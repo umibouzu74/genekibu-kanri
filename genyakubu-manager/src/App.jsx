@@ -56,6 +56,11 @@ function SlotCard({slot,compact,onEdit,onDel}) {
 }
 
 function Modal({title,onClose,children}) {
+  useEffect(()=>{
+    const h=e=>{if(e.key==="Escape")onClose();};
+    document.addEventListener("keydown",h);
+    return ()=>document.removeEventListener("keydown",h);
+  },[onClose]);
   return (
     <div style={S.modal} onClick={onClose}>
       <div style={S.card} onClick={e=>e.stopPropagation()}>
@@ -128,7 +133,7 @@ function HolidayManager({holidays,onAdd,onDel}) {
         <button onClick={()=>{if(d){onAdd({date:d,label:l||"休講"});setD("");setL("");}}} style={S.btn(true)}>追加</button>
       </div>
       <div style={{maxHeight:300,overflow:"auto"}}>
-        {holidays.sort((a,b)=>a.date.localeCompare(b.date)).map((h,i)=>(
+        {[...holidays].sort((a,b)=>a.date.localeCompare(b.date)).map((h,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #eee",fontSize:12}}>
             <span><strong>{h.date}</strong>　{h.label}</span>
             <button onClick={()=>onDel(h.date)} style={{background:"none",border:"none",cursor:"pointer",fontSize:14}}>✕</button>
@@ -212,16 +217,18 @@ function WeekView({teacher,slots,onEdit,onDel}) {
   const ts=useMemo(()=>sortS(slots.filter(s=>s.teacher===teacher||s.note?.includes(teacher))),[teacher,slots]);
   const byDay=useMemo(()=>{const m={};DAYS.forEach(d=>{m[d]=[]});ts.forEach(s=>m[s.day]?.push(s));return m;},[ts]);
   return (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:12}}>
-      {DAYS.map(d=>(
-        <div key={d}>
-          <div style={{background:DC[d],color:"#fff",textAlign:"center",padding:"7px 0",borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:14,letterSpacing:2}}>{d}</div>
-          <div style={{background:DB[d],borderRadius:"0 0 8px 8px",padding:6,minHeight:80,display:"flex",flexDirection:"column",gap:5}}>
-            {byDay[d].length===0?<div style={{color:"#ccc",textAlign:"center",padding:16,fontSize:11}}>—</div>:
-              byDay[d].map((s,i)=><SlotCard key={i} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
+    <div style={{overflowX:"auto",marginTop:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minWidth:600}}>
+        {DAYS.map(d=>(
+          <div key={d}>
+            <div style={{background:DC[d],color:"#fff",textAlign:"center",padding:"7px 0",borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:14,letterSpacing:2}}>{d}</div>
+            <div style={{background:DB[d],borderRadius:"0 0 8px 8px",padding:6,minHeight:80,display:"flex",flexDirection:"column",gap:5}}>
+              {byDay[d].length===0?<div style={{color:"#ccc",textAlign:"center",padding:16,fontSize:11}}>—</div>:
+                byDay[d].map((s,i)=><SlotCard key={i} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -350,12 +357,14 @@ export default function App() {
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;a.download=`genyakubu-backup-${fmtDate(new Date())}.json`;
-    a.click();URL.revokeObjectURL(url);
+    a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
 
   const handleImport=(e)=>{
     const file=e.target.files?.[0];
     if(!file)return;
+    if(!confirm(`「${file.name}」を読み込みます。\n現在のデータは上書きされます。よろしいですか？`))
+      {e.target.value="";return;}
     const reader=new FileReader();
     reader.onload=(ev)=>{
       try{
