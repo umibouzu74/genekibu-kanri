@@ -144,21 +144,8 @@ function HolidayManager({holidays,onAdd,onDel}) {
   );
 }
 
-function Dashboard({slots,holidays}) {
-  const now=new Date();
-  const todayStr=fmtDate(now);
-  const todayDow=WEEKDAYS[now.getDay()];
-  const tmr=new Date(now);tmr.setDate(tmr.getDate()+1);
-  const tmrStr=fmtDate(tmr);
-  const tmrDow=WEEKDAYS[tmr.getDay()];
-
-  const isHoliday=d=>holidays.some(h=>h.date===d);
-  const getLabel=d=>holidays.find(h=>h.date===d)?.label;
-
-  const todaySlots=isHoliday(todayStr)?[]:sortS(slots.filter(s=>s.day===todayDow));
-  const tmrSlots=isHoliday(tmrStr)?[]:sortS(slots.filter(s=>s.day===tmrDow));
-
-  const DayBlock=({date,dow,label,sl,isH})=>(
+function DayBlock({date,dow,label,sl,isH}) {
+  return (
     <div style={{flex:1,minWidth:280}}>
       <div style={{
         background:isH?"#f0f0f0":(DC[dow]||"#666"),color:isH?"#999":"#fff",
@@ -204,6 +191,21 @@ function Dashboard({slots,holidays}) {
       </div>
     </div>
   );
+}
+
+function Dashboard({slots,holidays}) {
+  const now=new Date();
+  const todayStr=fmtDate(now);
+  const todayDow=WEEKDAYS[now.getDay()];
+  const tmr=new Date(now);tmr.setDate(tmr.getDate()+1);
+  const tmrStr=fmtDate(tmr);
+  const tmrDow=WEEKDAYS[tmr.getDay()];
+
+  const isHoliday=d=>holidays.some(h=>h.date===d);
+  const getLabel=d=>holidays.find(h=>h.date===d)?.label;
+
+  const todaySlots=isHoliday(todayStr)?[]:sortS(slots.filter(s=>s.day===todayDow));
+  const tmrSlots=isHoliday(tmrStr)?[]:sortS(slots.filter(s=>s.day===tmrDow));
 
   return (
     <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
@@ -415,6 +417,7 @@ export default function App() {
     const el=document.getElementById("main-content");
     if(!el)return;
     const w=window.open("","_blank");
+    if(!w){alert("ポップアップがブロックされました。\nブラウザの設定でポップアップを許可してください。");return;}
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${selected||"現役部"} 授業予定</title><style>body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`);
     w.document.close();
     setTimeout(()=>w.print(),300);
