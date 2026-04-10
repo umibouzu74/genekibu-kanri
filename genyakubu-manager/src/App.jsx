@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   DAYS, WEEKDAYS, DAY_COLOR as DC, DAY_BG as DB,
-  gradeColor as GC, sortSlots as sortS, fmtDate,
+  gradeColor as GC, sortSlots as sortS, fmtDate, timeToMin,
   INIT_SLOTS, INIT_HOLIDAYS,
 } from "./data";
 
@@ -321,18 +321,221 @@ function AllView({slots,onSelectTeacher}) {
   );
 }
 
+function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
+  const [filterDay,setFilterDay]=useState("");
+  const [filterGrade,setFilterGrade]=useState("");
+  const [filterTeacher,setFilterTeacher]=useState("");
+  const [filterSubj,setFilterSubj]=useState("");
+  const [sortCol,setSortCol]=useState("day");
+  const [sortAsc,setSortAsc]=useState(true);
+  const [tab,setTab]=useState("list");
+
+  const grades=useMemo(()=>[...new Set(slots.map(s=>s.grade))].sort(),[slots]);
+
+  const filtered=useMemo(()=>{
+    let r=[...slots];
+    if(filterDay) r=r.filter(s=>s.day===filterDay);
+    if(filterGrade) r=r.filter(s=>s.grade===filterGrade);
+    if(filterTeacher) r=r.filter(s=>s.teacher.includes(filterTeacher));
+    if(filterSubj) r=r.filter(s=>s.subj.includes(filterSubj));
+    const di=Object.fromEntries(DAYS.map((d,i)=>[d,i]));
+    r.sort((a,b)=>{
+      let c=0;
+      if(sortCol==="day") c=(di[a.day]??99)-(di[b.day]??99);
+      else if(sortCol==="time") c=timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
+      else if(sortCol==="grade") c=a.grade.localeCompare(b.grade);
+      else if(sortCol==="cls") c=(a.cls||"").localeCompare(b.cls||"");
+      else if(sortCol==="room") c=(a.room||"").localeCompare(b.room||"");
+      else if(sortCol==="subj") c=a.subj.localeCompare(b.subj);
+      else if(sortCol==="teacher") c=a.teacher.localeCompare(b.teacher);
+      else c=a.id-b.id;
+      if(c===0&&sortCol!=="day") c=(di[a.day]??99)-(di[b.day]??99);
+      if(c===0&&sortCol!=="time") c=timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
+      if(c===0) c=a.id-b.id;
+      return sortAsc?c:-c;
+    });
+    return r;
+  },[slots,filterDay,filterGrade,filterTeacher,filterSubj,sortCol,sortAsc]);
+
+  const biweeklyGroups=useMemo(()=>{
+    const alt=slots.filter(s=>s.note?.includes("隔週"));
+    const g={};
+    alt.forEach(s=>{
+      const k=`${s.day}_${s.time}`;
+      if(!g[k]) g[k]={day:s.day,time:s.time,slots:[]};
+      g[k].slots.push(s);
+    });
+    const di=Object.fromEntries(DAYS.map((d,i)=>[d,i]));
+    return Object.values(g).sort((a,b)=>{
+      const dd=(di[a.day]??99)-(di[b.day]??99);
+      return dd||timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
+    });
+  },[slots]);
+
+  const currentWeekType=useMemo(()=>{
+    if(!biweeklyBase) return null;
+    const base=new Date(biweeklyBase+"T12:00:00");
+    const now=new Date();now.setHours(12,0,0,0);
+    const diffDays=Math.round((now-base)/(1000*60*60*24));
+    const weeks=Math.floor(diffDays/7);
+    return Math.abs(weeks)%2===0?"A":"B";
+  },[biweeklyBase]);
+
+  const handleSort=(col)=>{
+    if(sortCol===col) setSortAsc(!sortAsc);
+    else {setSortCol(col);setSortAsc(true);}
+  };
+  const sortTh=(col,label,first,last)=>(
+    <th key={col} onClick={()=>handleSort(col)} style={{
+      padding:"8px 6px",background:"#1a1a2e",color:"#fff",cursor:"pointer",
+      userSelect:"none",fontSize:11,whiteSpace:"nowrap",
+      borderRadius:first?"8px 0 0 0":last?"0 8px 0 0":"0",
+    }}>{label}{sortCol===col?(sortAsc?" ▲":" ▼"):""}</th>
+  );
+
+  if(tab==="biweekly") return (
+    <div style={{marginTop:12}}>
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        <button onClick={()=>setTab("list")} style={S.btn(false)}>コマ一覧</button>
+        <button onClick={()=>setTab("biweekly")} style={S.btn(true)}>隔週管理</button>
+      </div>
+      <div style={{background:"#fff",borderRadius:8,padding:14,marginBottom:16,border:"1px solid #e0e0e0"}}>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>隔週の基準設定</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <label style={{fontSize:12}}>A週の基準日:</label>
+          <input type="date" value={biweeklyBase||""} onChange={e=>onSetBiweeklyBase(e.target.value)} style={{...S.input,width:"auto"}}/>
+          {currentWeekType&&<span style={{
+            background:currentWeekType==="A"?"#2e6a9e":"#c05030",color:"#fff",
+            padding:"4px 12px",borderRadius:6,fontWeight:800,fontSize:13,
+          }}>今週は {currentWeekType}週</span>}
+        </div>
+        <div style={{fontSize:11,color:"#888",marginTop:6}}>基準日を含む週をA週とし、以降交互にA週・B週が繰り返されます</div>
+      </div>
+      {biweeklyGroups.length===0?(
+        <div style={{textAlign:"center",color:"#888",padding:40}}>隔週コマがありません</div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {biweeklyGroups.map(g=>(
+            <div key={g.day+g.time} style={{background:"#fff",borderRadius:8,border:`2px solid ${DC[g.day]}`,overflow:"hidden"}}>
+              <div style={{background:DC[g.day],color:"#fff",padding:"8px 14px",fontWeight:800,fontSize:13,display:"flex",justifyContent:"space-between"}}>
+                <span>{g.day}曜 {g.time}</span>
+                <span style={{fontSize:11,opacity:.8}}>{g.slots.length}コマ</span>
+              </div>
+              <div style={{padding:10}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:"2px solid #eee"}}>
+                    <th style={{textAlign:"left",padding:"4px 6px"}}>学年</th>
+                    <th style={{textAlign:"left",padding:"4px 6px"}}>クラス</th>
+                    <th style={{textAlign:"left",padding:"4px 6px"}}>科目</th>
+                    <th style={{textAlign:"left",padding:"4px 6px"}}>担当</th>
+                    <th style={{textAlign:"left",padding:"4px 6px"}}>備考</th>
+                    <th style={{textAlign:"center",padding:"4px 6px",width:40}}>編集</th>
+                  </tr></thead>
+                  <tbody>{g.slots.map(s=>(
+                    <tr key={s.id} style={{borderBottom:"1px solid #f0f0f0"}}>
+                      <td style={{padding:"6px"}}><span style={{background:GC(s.grade).b,color:GC(s.grade).f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.grade}</span></td>
+                      <td style={{padding:"6px"}}>{s.cls}</td>
+                      <td style={{padding:"6px",fontWeight:600}}>{s.subj}</td>
+                      <td style={{padding:"6px",fontWeight:700}}>{s.teacher}</td>
+                      <td style={{padding:"6px",color:"#e67a00",fontSize:11}}>{s.note}</td>
+                      <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>onEdit(s)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12}}>✏️</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{marginTop:16,fontSize:11,color:"#888"}}>※ 備考欄に「隔週」を含むコマが自動的に表示されます</div>
+    </div>
+  );
+
+  return (
+    <div style={{marginTop:12}}>
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        <button onClick={()=>setTab("list")} style={S.btn(true)}>コマ一覧</button>
+        <button onClick={()=>setTab("biweekly")} style={S.btn(false)}>隔週管理</button>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",background:"#fff",padding:12,borderRadius:8,border:"1px solid #e0e0e0",alignItems:"flex-end"}}>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>曜日</label>
+          <select value={filterDay} onChange={e=>setFilterDay(e.target.value)} style={{...S.input,width:"auto",minWidth:60}}>
+            <option value="">すべて</option>
+            {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>学年</label>
+          <select value={filterGrade} onChange={e=>setFilterGrade(e.target.value)} style={{...S.input,width:"auto",minWidth:80}}>
+            <option value="">すべて</option>
+            {grades.map(g=><option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>講師</label>
+          <input value={filterTeacher} onChange={e=>setFilterTeacher(e.target.value)} placeholder="講師名" style={{...S.input,width:100}}/>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>科目</label>
+          <input value={filterSubj} onChange={e=>setFilterSubj(e.target.value)} placeholder="科目名" style={{...S.input,width:100}}/>
+        </div>
+        <button onClick={()=>{setFilterDay("");setFilterGrade("");setFilterTeacher("");setFilterSubj("");}} style={{...S.btn(false),fontSize:11}}>クリア</button>
+        <div style={{marginLeft:"auto"}}>
+          <button onClick={onNew} style={{...S.btn(false),background:"#e8f5e8",color:"#2a7a2a"}}>＋ 新規追加</button>
+        </div>
+      </div>
+      <div style={{fontSize:12,color:"#888",marginBottom:6}}>{filtered.length} / {slots.length} 件表示</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,background:"#fff"}}>
+          <thead><tr>
+            {sortTh("day","曜日",true)}
+            {sortTh("time","時間帯")}
+            {sortTh("grade","学年")}
+            {sortTh("cls","クラス")}
+            {sortTh("room","教室")}
+            {sortTh("subj","科目")}
+            {sortTh("teacher","担当")}
+            <th style={{padding:"8px 6px",background:"#1a1a2e",color:"#fff",fontSize:11}}>備考</th>
+            <th style={{padding:"8px 6px",background:"#1a1a2e",color:"#fff",fontSize:11,borderRadius:"0 8px 0 0"}}>操作</th>
+          </tr></thead>
+          <tbody>{filtered.map((s,i)=>(
+            <tr key={s.id} style={{background:i%2?"#f8f9fa":"#fff",borderBottom:"1px solid #eee"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#f0f5ff"}
+              onMouseLeave={e=>e.currentTarget.style.background=i%2?"#f8f9fa":"#fff"}>
+              <td style={{padding:"6px 8px",fontWeight:700,color:DC[s.day],background:DB[s.day]}}>{s.day}</td>
+              <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{s.time}</td>
+              <td style={{padding:"6px 8px"}}><span style={{background:GC(s.grade).b,color:GC(s.grade).f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.grade}</span></td>
+              <td style={{padding:"6px 8px"}}>{s.cls}</td>
+              <td style={{padding:"6px 8px"}}>{s.room}</td>
+              <td style={{padding:"6px 8px",fontWeight:600}}>{s.subj}</td>
+              <td style={{padding:"6px 8px",fontWeight:700}}>{s.teacher}</td>
+              <td style={{padding:"6px 8px",color:"#e67a00",fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.note}>{s.note}</td>
+              <td style={{padding:"6px 4px",whiteSpace:"nowrap",textAlign:"center"}}>
+                <button onClick={()=>onEdit(s)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:2}}>✏️</button>
+                <button onClick={()=>onDel(s.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:2}}>🗑</button>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────
 export default function App() {
   const [slots,setSlots]=useState(INIT_SLOTS);
   const [holidays,setHolidays]=useState(INIT_HOLIDAYS);
   const [selected,setSelected]=useState(null);
-  const [view,setView]=useState("dash"); // dash|week|month|all|holidays
+  const [view,setView]=useState("dash"); // dash|week|month|all|master|holidays
   const [monthOff,setMonthOff]=useState(0);
   const [search,setSearch]=useState("");
   const [editSlot,setEditSlot]=useState(null); // null | slot | "new"
   const [showHolMgr,setShowHolMgr]=useState(false);
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [showDataMgr,setShowDataMgr]=useState(false);
+  const [biweeklyBase,setBiweeklyBase]=useState("");
 
   // Storage - localStorage
   useEffect(()=>{
@@ -344,6 +547,10 @@ export default function App() {
       const h=localStorage.getItem("genyakubu-holidays");
       if(h) setHolidays(JSON.parse(h));
     } catch{}
+    try {
+      const bw=localStorage.getItem("genyakubu-biweekly-base");
+      if(bw) setBiweeklyBase(bw);
+    } catch{}
   },[]);
 
   const saveSlots=useCallback((s)=>{
@@ -354,9 +561,13 @@ export default function App() {
     setHolidays(h);
     try{localStorage.setItem("genyakubu-holidays",JSON.stringify(h))}catch{}
   },[]);
+  const saveBiweeklyBase=useCallback((v)=>{
+    setBiweeklyBase(v);
+    try{localStorage.setItem("genyakubu-biweekly-base",v)}catch{}
+  },[]);
 
   const handleExport=()=>{
-    const data=JSON.stringify({slots,holidays},null,2);
+    const data=JSON.stringify({slots,holidays,biweeklyBase},null,2);
     const blob=new Blob([data],{type:"application/json"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
@@ -375,6 +586,7 @@ export default function App() {
         const d=JSON.parse(ev.target.result);
         if(d.slots&&Array.isArray(d.slots)){saveSlots(d.slots);}
         if(d.holidays&&Array.isArray(d.holidays)){saveHolidays(d.holidays);}
+        if(d.biweeklyBase){saveBiweeklyBase(d.biweeklyBase);}
         setShowDataMgr(false);
       }catch{alert("JSONファイルの読み込みに失敗しました。");}
     };
@@ -386,7 +598,8 @@ export default function App() {
     if(!confirm("データを初期状態に戻しますか？\n現在のデータは失われます。"))return;
     localStorage.removeItem("genyakubu-slots");
     localStorage.removeItem("genyakubu-holidays");
-    setSlots(INIT_SLOTS);setHolidays(INIT_HOLIDAYS);
+    localStorage.removeItem("genyakubu-biweekly-base");
+    setSlots(INIT_SLOTS);setHolidays(INIT_HOLIDAYS);setBiweeklyBase("");
     setSelected(null);setView("dash");setShowDataMgr(false);
   };
 
@@ -461,6 +674,10 @@ export default function App() {
             display:"block",width:"100%",padding:"7px 14px",border:"none",
             background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
           }}>📅 祝日・休講日管理</button>
+          <button onClick={()=>{setSelected(null);setView("master");setSidebarOpen(false)}} style={{
+            display:"block",width:"100%",padding:"7px 14px",border:"none",
+            background:!selected&&view==="master"?"#3a3a6e":"transparent",color:!selected&&view==="master"?"#fff":"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:view==="master"?700:400,
+          }}>⚙ コースマスター管理</button>
           <button onClick={()=>{setShowDataMgr(true);setSidebarOpen(false)}} style={{
             display:"block",width:"100%",padding:"7px 14px",border:"none",
             background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
@@ -492,7 +709,7 @@ export default function App() {
             <button className="hamburger" onClick={()=>setSidebarOpen(true)}
               style={{background:"#1a1a2e",border:"none",color:"#fff",cursor:"pointer",fontSize:18,padding:"4px 8px",borderRadius:6,lineHeight:1}}>☰</button>
             <h1 style={{margin:0,fontSize:20,fontWeight:800}}>
-              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":selected||""}
+              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":view==="master"?"コースマスター管理":selected||""}
             </h1>
           </div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
@@ -535,6 +752,7 @@ export default function App() {
         <div id="main-content">
           {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays}/>}
           {view==="all"&&!selected&&<AllView slots={slots} onSelectTeacher={selectTeacher}/>}
+          {view==="master"&&!selected&&<MasterView slots={slots} onEdit={setEditSlot} onDel={handleDelSlot} onNew={()=>setEditSlot("new")} biweeklyBase={biweeklyBase} onSetBiweeklyBase={saveBiweeklyBase}/>}
           {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} onEdit={setEditSlot} onDel={handleDelSlot}/>}
           {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm} onEdit={setEditSlot} onDel={handleDelSlot}/>}
         </div>
