@@ -614,8 +614,6 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
   const [filterGrade,setFilterGrade]=useState("");
   const [filterTeacher,setFilterTeacher]=useState("");
   const [filterSubj,setFilterSubj]=useState("");
-  const [sortCol,setSortCol]=useState("day");
-  const [sortAsc,setSortAsc]=useState(true);
   const [tab,setTab]=useState("list");
 
   const grades=useMemo(()=>[...new Set(slots.map(s=>s.grade))].sort(),[slots]);
@@ -626,24 +624,17 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
     if(filterGrade) r=r.filter(s=>s.grade===filterGrade);
     if(filterTeacher) r=r.filter(s=>s.teacher.includes(filterTeacher));
     if(filterSubj) r=r.filter(s=>s.subj.includes(filterSubj));
-    const di=Object.fromEntries(DAYS.map((d,i)=>[d,i]));
-    r.sort((a,b)=>{
-      let c=0;
-      if(sortCol==="day") c=(di[a.day]??99)-(di[b.day]??99);
-      else if(sortCol==="time") c=timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
-      else if(sortCol==="grade") c=a.grade.localeCompare(b.grade);
-      else if(sortCol==="cls") c=(a.cls||"").localeCompare(b.cls||"");
-      else if(sortCol==="room") c=(a.room||"").localeCompare(b.room||"");
-      else if(sortCol==="subj") c=a.subj.localeCompare(b.subj);
-      else if(sortCol==="teacher") c=a.teacher.localeCompare(b.teacher);
-      else c=a.id-b.id;
-      if(c===0&&sortCol!=="day") c=(di[a.day]??99)-(di[b.day]??99);
-      if(c===0&&sortCol!=="time") c=timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
-      if(c===0) c=a.id-b.id;
-      return sortAsc?c:-c;
-    });
-    return r;
-  },[slots,filterDay,filterGrade,filterTeacher,filterSubj,sortCol,sortAsc]);
+    return sortS(r);
+  },[slots,filterDay,filterGrade,filterTeacher,filterSubj]);
+
+  const dayGroups=useMemo(()=>{
+    const activeDays=filterDay?[filterDay]:DAYS;
+    return activeDays.map(day=>{
+      const daySlots=filtered.filter(s=>s.day===day);
+      if(daySlots.length===0) return null;
+      return {day,slots:daySlots};
+    }).filter(Boolean);
+  },[filtered,filterDay]);
 
   const biweeklyGroups=useMemo(()=>{
     const alt=slots.filter(s=>s.note?.includes("隔週"));
@@ -668,18 +659,6 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
     const weeks=Math.floor(diffDays/7);
     return Math.abs(weeks)%2===0?"A":"B";
   },[biweeklyBase]);
-
-  const handleSort=(col)=>{
-    if(sortCol===col) setSortAsc(!sortAsc);
-    else {setSortCol(col);setSortAsc(true);}
-  };
-  const sortTh=(col,label,first,last)=>(
-    <th key={col} onClick={()=>handleSort(col)} style={{
-      padding:"8px 6px",background:"#1a1a2e",color:"#fff",cursor:"pointer",
-      userSelect:"none",fontSize:11,whiteSpace:"nowrap",
-      borderRadius:first?"8px 0 0 0":last?"0 8px 0 0":"0",
-    }}>{label}{sortCol===col?(sortAsc?" ▲":" ▼"):""}</th>
-  );
 
   if(tab==="biweekly") return (
     <div style={{marginTop:12}}>
@@ -774,38 +753,114 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
         </div>
       </div>
       <div style={{fontSize:12,color:"#888",marginBottom:6}}>{filtered.length} / {slots.length} 件表示</div>
-      <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,background:"#fff"}}>
-          <thead><tr>
-            {sortTh("day","曜日",true)}
-            {sortTh("time","時間帯")}
-            {sortTh("grade","学年")}
-            {sortTh("cls","クラス")}
-            {sortTh("room","教室")}
-            {sortTh("subj","科目")}
-            {sortTh("teacher","担当")}
-            <th style={{padding:"8px 6px",background:"#1a1a2e",color:"#fff",fontSize:11}}>備考</th>
-            <th style={{padding:"8px 6px",background:"#1a1a2e",color:"#fff",fontSize:11,borderRadius:"0 8px 0 0"}}>操作</th>
-          </tr></thead>
-          <tbody>{filtered.map((s,i)=>(
-            <tr key={s.id} style={{background:i%2?"#f8f9fa":"#fff",borderBottom:"1px solid #eee"}}
-              onMouseEnter={e=>e.currentTarget.style.background="#f0f5ff"}
-              onMouseLeave={e=>e.currentTarget.style.background=i%2?"#f8f9fa":"#fff"}>
-              <td style={{padding:"6px 8px",fontWeight:700,color:DC[s.day],background:DB[s.day]}}>{s.day}</td>
-              <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{s.time}</td>
-              <td style={{padding:"6px 8px"}}><span style={{background:GC(s.grade).b,color:GC(s.grade).f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.grade}</span></td>
-              <td style={{padding:"6px 8px"}}>{s.cls}</td>
-              <td style={{padding:"6px 8px"}}>{s.room}</td>
-              <td style={{padding:"6px 8px",fontWeight:600}}>{s.subj}</td>
-              <td style={{padding:"6px 8px",fontWeight:700}}>{s.teacher}</td>
-              <td style={{padding:"6px 8px",color:"#e67a00",fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.note}>{s.note}</td>
-              <td style={{padding:"6px 4px",whiteSpace:"nowrap",textAlign:"center"}}>
-                <button onClick={()=>onEdit(s)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:2}}>✏️</button>
-                <button onClick={()=>onDel(s.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:2}}>🗑</button>
-              </td>
-            </tr>
-          ))}</tbody>
-        </table>
+      <div style={{display:"flex",flexDirection:"column",gap:20}}>
+        {dayGroups.map(({day,slots:daySlots})=>(
+          <div key={day}>
+            <div style={{
+              background:DC[day]||"#666",color:"#fff",
+              padding:"10px 16px",borderRadius:10,fontWeight:800,fontSize:15,
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              marginBottom:10,
+            }}>
+              <span>{day}曜日</span>
+              <span style={{fontSize:11,opacity:.8}}>{daySlots.length}コマ</span>
+            </div>
+            <div className="dash-sections" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:10}}>
+              {DASH_SECTIONS.map(sec=>{
+                const secSlots=sortS(daySlots.filter(sec.filterFn));
+                const color=DEPT_COLOR[sec.dept]||{b:"#e8e8e8",f:"#444",accent:"#888"};
+                const byTime={};
+                secSlots.forEach(s=>{if(!byTime[s.time])byTime[s.time]=[];byTime[s.time].push(s);});
+                const timeGroups=Object.entries(byTime).sort(([a],[b])=>timeToMin(a.split("-")[0])-timeToMin(b.split("-")[0]));
+                const teachers=[...new Set(secSlots.map(s=>s.teacher))];
+                return (
+                  <div key={sec.key} style={{flex:1,minWidth:0}}>
+                    <div style={{
+                      background:color.b,color:color.f,padding:"8px 12px",
+                      borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:13,
+                      display:"flex",justifyContent:"space-between",alignItems:"center",
+                    }}>
+                      <span>{sec.label}</span>
+                      {secSlots.length>0&&<span style={{fontSize:10,fontWeight:600,opacity:0.8}}>{secSlots.length}コマ / {teachers.length}名</span>}
+                    </div>
+                    <div style={{
+                      background:"#fff",borderRadius:"0 0 8px 8px",
+                      border:"1px solid #e0e0e0",borderTop:"none",
+                      padding:10,minHeight:80,
+                    }}>
+                      {secSlots.length===0?(
+                        <div style={{textAlign:"center",color:"#bbb",padding:20,fontSize:13}}>授業なし</div>
+                      ):(
+                        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                          {timeGroups.map(([time,tSlots])=>(
+                            <div key={time}>
+                              <div style={{
+                                fontSize:12,fontWeight:800,color:color.f,marginBottom:4,
+                                paddingBottom:3,borderBottom:`2px solid ${color.accent}`,
+                                display:"flex",alignItems:"center",gap:6,
+                              }}>
+                                <span>{time}</span>
+                                <span style={{fontSize:10,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
+                              </div>
+                              <div style={{
+                                display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",
+                                background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
+                              }}>
+                                {tSlots.map(s=>{
+                                  const gc=GC(s.grade);
+                                  return (
+                                    <div key={s.id} style={{
+                                      background:"#fff",padding:"8px 6px",textAlign:"center",
+                                      display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:80,
+                                      position:"relative",
+                                    }}
+                                    onMouseEnter={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='1';}}
+                                    onMouseLeave={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='0';}}>
+                                      <div style={{lineHeight:1.4}}>
+                                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,flexWrap:"wrap"}}>
+                                          <span style={{
+                                            background:gc.b,color:gc.f,borderRadius:3,padding:"1px 4px",
+                                            fontSize:9,fontWeight:700,
+                                          }}>{s.grade}{s.cls&&s.cls!=="-"?s.cls:""}</span>
+                                          <span style={{fontSize:11,fontWeight:600,color:"#444"}}>{s.subj}</span>
+                                        </div>
+                                        {s.room&&<div style={{fontSize:9,color:"#999",marginTop:1}}>{s.room}</div>}
+                                        {s.note&&<div style={{fontSize:8,color:"#e67a00",marginTop:1}}>({s.note})</div>}
+                                      </div>
+                                      <div style={{
+                                        fontSize:24,fontWeight:800,color:"#1a1a2e",
+                                        lineHeight:1.1,marginTop:4,
+                                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                                      }}>
+                                        {s.teacher}
+                                      </div>
+                                      <div className="master-slot-actions" style={{
+                                        position:"absolute",top:2,right:2,display:"flex",gap:1,
+                                        opacity:0,transition:"opacity .15s",
+                                      }}>
+                                        <button onClick={()=>onEdit(s)} style={{background:"rgba(255,255,255,0.9)",border:"1px solid #ddd",borderRadius:3,cursor:"pointer",fontSize:11,padding:"1px 3px",lineHeight:1}}>✏️</button>
+                                        <button onClick={()=>onDel(s.id)} style={{background:"rgba(255,255,255,0.9)",border:"1px solid #ddd",borderRadius:3,cursor:"pointer",fontSize:11,padding:"1px 3px",lineHeight:1}}>🗑</button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {dayGroups.length===0&&(
+          <div style={{textAlign:"center",color:"#888",padding:40,background:"#fff",borderRadius:8,border:"1px solid #e0e0e0"}}>
+            該当するコマがありません
+          </div>
+        )}
       </div>
     </div>
   );
