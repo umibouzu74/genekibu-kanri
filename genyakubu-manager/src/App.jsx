@@ -349,6 +349,9 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
       else if(sortCol==="subj") c=a.subj.localeCompare(b.subj);
       else if(sortCol==="teacher") c=a.teacher.localeCompare(b.teacher);
       else c=a.id-b.id;
+      if(c===0&&sortCol!=="day") c=(di[a.day]??99)-(di[b.day]??99);
+      if(c===0&&sortCol!=="time") c=timeToMin(a.time.split("-")[0])-timeToMin(b.time.split("-")[0]);
+      if(c===0) c=a.id-b.id;
       return sortAsc?c:-c;
     });
     return r;
@@ -371,11 +374,11 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
 
   const currentWeekType=useMemo(()=>{
     if(!biweeklyBase) return null;
-    const base=new Date(biweeklyBase);
-    const now=new Date();
-    const diff=Math.floor((now-base)/(1000*60*60*24));
-    const weeks=Math.floor(diff/7);
-    return weeks%2===0?"A":"B";
+    const base=new Date(biweeklyBase+"T12:00:00");
+    const now=new Date();now.setHours(12,0,0,0);
+    const diffDays=Math.round((now-base)/(1000*60*60*24));
+    const weeks=Math.floor(diffDays/7);
+    return Math.abs(weeks)%2===0?"A":"B";
   },[biweeklyBase]);
 
   const handleSort=(col)=>{
