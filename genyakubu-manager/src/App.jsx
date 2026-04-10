@@ -282,7 +282,7 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
                 </div>
                 <div style={{
                   display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(140px,1fr))`,
-                  background:"#999",gap:2,border:"2px solid #999",borderRadius:4,overflow:"hidden",
+                  background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                 }}>
                   {tSlots.map((s,i)=>{
                     const gc=GC(s.grade);
@@ -304,7 +304,8 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
                         </div>
                         <div style={{
                           fontSize:28,fontWeight:800,color:"#1a1a2e",
-                          lineHeight:1.1,letterSpacing:2,marginTop:6,
+                          lineHeight:1.1,marginTop:6,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                         }}>
                           {s.teacher}
                         </div>
