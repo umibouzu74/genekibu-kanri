@@ -235,7 +235,7 @@ function WeekView({teacher,slots,onEdit,onDel}) {
   );
 }
 
-function MonthView({teacher,slots,holidays,year,month}) {
+function MonthView({teacher,slots,holidays,year,month,onEdit,onDel}) {
   const ts=useMemo(()=>slots.filter(s=>s.teacher===teacher||s.note?.includes(teacher)),[teacher,slots]);
   const dayMap=useMemo(()=>{const m={};DAYS.forEach(d=>{m[d]=ts.filter(s=>s.day===d)});return m;},[ts]);
   const holSet=useMemo(()=>new Set(holidays.map(h=>h.date)),[holidays]);
@@ -258,7 +258,7 @@ function MonthView({teacher,slots,holidays,year,month}) {
           <div key={w} style={{background:w==="日"?"#f5e0e0":w==="土"?"#e0e0f5":"#eee",textAlign:"center",padding:"6px 0",fontWeight:800,fontSize:12,color:w==="日"?"#c44":w==="土"?"#44c":"#333"}}>{w}</div>
         ))}
         {cells.map((d,i)=>{
-          if(!d) return <div key={i} style={{background:"#fafafa",minHeight:72}}/>;
+          if(!d) return <div key={i} style={{background:"#fafafa",minHeight:90}}/>;
           const ds=`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
           const dow=new Date(year,month-1,d).getDay();
           const dn=WEEKDAYS[dow];
@@ -268,15 +268,17 @@ function MonthView({teacher,slots,holidays,year,month}) {
           return (
             <div key={i} style={{
               background:isH?"#f8f0f0":isT?"#fffbe6":dow===0?"#fdf5f5":dow===6?"#f5f5fd":"#fff",
-              minHeight:72,padding:3,border:isT?"2px solid #e6a800":"none",position:"relative",
+              minHeight:90,padding:4,border:isT?"2px solid #e6a800":"none",position:"relative",
             }}>
-              <div style={{fontSize:11,fontWeight:isT?800:600,color:dow===0?"#c44":dow===6?"#44c":"#333",display:"flex",justifyContent:"space-between"}}>
+              <div style={{fontSize:12,fontWeight:isT?800:600,color:dow===0?"#c44":dow===6?"#44c":"#333",display:"flex",justifyContent:"space-between"}}>
                 <span>{d}</span>
-                {isH&&<span style={{fontSize:8,color:"#c44",fontWeight:400}}>{holMap[ds]}</span>}
+                {isH&&<span style={{fontSize:9,color:"#c44",fontWeight:400}}>{holMap[ds]}</span>}
               </div>
-              {isH?<div style={{fontSize:8,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
+              {isH?<div style={{fontSize:10,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
                 sl.map((s,j)=>(
-                  <div key={j} style={{fontSize:8,lineHeight:1.3,padding:"1px 2px",margin:"1px 0",borderRadius:2,background:DB[s.day],borderLeft:`2px solid ${DC[s.day]}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  <div key={j} style={{fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,background:DB[s.day],borderLeft:`2px solid ${DC[s.day]}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:onEdit?"pointer":"default"}}
+                    onClick={()=>onEdit&&onEdit(s)}
+                    title={`${s.time} ${s.grade} ${s.subj} ${s.room||""}\nクリックで編集`}>
                     <b>{s.time.split("-")[0]}</b> {s.subj}
                   </div>
                 ))}
@@ -534,7 +536,7 @@ export default function App() {
           {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays}/>}
           {view==="all"&&!selected&&<AllView slots={slots} onSelectTeacher={selectTeacher}/>}
           {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} onEdit={setEditSlot} onDel={handleDelSlot}/>}
-          {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm}/>}
+          {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm} onEdit={setEditSlot} onDel={handleDelSlot}/>}
         </div>
       </div>
 
