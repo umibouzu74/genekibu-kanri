@@ -443,7 +443,7 @@ function DashDayRow({ date, dow, holidays: hols, slots }) {
           休講日{holLabel ? `（${holLabel}）` : ""}
         </div>
       ) : (
-        <div className="dash-sections" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <div className="dash-sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
           {DASH_SECTIONS.map(sec => {
             const deptOff = offDepts.includes(sec.dept);
             const secSlots = deptOff ? [] : sortS(slots.filter(sec.filterFn));
@@ -1089,6 +1089,9 @@ export default function App() {
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
+        }
+        @media print {
+          .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
         }
       `}</style>
     </div>
