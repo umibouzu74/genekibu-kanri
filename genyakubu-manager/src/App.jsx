@@ -33,18 +33,19 @@ function SlotCard({slot,compact,onEdit,onDel}) {
   return (
     <div style={{
       background:"#fff",border:"1px solid #e0e0e0",borderLeft:`4px solid ${DC[slot.day]}`,
-      borderRadius:8,padding:compact?"6px 10px":"10px 14px",fontSize:compact?11:13,
+      borderRadius:8,padding:compact?"8px 10px":"10px 14px",
       lineHeight:1.5,position:"relative",transition:"box-shadow .15s",
     }}
     onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.1)"}
     onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-      <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-        <span style={{background:gc.b,color:gc.f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{slot.grade}</span>
-        <span style={{fontWeight:700,color:"#1a1a2e"}}>{slot.subj}</span>
-        {slot.note&&<span style={{color:"#e67a00",fontSize:10}}>({slot.note})</span>}
+      <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",fontSize:10,color:"#888"}}>
+        <span style={{background:gc.b,color:gc.f,borderRadius:4,padding:"1px 6px",fontWeight:700}}>{slot.grade}{slot.cls&&slot.cls!=="-"?slot.cls:""}</span>
+        <span>{slot.time}</span>
+        {slot.room&&<span>/ {slot.room}</span>}
+        {slot.note&&<span style={{color:"#e67a00"}}>({slot.note})</span>}
       </div>
-      <div style={{color:"#888",fontSize:10,marginTop:2}}>
-        {slot.room} ｜ {slot.time}{slot.cls&&slot.cls!=="-"?` ｜ ${slot.cls}`:""}
+      <div style={{fontSize:compact?16:18,fontWeight:800,color:"#1a1a2e",marginTop:4}}>
+        {slot.subj}
       </div>
       {onEdit && (
         <div style={{position:"absolute",top:4,right:4,display:"flex",gap:2}}>
@@ -237,11 +238,16 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
   const offDepts=[...new Set(hols.flatMap(h=>h.scope||["全部"]))].filter(d=>d!=="全部");
   const hasPartial=!fullOff&&offDepts.length>0;
   const holLabel=hols[0]?.label;
+
+  const byTime={};
+  sl.forEach(s=>{if(!byTime[s.time])byTime[s.time]=[];byTime[s.time].push(s);});
+  const timeGroups=Object.entries(byTime).sort(([a],[b])=>timeToMin(a.split("-")[0])-timeToMin(b.split("-")[0]));
+
   return (
-    <div style={{flex:1,minWidth:280}}>
+    <div style={{flex:1,minWidth:360}}>
       <div style={{
         background:fullOff?"#f0f0f0":(DC[dow]||"#666"),color:fullOff?"#999":"#fff",
-        padding:"10px 16px",borderRadius:"10px 10px 0 0",fontWeight:800,fontSize:14,
+        padding:"12px 16px",borderRadius:"10px 10px 0 0",fontWeight:800,fontSize:15,
         display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,
       }}>
         <span>{date}（{dow}）</span>
@@ -256,34 +262,63 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
       </div>
       <div style={{
         background:"#fff",borderRadius:"0 0 10px 10px",border:"1px solid #e0e0e0",borderTop:"none",
-        padding:12,minHeight:100,
+        padding:14,minHeight:100,
       }}>
         {fullOff?(
-          <div style={{textAlign:"center",color:"#bbb",padding:30}}>休講日{holLabel?`（${holLabel}）`:""}</div>
+          <div style={{textAlign:"center",color:"#bbb",padding:30,fontSize:14}}>休講日{holLabel?`（${holLabel}）`:""}</div>
         ):sl.length===0?(
-          <div style={{textAlign:"center",color:"#bbb",padding:30}}>授業なし</div>
+          <div style={{textAlign:"center",color:"#bbb",padding:30,fontSize:14}}>授業なし</div>
         ):(
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {sl.map((s,i)=>(
-              <div key={i} style={{
-                display:"flex",alignItems:"center",gap:8,padding:"6px 10px",
-                background:DB[s.day],borderRadius:6,fontSize:12,
-                borderLeft:`3px solid ${DC[s.day]}`,
-              }}>
-                <span style={{fontWeight:800,minWidth:85,color:DC[s.day]}}>{s.time}</span>
-                <span style={{
-                  background:GC(s.grade).b,color:GC(s.grade).f,borderRadius:4,
-                  padding:"1px 6px",fontSize:10,fontWeight:700,
-                }}>{s.grade}</span>
-                <span style={{fontWeight:600}}>{s.subj}</span>
-                <span style={{color:"#888",fontSize:11}}>/{s.room}</span>
-                <span style={{marginLeft:"auto",fontWeight:800,color:"#1a1a2e"}}>{s.teacher}</span>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            {timeGroups.map(([time,tSlots])=>(
+              <div key={time}>
+                <div style={{
+                  fontSize:13,fontWeight:800,color:DC[dow],marginBottom:6,
+                  paddingBottom:4,borderBottom:`2px solid ${DC[dow]}`,
+                  display:"flex",alignItems:"center",gap:8,
+                }}>
+                  <span>{time}</span>
+                  <span style={{fontSize:11,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
+                </div>
+                <div style={{
+                  display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(140px,1fr))`,
+                  background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
+                }}>
+                  {tSlots.map((s,i)=>{
+                    const gc=GC(s.grade);
+                    return (
+                      <div key={i} style={{
+                        background:"#fff",padding:"10px 8px",textAlign:"center",
+                        display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:90,
+                      }}>
+                        <div style={{lineHeight:1.4}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,flexWrap:"wrap"}}>
+                            <span style={{
+                              background:gc.b,color:gc.f,borderRadius:3,padding:"1px 5px",
+                              fontSize:10,fontWeight:700,
+                            }}>{s.grade}{s.cls&&s.cls!=="-"?s.cls:""}</span>
+                            <span style={{fontSize:12,fontWeight:600,color:"#444"}}>{s.subj}</span>
+                          </div>
+                          {s.room&&<div style={{fontSize:10,color:"#999",marginTop:2}}>{s.room}</div>}
+                          {s.note&&<div style={{fontSize:9,color:"#e67a00",marginTop:1}}>({s.note})</div>}
+                        </div>
+                        <div style={{
+                          fontSize:28,fontWeight:800,color:"#1a1a2e",
+                          lineHeight:1.1,marginTop:6,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                        }}>
+                          {s.teacher}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
         )}
         {!fullOff&&sl.length>0&&(
-          <div style={{marginTop:8,fontSize:11,color:"#888",textAlign:"right"}}>
+          <div style={{marginTop:10,fontSize:11,color:"#888",textAlign:"right"}}>
             計 {sl.length} コマ ｜ 講師 {[...new Set(sl.map(s=>s.teacher))].length} 名
           </div>
         )}
@@ -318,7 +353,7 @@ function Dashboard({slots,holidays}) {
   const tmrSlots=tmrFullOff?[]:sortS(slots.filter(s=>s.day===tmrDow&&!isOffForGrade(tmrStr,s.grade)));
 
   return (
-    <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <DayBlock date={todayStr} dow={todayDow} holidays={todayHols} sl={todaySlots}/>
       <DayBlock date={tmrStr} dow={tmrDow} holidays={tmrHols} sl={tmrSlots}/>
     </div>
@@ -416,25 +451,30 @@ function AllView({slots,onSelectTeacher}) {
     const tSet=new Set(slots.map(s=>s.teacher));
     return [...tSet].map(t=>{
       const sl=slots.filter(s=>s.teacher===t);
-      const byDay={};DAYS.forEach(d=>{byDay[d]=sl.filter(s=>s.day===d).length});
-      return {name:t,byDay,total:sl.length};
+      const byDay={};const byDayTip={};
+      DAYS.forEach(d=>{
+        const ds=sl.filter(s=>s.day===d);
+        byDay[d]=ds.length;
+        byDayTip[d]=ds.map(s=>`${s.time} ${s.grade} ${s.subj}`).join("\n");
+      });
+      return {name:t,byDay,byDayTip,total:sl.length};
     }).sort((a,b)=>b.total-a.total);
   },[slots]);
   return (
     <div style={{marginTop:12,overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr>
-          <th style={{textAlign:"left",padding:"8px 10px",background:"#1a1a2e",color:"#fff",borderRadius:"8px 0 0 0"}}>講師名</th>
-          {DAYS.map(d=><th key={d} style={{padding:"8px 10px",background:DC[d],color:"#fff",textAlign:"center",minWidth:36}}>{d}</th>)}
-          <th style={{padding:"8px 10px",background:"#1a1a2e",color:"#fff",textAlign:"center",borderRadius:"0 8px 0 0"}}>計</th>
+          <th style={{textAlign:"left",padding:"10px 14px",background:"#1a1a2e",color:"#fff",borderRadius:"8px 0 0 0",fontSize:14}}>講師名</th>
+          {DAYS.map(d=><th key={d} style={{padding:"10px 12px",background:DC[d],color:"#fff",textAlign:"center",minWidth:48,fontSize:14}}>{d}</th>)}
+          <th style={{padding:"10px 12px",background:"#1a1a2e",color:"#fff",textAlign:"center",borderRadius:"0 8px 0 0",fontSize:14}}>計</th>
         </tr></thead>
         <tbody>{teachers.map((t,i)=>(
           <tr key={t.name} style={{background:i%2?"#f8f9fa":"#fff"}}>
-            <td onClick={()=>onSelectTeacher&&onSelectTeacher(t.name)} style={{padding:"5px 10px",fontWeight:700,borderBottom:"1px solid #eee",cursor:onSelectTeacher?"pointer":"default",color:onSelectTeacher?"#2e6a9e":"inherit"}}
+            <td onClick={()=>onSelectTeacher&&onSelectTeacher(t.name)} style={{padding:"8px 14px",fontWeight:800,fontSize:15,borderBottom:"1px solid #eee",cursor:onSelectTeacher?"pointer":"default",color:onSelectTeacher?"#2e6a9e":"inherit"}}
               onMouseEnter={e=>{if(onSelectTeacher)e.currentTarget.style.textDecoration="underline"}}
               onMouseLeave={e=>e.currentTarget.style.textDecoration="none"}>{t.name}</td>
-            {DAYS.map(d=><td key={d} style={{textAlign:"center",padding:"5px 6px",borderBottom:"1px solid #eee",background:t.byDay[d]?DB[d]:"transparent",fontWeight:t.byDay[d]>3?800:400,color:t.byDay[d]>3?DC[d]:"#888"}}>{t.byDay[d]||""}</td>)}
-            <td style={{textAlign:"center",padding:"5px 6px",fontWeight:800,borderBottom:"1px solid #eee",color:t.total>10?"#c44":"#1a1a2e"}}>{t.total}</td>
+            {DAYS.map(d=><td key={d} title={t.byDayTip[d]} style={{textAlign:"center",padding:"8px 10px",borderBottom:"1px solid #eee",background:t.byDay[d]?DB[d]:"transparent",fontWeight:t.byDay[d]>3?800:t.byDay[d]?600:400,fontSize:t.byDay[d]?18:13,color:t.byDay[d]>3?DC[d]:t.byDay[d]?"#1a1a2e":"#ccc",cursor:"default"}}>{t.byDay[d]||"—"}</td>)}
+            <td style={{textAlign:"center",padding:"8px 10px",fontWeight:800,fontSize:18,borderBottom:"1px solid #eee",color:t.total>10?"#c44":"#1a1a2e"}}>{t.total}</td>
           </tr>
         ))}</tbody>
       </table>
