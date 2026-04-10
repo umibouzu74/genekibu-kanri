@@ -767,7 +767,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
             </div>
             <div className="dash-sections" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:10}}>
               {DASH_SECTIONS.map(sec=>{
-                const secSlots=sortS(daySlots.filter(sec.filterFn));
+                const secSlots=daySlots.filter(sec.filterFn);
                 const color=DEPT_COLOR[sec.dept]||{b:"#e8e8e8",f:"#444",accent:"#888"};
                 const byTime={};
                 secSlots.forEach(s=>{if(!byTime[s.time])byTime[s.time]=[];byTime[s.time].push(s);});
@@ -1144,9 +1144,11 @@ export default function App() {
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
+          .master-slot-actions { opacity: 1 !important; }
         }
         @media print {
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+          .master-slot-actions { display: none !important; }
         }
       `}</style>
     </div>
