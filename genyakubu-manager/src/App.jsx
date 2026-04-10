@@ -3,6 +3,7 @@ import {
   DAYS, WEEKDAYS, DAY_COLOR as DC, DAY_BG as DB,
   gradeColor as GC, sortSlots as sortS, fmtDate, timeToMin,
   INIT_SLOTS, INIT_HOLIDAYS,
+  DEPARTMENTS, DEPT_COLOR, gradeToDept,
 } from "./data";
 
 
@@ -123,44 +124,142 @@ function SlotForm({slot,onSave,onCancel}) {
   );
 }
 
-function HolidayManager({holidays,onAdd,onDel}) {
-  const [d,setD]=useState("");const [l,setL]=useState("");
+function HolidayManager({holidays,onSave}) {
+  const [date,setDate]=useState("");
+  const [label,setLabel]=useState("");
+  const [scope,setScope]=useState(["全部"]);
+  const [filter,setFilter]=useState("");
+  const [editDate,setEditDate]=useState(null);
+
+  const toggleScope=(dept)=>{
+    if(dept==="全部"){setScope(["全部"]);return;}
+    let next=scope.filter(s=>s!=="全部");
+    next=next.includes(dept)?next.filter(s=>s!==dept):[...next,dept];
+    setScope(next.length===0?["全部"]:next);
+  };
+
+  const handleAdd=()=>{
+    if(!date)return;
+    const entry={date,label:label||"休講",scope:[...scope]};
+    onSave([...holidays.filter(h=>h.date!==date),entry]);
+    setDate("");setLabel("");setScope(["全部"]);setEditDate(null);
+  };
+  const handleEdit=(h)=>{setDate(h.date);setLabel(h.label);setScope(h.scope||["全部"]);setEditDate(h.date);};
+  const cancelEdit=()=>{setDate("");setLabel("");setScope(["全部"]);setEditDate(null);};
+  const handleDel=(d)=>onSave(holidays.filter(h=>h.date!==d));
+
+  const sorted=[...holidays].sort((a,b)=>a.date.localeCompare(b.date));
+  const filtered=filter?sorted.filter(h=>{const s=h.scope||["全部"];return s.includes("全部")||s.includes(filter);}):sorted;
+
   return (
-    <div>
-      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
-        <input type="date" value={d} onChange={e=>setD(e.target.value)} style={{...S.input,width:"auto"}}/>
-        <input value={l} onChange={e=>setL(e.target.value)} placeholder="名称（任意）" style={{...S.input,width:140}}/>
-        <button onClick={()=>{if(d){onAdd({date:d,label:l||"休講"});setD("");setL("");}}} style={S.btn(true)}>追加</button>
+    <div style={{marginTop:12}}>
+      <div style={{background:"#fff",borderRadius:8,padding:16,marginBottom:16,border:"1px solid #e0e0e0"}}>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>
+          {editDate?"休講日を編集":"休講日を追加"}
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...S.input,width:"auto"}}/>
+          <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="名称（任意）" style={{...S.input,width:160}}/>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          <span style={{fontSize:12,fontWeight:700}}>対象:</span>
+          {["全部",...DEPARTMENTS].map(d=>(
+            <label key={d} style={{
+              display:"flex",alignItems:"center",gap:3,fontSize:12,
+              padding:"4px 10px",borderRadius:6,cursor:"pointer",
+              background:scope.includes(d)?(d==="全部"?"#1a1a2e":DEPT_COLOR[d]?.b||"#eee"):"#f5f5f5",
+              color:scope.includes(d)?(d==="全部"?"#fff":DEPT_COLOR[d]?.f||"#444"):"#aaa",
+              border:`1px solid ${scope.includes(d)?(d==="全部"?"#1a1a2e":DEPT_COLOR[d]?.accent||"#ccc"):"#ddd"}`,
+              fontWeight:scope.includes(d)?700:400,transition:"all .15s",userSelect:"none",
+            }}>
+              <input type="checkbox" checked={scope.includes(d)} onChange={()=>toggleScope(d)} style={{display:"none"}}/>
+              {d}
+            </label>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={handleAdd} style={S.btn(true)}>{editDate?"更新":"追加"}</button>
+          {editDate&&<button onClick={cancelEdit} style={S.btn(false)}>キャンセル</button>}
+        </div>
       </div>
-      <div style={{maxHeight:300,overflow:"auto"}}>
-        {[...holidays].sort((a,b)=>a.date.localeCompare(b.date)).map((h,i)=>(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #eee",fontSize:12}}>
-            <span><strong>{h.date}</strong>　{h.label}</span>
-            <button onClick={()=>onDel(h.date)} style={{background:"none",border:"none",cursor:"pointer",fontSize:14}}>✕</button>
-          </div>
+
+      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:12,fontWeight:700}}>フィルター:</span>
+        {["",...DEPARTMENTS].map(d=>(
+          <button key={d} onClick={()=>setFilter(d)} style={{...S.btn(filter===d),fontSize:11,padding:"4px 10px"}}>
+            {d||"すべて"}
+          </button>
         ))}
+      </div>
+
+      <div style={{fontSize:12,color:"#888",marginBottom:6}}>{filtered.length} / {holidays.length} 件表示</div>
+      <div style={{background:"#fff",borderRadius:8,border:"1px solid #e0e0e0",overflow:"hidden"}}>
+        {filtered.length===0?(
+          <div style={{textAlign:"center",color:"#bbb",padding:30,fontSize:13}}>登録された休講日はありません</div>
+        ):filtered.map((h,i)=>{
+          const sc=h.scope||["全部"];
+          return (
+            <div key={h.date} style={{
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"8px 14px",borderBottom:i<filtered.length-1?"1px solid #eee":"none",
+              background:editDate===h.date?"#fffbe6":i%2?"#f8f9fa":"#fff",
+            }}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <strong style={{fontSize:12,minWidth:90}}>{h.date}</strong>
+                <span style={{fontSize:12}}>{h.label}</span>
+                <div style={{display:"flex",gap:3}}>
+                  {sc.map(d=>(
+                    <span key={d} style={{
+                      fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,
+                      background:d==="全部"?"#1a1a2e":DEPT_COLOR[d]?.b||"#eee",
+                      color:d==="全部"?"#fff":DEPT_COLOR[d]?.f||"#444",
+                    }}>{d}</span>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:4,flexShrink:0}}>
+                <button onClick={()=>handleEdit(h)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:2}}>✏️</button>
+                <button onClick={()=>handleDel(h.date)} style={{background:"none",border:"none",cursor:"pointer",fontSize:14}}>✕</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{marginTop:12,fontSize:11,color:"#888"}}>
+        ※「全部」＝全部門休講。部門を個別に選択すると、該当部門のみ休講になります。
       </div>
     </div>
   );
 }
 
-function DayBlock({date,dow,label,sl,isH}) {
+function DayBlock({date,dow,holidays:hols=[],sl}) {
+  const fullOff=hols.some(h=>(h.scope||["全部"]).includes("全部"));
+  const offDepts=[...new Set(hols.flatMap(h=>h.scope||["全部"]))].filter(d=>d!=="全部");
+  const hasPartial=!fullOff&&offDepts.length>0;
+  const holLabel=hols[0]?.label;
   return (
     <div style={{flex:1,minWidth:280}}>
       <div style={{
-        background:isH?"#f0f0f0":(DC[dow]||"#666"),color:isH?"#999":"#fff",
+        background:fullOff?"#f0f0f0":(DC[dow]||"#666"),color:fullOff?"#999":"#fff",
         padding:"10px 16px",borderRadius:"10px 10px 0 0",fontWeight:800,fontSize:14,
-        display:"flex",justifyContent:"space-between",alignItems:"center",
+        display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,
       }}>
         <span>{date}（{dow}）</span>
-        {isH&&<span style={{fontSize:11,background:"#ddd",padding:"2px 8px",borderRadius:4}}>🚫 {label}</span>}
+        {fullOff&&<span style={{fontSize:11,background:"#ddd",padding:"2px 8px",borderRadius:4}}>🚫 {holLabel}</span>}
+        {hasPartial&&(
+          <div style={{display:"flex",gap:3}}>
+            {offDepts.map(d=>(
+              <span key={d} style={{fontSize:10,background:"rgba(255,255,255,0.25)",padding:"2px 6px",borderRadius:4}}>{d}休</span>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{
         background:"#fff",borderRadius:"0 0 10px 10px",border:"1px solid #e0e0e0",borderTop:"none",
         padding:12,minHeight:100,
       }}>
-        {isH?(
-          <div style={{textAlign:"center",color:"#bbb",padding:30}}>休講日</div>
+        {fullOff?(
+          <div style={{textAlign:"center",color:"#bbb",padding:30}}>休講日{holLabel?`（${holLabel}）`:""}</div>
         ):sl.length===0?(
           <div style={{textAlign:"center",color:"#bbb",padding:30}}>授業なし</div>
         ):(
@@ -183,7 +282,7 @@ function DayBlock({date,dow,label,sl,isH}) {
             ))}
           </div>
         )}
-        {!isH&&sl.length>0&&(
+        {!fullOff&&sl.length>0&&(
           <div style={{marginTop:8,fontSize:11,color:"#888",textAlign:"right"}}>
             計 {sl.length} コマ ｜ 講師 {[...new Set(sl.map(s=>s.teacher))].length} 名
           </div>
@@ -201,16 +300,27 @@ function Dashboard({slots,holidays}) {
   const tmrStr=fmtDate(tmr);
   const tmrDow=WEEKDAYS[tmr.getDay()];
 
-  const isHoliday=d=>holidays.some(h=>h.date===d);
-  const getLabel=d=>holidays.find(h=>h.date===d)?.label;
+  const holidaysFor=d=>holidays.filter(h=>h.date===d);
+  const isOffForGrade=(d,grade)=>{
+    const dept=gradeToDept(grade);
+    return holidays.some(h=>{
+      if(h.date!==d)return false;
+      const sc=h.scope||["全部"];
+      return sc.includes("全部")||(dept&&sc.includes(dept));
+    });
+  };
 
-  const todaySlots=isHoliday(todayStr)?[]:sortS(slots.filter(s=>s.day===todayDow));
-  const tmrSlots=isHoliday(tmrStr)?[]:sortS(slots.filter(s=>s.day===tmrDow));
+  const todayHols=holidaysFor(todayStr);
+  const tmrHols=holidaysFor(tmrStr);
+  const todayFullOff=todayHols.some(h=>(h.scope||["全部"]).includes("全部"));
+  const tmrFullOff=tmrHols.some(h=>(h.scope||["全部"]).includes("全部"));
+  const todaySlots=todayFullOff?[]:sortS(slots.filter(s=>s.day===todayDow&&!isOffForGrade(todayStr,s.grade)));
+  const tmrSlots=tmrFullOff?[]:sortS(slots.filter(s=>s.day===tmrDow&&!isOffForGrade(tmrStr,s.grade)));
 
   return (
     <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-      <DayBlock date={todayStr} dow={todayDow} label={getLabel(todayStr)} sl={todaySlots} isH={isHoliday(todayStr)}/>
-      <DayBlock date={tmrStr} dow={tmrDow} label={getLabel(tmrStr)} sl={tmrSlots} isH={isHoliday(tmrStr)}/>
+      <DayBlock date={todayStr} dow={todayDow} holidays={todayHols} sl={todaySlots}/>
+      <DayBlock date={tmrStr} dow={tmrDow} holidays={tmrHols} sl={tmrSlots}/>
     </div>
   );
 }
@@ -238,8 +348,16 @@ function WeekView({teacher,slots,onEdit,onDel}) {
 function MonthView({teacher,slots,holidays,year,month,onEdit,onDel}) {
   const ts=useMemo(()=>slots.filter(s=>s.teacher===teacher||s.note?.includes(teacher)),[teacher,slots]);
   const dayMap=useMemo(()=>{const m={};DAYS.forEach(d=>{m[d]=ts.filter(s=>s.day===d)});return m;},[ts]);
-  const holSet=useMemo(()=>new Set(holidays.map(h=>h.date)),[holidays]);
-  const holMap=useMemo(()=>{const m={};holidays.forEach(h=>{m[h.date]=h.label});return m;},[holidays]);
+  const holMap=useMemo(()=>{const m={};holidays.forEach(h=>{m[h.date]=h});return m;},[holidays]);
+
+  const isOffForGrade=useCallback((ds,grade)=>{
+    const h=holMap[ds];
+    if(!h)return false;
+    const sc=h.scope||["全部"];
+    if(sc.includes("全部"))return true;
+    const dept=gradeToDept(grade);
+    return dept&&sc.includes(dept);
+  },[holMap]);
 
   const first=new Date(year,month-1,1);
   const dim=new Date(year,month,0).getDate();
@@ -262,19 +380,22 @@ function MonthView({teacher,slots,holidays,year,month,onEdit,onDel}) {
           const ds=`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
           const dow=new Date(year,month-1,d).getDay();
           const dn=WEEKDAYS[dow];
-          const isH=holSet.has(ds);
+          const hol=holMap[ds];
+          const isFullOff=hol&&(hol.scope||["全部"]).includes("全部");
+          const offDepts=hol?[...new Set((hol.scope||["全部"]).filter(s=>s!=="全部"))]:[];
           const isT=todayY===year&&todayM===month&&todayD===d;
-          const sl=isH?[]:dayMap[dn]||[];
+          const sl=isFullOff?[]:(dayMap[dn]||[]).filter(s=>!isOffForGrade(ds,s.grade));
           return (
             <div key={i} style={{
-              background:isH?"#f8f0f0":isT?"#fffbe6":dow===0?"#fdf5f5":dow===6?"#f5f5fd":"#fff",
+              background:isFullOff?"#f8f0f0":isT?"#fffbe6":dow===0?"#fdf5f5":dow===6?"#f5f5fd":"#fff",
               minHeight:90,padding:4,border:isT?"2px solid #e6a800":"none",position:"relative",
             }}>
               <div style={{fontSize:12,fontWeight:isT?800:600,color:dow===0?"#c44":dow===6?"#44c":"#333",display:"flex",justifyContent:"space-between"}}>
                 <span>{d}</span>
-                {isH&&<span style={{fontSize:9,color:"#c44",fontWeight:400}}>{holMap[ds]}</span>}
+                {isFullOff&&<span style={{fontSize:9,color:"#c44",fontWeight:400}}>{hol.label}</span>}
+                {!isFullOff&&offDepts.length>0&&<span style={{fontSize:8,color:"#c88",fontWeight:400}}>{offDepts.map(d=>d.replace("部","")).join(",")+"休"}</span>}
               </div>
-              {isH?<div style={{fontSize:10,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
+              {isFullOff?<div style={{fontSize:10,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
                 sl.map((s,j)=>(
                   <div key={j} style={{fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,background:DB[s.day],borderLeft:`2px solid ${DC[s.day]}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:onEdit?"pointer":"default"}}
                     onClick={()=>onEdit&&onEdit(s)}
@@ -532,7 +653,6 @@ export default function App() {
   const [monthOff,setMonthOff]=useState(0);
   const [search,setSearch]=useState("");
   const [editSlot,setEditSlot]=useState(null); // null | slot | "new"
-  const [showHolMgr,setShowHolMgr]=useState(false);
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [showDataMgr,setShowDataMgr]=useState(false);
   const [biweeklyBase,setBiweeklyBase]=useState("");
@@ -545,7 +665,7 @@ export default function App() {
     } catch{}
     try {
       const h=localStorage.getItem("genyakubu-holidays");
-      if(h) setHolidays(JSON.parse(h));
+      if(h) setHolidays(JSON.parse(h).map(x=>({...x,scope:x.scope||["全部"]})));
     } catch{}
     try {
       const bw=localStorage.getItem("genyakubu-biweekly-base");
@@ -585,7 +705,7 @@ export default function App() {
       try{
         const d=JSON.parse(ev.target.result);
         if(d.slots&&Array.isArray(d.slots)){saveSlots(d.slots);}
-        if(d.holidays&&Array.isArray(d.holidays)){saveHolidays(d.holidays);}
+        if(d.holidays&&Array.isArray(d.holidays)){saveHolidays(d.holidays.map(x=>({...x,scope:x.scope||["全部"]})));}
         if(d.biweeklyBase){saveBiweeklyBase(d.biweeklyBase);}
         setShowDataMgr(false);
       }catch{alert("JSONファイルの読み込みに失敗しました。");}
@@ -670,9 +790,9 @@ export default function App() {
               textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700,
             }}>{icon} {label}</button>
           ))}
-          <button onClick={()=>{setSelected(null);setShowHolMgr(true);setSidebarOpen(false)}} style={{
+          <button onClick={()=>{setSelected(null);setView("holidays");setSidebarOpen(false)}} style={{
             display:"block",width:"100%",padding:"7px 14px",border:"none",
-            background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
+            background:!selected&&view==="holidays"?"#3a3a6e":"transparent",color:!selected&&view==="holidays"?"#fff":"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:view==="holidays"?700:400,
           }}>📅 祝日・休講日管理</button>
           <button onClick={()=>{setSelected(null);setView("master");setSidebarOpen(false)}} style={{
             display:"block",width:"100%",padding:"7px 14px",border:"none",
@@ -709,7 +829,7 @@ export default function App() {
             <button className="hamburger" onClick={()=>setSidebarOpen(true)}
               style={{background:"#1a1a2e",border:"none",color:"#fff",cursor:"pointer",fontSize:18,padding:"4px 8px",borderRadius:6,lineHeight:1}}>☰</button>
             <h1 style={{margin:0,fontSize:20,fontWeight:800}}>
-              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":view==="master"?"コースマスター管理":selected||""}
+              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":view==="master"?"コースマスター管理":view==="holidays"?"祝日・休講日管理":selected||""}
             </h1>
           </div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
@@ -753,6 +873,7 @@ export default function App() {
           {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays}/>}
           {view==="all"&&!selected&&<AllView slots={slots} onSelectTeacher={selectTeacher}/>}
           {view==="master"&&!selected&&<MasterView slots={slots} onEdit={setEditSlot} onDel={handleDelSlot} onNew={()=>setEditSlot("new")} biweeklyBase={biweeklyBase} onSetBiweeklyBase={saveBiweeklyBase}/>}
+          {view==="holidays"&&!selected&&<HolidayManager holidays={holidays} onSave={saveHolidays}/>}
           {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} onEdit={setEditSlot} onDel={handleDelSlot}/>}
           {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm} onEdit={setEditSlot} onDel={handleDelSlot}/>}
         </div>
@@ -762,15 +883,6 @@ export default function App() {
       {editSlot&&(
         <Modal title={editSlot==="new"?"コマを追加":"コマを編集"} onClose={()=>setEditSlot(null)}>
           <SlotForm slot={editSlot==="new"?null:editSlot} onSave={handleSaveSlot} onCancel={()=>setEditSlot(null)}/>
-        </Modal>
-      )}
-
-      {/* Holiday Manager Modal */}
-      {showHolMgr&&(
-        <Modal title="祝日・休講日の管理" onClose={()=>setShowHolMgr(false)}>
-          <HolidayManager holidays={holidays}
-            onAdd={h=>saveHolidays([...holidays.filter(x=>x.date!==h.date),h])}
-            onDel={d=>saveHolidays(holidays.filter(h=>h.date!==d))}/>
         </Modal>
       )}
 

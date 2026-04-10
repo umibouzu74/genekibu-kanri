@@ -39,19 +39,33 @@ export function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+export const DEPARTMENTS = ["中学部", "高校部", "予備校部"];
+
+export const DEPT_COLOR = {
+  中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
+  高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
+  予備校部: { b: "#cce0f0", f: "#1a4a6a", accent: "#3a8abe" },
+};
+
+export function gradeToDept(grade) {
+  if (grade.includes("附中") || grade.includes("中")) return "中学部";
+  if (grade.includes("高")) return "高校部";
+  return null;
+}
+
 export const INIT_HOLIDAYS = [
-  { date: "2026-04-29", label: "昭和の日" },
-  { date: "2026-05-03", label: "憲法記念日" },
-  { date: "2026-05-04", label: "みどりの日" },
-  { date: "2026-05-05", label: "こどもの日" },
-  { date: "2026-05-06", label: "振替休日" },
-  { date: "2026-07-20", label: "海の日" },
-  { date: "2026-08-11", label: "山の日" },
-  { date: "2026-09-21", label: "敬老の日" },
-  { date: "2026-09-23", label: "秋分の日" },
-  { date: "2026-10-12", label: "スポーツの日" },
-  { date: "2026-11-03", label: "文化の日" },
-  { date: "2026-11-23", label: "勤労感謝の日" },
+  { date: "2026-04-29", label: "昭和の日", scope: ["全部"] },
+  { date: "2026-05-03", label: "憲法記念日", scope: ["全部"] },
+  { date: "2026-05-04", label: "みどりの日", scope: ["全部"] },
+  { date: "2026-05-05", label: "こどもの日", scope: ["全部"] },
+  { date: "2026-05-06", label: "振替休日", scope: ["全部"] },
+  { date: "2026-07-20", label: "海の日", scope: ["全部"] },
+  { date: "2026-08-11", label: "山の日", scope: ["全部"] },
+  { date: "2026-09-21", label: "敬老の日", scope: ["全部"] },
+  { date: "2026-09-23", label: "秋分の日", scope: ["全部"] },
+  { date: "2026-10-12", label: "スポーツの日", scope: ["全部"] },
+  { date: "2026-11-03", label: "文化の日", scope: ["全部"] },
+  { date: "2026-11-23", label: "勤労感謝の日", scope: ["全部"] },
 ];
 
 export const INIT_SLOTS = [
