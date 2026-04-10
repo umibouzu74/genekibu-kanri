@@ -3,7 +3,7 @@ import {
   DAYS, WEEKDAYS, DAY_COLOR as DC, DAY_BG as DB,
   gradeColor as GC, sortSlots as sortS, fmtDate, timeToMin,
   INIT_SLOTS, INIT_HOLIDAYS,
-  DEPARTMENTS, DEPT_COLOR, gradeToDept,
+  DEPARTMENTS, DEPT_COLOR, gradeToDept, isKameiRoom,
 } from "./data";
 
 
@@ -327,35 +327,162 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
   );
 }
 
-function Dashboard({slots,holidays}) {
-  const now=new Date();
-  const todayStr=fmtDate(now);
-  const todayDow=WEEKDAYS[now.getDay()];
-  const tmr=new Date(now);tmr.setDate(tmr.getDate()+1);
-  const tmrStr=fmtDate(tmr);
-  const tmrDow=WEEKDAYS[tmr.getDay()];
+const DASH_SECTIONS = [
+  { key: "中学部", label: "中学部", dept: "中学部", filterFn: s => gradeToDept(s.grade) === "中学部" },
+  { key: "高校本校", label: "高校部・本校", dept: "高校部", filterFn: s => gradeToDept(s.grade) === "高校部" && !isKameiRoom(s.room) },
+  { key: "高校亀井町", label: "高校部・亀井町", dept: "高校部", filterFn: s => gradeToDept(s.grade) === "高校部" && isKameiRoom(s.room) },
+];
 
-  const holidaysFor=d=>holidays.filter(h=>h.date===d);
-  const isOffForGrade=(d,grade)=>{
-    const dept=gradeToDept(grade);
-    return holidays.some(h=>{
-      if(h.date!==d)return false;
-      const sc=h.scope||["全部"];
-      return sc.includes("全部")||(dept&&sc.includes(dept));
+function SectionColumn({ label, color, sl, deptOff }) {
+  const byTime = {};
+  sl.forEach(s => { if (!byTime[s.time]) byTime[s.time] = []; byTime[s.time].push(s); });
+  const timeGroups = Object.entries(byTime).sort(([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0]));
+  const teachers = [...new Set(sl.map(s => s.teacher))];
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        background: color.b, color: color.f, padding: "8px 12px",
+        borderRadius: "8px 8px 0 0", fontWeight: 800, fontSize: 13,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+      }}>
+        <span>{label}</span>
+        {!deptOff && sl.length > 0 && (
+          <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{sl.length}コマ / {teachers.length}名</span>
+        )}
+      </div>
+      <div style={{
+        background: "#fff", borderRadius: "0 0 8px 8px",
+        border: "1px solid #e0e0e0", borderTop: "none",
+        padding: 10, minHeight: 80,
+      }}>
+        {deptOff ? (
+          <div style={{ textAlign: "center", color: "#bbb", padding: 20, fontSize: 13 }}>休講日</div>
+        ) : sl.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#bbb", padding: 20, fontSize: 13 }}>授業なし</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {timeGroups.map(([time, tSlots]) => (
+              <div key={time}>
+                <div style={{
+                  fontSize: 12, fontWeight: 800, color: color.f, marginBottom: 4,
+                  paddingBottom: 3, borderBottom: `2px solid ${color.accent}`,
+                  display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <span>{time}</span>
+                  <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>{tSlots.length}コマ</span>
+                </div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
+                  background: "#555", gap: 2, border: "2px solid #555", borderRadius: 4, overflow: "hidden",
+                }}>
+                  {tSlots.map((s, i) => {
+                    const gc = GC(s.grade);
+                    return (
+                      <div key={i} style={{
+                        background: "#fff", padding: "8px 6px", textAlign: "center",
+                        display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 80,
+                      }}>
+                        <div style={{ lineHeight: 1.4 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "wrap" }}>
+                            <span style={{
+                              background: gc.b, color: gc.f, borderRadius: 3, padding: "1px 4px",
+                              fontSize: 9, fontWeight: 700,
+                            }}>{s.grade}{s.cls && s.cls !== "-" ? s.cls : ""}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "#444" }}>{s.subj}</span>
+                          </div>
+                          {s.room && <div style={{ fontSize: 9, color: "#999", marginTop: 1 }}>{s.room}</div>}
+                          {s.note && <div style={{ fontSize: 8, color: "#e67a00", marginTop: 1 }}>({s.note})</div>}
+                        </div>
+                        <div style={{
+                          fontSize: 24, fontWeight: 800, color: "#1a1a2e",
+                          lineHeight: 1.1, marginTop: 4,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {s.teacher}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashDayRow({ date, dow, holidays: hols, slots }) {
+  const fullOff = hols.some(h => (h.scope || ["全部"]).includes("全部"));
+  const offDepts = [...new Set(hols.flatMap(h => h.scope || ["全部"]))].filter(d => d !== "全部");
+  const hasPartial = !fullOff && offDepts.length > 0;
+  const holLabel = hols[0]?.label;
+
+  return (
+    <div>
+      <div style={{
+        background: fullOff ? "#f0f0f0" : (DC[dow] || "#666"), color: fullOff ? "#999" : "#fff",
+        padding: "10px 16px", borderRadius: 10, fontWeight: 800, fontSize: 15,
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6,
+        marginBottom: 10,
+      }}>
+        <span>{date}（{dow}）</span>
+        {fullOff && <span style={{ fontSize: 11, background: "#ddd", padding: "2px 8px", borderRadius: 4 }}>🚫 {holLabel}</span>}
+        {hasPartial && (
+          <div style={{ display: "flex", gap: 3 }}>
+            {offDepts.map(d => (
+              <span key={d} style={{ fontSize: 10, background: "rgba(255,255,255,0.25)", padding: "2px 6px", borderRadius: 4 }}>{d}休</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {fullOff ? (
+        <div style={{ textAlign: "center", color: "#bbb", padding: 30, fontSize: 14, background: "#fff", borderRadius: 8, border: "1px solid #e0e0e0" }}>
+          休講日{holLabel ? `（${holLabel}）` : ""}
+        </div>
+      ) : (
+        <div className="dash-sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+          {DASH_SECTIONS.map(sec => {
+            const deptOff = offDepts.includes(sec.dept);
+            const secSlots = deptOff ? [] : sortS(slots.filter(sec.filterFn));
+            const color = DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+            return <SectionColumn key={sec.key} label={sec.label} color={color} sl={secSlots} deptOff={deptOff} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({ slots, holidays }) {
+  const now = new Date();
+  const todayStr = fmtDate(now);
+  const todayDow = WEEKDAYS[now.getDay()];
+  const tmr = new Date(now); tmr.setDate(tmr.getDate() + 1);
+  const tmrStr = fmtDate(tmr);
+  const tmrDow = WEEKDAYS[tmr.getDay()];
+
+  const holidaysFor = d => holidays.filter(h => h.date === d);
+  const isOffForGrade = (d, grade) => {
+    const dept = gradeToDept(grade);
+    return holidays.some(h => {
+      if (h.date !== d) return false;
+      const sc = h.scope || ["全部"];
+      return sc.includes("全部") || (dept && sc.includes(dept));
     });
   };
 
-  const todayHols=holidaysFor(todayStr);
-  const tmrHols=holidaysFor(tmrStr);
-  const todayFullOff=todayHols.some(h=>(h.scope||["全部"]).includes("全部"));
-  const tmrFullOff=tmrHols.some(h=>(h.scope||["全部"]).includes("全部"));
-  const todaySlots=todayFullOff?[]:sortS(slots.filter(s=>s.day===todayDow&&!isOffForGrade(todayStr,s.grade)));
-  const tmrSlots=tmrFullOff?[]:sortS(slots.filter(s=>s.day===tmrDow&&!isOffForGrade(tmrStr,s.grade)));
+  const todayHols = holidaysFor(todayStr);
+  const tmrHols = holidaysFor(tmrStr);
+  const todaySlots = slots.filter(s => s.day === todayDow && !isOffForGrade(todayStr, s.grade));
+  const tmrSlots = slots.filter(s => s.day === tmrDow && !isOffForGrade(tmrStr, s.grade));
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      <DayBlock date={todayStr} dow={todayDow} holidays={todayHols} sl={todaySlots}/>
-      <DayBlock date={tmrStr} dow={tmrDow} holidays={tmrHols} sl={tmrSlots}/>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <DashDayRow date={todayStr} dow={todayDow} holidays={todayHols} slots={todaySlots} />
+      <DashDayRow date={tmrStr} dow={tmrDow} holidays={tmrHols} slots={tmrSlots} />
     </div>
   );
 }
@@ -961,6 +1088,10 @@ export default function App() {
         }
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
+          .dash-sections { grid-template-columns: 1fr !important; }
+        }
+        @media print {
+          .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
         }
       `}</style>
     </div>
