@@ -71,34 +71,48 @@ function Modal({title,onClose,children}) {
 
 function SlotForm({slot,onSave,onCancel}) {
   const [f,setF]=useState(slot||{day:"月",time:"19:00-20:20",grade:"",cls:"",room:"",subj:"",teacher:"",note:""});
-  const up=(k,v)=>setF(p=>({...p,[k]:v}));
+  const [errors,setErrors]=useState({});
+  const up=(k,v)=>{setF(p=>({...p,[k]:v}));setErrors(p=>({...p,[k]:undefined}));};
+  const required=["time","grade","subj","teacher"];
   const fields=[
     {k:"day",l:"曜日",type:"select",opts:DAYS},
-    {k:"time",l:"時間帯",ph:"19:00-20:20"},
-    {k:"grade",l:"学年",ph:"中1, 高3 等"},
+    {k:"time",l:"時間帯",ph:"19:00-20:20",req:true},
+    {k:"grade",l:"学年",ph:"中1, 高3 等",req:true},
     {k:"cls",l:"クラス",ph:"S, AB 等"},
     {k:"room",l:"教室",ph:"601, 亀21 等"},
-    {k:"subj",l:"科目",ph:"英語, 高松一 数学 等"},
-    {k:"teacher",l:"担当講師",ph:"講師名"},
+    {k:"subj",l:"科目",ph:"英語, 高松一 数学 等",req:true},
+    {k:"teacher",l:"担当講師",ph:"講師名",req:true},
     {k:"note",l:"備考",ph:"隔週, 合同 等"},
   ];
+  const handleSave=()=>{
+    const errs={};
+    required.forEach(k=>{if(!f[k]?.trim())errs[k]="必須項目です"});
+    if(Object.keys(errs).length){setErrors(errs);return;}
+    onSave(f);
+  };
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {fields.map(({k,l,ph,type,opts})=>(
-        <div key={k} style={{display:"flex",alignItems:"center",gap:8}}>
-          <label style={{width:70,fontSize:12,fontWeight:700,textAlign:"right",flexShrink:0}}>{l}</label>
-          {type==="select"?(
-            <select value={f[k]} onChange={e=>up(k,e.target.value)} style={{...S.input,width:"auto",minWidth:80}}>
-              {opts.map(o=><option key={o} value={o}>{o}</option>)}
-            </select>
-          ):(
-            <input value={f[k]||""} onChange={e=>up(k,e.target.value)} placeholder={ph} style={S.input}/>
-          )}
+      {fields.map(({k,l,ph,type,opts,req})=>(
+        <div key={k}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <label style={{width:70,fontSize:12,fontWeight:700,textAlign:"right",flexShrink:0}}>
+              {l}{req&&<span style={{color:"#c44"}}>*</span>}
+            </label>
+            {type==="select"?(
+              <select value={f[k]} onChange={e=>up(k,e.target.value)} style={{...S.input,width:"auto",minWidth:80}}>
+                {opts.map(o=><option key={o} value={o}>{o}</option>)}
+              </select>
+            ):(
+              <input value={f[k]||""} onChange={e=>up(k,e.target.value)} placeholder={ph}
+                style={{...S.input,borderColor:errors[k]?"#c44":"#ccc"}}/>
+            )}
+          </div>
+          {errors[k]&&<div style={{marginLeft:78,fontSize:10,color:"#c44",marginTop:2}}>{errors[k]}</div>}
         </div>
       ))}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
         <button onClick={onCancel} style={S.btn(false)}>キャンセル</button>
-        <button onClick={()=>onSave(f)} style={S.btn(true)}>保存</button>
+        <button onClick={handleSave} style={S.btn(true)}>保存</button>
       </div>
     </div>
   );
@@ -265,7 +279,7 @@ function MonthView({teacher,slots,holidays,year,month}) {
   );
 }
 
-function AllView({slots}) {
+function AllView({slots,onSelectTeacher}) {
   const teachers=useMemo(()=>{
     const tSet=new Set(slots.map(s=>s.teacher));
     return [...tSet].map(t=>{
@@ -284,7 +298,9 @@ function AllView({slots}) {
         </tr></thead>
         <tbody>{teachers.map((t,i)=>(
           <tr key={t.name} style={{background:i%2?"#f8f9fa":"#fff"}}>
-            <td style={{padding:"5px 10px",fontWeight:700,borderBottom:"1px solid #eee"}}>{t.name}</td>
+            <td onClick={()=>onSelectTeacher&&onSelectTeacher(t.name)} style={{padding:"5px 10px",fontWeight:700,borderBottom:"1px solid #eee",cursor:onSelectTeacher?"pointer":"default",color:onSelectTeacher?"#2e6a9e":"inherit"}}
+              onMouseEnter={e=>{if(onSelectTeacher)e.currentTarget.style.textDecoration="underline"}}
+              onMouseLeave={e=>e.currentTarget.style.textDecoration="none"}>{t.name}</td>
             {DAYS.map(d=><td key={d} style={{textAlign:"center",padding:"5px 6px",borderBottom:"1px solid #eee",background:t.byDay[d]?DB[d]:"transparent",fontWeight:t.byDay[d]>3?800:400,color:t.byDay[d]>3?DC[d]:"#888"}}>{t.byDay[d]||""}</td>)}
             <td style={{textAlign:"center",padding:"5px 6px",fontWeight:800,borderBottom:"1px solid #eee",color:t.total>10?"#c44":"#1a1a2e"}}>{t.total}</td>
           </tr>
@@ -304,6 +320,8 @@ export default function App() {
   const [search,setSearch]=useState("");
   const [editSlot,setEditSlot]=useState(null); // null | slot | "new"
   const [showHolMgr,setShowHolMgr]=useState(false);
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [showDataMgr,setShowDataMgr]=useState(false);
 
   // Storage - localStorage
   useEffect(()=>{
@@ -325,6 +343,41 @@ export default function App() {
     setHolidays(h);
     try{localStorage.setItem("genyakubu-holidays",JSON.stringify(h))}catch{}
   },[]);
+
+  const handleExport=()=>{
+    const data=JSON.stringify({slots,holidays},null,2);
+    const blob=new Blob([data],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=`genyakubu-backup-${fmtDate(new Date())}.json`;
+    a.click();URL.revokeObjectURL(url);
+  };
+
+  const handleImport=(e)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try{
+        const d=JSON.parse(ev.target.result);
+        if(d.slots&&Array.isArray(d.slots)){saveSlots(d.slots);}
+        if(d.holidays&&Array.isArray(d.holidays)){saveHolidays(d.holidays);}
+        setShowDataMgr(false);
+      }catch{alert("JSONファイルの読み込みに失敗しました。");}
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  };
+
+  const handleReset=()=>{
+    if(!confirm("データを初期状態に戻しますか？\n現在のデータは失われます。"))return;
+    localStorage.removeItem("genyakubu-slots");
+    localStorage.removeItem("genyakubu-holidays");
+    setSlots(INIT_SLOTS);setHolidays(INIT_HOLIDAYS);
+    setSelected(null);setView("dash");setShowDataMgr(false);
+  };
+
+  const selectTeacher=(t)=>{setSelected(t);setView("week");setSidebarOpen(false);};
 
   const now=new Date();
   const vd=new Date(now.getFullYear(),now.getMonth()+monthOff,1);
@@ -362,11 +415,21 @@ export default function App() {
 
   return (
     <div style={{fontFamily:'"Hiragino Kaku Gothic Pro","Yu Gothic","Noto Sans JP",sans-serif',display:"flex",height:"100vh",background:"#f0f1f3",color:"#1a1a2e"}}>
+      {/* Mobile overlay */}
+      {sidebarOpen&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:998}} onClick={()=>setSidebarOpen(false)}/>}
+
       {/* Sidebar */}
-      <div style={{width:210,background:"#1a1a2e",color:"#fff",display:"flex",flexDirection:"column",flexShrink:0}}>
-        <div style={{padding:"16px 14px 10px",borderBottom:"1px solid #2a2a4e"}}>
-          <div style={{fontSize:13,fontWeight:800,letterSpacing:1}}>現役部</div>
-          <div style={{fontSize:10,color:"#8888aa",marginTop:1}}>授業管理システム</div>
+      <div className="sidebar" style={{
+        width:210,background:"#1a1a2e",color:"#fff",display:"flex",flexDirection:"column",flexShrink:0,
+        position:"fixed",top:0,left:sidebarOpen?0:-220,bottom:0,zIndex:999,transition:"left .25s ease",
+      }}>
+        <div style={{padding:"16px 14px 10px",borderBottom:"1px solid #2a2a4e",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:800,letterSpacing:1}}>現役部</div>
+            <div style={{fontSize:10,color:"#8888aa",marginTop:1}}>授業管理システム</div>
+          </div>
+          <button className="sidebar-close" onClick={()=>setSidebarOpen(false)}
+            style={{background:"none",border:"none",color:"#888",cursor:"pointer",fontSize:18,padding:4}}>✕</button>
         </div>
         <div style={{padding:"6px 8px"}}>
           <input type="text" placeholder="講師名で検索…" value={search} onChange={e=>setSearch(e.target.value)}
@@ -374,22 +437,26 @@ export default function App() {
         </div>
         <div style={{borderBottom:"1px solid #2a2a4e"}}>
           {[{k:null,v:"dash",icon:"📋",label:"ダッシュボード"},{k:null,v:"all",icon:"📊",label:"全講師一覧"}].map(({k,v,icon,label})=>(
-            <button key={v} onClick={()=>{setSelected(k);setView(v)}} style={{
+            <button key={v} onClick={()=>{setSelected(k);setView(v);setSidebarOpen(false)}} style={{
               display:"block",width:"100%",padding:"7px 14px",border:"none",
               background:!selected&&view===v?"#3a3a6e":"transparent",color:"#fff",
               textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700,
             }}>{icon} {label}</button>
           ))}
-          <button onClick={()=>{setSelected(null);setShowHolMgr(true)}} style={{
+          <button onClick={()=>{setSelected(null);setShowHolMgr(true);setSidebarOpen(false)}} style={{
             display:"block",width:"100%",padding:"7px 14px",border:"none",
             background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
           }}>📅 祝日・休講日管理</button>
+          <button onClick={()=>{setShowDataMgr(true);setSidebarOpen(false)}} style={{
+            display:"block",width:"100%",padding:"7px 14px",border:"none",
+            background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
+          }}>💾 データ管理</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:"2px 0"}}>
           {teachers.map(t=>{
             const cnt=slots.filter(s=>s.teacher===t).length;
             return (
-              <button key={t} onClick={()=>{setSelected(t);setView("week")}}
+              <button key={t} onClick={()=>selectTeacher(t)}
                 style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"6px 14px",border:"none",background:selected===t?"#3a3a6e":"transparent",color:selected===t?"#fff":"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,transition:"background .15s"}}
                 onMouseEnter={e=>{if(selected!==t)e.currentTarget.style.background="#2a2a4e"}}
                 onMouseLeave={e=>{if(selected!==t)e.currentTarget.style.background="transparent"}}>
@@ -401,12 +468,19 @@ export default function App() {
         </div>
       </div>
 
+      {/* Desktop sidebar spacer */}
+      <div className="sidebar-spacer" style={{width:210,flexShrink:0}}/>
+
       {/* Main */}
-      <div style={{flex:1,overflow:"auto",padding:"16px 24px"}}>
+      <div style={{flex:1,overflow:"auto",padding:"16px 24px",minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
-          <h1 style={{margin:0,fontSize:20,fontWeight:800}}>
-            {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":selected||""}
-          </h1>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button className="hamburger" onClick={()=>setSidebarOpen(true)}
+              style={{background:"#1a1a2e",border:"none",color:"#fff",cursor:"pointer",fontSize:18,padding:"4px 8px",borderRadius:6,lineHeight:1}}>☰</button>
+            <h1 style={{margin:0,fontSize:20,fontWeight:800}}>
+              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":selected||""}
+            </h1>
+          </div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
             {selected&&<>
               <button onClick={()=>setView("week")} style={S.btn(view==="week")}>週間</button>
@@ -446,7 +520,7 @@ export default function App() {
 
         <div id="main-content">
           {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays}/>}
-          {view==="all"&&!selected&&<AllView slots={slots}/>}
+          {view==="all"&&!selected&&<AllView slots={slots} onSelectTeacher={selectTeacher}/>}
           {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} onEdit={setEditSlot} onDel={handleDelSlot}/>}
           {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm}/>}
         </div>
@@ -467,6 +541,44 @@ export default function App() {
             onDel={d=>saveHolidays(holidays.filter(h=>h.date!==d))}/>
         </Modal>
       )}
+
+      {/* Data Manager Modal */}
+      {showDataMgr&&(
+        <Modal title="データ管理" onClose={()=>setShowDataMgr(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"#f8f9fa",borderRadius:8,padding:14}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>エクスポート（バックアップ）</div>
+              <div style={{fontSize:11,color:"#666",marginBottom:8}}>現在のコマ数: {slots.length} ／ 休講日: {holidays.length}</div>
+              <button onClick={handleExport} style={S.btn(true)}>JSONファイルをダウンロード</button>
+            </div>
+            <div style={{background:"#f8f9fa",borderRadius:8,padding:14}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>インポート（復元）</div>
+              <div style={{fontSize:11,color:"#666",marginBottom:8}}>JSONファイルからデータを読み込みます</div>
+              <label style={{...S.btn(false),display:"inline-block",cursor:"pointer"}}>
+                ファイルを選択
+                <input type="file" accept=".json" onChange={handleImport} style={{display:"none"}}/>
+              </label>
+            </div>
+            <div style={{background:"#fff5f5",borderRadius:8,padding:14,border:"1px solid #fcc"}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:6,color:"#c44"}}>初期化（リセット）</div>
+              <div style={{fontSize:11,color:"#666",marginBottom:8}}>すべてのデータを初期状態に戻します</div>
+              <button onClick={handleReset} style={{...S.btn(false),background:"#fee",color:"#c44",border:"1px solid #fcc"}}>データを初期化</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Responsive CSS */}
+      <style>{`
+        @media (min-width: 769px) {
+          .sidebar { left: 0 !important; position: fixed !important; }
+          .sidebar-close { display: none !important; }
+          .hamburger { display: none !important; }
+        }
+        @media (max-width: 768px) {
+          .sidebar-spacer { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
