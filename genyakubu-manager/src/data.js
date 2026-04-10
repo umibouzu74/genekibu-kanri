@@ -53,6 +53,8 @@ export function gradeToDept(grade) {
   return null;
 }
 
+export const isKameiRoom = (room) => room?.startsWith("亀");
+
 export const INIT_HOLIDAYS = [
   { date: "2026-04-29", label: "昭和の日", scope: ["全部"] },
   { date: "2026-05-03", label: "憲法記念日", scope: ["全部"] },
