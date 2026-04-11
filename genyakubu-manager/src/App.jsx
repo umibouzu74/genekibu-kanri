@@ -903,7 +903,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                 <span style={{fontSize:10,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
                               </div>
                               <div style={{
-                                display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",
+                                display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",
                                 background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                               }}>
                                 {tSlots.map(s=>{
