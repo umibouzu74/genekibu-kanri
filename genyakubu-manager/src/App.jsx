@@ -13,7 +13,7 @@ import { VIEWS } from "./constants/views";
 import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
-import { S } from "./styles/common";
+import { colors, font, S } from "./styles/common";
 import {
   CURRENT_SCHEMA_VERSION,
   migrateExportBundle,
@@ -332,11 +332,11 @@ export default function App() {
   return (
     <div
       style={{
-        fontFamily: '"Hiragino Kaku Gothic Pro","Yu Gothic","Noto Sans JP",sans-serif',
+        fontFamily: font.stack,
         display: "flex",
         height: "100vh",
-        background: "#f0f1f3",
-        color: "#1a1a2e",
+        background: colors.bg,
+        color: colors.ink,
       }}
     >
       <Sidebar
