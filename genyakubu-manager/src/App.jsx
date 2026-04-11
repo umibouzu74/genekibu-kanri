@@ -384,28 +384,32 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                     const st = sub ? (SUB_STATUS[sub.status] || SUB_STATUS.requested) : null;
                     return (
                       <div key={i} style={{
-                        background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "center",
-                        display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 80,
+                        background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "left",
+                        display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 96,
                         position: "relative",
                       }}>
                         {sub && (
-                          <div style={{position:"absolute",top:2,left:2,background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"1px 4px",borderRadius:3}}
+                          <div style={{position:"absolute",top:2,right:2,background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"1px 4px",borderRadius:3}}
                             title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}>代</div>
                         )}
                         <div style={{ lineHeight: 1.4 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 4, flexWrap: "wrap" }}>
                             <span style={{
                               background: gc.b, color: gc.f, borderRadius: 3, padding: "1px 4px",
-                              fontSize: 9, fontWeight: 700,
+                              fontSize: 11, fontWeight: 700,
                             }}>{s.grade}{s.cls && s.cls !== "-" ? s.cls : ""}</span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: "#444" }}>{s.subj}</span>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: "#444" }}>{s.subj}</span>
                           </div>
-                          {s.room && <div style={{ fontSize: 9, color: "#999", marginTop: 1 }}>{s.room}</div>}
-                          {s.note && <div style={{ fontSize: 8, color: "#e67a00", marginTop: 1 }}>({s.note})</div>}
+                          {(s.room || s.note) && (
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                              {s.room && <span style={{ fontSize: 18, fontWeight: 700, color: "#555" }}>{s.room}</span>}
+                              {s.note && <span style={{ fontSize: 13, fontWeight: 600, color: "#a0331a" }}>({s.note})</span>}
+                            </div>
+                          )}
                         </div>
                         <div style={{
-                          fontSize: sub ? 16 : 24, fontWeight: 800, color: "#1a1a2e",
-                          lineHeight: 1.1, marginTop: 4,
+                          fontSize: sub ? 16 : 22, fontWeight: 800, color: "#1a1a2e",
+                          lineHeight: 1.1, marginTop: 6,
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>
                           {sub ? (
