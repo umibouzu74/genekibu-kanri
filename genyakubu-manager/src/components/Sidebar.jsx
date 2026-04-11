@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { VIEWS } from "../constants/views";
 
 export function Sidebar({
@@ -14,7 +15,17 @@ export function Sidebar({
   slots,
   subs,
 }) {
-  const pending = subs.filter((s) => s.status === "requested").length;
+  // Pre-compute pending count and per-teacher slot counts once per
+  // render rather than running slots.filter() per teacher button.
+  const pending = useMemo(
+    () => subs.filter((s) => s.status === "requested").length,
+    [subs]
+  );
+  const slotCountByTeacher = useMemo(() => {
+    const m = new Map();
+    for (const s of slots) m.set(s.teacher, (m.get(s.teacher) || 0) + 1);
+    return m;
+  }, [slots]);
 
   const navItem = (key, icon, label, extra = null) => {
     const active = !selected && view === key;
@@ -164,7 +175,7 @@ export function Sidebar({
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
           {teachers.map((t) => {
-            const cnt = slots.filter((s) => s.teacher === t).length;
+            const cnt = slotCountByTeacher.get(t) || 0;
             return (
               <button
                 key={t}

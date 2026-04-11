@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   DAYS,
@@ -10,6 +10,132 @@ import {
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { formatBiweeklyTeacher } from "../../utils/biweekly";
+
+// Extracted to its own component so that hover state is scoped to a
+// single card instead of requiring DOM querySelector manipulation.
+const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, onDel }) {
+  const [hover, setHover] = useState(false);
+  const gc = GC(s.grade);
+  return (
+    <div
+      style={{
+        background: "#fff",
+        padding: "8px 6px",
+        textAlign: "left",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        minHeight: 96,
+        position: "relative",
+        ...(newGradeRow ? { gridColumnStart: 1 } : null),
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <div style={{ lineHeight: 1.4 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            gap: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            style={{
+              background: gc.b,
+              color: gc.f,
+              borderRadius: 3,
+              padding: "1px 4px",
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {s.grade}
+            {s.cls && s.cls !== "-" ? s.cls : ""}
+          </span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#444" }}>{s.subj}</span>
+        </div>
+        {(s.room || s.note) && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 6,
+              marginTop: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            {s.room && (
+              <span style={{ fontSize: 18, fontWeight: 700, color: "#555" }}>{s.room}</span>
+            )}
+            {s.note && (
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#a0331a" }}>
+                ({s.note})
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          color: "#1a1a2e",
+          lineHeight: 1.1,
+          marginTop: 6,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {formatBiweeklyTeacher(s.teacher, s.note)}
+      </div>
+      <div
+        className="master-slot-actions"
+        style={{
+          position: "absolute",
+          top: 2,
+          right: 2,
+          display: "flex",
+          gap: 1,
+          opacity: hover ? 1 : 0,
+          transition: "opacity .15s",
+        }}
+      >
+        <button
+          onClick={() => onEdit(s)}
+          style={{
+            background: "rgba(255,255,255,0.9)",
+            border: "1px solid #ddd",
+            borderRadius: 3,
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 3px",
+            lineHeight: 1,
+          }}
+        >
+          ✏️
+        </button>
+        <button
+          onClick={() => onDel(s.id)}
+          style={{
+            background: "rgba(255,255,255,0.9)",
+            border: "1px solid #ddd",
+            borderRadius: 3,
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 3px",
+            lineHeight: 1,
+          }}
+        >
+          🗑
+        </button>
+      </div>
+    </div>
+  );
+});
 
 export function MasterView({
   slots,
@@ -31,11 +157,14 @@ export function MasterView({
   );
 
   const filtered = useMemo(() => {
-    let r = [...slots];
-    if (filterDay) r = r.filter((s) => s.day === filterDay);
-    if (filterGrade) r = r.filter((s) => s.grade === filterGrade);
-    if (filterTeacher) r = r.filter((s) => s.teacher.includes(filterTeacher));
-    if (filterSubj) r = r.filter((s) => s.subj.includes(filterSubj));
+    // Single-pass filter to avoid creating 4 intermediate arrays.
+    const r = slots.filter(
+      (s) =>
+        (!filterDay || s.day === filterDay) &&
+        (!filterGrade || s.grade === filterGrade) &&
+        (!filterTeacher || s.teacher.includes(filterTeacher)) &&
+        (!filterSubj || s.subj.includes(filterSubj))
+    );
     return sortS(r);
   }, [slots, filterDay, filterGrade, filterTeacher, filterSubj]);
 
@@ -450,163 +579,19 @@ export function MasterView({
                                 }}
                               >
                                 {tSlots.map((s, i) => {
-                                  const gc = GC(s.grade);
                                   const newGradeRow =
                                     i > 0 &&
                                     s.grade !== tSlots[i - 1].grade &&
                                     !s.grade.includes("附中") &&
                                     !tSlots[i - 1].grade.includes("附中");
                                   return (
-                                    <div
+                                    <MasterSlotCard
                                       key={s.id}
-                                      style={{
-                                        background: "#fff",
-                                        padding: "8px 6px",
-                                        textAlign: "left",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        justifyContent: "space-between",
-                                        minHeight: 96,
-                                        position: "relative",
-                                        ...(newGradeRow ? { gridColumnStart: 1 } : null),
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        const b = e.currentTarget.querySelector(
-                                          ".master-slot-actions"
-                                        );
-                                        if (b) b.style.opacity = "1";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        const b = e.currentTarget.querySelector(
-                                          ".master-slot-actions"
-                                        );
-                                        if (b) b.style.opacity = "0";
-                                      }}
-                                    >
-                                      <div style={{ lineHeight: 1.4 }}>
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "flex-start",
-                                            gap: 4,
-                                            flexWrap: "wrap",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              background: gc.b,
-                                              color: gc.f,
-                                              borderRadius: 3,
-                                              padding: "1px 4px",
-                                              fontSize: 11,
-                                              fontWeight: 700,
-                                            }}
-                                          >
-                                            {s.grade}
-                                            {s.cls && s.cls !== "-" ? s.cls : ""}
-                                          </span>
-                                          <span
-                                            style={{
-                                              fontSize: 14,
-                                              fontWeight: 600,
-                                              color: "#444",
-                                            }}
-                                          >
-                                            {s.subj}
-                                          </span>
-                                        </div>
-                                        {(s.room || s.note) && (
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              alignItems: "baseline",
-                                              gap: 6,
-                                              marginTop: 2,
-                                              flexWrap: "wrap",
-                                            }}
-                                          >
-                                            {s.room && (
-                                              <span
-                                                style={{
-                                                  fontSize: 18,
-                                                  fontWeight: 700,
-                                                  color: "#555",
-                                                }}
-                                              >
-                                                {s.room}
-                                              </span>
-                                            )}
-                                            {s.note && (
-                                              <span
-                                                style={{
-                                                  fontSize: 13,
-                                                  fontWeight: 600,
-                                                  color: "#a0331a",
-                                                }}
-                                              >
-                                                ({s.note})
-                                              </span>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: 22,
-                                          fontWeight: 800,
-                                          color: "#1a1a2e",
-                                          lineHeight: 1.1,
-                                          marginTop: 6,
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                          whiteSpace: "nowrap",
-                                        }}
-                                      >
-                                        {formatBiweeklyTeacher(s.teacher, s.note)}
-                                      </div>
-                                      <div
-                                        className="master-slot-actions"
-                                        style={{
-                                          position: "absolute",
-                                          top: 2,
-                                          right: 2,
-                                          display: "flex",
-                                          gap: 1,
-                                          opacity: 0,
-                                          transition: "opacity .15s",
-                                        }}
-                                      >
-                                        <button
-                                          onClick={() => onEdit(s)}
-                                          style={{
-                                            background: "rgba(255,255,255,0.9)",
-                                            border: "1px solid #ddd",
-                                            borderRadius: 3,
-                                            cursor: "pointer",
-                                            fontSize: 11,
-                                            padding: "1px 3px",
-                                            lineHeight: 1,
-                                          }}
-                                        >
-                                          ✏️
-                                        </button>
-                                        <button
-                                          onClick={() => onDel(s.id)}
-                                          style={{
-                                            background: "rgba(255,255,255,0.9)",
-                                            border: "1px solid #ddd",
-                                            borderRadius: 3,
-                                            cursor: "pointer",
-                                            fontSize: 11,
-                                            padding: "1px 3px",
-                                            lineHeight: 1,
-                                          }}
-                                        >
-                                          🗑
-                                        </button>
-                                      </div>
-                                    </div>
+                                      s={s}
+                                      newGradeRow={newGradeRow}
+                                      onEdit={onEdit}
+                                      onDel={onDel}
+                                    />
                                   );
                                 })}
                               </div>

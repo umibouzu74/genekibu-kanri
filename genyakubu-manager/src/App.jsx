@@ -202,7 +202,20 @@ export default function App() {
     setTimeout(() => w.print(), 300);
   };
 
-  const selSlotCount = selected ? slots.filter((s) => s.teacher === selected).length : 0;
+  // Precompute per-day / total slot counts for the currently selected
+  // teacher so the header badge row doesn't do O(slots * DAYS) work.
+  const selDayCounts = useMemo(() => {
+    if (!selected) return { total: 0, byDay: {} };
+    const byDay = {};
+    let total = 0;
+    for (const s of slots) {
+      if (s.teacher !== selected) continue;
+      byDay[s.day] = (byDay[s.day] || 0) + 1;
+      total++;
+    }
+    return { total, byDay };
+  }, [slots, selected]);
+  const selSlotCount = selDayCounts.total;
 
   return (
     <div
@@ -338,9 +351,7 @@ export default function App() {
         {selected && (
           <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {DAYS.map((d) => {
-              const cnt = slots.filter(
-                (s) => s.teacher === selected && s.day === d
-              ).length;
+              const cnt = selDayCounts.byDay[d] || 0;
               return (
                 <div
                   key={d}

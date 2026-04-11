@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   DAY_COLOR as DC,
   DEPT_COLOR,
@@ -13,15 +14,19 @@ import {
 import { DASH_SECTIONS } from "../../constants/schedule";
 
 function SectionColumn({ label, color, sl, deptOff, subs, date }) {
-  const byTime = {};
-  sl.forEach((s) => {
-    if (!byTime[s.time]) byTime[s.time] = [];
-    byTime[s.time].push(s);
-  });
-  const timeGroups = Object.entries(byTime).sort(
-    ([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
-  );
-  const teachers = [...new Set(sl.map((s) => s.teacher))];
+  const { timeGroups, teachers } = useMemo(() => {
+    const byTime = {};
+    sl.forEach((s) => {
+      if (!byTime[s.time]) byTime[s.time] = [];
+      byTime[s.time].push(s);
+    });
+    return {
+      timeGroups: Object.entries(byTime).sort(
+        ([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
+      ),
+      teachers: [...new Set(sl.map((s) => s.teacher))],
+    };
+  }, [sl]);
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>

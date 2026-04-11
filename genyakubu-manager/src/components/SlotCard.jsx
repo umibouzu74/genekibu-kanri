@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { DAY_COLOR as DC, gradeColor as GC } from "../data";
 
-export function SlotCard({ slot, compact, onEdit, onDel }) {
+function SlotCardImpl({ slot, compact, onEdit, onDel }) {
   const gc = GC(slot.grade);
   return (
     <div
@@ -84,3 +85,5 @@ export function SlotCard({ slot, compact, onEdit, onDel }) {
     </div>
   );
 }
+
+export const SlotCard = memo(SlotCardImpl);

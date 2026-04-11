@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { SUB_STATUS } from "../data";
 
-export function StatusBadge({ status }) {
+function StatusBadgeImpl({ status }) {
   const s = SUB_STATUS[status] || SUB_STATUS.requested;
   return (
     <span
@@ -20,3 +21,5 @@ export function StatusBadge({ status }) {
     </span>
   );
 }
+
+export const StatusBadge = memo(StatusBadgeImpl);
