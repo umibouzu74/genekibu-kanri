@@ -55,6 +55,52 @@ export function gradeToDept(grade) {
 
 export const isKameiRoom = (room) => room?.startsWith("亀");
 
+// ─── アルバイト・代行管理 ──────────────────────────────────────────
+export const INIT_PART_TIME_STAFF = [
+  "福武", "河野", "香川", "小見山", "杉原", "奥村", "江本", "福江", "川井",
+];
+
+export const SUB_STATUS = {
+  requested: { label: "依頼中", color: "#c03030", bg: "#fde4e4", border: "#f0b0b0" },
+  confirmed: { label: "確定",   color: "#2a7a4a", bg: "#e0f2e4", border: "#a8d8b0" },
+  completed: { label: "完了",   color: "#555",    bg: "#ececec", border: "#c8c8c8" },
+};
+
+export const SUB_STATUS_KEYS = ["requested", "confirmed", "completed"];
+
+export function getSubForSlot(subs, slotId, date) {
+  if (!subs) return null;
+  return subs.find(s => s.slotId === slotId && s.date === date) || null;
+}
+
+export function monthlyTally(subs, year, month) {
+  const covered = {};     // name -> 代行した回数
+  const coveredFor = {};  // name -> 代行された回数
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  subs.forEach(s => {
+    if (!s.date?.startsWith(ym)) return;
+    if (s.status === "requested") return; // 依頼中は集計対象外
+    if (s.substitute) covered[s.substitute] = (covered[s.substitute] || 0) + 1;
+    if (s.originalTeacher) coveredFor[s.originalTeacher] = (coveredFor[s.originalTeacher] || 0) + 1;
+  });
+  return { covered, coveredFor };
+}
+
+export function fmtDateWeekday(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${dateStr} (${WEEKDAYS[dt.getDay()]})`;
+}
+
+export function dateToDay(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const w = WEEKDAYS[dt.getDay()];
+  return DAYS.includes(w) ? w : null;
+}
+
 export const INIT_HOLIDAYS = [
   { date: "2026-04-29", label: "昭和の日", scope: ["全部"] },
   { date: "2026-05-03", label: "憲法記念日", scope: ["全部"] },

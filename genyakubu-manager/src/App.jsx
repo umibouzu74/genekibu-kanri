@@ -4,6 +4,8 @@ import {
   gradeColor as GC, sortSlots as sortS, fmtDate, timeToMin,
   INIT_SLOTS, INIT_HOLIDAYS,
   DEPARTMENTS, DEPT_COLOR, gradeToDept, isKameiRoom,
+  INIT_PART_TIME_STAFF, SUB_STATUS, SUB_STATUS_KEYS,
+  getSubForSlot, monthlyTally, fmtDateWeekday, dateToDay,
 } from "./data";
 
 
@@ -333,7 +335,7 @@ const DASH_SECTIONS = [
   { key: "高校亀井町", label: "高校部・亀井町", dept: "高校部", filterFn: s => gradeToDept(s.grade) === "高校部" && isKameiRoom(s.room) },
 ];
 
-function SectionColumn({ label, color, sl, deptOff }) {
+function SectionColumn({ label, color, sl, deptOff, subs, date }) {
   const byTime = {};
   sl.forEach(s => { if (!byTime[s.time]) byTime[s.time] = []; byTime[s.time].push(s); });
   const timeGroups = Object.entries(byTime).sort(([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0]));
@@ -378,11 +380,18 @@ function SectionColumn({ label, color, sl, deptOff }) {
                 }}>
                   {tSlots.map((s, i) => {
                     const gc = GC(s.grade);
+                    const sub = date ? getSubForSlot(subs, s.id, date) : null;
+                    const st = sub ? (SUB_STATUS[sub.status] || SUB_STATUS.requested) : null;
                     return (
                       <div key={i} style={{
-                        background: "#fff", padding: "8px 6px", textAlign: "center",
+                        background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "center",
                         display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 80,
+                        position: "relative",
                       }}>
+                        {sub && (
+                          <div style={{position:"absolute",top:2,left:2,background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"1px 4px",borderRadius:3}}
+                            title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}>代</div>
+                        )}
                         <div style={{ lineHeight: 1.4 }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "wrap" }}>
                             <span style={{
@@ -395,11 +404,17 @@ function SectionColumn({ label, color, sl, deptOff }) {
                           {s.note && <div style={{ fontSize: 8, color: "#e67a00", marginTop: 1 }}>({s.note})</div>}
                         </div>
                         <div style={{
-                          fontSize: 24, fontWeight: 800, color: "#1a1a2e",
+                          fontSize: sub ? 16 : 24, fontWeight: 800, color: "#1a1a2e",
                           lineHeight: 1.1, marginTop: 4,
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>
-                          {s.teacher}
+                          {sub ? (
+                            <span>
+                              <span style={{textDecoration:"line-through",color:"#999",fontSize:12}}>{sub.originalTeacher}</span>
+                              <span style={{margin:"0 2px",color:st.color}}>→</span>
+                              <span style={{color:st.color}}>{sub.substitute || "?"}</span>
+                            </span>
+                          ) : s.teacher}
                         </div>
                       </div>
                     );
@@ -414,7 +429,7 @@ function SectionColumn({ label, color, sl, deptOff }) {
   );
 }
 
-function DashDayRow({ date, dow, holidays: hols, slots }) {
+function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
   const fullOff = hols.some(h => (h.scope || ["全部"]).includes("全部"));
   const offDepts = [...new Set(hols.flatMap(h => h.scope || ["全部"]))].filter(d => d !== "全部");
   const hasPartial = !fullOff && offDepts.length > 0;
@@ -448,7 +463,7 @@ function DashDayRow({ date, dow, holidays: hols, slots }) {
             const deptOff = offDepts.includes(sec.dept);
             const secSlots = deptOff ? [] : sortS(slots.filter(sec.filterFn));
             const color = DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
-            return <SectionColumn key={sec.key} label={sec.label} color={color} sl={secSlots} deptOff={deptOff} />;
+            return <SectionColumn key={sec.key} label={sec.label} color={color} sl={secSlots} deptOff={deptOff} subs={subs} date={date} />;
           })}
         </div>
       )}
@@ -456,7 +471,7 @@ function DashDayRow({ date, dow, holidays: hols, slots }) {
   );
 }
 
-function Dashboard({ slots, holidays }) {
+function Dashboard({ slots, holidays, subs }) {
   const now = new Date();
   const todayStr = fmtDate(now);
   const todayDow = WEEKDAYS[now.getDay()];
@@ -481,33 +496,84 @@ function Dashboard({ slots, holidays }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <DashDayRow date={todayStr} dow={todayDow} holidays={todayHols} slots={todaySlots} />
-      <DashDayRow date={tmrStr} dow={tmrDow} holidays={tmrHols} slots={tmrSlots} />
+      <DashDayRow date={todayStr} dow={todayDow} holidays={todayHols} slots={todaySlots} subs={subs} />
+      <DashDayRow date={tmrStr} dow={tmrDow} holidays={tmrHols} slots={tmrSlots} subs={subs} />
     </div>
   );
 }
 
-function WeekView({teacher,slots,onEdit,onDel}) {
+function WeekView({teacher,slots,subs,onEdit,onDel}) {
   const ts=useMemo(()=>sortS(slots.filter(s=>s.teacher===teacher||s.note?.includes(teacher))),[teacher,slots]);
   const byDay=useMemo(()=>{const m={};DAYS.forEach(d=>{m[d]=[]});ts.forEach(s=>m[s.day]?.push(s));return m;},[ts]);
+
+  // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
+  const upcomingSubs=useMemo(()=>{
+    if(!subs?.length) return [];
+    const today=new Date();today.setHours(0,0,0,0);
+    const end=new Date(today);end.setDate(end.getDate()+14);
+    return subs
+      .filter(sub=>{
+        if(sub.originalTeacher!==teacher&&sub.substitute!==teacher) return false;
+        const [y,m,d]=sub.date.split("-").map(Number);
+        const dt=new Date(y,m-1,d);
+        return dt>=today&&dt<=end;
+      })
+      .sort((a,b)=>a.date.localeCompare(b.date));
+  },[subs,teacher]);
+
   return (
-    <div style={{overflowX:"auto",marginTop:12}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minWidth:600}}>
-        {DAYS.map(d=>(
-          <div key={d}>
-            <div style={{background:DC[d],color:"#fff",textAlign:"center",padding:"7px 0",borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:14,letterSpacing:2}}>{d}</div>
-            <div style={{background:DB[d],borderRadius:"0 0 8px 8px",padding:6,minHeight:80,display:"flex",flexDirection:"column",gap:5}}>
-              {byDay[d].length===0?<div style={{color:"#ccc",textAlign:"center",padding:16,fontSize:11}}>—</div>:
-                byDay[d].map((s,i)=><SlotCard key={i} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
-            </div>
+    <div style={{marginTop:12}}>
+      {upcomingSubs.length>0 && (
+        <div style={{background:"#fffbe6",border:"1px solid #f0d878",borderRadius:8,padding:12,marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#8a6a1a"}}>
+            🔄 直近2週間の代行予定 ({upcomingSubs.length}件)
           </div>
-        ))}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {upcomingSubs.map(sub=>{
+              const slot=slots.find(s=>s.id===sub.slotId);
+              const st=SUB_STATUS[sub.status]||SUB_STATUS.requested;
+              const isOriginal=sub.originalTeacher===teacher;
+              return (
+                <div key={sub.id} style={{display:"flex",alignItems:"center",gap:10,background:"#fff",padding:"6px 10px",borderRadius:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,fontWeight:700,minWidth:110}}>{fmtDateWeekday(sub.date)}</span>
+                  <span style={{fontSize:11,color:"#666",minWidth:90}}>{slot?.time||"-"}</span>
+                  <span style={{fontSize:11}}>{slot?`${slot.grade}${slot.cls&&slot.cls!=="-"?slot.cls:""} ${slot.subj}`:"(削除済)"}</span>
+                  <span style={{fontSize:11,fontWeight:700,marginLeft:"auto"}}>
+                    <span style={{color:isOriginal?"#c03030":"#888"}}>{sub.originalTeacher}</span>
+                    <span style={{margin:"0 4px",color:"#888"}}>→</span>
+                    <span style={{color:!isOriginal?"#2a7a4a":"#888"}}>{sub.substitute||"未定"}</span>
+                  </span>
+                  <StatusBadge status={sub.status}/>
+                  {isOriginal
+                    ? <span style={{fontSize:9,background:"#fde4e4",color:"#c03030",padding:"1px 6px",borderRadius:10,fontWeight:700}}>お願いする側</span>
+                    : <span style={{fontSize:9,background:"#e0f2e4",color:"#2a7a4a",padding:"1px 6px",borderRadius:10,fontWeight:700}}>代行する側</span>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{overflowX:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minWidth:600}}>
+          {DAYS.map(d=>(
+            <div key={d}>
+              <div style={{background:DC[d],color:"#fff",textAlign:"center",padding:"7px 0",borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:14,letterSpacing:2}}>{d}</div>
+              <div style={{background:DB[d],borderRadius:"0 0 8px 8px",padding:6,minHeight:80,display:"flex",flexDirection:"column",gap:5}}>
+                {byDay[d].length===0?<div style={{color:"#ccc",textAlign:"center",padding:16,fontSize:11}}>—</div>:
+                  byDay[d].map((s,i)=><SlotCard key={i} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function MonthView({teacher,slots,holidays,year,month,onEdit,onDel}) {
+function MonthView({teacher,slots,holidays,subs,year,month,onEdit,onDel}) {
+  // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
+  const teacherSubs=useMemo(()=>(subs||[]).filter(s=>s.originalTeacher===teacher||s.substitute===teacher),[subs,teacher]);
   const ts=useMemo(()=>slots.filter(s=>s.teacher===teacher||s.note?.includes(teacher)),[teacher,slots]);
   const dayMap=useMemo(()=>{const m={};DAYS.forEach(d=>{m[d]=ts.filter(s=>s.day===d)});return m;},[ts]);
   const holMap=useMemo(()=>{const m={};holidays.forEach(h=>{m[h.date]=h});return m;},[holidays]);
@@ -558,13 +624,43 @@ function MonthView({teacher,slots,holidays,year,month,onEdit,onDel}) {
                 {!isFullOff&&offDepts.length>0&&<span style={{fontSize:8,color:"#c88",fontWeight:400}}>{offDepts.map(d=>d.replace("部","")).join(",")+"休"}</span>}
               </div>
               {isFullOff?<div style={{fontSize:10,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
-                sl.map((s,j)=>(
-                  <div key={j} style={{fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,background:DB[s.day],borderLeft:`2px solid ${DC[s.day]}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:onEdit?"pointer":"default"}}
-                    onClick={()=>onEdit&&onEdit(s)}
-                    title={`${s.time} ${s.grade} ${s.subj} ${s.room||""}\nクリックで編集`}>
-                    <b>{s.time.split("-")[0]}</b> {s.subj}
+                sl.map((s,j)=>{
+                  const sub=getSubForSlot(subs,s.id,ds);
+                  const st=sub?(SUB_STATUS[sub.status]||SUB_STATUS.requested):null;
+                  const away=sub&&sub.originalTeacher===teacher&&sub.substitute!==teacher; // 自分が休み
+                  return (
+                    <div key={j} style={{
+                      fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,
+                      background:sub?st.bg:DB[s.day],
+                      borderLeft:`2px solid ${sub?st.color:DC[s.day]}`,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                      cursor:onEdit?"pointer":"default",
+                      opacity:away?0.55:1,
+                    }}
+                      onClick={()=>onEdit&&onEdit(s)}
+                      title={`${s.time} ${s.grade} ${s.subj} ${s.room||""}${sub?`\n[代行] ${sub.originalTeacher} → ${sub.substitute||"未定"} (${st.label})${sub.memo?"\n"+sub.memo:""}`:""}\nクリックで編集`}>
+                      {sub && <span style={{background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"0 3px",borderRadius:2,marginRight:2}}>代</span>}
+                      <b>{s.time.split("-")[0]}</b> {s.subj}
+                    </div>
+                  );
+                })}
+              {/* この teacher が「他人のコマ」を代行する場合 */}
+              {!isFullOff && teacherSubs.filter(sub=>sub.date===ds && sub.substitute===teacher && !sl.some(s=>s.id===sub.slotId)).map((sub,j)=>{
+                const slot=slots.find(s=>s.id===sub.slotId);
+                if(!slot) return null;
+                const st=SUB_STATUS[sub.status]||SUB_STATUS.requested;
+                return (
+                  <div key={`ext-${j}`} style={{
+                    fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,
+                    background:st.bg,borderLeft:`2px solid ${st.color}`,
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                  }}
+                    title={`${slot.time} ${slot.grade} ${slot.subj} ${slot.room||""}\n[代行] ${sub.originalTeacher}の代わりに担当 (${st.label})${sub.memo?"\n"+sub.memo:""}`}>
+                    <span style={{background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"0 3px",borderRadius:2,marginRight:2}}>代</span>
+                    <b>{slot.time.split("-")[0]}</b> {slot.subj}
                   </div>
-                ))}
+                );
+              })}
             </div>
           );
         })}
@@ -866,15 +962,405 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
   );
 }
 
+// ─── 代行管理 ────────────────────────────────────────────────────────
+function StatusBadge({status}){
+  const s=SUB_STATUS[status]||SUB_STATUS.requested;
+  return (
+    <span style={{
+      display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,
+      background:s.bg,color:s.color,border:`1px solid ${s.border}`,whiteSpace:"nowrap",
+    }}>{s.label}</span>
+  );
+}
+
+function SubBadge({sub,compact}){
+  if(!sub) return null;
+  const s=SUB_STATUS[sub.status]||SUB_STATUS.requested;
+  return (
+    <span title={`${sub.originalTeacher} → ${sub.substitute||"未定"} (${s.label})${sub.memo?"\n"+sub.memo:""}`}
+      style={{
+      display:"inline-flex",alignItems:"center",gap:4,fontSize:compact?9:10,fontWeight:700,
+      padding:compact?"1px 5px":"2px 7px",borderRadius:10,
+      background:s.bg,color:s.color,border:`1px solid ${s.border}`,whiteSpace:"nowrap",
+    }}>
+      <span>代</span>
+      <span>{sub.originalTeacher}→{sub.substitute||"?"}</span>
+    </span>
+  );
+}
+
+function SubstituteForm({sub,slots,partTimeStaff,onSave,onCancel}){
+  const today=fmtDate(new Date());
+  const [f,setF]=useState(sub||{
+    date:today,slotId:"",originalTeacher:"",substitute:"",status:"requested",memo:"",
+  });
+  const [errors,setErrors]=useState({});
+  const up=(k,v)=>{setF(p=>({...p,[k]:v}));setErrors(p=>({...p,[k]:undefined}));};
+
+  const dayOfDate=dateToDay(f.date);
+
+  // 候補コマ: 選択日の曜日に該当する slot、アルバイト担当を優先
+  const slotOptions=useMemo(()=>{
+    if(!dayOfDate) return [];
+    const filtered=sortS(slots.filter(s=>s.day===dayOfDate));
+    const isPT=(t)=>partTimeStaff.includes(t);
+    return [
+      ...filtered.filter(s=>isPT(s.teacher)),
+      ...filtered.filter(s=>!isPT(s.teacher)),
+    ];
+  },[slots,dayOfDate,partTimeStaff]);
+
+  const selectedSlot=useMemo(
+    ()=>slots.find(s=>s.id===Number(f.slotId))||null,
+    [slots,f.slotId]
+  );
+
+  // slot 変更時に元講師を自動入力
+  useEffect(()=>{
+    if(selectedSlot && selectedSlot.teacher !== f.originalTeacher){
+      setF(p=>({...p,originalTeacher:selectedSlot.teacher}));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selectedSlot?.id]);
+
+  const allTeachers=useMemo(()=>{
+    const set=new Set(partTimeStaff);
+    slots.forEach(s=>s.teacher&&set.add(s.teacher));
+    return [...set].sort();
+  },[slots,partTimeStaff]);
+
+  const handleSave=()=>{
+    const errs={};
+    if(!f.date) errs.date="日付を入力してください";
+    if(!f.slotId) errs.slotId="コマを選択してください";
+    if(Object.keys(errs).length){setErrors(errs);return;}
+    onSave({...f,slotId:Number(f.slotId)});
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div>
+        <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:3}}>日付 <span style={{color:"#c44"}}>*</span></label>
+        <input type="date" value={f.date} onChange={e=>up("date",e.target.value)}
+          style={{...S.input,borderColor:errors.date?"#c44":"#ccc"}}/>
+        {dayOfDate && <span style={{fontSize:11,color:"#888",marginLeft:8}}>({dayOfDate}曜日)</span>}
+        {errors.date&&<div style={{fontSize:10,color:"#c44",marginTop:2}}>{errors.date}</div>}
+      </div>
+
+      <div>
+        <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:3}}>対象コマ <span style={{color:"#c44"}}>*</span></label>
+        <select value={f.slotId} onChange={e=>up("slotId",e.target.value)}
+          style={{...S.input,borderColor:errors.slotId?"#c44":"#ccc"}}>
+          <option value="">-- コマを選択 --</option>
+          {slotOptions.map(s=>{
+            const isPT=partTimeStaff.includes(s.teacher);
+            return (
+              <option key={s.id} value={s.id}>
+                {isPT?"★ ":""}{s.time} / {s.grade}{s.cls&&s.cls!=="-"?s.cls:""} / {s.subj} / {s.teacher}{s.room?` (${s.room})`:""}
+              </option>
+            );
+          })}
+        </select>
+        {dayOfDate===null && <div style={{fontSize:10,color:"#888",marginTop:2}}>※ 日付を選ぶと該当曜日のコマが表示されます</div>}
+        {dayOfDate && slotOptions.length===0 && <div style={{fontSize:10,color:"#888",marginTop:2}}>該当コマがありません</div>}
+        {errors.slotId&&<div style={{fontSize:10,color:"#c44",marginTop:2}}>{errors.slotId}</div>}
+      </div>
+
+      {selectedSlot && (
+        <div style={{background:"#f5f7fa",borderRadius:6,padding:"8px 12px",fontSize:11,color:"#555"}}>
+          元講師: <b style={{color:"#1a1a2e",fontSize:13}}>{selectedSlot.teacher}</b>
+          {selectedSlot.note && <span style={{marginLeft:10,color:"#e67a00"}}>({selectedSlot.note})</span>}
+        </div>
+      )}
+
+      <div>
+        <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:3}}>代行者</label>
+        <input list="sub-teacher-list" value={f.substitute} onChange={e=>up("substitute",e.target.value)}
+          placeholder="代行者名 (空欄なら依頼中)" style={S.input}/>
+        <datalist id="sub-teacher-list">
+          {allTeachers.map(t=><option key={t} value={t}/>)}
+        </datalist>
+      </div>
+
+      <div>
+        <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:3}}>ステータス</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {SUB_STATUS_KEYS.map(k=>{
+            const st=SUB_STATUS[k];
+            const active=f.status===k;
+            return (
+              <button key={k} type="button" onClick={()=>up("status",k)} style={{
+                padding:"5px 12px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700,
+                background:active?st.bg:"#f5f5f5",
+                color:active?st.color:"#888",
+                border:`2px solid ${active?st.border:"#e0e0e0"}`,
+              }}>{st.label}</button>
+            );
+          })}
+        </div>
+        {!f.substitute && f.status!=="requested" && (
+          <div style={{fontSize:10,color:"#c77",marginTop:4}}>※ 代行者が未入力の場合は「依頼中」として保存されます</div>
+        )}
+      </div>
+
+      <div>
+        <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:3}}>メモ</label>
+        <textarea value={f.memo||""} onChange={e=>up("memo",e.target.value)}
+          placeholder="理由・引継ぎ事項など"
+          rows={3} style={{...S.input,resize:"vertical",fontFamily:"inherit"}}/>
+      </div>
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+        <button onClick={onCancel} style={S.btn(false)}>キャンセル</button>
+        <button onClick={handleSave} style={S.btn(true)}>保存</button>
+      </div>
+    </div>
+  );
+}
+
+function SubstituteView({subs,slots,partTimeStaff,onNew,onEdit,onDel,onSavePartTimeStaff}){
+  const now=new Date();
+  const [tab,setTab]=useState("list");
+  const [fMonth,setFMonth]=useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const [fStaff,setFStaff]=useState("");
+  const [fStatus,setFStatus]=useState("");
+  const [newStaff,setNewStaff]=useState("");
+
+  const slotMap=useMemo(()=>{
+    const m={};slots.forEach(s=>{m[s.id]=s});return m;
+  },[slots]);
+
+  const filtered=useMemo(()=>{
+    let r=[...subs];
+    if(fMonth) r=r.filter(s=>s.date?.startsWith(fMonth));
+    if(fStaff) r=r.filter(s=>s.originalTeacher===fStaff||s.substitute===fStaff);
+    if(fStatus) r=r.filter(s=>s.status===fStatus);
+    return r.sort((a,b)=>a.date.localeCompare(b.date));
+  },[subs,fMonth,fStaff,fStatus]);
+
+  const [ty,tm]=fMonth.split("-").map(Number);
+  const tally=useMemo(()=>monthlyTally(subs,ty,tm),[subs,ty,tm]);
+
+  const tallyRows=useMemo(()=>{
+    const names=new Set(partTimeStaff);
+    Object.keys(tally.covered).forEach(n=>names.add(n));
+    Object.keys(tally.coveredFor).forEach(n=>names.add(n));
+    return [...names].map(name=>({
+      name,
+      covered:tally.covered[name]||0,
+      coveredFor:tally.coveredFor[name]||0,
+      isPT:partTimeStaff.includes(name),
+    })).sort((a,b)=>(b.covered+b.coveredFor)-(a.covered+a.coveredFor)||a.name.localeCompare(b.name));
+  },[tally,partTimeStaff]);
+
+  const addStaff=()=>{
+    const n=newStaff.trim();
+    if(!n||partTimeStaff.includes(n)) return;
+    onSavePartTimeStaff([...partTimeStaff,n]);
+    setNewStaff("");
+  };
+  const delStaff=(n)=>{
+    if(!confirm(`「${n}」をアルバイト一覧から削除しますか？\n※過去の代行記録は削除されません`)) return;
+    onSavePartTimeStaff(partTimeStaff.filter(x=>x!==n));
+  };
+
+  const allTeachers=useMemo(()=>{
+    const set=new Set(partTimeStaff);
+    slots.forEach(s=>s.teacher&&set.add(s.teacher));
+    return [...set].sort();
+  },[slots,partTimeStaff]);
+
+  const TabBtn=({k,label,count})=>(
+    <button onClick={()=>setTab(k)} style={S.btn(tab===k)}>
+      {label}{count!=null&&<span style={{marginLeft:5,opacity:.7}}>{count}</span>}
+    </button>
+  );
+
+  return (
+    <div style={{marginTop:12}}>
+      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+        <TabBtn k="list" label="代行一覧" count={subs.length}/>
+        <TabBtn k="tally" label="月次集計"/>
+        <TabBtn k="staff" label="アルバイト管理" count={partTimeStaff.length}/>
+      </div>
+
+      {tab==="list" && (
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",background:"#fff",padding:12,borderRadius:8,border:"1px solid #e0e0e0",alignItems:"flex-end"}}>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>月</label>
+              <input type="month" value={fMonth} onChange={e=>setFMonth(e.target.value)} style={{...S.input,width:"auto"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>講師・代行者</label>
+              <select value={fStaff} onChange={e=>setFStaff(e.target.value)} style={{...S.input,width:"auto",minWidth:110}}>
+                <option value="">すべて</option>
+                {allTeachers.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,display:"block",marginBottom:2}}>ステータス</label>
+              <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{...S.input,width:"auto",minWidth:90}}>
+                <option value="">すべて</option>
+                {SUB_STATUS_KEYS.map(k=><option key={k} value={k}>{SUB_STATUS[k].label}</option>)}
+              </select>
+            </div>
+            <button onClick={()=>{setFMonth("");setFStaff("");setFStatus("")}} style={{...S.btn(false),fontSize:11}}>クリア</button>
+            <div style={{marginLeft:"auto"}}>
+              <button onClick={onNew} style={{...S.btn(false),background:"#e8f5e8",color:"#2a7a2a"}}>＋ 新規代行</button>
+            </div>
+          </div>
+
+          <div style={{fontSize:12,color:"#888",marginBottom:6}}>{filtered.length} / {subs.length} 件表示</div>
+          <div style={{background:"#fff",borderRadius:8,border:"1px solid #e0e0e0",overflow:"auto"}}>
+            {filtered.length===0 ? (
+              <div style={{textAlign:"center",color:"#bbb",padding:40,fontSize:13}}>該当する代行記録はありません</div>
+            ) : (
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:760}}>
+                <thead>
+                  <tr style={{background:"#1a1a2e",color:"#fff"}}>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>日付</th>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>時間</th>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>学年</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>科目</th>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>元 → 代行</th>
+                    <th style={{padding:"8px 10px",textAlign:"center",whiteSpace:"nowrap"}}>状態</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>メモ</th>
+                    <th style={{padding:"8px 10px",textAlign:"center",width:60}}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((sub,i)=>{
+                    const slot=slotMap[sub.slotId];
+                    const gc=slot?GC(slot.grade):{b:"#eee",f:"#888"};
+                    const dow=dateToDay(sub.date);
+                    return (
+                      <tr key={sub.id} style={{background:i%2?"#f8f9fa":"#fff",borderTop:"1px solid #eee"}}>
+                        <td style={{padding:"8px 10px",whiteSpace:"nowrap",fontWeight:700}}>
+                          {sub.date}
+                          {dow && <span style={{marginLeft:4,fontSize:10,color:DC[dow],fontWeight:700}}>({dow})</span>}
+                        </td>
+                        <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{slot?.time||"-"}</td>
+                        <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
+                          {slot ? (
+                            <span style={{background:gc.b,color:gc.f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>
+                              {slot.grade}{slot.cls&&slot.cls!=="-"?slot.cls:""}
+                            </span>
+                          ) : "(削除済)"}
+                        </td>
+                        <td style={{padding:"8px 10px",fontWeight:600}}>{slot?.subj||"-"}{slot?.room?<span style={{color:"#999",fontSize:10,marginLeft:4}}>{slot.room}</span>:null}</td>
+                        <td style={{padding:"8px 10px",whiteSpace:"nowrap",fontWeight:700}}>
+                          {sub.originalTeacher} <span style={{color:"#888",fontWeight:400}}>→</span> <span style={{color:"#2a7a4a"}}>{sub.substitute||"未定"}</span>
+                        </td>
+                        <td style={{padding:"8px 10px",textAlign:"center"}}><StatusBadge status={sub.status}/></td>
+                        <td style={{padding:"8px 10px",fontSize:11,color:"#666",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sub.memo}>{sub.memo}</td>
+                        <td style={{padding:"8px 10px",textAlign:"center",whiteSpace:"nowrap"}}>
+                          <button onClick={()=>onEdit(sub)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:2}}>✏️</button>
+                          <button onClick={()=>onDel(sub.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:2}}>🗑</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab==="tally" && (
+        <div>
+          <div style={{background:"#fff",padding:12,borderRadius:8,border:"1px solid #e0e0e0",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <label style={{fontSize:12,fontWeight:700}}>集計月:</label>
+            <input type="month" value={fMonth} onChange={e=>setFMonth(e.target.value)} style={{...S.input,width:"auto"}}/>
+            <span style={{fontSize:11,color:"#888"}}>※ 依頼中のレコードは集計対象外</span>
+          </div>
+          <div style={{background:"#fff",borderRadius:8,border:"1px solid #e0e0e0",overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr style={{background:"#1a1a2e",color:"#fff"}}>
+                  <th style={{padding:"10px 14px",textAlign:"left"}}>氏名</th>
+                  <th style={{padding:"10px 14px",textAlign:"center"}}>代行した</th>
+                  <th style={{padding:"10px 14px",textAlign:"center"}}>代行された</th>
+                  <th style={{padding:"10px 14px",textAlign:"center"}}>差引</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tallyRows.map((r,i)=>{
+                  const diff=r.covered-r.coveredFor;
+                  return (
+                    <tr key={r.name} style={{background:i%2?"#f8f9fa":"#fff",borderTop:"1px solid #eee"}}>
+                      <td style={{padding:"10px 14px",fontWeight:800,fontSize:14}}>
+                        {r.isPT && <span style={{marginRight:6,background:"#ffe8a0",color:"#7a5a1a",borderRadius:4,padding:"1px 6px",fontSize:9,fontWeight:700,verticalAlign:"middle"}}>バイト</span>}
+                        {r.name}
+                      </td>
+                      <td style={{padding:"10px 14px",textAlign:"center",fontSize:18,fontWeight:r.covered?800:400,color:r.covered?"#2a7a4a":"#ccc"}}>{r.covered||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",fontSize:18,fontWeight:r.coveredFor?800:400,color:r.coveredFor?"#c03030":"#ccc"}}>{r.coveredFor||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",fontSize:16,fontWeight:700,color:diff>0?"#2a7a4a":diff<0?"#c03030":"#888"}}>{diff>0?`+${diff}`:diff}</td>
+                    </tr>
+                  );
+                })}
+                {tallyRows.length===0 && (
+                  <tr><td colSpan={4} style={{textAlign:"center",color:"#bbb",padding:40,fontSize:13}}>データがありません</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab==="staff" && (
+        <div>
+          <div style={{background:"#fff",padding:14,borderRadius:8,border:"1px solid #e0e0e0",marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>アルバイトを追加</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <input value={newStaff} onChange={e=>setNewStaff(e.target.value)} placeholder="名前を入力" list="sub-staff-candidates"
+                onKeyDown={e=>{if(e.key==="Enter")addStaff()}} style={{...S.input,width:180}}/>
+              <datalist id="sub-staff-candidates">
+                {allTeachers.filter(t=>!partTimeStaff.includes(t)).map(t=><option key={t} value={t}/>)}
+              </datalist>
+              <button onClick={addStaff} style={S.btn(true)}>＋ 追加</button>
+            </div>
+            <div style={{fontSize:11,color:"#888",marginTop:6}}>※ 既存講師名を入れると候補に補完されます</div>
+          </div>
+          <div style={{background:"#fff",borderRadius:8,border:"1px solid #e0e0e0",overflow:"hidden"}}>
+            {partTimeStaff.length===0 ? (
+              <div style={{textAlign:"center",color:"#bbb",padding:30,fontSize:13}}>登録されていません</div>
+            ) : partTimeStaff.map((n,i)=>{
+              const cnt=slots.filter(s=>s.teacher===n).length;
+              return (
+                <div key={n} style={{
+                  display:"flex",justifyContent:"space-between",alignItems:"center",
+                  padding:"10px 14px",borderBottom:i<partTimeStaff.length-1?"1px solid #eee":"none",
+                  background:i%2?"#f8f9fa":"#fff",
+                }}>
+                  <div>
+                    <span style={{fontWeight:800,fontSize:14}}>{n}</span>
+                    <span style={{marginLeft:10,fontSize:11,color:"#888"}}>担当コマ: {cnt}</span>
+                  </div>
+                  <button onClick={()=>delStaff(n)} style={{background:"none",border:"none",cursor:"pointer",fontSize:14,color:"#c44"}}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────
 export default function App() {
   const [slots,setSlots]=useState(INIT_SLOTS);
   const [holidays,setHolidays]=useState(INIT_HOLIDAYS);
+  const [subs,setSubs]=useState([]);
+  const [partTimeStaff,setPartTimeStaff]=useState(INIT_PART_TIME_STAFF);
   const [selected,setSelected]=useState(null);
-  const [view,setView]=useState("dash"); // dash|week|month|all|master|holidays
+  const [view,setView]=useState("dash"); // dash|week|month|all|master|holidays|subs
   const [monthOff,setMonthOff]=useState(0);
   const [search,setSearch]=useState("");
   const [editSlot,setEditSlot]=useState(null); // null | slot | "new"
+  const [editSub,setEditSub]=useState(null);   // null | sub | "new"
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [showDataMgr,setShowDataMgr]=useState(false);
   const [biweeklyBase,setBiweeklyBase]=useState("");
@@ -893,6 +1379,14 @@ export default function App() {
       const bw=localStorage.getItem("genyakubu-biweekly-base");
       if(bw) setBiweeklyBase(bw);
     } catch{}
+    try {
+      const sv=localStorage.getItem("genyakubu-substitutions");
+      if(sv) setSubs(JSON.parse(sv));
+    } catch{}
+    try {
+      const pt=localStorage.getItem("genyakubu-part-time-staff");
+      if(pt) setPartTimeStaff(JSON.parse(pt));
+    } catch{}
   },[]);
 
   const saveSlots=useCallback((s)=>{
@@ -907,9 +1401,17 @@ export default function App() {
     setBiweeklyBase(v);
     try{localStorage.setItem("genyakubu-biweekly-base",v)}catch{}
   },[]);
+  const saveSubs=useCallback((v)=>{
+    setSubs(v);
+    try{localStorage.setItem("genyakubu-substitutions",JSON.stringify(v))}catch{}
+  },[]);
+  const savePartTimeStaff=useCallback((v)=>{
+    setPartTimeStaff(v);
+    try{localStorage.setItem("genyakubu-part-time-staff",JSON.stringify(v))}catch{}
+  },[]);
 
   const handleExport=()=>{
-    const data=JSON.stringify({slots,holidays,biweeklyBase},null,2);
+    const data=JSON.stringify({slots,holidays,biweeklyBase,substitutions:subs,partTimeStaff},null,2);
     const blob=new Blob([data],{type:"application/json"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
@@ -929,6 +1431,8 @@ export default function App() {
         if(d.slots&&Array.isArray(d.slots)){saveSlots(d.slots);}
         if(d.holidays&&Array.isArray(d.holidays)){saveHolidays(d.holidays.map(x=>({...x,scope:x.scope||["全部"]})));}
         if(d.biweeklyBase){saveBiweeklyBase(d.biweeklyBase);}
+        if(d.substitutions&&Array.isArray(d.substitutions)){saveSubs(d.substitutions);}
+        if(d.partTimeStaff&&Array.isArray(d.partTimeStaff)){savePartTimeStaff(d.partTimeStaff);}
         setShowDataMgr(false);
       }catch{alert("JSONファイルの読み込みに失敗しました。");}
     };
@@ -941,7 +1445,10 @@ export default function App() {
     localStorage.removeItem("genyakubu-slots");
     localStorage.removeItem("genyakubu-holidays");
     localStorage.removeItem("genyakubu-biweekly-base");
+    localStorage.removeItem("genyakubu-substitutions");
+    localStorage.removeItem("genyakubu-part-time-staff");
     setSlots(INIT_SLOTS);setHolidays(INIT_HOLIDAYS);setBiweeklyBase("");
+    setSubs([]);setPartTimeStaff(INIT_PART_TIME_STAFF);
     setSelected(null);setView("dash");setShowDataMgr(false);
   };
 
@@ -957,6 +1464,7 @@ export default function App() {
   },[slots,search]);
 
   const nextId=()=>Math.max(0,...slots.map(s=>s.id))+1;
+  const nextSubId=()=>Math.max(0,...subs.map(s=>s.id||0))+1;
 
   const handleSaveSlot=(f)=>{
     if(editSlot==="new"){
@@ -968,6 +1476,20 @@ export default function App() {
   };
   const handleDelSlot=(id)=>{
     if(confirm("このコマを削除しますか？")) saveSlots(slots.filter(s=>s.id!==id));
+  };
+
+  const handleSaveSub=(f)=>{
+    const now=new Date().toISOString();
+    const normalized={...f,status:f.substitute?f.status:"requested"};
+    if(editSub==="new"){
+      saveSubs([...subs,{...normalized,id:nextSubId(),createdAt:now,updatedAt:now}]);
+    } else {
+      saveSubs(subs.map(s=>s.id===editSub.id?{...normalized,id:s.id,createdAt:s.createdAt,updatedAt:now}:s));
+    }
+    setEditSub(null);
+  };
+  const handleDelSub=(id)=>{
+    if(confirm("この代行記録を削除しますか？")) saveSubs(subs.filter(s=>s.id!==id));
   };
 
   const handlePrint=()=>{
@@ -1020,6 +1542,10 @@ export default function App() {
             display:"block",width:"100%",padding:"7px 14px",border:"none",
             background:!selected&&view==="master"?"#3a3a6e":"transparent",color:!selected&&view==="master"?"#fff":"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:view==="master"?700:400,
           }}>⚙ コースマスター管理</button>
+          <button onClick={()=>{setSelected(null);setView("subs");setSidebarOpen(false)}} style={{
+            display:"block",width:"100%",padding:"7px 14px",border:"none",
+            background:!selected&&view==="subs"?"#3a3a6e":"transparent",color:!selected&&view==="subs"?"#fff":"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:view==="subs"?700:400,
+          }}>🔄 代行管理{subs.filter(s=>s.status==="requested").length>0&&<span style={{marginLeft:6,background:"#c44",color:"#fff",borderRadius:10,padding:"1px 6px",fontSize:9,fontWeight:800}}>{subs.filter(s=>s.status==="requested").length}</span>}</button>
           <button onClick={()=>{setShowDataMgr(true);setSidebarOpen(false)}} style={{
             display:"block",width:"100%",padding:"7px 14px",border:"none",
             background:"transparent",color:"#ccc",textAlign:"left",cursor:"pointer",fontSize:12,
@@ -1051,7 +1577,7 @@ export default function App() {
             <button className="hamburger" onClick={()=>setSidebarOpen(true)}
               style={{background:"#1a1a2e",border:"none",color:"#fff",cursor:"pointer",fontSize:18,padding:"4px 8px",borderRadius:6,lineHeight:1}}>☰</button>
             <h1 style={{margin:0,fontSize:20,fontWeight:800}}>
-              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":view==="master"?"コースマスター管理":view==="holidays"?"祝日・休講日管理":selected||""}
+              {view==="dash"?"ダッシュボード":view==="all"?"全講師コマ数一覧":view==="master"?"コースマスター管理":view==="holidays"?"祝日・休講日管理":view==="subs"?"アルバイト代行管理":selected||""}
             </h1>
           </div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
@@ -1092,12 +1618,13 @@ export default function App() {
         )}
 
         <div id="main-content">
-          {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays}/>}
+          {view==="dash"&&!selected&&<Dashboard slots={slots} holidays={holidays} subs={subs}/>}
           {view==="all"&&!selected&&<AllView slots={slots} onSelectTeacher={selectTeacher}/>}
           {view==="master"&&!selected&&<MasterView slots={slots} onEdit={setEditSlot} onDel={handleDelSlot} onNew={()=>setEditSlot("new")} biweeklyBase={biweeklyBase} onSetBiweeklyBase={saveBiweeklyBase}/>}
           {view==="holidays"&&!selected&&<HolidayManager holidays={holidays} onSave={saveHolidays}/>}
-          {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} onEdit={setEditSlot} onDel={handleDelSlot}/>}
-          {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} year={vy} month={vm} onEdit={setEditSlot} onDel={handleDelSlot}/>}
+          {view==="subs"&&!selected&&<SubstituteView subs={subs} slots={slots} partTimeStaff={partTimeStaff} onNew={()=>setEditSub("new")} onEdit={setEditSub} onDel={handleDelSub} onSavePartTimeStaff={savePartTimeStaff}/>}
+          {selected&&view==="week"&&<WeekView teacher={selected} slots={slots} subs={subs} onEdit={setEditSlot} onDel={handleDelSlot}/>}
+          {selected&&view==="month"&&<MonthView teacher={selected} slots={slots} holidays={holidays} subs={subs} year={vy} month={vm} onEdit={setEditSlot} onDel={handleDelSlot}/>}
         </div>
       </div>
 
@@ -1105,6 +1632,13 @@ export default function App() {
       {editSlot&&(
         <Modal title={editSlot==="new"?"コマを追加":"コマを編集"} onClose={()=>setEditSlot(null)}>
           <SlotForm slot={editSlot==="new"?null:editSlot} onSave={handleSaveSlot} onCancel={()=>setEditSlot(null)}/>
+        </Modal>
+      )}
+
+      {/* Substitute Edit Modal */}
+      {editSub&&(
+        <Modal title={editSub==="new"?"代行を追加":"代行を編集"} onClose={()=>setEditSub(null)}>
+          <SubstituteForm sub={editSub==="new"?null:editSub} slots={slots} partTimeStaff={partTimeStaff} onSave={handleSaveSub} onCancel={()=>setEditSub(null)}/>
         </Modal>
       )}
 
