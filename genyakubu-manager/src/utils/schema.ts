@@ -10,15 +10,25 @@
 //     biweeklyBase: string,
 //   }
 
+import type {
+  ExportBundle,
+  Holiday,
+  Slot,
+  Substitute,
+  ValidationResult,
+} from "../types";
+
 export const CURRENT_SCHEMA_VERSION = 1;
 
-const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-const isString = (v) => typeof v === "string";
-const isNumber = (v) => typeof v === "number" && Number.isFinite(v);
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const isString = (v: unknown): v is string => typeof v === "string";
+const isNumber = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
 
 // Type guards ------------------------------------------------------
 
-export function isSlot(x) {
+export function isSlot(x: unknown): x is Slot {
   return (
     isObject(x) &&
     isNumber(x.id) &&
@@ -30,29 +40,32 @@ export function isSlot(x) {
   );
 }
 
-export function isHoliday(x) {
+export function isHoliday(x: unknown): x is Holiday {
   return isObject(x) && isString(x.date);
 }
 
-export function isSub(x) {
+export function isSub(x: unknown): x is Substitute {
   return (
     isObject(x) &&
     isString(x.date) &&
     (isNumber(x.slotId) || isString(x.slotId)) &&
-    isString(x.originalTeacher || "") &&
-    isString(x.status || "")
+    typeof (x.originalTeacher ?? "") === "string" &&
+    typeof (x.status ?? "") === "string"
   );
 }
 
 // ─── Validation ────────────────────────────────────────────────────
-// Returns a { ok: true, data } if the payload passes structural
-// checks, otherwise { ok: false, error: string, path?: string }.
-export function validateExportBundle(raw) {
+// Returns { ok: true, data } if the payload passes structural checks,
+// otherwise { ok: false, error, path? }.
+export function validateExportBundle(
+  raw: unknown
+): ValidationResult<ExportBundle> {
   if (!isObject(raw)) return { ok: false, error: "ルートがオブジェクトではありません" };
 
   if (raw.slots != null) {
-    if (!Array.isArray(raw.slots)) return { ok: false, error: "slots が配列ではありません" };
-    const bad = raw.slots.findIndex((s) => !isSlot(s));
+    if (!Array.isArray(raw.slots))
+      return { ok: false, error: "slots が配列ではありません" };
+    const bad = raw.slots.findIndex((s: unknown) => !isSlot(s));
     if (bad !== -1)
       return { ok: false, error: `slots[${bad}] の形式が不正です`, path: `slots[${bad}]` };
   }
@@ -60,7 +73,7 @@ export function validateExportBundle(raw) {
   if (raw.holidays != null) {
     if (!Array.isArray(raw.holidays))
       return { ok: false, error: "holidays が配列ではありません" };
-    const bad = raw.holidays.findIndex((h) => !isHoliday(h));
+    const bad = raw.holidays.findIndex((h: unknown) => !isHoliday(h));
     if (bad !== -1)
       return {
         ok: false,
@@ -72,7 +85,7 @@ export function validateExportBundle(raw) {
   if (raw.substitutions != null) {
     if (!Array.isArray(raw.substitutions))
       return { ok: false, error: "substitutions が配列ではありません" };
-    const bad = raw.substitutions.findIndex((s) => !isSub(s));
+    const bad = raw.substitutions.findIndex((s: unknown) => !isSub(s));
     if (bad !== -1)
       return {
         ok: false,
@@ -89,23 +102,24 @@ export function validateExportBundle(raw) {
     return { ok: false, error: "biweeklyBase が文字列ではありません" };
   }
 
-  return { ok: true, data: raw };
+  return { ok: true, data: raw as unknown as ExportBundle };
 }
 
 // ─── Migration ─────────────────────────────────────────────────────
 // Upgrades old export bundles to the current schema. Exists so that
 // future schema changes have a single place to hook into.
-export function migrateExportBundle(raw) {
+export function migrateExportBundle(raw: unknown): unknown {
   if (!isObject(raw)) return raw;
-  const bundle = { ...raw };
-  const version = bundle.schemaVersion ?? 0;
+  const bundle: Record<string, unknown> = { ...raw };
+  const version = (bundle.schemaVersion as number | undefined) ?? 0;
 
   // v0 → v1: ensure holidays have a scope, add schemaVersion.
   if (version < 1) {
     if (Array.isArray(bundle.holidays)) {
-      bundle.holidays = bundle.holidays.map((h) => ({
+      bundle.holidays = bundle.holidays.map((h: Record<string, unknown>) => ({
         ...h,
-        scope: h.scope && h.scope.length ? h.scope : ["全部"],
+        scope:
+          Array.isArray(h.scope) && h.scope.length ? h.scope : ["全部"],
       }));
     }
   }
@@ -116,9 +130,12 @@ export function migrateExportBundle(raw) {
 
 // ─── ID generation ─────────────────────────────────────────────────
 // Produces the next numeric ID that is strictly greater than any
-// existing ID in the provided list, including -1 as a sentinel when
+// existing ID in the provided list, including 0 as a sentinel when
 // the list is empty.
-export function nextNumericId(list, key = "id") {
+export function nextNumericId<T extends Record<string, unknown>>(
+  list: readonly T[],
+  key: keyof T = "id" as keyof T
+): number {
   let max = 0;
   for (const item of list) {
     const v = Number(item?.[key]);
