@@ -1,0 +1,86 @@
+import { DAY_COLOR as DC, gradeColor as GC } from "../data";
+
+export function SlotCard({ slot, compact, onEdit, onDel }) {
+  const gc = GC(slot.grade);
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e0e0e0",
+        borderLeft: `4px solid ${DC[slot.day]}`,
+        borderRadius: 8,
+        padding: compact ? "8px 10px" : "10px 14px",
+        lineHeight: 1.5,
+        position: "relative",
+        transition: "box-shadow .15s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,.1)")}
+      onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          flexWrap: "wrap",
+          fontSize: 10,
+          color: "#888",
+        }}
+      >
+        <span
+          style={{
+            background: gc.b,
+            color: gc.f,
+            borderRadius: 4,
+            padding: "1px 6px",
+            fontWeight: 700,
+          }}
+        >
+          {slot.grade}
+          {slot.cls && slot.cls !== "-" ? slot.cls : ""}
+        </span>
+        <span>{slot.time}</span>
+        {slot.room && <span>/ {slot.room}</span>}
+        {slot.note && <span style={{ color: "#e67a00" }}>({slot.note})</span>}
+      </div>
+      <div
+        style={{
+          fontSize: compact ? 16 : 18,
+          fontWeight: 800,
+          color: "#1a1a2e",
+          marginTop: 4,
+        }}
+      >
+        {slot.subj}
+      </div>
+      {onEdit && (
+        <div style={{ position: "absolute", top: 4, right: 4, display: "flex", gap: 2 }}>
+          <button
+            onClick={() => onEdit(slot)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 12,
+              padding: 2,
+            }}
+          >
+            ✏️
+          </button>
+          <button
+            onClick={() => onDel(slot.id)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 12,
+              padding: 2,
+            }}
+          >
+            🗑
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
