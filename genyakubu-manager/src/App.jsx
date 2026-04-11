@@ -286,10 +286,10 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
                   display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(180px,1fr))`,
                   background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                 }}>
-                  {tSlots.map((s,i)=>{
+                  {tSlots.map((s)=>{
                     const gc=GC(s.grade);
                     return (
-                      <div key={i} style={{
+                      <div key={s.id} style={{
                         background:"#fff",padding:"10px 8px",textAlign:"center",
                         display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:90,
                       }}>
@@ -385,7 +385,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                     const newGradeRow = i > 0 && s.grade !== tSlots[i - 1].grade
                       && !s.grade.includes("附中") && !tSlots[i - 1].grade.includes("附中");
                     return (
-                      <div key={i} style={{
+                      <div key={s.id} style={{
                         background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "left",
                         display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 96,
                         position: "relative",
@@ -568,7 +568,7 @@ function WeekView({teacher,slots,subs,onEdit,onDel}) {
               <div style={{background:DC[d],color:"#fff",textAlign:"center",padding:"7px 0",borderRadius:"8px 8px 0 0",fontWeight:800,fontSize:14,letterSpacing:2}}>{d}</div>
               <div style={{background:DB[d],borderRadius:"0 0 8px 8px",padding:6,minHeight:80,display:"flex",flexDirection:"column",gap:5}}>
                 {byDay[d].length===0?<div style={{color:"#ccc",textAlign:"center",padding:16,fontSize:11}}>—</div>:
-                  byDay[d].map((s,i)=><SlotCard key={i} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
+                  byDay[d].map((s)=><SlotCard key={s.id} slot={s} compact onEdit={onEdit} onDel={onDel}/>)}
               </div>
             </div>
           ))}
@@ -611,7 +611,7 @@ function MonthView({teacher,slots,holidays,subs,year,month,onEdit,onDel}) {
           <div key={w} style={{background:w==="日"?"#f5e0e0":w==="土"?"#e0e0f5":"#eee",textAlign:"center",padding:"6px 0",fontWeight:800,fontSize:12,color:w==="日"?"#c44":w==="土"?"#44c":"#333"}}>{w}</div>
         ))}
         {cells.map((d,i)=>{
-          if(!d) return <div key={i} style={{background:"#fafafa",minHeight:90}}/>;
+          if(!d) return <div key={`empty-${i}`} style={{background:"#fafafa",minHeight:90}}/>;
           const ds=`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
           const dow=new Date(year,month-1,d).getDay();
           const dn=WEEKDAYS[dow];
@@ -621,7 +621,7 @@ function MonthView({teacher,slots,holidays,subs,year,month,onEdit,onDel}) {
           const isT=todayY===year&&todayM===month&&todayD===d;
           const sl=isFullOff?[]:(dayMap[dn]||[]).filter(s=>!isOffForGrade(ds,s.grade));
           return (
-            <div key={i} style={{
+            <div key={ds} style={{
               background:isFullOff?"#f8f0f0":isT?"#fffbe6":dow===0?"#fdf5f5":dow===6?"#f5f5fd":"#fff",
               minHeight:90,padding:4,border:isT?"2px solid #e6a800":"none",position:"relative",
             }}>
@@ -631,12 +631,12 @@ function MonthView({teacher,slots,holidays,subs,year,month,onEdit,onDel}) {
                 {!isFullOff&&offDepts.length>0&&<span style={{fontSize:8,color:"#c88",fontWeight:400}}>{offDepts.map(d=>d.replace("部","")).join(",")+"休"}</span>}
               </div>
               {isFullOff?<div style={{fontSize:10,color:"#caa",textAlign:"center",marginTop:8}}>休</div>:
-                sl.map((s,j)=>{
+                sl.map((s)=>{
                   const sub=getSubForSlot(subs,s.id,ds);
                   const st=sub?(SUB_STATUS[sub.status]||SUB_STATUS.requested):null;
                   const away=sub&&sub.originalTeacher===teacher&&sub.substitute!==teacher; // 自分が休み
                   return (
-                    <div key={j} style={{
+                    <div key={`slot-${s.id}`} style={{
                       fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,
                       background:sub?st.bg:DB[s.day],
                       borderLeft:`2px solid ${sub?st.color:DC[s.day]}`,
@@ -652,12 +652,12 @@ function MonthView({teacher,slots,holidays,subs,year,month,onEdit,onDel}) {
                   );
                 })}
               {/* この teacher が「他人のコマ」を代行する場合 */}
-              {!isFullOff && teacherSubs.filter(sub=>sub.date===ds && sub.substitute===teacher && !sl.some(s=>s.id===sub.slotId)).map((sub,j)=>{
+              {!isFullOff && teacherSubs.filter(sub=>sub.date===ds && sub.substitute===teacher && !sl.some(s=>s.id===sub.slotId)).map((sub)=>{
                 const slot=slots.find(s=>s.id===sub.slotId);
                 if(!slot) return null;
                 const st=SUB_STATUS[sub.status]||SUB_STATUS.requested;
                 return (
-                  <div key={`ext-${j}`} style={{
+                  <div key={`ext-${sub.id}`} style={{
                     fontSize:11,lineHeight:1.4,padding:"2px 3px",margin:"1px 0",borderRadius:3,
                     background:st.bg,borderLeft:`2px solid ${st.color}`,
                     overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
