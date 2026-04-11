@@ -382,7 +382,8 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                     const gc = GC(s.grade);
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? (SUB_STATUS[sub.status] || SUB_STATUS.requested) : null;
-                    const newGradeRow = i > 0 && s.grade !== tSlots[i - 1].grade;
+                    const newGradeRow = i > 0 && s.grade !== tSlots[i - 1].grade
+                      && !s.grade.includes("附中") && !tSlots[i - 1].grade.includes("附中");
                     return (
                       <div key={i} style={{
                         background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "left",
@@ -910,7 +911,8 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                               }}>
                                 {tSlots.map((s,i)=>{
                                   const gc=GC(s.grade);
-                                  const newGradeRow=i>0&&s.grade!==tSlots[i-1].grade;
+                                  const newGradeRow=i>0&&s.grade!==tSlots[i-1].grade
+                                    &&!s.grade.includes("附中")&&!tSlots[i-1].grade.includes("附中");
                                   return (
                                     <div key={s.id} style={{
                                       background:"#fff",padding:"8px 6px",textAlign:"left",
