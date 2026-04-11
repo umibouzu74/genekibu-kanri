@@ -865,7 +865,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
               <span>{day}曜日</span>
               <span style={{fontSize:11,opacity:.8}}>{daySlots.length}コマ</span>
             </div>
-            <div className="dash-sections" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:10}}>
+            <div className="dash-sections" style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
               {DASH_SECTIONS.map(sec=>{
                 const secSlots=daySlots.filter(sec.filterFn);
                 const color=DEPT_COLOR[sec.dept]||{b:"#e8e8e8",f:"#444",accent:"#888"};
@@ -903,7 +903,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                 <span style={{fontSize:10,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
                               </div>
                               <div style={{
-                                display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",
+                                display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",
                                 background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                               }}>
                                 {tSlots.map(s=>{
