@@ -712,6 +712,12 @@ function AllView({slots,onSelectTeacher}) {
   );
 }
 
+// 隔週コマの教員表示 ("堀上" + "隔週(河野)" → "堀上 / 河野")
+function formatBiweeklyTeacher(teacher,note){
+  const m=note&&note.match(/隔週\(([^)]+)\)/);
+  return m?`${teacher} / ${m[1]}`:teacher;
+}
+
 function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
   const [filterDay,setFilterDay]=useState("");
   const [filterGrade,setFilterGrade]=useState("");
@@ -806,7 +812,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                       <td style={{padding:"6px"}}><span style={{background:GC(s.grade).b,color:GC(s.grade).f,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.grade}</span></td>
                       <td style={{padding:"6px"}}>{s.cls}</td>
                       <td style={{padding:"6px",fontWeight:600}}>{s.subj}</td>
-                      <td style={{padding:"6px",fontWeight:700}}>{s.teacher}</td>
+                      <td style={{padding:"6px",fontWeight:700}}>{formatBiweeklyTeacher(s.teacher,s.note)}</td>
                       <td style={{padding:"6px",color:"#e67a00",fontSize:11}}>{s.note}</td>
                       <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>onEdit(s)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12}}>✏️</button></td>
                     </tr>
@@ -942,7 +948,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                         lineHeight:1.1,marginTop:6,
                                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                                       }}>
-                                        {s.teacher}
+                                        {formatBiweeklyTeacher(s.teacher,s.note)}
                                       </div>
                                       <div className="master-slot-actions" style={{
                                         position:"absolute",top:2,right:2,display:"flex",gap:1,
