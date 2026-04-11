@@ -262,8 +262,10 @@ export default function App() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
+              type="button"
               className="hamburger"
               onClick={() => setSidebarOpen(true)}
+              aria-label="サイドバーを開く"
               style={{
                 background: "#1a1a2e",
                 border: "none",
@@ -314,7 +316,9 @@ export default function App() {
               </button>
             )}
             <button
+              type="button"
               onClick={handlePrint}
+              aria-label="現在のビューを印刷"
               style={{ ...S.btn(false), border: "1px solid #ccc" }}
             >
               🖨 印刷

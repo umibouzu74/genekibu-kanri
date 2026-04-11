@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
 
 export function SlotForm({ slot, onSave, onCancel }) {
+  const formId = useId();
   const [f, setF] = useState(
     slot || {
       day: "月",
@@ -44,49 +45,67 @@ export function SlotForm({ slot, onSave, onCancel }) {
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {fields.map(({ k, l, ph, type, opts, req }) => (
-        <div key={k}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label
-              style={{
-                width: 70,
-                fontSize: 12,
-                fontWeight: 700,
-                textAlign: "right",
-                flexShrink: 0,
-              }}
-            >
-              {l}
-              {req && <span style={{ color: "#c44" }}>*</span>}
-            </label>
-            {type === "select" ? (
-              <select
-                value={f[k]}
-                onChange={(e) => up(k, e.target.value)}
-                style={{ ...S.input, width: "auto", minWidth: 80 }}
+      {fields.map(({ k, l, ph, type, opts, req }) => {
+        const inputId = `${formId}-${k}`;
+        const errorId = `${inputId}-err`;
+        return (
+          <div key={k}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label
+                htmlFor={inputId}
+                style={{
+                  width: 70,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textAlign: "right",
+                  flexShrink: 0,
+                }}
               >
-                {opts.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                value={f[k] || ""}
-                onChange={(e) => up(k, e.target.value)}
-                placeholder={ph}
-                style={{ ...S.input, borderColor: errors[k] ? "#c44" : "#ccc" }}
-              />
+                {l}
+                {req && (
+                  <span style={{ color: "#c44" }} aria-label="必須">
+                    *
+                  </span>
+                )}
+              </label>
+              {type === "select" ? (
+                <select
+                  id={inputId}
+                  value={f[k]}
+                  onChange={(e) => up(k, e.target.value)}
+                  style={{ ...S.input, width: "auto", minWidth: 80 }}
+                >
+                  {opts.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={inputId}
+                  value={f[k] || ""}
+                  onChange={(e) => up(k, e.target.value)}
+                  placeholder={ph}
+                  required={req}
+                  aria-invalid={errors[k] ? "true" : undefined}
+                  aria-describedby={errors[k] ? errorId : undefined}
+                  style={{ ...S.input, borderColor: errors[k] ? "#c44" : "#ccc" }}
+                />
+              )}
+            </div>
+            {errors[k] && (
+              <div
+                id={errorId}
+                role="alert"
+                style={{ marginLeft: 78, fontSize: 10, color: "#c44", marginTop: 2 }}
+              >
+                {errors[k]}
+              </div>
             )}
           </div>
-          {errors[k] && (
-            <div style={{ marginLeft: 78, fontSize: 10, color: "#c44", marginTop: 2 }}>
-              {errors[k]}
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onCancel} style={S.btn(false)}>
           キャンセル

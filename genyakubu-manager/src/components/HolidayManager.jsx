@@ -239,7 +239,9 @@ export function HolidayManager({ holidays, onSave }) {
                 </div>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                   <button
+                    type="button"
                     onClick={() => handleEdit(h)}
+                    aria-label={`${h.date} の休講日を編集`}
                     style={{
                       background: "none",
                       border: "none",
@@ -251,7 +253,9 @@ export function HolidayManager({ holidays, onSave }) {
                     ✏️
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDel(h.date)}
+                    aria-label={`${h.date} の休講日を削除`}
                     style={{
                       background: "none",
                       border: "none",

@@ -57,7 +57,9 @@ function SlotCardImpl({ slot, compact, onEdit, onDel }) {
       {onEdit && (
         <div style={{ position: "absolute", top: 4, right: 4, display: "flex", gap: 2 }}>
           <button
+            type="button"
             onClick={() => onEdit(slot)}
+            aria-label={`${slot.subj} を編集`}
             style={{
               background: "none",
               border: "none",
@@ -69,7 +71,9 @@ function SlotCardImpl({ slot, compact, onEdit, onDel }) {
             ✏️
           </button>
           <button
+            type="button"
             onClick={() => onDel(slot.id)}
+            aria-label={`${slot.subj} を削除`}
             style={{
               background: "none",
               border: "none",

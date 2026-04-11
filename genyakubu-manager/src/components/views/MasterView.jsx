@@ -105,7 +105,9 @@ const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, on
         }}
       >
         <button
+          type="button"
           onClick={() => onEdit(s)}
+          aria-label={`${s.subj} を編集`}
           style={{
             background: "rgba(255,255,255,0.9)",
             border: "1px solid #ddd",
@@ -119,7 +121,9 @@ const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, on
           ✏️
         </button>
         <button
+          type="button"
           onClick={() => onDel(s.id)}
+          aria-label={`${s.subj} を削除`}
           style={{
             background: "rgba(255,255,255,0.9)",
             border: "1px solid #ddd",
@@ -325,7 +329,9 @@ export function MasterView({
                           </td>
                           <td style={{ padding: "6px", textAlign: "center" }}>
                             <button
+                              type="button"
                               onClick={() => onEdit(s)}
+                              aria-label={`${s.subj} を編集`}
                               style={{
                                 background: "none",
                                 border: "none",

@@ -351,7 +351,9 @@ export function SubstituteView({
                           }}
                         >
                           <button
+                            type="button"
                             onClick={() => onEdit(sub)}
+                            aria-label={`${sub.date} の代行を編集`}
                             style={{
                               background: "none",
                               border: "none",
@@ -363,7 +365,9 @@ export function SubstituteView({
                             ✏️
                           </button>
                           <button
+                            type="button"
                             onClick={() => onDel(sub.id)}
+                            aria-label={`${sub.date} の代行を削除`}
                             style={{
                               background: "none",
                               border: "none",
@@ -591,7 +595,9 @@ export function SubstituteView({
                       </span>
                     </div>
                     <button
+                      type="button"
                       onClick={() => delStaff(n)}
+                      aria-label={`${n} を削除`}
                       style={{
                         background: "none",
                         border: "none",

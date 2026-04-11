@@ -65,8 +65,9 @@ export function Sidebar({
           onClick={onClose}
         />
       )}
-      <div
+      <nav
         className="sidebar"
+        aria-label="メインナビゲーション"
         style={{
           width: 210,
           background: "#1a1a2e",
@@ -98,8 +99,10 @@ export function Sidebar({
             </div>
           </div>
           <button
+            type="button"
             className="sidebar-close"
             onClick={onClose}
+            aria-label="サイドバーを閉じる"
             style={{
               background: "none",
               border: "none",
@@ -217,7 +220,7 @@ export function Sidebar({
             );
           })}
         </div>
-      </div>
+      </nav>
     </>
   );
 }
