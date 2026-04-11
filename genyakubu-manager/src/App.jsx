@@ -382,11 +382,13 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                     const gc = GC(s.grade);
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? (SUB_STATUS[sub.status] || SUB_STATUS.requested) : null;
+                    const newGradeRow = i > 0 && s.grade !== tSlots[i - 1].grade;
                     return (
                       <div key={i} style={{
                         background: sub ? st.bg : "#fff", padding: "8px 6px", textAlign: "left",
                         display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 96,
                         position: "relative",
+                        ...(newGradeRow ? { gridColumnStart: 1 } : null),
                       }}>
                         {sub && (
                           <div style={{position:"absolute",top:2,right:2,background:st.color,color:"#fff",fontSize:8,fontWeight:800,padding:"1px 4px",borderRadius:3}}
@@ -906,13 +908,15 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                 display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",
                                 background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                               }}>
-                                {tSlots.map(s=>{
+                                {tSlots.map((s,i)=>{
                                   const gc=GC(s.grade);
+                                  const newGradeRow=i>0&&s.grade!==tSlots[i-1].grade;
                                   return (
                                     <div key={s.id} style={{
                                       background:"#fff",padding:"8px 6px",textAlign:"left",
                                       display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:96,
                                       position:"relative",
+                                      ...(newGradeRow?{gridColumnStart:1}:null),
                                     }}
                                     onMouseEnter={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='1';}}
                                     onMouseLeave={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='0';}}>
