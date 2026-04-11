@@ -283,7 +283,7 @@ function DayBlock({date,dow,holidays:hols=[],sl}) {
                   <span style={{fontSize:11,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
                 </div>
                 <div style={{
-                  display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(140px,1fr))`,
+                  display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(180px,1fr))`,
                   background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                 }}>
                   {tSlots.map((s,i)=>{
@@ -375,7 +375,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                   <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>{tSlots.length}コマ</span>
                 </div>
                 <div style={{
-                  display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
+                  display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))",
                   background: "#555", gap: 2, border: "2px solid #555", borderRadius: 4, overflow: "hidden",
                 }}>
                   {tSlots.map((s, i) => {
@@ -903,7 +903,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                 <span style={{fontSize:10,fontWeight:400,color:"#888"}}>{tSlots.length}コマ</span>
                               </div>
                               <div style={{
-                                display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",
+                                display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",
                                 background:"#555",gap:2,border:"2px solid #555",borderRadius:4,overflow:"hidden",
                               }}>
                                 {tSlots.map(s=>{
