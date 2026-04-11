@@ -1,0 +1,74 @@
+// ─── Domain types ─────────────────────────────────────────────────
+// Shared TypeScript definitions for the core data model. JSX files
+// reference these via JSDoc imports so checkJs can verify call
+// sites without requiring a .jsx → .tsx migration.
+
+export type DayName = "月" | "火" | "水" | "木" | "金" | "土";
+export type Weekday = "日" | "月" | "火" | "水" | "木" | "金" | "土";
+export type Department = "中学部" | "高校部";
+export type HolidayScopeEntry = "全部" | Department;
+export type SubStatus = "requested" | "confirmed" | "done" | "cancelled";
+
+export interface Slot {
+  id: number;
+  day: DayName;
+  time: string; // "19:00-20:20"
+  grade: string; // "中1", "高3", etc.
+  cls: string; // "S", "AB", "-"
+  room: string;
+  subj: string;
+  teacher: string;
+  note: string;
+}
+
+export interface Holiday {
+  date: string; // YYYY-MM-DD
+  label: string;
+  scope: HolidayScopeEntry[];
+}
+
+export interface Substitute {
+  id: number;
+  date: string; // YYYY-MM-DD
+  slotId: number;
+  originalTeacher: string;
+  substitute: string; // "" until assigned
+  status: SubStatus;
+  memo: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExportBundle {
+  schemaVersion?: number;
+  exportedAt?: string;
+  slots?: Slot[];
+  holidays?: Holiday[];
+  substitutions?: Substitute[];
+  partTimeStaff?: string[];
+  biweeklyBase?: string;
+}
+
+export interface ValidationResult<T> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+  path?: string;
+}
+
+// Toast tones.
+export type ToastTone = "success" | "error" | "info";
+export interface Toast {
+  id: number;
+  message: string;
+  tone: ToastTone;
+}
+
+// Confirm dialog options.
+export interface ConfirmOptions {
+  title?: string;
+  message: string;
+  okLabel?: string;
+  cancelLabel?: string;
+  tone?: "default" | "danger";
+}

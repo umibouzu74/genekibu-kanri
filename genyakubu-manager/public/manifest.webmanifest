@@ -1,0 +1,17 @@
+{
+  "name": "現役部 授業管理システム",
+  "short_name": "現役部",
+  "description": "中学・高校の現役部の授業コマ割り・講師別スケジュール・休講日・代行を一元管理する Web アプリ。",
+  "lang": "ja",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f0f1f3",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%231a1a2e'/%3E%3Ctext x='96' y='130' font-size='110' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%23ffffff'%3E現%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

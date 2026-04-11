@@ -1,0 +1,72 @@
+import { colors, font, radius, space } from "./tokens";
+
+// ─── Common inline style tokens ────────────────────────────────────
+// Low-level helpers used across the split component files. Prefer
+// adding new helpers here (or more-specific colocated styles) over
+// pasting new literal hex values and px numbers.
+export const S = {
+  btn: (active) => ({
+    padding: "6px 14px",
+    borderRadius: radius.md,
+    border: "none",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 700,
+    background: active ? colors.primary : "#e4e4e8",
+    color: active ? "#fff" : "#444",
+    transition: "all .15s",
+  }),
+  input: {
+    padding: "6px 10px",
+    borderRadius: radius.md,
+    border: "1px solid #ccc",
+    fontSize: 12,
+    outline: "none",
+    width: "100%",
+    boxSizing: "border-box",
+    fontFamily: "inherit",
+  },
+  modal: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "rgba(0,0,0,.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+  },
+  card: {
+    background: colors.surface,
+    borderRadius: radius.xl,
+    padding: space["2xl"],
+    width: 420,
+    maxWidth: "90vw",
+    maxHeight: "85vh",
+    overflow: "auto",
+    boxShadow: "0 20px 60px rgba(0,0,0,.3)",
+  },
+  // Panel used by SlotCard, Holiday list, section columns, etc.
+  panel: {
+    background: colors.surface,
+    borderRadius: radius.lg,
+    border: `1px solid ${colors.border}`,
+  },
+  // Section header strip used by day rows.
+  sectionHeader: (bg, fg) => ({
+    background: bg,
+    color: fg,
+    padding: "10px 16px",
+    borderRadius: radius.lg,
+    fontWeight: 800,
+    fontSize: 15,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 6,
+  }),
+};
+
+export { colors, font, radius, space };
