@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { DEPARTMENTS, DEPT_COLOR } from "../data";
+import { useConfirm } from "../hooks/useConfirm";
+import { useToasts } from "../hooks/useToasts";
 import { S } from "../styles/common";
+
+const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 
 export function HolidayManager({ holidays, onSave }) {
   const [date, setDate] = useState("");
@@ -8,6 +12,9 @@ export function HolidayManager({ holidays, onSave }) {
   const [scope, setScope] = useState(["全部"]);
   const [filter, setFilter] = useState("");
   const [editDate, setEditDate] = useState(null);
+  const [error, setError] = useState("");
+  const toasts = useToasts();
+  const confirm = useConfirm();
 
   const toggleScope = (dept) => {
     if (dept === "全部") {
@@ -20,27 +27,53 @@ export function HolidayManager({ holidays, onSave }) {
   };
 
   const handleAdd = () => {
-    if (!date) return;
+    setError("");
+    if (!date) {
+      setError("日付を入力してください");
+      return;
+    }
+    if (!isValidDate(date)) {
+      setError("日付の形式が正しくありません");
+      return;
+    }
+    const isUpdate = holidays.some((h) => h.date === date);
+    if (isUpdate && !editDate) {
+      // Overwriting an existing holiday without entering edit mode.
+      toasts.info(`${date} の既存の休講日を上書きしました`);
+    }
     const entry = { date, label: label || "休講", scope: [...scope] };
     onSave([...holidays.filter((h) => h.date !== date), entry]);
     setDate("");
     setLabel("");
     setScope(["全部"]);
     setEditDate(null);
+    toasts.success(editDate ? "休講日を更新しました" : "休講日を追加しました");
   };
   const handleEdit = (h) => {
     setDate(h.date);
     setLabel(h.label);
     setScope(h.scope || ["全部"]);
     setEditDate(h.date);
+    setError("");
   };
   const cancelEdit = () => {
     setDate("");
     setLabel("");
     setScope(["全部"]);
     setEditDate(null);
+    setError("");
   };
-  const handleDel = (d) => onSave(holidays.filter((h) => h.date !== d));
+  const handleDel = async (d) => {
+    const ok = await confirm({
+      title: "休講日の削除",
+      message: `${d} の休講日を削除しますか？`,
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onSave(holidays.filter((h) => h.date !== d));
+    toasts.success("休講日を削除しました");
+  };
 
   const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
   const filtered = filter
@@ -76,8 +109,13 @@ export function HolidayManager({ holidays, onSave }) {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={{ ...S.input, width: "auto" }}
+            onChange={(e) => {
+              setDate(e.target.value);
+              if (error) setError("");
+            }}
+            aria-invalid={error ? "true" : undefined}
+            aria-describedby={error ? "holiday-date-err" : undefined}
+            style={{ ...S.input, width: "auto", borderColor: error ? "#c44" : "#ccc" }}
           />
           <input
             value={label}
@@ -86,6 +124,15 @@ export function HolidayManager({ holidays, onSave }) {
             style={{ ...S.input, width: 160 }}
           />
         </div>
+        {error && (
+          <div
+            id="holiday-date-err"
+            role="alert"
+            style={{ fontSize: 11, color: "#c44", marginBottom: 8 }}
+          >
+            {error}
+          </div>
+        )}
         <div
           style={{
             display: "flex",

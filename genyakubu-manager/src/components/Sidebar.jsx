@@ -177,6 +177,27 @@ export function Sidebar({
           </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
+          {teachers.length === 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#8888aa",
+                padding: "16px 12px",
+                fontSize: 11,
+                lineHeight: 1.6,
+              }}
+            >
+              {search ? (
+                <>
+                  「{search}」に一致する
+                  <br />
+                  講師はいません
+                </>
+              ) : (
+                "講師が登録されていません"
+              )}
+            </div>
+          )}
           {teachers.map((t) => {
             const cnt = slotCountByTeacher.get(t) || 0;
             return (

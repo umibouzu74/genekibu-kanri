@@ -7,6 +7,8 @@ import {
   SUB_STATUS,
   SUB_STATUS_KEYS,
 } from "../../data";
+import { useConfirm } from "../../hooks/useConfirm";
+import { useToasts } from "../../hooks/useToasts";
 import { S } from "../../styles/common";
 import { StatusBadge } from "../StatusBadge";
 
@@ -27,6 +29,8 @@ export function SubstituteView({
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [newStaff, setNewStaff] = useState("");
+  const confirm = useConfirm();
+  const toasts = useToasts();
 
   const slotMap = useMemo(() => {
     const m = {};
@@ -66,14 +70,25 @@ export function SubstituteView({
 
   const addStaff = () => {
     const n = newStaff.trim();
-    if (!n || partTimeStaff.includes(n)) return;
+    if (!n) return;
+    if (partTimeStaff.includes(n)) {
+      toasts.error(`「${n}」は既に登録されています`);
+      return;
+    }
     onSavePartTimeStaff([...partTimeStaff, n]);
     setNewStaff("");
+    toasts.success(`「${n}」を追加しました`);
   };
-  const delStaff = (n) => {
-    if (!confirm(`「${n}」をアルバイト一覧から削除しますか？\n※過去の代行記録は削除されません`))
-      return;
+  const delStaff = async (n) => {
+    const ok = await confirm({
+      title: "アルバイトの削除",
+      message: `「${n}」をアルバイト一覧から削除しますか？\n※過去の代行記録は削除されません`,
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
     onSavePartTimeStaff(partTimeStaff.filter((x) => x !== n));
+    toasts.success(`「${n}」を削除しました`);
   };
 
   const allTeachers = useMemo(() => {

@@ -11,6 +11,8 @@ import {
 
 import { VIEWS } from "./constants/views";
 import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
+import { useToasts } from "./hooks/useToasts";
+import { useConfirm } from "./hooks/useConfirm";
 import { S } from "./styles/common";
 
 import { Modal } from "./components/Modal";
@@ -60,35 +62,48 @@ export default function App() {
   const [editSub, setEditSub] = useState(null); // null | sub | "new"
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDataMgr, setShowDataMgr] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const toasts = useToasts();
+  const confirm = useConfirm();
 
   // ─── Export / Import / Reset ────────────────────────────────────
   const handleExport = useCallback(() => {
-    const data = JSON.stringify(
-      { slots, holidays, biweeklyBase, substitutions: subs, partTimeStaff },
-      null,
-      2
-    );
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `genyakubu-backup-${fmtDate(new Date())}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [slots, holidays, biweeklyBase, subs, partTimeStaff]);
+    try {
+      const data = JSON.stringify(
+        { slots, holidays, biweeklyBase, substitutions: subs, partTimeStaff },
+        null,
+        2
+      );
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `genyakubu-backup-${fmtDate(new Date())}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toasts.success("バックアップをダウンロードしました");
+    } catch (err) {
+      console.error(err);
+      toasts.error("エクスポートに失敗しました");
+    }
+  }, [slots, holidays, biweeklyBase, subs, partTimeStaff, toasts]);
 
   const handleImport = useCallback(
-    (e) => {
+    async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      if (
-        !confirm(
-          `「${file.name}」を読み込みます。\n現在のデータは上書きされます。よろしいですか？`
-        )
-      ) {
+      const ok = await confirm({
+        title: "データのインポート",
+        message: `「${file.name}」を読み込みます。\n現在のデータは上書きされます。よろしいですか？`,
+        okLabel: "読み込む",
+        tone: "danger",
+      });
+      if (!ok) {
         e.target.value = "";
         return;
       }
+      setImporting(true);
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
@@ -101,18 +116,32 @@ export default function App() {
           if (d.partTimeStaff && Array.isArray(d.partTimeStaff))
             savePartTimeStaff(d.partTimeStaff);
           setShowDataMgr(false);
-        } catch {
-          alert("JSONファイルの読み込みに失敗しました。");
+          toasts.success("データをインポートしました");
+        } catch (err) {
+          console.error(err);
+          toasts.error("JSONファイルの読み込みに失敗しました");
+        } finally {
+          setImporting(false);
         }
+      };
+      reader.onerror = () => {
+        setImporting(false);
+        toasts.error("ファイル読み込み中にエラーが発生しました");
       };
       reader.readAsText(file);
       e.target.value = "";
     },
-    [saveSlots, saveHolidays, saveBiweeklyBase, saveSubs, savePartTimeStaff]
+    [confirm, toasts, saveSlots, saveHolidays, saveBiweeklyBase, saveSubs, savePartTimeStaff]
   );
 
-  const handleReset = useCallback(() => {
-    if (!confirm("データを初期状態に戻しますか？\n現在のデータは失われます。")) return;
+  const handleReset = useCallback(async () => {
+    const ok = await confirm({
+      title: "データの初期化",
+      message: "データを初期状態に戻しますか？\n現在のデータは失われます。",
+      okLabel: "初期化",
+      tone: "danger",
+    });
+    if (!ok) return;
     Object.values(LS).forEach((k) => localStorage.removeItem(k));
     saveSlots(INIT_SLOTS);
     saveHolidays(INIT_HOLIDAYS);
@@ -122,7 +151,16 @@ export default function App() {
     setSelected(null);
     setView(VIEWS.DASH);
     setShowDataMgr(false);
-  }, [saveSlots, saveHolidays, saveBiweeklyBase, saveSubs, savePartTimeStaff]);
+    toasts.success("データを初期化しました");
+  }, [
+    confirm,
+    toasts,
+    saveSlots,
+    saveHolidays,
+    saveBiweeklyBase,
+    saveSubs,
+    savePartTimeStaff,
+  ]);
 
   // ─── Navigation / teacher selection ─────────────────────────────
   const selectTeacher = useCallback((t) => {
@@ -155,14 +193,24 @@ export default function App() {
   const handleSaveSlot = (f) => {
     if (editSlot === "new") {
       saveSlots([...slots, { ...f, id: nextId() }]);
+      toasts.success("コマを追加しました");
     } else {
       saveSlots(slots.map((s) => (s.id === editSlot.id ? { ...f, id: s.id } : s)));
+      toasts.success("コマを更新しました");
     }
     setEditSlot(null);
   };
 
-  const handleDelSlot = (id) => {
-    if (confirm("このコマを削除しますか？")) saveSlots(slots.filter((s) => s.id !== id));
+  const handleDelSlot = async (id) => {
+    const ok = await confirm({
+      title: "コマの削除",
+      message: "このコマを削除しますか？",
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    saveSlots(slots.filter((s) => s.id !== id));
+    toasts.success("コマを削除しました");
   };
 
   const handleSaveSub = (f) => {
@@ -170,6 +218,7 @@ export default function App() {
     const normalized = { ...f, status: f.substitute ? f.status : "requested" };
     if (editSub === "new") {
       saveSubs([...subs, { ...normalized, id: nextSubId(), createdAt: ts, updatedAt: ts }]);
+      toasts.success("代行を追加しました");
     } else {
       saveSubs(
         subs.map((s) =>
@@ -178,12 +227,21 @@ export default function App() {
             : s
         )
       );
+      toasts.success("代行を更新しました");
     }
     setEditSub(null);
   };
 
-  const handleDelSub = (id) => {
-    if (confirm("この代行記録を削除しますか？")) saveSubs(subs.filter((s) => s.id !== id));
+  const handleDelSub = async (id) => {
+    const ok = await confirm({
+      title: "代行の削除",
+      message: "この代行記録を削除しますか？",
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    saveSubs(subs.filter((s) => s.id !== id));
+    toasts.success("代行記録を削除しました");
   };
 
   // ─── Print ──────────────────────────────────────────────────────
@@ -192,7 +250,9 @@ export default function App() {
     if (!el) return;
     const w = window.open("", "_blank");
     if (!w) {
-      alert("ポップアップがブロックされました。\nブラウザの設定でポップアップを許可してください。");
+      toasts.error(
+        "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
+      );
       return;
     }
     w.document.write(
@@ -487,6 +547,7 @@ export default function App() {
             onExport={handleExport}
             onImport={handleImport}
             onReset={handleReset}
+            importing={importing}
           />
         </Modal>
       )}

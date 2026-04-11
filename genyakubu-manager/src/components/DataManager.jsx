@@ -1,6 +1,6 @@
 import { S } from "../styles/common";
 
-export function DataManager({ slots, holidays, onExport, onImport, onReset }) {
+export function DataManager({ slots, holidays, onExport, onImport, onReset, importing }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14 }}>
@@ -21,12 +21,20 @@ export function DataManager({ slots, holidays, onExport, onImport, onReset }) {
         <div style={{ fontSize: 11, color: "#666", marginBottom: 8 }}>
           JSONファイルからデータを読み込みます
         </div>
-        <label style={{ ...S.btn(false), display: "inline-block", cursor: "pointer" }}>
-          ファイルを選択
+        <label
+          style={{
+            ...S.btn(false),
+            display: "inline-block",
+            cursor: importing ? "wait" : "pointer",
+            opacity: importing ? 0.6 : 1,
+          }}
+        >
+          {importing ? "読み込み中…" : "ファイルを選択"}
           <input
             type="file"
             accept=".json"
             onChange={onImport}
+            disabled={importing}
             style={{ display: "none" }}
           />
         </label>
