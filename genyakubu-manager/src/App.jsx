@@ -853,7 +853,7 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
         </div>
       </div>
       <div style={{fontSize:12,color:"#888",marginBottom:6}}>{filtered.length} / {slots.length} 件表示</div>
-      <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <div style={{display:"flex",flexDirection:"column",gap:24}}>
         {dayGroups.map(({day,slots:daySlots})=>(
           <div key={day}>
             <div style={{
@@ -910,26 +910,30 @@ function MasterView({slots,onEdit,onDel,onNew,biweeklyBase,onSetBiweeklyBase}) {
                                   const gc=GC(s.grade);
                                   return (
                                     <div key={s.id} style={{
-                                      background:"#fff",padding:"8px 6px",textAlign:"center",
-                                      display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:80,
+                                      background:"#fff",padding:"8px 6px",textAlign:"left",
+                                      display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:96,
                                       position:"relative",
                                     }}
                                     onMouseEnter={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='1';}}
                                     onMouseLeave={e=>{const b=e.currentTarget.querySelector('.master-slot-actions');if(b)b.style.opacity='0';}}>
                                       <div style={{lineHeight:1.4}}>
-                                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,flexWrap:"wrap"}}>
+                                        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:4,flexWrap:"wrap"}}>
                                           <span style={{
                                             background:gc.b,color:gc.f,borderRadius:3,padding:"1px 4px",
-                                            fontSize:9,fontWeight:700,
+                                            fontSize:11,fontWeight:700,
                                           }}>{s.grade}{s.cls&&s.cls!=="-"?s.cls:""}</span>
-                                          <span style={{fontSize:11,fontWeight:600,color:"#444"}}>{s.subj}</span>
+                                          <span style={{fontSize:14,fontWeight:600,color:"#444"}}>{s.subj}</span>
                                         </div>
-                                        {s.room&&<div style={{fontSize:9,color:"#999",marginTop:1}}>{s.room}</div>}
-                                        {s.note&&<div style={{fontSize:8,color:"#e67a00",marginTop:1}}>({s.note})</div>}
+                                        {(s.room||s.note)&&(
+                                          <div style={{display:"flex",alignItems:"baseline",gap:6,marginTop:2,flexWrap:"wrap"}}>
+                                            {s.room&&<span style={{fontSize:18,fontWeight:700,color:"#555"}}>{s.room}</span>}
+                                            {s.note&&<span style={{fontSize:13,fontWeight:600,color:"#a0331a"}}>({s.note})</span>}
+                                          </div>
+                                        )}
                                       </div>
                                       <div style={{
-                                        fontSize:24,fontWeight:800,color:"#1a1a2e",
-                                        lineHeight:1.1,marginTop:4,
+                                        fontSize:22,fontWeight:800,color:"#1a1a2e",
+                                        lineHeight:1.1,marginTop:6,
                                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                                       }}>
                                         {s.teacher}
