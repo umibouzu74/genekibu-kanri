@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 
+const isQuotaError = (err) =>
+  err &&
+  (err.name === "QuotaExceededError" ||
+    err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    err.code === 22 ||
+    err.code === 1014);
+
 // ─── useLocalStorage ───────────────────────────────────────────────
 // Persists a React state value to localStorage, with JSON
 // serialization. `migrate` can transform the stored payload before it
 // becomes state (useful for adding defaults to old records).
+// `onError(err, phase)` is called on load/save failures so the caller
+// can surface a toast.
 //
 // Returns: [value, setValue]
 // setValue behaves like useState's setter (accepts value or updater).
-export function useLocalStorage(key, initialValue, { migrate } = {}) {
+export function useLocalStorage(key, initialValue, { migrate, onError } = {}) {
   const [value, setValue] = useState(initialValue);
 
   // Load once on mount.
@@ -19,6 +28,7 @@ export function useLocalStorage(key, initialValue, { migrate } = {}) {
       setValue(migrate ? migrate(parsed) : parsed);
     } catch (err) {
       console.warn(`[useLocalStorage] failed to load "${key}":`, err);
+      onError?.(err, "load");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -31,11 +41,12 @@ export function useLocalStorage(key, initialValue, { migrate } = {}) {
           localStorage.setItem(key, JSON.stringify(resolved));
         } catch (err) {
           console.warn(`[useLocalStorage] failed to save "${key}":`, err);
+          onError?.(err, isQuotaError(err) ? "quota" : "save");
         }
         return resolved;
       });
     },
-    [key]
+    [key, onError]
   );
 
   return [value, update];

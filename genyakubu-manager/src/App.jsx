@@ -14,6 +14,12 @@ import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
 import { S } from "./styles/common";
+import {
+  CURRENT_SCHEMA_VERSION,
+  migrateExportBundle,
+  nextNumericId,
+  validateExportBundle,
+} from "./utils/schema";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -43,14 +49,36 @@ const migrateHolidays = (arr) =>
   Array.isArray(arr) ? arr.map((x) => ({ ...x, scope: x.scope || ["全部"] })) : arr;
 
 export default function App() {
-  const [slots, saveSlots] = useLocalStorage(LS.slots, INIT_SLOTS);
+  const toasts = useToasts();
+  const confirm = useConfirm();
+
+  const onStorageError = useCallback(
+    (err, phase) => {
+      if (phase === "quota") {
+        toasts.error(
+          "保存領域の上限に達しました。データ管理からエクスポートして古いデータを整理してください。"
+        );
+      } else if (phase === "load") {
+        toasts.error(
+          `保存データの読み込みに失敗しました: ${err?.message || err}`
+        );
+      }
+    },
+    [toasts]
+  );
+
+  const [slots, saveSlots] = useLocalStorage(LS.slots, INIT_SLOTS, {
+    onError: onStorageError,
+  });
   const [holidays, saveHolidays] = useLocalStorage(LS.holidays, INIT_HOLIDAYS, {
     migrate: migrateHolidays,
+    onError: onStorageError,
   });
-  const [subs, saveSubs] = useLocalStorage(LS.subs, []);
+  const [subs, saveSubs] = useLocalStorage(LS.subs, [], { onError: onStorageError });
   const [partTimeStaff, savePartTimeStaff] = useLocalStorage(
     LS.partTime,
-    INIT_PART_TIME_STAFF
+    INIT_PART_TIME_STAFF,
+    { onError: onStorageError }
   );
   const [biweeklyBase, saveBiweeklyBase] = useLocalStorageRaw(LS.biweeklyBase, "");
 
@@ -64,14 +92,19 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  const toasts = useToasts();
-  const confirm = useConfirm();
-
   // ─── Export / Import / Reset ────────────────────────────────────
   const handleExport = useCallback(() => {
     try {
       const data = JSON.stringify(
-        { slots, holidays, biweeklyBase, substitutions: subs, partTimeStaff },
+        {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          exportedAt: new Date().toISOString(),
+          slots,
+          holidays,
+          biweeklyBase,
+          substitutions: subs,
+          partTimeStaff,
+        },
         null,
         2
       );
@@ -107,14 +140,20 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
-          const d = JSON.parse(ev.target.result);
-          if (d.slots && Array.isArray(d.slots)) saveSlots(d.slots);
-          if (d.holidays && Array.isArray(d.holidays))
-            saveHolidays(migrateHolidays(d.holidays));
+          const raw = JSON.parse(ev.target.result);
+          const migrated = migrateExportBundle(raw);
+          const result = validateExportBundle(migrated);
+          if (!result.ok) {
+            console.error("[import] validation failed:", result);
+            toasts.error(`インポートに失敗: ${result.error}`);
+            return;
+          }
+          const d = result.data;
+          if (Array.isArray(d.slots)) saveSlots(d.slots);
+          if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
           if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
-          if (d.substitutions && Array.isArray(d.substitutions)) saveSubs(d.substitutions);
-          if (d.partTimeStaff && Array.isArray(d.partTimeStaff))
-            savePartTimeStaff(d.partTimeStaff);
+          if (Array.isArray(d.substitutions)) saveSubs(d.substitutions);
+          if (Array.isArray(d.partTimeStaff)) savePartTimeStaff(d.partTimeStaff);
           setShowDataMgr(false);
           toasts.success("データをインポートしました");
         } catch (err) {
@@ -187,8 +226,10 @@ export default function App() {
   }, [slots, search]);
 
   // ─── Slot / Sub CRUD ────────────────────────────────────────────
-  const nextId = () => Math.max(0, ...slots.map((s) => s.id)) + 1;
-  const nextSubId = () => Math.max(0, ...subs.map((s) => s.id || 0)) + 1;
+  // Robust monotonic IDs: derived from the global maximum across the
+  // current list so imports / merges never collide.
+  const nextId = () => nextNumericId(slots);
+  const nextSubId = () => nextNumericId(subs);
 
   const handleSaveSlot = (f) => {
     if (editSlot === "new") {
@@ -202,15 +243,26 @@ export default function App() {
   };
 
   const handleDelSlot = async (id) => {
+    const linkedSubs = subs.filter((s) => s.slotId === id);
+    const extra = linkedSubs.length
+      ? `\n※この操作で ${linkedSubs.length} 件の代行記録も削除されます。`
+      : "";
     const ok = await confirm({
       title: "コマの削除",
-      message: "このコマを削除しますか？",
+      message: `このコマを削除しますか？${extra}`,
       okLabel: "削除",
       tone: "danger",
     });
     if (!ok) return;
     saveSlots(slots.filter((s) => s.id !== id));
-    toasts.success("コマを削除しました");
+    if (linkedSubs.length) {
+      saveSubs(subs.filter((s) => s.slotId !== id));
+    }
+    toasts.success(
+      linkedSubs.length
+        ? `コマと ${linkedSubs.length} 件の代行記録を削除しました`
+        : "コマを削除しました"
+    );
   };
 
   const handleSaveSub = (f) => {
