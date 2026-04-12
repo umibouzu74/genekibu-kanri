@@ -7,8 +7,6 @@ import {
   SUB_STATUS,
   SUB_STATUS_KEYS,
 } from "../../data";
-import { useConfirm } from "../../hooks/useConfirm";
-import { useToasts } from "../../hooks/useToasts";
 import { S } from "../../styles/common";
 import { StatusBadge } from "../StatusBadge";
 
@@ -19,7 +17,7 @@ export function SubstituteView({
   onNew,
   onEdit,
   onDel,
-  onSavePartTimeStaff,
+  onGoToStaffView,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -28,9 +26,12 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
-  const [newStaff, setNewStaff] = useState("");
-  const confirm = useConfirm();
-  const toasts = useToasts();
+
+  // partTimeStaff は新形式 {name, subjectIds}[] のみを想定
+  const staffNameSet = useMemo(
+    () => new Set(partTimeStaff.map((s) => s.name)),
+    [partTimeStaff]
+  );
 
   const slotMap = useMemo(() => {
     const m = {};
@@ -52,7 +53,7 @@ export function SubstituteView({
   const tally = useMemo(() => monthlyTally(subs, ty, tm), [subs, ty, tm]);
 
   const tallyRows = useMemo(() => {
-    const names = new Set(partTimeStaff);
+    const names = new Set(staffNameSet);
     Object.keys(tally.covered).forEach((n) => names.add(n));
     Object.keys(tally.coveredFor).forEach((n) => names.add(n));
     return [...names]
@@ -60,42 +61,19 @@ export function SubstituteView({
         name,
         covered: tally.covered[name] || 0,
         coveredFor: tally.coveredFor[name] || 0,
-        isPT: partTimeStaff.includes(name),
+        isPT: staffNameSet.has(name),
       }))
       .sort(
         (a, b) =>
           b.covered + b.coveredFor - (a.covered + a.coveredFor) || a.name.localeCompare(b.name)
       );
-  }, [tally, partTimeStaff]);
-
-  const addStaff = () => {
-    const n = newStaff.trim();
-    if (!n) return;
-    if (partTimeStaff.includes(n)) {
-      toasts.error(`「${n}」は既に登録されています`);
-      return;
-    }
-    onSavePartTimeStaff([...partTimeStaff, n]);
-    setNewStaff("");
-    toasts.success(`「${n}」を追加しました`);
-  };
-  const delStaff = async (n) => {
-    const ok = await confirm({
-      title: "アルバイトの削除",
-      message: `「${n}」をアルバイト一覧から削除しますか？\n※過去の代行記録は削除されません`,
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    onSavePartTimeStaff(partTimeStaff.filter((x) => x !== n));
-    toasts.success(`「${n}」を削除しました`);
-  };
+  }, [tally, staffNameSet]);
 
   const allTeachers = useMemo(() => {
-    const set = new Set(partTimeStaff);
+    const set = new Set(staffNameSet);
     slots.forEach((s) => s.teacher && set.add(s.teacher));
     return [...set].sort();
-  }, [slots, partTimeStaff]);
+  }, [slots, staffNameSet]);
 
   const TabBtn = ({ k, label, count }) => (
     <button onClick={() => setTab(k)} style={S.btn(tab === k)}>
@@ -106,10 +84,30 @@ export function SubstituteView({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          marginBottom: 12,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
         <TabBtn k="tally" label="月次集計" />
-        <TabBtn k="staff" label="アルバイト管理" count={partTimeStaff.length} />
+        <button
+          type="button"
+          onClick={onGoToStaffView}
+          style={{
+            ...S.btn(false),
+            marginLeft: "auto",
+            fontSize: 11,
+            background: "#fff",
+            border: "1px solid #ccc",
+          }}
+        >
+          👥 バイト・教科管理へ
+        </button>
       </div>
 
       {tab === "list" && (
@@ -534,102 +532,6 @@ export function SubstituteView({
         </div>
       )}
 
-      {tab === "staff" && (
-        <div>
-          <div
-            style={{
-              background: "#fff",
-              padding: 14,
-              borderRadius: 8,
-              border: "1px solid #e0e0e0",
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-              アルバイトを追加
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input
-                value={newStaff}
-                onChange={(e) => setNewStaff(e.target.value)}
-                placeholder="名前を入力"
-                list="sub-staff-candidates"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addStaff();
-                }}
-                style={{ ...S.input, width: 180 }}
-              />
-              <datalist id="sub-staff-candidates">
-                {allTeachers
-                  .filter((t) => !partTimeStaff.includes(t))
-                  .map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-              </datalist>
-              <button onClick={addStaff} style={S.btn(true)}>
-                ＋ 追加
-              </button>
-            </div>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-              ※ 既存講師名を入れると候補に補完されます
-            </div>
-          </div>
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 8,
-              border: "1px solid #e0e0e0",
-              overflow: "hidden",
-            }}
-          >
-            {partTimeStaff.length === 0 ? (
-              <div
-                style={{ textAlign: "center", color: "#bbb", padding: 30, fontSize: 13 }}
-              >
-                登録されていません
-              </div>
-            ) : (
-              partTimeStaff.map((n, i) => {
-                const cnt = slots.filter((s) => s.teacher === n).length;
-                return (
-                  <div
-                    key={n}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 14px",
-                      borderBottom: i < partTimeStaff.length - 1 ? "1px solid #eee" : "none",
-                      background: i % 2 ? "#f8f9fa" : "#fff",
-                    }}
-                  >
-                    <div>
-                      <span style={{ fontWeight: 800, fontSize: 14 }}>{n}</span>
-                      <span style={{ marginLeft: 10, fontSize: 11, color: "#888" }}>
-                        担当コマ: {cnt}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => delStaff(n)}
-                      aria-label={`${n} を削除`}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: 14,
-                        color: "#c44",
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

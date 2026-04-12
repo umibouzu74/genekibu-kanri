@@ -7,6 +7,8 @@ import {
   INIT_HOLIDAYS,
   INIT_PART_TIME_STAFF,
   INIT_SLOTS,
+  INIT_SUBJECTS,
+  INIT_SUBJECT_CATEGORIES,
 } from "./data";
 
 import { VIEWS } from "./constants/views";
@@ -34,6 +36,7 @@ import { MonthView } from "./components/views/MonthView";
 import { AllView } from "./components/views/AllView";
 import { MasterView } from "./components/views/MasterView";
 import { SubstituteView } from "./components/views/SubstituteView";
+import { StaffManagerView } from "./components/views/StaffManagerView";
 
 // ─── localStorage keys ──────────────────────────────────────────────
 const LS = {
@@ -41,12 +44,25 @@ const LS = {
   holidays: "genyakubu-holidays",
   subs: "genyakubu-substitutions",
   partTime: "genyakubu-part-time-staff",
+  subjectCategories: "genyakubu-subject-categories",
+  subjects: "genyakubu-subjects",
   biweeklyBase: "genyakubu-biweekly-base",
 };
 
 // Migrate holiday records to ensure `scope` defaults to ["全部"].
 const migrateHolidays = (arr) =>
   Array.isArray(arr) ? arr.map((x) => ({ ...x, scope: x.scope || ["全部"] })) : arr;
+
+// partTimeStaff を string[] (旧形式) から {name, subjectIds}[] (新形式) に
+// 変換する。既存ユーザーの localStorage を破壊せずアップグレードする。
+const migratePartTimeStaff = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((x) =>
+        typeof x === "string"
+          ? { name: x, subjectIds: [] }
+          : { name: x?.name ?? "", subjectIds: Array.isArray(x?.subjectIds) ? x.subjectIds : [] }
+      )
+    : arr;
 
 export default function App() {
   const toasts = useToasts();
@@ -78,8 +94,16 @@ export default function App() {
   const [partTimeStaff, savePartTimeStaff] = useLocalStorage(
     LS.partTime,
     INIT_PART_TIME_STAFF,
+    { migrate: migratePartTimeStaff, onError: onStorageError }
+  );
+  const [subjectCategories, saveSubjectCategories] = useLocalStorage(
+    LS.subjectCategories,
+    INIT_SUBJECT_CATEGORIES,
     { onError: onStorageError }
   );
+  const [subjects, saveSubjects] = useLocalStorage(LS.subjects, INIT_SUBJECTS, {
+    onError: onStorageError,
+  });
   const [biweeklyBase, saveBiweeklyBase] = useLocalStorageRaw(LS.biweeklyBase, "");
 
   const [selected, setSelected] = useState(null);
@@ -104,6 +128,8 @@ export default function App() {
           biweeklyBase,
           substitutions: subs,
           partTimeStaff,
+          subjectCategories,
+          subjects,
         },
         null,
         2
@@ -120,7 +146,7 @@ export default function App() {
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, subs, partTimeStaff, toasts]);
+  }, [slots, holidays, biweeklyBase, subs, partTimeStaff, subjectCategories, subjects, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -153,7 +179,10 @@ export default function App() {
           if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
           if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
           if (Array.isArray(d.substitutions)) saveSubs(d.substitutions);
-          if (Array.isArray(d.partTimeStaff)) savePartTimeStaff(d.partTimeStaff);
+          if (Array.isArray(d.partTimeStaff))
+            savePartTimeStaff(migratePartTimeStaff(d.partTimeStaff));
+          if (Array.isArray(d.subjectCategories)) saveSubjectCategories(d.subjectCategories);
+          if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
           setShowDataMgr(false);
           toasts.success("データをインポートしました");
         } catch (err) {
@@ -170,7 +199,17 @@ export default function App() {
       reader.readAsText(file);
       e.target.value = "";
     },
-    [confirm, toasts, saveSlots, saveHolidays, saveBiweeklyBase, saveSubs, savePartTimeStaff]
+    [
+      confirm,
+      toasts,
+      saveSlots,
+      saveHolidays,
+      saveBiweeklyBase,
+      saveSubs,
+      savePartTimeStaff,
+      saveSubjectCategories,
+      saveSubjects,
+    ]
   );
 
   const handleReset = useCallback(async () => {
@@ -187,6 +226,8 @@ export default function App() {
     saveBiweeklyBase("");
     saveSubs([]);
     savePartTimeStaff(INIT_PART_TIME_STAFF);
+    saveSubjectCategories(INIT_SUBJECT_CATEGORIES);
+    saveSubjects(INIT_SUBJECTS);
     setSelected(null);
     setView(VIEWS.DASH);
     setShowDataMgr(false);
@@ -199,6 +240,8 @@ export default function App() {
     saveBiweeklyBase,
     saveSubs,
     savePartTimeStaff,
+    saveSubjectCategories,
+    saveSubjects,
   ]);
 
   // ─── Navigation / teacher selection ─────────────────────────────
@@ -294,6 +337,121 @@ export default function App() {
     if (!ok) return;
     saveSubs(subs.filter((s) => s.id !== id));
     toasts.success("代行記録を削除しました");
+  };
+
+  // ─── Staff (バイト) / Subject / Category CRUD ────────────────────
+  const handleAddStaff = (name) => {
+    const n = name.trim();
+    if (!n) return false;
+    if (partTimeStaff.some((s) => s.name === n)) {
+      toasts.error(`「${n}」は既に登録されています`);
+      return false;
+    }
+    savePartTimeStaff([...partTimeStaff, { name: n, subjectIds: [] }]);
+    toasts.success(`「${n}」を追加しました`);
+    return true;
+  };
+
+  const handleDelStaff = async (name) => {
+    const used = subs.some(
+      (s) => s.originalTeacher === name || s.substitute === name
+    );
+    const extra = used ? "\n※過去の代行記録は削除されません" : "";
+    const ok = await confirm({
+      title: "バイトの削除",
+      message: `「${name}」をバイト一覧から削除しますか？${extra}`,
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    savePartTimeStaff(partTimeStaff.filter((s) => s.name !== name));
+    toasts.success(`「${name}」を削除しました`);
+  };
+
+  const handleToggleStaffSubject = (name, subjectId) => {
+    savePartTimeStaff(
+      partTimeStaff.map((s) => {
+        if (s.name !== name) return s;
+        const has = s.subjectIds.includes(subjectId);
+        return {
+          ...s,
+          subjectIds: has
+            ? s.subjectIds.filter((id) => id !== subjectId)
+            : [...s.subjectIds, subjectId],
+        };
+      })
+    );
+  };
+
+  const handleSaveCategory = (cat) => {
+    if (cat.id) {
+      // インライン編集はキーストロークごとに呼ばれるため toast は出さない
+      saveSubjectCategories(
+        subjectCategories.map((c) => (c.id === cat.id ? { ...c, ...cat } : c))
+      );
+    } else {
+      const id = nextNumericId(subjectCategories);
+      saveSubjectCategories([...subjectCategories, { ...cat, id }]);
+      toasts.success("カテゴリを追加しました");
+    }
+  };
+
+  const handleDelCategory = async (id) => {
+    const childSubjects = subjects.filter((s) => s.categoryId === id);
+    const extra = childSubjects.length
+      ? `\n※このカテゴリ配下の ${childSubjects.length} 件の教科も削除されます。`
+      : "";
+    const ok = await confirm({
+      title: "カテゴリの削除",
+      message: `このカテゴリを削除しますか？${extra}`,
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    const removedSubjectIds = new Set(childSubjects.map((s) => s.id));
+    saveSubjects(subjects.filter((s) => s.categoryId !== id));
+    saveSubjectCategories(subjectCategories.filter((c) => c.id !== id));
+    // バイトの担当教科からも除外
+    if (removedSubjectIds.size) {
+      savePartTimeStaff(
+        partTimeStaff.map((s) => ({
+          ...s,
+          subjectIds: s.subjectIds.filter((sid) => !removedSubjectIds.has(sid)),
+        }))
+      );
+    }
+    toasts.success("カテゴリを削除しました");
+  };
+
+  const handleSaveSubject = (subj) => {
+    if (subj.id) {
+      // インライン編集はキーストロークごとに呼ばれるため toast は出さない
+      saveSubjects(
+        subjects.map((s) => (s.id === subj.id ? { ...s, ...subj } : s))
+      );
+    } else {
+      const id = nextNumericId(subjects);
+      saveSubjects([...subjects, { ...subj, id }]);
+      toasts.success("教科を追加しました");
+    }
+  };
+
+  const handleDelSubject = async (id) => {
+    const ok = await confirm({
+      title: "教科の削除",
+      message: "この教科を削除しますか？\n※バイトの担当教科設定からも除外されます。",
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    saveSubjects(subjects.filter((s) => s.id !== id));
+    savePartTimeStaff(
+      partTimeStaff.map((s) => ({
+        ...s,
+        subjectIds: s.subjectIds.filter((sid) => sid !== id),
+      }))
+    );
+    toasts.success("教科を削除しました");
   };
 
   // ─── Print ──────────────────────────────────────────────────────
@@ -402,7 +560,9 @@ export default function App() {
                       ? "祝日・休講日管理"
                       : view === VIEWS.SUBS
                         ? "アルバイト代行管理"
-                        : selected || ""}
+                        : view === VIEWS.STAFF
+                          ? "バイト・教科管理"
+                          : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -533,7 +693,22 @@ export default function App() {
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
               onDel={handleDelSub}
-              onSavePartTimeStaff={savePartTimeStaff}
+              onGoToStaffView={() => setView(VIEWS.STAFF)}
+            />
+          )}
+          {view === VIEWS.STAFF && !selected && (
+            <StaffManagerView
+              partTimeStaff={partTimeStaff}
+              subjectCategories={subjectCategories}
+              subjects={subjects}
+              slots={slots}
+              onAddStaff={handleAddStaff}
+              onDelStaff={handleDelStaff}
+              onToggleStaffSubject={handleToggleStaffSubject}
+              onSaveCategory={handleSaveCategory}
+              onDelCategory={handleDelCategory}
+              onSaveSubject={handleSaveSubject}
+              onDelSubject={handleDelSubject}
             />
           )}
           {selected && view === VIEWS.WEEK && (
@@ -584,6 +759,7 @@ export default function App() {
             sub={editSub === "new" ? null : editSub}
             slots={slots}
             partTimeStaff={partTimeStaff}
+            subjects={subjects}
             onSave={handleSaveSub}
             onCancel={() => setEditSub(null)}
           />

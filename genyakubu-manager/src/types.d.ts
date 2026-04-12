@@ -39,13 +39,34 @@ export interface Substitute {
   updatedAt?: string;
 }
 
+export interface SubjectCategory {
+  id: number;
+  name: string; // 例: "文系", "理系"
+  color?: string; // 表示色（任意）
+}
+
+export interface Subject {
+  id: number;
+  name: string; // 例: "英語"
+  categoryId: number; // SubjectCategory.id
+  aliases?: string[]; // Slot.subj 文字列とのマッチング用（任意）
+}
+
+export interface PartTimeStaffObject {
+  name: string; // 一意キー
+  subjectIds: number[]; // 担当できる Subject.id の配列
+}
+
 export interface ExportBundle {
   schemaVersion?: number;
   exportedAt?: string;
   slots?: Slot[];
   holidays?: Holiday[];
   substitutions?: Substitute[];
-  partTimeStaff?: string[];
+  // 旧形式 (string[]) と新形式 (PartTimeStaffObject[]) の両方を受け入れる
+  partTimeStaff?: (string | PartTimeStaffObject)[];
+  subjectCategories?: SubjectCategory[];
+  subjects?: Subject[];
   biweeklyBase?: string;
 }
 

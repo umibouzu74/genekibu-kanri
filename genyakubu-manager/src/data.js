@@ -55,9 +55,34 @@ export function gradeToDept(grade) {
 
 export const isKameiRoom = (room) => room?.startsWith("亀");
 
+// ─── 教科マスター ──────────────────────────────────────────────────
+// カテゴリと教科は独立したエンティティで、既存の Slot.subj (自由入力文字列)
+// とは切り離して管理する。バイトの担当教科判定に使用する。
+export const INIT_SUBJECT_CATEGORIES = [
+  { id: 1, name: "文系", color: "#c44" },
+  { id: 2, name: "理系", color: "#4a7" },
+];
+
+export const INIT_SUBJECTS = [
+  { id: 1, name: "英語", categoryId: 1, aliases: ["英"] },
+  { id: 2, name: "国語", categoryId: 1, aliases: ["現代文", "古文", "漢文", "国"] },
+  { id: 3, name: "社会", categoryId: 1, aliases: ["日本史", "世界史", "地理", "公民", "政経", "倫理"] },
+  { id: 4, name: "数学", categoryId: 2, aliases: ["数", "算数"] },
+  { id: 5, name: "理科", categoryId: 2, aliases: ["物理", "化学", "生物", "地学"] },
+];
+
 // ─── アルバイト・代行管理 ──────────────────────────────────────────
+// 新形式: { name, subjectIds }。旧 string[] はマイグレーションで自動変換される。
 export const INIT_PART_TIME_STAFF = [
-  "福武", "河野", "香川", "小見山", "杉原", "奥村", "江本", "福江", "川井",
+  { name: "福武", subjectIds: [] },
+  { name: "河野", subjectIds: [] },
+  { name: "香川", subjectIds: [] },
+  { name: "小見山", subjectIds: [] },
+  { name: "杉原", subjectIds: [] },
+  { name: "奥村", subjectIds: [] },
+  { name: "江本", subjectIds: [] },
+  { name: "福江", subjectIds: [] },
+  { name: "川井", subjectIds: [] },
 ];
 
 export const SUB_STATUS = {
