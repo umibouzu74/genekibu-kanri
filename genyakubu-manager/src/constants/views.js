@@ -13,4 +13,5 @@ export const VIEWS = Object.freeze({
   STAFF: "staff",
   HEATMAP: "heatmap",
   COMPARE: "compare",
+  SHARED: "shared",
 });

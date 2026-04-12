@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
@@ -9,6 +9,8 @@ import {
 } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
+import { encodeShareData } from "../../utils/shareCodec";
+import { useToasts } from "../../hooks/useToasts";
 import { StatusBadge } from "../StatusBadge";
 
 export function SubstituteView({
@@ -90,6 +92,44 @@ export function SubstituteView({
     return sortJa([...set]);
   }, [slots, staffNameSet]);
 
+  const toasts = useToasts();
+  const [sharing, setSharing] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (sharing) return;
+    const target = filtered.length > 0 ? filtered : subs;
+    if (target.length === 0) {
+      toasts.error("共有する代行データがありません");
+      return;
+    }
+    setSharing(true);
+    try {
+      const referencedSlotIds = new Set(target.map((s) => s.slotId));
+      const referencedSlots = slots.filter((s) => referencedSlotIds.has(s.id));
+      const encoded = await encodeShareData({
+        slots: referencedSlots,
+        substitutions: target,
+        generatedAt: new Date().toISOString(),
+      });
+      const url = `${window.location.origin}${window.location.pathname}#/share/${encoded}`;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "代行情報", url });
+          toasts.success("共有しました");
+          return;
+        } catch {
+          // User cancelled or Web Share unavailable – fall through to clipboard
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      toasts.success("共有リンクをコピーしました");
+    } catch {
+      toasts.error("共有リンクの生成に失敗しました");
+    } finally {
+      setSharing(false);
+    }
+  }, [filtered, subs, slots, sharing, toasts]);
+
   const TabBtn = ({ k, label, count }) => (
     <button onClick={() => setTab(k)} style={S.btn(tab === k)}>
       {label}
@@ -129,19 +169,35 @@ export function SubstituteView({
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
         <TabBtn k="tally" label="月次集計" />
-        <button
-          type="button"
-          onClick={onGoToStaffView}
-          style={{
-            ...S.btn(false),
-            marginLeft: "auto",
-            fontSize: 11,
-            background: "#fff",
-            border: "1px solid #ccc",
-          }}
-        >
-          👥 バイト・教科管理へ
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={sharing}
+            style={{
+              ...S.btn(false),
+              fontSize: 11,
+              background: "#eef2ff",
+              color: "#1a1a6e",
+              border: "1px solid #c0c8e8",
+              opacity: sharing ? 0.6 : 1,
+            }}
+          >
+            {sharing ? "生成中..." : "共有リンクを作成"}
+          </button>
+          <button
+            type="button"
+            onClick={onGoToStaffView}
+            style={{
+              ...S.btn(false),
+              fontSize: 11,
+              background: "#fff",
+              border: "1px solid #ccc",
+            }}
+          >
+            バイト・教科管理へ
+          </button>
+        </div>
       </div>
 
       {tab === "list" && (
