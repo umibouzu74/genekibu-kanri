@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { S } from "../../styles/common";
+import { formatCount, slotWeight } from "../../utils/biweekly";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -91,7 +92,7 @@ export function TimetableManagerView({
   const slotCountByTT = {};
   for (const s of slots) {
     const ttId = s.timetableId ?? 1;
-    slotCountByTT[ttId] = (slotCountByTT[ttId] || 0) + 1;
+    slotCountByTT[ttId] = (slotCountByTT[ttId] || 0) + slotWeight(s.note);
   }
 
   return (
@@ -201,7 +202,7 @@ export function TimetableManagerView({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {slotCountByTT[tt.id] || 0} コマ
+                  {formatCount(slotCountByTT[tt.id] || 0)} コマ
                 </span>
                 {isAdmin && (
                   <div style={{ display: "flex", gap: 4 }}>

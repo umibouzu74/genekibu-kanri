@@ -43,6 +43,30 @@ describe("type guards", () => {
     expect(isSlot(goodSlot)).toBe(true);
   });
 
+  it("isSlot accepts a slot with valid biweeklyAnchors", () => {
+    expect(
+      isSlot({
+        ...goodSlot,
+        biweeklyAnchors: [{ date: "2026-04-06", weekType: "A" }],
+      })
+    ).toBe(true);
+  });
+
+  it("isSlot accepts a slot with empty biweeklyAnchors", () => {
+    expect(isSlot({ ...goodSlot, biweeklyAnchors: [] })).toBe(true);
+  });
+
+  it("isSlot accepts a slot without biweeklyAnchors (undefined)", () => {
+    expect(isSlot({ ...goodSlot, biweeklyAnchors: undefined })).toBe(true);
+  });
+
+  it("isSlot rejects a slot with invalid biweeklyAnchors", () => {
+    expect(isSlot({ ...goodSlot, biweeklyAnchors: "bad" })).toBe(false);
+    expect(
+      isSlot({ ...goodSlot, biweeklyAnchors: [{ date: "2026-04-06" }] })
+    ).toBe(false); // missing weekType
+  });
+
   it("isSlot rejects a slot without id", () => {
     expect(isSlot({ ...goodSlot, id: undefined })).toBe(false);
   });
@@ -385,6 +409,35 @@ describe("migrateExportBundle", () => {
     expect(data.biweeklyAnchors).toEqual([
       { date: "2026-04-06", weekType: "A" },
     ]);
+  });
+
+  it("v4 → v5: preserves slots with per-slot biweeklyAnchors", () => {
+    const slotWithAnchors = {
+      ...goodSlot,
+      note: "隔週(河野)",
+      biweeklyAnchors: [{ date: "2026-06-08", weekType: "A" }],
+    };
+    const out = migrateExportBundle({
+      schemaVersion: 4,
+      slots: [slotWithAnchors],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    const slots = out.slots as Array<Record<string, unknown>>;
+    expect(slots[0].biweeklyAnchors).toEqual([
+      { date: "2026-06-08", weekType: "A" },
+    ]);
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("v4 → v5: slots without biweeklyAnchors remain valid", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 4,
+      slots: [goodSlot],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
   });
 });
 

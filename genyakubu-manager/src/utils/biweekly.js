@@ -64,3 +64,32 @@ function getWeekTypeFromBase(dateStr, baseStr) {
 export function isBiweekly(note) {
   return !!note && note.includes("隔週");
 }
+
+// Determine the week type for a specific slot on a given date.
+// Uses per-slot anchors when present, otherwise falls back to global anchors.
+export function getSlotWeekType(dateStr, slot, globalAnchors) {
+  const anchors =
+    slot.biweeklyAnchors && slot.biweeklyAnchors.length > 0
+      ? slot.biweeklyAnchors
+      : globalAnchors;
+  return getWeekType(dateStr, anchors);
+}
+
+// Returns the weight of a slot for コマ数 calculation.
+// Biweekly slots count as 0.5, regular slots as 1.
+export function slotWeight(note) {
+  return isBiweekly(note) ? 0.5 : 1;
+}
+
+// Compute weighted slot count for an array of slots.
+export function weightedSlotCount(slots) {
+  let total = 0;
+  for (const s of slots) total += slotWeight(s.note);
+  return total;
+}
+
+// Format a weighted count for display.
+// Integer → "7", fractional → "7.5".
+export function formatCount(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}

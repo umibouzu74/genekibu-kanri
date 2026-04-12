@@ -27,6 +27,7 @@ import {
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
+import { slotWeight, formatCount } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 
 import { Modal } from "./components/Modal";
@@ -271,8 +272,9 @@ export default function App() {
     let total = 0;
     for (const s of ttFilteredSlots) {
       if (s.teacher !== selected) continue;
-      byDay[s.day] = (byDay[s.day] || 0) + 1;
-      total++;
+      const w = slotWeight(s.note);
+      byDay[s.day] = (byDay[s.day] || 0) + w;
+      total += w;
     }
     return { total, byDay };
   }, [ttFilteredSlots, selected]);
@@ -475,7 +477,7 @@ export default function App() {
                   <div
                     style={{ fontSize: 18, fontWeight: 800, color: cnt ? "#1a1a2e" : "#ccc" }}
                   >
-                    {cnt}
+                    {formatCount(cnt)}
                   </div>
                 </div>
               );
@@ -491,7 +493,7 @@ export default function App() {
               }}
             >
               <div style={{ fontSize: 11, fontWeight: 800 }}>週計</div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>{selSlotCount}</div>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>{formatCount(selSlotCount)}</div>
             </div>
           </div>
         )}

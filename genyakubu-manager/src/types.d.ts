@@ -20,6 +20,7 @@ export interface Slot {
   teacher: string;
   note: string;
   timetableId?: number; // Timetable.id。未設定 = デフォルト時間割(id=1)
+  biweeklyAnchors?: BiweeklyAnchor[]; // 授業別の隔週基準。未設定 = グローバル基準を使用
 }
 
 export interface Holiday {

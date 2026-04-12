@@ -9,7 +9,7 @@ import {
 } from "../../data";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
-import { formatBiweeklyTeacher, getWeekType } from "../../utils/biweekly";
+import { formatBiweeklyTeacher, formatCount, getSlotWeekType, getWeekType, weightedSlotCount } from "../../utils/biweekly";
 import { fmtDate } from "../../data";
 
 // Extracted to its own component so that hover state is scoped to a
@@ -359,8 +359,8 @@ export function MasterView({
             </div>
           )}
           <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-            基準日を追加すると、その日以降は直近の基準日からA/B週が再計算されます。
-            祝日や長期休暇でずれた場合は新しい基準日を追加してください。
+            ここで設定する基準日は全隔週コマのデフォルトです。
+            個別にずれたコマは、コマの編集画面から専用の基準日を設定できます。
           </div>
         </div>
         {biweeklyGroups.length === 0 ? (
@@ -393,7 +393,7 @@ export function MasterView({
                   <span>
                     {g.day}曜 {g.time}
                   </span>
-                  <span style={{ fontSize: 11, opacity: 0.8 }}>{g.slots.length}コマ</span>
+                  <span style={{ fontSize: 11, opacity: 0.8 }}>{formatCount(weightedSlotCount(g.slots))}コマ</span>
                 </div>
                 <div style={{ padding: 10 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -403,7 +403,8 @@ export function MasterView({
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>クラス</th>
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>科目</th>
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>担当</th>
-                        <th style={{ textAlign: "left", padding: "4px 6px" }}>備考</th>
+                        <th style={{ textAlign: "center", padding: "4px 6px" }}>今週</th>
+                        <th style={{ textAlign: "left", padding: "4px 6px" }}>基準</th>
                         {isAdmin && (
                           <th style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>
                             編集
@@ -412,7 +413,10 @@ export function MasterView({
                       </tr>
                     </thead>
                     <tbody>
-                      {g.slots.map((s) => (
+                      {g.slots.map((s) => {
+                        const slotWt = getSlotWeekType(fmtDate(new Date()), s, biweeklyAnchors);
+                        const hasCustomAnchors = s.biweeklyAnchors && s.biweeklyAnchors.length > 0;
+                        return (
                         <tr key={s.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
                           <td style={{ padding: "6px" }}>
                             <span
@@ -433,8 +437,39 @@ export function MasterView({
                           <td style={{ padding: "6px", fontWeight: 700 }}>
                             {formatBiweeklyTeacher(s.teacher, s.note)}
                           </td>
-                          <td style={{ padding: "6px", color: "#e67a00", fontSize: 11 }}>
-                            {s.note}
+                          <td style={{ padding: "6px", textAlign: "center" }}>
+                            {slotWt && (
+                              <span
+                                style={{
+                                  background: slotWt === "A" ? "#2e6a9e" : "#c05030",
+                                  color: "#fff",
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {slotWt}週
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: "6px" }}>
+                            {hasCustomAnchors ? (
+                              <span
+                                style={{
+                                  background: "#e67a00",
+                                  color: "#fff",
+                                  padding: "1px 6px",
+                                  borderRadius: 3,
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                個別
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 10, color: "#aaa" }}>共通</span>
+                            )}
                           </td>
                           {isAdmin && (
                             <td style={{ padding: "6px", textAlign: "center" }}>
@@ -454,7 +489,8 @@ export function MasterView({
                             </td>
                           )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -463,7 +499,8 @@ export function MasterView({
           </div>
         )}
         <div style={{ marginTop: 16, fontSize: 11, color: "#888" }}>
-          ※ 備考欄に「隔週」を含むコマが自動的に表示されます
+          ※ 備考欄に「隔週」を含むコマが自動的に表示されます。
+          「個別」マーク付きのコマは独自の基準日が設定されています。
         </div>
       </div>
     );
@@ -598,7 +635,7 @@ export function MasterView({
               }}
             >
               <span>{day}曜日</span>
-              <span style={{ fontSize: 11, opacity: 0.8 }}>{daySlots.length}コマ</span>
+              <span style={{ fontSize: 11, opacity: 0.8 }}>{formatCount(weightedSlotCount(daySlots))}コマ</span>
             </div>
             <div
               className="dash-sections"
@@ -639,7 +676,7 @@ export function MasterView({
                       <span>{sec.label}</span>
                       {secSlots.length > 0 && (
                         <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>
-                          {secSlots.length}コマ / {teachers.length}名
+                          {formatCount(weightedSlotCount(secSlots))}コマ / {teachers.length}名
                         </span>
                       )}
                     </div>
@@ -683,7 +720,7 @@ export function MasterView({
                               >
                                 <span>{time}</span>
                                 <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>
-                                  {tSlots.length}コマ
+                                  {formatCount(weightedSlotCount(tSlots))}コマ
                                 </span>
                               </div>
                               <div

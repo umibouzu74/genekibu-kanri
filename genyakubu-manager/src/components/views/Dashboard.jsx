@@ -10,6 +10,7 @@ import {
   timeToMin,
   WEEKDAYS,
 } from "../../data";
+import { formatCount, weightedSlotCount } from "../../utils/biweekly";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { buildDayRange, makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
@@ -48,7 +49,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
         <span>{label}</span>
         {!deptOff && sl.length > 0 && (
           <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>
-            {sl.length}コマ / {teachers.length}名
+            {formatCount(weightedSlotCount(sl))}コマ / {teachers.length}名
           </span>
         )}
       </div>
@@ -89,7 +90,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                 >
                   <span>{time}</span>
                   <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>
-                    {tSlots.length}コマ
+                    {formatCount(weightedSlotCount(tSlots))}コマ
                   </span>
                 </div>
                 <div

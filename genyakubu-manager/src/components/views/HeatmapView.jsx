@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { DAY_COLOR as DC, DAYS, timeToMin } from "../../data";
+import { formatCount, slotWeight, weightedSlotCount } from "../../utils/biweekly";
 
 // 背景色の補間: 0→白, max→濃い色
 function heatColor(count, max) {
@@ -36,7 +37,7 @@ export function HeatmapView({ slots }) {
     }
     for (const s of slots) {
       if (g[s.day]?.[s.time] != null) {
-        g[s.day][s.time]++;
+        g[s.day][s.time] += slotWeight(s.note);
         d[s.day][s.time].push(s);
         if (g[s.day][s.time] > mx) mx = g[s.day][s.time];
       }
@@ -197,7 +198,7 @@ export function HeatmapView({ slots }) {
                         transition: "background .2s",
                       }}
                     >
-                      {cnt || "–"}
+                      {cnt ? formatCount(cnt) : "–"}
                     </td>
                   );
                 })}
@@ -210,7 +211,7 @@ export function HeatmapView({ slots }) {
                     background: "#f8f8f8",
                   }}
                 >
-                  {timeTotals[t]}
+                  {formatCount(timeTotals[t])}
                 </td>
               </tr>
             ))}
@@ -238,7 +239,7 @@ export function HeatmapView({ slots }) {
                     fontSize: 14,
                   }}
                 >
-                  {dayTotals[d]}
+                  {formatCount(dayTotals[d])}
                 </td>
               ))}
               <td
@@ -252,7 +253,7 @@ export function HeatmapView({ slots }) {
                   borderRadius: "0 0 8px 0",
                 }}
               >
-                {slots.length}
+                {formatCount(weightedSlotCount(slots))}
               </td>
             </tr>
           </tbody>

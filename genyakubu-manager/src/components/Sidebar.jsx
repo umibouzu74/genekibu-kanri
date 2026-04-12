@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { VIEWS } from "../constants/views";
+import { slotWeight, formatCount } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 
@@ -30,7 +31,7 @@ export function Sidebar({
   );
   const slotCountByTeacher = useMemo(() => {
     const m = new Map();
-    for (const s of slots) m.set(s.teacher, (m.get(s.teacher) || 0) + 1);
+    for (const s of slots) m.set(s.teacher, (m.get(s.teacher) || 0) + slotWeight(s.note));
     return m;
   }, [slots]);
 
@@ -315,7 +316,7 @@ export function Sidebar({
                           fontWeight: 700,
                         }}
                       >
-                        {cnt}
+                        {formatCount(cnt)}
                       </span>
                     </button>
                   );
