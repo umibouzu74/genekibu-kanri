@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBiweeklyNote,
   formatBiweeklyTeacher,
   formatCount,
   getSlotWeekType,
@@ -25,6 +26,25 @@ describe("formatBiweeklyTeacher", () => {
   it("handles biweekly markers surrounded by other note text", () => {
     expect(formatBiweeklyTeacher("山田", "補習, 隔週(佐藤), 要調整")).toBe(
       "山田 / 佐藤"
+    );
+  });
+});
+
+describe("formatBiweeklyNote", () => {
+  it("returns note as-is when no biweekly marker is present", () => {
+    expect(formatBiweeklyNote("堀上", "合同")).toBe("合同");
+    expect(formatBiweeklyNote("堀上", "")).toBe("");
+    expect(formatBiweeklyNote("堀上", null)).toBe(null);
+    expect(formatBiweeklyNote("堀上", undefined)).toBe(undefined);
+  });
+
+  it("expands biweekly marker to show both teachers", () => {
+    expect(formatBiweeklyNote("堀上", "隔週(河野)")).toBe("隔週 : 堀上 / 河野");
+  });
+
+  it("preserves surrounding note text", () => {
+    expect(formatBiweeklyNote("山田", "補習, 隔週(佐藤), 要調整")).toBe(
+      "補習, 隔週 : 山田 / 佐藤, 要調整"
     );
   });
 });

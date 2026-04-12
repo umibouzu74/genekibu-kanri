@@ -8,6 +8,7 @@ import {
   SUB_STATUS_KEYS,
 } from "../data";
 import { S } from "../styles/common";
+import { formatBiweeklyNote } from "../utils/biweekly";
 import { sortJa } from "../utils/sortJa";
 
 // コマの科目文字列から対応する Subject.id を推定する。
@@ -518,7 +519,7 @@ export function SubstituteForm({
                         元講師: <b style={{ color: "#1a1a2e" }}>{slot.teacher}</b>
                         {slot.note && (
                           <span style={{ marginLeft: 6, color: "#e67a00" }}>
-                            ({slot.note})
+                            ({formatBiweeklyNote(slot.teacher, slot.note)})
                           </span>
                         )}
                       </div>

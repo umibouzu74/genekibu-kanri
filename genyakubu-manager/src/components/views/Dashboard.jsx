@@ -10,7 +10,7 @@ import {
   timeToMin,
   WEEKDAYS,
 } from "../../data";
-import { formatCount, weightedSlotCount } from "../../utils/biweekly";
+import { formatBiweeklyNote, formatCount, weightedSlotCount } from "../../utils/biweekly";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { buildDayRange, makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
@@ -190,7 +190,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                               )}
                               {s.note && (
                                 <span style={{ fontSize: 13, fontWeight: 600, color: "#a0331a" }}>
-                                  ({s.note})
+                                  ({formatBiweeklyNote(s.teacher, s.note)})
                                 </span>
                               )}
                             </div>

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { DAY_COLOR as DC, gradeColor as GC } from "../data";
+import { formatBiweeklyNote } from "../utils/biweekly";
 
 function SlotCardImpl({ slot, compact, onEdit, onDel }) {
   const gc = GC(slot.grade);
@@ -42,7 +43,7 @@ function SlotCardImpl({ slot, compact, onEdit, onDel }) {
         </span>
         <span>{slot.time}</span>
         {slot.room && <span>/ {slot.room}</span>}
-        {slot.note && <span style={{ color: "#e67a00" }}>({slot.note})</span>}
+        {slot.note && <span style={{ color: "#e67a00" }}>({formatBiweeklyNote(slot.teacher, slot.note)})</span>}
       </div>
       <div
         style={{
