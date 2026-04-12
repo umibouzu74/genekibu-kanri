@@ -13,7 +13,7 @@ const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
 const databaseURL = import.meta.env.VITE_FIREBASE_DATABASE_URL;
 const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
-const isConfigured = Boolean(apiKey && databaseURL);
+const isConfigured = Boolean(apiKey && authDomain && databaseURL && projectId);
 
 let app = null;
 let db = null;

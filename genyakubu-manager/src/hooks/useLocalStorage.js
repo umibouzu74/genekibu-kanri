@@ -30,7 +30,7 @@ export function useLocalStorage(key, initialValue, { migrate, onError } = {}) {
       console.warn(`[useLocalStorage] failed to load "${key}":`, err);
       onError?.(err, "load");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   const update = useCallback(
@@ -65,7 +65,7 @@ export function useLocalStorageRaw(key, initialValue) {
     } catch (err) {
       console.warn(`[useLocalStorageRaw] failed to load "${key}":`, err);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   const update = useCallback(

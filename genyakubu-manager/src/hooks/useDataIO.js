@@ -9,24 +9,7 @@ import {
   migrateExportBundle,
   validateExportBundle,
 } from "../utils/schema";
-
-// Migrate helpers (duplicated from App for encapsulation)
-const migrateHolidays = (arr) =>
-  Array.isArray(arr) ? arr.map((x) => ({ ...x, scope: x.scope || ["全部"] })) : arr;
-
-const migratePartTimeStaff = (arr) =>
-  Array.isArray(arr)
-    ? arr.map((x) =>
-        typeof x === "string"
-          ? { name: x, subjectIds: [] }
-          : { name: x?.name ?? "", subjectIds: Array.isArray(x?.subjectIds) ? x.subjectIds : [] }
-      )
-    : arr;
-
-const migrateSubs = (arr) =>
-  Array.isArray(arr)
-    ? arr.map((s) => (s?.status === "completed" ? { ...s, status: "confirmed" } : s))
-    : arr;
+import { migrateHolidays, migratePartTimeStaff, migrateSubs } from "../utils/migrate";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -105,6 +88,19 @@ export function useDataIO({
     async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+
+      const MAX_IMPORT_SIZE = 10 * 1024 * 1024; // 10 MB
+      if (file.size > MAX_IMPORT_SIZE) {
+        toasts.error("ファイルサイズが大きすぎます（上限: 10MB）");
+        e.target.value = "";
+        return;
+      }
+      if (file.type && !file.type.includes("json") && !file.name.endsWith(".json")) {
+        toasts.error("JSONファイルを選択してください");
+        e.target.value = "";
+        return;
+      }
+
       const ok = await confirm({
         title: "データのインポート",
         message: `「${file.name}」を読み込みます。\n現在のデータは上書きされます。よろしいですか？`,
@@ -229,5 +225,5 @@ export function useDataIO({
   return { handleExport, handleImport, handleReset, migrateHolidays, migratePartTimeStaff, migrateSubs };
 }
 
-// Re-export migrate functions for useLocalStorage initial setup
+// Re-export migrate functions for convenience
 export { migrateHolidays, migratePartTimeStaff, migrateSubs };

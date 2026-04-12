@@ -1,12 +1,5 @@
 // ─── CSV export utilities ──────────────────────────────────────────
-
-function escapeCsv(val) {
-  const s = String(val ?? "");
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
+import { escapeCsv } from "./escape";
 
 function toCsv(headers, rows) {
   const lines = [headers.map(escapeCsv).join(",")];

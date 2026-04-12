@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { LS } from "../constants/storageKeys";
 
 // ─── ErrorBoundary ─────────────────────────────────────────────────
 // Catches render-time errors in any descendant and shows a graceful
@@ -22,20 +23,12 @@ export class ErrorBoundary extends Component {
     window.location.reload();
   };
 
+  // Uses window.confirm() intentionally — the custom useConfirm modal may
+  // itself be broken when ErrorBoundary renders, so the native dialog is safer.
   handleClear = () => {
     if (!confirm("localStorage を初期化してリロードします。よろしいですか？")) return;
     try {
-      [
-        "genyakubu-slots",
-        "genyakubu-holidays",
-        "genyakubu-substitutions",
-        "genyakubu-part-time-staff",
-        "genyakubu-subject-categories",
-        "genyakubu-subjects",
-        "genyakubu-biweekly-base",
-        "genyakubu-biweekly-anchors",
-        "genyakubu-adjustments",
-      ].forEach((k) => localStorage.removeItem(k));
+      Object.values(LS).forEach((k) => localStorage.removeItem(k));
     } catch {
       // ignore
     }

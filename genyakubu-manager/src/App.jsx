@@ -29,6 +29,8 @@ import {
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
+import { LS } from "./constants/storageKeys";
+import { escapeHtml } from "./utils/escape";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -52,30 +54,6 @@ import { CompareView } from "./components/views/CompareView";
 import { TimetableManagerView } from "./components/views/TimetableManagerView";
 import { TimetableSelector } from "./components/TimetableSelector";
 
-// ─── helpers ───────────────────────────────────────────────────────
-const escapeHtml = (s) =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-// ─── localStorage keys ──────────────────────────────────────────────
-const LS = {
-  slots: "genyakubu-slots",
-  holidays: "genyakubu-holidays",
-  subs: "genyakubu-substitutions",
-  partTime: "genyakubu-part-time-staff",
-  subjectCategories: "genyakubu-subject-categories",
-  subjects: "genyakubu-subjects",
-  biweeklyBase: "genyakubu-biweekly-base",
-  biweeklyAnchors: "genyakubu-biweekly-anchors",
-  adjustments: "genyakubu-adjustments",
-  timetables: "genyakubu-timetables",
-  displayCutoff: "genyakubu-display-cutoff",
-  activeTimetableId: "genyakubu-active-timetable",
-  examPeriods: "genyakubu-exam-periods",
-};
 
 export default function App() {
   const toasts = useToasts();
@@ -176,7 +154,7 @@ export default function App() {
     if (biweeklyBase && biweeklyAnchors.length === 0) {
       saveBiweeklyAnchors([{ date: biweeklyBase, weekType: "A" }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time migration on mount
   }, []);
 
   // ─── Cmd+K global shortcut ─────────────────────────────────────

@@ -1,0 +1,78 @@
+import { describe, it, expect } from "vitest";
+import { migrateHolidays, migratePartTimeStaff, migrateSubs } from "./migrate";
+
+describe("migrateHolidays", () => {
+  it("adds default scope when missing", () => {
+    const input = [{ date: "2026-01-01", label: "元旦" }];
+    const result = migrateHolidays(input);
+    expect(result).toEqual([{ date: "2026-01-01", label: "元旦", scope: ["全部"] }]);
+  });
+
+  it("preserves existing scope", () => {
+    const input = [{ date: "2026-01-01", label: "元旦", scope: ["中学部"] }];
+    const result = migrateHolidays(input);
+    expect(result[0].scope).toEqual(["中学部"]);
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migrateHolidays(null)).toBe(null);
+    expect(migrateHolidays(undefined)).toBe(undefined);
+    expect(migrateHolidays("bad")).toBe("bad");
+  });
+});
+
+describe("migratePartTimeStaff", () => {
+  it("converts string entries to PartTimeStaffObject", () => {
+    const result = migratePartTimeStaff(["田中", "佐藤"]);
+    expect(result).toEqual([
+      { name: "田中", subjectIds: [] },
+      { name: "佐藤", subjectIds: [] },
+    ]);
+  });
+
+  it("preserves existing object entries", () => {
+    const input = [{ name: "田中", subjectIds: [1, 2] }];
+    const result = migratePartTimeStaff(input);
+    expect(result).toEqual([{ name: "田中", subjectIds: [1, 2] }]);
+  });
+
+  it("handles mixed arrays", () => {
+    const input = ["田中", { name: "佐藤", subjectIds: [3] }];
+    const result = migratePartTimeStaff(input);
+    expect(result).toEqual([
+      { name: "田中", subjectIds: [] },
+      { name: "佐藤", subjectIds: [3] },
+    ]);
+  });
+
+  it("handles malformed objects gracefully", () => {
+    const input = [{ foo: "bar" }];
+    const result = migratePartTimeStaff(input);
+    expect(result).toEqual([{ name: "", subjectIds: [] }]);
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migratePartTimeStaff(null)).toBe(null);
+    expect(migratePartTimeStaff(undefined)).toBe(undefined);
+  });
+});
+
+describe("migrateSubs", () => {
+  it('renames "completed" status to "confirmed"', () => {
+    const input = [{ id: 1, status: "completed" }, { id: 2, status: "requested" }];
+    const result = migrateSubs(input);
+    expect(result[0].status).toBe("confirmed");
+    expect(result[1].status).toBe("requested");
+  });
+
+  it("preserves already-valid statuses", () => {
+    const input = [{ id: 1, status: "confirmed" }];
+    const result = migrateSubs(input);
+    expect(result[0].status).toBe("confirmed");
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migrateSubs(null)).toBe(null);
+    expect(migrateSubs(undefined)).toBe(undefined);
+  });
+});

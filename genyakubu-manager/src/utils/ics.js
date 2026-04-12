@@ -2,6 +2,7 @@
 // 講師の週間スケジュールを iCalendar (.ics) 形式でエクスポートする。
 // Google Calendar にインポートして講師のスケジュールを共有できる。
 import { isSlotForTeacher } from "./biweekly";
+import { escapeIcal } from "./escape";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -37,14 +38,6 @@ function nextDayOfWeek(baseDate, dayIdx) {
   const diff = (dayIdx - current + 7) % 7 || 7;
   d.setDate(d.getDate() + diff);
   return d;
-}
-
-function escapeIcal(s) {
-  return String(s || "")
-    .replace(/\\/g, "\\\\")
-    .replace(/;/g, "\\;")
-    .replace(/,/g, "\\,")
-    .replace(/\n/g, "\\n");
 }
 
 export function exportTeacherIcs(teacher, slots) {

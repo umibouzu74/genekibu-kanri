@@ -7,7 +7,7 @@ export type DayName = "月" | "火" | "水" | "木" | "金" | "土";
 export type Weekday = "日" | "月" | "火" | "水" | "木" | "金" | "土";
 export type Department = "中学部" | "高校部";
 export type HolidayScopeEntry = "全部" | Department;
-export type SubStatus = "requested" | "confirmed" | "done" | "cancelled";
+export type SubStatus = "requested" | "confirmed";
 
 export interface Slot {
   id: number;
