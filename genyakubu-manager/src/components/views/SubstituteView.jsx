@@ -23,6 +23,7 @@ export function SubstituteView({
   onGoToStaffView,
   initFilter,
   onConsumeInitFilter,
+  isAdmin,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -139,25 +140,27 @@ export function SubstituteView({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={onNew}
-          style={{
-            padding: "12px 24px",
-            borderRadius: 8,
-            border: "2px solid #2a7a2a",
-            background: "#e8f5e8",
-            color: "#2a7a2a",
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: "pointer",
-            boxShadow: "0 2px 4px rgba(42,122,42,0.1)",
-          }}
-        >
-          ＋ 新規代行
-        </button>
-      </div>
+      {isAdmin && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={onNew}
+            style={{
+              padding: "12px 24px",
+              borderRadius: 8,
+              border: "2px solid #2a7a2a",
+              background: "#e8f5e8",
+              color: "#2a7a2a",
+              fontSize: 15,
+              fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 2px 4px rgba(42,122,42,0.1)",
+            }}
+          >
+            ＋ 新規代行
+          </button>
+        </div>
+      )}
       <div
         style={{
           display: "flex",
@@ -337,9 +340,11 @@ export function SubstituteView({
                       状態
                     </th>
                     <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
-                    <th style={{ padding: "8px 10px", textAlign: "center", width: 60 }}>
-                      操作
-                    </th>
+                    {isAdmin && (
+                      <th style={{ padding: "8px 10px", textAlign: "center", width: 60 }}>
+                        操作
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -438,42 +443,44 @@ export function SubstituteView({
                         >
                           {sub.memo}
                         </td>
-                        <td
-                          style={{
-                            padding: "8px 10px",
-                            textAlign: "center",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => onEdit(sub)}
-                            aria-label={`${sub.date} の代行を編集`}
+                        {isAdmin && (
+                          <td
                             style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              padding: 2,
+                              padding: "8px 10px",
+                              textAlign: "center",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDel(sub.id)}
-                            aria-label={`${sub.date} の代行を削除`}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              padding: 2,
-                            }}
-                          >
-                            🗑
-                          </button>
-                        </td>
+                            <button
+                              type="button"
+                              onClick={() => onEdit(sub)}
+                              aria-label={`${sub.date} の代行を編集`}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: 13,
+                                padding: 2,
+                              }}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDel(sub.id)}
+                              aria-label={`${sub.date} の代行を削除`}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: 13,
+                                padding: 2,
+                              }}
+                            >
+                              🗑
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

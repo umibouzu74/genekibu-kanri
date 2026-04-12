@@ -12,7 +12,7 @@ import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
 import { S } from "../../styles/common";
 
-export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
+export function WeekView({ teacher, slots, subs, onEdit, onDel, isAdmin }) {
   const ts = useMemo(
     () => sortS(slots.filter((s) => s.teacher === teacher || s.note?.includes(teacher))),
     [teacher, slots]
@@ -206,7 +206,7 @@ export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
                     const slotSubs = slotSubMap.get(s.id);
                     return (
                       <div key={s.id} style={{ position: "relative" }}>
-                        <SlotCard slot={s} compact onEdit={onEdit} onDel={onDel} />
+                        <SlotCard slot={s} compact onEdit={isAdmin ? onEdit : undefined} onDel={isAdmin ? onDel : undefined} />
                         {slotSubs && slotSubs.length > 0 && (
                           <div
                             style={{

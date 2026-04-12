@@ -9,7 +9,7 @@ import {
   WEEKDAYS,
 } from "../../data";
 
-export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit }) {
+export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -170,11 +170,11 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit 
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        cursor: onEdit ? "pointer" : "default",
+                        cursor: isAdmin && onEdit ? "pointer" : "default",
                         opacity: away ? 0.55 : 1,
                       }}
-                      onClick={() => onEdit && onEdit(s)}
-                      title={`${s.time} ${s.grade} ${s.subj} ${s.room || ""}${sub ? `\n[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}` : ""}\nクリックで編集`}
+                      onClick={() => isAdmin && onEdit && onEdit(s)}
+                      title={`${s.time} ${s.grade} ${s.subj} ${s.room || ""}${sub ? `\n[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}` : ""}${isAdmin ? "\nクリックで編集" : ""}`}
                     >
                       {sub && (
                         <span

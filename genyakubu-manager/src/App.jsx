@@ -14,6 +14,7 @@ import { VIEWS } from "./constants/views";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
+import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -65,6 +66,7 @@ const LS = {
 
 export default function App() {
   const toasts = useToasts();
+  const { isAdmin, signIn, signOutAdmin } = useAuth();
 
   const onStorageError = useCallback(
     (err, phase) => {
@@ -259,6 +261,9 @@ export default function App() {
         subjectCategories={subjectCategories}
         slots={slots}
         subs={subs}
+        isAdmin={isAdmin}
+        onSignIn={signIn}
+        onSignOut={signOutAdmin}
       />
 
       {/* Desktop sidebar spacer */}
@@ -329,7 +334,7 @@ export default function App() {
                 </button>
               </>
             )}
-            {selected && (
+            {selected && isAdmin && (
               <button
                 onClick={() => setEditSlot("new")}
                 style={{ ...S.btn(false), background: "#e8f5e8", color: "#2a7a2a" }}
@@ -436,10 +441,11 @@ export default function App() {
               onNew={() => setEditSlot("new")}
               biweeklyBase={biweeklyBase}
               onSetBiweeklyBase={saveBiweeklyBase}
+              isAdmin={isAdmin}
             />
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
-            <HolidayManager holidays={holidays} onSave={saveHolidays} />
+            <HolidayManager holidays={holidays} onSave={saveHolidays} isAdmin={isAdmin} />
           )}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
@@ -452,6 +458,7 @@ export default function App() {
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
+              isAdmin={isAdmin}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
@@ -470,6 +477,7 @@ export default function App() {
               onDelCategory={staffCrud.delCategory}
               onSaveSubject={staffCrud.saveSubject}
               onDelSubject={staffCrud.delSubject}
+              isAdmin={isAdmin}
             />
           )}
           {selected && view === VIEWS.WEEK && (
@@ -479,6 +487,7 @@ export default function App() {
               subs={subs}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
+              isAdmin={isAdmin}
             />
           )}
           {selected && view === VIEWS.MONTH && (
@@ -491,6 +500,7 @@ export default function App() {
               month={vm}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
+              isAdmin={isAdmin}
             />
           )}
         </div>

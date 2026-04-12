@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { VIEWS } from "../constants/views";
 import { SyncStatus } from "./SyncStatus";
+import { LoginForm } from "./LoginForm";
 
 export function Sidebar({
   open,
@@ -17,6 +18,9 @@ export function Sidebar({
   subjectCategories,
   slots,
   subs,
+  isAdmin,
+  onSignIn,
+  onSignOut,
 }) {
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
@@ -319,7 +323,8 @@ export function Sidebar({
             );
           })}
         </div>
-        <SyncStatus />
+        <SyncStatus isAdmin={isAdmin} />
+        <LoginForm isAdmin={isAdmin} onSignIn={onSignIn} onSignOut={onSignOut} />
       </nav>
     </>
   );
