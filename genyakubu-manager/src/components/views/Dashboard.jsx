@@ -334,18 +334,34 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
   );
 }
 
-const DAYS_IN_RANGE = 7;
+const DAY_COUNT_OPTIONS = [3, 7, 14];
+const LS_DAY_COUNT_KEY = "genyakubu-dash-day-count";
+
+function loadDayCount() {
+  try {
+    const v = parseInt(localStorage.getItem(LS_DAY_COUNT_KEY), 10);
+    return DAY_COUNT_OPTIONS.includes(v) ? v : 7;
+  } catch {
+    return 7;
+  }
+}
 
 export function Dashboard({ slots, holidays, subs }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
+  const [daysInRange, setDaysInRange] = useState(loadDayCount);
+
+  const changeDayCount = (n) => {
+    setDaysInRange(n);
+    try { localStorage.setItem(LS_DAY_COUNT_KEY, String(n)); } catch { /* quota */ }
+  };
 
   const { holidaysFor, isOffForGrade } = useMemo(
     () => makeHolidayHelpers(holidays),
     [holidays]
   );
 
-  const days = useMemo(() => buildDayRange(startDate, DAYS_IN_RANGE), [startDate]);
+  const days = useMemo(() => buildDayRange(startDate, daysInRange), [startDate, daysInRange]);
 
   const isToday = startDate === todayStr;
 
@@ -374,10 +390,10 @@ export function Dashboard({ slots, holidays, subs }) {
         />
         <button
           type="button"
-          onClick={() => setStartDate(shiftDate(startDate, -DAYS_IN_RANGE))}
+          onClick={() => setStartDate(shiftDate(startDate, -daysInRange))}
           style={S.btn(false)}
         >
-          ← 前の週
+          ← 前
         </button>
         <button
           type="button"
@@ -388,13 +404,30 @@ export function Dashboard({ slots, holidays, subs }) {
         </button>
         <button
           type="button"
-          onClick={() => setStartDate(shiftDate(startDate, DAYS_IN_RANGE))}
+          onClick={() => setStartDate(shiftDate(startDate, daysInRange))}
           style={S.btn(false)}
         >
-          次の週 →
+          次 →
         </button>
+        <div style={{ display: "flex", gap: 2 }}>
+          {DAY_COUNT_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => changeDayCount(n)}
+              style={{
+                ...S.btn(daysInRange === n),
+                padding: "4px 8px",
+                fontSize: 11,
+                minWidth: 32,
+              }}
+            >
+              {n}日
+            </button>
+          ))}
+        </div>
         <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
-          {startDate} 〜 {days[days.length - 1].dateStr}（{DAYS_IN_RANGE}日間）
+          {startDate} 〜 {days[days.length - 1].dateStr}（{daysInRange}日間）
         </span>
       </div>
       {days.map(({ dateStr, dow }) => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
@@ -18,6 +18,8 @@ export function SubstituteView({
   onEdit,
   onDel,
   onGoToStaffView,
+  initFilter,
+  onConsumeInitFilter,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -26,6 +28,18 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
+
+  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック)
+  useEffect(() => {
+    if (initFilter) {
+      if (initFilter.status) {
+        setFStatus(initFilter.status);
+        setFMonth(""); // 月フィルタを解除して全件から依頼中を表示
+        setTab("list");
+      }
+      onConsumeInitFilter?.();
+    }
+  }, [initFilter, onConsumeInitFilter]);
 
   // partTimeStaff は新形式 {name, subjectIds}[] のみを想定
   const staffNameSet = useMemo(

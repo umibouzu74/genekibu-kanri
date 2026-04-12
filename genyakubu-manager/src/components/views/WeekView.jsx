@@ -5,6 +5,7 @@ import {
   DAYS,
   fmtDateWeekday,
   sortSlots as sortS,
+  SUB_STATUS,
 } from "../../data";
 import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
@@ -22,6 +23,25 @@ export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
     ts.forEach((s) => m[s.day]?.push(s));
     return m;
   }, [ts]);
+
+  // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
+  const slotSubMap = useMemo(() => {
+    if (!subs?.length) return new Map();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const end = new Date(today);
+    end.setDate(end.getDate() + 14);
+    const m = new Map();
+    for (const sub of subs) {
+      if (sub.originalTeacher !== teacher && sub.substitute !== teacher) continue;
+      const [y, mo, d] = sub.date.split("-").map(Number);
+      const dt = new Date(y, mo - 1, d);
+      if (dt < today || dt > end) continue;
+      if (!m.has(sub.slotId)) m.set(sub.slotId, []);
+      m.get(sub.slotId).push(sub);
+    }
+    return m;
+  }, [subs, teacher]);
 
   // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
   const upcomingSubs = useMemo(() => {
@@ -167,9 +187,57 @@ export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
                     —
                   </div>
                 ) : (
-                  byDay[d].map((s) => (
-                    <SlotCard key={s.id} slot={s} compact onEdit={onEdit} onDel={onDel} />
-                  ))
+                  byDay[d].map((s) => {
+                    const slotSubs = slotSubMap.get(s.id);
+                    return (
+                      <div key={s.id} style={{ position: "relative" }}>
+                        <SlotCard slot={s} compact onEdit={onEdit} onDel={onDel} />
+                        {slotSubs && slotSubs.length > 0 && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 2,
+                              marginTop: 2,
+                            }}
+                          >
+                            {slotSubs.map((sub) => {
+                              const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
+                              const isOriginal = sub.originalTeacher === teacher;
+                              return (
+                                <div
+                                  key={sub.id}
+                                  style={{
+                                    fontSize: 9,
+                                    lineHeight: 1.3,
+                                    padding: "2px 4px",
+                                    borderRadius: 4,
+                                    background: st.bg,
+                                    borderLeft: `2px solid ${st.color}`,
+                                    display: "flex",
+                                    gap: 4,
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                  }}
+                                  title={`${sub.date} ${isOriginal ? "代行依頼中" : "代行予定"}\n${sub.originalTeacher} → ${sub.substitute || "未定"}${sub.memo ? "\n" + sub.memo : ""}`}
+                                >
+                                  <span style={{ fontWeight: 700 }}>
+                                    {sub.date.slice(5)}
+                                  </span>
+                                  <span style={{ color: st.color, fontWeight: 700 }}>
+                                    {st.label}
+                                  </span>
+                                  <span style={{ color: "#666" }}>
+                                    {isOriginal ? `→${sub.substitute || "?"}` : `←${sub.originalTeacher}`}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>

@@ -13,6 +13,7 @@ import {
 
 import { VIEWS } from "./constants/views";
 import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
+import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
 import { colors, font, S } from "./styles/common";
@@ -126,6 +127,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [subsInitFilter, setSubsInitFilter] = useState(null); // null | { status }
 
   // ─── Export / Import / Reset ────────────────────────────────────
   const handleExport = useCallback(() => {
@@ -274,110 +276,36 @@ export default function App() {
   const vy = vd.getFullYear();
   const vm = vd.getMonth() + 1;
 
-  // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
-  // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
-  // それ以外の教員は slots.subj を教科マスター (名前 / 別名) と照合し、
-  // 最も多く担当している教科を primary として振り分ける。
-  const teacherGroups = useMemo(() => {
-    const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
+  const teacherGroups = useTeacherGroups({ slots, partTimeStaff, subjects, search });
 
-    // slot.subj 文字列から Subject を推定
-    const matchSubject = (subjStr) => {
-      if (!subjStr) return null;
-      const exact = subjects.find((s) => s.name === subjStr);
-      if (exact) return exact;
-      const byName = subjects.find((s) => subjStr.includes(s.name));
-      if (byName) return byName;
-      const byAlias = subjects.find(
-        (s) =>
-          Array.isArray(s.aliases) &&
-          s.aliases.some((a) => a && subjStr.includes(a))
-      );
-      return byAlias || null;
+  // SlotForm 用のサジェスト集合 (時間帯・学年・教室・科目・講師)。
+  // 既存スロットと教科マスター・バイト一覧から派生させ、入力時の datalist 補完で
+  // タイポを防ぎ手間を減らす。
+  const slotFormSuggestions = useMemo(() => {
+    const times = new Set();
+    const grades = new Set();
+    const rooms = new Set();
+    const subjs = new Set();
+    const teachers = new Set();
+    for (const s of slots) {
+      if (s.time) times.add(s.time);
+      if (s.grade) grades.add(s.grade);
+      if (s.room) rooms.add(s.room);
+      if (s.subj) subjs.add(s.subj);
+      if (s.teacher) teachers.add(s.teacher);
+    }
+    for (const subj of subjects) if (subj.name) subjs.add(subj.name);
+    for (const ps of partTimeStaff) if (ps.name) teachers.add(ps.name);
+    const sortJa = (arr) =>
+      arr.sort((a, b) => a.localeCompare(b, "ja"));
+    return {
+      times: sortJa([...times]),
+      grades: sortJa([...grades]),
+      rooms: sortJa([...rooms]),
+      subjs: sortJa([...subjs]),
+      teachers: sortJa([...teachers]),
     };
-
-    // 教員ごとの「教科名 → コマ数」集計
-    const teacherSubjectCounts = new Map();
-    for (const slot of slots) {
-      if (!slot.teacher) continue;
-      const matched = matchSubject(slot.subj);
-      if (!matched) continue;
-      if (!teacherSubjectCounts.has(slot.teacher)) {
-        teacherSubjectCounts.set(slot.teacher, new Map());
-      }
-      const m = teacherSubjectCounts.get(slot.teacher);
-      m.set(matched.name, (m.get(matched.name) || 0) + 1);
-    }
-
-    // 全教員を列挙 (slots + partTimeStaff)
-    const allTeachers = new Set();
-    for (const s of slots) if (s.teacher) allTeachers.add(s.teacher);
-    for (const s of partTimeStaff) allTeachers.add(s.name);
-
-    // バイト / 教科別 / その他 に仕分け
-    const staffGroup = [];
-    const bySubject = new Map();
-    const other = [];
-    for (const t of allTeachers) {
-      if (staffNameSet.has(t)) {
-        staffGroup.push(t);
-        continue;
-      }
-      const counts = teacherSubjectCounts.get(t);
-      let primary = null;
-      let best = 0;
-      if (counts) {
-        for (const [name, cnt] of counts) {
-          if (cnt > best) {
-            best = cnt;
-            primary = name;
-          }
-        }
-      }
-      if (primary) {
-        if (!bySubject.has(primary)) bySubject.set(primary, []);
-        bySubject.get(primary).push(t);
-      } else {
-        other.push(t);
-      }
-    }
-
-    staffGroup.sort();
-    for (const arr of bySubject.values()) arr.sort();
-    other.sort();
-
-    // 表示順: バイト → 英数国理社 → それ以外の教科 → その他
-    const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
-    const groups = [];
-    if (staffGroup.length) {
-      groups.push({ key: "__staff__", label: "バイト", teachers: staffGroup });
-    }
-    for (const name of SUBJECT_ORDER) {
-      const arr = bySubject.get(name);
-      if (arr && arr.length) {
-        groups.push({ key: name, label: name, teachers: arr });
-      }
-    }
-    for (const [name, arr] of bySubject) {
-      if (!SUBJECT_ORDER.includes(name) && arr.length) {
-        groups.push({ key: name, label: name, teachers: arr });
-      }
-    }
-    if (other.length) {
-      groups.push({ key: "__other__", label: "その他", teachers: other });
-    }
-
-    // 検索フィルタ
-    if (search) {
-      return groups
-        .map((g) => ({
-          ...g,
-          teachers: g.teachers.filter((t) => t.includes(search)),
-        }))
-        .filter((g) => g.teachers.length > 0);
-    }
-    return groups;
-  }, [slots, partTimeStaff, subjects, search]);
+  }, [slots, subjects, partTimeStaff]);
 
   // ─── Slot / Sub CRUD ────────────────────────────────────────────
   // Robust monotonic IDs: derived from the global maximum across the
@@ -385,7 +313,30 @@ export default function App() {
   const nextId = () => nextNumericId(slots);
   const nextSubId = () => nextNumericId(subs);
 
-  const handleSaveSlot = (f) => {
+  const handleSaveSlot = async (f) => {
+    // Double booking detection: 同じ講師が同じ曜日・同じ時間帯に既に
+    // 入っている場合、ユーザーに確認する。編集中のコマ自身は除外する。
+    const editingId = editSlot === "new" ? null : editSlot?.id;
+    const conflicts = slots.filter(
+      (s) =>
+        s.id !== editingId &&
+        s.teacher === f.teacher &&
+        s.day === f.day &&
+        s.time === f.time
+    );
+    if (conflicts.length > 0) {
+      const list = conflicts
+        .map((c) => `・${c.grade}${c.cls && c.cls !== "-" ? c.cls : ""} ${c.subj}${c.room ? ` (${c.room})` : ""}`)
+        .join("\n");
+      const ok = await confirm({
+        title: "ダブルブッキングの可能性",
+        message: `「${f.teacher}」は ${f.day}曜 ${f.time} に既に ${conflicts.length} 件のコマがあります:\n\n${list}\n\nこのまま保存しますか？`,
+        okLabel: "保存する",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+
     if (editSlot === "new") {
       saveSlots([...slots, { ...f, id: nextId() }]);
       toasts.success("コマを追加しました");
@@ -636,6 +587,12 @@ export default function App() {
           setShowDataMgr(true);
           setSidebarOpen(false);
         }}
+        onJumpToRequestedSubs={() => {
+          setSelected(null);
+          setView(VIEWS.SUBS);
+          setSubsInitFilter({ status: "requested" });
+          setSidebarOpen(false);
+        }}
         search={search}
         onSearchChange={setSearch}
         teacherGroups={teacherGroups}
@@ -823,6 +780,8 @@ export default function App() {
               onEdit={setEditSub}
               onDel={handleDelSub}
               onGoToStaffView={() => setView(VIEWS.STAFF)}
+              initFilter={subsInitFilter}
+              onConsumeInitFilter={() => setSubsInitFilter(null)}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
@@ -877,6 +836,7 @@ export default function App() {
             slot={editSlot === "new" ? null : editSlot}
             onSave={handleSaveSlot}
             onCancel={() => setEditSlot(null)}
+            suggestions={slotFormSuggestions}
           />
         </Modal>
       )}
@@ -923,6 +883,9 @@ export default function App() {
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
+          .master-slot-actions { opacity: 1 !important; }
+        }
+        @media (hover: none) {
           .master-slot-actions { opacity: 1 !important; }
         }
         @media print {

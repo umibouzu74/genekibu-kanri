@@ -9,6 +9,7 @@ export function Sidebar({
   onSelectView,
   onSelectTeacher,
   onOpenDataMgr,
+  onJumpToRequestedSubs,
   search,
   onSearchChange,
   teacherGroups,
@@ -175,6 +176,20 @@ export function Sidebar({
             "代行管理",
             pending > 0 && (
               <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onJumpToRequestedSubs?.();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onJumpToRequestedSubs?.();
+                  }
+                }}
+                title="依頼中のみ表示"
                 style={{
                   marginLeft: 6,
                   background: "#c44",
@@ -183,6 +198,7 @@ export function Sidebar({
                   padding: "1px 6px",
                   fontSize: 9,
                   fontWeight: 800,
+                  cursor: "pointer",
                 }}
               >
                 {pending}
