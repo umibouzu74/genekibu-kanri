@@ -8,6 +8,7 @@ import {
   SUB_STATUS_KEYS,
 } from "../../data";
 import { S } from "../../styles/common";
+import { sortJa } from "../../utils/sortJa";
 import { StatusBadge } from "../StatusBadge";
 
 export function SubstituteView({
@@ -86,7 +87,7 @@ export function SubstituteView({
   const allTeachers = useMemo(() => {
     const set = new Set(staffNameSet);
     slots.forEach((s) => s.teacher && set.add(s.teacher));
-    return [...set].sort();
+    return sortJa([...set]);
   }, [slots, staffNameSet]);
 
   const TabBtn = ({ k, label, count }) => (
