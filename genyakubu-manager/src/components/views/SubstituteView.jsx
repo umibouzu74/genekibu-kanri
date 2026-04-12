@@ -84,6 +84,25 @@ export function SubstituteView({
 
   return (
     <div style={{ marginTop: 12 }}>
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          onClick={onNew}
+          style={{
+            padding: "12px 24px",
+            borderRadius: 8,
+            border: "2px solid #2a7a2a",
+            background: "#e8f5e8",
+            color: "#2a7a2a",
+            fontSize: 15,
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: "0 2px 4px rgba(42,122,42,0.1)",
+          }}
+        >
+          ＋ 新規代行
+        </button>
+      </div>
       <div
         style={{
           display: "flex",
@@ -186,14 +205,6 @@ export function SubstituteView({
             >
               クリア
             </button>
-            <div style={{ marginLeft: "auto" }}>
-              <button
-                onClick={onNew}
-                style={{ ...S.btn(false), background: "#e8f5e8", color: "#2a7a2a" }}
-              >
-                ＋ 新規代行
-              </button>
-            </div>
           </div>
 
           <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>

@@ -65,6 +65,13 @@ const migratePartTimeStaff = (arr) =>
       )
     : arr;
 
+// 旧「完了」ステータスを廃止したため、既存の completed レコードは confirmed
+// に正規化する。
+const migrateSubs = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((s) => (s?.status === "completed" ? { ...s, status: "confirmed" } : s))
+    : arr;
+
 export default function App() {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -91,7 +98,10 @@ export default function App() {
     migrate: migrateHolidays,
     onError: onStorageError,
   });
-  const [subs, saveSubs] = useLocalStorage(LS.subs, [], { onError: onStorageError });
+  const [subs, saveSubs] = useLocalStorage(LS.subs, [], {
+    migrate: migrateSubs,
+    onError: onStorageError,
+  });
   const [partTimeStaff, savePartTimeStaff] = useLocalStorage(
     LS.partTime,
     INIT_PART_TIME_STAFF,
@@ -179,7 +189,7 @@ export default function App() {
           if (Array.isArray(d.slots)) saveSlots(d.slots);
           if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
           if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
-          if (Array.isArray(d.substitutions)) saveSubs(d.substitutions);
+          if (Array.isArray(d.substitutions)) saveSubs(migrateSubs(d.substitutions));
           if (Array.isArray(d.partTimeStaff))
             savePartTimeStaff(migratePartTimeStaff(d.partTimeStaff));
           if (Array.isArray(d.subjectCategories)) saveSubjectCategories(d.subjectCategories);
