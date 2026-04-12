@@ -5,6 +5,8 @@ import {
   fmtDateWeekday,
   gradeColor as GC,
   monthlyTally,
+  staffMonthlyAbsenceDates,
+  staffMonthlyRegularDates,
   staffMonthlyWorkDates,
   SUB_STATUS,
   SUB_STATUS_KEYS,
@@ -19,6 +21,7 @@ import { AdjustmentEditor } from "./AdjustmentEditor";
 export function SubstituteView({
   subs,
   slots,
+  holidays,
   partTimeStaff,
   onNew,
   onEdit,
@@ -551,16 +554,22 @@ export function SubstituteView({
                   const workDates = isExpanded
                     ? staffMonthlyWorkDates(subs, r.name, ty, tm)
                     : [];
+                  const absenceDates = isExpanded
+                    ? staffMonthlyAbsenceDates(subs, r.name, ty, tm)
+                    : [];
+                  const regularDates = isExpanded
+                    ? staffMonthlyRegularDates(slots, r.name, holidays || [], ty, tm)
+                    : [];
                   return (
                     <Fragment key={r.name}>
                       <tr
                         style={{
                           background: i % 2 ? "#f8f9fa" : "#fff",
                           borderTop: "1px solid #eee",
-                          cursor: r.covered ? "pointer" : "default",
+                          cursor: r.covered || r.coveredFor ? "pointer" : "default",
                         }}
                         onClick={() => {
-                          if (!r.covered) return;
+                          if (!r.covered && !r.coveredFor) return;
                           setExpandedTally((prev) => {
                             const next = new Set(prev);
                             if (next.has(r.name)) next.delete(r.name);
@@ -570,7 +579,7 @@ export function SubstituteView({
                         }}
                       >
                         <td style={{ padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
-                          {r.covered > 0 && (
+                          {(r.covered > 0 || r.coveredFor > 0) && (
                             <span
                               style={{
                                 display: "inline-block",
@@ -636,16 +645,45 @@ export function SubstituteView({
                           {diff > 0 ? `+${diff}` : diff}
                         </td>
                       </tr>
-                      {isExpanded && workDates.length > 0 && (
+                      {isExpanded && (
                         <tr style={{ background: i % 2 ? "#f0f2f4" : "#f8f9fa" }}>
                           <td
                             colSpan={4}
-                            style={{ padding: "6px 14px 10px 36px", fontSize: 12, color: "#555" }}
+                            style={{ padding: "8px 14px 12px 36px", fontSize: 12, color: "#555" }}
                           >
-                            <span style={{ fontWeight: 700, fontSize: 11, color: "#888" }}>
-                              出勤日（{workDates.length}日）:
-                            </span>{" "}
-                            {workDates.map((d) => fmtDateWeekday(d)).join("、")}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {regularDates.length > 0 && (
+                                <div>
+                                  <span style={{ fontWeight: 700, fontSize: 11, color: "#666" }}>
+                                    通常出勤日（{regularDates.length}日）:
+                                  </span>{" "}
+                                  {regularDates.map((d) => fmtDateWeekday(d)).join("、")}
+                                </div>
+                              )}
+                              <div>
+                                <span style={{ fontWeight: 700, fontSize: 11, color: "#2a7a4a" }}>
+                                  代行出勤日（{workDates.length}日）:
+                                </span>{" "}
+                                {workDates.length > 0
+                                  ? workDates.map((d) => fmtDateWeekday(d)).join("、")
+                                  : "—"}
+                              </div>
+                              <div>
+                                <span style={{ fontWeight: 700, fontSize: 11, color: "#c03030" }}>
+                                  代行された日（{absenceDates.length}日）:
+                                </span>{" "}
+                                {absenceDates.length > 0 ? (
+                                  <>
+                                    {absenceDates.map((d) => fmtDateWeekday(d)).join("、")}
+                                    <span style={{ marginLeft: 6, fontSize: 10, color: "#999" }}>
+                                      ※ 出勤なし
+                                    </span>
+                                  </>
+                                ) : (
+                                  "—"
+                                )}
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       )}
