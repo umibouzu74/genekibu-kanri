@@ -18,6 +18,11 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
     );
   };
 
+  // 確認ダイアログなしで削除（ドラッグ操作での置き換え等に使用）
+  const remove = (id) => {
+    saveAdjustments(adjustments.filter((a) => a.id !== id));
+  };
+
   const del = async (id) => {
     const ok = await confirm({
       title: "調整の削除",
@@ -26,9 +31,9 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
       tone: "danger",
     });
     if (!ok) return;
-    saveAdjustments(adjustments.filter((a) => a.id !== id));
+    remove(id);
     toasts.success("時間割調整を削除しました");
   };
 
-  return { add, del };
+  return { add, del, remove };
 }

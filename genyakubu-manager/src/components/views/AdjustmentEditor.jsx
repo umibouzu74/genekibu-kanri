@@ -135,7 +135,7 @@ function SlotCard({ slot, isAdjusted, adjustLabel, onContextMenu, isAdmin }) {
 }
 
 // ─── Time Row (drop target) ─────────────────────────────────────
-function TimeRow({ time, slots, children, onDrop, isAdmin }) {
+function TimeRow({ time, children, onDrop, isAdmin }) {
   const [dragOver, setDragOver] = useState(false);
 
   const handleDragOver = (e) => {
@@ -204,6 +204,7 @@ export function AdjustmentEditor({
   adjustments,
   onAddAdjustment,
   onDelAdjustment,
+  onRemoveAdjustment,
   isAdmin,
 }) {
   const [date, setDate] = useState(fmtDate(new Date()));
@@ -279,17 +280,20 @@ export function AdjustmentEditor({
     (slotId, targetTime) => {
       const slot = daySlots.find((s) => s.id === slotId);
       if (!slot) return;
-      // Don't create adjustment if dropped on same time
-      if (slot.time === targetTime) return;
       // Check if there's already a move for this slot on this date
       const existing = dateAdj.find(
         (a) => a.type === "move" && a.slotId === slotId
       );
       if (existing) {
-        // If moving back to original, delete the adjustment
+        // Moving back to original time → just delete the adjustment
         if (slot.time === targetTime) {
-          onDelAdjustment(existing.id);
+          onRemoveAdjustment(existing.id);
+          return;
         }
+        // Moving to a different time → replace the adjustment
+        onRemoveAdjustment(existing.id);
+      } else if (slot.time === targetTime) {
+        // No existing adjustment and dropped on same time → no-op
         return;
       }
       onAddAdjustment({
@@ -300,7 +304,7 @@ export function AdjustmentEditor({
         memo: `${slot.time} → ${targetTime}`,
       });
     },
-    [date, daySlots, dateAdj, onAddAdjustment, onDelAdjustment]
+    [date, daySlots, dateAdj, onAddAdjustment, onRemoveAdjustment]
   );
 
   // Context menu handler
@@ -488,7 +492,6 @@ export function AdjustmentEditor({
               <TimeRow
                 key={time}
                 time={time}
-                slots={groupSlots}
                 onDrop={handleDrop}
                 isAdmin={isAdmin}
               >

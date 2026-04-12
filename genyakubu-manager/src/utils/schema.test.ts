@@ -4,6 +4,7 @@ import {
   isBiweeklyAnchor,
   isHoliday,
   isPartTimeStaffObject,
+  isScheduleAdjustment,
   isSlot,
   isSub,
   isSubject,
@@ -90,6 +91,22 @@ describe("type guards", () => {
     expect(isBiweeklyAnchor({ weekType: "A" })).toBe(false);
     expect(isBiweeklyAnchor("2026-04-06")).toBe(false);
     expect(isBiweeklyAnchor(null)).toBe(false);
+  });
+
+  it("isScheduleAdjustment requires id, date, type, slotId", () => {
+    expect(
+      isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "move", slotId: 3, memo: "" })
+    ).toBe(true);
+    expect(
+      isScheduleAdjustment({ id: 2, date: "2026-04-10", type: "combine", slotId: 3, combineSlotIds: [4] })
+    ).toBe(true);
+    expect(
+      isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "cancel", slotId: 3 })
+    ).toBe(false); // "cancel" is not a valid type
+    expect(
+      isScheduleAdjustment({ date: "2026-04-10", type: "move", slotId: 3 })
+    ).toBe(false); // missing id
+    expect(isScheduleAdjustment(null)).toBe(false);
   });
 });
 
@@ -216,6 +233,38 @@ describe("validateExportBundle", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.path).toBe("biweeklyAnchors[1]");
+  });
+
+  it("accepts a well-formed adjustments array", () => {
+    const r = validateExportBundle({
+      adjustments: [
+        { id: 1, date: "2026-04-10", type: "move", slotId: 3, targetTime: "20:30-21:50", memo: "" },
+        { id: 2, date: "2026-04-10", type: "combine", slotId: 3, combineSlotIds: [4], memo: "" },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts an empty adjustments array", () => {
+    const r = validateExportBundle({ adjustments: [] });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects non-array adjustments", () => {
+    const r = validateExportBundle({ adjustments: "bad" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/adjustments/);
+  });
+
+  it("rejects malformed adjustments entries", () => {
+    const r = validateExportBundle({
+      adjustments: [
+        { id: 1, date: "2026-04-10", type: "move", slotId: 3 },
+        { date: "2026-04-10", type: "move", slotId: 3 }, // missing id
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("adjustments[1]");
   });
 });
 

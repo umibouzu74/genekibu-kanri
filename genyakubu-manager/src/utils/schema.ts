@@ -9,6 +9,7 @@
 //     partTimeStaff: PartTimeStaffObject[],
 //     biweeklyBase: string,
 //     biweeklyAnchors: BiweeklyAnchor[],
+//     adjustments: ScheduleAdjustment[],
 //   }
 
 import type {
