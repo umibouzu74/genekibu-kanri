@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { compareJa } from "../utils/sortJa";
+import { getSlotTeachers } from "../utils/biweekly";
 
 // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
 // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
@@ -30,16 +31,18 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search }) {
       if (!slot.teacher) continue;
       const matched = matchSubject(slot.subj);
       if (!matched) continue;
-      if (!teacherSubjectCounts.has(slot.teacher)) {
-        teacherSubjectCounts.set(slot.teacher, new Map());
+      for (const t of getSlotTeachers(slot)) {
+        if (!teacherSubjectCounts.has(t)) {
+          teacherSubjectCounts.set(t, new Map());
+        }
+        const m = teacherSubjectCounts.get(t);
+        m.set(matched.name, (m.get(matched.name) || 0) + 1);
       }
-      const m = teacherSubjectCounts.get(slot.teacher);
-      m.set(matched.name, (m.get(matched.name) || 0) + 1);
     }
 
     // 全教員を列挙 (slots + partTimeStaff)
     const allTeachers = new Set();
-    for (const s of slots) if (s.teacher) allTeachers.add(s.teacher);
+    for (const s of slots) for (const t of getSlotTeachers(s)) allTeachers.add(t);
     for (const s of partTimeStaff) allTeachers.add(s.name);
 
     // バイト / 教科別 / その他 に仕分け

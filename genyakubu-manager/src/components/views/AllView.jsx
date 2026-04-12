@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "../../data";
-import { formatCount, weightedSlotCount } from "../../utils/biweekly";
+import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
 
 export function AllView({ slots, onSelectTeacher }) {
   const teachers = useMemo(() => {
-    const tSet = new Set(slots.map((s) => s.teacher));
+    const tSet = new Set();
+    for (const s of slots) for (const t of getSlotTeachers(s)) tSet.add(t);
     return [...tSet]
       .map((t) => {
-        const sl = slots.filter((s) => s.teacher === t);
+        const sl = slots.filter((s) => isSlotForTeacher(s, t));
         const byDay = {};
         const byDayTip = {};
         DAYS.forEach((d) => {

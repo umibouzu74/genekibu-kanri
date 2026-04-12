@@ -10,11 +10,12 @@ import {
 import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
+import { isSlotForTeacher } from "../../utils/biweekly";
 import { S } from "../../styles/common";
 
 export function WeekView({ teacher, slots, subs, onEdit, onDel, isAdmin }) {
   const ts = useMemo(
-    () => sortS(slots.filter((s) => s.teacher === teacher || s.note?.includes(teacher))),
+    () => sortS(slots.filter((s) => isSlotForTeacher(s, teacher))),
     [teacher, slots]
   );
   const byDay = useMemo(() => {

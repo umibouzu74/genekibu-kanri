@@ -5,6 +5,8 @@ import {
   getSlotWeekType,
   getWeekType,
   isBiweekly,
+  isSlotForTeacher,
+  getSlotTeachers,
   slotWeight,
   weightedSlotCount,
 } from "./biweekly";
@@ -216,6 +218,46 @@ describe("weightedSlotCount", () => {
   it("returns integer for all-regular slots", () => {
     const slots = [{ note: "" }, { note: "合同" }, { note: "" }];
     expect(weightedSlotCount(slots)).toBe(3);
+  });
+});
+
+describe("isSlotForTeacher", () => {
+  it("matches direct teacher field", () => {
+    expect(isSlotForTeacher({ teacher: "堀上", note: "" }, "堀上")).toBe(true);
+  });
+
+  it("matches biweekly partner in note", () => {
+    expect(isSlotForTeacher({ teacher: "堀上", note: "隔週(川井)" }, "川井")).toBe(true);
+  });
+
+  it("matches individual teacher in multi-teacher field", () => {
+    expect(isSlotForTeacher({ teacher: "香川·福江·川井", note: "プレップ" }, "川井")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "香川·福江·川井", note: "プレップ" }, "香川")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "香川·福江·川井", note: "プレップ" }, "福江")).toBe(true);
+  });
+
+  it("does not match unrelated teacher", () => {
+    expect(isSlotForTeacher({ teacher: "堀上", note: "隔週(川井)" }, "河野")).toBe(false);
+  });
+
+  it("handles null/empty note gracefully", () => {
+    expect(isSlotForTeacher({ teacher: "堀上", note: null }, "堀上")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "堀上", note: undefined }, "堀上")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "堀上" }, "堀上")).toBe(true);
+  });
+});
+
+describe("getSlotTeachers", () => {
+  it("returns single teacher as array", () => {
+    expect(getSlotTeachers({ teacher: "堀上" })).toEqual(["堀上"]);
+  });
+
+  it("splits multi-teacher field by ·", () => {
+    expect(getSlotTeachers({ teacher: "香川·福江·川井" })).toEqual(["香川", "福江", "川井"]);
+  });
+
+  it("returns empty array for empty teacher", () => {
+    expect(getSlotTeachers({ teacher: "" })).toEqual([]);
   });
 });
 

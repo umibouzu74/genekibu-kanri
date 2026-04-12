@@ -9,6 +9,7 @@ import {
   WEEKDAYS,
 } from "../../data";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
+import { isSlotForTeacher } from "../../utils/biweekly";
 
 export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
@@ -18,7 +19,7 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
     [subs, teacher]
   );
   const ts = useMemo(
-    () => slots.filter((s) => s.teacher === teacher || s.note?.includes(teacher)),
+    () => slots.filter((s) => isSlotForTeacher(s, teacher)),
     [teacher, slots]
   );
   const dayMap = useMemo(() => {
