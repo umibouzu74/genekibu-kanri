@@ -11,4 +11,6 @@ export const VIEWS = Object.freeze({
   SUBS: "subs",
   CONFIRMED_SUBS: "confirmed-subs",
   STAFF: "staff",
+  HEATMAP: "heatmap",
+  COMPARE: "compare",
 });

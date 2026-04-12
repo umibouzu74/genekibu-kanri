@@ -167,6 +167,8 @@ export function Sidebar({
         <div style={{ borderBottom: "1px solid #2a2a4e" }}>
           {navItem(VIEWS.DASH, "📋", "ダッシュボード")}
           {navItem(VIEWS.ALL, "📊", "全講師一覧")}
+          {navItem(VIEWS.HEATMAP, "🔥", "繁忙度ヒートマップ")}
+          {navItem(VIEWS.COMPARE, "⚖", "講師比較")}
           {navItem(VIEWS.HOLIDAYS, "📅", "祝日・休講日管理")}
           {navItem(VIEWS.MASTER, "⚙", "コースマスター管理")}
           {navItem(VIEWS.STAFF, "👥", "バイト・教科管理")}

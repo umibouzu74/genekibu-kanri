@@ -3,7 +3,6 @@ import {
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
-  fmtDate,
   INIT_HOLIDAYS,
   INIT_PART_TIME_STAFF,
   INIT_SLOTS,
@@ -15,14 +14,16 @@ import { VIEWS } from "./constants/views";
 import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
-import { useConfirm } from "./hooks/useConfirm";
-import { colors, font, S } from "./styles/common";
+import { useSlotsCrud } from "./hooks/useSlotsCrud";
+import { useSubsCrud } from "./hooks/useSubsCrud";
+import { useStaffCrud } from "./hooks/useStaffCrud";
 import {
-  CURRENT_SCHEMA_VERSION,
-  migrateExportBundle,
-  nextNumericId,
-  validateExportBundle,
-} from "./utils/schema";
+  useDataIO,
+  migrateHolidays,
+  migratePartTimeStaff,
+  migrateSubs,
+} from "./hooks/useDataIO";
+import { colors, font, S } from "./styles/common";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -39,6 +40,8 @@ import { MasterView } from "./components/views/MasterView";
 import { SubstituteView } from "./components/views/SubstituteView";
 import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
 import { StaffManagerView } from "./components/views/StaffManagerView";
+import { HeatmapView } from "./components/views/HeatmapView";
+import { CompareView } from "./components/views/CompareView";
 
 // ─── localStorage keys ──────────────────────────────────────────────
 const LS = {
@@ -51,31 +54,8 @@ const LS = {
   biweeklyBase: "genyakubu-biweekly-base",
 };
 
-// Migrate holiday records to ensure `scope` defaults to ["全部"].
-const migrateHolidays = (arr) =>
-  Array.isArray(arr) ? arr.map((x) => ({ ...x, scope: x.scope || ["全部"] })) : arr;
-
-// partTimeStaff を string[] (旧形式) から {name, subjectIds}[] (新形式) に
-// 変換する。既存ユーザーの localStorage を破壊せずアップグレードする。
-const migratePartTimeStaff = (arr) =>
-  Array.isArray(arr)
-    ? arr.map((x) =>
-        typeof x === "string"
-          ? { name: x, subjectIds: [] }
-          : { name: x?.name ?? "", subjectIds: Array.isArray(x?.subjectIds) ? x.subjectIds : [] }
-      )
-    : arr;
-
-// 旧「完了」ステータスを廃止したため、既存の completed レコードは confirmed
-// に正規化する。
-const migrateSubs = (arr) =>
-  Array.isArray(arr)
-    ? arr.map((s) => (s?.status === "completed" ? { ...s, status: "confirmed" } : s))
-    : arr;
-
 export default function App() {
   const toasts = useToasts();
-  const confirm = useConfirm();
 
   const onStorageError = useCallback(
     (err, phase) => {
@@ -92,6 +72,7 @@ export default function App() {
     [toasts]
   );
 
+  // ─── Persisted state ──────────────────────────────────────────────
   const [slots, saveSlots] = useLocalStorage(LS.slots, INIT_SLOTS, {
     onError: onStorageError,
   });
@@ -118,136 +99,40 @@ export default function App() {
   });
   const [biweeklyBase, saveBiweeklyBase] = useLocalStorageRaw(LS.biweeklyBase, "");
 
+  // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
   const [view, setView] = useState(VIEWS.DASH);
   const [monthOff, setMonthOff] = useState(0);
   const [search, setSearch] = useState("");
-  const [editSlot, setEditSlot] = useState(null); // null | slot | "new"
-  const [editSub, setEditSub] = useState(null); // null | sub | "new"
+  const [editSlot, setEditSlot] = useState(null);
+  const [editSub, setEditSub] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [subsInitFilter, setSubsInitFilter] = useState(null); // null | { status }
+  const [subsInitFilter, setSubsInitFilter] = useState(null);
 
-  // ─── Export / Import / Reset ────────────────────────────────────
-  const handleExport = useCallback(() => {
-    try {
-      const data = JSON.stringify(
-        {
-          schemaVersion: CURRENT_SCHEMA_VERSION,
-          exportedAt: new Date().toISOString(),
-          slots,
-          holidays,
-          biweeklyBase,
-          substitutions: subs,
-          partTimeStaff,
-          subjectCategories,
-          subjects,
-        },
-        null,
-        2
-      );
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `genyakubu-backup-${fmtDate(new Date())}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toasts.success("バックアップをダウンロードしました");
-    } catch (err) {
-      console.error(err);
-      toasts.error("エクスポートに失敗しました");
-    }
-  }, [slots, holidays, biweeklyBase, subs, partTimeStaff, subjectCategories, subjects, toasts]);
-
-  const handleImport = useCallback(
-    async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const ok = await confirm({
-        title: "データのインポート",
-        message: `「${file.name}」を読み込みます。\n現在のデータは上書きされます。よろしいですか？`,
-        okLabel: "読み込む",
-        tone: "danger",
-      });
-      if (!ok) {
-        e.target.value = "";
-        return;
-      }
-      setImporting(true);
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const raw = JSON.parse(ev.target.result);
-          const migrated = migrateExportBundle(raw);
-          const result = validateExportBundle(migrated);
-          if (!result.ok) {
-            console.error("[import] validation failed:", result);
-            toasts.error(`インポートに失敗: ${result.error}`);
-            return;
-          }
-          const d = result.data;
-          if (Array.isArray(d.slots)) saveSlots(d.slots);
-          if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
-          if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
-          if (Array.isArray(d.substitutions)) saveSubs(migrateSubs(d.substitutions));
-          if (Array.isArray(d.partTimeStaff))
-            savePartTimeStaff(migratePartTimeStaff(d.partTimeStaff));
-          if (Array.isArray(d.subjectCategories)) saveSubjectCategories(d.subjectCategories);
-          if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
-          setShowDataMgr(false);
-          toasts.success("データをインポートしました");
-        } catch (err) {
-          console.error(err);
-          toasts.error("JSONファイルの読み込みに失敗しました");
-        } finally {
-          setImporting(false);
-        }
-      };
-      reader.onerror = () => {
-        setImporting(false);
-        toasts.error("ファイル読み込み中にエラーが発生しました");
-      };
-      reader.readAsText(file);
-      e.target.value = "";
-    },
-    [
-      confirm,
-      toasts,
-      saveSlots,
-      saveHolidays,
-      saveBiweeklyBase,
-      saveSubs,
-      savePartTimeStaff,
-      saveSubjectCategories,
-      saveSubjects,
-    ]
-  );
-
-  const handleReset = useCallback(async () => {
-    const ok = await confirm({
-      title: "データの初期化",
-      message: "データを初期状態に戻しますか？\n現在のデータは失われます。",
-      okLabel: "初期化",
-      tone: "danger",
-    });
-    if (!ok) return;
-    Object.values(LS).forEach((k) => localStorage.removeItem(k));
-    saveSlots(INIT_SLOTS);
-    saveHolidays(INIT_HOLIDAYS);
-    saveBiweeklyBase("");
-    saveSubs([]);
-    savePartTimeStaff(INIT_PART_TIME_STAFF);
-    saveSubjectCategories(INIT_SUBJECT_CATEGORIES);
-    saveSubjects(INIT_SUBJECTS);
-    setSelected(null);
-    setView(VIEWS.DASH);
-    setShowDataMgr(false);
-    toasts.success("データを初期化しました");
-  }, [
-    confirm,
-    toasts,
+  // ─── CRUD hooks ───────────────────────────────────────────────────
+  const slotsCrud = useSlotsCrud({
+    slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
+  });
+  const subsCrud = useSubsCrud({ subs, saveSubs });
+  const staffCrud = useStaffCrud({
+    partTimeStaff,
+    savePartTimeStaff,
+    subs,
+    subjects,
+    saveSubjects,
+    subjectCategories,
+    saveSubjectCategories,
+  });
+  const dataIO = useDataIO({
+    slots,
+    holidays,
+    biweeklyBase,
+    subs,
+    partTimeStaff,
+    subjectCategories,
+    subjects,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -255,7 +140,13 @@ export default function App() {
     savePartTimeStaff,
     saveSubjectCategories,
     saveSubjects,
-  ]);
+    lsKeys: LS,
+    setImporting,
+    setShowDataMgr,
+    setSelected,
+    setView,
+    defaultView: VIEWS.DASH,
+  });
 
   // ─── Navigation / teacher selection ─────────────────────────────
   const selectTeacher = useCallback((t) => {
@@ -278,260 +169,18 @@ export default function App() {
 
   const teacherGroups = useTeacherGroups({ slots, partTimeStaff, subjects, search });
 
-  // SlotForm 用のサジェスト集合 (時間帯・学年・教室・科目・講師)。
-  // 既存スロットと教科マスター・バイト一覧から派生させ、入力時の datalist 補完で
-  // タイポを防ぎ手間を減らす。
-  const slotFormSuggestions = useMemo(() => {
-    const times = new Set();
-    const grades = new Set();
-    const rooms = new Set();
-    const subjs = new Set();
-    const teachers = new Set();
+  const selDayCounts = useMemo(() => {
+    if (!selected) return { total: 0, byDay: {} };
+    const byDay = {};
+    let total = 0;
     for (const s of slots) {
-      if (s.time) times.add(s.time);
-      if (s.grade) grades.add(s.grade);
-      if (s.room) rooms.add(s.room);
-      if (s.subj) subjs.add(s.subj);
-      if (s.teacher) teachers.add(s.teacher);
+      if (s.teacher !== selected) continue;
+      byDay[s.day] = (byDay[s.day] || 0) + 1;
+      total++;
     }
-    for (const subj of subjects) if (subj.name) subjs.add(subj.name);
-    for (const ps of partTimeStaff) if (ps.name) teachers.add(ps.name);
-    const sortJa = (arr) =>
-      arr.sort((a, b) => a.localeCompare(b, "ja"));
-    return {
-      times: sortJa([...times]),
-      grades: sortJa([...grades]),
-      rooms: sortJa([...rooms]),
-      subjs: sortJa([...subjs]),
-      teachers: sortJa([...teachers]),
-    };
-  }, [slots, subjects, partTimeStaff]);
-
-  // ─── Slot / Sub CRUD ────────────────────────────────────────────
-  // Robust monotonic IDs: derived from the global maximum across the
-  // current list so imports / merges never collide.
-  const nextId = () => nextNumericId(slots);
-  const nextSubId = () => nextNumericId(subs);
-
-  const handleSaveSlot = async (f) => {
-    // Double booking detection: 同じ講師が同じ曜日・同じ時間帯に既に
-    // 入っている場合、ユーザーに確認する。編集中のコマ自身は除外する。
-    const editingId = editSlot === "new" ? null : editSlot?.id;
-    const conflicts = slots.filter(
-      (s) =>
-        s.id !== editingId &&
-        s.teacher === f.teacher &&
-        s.day === f.day &&
-        s.time === f.time
-    );
-    if (conflicts.length > 0) {
-      const list = conflicts
-        .map((c) => `・${c.grade}${c.cls && c.cls !== "-" ? c.cls : ""} ${c.subj}${c.room ? ` (${c.room})` : ""}`)
-        .join("\n");
-      const ok = await confirm({
-        title: "ダブルブッキングの可能性",
-        message: `「${f.teacher}」は ${f.day}曜 ${f.time} に既に ${conflicts.length} 件のコマがあります:\n\n${list}\n\nこのまま保存しますか？`,
-        okLabel: "保存する",
-        tone: "danger",
-      });
-      if (!ok) return;
-    }
-
-    if (editSlot === "new") {
-      saveSlots([...slots, { ...f, id: nextId() }]);
-      toasts.success("コマを追加しました");
-    } else {
-      saveSlots(slots.map((s) => (s.id === editSlot.id ? { ...f, id: s.id } : s)));
-      toasts.success("コマを更新しました");
-    }
-    setEditSlot(null);
-  };
-
-  const handleDelSlot = async (id) => {
-    const linkedSubs = subs.filter((s) => s.slotId === id);
-    const extra = linkedSubs.length
-      ? `\n※この操作で ${linkedSubs.length} 件の代行記録も削除されます。`
-      : "";
-    const ok = await confirm({
-      title: "コマの削除",
-      message: `このコマを削除しますか？${extra}`,
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    saveSlots(slots.filter((s) => s.id !== id));
-    if (linkedSubs.length) {
-      saveSubs(subs.filter((s) => s.slotId !== id));
-    }
-    toasts.success(
-      linkedSubs.length
-        ? `コマと ${linkedSubs.length} 件の代行記録を削除しました`
-        : "コマを削除しました"
-    );
-  };
-
-  const handleSaveSub = (f) => {
-    const ts = new Date().toISOString();
-
-    // 1日分モードからの一括保存 (配列)。新規追加時のみ到達する想定
-    if (Array.isArray(f)) {
-      let next = subs.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
-      const newRecords = f.map((r) => ({
-        ...r,
-        status: r.substitute ? r.status : "requested",
-        id: next++,
-        createdAt: ts,
-        updatedAt: ts,
-      }));
-      saveSubs([...subs, ...newRecords]);
-      toasts.success(`代行を ${newRecords.length} 件追加しました`);
-      setEditSub(null);
-      return;
-    }
-
-    const normalized = { ...f, status: f.substitute ? f.status : "requested" };
-    if (editSub === "new") {
-      saveSubs([...subs, { ...normalized, id: nextSubId(), createdAt: ts, updatedAt: ts }]);
-      toasts.success("代行を追加しました");
-    } else {
-      saveSubs(
-        subs.map((s) =>
-          s.id === editSub.id
-            ? { ...normalized, id: s.id, createdAt: s.createdAt, updatedAt: ts }
-            : s
-        )
-      );
-      toasts.success("代行を更新しました");
-    }
-    setEditSub(null);
-  };
-
-  const handleDelSub = async (id) => {
-    const ok = await confirm({
-      title: "代行の削除",
-      message: "この代行記録を削除しますか？",
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    saveSubs(subs.filter((s) => s.id !== id));
-    toasts.success("代行記録を削除しました");
-  };
-
-  // ─── Staff (バイト) / Subject / Category CRUD ────────────────────
-  const handleAddStaff = (name) => {
-    const n = name.trim();
-    if (!n) return false;
-    if (partTimeStaff.some((s) => s.name === n)) {
-      toasts.error(`「${n}」は既に登録されています`);
-      return false;
-    }
-    savePartTimeStaff([...partTimeStaff, { name: n, subjectIds: [] }]);
-    toasts.success(`「${n}」を追加しました`);
-    return true;
-  };
-
-  const handleDelStaff = async (name) => {
-    const used = subs.some(
-      (s) => s.originalTeacher === name || s.substitute === name
-    );
-    const extra = used ? "\n※過去の代行記録は削除されません" : "";
-    const ok = await confirm({
-      title: "バイトの削除",
-      message: `「${name}」をバイト一覧から削除しますか？${extra}`,
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    savePartTimeStaff(partTimeStaff.filter((s) => s.name !== name));
-    toasts.success(`「${name}」を削除しました`);
-  };
-
-  const handleToggleStaffSubject = (name, subjectId) => {
-    savePartTimeStaff(
-      partTimeStaff.map((s) => {
-        if (s.name !== name) return s;
-        const has = s.subjectIds.includes(subjectId);
-        return {
-          ...s,
-          subjectIds: has
-            ? s.subjectIds.filter((id) => id !== subjectId)
-            : [...s.subjectIds, subjectId],
-        };
-      })
-    );
-  };
-
-  const handleSaveCategory = (cat) => {
-    if (cat.id) {
-      // インライン編集はキーストロークごとに呼ばれるため toast は出さない
-      saveSubjectCategories(
-        subjectCategories.map((c) => (c.id === cat.id ? { ...c, ...cat } : c))
-      );
-    } else {
-      const id = nextNumericId(subjectCategories);
-      saveSubjectCategories([...subjectCategories, { ...cat, id }]);
-      toasts.success("カテゴリを追加しました");
-    }
-  };
-
-  const handleDelCategory = async (id) => {
-    const childSubjects = subjects.filter((s) => s.categoryId === id);
-    const extra = childSubjects.length
-      ? `\n※このカテゴリ配下の ${childSubjects.length} 件の教科も削除されます。`
-      : "";
-    const ok = await confirm({
-      title: "カテゴリの削除",
-      message: `このカテゴリを削除しますか？${extra}`,
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    const removedSubjectIds = new Set(childSubjects.map((s) => s.id));
-    saveSubjects(subjects.filter((s) => s.categoryId !== id));
-    saveSubjectCategories(subjectCategories.filter((c) => c.id !== id));
-    // バイトの担当教科からも除外
-    if (removedSubjectIds.size) {
-      savePartTimeStaff(
-        partTimeStaff.map((s) => ({
-          ...s,
-          subjectIds: s.subjectIds.filter((sid) => !removedSubjectIds.has(sid)),
-        }))
-      );
-    }
-    toasts.success("カテゴリを削除しました");
-  };
-
-  const handleSaveSubject = (subj) => {
-    if (subj.id) {
-      // インライン編集はキーストロークごとに呼ばれるため toast は出さない
-      saveSubjects(
-        subjects.map((s) => (s.id === subj.id ? { ...s, ...subj } : s))
-      );
-    } else {
-      const id = nextNumericId(subjects);
-      saveSubjects([...subjects, { ...subj, id }]);
-      toasts.success("教科を追加しました");
-    }
-  };
-
-  const handleDelSubject = async (id) => {
-    const ok = await confirm({
-      title: "教科の削除",
-      message: "この教科を削除しますか？\n※バイトの担当教科設定からも除外されます。",
-      okLabel: "削除",
-      tone: "danger",
-    });
-    if (!ok) return;
-    saveSubjects(subjects.filter((s) => s.id !== id));
-    savePartTimeStaff(
-      partTimeStaff.map((s) => ({
-        ...s,
-        subjectIds: s.subjectIds.filter((sid) => sid !== id),
-      }))
-    );
-    toasts.success("教科を削除しました");
-  };
+    return { total, byDay };
+  }, [slots, selected]);
+  const selSlotCount = selDayCounts.total;
 
   // ─── Print ──────────────────────────────────────────────────────
   const handlePrint = () => {
@@ -551,21 +200,7 @@ export default function App() {
     setTimeout(() => w.print(), 300);
   };
 
-  // Precompute per-day / total slot counts for the currently selected
-  // teacher so the header badge row doesn't do O(slots * DAYS) work.
-  const selDayCounts = useMemo(() => {
-    if (!selected) return { total: 0, byDay: {} };
-    const byDay = {};
-    let total = 0;
-    for (const s of slots) {
-      if (s.teacher !== selected) continue;
-      byDay[s.day] = (byDay[s.day] || 0) + 1;
-      total++;
-    }
-    return { total, byDay };
-  }, [slots, selected]);
-  const selSlotCount = selDayCounts.total;
-
+  // ─── Render ─────────────────────────────────────────────────────
   return (
     <div
       style={{
@@ -640,15 +275,19 @@ export default function App() {
                 ? "ダッシュボード"
                 : view === VIEWS.ALL
                   ? "全講師コマ数一覧"
-                  : view === VIEWS.MASTER
-                    ? "コースマスター管理"
-                    : view === VIEWS.HOLIDAYS
-                      ? "祝日・休講日管理"
-                      : view === VIEWS.SUBS
-                        ? "アルバイト代行管理"
-                        : view === VIEWS.STAFF
-                          ? "バイト・教科管理"
-                          : selected || ""}
+                  : view === VIEWS.HEATMAP
+                    ? "繁忙度ヒートマップ"
+                    : view === VIEWS.COMPARE
+                      ? "講師比較"
+                      : view === VIEWS.MASTER
+                      ? "コースマスター管理"
+                      : view === VIEWS.HOLIDAYS
+                        ? "祝日・休講日管理"
+                        : view === VIEWS.SUBS
+                          ? "アルバイト代行管理"
+                          : view === VIEWS.STAFF
+                            ? "バイト・教科管理"
+                            : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -758,11 +397,17 @@ export default function App() {
           {view === VIEWS.ALL && !selected && (
             <AllView slots={slots} onSelectTeacher={selectTeacher} />
           )}
+          {view === VIEWS.HEATMAP && !selected && (
+            <HeatmapView slots={slots} />
+          )}
+          {view === VIEWS.COMPARE && !selected && (
+            <CompareView slots={slots} />
+          )}
           {view === VIEWS.MASTER && !selected && (
             <MasterView
               slots={slots}
               onEdit={setEditSlot}
-              onDel={handleDelSlot}
+              onDel={slotsCrud.del}
               onNew={() => setEditSlot("new")}
               biweeklyBase={biweeklyBase}
               onSetBiweeklyBase={saveBiweeklyBase}
@@ -778,7 +423,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
-              onDel={handleDelSub}
+              onDel={subsCrud.del}
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
@@ -793,13 +438,13 @@ export default function App() {
               subjectCategories={subjectCategories}
               subjects={subjects}
               slots={slots}
-              onAddStaff={handleAddStaff}
-              onDelStaff={handleDelStaff}
-              onToggleStaffSubject={handleToggleStaffSubject}
-              onSaveCategory={handleSaveCategory}
-              onDelCategory={handleDelCategory}
-              onSaveSubject={handleSaveSubject}
-              onDelSubject={handleDelSubject}
+              onAddStaff={staffCrud.addStaff}
+              onDelStaff={staffCrud.delStaff}
+              onToggleStaffSubject={staffCrud.toggleStaffSubject}
+              onSaveCategory={staffCrud.saveCategory}
+              onDelCategory={staffCrud.delCategory}
+              onSaveSubject={staffCrud.saveSubject}
+              onDelSubject={staffCrud.delSubject}
             />
           )}
           {selected && view === VIEWS.WEEK && (
@@ -808,7 +453,7 @@ export default function App() {
               slots={slots}
               subs={subs}
               onEdit={setEditSlot}
-              onDel={handleDelSlot}
+              onDel={slotsCrud.del}
             />
           )}
           {selected && view === VIEWS.MONTH && (
@@ -820,7 +465,7 @@ export default function App() {
               year={vy}
               month={vm}
               onEdit={setEditSlot}
-              onDel={handleDelSlot}
+              onDel={slotsCrud.del}
             />
           )}
         </div>
@@ -834,9 +479,9 @@ export default function App() {
         >
           <SlotForm
             slot={editSlot === "new" ? null : editSlot}
-            onSave={handleSaveSlot}
+            onSave={(f) => slotsCrud.save(editSlot, f, setEditSlot)}
             onCancel={() => setEditSlot(null)}
-            suggestions={slotFormSuggestions}
+            suggestions={slotsCrud.suggestions}
           />
         </Modal>
       )}
@@ -853,7 +498,7 @@ export default function App() {
             subs={subs}
             partTimeStaff={partTimeStaff}
             subjects={subjects}
-            onSave={handleSaveSub}
+            onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
             onCancel={() => setEditSub(null)}
           />
         </Modal>
@@ -865,9 +510,9 @@ export default function App() {
           <DataManager
             slots={slots}
             holidays={holidays}
-            onExport={handleExport}
-            onImport={handleImport}
-            onReset={handleReset}
+            onExport={dataIO.handleExport}
+            onImport={dataIO.handleImport}
+            onReset={dataIO.handleReset}
             importing={importing}
           />
         </Modal>
