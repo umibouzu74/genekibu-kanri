@@ -77,6 +77,15 @@ export interface ScheduleAdjustment {
   createdAt?: string;
 }
 
+// ─── Exam period (テスト期間) ────────────────────────────────────
+export interface ExamPeriod {
+  id: number;
+  name: string; // "1学期中間テスト期間" 等
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string; // "YYYY-MM-DD"
+  targetGrades: string[]; // ["中1","中2","中3"] 等。空配列 = 全学年対象
+}
+
 // ─── Timetable / Display cutoff ──────────────────────────────────
 export type TimetableType = "regular" | "koshu";
 
@@ -114,6 +123,7 @@ export interface ExportBundle {
   adjustments?: ScheduleAdjustment[];
   timetables?: Timetable[];
   displayCutoff?: DisplayCutoff;
+  examPeriods?: ExamPeriod[];
 }
 
 export interface ValidationResult<T> {

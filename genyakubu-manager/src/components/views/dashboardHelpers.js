@@ -26,16 +26,32 @@ export function shiftDate(dateStr, days) {
   return fmtDate(dt);
 }
 
-// Compute holiday utilities shared between Dashboard and ConfirmedSubsView.
-export function makeHolidayHelpers(holidays) {
+// Compute holiday / exam-period utilities shared between Dashboard and
+// ConfirmedSubsView.
+export function makeHolidayHelpers(holidays, examPeriods = []) {
   const holidaysFor = (d) => holidays.filter((h) => h.date === d);
+
+  // Returns exam periods that are active on a given date.
+  const examPeriodsFor = (d) =>
+    examPeriods.filter((ep) => d >= ep.startDate && d <= ep.endDate);
+
   const isOffForGrade = (d, grade) => {
+    // Holiday check (existing)
     const dept = gradeToDept(grade);
-    return holidays.some((h) => {
+    const offByHoliday = holidays.some((h) => {
       if (h.date !== d) return false;
       const sc = h.scope || ["全部"];
       return sc.includes("全部") || (dept && sc.includes(dept));
     });
+    if (offByHoliday) return true;
+
+    // Exam period check
+    return examPeriods.some((ep) => {
+      if (d < ep.startDate || d > ep.endDate) return false;
+      if (ep.targetGrades.length === 0) return true; // empty = all grades
+      return ep.targetGrades.includes(grade);
+    });
   };
-  return { holidaysFor, isOffForGrade };
+
+  return { holidaysFor, examPeriodsFor, isOffForGrade };
 }

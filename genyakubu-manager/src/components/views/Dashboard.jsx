@@ -411,13 +411,15 @@ function SubSummaryCards({ subs, slots, todayStr }) {
   );
 }
 
-export function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
+export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriodsForDate = [] }) {
   const fullOff = hols.some((h) => (h.scope || ["全部"]).includes("全部"));
   const offDepts = [...new Set(hols.flatMap((h) => h.scope || ["全部"]))].filter(
     (d) => d !== "全部"
   );
   const hasPartial = !fullOff && offDepts.length > 0;
   const holLabel = hols[0]?.label;
+  const hasExamPeriod = examPeriodsForDate.length > 0;
+  const examLabel = examPeriodsForDate.map((ep) => ep.name).join(", ");
 
   return (
     <div>
@@ -462,6 +464,20 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
               </span>
             ))}
           </div>
+        )}
+        {!fullOff && hasExamPeriod && (
+          <span
+            style={{
+              fontSize: 10,
+              background: "#f0a030",
+              color: "#fff",
+              padding: "2px 8px",
+              borderRadius: 4,
+              fontWeight: 700,
+            }}
+          >
+            {examLabel}
+          </span>
         )}
       </div>
       {fullOff ? (
@@ -521,7 +537,7 @@ function loadDayCount() {
   }
 }
 
-export function Dashboard({ slots, holidays, subs, timetables, displayCutoff }) {
+export function Dashboard({ slots, holidays, subs, timetables, displayCutoff, examPeriods = [] }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
   const [daysInRange, setDaysInRange] = useState(loadDayCount);
@@ -531,9 +547,9 @@ export function Dashboard({ slots, holidays, subs, timetables, displayCutoff }) 
     try { localStorage.setItem(LS_DAY_COUNT_KEY, String(n)); } catch { /* quota */ }
   };
 
-  const { holidaysFor, isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays),
-    [holidays]
+  const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
+    () => makeHolidayHelpers(holidays, examPeriods),
+    [holidays, examPeriods]
   );
 
   const days = useMemo(() => buildDayRange(startDate, daysInRange), [startDate, daysInRange]);
@@ -649,6 +665,7 @@ export function Dashboard({ slots, holidays, subs, timetables, displayCutoff }) 
               holidays={hols}
               slots={daySlots}
               subs={subs}
+              examPeriodsForDate={examPeriodsFor(dateStr)}
             />
           </div>
         );

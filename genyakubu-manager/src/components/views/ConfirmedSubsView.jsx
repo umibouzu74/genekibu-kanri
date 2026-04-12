@@ -13,16 +13,16 @@ import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable"
 // Default (future mode): only today and later confirmed subs are shown.
 // Past mode: toggle reveals from/to date pickers for arbitrary range lookup
 // over confirmed subs whose date falls within the selected range.
-export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCutoff }) {
+export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCutoff, examPeriods = [] }) {
   const todayStr = fmtDate(new Date());
   const [showPast, setShowPast] = useState(false);
   // Past-mode defaults: last 30 days, up to yesterday (inclusive of both ends).
   const [fromDate, setFromDate] = useState(() => shiftDate(todayStr, -30));
   const [toDate, setToDate] = useState(() => shiftDate(todayStr, -1));
 
-  const { holidaysFor, isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays),
-    [holidays]
+  const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
+    () => makeHolidayHelpers(holidays, examPeriods),
+    [holidays, examPeriods]
   );
 
   const confirmedSubs = useMemo(
@@ -210,6 +210,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
               holidays={hols}
               slots={daySlots}
               subs={subs}
+              examPeriodsForDate={examPeriodsFor(dateStr)}
             />
           );
         })

@@ -10,7 +10,7 @@ import {
 } from "../../data";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 
-export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff }) {
+export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -38,14 +38,28 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
 
   const isOffForGrade = useCallback(
     (ds, grade) => {
+      // Holiday check
       const h = holMap[ds];
-      if (!h) return false;
-      const sc = h.scope || ["全部"];
-      if (sc.includes("全部")) return true;
-      const dept = gradeToDept(grade);
-      return dept && sc.includes(dept);
+      if (h) {
+        const sc = h.scope || ["全部"];
+        if (sc.includes("全部")) return true;
+        const dept = gradeToDept(grade);
+        if (dept && sc.includes(dept)) return true;
+      }
+      // Exam period check
+      return examPeriods.some((ep) => {
+        if (ds < ep.startDate || ds > ep.endDate) return false;
+        if (ep.targetGrades.length === 0) return true;
+        return ep.targetGrades.includes(grade);
+      });
     },
-    [holMap]
+    [holMap, examPeriods]
+  );
+
+  // Returns exam period names active on a given date (for label display)
+  const examPeriodsForDate = useCallback(
+    (ds) => examPeriods.filter((ep) => ds >= ep.startDate && ds <= ep.endDate),
+    [examPeriods]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -101,6 +115,8 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
           const offDepts = hol
             ? [...new Set((hol.scope || ["全部"]).filter((s) => s !== "全部"))]
             : [];
+          const epActive = examPeriodsForDate(ds);
+          const hasExam = epActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
           const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
           const sl = isFullOff || dayCutoff
@@ -125,13 +141,15 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
                   ? "#f5f5f0"
                   : isFullOff
                     ? "#f8f0f0"
-                    : isT
-                      ? "#fffbe6"
-                      : dow === 0
-                        ? "#fdf5f5"
-                        : dow === 6
-                          ? "#f5f5fd"
-                          : "#fff",
+                    : hasExam && !isT
+                      ? "#fdf5e8"
+                      : isT
+                        ? "#fffbe6"
+                        : dow === 0
+                          ? "#fdf5f5"
+                          : dow === 6
+                            ? "#f5f5fd"
+                            : "#fff",
                 minHeight: 90,
                 padding: 4,
                 border: isT ? "2px solid #e6a800" : "none",
@@ -156,6 +174,11 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
                 {!isFullOff && offDepts.length > 0 && (
                   <span style={{ fontSize: 8, color: "#c88", fontWeight: 400 }}>
                     {offDepts.map((d) => d.replace("部", "")).join(",") + "休"}
+                  </span>
+                )}
+                {!isFullOff && hasExam && (
+                  <span style={{ fontSize: 7, color: "#b07020", fontWeight: 700 }}>
+                    {epActive[0].name.length > 8 ? epActive[0].name.slice(0, 8) + "…" : epActive[0].name}
                   </span>
                 )}
               </div>
