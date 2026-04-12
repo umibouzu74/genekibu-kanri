@@ -421,6 +421,23 @@ export default function App() {
 
   const handleSaveSub = (f) => {
     const ts = new Date().toISOString();
+
+    // 1日分モードからの一括保存 (配列)。新規追加時のみ到達する想定
+    if (Array.isArray(f)) {
+      let next = subs.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
+      const newRecords = f.map((r) => ({
+        ...r,
+        status: r.substitute ? r.status : "requested",
+        id: next++,
+        createdAt: ts,
+        updatedAt: ts,
+      }));
+      saveSubs([...subs, ...newRecords]);
+      toasts.success(`代行を ${newRecords.length} 件追加しました`);
+      setEditSub(null);
+      return;
+    }
+
     const normalized = { ...f, status: f.substitute ? f.status : "requested" };
     if (editSub === "new") {
       saveSubs([...subs, { ...normalized, id: nextSubId(), createdAt: ts, updatedAt: ts }]);
@@ -873,6 +890,7 @@ export default function App() {
           <SubstituteForm
             sub={editSub === "new" ? null : editSub}
             slots={slots}
+            subs={subs}
             partTimeStaff={partTimeStaff}
             subjects={subjects}
             onSave={handleSaveSub}
