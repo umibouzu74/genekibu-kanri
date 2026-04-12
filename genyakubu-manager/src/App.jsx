@@ -11,7 +11,7 @@ import {
 } from "./data";
 
 import { VIEWS } from "./constants/views";
-import { useLocalStorage, useLocalStorageRaw } from "./hooks/useLocalStorage";
+import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
@@ -73,32 +73,32 @@ export default function App() {
     [toasts]
   );
 
-  // ─── Persisted state ──────────────────────────────────────────────
-  const [slots, saveSlots] = useLocalStorage(LS.slots, INIT_SLOTS, {
+  // ─── Persisted state (synced with Firebase when configured) ───────
+  const [slots, saveSlots] = useSyncedStorage(LS.slots, INIT_SLOTS, {
     onError: onStorageError,
   });
-  const [holidays, saveHolidays] = useLocalStorage(LS.holidays, INIT_HOLIDAYS, {
+  const [holidays, saveHolidays] = useSyncedStorage(LS.holidays, INIT_HOLIDAYS, {
     migrate: migrateHolidays,
     onError: onStorageError,
   });
-  const [subs, saveSubs] = useLocalStorage(LS.subs, [], {
+  const [subs, saveSubs] = useSyncedStorage(LS.subs, [], {
     migrate: migrateSubs,
     onError: onStorageError,
   });
-  const [partTimeStaff, savePartTimeStaff] = useLocalStorage(
+  const [partTimeStaff, savePartTimeStaff] = useSyncedStorage(
     LS.partTime,
     INIT_PART_TIME_STAFF,
     { migrate: migratePartTimeStaff, onError: onStorageError }
   );
-  const [subjectCategories, saveSubjectCategories] = useLocalStorage(
+  const [subjectCategories, saveSubjectCategories] = useSyncedStorage(
     LS.subjectCategories,
     INIT_SUBJECT_CATEGORIES,
     { onError: onStorageError }
   );
-  const [subjects, saveSubjects] = useLocalStorage(LS.subjects, INIT_SUBJECTS, {
+  const [subjects, saveSubjects] = useSyncedStorage(LS.subjects, INIT_SUBJECTS, {
     onError: onStorageError,
   });
-  const [biweeklyBase, saveBiweeklyBase] = useLocalStorageRaw(LS.biweeklyBase, "");
+  const [biweeklyBase, saveBiweeklyBase] = useSyncedStorageRaw(LS.biweeklyBase, "");
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);

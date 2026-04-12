@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { VIEWS } from "../constants/views";
+import { SyncStatus } from "./SyncStatus";
 
 export function Sidebar({
   open,
@@ -318,6 +319,7 @@ export function Sidebar({
             );
           })}
         </div>
+        <SyncStatus />
       </nav>
     </>
   );
