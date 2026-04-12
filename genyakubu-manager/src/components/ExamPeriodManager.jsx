@@ -34,9 +34,16 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
       setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
       return;
     }
-    setTargetGrades((prev) =>
-      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
-    );
+    const next = targetGrades.includes(g)
+      ? targetGrades.filter((x) => x !== g)
+      : [...targetGrades, g];
+    // If all grades deselected, revert to "all" mode
+    if (next.length === 0) {
+      setAllGrades(true);
+      setTargetGrades([]);
+    } else {
+      setTargetGrades(next);
+    }
   };
 
   const selectAll = () => {
@@ -72,6 +79,10 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
     }
     if (endDate < startDate) {
       setError("終了日は開始日以降にしてください");
+      return;
+    }
+    if (!allGrades && targetGrades.length === 0) {
+      setError("対象学年を選択してください");
       return;
     }
 
@@ -177,7 +188,9 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
                 if (error) setError("");
               }}
               placeholder="名称（例: 1学期中間テスト期間）"
-              style={{ ...S.input, width: "100%", maxWidth: 340 }}
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "exam-period-err" : undefined}
+              style={{ ...S.input, width: "100%", maxWidth: 340, borderColor: error ? "#c44" : "#ccc" }}
             />
           </div>
 
@@ -318,6 +331,7 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
 
           {error && (
             <div
+              id="exam-period-err"
               role="alert"
               style={{ fontSize: 11, color: "#c44", marginBottom: 8 }}
             >
