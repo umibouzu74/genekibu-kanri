@@ -8,8 +8,9 @@ import {
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
+import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 
-export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin }) {
+export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -101,22 +102,36 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
             ? [...new Set((hol.scope || ["全部"]).filter((s) => s !== "全部"))]
             : [];
           const isT = todayY === year && todayM === month && todayD === d;
-          const sl = isFullOff
+          const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
+          const sl = isFullOff || dayCutoff
             ? []
-            : (dayMap[dn] || []).filter((s) => !isOffForGrade(ds, s.grade));
+            : (dayMap[dn] || []).filter(
+                (s) =>
+                  !isOffForGrade(ds, s.grade) &&
+                  (!timetables ||
+                    timetables.length === 0 ||
+                    isTimetableActiveForDate(
+                      timetables.find((t) => t.id === (s.timetableId ?? 1)),
+                      ds,
+                      s.grade
+                    )) &&
+                  !isBeyondCutoff(ds, s.grade, displayCutoff)
+              );
           return (
             <div
               key={ds}
               style={{
-                background: isFullOff
-                  ? "#f8f0f0"
-                  : isT
-                    ? "#fffbe6"
-                    : dow === 0
-                      ? "#fdf5f5"
-                      : dow === 6
-                        ? "#f5f5fd"
-                        : "#fff",
+                background: dayCutoff
+                  ? "#f5f5f0"
+                  : isFullOff
+                    ? "#f8f0f0"
+                    : isT
+                      ? "#fffbe6"
+                      : dow === 0
+                        ? "#fdf5f5"
+                        : dow === 6
+                          ? "#f5f5fd"
+                          : "#fff",
                 minHeight: 90,
                 padding: 4,
                 border: isT ? "2px solid #e6a800" : "none",
@@ -144,7 +159,13 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
                   </span>
                 )}
               </div>
-              {isFullOff ? (
+              {dayCutoff ? (
+                <div
+                  style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}
+                >
+                  未確定
+                </div>
+              ) : isFullOff ? (
                 <div
                   style={{ fontSize: 10, color: "#caa", textAlign: "center", marginTop: 8 }}
                 >

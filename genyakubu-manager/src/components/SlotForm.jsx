@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
 
-export function SlotForm({ slot, onSave, onCancel, suggestions }) {
+export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, activeTimetableId }) {
   const formId = useId();
   const [f, setF] = useState(
     slot || {
@@ -14,6 +14,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions }) {
       subj: "",
       teacher: "",
       note: "",
+      timetableId: activeTimetableId || 1,
     }
   );
   const [errors, setErrors] = useState({});
@@ -151,6 +152,34 @@ export function SlotForm({ slot, onSave, onCancel, suggestions }) {
           </div>
         );
       })}
+      {timetables && timetables.length > 1 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label
+              style={{
+                width: 70,
+                fontSize: 12,
+                fontWeight: 700,
+                textAlign: "right",
+                flexShrink: 0,
+              }}
+            >
+              時間割
+            </label>
+            <select
+              value={f.timetableId ?? 1}
+              onChange={(e) => up("timetableId", Number(e.target.value))}
+              style={{ ...S.input, width: "auto", minWidth: 150 }}
+            >
+              {timetables.map((tt) => (
+                <option key={tt.id} value={tt.id}>
+                  {tt.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onCancel} style={S.btn(false)}>
           キャンセル

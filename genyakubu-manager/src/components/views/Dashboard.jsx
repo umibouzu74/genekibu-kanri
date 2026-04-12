@@ -13,6 +13,7 @@ import {
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { buildDayRange, makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
+import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 
 function SectionColumn({ label, color, sl, deptOff, subs, date }) {
   const { timeGroups, teachers } = useMemo(() => {
@@ -519,7 +520,7 @@ function loadDayCount() {
   }
 }
 
-export function Dashboard({ slots, holidays, subs }) {
+export function Dashboard({ slots, holidays, subs, timetables, displayCutoff }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
   const [daysInRange, setDaysInRange] = useState(loadDayCount);
@@ -606,18 +607,49 @@ export function Dashboard({ slots, holidays, subs }) {
       <SubSummaryCards subs={subs} slots={slots} todayStr={todayStr} />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
-        const daySlots = slots.filter(
-          (s) => s.day === dow && !isOffForGrade(dateStr, s.grade)
-        );
+        const entireDayCutoff = isEntireDayBeyondCutoff(dateStr, displayCutoff);
+        const daySlots = entireDayCutoff
+          ? []
+          : slots.filter(
+              (s) =>
+                s.day === dow &&
+                !isOffForGrade(dateStr, s.grade) &&
+                (!timetables ||
+                  timetables.length === 0 ||
+                  isTimetableActiveForDate(
+                    timetables.find((t) => t.id === (s.timetableId ?? 1)),
+                    dateStr,
+                    s.grade
+                  )) &&
+                !isBeyondCutoff(dateStr, s.grade, displayCutoff)
+            );
         return (
-          <DashDayRow
-            key={dateStr}
-            date={dateStr}
-            dow={dow}
-            holidays={hols}
-            slots={daySlots}
-            subs={subs}
-          />
+          <div key={dateStr}>
+            {entireDayCutoff && (
+              <div
+                style={{
+                  background: "#fff8e0",
+                  border: "1px solid #e0d080",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  marginBottom: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#8a7020",
+                  textAlign: "center",
+                }}
+              >
+                この日以降の予定は未確定です
+              </div>
+            )}
+            <DashDayRow
+              date={dateStr}
+              dow={dow}
+              holidays={hols}
+              slots={daySlots}
+              subs={subs}
+            />
+          </div>
         );
       })}
     </div>
