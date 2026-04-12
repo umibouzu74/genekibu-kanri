@@ -31,6 +31,8 @@ export function useDataIO({
   slots,
   holidays,
   biweeklyBase,
+  biweeklyAnchors,
+  adjustments,
   subs,
   partTimeStaff,
   subjectCategories,
@@ -38,6 +40,8 @@ export function useDataIO({
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
+  saveBiweeklyAnchors,
+  saveAdjustments,
   saveSubs,
   savePartTimeStaff,
   saveSubjectCategories,
@@ -61,6 +65,8 @@ export function useDataIO({
           slots,
           holidays,
           biweeklyBase,
+          biweeklyAnchors,
+          adjustments,
           substitutions: subs,
           partTimeStaff,
           subjectCategories,
@@ -81,7 +87,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, subs, partTimeStaff, subjectCategories, subjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -113,6 +119,8 @@ export function useDataIO({
           if (Array.isArray(d.slots)) saveSlots(d.slots);
           if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
           if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
+          if (Array.isArray(d.biweeklyAnchors)) saveBiweeklyAnchors(d.biweeklyAnchors);
+          if (Array.isArray(d.adjustments)) saveAdjustments(d.adjustments);
           if (Array.isArray(d.substitutions)) saveSubs(migrateSubs(d.substitutions));
           if (Array.isArray(d.partTimeStaff))
             savePartTimeStaff(migratePartTimeStaff(d.partTimeStaff));
@@ -140,6 +148,8 @@ export function useDataIO({
       saveSlots,
       saveHolidays,
       saveBiweeklyBase,
+      saveBiweeklyAnchors,
+      saveAdjustments,
       saveSubs,
       savePartTimeStaff,
       saveSubjectCategories,
@@ -161,6 +171,8 @@ export function useDataIO({
     saveSlots(INIT_SLOTS);
     saveHolidays(INIT_HOLIDAYS);
     saveBiweeklyBase("");
+    saveBiweeklyAnchors([]);
+    saveAdjustments([]);
     saveSubs([]);
     savePartTimeStaff(INIT_PART_TIME_STAFF);
     saveSubjectCategories(INIT_SUBJECT_CATEGORIES);
@@ -176,6 +188,8 @@ export function useDataIO({
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
+    saveBiweeklyAnchors,
+    saveAdjustments,
     saveSubs,
     savePartTimeStaff,
     saveSubjectCategories,

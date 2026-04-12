@@ -12,6 +12,7 @@ import { sortJa } from "../../utils/sortJa";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { StatusBadge } from "../StatusBadge";
+import { AdjustmentEditor } from "./AdjustmentEditor";
 
 export function SubstituteView({
   subs,
@@ -23,6 +24,11 @@ export function SubstituteView({
   onGoToStaffView,
   initFilter,
   onConsumeInitFilter,
+  adjustments,
+  onAddAdjustment,
+  onDelAdjustment,
+  onRemoveAdjustment,
+  onReplaceAdjustment,
   isAdmin,
 }) {
   const now = new Date();
@@ -172,6 +178,7 @@ export function SubstituteView({
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
         <TabBtn k="tally" label="月次集計" />
+        <TabBtn k="adjust" label="時間割調整" count={adjustments?.length || null} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           <button
             type="button"
@@ -718,6 +725,18 @@ export function SubstituteView({
             </div>
           )}
         </div>
+      )}
+
+      {tab === "adjust" && (
+        <AdjustmentEditor
+          slots={slots}
+          adjustments={adjustments || []}
+          onAddAdjustment={onAddAdjustment}
+          onDelAdjustment={onDelAdjustment}
+          onRemoveAdjustment={onRemoveAdjustment}
+          onReplaceAdjustment={onReplaceAdjustment}
+          isAdmin={isAdmin}
+        />
       )}
 
     </div>

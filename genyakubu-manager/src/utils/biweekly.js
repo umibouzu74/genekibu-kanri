@@ -8,13 +8,50 @@ export function formatBiweeklyTeacher(teacher, note) {
   return m ? `${teacher} / ${m[1]}` : teacher;
 }
 
-// Determine whether a given date falls in an "A" week or "B" week
-// relative to a base date string (YYYY-MM-DD). The base date's week is
-// defined as week A, the following week is B, then alternating.
+// Determine whether a given date falls in an "A" week or "B" week.
 //
-// Returns "A" | "B" | null (if baseStr is empty or invalid).
-export function getWeekType(dateStr, baseStr) {
-  if (!baseStr || !dateStr) return null;
+// Accepts either:
+//   - a base date string (legacy): getWeekType("2026-04-13", "2026-04-06")
+//   - an array of BiweeklyAnchor objects: getWeekType("2026-04-13", [{date:"2026-04-06", weekType:"A"}])
+//
+// When multiple anchors are provided the most recent anchor on or before
+// the target date is used as the reference point. This prevents drift
+// caused by holidays or schedule disruptions — just add a new anchor
+// after the disruption to re-sync.
+//
+// Returns "A" | "B" | null.
+export function getWeekType(dateStr, anchorsOrBaseStr) {
+  if (!dateStr) return null;
+
+  // Legacy: single base-date string
+  if (typeof anchorsOrBaseStr === "string") {
+    return anchorsOrBaseStr ? getWeekTypeFromBase(dateStr, anchorsOrBaseStr) : null;
+  }
+
+  // New: array of anchor objects
+  const anchors = anchorsOrBaseStr;
+  if (!Array.isArray(anchors) || anchors.length === 0) return null;
+
+  // Find the most recent anchor whose date is <= dateStr
+  let best = null;
+  for (const a of anchors) {
+    if (a.date && a.date <= dateStr) {
+      if (!best || a.date > best.date) best = a;
+    }
+  }
+
+  if (best) return getWeekTypeFromBase(dateStr, best.date);
+
+  // dateStr is before all anchors — use the earliest anchor and calculate backwards
+  let earliest = anchors[0];
+  for (const a of anchors) {
+    if (a.date && a.date < earliest.date) earliest = a;
+  }
+  return getWeekTypeFromBase(dateStr, earliest.date);
+}
+
+// Core week-type calculation from a single base date.
+function getWeekTypeFromBase(dateStr, baseStr) {
   const base = new Date(baseStr + "T12:00:00");
   const target = new Date(dateStr + "T12:00:00");
   if (isNaN(base.getTime()) || isNaN(target.getTime())) return null;
