@@ -189,6 +189,7 @@ export function Sidebar({
               </span>
             )
           )}
+          {navItem(VIEWS.CONFIRMED_SUBS, "✅", "代行確定一覧")}
           <button
             onClick={onOpenDataMgr}
             style={{
