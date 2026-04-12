@@ -9,7 +9,7 @@ import {
 } from "../../data";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
-import { formatBiweeklyTeacher, formatCount, getSlotWeekType, getWeekType, weightedSlotCount } from "../../utils/biweekly";
+import { formatBiweeklyNote, formatBiweeklyTeacher, formatCount, getSlotWeekType, getWeekType, weightedSlotCount } from "../../utils/biweekly";
 import { fmtDate } from "../../data";
 
 // Extracted to its own component so that hover state is scoped to a
@@ -73,7 +73,7 @@ const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, on
             )}
             {s.note && (
               <span style={{ fontSize: 13, fontWeight: 600, color: "#a0331a" }}>
-                ({s.note})
+                ({formatBiweeklyNote(s.teacher, s.note)})
               </span>
             )}
           </div>

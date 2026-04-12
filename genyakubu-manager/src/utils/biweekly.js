@@ -60,6 +60,15 @@ function getWeekTypeFromBase(dateStr, baseStr) {
   return Math.abs(weeks) % 2 === 0 ? "A" : "B";
 }
 
+// Format the note field for display, expanding the biweekly marker to
+// show both teachers. e.g. teacher="堀上", note="隔週(河野)"
+// → "隔週 : 堀上 / 河野".
+// Non-biweekly notes are returned as-is.
+export function formatBiweeklyNote(teacher, note) {
+  if (!note) return note;
+  return note.replace(/隔週\(([^)]+)\)/, (_, partner) => `隔週 : ${teacher} / ${partner}`);
+}
+
 // Convenience: check if a note includes the "隔週" marker.
 export function isBiweekly(note) {
   return !!note && note.includes("隔週");
