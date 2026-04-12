@@ -13,12 +13,15 @@
 import type {
   ExportBundle,
   Holiday,
+  PartTimeStaffObject,
   Slot,
+  Subject,
+  SubjectCategory,
   Substitute,
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -52,6 +55,20 @@ export function isSub(x: unknown): x is Substitute {
     typeof (x.originalTeacher ?? "") === "string" &&
     typeof (x.status ?? "") === "string"
   );
+}
+
+export function isSubjectCategory(x: unknown): x is SubjectCategory {
+  return isObject(x) && isNumber(x.id) && isString(x.name);
+}
+
+export function isSubject(x: unknown): x is Subject {
+  return (
+    isObject(x) && isNumber(x.id) && isString(x.name) && isNumber(x.categoryId)
+  );
+}
+
+export function isPartTimeStaffObject(x: unknown): x is PartTimeStaffObject {
+  return isObject(x) && isString(x.name) && Array.isArray(x.subjectIds);
 }
 
 // ─── Validation ────────────────────────────────────────────────────
@@ -94,8 +111,46 @@ export function validateExportBundle(
       };
   }
 
-  if (raw.partTimeStaff != null && !Array.isArray(raw.partTimeStaff)) {
-    return { ok: false, error: "partTimeStaff が配列ではありません" };
+  if (raw.partTimeStaff != null) {
+    if (!Array.isArray(raw.partTimeStaff)) {
+      return { ok: false, error: "partTimeStaff が配列ではありません" };
+    }
+    // 旧形式 (string) と新形式 (PartTimeStaffObject) の混在を許容
+    const bad = raw.partTimeStaff.findIndex(
+      (s: unknown) => !isString(s) && !isPartTimeStaffObject(s)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `partTimeStaff[${bad}] の形式が不正です`,
+        path: `partTimeStaff[${bad}]`,
+      };
+  }
+
+  if (raw.subjectCategories != null) {
+    if (!Array.isArray(raw.subjectCategories))
+      return { ok: false, error: "subjectCategories が配列ではありません" };
+    const bad = raw.subjectCategories.findIndex(
+      (c: unknown) => !isSubjectCategory(c)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `subjectCategories[${bad}] の形式が不正です`,
+        path: `subjectCategories[${bad}]`,
+      };
+  }
+
+  if (raw.subjects != null) {
+    if (!Array.isArray(raw.subjects))
+      return { ok: false, error: "subjects が配列ではありません" };
+    const bad = raw.subjects.findIndex((s: unknown) => !isSubject(s));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `subjects[${bad}] の形式が不正です`,
+        path: `subjects[${bad}]`,
+      };
   }
 
   if (raw.biweeklyBase != null && !isString(raw.biweeklyBase)) {
@@ -121,6 +176,33 @@ export function migrateExportBundle(raw: unknown): unknown {
         scope:
           Array.isArray(h.scope) && h.scope.length ? h.scope : ["全部"],
       }));
+    }
+  }
+
+  // v1 → v2: partTimeStaff を string[] からオブジェクト配列に変換し、
+  //          subjectCategories / subjects を空配列で初期化。
+  if (version < 2) {
+    if (Array.isArray(bundle.partTimeStaff)) {
+      bundle.partTimeStaff = bundle.partTimeStaff.map((s: unknown) =>
+        typeof s === "string"
+          ? { name: s, subjectIds: [] }
+          : s && typeof s === "object" && "name" in s
+            ? {
+                name: String((s as Record<string, unknown>).name ?? ""),
+                subjectIds: Array.isArray(
+                  (s as Record<string, unknown>).subjectIds
+                )
+                  ? ((s as Record<string, unknown>).subjectIds as number[])
+                  : [],
+              }
+            : s
+      );
+    }
+    if (!Array.isArray(bundle.subjectCategories)) {
+      bundle.subjectCategories = [];
+    }
+    if (!Array.isArray(bundle.subjects)) {
+      bundle.subjects = [];
     }
   }
 

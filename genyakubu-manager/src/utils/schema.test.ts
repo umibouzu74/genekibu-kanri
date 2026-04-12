@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
   isHoliday,
+  isPartTimeStaffObject,
   isSlot,
   isSub,
+  isSubject,
+  isSubjectCategory,
   migrateExportBundle,
   nextNumericId,
   validateExportBundle,
@@ -58,6 +61,26 @@ describe("type guards", () => {
     expect(isSub({ ...goodSub, slotId: "abc" })).toBe(true);
     expect(isSub({ ...goodSub, slotId: null })).toBe(false);
   });
+
+  it("isSubjectCategory requires id and name", () => {
+    expect(isSubjectCategory({ id: 1, name: "文系" })).toBe(true);
+    expect(isSubjectCategory({ id: 1, name: "文系", color: "#c44" })).toBe(true);
+    expect(isSubjectCategory({ name: "文系" })).toBe(false);
+    expect(isSubjectCategory({ id: 1 })).toBe(false);
+  });
+
+  it("isSubject requires id, name and numeric categoryId", () => {
+    expect(isSubject({ id: 1, name: "英語", categoryId: 1 })).toBe(true);
+    expect(isSubject({ id: 1, name: "英語" })).toBe(false);
+    expect(isSubject({ id: 1, name: "英語", categoryId: "1" })).toBe(false);
+  });
+
+  it("isPartTimeStaffObject requires name and subjectIds array", () => {
+    expect(isPartTimeStaffObject({ name: "田中", subjectIds: [] })).toBe(true);
+    expect(isPartTimeStaffObject({ name: "田中", subjectIds: [1, 2] })).toBe(true);
+    expect(isPartTimeStaffObject({ name: "田中" })).toBe(false);
+    expect(isPartTimeStaffObject("田中")).toBe(false);
+  });
 });
 
 describe("validateExportBundle", () => {
@@ -65,7 +88,7 @@ describe("validateExportBundle", () => {
     expect(validateExportBundle({})).toEqual({ ok: true, data: {} });
   });
 
-  it("accepts a well-formed bundle", () => {
+  it("accepts a well-formed bundle (legacy partTimeStaff)", () => {
     const bundle = {
       schemaVersion: 1,
       slots: [goodSlot],
@@ -77,6 +100,46 @@ describe("validateExportBundle", () => {
     const r = validateExportBundle(bundle);
     expect(r.ok).toBe(true);
     expect(r.data).toEqual(bundle);
+  });
+
+  it("accepts a well-formed v2 bundle with subjects", () => {
+    const bundle = {
+      schemaVersion: 2,
+      slots: [goodSlot],
+      holidays: [goodHoliday],
+      substitutions: [goodSub],
+      partTimeStaff: [{ name: "田中", subjectIds: [1, 2] }],
+      subjectCategories: [{ id: 1, name: "文系", color: "#c44" }],
+      subjects: [{ id: 1, name: "英語", categoryId: 1 }],
+      biweeklyBase: "2026-04-01",
+    };
+    const r = validateExportBundle(bundle);
+    expect(r.ok).toBe(true);
+    expect(r.data).toEqual(bundle);
+  });
+
+  it("rejects malformed partTimeStaff entries", () => {
+    const r = validateExportBundle({
+      partTimeStaff: ["田中", { name: "山田" }], // subjectIds missing
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("partTimeStaff[1]");
+  });
+
+  it("rejects malformed subject categories", () => {
+    const r = validateExportBundle({
+      subjectCategories: [{ id: 1, name: "文系" }, { name: "理系" }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("subjectCategories[1]");
+  });
+
+  it("rejects malformed subjects", () => {
+    const r = validateExportBundle({
+      subjects: [{ id: 1, name: "英語", categoryId: 1 }, { id: 2, name: "数学" }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("subjects[1]");
   });
 
   it("rejects non-objects", () => {
@@ -137,6 +200,45 @@ describe("migrateExportBundle", () => {
   it("passes through non-object inputs unchanged", () => {
     expect(migrateExportBundle(null)).toBe(null);
     expect(migrateExportBundle("x")).toBe("x");
+  });
+
+  it("v1 → v2: converts partTimeStaff from string[] to object array", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 1,
+      partTimeStaff: ["福武", "河野"],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.partTimeStaff).toEqual([
+      { name: "福武", subjectIds: [] },
+      { name: "河野", subjectIds: [] },
+    ]);
+  });
+
+  it("v1 → v2: initialises subjectCategories and subjects as empty arrays", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 1,
+      partTimeStaff: [],
+    }) as Record<string, unknown>;
+    expect(out.subjectCategories).toEqual([]);
+    expect(out.subjects).toEqual([]);
+  });
+
+  it("v1 → v2: preserves already-migrated object partTimeStaff", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 1,
+      partTimeStaff: [{ name: "福武", subjectIds: [1, 2] }],
+    }) as Record<string, unknown>;
+    expect(out.partTimeStaff).toEqual([{ name: "福武", subjectIds: [1, 2] }]);
+  });
+
+  it("v1 → v2: migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 0,
+      partTimeStaff: ["福武"],
+      holidays: [{ date: "2026-05-04", label: "みどりの日" }],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
   });
 });
 

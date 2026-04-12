@@ -8,7 +8,14 @@ import {
 } from "../data";
 import { S } from "../styles/common";
 
-export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) {
+export function SubstituteForm({
+  sub,
+  slots,
+  partTimeStaff,
+  subjects = [],
+  onSave,
+  onCancel,
+}) {
   const today = fmtDate(new Date());
   const [f, setF] = useState(
     sub || {
@@ -21,6 +28,7 @@ export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) 
     }
   );
   const [errors, setErrors] = useState({});
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
   const up = (k, v) => {
     setF((p) => ({ ...p, [k]: v }));
     setErrors((p) => ({ ...p, [k]: undefined }));
@@ -28,16 +36,22 @@ export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) 
 
   const dayOfDate = dateToDay(f.date);
 
+  // partTimeStaff の名前集合 (新形式オブジェクトのみ想定)
+  const staffNameSet = useMemo(
+    () => new Set(partTimeStaff.map((s) => s.name)),
+    [partTimeStaff]
+  );
+
   // 候補コマ: 選択日の曜日に該当する slot、アルバイト担当を優先
   const slotOptions = useMemo(() => {
     if (!dayOfDate) return [];
     const filtered = sortS(slots.filter((s) => s.day === dayOfDate));
-    const isPT = (t) => partTimeStaff.includes(t);
+    const isPT = (t) => staffNameSet.has(t);
     return [
       ...filtered.filter((s) => isPT(s.teacher)),
       ...filtered.filter((s) => !isPT(s.teacher)),
     ];
-  }, [slots, dayOfDate, partTimeStaff]);
+  }, [slots, dayOfDate, staffNameSet]);
 
   const selectedSlot = useMemo(
     () => slots.find((s) => s.id === Number(f.slotId)) || null,
@@ -52,11 +66,48 @@ export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSlot?.id]);
 
+  // コマの科目文字列から対応する Subject.id を推定する。
+  // 完全一致 → 名前を含む → 別名を含む の順で判定し、最初のマッチを返す。
+  const matchedSubjectId = useMemo(() => {
+    if (!selectedSlot?.subj) return null;
+    const subj = selectedSlot.subj;
+    // 完全一致
+    const exact = subjects.find((s) => s.name === subj);
+    if (exact) return exact.id;
+    // 教科名を部分一致
+    const byName = subjects.find((s) => subj.includes(s.name));
+    if (byName) return byName.id;
+    // 別名を部分一致
+    const byAlias = subjects.find(
+      (s) =>
+        Array.isArray(s.aliases) &&
+        s.aliases.some((a) => a && subj.includes(a))
+    );
+    return byAlias ? byAlias.id : null;
+  }, [selectedSlot?.subj, subjects]);
+
+  const matchedSubject = useMemo(
+    () =>
+      matchedSubjectId
+        ? subjects.find((s) => s.id === matchedSubjectId) || null
+        : null,
+    [matchedSubjectId, subjects]
+  );
+
+  // 担当可能なバイト一覧 (科目フィルタ適用後)
+  const filteredPartTimeStaff = useMemo(() => {
+    if (!matchedSubjectId || showAllCandidates) return partTimeStaff;
+    return partTimeStaff.filter((s) => s.subjectIds.includes(matchedSubjectId));
+  }, [partTimeStaff, matchedSubjectId, showAllCandidates]);
+
   const allTeachers = useMemo(() => {
-    const set = new Set(partTimeStaff);
-    slots.forEach((s) => s.teacher && set.add(s.teacher));
+    const set = new Set(filteredPartTimeStaff.map((s) => s.name));
+    // フィルタが効いているときは全講師を混ぜずに候補を絞る
+    if (!matchedSubjectId || showAllCandidates) {
+      slots.forEach((s) => s.teacher && set.add(s.teacher));
+    }
     return [...set].sort();
-  }, [slots, partTimeStaff]);
+  }, [slots, filteredPartTimeStaff, matchedSubjectId, showAllCandidates]);
 
   const handleSave = () => {
     const errs = {};
@@ -100,7 +151,7 @@ export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) 
         >
           <option value="">-- コマを選択 --</option>
           {slotOptions.map((s) => {
-            const isPT = partTimeStaff.includes(s.teacher);
+            const isPT = staffNameSet.has(s.teacher);
             return (
               <option key={s.id} value={s.id}>
                 {isPT ? "★ " : ""}
@@ -145,6 +196,38 @@ export function SubstituteForm({ sub, slots, partTimeStaff, onSave, onCancel }) 
         <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 3 }}>
           代行者
         </label>
+        {matchedSubject && (
+          <div
+            style={{
+              fontSize: 10,
+              color: "#555",
+              background: "#f0f8ea",
+              border: "1px solid #cde5b8",
+              borderRadius: 4,
+              padding: "4px 8px",
+              marginBottom: 4,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
+          >
+            <span>
+              教科「<b>{matchedSubject.name}</b>」を担当できるバイトに絞り込み中
+              ({filteredPartTimeStaff.length} 名)
+            </span>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={showAllCandidates}
+                onChange={(e) => setShowAllCandidates(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              全員表示
+            </label>
+          </div>
+        )}
         <input
           list="sub-teacher-list"
           value={f.substitute}

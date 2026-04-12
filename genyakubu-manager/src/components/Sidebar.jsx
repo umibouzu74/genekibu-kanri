@@ -139,6 +139,7 @@ export function Sidebar({
           {navItem(VIEWS.ALL, "📊", "全講師一覧")}
           {navItem(VIEWS.HOLIDAYS, "📅", "祝日・休講日管理")}
           {navItem(VIEWS.MASTER, "⚙", "コースマスター管理")}
+          {navItem(VIEWS.STAFF, "👥", "バイト・教科管理")}
           {navItem(
             VIEWS.SUBS,
             "🔄",

@@ -9,4 +9,5 @@ export const VIEWS = Object.freeze({
   MASTER: "master",
   HOLIDAYS: "holidays",
   SUBS: "subs",
+  STAFF: "staff",
 });
