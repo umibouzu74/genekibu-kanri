@@ -36,6 +36,7 @@ import { MonthView } from "./components/views/MonthView";
 import { AllView } from "./components/views/AllView";
 import { MasterView } from "./components/views/MasterView";
 import { SubstituteView } from "./components/views/SubstituteView";
+import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
 import { StaffManagerView } from "./components/views/StaffManagerView";
 
 // ─── localStorage keys ──────────────────────────────────────────────
@@ -796,6 +797,9 @@ export default function App() {
               onDel={handleDelSub}
               onGoToStaffView={() => setView(VIEWS.STAFF)}
             />
+          )}
+          {view === VIEWS.CONFIRMED_SUBS && !selected && (
+            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} />
           )}
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView

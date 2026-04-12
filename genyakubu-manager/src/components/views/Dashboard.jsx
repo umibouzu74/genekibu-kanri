@@ -1,17 +1,17 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   DEPT_COLOR,
   fmtDate,
   getSubForSlot,
   gradeColor as GC,
-  gradeToDept,
   sortSlots as sortS,
   SUB_STATUS,
   timeToMin,
-  WEEKDAYS,
 } from "../../data";
 import { DASH_SECTIONS } from "../../constants/schedule";
+import { S } from "../../styles/common";
+import { buildDayRange, makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 
 function SectionColumn({ label, color, sl, deptOff, subs, date }) {
   const { timeGroups, teachers } = useMemo(() => {
@@ -236,7 +236,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
   );
 }
 
-function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
+export function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
   const fullOff = hols.some((h) => (h.scope || ["全部"]).includes("全部"));
   const offDepts = [...new Set(hols.flatMap((h) => h.scope || ["全部"]))].filter(
     (d) => d !== "全部"
@@ -334,48 +334,85 @@ function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
   );
 }
 
+const DAYS_IN_RANGE = 7;
+
 export function Dashboard({ slots, holidays, subs }) {
-  const now = new Date();
-  const todayStr = fmtDate(now);
-  const todayDow = WEEKDAYS[now.getDay()];
-  const tmr = new Date(now);
-  tmr.setDate(tmr.getDate() + 1);
-  const tmrStr = fmtDate(tmr);
-  const tmrDow = WEEKDAYS[tmr.getDay()];
+  const todayStr = fmtDate(new Date());
+  const [startDate, setStartDate] = useState(todayStr);
 
-  const holidaysFor = (d) => holidays.filter((h) => h.date === d);
-  const isOffForGrade = (d, grade) => {
-    const dept = gradeToDept(grade);
-    return holidays.some((h) => {
-      if (h.date !== d) return false;
-      const sc = h.scope || ["全部"];
-      return sc.includes("全部") || (dept && sc.includes(dept));
-    });
-  };
-
-  const todayHols = holidaysFor(todayStr);
-  const tmrHols = holidaysFor(tmrStr);
-  const todaySlots = slots.filter(
-    (s) => s.day === todayDow && !isOffForGrade(todayStr, s.grade)
+  const { holidaysFor, isOffForGrade } = useMemo(
+    () => makeHolidayHelpers(holidays),
+    [holidays]
   );
-  const tmrSlots = slots.filter((s) => s.day === tmrDow && !isOffForGrade(tmrStr, s.grade));
+
+  const days = useMemo(() => buildDayRange(startDate, DAYS_IN_RANGE), [startDate]);
+
+  const isToday = startDate === todayStr;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <DashDayRow
-        date={todayStr}
-        dow={todayDow}
-        holidays={todayHols}
-        slots={todaySlots}
-        subs={subs}
-      />
-      <DashDayRow
-        date={tmrStr}
-        dow={tmrDow}
-        holidays={tmrHols}
-        slots={tmrSlots}
-        subs={subs}
-      />
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+          background: "#fff",
+          padding: "10px 14px",
+          borderRadius: 10,
+          border: "1px solid #e0e0e0",
+        }}
+      >
+        <span style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>
+          表示開始日
+        </span>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => e.target.value && setStartDate(e.target.value)}
+          style={{ ...S.input, width: "auto" }}
+        />
+        <button
+          type="button"
+          onClick={() => setStartDate(shiftDate(startDate, -DAYS_IN_RANGE))}
+          style={S.btn(false)}
+        >
+          ← 前の週
+        </button>
+        <button
+          type="button"
+          onClick={() => setStartDate(todayStr)}
+          style={S.btn(isToday)}
+        >
+          今日
+        </button>
+        <button
+          type="button"
+          onClick={() => setStartDate(shiftDate(startDate, DAYS_IN_RANGE))}
+          style={S.btn(false)}
+        >
+          次の週 →
+        </button>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
+          {startDate} 〜 {days[days.length - 1].dateStr}（{DAYS_IN_RANGE}日間）
+        </span>
+      </div>
+      {days.map(({ dateStr, dow }) => {
+        const hols = holidaysFor(dateStr);
+        const daySlots = slots.filter(
+          (s) => s.day === dow && !isOffForGrade(dateStr, s.grade)
+        );
+        return (
+          <DashDayRow
+            key={dateStr}
+            date={dateStr}
+            dow={dow}
+            holidays={hols}
+            slots={daySlots}
+            subs={subs}
+          />
+        );
+      })}
     </div>
   );
 }
