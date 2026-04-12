@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -31,6 +31,7 @@ import { SubstituteForm } from "./components/SubstituteForm";
 import { HolidayManager } from "./components/HolidayManager";
 import { Sidebar } from "./components/Sidebar";
 import { DataManager } from "./components/DataManager";
+import { CommandPalette } from "./components/CommandPalette";
 
 import { Dashboard } from "./components/views/Dashboard";
 import { WeekView } from "./components/views/WeekView";
@@ -110,6 +111,19 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  // ─── Cmd+K global shortcut ─────────────────────────────────────
+  useEffect(() => {
+    const handleKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdPaletteOpen((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
 
   // ─── CRUD hooks ───────────────────────────────────────────────────
   const slotsCrud = useSlotsCrud({
@@ -120,6 +134,7 @@ export default function App() {
     partTimeStaff,
     savePartTimeStaff,
     subs,
+    slots,
     subjects,
     saveSubjects,
     subjectCategories,
@@ -510,6 +525,7 @@ export default function App() {
           <DataManager
             slots={slots}
             holidays={holidays}
+            subs={subs}
             onExport={dataIO.handleExport}
             onImport={dataIO.handleImport}
             onReset={dataIO.handleReset}
@@ -517,6 +533,23 @@ export default function App() {
           />
         </Modal>
       )}
+
+      {/* Command Palette (Cmd+K) */}
+      <CommandPalette
+        open={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        slots={slots}
+        subs={subs}
+        onSelectTeacher={(t) => {
+          selectTeacher(t);
+          setCmdPaletteOpen(false);
+        }}
+        onSelectView={(v) => {
+          selectView(v);
+          setCmdPaletteOpen(false);
+        }}
+        views={VIEWS}
+      />
 
       {/* Responsive CSS */}
       <style>{`
@@ -534,8 +567,12 @@ export default function App() {
           .master-slot-actions { opacity: 1 !important; }
         }
         @media print {
+          .sidebar, .sidebar-spacer, .hamburger { display: none !important; }
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
+          .no-print { display: none !important; }
+          body { font-size: 10px !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
       `}</style>
     </div>

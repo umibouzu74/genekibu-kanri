@@ -7,6 +7,7 @@ export function useStaffCrud({
   partTimeStaff,
   savePartTimeStaff,
   subs,
+  slots,
   subjects,
   saveSubjects,
   subjectCategories,
@@ -28,10 +29,18 @@ export function useStaffCrud({
   };
 
   const delStaff = async (name) => {
-    const used = subs.some(
+    const usedInSubs = subs.some(
       (s) => s.originalTeacher === name || s.substitute === name
     );
-    const extra = used ? "\n※過去の代行記録は削除されません" : "";
+    const assignedSlots = slots.filter((s) => s.teacher === name);
+    const warnings = [];
+    if (assignedSlots.length) {
+      warnings.push(`※ ${assignedSlots.length} 件のコマで担当講師として登録されています`);
+    }
+    if (usedInSubs) {
+      warnings.push("※ 過去の代行記録は削除されません");
+    }
+    const extra = warnings.length ? "\n" + warnings.join("\n") : "";
     const ok = await confirm({
       title: "バイトの削除",
       message: `「${name}」をバイト一覧から削除しますか？${extra}`,

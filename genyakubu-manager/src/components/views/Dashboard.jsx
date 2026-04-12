@@ -219,8 +219,12 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                               <span style={{ margin: "0 2px", color: st.color }}>→</span>
                               <span style={{ color: st.color }}>{sub.substitute || "?"}</span>
                             </span>
-                          ) : (
+                          ) : s.teacher ? (
                             s.teacher
+                          ) : (
+                            <span style={{ color: "#c44", fontSize: 14, fontStyle: "italic" }}>
+                              未割当
+                            </span>
                           )}
                         </div>
                       </div>

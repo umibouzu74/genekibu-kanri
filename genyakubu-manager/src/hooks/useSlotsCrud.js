@@ -63,6 +63,18 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
       if (!ok) return;
     }
 
+    // 同一曜日での過度な連続コマ警告 (6コマ以上)
+    const OVERLOAD_THRESHOLD = 6;
+    const sameDayCount =
+      slots.filter(
+        (s) => s.id !== editingId && s.teacher === f.teacher && s.day === f.day
+      ).length + 1; // +1 for this slot
+    if (sameDayCount >= OVERLOAD_THRESHOLD) {
+      toasts.info(
+        `注意: ${f.teacher} は ${f.day}曜に ${sameDayCount} コマ目になります`
+      );
+    }
+
     if (editSlot === "new") {
       saveSlots([...slots, { ...f, id: nextId() }]);
       toasts.success("コマを追加しました");

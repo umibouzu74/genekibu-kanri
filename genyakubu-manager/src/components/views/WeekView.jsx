@@ -9,6 +9,8 @@ import {
 } from "../../data";
 import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
+import { exportTeacherIcs } from "../../utils/ics";
+import { S } from "../../styles/common";
 
 export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
   const ts = useMemo(
@@ -62,6 +64,19 @@ export function WeekView({ teacher, slots, subs, onEdit, onDel }) {
 
   return (
     <div style={{ marginTop: 12 }}>
+      <div
+        className="no-print"
+        style={{ display: "flex", gap: 6, marginBottom: 8, justifyContent: "flex-end" }}
+      >
+        <button
+          type="button"
+          onClick={() => exportTeacherIcs(teacher, slots)}
+          style={{ ...S.btn(false), fontSize: 11 }}
+          title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
+        >
+          📅 iCalエクスポート
+        </button>
+      </div>
       {upcomingSubs.length > 0 && (
         <div
           style={{
