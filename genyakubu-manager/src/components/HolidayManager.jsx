@@ -6,7 +6,7 @@ import { S } from "../styles/common";
 
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 
-export function HolidayManager({ holidays, onSave }) {
+export function HolidayManager({ holidays, onSave, isAdmin }) {
   const [date, setDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState(["全部"]);
@@ -85,6 +85,7 @@ export function HolidayManager({ holidays, onSave }) {
 
   return (
     <div style={{ marginTop: 12 }}>
+      {isAdmin && (
       <div
         style={{
           background: "#fff",
@@ -197,6 +198,7 @@ export function HolidayManager({ holidays, onSave }) {
           )}
         </div>
       </div>
+      )}
 
       <div
         style={{
@@ -284,35 +286,37 @@ export function HolidayManager({ holidays, onSave }) {
                     ))}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(h)}
-                    aria-label={`${h.date} の休講日を編集`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      padding: 2,
-                    }}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDel(h.date)}
-                    aria-label={`${h.date} の休講日を削除`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 14,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(h)}
+                      aria-label={`${h.date} の休講日を編集`}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        padding: 2,
+                      }}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDel(h.date)}
+                      aria-label={`${h.date} の休講日を削除`}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 14,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })

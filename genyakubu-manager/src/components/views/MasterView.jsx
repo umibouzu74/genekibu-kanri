@@ -14,7 +14,7 @@ import { fmtDate } from "../../data";
 
 // Extracted to its own component so that hover state is scoped to a
 // single card instead of requiring DOM querySelector manipulation.
-const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, onDel }) {
+const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, onDel, isAdmin }) {
   const [hover, setHover] = useState(false);
   const gc = GC(s.grade);
   return (
@@ -93,51 +93,53 @@ const MasterSlotCard = memo(function MasterSlotCard({ s, newGradeRow, onEdit, on
       >
         {formatBiweeklyTeacher(s.teacher, s.note)}
       </div>
-      <div
-        className="master-slot-actions"
-        style={{
-          position: "absolute",
-          top: 2,
-          right: 2,
-          display: "flex",
-          gap: 1,
-          opacity: hover ? 1 : 0,
-          transition: "opacity .15s",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => onEdit(s)}
-          aria-label={`${s.subj} を編集`}
+      {isAdmin && (
+        <div
+          className="master-slot-actions"
           style={{
-            background: "rgba(255,255,255,0.9)",
-            border: "1px solid #ddd",
-            borderRadius: 3,
-            cursor: "pointer",
-            fontSize: 11,
-            padding: "1px 3px",
-            lineHeight: 1,
+            position: "absolute",
+            top: 2,
+            right: 2,
+            display: "flex",
+            gap: 1,
+            opacity: hover ? 1 : 0,
+            transition: "opacity .15s",
           }}
         >
-          ✏️
-        </button>
-        <button
-          type="button"
-          onClick={() => onDel(s.id)}
-          aria-label={`${s.subj} を削除`}
-          style={{
-            background: "rgba(255,255,255,0.9)",
-            border: "1px solid #ddd",
-            borderRadius: 3,
-            cursor: "pointer",
-            fontSize: 11,
-            padding: "1px 3px",
-            lineHeight: 1,
-          }}
-        >
-          🗑
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => onEdit(s)}
+            aria-label={`${s.subj} を編集`}
+            style={{
+              background: "rgba(255,255,255,0.9)",
+              border: "1px solid #ddd",
+              borderRadius: 3,
+              cursor: "pointer",
+              fontSize: 11,
+              padding: "1px 3px",
+              lineHeight: 1,
+            }}
+          >
+            ✏️
+          </button>
+          <button
+            type="button"
+            onClick={() => onDel(s.id)}
+            aria-label={`${s.subj} を削除`}
+            style={{
+              background: "rgba(255,255,255,0.9)",
+              border: "1px solid #ddd",
+              borderRadius: 3,
+              cursor: "pointer",
+              fontSize: 11,
+              padding: "1px 3px",
+              lineHeight: 1,
+            }}
+          >
+            🗑
+          </button>
+        </div>
+      )}
     </div>
   );
 });
@@ -149,6 +151,7 @@ export function MasterView({
   onNew,
   biweeklyBase,
   onSetBiweeklyBase,
+  isAdmin,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -293,9 +296,11 @@ export function MasterView({
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>科目</th>
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>担当</th>
                         <th style={{ textAlign: "left", padding: "4px 6px" }}>備考</th>
-                        <th style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>
-                          編集
-                        </th>
+                        {isAdmin && (
+                          <th style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>
+                            編集
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -323,21 +328,23 @@ export function MasterView({
                           <td style={{ padding: "6px", color: "#e67a00", fontSize: 11 }}>
                             {s.note}
                           </td>
-                          <td style={{ padding: "6px", textAlign: "center" }}>
-                            <button
-                              type="button"
-                              onClick={() => onEdit(s)}
-                              aria-label={`${s.subj} を編集`}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                fontSize: 12,
-                              }}
-                            >
-                              ✏️
-                            </button>
-                          </td>
+                          {isAdmin && (
+                            <td style={{ padding: "6px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={() => onEdit(s)}
+                                aria-label={`${s.subj} を編集`}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontSize: 12,
+                                }}
+                              >
+                                ✏️
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -451,14 +458,16 @@ export function MasterView({
         >
           クリア
         </button>
-        <div style={{ marginLeft: "auto" }}>
-          <button
-            onClick={onNew}
-            style={{ ...S.btn(false), background: "#e8f5e8", color: "#2a7a2a" }}
-          >
-            ＋ 新規追加
-          </button>
-        </div>
+        {isAdmin && (
+          <div style={{ marginLeft: "auto" }}>
+            <button
+              onClick={onNew}
+              style={{ ...S.btn(false), background: "#e8f5e8", color: "#2a7a2a" }}
+            >
+              ＋ 新規追加
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
         {filtered.length} / {slots.length} 件表示
@@ -593,6 +602,7 @@ export function MasterView({
                                       newGradeRow={newGradeRow}
                                       onEdit={onEdit}
                                       onDel={onDel}
+                                      isAdmin={isAdmin}
                                     />
                                   );
                                 })}

@@ -8,7 +8,7 @@ import { ref, onValue, off } from "firebase/database";
 //   Red    = offline / disconnected
 //   Orange = authentication failed
 //   Grey   = Firebase not configured (localStorage-only mode)
-export function SyncStatus() {
+export function SyncStatus({ isAdmin }) {
   const [connected, setConnected] = useState(false);
   const [authError, setAuthError] = useState(false);
 
@@ -53,13 +53,23 @@ export function SyncStatus() {
     );
   }
 
+  const roleLabel = isAdmin ? "管理者" : "閲覧者";
+  const statusLabel = connected ? "同期中" : "オフライン";
+
   return (
     <div
       style={wrap}
-      title={connected ? "クラウド同期中" : "オフライン（ローカル保存中）"}
+      title={connected ? `クラウド同期中（${roleLabel}）` : "オフライン（ローカル保存中）"}
     >
       <span style={{ ...dot, background: connected ? "#4caf50" : "#c44" }} />
-      <span style={label}>{connected ? "同期中" : "オフライン"}</span>
+      <span style={label}>
+        {statusLabel}
+        {connected && (
+          <span style={{ marginLeft: 4, color: isAdmin ? "#4caf50" : "#6a8fff" }}>
+            [{roleLabel}]
+          </span>
+        )}
+      </span>
     </div>
   );
 }

@@ -2,7 +2,7 @@
   "rules": {
     "appData": {
       ".read": "auth != null",
-      ".write": "auth != null",
+      ".write": "auth.provider === 'password'",
       "genyakubu-biweekly-base": {
         ".validate": "newData.isString() && newData.val().length < 20"
       }

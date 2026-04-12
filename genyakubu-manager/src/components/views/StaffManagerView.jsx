@@ -17,6 +17,7 @@ export function StaffManagerView({
   onDelCategory,
   onSaveSubject,
   onDelSubject,
+  isAdmin,
 }) {
   const [tab, setTab] = useState("staff");
   const [newStaff, setNewStaff] = useState("");
@@ -92,28 +93,30 @@ export function StaffManagerView({
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
               バイトを追加
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input
-                value={newStaff}
-                onChange={(e) => setNewStaff(e.target.value)}
-                placeholder="名前を入力"
-                list="staff-candidates"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddStaff();
-                }}
-                style={{ ...S.input, width: 180 }}
-              />
-              <datalist id="staff-candidates">
-                {allTeachers
-                  .filter((t) => !partTimeStaff.some((s) => s.name === t))
-                  .map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-              </datalist>
-              <button onClick={handleAddStaff} style={S.btn(true)}>
-                ＋ 追加
-              </button>
-            </div>
+            {isAdmin && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  value={newStaff}
+                  onChange={(e) => setNewStaff(e.target.value)}
+                  placeholder="名前を入力"
+                  list="staff-candidates"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddStaff();
+                  }}
+                  style={{ ...S.input, width: 180 }}
+                />
+                <datalist id="staff-candidates">
+                  {allTeachers
+                    .filter((t) => !partTimeStaff.some((s) => s.name === t))
+                    .map((t) => (
+                      <option key={t} value={t} />
+                    ))}
+                </datalist>
+                <button onClick={handleAddStaff} style={S.btn(true)}>
+                  ＋ 追加
+                </button>
+              </div>
+            )}
             <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
               ※ 既存講師名を入れると候補補完されます
             </div>
@@ -164,20 +167,22 @@ export function StaffManagerView({
                           担当教科: {staff.subjectIds.length}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onDelStaff(staff.name)}
-                        aria-label={`${staff.name} を削除`}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          fontSize: 14,
-                          color: "#c44",
-                        }}
-                      >
-                        ✕
-                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => onDelStaff(staff.name)}
+                          aria-label={`${staff.name} を削除`}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 14,
+                            color: "#c44",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
 
                     {subjectCategories.length === 0 ? (
