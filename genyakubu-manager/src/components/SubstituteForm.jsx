@@ -8,7 +8,7 @@ import {
   SUB_STATUS_KEYS,
 } from "../data";
 import { S } from "../styles/common";
-import { formatBiweeklyNote } from "../utils/biweekly";
+import { formatBiweeklyNote, getSlotTeachers } from "../utils/biweekly";
 import { sortJa } from "../utils/sortJa";
 
 // コマの科目文字列から対応する Subject.id を推定する。
@@ -69,39 +69,68 @@ export function SubstituteForm({
     [partTimeStaff]
   );
 
-  // すでに代行記録がある slotId の集合 (同じ日付内)。
-  // 編集中のレコード自身は除外する。
-  const takenSlotIds = useMemo(() => {
-    if (!f.date) return new Set();
-    return new Set(
-      subs
-        .filter((x) => x.date === f.date && (!sub || x.id !== sub.id))
-        .map((x) => x.slotId)
-    );
+  // すでに代行記録がある slotId → originalTeacher の Map (同じ日付内)。
+  // マルチ教師スロットで教師単位の代行登録を可能にするために、
+  // slotId ごとに登録済み教師名の Set を保持する。
+  const takenSlotTeachers = useMemo(() => {
+    if (!f.date) return new Map();
+    const m = new Map();
+    for (const x of subs) {
+      if (x.date !== f.date) continue;
+      if (sub && x.id === sub.id) continue;
+      if (!m.has(x.slotId)) m.set(x.slotId, new Set());
+      m.get(x.slotId).add(x.originalTeacher);
+    }
+    return m;
   }, [subs, f.date, sub]);
 
-  // 候補コマ: 選択日の曜日に該当する slot、アルバイト担当を優先、代行済みは除外
+  // スロットが完全に代行済みかどうか判定
+  const isSlotFullyTaken = (s) => {
+    const taken = takenSlotTeachers.get(s.id);
+    if (!taken) return false;
+    const teachers = getSlotTeachers(s);
+    // 単一教師: 1件でも代行あれば taken
+    if (teachers.length <= 1) return true;
+    // マルチ教師: 全教師に代行がついていれば taken
+    return teachers.every((t) => taken.has(t));
+  };
+
+  // 候補コマ: 選択日の曜日に該当する slot、アルバイト担当を優先、完全代行済みは除外
   const slotOptions = useMemo(() => {
     if (!dayOfDate) return [];
     const filtered = sortS(
-      slots.filter((s) => s.day === dayOfDate && !takenSlotIds.has(s.id))
+      slots.filter((s) => s.day === dayOfDate && !isSlotFullyTaken(s))
     );
-    const isPT = (t) => staffNameSet.has(t);
+    const hasPT = (s) => getSlotTeachers(s).some((t) => staffNameSet.has(t));
     return [
-      ...filtered.filter((s) => isPT(s.teacher)),
-      ...filtered.filter((s) => !isPT(s.teacher)),
+      ...filtered.filter((s) => hasPT(s)),
+      ...filtered.filter((s) => !hasPT(s)),
     ];
-  }, [slots, dayOfDate, staffNameSet, takenSlotIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- takenSlotTeachers is covered by subs/f.date/sub
+  }, [slots, dayOfDate, staffNameSet, subs, f.date, sub]);
 
   const selectedSlot = useMemo(
     () => slots.find((s) => s.id === Number(f.slotId)) || null,
     [slots, f.slotId]
   );
 
-  // slot 変更時に元講師を自動入力
+  const selectedSlotTeachers = useMemo(
+    () => (selectedSlot ? getSlotTeachers(selectedSlot) : []),
+    [selectedSlot]
+  );
+  const isMultiTeacher = selectedSlotTeachers.length > 1;
+
+  // slot 変更時に元講師を自動入力（単一教師の場合のみ）
   useEffect(() => {
-    if (selectedSlot && selectedSlot.teacher !== f.originalTeacher) {
+    if (!selectedSlot) return;
+    const teachers = getSlotTeachers(selectedSlot);
+    if (teachers.length === 1 && selectedSlot.teacher !== f.originalTeacher) {
       setF((p) => ({ ...p, originalTeacher: selectedSlot.teacher }));
+    } else if (teachers.length > 1) {
+      // マルチ教師: 現在の originalTeacher がこのスロットの教師でなければクリア
+      if (!teachers.includes(f.originalTeacher)) {
+        setF((p) => ({ ...p, originalTeacher: "" }));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when selected slot changes, not on every f.originalTeacher change
   }, [selectedSlot?.id]);
@@ -143,10 +172,10 @@ export function SubstituteForm({
         (s) => s.day === dayOfDate && !getSubForSlot(subs, s.id, f.date)
       )
     );
-    const isPT = (t) => staffNameSet.has(t);
+    const hasPT = (s) => getSlotTeachers(s).some((t) => staffNameSet.has(t));
     return [
-      ...filtered.filter((s) => isPT(s.teacher)),
-      ...filtered.filter((s) => !isPT(s.teacher)),
+      ...filtered.filter((s) => hasPT(s)),
+      ...filtered.filter((s) => !hasPT(s)),
     ];
   }, [slots, subs, dayOfDate, f.date, staffNameSet]);
 
@@ -187,6 +216,7 @@ export function SubstituteForm({
     const errs = {};
     if (!f.date) errs.date = "日付を入力してください";
     if (!f.slotId) errs.slotId = "コマを選択してください";
+    if (isMultiTeacher && !f.originalTeacher) errs.originalTeacher = "元講師を選択してください";
     if (Object.keys(errs).length) {
       setErrors(errs);
       return;
@@ -289,10 +319,10 @@ export function SubstituteForm({
             >
               <option value="">-- コマを選択 --</option>
               {slotOptions.map((s) => {
-                const isPT = staffNameSet.has(s.teacher);
+                const hasPT = getSlotTeachers(s).some((t) => staffNameSet.has(t));
                 return (
                   <option key={s.id} value={s.id}>
-                    {isPT ? "★ " : ""}
+                    {hasPT ? "★ " : ""}
                     {s.time} / {s.grade}
                     {s.cls && s.cls !== "-" ? s.cls : ""} / {s.subj} / {s.teacher}
                     {s.room ? ` (${s.room})` : ""}
@@ -327,11 +357,72 @@ export function SubstituteForm({
                 color: "#555",
               }}
             >
-              元講師: <b style={{ color: "#1a1a2e", fontSize: 13 }}>{selectedSlot.teacher}</b>
-              {selectedSlot.note && (
-                <span style={{ marginLeft: 10, color: "#e67a00" }}>
-                  ({selectedSlot.note})
-                </span>
+              {isMultiTeacher ? (
+                <>
+                  <div style={{ marginBottom: 6 }}>
+                    元講師（{selectedSlotTeachers.length}名）: 代行が必要な講師を選択
+                    {selectedSlot.note && (
+                      <span style={{ marginLeft: 6, color: "#e67a00" }}>
+                        ({selectedSlot.note})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {selectedSlotTeachers.map((t) => {
+                      const active = f.originalTeacher === t;
+                      const alreadyTaken =
+                        takenSlotTeachers.get(Number(f.slotId))?.has(t) ?? false;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={alreadyTaken}
+                          onClick={() => up("originalTeacher", t)}
+                          style={{
+                            padding: "4px 12px",
+                            borderRadius: 6,
+                            cursor: alreadyTaken ? "not-allowed" : "pointer",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background: alreadyTaken
+                              ? "#eee"
+                              : active
+                                ? "#1a1a2e"
+                                : "#fff",
+                            color: alreadyTaken
+                              ? "#aaa"
+                              : active
+                                ? "#fff"
+                                : "#333",
+                            border: `2px solid ${alreadyTaken ? "#ddd" : active ? "#1a1a2e" : "#ccc"}`,
+                            textDecoration: alreadyTaken ? "line-through" : "none",
+                          }}
+                        >
+                          {t}
+                          {alreadyTaken
+                            ? " (登録済)"
+                            : staffNameSet.has(t)
+                              ? <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.7 }}>★</span>
+                              : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {errors.originalTeacher && (
+                    <div style={{ fontSize: 10, color: "#c44", marginTop: 4 }}>
+                      {errors.originalTeacher}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  元講師: <b style={{ color: "#1a1a2e", fontSize: 13 }}>{selectedSlot.teacher}</b>
+                  {selectedSlot.note && (
+                    <span style={{ marginLeft: 10, color: "#e67a00" }}>
+                      ({selectedSlot.note})
+                    </span>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -490,7 +581,7 @@ export function SubstituteForm({
           {fullDayRows.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {fullDayRows.map((slot) => {
-                const isPT = staffNameSet.has(slot.teacher);
+                const hasPT = getSlotTeachers(slot).some((t) => staffNameSet.has(t));
                 const row = rowState[slot.id] || {
                   substitute: "",
                   status: "requested",
@@ -511,7 +602,7 @@ export function SubstituteForm({
                     }}
                   >
                     <div style={{ fontSize: 11, color: "#333", lineHeight: 1.35 }}>
-                      {isPT ? "★ " : ""}
+                      {hasPT ? "★ " : ""}
                       <b>{slot.time}</b> / {slot.grade}
                       {slot.cls && slot.cls !== "-" ? slot.cls : ""} / {slot.subj}
                       {slot.room ? ` (${slot.room})` : ""}

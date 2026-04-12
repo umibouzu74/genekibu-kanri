@@ -4,6 +4,8 @@ import {
   dateToDay,
   fmtDate,
   gradeColor as GC,
+  gradeToDept,
+  isKameiRoom,
   timeToMin,
 } from "../../data";
 import { S } from "../../styles/common";
@@ -251,31 +253,6 @@ export function AdjustmentEditor({
     }));
   }, [daySlots, dateAdj]);
 
-  // Group adjusted slots by time
-  const timeGroups = useMemo(() => {
-    const groups = {};
-    for (const s of adjustedSlots) {
-      if (s._combinedInto != null) continue; // hide merged children
-      if (!groups[s.time]) groups[s.time] = [];
-      groups[s.time].push(s);
-    }
-    return Object.entries(groups).sort(
-      ([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
-    );
-  }, [adjustedSlots]);
-
-  // All unique times for drop targets (including empty ones)
-  const allTimes = useMemo(() => {
-    const ts = new Set();
-    for (const s of daySlots) ts.add(s.time);
-    for (const a of dateAdj) {
-      if (a.targetTime) ts.add(a.targetTime);
-    }
-    return [...ts].sort(
-      (a, b) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
-    );
-  }, [daySlots, dateAdj]);
-
   // Handle drop: create a "move" adjustment
   const handleDrop = useCallback(
     (slotId, targetTime) => {
@@ -369,6 +346,102 @@ export function AdjustmentEditor({
   );
 
   const dayColor = dayName ? DC[dayName] || "#666" : "#ccc";
+
+  // Section renderer: filters adjusted slots by department, groups by time
+  const renderSection = (label, headerColor, filterFn) => {
+    const sectionSlots = adjustedSlots.filter(
+      (s) => s._combinedInto == null && filterFn(s)
+    );
+    if (sectionSlots.length === 0) return null;
+
+    const sectionTimes = new Set();
+    for (const s of sectionSlots) sectionTimes.add(s.time);
+    // Include times from move targets that intersect with this section's slots
+    for (const a of dateAdj) {
+      if (a.targetTime) {
+        const slot = daySlots.find((ds) => ds.id === a.slotId);
+        if (slot && filterFn(slot)) sectionTimes.add(a.targetTime);
+      }
+    }
+    const sortedTimes = [...sectionTimes].sort(
+      (a, b) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
+    );
+
+    const sectionTimeGroups = {};
+    for (const s of sectionSlots) {
+      if (!sectionTimeGroups[s.time]) sectionTimeGroups[s.time] = [];
+      sectionTimeGroups[s.time].push(s);
+    }
+
+    return (
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 8,
+          border: "1px solid #e0e0e0",
+          marginBottom: 10,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            background: headerColor,
+            color: "#fff",
+            padding: "6px 14px",
+            fontSize: 13,
+            fontWeight: 800,
+          }}
+        >
+          {label}
+          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, opacity: 0.8 }}>
+            {sectionSlots.length}コマ
+          </span>
+        </div>
+        <div style={{ padding: "4px 14px 10px" }}>
+          {sortedTimes.map((time) => {
+            const groupSlots = sectionTimeGroups[time] || [];
+            return (
+              <TimeRow
+                key={time}
+                time={time}
+                onDrop={handleDrop}
+                isAdmin={isAdmin}
+              >
+                {groupSlots.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSlotClick(s)}
+                    style={{
+                      cursor: combineSource ? "pointer" : undefined,
+                      outline:
+                        combineSource && s.id !== combineSource.id
+                          ? "2px dashed #ffc107"
+                          : "none",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <SlotCard
+                      slot={s}
+                      isAdjusted={s._moved || s._isCombineParent}
+                      adjustLabel={
+                        s._moved
+                          ? "移動"
+                          : s._isCombineParent
+                            ? "合同"
+                            : null
+                      }
+                      onContextMenu={(e) => handleSlotContext(e, s)}
+                      isAdmin={isAdmin}
+                    />
+                  </div>
+                ))}
+              </TimeRow>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -469,14 +542,7 @@ export function AdjustmentEditor({
           この日のコマがありません
         </div>
       ) : (
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 8,
-            border: "1px solid #e0e0e0",
-            padding: 14,
-          }}
-        >
+        <div>
           <div
             style={{
               fontSize: 11,
@@ -488,46 +554,23 @@ export function AdjustmentEditor({
               ? "コマをドラッグして時間帯を変更 / 右クリックで合同設定"
               : "時間割調整の閲覧モード"}
           </div>
-          {allTimes.map((time) => {
-            const groupSlots = timeGroups.find(([t]) => t === time)?.[1] || [];
-            return (
-              <TimeRow
-                key={time}
-                time={time}
-                onDrop={handleDrop}
-                isAdmin={isAdmin}
-              >
-                {groupSlots.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSlotClick(s)}
-                    style={{
-                      cursor: combineSource ? "pointer" : undefined,
-                      outline:
-                        combineSource && s.id !== combineSource.id
-                          ? "2px dashed #ffc107"
-                          : "none",
-                      borderRadius: 6,
-                    }}
-                  >
-                    <SlotCard
-                      slot={s}
-                      isAdjusted={s._moved || s._isCombineParent}
-                      adjustLabel={
-                        s._moved
-                          ? "移動"
-                          : s._isCombineParent
-                            ? "合同"
-                            : null
-                      }
-                      onContextMenu={(e) => handleSlotContext(e, s)}
-                      isAdmin={isAdmin}
-                    />
-                  </div>
-                ))}
-              </TimeRow>
-            );
-          })}
+          {/* ─── 中学部 ──────────────────────────────────────── */}
+          {renderSection(
+            "中学部",
+            "#3a6ea5",
+            (s) => gradeToDept(s.grade) === "中学部"
+          )}
+          {/* ─── 高校部 ──────────────────────────────────────── */}
+          {renderSection(
+            "高校部・本校",
+            "#8a5a2e",
+            (s) => gradeToDept(s.grade) === "高校部" && !isKameiRoom(s.room)
+          )}
+          {renderSection(
+            "高校部・亀井町",
+            "#6a6a2e",
+            (s) => gradeToDept(s.grade) === "高校部" && isKameiRoom(s.room)
+          )}
         </div>
       )}
 
