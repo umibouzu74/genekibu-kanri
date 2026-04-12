@@ -2,15 +2,17 @@
 //
 // The export bundle format:
 //   {
-//     schemaVersion: 1,
+//     schemaVersion: 3,
 //     slots: Slot[],
 //     holidays: Holiday[],
 //     substitutions: Sub[],
-//     partTimeStaff: string[],
+//     partTimeStaff: PartTimeStaffObject[],
 //     biweeklyBase: string,
+//     biweeklyAnchors: BiweeklyAnchor[],
 //   }
 
 import type {
+  BiweeklyAnchor,
   ExportBundle,
   Holiday,
   PartTimeStaffObject,
@@ -21,7 +23,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -69,6 +71,10 @@ export function isSubject(x: unknown): x is Subject {
 
 export function isPartTimeStaffObject(x: unknown): x is PartTimeStaffObject {
   return isObject(x) && isString(x.name) && Array.isArray(x.subjectIds);
+}
+
+export function isBiweeklyAnchor(x: unknown): x is BiweeklyAnchor {
+  return isObject(x) && isString(x.date) && x.weekType === "A";
 }
 
 // ─── Validation ────────────────────────────────────────────────────
@@ -157,6 +163,20 @@ export function validateExportBundle(
     return { ok: false, error: "biweeklyBase が文字列ではありません" };
   }
 
+  if (raw.biweeklyAnchors != null) {
+    if (!Array.isArray(raw.biweeklyAnchors))
+      return { ok: false, error: "biweeklyAnchors が配列ではありません" };
+    const bad = raw.biweeklyAnchors.findIndex(
+      (a: unknown) => !isBiweeklyAnchor(a)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `biweeklyAnchors[${bad}] の形式が不正です`,
+        path: `biweeklyAnchors[${bad}]`,
+      };
+  }
+
   return { ok: true, data: raw as unknown as ExportBundle };
 }
 
@@ -203,6 +223,20 @@ export function migrateExportBundle(raw: unknown): unknown {
     }
     if (!Array.isArray(bundle.subjects)) {
       bundle.subjects = [];
+    }
+  }
+
+  // v2 → v3: biweeklyBase (単一文字列) → biweeklyAnchors (配列) に変換。
+  if (version < 3) {
+    if (
+      isString(bundle.biweeklyBase) &&
+      (bundle.biweeklyBase as string).length > 0
+    ) {
+      bundle.biweeklyAnchors = [
+        { date: bundle.biweeklyBase as string, weekType: "A" },
+      ];
+    } else if (!Array.isArray(bundle.biweeklyAnchors)) {
+      bundle.biweeklyAnchors = [];
     }
   }
 

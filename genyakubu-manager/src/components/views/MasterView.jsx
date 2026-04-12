@@ -149,8 +149,8 @@ export function MasterView({
   onEdit,
   onDel,
   onNew,
-  biweeklyBase,
-  onSetBiweeklyBase,
+  biweeklyAnchors,
+  onSetBiweeklyAnchors,
   isAdmin,
 }) {
   const [filterDay, setFilterDay] = useState("");
@@ -203,9 +203,27 @@ export function MasterView({
   }, [slots]);
 
   const currentWeekType = useMemo(
-    () => getWeekType(fmtDate(new Date()), biweeklyBase),
-    [biweeklyBase]
+    () => getWeekType(fmtDate(new Date()), biweeklyAnchors),
+    [biweeklyAnchors]
   );
+
+  const [newAnchorDate, setNewAnchorDate] = useState("");
+
+  const sortedAnchors = useMemo(
+    () => [...(biweeklyAnchors || [])].sort((a, b) => a.date.localeCompare(b.date)),
+    [biweeklyAnchors]
+  );
+
+  const addAnchor = () => {
+    if (!newAnchorDate) return;
+    if (biweeklyAnchors.some((a) => a.date === newAnchorDate)) return;
+    onSetBiweeklyAnchors([...biweeklyAnchors, { date: newAnchorDate, weekType: "A" }]);
+    setNewAnchorDate("");
+  };
+
+  const removeAnchor = (date) => {
+    onSetBiweeklyAnchors(biweeklyAnchors.filter((a) => a.date !== date));
+  };
 
   if (tab === "biweekly")
     return (
@@ -227,15 +245,17 @@ export function MasterView({
             border: "1px solid #e0e0e0",
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>隔週の基準設定</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <label style={{ fontSize: 12 }}>A週の基準日:</label>
-            <input
-              type="date"
-              value={biweeklyBase || ""}
-              onChange={(e) => onSetBiweeklyBase(e.target.value)}
-              style={{ ...S.input, width: "auto" }}
-            />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 8,
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700 }}>隔週の基準設定</div>
             {currentWeekType && (
               <span
                 style={{
@@ -251,8 +271,92 @@ export function MasterView({
               </span>
             )}
           </div>
+
+          {sortedAnchors.length > 0 && (
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              <thead>
+                <tr style={{ borderBottom: "2px solid #eee" }}>
+                  <th style={{ textAlign: "left", padding: "4px 6px" }}>基準日</th>
+                  <th style={{ textAlign: "left", padding: "4px 6px" }}>種別</th>
+                  {isAdmin && (
+                    <th style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>削除</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedAnchors.map((a) => (
+                  <tr key={a.date} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                    <td style={{ padding: "6px", fontWeight: 600 }}>{a.date}</td>
+                    <td style={{ padding: "6px" }}>
+                      <span
+                        style={{
+                          background: "#2e6a9e",
+                          color: "#fff",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        A週
+                      </span>
+                    </td>
+                    {isAdmin && (
+                      <td style={{ padding: "6px", textAlign: "center" }}>
+                        <button
+                          type="button"
+                          onClick={() => removeAnchor(a.date)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 12,
+                            color: "#c05030",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {isAdmin && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 12 }}>A週の基準日を追加:</label>
+              <input
+                type="date"
+                value={newAnchorDate}
+                onChange={(e) => setNewAnchorDate(e.target.value)}
+                style={{ ...S.input, width: "auto" }}
+              />
+              <button
+                type="button"
+                onClick={addAnchor}
+                disabled={!newAnchorDate}
+                style={{
+                  ...S.btn(false),
+                  fontSize: 12,
+                  opacity: newAnchorDate ? 1 : 0.5,
+                }}
+              >
+                追加
+              </button>
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-            基準日を含む週をA週とし、以降交互にA週・B週が繰り返されます
+            基準日を追加すると、その日以降は直近の基準日からA/B週が再計算されます。
+            祝日や長期休暇でずれた場合は新しい基準日を追加してください。
           </div>
         </div>
         {biweeklyGroups.length === 0 ? (

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
+  isBiweeklyAnchor,
   isHoliday,
   isPartTimeStaffObject,
   isSlot,
@@ -78,8 +79,17 @@ describe("type guards", () => {
   it("isPartTimeStaffObject requires name and subjectIds array", () => {
     expect(isPartTimeStaffObject({ name: "田中", subjectIds: [] })).toBe(true);
     expect(isPartTimeStaffObject({ name: "田中", subjectIds: [1, 2] })).toBe(true);
-    expect(isPartTimeStaffObject({ name: "田中" })).toBe(false);
+    expect(isPartTimeStaffObject({ name: "田���" })).toBe(false);
     expect(isPartTimeStaffObject("田中")).toBe(false);
+  });
+
+  it("isBiweeklyAnchor requires date string and weekType 'A'", () => {
+    expect(isBiweeklyAnchor({ date: "2026-04-06", weekType: "A" })).toBe(true);
+    expect(isBiweeklyAnchor({ date: "2026-04-06", weekType: "B" })).toBe(false);
+    expect(isBiweeklyAnchor({ date: "2026-04-06" })).toBe(false);
+    expect(isBiweeklyAnchor({ weekType: "A" })).toBe(false);
+    expect(isBiweeklyAnchor("2026-04-06")).toBe(false);
+    expect(isBiweeklyAnchor(null)).toBe(false);
   });
 });
 
@@ -172,6 +182,41 @@ describe("validateExportBundle", () => {
     const r = validateExportBundle({ biweeklyBase: 123 });
     expect(r.ok).toBe(false);
   });
+
+  it("accepts a well-formed v3 bundle with biweeklyAnchors", () => {
+    const bundle = {
+      schemaVersion: 3,
+      slots: [goodSlot],
+      biweeklyAnchors: [
+        { date: "2026-04-06", weekType: "A" as const },
+        { date: "2026-06-08", weekType: "A" as const },
+      ],
+    };
+    const r = validateExportBundle(bundle);
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts an empty biweeklyAnchors array", () => {
+    const r = validateExportBundle({ biweeklyAnchors: [] });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects non-array biweeklyAnchors", () => {
+    const r = validateExportBundle({ biweeklyAnchors: "bad" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/biweeklyAnchors/);
+  });
+
+  it("rejects malformed biweeklyAnchors entries", () => {
+    const r = validateExportBundle({
+      biweeklyAnchors: [
+        { date: "2026-04-06", weekType: "A" },
+        { date: "2026-06-08" }, // missing weekType
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("biweeklyAnchors[1]");
+  });
 });
 
 describe("migrateExportBundle", () => {
@@ -239,6 +284,58 @@ describe("migrateExportBundle", () => {
     });
     const v = validateExportBundle(out);
     expect(v.ok).toBe(true);
+  });
+
+  it("v2 → v3: converts biweeklyBase to biweeklyAnchors", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 2,
+      biweeklyBase: "2026-04-06",
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.biweeklyAnchors).toEqual([
+      { date: "2026-04-06", weekType: "A" },
+    ]);
+    // biweeklyBase is preserved for backward compat
+    expect(out.biweeklyBase).toBe("2026-04-06");
+  });
+
+  it("v2 → v3: initialises empty biweeklyAnchors when biweeklyBase is empty", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 2,
+      biweeklyBase: "",
+    }) as Record<string, unknown>;
+    expect(out.biweeklyAnchors).toEqual([]);
+  });
+
+  it("v2 → v3: initialises empty biweeklyAnchors when biweeklyBase is absent", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 2,
+    }) as Record<string, unknown>;
+    expect(out.biweeklyAnchors).toEqual([]);
+  });
+
+  it("v2 → v3: migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 2,
+      biweeklyBase: "2026-04-06",
+      partTimeStaff: [{ name: "福武", subjectIds: [] }],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("full migration v0 → v3 produces valid bundle", () => {
+    const out = migrateExportBundle({
+      partTimeStaff: ["福武"],
+      holidays: [{ date: "2026-05-04", label: "みどりの日" }],
+      biweeklyBase: "2026-04-06",
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+    const data = v.data!;
+    expect(data.biweeklyAnchors).toEqual([
+      { date: "2026-04-06", weekType: "A" },
+    ]);
   });
 });
 

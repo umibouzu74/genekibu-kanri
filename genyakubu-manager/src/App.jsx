@@ -62,6 +62,7 @@ const LS = {
   subjectCategories: "genyakubu-subject-categories",
   subjects: "genyakubu-subjects",
   biweeklyBase: "genyakubu-biweekly-base",
+  biweeklyAnchors: "genyakubu-biweekly-anchors",
 };
 
 export default function App() {
@@ -111,6 +112,11 @@ export default function App() {
   const [biweeklyBase, saveBiweeklyBase] = useSyncedStorageRaw(LS.biweeklyBase, "", {
     onError: onStorageError,
   });
+  const [biweeklyAnchors, saveBiweeklyAnchors] = useSyncedStorage(
+    LS.biweeklyAnchors,
+    [],
+    { onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -124,6 +130,14 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  // ─── Runtime migration: biweeklyBase → biweeklyAnchors ─────────
+  useEffect(() => {
+    if (biweeklyBase && biweeklyAnchors.length === 0) {
+      saveBiweeklyAnchors([{ date: biweeklyBase, weekType: "A" }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Cmd+K global shortcut ─────────────────────────────────────
   useEffect(() => {
@@ -156,6 +170,7 @@ export default function App() {
     slots,
     holidays,
     biweeklyBase,
+    biweeklyAnchors,
     subs,
     partTimeStaff,
     subjectCategories,
@@ -163,6 +178,7 @@ export default function App() {
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
+    saveBiweeklyAnchors,
     saveSubs,
     savePartTimeStaff,
     saveSubjectCategories,
@@ -439,8 +455,8 @@ export default function App() {
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
               onNew={() => setEditSlot("new")}
-              biweeklyBase={biweeklyBase}
-              onSetBiweeklyBase={saveBiweeklyBase}
+              biweeklyAnchors={biweeklyAnchors}
+              onSetBiweeklyAnchors={saveBiweeklyAnchors}
               isAdmin={isAdmin}
             />
           )}

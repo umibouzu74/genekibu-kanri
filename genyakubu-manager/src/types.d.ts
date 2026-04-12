@@ -57,6 +57,11 @@ export interface PartTimeStaffObject {
   subjectIds: number[]; // 担当できる Subject.id の配列
 }
 
+export interface BiweeklyAnchor {
+  date: string; // YYYY-MM-DD
+  weekType: "A"; // 常にA週（UIシンプル化のため）
+}
+
 export interface ExportBundle {
   schemaVersion?: number;
   exportedAt?: string;
@@ -68,6 +73,7 @@ export interface ExportBundle {
   subjectCategories?: SubjectCategory[];
   subjects?: Subject[];
   biweeklyBase?: string;
+  biweeklyAnchors?: BiweeklyAnchor[];
 }
 
 export interface ValidationResult<T> {
