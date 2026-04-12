@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { dateToDay, fmtDate } from "../../data";
 import { S } from "../../styles/common";
+import { encodeShareData } from "../../utils/shareCodec";
+import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
 import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 
@@ -22,16 +24,60 @@ export function ConfirmedSubsView({ slots, holidays, subs }) {
     [holidays]
   );
 
+  const confirmedSubs = useMemo(
+    () => subs.filter((s) => s.status === "confirmed"),
+    [subs]
+  );
+
+  const filteredSubs = useMemo(() => {
+    return showPast
+      ? confirmedSubs.filter((s) => s.date >= fromDate && s.date <= toDate)
+      : confirmedSubs.filter((s) => s.date >= todayStr);
+  }, [confirmedSubs, showPast, fromDate, toDate, todayStr]);
+
   const days = useMemo(() => {
-    const confirmed = subs.filter((s) => s.status === "confirmed");
-    const filtered = showPast
-      ? confirmed.filter((s) => s.date >= fromDate && s.date <= toDate)
-      : confirmed.filter((s) => s.date >= todayStr);
-    const dates = [...new Set(filtered.map((s) => s.date))].sort();
+    const dates = [...new Set(filteredSubs.map((s) => s.date))].sort();
     // Past mode is shown newest-first so recent history sits at the top.
     if (showPast) dates.reverse();
     return dates.map((dateStr) => ({ dateStr, dow: dateToDay(dateStr) }));
-  }, [subs, showPast, fromDate, toDate, todayStr]);
+  }, [filteredSubs, showPast]);
+
+  const toasts = useToasts();
+  const [sharing, setSharing] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (sharing) return;
+    if (filteredSubs.length === 0) {
+      toasts.error("共有する代行データがありません");
+      return;
+    }
+    setSharing(true);
+    try {
+      const referencedSlotIds = new Set(filteredSubs.map((s) => s.slotId));
+      const referencedSlots = slots.filter((s) => referencedSlotIds.has(s.id));
+      const encoded = await encodeShareData({
+        slots: referencedSlots,
+        substitutions: filteredSubs,
+        generatedAt: new Date().toISOString(),
+      });
+      const url = `${window.location.origin}${window.location.pathname}#/share/${encoded}`;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "代行確定情報", url });
+          toasts.success("共有しました");
+          return;
+        } catch {
+          // User cancelled or Web Share unavailable – fall through to clipboard
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      toasts.success("共有リンクをコピーしました");
+    } catch {
+      toasts.error("共有リンクの生成に失敗しました");
+    } finally {
+      setSharing(false);
+    }
+  }, [filteredSubs, slots, sharing, toasts]);
 
   const rangeInvalid = showPast && fromDate > toDate;
 
@@ -90,8 +136,23 @@ export function ConfirmedSubsView({ slots, holidays, subs }) {
             />
           </div>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
-          {days.length}日
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={sharing}
+            style={{
+              ...S.btn(false),
+              fontSize: 11,
+              background: "#eef2ff",
+              color: "#1a1a6e",
+              border: "1px solid #c0c8e8",
+              opacity: sharing ? 0.6 : 1,
+            }}
+          >
+            {sharing ? "生成中..." : "共有リンクを作成"}
+          </button>
+          <span style={{ fontSize: 11, color: "#888" }}>{days.length}日</span>
         </span>
       </div>
       {rangeInvalid ? (
