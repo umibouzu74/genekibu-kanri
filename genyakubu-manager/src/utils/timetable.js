@@ -103,7 +103,8 @@ function gradeMatchesCutoffGroup(grade, groupGrades) {
 }
 
 /**
- * Check whether a date is beyond the display cutoff for a given grade.
+ * Check whether a date is outside the display range for a given grade.
+ * Returns true when dateStr falls before startDate or after date (end).
  * @param {string} dateStr
  * @param {string} grade
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
@@ -113,6 +114,7 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
   if (!displayCutoff || !displayCutoff.groups) return false;
   for (const group of displayCutoff.groups) {
     if (gradeMatchesCutoffGroup(grade, group.grades)) {
+      if (group.startDate && dateStr < group.startDate) return true;
       if (group.date && dateStr > group.date) return true;
       return false;
     }
@@ -122,7 +124,7 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
 }
 
 /**
- * Check whether ALL grades on a given date are beyond their cutoff.
+ * Check whether ALL grades on a given date are outside their display range.
  * Used to show "未確定" banners for an entire day.
  * @param {string} dateStr
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
@@ -130,7 +132,9 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
  */
 export function isEntireDayBeyondCutoff(dateStr, displayCutoff) {
   if (!displayCutoff || !displayCutoff.groups || displayCutoff.groups.length === 0) return false;
-  return displayCutoff.groups.every(
-    (group) => group.date != null && dateStr > group.date
-  );
+  return displayCutoff.groups.every((group) => {
+    const pastEnd = group.date != null && dateStr > group.date;
+    const beforeStart = group.startDate != null && dateStr < group.startDate;
+    return pastEnd || beforeStart;
+  });
 }

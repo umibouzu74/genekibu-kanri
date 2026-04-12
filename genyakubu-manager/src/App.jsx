@@ -555,6 +555,7 @@ export default function App() {
               subjectCategories={subjectCategories}
               subjects={subjects}
               slots={slots}
+              subs={subs}
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}

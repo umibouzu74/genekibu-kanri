@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { S } from "../../styles/common";
 import { compareJa, sortJa } from "../../utils/sortJa";
 import { isSlotForTeacher } from "../../utils/biweekly";
+import { staffMonthlyWorkDates, fmtDateWeekday } from "../../data";
 
 // バイト・教科管理ビュー。2 タブ構成：
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
@@ -11,6 +12,7 @@ export function StaffManagerView({
   subjectCategories,
   subjects,
   slots,
+  subs,
   onAddStaff,
   onDelStaff,
   onToggleStaffSubject,
@@ -25,6 +27,11 @@ export function StaffManagerView({
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState("#888");
   const [newSubjByCat, setNewSubjByCat] = useState({}); // { [categoryId]: "名前" }
+
+  const [nowYear, nowMonth] = useMemo(() => {
+    const d = new Date();
+    return [d.getFullYear(), d.getMonth() + 1];
+  }, []);
 
   const subjectsByCat = useMemo(() => {
     const m = new Map();
@@ -254,6 +261,33 @@ export function StaffManagerView({
                         })}
                       </div>
                     )}
+
+                    {/* 今月の出勤日（代行実績） */}
+                    {subs && (() => {
+                      const workDates = staffMonthlyWorkDates(subs, staff.name, nowYear, nowMonth);
+                      return (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            background: "#f0f7ff",
+                            borderRadius: 6,
+                            padding: "8px 10px",
+                            fontSize: 12,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 11, color: "#4a6a9a", marginBottom: 4 }}>
+                            {nowMonth}月の代行出勤（{workDates.length}日）
+                          </div>
+                          {workDates.length > 0 ? (
+                            <div style={{ color: "#555", lineHeight: 1.6 }}>
+                              {workDates.map((d) => fmtDateWeekday(d)).join("、")}
+                            </div>
+                          ) : (
+                            <div style={{ color: "#aaa" }}>今月の代行実績なし</div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}

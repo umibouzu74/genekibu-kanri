@@ -101,7 +101,8 @@ export interface Timetable {
 export interface CutoffGroup {
   label: string; // "中1・2", "中3", "高1・2", "高3"
   grades: string[]; // ["中1","中2"], ["中3"], …
-  date: string | null; // "YYYY-MM-DD" or null（無制限）
+  startDate?: string | null; // "YYYY-MM-DD" or null（開始日制限なし）
+  date: string | null; // "YYYY-MM-DD" or null（終了日制限なし）
 }
 
 export interface DisplayCutoff {

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
+  fmtDateWeekday,
   gradeColor as GC,
   monthlyTally,
+  staffMonthlyWorkDates,
   SUB_STATUS,
   SUB_STATUS_KEYS,
 } from "../../data";
@@ -38,6 +40,7 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [expandedTally, setExpandedTally] = useState(new Set());
 
   // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック)
   useEffect(() => {
@@ -544,67 +547,109 @@ export function SubstituteView({
               <tbody>
                 {tallyRows.map((r, i) => {
                   const diff = r.covered - r.coveredFor;
+                  const isExpanded = expandedTally.has(r.name);
+                  const workDates = isExpanded
+                    ? staffMonthlyWorkDates(subs, r.name, ty, tm)
+                    : [];
                   return (
-                    <tr
-                      key={r.name}
-                      style={{
-                        background: i % 2 ? "#f8f9fa" : "#fff",
-                        borderTop: "1px solid #eee",
-                      }}
-                    >
-                      <td style={{ padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
-                        {r.isPT && (
-                          <span
-                            style={{
-                              marginRight: 6,
-                              background: "#ffe8a0",
-                              color: "#7a5a1a",
-                              borderRadius: 4,
-                              padding: "1px 6px",
-                              fontSize: 9,
-                              fontWeight: 700,
-                              verticalAlign: "middle",
-                            }}
+                    <Fragment key={r.name}>
+                      <tr
+                        style={{
+                          background: i % 2 ? "#f8f9fa" : "#fff",
+                          borderTop: "1px solid #eee",
+                          cursor: r.covered ? "pointer" : "default",
+                        }}
+                        onClick={() => {
+                          if (!r.covered) return;
+                          setExpandedTally((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(r.name)) next.delete(r.name);
+                            else next.add(r.name);
+                            return next;
+                          });
+                        }}
+                      >
+                        <td style={{ padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
+                          {r.covered > 0 && (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                marginRight: 4,
+                                fontSize: 10,
+                                color: "#888",
+                                transform: isExpanded ? "rotate(90deg)" : "none",
+                                transition: "transform 0.15s",
+                              }}
+                            >
+                              ▶
+                            </span>
+                          )}
+                          {r.isPT && (
+                            <span
+                              style={{
+                                marginRight: 6,
+                                background: "#ffe8a0",
+                                color: "#7a5a1a",
+                                borderRadius: 4,
+                                padding: "1px 6px",
+                                fontSize: 9,
+                                fontWeight: 700,
+                                verticalAlign: "middle",
+                              }}
+                            >
+                              バイト
+                            </span>
+                          )}
+                          {r.name}
+                        </td>
+                        <td
+                          style={{
+                            padding: "10px 14px",
+                            textAlign: "center",
+                            fontSize: 18,
+                            fontWeight: r.covered ? 800 : 400,
+                            color: r.covered ? "#2a7a4a" : "#ccc",
+                          }}
+                        >
+                          {r.covered || "—"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "10px 14px",
+                            textAlign: "center",
+                            fontSize: 18,
+                            fontWeight: r.coveredFor ? 800 : 400,
+                            color: r.coveredFor ? "#c03030" : "#ccc",
+                          }}
+                        >
+                          {r.coveredFor || "—"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "10px 14px",
+                            textAlign: "center",
+                            fontSize: 16,
+                            fontWeight: 700,
+                            color: diff > 0 ? "#2a7a4a" : diff < 0 ? "#c03030" : "#888",
+                          }}
+                        >
+                          {diff > 0 ? `+${diff}` : diff}
+                        </td>
+                      </tr>
+                      {isExpanded && workDates.length > 0 && (
+                        <tr style={{ background: i % 2 ? "#f0f2f4" : "#f8f9fa" }}>
+                          <td
+                            colSpan={4}
+                            style={{ padding: "6px 14px 10px 36px", fontSize: 12, color: "#555" }}
                           >
-                            バイト
-                          </span>
-                        )}
-                        {r.name}
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px 14px",
-                          textAlign: "center",
-                          fontSize: 18,
-                          fontWeight: r.covered ? 800 : 400,
-                          color: r.covered ? "#2a7a4a" : "#ccc",
-                        }}
-                      >
-                        {r.covered || "—"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px 14px",
-                          textAlign: "center",
-                          fontSize: 18,
-                          fontWeight: r.coveredFor ? 800 : 400,
-                          color: r.coveredFor ? "#c03030" : "#ccc",
-                        }}
-                      >
-                        {r.coveredFor || "—"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px 14px",
-                          textAlign: "center",
-                          fontSize: 16,
-                          fontWeight: 700,
-                          color: diff > 0 ? "#2a7a4a" : diff < 0 ? "#c03030" : "#888",
-                        }}
-                      >
-                        {diff > 0 ? `+${diff}` : diff}
-                      </td>
-                    </tr>
+                            <span style={{ fontWeight: 700, fontSize: 11, color: "#888" }}>
+                              出勤日（{workDates.length}日）:
+                            </span>{" "}
+                            {workDates.map((d) => fmtDateWeekday(d)).join("、")}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
                 {tallyRows.length === 0 && (

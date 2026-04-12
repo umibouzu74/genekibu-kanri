@@ -8,6 +8,7 @@ import {
   isKameiRoom,
   monthlyTally,
   sortSlots,
+  staffMonthlyWorkDates,
   timeToMin,
 } from "./data";
 
@@ -137,5 +138,42 @@ describe("monthlyTally", () => {
 
   it("returns empty objects when no subs match", () => {
     expect(monthlyTally([], 2026, 4)).toEqual({ covered: {}, coveredFor: {} });
+  });
+});
+
+describe("staffMonthlyWorkDates", () => {
+  const subs = [
+    { date: "2026-04-03", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
+    { date: "2026-04-10", status: "confirmed", substitute: "山田", originalTeacher: "佐藤" },
+    { date: "2026-04-10", status: "confirmed", substitute: "山田", originalTeacher: "田中" },
+    { date: "2026-04-15", status: "requested", substitute: "山田", originalTeacher: "鈴木" },
+    { date: "2026-04-20", status: "confirmed", substitute: "佐藤", originalTeacher: "鈴木" },
+    { date: "2026-05-01", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
+  ];
+
+  it("returns sorted unique dates for matching staff", () => {
+    expect(staffMonthlyWorkDates(subs, "山田", 2026, 4)).toEqual([
+      "2026-04-03",
+      "2026-04-10",
+    ]);
+  });
+
+  it("deduplicates dates from multiple subs on same day", () => {
+    const result = staffMonthlyWorkDates(subs, "山田", 2026, 4);
+    expect(result.filter((d) => d === "2026-04-10")).toHaveLength(1);
+  });
+
+  it("excludes requested (non-confirmed) records", () => {
+    const result = staffMonthlyWorkDates(subs, "山田", 2026, 4);
+    expect(result).not.toContain("2026-04-15");
+  });
+
+  it("filters by month correctly", () => {
+    expect(staffMonthlyWorkDates(subs, "山田", 2026, 5)).toEqual(["2026-05-01"]);
+  });
+
+  it("returns empty array when no matches", () => {
+    expect(staffMonthlyWorkDates(subs, "unknown", 2026, 4)).toEqual([]);
+    expect(staffMonthlyWorkDates([], "山田", 2026, 4)).toEqual([]);
   });
 });
