@@ -123,10 +123,10 @@ describe("getSubForSlot", () => {
 });
 
 describe("monthlyTally", () => {
-  it("counts confirmed/completed subs per month, excluding requested", () => {
+  it("counts confirmed subs per month, excluding requested", () => {
     const subs = [
       { date: "2026-04-10", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
-      { date: "2026-04-12", status: "completed", substitute: "山田", originalTeacher: "鈴木" },
+      { date: "2026-04-12", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
       { date: "2026-04-15", status: "requested", substitute: "山田", originalTeacher: "鈴木" },
       { date: "2026-05-02", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
     ];

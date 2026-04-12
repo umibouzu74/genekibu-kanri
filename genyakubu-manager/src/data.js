@@ -88,10 +88,9 @@ export const INIT_PART_TIME_STAFF = [
 export const SUB_STATUS = {
   requested: { label: "依頼中", color: "#c03030", bg: "#fde4e4", border: "#f0b0b0" },
   confirmed: { label: "確定",   color: "#2a7a4a", bg: "#e0f2e4", border: "#a8d8b0" },
-  completed: { label: "完了",   color: "#555",    bg: "#ececec", border: "#c8c8c8" },
 };
 
-export const SUB_STATUS_KEYS = ["requested", "confirmed", "completed"];
+export const SUB_STATUS_KEYS = ["requested", "confirmed"];
 
 export function getSubForSlot(subs, slotId, date) {
   if (!subs) return null;
