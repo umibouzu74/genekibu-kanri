@@ -12,7 +12,7 @@ import { nextNumericId } from "../utils/schema";
  *   saveSlots: (v: import("../types").Slot[]) => void,
  * }} deps
  */
-export function useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots }) {
+export function useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots, onRemoveActive }) {
   const toasts = useToasts();
   const confirm = useConfirm();
 
@@ -59,9 +59,10 @@ export function useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots
           )
         );
       }
+      if (onRemoveActive) onRemoveActive(id);
       toasts.success("時間割を削除しました");
     },
-    [timetables, saveTimetables, slots, saveSlots, toasts, confirm]
+    [timetables, saveTimetables, slots, saveSlots, toasts, confirm, onRemoveActive]
   );
 
   const duplicate = useCallback(

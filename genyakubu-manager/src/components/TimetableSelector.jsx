@@ -2,9 +2,14 @@
 export function TimetableSelector({ timetables, activeTimetableId, onChange }) {
   if (!timetables || timetables.length <= 1) return null;
 
+  // Fall back to first timetable if active ID no longer exists.
+  const validId = timetables.some((t) => t.id === activeTimetableId)
+    ? activeTimetableId
+    : timetables[0]?.id ?? 1;
+
   return (
     <select
-      value={activeTimetableId}
+      value={validId}
       onChange={(e) => onChange(Number(e.target.value))}
       style={{
         padding: "4px 8px",

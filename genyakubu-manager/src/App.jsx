@@ -71,6 +71,7 @@ const LS = {
   adjustments: "genyakubu-adjustments",
   timetables: "genyakubu-timetables",
   displayCutoff: "genyakubu-display-cutoff",
+  activeTimetableId: "genyakubu-active-timetable",
 };
 
 export default function App() {
@@ -154,12 +155,12 @@ export default function App() {
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(
-    () => Number(localStorage.getItem("genyakubu-active-timetable")) || 1
+    () => Number(localStorage.getItem(LS.activeTimetableId)) || 1
   );
 
   const changeActiveTimetable = useCallback((id) => {
     setActiveTimetableId(id);
-    try { localStorage.setItem("genyakubu-active-timetable", String(id)); } catch { /* quota */ }
+    try { localStorage.setItem(LS.activeTimetableId, String(id)); } catch { /* quota */ }
   }, []);
 
   // ─── Runtime migration: biweeklyBase → biweeklyAnchors ─────────
@@ -187,7 +188,12 @@ export default function App() {
     slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
-  const ttCrud = useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots });
+  const ttCrud = useTimetablesCrud({
+    timetables, saveTimetables, slots, saveSlots,
+    onRemoveActive: useCallback((deletedId) => {
+      if (activeTimetableId === deletedId) changeActiveTimetable(1);
+    }, [activeTimetableId, changeActiveTimetable]),
+  });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
   const staffCrud = useStaffCrud({
     partTimeStaff,
@@ -227,6 +233,7 @@ export default function App() {
     setShowDataMgr,
     setSelected,
     setView,
+    setActiveTimetableId,
     defaultView: VIEWS.DASH,
   });
 
@@ -256,19 +263,19 @@ export default function App() {
     return slots.filter((s) => (s.timetableId ?? 1) === activeTimetableId);
   }, [slots, timetables, activeTimetableId]);
 
-  const teacherGroups = useTeacherGroups({ slots, partTimeStaff, subjects, search });
+  const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
 
   const selDayCounts = useMemo(() => {
     if (!selected) return { total: 0, byDay: {} };
     const byDay = {};
     let total = 0;
-    for (const s of slots) {
+    for (const s of ttFilteredSlots) {
       if (s.teacher !== selected) continue;
       byDay[s.day] = (byDay[s.day] || 0) + 1;
       total++;
     }
     return { total, byDay };
-  }, [slots, selected]);
+  }, [ttFilteredSlots, selected]);
   const selSlotCount = selDayCounts.total;
 
   // ─── Print ──────────────────────────────────────────────────────
@@ -569,7 +576,7 @@ export default function App() {
           {selected && view === VIEWS.WEEK && (
             <WeekView
               teacher={selected}
-              slots={slots}
+              slots={ttFilteredSlots}
               subs={subs}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}

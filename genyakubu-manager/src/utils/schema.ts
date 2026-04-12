@@ -2,7 +2,7 @@
 //
 // The export bundle format:
 //   {
-//     schemaVersion: 3,
+//     schemaVersion: 4,
 //     slots: Slot[],
 //     holidays: Holiday[],
 //     substitutions: Sub[],
@@ -10,6 +10,8 @@
 //     biweeklyBase: string,
 //     biweeklyAnchors: BiweeklyAnchor[],
 //     adjustments: ScheduleAdjustment[],
+//     timetables: Timetable[],
+//     displayCutoff: DisplayCutoff,
 //   }
 
 import type {
@@ -46,7 +48,8 @@ export function isSlot(x: unknown): x is Slot {
     isString(x.time) &&
     isString(x.grade) &&
     isString(x.subj) &&
-    isString(x.teacher)
+    isString(x.teacher) &&
+    (x.timetableId === undefined || isNumber(x.timetableId))
   );
 }
 

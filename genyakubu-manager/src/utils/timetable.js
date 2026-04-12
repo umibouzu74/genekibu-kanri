@@ -64,6 +64,7 @@ export function isTimetableActiveForDate(timetable, dateStr, grade) {
  * @returns {number[]}
  */
 export function getActiveTimetableIds(dateStr, grade, timetables) {
+  if (!Array.isArray(timetables)) return [];
   return timetables
     .filter((t) => isTimetableActiveForDate(t, dateStr, grade))
     .map((t) => t.id);
@@ -78,6 +79,7 @@ export function getActiveTimetableIds(dateStr, grade, timetables) {
  * @returns {import("../types").Slot[]}
  */
 export function filterSlotsForDate(slots, dateStr, timetables) {
+  if (!Array.isArray(timetables) || timetables.length === 0) return slots;
   return slots.filter((s) => {
     const ttId = s.timetableId ?? 1;
     const tt = timetables.find((t) => t.id === ttId);

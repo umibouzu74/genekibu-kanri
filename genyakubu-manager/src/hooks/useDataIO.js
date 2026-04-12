@@ -57,6 +57,7 @@ export function useDataIO({
   setShowDataMgr,
   setSelected,
   setView,
+  setActiveTimetableId,
   defaultView,
 }) {
   const toasts = useToasts();
@@ -191,6 +192,7 @@ export function useDataIO({
     saveSubjects(INIT_SUBJECTS);
     saveTimetables([DEFAULT_TIMETABLE]);
     saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
+    if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
     setShowDataMgr(false);
@@ -210,6 +212,7 @@ export function useDataIO({
     saveSubjects,
     saveTimetables,
     saveDisplayCutoff,
+    setActiveTimetableId,
     setSelected,
     setView,
     setShowDataMgr,

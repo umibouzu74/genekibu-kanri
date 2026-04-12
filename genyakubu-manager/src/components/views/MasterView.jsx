@@ -175,8 +175,7 @@ export function MasterView({
         (!filterSubj || s.subj.includes(filterSubj)) &&
         (!timetables ||
           timetables.length <= 1 ||
-          !activeTimetableId ||
-          (s.timetableId ?? 1) === activeTimetableId)
+          (s.timetableId ?? 1) === (activeTimetableId || 1))
     );
     return sortS(r);
   }, [slots, filterDay, filterGrade, filterTeacher, filterSubj, timetables, activeTimetableId]);
