@@ -152,6 +152,8 @@ export function MasterView({
   biweeklyAnchors,
   onSetBiweeklyAnchors,
   isAdmin,
+  timetables,
+  activeTimetableId,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -165,16 +167,19 @@ export function MasterView({
   );
 
   const filtered = useMemo(() => {
-    // Single-pass filter to avoid creating 4 intermediate arrays.
     const r = slots.filter(
       (s) =>
         (!filterDay || s.day === filterDay) &&
         (!filterGrade || s.grade === filterGrade) &&
         (!filterTeacher || s.teacher.includes(filterTeacher)) &&
-        (!filterSubj || s.subj.includes(filterSubj))
+        (!filterSubj || s.subj.includes(filterSubj)) &&
+        (!timetables ||
+          timetables.length <= 1 ||
+          !activeTimetableId ||
+          (s.timetableId ?? 1) === activeTimetableId)
     );
     return sortS(r);
-  }, [slots, filterDay, filterGrade, filterTeacher, filterSubj]);
+  }, [slots, filterDay, filterGrade, filterTeacher, filterSubj, timetables, activeTimetableId]);
 
   const dayGroups = useMemo(() => {
     const activeDays = filterDay ? [filterDay] : DAYS;

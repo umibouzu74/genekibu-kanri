@@ -19,6 +19,7 @@ export interface Slot {
   subj: string;
   teacher: string;
   note: string;
+  timetableId?: number; // Timetable.id。未設定 = デフォルト時間割(id=1)
 }
 
 export interface Holiday {
@@ -75,6 +76,28 @@ export interface ScheduleAdjustment {
   createdAt?: string;
 }
 
+// ─── Timetable / Display cutoff ──────────────────────────────────
+export type TimetableType = "regular" | "koshu";
+
+export interface Timetable {
+  id: number;
+  name: string; // "2026年度 1学期", "夏期講習2026"
+  type: TimetableType; // 現在は "regular" のみ、"koshu" は将来用
+  startDate: string | null; // "YYYY-MM-DD" or null（無制限）
+  endDate: string | null; // "YYYY-MM-DD" or null（無制限）
+  grades: string[]; // ["中1","中2","附中1"] 等。空配列 = 全学年対象
+}
+
+export interface CutoffGroup {
+  label: string; // "中1・2", "中3", "高1・2", "高3"
+  grades: string[]; // ["中1","中2"], ["中3"], …
+  date: string | null; // "YYYY-MM-DD" or null（無制限）
+}
+
+export interface DisplayCutoff {
+  groups: CutoffGroup[];
+}
+
 export interface ExportBundle {
   schemaVersion?: number;
   exportedAt?: string;
@@ -88,6 +111,8 @@ export interface ExportBundle {
   biweeklyBase?: string;
   biweeklyAnchors?: BiweeklyAnchor[];
   adjustments?: ScheduleAdjustment[];
+  timetables?: Timetable[];
+  displayCutoff?: DisplayCutoff;
 }
 
 export interface ValidationResult<T> {

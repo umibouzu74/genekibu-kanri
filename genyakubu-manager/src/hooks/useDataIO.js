@@ -4,6 +4,8 @@ import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_TIMETABLE,
+  DEFAULT_DISPLAY_CUTOFF,
   migrateExportBundle,
   validateExportBundle,
 } from "../utils/schema";
@@ -37,6 +39,8 @@ export function useDataIO({
   partTimeStaff,
   subjectCategories,
   subjects,
+  timetables,
+  displayCutoff,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -46,6 +50,8 @@ export function useDataIO({
   savePartTimeStaff,
   saveSubjectCategories,
   saveSubjects,
+  saveTimetables,
+  saveDisplayCutoff,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -71,6 +77,8 @@ export function useDataIO({
           partTimeStaff,
           subjectCategories,
           subjects,
+          timetables,
+          displayCutoff,
         },
         null,
         2
@@ -87,7 +95,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -126,6 +134,8 @@ export function useDataIO({
             savePartTimeStaff(migratePartTimeStaff(d.partTimeStaff));
           if (Array.isArray(d.subjectCategories)) saveSubjectCategories(d.subjectCategories);
           if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
+          if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
+          if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
           setShowDataMgr(false);
           toasts.success("データをインポートしました");
         } catch (err) {
@@ -154,6 +164,8 @@ export function useDataIO({
       savePartTimeStaff,
       saveSubjectCategories,
       saveSubjects,
+      saveTimetables,
+      saveDisplayCutoff,
       setImporting,
       setShowDataMgr,
     ]
@@ -177,6 +189,8 @@ export function useDataIO({
     savePartTimeStaff(INIT_PART_TIME_STAFF);
     saveSubjectCategories(INIT_SUBJECT_CATEGORIES);
     saveSubjects(INIT_SUBJECTS);
+    saveTimetables([DEFAULT_TIMETABLE]);
+    saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
     setSelected(null);
     setView(defaultView);
     setShowDataMgr(false);
@@ -194,6 +208,8 @@ export function useDataIO({
     savePartTimeStaff,
     saveSubjectCategories,
     saveSubjects,
+    saveTimetables,
+    saveDisplayCutoff,
     setSelected,
     setView,
     setShowDataMgr,

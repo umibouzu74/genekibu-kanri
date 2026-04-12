@@ -5,6 +5,7 @@ import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
 import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
+import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable";
 
 // Shows a Dashboard-style listing of classes on days that have at least one
 // confirmed substitute.
@@ -12,7 +13,7 @@ import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 // Default (future mode): only today and later confirmed subs are shown.
 // Past mode: toggle reveals from/to date pickers for arbitrary range lookup
 // over confirmed subs whose date falls within the selected range.
-export function ConfirmedSubsView({ slots, holidays, subs }) {
+export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCutoff }) {
   const todayStr = fmtDate(new Date());
   const [showPast, setShowPast] = useState(false);
   // Past-mode defaults: last 30 days, up to yesterday (inclusive of both ends).
@@ -189,7 +190,17 @@ export function ConfirmedSubsView({ slots, holidays, subs }) {
         days.map(({ dateStr, dow }) => {
           const hols = holidaysFor(dateStr);
           const daySlots = slots.filter(
-            (s) => s.day === dow && !isOffForGrade(dateStr, s.grade)
+            (s) =>
+              s.day === dow &&
+              !isOffForGrade(dateStr, s.grade) &&
+              (!timetables ||
+                timetables.length === 0 ||
+                isTimetableActiveForDate(
+                  timetables.find((t) => t.id === (s.timetableId ?? 1)),
+                  dateStr,
+                  s.grade
+                )) &&
+              !isBeyondCutoff(dateStr, s.grade, displayCutoff)
           );
           return (
             <DashDayRow

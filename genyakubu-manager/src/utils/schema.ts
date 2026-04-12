@@ -14,6 +14,8 @@
 
 import type {
   BiweeklyAnchor,
+  CutoffGroup,
+  DisplayCutoff,
   ExportBundle,
   Holiday,
   PartTimeStaffObject,
@@ -22,10 +24,11 @@ import type {
   Subject,
   SubjectCategory,
   Substitute,
+  Timetable,
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -87,6 +90,36 @@ export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
     isString(x.type) &&
     (x.type === "move" || x.type === "combine") &&
     isNumber(x.slotId)
+  );
+}
+
+export function isTimetable(x: unknown): x is Timetable {
+  return (
+    isObject(x) &&
+    isNumber(x.id) &&
+    isString(x.name) &&
+    isString(x.type) &&
+    (x.type === "regular" || x.type === "koshu") &&
+    (x.startDate === null || isString(x.startDate)) &&
+    (x.endDate === null || isString(x.endDate)) &&
+    Array.isArray(x.grades)
+  );
+}
+
+export function isCutoffGroup(x: unknown): x is CutoffGroup {
+  return (
+    isObject(x) &&
+    isString(x.label) &&
+    Array.isArray(x.grades) &&
+    (x.date === null || isString(x.date))
+  );
+}
+
+export function isDisplayCutoff(x: unknown): x is DisplayCutoff {
+  return (
+    isObject(x) &&
+    Array.isArray(x.groups) &&
+    x.groups.every((g: unknown) => isCutoffGroup(g))
   );
 }
 
@@ -204,6 +237,23 @@ export function validateExportBundle(
       };
   }
 
+  if (raw.timetables != null) {
+    if (!Array.isArray(raw.timetables))
+      return { ok: false, error: "timetables が配列ではありません" };
+    const bad = raw.timetables.findIndex((t: unknown) => !isTimetable(t));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `timetables[${bad}] の形式が不正です`,
+        path: `timetables[${bad}]`,
+      };
+  }
+
+  if (raw.displayCutoff != null) {
+    if (!isDisplayCutoff(raw.displayCutoff))
+      return { ok: false, error: "displayCutoff の形式が不正です" };
+  }
+
   return { ok: true, data: raw as unknown as ExportBundle };
 }
 
@@ -267,9 +317,54 @@ export function migrateExportBundle(raw: unknown): unknown {
     }
   }
 
+  // v3 → v4: timetables / displayCutoff を追加。
+  if (version < 4) {
+    if (!Array.isArray(bundle.timetables)) {
+      bundle.timetables = [
+        {
+          id: 1,
+          name: "デフォルト",
+          type: "regular",
+          startDate: null,
+          endDate: null,
+          grades: [],
+        },
+      ];
+    }
+    if (!isObject(bundle.displayCutoff)) {
+      bundle.displayCutoff = {
+        groups: [
+          { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], date: null },
+          { label: "中3", grades: ["中3", "附中3"], date: null },
+          { label: "高1・2", grades: ["高1", "高2"], date: null },
+          { label: "高3", grades: ["高3"], date: null },
+        ],
+      };
+    }
+  }
+
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;
 }
+
+// ─── Default timetable / cutoff ───────────────────────────────────
+export const DEFAULT_TIMETABLE: Timetable = {
+  id: 1,
+  name: "デフォルト",
+  type: "regular",
+  startDate: null,
+  endDate: null,
+  grades: [],
+};
+
+export const DEFAULT_DISPLAY_CUTOFF: DisplayCutoff = {
+  groups: [
+    { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], date: null },
+    { label: "中3", grades: ["中3", "附中3"], date: null },
+    { label: "高1・2", grades: ["高1", "高2"], date: null },
+    { label: "高3", grades: ["高3"], date: null },
+  ],
+};
 
 // ─── ID generation ─────────────────────────────────────────────────
 // Produces the next numeric ID that is strictly greater than any

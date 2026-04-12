@@ -18,6 +18,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
+import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import {
   useDataIO,
@@ -25,6 +26,7 @@ import {
   migratePartTimeStaff,
   migrateSubs,
 } from "./hooks/useDataIO";
+import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { colors, font, S } from "./styles/common";
 
 import { Modal } from "./components/Modal";
@@ -45,6 +47,8 @@ import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
 import { StaffManagerView } from "./components/views/StaffManagerView";
 import { HeatmapView } from "./components/views/HeatmapView";
 import { CompareView } from "./components/views/CompareView";
+import { TimetableManagerView } from "./components/views/TimetableManagerView";
+import { TimetableSelector } from "./components/TimetableSelector";
 
 // ─── helpers ───────────────────────────────────────────────────────
 const escapeHtml = (s) =>
@@ -65,6 +69,8 @@ const LS = {
   biweeklyBase: "genyakubu-biweekly-base",
   biweeklyAnchors: "genyakubu-biweekly-anchors",
   adjustments: "genyakubu-adjustments",
+  timetables: "genyakubu-timetables",
+  displayCutoff: "genyakubu-display-cutoff",
 };
 
 export default function App() {
@@ -124,6 +130,16 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [timetables, saveTimetables] = useSyncedStorage(
+    LS.timetables,
+    [DEFAULT_TIMETABLE],
+    { onError: onStorageError }
+  );
+  const [displayCutoff, saveDisplayCutoff] = useSyncedStorage(
+    LS.displayCutoff,
+    DEFAULT_DISPLAY_CUTOFF,
+    { onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -137,6 +153,14 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [activeTimetableId, setActiveTimetableId] = useState(
+    () => Number(localStorage.getItem("genyakubu-active-timetable")) || 1
+  );
+
+  const changeActiveTimetable = useCallback((id) => {
+    setActiveTimetableId(id);
+    try { localStorage.setItem("genyakubu-active-timetable", String(id)); } catch { /* quota */ }
+  }, []);
 
   // ─── Runtime migration: biweeklyBase → biweeklyAnchors ─────────
   useEffect(() => {
@@ -163,6 +187,7 @@ export default function App() {
     slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
+  const ttCrud = useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
   const staffCrud = useStaffCrud({
     partTimeStaff,
@@ -184,6 +209,8 @@ export default function App() {
     partTimeStaff,
     subjectCategories,
     subjects,
+    timetables,
+    displayCutoff,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -193,6 +220,8 @@ export default function App() {
     savePartTimeStaff,
     saveSubjectCategories,
     saveSubjects,
+    saveTimetables,
+    saveDisplayCutoff,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -219,6 +248,13 @@ export default function App() {
   const vd = new Date(now.getFullYear(), now.getMonth() + monthOff, 1);
   const vy = vd.getFullYear();
   const vm = vd.getMonth() + 1;
+
+  // Slots filtered by active timetable (for aggregate views that show
+  // the "current" timetable rather than a specific date).
+  const ttFilteredSlots = useMemo(() => {
+    if (!timetables || timetables.length <= 1) return slots;
+    return slots.filter((s) => (s.timetableId ?? 1) === activeTimetableId);
+  }, [slots, timetables, activeTimetableId]);
 
   const teacherGroups = useTeacherGroups({ slots, partTimeStaff, subjects, search });
 
@@ -335,6 +371,8 @@ export default function App() {
                     ? "繁忙度ヒートマップ"
                     : view === VIEWS.COMPARE
                       ? "講師比較"
+                      : view === VIEWS.TIMETABLE
+                        ? "時間割管理"
                       : view === VIEWS.MASTER
                       ? "コースマスター管理"
                       : view === VIEWS.HOLIDAYS
@@ -368,6 +406,11 @@ export default function App() {
                 ＋ コマ追加
               </button>
             )}
+            <TimetableSelector
+              timetables={timetables}
+              activeTimetableId={activeTimetableId}
+              onChange={changeActiveTimetable}
+            />
             <button
               type="button"
               onClick={handlePrint}
@@ -448,16 +491,16 @@ export default function App() {
 
         <div id="main-content">
           {view === VIEWS.DASH && !selected && (
-            <Dashboard slots={slots} holidays={holidays} subs={subs} />
+            <Dashboard slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} />
           )}
           {view === VIEWS.ALL && !selected && (
-            <AllView slots={slots} onSelectTeacher={selectTeacher} />
+            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
           )}
           {view === VIEWS.HEATMAP && !selected && (
-            <HeatmapView slots={slots} />
+            <HeatmapView slots={ttFilteredSlots} />
           )}
           {view === VIEWS.COMPARE && !selected && (
-            <CompareView slots={slots} />
+            <CompareView slots={ttFilteredSlots} />
           )}
           {view === VIEWS.MASTER && !selected && (
             <MasterView
@@ -467,6 +510,18 @@ export default function App() {
               onNew={() => setEditSlot("new")}
               biweeklyAnchors={biweeklyAnchors}
               onSetBiweeklyAnchors={saveBiweeklyAnchors}
+              isAdmin={isAdmin}
+              timetables={timetables}
+              activeTimetableId={activeTimetableId}
+            />
+          )}
+          {view === VIEWS.TIMETABLE && !selected && (
+            <TimetableManagerView
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              slots={slots}
+              ttCrud={ttCrud}
+              onSaveDisplayCutoff={saveDisplayCutoff}
               isAdmin={isAdmin}
             />
           )}
@@ -493,7 +548,7 @@ export default function App() {
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
-            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} />
+            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} />
           )}
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView
@@ -532,6 +587,8 @@ export default function App() {
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
               isAdmin={isAdmin}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
             />
           )}
         </div>
@@ -548,6 +605,8 @@ export default function App() {
             onSave={(f) => slotsCrud.save(editSlot, f, setEditSlot)}
             onCancel={() => setEditSlot(null)}
             suggestions={slotsCrud.suggestions}
+            timetables={timetables}
+            activeTimetableId={activeTimetableId}
           />
         </Modal>
       )}

@@ -13,5 +13,6 @@ export const VIEWS = Object.freeze({
   STAFF: "staff",
   HEATMAP: "heatmap",
   COMPARE: "compare",
+  TIMETABLE: "timetable",
   SHARED: "shared",
 });
