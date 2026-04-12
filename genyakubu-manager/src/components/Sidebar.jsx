@@ -9,6 +9,7 @@ export function Sidebar({
   onSelectView,
   onSelectTeacher,
   onOpenDataMgr,
+  onJumpToRequestedSubs,
   search,
   onSearchChange,
   teacherGroups,
@@ -166,6 +167,8 @@ export function Sidebar({
         <div style={{ borderBottom: "1px solid #2a2a4e" }}>
           {navItem(VIEWS.DASH, "📋", "ダッシュボード")}
           {navItem(VIEWS.ALL, "📊", "全講師一覧")}
+          {navItem(VIEWS.HEATMAP, "🔥", "繁忙度ヒートマップ")}
+          {navItem(VIEWS.COMPARE, "⚖", "講師比較")}
           {navItem(VIEWS.HOLIDAYS, "📅", "祝日・休講日管理")}
           {navItem(VIEWS.MASTER, "⚙", "コースマスター管理")}
           {navItem(VIEWS.STAFF, "👥", "バイト・教科管理")}
@@ -175,6 +178,20 @@ export function Sidebar({
             "代行管理",
             pending > 0 && (
               <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onJumpToRequestedSubs?.();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onJumpToRequestedSubs?.();
+                  }
+                }}
+                title="依頼中のみ表示"
                 style={{
                   marginLeft: 6,
                   background: "#c44",
@@ -183,6 +200,7 @@ export function Sidebar({
                   padding: "1px 6px",
                   fontSize: 9,
                   fontWeight: 800,
+                  cursor: "pointer",
                 }}
               >
                 {pending}

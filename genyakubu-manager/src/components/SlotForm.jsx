@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
 
-export function SlotForm({ slot, onSave, onCancel }) {
+export function SlotForm({ slot, onSave, onCancel, suggestions }) {
   const formId = useId();
   const [f, setF] = useState(
     slot || {
@@ -22,6 +22,14 @@ export function SlotForm({ slot, onSave, onCancel }) {
     setErrors((p) => ({ ...p, [k]: undefined }));
   };
   const required = ["time", "grade", "subj", "teacher"];
+  // datalist の id (フィールドごと)。suggestions が無いキーは undefined → list 属性なし。
+  const listIds = {
+    time: suggestions?.times?.length ? `${formId}-times` : undefined,
+    grade: suggestions?.grades?.length ? `${formId}-grades` : undefined,
+    room: suggestions?.rooms?.length ? `${formId}-rooms` : undefined,
+    subj: suggestions?.subjs?.length ? `${formId}-subjs` : undefined,
+    teacher: suggestions?.teachers?.length ? `${formId}-teachers` : undefined,
+  };
   const fields = [
     { k: "day", l: "曜日", type: "select", opts: DAYS },
     { k: "time", l: "時間帯", ph: "19:00-20:20", req: true },
@@ -45,6 +53,42 @@ export function SlotForm({ slot, onSave, onCancel }) {
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* 候補リスト (datalist) - 表示はされない */}
+      {listIds.time && (
+        <datalist id={listIds.time}>
+          {suggestions.times.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
+      {listIds.grade && (
+        <datalist id={listIds.grade}>
+          {suggestions.grades.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
+      {listIds.room && (
+        <datalist id={listIds.room}>
+          {suggestions.rooms.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
+      {listIds.subj && (
+        <datalist id={listIds.subj}>
+          {suggestions.subjs.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
+      {listIds.teacher && (
+        <datalist id={listIds.teacher}>
+          {suggestions.teachers.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
       {fields.map(({ k, l, ph, type, opts, req }) => {
         const inputId = `${formId}-${k}`;
         const errorId = `${inputId}-err`;
@@ -88,6 +132,7 @@ export function SlotForm({ slot, onSave, onCancel }) {
                   onChange={(e) => up(k, e.target.value)}
                   placeholder={ph}
                   required={req}
+                  list={listIds[k]}
                   aria-invalid={errors[k] ? "true" : undefined}
                   aria-describedby={errors[k] ? errorId : undefined}
                   style={{ ...S.input, borderColor: errors[k] ? "#c44" : "#ccc" }}

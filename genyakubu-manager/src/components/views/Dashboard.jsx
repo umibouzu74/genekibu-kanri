@@ -8,6 +8,7 @@ import {
   sortSlots as sortS,
   SUB_STATUS,
   timeToMin,
+  WEEKDAYS,
 } from "../../data";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
@@ -219,8 +220,12 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                               <span style={{ margin: "0 2px", color: st.color }}>→</span>
                               <span style={{ color: st.color }}>{sub.substitute || "?"}</span>
                             </span>
-                          ) : (
+                          ) : s.teacher ? (
                             s.teacher
+                          ) : (
+                            <span style={{ color: "#c44", fontSize: 14, fontStyle: "italic" }}>
+                              未割当
+                            </span>
                           )}
                         </div>
                       </div>
@@ -232,6 +237,174 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── 代行サマリーカード ─────────────────────────────────────────────
+// 今日・明日の代行予定と全体の依頼中件数を一目で把握できるウィジェット。
+function SubSummaryCards({ subs, slots, todayStr }) {
+  const summary = useMemo(() => {
+    if (!subs || subs.length === 0) return null;
+
+    const tomorrow = new Date(todayStr + "T12:00:00");
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = fmtDate(tomorrow);
+    const tomorrowDow = WEEKDAYS[tomorrow.getDay()];
+
+    const todayDow = (() => {
+      const d = new Date(todayStr + "T12:00:00");
+      return WEEKDAYS[d.getDay()];
+    })();
+
+    const todaySubs = subs.filter((s) => s.date === todayStr);
+    const tomorrowSubs = subs.filter((s) => s.date === tomorrowStr);
+    const pendingAll = subs.filter((s) => s.status === "requested");
+
+    // 今後7日の代行件数
+    const weekAhead = [];
+    const base = new Date(todayStr + "T12:00:00");
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() + i);
+      weekAhead.push(fmtDate(d));
+    }
+    const weekSubs = subs.filter((s) => weekAhead.includes(s.date));
+
+    return {
+      todaySubs,
+      todayDow,
+      tomorrowSubs,
+      tomorrowDow,
+      pendingAll,
+      weekSubs,
+    };
+  }, [subs, todayStr]);
+
+  if (!summary) return null;
+
+  const { todaySubs, todayDow, tomorrowSubs, tomorrowDow, pendingAll, weekSubs } =
+    summary;
+
+  // 何も無ければ表示しない
+  if (todaySubs.length === 0 && tomorrowSubs.length === 0 && pendingAll.length === 0) {
+    return null;
+  }
+
+  const Card = ({ label, count, color, bg, detail, children }) => (
+    <div
+      style={{
+        background: bg,
+        borderRadius: 10,
+        padding: "10px 14px",
+        border: `1px solid ${color}30`,
+        minWidth: 130,
+        flex: "1 1 130px",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>
+        {count}
+        <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 4 }}>件</span>
+      </div>
+      {detail && (
+        <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>{detail}</div>
+      )}
+      {children}
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        flexWrap: "wrap",
+      }}
+    >
+      {/* 今日の代行 */}
+      <Card
+        label={`今日 (${todayDow}) の代行`}
+        count={todaySubs.length}
+        color={todaySubs.length > 0 ? "#2e6a9e" : "#888"}
+        bg={todaySubs.length > 0 ? "#e8f0fa" : "#f8f8f8"}
+        detail={
+          todaySubs.length > 0
+            ? `確定: ${todaySubs.filter((s) => s.status === "confirmed").length} / 依頼中: ${todaySubs.filter((s) => s.status === "requested").length}`
+            : null
+        }
+      >
+        {todaySubs.length > 0 && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+            {todaySubs.slice(0, 3).map((s) => {
+              const slot = slots.find((sl) => sl.id === s.slotId);
+              const st = SUB_STATUS[s.status] || SUB_STATUS.requested;
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    fontSize: 10,
+                    lineHeight: 1.3,
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      background: st.color,
+                      color: "#fff",
+                      padding: "0 3px",
+                      borderRadius: 2,
+                      fontSize: 8,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {st.label}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>
+                    {slot?.time?.split("-")[0] || "?"} {slot?.subj || "?"}
+                  </span>
+                  <span style={{ color: "#888" }}>
+                    {s.originalTeacher}→{s.substitute || "?"}
+                  </span>
+                </div>
+              );
+            })}
+            {todaySubs.length > 3 && (
+              <div style={{ fontSize: 9, color: "#888" }}>
+                他 {todaySubs.length - 3} 件
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* 明日の代行 */}
+      <Card
+        label={`明日 (${tomorrowDow}) の代行`}
+        count={tomorrowSubs.length}
+        color={tomorrowSubs.length > 0 ? "#6a3d8e" : "#888"}
+        bg={tomorrowSubs.length > 0 ? "#f0e8f6" : "#f8f8f8"}
+        detail={
+          tomorrowSubs.length > 0
+            ? `確定: ${tomorrowSubs.filter((s) => s.status === "confirmed").length} / 依頼中: ${tomorrowSubs.filter((s) => s.status === "requested").length}`
+            : null
+        }
+      />
+
+      {/* 依頼中（全体） */}
+      {pendingAll.length > 0 && (
+        <Card
+          label="依頼中（未確定）"
+          count={pendingAll.length}
+          color="#c03030"
+          bg="#fde8e8"
+          detail={`今後7日間の代行: ${weekSubs.length}件`}
+        />
+      )}
     </div>
   );
 }
@@ -334,18 +507,34 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs }) {
   );
 }
 
-const DAYS_IN_RANGE = 7;
+const DAY_COUNT_OPTIONS = [3, 7, 14];
+const LS_DAY_COUNT_KEY = "genyakubu-dash-day-count";
+
+function loadDayCount() {
+  try {
+    const v = parseInt(localStorage.getItem(LS_DAY_COUNT_KEY), 10);
+    return DAY_COUNT_OPTIONS.includes(v) ? v : 7;
+  } catch {
+    return 7;
+  }
+}
 
 export function Dashboard({ slots, holidays, subs }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
+  const [daysInRange, setDaysInRange] = useState(loadDayCount);
+
+  const changeDayCount = (n) => {
+    setDaysInRange(n);
+    try { localStorage.setItem(LS_DAY_COUNT_KEY, String(n)); } catch { /* quota */ }
+  };
 
   const { holidaysFor, isOffForGrade } = useMemo(
     () => makeHolidayHelpers(holidays),
     [holidays]
   );
 
-  const days = useMemo(() => buildDayRange(startDate, DAYS_IN_RANGE), [startDate]);
+  const days = useMemo(() => buildDayRange(startDate, daysInRange), [startDate, daysInRange]);
 
   const isToday = startDate === todayStr;
 
@@ -374,10 +563,10 @@ export function Dashboard({ slots, holidays, subs }) {
         />
         <button
           type="button"
-          onClick={() => setStartDate(shiftDate(startDate, -DAYS_IN_RANGE))}
+          onClick={() => setStartDate(shiftDate(startDate, -daysInRange))}
           style={S.btn(false)}
         >
-          ← 前の週
+          ← 前
         </button>
         <button
           type="button"
@@ -388,15 +577,33 @@ export function Dashboard({ slots, holidays, subs }) {
         </button>
         <button
           type="button"
-          onClick={() => setStartDate(shiftDate(startDate, DAYS_IN_RANGE))}
+          onClick={() => setStartDate(shiftDate(startDate, daysInRange))}
           style={S.btn(false)}
         >
-          次の週 →
+          次 →
         </button>
+        <div style={{ display: "flex", gap: 2 }}>
+          {DAY_COUNT_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => changeDayCount(n)}
+              style={{
+                ...S.btn(daysInRange === n),
+                padding: "4px 8px",
+                fontSize: 11,
+                minWidth: 32,
+              }}
+            >
+              {n}日
+            </button>
+          ))}
+        </div>
         <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
-          {startDate} 〜 {days[days.length - 1].dateStr}（{DAYS_IN_RANGE}日間）
+          {startDate} 〜 {days[days.length - 1].dateStr}（{daysInRange}日間）
         </span>
       </div>
+      <SubSummaryCards subs={subs} slots={slots} todayStr={todayStr} />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
         const daySlots = slots.filter(

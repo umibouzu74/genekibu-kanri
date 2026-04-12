@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
@@ -18,6 +18,8 @@ export function SubstituteView({
   onEdit,
   onDel,
   onGoToStaffView,
+  initFilter,
+  onConsumeInitFilter,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -26,6 +28,18 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
+
+  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック)
+  useEffect(() => {
+    if (initFilter) {
+      if (initFilter.status) {
+        setFStatus(initFilter.status);
+        setFMonth(""); // 月フィルタを解除して全件から依頼中を表示
+        setTab("list");
+      }
+      onConsumeInitFilter?.();
+    }
+  }, [initFilter, onConsumeInitFilter]);
 
   // partTimeStaff は新形式 {name, subjectIds}[] のみを想定
   const staffNameSet = useMemo(
@@ -540,6 +554,105 @@ export function SubstituteView({
               </tbody>
             </table>
           </div>
+          {/* 代行差引バーチャート */}
+          {tallyRows.length > 0 && (
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: 8,
+                border: "1px solid #e0e0e0",
+                padding: 14,
+                marginTop: 12,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#444" }}>
+                代行差引グラフ（代行した - 代行された）
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {tallyRows
+                  .filter((r) => r.covered || r.coveredFor)
+                  .map((r) => {
+                    const diff = r.covered - r.coveredFor;
+                    const maxAbs = Math.max(
+                      ...tallyRows.map((x) => Math.abs(x.covered - x.coveredFor)),
+                      1
+                    );
+                    const barWidth = Math.abs(diff) / maxAbs * 100;
+                    const isPos = diff >= 0;
+                    return (
+                      <div
+                        key={r.name}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 12,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 60,
+                            textAlign: "right",
+                            fontWeight: 700,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                          title={r.name}
+                        >
+                          {r.name}
+                        </span>
+                        <div
+                          style={{
+                            flex: 1,
+                            height: 18,
+                            background: "#f5f5f5",
+                            borderRadius: 4,
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              [isPos ? "left" : "right"]: "50%",
+                              width: `${barWidth / 2}%`,
+                              height: "100%",
+                              background: isPos ? "#4a9a4a" : "#c05050",
+                              borderRadius: 4,
+                              transition: "width .3s",
+                            }}
+                          />
+                          <div
+                            style={{
+                              position: "absolute",
+                              left: "50%",
+                              top: 0,
+                              bottom: 0,
+                              width: 1,
+                              background: "#ccc",
+                            }}
+                          />
+                        </div>
+                        <span
+                          style={{
+                            width: 30,
+                            textAlign: "left",
+                            fontWeight: 700,
+                            color: isPos ? "#2a7a4a" : "#c03030",
+                            fontSize: 11,
+                          }}
+                        >
+                          {diff > 0 ? `+${diff}` : diff}
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

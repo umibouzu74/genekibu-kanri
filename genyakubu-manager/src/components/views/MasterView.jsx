@@ -9,7 +9,8 @@ import {
 } from "../../data";
 import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
-import { formatBiweeklyTeacher } from "../../utils/biweekly";
+import { formatBiweeklyTeacher, getWeekType } from "../../utils/biweekly";
+import { fmtDate } from "../../data";
 
 // Extracted to its own component so that hover state is scoped to a
 // single card instead of requiring DOM querySelector manipulation.
@@ -198,15 +199,10 @@ export function MasterView({
     });
   }, [slots]);
 
-  const currentWeekType = useMemo(() => {
-    if (!biweeklyBase) return null;
-    const base = new Date(biweeklyBase + "T12:00:00");
-    const now = new Date();
-    now.setHours(12, 0, 0, 0);
-    const diffDays = Math.round((now - base) / (1000 * 60 * 60 * 24));
-    const weeks = Math.floor(diffDays / 7);
-    return Math.abs(weeks) % 2 === 0 ? "A" : "B";
-  }, [biweeklyBase]);
+  const currentWeekType = useMemo(
+    () => getWeekType(fmtDate(new Date()), biweeklyBase),
+    [biweeklyBase]
+  );
 
   if (tab === "biweekly")
     return (
