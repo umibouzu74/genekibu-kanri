@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { VIEWS } from "../constants/views";
-import { slotWeight, formatCount } from "../utils/biweekly";
+import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 
@@ -31,7 +31,18 @@ export function Sidebar({
   );
   const slotCountByTeacher = useMemo(() => {
     const m = new Map();
-    for (const s of slots) m.set(s.teacher, (m.get(s.teacher) || 0) + slotWeight(s.note));
+    const w = (s) => slotWeight(s.note);
+    for (const s of slots) {
+      // Attribute to each individual teacher (handles "·" separator)
+      for (const t of getSlotTeachers(s)) {
+        m.set(t, (m.get(t) || 0) + w(s));
+      }
+      // Also attribute to biweekly partner mentioned in note
+      if (isBiweekly(s.note)) {
+        const pm = s.note.match(/隔週\(([^)]+)\)/);
+        if (pm) m.set(pm[1], (m.get(pm[1]) || 0) + w(s));
+      }
+    }
     return m;
   }, [slots]);
 

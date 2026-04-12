@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SUB_STATUS } from "../data";
+import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -33,12 +34,12 @@ export function CommandPalette({
     // 講師検索
     const teacherSet = new Set();
     for (const s of slots) {
-      if (s.teacher && s.teacher.toLowerCase().includes(q)) {
-        teacherSet.add(s.teacher);
+      for (const t of getSlotTeachers(s)) {
+        if (t.toLowerCase().includes(q)) teacherSet.add(t);
       }
     }
     for (const t of teacherSet) {
-      const cnt = slots.filter((s) => s.teacher === t).length;
+      const cnt = slots.filter((s) => isSlotForTeacher(s, t)).length;
       hits.push({
         type: "teacher",
         label: t,

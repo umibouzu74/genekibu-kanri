@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { S } from "../../styles/common";
 import { compareJa, sortJa } from "../../utils/sortJa";
+import { isSlotForTeacher } from "../../utils/biweekly";
 
 // バイト・教科管理ビュー。2 タブ構成：
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
@@ -139,7 +140,7 @@ export function StaffManagerView({
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {sortedPartTimeStaff.map((staff) => {
-                const cnt = slots.filter((s) => s.teacher === staff.name).length;
+                const cnt = slots.filter((s) => isSlotForTeacher(s, staff.name)).length;
                 return (
                   <div
                     key={staff.name}

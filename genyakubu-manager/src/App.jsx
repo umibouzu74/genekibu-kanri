@@ -27,7 +27,7 @@ import {
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
-import { slotWeight, formatCount } from "./utils/biweekly";
+import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 
 import { Modal } from "./components/Modal";
@@ -280,7 +280,7 @@ export default function App() {
     const byDay = {};
     let total = 0;
     for (const s of ttFilteredSlots) {
-      if (s.teacher !== selected) continue;
+      if (!isSlotForTeacher(s, selected)) continue;
       const w = slotWeight(s.note);
       byDay[s.day] = (byDay[s.day] || 0) + w;
       total += w;

@@ -8,7 +8,7 @@ import {
 } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
-import { formatCount, weightedSlotCount } from "../../utils/biweekly";
+import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
@@ -19,7 +19,7 @@ export function CompareView({ slots }) {
   // 全講師リスト
   const allTeachers = useMemo(() => {
     const set = new Set();
-    for (const s of slots) if (s.teacher) set.add(s.teacher);
+    for (const s of slots) for (const t of getSlotTeachers(s)) set.add(t);
     return sortJa([...set]);
   }, [slots]);
 
@@ -44,7 +44,7 @@ export function CompareView({ slots }) {
   const teacherSlots = useMemo(() => {
     const m = {};
     for (const t of selectedTeachers) {
-      const ts = sortS(slots.filter((s) => s.teacher === t || s.note?.includes(t)));
+      const ts = sortS(slots.filter((s) => isSlotForTeacher(s, t)));
       const byDay = {};
       DAYS.forEach((d) => {
         byDay[d] = ts.filter((s) => s.day === d);

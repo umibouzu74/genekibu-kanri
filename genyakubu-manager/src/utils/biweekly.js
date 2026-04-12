@@ -88,6 +88,25 @@ export function weightedSlotCount(slots) {
   return total;
 }
 
+// Check whether a slot belongs to the given teacher.
+// Matches on: direct teacher field, biweekly partner in note, or
+// multi-teacher field separated by "·".
+export function isSlotForTeacher(slot, teacher) {
+  if (slot.teacher === teacher) return true;
+  if (slot.note?.includes(teacher)) return true;
+  if (slot.teacher.includes("·") && slot.teacher.split("·").includes(teacher)) return true;
+  return false;
+}
+
+// Extract individual teacher names from a slot's teacher field.
+// "香川·福江·川井" → ["香川", "福江", "川井"]
+// "堀上" → ["堀上"]
+export function getSlotTeachers(slot) {
+  if (!slot.teacher) return [];
+  if (slot.teacher.includes("·")) return slot.teacher.split("·");
+  return [slot.teacher];
+}
+
 // Format a weighted count for display.
 // Integer → "7", fractional → "7.5".
 export function formatCount(n) {
