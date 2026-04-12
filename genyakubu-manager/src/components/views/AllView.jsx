@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "../../data";
+import { formatCount, weightedSlotCount } from "../../utils/biweekly";
 
 export function AllView({ slots, onSelectTeacher }) {
   const teachers = useMemo(() => {
@@ -11,10 +12,10 @@ export function AllView({ slots, onSelectTeacher }) {
         const byDayTip = {};
         DAYS.forEach((d) => {
           const ds = sl.filter((s) => s.day === d);
-          byDay[d] = ds.length;
+          byDay[d] = weightedSlotCount(ds);
           byDayTip[d] = ds.map((s) => `${s.time} ${s.grade} ${s.subj}`).join("\n");
         });
-        return { name: t, byDay, byDayTip, total: sl.length };
+        return { name: t, byDay, byDayTip, total: weightedSlotCount(sl) };
       })
       .sort((a, b) => b.total - a.total);
   }, [slots]);
@@ -100,7 +101,7 @@ export function AllView({ slots, onSelectTeacher }) {
                     cursor: "default",
                   }}
                 >
-                  {t.byDay[d] || "—"}
+                  {t.byDay[d] ? formatCount(t.byDay[d]) : "—"}
                 </td>
               ))}
               <td
@@ -113,7 +114,7 @@ export function AllView({ slots, onSelectTeacher }) {
                   color: t.total > 10 ? "#c44" : "#1a1a2e",
                 }}
               >
-                {t.total}
+                {formatCount(t.total)}
               </td>
             </tr>
           ))}

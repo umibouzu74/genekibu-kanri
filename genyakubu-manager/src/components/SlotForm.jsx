@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
+import { isBiweekly } from "../utils/biweekly";
 
 export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, activeTimetableId }) {
   const formId = useId();
@@ -180,6 +181,12 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
           </div>
         </div>
       )}
+      {isBiweekly(f.note) && (
+        <BiweeklyAnchorSection
+          anchors={f.biweeklyAnchors}
+          onChange={(anchors) => up("biweeklyAnchors", anchors)}
+        />
+      )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onCancel} style={S.btn(false)}>
           キャンセル
@@ -188,6 +195,142 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
           保存
         </button>
       </div>
+    </div>
+  );
+}
+
+function BiweeklyAnchorSection({ anchors, onChange }) {
+  const hasCustom = Array.isArray(anchors) && anchors.length > 0;
+  const [useCustom, setUseCustom] = useState(hasCustom);
+  const [newDate, setNewDate] = useState("");
+
+  const sorted = hasCustom
+    ? [...anchors].sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+
+  const toggleCustom = (checked) => {
+    setUseCustom(checked);
+    if (!checked) onChange(undefined);
+  };
+
+  const addAnchor = () => {
+    if (!newDate) return;
+    const current = Array.isArray(anchors) ? anchors : [];
+    if (current.some((a) => a.date === newDate)) return;
+    onChange([...current, { date: newDate, weekType: "A" }]);
+    setNewDate("");
+  };
+
+  const removeAnchor = (date) => {
+    const next = (anchors || []).filter((a) => a.date !== date);
+    onChange(next.length > 0 ? next : undefined);
+    if (next.length === 0) setUseCustom(false);
+  };
+
+  return (
+    <div
+      style={{
+        background: "#f8f0e8",
+        border: "1px solid #e0c8a0",
+        borderRadius: 8,
+        padding: 10,
+        marginTop: 4,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#8a6a1a" }}>
+        隔週の基準設定
+      </div>
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          cursor: "pointer",
+          marginBottom: 6,
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={useCustom}
+          onChange={(e) => toggleCustom(e.target.checked)}
+        />
+        このコマ専用の基準日を設定する
+      </label>
+      {!useCustom && (
+        <div style={{ fontSize: 10, color: "#888" }}>
+          グローバル基準（コースマスター管理 → 隔週管理で設定）を使用します
+        </div>
+      )}
+      {useCustom && (
+        <div>
+          {sorted.length > 0 && (
+            <div style={{ marginBottom: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+              {sorted.map((a) => (
+                <div
+                  key={a.date}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 11,
+                    background: "#fff",
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{a.date}</span>
+                  <span
+                    style={{
+                      background: "#2e6a9e",
+                      color: "#fff",
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                      fontSize: 9,
+                      fontWeight: 700,
+                    }}
+                  >
+                    A週
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAnchor(a.date)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      color: "#c05030",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              style={{ ...S.input, width: "auto", fontSize: 11 }}
+            />
+            <button
+              type="button"
+              onClick={addAnchor}
+              disabled={!newDate}
+              style={{ ...S.btn(false), fontSize: 10, opacity: newDate ? 1 : 0.5 }}
+            >
+              追加
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+            このコマ専用のA週基準日を設定します。ずれが生じた場合、新しい基準日を追加してください。
+          </div>
+        </div>
+      )}
     </div>
   );
 }

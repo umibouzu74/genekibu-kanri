@@ -8,6 +8,7 @@ import {
 } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
+import { formatCount, weightedSlotCount } from "../../utils/biweekly";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
@@ -306,7 +307,7 @@ export function CompareView({ slots }) {
                 </td>
                 {selectedTeachers.map((t, i) => {
                   const total = DAYS.reduce(
-                    (sum, d) => sum + (teacherSlots[t]?.[d]?.length || 0),
+                    (sum, d) => sum + weightedSlotCount(teacherSlots[t]?.[d] || []),
                     0
                   );
                   return (
@@ -321,7 +322,7 @@ export function CompareView({ slots }) {
                         color: TEACHER_COLORS[i],
                       }}
                     >
-                      {total}コマ
+                      {formatCount(total)}コマ
                     </td>
                   );
                 })}

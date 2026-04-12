@@ -30,7 +30,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -49,7 +49,10 @@ export function isSlot(x: unknown): x is Slot {
     isString(x.grade) &&
     isString(x.subj) &&
     isString(x.teacher) &&
-    (x.timetableId === undefined || isNumber(x.timetableId))
+    (x.timetableId === undefined || isNumber(x.timetableId)) &&
+    (x.biweeklyAnchors === undefined ||
+      (Array.isArray(x.biweeklyAnchors) &&
+        (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a))))
   );
 }
 
@@ -321,6 +324,8 @@ export function migrateExportBundle(raw: unknown): unknown {
   }
 
   // v3 → v4: timetables / displayCutoff を追加。
+  // v4 → v5: Slot に biweeklyAnchors (授業別隔週基準) を追加。
+  //           フィールドは optional のため既存データの変換は不要。
   if (version < 4) {
     if (!Array.isArray(bundle.timetables)) {
       bundle.timetables = [

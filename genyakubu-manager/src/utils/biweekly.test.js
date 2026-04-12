@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatBiweeklyTeacher, getWeekType, isBiweekly } from "./biweekly";
+import {
+  formatBiweeklyTeacher,
+  formatCount,
+  getSlotWeekType,
+  getWeekType,
+  isBiweekly,
+  slotWeight,
+  weightedSlotCount,
+} from "./biweekly";
 
 describe("formatBiweeklyTeacher", () => {
   it("returns the teacher alone when no biweekly note is present", () => {
@@ -135,5 +143,90 @@ describe("isBiweekly", () => {
     expect(isBiweekly("")).toBe(false);
     expect(isBiweekly(null)).toBe(false);
     expect(isBiweekly(undefined)).toBe(false);
+  });
+});
+
+describe("getSlotWeekType", () => {
+  const globalAnchors = [{ date: "2026-04-06", weekType: "A" }];
+
+  it("uses global anchors when slot has no per-slot anchors", () => {
+    const slot = { note: "隔週(河野)" };
+    expect(getSlotWeekType("2026-04-06", slot, globalAnchors)).toBe("A");
+    expect(getSlotWeekType("2026-04-13", slot, globalAnchors)).toBe("B");
+  });
+
+  it("uses global anchors when slot.biweeklyAnchors is empty", () => {
+    const slot = { note: "隔週(河野)", biweeklyAnchors: [] };
+    expect(getSlotWeekType("2026-04-06", slot, globalAnchors)).toBe("A");
+    expect(getSlotWeekType("2026-04-13", slot, globalAnchors)).toBe("B");
+  });
+
+  it("uses per-slot anchors when present", () => {
+    const slot = {
+      note: "隔週(河野)",
+      biweeklyAnchors: [{ date: "2026-04-13", weekType: "A" }],
+    };
+    // Per-slot anchor says 2026-04-13 is A (differs from global which says B)
+    expect(getSlotWeekType("2026-04-13", slot, globalAnchors)).toBe("A");
+    expect(getSlotWeekType("2026-04-20", slot, globalAnchors)).toBe("B");
+  });
+
+  it("per-slot anchors override global even for same-date queries", () => {
+    const slot = {
+      note: "隔週(河野)",
+      biweeklyAnchors: [{ date: "2026-06-08", weekType: "A" }],
+    };
+    // 2026-06-15 is 1 week after per-slot anchor → B
+    expect(getSlotWeekType("2026-06-15", slot, globalAnchors)).toBe("B");
+    // But with global anchor (2026-04-06), 2026-06-15 is 10 weeks → A
+    const slotNoAnchors = { note: "隔週(河野)" };
+    expect(getSlotWeekType("2026-06-15", slotNoAnchors, globalAnchors)).toBe("A");
+  });
+});
+
+describe("slotWeight", () => {
+  it("returns 0.5 for biweekly notes", () => {
+    expect(slotWeight("隔週(河野)")).toBe(0.5);
+    expect(slotWeight("合同, 隔週")).toBe(0.5);
+  });
+
+  it("returns 1 for regular notes", () => {
+    expect(slotWeight("合同")).toBe(1);
+    expect(slotWeight("")).toBe(1);
+    expect(slotWeight(null)).toBe(1);
+    expect(slotWeight(undefined)).toBe(1);
+  });
+});
+
+describe("weightedSlotCount", () => {
+  it("sums weights correctly", () => {
+    const slots = [
+      { note: "" },
+      { note: "隔週(河野)" },
+      { note: "" },
+      { note: "隔週(佐藤)" },
+    ];
+    expect(weightedSlotCount(slots)).toBe(3);
+  });
+
+  it("returns 0 for empty array", () => {
+    expect(weightedSlotCount([])).toBe(0);
+  });
+
+  it("returns integer for all-regular slots", () => {
+    const slots = [{ note: "" }, { note: "合同" }, { note: "" }];
+    expect(weightedSlotCount(slots)).toBe(3);
+  });
+});
+
+describe("formatCount", () => {
+  it("formats integers without decimal", () => {
+    expect(formatCount(7)).toBe("7");
+    expect(formatCount(0)).toBe("0");
+  });
+
+  it("formats fractional values with one decimal", () => {
+    expect(formatCount(7.5)).toBe("7.5");
+    expect(formatCount(3.0)).toBe("3");
   });
 });
