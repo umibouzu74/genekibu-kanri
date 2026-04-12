@@ -44,6 +44,14 @@ import { StaffManagerView } from "./components/views/StaffManagerView";
 import { HeatmapView } from "./components/views/HeatmapView";
 import { CompareView } from "./components/views/CompareView";
 
+// ─── helpers ───────────────────────────────────────────────────────
+const escapeHtml = (s) =>
+  String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
 // ─── localStorage keys ──────────────────────────────────────────────
 const LS = {
   slots: "genyakubu-slots",
@@ -98,7 +106,9 @@ export default function App() {
   const [subjects, saveSubjects] = useSyncedStorage(LS.subjects, INIT_SUBJECTS, {
     onError: onStorageError,
   });
-  const [biweeklyBase, saveBiweeklyBase] = useSyncedStorageRaw(LS.biweeklyBase, "");
+  const [biweeklyBase, saveBiweeklyBase] = useSyncedStorageRaw(LS.biweeklyBase, "", {
+    onError: onStorageError,
+  });
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -209,7 +219,7 @@ export default function App() {
       return;
     }
     w.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${selected || "現役部"} 授業予定</title><style>body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(selected || "現役部")} 授業予定</title><style>body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`
     );
     w.document.close();
     setTimeout(() => w.print(), 300);

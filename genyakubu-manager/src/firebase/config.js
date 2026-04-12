@@ -19,6 +19,7 @@ let app = null;
 let db = null;
 let auth = null;
 let authReady = null;
+let authFailed = false;
 
 if (isConfigured) {
   app = initializeApp({ apiKey, authDomain, databaseURL, projectId });
@@ -30,9 +31,10 @@ if (isConfigured) {
   // reading/writing if they need to ensure auth is done.
   authReady = signInAnonymously(auth).catch((err) => {
     console.warn("[firebase] anonymous sign-in failed:", err);
+    authFailed = true;
   });
 } else {
   authReady = Promise.resolve();
 }
 
-export { db, auth, authReady, isConfigured };
+export { db, auth, authReady, authFailed, isConfigured };

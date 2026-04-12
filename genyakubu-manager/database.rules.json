@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "appData": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "genyakubu-biweekly-base": {
+        ".validate": "newData.isString() && newData.val().length < 20"
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}

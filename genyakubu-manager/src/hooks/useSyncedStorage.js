@@ -14,6 +14,22 @@ const isQuotaError = (err) =>
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
 
+/** Key-order-independent JSON stringification.
+ *  Firebase RTDB may return object keys in a different order than
+ *  what was written, so a naive JSON.stringify comparison can fail
+ *  to detect echoes. This replacer sorts object keys at every level. */
+const stableStringify = (val) =>
+  JSON.stringify(val, (_, v) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.keys(v)
+          .sort()
+          .reduce((o, k) => {
+            o[k] = v[k];
+            return o;
+          }, {})
+      : v
+  );
+
 // ─── useSyncedStorage ───────────────────────────────────────────────
 // Drop-in replacement for useLocalStorage that additionally syncs data
 // with Firebase Realtime Database.
@@ -43,7 +59,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       const parsed = JSON.parse(raw);
       const migrated = migrate ? migrate(parsed) : parsed;
       setValue(migrated);
-      lastLocalJsonRef.current = JSON.stringify(migrated);
+      lastLocalJsonRef.current = stableStringify(migrated);
     } catch (err) {
       console.warn(`[useSyncedStorage] failed to load "${key}":`, err);
       onError?.(err, "load");
@@ -83,14 +99,14 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
             return;
           }
 
-          const serverJson = JSON.stringify(serverVal);
+          const serverJson = stableStringify(serverVal);
 
           // Skip if this is our own echo
           if (serverJson === lastLocalJsonRef.current) return;
 
           // Apply migration if needed
           const migrated = migrate ? migrate(serverVal) : serverVal;
-          const migratedJson = JSON.stringify(migrated);
+          const migratedJson = stableStringify(migrated);
 
           // Update React state + localStorage
           setValue(migrated);
@@ -119,7 +135,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
     (next) => {
       setValue((prev) => {
         const resolved = typeof next === "function" ? next(prev) : next;
-        const json = JSON.stringify(resolved);
+        const json = stableStringify(resolved);
         lastLocalJsonRef.current = json;
 
         // Write to localStorage
@@ -150,7 +166,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
 // ─── useSyncedStorageRaw ────────────────────────────────────────────
 // Same as useSyncedStorage but stores a raw string (no JSON encoding).
 // Used for simple scalar values like biweeklyBase date strings.
-export function useSyncedStorageRaw(key, initialValue) {
+export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
   const [value, setValue] = useState(initialValue);
   const lastLocalRef = useRef(null);
 
@@ -164,6 +180,7 @@ export function useSyncedStorageRaw(key, initialValue) {
       }
     } catch (err) {
       console.warn(`[useSyncedStorageRaw] failed to load "${key}":`, err);
+      onError?.(err, "load");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -200,8 +217,8 @@ export function useSyncedStorageRaw(key, initialValue) {
           lastLocalRef.current = str;
           try {
             localStorage.setItem(key, str);
-          } catch {
-            // ignore
+          } catch (err) {
+            console.warn(`[useSyncedStorageRaw] ls write failed "${key}":`, err);
           }
         },
         (err) => {
@@ -227,6 +244,7 @@ export function useSyncedStorageRaw(key, initialValue) {
         localStorage.setItem(key, next);
       } catch (err) {
         console.warn(`[useSyncedStorageRaw] failed to save "${key}":`, err);
+        onError?.(err, isQuotaError(err) ? "quota" : "save");
       }
 
       if (isConfigured && db) {
@@ -236,7 +254,7 @@ export function useSyncedStorageRaw(key, initialValue) {
         });
       }
     },
-    [key]
+    [key, onError]
   );
 
   return [value, update];
