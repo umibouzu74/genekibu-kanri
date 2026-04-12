@@ -23,6 +23,19 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
     saveAdjustments(adjustments.filter((a) => a.id !== id));
   };
 
+  // 削除と追加を1回の saveAdjustments で行う（stale closure 回避）
+  const replace = (oldId, newAdj) => {
+    const ts = new Date().toISOString();
+    const filtered = adjustments.filter((a) => a.id !== oldId);
+    saveAdjustments([
+      ...filtered,
+      { ...newAdj, id: nextNumericId(filtered), createdAt: ts },
+    ]);
+    toasts.success(
+      newAdj.type === "move" ? "コマ移動を更新しました" : "合同授業を更新しました"
+    );
+  };
+
   const del = async (id) => {
     const ok = await confirm({
       title: "調整の削除",
@@ -35,5 +48,5 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
     toasts.success("時間割調整を削除しました");
   };
 
-  return { add, del, remove };
+  return { add, del, remove, replace };
 }

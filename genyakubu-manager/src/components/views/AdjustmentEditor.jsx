@@ -205,6 +205,7 @@ export function AdjustmentEditor({
   onAddAdjustment,
   onDelAdjustment,
   onRemoveAdjustment,
+  onReplaceAdjustment,
   isAdmin,
 }) {
   const [date, setDate] = useState(fmtDate(new Date()));
@@ -284,27 +285,28 @@ export function AdjustmentEditor({
       const existing = dateAdj.find(
         (a) => a.type === "move" && a.slotId === slotId
       );
+      const newAdj = {
+        date,
+        type: "move",
+        slotId,
+        targetTime,
+        memo: `${slot.time} → ${targetTime}`,
+      };
       if (existing) {
         // Moving back to original time → just delete the adjustment
         if (slot.time === targetTime) {
           onRemoveAdjustment(existing.id);
           return;
         }
-        // Moving to a different time → replace the adjustment
-        onRemoveAdjustment(existing.id);
-      } else if (slot.time === targetTime) {
+        // Moving to a different time → replace in a single operation (stale closure 回避)
+        onReplaceAdjustment(existing.id, newAdj);
+      } else {
         // No existing adjustment and dropped on same time → no-op
-        return;
+        if (slot.time === targetTime) return;
+        onAddAdjustment(newAdj);
       }
-      onAddAdjustment({
-        date,
-        type: "move",
-        slotId,
-        targetTime,
-        memo: `${slot.time} → ${targetTime}`,
-      });
     },
-    [date, daySlots, dateAdj, onAddAdjustment, onRemoveAdjustment]
+    [date, daySlots, dateAdj, onAddAdjustment, onRemoveAdjustment, onReplaceAdjustment]
   );
 
   // Context menu handler

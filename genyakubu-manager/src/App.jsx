@@ -488,6 +488,7 @@ export default function App() {
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
               onRemoveAdjustment={adjCrud.remove}
+              onReplaceAdjustment={adjCrud.replace}
               isAdmin={isAdmin}
             />
           )}

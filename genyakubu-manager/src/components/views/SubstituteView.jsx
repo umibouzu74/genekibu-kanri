@@ -28,6 +28,7 @@ export function SubstituteView({
   onAddAdjustment,
   onDelAdjustment,
   onRemoveAdjustment,
+  onReplaceAdjustment,
   isAdmin,
 }) {
   const now = new Date();
@@ -733,6 +734,7 @@ export function SubstituteView({
           onAddAdjustment={onAddAdjustment}
           onDelAdjustment={onDelAdjustment}
           onRemoveAdjustment={onRemoveAdjustment}
+          onReplaceAdjustment={onReplaceAdjustment}
           isAdmin={isAdmin}
         />
       )}

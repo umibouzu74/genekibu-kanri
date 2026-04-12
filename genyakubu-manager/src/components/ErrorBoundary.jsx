@@ -30,6 +30,8 @@ export class ErrorBoundary extends Component {
         "genyakubu-holidays",
         "genyakubu-substitutions",
         "genyakubu-part-time-staff",
+        "genyakubu-subject-categories",
+        "genyakubu-subjects",
         "genyakubu-biweekly-base",
         "genyakubu-biweekly-anchors",
         "genyakubu-adjustments",
