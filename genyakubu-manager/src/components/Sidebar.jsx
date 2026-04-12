@@ -11,7 +11,8 @@ export function Sidebar({
   onOpenDataMgr,
   search,
   onSearchChange,
-  teachers,
+  teacherGroups,
+  subjectCategories,
   slots,
   subs,
 }) {
@@ -26,6 +27,34 @@ export function Sidebar({
     for (const s of slots) m.set(s.teacher, (m.get(s.teacher) || 0) + 1);
     return m;
   }, [slots]);
+
+  // 教科名 → カテゴリ色 のマップ (グループヘッダの色付けに使用)
+  const subjectColorByName = useMemo(() => {
+    const m = new Map();
+    if (!Array.isArray(subjectCategories)) return m;
+    // この Sidebar は教科オブジェクトを直接持たないので、ヘッダ色はカテゴリから
+    // 決めるのではなく、グループラベルに対応する固定カラーを用いる。
+    // 代わりにシンプルに、バイト=金 / 英=青 / 数=赤 / 国=紫 / 理=緑 / 社=橙 を返す。
+    const defaults = {
+      バイト: "#d4a84a",
+      英語: "#2e6a9e",
+      数学: "#c05030",
+      国語: "#6a3d8e",
+      理科: "#3d7a4a",
+      社会: "#9e6a2e",
+      その他: "#888",
+    };
+    for (const [k, v] of Object.entries(defaults)) m.set(k, v);
+    return m;
+  }, [subjectCategories]);
+
+  const totalTeachers = useMemo(
+    () =>
+      Array.isArray(teacherGroups)
+        ? teacherGroups.reduce((n, g) => n + g.teachers.length, 0)
+        : 0,
+    [teacherGroups]
+  );
 
   const navItem = (key, icon, label, extra = null) => {
     const active = !selected && view === key;
@@ -178,7 +207,7 @@ export function Sidebar({
           </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
-          {teachers.length === 0 && (
+          {totalTeachers === 0 && (
             <div
               style={{
                 textAlign: "center",
@@ -199,46 +228,74 @@ export function Sidebar({
               )}
             </div>
           )}
-          {teachers.map((t) => {
-            const cnt = slotCountByTeacher.get(t) || 0;
+          {teacherGroups.map((group) => {
+            const color = subjectColorByName.get(group.label) || "#888";
             return (
-              <button
-                key={t}
-                onClick={() => onSelectTeacher(t)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  width: "100%",
-                  padding: "6px 14px",
-                  border: "none",
-                  background: selected === t ? "#3a3a6e" : "transparent",
-                  color: selected === t ? "#fff" : "#ccc",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  transition: "background .15s",
-                }}
-                onMouseEnter={(e) => {
-                  if (selected !== t) e.currentTarget.style.background = "#2a2a4e";
-                }}
-                onMouseLeave={(e) => {
-                  if (selected !== t) e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <span>{t}</span>
-                <span
+              <div key={group.key}>
+                <div
                   style={{
-                    fontSize: 9,
-                    background: cnt > 10 ? "#c44" : "#4a4a7e",
-                    borderRadius: 10,
-                    padding: "1px 6px",
-                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "6px 14px 4px",
+                    marginTop: 6,
+                    borderLeft: `3px solid ${color}`,
+                    background: "#13132a",
+                    color: "#ccd",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 1,
+                    textTransform: "none",
                   }}
                 >
-                  {cnt}
-                </span>
-              </button>
+                  <span>{group.label}</span>
+                  <span style={{ fontSize: 9, color: "#6a6a8e", fontWeight: 700 }}>
+                    {group.teachers.length}
+                  </span>
+                </div>
+                {group.teachers.map((t) => {
+                  const cnt = slotCountByTeacher.get(t) || 0;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => onSelectTeacher(t)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        width: "100%",
+                        padding: "6px 14px",
+                        border: "none",
+                        background: selected === t ? "#3a3a6e" : "transparent",
+                        color: selected === t ? "#fff" : "#ccc",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        transition: "background .15s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selected !== t) e.currentTarget.style.background = "#2a2a4e";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selected !== t) e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <span>{t}</span>
+                      <span
+                        style={{
+                          fontSize: 9,
+                          background: cnt > 10 ? "#c44" : "#4a4a7e",
+                          borderRadius: 10,
+                          padding: "1px 6px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {cnt}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
