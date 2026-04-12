@@ -322,10 +322,10 @@ export function TimetableManagerView({
             background: "#fafafa",
           }}
         >
-          <span style={{ fontWeight: 800, fontSize: 14 }}>表示期限設定</span>
+          <span style={{ fontWeight: 800, fontSize: 14 }}>表示期間設定</span>
           <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-            各学年グループの予定表が確定している最終日を設定します。
-            この日より後の予定はダッシュボード等に表示されません。
+            各学年グループの表示期間（開始日〜終了日）を設定します。
+            この範囲外の予定はダッシュボード等に表示されません。
           </div>
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -335,7 +335,8 @@ export function TimetableManagerView({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
               <span
@@ -349,6 +350,22 @@ export function TimetableManagerView({
               </span>
               <input
                 type="date"
+                value={group.startDate || ""}
+                onChange={(e) => {
+                  if (!isAdmin) return;
+                  const newGroups = [...displayCutoff.groups];
+                  newGroups[idx] = {
+                    ...newGroups[idx],
+                    startDate: e.target.value || null,
+                  };
+                  onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
+                }}
+                disabled={!isAdmin}
+                style={{ ...S.input, width: 160 }}
+              />
+              <span style={{ fontSize: 12, color: "#888" }}>〜</span>
+              <input
+                type="date"
                 value={group.date || ""}
                 onChange={(e) => {
                   if (!isAdmin) return;
@@ -360,14 +377,14 @@ export function TimetableManagerView({
                   onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
                 }}
                 disabled={!isAdmin}
-                style={{ ...S.input, width: 180 }}
+                style={{ ...S.input, width: 160 }}
               />
-              {group.date && isAdmin && (
+              {(group.startDate || group.date) && isAdmin && (
                 <button
                   type="button"
                   onClick={() => {
                     const newGroups = [...displayCutoff.groups];
-                    newGroups[idx] = { ...newGroups[idx], date: null };
+                    newGroups[idx] = { ...newGroups[idx], startDate: null, date: null };
                     onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
                   }}
                   style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}

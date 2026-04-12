@@ -103,7 +103,7 @@ export function SubstituteForm({
     if (selectedSlot && selectedSlot.teacher !== f.originalTeacher) {
       setF((p) => ({ ...p, originalTeacher: selectedSlot.teacher }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when selected slot changes, not on every f.originalTeacher change
   }, [selectedSlot?.id]);
 
   const matchedSubjectId = useMemo(

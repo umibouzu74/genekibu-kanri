@@ -190,3 +190,76 @@ describe("isEntireDayBeyondCutoff", () => {
     expect(isEntireDayBeyondCutoff("2026-07-21", null)).toBe(false);
   });
 });
+
+// ─── startDate tests ────────────────────────────────────────────────
+
+describe("isBeyondCutoff with startDate", () => {
+  const cutoff = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-01", date: "2026-07-18" },
+      { label: "高1・2", grades: ["高1", "高2"], startDate: "2026-04-10", date: null },
+      { label: "高3", grades: ["高3"], startDate: null, date: "2026-07-20" },
+    ],
+  };
+
+  it("returns true when date is before startDate", () => {
+    expect(isBeyondCutoff("2026-03-31", "中1", cutoff)).toBe(true);
+    expect(isBeyondCutoff("2026-04-09", "高1", cutoff)).toBe(true);
+  });
+
+  it("returns false when date equals startDate (inclusive)", () => {
+    expect(isBeyondCutoff("2026-04-01", "中1", cutoff)).toBe(false);
+    expect(isBeyondCutoff("2026-04-10", "高1", cutoff)).toBe(false);
+  });
+
+  it("returns false when date is within range", () => {
+    expect(isBeyondCutoff("2026-05-01", "中1", cutoff)).toBe(false);
+    expect(isBeyondCutoff("2026-06-15", "高1", cutoff)).toBe(false);
+  });
+
+  it("returns true when date is past endDate", () => {
+    expect(isBeyondCutoff("2026-07-19", "中1", cutoff)).toBe(true);
+  });
+
+  it("handles startDate only (no endDate)", () => {
+    expect(isBeyondCutoff("2099-12-31", "高1", cutoff)).toBe(false);
+  });
+
+  it("handles endDate only (no startDate)", () => {
+    expect(isBeyondCutoff("2020-01-01", "高3", cutoff)).toBe(false);
+    expect(isBeyondCutoff("2026-07-21", "高3", cutoff)).toBe(true);
+  });
+});
+
+describe("isEntireDayBeyondCutoff with startDate", () => {
+  it("returns true when all groups are before their startDate", () => {
+    const cutoff = {
+      groups: [
+        { label: "中", grades: ["中1"], startDate: "2026-04-01", date: null },
+        { label: "高", grades: ["高1"], startDate: "2026-04-10", date: null },
+      ],
+    };
+    expect(isEntireDayBeyondCutoff("2026-03-01", cutoff)).toBe(true);
+    expect(isEntireDayBeyondCutoff("2026-04-05", cutoff)).toBe(false);
+  });
+
+  it("returns true when mix of before-start and past-end", () => {
+    const cutoff = {
+      groups: [
+        { label: "中", grades: ["中1"], startDate: "2026-06-01", date: null },
+        { label: "高", grades: ["高1"], startDate: null, date: "2026-03-31" },
+      ],
+    };
+    expect(isEntireDayBeyondCutoff("2026-04-15", cutoff)).toBe(true);
+  });
+
+  it("returns false when any group has open range", () => {
+    const cutoff = {
+      groups: [
+        { label: "中", grades: ["中1"], startDate: "2026-06-01", date: null },
+        { label: "高", grades: ["高1"], startDate: null, date: null },
+      ],
+    };
+    expect(isEntireDayBeyondCutoff("2026-04-15", cutoff)).toBe(false);
+  });
+});

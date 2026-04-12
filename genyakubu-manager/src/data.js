@@ -115,6 +115,26 @@ export function monthlyTally(subs, year, month) {
   return { covered, coveredFor };
 }
 
+/**
+ * Return sorted unique dates a staff member worked as a substitute in a given month.
+ * Only confirmed substitutions are counted.
+ * @param {import("./types").Substitute[]} subs
+ * @param {string} staffName
+ * @param {number} year
+ * @param {number} month
+ * @returns {string[]}
+ */
+export function staffMonthlyWorkDates(subs, staffName, year, month) {
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const dates = new Set();
+  for (const s of subs) {
+    if (s.status !== "confirmed") continue;
+    if (!s.date?.startsWith(ym)) continue;
+    if (s.substitute === staffName) dates.add(s.date);
+  }
+  return [...dates].sort();
+}
+
 export function fmtDateWeekday(dateStr) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-").map(Number);

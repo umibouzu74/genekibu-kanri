@@ -64,7 +64,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       console.warn(`[useSyncedStorage] failed to load "${key}":`, err);
       onError?.(err, "load");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   // ── 2. Attach Firebase listener ─────────────────────────────────
@@ -127,7 +127,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       unsubscribed = true;
       off(dbRef);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   // ── 3. Setter: write to localStorage + Firebase ─────────────────
@@ -182,7 +182,7 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
       console.warn(`[useSyncedStorageRaw] failed to load "${key}":`, err);
       onError?.(err, "load");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   // ── Firebase listener ───────────────────────────────────────────
@@ -231,7 +231,7 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
       unsubscribed = true;
       off(dbRef);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
   // ── Setter ──────────────────────────────────────────────────────

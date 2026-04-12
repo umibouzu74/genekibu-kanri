@@ -32,7 +32,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -119,7 +119,8 @@ export function isCutoffGroup(x: unknown): x is CutoffGroup {
     isObject(x) &&
     isString(x.label) &&
     Array.isArray(x.grades) &&
-    (x.date === null || isString(x.date))
+    (x.date === null || isString(x.date)) &&
+    (x.startDate === undefined || x.startDate === null || isString(x.startDate))
   );
 }
 
@@ -367,10 +368,10 @@ export function migrateExportBundle(raw: unknown): unknown {
     if (!isObject(bundle.displayCutoff)) {
       bundle.displayCutoff = {
         groups: [
-          { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], date: null },
-          { label: "中3", grades: ["中3", "附中3"], date: null },
-          { label: "高1・2", grades: ["高1", "高2"], date: null },
-          { label: "高3", grades: ["高3"], date: null },
+          { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], startDate: null, date: null },
+          { label: "中3", grades: ["中3", "附中3"], startDate: null, date: null },
+          { label: "高1・2", grades: ["高1", "高2"], startDate: null, date: null },
+          { label: "高3", grades: ["高3"], startDate: null, date: null },
         ],
       };
     }
@@ -380,6 +381,20 @@ export function migrateExportBundle(raw: unknown): unknown {
   if (version < 6) {
     if (!Array.isArray(bundle.examPeriods)) {
       bundle.examPeriods = [];
+    }
+  }
+
+  // v6 → v7: CutoffGroup に startDate を追加。
+  if (version < 7) {
+    if (
+      isObject(bundle.displayCutoff) &&
+      Array.isArray((bundle.displayCutoff as Record<string, unknown>).groups)
+    ) {
+      const dc = bundle.displayCutoff as Record<string, unknown>;
+      dc.groups = (dc.groups as Array<Record<string, unknown>>).map((g) => ({
+        ...g,
+        startDate: g.startDate ?? null,
+      }));
     }
   }
 
@@ -399,10 +414,10 @@ export const DEFAULT_TIMETABLE: Timetable = {
 
 export const DEFAULT_DISPLAY_CUTOFF: DisplayCutoff = {
   groups: [
-    { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], date: null },
-    { label: "中3", grades: ["中3", "附中3"], date: null },
-    { label: "高1・2", grades: ["高1", "高2"], date: null },
-    { label: "高3", grades: ["高3"], date: null },
+    { label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], startDate: null, date: null },
+    { label: "中3", grades: ["中3", "附中3"], startDate: null, date: null },
+    { label: "高1・2", grades: ["高1", "高2"], startDate: null, date: null },
+    { label: "高3", grades: ["高3"], startDate: null, date: null },
   ],
 };
 

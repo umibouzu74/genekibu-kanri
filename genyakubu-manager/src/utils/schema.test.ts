@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
   isBiweeklyAnchor,
+  isCutoffGroup,
   isExamPeriod,
   isHoliday,
   isPartTimeStaffObject,
@@ -525,6 +526,57 @@ describe("migrateExportBundle", () => {
     }) as Record<string, unknown>;
     expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(out.examPeriods).toEqual(existing);
+  });
+});
+
+describe("v6 → v7 migration: CutoffGroup startDate", () => {
+  it("adds startDate: null to existing cutoff groups", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 6,
+      displayCutoff: {
+        groups: [
+          { label: "中1・2", grades: ["中1", "中2"], date: "2026-07-18" },
+          { label: "高3", grades: ["高3"], date: null },
+        ],
+      },
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    const dc = out.displayCutoff as { groups: Array<{ startDate: unknown; date: unknown }> };
+    expect(dc.groups[0].startDate).toBe(null);
+    expect(dc.groups[0].date).toBe("2026-07-18");
+    expect(dc.groups[1].startDate).toBe(null);
+    expect(dc.groups[1].date).toBe(null);
+  });
+
+  it("preserves existing startDate if present", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 6,
+      displayCutoff: {
+        groups: [
+          { label: "中", grades: ["中1"], startDate: "2026-04-01", date: "2026-07-18" },
+        ],
+      },
+    }) as Record<string, unknown>;
+    const dc = out.displayCutoff as { groups: Array<{ startDate: unknown }> };
+    expect(dc.groups[0].startDate).toBe("2026-04-01");
+  });
+});
+
+describe("isCutoffGroup with startDate", () => {
+  it("accepts group with startDate", () => {
+    expect(isCutoffGroup({ label: "中", grades: ["中1"], startDate: "2026-04-01", date: null })).toBe(true);
+  });
+
+  it("accepts group with null startDate", () => {
+    expect(isCutoffGroup({ label: "中", grades: ["中1"], startDate: null, date: null })).toBe(true);
+  });
+
+  it("accepts group without startDate (undefined)", () => {
+    expect(isCutoffGroup({ label: "中", grades: ["中1"], date: null })).toBe(true);
+  });
+
+  it("rejects group with invalid startDate", () => {
+    expect(isCutoffGroup({ label: "中", grades: ["中1"], startDate: 123, date: null })).toBe(false);
   });
 });
 

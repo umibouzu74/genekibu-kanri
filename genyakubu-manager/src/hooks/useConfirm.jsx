@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- context provider pattern requires co-located exports */
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { Modal } from "../components/Modal";
 import { S } from "../styles/common";
