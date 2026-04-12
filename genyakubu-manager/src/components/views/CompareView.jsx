@@ -7,6 +7,7 @@ import {
   sortSlots as sortS,
 } from "../../data";
 import { S } from "../../styles/common";
+import { sortJa } from "../../utils/sortJa";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
@@ -18,7 +19,7 @@ export function CompareView({ slots }) {
   const allTeachers = useMemo(() => {
     const set = new Set();
     for (const s of slots) if (s.teacher) set.add(s.teacher);
-    return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+    return sortJa([...set]);
   }, [slots]);
 
   // 検索でフィルタ

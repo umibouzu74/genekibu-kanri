@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { compareJa } from "../utils/sortJa";
 
 // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
 // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
@@ -69,9 +70,9 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search }) {
       }
     }
 
-    staffGroup.sort();
-    for (const arr of bySubject.values()) arr.sort();
-    other.sort();
+    staffGroup.sort(compareJa);
+    for (const arr of bySubject.values()) arr.sort(compareJa);
+    other.sort(compareJa);
 
     // 表示順: バイト → 英数国理社 → それ以外の教科 → その他
     const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];

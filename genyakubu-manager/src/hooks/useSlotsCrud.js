@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
+import { sortJa } from "../utils/sortJa";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
 // App 本体から約 120 行削減する。
@@ -27,7 +28,6 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
     }
     for (const subj of subjects) if (subj.name) subjs.add(subj.name);
     for (const ps of partTimeStaff) if (ps.name) teachers.add(ps.name);
-    const sortJa = (arr) => arr.sort((a, b) => a.localeCompare(b, "ja"));
     return {
       times: sortJa([...times]),
       grades: sortJa([...grades]),

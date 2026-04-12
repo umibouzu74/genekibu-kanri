@@ -8,6 +8,7 @@ import {
   SUB_STATUS_KEYS,
 } from "../data";
 import { S } from "../styles/common";
+import { sortJa } from "../utils/sortJa";
 
 // コマの科目文字列から対応する Subject.id を推定する。
 // 完全一致 → 名前を含む → 別名を含む の順で判定し、最初のマッチを返す。
@@ -129,7 +130,7 @@ export function SubstituteForm({
     if (!matchedSubjectId || showAllCandidates) {
       slots.forEach((s) => s.teacher && set.add(s.teacher));
     }
-    return [...set].sort();
+    return sortJa([...set]);
   }, [slots, filteredPartTimeStaff, matchedSubjectId, showAllCandidates]);
 
   // ── 1日分モード用 ───────────────────────────────────────
@@ -178,7 +179,7 @@ export function SubstituteForm({
     if (!subjId || showAllCandidates) {
       slots.forEach((s) => s.teacher && set.add(s.teacher));
     }
-    return [...set].sort();
+    return sortJa([...set]);
   };
 
   const handleSave = () => {

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { S } from "../../styles/common";
+import { compareJa, sortJa } from "../../utils/sortJa";
 
 // バイト・教科管理ビュー。2 タブ構成：
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
@@ -33,10 +34,15 @@ export function StaffManagerView({
     return m;
   }, [subjects, subjectCategories]);
 
+  const sortedPartTimeStaff = useMemo(
+    () => [...partTimeStaff].sort((a, b) => compareJa(a.name, b.name)),
+    [partTimeStaff]
+  );
+
   const allTeachers = useMemo(() => {
     const set = new Set(partTimeStaff.map((s) => s.name));
     slots.forEach((s) => s.teacher && set.add(s.teacher));
-    return [...set].sort();
+    return sortJa([...set]);
   }, [slots, partTimeStaff]);
 
   const handleAddStaff = () => {
@@ -129,7 +135,7 @@ export function StaffManagerView({
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {partTimeStaff.map((staff) => {
+              {sortedPartTimeStaff.map((staff) => {
                 const cnt = slots.filter((s) => s.teacher === staff.name).length;
                 return (
                   <div
