@@ -32,6 +32,7 @@ export class ErrorBoundary extends Component {
         "genyakubu-part-time-staff",
         "genyakubu-biweekly-base",
         "genyakubu-biweekly-anchors",
+        "genyakubu-adjustments",
       ].forEach((k) => localStorage.removeItem(k));
     } catch {
       // ignore

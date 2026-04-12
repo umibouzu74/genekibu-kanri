@@ -16,6 +16,7 @@ import type {
   ExportBundle,
   Holiday,
   PartTimeStaffObject,
+  ScheduleAdjustment,
   Slot,
   Subject,
   SubjectCategory,
@@ -75,6 +76,17 @@ export function isPartTimeStaffObject(x: unknown): x is PartTimeStaffObject {
 
 export function isBiweeklyAnchor(x: unknown): x is BiweeklyAnchor {
   return isObject(x) && isString(x.date) && x.weekType === "A";
+}
+
+export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
+  return (
+    isObject(x) &&
+    isNumber(x.id) &&
+    isString(x.date) &&
+    isString(x.type) &&
+    (x.type === "move" || x.type === "combine") &&
+    isNumber(x.slotId)
+  );
 }
 
 // ─── Validation ────────────────────────────────────────────────────
@@ -174,6 +186,20 @@ export function validateExportBundle(
         ok: false,
         error: `biweeklyAnchors[${bad}] の形式が不正です`,
         path: `biweeklyAnchors[${bad}]`,
+      };
+  }
+
+  if (raw.adjustments != null) {
+    if (!Array.isArray(raw.adjustments))
+      return { ok: false, error: "adjustments が配列ではありません" };
+    const bad = raw.adjustments.findIndex(
+      (a: unknown) => !isScheduleAdjustment(a)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `adjustments[${bad}] の形式が不正です`,
+        path: `adjustments[${bad}]`,
       };
   }
 

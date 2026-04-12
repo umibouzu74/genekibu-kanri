@@ -62,6 +62,19 @@ export interface BiweeklyAnchor {
   weekType: "A"; // 常にA週（UIシンプル化のため）
 }
 
+export type AdjustmentType = "move" | "combine";
+
+export interface ScheduleAdjustment {
+  id: number;
+  date: string; // YYYY-MM-DD
+  type: AdjustmentType;
+  slotId: number; // 主対象コマ
+  targetTime?: string; // "move" 用: 移動先の時間帯
+  combineSlotIds?: number[]; // "combine" 用: 合同にするコマID群
+  memo: string;
+  createdAt?: string;
+}
+
 export interface ExportBundle {
   schemaVersion?: number;
   exportedAt?: string;
@@ -74,6 +87,7 @@ export interface ExportBundle {
   subjects?: Subject[];
   biweeklyBase?: string;
   biweeklyAnchors?: BiweeklyAnchor[];
+  adjustments?: ScheduleAdjustment[];
 }
 
 export interface ValidationResult<T> {

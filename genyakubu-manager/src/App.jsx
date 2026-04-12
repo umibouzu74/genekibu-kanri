@@ -17,6 +17,7 @@ import { useToasts } from "./hooks/useToasts";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
+import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import {
   useDataIO,
@@ -63,6 +64,7 @@ const LS = {
   subjects: "genyakubu-subjects",
   biweeklyBase: "genyakubu-biweekly-base",
   biweeklyAnchors: "genyakubu-biweekly-anchors",
+  adjustments: "genyakubu-adjustments",
 };
 
 export default function App() {
@@ -117,6 +119,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [adjustments, saveAdjustments] = useSyncedStorage(
+    LS.adjustments,
+    [],
+    { onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -156,6 +163,7 @@ export default function App() {
     slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
+  const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
   const staffCrud = useStaffCrud({
     partTimeStaff,
     savePartTimeStaff,
@@ -171,6 +179,7 @@ export default function App() {
     holidays,
     biweeklyBase,
     biweeklyAnchors,
+    adjustments,
     subs,
     partTimeStaff,
     subjectCategories,
@@ -179,6 +188,7 @@ export default function App() {
     saveHolidays,
     saveBiweeklyBase,
     saveBiweeklyAnchors,
+    saveAdjustments,
     saveSubs,
     savePartTimeStaff,
     saveSubjectCategories,
@@ -474,6 +484,9 @@ export default function App() {
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
+              adjustments={adjustments}
+              onAddAdjustment={adjCrud.add}
+              onDelAdjustment={adjCrud.del}
               isAdmin={isAdmin}
             />
           )}
