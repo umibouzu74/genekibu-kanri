@@ -34,6 +34,7 @@ import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
 import { SubstituteForm } from "./components/SubstituteForm";
 import { HolidayManager } from "./components/HolidayManager";
+import { ExamPeriodManager } from "./components/ExamPeriodManager";
 import { Sidebar } from "./components/Sidebar";
 import { DataManager } from "./components/DataManager";
 import { CommandPalette } from "./components/CommandPalette";
@@ -73,6 +74,7 @@ const LS = {
   timetables: "genyakubu-timetables",
   displayCutoff: "genyakubu-display-cutoff",
   activeTimetableId: "genyakubu-active-timetable",
+  examPeriods: "genyakubu-exam-periods",
 };
 
 export default function App() {
@@ -140,6 +142,11 @@ export default function App() {
   const [displayCutoff, saveDisplayCutoff] = useSyncedStorage(
     LS.displayCutoff,
     DEFAULT_DISPLAY_CUTOFF,
+    { onError: onStorageError }
+  );
+  const [examPeriods, saveExamPeriods] = useSyncedStorage(
+    LS.examPeriods,
+    [],
     { onError: onStorageError }
   );
 
@@ -218,6 +225,7 @@ export default function App() {
     subjects,
     timetables,
     displayCutoff,
+    examPeriods,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -229,6 +237,7 @@ export default function App() {
     saveSubjects,
     saveTimetables,
     saveDisplayCutoff,
+    saveExamPeriods,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -385,7 +394,7 @@ export default function App() {
                       : view === VIEWS.MASTER
                       ? "コースマスター管理"
                       : view === VIEWS.HOLIDAYS
-                        ? "祝日・休講日管理"
+                        ? "休講日・テスト期間管理"
                         : view === VIEWS.SUBS
                           ? "アルバイト代行管理"
                           : view === VIEWS.STAFF
@@ -500,7 +509,7 @@ export default function App() {
 
         <div id="main-content">
           {view === VIEWS.DASH && !selected && (
-            <Dashboard slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} />
+            <Dashboard slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
@@ -535,7 +544,10 @@ export default function App() {
             />
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
-            <HolidayManager holidays={holidays} onSave={saveHolidays} isAdmin={isAdmin} />
+            <>
+              <HolidayManager holidays={holidays} onSave={saveHolidays} isAdmin={isAdmin} />
+              <ExamPeriodManager examPeriods={examPeriods} onSave={saveExamPeriods} isAdmin={isAdmin} />
+            </>
           )}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
@@ -557,7 +569,7 @@ export default function App() {
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
-            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} />
+            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
           )}
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView
@@ -598,6 +610,7 @@ export default function App() {
               isAdmin={isAdmin}
               timetables={timetables}
               displayCutoff={displayCutoff}
+              examPeriods={examPeriods}
             />
           )}
         </div>

@@ -2,7 +2,7 @@
 //
 // The export bundle format:
 //   {
-//     schemaVersion: 4,
+//     schemaVersion: 6,
 //     slots: Slot[],
 //     holidays: Holiday[],
 //     substitutions: Sub[],
@@ -12,12 +12,14 @@
 //     adjustments: ScheduleAdjustment[],
 //     timetables: Timetable[],
 //     displayCutoff: DisplayCutoff,
+//     examPeriods: ExamPeriod[],
 //   }
 
 import type {
   BiweeklyAnchor,
   CutoffGroup,
   DisplayCutoff,
+  ExamPeriod,
   ExportBundle,
   Holiday,
   PartTimeStaffObject,
@@ -30,7 +32,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -126,6 +128,17 @@ export function isDisplayCutoff(x: unknown): x is DisplayCutoff {
     isObject(x) &&
     Array.isArray(x.groups) &&
     x.groups.every((g: unknown) => isCutoffGroup(g))
+  );
+}
+
+export function isExamPeriod(x: unknown): x is ExamPeriod {
+  return (
+    isObject(x) &&
+    isNumber(x.id) &&
+    isString(x.name) &&
+    isString(x.startDate) &&
+    isString(x.endDate) &&
+    Array.isArray(x.targetGrades)
   );
 }
 
@@ -260,6 +273,18 @@ export function validateExportBundle(
       return { ok: false, error: "displayCutoff の形式が不正です" };
   }
 
+  if (raw.examPeriods != null) {
+    if (!Array.isArray(raw.examPeriods))
+      return { ok: false, error: "examPeriods が配列ではありません" };
+    const bad = raw.examPeriods.findIndex((ep: unknown) => !isExamPeriod(ep));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `examPeriods[${bad}] の形式が不正です`,
+        path: `examPeriods[${bad}]`,
+      };
+  }
+
   return { ok: true, data: raw as unknown as ExportBundle };
 }
 
@@ -348,6 +373,13 @@ export function migrateExportBundle(raw: unknown): unknown {
           { label: "高3", grades: ["高3"], date: null },
         ],
       };
+    }
+  }
+
+  // v5 → v6: examPeriods（テスト期間）を追加。
+  if (version < 6) {
+    if (!Array.isArray(bundle.examPeriods)) {
+      bundle.examPeriods = [];
     }
   }
 

@@ -175,7 +175,7 @@ export function Sidebar({
           {navItem(VIEWS.ALL, "📊", "全講師一覧")}
           {navItem(VIEWS.HEATMAP, "🔥", "繁忙度ヒートマップ")}
           {navItem(VIEWS.COMPARE, "⚖", "講師比較")}
-          {navItem(VIEWS.HOLIDAYS, "📅", "祝日・休講日管理")}
+          {navItem(VIEWS.HOLIDAYS, "📅", "休講日・テスト期間")}
           {navItem(VIEWS.TIMETABLE, "🗓", "時間割管理")}
           {navItem(VIEWS.MASTER, "⚙", "コースマスター管理")}
           {navItem(VIEWS.STAFF, "👥", "バイト・教科管理")}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
   isBiweeklyAnchor,
+  isExamPeriod,
   isHoliday,
   isPartTimeStaffObject,
   isScheduleAdjustment,
@@ -131,6 +132,37 @@ describe("type guards", () => {
       isScheduleAdjustment({ date: "2026-04-10", type: "move", slotId: 3 })
     ).toBe(false); // missing id
     expect(isScheduleAdjustment(null)).toBe(false);
+  });
+
+  it("isExamPeriod requires id, name, startDate, endDate, targetGrades", () => {
+    expect(
+      isExamPeriod({
+        id: 1,
+        name: "1学期中間テスト",
+        startDate: "2026-05-08",
+        endDate: "2026-05-14",
+        targetGrades: ["中1", "中2", "中3"],
+      })
+    ).toBe(true);
+    expect(
+      isExamPeriod({
+        id: 2,
+        name: "期末テスト",
+        startDate: "2026-06-20",
+        endDate: "2026-06-26",
+        targetGrades: [],
+      })
+    ).toBe(true); // empty = all grades
+    expect(
+      isExamPeriod({ name: "テスト", startDate: "2026-05-08", endDate: "2026-05-14", targetGrades: [] })
+    ).toBe(false); // missing id
+    expect(
+      isExamPeriod({ id: 1, startDate: "2026-05-08", endDate: "2026-05-14", targetGrades: [] })
+    ).toBe(false); // missing name
+    expect(
+      isExamPeriod({ id: 1, name: "テスト", startDate: "2026-05-08", endDate: "2026-05-14" })
+    ).toBe(false); // missing targetGrades
+    expect(isExamPeriod(null)).toBe(false);
   });
 });
 
@@ -290,6 +322,38 @@ describe("validateExportBundle", () => {
     expect(r.ok).toBe(false);
     expect(r.path).toBe("adjustments[1]");
   });
+
+  it("accepts a well-formed examPeriods array", () => {
+    const r = validateExportBundle({
+      examPeriods: [
+        { id: 1, name: "1学期中間テスト", startDate: "2026-05-08", endDate: "2026-05-14", targetGrades: ["中1", "中2"] },
+        { id: 2, name: "期末テスト", startDate: "2026-06-20", endDate: "2026-06-26", targetGrades: [] },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts an empty examPeriods array", () => {
+    const r = validateExportBundle({ examPeriods: [] });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects non-array examPeriods", () => {
+    const r = validateExportBundle({ examPeriods: "bad" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/examPeriods/);
+  });
+
+  it("rejects malformed examPeriods entries", () => {
+    const r = validateExportBundle({
+      examPeriods: [
+        { id: 1, name: "テスト", startDate: "2026-05-08", endDate: "2026-05-14", targetGrades: [] },
+        { name: "テスト2", startDate: "2026-06-01", endDate: "2026-06-07", targetGrades: [] }, // missing id
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.path).toBe("examPeriods[1]");
+  });
 });
 
 describe("migrateExportBundle", () => {
@@ -438,6 +502,29 @@ describe("migrateExportBundle", () => {
     expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     const v = validateExportBundle(out);
     expect(v.ok).toBe(true);
+  });
+
+  it("v5 → v6: adds empty examPeriods when missing", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 5,
+      slots: [goodSlot],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.examPeriods).toEqual([]);
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("v5 → v6: preserves existing examPeriods", () => {
+    const existing = [
+      { id: 1, name: "中間テスト", startDate: "2026-05-08", endDate: "2026-05-14", targetGrades: ["中1"] },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 5,
+      examPeriods: existing,
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.examPeriods).toEqual(existing);
   });
 });
 

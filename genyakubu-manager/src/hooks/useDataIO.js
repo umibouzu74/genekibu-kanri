@@ -41,6 +41,7 @@ export function useDataIO({
   subjects,
   timetables,
   displayCutoff,
+  examPeriods,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -52,6 +53,7 @@ export function useDataIO({
   saveSubjects,
   saveTimetables,
   saveDisplayCutoff,
+  saveExamPeriods,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -80,6 +82,7 @@ export function useDataIO({
           subjects,
           timetables,
           displayCutoff,
+          examPeriods,
         },
         null,
         2
@@ -96,7 +99,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -137,6 +140,7 @@ export function useDataIO({
           if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
           if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
+          if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
           setShowDataMgr(false);
           toasts.success("データをインポートしました");
         } catch (err) {
@@ -167,6 +171,7 @@ export function useDataIO({
       saveSubjects,
       saveTimetables,
       saveDisplayCutoff,
+      saveExamPeriods,
       setImporting,
       setShowDataMgr,
     ]
@@ -192,6 +197,7 @@ export function useDataIO({
     saveSubjects(INIT_SUBJECTS);
     saveTimetables([DEFAULT_TIMETABLE]);
     saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
+    saveExamPeriods([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -212,6 +218,7 @@ export function useDataIO({
     saveSubjects,
     saveTimetables,
     saveDisplayCutoff,
+    saveExamPeriods,
     setActiveTimetableId,
     setSelected,
     setView,

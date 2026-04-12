@@ -41,6 +41,11 @@ export function fmtDate(d) {
 
 export const DEPARTMENTS = ["中学部", "高校部", "予備校部"];
 
+export const ALL_GRADES = [
+  "中1", "中2", "中3", "附中1", "附中2", "附中3",
+  "高1", "高2", "高3",
+];
+
 export const DEPT_COLOR = {
   中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
   高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
