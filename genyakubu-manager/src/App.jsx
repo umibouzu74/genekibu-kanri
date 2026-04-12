@@ -54,7 +54,6 @@ import { CompareView } from "./components/views/CompareView";
 import { TimetableManagerView } from "./components/views/TimetableManagerView";
 import { TimetableSelector } from "./components/TimetableSelector";
 
-
 export default function App() {
   const toasts = useToasts();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
