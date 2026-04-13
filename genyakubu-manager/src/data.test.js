@@ -8,6 +8,8 @@ import {
   isKameiRoom,
   monthlyTally,
   sortSlots,
+  staffMonthlyAbsenceDates,
+  staffMonthlyRegularDates,
   staffMonthlyWorkDates,
   timeToMin,
 } from "./data";
@@ -175,5 +177,102 @@ describe("staffMonthlyWorkDates", () => {
   it("returns empty array when no matches", () => {
     expect(staffMonthlyWorkDates(subs, "unknown", 2026, 4)).toEqual([]);
     expect(staffMonthlyWorkDates([], "山田", 2026, 4)).toEqual([]);
+  });
+});
+
+describe("staffMonthlyAbsenceDates", () => {
+  const subs = [
+    { date: "2026-04-03", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
+    { date: "2026-04-10", status: "confirmed", substitute: "佐藤", originalTeacher: "鈴木" },
+    { date: "2026-04-10", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
+    { date: "2026-04-15", status: "requested", substitute: "山田", originalTeacher: "鈴木" },
+    { date: "2026-04-20", status: "confirmed", substitute: "山田", originalTeacher: "佐藤" },
+    { date: "2026-05-01", status: "confirmed", substitute: "山田", originalTeacher: "鈴木" },
+  ];
+
+  it("returns sorted unique dates where staff was substituted for", () => {
+    expect(staffMonthlyAbsenceDates(subs, "鈴木", 2026, 4)).toEqual([
+      "2026-04-03",
+      "2026-04-10",
+    ]);
+  });
+
+  it("deduplicates dates from multiple subs on same day", () => {
+    const result = staffMonthlyAbsenceDates(subs, "鈴木", 2026, 4);
+    expect(result.filter((d) => d === "2026-04-10")).toHaveLength(1);
+  });
+
+  it("excludes requested (non-confirmed) records", () => {
+    const result = staffMonthlyAbsenceDates(subs, "鈴木", 2026, 4);
+    expect(result).not.toContain("2026-04-15");
+  });
+
+  it("filters by month correctly", () => {
+    expect(staffMonthlyAbsenceDates(subs, "鈴木", 2026, 5)).toEqual(["2026-05-01"]);
+  });
+
+  it("returns empty array when no matches", () => {
+    expect(staffMonthlyAbsenceDates(subs, "unknown", 2026, 4)).toEqual([]);
+    expect(staffMonthlyAbsenceDates([], "鈴木", 2026, 4)).toEqual([]);
+  });
+});
+
+describe("staffMonthlyRegularDates", () => {
+  // 2026-04: 月=6,13,20,27  火=7,14,21,28  水=1,8,15,22,29
+  const slots = [
+    { day: "月", teacher: "鈴木", time: "19:00-20:20", note: "" },
+    { day: "水", teacher: "鈴木", time: "19:00-20:20", note: "" },
+    { day: "火", teacher: "佐藤", time: "19:00-20:20", note: "" },
+  ];
+
+  it("returns dates matching the staff's slot days within the month", () => {
+    const result = staffMonthlyRegularDates(slots, "鈴木", [], 2026, 4);
+    expect(result).toEqual([
+      "2026-04-01", // 水
+      "2026-04-06", // 月
+      "2026-04-08", // 水
+      "2026-04-13", // 月
+      "2026-04-15", // 水
+      "2026-04-20", // 月
+      "2026-04-22", // 水
+      "2026-04-27", // 月
+      "2026-04-29", // 水
+    ]);
+  });
+
+  it("excludes holidays with scope 全部", () => {
+    const holidays = [
+      { date: "2026-04-29", label: "昭和の日", scope: ["全部"] },
+    ];
+    const result = staffMonthlyRegularDates(slots, "鈴木", holidays, 2026, 4);
+    expect(result).not.toContain("2026-04-29");
+    expect(result).toHaveLength(8);
+  });
+
+  it("does not exclude holidays scoped to a department only", () => {
+    const holidays = [
+      { date: "2026-04-06", label: "中学部休み", scope: ["中学部"] },
+    ];
+    const result = staffMonthlyRegularDates(slots, "鈴木", holidays, 2026, 4);
+    expect(result).toContain("2026-04-06");
+  });
+
+  it("returns empty array for a person with no slots", () => {
+    expect(staffMonthlyRegularDates(slots, "unknown", [], 2026, 4)).toEqual([]);
+  });
+
+  it("handles multi-teacher slots (separator ·)", () => {
+    const multiSlots = [
+      { day: "木", teacher: "香川·福江", time: "19:00-20:20", note: "" },
+    ];
+    // 2026-04: 木=2,9,16,23,30
+    const result = staffMonthlyRegularDates(multiSlots, "福江", [], 2026, 4);
+    expect(result).toEqual([
+      "2026-04-02",
+      "2026-04-09",
+      "2026-04-16",
+      "2026-04-23",
+      "2026-04-30",
+    ]);
   });
 });

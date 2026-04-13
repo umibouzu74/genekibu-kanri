@@ -530,6 +530,7 @@ export default function App() {
             <SubstituteView
               subs={subs}
               slots={slots}
+              holidays={holidays}
               partTimeStaff={partTimeStaff}
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
