@@ -176,7 +176,7 @@ export function staffMonthlyRegularDates(slots, staffName, holidays, year, month
     holidays.filter((h) => (h.scope || ["全部"]).includes("全部")).map((h) => h.date)
   );
 
-  const dates = new Set();
+  const dates = [];
   const daysInMonth = new Date(year, month, 0).getDate();
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(year, month - 1, d);
@@ -184,9 +184,9 @@ export function staffMonthlyRegularDates(slots, staffName, holidays, year, month
     if (!slotDays.has(dow)) continue;
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     if (holidayDates.has(dateStr)) continue;
-    dates.add(dateStr);
+    dates.push(dateStr);
   }
-  return [...dates].sort();
+  return dates;
 }
 
 export function fmtDateWeekday(dateStr) {

@@ -652,14 +652,14 @@ export function SubstituteView({
                             style={{ padding: "8px 14px 12px 36px", fontSize: 12, color: "#555" }}
                           >
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                              {regularDates.length > 0 && (
-                                <div>
-                                  <span style={{ fontWeight: 700, fontSize: 11, color: "#666" }}>
-                                    通常出勤日（{regularDates.length}日）:
-                                  </span>{" "}
-                                  {regularDates.map((d) => fmtDateWeekday(d)).join("、")}
-                                </div>
-                              )}
+                              <div>
+                                <span style={{ fontWeight: 700, fontSize: 11, color: "#666" }}>
+                                  通常出勤日（{regularDates.length}日）:
+                                </span>{" "}
+                                {regularDates.length > 0
+                                  ? regularDates.map((d) => fmtDateWeekday(d)).join("、")
+                                  : "—"}
+                              </div>
                               <div>
                                 <span style={{ fontWeight: 700, fontSize: 11, color: "#2a7a4a" }}>
                                   代行出勤日（{workDates.length}日）:
