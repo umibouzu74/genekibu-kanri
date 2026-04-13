@@ -52,11 +52,22 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   const toggleScope = (dept) => {
     if (dept === "全部") {
       setScope(["全部"]);
+      // Reset grade/keyword when switching to 全部
+      setTargetGrades([]);
+      setAllGrades(true);
+      setSubjKeywords([]);
       return;
     }
     let next = scope.filter((s) => s !== "全部");
     next = next.includes(dept) ? next.filter((s) => s !== dept) : [...next, dept];
-    setScope(next.length === 0 ? ["全部"] : next);
+    if (next.length === 0) {
+      setScope(["全部"]);
+      setTargetGrades([]);
+      setAllGrades(true);
+      setSubjKeywords([]);
+    } else {
+      setScope(next);
+    }
   };
 
   // ─── Grade selection (same pattern as ExamPeriodManager) ───
@@ -139,13 +150,15 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
     }
 
     const grades = allGrades ? [] : [...targetGrades];
+    // Clear subjKeywords when scope is 全部 or all grades selected
+    const keywords = scope.includes("全部") || allGrades ? [] : [...subjKeywords];
     const entry = {
       id: editId != null ? editId : nextNumericId(holidays),
       date,
       label: label || "休講",
       scope: [...scope],
       targetGrades: grades,
-      subjKeywords: [...subjKeywords],
+      subjKeywords: keywords,
     };
 
     if (editId != null) {

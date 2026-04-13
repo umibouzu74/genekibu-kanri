@@ -45,15 +45,13 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
       if (hols) {
         const dept = gradeToDept(grade);
         const off = hols.some((h) => {
-          // 1. Grade-level check
+          // 1. Department scope check (always applied)
+          const sc = h.scope || ["全部"];
+          if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
+          // 2. Grade-level check (when targetGrades is set)
           const tg = h.targetGrades || [];
-          if (tg.length > 0) {
-            if (!tg.includes(grade)) return false;
-          } else {
-            const sc = h.scope || ["全部"];
-            if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-          }
-          // 2. Subject keyword check
+          if (tg.length > 0 && !tg.includes(grade)) return false;
+          // 3. Subject keyword check
           const sk = h.subjKeywords || [];
           if (sk.length > 0) {
             if (!subj) return false;
@@ -138,6 +136,9 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
           const offDepts = [
             ...new Set(hols.flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))),
           ];
+          const granularHols = hols.filter(
+            (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
+          );
           const epActive = examPeriodsForDate(ds);
           const hasExam = epActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
@@ -197,6 +198,13 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
                 {!isFullOff && offDepts.length > 0 && (
                   <span style={{ fontSize: 8, color: "#c88", fontWeight: 400 }}>
                     {offDepts.map((d) => d.replace("部", "")).join(",") + "休"}
+                  </span>
+                )}
+                {!isFullOff && granularHols.length > 0 && (
+                  <span style={{ fontSize: 7, color: "#4a7a9a", fontWeight: 400, display: "block" }}>
+                    {granularHols.map((h) =>
+                      [...(h.targetGrades || []), ...(h.subjKeywords || [])].join("・")
+                    ).join(", ") + "休"}
                   </span>
                 )}
                 {!isFullOff && hasExam && (

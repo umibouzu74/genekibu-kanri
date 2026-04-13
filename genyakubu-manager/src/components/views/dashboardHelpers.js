@@ -43,17 +43,15 @@ export function makeHolidayHelpers(holidays, examPeriods = []) {
     const offByHoliday = holidays.some((h) => {
       if (h.date !== d) return false;
 
-      // 1. Grade-level check
-      const tg = h.targetGrades || [];
-      if (tg.length > 0) {
-        if (!tg.includes(grade)) return false;
-      } else {
-        // Fall back to department scope
-        const sc = h.scope || ["全部"];
-        if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-      }
+      // 1. Department scope check (always applied)
+      const sc = h.scope || ["全部"];
+      if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
 
-      // 2. Subject keyword check
+      // 2. Grade-level check (when targetGrades is set)
+      const tg = h.targetGrades || [];
+      if (tg.length > 0 && !tg.includes(grade)) return false;
+
+      // 3. Subject keyword check
       const sk = h.subjKeywords || [];
       if (sk.length > 0) {
         if (!subj) return false; // cannot match without subject info
