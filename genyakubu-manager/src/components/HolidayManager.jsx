@@ -115,7 +115,10 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
     setSubjKeywords([]); // Clear class selection when grades change
     if (allGrades) {
       setAllGrades(false);
-      setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
+      const scopeGrades = scope.includes("全部")
+        ? ALL_GRADES
+        : ALL_GRADES.filter((gr) => scope.includes(gradeToDept(gr)));
+      setTargetGrades(scopeGrades.filter((gr) => gr !== g));
       return;
     }
     const next = targetGrades.includes(g)

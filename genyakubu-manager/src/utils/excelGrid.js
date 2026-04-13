@@ -154,15 +154,17 @@ export function buildTimeRows(slots, day, sectionFilterFn) {
  * @param {string} time
  * @param {string} grade
  * @param {string} cls
+ * @param {string} room
  * @returns {import("../types").Slot | null}
  */
-export function findSlotForCell(slots, day, time, grade, cls) {
+export function findSlotForCell(slots, day, time, grade, cls, room) {
   return (
     slots.find(
       (s) =>
         s.day === day &&
         s.time === time &&
         s.grade === grade &&
+        s.room === room &&
         !isCombinedCls(s.cls) &&
         classMatchesColumn(s.cls, cls)
     ) ?? null
