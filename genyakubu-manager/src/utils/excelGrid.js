@@ -163,6 +163,7 @@ export function findSlotForCell(slots, day, time, grade, cls) {
         s.day === day &&
         s.time === time &&
         s.grade === grade &&
+        !isCombinedCls(s.cls) &&
         classMatchesColumn(s.cls, cls)
     ) ?? null
   );

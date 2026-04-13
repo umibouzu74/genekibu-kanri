@@ -21,7 +21,6 @@ import {
   findSlotForCell,
   findCombinedSlots,
   getCombinedSpan,
-  isCombinedCls,
   splitTime,
 } from "../../utils/excelGrid";
 
@@ -29,9 +28,9 @@ import {
 const ExcelCell = memo(function ExcelCell({
   slot,
   colSpan,
-  columnRoom,
   isAdmin,
   isDragOver,
+  isDragSource,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -52,7 +51,7 @@ const ExcelCell = memo(function ExcelCell({
           border: "1px solid #ddd",
           padding: 4,
           minWidth: 100,
-          minHeight: 60,
+          height: 60,
           verticalAlign: "top",
           background: isDragOver ? "#e8f4ff" : "#fafafa",
           transition: "background .15s",
@@ -65,7 +64,6 @@ const ExcelCell = memo(function ExcelCell({
     );
   }
 
-  const gc = GC(slot.grade);
   const biweekly = isBiweekly(slot.note);
   const weekType = biweekly
     ? getSlotWeekType(fmtDate(new Date()), slot, biweeklyAnchors)
@@ -88,7 +86,8 @@ const ExcelCell = memo(function ExcelCell({
         verticalAlign: "top",
         cursor: isAdmin ? "grab" : "default",
         background: isDragOver ? "#e8f4ff" : "#fff",
-        transition: "background .15s",
+        opacity: isDragSource ? 0.4 : 1,
+        transition: "background .15s, opacity .15s",
         position: "relative",
       }}
     >
@@ -426,9 +425,9 @@ function ExcelSection({
                             key={cellKey}
                             slot={combined.slot}
                             colSpan={combined.span}
-                            columnRoom={col.room}
                             isAdmin={isAdmin}
                             isDragOver={dragState.overCell === cellKey}
+                            isDragSource={dragState.draggingId === combined.slot.id}
                             onDragStart={(e) => handleDragStart(e, combined.slot)}
                             onDragOver={(e) => handleDragOver(e, cellKey)}
                             onDragLeave={handleDragLeave}
@@ -451,9 +450,9 @@ function ExcelSection({
                         key={cellKey}
                         slot={slot}
                         colSpan={1}
-                        columnRoom={col.room}
                         isAdmin={isAdmin}
                         isDragOver={dragState.overCell === cellKey}
+                        isDragSource={slot ? dragState.draggingId === slot.id : false}
                         onDragStart={slot ? (e) => handleDragStart(e, slot) : undefined}
                         onDragOver={(e) => handleDragOver(e, cellKey)}
                         onDragLeave={handleDragLeave}
@@ -479,8 +478,6 @@ export function ExcelGridView({
   slots,
   saveSlots,
   onEdit,
-  onDel,
-  onNew,
   biweeklyAnchors,
   isAdmin,
   timetables,

@@ -249,8 +249,6 @@ export function MasterView({
           slots={slots}
           saveSlots={saveSlots}
           onEdit={onEdit}
-          onDel={onDel}
-          onNew={onNew}
           biweeklyAnchors={biweeklyAnchors}
           isAdmin={isAdmin}
           timetables={timetables}
