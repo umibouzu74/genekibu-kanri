@@ -95,11 +95,24 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
       setSubjKeywords([]);
     } else {
       setScope(next);
+      // Filter out grades that no longer belong to selected departments
+      if (!allGrades) {
+        const validGrades = targetGrades.filter((g) => next.includes(gradeToDept(g)));
+        if (validGrades.length === 0) {
+          setAllGrades(true);
+          setTargetGrades([]);
+          setSubjKeywords([]);
+        } else {
+          setTargetGrades(validGrades);
+          setSubjKeywords([]);
+        }
+      }
     }
   };
 
   // ─── Grade selection (same pattern as ExamPeriodManager) ───
   const toggleGrade = (g) => {
+    setSubjKeywords([]); // Clear class selection when grades change
     if (allGrades) {
       setAllGrades(false);
       setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
@@ -119,16 +132,19 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   const selectAllGrades = () => {
     setAllGrades(true);
     setTargetGrades([]);
+    setSubjKeywords([]);
   };
 
   const selectMiddle = () => {
     setAllGrades(false);
     setTargetGrades(MIDDLE_GRADES);
+    setSubjKeywords([]);
   };
 
   const selectHigh = () => {
     setAllGrades(false);
     setTargetGrades(HIGH_GRADES);
+    setSubjKeywords([]);
   };
 
   const isGradeSelected = (g) => allGrades || targetGrades.includes(g);

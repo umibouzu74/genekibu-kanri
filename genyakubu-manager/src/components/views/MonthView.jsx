@@ -134,7 +134,11 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
             return true;
           });
           const offDepts = [
-            ...new Set(hols.flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))),
+            ...new Set(
+              hols
+                .filter((h) => (h.targetGrades || []).length === 0 && (h.subjKeywords || []).length === 0)
+                .flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))
+            ),
           ];
           const granularHols = hols.filter(
             (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0

@@ -419,9 +419,13 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriods
     if ((h.subjKeywords || []).length > 0) return false;
     return true;
   });
-  const offDepts = [...new Set(hols.flatMap((h) => h.scope || ["全部"]))].filter(
-    (d) => d !== "全部"
-  );
+  const offDepts = [
+    ...new Set(
+      hols
+        .filter((h) => (h.targetGrades || []).length === 0 && (h.subjKeywords || []).length === 0)
+        .flatMap((h) => h.scope || ["全部"])
+    ),
+  ].filter((d) => d !== "全部");
   const granularHols = hols.filter(
     (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
   );
