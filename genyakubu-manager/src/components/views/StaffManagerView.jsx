@@ -9,7 +9,7 @@ import {
   fmtDateWeekday,
 } from "../../data";
 
-// バイト・教科管理ビュー。2 タブ構成：
+// バイト管理ビュー。2 タブ構成：
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
 //   - 教科マスター: カテゴリと教科の CRUD (インライン編集)
 export function StaffManagerView({

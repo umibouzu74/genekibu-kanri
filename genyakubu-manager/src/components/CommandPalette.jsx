@@ -97,7 +97,7 @@ export function CommandPalette({
       { key: views.HEATMAP, label: "繁忙度ヒートマップ" },
       { key: views.COMPARE, label: "講師比較" },
       { key: views.TIMETABLE, label: "時間割管理" },
-      { key: views.HOLIDAYS, label: "休校日・テスト期間" },
+      { key: views.HOLIDAYS, label: "休講日・テスト期間" },
       { key: views.MASTER, label: "コースマスター管理" },
       { key: views.SUBS, label: "代行管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },

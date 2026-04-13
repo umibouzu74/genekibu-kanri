@@ -211,7 +211,7 @@ export function SubstituteView({
               border: "1px solid #ccc",
             }}
           >
-            バイト・教科管理へ
+            バイト管理へ
           </button>
         </div>
       </div>

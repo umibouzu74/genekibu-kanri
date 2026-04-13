@@ -16,14 +16,14 @@ const MENU_CONFIG = [
   {
     key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理",
     children: [
-      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休校日・テスト期間" },
+      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休講日・テスト期間" },
     ],
   },
   {
     key: VIEWS.STAFF, icon: "👥", label: "バイト管理",
     children: [
       { key: VIEWS.SUBS, icon: "🔄", label: "代行管理", badge: true },
-      { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "確定した代行一覧" },
+      { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
     ],
   },
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
