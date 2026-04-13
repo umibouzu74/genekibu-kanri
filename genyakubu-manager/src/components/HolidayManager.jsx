@@ -15,18 +15,19 @@ const GRADE_COLOR = {
   高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
 };
 
-// Extract unique subject-name prefixes (school/course names) from slots,
-// grouped by grade.
-function extractSubjPrefixes(slots, grades) {
-  const prefixes = new Set();
+// Extract unique class groups (school/course names) from configured slots.
+// For high school, the class group is the first token in the subject name
+// (e.g., "高松西 数学" → "高松西").
+function extractClassGroups(slots, grades) {
+  const groups = new Set();
   const gradeSet = new Set(grades);
   for (const s of slots) {
     if (gradeSet.size > 0 && !gradeSet.has(s.grade)) continue;
     if (gradeToDept(s.grade) !== "高校部") continue;
     const parts = s.subj.split(/\s+/);
-    if (parts.length >= 2) prefixes.add(parts[0]);
+    if (parts.length >= 2) groups.add(parts[0]);
   }
-  return [...prefixes].sort();
+  return [...groups].sort();
 }
 
 export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
@@ -36,16 +37,15 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   const [targetGrades, setTargetGrades] = useState([]);
   const [allGrades, setAllGrades] = useState(true);
   const [subjKeywords, setSubjKeywords] = useState([]);
-  const [customKw, setCustomKw] = useState("");
   const [filter, setFilter] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const toasts = useToasts();
   const confirm = useConfirm();
 
-  // Derive available subject prefixes based on selected grades
-  const availablePrefixes = useMemo(
-    () => extractSubjPrefixes(slots, allGrades ? [] : targetGrades),
+  // Derive available class groups from configured slots
+  const availableClasses = useMemo(
+    () => extractClassGroups(slots, allGrades ? [] : targetGrades),
     [slots, targetGrades, allGrades]
   );
 
@@ -112,19 +112,6 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
     );
   };
 
-  const addCustomKeyword = () => {
-    const kw = customKw.trim();
-    if (!kw) return;
-    if (!subjKeywords.includes(kw)) {
-      setSubjKeywords((prev) => [...prev, kw]);
-    }
-    setCustomKw("");
-  };
-
-  const removeKeyword = (kw) => {
-    setSubjKeywords((prev) => prev.filter((k) => k !== kw));
-  };
-
   // ─── Form actions ───
   const resetForm = () => {
     setDate("");
@@ -133,7 +120,6 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
     setTargetGrades([]);
     setAllGrades(true);
     setSubjKeywords([]);
-    setCustomKw("");
     setEditId(null);
     setError("");
   };
@@ -417,8 +403,8 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
           </div>
         )}
 
-        {/* 対象科目キーワード (学年が個別選択かつ高校部を含む場合のみ表示) */}
-        {showGradeSelection && !allGrades && targetGrades.some((g) => gradeToDept(g) === "高校部") && (
+        {/* 対象クラス (学年が個別選択かつ高校部を含む場合のみ表示) */}
+        {showGradeSelection && !allGrades && targetGrades.some((g) => gradeToDept(g) === "高校部") && availableClasses.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <div
               style={{
@@ -429,15 +415,15 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
                 marginBottom: 6,
               }}
             >
-              <span style={{ fontSize: 12, fontWeight: 700 }}>科目キーワード:</span>
-              <span style={{ fontSize: 10, color: "#888" }}>（任意・未選択＝全科目対象）</span>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>対象クラス:</span>
+              <span style={{ fontSize: 10, color: "#888" }}>（未選択＝全クラス対象）</span>
             </div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-              {availablePrefixes.map((p) => {
-                const sel = subjKeywords.includes(p);
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {availableClasses.map((cls) => {
+                const sel = subjKeywords.includes(cls);
                 return (
                   <label
-                    key={p}
+                    key={cls}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -457,73 +443,14 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
                     <input
                       type="checkbox"
                       checked={sel}
-                      onChange={() => toggleKeyword(p)}
+                      onChange={() => toggleKeyword(cls)}
                       style={{ display: "none" }}
                     />
-                    {p}
+                    {cls}
                   </label>
                 );
               })}
             </div>
-            {/* Custom keyword input */}
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <input
-                value={customKw}
-                onChange={(e) => setCustomKw(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomKeyword();
-                  }
-                }}
-                placeholder="カスタムキーワード"
-                style={{ ...S.input, width: 140, fontSize: 11 }}
-              />
-              <button
-                type="button"
-                onClick={addCustomKeyword}
-                style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
-              >
-                追加
-              </button>
-            </div>
-            {/* Selected keywords display */}
-            {subjKeywords.length > 0 && (
-              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 6 }}>
-                {subjKeywords.filter((kw) => !availablePrefixes.includes(kw)).map((kw) => (
-                  <span
-                    key={kw}
-                    style={{
-                      fontSize: 10,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: "#e0ecf8",
-                      color: "#1a4a7a",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 3,
-                    }}
-                  >
-                    {kw}
-                    <button
-                      type="button"
-                      onClick={() => removeKeyword(kw)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: 10,
-                        color: "#1a4a7a",
-                        padding: 0,
-                        lineHeight: 1,
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -699,7 +626,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
         )}
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
-        ※「全部」＝全部門休講。部門を個別に選択すると、学年や科目キーワードで対象を絞り込めます。
+        ※「全部」＝全部門休講。部門を個別に選択すると、学年やクラスで対象を絞り込めます。
       </div>
     </div>
   );
