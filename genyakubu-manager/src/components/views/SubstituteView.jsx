@@ -566,10 +566,9 @@ export function SubstituteView({
                         style={{
                           background: i % 2 ? "#f8f9fa" : "#fff",
                           borderTop: "1px solid #eee",
-                          cursor: r.covered || r.coveredFor ? "pointer" : "default",
+                          cursor: "pointer",
                         }}
                         onClick={() => {
-                          if (!r.covered && !r.coveredFor) return;
                           setExpandedTally((prev) => {
                             const next = new Set(prev);
                             if (next.has(r.name)) next.delete(r.name);
@@ -579,20 +578,18 @@ export function SubstituteView({
                         }}
                       >
                         <td style={{ padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
-                          {(r.covered > 0 || r.coveredFor > 0) && (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                marginRight: 4,
-                                fontSize: 10,
-                                color: "#888",
-                                transform: isExpanded ? "rotate(90deg)" : "none",
-                                transition: "transform 0.15s",
-                              }}
-                            >
-                              ▶
-                            </span>
-                          )}
+                          <span
+                            style={{
+                              display: "inline-block",
+                              marginRight: 4,
+                              fontSize: 10,
+                              color: "#888",
+                              transform: isExpanded ? "rotate(90deg)" : "none",
+                              transition: "transform 0.15s",
+                            }}
+                          >
+                            ▶
+                          </span>
                           {r.isPT && (
                             <span
                               style={{

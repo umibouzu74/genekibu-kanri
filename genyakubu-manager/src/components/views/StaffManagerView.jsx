@@ -2,7 +2,12 @@ import { useMemo, useState } from "react";
 import { S } from "../../styles/common";
 import { compareJa, sortJa } from "../../utils/sortJa";
 import { isSlotForTeacher } from "../../utils/biweekly";
-import { staffMonthlyWorkDates, fmtDateWeekday } from "../../data";
+import {
+  staffMonthlyWorkDates,
+  staffMonthlyAbsenceDates,
+  staffMonthlyRegularDates,
+  fmtDateWeekday,
+} from "../../data";
 
 // バイト・教科管理ビュー。2 タブ構成：
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
@@ -13,6 +18,7 @@ export function StaffManagerView({
   subjects,
   slots,
   subs,
+  holidays,
   onAddStaff,
   onDelStaff,
   onToggleStaffSubject,
@@ -262,9 +268,11 @@ export function StaffManagerView({
                       </div>
                     )}
 
-                    {/* 今月の出勤日（代行実績） */}
+                    {/* 今月の出勤状況 */}
                     {subs && (() => {
+                      const regularDates = staffMonthlyRegularDates(slots, staff.name, holidays || [], nowYear, nowMonth);
                       const workDates = staffMonthlyWorkDates(subs, staff.name, nowYear, nowMonth);
+                      const absenceDates = staffMonthlyAbsenceDates(subs, staff.name, nowYear, nowMonth);
                       return (
                         <div
                           style={{
@@ -275,16 +283,42 @@ export function StaffManagerView({
                             fontSize: 12,
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 11, color: "#4a6a9a", marginBottom: 4 }}>
-                            {nowMonth}月の代行出勤（{workDates.length}日）
+                          <div style={{ fontWeight: 700, fontSize: 11, color: "#4a6a9a", marginBottom: 6 }}>
+                            {nowMonth}月の出勤状況
                           </div>
-                          {workDates.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ color: "#555", lineHeight: 1.6 }}>
-                              {workDates.map((d) => fmtDateWeekday(d)).join("、")}
+                              <span style={{ fontWeight: 700, fontSize: 11, color: "#666" }}>
+                                通常出勤日（{regularDates.length}日）:
+                              </span>{" "}
+                              {regularDates.length > 0
+                                ? regularDates.map((d) => fmtDateWeekday(d)).join("、")
+                                : "—"}
                             </div>
-                          ) : (
-                            <div style={{ color: "#aaa" }}>今月の代行実績なし</div>
-                          )}
+                            <div style={{ color: "#555", lineHeight: 1.6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 11, color: "#2a7a4a" }}>
+                                代行出勤日（{workDates.length}日）:
+                              </span>{" "}
+                              {workDates.length > 0
+                                ? workDates.map((d) => fmtDateWeekday(d)).join("、")
+                                : "—"}
+                            </div>
+                            <div style={{ color: "#555", lineHeight: 1.6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 11, color: "#c03030" }}>
+                                代行された日（{absenceDates.length}日）:
+                              </span>{" "}
+                              {absenceDates.length > 0 ? (
+                                <>
+                                  {absenceDates.map((d) => fmtDateWeekday(d)).join("、")}
+                                  <span style={{ marginLeft: 6, fontSize: 10, color: "#999" }}>
+                                    ※ 出勤なし
+                                  </span>
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </div>
+                          </div>
                         </div>
                       );
                     })()}
