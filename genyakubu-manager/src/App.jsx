@@ -375,7 +375,7 @@ export default function App() {
                         : view === VIEWS.SUBS
                           ? "アルバイト代行管理"
                           : view === VIEWS.STAFF
-                            ? "バイト・教科管理"
+                            ? "バイト管理"
                             : selected || ""}
             </h1>
           </div>
