@@ -1,8 +1,44 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
+
+const MENU_CONFIG = [
+  { key: VIEWS.DASH, icon: "📋", label: "ダッシュボード" },
+  {
+    key: VIEWS.ALL, icon: "📊", label: "全講師一覧",
+    children: [
+      { key: VIEWS.HEATMAP, icon: "🔥", label: "繁忙度ヒートマップ" },
+      { key: VIEWS.COMPARE, icon: "⚖", label: "講師比較" },
+    ],
+  },
+  {
+    key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理",
+    children: [
+      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休校日・テスト期間" },
+    ],
+  },
+  {
+    key: VIEWS.STAFF, icon: "👥", label: "バイト管理",
+    children: [
+      { key: VIEWS.SUBS, icon: "🔄", label: "代行管理", badge: true },
+      { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "確定した代行一覧" },
+    ],
+  },
+  { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
+  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal" },
+];
+
+// child view key → parent view key のマッピングを事前構築
+const CHILD_TO_PARENT = new Map();
+for (const item of MENU_CONFIG) {
+  if (item.children) {
+    for (const child of item.children) {
+      CHILD_TO_PARENT.set(child.key, item.key);
+    }
+  }
+}
 
 export function Sidebar({
   open,
@@ -23,6 +59,26 @@ export function Sidebar({
   onSignIn,
   onSignOut,
 }) {
+  // 展開/折りたたみ状態管理
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+
+  // 手動トグル + アクティブ子ビューの自動展開を統合
+  const effectiveExpanded = useMemo(() => {
+    const set = new Set(expandedGroups);
+    const parentOfActive = CHILD_TO_PARENT.get(view);
+    if (parentOfActive) set.add(parentOfActive);
+    return set;
+  }, [expandedGroups, view]);
+
+  const toggleGroup = (key) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
   const pending = useMemo(
@@ -73,31 +129,6 @@ export function Sidebar({
         : 0,
     [teacherGroups]
   );
-
-  const navItem = (key, icon, label, extra = null) => {
-    const active = !selected && view === key;
-    return (
-      <button
-        key={key}
-        onClick={() => onSelectView(key)}
-        style={{
-          display: "block",
-          width: "100%",
-          padding: "7px 14px",
-          border: "none",
-          background: active ? "#3a3a6e" : "transparent",
-          color: active ? "#fff" : "#ccc",
-          textAlign: "left",
-          cursor: "pointer",
-          fontSize: 12,
-          fontWeight: active ? 700 : 400,
-        }}
-      >
-        {icon} {label}
-        {extra}
-      </button>
-    );
-  };
 
   return (
     <>
@@ -182,19 +213,14 @@ export function Sidebar({
           />
         </div>
         <div style={{ borderBottom: "1px solid #2a2a4e" }}>
-          {navItem(VIEWS.DASH, "📋", "ダッシュボード")}
-          {navItem(VIEWS.ALL, "📊", "全講師一覧")}
-          {navItem(VIEWS.HEATMAP, "🔥", "繁忙度ヒートマップ")}
-          {navItem(VIEWS.COMPARE, "⚖", "講師比較")}
-          {navItem(VIEWS.HOLIDAYS, "📅", "休講日・テスト期間")}
-          {navItem(VIEWS.TIMETABLE, "🗓", "時間割管理")}
-          {navItem(VIEWS.MASTER, "⚙", "コースマスター管理")}
-          {navItem(VIEWS.STAFF, "👥", "バイト・教科管理")}
-          {navItem(
-            VIEWS.SUBS,
-            "🔄",
-            "代行管理",
-            pending > 0 && (
+          {MENU_CONFIG.map((item) => {
+            const hasChildren = !!item.children;
+            const isExpanded = hasChildren && effectiveExpanded.has(item.key);
+            const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);
+            const selfActive = !selected && view === item.key;
+            const isModal = item.action === "modal";
+
+            const pendingBadge = pending > 0 && (
               <span
                 role="button"
                 tabIndex={0}
@@ -223,25 +249,109 @@ export function Sidebar({
               >
                 {pending}
               </span>
-            )
-          )}
-          {navItem(VIEWS.CONFIRMED_SUBS, "✅", "代行確定一覧")}
-          <button
-            onClick={onOpenDataMgr}
-            style={{
-              display: "block",
-              width: "100%",
-              padding: "7px 14px",
-              border: "none",
-              background: "transparent",
-              color: "#ccc",
-              textAlign: "left",
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            💾 データ管理
-          </button>
+            );
+
+            return (
+              <div key={item.key}>
+                <button
+                  onClick={() => {
+                    if (isModal) {
+                      onOpenDataMgr();
+                    } else {
+                      onSelectView(item.key);
+                    }
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    width: "100%",
+                    padding: "7px 14px",
+                    border: "none",
+                    background: selfActive
+                      ? "#3a3a6e"
+                      : childActive
+                        ? "#2a2a4e"
+                        : "transparent",
+                    color: selfActive ? "#fff" : childActive ? "#ddd" : "#ccc",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: selfActive ? 700 : childActive ? 600 : 400,
+                  }}
+                >
+                  <span style={{ flex: 1 }}>
+                    {item.icon} {item.label}
+                    {/* 折りたたみ時は親にバッジ表示 */}
+                    {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
+                  </span>
+                  {hasChildren && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroup(item.key);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          toggleGroup(item.key);
+                        }
+                      }}
+                      style={{
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        fontSize: 10,
+                        color: "#888",
+                        cursor: "pointer",
+                        transition: "background .15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "#3a3a5e"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      {isExpanded ? "▾" : "▸"}
+                    </span>
+                  )}
+                </button>
+                {hasChildren && (
+                  <div
+                    style={{
+                      maxHeight: isExpanded ? `${item.children.length * 36}px` : "0px",
+                      overflow: "hidden",
+                      transition: "max-height 0.2s ease",
+                      background: "#16162e",
+                    }}
+                  >
+                    {item.children.map((child) => {
+                      const childIsActive = !selected && view === child.key;
+                      return (
+                        <button
+                          key={child.key}
+                          onClick={() => onSelectView(child.key)}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "7px 14px 7px 28px",
+                            border: "none",
+                            background: childIsActive ? "#3a3a6e" : "transparent",
+                            color: childIsActive ? "#fff" : "#aaa",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontSize: 11,
+                            fontWeight: childIsActive ? 700 : 400,
+                          }}
+                        >
+                          {child.icon} {child.label}
+                          {child.badge && pendingBadge}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
           {totalTeachers === 0 && (
