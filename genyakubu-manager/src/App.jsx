@@ -508,6 +508,7 @@ export default function App() {
               isAdmin={isAdmin}
               timetables={timetables}
               activeTimetableId={activeTimetableId}
+              saveSlots={saveSlots}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (

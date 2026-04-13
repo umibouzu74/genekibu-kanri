@@ -11,6 +11,7 @@ import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { formatBiweeklyNote, formatBiweeklyTeacher, formatCount, getSlotWeekType, getWeekType, weightedSlotCount } from "../../utils/biweekly";
 import { fmtDate } from "../../data";
+import { ExcelGridView } from "./ExcelGridView";
 
 // Extracted to its own component so that hover state is scoped to a
 // single card instead of requiring DOM querySelector manipulation.
@@ -154,6 +155,7 @@ export function MasterView({
   isAdmin,
   timetables,
   activeTimetableId,
+  saveSlots,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -229,6 +231,32 @@ export function MasterView({
     onSetBiweeklyAnchors(biweeklyAnchors.filter((a) => a.date !== date));
   };
 
+  if (tab === "excel")
+    return (
+      <div style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <button onClick={() => setTab("list")} style={S.btn(false)}>
+            コマ一覧
+          </button>
+          <button onClick={() => setTab("biweekly")} style={S.btn(false)}>
+            隔週管理
+          </button>
+          <button onClick={() => setTab("excel")} style={S.btn(true)}>
+            時間割表
+          </button>
+        </div>
+        <ExcelGridView
+          slots={slots}
+          saveSlots={saveSlots}
+          onEdit={onEdit}
+          biweeklyAnchors={biweeklyAnchors}
+          isAdmin={isAdmin}
+          timetables={timetables}
+          activeTimetableId={activeTimetableId}
+        />
+      </div>
+    );
+
   if (tab === "biweekly")
     return (
       <div style={{ marginTop: 12 }}>
@@ -238,6 +266,9 @@ export function MasterView({
           </button>
           <button onClick={() => setTab("biweekly")} style={S.btn(true)}>
             隔週管理
+          </button>
+          <button onClick={() => setTab("excel")} style={S.btn(false)}>
+            時間割表
           </button>
         </div>
         <div
@@ -513,6 +544,9 @@ export function MasterView({
         </button>
         <button onClick={() => setTab("biweekly")} style={S.btn(false)}>
           隔週管理
+        </button>
+        <button onClick={() => setTab("excel")} style={S.btn(false)}>
+          時間割表
         </button>
       </div>
       <div
