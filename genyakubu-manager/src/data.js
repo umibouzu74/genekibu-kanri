@@ -221,12 +221,12 @@ export const INIT_HOLIDAYS = [
 
 export const INIT_SLOTS = [
   // ── 中学 月曜 ──
-  {id:1,day:"月",time:"18:55-19:40",grade:"中2",cls:"S/AB",room:"601",subj:"社会",teacher:"西岡",note:"合同"},
+  {id:1,day:"月",time:"18:55-19:40",grade:"中2",cls:"S/AB/C",room:"601",subj:"社会",teacher:"西岡",note:"合同"},
   {id:2,day:"月",time:"19:50-20:35",grade:"中2",cls:"S",room:"602",subj:"国語",teacher:"小松",note:""},
   {id:3,day:"月",time:"19:50-20:35",grade:"中2",cls:"AB",room:"601",subj:"英/数",teacher:"堀上",note:"隔週(河野)"},
   {id:4,day:"月",time:"19:50-20:35",grade:"中2",cls:"C",room:"603",subj:"数/英",teacher:"河野",note:"隔週(堀上)"},
   {id:5,day:"月",time:"20:45-21:30",grade:"中2",cls:"S",room:"602",subj:"英/数",teacher:"堀上",note:"隔週(河野)"},
-  {id:6,day:"月",time:"20:45-21:30",grade:"中2",cls:"AB",room:"601",subj:"国語",teacher:"小松",note:"合同"},
+  {id:6,day:"月",time:"20:45-21:30",grade:"中2",cls:"AB/C",room:"601",subj:"国語",teacher:"小松",note:"合同"},
   {id:95,day:"月",time:"21:35-21:50",grade:"中2",cls:"S/AB",room:"601",subj:"確認テスト",teacher:"堀上",note:"担任"},
   // ── 中学 火曜 中1 ──
   {id:7,day:"火",time:"18:55-19:40",grade:"中1",cls:"S/AB",room:"601",subj:"社会",teacher:"西岡",note:"合同"},
