@@ -7,7 +7,7 @@ import {
   gradeColor as GC,
   fmtDate,
 } from "../../data";
-import { DASH_SECTIONS } from "../../constants/schedule";
+import { getDashSections } from "../../constants/schedule";
 import {
   formatBiweeklyTeacher,
   getSlotWeekType,
@@ -561,9 +561,9 @@ export function ExcelGridView({
           {selectedDay}曜日のコマがありません
         </div>
       ) : (
-        DASH_SECTIONS.map((sec) => {
+        getDashSections(selectedDay).map((sec) => {
           const color =
-            DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+            sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
           return (
             <ExcelSection
               key={sec.key}
