@@ -419,7 +419,7 @@ function ExcelSection({
                       // Check if this is the start of a combined cell
                       const combined = combinedCells.find((c) => c.colIdx === colIdx);
                       if (combined) {
-                        const cellKey = `${time}_${col.grade}_${combined.slot.cls}`;
+                        const cellKey = `${time}_${col.grade}_${combined.slot.cls}_${combined.slot.room}`;
                         return (
                           <ExcelCell
                             key={cellKey}
