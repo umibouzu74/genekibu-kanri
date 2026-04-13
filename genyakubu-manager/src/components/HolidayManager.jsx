@@ -16,16 +16,44 @@ const GRADE_COLOR = {
 };
 
 // Extract unique class groups (school/course names) from configured slots.
-// For high school, the class group is the first token in the subject name
-// (e.g., "高松西 数学" → "高松西").
+// For high school, the class group is either:
+//   - the first token for space-separated subjects ("高松西 数学" → "高松西")
+//   - a common prefix for concatenated subjects ("共テ英語(St)" → "共テ")
 function extractClassGroups(slots, grades) {
   const groups = new Set();
+  const singleTokenSubjs = new Set();
   const gradeSet = new Set(grades);
   for (const s of slots) {
     if (gradeSet.size > 0 && !gradeSet.has(s.grade)) continue;
     if (gradeToDept(s.grade) !== "高校部") continue;
     const parts = s.subj.split(/\s+/);
-    if (parts.length >= 2) groups.add(parts[0]);
+    if (parts.length >= 2) {
+      groups.add(parts[0]);
+    } else {
+      singleTokenSubjs.add(s.subj);
+    }
+  }
+  // Find shortest common prefix (≥2 chars) among 3+ single-token subjects
+  if (singleTokenSubjs.size >= 2) {
+    const subjs = [...singleTokenSubjs];
+    for (let len = 2; len <= 8; len++) {
+      const counts = {};
+      for (const s of subjs) {
+        if (s.length >= len) {
+          const p = s.slice(0, len);
+          counts[p] = (counts[p] || 0) + 1;
+        }
+      }
+      for (const [prefix, count] of Object.entries(counts)) {
+        if (count < 3) continue;
+        // Skip if a shorter prefix already covers this group
+        let dominated = false;
+        for (const g of groups) {
+          if (prefix.startsWith(g)) { dominated = true; break; }
+        }
+        if (!dominated) groups.add(prefix);
+      }
+    }
   }
   return [...groups].sort();
 }
