@@ -24,7 +24,7 @@ export function TimetableManagerView({
         type: tt.type,
         startDate: tt.startDate || "",
         endDate: tt.endDate || "",
-        grades: tt.grades.join(", "),
+        grades: (tt.grades || []).join(", "),
       });
     },
     []
@@ -184,7 +184,7 @@ export function TimetableManagerView({
                         : tt.endDate
                           ? `〜 ${tt.endDate}`
                           : "期間: 無制限"}
-                    {tt.grades.length > 0 && (
+                    {tt.grades?.length > 0 && (
                       <span style={{ marginLeft: 8 }}>
                         対象: {tt.grades.join(", ")}
                       </span>
@@ -393,7 +393,7 @@ export function TimetableManagerView({
                 </button>
               )}
               <span style={{ fontSize: 10, color: "#aaa" }}>
-                {group.grades.join(", ")}
+                {(group.grades || []).join(", ")}
               </span>
             </div>
           ))}
