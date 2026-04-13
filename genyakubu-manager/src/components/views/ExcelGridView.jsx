@@ -443,8 +443,8 @@ function ExcelSection({
                     }
 
                     // Individual slot
-                    const slot = findSlotForCell(sectionSlots, day, time, col.grade, col.cls);
-                    const cellKey = `${time}_${col.grade}_${col.cls}`;
+                    const slot = findSlotForCell(sectionSlots, day, time, col.grade, col.cls, col.room);
+                    const cellKey = `${time}_${col.grade}_${col.cls}_${col.room}`;
                     return (
                       <ExcelCell
                         key={cellKey}
