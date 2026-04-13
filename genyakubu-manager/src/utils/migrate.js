@@ -2,9 +2,17 @@
 // Pure data-transformation functions used during localStorage load
 // (useSyncedStorage migrate option) and JSON import (useDataIO).
 
-/** Add default `scope` to legacy holidays that lack it. */
+/** Add default `scope`, `id`, `targetGrades`, `subjKeywords` to legacy holidays. */
 export const migrateHolidays = (arr) =>
-  Array.isArray(arr) ? arr.map((x) => ({ ...x, scope: x.scope || ["全部"] })) : arr;
+  Array.isArray(arr)
+    ? arr.map((x, i) => ({
+        ...x,
+        id: typeof x.id === "number" ? x.id : i + 1,
+        scope: x.scope || ["全部"],
+        targetGrades: Array.isArray(x.targetGrades) ? x.targetGrades : [],
+        subjKeywords: Array.isArray(x.subjKeywords) ? x.subjKeywords : [],
+      }))
+    : arr;
 
 /** Convert legacy string[] staff to PartTimeStaffObject[]. */
 export const migratePartTimeStaff = (arr) =>

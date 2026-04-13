@@ -2,16 +2,38 @@ import { describe, it, expect } from "vitest";
 import { migrateHolidays, migratePartTimeStaff, migrateSubs } from "./migrate";
 
 describe("migrateHolidays", () => {
-  it("adds default scope when missing", () => {
+  it("adds default scope, id, targetGrades, subjKeywords when missing", () => {
     const input = [{ date: "2026-01-01", label: "元旦" }];
     const result = migrateHolidays(input);
-    expect(result).toEqual([{ date: "2026-01-01", label: "元旦", scope: ["全部"] }]);
+    expect(result).toEqual([
+      { date: "2026-01-01", label: "元旦", id: 1, scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ]);
   });
 
   it("preserves existing scope", () => {
     const input = [{ date: "2026-01-01", label: "元旦", scope: ["中学部"] }];
     const result = migrateHolidays(input);
     expect(result[0].scope).toEqual(["中学部"]);
+  });
+
+  it("preserves existing id, targetGrades, subjKeywords", () => {
+    const input = [
+      { id: 42, date: "2026-01-01", label: "x", scope: ["高校部"], targetGrades: ["高1"], subjKeywords: ["高松西"] },
+    ];
+    const result = migrateHolidays(input);
+    expect(result[0].id).toBe(42);
+    expect(result[0].targetGrades).toEqual(["高1"]);
+    expect(result[0].subjKeywords).toEqual(["高松西"]);
+  });
+
+  it("assigns sequential ids to entries without id", () => {
+    const input = [
+      { date: "2026-01-01", label: "a" },
+      { date: "2026-01-02", label: "b" },
+    ];
+    const result = migrateHolidays(input);
+    expect(result[0].id).toBe(1);
+    expect(result[1].id).toBe(2);
   });
 
   it("returns non-array input unchanged", () => {

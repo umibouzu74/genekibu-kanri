@@ -1,20 +1,53 @@
-import { useState } from "react";
-import { DEPARTMENTS, DEPT_COLOR } from "../data";
+import { useMemo, useState } from "react";
+import { ALL_GRADES, DEPARTMENTS, DEPT_COLOR, gradeToDept } from "../data";
+import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { S } from "../styles/common";
 
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 
-export function HolidayManager({ holidays, onSave, isAdmin }) {
+const MIDDLE_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "中学部");
+const HIGH_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "高校部");
+
+const GRADE_COLOR = {
+  中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
+  高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
+};
+
+// Extract unique subject-name prefixes (school/course names) from slots,
+// grouped by grade.
+function extractSubjPrefixes(slots, grades) {
+  const prefixes = new Set();
+  const gradeSet = new Set(grades);
+  for (const s of slots) {
+    if (gradeSet.size > 0 && !gradeSet.has(s.grade)) continue;
+    if (gradeToDept(s.grade) !== "高校部") continue;
+    const parts = s.subj.split(/\s+/);
+    if (parts.length >= 2) prefixes.add(parts[0]);
+  }
+  return [...prefixes].sort();
+}
+
+export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   const [date, setDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState(["全部"]);
+  const [targetGrades, setTargetGrades] = useState([]);
+  const [allGrades, setAllGrades] = useState(true);
+  const [subjKeywords, setSubjKeywords] = useState([]);
+  const [customKw, setCustomKw] = useState("");
   const [filter, setFilter] = useState("");
-  const [editDate, setEditDate] = useState(null);
+  const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const toasts = useToasts();
   const confirm = useConfirm();
+
+  // Derive available subject prefixes based on selected grades
+  const availablePrefixes = useMemo(
+    () => extractSubjPrefixes(slots, allGrades ? [] : targetGrades),
+    [slots, targetGrades, allGrades]
+  );
 
   const toggleScope = (dept) => {
     if (dept === "全部") {
@@ -24,6 +57,74 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
     let next = scope.filter((s) => s !== "全部");
     next = next.includes(dept) ? next.filter((s) => s !== dept) : [...next, dept];
     setScope(next.length === 0 ? ["全部"] : next);
+  };
+
+  // ─── Grade selection (same pattern as ExamPeriodManager) ───
+  const toggleGrade = (g) => {
+    if (allGrades) {
+      setAllGrades(false);
+      setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
+      return;
+    }
+    const next = targetGrades.includes(g)
+      ? targetGrades.filter((x) => x !== g)
+      : [...targetGrades, g];
+    if (next.length === 0) {
+      setAllGrades(true);
+      setTargetGrades([]);
+    } else {
+      setTargetGrades(next);
+    }
+  };
+
+  const selectAllGrades = () => {
+    setAllGrades(true);
+    setTargetGrades([]);
+  };
+
+  const selectMiddle = () => {
+    setAllGrades(false);
+    setTargetGrades(MIDDLE_GRADES);
+  };
+
+  const selectHigh = () => {
+    setAllGrades(false);
+    setTargetGrades(HIGH_GRADES);
+  };
+
+  const isGradeSelected = (g) => allGrades || targetGrades.includes(g);
+
+  // ─── Subject keyword selection ───
+  const toggleKeyword = (kw) => {
+    setSubjKeywords((prev) =>
+      prev.includes(kw) ? prev.filter((k) => k !== kw) : [...prev, kw]
+    );
+  };
+
+  const addCustomKeyword = () => {
+    const kw = customKw.trim();
+    if (!kw) return;
+    if (!subjKeywords.includes(kw)) {
+      setSubjKeywords((prev) => [...prev, kw]);
+    }
+    setCustomKw("");
+  };
+
+  const removeKeyword = (kw) => {
+    setSubjKeywords((prev) => prev.filter((k) => k !== kw));
+  };
+
+  // ─── Form actions ───
+  const resetForm = () => {
+    setDate("");
+    setLabel("");
+    setScope(["全部"]);
+    setTargetGrades([]);
+    setAllGrades(true);
+    setSubjKeywords([]);
+    setCustomKw("");
+    setEditId(null);
+    setError("");
   };
 
   const handleAdd = () => {
@@ -36,52 +137,65 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
       setError("日付の形式が正しくありません");
       return;
     }
-    const isUpdate = holidays.some((h) => h.date === date);
-    if (isUpdate && !editDate) {
-      // Overwriting an existing holiday without entering edit mode.
-      toasts.info(`${date} の既存の休講日を上書きしました`);
+
+    const grades = allGrades ? [] : [...targetGrades];
+    const entry = {
+      id: editId != null ? editId : nextNumericId(holidays),
+      date,
+      label: label || "休講",
+      scope: [...scope],
+      targetGrades: grades,
+      subjKeywords: [...subjKeywords],
+    };
+
+    if (editId != null) {
+      onSave(holidays.map((h) => (h.id === editId ? entry : h)));
+      toasts.success("休講日を更新しました");
+    } else {
+      onSave([...holidays, entry]);
+      toasts.success("休講日を追加しました");
     }
-    const entry = { date, label: label || "休講", scope: [...scope] };
-    onSave([...holidays.filter((h) => h.date !== date), entry]);
-    setDate("");
-    setLabel("");
-    setScope(["全部"]);
-    setEditDate(null);
-    toasts.success(editDate ? "休講日を更新しました" : "休講日を追加しました");
+    resetForm();
   };
+
   const handleEdit = (h) => {
     setDate(h.date);
     setLabel(h.label);
     setScope(h.scope || ["全部"]);
-    setEditDate(h.date);
+    if ((h.targetGrades || []).length === 0) {
+      setAllGrades(true);
+      setTargetGrades([]);
+    } else {
+      setAllGrades(false);
+      setTargetGrades([...h.targetGrades]);
+    }
+    setSubjKeywords([...(h.subjKeywords || [])]);
+    setEditId(h.id);
     setError("");
   };
-  const cancelEdit = () => {
-    setDate("");
-    setLabel("");
-    setScope(["全部"]);
-    setEditDate(null);
-    setError("");
-  };
-  const handleDel = async (d) => {
+
+  const handleDel = async (h) => {
     const ok = await confirm({
       title: "休講日の削除",
-      message: `${d} の休講日を削除しますか？`,
+      message: `${h.date}${h.label ? `（${h.label}）` : ""} の休講日を削除しますか？`,
       okLabel: "削除",
       tone: "danger",
     });
     if (!ok) return;
-    onSave(holidays.filter((h) => h.date !== d));
+    onSave(holidays.filter((x) => x.id !== h.id));
     toasts.success("休講日を削除しました");
   };
 
-  const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   const filtered = filter
     ? sorted.filter((h) => {
         const s = h.scope || ["全部"];
         return s.includes("全部") || s.includes(filter);
       })
     : sorted;
+
+  // Show grade/keyword selection only when scope is NOT 全部
+  const showGradeSelection = !scope.includes("全部");
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -96,7 +210,7 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
-          {editDate ? "休講日を編集" : "休講日を追加"}
+          {editId != null ? "休講日を編集" : "休講日を追加"}
         </div>
         <div
           style={{
@@ -134,6 +248,8 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
             {error}
           </div>
         )}
+
+        {/* 対象部門 */}
         <div
           style={{
             display: "flex",
@@ -187,12 +303,223 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
             </label>
           ))}
         </div>
+
+        {/* 対象学年 (部門が全部でない場合のみ表示) */}
+        {showGradeSelection && (
+          <div style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700 }}>対象学年:</span>
+              <button
+                type="button"
+                onClick={selectAllGrades}
+                style={{
+                  ...S.btn(allGrades),
+                  fontSize: 11,
+                  padding: "4px 10px",
+                }}
+              >
+                全学年
+              </button>
+              {scope.includes("中学部") && (
+                <button
+                  type="button"
+                  onClick={selectMiddle}
+                  style={{
+                    ...S.btn(
+                      !allGrades &&
+                        MIDDLE_GRADES.every((g) => targetGrades.includes(g)) &&
+                        !HIGH_GRADES.some((g) => targetGrades.includes(g))
+                    ),
+                    fontSize: 11,
+                    padding: "4px 10px",
+                  }}
+                >
+                  中学部一括
+                </button>
+              )}
+              {scope.includes("高校部") && (
+                <button
+                  type="button"
+                  onClick={selectHigh}
+                  style={{
+                    ...S.btn(
+                      !allGrades &&
+                        HIGH_GRADES.every((g) => targetGrades.includes(g)) &&
+                        !MIDDLE_GRADES.some((g) => targetGrades.includes(g))
+                    ),
+                    fontSize: 11,
+                    padding: "4px 10px",
+                  }}
+                >
+                  高校部一括
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {ALL_GRADES.filter((g) => {
+                const dept = gradeToDept(g);
+                return scope.includes(dept);
+              }).map((g) => {
+                const dept = gradeToDept(g);
+                const col = GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                const sel = isGradeSelected(g);
+                return (
+                  <label
+                    key={g}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: 12,
+                      padding: "4px 10px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      background: sel ? col.b : "#f5f5f5",
+                      color: sel ? col.f : "#aaa",
+                      border: `1px solid ${sel ? col.accent || "#ccc" : "#ddd"}`,
+                      fontWeight: sel ? 700 : 400,
+                      transition: "all .15s",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sel}
+                      onChange={() => toggleGrade(g)}
+                      style={{ display: "none" }}
+                    />
+                    {g}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 対象科目キーワード (学年が個別選択かつ高校部を含む場合のみ表示) */}
+        {showGradeSelection && !allGrades && targetGrades.some((g) => gradeToDept(g) === "高校部") && (
+          <div style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700 }}>科目キーワード:</span>
+              <span style={{ fontSize: 10, color: "#888" }}>（任意・未選択＝全科目対象）</span>
+            </div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+              {availablePrefixes.map((p) => {
+                const sel = subjKeywords.includes(p);
+                return (
+                  <label
+                    key={p}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: 11,
+                      padding: "3px 8px",
+                      borderRadius: 5,
+                      cursor: "pointer",
+                      background: sel ? "#e0ecf8" : "#f5f5f5",
+                      color: sel ? "#1a4a7a" : "#999",
+                      border: `1px solid ${sel ? "#6aa0d0" : "#ddd"}`,
+                      fontWeight: sel ? 700 : 400,
+                      transition: "all .15s",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sel}
+                      onChange={() => toggleKeyword(p)}
+                      style={{ display: "none" }}
+                    />
+                    {p}
+                  </label>
+                );
+              })}
+            </div>
+            {/* Custom keyword input */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input
+                value={customKw}
+                onChange={(e) => setCustomKw(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomKeyword();
+                  }
+                }}
+                placeholder="カスタムキーワード"
+                style={{ ...S.input, width: 140, fontSize: 11 }}
+              />
+              <button
+                type="button"
+                onClick={addCustomKeyword}
+                style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+              >
+                追加
+              </button>
+            </div>
+            {/* Selected keywords display */}
+            {subjKeywords.length > 0 && (
+              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 6 }}>
+                {subjKeywords.filter((kw) => !availablePrefixes.includes(kw)).map((kw) => (
+                  <span
+                    key={kw}
+                    style={{
+                      fontSize: 10,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: "#e0ecf8",
+                      color: "#1a4a7a",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    {kw}
+                    <button
+                      type="button"
+                      onClick={() => removeKeyword(kw)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 10,
+                        color: "#1a4a7a",
+                        padding: 0,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleAdd} style={S.btn(true)}>
-            {editDate ? "更新" : "追加"}
+            {editId != null ? "更新" : "追加"}
           </button>
-          {editDate && (
-            <button onClick={cancelEdit} style={S.btn(false)}>
+          {editId != null && (
+            <button onClick={resetForm} style={S.btn(false)}>
               キャンセル
             </button>
           )}
@@ -246,16 +573,18 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
         ) : (
           filtered.map((h, i) => {
             const sc = h.scope || ["全部"];
+            const tg = h.targetGrades || [];
+            const sk = h.subjKeywords || [];
             return (
               <div
-                key={h.date}
+                key={h.id}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "8px 14px",
                   borderBottom: i < filtered.length - 1 ? "1px solid #eee" : "none",
-                  background: editDate === h.date ? "#fffbe6" : i % 2 ? "#f8f9fa" : "#fff",
+                  background: editId === h.id ? "#fffbe6" : i % 2 ? "#f8f9fa" : "#fff",
                 }}
               >
                 <div
@@ -268,7 +597,7 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
                 >
                   <strong style={{ fontSize: 12, minWidth: 90 }}>{h.date}</strong>
                   <span style={{ fontSize: 12 }}>{h.label}</span>
-                  <div style={{ display: "flex", gap: 3 }}>
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {sc.map((d) => (
                       <span
                         key={d}
@@ -282,6 +611,40 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
                         }}
                       >
                         {d}
+                      </span>
+                    ))}
+                    {tg.map((g) => {
+                      const dept = gradeToDept(g);
+                      const col = GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                      return (
+                        <span
+                          key={g}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 6px",
+                            borderRadius: 4,
+                            background: col.b,
+                            color: col.f,
+                          }}
+                        >
+                          {g}
+                        </span>
+                      );
+                    })}
+                    {sk.map((kw) => (
+                      <span
+                        key={kw}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          background: "#e0ecf8",
+                          color: "#1a4a7a",
+                        }}
+                      >
+                        {kw}
                       </span>
                     ))}
                   </div>
@@ -304,7 +667,7 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDel(h.date)}
+                      onClick={() => handleDel(h)}
                       aria-label={`${h.date} の休講日を削除`}
                       style={{
                         background: "none",
@@ -323,7 +686,7 @@ export function HolidayManager({ holidays, onSave, isAdmin }) {
         )}
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
-        ※「全部」＝全部門休講。部門を個別に選択すると、該当部門のみ休講になります。
+        ※「全部」＝全部門休講。部門を個別に選択すると、学年や科目キーワードで対象を絞り込めます。
       </div>
     </div>
   );

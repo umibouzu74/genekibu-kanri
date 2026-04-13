@@ -35,17 +35,36 @@ export function makeHolidayHelpers(holidays, examPeriods = []) {
   const examPeriodsFor = (d) =>
     examPeriods.filter((ep) => d >= ep.startDate && d <= ep.endDate);
 
-  const isOffForGrade = (d, grade) => {
-    // Holiday check (existing)
+  // Check if a specific slot is off on a given date.
+  // `subj` is optional for backward compat; when omitted, holidays with
+  // subjKeywords set will NOT match (safe-side).
+  const isOffForGrade = (d, grade, subj) => {
     const dept = gradeToDept(grade);
     const offByHoliday = holidays.some((h) => {
       if (h.date !== d) return false;
-      const sc = h.scope || ["全部"];
-      return sc.includes("全部") || (dept && sc.includes(dept));
+
+      // 1. Grade-level check
+      const tg = h.targetGrades || [];
+      if (tg.length > 0) {
+        if (!tg.includes(grade)) return false;
+      } else {
+        // Fall back to department scope
+        const sc = h.scope || ["全部"];
+        if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
+      }
+
+      // 2. Subject keyword check
+      const sk = h.subjKeywords || [];
+      if (sk.length > 0) {
+        if (!subj) return false; // cannot match without subject info
+        if (!sk.some((kw) => subj.includes(kw))) return false;
+      }
+
+      return true;
     });
     if (offByHoliday) return true;
 
-    // Exam period check
+    // Exam period check (unchanged)
     return examPeriods.some((ep) => {
       if (d < ep.startDate || d > ep.endDate) return false;
       if (ep.targetGrades.length === 0) return true; // empty = all grades

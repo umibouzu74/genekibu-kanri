@@ -257,6 +257,16 @@ describe("staffMonthlyRegularDates", () => {
     expect(result).toContain("2026-04-06");
   });
 
+  it("does not exclude holidays with targetGrades or subjKeywords set", () => {
+    const holidays = [
+      { date: "2026-04-06", label: "高松西試験", scope: ["全部"], targetGrades: ["高1"], subjKeywords: [] },
+      { date: "2026-04-08", label: "共テ休み", scope: ["全部"], targetGrades: [], subjKeywords: ["共テ"] },
+    ];
+    const result = staffMonthlyRegularDates(slots, "鈴木", holidays, 2026, 4);
+    expect(result).toContain("2026-04-06");
+    expect(result).toContain("2026-04-08");
+  });
+
   it("returns empty array for a person with no slots", () => {
     expect(staffMonthlyRegularDates(slots, "unknown", [], 2026, 4)).toEqual([]);
   });

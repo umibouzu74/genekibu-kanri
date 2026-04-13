@@ -32,20 +32,36 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
   const holMap = useMemo(() => {
     const m = {};
     holidays.forEach((h) => {
-      m[h.date] = h;
+      if (!m[h.date]) m[h.date] = [];
+      m[h.date].push(h);
     });
     return m;
   }, [holidays]);
 
   const isOffForGrade = useCallback(
-    (ds, grade) => {
+    (ds, grade, subj) => {
       // Holiday check
-      const h = holMap[ds];
-      if (h) {
-        const sc = h.scope || ["全部"];
-        if (sc.includes("全部")) return true;
+      const hols = holMap[ds];
+      if (hols) {
         const dept = gradeToDept(grade);
-        if (dept && sc.includes(dept)) return true;
+        const off = hols.some((h) => {
+          // 1. Grade-level check
+          const tg = h.targetGrades || [];
+          if (tg.length > 0) {
+            if (!tg.includes(grade)) return false;
+          } else {
+            const sc = h.scope || ["全部"];
+            if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
+          }
+          // 2. Subject keyword check
+          const sk = h.subjKeywords || [];
+          if (sk.length > 0) {
+            if (!subj) return false;
+            if (!sk.some((kw) => subj.includes(kw))) return false;
+          }
+          return true;
+        });
+        if (off) return true;
       }
       // Exam period check
       return examPeriods.some((ep) => {
@@ -111,11 +127,17 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
           const ds = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
           const dow = new Date(year, month - 1, d).getDay();
           const dn = WEEKDAYS[dow];
-          const hol = holMap[ds];
-          const isFullOff = hol && (hol.scope || ["全部"]).includes("全部");
-          const offDepts = hol
-            ? [...new Set((hol.scope || ["全部"]).filter((s) => s !== "全部"))]
-            : [];
+          const hols = holMap[ds] || [];
+          const isFullOff = hols.some((h) => {
+            const sc = h.scope || ["全部"];
+            if (!sc.includes("全部")) return false;
+            if ((h.targetGrades || []).length > 0) return false;
+            if ((h.subjKeywords || []).length > 0) return false;
+            return true;
+          });
+          const offDepts = [
+            ...new Set(hols.flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))),
+          ];
           const epActive = examPeriodsForDate(ds);
           const hasExam = epActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
@@ -124,7 +146,7 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
             ? []
             : (dayMap[dn] || []).filter(
                 (s) =>
-                  !isOffForGrade(ds, s.grade) &&
+                  !isOffForGrade(ds, s.grade, s.subj) &&
                   (!timetables ||
                     timetables.length === 0 ||
                     isTimetableActiveForDate(
@@ -169,7 +191,7 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
                 <span>{d}</span>
                 {isFullOff && (
                   <span style={{ fontSize: 9, color: "#c44", fontWeight: 400 }}>
-                    {hol.label}
+                    {hols[0].label}
                   </span>
                 )}
                 {!isFullOff && offDepts.length > 0 && (

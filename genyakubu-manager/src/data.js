@@ -173,7 +173,15 @@ export function staffMonthlyRegularDates(slots, staffName, holidays, year, month
 
   const slotDays = new Set(teacherSlots.map((s) => s.day));
   const holidayDates = new Set(
-    holidays.filter((h) => (h.scope || ["全部"]).includes("全部")).map((h) => h.date)
+    holidays
+      .filter((h) => {
+        const sc = h.scope || ["全部"];
+        if (!sc.includes("全部")) return false;
+        if ((h.targetGrades || []).length > 0) return false;
+        if ((h.subjKeywords || []).length > 0) return false;
+        return true;
+      })
+      .map((h) => h.date)
   );
 
   const dates = [];
@@ -205,18 +213,18 @@ export function dateToDay(dateStr) {
 }
 
 export const INIT_HOLIDAYS = [
-  { date: "2026-04-29", label: "昭和の日", scope: ["全部"] },
-  { date: "2026-05-03", label: "憲法記念日", scope: ["全部"] },
-  { date: "2026-05-04", label: "みどりの日", scope: ["全部"] },
-  { date: "2026-05-05", label: "こどもの日", scope: ["全部"] },
-  { date: "2026-05-06", label: "振替休日", scope: ["全部"] },
-  { date: "2026-07-20", label: "海の日", scope: ["全部"] },
-  { date: "2026-08-11", label: "山の日", scope: ["全部"] },
-  { date: "2026-09-21", label: "敬老の日", scope: ["全部"] },
-  { date: "2026-09-23", label: "秋分の日", scope: ["全部"] },
-  { date: "2026-10-12", label: "スポーツの日", scope: ["全部"] },
-  { date: "2026-11-03", label: "文化の日", scope: ["全部"] },
-  { date: "2026-11-23", label: "勤労感謝の日", scope: ["全部"] },
+  { id: 1, date: "2026-04-29", label: "昭和の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 2, date: "2026-05-03", label: "憲法記念日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 3, date: "2026-05-04", label: "みどりの日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 4, date: "2026-05-05", label: "こどもの日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 5, date: "2026-05-06", label: "振替休日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 6, date: "2026-07-20", label: "海の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 7, date: "2026-08-11", label: "山の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 8, date: "2026-09-21", label: "敬老の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 9, date: "2026-09-23", label: "秋分の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 10, date: "2026-10-12", label: "スポーツの日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 11, date: "2026-11-03", label: "文化の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  { id: 12, date: "2026-11-23", label: "勤労感謝の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
 ];
 
 export const INIT_SLOTS = [
