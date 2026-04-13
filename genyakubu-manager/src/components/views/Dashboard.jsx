@@ -412,11 +412,20 @@ function SubSummaryCards({ subs, slots, todayStr }) {
 }
 
 export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriodsForDate = [] }) {
-  const fullOff = hols.some((h) => (h.scope || ["全部"]).includes("全部"));
+  const fullOff = hols.some((h) => {
+    const sc = h.scope || ["全部"];
+    if (!sc.includes("全部")) return false;
+    if ((h.targetGrades || []).length > 0) return false;
+    if ((h.subjKeywords || []).length > 0) return false;
+    return true;
+  });
   const offDepts = [...new Set(hols.flatMap((h) => h.scope || ["全部"]))].filter(
     (d) => d !== "全部"
   );
-  const hasPartial = !fullOff && offDepts.length > 0;
+  const granularHols = hols.filter(
+    (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
+  );
+  const hasPartial = !fullOff && (offDepts.length > 0 || granularHols.length > 0);
   const holLabel = hols[0]?.label;
   const hasExamPeriod = examPeriodsForDate.length > 0;
   const examLabel = examPeriodsForDate.map((ep) => ep.name).join(", ");
@@ -449,7 +458,7 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriods
           </span>
         )}
         {hasPartial && (
-          <div style={{ display: "flex", gap: 3 }}>
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
             {offDepts.map((d) => (
               <span
                 key={d}
@@ -463,6 +472,25 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriods
                 {d}休
               </span>
             ))}
+            {granularHols.map((h) => {
+              const parts = [
+                ...(h.targetGrades || []),
+                ...(h.subjKeywords || []),
+              ];
+              return (
+                <span
+                  key={h.id}
+                  style={{
+                    fontSize: 10,
+                    background: "rgba(255,255,255,0.25)",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                  }}
+                >
+                  {parts.join("・")}休{h.label ? `(${h.label})` : ""}
+                </span>
+              );
+            })}
           </div>
         )}
         {!fullOff && hasExamPeriod && (
@@ -630,7 +658,7 @@ export function Dashboard({ slots, holidays, subs, timetables, displayCutoff, ex
           : slots.filter(
               (s) =>
                 s.day === dow &&
-                !isOffForGrade(dateStr, s.grade) &&
+                !isOffForGrade(dateStr, s.grade, s.subj) &&
                 (!timetables ||
                   timetables.length === 0 ||
                   isTimetableActiveForDate(

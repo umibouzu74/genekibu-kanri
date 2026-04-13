@@ -32,7 +32,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -59,7 +59,12 @@ export function isSlot(x: unknown): x is Slot {
 }
 
 export function isHoliday(x: unknown): x is Holiday {
-  return isObject(x) && isString(x.date);
+  return (
+    isObject(x) &&
+    isString(x.date) &&
+    (x.targetGrades === undefined || Array.isArray(x.targetGrades)) &&
+    (x.subjKeywords === undefined || Array.isArray(x.subjKeywords))
+  );
 }
 
 export function isSub(x: unknown): x is Substitute {
@@ -394,6 +399,21 @@ export function migrateExportBundle(raw: unknown): unknown {
       dc.groups = (dc.groups as Array<Record<string, unknown>>).map((g) => ({
         ...g,
         startDate: g.startDate ?? null,
+      }));
+    }
+  }
+
+  // v7 → v8: Holiday に id, targetGrades, subjKeywords を追加。
+  //           同一日付に複数の休講日エントリを登録可能に。
+  if (version < 8) {
+    if (Array.isArray(bundle.holidays)) {
+      bundle.holidays = (
+        bundle.holidays as Array<Record<string, unknown>>
+      ).map((h, i) => ({
+        ...h,
+        id: isNumber(h.id) ? h.id : i + 1,
+        targetGrades: Array.isArray(h.targetGrades) ? h.targetGrades : [],
+        subjKeywords: Array.isArray(h.subjKeywords) ? h.subjKeywords : [],
       }));
     }
   }

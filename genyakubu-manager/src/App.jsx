@@ -523,7 +523,7 @@ export default function App() {
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
-              <HolidayManager holidays={holidays} onSave={saveHolidays} isAdmin={isAdmin} />
+              <HolidayManager holidays={holidays} slots={slots} onSave={saveHolidays} isAdmin={isAdmin} />
               <ExamPeriodManager examPeriods={examPeriods} onSave={saveExamPeriods} isAdmin={isAdmin} />
             </>
           )}

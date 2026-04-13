@@ -24,9 +24,12 @@ export interface Slot {
 }
 
 export interface Holiday {
+  id: number;
   date: string; // YYYY-MM-DD
   label: string;
   scope: HolidayScopeEntry[];
+  targetGrades: string[]; // 空配列 = scope に従う（既存動作）
+  subjKeywords: string[]; // 空配列 = 全科目対象。例: ["高松西"]
 }
 
 export interface Substitute {

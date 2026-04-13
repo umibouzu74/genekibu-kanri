@@ -84,6 +84,23 @@ describe("type guards", () => {
     expect(isHoliday({ label: "x" })).toBe(false);
   });
 
+  it("isHoliday accepts new-format with targetGrades and subjKeywords", () => {
+    expect(
+      isHoliday({
+        id: 1,
+        date: "2026-06-04",
+        label: "高松西試験",
+        scope: ["高校部"],
+        targetGrades: ["高1"],
+        subjKeywords: ["高松西"],
+      })
+    ).toBe(true);
+  });
+
+  it("isHoliday rejects invalid targetGrades", () => {
+    expect(isHoliday({ date: "2026-01-01", targetGrades: "bad" })).toBe(false);
+  });
+
   it("isSub accepts numeric and string slotId", () => {
     expect(isSub(goodSub)).toBe(true);
     expect(isSub({ ...goodSub, slotId: "abc" })).toBe(true);
@@ -577,6 +594,46 @@ describe("isCutoffGroup with startDate", () => {
 
   it("rejects group with invalid startDate", () => {
     expect(isCutoffGroup({ label: "中", grades: ["中1"], startDate: 123, date: null })).toBe(false);
+  });
+});
+
+describe("v7 → v8 migration: Holiday id, targetGrades, subjKeywords", () => {
+  it("adds id, targetGrades, subjKeywords to holidays without them", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 7,
+      holidays: [
+        { date: "2026-06-04", label: "休講", scope: ["高校部"] },
+        { date: "2026-06-05", label: "テスト", scope: ["全部"] },
+      ],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    const holidays = out.holidays as Array<Record<string, unknown>>;
+    expect(holidays[0].id).toBe(1);
+    expect(holidays[0].targetGrades).toEqual([]);
+    expect(holidays[0].subjKeywords).toEqual([]);
+    expect(holidays[1].id).toBe(2);
+  });
+
+  it("preserves existing id, targetGrades, subjKeywords", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 7,
+      holidays: [
+        { id: 99, date: "2026-06-04", label: "x", scope: ["高校部"], targetGrades: ["高1"], subjKeywords: ["高松西"] },
+      ],
+    }) as Record<string, unknown>;
+    const holidays = out.holidays as Array<Record<string, unknown>>;
+    expect(holidays[0].id).toBe(99);
+    expect(holidays[0].targetGrades).toEqual(["高1"]);
+    expect(holidays[0].subjKeywords).toEqual(["高松西"]);
+  });
+
+  it("v7 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 7,
+      holidays: [{ date: "2026-06-04", label: "休講", scope: ["高校部"] }],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
   });
 });
 

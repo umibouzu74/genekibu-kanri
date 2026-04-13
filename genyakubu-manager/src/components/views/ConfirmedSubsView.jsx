@@ -192,7 +192,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
           const daySlots = slots.filter(
             (s) =>
               s.day === dow &&
-              !isOffForGrade(dateStr, s.grade) &&
+              !isOffForGrade(dateStr, s.grade, s.subj) &&
               (!timetables ||
                 timetables.length === 0 ||
                 isTimetableActiveForDate(
