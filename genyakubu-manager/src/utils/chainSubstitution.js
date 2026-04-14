@@ -50,7 +50,8 @@ export function computeAvailableTeachers(
   partTimeStaff,
   subjects,
   timetables,
-  biweeklyAnchors
+  biweeklyAnchors,
+  teacherSubjects = {}
 ) {
   const day = dateToDay(date);
   if (!day) return [];
@@ -162,10 +163,12 @@ export function computeAvailableTeachers(
 
     if (uniqueFreeTimes.length === 0 && !isFreeAllDay) continue;
 
-    // 教科の判定
+    // 教科の判定: teacherSubjects > partTimeStaff.subjectIds > スロットから推定
     const isPartTime = staffNameSet.has(name);
     let subjectIds;
-    if (isPartTime) {
+    if (teacherSubjects[name] && teacherSubjects[name].length > 0) {
+      subjectIds = teacherSubjects[name];
+    } else if (isPartTime) {
       const staff = partTimeStaff.find((s) => s.name === name);
       subjectIds = staff ? staff.subjectIds : [];
     } else {

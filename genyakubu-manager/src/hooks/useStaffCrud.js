@@ -12,6 +12,8 @@ export function useStaffCrud({
   saveSubjects,
   subjectCategories,
   saveSubjectCategories,
+  teacherSubjects,
+  saveTeacherSubjects,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -53,18 +55,31 @@ export function useStaffCrud({
   };
 
   const toggleStaffSubject = (name, subjectId) => {
-    savePartTimeStaff(
-      partTimeStaff.map((s) => {
-        if (s.name !== name) return s;
-        const has = s.subjectIds.includes(subjectId);
-        return {
-          ...s,
-          subjectIds: has
-            ? s.subjectIds.filter((id) => id !== subjectId)
-            : [...s.subjectIds, subjectId],
-        };
-      })
-    );
+    // バイトの場合は partTimeStaff を更新
+    const isPT = partTimeStaff.some((s) => s.name === name);
+    if (isPT) {
+      savePartTimeStaff(
+        partTimeStaff.map((s) => {
+          if (s.name !== name) return s;
+          const has = s.subjectIds.includes(subjectId);
+          return {
+            ...s,
+            subjectIds: has
+              ? s.subjectIds.filter((id) => id !== subjectId)
+              : [...s.subjectIds, subjectId],
+          };
+        })
+      );
+    }
+    // 全講師共通: teacherSubjects マップも更新
+    const current = teacherSubjects[name] || [];
+    const has = current.includes(subjectId);
+    saveTeacherSubjects({
+      ...teacherSubjects,
+      [name]: has
+        ? current.filter((id) => id !== subjectId)
+        : [...current, subjectId],
+    });
   };
 
   const saveCategory = (cat) => {
@@ -101,6 +116,11 @@ export function useStaffCrud({
           subjectIds: s.subjectIds.filter((sid) => !removedSubjectIds.has(sid)),
         }))
       );
+      const updated = {};
+      for (const [k, v] of Object.entries(teacherSubjects)) {
+        updated[k] = v.filter((sid) => !removedSubjectIds.has(sid));
+      }
+      saveTeacherSubjects(updated);
     }
     toasts.success("カテゴリを削除しました");
   };
@@ -132,6 +152,12 @@ export function useStaffCrud({
         subjectIds: s.subjectIds.filter((sid) => sid !== id),
       }))
     );
+    // teacherSubjects からも除外
+    const updated = {};
+    for (const [k, v] of Object.entries(teacherSubjects)) {
+      updated[k] = v.filter((sid) => sid !== id);
+    }
+    saveTeacherSubjects(updated);
     toasts.success("教科を削除しました");
   };
 

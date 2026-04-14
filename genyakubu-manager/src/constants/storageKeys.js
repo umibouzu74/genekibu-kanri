@@ -17,4 +17,5 @@ export const LS = {
   displayCutoff: "genyakubu-display-cutoff",
   activeTimetableId: "genyakubu-active-timetable",
   examPeriods: "genyakubu-exam-periods",
+  teacherSubjects: "genyakubu-teacher-subjects",
 };

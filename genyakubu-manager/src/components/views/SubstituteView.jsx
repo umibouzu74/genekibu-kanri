@@ -42,6 +42,7 @@ export function SubstituteView({
   subjectCategories,
   timetables,
   biweeklyAnchors,
+  teacherSubjects,
   saveSubs,
 }) {
   const now = new Date();
@@ -839,6 +840,7 @@ export function SubstituteView({
           subjectCategories={subjectCategories || []}
           timetables={timetables || []}
           biweeklyAnchors={biweeklyAnchors || []}
+          teacherSubjects={teacherSubjects || {}}
           saveSubs={saveSubs}
           isAdmin={isAdmin}
         />

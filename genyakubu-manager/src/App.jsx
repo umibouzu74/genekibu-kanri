@@ -126,6 +126,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [teacherSubjects, saveTeacherSubjects] = useSyncedStorage(
+    LS.teacherSubjects,
+    {},
+    { onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -189,6 +194,8 @@ export default function App() {
     saveSubjects,
     subjectCategories,
     saveSubjectCategories,
+    teacherSubjects,
+    saveTeacherSubjects,
   });
   const dataIO = useDataIO({
     slots,
@@ -550,6 +557,7 @@ export default function App() {
               subjectCategories={subjectCategories}
               timetables={timetables}
               biweeklyAnchors={biweeklyAnchors}
+              teacherSubjects={teacherSubjects}
               saveSubs={saveSubs}
             />
           )}
@@ -559,6 +567,7 @@ export default function App() {
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView
               partTimeStaff={partTimeStaff}
+              teacherSubjects={teacherSubjects}
               subjectCategories={subjectCategories}
               subjects={subjects}
               slots={slots}
