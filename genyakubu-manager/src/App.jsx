@@ -520,6 +520,12 @@ export default function App() {
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
+              subs={subs}
+              saveSubs={saveSubs}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              subjectCategories={subjectCategories}
+              teacherSubjects={teacherSubjects}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
