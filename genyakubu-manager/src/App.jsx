@@ -520,13 +520,6 @@ export default function App() {
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
-              subs={subs}
-              saveSubs={saveSubs}
-              holidays={holidays}
-              examPeriods={examPeriods}
-              subjectCategories={subjectCategories}
-              teacherSubjects={teacherSubjects}
-              onAddAdjustment={adjCrud.add}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -558,6 +551,15 @@ export default function App() {
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
               isAdmin={isAdmin}
+              saveSubs={saveSubs}
+              examPeriods={examPeriods}
+              subjects={subjects}
+              subjectCategories={subjectCategories}
+              timetables={timetables}
+              activeTimetableId={activeTimetableId}
+              biweeklyAnchors={biweeklyAnchors}
+              teacherSubjects={teacherSubjects}
+              onAddAdjustment={adjCrud.add}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
