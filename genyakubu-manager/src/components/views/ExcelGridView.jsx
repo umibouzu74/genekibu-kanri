@@ -45,6 +45,7 @@ const ExcelCell = memo(function ExcelCell({
   onDragEnd,
   onEdit,
   biweeklyAnchors,
+  subDate,
   isUnavailable,
   isHolidayOff,
   pendingSub,
@@ -80,7 +81,7 @@ const ExcelCell = memo(function ExcelCell({
 
   const biweekly = isBiweekly(slot.note);
   const weekType = biweekly
-    ? getSlotWeekType(fmtDate(new Date()), slot, biweeklyAnchors)
+    ? getSlotWeekType(subDate || fmtDate(new Date()), slot, biweeklyAnchors)
     : null;
 
   // Determine cell visual state (priority order)
@@ -144,19 +145,24 @@ const ExcelCell = memo(function ExcelCell({
     teacherDecor = "line-through";
   }
 
-  const isClickable = isSubMode && (isUnavailable || pendingSub || isCombineTarget);
+  // In sub mode, all cells with a teacher are clickable (for chain substitutions)
+  const isClickable = isSubMode && (slot.teacher || pendingSub || isCombineTarget);
 
   const handleClick = (e) => {
     if (!isClickable || !onCellClick) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    onCellClick(slot, rect);
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    onCellClick(slot, rect, el);
   };
+
+  // In sub mode, cells are draggable for swap-based substitution
+  const subModeDraggable = isSubMode && isAdmin && slot.teacher && !isHolidayOff;
 
   return (
     <td
       colSpan={colSpan}
-      draggable={isAdmin && !isSubMode}
-      onDragStart={isAdmin && !isSubMode ? onDragStart : undefined}
+      draggable={subModeDraggable || (isAdmin && !isSubMode)}
+      onDragStart={isAdmin ? onDragStart : undefined}
       onDragOver={isAdmin ? onDragOver : undefined}
       onDragLeave={isAdmin ? onDragLeave : undefined}
       onDrop={isAdmin ? onDrop : undefined}
@@ -168,7 +174,7 @@ const ExcelCell = memo(function ExcelCell({
         padding: "4px 6px",
         minWidth: 100,
         verticalAlign: "top",
-        cursor: isClickable ? "pointer" : isAdmin && !isSubMode ? "grab" : "default",
+        cursor: isClickable ? "pointer" : subModeDraggable ? "grab" : isAdmin && !isSubMode ? "grab" : "default",
         background: bg,
         opacity: isDragSource ? 0.4 : 1,
         transition: "background .15s, opacity .15s",
@@ -247,11 +253,13 @@ function ExcelSection({
   setDragState,
   unavailableTeachers,
   isSubMode,
+  subDate,
   holidayOffSlots,
   pendingSubMap,
   existingSubMap,
   onCellClick,
   combineMode,
+  onSubDrop,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -308,35 +316,47 @@ function ExcelSection({
     (e, targetTime, targetGrade, targetCls, targetRoom) => {
       e.preventDefault();
       setDragState({ draggingId: null, overCell: null });
-      const slotId = parseInt(e.dataTransfer.getData("text/plain"), 10);
-      if (isNaN(slotId)) return;
+      const sourceSlotId = parseInt(e.dataTransfer.getData("text/plain"), 10);
+      if (isNaN(sourceSlotId)) return;
 
-      const slot = allSlots.find((s) => s.id === slotId);
-      if (!slot) return;
+      const sourceSlot = allSlots.find((s) => s.id === sourceSlotId);
+      if (!sourceSlot) return;
 
-      // No-op if same position
+      // In substitution mode: swap teachers (create mutual substitutions)
+      if (isSubMode && onSubDrop) {
+        const targetSlot = sectionSlots.find(
+          (s) => s.time === targetTime && s.grade === targetGrade &&
+                 s.cls === targetCls && s.room === targetRoom
+        );
+        if (targetSlot && targetSlot.id !== sourceSlotId) {
+          onSubDrop(sourceSlot, targetSlot);
+        }
+        return;
+      }
+
+      // Template mode: move slot position
       if (
-        slot.time === targetTime &&
-        slot.grade === targetGrade &&
-        slot.cls === targetCls &&
-        slot.room === targetRoom
+        sourceSlot.time === targetTime &&
+        sourceSlot.grade === targetGrade &&
+        sourceSlot.cls === targetCls &&
+        sourceSlot.room === targetRoom
       ) {
         return;
       }
 
-      const from = `${slot.grade}${slot.cls} ${slot.room} ${slot.time}`;
+      const from = `${sourceSlot.grade}${sourceSlot.cls} ${sourceSlot.room} ${sourceSlot.time}`;
       const to = `${targetGrade}${targetCls} ${targetRoom} ${targetTime}`;
       if (!window.confirm(`このコマを移動しますか？\n${from} → ${to}`)) return;
 
       saveSlots(
         allSlots.map((s) =>
-          s.id === slotId
+          s.id === sourceSlotId
             ? { ...s, time: targetTime, grade: targetGrade, cls: targetCls, room: targetRoom }
             : s
         )
       );
     },
-    [allSlots, saveSlots, setDragState]
+    [allSlots, saveSlots, setDragState, isSubMode, onSubDrop, sectionSlots]
   );
 
   if (gradeGroups.length === 0 || timeRows.length === 0) return null;
@@ -356,17 +376,20 @@ function ExcelSection({
       pendingSub: pendingSubMap.get(slot.id) || null,
       existingSub: existingSubMap.get(slot.id) || null,
       isSubMode,
+      subDate,
       isCombineTarget: !!isCombineTarget,
       onCellClick: onCellClick
-        ? (s, rect) => {
+        ? (s, rect, el) => {
             // In combine mode, any cell can be clicked
             if (combineMode) {
-              onCellClick(s, rect, "");
+              onCellClick(s, rect, "", el);
               return;
             }
+            // Find the teacher for this cell: prefer absent teacher, fall back to first
             const teachers = getSlotTeachers(s);
             const absent = teachers.find((t) => unavailableTeachers.has(t));
-            if (absent) onCellClick(s, rect, absent);
+            const teacher = absent || teachers[0] || "";
+            if (teacher) onCellClick(s, rect, teacher, el);
           }
         : undefined,
     };
@@ -683,6 +706,17 @@ export function ExcelGridView({
     });
   }, []);
 
+  const bulkToggleTeachers = useCallback((names, selected) => {
+    setUnavailableTeachers((prev) => {
+      const next = new Set(prev);
+      for (const n of names) {
+        if (selected) next.add(n);
+        else next.delete(n);
+      }
+      return next;
+    });
+  }, []);
+
   const clearAllUnavailable = useCallback(() => {
     setUnavailableTeachers(new Set());
   }, []);
@@ -694,6 +728,21 @@ export function ExcelGridView({
     startCombine, assignSubstitute, removeAssignment, closePopover,
     saveAll, discardAll,
   } = subMode;
+
+  // Handle drag-and-drop swap in substitution mode
+  const handleSubDrop = useCallback((sourceSlot, targetSlot) => {
+    const sourceTeachers = getSlotTeachers(sourceSlot);
+    const targetTeachers = getSlotTeachers(targetSlot);
+    // Prefer absent teacher, fall back to first
+    const sourceTeacher = sourceTeachers.find((t) => unavailableTeachers.has(t)) || sourceTeachers[0];
+    const targetTeacher = targetTeachers.find((t) => unavailableTeachers.has(t)) || targetTeachers[0];
+    if (!sourceTeacher || !targetTeacher) return;
+    if (sourceTeacher === targetTeacher) return;
+
+    // Assign source teacher's slot to target teacher (and vice versa)
+    assignSubstitute(sourceSlot.id, sourceTeacher, targetTeacher);
+    assignSubstitute(targetSlot.id, targetTeacher, sourceTeacher);
+  }, [assignSubstitute, unavailableTeachers]);
 
   // Handle date change: set date and auto-select the day
   const handleDateChange = useCallback((dateStr) => {
@@ -709,7 +758,7 @@ export function ExcelGridView({
   }, [clearSub, setSubDate]);
 
   // Handle cell click in substitution mode
-  const handleCellClick = useCallback((slot, rect, originalTeacher) => {
+  const handleCellClick = useCallback((slot, rect, originalTeacher, anchorEl) => {
     // If in combine mode, complete the combine
     if (combineMode) {
       if (slot.id !== combineMode.sourceSlotId) {
@@ -717,7 +766,7 @@ export function ExcelGridView({
       }
       return;
     }
-    openPopover(slot.id, rect, originalTeacher);
+    openPopover(slot.id, rect, originalTeacher, anchorEl);
   }, [combineMode, completeCombine, onAddAdjustment, openPopover]);
 
   // Popover slot lookup
@@ -760,6 +809,14 @@ export function ExcelGridView({
               <span style={{ fontSize: 11, color: "#3a6ea5", fontWeight: 700 }}>
                 {subMode.dayOfDate}曜日 - 代行モード
               </span>
+              {subMode.uncoveredSlots.length > 0 && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: "#c03030",
+                  background: "#fde4e4", padding: "2px 8px", borderRadius: 10,
+                }}>
+                  未割当: {subMode.uncoveredSlots.length}件
+                </span>
+              )}
               <button
                 onClick={() => handleDateChange("")}
                 style={{ ...S.btn(false), fontSize: 10 }}
@@ -816,7 +873,7 @@ export function ExcelGridView({
       {/* Guide */}
       <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>
         {subMode.isSubMode
-          ? "欠席講師を右パネルで選択 → 赤いセルをクリックして代行者を割り当て"
+          ? "欠席講師を右パネルで選択 → セルをクリックして代行者を割り当て / ドラッグで入れ替え"
           : isAdmin
             ? "コマをドラッグして移動 / ダブルクリックで編集"
             : "時間割の閲覧モード"}
@@ -896,11 +953,13 @@ export function ExcelGridView({
                     setDragState={setDragState}
                     unavailableTeachers={unavailableTeachers}
                     isSubMode={subMode.isSubMode}
+                    subDate={subMode.subDate}
                     holidayOffSlots={subMode.holidayOffSlots}
                     pendingSubMap={subMode.pendingSubMap}
                     existingSubMap={subMode.existingSubMap}
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
                     combineMode={combineMode}
+                    onSubDrop={subMode.isSubMode ? handleSubDrop : undefined}
                   />
                 );
               })}
@@ -928,7 +987,7 @@ export function ExcelGridView({
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 <button
-                  onClick={discardAll}
+                  onClick={() => window.confirm("仮代行をすべて破棄しますか？") && discardAll()}
                   style={S.btn(false)}
                 >
                   破棄
@@ -944,22 +1003,26 @@ export function ExcelGridView({
           )}
         </div>
 
-        {/* Unavailability Panel */}
-        <StaffUnavailabilityPanel
-          teacherGroups={teacherGroups}
-          unavailableTeachers={unavailableTeachers}
-          onToggleTeacher={toggleTeacher}
-          onClearAll={clearAllUnavailable}
-          collapsed={panelCollapsed}
-          onToggleCollapse={() => setPanelCollapsed((p) => !p)}
-          slots={displaySlots}
-          selectedDay={selectedDay}
-        />
+        {/* Unavailability Panel (only in substitution-enabled views) */}
+        {enableSubMode && (
+          <StaffUnavailabilityPanel
+            teacherGroups={teacherGroups}
+            unavailableTeachers={unavailableTeachers}
+            onToggleTeacher={toggleTeacher}
+            onBulkToggle={bulkToggleTeachers}
+            onClearAll={clearAllUnavailable}
+            collapsed={panelCollapsed}
+            onToggleCollapse={() => setPanelCollapsed((p) => !p)}
+            slots={displaySlots}
+            selectedDay={selectedDay}
+          />
+        )}
       </div>
 
       {/* Substitution Popover */}
       {popoverTarget && popoverSlot && (
         <SubstitutionPopover
+          anchorEl={popoverTarget.anchorEl}
           anchorRect={popoverTarget.rect}
           slot={popoverSlot}
           originalTeacher={popoverTarget.originalTeacher}
@@ -977,6 +1040,9 @@ export function ExcelGridView({
           onRemoveAssignment={() => removeAssignment(popoverSlot.id)}
           onCombine={() => startCombine(popoverSlot.id)}
           onClose={closePopover}
+          slots={displaySlots}
+          pendingSubs={subMode.pendingSubs}
+          partTimeStaff={partTimeStaff}
         />
       )}
     </div>

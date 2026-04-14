@@ -158,8 +158,8 @@ export function useSubstitutionMode({
     setPendingSubs((prev) => prev.filter((s) => s.slotId !== slotId));
   }, []);
 
-  const openPopover = useCallback((slotId, rect, originalTeacher) => {
-    setPopoverTarget({ slotId, rect, originalTeacher });
+  const openPopover = useCallback((slotId, rect, originalTeacher, anchorEl) => {
+    setPopoverTarget({ slotId, rect, originalTeacher, anchorEl: anchorEl || null });
   }, []);
 
   const closePopover = useCallback(() => {
@@ -174,13 +174,12 @@ export function useSubstitutionMode({
     const updatedIds = new Set();
     const newRecords = [];
     for (const p of pendingSubs) {
-      // Check if there's an existing requested record
+      // Check if there's an existing record for this slot (replace if found)
       const existing = subs.find(
         (s) =>
           s.date === subDate &&
           s.slotId === p.slotId &&
-          s.originalTeacher === p.originalTeacher &&
-          !s.substitute
+          s.originalTeacher === p.originalTeacher
       );
       if (existing) updatedIds.add(existing.id);
       newRecords.push({

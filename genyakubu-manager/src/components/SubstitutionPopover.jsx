@@ -1,8 +1,20 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { pickSubjectId } from "../utils/subjectMatch";
+import { validateSubstituteChange } from "../utils/chainSubstitution";
+
+function computePosition(anchorRect) {
+  const top = anchorRect.bottom + 4;
+  const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 300));
+  const maxTop = window.innerHeight - 400;
+  return {
+    top: top > maxTop ? anchorRect.top - 304 : top,
+    left,
+  };
+}
 
 export const SubstitutionPopover = memo(function SubstitutionPopover({
-  anchorRect,
+  anchorEl,
+  anchorRect: initialRect,
   slot,
   originalTeacher,
   availableTeachers,
@@ -13,6 +25,9 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   onRemoveAssignment,
   onCombine,
   onClose,
+  slots,
+  pendingSubs,
+  partTimeStaff,
 }) {
   const ref = useRef(null);
 
@@ -32,42 +47,62 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Close on scroll (position becomes stale)
+  // Track position on scroll (recalculate from anchor element)
+  const [pos, setPos] = useState(() => computePosition(initialRect));
   useEffect(() => {
-    const handler = () => onClose();
-    window.addEventListener("scroll", handler, true);
-    return () => window.removeEventListener("scroll", handler, true);
-  }, [onClose]);
-
-  // Position: below the anchor, clamp to viewport
-  const style = (() => {
-    const top = anchorRect.bottom + 4;
-    const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 300));
-    const maxTop = window.innerHeight - 400;
-    return {
-      position: "fixed",
-      top: top > maxTop ? anchorRect.top - 304 : top,
-      left,
-      zIndex: 2000,
-      width: 280,
-      maxHeight: 360,
-      overflowY: "auto",
-      background: "#fff",
-      border: "1px solid #ccc",
-      borderRadius: 8,
-      boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+    const handler = () => {
+      if (anchorEl) {
+        setPos(computePosition(anchorEl.getBoundingClientRect()));
+      }
     };
-  })();
+    window.addEventListener("scroll", handler, true);
+    window.addEventListener("resize", handler);
+    return () => {
+      window.removeEventListener("scroll", handler, true);
+      window.removeEventListener("resize", handler);
+    };
+  }, [anchorEl]);
+
+  const style = {
+    position: "fixed",
+    top: pos.top,
+    left: pos.left,
+    zIndex: 2000,
+    width: 280,
+    maxHeight: 360,
+    overflowY: "auto",
+    background: "#fff",
+    border: "1px solid #ccc",
+    borderRadius: 8,
+    boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+  };
 
   // Match slot's subject
   const slotSubjectId = pickSubjectId(slot.subj, subjects);
 
-  // Filter to teachers available at this time
-  const candidates = availableTeachers.filter((t) => {
-    if (t.name === originalTeacher) return false;
-    if (t.isFreeAllDay) return true;
-    return t.freeTimeSlots.some((ft) => ft === slot.time);
-  });
+  // Filter and sort candidates by relevance
+  const candidates = availableTeachers
+    .filter((t) => {
+      if (t.name === originalTeacher) return false;
+      if (t.isFreeAllDay) return true;
+      return t.freeTimeSlots.some((ft) => ft === slot.time);
+    })
+    .sort((a, b) => {
+      // Subject match first
+      const aMatch = a.subjectIds.includes(slotSubjectId) ? 1 : 0;
+      const bMatch = b.subjectIds.includes(slotSubjectId) ? 1 : 0;
+      if (bMatch !== aMatch) return bMatch - aMatch;
+      // Full-time over part-time
+      if (a.isPartTime !== b.isPartTime) return a.isPartTime ? 1 : -1;
+      // More free slots = more available
+      return (b.freeTimeSlots?.length || 0) - (a.freeTimeSlots?.length || 0);
+    });
+
+  // Build pending assignments for conflict check
+  const pendingAssignments = (pendingSubs || []).map((p) => ({
+    slotId: p.slotId,
+    suggestedSubstitute: p.substitute,
+  }));
 
   return (
     <div ref={ref} style={style}>
@@ -85,7 +120,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
           {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
         </div>
         <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-          元講師: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
+          担当: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
         </div>
       </div>
 
@@ -166,6 +201,10 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
         {candidates.map((t) => {
           const subjectMatch = t.subjectIds.includes(slotSubjectId);
           const isSuggested = suggestion?.suggestedSubstitute === t.name;
+          const conflict = (slots && partTimeStaff)
+            ? validateSubstituteChange(t.name, slot.id, slots, pendingAssignments, subjects, partTimeStaff)
+            : null;
+          const hasConflict = conflict?.timeConflict;
           return (
             <div
               key={t.name}
@@ -214,6 +253,11 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
                   別教科
                 </span>
               ) : null}
+              {hasConflict && (
+                <span style={{ fontSize: 9, background: "#fde4e4", color: "#c03030", padding: "0 4px", borderRadius: 3, fontWeight: 700 }}>
+                  時間重複
+                </span>
+              )}
               <span style={{ fontSize: 9, color: "#888", marginLeft: "auto" }}>
                 {t.isFreeAllDay ? "全日" : t.freeTimeSlots.length + "コマ空"}
               </span>
