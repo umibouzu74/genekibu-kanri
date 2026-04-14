@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DAY_COLOR as DC,
   DAY_BG as DB,
@@ -6,10 +6,12 @@ import {
   DEPT_COLOR,
   gradeColor as GC,
   fmtDate,
+  dateToDay,
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import {
   formatBiweeklyTeacher,
+  getSlotTeachers,
   getSlotWeekType,
   isBiweekly,
   formatCount,
@@ -23,6 +25,11 @@ import {
   getCombinedSpan,
   splitTime,
 } from "../../utils/excelGrid";
+import { useTeacherGroups } from "../../hooks/useTeacherGroups";
+import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
+import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
+import { SubstitutionPopover } from "../SubstitutionPopover";
+import { S } from "../../styles/common";
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
 const ExcelCell = memo(function ExcelCell({
@@ -38,6 +45,13 @@ const ExcelCell = memo(function ExcelCell({
   onDragEnd,
   onEdit,
   biweeklyAnchors,
+  isUnavailable,
+  isHolidayOff,
+  pendingSub,
+  existingSub,
+  isSubMode,
+  isCombineTarget,
+  onCellClick,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -69,26 +83,101 @@ const ExcelCell = memo(function ExcelCell({
     ? getSlotWeekType(fmtDate(new Date()), slot, biweeklyAnchors)
     : null;
 
+  // Determine cell visual state (priority order)
+  let bg = "#fff";
+  let borderLeft = undefined;
+  let badge = null;
+  let teacherColor = "#1a1a2e";
+  let teacherDecor = "none";
+  let subDisplay = null;
+
+  if (isDragOver) {
+    bg = "#e8f4ff";
+  } else if (pendingSub) {
+    bg = "#e0f5e0";
+    borderLeft = "3px solid #2a7a4a";
+    badge = (
+      <span style={{ background: "#2a7a4a", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
+        仮
+      </span>
+    );
+    teacherColor = "#888";
+    teacherDecor = "line-through";
+    subDisplay = (
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#2a7a4a", marginTop: 1 }}>
+        ← {pendingSub.substitute}
+      </div>
+    );
+  } else if (existingSub && existingSub.substitute) {
+    bg = "#e8f0ff";
+    borderLeft = "3px solid #3a6ea5";
+    badge = (
+      <span style={{ background: "#3a6ea5", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
+        代
+      </span>
+    );
+    teacherColor = "#888";
+    teacherDecor = "line-through";
+    subDisplay = (
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#3a6ea5", marginTop: 1 }}>
+        ← {existingSub.substitute}
+      </div>
+    );
+  } else if (isHolidayOff) {
+    bg = "#f5f0e0";
+    borderLeft = "3px solid #b8860b";
+    badge = (
+      <span style={{ background: "#b8860b", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
+        休
+      </span>
+    );
+    teacherColor = "#aaa";
+  } else if (isUnavailable) {
+    bg = "#fff0f0";
+    borderLeft = "3px solid #c03030";
+    badge = (
+      <span style={{ background: "#c03030", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
+        欠
+      </span>
+    );
+    teacherColor = "#c03030";
+    teacherDecor = "line-through";
+  }
+
+  const isClickable = isSubMode && (isUnavailable || pendingSub || isCombineTarget);
+
+  const handleClick = (e) => {
+    if (!isClickable || !onCellClick) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    onCellClick(slot, rect);
+  };
+
   return (
     <td
       colSpan={colSpan}
-      draggable={isAdmin}
-      onDragStart={isAdmin ? onDragStart : undefined}
+      draggable={isAdmin && !isSubMode}
+      onDragStart={isAdmin && !isSubMode ? onDragStart : undefined}
       onDragOver={isAdmin ? onDragOver : undefined}
       onDragLeave={isAdmin ? onDragLeave : undefined}
       onDrop={isAdmin ? onDrop : undefined}
       onDragEnd={isAdmin ? onDragEnd : undefined}
-      onDoubleClick={isAdmin && onEdit ? () => onEdit(slot) : undefined}
+      onDoubleClick={isAdmin && onEdit && !isSubMode ? () => onEdit(slot) : undefined}
+      onClick={handleClick}
       style={{
         border: "1px solid #ccc",
         padding: "4px 6px",
         minWidth: 100,
         verticalAlign: "top",
-        cursor: isAdmin ? "grab" : "default",
-        background: isDragOver ? "#e8f4ff" : "#fff",
+        cursor: isClickable ? "pointer" : isAdmin && !isSubMode ? "grab" : "default",
+        background: bg,
         opacity: isDragSource ? 0.4 : 1,
         transition: "background .15s, opacity .15s",
         position: "relative",
+        ...(borderLeft && { borderLeft }),
+        ...(isCombineTarget && {
+          outline: "2px dashed #d4a020",
+          outlineOffset: -2,
+        }),
       }}
     >
       <div style={{ lineHeight: 1.3 }}>
@@ -118,17 +207,20 @@ const ExcelCell = memo(function ExcelCell({
               {weekType}週
             </span>
           )}
+          {badge}
         </div>
         <div
           style={{
             fontSize: 15,
             fontWeight: 800,
-            color: "#1a1a2e",
+            color: teacherColor,
             marginTop: 2,
+            textDecoration: teacherDecor,
           }}
         >
           {formatBiweeklyTeacher(slot.teacher, slot.note)}
         </div>
+        {subDisplay}
         {slot.note && !slot.note.startsWith("隔週") && slot.note !== "合同" && (
           <div style={{ fontSize: 10, color: "#a0331a", marginTop: 1 }}>
             {slot.note}
@@ -153,6 +245,13 @@ function ExcelSection({
   allSlots,
   dragState,
   setDragState,
+  unavailableTeachers,
+  isSubMode,
+  holidayOffSlots,
+  pendingSubMap,
+  existingSubMap,
+  onCellClick,
+  combineMode,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -243,6 +342,35 @@ function ExcelSection({
   if (gradeGroups.length === 0 || timeRows.length === 0) return null;
 
   const slotCount = weightedSlotCount(sectionSlots);
+
+  // Helper to compute cell props
+  const getCellSubProps = (slot) => {
+    if (!slot) return {};
+    const isOff = holidayOffSlots.has(slot.id);
+    const isUnavail = unavailableTeachers.size > 0 &&
+      getSlotTeachers(slot).some((t) => unavailableTeachers.has(t));
+    const isCombineTarget = combineMode && slot.id !== combineMode.sourceSlotId;
+    return {
+      isUnavailable: isUnavail && !isOff,
+      isHolidayOff: isOff,
+      pendingSub: pendingSubMap.get(slot.id) || null,
+      existingSub: existingSubMap.get(slot.id) || null,
+      isSubMode,
+      isCombineTarget: !!isCombineTarget,
+      onCellClick: onCellClick
+        ? (s, rect) => {
+            // In combine mode, any cell can be clicked
+            if (combineMode) {
+              onCellClick(s, rect, "");
+              return;
+            }
+            const teachers = getSlotTeachers(s);
+            const absent = teachers.find((t) => unavailableTeachers.has(t));
+            if (absent) onCellClick(s, rect, absent);
+          }
+        : undefined,
+    };
+  };
 
   return (
     <div>
@@ -420,6 +548,7 @@ function ExcelSection({
                       const combined = combinedCells.find((c) => c.colIdx === colIdx);
                       if (combined) {
                         const cellKey = `${time}_${col.grade}_${combined.slot.cls}_${combined.slot.room}`;
+                        const subProps = getCellSubProps(combined.slot);
                         return (
                           <ExcelCell
                             key={cellKey}
@@ -435,6 +564,7 @@ function ExcelSection({
                             onDragEnd={handleDragEnd}
                             onEdit={onEdit}
                             biweeklyAnchors={biweeklyAnchors}
+                            {...subProps}
                           />
                         );
                       }
@@ -445,6 +575,7 @@ function ExcelSection({
                     // Individual slot
                     const slot = findSlotForCell(sectionSlots, day, time, col.grade, col.cls, col.room);
                     const cellKey = `${time}_${col.grade}_${col.cls}_${col.room}`;
+                    const subProps = getCellSubProps(slot);
                     return (
                       <ExcelCell
                         key={cellKey}
@@ -460,6 +591,7 @@ function ExcelSection({
                         onDragEnd={handleDragEnd}
                         onEdit={onEdit}
                         biweeklyAnchors={biweeklyAnchors}
+                        {...subProps}
                       />
                     );
                   })}
@@ -482,9 +614,20 @@ export function ExcelGridView({
   isAdmin,
   timetables,
   activeTimetableId,
+  partTimeStaff,
+  subjects,
+  subs,
+  saveSubs,
+  holidays,
+  examPeriods,
+  subjectCategories,
+  teacherSubjects,
+  onAddAdjustment,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
+  const [unavailableTeachers, setUnavailableTeachers] = useState(new Set());
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   // Filter by active timetable
   const filteredSlots = useMemo(() => {
@@ -501,8 +644,135 @@ export function ExcelGridView({
     return days;
   }, [filteredSlots]);
 
+  // Teacher groups for the unavailability panel
+  const teacherGroups = useTeacherGroups({
+    slots: filteredSlots,
+    partTimeStaff: partTimeStaff || [],
+    subjects: subjects || [],
+    search: "",
+  });
+
+  // Substitution mode hook
+  const subMode = useSubstitutionMode({
+    slots: filteredSlots,
+    subs: subs || [],
+    saveSubs: saveSubs || (() => {}),
+    holidays: holidays || [],
+    examPeriods: examPeriods || [],
+    partTimeStaff: partTimeStaff || [],
+    subjects: subjects || [],
+    subjectCategories: subjectCategories || [],
+    timetables: timetables || [],
+    biweeklyAnchors: biweeklyAnchors || [],
+    teacherSubjects: teacherSubjects || {},
+    unavailableTeachers,
+  });
+
+  // Clear unavailable selection when day changes
+  useEffect(() => {
+    setUnavailableTeachers(new Set());
+  }, [selectedDay]);
+
+  const toggleTeacher = useCallback((name) => {
+    setUnavailableTeachers((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const clearAllUnavailable = useCallback(() => {
+    setUnavailableTeachers(new Set());
+  }, []);
+
+  // Destructure stable callbacks from subMode to avoid stale deps
+  const {
+    setSubDate, clearSubMode: clearSub, openPopover,
+    combineMode, completeCombine, popoverTarget,
+    startCombine, assignSubstitute, removeAssignment, closePopover,
+    saveAll, discardAll,
+  } = subMode;
+
+  // Handle date change: set date and auto-select the day
+  const handleDateChange = useCallback((dateStr) => {
+    if (!dateStr) {
+      clearSub();
+      return;
+    }
+    // Validate: dateToDay returns null for days without slots (e.g. Sunday)
+    const day = dateToDay(dateStr);
+    if (!day) return;
+    setSubDate(dateStr);
+    setSelectedDay(day);
+  }, [clearSub, setSubDate]);
+
+  // Handle cell click in substitution mode
+  const handleCellClick = useCallback((slot, rect, originalTeacher) => {
+    // If in combine mode, complete the combine
+    if (combineMode) {
+      if (slot.id !== combineMode.sourceSlotId) {
+        completeCombine(slot.id, onAddAdjustment);
+      }
+      return;
+    }
+    openPopover(slot.id, rect, originalTeacher);
+  }, [combineMode, completeCombine, onAddAdjustment, openPopover]);
+
+  // Popover slot lookup
+  const popoverSlot = useMemo(() => {
+    if (!popoverTarget) return null;
+    return filteredSlots.find((s) => s.id === popoverTarget.slotId) || null;
+  }, [popoverTarget, filteredSlots]);
+
+  // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
+  const displaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
+
   return (
     <div>
+      {/* Date selector for substitution mode */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 10,
+          flexWrap: "wrap",
+          padding: "8px 12px",
+          background: subMode.isSubMode ? "#f0f8ff" : "#f8f8f8",
+          border: `1px solid ${subMode.isSubMode ? "#b0d0f0" : "#e0e0e0"}`,
+          borderRadius: 8,
+        }}
+      >
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>
+          代行管理日付
+        </label>
+        <input
+          type="date"
+          value={subMode.subDate || ""}
+          onChange={(e) => handleDateChange(e.target.value)}
+          style={{ ...S.input, width: "auto", minWidth: 140 }}
+        />
+        {subMode.isSubMode && (
+          <>
+            <span style={{ fontSize: 11, color: "#3a6ea5", fontWeight: 700 }}>
+              {subMode.dayOfDate}曜日 - 代行モード
+            </span>
+            <button
+              onClick={() => handleDateChange("")}
+              style={{ ...S.btn(false), fontSize: 10 }}
+            >
+              解除
+            </button>
+          </>
+        )}
+        {!subMode.isSubMode && (
+          <span style={{ fontSize: 10, color: "#999" }}>
+            日付を入力すると代行モードになります
+          </span>
+        )}
+      </div>
+
       {/* Day Tab Bar */}
       <div
         style={{
@@ -515,11 +785,12 @@ export function ExcelGridView({
         {DAYS.map((d) => {
           const active = selectedDay === d;
           const hasSlotsForDay = daysWithSlots.has(d);
+          const isLocked = subMode.isSubMode && d !== subMode.dayOfDate;
           return (
             <button
               key={d}
               type="button"
-              onClick={() => setSelectedDay(d)}
+              onClick={() => !isLocked && setSelectedDay(d)}
               style={{
                 padding: "8px 18px",
                 border: active ? `2px solid ${DC[d]}` : "1px solid #ddd",
@@ -528,8 +799,8 @@ export function ExcelGridView({
                 color: active ? "#fff" : hasSlotsForDay ? DC[d] : "#bbb",
                 fontWeight: 800,
                 fontSize: 15,
-                cursor: hasSlotsForDay ? "pointer" : "default",
-                opacity: hasSlotsForDay ? 1 : 0.5,
+                cursor: isLocked ? "not-allowed" : hasSlotsForDay ? "pointer" : "default",
+                opacity: isLocked ? 0.3 : hasSlotsForDay ? 1 : 0.5,
                 transition: "all .15s",
               }}
             >
@@ -541,57 +812,169 @@ export function ExcelGridView({
 
       {/* Guide */}
       <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>
-        {isAdmin
-          ? "コマをドラッグして移動 / ダブルクリックで編集"
-          : "時間割の閲覧モード"}
+        {subMode.isSubMode
+          ? "欠席講師を右パネルで選択 → 赤いセルをクリックして代行者を割り当て"
+          : isAdmin
+            ? "コマをドラッグして移動 / ダブルクリックで編集"
+            : "時間割の閲覧モード"}
       </div>
 
-      {/* Sections */}
-      {!daysWithSlots.has(selectedDay) ? (
+      {/* Combine mode banner */}
+      {combineMode && (
         <div
           style={{
-            textAlign: "center",
-            color: "#888",
-            padding: 40,
-            background: "#fff",
+            padding: "8px 14px",
+            marginBottom: 10,
+            background: "#fff8e0",
+            border: "1px solid #e0c860",
             borderRadius: 8,
-            border: "1px solid #e0e0e0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
           }}
         >
-          {selectedDay}曜日のコマがありません
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#8a6000" }}>
+            合同にするコマをクリックしてください
+          </span>
+          <button
+            onClick={subMode.cancelCombine}
+            style={{ ...S.btn(false), fontSize: 10 }}
+          >
+            キャンセル
+          </button>
         </div>
-      ) : (
-        <div
-          className="excel-grid-sections"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-            gap: 12,
-            alignItems: "start",
-          }}
-        >
-          {getDashSections(selectedDay).map((sec) => {
-            const color =
-              sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
-            return (
-              <ExcelSection
-                key={sec.key}
-                label={sec.label}
-                headerColor={color.accent}
-                slots={filteredSlots}
-                day={selectedDay}
-                sectionFilterFn={sec.filterFn}
-                isAdmin={isAdmin}
-                biweeklyAnchors={biweeklyAnchors}
-                onEdit={onEdit}
-                saveSlots={saveSlots}
-                allSlots={slots}
-                dragState={dragState}
-                setDragState={setDragState}
-              />
-            );
-          })}
+      )}
+
+      {/* Grid + Panel layout */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {/* Sections */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!daysWithSlots.has(selectedDay) ? (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#888",
+                padding: 40,
+                background: "#fff",
+                borderRadius: 8,
+                border: "1px solid #e0e0e0",
+              }}
+            >
+              {selectedDay}曜日のコマがありません
+            </div>
+          ) : (
+            <div
+              className="excel-grid-sections"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+                gap: 12,
+                alignItems: "start",
+              }}
+            >
+              {getDashSections(selectedDay).map((sec) => {
+                const color =
+                  sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+                return (
+                  <ExcelSection
+                    key={sec.key}
+                    label={sec.label}
+                    headerColor={color.accent}
+                    slots={displaySlots}
+                    day={selectedDay}
+                    sectionFilterFn={sec.filterFn}
+                    isAdmin={isAdmin}
+                    biweeklyAnchors={biweeklyAnchors}
+                    onEdit={onEdit}
+                    saveSlots={saveSlots}
+                    allSlots={slots}
+                    dragState={dragState}
+                    setDragState={setDragState}
+                    unavailableTeachers={unavailableTeachers}
+                    isSubMode={subMode.isSubMode}
+                    holidayOffSlots={subMode.holidayOffSlots}
+                    pendingSubMap={subMode.pendingSubMap}
+                    existingSubMap={subMode.existingSubMap}
+                    onCellClick={subMode.isSubMode ? handleCellClick : undefined}
+                    combineMode={combineMode}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pending subs save bar */}
+          {subMode.isSubMode && subMode.pendingSubs.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 16px",
+                background: "#e8f5e8",
+                border: "1px solid #b0d8b0",
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#2a7a2a" }}>
+                仮代行: {subMode.pendingSubs.length}件
+              </span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={discardAll}
+                  style={S.btn(false)}
+                >
+                  破棄
+                </button>
+                <button
+                  onClick={saveAll}
+                  style={{ ...S.btn(true), background: "#2a7a2a" }}
+                >
+                  確定して保存
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Unavailability Panel */}
+        <StaffUnavailabilityPanel
+          teacherGroups={teacherGroups}
+          unavailableTeachers={unavailableTeachers}
+          onToggleTeacher={toggleTeacher}
+          onClearAll={clearAllUnavailable}
+          collapsed={panelCollapsed}
+          onToggleCollapse={() => setPanelCollapsed((p) => !p)}
+          slots={displaySlots}
+          selectedDay={selectedDay}
+        />
+      </div>
+
+      {/* Substitution Popover */}
+      {popoverTarget && popoverSlot && (
+        <SubstitutionPopover
+          anchorRect={popoverTarget.rect}
+          slot={popoverSlot}
+          originalTeacher={popoverTarget.originalTeacher}
+          availableTeachers={subMode.availableTeachers}
+          suggestion={subMode.suggestionMap.get(popoverSlot.id) || null}
+          subjects={subjects || []}
+          pendingSub={subMode.pendingSubMap.get(popoverSlot.id) || null}
+          onAssign={(teacher) =>
+            assignSubstitute(
+              popoverSlot.id,
+              popoverTarget.originalTeacher,
+              teacher
+            )
+          }
+          onRemoveAssignment={() => removeAssignment(popoverSlot.id)}
+          onCombine={() => startCombine(popoverSlot.id)}
+          onClose={closePopover}
+        />
       )}
     </div>
   );
