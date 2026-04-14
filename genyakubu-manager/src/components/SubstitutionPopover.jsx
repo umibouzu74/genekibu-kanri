@@ -32,6 +32,13 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  // Close on scroll (position becomes stale)
+  useEffect(() => {
+    const handler = () => onClose();
+    window.addEventListener("scroll", handler, true);
+    return () => window.removeEventListener("scroll", handler, true);
+  }, [onClose]);
+
   // Position: below the anchor, clamp to viewport
   const style = (() => {
     const top = anchorRect.bottom + 4;

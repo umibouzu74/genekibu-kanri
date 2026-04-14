@@ -73,8 +73,11 @@ export function SubstituteView({
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
 
-  const [ty, tm] = fMonth.split("-").map(Number);
-  const tally = useMemo(() => monthlyTally(subs, ty, tm), [subs, ty, tm]);
+  const [ty, tm] = fMonth ? fMonth.split("-").map(Number) : [0, 0];
+  const tally = useMemo(
+    () => (ty && tm) ? monthlyTally(subs, ty, tm) : { covered: {}, coveredFor: {} },
+    [subs, ty, tm]
+  );
 
   const tallyRows = useMemo(() => {
     const names = new Set(staffNameSet);

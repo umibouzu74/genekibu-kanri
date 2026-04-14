@@ -686,34 +686,44 @@ export function ExcelGridView({
     setUnavailableTeachers(new Set());
   }, []);
 
+  // Destructure stable callbacks from subMode to avoid stale deps
+  const {
+    setSubDate, clearSubMode: clearSub, openPopover,
+    combineMode, completeCombine, popoverTarget,
+    startCombine, assignSubstitute, removeAssignment, closePopover,
+    saveAll, discardAll,
+  } = subMode;
+
   // Handle date change: set date and auto-select the day
   const handleDateChange = useCallback((dateStr) => {
     if (!dateStr) {
-      subMode.clearSubMode();
+      clearSub();
       return;
     }
-    subMode.setSubDate(dateStr);
+    // Validate: dateToDay returns null for days without slots (e.g. Sunday)
     const day = dateToDay(dateStr);
-    if (day) setSelectedDay(day);
-  }, [subMode]);
+    if (!day) return;
+    setSubDate(dateStr);
+    setSelectedDay(day);
+  }, [clearSub, setSubDate]);
 
   // Handle cell click in substitution mode
   const handleCellClick = useCallback((slot, rect, originalTeacher) => {
     // If in combine mode, complete the combine
-    if (subMode.combineMode) {
-      if (slot.id !== subMode.combineMode.sourceSlotId) {
-        subMode.completeCombine(slot.id, onAddAdjustment);
+    if (combineMode) {
+      if (slot.id !== combineMode.sourceSlotId) {
+        completeCombine(slot.id, onAddAdjustment);
       }
       return;
     }
-    subMode.openPopover(slot.id, rect, originalTeacher);
-  }, [subMode, onAddAdjustment]);
+    openPopover(slot.id, rect, originalTeacher);
+  }, [combineMode, completeCombine, onAddAdjustment, openPopover]);
 
   // Popover slot lookup
   const popoverSlot = useMemo(() => {
-    if (!subMode.popoverTarget) return null;
-    return filteredSlots.find((s) => s.id === subMode.popoverTarget.slotId) || null;
-  }, [subMode.popoverTarget, filteredSlots]);
+    if (!popoverTarget) return null;
+    return filteredSlots.find((s) => s.id === popoverTarget.slotId) || null;
+  }, [popoverTarget, filteredSlots]);
 
   // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
   const displaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
@@ -810,7 +820,7 @@ export function ExcelGridView({
       </div>
 
       {/* Combine mode banner */}
-      {subMode.combineMode && (
+      {combineMode && (
         <div
           style={{
             padding: "8px 14px",
@@ -887,7 +897,7 @@ export function ExcelGridView({
                     pendingSubMap={subMode.pendingSubMap}
                     existingSubMap={subMode.existingSubMap}
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
-                    combineMode={subMode.combineMode}
+                    combineMode={combineMode}
                   />
                 );
               })}
@@ -915,13 +925,13 @@ export function ExcelGridView({
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 <button
-                  onClick={subMode.discardAll}
+                  onClick={discardAll}
                   style={S.btn(false)}
                 >
                   破棄
                 </button>
                 <button
-                  onClick={subMode.saveAll}
+                  onClick={saveAll}
                   style={{ ...S.btn(true), background: "#2a7a2a" }}
                 >
                   確定して保存
@@ -945,25 +955,25 @@ export function ExcelGridView({
       </div>
 
       {/* Substitution Popover */}
-      {subMode.popoverTarget && popoverSlot && (
+      {popoverTarget && popoverSlot && (
         <SubstitutionPopover
-          anchorRect={subMode.popoverTarget.rect}
+          anchorRect={popoverTarget.rect}
           slot={popoverSlot}
-          originalTeacher={subMode.popoverTarget.originalTeacher}
+          originalTeacher={popoverTarget.originalTeacher}
           availableTeachers={subMode.availableTeachers}
           suggestion={subMode.suggestionMap.get(popoverSlot.id) || null}
           subjects={subjects || []}
           pendingSub={subMode.pendingSubMap.get(popoverSlot.id) || null}
           onAssign={(teacher) =>
-            subMode.assignSubstitute(
+            assignSubstitute(
               popoverSlot.id,
-              subMode.popoverTarget.originalTeacher,
+              popoverTarget.originalTeacher,
               teacher
             )
           }
-          onRemoveAssignment={() => subMode.removeAssignment(popoverSlot.id)}
-          onCombine={() => subMode.startCombine(popoverSlot.id)}
-          onClose={subMode.closePopover}
+          onRemoveAssignment={() => removeAssignment(popoverSlot.id)}
+          onCombine={() => startCombine(popoverSlot.id)}
+          onClose={closePopover}
         />
       )}
     </div>

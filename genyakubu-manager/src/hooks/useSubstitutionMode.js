@@ -78,12 +78,12 @@ export function useSubstitutionMode({
   const availableTeachers = useMemo(() => {
     if (!subDate) return [];
     return computeAvailableTeachers(
-      subDate, slots, holidays, examPeriods, subs,
+      subDate, dateFilteredSlots, holidays, examPeriods, subs,
       partTimeStaff, subjects, timetables, biweeklyAnchors,
       teacherSubjects || {}
     );
   }, [
-    subDate, slots, holidays, examPeriods, subs,
+    subDate, dateFilteredSlots, holidays, examPeriods, subs,
     partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects,
   ]);
 
@@ -99,14 +99,15 @@ export function useSubstitutionMode({
       if (pendingSubMap.has(slot.id)) continue; // pending assignment
 
       const teachers = getSlotTeachers(slot);
-      for (const t of teachers) {
-        if (unavailableTeachers.has(t)) {
-          result.push({
-            slotId: slot.id,
-            originalTeacher: t,
-            date: subDate,
-          });
-        }
+      // For multi-teacher slots, pick the first absent teacher
+      // (one substitute per slot, not per teacher)
+      const absent = teachers.find((t) => unavailableTeachers.has(t));
+      if (absent) {
+        result.push({
+          slotId: slot.id,
+          originalTeacher: absent,
+          date: subDate,
+        });
       }
     }
     return result;
@@ -116,10 +117,10 @@ export function useSubstitutionMode({
   const chainSuggestions = useMemo(() => {
     if (!subDate || uncoveredSlots.length === 0 || availableTeachers.length === 0) return [];
     return suggestChainSubstitutions(
-      uncoveredSlots, availableTeachers, slots,
+      uncoveredSlots, availableTeachers, dateFilteredSlots,
       subjects, subjectCategories || [], partTimeStaff
     );
-  }, [subDate, uncoveredSlots, availableTeachers, slots, subjects, subjectCategories, partTimeStaff]);
+  }, [subDate, uncoveredSlots, availableTeachers, dateFilteredSlots, subjects, subjectCategories, partTimeStaff]);
 
   // Suggestion map for quick lookup
   const suggestionMap = useMemo(() => {
