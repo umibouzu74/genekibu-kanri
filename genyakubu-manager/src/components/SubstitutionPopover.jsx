@@ -1,8 +1,19 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { pickSubjectId } from "../utils/subjectMatch";
 
+function computePosition(anchorRect) {
+  const top = anchorRect.bottom + 4;
+  const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 300));
+  const maxTop = window.innerHeight - 400;
+  return {
+    top: top > maxTop ? anchorRect.top - 304 : top,
+    left,
+  };
+}
+
 export const SubstitutionPopover = memo(function SubstitutionPopover({
-  anchorRect,
+  anchorEl,
+  anchorRect: initialRect,
   slot,
   originalTeacher,
   availableTeachers,
@@ -32,32 +43,35 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Close on scroll (position becomes stale)
+  // Track position on scroll (recalculate from anchor element)
+  const [pos, setPos] = useState(() => computePosition(initialRect));
   useEffect(() => {
-    const handler = () => onClose();
-    window.addEventListener("scroll", handler, true);
-    return () => window.removeEventListener("scroll", handler, true);
-  }, [onClose]);
-
-  // Position: below the anchor, clamp to viewport
-  const style = (() => {
-    const top = anchorRect.bottom + 4;
-    const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 300));
-    const maxTop = window.innerHeight - 400;
-    return {
-      position: "fixed",
-      top: top > maxTop ? anchorRect.top - 304 : top,
-      left,
-      zIndex: 2000,
-      width: 280,
-      maxHeight: 360,
-      overflowY: "auto",
-      background: "#fff",
-      border: "1px solid #ccc",
-      borderRadius: 8,
-      boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+    const handler = () => {
+      if (anchorEl) {
+        setPos(computePosition(anchorEl.getBoundingClientRect()));
+      }
     };
-  })();
+    window.addEventListener("scroll", handler, true);
+    window.addEventListener("resize", handler);
+    return () => {
+      window.removeEventListener("scroll", handler, true);
+      window.removeEventListener("resize", handler);
+    };
+  }, [anchorEl]);
+
+  const style = {
+    position: "fixed",
+    top: pos.top,
+    left: pos.left,
+    zIndex: 2000,
+    width: 280,
+    maxHeight: 360,
+    overflowY: "auto",
+    background: "#fff",
+    border: "1px solid #ccc",
+    borderRadius: 8,
+    boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+  };
 
   // Match slot's subject
   const slotSubjectId = pickSubjectId(slot.subj, subjects);

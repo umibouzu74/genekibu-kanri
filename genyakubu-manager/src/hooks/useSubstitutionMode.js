@@ -158,8 +158,8 @@ export function useSubstitutionMode({
     setPendingSubs((prev) => prev.filter((s) => s.slotId !== slotId));
   }, []);
 
-  const openPopover = useCallback((slotId, rect, originalTeacher) => {
-    setPopoverTarget({ slotId, rect, originalTeacher });
+  const openPopover = useCallback((slotId, rect, originalTeacher, anchorEl) => {
+    setPopoverTarget({ slotId, rect, originalTeacher, anchorEl: anchorEl || null });
   }, []);
 
   const closePopover = useCallback(() => {
