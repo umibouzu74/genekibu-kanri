@@ -545,6 +545,12 @@ export default function App() {
               onRemoveAdjustment={adjCrud.remove}
               onReplaceAdjustment={adjCrud.replace}
               isAdmin={isAdmin}
+              examPeriods={examPeriods}
+              subjects={subjects}
+              subjectCategories={subjectCategories}
+              timetables={timetables}
+              biweeklyAnchors={biweeklyAnchors}
+              saveSubs={saveSubs}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (

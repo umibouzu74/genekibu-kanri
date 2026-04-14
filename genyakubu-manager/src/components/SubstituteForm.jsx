@@ -9,23 +9,8 @@ import {
 } from "../data";
 import { S } from "../styles/common";
 import { formatBiweeklyNote, getSlotTeachers } from "../utils/biweekly";
+import { pickSubjectId } from "../utils/subjectMatch";
 import { sortJa } from "../utils/sortJa";
-
-// コマの科目文字列から対応する Subject.id を推定する。
-// 完全一致 → 名前を含む → 別名を含む の順で判定し、最初のマッチを返す。
-function pickSubjectId(subjStr, subjects) {
-  if (!subjStr) return null;
-  const exact = subjects.find((s) => s.name === subjStr);
-  if (exact) return exact.id;
-  const byName = subjects.find((s) => subjStr.includes(s.name));
-  if (byName) return byName.id;
-  const byAlias = subjects.find(
-    (s) =>
-      Array.isArray(s.aliases) &&
-      s.aliases.some((a) => a && subjStr.includes(a))
-  );
-  return byAlias ? byAlias.id : null;
-}
 
 export function SubstituteForm({
   sub,
