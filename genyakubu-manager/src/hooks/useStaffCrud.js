@@ -140,7 +140,7 @@ export function useStaffCrud({
   const delSubject = async (id) => {
     const ok = await confirm({
       title: "教科の削除",
-      message: "この教科を削除しますか？\n※バイトの担当教科設定からも除外されます。",
+      message: "この教科を削除しますか？\n※全講師の担当教科設定からも除外されます。",
       okLabel: "削除",
       tone: "danger",
     });

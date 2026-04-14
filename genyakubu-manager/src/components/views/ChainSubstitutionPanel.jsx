@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay, fmtDate, DEPT_COLOR, timeToMin, sortSlots } from "../../data";
+import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
 import { getDashSections } from "../../constants/schedule";
@@ -63,12 +63,9 @@ export function ChainSubstitutionPanel({
   }, [slots, dayOfDate]);
 
   // その日の時間割（3列表示用）
-  const { isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays, examPeriods),
-    [holidays, examPeriods]
-  );
   const daySchedule = useMemo(() => {
     if (!dayOfDate || !date) return [];
+    const { isOffForGrade } = makeHolidayHelpers(holidays, examPeriods);
     const daySlots = filterSlotsForDate(slots, date, timetables).filter(
       (s) => s.day === dayOfDate
     );
@@ -84,7 +81,7 @@ export function ChainSubstitutionPanel({
       });
       return { sec, color, rows };
     }).filter((s) => s.rows.length > 0);
-  }, [dayOfDate, date, slots, timetables, subs, isOffForGrade]);
+  }, [dayOfDate, date, slots, timetables, subs, holidays, examPeriods]);
 
   // 代行が必要なコマ（依頼中で代行者未定）
   const uncoveredSubs = useMemo(() => {

@@ -110,7 +110,7 @@ export function StaffManagerView({
     <div style={{ marginTop: 12 }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         <TabBtn k="staff" label="バイト一覧" count={partTimeStaff.length} />
-        <TabBtn k="fulltime" label="常勤講師" />
+        <TabBtn k="fulltime" label="常勤講師" count={fulltimeTeachers.length} />
         <TabBtn k="subjects" label="教科マスター" count={subjects.length} />
       </div>
 
