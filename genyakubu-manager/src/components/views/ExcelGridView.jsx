@@ -623,6 +623,7 @@ export function ExcelGridView({
   subjectCategories,
   teacherSubjects,
   onAddAdjustment,
+  enableSubMode = false,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -730,48 +731,50 @@ export function ExcelGridView({
 
   return (
     <div>
-      {/* Date selector for substitution mode */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 10,
-          flexWrap: "wrap",
-          padding: "8px 12px",
-          background: subMode.isSubMode ? "#f0f8ff" : "#f8f8f8",
-          border: `1px solid ${subMode.isSubMode ? "#b0d0f0" : "#e0e0e0"}`,
-          borderRadius: 8,
-        }}
-      >
-        <label style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>
-          代行管理日付
-        </label>
-        <input
-          type="date"
-          value={subMode.subDate || ""}
-          onChange={(e) => handleDateChange(e.target.value)}
-          style={{ ...S.input, width: "auto", minWidth: 140 }}
-        />
-        {subMode.isSubMode && (
-          <>
-            <span style={{ fontSize: 11, color: "#3a6ea5", fontWeight: 700 }}>
-              {subMode.dayOfDate}曜日 - 代行モード
+      {/* Date selector for substitution mode (only when enabled) */}
+      {enableSubMode && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 10,
+            flexWrap: "wrap",
+            padding: "8px 12px",
+            background: subMode.isSubMode ? "#f0f8ff" : "#f8f8f8",
+            border: `1px solid ${subMode.isSubMode ? "#b0d0f0" : "#e0e0e0"}`,
+            borderRadius: 8,
+          }}
+        >
+          <label style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>
+            代行管理日付
+          </label>
+          <input
+            type="date"
+            value={subMode.subDate || ""}
+            onChange={(e) => handleDateChange(e.target.value)}
+            style={{ ...S.input, width: "auto", minWidth: 140 }}
+          />
+          {subMode.isSubMode && (
+            <>
+              <span style={{ fontSize: 11, color: "#3a6ea5", fontWeight: 700 }}>
+                {subMode.dayOfDate}曜日 - 代行モード
+              </span>
+              <button
+                onClick={() => handleDateChange("")}
+                style={{ ...S.btn(false), fontSize: 10 }}
+              >
+                解除
+              </button>
+            </>
+          )}
+          {!subMode.isSubMode && (
+            <span style={{ fontSize: 10, color: "#999" }}>
+              日付を入力すると代行モードになります
             </span>
-            <button
-              onClick={() => handleDateChange("")}
-              style={{ ...S.btn(false), fontSize: 10 }}
-            >
-              解除
-            </button>
-          </>
-        )}
-        {!subMode.isSubMode && (
-          <span style={{ fontSize: 10, color: "#999" }}>
-            日付を入力すると代行モードになります
-          </span>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Day Tab Bar */}
       <div

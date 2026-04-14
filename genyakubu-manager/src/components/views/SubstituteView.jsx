@@ -16,6 +16,7 @@ import { sortJa } from "../../utils/sortJa";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { StatusBadge } from "../StatusBadge";
+import { ExcelGridView } from "./ExcelGridView";
 
 export function SubstituteView({
   subs,
@@ -29,6 +30,16 @@ export function SubstituteView({
   initFilter,
   onConsumeInitFilter,
   isAdmin,
+  // 時間割表タブ用 props
+  saveSubs,
+  examPeriods,
+  subjects,
+  subjectCategories,
+  timetables,
+  activeTimetableId,
+  biweeklyAnchors,
+  teacherSubjects,
+  onAddAdjustment,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -181,6 +192,7 @@ export function SubstituteView({
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
         <TabBtn k="tally" label="月次集計" />
+        <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           <button
             type="button"
@@ -801,6 +813,27 @@ export function SubstituteView({
             </div>
           )}
         </div>
+      )}
+
+      {tab === "timetable" && (
+        <ExcelGridView
+          slots={slots}
+          saveSlots={() => {}}
+          biweeklyAnchors={biweeklyAnchors || []}
+          isAdmin={isAdmin}
+          timetables={timetables || []}
+          activeTimetableId={activeTimetableId}
+          partTimeStaff={partTimeStaff}
+          subjects={subjects || []}
+          subs={subs}
+          saveSubs={saveSubs}
+          holidays={holidays}
+          examPeriods={examPeriods || []}
+          subjectCategories={subjectCategories || []}
+          teacherSubjects={teacherSubjects || {}}
+          onAddAdjustment={onAddAdjustment}
+          enableSubMode
+        />
       )}
 
     </div>
