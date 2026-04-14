@@ -15,6 +15,7 @@ export const StaffUnavailabilityPanel = memo(function StaffUnavailabilityPanel({
   teacherGroups,
   unavailableTeachers,
   onToggleTeacher,
+  onBulkToggle,
   onClearAll,
   collapsed,
   onToggleCollapse,
@@ -48,15 +49,13 @@ export const StaffUnavailabilityPanel = memo(function StaffUnavailabilityPanel({
   const handleGroupToggle = useCallback(
     (teachers) => {
       const allSelected = teachers.every((t) => unavailableTeachers.has(t));
-      for (const t of teachers) {
-        if (allSelected) {
-          if (unavailableTeachers.has(t)) onToggleTeacher(t);
-        } else {
-          if (!unavailableTeachers.has(t)) onToggleTeacher(t);
-        }
+      if (onBulkToggle) {
+        onBulkToggle(teachers, !allSelected);
+      } else {
+        for (const t of teachers) onToggleTeacher(t);
       }
     },
-    [unavailableTeachers, onToggleTeacher]
+    [unavailableTeachers, onToggleTeacher, onBulkToggle]
   );
 
   if (collapsed) {
@@ -216,12 +215,9 @@ export const StaffUnavailabilityPanel = memo(function StaffUnavailabilityPanel({
         )}
         {dayGroups.map((group) => {
           const color = SUBJECT_COLORS[group.label] || "#888";
-          const allSelected = group.teachers.every((t) =>
-            unavailableTeachers.has(t)
-          );
-          const someSelected = group.teachers.some((t) =>
-            unavailableTeachers.has(t)
-          );
+          const selectedInGroup = group.teachers.filter((t) => unavailableTeachers.has(t)).length;
+          const allSelected = selectedInGroup === group.teachers.length;
+          const someSelected = selectedInGroup > 0;
 
           return (
             <div key={group.key}>
@@ -288,9 +284,8 @@ export const StaffUnavailabilityPanel = memo(function StaffUnavailabilityPanel({
                     fontWeight: 600,
                   }}
                 >
-                  {group.teachers.filter((t) => unavailableTeachers.has(t))
-                    .length > 0
-                    ? `${group.teachers.filter((t) => unavailableTeachers.has(t)).length}/`
+                  {selectedInGroup > 0
+                    ? `${selectedInGroup}/`
                     : ""}
                   {group.teachers.length}
                 </span>
