@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   DAY_COLOR as DC,
   DAY_BG as DB,
@@ -10,6 +10,7 @@ import {
 import { getDashSections } from "../../constants/schedule";
 import {
   formatBiweeklyTeacher,
+  getSlotTeachers,
   getSlotWeekType,
   isBiweekly,
   formatCount,
@@ -23,6 +24,8 @@ import {
   getCombinedSpan,
   splitTime,
 } from "../../utils/excelGrid";
+import { useTeacherGroups } from "../../hooks/useTeacherGroups";
+import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
 const ExcelCell = memo(function ExcelCell({
@@ -38,6 +41,7 @@ const ExcelCell = memo(function ExcelCell({
   onDragEnd,
   onEdit,
   biweeklyAnchors,
+  isUnavailable,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -85,10 +89,15 @@ const ExcelCell = memo(function ExcelCell({
         minWidth: 100,
         verticalAlign: "top",
         cursor: isAdmin ? "grab" : "default",
-        background: isDragOver ? "#e8f4ff" : "#fff",
+        background: isDragOver
+          ? "#e8f4ff"
+          : isUnavailable
+            ? "#fff0f0"
+            : "#fff",
         opacity: isDragSource ? 0.4 : 1,
         transition: "background .15s, opacity .15s",
         position: "relative",
+        ...(isUnavailable && { borderLeft: "3px solid #c03030" }),
       }}
     >
       <div style={{ lineHeight: 1.3 }}>
@@ -118,13 +127,28 @@ const ExcelCell = memo(function ExcelCell({
               {weekType}週
             </span>
           )}
+          {isUnavailable && (
+            <span
+              style={{
+                background: "#c03030",
+                color: "#fff",
+                padding: "0 4px",
+                borderRadius: 3,
+                fontSize: 9,
+                fontWeight: 700,
+              }}
+            >
+              欠
+            </span>
+          )}
         </div>
         <div
           style={{
             fontSize: 15,
             fontWeight: 800,
-            color: "#1a1a2e",
+            color: isUnavailable ? "#c03030" : "#1a1a2e",
             marginTop: 2,
+            textDecoration: isUnavailable ? "line-through" : "none",
           }}
         >
           {formatBiweeklyTeacher(slot.teacher, slot.note)}
@@ -153,6 +177,7 @@ function ExcelSection({
   allSlots,
   dragState,
   setDragState,
+  unavailableTeachers,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -420,6 +445,8 @@ function ExcelSection({
                       const combined = combinedCells.find((c) => c.colIdx === colIdx);
                       if (combined) {
                         const cellKey = `${time}_${col.grade}_${combined.slot.cls}_${combined.slot.room}`;
+                        const cellUnavailable = unavailableTeachers.size > 0 &&
+                          getSlotTeachers(combined.slot).some((t) => unavailableTeachers.has(t));
                         return (
                           <ExcelCell
                             key={cellKey}
@@ -435,6 +462,7 @@ function ExcelSection({
                             onDragEnd={handleDragEnd}
                             onEdit={onEdit}
                             biweeklyAnchors={biweeklyAnchors}
+                            isUnavailable={cellUnavailable}
                           />
                         );
                       }
@@ -445,6 +473,8 @@ function ExcelSection({
                     // Individual slot
                     const slot = findSlotForCell(sectionSlots, day, time, col.grade, col.cls, col.room);
                     const cellKey = `${time}_${col.grade}_${col.cls}_${col.room}`;
+                    const cellUnavailable = slot && unavailableTeachers.size > 0 &&
+                      getSlotTeachers(slot).some((t) => unavailableTeachers.has(t));
                     return (
                       <ExcelCell
                         key={cellKey}
@@ -460,6 +490,7 @@ function ExcelSection({
                         onDragEnd={handleDragEnd}
                         onEdit={onEdit}
                         biweeklyAnchors={biweeklyAnchors}
+                        isUnavailable={cellUnavailable}
                       />
                     );
                   })}
@@ -482,9 +513,13 @@ export function ExcelGridView({
   isAdmin,
   timetables,
   activeTimetableId,
+  partTimeStaff,
+  subjects,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
+  const [unavailableTeachers, setUnavailableTeachers] = useState(new Set());
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   // Filter by active timetable
   const filteredSlots = useMemo(() => {
@@ -500,6 +535,32 @@ export function ExcelGridView({
     for (const s of filteredSlots) days.add(s.day);
     return days;
   }, [filteredSlots]);
+
+  // Teacher groups for the unavailability panel
+  const teacherGroups = useTeacherGroups({
+    slots: filteredSlots,
+    partTimeStaff: partTimeStaff || [],
+    subjects: subjects || [],
+    search: "",
+  });
+
+  // Clear selection when day changes
+  useEffect(() => {
+    setUnavailableTeachers(new Set());
+  }, [selectedDay]);
+
+  const toggleTeacher = useCallback((name) => {
+    setUnavailableTeachers((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const clearAllUnavailable = useCallback(() => {
+    setUnavailableTeachers(new Set());
+  }, []);
 
   return (
     <div>
@@ -546,53 +607,71 @@ export function ExcelGridView({
           : "時間割の閲覧モード"}
       </div>
 
-      {/* Sections */}
-      {!daysWithSlots.has(selectedDay) ? (
-        <div
-          style={{
-            textAlign: "center",
-            color: "#888",
-            padding: 40,
-            background: "#fff",
-            borderRadius: 8,
-            border: "1px solid #e0e0e0",
-          }}
-        >
-          {selectedDay}曜日のコマがありません
+      {/* Grid + Panel layout */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {/* Sections */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!daysWithSlots.has(selectedDay) ? (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#888",
+                padding: 40,
+                background: "#fff",
+                borderRadius: 8,
+                border: "1px solid #e0e0e0",
+              }}
+            >
+              {selectedDay}曜日のコマがありません
+            </div>
+          ) : (
+            <div
+              className="excel-grid-sections"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+                gap: 12,
+                alignItems: "start",
+              }}
+            >
+              {getDashSections(selectedDay).map((sec) => {
+                const color =
+                  sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+                return (
+                  <ExcelSection
+                    key={sec.key}
+                    label={sec.label}
+                    headerColor={color.accent}
+                    slots={filteredSlots}
+                    day={selectedDay}
+                    sectionFilterFn={sec.filterFn}
+                    isAdmin={isAdmin}
+                    biweeklyAnchors={biweeklyAnchors}
+                    onEdit={onEdit}
+                    saveSlots={saveSlots}
+                    allSlots={slots}
+                    dragState={dragState}
+                    setDragState={setDragState}
+                    unavailableTeachers={unavailableTeachers}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
-      ) : (
-        <div
-          className="excel-grid-sections"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-            gap: 12,
-            alignItems: "start",
-          }}
-        >
-          {getDashSections(selectedDay).map((sec) => {
-            const color =
-              sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
-            return (
-              <ExcelSection
-                key={sec.key}
-                label={sec.label}
-                headerColor={color.accent}
-                slots={filteredSlots}
-                day={selectedDay}
-                sectionFilterFn={sec.filterFn}
-                isAdmin={isAdmin}
-                biweeklyAnchors={biweeklyAnchors}
-                onEdit={onEdit}
-                saveSlots={saveSlots}
-                allSlots={slots}
-                dragState={dragState}
-                setDragState={setDragState}
-              />
-            );
-          })}
-        </div>
-      )}
+
+        {/* Unavailability Panel */}
+        <StaffUnavailabilityPanel
+          teacherGroups={teacherGroups}
+          unavailableTeachers={unavailableTeachers}
+          onToggleTeacher={toggleTeacher}
+          onClearAll={clearAllUnavailable}
+          collapsed={panelCollapsed}
+          onToggleCollapse={() => setPanelCollapsed((p) => !p)}
+          slots={filteredSlots}
+          selectedDay={selectedDay}
+        />
+      </div>
     </div>
   );
 }

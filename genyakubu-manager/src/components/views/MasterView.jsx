@@ -156,6 +156,8 @@ export function MasterView({
   timetables,
   activeTimetableId,
   saveSlots,
+  partTimeStaff,
+  subjects,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -253,6 +255,8 @@ export function MasterView({
           isAdmin={isAdmin}
           timetables={timetables}
           activeTimetableId={activeTimetableId}
+          partTimeStaff={partTimeStaff}
+          subjects={subjects}
         />
       </div>
     );

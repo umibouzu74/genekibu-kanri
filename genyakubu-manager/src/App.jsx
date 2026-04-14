@@ -518,6 +518,8 @@ export default function App() {
               timetables={timetables}
               activeTimetableId={activeTimetableId}
               saveSlots={saveSlots}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
