@@ -245,7 +245,7 @@ function ExcelSection({
   const slotCount = weightedSlotCount(sectionSlots);
 
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div>
       <div
         style={{
           background: headerColor,
@@ -561,27 +561,37 @@ export function ExcelGridView({
           {selectedDay}曜日のコマがありません
         </div>
       ) : (
-        getDashSections(selectedDay).map((sec) => {
-          const color =
-            sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
-          return (
-            <ExcelSection
-              key={sec.key}
-              label={sec.label}
-              headerColor={color.accent}
-              slots={filteredSlots}
-              day={selectedDay}
-              sectionFilterFn={sec.filterFn}
-              isAdmin={isAdmin}
-              biweeklyAnchors={biweeklyAnchors}
-              onEdit={onEdit}
-              saveSlots={saveSlots}
-              allSlots={slots}
-              dragState={dragState}
-              setDragState={setDragState}
-            />
-          );
-        })
+        <div
+          className="excel-grid-sections"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+            gap: 12,
+            alignItems: "start",
+          }}
+        >
+          {getDashSections(selectedDay).map((sec) => {
+            const color =
+              sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+            return (
+              <ExcelSection
+                key={sec.key}
+                label={sec.label}
+                headerColor={color.accent}
+                slots={filteredSlots}
+                day={selectedDay}
+                sectionFilterFn={sec.filterFn}
+                isAdmin={isAdmin}
+                biweeklyAnchors={biweeklyAnchors}
+                onEdit={onEdit}
+                saveSlots={saveSlots}
+                allSlots={slots}
+                dragState={dragState}
+                setDragState={setDragState}
+              />
+            );
+          })}
+        </div>
       )}
     </div>
   );

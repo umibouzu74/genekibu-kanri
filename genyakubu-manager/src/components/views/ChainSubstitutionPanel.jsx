@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay, fmtDate } from "../../data";
+import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
+import { getDashSections } from "../../constants/schedule";
+import { getSlotTeachers } from "../../utils/biweekly";
+import { filterSlotsForDate } from "../../utils/timetable";
+import { makeHolidayHelpers } from "./dashboardHelpers";
 import {
   computeAvailableTeachers,
   suggestChainSubstitutions,
@@ -19,6 +23,7 @@ export function ChainSubstitutionPanel({
   subjectCategories,
   timetables,
   biweeklyAnchors,
+  teacherSubjects = {},
   saveSubs,
   isAdmin,
 }) {
@@ -57,6 +62,27 @@ export function ChainSubstitutionPanel({
     return [...times].sort();
   }, [slots, dayOfDate]);
 
+  // その日の時間割（3列表示用）
+  const daySchedule = useMemo(() => {
+    if (!dayOfDate || !date) return [];
+    const { isOffForGrade } = makeHolidayHelpers(holidays, examPeriods);
+    const daySlots = filterSlotsForDate(slots, date, timetables).filter(
+      (s) => s.day === dayOfDate
+    );
+    const sections = getDashSections(dayOfDate);
+    const subsForDate = subs.filter((s) => s.date === date);
+    return sections.map((sec) => {
+      const color = sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
+      const secSlots = sortSlots(daySlots.filter(sec.filterFn));
+      const rows = secSlots.map((slot) => {
+        const off = isOffForGrade(date, slot.grade, slot.subj);
+        const sub = subsForDate.find((s) => s.slotId === slot.id);
+        return { slot, off, sub };
+      });
+      return { sec, color, rows };
+    }).filter((s) => s.rows.length > 0);
+  }, [dayOfDate, date, slots, timetables, subs, holidays, examPeriods]);
+
   // 代行が必要なコマ（依頼中で代行者未定）
   const uncoveredSubs = useMemo(() => {
     return subs.filter(
@@ -73,7 +99,7 @@ export function ChainSubstitutionPanel({
   const handleGenerate = useCallback(() => {
     const auto = computeAvailableTeachers(
       date, slots, holidays, examPeriods, subs,
-      partTimeStaff, subjects, timetables, biweeklyAnchors
+      partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects
     );
     setAutoAvailable(auto);
 
@@ -229,6 +255,58 @@ export function ChainSubstitutionPanel({
           </button>
         )}
       </div>
+
+      {/* その日の時間割（3列表示） */}
+      {dayOfDate && daySchedule.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 8,
+          }}
+        >
+          {daySchedule.map(({ sec, color, rows }) => (
+            <div key={sec.key} style={{ border: "1px solid #e0e0e0", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{
+                background: color.accent, color: "#fff",
+                padding: "4px 10px", fontSize: 11, fontWeight: 800,
+              }}>
+                {sec.label}
+              </div>
+              <div style={{ fontSize: 11 }}>
+                {rows.map(({ slot, off, sub }) => {
+                  const teachers = getSlotTeachers(slot);
+                  const hasSub = Boolean(sub);
+                  const needsSub = hasSub && !sub.substitute;
+                  const bg = off ? "#f5f0e0" : needsSub ? "#fde4e4" : hasSub ? "#e0f2e4" : "#fff";
+                  return (
+                    <div
+                      key={slot.id}
+                      style={{
+                        padding: "3px 8px", borderBottom: "1px solid #f0f0f0",
+                        background: bg, display: "flex", gap: 6,
+                        alignItems: "center", flexWrap: "wrap",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, minWidth: 80, fontSize: 10 }}>{slot.time}</span>
+                      <span style={{ fontSize: 10 }}>
+                        {slot.grade}{slot.cls && slot.cls !== "-" ? slot.cls : ""}
+                      </span>
+                      <span style={{ color: "#555", fontSize: 10 }}>{slot.subj}</span>
+                      <span style={{ fontWeight: 700, fontSize: 10 }}>{teachers.join("・")}</span>
+                      {off && <span style={{ fontSize: 9, color: "#b8860b" }}>休講</span>}
+                      {needsSub && <span style={{ fontSize: 9, color: "#c03030", fontWeight: 700 }}>代行必要</span>}
+                      {hasSub && sub.substitute && (
+                        <span style={{ fontSize: 9, color: "#2a7a4a" }}>← {sub.substitute}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 代行が必要なコマ (常に表示) */}
       <Section title={`代行が必要なコマ (${uncoveredSubs.length}件)`}>
