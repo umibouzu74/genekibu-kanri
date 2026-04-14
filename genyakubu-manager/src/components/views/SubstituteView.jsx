@@ -17,6 +17,7 @@ import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { StatusBadge } from "../StatusBadge";
 import { AdjustmentEditor } from "./AdjustmentEditor";
+import { ChainSubstitutionPanel } from "./ChainSubstitutionPanel";
 
 export function SubstituteView({
   subs,
@@ -35,6 +36,13 @@ export function SubstituteView({
   onRemoveAdjustment,
   onReplaceAdjustment,
   isAdmin,
+  // 玉突き提案用 props
+  examPeriods,
+  subjects,
+  subjectCategories,
+  timetables,
+  biweeklyAnchors,
+  saveSubs,
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -185,6 +193,7 @@ export function SubstituteView({
         <TabBtn k="list" label="代行一覧" count={subs.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="adjust" label="時間割調整" count={adjustments?.length || null} />
+        <TabBtn k="chain" label="玉突き提案" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           <button
             type="button"
@@ -815,6 +824,22 @@ export function SubstituteView({
           onDelAdjustment={onDelAdjustment}
           onRemoveAdjustment={onRemoveAdjustment}
           onReplaceAdjustment={onReplaceAdjustment}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {tab === "chain" && (
+        <ChainSubstitutionPanel
+          slots={slots}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods || []}
+          partTimeStaff={partTimeStaff}
+          subjects={subjects || []}
+          subjectCategories={subjectCategories || []}
+          timetables={timetables || []}
+          biweeklyAnchors={biweeklyAnchors || []}
+          saveSubs={saveSubs}
           isAdmin={isAdmin}
         />
       )}
