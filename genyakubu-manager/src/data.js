@@ -170,7 +170,7 @@ export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
 // Inline isOffForGrade logic (can't import from components/views/dashboardHelpers
 // without creating a circular-ish dep tree). Mirrors makeHolidayHelpers().
 function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
-  const dept = gradeToDept(slot.grade);
+  const dept = slot.grade ? gradeToDept(slot.grade) : null;
   const offByHoliday = holidays.some((h) => {
     if (h.date !== dateStr) return false;
     const sc = h.scope || ["全部"];
