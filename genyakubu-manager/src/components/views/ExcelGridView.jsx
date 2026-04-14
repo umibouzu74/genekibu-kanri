@@ -1027,6 +1027,7 @@ export function ExcelGridView({
           slot={popoverSlot}
           originalTeacher={popoverTarget.originalTeacher}
           availableTeachers={subMode.availableTeachers}
+          allTeachersForDay={subMode.allTeachersForDay}
           suggestion={subMode.suggestionMap.get(popoverSlot.id) || null}
           subjects={subjects || []}
           pendingSub={subMode.pendingSubMap.get(popoverSlot.id) || null}

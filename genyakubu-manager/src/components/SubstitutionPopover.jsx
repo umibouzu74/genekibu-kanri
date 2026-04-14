@@ -18,6 +18,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   slot,
   originalTeacher,
   availableTeachers,
+  allTeachersForDay,
   suggestion,
   subjects,
   pendingSub,
@@ -30,6 +31,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   partTimeStaff,
 }) {
   const ref = useRef(null);
+  const [showAll, setShowAll] = useState(false);
 
   // Close on click outside
   useEffect(() => {
@@ -80,23 +82,42 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   // Match slot's subject
   const slotSubjectId = pickSubjectId(slot.subj, subjects);
 
-  // Filter and sort candidates by relevance
-  const candidates = availableTeachers
+  // Filter and sort free candidates by relevance
+  const freeCandidates = availableTeachers
     .filter((t) => {
       if (t.name === originalTeacher) return false;
       if (t.isFreeAllDay) return true;
       return t.freeTimeSlots.some((ft) => ft === slot.time);
     })
     .sort((a, b) => {
-      // Subject match first
       const aMatch = a.subjectIds.includes(slotSubjectId) ? 1 : 0;
       const bMatch = b.subjectIds.includes(slotSubjectId) ? 1 : 0;
       if (bMatch !== aMatch) return bMatch - aMatch;
-      // Full-time over part-time
       if (a.isPartTime !== b.isPartTime) return a.isPartTime ? 1 : -1;
-      // More free slots = more available
       return (b.freeTimeSlots?.length || 0) - (a.freeTimeSlots?.length || 0);
     });
+
+  // When "全員表示" is on, add busy teachers that weren't already included
+  const freeNames = new Set(freeCandidates.map((t) => t.name));
+  const busyCandidates = (allTeachersForDay || [])
+    .filter((t) => t.name !== originalTeacher && !freeNames.has(t.name))
+    .map((t) => ({
+      name: t.name,
+      isFreeAllDay: false,
+      freeTimeSlots: [],
+      subjectIds: t.subjectIds || [],
+      isPartTime: t.isPartTime,
+      isBusy: true,
+    }))
+    .sort((a, b) => {
+      const aMatch = a.subjectIds.includes(slotSubjectId) ? 1 : 0;
+      const bMatch = b.subjectIds.includes(slotSubjectId) ? 1 : 0;
+      if (bMatch !== aMatch) return bMatch - aMatch;
+      if (a.isPartTime !== b.isPartTime) return a.isPartTime ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+  const candidates = showAll ? [...freeCandidates, ...busyCandidates] : freeCandidates;
 
   // Build pending assignments for conflict check
   const pendingAssignments = (pendingSubs || []).map((p) => ({
@@ -119,8 +140,29 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
           {slot.time} {slot.grade}
           {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
         </div>
-        <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-          担当: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            marginTop: 2, gap: 6,
+          }}
+        >
+          <span style={{ fontSize: 10, color: "#888" }}>
+            担当: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
+          </span>
+          <label
+            style={{
+              display: "flex", alignItems: "center", gap: 3,
+              fontSize: 10, color: "#666", cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => setShowAll(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            全員表示
+          </label>
         </div>
       </div>
 
@@ -194,8 +236,13 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
       {/* Candidate list */}
       <div style={{ maxHeight: 220, overflowY: "auto" }}>
         {candidates.length === 0 && !suggestion && (
-          <div style={{ padding: "12px", fontSize: 11, color: "#888", textAlign: "center" }}>
+          <div style={{ padding: "12px", fontSize: 11, color: "#888", textAlign: "center", lineHeight: 1.6 }}>
             この時間に空いている講師がいません
+            {!showAll && (
+              <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
+                「全員表示」をONで授業中の講師も表示されます
+              </div>
+            )}
           </div>
         )}
         {candidates.map((t) => {
@@ -253,13 +300,18 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
                   別教科
                 </span>
               ) : null}
-              {hasConflict && (
+              {t.isBusy && (
+                <span style={{ fontSize: 9, background: "#eeeeee", color: "#666", padding: "0 4px", borderRadius: 3, fontWeight: 700 }}>
+                  授業中
+                </span>
+              )}
+              {hasConflict && !t.isBusy && (
                 <span style={{ fontSize: 9, background: "#fde4e4", color: "#c03030", padding: "0 4px", borderRadius: 3, fontWeight: 700 }}>
                   時間重複
                 </span>
               )}
               <span style={{ fontSize: 9, color: "#888", marginLeft: "auto" }}>
-                {t.isFreeAllDay ? "全日" : t.freeTimeSlots.length + "コマ空"}
+                {t.isBusy ? "" : t.isFreeAllDay ? "全日" : t.freeTimeSlots.length + "コマ空"}
               </span>
             </div>
           );

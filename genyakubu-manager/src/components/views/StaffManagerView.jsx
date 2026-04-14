@@ -20,6 +20,7 @@ export function StaffManagerView({
   slots,
   subs,
   holidays,
+  examPeriods,
   onAddStaff,
   onDelStaff,
   onToggleStaffSubject,
@@ -291,7 +292,7 @@ export function StaffManagerView({
 
                     {/* 今月の出勤状況 */}
                     {subs && (() => {
-                      const regularDates = staffMonthlyRegularDates(slots, staff.name, holidays || [], nowYear, nowMonth);
+                      const regularDates = staffMonthlyRegularDates(slots, staff.name, holidays || [], nowYear, nowMonth, examPeriods || []);
                       const workDates = staffMonthlyWorkDates(subs, staff.name, nowYear, nowMonth);
                       const absenceDates = staffMonthlyAbsenceDates(subs, staff.name, nowYear, nowMonth);
                       return (

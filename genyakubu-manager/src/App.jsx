@@ -574,6 +574,7 @@ export default function App() {
               slots={slots}
               subs={subs}
               holidays={holidays}
+              examPeriods={examPeriods}
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}
