@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay, fmtDate, SUB_STATUS } from "../../data";
-import { getSlotTeachers } from "../../utils/biweekly";
+import { dateToDay, fmtDate } from "../../data";
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
 import {
@@ -42,7 +41,11 @@ export function ChainSubstitutionPanel({
   // 全講師リスト（手動追加ドロップダウン用）
   const allTeachers = useMemo(() => {
     const set = new Set(partTimeStaff.map((s) => s.name));
-    slots.forEach((s) => s.teacher && set.add(s.teacher));
+    slots.forEach((s) => {
+      if (!s.teacher) return;
+      const names = s.teacher.includes("·") ? s.teacher.split("·") : [s.teacher];
+      names.forEach((n) => set.add(n));
+    });
     return sortJa([...set]);
   }, [slots, partTimeStaff]);
 
@@ -164,7 +167,7 @@ export function ChainSubstitutionPanel({
         originalTeacher: sugg.originalTeacher,
         substitute: sugg.suggestedSubstitute,
         status: "confirmed",
-        memo: sugg.isChain ? "玉突き代行" : "玉突き代行",
+        memo: "玉突き代行",
         createdAt: existing?.createdAt || ts,
         updatedAt: ts,
       });

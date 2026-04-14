@@ -70,16 +70,6 @@ export function computeAvailableTeachers(
     slotCancelled.set(slot.id, isOffForGrade(date, slot.grade, slot.subj));
   }
 
-  // 隔週スロットで、この日が担当でない場合もキャンセル扱い
-  for (const slot of daySlots) {
-    if (isBiweekly(slot.note) && !slotCancelled.get(slot.id)) {
-      const wt = getSlotWeekType(date, slot, biweeklyAnchors);
-      // B週ならメイン教師は休み (パートナーが担当)
-      // ただし空き判定では、メイン教師がB週に空いていることを検出する
-      // この情報は教師ごとの処理で使う
-    }
-  }
-
   // 既存の代行レコード (この日の確定分) で既に代行に入っている時間帯を取得
   const subsForDate = subs.filter((s) => s.date === date);
   const substituteAssignments = new Map(); // teacher -> [time strings]
@@ -266,23 +256,13 @@ export function suggestChainSubstitutions(
         if (teacher.name === sub.originalTeacher) continue;
 
         // 時間が空いているか
-        const isFree =
-          teacher.isFreeAllDay && teacher.busyTimes.length === 0
-            ? true
-            : teacher.freeTimeSlots.some(
-                (ft) => timeOverlaps(ft, slot.time)
-              ) && !teacher.busyTimes.some((bt) => timeOverlaps(bt, slot.time));
-
-        // 全日空きで、まだ busyTimes に重複がない場合も OK
-        if (
-          !isFree &&
-          teacher.isFreeAllDay &&
-          !teacher.busyTimes.some((bt) => timeOverlaps(bt, slot.time))
-        ) {
-          // 全日空きなのでOK
-        } else if (!isFree) {
-          continue;
-        }
+        const hasTimeAvailable =
+          teacher.isFreeAllDay ||
+          teacher.freeTimeSlots.some((ft) => timeOverlaps(ft, slot.time));
+        const notBusy = !teacher.busyTimes.some((bt) =>
+          timeOverlaps(bt, slot.time)
+        );
+        if (!hasTimeAvailable || !notBusy) continue;
 
         // スコア計算
         let score = 0;
@@ -390,15 +370,12 @@ export function validateSubstituteChange(
   if (!slot) return { timeConflict: false, subjectMismatch: false };
 
   // 時間重複チェック
-  const timeConflict = existingAssignments.some(
-    (a) =>
-      a.suggestedSubstitute === teacherName &&
-      a.slotId !== slotId &&
-      timeOverlaps(
-        slot.time,
-        (slots.find((s) => s.id === a.slotId) || {}).time || ""
-      )
-  );
+  const timeConflict = existingAssignments.some((a) => {
+    if (a.suggestedSubstitute !== teacherName || a.slotId === slotId) return false;
+    const otherSlot = slots.find((s) => s.id === a.slotId);
+    if (!otherSlot) return false;
+    return timeOverlaps(slot.time, otherSlot.time);
+  });
 
   // 教科チェック
   const slotSubjectId = pickSubjectId(slot.subj, subjects);
