@@ -50,6 +50,7 @@ const ExcelCell = memo(function ExcelCell({
   pendingSub,
   existingSub,
   isSubMode,
+  isCombineTarget,
   onCellClick,
 }) {
   if (!slot) {
@@ -143,7 +144,7 @@ const ExcelCell = memo(function ExcelCell({
     teacherDecor = "line-through";
   }
 
-  const isClickable = isSubMode && (isUnavailable || pendingSub);
+  const isClickable = isSubMode && (isUnavailable || pendingSub || isCombineTarget);
 
   const handleClick = (e) => {
     if (!isClickable || !onCellClick) return;
@@ -173,6 +174,10 @@ const ExcelCell = memo(function ExcelCell({
         transition: "background .15s, opacity .15s",
         position: "relative",
         ...(borderLeft && { borderLeft }),
+        ...(isCombineTarget && {
+          outline: "2px dashed #d4a020",
+          outlineOffset: -2,
+        }),
       }}
     >
       <div style={{ lineHeight: 1.3 }}>
@@ -246,6 +251,7 @@ function ExcelSection({
   pendingSubMap,
   existingSubMap,
   onCellClick,
+  combineMode,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -343,14 +349,21 @@ function ExcelSection({
     const isOff = holidayOffSlots.has(slot.id);
     const isUnavail = unavailableTeachers.size > 0 &&
       getSlotTeachers(slot).some((t) => unavailableTeachers.has(t));
+    const isCombineTarget = combineMode && slot.id !== combineMode.sourceSlotId;
     return {
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
       pendingSub: pendingSubMap.get(slot.id) || null,
       existingSub: existingSubMap.get(slot.id) || null,
       isSubMode,
+      isCombineTarget: !!isCombineTarget,
       onCellClick: onCellClick
         ? (s, rect) => {
+            // In combine mode, any cell can be clicked
+            if (combineMode) {
+              onCellClick(s, rect, "");
+              return;
+            }
             const teachers = getSlotTeachers(s);
             const absent = teachers.find((t) => unavailableTeachers.has(t));
             if (absent) onCellClick(s, rect, absent);
@@ -609,6 +622,7 @@ export function ExcelGridView({
   examPeriods,
   subjectCategories,
   teacherSubjects,
+  onAddAdjustment,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -685,8 +699,15 @@ export function ExcelGridView({
 
   // Handle cell click in substitution mode
   const handleCellClick = useCallback((slot, rect, originalTeacher) => {
+    // If in combine mode, complete the combine
+    if (subMode.combineMode) {
+      if (slot.id !== subMode.combineMode.sourceSlotId) {
+        subMode.completeCombine(slot.id, onAddAdjustment);
+      }
+      return;
+    }
     subMode.openPopover(slot.id, rect, originalTeacher);
-  }, [subMode]);
+  }, [subMode, onAddAdjustment]);
 
   // Popover slot lookup
   const popoverSlot = useMemo(() => {
@@ -788,6 +809,33 @@ export function ExcelGridView({
             : "時間割の閲覧モード"}
       </div>
 
+      {/* Combine mode banner */}
+      {subMode.combineMode && (
+        <div
+          style={{
+            padding: "8px 14px",
+            marginBottom: 10,
+            background: "#fff8e0",
+            border: "1px solid #e0c860",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#8a6000" }}>
+            合同にするコマをクリックしてください
+          </span>
+          <button
+            onClick={subMode.cancelCombine}
+            style={{ ...S.btn(false), fontSize: 10 }}
+          >
+            キャンセル
+          </button>
+        </div>
+      )}
+
       {/* Grid + Panel layout */}
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         {/* Sections */}
@@ -839,6 +887,7 @@ export function ExcelGridView({
                     pendingSubMap={subMode.pendingSubMap}
                     existingSubMap={subMode.existingSubMap}
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
+                    combineMode={subMode.combineMode}
                   />
                 );
               })}
@@ -913,6 +962,7 @@ export function ExcelGridView({
             )
           }
           onRemoveAssignment={() => subMode.removeAssignment(popoverSlot.id)}
+          onCombine={() => subMode.startCombine(popoverSlot.id)}
           onClose={subMode.closePopover}
         />
       )}

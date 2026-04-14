@@ -164,6 +164,7 @@ export function MasterView({
   examPeriods,
   subjectCategories,
   teacherSubjects,
+  onAddAdjustment,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -269,6 +270,7 @@ export function MasterView({
           examPeriods={examPeriods}
           subjectCategories={subjectCategories}
           teacherSubjects={teacherSubjects}
+          onAddAdjustment={onAddAdjustment}
         />
       </div>
     );

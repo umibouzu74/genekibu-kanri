@@ -526,6 +526,7 @@ export default function App() {
               examPeriods={examPeriods}
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
+              onAddAdjustment={adjCrud.add}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -556,19 +557,7 @@ export default function App() {
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
-              adjustments={adjustments}
-              onAddAdjustment={adjCrud.add}
-              onDelAdjustment={adjCrud.del}
-              onRemoveAdjustment={adjCrud.remove}
-              onReplaceAdjustment={adjCrud.replace}
               isAdmin={isAdmin}
-              examPeriods={examPeriods}
-              subjects={subjects}
-              subjectCategories={subjectCategories}
-              timetables={timetables}
-              biweeklyAnchors={biweeklyAnchors}
-              teacherSubjects={teacherSubjects}
-              saveSubs={saveSubs}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (

@@ -11,6 +11,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   pendingSub,
   onAssign,
   onRemoveAssignment,
+  onCombine,
   onClose,
 }) {
   const ref = useRef(null);
@@ -214,14 +215,35 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
         })}
       </div>
 
-      {/* Close */}
+      {/* Footer actions */}
       <div
         style={{
           padding: "6px 12px",
           borderTop: "1px solid #e0e0e0",
-          textAlign: "right",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}
       >
+        {onCombine && !pendingSub ? (
+          <button
+            onClick={onCombine}
+            style={{
+              border: "1px solid #d8a030",
+              background: "#fff8e0",
+              color: "#8a6000",
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 4,
+            }}
+          >
+            合同にする
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           onClick={onClose}
           style={{

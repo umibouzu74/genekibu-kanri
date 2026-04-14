@@ -30,6 +30,7 @@ export function useSubstitutionMode({
   const [subDate, setSubDateRaw] = useState(null);
   const [pendingSubs, setPendingSubs] = useState([]);
   const [popoverTarget, setPopoverTarget] = useState(null);
+  const [combineMode, setCombineMode] = useState(null); // { sourceSlotId }
 
   const dayOfDate = subDate ? dateToDay(subDate) : null;
   const isSubMode = subDate !== null;
@@ -133,12 +134,14 @@ export function useSubstitutionMode({
     setSubDateRaw(dateStr || null);
     setPendingSubs([]);
     setPopoverTarget(null);
+    setCombineMode(null);
   }, []);
 
   const clearSubMode = useCallback(() => {
     setSubDateRaw(null);
     setPendingSubs([]);
     setPopoverTarget(null);
+    setCombineMode(null);
   }, []);
 
   const assignSubstitute = useCallback((slotId, originalTeacher, substitute) => {
@@ -200,6 +203,29 @@ export function useSubstitutionMode({
     setPendingSubs([]);
   }, []);
 
+  const startCombine = useCallback((sourceSlotId) => {
+    setCombineMode({ sourceSlotId });
+    setPopoverTarget(null);
+  }, []);
+
+  const completeCombine = useCallback((targetSlotId, onAddAdjustment) => {
+    if (!combineMode || !subDate) return;
+    if (onAddAdjustment) {
+      onAddAdjustment({
+        date: subDate,
+        type: "combine",
+        slotId: combineMode.sourceSlotId,
+        combineSlotIds: [targetSlotId],
+        memo: "",
+      });
+    }
+    setCombineMode(null);
+  }, [combineMode, subDate]);
+
+  const cancelCombine = useCallback(() => {
+    setCombineMode(null);
+  }, []);
+
   return {
     subDate,
     dayOfDate,
@@ -222,5 +248,9 @@ export function useSubstitutionMode({
     closePopover,
     saveAll,
     discardAll,
+    combineMode,
+    startCombine,
+    completeCombine,
+    cancelCombine,
   };
 }
