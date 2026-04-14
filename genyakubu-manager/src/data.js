@@ -167,31 +167,52 @@ export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
  * @param {number} month
  * @returns {string[]}
  */
-export function staffMonthlyRegularDates(slots, staffName, holidays, year, month) {
+// Inline isOffForGrade logic (can't import from components/views/dashboardHelpers
+// without creating a circular-ish dep tree). Mirrors makeHolidayHelpers().
+function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
+  const dept = slot.grade ? gradeToDept(slot.grade) : null;
+  const offByHoliday = holidays.some((h) => {
+    if (h.date !== dateStr) return false;
+    const sc = h.scope || ["全部"];
+    if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
+    const tg = h.targetGrades || [];
+    if (tg.length > 0 && !tg.includes(slot.grade)) return false;
+    const sk = h.subjKeywords || [];
+    if (sk.length > 0) {
+      if (!slot.subj) return false;
+      if (!sk.some((kw) => slot.subj.includes(kw))) return false;
+    }
+    return true;
+  });
+  if (offByHoliday) return true;
+  return (examPeriods || []).some((ep) => {
+    if (dateStr < ep.startDate || dateStr > ep.endDate) return false;
+    if (!ep.targetGrades || ep.targetGrades.length === 0) return true;
+    return ep.targetGrades.includes(slot.grade);
+  });
+}
+
+export function staffMonthlyRegularDates(slots, staffName, holidays, year, month, examPeriods = []) {
   const teacherSlots = slots.filter((s) => isSlotForTeacher(s, staffName));
   if (teacherSlots.length === 0) return [];
 
-  const slotDays = new Set(teacherSlots.map((s) => s.day));
-  const holidayDates = new Set(
-    holidays
-      .filter((h) => {
-        const sc = h.scope || ["全部"];
-        if (!sc.includes("全部")) return false;
-        if ((h.targetGrades || []).length > 0) return false;
-        if ((h.subjKeywords || []).length > 0) return false;
-        return true;
-      })
-      .map((h) => h.date)
-  );
+  const slotsByDay = new Map(); // day -> Slot[]
+  for (const s of teacherSlots) {
+    if (!slotsByDay.has(s.day)) slotsByDay.set(s.day, []);
+    slotsByDay.get(s.day).push(s);
+  }
 
   const dates = [];
   const daysInMonth = new Date(year, month, 0).getDate();
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(year, month - 1, d);
     const dow = WEEKDAYS[dt.getDay()];
-    if (!slotDays.has(dow)) continue;
+    const daySlots = slotsByDay.get(dow);
+    if (!daySlots || daySlots.length === 0) continue;
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    if (holidayDates.has(dateStr)) continue;
+    // Skip day if ALL of this teacher's slots on this day are canceled
+    const allOff = daySlots.every((s) => isSlotOffOnDate(s, dateStr, holidays, examPeriods));
+    if (allOff) continue;
     dates.push(dateStr);
   }
   return dates;

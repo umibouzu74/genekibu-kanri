@@ -87,6 +87,35 @@ export function useSubstitutionMode({
     partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects,
   ]);
 
+  // All teachers who have any slot on this day (including busy ones).
+  // Used by the "全員表示" toggle in the popover.
+  const allTeachersForDay = useMemo(() => {
+    if (!subDate || !dayOfDate) return [];
+    const map = new Map(); // name -> { name, slotsToday, isPartTime, subjectIds }
+    const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
+    for (const slot of dateFilteredSlots) {
+      if (slot.day !== dayOfDate) continue;
+      const names = getSlotTeachers(slot);
+      for (const n of names) {
+        if (!map.has(n)) {
+          const isPartTime = staffNameSet.has(n);
+          let subjectIds;
+          if (teacherSubjects?.[n]?.length > 0) {
+            subjectIds = teacherSubjects[n];
+          } else if (isPartTime) {
+            const staff = partTimeStaff.find((s) => s.name === n);
+            subjectIds = staff ? staff.subjectIds : [];
+          } else {
+            subjectIds = [];
+          }
+          map.set(n, { name: n, slotsToday: [], isPartTime, subjectIds });
+        }
+        map.get(n).slotsToday.push(slot);
+      }
+    }
+    return [...map.values()];
+  }, [subDate, dayOfDate, dateFilteredSlots, partTimeStaff, teacherSubjects]);
+
   // Build uncovered slots from unavailableTeachers + holidayOff
   // (slots that need substitutes but don't have one yet)
   const uncoveredSlots = useMemo(() => {
@@ -235,6 +264,7 @@ export function useSubstitutionMode({
     existingSubMap,
     pendingSubMap,
     availableTeachers,
+    allTeachersForDay,
     chainSuggestions,
     suggestionMap,
     uncoveredSlots,
