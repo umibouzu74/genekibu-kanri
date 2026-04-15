@@ -15,8 +15,10 @@ import { DASH_SECTIONS } from "../../constants/schedule";
 import { S } from "../../styles/common";
 import { buildDayRange, makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
+import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
+import { ExcelGridView } from "./ExcelGridView";
 
-function SectionColumn({ label, color, sl, deptOff, subs, date }) {
+function SectionColumn({ label, color, sl, deptOff, subs, date, sessionCountMap }) {
   const { timeGroups, teachers } = useMemo(() => {
     const byTime = {};
     sl.forEach((s) => {
@@ -108,6 +110,7 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                     const gc = GC(s.grade);
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
+                    const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
@@ -156,6 +159,27 @@ function SectionColumn({ label, color, sl, deptOff, subs, date }) {
                               flexWrap: "wrap",
                             }}
                           >
+                            {sessionNum > 0 && (
+                              <span
+                                title={`第${sessionNum}回`}
+                                aria-label={`第${sessionNum}回`}
+                                style={{
+                                  background: "#3a6ea5",
+                                  color: "#fff",
+                                  borderRadius: 4,
+                                  padding: "0 5px",
+                                  fontSize: 13,
+                                  fontWeight: 800,
+                                  lineHeight: "18px",
+                                  minWidth: 20,
+                                  textAlign: "center",
+                                  boxShadow: "0 1px 2px rgba(0,0,0,.12)",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {formatSessionNumber(sessionNum)}
+                              </span>
+                            )}
                             <span
                               style={{
                                 background: gc.b,
@@ -411,7 +435,11 @@ function SubSummaryCards({ subs, slots, todayStr }) {
   );
 }
 
-export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriodsForDate = [] }) {
+export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriodsForDate = [], sessionCtx }) {
+  const sessionCountMap = useMemo(() => {
+    if (!sessionCtx || !sessionCtx.displayCutoff) return null;
+    return buildSessionCountMap(slots, date, sessionCtx);
+  }, [slots, date, sessionCtx]);
   const fullOff = hols.some((h) => {
     const sc = h.scope || ["全部"];
     if (!sc.includes("全部")) return false;
@@ -548,6 +576,7 @@ export function DashDayRow({ date, dow, holidays: hols, slots, subs, examPeriods
                 deptOff={deptOff}
                 subs={subs}
                 date={date}
+                sessionCountMap={sessionCountMap}
               />
             );
           })}
@@ -569,14 +598,46 @@ function loadDayCount() {
   }
 }
 
-export function Dashboard({ slots, holidays, subs, timetables, displayCutoff, examPeriods = [] }) {
+const LS_VIEW_MODE_KEY = "genyakubu-dash-view-mode";
+const VIEW_MODES = ["list", "timetable"];
+function loadViewMode() {
+  try {
+    const v = localStorage.getItem(LS_VIEW_MODE_KEY);
+    return VIEW_MODES.includes(v) ? v : "list";
+  } catch {
+    return "list";
+  }
+}
+
+export function Dashboard({
+  slots,
+  holidays,
+  subs,
+  timetables,
+  displayCutoff,
+  examPeriods = [],
+  classSets = [],
+  biweeklyAnchors = [],
+  activeTimetableId,
+  partTimeStaff,
+  subjects,
+  subjectCategories,
+  teacherSubjects,
+  saveSubs,
+}) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
   const [daysInRange, setDaysInRange] = useState(loadDayCount);
+  const [viewMode, setViewMode] = useState(loadViewMode);
 
   const changeDayCount = (n) => {
     setDaysInRange(n);
     try { localStorage.setItem(LS_DAY_COUNT_KEY, String(n)); } catch { /* quota */ }
+  };
+
+  const changeViewMode = (m) => {
+    setViewMode(m);
+    try { localStorage.setItem(LS_VIEW_MODE_KEY, m); } catch { /* quota */ }
   };
 
   const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
@@ -588,6 +649,114 @@ export function Dashboard({ slots, holidays, subs, timetables, displayCutoff, ex
 
   const isToday = startDate === todayStr;
 
+  // Session count 用の共通 ctx。DashDayRow ごとに buildSessionCountMap を
+  // 呼び、その日の対象スロットにセッション番号を振る。
+  const sessionCtx = useMemo(
+    () => ({
+      classSets,
+      allSlots: slots,
+      displayCutoff,
+      isOffForGrade,
+      biweeklyAnchors,
+    }),
+    [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors]
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* 表示モード切替 */}
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          alignItems: "center",
+          background: "#fff",
+          padding: "6px 10px",
+          borderRadius: 10,
+          border: "1px solid #e0e0e0",
+          alignSelf: "flex-start",
+        }}
+      >
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#666", marginRight: 6 }}>
+          表示:
+        </span>
+        <button
+          type="button"
+          onClick={() => changeViewMode("list")}
+          style={{ ...S.btn(viewMode === "list"), fontSize: 12, padding: "4px 12px" }}
+        >
+          日別
+        </button>
+        <button
+          type="button"
+          onClick={() => changeViewMode("timetable")}
+          style={{ ...S.btn(viewMode === "timetable"), fontSize: 12, padding: "4px 12px" }}
+        >
+          時間割
+        </button>
+      </div>
+
+      {viewMode === "timetable" ? (
+        <ExcelGridView
+          slots={slots}
+          saveSlots={() => {}}
+          biweeklyAnchors={biweeklyAnchors}
+          isAdmin={false}
+          timetables={timetables || []}
+          activeTimetableId={activeTimetableId}
+          partTimeStaff={partTimeStaff || []}
+          subjects={subjects || []}
+          subs={subs}
+          saveSubs={saveSubs || (() => {})}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          subjectCategories={subjectCategories || []}
+          teacherSubjects={teacherSubjects || {}}
+          classSets={classSets}
+          displayCutoff={displayCutoff}
+        />
+      ) : (
+        <DashboardListView
+          slots={slots}
+          holidays={holidays}
+          subs={subs}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          examPeriods={examPeriods}
+          days={days}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          daysInRange={daysInRange}
+          changeDayCount={changeDayCount}
+          todayStr={todayStr}
+          isToday={isToday}
+          holidaysFor={holidaysFor}
+          examPeriodsFor={examPeriodsFor}
+          isOffForGrade={isOffForGrade}
+          sessionCtx={sessionCtx}
+        />
+      )}
+    </div>
+  );
+}
+
+function DashboardListView({
+  slots,
+  subs,
+  timetables,
+  displayCutoff,
+  days,
+  startDate,
+  setStartDate,
+  daysInRange,
+  changeDayCount,
+  todayStr,
+  isToday,
+  holidaysFor,
+  examPeriodsFor,
+  isOffForGrade,
+  sessionCtx,
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div
@@ -698,6 +867,7 @@ export function Dashboard({ slots, holidays, subs, timetables, displayCutoff, ex
               slots={daySlots}
               subs={subs}
               examPeriodsForDate={examPeriodsFor(dateStr)}
+              sessionCtx={sessionCtx}
             />
           </div>
         );

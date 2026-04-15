@@ -502,7 +502,22 @@ export default function App() {
 
         <div id="main-content">
           {view === VIEWS.DASH && !selected && (
-            <Dashboard slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
+            <Dashboard
+              slots={slots}
+              holidays={holidays}
+              subs={subs}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              activeTimetableId={activeTimetableId}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
+              subjectCategories={subjectCategories}
+              teacherSubjects={teacherSubjects}
+              saveSubs={saveSubs}
+            />
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
