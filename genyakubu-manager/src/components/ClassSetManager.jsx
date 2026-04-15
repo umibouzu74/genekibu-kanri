@@ -214,11 +214,15 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     const finalLabel = label.trim() || autoLabelFromUnits(selectedUnits);
 
     if (editId != null) {
-      const next = classSets.map((cs) =>
-        cs.id === editId
-          ? { ...cs, label: finalLabel, slotIds: [...selectedSlotIds] }
-          : cs
-      );
+      // 編集モード: 他セットからは selectedSlotIds を剥がし、編集対象セットは
+      // 上書きする (各スロットは 0 or 1 set を守る)
+      const next = classSets
+        .map((cs) =>
+          cs.id === editId
+            ? { ...cs, label: finalLabel, slotIds: [...selectedSlotIds] }
+            : { ...cs, slotIds: cs.slotIds.filter((id) => !selectedSlotIds.includes(id)) }
+        )
+        .filter((cs) => cs.id === editId || cs.slotIds.length > 0);
       onSave(next);
       toasts.success("授業セットを更新しました");
     } else {
