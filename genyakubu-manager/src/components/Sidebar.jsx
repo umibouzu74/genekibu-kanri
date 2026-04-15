@@ -136,6 +136,7 @@ export function Sidebar({
     <>
       {open && (
         <div
+          className="sidebar-backdrop"
           style={{
             position: "fixed",
             inset: 0,

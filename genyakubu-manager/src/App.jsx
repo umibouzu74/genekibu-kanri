@@ -686,6 +686,7 @@ export default function App() {
         @media (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
           .sidebar-close { display: none !important; }
+          .sidebar-backdrop { display: none !important; }
           .hamburger { display: none !important; }
         }
         @media (max-width: 768px) {
