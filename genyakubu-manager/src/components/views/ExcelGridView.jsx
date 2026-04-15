@@ -674,6 +674,7 @@ export function ExcelGridView({
   teacherSubjects,
   classSets,
   displayCutoff,
+  viewDate,
   onAddAdjustment,
   enableSubMode = false,
 }) {
@@ -807,13 +808,24 @@ export function ExcelGridView({
   // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
   const displaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
 
+  // viewDate が指定されたらその曜日に selectedDay を自動同期
+  useEffect(() => {
+    if (!viewDate) return;
+    const day = dateToDay(viewDate);
+    if (day && day !== selectedDay) setSelectedDay(day);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewDate]);
+
   // ─── Session count (第 N 回) 計算 ──────────────────────────────
-  // 対象日: 代行モード中は subDate、それ以外は選択曜日 (selectedDay) の
-  // 直近発生日 (今日以前) を使う。
+  // 対象日の決定優先順位:
+  //   1. 代行モードの subDate
+  //   2. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
+  //   3. selectedDay の直近発生日 (今日以前) — フォールバック
   // 注: `new Date()` は useMemo deps に含めていないため、タブを開いた
   // まま深夜0時を跨ぐと値が更新されない。再計算にはリロードが必要。
   const sessionTargetDate = useMemo(() => {
     if (subMode.subDate) return subMode.subDate;
+    if (viewDate && dateToDay(viewDate) === selectedDay) return viewDate;
     if (!selectedDay) return null;
     const d = new Date();
     for (let i = 0; i < 14; i++) {
@@ -822,7 +834,7 @@ export function ExcelGridView({
       d.setDate(d.getDate() - 1);
     }
     return null;
-  }, [subMode.subDate, selectedDay]);
+  }, [subMode.subDate, viewDate, selectedDay]);
 
   const sessionCountMap = useMemo(() => {
     if (!sessionTargetDate || !displayCutoff) return new Map();
