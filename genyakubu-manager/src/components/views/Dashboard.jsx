@@ -696,6 +696,18 @@ export function Dashboard({
         </button>
       </div>
 
+      {/* 日付ナビゲーション (両モード共通) */}
+      <DashboardDateNav
+        startDate={startDate}
+        setStartDate={setStartDate}
+        daysInRange={daysInRange}
+        changeDayCount={changeDayCount}
+        todayStr={todayStr}
+        isToday={isToday}
+        days={days}
+        viewMode={viewMode}
+      />
+
       {viewMode === "timetable" ? (
         <ExcelGridView
           slots={slots}
@@ -714,6 +726,7 @@ export function Dashboard({
           teacherSubjects={teacherSubjects || {}}
           classSets={classSets}
           displayCutoff={displayCutoff}
+          viewDate={startDate}
         />
       ) : (
         <DashboardListView
@@ -724,83 +737,73 @@ export function Dashboard({
           displayCutoff={displayCutoff}
           examPeriods={examPeriods}
           days={days}
-          startDate={startDate}
-          setStartDate={setStartDate}
-          daysInRange={daysInRange}
-          changeDayCount={changeDayCount}
-          todayStr={todayStr}
-          isToday={isToday}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
           isOffForGrade={isOffForGrade}
           sessionCtx={sessionCtx}
+          todayStr={todayStr}
         />
       )}
     </div>
   );
 }
 
-function DashboardListView({
-  slots,
-  subs,
-  timetables,
-  displayCutoff,
-  days,
+// 日付ナビゲーション (日付ピッカー + 前/今日/次 + 範囲選択)
+// viewMode に応じてステップ量と範囲ボタンの表示を切り替える
+function DashboardDateNav({
   startDate,
   setStartDate,
   daysInRange,
   changeDayCount,
   todayStr,
   isToday,
-  holidaysFor,
-  examPeriodsFor,
-  isOffForGrade,
-  sessionCtx,
+  days,
+  viewMode,
 }) {
+  const stepDays = viewMode === "timetable" ? 1 : daysInRange;
+  const label = viewMode === "timetable" ? "表示日" : "表示開始日";
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
-          background: "#fff",
-          padding: "10px 14px",
-          borderRadius: 10,
-          border: "1px solid #e0e0e0",
-        }}
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        alignItems: "center",
+        background: "#fff",
+        padding: "10px 14px",
+        borderRadius: 10,
+        border: "1px solid #e0e0e0",
+      }}
+    >
+      <span style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>{label}</span>
+      <input
+        type="date"
+        value={startDate}
+        onChange={(e) => e.target.value && setStartDate(e.target.value)}
+        style={{ ...S.input, width: "auto" }}
+      />
+      <button
+        type="button"
+        onClick={() => setStartDate(shiftDate(startDate, -stepDays))}
+        style={S.btn(false)}
       >
-        <span style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>
-          表示開始日
-        </span>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => e.target.value && setStartDate(e.target.value)}
-          style={{ ...S.input, width: "auto" }}
-        />
-        <button
-          type="button"
-          onClick={() => setStartDate(shiftDate(startDate, -daysInRange))}
-          style={S.btn(false)}
-        >
-          ← 前
-        </button>
-        <button
-          type="button"
-          onClick={() => setStartDate(todayStr)}
-          style={S.btn(isToday)}
-        >
-          今日
-        </button>
-        <button
-          type="button"
-          onClick={() => setStartDate(shiftDate(startDate, daysInRange))}
-          style={S.btn(false)}
-        >
-          次 →
-        </button>
+        ← 前
+      </button>
+      <button
+        type="button"
+        onClick={() => setStartDate(todayStr)}
+        style={S.btn(isToday)}
+      >
+        今日
+      </button>
+      <button
+        type="button"
+        onClick={() => setStartDate(shiftDate(startDate, stepDays))}
+        style={S.btn(false)}
+      >
+        次 →
+      </button>
+      {viewMode === "list" && (
         <div style={{ display: "flex", gap: 2 }}>
           {DAY_COUNT_OPTIONS.map((n) => (
             <button
@@ -818,10 +821,30 @@ function DashboardListView({
             </button>
           ))}
         </div>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
-          {startDate} 〜 {days[days.length - 1].dateStr}（{daysInRange}日間）
-        </span>
-      </div>
+      )}
+      <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
+        {viewMode === "timetable"
+          ? startDate
+          : `${startDate} 〜 ${days[days.length - 1].dateStr}（${daysInRange}日間）`}
+      </span>
+    </div>
+  );
+}
+
+function DashboardListView({
+  slots,
+  subs,
+  timetables,
+  displayCutoff,
+  days,
+  todayStr,
+  holidaysFor,
+  examPeriodsFor,
+  isOffForGrade,
+  sessionCtx,
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <SubSummaryCards subs={subs} slots={slots} todayStr={todayStr} />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
