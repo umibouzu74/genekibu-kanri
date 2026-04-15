@@ -924,16 +924,17 @@ export function ExcelGridView({
               {selectedDay}曜日のコマがありません
             </div>
           ) : (
-            <div
-              className="excel-grid-sections"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-                gap: 12,
-                alignItems: "start",
-              }}
-            >
-              {getDashSections(selectedDay).map((sec) => {
+            (() => {
+              const sections = getDashSections(selectedDay);
+              const leftCol = [];
+              const rightCol = [];
+              const otherCol = [];
+              for (const sec of sections) {
+                if (sec.dept === "中学部") leftCol.push(sec);
+                else if (sec.dept === "高校部") rightCol.push(sec);
+                else otherCol.push(sec);
+              }
+              const renderSection = (sec) => {
                 const color =
                   sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
                 return (
@@ -962,8 +963,26 @@ export function ExcelGridView({
                     onSubDrop={subMode.isSubMode ? handleSubDrop : undefined}
                   />
                 );
-              })}
-            </div>
+              };
+              return (
+                <div
+                  className="excel-grid-sections"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    alignItems: "start",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                    {leftCol.map(renderSection)}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                    {[...rightCol, ...otherCol].map(renderSection)}
+                  </div>
+                </div>
+              );
+            })()
           )}
 
           {/* Pending subs save bar */}

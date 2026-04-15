@@ -59,8 +59,10 @@ export function Sidebar({
   onSignIn,
   onSignOut,
 }) {
-  // 展開/折りたたみ状態管理
-  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
+  const [expandedGroups, setExpandedGroups] = useState(
+    () => new Set(MENU_CONFIG.filter((m) => m.children).map((m) => m.key))
+  );
 
   // 手動トグル + アクティブ子ビューの自動展開を統合
   const effectiveExpanded = useMemo(() => {

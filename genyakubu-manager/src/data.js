@@ -451,7 +451,7 @@ export const INIT_SLOTS = [
   {id:197,day:"金",time:"19:40-20:40",grade:"高2",cls:"",room:"404",subj:"高松一 英語",teacher:"池内",note:""},
   {id:198,day:"金",time:"19:40-20:40",grade:"高2",cls:"",room:"405",subj:"高松桜井 文系数学",teacher:"奥村",note:""},
   {id:199,day:"金",time:"19:40-20:40",grade:"高2",cls:"",room:"406",subj:"高松桜井 理系数学",teacher:"片岡",note:""},
-  {id:267,day:"金",time:"19:40-20:40",grade:"高1",cls:"",room:"408",subj:"古文・漢文",teacher:"竹内",note:""},
+  {id:267,day:"金",time:"19:40-20:40",grade:"高1",cls:"",room:"408",subj:"古文漢文",teacher:"竹内",note:""},
   {id:268,day:"金",time:"19:40-20:40",grade:"高2",cls:"",room:"407",subj:"高松一 英語選抜",teacher:"伊藤",note:""},
   {id:200,day:"金",time:"20:30-21:50",grade:"高1",cls:"",room:"亀42",subj:"東大京大医進 数学",teacher:"大前",note:""},
   {id:201,day:"金",time:"20:30-21:50",grade:"高1",cls:"",room:"亀43",subj:"高松高 英語",teacher:"藤本",note:""},

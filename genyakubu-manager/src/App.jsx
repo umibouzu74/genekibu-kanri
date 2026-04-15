@@ -139,7 +139,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [editSlot, setEditSlot] = useState(null);
   const [editSub, setEditSub] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
@@ -691,6 +691,7 @@ export default function App() {
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
+          .excel-grid-sections { grid-template-columns: 1fr !important; }
           .master-slot-actions { opacity: 1 !important; }
         }
         @media (hover: none) {

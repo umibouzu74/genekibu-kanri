@@ -55,6 +55,17 @@ function extractClassGroups(slots, grades) {
       }
     }
   }
+  // Also include single-token subjects that aren't covered by any existing
+  // group prefix (e.g. "古文漢文"). Normalize by removing "・" so that
+  // "古文・漢文" and "古文漢文" collapse to a single option.
+  for (const s of singleTokenSubjs) {
+    const normalized = s.replace(/・/g, "");
+    let dominated = false;
+    for (const g of groups) {
+      if (normalized.startsWith(g)) { dominated = true; break; }
+    }
+    if (!dominated) groups.add(normalized);
+  }
   return [...groups].sort();
 }
 
