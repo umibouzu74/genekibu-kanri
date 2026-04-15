@@ -1,8 +1,10 @@
 // ─── 授業回数 (セッション番号) 計算 ──────────────────────────────
 // 各スロットが、所属するセット内で対象日までに何回目の授業かを算出する。
 // 同一セット内でも教科 (slot.subj) ごとに独立したカウンタで数える。
-// 休講日 / テスト期間 / 隔週ハズレ週はカウントしない。
-// 対象日で該当スロットが実施されない場合は 0 を返す。
+// 「英/数」のような複合教科の隔週スロットは A 週 = 先頭教科 / B 週 = 次教科
+// としてそれぞれ独立にカウントする。
+// 休講日 / テスト期間 / 単独教科隔週の B 週はカウントしない。
+// 対象日で対象スロットがその教科を実施していない場合は 0 を返す。
 
 import { WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
@@ -51,37 +53,72 @@ function timeToMinutes(time) {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
-// 指定スロットを対象日付で実施するかを判定。
-// - 曜日一致
-// - 休講 / テスト期間に該当しない
-// - 隔週スロットの場合は A 週に合致する
-function isSlotActiveOn(slot, dateStr, ctx) {
-  const dt = parseDate(dateStr);
-  if (WEEKDAYS[dt.getDay()] !== slot.day) return false;
-
-  // 隔週判定: B 週はスキップ。アンカーなしの隔週スロットはフォールバックで常時実施。
-  if (isBiweekly(slot.note)) {
-    const w = getSlotWeekType(dateStr, slot, ctx.biweeklyAnchors || []);
-    if (w && w !== "A") return false;
-  }
-
-  // 休講 / テスト期間判定
-  if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
-    return false;
-  }
-
-  return true;
+// 略称を正式名に正規化 (複合教科 "英/数" の分割時に使用)。
+// 組み込み主要教科のみ対応; 未登録の文字列はそのまま返す。
+const SUBJECT_ALIASES = {
+  "英": "英語",
+  "数": "数学",
+  "国": "国語",
+  "社": "社会",
+  "理": "理科",
+};
+function normalizeSubjectName(s) {
+  if (!s) return s;
+  const t = s.trim();
+  return SUBJECT_ALIASES[t] || t;
 }
 
-// セット内スロット群の単一日における実施分を、安定した順序 (time, slotId)
-// で返す。回数カウントの順番付けに使用。
-// subj が与えられた場合は、同一教科のスロットだけを対象にする
-// (セット内でも教科ごとに独立したカウンタで数えるため)。
-function activeSlotsOnDay(setSlots, dateStr, ctx, subj) {
+// "英/数" → ["英語", "数学"], "英語" → ["英語"]
+function parseSubjects(subjStr) {
+  if (!subjStr) return [];
+  return subjStr
+    .split("/")
+    .map((s) => normalizeSubjectName(s))
+    .filter(Boolean);
+}
+
+// 対象日にスロットがどの教科を実施しているかを返す。
+// 実施なし (曜日違い / 休講 / 単独教科隔週の B 週) の場合は null。
+// 複合教科の隔週スロット ("英/数" + 隔週) は毎週実施され、A 週は先頭教科、
+// B 週は次の教科を返す (それぞれ独立した進度としてカウントされる)。
+// アンカー未設定の隔週スロットは常時実施 (先頭教科) にフォールバック。
+function effectiveSubjectOnDay(slot, dateStr, ctx) {
+  const dt = parseDate(dateStr);
+  if (WEEKDAYS[dt.getDay()] !== slot.day) return null;
+
+  // 休講 / テスト期間 (exam) 判定は生の slot.subj で評価 (既存挙動維持)。
+  if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
+    return null;
+  }
+
+  const parts = parseSubjects(slot.subj);
+  const bi = isBiweekly(slot.note);
+
+  if (bi) {
+    const w = getSlotWeekType(dateStr, slot, ctx.biweeklyAnchors || []);
+    if (parts.length > 1) {
+      // 複合教科の隔週: 毎週実施、教科が A/B で入れ替わる。
+      if (!w) return parts[0];
+      const idx = w === "A" ? 0 : 1;
+      return parts[idx] || parts[parts.length - 1];
+    }
+    // 単独教科の隔週: B 週は実施なし (アンカーなしなら常時実施)。
+    if (w && w !== "A") return null;
+  }
+
+  return parts[0] || slot.subj || null;
+}
+
+// セット内スロット群の単一日における「対象教科を実施する」スロットを、
+// 安定した順序 (time, slotId) で返す。回数カウントの順番付けに使用。
+// targetSubj が与えられた場合、その教科を実施するスロットのみを対象にする。
+function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj) {
   const out = [];
   for (const s of setSlots) {
-    if (subj != null && s.subj !== subj) continue;
-    if (isSlotActiveOn(s, dateStr, ctx)) out.push(s);
+    const eff = effectiveSubjectOnDay(s, dateStr, ctx);
+    if (eff == null) continue;
+    if (targetSubj != null && eff !== targetSubj) continue;
+    out.push(s);
   }
   out.sort((a, b) => {
     const ta = timeToMinutes(a.time);
@@ -115,19 +152,23 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
   if (setSlots.length === 0) return 0;
 
-  // 対象日当日に対象スロットが実施されるか確認 (同一教科のみで数える)
-  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, slot.subj);
+  // 対象日当日に対象スロットが実施している教科を特定 (隔週複合教科は週ごとに変わる)
+  const targetSubj = effectiveSubjectOnDay(slot, targetDateStr, ctx);
+  if (targetSubj == null) return 0;
+
+  // 対象日当日の該当教科スロット一覧内での自分の位置
+  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, targetSubj);
   const todayIdx = todayActive.findIndex((s) => s.id === slot.id);
   if (todayIdx === -1) return 0;
 
-  // 開始日から前日までの累計実施数を加算 (同一教科のみで数える)
+  // 開始日から前日までの同一教科の累計実施数を加算
   const start = parseDate(startDate);
   const target = parseDate(targetDateStr);
   let count = 0;
   const cur = new Date(start);
   while (cur < target) {
     const dStr = fmtDate(cur);
-    count += activeSlotsOnDay(setSlots, dStr, ctx, slot.subj).length;
+    count += activeSlotsOnDay(setSlots, dStr, ctx, targetSubj).length;
     cur.setDate(cur.getDate() + 1);
   }
 
@@ -161,10 +202,18 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       continue;
     }
 
+    // 対象日における当該スロットの実施教科 (複合教科の隔週は週で変わる)
+    const targetSubj = effectiveSubjectOnDay(slot, targetDateStr, ctx);
+    if (targetSubj == null) {
+      out.set(slot.id, 0);
+      continue;
+    }
+
     const setSlotIds = resolveSetSlotIds(slot, ctx.classSets);
+    // キャッシュキーは (セット × 実施教科 × 開始日) 単位で分離。
     const setKey =
       [...setSlotIds].sort((a, b) => a - b).join(",") +
-      "|" + (slot.subj || "") +
+      "|" + targetSubj +
       "|" + startDate;
     const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
     if (setSlots.length === 0) {
@@ -180,7 +229,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       const cur = new Date(start);
       while (cur <= target) {
         const dStr = fmtDate(cur);
-        const active = activeSlotsOnDay(setSlots, dStr, ctx, slot.subj);
+        const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj);
         dayMap.set(dStr, active.map((s) => s.id));
         cur.setDate(cur.getDate() + 1);
       }

@@ -237,6 +237,58 @@ describe("computeSessionNumber - セット内教科別カウンタ", () => {
   });
 });
 
+describe("computeSessionNumber - 英/数 隔週複合教科スロット", () => {
+  // 月曜 19:00 の「英/数」隔週スロット (堀上=英, 河野=数 のように交代)
+  // A 週は英語、B 週は数学として独立カウントする。
+  const combo = makeSlot(1, "月", "19:00-20:20", "中3", {
+    subj: "英/数",
+    note: "隔週(河野)",
+  });
+  const anchors = [{ date: "2026-04-06", weekType: "A" }];
+  // 4/6=月(A), 4/13=月(B), 4/20=月(A), 4/27=月(B)
+  const MON_CUTOFF = {
+    groups: [{ label: "中3", grades: ["中3"], startDate: "2026-04-06" }],
+  };
+  const ctx = {
+    classSets: [],
+    allSlots: [combo],
+    displayCutoff: MON_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+    biweeklyAnchors: anchors,
+  };
+
+  it("4/6 (A 週) は 英語として ①", () => {
+    expect(computeSessionNumber(combo, "2026-04-06", ctx)).toBe(1);
+  });
+  it("4/13 (B 週) は 数学として ① (英語カウントに影響しない)", () => {
+    expect(computeSessionNumber(combo, "2026-04-13", ctx)).toBe(1);
+  });
+  it("4/20 (A 週) は 英語として ② (A 週分のみ累積)", () => {
+    expect(computeSessionNumber(combo, "2026-04-20", ctx)).toBe(2);
+  });
+  it("4/27 (B 週) は 数学として ② (B 週分のみ累積)", () => {
+    expect(computeSessionNumber(combo, "2026-04-27", ctx)).toBe(2);
+  });
+
+  it("同セット内の純英語スロットは 英/数 の A 週分をカウントに含む", () => {
+    // 月 20:30 に純粋な英語スロットがあり、上記 combo と同じセットに入れる
+    const pureEng = makeSlot(2, "月", "20:30-21:50", "中3", { subj: "英語" });
+    const setCtx = {
+      ...ctx,
+      classSets: [{ id: 10, label: "中3 月セット", slotIds: [1, 2] }],
+      allSlots: [combo, pureEng],
+    };
+    // 4/6 (A) 英語実施: combo=英(19:00), pureEng=英(20:30) → combo ①, pureEng ②
+    expect(computeSessionNumber(combo, "2026-04-06", setCtx)).toBe(1);
+    expect(computeSessionNumber(pureEng, "2026-04-06", setCtx)).toBe(2);
+    // 4/13 (B) 英語は pureEng のみ、combo は数 (英語から除外) → pureEng ③
+    expect(computeSessionNumber(pureEng, "2026-04-13", setCtx)).toBe(3);
+    // 4/20 (A) 英語 combo+pureEng → combo ④, pureEng ⑤
+    expect(computeSessionNumber(combo, "2026-04-20", setCtx)).toBe(4);
+    expect(computeSessionNumber(pureEng, "2026-04-20", setCtx)).toBe(5);
+  });
+});
+
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
   // 両方とも火曜同時刻帯に並ぶスロット
   const early = makeSlot(1, "火", "18:00-19:00", "中3");
