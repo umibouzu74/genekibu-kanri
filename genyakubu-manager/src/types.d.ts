@@ -89,6 +89,16 @@ export interface ExamPeriod {
   targetGrades: string[]; // ["中1","中2","中3"] 等。空配列 = 全学年対象
 }
 
+// ─── Class set (授業セット) ──────────────────────────────────────
+// 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
+// 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると
+// ダッシュボードで共通の回数カウンタが振られる。
+export interface ClassSet {
+  id: number;
+  label: string; // "中3 数学 (火・木)" 等
+  slotIds: number[];
+}
+
 // ─── Timetable / Display cutoff ──────────────────────────────────
 export type TimetableType = "regular" | "koshu";
 
@@ -128,6 +138,7 @@ export interface ExportBundle {
   timetables?: Timetable[];
   displayCutoff?: DisplayCutoff;
   examPeriods?: ExamPeriod[];
+  classSets?: ClassSet[];
 }
 
 export interface ValidationResult<T> {

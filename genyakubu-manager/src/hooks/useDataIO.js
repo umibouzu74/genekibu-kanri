@@ -25,6 +25,7 @@ export function useDataIO({
   timetables,
   displayCutoff,
   examPeriods,
+  classSets,
   teacherSubjects,
   saveSlots,
   saveHolidays,
@@ -38,6 +39,7 @@ export function useDataIO({
   saveTimetables,
   saveDisplayCutoff,
   saveExamPeriods,
+  saveClassSets,
   saveTeacherSubjects,
   lsKeys,
   setImporting,
@@ -68,6 +70,7 @@ export function useDataIO({
           timetables,
           displayCutoff,
           examPeriods,
+          classSets,
           teacherSubjects,
         },
         null,
@@ -85,7 +88,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, teacherSubjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, classSets, teacherSubjects, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -140,6 +143,7 @@ export function useDataIO({
           if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
           if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
+          if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -174,6 +178,7 @@ export function useDataIO({
       saveTimetables,
       saveDisplayCutoff,
       saveExamPeriods,
+      saveClassSets,
       setImporting,
       setShowDataMgr,
     ]
@@ -200,6 +205,7 @@ export function useDataIO({
     saveTimetables([DEFAULT_TIMETABLE]);
     saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
     saveExamPeriods([]);
+    saveClassSets([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -221,6 +227,7 @@ export function useDataIO({
     saveTimetables,
     saveDisplayCutoff,
     saveExamPeriods,
+    saveClassSets,
     setActiveTimetableId,
     setSelected,
     setView,

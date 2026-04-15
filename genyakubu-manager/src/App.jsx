@@ -126,6 +126,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [classSets, saveClassSets] = useSyncedStorage(
+    LS.classSets,
+    [],
+    { onError: onStorageError }
+  );
   const [teacherSubjects, saveTeacherSubjects] = useSyncedStorage(
     LS.teacherSubjects,
     {},
@@ -210,6 +215,7 @@ export default function App() {
     timetables,
     displayCutoff,
     examPeriods,
+    classSets,
     teacherSubjects,
     saveSlots,
     saveHolidays,
@@ -223,6 +229,7 @@ export default function App() {
     saveTimetables,
     saveDisplayCutoff,
     saveExamPeriods,
+    saveClassSets,
     saveTeacherSubjects,
     lsKeys: LS,
     setImporting,
@@ -520,6 +527,10 @@ export default function App() {
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              displayCutoff={displayCutoff}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -527,6 +538,8 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               slots={slots}
+              classSets={classSets}
+              onSaveClassSets={saveClassSets}
               ttCrud={ttCrud}
               onSaveDisplayCutoff={saveDisplayCutoff}
               isAdmin={isAdmin}
@@ -559,6 +572,8 @@ export default function App() {
               activeTimetableId={activeTimetableId}
               biweeklyAnchors={biweeklyAnchors}
               teacherSubjects={teacherSubjects}
+              classSets={classSets}
+              displayCutoff={displayCutoff}
               onAddAdjustment={adjCrud.add}
             />
           )}
