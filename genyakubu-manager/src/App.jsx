@@ -126,6 +126,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [classSets, saveClassSets] = useSyncedStorage(
+    LS.classSets,
+    [],
+    { onError: onStorageError }
+  );
   const [teacherSubjects, saveTeacherSubjects] = useSyncedStorage(
     LS.teacherSubjects,
     {},
@@ -139,7 +144,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [editSlot, setEditSlot] = useState(null);
   const [editSub, setEditSub] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
@@ -210,6 +215,7 @@ export default function App() {
     timetables,
     displayCutoff,
     examPeriods,
+    classSets,
     teacherSubjects,
     saveSlots,
     saveHolidays,
@@ -223,6 +229,7 @@ export default function App() {
     saveTimetables,
     saveDisplayCutoff,
     saveExamPeriods,
+    saveClassSets,
     saveTeacherSubjects,
     lsKeys: LS,
     setImporting,
@@ -495,7 +502,22 @@ export default function App() {
 
         <div id="main-content">
           {view === VIEWS.DASH && !selected && (
-            <Dashboard slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
+            <Dashboard
+              slots={slots}
+              holidays={holidays}
+              subs={subs}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              activeTimetableId={activeTimetableId}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
+              subjectCategories={subjectCategories}
+              teacherSubjects={teacherSubjects}
+              saveSubs={saveSubs}
+            />
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
@@ -520,6 +542,10 @@ export default function App() {
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              displayCutoff={displayCutoff}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -527,6 +553,8 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               slots={slots}
+              classSets={classSets}
+              onSaveClassSets={saveClassSets}
               ttCrud={ttCrud}
               onSaveDisplayCutoff={saveDisplayCutoff}
               isAdmin={isAdmin}
@@ -559,6 +587,8 @@ export default function App() {
               activeTimetableId={activeTimetableId}
               biweeklyAnchors={biweeklyAnchors}
               teacherSubjects={teacherSubjects}
+              classSets={classSets}
+              displayCutoff={displayCutoff}
               onAddAdjustment={adjCrud.add}
             />
           )}
@@ -686,11 +716,13 @@ export default function App() {
         @media (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
           .sidebar-close { display: none !important; }
+          .sidebar-backdrop { display: none !important; }
           .hamburger { display: none !important; }
         }
         @media (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
+          .excel-grid-sections { grid-template-columns: 1fr !important; }
           .master-slot-actions { opacity: 1 !important; }
         }
         @media (hover: none) {

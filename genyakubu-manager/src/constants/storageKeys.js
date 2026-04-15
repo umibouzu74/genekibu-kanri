@@ -18,4 +18,5 @@ export const LS = {
   activeTimetableId: "genyakubu-active-timetable",
   examPeriods: "genyakubu-exam-periods",
   teacherSubjects: "genyakubu-teacher-subjects",
+  classSets: "genyakubu-class-sets",
 };

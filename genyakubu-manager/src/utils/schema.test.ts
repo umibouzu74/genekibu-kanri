@@ -637,6 +637,47 @@ describe("v7 → v8 migration: Holiday id, targetGrades, subjKeywords", () => {
   });
 });
 
+describe("v8 → v9 migration: classSets 初期化", () => {
+  it("adds empty classSets when missing", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 8,
+      slots: [],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.classSets).toEqual([]);
+  });
+
+  it("preserves existing classSets", () => {
+    const existing = [
+      { id: 1, label: "中3 数学", slotIds: [100, 101] },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 8,
+      classSets: existing,
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.classSets).toEqual(existing);
+  });
+
+  it("v8 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 8,
+      slots: [],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("rejects classSets with malformed entries", () => {
+    const bundle = {
+      schemaVersion: 9,
+      classSets: [{ id: "not-a-number", label: "x", slotIds: [1] }],
+    };
+    const v = validateExportBundle(bundle);
+    expect(v.ok).toBe(false);
+  });
+});
+
 describe("nextNumericId", () => {
   it("returns 1 for an empty list", () => {
     expect(nextNumericId([])).toBe(1);

@@ -17,6 +17,7 @@
 
 import type {
   BiweeklyAnchor,
+  ClassSet,
   CutoffGroup,
   DisplayCutoff,
   ExamPeriod,
@@ -32,7 +33,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -145,6 +146,16 @@ export function isExamPeriod(x: unknown): x is ExamPeriod {
     isString(x.startDate) &&
     isString(x.endDate) &&
     Array.isArray(x.targetGrades)
+  );
+}
+
+export function isClassSet(x: unknown): x is ClassSet {
+  return (
+    isObject(x) &&
+    isNumber(x.id) &&
+    isString(x.label) &&
+    Array.isArray(x.slotIds) &&
+    (x.slotIds as unknown[]).every((i) => isNumber(i))
   );
 }
 
@@ -291,6 +302,18 @@ export function validateExportBundle(
       };
   }
 
+  if (raw.classSets != null) {
+    if (!Array.isArray(raw.classSets))
+      return { ok: false, error: "classSets が配列ではありません" };
+    const bad = raw.classSets.findIndex((cs: unknown) => !isClassSet(cs));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `classSets[${bad}] の形式が不正です`,
+        path: `classSets[${bad}]`,
+      };
+  }
+
   return { ok: true, data: raw as unknown as ExportBundle };
 }
 
@@ -415,6 +438,14 @@ export function migrateExportBundle(raw: unknown): unknown {
         targetGrades: Array.isArray(h.targetGrades) ? h.targetGrades : [],
         subjKeywords: Array.isArray(h.subjKeywords) ? h.subjKeywords : [],
       }));
+    }
+  }
+
+  // v8 → v9: classSets (授業セット) を追加。
+  //           既存データは空配列で初期化。
+  if (version < 9) {
+    if (!Array.isArray(bundle.classSets)) {
+      bundle.classSets = [];
     }
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { S } from "../../styles/common";
 import { formatCount, slotWeight } from "../../utils/biweekly";
+import { ClassSetManager } from "../ClassSetManager";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -8,6 +9,8 @@ export function TimetableManagerView({
   timetables,
   displayCutoff,
   slots,
+  classSets,
+  onSaveClassSets,
   ttCrud,
   onSaveDisplayCutoff,
   isAdmin,
@@ -399,6 +402,14 @@ export function TimetableManagerView({
           ))}
         </div>
       </div>
+
+      {/* 授業セット管理 */}
+      <ClassSetManager
+        classSets={classSets || []}
+        slots={slots}
+        onSave={onSaveClassSets}
+        isAdmin={isAdmin}
+      />
     </div>
   );
 }
