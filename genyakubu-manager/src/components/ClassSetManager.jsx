@@ -9,19 +9,17 @@ import { useToasts } from "../hooks/useToasts";
 // 複数のスロットを「同一コース」として束ね、ダッシュボードで共通の
 // 授業回数カウンタ (第①回, 第②回…) を振るためのマネージャ。
 //
-// ユーザーは "クラスユニット" = (学年, 曜日, cls|room) 単位で選択する。
-// 例: 「火曜日 中3 S」をクリック → その cohort × 曜日 の全コマを一括選択。
+// ユーザーは "クラスユニット" = (学年, 曜日) 単位で選択する。
+// 例: 「火曜日 中3」をクリック → その学年 × 曜日 の全コマ (cohort 横断、
+// 合同コマ含む) を一括選択。
 // 複数ユニットを選んで「セットとして登録」すると、それらのコマが 1 つの
 // 進度カウンタを共有する。
+// 進度は内部で (教科, cohort=cls) 別に独立カウントされるため、同セット内
+// で並行する別 cohort の同教科は混ざらない。
 
-// クラスユニットのキー: (学年, 曜日, cohortId)
-// cohortId は cls が入っていればそちら、無ければ room を使用。
-function cohortIdOf(slot) {
-  return (slot.cls && slot.cls.trim()) ? slot.cls : slot.room;
-}
-
+// クラスユニットのキー: (学年, 曜日)
 function unitKeyOf(slot) {
-  return `${slot.grade}|${slot.day}|${cohortIdOf(slot)}`;
+  return `${slot.grade}|${slot.day}`;
 }
 
 // slots → ClassUnit[]
@@ -34,7 +32,6 @@ function buildClassUnits(slots) {
         key,
         grade: s.grade,
         day: s.day,
-        cohortId: cohortIdOf(s),
         slots: [],
       });
     }
@@ -46,58 +43,93 @@ function buildClassUnits(slots) {
   return [...units.values()];
 }
 
-// ユニット表示ラベル: "火 中3 S"
+// ユニット表示ラベル: "火 中3"
 function unitLabel(unit) {
-  return `${unit.day} ${unit.grade} ${unit.cohortId}`;
+  return `${unit.day} ${unit.grade}`;
 }
 
 // 指定されたユニット群から自動ラベルを生成。
-// 例: {grade:"中3", cohortId:"S", days:["火","木"]} → "中3 S (火・木)"
+// 例: {grade:"中3", days:["火","木"]} → "中3 (火・木)"
 function autoLabelFromUnits(units) {
   if (units.length === 0) return "";
   const grades = [...new Set(units.map((u) => u.grade))];
-  const cohorts = [...new Set(units.map((u) => u.cohortId))];
   const days = [...new Set(units.map((u) => u.day))].sort(
     (a, b) => DAYS.indexOf(a) - DAYS.indexOf(b)
   );
   const gPart = grades.join("/");
-  const cPart = cohorts.length === 1 ? cohorts[0] : cohorts.join("/");
   const dPart = days.join("・");
-  return `${gPart} ${cPart} (${dPart})`.trim();
+  return `${gPart} (${dPart})`.trim();
 }
 
-// (grade, cohortId) が 2 日以上に出現するユニット群を自動提案として返す。
-function buildSuggestions(allUnits, classSets) {
+// 自動提案: 各学年内で「同じ曜日セット」を持つ cohort 群をひとまとめにし、
+// (学年, 曜日ペア) 単位で提案する。
+// 例: 中3 SS/S/A/B が火木に出現 → "中3 (火・木)" 提案
+//      中3 C が水金に出現 → "中3 (水・金)" 提案
+// 同学年内で複数の曜日パターンが重複曜日を含む場合、ユニット数が大きい
+// (= カバレッジが広い) 提案を優先表示する。
+export function buildSuggestions(allUnits, classSets, allSlots) {
   const alreadyMapped = new Set();
   for (const cs of classSets) for (const id of cs.slotIds) alreadyMapped.add(id);
 
-  // 完全未マップのユニットだけ対象
+  // 完全未マップのユニット (= 学年×曜日) だけ対象
   const freeUnits = allUnits.filter((u) =>
     u.slots.every((s) => !alreadyMapped.has(s.id))
   );
 
-  // (grade, cohortId) でグルーピング
-  const groups = new Map();
-  for (const u of freeUnits) {
-    const gkey = `${u.grade}|${u.cohortId}`;
-    if (!groups.has(gkey)) groups.set(gkey, []);
-    groups.get(gkey).push(u);
+  // 学年ごとに cohort (cls or room) → 出現曜日セット を集計
+  const gradeCohortDays = new Map(); // grade → Map<cohortId, Set<day>>
+  const freeKeys = new Set(freeUnits.map((u) => u.key));
+  for (const s of allSlots) {
+    const k = `${s.grade}|${s.day}`;
+    if (!freeKeys.has(k)) continue;
+    const cohortId = (s.cls && s.cls.trim()) || s.room || "";
+    if (!gradeCohortDays.has(s.grade)) gradeCohortDays.set(s.grade, new Map());
+    const cohortMap = gradeCohortDays.get(s.grade);
+    if (!cohortMap.has(cohortId)) cohortMap.set(cohortId, new Set());
+    cohortMap.get(cohortId).add(s.day);
   }
 
   const suggestions = [];
-  for (const [gkey, units] of groups) {
-    const days = new Set(units.map((u) => u.day));
-    if (days.size < 2) continue;
-    const sorted = [...units].sort(
-      (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
-    );
-    suggestions.push({
-      key: gkey,
-      units: sorted,
-      label: autoLabelFromUnits(sorted),
-    });
+  for (const [grade, cohortMap] of gradeCohortDays) {
+    // 同じ曜日セット文字列ごとに cohort をグルーピング
+    const dayPatternGroups = new Map(); // sortedDayKey → cohortIds[]
+    for (const [cohortId, daySet] of cohortMap) {
+      if (daySet.size < 2) continue; // 単日の cohort はセット化対象外
+      const sortedDays = [...daySet].sort(
+        (a, b) => DAYS.indexOf(a) - DAYS.indexOf(b)
+      );
+      const dayKey = sortedDays.join(",");
+      if (!dayPatternGroups.has(dayKey)) dayPatternGroups.set(dayKey, []);
+      dayPatternGroups.get(dayKey).push(cohortId);
+    }
+
+    // 各曜日パターンごとに、その学年×その曜日群のユニット (横断) を集約して提案
+    for (const dayKey of dayPatternGroups.keys()) {
+      const days = dayKey.split(",");
+      const units = freeUnits.filter(
+        (u) => u.grade === grade && days.includes(u.day)
+      );
+      if (units.length === 0) continue;
+      const sortedUnits = [...units].sort(
+        (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
+      );
+      // ユニット内 slot 総数 (カバレッジ) を保持してソートに使う
+      const slotCount = sortedUnits.reduce((acc, u) => acc + u.slots.length, 0);
+      suggestions.push({
+        key: `${grade}|${dayKey}`,
+        units: sortedUnits,
+        label: autoLabelFromUnits(sortedUnits),
+        slotCount,
+      });
+    }
   }
-  return suggestions.sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  // カバレッジが広い (slotCount 大) ものを先に提示 → 先に登録すれば
+  // 重複曜日を含む細かい提案は freeUnits から自動的に外れる。
+  // 同カバレッジは label の自然順で安定ソート。
+  return suggestions.sort((a, b) => {
+    if (a.slotCount !== b.slotCount) return b.slotCount - a.slotCount;
+    return a.label.localeCompare(b.label, "ja");
+  });
 }
 
 export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
@@ -146,8 +178,8 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   };
 
   const suggestions = useMemo(
-    () => buildSuggestions(allUnits, classSets),
-    [allUnits, classSets]
+    () => buildSuggestions(allUnits, classSets, slots),
+    [allUnits, classSets, slots]
   );
 
   // フィルタ適用済みユニット
@@ -168,8 +200,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     }
     return [...out].sort((a, b) => {
       if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
-      if (a.day !== b.day) return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
-      return a.cohortId.localeCompare(b.cohortId);
+      return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
     });
     // unitStatus depends on slotToSet + editId, already in deps via allUnits/classSets/editId
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,11 +335,36 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>授業セット</span>
         <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-          同一コース (例: 中3 S の 火・木) として扱うクラスユニットをまとめます。
-          ダッシュボードで共通の授業回数カウンタ (第①回, 第②回…) が振られます。
+          学年 × 曜日ペア (例: 中3 の 火・木) として扱うクラスユニットを
+          まとめます。ダッシュボードで共通の授業回数カウンタ (第①回, 第②回…)
+          が振られます。進度は内部で (教科, クラス) 別に独立カウントされる
+          ため、合同コマや並行する別クラスの同教科は混ざりません。
           未登録のスロットは単体で 1 セット扱いです。
         </div>
       </div>
+
+      {/* 移行ガイダンス: 旧設計 (cohort 単位セット) からの移行案内 */}
+      {isAdmin && classSets.length > 0 && (
+        <div
+          style={{
+            padding: "10px 16px",
+            background: "#fff8e0",
+            borderBottom: "1px solid #f0e0a0",
+            fontSize: 11,
+            color: "#7a6020",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+            ⚠️ 設計変更のお知らせ
+          </div>
+          授業セットの粒度が「(学年, 曜日)」に変わりました。旧形式
+          (cohort ごとのセット) は引き続き動きますが、合同コマを正しく
+          含めるには <strong>登録済みセットを一旦削除し、自動提案から
+          再登録</strong> してください。新形式では「中3 (火・木)」の
+          ように cohort 横断で 1 セットになります。
+        </div>
+      )}
 
       {/* 登録済みセット一覧 */}
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
