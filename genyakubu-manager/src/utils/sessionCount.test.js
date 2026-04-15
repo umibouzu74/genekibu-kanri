@@ -287,6 +287,63 @@ describe("computeSessionNumber - 英/数 隔週複合教科スロット", () => 
     expect(computeSessionNumber(combo, "2026-04-20", setCtx)).toBe(4);
     expect(computeSessionNumber(pureEng, "2026-04-20", setCtx)).toBe(5);
   });
+
+  it("数/英 ペアも A 週 = 先頭 (数) / B 週 = 次 (英) で独立カウント", () => {
+    // 中2 AB の「英/数 堀上」(id=1) と 中2 C の「数/英 河野」(id=2) のような
+    // ペアを想定。グローバルアンカーで両方同じ週判定になる。
+    const abCombo = combo; // 英/数 堀上 (id=1)
+    const cCombo = makeSlot(2, "月", "19:00-20:20", "中2", {
+      subj: "数/英",
+      note: "隔週(堀上)",
+    });
+    const pairCtx = {
+      classSets: [],
+      allSlots: [abCombo, cCombo],
+      displayCutoff: {
+        groups: [
+          { label: "中3", grades: ["中3"], startDate: "2026-04-06" },
+          { label: "中2", grades: ["中2"], startDate: "2026-04-06" },
+        ],
+      },
+      isOffForGrade: NEVER_OFF,
+      biweeklyAnchors: anchors,
+    };
+    // 4/6 (A): abCombo = 英 ①, cCombo = 数 ①
+    expect(computeSessionNumber(abCombo, "2026-04-06", pairCtx)).toBe(1);
+    expect(computeSessionNumber(cCombo, "2026-04-06", pairCtx)).toBe(1);
+    // 4/13 (B): abCombo = 数 ①, cCombo = 英 ①
+    expect(computeSessionNumber(abCombo, "2026-04-13", pairCtx)).toBe(1);
+    expect(computeSessionNumber(cCombo, "2026-04-13", pairCtx)).toBe(1);
+    // 4/20 (A): abCombo = 英 ②, cCombo = 数 ②
+    expect(computeSessionNumber(abCombo, "2026-04-20", pairCtx)).toBe(2);
+    expect(computeSessionNumber(cCombo, "2026-04-20", pairCtx)).toBe(2);
+  });
+
+  it("個別アンカー (slot.biweeklyAnchors) が優先され、グローバルと週判定が逆転する", () => {
+    // スロット個別アンカーで A/B を反転させたスロット。
+    // グローバル基準では 4/6 が A 週だが、このスロットでは 4/6 を B 週扱いにする
+    // (= 前週の 3/30 を A 週基準点として設定)。
+    const flipped = makeSlot(99, "月", "19:00-20:20", "中3", {
+      subj: "英/数",
+      note: "隔週(河野)",
+      biweeklyAnchors: [{ date: "2026-03-30", weekType: "A" }],
+    });
+    const flipCtx = {
+      classSets: [],
+      allSlots: [flipped],
+      displayCutoff: {
+        groups: [{ label: "中3", grades: ["中3"], startDate: "2026-04-06" }],
+      },
+      isOffForGrade: NEVER_OFF,
+      biweeklyAnchors: anchors, // グローバルは 4/6=A のまま
+    };
+    // 4/6: グローバルでは A だが、個別アンカー 3/30=A により 4/6 は B → 数学 ①
+    expect(computeSessionNumber(flipped, "2026-04-06", flipCtx)).toBe(1);
+    // 4/13: 個別アンカー基準では A 週 → 英語 ①
+    expect(computeSessionNumber(flipped, "2026-04-13", flipCtx)).toBe(1);
+    // 4/20: 個別アンカー基準では B 週 → 数学 ②
+    expect(computeSessionNumber(flipped, "2026-04-20", flipCtx)).toBe(2);
+  });
 });
 
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
