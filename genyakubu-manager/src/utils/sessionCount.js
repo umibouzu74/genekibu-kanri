@@ -1,5 +1,6 @@
 // ─── 授業回数 (セッション番号) 計算 ──────────────────────────────
 // 各スロットが、所属するセット内で対象日までに何回目の授業かを算出する。
+// 同一セット内でも教科 (slot.subj) ごとに独立したカウンタで数える。
 // 休講日 / テスト期間 / 隔週ハズレ週はカウントしない。
 // 対象日で該当スロットが実施されない場合は 0 を返す。
 
@@ -74,9 +75,12 @@ function isSlotActiveOn(slot, dateStr, ctx) {
 
 // セット内スロット群の単一日における実施分を、安定した順序 (time, slotId)
 // で返す。回数カウントの順番付けに使用。
-function activeSlotsOnDay(setSlots, dateStr, ctx) {
+// subj が与えられた場合は、同一教科のスロットだけを対象にする
+// (セット内でも教科ごとに独立したカウンタで数えるため)。
+function activeSlotsOnDay(setSlots, dateStr, ctx, subj) {
   const out = [];
   for (const s of setSlots) {
+    if (subj != null && s.subj !== subj) continue;
     if (isSlotActiveOn(s, dateStr, ctx)) out.push(s);
   }
   out.sort((a, b) => {
@@ -111,19 +115,19 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
   if (setSlots.length === 0) return 0;
 
-  // 対象日当日に対象スロットが実施されるか確認
-  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx);
+  // 対象日当日に対象スロットが実施されるか確認 (同一教科のみで数える)
+  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, slot.subj);
   const todayIdx = todayActive.findIndex((s) => s.id === slot.id);
   if (todayIdx === -1) return 0;
 
-  // 開始日から前日までの累計実施数を加算
+  // 開始日から前日までの累計実施数を加算 (同一教科のみで数える)
   const start = parseDate(startDate);
   const target = parseDate(targetDateStr);
   let count = 0;
   const cur = new Date(start);
   while (cur < target) {
     const dStr = fmtDate(cur);
-    count += activeSlotsOnDay(setSlots, dStr, ctx).length;
+    count += activeSlotsOnDay(setSlots, dStr, ctx, slot.subj).length;
     cur.setDate(cur.getDate() + 1);
   }
 
@@ -144,7 +148,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
   const out = new Map();
   if (!slots || slots.length === 0 || !targetDateStr) return out;
 
-  // 同じセットに属するスロットは 1 回の走査で済ませるためにキャッシュ
+  // 同じ (セット × 教科) に属するスロットは 1 回の走査で済ませるためにキャッシュ
   const setCache = new Map(); // setKey → Map<dateStr, activeSlotIds[]>
 
   const slotById = new Map();
@@ -158,7 +162,10 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
     }
 
     const setSlotIds = resolveSetSlotIds(slot, ctx.classSets);
-    const setKey = [...setSlotIds].sort((a, b) => a - b).join(",") + "|" + startDate;
+    const setKey =
+      [...setSlotIds].sort((a, b) => a - b).join(",") +
+      "|" + (slot.subj || "") +
+      "|" + startDate;
     const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
     if (setSlots.length === 0) {
       out.set(slot.id, 0);
@@ -173,7 +180,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       const cur = new Date(start);
       while (cur <= target) {
         const dStr = fmtDate(cur);
-        const active = activeSlotsOnDay(setSlots, dStr, ctx);
+        const active = activeSlotsOnDay(setSlots, dStr, ctx, slot.subj);
         dayMap.set(dStr, active.map((s) => s.id));
         cur.setDate(cur.getDate() + 1);
       }

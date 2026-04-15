@@ -194,6 +194,49 @@ describe("computeSessionNumber - biweekly A week only", () => {
   });
 });
 
+describe("computeSessionNumber - セット内教科別カウンタ", () => {
+  // 火: 英語 19:00 / 数学 20:20, 木: 英語 19:00 / 理科 20:20 を 1 セットに束ねる
+  const tueEng = makeSlot(1, "火", "19:00-20:20", "中3", { subj: "英語" });
+  const tueMath = makeSlot(2, "火", "20:30-21:50", "中3", { subj: "数学" });
+  const thuEng = makeSlot(3, "木", "19:00-20:20", "中3", { subj: "英語" });
+  const thuSci = makeSlot(4, "木", "20:30-21:50", "中3", { subj: "理科" });
+  const classSets = [
+    { id: 10, label: "中3 (火・木)", slotIds: [1, 2, 3, 4] },
+  ];
+  const baseCtx = {
+    classSets,
+    allSlots: [tueEng, tueMath, thuEng, thuSci],
+    displayCutoff: DISPLAY_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+  };
+
+  it("4/7 (火) 英語 = ①, 数学 = ①", () => {
+    expect(computeSessionNumber(tueEng, "2026-04-07", baseCtx)).toBe(1);
+    expect(computeSessionNumber(tueMath, "2026-04-07", baseCtx)).toBe(1);
+  });
+  it("4/9 (木) 英語 = ②, 理科 = ①", () => {
+    expect(computeSessionNumber(thuEng, "2026-04-09", baseCtx)).toBe(2);
+    expect(computeSessionNumber(thuSci, "2026-04-09", baseCtx)).toBe(1);
+  });
+  it("4/14 (火) 英語 = ③, 数学 = ②", () => {
+    expect(computeSessionNumber(tueEng, "2026-04-14", baseCtx)).toBe(3);
+    expect(computeSessionNumber(tueMath, "2026-04-14", baseCtx)).toBe(2);
+  });
+  it("4/16 (木) 英語 = ④, 理科 = ②", () => {
+    expect(computeSessionNumber(thuEng, "2026-04-16", baseCtx)).toBe(4);
+    expect(computeSessionNumber(thuSci, "2026-04-16", baseCtx)).toBe(2);
+  });
+  it("buildSessionCountMap でも同じ結果", () => {
+    const map = buildSessionCountMap(
+      [thuEng, thuSci],
+      "2026-04-16",
+      baseCtx
+    );
+    expect(map.get(3)).toBe(4); // 英語
+    expect(map.get(4)).toBe(2); // 理科
+  });
+});
+
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
   // 両方とも火曜同時刻帯に並ぶスロット
   const early = makeSlot(1, "火", "18:00-19:00", "中3");
