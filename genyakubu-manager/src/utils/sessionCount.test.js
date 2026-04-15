@@ -346,6 +346,151 @@ describe("computeSessionNumber - 英/数 隔週複合教科スロット", () => 
   });
 });
 
+describe("computeSessionNumber - 中学部開講日のオリエン (1 限スキップ)", () => {
+  // 中学部は開講日の 1 限目 (= 同曜日同学年の最早時刻) がオリエン扱い。
+  // session count は 0 で表示なし、2 限目以降は通常通り ① から開始。
+  // DISPLAY_CUTOFF: 中3 startDate=2026-04-07 (火)
+  const p1 = makeSlot(1, "火", "18:55-19:40", "中3", { subj: "理科" });
+  const p2 = makeSlot(2, "火", "19:50-20:35", "中3", { subj: "英語" });
+  const p3 = makeSlot(3, "火", "20:45-21:30", "中3", { subj: "数学" });
+  const ctx = {
+    classSets: [],
+    allSlots: [p1, p2, p3],
+    displayCutoff: DISPLAY_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+    orientationOnFirstDay: true,
+  };
+
+  it("開講日 1 限 (理科) はオリエンで 0", () => {
+    expect(computeSessionNumber(p1, "2026-04-07", ctx)).toBe(0);
+  });
+  it("開講日 2 限 (英語) は ①", () => {
+    expect(computeSessionNumber(p2, "2026-04-07", ctx)).toBe(1);
+  });
+  it("開講日 3 限 (数学) は ①", () => {
+    expect(computeSessionNumber(p3, "2026-04-07", ctx)).toBe(1);
+  });
+  it("開講日翌週 1 限 (理科) は ① (オリエン週はカウント外)", () => {
+    expect(computeSessionNumber(p1, "2026-04-14", ctx)).toBe(1);
+  });
+  it("開講日翌週 2 限 (英語) は ② (前週開講日でも 1 回目を加算済み)", () => {
+    expect(computeSessionNumber(p2, "2026-04-14", ctx)).toBe(2);
+  });
+  it("orientationOnFirstDay を渡さなければ通常通り (1 限から ①)", () => {
+    const off = { ...ctx, orientationOnFirstDay: false };
+    expect(computeSessionNumber(p1, "2026-04-07", off)).toBe(1);
+  });
+  it("高校部スロットには適用されない (1 限から ①)", () => {
+    const high = makeSlot(99, "火", "18:55-19:40", "高3", { subj: "数学" });
+    const ctxH = {
+      classSets: [],
+      allSlots: [high],
+      displayCutoff: DISPLAY_CUTOFF, // 高3: 2026-04-07
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    expect(computeSessionNumber(high, "2026-04-07", ctxH)).toBe(1);
+  });
+  it("buildSessionCountMap でも 1 限のみ 0 になる", () => {
+    const map = buildSessionCountMap([p1, p2, p3], "2026-04-07", ctx);
+    expect(map.get(1)).toBe(0); // 理科 (orient)
+    expect(map.get(2)).toBe(1); // 英語
+    expect(map.get(3)).toBe(1); // 数学
+  });
+});
+
+describe("computeSessionNumber - 中学部オリエン (セット連動)", () => {
+  // 中学部全学年で startDate = 2026-04-07 (火) を共通設定
+  const MS_CUTOFF = {
+    groups: [
+      {
+        label: "中学部",
+        grades: ["中1", "中2", "中3"],
+        startDate: "2026-04-07",
+      },
+    ],
+  };
+
+  it("中2 月木セット: 月 4/13 と 木 4/9 → 木が先で 4/9 (木) が初開講", () => {
+    // 月 18:55 (1限相当) / 月 19:50 / 木 18:55 (1限相当) / 木 19:50
+    const monP1 = makeSlot(10, "月", "18:55-19:40", "中2", { subj: "数学" });
+    const monP2 = makeSlot(11, "月", "19:50-20:35", "中2", { subj: "英語" });
+    const thuP1 = makeSlot(20, "木", "18:55-19:40", "中2", { subj: "国語" });
+    const thuP2 = makeSlot(21, "木", "19:50-20:35", "中2", { subj: "理科" });
+    const ctx = {
+      classSets: [{ id: 100, label: "中2 (月・木)", slotIds: [10, 11, 20, 21] }],
+      allSlots: [monP1, monP2, thuP1, thuP2],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    // 4/9 (木) 初開講: 1 限の thuP1 = 0, 2 限の thuP2 = ①
+    expect(computeSessionNumber(thuP1, "2026-04-09", ctx)).toBe(0);
+    expect(computeSessionNumber(thuP2, "2026-04-09", ctx)).toBe(1);
+    // 4/13 (月): 初開講 (4/9) でないので 1 限もオリエン対象外 → ①
+    expect(computeSessionNumber(monP1, "2026-04-13", ctx)).toBe(1);
+    expect(computeSessionNumber(monP2, "2026-04-13", ctx)).toBe(1);
+    // 4/16 (木) 翌週: 1 限 thuP1 → ① (前週 4/9 はオリエンで未カウント), 2 限 → ②
+    expect(computeSessionNumber(thuP1, "2026-04-16", ctx)).toBe(1);
+    expect(computeSessionNumber(thuP2, "2026-04-16", ctx)).toBe(2);
+  });
+
+  it("中1 火金セット: 火 4/7 が先で 4/7 (火) が初開講", () => {
+    const tueP1 = makeSlot(50, "火", "18:55-19:40", "中1", { subj: "理科" });
+    const tueP2 = makeSlot(51, "火", "19:50-20:35", "中1", { subj: "英語" });
+    const friP1 = makeSlot(60, "金", "18:55-19:40", "中1", { subj: "数学" });
+    const friP2 = makeSlot(61, "金", "19:50-20:35", "中1", { subj: "国語" });
+    const ctx = {
+      classSets: [{ id: 200, label: "中1 (火・金)", slotIds: [50, 51, 60, 61] }],
+      allSlots: [tueP1, tueP2, friP1, friP2],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    // 4/7 (火) 初開講: 1 限 = 0, 2 限 = ①
+    expect(computeSessionNumber(tueP1, "2026-04-07", ctx)).toBe(0);
+    expect(computeSessionNumber(tueP2, "2026-04-07", ctx)).toBe(1);
+    // 4/10 (金) は初開講ではない → 1 限から ①
+    expect(computeSessionNumber(friP1, "2026-04-10", ctx)).toBe(1);
+    expect(computeSessionNumber(friP2, "2026-04-10", ctx)).toBe(1);
+  });
+
+  it("中3 水金セット: 水 4/8 が先で 4/8 (水) が初開講", () => {
+    const wedP1 = makeSlot(70, "水", "18:55-19:40", "中3", { subj: "社会" });
+    const wedP2 = makeSlot(71, "水", "19:50-20:35", "中3", { subj: "数学" });
+    const friP = makeSlot(72, "金", "19:50-20:35", "中3", { subj: "英語" });
+    const ctx = {
+      classSets: [{ id: 300, label: "中3 (水・金)", slotIds: [70, 71, 72] }],
+      allSlots: [wedP1, wedP2, friP],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    // 4/8 (水) 初開講: 1 限 = 0, 2 限 = ①
+    expect(computeSessionNumber(wedP1, "2026-04-08", ctx)).toBe(0);
+    expect(computeSessionNumber(wedP2, "2026-04-08", ctx)).toBe(1);
+    // 4/10 (金) は初開講外 → ①
+    expect(computeSessionNumber(friP, "2026-04-10", ctx)).toBe(1);
+  });
+
+  it("セット未登録スロットは同学年フォールバック (cohort 推定不能)", () => {
+    // 中2 で 月にしかスロットがなく、セット未登録のケース。
+    // 同学年同曜日の最早が 1 限としてオリエン扱いされる (従来挙動継続)。
+    const m1 = makeSlot(80, "月", "18:55-19:40", "中2", { subj: "理科" });
+    const m2 = makeSlot(81, "月", "19:50-20:35", "中2", { subj: "英語" });
+    const ctx = {
+      classSets: [],
+      allSlots: [m1, m2],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    // startDate 4/7 火 → 同学年 pool で初日付の月曜は 4/13
+    expect(computeSessionNumber(m1, "2026-04-13", ctx)).toBe(0);
+    expect(computeSessionNumber(m2, "2026-04-13", ctx)).toBe(1);
+  });
+});
+
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
   // 両方とも火曜同時刻帯に並ぶスロット
   const early = makeSlot(1, "火", "18:00-19:00", "中3");
