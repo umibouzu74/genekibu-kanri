@@ -658,6 +658,7 @@ export function Dashboard({
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors,
+      orientationOnFirstDay: true,
     }),
     [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors]
   );

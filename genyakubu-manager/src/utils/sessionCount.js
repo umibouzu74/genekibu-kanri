@@ -6,7 +6,7 @@
 // 休講日 / テスト期間 / 単独教科隔週の B 週はカウントしない。
 // 対象日で対象スロットがその教科を実施していない場合は 0 を返す。
 
-import { WEEKDAYS } from "../data";
+import { gradeToDept, WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 
 // "YYYY-MM-DD" → Date (ローカル)
@@ -77,8 +77,35 @@ function parseSubjects(subjStr) {
     .filter(Boolean);
 }
 
+// 中学部の開講日 1 限目はオリエンテーションに置き換わるため、授業として
+// カウントしない。対象スロットが
+//   - ctx.orientationOnFirstDay = true (呼び出し側でオプトイン)
+//   - 中学部
+//   - 対象日 == 自分の学年の開始日
+//   - 同じ学年・同じ曜日のスロット群のなかで最早時刻
+// をすべて満たすとき true。
+function isOrientationSlot(slot, dateStr, ctx) {
+  if (!ctx.orientationOnFirstDay) return false;
+  if (gradeToDept(slot.grade) !== "中学部") return false;
+  const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  if (!startDate || dateStr !== startDate) return false;
+
+  const dt = parseDate(dateStr);
+  const dayKey = WEEKDAYS[dt.getDay()];
+  let earliestMin = Infinity;
+  for (const s of ctx.allSlots || []) {
+    if (s.grade !== slot.grade) continue;
+    if (s.day !== dayKey) continue;
+    const m = timeToMinutes(s.time);
+    if (m < earliestMin) earliestMin = m;
+  }
+  if (earliestMin === Infinity) return false;
+  return timeToMinutes(slot.time) === earliestMin;
+}
+
 // 対象日にスロットがどの教科を実施しているかを返す。
-// 実施なし (曜日違い / 休講 / 単独教科隔週の B 週) の場合は null。
+// 実施なし (曜日違い / 休講 / 単独教科隔週の B 週 / 中学部開講日 1 限の
+// オリエンテーション) の場合は null。
 // 複合教科の隔週スロット ("英/数" + 隔週) は毎週実施され、A 週は先頭教科、
 // B 週は次の教科を返す (それぞれ独立した進度としてカウントされる)。
 // アンカー未設定の隔週スロットは常時実施 (先頭教科) にフォールバック。
@@ -90,6 +117,9 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
   if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
     return null;
   }
+
+  // 中学部開講日の 1 限目はオリエン (授業実施なし)。
+  if (isOrientationSlot(slot, dateStr, ctx)) return null;
 
   const parts = parseSubjects(slot.subj);
   const bi = isBiweekly(slot.note);

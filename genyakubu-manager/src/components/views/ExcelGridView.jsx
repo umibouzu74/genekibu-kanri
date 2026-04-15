@@ -846,6 +846,7 @@ export function ExcelGridView({
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
+      orientationOnFirstDay: true,
     });
   }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors]);
 
