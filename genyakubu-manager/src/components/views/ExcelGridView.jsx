@@ -30,6 +30,8 @@ import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
+import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
+import { makeHolidayHelpers } from "./dashboardHelpers";
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
 const ExcelCell = memo(function ExcelCell({
@@ -53,6 +55,7 @@ const ExcelCell = memo(function ExcelCell({
   isSubMode,
   isCombineTarget,
   onCellClick,
+  sessionNumber,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -198,6 +201,27 @@ const ExcelCell = memo(function ExcelCell({
             flexWrap: "wrap",
           }}
         >
+          {sessionNumber > 0 && (
+            <span
+              title={`第${sessionNumber}回`}
+              aria-label={`第${sessionNumber}回`}
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                color: "#fff",
+                background: "#3a6ea5",
+                borderRadius: 4,
+                padding: "0 5px",
+                lineHeight: "18px",
+                minWidth: 20,
+                textAlign: "center",
+                boxShadow: "0 1px 2px rgba(0,0,0,.12)",
+                flexShrink: 0,
+              }}
+            >
+              {formatSessionNumber(sessionNumber)}
+            </span>
+          )}
           <span>{slot.subj}</span>
           {biweekly && weekType && (
             <span
@@ -260,6 +284,7 @@ function ExcelSection({
   onCellClick,
   combineMode,
   onSubDrop,
+  sessionCountMap,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -587,6 +612,7 @@ function ExcelSection({
                             onDragEnd={handleDragEnd}
                             onEdit={onEdit}
                             biweeklyAnchors={biweeklyAnchors}
+                            sessionNumber={sessionCountMap ? sessionCountMap.get(combined.slot.id) || 0 : 0}
                             {...subProps}
                           />
                         );
@@ -614,6 +640,7 @@ function ExcelSection({
                         onDragEnd={handleDragEnd}
                         onEdit={onEdit}
                         biweeklyAnchors={biweeklyAnchors}
+                        sessionNumber={slot && sessionCountMap ? sessionCountMap.get(slot.id) || 0 : 0}
                         {...subProps}
                       />
                     );
@@ -645,6 +672,8 @@ export function ExcelGridView({
   examPeriods,
   subjectCategories,
   teacherSubjects,
+  classSets,
+  displayCutoff,
   onAddAdjustment,
   enableSubMode = false,
 }) {
@@ -777,6 +806,34 @@ export function ExcelGridView({
 
   // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
   const displaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
+
+  // ─── Session count (第 N 回) 計算 ──────────────────────────────
+  // 対象日: 代行モード中は subDate、それ以外は選択曜日 (selectedDay) の
+  // 直近発生日 (今日以前) を使う。
+  const sessionTargetDate = useMemo(() => {
+    if (subMode.subDate) return subMode.subDate;
+    if (!selectedDay) return null;
+    const d = new Date();
+    for (let i = 0; i < 14; i++) {
+      const dateStr = fmtDate(d);
+      if (dateToDay(dateStr) === selectedDay) return dateStr;
+      d.setDate(d.getDate() - 1);
+    }
+    return null;
+  }, [subMode.subDate, selectedDay]);
+
+  const sessionCountMap = useMemo(() => {
+    if (!sessionTargetDate || !displayCutoff) return new Map();
+    const { isOffForGrade } = makeHolidayHelpers(holidays || [], examPeriods || []);
+    const daySlots = displaySlots.filter((s) => s.day === selectedDay);
+    return buildSessionCountMap(daySlots, sessionTargetDate, {
+      classSets: classSets || [],
+      allSlots: displaySlots,
+      displayCutoff,
+      isOffForGrade,
+      biweeklyAnchors: biweeklyAnchors || [],
+    });
+  }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors]);
 
   return (
     <div>
@@ -961,6 +1018,7 @@ export function ExcelGridView({
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
                     combineMode={combineMode}
                     onSubDrop={subMode.isSubMode ? handleSubDrop : undefined}
+                    sessionCountMap={sessionCountMap}
                   />
                 );
               };

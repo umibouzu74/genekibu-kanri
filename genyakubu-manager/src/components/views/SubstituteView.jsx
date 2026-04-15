@@ -39,6 +39,8 @@ export function SubstituteView({
   activeTimetableId,
   biweeklyAnchors,
   teacherSubjects,
+  classSets,
+  displayCutoff,
   onAddAdjustment,
 }) {
   const now = new Date();
@@ -831,6 +833,8 @@ export function SubstituteView({
           examPeriods={examPeriods || []}
           subjectCategories={subjectCategories || []}
           teacherSubjects={teacherSubjects || {}}
+          classSets={classSets || []}
+          displayCutoff={displayCutoff}
           onAddAdjustment={onAddAdjustment}
           enableSubMode
         />

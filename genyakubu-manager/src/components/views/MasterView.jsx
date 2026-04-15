@@ -158,6 +158,10 @@ export function MasterView({
   saveSlots,
   partTimeStaff,
   subjects,
+  holidays,
+  examPeriods,
+  classSets,
+  displayCutoff,
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -257,6 +261,10 @@ export function MasterView({
           activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          classSets={classSets}
+          displayCutoff={displayCutoff}
         />
       </div>
     );
