@@ -65,7 +65,9 @@ function autoLabelFromUnits(units) {
 // (学年, 曜日ペア) 単位で提案する。
 // 例: 中3 SS/S/A/B が火木に出現 → "中3 (火・木)" 提案
 //      中3 C が水金に出現 → "中3 (水・金)" 提案
-function buildSuggestions(allUnits, classSets, allSlots) {
+// 同学年内で複数の曜日パターンが重複曜日を含む場合、ユニット数が大きい
+// (= カバレッジが広い) 提案を優先表示する。
+export function buildSuggestions(allUnits, classSets, allSlots) {
   const alreadyMapped = new Set();
   for (const cs of classSets) for (const id of cs.slotIds) alreadyMapped.add(id);
 
@@ -111,14 +113,23 @@ function buildSuggestions(allUnits, classSets, allSlots) {
       const sortedUnits = [...units].sort(
         (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
       );
+      // ユニット内 slot 総数 (カバレッジ) を保持してソートに使う
+      const slotCount = sortedUnits.reduce((acc, u) => acc + u.slots.length, 0);
       suggestions.push({
         key: `${grade}|${dayKey}`,
         units: sortedUnits,
         label: autoLabelFromUnits(sortedUnits),
+        slotCount,
       });
     }
   }
-  return suggestions.sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  // カバレッジが広い (slotCount 大) ものを先に提示 → 先に登録すれば
+  // 重複曜日を含む細かい提案は freeUnits から自動的に外れる。
+  // 同カバレッジは label の自然順で安定ソート。
+  return suggestions.sort((a, b) => {
+    if (a.slotCount !== b.slotCount) return b.slotCount - a.slotCount;
+    return a.label.localeCompare(b.label, "ja");
+  });
 }
 
 export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
@@ -324,11 +335,36 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>授業セット</span>
         <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-          同一コース (例: 中3 S の 火・木) として扱うクラスユニットをまとめます。
-          ダッシュボードで共通の授業回数カウンタ (第①回, 第②回…) が振られます。
+          学年 × 曜日ペア (例: 中3 の 火・木) として扱うクラスユニットを
+          まとめます。ダッシュボードで共通の授業回数カウンタ (第①回, 第②回…)
+          が振られます。進度は内部で (教科, クラス) 別に独立カウントされる
+          ため、合同コマや並行する別クラスの同教科は混ざりません。
           未登録のスロットは単体で 1 セット扱いです。
         </div>
       </div>
+
+      {/* 移行ガイダンス: 旧設計 (cohort 単位セット) からの移行案内 */}
+      {isAdmin && classSets.length > 0 && (
+        <div
+          style={{
+            padding: "10px 16px",
+            background: "#fff8e0",
+            borderBottom: "1px solid #f0e0a0",
+            fontSize: 11,
+            color: "#7a6020",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+            ⚠️ 設計変更のお知らせ
+          </div>
+          授業セットの粒度が「(学年, 曜日)」に変わりました。旧形式
+          (cohort ごとのセット) は引き続き動きますが、合同コマを正しく
+          含めるには <strong>登録済みセットを一旦削除し、自動提案から
+          再登録</strong> してください。新形式では「中3 (火・木)」の
+          ように cohort 横断で 1 セットになります。
+        </div>
+      )}
 
       {/* 登録済みセット一覧 */}
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>

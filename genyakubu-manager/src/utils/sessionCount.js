@@ -285,11 +285,14 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
 
     const setSlotIds = resolveSetSlotIds(slot, ctx.classSets);
     // キャッシュキーは (セット × 実施教科 × cohort × 開始日) 単位で分離。
+    // 区切りには非可視文字 (US: \u001f) を使い、ユーザー入力 (cls 等) に
+    // 通常含まれない文字で衝突を防ぐ。
+    const SEP = "\u001f";
     const setKey =
       [...setSlotIds].sort((a, b) => a - b).join(",") +
-      "|" + targetSubj +
-      "|" + targetCls +
-      "|" + startDate;
+      SEP + targetSubj +
+      SEP + targetCls +
+      SEP + startDate;
     const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
     if (setSlots.length === 0) {
       out.set(slot.id, 0);
