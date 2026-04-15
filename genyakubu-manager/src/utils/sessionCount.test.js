@@ -491,6 +491,98 @@ describe("computeSessionNumber - 中学部オリエン (セット連動)", () =>
   });
 });
 
+describe("computeSessionNumber - 学年×曜日ペアセット内の cohort 別カウンタ", () => {
+  // 学年×曜日ペアでセットを括り、cohort (cls) 別に進度カウンタを独立させる。
+  // 同じ時間帯に並行する別 cohort の同教科は別カウンタで進む。
+  // 合同コマ (cls="S/AB/C") は独立 cohort として独立カウント (Q1 案A)。
+
+  const MS_CUTOFF = {
+    groups: [
+      { label: "中学部", grades: ["中1", "中2", "中3"], startDate: "2026-04-07" },
+    ],
+  };
+
+  it("同時間帯の中3 S 英語と中3 A 英語は別 cohort カウンタで両方 ①", () => {
+    // 火 19:50 に中3 S と中3 A が同時並行で英語を受講
+    const sEng = makeSlot(1, "火", "19:50-20:35", "中3", { subj: "英語", cls: "S" });
+    const aEng = makeSlot(2, "火", "19:50-20:35", "中3", { subj: "英語", cls: "A" });
+    const ctx = {
+      classSets: [{ id: 100, label: "中3 (火・木)", slotIds: [1, 2] }],
+      allSlots: [sEng, aEng],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    expect(computeSessionNumber(sEng, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(aEng, "2026-04-07", ctx)).toBe(1);
+  });
+
+  it("同 cohort の火・木の同教科は通算カウント、別 cohort には影響しない", () => {
+    // 中3 S 火 19:50 英語、中3 S 木 19:50 英語、中3 A 火 19:50 英語
+    const sTueEng = makeSlot(1, "火", "19:50-20:35", "中3", { subj: "英語", cls: "S" });
+    const sThuEng = makeSlot(2, "木", "19:50-20:35", "中3", { subj: "英語", cls: "S" });
+    const aTueEng = makeSlot(3, "火", "19:50-20:35", "中3", { subj: "英語", cls: "A" });
+    const ctx = {
+      classSets: [{ id: 100, label: "中3 (火・木)", slotIds: [1, 2, 3] }],
+      allSlots: [sTueEng, sThuEng, aTueEng],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    // 4/7 (火): S 英語①, A 英語①
+    expect(computeSessionNumber(sTueEng, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(aTueEng, "2026-04-07", ctx)).toBe(1);
+    // 4/9 (木): S 英語②, A は実施なし
+    expect(computeSessionNumber(sThuEng, "2026-04-09", ctx)).toBe(2);
+    // 4/14 (火): S 英語③, A 英語②
+    expect(computeSessionNumber(sTueEng, "2026-04-14", ctx)).toBe(3);
+    expect(computeSessionNumber(aTueEng, "2026-04-14", ctx)).toBe(2);
+  });
+
+  it("合同コマ (cls='S/AB/C') は独立 cohort として独立カウント", () => {
+    // 月 18:55 中2 SABC合同 理科 (合同 cohort), 月 19:50 中2 S 国語 (S 専用)
+    const goudouSci = makeSlot(1, "月", "18:55-19:40", "中2", {
+      subj: "理科",
+      cls: "S/AB/C",
+    });
+    const sKoku = makeSlot(2, "月", "19:50-20:35", "中2", {
+      subj: "国語",
+      cls: "S",
+    });
+    const sSci = makeSlot(3, "月", "20:45-21:30", "中2", {
+      subj: "理科",
+      cls: "S",
+    });
+    const ctx = {
+      classSets: [{ id: 200, label: "中2 (月・木)", slotIds: [1, 2, 3] }],
+      allSlots: [goudouSci, sKoku, sSci],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    // 4/13 (月) 4/7 火スタートで初の月曜:
+    //   - SABC合同 理科 → cohort 'S/AB/C' で 理科①
+    //   - S 国語 → cohort 'S' で 国語①
+    //   - S 理科 → cohort 'S' で 理科① (合同とは別カウンタ)
+    expect(computeSessionNumber(goudouSci, "2026-04-13", ctx)).toBe(1);
+    expect(computeSessionNumber(sKoku, "2026-04-13", ctx)).toBe(1);
+    expect(computeSessionNumber(sSci, "2026-04-13", ctx)).toBe(1);
+  });
+
+  it("buildSessionCountMap でも cohort 別カウンタが正しい", () => {
+    const sEng = makeSlot(1, "火", "19:50-20:35", "中3", { subj: "英語", cls: "S" });
+    const aEng = makeSlot(2, "火", "19:50-20:35", "中3", { subj: "英語", cls: "A" });
+    const sMath = makeSlot(3, "火", "20:45-21:30", "中3", { subj: "数学", cls: "S" });
+    const ctx = {
+      classSets: [{ id: 100, label: "中3 (火・木)", slotIds: [1, 2, 3] }],
+      allSlots: [sEng, aEng, sMath],
+      displayCutoff: MS_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    const map = buildSessionCountMap([sEng, aEng, sMath], "2026-04-07", ctx);
+    expect(map.get(1)).toBe(1); // S 英語①
+    expect(map.get(2)).toBe(1); // A 英語①
+    expect(map.get(3)).toBe(1); // S 数学①
+  });
+});
+
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
   // 両方とも火曜同時刻帯に並ぶスロット
   const early = makeSlot(1, "火", "18:00-19:00", "中3");

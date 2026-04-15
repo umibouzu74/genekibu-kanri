@@ -178,15 +178,18 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
   return parts[0] || slot.subj || null;
 }
 
-// セット内スロット群の単一日における「対象教科を実施する」スロットを、
-// 安定した順序 (time, slotId) で返す。回数カウントの順番付けに使用。
-// targetSubj が与えられた場合、その教科を実施するスロットのみを対象にする。
-function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj) {
+// セット内スロット群の単一日における「対象教科 × 対象 cohort を実施する」
+// スロットを、安定した順序 (time, slotId) で返す。回数カウントの順番付け。
+// targetSubj が与えられた場合は同教科のみ。
+// targetCls が与えられた場合は同 cls (cohort) のみ。
+// 学年×曜日ペアでセットを括っても、cohort と教科で進度カウンタを独立させる。
+function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj, targetCls) {
   const out = [];
   for (const s of setSlots) {
     const eff = effectiveSubjectOnDay(s, dateStr, ctx);
     if (eff == null) continue;
     if (targetSubj != null && eff !== targetSubj) continue;
+    if (targetCls != null && (s.cls || "") !== targetCls) continue;
     out.push(s);
   }
   out.sort((a, b) => {
@@ -224,20 +227,21 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   // 対象日当日に対象スロットが実施している教科を特定 (隔週複合教科は週ごとに変わる)
   const targetSubj = effectiveSubjectOnDay(slot, targetDateStr, ctx);
   if (targetSubj == null) return 0;
+  const targetCls = slot.cls || "";
 
-  // 対象日当日の該当教科スロット一覧内での自分の位置
-  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, targetSubj);
+  // 対象日当日の該当教科 × cohort スロット一覧内での自分の位置
+  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, targetSubj, targetCls);
   const todayIdx = todayActive.findIndex((s) => s.id === slot.id);
   if (todayIdx === -1) return 0;
 
-  // 開始日から前日までの同一教科の累計実施数を加算
+  // 開始日から前日までの同一教科 × cohort の累計実施数を加算
   const start = parseDate(startDate);
   const target = parseDate(targetDateStr);
   let count = 0;
   const cur = new Date(start);
   while (cur < target) {
     const dStr = fmtDate(cur);
-    count += activeSlotsOnDay(setSlots, dStr, ctx, targetSubj).length;
+    count += activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls).length;
     cur.setDate(cur.getDate() + 1);
   }
 
@@ -258,7 +262,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
   const out = new Map();
   if (!slots || slots.length === 0 || !targetDateStr) return out;
 
-  // 同じ (セット × 教科) に属するスロットは 1 回の走査で済ませるためにキャッシュ
+  // 同じ (セット × 教科 × cohort) に属するスロットは 1 回の走査で済ませる
   const setCache = new Map(); // setKey → Map<dateStr, activeSlotIds[]>
 
   const slotById = new Map();
@@ -277,12 +281,14 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       out.set(slot.id, 0);
       continue;
     }
+    const targetCls = slot.cls || "";
 
     const setSlotIds = resolveSetSlotIds(slot, ctx.classSets);
-    // キャッシュキーは (セット × 実施教科 × 開始日) 単位で分離。
+    // キャッシュキーは (セット × 実施教科 × cohort × 開始日) 単位で分離。
     const setKey =
       [...setSlotIds].sort((a, b) => a - b).join(",") +
       "|" + targetSubj +
+      "|" + targetCls +
       "|" + startDate;
     const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
     if (setSlots.length === 0) {
@@ -298,7 +304,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       const cur = new Date(start);
       while (cur <= target) {
         const dStr = fmtDate(cur);
-        const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj);
+        const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls);
         dayMap.set(dStr, active.map((s) => s.id));
         cur.setDate(cur.getDate() + 1);
       }
