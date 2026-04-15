@@ -731,11 +731,9 @@ export function Dashboard({
       ) : (
         <DashboardListView
           slots={slots}
-          holidays={holidays}
           subs={subs}
           timetables={timetables}
           displayCutoff={displayCutoff}
-          examPeriods={examPeriods}
           days={days}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}

@@ -8,66 +8,114 @@ import { useToasts } from "../hooks/useToasts";
 // ─── 授業セット管理 ───────────────────────────────────────────────
 // 複数のスロットを「同一コース」として束ね、ダッシュボードで共通の
 // 授業回数カウンタ (第①回, 第②回…) を振るためのマネージャ。
-// 自動提案: (grade, room, subj) が一致する 2 つ以上のスロットを検出
-// し、ワンクリックでセット化を提案する。
+//
+// ユーザーは "クラスユニット" = (学年, 曜日, cls|room) 単位で選択する。
+// 例: 「火曜日 中3 S」をクリック → その cohort × 曜日 の全コマを一括選択。
+// 複数ユニットを選んで「セットとして登録」すると、それらのコマが 1 つの
+// 進度カウンタを共有する。
 
-// 指定 slotIds 群から自動ラベルを生成。
-// 例: {grade:"中3", room:"602", subj:"数学", days:["火","木"]}
-//     → "中3 602 数学 (火・木)"
-function autoLabel(slots) {
-  if (slots.length === 0) return "";
-  const grades = [...new Set(slots.map((s) => s.grade))];
-  const rooms = [...new Set(slots.map((s) => s.room))];
-  const subjs = [...new Set(slots.map((s) => s.subj))];
-  const days = [...new Set(slots.map((s) => s.day))].sort(
+// クラスユニットのキー: (学年, 曜日, cohortId)
+// cohortId は cls が入っていればそちら、無ければ room を使用。
+function cohortIdOf(slot) {
+  return (slot.cls && slot.cls.trim()) ? slot.cls : slot.room;
+}
+
+function unitKeyOf(slot) {
+  return `${slot.grade}|${slot.day}|${cohortIdOf(slot)}`;
+}
+
+// slots → ClassUnit[]
+function buildClassUnits(slots) {
+  const units = new Map();
+  for (const s of slots) {
+    const key = unitKeyOf(s);
+    if (!units.has(key)) {
+      units.set(key, {
+        key,
+        grade: s.grade,
+        day: s.day,
+        cohortId: cohortIdOf(s),
+        slots: [],
+      });
+    }
+    units.get(key).slots.push(s);
+  }
+  for (const u of units.values()) {
+    u.slots.sort((a, b) => a.time.localeCompare(b.time));
+  }
+  return [...units.values()];
+}
+
+// ユニット表示ラベル: "火 中3 S"
+function unitLabel(unit) {
+  return `${unit.day} ${unit.grade} ${unit.cohortId}`;
+}
+
+// 指定されたユニット群から自動ラベルを生成。
+// 例: {grade:"中3", cohortId:"S", days:["火","木"]} → "中3 S (火・木)"
+function autoLabelFromUnits(units) {
+  if (units.length === 0) return "";
+  const grades = [...new Set(units.map((u) => u.grade))];
+  const cohorts = [...new Set(units.map((u) => u.cohortId))];
+  const days = [...new Set(units.map((u) => u.day))].sort(
     (a, b) => DAYS.indexOf(a) - DAYS.indexOf(b)
   );
   const gPart = grades.join("/");
-  const rPart = rooms.length === 1 ? rooms[0] : rooms.join("/");
-  const sPart = subjs.length === 1 ? subjs[0] : subjs.join("/");
+  const cPart = cohorts.length === 1 ? cohorts[0] : cohorts.join("/");
   const dPart = days.join("・");
-  return `${gPart} ${rPart} ${sPart} (${dPart})`.trim();
+  return `${gPart} ${cPart} (${dPart})`.trim();
 }
 
-// (grade, room, subj) をキーに slot を集約し、複数日に跨がる組を
-// セット化候補として返す。
-function buildSuggestions(slots, classSets) {
+// (grade, cohortId) が 2 日以上に出現するユニット群を自動提案として返す。
+function buildSuggestions(allUnits, classSets) {
   const alreadyMapped = new Set();
   for (const cs of classSets) for (const id of cs.slotIds) alreadyMapped.add(id);
 
+  // 完全未マップのユニットだけ対象
+  const freeUnits = allUnits.filter((u) =>
+    u.slots.every((s) => !alreadyMapped.has(s.id))
+  );
+
+  // (grade, cohortId) でグルーピング
   const groups = new Map();
-  for (const s of slots) {
-    if (alreadyMapped.has(s.id)) continue;
-    const key = `${s.grade}|${s.room}|${s.subj}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
+  for (const u of freeUnits) {
+    const gkey = `${u.grade}|${u.cohortId}`;
+    if (!groups.has(gkey)) groups.set(gkey, []);
+    groups.get(gkey).push(u);
   }
 
   const suggestions = [];
-  for (const [key, ss] of groups) {
-    // Only propose when slots span 2+ distinct days (truly a "set")
-    const distinctDays = new Set(ss.map((s) => s.day));
-    if (distinctDays.size < 2) continue;
+  for (const [gkey, units] of groups) {
+    const days = new Set(units.map((u) => u.day));
+    if (days.size < 2) continue;
+    const sorted = [...units].sort(
+      (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
+    );
     suggestions.push({
-      key,
-      slots: ss.sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)),
-      label: autoLabel(ss),
+      key: gkey,
+      units: sorted,
+      label: autoLabelFromUnits(sorted),
     });
   }
   return suggestions.sort((a, b) => a.label.localeCompare(b.label, "ja"));
 }
 
 export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
-  const [selectedSlotIds, setSelectedSlotIds] = useState([]);
+  const [selectedUnitKeys, setSelectedUnitKeys] = useState([]);
   const [label, setLabel] = useState("");
   const [editId, setEditId] = useState(null);
   const [gradeFilter, setGradeFilter] = useState("all");
+  const [dayFilter, setDayFilter] = useState("all");
   const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(true);
+  const [expandedKeys, setExpandedKeys] = useState(new Set());
 
   const toasts = useToasts();
   const confirm = useConfirm();
 
-  // Slot id → ClassSet lookup
+  // 全ユニット (フィルタ前)
+  const allUnits = useMemo(() => buildClassUnits(slots), [slots]);
+
+  // slotId → ClassSet lookup
   const slotToSet = useMemo(() => {
     const m = new Map();
     for (const cs of classSets) {
@@ -76,62 +124,109 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     return m;
   }, [classSets]);
 
+  // ユニットの登録状態: "unassigned" | "owned" | "other" | "partial"
+  // (編集中のセットに全部入っているかで判定)
+  const unitStatus = (unit) => {
+    const inCurrent = unit.slots.every(
+      (s) => slotToSet.get(s.id)?.id === editId
+    );
+    const anyAssigned = unit.slots.some((s) => slotToSet.has(s.id));
+    const allAssigned = unit.slots.every((s) => slotToSet.has(s.id));
+    if (!anyAssigned) return "unassigned";
+    if (inCurrent && editId != null) return "owned";
+    if (allAssigned) {
+      // All assigned, but to multiple or non-current set
+      const setIds = new Set(
+        unit.slots.map((s) => slotToSet.get(s.id)?.id).filter(Boolean)
+      );
+      if (setIds.size === 1) return "other";
+      return "partial";
+    }
+    return "partial";
+  };
+
   const suggestions = useMemo(
-    () => buildSuggestions(slots, classSets),
-    [slots, classSets]
+    () => buildSuggestions(allUnits, classSets),
+    [allUnits, classSets]
   );
 
-  // Filtered slot list for selection panel
-  const filteredSlots = useMemo(() => {
-    let out = slots;
+  // フィルタ適用済みユニット
+  const filteredUnits = useMemo(() => {
+    let out = allUnits;
     if (gradeFilter !== "all") {
       if (gradeFilter === "中学部" || gradeFilter === "高校部") {
-        out = out.filter((s) => gradeToDept(s.grade) === gradeFilter);
+        out = out.filter((u) => gradeToDept(u.grade) === gradeFilter);
       } else {
-        out = out.filter((s) => s.grade === gradeFilter);
+        out = out.filter((u) => u.grade === gradeFilter);
       }
     }
-    if (showOnlyUnassigned && !editId) {
-      out = out.filter((s) => !slotToSet.has(s.id));
+    if (dayFilter !== "all") {
+      out = out.filter((u) => u.day === dayFilter);
+    }
+    if (showOnlyUnassigned && editId == null) {
+      out = out.filter((u) => unitStatus(u) === "unassigned");
     }
     return [...out].sort((a, b) => {
       if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
       if (a.day !== b.day) return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
-      return a.time.localeCompare(b.time);
+      return a.cohortId.localeCompare(b.cohortId);
     });
-  }, [slots, gradeFilter, showOnlyUnassigned, slotToSet, editId]);
+    // unitStatus depends on slotToSet + editId, already in deps via allUnits/classSets/editId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allUnits, gradeFilter, dayFilter, showOnlyUnassigned, slotToSet, editId]);
+
+  const selectedUnits = useMemo(
+    () => allUnits.filter((u) => selectedUnitKeys.includes(u.key)),
+    [allUnits, selectedUnitKeys]
+  );
+  const selectedSlotIds = useMemo(
+    () => selectedUnits.flatMap((u) => u.slots.map((s) => s.id)),
+    [selectedUnits]
+  );
 
   const resetForm = () => {
-    setSelectedSlotIds([]);
+    setSelectedUnitKeys([]);
     setLabel("");
     setEditId(null);
+    setExpandedKeys(new Set());
   };
 
-  const toggleSlot = (id) => {
-    setSelectedSlotIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  const toggleUnit = (key) => {
+    setSelectedUnitKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
+  };
+
+  const toggleExpand = (key) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const handleSaveSet = () => {
     if (selectedSlotIds.length < 1) {
-      toasts.error("スロットを選択してください");
+      toasts.error("クラスユニットを選択してください");
       return;
     }
-    const finalLabel =
-      label.trim() ||
-      autoLabel(slots.filter((s) => selectedSlotIds.includes(s.id)));
+    const finalLabel = label.trim() || autoLabelFromUnits(selectedUnits);
 
     if (editId != null) {
-      const next = classSets.map((cs) =>
-        cs.id === editId
-          ? { ...cs, label: finalLabel, slotIds: [...selectedSlotIds] }
-          : cs
-      );
+      // 編集モード: 他セットからは selectedSlotIds を剥がし、編集対象セットは
+      // 上書きする (各スロットは 0 or 1 set を守る)
+      const next = classSets
+        .map((cs) =>
+          cs.id === editId
+            ? { ...cs, label: finalLabel, slotIds: [...selectedSlotIds] }
+            : { ...cs, slotIds: cs.slotIds.filter((id) => !selectedSlotIds.includes(id)) }
+        )
+        .filter((cs) => cs.id === editId || cs.slotIds.length > 0);
       onSave(next);
       toasts.success("授業セットを更新しました");
     } else {
-      // Remove any overlapping slotIds from other sets (each slot can be in 0 or 1 set)
+      // 既存セットに含まれるスロットは剥がす (各スロットは 0 or 1 set)
       const cleaned = classSets.map((cs) => ({
         ...cs,
         slotIds: cs.slotIds.filter((id) => !selectedSlotIds.includes(id)),
@@ -153,7 +248,13 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const handleEdit = (cs) => {
     setEditId(cs.id);
     setLabel(cs.label);
-    setSelectedSlotIds([...cs.slotIds]);
+    // 編集対象のセットに属するスロットを持つユニットを選択状態に
+    const slotIdSet = new Set(cs.slotIds);
+    const ownedUnitKeys = allUnits
+      .filter((u) => u.slots.some((s) => slotIdSet.has(s.id)))
+      .map((u) => u.key);
+    setSelectedUnitKeys(ownedUnitKeys);
+    setExpandedKeys(new Set());
   };
 
   const handleDelete = async (cs) => {
@@ -169,12 +270,13 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   };
 
   const handleAcceptSuggestion = (sug) => {
+    const slotIds = sug.units.flatMap((u) => u.slots.map((s) => s.id));
     const next = [
       ...classSets,
       {
         id: nextNumericId(classSets),
         label: sug.label,
-        slotIds: sug.slots.map((s) => s.id),
+        slotIds,
       },
     ];
     onSave(next);
@@ -182,7 +284,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   };
 
   const describeSlot = (s) =>
-    `${s.grade} ${s.day} ${s.time} ${s.room} ${s.subj}${s.teacher ? ` (${s.teacher})` : ""}`;
+    `${s.time} ${s.subj}${s.teacher ? ` (${s.teacher})` : ""}${s.room ? ` / ${s.room}` : ""}`;
 
   return (
     <div
@@ -202,7 +304,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>授業セット</span>
         <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-          同一コース (例: 中3 数学 火・木) として扱うスロットをまとめます。
+          同一コース (例: 中3 S の 火・木) として扱うクラスユニットをまとめます。
           ダッシュボードで共通の授業回数カウンタ (第①回, 第②回…) が振られます。
           未登録のスロットは単体で 1 セット扱いです。
         </div>
@@ -232,7 +334,19 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
               .map((id) => slots.find((s) => s.id === id))
               .filter(Boolean);
             const dept = setSlots[0] ? gradeToDept(setSlots[0].grade) : null;
-            const col = dept ? DEPT_COLOR[dept] : { b: "#eee", f: "#444", accent: "#aaa" };
+            const col = dept
+              ? DEPT_COLOR[dept]
+              : { b: "#eee", f: "#444", accent: "#aaa" };
+            // 所属ユニットを逆引き
+            const setUnits = [];
+            const seen = new Set();
+            for (const s of setSlots) {
+              const k = unitKeyOf(s);
+              if (seen.has(k)) continue;
+              seen.add(k);
+              const u = allUnits.find((x) => x.key === k);
+              if (u) setUnits.push(u);
+            }
             return (
               <div
                 key={cs.id}
@@ -247,8 +361,16 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                   gap: 8,
                 }}
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 3,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span
                       style={{
                         display: "inline-block",
@@ -260,11 +382,25 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                     />
                     <span style={{ fontSize: 13, fontWeight: 700 }}>{cs.label}</span>
                     <span style={{ fontSize: 10, color: "#888" }}>
-                      {setSlots.length} / {cs.slotIds.length} コマ
+                      {setUnits.length} ユニット / {setSlots.length} コマ
                     </span>
                   </div>
-                  <div style={{ fontSize: 10, color: "#666", lineHeight: 1.5 }}>
-                    {setSlots.map((s) => describeSlot(s)).join(" / ")}
+                  <div style={{ fontSize: 10, color: "#666", lineHeight: 1.6 }}>
+                    {setUnits.map((u) => (
+                      <span
+                        key={u.key}
+                        style={{
+                          display: "inline-block",
+                          marginRight: 8,
+                          padding: "1px 6px",
+                          background: "#fff",
+                          border: "1px solid #e0e0e0",
+                          borderRadius: 10,
+                        }}
+                      >
+                        {unitLabel(u)}
+                      </span>
+                    ))}
                     {setSlots.length < cs.slotIds.length && (
                       <span style={{ color: "#c44" }}> ※ 一部スロット削除済み</span>
                     )}
@@ -310,14 +446,16 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
             background: "#f0f7ff",
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#2a4a8e", marginBottom: 6 }}>
+          <div
+            style={{ fontSize: 12, fontWeight: 700, color: "#2a4a8e", marginBottom: 6 }}
+          >
             💡 自動提案 ({suggestions.length}件)
           </div>
           <div style={{ fontSize: 10, color: "#666", marginBottom: 8 }}>
-            同じ (学年・教室・科目) で複数曜日に跨がるスロットが見つかりました。
+            同じ (学年・クラス) が複数曜日に出現するパターンを検出しました。
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {suggestions.slice(0, 20).map((sug) => (
+            {suggestions.slice(0, 30).map((sug) => (
               <div
                 key={sug.key}
                 style={{
@@ -334,7 +472,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                 <div style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>{sug.label}</div>
                   <div style={{ fontSize: 9, color: "#888" }}>
-                    {sug.slots.map((s) => `${s.day} ${s.time}`).join(" / ")}
+                    {sug.units.map((u) => unitLabel(u)).join(" + ")}
                   </div>
                 </div>
                 <button
@@ -351,9 +489,9 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                 </button>
               </div>
             ))}
-            {suggestions.length > 20 && (
+            {suggestions.length > 30 && (
               <div style={{ fontSize: 10, color: "#888", textAlign: "center" }}>
-                他 {suggestions.length - 20} 件
+                他 {suggestions.length - 30} 件
               </div>
             )}
           </div>
@@ -381,38 +519,80 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
             style={{ ...S.input, width: "100%", marginBottom: 8 }}
           />
 
-          {/* Filter controls */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+          {/* フィルタ */}
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              marginBottom: 8,
+              alignItems: "center",
+            }}
+          >
             <span style={{ fontSize: 11, fontWeight: 700 }}>絞込:</span>
             <select
               value={gradeFilter}
               onChange={(e) => setGradeFilter(e.target.value)}
-              style={{ ...S.input, width: "auto", fontSize: 11, padding: "3px 6px" }}
+              style={{
+                ...S.input,
+                width: "auto",
+                fontSize: 11,
+                padding: "3px 6px",
+              }}
             >
               <option value="all">全学年</option>
               <option value="中学部">中学部</option>
               <option value="高校部">高校部</option>
               {ALL_GRADES.map((g) => (
-                <option key={g} value={g}>{g}</option>
+                <option key={g} value={g}>
+                  {g}
+                </option>
               ))}
             </select>
-            <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+            <select
+              value={dayFilter}
+              onChange={(e) => setDayFilter(e.target.value)}
+              style={{
+                ...S.input,
+                width: "auto",
+                fontSize: 11,
+                padding: "3px 6px",
+              }}
+            >
+              <option value="all">全曜日</option>
+              {DAYS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <label
+              style={{
+                fontSize: 11,
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={showOnlyUnassigned}
                 onChange={(e) => setShowOnlyUnassigned(e.target.checked)}
+                disabled={editId != null}
               />
-              未登録スロットのみ表示
+              未登録のみ表示
             </label>
-            <span style={{ fontSize: 10, color: "#888", marginLeft: "auto" }}>
-              選択中: {selectedSlotIds.length} コマ
+            <span
+              style={{ fontSize: 10, color: "#888", marginLeft: "auto" }}
+            >
+              選択中: {selectedUnitKeys.length} ユニット / {selectedSlotIds.length} コマ
             </span>
           </div>
 
-          {/* Slot selection list */}
+          {/* クラスユニット一覧 */}
           <div
             style={{
-              maxHeight: 280,
+              maxHeight: 420,
               overflowY: "auto",
               border: "1px solid #e0e0e0",
               borderRadius: 4,
@@ -420,43 +600,135 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
               marginBottom: 8,
             }}
           >
-            {filteredSlots.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: "#aaa", fontSize: 11 }}>
-                該当スロットなし
+            {filteredUnits.length === 0 ? (
+              <div
+                style={{
+                  padding: 20,
+                  textAlign: "center",
+                  color: "#aaa",
+                  fontSize: 11,
+                }}
+              >
+                該当するクラスユニットがありません
               </div>
             ) : (
-              filteredSlots.map((s) => {
-                const selected = selectedSlotIds.includes(s.id);
-                const assignedSet = slotToSet.get(s.id);
-                const isOwnSet = editId != null && assignedSet?.id === editId;
-                const occupied = assignedSet && !isOwnSet;
+              filteredUnits.map((u) => {
+                const selected = selectedUnitKeys.includes(u.key);
+                const status = unitStatus(u);
+                const occupied = status === "other" || status === "partial";
+                const expanded = expandedKeys.has(u.key);
+                const dept = gradeToDept(u.grade);
+                const col = dept ? DEPT_COLOR[dept] : { b: "#eee", f: "#444", accent: "#aaa" };
                 return (
-                  <label
-                    key={s.id}
+                  <div
+                    key={u.key}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "4px 8px",
                       borderBottom: "1px solid #f0f0f0",
-                      fontSize: 11,
-                      cursor: "pointer",
-                      background: selected ? "#e8f4ff" : occupied ? "#f8f8f8" : "#fff",
-                      color: occupied ? "#888" : "#333",
+                      background: selected
+                        ? "#e8f4ff"
+                        : occupied
+                          ? "#f8f8f8"
+                          : "#fff",
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleSlot(s.id)}
-                    />
-                    <span style={{ flex: 1 }}>{describeSlot(s)}</span>
-                    {occupied && (
-                      <span style={{ fontSize: 9, color: "#c84" }}>
-                        別セット: {assignedSet.label}
-                      </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 10px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleUnit(u.key)}
+                        aria-label={`${unitLabel(u)} を選択`}
+                      />
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: col.accent,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(u.key)}
+                        style={{
+                          flex: 1,
+                          textAlign: "left",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: 0,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#333",
+                          minWidth: 0,
+                        }}
+                      >
+                        <span>{unitLabel(u)}</span>
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            color: "#888",
+                            fontWeight: 400,
+                          }}
+                        >
+                          {u.slots.length}コマ {expanded ? "▲" : "▼"}
+                        </span>
+                      </button>
+                      {occupied && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            color: "#c84",
+                            flexShrink: 0,
+                          }}
+                        >
+                          別セットに登録済み
+                        </span>
+                      )}
+                      {status === "owned" && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            color: "#4a8a4a",
+                            flexShrink: 0,
+                          }}
+                        >
+                          このセット
+                        </span>
+                      )}
+                    </div>
+                    {expanded && (
+                      <div
+                        style={{
+                          padding: "4px 10px 10px 38px",
+                          fontSize: 11,
+                          color: "#555",
+                          background: "#fafbfc",
+                        }}
+                      >
+                        {u.slots.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: "2px 0",
+                              borderBottom: "1px dotted #eee",
+                            }}
+                          >
+                            {describeSlot(s)}
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </label>
+                  </div>
                 );
               })
             )}
