@@ -810,6 +810,8 @@ export function ExcelGridView({
   // ─── Session count (第 N 回) 計算 ──────────────────────────────
   // 対象日: 代行モード中は subDate、それ以外は選択曜日 (selectedDay) の
   // 直近発生日 (今日以前) を使う。
+  // 注: `new Date()` は useMemo deps に含めていないため、タブを開いた
+  // まま深夜0時を跨ぐと値が更新されない。再計算にはリロードが必要。
   const sessionTargetDate = useMemo(() => {
     if (subMode.subDate) return subMode.subDate;
     if (!selectedDay) return null;

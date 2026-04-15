@@ -3,7 +3,7 @@
 // 休講日 / テスト期間 / 隔週ハズレ週はカウントしない。
 // 対象日で該当スロットが実施されない場合は 0 を返す。
 
-import { WEEKDAYS, gradeToDept } from "../data";
+import { WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 
 // "YYYY-MM-DD" → Date (ローカル)
@@ -211,6 +211,3 @@ export function formatSessionNumber(n) {
   }
   return `第${n}回`;
 }
-
-// gradeToDept 再エクスポート (テスト・参照用)
-export { gradeToDept };
