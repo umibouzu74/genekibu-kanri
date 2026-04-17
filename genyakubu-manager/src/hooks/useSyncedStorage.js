@@ -156,6 +156,10 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       setValue((prev) => {
         const resolved = typeof next === "function" ? next(prev) : next;
         const json = stableStringify(resolved);
+
+        // Strict Mode の updater 二重呼び出しで副作用が 2 回走らないよう、
+        // 既に同じ JSON を書き込み済みならスキップする。
+        if (json === lastLocalJsonRef.current) return resolved;
         lastLocalJsonRef.current = json;
 
         // Write to localStorage

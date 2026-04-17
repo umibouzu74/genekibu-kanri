@@ -22,14 +22,17 @@ export function useCrudResource({ list, save, idKey = "id" }) {
   const confirm = useConfirm();
 
   const add = useCallback(
-    (fields, { successMsg, withTimestamps = false } = {}) => {
+    (
+      fields,
+      { successMsg, withCreatedAt = false, withUpdatedAt = false } = {}
+    ) => {
       const id = nextNumericId(list, idKey);
-      const ts = withTimestamps ? new Date().toISOString() : null;
-      const record = {
-        ...fields,
-        [idKey]: id,
-        ...(ts ? { createdAt: ts, updatedAt: ts } : {}),
-      };
+      const ts =
+        withCreatedAt || withUpdatedAt ? new Date().toISOString() : null;
+      const extras = {};
+      if (withCreatedAt) extras.createdAt = ts;
+      if (withUpdatedAt) extras.updatedAt = ts;
+      const record = { ...fields, [idKey]: id, ...extras };
       save([...list, record]);
       if (successMsg) toasts.success(successMsg);
       return id;

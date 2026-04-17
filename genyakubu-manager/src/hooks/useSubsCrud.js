@@ -29,7 +29,11 @@ export function useSubsCrud({ subs, saveSubs }) {
 
       const normalized = { ...f, status: f.substitute ? f.status : "requested" };
       if (editSub === "new") {
-        crud.add(normalized, { successMsg: "代行を追加しました", withTimestamps: true });
+        crud.add(normalized, {
+          successMsg: "代行を追加しました",
+          withCreatedAt: true,
+          withUpdatedAt: true,
+        });
       } else {
         crud.update(editSub.id, normalized, {
           successMsg: "代行を更新しました",

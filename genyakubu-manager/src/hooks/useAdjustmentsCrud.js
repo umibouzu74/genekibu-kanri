@@ -12,7 +12,7 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
       crud.add(adj, {
         successMsg:
           adj.type === "move" ? "コマ移動を登録しました" : "合同授業を登録しました",
-        withTimestamps: true,
+        withCreatedAt: true,
       });
     },
     [crud]
