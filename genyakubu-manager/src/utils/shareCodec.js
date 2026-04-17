@@ -98,5 +98,9 @@ export async function encodeShareData(data) {
 export async function decodeShareData(encoded) {
   const buf = fromBase64Url(encoded);
   const json = await inflate(buf);
-  return JSON.parse(json);
+  try {
+    return JSON.parse(json);
+  } catch (err) {
+    throw new Error(`共有データの解析に失敗しました: ${err?.message || err}`);
+  }
 }

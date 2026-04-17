@@ -11,6 +11,12 @@ const isQuotaError = (err) =>
     err.code === 22 ||
     err.code === 1014);
 
+const isPermissionError = (err) =>
+  err &&
+  (err.code === "PERMISSION_DENIED" ||
+    err.code === "permission-denied" ||
+    /permission[_ -]?denied/i.test(err.message || ""));
+
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
 
@@ -151,6 +157,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
           const dbRef = ref(db, fbPath(key));
           set(dbRef, resolved).catch((err) => {
             console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
+            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
           });
         }
 
@@ -251,6 +258,7 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
         const dbRef = ref(db, fbPath(key));
         set(dbRef, next).catch((err) => {
           console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
+          onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
         });
       }
     },

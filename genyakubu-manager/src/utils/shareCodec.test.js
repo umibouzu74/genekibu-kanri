@@ -87,4 +87,37 @@ describe.skipIf(!HAS_COMPRESSION)("shareCodec", () => {
   it("rejects corrupted data", async () => {
     await expect(decodeShareData("!!!invalid!!!")).rejects.toThrow();
   });
+
+  it("wraps non-JSON inflate output with a descriptive error", async () => {
+    // Deflate a plain (non-JSON) string so fromBase64Url + inflate succeed
+    // but JSON.parse fails, exercising the try/catch in decodeShareData.
+    const encoder = new TextEncoder();
+    const cs = new CompressionStream("deflate");
+    const writer = cs.writable.getWriter();
+    writer.write(encoder.encode("not json at all"));
+    writer.close();
+    const reader = cs.readable.getReader();
+    const chunks = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    let total = 0;
+    for (const c of chunks) total += c.length;
+    const buf = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      buf.set(c, offset);
+      offset += c.length;
+    }
+    let binary = "";
+    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+    const b64url = btoa(binary)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    await expect(decodeShareData(b64url)).rejects.toThrow(/共有データの解析に失敗しました/);
+  });
 });

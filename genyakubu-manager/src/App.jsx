@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -58,6 +58,9 @@ export default function App() {
   const toasts = useToasts();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
 
+  // Flags to avoid spamming the same toast on every subsequent save.
+  const syncAuthNotifiedRef = useRef(false);
+
   const onStorageError = useCallback(
     (err, phase) => {
       if (phase === "quota") {
@@ -68,10 +71,21 @@ export default function App() {
         toasts.error(
           `保存データの読み込みに失敗しました: ${err?.message || err}`
         );
+      } else if (phase === "sync-auth") {
+        if (!syncAuthNotifiedRef.current) {
+          syncAuthNotifiedRef.current = true;
+          toasts.error(
+            "クラウドへの書込が拒否されました。管理者ログインが必要です（端末にはローカル保存されています）。"
+          );
+        }
       }
     },
     [toasts]
   );
+
+  useEffect(() => {
+    if (isAdmin) syncAuthNotifiedRef.current = false;
+  }, [isAdmin]);
 
   // ─── Persisted state (synced with Firebase when configured) ───────
   const [slots, saveSlots] = useSyncedStorage(LS.slots, INIT_SLOTS, {
@@ -149,9 +163,15 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
-  const [activeTimetableId, setActiveTimetableId] = useState(
-    () => Number(localStorage.getItem(LS.activeTimetableId)) || 1
-  );
+  const [activeTimetableId, setActiveTimetableId] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LS.activeTimetableId);
+      const n = raw == null ? NaN : Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    } catch {
+      return 1;
+    }
+  });
 
   const changeActiveTimetable = useCallback((id) => {
     setActiveTimetableId(id);
