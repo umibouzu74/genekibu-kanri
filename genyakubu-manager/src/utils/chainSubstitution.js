@@ -365,8 +365,8 @@ export function suggestChainSubstitutions(
   availableTeachers,
   slots,
   subjects,
-  // eslint-disable-next-line no-unused-vars -- reserved for future category-based scoring
-  subjectCategories,
+  // subjectCategories is accepted for API compatibility; scoring uses subjects[].categoryId directly.
+  _subjectCategories,
   partTimeStaff
 ) {
   const slotMap = new Map(slots.map((s) => [s.id, s]));

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifySlotForTeacher,
   computeAvailableTeachers,
+  resolveTeacherSubjectIds,
+  scoreSubstituteCandidate,
   suggestChainSubstitutions,
+  timeOverlaps,
   validateSubstituteChange,
 } from "./chainSubstitution";
 
@@ -43,6 +47,221 @@ const makeSlot = (overrides = {}) => ({
 // 2026-04-13 is a Monday; 2026-04-06 is also Monday (anchor A → "B" week on the 13th).
 const MONDAY = "2026-04-13";
 const ANCHORS = [{ date: "2026-04-06", weekType: "A" }];
+
+// ─── Unit tests for extracted helpers ─────────────────────────────
+
+describe("timeOverlaps", () => {
+  it("完全一致は重複", () => {
+    expect(timeOverlaps("19:00-20:20", "19:00-20:20")).toBe(true);
+  });
+  it("部分的にかぶれば重複", () => {
+    expect(timeOverlaps("19:00-20:20", "20:00-21:00")).toBe(true);
+  });
+  it("境界が接するだけ (a.end === b.start) は重複しない (半開区間)", () => {
+    expect(timeOverlaps("19:00-20:20", "20:20-21:40")).toBe(false);
+  });
+  it("前後に離れていれば重複しない", () => {
+    expect(timeOverlaps("19:00-20:20", "21:00-22:00")).toBe(false);
+  });
+  it("一方が他方を完全に含む", () => {
+    expect(timeOverlaps("19:00-22:00", "20:00-21:00")).toBe(true);
+  });
+});
+
+describe("scoreSubstituteCandidate", () => {
+  const subs = [
+    { id: 1, name: "英語", categoryId: 1 },
+    { id: 2, name: "数学", categoryId: 2 },
+    { id: 3, name: "国語", categoryId: 1 },
+  ];
+  const baseTeacher = {
+    isFreeAllDay: false,
+    isPartTime: true,
+    subjectIds: [],
+  };
+
+  it("完全一致で +10", () => {
+    const s = scoreSubstituteCandidate({ ...baseTeacher, subjectIds: [1] }, 1, subs);
+    expect(s).toBe(10);
+  });
+  it("カテゴリ一致で +5", () => {
+    const s = scoreSubstituteCandidate({ ...baseTeacher, subjectIds: [3] }, 1, subs);
+    expect(s).toBe(5);
+  });
+  it("マッチしないなら 0", () => {
+    const s = scoreSubstituteCandidate({ ...baseTeacher, subjectIds: [2] }, 1, subs);
+    expect(s).toBe(0);
+  });
+  it("isFreeAllDay で +3 加算", () => {
+    const s = scoreSubstituteCandidate(
+      { ...baseTeacher, subjectIds: [1], isFreeAllDay: true },
+      1,
+      subs
+    );
+    expect(s).toBe(13);
+  });
+  it("正社員 (isPartTime=false) で +2 加算", () => {
+    const s = scoreSubstituteCandidate(
+      { ...baseTeacher, subjectIds: [1], isPartTime: false },
+      1,
+      subs
+    );
+    expect(s).toBe(12);
+  });
+  it("slotSubjectId=null なら教科点は 0", () => {
+    const s = scoreSubstituteCandidate(
+      { ...baseTeacher, subjectIds: [1], isFreeAllDay: true },
+      null,
+      subs
+    );
+    expect(s).toBe(3); // isFreeAllDay のみ
+  });
+  it("完全一致・isFreeAllDay・正社員が全部揃えば 15", () => {
+    const s = scoreSubstituteCandidate(
+      {
+        subjectIds: [1],
+        isFreeAllDay: true,
+        isPartTime: false,
+      },
+      1,
+      subs
+    );
+    expect(s).toBe(15);
+  });
+});
+
+describe("classifySlotForTeacher", () => {
+  const baseSlot = {
+    id: 1,
+    day: "月",
+    time: "19:00-20:20",
+    grade: "高1",
+    cls: "S",
+    room: "601",
+    subj: "英語",
+    teacher: "A太郎",
+    note: "",
+  };
+  const anchors = [{ date: "2026-04-06", weekType: "A" }];
+  const MON_B = "2026-04-13"; // 1 週後 → B週
+  const MON_A = "2026-04-06"; // A週
+
+  it("通常スロット・休講なし → active", () => {
+    const r = classifySlotForTeacher(baseSlot, "A太郎", MON_B, anchors, false);
+    expect(r.status).toBe("active");
+    expect(r.reason).toBeNull();
+  });
+
+  it("B 週の隔週メイン教師 → cancelled(隔週(B週))", () => {
+    const slot = { ...baseSlot, note: "隔週(B子)" };
+    const r = classifySlotForTeacher(slot, "A太郎", MON_B, anchors, false);
+    expect(r.status).toBe("cancelled");
+    expect(r.reason).toBe("隔週(B週)");
+  });
+
+  it("A 週の隔週パートナー → cancelled(隔週(A週))", () => {
+    const slot = { ...baseSlot, note: "隔週(B子)" };
+    const r = classifySlotForTeacher(slot, "B子", MON_A, anchors, false);
+    expect(r.status).toBe("cancelled");
+    expect(r.reason).toBe("隔週(A週)");
+  });
+
+  it("A 週のメイン教師は active (隔週でもその週は担当)", () => {
+    const slot = { ...baseSlot, note: "隔週(B子)" };
+    const r = classifySlotForTeacher(slot, "A太郎", MON_A, anchors, false);
+    expect(r.status).toBe("active");
+  });
+
+  it("cancelledByHoliday=true + grade=高 → cancelled(高校部休講)", () => {
+    const r = classifySlotForTeacher(baseSlot, "A太郎", MON_B, anchors, true);
+    expect(r.status).toBe("cancelled");
+    expect(r.reason).toBe("高校部休講");
+  });
+
+  it("cancelledByHoliday=true + grade=中 → cancelled(中学部休講)", () => {
+    const slot = { ...baseSlot, grade: "中2" };
+    const r = classifySlotForTeacher(slot, "A太郎", MON_B, anchors, true);
+    expect(r.status).toBe("cancelled");
+    expect(r.reason).toBe("中学部休講");
+  });
+
+  it("隔週の条件が優先され、休講でも隔週理由が優先される", () => {
+    const slot = { ...baseSlot, note: "隔週(B子)" };
+    const r = classifySlotForTeacher(slot, "A太郎", MON_B, anchors, true);
+    expect(r.reason).toBe("隔週(B週)");
+  });
+});
+
+describe("resolveTeacherSubjectIds", () => {
+  const subjects = [
+    { id: 1, name: "英語", categoryId: 1 },
+    { id: 2, name: "数学", categoryId: 2 },
+  ];
+  const partTimeStaff = [
+    { id: 1, name: "バイトA", subjectIds: [1, 2] },
+  ];
+  const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
+
+  it("teacherSubjects が最優先", () => {
+    const r = resolveTeacherSubjectIds("バイトA", {
+      teacherSubjects: { バイトA: [1] },
+      partTimeStaff,
+      staffNameSet,
+      slots: [],
+      subjects,
+    });
+    expect(r).toEqual([1]);
+  });
+
+  it("teacherSubjects が空配列なら partTimeStaff.subjectIds", () => {
+    const r = resolveTeacherSubjectIds("バイトA", {
+      teacherSubjects: { バイトA: [] },
+      partTimeStaff,
+      staffNameSet,
+      slots: [],
+      subjects,
+    });
+    expect(r).toEqual([1, 2]);
+  });
+
+  it("staff にいて teacherSubjects 指定なし → partTimeStaff.subjectIds", () => {
+    const r = resolveTeacherSubjectIds("バイトA", {
+      teacherSubjects: {},
+      partTimeStaff,
+      staffNameSet,
+      slots: [],
+      subjects,
+    });
+    expect(r).toEqual([1, 2]);
+  });
+
+  it("非 staff はスロット由来で推定", () => {
+    const slots = [
+      { id: 1, subj: "英語", teacher: "山田", note: "" },
+    ];
+    const r = resolveTeacherSubjectIds("山田", {
+      teacherSubjects: {},
+      partTimeStaff,
+      staffNameSet,
+      slots,
+      subjects,
+    });
+    expect(r).toEqual([1]);
+  });
+
+  it("staff だが partTimeStaff に見つからないなら []", () => {
+    const r = resolveTeacherSubjectIds("バイトMissing", {
+      teacherSubjects: {},
+      partTimeStaff,
+      staffNameSet: new Set(["バイトMissing"]),
+      slots: [],
+      subjects,
+    });
+    expect(r).toEqual([]);
+  });
+});
+
+// ─── Integration tests (以下は安全網として 3 公開関数を end-to-end で検証) ─
 
 describe("computeAvailableTeachers", () => {
   it("休講がなければ誰も空きにならない", () => {
