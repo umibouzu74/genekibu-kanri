@@ -4,6 +4,13 @@ import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
+import {
+  autoLabelFromUnits,
+  buildClassUnits,
+  buildSuggestions,
+  unitKeyOf,
+  unitLabel,
+} from "../utils/classSetSuggestions";
 
 // ─── 授業セット管理 ───────────────────────────────────────────────
 // 複数のスロットを「同一コース」として束ね、ダッシュボードで共通の
@@ -16,121 +23,9 @@ import { useToasts } from "../hooks/useToasts";
 // 進度カウンタを共有する。
 // 進度は内部で (教科, cohort=cls) 別に独立カウントされるため、同セット内
 // で並行する別 cohort の同教科は混ざらない。
-
-// クラスユニットのキー: (学年, 曜日)
-function unitKeyOf(slot) {
-  return `${slot.grade}|${slot.day}`;
-}
-
-// slots → ClassUnit[]
-function buildClassUnits(slots) {
-  const units = new Map();
-  for (const s of slots) {
-    const key = unitKeyOf(s);
-    if (!units.has(key)) {
-      units.set(key, {
-        key,
-        grade: s.grade,
-        day: s.day,
-        slots: [],
-      });
-    }
-    units.get(key).slots.push(s);
-  }
-  for (const u of units.values()) {
-    u.slots.sort((a, b) => a.time.localeCompare(b.time));
-  }
-  return [...units.values()];
-}
-
-// ユニット表示ラベル: "火 中3"
-function unitLabel(unit) {
-  return `${unit.day} ${unit.grade}`;
-}
-
-// 指定されたユニット群から自動ラベルを生成。
-// 例: {grade:"中3", days:["火","木"]} → "中3 (火・木)"
-function autoLabelFromUnits(units) {
-  if (units.length === 0) return "";
-  const grades = [...new Set(units.map((u) => u.grade))];
-  const days = [...new Set(units.map((u) => u.day))].sort(
-    (a, b) => DAYS.indexOf(a) - DAYS.indexOf(b)
-  );
-  const gPart = grades.join("/");
-  const dPart = days.join("・");
-  return `${gPart} (${dPart})`.trim();
-}
-
-// 自動提案: 各学年内で「同じ曜日セット」を持つ cohort 群をひとまとめにし、
-// (学年, 曜日ペア) 単位で提案する。
-// 例: 中3 SS/S/A/B が火木に出現 → "中3 (火・木)" 提案
-//      中3 C が水金に出現 → "中3 (水・金)" 提案
-// 同学年内で複数の曜日パターンが重複曜日を含む場合、ユニット数が大きい
-// (= カバレッジが広い) 提案を優先表示する。
-export function buildSuggestions(allUnits, classSets, allSlots) {
-  const alreadyMapped = new Set();
-  for (const cs of classSets) for (const id of cs.slotIds) alreadyMapped.add(id);
-
-  // 完全未マップのユニット (= 学年×曜日) だけ対象
-  const freeUnits = allUnits.filter((u) =>
-    u.slots.every((s) => !alreadyMapped.has(s.id))
-  );
-
-  // 学年ごとに cohort (cls or room) → 出現曜日セット を集計
-  const gradeCohortDays = new Map(); // grade → Map<cohortId, Set<day>>
-  const freeKeys = new Set(freeUnits.map((u) => u.key));
-  for (const s of allSlots) {
-    const k = `${s.grade}|${s.day}`;
-    if (!freeKeys.has(k)) continue;
-    const cohortId = (s.cls && s.cls.trim()) || s.room || "";
-    if (!gradeCohortDays.has(s.grade)) gradeCohortDays.set(s.grade, new Map());
-    const cohortMap = gradeCohortDays.get(s.grade);
-    if (!cohortMap.has(cohortId)) cohortMap.set(cohortId, new Set());
-    cohortMap.get(cohortId).add(s.day);
-  }
-
-  const suggestions = [];
-  for (const [grade, cohortMap] of gradeCohortDays) {
-    // 同じ曜日セット文字列ごとに cohort をグルーピング
-    const dayPatternGroups = new Map(); // sortedDayKey → cohortIds[]
-    for (const [cohortId, daySet] of cohortMap) {
-      if (daySet.size < 2) continue; // 単日の cohort はセット化対象外
-      const sortedDays = [...daySet].sort(
-        (a, b) => DAYS.indexOf(a) - DAYS.indexOf(b)
-      );
-      const dayKey = sortedDays.join(",");
-      if (!dayPatternGroups.has(dayKey)) dayPatternGroups.set(dayKey, []);
-      dayPatternGroups.get(dayKey).push(cohortId);
-    }
-
-    // 各曜日パターンごとに、その学年×その曜日群のユニット (横断) を集約して提案
-    for (const dayKey of dayPatternGroups.keys()) {
-      const days = dayKey.split(",");
-      const units = freeUnits.filter(
-        (u) => u.grade === grade && days.includes(u.day)
-      );
-      if (units.length === 0) continue;
-      const sortedUnits = [...units].sort(
-        (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
-      );
-      // ユニット内 slot 総数 (カバレッジ) を保持してソートに使う
-      const slotCount = sortedUnits.reduce((acc, u) => acc + u.slots.length, 0);
-      suggestions.push({
-        key: `${grade}|${dayKey}`,
-        units: sortedUnits,
-        label: autoLabelFromUnits(sortedUnits),
-        slotCount,
-      });
-    }
-  }
-  // カバレッジが広い (slotCount 大) ものを先に提示 → 先に登録すれば
-  // 重複曜日を含む細かい提案は freeUnits から自動的に外れる。
-  // 同カバレッジは label の自然順で安定ソート。
-  return suggestions.sort((a, b) => {
-    if (a.slotCount !== b.slotCount) return b.slotCount - a.slotCount;
-    return a.label.localeCompare(b.label, "ja");
-  });
-}
+//
+// 純粋ロジック (ユニット構築・自動提案) は ../utils/classSetSuggestions.js
+// へ分離。ここでは UI 状態遷移に集中。
 
 export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const [selectedUnitKeys, setSelectedUnitKeys] = useState([]);
