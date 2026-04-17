@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import {
   act,
@@ -15,8 +15,8 @@ import { ConfirmProvider } from "./useConfirm";
 
 afterEach(cleanup);
 
-function makeWrapper() {
-  return ({ children }) => (
+function TestWrapper({ children }) {
+  return (
     <ToastProvider
       render={(toasts) => (
         <div data-testid="toasts">
@@ -37,7 +37,7 @@ function renderCrud(initialList, { idKey } = {}) {
   const saveSpy = vi.fn();
   const { result, rerender } = renderHook(
     ({ list }) => useCrudResource({ list, save: saveSpy, idKey }),
-    { wrapper: makeWrapper(), initialProps: { list: initialList } }
+    { wrapper: TestWrapper, initialProps: { list: initialList } }
   );
   return { result, rerender, saveSpy };
 }
