@@ -787,4 +787,69 @@ describe("validateExportBundle referential integrity", () => {
     });
     expect(result.ok).toBe(true);
   });
+
+  it("does not validate combineSlotIds when adjustment type is not 'combine'", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      adjustments: [
+        {
+          id: 1,
+          date: "2026-04-10",
+          type: "move",
+          slotId: 1,
+          combineSlotIds: [999],
+          memo: "",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("does not validate categoryId FK when subjectCategories is absent", () => {
+    const result = validateExportBundle({
+      subjects: [{ id: 1, name: "英語", categoryId: 99 }],
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("validateExportBundle biweeklyAnchors format", () => {
+  it("rejects slash-formatted date via validateExportBundle", () => {
+    const result = validateExportBundle({
+      biweeklyAnchors: [{ date: "2026/04/06", weekType: "A" }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("biweeklyAnchors[0]");
+  });
+
+  it("rejects non-date string via validateExportBundle", () => {
+    const result = validateExportBundle({
+      biweeklyAnchors: [{ date: "invalid", weekType: "A" }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("biweeklyAnchors[0]");
+  });
+
+  it("rejects empty date string via validateExportBundle", () => {
+    const result = validateExportBundle({
+      biweeklyAnchors: [{ date: "", weekType: "A" }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("biweeklyAnchors[0]");
+  });
+
+  it("accepts a valid ISO-8601 anchor via validateExportBundle", () => {
+    const result = validateExportBundle({
+      biweeklyAnchors: [{ date: "2026-04-06", weekType: "A" }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a non-array biweeklyAnchors payload", () => {
+    const result = validateExportBundle({
+      biweeklyAnchors: "not-an-array",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/biweeklyAnchors/);
+  });
 });
