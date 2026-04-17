@@ -30,6 +30,7 @@ import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
+import { LAYOUT } from "./constants/layout";
 import { escapeHtml } from "./utils/escape";
 
 import { Modal } from "./components/Modal";
@@ -359,7 +360,7 @@ export default function App() {
       />
 
       {/* Desktop sidebar spacer */}
-      <div className="sidebar-spacer" style={{ width: 210, flexShrink: 0 }} />
+      <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
       <div style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>

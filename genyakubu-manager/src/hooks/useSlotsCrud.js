@@ -3,6 +3,7 @@ import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
 import { sortJa } from "../utils/sortJa";
+import { BEHAVIOR } from "../constants/layout";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
 // App 本体から約 120 行削減する。
@@ -63,13 +64,12 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
       if (!ok) return;
     }
 
-    // 同一曜日での過度な連続コマ警告 (6コマ以上)
-    const OVERLOAD_THRESHOLD = 6;
+    // 同一曜日での過度な連続コマ警告
     const sameDayCount =
       slots.filter(
         (s) => s.id !== editingId && s.teacher === f.teacher && s.day === f.day
       ).length + 1; // +1 for this slot
-    if (sameDayCount >= OVERLOAD_THRESHOLD) {
+    if (sameDayCount >= BEHAVIOR.SLOT_OVERLOAD_THRESHOLD) {
       toasts.info(
         `注意: ${f.teacher} は ${f.day}曜に ${sameDayCount} コマ目になります`
       );
