@@ -94,7 +94,6 @@ export function CommandPalette({
     const viewNames = [
       { key: views.DASH, label: "ダッシュボード" },
       { key: views.ALL, label: "全講師一覧" },
-      { key: views.HEATMAP, label: "繁忙度ヒートマップ" },
       { key: views.COMPARE, label: "講師比較" },
       { key: views.TIMETABLE, label: "時間割管理" },
       { key: views.HOLIDAYS, label: "休講日・テスト期間" },
@@ -147,9 +146,19 @@ export function CommandPalette({
   if (!open) return null;
 
   const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー" };
+  const listboxId = "cmdp-results";
+  const optionId = (i) => `cmdp-opt-${i}`;
+  const activeOptionId =
+    results.length > 0 && selectedIdx < results.length
+      ? optionId(selectedIdx)
+      : undefined;
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="コマンドパレット"
       style={{
         position: "fixed",
         inset: 0,
@@ -179,6 +188,12 @@ export function CommandPalette({
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
+            aria-label="検索"
             placeholder="講師名・科目・教室・メモで検索…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -195,7 +210,30 @@ export function CommandPalette({
             }}
           />
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {query
+            ? results.length === 0
+              ? "結果なし"
+              : `${results.length}件の結果`
+            : ""}
+        </div>
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="検索結果"
+          style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}
+        >
           {query && results.length === 0 && (
             <div
               style={{
@@ -211,6 +249,9 @@ export function CommandPalette({
           {results.map((r, i) => (
             <button
               key={`${r.type}-${r.label}-${i}`}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === selectedIdx}
               type="button"
               onClick={() => {
                 r.action();
@@ -230,7 +271,10 @@ export function CommandPalette({
                 fontFamily: "inherit",
               }}
             >
-              <span style={{ fontSize: 16, width: 24, textAlign: "center" }}>
+              <span
+                aria-hidden="true"
+                style={{ fontSize: 16, width: 24, textAlign: "center" }}
+              >
                 {typeIcons[r.type]}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -250,13 +294,7 @@ export function CommandPalette({
                 </div>
               </div>
               <span style={{ fontSize: 10, color: "#aaa" }}>
-                {r.type === "teacher"
-                  ? "講師"
-                  : r.type === "slot"
-                    ? "コマ"
-                    : r.type === "sub"
-                      ? "代行"
-                      : "ビュー"}
+                {typeLabels[r.type]}
               </span>
             </button>
           ))}

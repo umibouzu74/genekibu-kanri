@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { db, authReady, authFailed, isConfigured } from "../firebase/config";
 import { ref, onValue, off } from "firebase/database";
+import { subscribeSyncActivity } from "../hooks/useSyncedStorage";
 
 // ─── SyncStatus ─────────────────────────────────────────────────────
 // A small indicator showing Firebase connection state.
@@ -8,9 +9,11 @@ import { ref, onValue, off } from "firebase/database";
 //   Red    = offline / disconnected
 //   Orange = authentication failed
 //   Grey   = Firebase not configured (localStorage-only mode)
+//   Blue pulse = actively writing (pending sync)
 export function SyncStatus({ isAdmin }) {
   const [connected, setConnected] = useState(false);
   const [authError, setAuthError] = useState(false);
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     if (!isConfigured || !db) return;
@@ -35,6 +38,8 @@ export function SyncStatus({ isAdmin }) {
     };
   }, []);
 
+  useEffect(() => subscribeSyncActivity(setPending), []);
+
   if (!isConfigured) {
     return (
       <div style={wrap} title="ローカルモード（Firebase未設定）">
@@ -54,22 +59,47 @@ export function SyncStatus({ isAdmin }) {
   }
 
   const roleLabel = isAdmin ? "管理者" : "閲覧者";
-  const statusLabel = connected ? "同期中" : "オフライン";
+  const saving = pending > 0;
+  const statusLabel = saving
+    ? "保存中…"
+    : connected
+      ? "同期中"
+      : "オフライン";
+
+  const dotColor = saving
+    ? "#6a8fff"
+    : connected
+      ? "#4caf50"
+      : "#c44";
 
   return (
     <div
       style={wrap}
-      title={connected ? `クラウド同期中（${roleLabel}）` : "オフライン（ローカル保存中）"}
+      title={
+        saving
+          ? `クラウドへ保存中（${roleLabel}）`
+          : connected
+            ? `クラウド同期中（${roleLabel}）`
+            : "オフライン（ローカル保存中）"
+      }
+      aria-live="polite"
     >
-      <span style={{ ...dot, background: connected ? "#4caf50" : "#c44" }} />
+      <span
+        style={{
+          ...dot,
+          background: dotColor,
+          animation: saving ? "syncPulse 1s ease-in-out infinite" : "none",
+        }}
+      />
       <span style={label}>
         {statusLabel}
-        {connected && (
+        {connected && !saving && (
           <span style={{ marginLeft: 4, color: isAdmin ? "#4caf50" : "#6a8fff" }}>
             [{roleLabel}]
           </span>
         )}
       </span>
+      <style>{`@keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -30,6 +30,7 @@ import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
+import { LAYOUT } from "./constants/layout";
 import { escapeHtml } from "./utils/escape";
 
 import { Modal } from "./components/Modal";
@@ -49,7 +50,6 @@ import { MasterView } from "./components/views/MasterView";
 import { SubstituteView } from "./components/views/SubstituteView";
 import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
 import { StaffManagerView } from "./components/views/StaffManagerView";
-import { HeatmapView } from "./components/views/HeatmapView";
 import { CompareView } from "./components/views/CompareView";
 import { TimetableManagerView } from "./components/views/TimetableManagerView";
 import { TimetableSelector } from "./components/TimetableSelector";
@@ -57,6 +57,9 @@ import { TimetableSelector } from "./components/TimetableSelector";
 export default function App() {
   const toasts = useToasts();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
+
+  // Flags to avoid spamming the same toast on every subsequent save.
+  const syncAuthNotifiedRef = useRef(false);
 
   const onStorageError = useCallback(
     (err, phase) => {
@@ -68,10 +71,21 @@ export default function App() {
         toasts.error(
           `保存データの読み込みに失敗しました: ${err?.message || err}`
         );
+      } else if (phase === "sync-auth") {
+        if (!syncAuthNotifiedRef.current) {
+          syncAuthNotifiedRef.current = true;
+          toasts.error(
+            "クラウドへの書込が拒否されました。管理者ログインが必要です（端末にはローカル保存されています）。"
+          );
+        }
       }
     },
     [toasts]
   );
+
+  useEffect(() => {
+    if (isAdmin) syncAuthNotifiedRef.current = false;
+  }, [isAdmin]);
 
   // ─── Persisted state (synced with Firebase when configured) ───────
   const [slots, saveSlots] = useSyncedStorage(LS.slots, INIT_SLOTS, {
@@ -149,9 +163,15 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
-  const [activeTimetableId, setActiveTimetableId] = useState(
-    () => Number(localStorage.getItem(LS.activeTimetableId)) || 1
-  );
+  const [activeTimetableId, setActiveTimetableId] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LS.activeTimetableId);
+      const n = raw == null ? NaN : Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    } catch {
+      return 1;
+    }
+  });
 
   const changeActiveTimetable = useCallback((id) => {
     setActiveTimetableId(id);
@@ -340,7 +360,7 @@ export default function App() {
       />
 
       {/* Desktop sidebar spacer */}
-      <div className="sidebar-spacer" style={{ width: 210, flexShrink: 0 }} />
+      <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
       <div style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
@@ -378,21 +398,19 @@ export default function App() {
                 ? "ダッシュボード"
                 : view === VIEWS.ALL
                   ? "全講師コマ数一覧"
-                  : view === VIEWS.HEATMAP
-                    ? "繁忙度ヒートマップ"
-                    : view === VIEWS.COMPARE
-                      ? "講師比較"
-                      : view === VIEWS.TIMETABLE
-                        ? "時間割管理"
-                      : view === VIEWS.MASTER
-                      ? "コースマスター管理"
-                      : view === VIEWS.HOLIDAYS
-                        ? "休講日・テスト期間管理"
-                        : view === VIEWS.SUBS
-                          ? "アルバイト代行管理"
-                          : view === VIEWS.STAFF
-                            ? "バイト管理"
-                            : selected || ""}
+                  : view === VIEWS.COMPARE
+                    ? "講師比較"
+                    : view === VIEWS.TIMETABLE
+                      ? "時間割管理"
+                    : view === VIEWS.MASTER
+                    ? "コースマスター管理"
+                    : view === VIEWS.HOLIDAYS
+                      ? "休講日・テスト期間管理"
+                      : view === VIEWS.SUBS
+                        ? "アルバイト代行管理"
+                        : view === VIEWS.STAFF
+                          ? "バイト管理"
+                          : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -521,9 +539,6 @@ export default function App() {
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
-          )}
-          {view === VIEWS.HEATMAP && !selected && (
-            <HeatmapView slots={ttFilteredSlots} />
           )}
           {view === VIEWS.COMPARE && !selected && (
             <CompareView slots={ttFilteredSlots} />

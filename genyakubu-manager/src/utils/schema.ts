@@ -41,6 +41,10 @@ const isString = (v: unknown): v is string => typeof v === "string";
 const isNumber = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isIsoDate = (v: unknown): v is string =>
+  isString(v) && ISO_DATE_RE.test(v);
+
 // Type guards ------------------------------------------------------
 
 export function isSlot(x: unknown): x is Slot {
@@ -93,7 +97,7 @@ export function isPartTimeStaffObject(x: unknown): x is PartTimeStaffObject {
 }
 
 export function isBiweeklyAnchor(x: unknown): x is BiweeklyAnchor {
-  return isObject(x) && isString(x.date) && x.weekType === "A";
+  return isObject(x) && isIsoDate(x.date) && x.weekType === "A";
 }
 
 export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
@@ -314,7 +318,129 @@ export function validateExportBundle(
       };
   }
 
+  // ── Cross-entity referential integrity ────────────────────────────
+  // Run only when both sides of a relationship are present in the
+  // bundle; skip when only one side is provided (partial import).
+  const fkError = validateReferentialIntegrity(raw);
+  if (fkError) return fkError;
+
   return { ok: true, data: raw as unknown as ExportBundle };
+}
+
+function toSlotIdKey(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.length > 0) return v;
+  return null;
+}
+
+function validateReferentialIntegrity(
+  raw: Record<string, unknown>
+): ValidationResult<ExportBundle> | null {
+  if (Array.isArray(raw.slots)) {
+    const slotIds = new Set<string>();
+    for (const s of raw.slots as Array<Record<string, unknown>>) {
+      const k = toSlotIdKey(s.id);
+      if (k !== null) slotIds.add(k);
+    }
+
+    if (Array.isArray(raw.substitutions)) {
+      const bad = (
+        raw.substitutions as Array<Record<string, unknown>>
+      ).findIndex((s) => {
+        const k = toSlotIdKey(s.slotId);
+        return k === null || !slotIds.has(k);
+      });
+      if (bad !== -1) {
+        const missing = (
+          raw.substitutions as Array<Record<string, unknown>>
+        )[bad]?.slotId;
+        return {
+          ok: false,
+          error: `substitutions[${bad}] が参照するコマ (slotId=${String(
+            missing
+          )}) が slots に存在しません`,
+          path: `substitutions[${bad}].slotId`,
+        };
+      }
+    }
+
+    if (Array.isArray(raw.classSets)) {
+      const list = raw.classSets as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        const ids = list[i].slotIds;
+        if (!Array.isArray(ids)) continue;
+        for (let j = 0; j < ids.length; j++) {
+          const k = toSlotIdKey(ids[j]);
+          if (k === null || !slotIds.has(k)) {
+            return {
+              ok: false,
+              error: `classSets[${i}].slotIds[${j}] (${String(
+                ids[j]
+              )}) が slots に存在しません`,
+              path: `classSets[${i}].slotIds[${j}]`,
+            };
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(raw.adjustments)) {
+      const list = raw.adjustments as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        const k = toSlotIdKey(a.slotId);
+        if (k === null || !slotIds.has(k)) {
+          return {
+            ok: false,
+            error: `adjustments[${i}].slotId (${String(
+              a.slotId
+            )}) が slots に存在しません`,
+            path: `adjustments[${i}].slotId`,
+          };
+        }
+        if (a.type === "combine" && Array.isArray(a.combineSlotIds)) {
+          for (let j = 0; j < a.combineSlotIds.length; j++) {
+            const ck = toSlotIdKey(a.combineSlotIds[j]);
+            if (ck === null || !slotIds.has(ck)) {
+              return {
+                ok: false,
+                error: `adjustments[${i}].combineSlotIds[${j}] (${String(
+                  a.combineSlotIds[j]
+                )}) が slots に存在しません`,
+                path: `adjustments[${i}].combineSlotIds[${j}]`,
+              };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (
+    Array.isArray(raw.subjects) &&
+    Array.isArray(raw.subjectCategories)
+  ) {
+    const catIds = new Set<number>();
+    for (const c of raw.subjectCategories as Array<Record<string, unknown>>) {
+      if (typeof c.id === "number") catIds.add(c.id);
+    }
+    const bad = (raw.subjects as Array<Record<string, unknown>>).findIndex(
+      (s) =>
+        typeof s.categoryId !== "number" || !catIds.has(s.categoryId as number)
+    );
+    if (bad !== -1) {
+      const s = (raw.subjects as Array<Record<string, unknown>>)[bad];
+      return {
+        ok: false,
+        error: `subjects[${bad}] の categoryId (${String(
+          s?.categoryId
+        )}) が subjectCategories に存在しません`,
+        path: `subjects[${bad}].categoryId`,
+      };
+    }
+  }
+
+  return null;
 }
 
 // ─── Migration ─────────────────────────────────────────────────────

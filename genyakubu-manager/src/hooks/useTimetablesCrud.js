@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useToasts } from "./useToasts";
-import { useConfirm } from "./useConfirm";
+import { useCrudResource } from "./useCrudResource";
 import { nextNumericId } from "../utils/schema";
 
 /**
@@ -12,30 +12,29 @@ import { nextNumericId } from "../utils/schema";
  *   saveSlots: (v: import("../types").Slot[]) => void,
  * }} deps
  */
-export function useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots, onRemoveActive }) {
+export function useTimetablesCrud({
+  timetables,
+  saveTimetables,
+  slots,
+  saveSlots,
+  onRemoveActive,
+}) {
   const toasts = useToasts();
-  const confirm = useConfirm();
+  const crud = useCrudResource({ list: timetables, save: saveTimetables });
 
   const add = useCallback(
-    (/** @type {Omit<import("../types").Timetable, "id">} */ fields) => {
-      const id = nextNumericId(timetables);
-      saveTimetables([...timetables, { ...fields, id }]);
-      toasts.success("時間割を作成しました");
-      return id;
-    },
-    [timetables, saveTimetables, toasts]
+    (fields) => crud.add(fields, { successMsg: "時間割を作成しました" }),
+    [crud]
   );
 
   const update = useCallback(
-    (/** @type {number} */ id, /** @type {Partial<import("../types").Timetable>} */ changes) => {
-      saveTimetables(timetables.map((t) => (t.id === id ? { ...t, ...changes, id } : t)));
-      toasts.success("時間割を更新しました");
-    },
-    [timetables, saveTimetables, toasts]
+    (id, changes) =>
+      crud.update(id, changes, { successMsg: "時間割を更新しました" }),
+    [crud]
   );
 
   const remove = useCallback(
-    async (/** @type {number} */ id) => {
+    async (id) => {
       if (id === 1) {
         toasts.error("デフォルト時間割は削除できません");
         return;
@@ -44,33 +43,27 @@ export function useTimetablesCrud({ timetables, saveTimetables, slots, saveSlots
       const msg = linkedSlots.length
         ? `この時間割には ${linkedSlots.length} 件のコマが割り当てられています。\n削除するとコマはデフォルト時間割に移動します。`
         : "この時間割を削除しますか？";
-      const ok = await confirm({
+      const removed = await crud.confirmedRemove(id, {
         title: "時間割の削除",
         message: msg,
-        okLabel: "削除",
-        tone: "danger",
+        successMsg: "時間割を削除しました",
+        cascade: () => {
+          if (linkedSlots.length) {
+            saveSlots(
+              slots.map((s) =>
+                s.timetableId === id ? { ...s, timetableId: 1 } : s
+              )
+            );
+          }
+        },
       });
-      if (!ok) return;
-      saveTimetables(timetables.filter((t) => t.id !== id));
-      if (linkedSlots.length) {
-        saveSlots(
-          slots.map((s) =>
-            s.timetableId === id ? { ...s, timetableId: 1 } : s
-          )
-        );
-      }
-      if (onRemoveActive) onRemoveActive(id);
-      toasts.success("時間割を削除しました");
+      if (removed && onRemoveActive) onRemoveActive(id);
     },
-    [timetables, saveTimetables, slots, saveSlots, toasts, confirm, onRemoveActive]
+    [slots, saveSlots, toasts, crud, onRemoveActive]
   );
 
   const duplicate = useCallback(
-    (
-      /** @type {number} */ sourceId,
-      /** @type {string} */ newName,
-      /** @type {{ startDate: string | null, endDate: string | null }} */ newDates
-    ) => {
+    (sourceId, newName, newDates) => {
       const source = timetables.find((t) => t.id === sourceId);
       if (!source) {
         toasts.error("複製元の時間割が見つかりません");

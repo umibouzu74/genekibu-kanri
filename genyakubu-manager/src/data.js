@@ -1,66 +1,31 @@
-import { isSlotForTeacher } from "./utils/biweekly";
+// ─── Barrel: domain constants + INIT data + helpers ───────────────
+// Module has been split into focused files; this file now re-exports
+// from them so existing call sites keep working while new code can
+// import directly from the source modules.
+//
+// - Constants:  src/constants/schools.js, src/constants/colors.js
+// - Helpers:    src/utils/dateHelpers.js, src/utils/scheduleHelpers.js,
+//               src/utils/staffHelpers.js
+// - Seed data:  INIT_HOLIDAYS / INIT_SLOTS stay here (bulk static data)
 
-export const DAYS = ["月", "火", "水", "木", "金", "土"];
-export const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-
-export const DAY_COLOR = {
-  月: "#3d7a4a", 火: "#c05030", 水: "#2e6a9e",
-  木: "#9e8a2e", 金: "#6a3d8e", 土: "#8e3d3d",
-};
-
-export const DAY_BG = {
-  月: "#e8f2ea", 火: "#fce8e4", 水: "#e4ecf6",
-  木: "#f6f2e4", 金: "#ece4f2", 土: "#f2e4e4",
-};
-
-export function gradeColor(g) {
-  if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
-  if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };
-  if (g.includes("中2")) return { b: "#cce0f0", f: "#1a4a6a" };
-  if (g.includes("中3")) return { b: "#e0d4f0", f: "#4a2a7a" };
-  if (g.includes("高1")) return { b: "#f0e0c8", f: "#7a5a1a" };
-  if (g.includes("高2")) return { b: "#f0ccc8", f: "#7a2a1a" };
-  if (g.includes("高3")) return { b: "#c8c8f0", f: "#1a1a7a" };
-  return { b: "#e8e8e8", f: "#444" };
-}
-
-export function timeToMin(t) {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-
-export function sortSlots(arr) {
-  const idx = Object.fromEntries(DAYS.map((d, i) => [d, i]));
-  return [...arr].sort((a, b) => {
-    const dd = idx[a.day] - idx[b.day];
-    return dd || timeToMin(a.time.split("-")[0]) - timeToMin(b.time.split("-")[0]);
-  });
-}
-
-export function fmtDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-export const DEPARTMENTS = ["中学部", "高校部", "予備校部"];
-
-export const ALL_GRADES = [
-  "中1", "中2", "中3", "附中1", "附中2", "附中3",
-  "高1", "高2", "高3",
-];
-
-export const DEPT_COLOR = {
-  中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
-  高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
-  予備校部: { b: "#cce0f0", f: "#1a4a6a", accent: "#3a8abe" },
-};
-
-export function gradeToDept(grade) {
-  if (grade.includes("附中") || grade.includes("中")) return "中学部";
-  if (grade.includes("高")) return "高校部";
-  return null;
-}
-
-export const isKameiRoom = (room) => room?.startsWith("亀");
+export {
+  DAYS,
+  WEEKDAYS,
+  DEPARTMENTS,
+  ALL_GRADES,
+  SUB_STATUS,
+  SUB_STATUS_KEYS,
+} from "./constants/schools";
+export { DAY_COLOR, DAY_BG, DEPT_COLOR, gradeColor } from "./constants/colors";
+export { timeToMin, fmtDate, fmtDateWeekday, dateToDay } from "./utils/dateHelpers";
+export { sortSlots, gradeToDept, isKameiRoom } from "./utils/scheduleHelpers";
+export {
+  getSubForSlot,
+  monthlyTally,
+  staffMonthlyWorkDates,
+  staffMonthlyAbsenceDates,
+  staffMonthlyRegularDates,
+} from "./utils/staffHelpers";
 
 // ─── 教科マスター ──────────────────────────────────────────────────
 // カテゴリと教科は独立したエンティティで、既存の Slot.subj (自由入力文字列)
@@ -91,147 +56,6 @@ export const INIT_PART_TIME_STAFF = [
   { name: "福江", subjectIds: [] },
   { name: "川井", subjectIds: [] },
 ];
-
-export const SUB_STATUS = {
-  requested: { label: "依頼中", color: "#c03030", bg: "#fde4e4", border: "#f0b0b0" },
-  confirmed: { label: "確定",   color: "#2a7a4a", bg: "#e0f2e4", border: "#a8d8b0" },
-};
-
-export const SUB_STATUS_KEYS = ["requested", "confirmed"];
-
-export function getSubForSlot(subs, slotId, date) {
-  if (!subs) return null;
-  return subs.find(s => s.slotId === slotId && s.date === date) || null;
-}
-
-export function monthlyTally(subs, year, month) {
-  const covered = {};     // name -> 代行した回数
-  const coveredFor = {};  // name -> 代行された回数
-  const ym = `${year}-${String(month).padStart(2, "0")}`;
-  subs.forEach(s => {
-    if (!s.date?.startsWith(ym)) return;
-    if (s.status === "requested") return; // 依頼中は集計対象外
-    if (s.substitute) covered[s.substitute] = (covered[s.substitute] || 0) + 1;
-    if (s.originalTeacher) coveredFor[s.originalTeacher] = (coveredFor[s.originalTeacher] || 0) + 1;
-  });
-  return { covered, coveredFor };
-}
-
-/**
- * Return sorted unique dates a staff member worked as a substitute in a given month.
- * Only confirmed substitutions are counted.
- * @param {import("./types").Substitute[]} subs
- * @param {string} staffName
- * @param {number} year
- * @param {number} month
- * @returns {string[]}
- */
-export function staffMonthlyWorkDates(subs, staffName, year, month) {
-  const ym = `${year}-${String(month).padStart(2, "0")}`;
-  const dates = new Set();
-  for (const s of subs) {
-    if (s.status !== "confirmed") continue;
-    if (!s.date?.startsWith(ym)) continue;
-    if (s.substitute === staffName) dates.add(s.date);
-  }
-  return [...dates].sort();
-}
-
-/**
- * Return sorted unique dates a staff member was substituted for in a given month.
- * Only confirmed substitutions are counted.
- * @param {import("./types").Substitute[]} subs
- * @param {string} staffName
- * @param {number} year
- * @param {number} month
- * @returns {string[]}
- */
-export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
-  const ym = `${year}-${String(month).padStart(2, "0")}`;
-  const dates = new Set();
-  for (const s of subs) {
-    if (s.status !== "confirmed") continue;
-    if (!s.date?.startsWith(ym)) continue;
-    if (s.originalTeacher === staffName) dates.add(s.date);
-  }
-  return [...dates].sort();
-}
-
-/**
- * Return sorted unique dates a staff member would normally work in a given month
- * based on their slot schedule, excluding holidays.
- * @param {import("./types").Slot[]} slots
- * @param {string} staffName
- * @param {import("./types").Holiday[]} holidays
- * @param {number} year
- * @param {number} month
- * @returns {string[]}
- */
-// Inline isOffForGrade logic (can't import from components/views/dashboardHelpers
-// without creating a circular-ish dep tree). Mirrors makeHolidayHelpers().
-function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
-  const dept = slot.grade ? gradeToDept(slot.grade) : null;
-  const offByHoliday = holidays.some((h) => {
-    if (h.date !== dateStr) return false;
-    const sc = h.scope || ["全部"];
-    if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-    const tg = h.targetGrades || [];
-    if (tg.length > 0 && !tg.includes(slot.grade)) return false;
-    const sk = h.subjKeywords || [];
-    if (sk.length > 0) {
-      if (!slot.subj) return false;
-      if (!sk.some((kw) => slot.subj.includes(kw))) return false;
-    }
-    return true;
-  });
-  if (offByHoliday) return true;
-  return (examPeriods || []).some((ep) => {
-    if (dateStr < ep.startDate || dateStr > ep.endDate) return false;
-    if (!ep.targetGrades || ep.targetGrades.length === 0) return true;
-    return ep.targetGrades.includes(slot.grade);
-  });
-}
-
-export function staffMonthlyRegularDates(slots, staffName, holidays, year, month, examPeriods = []) {
-  const teacherSlots = slots.filter((s) => isSlotForTeacher(s, staffName));
-  if (teacherSlots.length === 0) return [];
-
-  const slotsByDay = new Map(); // day -> Slot[]
-  for (const s of teacherSlots) {
-    if (!slotsByDay.has(s.day)) slotsByDay.set(s.day, []);
-    slotsByDay.get(s.day).push(s);
-  }
-
-  const dates = [];
-  const daysInMonth = new Date(year, month, 0).getDate();
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(year, month - 1, d);
-    const dow = WEEKDAYS[dt.getDay()];
-    const daySlots = slotsByDay.get(dow);
-    if (!daySlots || daySlots.length === 0) continue;
-    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    // Skip day if ALL of this teacher's slots on this day are canceled
-    const allOff = daySlots.every((s) => isSlotOffOnDate(s, dateStr, holidays, examPeriods));
-    if (allOff) continue;
-    dates.push(dateStr);
-  }
-  return dates;
-}
-
-export function fmtDateWeekday(dateStr) {
-  if (!dateStr) return "";
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return `${dateStr} (${WEEKDAYS[dt.getDay()]})`;
-}
-
-export function dateToDay(dateStr) {
-  if (!dateStr) return null;
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  const w = WEEKDAYS[dt.getDay()];
-  return DAYS.includes(w) ? w : null;
-}
 
 export const INIT_HOLIDAYS = [
   { id: 1, date: "2026-04-29", label: "昭和の日", scope: ["全部"], targetGrades: [], subjKeywords: [] },

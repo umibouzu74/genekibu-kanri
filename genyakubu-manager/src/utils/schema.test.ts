@@ -695,3 +695,96 @@ describe("nextNumericId", () => {
     expect(nextNumericId([{ pk: 10 }, { pk: 2 }], "pk")).toBe(11);
   });
 });
+
+describe("isBiweeklyAnchor ISO-8601 date check", () => {
+  it("accepts a properly formatted date", () => {
+    expect(isBiweeklyAnchor({ date: "2026-04-06", weekType: "A" })).toBe(true);
+  });
+
+  it("rejects malformed date strings", () => {
+    expect(isBiweeklyAnchor({ date: "2026/4/6", weekType: "A" })).toBe(false);
+    expect(isBiweeklyAnchor({ date: "April 6, 2026", weekType: "A" })).toBe(false);
+    expect(isBiweeklyAnchor({ date: "2026-4-6", weekType: "A" })).toBe(false);
+    expect(isBiweeklyAnchor({ date: "", weekType: "A" })).toBe(false);
+  });
+});
+
+describe("validateExportBundle referential integrity", () => {
+  it("rejects substitutions referencing a missing slotId", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      substitutions: [{ ...goodSub, slotId: 999 }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/substitutions\[0\]/);
+    expect(result.path).toBe("substitutions[0].slotId");
+  });
+
+  it("accepts substitutions with a matching slotId", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      substitutions: [{ ...goodSub, slotId: 1 }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects classSets referencing a missing slotId", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      classSets: [{ id: 1, label: "grp", slotIds: [1, 42] }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/classSets\[0\]\.slotIds\[1\]/);
+  });
+
+  it("rejects adjustments referencing a missing slotId", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      adjustments: [
+        {
+          id: 1,
+          date: "2026-04-10",
+          type: "move",
+          slotId: 404,
+          memo: "",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("adjustments[0].slotId");
+  });
+
+  it("rejects combine adjustments with bad combineSlotIds", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      adjustments: [
+        {
+          id: 1,
+          date: "2026-04-10",
+          type: "combine",
+          slotId: 1,
+          combineSlotIds: [1, 99],
+          memo: "",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("adjustments[0].combineSlotIds[1]");
+  });
+
+  it("rejects subjects with a missing categoryId", () => {
+    const result = validateExportBundle({
+      subjectCategories: [{ id: 1, name: "文系" }],
+      subjects: [{ id: 1, name: "英語", categoryId: 99 }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.path).toBe("subjects[0].categoryId");
+  });
+
+  it("skips FK checks when slots is not provided (partial import)", () => {
+    const result = validateExportBundle({
+      substitutions: [{ ...goodSub, slotId: 999 }],
+    });
+    expect(result.ok).toBe(true);
+  });
+});

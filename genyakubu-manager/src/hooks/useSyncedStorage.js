@@ -2,6 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
 import { ref, onValue, set, off } from "firebase/database";
 
+// ─── Pending sync activity counter ──────────────────────────────────
+// Each in-flight Firebase write increments this counter. SyncStatus
+// (or any other consumer) can subscribe to be notified when it changes.
+let pendingWrites = 0;
+const activityListeners = new Set();
+const notifyActivity = () => {
+  for (const fn of activityListeners) fn(pendingWrites);
+};
+export function subscribeSyncActivity(fn) {
+  activityListeners.add(fn);
+  fn(pendingWrites);
+  return () => activityListeners.delete(fn);
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 const isQuotaError = (err) =>
@@ -10,6 +24,12 @@ const isQuotaError = (err) =>
     err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
     err.code === 22 ||
     err.code === 1014);
+
+const isPermissionError = (err) =>
+  err &&
+  (err.code === "PERMISSION_DENIED" ||
+    err.code === "permission-denied" ||
+    /permission[_ -]?denied/i.test(err.message || ""));
 
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
@@ -136,6 +156,10 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       setValue((prev) => {
         const resolved = typeof next === "function" ? next(prev) : next;
         const json = stableStringify(resolved);
+
+        // Strict Mode の updater 二重呼び出しで副作用が 2 回走らないよう、
+        // 既に同じ JSON を書き込み済みならスキップする。
+        if (json === lastLocalJsonRef.current) return resolved;
         lastLocalJsonRef.current = json;
 
         // Write to localStorage
@@ -149,9 +173,17 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
         // Write to Firebase
         if (isConfigured && db) {
           const dbRef = ref(db, fbPath(key));
-          set(dbRef, resolved).catch((err) => {
-            console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
-          });
+          pendingWrites++;
+          notifyActivity();
+          set(dbRef, resolved)
+            .catch((err) => {
+              console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
+              onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+            })
+            .finally(() => {
+              pendingWrites = Math.max(0, pendingWrites - 1);
+              notifyActivity();
+            });
         }
 
         return resolved;
@@ -249,9 +281,17 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
 
       if (isConfigured && db) {
         const dbRef = ref(db, fbPath(key));
-        set(dbRef, next).catch((err) => {
-          console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
-        });
+        pendingWrites++;
+        notifyActivity();
+        set(dbRef, next)
+          .catch((err) => {
+            console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
+            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+            notifyActivity();
+          });
       }
     },
     [key, onError]
