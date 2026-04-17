@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { pickSubjectId } from "../utils/subjectMatch";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
 
@@ -126,7 +126,12 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   }));
 
   return (
-    <div ref={ref} style={style}>
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={`${slot.time} ${slot.grade} ${slot.subj} の代行候補`}
+      style={style}
+    >
       {/* Header */}
       <div
         style={{
@@ -234,7 +239,11 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
       )}
 
       {/* Candidate list */}
-      <div style={{ maxHeight: 220, overflowY: "auto" }}>
+      <div
+        role="listbox"
+        aria-label="代行候補"
+        style={{ maxHeight: 220, overflowY: "auto" }}
+      >
         {candidates.length === 0 && !suggestion && (
           <div style={{ padding: "12px", fontSize: 11, color: "#888", textAlign: "center", lineHeight: 1.6 }}>
             この時間に空いている講師がいません
@@ -255,7 +264,16 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
           return (
             <div
               key={t.name}
+              role="option"
+              aria-selected={isSuggested}
+              tabIndex={0}
               onClick={() => onAssign(t.name)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onAssign(t.name);
+                }
+              }}
               style={{
                 padding: "5px 12px",
                 borderBottom: "1px solid #f0f0f0",

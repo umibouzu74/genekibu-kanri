@@ -9,7 +9,6 @@ const MENU_CONFIG = [
   {
     key: VIEWS.ALL, icon: "📊", label: "全講師一覧",
     children: [
-      { key: VIEWS.HEATMAP, icon: "🔥", label: "繁忙度ヒートマップ" },
       { key: VIEWS.COMPARE, icon: "⚖", label: "講師比較" },
     ],
   },

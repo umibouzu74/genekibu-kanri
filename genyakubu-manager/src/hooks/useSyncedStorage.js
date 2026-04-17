@@ -2,6 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
 import { ref, onValue, set, off } from "firebase/database";
 
+// ─── Pending sync activity counter ──────────────────────────────────
+// Each in-flight Firebase write increments this counter. SyncStatus
+// (or any other consumer) can subscribe to be notified when it changes.
+let pendingWrites = 0;
+const activityListeners = new Set();
+const notifyActivity = () => {
+  for (const fn of activityListeners) fn(pendingWrites);
+};
+export function subscribeSyncActivity(fn) {
+  activityListeners.add(fn);
+  fn(pendingWrites);
+  return () => activityListeners.delete(fn);
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 const isQuotaError = (err) =>
@@ -155,10 +169,17 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
         // Write to Firebase
         if (isConfigured && db) {
           const dbRef = ref(db, fbPath(key));
-          set(dbRef, resolved).catch((err) => {
-            console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
-            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-          });
+          pendingWrites++;
+          notifyActivity();
+          set(dbRef, resolved)
+            .catch((err) => {
+              console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
+              onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+            })
+            .finally(() => {
+              pendingWrites = Math.max(0, pendingWrites - 1);
+              notifyActivity();
+            });
         }
 
         return resolved;
@@ -256,10 +277,17 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
 
       if (isConfigured && db) {
         const dbRef = ref(db, fbPath(key));
-        set(dbRef, next).catch((err) => {
-          console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
-          onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-        });
+        pendingWrites++;
+        notifyActivity();
+        set(dbRef, next)
+          .catch((err) => {
+            console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
+            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+            notifyActivity();
+          });
       }
     },
     [key, onError]

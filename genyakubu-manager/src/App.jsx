@@ -49,7 +49,6 @@ import { MasterView } from "./components/views/MasterView";
 import { SubstituteView } from "./components/views/SubstituteView";
 import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
 import { StaffManagerView } from "./components/views/StaffManagerView";
-import { HeatmapView } from "./components/views/HeatmapView";
 import { CompareView } from "./components/views/CompareView";
 import { TimetableManagerView } from "./components/views/TimetableManagerView";
 import { TimetableSelector } from "./components/TimetableSelector";
@@ -398,21 +397,19 @@ export default function App() {
                 ? "ダッシュボード"
                 : view === VIEWS.ALL
                   ? "全講師コマ数一覧"
-                  : view === VIEWS.HEATMAP
-                    ? "繁忙度ヒートマップ"
-                    : view === VIEWS.COMPARE
-                      ? "講師比較"
-                      : view === VIEWS.TIMETABLE
-                        ? "時間割管理"
-                      : view === VIEWS.MASTER
-                      ? "コースマスター管理"
-                      : view === VIEWS.HOLIDAYS
-                        ? "休講日・テスト期間管理"
-                        : view === VIEWS.SUBS
-                          ? "アルバイト代行管理"
-                          : view === VIEWS.STAFF
-                            ? "バイト管理"
-                            : selected || ""}
+                  : view === VIEWS.COMPARE
+                    ? "講師比較"
+                    : view === VIEWS.TIMETABLE
+                      ? "時間割管理"
+                    : view === VIEWS.MASTER
+                    ? "コースマスター管理"
+                    : view === VIEWS.HOLIDAYS
+                      ? "休講日・テスト期間管理"
+                      : view === VIEWS.SUBS
+                        ? "アルバイト代行管理"
+                        : view === VIEWS.STAFF
+                          ? "バイト管理"
+                          : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -541,9 +538,6 @@ export default function App() {
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
-          )}
-          {view === VIEWS.HEATMAP && !selected && (
-            <HeatmapView slots={ttFilteredSlots} />
           )}
           {view === VIEWS.COMPARE && !selected && (
             <CompareView slots={ttFilteredSlots} />
