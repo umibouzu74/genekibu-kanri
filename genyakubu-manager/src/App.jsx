@@ -27,6 +27,7 @@ import {
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
+import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
@@ -321,10 +322,10 @@ export default function App() {
 
   // Slots filtered by active timetable (for aggregate views that show
   // the "current" timetable rather than a specific date).
-  const ttFilteredSlots = useMemo(() => {
-    if (!timetables || timetables.length <= 1) return slots;
-    return slots.filter((s) => (s.timetableId ?? 1) === activeTimetableId);
-  }, [slots, timetables, activeTimetableId]);
+  const ttFilteredSlots = useMemo(
+    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
+    [slots, timetables, activeTimetableId]
+  );
 
   const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
 

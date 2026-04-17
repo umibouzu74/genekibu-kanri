@@ -4,12 +4,12 @@ import {
   DAY_COLOR as DC,
   DAYS,
   getSubForSlot,
-  gradeToDept,
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import { isSlotForTeacher } from "../../utils/biweekly";
+import { makeHolidayHelpers } from "./dashboardHelpers";
 
 export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
@@ -38,37 +38,9 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
     return m;
   }, [holidays]);
 
-  const isOffForGrade = useCallback(
-    (ds, grade, subj) => {
-      // Holiday check
-      const hols = holMap[ds];
-      if (hols) {
-        const dept = gradeToDept(grade);
-        const off = hols.some((h) => {
-          // 1. Department scope check (always applied)
-          const sc = h.scope || ["全部"];
-          if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-          // 2. Grade-level check (when targetGrades is set)
-          const tg = h.targetGrades || [];
-          if (tg.length > 0 && !tg.includes(grade)) return false;
-          // 3. Subject keyword check
-          const sk = h.subjKeywords || [];
-          if (sk.length > 0) {
-            if (!subj) return false;
-            if (!sk.some((kw) => subj.includes(kw))) return false;
-          }
-          return true;
-        });
-        if (off) return true;
-      }
-      // Exam period check
-      return examPeriods.some((ep) => {
-        if (ds < ep.startDate || ds > ep.endDate) return false;
-        if (ep.targetGrades.length === 0) return true;
-        return ep.targetGrades.includes(grade);
-      });
-    },
-    [holMap, examPeriods]
+  const { isOffForGrade } = useMemo(
+    () => makeHolidayHelpers(holidays, examPeriods),
+    [holidays, examPeriods]
   );
 
   // Returns exam period names active on a given date (for label display)

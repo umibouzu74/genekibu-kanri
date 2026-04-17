@@ -88,6 +88,19 @@ export function filterSlotsForDate(slots, dateStr, timetables) {
 }
 
 /**
+ * Filter slots to those belonging to the active timetable, used by aggregate
+ * views (week/month/dashboard "現在の時間割") where no specific date applies.
+ * Returns slots unchanged when there is only a single timetable (or none) —
+ * the filter is a no-op in that case.
+ * Slots without timetableId are treated as belonging to timetable id 1.
+ */
+export function filterSlotsByActiveTimetable(slots, timetables, activeTimetableId) {
+  if (!Array.isArray(timetables) || timetables.length <= 1) return slots;
+  const activeId = activeTimetableId || 1;
+  return slots.filter((s) => (s.timetableId ?? 1) === activeId);
+}
+
+/**
  * Check if a given grade matches any grade in a cutoff group.
  * @param {string} grade
  * @param {string[]} groupGrades
