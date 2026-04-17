@@ -3,6 +3,9 @@ import { decodeShareData } from "./utils/shareCodec";
 import { SharedSubsView } from "./components/views/SharedSubsView";
 import { colors, font } from "./styles/tokens";
 
+const MAX_SHARE_SLOTS = 10000;
+const MAX_SHARE_SUBS = 10000;
+
 /**
  * Lightweight page rendered for share URLs (#/share/<encoded>).
  * Decodes the payload and displays the read-only SharedSubsView.
@@ -14,13 +17,27 @@ export function SharePage({ encoded }) {
     let cancelled = false;
     decodeShareData(encoded)
       .then((data) => {
-        if (!cancelled) {
-          if (!data || !Array.isArray(data.substitutions)) {
-            setState({ status: "error", data: null, error: "データ形式が不正です" });
-          } else {
-            setState({ status: "ok", data, error: null });
-          }
+        if (cancelled) return;
+        if (!data || !Array.isArray(data.substitutions)) {
+          setState({ status: "error", data: null, error: "データ形式が不正です" });
+          return;
         }
+        if (!Array.isArray(data.slots)) {
+          setState({ status: "error", data: null, error: "共有データに slots が含まれていません" });
+          return;
+        }
+        if (
+          data.slots.length > MAX_SHARE_SLOTS ||
+          data.substitutions.length > MAX_SHARE_SUBS
+        ) {
+          setState({
+            status: "error",
+            data: null,
+            error: `共有データが上限 (slots ${MAX_SHARE_SLOTS} / subs ${MAX_SHARE_SUBS}) を超えています`,
+          });
+          return;
+        }
+        setState({ status: "ok", data, error: null });
       })
       .catch(() => {
         if (!cancelled) {
