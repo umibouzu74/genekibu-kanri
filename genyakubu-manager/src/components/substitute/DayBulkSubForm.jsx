@@ -82,7 +82,6 @@ export function DayBulkSubForm({
 
   const handleSave = () => {
     const errs = {};
-    if (!date) errs.date = "日付を入力してください";
     const records = Object.entries(rowState)
       .filter(([, v]) => v && v.substitute && v.substitute.trim())
       .map(([slotId, v]) => {

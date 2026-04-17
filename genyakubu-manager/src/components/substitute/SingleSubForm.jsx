@@ -125,7 +125,6 @@ export function SingleSubForm({
 
   const handleSave = () => {
     const errs = {};
-    if (!date) errs.date = "日付を入力してください";
     if (!f.slotId) errs.slotId = "コマを選択してください";
     if (isMultiTeacher && !f.originalTeacher)
       errs.originalTeacher = "元講師を選択してください";

@@ -8,6 +8,9 @@ import { DayBulkSubForm } from "./substitute/DayBulkSubForm";
 // モード切替と日付管理のみを扱う薄いラッパー。
 // 単一コマ入力 → SingleSubForm / 1日分まとめ入力 → DayBulkSubForm。
 // 編集時 (sub prop あり) は常に単一モード固定。
+//
+// 日付入力は親で保持し、両サブフォームへ prop として流す。
+// 日付の必須 validation も親で行い、空なら onSave 呼び出しを止める。
 export function SubstituteForm({
   sub,
   slots,
@@ -21,9 +24,24 @@ export function SubstituteForm({
   const today = fmtDate(new Date());
   const [mode, setMode] = useState("single");
   const [date, setDate] = useState(sub?.date || today);
+  const [dateError, setDateError] = useState(null);
 
   const activeMode = isEdit ? "single" : mode;
   const dayOfDate = dateToDay(date);
+
+  const handleDateChange = (e) => {
+    setDate(e.target.value);
+    setDateError(null);
+  };
+
+  // サブフォームからの onSave をラップし、日付空なら表示を赤くして中断する。
+  const handleSave = (payload) => {
+    if (!date) {
+      setDateError("日付を入力してください");
+      return;
+    }
+    onSave(payload);
+  };
 
   const modeBtn = (key, label) => {
     const active = activeMode === key;
@@ -71,13 +89,18 @@ export function SubstituteForm({
         <input
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
-          style={S.input}
+          onChange={handleDateChange}
+          style={{ ...S.input, borderColor: dateError ? "#c44" : "#ccc" }}
         />
         {dayOfDate && (
           <span style={{ fontSize: 11, color: "#888", marginLeft: 8 }}>
             ({dayOfDate}曜日)
           </span>
+        )}
+        {dateError && (
+          <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>
+            {dateError}
+          </div>
         )}
       </div>
 
@@ -90,7 +113,7 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
-          onSave={onSave}
+          onSave={handleSave}
           onCancel={onCancel}
         />
       ) : (
@@ -101,7 +124,7 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
-          onSave={onSave}
+          onSave={handleSave}
           onCancel={onCancel}
         />
       )}
