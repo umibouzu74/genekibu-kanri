@@ -1,16 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay } from "../../../data";
+import { dateToDay, DEPT_COLOR } from "../../../data";
+import { getDashSections } from "../../../constants/schedule";
 import { ContextMenu } from "../../ContextMenu";
 import { AbsenceSlotCard } from "./AbsenceSlotCard";
-import { AbsenceDashDayRow } from "./AbsenceDashDayRow";
+import { AbsenceExcelSection } from "./AbsenceExcelSection";
 import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
 
 // ─── 欠勤ワークフロー: 時間割グリッド (直接操作 UI) ────────────
-// レイアウトは Dashboard 日別 (DashDayRow) と同じ 3 カラム。
+// レイアウトは Dashboard 時間割 (ExcelGridView) と同じ Excel グリッド。
+// 部署セクションを左右 2 カラム (中学部 / それ以外) に並べ、各セクション内は
+// 行=時間、列=学年・クラス・教室 の表構造。
 // 編集機能:
-//   1. スロットをドラッグして別時間行にドロップ → move 下書き
+//   1. スロットをドラッグして別時間セルにドロップ → move 下書き (時間のみ更新)
 //   2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 回数補正 / 取消
 //   3. 合同モード中はヒューリスティック候補のみ破線枠、クリックで合同確定
 // draft は親から渡された callback 経由で更新する (直接 mutate しない)。
@@ -30,6 +33,7 @@ export function AbsenceTimetable({
   const [combineSource, setCombineSource] = useState(null);
   const [subPicker, setSubPicker] = useState(null); // { slot, anchorRect }
   const [overridePicker, setOverridePicker] = useState(null); // { slot, anchorRect }
+  const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
 
   const dow = useMemo(() => dateToDay(date), [date]);
 
@@ -64,7 +68,7 @@ export function AbsenceTimetable({
     });
   }, [slots, draft]);
 
-  // AbsenceDashDayRow に渡す表示対象 (absorbed は除外、host/移動済みは残す)
+  // 表示対象 (absorbed は除外、host/移動済みは残す)
   const visibleSlots = useMemo(
     () => effectiveSlots.filter((s) => !absorbedSet.has(s.id)),
     [effectiveSlots, absorbedSet]
@@ -180,6 +184,7 @@ export function AbsenceTimetable({
   const handleDragStart = useCallback((e, slot) => {
     e.dataTransfer.setData("text/plain", String(slot.id));
     e.dataTransfer.effectAllowed = "move";
+    setDragState({ draggingId: slot.id, overCell: null });
   }, []);
 
   // ドロップ: move 下書きを作成 / 同じ時刻なら解除
@@ -214,7 +219,7 @@ export function AbsenceTimetable({
     [combineSource, subjects, draft, draftApi]
   );
 
-  // 個々のスロットカード描画 (AbsenceSectionColumn に渡す関数)
+  // 個々のスロットカード描画 (AbsenceExcelSection に渡す関数)
   const renderCard = useCallback(
     (s) => {
       const row = draft[s.id] || {};
@@ -379,7 +384,7 @@ export function AbsenceTimetable({
           marginBottom: 6,
         }}
       >
-        コマをドラッグ → 別時間にドロップで移動 / 右クリック → メニューで代行・合同・回数補正
+        コマをドラッグ → 別時間セルにドロップで移動 / 右クリック → メニューで代行・合同・回数補正
       </div>
 
       {effectiveSlots.length === 0 ? (
@@ -396,12 +401,68 @@ export function AbsenceTimetable({
           対象日のコマがありません
         </div>
       ) : (
-        <AbsenceDashDayRow
-          dow={dow}
-          slots={visibleSlots}
-          renderCard={renderCard}
-          onTimeDrop={handleDrop}
-        />
+        (() => {
+          const sections = getDashSections(dow);
+          const leftCol = [];
+          const rightCol = [];
+          for (const sec of sections) {
+            if (sec.dept === "中学部") leftCol.push(sec);
+            else rightCol.push(sec);
+          }
+          const renderSection = (sec) => {
+            const color =
+              sec.color ||
+              DEPT_COLOR[sec.dept] ||
+              { b: "#e8e8e8", f: "#444", accent: "#888" };
+            return (
+              <AbsenceExcelSection
+                key={sec.key}
+                label={sec.label}
+                headerColor={color.accent}
+                slots={visibleSlots}
+                originalSlots={slots}
+                day={dow}
+                sectionFilterFn={sec.filterFn}
+                renderCard={renderCard}
+                onTimeDrop={handleDrop}
+                dragState={dragState}
+                setDragState={setDragState}
+              />
+            );
+          };
+          return (
+            <div
+              className="absence-excel-sections"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+                alignItems: "start",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  minWidth: 0,
+                }}
+              >
+                {leftCol.map(renderSection)}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  minWidth: 0,
+                }}
+              >
+                {rightCol.map(renderSection)}
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* Context Menu */}
