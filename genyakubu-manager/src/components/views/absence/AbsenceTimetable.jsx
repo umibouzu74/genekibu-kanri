@@ -33,7 +33,6 @@ export function AbsenceTimetable({
   const [combineSource, setCombineSource] = useState(null);
   const [subPicker, setSubPicker] = useState(null); // { slot, anchorRect }
   const [overridePicker, setOverridePicker] = useState(null); // { slot, anchorRect }
-  const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
 
   const dow = useMemo(() => dateToDay(date), [date]);
 
@@ -184,7 +183,6 @@ export function AbsenceTimetable({
   const handleDragStart = useCallback((e, slot) => {
     e.dataTransfer.setData("text/plain", String(slot.id));
     e.dataTransfer.effectAllowed = "move";
-    setDragState({ draggingId: slot.id, overCell: null });
   }, []);
 
   // ドロップ: move 下書きを作成 / 同じ時刻なら解除
@@ -425,8 +423,6 @@ export function AbsenceTimetable({
                 sectionFilterFn={sec.filterFn}
                 renderCard={renderCard}
                 onTimeDrop={handleDrop}
-                dragState={dragState}
-                setDragState={setDragState}
               />
             );
           };

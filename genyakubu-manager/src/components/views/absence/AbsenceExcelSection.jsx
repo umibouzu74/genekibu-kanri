@@ -11,88 +11,174 @@ import {
 } from "../../../utils/excelGrid";
 import { AbsenceExcelCell } from "./AbsenceExcelCell";
 
-// ─── Absence Excel Section (one table per department) ─────────────
 // Dashboard の ExcelSection の欠勤ワークフロー版。
-// ドラッグ＆ドロップのターゲットは「セル」で、ドロップ時は時間のみを
-// 更新する (学年・クラス・教室は変更しない — 欠勤 move ドラフトの仕様)。
-// セルには該当する effective-time のスロットを複数縦スタックして表示する
-// (移動衝突時に両方のカードが見えるように)。
+// カラム定義は move 適用前の `originalSlots` から作ることで、移動ドラフトが
+// 新しい学年・クラス・教室の列を生やさないようにする。ドロップ時は時間のみを
+// 更新 — 学年・クラス・教室は変更しない (欠勤 move ドラフトの仕様)。
 export function AbsenceExcelSection({
   label,
   headerColor,
-  slots, // effective-time を持つ (s._time | s.time) 可視スロット
-  originalSlots, // move ドラフト適用前 — カラム定義に使う
+  slots,
+  originalSlots,
   day,
   sectionFilterFn,
   renderCard,
   onTimeDrop,
-  dragState,
-  setDragState,
 }) {
-  // カラム定義は ドラフト非適用の元スロットから生成する。これにより move が
-  // 新しい学年/クラス/教室の列を作らない。
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(originalSlots, day, sectionFilterFn),
     [originalSlots, day, sectionFilterFn]
   );
 
-  // このセクションに属する元スロット (colSpan 計算用)
   const sectionOriginalSlots = useMemo(
     () => originalSlots.filter((s) => s.day === day && sectionFilterFn(s)),
     [originalSlots, day, sectionFilterFn]
   );
 
-  // このセクションに属する effective スロット (配置用)
   const sectionEffectiveSlots = useMemo(
     () => slots.filter((s) => s.day === day && sectionFilterFn(s)),
     [slots, day, sectionFilterFn]
   );
 
-  // 時間行: 元の時間 ∪ 移動先の時間。移動先に元々コマがない時間でもドロップ
-  // 可能にするため。
+  // 移動先に元々コマがない時間でもドロップ可能にするため、元時間と移動先時間
+  // の両方を時間行に含める。
   const timeRows = useMemo(() => {
     const times = new Set();
     for (const s of sectionOriginalSlots) times.add(s.time);
-    for (const s of sectionEffectiveSlots) {
-      const t = s._time || s.time;
-      times.add(t);
-    }
+    for (const s of sectionEffectiveSlots) times.add(s._time || s.time);
     return [...times].sort(
       (a, b) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
     );
   }, [sectionOriginalSlots, sectionEffectiveSlots]);
 
-  const totalColumns = useMemo(
-    () => gradeGroups.reduce((n, g) => n + g.columns.length, 0),
-    [gradeGroups]
-  );
+  const { allColumns, totalColumns } = useMemo(() => {
+    const all = gradeGroups.flatMap((g) =>
+      g.columns.map((c) => ({ ...c, grade: g.grade }))
+    );
+    return { allColumns: all, totalColumns: all.length };
+  }, [gradeGroups]);
 
-  const allColumns = useMemo(
-    () =>
-      gradeGroups.flatMap((g) =>
-        g.columns.map((c) => ({ ...c, grade: g.grade }))
-      ),
-    [gradeGroups]
+  // 個別コマを (time, grade, cls, room) でバケット化。セル描画を O(1) 参照にする。
+  const cardsByCell = useMemo(() => {
+    const map = new Map();
+    for (const s of sectionEffectiveSlots) {
+      if (isCombinedCls(s.cls)) continue;
+      const t = s._time || s.time;
+      // 合同範囲 "S/AB" などと個別 cls の突き合わせは classMatchesColumn に任せる
+      // 必要があるので、ここでは (t, grade, room) でグルーピングしておき、
+      // 取得時に cls マッチを最終チェックする。
+      const key = `${t}|${s.grade}|${s.room}`;
+      let bucket = map.get(key);
+      if (!bucket) {
+        bucket = [];
+        map.set(key, bucket);
+      }
+      bucket.push(s);
+    }
+    return map;
+  }, [sectionEffectiveSlots]);
+
+  // 合同コマ (cls がレンジ指定) は colSpan で表示する。
+  // 時間×学年ごとに「元スロット (colSpan 計算用)」「表示用 effective スロット」
+  // の対応を先に全時間行ぶん構築し、row ループ中のループ回数を減らす。
+  const combinedByTime = useMemo(() => {
+    const effCombinedByTimeGrade = new Map();
+    for (const s of sectionEffectiveSlots) {
+      if (!isCombinedCls(s.cls)) continue;
+      const t = s._time || s.time;
+      const key = `${t}|${s.grade}`;
+      let bucket = effCombinedByTimeGrade.get(key);
+      if (!bucket) {
+        bucket = [];
+        effCombinedByTimeGrade.set(key, bucket);
+      }
+      bucket.push(s);
+    }
+
+    const byTime = new Map();
+    for (const time of timeRows) {
+      const cells = []; // { colIdx, span, cards }
+      const consumed = new Set();
+      for (const g of gradeGroups) {
+        const origCombined = findCombinedSlots(
+          sectionOriginalSlots,
+          day,
+          time,
+          g.grade
+        );
+        const effCombined =
+          effCombinedByTimeGrade.get(`${time}|${g.grade}`) || [];
+        const effMatched = new Set();
+
+        const entries = [];
+        for (const orig of origCombined) {
+          const cards = effCombined.filter(
+            (e) => e.cls === orig.cls && e.room === orig.room
+          );
+          if (cards.length > 0) {
+            entries.push({ orig, cards });
+            cards.forEach((c) => effMatched.add(c.id));
+          }
+        }
+        // 移動で入ってきた合同コマ (元位置に対応スロットが無い)
+        for (const eff of effCombined) {
+          if (effMatched.has(eff.id)) continue;
+          entries.push({ orig: eff, cards: [eff] });
+        }
+
+        let absStart = 0;
+        for (const gg of gradeGroups) {
+          if (gg.grade === g.grade) break;
+          absStart += gg.columns.length;
+        }
+        for (const entry of entries) {
+          const spanInfo = getCombinedSpan(entry.orig, g.columns);
+          if (!spanInfo) continue;
+          const colIdx = absStart + spanInfo.startIdx;
+          cells.push({ colIdx, span: spanInfo.span, cards: entry.cards });
+          for (let i = colIdx; i < colIdx + spanInfo.span; i++) {
+            consumed.add(i);
+          }
+        }
+      }
+      byTime.set(time, { cells, consumed });
+    }
+    return byTime;
+  }, [
+    timeRows,
+    gradeGroups,
+    sectionEffectiveSlots,
+    sectionOriginalSlots,
+    day,
+  ]);
+
+  const sectionHeader = (
+    <div
+      style={{
+        background: headerColor,
+        color: "#fff",
+        padding: "6px 14px",
+        borderRadius: "8px 8px 0 0",
+        fontWeight: 800,
+        fontSize: 13,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <span>{label}</span>
+      {sectionOriginalSlots.length > 0 && (
+        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>
+          {formatCount(weightedSlotCount(sectionOriginalSlots))}コマ
+        </span>
+      )}
+    </div>
   );
 
   if (gradeGroups.length === 0 || timeRows.length === 0) {
     return (
       <div>
-        <div
-          style={{
-            background: headerColor,
-            color: "#fff",
-            padding: "6px 14px",
-            borderRadius: "8px 8px 0 0",
-            fontWeight: 800,
-            fontSize: 13,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>{label}</span>
-        </div>
+        {sectionHeader}
         <div
           style={{
             background: "#fff",
@@ -111,48 +197,25 @@ export function AbsenceExcelSection({
     );
   }
 
-  const slotCount = weightedSlotCount(sectionOriginalSlots);
-
-  // セルに入れる effective スロット (複数) を抽出。個別コマのみ。
-  const findCardsForCell = (time, grade, cls, room) => {
-    return sectionEffectiveSlots.filter((s) => {
-      const t = s._time || s.time;
-      if (t !== time) return false;
-      if (s.grade !== grade) return false;
-      if (s.room !== room) return false;
-      if (isCombinedCls(s.cls)) return false;
-      return classMatchesColumn(s.cls, cls);
-    });
+  const getCardsForCell = (time, grade, cls, room) => {
+    const bucket = cardsByCell.get(`${time}|${grade}|${room}`);
+    if (!bucket) return [];
+    return bucket.filter((s) => classMatchesColumn(s.cls, cls));
   };
 
-  // 合同コマ (cls がレンジ指定) も effective-time の一致で探す
-  const findCombinedCardsForCell = (time, grade) => {
-    return sectionEffectiveSlots.filter((s) => {
-      const t = s._time || s.time;
-      return t === time && s.grade === grade && isCombinedCls(s.cls);
-    });
-  };
+  const renderCellAt = (cellKey, time, cards, colSpan) => (
+    <AbsenceExcelCell
+      key={cellKey}
+      cards={cards}
+      colSpan={colSpan}
+      renderCard={renderCard}
+      onDrop={(slotId) => onTimeDrop(slotId, time)}
+    />
+  );
 
   return (
     <div>
-      <div
-        style={{
-          background: headerColor,
-          color: "#fff",
-          padding: "6px 14px",
-          borderRadius: "8px 8px 0 0",
-          fontWeight: 800,
-          fontSize: 13,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span>{label}</span>
-        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>
-          {formatCount(slotCount)}コマ
-        </span>
-      </div>
+      {sectionHeader}
       <div
         style={{
           overflowX: "auto",
@@ -170,7 +233,6 @@ export function AbsenceExcelSection({
           }}
         >
           <thead>
-            {/* Grade header row */}
             <tr>
               <th
                 rowSpan={3}
@@ -211,7 +273,6 @@ export function AbsenceExcelSection({
                 );
               })}
             </tr>
-            {/* Class header row */}
             <tr>
               {allColumns.map((col) => (
                 <th
@@ -229,7 +290,6 @@ export function AbsenceExcelSection({
                 </th>
               ))}
             </tr>
-            {/* Room header row */}
             <tr>
               {allColumns.map((col) => (
                 <th
@@ -252,64 +312,9 @@ export function AbsenceExcelSection({
           <tbody>
             {timeRows.map((time) => {
               const tp = splitTime(time);
-              const consumed = new Set();
-
-              // 合同コマ (cls レンジ) を先に確保し colSpan で表示する
-              const combinedByGrade = new Map();
-              for (const g of gradeGroups) {
-                // colSpan の計算は元スロット基準 (列が存在する前提)
-                const origCombined = findCombinedSlots(
-                  sectionOriginalSlots,
-                  day,
-                  time,
-                  g.grade
-                );
-                // effective で同じ (cls, room) の合同コマを表示対象にする
-                const effCombined = findCombinedCardsForCell(time, g.grade);
-                const list = [];
-                for (const orig of origCombined) {
-                  const effMatches = effCombined.filter(
-                    (e) => e.cls === orig.cls && e.room === orig.room
-                  );
-                  if (effMatches.length > 0) {
-                    list.push({ orig, cards: effMatches });
-                  }
-                }
-                // 元スロットと一致しない effective 合同 (移動で入ってきた) も表示
-                for (const eff of effCombined) {
-                  const already = list.find(
-                    (x) => x.orig.cls === eff.cls && x.orig.room === eff.room
-                  );
-                  if (!already) {
-                    list.push({ orig: eff, cards: [eff] });
-                  }
-                }
-                if (list.length > 0) combinedByGrade.set(g.grade, list);
-              }
-
-              const combinedCells = []; // { colIdx, span, cards }
-              for (const [grade, entries] of combinedByGrade) {
-                const gradeColumns =
-                  gradeGroups.find((g) => g.grade === grade)?.columns || [];
-                for (const entry of entries) {
-                  const spanInfo = getCombinedSpan(entry.orig, gradeColumns);
-                  if (!spanInfo) continue;
-                  let absStart = 0;
-                  for (const g of gradeGroups) {
-                    if (g.grade === grade) break;
-                    absStart += g.columns.length;
-                  }
-                  const absIdx = absStart + spanInfo.startIdx;
-                  combinedCells.push({
-                    colIdx: absIdx,
-                    span: spanInfo.span,
-                    cards: entry.cards,
-                  });
-                  for (let i = absIdx; i < absIdx + spanInfo.span; i++) {
-                    consumed.add(i);
-                  }
-                }
-              }
+              const { cells: combinedCells, consumed } = combinedByTime.get(
+                time
+              ) || { cells: [], consumed: new Set() };
 
               return (
                 <tr key={time}>
@@ -339,72 +344,25 @@ export function AbsenceExcelSection({
                       const combined = combinedCells.find(
                         (c) => c.colIdx === colIdx
                       );
-                      if (combined) {
-                        const cellKey = `${time}__combined_${colIdx}`;
-                        return (
-                          <AbsenceExcelCell
-                            key={cellKey}
-                            cards={combined.cards}
-                            colSpan={combined.span}
-                            isDragOver={dragState.overCell === cellKey}
-                            onDragOver={() =>
-                              setDragState((prev) =>
-                                prev.overCell === cellKey
-                                  ? prev
-                                  : { ...prev, overCell: cellKey }
-                              )
-                            }
-                            onDragLeave={() =>
-                              setDragState((prev) =>
-                                prev.overCell === cellKey
-                                  ? { ...prev, overCell: null }
-                                  : prev
-                              )
-                            }
-                            onDrop={(slotId) => {
-                              setDragState({ draggingId: null, overCell: null });
-                              onTimeDrop(slotId, time);
-                            }}
-                            renderCard={renderCard}
-                          />
-                        );
-                      }
-                      return null;
+                      if (!combined) return null;
+                      return renderCellAt(
+                        `${time}__combined_${colIdx}`,
+                        time,
+                        combined.cards,
+                        combined.span
+                      );
                     }
-
-                    const cards = findCardsForCell(
+                    const cards = getCardsForCell(
                       time,
                       col.grade,
                       col.cls,
                       col.room
                     );
-                    const cellKey = `${time}_${col.grade}_${col.cls}_${col.room}`;
-                    return (
-                      <AbsenceExcelCell
-                        key={cellKey}
-                        cards={cards}
-                        colSpan={1}
-                        isDragOver={dragState.overCell === cellKey}
-                        onDragOver={() =>
-                          setDragState((prev) =>
-                            prev.overCell === cellKey
-                              ? prev
-                              : { ...prev, overCell: cellKey }
-                          )
-                        }
-                        onDragLeave={() =>
-                          setDragState((prev) =>
-                            prev.overCell === cellKey
-                              ? { ...prev, overCell: null }
-                              : prev
-                          )
-                        }
-                        onDrop={(slotId) => {
-                          setDragState({ draggingId: null, overCell: null });
-                          onTimeDrop(slotId, time);
-                        }}
-                        renderCard={renderCard}
-                      />
+                    return renderCellAt(
+                      `${time}_${col.grade}_${col.cls}_${col.room}`,
+                      time,
+                      cards,
+                      1
                     );
                   })}
                 </tr>
