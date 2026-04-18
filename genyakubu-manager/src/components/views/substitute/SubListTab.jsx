@@ -1,8 +1,6 @@
-import { useMemo } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
-  fmtDate,
   gradeColor as GC,
   SUB_STATUS,
   SUB_STATUS_KEYS,
@@ -41,14 +39,10 @@ export function SubListTab({
   adjustments,
   sessionOverrides,
 }) {
-  const todayStr = useMemo(() => fmtDate(new Date()), []);
-
-  // fMonth "YYYY-MM" → year/month (1-indexed) に分解
-  const [yearSel, monthSel] = useMemo(() => {
-    if (!fMonth) return [null, null];
-    const [y, m] = fMonth.split("-").map(Number);
-    return [Number.isFinite(y) ? y : null, Number.isFinite(m) ? m : null];
-  }, [fMonth]);
+  // fMonth "YYYY-MM" → year/month (1-indexed)
+  const fMonthParts = fMonth ? fMonth.split("-").map(Number) : [null, null];
+  const yearSel = Number.isFinite(fMonthParts[0]) ? fMonthParts[0] : null;
+  const monthSel = Number.isFinite(fMonthParts[1]) ? fMonthParts[1] : null;
 
   return (
     <div>
@@ -146,7 +140,6 @@ export function SubListTab({
         timetables={timetables || []}
         adjustments={adjustments || []}
         sessionOverrides={sessionOverrides || []}
-        todayStr={todayStr}
       />
 
       {/* 詳細リスト (編集・削除用) */}

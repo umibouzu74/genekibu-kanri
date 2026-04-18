@@ -1,16 +1,19 @@
 import { useMemo } from "react";
 import { fmtDate } from "../../../data";
-import { DashboardListView } from "../dashboard/DashboardListView";
+import {
+  isBeyondCutoff,
+  isEntireDayBeyondCutoff,
+  isTimetableActiveForDate,
+} from "../../../utils/timetable";
+import { DashDayRow } from "../dashboard/DashDayRow";
 import { buildDayRange, makeHolidayHelpers } from "../dashboardHelpers";
 
-// ─── 代行管理: 選択月の日別時間割 ───────────────────────────────
-// Dashboard の「日別」モード (DashboardListView) を月単位で表示する。
-// 親から渡された `filteredSubs` (月/講師/ステータスで絞り済み) のみが
-// 各コマに 代行バッジとして反映されるため、ユーザーはフィルタ条件を
-// 時間割上で視覚的に確認できる。
+// 代行管理「代行一覧」タブ用: 選択月の 1 日〜末日を Dashboard 日別モード
+// と同じ DashDayRow で並べる。DashboardListView は再利用しない
+// (SubSummaryCards が todayStr 基準で動くため、過去月・未来月での
+//  サマリが直感に反する)。
 
 function daysInMonth(year, month) {
-  // month: 1-indexed
   return new Date(year, month, 0).getDate();
 }
 
@@ -27,24 +30,24 @@ export function SubMonthlyTimetable({
   timetables,
   adjustments,
   sessionOverrides,
-  todayStr,
 }) {
   const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
     () => makeHolidayHelpers(holidays || [], examPeriods || []),
     [holidays, examPeriods]
   );
 
-  // 選択月の 1 日〜末日までを days に展開
   const days = useMemo(() => {
     if (!year || !month) return [];
-    const first = new Date(year, month - 1, 1);
-    return buildDayRange(fmtDate(first), daysInMonth(year, month));
+    return buildDayRange(
+      fmtDate(new Date(year, month - 1, 1)),
+      daysInMonth(year, month)
+    );
   }, [year, month]);
 
   const sessionCtx = useMemo(
     () => ({
       classSets: classSets || [],
-      allSlots: slots,
+      allSlots: slots || [],
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
@@ -52,7 +55,15 @@ export function SubMonthlyTimetable({
       sessionOverrides: sessionOverrides || [],
       orientationOnFirstDay: true,
     }),
-    [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides]
+    [
+      classSets,
+      slots,
+      displayCutoff,
+      isOffForGrade,
+      biweeklyAnchors,
+      adjustments,
+      sessionOverrides,
+    ]
   );
 
   if (!year || !month) {
@@ -74,17 +85,56 @@ export function SubMonthlyTimetable({
   }
 
   return (
-    <DashboardListView
-      slots={slots}
-      subs={filteredSubs}
-      timetables={timetables}
-      displayCutoff={displayCutoff}
-      days={days}
-      holidaysFor={holidaysFor}
-      examPeriodsFor={examPeriodsFor}
-      isOffForGrade={isOffForGrade}
-      sessionCtx={sessionCtx}
-      todayStr={todayStr}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {days.map(({ dateStr, dow }) => {
+        const hols = holidaysFor(dateStr);
+        const entireDayCutoff = isEntireDayBeyondCutoff(dateStr, displayCutoff);
+        const daySlots = entireDayCutoff
+          ? []
+          : (slots || []).filter(
+              (s) =>
+                s.day === dow &&
+                !isOffForGrade(dateStr, s.grade, s.subj) &&
+                (!timetables ||
+                  timetables.length === 0 ||
+                  isTimetableActiveForDate(
+                    timetables.find((t) => t.id === (s.timetableId ?? 1)),
+                    dateStr,
+                    s.grade
+                  )) &&
+                !isBeyondCutoff(dateStr, s.grade, displayCutoff)
+            );
+        return (
+          <div key={dateStr}>
+            {entireDayCutoff && (
+              <div
+                style={{
+                  background: "#fff8e0",
+                  border: "1px solid #e0d080",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  marginBottom: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#8a7020",
+                  textAlign: "center",
+                }}
+              >
+                この日以降の予定は未確定です
+              </div>
+            )}
+            <DashDayRow
+              date={dateStr}
+              dow={dow}
+              holidays={hols}
+              slots={daySlots}
+              subs={filteredSubs}
+              examPeriodsForDate={examPeriodsFor(dateStr)}
+              sessionCtx={sessionCtx}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }
