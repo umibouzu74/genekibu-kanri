@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSuggestions } from "./ClassSetManager";
+import { buildSuggestions } from "../utils/classSetSuggestions";
 
 // テスト用のスロット生成ヘルパ。授業セット提案ロジックの単体テスト用。
 function makeSlot(id, grade, day, cls, time = "19:00-20:00") {

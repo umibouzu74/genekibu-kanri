@@ -15,6 +15,7 @@ import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
 import { buildSessionCountMap } from "../../utils/sessionCount";
+import { filterSlotsByActiveTimetable } from "../../utils/timetable";
 import { makeHolidayHelpers } from "./dashboardHelpers";
 import { ExcelSection } from "./excelGrid/ExcelSection";
 
@@ -47,12 +48,10 @@ export function ExcelGridView({
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   // Filter by active timetable
-  const filteredSlots = useMemo(() => {
-    if (!timetables || timetables.length <= 1) return slots;
-    return slots.filter(
-      (s) => (s.timetableId ?? 1) === (activeTimetableId || 1)
-    );
-  }, [slots, timetables, activeTimetableId]);
+  const filteredSlots = useMemo(
+    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
+    [slots, timetables, activeTimetableId]
+  );
 
   // Check which days have slots
   const daysWithSlots = useMemo(() => {

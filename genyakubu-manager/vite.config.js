@@ -11,6 +11,31 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split vendor dependencies into their own chunks so page navigation
+        // doesn't re-download React/Firebase when a lazy view loads.
+        manualChunks: (id) => {
+          if (id.includes("node_modules")) {
+            if (id.includes("firebase")) return "firebase";
+            if (id.includes("react-dom") || id.includes("scheduler")) {
+              return "react-dom";
+            }
+            if (
+              id.includes("/react/") ||
+              id.endsWith("/react") ||
+              id.includes("react/jsx-runtime") ||
+              id.includes("react/jsx-dev-runtime")
+            ) {
+              return "react";
+            }
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     environment: "node",
     include: ["src/**/*.test.{js,ts,jsx,tsx}"],

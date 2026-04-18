@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -27,6 +27,7 @@ import {
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
+import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
@@ -35,24 +36,64 @@ import { escapeHtml } from "./utils/escape";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
-import { SubstituteForm } from "./components/SubstituteForm";
-import { HolidayManager } from "./components/HolidayManager";
-import { ExamPeriodManager } from "./components/ExamPeriodManager";
 import { Sidebar } from "./components/Sidebar";
-import { DataManager } from "./components/DataManager";
-import { CommandPalette } from "./components/CommandPalette";
+import { TimetableSelector } from "./components/TimetableSelector";
 
 import { Dashboard } from "./components/views/Dashboard";
 import { WeekView } from "./components/views/WeekView";
 import { MonthView } from "./components/views/MonthView";
 import { AllView } from "./components/views/AllView";
-import { MasterView } from "./components/views/MasterView";
-import { SubstituteView } from "./components/views/SubstituteView";
-import { ConfirmedSubsView } from "./components/views/ConfirmedSubsView";
-import { StaffManagerView } from "./components/views/StaffManagerView";
-import { CompareView } from "./components/views/CompareView";
-import { TimetableManagerView } from "./components/views/TimetableManagerView";
-import { TimetableSelector } from "./components/TimetableSelector";
+
+// Lazy-loaded views (less frequently used or gated by navigation).
+const MasterView = lazy(() =>
+  import("./components/views/MasterView").then((m) => ({ default: m.MasterView }))
+);
+const SubstituteView = lazy(() =>
+  import("./components/views/SubstituteView").then((m) => ({ default: m.SubstituteView }))
+);
+const ConfirmedSubsView = lazy(() =>
+  import("./components/views/ConfirmedSubsView").then((m) => ({ default: m.ConfirmedSubsView }))
+);
+const StaffManagerView = lazy(() =>
+  import("./components/views/StaffManagerView").then((m) => ({ default: m.StaffManagerView }))
+);
+const CompareView = lazy(() =>
+  import("./components/views/CompareView").then((m) => ({ default: m.CompareView }))
+);
+const TimetableManagerView = lazy(() =>
+  import("./components/views/TimetableManagerView").then((m) => ({ default: m.TimetableManagerView }))
+);
+
+// Lazy-loaded modals (only rendered on demand).
+const SubstituteForm = lazy(() =>
+  import("./components/SubstituteForm").then((m) => ({ default: m.SubstituteForm }))
+);
+const HolidayManager = lazy(() =>
+  import("./components/HolidayManager").then((m) => ({ default: m.HolidayManager }))
+);
+const ExamPeriodManager = lazy(() =>
+  import("./components/ExamPeriodManager").then((m) => ({ default: m.ExamPeriodManager }))
+);
+const DataManager = lazy(() =>
+  import("./components/DataManager").then((m) => ({ default: m.DataManager }))
+);
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette }))
+);
+
+function ViewFallback() {
+  return (
+    <div
+      style={{
+        padding: 24,
+        color: colors.inkMuted,
+        fontSize: 13,
+      }}
+    >
+      読み込み中...
+    </div>
+  );
+}
 
 export default function App() {
   const toasts = useToasts();
@@ -281,10 +322,10 @@ export default function App() {
 
   // Slots filtered by active timetable (for aggregate views that show
   // the "current" timetable rather than a specific date).
-  const ttFilteredSlots = useMemo(() => {
-    if (!timetables || timetables.length <= 1) return slots;
-    return slots.filter((s) => (s.timetableId ?? 1) === activeTimetableId);
-  }, [slots, timetables, activeTimetableId]);
+  const ttFilteredSlots = useMemo(
+    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
+    [slots, timetables, activeTimetableId]
+  );
 
   const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
 
@@ -519,6 +560,7 @@ export default function App() {
         )}
 
         <div id="main-content">
+          <Suspense fallback={<ViewFallback />}>
           {view === VIEWS.DASH && !selected && (
             <Dashboard
               slots={slots}
@@ -656,6 +698,7 @@ export default function App() {
               examPeriods={examPeriods}
             />
           )}
+          </Suspense>
         </div>
       </div>
 
@@ -682,49 +725,58 @@ export default function App() {
           title={editSub === "new" ? "代行を追加" : "代行を編集"}
           onClose={() => setEditSub(null)}
         >
-          <SubstituteForm
-            sub={editSub === "new" ? null : editSub}
-            slots={slots}
-            subs={subs}
-            partTimeStaff={partTimeStaff}
-            subjects={subjects}
-            onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
-            onCancel={() => setEditSub(null)}
-          />
+          <Suspense fallback={<ViewFallback />}>
+            <SubstituteForm
+              sub={editSub === "new" ? null : editSub}
+              slots={slots}
+              subs={subs}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
+              onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
+              onCancel={() => setEditSub(null)}
+            />
+          </Suspense>
         </Modal>
       )}
 
       {/* Data Manager Modal */}
       {showDataMgr && (
         <Modal title="データ管理" onClose={() => setShowDataMgr(false)}>
-          <DataManager
-            slots={slots}
-            holidays={holidays}
-            subs={subs}
-            onExport={dataIO.handleExport}
-            onImport={dataIO.handleImport}
-            onReset={dataIO.handleReset}
-            importing={importing}
-          />
+          <Suspense fallback={<ViewFallback />}>
+            <DataManager
+              slots={slots}
+              holidays={holidays}
+              subs={subs}
+              onExport={dataIO.handleExport}
+              onImport={dataIO.handleImport}
+              onReset={dataIO.handleReset}
+              importing={importing}
+            />
+          </Suspense>
         </Modal>
       )}
 
-      {/* Command Palette (Cmd+K) */}
-      <CommandPalette
-        open={cmdPaletteOpen}
-        onClose={() => setCmdPaletteOpen(false)}
-        slots={slots}
-        subs={subs}
-        onSelectTeacher={(t) => {
-          selectTeacher(t);
-          setCmdPaletteOpen(false);
-        }}
-        onSelectView={(v) => {
-          selectView(v);
-          setCmdPaletteOpen(false);
-        }}
-        views={VIEWS}
-      />
+      {/* Command Palette (Cmd+K) — lazy-loaded; only mount when open so
+          the initial bundle doesn't pull in search/filter utilities. */}
+      {cmdPaletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={cmdPaletteOpen}
+            onClose={() => setCmdPaletteOpen(false)}
+            slots={slots}
+            subs={subs}
+            onSelectTeacher={(t) => {
+              selectTeacher(t);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectView={(v) => {
+              selectView(v);
+              setCmdPaletteOpen(false);
+            }}
+            views={VIEWS}
+          />
+        </Suspense>
+      )}
 
       {/* Responsive CSS */}
       <style>{`
