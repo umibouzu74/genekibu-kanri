@@ -101,6 +101,7 @@ export function CommandPalette({
       { key: views.SUBS, label: "代行管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
       { key: views.STAFF, label: "バイト管理" },
+      { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
     ];
     for (const v of viewNames) {
       if (v.label.toLowerCase().includes(q)) {

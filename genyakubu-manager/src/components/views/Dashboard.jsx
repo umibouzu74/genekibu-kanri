@@ -42,6 +42,8 @@ export function Dashboard({
   examPeriods = [],
   classSets = [],
   biweeklyAnchors = [],
+  adjustments = [],
+  sessionOverrides = [],
   activeTimetableId,
   partTimeStaff,
   subjects,
@@ -85,9 +87,11 @@ export function Dashboard({
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors,
+      adjustments,
+      sessionOverrides,
       orientationOnFirstDay: true,
     }),
-    [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors]
+    [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides]
   );
 
   return (
@@ -156,6 +160,8 @@ export function Dashboard({
           displayCutoff={displayCutoff}
           viewDate={startDate}
           onViewDateChange={setStartDate}
+          adjustments={adjustments}
+          sessionOverrides={sessionOverrides}
         />
       ) : (
         <DashboardListView

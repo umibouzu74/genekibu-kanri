@@ -5,6 +5,15 @@
 // としてそれぞれ独立にカウントする。
 // 休講日 / テスト期間 / 単独教科隔週の B 週はカウントしない。
 // 対象日で対象スロットがその教科を実施していない場合は 0 を返す。
+//
+// SessionOverride (回数手動補正) の扱い:
+//   - mode:"set"  → そのコマの回数を value に強制し、以降の同バケット
+//                    スロットは value を基準に連番で続く。value は以降
+//                    の通常カウントで二重使用されないよう予約扱い。
+//   - mode:"skip" → そのコマを「実施していない」扱いとし、回数カウンタを
+//                    進めない。displayAs を指定するとその値を表示し、
+//                    かつその値を予約扱いとするため、以降の通常カウント
+//                    が displayAs に到達すると自動で飛び越す。
 
 import { gradeToDept, WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
@@ -212,6 +221,75 @@ function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj, targetCls) {
   return deduped;
 }
 
+// (slotId × date) → SessionOverride のインデックスを作る。
+// ctx.sessionOverrides 未指定時は空 Map を返す。
+function buildOverrideIndex(sessionOverrides) {
+  const idx = new Map();
+  if (!Array.isArray(sessionOverrides)) return idx;
+  for (const o of sessionOverrides) {
+    if (!o || typeof o !== "object") continue;
+    idx.set(`${o.slotId}|${o.date}`, o);
+  }
+  return idx;
+}
+
+// 1 つの (setKey) バケットに属する setSlots について、対象教科 × cohort で
+// 開始日〜対象日 (含む) の各日・各スロットの回数を算出した Map を返す。
+//   key:   `${slotId}|${dateStr}`
+//   value: 1-indexed の回数 (skip + displayAs 未指定時は 0)
+// 走査中に override を見つけたらそれに従い、通常カウント時は reserved
+// (既に override で消費された値の集合) をスキップしながら +1 する。
+function computeBucketCounts(
+  setSlots,
+  startDateStr,
+  targetDateStr,
+  targetSubj,
+  targetCls,
+  ctx,
+  overrideIndex,
+) {
+  const result = new Map();
+  if (!startDateStr || targetDateStr < startDateStr) return result;
+
+  const start = parseDate(startDateStr);
+  const end = parseDate(targetDateStr);
+  const cur = new Date(start);
+  let running = 0;
+  const reserved = new Set();
+  while (cur <= end) {
+    const dStr = fmtDate(cur);
+    const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls);
+    for (const s of active) {
+      const ov = overrideIndex.get(`${s.id}|${dStr}`);
+      if (ov && ov.mode === "skip") {
+        const disp =
+          typeof ov.displayAs === "number" && Number.isFinite(ov.displayAs) && ov.displayAs > 0
+            ? ov.displayAs
+            : 0;
+        if (disp > 0) reserved.add(disp);
+        result.set(`${s.id}|${dStr}`, disp);
+        continue;
+      }
+      if (
+        ov &&
+        ov.mode === "set" &&
+        typeof ov.value === "number" &&
+        Number.isFinite(ov.value)
+      ) {
+        running = ov.value;
+        reserved.add(running);
+        result.set(`${s.id}|${dStr}`, running);
+        continue;
+      }
+      running += 1;
+      while (reserved.has(running)) running += 1;
+      result.set(`${s.id}|${dStr}`, running);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return result;
+}
+
 /**
  * 対象スロットの、対象日付における授業回数 (1-indexed) を返す。
  * 開始日 未設定、対象日 < 開始日、または対象日で対象スロットが実施されない
@@ -219,7 +297,7 @@ function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj, targetCls) {
  *
  * @param {object} slot 対象スロット
  * @param {string} targetDateStr "YYYY-MM-DD"
- * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors}
+ * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides?}
  * @returns {number} 回数 または 0
  */
 export function computeSessionNumber(slot, targetDateStr, ctx) {
@@ -240,24 +318,17 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   if (targetSubj == null) return 0;
   const targetCls = slot.cls || "";
 
-  // 対象日当日の該当教科 × cohort スロット一覧内での自分の位置
-  const todayActive = activeSlotsOnDay(setSlots, targetDateStr, ctx, targetSubj, targetCls);
-  const todayIdx = todayActive.findIndex((s) => s.id === slot.id);
-  if (todayIdx === -1) return 0;
-
-  // 開始日から前日までの同一教科 × cohort の累計実施数を加算
-  const start = parseDate(startDate);
-  const target = parseDate(targetDateStr);
-  let count = 0;
-  const cur = new Date(start);
-  while (cur < target) {
-    const dStr = fmtDate(cur);
-    count += activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls).length;
-    cur.setDate(cur.getDate() + 1);
-  }
-
-  // 当日分は slot より前の時刻 + 自分 (todayIdx + 1) を加算
-  return count + todayIdx + 1;
+  const overrideIndex = buildOverrideIndex(ctx.sessionOverrides);
+  const bucket = computeBucketCounts(
+    setSlots,
+    startDate,
+    targetDateStr,
+    targetSubj,
+    targetCls,
+    ctx,
+    overrideIndex,
+  );
+  return bucket.get(`${slot.id}|${targetDateStr}`) || 0;
 }
 
 /**
@@ -266,15 +337,17 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
  *
  * @param {Array} slots 計算対象のスロット群 (表示中の日のものだけで良い)
  * @param {string} targetDateStr "YYYY-MM-DD"
- * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors}
+ * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides?}
  * @returns {Map<number, number>}
  */
 export function buildSessionCountMap(slots, targetDateStr, ctx) {
   const out = new Map();
   if (!slots || slots.length === 0 || !targetDateStr) return out;
 
+  const overrideIndex = buildOverrideIndex(ctx.sessionOverrides);
+
   // 同じ (セット × 教科 × cohort) に属するスロットは 1 回の走査で済ませる
-  const setCache = new Map(); // setKey → Map<dateStr, activeSlotIds[]>
+  const setCache = new Map(); // setKey → Map<`${slotId}|${dateStr}`, count>
 
   const slotById = new Map();
   for (const s of ctx.allSlots || []) slotById.set(s.id, s);
@@ -310,38 +383,21 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       continue;
     }
 
-    let dayMap = setCache.get(setKey);
-    if (!dayMap) {
-      dayMap = new Map();
-      const start = parseDate(startDate);
-      const target = parseDate(targetDateStr);
-      const cur = new Date(start);
-      while (cur <= target) {
-        const dStr = fmtDate(cur);
-        const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls);
-        dayMap.set(dStr, active.map((s) => s.id));
-        cur.setDate(cur.getDate() + 1);
-      }
-      setCache.set(setKey, dayMap);
+    let bucket = setCache.get(setKey);
+    if (!bucket) {
+      bucket = computeBucketCounts(
+        setSlots,
+        startDate,
+        targetDateStr,
+        targetSubj,
+        targetCls,
+        ctx,
+        overrideIndex,
+      );
+      setCache.set(setKey, bucket);
     }
 
-    const todayActiveIds = dayMap.get(targetDateStr) || [];
-    const todayIdx = todayActiveIds.indexOf(slot.id);
-    if (todayIdx === -1) {
-      out.set(slot.id, 0);
-      continue;
-    }
-
-    let count = 0;
-    const start = parseDate(startDate);
-    const target = parseDate(targetDateStr);
-    const cur = new Date(start);
-    while (cur < target) {
-      const dStr = fmtDate(cur);
-      count += (dayMap.get(dStr) || []).length;
-      cur.setDate(cur.getDate() + 1);
-    }
-    out.set(slot.id, count + todayIdx + 1);
+    out.set(slot.id, bucket.get(`${slot.id}|${targetDateStr}`) || 0);
   }
   return out;
 }

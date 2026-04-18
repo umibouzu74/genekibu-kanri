@@ -32,6 +32,8 @@ export function SubstituteView({
   classSets,
   displayCutoff,
   onAddAdjustment,
+  adjustments = [],
+  sessionOverrides = [],
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -270,6 +272,8 @@ export function SubstituteView({
           classSets={classSets || []}
           displayCutoff={displayCutoff}
           onAddAdjustment={onAddAdjustment}
+          adjustments={adjustments}
+          sessionOverrides={sessionOverrides}
           enableSubMode
         />
       )}

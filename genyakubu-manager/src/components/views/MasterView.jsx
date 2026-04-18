@@ -39,6 +39,8 @@ export function MasterView({
   examPeriods,
   classSets,
   displayCutoff,
+  adjustments = [],
+  sessionOverrides = [],
 }) {
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
@@ -140,6 +142,8 @@ export function MasterView({
           examPeriods={examPeriods}
           classSets={classSets}
           displayCutoff={displayCutoff}
+          adjustments={adjustments}
+          sessionOverrides={sessionOverrides}
         />
       </div>
     );

@@ -19,4 +19,5 @@ export const LS = {
   examPeriods: "genyakubu-exam-periods",
   teacherSubjects: "genyakubu-teacher-subjects",
   classSets: "genyakubu-class-sets",
+  sessionOverrides: "genyakubu-session-overrides",
 };

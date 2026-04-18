@@ -21,6 +21,7 @@ const MENU_CONFIG = [
   {
     key: VIEWS.STAFF, icon: "👥", label: "バイト管理",
     children: [
+      { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
       { key: VIEWS.SUBS, icon: "🔄", label: "代行管理", badge: true },
       { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
     ],
