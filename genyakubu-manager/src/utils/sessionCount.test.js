@@ -623,6 +623,30 @@ describe("buildSessionCountMap", () => {
     expect(buildSessionCountMap([], "2026-04-07", {}).size).toBe(0);
     expect(buildSessionCountMap(null, "2026-04-07", {}).size).toBe(0);
   });
+
+  it("並列スロット (同一 day|time|grade|cls|subj で担任違い) は 1 回として集計", () => {
+    // 中3 火曜 確認テスト 藤田 + 大屋敷 を想定
+    // user が両スロットを 1 つの classSet にまとめている前提 (ユーザの実運用)。
+    // 並列スロットの dedupe が無いと 1 日で +2 カウントされてしまう。
+    const fujita = makeSlot(97, "火", "21:35-21:50", "中3", {
+      cls: "SS〜C", subj: "確認テスト", teacher: "藤田", room: "501",
+    });
+    const oyashiki = makeSlot(98, "火", "21:35-21:50", "中3", {
+      cls: "SS〜C", subj: "確認テスト", teacher: "大屋敷", room: "503",
+    });
+    const ctx = {
+      classSets: [{ id: 50, label: "中3 火 確認テスト", slotIds: [97, 98] }],
+      allSlots: [fujita, oyashiki],
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    // 2026-04-07(火) → 1 回, 2026-04-14(火) → 2 回。dedupe 無しなら 4 回。
+    const map = buildSessionCountMap([fujita, oyashiki], "2026-04-14", ctx);
+    expect(map.get(97)).toBe(2);
+    // 並列側 (大屋敷) は activeSlotsOnDay の dedupe で除外されるため 0。
+    // UI 側では集約により非表示になり、このカウントは参照されない。
+    expect(map.get(98)).toBe(0);
+  });
 });
 
 describe("formatSessionNumber", () => {

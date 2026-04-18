@@ -194,10 +194,17 @@ export function ExcelGridView({
 
   // 同一コホートで担任だけ異なる並列スロット (例: 中3 火 確認テスト 藤田 + 大屋敷)
   // を 1 コマにまとめる。groupTeacherMap は代表スロットに「藤田・大屋敷」を割当。
-  const { representativeSlots: displaySlots, groupTeacherMap } = useMemo(
+  const grouped = useMemo(
     () => groupParallelSlots(rawDisplaySlots),
     [rawDisplaySlots]
   );
+  // 集約は閲覧用途限定。管理モード (スロット編集) および代行モード (個別
+  // スロットに対する欠席/代行割当) では個別スロット情報を保つ必要があるため
+  // 元配列をそのまま使う。セッション回数のカウントは sessionCount 内部で
+  // 並列スロットを重複除去するため、どちらのパスでも正しく集計される。
+  const shouldGroup = !isAdmin && !subMode.isSubMode;
+  const displaySlots = shouldGroup ? grouped.representativeSlots : rawDisplaySlots;
+  const groupTeacherMap = shouldGroup ? grouped.groupTeacherMap : null;
 
   // viewDate を含む週の月〜土の日付を曜日→"YYYY-MM-DD" で保持。
   const weekDates = useMemo(() => computeWeekDates(viewDate), [viewDate]);
