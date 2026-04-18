@@ -404,7 +404,7 @@ export default function App() {
       <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
+      <div className="main-content" style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
         <div
           style={{
             display: "flex",
@@ -434,7 +434,7 @@ export default function App() {
             >
               ☰
             </button>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
+            <h1 className="app-h1" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
               {view === VIEWS.DASH
                 ? "ダッシュボード"
                 : view === VIEWS.ALL
@@ -791,6 +791,21 @@ export default function App() {
           .dash-sections { grid-template-columns: 1fr !important; }
           .excel-grid-sections { grid-template-columns: 1fr !important; }
           .master-slot-actions { opacity: 1 !important; }
+          .sidebar { width: min(85vw, 280px) !important; }
+          .main-content { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
+          .app-h1 { font-size: 16px !important; }
+        }
+        @media (max-width: 480px) {
+          body { font-size: 14px; }
+          /* iOS Safari prevents auto-zoom only when input font-size >= 16px */
+          input, select, textarea { font-size: 16px !important; }
+          button, [role="button"] { min-height: 40px; touch-action: manipulation; }
+          .main-content { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
+          .app-h1 { font-size: 15px !important; }
+          .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
+          .mobile-stack > * { width: 100% !important; }
+          .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+          .mobile-card-pad { padding: 16px !important; }
         }
         @media (hover: none) {
           .master-slot-actions { opacity: 1 !important; }
