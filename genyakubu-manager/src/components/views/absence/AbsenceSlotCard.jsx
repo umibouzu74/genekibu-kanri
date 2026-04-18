@@ -1,5 +1,9 @@
 import { gradeColor as GC } from "../../../data";
-import { formatBiweeklyTeacher } from "../../../utils/biweekly";
+import {
+  formatBiweeklyTeacher,
+  getSlotWeekType,
+  isBiweekly,
+} from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
 
 // ─── 欠勤 UI 用スロットカード ──────────────────────────────────
@@ -8,6 +12,8 @@ import { formatSessionNumber } from "../../../utils/sessionCount";
 
 export function AbsenceSlotCard({
   slot,
+  date, // 対象日 (YYYY-MM-DD) — 隔週の A/B 判定に使用
+  biweeklyAnchors,
   isAbsent,
   isMoved,
   isCombineHost,
@@ -27,6 +33,10 @@ export function AbsenceSlotCard({
   onClick,
 }) {
   const gc = GC(slot.grade);
+  const biweekly = isBiweekly(slot.note);
+  const weekType = biweekly && date
+    ? getSlotWeekType(date, slot, biweeklyAnchors)
+    : null;
 
   const borderColor = isCombineSource
     ? "#e0a020"
@@ -137,6 +147,20 @@ export function AbsenceSlotCard({
           {slot.cls && slot.cls !== "-" ? slot.cls : ""}
         </span>
         <span style={{ fontSize: 12, fontWeight: 600 }}>{slot.subj}</span>
+        {biweekly && weekType && (
+          <span
+            style={{
+              background: weekType === "A" ? "#2e6a9e" : "#c05030",
+              color: "#fff",
+              padding: "0 4px",
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 700,
+            }}
+          >
+            {weekType}週
+          </span>
+        )}
         {sessionCount > 0 && (
           <span
             style={{

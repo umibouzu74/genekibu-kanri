@@ -11,7 +11,7 @@ import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } fro
 import { isSlotForTeacher } from "../../utils/biweekly";
 import { makeHolidayHelpers } from "./dashboardHelpers";
 
-export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
+export function MonthView({ teacher, slots, holidays, subs, adjustments = [], year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -22,6 +22,19 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
     () => slots.filter((s) => isSlotForTeacher(s, teacher)),
     [teacher, slots]
   );
+
+  // 日付ごとに「合同で吸収されたコマ id」を索引化。吸収されたコマは当該日に
+  // 出勤扱いしない (host 側に統合されるため)。
+  const absorbedByDate = useMemo(() => {
+    const m = new Map();
+    for (const adj of adjustments) {
+      if (adj.type !== "combine") continue;
+      const set = m.get(adj.date) || new Set();
+      for (const id of adj.combineSlotIds || []) set.add(id);
+      m.set(adj.date, set);
+    }
+    return m;
+  }, [adjustments]);
   const dayMap = useMemo(() => {
     const m = {};
     DAYS.forEach((d) => {
@@ -119,20 +132,36 @@ export function MonthView({ teacher, slots, holidays, subs, year, month, onEdit,
           const hasExam = epActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
           const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
+          const absorbedSet = absorbedByDate.get(ds);
           const sl = isFullOff || dayCutoff
             ? []
-            : (dayMap[dn] || []).filter(
-                (s) =>
-                  !isOffForGrade(ds, s.grade, s.subj) &&
-                  (!timetables ||
-                    timetables.length === 0 ||
-                    isTimetableActiveForDate(
-                      timetables.find((t) => t.id === (s.timetableId ?? 1)),
-                      ds,
-                      s.grade
-                    )) &&
-                  !isBeyondCutoff(ds, s.grade, displayCutoff)
-              );
+            : (dayMap[dn] || []).filter((s) => {
+                if (isOffForGrade(ds, s.grade, s.subj)) return false;
+                if (
+                  timetables &&
+                  timetables.length > 0 &&
+                  !isTimetableActiveForDate(
+                    timetables.find((t) => t.id === (s.timetableId ?? 1)),
+                    ds,
+                    s.grade
+                  )
+                ) {
+                  return false;
+                }
+                if (isBeyondCutoff(ds, s.grade, displayCutoff)) return false;
+                // この日に確定代行で自分が外れているコマは出勤扱いしない
+                const sub = getSubForSlot(subs, s.id, ds);
+                if (
+                  sub?.status === "confirmed" &&
+                  sub.originalTeacher === teacher &&
+                  sub.substitute !== teacher
+                ) {
+                  return false;
+                }
+                // この日に合同で吸収されたコマも出勤扱いしない
+                if (absorbedSet && absorbedSet.has(s.id)) return false;
+                return true;
+              });
           return (
             <div
               key={ds}

@@ -727,6 +727,7 @@ export default function App() {
               slots={slots}
               holidays={holidays}
               subs={subs}
+              adjustments={adjustments}
               year={vy}
               month={vm}
               onEdit={setEditSlot}
