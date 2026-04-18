@@ -8,9 +8,12 @@
 //
 // SessionOverride (回数手動補正) の扱い:
 //   - mode:"set"  → そのコマの回数を value に強制し、以降の同バケット
-//                    スロットは value を基準に連番で続く。
+//                    スロットは value を基準に連番で続く。value は以降
+//                    の通常カウントで二重使用されないよう予約扱い。
 //   - mode:"skip" → そのコマを「実施していない」扱いとし、回数カウンタを
-//                    進めない (当該コマは 0 を返す)。
+//                    進めない。displayAs を指定するとその値を表示し、
+//                    かつその値を予約扱いとするため、以降の通常カウント
+//                    が displayAs に到達すると自動で飛び越す。
 
 import { gradeToDept, WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
@@ -233,9 +236,9 @@ function buildOverrideIndex(sessionOverrides) {
 // 1 つの (setKey) バケットに属する setSlots について、対象教科 × cohort で
 // 開始日〜対象日 (含む) の各日・各スロットの回数を算出した Map を返す。
 //   key:   `${slotId}|${dateStr}`
-//   value: 1-indexed の回数 (skip 適用時は 0)
-// 走査中に mode:"set" を見つけると累計カウンタを value に揃え、以降の加算は
-// その値を基準に連番で続く。
+//   value: 1-indexed の回数 (skip + displayAs 未指定時は 0)
+// 走査中に override を見つけたらそれに従い、通常カウント時は reserved
+// (既に override で消費された値の集合) をスキップしながら +1 する。
 function computeBucketCounts(
   setSlots,
   startDateStr,
@@ -252,13 +255,19 @@ function computeBucketCounts(
   const end = parseDate(targetDateStr);
   const cur = new Date(start);
   let running = 0;
+  const reserved = new Set();
   while (cur <= end) {
     const dStr = fmtDate(cur);
     const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls);
     for (const s of active) {
       const ov = overrideIndex.get(`${s.id}|${dStr}`);
       if (ov && ov.mode === "skip") {
-        result.set(`${s.id}|${dStr}`, 0);
+        const disp =
+          typeof ov.displayAs === "number" && Number.isFinite(ov.displayAs) && ov.displayAs > 0
+            ? ov.displayAs
+            : 0;
+        if (disp > 0) reserved.add(disp);
+        result.set(`${s.id}|${dStr}`, disp);
         continue;
       }
       if (
@@ -268,10 +277,12 @@ function computeBucketCounts(
         Number.isFinite(ov.value)
       ) {
         running = ov.value;
+        reserved.add(running);
         result.set(`${s.id}|${dStr}`, running);
         continue;
       }
       running += 1;
+      while (reserved.has(running)) running += 1;
       result.set(`${s.id}|${dStr}`, running);
     }
     cur.setDate(cur.getDate() + 1);

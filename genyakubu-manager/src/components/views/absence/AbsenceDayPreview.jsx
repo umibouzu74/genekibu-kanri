@@ -75,13 +75,16 @@ export function AbsenceDayPreview({
             memo: "(draft)",
           });
         } else if (row.override.mode === "skip") {
-          list.push({
+          const rawDisp = Number(row.override.displayAs);
+          const entry = {
             id: idBase--,
             date,
             slotId,
             mode: "skip",
             memo: "(draft)",
-          });
+          };
+          if (Number.isFinite(rawDisp) && rawDisp > 0) entry.displayAs = rawDisp;
+          list.push(entry);
         }
       }
     }

@@ -36,18 +36,46 @@ export function useAbsenceDraft() {
   const setAction = useCallback((slotId, action) => {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
+      const next = { ...prev };
+
+      // 合同関連のクリーンアップ: 合同から離脱するときに両側の参照を切る。
+      const wasHost = cur.action === "combine" && cur.combine;
+      const wasAbsorbed = cur.absorbedBy != null;
+
+      if (wasHost && action !== "combine") {
+        // host → 別アクション: 吸収されていた全スロットの absorbedBy を解除
+        for (const absId of cur.combine.absorbedSlotIds || []) {
+          const absRow = next[absId];
+          if (absRow && absRow.absorbedBy === slotId) {
+            next[absId] = { ...absRow, absorbedBy: null, action: null };
+          }
+        }
+      }
+
+      if (wasAbsorbed && action !== "combine") {
+        // 吸収されていた側 → 別アクション: host の absorbedSlotIds から自分を除去
+        const hostId = cur.absorbedBy;
+        const host = next[hostId];
+        if (host && host.combine && Array.isArray(host.combine.absorbedSlotIds)) {
+          const filtered = host.combine.absorbedSlotIds.filter((x) => x !== slotId);
+          next[hostId] = {
+            ...host,
+            combine: filtered.length > 0 ? { ...host.combine, absorbedSlotIds: filtered } : null,
+            action: filtered.length > 0 ? "combine" : null,
+          };
+        }
+      }
+
       // action を切り替えるときに相互排他する (sub, combine, move)
-      return {
-        ...prev,
-        [slotId]: {
-          ...cur,
-          action,
-          sub: action === "sub" ? cur.sub || { substitute: "", status: "confirmed", memo: "" } : null,
-          combine: action === "combine" ? cur.combine : null,
-          absorbedBy: action === "combine" ? cur.absorbedBy : null,
-          move: action === "move" ? cur.move : null,
-        },
+      next[slotId] = {
+        ...cur,
+        action,
+        sub: action === "sub" ? cur.sub || { substitute: "", status: "confirmed", memo: "" } : null,
+        combine: action === "combine" ? cur.combine : null,
+        absorbedBy: action === "combine" ? cur.absorbedBy : null,
+        move: action === "move" ? cur.move : null,
       };
+      return next;
     });
   }, []);
 
@@ -191,12 +219,17 @@ export function useAbsenceDraft() {
               memo: row.override.memo || "",
             });
           } else if (row.override.mode === "skip") {
-            draftOverrides.push({
+            const rawDisplay = Number(row.override.displayAs);
+            const entry = {
               date,
               slotId,
               mode: "skip",
               memo: row.override.memo || "",
-            });
+            };
+            if (Number.isFinite(rawDisplay) && rawDisplay > 0) {
+              entry.displayAs = rawDisplay;
+            }
+            draftOverrides.push(entry);
           }
         }
       }

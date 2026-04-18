@@ -84,8 +84,15 @@ export interface ScheduleAdjustment {
 // 特定日・特定コマに対する回数の手動上書き。
 // mode:"set"  → そのコマの回数を value に強制する。後続の同セット
 //               ×教科×cohort スロットも value を基準に連続する。
-// mode:"skip" → そのコマはその日に「実施していない」扱いとし、回数を
-//               加算しない。別の合同コマに吸収された等の表現に使う。
+//               value は以降の通常カウントで二重使用されないよう
+//               「予約済み」として扱われる。
+// mode:"skip" → そのコマはその日に「実施していない」扱いとし、回数
+//               カウンタを進めない。別の合同コマに吸収された等。
+//               displayAs を指定するとその値を表示しつつ、その値を
+//               「使用済み」としてマークするため、以降の通常カウント
+//               が displayAs に到達すると自動で飛び越す。
+//               例: 合同授業で第4回を消化 → skip displayAs=4 →
+//                  次回の通常カウントは 3, その次は 5 (4 は飛ばす)
 export type SessionOverrideMode = "set" | "skip";
 
 export interface SessionOverride {
@@ -94,6 +101,7 @@ export interface SessionOverride {
   slotId: number;
   mode: SessionOverrideMode;
   value?: number; // mode="set" のとき必須 (1-indexed)
+  displayAs?: number; // mode="skip" のとき、その日に表示する回数 (1-indexed)
   memo: string;
   createdAt?: string;
 }

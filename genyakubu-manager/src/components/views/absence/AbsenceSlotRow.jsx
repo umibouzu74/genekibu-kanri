@@ -200,7 +200,7 @@ export function AbsenceSlotRow({
               if (!m) updateOverride(slot.id, null);
               else updateOverride(slot.id, { mode: m });
             }}
-            style={{ ...S.input, width: 100 }}
+            style={{ ...S.input, width: 110 }}
           >
             <option value="">(なし)</option>
             <option value="set">回数指定</option>
@@ -214,6 +214,17 @@ export function AbsenceSlotRow({
               onChange={(e) => updateOverride(slot.id, { value: e.target.value })}
               placeholder="例: 4"
               style={{ ...S.input, width: 80 }}
+            />
+          )}
+          {row?.override?.mode === "skip" && (
+            <input
+              type="number"
+              min={1}
+              value={row.override.displayAs ?? ""}
+              onChange={(e) => updateOverride(slot.id, { displayAs: e.target.value })}
+              placeholder="表示する回 (例: 4)"
+              title="この日に表示する回数。以降の通常カウントはこの値を飛ばす。未入力なら空欄表示。"
+              style={{ ...S.input, width: 130 }}
             />
           )}
           {row?.override && (

@@ -171,6 +171,7 @@ export function isSessionOverride(x: unknown): x is SessionOverride {
   if (!isNumber(x.slotId)) return false;
   if (x.mode !== "set" && x.mode !== "skip") return false;
   if (x.mode === "set" && !isNumber(x.value)) return false;
+  if (x.displayAs !== undefined && !isNumber(x.displayAs)) return false;
   return true;
 }
 

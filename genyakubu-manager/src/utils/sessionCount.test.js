@@ -719,7 +719,7 @@ describe("computeSessionNumber - sessionOverrides: skip mode", () => {
   const tue = makeSlot(1, "火", "19:00-20:20", "中3");
   const allSlots = [tue];
 
-  it("skip override は 0 を返し、カウンタも進めない", () => {
+  it("skip override は 0 を返し、カウンタも進めない (displayAs 未指定)", () => {
     const ctx = {
       classSets: [],
       allSlots,
@@ -733,6 +733,76 @@ describe("computeSessionNumber - sessionOverrides: skip mode", () => {
     expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(0);
     // 4/21 は 2 回目として扱う (4/14 をスキップしたため)
     expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(2);
+  });
+
+  it("skip + displayAs は displayAs を表示し、以降の通常カウントがその値を飛ばす", () => {
+    // 4/7=1, 4/14=2, 4/21=skip displayAs=4 (合同で第4回を消化),
+    // 4/28 の通常カウントは 3 (4 は予約済みで飛ばされる次回の 5 に備える),
+    // 5/5 は 5 (通常 +1 = 4 だが予約済みなのでスキップ)
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-21", mode: "skip", displayAs: 4, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(2);
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(4); // skip の displayAs
+    expect(computeSessionNumber(tue, "2026-04-28", ctx)).toBe(3); // 通常 +1 = 3 (4 未到達)
+    expect(computeSessionNumber(tue, "2026-05-05", ctx)).toBe(5); // 通常 +1 → 4 だが予約済み → 5
+    expect(computeSessionNumber(tue, "2026-05-12", ctx)).toBe(6);
+  });
+
+  it("skip + displayAs の値が未来の通常カウントに出てこないこと (予約)", () => {
+    // 4/7=1, 4/14=2, 4/21=3, 4/28=skip displayAs=6, 5/5 は 4, 5/12 は 5,
+    // 5/19 の通常 +1 は 6 だが予約済み → 7, 以降 8,9...
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-28", mode: "skip", displayAs: 6, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-28", ctx)).toBe(6);
+    expect(computeSessionNumber(tue, "2026-05-05", ctx)).toBe(4);
+    expect(computeSessionNumber(tue, "2026-05-12", ctx)).toBe(5);
+    expect(computeSessionNumber(tue, "2026-05-19", ctx)).toBe(7); // 6 を飛ばす
+    expect(computeSessionNumber(tue, "2026-05-26", ctx)).toBe(8);
+  });
+
+  it("displayAs が 0 以下なら従来通り空欄扱い", () => {
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-14", mode: "skip", displayAs: 0, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(0);
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(2);
+  });
+
+  it("set 値も予約されるため、以降の通常カウントが set 値を避ける", () => {
+    // 4/7=1, 4/14=2, 4/21=set 5 → running=5, reserved={5},
+    // 4/28 の通常 +1=6 (reserved の 5 はすでに通過している)
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-21", mode: "set", value: 5, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(5);
+    expect(computeSessionNumber(tue, "2026-04-28", ctx)).toBe(6);
   });
 });
 
