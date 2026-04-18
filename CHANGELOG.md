@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed
+- ダッシュボード既定ビューを「時間割」に変更。localStorage 未設定ユーザは
+  起動時に時間割表示で開く（既存ユーザは保存済みビューを尊重）。
+- 時間割表示の月〜土曜タブに、viewDate を含む週の日付 (M/D) を併記。
+  曜日クリック時に viewDate も連動し、第N回バッジが正しい日付基準で
+  算出される。
+- 並列スロット集約を導入: 同一 `(day, time, grade, cls, subj)` で担任
+  だけ異なる複数スロット（例: 中3 火/木 確認テスト 藤田 + 大屋敷）を
+  1 コマにまとめ、時間割表示では担任を「藤田・大屋敷」と併記し、
+  `buildSessionCountMap` の回数カウントも 1 回として集計。`utils/
+  parallelSlots.js` を新設。
+
+### TODO / 課題
+- 確認テストの教科ローテーション（英→数→国→理→社）未対応。現状は
+  `subj:"確認テスト"` で固定表示。回数に応じた教科表示をサポートする
+  仕組み（例: スロットに `subjectRotation: ["英語","数学",…]` を
+  持たせ、セッション回数から教科を決定して表示する）が必要。
+
 ### Added
 - ESLint (flat config) + Prettier + `npm run lint` / `npm run format`
 - TypeScript tooling (`tsconfig.json`, `npm run typecheck`) and initial

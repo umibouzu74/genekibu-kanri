@@ -104,6 +104,9 @@ export const INIT_SLOTS = [
   {id:24,day:"火",time:"20:45-21:30",grade:"中3",cls:"A",room:"502",subj:"社会",teacher:"西岡",note:""},
   {id:25,day:"火",time:"20:45-21:30",grade:"中3",cls:"B",room:"503",subj:"理科",teacher:"奥村",note:""},
   {id:26,day:"火",time:"20:45-21:30",grade:"中3",cls:"C",room:"504",subj:"英語",teacher:"高松",note:""},
+  // TODO: 確認テストは本来 英→数→国→理→社 の順に教科がローテーションする
+  // 運用。現状 subj="確認テスト" で固定のため、回数に応じた教科表示サポートは
+  // 将来の課題 (CHANGELOG 参照)。
   {id:97,day:"火",time:"21:35-21:50",grade:"中3",cls:"SS〜C",room:"501",subj:"確認テスト",teacher:"藤田",note:"担任"},
   {id:98,day:"火",time:"21:35-21:50",grade:"中3",cls:"SS〜C",room:"503",subj:"確認テスト",teacher:"大屋敷",note:"担任"},
   // ── 水曜 中3水金 ──
