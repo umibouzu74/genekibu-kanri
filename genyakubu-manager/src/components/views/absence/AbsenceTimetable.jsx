@@ -393,6 +393,12 @@ export function AbsenceTimetable({
       !absorbedSet.has(s.id) &&
       canCombineSlots(combineSource, s, subjects);
 
+    // DnD は以下のとき無効化する:
+    //   - 吸収されている (AbsenceSlotCard 側で既に処理済みだが明示)
+    //   - このスロットが合同ホスト (時刻を動かすと吸収側と位置がずれるため)
+    //   - 合同モード中 (クリックしたいのに誤ドラッグを防ぐ)
+    const disableDrag = isHost || combineSource != null;
+
     return (
       <AbsenceSlotCard
         key={s.id}
@@ -409,6 +415,7 @@ export function AbsenceTimetable({
         sessionCount={sessionCountMap?.get(s.id) || 0}
         isCombineCandidate={isCombineCandidate}
         isCombineSource={isCombineSource}
+        disableDrag={disableDrag}
         onContextMenu={(e) => openContextMenu(e, s)}
         onDragStart={(e) => handleDragStart(e, s)}
         onClick={() => handleSlotClick(s)}

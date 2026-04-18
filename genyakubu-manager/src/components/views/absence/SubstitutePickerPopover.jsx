@@ -57,26 +57,32 @@ export function SubstitutePickerPopover({
     ? computePosition(anchorRect)
     : { top: 100, left: 100 };
 
+  // Primary 候補: そのコマの教科を担当できるバイト講師。
+  //   subjId が解決できた場合   → subjectIds に該当 id を持つ講師
+  //   subjId が解決できない場合 → 教科フィルタを適用できないので全員
   const subjId = pickSubjectId(slot.subj, subjects);
-  const staffSubjectMatch = (partTimeStaff || []).filter((p) =>
-    Array.isArray(p.subjectIds) && subjId ? p.subjectIds.includes(subjId) : !subjId
-  );
-  const staffAll = partTimeStaff || [];
+  const allStaff = partTimeStaff || [];
+  const staffSubjectMatch =
+    subjId != null
+      ? allStaff.filter(
+          (p) => Array.isArray(p.subjectIds) && p.subjectIds.includes(subjId)
+        )
+      : allStaff;
 
-  // 追加候補: 同日の他のコマで担当している先生 (常勤含む)
+  // 同日の他のコマで担当している先生 (常勤含む) を secondary 候補に加える
   const dayTeachers = new Set();
   for (const s of daySlots || []) {
     if (s.teacher) {
       for (const t of s.teacher.split("·")) dayTeachers.add(t.trim());
     }
   }
-  // 元の先生は除外
   dayTeachers.delete(slot.teacher);
 
   const primary = sortJa(staffSubjectMatch.map((s) => s.name));
   const rest = sortJa(
-    [...new Set([...staffAll.map((s) => s.name), ...dayTeachers])]
-      .filter((n) => !primary.includes(n) && n !== slot.teacher)
+    [...new Set([...allStaff.map((s) => s.name), ...dayTeachers])].filter(
+      (n) => !primary.includes(n) && n !== slot.teacher
+    )
   );
 
   const list = showAll ? [...primary, ...rest] : primary;

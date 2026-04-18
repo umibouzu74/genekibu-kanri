@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, dateToDay, sortSlots as sortS, DAY_COLOR as DC } from "../../data";
 import { S } from "../../styles/common";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { sortJa } from "../../utils/sortJa";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
+import { useConfirm } from "../../hooks/useConfirm";
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeHolidayHelpers } from "./dashboardHelpers";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
@@ -35,10 +36,27 @@ export function AbsenceWorkflowView({
   isAdmin,
 }) {
   const toasts = useToasts();
+  const confirm = useConfirm();
   const [date, setDate] = useState(fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
+  const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
+
+  // ドロップダウン外クリックで閉じる
+  useEffect(() => {
+    if (!teacherDropdownOpen) return undefined;
+    const handler = (e) => {
+      if (
+        teacherDropdownRef.current &&
+        !teacherDropdownRef.current.contains(e.target)
+      ) {
+        setTeacherDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [teacherDropdownOpen]);
 
   const dayName = useMemo(() => dateToDay(date), [date]);
 
@@ -128,12 +146,14 @@ export function AbsenceWorkflowView({
 
   const toggleTeacher = useCallback(
     (name) => {
+      // 欠勤先生の追加 / 削除は「どのコマを赤枠強調するか」だけを変える
+      // ため、既存の下書きはそのまま維持する (過去に "リセット" していたが、
+      // 別先生を追加しようとして下書きが全消去される事故が起きるため廃止)。
       setSelectedTeachers((prev) =>
         prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
       );
-      draft.reset();
     },
-    [draft]
+    []
   );
 
   // 下書きの件数カウント (保存ボタン表示用)
@@ -147,6 +167,46 @@ export function AbsenceWorkflowView({
     }
     return c;
   }, [draft.draft]);
+
+  // 下書きがある状態でタブを閉じる / リロードしようとしたら警告
+  useEffect(() => {
+    if (draftCount === 0) return undefined;
+    const handler = (e) => {
+      e.preventDefault();
+      // Chrome ではメッセージ文字列は無視され固定のダイアログが出る
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [draftCount]);
+
+  const handleDiscard = useCallback(async () => {
+    const ok = await confirm({
+      title: "下書きを破棄",
+      message: `下書きが ${draftCount} 件あります。破棄しますか？`,
+      okLabel: "破棄",
+      tone: "danger",
+    });
+    if (ok) draft.reset();
+  }, [confirm, draft, draftCount]);
+
+  const handleDateChange = useCallback(
+    async (newDate) => {
+      if (draftCount > 0) {
+        const ok = await confirm({
+          title: "下書きがあります",
+          message: "日付を変更すると下書きが破棄されます。続行しますか？",
+          okLabel: "破棄して変更",
+          tone: "danger",
+        });
+        if (!ok) return;
+        draft.reset();
+      }
+      setDate(newDate);
+    },
+    [confirm, draft, draftCount]
+  );
 
   const handleSave = useCallback(() => {
     const { draftSubs, draftAdjustments, draftOverrides } =
@@ -210,10 +270,7 @@ export function AbsenceWorkflowView({
         <input
           type="date"
           value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            draft.reset();
-          }}
+          onChange={(e) => handleDateChange(e.target.value)}
           style={{ ...S.input, width: "auto" }}
         />
         {dayName && (
@@ -233,7 +290,7 @@ export function AbsenceWorkflowView({
         <div style={{ fontSize: 12, color: "#666" }}>
           欠勤する先生 ({selectedTeachers.length} 名選択):
         </div>
-        <div style={{ position: "relative" }}>
+        <div ref={teacherDropdownRef} style={{ position: "relative" }}>
           <button
             type="button"
             onClick={() => setTeacherDropdownOpen((v) => !v)}
@@ -317,7 +374,7 @@ export function AbsenceWorkflowView({
         >
           <button
             type="button"
-            onClick={() => draft.reset()}
+            onClick={handleDiscard}
             style={{ ...S.btn(false), fontSize: 12 }}
           >
             破棄

@@ -66,7 +66,8 @@ export function useAbsenceDraft() {
         }
       }
 
-      // action を切り替えるときに相互排他する (sub, combine, move)
+      // action を切り替えるときに相互排他する (sub, combine, move)。
+      // override は action と独立に保持するため、ここではクリアしない。
       next[slotId] = {
         ...cur,
         action,
@@ -105,20 +106,37 @@ export function useAbsenceDraft() {
 
   // 合同: host と absorbed の両方を同時に更新する。
   // host 側には combine.absorbedSlotIds[] を、absorbed 側には absorbedBy=host を設定。
+  // 既に host に吸収されていた slot が新リストから外れた場合は、その孤児
+  // absorbed の absorbedBy を解除する (整合性を保つための防御)。
   const setCombine = useCallback((hostSlotId, absorbedSlotIds) => {
     setDraft((prev) => {
       const next = { ...prev };
-      // まず既存の host エントリを取得 / 初期化
-      const hostRow = next[hostSlotId] || emptyRow();
+      const newIds = [...absorbedSlotIds];
+      const newIdSet = new Set(newIds);
+
+      // 既存 host の以前の吸収リストから、新リストに含まれない id を孤児として解除
+      const prevHost = next[hostSlotId];
+      const prevAbsorbedIds = prevHost?.combine?.absorbedSlotIds || [];
+      for (const oldId of prevAbsorbedIds) {
+        if (newIdSet.has(oldId)) continue;
+        const oldRow = next[oldId];
+        if (oldRow && oldRow.absorbedBy === hostSlotId) {
+          next[oldId] = { ...oldRow, absorbedBy: null, action: null };
+        }
+      }
+
+      // host エントリを上書き
+      const hostRow = prevHost || emptyRow();
       next[hostSlotId] = {
         ...hostRow,
         action: "combine",
         combine: {
           ...(hostRow.combine || {}),
-          absorbedSlotIds: [...absorbedSlotIds],
+          absorbedSlotIds: newIds,
         },
       };
-      for (const sid of absorbedSlotIds) {
+
+      for (const sid of newIds) {
         const cur = next[sid] || emptyRow();
         next[sid] = {
           ...cur,

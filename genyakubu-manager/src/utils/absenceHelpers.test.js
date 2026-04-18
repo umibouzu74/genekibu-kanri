@@ -71,10 +71,19 @@ describe("canCombineSlots", () => {
     expect(canCombineSlots(a, c, SUBJECTS)).toBe(false);
   });
 
-  it("片方のみ subjects にマッチする場合は NG (整合性なし)", () => {
+  it("alias で両方が同じ科目 id に解決されるケースは合同可", () => {
+    // "理科" と "理科特別" はどちらも "理" alias 経由で理科 (id:3) にマッチ
+    // するため、canCombineSlots は true を返す (aliases の部分一致仕様)。
     const a = mk(1, { subj: "理科" });
-    const b = mk(2, { subj: "理科特別" }); // "理" alias で理科にマッチしてしまうため別名で比較
-    expect(canCombineSlots(a, b, SUBJECTS)).toBe(true); // 実装上はどちらも理科 id
+    const b = mk(2, { subj: "理科特別" });
+    expect(canCombineSlots(a, b, SUBJECTS)).toBe(true);
+  });
+
+  it("一方だけ subjects にマッチする場合は NG (未マッチ側が不明のため)", () => {
+    // "理科" は理科 (id:3) にマッチ、"XYZ謎科目" は aliases にも無いため null
+    const a = mk(1, { subj: "理科" });
+    const b = mk(2, { subj: "XYZ謎科目" });
+    expect(canCombineSlots(a, b, SUBJECTS)).toBe(false);
   });
 });
 

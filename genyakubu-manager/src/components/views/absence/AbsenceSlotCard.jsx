@@ -20,10 +20,10 @@ export function AbsenceSlotCard({
   sessionCount, // 回数 (override 反映後)
   isCombineCandidate, // 合同モード中の候補ハイライト用
   isCombineSource, // 合同モード中の起点
+  disableDrag, // DnD 抑止 (合同ホスト / 吸収済み / 合同モード中など)
   onContextMenu,
   onDragStart,
   onClick,
-  dragHandleRef,
 }) {
   const gc = GC(slot.grade);
 
@@ -36,7 +36,7 @@ export function AbsenceSlotCard({
         : isMoved
           ? "#2a6a9e"
           : isCombineHost
-            ? "#c08020"
+            ? "#e0a020"
             : "#ddd";
 
   const background = isMoved
@@ -47,10 +47,18 @@ export function AbsenceSlotCard({
         ? "#fafafa"
         : "#fff";
 
+  const draggable = !isAbsorbed && !disableDrag;
+  const cursor = isAbsorbed
+    ? "not-allowed"
+    : draggable
+      ? "grab"
+      : isCombineCandidate || isCombineSource
+        ? "pointer"
+        : "default";
+
   return (
     <div
-      ref={dragHandleRef || undefined}
-      draggable={!isAbsorbed}
+      draggable={draggable}
       onDragStart={onDragStart}
       onContextMenu={onContextMenu}
       onClick={onClick}
@@ -61,7 +69,7 @@ export function AbsenceSlotCard({
         } ${borderColor}`,
         borderRadius: 6,
         padding: "6px 8px",
-        cursor: isAbsorbed ? "not-allowed" : "grab",
+        cursor,
         minWidth: 150,
         position: "relative",
         opacity: isAbsorbed ? 0.55 : 1,
@@ -149,9 +157,15 @@ export function AbsenceSlotCard({
           color: substituteName ? "#c44" : "#1a1a2e",
         }}
       >
-        {substituteName
-          ? `${slot.teacher}⇒${substituteName}`
-          : formatBiweeklyTeacher(slot.teacher, slot.note)}
+        {substituteName ? (
+          <>
+            {formatBiweeklyTeacher(slot.teacher, slot.note)}
+            <span style={{ margin: "0 2px" }}>⇒</span>
+            {substituteName}
+          </>
+        ) : (
+          formatBiweeklyTeacher(slot.teacher, slot.note)
+        )}
       </div>
 
       {slot.room && (

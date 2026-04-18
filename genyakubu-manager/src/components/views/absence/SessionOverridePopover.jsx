@@ -38,6 +38,7 @@ export function SessionOverridePopover({
     initial?.displayAs != null ? String(initial.displayAs) : ""
   );
   const [memo, setMemo] = useState(initial?.memo || "");
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const handler = (e) => {
@@ -52,19 +53,28 @@ export function SessionOverridePopover({
     : { top: 100, left: 100 };
 
   const handleSave = () => {
+    setError(null);
     if (mode === "set") {
       const v = Number(value);
       if (!Number.isFinite(v) || v < 1) {
-        // 無効入力: 何もせず閉じる
-        onClose();
+        setError("1 以上の数値を入力してください");
         return;
       }
       onSave({ mode: "set", value: v, memo });
     } else {
-      const d = Number(displayAs);
-      const entry = { mode: "skip", memo };
-      if (Number.isFinite(d) && d > 0) entry.displayAs = d;
-      onSave(entry);
+      // skip: displayAs は任意 (未入力なら回数空欄)。空白は許容、
+      // 入力されたが無効 (0 以下 / 非数字) の場合は明示エラー。
+      const trimmed = displayAs.trim();
+      if (trimmed !== "") {
+        const d = Number(trimmed);
+        if (!Number.isFinite(d) || d < 1) {
+          setError("表示する回数は 1 以上の数値、または未入力にしてください");
+          return;
+        }
+        onSave({ mode: "skip", memo, displayAs: d });
+      } else {
+        onSave({ mode: "skip", memo });
+      }
     }
     onClose();
   };
@@ -170,6 +180,22 @@ export function SessionOverridePopover({
           style={{ ...S.input, width: "100%" }}
         />
       </div>
+
+      {error && (
+        <div
+          style={{
+            background: "#fde8e8",
+            border: "1px solid #f5c2c2",
+            color: "#c44",
+            padding: "4px 8px",
+            borderRadius: 4,
+            marginBottom: 6,
+            fontSize: 11,
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
         {onClear && initial && (
