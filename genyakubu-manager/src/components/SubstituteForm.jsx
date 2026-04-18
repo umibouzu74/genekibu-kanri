@@ -5,12 +5,12 @@ import { SingleSubForm } from "./substitute/SingleSubForm";
 import { DayBulkSubForm } from "./substitute/DayBulkSubForm";
 
 // ─── 代行登録フォーム ─────────────────────────────────────────────
-// モード切替と日付管理のみを扱う薄いラッパー。
+// モード切替と共有 state を扱う薄いラッパー。
 // 単一コマ入力 → SingleSubForm / 1日分まとめ入力 → DayBulkSubForm。
 // 編集時 (sub prop あり) は常に単一モード固定。
 //
-// 日付入力は親で保持し、両サブフォームへ prop として流す。
-// 日付の必須 validation も親で行い、空なら onSave 呼び出しを止める。
+// 共有 state (date / singleF / rowState / showAllCandidates) は親で
+// 保持することで、モード切替時に入力が消失しないようにしている。
 export function SubstituteForm({
   sub,
   slots,
@@ -25,6 +25,19 @@ export function SubstituteForm({
   const [mode, setMode] = useState("single");
   const [date, setDate] = useState(sub?.date || today);
   const [dateError, setDateError] = useState(null);
+
+  // 子フォーム間で共有する state (モード切替で消えないよう親で保持)
+  const [singleF, setSingleF] = useState(
+    sub || {
+      slotId: "",
+      originalTeacher: "",
+      substitute: "",
+      status: "requested",
+      memo: "",
+    }
+  );
+  const [rowState, setRowState] = useState({});
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
 
   const activeMode = isEdit ? "single" : mode;
   const dayOfDate = dateToDay(date);
@@ -113,6 +126,10 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          f={singleF}
+          setF={setSingleF}
+          showAllCandidates={showAllCandidates}
+          setShowAllCandidates={setShowAllCandidates}
           onSave={handleSave}
           onCancel={onCancel}
         />
@@ -124,6 +141,10 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          rowState={rowState}
+          setRowState={setRowState}
+          showAllCandidates={showAllCandidates}
+          setShowAllCandidates={setShowAllCandidates}
           onSave={handleSave}
           onCancel={onCancel}
         />

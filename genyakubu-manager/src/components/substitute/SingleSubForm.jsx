@@ -7,8 +7,8 @@ import { sortJa } from "../../utils/sortJa";
 
 // ─── 単一コマ代行フォーム ──────────────────────────────────────────
 // SubstituteForm の "single" モード相当。
-// 親から date / isEdit / 既存 sub / 各種参照データを受け取り、単一の
-// 代行レコードを構築して onSave に渡す。
+// フォーム入力 state (f) と "全員表示" トグルは親で保持し、モード切替時
+// にも維持される (UX: ユーザが途中でモード切替しても入力が消えない)。
 export function SingleSubForm({
   sub,
   date,
@@ -17,20 +17,14 @@ export function SingleSubForm({
   subs,
   partTimeStaff,
   subjects,
+  f,
+  setF,
+  showAllCandidates,
+  setShowAllCandidates,
   onSave,
   onCancel,
 }) {
-  const [f, setF] = useState(
-    sub || {
-      slotId: "",
-      originalTeacher: "",
-      substitute: "",
-      status: "requested",
-      memo: "",
-    }
-  );
   const [errors, setErrors] = useState({});
-  const [showAllCandidates, setShowAllCandidates] = useState(false);
 
   const up = (k, v) => {
     setF((p) => ({ ...p, [k]: v }));

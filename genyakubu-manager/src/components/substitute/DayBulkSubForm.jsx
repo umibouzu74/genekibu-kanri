@@ -14,6 +14,8 @@ import { sortJa } from "../../utils/sortJa";
 // SubstituteForm の "full-day" モード相当。
 // 対象日の曜日に該当する (未代行の) コマ一覧を行表示し、一括で
 // 複数の代行レコードを登録する。
+// 行入力 state (rowState) と "全員表示" トグルは親で保持し、モード切替で
+// リセットされないようにしている。
 export function DayBulkSubForm({
   date,
   dayOfDate,
@@ -21,12 +23,14 @@ export function DayBulkSubForm({
   subs,
   partTimeStaff,
   subjects,
+  rowState,
+  setRowState,
+  showAllCandidates,
+  setShowAllCandidates,
   onSave,
   onCancel,
 }) {
-  const [rowState, setRowState] = useState({});
   const [errors, setErrors] = useState({});
-  const [showAllCandidates, setShowAllCandidates] = useState(false);
 
   const staffNameSet = useMemo(
     () => new Set(partTimeStaff.map((s) => s.name)),
@@ -51,7 +55,7 @@ export function DayBulkSubForm({
   useEffect(() => {
     setRowState({});
     setErrors((p) => ({ ...p, rows: undefined }));
-  }, [date]);
+  }, [date, setRowState]);
 
   const updateRow = (slotId, patch) => {
     setRowState((p) => ({
