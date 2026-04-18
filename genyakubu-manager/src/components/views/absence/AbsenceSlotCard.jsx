@@ -5,6 +5,7 @@ import {
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // ─── 欠勤 UI 用スロットカード ──────────────────────────────────
 // AdjustmentEditor.SlotCard の派生。欠勤バッジ・下書き状態・代行表示・
@@ -147,20 +148,7 @@ export function AbsenceSlotCard({
           {slot.cls && slot.cls !== "-" ? slot.cls : ""}
         </span>
         <span style={{ fontSize: 12, fontWeight: 600 }}>{slot.subj}</span>
-        {biweekly && weekType && (
-          <span
-            style={{
-              background: weekType === "A" ? "#2e6a9e" : "#c05030",
-              color: "#fff",
-              padding: "0 4px",
-              borderRadius: 3,
-              fontSize: 9,
-              fontWeight: 700,
-            }}
-          >
-            {weekType}週
-          </span>
-        )}
+        {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
         {sessionCount > 0 && (
           <span
             style={{

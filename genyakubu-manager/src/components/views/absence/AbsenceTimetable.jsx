@@ -21,7 +21,7 @@ import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHe
 export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
   draft, // draft.draft (useAbsenceDraft から)
-  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride, getRow
+  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride
   existingSubs, // 既存確定代行 (date フィルタ済み)
   sessionCountMap, // Map<slotId, number> draft 反映済み
   absentSlotIds, // Set<slotId>

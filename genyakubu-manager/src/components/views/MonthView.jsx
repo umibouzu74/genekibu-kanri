@@ -3,7 +3,6 @@ import {
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
-  getSubForSlot,
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
@@ -22,6 +21,16 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
     () => slots.filter((s) => isSlotForTeacher(s, teacher)),
     [teacher, slots]
   );
+
+  // 代行レコードを (date, slotId) で索引化。日 × コマのループ内で
+  // Array.find を回さないように。
+  const subByDateSlot = useMemo(() => {
+    const m = new Map();
+    for (const s of subs || []) {
+      m.set(`${s.date}|${s.slotId}`, s);
+    }
+    return m;
+  }, [subs]);
 
   // 日付ごとに「合同で吸収されたコマ id」を索引化。吸収されたコマは当該日に
   // 出勤扱いしない (host 側に統合されるため)。
@@ -60,6 +69,39 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
   const examPeriodsForDate = useCallback(
     (ds) => examPeriods.filter((ep) => ds >= ep.startDate && ds <= ep.endDate),
     [examPeriods]
+  );
+
+  // この講師が (slot, ds) のコマに出勤扱いとなるかどうか。
+  // 休講・カットオフ・時間割外・確定代行で外された・合同で吸収された、の
+  // いずれかに該当すると false。
+  const isTeacherAttending = useCallback(
+    (slot, ds) => {
+      if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
+      if (
+        timetables &&
+        timetables.length > 0 &&
+        !isTimetableActiveForDate(
+          timetables.find((t) => t.id === (slot.timetableId ?? 1)),
+          ds,
+          slot.grade
+        )
+      ) {
+        return false;
+      }
+      if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
+      const sub = subByDateSlot.get(`${ds}|${slot.id}`);
+      if (
+        sub?.status === "confirmed" &&
+        sub.originalTeacher === teacher &&
+        sub.substitute !== teacher
+      ) {
+        return false;
+      }
+      const absorbedSet = absorbedByDate.get(ds);
+      if (absorbedSet && absorbedSet.has(slot.id)) return false;
+      return true;
+    },
+    [isOffForGrade, timetables, displayCutoff, subByDateSlot, absorbedByDate, teacher]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -132,36 +174,9 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
           const hasExam = epActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
           const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
-          const absorbedSet = absorbedByDate.get(ds);
           const sl = isFullOff || dayCutoff
             ? []
-            : (dayMap[dn] || []).filter((s) => {
-                if (isOffForGrade(ds, s.grade, s.subj)) return false;
-                if (
-                  timetables &&
-                  timetables.length > 0 &&
-                  !isTimetableActiveForDate(
-                    timetables.find((t) => t.id === (s.timetableId ?? 1)),
-                    ds,
-                    s.grade
-                  )
-                ) {
-                  return false;
-                }
-                if (isBeyondCutoff(ds, s.grade, displayCutoff)) return false;
-                // この日に確定代行で自分が外れているコマは出勤扱いしない
-                const sub = getSubForSlot(subs, s.id, ds);
-                if (
-                  sub?.status === "confirmed" &&
-                  sub.originalTeacher === teacher &&
-                  sub.substitute !== teacher
-                ) {
-                  return false;
-                }
-                // この日に合同で吸収されたコマも出勤扱いしない
-                if (absorbedSet && absorbedSet.has(s.id)) return false;
-                return true;
-              });
+            : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
           return (
             <div
               key={ds}
@@ -232,7 +247,7 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                 </div>
               ) : (
                 sl.map((s) => {
-                  const sub = getSubForSlot(subs, s.id, ds);
+                  const sub = subByDateSlot.get(`${ds}|${s.id}`);
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                   const away =
                     sub && sub.originalTeacher === teacher && sub.substitute !== teacher; // 自分が休み

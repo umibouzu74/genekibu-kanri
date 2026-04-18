@@ -56,8 +56,6 @@ export function useAbsenceDraft() {
 
   const reset = useCallback(() => setDraft({}), []);
 
-  const getRow = useCallback((slotId) => draft[slotId] || emptyRow(), [draft]);
-
   const updateSub = useCallback((slotId, patch) => {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
@@ -233,7 +231,6 @@ export function useAbsenceDraft() {
   return {
     draft,
     reset,
-    getRow,
     updateSub,
     clearSub,
     updateMove,
