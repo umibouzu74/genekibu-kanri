@@ -293,7 +293,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="名称（任意）"
-            style={{ ...S.input, width: 160 }}
+            style={{ ...S.input, width: "100%", maxWidth: 240 }}
           />
         </div>
         {error && (

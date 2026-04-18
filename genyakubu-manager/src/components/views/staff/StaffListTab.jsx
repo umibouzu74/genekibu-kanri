@@ -51,7 +51,7 @@ export function StaffListTab({
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAddStaff();
               }}
-              style={{ ...S.input, width: 180 }}
+              style={{ ...S.input, width: "100%", maxWidth: 240 }}
             />
             <datalist id="staff-candidates">
               {allTeachers
