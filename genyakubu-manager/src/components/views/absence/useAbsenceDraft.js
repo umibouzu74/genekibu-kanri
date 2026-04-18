@@ -2,148 +2,116 @@ import { useCallback, useState } from "react";
 
 // ─── Teacher Absence workflow: local draft state ──────────────────
 // 代行・合同/移動・回数補正の下書きを slot ごとに保持する。
-// 1 スロットに対し 1 種類の action (sub|combine|move) と回数補正 (override)
-// を共存可能とする。sub/combine/move は相互排他。
+// sub / move / combine / override はいずれも独立フィールドで、同一スロット
+// 上で任意の組み合わせが共存できる (例: 時間を移動した上でさらに代行を
+// 割り当てる)。combine で吸収された側 (absorbedBy != null) は表示対象から
+// 除外されるため、個別の sub/move は持たない。
 //
 // draft shape:
 //   {
 //     [slotId]: {
-//       action: null | "sub" | "combine" | "move",
-//       sub?: { substitute: string, status: "requested"|"confirmed", memo: string }
-//       combine?: { hostSlotId: number }  // この slot が host、他が吸収される
-//       absorbedBy?: number               // 逆向き: 他の slot (host) に吸収される
-//       move?: { targetTime: string }
-//       override?: { mode: "set"|"skip", value?: number, memo: string }
+//       sub?:        { substitute, status, memo },
+//       move?:       { targetTime },
+//       combine?:    { absorbedSlotIds },   // この slot が host
+//       absorbedBy?: number,                // 逆向き: 他の slot (host) に吸収
+//       override?:   { mode, value?, displayAs?, memo },
 //     }
 //   }
 
 const emptyRow = () => ({
-  action: null,
   sub: null,
+  move: null,
   combine: null,
   absorbedBy: null,
-  move: null,
   override: null,
 });
+
+// row が "空" (全フィールド null) なら true
+function isEmptyRow(row) {
+  return (
+    !row.sub &&
+    !row.move &&
+    !row.combine &&
+    row.absorbedBy == null &&
+    !row.override
+  );
+}
+
+// 各フィールドを更新する共通ヘルパ。row が空になったら entry ごと削除して
+// draft を綺麗に保つ。
+function patchRow(prev, slotId, patch) {
+  const cur = prev[slotId] || emptyRow();
+  const next = { ...cur, ...patch };
+  const out = { ...prev };
+  if (isEmptyRow(next)) {
+    delete out[slotId];
+  } else {
+    out[slotId] = next;
+  }
+  return out;
+}
 
 export function useAbsenceDraft() {
   const [draft, setDraft] = useState({});
 
   const reset = useCallback(() => setDraft({}), []);
 
-  const getRow = useCallback((slotId) => draft[slotId] || emptyRow(), [draft]);
-
-  const setAction = useCallback((slotId, action) => {
-    setDraft((prev) => {
-      const cur = prev[slotId] || emptyRow();
-      const next = { ...prev };
-
-      // 合同関連のクリーンアップ: 合同から離脱するときに両側の参照を切る。
-      const wasHost = cur.action === "combine" && cur.combine;
-      const wasAbsorbed = cur.absorbedBy != null;
-
-      if (wasHost && action !== "combine") {
-        // host → 別アクション: 吸収されていた全スロットの absorbedBy を解除
-        for (const absId of cur.combine.absorbedSlotIds || []) {
-          const absRow = next[absId];
-          if (absRow && absRow.absorbedBy === slotId) {
-            next[absId] = { ...absRow, absorbedBy: null, action: null };
-          }
-        }
-      }
-
-      if (wasAbsorbed && action !== "combine") {
-        // 吸収されていた側 → 別アクション: host の absorbedSlotIds から自分を除去
-        const hostId = cur.absorbedBy;
-        const host = next[hostId];
-        if (host && host.combine && Array.isArray(host.combine.absorbedSlotIds)) {
-          const filtered = host.combine.absorbedSlotIds.filter((x) => x !== slotId);
-          next[hostId] = {
-            ...host,
-            combine: filtered.length > 0 ? { ...host.combine, absorbedSlotIds: filtered } : null,
-            action: filtered.length > 0 ? "combine" : null,
-          };
-        }
-      }
-
-      // action を切り替えるときに相互排他する (sub, combine, move)。
-      // override は action と独立に保持するため、ここではクリアしない。
-      next[slotId] = {
-        ...cur,
-        action,
-        sub: action === "sub" ? cur.sub || { substitute: "", status: "confirmed", memo: "" } : null,
-        combine: action === "combine" ? cur.combine : null,
-        absorbedBy: action === "combine" ? cur.absorbedBy : null,
-        move: action === "move" ? cur.move : null,
-      };
-      return next;
-    });
-  }, []);
-
   const updateSub = useCallback((slotId, patch) => {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
-      return {
-        ...prev,
-        [slotId]: {
-          ...cur,
-          action: "sub",
-          sub: { substitute: "", status: "confirmed", memo: "", ...(cur.sub || {}), ...patch },
+      return patchRow(prev, slotId, {
+        sub: {
+          substitute: "",
+          status: "confirmed",
+          memo: "",
+          ...(cur.sub || {}),
+          ...patch,
         },
-      };
+      });
     });
+  }, []);
+
+  const clearSub = useCallback((slotId) => {
+    setDraft((prev) => patchRow(prev, slotId, { sub: null }));
   }, []);
 
   const updateMove = useCallback((slotId, targetTime) => {
-    setDraft((prev) => {
-      const cur = prev[slotId] || emptyRow();
-      return {
-        ...prev,
-        [slotId]: { ...cur, action: "move", move: { targetTime } },
-      };
-    });
+    setDraft((prev) => patchRow(prev, slotId, { move: { targetTime } }));
   }, []);
 
-  // 合同: host と absorbed の両方を同時に更新する。
-  // host 側には combine.absorbedSlotIds[] を、absorbed 側には absorbedBy=host を設定。
-  // 既に host に吸収されていた slot が新リストから外れた場合は、その孤児
-  // absorbed の absorbedBy を解除する (整合性を保つための防御)。
+  const clearMove = useCallback((slotId) => {
+    setDraft((prev) => patchRow(prev, slotId, { move: null }));
+  }, []);
+
+  // 合同: host に combine.absorbedSlotIds[] を、absorbed 側に absorbedBy=host を
+  // 設定する。吸収された slot は host と統合されるため、独自の sub/move は
+  // 持たせない (表示対象外になる)。
   const setCombine = useCallback((hostSlotId, absorbedSlotIds) => {
     setDraft((prev) => {
-      const next = { ...prev };
+      let next = { ...prev };
       const newIds = [...absorbedSlotIds];
       const newIdSet = new Set(newIds);
 
-      // 既存 host の以前の吸収リストから、新リストに含まれない id を孤児として解除
+      // 既存 host から新リストに含まれなくなった slot の absorbedBy を解除
       const prevHost = next[hostSlotId];
-      const prevAbsorbedIds = prevHost?.combine?.absorbedSlotIds || [];
-      for (const oldId of prevAbsorbedIds) {
+      for (const oldId of prevHost?.combine?.absorbedSlotIds || []) {
         if (newIdSet.has(oldId)) continue;
         const oldRow = next[oldId];
         if (oldRow && oldRow.absorbedBy === hostSlotId) {
-          next[oldId] = { ...oldRow, absorbedBy: null, action: null };
+          next = patchRow(next, oldId, { absorbedBy: null });
         }
       }
 
-      // host エントリを上書き
-      const hostRow = prevHost || emptyRow();
-      next[hostSlotId] = {
-        ...hostRow,
-        action: "combine",
-        combine: {
-          ...(hostRow.combine || {}),
-          absorbedSlotIds: newIds,
-        },
-      };
+      next = patchRow(next, hostSlotId, {
+        combine: { absorbedSlotIds: newIds },
+      });
 
       for (const sid of newIds) {
-        const cur = next[sid] || emptyRow();
-        next[sid] = {
-          ...cur,
-          action: "combine",
-          combine: null,
+        next = patchRow(next, sid, {
           absorbedBy: hostSlotId,
-        };
+          sub: null,
+          move: null,
+        });
       }
       return next;
     });
@@ -152,16 +120,15 @@ export function useAbsenceDraft() {
   const clearCombine = useCallback((hostSlotId) => {
     setDraft((prev) => {
       const hostRow = prev[hostSlotId];
-      if (!hostRow || !hostRow.combine) return prev;
-      const absorbedIds = hostRow.combine.absorbedSlotIds || [];
-      const next = { ...prev };
-      next[hostSlotId] = { ...hostRow, action: null, combine: null };
-      for (const sid of absorbedIds) {
+      if (!hostRow?.combine) return prev;
+      let next = { ...prev };
+      for (const sid of hostRow.combine.absorbedSlotIds || []) {
         const cur = next[sid];
         if (cur && cur.absorbedBy === hostSlotId) {
-          next[sid] = { ...cur, action: null, absorbedBy: null };
+          next = patchRow(next, sid, { absorbedBy: null });
         }
       }
+      next = patchRow(next, hostSlotId, { combine: null });
       return next;
     });
   }, []);
@@ -169,19 +136,23 @@ export function useAbsenceDraft() {
   const updateOverride = useCallback((slotId, patch) => {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
-      return {
-        ...prev,
-        [slotId]: {
-          ...cur,
-          override: patch === null ? null : { mode: "set", value: 0, memo: "", ...(cur.override || {}), ...patch },
+      if (patch === null) {
+        return patchRow(prev, slotId, { override: null });
+      }
+      return patchRow(prev, slotId, {
+        override: {
+          mode: "set",
+          value: 0,
+          memo: "",
+          ...(cur.override || {}),
+          ...patch,
         },
-      };
+      });
     });
   }, []);
 
   // ドラフトから保存対象の配列を作成する。
-  // date: 対象日 (YYYY-MM-DD)
-  // slots: 現在ロードされているスロット群 (slot.id, teacher 参照用)
+  // 1 スロットが sub + move の両方を持つ場合は両方のレコードを出力する。
   const toBatchPayload = useCallback(
     (date, slots) => {
       const draftSubs = [];
@@ -196,7 +167,7 @@ export function useAbsenceDraft() {
         const slot = slotById.get(slotId);
         if (!slot) continue;
 
-        if (row.action === "sub" && row.sub) {
+        if (row.sub?.substitute || row.sub?.status) {
           draftSubs.push({
             date,
             slotId,
@@ -207,17 +178,17 @@ export function useAbsenceDraft() {
           });
         }
 
-        if (row.action === "combine" && row.combine) {
+        if (row.combine?.absorbedSlotIds?.length) {
           draftAdjustments.push({
             date,
             type: "combine",
             slotId,
-            combineSlotIds: [...(row.combine.absorbedSlotIds || [])],
+            combineSlotIds: [...row.combine.absorbedSlotIds],
             memo: row.combine.memo || "",
           });
         }
 
-        if (row.action === "move" && row.move?.targetTime) {
+        if (row.move?.targetTime) {
           draftAdjustments.push({
             date,
             type: "move",
@@ -260,10 +231,10 @@ export function useAbsenceDraft() {
   return {
     draft,
     reset,
-    getRow,
-    setAction,
     updateSub,
+    clearSub,
     updateMove,
+    clearMove,
     setCombine,
     clearCombine,
     updateOverride,

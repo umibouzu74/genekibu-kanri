@@ -93,7 +93,7 @@ export function AbsenceWorkflowView({
     let idBase = -1000;
     for (const [sidStr, row] of Object.entries(draft.draft)) {
       const slotId = Number(sidStr);
-      if (row.action === "combine" && row.combine?.absorbedSlotIds?.length) {
+      if (row.combine?.absorbedSlotIds?.length) {
         draftAdjustments.push({
           id: idBase--,
           date,
@@ -103,7 +103,7 @@ export function AbsenceWorkflowView({
           memo: "(draft)",
         });
       }
-      if (row.action === "move" && row.move?.targetTime) {
+      if (row.move?.targetTime) {
         draftAdjustments.push({
           id: idBase--,
           date,
@@ -160,9 +160,9 @@ export function AbsenceWorkflowView({
   const draftCount = useMemo(() => {
     let c = 0;
     for (const row of Object.values(draft.draft)) {
-      if (row.action === "sub" && row.sub?.substitute) c++;
-      if (row.action === "combine" && row.combine?.absorbedSlotIds?.length) c++;
-      if (row.action === "move" && row.move?.targetTime) c++;
+      if (row.sub?.substitute) c++;
+      if (row.combine?.absorbedSlotIds?.length) c++;
+      if (row.move?.targetTime) c++;
       if (row.override) c++;
     }
     return c;
@@ -351,6 +351,7 @@ export function AbsenceWorkflowView({
         absentSlotIds={absentSlotIds}
         partTimeStaff={partTimeStaff}
         subjects={subjects}
+        biweeklyAnchors={biweeklyAnchors}
         date={date}
       />
 

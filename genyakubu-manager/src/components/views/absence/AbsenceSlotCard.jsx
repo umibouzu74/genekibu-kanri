@@ -1,6 +1,11 @@
 import { gradeColor as GC } from "../../../data";
-import { formatBiweeklyTeacher } from "../../../utils/biweekly";
+import {
+  formatBiweeklyTeacher,
+  getSlotWeekType,
+  isBiweekly,
+} from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // ─── 欠勤 UI 用スロットカード ──────────────────────────────────
 // AdjustmentEditor.SlotCard の派生。欠勤バッジ・下書き状態・代行表示・
@@ -8,6 +13,8 @@ import { formatSessionNumber } from "../../../utils/sessionCount";
 
 export function AbsenceSlotCard({
   slot,
+  date, // 対象日 (YYYY-MM-DD) — 隔週の A/B 判定に使用
+  biweeklyAnchors,
   isAbsent,
   isMoved,
   isCombineHost,
@@ -27,6 +34,10 @@ export function AbsenceSlotCard({
   onClick,
 }) {
   const gc = GC(slot.grade);
+  const biweekly = isBiweekly(slot.note);
+  const weekType = biweekly && date
+    ? getSlotWeekType(date, slot, biweeklyAnchors)
+    : null;
 
   const borderColor = isCombineSource
     ? "#e0a020"
@@ -137,6 +148,7 @@ export function AbsenceSlotCard({
           {slot.cls && slot.cls !== "-" ? slot.cls : ""}
         </span>
         <span style={{ fontSize: 12, fontWeight: 600 }}>{slot.subj}</span>
+        {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
         {sessionCount > 0 && (
           <span
             style={{

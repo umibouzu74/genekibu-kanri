@@ -6,6 +6,7 @@ import {
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
 // Single cell in the Excel-like timetable grid. Highly memoised because
@@ -200,20 +201,7 @@ export const ExcelCell = memo(function ExcelCell({
             </span>
           )}
           <span>{slot.subj}</span>
-          {biweekly && weekType && (
-            <span
-              style={{
-                background: weekType === "A" ? "#2e6a9e" : "#c05030",
-                color: "#fff",
-                padding: "0 4px",
-                borderRadius: 3,
-                fontSize: 9,
-                fontWeight: 700,
-              }}
-            >
-              {weekType}週
-            </span>
-          )}
+          {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
           {badge}
         </div>
         <div

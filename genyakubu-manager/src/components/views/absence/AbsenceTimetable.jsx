@@ -21,12 +21,13 @@ import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHe
 export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
   draft, // draft.draft (useAbsenceDraft から)
-  draftApi, // setAction, updateSub, updateMove, setCombine, clearCombine, updateOverride, getRow
+  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride
   existingSubs, // 既存確定代行 (date フィルタ済み)
   sessionCountMap, // Map<slotId, number> draft 反映済み
   absentSlotIds, // Set<slotId>
   partTimeStaff,
   subjects,
+  biweeklyAnchors,
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -43,7 +44,7 @@ export function AbsenceTimetable({
     const hostsAbs = new Map(); // hostId -> absorbedSlotIds[]
     for (const [sidStr, row] of Object.entries(draft)) {
       const sid = Number(sidStr);
-      if (row.action === "combine" && row.combine?.absorbedSlotIds) {
+      if (row.combine?.absorbedSlotIds?.length) {
         hostsAbs.set(sid, [...row.combine.absorbedSlotIds]);
         for (const c of row.combine.absorbedSlotIds) {
           absorbed.add(c);
@@ -57,8 +58,7 @@ export function AbsenceTimetable({
   // 表示用の slot リスト: time は move があれば target time
   const effectiveSlots = useMemo(() => {
     return slots.map((s) => {
-      const row = draft[s.id];
-      const moveTarget = row?.action === "move" ? row.move?.targetTime : null;
+      const moveTarget = draft[s.id]?.move?.targetTime || null;
       return {
         ...s,
         _time: moveTarget || s.time,
@@ -82,8 +82,8 @@ export function AbsenceTimetable({
 
       const isAbsorbed = absorbedSet.has(slot.id);
       const isHost = hostsAbsorbedMap.has(slot.id);
-      const hasSub = row?.action === "sub" && row.sub?.substitute;
-      const hasMove = row?.action === "move" && row.move?.targetTime;
+      const hasSub = !!row?.sub?.substitute;
+      const hasMove = !!row?.move?.targetTime;
       const hasOverride = !!row?.override;
 
       if (isAbsorbed) {
@@ -142,7 +142,7 @@ export function AbsenceTimetable({
           items.push({
             label: "移動を取り消す",
             danger: true,
-            onClick: () => draftApi.setAction(slot.id, null),
+            onClick: () => draftApi.clearMove(slot.id),
           });
         }
 
@@ -167,7 +167,7 @@ export function AbsenceTimetable({
           items.push({
             label: "代行を取り消す",
             danger: true,
-            onClick: () => draftApi.setAction(slot.id, null),
+            onClick: () => draftApi.clearSub(slot.id),
           });
         }
       }
@@ -185,14 +185,13 @@ export function AbsenceTimetable({
     e.dataTransfer.effectAllowed = "move";
   }, []);
 
-  // ドロップ: move 下書きを作成 / 同じ時刻なら解除
+  // ドロップ: move 下書きを作成 / 元の時刻に戻したら解除
   const handleDrop = useCallback(
     (slotId, targetTime) => {
       const slot = slots.find((s) => s.id === slotId);
       if (!slot) return;
       if (slot.time === targetTime) {
-        const row = draft[slotId];
-        if (row?.action === "move") draftApi.setAction(slotId, null);
+        if (draft[slotId]?.move) draftApi.clearMove(slotId);
         return;
       }
       draftApi.updateMove(slotId, targetTime);
@@ -244,7 +243,7 @@ export function AbsenceTimetable({
       // 代行: draft or 既存確定
       let substituteName = null;
       let substituteStatus = null;
-      if (row.action === "sub" && row.sub?.substitute) {
+      if (row.sub?.substitute) {
         substituteName = row.sub.substitute;
         substituteStatus = row.sub.status || "confirmed";
       } else {
@@ -295,8 +294,10 @@ export function AbsenceTimetable({
         <AbsenceSlotCard
           key={s.id}
           slot={s}
+          date={date}
+          biweeklyAnchors={biweeklyAnchors}
           isAbsent={isAbsent}
-          isMoved={row._moved || row.action === "move"}
+          isMoved={!!row.move?.targetTime}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
           isAbsorbed={isAbsorbed}
@@ -324,6 +325,7 @@ export function AbsenceTimetable({
       slots,
       existingSubs,
       date,
+      biweeklyAnchors,
       combineSource,
       subjects,
       sessionCountMap,
@@ -484,7 +486,7 @@ export function AbsenceTimetable({
           onAssign={(name, status) =>
             draftApi.updateSub(subPicker.slot.id, { substitute: name, status })
           }
-          onClear={() => draftApi.setAction(subPicker.slot.id, null)}
+          onClear={() => draftApi.clearSub(subPicker.slot.id)}
           onClose={() => setSubPicker(null)}
         />
       )}
