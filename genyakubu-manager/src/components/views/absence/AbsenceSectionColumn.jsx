@@ -9,14 +9,12 @@ import { formatCount, weightedSlotCount } from "../../../utils/biweekly";
 //
 // props:
 //   label, color, sl          - ヘッダ/見た目/対象スロット (effective _time 付き想定)
-//   extraTimes                - スロットが存在しない移動先時刻 (空のドロップ行を生成)
 //   renderCard(slot)          - スロットカードを描画する関数
 //   onTimeDrop(slotId, time)  - 時間行にドロップされたとき呼ばれる
 export function AbsenceSectionColumn({
   label,
   color,
   sl,
-  extraTimes = [],
   renderCard,
   onTimeDrop,
 }) {
@@ -27,15 +25,10 @@ export function AbsenceSectionColumn({
       if (!byTime[t]) byTime[t] = [];
       byTime[t].push(s);
     });
-    for (const t of extraTimes) {
-      if (!byTime[t]) byTime[t] = [];
-    }
     return Object.entries(byTime).sort(
       ([a], [b]) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
     );
-  }, [sl, extraTimes]);
-
-  const hasContent = sl.length > 0 || timeGroups.length > 0;
+  }, [sl]);
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -69,7 +62,7 @@ export function AbsenceSectionColumn({
           minHeight: 80,
         }}
       >
-        {!hasContent ? (
+        {sl.length === 0 ? (
           <div
             style={{ textAlign: "center", color: "#bbb", padding: 20, fontSize: 13 }}
           >
@@ -85,28 +78,15 @@ export function AbsenceSectionColumn({
                 labelColor={color.f}
                 onDrop={(slotId) => onTimeDrop(slotId, time)}
               >
-                {tSlots.length === 0 ? (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#bbb",
-                      fontStyle: "italic",
-                      padding: "4px 2px",
-                    }}
-                  >
-                    ここへドロップで移動
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
-                      gap: 6,
-                    }}
-                  >
-                    {tSlots.map((s) => renderCard(s))}
-                  </div>
-                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
+                    gap: 6,
+                  }}
+                >
+                  {tSlots.map((s) => renderCard(s))}
+                </div>
               </TimeDropRow>
             ))}
           </div>

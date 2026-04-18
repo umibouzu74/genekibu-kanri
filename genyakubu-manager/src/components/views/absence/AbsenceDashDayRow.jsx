@@ -8,18 +8,11 @@ import { AbsenceSectionColumn } from "./AbsenceSectionColumn";
 // AbsenceSectionColumn を getDashSections(dow) に従って並べる。
 //
 // props:
-//   dow             - 曜日。水/土 は特殊レイアウト
-//   slots           - effective slots (absorbed 除外済みを親で filter 済み)
-//   renderCard      - 個々のスロットカードを描画する関数 (親で draft 状態を保持)
-//   onTimeDrop      - 時間行にドロップされたとき呼ばれる (slotId, time)
-//   extraTimesBySection - { sectionKey: string[] } 各セクションに追加する移動先時刻
-export function AbsenceDashDayRow({
-  dow,
-  slots,
-  renderCard,
-  onTimeDrop,
-  extraTimesBySection = {},
-}) {
+//   dow        - 曜日。水/土 は特殊レイアウト
+//   slots      - effective slots (absorbed 除外済みを親で filter 済み)
+//   renderCard - 個々のスロットカードを描画する関数 (親で draft 状態を保持)
+//   onTimeDrop - 時間行にドロップされたとき呼ばれる (slotId, time)
+export function AbsenceDashDayRow({ dow, slots, renderCard, onTimeDrop }) {
   const sections = useMemo(() => getDashSections(dow), [dow]);
 
   return (
@@ -42,7 +35,6 @@ export function AbsenceDashDayRow({
             label={sec.label}
             color={color}
             sl={secSlots}
-            extraTimes={extraTimesBySection[sec.key] || []}
             renderCard={renderCard}
             onTimeDrop={onTimeDrop}
           />

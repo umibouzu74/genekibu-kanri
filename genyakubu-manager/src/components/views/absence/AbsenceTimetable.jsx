@@ -305,7 +305,6 @@ export function AbsenceTimetable({
           isCombineCandidate={isCombineCandidate}
           isCombineSource={isCombineSource}
           disableDrag={disableDrag}
-          compact
           dimmed={dimmed}
           onContextMenu={(e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
