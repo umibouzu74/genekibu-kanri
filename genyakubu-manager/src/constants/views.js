@@ -14,4 +14,5 @@ export const VIEWS = Object.freeze({
   COMPARE: "compare",
   TIMETABLE: "timetable",
   SHARED: "shared",
+  ABSENCE_FLOW: "absence-flow",
 });

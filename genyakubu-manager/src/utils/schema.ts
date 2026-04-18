@@ -25,6 +25,7 @@ import type {
   Holiday,
   PartTimeStaffObject,
   ScheduleAdjustment,
+  SessionOverride,
   Slot,
   Subject,
   SubjectCategory,
@@ -33,7 +34,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -161,6 +162,16 @@ export function isClassSet(x: unknown): x is ClassSet {
     Array.isArray(x.slotIds) &&
     (x.slotIds as unknown[]).every((i) => isNumber(i))
   );
+}
+
+export function isSessionOverride(x: unknown): x is SessionOverride {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.date)) return false;
+  if (!isNumber(x.slotId)) return false;
+  if (x.mode !== "set" && x.mode !== "skip") return false;
+  if (x.mode === "set" && !isNumber(x.value)) return false;
+  return true;
 }
 
 // ─── Validation ────────────────────────────────────────────────────
@@ -318,6 +329,20 @@ export function validateExportBundle(
       };
   }
 
+  if (raw.sessionOverrides != null) {
+    if (!Array.isArray(raw.sessionOverrides))
+      return { ok: false, error: "sessionOverrides が配列ではありません" };
+    const bad = raw.sessionOverrides.findIndex(
+      (o: unknown) => !isSessionOverride(o)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `sessionOverrides[${bad}] の形式が不正です`,
+        path: `sessionOverrides[${bad}]`,
+      };
+  }
+
   // ── Cross-entity referential integrity ────────────────────────────
   // Run only when both sides of a relationship are present in the
   // bundle; skip when only one side is provided (partial import).
@@ -411,6 +436,22 @@ function validateReferentialIntegrity(
               };
             }
           }
+        }
+      }
+    }
+
+    if (Array.isArray(raw.sessionOverrides)) {
+      const list = raw.sessionOverrides as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        const k = toSlotIdKey(list[i].slotId);
+        if (k === null || !slotIds.has(k)) {
+          return {
+            ok: false,
+            error: `sessionOverrides[${i}].slotId (${String(
+              list[i].slotId
+            )}) が slots に存在しません`,
+            path: `sessionOverrides[${i}].slotId`,
+          };
         }
       }
     }
@@ -572,6 +613,14 @@ export function migrateExportBundle(raw: unknown): unknown {
   if (version < 9) {
     if (!Array.isArray(bundle.classSets)) {
       bundle.classSets = [];
+    }
+  }
+
+  // v9 → v10: sessionOverrides (回数手動補正) を追加。
+  //            既存データは空配列で初期化。
+  if (version < 10) {
+    if (!Array.isArray(bundle.sessionOverrides)) {
+      bundle.sessionOverrides = [];
     }
   }
 

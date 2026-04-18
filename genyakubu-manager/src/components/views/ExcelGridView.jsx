@@ -63,6 +63,8 @@ export function ExcelGridView({
   onViewDateChange,
   onAddAdjustment,
   enableSubMode = false,
+  adjustments = [],
+  sessionOverrides = [],
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -247,9 +249,11 @@ export function ExcelGridView({
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
+      adjustments,
+      sessionOverrides,
       orientationOnFirstDay: true,
     });
-  }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors]);
+  }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides]);
 
   return (
     <div>

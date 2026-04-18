@@ -80,6 +80,24 @@ export interface ScheduleAdjustment {
   createdAt?: string;
 }
 
+// ─── Session override (回数手動補正) ─────────────────────────────
+// 特定日・特定コマに対する回数の手動上書き。
+// mode:"set"  → そのコマの回数を value に強制する。後続の同セット
+//               ×教科×cohort スロットも value を基準に連続する。
+// mode:"skip" → そのコマはその日に「実施していない」扱いとし、回数を
+//               加算しない。別の合同コマに吸収された等の表現に使う。
+export type SessionOverrideMode = "set" | "skip";
+
+export interface SessionOverride {
+  id: number;
+  date: string; // YYYY-MM-DD
+  slotId: number;
+  mode: SessionOverrideMode;
+  value?: number; // mode="set" のとき必須 (1-indexed)
+  memo: string;
+  createdAt?: string;
+}
+
 // ─── Exam period (テスト期間) ────────────────────────────────────
 export interface ExamPeriod {
   id: number;
@@ -139,6 +157,7 @@ export interface ExportBundle {
   displayCutoff?: DisplayCutoff;
   examPeriods?: ExamPeriod[];
   classSets?: ClassSet[];
+  sessionOverrides?: SessionOverride[];
 }
 
 export interface ValidationResult<T> {

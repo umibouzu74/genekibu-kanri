@@ -63,6 +63,11 @@ const CompareView = lazy(() =>
 const TimetableManagerView = lazy(() =>
   import("./components/views/TimetableManagerView").then((m) => ({ default: m.TimetableManagerView }))
 );
+const AbsenceWorkflowView = lazy(() =>
+  import("./components/views/AbsenceWorkflowView").then((m) => ({
+    default: m.AbsenceWorkflowView,
+  }))
+);
 
 // Lazy-loaded modals (only rendered on demand).
 const SubstituteForm = lazy(() =>
@@ -186,6 +191,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [sessionOverrides, saveSessionOverrides] = useSyncedStorage(
+    LS.sessionOverrides,
+    [],
+    { onError: onStorageError }
+  );
   const [teacherSubjects, saveTeacherSubjects] = useSyncedStorage(
     LS.teacherSubjects,
     {},
@@ -277,6 +287,7 @@ export default function App() {
     displayCutoff,
     examPeriods,
     classSets,
+    sessionOverrides,
     teacherSubjects,
     saveSlots,
     saveHolidays,
@@ -291,6 +302,7 @@ export default function App() {
     saveDisplayCutoff,
     saveExamPeriods,
     saveClassSets,
+    saveSessionOverrides,
     saveTeacherSubjects,
     lsKeys: LS,
     setImporting,
@@ -449,9 +461,11 @@ export default function App() {
                       ? "休講日・テスト期間管理"
                       : view === VIEWS.SUBS
                         ? "アルバイト代行管理"
-                        : view === VIEWS.STAFF
-                          ? "バイト管理"
-                          : selected || ""}
+                        : view === VIEWS.ABSENCE_FLOW
+                          ? "欠勤組み換え"
+                          : view === VIEWS.STAFF
+                            ? "バイト管理"
+                            : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -571,6 +585,8 @@ export default function App() {
               examPeriods={examPeriods}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
               activeTimetableId={activeTimetableId}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
@@ -603,6 +619,8 @@ export default function App() {
               examPeriods={examPeriods}
               classSets={classSets}
               displayCutoff={displayCutoff}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -647,10 +665,31 @@ export default function App() {
               classSets={classSets}
               displayCutoff={displayCutoff}
               onAddAdjustment={adjCrud.add}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
             <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
+          )}
+          {view === VIEWS.ABSENCE_FLOW && !selected && (
+            <AbsenceWorkflowView
+              slots={slots}
+              subs={subs}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              biweeklyAnchors={biweeklyAnchors}
+              classSets={classSets}
+              displayCutoff={displayCutoff}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
+              saveSubs={saveSubs}
+              saveAdjustments={saveAdjustments}
+              saveSessionOverrides={saveSessionOverrides}
+              isAdmin={isAdmin}
+            />
           )}
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView

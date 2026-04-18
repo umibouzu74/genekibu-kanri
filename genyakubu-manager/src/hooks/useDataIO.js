@@ -26,6 +26,7 @@ export function useDataIO({
   displayCutoff,
   examPeriods,
   classSets,
+  sessionOverrides,
   teacherSubjects,
   saveSlots,
   saveHolidays,
@@ -40,6 +41,7 @@ export function useDataIO({
   saveDisplayCutoff,
   saveExamPeriods,
   saveClassSets,
+  saveSessionOverrides,
   saveTeacherSubjects,
   lsKeys,
   setImporting,
@@ -71,6 +73,7 @@ export function useDataIO({
           displayCutoff,
           examPeriods,
           classSets,
+          sessionOverrides,
           teacherSubjects,
         },
         null,
@@ -88,7 +91,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, classSets, teacherSubjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, classSets, sessionOverrides, teacherSubjects, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -144,6 +147,7 @@ export function useDataIO({
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
           if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
           if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
+          if (Array.isArray(d.sessionOverrides)) saveSessionOverrides(d.sessionOverrides);
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -179,6 +183,8 @@ export function useDataIO({
       saveDisplayCutoff,
       saveExamPeriods,
       saveClassSets,
+      saveSessionOverrides,
+      saveTeacherSubjects,
       setImporting,
       setShowDataMgr,
     ]
@@ -206,6 +212,7 @@ export function useDataIO({
     saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
     saveExamPeriods([]);
     saveClassSets([]);
+    saveSessionOverrides([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -228,6 +235,7 @@ export function useDataIO({
     saveDisplayCutoff,
     saveExamPeriods,
     saveClassSets,
+    saveSessionOverrides,
     setActiveTimetableId,
     setSelected,
     setView,

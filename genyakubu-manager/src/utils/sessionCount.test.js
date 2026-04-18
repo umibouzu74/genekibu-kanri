@@ -665,3 +665,124 @@ describe("formatSessionNumber", () => {
     expect(formatSessionNumber(undefined)).toBe("");
   });
 });
+
+// ─── SessionOverride (回数手動補正) ─────────────────────────────
+describe("computeSessionNumber - sessionOverrides: set mode", () => {
+  const tue = makeSlot(1, "火", "19:00-20:20", "中3");
+  const allSlots = [tue];
+
+  it("set override は value を即返す", () => {
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-14", mode: "set", value: 5, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(5);
+  });
+
+  it("set override 以降のカウンタは value を基準に連番で続く", () => {
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-14", mode: "set", value: 5, memo: "" },
+      ],
+    };
+    // 4/14 (2 回目) を 5 に強制 → 4/21 (本来 3 回目) は 6 になる
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(6);
+    expect(computeSessionNumber(tue, "2026-04-28", ctx)).toBe(7);
+  });
+
+  it("set override 以前は通常のカウント", () => {
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-21", mode: "set", value: 10, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(tue, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(2);
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(10);
+  });
+});
+
+describe("computeSessionNumber - sessionOverrides: skip mode", () => {
+  const tue = makeSlot(1, "火", "19:00-20:20", "中3");
+  const allSlots = [tue];
+
+  it("skip override は 0 を返し、カウンタも進めない", () => {
+    const ctx = {
+      classSets: [],
+      allSlots,
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-14", mode: "skip", memo: "" },
+      ],
+    };
+    // 4/14 は skip → 0
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(0);
+    // 4/21 は 2 回目として扱う (4/14 をスキップしたため)
+    expect(computeSessionNumber(tue, "2026-04-21", ctx)).toBe(2);
+  });
+});
+
+describe("buildSessionCountMap - sessionOverrides", () => {
+  it("同一バケット内で set override が走査中の running counter を更新する", () => {
+    // 中3 数学 火木セット、4/09 (木, 2回目) に set:10 を入れる
+    const tue = makeSlot(1, "火", "19:00-20:20", "中3");
+    const thu = makeSlot(2, "木", "19:00-20:20", "中3");
+    const classSets = [{ id: 10, label: "中3 数学", slotIds: [1, 2] }];
+    const ctx = {
+      classSets,
+      allSlots: [tue, thu],
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 2, date: "2026-04-09", mode: "set", value: 10, memo: "" },
+      ],
+    };
+    // 4/16 (木) は本来 4 回目 → 10 を基準に連番: 4/09=10, 4/14=11, 4/16=12
+    const map = buildSessionCountMap([thu], "2026-04-16", ctx);
+    expect(map.get(2)).toBe(12);
+  });
+
+  it("cohort が異なるスロットには override が波及しない", () => {
+    // 中3 英語 火曜 の S と A が並列 (同セット)。S のみに override。
+    const sTue = makeSlot(1, "火", "19:00-20:20", "中3", { cls: "S", subj: "英語" });
+    const aTue = makeSlot(2, "火", "19:00-20:20", "中3", { cls: "A", subj: "英語" });
+    const classSets = [{ id: 10, label: "中3 英語", slotIds: [1, 2] }];
+    const ctx = {
+      classSets,
+      allSlots: [sTue, aTue],
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+      sessionOverrides: [
+        { id: 1, slotId: 1, date: "2026-04-07", mode: "set", value: 9, memo: "" },
+      ],
+    };
+    expect(computeSessionNumber(sTue, "2026-04-07", ctx)).toBe(9);
+    // A には波及しない (別 cohort = 別バケット)
+    expect(computeSessionNumber(aTue, "2026-04-07", ctx)).toBe(1);
+  });
+
+  it("sessionOverrides 未指定時は既存挙動を維持する", () => {
+    const tue = makeSlot(1, "火", "19:00-20:20", "中3");
+    const ctx = {
+      classSets: [],
+      allSlots: [tue],
+      displayCutoff: DISPLAY_CUTOFF,
+      isOffForGrade: NEVER_OFF,
+    };
+    expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(2);
+  });
+});
