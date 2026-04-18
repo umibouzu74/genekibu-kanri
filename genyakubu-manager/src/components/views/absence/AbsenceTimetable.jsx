@@ -1,81 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
-import {
-  gradeToDept,
-  isKameiRoom,
-  timeToMin,
-} from "../../../data";
+import { dateToDay } from "../../../data";
 import { ContextMenu } from "../../ContextMenu";
 import { AbsenceSlotCard } from "./AbsenceSlotCard";
+import { AbsenceDashDayRow } from "./AbsenceDashDayRow";
 import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
 
 // ─── 欠勤ワークフロー: 時間割グリッド (直接操作 UI) ────────────
-// 1. スロットをドラッグして別時間行にドロップ → move 下書き
-// 2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 回数補正 / 取消
-// 3. 合同モード中はヒューリスティック候補のみ破線枠、クリックで合同確定
-// このコンポーネントは draft を直接 mutate せず、親から渡された callback 経由。
-
-// 時間行: ドロップターゲット
-function TimeRow({ time, children, onDrop }) {
-  const [dragOver, setDragOver] = useState(false);
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOver(true);
-  };
-  const handleDragLeave = () => setDragOver(false);
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const slotId = parseInt(e.dataTransfer.getData("text/plain"), 10);
-    if (!Number.isNaN(slotId)) onDrop(slotId, time);
-  };
-
-  return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      style={{
-        display: "flex",
-        gap: 8,
-        alignItems: "flex-start",
-        padding: "8px 0",
-        borderBottom: "1px solid #eee",
-        background: dragOver ? "#e8f4ff" : "transparent",
-        borderRadius: dragOver ? 6 : 0,
-        transition: "background .15s",
-        minHeight: 50,
-      }}
-    >
-      <div
-        style={{
-          width: 90,
-          flexShrink: 0,
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#555",
-          paddingTop: 6,
-        }}
-      >
-        {time}
-      </div>
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          gap: 6,
-          flexWrap: "wrap",
-          minHeight: 36,
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
+// レイアウトは Dashboard 日別 (DashDayRow) と同じ 3 カラム。
+// 編集機能:
+//   1. スロットをドラッグして別時間行にドロップ → move 下書き
+//   2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 回数補正 / 取消
+//   3. 合同モード中はヒューリスティック候補のみ破線枠、クリックで合同確定
+// draft は親から渡された callback 経由で更新する (直接 mutate しない)。
 
 export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
@@ -92,6 +30,8 @@ export function AbsenceTimetable({
   const [combineSource, setCombineSource] = useState(null);
   const [subPicker, setSubPicker] = useState(null); // { slot, anchorRect }
   const [overridePicker, setOverridePicker] = useState(null); // { slot, anchorRect }
+
+  const dow = useMemo(() => dateToDay(date), [date]);
 
   // draft から派生する absorbed 集合とホスト対応
   const { absorbedSet, hostByAbsorbed, hostsAbsorbedMap } = useMemo(() => {
@@ -124,6 +64,12 @@ export function AbsenceTimetable({
     });
   }, [slots, draft]);
 
+  // AbsenceDashDayRow に渡す表示対象 (absorbed は除外、host/移動済みは残す)
+  const visibleSlots = useMemo(
+    () => effectiveSlots.filter((s) => !absorbedSet.has(s.id)),
+    [effectiveSlots, absorbedSet]
+  );
+
   // 右クリックメニュー
   const openContextMenu = useCallback(
     (e, slot) => {
@@ -142,7 +88,6 @@ export function AbsenceTimetable({
           label: "合同から外す",
           danger: true,
           onClick: () => {
-            // absorbed を戻す: host の absorbedSlotIds から除く
             const hostId = hostByAbsorbed.get(slot.id);
             if (hostId == null) return;
             const hostRow = draft[hostId];
@@ -243,7 +188,6 @@ export function AbsenceTimetable({
       const slot = slots.find((s) => s.id === slotId);
       if (!slot) return;
       if (slot.time === targetTime) {
-        // 元に戻すドラッグ: move を取り消す
         const row = draft[slotId];
         if (row?.action === "move") draftApi.setAction(slotId, null);
         return;
@@ -262,7 +206,6 @@ export function AbsenceTimetable({
         return;
       }
       if (!canCombineSlots(combineSource, slot, subjects)) return;
-      // 既に source が host の場合は既存 absorbedSlotIds に追加、無ければ新規作成
       const existing = draft[combineSource.id]?.combine?.absorbedSlotIds || [];
       if (existing.includes(slot.id)) return;
       draftApi.setCombine(combineSource.id, [...existing, slot.id]);
@@ -271,157 +214,122 @@ export function AbsenceTimetable({
     [combineSource, subjects, draft, draftApi]
   );
 
-  // renderSection: 部署ごとの表示ブロック
-  const renderSection = (label, headerColor, filterFn) => {
-    const sectionSlots = effectiveSlots.filter(
-      (s) => !absorbedSet.has(s.id) && filterFn(s)
-    );
-    if (sectionSlots.length === 0) return null;
+  // 個々のスロットカード描画 (AbsenceSectionColumn に渡す関数)
+  const renderCard = useCallback(
+    (s) => {
+      const row = draft[s.id] || {};
+      const isAbsorbed = absorbedSet.has(s.id);
+      const isHost = hostsAbsorbedMap.has(s.id);
+      const isAbsent = absentSlotIds.has(s.id);
 
-    const times = new Set();
-    for (const s of sectionSlots) times.add(s._time);
-    // move 先の時刻も表示対象に
-    for (const [sidStr, row] of Object.entries(draft)) {
-      if (row.action === "move" && row.move?.targetTime) {
-        const src = slots.find((s) => s.id === Number(sidStr));
-        if (src && filterFn(src)) times.add(row.move.targetTime);
-      }
-    }
-    const sortedTimes = [...times].sort(
-      (a, b) => timeToMin(a.split("-")[0]) - timeToMin(b.split("-")[0])
-    );
+      const absorbedIds = hostsAbsorbedMap.get(s.id) || [];
+      const absorbedSlots = absorbedIds
+        .map((id) => slots.find((x) => x.id === id))
+        .filter(Boolean);
+      const absorbedLabel = absorbedSlots.length
+        ? `+ ${absorbedSlots
+            .map((a) => `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`)
+            .join(" / ")}`
+        : null;
 
-    const byTime = {};
-    for (const s of sectionSlots) {
-      if (!byTime[s._time]) byTime[s._time] = [];
-      byTime[s._time].push(s);
-    }
+      const hostId = hostByAbsorbed.get(s.id);
+      const hostSlot = hostId != null ? slots.find((x) => x.id === hostId) : null;
+      const hostLabel = hostSlot
+        ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
+        : null;
 
-    return (
-      <div
-        key={label}
-        style={{
-          background: "#fff",
-          borderRadius: 8,
-          border: "1px solid #e0e0e0",
-          marginBottom: 10,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            background: headerColor,
-            color: "#fff",
-            padding: "6px 14px",
-            fontSize: 13,
-            fontWeight: 800,
-          }}
-        >
-          {label}
-          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, opacity: 0.8 }}>
-            {sectionSlots.length}コマ
-          </span>
-        </div>
-        <div style={{ padding: "4px 14px 10px" }}>
-          {sortedTimes.map((time) => (
-            <TimeRow key={time} time={time} onDrop={handleDrop}>
-              {(byTime[time] || []).map((s) => renderCard(s))}
-            </TimeRow>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  // カード描画
-  const renderCard = (s) => {
-    const row = draft[s.id] || {};
-    const isAbsorbed = absorbedSet.has(s.id);
-    const isHost = hostsAbsorbedMap.has(s.id);
-    const isAbsent = absentSlotIds.has(s.id);
-
-    const absorbedIds = hostsAbsorbedMap.get(s.id) || [];
-    const absorbedSlots = absorbedIds
-      .map((id) => slots.find((x) => x.id === id))
-      .filter(Boolean);
-    const absorbedLabel = absorbedSlots.length
-      ? `+ ${absorbedSlots
-          .map((a) => `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`)
-          .join(" / ")}`
-      : null;
-
-    const hostId = hostByAbsorbed.get(s.id);
-    const hostSlot = hostId != null ? slots.find((x) => x.id === hostId) : null;
-    const hostLabel = hostSlot
-      ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
-      : null;
-
-    // 代行: draft or 既存確定
-    let substituteName = null;
-    let substituteStatus = null;
-    if (row.action === "sub" && row.sub?.substitute) {
-      substituteName = row.sub.substitute;
-      substituteStatus = row.sub.status || "confirmed";
-    } else {
-      const ex = (existingSubs || []).find(
-        (x) => x.date === date && x.slotId === s.id
-      );
-      if (ex?.substitute) {
-        substituteName = ex.substitute;
-        substituteStatus = ex.status;
-      }
-    }
-
-    // 補正バッジ
-    let overrideLabel = null;
-    if (row.override) {
-      if (row.override.mode === "set" && row.override.value) {
-        overrideLabel = `第${row.override.value}回 (補正)`;
-      } else if (row.override.mode === "skip") {
-        if (Number.isFinite(Number(row.override.displayAs)) && Number(row.override.displayAs) > 0) {
-          overrideLabel = `第${row.override.displayAs}回 (合同消化)`;
-        } else {
-          overrideLabel = "カウント外";
+      // 代行: draft or 既存確定
+      let substituteName = null;
+      let substituteStatus = null;
+      if (row.action === "sub" && row.sub?.substitute) {
+        substituteName = row.sub.substitute;
+        substituteStatus = row.sub.status || "confirmed";
+      } else {
+        const ex = (existingSubs || []).find(
+          (x) => x.date === date && x.slotId === s.id
+        );
+        if (ex?.substitute) {
+          substituteName = ex.substitute;
+          substituteStatus = ex.status;
         }
       }
-    }
 
-    const isCombineSource = combineSource?.id === s.id;
-    const isCombineCandidate =
-      combineSource != null &&
-      combineSource.id !== s.id &&
-      !absorbedSet.has(s.id) &&
-      canCombineSlots(combineSource, s, subjects);
+      // 補正バッジ
+      let overrideLabel = null;
+      if (row.override) {
+        if (row.override.mode === "set" && row.override.value) {
+          overrideLabel = `第${row.override.value}回 (補正)`;
+        } else if (row.override.mode === "skip") {
+          if (
+            Number.isFinite(Number(row.override.displayAs)) &&
+            Number(row.override.displayAs) > 0
+          ) {
+            overrideLabel = `第${row.override.displayAs}回 (合同消化)`;
+          } else {
+            overrideLabel = "カウント外";
+          }
+        }
+      }
 
-    // DnD は以下のとき無効化する:
-    //   - 吸収されている (AbsenceSlotCard 側で既に処理済みだが明示)
-    //   - このスロットが合同ホスト (時刻を動かすと吸収側と位置がずれるため)
-    //   - 合同モード中 (クリックしたいのに誤ドラッグを防ぐ)
-    const disableDrag = isHost || combineSource != null;
+      const isCombineSource = combineSource?.id === s.id;
+      const isCombineCandidate =
+        combineSource != null &&
+        combineSource.id !== s.id &&
+        !absorbedSet.has(s.id) &&
+        canCombineSlots(combineSource, s, subjects);
 
-    return (
-      <AbsenceSlotCard
-        key={s.id}
-        slot={s}
-        isAbsent={isAbsent}
-        isMoved={row._moved || row.action === "move"}
-        isCombineHost={isHost}
-        absorbedLabel={absorbedLabel}
-        isAbsorbed={isAbsorbed}
-        hostLabel={hostLabel}
-        substituteName={substituteName}
-        substituteStatus={substituteStatus}
-        overrideLabel={overrideLabel}
-        sessionCount={sessionCountMap?.get(s.id) || 0}
-        isCombineCandidate={isCombineCandidate}
-        isCombineSource={isCombineSource}
-        disableDrag={disableDrag}
-        onContextMenu={(e) => openContextMenu(e, s)}
-        onDragStart={(e) => handleDragStart(e, s)}
-        onClick={() => handleSlotClick(s)}
-      />
-    );
-  };
+      // 合同モード中の非候補は暗く
+      const dimmed =
+        combineSource != null &&
+        !isCombineSource &&
+        !isCombineCandidate &&
+        !isAbsorbed;
+
+      // DnD 抑止条件
+      const disableDrag = isHost || combineSource != null;
+
+      return (
+        <AbsenceSlotCard
+          key={s.id}
+          slot={s}
+          isAbsent={isAbsent}
+          isMoved={row._moved || row.action === "move"}
+          isCombineHost={isHost}
+          absorbedLabel={absorbedLabel}
+          isAbsorbed={isAbsorbed}
+          hostLabel={hostLabel}
+          substituteName={substituteName}
+          substituteStatus={substituteStatus}
+          overrideLabel={overrideLabel}
+          sessionCount={sessionCountMap?.get(s.id) || 0}
+          isCombineCandidate={isCombineCandidate}
+          isCombineSource={isCombineSource}
+          disableDrag={disableDrag}
+          compact
+          dimmed={dimmed}
+          onContextMenu={(e) => openContextMenu(e, s)}
+          onDragStart={(e) => handleDragStart(e, s)}
+          onClick={() => handleSlotClick(s)}
+        />
+      );
+    },
+    [
+      draft,
+      absorbedSet,
+      hostsAbsorbedMap,
+      hostByAbsorbed,
+      absentSlotIds,
+      slots,
+      existingSubs,
+      date,
+      combineSource,
+      subjects,
+      sessionCountMap,
+      openContextMenu,
+      handleDragStart,
+      handleSlotClick,
+    ]
+  );
 
   return (
     <div>
@@ -475,19 +383,7 @@ export function AbsenceTimetable({
         コマをドラッグ → 別時間にドロップで移動 / 右クリック → メニューで代行・合同・回数補正
       </div>
 
-      {renderSection("中学部", "#3a6ea5", (s) => gradeToDept(s.grade) === "中学部")}
-      {renderSection(
-        "高校部・本校",
-        "#8a5a2e",
-        (s) => gradeToDept(s.grade) === "高校部" && !isKameiRoom(s.room)
-      )}
-      {renderSection(
-        "高校部・亀井町",
-        "#6a6a2e",
-        (s) => gradeToDept(s.grade) === "高校部" && isKameiRoom(s.room)
-      )}
-
-      {effectiveSlots.length === 0 && (
+      {effectiveSlots.length === 0 ? (
         <div
           style={{
             textAlign: "center",
@@ -500,6 +396,13 @@ export function AbsenceTimetable({
         >
           対象日のコマがありません
         </div>
+      ) : (
+        <AbsenceDashDayRow
+          dow={dow}
+          slots={visibleSlots}
+          renderCard={renderCard}
+          onTimeDrop={handleDrop}
+        />
       )}
 
       {/* Context Menu */}

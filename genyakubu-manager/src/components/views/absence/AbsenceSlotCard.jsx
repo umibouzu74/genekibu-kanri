@@ -21,6 +21,8 @@ export function AbsenceSlotCard({
   isCombineCandidate, // 合同モード中の候補ハイライト用
   isCombineSource, // 合同モード中の起点
   disableDrag, // DnD 抑止 (合同ホスト / 吸収済み / 合同モード中など)
+  compact, // DashDayRow 風レイアウト (狭幅セル) 用: minWidth を抑える
+  dimmed, // 合同モード中の非候補: 暗くする
   onContextMenu,
   onDragStart,
   onClick,
@@ -70,9 +72,9 @@ export function AbsenceSlotCard({
         borderRadius: 6,
         padding: "6px 8px",
         cursor,
-        minWidth: 150,
+        minWidth: compact ? 0 : 150,
         position: "relative",
-        opacity: isAbsorbed ? 0.55 : 1,
+        opacity: isAbsorbed ? 0.55 : dimmed ? 0.35 : 1,
         userSelect: "none",
       }}
     >
