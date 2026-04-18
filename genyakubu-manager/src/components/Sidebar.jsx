@@ -146,7 +146,7 @@ export function Sidebar({
         />
       )}
       <nav
-        className="sidebar"
+        className={`sidebar${open ? "" : " is-closed"}`}
         aria-label="メインナビゲーション"
         style={{
           width: 210,
@@ -157,6 +157,9 @@ export function Sidebar({
           flexShrink: 0,
           position: "fixed",
           top: 0,
+          // デスクトップは @media で left: 0 に固定。モバイルは開=0、閉=-220 だが、
+          // サイドバー幅が 280px に広がる 768px 以下では App.jsx の .sidebar.is-closed
+          // ルールが left を calc(-1 * min(85vw, 280px) - 8px) に上書きする。
           left: open ? 0 : -220,
           bottom: 0,
           zIndex: 999,

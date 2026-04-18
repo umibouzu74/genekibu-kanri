@@ -44,7 +44,8 @@ export const S = {
     padding: space["2xl"],
     width: "min(420px, 100%)",
     maxWidth: "90vw",
-    maxHeight: "min(85vh, 100dvh - 32px)",
+    // calc() を明示。一部古い UA で min() 内の減算が calc() 省略時にパース失敗する事例があるため。
+    maxHeight: "min(85vh, calc(100dvh - 32px))",
     overflow: "auto",
     boxShadow: "0 20px 60px rgba(0,0,0,.3)",
   },

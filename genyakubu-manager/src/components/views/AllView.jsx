@@ -30,7 +30,6 @@ export function AllView({ slots, onSelectTeacher }) {
         <thead>
           <tr>
             <th
-              className="allview-name-col"
               style={{
                 textAlign: "left",
                 padding: "10px 14px",
@@ -80,7 +79,6 @@ export function AllView({ slots, onSelectTeacher }) {
             return (
             <tr key={t.name} style={{ background: rowBg }}>
               <td
-                className="allview-name-col"
                 onClick={() => onSelectTeacher && onSelectTeacher(t.name)}
                 style={{
                   padding: "8px 14px",

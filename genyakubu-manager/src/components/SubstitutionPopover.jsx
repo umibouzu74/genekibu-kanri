@@ -3,14 +3,18 @@ import { pickSubjectId } from "../utils/subjectMatch";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
 
 function computePosition(anchorRect) {
-  // Popover幅 280px、画面端から最低 8px のマージン。
-  // 狭いスマホ (375px) でも完全に収まるよう Math.min/max でクランプ。
+  // Popover の幅・高さ上限を画面サイズに応じて算出 (style の
+  // `width: min(280px, calc(100vw - 16px))` と
+  // `maxHeight: min(360px, calc(100vh - 24px))` に一致させる)。
+  // 狭いスマホ (375px, 低い iPhone) でも画面内に収まるよう、
+  // フリップ判定にもこの実高さを使う。
   const popoverWidth = Math.min(280, window.innerWidth - 16);
+  const popoverMaxHeight = Math.min(360, window.innerHeight - 24);
   const top = anchorRect.bottom + 4;
   const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - popoverWidth - 8));
-  const maxTop = window.innerHeight - 400;
+  const maxTop = window.innerHeight - popoverMaxHeight - 8;
   return {
-    top: top > maxTop ? anchorRect.top - 304 : top,
+    top: top > maxTop ? Math.max(8, anchorRect.top - popoverMaxHeight - 4) : top,
     left,
   };
 }

@@ -96,7 +96,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
         const errorId = `${inputId}-err`;
         return (
           <div key={k}>
-            <div className="form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="slot-form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <label
                 htmlFor={inputId}
                 style={{
@@ -145,7 +145,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
               <div
                 id={errorId}
                 role="alert"
-                className="form-row-error-indent"
+                className="slot-form-row-error"
                 style={{ marginLeft: 78, fontSize: 11, color: "#c44", marginTop: 2 }}
               >
                 {errors[k]}
@@ -156,7 +156,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
       })}
       {timetables && timetables.length > 1 && (
         <div>
-          <div className="form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="slot-form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <label
               style={{
                 width: 70,
