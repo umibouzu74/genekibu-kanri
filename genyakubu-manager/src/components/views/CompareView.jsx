@@ -83,12 +83,12 @@ export function CompareView({ slots }) {
             placeholder="講師名で検索…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{ ...S.input, width: 140 }}
+            style={{ ...S.input, width: "100%", maxWidth: 200 }}
           />
           {selectedTeachers.length > 0 && (
             <button
               onClick={() => setSelectedTeachers([])}
-              style={{ ...S.btn(false), fontSize: 11 }}
+              style={{ ...S.btn(false) }}
             >
               クリア
             </button>
@@ -182,7 +182,7 @@ export function CompareView({ slots }) {
           上のリストから講師を選択してください
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        <div className="mobile-scroll-x" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table
             style={{
               width: "100%",

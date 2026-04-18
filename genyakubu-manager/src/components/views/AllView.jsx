@@ -22,11 +22,15 @@ export function AllView({ slots, onSelectTeacher }) {
   }, [slots]);
 
   return (
-    <div style={{ marginTop: 12, overflowX: "auto" }}>
+    <div
+      className="mobile-scroll-x"
+      style={{ marginTop: 12, overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+    >
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr>
             <th
+              className="allview-name-col"
               style={{
                 textAlign: "left",
                 padding: "10px 14px",
@@ -34,6 +38,9 @@ export function AllView({ slots, onSelectTeacher }) {
                 color: "#fff",
                 borderRadius: "8px 0 0 0",
                 fontSize: 14,
+                position: "sticky",
+                left: 0,
+                zIndex: 2,
               }}
             >
               講師名
@@ -46,7 +53,7 @@ export function AllView({ slots, onSelectTeacher }) {
                   background: DC[d],
                   color: "#fff",
                   textAlign: "center",
-                  minWidth: 48,
+                  minWidth: 56,
                   fontSize: 14,
                 }}
               >
@@ -68,9 +75,12 @@ export function AllView({ slots, onSelectTeacher }) {
           </tr>
         </thead>
         <tbody>
-          {teachers.map((t, i) => (
-            <tr key={t.name} style={{ background: i % 2 ? "#f8f9fa" : "#fff" }}>
+          {teachers.map((t, i) => {
+            const rowBg = i % 2 ? "#f8f9fa" : "#fff";
+            return (
+            <tr key={t.name} style={{ background: rowBg }}>
               <td
+                className="allview-name-col"
                 onClick={() => onSelectTeacher && onSelectTeacher(t.name)}
                 style={{
                   padding: "8px 14px",
@@ -79,6 +89,10 @@ export function AllView({ slots, onSelectTeacher }) {
                   borderBottom: "1px solid #eee",
                   cursor: onSelectTeacher ? "pointer" : "default",
                   color: onSelectTeacher ? "#2e6a9e" : "inherit",
+                  position: "sticky",
+                  left: 0,
+                  background: rowBg,
+                  zIndex: 1,
                 }}
                 onMouseEnter={(e) => {
                   if (onSelectTeacher) e.currentTarget.style.textDecoration = "underline";
@@ -118,7 +132,8 @@ export function AllView({ slots, onSelectTeacher }) {
                 {formatCount(t.total)}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
