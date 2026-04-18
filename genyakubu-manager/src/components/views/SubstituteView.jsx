@@ -235,6 +235,15 @@ export function SubstituteView({
           isAdmin={isAdmin}
           onEdit={onEdit}
           onDel={onDel}
+          slots={slots}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          biweeklyAnchors={biweeklyAnchors}
+          classSets={classSets}
+          displayCutoff={displayCutoff}
+          timetables={timetables}
+          adjustments={adjustments}
+          sessionOverrides={sessionOverrides}
         />
       )}
 
