@@ -3,8 +3,11 @@ import { pickSubjectId } from "../utils/subjectMatch";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
 
 function computePosition(anchorRect) {
+  // Popover幅 280px、画面端から最低 8px のマージン。
+  // 狭いスマホ (375px) でも完全に収まるよう Math.min/max でクランプ。
+  const popoverWidth = Math.min(280, window.innerWidth - 16);
   const top = anchorRect.bottom + 4;
-  const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - 300));
+  const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - popoverWidth - 8));
   const maxTop = window.innerHeight - 400;
   return {
     top: top > maxTop ? anchorRect.top - 304 : top,
@@ -70,8 +73,8 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
     top: pos.top,
     left: pos.left,
     zIndex: 2000,
-    width: 280,
-    maxHeight: 360,
+    width: "min(280px, calc(100vw - 16px))",
+    maxHeight: "min(360px, calc(100vh - 24px))",
     overflowY: "auto",
     background: "#fff",
     border: "1px solid #ccc",

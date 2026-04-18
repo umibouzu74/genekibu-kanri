@@ -806,6 +806,10 @@ export default function App() {
           .mobile-stack > * { width: 100% !important; }
           .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
           .mobile-card-pad { padding: 16px !important; }
+          .form-row { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
+          .form-row > label { width: auto !important; text-align: left !important; }
+          .form-row > input, .form-row > select { width: 100% !important; min-width: 0 !important; }
+          .form-row-error-indent { margin-left: 0 !important; }
         }
         @media (hover: none) {
           .master-slot-actions { opacity: 1 !important; }

@@ -59,6 +59,7 @@ export function Modal({ title, onClose, children }) {
     <div style={S.modal} onClick={onClose} role="presentation">
       <div
         ref={dialogRef}
+        className="mobile-card-pad"
         style={S.card}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
