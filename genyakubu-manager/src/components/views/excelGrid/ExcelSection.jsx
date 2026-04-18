@@ -39,6 +39,7 @@ export function ExcelSection({
   combineMode,
   onSubDrop,
   sessionCountMap,
+  groupTeacherMap,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -416,6 +417,7 @@ export function ExcelSection({
                                 ? sessionCountMap.get(combined.slot.id) || 0
                                 : 0
                             }
+                            teacherOverride={groupTeacherMap?.get(combined.slot.id)}
                             {...subProps}
                           />
                         );
@@ -461,6 +463,7 @@ export function ExcelSection({
                             ? sessionCountMap.get(slot.id) || 0
                             : 0
                         }
+                        teacherOverride={slot ? groupTeacherMap?.get(slot.id) : undefined}
                         {...subProps}
                       />
                     );

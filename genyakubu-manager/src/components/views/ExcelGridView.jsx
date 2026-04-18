@@ -9,6 +9,7 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
+import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
@@ -18,6 +19,26 @@ import { buildSessionCountMap } from "../../utils/sessionCount";
 import { filterSlotsByActiveTimetable } from "../../utils/timetable";
 import { makeHolidayHelpers } from "./dashboardHelpers";
 import { ExcelSection } from "./excelGrid/ExcelSection";
+
+// DAYS = ["月","火","水","木","金","土"]。viewDate を含む週の月曜日を起点に
+// 各曜日の日付 (YYYY-MM-DD) を算出して返す。viewDate 未指定時は空 Map。
+function computeWeekDates(viewDate) {
+  const out = new Map();
+  if (!viewDate) return out;
+  const [y, m, d] = viewDate.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  // getDay: 日=0, 月=1, ..., 土=6。日曜日を基準に月曜までの差分を引く。
+  const dow = dt.getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(dt);
+  monday.setDate(dt.getDate() + mondayOffset);
+  for (let i = 0; i < DAYS.length; i++) {
+    const cur = new Date(monday);
+    cur.setDate(monday.getDate() + i);
+    out.set(DAYS[i], fmtDate(cur));
+  }
+  return out;
+}
 
 // ─── Main Component ────────────────────────────────────────────────
 export function ExcelGridView({
@@ -39,6 +60,7 @@ export function ExcelGridView({
   classSets,
   displayCutoff,
   viewDate,
+  onViewDateChange,
   onAddAdjustment,
   enableSubMode = false,
 }) {
@@ -168,7 +190,24 @@ export function ExcelGridView({
   }, [popoverTarget, filteredSlots]);
 
   // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
-  const displaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
+  const rawDisplaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
+
+  // 同一コホートで担任だけ異なる並列スロット (例: 中3 火 確認テスト 藤田 + 大屋敷)
+  // を 1 コマにまとめる。groupTeacherMap は代表スロットに「藤田・大屋敷」を割当。
+  const grouped = useMemo(
+    () => groupParallelSlots(rawDisplaySlots),
+    [rawDisplaySlots]
+  );
+  // 集約は閲覧用途限定。管理モード (スロット編集) および代行モード (個別
+  // スロットに対する欠席/代行割当) では個別スロット情報を保つ必要があるため
+  // 元配列をそのまま使う。セッション回数のカウントは sessionCount 内部で
+  // 並列スロットを重複除去するため、どちらのパスでも正しく集計される。
+  const shouldGroup = !isAdmin && !subMode.isSubMode;
+  const displaySlots = shouldGroup ? grouped.representativeSlots : rawDisplaySlots;
+  const groupTeacherMap = shouldGroup ? grouped.groupTeacherMap : null;
+
+  // viewDate を含む週の月〜土の日付を曜日→"YYYY-MM-DD" で保持。
+  const weekDates = useMemo(() => computeWeekDates(viewDate), [viewDate]);
 
   // viewDate が指定されたらその曜日に selectedDay を自動同期
   useEffect(() => {
@@ -280,13 +319,25 @@ export function ExcelGridView({
           const active = selectedDay === d;
           const hasSlotsForDay = daysWithSlots.has(d);
           const isLocked = subMode.isSubMode && d !== subMode.dayOfDate;
+          const dateStr = weekDates.get(d);
+          const mdLabel = dateStr
+            ? (() => {
+                const [, mm, dd] = dateStr.split("-");
+                return `${Number(mm)}/${Number(dd)}`;
+              })()
+            : null;
+          const handleClick = () => {
+            if (isLocked) return;
+            setSelectedDay(d);
+            if (dateStr && onViewDateChange) onViewDateChange(dateStr);
+          };
           return (
             <button
               key={d}
               type="button"
-              onClick={() => !isLocked && setSelectedDay(d)}
+              onClick={handleClick}
               style={{
-                padding: "8px 18px",
+                padding: "6px 14px",
                 border: active ? `2px solid ${DC[d]}` : "1px solid #ddd",
                 borderRadius: 8,
                 background: active ? DC[d] : hasSlotsForDay ? DB[d] : "#f5f5f5",
@@ -296,9 +347,26 @@ export function ExcelGridView({
                 cursor: isLocked ? "not-allowed" : hasSlotsForDay ? "pointer" : "default",
                 opacity: isLocked ? 0.3 : hasSlotsForDay ? 1 : 0.5,
                 transition: "all .15s",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                lineHeight: 1.15,
+                minWidth: 52,
               }}
             >
-              {d}
+              <span>{d}</span>
+              {mdLabel && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    opacity: 0.85,
+                    marginTop: 2,
+                  }}
+                >
+                  {mdLabel}
+                </span>
+              )}
             </button>
           );
         })}
@@ -396,6 +464,7 @@ export function ExcelGridView({
                     combineMode={combineMode}
                     onSubDrop={subMode.isSubMode ? handleSubDrop : undefined}
                     sessionCountMap={sessionCountMap}
+                    groupTeacherMap={groupTeacherMap}
                   />
                 );
               };

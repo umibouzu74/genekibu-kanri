@@ -8,6 +8,7 @@
 
 import { gradeToDept, WEEKDAYS } from "../data";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
+import { slotGroupKey } from "./parallelSlots";
 
 // "YYYY-MM-DD" → Date (ローカル)
 function parseDate(s) {
@@ -198,7 +199,17 @@ function activeSlotsOnDay(setSlots, dateStr, ctx, targetSubj, targetCls) {
     if (ta !== tb) return ta - tb;
     return a.id - b.id;
   });
-  return out;
+  // 並列スロット (同一 day|time|grade|cls|subj で担任のみ違う) は 1 コマとして
+  // カウントする。例: 中3 火 21:35 確認テスト 藤田 + 大屋敷 → +1 回
+  const seen = new Set();
+  const deduped = [];
+  for (const s of out) {
+    const key = slotGroupKey(s);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(s);
+  }
+  return deduped;
 }
 
 /**

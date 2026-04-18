@@ -27,9 +27,9 @@ const VIEW_MODES = ["list", "timetable"];
 function loadViewMode() {
   try {
     const v = localStorage.getItem(LS_VIEW_MODE_KEY);
-    return VIEW_MODES.includes(v) ? v : "list";
+    return VIEW_MODES.includes(v) ? v : "timetable";
   } catch {
-    return "list";
+    return "timetable";
   }
 }
 
@@ -155,6 +155,7 @@ export function Dashboard({
           classSets={classSets}
           displayCutoff={displayCutoff}
           viewDate={startDate}
+          onViewDateChange={setStartDate}
         />
       ) : (
         <DashboardListView

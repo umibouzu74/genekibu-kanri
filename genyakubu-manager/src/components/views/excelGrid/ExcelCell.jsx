@@ -32,6 +32,7 @@ export const ExcelCell = memo(function ExcelCell({
   isCombineTarget,
   onCellClick,
   sessionNumber,
+  teacherOverride,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -224,7 +225,7 @@ export const ExcelCell = memo(function ExcelCell({
             textDecoration: teacherDecor,
           }}
         >
-          {formatBiweeklyTeacher(slot.teacher, slot.note)}
+          {teacherOverride ?? formatBiweeklyTeacher(slot.teacher, slot.note)}
         </div>
         {subDisplay}
         {slot.note && !slot.note.startsWith("隔週") && slot.note !== "合同" && (
