@@ -1,20 +1,22 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, dateToDay, sortSlots as sortS, DAY_COLOR as DC } from "../../data";
 import { S } from "../../styles/common";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { sortJa } from "../../utils/sortJa";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
+import { useConfirm } from "../../hooks/useConfirm";
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeHolidayHelpers } from "./dashboardHelpers";
-import { AbsenceSlotRow } from "./absence/AbsenceSlotRow";
-import { AbsenceDayPreview } from "./absence/AbsenceDayPreview";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
+import { AbsenceTimetable } from "./absence/AbsenceTimetable";
+import { getAbsentSlotIds } from "../../utils/absenceHelpers";
 
-// ─── 先生欠勤 統合ワークフロー ──────────────────────────────────
-// 先生の欠勤日を指定 → その先生が担当する当該日のコマを一覧化 →
-// 各コマに対して 代行 / 合同 / 移動 / 回数補正 をその場で設定し、
-// 一括保存する。
+// ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
+// 上部: 対象日 + 欠勤先生選択 / 下部: 時間割グリッド
+// 全ての操作 (代行・合同・移動・回数補正) はグリッド上で DnD や右クリック
+// から行い、下書きは useAbsenceDraft が保持する。画面右下のフローティング
+// ボタンで一括保存。
 
 export function AbsenceWorkflowView({
   slots,
@@ -34,13 +36,31 @@ export function AbsenceWorkflowView({
   isAdmin,
 }) {
   const toasts = useToasts();
+  const confirm = useConfirm();
   const [date, setDate] = useState(fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
+  const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
+  const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
+
+  // ドロップダウン外クリックで閉じる
+  useEffect(() => {
+    if (!teacherDropdownOpen) return undefined;
+    const handler = (e) => {
+      if (
+        teacherDropdownRef.current &&
+        !teacherDropdownRef.current.contains(e.target)
+      ) {
+        setTeacherDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [teacherDropdownOpen]);
 
   const dayName = useMemo(() => dateToDay(date), [date]);
 
-  // 全先生リスト (slot.teacher + 隔週パートナー + partTimeStaff)
+  // 全先生リスト
   const allTeachers = useMemo(() => {
     const set = new Set();
     for (const s of slots) {
@@ -50,53 +70,143 @@ export function AbsenceWorkflowView({
     return sortJa([...set]);
   }, [slots, partTimeStaff]);
 
-  // 対象日にこれらの先生が担当するコマ群
-  const affectedSlots = useMemo(() => {
-    if (!dayName || selectedTeachers.length === 0) return [];
-    const teacherSet = new Set(selectedTeachers);
-    return sortS(
-      slots.filter(
-        (s) =>
-          s.day === dayName &&
-          getSlotTeachers(s).some((t) => teacherSet.has(t))
-      )
-    );
-  }, [slots, dayName, selectedTeachers]);
-
-  // その日の全コマ (合同ホスト候補 / 移動先の時間帯候補)
-  const allDaySlots = useMemo(() => {
+  // 対象日のコマ群
+  const daySlots = useMemo(() => {
     if (!dayName) return [];
     return sortS(slots.filter((s) => s.day === dayName));
   }, [slots, dayName]);
 
-  const timeOptions = useMemo(() => {
-    const set = new Set();
-    for (const s of allDaySlots) set.add(s.time);
-    return [...set].sort();
-  }, [allDaySlots]);
+  // 欠勤先生が担当するコマ集合 (赤枠表示用)
+  const absentSlotIds = useMemo(
+    () => getAbsentSlotIds(slots, dayName, selectedTeachers),
+    [slots, dayName, selectedTeachers]
+  );
 
-  // 対象日の回数 (現在の確定データに対する値 — draft 反映前)
-  const sessionCountsBase = useMemo(() => {
+  // ドラフト反映済みの回数 map
+  const sessionCountMap = useMemo(() => {
     if (!date || !displayCutoff) return new Map();
     const { isOffForGrade } = makeHolidayHelpers(holidays || [], examPeriods || []);
-    return buildSessionCountMap(affectedSlots, date, {
+
+    // ドラフトを effective な adjustments / overrides に連結
+    const draftAdjustments = [];
+    const draftOverridesLocal = [];
+    let idBase = -1000;
+    for (const [sidStr, row] of Object.entries(draft.draft)) {
+      const slotId = Number(sidStr);
+      if (row.action === "combine" && row.combine?.absorbedSlotIds?.length) {
+        draftAdjustments.push({
+          id: idBase--,
+          date,
+          type: "combine",
+          slotId,
+          combineSlotIds: [...row.combine.absorbedSlotIds],
+          memo: "(draft)",
+        });
+      }
+      if (row.action === "move" && row.move?.targetTime) {
+        draftAdjustments.push({
+          id: idBase--,
+          date,
+          type: "move",
+          slotId,
+          targetTime: row.move.targetTime,
+          memo: "(draft)",
+        });
+      }
+      if (row.override) {
+        if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
+          draftOverridesLocal.push({
+            id: idBase--,
+            date,
+            slotId,
+            mode: "set",
+            value: Number(row.override.value),
+            memo: "(draft)",
+          });
+        } else if (row.override.mode === "skip") {
+          const entry = { id: idBase--, date, slotId, mode: "skip", memo: "(draft)" };
+          const d = Number(row.override.displayAs);
+          if (Number.isFinite(d) && d > 0) entry.displayAs = d;
+          draftOverridesLocal.push(entry);
+        }
+      }
+    }
+
+    return buildSessionCountMap(daySlots, date, {
       classSets: classSets || [],
       allSlots: slots,
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
-      adjustments: adjustments || [],
-      sessionOverrides: sessionOverrides || [],
+      adjustments: [...(adjustments || []), ...draftAdjustments],
+      sessionOverrides: [...(sessionOverrides || []), ...draftOverridesLocal],
       orientationOnFirstDay: true,
     });
-  }, [affectedSlots, slots, date, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides]);
+  }, [daySlots, slots, date, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides, draft.draft]);
 
-  const toggleTeacher = useCallback((name) => {
-    setSelectedTeachers((prev) =>
-      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
-    );
-    draft.reset();
-  }, [draft]);
+  const toggleTeacher = useCallback(
+    (name) => {
+      // 欠勤先生の追加 / 削除は「どのコマを赤枠強調するか」だけを変える
+      // ため、既存の下書きはそのまま維持する (過去に "リセット" していたが、
+      // 別先生を追加しようとして下書きが全消去される事故が起きるため廃止)。
+      setSelectedTeachers((prev) =>
+        prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+      );
+    },
+    []
+  );
+
+  // 下書きの件数カウント (保存ボタン表示用)
+  const draftCount = useMemo(() => {
+    let c = 0;
+    for (const row of Object.values(draft.draft)) {
+      if (row.action === "sub" && row.sub?.substitute) c++;
+      if (row.action === "combine" && row.combine?.absorbedSlotIds?.length) c++;
+      if (row.action === "move" && row.move?.targetTime) c++;
+      if (row.override) c++;
+    }
+    return c;
+  }, [draft.draft]);
+
+  // 下書きがある状態でタブを閉じる / リロードしようとしたら警告
+  useEffect(() => {
+    if (draftCount === 0) return undefined;
+    const handler = (e) => {
+      e.preventDefault();
+      // Chrome ではメッセージ文字列は無視され固定のダイアログが出る
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [draftCount]);
+
+  const handleDiscard = useCallback(async () => {
+    const ok = await confirm({
+      title: "下書きを破棄",
+      message: `下書きが ${draftCount} 件あります。破棄しますか？`,
+      okLabel: "破棄",
+      tone: "danger",
+    });
+    if (ok) draft.reset();
+  }, [confirm, draft, draftCount]);
+
+  const handleDateChange = useCallback(
+    async (newDate) => {
+      if (draftCount > 0) {
+        const ok = await confirm({
+          title: "下書きがあります",
+          message: "日付を変更すると下書きが破棄されます。続行しますか？",
+          okLabel: "破棄して変更",
+          tone: "danger",
+        });
+        if (!ok) return;
+        draft.reset();
+      }
+      setDate(newDate);
+    },
+    [confirm, draft, draftCount]
+  );
 
   const handleSave = useCallback(() => {
     const { draftSubs, draftAdjustments, draftOverrides } =
@@ -133,17 +243,6 @@ export function AbsenceWorkflowView({
     }
   }, [draft, date, slots, subs, adjustments, sessionOverrides, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
 
-  const candidateHostSlotsFor = useCallback(
-    (slot) => {
-      // 合同候補: 同じ day の他のコマ。同時刻や同学年を優先するために
-      // ソートはせず、UI 側で並べる。
-      return allDaySlots.filter(
-        (other) => other.id !== slot.id && other.day === slot.day
-      );
-    },
-    [allDaySlots]
-  );
-
   if (!isAdmin) {
     return (
       <div style={{ padding: 24, color: "#888", fontSize: 13 }}>
@@ -153,7 +252,7 @@ export function AbsenceWorkflowView({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 80 }}>
       {/* Header: date + teacher selection */}
       <div
         style={{
@@ -171,10 +270,7 @@ export function AbsenceWorkflowView({
         <input
           type="date"
           value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            draft.reset();
-          }}
+          onChange={(e) => handleDateChange(e.target.value)}
           style={{ ...S.input, width: "auto" }}
         />
         {dayName && (
@@ -194,165 +290,113 @@ export function AbsenceWorkflowView({
         <div style={{ fontSize: 12, color: "#666" }}>
           欠勤する先生 ({selectedTeachers.length} 名選択):
         </div>
-        <details style={{ position: "relative" }}>
-          <summary
-            style={{
-              ...S.btn(false),
-              cursor: "pointer",
-              listStyle: "none",
-            }}
+        <div ref={teacherDropdownRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            onClick={() => setTeacherDropdownOpen((v) => !v)}
+            style={{ ...S.btn(false), cursor: "pointer" }}
           >
             {selectedTeachers.length > 0
               ? selectedTeachers.join(", ")
               : "(クリックして選択)"}
-          </summary>
-          <div
-            style={{
-              position: "absolute",
-              zIndex: 10,
-              background: "#fff",
-              border: "1px solid #ccc",
-              borderRadius: 6,
-              padding: "6px 8px",
-              maxHeight: 280,
-              overflowY: "auto",
-              minWidth: 180,
-              boxShadow: "0 2px 6px rgba(0,0,0,.1)",
-            }}
-          >
-            {allTeachers.map((t) => (
-              <label
-                key={t}
-                style={{ display: "flex", gap: 6, padding: "2px 4px", cursor: "pointer", fontSize: 12 }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedTeachers.includes(t)}
-                  onChange={() => toggleTeacher(t)}
-                />
-                {t}
-              </label>
-            ))}
-          </div>
-        </details>
+          </button>
+          {teacherDropdownOpen && (
+            <div
+              style={{
+                position: "absolute",
+                zIndex: 10,
+                background: "#fff",
+                border: "1px solid #ccc",
+                borderRadius: 6,
+                padding: "6px 8px",
+                maxHeight: 280,
+                overflowY: "auto",
+                minWidth: 180,
+                boxShadow: "0 2px 6px rgba(0,0,0,.1)",
+                top: "100%",
+                marginTop: 2,
+              }}
+            >
+              {allTeachers.map((t) => (
+                <label
+                  key={t}
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    padding: "2px 4px",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedTeachers.includes(t)}
+                    onChange={() => toggleTeacher(t)}
+                  />
+                  {t}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {affectedSlots.length === 0 && selectedTeachers.length > 0 && (
+      {/* Timetable grid */}
+      <AbsenceTimetable
+        slots={daySlots}
+        draft={draft.draft}
+        draftApi={draft}
+        existingSubs={subs}
+        sessionCountMap={sessionCountMap}
+        absentSlotIds={absentSlotIds}
+        partTimeStaff={partTimeStaff}
+        subjects={subjects}
+        date={date}
+      />
+
+      {/* Floating save button */}
+      {draftCount > 0 && (
         <div
           style={{
-            background: "#fff",
-            padding: 24,
-            borderRadius: 8,
-            border: "1px solid #e0e0e0",
-            color: "#888",
-            textAlign: "center",
-            fontSize: 13,
-          }}
-        >
-          対象日にこれらの先生のコマはありません
-        </div>
-      )}
-
-      {affectedSlots.length > 0 && (
-        <div
-          className="absence-workflow-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            gap: 12,
-          }}
-        >
-          {/* 左: 編集行 */}
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-              影響コマ ({affectedSlots.length} 件)
-            </div>
-            {affectedSlots.map((s) => (
-              <AbsenceSlotRow
-                key={s.id}
-                slot={s}
-                row={draft.getRow(s.id)}
-                timeOptions={timeOptions}
-                candidateHostSlots={candidateHostSlotsFor(s)}
-                partTimeStaff={partTimeStaff}
-                subjects={subjects}
-                setAction={draft.setAction}
-                updateSub={draft.updateSub}
-                updateMove={draft.updateMove}
-                setCombine={draft.setCombine}
-                clearCombine={draft.clearCombine}
-                updateOverride={draft.updateOverride}
-                sessionCountBefore={sessionCountsBase.get(s.id) || 0}
-              />
-            ))}
-          </div>
-
-          {/* 右: プレビュー */}
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #e0e0e0",
-              borderRadius: 8,
-              padding: "10px 14px",
-              position: "sticky",
-              top: 16,
-              maxHeight: "calc(100vh - 140px)",
-              overflowY: "auto",
-            }}
-          >
-            <AbsenceDayPreview
-              date={date}
-              dayOfDate={dayName}
-              slots={slots}
-              draft={draft.draft}
-              adjustments={adjustments}
-              sessionOverrides={sessionOverrides}
-              classSets={classSets}
-              displayCutoff={displayCutoff}
-              holidays={holidays}
-              examPeriods={examPeriods}
-              biweeklyAnchors={biweeklyAnchors}
-              subs={subs}
-            />
-          </div>
-        </div>
-      )}
-
-      {affectedSlots.length > 0 && (
-        <div
-          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            zIndex: 500,
             display: "flex",
-            gap: 8,
-            justifyContent: "flex-end",
+            gap: 6,
             alignItems: "center",
-            padding: "10px 14px",
             background: "#fff",
-            border: "1px solid #e0e0e0",
-            borderRadius: 8,
+            padding: "8px 10px",
+            borderRadius: 10,
+            boxShadow: "0 6px 18px rgba(0,0,0,.25)",
+            border: "1px solid #ddd",
           }}
         >
           <button
             type="button"
-            onClick={() => draft.reset()}
-            style={{ ...S.btn(false) }}
+            onClick={handleDiscard}
+            style={{ ...S.btn(false), fontSize: 12 }}
           >
-            下書きをクリア
+            破棄
           </button>
           <button
             type="button"
             onClick={handleSave}
-            style={{ ...S.btn(true), background: "#2a6a9e", color: "#fff" }}
+            style={{
+              background: "#2a6a9e",
+              color: "#fff",
+              padding: "8px 16px",
+              border: "none",
+              borderRadius: 6,
+              fontWeight: 800,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
           >
-            一括保存
+            {draftCount} 件の変更を保存
           </button>
         </div>
       )}
-
-      <style>{`
-        @media (max-width: 900px) {
-          .absence-workflow-grid { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
     </div>
   );
 }

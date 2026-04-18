@@ -19,7 +19,7 @@ function nextId(list) {
  * @param {Array} args.sessionOverridesList  現在の回数補正配列
  * @param {Array} args.draftSubs             追加する代行 (date, slotId, originalTeacher, substitute, status, memo)
  * @param {Array} args.draftAdjustments      追加する調整 (date, type, slotId, targetTime?, combineSlotIds?, memo)
- * @param {Array} args.draftOverrides        追加する回数補正 (date, slotId, mode, value?, memo)
+ * @param {Array} args.draftOverrides        追加する回数補正 (date, slotId, mode, value?, displayAs?, memo)
  * @param {Function} args.saveSubs
  * @param {Function} args.saveAdjustments
  * @param {Function} args.saveSessionOverrides
