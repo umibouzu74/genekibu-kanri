@@ -364,7 +364,7 @@ export function TimetableManagerView({
                   onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
                 }}
                 disabled={!isAdmin}
-                style={{ ...S.input, width: 160 }}
+                style={{ ...S.input, width: "auto", minWidth: 140 }}
               />
               <span style={{ fontSize: 12, color: "#888" }}>〜</span>
               <input
@@ -380,7 +380,7 @@ export function TimetableManagerView({
                   onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
                 }}
                 disabled={!isAdmin}
-                style={{ ...S.input, width: 160 }}
+                style={{ ...S.input, width: "auto", minWidth: 140 }}
               />
               {(group.startDate || group.date) && isAdmin && (
                 <button

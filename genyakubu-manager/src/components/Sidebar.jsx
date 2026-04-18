@@ -146,7 +146,7 @@ export function Sidebar({
         />
       )}
       <nav
-        className="sidebar"
+        className={`sidebar${open ? "" : " is-closed"}`}
         aria-label="メインナビゲーション"
         style={{
           width: 210,
@@ -157,6 +157,9 @@ export function Sidebar({
           flexShrink: 0,
           position: "fixed",
           top: 0,
+          // デスクトップは @media で left: 0 に固定。モバイルは開=0、閉=-220 だが、
+          // サイドバー幅が 280px に広がる 768px 以下では App.jsx の .sidebar.is-closed
+          // ルールが left を calc(-1 * min(85vw, 280px) - 8px) に上書きする。
           left: open ? 0 : -220,
           bottom: 0,
           zIndex: 999,
@@ -195,7 +198,7 @@ export function Sidebar({
             ✕
           </button>
         </div>
-        <div style={{ padding: "6px 8px" }}>
+        <div style={{ padding: "8px 10px" }}>
           <input
             type="text"
             placeholder="講師名で検索…"
@@ -203,12 +206,12 @@ export function Sidebar({
             onChange={(e) => onSearchChange(e.target.value)}
             style={{
               width: "100%",
-              padding: "5px 8px",
+              padding: "8px 10px",
               borderRadius: 6,
               border: "1px solid #3a3a5e",
               background: "#2a2a4e",
               color: "#fff",
-              fontSize: 11,
+              fontSize: 13,
               outline: "none",
               boxSizing: "border-box",
             }}
@@ -261,13 +264,15 @@ export function Sidebar({
                       onOpenDataMgr();
                     } else {
                       onSelectView(item.key);
+                      // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
+                      if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
                     }
                   }}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     width: "100%",
-                    padding: "7px 14px",
+                    padding: "10px 14px",
                     border: "none",
                     background: selfActive
                       ? "#3a3a6e"
@@ -277,7 +282,7 @@ export function Sidebar({
                     color: selfActive ? "#fff" : childActive ? "#ddd" : "#ccc",
                     textAlign: "left",
                     cursor: "pointer",
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: selfActive ? 700 : childActive ? 600 : 400,
                   }}
                 >
@@ -319,7 +324,7 @@ export function Sidebar({
                 {hasChildren && (
                   <div
                     style={{
-                      maxHeight: isExpanded ? `${item.children.length * 36}px` : "0px",
+                      maxHeight: isExpanded ? `${item.children.length * 44}px` : "0px",
                       overflow: "hidden",
                       transition: "max-height 0.2s ease",
                       background: "#16162e",
@@ -330,17 +335,20 @@ export function Sidebar({
                       return (
                         <button
                           key={child.key}
-                          onClick={() => onSelectView(child.key)}
+                          onClick={() => {
+                            onSelectView(child.key);
+                            if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+                          }}
                           style={{
                             display: "block",
                             width: "100%",
-                            padding: "7px 14px 7px 28px",
+                            padding: "9px 14px 9px 28px",
                             border: "none",
                             background: childIsActive ? "#3a3a6e" : "transparent",
                             color: childIsActive ? "#fff" : "#aaa",
                             textAlign: "left",
                             cursor: "pointer",
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: childIsActive ? 700 : 400,
                           }}
                         >
@@ -386,19 +394,19 @@ export function Sidebar({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    padding: "6px 14px 4px",
+                    padding: "8px 14px 6px",
                     marginTop: 6,
                     borderLeft: `3px solid ${color}`,
                     background: "#13132a",
                     color: "#ccd",
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: 800,
                     letterSpacing: 1,
                     textTransform: "none",
                   }}
                 >
                   <span>{group.label}</span>
-                  <span style={{ fontSize: 9, color: "#6a6a8e", fontWeight: 700 }}>
+                  <span style={{ fontSize: 11, color: "#6a6a8e", fontWeight: 700 }}>
                     {group.teachers.length}
                   </span>
                 </div>
@@ -407,19 +415,22 @@ export function Sidebar({
                   return (
                     <button
                       key={t}
-                      onClick={() => onSelectTeacher(t)}
+                      onClick={() => {
+                        onSelectTeacher(t);
+                        if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+                      }}
                       style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
                         width: "100%",
-                        padding: "6px 14px",
+                        padding: "8px 14px",
                         border: "none",
                         background: selected === t ? "#3a3a6e" : "transparent",
                         color: selected === t ? "#fff" : "#ccc",
                         textAlign: "left",
                         cursor: "pointer",
-                        fontSize: 12,
+                        fontSize: 13,
                         transition: "background .15s",
                       }}
                       onMouseEnter={(e) => {
@@ -432,10 +443,10 @@ export function Sidebar({
                       <span>{t}</span>
                       <span
                         style={{
-                          fontSize: 9,
+                          fontSize: 11,
                           background: cnt > 10 ? "#c44" : "#4a4a7e",
                           borderRadius: 10,
-                          padding: "1px 6px",
+                          padding: "2px 7px",
                           fontWeight: 700,
                         }}
                       >

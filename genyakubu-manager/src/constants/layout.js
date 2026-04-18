@@ -7,6 +7,12 @@ export const LAYOUT = Object.freeze({
   SIDEBAR_WIDTH: 210,
 });
 
+/** Responsive breakpoints (px). Used by global media queries. */
+export const BREAKPOINTS = Object.freeze({
+  sm: 480,
+  md: 768,
+});
+
 export const BEHAVIOR = Object.freeze({
   /** Warn when a single teacher has this many slots on one weekday. */
   SLOT_OVERLOAD_THRESHOLD: 6,

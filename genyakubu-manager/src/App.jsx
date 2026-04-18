@@ -404,7 +404,7 @@ export default function App() {
       <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
+      <div className="app-main" style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
         <div
           style={{
             display: "flex",
@@ -434,7 +434,7 @@ export default function App() {
             >
               ☰
             </button>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
+            <h1 className="app-h1" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
               {view === VIEWS.DASH
                 ? "ダッシュボード"
                 : view === VIEWS.ALL
@@ -791,16 +791,42 @@ export default function App() {
           .dash-sections { grid-template-columns: 1fr !important; }
           .excel-grid-sections { grid-template-columns: 1fr !important; }
           .master-slot-actions { opacity: 1 !important; }
+          .sidebar { width: min(85vw, 280px) !important; }
+          /* 閉状態の left をモバイル幅に同期 (インライン left: -220 を上書き) */
+          .sidebar.is-closed { left: calc(-1 * min(85vw, 280px) - 8px) !important; }
+          .app-main { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
+          .app-h1 { font-size: 16px !important; }
+        }
+        @media (max-width: 480px) {
+          body { font-size: 14px; }
+          /* iOS Safari prevents auto-zoom only when input font-size >= 16px。
+             checkbox/radio/range/color は見た目が font-size に連動すると困るため除外。 */
+          input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+          select, textarea { font-size: 16px !important; }
+          button, [role="button"] { min-height: 40px !important; touch-action: manipulation; }
+          .app-main { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
+          .app-h1 { font-size: 15px !important; }
+          .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
+          .mobile-stack > * { width: 100% !important; }
+          .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+          .mobile-card-pad { padding: 16px !important; }
+          .slot-form-row { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
+          .slot-form-row > label { width: auto !important; text-align: left !important; }
+          .slot-form-row > input, .slot-form-row > select { width: 100% !important; min-width: 0 !important; }
+          .slot-form-row-error { margin-left: 0 !important; }
         }
         @media (hover: none) {
           .master-slot-actions { opacity: 1 !important; }
         }
+        /* print ルールは mobile ルールの後に置き、印刷時にスマホ用の
+           font-size: 16px が勝たないようにする (source order で優先) */
         @media print {
           .sidebar, .sidebar-spacer, .hamburger { display: none !important; }
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
           .no-print { display: none !important; }
           body { font-size: 10px !important; }
+          input, select, textarea { font-size: 10px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
       `}</style>

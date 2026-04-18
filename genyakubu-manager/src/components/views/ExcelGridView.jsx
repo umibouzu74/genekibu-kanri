@@ -409,7 +409,7 @@ export function ExcelGridView({
       )}
 
       {/* Grid + Panel layout */}
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div className="mobile-stack" style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         {/* Sections */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {!daysWithSlots.has(selectedDay) ? (

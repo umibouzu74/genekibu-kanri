@@ -6,21 +6,21 @@ import { colors, font, radius, space } from "./tokens";
 // pasting new literal hex values and px numbers.
 export const S = {
   btn: (active) => ({
-    padding: "6px 14px",
+    padding: "8px 14px",
     borderRadius: radius.md,
     border: "none",
     cursor: "pointer",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 700,
     background: active ? colors.primary : "#e4e4e8",
     color: active ? "#fff" : "#444",
     transition: "all .15s",
   }),
   input: {
-    padding: "6px 10px",
+    padding: "8px 10px",
     borderRadius: radius.md,
     border: "1px solid #ccc",
-    fontSize: 12,
+    fontSize: 14,
     outline: "none",
     width: "100%",
     boxSizing: "border-box",
@@ -42,9 +42,10 @@ export const S = {
     background: colors.surface,
     borderRadius: radius.xl,
     padding: space["2xl"],
-    width: 420,
+    width: "min(420px, 100%)",
     maxWidth: "90vw",
-    maxHeight: "85vh",
+    // calc() を明示。一部古い UA で min() 内の減算が calc() 省略時にパース失敗する事例があるため。
+    maxHeight: "min(85vh, calc(100dvh - 32px))",
     overflow: "auto",
     boxShadow: "0 20px 60px rgba(0,0,0,.3)",
   },

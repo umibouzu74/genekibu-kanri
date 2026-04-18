@@ -8,7 +8,7 @@ import { MasterListTab } from "./master/MasterListTab";
 
 function TabSwitcher({ tab, setTab }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
       <button onClick={() => setTab("list")} style={S.btn(tab === "list")}>
         コマ一覧
       </button>
