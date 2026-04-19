@@ -20,10 +20,11 @@ function nextId(list) {
  * @param {Array} args.draftSubs             追加する代行 (date, slotId, originalTeacher, substitute, status, memo)
  * @param {Array} args.draftAdjustments      追加する調整 (date, type, slotId, targetTime?, combineSlotIds?, memo)
  * @param {Array} args.draftOverrides        追加する回数補正 (date, slotId, mode, value?, displayAs?, memo)
+ * @param {Array<number>} [args.removedAdjustmentIds]  解除する既存 adjustment の id 配列
  * @param {Function} args.saveSubs
  * @param {Function} args.saveAdjustments
  * @param {Function} args.saveSessionOverrides
- * @returns {{added: {subs: number, adjustments: number, overrides: number}}}
+ * @returns {{added: {subs: number, adjustments: number, overrides: number, removed: number}}}
  */
 export function saveAbsenceBatch({
   subsList,
@@ -32,6 +33,7 @@ export function saveAbsenceBatch({
   draftSubs = [],
   draftAdjustments = [],
   draftOverrides = [],
+  removedAdjustmentIds = [],
   saveSubs,
   saveAdjustments,
   saveSessionOverrides,
@@ -71,8 +73,19 @@ export function saveAbsenceBatch({
     createdAt: ts,
   }));
 
+  // Adjustments: 解除マーク分を除外して再構築
+  const removedIdSet = new Set(
+    (removedAdjustmentIds || []).map((x) => Number(x)).filter((x) => Number.isFinite(x))
+  );
+  const keptAdjustments = removedIdSet.size
+    ? adjustmentsList.filter((a) => !removedIdSet.has(Number(a?.id)))
+    : adjustmentsList;
+  const removedCount = adjustmentsList.length - keptAdjustments.length;
+
   if (newSubs.length > 0) saveSubs([...subsList, ...newSubs]);
-  if (newAdjs.length > 0) saveAdjustments([...adjustmentsList, ...newAdjs]);
+  if (newAdjs.length > 0 || removedCount > 0) {
+    saveAdjustments([...keptAdjustments, ...newAdjs]);
+  }
   if (newOverrides.length > 0 || keptOverrides.length !== sessionOverridesList.length) {
     saveSessionOverrides([...keptOverrides, ...newOverrides]);
   }
@@ -82,6 +95,7 @@ export function saveAbsenceBatch({
       subs: newSubs.length,
       adjustments: newAdjs.length,
       overrides: newOverrides.length,
+      removed: removedCount,
     },
   };
 }

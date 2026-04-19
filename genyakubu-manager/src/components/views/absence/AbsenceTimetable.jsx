@@ -21,8 +21,10 @@ import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHe
 export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
   draft, // draft.draft (useAbsenceDraft から)
-  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride
+  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride, markAdjustmentRemoved
   existingSubs, // 既存確定代行 (date フィルタ済み)
+  existingAdjustments, // 既存調整 (date フィルタ前)
+  removedAdjustmentIds, // Set<number> draft 上で解除マークされた adjustment id
   sessionCountMap, // Map<slotId, number> draft 反映済み
   absentSlotIds, // Set<slotId>
   partTimeStaff,
@@ -37,35 +39,87 @@ export function AbsenceTimetable({
 
   const dow = useMemo(() => dateToDay(date), [date]);
 
-  // draft から派生する absorbed 集合とホスト対応
-  const { absorbedSet, hostByAbsorbed, hostsAbsorbedMap } = useMemo(() => {
+  // 当日の既存調整 (解除マーク済みは除く)
+  const activeExistingAdjustments = useMemo(() => {
+    const removed = removedAdjustmentIds || new Set();
+    return (existingAdjustments || []).filter(
+      (a) => a.date === date && !removed.has(a.id)
+    );
+  }, [existingAdjustments, date, removedAdjustmentIds]);
+
+  // 既存調整のインデックス: slotId -> adjustment (種別ごと)
+  const { existingCombineBySlot, existingMoveBySlot } = useMemo(() => {
+    const combineMap = new Map(); // hostSlotId -> adjustment
+    const moveMap = new Map(); // slotId -> adjustment
+    for (const adj of activeExistingAdjustments) {
+      if (adj.type === "combine") combineMap.set(adj.slotId, adj);
+      else if (adj.type === "move") moveMap.set(adj.slotId, adj);
+    }
+    return { existingCombineBySlot: combineMap, existingMoveBySlot: moveMap };
+  }, [activeExistingAdjustments]);
+
+  // draft + 既存 からの実効的な合同状態 (draft が同 slot にある場合は draft を優先)
+  const { absorbedSet, hostByAbsorbed, hostsAbsorbedMap, combineSourceByHost } = useMemo(() => {
     const absorbed = new Set();
     const hostByAbs = new Map();
     const hostsAbs = new Map(); // hostId -> absorbedSlotIds[]
+    const sourceByHost = new Map(); // hostId -> "draft" | "saved"
+
+    // 既存 combine を先に反映
+    for (const [hostId, adj] of existingCombineBySlot) {
+      if (draft[hostId]?.combine !== undefined && draft[hostId]?.combine !== null) continue;
+      const ids = [...(adj.combineSlotIds || [])];
+      if (!ids.length) continue;
+      hostsAbs.set(hostId, ids);
+      sourceByHost.set(hostId, "saved");
+      for (const c of ids) {
+        absorbed.add(c);
+        hostByAbs.set(c, hostId);
+      }
+    }
+
+    // draft を上書き
     for (const [sidStr, row] of Object.entries(draft)) {
       const sid = Number(sidStr);
       if (row.combine?.absorbedSlotIds?.length) {
         hostsAbs.set(sid, [...row.combine.absorbedSlotIds]);
+        sourceByHost.set(sid, "draft");
         for (const c of row.combine.absorbedSlotIds) {
           absorbed.add(c);
           hostByAbs.set(c, sid);
         }
       }
     }
-    return { absorbedSet: absorbed, hostByAbsorbed: hostByAbs, hostsAbsorbedMap: hostsAbs };
-  }, [draft]);
+    return {
+      absorbedSet: absorbed,
+      hostByAbsorbed: hostByAbs,
+      hostsAbsorbedMap: hostsAbs,
+      combineSourceByHost: sourceByHost,
+    };
+  }, [draft, existingCombineBySlot]);
 
-  // 表示用の slot リスト: time は move があれば target time
-  const effectiveSlots = useMemo(() => {
-    return slots.map((s) => {
-      const moveTarget = draft[s.id]?.move?.targetTime || null;
+  // 表示用の slot リスト: time は draft move or 既存 move があれば target time
+  const { effectiveSlots, moveSourceBySlot } = useMemo(() => {
+    const sourceBySlot = new Map(); // slotId -> "draft" | "saved"
+    const list = slots.map((s) => {
+      let moveTarget = draft[s.id]?.move?.targetTime || null;
+      if (moveTarget) {
+        sourceBySlot.set(s.id, "draft");
+      } else {
+        const savedMove = existingMoveBySlot.get(s.id);
+        if (savedMove?.targetTime) {
+          moveTarget = savedMove.targetTime;
+          sourceBySlot.set(s.id, "saved");
+        }
+      }
       return {
         ...s,
         _time: moveTarget || s.time,
         _moved: !!moveTarget,
       };
     });
-  }, [slots, draft]);
+    return { effectiveSlots: list, moveSourceBySlot: sourceBySlot };
+  }, [slots, draft, existingMoveBySlot]);
 
   // 表示対象 (absorbed は除外、host/移動済みは残す)
   const visibleSlots = useMemo(
@@ -83,7 +137,6 @@ export function AbsenceTimetable({
       const isAbsorbed = absorbedSet.has(slot.id);
       const isHost = hostsAbsorbedMap.has(slot.id);
       const hasSub = !!row?.sub?.substitute;
-      const hasMove = !!row?.move?.targetTime;
       const hasOverride = !!row?.override;
 
       if (isAbsorbed) {
@@ -93,6 +146,13 @@ export function AbsenceTimetable({
           onClick: () => {
             const hostId = hostByAbsorbed.get(slot.id);
             if (hostId == null) return;
+            const source = combineSourceByHost.get(hostId);
+            if (source === "saved") {
+              // 既存 combine はまるごと解除 (部分修正は非対応)
+              const existing = existingCombineBySlot.get(hostId);
+              if (existing) draftApi.markAdjustmentRemoved(existing.id);
+              return;
+            }
             const hostRow = draft[hostId];
             const remaining = (hostRow?.combine?.absorbedSlotIds || []).filter(
               (x) => x !== slot.id
@@ -116,14 +176,24 @@ export function AbsenceTimetable({
 
         // 合同
         if (isHost) {
-          items.push({
-            label: "合同相手を変更…",
-            onClick: () => setCombineSource(slot),
-          });
+          const source = combineSourceByHost.get(slot.id);
+          if (source === "draft") {
+            items.push({
+              label: "合同相手を変更…",
+              onClick: () => setCombineSource(slot),
+            });
+          }
           items.push({
             label: "合同を取り消す",
             danger: true,
-            onClick: () => draftApi.clearCombine(slot.id),
+            onClick: () => {
+              if (source === "saved") {
+                const existing = existingCombineBySlot.get(slot.id);
+                if (existing) draftApi.markAdjustmentRemoved(existing.id);
+              } else {
+                draftApi.clearCombine(slot.id);
+              }
+            },
           });
         } else {
           const candidates = findCombineCandidates(slot, slots, subjects, absorbedSet);
@@ -137,12 +207,20 @@ export function AbsenceTimetable({
           });
         }
 
-        // 移動
-        if (hasMove) {
+        // 移動 (draft or 既存)
+        const moveSrc = moveSourceBySlot.get(slot.id);
+        if (moveSrc) {
           items.push({
             label: "移動を取り消す",
             danger: true,
-            onClick: () => draftApi.clearMove(slot.id),
+            onClick: () => {
+              if (moveSrc === "saved") {
+                const existing = existingMoveBySlot.get(slot.id);
+                if (existing) draftApi.markAdjustmentRemoved(existing.id);
+              } else {
+                draftApi.clearMove(slot.id);
+              }
+            },
           });
         }
 
@@ -176,7 +254,19 @@ export function AbsenceTimetable({
         setCtxMenu({ x: e.clientX, y: e.clientY, items });
       }
     },
-    [draft, absorbedSet, hostsAbsorbedMap, hostByAbsorbed, draftApi, slots, subjects]
+    [
+      draft,
+      absorbedSet,
+      hostsAbsorbedMap,
+      hostByAbsorbed,
+      combineSourceByHost,
+      moveSourceBySlot,
+      existingCombineBySlot,
+      existingMoveBySlot,
+      draftApi,
+      slots,
+      subjects,
+    ]
   );
 
   // ドラッグ開始: dataTransfer に slotId をセット
@@ -191,12 +281,15 @@ export function AbsenceTimetable({
       const slot = slots.find((s) => s.id === slotId);
       if (!slot) return;
       if (slot.time === targetTime) {
+        // 元の時刻に戻す: draft move を削除 + 既存 move を解除マーク
         if (draft[slotId]?.move) draftApi.clearMove(slotId);
+        const existingMove = existingMoveBySlot.get(slotId);
+        if (existingMove) draftApi.markAdjustmentRemoved(existingMove.id);
         return;
       }
       draftApi.updateMove(slotId, targetTime);
     },
-    [slots, draft, draftApi]
+    [slots, draft, draftApi, existingMoveBySlot]
   );
 
   // 合同モード中のスロットクリック: 相手として選ぶ
@@ -290,6 +383,8 @@ export function AbsenceTimetable({
       // DnD 抑止条件
       const disableDrag = isHost || combineSource != null;
 
+      const isMoved = !!row.move?.targetTime || moveSourceBySlot.get(s.id) === "saved";
+
       return (
         <AbsenceSlotCard
           key={s.id}
@@ -297,7 +392,7 @@ export function AbsenceTimetable({
           date={date}
           biweeklyAnchors={biweeklyAnchors}
           isAbsent={isAbsent}
-          isMoved={!!row.move?.targetTime}
+          isMoved={isMoved}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
           isAbsorbed={isAbsorbed}
@@ -321,6 +416,7 @@ export function AbsenceTimetable({
       absorbedSet,
       hostsAbsorbedMap,
       hostByAbsorbed,
+      moveSourceBySlot,
       absentSlotIds,
       slots,
       existingSubs,
