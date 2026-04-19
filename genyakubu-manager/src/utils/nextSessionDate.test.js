@@ -40,38 +40,39 @@ describe("findNextSessionMap", () => {
 
   it("today = 2026-04-07 (火曜日) → その日の回数 1 を返す", () => {
     const today = new Date(2026, 3, 7); // 月は 0-indexed
-    const map = findNextSessionMap([tueSlot], 2 /* Tue */, today, makeCtx([tueSlot]), DISPLAY_CUTOFF);
+    const map = findNextSessionMap([tueSlot], 2 /* Tue */, today, makeCtx([tueSlot]));
     expect(map.get(1)).toBe(1);
   });
 
   it("today = 2026-04-08 (水曜日) の 火曜列 → 次週の 4/14 基準の 2 を返す", () => {
     const today = new Date(2026, 3, 8);
-    const map = findNextSessionMap([tueSlot], 2, today, makeCtx([tueSlot]), DISPLAY_CUTOFF);
+    const map = findNextSessionMap([tueSlot], 2, today, makeCtx([tueSlot]));
     expect(map.get(1)).toBe(2);
   });
 
   it("today < startDate (2026-04-01) の火曜列 → 見つかるまで先送り、4/7 基準の 1 を返す", () => {
     const today = new Date(2026, 3, 1);
-    const map = findNextSessionMap([tueSlot], 2, today, makeCtx([tueSlot]), DISPLAY_CUTOFF);
+    const map = findNextSessionMap([tueSlot], 2, today, makeCtx([tueSlot]));
     expect(map.get(1)).toBe(1);
   });
 
   it("daySlots が空なら空 Map", () => {
     const today = new Date(2026, 3, 7);
-    const map = findNextSessionMap([], 2, today, makeCtx([tueSlot]), DISPLAY_CUTOFF);
+    const map = findNextSessionMap([], 2, today, makeCtx([tueSlot]));
     expect(map.size).toBe(0);
   });
 
-  it("displayCutoff が null なら空 Map (バッジ非表示に倒す)", () => {
+  it("sessionCtx.displayCutoff が null なら空 Map (バッジ非表示に倒す)", () => {
     const today = new Date(2026, 3, 7);
-    const map = findNextSessionMap([tueSlot], 2, today, makeCtx([tueSlot]), null);
+    const ctx = makeCtx([tueSlot], { displayCutoff: null });
+    const map = findNextSessionMap([tueSlot], 2, today, ctx);
     expect(map.size).toBe(0);
   });
 
   it("4 週間探しても回数 > 0 が得られない場合は空 Map", () => {
     // 対象曜日が月だが slot は火曜 → どの月曜でもカウントが上がらない。
     const today = new Date(2026, 3, 7);
-    const map = findNextSessionMap([tueSlot], 1 /* Mon */, today, makeCtx([tueSlot]), DISPLAY_CUTOFF);
+    const map = findNextSessionMap([tueSlot], 1 /* Mon */, today, makeCtx([tueSlot]));
     expect(map.size).toBe(0);
   });
 
@@ -89,7 +90,6 @@ describe("findNextSessionMap", () => {
       4,
       today,
       makeCtx([thuSlot], { displayCutoff: cutoff }),
-      cutoff,
     );
     expect(map.size).toBe(0);
   });

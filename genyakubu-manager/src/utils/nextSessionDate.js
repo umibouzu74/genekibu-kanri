@@ -8,11 +8,12 @@ import { isEntireDayBeyondCutoff } from "./timetable";
 //
 // 純粋関数。today は Date オブジェクト (時分秒は 0 前提)。
 // targetDow は 0..6 (Sun..Sat; Date#getDay と同じインデックス)。
-export function findNextSessionMap(daySlots, targetDow, today, sessionCtx, displayCutoff, maxWeeks = 4) {
+// displayCutoff は sessionCtx.displayCutoff から参照する (単一情報源)。
+export function findNextSessionMap(daySlots, targetDow, today, sessionCtx, maxWeeks = 4) {
   if (!daySlots || daySlots.length === 0) return new Map();
-  if (!displayCutoff) return new Map();
-  if (!sessionCtx) return new Map();
+  if (!sessionCtx || !sessionCtx.displayCutoff) return new Map();
 
+  const displayCutoff = sessionCtx.displayCutoff;
   const base = new Date(today);
   const diff = (targetDow - base.getDay() + 7) % 7;
   base.setDate(base.getDate() + diff);

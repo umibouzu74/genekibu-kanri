@@ -65,7 +65,7 @@ export function WeekView({
 
   // ダッシュボードと同じ仕組みで 第N回 (①②③…) バッジを出す。
   // 曜日ごとに「今日以降で最初に実際の講義が成立する日」の回数マップを保持。
-  const sessionCtx = useSessionCtx({
+  const { sessionCtx } = useSessionCtx({
     classSets,
     slots,
     allSlots,
@@ -81,10 +81,10 @@ export function WeekView({
     const result = {};
     DAYS.forEach((d, idx) => {
       // DAYS は月〜土。Date#getDay は日=0..土=6 なので月=1..土=6 に変換。
-      result[d] = findNextSessionMap(byDay[d], idx + 1, today, sessionCtx, displayCutoff);
+      result[d] = findNextSessionMap(byDay[d], idx + 1, today, sessionCtx);
     });
     return result;
-  }, [byDay, sessionCtx, displayCutoff]);
+  }, [byDay, sessionCtx]);
 
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {

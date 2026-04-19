@@ -12,7 +12,6 @@ import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } fro
 import { isSlotForTeacher } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
-import { makeHolidayHelpers } from "./dashboardHelpers";
 
 export function MonthView({
   teacher,
@@ -94,13 +93,9 @@ export function MonthView({
     return m;
   }, [holidays]);
 
-  const { isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays, examPeriods),
-    [holidays, examPeriods]
-  );
-
   // 各日付セルで使う sessionCtx (第N回バッジ用)。Dashboard/WeekView と同仕様。
-  const sessionCtx = useSessionCtx({
+  // isOffForGrade は同じ hook から取得して makeHolidayHelpers の重複を避ける。
+  const { sessionCtx, isOffForGrade } = useSessionCtx({
     classSets,
     slots,
     displayCutoff,
@@ -216,19 +211,20 @@ export function MonthView({
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
           // この teacher が他人のコマを代行する行で使う slot も session count
           // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
-          const externalSubSlots = !isFullOff
-            ? teacherSubs
-                .filter(
-                  (sub) =>
-                    sub.date === ds &&
-                    sub.substitute === teacher &&
-                    !sl.some((s) => s.id === sub.slotId)
-                )
-                .map((sub) => slots.find((x) => x.id === sub.slotId))
-                .filter(Boolean)
-            : [];
+          const externalSubSlots =
+            isFullOff || dayCutoff
+              ? []
+              : teacherSubs
+                  .filter(
+                    (sub) =>
+                      sub.date === ds &&
+                      sub.substitute === teacher &&
+                      !sl.some((s) => s.id === sub.slotId)
+                  )
+                  .map((sub) => slots.find((x) => x.id === sub.slotId))
+                  .filter(Boolean);
           const sessionCountMap =
-            sessionCtx && displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
+            displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
               ? buildSessionCountMap([...sl, ...externalSubSlots], ds, sessionCtx)
               : null;
           return (
