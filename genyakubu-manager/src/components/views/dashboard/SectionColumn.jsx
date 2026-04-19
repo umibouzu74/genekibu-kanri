@@ -19,6 +19,8 @@ export function SectionColumn({
   sl,
   deptOff,
   subs,
+  adjustments = [],
+  allSlots = [],
   date,
   sessionCountMap,
 }) {
@@ -35,6 +37,26 @@ export function SectionColumn({
       teachers: [...new Set(sl.map((s) => s.teacher))],
     };
   }, [sl]);
+
+  // この日の合同情報を索引化
+  //   combineHostInfo: hostSlotId -> { absorbedSlotIds[] }
+  //   combineAbsorbedInfo: absorbedSlotId -> hostSlotId
+  const { combineHostInfo, combineAbsorbedInfo } = useMemo(() => {
+    const host = new Map();
+    const absorbed = new Map();
+    for (const adj of adjustments) {
+      if (adj.type !== "combine" || adj.date !== date) continue;
+      host.set(adj.slotId, { absorbedSlotIds: adj.combineSlotIds || [] });
+      for (const id of adj.combineSlotIds || []) absorbed.set(id, adj.slotId);
+    }
+    return { combineHostInfo: host, combineAbsorbedInfo: absorbed };
+  }, [adjustments, date]);
+
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of allSlots) m.set(s.id, s);
+    return m;
+  }, [allSlots]);
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -114,6 +136,11 @@ export function SectionColumn({
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                     const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
+                    const hostIdForAbsorbed = combineAbsorbedInfo.get(s.id);
+                    const absorbed = hostIdForAbsorbed != null;
+                    const hostSlot = absorbed ? slotById.get(hostIdForAbsorbed) : null;
+                    const hostInfo = combineHostInfo.get(s.id);
+                    const isHost = !!hostInfo;
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
@@ -123,7 +150,7 @@ export function SectionColumn({
                       <div
                         key={s.id}
                         style={{
-                          background: sub ? st.bg : "#fff",
+                          background: absorbed ? "#efe6f5" : sub ? st.bg : "#fff",
                           padding: "8px 6px",
                           textAlign: "left",
                           display: "flex",
@@ -131,25 +158,74 @@ export function SectionColumn({
                           justifyContent: "space-between",
                           minHeight: 96,
                           position: "relative",
+                          opacity: absorbed ? 0.65 : 1,
                           ...(newGradeRow ? { gridColumnStart: 1 } : null),
                         }}
                       >
-                        {sub && (
+                        {(sub || absorbed || isHost) && (
                           <div
                             style={{
                               position: "absolute",
                               top: 2,
                               right: 2,
-                              background: st.color,
-                              color: "#fff",
-                              fontSize: 8,
-                              fontWeight: 800,
-                              padding: "1px 4px",
-                              borderRadius: 3,
+                              display: "flex",
+                              gap: 2,
                             }}
-                            title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
                           >
-                            代
+                            {absorbed && (
+                              <span
+                                style={{
+                                  background: "#7a4aa0",
+                                  color: "#fff",
+                                  fontSize: 8,
+                                  fontWeight: 800,
+                                  padding: "1px 4px",
+                                  borderRadius: 3,
+                                }}
+                                title={
+                                  hostSlot
+                                    ? `合同で ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} (${hostSlot.teacher}) に統合`
+                                    : "合同で吸収"
+                                }
+                              >
+                                合
+                              </span>
+                            )}
+                            {isHost && !absorbed && (
+                              <span
+                                style={{
+                                  background: "#7a4aa0",
+                                  color: "#fff",
+                                  fontSize: 8,
+                                  fontWeight: 800,
+                                  padding: "1px 4px",
+                                  borderRadius: 3,
+                                }}
+                                title={`合同ホスト\n+ ${hostInfo.absorbedSlotIds
+                                  .map((id) => {
+                                    const a = slotById.get(id);
+                                    return a ? `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}` : `#${id}`;
+                                  })
+                                  .join(" / ")}`}
+                              >
+                                合+
+                              </span>
+                            )}
+                            {sub && (
+                              <span
+                                style={{
+                                  background: st.color,
+                                  color: "#fff",
+                                  fontSize: 8,
+                                  fontWeight: 800,
+                                  padding: "1px 4px",
+                                  borderRadius: 3,
+                                }}
+                                title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
+                              >
+                                代
+                              </span>
+                            )}
                           </div>
                         )}
                         <div style={{ lineHeight: 1.4 }}>
@@ -225,7 +301,7 @@ export function SectionColumn({
                         </div>
                         <div
                           style={{
-                            fontSize: sub ? 16 : 22,
+                            fontSize: sub || absorbed ? 14 : 22,
                             fontWeight: 800,
                             color: "#1a1a2e",
                             lineHeight: 1.1,
@@ -235,7 +311,23 @@ export function SectionColumn({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {sub ? (
+                          {absorbed ? (
+                            <span>
+                              <span
+                                style={{
+                                  textDecoration: "line-through",
+                                  color: "#999",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {s.teacher || "?"}
+                              </span>
+                              <span style={{ margin: "0 2px", color: "#7a4aa0" }}>→</span>
+                              <span style={{ color: "#7a4aa0" }}>
+                                {hostSlot?.teacher || "?"}
+                              </span>
+                            </span>
+                          ) : sub ? (
                             <span>
                               <span
                                 style={{

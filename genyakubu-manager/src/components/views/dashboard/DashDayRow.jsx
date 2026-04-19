@@ -10,6 +10,7 @@ export function DashDayRow({
   holidays: hols,
   slots,
   subs,
+  adjustments = [],
   examPeriodsForDate = [],
   sessionCtx,
 }) {
@@ -158,6 +159,8 @@ export function DashDayRow({
                 sl={secSlots}
                 deptOff={deptOff}
                 subs={subs}
+                adjustments={adjustments}
+                allSlots={sessionCtx?.allSlots || slots}
                 date={date}
                 sessionCountMap={sessionCountMap}
               />

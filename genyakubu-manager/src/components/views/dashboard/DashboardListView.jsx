@@ -17,6 +17,7 @@ export function DashboardListView({
   examPeriodsFor,
   isOffForGrade,
   sessionCtx,
+  adjustments = [],
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -64,6 +65,7 @@ export function DashboardListView({
               holidays={hols}
               slots={daySlots}
               subs={subs}
+              adjustments={adjustments}
               examPeriodsForDate={examPeriodsFor(dateStr)}
               sessionCtx={sessionCtx}
             />

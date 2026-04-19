@@ -724,6 +724,7 @@ export default function App() {
               teacher={selected}
               slots={ttFilteredSlots}
               subs={subs}
+              adjustments={adjustments}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
               isAdmin={isAdmin}

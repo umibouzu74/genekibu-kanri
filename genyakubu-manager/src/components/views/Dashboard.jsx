@@ -176,6 +176,7 @@ export function Dashboard({
           isOffForGrade={isOffForGrade}
           sessionCtx={sessionCtx}
           todayStr={todayStr}
+          adjustments={adjustments}
         />
       )}
     </div>
