@@ -66,9 +66,11 @@ export const ExcelCell = memo(function ExcelCell({
     ? getSlotWeekType(subDate || fmtDate(new Date()), slot, biweeklyAnchors)
     : null;
 
-  // ダッシュボード時のみ: 単独教科の隔週 ("隔週(partner)") は、その日に
-  // 授業がある側だけ表示して "(隔週)" を付ける。アンカー未設定 (weekType null)
-  // や複合教科隔週は従来通り両者併記のまま。
+  // ダッシュボード時のみ: note が "隔週(partner)" 形式の隔週スロットで、
+  // A 週は slot.teacher、B 週は括弧内の partner を active とする。
+  // 実データは複合教科 (例: "英/数") のペアで使われる想定で、隔週の A/B に
+  // 応じて実際に担当する教員を表示する。アンカー未設定 (weekType null) や
+  // note が "隔週" のみ (partner 未指定) の場合は従来通りの併記表示。
   const biweeklyPartnerMatch =
     biweekly && dashboardMode ? slot.note.match(/隔週\(([^)]+)\)/) : null;
   const activeBiweeklyTeacher =
