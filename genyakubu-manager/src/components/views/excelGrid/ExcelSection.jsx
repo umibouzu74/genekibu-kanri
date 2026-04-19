@@ -40,6 +40,7 @@ export function ExcelSection({
   onSubDrop,
   sessionCountMap,
   groupTeacherMap,
+  dashboardMode = false,
 }) {
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
@@ -418,6 +419,7 @@ export function ExcelSection({
                                 : 0
                             }
                             teacherOverride={groupTeacherMap?.get(combined.slot.id)}
+                            dashboardMode={dashboardMode}
                             {...subProps}
                           />
                         );
@@ -464,6 +466,7 @@ export function ExcelSection({
                             : 0
                         }
                         teacherOverride={slot ? groupTeacherMap?.get(slot.id) : undefined}
+                        dashboardMode={dashboardMode}
                         {...subProps}
                       />
                     );

@@ -34,6 +34,7 @@ export const ExcelCell = memo(function ExcelCell({
   onCellClick,
   sessionNumber,
   teacherOverride,
+  dashboardMode = false,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -64,6 +65,20 @@ export const ExcelCell = memo(function ExcelCell({
   const weekType = biweekly
     ? getSlotWeekType(subDate || fmtDate(new Date()), slot, biweeklyAnchors)
     : null;
+
+  // ダッシュボード時のみ: note が "隔週(partner)" 形式の隔週スロットで、
+  // A 週は slot.teacher、B 週は括弧内の partner を active とする。
+  // 実データは複合教科 (例: "英/数") のペアで使われる想定で、隔週の A/B に
+  // 応じて実際に担当する教員を表示する。アンカー未設定 (weekType null) や
+  // note が "隔週" のみ (partner 未指定) の場合は従来通りの併記表示。
+  const biweeklyPartnerMatch =
+    biweekly && dashboardMode ? slot.note.match(/隔週\(([^)]+)\)/) : null;
+  const activeBiweeklyTeacher =
+    biweeklyPartnerMatch && weekType
+      ? weekType === "A"
+        ? slot.teacher
+        : biweeklyPartnerMatch[1]
+      : null;
 
   // Determine cell visual state (priority order)
   let bg = "#fff";
@@ -213,7 +228,10 @@ export const ExcelCell = memo(function ExcelCell({
             textDecoration: teacherDecor,
           }}
         >
-          {teacherOverride ?? formatBiweeklyTeacher(slot.teacher, slot.note)}
+          {teacherOverride ??
+            (activeBiweeklyTeacher
+              ? `${activeBiweeklyTeacher} (隔週)`
+              : formatBiweeklyTeacher(slot.teacher, slot.note))}
         </div>
         {subDisplay}
         {slot.note && !slot.note.startsWith("隔週") && slot.note !== "合同" && (

@@ -65,6 +65,7 @@ export function ExcelGridView({
   enableSubMode = false,
   adjustments = [],
   sessionOverrides = [],
+  dashboardMode = false,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -254,6 +255,26 @@ export function ExcelGridView({
       orientationOnFirstDay: true,
     });
   }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides]);
+
+  // 表示中の日付。代行モード中は subDate、そうでなければ選択曜日に対応する
+  // 実日付 (sessionTargetDate を流用)。隔週 weekType 計算とダッシュボードの
+  // 代行表示の両方で使う。
+  const displayDate = subMode.subDate || sessionTargetDate;
+
+  // ダッシュボード表示用: 表示中日付の代行を slotId → Substitute でマップ化。
+  // 代行モード中は subMode.existingSubMap を優先する (下で分岐)。
+  const dashboardSubMap = useMemo(() => {
+    if (!dashboardMode || !displayDate) return new Map();
+    const m = new Map();
+    for (const sub of subs || []) {
+      if (sub.date === displayDate) m.set(sub.slotId, sub);
+    }
+    return m;
+  }, [dashboardMode, displayDate, subs]);
+
+  const effectiveSubMap = subMode.isSubMode
+    ? subMode.existingSubMap
+    : dashboardSubMap;
 
   return (
     <div>
@@ -460,15 +481,16 @@ export function ExcelGridView({
                     setDragState={setDragState}
                     unavailableTeachers={unavailableTeachers}
                     isSubMode={subMode.isSubMode}
-                    subDate={subMode.subDate}
+                    subDate={displayDate}
                     holidayOffSlots={subMode.holidayOffSlots}
                     pendingSubMap={subMode.pendingSubMap}
-                    existingSubMap={subMode.existingSubMap}
+                    existingSubMap={effectiveSubMap}
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
                     combineMode={combineMode}
                     onSubDrop={subMode.isSubMode ? handleSubDrop : undefined}
                     sessionCountMap={sessionCountMap}
                     groupTeacherMap={groupTeacherMap}
+                    dashboardMode={dashboardMode}
                   />
                 );
               };
