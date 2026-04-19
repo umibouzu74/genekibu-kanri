@@ -80,6 +80,9 @@ export function WeekView({
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
       sessionOverrides: sessionOverrides || [],
+      // 中学部の開講日 1 限目をオリエン扱いにし第1回を 2 限へ繰下げる挙動を
+      // ダッシュボードと揃える。
+      orientationOnFirstDay: true,
     }),
     [classSets, allSlots, slots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides]
   );
