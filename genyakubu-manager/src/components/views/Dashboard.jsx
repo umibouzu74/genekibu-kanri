@@ -162,6 +162,7 @@ export function Dashboard({
           onViewDateChange={setStartDate}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
+          dashboardMode
         />
       ) : (
         <DashboardListView
