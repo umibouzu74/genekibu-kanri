@@ -17,7 +17,7 @@ import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import { filterSlotsByActiveTimetable } from "../../utils/timetable";
-import { makeHolidayHelpers } from "./dashboardHelpers";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { ExcelSection } from "./excelGrid/ExcelSection";
 
 // DAYS = ["月","火","水","木","金","土"]。viewDate を含む週の月曜日を起点に
@@ -240,21 +240,21 @@ export function ExcelGridView({
     return null;
   }, [subMode.subDate, viewDate, selectedDay]);
 
+  const { sessionCtx } = useSessionCtx({
+    classSets,
+    slots: displaySlots,
+    displayCutoff,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+  });
+
   const sessionCountMap = useMemo(() => {
-    if (!sessionTargetDate || !displayCutoff) return new Map();
-    const { isOffForGrade } = makeHolidayHelpers(holidays || [], examPeriods || []);
+    if (!sessionTargetDate || !sessionCtx.displayCutoff) return new Map();
     const daySlots = displaySlots.filter((s) => s.day === selectedDay);
-    return buildSessionCountMap(daySlots, sessionTargetDate, {
-      classSets: classSets || [],
-      allSlots: displaySlots,
-      displayCutoff,
-      isOffForGrade,
-      biweeklyAnchors: biweeklyAnchors || [],
-      adjustments,
-      sessionOverrides,
-      orientationOnFirstDay: true,
-    });
-  }, [sessionTargetDate, selectedDay, displaySlots, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides]);
+    return buildSessionCountMap(daySlots, sessionTargetDate, sessionCtx);
+  }, [sessionTargetDate, selectedDay, displaySlots, sessionCtx]);
 
   // 表示中の日付。代行モード中は subDate、そうでなければ選択曜日に対応する
   // 実日付 (sessionTargetDate を流用)。隔週 weekType 計算とダッシュボードの
