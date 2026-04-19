@@ -723,11 +723,18 @@ export default function App() {
             <WeekView
               teacher={selected}
               slots={ttFilteredSlots}
+              allSlots={slots}
               subs={subs}
               adjustments={adjustments}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
               isAdmin={isAdmin}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              displayCutoff={displayCutoff}
             />
           )}
           {selected && view === VIEWS.MONTH && (

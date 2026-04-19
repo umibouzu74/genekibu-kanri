@@ -4,6 +4,7 @@ import {
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
+  gradeColor as GC,
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
@@ -254,6 +255,7 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                 </div>
               ) : (
                 sl.map((s) => {
+                  const gc = GC(s.grade);
                   const sub = subByDateSlot.get(`${ds}|${s.id}`);
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                   const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
@@ -348,6 +350,20 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                           {b.label}
                         </span>
                       ))}
+                      <span
+                        style={{
+                          background: gc.b,
+                          color: gc.f,
+                          fontSize: 8,
+                          fontWeight: 700,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        {s.grade}
+                        {s.cls && s.cls !== "-" ? s.cls : ""}
+                      </span>
                       <b>{displayTime}</b> {s.subj}
                     </div>
                   );
@@ -366,6 +382,7 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                     const slot = slots.find((s) => s.id === sub.slotId);
                     if (!slot) return null;
                     const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
+                    const gc = GC(slot.grade);
                     return (
                       <div
                         key={`ext-${sub.id}`}
@@ -395,6 +412,20 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                           }}
                         >
                           代
+                        </span>
+                        <span
+                          style={{
+                            background: gc.b,
+                            color: gc.f,
+                            fontSize: 8,
+                            fontWeight: 700,
+                            padding: "0 3px",
+                            borderRadius: 2,
+                            marginRight: 2,
+                          }}
+                        >
+                          {slot.grade}
+                          {slot.cls && slot.cls !== "-" ? slot.cls : ""}
                         </span>
                         <b>{slot.time.split("-")[0]}</b> {slot.subj}
                       </div>

@@ -1,9 +1,11 @@
 import { memo } from "react";
 import { DAY_COLOR as DC, gradeColor as GC } from "../data";
 import { formatBiweeklyNote } from "../utils/biweekly";
+import { formatSessionNumber } from "../utils/sessionCount";
 
-function SlotCardImpl({ slot, compact, onEdit, onDel }) {
+function SlotCardImpl({ slot, compact, sessionNum, onEdit, onDel }) {
   const gc = GC(slot.grade);
+  const hasSessionBadge = typeof sessionNum === "number" && sessionNum > 0;
   return (
     <div
       style={{
@@ -29,6 +31,27 @@ function SlotCardImpl({ slot, compact, onEdit, onDel }) {
           color: "#888",
         }}
       >
+        {hasSessionBadge && (
+          <span
+            title={`第${sessionNum}回`}
+            aria-label={`第${sessionNum}回`}
+            style={{
+              background: "#3a6ea5",
+              color: "#fff",
+              borderRadius: 3,
+              padding: "0 4px",
+              fontSize: 11,
+              fontWeight: 800,
+              lineHeight: "16px",
+              minWidth: 18,
+              textAlign: "center",
+              boxShadow: "0 1px 2px rgba(0,0,0,.12)",
+              flexShrink: 0,
+            }}
+          >
+            {formatSessionNumber(sessionNum)}
+          </span>
+        )}
         <span
           style={{
             background: gc.b,

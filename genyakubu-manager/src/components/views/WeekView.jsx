@@ -4,6 +4,7 @@ import {
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
+  fmtDate,
   fmtDateWeekday,
   parseLocalDate,
   sortSlots as sortS,
@@ -13,6 +14,9 @@ import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
 import { isSlotForTeacher } from "../../utils/biweekly";
+import { buildSessionCountMap } from "../../utils/sessionCount";
+import { isEntireDayBeyondCutoff } from "../../utils/timetable";
+import { makeHolidayHelpers } from "./dashboardHelpers";
 import { S } from "../../styles/common";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
@@ -29,7 +33,22 @@ function isWithinWindow(dateStr, start, end) {
   return !!dt && dt >= start && dt <= end;
 }
 
-export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel, isAdmin }) {
+export function WeekView({
+  teacher,
+  slots,
+  subs,
+  adjustments = [],
+  onEdit,
+  onDel,
+  isAdmin,
+  allSlots,
+  classSets,
+  biweeklyAnchors,
+  sessionOverrides,
+  holidays = [],
+  examPeriods = [],
+  displayCutoff,
+}) {
   const ts = useMemo(
     () => sortS(slots.filter((s) => isSlotForTeacher(s, teacher))),
     [teacher, slots]
@@ -45,6 +64,62 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
 
   // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
   const [winStart, winEnd] = useMemo(() => getUpcomingWindow(), []);
+
+  // ダッシュボードと同じ仕組みで 第N回 (①②③…) バッジを出す。
+  // 曜日ごとに「今日以降で最初に実際の講義が成立する日」を計算し、
+  // その日付に対するセッション番号マップを保持する。
+  const { isOffForGrade } = useMemo(
+    () => makeHolidayHelpers(holidays, examPeriods),
+    [holidays, examPeriods]
+  );
+  const sessionCtx = useMemo(
+    () => ({
+      classSets: classSets || [],
+      allSlots: allSlots || slots,
+      displayCutoff,
+      isOffForGrade,
+      biweeklyAnchors: biweeklyAnchors || [],
+      sessionOverrides: sessionOverrides || [],
+    }),
+    [classSets, allSlots, slots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides]
+  );
+  const sessionMapByDay = useMemo(() => {
+    const result = {};
+    DAYS.forEach((d) => {
+      result[d] = new Map();
+    });
+    if (!displayCutoff || !classSets) return result;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    DAYS.forEach((d, idx) => {
+      const targetDow = idx + 1; // 月=1 … 土=6, WEEKDAYS と整合
+      const base = new Date(today);
+      const diff = (targetDow - base.getDay() + 7) % 7;
+      base.setDate(base.getDate() + diff);
+      const daySlots = byDay[d] || [];
+      if (daySlots.length === 0) return;
+      // 最大 4 週分先までスキャンして、回数 > 0 のスロットがある日を採用
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const ds = fmtDate(base);
+        if (!isEntireDayBeyondCutoff(ds, displayCutoff)) {
+          const map = buildSessionCountMap(daySlots, ds, sessionCtx);
+          let any = false;
+          for (const v of map.values()) {
+            if (v > 0) {
+              any = true;
+              break;
+            }
+          }
+          if (any) {
+            result[d] = map;
+            return;
+          }
+        }
+        base.setDate(base.getDate() + 7);
+      }
+    });
+    return result;
+  }, [byDay, sessionCtx, displayCutoff, classSets]);
 
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {
@@ -465,7 +540,13 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                     );
                     return (
                       <div key={s.id} style={{ position: "relative" }}>
-                        <SlotCard slot={s} compact onEdit={isAdmin ? onEdit : undefined} onDel={isAdmin ? onDel : undefined} />
+                        <SlotCard
+                          slot={s}
+                          compact
+                          sessionNum={sessionMapByDay[d]?.get(s.id) || 0}
+                          onEdit={isAdmin ? onEdit : undefined}
+                          onDel={isAdmin ? onDel : undefined}
+                        />
                         {hasAny && (
                           <div
                             style={{
