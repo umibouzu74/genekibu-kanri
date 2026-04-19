@@ -752,6 +752,9 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
             />
           )}
           </Suspense>

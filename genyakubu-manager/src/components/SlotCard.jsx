@@ -40,12 +40,11 @@ function SlotCardImpl({ slot, compact, sessionNum, onEdit, onDel }) {
               color: "#fff",
               borderRadius: 3,
               padding: "0 4px",
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: 800,
-              lineHeight: "16px",
-              minWidth: 18,
+              lineHeight: "14px",
+              minWidth: 16,
               textAlign: "center",
-              boxShadow: "0 1px 2px rgba(0,0,0,.12)",
               flexShrink: 0,
             }}
           >

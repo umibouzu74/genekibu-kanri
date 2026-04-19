@@ -10,9 +10,27 @@ import {
 } from "../../data";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import { isSlotForTeacher } from "../../utils/biweekly";
+import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { makeHolidayHelpers } from "./dashboardHelpers";
 
-export function MonthView({ teacher, slots, holidays, subs, adjustments = [], year, month, onEdit, isAdmin, timetables, displayCutoff, examPeriods = [] }) {
+export function MonthView({
+  teacher,
+  slots,
+  holidays,
+  subs,
+  adjustments = [],
+  year,
+  month,
+  onEdit,
+  isAdmin,
+  timetables,
+  displayCutoff,
+  examPeriods = [],
+  classSets,
+  biweeklyAnchors,
+  sessionOverrides,
+}) {
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -80,6 +98,17 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
     () => makeHolidayHelpers(holidays, examPeriods),
     [holidays, examPeriods]
   );
+
+  // 各日付セルで使う sessionCtx (第N回バッジ用)。Dashboard/WeekView と同仕様。
+  const sessionCtx = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+  });
 
   // Returns exam period names active on a given date (for label display)
   const examPeriodsForDate = useCallback(
@@ -185,6 +214,23 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
           const sl = isFullOff || dayCutoff
             ? []
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
+          // この teacher が他人のコマを代行する行で使う slot も session count
+          // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
+          const externalSubSlots = !isFullOff
+            ? teacherSubs
+                .filter(
+                  (sub) =>
+                    sub.date === ds &&
+                    sub.substitute === teacher &&
+                    !sl.some((s) => s.id === sub.slotId)
+                )
+                .map((sub) => slots.find((x) => x.id === sub.slotId))
+                .filter(Boolean)
+            : [];
+          const sessionCountMap =
+            sessionCtx && displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
+              ? buildSessionCountMap([...sl, ...externalSubSlots], ds, sessionCtx)
+              : null;
           return (
             <div
               key={ds}
@@ -256,6 +302,7 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
               ) : (
                 sl.map((s) => {
                   const gc = GC(s.grade);
+                  const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
                   const sub = subByDateSlot.get(`${ds}|${s.id}`);
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                   const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
@@ -350,6 +397,22 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                           {b.label}
                         </span>
                       ))}
+                      {sessionNum > 0 && (
+                        <span
+                          title={`第${sessionNum}回`}
+                          style={{
+                            background: "#3a6ea5",
+                            color: "#fff",
+                            fontSize: 8,
+                            fontWeight: 800,
+                            padding: "0 3px",
+                            borderRadius: 2,
+                            marginRight: 2,
+                          }}
+                        >
+                          {formatSessionNumber(sessionNum)}
+                        </span>
+                      )}
                       <span
                         style={{
                           background: gc.b,
@@ -383,6 +446,9 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                     if (!slot) return null;
                     const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
                     const gc = GC(slot.grade);
+                    const sessionNum = sessionCountMap
+                      ? sessionCountMap.get(slot.id) || 0
+                      : 0;
                     return (
                       <div
                         key={`ext-${sub.id}`}
@@ -413,6 +479,22 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                         >
                           代
                         </span>
+                        {sessionNum > 0 && (
+                          <span
+                            title={`第${sessionNum}回`}
+                            style={{
+                              background: "#3a6ea5",
+                              color: "#fff",
+                              fontSize: 8,
+                              fontWeight: 800,
+                              padding: "0 3px",
+                              borderRadius: 2,
+                              marginRight: 2,
+                            }}
+                          >
+                            {formatSessionNumber(sessionNum)}
+                          </span>
+                        )}
                         <span
                           style={{
                             background: gc.b,
