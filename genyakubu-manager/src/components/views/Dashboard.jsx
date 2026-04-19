@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { fmtDate } from "../../data";
 import { S } from "../../styles/common";
-import { buildDayRange, makeHolidayHelpers } from "./dashboardHelpers";
+import { buildDayRange } from "./dashboardHelpers";
 import { ExcelGridView } from "./ExcelGridView";
 import { DAY_COUNT_OPTIONS } from "./dashboard/constants";
 import { DashboardDateNav } from "./dashboard/DashboardDateNav";
 import { DashboardListView } from "./dashboard/DashboardListView";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 
 // Re-export DashDayRow so existing call sites (e.g. ConfirmedSubsView)
 // keep working without import-path churn.
@@ -66,11 +67,6 @@ export function Dashboard({
     try { localStorage.setItem(LS_VIEW_MODE_KEY, m); } catch { /* quota */ }
   };
 
-  const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays, examPeriods),
-    [holidays, examPeriods]
-  );
-
   const days = useMemo(
     () => buildDayRange(startDate, daysInRange),
     [startDate, daysInRange]
@@ -78,21 +74,16 @@ export function Dashboard({
 
   const isToday = startDate === todayStr;
 
-  // Session count 用の共通 ctx。DashDayRow ごとに buildSessionCountMap を
-  // 呼び、その日の対象スロットにセッション番号を振る。
-  const sessionCtx = useMemo(
-    () => ({
-      classSets,
-      allSlots: slots,
-      displayCutoff,
-      isOffForGrade,
-      biweeklyAnchors,
-      adjustments,
-      sessionOverrides,
-      orientationOnFirstDay: true,
-    }),
-    [classSets, slots, displayCutoff, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides]
-  );
+  // Session count 用の共通 ctx + ホリデーヘルパをまとめて取得。
+  const { sessionCtx, holidaysFor, examPeriodsFor, isOffForGrade } = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

@@ -115,7 +115,7 @@ export function ChainSubstitutionPanel({
     setSaved(false);
   }, [
     date, slots, holidays, examPeriods, subs, partTimeStaff,
-    subjects, subjectCategories, timetables, biweeklyAnchors,
+    subjects, subjectCategories, timetables, biweeklyAnchors, teacherSubjects,
     manualAvailable, uncoveredSubs,
   ]);
 

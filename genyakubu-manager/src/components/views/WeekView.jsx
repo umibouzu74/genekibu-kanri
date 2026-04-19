@@ -13,6 +13,8 @@ import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
 import { isSlotForTeacher } from "../../utils/biweekly";
+import { findNextSessionMap } from "../../utils/nextSessionDate";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
@@ -29,7 +31,22 @@ function isWithinWindow(dateStr, start, end) {
   return !!dt && dt >= start && dt <= end;
 }
 
-export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel, isAdmin }) {
+export function WeekView({
+  teacher,
+  slots,
+  subs,
+  adjustments = [],
+  onEdit,
+  onDel,
+  isAdmin,
+  allSlots,
+  classSets,
+  biweeklyAnchors,
+  sessionOverrides,
+  holidays = [],
+  examPeriods = [],
+  displayCutoff,
+}) {
   const ts = useMemo(
     () => sortS(slots.filter((s) => isSlotForTeacher(s, teacher))),
     [teacher, slots]
@@ -45,6 +62,29 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
 
   // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
   const [winStart, winEnd] = useMemo(() => getUpcomingWindow(), []);
+
+  // ダッシュボードと同じ仕組みで 第N回 (①②③…) バッジを出す。
+  // 曜日ごとに「今日以降で最初に実際の講義が成立する日」の回数マップを保持。
+  const { sessionCtx } = useSessionCtx({
+    classSets,
+    slots,
+    allSlots,
+    displayCutoff,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+  });
+  const sessionMapByDay = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const result = {};
+    DAYS.forEach((d, idx) => {
+      // DAYS は月〜土。Date#getDay は日=0..土=6 なので月=1..土=6 に変換。
+      result[d] = findNextSessionMap(byDay[d], idx + 1, today, sessionCtx);
+    });
+    return result;
+  }, [byDay, sessionCtx]);
 
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {
@@ -465,7 +505,13 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                     );
                     return (
                       <div key={s.id} style={{ position: "relative" }}>
-                        <SlotCard slot={s} compact onEdit={isAdmin ? onEdit : undefined} onDel={isAdmin ? onDel : undefined} />
+                        <SlotCard
+                          slot={s}
+                          compact
+                          sessionNum={sessionMapByDay[d]?.get(s.id) || 0}
+                          onEdit={isAdmin ? onEdit : undefined}
+                          onDel={isAdmin ? onDel : undefined}
+                        />
                         {hasAny && (
                           <div
                             style={{
