@@ -1,12 +1,34 @@
 import { memo } from "react";
-import { fmtDate } from "../../../data";
+import { ADJ_COLOR, fmtDate } from "../../../data";
 import {
   formatBiweeklyTeacher,
   getSlotWeekType,
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { describeSlot } from "../../../utils/adjustmentDisplay";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
+
+// セル内で並べる小さなステータスバッジ。
+// 代/仮/休/欠/合/合+/移 を同じ見た目で生成する。
+function mkBadge(color, label, key, title) {
+  return (
+    <span
+      key={key}
+      title={title}
+      style={{
+        background: color,
+        color: "#fff",
+        padding: "0 4px",
+        borderRadius: 3,
+        fontSize: 9,
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
 // Single cell in the Excel-like timetable grid. Highly memoised because
@@ -35,6 +57,12 @@ export const ExcelCell = memo(function ExcelCell({
   sessionNumber,
   teacherOverride,
   dashboardMode = false,
+  absorbed = false,
+  absorbedHostSlot = null,
+  isCombineHost = false,
+  hostedSlots = null,
+  moveTarget = null,
+  moveOriginalTime = null,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -80,24 +108,28 @@ export const ExcelCell = memo(function ExcelCell({
         : biweeklyPartnerMatch[1]
       : null;
 
-  // Determine cell visual state (priority order)
+  // Determine cell visual state (priority order).
+  // 合同・移動バッジは他の状態と重なり得るため配列で後から追加する。
   let bg = "#fff";
   let borderLeft = undefined;
-  let badge = null;
+  const badges = [];
   let teacherColor = "#1a1a2e";
   let teacherDecor = "none";
   let subDisplay = null;
 
+  // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
+  // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
   if (isDragOver) {
     bg = "#e8f4ff";
+  } else if (isHolidayOff) {
+    bg = "#f5f0e0";
+    borderLeft = "3px solid #b8860b";
+    badges.push(mkBadge("#b8860b", "休", "holiday"));
+    teacherColor = "#aaa";
   } else if (pendingSub) {
     bg = "#e0f5e0";
     borderLeft = "3px solid #2a7a4a";
-    badge = (
-      <span style={{ background: "#2a7a4a", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        仮
-      </span>
-    );
+    badges.push(mkBadge("#2a7a4a", "仮", "pending"));
     teacherColor = "#888";
     teacherDecor = "line-through";
     subDisplay = (
@@ -108,11 +140,7 @@ export const ExcelCell = memo(function ExcelCell({
   } else if (existingSub && existingSub.substitute) {
     bg = "#e8f0ff";
     borderLeft = "3px solid #3a6ea5";
-    badge = (
-      <span style={{ background: "#3a6ea5", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        代
-      </span>
-    );
+    badges.push(mkBadge("#3a6ea5", "代", "sub"));
     teacherColor = "#888";
     teacherDecor = "line-through";
     subDisplay = (
@@ -120,25 +148,72 @@ export const ExcelCell = memo(function ExcelCell({
         ← {existingSub.substitute}
       </div>
     );
-  } else if (isHolidayOff) {
-    bg = "#f5f0e0";
-    borderLeft = "3px solid #b8860b";
-    badge = (
-      <span style={{ background: "#b8860b", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        休
-      </span>
-    );
-    teacherColor = "#aaa";
   } else if (isUnavailable) {
     bg = "#fff0f0";
     borderLeft = "3px solid #c03030";
-    badge = (
-      <span style={{ background: "#c03030", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        欠
-      </span>
-    );
+    badges.push(mkBadge("#c03030", "欠", "unavail"));
     teacherColor = "#c03030";
     teacherDecor = "line-through";
+  }
+
+  // 合同・移動は休講日には意味がないのでそこでは表示しない (バッジもつけない)。
+  if (!isHolidayOff) {
+    if (absorbed) {
+      // 合同で吸収された側: 既存の sub 背景がなければ紫で塗って line-through
+      if (!pendingSub && !existingSub?.substitute) {
+        bg = ADJ_COLOR.combine.bg;
+        borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
+        teacherColor = "#888";
+        teacherDecor = "line-through";
+        if (absorbedHostSlot) {
+          subDisplay = (
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: ADJ_COLOR.combine.color,
+                marginTop: 1,
+              }}
+            >
+              → {absorbedHostSlot.teacher || "?"} に合同
+            </div>
+          );
+        }
+      }
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.combine.color,
+          "合",
+          "absorbed",
+          absorbedHostSlot
+            ? `合同で ${describeSlot(absorbedHostSlot)} (${absorbedHostSlot.teacher}) に統合`
+            : "合同で吸収"
+        )
+      );
+    } else if (isCombineHost) {
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.combine.color,
+          "合+",
+          "host",
+          hostedSlots && hostedSlots.length
+            ? `合同ホスト\n+ ${hostedSlots.map(describeSlot).join(" / ")}`
+            : "合同ホスト"
+        )
+      );
+    }
+
+    if (moveTarget) {
+      const origTime = moveOriginalTime || slot.time;
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.move.color,
+          "移",
+          "move",
+          `時間変更\n${origTime} → ${moveTarget}`
+        )
+      );
+    }
   }
 
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
@@ -217,7 +292,7 @@ export const ExcelCell = memo(function ExcelCell({
           )}
           <span>{slot.subj}</span>
           {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
-          {badge}
+          {badges}
         </div>
         <div
           style={{

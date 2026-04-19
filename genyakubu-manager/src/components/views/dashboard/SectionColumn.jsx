@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  ADJ_COLOR,
   getSubForSlot,
   gradeColor as GC,
   SUB_STATUS,
@@ -11,6 +12,7 @@ import {
   weightedSlotCount,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
 
 // Single department / time-grouped slot column rendered inside DashDayRow.
 export function SectionColumn({
@@ -19,14 +21,25 @@ export function SectionColumn({
   sl,
   deptOff,
   subs,
+  adjustments = [],
+  allSlots = [],
   date,
   sessionCountMap,
 }) {
+  // この日の合同・移動情報を索引化 (共通ヘルパを使用)
+  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot } = useMemo(
+    () => buildAdjustmentIndex(adjustments, date),
+    [adjustments, date]
+  );
+
+  // 移動が適用された後の「実効時間」で slot をグループ化。
+  // moveBySlot に載っている slot は targetTime で、他は template の s.time で集計。
   const { timeGroups, teachers } = useMemo(() => {
     const byTime = {};
     sl.forEach((s) => {
-      if (!byTime[s.time]) byTime[s.time] = [];
-      byTime[s.time].push(s);
+      const effTime = moveBySlot.get(s.id) || s.time;
+      if (!byTime[effTime]) byTime[effTime] = [];
+      byTime[effTime].push(s);
     });
     return {
       timeGroups: Object.entries(byTime).sort(
@@ -34,7 +47,13 @@ export function SectionColumn({
       ),
       teachers: [...new Set(sl.map((s) => s.teacher))],
     };
-  }, [sl]);
+  }, [sl, moveBySlot]);
+
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of allSlots) m.set(s.id, s);
+    return m;
+  }, [allSlots]);
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -78,7 +97,14 @@ export function SectionColumn({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {timeGroups.map(([time, tSlots]) => (
+            {timeGroups.map(([time, tSlots]) => {
+              // この時間グループに「移動で流入した」コマがあれば時間ヘッダに補足。
+              // 元時刻のリストを集約してツールチップに出す。
+              const movedIn = tSlots.filter((s) => moveBySlot.get(s.id));
+              const movedInOrigTimes = [
+                ...new Set(movedIn.map((s) => s.time).filter(Boolean)),
+              ];
+              return (
               <div key={time}>
                 <div
                   style={{
@@ -97,6 +123,21 @@ export function SectionColumn({
                   <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>
                     {formatCount(weightedSlotCount(tSlots))}コマ
                   </span>
+                  {movedIn.length > 0 && (
+                    <span
+                      title={`移動で流入: ${movedInOrigTimes.join(" / ")} から`}
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: "#fff",
+                        background: ADJ_COLOR.move.color,
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                      }}
+                    >
+                      ← 移入 {movedIn.length}
+                    </span>
+                  )}
                 </div>
                 <div
                   style={{
@@ -114,16 +155,30 @@ export function SectionColumn({
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                     const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
+                    const hostIdForAbsorbed = combineAbsorbedBySlot.get(s.id);
+                    const absorbed = hostIdForAbsorbed != null;
+                    const hostSlot = absorbed ? slotById.get(hostIdForAbsorbed) : null;
+                    const hostedIds = combineHostBySlot.get(s.id);
+                    const isHost = !!hostedIds;
+                    const moveTarget = moveBySlot.get(s.id);
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
                       !s.grade.includes("附中") &&
                       !tSlots[i - 1].grade.includes("附中");
+                    const badgeStyle = (bg) => ({
+                      background: bg,
+                      color: "#fff",
+                      fontSize: 8,
+                      fontWeight: 800,
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                    });
                     return (
                       <div
                         key={s.id}
                         style={{
-                          background: sub ? st.bg : "#fff",
+                          background: absorbed ? ADJ_COLOR.combine.bg : sub ? st.bg : "#fff",
                           padding: "8px 6px",
                           textAlign: "left",
                           display: "flex",
@@ -131,25 +186,61 @@ export function SectionColumn({
                           justifyContent: "space-between",
                           minHeight: 96,
                           position: "relative",
+                          opacity: absorbed ? 0.65 : 1,
                           ...(newGradeRow ? { gridColumnStart: 1 } : null),
                         }}
                       >
-                        {sub && (
+                        {(sub || absorbed || isHost || moveTarget) && (
                           <div
                             style={{
                               position: "absolute",
                               top: 2,
                               right: 2,
-                              background: st.color,
-                              color: "#fff",
-                              fontSize: 8,
-                              fontWeight: 800,
-                              padding: "1px 4px",
-                              borderRadius: 3,
+                              display: "flex",
+                              gap: 2,
                             }}
-                            title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
                           >
-                            代
+                            {absorbed && (
+                              <span
+                                style={badgeStyle(ADJ_COLOR.combine.color)}
+                                title={
+                                  hostSlot
+                                    ? `合同で ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} (${hostSlot.teacher}) に統合`
+                                    : "合同で吸収"
+                                }
+                              >
+                                合
+                              </span>
+                            )}
+                            {isHost && !absorbed && (
+                              <span
+                                style={badgeStyle(ADJ_COLOR.combine.color)}
+                                title={`合同ホスト\n+ ${hostedIds
+                                  .map((id) => {
+                                    const a = slotById.get(id);
+                                    return a ? `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}` : `#${id}`;
+                                  })
+                                  .join(" / ")}`}
+                              >
+                                合+
+                              </span>
+                            )}
+                            {moveTarget && (
+                              <span
+                                style={badgeStyle(ADJ_COLOR.move.color)}
+                                title={`時間変更\n${s.time} → ${moveTarget}`}
+                              >
+                                移
+                              </span>
+                            )}
+                            {sub && (
+                              <span
+                                style={badgeStyle(st.color)}
+                                title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
+                              >
+                                代
+                              </span>
+                            )}
                           </div>
                         )}
                         <div style={{ lineHeight: 1.4 }}>
@@ -225,7 +316,7 @@ export function SectionColumn({
                         </div>
                         <div
                           style={{
-                            fontSize: sub ? 16 : 22,
+                            fontSize: sub || absorbed ? 14 : 22,
                             fontWeight: 800,
                             color: "#1a1a2e",
                             lineHeight: 1.1,
@@ -235,7 +326,23 @@ export function SectionColumn({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {sub ? (
+                          {absorbed ? (
+                            <span>
+                              <span
+                                style={{
+                                  textDecoration: "line-through",
+                                  color: "#999",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {s.teacher || "?"}
+                              </span>
+                              <span style={{ margin: "0 2px", color: ADJ_COLOR.combine.color }}>→</span>
+                              <span style={{ color: ADJ_COLOR.combine.color }}>
+                                {hostSlot?.teacher || "?"}
+                              </span>
+                            </span>
+                          ) : sub ? (
                             <span>
                               <span
                                 style={{
@@ -262,7 +369,8 @@ export function SectionColumn({
                   })}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

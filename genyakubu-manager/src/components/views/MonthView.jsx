@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import {
+  ADJ_COLOR,
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
@@ -32,17 +33,31 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
     return m;
   }, [subs]);
 
-  // 日付ごとに「合同で吸収されたコマ id」を索引化。吸収されたコマは当該日に
-  // 出勤扱いしない (host 側に統合されるため)。
-  const absorbedByDate = useMemo(() => {
-    const m = new Map();
+  // 合同の索引
+  //   hostByAbsorbedKey:   (date|absorbedSlotId) -> hostSlotId  (吸収された側)
+  //   absorbedByHostKey:   (date|hostSlotId) -> absorbedSlotIds[]  (ホスト側に何を吸収したか)
+  // 吸収された側は「代行と同じく自分のコマが別人に渡った」状態、
+  // ホスト側は「自分のコマに別クラスが追加された」状態。
+  // 移動の索引
+  //   moveByKey:           (date|slotId) -> targetTime
+  const { hostByAbsorbedKey, absorbedByHostKey, moveByKey } = useMemo(() => {
+    const absMap = new Map();
+    const hostMap = new Map();
+    const moveMap = new Map();
     for (const adj of adjustments) {
-      if (adj.type !== "combine") continue;
-      const set = m.get(adj.date) || new Set();
-      for (const id of adj.combineSlotIds || []) set.add(id);
-      m.set(adj.date, set);
+      if (adj.type === "combine") {
+        const absorbedIds = adj.combineSlotIds || [];
+        if (absorbedIds.length > 0) {
+          hostMap.set(`${adj.date}|${adj.slotId}`, [...absorbedIds]);
+        }
+        for (const id of absorbedIds) {
+          absMap.set(`${adj.date}|${id}`, adj.slotId);
+        }
+      } else if (adj.type === "move" && adj.targetTime) {
+        moveMap.set(`${adj.date}|${adj.slotId}`, adj.targetTime);
+      }
     }
-    return m;
+    return { hostByAbsorbedKey: absMap, absorbedByHostKey: hostMap, moveByKey: moveMap };
   }, [adjustments]);
   const dayMap = useMemo(() => {
     const m = {};
@@ -72,10 +87,10 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
   );
 
   // この講師が (slot, ds) のコマを「月次ビューに載せるか」を判定する。
-  // 休講・カットオフ・時間割外・合同で吸収された場合は非表示。
-  // 確定代行で本人が外されたコマは、描画時に `away` フラグでグレー表示+代バッジを
-  // 出すため、ここでは除外しない (以前は除外していたが 代 バッジが消えて
-  // 代行されたことが判らない問題があった)。
+  // 休講・カットオフ・時間割外の場合は非表示。
+  // 確定代行で本人が外されたコマ / 合同で吸収されたコマは、描画時に `away`
+  // フラグでグレー表示+代/合バッジを出すため、ここでは除外しない
+  // (以前は除外していたが バッジが消えて代行/合同されたことが判らない問題があった)。
   const isTeacherAttending = useCallback(
     (slot, ds) => {
       if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
@@ -91,11 +106,9 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
         return false;
       }
       if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
-      const absorbedSet = absorbedByDate.get(ds);
-      if (absorbedSet && absorbedSet.has(slot.id)) return false;
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff, absorbedByDate]
+    [isOffForGrade, timetables, displayCutoff]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -243,8 +256,62 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                 sl.map((s) => {
                   const sub = subByDateSlot.get(`${ds}|${s.id}`);
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
+                  const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
+                  const absorbed = hostSlotId != null;
+                  const hostSlot = absorbed ? slots.find((x) => x.id === hostSlotId) : null;
+                  const hostedIds = absorbedByHostKey.get(`${ds}|${s.id}`);
+                  const isHost = !absorbed && !!hostedIds;
+                  const moveTarget = moveByKey.get(`${ds}|${s.id}`);
+                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された
                   const away =
-                    sub && sub.originalTeacher === teacher && sub.substitute !== teacher; // 自分が休み
+                    (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) ||
+                    absorbed;
+                  // カード全体の色: absorbed が最強 (不在扱い)、次に sub、なければ曜日色
+                  // host / move は情報追加なのでバッジだけ
+                  const cardBg = absorbed
+                    ? ADJ_COLOR.combine.bg
+                    : sub
+                      ? st.bg
+                      : DB[s.day];
+                  const cardBorder = absorbed
+                    ? ADJ_COLOR.combine.color
+                    : sub
+                      ? st.color
+                      : DC[s.day];
+                  const displayTime = moveTarget
+                    ? moveTarget.split("-")[0]
+                    : s.time.split("-")[0];
+                  const badges = [];
+                  if (absorbed) badges.push({ label: "合", color: ADJ_COLOR.combine.color });
+                  if (isHost) badges.push({ label: "合+", color: ADJ_COLOR.combine.color });
+                  if (sub) badges.push({ label: "代", color: st.color });
+                  if (moveTarget) badges.push({ label: "移", color: ADJ_COLOR.move.color });
+                  const titleParts = [
+                    `${s.time} ${s.grade} ${s.subj} ${s.room || ""}`,
+                  ];
+                  if (moveTarget) titleParts.push(`[移動] ${s.time} → ${moveTarget}`);
+                  if (absorbed && hostSlot) {
+                    titleParts.push(
+                      `[合同] ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} に統合 (${hostSlot.teacher})`
+                    );
+                  }
+                  if (isHost && hostedIds) {
+                    const labels = hostedIds
+                      .map((id) => {
+                        const a = slots.find((x) => x.id === id);
+                        return a
+                          ? `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`
+                          : `#${id}`;
+                      })
+                      .join(" / ");
+                    titleParts.push(`[合同ホスト] + ${labels}`);
+                  }
+                  if (sub) {
+                    titleParts.push(
+                      `[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}`
+                    );
+                  }
+                  if (isAdmin) titleParts.push("クリックで編集");
                   return (
                     <div
                       key={`slot-${s.id}`}
@@ -254,8 +321,8 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                         padding: "2px 3px",
                         margin: "1px 0",
                         borderRadius: 3,
-                        background: sub ? st.bg : DB[s.day],
-                        borderLeft: `2px solid ${sub ? st.color : DC[s.day]}`,
+                        background: cardBg,
+                        borderLeft: `2px solid ${cardBorder}`,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -263,12 +330,13 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                         opacity: away ? 0.55 : 1,
                       }}
                       onClick={() => isAdmin && onEdit && onEdit(s)}
-                      title={`${s.time} ${s.grade} ${s.subj} ${s.room || ""}${sub ? `\n[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}` : ""}${isAdmin ? "\nクリックで編集" : ""}`}
+                      title={titleParts.join("\n")}
                     >
-                      {sub && (
+                      {badges.map((b, i) => (
                         <span
+                          key={`b-${i}`}
                           style={{
-                            background: st.color,
+                            background: b.color,
                             color: "#fff",
                             fontSize: 8,
                             fontWeight: 800,
@@ -277,10 +345,10 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                             marginRight: 2,
                           }}
                         >
-                          代
+                          {b.label}
                         </span>
-                      )}
-                      <b>{s.time.split("-")[0]}</b> {s.subj}
+                      ))}
+                      <b>{displayTime}</b> {s.subj}
                     </div>
                   );
                 })
