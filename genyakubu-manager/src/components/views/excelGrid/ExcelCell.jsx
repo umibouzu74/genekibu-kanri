@@ -1,11 +1,12 @@
 import { memo } from "react";
-import { fmtDate } from "../../../data";
+import { ADJ_COLOR, fmtDate } from "../../../data";
 import {
   formatBiweeklyTeacher,
   getSlotWeekType,
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { describeSlot } from "../../../utils/adjustmentDisplay";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // ─── ExcelCell ──────────────────────────────────────────────────────
@@ -35,6 +36,11 @@ export const ExcelCell = memo(function ExcelCell({
   sessionNumber,
   teacherOverride,
   dashboardMode = false,
+  absorbed = false,
+  absorbedHostSlot = null,
+  isCombineHost = false,
+  hostedSlots = null,
+  moveTarget = null,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -80,24 +86,37 @@ export const ExcelCell = memo(function ExcelCell({
         : biweeklyPartnerMatch[1]
       : null;
 
-  // Determine cell visual state (priority order)
+  // Determine cell visual state (priority order).
+  // 合同・移動バッジは他の状態と重なり得るため配列で後から追加する。
   let bg = "#fff";
   let borderLeft = undefined;
-  let badge = null;
+  const badges = [];
   let teacherColor = "#1a1a2e";
   let teacherDecor = "none";
   let subDisplay = null;
+
+  const mkBadge = (color, label, key) => (
+    <span
+      key={key}
+      style={{
+        background: color,
+        color: "#fff",
+        padding: "0 4px",
+        borderRadius: 3,
+        fontSize: 9,
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </span>
+  );
 
   if (isDragOver) {
     bg = "#e8f4ff";
   } else if (pendingSub) {
     bg = "#e0f5e0";
     borderLeft = "3px solid #2a7a4a";
-    badge = (
-      <span style={{ background: "#2a7a4a", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        仮
-      </span>
-    );
+    badges.push(mkBadge("#2a7a4a", "仮", "pending"));
     teacherColor = "#888";
     teacherDecor = "line-through";
     subDisplay = (
@@ -108,11 +127,7 @@ export const ExcelCell = memo(function ExcelCell({
   } else if (existingSub && existingSub.substitute) {
     bg = "#e8f0ff";
     borderLeft = "3px solid #3a6ea5";
-    badge = (
-      <span style={{ background: "#3a6ea5", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        代
-      </span>
-    );
+    badges.push(mkBadge("#3a6ea5", "代", "sub"));
     teacherColor = "#888";
     teacherDecor = "line-through";
     subDisplay = (
@@ -123,22 +138,99 @@ export const ExcelCell = memo(function ExcelCell({
   } else if (isHolidayOff) {
     bg = "#f5f0e0";
     borderLeft = "3px solid #b8860b";
-    badge = (
-      <span style={{ background: "#b8860b", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        休
-      </span>
-    );
+    badges.push(mkBadge("#b8860b", "休", "holiday"));
     teacherColor = "#aaa";
   } else if (isUnavailable) {
     bg = "#fff0f0";
     borderLeft = "3px solid #c03030";
-    badge = (
-      <span style={{ background: "#c03030", color: "#fff", padding: "0 4px", borderRadius: 3, fontSize: 9, fontWeight: 700 }}>
-        欠
-      </span>
-    );
+    badges.push(mkBadge("#c03030", "欠", "unavail"));
     teacherColor = "#c03030";
     teacherDecor = "line-through";
+  }
+
+  // 合同で吸収された側: 代行扱い相当。既存の sub 背景がなければ紫で塗る。
+  if (absorbed) {
+    if (!pendingSub && !existingSub?.substitute) {
+      bg = ADJ_COLOR.combine.bg;
+      borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
+      teacherColor = "#888";
+      teacherDecor = "line-through";
+      if (absorbedHostSlot) {
+        subDisplay = (
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              color: ADJ_COLOR.combine.color,
+              marginTop: 1,
+            }}
+          >
+            → {absorbedHostSlot.teacher || "?"} に合同
+          </div>
+        );
+      }
+    }
+    badges.push(
+      <span
+        key="absorbed"
+        title={
+          absorbedHostSlot
+            ? `合同で ${describeSlot(absorbedHostSlot)} (${absorbedHostSlot.teacher}) に統合`
+            : "合同で吸収"
+        }
+        style={{
+          background: ADJ_COLOR.combine.color,
+          color: "#fff",
+          padding: "0 4px",
+          borderRadius: 3,
+          fontSize: 9,
+          fontWeight: 700,
+        }}
+      >
+        合
+      </span>
+    );
+  } else if (isCombineHost) {
+    // ホスト側は情報追加のみ (通常の表示に + マーク)
+    badges.push(
+      <span
+        key="host"
+        title={
+          hostedSlots
+            ? `合同ホスト\n+ ${hostedSlots.map(describeSlot).join(" / ")}`
+            : "合同ホスト"
+        }
+        style={{
+          background: ADJ_COLOR.combine.color,
+          color: "#fff",
+          padding: "0 4px",
+          borderRadius: 3,
+          fontSize: 9,
+          fontWeight: 700,
+        }}
+      >
+        合+
+      </span>
+    );
+  }
+
+  if (moveTarget) {
+    badges.push(
+      <span
+        key="move"
+        title={`時間変更\n${slot.time} → ${moveTarget}`}
+        style={{
+          background: ADJ_COLOR.move.color,
+          color: "#fff",
+          padding: "0 4px",
+          borderRadius: 3,
+          fontSize: 9,
+          fontWeight: 700,
+        }}
+      >
+        移
+      </span>
+    );
   }
 
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
@@ -217,7 +309,7 @@ export const ExcelCell = memo(function ExcelCell({
           )}
           <span>{slot.subj}</span>
           {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
-          {badge}
+          {badges}
         </div>
         <div
           style={{

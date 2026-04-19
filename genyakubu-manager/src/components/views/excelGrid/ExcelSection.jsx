@@ -5,6 +5,7 @@ import {
   getSlotTeachers,
   weightedSlotCount,
 } from "../../../utils/biweekly";
+import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
 import {
   buildColumnDefs,
   buildTimeRows,
@@ -41,7 +42,18 @@ export function ExcelSection({
   sessionCountMap,
   groupTeacherMap,
   dashboardMode = false,
+  adjustments = [],
 }) {
+  // 当日の保存済み合同/移動を索引化
+  const adjIndex = useMemo(
+    () => buildAdjustmentIndex(adjustments, subDate),
+    [adjustments, subDate]
+  );
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of allSlots || []) m.set(s.id, s);
+    return m;
+  }, [allSlots]);
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(slots, day, sectionFilterFn),
     [slots, day, sectionFilterFn]
@@ -165,6 +177,15 @@ export function ExcelSection({
       getSlotTeachers(slot).some((t) => unavailableTeachers.has(t));
     const isCombineTarget =
       combineMode && slot.id !== combineMode.sourceSlotId;
+    const absorbedHostId = adjIndex.combineAbsorbedBySlot.get(slot.id);
+    const absorbed = absorbedHostId != null;
+    const absorbedHostSlot = absorbed ? slotById.get(absorbedHostId) || null : null;
+    const hostedIds = adjIndex.combineHostBySlot.get(slot.id);
+    const isCombineHost = !!hostedIds;
+    const hostedSlots = isCombineHost
+      ? hostedIds.map((id) => slotById.get(id)).filter(Boolean)
+      : null;
+    const moveTarget = adjIndex.moveBySlot.get(slot.id) || null;
     return {
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
@@ -173,6 +194,11 @@ export function ExcelSection({
       isSubMode,
       subDate,
       isCombineTarget: !!isCombineTarget,
+      absorbed,
+      absorbedHostSlot,
+      isCombineHost,
+      hostedSlots,
+      moveTarget,
       onCellClick: onCellClick
         ? (s, rect, el) => {
             // In combine mode, any cell can be clicked

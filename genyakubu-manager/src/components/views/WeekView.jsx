@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import {
+  ADJ_COLOR,
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
   fmtDateWeekday,
+  parseLocalDate,
   sortSlots as sortS,
   SUB_STATUS,
 } from "../../data";
@@ -12,6 +14,20 @@ import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
 import { isSlotForTeacher } from "../../utils/biweekly";
 import { S } from "../../styles/common";
+
+// 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
+function getUpcomingWindow() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 14);
+  return [today, end];
+}
+
+function isWithinWindow(dateStr, start, end) {
+  const dt = parseLocalDate(dateStr);
+  return !!dt && dt >= start && dt <= end;
+}
 
 export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel, isAdmin }) {
   const ts = useMemo(
@@ -27,33 +43,26 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
     return m;
   }, [ts]);
 
+  // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
+  const [winStart, winEnd] = useMemo(() => getUpcomingWindow(), []);
+
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {
     if (!subs?.length) return new Map();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setDate(end.getDate() + 14);
     const m = new Map();
     for (const sub of subs) {
       if (sub.originalTeacher !== teacher && sub.substitute !== teacher) continue;
-      const [y, mo, d] = sub.date.split("-").map(Number);
-      const dt = new Date(y, mo - 1, d);
-      if (dt < today || dt > end) continue;
+      if (!isWithinWindow(sub.date, winStart, winEnd)) continue;
       if (!m.has(sub.slotId)) m.set(sub.slotId, []);
       m.get(sub.slotId).push(sub);
     }
     return m;
-  }, [subs, teacher]);
+  }, [subs, teacher, winStart, winEnd]);
 
   // 合同: 各スロットに対する直近14日間の合同予定 (host or absorbed)
-  // 戻り値の各エントリ: { date, role: "host"|"absorbed", hostSlot, myGrade, myCls, mySubj }
+  // 戻り値の各エントリ: { date, role: "host"|"absorbed", hostSlot, absorbedSlot?, absorbedSlots? }
   const slotCombineMap = useMemo(() => {
     if (!adjustments?.length) return new Map();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setDate(end.getDate() + 14);
     const slotById = new Map();
     for (const s of slots) slotById.set(s.id, s);
 
@@ -65,65 +74,69 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
 
     for (const adj of adjustments) {
       if (adj.type !== "combine") continue;
-      const [y, mo, d] = (adj.date || "").split("-").map(Number);
-      if (!y || !mo || !d) continue;
-      const dt = new Date(y, mo - 1, d);
-      if (dt < today || dt > end) continue;
+      if (!isWithinWindow(adj.date, winStart, winEnd)) continue;
 
       const hostSlot = slotById.get(adj.slotId);
       if (!hostSlot) continue;
 
-      // host 側: host slot の担当がこの teacher なら host として記録
       if (isSlotForTeacher(hostSlot, teacher)) {
         const absorbedSlots = (adj.combineSlotIds || [])
           .map((id) => slotById.get(id))
           .filter(Boolean);
-        push(adj.slotId, {
-          date: adj.date,
-          role: "host",
-          hostSlot,
-          absorbedSlots,
-        });
+        push(adj.slotId, { date: adj.date, role: "host", hostSlot, absorbedSlots });
       }
-      // absorbed 側: 吸収される slot がこの teacher のものなら absorbed として記録
       for (const absorbedId of adj.combineSlotIds || []) {
         const absorbedSlot = slotById.get(absorbedId);
         if (!absorbedSlot) continue;
         if (!isSlotForTeacher(absorbedSlot, teacher)) continue;
-        push(absorbedId, {
-          date: adj.date,
-          role: "absorbed",
-          hostSlot,
-          absorbedSlot,
-        });
+        push(absorbedId, { date: adj.date, role: "absorbed", hostSlot, absorbedSlot });
       }
     }
     return m;
-  }, [adjustments, slots, teacher]);
+  }, [adjustments, slots, teacher, winStart, winEnd]);
 
-  // 上部バナー用: 直近14日間の合同予定を日付順に並べた配列
+  // 移動: 各スロットに対する直近14日間の移動予定
+  const slotMoveMap = useMemo(() => {
+    if (!adjustments?.length) return new Map();
+    const slotById = new Map();
+    for (const s of slots) slotById.set(s.id, s);
+
+    const m = new Map();
+    for (const adj of adjustments) {
+      if (adj.type !== "move") continue;
+      if (!isWithinWindow(adj.date, winStart, winEnd)) continue;
+      const slot = slotById.get(adj.slotId);
+      if (!slot) continue;
+      if (!isSlotForTeacher(slot, teacher)) continue;
+      if (!m.has(adj.slotId)) m.set(adj.slotId, []);
+      m.get(adj.slotId).push({ date: adj.date, slot, targetTime: adj.targetTime });
+    }
+    return m;
+  }, [adjustments, slots, teacher, winStart, winEnd]);
+
+  // 上部バナー用: フラット化 + 日付ソート
   const upcomingCombines = useMemo(() => {
     const list = [];
     for (const arr of slotCombineMap.values()) list.push(...arr);
     return list.sort((a, b) => a.date.localeCompare(b.date));
   }, [slotCombineMap]);
 
+  const upcomingMoves = useMemo(() => {
+    const list = [];
+    for (const arr of slotMoveMap.values()) list.push(...arr);
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [slotMoveMap]);
+
   // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
   const upcomingSubs = useMemo(() => {
     if (!subs?.length) return [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setDate(end.getDate() + 14);
     return subs
       .filter((sub) => {
         if (sub.originalTeacher !== teacher && sub.substitute !== teacher) return false;
-        const [y, m, d] = sub.date.split("-").map(Number);
-        const dt = new Date(y, m - 1, d);
-        return dt >= today && dt <= end;
+        return isWithinWindow(sub.date, winStart, winEnd);
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [subs, teacher]);
+  }, [subs, teacher, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -143,14 +156,21 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
       {upcomingCombines.length > 0 && (
         <div
           style={{
-            background: "#f5eefa",
-            border: "1px solid #c8a8dc",
+            background: ADJ_COLOR.combine.bannerBg,
+            border: `1px solid ${ADJ_COLOR.combine.bannerBorder}`,
             borderRadius: 8,
             padding: 12,
             marginBottom: 12,
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: "#6a3d8e" }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              marginBottom: 8,
+              color: ADJ_COLOR.combine.deep,
+            }}
+          >
             🔗 直近2週間の合同予定 ({upcomingCombines.length}件)
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -188,8 +208,8 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                       <span
                         style={{
                           fontSize: 9,
-                          background: "#f0e6fa",
-                          color: "#6a3d8e",
+                          background: ADJ_COLOR.combine.chipBg,
+                          color: ADJ_COLOR.combine.deep,
                           padding: "1px 6px",
                           borderRadius: 10,
                           fontWeight: 700,
@@ -212,8 +232,8 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                       <span
                         style={{
                           fontSize: 9,
-                          background: "#efe6f5",
-                          color: "#7a4aa0",
+                          background: ADJ_COLOR.combine.bg,
+                          color: ADJ_COLOR.combine.color,
                           padding: "1px 6px",
                           borderRadius: 10,
                           fontWeight: 700,
@@ -224,6 +244,62 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                       </span>
                     </>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {upcomingMoves.length > 0 && (
+        <div
+          style={{
+            background: ADJ_COLOR.move.bannerBg,
+            border: `1px solid ${ADJ_COLOR.move.bannerBorder}`,
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              marginBottom: 8,
+              color: ADJ_COLOR.move.deep,
+            }}
+          >
+            ↔ 直近2週間の時間変更予定 ({upcomingMoves.length}件)
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {upcomingMoves.map((mv, i) => {
+              const slot = mv.slot;
+              return (
+                <div
+                  key={`mv-${mv.date}-${i}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#fff",
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                    {fmtDateWeekday(mv.date)}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#888", minWidth: 110 }}>
+                    <span style={{ textDecoration: "line-through" }}>{slot.time}</span>
+                    <span style={{ margin: "0 4px" }}>→</span>
+                    <span style={{ fontWeight: 700, color: ADJ_COLOR.move.deep }}>
+                      {mv.targetTime}
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 11 }}>
+                    {slot.grade}
+                    {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
+                  </span>
                 </div>
               );
             })}
@@ -358,6 +434,7 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                   byDay[d].map((s) => {
                     const slotSubs = slotSubMap.get(s.id);
                     const slotCombines = slotCombineMap.get(s.id);
+                    const slotMoves = slotMoveMap.get(s.id);
                     return (
                       <div key={s.id} style={{ position: "relative" }}>
                         <SlotCard slot={s} compact onEdit={isAdmin ? onEdit : undefined} onDel={isAdmin ? onDel : undefined} />
@@ -380,8 +457,8 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                                     lineHeight: 1.3,
                                     padding: "2px 4px",
                                     borderRadius: 4,
-                                    background: "#efe6f5",
-                                    borderLeft: "2px solid #7a4aa0",
+                                    background: ADJ_COLOR.combine.bg,
+                                    borderLeft: `2px solid ${ADJ_COLOR.combine.color}`,
                                     display: "flex",
                                     gap: 4,
                                     alignItems: "center",
@@ -399,12 +476,46 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                                   }
                                 >
                                   <span style={{ fontWeight: 700 }}>{c.date.slice(5)}</span>
-                                  <span style={{ color: "#7a4aa0", fontWeight: 700 }}>
+                                  <span style={{ color: ADJ_COLOR.combine.color, fontWeight: 700 }}>
                                     {isHost ? "合同ホスト" : "合同吸収"}
                                   </span>
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                        {slotMoves && slotMoves.length > 0 && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 2,
+                              marginTop: 2,
+                            }}
+                          >
+                            {slotMoves.map((mv, i) => (
+                              <div
+                                key={`mv-${mv.date}-${i}`}
+                                style={{
+                                  fontSize: 9,
+                                  lineHeight: 1.3,
+                                  padding: "2px 4px",
+                                  borderRadius: 4,
+                                  background: ADJ_COLOR.move.bg,
+                                  borderLeft: `2px solid ${ADJ_COLOR.move.color}`,
+                                  display: "flex",
+                                  gap: 4,
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                }}
+                                title={`${mv.date} 時間変更\n${mv.slot.time} → ${mv.targetTime}`}
+                              >
+                                <span style={{ fontWeight: 700 }}>{mv.date.slice(5)}</span>
+                                <span style={{ color: ADJ_COLOR.move.color, fontWeight: 700 }}>
+                                  {mv.slot.time.split("-")[0]}→{mv.targetTime.split("-")[0]}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         )}
                         {slotSubs && slotSubs.length > 0 && (

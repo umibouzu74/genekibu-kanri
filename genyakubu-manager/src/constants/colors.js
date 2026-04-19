@@ -14,6 +14,27 @@ export const DEPT_COLOR = {
   予備校部: { b: "#cce0f0", f: "#1a4a6a", accent: "#3a8abe" },
 };
 
+// 調整系 (代行以外) のバッジ/背景/ボーダーに使う共通色。
+// SUB_STATUS は代行側を担うので、合同と移動をここに集約する。
+export const ADJ_COLOR = {
+  combine: {
+    color: "#7a4aa0",   // バッジ文字色 / ボーダー色
+    deep: "#6a3d8e",    // 見出し文字
+    bg: "#efe6f5",      // 薄い背景 (カード)
+    bannerBg: "#f5eefa",// バナー背景
+    bannerBorder: "#c8a8dc",
+    chipBg: "#f0e6fa",  // チップ / 役割ラベル背景
+  },
+  move: {
+    color: "#a07030",
+    deep: "#805515",
+    bg: "#faeed0",
+    bannerBg: "#fbf5e8",
+    bannerBorder: "#e0c080",
+    chipBg: "#f5e5c8",
+  },
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };

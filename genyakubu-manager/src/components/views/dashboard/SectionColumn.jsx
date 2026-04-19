@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  ADJ_COLOR,
   getSubForSlot,
   gradeColor as GC,
   SUB_STATUS,
@@ -11,6 +12,7 @@ import {
   weightedSlotCount,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
 
 // Single department / time-grouped slot column rendered inside DashDayRow.
 export function SectionColumn({
@@ -38,19 +40,11 @@ export function SectionColumn({
     };
   }, [sl]);
 
-  // この日の合同情報を索引化
-  //   combineHostInfo: hostSlotId -> { absorbedSlotIds[] }
-  //   combineAbsorbedInfo: absorbedSlotId -> hostSlotId
-  const { combineHostInfo, combineAbsorbedInfo } = useMemo(() => {
-    const host = new Map();
-    const absorbed = new Map();
-    for (const adj of adjustments) {
-      if (adj.type !== "combine" || adj.date !== date) continue;
-      host.set(adj.slotId, { absorbedSlotIds: adj.combineSlotIds || [] });
-      for (const id of adj.combineSlotIds || []) absorbed.set(id, adj.slotId);
-    }
-    return { combineHostInfo: host, combineAbsorbedInfo: absorbed };
-  }, [adjustments, date]);
+  // この日の合同・移動情報を索引化 (共通ヘルパを使用)
+  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot } = useMemo(
+    () => buildAdjustmentIndex(adjustments, date),
+    [adjustments, date]
+  );
 
   const slotById = useMemo(() => {
     const m = new Map();
@@ -136,21 +130,30 @@ export function SectionColumn({
                     const sub = date ? getSubForSlot(subs, s.id, date) : null;
                     const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                     const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
-                    const hostIdForAbsorbed = combineAbsorbedInfo.get(s.id);
+                    const hostIdForAbsorbed = combineAbsorbedBySlot.get(s.id);
                     const absorbed = hostIdForAbsorbed != null;
                     const hostSlot = absorbed ? slotById.get(hostIdForAbsorbed) : null;
-                    const hostInfo = combineHostInfo.get(s.id);
-                    const isHost = !!hostInfo;
+                    const hostedIds = combineHostBySlot.get(s.id);
+                    const isHost = !!hostedIds;
+                    const moveTarget = moveBySlot.get(s.id);
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
                       !s.grade.includes("附中") &&
                       !tSlots[i - 1].grade.includes("附中");
+                    const badgeStyle = (bg) => ({
+                      background: bg,
+                      color: "#fff",
+                      fontSize: 8,
+                      fontWeight: 800,
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                    });
                     return (
                       <div
                         key={s.id}
                         style={{
-                          background: absorbed ? "#efe6f5" : sub ? st.bg : "#fff",
+                          background: absorbed ? ADJ_COLOR.combine.bg : sub ? st.bg : "#fff",
                           padding: "8px 6px",
                           textAlign: "left",
                           display: "flex",
@@ -162,7 +165,7 @@ export function SectionColumn({
                           ...(newGradeRow ? { gridColumnStart: 1 } : null),
                         }}
                       >
-                        {(sub || absorbed || isHost) && (
+                        {(sub || absorbed || isHost || moveTarget) && (
                           <div
                             style={{
                               position: "absolute",
@@ -174,14 +177,7 @@ export function SectionColumn({
                           >
                             {absorbed && (
                               <span
-                                style={{
-                                  background: "#7a4aa0",
-                                  color: "#fff",
-                                  fontSize: 8,
-                                  fontWeight: 800,
-                                  padding: "1px 4px",
-                                  borderRadius: 3,
-                                }}
+                                style={badgeStyle(ADJ_COLOR.combine.color)}
                                 title={
                                   hostSlot
                                     ? `合同で ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} (${hostSlot.teacher}) に統合`
@@ -193,15 +189,8 @@ export function SectionColumn({
                             )}
                             {isHost && !absorbed && (
                               <span
-                                style={{
-                                  background: "#7a4aa0",
-                                  color: "#fff",
-                                  fontSize: 8,
-                                  fontWeight: 800,
-                                  padding: "1px 4px",
-                                  borderRadius: 3,
-                                }}
-                                title={`合同ホスト\n+ ${hostInfo.absorbedSlotIds
+                                style={badgeStyle(ADJ_COLOR.combine.color)}
+                                title={`合同ホスト\n+ ${hostedIds
                                   .map((id) => {
                                     const a = slotById.get(id);
                                     return a ? `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}` : `#${id}`;
@@ -211,16 +200,17 @@ export function SectionColumn({
                                 合+
                               </span>
                             )}
+                            {moveTarget && (
+                              <span
+                                style={badgeStyle(ADJ_COLOR.move.color)}
+                                title={`時間変更\n${s.time} → ${moveTarget}`}
+                              >
+                                移
+                              </span>
+                            )}
                             {sub && (
                               <span
-                                style={{
-                                  background: st.color,
-                                  color: "#fff",
-                                  fontSize: 8,
-                                  fontWeight: 800,
-                                  padding: "1px 4px",
-                                  borderRadius: 3,
-                                }}
+                                style={badgeStyle(st.color)}
                                 title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
                               >
                                 代
@@ -322,8 +312,8 @@ export function SectionColumn({
                               >
                                 {s.teacher || "?"}
                               </span>
-                              <span style={{ margin: "0 2px", color: "#7a4aa0" }}>→</span>
-                              <span style={{ color: "#7a4aa0" }}>
+                              <span style={{ margin: "0 2px", color: ADJ_COLOR.combine.color }}>→</span>
+                              <span style={{ color: ADJ_COLOR.combine.color }}>
                                 {hostSlot?.teacher || "?"}
                               </span>
                             </span>

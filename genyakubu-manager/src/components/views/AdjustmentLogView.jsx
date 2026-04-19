@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { dateToDay, DAY_COLOR as DC, SUB_STATUS, fmtDate } from "../../data";
+import { ADJ_COLOR, dateToDay, DAY_COLOR as DC, SUB_STATUS, fmtDate } from "../../data";
 import { S } from "../../styles/common";
 
 // ─── 調整履歴 (代行 / 合同授業 / コマ移動) 日付別タイムライン ────────
@@ -8,8 +8,8 @@ import { S } from "../../styles/common";
 
 const TYPE_META = {
   sub: { label: "代行", icon: "🔄", color: "#2a6a9e" },
-  combine: { label: "合同", icon: "🔗", color: "#7a4aa0" },
-  move: { label: "移動", icon: "↔", color: "#a07030" },
+  combine: { label: "合同", icon: "🔗", color: ADJ_COLOR.combine.color },
+  move: { label: "移動", icon: "↔", color: ADJ_COLOR.move.color },
 };
 
 function yearMonthOf(ds) {

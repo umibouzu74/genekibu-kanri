@@ -491,6 +491,7 @@ export function ExcelGridView({
                     sessionCountMap={sessionCountMap}
                     groupTeacherMap={groupTeacherMap}
                     dashboardMode={dashboardMode}
+                    adjustments={adjustments}
                   />
                 );
               };
