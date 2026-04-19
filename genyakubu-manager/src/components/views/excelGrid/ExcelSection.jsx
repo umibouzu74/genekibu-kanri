@@ -54,13 +54,45 @@ export function ExcelSection({
     for (const s of allSlots || []) m.set(s.id, s);
     return m;
   }, [allSlots]);
+
+  // hostedSlots を host slotId ごとにキャッシュして ExcelCell の memo を活かす。
+  // getCellSubProps は毎レンダで呼ばれるため、毎回 new Array を生成すると
+  // memo の shallow 比較が外れて不必要な再レンダが起きる。
+  const hostedSlotsByHost = useMemo(() => {
+    const m = new Map();
+    for (const [hostId, absorbedIds] of adjIndex.combineHostBySlot) {
+      const list = absorbedIds.map((id) => slotById.get(id)).filter(Boolean);
+      m.set(hostId, list);
+    }
+    return m;
+  }, [adjIndex.combineHostBySlot, slotById]);
+
+  // 当日の移動 (move) を slot.time に反映した "effective slots"。
+  // buildColumnDefs / buildTimeRows / findSlotForCell は全てこの effectiveSlots
+  // を元に計算するため、移動後の時間セルに自然に配置される。
+  // originalTimeBySlot は移動された slot の元時刻 (ツールチップ用)。
+  const { effectiveSlots, originalTimeBySlot } = useMemo(() => {
+    const moveMap = adjIndex.moveBySlot;
+    if (!moveMap || moveMap.size === 0) {
+      return { effectiveSlots: slots, originalTimeBySlot: new Map() };
+    }
+    const origMap = new Map();
+    const eff = slots.map((s) => {
+      const target = moveMap.get(s.id);
+      if (!target) return s;
+      origMap.set(s.id, s.time);
+      return { ...s, time: target };
+    });
+    return { effectiveSlots: eff, originalTimeBySlot: origMap };
+  }, [slots, adjIndex.moveBySlot]);
+
   const { gradeGroups } = useMemo(
-    () => buildColumnDefs(slots, day, sectionFilterFn),
-    [slots, day, sectionFilterFn]
+    () => buildColumnDefs(effectiveSlots, day, sectionFilterFn),
+    [effectiveSlots, day, sectionFilterFn]
   );
   const timeRows = useMemo(
-    () => buildTimeRows(slots, day, sectionFilterFn),
-    [slots, day, sectionFilterFn]
+    () => buildTimeRows(effectiveSlots, day, sectionFilterFn),
+    [effectiveSlots, day, sectionFilterFn]
   );
 
   const totalColumns = useMemo(
@@ -78,8 +110,8 @@ export function ExcelSection({
   );
 
   const sectionSlots = useMemo(
-    () => slots.filter((s) => s.day === day && sectionFilterFn(s)),
-    [slots, day, sectionFilterFn]
+    () => effectiveSlots.filter((s) => s.day === day && sectionFilterFn(s)),
+    [effectiveSlots, day, sectionFilterFn]
   );
 
   const handleDragStart = useCallback(
@@ -180,12 +212,10 @@ export function ExcelSection({
     const absorbedHostId = adjIndex.combineAbsorbedBySlot.get(slot.id);
     const absorbed = absorbedHostId != null;
     const absorbedHostSlot = absorbed ? slotById.get(absorbedHostId) || null : null;
-    const hostedIds = adjIndex.combineHostBySlot.get(slot.id);
-    const isCombineHost = !!hostedIds;
-    const hostedSlots = isCombineHost
-      ? hostedIds.map((id) => slotById.get(id)).filter(Boolean)
-      : null;
+    const hostedSlots = hostedSlotsByHost.get(slot.id) || null;
+    const isCombineHost = !!hostedSlots;
     const moveTarget = adjIndex.moveBySlot.get(slot.id) || null;
+    const moveOriginalTime = originalTimeBySlot.get(slot.id) || null;
     return {
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
@@ -199,6 +229,7 @@ export function ExcelSection({
       isCombineHost,
       hostedSlots,
       moveTarget,
+      moveOriginalTime,
       onCellClick: onCellClick
         ? (s, rect, el) => {
             // In combine mode, any cell can be clicked

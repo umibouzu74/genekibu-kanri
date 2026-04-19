@@ -26,11 +26,20 @@ export function SectionColumn({
   date,
   sessionCountMap,
 }) {
+  // この日の合同・移動情報を索引化 (共通ヘルパを使用)
+  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot } = useMemo(
+    () => buildAdjustmentIndex(adjustments, date),
+    [adjustments, date]
+  );
+
+  // 移動が適用された後の「実効時間」で slot をグループ化。
+  // moveBySlot に載っている slot は targetTime で、他は template の s.time で集計。
   const { timeGroups, teachers } = useMemo(() => {
     const byTime = {};
     sl.forEach((s) => {
-      if (!byTime[s.time]) byTime[s.time] = [];
-      byTime[s.time].push(s);
+      const effTime = moveBySlot.get(s.id) || s.time;
+      if (!byTime[effTime]) byTime[effTime] = [];
+      byTime[effTime].push(s);
     });
     return {
       timeGroups: Object.entries(byTime).sort(
@@ -38,13 +47,7 @@ export function SectionColumn({
       ),
       teachers: [...new Set(sl.map((s) => s.teacher))],
     };
-  }, [sl]);
-
-  // この日の合同・移動情報を索引化 (共通ヘルパを使用)
-  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot } = useMemo(
-    () => buildAdjustmentIndex(adjustments, date),
-    [adjustments, date]
-  );
+  }, [sl, moveBySlot]);
 
   const slotById = useMemo(() => {
     const m = new Map();

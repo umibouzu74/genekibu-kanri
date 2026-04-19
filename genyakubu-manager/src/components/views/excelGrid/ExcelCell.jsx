@@ -41,6 +41,7 @@ export const ExcelCell = memo(function ExcelCell({
   isCombineHost = false,
   hostedSlots = null,
   moveTarget = null,
+  moveOriginalTime = null,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -95,9 +96,10 @@ export const ExcelCell = memo(function ExcelCell({
   let teacherDecor = "none";
   let subDisplay = null;
 
-  const mkBadge = (color, label, key) => (
+  const mkBadge = (color, label, key, title) => (
     <span
       key={key}
+      title={title}
       style={{
         background: color,
         color: "#fff",
@@ -111,8 +113,15 @@ export const ExcelCell = memo(function ExcelCell({
     </span>
   );
 
+  // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
+  // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
   if (isDragOver) {
     bg = "#e8f4ff";
+  } else if (isHolidayOff) {
+    bg = "#f5f0e0";
+    borderLeft = "3px solid #b8860b";
+    badges.push(mkBadge("#b8860b", "休", "holiday"));
+    teacherColor = "#aaa";
   } else if (pendingSub) {
     bg = "#e0f5e0";
     borderLeft = "3px solid #2a7a4a";
@@ -135,11 +144,6 @@ export const ExcelCell = memo(function ExcelCell({
         ← {existingSub.substitute}
       </div>
     );
-  } else if (isHolidayOff) {
-    bg = "#f5f0e0";
-    borderLeft = "3px solid #b8860b";
-    badges.push(mkBadge("#b8860b", "休", "holiday"));
-    teacherColor = "#aaa";
   } else if (isUnavailable) {
     bg = "#fff0f0";
     borderLeft = "3px solid #c03030";
@@ -148,89 +152,64 @@ export const ExcelCell = memo(function ExcelCell({
     teacherDecor = "line-through";
   }
 
-  // 合同で吸収された側: 代行扱い相当。既存の sub 背景がなければ紫で塗る。
-  if (absorbed) {
-    if (!pendingSub && !existingSub?.substitute) {
-      bg = ADJ_COLOR.combine.bg;
-      borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
-      teacherColor = "#888";
-      teacherDecor = "line-through";
-      if (absorbedHostSlot) {
-        subDisplay = (
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              color: ADJ_COLOR.combine.color,
-              marginTop: 1,
-            }}
-          >
-            → {absorbedHostSlot.teacher || "?"} に合同
-          </div>
-        );
+  // 合同・移動は休講日には意味がないのでそこでは表示しない (バッジもつけない)。
+  if (!isHolidayOff) {
+    if (absorbed) {
+      // 合同で吸収された側: 既存の sub 背景がなければ紫で塗って line-through
+      if (!pendingSub && !existingSub?.substitute) {
+        bg = ADJ_COLOR.combine.bg;
+        borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
+        teacherColor = "#888";
+        teacherDecor = "line-through";
+        if (absorbedHostSlot) {
+          subDisplay = (
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: ADJ_COLOR.combine.color,
+                marginTop: 1,
+              }}
+            >
+              → {absorbedHostSlot.teacher || "?"} に合同
+            </div>
+          );
+        }
       }
-    }
-    badges.push(
-      <span
-        key="absorbed"
-        title={
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.combine.color,
+          "合",
+          "absorbed",
           absorbedHostSlot
             ? `合同で ${describeSlot(absorbedHostSlot)} (${absorbedHostSlot.teacher}) に統合`
             : "合同で吸収"
-        }
-        style={{
-          background: ADJ_COLOR.combine.color,
-          color: "#fff",
-          padding: "0 4px",
-          borderRadius: 3,
-          fontSize: 9,
-          fontWeight: 700,
-        }}
-      >
-        合
-      </span>
-    );
-  } else if (isCombineHost) {
-    // ホスト側は情報追加のみ (通常の表示に + マーク)
-    badges.push(
-      <span
-        key="host"
-        title={
-          hostedSlots
+        )
+      );
+    } else if (isCombineHost) {
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.combine.color,
+          "合+",
+          "host",
+          hostedSlots && hostedSlots.length
             ? `合同ホスト\n+ ${hostedSlots.map(describeSlot).join(" / ")}`
             : "合同ホスト"
-        }
-        style={{
-          background: ADJ_COLOR.combine.color,
-          color: "#fff",
-          padding: "0 4px",
-          borderRadius: 3,
-          fontSize: 9,
-          fontWeight: 700,
-        }}
-      >
-        合+
-      </span>
-    );
-  }
+        )
+      );
+    }
 
-  if (moveTarget) {
-    badges.push(
-      <span
-        key="move"
-        title={`時間変更\n${slot.time} → ${moveTarget}`}
-        style={{
-          background: ADJ_COLOR.move.color,
-          color: "#fff",
-          padding: "0 4px",
-          borderRadius: 3,
-          fontSize: 9,
-          fontWeight: 700,
-        }}
-      >
-        移
-      </span>
-    );
+    if (moveTarget) {
+      const origTime = moveOriginalTime || slot.time;
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.move.color,
+          "移",
+          "move",
+          `時間変更\n${origTime} → ${moveTarget}`
+        )
+      );
+    }
   }
 
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
