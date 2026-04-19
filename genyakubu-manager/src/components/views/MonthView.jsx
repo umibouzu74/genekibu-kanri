@@ -32,17 +32,18 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
     return m;
   }, [subs]);
 
-  // 日付ごとに「合同で吸収されたコマ id」を索引化。吸収されたコマは当該日に
-  // 出勤扱いしない (host 側に統合されるため)。
-  const absorbedByDate = useMemo(() => {
-    const m = new Map();
+  // 合同で吸収されたコマの索引: (date|absorbedSlotId) -> hostSlotId
+  // 吸収された側は host に統合されて担当講師が実質変わるため、元の講師の
+  // 月次ビューでは「合」バッジ+グレー表示 (代行と同じ扱い)。
+  const hostByAbsorbedKey = useMemo(() => {
+    const h = new Map();
     for (const adj of adjustments) {
       if (adj.type !== "combine") continue;
-      const set = m.get(adj.date) || new Set();
-      for (const id of adj.combineSlotIds || []) set.add(id);
-      m.set(adj.date, set);
+      for (const id of adj.combineSlotIds || []) {
+        h.set(`${adj.date}|${id}`, adj.slotId);
+      }
     }
-    return m;
+    return h;
   }, [adjustments]);
   const dayMap = useMemo(() => {
     const m = {};
@@ -72,10 +73,10 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
   );
 
   // この講師が (slot, ds) のコマを「月次ビューに載せるか」を判定する。
-  // 休講・カットオフ・時間割外・合同で吸収された場合は非表示。
-  // 確定代行で本人が外されたコマは、描画時に `away` フラグでグレー表示+代バッジを
-  // 出すため、ここでは除外しない (以前は除外していたが 代 バッジが消えて
-  // 代行されたことが判らない問題があった)。
+  // 休講・カットオフ・時間割外の場合は非表示。
+  // 確定代行で本人が外されたコマ / 合同で吸収されたコマは、描画時に `away`
+  // フラグでグレー表示+代/合バッジを出すため、ここでは除外しない
+  // (以前は除外していたが バッジが消えて代行/合同されたことが判らない問題があった)。
   const isTeacherAttending = useCallback(
     (slot, ds) => {
       if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
@@ -91,11 +92,9 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
         return false;
       }
       if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
-      const absorbedSet = absorbedByDate.get(ds);
-      if (absorbedSet && absorbedSet.has(slot.id)) return false;
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff, absorbedByDate]
+    [isOffForGrade, timetables, displayCutoff]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -243,8 +242,21 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                 sl.map((s) => {
                   const sub = subByDateSlot.get(`${ds}|${s.id}`);
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
+                  const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
+                  const absorbed = hostSlotId != null;
+                  const hostSlot = absorbed ? slots.find((x) => x.id === hostSlotId) : null;
+                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された
                   const away =
-                    sub && sub.originalTeacher === teacher && sub.substitute !== teacher; // 自分が休み
+                    (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) ||
+                    absorbed;
+                  // 合バッジ色 (代行の status 色とは別系統)
+                  const combineColor = "#7a4aa0";
+                  // 表示色: 合同が優先 (代行バッジより先に塗る) 、無ければ代行
+                  const badge = absorbed
+                    ? { label: "合", color: combineColor, bg: "#efe6f5" }
+                    : sub
+                      ? { label: "代", color: st.color, bg: st.bg }
+                      : null;
                   return (
                     <div
                       key={`slot-${s.id}`}
@@ -254,8 +266,8 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                         padding: "2px 3px",
                         margin: "1px 0",
                         borderRadius: 3,
-                        background: sub ? st.bg : DB[s.day],
-                        borderLeft: `2px solid ${sub ? st.color : DC[s.day]}`,
+                        background: badge ? badge.bg : DB[s.day],
+                        borderLeft: `2px solid ${badge ? badge.color : DC[s.day]}`,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -263,12 +275,16 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                         opacity: away ? 0.55 : 1,
                       }}
                       onClick={() => isAdmin && onEdit && onEdit(s)}
-                      title={`${s.time} ${s.grade} ${s.subj} ${s.room || ""}${sub ? `\n[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}` : ""}${isAdmin ? "\nクリックで編集" : ""}`}
+                      title={`${s.time} ${s.grade} ${s.subj} ${s.room || ""}${
+                        absorbed && hostSlot
+                          ? `\n[合同] ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} に統合 (${hostSlot.teacher})`
+                          : ""
+                      }${sub ? `\n[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}` : ""}${isAdmin ? "\nクリックで編集" : ""}`}
                     >
-                      {sub && (
+                      {badge && (
                         <span
                           style={{
-                            background: st.color,
+                            background: badge.color,
                             color: "#fff",
                             fontSize: 8,
                             fontWeight: 800,
@@ -277,7 +293,7 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
                             marginRight: 2,
                           }}
                         >
-                          代
+                          {badge.label}
                         </span>
                       )}
                       <b>{s.time.split("-")[0]}</b> {s.subj}
