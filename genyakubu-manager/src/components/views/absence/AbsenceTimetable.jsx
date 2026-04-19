@@ -47,6 +47,15 @@ export function AbsenceTimetable({
     );
   }, [existingAdjustments, date, removedAdjustmentIds]);
 
+  // 解除マーク済み (保存前に取り消し可能)
+  const pendingRemovals = useMemo(() => {
+    const removed = removedAdjustmentIds;
+    if (!removed || removed.size === 0) return [];
+    return (existingAdjustments || []).filter(
+      (a) => a.date === date && removed.has(a.id)
+    );
+  }, [existingAdjustments, date, removedAdjustmentIds]);
+
   // 既存調整のインデックス: slotId -> adjustment (種別ごと)
   const { existingCombineBySlot, existingMoveBySlot } = useMemo(() => {
     const combineMap = new Map(); // hostSlotId -> adjustment
@@ -67,7 +76,7 @@ export function AbsenceTimetable({
 
     // 既存 combine を先に反映
     for (const [hostId, adj] of existingCombineBySlot) {
-      if (draft[hostId]?.combine !== undefined && draft[hostId]?.combine !== null) continue;
+      if (draft[hostId]?.combine) continue; // draft が同 host にあれば draft を優先
       const ids = [...(adj.combineSlotIds || [])];
       if (!ids.length) continue;
       hostsAbs.set(hostId, ids);
@@ -146,20 +155,19 @@ export function AbsenceTimetable({
           onClick: () => {
             const hostId = hostByAbsorbed.get(slot.id);
             if (hostId == null) return;
-            const source = combineSourceByHost.get(hostId);
-            if (source === "saved") {
-              // 既存 combine はまるごと解除 (部分修正は非対応)
-              const existing = existingCombineBySlot.get(hostId);
-              if (existing) draftApi.markAdjustmentRemoved(existing.id);
-              return;
-            }
-            const hostRow = draft[hostId];
-            const remaining = (hostRow?.combine?.absorbedSlotIds || []).filter(
-              (x) => x !== slot.id
-            );
+            const current = hostsAbsorbedMap.get(hostId) || [];
+            const remaining = current.filter((x) => x !== slot.id);
             if (remaining.length === 0) {
-              draftApi.clearCombine(hostId);
+              // 全解除: draft は clear、既存は markAdjustmentRemoved
+              if (combineSourceByHost.get(hostId) === "saved") {
+                const existing = existingCombineBySlot.get(hostId);
+                if (existing) draftApi.markAdjustmentRemoved(existing.id);
+              } else {
+                draftApi.clearCombine(hostId);
+              }
             } else {
+              // 部分解除: 残りの slots で draft combine を作成
+              // (既存 combine は toBatchPayload で自動的に removedIds に追加される)
               draftApi.setCombine(hostId, remaining);
             }
           },
@@ -177,12 +185,10 @@ export function AbsenceTimetable({
         // 合同
         if (isHost) {
           const source = combineSourceByHost.get(slot.id);
-          if (source === "draft") {
-            items.push({
-              label: "合同相手を変更…",
-              onClick: () => setCombineSource(slot),
-            });
-          }
+          items.push({
+            label: "合同相手を変更…",
+            onClick: () => setCombineSource(slot),
+          });
           items.push({
             label: "合同を取り消す",
             danger: true,
@@ -292,7 +298,8 @@ export function AbsenceTimetable({
     [slots, draft, draftApi, existingMoveBySlot]
   );
 
-  // 合同モード中のスロットクリック: 相手として選ぶ
+  // 合同モード中のスロットクリック: 相手として選ぶ。
+  // 既存 (saved) combine の「相手を変更」時は、保存済みリストを起点に追加する。
   const handleSlotClick = useCallback(
     (slot) => {
       if (!combineSource) return;
@@ -301,12 +308,12 @@ export function AbsenceTimetable({
         return;
       }
       if (!canCombineSlots(combineSource, slot, subjects)) return;
-      const existing = draft[combineSource.id]?.combine?.absorbedSlotIds || [];
-      if (existing.includes(slot.id)) return;
-      draftApi.setCombine(combineSource.id, [...existing, slot.id]);
+      const current = hostsAbsorbedMap.get(combineSource.id) || [];
+      if (current.includes(slot.id)) return;
+      draftApi.setCombine(combineSource.id, [...current, slot.id]);
       setCombineSource(null);
     },
-    [combineSource, subjects, draft, draftApi]
+    [combineSource, subjects, hostsAbsorbedMap, draftApi]
   );
 
   // 個々のスロットカード描画 (AbsenceExcelSection に渡す関数)
@@ -431,8 +438,97 @@ export function AbsenceTimetable({
     ]
   );
 
+  // 解除予定のアイテムを人間可読な短いラベルに
+  const describeRemoved = (adj) => {
+    const slot = slots.find((s) => s.id === adj.slotId);
+    const slotLabel = slot
+      ? `${slot.time} ${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`
+      : `slot#${adj.slotId}`;
+    if (adj.type === "combine") return `合同: ${slotLabel}`;
+    if (adj.type === "move") return `移動: ${slotLabel} → ${adj.targetTime}`;
+    return slotLabel;
+  };
+
   return (
     <div>
+      {/* 解除予定バナー (保存前なら個別に取り消せる) */}
+      {pendingRemovals.length > 0 && (
+        <div
+          style={{
+            background: "#fdecec",
+            border: "1px solid #f0b0b0",
+            borderRadius: 6,
+            padding: "8px 14px",
+            marginBottom: 10,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <strong style={{ color: "#a03030" }}>
+              解除予定: {pendingRemovals.length} 件
+            </strong>
+            <button
+              type="button"
+              onClick={() => {
+                for (const a of pendingRemovals) draftApi.unmarkAdjustmentRemoved(a.id);
+              }}
+              style={{
+                padding: "3px 10px",
+                fontSize: 11,
+                border: "1px solid #ccc",
+                background: "#fff",
+                borderRadius: 4,
+                cursor: "pointer",
+                marginLeft: "auto",
+              }}
+            >
+              全て取り消す
+            </button>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {pendingRemovals.map((a) => (
+              <span
+                key={a.id}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "#fff",
+                  border: "1px solid #e0b0b0",
+                  borderRadius: 12,
+                  padding: "2px 4px 2px 8px",
+                  fontSize: 11,
+                  color: "#703030",
+                  textDecoration: "line-through",
+                }}
+              >
+                {describeRemoved(a)}
+                <button
+                  type="button"
+                  title="この解除を取り消す"
+                  onClick={() => draftApi.unmarkAdjustmentRemoved(a.id)}
+                  style={{
+                    border: "none",
+                    background: "#f0d0d0",
+                    color: "#703030",
+                    borderRadius: "50%",
+                    width: 18,
+                    height: 18,
+                    lineHeight: "16px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    textDecoration: "none",
+                    padding: 0,
+                  }}
+                >
+                  ↺
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 合同モードバナー */}
       {combineSource && (
         <div
