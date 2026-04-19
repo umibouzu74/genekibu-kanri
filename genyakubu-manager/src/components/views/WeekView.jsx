@@ -435,9 +435,63 @@ export function WeekView({ teacher, slots, subs, adjustments = [], onEdit, onDel
                     const slotSubs = slotSubMap.get(s.id);
                     const slotCombines = slotCombineMap.get(s.id);
                     const slotMoves = slotMoveMap.get(s.id);
+                    // 直近 14 日以内のイベント件数: SlotCard 右上にサマリーバッジ。
+                    // 詳細は下のインラインリストで見せるが、一目で「このコマは
+                    // 何か起きる」ことが判るよう本体にもヒントを出す。
+                    const subCount = slotSubs?.length || 0;
+                    const combineCount = slotCombines?.length || 0;
+                    const moveCount = slotMoves?.length || 0;
+                    const hasAny = subCount + combineCount + moveCount > 0;
+                    const summaryBadge = (label, count, color, key) => (
+                      <span
+                        key={key}
+                        style={{
+                          background: color,
+                          color: "#fff",
+                          fontSize: 8,
+                          fontWeight: 800,
+                          padding: "0 4px",
+                          borderRadius: 3,
+                          lineHeight: "14px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 2,
+                          boxShadow: "0 1px 2px rgba(0,0,0,.12)",
+                        }}
+                      >
+                        {label}
+                        {count > 1 && <span style={{ fontSize: 8 }}>×{count}</span>}
+                      </span>
+                    );
                     return (
                       <div key={s.id} style={{ position: "relative" }}>
                         <SlotCard slot={s} compact onEdit={isAdmin ? onEdit : undefined} onDel={isAdmin ? onDel : undefined} />
+                        {hasAny && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: 2,
+                              right: 2,
+                              display: "flex",
+                              gap: 2,
+                              zIndex: 1,
+                              pointerEvents: "none",
+                            }}
+                            title={[
+                              subCount > 0 ? `代行 ${subCount} 件` : null,
+                              combineCount > 0 ? `合同 ${combineCount} 件` : null,
+                              moveCount > 0 ? `時間変更 ${moveCount} 件` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" / ")}
+                          >
+                            {subCount > 0 && summaryBadge("代", subCount, "#3a6ea5", "sub")}
+                            {combineCount > 0 &&
+                              summaryBadge("合", combineCount, ADJ_COLOR.combine.color, "combine")}
+                            {moveCount > 0 &&
+                              summaryBadge("移", moveCount, ADJ_COLOR.move.color, "move")}
+                          </div>
+                        )}
                         {slotCombines && slotCombines.length > 0 && (
                           <div
                             style={{
