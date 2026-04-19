@@ -90,6 +90,7 @@ export function AbsenceWorkflowView({
     // ドラフトを effective な adjustments / overrides に連結
     const draftAdjustments = [];
     const draftOverridesLocal = [];
+    const draftOverridingSlots = { combine: new Set(), move: new Set() };
     let idBase = -1000;
     for (const [sidStr, row] of Object.entries(draft.draft)) {
       const slotId = Number(sidStr);
@@ -102,6 +103,7 @@ export function AbsenceWorkflowView({
           combineSlotIds: [...row.combine.absorbedSlotIds],
           memo: "(draft)",
         });
+        draftOverridingSlots.combine.add(slotId);
       }
       if (row.move?.targetTime) {
         draftAdjustments.push({
@@ -112,6 +114,7 @@ export function AbsenceWorkflowView({
           targetTime: row.move.targetTime,
           memo: "(draft)",
         });
+        draftOverridingSlots.move.add(slotId);
       }
       if (row.override) {
         if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
@@ -132,17 +135,28 @@ export function AbsenceWorkflowView({
       }
     }
 
+    // 既存 adjustments から、draft で上書きされるものと解除マークされたものを除外
+    const removedIds = draft.removedAdjustmentIds || new Set();
+    const filteredAdjustments = (adjustments || []).filter((a) => {
+      if (removedIds.has(a.id)) return false;
+      if (a.date === date) {
+        if (a.type === "combine" && draftOverridingSlots.combine.has(a.slotId)) return false;
+        if (a.type === "move" && draftOverridingSlots.move.has(a.slotId)) return false;
+      }
+      return true;
+    });
+
     return buildSessionCountMap(daySlots, date, {
       classSets: classSets || [],
       allSlots: slots,
       displayCutoff,
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
-      adjustments: [...(adjustments || []), ...draftAdjustments],
+      adjustments: [...filteredAdjustments, ...draftAdjustments],
       sessionOverrides: [...(sessionOverrides || []), ...draftOverridesLocal],
       orientationOnFirstDay: true,
     });
-  }, [daySlots, slots, date, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides, draft.draft]);
+  }, [daySlots, slots, date, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);
 
   const toggleTeacher = useCallback(
     (name) => {
@@ -165,8 +179,9 @@ export function AbsenceWorkflowView({
       if (row.move?.targetTime) c++;
       if (row.override) c++;
     }
+    c += (draft.removedAdjustmentIds?.size || 0);
     return c;
-  }, [draft.draft]);
+  }, [draft.draft, draft.removedAdjustmentIds]);
 
   // 下書きがある状態でタブを閉じる / リロードしようとしたら警告
   useEffect(() => {
@@ -209,12 +224,13 @@ export function AbsenceWorkflowView({
   );
 
   const handleSave = useCallback(() => {
-    const { draftSubs, draftAdjustments, draftOverrides } =
-      draft.toBatchPayload(date, slots);
+    const { draftSubs, draftAdjustments, draftOverrides, removedAdjustmentIds } =
+      draft.toBatchPayload(date, slots, adjustments || []);
     if (
       draftSubs.length === 0 &&
       draftAdjustments.length === 0 &&
-      draftOverrides.length === 0
+      draftOverrides.length === 0 &&
+      (!removedAdjustmentIds || removedAdjustmentIds.length === 0)
     ) {
       toasts.error("変更がありません");
       return;
@@ -227,6 +243,7 @@ export function AbsenceWorkflowView({
         draftSubs,
         draftAdjustments,
         draftOverrides,
+        removedAdjustmentIds,
         saveSubs,
         saveAdjustments,
         saveSessionOverrides,
@@ -235,6 +252,7 @@ export function AbsenceWorkflowView({
       if (res.added.subs) parts.push(`代行 ${res.added.subs} 件`);
       if (res.added.adjustments) parts.push(`調整 ${res.added.adjustments} 件`);
       if (res.added.overrides) parts.push(`回数補正 ${res.added.overrides} 件`);
+      if (res.added.removed) parts.push(`解除 ${res.added.removed} 件`);
       toasts.success(`保存しました (${parts.join(" / ")})`);
       draft.reset();
     } catch (err) {
@@ -347,6 +365,8 @@ export function AbsenceWorkflowView({
         draft={draft.draft}
         draftApi={draft}
         existingSubs={subs}
+        existingAdjustments={adjustments}
+        removedAdjustmentIds={draft.removedAdjustmentIds}
         sessionCountMap={sessionCountMap}
         absentSlotIds={absentSlotIds}
         partTimeStaff={partTimeStaff}

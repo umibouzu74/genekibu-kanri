@@ -24,6 +24,7 @@ const MENU_CONFIG = [
       { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
       { key: VIEWS.SUBS, icon: "🔄", label: "代行管理", badge: true },
       { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
+      { key: VIEWS.ADJUSTMENT_LOG, icon: "📝", label: "調整履歴" },
     ],
   },
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },

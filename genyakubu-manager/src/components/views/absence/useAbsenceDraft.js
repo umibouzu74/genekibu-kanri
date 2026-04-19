@@ -53,8 +53,31 @@ function patchRow(prev, slotId, patch) {
 
 export function useAbsenceDraft() {
   const [draft, setDraft] = useState({});
+  // 保存済み adjustments の解除マーク (UI 上で取消した既存 combine/move の id)
+  const [removedAdjustmentIds, setRemovedAdjustmentIds] = useState(() => new Set());
 
-  const reset = useCallback(() => setDraft({}), []);
+  const reset = useCallback(() => {
+    setDraft({});
+    setRemovedAdjustmentIds(new Set());
+  }, []);
+
+  const markAdjustmentRemoved = useCallback((id) => {
+    setRemovedAdjustmentIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const unmarkAdjustmentRemoved = useCallback((id) => {
+    setRemovedAdjustmentIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   const updateSub = useCallback((slotId, patch) => {
     setDraft((prev) => {
@@ -153,14 +176,24 @@ export function useAbsenceDraft() {
 
   // ドラフトから保存対象の配列を作成する。
   // 1 スロットが sub + move の両方を持つ場合は両方のレコードを出力する。
+  // existingAdjustments を渡すと、draft で上書きされる同 slot の既存 combine/move を
+  // 自動的に removedAdjustmentIds に追加する (二重保存防止)。
   const toBatchPayload = useCallback(
-    (date, slots) => {
+    (date, slots, existingAdjustments = []) => {
       const draftSubs = [];
       const draftAdjustments = [];
       const draftOverrides = [];
+      const autoRemovedIds = new Set();
 
       const slotById = new Map();
       for (const s of slots) slotById.set(s.id, s);
+
+      // 既存調整: (slotId, type) -> adjustment id (同日)
+      const existingBySlotType = new Map();
+      for (const adj of existingAdjustments || []) {
+        if (adj.date !== date) continue;
+        existingBySlotType.set(`${adj.slotId}|${adj.type}`, adj.id);
+      }
 
       for (const [sidStr, row] of Object.entries(draft)) {
         const slotId = Number(sidStr);
@@ -186,6 +219,8 @@ export function useAbsenceDraft() {
             combineSlotIds: [...row.combine.absorbedSlotIds],
             memo: row.combine.memo || "",
           });
+          const existingId = existingBySlotType.get(`${slotId}|combine`);
+          if (existingId != null) autoRemovedIds.add(existingId);
         }
 
         if (row.move?.targetTime) {
@@ -196,6 +231,8 @@ export function useAbsenceDraft() {
             targetTime: row.move.targetTime,
             memo: `${slot.time} → ${row.move.targetTime}`,
           });
+          const existingId = existingBySlotType.get(`${slotId}|move`);
+          if (existingId != null) autoRemovedIds.add(existingId);
         }
 
         if (row.override) {
@@ -223,13 +260,20 @@ export function useAbsenceDraft() {
         }
       }
 
-      return { draftSubs, draftAdjustments, draftOverrides };
+      const mergedRemoved = new Set([...removedAdjustmentIds, ...autoRemovedIds]);
+      return {
+        draftSubs,
+        draftAdjustments,
+        draftOverrides,
+        removedAdjustmentIds: [...mergedRemoved],
+      };
     },
-    [draft]
+    [draft, removedAdjustmentIds]
   );
 
   return {
     draft,
+    removedAdjustmentIds,
     reset,
     updateSub,
     clearSub,
@@ -238,6 +282,8 @@ export function useAbsenceDraft() {
     setCombine,
     clearCombine,
     updateOverride,
+    markAdjustmentRemoved,
+    unmarkAdjustmentRemoved,
     toBatchPayload,
   };
 }

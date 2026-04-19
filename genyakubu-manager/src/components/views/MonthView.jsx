@@ -71,9 +71,11 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
     [examPeriods]
   );
 
-  // この講師が (slot, ds) のコマに出勤扱いとなるかどうか。
-  // 休講・カットオフ・時間割外・確定代行で外された・合同で吸収された、の
-  // いずれかに該当すると false。
+  // この講師が (slot, ds) のコマを「月次ビューに載せるか」を判定する。
+  // 休講・カットオフ・時間割外・合同で吸収された場合は非表示。
+  // 確定代行で本人が外されたコマは、描画時に `away` フラグでグレー表示+代バッジを
+  // 出すため、ここでは除外しない (以前は除外していたが 代 バッジが消えて
+  // 代行されたことが判らない問題があった)。
   const isTeacherAttending = useCallback(
     (slot, ds) => {
       if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
@@ -89,19 +91,11 @@ export function MonthView({ teacher, slots, holidays, subs, adjustments = [], ye
         return false;
       }
       if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
-      const sub = subByDateSlot.get(`${ds}|${slot.id}`);
-      if (
-        sub?.status === "confirmed" &&
-        sub.originalTeacher === teacher &&
-        sub.substitute !== teacher
-      ) {
-        return false;
-      }
       const absorbedSet = absorbedByDate.get(ds);
       if (absorbedSet && absorbedSet.has(slot.id)) return false;
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff, subByDateSlot, absorbedByDate, teacher]
+    [isOffForGrade, timetables, displayCutoff, absorbedByDate]
   );
 
   const first = new Date(year, month - 1, 1);
