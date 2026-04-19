@@ -97,7 +97,14 @@ export function SectionColumn({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {timeGroups.map(([time, tSlots]) => (
+            {timeGroups.map(([time, tSlots]) => {
+              // この時間グループに「移動で流入した」コマがあれば時間ヘッダに補足。
+              // 元時刻のリストを集約してツールチップに出す。
+              const movedIn = tSlots.filter((s) => moveBySlot.get(s.id));
+              const movedInOrigTimes = [
+                ...new Set(movedIn.map((s) => s.time).filter(Boolean)),
+              ];
+              return (
               <div key={time}>
                 <div
                   style={{
@@ -116,6 +123,21 @@ export function SectionColumn({
                   <span style={{ fontSize: 10, fontWeight: 400, color: "#888" }}>
                     {formatCount(weightedSlotCount(tSlots))}コマ
                   </span>
+                  {movedIn.length > 0 && (
+                    <span
+                      title={`移動で流入: ${movedInOrigTimes.join(" / ")} から`}
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: "#fff",
+                        background: ADJ_COLOR.move.color,
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                      }}
+                    >
+                      ← 移入 {movedIn.length}
+                    </span>
+                  )}
                 </div>
                 <div
                   style={{
@@ -347,7 +369,8 @@ export function SectionColumn({
                   })}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

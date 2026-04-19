@@ -9,6 +9,27 @@ import { formatSessionNumber } from "../../../utils/sessionCount";
 import { describeSlot } from "../../../utils/adjustmentDisplay";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
+// セル内で並べる小さなステータスバッジ。
+// 代/仮/休/欠/合/合+/移 を同じ見た目で生成する。
+function mkBadge(color, label, key, title) {
+  return (
+    <span
+      key={key}
+      title={title}
+      style={{
+        background: color,
+        color: "#fff",
+        padding: "0 4px",
+        borderRadius: 3,
+        fontSize: 9,
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 // ─── ExcelCell ──────────────────────────────────────────────────────
 // Single cell in the Excel-like timetable grid. Highly memoised because
 // the parent re-renders on every drag/hover state update.
@@ -95,23 +116,6 @@ export const ExcelCell = memo(function ExcelCell({
   let teacherColor = "#1a1a2e";
   let teacherDecor = "none";
   let subDisplay = null;
-
-  const mkBadge = (color, label, key, title) => (
-    <span
-      key={key}
-      title={title}
-      style={{
-        background: color,
-        color: "#fff",
-        padding: "0 4px",
-        borderRadius: 3,
-        fontSize: 9,
-        fontWeight: 700,
-      }}
-    >
-      {label}
-    </span>
-  );
 
   // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
   // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
