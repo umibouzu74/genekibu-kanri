@@ -4,6 +4,7 @@ import {
   DAY_BG as DB,
   DAY_COLOR as DC,
   DAYS,
+  fmtDate,
   fmtDateWeekday,
   parseLocalDate,
   sortSlots as sortS,
@@ -12,7 +13,12 @@ import {
 import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
 import { exportTeacherIcs } from "../../utils/ics";
-import { isSlotForTeacher } from "../../utils/biweekly";
+import {
+  biweeklyDisplaySubject,
+  isBiweekly,
+  isSlotForTeacher,
+  isTeacherActiveOnDate,
+} from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
@@ -47,9 +53,20 @@ export function WeekView({
   examPeriods = [],
   displayCutoff,
 }) {
+  // 隔週スロットは「今週の実施側講師」のビューにだけ出す。今日を基準週として扱う。
+  const refDateStr = useMemo(() => fmtDate(new Date()), []);
   const ts = useMemo(
-    () => sortS(slots.filter((s) => isSlotForTeacher(s, teacher))),
-    [teacher, slots]
+    () =>
+      sortS(
+        slots
+          .filter((s) => isSlotForTeacher(s, teacher))
+          .filter(
+            (s) =>
+              !isBiweekly(s.note) ||
+              isTeacherActiveOnDate(s, teacher, refDateStr, biweeklyAnchors)
+          )
+      ),
+    [teacher, slots, refDateStr, biweeklyAnchors]
   );
   const byDay = useMemo(() => {
     const m = {};
@@ -511,6 +528,12 @@ export function WeekView({
                           sessionNum={sessionMapByDay[d]?.get(s.id) || 0}
                           onEdit={isAdmin ? onEdit : undefined}
                           onDel={isAdmin ? onDel : undefined}
+                          displaySubject={
+                            isBiweekly(s.note)
+                              ? `${biweeklyDisplaySubject(s, refDateStr, biweeklyAnchors)}（隔週）`
+                              : undefined
+                          }
+                          hideNote={isBiweekly(s.note)}
                         />
                         {hasAny && (
                           <div

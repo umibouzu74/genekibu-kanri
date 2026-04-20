@@ -121,3 +121,35 @@ export function getSlotTeachers(slot) {
 export function formatCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
+
+// Determine whether the given teacher actually teaches this slot on
+// `dateStr`. Non-biweekly slots always return true. For biweekly slots:
+//   - A 週: slot.teacher (handles "·" separated multi-teacher) が実施
+//   - B 週: note "隔週(partner)" の partner が実施
+// アンカー未設定 (weekType null) の場合は安全側で true を返す
+// (表示側で隠さない = 従来挙動)。
+export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors) {
+  if (!isBiweekly(slot.note)) return true;
+  const wt = getSlotWeekType(dateStr, slot, anchors);
+  if (wt == null) return true;
+  const mainTeachers = getSlotTeachers(slot);
+  const m = slot.note.match(/隔週\(([^)]+)\)/);
+  const partner = m ? m[1] : null;
+  if (wt === "A") return mainTeachers.includes(teacher);
+  // wt === "B"
+  return partner != null && teacher === partner;
+}
+
+// 表示用の「実施される教科」を返す。
+// 複合教科 ("英/数") の隔週スロットでは A 週 → 先頭、B 週 → 2 つ目。
+// 単独教科 / アンカー未設定 の場合は slot.subj をそのまま返す。
+export function biweeklyDisplaySubject(slot, dateStr, anchors) {
+  const raw = slot.subj || "";
+  if (!isBiweekly(slot.note)) return raw;
+  const parts = raw.split("/").map((s) => s.trim()).filter(Boolean);
+  if (parts.length <= 1) return raw;
+  const wt = getSlotWeekType(dateStr, slot, anchors);
+  if (wt == null) return parts[0];
+  const idx = wt === "A" ? 0 : 1;
+  return parts[idx] || parts[parts.length - 1];
+}

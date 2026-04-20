@@ -3,7 +3,15 @@ import { DAY_COLOR as DC, gradeColor as GC } from "../data";
 import { formatBiweeklyNote } from "../utils/biweekly";
 import { formatSessionNumber } from "../utils/sessionCount";
 
-function SlotCardImpl({ slot, compact, sessionNum, onEdit, onDel }) {
+function SlotCardImpl({
+  slot,
+  compact,
+  sessionNum,
+  onEdit,
+  onDel,
+  displaySubject,
+  hideNote,
+}) {
   const gc = GC(slot.grade);
   const hasSessionBadge = typeof sessionNum === "number" && sessionNum > 0;
   return (
@@ -65,7 +73,7 @@ function SlotCardImpl({ slot, compact, sessionNum, onEdit, onDel }) {
         </span>
         <span>{slot.time}</span>
         {slot.room && <span>/ {slot.room}</span>}
-        {slot.note && <span style={{ color: "#e67a00" }}>({formatBiweeklyNote(slot.teacher, slot.note)})</span>}
+        {slot.note && !hideNote && <span style={{ color: "#e67a00" }}>({formatBiweeklyNote(slot.teacher, slot.note)})</span>}
       </div>
       <div
         style={{
@@ -75,7 +83,7 @@ function SlotCardImpl({ slot, compact, sessionNum, onEdit, onDel }) {
           marginTop: 4,
         }}
       >
-        {slot.subj}
+        {displaySubject ?? slot.subj}
       </div>
       {onEdit && (
         <div style={{ position: "absolute", top: 4, right: 4, display: "flex", gap: 2 }}>
