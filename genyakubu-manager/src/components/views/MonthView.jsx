@@ -9,7 +9,12 @@ import {
   WEEKDAYS,
 } from "../../data";
 import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
-import { isSlotForTeacher } from "../../utils/biweekly";
+import {
+  biweeklyDisplaySubject,
+  isBiweekly,
+  isSlotForTeacher,
+  isTeacherActiveOnDate,
+} from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 
@@ -131,9 +136,16 @@ export function MonthView({
         return false;
       }
       if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
+      // 隔週スロットは「その週に実施する側の講師」のビューにだけ載せる。
+      if (
+        isBiweekly(slot.note) &&
+        !isTeacherActiveOnDate(slot, teacher, ds, biweeklyAnchors)
+      ) {
+        return false;
+      }
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff]
+    [isOffForGrade, timetables, displayCutoff, teacher, biweeklyAnchors]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -423,7 +435,10 @@ export function MonthView({
                         {s.grade}
                         {s.cls && s.cls !== "-" ? s.cls : ""}
                       </span>
-                      <b>{displayTime}</b> {s.subj}
+                      <b>{displayTime}</b>{" "}
+                      {isBiweekly(s.note)
+                        ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors)}（隔週）`
+                        : s.subj}
                     </div>
                   );
                 })

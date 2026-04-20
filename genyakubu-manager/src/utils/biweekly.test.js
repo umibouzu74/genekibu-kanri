@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  biweeklyDisplaySubject,
   formatBiweeklyNote,
   formatBiweeklyTeacher,
   formatCount,
@@ -7,6 +8,7 @@ import {
   getWeekType,
   isBiweekly,
   isSlotForTeacher,
+  isTeacherActiveOnDate,
   getSlotTeachers,
   slotWeight,
   weightedSlotCount,
@@ -278,6 +280,82 @@ describe("getSlotTeachers", () => {
 
   it("returns empty array for empty teacher", () => {
     expect(getSlotTeachers({ teacher: "" })).toEqual([]);
+  });
+});
+
+describe("isTeacherActiveOnDate", () => {
+  const anchors = [{ date: "2026-04-06", weekType: "A" }];
+  // id=3 相当: 堀上 が A 週に 英、河野 が B 週に 数 を担当
+  const slot = { teacher: "堀上", note: "隔週(河野)", subj: "英/数" };
+
+  it("non-biweekly slots always return true", () => {
+    const plain = { teacher: "堀上", note: "", subj: "英語" };
+    expect(isTeacherActiveOnDate(plain, "堀上", "2026-04-13", anchors)).toBe(true);
+    expect(isTeacherActiveOnDate(plain, "河野", "2026-04-13", anchors)).toBe(true);
+  });
+
+  it("A 週 では slot.teacher が active、partner は inactive", () => {
+    expect(isTeacherActiveOnDate(slot, "堀上", "2026-04-06", anchors)).toBe(true);
+    expect(isTeacherActiveOnDate(slot, "河野", "2026-04-06", anchors)).toBe(false);
+  });
+
+  it("B 週 では partner が active、slot.teacher は inactive", () => {
+    expect(isTeacherActiveOnDate(slot, "堀上", "2026-04-13", anchors)).toBe(false);
+    expect(isTeacherActiveOnDate(slot, "河野", "2026-04-13", anchors)).toBe(true);
+  });
+
+  it("アンカー未設定 (weekType null) は両講師ともに true にフォールバック", () => {
+    expect(isTeacherActiveOnDate(slot, "堀上", "2026-04-13", [])).toBe(true);
+    expect(isTeacherActiveOnDate(slot, "河野", "2026-04-13", [])).toBe(true);
+  });
+
+  it("'·' 区切りの multi-teacher でも先頭集合内にあれば active", () => {
+    const multi = { teacher: "香川·福江", note: "隔週(川井)", subj: "英/数" };
+    expect(isTeacherActiveOnDate(multi, "香川", "2026-04-06", anchors)).toBe(true);
+    expect(isTeacherActiveOnDate(multi, "福江", "2026-04-06", anchors)).toBe(true);
+    expect(isTeacherActiveOnDate(multi, "川井", "2026-04-06", anchors)).toBe(false);
+    expect(isTeacherActiveOnDate(multi, "川井", "2026-04-13", anchors)).toBe(true);
+  });
+});
+
+describe("biweeklyDisplaySubject", () => {
+  const anchors = [{ date: "2026-04-06", weekType: "A" }];
+
+  it("複合教科 '英/数' の A 週 → 先頭 '英'", () => {
+    const slot = { note: "隔週(河野)", subj: "英/数" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("英");
+  });
+
+  it("複合教科 '英/数' の B 週 → 2 つ目 '数'", () => {
+    const slot = { note: "隔週(河野)", subj: "英/数" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-13", anchors)).toBe("数");
+  });
+
+  it("非 biweekly はそのまま返す", () => {
+    const slot = { note: "", subj: "英/数" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("英/数");
+  });
+
+  it("単独教科 biweekly は subj をそのまま返す", () => {
+    const slot = { note: "隔週(河野)", subj: "英語" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("英語");
+    expect(biweeklyDisplaySubject(slot, "2026-04-13", anchors)).toBe("英語");
+  });
+
+  it("アンカー未設定のときは先頭教科にフォールバック", () => {
+    const slot = { note: "隔週(河野)", subj: "英/数" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-13", [])).toBe("英");
+  });
+
+  it("3 パート以上の複合 '英/数/国' は A→先頭, B→2 つ目を返す (3 つ目以降は未使用)", () => {
+    const slot = { note: "隔週(河野)", subj: "英/数/国" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("英");
+    expect(biweeklyDisplaySubject(slot, "2026-04-13", anchors)).toBe("数");
+  });
+
+  it("subj が空のときは空文字を返す", () => {
+    const slot = { note: "隔週(河野)", subj: "" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("");
   });
 });
 
