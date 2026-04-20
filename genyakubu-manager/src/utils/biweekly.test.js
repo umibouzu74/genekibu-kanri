@@ -346,6 +346,17 @@ describe("biweeklyDisplaySubject", () => {
     const slot = { note: "隔週(河野)", subj: "英/数" };
     expect(biweeklyDisplaySubject(slot, "2026-04-13", [])).toBe("英");
   });
+
+  it("3 パート以上の複合 '英/数/国' は A→先頭, B→2 つ目を返す (3 つ目以降は未使用)", () => {
+    const slot = { note: "隔週(河野)", subj: "英/数/国" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("英");
+    expect(biweeklyDisplaySubject(slot, "2026-04-13", anchors)).toBe("数");
+  });
+
+  it("subj が空のときは空文字を返す", () => {
+    const slot = { note: "隔週(河野)", subj: "" };
+    expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("");
+  });
 });
 
 describe("formatCount", () => {
