@@ -17,6 +17,7 @@ import {
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
 
 export function MonthView({
   teacher,
@@ -31,10 +32,16 @@ export function MonthView({
   timetables,
   displayCutoff,
   examPeriods = [],
+  examPrepSchedules = [],
+  partTimeStaff = [],
   classSets,
   biweeklyAnchors,
   sessionOverrides,
 }) {
+  const isPartTime = useMemo(
+    () => (partTimeStaff || []).some((p) => p.name === teacher),
+    [partTimeStaff, teacher]
+  );
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -524,6 +531,56 @@ export function MonthView({
                       </div>
                     );
                   })}
+              {/* テスト直前特訓シフト (アルバイト講師のみ) */}
+              {isPartTime &&
+                (() => {
+                  const shifts = getExamPrepShiftsForStaff(
+                    teacher,
+                    ds,
+                    examPeriods,
+                    examPrepSchedules
+                  );
+                  if (shifts.length === 0) return null;
+                  const first = shifts[0];
+                  const last = shifts[shifts.length - 1];
+                  return (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                        padding: "2px 3px",
+                        margin: "1px 0",
+                        borderRadius: 3,
+                        background: "#fdf5e8",
+                        borderLeft: "2px solid #e0a030",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={`特訓シフト ${first.start}〜${last.end}\n${shifts
+                        .map((s) => `${s.no}校時 ${s.start}-${s.end}`)
+                        .join("\n")}`}
+                    >
+                      <span
+                        style={{
+                          background: "#e0a030",
+                          color: "#fff",
+                          fontSize: 8,
+                          fontWeight: 800,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        特訓
+                      </span>
+                      <b>{first.start}</b>〜{last.end}{" "}
+                      <span style={{ fontSize: 10, color: "#8a5a1a" }}>
+                        ({shifts.length}校時)
+                      </span>
+                    </div>
+                  );
+                })()}
             </div>
           );
         })}

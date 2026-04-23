@@ -25,6 +25,7 @@ export function useDataIO({
   timetables,
   displayCutoff,
   examPeriods,
+  examPrepSchedules,
   classSets,
   sessionOverrides,
   teacherSubjects,
@@ -40,6 +41,7 @@ export function useDataIO({
   saveTimetables,
   saveDisplayCutoff,
   saveExamPeriods,
+  saveExamPrepSchedules,
   saveClassSets,
   saveSessionOverrides,
   saveTeacherSubjects,
@@ -72,6 +74,7 @@ export function useDataIO({
           timetables,
           displayCutoff,
           examPeriods,
+          examPrepSchedules,
           classSets,
           sessionOverrides,
           teacherSubjects,
@@ -91,7 +94,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, classSets, sessionOverrides, teacherSubjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -146,6 +149,8 @@ export function useDataIO({
           if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
           if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
+          if (Array.isArray(d.examPrepSchedules) && saveExamPrepSchedules)
+            saveExamPrepSchedules(d.examPrepSchedules);
           if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
           if (Array.isArray(d.sessionOverrides)) saveSessionOverrides(d.sessionOverrides);
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
@@ -182,6 +187,7 @@ export function useDataIO({
       saveTimetables,
       saveDisplayCutoff,
       saveExamPeriods,
+      saveExamPrepSchedules,
       saveClassSets,
       saveSessionOverrides,
       saveTeacherSubjects,
@@ -211,6 +217,7 @@ export function useDataIO({
     saveTimetables([DEFAULT_TIMETABLE]);
     saveDisplayCutoff(DEFAULT_DISPLAY_CUTOFF);
     saveExamPeriods([]);
+    if (saveExamPrepSchedules) saveExamPrepSchedules([]);
     saveClassSets([]);
     saveSessionOverrides([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
@@ -234,6 +241,7 @@ export function useDataIO({
     saveTimetables,
     saveDisplayCutoff,
     saveExamPeriods,
+    saveExamPrepSchedules,
     saveClassSets,
     saveSessionOverrides,
     setActiveTimetableId,

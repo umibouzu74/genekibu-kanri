@@ -115,6 +115,27 @@ export interface ExamPeriod {
   targetGrades: string[]; // ["中1","中2","中3"] 等。空配列 = 全学年対象
 }
 
+// ─── Exam prep (テスト直前特訓) shift schedule ────────────────────
+// テスト期間中、通常授業は休講になるがアルバイトが自習監督のため出勤する。
+// 校時を日毎に自由に定義し、各アルバイトがどの校時に出勤するかを記録する。
+export interface ExamPrepPeriod {
+  no: number; // 日毎に 1 始まりの連番
+  start: string; // "HH:MM"
+  end: string; // "HH:MM"
+}
+
+export interface ExamPrepDay {
+  date: string; // "YYYY-MM-DD"
+  periods: ExamPrepPeriod[];
+  // assignments[staffName] = 出勤する校時 no の配列
+  assignments: Record<string, number[]>;
+}
+
+export interface ExamPrepSchedule {
+  examPeriodId: number; // ExamPeriod.id
+  days: ExamPrepDay[];
+}
+
 // ─── Class set (授業セット) ──────────────────────────────────────
 // 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
 // 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると
@@ -166,6 +187,7 @@ export interface ExportBundle {
   examPeriods?: ExamPeriod[];
   classSets?: ClassSet[];
   sessionOverrides?: SessionOverride[];
+  examPrepSchedules?: ExamPrepSchedule[];
 }
 
 export interface ValidationResult<T> {

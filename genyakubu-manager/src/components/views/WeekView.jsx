@@ -22,6 +22,7 @@ import {
 import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
+import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
 function getUpcomingWindow() {
@@ -51,6 +52,8 @@ export function WeekView({
   sessionOverrides,
   holidays = [],
   examPeriods = [],
+  examPrepSchedules = [],
+  partTimeStaff = [],
   displayCutoff,
 }) {
   // 隔週スロットは「今週の実施側講師」のビューにだけ出す。今日を基準週として扱う。
@@ -198,6 +201,35 @@ export function WeekView({
     for (const arr of slotMoveMap.values()) list.push(...arr);
     return list.sort((a, b) => a.date.localeCompare(b.date));
   }, [slotMoveMap]);
+
+  // 今日から+14日間の特訓シフト (アルバイト講師の場合のみ)
+  const isPartTime = useMemo(
+    () => partTimeStaff.some((p) => p.name === teacher),
+    [partTimeStaff, teacher]
+  );
+  const upcomingExamPrep = useMemo(() => {
+    if (!isPartTime) return [];
+    if (!examPrepSchedules?.length || !examPeriods?.length) return [];
+    const out = [];
+    const cur = new Date(winStart);
+    while (cur <= winEnd) {
+      const ds = fmtDate(cur);
+      const shifts = getExamPrepShiftsForStaff(
+        teacher,
+        ds,
+        examPeriods,
+        examPrepSchedules
+      );
+      if (shifts.length > 0) {
+        const ep = examPeriods.find(
+          (e) => ds >= e.startDate && ds <= e.endDate
+        );
+        out.push({ date: ds, shifts, examPeriodName: ep?.name || "" });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [isPartTime, examPrepSchedules, examPeriods, teacher, winStart, winEnd]);
 
   // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
   const upcomingSubs = useMemo(() => {
@@ -372,6 +404,66 @@ export function WeekView({
                     {slot.grade}
                     {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
                   </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {upcomingExamPrep.length > 0 && (
+        <div
+          style={{
+            background: "#fdf5e8",
+            border: "1px solid #e0a030",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: "#8a5a1a" }}>
+            📝 直近2週間のテスト直前特訓シフト ({upcomingExamPrep.length}日)
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {upcomingExamPrep.map((e) => {
+              const first = e.shifts[0];
+              const last = e.shifts[e.shifts.length - 1];
+              return (
+                <div
+                  key={e.date}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#fff",
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                    {fmtDateWeekday(e.date)}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#666", minWidth: 110 }}>
+                    {first.start}〜{last.end}
+                  </span>
+                  <span style={{ fontSize: 11 }}>
+                    {e.shifts.map((s) => `${s.no}校時`).join(" / ")}
+                  </span>
+                  {e.examPeriodName && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        background: "#fff2d8",
+                        color: "#8a5a1a",
+                        padding: "1px 6px",
+                        borderRadius: 10,
+                        fontWeight: 700,
+                        marginLeft: "auto",
+                      }}
+                    >
+                      {e.examPeriodName}
+                    </span>
+                  )}
                 </div>
               );
             })}

@@ -33,3 +33,18 @@ export function parseLocalDate(dateStr) {
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
 }
+
+// start / end を含む範囲の "YYYY-MM-DD" 文字列配列を返す。
+// 無効な入力・end < start のときは空配列。
+export function eachDateStrInRange(startDate, endDate) {
+  const s = parseLocalDate(startDate);
+  const e = parseLocalDate(endDate);
+  if (!s || !e || e < s) return [];
+  const out = [];
+  const cur = new Date(s);
+  while (cur <= e) {
+    out.push(fmtDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}

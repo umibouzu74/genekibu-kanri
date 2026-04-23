@@ -4,6 +4,8 @@ import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { S } from "../styles/common";
+import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
+import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
 
 const isValidDate = (s) =>
   /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
@@ -16,7 +18,14 @@ const GRADE_COLOR = {
   高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
 };
 
-export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
+export function ExamPeriodManager({
+  examPeriods,
+  onSave,
+  isAdmin,
+  partTimeStaff = [],
+  examPrepSchedules = [],
+  examPrepCrud = null,
+}) {
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -24,6 +33,7 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
   const [allGrades, setAllGrades] = useState(true);
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
+  const [scheduleEditingEp, setScheduleEditingEp] = useState(null);
   const toasts = useToasts();
   const confirm = useConfirm();
 
@@ -135,13 +145,22 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
   };
 
   const handleDel = async (ep) => {
+    const sch = findScheduleByExamPeriodId(examPrepSchedules, ep.id);
+    const hasSchedule = sch && (sch.days || []).length > 0;
     const ok = await confirm({
       title: "テスト期間の削除",
-      message: `「${ep.name}」（${ep.startDate} 〜 ${ep.endDate}）を削除しますか？`,
+      message:
+        `「${ep.name}」（${ep.startDate} 〜 ${ep.endDate}）を削除しますか？` +
+        (hasSchedule
+          ? `\n\n※特訓シフト設定（${sch.days.length} 日分）も同時に削除されます。`
+          : ""),
       okLabel: "削除",
       tone: "danger",
     });
     if (!ok) return;
+    if (hasSchedule && examPrepCrud) {
+      examPrepCrud.cascadeDeletePeriod(ep.id);
+    }
     onSave(examPeriods.filter((e) => e.id !== ep.id));
     toasts.success("テスト期間を削除しました");
   };
@@ -441,7 +460,26 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
                 </div>
               </div>
               {isAdmin && (
-                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+                  {examPrepCrud && (
+                    <button
+                      type="button"
+                      onClick={() => setScheduleEditingEp(ep)}
+                      aria-label={`${ep.name} の特訓シフトを設定`}
+                      style={{
+                        ...S.btn(false),
+                        fontSize: 11,
+                        padding: "4px 10px",
+                      }}
+                    >
+                      特訓シフト
+                      {(() => {
+                        const sch = findScheduleByExamPeriodId(examPrepSchedules, ep.id);
+                        const n = (sch?.days || []).length;
+                        return n > 0 ? ` (${n})` : "";
+                      })()}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleEdit(ep)}
@@ -477,7 +515,21 @@ export function ExamPeriodManager({ examPeriods, onSave, isAdmin }) {
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
         ※テスト期間中は対象学年の通常授業が休止扱いになります。「全学年」＝全学年対象。
+        {examPrepCrud && "「特訓シフト」からアルバイトの出勤日・校時を設定できます。"}
       </div>
+
+      {scheduleEditingEp && examPrepCrud && (
+        <ExamPrepScheduleEditor
+          examPeriod={scheduleEditingEp}
+          schedule={findScheduleByExamPeriodId(
+            examPrepSchedules,
+            scheduleEditingEp.id
+          )}
+          partTimeStaff={partTimeStaff}
+          crud={examPrepCrud}
+          onClose={() => setScheduleEditingEp(null)}
+        />
+      )}
     </div>
   );
 }
