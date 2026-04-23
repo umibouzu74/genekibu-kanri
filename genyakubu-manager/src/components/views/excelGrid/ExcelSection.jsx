@@ -71,11 +71,12 @@ export function ExcelSection({
   // buildColumnDefs / buildTimeRows / findSlotForCell は全てこの effectiveSlots
   // を元に計算するため、移動後の時間セルに自然に配置される。
   // originalTimeBySlot は移動された slot の元時刻 (ツールチップ用)。
+  // 同一セルに吸収済みコマと移動後コマが衝突した場合、findSlotForCell は
+  // 配列の先頭一致を返すため、移動 > 通常 > 吸収済みの順でランク並べ替えし、
+  // 移動後コマが優先表示されるようにする。
   const { effectiveSlots, originalTimeBySlot } = useMemo(() => {
     const moveMap = adjIndex.moveBySlot;
-    if (!moveMap || moveMap.size === 0) {
-      return { effectiveSlots: slots, originalTimeBySlot: new Map() };
-    }
+    const absorbedSet = new Set(adjIndex.combineAbsorbedBySlot.keys());
     const origMap = new Map();
     const eff = slots.map((s) => {
       const target = moveMap.get(s.id);
@@ -83,8 +84,14 @@ export function ExcelSection({
       origMap.set(s.id, s.time);
       return { ...s, time: target };
     });
-    return { effectiveSlots: eff, originalTimeBySlot: origMap };
-  }, [slots, adjIndex.moveBySlot]);
+    const rankOf = (s) =>
+      moveMap.has(s.id) ? 0 : absorbedSet.has(s.id) ? 2 : 1;
+    const sorted = eff
+      .map((s, i) => ({ s, i, r: rankOf(s) }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .map((x) => x.s);
+    return { effectiveSlots: sorted, originalTimeBySlot: origMap };
+  }, [slots, adjIndex.moveBySlot, adjIndex.combineAbsorbedBySlot]);
 
   const { gradeGroups } = useMemo(
     () => buildColumnDefs(effectiveSlots, day, sectionFilterFn),
