@@ -20,4 +20,5 @@ export const LS = {
   teacherSubjects: "genyakubu-teacher-subjects",
   classSets: "genyakubu-class-sets",
   sessionOverrides: "genyakubu-session-overrides",
+  examPrepSchedules: "genyakubu-exam-prep-schedules",
 };

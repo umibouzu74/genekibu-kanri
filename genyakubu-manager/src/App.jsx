@@ -20,6 +20,7 @@ import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
+import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import {
   useDataIO,
   migrateHolidays,
@@ -191,6 +192,11 @@ export default function App() {
     [],
     { onError: onStorageError }
   );
+  const [examPrepSchedules, saveExamPrepSchedules] = useSyncedStorage(
+    LS.examPrepSchedules,
+    [],
+    { onError: onStorageError }
+  );
   const [classSets, saveClassSets] = useSyncedStorage(
     LS.classSets,
     [],
@@ -266,6 +272,10 @@ export default function App() {
     }, [activeTimetableId, changeActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
+  const examPrepCrud = useExamPrepSchedulesCrud({
+    examPrepSchedules,
+    saveExamPrepSchedules,
+  });
   const staffCrud = useStaffCrud({
     partTimeStaff,
     savePartTimeStaff,
@@ -277,6 +287,8 @@ export default function App() {
     saveSubjectCategories,
     teacherSubjects,
     saveTeacherSubjects,
+    examPrepSchedules,
+    saveExamPrepSchedules,
   });
   const dataIO = useDataIO({
     slots,
@@ -291,6 +303,7 @@ export default function App() {
     timetables,
     displayCutoff,
     examPeriods,
+    examPrepSchedules,
     classSets,
     sessionOverrides,
     teacherSubjects,
@@ -306,6 +319,7 @@ export default function App() {
     saveTimetables,
     saveDisplayCutoff,
     saveExamPeriods,
+    saveExamPrepSchedules,
     saveClassSets,
     saveSessionOverrides,
     saveTeacherSubjects,
@@ -643,7 +657,14 @@ export default function App() {
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
               <HolidayManager holidays={holidays} slots={slots} onSave={saveHolidays} isAdmin={isAdmin} />
-              <ExamPeriodManager examPeriods={examPeriods} onSave={saveExamPeriods} isAdmin={isAdmin} />
+              <ExamPeriodManager
+                examPeriods={examPeriods}
+                onSave={saveExamPeriods}
+                isAdmin={isAdmin}
+                partTimeStaff={partTimeStaff}
+                examPrepSchedules={examPrepSchedules}
+                examPrepCrud={examPrepCrud}
+              />
             </>
           )}
           {view === VIEWS.SUBS && !selected && (
@@ -734,6 +755,8 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               holidays={holidays}
               examPeriods={examPeriods}
+              examPrepSchedules={examPrepSchedules}
+              partTimeStaff={partTimeStaff}
               displayCutoff={displayCutoff}
             />
           )}
@@ -752,6 +775,8 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
+              examPrepSchedules={examPrepSchedules}
+              partTimeStaff={partTimeStaff}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}

@@ -31,10 +31,43 @@ export function MonthView({
   timetables,
   displayCutoff,
   examPeriods = [],
+  examPrepSchedules = [],
+  partTimeStaff = [],
   classSets,
   biweeklyAnchors,
   sessionOverrides,
 }) {
+  const isPartTime = useMemo(
+    () => (partTimeStaff || []).some((p) => p.name === teacher),
+    [partTimeStaff, teacher]
+  );
+  // 日付 → この講師の特訓シフト一覧。cells.map の各セルで O(1) 参照するための索引。
+  const examPrepByDate = useMemo(() => {
+    if (!isPartTime) return new Map();
+    const m = new Map();
+    for (const ep of examPeriods || []) {
+      if (!ep.startDate || !ep.endDate) continue;
+      if (ep.startDate.slice(0, 7) > `${year}-${String(month).padStart(2, "0")}`)
+        continue;
+      if (ep.endDate.slice(0, 7) < `${year}-${String(month).padStart(2, "0")}`)
+        continue;
+      const sch = (examPrepSchedules || []).find(
+        (s) => s.examPeriodId === ep.id
+      );
+      if (!sch) continue;
+      for (const day of sch.days || []) {
+        if (day.date < ep.startDate || day.date > ep.endDate) continue;
+        const nos = day.assignments?.[teacher];
+        if (!Array.isArray(nos) || nos.length === 0) continue;
+        const set = new Set(nos);
+        const shifts = (day.periods || [])
+          .filter((p) => set.has(p.no))
+          .sort((a, b) => a.no - b.no);
+        if (shifts.length > 0) m.set(day.date, shifts);
+      }
+    }
+    return m;
+  }, [isPartTime, examPeriods, examPrepSchedules, teacher, year, month]);
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -524,6 +557,51 @@ export function MonthView({
                       </div>
                     );
                   })}
+              {/* テスト直前特訓シフト (アルバイト講師のみ) */}
+              {isPartTime &&
+                (() => {
+                  const shifts = examPrepByDate.get(ds);
+                  if (!shifts || shifts.length === 0) return null;
+                  const first = shifts[0];
+                  const last = shifts[shifts.length - 1];
+                  return (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                        padding: "2px 3px",
+                        margin: "1px 0",
+                        borderRadius: 3,
+                        background: "#fdf5e8",
+                        borderLeft: "2px solid #e0a030",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={`特訓シフト ${first.start}〜${last.end}\n${shifts
+                        .map((s) => `${s.no}校時 ${s.start}-${s.end}`)
+                        .join("\n")}`}
+                    >
+                      <span
+                        style={{
+                          background: "#e0a030",
+                          color: "#fff",
+                          fontSize: 8,
+                          fontWeight: 800,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        特訓
+                      </span>
+                      <b>{first.start}</b>〜{last.end}{" "}
+                      <span style={{ fontSize: 10, color: "#8a5a1a" }}>
+                        ({shifts.length}校時)
+                      </span>
+                    </div>
+                  );
+                })()}
             </div>
           );
         })}

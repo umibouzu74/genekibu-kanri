@@ -21,6 +21,7 @@ import type {
   CutoffGroup,
   DisplayCutoff,
   ExamPeriod,
+  ExamPrepSchedule,
   ExportBundle,
   Holiday,
   PartTimeStaffObject,
@@ -34,7 +35,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -172,6 +173,29 @@ export function isSessionOverride(x: unknown): x is SessionOverride {
   if (x.mode !== "set" && x.mode !== "skip") return false;
   if (x.mode === "set" && !isNumber(x.value)) return false;
   if (x.displayAs !== undefined && !isNumber(x.displayAs)) return false;
+  return true;
+}
+
+export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.examPeriodId)) return false;
+  if (!Array.isArray(x.days)) return false;
+  for (const d of x.days as unknown[]) {
+    if (!isObject(d)) return false;
+    if (!isString(d.date)) return false;
+    if (!Array.isArray(d.periods)) return false;
+    for (const p of d.periods as unknown[]) {
+      if (!isObject(p)) return false;
+      if (!isNumber(p.no)) return false;
+      if (!isString(p.start)) return false;
+      if (!isString(p.end)) return false;
+    }
+    if (!isObject(d.assignments)) return false;
+    for (const v of Object.values(d.assignments)) {
+      if (!Array.isArray(v)) return false;
+      if (!v.every((n) => isNumber(n))) return false;
+    }
+  }
   return true;
 }
 
@@ -341,6 +365,20 @@ export function validateExportBundle(
         ok: false,
         error: `sessionOverrides[${bad}] の形式が不正です`,
         path: `sessionOverrides[${bad}]`,
+      };
+  }
+
+  if (raw.examPrepSchedules != null) {
+    if (!Array.isArray(raw.examPrepSchedules))
+      return { ok: false, error: "examPrepSchedules が配列ではありません" };
+    const bad = raw.examPrepSchedules.findIndex(
+      (s: unknown) => !isExamPrepSchedule(s)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `examPrepSchedules[${bad}] の形式が不正です`,
+        path: `examPrepSchedules[${bad}]`,
       };
   }
 
@@ -622,6 +660,14 @@ export function migrateExportBundle(raw: unknown): unknown {
   if (version < 10) {
     if (!Array.isArray(bundle.sessionOverrides)) {
       bundle.sessionOverrides = [];
+    }
+  }
+
+  // v10 → v11: examPrepSchedules (テスト直前特訓シフト) を追加。
+  //             既存データは空配列で初期化。
+  if (version < 11) {
+    if (!Array.isArray(bundle.examPrepSchedules)) {
+      bundle.examPrepSchedules = [];
     }
   }
 

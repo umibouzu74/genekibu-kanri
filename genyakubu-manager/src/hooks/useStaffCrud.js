@@ -1,6 +1,7 @@
 import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
+import { removeStaffFromSchedules } from "../utils/examPrepHelpers";
 
 // バイト・教科カテゴリ・教科の CRUD ロジック。
 export function useStaffCrud({
@@ -14,6 +15,8 @@ export function useStaffCrud({
   saveSubjectCategories,
   teacherSubjects,
   saveTeacherSubjects,
+  examPrepSchedules = [],
+  saveExamPrepSchedules,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -35,12 +38,23 @@ export function useStaffCrud({
       (s) => s.originalTeacher === name || s.substitute === name
     );
     const assignedSlots = slots.filter((s) => s.teacher === name);
+    const prepDayCount = (examPrepSchedules || []).reduce(
+      (acc, sch) =>
+        acc +
+        (sch.days || []).filter(
+          (d) => d.assignments && name in d.assignments
+        ).length,
+      0
+    );
     const warnings = [];
     if (assignedSlots.length) {
       warnings.push(`※ ${assignedSlots.length} 件のコマで担当講師として登録されています`);
     }
     if (usedInSubs) {
       warnings.push("※ 過去の代行記録は削除されません");
+    }
+    if (prepDayCount > 0) {
+      warnings.push(`※ ${prepDayCount} 日分の特訓シフト出勤が取り消されます`);
     }
     const extra = warnings.length ? "\n" + warnings.join("\n") : "";
     const ok = await confirm({
@@ -51,6 +65,9 @@ export function useStaffCrud({
     });
     if (!ok) return;
     savePartTimeStaff(partTimeStaff.filter((s) => s.name !== name));
+    if (prepDayCount > 0 && saveExamPrepSchedules) {
+      saveExamPrepSchedules(removeStaffFromSchedules(examPrepSchedules, name));
+    }
     toasts.success(`「${name}」を削除しました`);
   };
 

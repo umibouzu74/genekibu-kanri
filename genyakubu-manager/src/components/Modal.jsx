@@ -4,7 +4,7 @@ import { S } from "../styles/common";
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, width }) {
   const dialogRef = useRef(null);
   const titleId = useId();
 
@@ -60,7 +60,7 @@ export function Modal({ title, onClose, children }) {
       <div
         ref={dialogRef}
         className="mobile-card-pad"
-        style={S.card}
+        style={{ ...S.card, ...(width ? { width } : null) }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
