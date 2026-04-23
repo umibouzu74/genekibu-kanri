@@ -287,6 +287,8 @@ export default function App() {
     saveSubjectCategories,
     teacherSubjects,
     saveTeacherSubjects,
+    examPrepSchedules,
+    saveExamPrepSchedules,
   });
   const dataIO = useDataIO({
     slots,

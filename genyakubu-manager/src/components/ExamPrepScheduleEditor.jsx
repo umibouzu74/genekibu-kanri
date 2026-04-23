@@ -3,6 +3,7 @@ import { Modal } from "./Modal";
 import { S } from "../styles/common";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
 import {
+  detectOverlaps,
   findDay,
   isTimeRangeValid,
   nextPeriodNo,
@@ -110,17 +111,22 @@ export function ExamPrepScheduleEditor({
   };
 
   const handleDeletePeriod = (periodNo) => {
-    updateActiveDay((d) => {
-      const filtered = d.periods.filter((p) => p.no !== periodNo);
-      const renumbered = renumberPeriods(filtered);
-      const noMap = new Map();
-      filtered.forEach((p, i) => noMap.set(p.no, renumbered[i].no));
-      return {
-        ...d,
-        periods: renumbered,
-        assignments: remapAssignments(d.assignments, noMap),
-      };
-    });
+    if (!activeDay) return;
+    const filtered = activeDay.periods.filter((p) => p.no !== periodNo);
+    // 最後の 1 校時を消す場合は、日ごと削除する（空の日エントリを残さない）。
+    if (filtered.length === 0) {
+      crud.deleteDay(examPeriod.id, activeDate);
+      return;
+    }
+    const renumbered = renumberPeriods(filtered);
+    const noMap = new Map();
+    filtered.forEach((p, i) => noMap.set(p.no, renumbered[i].no));
+    const next = {
+      ...activeDay,
+      periods: renumbered,
+      assignments: remapAssignments(activeDay.assignments, noMap),
+    };
+    crud.upsertDay(examPeriod.id, next, { successMsg: null });
   };
 
   const handleChangePeriodTime = (periodNo, field, value) => {
@@ -156,7 +162,7 @@ export function ExamPrepScheduleEditor({
     });
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!activeDay) {
       toasts.error("コピー元の日を先に設定してください");
       return;
@@ -164,6 +170,18 @@ export function ExamPrepScheduleEditor({
     if (copyTargets.length === 0) {
       toasts.error("コピー先の日付を選択してください");
       return;
+    }
+    const overwrites = copyTargets.filter((d) => configuredDates.has(d));
+    if (overwrites.length > 0) {
+      const ok = await confirm({
+        title: "既存シフトの上書き",
+        message: `以下の日には既にシフト設定があります。上書きしますか？\n${overwrites
+          .map((d) => `・${fmtDateWeekday(d)}`)
+          .join("\n")}`,
+        okLabel: "上書き",
+        tone: "danger",
+      });
+      if (!ok) return;
     }
     crud.copyDay(examPeriod.id, activeDate, copyTargets);
     setCopyTargets([]);
@@ -175,12 +193,14 @@ export function ExamPrepScheduleEditor({
     );
   };
 
-  // 右ペインのテーブル表示用。時間範囲妥当性チェックも算出。
+  // 右ペインのテーブル表示用。時間範囲妥当性 + 校時同士の重複チェック。
   const periodWarnings = useMemo(() => {
-    if (!activeDay) return [];
-    return activeDay.periods
+    if (!activeDay) return { invalid: [], overlapping: new Set() };
+    const invalid = activeDay.periods
       .filter((p) => !isTimeRangeValid(p.start, p.end))
       .map((p) => p.no);
+    const overlapping = detectOverlaps(activeDay.periods);
+    return { invalid, overlapping };
   }, [activeDay]);
 
   const configuredDates = new Set((schedule?.days || []).map((d) => d.date));
@@ -311,7 +331,13 @@ export function ExamPrepScheduleEditor({
                   </thead>
                   <tbody>
                     {activeDay.periods.map((p) => {
-                      const invalid = periodWarnings.includes(p.no);
+                      const invalid = periodWarnings.invalid.includes(p.no);
+                      const overlap = periodWarnings.overlapping.has(p.no);
+                      const borderColor = invalid
+                        ? "#c44"
+                        : overlap
+                          ? "#d98a00"
+                          : "#ccc";
                       return (
                         <tr key={p.no}>
                           <td style={tdStyle}>{p.no}</td>
@@ -326,7 +352,7 @@ export function ExamPrepScheduleEditor({
                                 ...S.input,
                                 width: 100,
                                 padding: "4px 6px",
-                                borderColor: invalid ? "#c44" : "#ccc",
+                                borderColor,
                               }}
                             />
                           </td>
@@ -341,7 +367,7 @@ export function ExamPrepScheduleEditor({
                                 ...S.input,
                                 width: 100,
                                 padding: "4px 6px",
-                                borderColor: invalid ? "#c44" : "#ccc",
+                                borderColor,
                               }}
                             />
                           </td>
@@ -366,9 +392,14 @@ export function ExamPrepScheduleEditor({
                     })}
                   </tbody>
                 </table>
-                {periodWarnings.length > 0 && (
+                {periodWarnings.invalid.length > 0 && (
                   <div style={{ fontSize: 11, color: "#c44", marginTop: 4 }}>
-                    校時 {periodWarnings.join(", ")} の時刻が不正です（開始 &lt; 終了）
+                    校時 {periodWarnings.invalid.join(", ")} の時刻が不正です（開始 &lt; 終了）
+                  </div>
+                )}
+                {periodWarnings.overlapping.size > 0 && (
+                  <div style={{ fontSize: 11, color: "#a06000", marginTop: 4 }}>
+                    校時 {[...periodWarnings.overlapping].sort((a, b) => a - b).join(", ")} の時間帯が他の校時と重なっています
                   </div>
                 )}
                 <button

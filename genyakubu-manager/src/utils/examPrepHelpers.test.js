@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   copyDay,
+  detectOverlaps,
   findDay,
   findScheduleByExamPeriodId,
   getExamPrepShiftsForStaff,
@@ -8,6 +9,7 @@ import {
   nextPeriodNo,
   removeDay,
   removeSchedulesForPeriod,
+  removeStaffFromSchedules,
   timeStrToMin,
   upsertDay,
 } from "./examPrepHelpers";
@@ -186,6 +188,84 @@ describe("copyDay", () => {
   it("no-op when source day doesn't exist", () => {
     const next = copyDay(schedules, 1, "2026-05-99", ["2026-05-11"]);
     expect(next).toBe(schedules);
+  });
+});
+
+describe("removeStaffFromSchedules", () => {
+  it("removes staff from all days' assignments", () => {
+    const next = removeStaffFromSchedules(schedules, "福武");
+    const sch = findScheduleByExamPeriodId(next, 1);
+    const d = findDay(sch, "2026-05-08");
+    expect(d.assignments.福武).toBeUndefined();
+    expect(d.assignments.江本).toEqual([1, 2, 3]);
+  });
+
+  it("keeps unrelated days intact", () => {
+    const next = removeStaffFromSchedules(schedules, "架空の人");
+    expect(next).toEqual(schedules);
+  });
+
+  it("drops days whose periods are empty (invariant), not empty assignments", () => {
+    const withEmptyDay = [
+      {
+        examPeriodId: 9,
+        days: [
+          {
+            date: "2026-05-08",
+            periods: [],
+            assignments: { 福武: [1] },
+          },
+        ],
+      },
+    ];
+    const next = removeStaffFromSchedules(withEmptyDay, "福武");
+    // periods が空の day は drop → schedule 自体も days が空になるので drop
+    expect(next).toEqual([]);
+  });
+
+  it("handles falsy / malformed input", () => {
+    expect(removeStaffFromSchedules(null, "福武")).toEqual([]);
+    expect(removeStaffFromSchedules(undefined, "福武")).toEqual([]);
+  });
+});
+
+describe("detectOverlaps", () => {
+  it("returns empty set for disjoint periods", () => {
+    const out = detectOverlaps([
+      { no: 1, start: "18:00", end: "18:50" },
+      { no: 2, start: "19:00", end: "19:50" },
+    ]);
+    expect(out.size).toBe(0);
+  });
+
+  it("detects simple overlap", () => {
+    const out = detectOverlaps([
+      { no: 1, start: "18:00", end: "19:10" },
+      { no: 2, start: "19:00", end: "19:50" },
+    ]);
+    expect([...out].sort()).toEqual([1, 2]);
+  });
+
+  it("treats adjacent (end == start) as non-overlap", () => {
+    const out = detectOverlaps([
+      { no: 1, start: "18:00", end: "19:00" },
+      { no: 2, start: "19:00", end: "20:00" },
+    ]);
+    expect(out.size).toBe(0);
+  });
+
+  it("ignores invalid ranges but still detects overlaps among valid ones", () => {
+    const out = detectOverlaps([
+      { no: 1, start: "18:00", end: "19:00" },
+      { no: 2, start: "19:30", end: "19:00" }, // invalid
+      { no: 3, start: "18:30", end: "18:45" }, // overlaps 1
+    ]);
+    expect([...out].sort()).toEqual([1, 3]);
+  });
+
+  it("handles empty / non-array safely", () => {
+    expect(detectOverlaps([]).size).toBe(0);
+    expect(detectOverlaps(null).size).toBe(0);
   });
 });
 

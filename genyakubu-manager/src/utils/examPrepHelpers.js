@@ -115,6 +115,50 @@ export function removeSchedulesForPeriod(schedules, examPeriodId) {
   return schedules.filter((s) => s.examPeriodId !== examPeriodId);
 }
 
+// 全スケジュール内の assignments から指定 staff を削除して返す。
+// 空になった day は落とし、days が空になったスケジュール自体も落とす。
+export function removeStaffFromSchedules(schedules, staffName) {
+  if (!Array.isArray(schedules)) return [];
+  return schedules
+    .map((s) => {
+      const days = (s.days || [])
+        .map((d) => {
+          if (!d.assignments || !(staffName in d.assignments)) return d;
+          const { [staffName]: _removed, ...rest } = d.assignments;
+          void _removed;
+          return { ...d, assignments: rest };
+        })
+        .filter((d) => (d.periods || []).length > 0);
+      return { ...s, days };
+    })
+    .filter((s) => (s.days || []).length > 0);
+}
+
+// 同一日内の校時同士が時刻的に重複しているペアを検出する。
+// 戻り値は重複している校時 no 群の Set。
+export function detectOverlaps(periods) {
+  const bad = new Set();
+  if (!Array.isArray(periods)) return bad;
+  const spans = periods
+    .map((p) => ({
+      no: p.no,
+      s: timeStrToMin(p.start),
+      e: timeStrToMin(p.end),
+    }))
+    .filter((x) => Number.isFinite(x.s) && Number.isFinite(x.e) && x.s < x.e);
+  for (let i = 0; i < spans.length; i++) {
+    for (let j = i + 1; j < spans.length; j++) {
+      const a = spans[i];
+      const b = spans[j];
+      if (a.s < b.e && b.s < a.e) {
+        bad.add(a.no);
+        bad.add(b.no);
+      }
+    }
+  }
+  return bad;
+}
+
 // fromDate のシフト設定を toDates の各日にコピーして返す。
 export function copyDay(schedules, examPeriodId, fromDate, toDates) {
   const sch = findScheduleByExamPeriodId(schedules, examPeriodId);
