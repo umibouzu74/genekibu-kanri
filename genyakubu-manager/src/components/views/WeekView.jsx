@@ -118,6 +118,7 @@ export function WeekView({
 
   // 合同: 各スロットに対する直近14日間の合同予定 (host or absorbed)
   // 戻り値の各エントリ: { date, role: "host"|"absorbed", hostSlot, absorbedSlot?, absorbedSlots? }
+  // 隔週スロットは「その日付に実施する側の講師」にだけ通知を出す。
   const slotCombineMap = useMemo(() => {
     if (!adjustments?.length) return new Map();
     const slotById = new Map();
@@ -128,6 +129,9 @@ export function WeekView({
       if (!m.has(slotId)) m.set(slotId, []);
       m.get(slotId).push(entry);
     };
+    const isTeacherInactiveOnDate = (slot, dateStr) =>
+      isBiweekly(slot.note) &&
+      !isTeacherActiveOnDate(slot, teacher, dateStr, biweeklyAnchors);
 
     for (const adj of adjustments) {
       if (adj.type !== "combine") continue;
@@ -136,7 +140,10 @@ export function WeekView({
       const hostSlot = slotById.get(adj.slotId);
       if (!hostSlot) continue;
 
-      if (isSlotForTeacher(hostSlot, teacher)) {
+      if (
+        isSlotForTeacher(hostSlot, teacher) &&
+        !isTeacherInactiveOnDate(hostSlot, adj.date)
+      ) {
         const absorbedSlots = (adj.combineSlotIds || [])
           .map((id) => slotById.get(id))
           .filter(Boolean);
@@ -146,13 +153,15 @@ export function WeekView({
         const absorbedSlot = slotById.get(absorbedId);
         if (!absorbedSlot) continue;
         if (!isSlotForTeacher(absorbedSlot, teacher)) continue;
+        if (isTeacherInactiveOnDate(absorbedSlot, adj.date)) continue;
         push(absorbedId, { date: adj.date, role: "absorbed", hostSlot, absorbedSlot });
       }
     }
     return m;
-  }, [adjustments, slots, teacher, winStart, winEnd]);
+  }, [adjustments, slots, teacher, winStart, winEnd, biweeklyAnchors]);
 
   // 移動: 各スロットに対する直近14日間の移動予定
+  // 隔週スロットは「その日付に実施する側の講師」にだけ通知を出す。
   const slotMoveMap = useMemo(() => {
     if (!adjustments?.length) return new Map();
     const slotById = new Map();
@@ -165,11 +174,17 @@ export function WeekView({
       const slot = slotById.get(adj.slotId);
       if (!slot) continue;
       if (!isSlotForTeacher(slot, teacher)) continue;
+      if (
+        isBiweekly(slot.note) &&
+        !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors)
+      ) {
+        continue;
+      }
       if (!m.has(adj.slotId)) m.set(adj.slotId, []);
       m.get(adj.slotId).push({ date: adj.date, slot, targetTime: adj.targetTime });
     }
     return m;
-  }, [adjustments, slots, teacher, winStart, winEnd]);
+  }, [adjustments, slots, teacher, winStart, winEnd, biweeklyAnchors]);
 
   // 上部バナー用: フラット化 + 日付ソート
   const upcomingCombines = useMemo(() => {
