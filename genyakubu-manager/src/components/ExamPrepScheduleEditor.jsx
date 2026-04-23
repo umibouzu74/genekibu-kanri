@@ -6,6 +6,7 @@ import {
   findDay,
   isTimeRangeValid,
   nextPeriodNo,
+  timeStrToMin,
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
@@ -94,12 +95,16 @@ export function ExamPrepScheduleEditor({
     updateActiveDay((d) => {
       const no = nextPeriodNo(d.periods);
       const last = d.periods[d.periods.length - 1];
-      // 直前校時の終了時刻から +10 分を初期値として提案（無ければ 18:00 開始）。
-      const start = last?.end || "18:00";
-      const end = last?.end || "18:50";
+      // 直前校時の終了時刻から +10 分後に開始、50 分授業を既定値とする。
+      // 直前校時が無効または未設定なら 18:00-18:50 で初期化。
+      const lastEndMin = last ? timeStrToMin(last.end) : NaN;
+      const startMin = Number.isFinite(lastEndMin) ? lastEndMin + 10 : 18 * 60;
+      const endMin = startMin + 50;
+      const fmt = (m) =>
+        `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
       return {
         ...d,
-        periods: [...d.periods, { no, start, end }],
+        periods: [...d.periods, { no, start: fmt(startMin), end: fmt(endMin) }],
       };
     });
   };
@@ -184,8 +189,9 @@ export function ExamPrepScheduleEditor({
     <Modal
       title={`特訓シフト: ${examPeriod.name}`}
       onClose={onClose}
+      width="min(900px, 95vw)"
     >
-      <div style={{ display: "flex", gap: 16, minWidth: 720 }}>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         {/* 左ペイン: 日付リスト */}
         <div style={{ minWidth: 170, maxWidth: 200 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
@@ -225,7 +231,7 @@ export function ExamPrepScheduleEditor({
         </div>
 
         {/* 右ペイン: 選択日の編集 */}
-        <div style={{ flex: 1, minWidth: 520 }}>
+        <div style={{ flex: 1, minWidth: 320 }}>
           <div
             style={{
               display: "flex",
@@ -395,6 +401,7 @@ export function ExamPrepScheduleEditor({
                     アルバイト講師が登録されていません
                   </div>
                 ) : (
+                  <div style={{ overflowX: "auto" }}>
                   <table
                     style={{
                       borderCollapse: "collapse",
@@ -451,6 +458,7 @@ export function ExamPrepScheduleEditor({
                       })}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
 
