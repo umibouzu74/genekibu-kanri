@@ -10,6 +10,7 @@ const TYPE_META = {
   sub: { label: "代行", icon: "🔄", color: "#2a6a9e" },
   combine: { label: "合同", icon: "🔗", color: ADJ_COLOR.combine.color },
   move: { label: "移動", icon: "↔", color: ADJ_COLOR.move.color },
+  reschedule: { label: "振替", icon: "🗓", color: ADJ_COLOR.reschedule.color },
 };
 
 function yearMonthOf(ds) {
@@ -46,6 +47,7 @@ export function AdjustmentLogView({ slots, subs, adjustments }) {
   const [showSub, setShowSub] = useState(true);
   const [showCombine, setShowCombine] = useState(true);
   const [showMove, setShowMove] = useState(true);
+  const [showReschedule, setShowReschedule] = useState(true);
 
   // 各イベントを { date, kind, payload, time } に正規化
   const events = useMemo(() => {
@@ -70,6 +72,7 @@ export function AdjustmentLogView({ slots, subs, adjustments }) {
       if (monthFilter && yearMonthOf(adj.date) !== monthFilter) continue;
       if (adj.type === "combine" && !showCombine) continue;
       if (adj.type === "move" && !showMove) continue;
+      if (adj.type === "reschedule" && !showReschedule) continue;
       const slot = slotById.get(adj.slotId);
       out.push({
         kind: adj.type,
@@ -81,7 +84,16 @@ export function AdjustmentLogView({ slots, subs, adjustments }) {
       });
     }
     return out;
-  }, [subs, adjustments, slotById, monthFilter, showSub, showCombine, showMove]);
+  }, [
+    subs,
+    adjustments,
+    slotById,
+    monthFilter,
+    showSub,
+    showCombine,
+    showMove,
+    showReschedule,
+  ]);
 
   // 日付別グルーピング (新しい日付が上)
   const groups = useMemo(() => {
@@ -134,6 +146,7 @@ export function AdjustmentLogView({ slots, subs, adjustments }) {
           { key: "sub", state: showSub, set: setShowSub },
           { key: "combine", state: showCombine, set: setShowCombine },
           { key: "move", state: showMove, set: setShowMove },
+          { key: "reschedule", state: showReschedule, set: setShowReschedule },
         ].map(({ key, state, set }) => {
           const meta = TYPE_META[key];
           return (
@@ -298,6 +311,29 @@ function EventRow({ ev, slotById }) {
         <span style={{ marginLeft: 6, color: "#666" }}>
           {ev.slot?.time || "?"} → <strong>{ev.adj.targetTime}</strong>
         </span>
+      </>
+    );
+  } else if (ev.kind === "reschedule") {
+    const targetParts = [ev.adj.targetDate];
+    if (ev.adj.targetTime) targetParts.push(ev.adj.targetTime);
+    body = (
+      <>
+        <span style={{ color: "#333" }}>
+          <strong>{slotLabel}</strong>
+        </span>
+        <span style={{ marginLeft: 6, color: "#666" }}>
+          {ev.slot?.time || "?"} → <strong>{targetParts.join(" ")}</strong>
+          {ev.adj.targetTeacher && (
+            <span style={{ marginLeft: 6, color: "#888" }}>
+              担当: {ev.adj.targetTeacher}
+            </span>
+          )}
+        </span>
+        {ev.adj.memo && (
+          <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
+            {ev.adj.memo}
+          </span>
+        )}
       </>
     );
   }

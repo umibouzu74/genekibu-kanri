@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay, DEPT_COLOR } from "../../../data";
+import { ADJ_COLOR, dateToDay, DEPT_COLOR, timeToMin } from "../../../data";
 import { getDashSections } from "../../../constants/schedule";
 import { ContextMenu } from "../../ContextMenu";
 import { AbsenceSlotCard } from "./AbsenceSlotCard";
 import { AbsenceExcelSection } from "./AbsenceExcelSection";
 import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
+import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
 
 // ─── 欠勤ワークフロー: 時間割グリッド (直接操作 UI) ────────────
@@ -20,22 +21,29 @@ import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHe
 
 export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
+  allSlots, // 全スロット (振替先日付の候補時間帯抽出用)
   draft, // draft.draft (useAbsenceDraft から)
-  draftApi, // updateSub, clearSub, updateMove, clearMove, setCombine, clearCombine, updateOverride, markAdjustmentRemoved
+  draftApi, // updateSub, clearSub, updateMove, clearMove, updateReschedule, clearReschedule, setCombine, clearCombine, updateOverride, markAdjustmentRemoved
   existingSubs, // 既存確定代行 (date フィルタ済み)
   existingAdjustments, // 既存調整 (date フィルタ前)
   removedAdjustmentIds, // Set<number> draft 上で解除マークされた adjustment id
+  removedSubIds, // Set<number> draft 上で解除マークされた substitute id
   sessionCountMap, // Map<slotId, number> draft 反映済み
   absentSlotIds, // Set<slotId>
   partTimeStaff,
   subjects,
   biweeklyAnchors,
+  allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
+  timetables, // 振替先の有効時間割フィルタ用
+  isOffForGrade, // 振替先の休講/テスト期間警告用
+  sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
   const [combineSource, setCombineSource] = useState(null);
   const [subPicker, setSubPicker] = useState(null); // { slot, anchorRect }
   const [overridePicker, setOverridePicker] = useState(null); // { slot, anchorRect }
+  const [reschedulePicker, setReschedulePicker] = useState(null); // { slot, anchorRect }
 
   const dow = useMemo(() => dateToDay(date), [date]);
 
@@ -57,15 +65,46 @@ export function AbsenceTimetable({
   }, [existingAdjustments, date, removedAdjustmentIds]);
 
   // 既存調整のインデックス: slotId -> adjustment (種別ごと)
-  const { existingCombineBySlot, existingMoveBySlot } = useMemo(() => {
-    const combineMap = new Map(); // hostSlotId -> adjustment
-    const moveMap = new Map(); // slotId -> adjustment
-    for (const adj of activeExistingAdjustments) {
-      if (adj.type === "combine") combineMap.set(adj.slotId, adj);
-      else if (adj.type === "move") moveMap.set(adj.slotId, adj);
+  const { existingCombineBySlot, existingMoveBySlot, existingRescheduleBySlot } =
+    useMemo(() => {
+      const combineMap = new Map(); // hostSlotId -> adjustment
+      const moveMap = new Map(); // slotId -> adjustment
+      const rescheduleMap = new Map(); // slotId -> adjustment
+      for (const adj of activeExistingAdjustments) {
+        if (adj.type === "combine") combineMap.set(adj.slotId, adj);
+        else if (adj.type === "move") moveMap.set(adj.slotId, adj);
+        else if (adj.type === "reschedule") rescheduleMap.set(adj.slotId, adj);
+      }
+      return {
+        existingCombineBySlot: combineMap,
+        existingMoveBySlot: moveMap,
+        existingRescheduleBySlot: rescheduleMap,
+      };
+    }, [activeExistingAdjustments]);
+
+  // 他日から当日へ振替えられてきたコマ (incoming) を集約。
+  // 「本多が 4/24 休み → 今日のコマを 5/1 に振替」という adjustment が
+  // あるとき、5/1 の画面では「+ 振替で来たコマ」バナーとして可視化したい。
+  const incomingReschedules = useMemo(() => {
+    const removed = removedAdjustmentIds || new Set();
+    const slotById = new Map();
+    for (const s of allSlots || []) slotById.set(s.id, s);
+    const out = [];
+    for (const adj of existingAdjustments || []) {
+      if (adj.type !== "reschedule") continue;
+      if (removed.has(adj.id)) continue;
+      if (adj.targetDate !== date) continue;
+      const slot = slotById.get(adj.slotId);
+      if (!slot) continue;
+      out.push({ adj, slot });
     }
-    return { existingCombineBySlot: combineMap, existingMoveBySlot: moveMap };
-  }, [activeExistingAdjustments]);
+    out.sort(
+      (a, b) =>
+        timeToMin(a.adj.targetTime || a.slot.time || "00:00") -
+        timeToMin(b.adj.targetTime || b.slot.time || "00:00")
+    );
+    return out;
+  }, [existingAdjustments, removedAdjustmentIds, date, allSlots]);
 
   // draft + 既存 からの実効的な合同状態 (draft が同 slot にある場合は draft を優先)
   const { absorbedSet, hostByAbsorbed, hostsAbsorbedMap, combineSourceByHost } = useMemo(() => {
@@ -129,6 +168,33 @@ export function AbsenceTimetable({
     });
     return { effectiveSlots: list, moveSourceBySlot: sourceBySlot };
   }, [slots, draft, existingMoveBySlot]);
+
+  // draft + 既存 からの実効的な振替状態 (draft 優先)。
+  //   slotId -> { targetDate, targetTime?, targetTeacher?, memo, source }
+  const rescheduleBySlot = useMemo(() => {
+    const map = new Map();
+    for (const [sid, adj] of existingRescheduleBySlot) {
+      if (draft[sid]?.reschedule?.targetDate) continue; // draft 優先
+      map.set(sid, {
+        targetDate: adj.targetDate,
+        targetTime: adj.targetTime || "",
+        targetTeacher: adj.targetTeacher || "",
+        memo: adj.memo || "",
+        source: "saved",
+      });
+    }
+    for (const [sidStr, row] of Object.entries(draft)) {
+      if (!row.reschedule?.targetDate) continue;
+      map.set(Number(sidStr), {
+        targetDate: row.reschedule.targetDate,
+        targetTime: row.reschedule.targetTime || "",
+        targetTeacher: row.reschedule.targetTeacher || "",
+        memo: row.reschedule.memo || "",
+        source: "draft",
+      });
+    }
+    return map;
+  }, [draft, existingRescheduleBySlot]);
 
   // 表示対象 (absorbed は除外、host/移動済みは残す)
   const visibleSlots = useMemo(
@@ -230,6 +296,35 @@ export function AbsenceTimetable({
           });
         }
 
+        // 振替 (他日への移動)。合同 host の状態では振替不可 (排他)。
+        const hasReschedule = rescheduleBySlot.has(slot.id);
+        const blockReschedule = isHost; // absorbed は分岐の外側で処理済み
+        items.push({
+          label: hasReschedule ? "振替を変更…" : "振替にする…",
+          disabled: blockReschedule,
+          onClick: blockReschedule
+            ? undefined
+            : () => {
+                const anchorRect = e.target.getBoundingClientRect();
+                setReschedulePicker({ slot, anchorRect });
+              },
+        });
+        if (hasReschedule) {
+          const info = rescheduleBySlot.get(slot.id);
+          items.push({
+            label: "振替を取り消す",
+            danger: true,
+            onClick: () => {
+              if (info.source === "saved") {
+                const existing = existingRescheduleBySlot.get(slot.id);
+                if (existing) draftApi.markAdjustmentRemoved(existing.id);
+              } else {
+                draftApi.clearReschedule(slot.id);
+              }
+            },
+          });
+        }
+
         // 回数補正
         items.push({
           label: hasOverride ? "回数補正を変更…" : "回数を補正…",
@@ -269,6 +364,8 @@ export function AbsenceTimetable({
       moveSourceBySlot,
       existingCombineBySlot,
       existingMoveBySlot,
+      existingRescheduleBySlot,
+      rescheduleBySlot,
       draftApi,
       slots,
       subjects,
@@ -340,7 +437,7 @@ export function AbsenceTimetable({
         ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
         : null;
 
-      // 代行: draft or 既存確定
+      // 代行: draft or 既存確定 (removedSubIds でマーク済みは表示から除外)
       let substituteName = null;
       let substituteStatus = null;
       if (row.sub?.substitute) {
@@ -348,7 +445,10 @@ export function AbsenceTimetable({
         substituteStatus = row.sub.status || "confirmed";
       } else {
         const ex = (existingSubs || []).find(
-          (x) => x.date === date && x.slotId === s.id
+          (x) =>
+            x.date === date &&
+            x.slotId === s.id &&
+            !removedSubIds?.has(x.id)
         );
         if (ex?.substitute) {
           substituteName = ex.substitute;
@@ -392,6 +492,20 @@ export function AbsenceTimetable({
 
       const isMoved = !!row.move?.targetTime || moveSourceBySlot.get(s.id) === "saved";
 
+      // 振替情報。targetTime が空なら元コマの時間帯を使う。
+      const reschedule = rescheduleBySlot.get(s.id) || null;
+      let rescheduleLabel = null;
+      if (reschedule) {
+        const timeText = reschedule.targetTime || s.time;
+        const parts = [`→ ${reschedule.targetDate}`];
+        if (timeText) parts.push(timeText);
+        if (reschedule.targetTeacher && reschedule.targetTeacher !== s.teacher) {
+          parts.push(`(${reschedule.targetTeacher})`);
+        }
+        rescheduleLabel = `振替 ${parts.join(" ")}`;
+        if (reschedule.memo) rescheduleLabel += ` - ${reschedule.memo}`;
+      }
+
       return (
         <AbsenceSlotCard
           key={s.id}
@@ -412,6 +526,8 @@ export function AbsenceTimetable({
           isCombineSource={isCombineSource}
           disableDrag={disableDrag}
           dimmed={dimmed}
+          isRescheduled={!!reschedule}
+          rescheduleLabel={rescheduleLabel}
           onContextMenu={(e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
           onClick={() => handleSlotClick(s)}
@@ -424,9 +540,11 @@ export function AbsenceTimetable({
       hostsAbsorbedMap,
       hostByAbsorbed,
       moveSourceBySlot,
+      rescheduleBySlot,
       absentSlotIds,
       slots,
       existingSubs,
+      removedSubIds,
       date,
       biweeklyAnchors,
       combineSource,
@@ -440,12 +558,19 @@ export function AbsenceTimetable({
 
   // 解除予定のアイテムを人間可読な短いラベルに
   const describeRemoved = (adj) => {
-    const slot = slots.find((s) => s.id === adj.slotId);
+    const slot =
+      slots.find((s) => s.id === adj.slotId) ||
+      (allSlots || []).find((s) => s.id === adj.slotId);
     const slotLabel = slot
       ? `${slot.time} ${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`
       : `slot#${adj.slotId}`;
     if (adj.type === "combine") return `合同: ${slotLabel}`;
     if (adj.type === "move") return `移動: ${slotLabel} → ${adj.targetTime}`;
+    if (adj.type === "reschedule") {
+      return `振替: ${slotLabel} → ${adj.targetDate}${
+        adj.targetTime ? ` ${adj.targetTime}` : ""
+      }`;
+    }
     return slotLabel;
   };
 
@@ -569,6 +694,71 @@ export function AbsenceTimetable({
         </div>
       )}
 
+      {/* 振替で当日に来るコマの案内バナー (他日からこの日付へ振り替えられたもの) */}
+      {incomingReschedules.length > 0 && (
+        <div
+          style={{
+            background: ADJ_COLOR.reschedule.bannerBg,
+            border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
+            borderRadius: 6,
+            padding: "8px 14px",
+            marginBottom: 10,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <strong style={{ color: ADJ_COLOR.reschedule.deep }}>
+              この日に振替で入るコマ: {incomingReschedules.length} 件
+            </strong>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {incomingReschedules.map(({ adj, slot }) => {
+              const timeText = adj.targetTime || slot.time;
+              const teacherText = adj.targetTeacher || slot.teacher;
+              const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+              const titleParts = [`元: ${adj.date} ${slot.time}`];
+              if (adj.memo) titleParts.push(adj.memo);
+              return (
+                <span
+                  key={adj.id}
+                  title={titleParts.join(" / ")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    background: "#fff",
+                    border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
+                    borderRadius: 12,
+                    padding: "2px 8px",
+                    fontSize: 11,
+                    color: ADJ_COLOR.reschedule.deep,
+                  }}
+                >
+                  <span style={{ fontWeight: 700 }}>{timeText}</span>
+                  <span>
+                    {slot.grade}
+                    {cls} {slot.subj}
+                  </span>
+                  <span style={{ color: "#666" }}>({teacherText})</span>
+                  <span style={{ color: "#888" }}>← {adj.date}</span>
+                  {adj.memo && (
+                    <span
+                      style={{
+                        color: "#888",
+                        fontStyle: "italic",
+                        marginLeft: 2,
+                      }}
+                    >
+                      {adj.memo}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           fontSize: 11,
@@ -576,7 +766,7 @@ export function AbsenceTimetable({
           marginBottom: 6,
         }}
       >
-        コマをドラッグ → 別時間セルにドロップで移動 / 右クリック → メニューで代行・合同・回数補正
+        コマをドラッグ → 別時間セルにドロップで移動 / 右クリック → メニューで代行・合同・振替・回数補正
       </div>
 
       {effectiveSlots.length === 0 ? (
@@ -692,6 +882,85 @@ export function AbsenceTimetable({
           onSave={(payload) => draftApi.updateOverride(overridePicker.slot.id, payload)}
           onClear={() => draftApi.updateOverride(overridePicker.slot.id, null)}
           onClose={() => setOverridePicker(null)}
+        />
+      )}
+
+      {/* 振替ピッカー */}
+      {reschedulePicker && (
+        <ReschedulePickerPopover
+          anchorRect={reschedulePicker.anchorRect}
+          slot={reschedulePicker.slot}
+          sourceDate={date}
+          allSlots={allSlots}
+          allTeachers={allTeachers}
+          timetables={timetables}
+          isOffForGrade={isOffForGrade}
+          hasAutoSkip={(() => {
+            const sid = reschedulePicker.slot.id;
+            // draft 上の override が skip ならそれを引き継ぐ。なければ
+            // 保存済み sessionOverrides を date+slotId で検索。
+            const draftOv = draft[sid]?.override;
+            if (draftOv) return draftOv.mode === "skip";
+            const ex = (sessionOverrides || []).find(
+              (o) => o.date === date && o.slotId === sid
+            );
+            return ex?.mode === "skip";
+          })()}
+          initial={
+            draft[reschedulePicker.slot.id]?.reschedule ||
+            rescheduleBySlot.get(reschedulePicker.slot.id) ||
+            null
+          }
+          onSave={(payload) => {
+            const slotId = reschedulePicker.slot.id;
+            const { autoSkip, ...reschedulePayload } = payload;
+            // 既存 (saved) からの変更は draft に写した上で既存を除去マーク
+            const info = rescheduleBySlot.get(slotId);
+            if (info?.source === "saved") {
+              const existing = existingRescheduleBySlot.get(slotId);
+              if (existing) draftApi.markAdjustmentRemoved(existing.id);
+            }
+            // 同コマで既に確定している代行があれば解除マーク
+            // (振替するなら同日の代行は不要のため)
+            for (const sub of existingSubs || []) {
+              if (sub.date === date && sub.slotId === slotId) {
+                draftApi.markSubRemoved(sub.id);
+              }
+            }
+            draftApi.updateReschedule(slotId, reschedulePayload);
+            // autoSkip: 元日付の回数カウントから外す skip override を付与
+            if (autoSkip) {
+              draftApi.updateOverride(slotId, {
+                mode: "skip",
+                memo: "振替に伴う skip",
+              });
+            } else {
+              // ユーザーが明示的にチェック解除した場合: 既存の skip override を解除
+              const existingOv = (sessionOverrides || []).find(
+                (o) => o.date === date && o.slotId === slotId && o.mode === "skip"
+              );
+              if (existingOv || draft[slotId]?.override?.mode === "skip") {
+                draftApi.updateOverride(slotId, null);
+              }
+            }
+          }}
+          onClear={() => {
+            const slotId = reschedulePicker.slot.id;
+            const info = rescheduleBySlot.get(slotId);
+            if (info?.source === "saved") {
+              const existing = existingRescheduleBySlot.get(slotId);
+              if (existing) draftApi.markAdjustmentRemoved(existing.id);
+            } else {
+              draftApi.clearReschedule(slotId);
+            }
+            // 振替設定時に解除マークしていた既存代行を取り消す (元の状態へ)
+            for (const sub of existingSubs || []) {
+              if (sub.date === date && sub.slotId === slotId) {
+                draftApi.unmarkSubRemoved(sub.id);
+              }
+            }
+          }}
+          onClose={() => setReschedulePicker(null)}
         />
       )}
     </div>

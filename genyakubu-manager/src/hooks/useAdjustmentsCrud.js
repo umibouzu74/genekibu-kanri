@@ -2,7 +2,17 @@ import { useCallback } from "react";
 import { useCrudResource } from "./useCrudResource";
 import { useToasts } from "./useToasts";
 
-// 時間割調整 (move / combine) の CRUD ロジック。
+const ADJ_LABEL = {
+  move: "コマ移動",
+  combine: "合同授業",
+  reschedule: "振替",
+};
+
+function adjLabel(type) {
+  return ADJ_LABEL[type] || "時間割調整";
+}
+
+// 時間割調整 (move / combine / reschedule) の CRUD ロジック。
 export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: adjustments, save: saveAdjustments });
@@ -10,8 +20,7 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
   const add = useCallback(
     (adj) => {
       crud.add(adj, {
-        successMsg:
-          adj.type === "move" ? "コマ移動を登録しました" : "合同授業を登録しました",
+        successMsg: `${adjLabel(adj.type)}を登録しました`,
         withCreatedAt: true,
       });
     },
@@ -31,9 +40,7 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
         ...filtered,
         { ...newAdj, id, createdAt: ts },
       ]);
-      toasts.success(
-        newAdj.type === "move" ? "コマ移動を更新しました" : "合同授業を更新しました"
-      );
+      toasts.success(`${adjLabel(newAdj.type)}を更新しました`);
     },
     [adjustments, saveAdjustments, toasts]
   );

@@ -21,10 +21,11 @@ function nextId(list) {
  * @param {Array} args.draftAdjustments      追加する調整 (date, type, slotId, targetTime?, combineSlotIds?, memo)
  * @param {Array} args.draftOverrides        追加する回数補正 (date, slotId, mode, value?, displayAs?, memo)
  * @param {Array<number>} [args.removedAdjustmentIds]  解除する既存 adjustment の id 配列
+ * @param {Array<number>} [args.removedSubIds]         解除する既存 substitute の id 配列
  * @param {Function} args.saveSubs
  * @param {Function} args.saveAdjustments
  * @param {Function} args.saveSessionOverrides
- * @returns {{added: {subs: number, adjustments: number, overrides: number, removed: number}}}
+ * @returns {{added: {subs: number, adjustments: number, overrides: number, removed: number, removedSubs: number}}}
  */
 export function saveAbsenceBatch({
   subsList,
@@ -34,13 +35,22 @@ export function saveAbsenceBatch({
   draftAdjustments = [],
   draftOverrides = [],
   removedAdjustmentIds = [],
+  removedSubIds = [],
   saveSubs,
   saveAdjustments,
   saveSessionOverrides,
 }) {
   const ts = new Date().toISOString();
 
-  // Substitutes
+  // Substitutes: 解除マーク分を除外、追加分を末尾に。
+  const removedSubIdSet = new Set(
+    (removedSubIds || []).map((x) => Number(x)).filter((x) => Number.isFinite(x))
+  );
+  const keptSubs = removedSubIdSet.size
+    ? subsList.filter((s) => !removedSubIdSet.has(Number(s?.id)))
+    : subsList;
+  const removedSubsCount = subsList.length - keptSubs.length;
+
   let subId = nextId(subsList);
   const newSubs = draftSubs.map((r) => ({
     ...r,
@@ -82,7 +92,9 @@ export function saveAbsenceBatch({
     : adjustmentsList;
   const removedCount = adjustmentsList.length - keptAdjustments.length;
 
-  if (newSubs.length > 0) saveSubs([...subsList, ...newSubs]);
+  if (newSubs.length > 0 || removedSubsCount > 0) {
+    saveSubs([...keptSubs, ...newSubs]);
+  }
   if (newAdjs.length > 0 || removedCount > 0) {
     saveAdjustments([...keptAdjustments, ...newAdjs]);
   }
@@ -96,6 +108,7 @@ export function saveAbsenceBatch({
       adjustments: newAdjs.length,
       overrides: newOverrides.length,
       removed: removedCount,
+      removedSubs: removedSubsCount,
     },
   };
 }

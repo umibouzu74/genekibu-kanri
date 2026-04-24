@@ -67,15 +67,17 @@ export interface BiweeklyAnchor {
   weekType: "A"; // 常にA週（UIシンプル化のため）
 }
 
-export type AdjustmentType = "move" | "combine";
+export type AdjustmentType = "move" | "combine" | "reschedule";
 
 export interface ScheduleAdjustment {
   id: number;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD (振替/移動元の日付)
   type: AdjustmentType;
   slotId: number; // 主対象コマ
-  targetTime?: string; // "move" 用: 移動先の時間帯
+  targetTime?: string; // "move"/"reschedule" 用: 移動先の時間帯
   combineSlotIds?: number[]; // "combine" 用: 合同にするコマID群
+  targetDate?: string; // "reschedule" 用: 振替先の日付 (YYYY-MM-DD)
+  targetTeacher?: string; // "reschedule" 用: 振替先担当者 (未指定 = 元担当)
   memo: string;
   createdAt?: string;
 }

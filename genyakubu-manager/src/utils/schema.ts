@@ -35,7 +35,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -103,14 +103,23 @@ export function isBiweeklyAnchor(x: unknown): x is BiweeklyAnchor {
 }
 
 export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
-  return (
-    isObject(x) &&
-    isNumber(x.id) &&
-    isString(x.date) &&
-    isString(x.type) &&
-    (x.type === "move" || x.type === "combine") &&
-    isNumber(x.slotId)
-  );
+  if (
+    !(
+      isObject(x) &&
+      isNumber(x.id) &&
+      isString(x.date) &&
+      isString(x.type) &&
+      (x.type === "move" || x.type === "combine" || x.type === "reschedule") &&
+      isNumber(x.slotId)
+    )
+  ) {
+    return false;
+  }
+  // reschedule は targetDate (ISO 形式) が必須
+  if (x.type === "reschedule" && !isIsoDate(x.targetDate)) return false;
+  // targetTeacher は省略可だが、入っていれば文字列であること
+  if (x.targetTeacher !== undefined && !isString(x.targetTeacher)) return false;
+  return true;
 }
 
 export function isTimetable(x: unknown): x is Timetable {
@@ -670,6 +679,13 @@ export function migrateExportBundle(raw: unknown): unknown {
       bundle.examPrepSchedules = [];
     }
   }
+
+  // v11 → v12: ScheduleAdjustment に "reschedule" 種別を追加。
+  //             既存 adjustments は move/combine のみのため変換不要 (no-op
+  //             だがバージョン番号で「reschedule を理解する schema」と
+  //             明示する)。今後 reschedule 必須フィールドを追加した際の
+  //             ための切れ目として版を上げる。
+  // 既存データは触らない。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

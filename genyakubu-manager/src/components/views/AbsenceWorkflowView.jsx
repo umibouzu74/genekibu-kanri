@@ -30,6 +30,7 @@ export function AbsenceWorkflowView({
   displayCutoff,
   partTimeStaff,
   subjects,
+  timetables,
   saveSubs,
   saveAdjustments,
   saveSessionOverrides,
@@ -60,6 +61,12 @@ export function AbsenceWorkflowView({
 
   const dayName = useMemo(() => dateToDay(date), [date]);
 
+  // 休講/テスト期間判定 (sessionCount 計算 + 振替先警告で共有)
+  const isOffForGrade = useMemo(
+    () => makeHolidayHelpers(holidays || [], examPeriods || []).isOffForGrade,
+    [holidays, examPeriods]
+  );
+
   // 全先生リスト
   const allTeachers = useMemo(() => {
     const set = new Set();
@@ -85,12 +92,15 @@ export function AbsenceWorkflowView({
   // ドラフト反映済みの回数 map
   const sessionCountMap = useMemo(() => {
     if (!date || !displayCutoff) return new Map();
-    const { isOffForGrade } = makeHolidayHelpers(holidays || [], examPeriods || []);
 
     // ドラフトを effective な adjustments / overrides に連結
     const draftAdjustments = [];
     const draftOverridesLocal = [];
-    const draftOverridingSlots = { combine: new Set(), move: new Set() };
+    const draftOverridingSlots = {
+      combine: new Set(),
+      move: new Set(),
+      reschedule: new Set(),
+    };
     let idBase = -1000;
     for (const [sidStr, row] of Object.entries(draft.draft)) {
       const slotId = Number(sidStr);
@@ -115,6 +125,22 @@ export function AbsenceWorkflowView({
           memo: "(draft)",
         });
         draftOverridingSlots.move.add(slotId);
+      }
+      if (row.reschedule?.targetDate) {
+        const entry = {
+          id: idBase--,
+          date,
+          type: "reschedule",
+          slotId,
+          targetDate: row.reschedule.targetDate,
+          memo: "(draft)",
+        };
+        if (row.reschedule.targetTime) entry.targetTime = row.reschedule.targetTime;
+        if (row.reschedule.targetTeacher) {
+          entry.targetTeacher = row.reschedule.targetTeacher;
+        }
+        draftAdjustments.push(entry);
+        draftOverridingSlots.reschedule.add(slotId);
       }
       if (row.override) {
         if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
@@ -142,6 +168,9 @@ export function AbsenceWorkflowView({
       if (a.date === date) {
         if (a.type === "combine" && draftOverridingSlots.combine.has(a.slotId)) return false;
         if (a.type === "move" && draftOverridingSlots.move.has(a.slotId)) return false;
+        if (a.type === "reschedule" && draftOverridingSlots.reschedule.has(a.slotId)) {
+          return false;
+        }
       }
       return true;
     });
@@ -156,7 +185,7 @@ export function AbsenceWorkflowView({
       sessionOverrides: [...(sessionOverrides || []), ...draftOverridesLocal],
       orientationOnFirstDay: true,
     });
-  }, [daySlots, slots, date, classSets, displayCutoff, holidays, examPeriods, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);
+  }, [daySlots, slots, date, classSets, displayCutoff, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);
 
   const toggleTeacher = useCallback(
     (name) => {
@@ -177,11 +206,13 @@ export function AbsenceWorkflowView({
       if (row.sub?.substitute) c++;
       if (row.combine?.absorbedSlotIds?.length) c++;
       if (row.move?.targetTime) c++;
+      if (row.reschedule?.targetDate) c++;
       if (row.override) c++;
     }
     c += (draft.removedAdjustmentIds?.size || 0);
+    c += (draft.removedSubIds?.size || 0);
     return c;
-  }, [draft.draft, draft.removedAdjustmentIds]);
+  }, [draft.draft, draft.removedAdjustmentIds, draft.removedSubIds]);
 
   // 下書きがある状態でタブを閉じる / リロードしようとしたら警告
   useEffect(() => {
@@ -224,13 +255,19 @@ export function AbsenceWorkflowView({
   );
 
   const handleSave = useCallback(() => {
-    const { draftSubs, draftAdjustments, draftOverrides, removedAdjustmentIds } =
-      draft.toBatchPayload(date, slots, adjustments || []);
+    const {
+      draftSubs,
+      draftAdjustments,
+      draftOverrides,
+      removedAdjustmentIds,
+      removedSubIds,
+    } = draft.toBatchPayload(date, slots, adjustments || []);
     if (
       draftSubs.length === 0 &&
       draftAdjustments.length === 0 &&
       draftOverrides.length === 0 &&
-      (!removedAdjustmentIds || removedAdjustmentIds.length === 0)
+      (!removedAdjustmentIds || removedAdjustmentIds.length === 0) &&
+      (!removedSubIds || removedSubIds.length === 0)
     ) {
       toasts.error("変更がありません");
       return;
@@ -244,6 +281,7 @@ export function AbsenceWorkflowView({
         draftAdjustments,
         draftOverrides,
         removedAdjustmentIds,
+        removedSubIds,
         saveSubs,
         saveAdjustments,
         saveSessionOverrides,
@@ -252,7 +290,8 @@ export function AbsenceWorkflowView({
       if (res.added.subs) parts.push(`代行 ${res.added.subs} 件`);
       if (res.added.adjustments) parts.push(`調整 ${res.added.adjustments} 件`);
       if (res.added.overrides) parts.push(`回数補正 ${res.added.overrides} 件`);
-      if (res.added.removed) parts.push(`解除 ${res.added.removed} 件`);
+      if (res.added.removed) parts.push(`調整解除 ${res.added.removed} 件`);
+      if (res.added.removedSubs) parts.push(`代行解除 ${res.added.removedSubs} 件`);
       toasts.success(`保存しました (${parts.join(" / ")})`);
       draft.reset();
     } catch (err) {
@@ -362,16 +401,22 @@ export function AbsenceWorkflowView({
       {/* Timetable grid */}
       <AbsenceTimetable
         slots={daySlots}
+        allSlots={slots}
         draft={draft.draft}
         draftApi={draft}
         existingSubs={subs}
         existingAdjustments={adjustments}
         removedAdjustmentIds={draft.removedAdjustmentIds}
+        removedSubIds={draft.removedSubIds}
         sessionCountMap={sessionCountMap}
         absentSlotIds={absentSlotIds}
         partTimeStaff={partTimeStaff}
         subjects={subjects}
         biweeklyAnchors={biweeklyAnchors}
+        allTeachers={allTeachers}
+        timetables={timetables}
+        isOffForGrade={isOffForGrade}
+        sessionOverrides={sessionOverrides}
         date={date}
       />
 

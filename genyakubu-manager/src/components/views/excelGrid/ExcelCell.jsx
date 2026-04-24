@@ -63,6 +63,7 @@ export const ExcelCell = memo(function ExcelCell({
   hostedSlots = null,
   moveTarget = null,
   moveOriginalTime = null,
+  rescheduleOut = null, // { targetDate, targetTime?, targetTeacher? }
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -213,6 +214,31 @@ export const ExcelCell = memo(function ExcelCell({
           `時間変更\n${origTime} → ${moveTarget}`
         )
       );
+    }
+
+    // 振替で他日へ送り出されているコマ: 「振」バッジ + 担当を取消線で薄く
+    if (rescheduleOut) {
+      const tgtParts = [rescheduleOut.targetDate];
+      if (rescheduleOut.targetTime) tgtParts.push(rescheduleOut.targetTime);
+      if (rescheduleOut.targetTeacher) tgtParts.push(`(${rescheduleOut.targetTeacher})`);
+      badges.push(
+        mkBadge(
+          ADJ_COLOR.reschedule.color,
+          "振",
+          "reschedule-out",
+          `他日へ振替\n→ ${tgtParts.join(" ")}`
+        )
+      );
+      // 既に substitute / unavailable で teacherDecor が付いていない場合のみ
+      // 取消線にする (他状態の表示を上書きしない)
+      if (teacherDecor === "none") {
+        teacherColor = "#888";
+        teacherDecor = "line-through";
+      }
+      if (!borderLeft) {
+        bg = ADJ_COLOR.reschedule.bg;
+        borderLeft = `3px solid ${ADJ_COLOR.reschedule.color}`;
+      }
     }
   }
 
