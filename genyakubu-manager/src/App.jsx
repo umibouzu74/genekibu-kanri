@@ -228,6 +228,9 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [chordWaiting, setChordWaiting] = useState(false);
+  // chord effect 内部の reset() を外部から呼び出すためのフック。
+  // 別の UI イベント（モーダル展開など）で chord を即時解除する。
+  const chordResetRef = useRef(() => {});
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -410,6 +413,8 @@ export default function App() {
         timer = null;
       }
     };
+    // 外部（別 useEffect）からも reset を呼び出せるように ref へ公開。
+    chordResetRef.current = reset;
     const handleKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
@@ -436,8 +441,17 @@ export default function App() {
     return () => {
       document.removeEventListener("keydown", handleKey);
       reset();
+      chordResetRef.current = () => {};
     };
   }, [selectView]);
+
+  // モーダル／パレットが開いたら chord 待機を即クリア。
+  // バッジが最大 1.2 秒間モーダル上に残留するのを防ぐ。
+  useEffect(() => {
+    if (cmdPaletteOpen || shortcutsHelpOpen) {
+      chordResetRef.current();
+    }
+  }, [cmdPaletteOpen, shortcutsHelpOpen]);
 
   // ─── Derived data ───────────────────────────────────────────────
   const now = new Date();
@@ -1010,6 +1024,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
+          aria-label="g キーを受付中。対応する 2 キー目を入力してください。? でヘルプを表示。"
           className="no-print"
           style={{
             position: "fixed",
@@ -1029,21 +1044,23 @@ export default function App() {
             pointerEvents: "none",
           }}
         >
-          <kbd
-            style={{
-              background: "#3a3a6e",
-              padding: "2px 8px",
-              borderRadius: 4,
-              fontSize: 11,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            }}
-          >
-            g
-          </kbd>
-          <span aria-hidden="true" style={{ color: "#8a8aa0" }}>→</span>
-          <span style={{ color: "#ccd" }}>次のキー…</span>
-          <span style={{ marginLeft: 4, fontSize: 10, color: "#6a6a8e", fontWeight: 400 }}>
-            ? でヘルプ
+          <span aria-hidden="true" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <kbd
+              style={{
+                background: "#3a3a6e",
+                padding: "2px 8px",
+                borderRadius: 4,
+                fontSize: 11,
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              }}
+            >
+              g
+            </kbd>
+            <span style={{ color: "#8a8aa0" }}>→</span>
+            <span style={{ color: "#ccd" }}>次のキー…</span>
+            <span style={{ marginLeft: 4, fontSize: 10, color: "#6a6a8e", fontWeight: 400 }}>
+              ? でヘルプ
+            </span>
           </span>
         </div>
       )}

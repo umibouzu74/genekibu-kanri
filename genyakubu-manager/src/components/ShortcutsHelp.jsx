@@ -98,6 +98,27 @@ function Gesture({ children }) {
   );
 }
 
+// キー列をセパレータ付きで描画する。sequential=true なら "→"、そうでなければ "+"。
+function KeyCombo({ keys, sequential, keyPrefix }) {
+  const separator = sequential ? "→" : "+";
+  return keys.map((k, i) => (
+    <span
+      key={`${keyPrefix}-${i}`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+    >
+      {i > 0 && (
+        <span
+          aria-hidden="true"
+          style={{ fontSize: 11, color: "#8a8aa0", fontWeight: 700 }}
+        >
+          {separator}
+        </span>
+      )}
+      <Key>{k}</Key>
+    </span>
+  ));
+}
+
 function ItemRow({ item }) {
   return (
     <div
@@ -125,49 +146,19 @@ function ItemRow({ item }) {
           <Gesture>{item.gesture}</Gesture>
         ) : (
           <>
-            {item.keys.map((k, i) => (
-              <span
-                key={`${item.label}-${i}`}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                {i > 0 && (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      fontSize: 11,
-                      color: "#8a8aa0",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {item.sequential ? "→" : "+"}
-                  </span>
-                )}
-                <Key>{k}</Key>
-              </span>
-            ))}
+            <KeyCombo
+              keys={item.keys}
+              sequential={item.sequential}
+              keyPrefix={item.label}
+            />
             {item.alt && (
               <>
                 <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>/</span>
-                {item.alt.map((k, i) => (
-                  <span
-                    key={`${item.label}-alt-${i}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-                  >
-                    {i > 0 && (
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          fontSize: 11,
-                          color: "#8a8aa0",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {item.sequential ? "→" : "+"}
-                      </span>
-                    )}
-                    <Key>{k}</Key>
-                  </span>
-                ))}
+                <KeyCombo
+                  keys={item.alt}
+                  sequential={item.sequential}
+                  keyPrefix={`${item.label}-alt`}
+                />
               </>
             )}
           </>
