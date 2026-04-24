@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
@@ -125,16 +125,6 @@ export function Sidebar({
     });
   };
 
-  // 教師選択 (+ モバイルでは閉じる) を 1 つの stable コールバックにまとめ、
-  // SidebarTeacherButton の props 参照を安定化させる。
-  const handleSelectTeacher = useCallback(
-    (name) => {
-      onSelectTeacher(name);
-      if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-    },
-    [onSelectTeacher, onClose]
-  );
-
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
   const pending = useMemo(
@@ -259,6 +249,12 @@ export function Sidebar({
             placeholder="講師名で検索…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && search) {
+                e.stopPropagation();
+                onSearchChange("");
+              }
+            }}
             aria-label="講師名で検索"
             style={{
               width: "100%",
@@ -534,7 +530,7 @@ export function Sidebar({
                     name={t}
                     count={slotCountByTeacher.get(t) || 0}
                     isSelected={selected === t}
-                    onSelect={handleSelectTeacher}
+                    onSelect={onSelectTeacher}
                   />
                 ))}
               </div>
