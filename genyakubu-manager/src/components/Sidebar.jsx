@@ -1,8 +1,32 @@
 import { memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
+import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
+
+// chord ヒント表示用の小さなバッジ。`g d` 等のキー組を薄く出して学習を助ける。
+function ChordHint({ viewKey, dim }) {
+  const second = VIEW_CHORD_BY_VIEW.get(viewKey);
+  if (!second) return null;
+  return (
+    <span
+      aria-hidden="true"
+      title={`キーボード: g → ${second}`}
+      style={{
+        marginLeft: 8,
+        fontSize: 9,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        color: dim ? "#6a6a8e" : "#8a8aaa",
+        letterSpacing: 0.5,
+        opacity: 0.85,
+        flexShrink: 0,
+      }}
+    >
+      g {second}
+    </span>
+  );
+}
 
 // Teacher ボタン: memo 化して selected 変化時に隣接ボタンの再描画を避ける。
 const SidebarTeacherButton = memo(function SidebarTeacherButton({
@@ -361,10 +385,13 @@ export function Sidebar({
                     fontWeight: selfActive ? 700 : childActive ? 600 : 400,
                   }}
                 >
-                  <span style={{ flex: 1 }}>
-                    {item.icon} {item.label}
+                  <span style={{ flex: 1, display: "flex", alignItems: "center" }}>
+                    <span>
+                      {item.icon} {item.label}
+                    </span>
                     {/* 折りたたみ時は親にバッジ表示 */}
                     {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
+                    {!isModal && <ChordHint viewKey={item.key} dim={!selfActive && !childActive} />}
                   </span>
                   {hasChildren && (
                     <span
@@ -427,8 +454,13 @@ export function Sidebar({
                             fontWeight: childIsActive ? 700 : 400,
                           }}
                         >
-                          {child.icon} {child.label}
-                          {child.badge && pendingBadge}
+                          <span style={{ display: "flex", alignItems: "center" }}>
+                            <span style={{ flex: 1 }}>
+                              {child.icon} {child.label}
+                              {child.badge && pendingBadge}
+                            </span>
+                            <ChordHint viewKey={child.key} dim={!childIsActive} />
+                          </span>
                         </button>
                       );
                     })}
