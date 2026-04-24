@@ -1,8 +1,56 @@
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
+
+// Teacher ボタン: memo 化して selected 変化時に隣接ボタンの再描画を避ける。
+const SidebarTeacherButton = memo(function SidebarTeacherButton({
+  name,
+  count,
+  isSelected,
+  onSelect,
+}) {
+  const handleClick = () => onSelect(name);
+  return (
+    <button
+      onClick={handleClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        padding: "8px 14px",
+        border: "none",
+        background: isSelected ? "#3a3a6e" : "transparent",
+        color: isSelected ? "#fff" : "#ccc",
+        textAlign: "left",
+        cursor: "pointer",
+        fontSize: 13,
+        transition: "background .15s",
+      }}
+      onMouseEnter={(e) => {
+        if (!isSelected) e.currentTarget.style.background = "#2a2a4e";
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) e.currentTarget.style.background = "transparent";
+      }}
+    >
+      <span>{name}</span>
+      <span
+        style={{
+          fontSize: 11,
+          background: count > 10 ? "#c44" : "#4a4a7e",
+          borderRadius: 10,
+          padding: "2px 7px",
+          fontWeight: 700,
+        }}
+      >
+        {formatCount(count)}
+      </span>
+    </button>
+  );
+});
 
 const MENU_CONFIG = [
   { key: VIEWS.DASH, icon: "📋", label: "ダッシュボード" },
@@ -76,6 +124,16 @@ export function Sidebar({
       return next;
     });
   };
+
+  // 教師選択 (+ モバイルでは閉じる) を 1 つの stable コールバックにまとめ、
+  // SidebarTeacherButton の props 参照を安定化させる。
+  const handleSelectTeacher = useCallback(
+    (name) => {
+      onSelectTeacher(name);
+      if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+    },
+    [onSelectTeacher, onClose]
+  );
 
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
@@ -195,15 +253,16 @@ export function Sidebar({
             ✕
           </button>
         </div>
-        <div style={{ padding: "8px 10px" }}>
+        <div style={{ padding: "8px 10px", position: "relative" }}>
           <input
             type="text"
             placeholder="講師名で検索…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            aria-label="講師名で検索"
             style={{
               width: "100%",
-              padding: "8px 10px",
+              padding: search ? "8px 28px 8px 10px" : "8px 10px",
               borderRadius: 6,
               border: "1px solid #3a3a5e",
               background: "#2a2a4e",
@@ -213,6 +272,29 @@ export function Sidebar({
               boxSizing: "border-box",
             }}
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              aria-label="検索をクリア"
+              title="検索をクリア"
+              style={{
+                position: "absolute",
+                right: 16,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                color: "#8888aa",
+                cursor: "pointer",
+                fontSize: 14,
+                padding: 2,
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
         <div style={{ borderBottom: "1px solid #2a2a4e" }}>
           {MENU_CONFIG.map((item) => {
@@ -366,19 +448,58 @@ export function Sidebar({
               style={{
                 textAlign: "center",
                 color: "#8888aa",
-                padding: "16px 12px",
+                padding: "18px 12px",
                 fontSize: 11,
-                lineHeight: 1.6,
+                lineHeight: 1.7,
               }}
             >
+              <div aria-hidden="true" style={{ fontSize: 22, marginBottom: 4, opacity: 0.6 }}>
+                {search ? "🔍" : "👥"}
+              </div>
               {search ? (
                 <>
-                  「{search}」に一致する
-                  <br />
-                  講師はいません
+                  <div>
+                    「{search}」に一致する
+                    <br />
+                    講師はいません
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange("")}
+                    style={{
+                      marginTop: 8,
+                      background: "#3a3a6e",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 4,
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                    }}
+                  >
+                    検索をクリア
+                  </button>
                 </>
               ) : (
-                "講師が登録されていません"
+                <>
+                  <div>講師が登録されていません</div>
+                  <button
+                    type="button"
+                    onClick={() => onSelectView(VIEWS.MASTER)}
+                    style={{
+                      marginTop: 8,
+                      background: "#3a3a6e",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 4,
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                    }}
+                  >
+                    コースマスターへ
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -407,51 +528,15 @@ export function Sidebar({
                     {group.teachers.length}
                   </span>
                 </div>
-                {group.teachers.map((t) => {
-                  const cnt = slotCountByTeacher.get(t) || 0;
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => {
-                        onSelectTeacher(t);
-                        if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        width: "100%",
-                        padding: "8px 14px",
-                        border: "none",
-                        background: selected === t ? "#3a3a6e" : "transparent",
-                        color: selected === t ? "#fff" : "#ccc",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        fontSize: 13,
-                        transition: "background .15s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selected !== t) e.currentTarget.style.background = "#2a2a4e";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selected !== t) e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      <span>{t}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          background: cnt > 10 ? "#c44" : "#4a4a7e",
-                          borderRadius: 10,
-                          padding: "2px 7px",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {formatCount(cnt)}
-                      </span>
-                    </button>
-                  );
-                })}
+                {group.teachers.map((t) => (
+                  <SidebarTeacherButton
+                    key={t}
+                    name={t}
+                    count={slotCountByTeacher.get(t) || 0}
+                    isSelected={selected === t}
+                    onSelect={handleSelectTeacher}
+                  />
+                ))}
               </div>
             );
           })}
