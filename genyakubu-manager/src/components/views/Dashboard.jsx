@@ -118,6 +118,32 @@ export function Dashboard({
         >
           時間割
         </button>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 1,
+            height: 18,
+            background: "#e0e0e0",
+            margin: "0 6px",
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => window.print()}
+          title="このビューを印刷 (Ctrl/⌘ + P)"
+          aria-label="このビューを印刷"
+          style={{
+            ...S.btn(false),
+            fontSize: 12,
+            padding: "4px 12px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <span aria-hidden="true">🖨</span>
+          <span>印刷</span>
+        </button>
       </div>
 
       {/* 日付ナビゲーション (両モード共通) */}
