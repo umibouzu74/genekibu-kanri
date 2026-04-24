@@ -108,7 +108,7 @@ export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
     isNumber(x.id) &&
     isString(x.date) &&
     isString(x.type) &&
-    (x.type === "move" || x.type === "combine") &&
+    (x.type === "move" || x.type === "combine" || x.type === "reschedule") &&
     isNumber(x.slotId)
   );
 }

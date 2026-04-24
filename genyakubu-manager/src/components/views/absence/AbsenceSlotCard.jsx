@@ -1,4 +1,4 @@
-import { gradeColor as GC } from "../../../data";
+import { ADJ_COLOR, gradeColor as GC } from "../../../data";
 import {
   formatBiweeklyTeacher,
   getSlotWeekType,
@@ -29,6 +29,8 @@ export function AbsenceSlotCard({
   isCombineSource, // 合同モード中の起点
   disableDrag, // DnD 抑止 (合同ホスト / 吸収済み / 合同モード中など)
   dimmed, // 合同モード中の非候補: 暗くする
+  isRescheduled, // 他日へ振替中
+  rescheduleLabel, // 振替情報テキスト (例: "振替 → 2026-05-01 19:00-20:20")
   onContextMenu,
   onDragStart,
   onClick,
@@ -45,19 +47,23 @@ export function AbsenceSlotCard({
       ? "#ffc107"
       : isAbsent
         ? "#c44"
-        : isMoved
-          ? "#2a6a9e"
-          : isCombineHost
-            ? "#e0a020"
-            : "#ddd";
+        : isRescheduled
+          ? ADJ_COLOR.reschedule.color
+          : isMoved
+            ? "#2a6a9e"
+            : isCombineHost
+              ? "#e0a020"
+              : "#ddd";
 
-  const background = isMoved
-    ? "#e8f4ff"
-    : isCombineHost
-      ? "#fff8e0"
-      : isAbsorbed
-        ? "#fafafa"
-        : "#fff";
+  const background = isRescheduled
+    ? ADJ_COLOR.reschedule.bg
+    : isMoved
+      ? "#e8f4ff"
+      : isCombineHost
+        ? "#fff8e0"
+        : isAbsorbed
+          ? "#fafafa"
+          : "#fff";
 
   const draggable = !isAbsorbed && !disableDrag;
   const cursor = isAbsorbed
@@ -89,7 +95,7 @@ export function AbsenceSlotCard({
       }}
     >
       {/* 状態バッジ (右上) */}
-      {(isMoved || isCombineHost || substituteName) && (
+      {(isMoved || isCombineHost || substituteName || isRescheduled) && (
         <div
           style={{
             position: "absolute",
@@ -99,6 +105,9 @@ export function AbsenceSlotCard({
             gap: 3,
           }}
         >
+          {isRescheduled && (
+            <BadgeChip color={ADJ_COLOR.reschedule.color} label="振替" />
+          )}
           {isMoved && (
             <BadgeChip color="#2a6a9e" label="移動" />
           )}
@@ -193,6 +202,18 @@ export function AbsenceSlotCard({
       {hostLabel && (
         <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>
           {hostLabel}
+        </div>
+      )}
+      {rescheduleLabel && (
+        <div
+          style={{
+            fontSize: 10,
+            color: ADJ_COLOR.reschedule.deep,
+            fontWeight: 700,
+            marginTop: 2,
+          }}
+        >
+          {rescheduleLabel}
         </div>
       )}
       {overrideLabel && (

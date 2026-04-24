@@ -1,26 +1,30 @@
 import { useCallback, useState } from "react";
 
 // ─── Teacher Absence workflow: local draft state ──────────────────
-// 代行・合同/移動・回数補正の下書きを slot ごとに保持する。
-// sub / move / combine / override はいずれも独立フィールドで、同一スロット
-// 上で任意の組み合わせが共存できる (例: 時間を移動した上でさらに代行を
-// 割り当てる)。combine で吸収された側 (absorbedBy != null) は表示対象から
-// 除外されるため、個別の sub/move は持たない。
+// 代行・合同/移動/振替・回数補正の下書きを slot ごとに保持する。
+// sub / move / combine / reschedule / override はいずれも独立フィールドで、
+// 同一スロット上で任意の組み合わせが共存できる (例: 時間を移動した上で
+// さらに代行を割り当てる)。ただし move と reschedule、sub と reschedule は
+// 意味的に排他のため、片方を設定するともう片方は自動で解除する。
+// combine で吸収された側 (absorbedBy != null) は表示対象から除外される
+// ため、個別の sub/move/reschedule は持たない。
 //
 // draft shape:
 //   {
 //     [slotId]: {
-//       sub?:        { substitute, status, memo },
-//       move?:       { targetTime },
-//       combine?:    { absorbedSlotIds },   // この slot が host
-//       absorbedBy?: number,                // 逆向き: 他の slot (host) に吸収
-//       override?:   { mode, value?, displayAs?, memo },
+//       sub?:         { substitute, status, memo },
+//       move?:        { targetTime },
+//       reschedule?:  { targetDate, targetTime, targetTeacher, memo },
+//       combine?:     { absorbedSlotIds },   // この slot が host
+//       absorbedBy?:  number,                // 逆向き: 他の slot (host) に吸収
+//       override?:    { mode, value?, displayAs?, memo },
 //     }
 //   }
 
 const emptyRow = () => ({
   sub: null,
   move: null,
+  reschedule: null,
   combine: null,
   absorbedBy: null,
   override: null,
@@ -31,6 +35,7 @@ function isEmptyRow(row) {
   return (
     !row.sub &&
     !row.move &&
+    !row.reschedule &&
     !row.combine &&
     row.absorbedBy == null &&
     !row.override
@@ -99,15 +104,43 @@ export function useAbsenceDraft() {
   }, []);
 
   const updateMove = useCallback((slotId, targetTime) => {
-    setDraft((prev) => patchRow(prev, slotId, { move: { targetTime } }));
+    setDraft((prev) =>
+      // 同日内の時間移動と他日への振替は排他
+      patchRow(prev, slotId, { move: { targetTime }, reschedule: null })
+    );
   }, []);
 
   const clearMove = useCallback((slotId) => {
     setDraft((prev) => patchRow(prev, slotId, { move: null }));
   }, []);
 
+  // 振替 (他日への移動): targetDate は必須、targetTime / targetTeacher は省略可
+  // (省略時はそれぞれ元コマの時間 / 元担当を使う前提)。
+  const updateReschedule = useCallback((slotId, patch) => {
+    setDraft((prev) => {
+      const cur = prev[slotId] || emptyRow();
+      // 振替を設定したら move / sub は解除 (意味的に排他)
+      return patchRow(prev, slotId, {
+        reschedule: {
+          targetDate: "",
+          targetTime: "",
+          targetTeacher: "",
+          memo: "",
+          ...(cur.reschedule || {}),
+          ...patch,
+        },
+        move: null,
+        sub: null,
+      });
+    });
+  }, []);
+
+  const clearReschedule = useCallback((slotId) => {
+    setDraft((prev) => patchRow(prev, slotId, { reschedule: null }));
+  }, []);
+
   // 合同: host に combine.absorbedSlotIds[] を、absorbed 側に absorbedBy=host を
-  // 設定する。吸収された slot は host と統合されるため、独自の sub/move は
+  // 設定する。吸収された slot は host と統合されるため、独自の sub/move/reschedule は
   // 持たせない (表示対象外になる)。
   const setCombine = useCallback((hostSlotId, absorbedSlotIds) => {
     setDraft((prev) => {
@@ -134,6 +167,7 @@ export function useAbsenceDraft() {
           absorbedBy: hostSlotId,
           sub: null,
           move: null,
+          reschedule: null,
         });
       }
       return next;
@@ -235,6 +269,25 @@ export function useAbsenceDraft() {
           if (existingId != null) autoRemovedIds.add(existingId);
         }
 
+        if (row.reschedule?.targetDate) {
+          const entry = {
+            date,
+            type: "reschedule",
+            slotId,
+            targetDate: row.reschedule.targetDate,
+            memo: row.reschedule.memo || "",
+          };
+          if (row.reschedule.targetTime) {
+            entry.targetTime = row.reschedule.targetTime;
+          }
+          if (row.reschedule.targetTeacher) {
+            entry.targetTeacher = row.reschedule.targetTeacher;
+          }
+          draftAdjustments.push(entry);
+          const existingId = existingBySlotType.get(`${slotId}|reschedule`);
+          if (existingId != null) autoRemovedIds.add(existingId);
+        }
+
         if (row.override) {
           if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
             draftOverrides.push({
@@ -279,6 +332,8 @@ export function useAbsenceDraft() {
     clearSub,
     updateMove,
     clearMove,
+    updateReschedule,
+    clearReschedule,
     setCombine,
     clearCombine,
     updateOverride,

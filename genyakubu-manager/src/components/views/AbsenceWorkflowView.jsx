@@ -90,7 +90,11 @@ export function AbsenceWorkflowView({
     // ドラフトを effective な adjustments / overrides に連結
     const draftAdjustments = [];
     const draftOverridesLocal = [];
-    const draftOverridingSlots = { combine: new Set(), move: new Set() };
+    const draftOverridingSlots = {
+      combine: new Set(),
+      move: new Set(),
+      reschedule: new Set(),
+    };
     let idBase = -1000;
     for (const [sidStr, row] of Object.entries(draft.draft)) {
       const slotId = Number(sidStr);
@@ -115,6 +119,22 @@ export function AbsenceWorkflowView({
           memo: "(draft)",
         });
         draftOverridingSlots.move.add(slotId);
+      }
+      if (row.reschedule?.targetDate) {
+        const entry = {
+          id: idBase--,
+          date,
+          type: "reschedule",
+          slotId,
+          targetDate: row.reschedule.targetDate,
+          memo: "(draft)",
+        };
+        if (row.reschedule.targetTime) entry.targetTime = row.reschedule.targetTime;
+        if (row.reschedule.targetTeacher) {
+          entry.targetTeacher = row.reschedule.targetTeacher;
+        }
+        draftAdjustments.push(entry);
+        draftOverridingSlots.reschedule.add(slotId);
       }
       if (row.override) {
         if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
@@ -142,6 +162,9 @@ export function AbsenceWorkflowView({
       if (a.date === date) {
         if (a.type === "combine" && draftOverridingSlots.combine.has(a.slotId)) return false;
         if (a.type === "move" && draftOverridingSlots.move.has(a.slotId)) return false;
+        if (a.type === "reschedule" && draftOverridingSlots.reschedule.has(a.slotId)) {
+          return false;
+        }
       }
       return true;
     });
@@ -177,6 +200,7 @@ export function AbsenceWorkflowView({
       if (row.sub?.substitute) c++;
       if (row.combine?.absorbedSlotIds?.length) c++;
       if (row.move?.targetTime) c++;
+      if (row.reschedule?.targetDate) c++;
       if (row.override) c++;
     }
     c += (draft.removedAdjustmentIds?.size || 0);
@@ -362,6 +386,7 @@ export function AbsenceWorkflowView({
       {/* Timetable grid */}
       <AbsenceTimetable
         slots={daySlots}
+        allSlots={slots}
         draft={draft.draft}
         draftApi={draft}
         existingSubs={subs}
@@ -372,6 +397,7 @@ export function AbsenceWorkflowView({
         partTimeStaff={partTimeStaff}
         subjects={subjects}
         biweeklyAnchors={biweeklyAnchors}
+        allTeachers={allTeachers}
         date={date}
       />
 

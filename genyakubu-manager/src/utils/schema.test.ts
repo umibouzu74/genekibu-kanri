@@ -144,6 +144,17 @@ describe("type guards", () => {
       isScheduleAdjustment({ id: 2, date: "2026-04-10", type: "combine", slotId: 3, combineSlotIds: [4] })
     ).toBe(true);
     expect(
+      isScheduleAdjustment({
+        id: 3,
+        date: "2026-04-10",
+        type: "reschedule",
+        slotId: 3,
+        targetDate: "2026-04-17",
+        targetTime: "19:00-20:20",
+        memo: "",
+      })
+    ).toBe(true);
+    expect(
       isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "cancel", slotId: 3 })
     ).toBe(false); // "cancel" is not a valid type
     expect(

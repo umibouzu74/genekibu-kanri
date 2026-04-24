@@ -9,11 +9,15 @@ describe("buildAdjustmentIndex", () => {
       combineAbsorbedBySlot: new Map(),
       combineHostBySlot: new Map(),
       moveBySlot: new Map(),
+      rescheduleOutBySlot: new Map(),
+      rescheduleInBySlot: new Map(),
     });
     expect(buildAdjustmentIndex([], base)).toEqual({
       combineAbsorbedBySlot: new Map(),
       combineHostBySlot: new Map(),
       moveBySlot: new Map(),
+      rescheduleOutBySlot: new Map(),
+      rescheduleInBySlot: new Map(),
     });
   });
 
@@ -23,6 +27,8 @@ describe("buildAdjustmentIndex", () => {
       combineAbsorbedBySlot: new Map(),
       combineHostBySlot: new Map(),
       moveBySlot: new Map(),
+      rescheduleOutBySlot: new Map(),
+      rescheduleInBySlot: new Map(),
     });
   });
 
@@ -59,6 +65,22 @@ describe("buildAdjustmentIndex", () => {
     const adjustments = [{ id: 1, date: base, type: "move", slotId: 10 }];
     const r = buildAdjustmentIndex(adjustments, base);
     expect(r.moveBySlot.size).toBe(0);
+  });
+
+  it("indexes reschedule adjustments by source (out) and target (in) dates", () => {
+    const adjustments = [
+      { id: 1, date: base, type: "reschedule", slotId: 20, targetDate: "2026-04-27", targetTime: "19:00-20:20" },
+      { id: 2, date: "2026-04-13", type: "reschedule", slotId: 21, targetDate: base, targetTime: "20:30-21:50", targetTeacher: "本多" },
+    ];
+    const r = buildAdjustmentIndex(adjustments, base);
+    // source date view: slot 20 is going out
+    expect(r.rescheduleOutBySlot.get(20)?.targetDate).toBe("2026-04-27");
+    // source date view: slot 21 is coming in from 2026-04-13
+    expect(r.rescheduleInBySlot.get(21)?.targetDate).toBe(base);
+    expect(r.rescheduleInBySlot.get(21)?.targetTeacher).toBe("本多");
+    // reschedule entries should not affect move/combine indices
+    expect(r.moveBySlot.size).toBe(0);
+    expect(r.combineHostBySlot.size).toBe(0);
   });
 
   it("handles a mix of combine and move entries on the same date", () => {

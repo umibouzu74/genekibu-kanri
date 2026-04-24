@@ -33,6 +33,14 @@ export const ADJ_COLOR = {
     bannerBorder: "#e0c080",
     chipBg: "#f5e5c8",
   },
+  reschedule: {
+    color: "#1a8a8a",
+    deep: "#106565",
+    bg: "#d8f1f1",
+    bannerBg: "#e8f6f6",
+    bannerBorder: "#8cc8c8",
+    chipBg: "#d0eded",
+  },
 };
 
 export function gradeColor(g) {
