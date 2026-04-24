@@ -34,6 +34,7 @@ import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { escapeHtml } from "./utils/escape";
+import { dateToDay } from "./utils/dateHelpers";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -385,8 +386,46 @@ export default function App() {
       );
       return;
     }
+    const dateInput = el.querySelector('input[type="date"]');
+    const printDate = dateInput?.value || "";
+    const printDay = printDate ? dateToDay(printDate) : "";
+    const dateLabel = printDate
+      ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
+      : "授業予定";
+    const docTitle = selected ? `${selected} 授業予定` : dateLabel;
+    const hasTimetableGrid = !!el.querySelector(".excel-print-col-ms");
+
+    const printStyles = `
+      body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
+      .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
+      @media print{
+        @page{size:A4 landscape;margin:12mm 8mm}
+        body{padding:0;font-size:10px}
+        *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
+        .no-print{display:none !important}
+        ${hasTimetableGrid ? `
+        .excel-grid-sections{display:block !important;grid-template-columns:none !important}
+        .excel-print-col-ms{break-after:page;page-break-after:always}
+        .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
+        ` : ""}
+      }
+    `;
+
+    let bodyHtml = el.innerHTML;
+    if (hasTimetableGrid) {
+      const header = `<h2 class="excel-print-page-title">${escapeHtml(dateLabel)}</h2>`;
+      bodyHtml = bodyHtml.replace(
+        /(<div[^>]*class="[^"]*\bexcel-print-col-ms\b[^"]*"[^>]*>)/,
+        `${header}$1`
+      );
+      bodyHtml = bodyHtml.replace(
+        /(<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>)/,
+        `${header}$1`
+      );
+    }
+
     w.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(selected || "現役部")} 授業予定</title><style>body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
     );
     w.document.close();
     setTimeout(() => w.print(), 300);

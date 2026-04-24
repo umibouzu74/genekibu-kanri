@@ -333,6 +333,7 @@ export function ExcelGridView({
 
       {/* Day Tab Bar */}
       <div
+        className="no-print"
         style={{
           display: "flex",
           gap: 4,
@@ -398,7 +399,7 @@ export function ExcelGridView({
       </div>
 
       {/* Guide */}
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>
+      <div className="no-print" style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>
         {subMode.isSubMode
           ? "欠席講師を右パネルで選択 → セルをクリックして代行者を割り当て / ドラッグで入れ替え"
           : isAdmin
@@ -505,10 +506,16 @@ export function ExcelGridView({
                     alignItems: "start",
                   }}
                 >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                  <div
+                    className="excel-print-col-ms"
+                    style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
+                  >
                     {leftCol.map(renderSection)}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                  <div
+                    className="excel-print-col-hs"
+                    style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
+                  >
                     {[...rightCol, ...otherCol].map(renderSection)}
                   </div>
                 </div>
