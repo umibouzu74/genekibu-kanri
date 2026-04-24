@@ -29,3 +29,37 @@ export const migrateSubs = (arr) =>
   Array.isArray(arr)
     ? arr.map((s) => (s?.status === "completed" ? { ...s, status: "confirmed" } : s))
     : arr;
+
+/**
+ * Restore `targetGrades: []` (全学年モード) dropped by Firebase RTDB.
+ * Firebase RTDB discards empty arrays on write, so exam periods saved
+ * with the "全学年" option come back missing `targetGrades` and cause
+ * a render crash in ExamPeriodManager.
+ */
+export const migrateExamPeriods = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((ep) => ({
+        ...ep,
+        targetGrades: Array.isArray(ep?.targetGrades) ? ep.targetGrades : [],
+      }))
+    : arr;
+
+/**
+ * Restore `assignments: {}` dropped by Firebase RTDB.
+ * Firebase RTDB discards empty objects/arrays on write, so days
+ * initialized via `blankDay` come back missing `assignments` (and
+ * potentially `periods` if somehow emptied), crashing the editor.
+ */
+export const migrateExamPrepSchedules = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((s) => ({
+        ...s,
+        days: Array.isArray(s?.days)
+          ? s.days.map((d) => ({
+              ...d,
+              periods: Array.isArray(d?.periods) ? d.periods : [],
+              assignments: d?.assignments ?? {},
+            }))
+          : [],
+      }))
+    : arr;

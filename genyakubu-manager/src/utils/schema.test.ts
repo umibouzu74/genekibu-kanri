@@ -4,6 +4,7 @@ import {
   isBiweeklyAnchor,
   isCutoffGroup,
   isExamPeriod,
+  isExamPrepSchedule,
   isHoliday,
   isPartTimeStaffObject,
   isScheduleAdjustment,
@@ -224,6 +225,45 @@ describe("type guards", () => {
       isExamPeriod({ id: 1, name: "テスト", startDate: "2026-05-08", endDate: "2026-05-14" })
     ).toBe(false); // missing targetGrades
     expect(isExamPeriod(null)).toBe(false);
+  });
+
+  it("isExamPrepSchedule requires examPeriodId and days with valid periods", () => {
+    expect(
+      isExamPrepSchedule({
+        examPeriodId: 1,
+        days: [
+          {
+            date: "2026-05-08",
+            periods: [{ no: 1, start: "18:00", end: "18:50" }],
+            assignments: { 福武: [1] },
+          },
+        ],
+      })
+    ).toBe(true);
+    // assignments 欠落は許容（Firebase RTDB が空オブジェクトを破棄するため）
+    expect(
+      isExamPrepSchedule({
+        examPeriodId: 1,
+        days: [
+          { date: "2026-05-08", periods: [{ no: 1, start: "18:00", end: "18:50" }] },
+        ],
+      })
+    ).toBe(true);
+    // 値が配列でない assignments は不正
+    expect(
+      isExamPrepSchedule({
+        examPeriodId: 1,
+        days: [
+          {
+            date: "2026-05-08",
+            periods: [{ no: 1, start: "18:00", end: "18:50" }],
+            assignments: { 福武: "not-an-array" },
+          },
+        ],
+      })
+    ).toBe(false);
+    expect(isExamPrepSchedule(null)).toBe(false);
+    expect(isExamPrepSchedule({ examPeriodId: 1 })).toBe(false); // days 欠落
   });
 });
 

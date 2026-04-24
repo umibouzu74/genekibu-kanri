@@ -140,10 +140,10 @@ export function ExamPrepScheduleEditor({
 
   const handleToggleAssignment = (staffName, periodNo) => {
     updateActiveDay((d) => {
-      const cur = new Set(d.assignments[staffName] || []);
+      const cur = new Set(d.assignments?.[staffName] || []);
       if (cur.has(periodNo)) cur.delete(periodNo);
       else cur.add(periodNo);
-      const next = { ...d.assignments };
+      const next = { ...(d.assignments || {}) };
       if (cur.size === 0) delete next[staffName];
       else next[staffName] = [...cur].sort((a, b) => a - b);
       return { ...d, assignments: next };
@@ -153,9 +153,9 @@ export function ExamPrepScheduleEditor({
   const handleToggleAllForStaff = (staffName) => {
     updateActiveDay((d) => {
       const allNos = d.periods.map((p) => p.no);
-      const cur = d.assignments[staffName] || [];
+      const cur = d.assignments?.[staffName] || [];
       const allSelected = allNos.every((n) => cur.includes(n));
-      const next = { ...d.assignments };
+      const next = { ...(d.assignments || {}) };
       if (allSelected) delete next[staffName];
       else next[staffName] = allNos;
       return { ...d, assignments: next };
@@ -452,7 +452,7 @@ export function ExamPrepScheduleEditor({
                     </thead>
                     <tbody>
                       {partTimeStaff.map((s) => {
-                        const nos = activeDay.assignments[s.name] || [];
+                        const nos = activeDay.assignments?.[s.name] || [];
                         return (
                           <tr key={s.name}>
                             <td style={tdStyle}>{s.name}</td>

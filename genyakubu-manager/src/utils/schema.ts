@@ -199,10 +199,14 @@ export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
       if (!isString(p.start)) return false;
       if (!isString(p.end)) return false;
     }
-    if (!isObject(d.assignments)) return false;
-    for (const v of Object.values(d.assignments)) {
-      if (!Array.isArray(v)) return false;
-      if (!v.every((n) => isNumber(n))) return false;
+    // Firebase RTDB drops empty objects on write, so imported JSON may
+    // legitimately lack `assignments`; treat missing as empty.
+    if (d.assignments !== undefined) {
+      if (!isObject(d.assignments)) return false;
+      for (const v of Object.values(d.assignments)) {
+        if (!Array.isArray(v)) return false;
+        if (!v.every((n) => isNumber(n))) return false;
+      }
     }
   }
   return true;
