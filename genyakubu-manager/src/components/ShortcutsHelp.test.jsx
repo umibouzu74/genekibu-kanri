@@ -34,6 +34,12 @@ describe("ShortcutsHelp", () => {
     expect(screen.getByText("授業管理")).toBeDefined();
   });
 
+  it("renders sequential chord keys with arrow separator, not plus", () => {
+    render(<ShortcutsHelp open onClose={noop} />);
+    // chord 行 (g → d 等) は必ず矢印を含むはず
+    expect(screen.getAllByText("→").length).toBeGreaterThanOrEqual(8);
+  });
+
   it("calls onClose when Escape is pressed", () => {
     const onClose = vi.fn();
     render(<ShortcutsHelp open onClose={onClose} />);

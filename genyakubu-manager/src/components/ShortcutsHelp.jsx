@@ -16,14 +16,14 @@ const SHORTCUTS = [
     section: "ビュー移動 (g から開始)",
     note: "g を押した直後にもう 1 キー",
     items: [
-      { keys: ["g", "d"], label: "ダッシュボード" },
-      { keys: ["g", "a"], label: "欠勤組み換え" },
-      { keys: ["g", "s"], label: "授業管理" },
-      { keys: ["g", "c"], label: "代行確定一覧" },
-      { keys: ["g", "t"], label: "時間割管理" },
-      { keys: ["g", "h"], label: "休講日・テスト期間" },
-      { keys: ["g", "m"], label: "コースマスター管理" },
-      { keys: ["g", "v"], label: "バイト管理" },
+      { keys: ["g", "d"], sequential: true, label: "ダッシュボード" },
+      { keys: ["g", "a"], sequential: true, label: "欠勤組み換え" },
+      { keys: ["g", "s"], sequential: true, label: "授業管理" },
+      { keys: ["g", "c"], sequential: true, label: "代行確定一覧" },
+      { keys: ["g", "t"], sequential: true, label: "時間割管理" },
+      { keys: ["g", "h"], sequential: true, label: "休講日・テスト期間" },
+      { keys: ["g", "m"], sequential: true, label: "コースマスター管理" },
+      { keys: ["g", "v"], sequential: true, label: "バイト管理" },
     ],
   },
   {
@@ -126,13 +126,47 @@ function ItemRow({ item }) {
         ) : (
           <>
             {item.keys.map((k, i) => (
-              <Key key={`${item.label}-${i}`}>{k}</Key>
+              <span
+                key={`${item.label}-${i}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                {i > 0 && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      fontSize: 11,
+                      color: "#8a8aa0",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {item.sequential ? "→" : "+"}
+                  </span>
+                )}
+                <Key>{k}</Key>
+              </span>
             ))}
             {item.alt && (
               <>
                 <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>/</span>
                 {item.alt.map((k, i) => (
-                  <Key key={`${item.label}-alt-${i}`}>{k}</Key>
+                  <span
+                    key={`${item.label}-alt-${i}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                  >
+                    {i > 0 && (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          fontSize: 11,
+                          color: "#8a8aa0",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.sequential ? "→" : "+"}
+                      </span>
+                    )}
+                    <Key>{k}</Key>
+                  </span>
                 ))}
               </>
             )}
