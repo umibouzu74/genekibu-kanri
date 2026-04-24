@@ -252,7 +252,8 @@ export default function App() {
 
   // ─── Global shortcuts ──────────────────────────────────────────
   // Cmd+K: コマンドパレット / ?: ショートカットヘルプ
-  // フォーカスが入力要素にある場合は ? を無効化する (文字入力を妨げない)。
+  // フォーカスが入力要素にあるときや、他のダイアログが既に開いているときは
+  // ? を無効化する (文字入力や既存モーダルの Esc 処理を妨げない)。
   useEffect(() => {
     const isTypingTarget = (el) => {
       if (!el) return false;
@@ -264,6 +265,8 @@ export default function App() {
         el.isContentEditable
       );
     };
+    const hasOpenDialog = () =>
+      !!document.querySelector('[role="dialog"][aria-modal="true"]');
     const handleKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -272,8 +275,11 @@ export default function App() {
       }
       if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (isTypingTarget(e.target)) return;
+        // 他のダイアログ (Modal / CommandPalette / ShortcutsHelp 自身)
+        // が開いている場合は、その Esc 処理に委ねるため握りつぶす。
+        if (hasOpenDialog()) return;
         e.preventDefault();
-        setShortcutsHelpOpen((v) => !v);
+        setShortcutsHelpOpen(true);
       }
     };
     document.addEventListener("keydown", handleKey);
@@ -915,6 +921,7 @@ export default function App() {
               selectView(v);
               setCmdPaletteOpen(false);
             }}
+            onShowShortcuts={() => setShortcutsHelpOpen(true)}
             views={VIEWS}
           />
         </Suspense>

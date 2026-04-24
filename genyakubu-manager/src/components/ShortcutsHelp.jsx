@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { Modal } from "./Modal";
 
 // キーボードショートカット ヘルプオーバーレイ
-// `?` キーで開き、`Esc` で閉じる。App.jsx のグローバル keydown ハンドラから制御。
+// `?` キーで開き、Modal 共通の focus trap / Esc / フォーカス復帰を利用する。
 
 const SHORTCUTS = [
   {
@@ -21,7 +21,8 @@ const SHORTCUTS = [
     ],
   },
   {
-    section: "印刷",
+    section: "ブラウザ",
+    note: "アプリ固有ではなくブラウザ標準",
     items: [
       { keys: ["Ctrl", "P"], alt: ["⌘", "P"], label: "現在のビューを印刷" },
     ],
@@ -51,126 +52,61 @@ function Key({ children }) {
 }
 
 export function ShortcutsHelp({ open, onClose }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="キーボードショートカット"
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.5)",
-        zIndex: 10001,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 24,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#fff",
-          borderRadius: 12,
-          width: "100%",
-          maxWidth: 480,
-          maxHeight: "80vh",
-          overflowY: "auto",
-          boxShadow: "0 8px 32px rgba(0,0,0,.25)",
-        }}
-      >
-        <div
-          style={{
-            padding: "14px 20px",
-            borderBottom: "1px solid #e0e0e0",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>
-            キーボードショートカット
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="閉じる"
+    <Modal title="キーボードショートカット" onClose={onClose} width={480}>
+      {SHORTCUTS.map((sec) => (
+        <div key={sec.section} style={{ marginBottom: 14 }}>
+          <div
             style={{
-              background: "none",
-              border: "none",
-              fontSize: 18,
-              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: 800,
               color: "#888",
-              padding: 4,
-              lineHeight: 1,
+              letterSpacing: 1,
+              margin: "8px 0 6px",
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
             }}
           >
-            ✕
-          </button>
-        </div>
-        <div style={{ padding: "12px 20px 20px" }}>
-          {SHORTCUTS.map((sec) => (
-            <div key={sec.section} style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#888",
-                  letterSpacing: 1,
-                  margin: "8px 0 6px",
-                }}
-              >
-                {sec.section}
-              </div>
-              {sec.items.map((it) => (
-                <div
-                  key={it.label}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "6px 0",
-                    fontSize: 13,
-                    color: "#333",
-                    borderBottom: "1px dashed #eee",
-                  }}
-                >
-                  <span>{it.label}</span>
-                  <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                    {it.keys.map((k, i) => (
-                      <Key key={`${it.label}-${i}`}>{k}</Key>
+            <span>{sec.section}</span>
+            {sec.note && (
+              <span style={{ fontSize: 10, fontWeight: 400, color: "#aaa", letterSpacing: 0 }}>
+                {sec.note}
+              </span>
+            )}
+          </div>
+          {sec.items.map((it) => (
+            <div
+              key={it.label}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "6px 0",
+                fontSize: 13,
+                color: "#333",
+                borderBottom: "1px dashed #eee",
+              }}
+            >
+              <span>{it.label}</span>
+              <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                {it.keys.map((k, i) => (
+                  <Key key={`${it.label}-${i}`}>{k}</Key>
+                ))}
+                {it.alt && (
+                  <>
+                    <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>/</span>
+                    {it.alt.map((k, i) => (
+                      <Key key={`${it.label}-alt-${i}`}>{k}</Key>
                     ))}
-                    {it.alt && (
-                      <>
-                        <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>
-                          /
-                        </span>
-                        {it.alt.map((k, i) => (
-                          <Key key={`${it.label}-alt-${i}`}>{k}</Key>
-                        ))}
-                      </>
-                    )}
-                  </span>
-                </div>
-              ))}
+                  </>
+                )}
+              </span>
             </div>
           ))}
         </div>
-      </div>
-    </div>
+      ))}
+    </Modal>
   );
 }
