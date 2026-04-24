@@ -11,9 +11,11 @@ import {
 } from "./data";
 
 import { VIEWS } from "./constants/views";
+import { VIEW_CHORDS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
+import { useChordNavigation } from "./hooks/useChordNavigation";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
@@ -227,10 +229,6 @@ export default function App() {
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  const [chordWaiting, setChordWaiting] = useState(false);
-  // chord effect 内部の reset() を外部から呼び出すためのフック。
-  // 別の UI イベント（モーダル展開など）で chord を即時解除する。
-  const chordResetRef = useRef(() => {});
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -378,80 +376,20 @@ export default function App() {
   // ─── g-prefix chord navigation ──────────────────────────────────
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
   // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
-  useEffect(() => {
-    const CHORD_MAP = {
-      d: VIEWS.DASH,
-      a: VIEWS.ABSENCE_FLOW,
-      s: VIEWS.SUBS,
-      c: VIEWS.CONFIRMED_SUBS,
-      t: VIEWS.TIMETABLE,
-      h: VIEWS.HOLIDAYS,
-      m: VIEWS.MASTER,
-      v: VIEWS.STAFF,
-    };
-    const CHORD_TIMEOUT_MS = 1200;
-    const isTypingTarget = (el) => {
-      if (!el) return false;
-      const tag = el.tagName;
-      return (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el.isContentEditable
-      );
-    };
-    const hasOpenDialog = () =>
-      !!document.querySelector('[role="dialog"][aria-modal="true"]');
-
-    let waitingG = false;
-    let timer = null;
-    const reset = () => {
-      waitingG = false;
-      setChordWaiting(false);
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-    };
-    // 外部（別 useEffect）からも reset を呼び出せるように ref へ公開。
-    chordResetRef.current = reset;
-    const handleKey = (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingTarget(e.target)) return;
-      if (hasOpenDialog()) return;
-      // CapsLock や Shift を踏んで "G" / "D" が来ても受理できるよう lowercase 化。
-      // 1 文字キーでない Tab / Escape 等は toLowerCase しても実害がない。
-      const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
-      if (waitingG) {
-        const target = CHORD_MAP[key];
-        reset();
-        if (target) {
-          e.preventDefault();
-          selectView(target);
-        }
-        return;
-      }
-      if (key === "g") {
-        waitingG = true;
-        setChordWaiting(true);
-        timer = setTimeout(reset, CHORD_TIMEOUT_MS);
-      }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      reset();
-      chordResetRef.current = () => {};
-    };
-  }, [selectView]);
+  // タイムアウト時は ShortcutsHelp を開く（chord 忘れ救済 = A14）。
+  const { waiting: chordWaiting, reset: resetChord } = useChordNavigation({
+    chordMap: VIEW_CHORDS,
+    onMatch: selectView,
+    onTimeout: useCallback(() => setShortcutsHelpOpen(true), []),
+  });
 
   // モーダル／パレットが開いたら chord 待機を即クリア。
   // バッジが最大 1.2 秒間モーダル上に残留するのを防ぐ。
   useEffect(() => {
     if (cmdPaletteOpen || shortcutsHelpOpen) {
-      chordResetRef.current();
+      resetChord();
     }
-  }, [cmdPaletteOpen, shortcutsHelpOpen]);
+  }, [cmdPaletteOpen, shortcutsHelpOpen, resetChord]);
 
   // ─── Derived data ───────────────────────────────────────────────
   const now = new Date();
