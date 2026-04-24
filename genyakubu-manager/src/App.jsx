@@ -227,6 +227,7 @@ export default function App() {
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const [chordWaiting, setChordWaiting] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -403,6 +404,7 @@ export default function App() {
     let timer = null;
     const reset = () => {
       waitingG = false;
+      setChordWaiting(false);
       if (timer) {
         clearTimeout(timer);
         timer = null;
@@ -412,8 +414,11 @@ export default function App() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (hasOpenDialog()) return;
+      // CapsLock や Shift を踏んで "G" / "D" が来ても受理できるよう lowercase 化。
+      // 1 文字キーでない Tab / Escape 等は toLowerCase しても実害がない。
+      const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
       if (waitingG) {
-        const target = CHORD_MAP[e.key];
+        const target = CHORD_MAP[key];
         reset();
         if (target) {
           e.preventDefault();
@@ -421,8 +426,9 @@ export default function App() {
         }
         return;
       }
-      if (e.key === "g") {
+      if (key === "g") {
         waitingG = true;
+        setChordWaiting(true);
         timer = setTimeout(reset, CHORD_TIMEOUT_MS);
       }
     };
@@ -997,6 +1003,49 @@ export default function App() {
             onClose={() => setShortcutsHelpOpen(false)}
           />
         </Suspense>
+      )}
+
+      {/* Chord waiting badge (g を押したあと次のキーを待っている間だけ表示) */}
+      {chordWaiting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="no-print"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: 24,
+            background: "#1a1a2e",
+            color: "#fff",
+            padding: "8px 14px",
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            boxShadow: "0 4px 20px rgba(0,0,0,.25)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            pointerEvents: "none",
+          }}
+        >
+          <kbd
+            style={{
+              background: "#3a3a6e",
+              padding: "2px 8px",
+              borderRadius: 4,
+              fontSize: 11,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            }}
+          >
+            g
+          </kbd>
+          <span aria-hidden="true" style={{ color: "#8a8aa0" }}>→</span>
+          <span style={{ color: "#ccd" }}>次のキー…</span>
+          <span style={{ marginLeft: 4, fontSize: 10, color: "#6a6a8e", fontWeight: 400 }}>
+            ? でヘルプ
+          </span>
+        </div>
       )}
 
       {/* Responsive CSS */}
