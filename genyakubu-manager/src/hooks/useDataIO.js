@@ -10,6 +10,7 @@ import {
   validateExportBundle,
 } from "../utils/schema";
 import {
+  migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
@@ -153,7 +154,7 @@ export function useDataIO({
           if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
           if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
-          if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
+          if (Array.isArray(d.examPeriods)) saveExamPeriods(migrateExamPeriods(d.examPeriods));
           if (Array.isArray(d.examPrepSchedules) && saveExamPrepSchedules)
             saveExamPrepSchedules(migrateExamPrepSchedules(d.examPrepSchedules));
           if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
@@ -260,4 +261,10 @@ export function useDataIO({
 }
 
 // Re-export migrate functions for convenience
-export { migrateExamPrepSchedules, migrateHolidays, migratePartTimeStaff, migrateSubs };
+export {
+  migrateExamPeriods,
+  migrateExamPrepSchedules,
+  migrateHolidays,
+  migratePartTimeStaff,
+  migrateSubs,
+};

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
@@ -81,6 +82,35 @@ describe("migratePartTimeStaff", () => {
   it("returns non-array input unchanged", () => {
     expect(migratePartTimeStaff(null)).toBe(null);
     expect(migratePartTimeStaff(undefined)).toBe(undefined);
+  });
+});
+
+describe("migrateExamPeriods", () => {
+  it("restores targetGrades dropped by Firebase RTDB (全学年 mode)", () => {
+    const input = [
+      { id: 1, name: "中間", startDate: "2026-05-08", endDate: "2026-05-14" },
+    ];
+    const result = migrateExamPeriods(input);
+    expect(result[0].targetGrades).toEqual([]);
+  });
+
+  it("preserves existing targetGrades", () => {
+    const input = [
+      {
+        id: 1,
+        name: "中間",
+        startDate: "2026-05-08",
+        endDate: "2026-05-14",
+        targetGrades: ["中1", "中2"],
+      },
+    ];
+    const result = migrateExamPeriods(input);
+    expect(result[0].targetGrades).toEqual(["中1", "中2"]);
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migrateExamPeriods(null)).toBe(null);
+    expect(migrateExamPeriods(undefined)).toBe(undefined);
   });
 });
 

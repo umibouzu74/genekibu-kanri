@@ -23,6 +23,7 @@ import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import {
   useDataIO,
+  migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
@@ -192,7 +193,7 @@ export default function App() {
   const [examPeriods, saveExamPeriods] = useSyncedStorage(
     LS.examPeriods,
     [],
-    { onError: onStorageError }
+    { migrate: migrateExamPeriods, onError: onStorageError }
   );
   const [examPrepSchedules, saveExamPrepSchedules] = useSyncedStorage(
     LS.examPrepSchedules,
