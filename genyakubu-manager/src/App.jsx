@@ -371,6 +371,68 @@ export default function App() {
     setSidebarOpen(false);
   }, []);
 
+  // ─── g-prefix chord navigation ──────────────────────────────────
+  // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
+  // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
+  useEffect(() => {
+    const CHORD_MAP = {
+      d: VIEWS.DASH,
+      a: VIEWS.ABSENCE_FLOW,
+      s: VIEWS.SUBS,
+      c: VIEWS.CONFIRMED_SUBS,
+      t: VIEWS.TIMETABLE,
+      h: VIEWS.HOLIDAYS,
+      m: VIEWS.MASTER,
+      v: VIEWS.STAFF,
+    };
+    const CHORD_TIMEOUT_MS = 1200;
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+    const hasOpenDialog = () =>
+      !!document.querySelector('[role="dialog"][aria-modal="true"]');
+
+    let waitingG = false;
+    let timer = null;
+    const reset = () => {
+      waitingG = false;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const handleKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (hasOpenDialog()) return;
+      if (waitingG) {
+        const target = CHORD_MAP[e.key];
+        reset();
+        if (target) {
+          e.preventDefault();
+          selectView(target);
+        }
+        return;
+      }
+      if (e.key === "g") {
+        waitingG = true;
+        timer = setTimeout(reset, CHORD_TIMEOUT_MS);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      reset();
+    };
+  }, [selectView]);
+
   // ─── Derived data ───────────────────────────────────────────────
   const now = new Date();
   const vd = new Date(now.getFullYear(), now.getMonth() + monthOff, 1);

@@ -13,11 +13,39 @@ const SHORTCUTS = [
     ],
   },
   {
+    section: "ビュー移動 (g から開始)",
+    note: "g を押した直後にもう 1 キー",
+    items: [
+      { keys: ["g", "d"], label: "ダッシュボード" },
+      { keys: ["g", "a"], label: "欠勤組み換え" },
+      { keys: ["g", "s"], label: "授業管理" },
+      { keys: ["g", "c"], label: "代行確定一覧" },
+      { keys: ["g", "t"], label: "時間割管理" },
+      { keys: ["g", "h"], label: "休講日・テスト期間" },
+      { keys: ["g", "m"], label: "コースマスター管理" },
+      { keys: ["g", "v"], label: "バイト管理" },
+    ],
+  },
+  {
     section: "コマンドパレット内",
     items: [
       { keys: ["↑"], label: "前の候補に移動" },
       { keys: ["↓"], label: "次の候補に移動" },
       { keys: ["Enter"], label: "選択" },
+    ],
+  },
+  {
+    section: "検索入力",
+    items: [
+      { keys: ["Esc"], label: "検索をクリア (サイドバー)" },
+    ],
+  },
+  {
+    section: "マウス操作",
+    items: [
+      { gesture: "ドラッグ", label: "欠勤組み換え: コマを他講師に移動／合同設定" },
+      { gesture: "右クリック", label: "欠勤組み換え: コマに対するコンテキストメニュー" },
+      { gesture: "クリック", label: "時間割セル: 代行先を選ぶポップオーバーを開く" },
     ],
   },
   {
@@ -51,10 +79,74 @@ function Key({ children }) {
   );
 }
 
+function Gesture({ children }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        background: "#eef2ff",
+        border: "1px solid #ccd6f5",
+        borderRadius: 4,
+        padding: "2px 8px",
+        fontSize: 11,
+        color: "#3a3a6e",
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ItemRow({ item }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "6px 0",
+        fontSize: 13,
+        color: "#333",
+        borderBottom: "1px dashed #eee",
+        gap: 12,
+      }}
+    >
+      <span>{item.label}</span>
+      <span
+        style={{
+          display: "flex",
+          gap: 4,
+          alignItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        {item.gesture ? (
+          <Gesture>{item.gesture}</Gesture>
+        ) : (
+          <>
+            {item.keys.map((k, i) => (
+              <Key key={`${item.label}-${i}`}>{k}</Key>
+            ))}
+            {item.alt && (
+              <>
+                <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>/</span>
+                {item.alt.map((k, i) => (
+                  <Key key={`${item.label}-alt-${i}`}>{k}</Key>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function ShortcutsHelp({ open, onClose }) {
   if (!open) return null;
   return (
-    <Modal title="キーボードショートカット" onClose={onClose} width={480}>
+    <Modal title="キーボードショートカット" onClose={onClose} width={520}>
       {SHORTCUTS.map((sec) => (
         <div key={sec.section} style={{ marginBottom: 14 }}>
           <div
@@ -77,33 +169,7 @@ export function ShortcutsHelp({ open, onClose }) {
             )}
           </div>
           {sec.items.map((it) => (
-            <div
-              key={it.label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "6px 0",
-                fontSize: 13,
-                color: "#333",
-                borderBottom: "1px dashed #eee",
-              }}
-            >
-              <span>{it.label}</span>
-              <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                {it.keys.map((k, i) => (
-                  <Key key={`${it.label}-${i}`}>{k}</Key>
-                ))}
-                {it.alt && (
-                  <>
-                    <span style={{ fontSize: 10, color: "#aaa", margin: "0 4px" }}>/</span>
-                    {it.alt.map((k, i) => (
-                      <Key key={`${it.label}-alt-${i}`}>{k}</Key>
-                    ))}
-                  </>
-                )}
-              </span>
-            </div>
+            <ItemRow key={it.label} item={it} />
           ))}
         </div>
       ))}
