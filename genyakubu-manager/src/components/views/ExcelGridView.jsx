@@ -505,10 +505,16 @@ export function ExcelGridView({
                     alignItems: "start",
                   }}
                 >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                  <div
+                    className="excel-print-col-ms"
+                    style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
+                  >
                     {leftCol.map(renderSection)}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+                  <div
+                    className="excel-print-col-hs"
+                    style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
+                  >
                     {[...rightCol, ...otherCol].map(renderSection)}
                   </div>
                 </div>

@@ -385,8 +385,20 @@ export default function App() {
       );
       return;
     }
+    const printStyles = `
+      body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
+      @media print{
+        @page{size:A4 landscape;margin:8mm}
+        body{padding:0;font-size:10px}
+        *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
+        .no-print{display:none !important}
+        .excel-grid-sections{display:block !important;grid-template-columns:none !important}
+        .excel-print-col-ms{break-after:page;page-break-after:always}
+        .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
+      }
+    `;
     w.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(selected || "現役部")} 授業予定</title><style>body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(selected || "現役部")} 授業予定</title><style>${printStyles}</style></head><body>${el.innerHTML}</body></html>`
     );
     w.document.close();
     setTimeout(() => w.print(), 300);
