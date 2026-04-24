@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
+  ADJ_COLOR,
   DAY_COLOR as DC,
   dateToDay,
   fmtDate,
@@ -11,6 +12,16 @@ import {
 import { S } from "../../styles/common";
 import { formatBiweeklyTeacher } from "../../utils/biweekly";
 import { ContextMenu } from "../ContextMenu";
+
+const ADJ_TYPE_META = {
+  move: { label: "移動", color: "#2e6a9e" },
+  combine: { label: "合同", color: "#9e8a2e" },
+  reschedule: { label: "振替", color: ADJ_COLOR.reschedule.color },
+};
+
+function adjMeta(type) {
+  return ADJ_TYPE_META[type] || { label: type || "?", color: "#888" };
+}
 
 // ─── Slot Card (draggable) ───────────────────────────────────────
 function SlotCard({ slot, isAdjusted, adjustLabel, onContextMenu, isAdmin }) {
@@ -549,13 +560,30 @@ export function AdjustmentEditor({
             <tbody>
               {dateAdj.map((a) => {
                 const slot = slots.find((s) => s.id === a.slotId);
+                const meta = adjMeta(a.type);
+                let detail = null;
+                if (a.type === "move" && a.targetTime) {
+                  detail = (
+                    <span style={{ color: "#666", marginLeft: 6 }}>
+                      → {a.targetTime}
+                    </span>
+                  );
+                } else if (a.type === "reschedule" && a.targetDate) {
+                  const tgt = [a.targetDate];
+                  if (a.targetTime) tgt.push(a.targetTime);
+                  detail = (
+                    <span style={{ color: "#666", marginLeft: 6 }}>
+                      → {tgt.join(" ")}
+                      {a.targetTeacher && ` (${a.targetTeacher})`}
+                    </span>
+                  );
+                }
                 return (
                   <tr key={a.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
                     <td style={{ padding: "6px 8px" }}>
                       <span
                         style={{
-                          background:
-                            a.type === "move" ? "#2e6a9e" : "#9e8a2e",
+                          background: meta.color,
                           color: "#fff",
                           padding: "2px 8px",
                           borderRadius: 4,
@@ -563,13 +591,14 @@ export function AdjustmentEditor({
                           fontWeight: 700,
                         }}
                       >
-                        {a.type === "move" ? "移動" : "合同"}
+                        {meta.label}
                       </span>
                     </td>
                     <td style={{ padding: "6px 8px" }}>
                       {slot
                         ? `${slot.grade}${slot.cls} ${slot.subj} (${slot.teacher})`
                         : `コマID: ${a.slotId}`}
+                      {detail}
                       {a.memo && (
                         <span style={{ color: "#888", marginLeft: 6 }}>
                           - {a.memo}

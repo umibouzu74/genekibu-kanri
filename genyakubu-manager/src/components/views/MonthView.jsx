@@ -96,10 +96,21 @@ export function MonthView({
   // ホスト側は「自分のコマに別クラスが追加された」状態。
   // 移動の索引
   //   moveByKey:           (date|slotId) -> targetTime
-  const { hostByAbsorbedKey, absorbedByHostKey, moveByKey } = useMemo(() => {
+  // 振替の索引
+  //   rescheduleOutByKey:  (date|slotId) -> adj  (元日付で他日へ送り出されている)
+  //   rescheduleInByDate:  targetDate -> adj[]   (その日に振替で入るコマ)
+  const {
+    hostByAbsorbedKey,
+    absorbedByHostKey,
+    moveByKey,
+    rescheduleOutByKey,
+    rescheduleInByDate,
+  } = useMemo(() => {
     const absMap = new Map();
     const hostMap = new Map();
     const moveMap = new Map();
+    const rOutMap = new Map();
+    const rInMap = new Map();
     for (const adj of adjustments) {
       if (adj.type === "combine") {
         const absorbedIds = adj.combineSlotIds || [];
@@ -111,9 +122,19 @@ export function MonthView({
         }
       } else if (adj.type === "move" && adj.targetTime) {
         moveMap.set(`${adj.date}|${adj.slotId}`, adj.targetTime);
+      } else if (adj.type === "reschedule" && adj.targetDate) {
+        rOutMap.set(`${adj.date}|${adj.slotId}`, adj);
+        if (!rInMap.has(adj.targetDate)) rInMap.set(adj.targetDate, []);
+        rInMap.get(adj.targetDate).push(adj);
       }
     }
-    return { hostByAbsorbedKey: absMap, absorbedByHostKey: hostMap, moveByKey: moveMap };
+    return {
+      hostByAbsorbedKey: absMap,
+      absorbedByHostKey: hostMap,
+      moveByKey: moveMap,
+      rescheduleOutByKey: rOutMap,
+      rescheduleInByDate: rInMap,
+    };
   }, [adjustments]);
   const dayMap = useMemo(() => {
     const m = {};
@@ -254,6 +275,20 @@ export function MonthView({
           const sl = isFullOff || dayCutoff
             ? []
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
+          // 振替で当日に来る予定のコマ (この teacher が担当する分)。
+          // adj.targetTeacher 指定時はその講師、未指定時は元 slot.teacher。
+          const incomingForDay =
+            isFullOff || dayCutoff
+              ? []
+              : (rescheduleInByDate.get(ds) || [])
+                  .map((adj) => {
+                    const slot = slots.find((x) => x.id === adj.slotId);
+                    if (!slot) return null;
+                    const tgtTeacher = adj.targetTeacher || slot.teacher;
+                    if (tgtTeacher !== teacher) return null;
+                    return { adj, slot };
+                  })
+                  .filter(Boolean);
           // この teacher が他人のコマを代行する行で使う slot も session count
           // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
           const externalSubSlots =
@@ -352,22 +387,29 @@ export function MonthView({
                   const hostedIds = absorbedByHostKey.get(`${ds}|${s.id}`);
                   const isHost = !absorbed && !!hostedIds;
                   const moveTarget = moveByKey.get(`${ds}|${s.id}`);
-                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された
+                  const rescheduledOut = rescheduleOutByKey.get(`${ds}|${s.id}`);
+                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された or 振替で他日へ
                   const away =
                     (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) ||
-                    absorbed;
-                  // カード全体の色: absorbed が最強 (不在扱い)、次に sub、なければ曜日色
-                  // host / move は情報追加なのでバッジだけ
+                    absorbed ||
+                    (rescheduledOut &&
+                      (!rescheduledOut.targetTeacher ||
+                        rescheduledOut.targetTeacher !== teacher));
+                  // カード全体の色: absorbed > rescheduledOut > sub > 曜日色
                   const cardBg = absorbed
                     ? ADJ_COLOR.combine.bg
-                    : sub
-                      ? st.bg
-                      : DB[s.day];
+                    : rescheduledOut
+                      ? ADJ_COLOR.reschedule.bg
+                      : sub
+                        ? st.bg
+                        : DB[s.day];
                   const cardBorder = absorbed
                     ? ADJ_COLOR.combine.color
-                    : sub
-                      ? st.color
-                      : DC[s.day];
+                    : rescheduledOut
+                      ? ADJ_COLOR.reschedule.color
+                      : sub
+                        ? st.color
+                        : DC[s.day];
                   const displayTime = moveTarget
                     ? moveTarget.split("-")[0]
                     : s.time.split("-")[0];
@@ -376,10 +418,21 @@ export function MonthView({
                   if (isHost) badges.push({ label: "合+", color: ADJ_COLOR.combine.color });
                   if (sub) badges.push({ label: "代", color: st.color });
                   if (moveTarget) badges.push({ label: "移", color: ADJ_COLOR.move.color });
+                  if (rescheduledOut) {
+                    badges.push({ label: "振", color: ADJ_COLOR.reschedule.color });
+                  }
                   const titleParts = [
                     `${s.time} ${s.grade} ${s.subj} ${s.room || ""}`,
                   ];
                   if (moveTarget) titleParts.push(`[移動] ${s.time} → ${moveTarget}`);
+                  if (rescheduledOut) {
+                    const tgt = [rescheduledOut.targetDate];
+                    if (rescheduledOut.targetTime) tgt.push(rescheduledOut.targetTime);
+                    if (rescheduledOut.targetTeacher) {
+                      tgt.push(`(${rescheduledOut.targetTeacher})`);
+                    }
+                    titleParts.push(`[振替] → ${tgt.join(" ")}`);
+                  }
                   if (absorbed && hostSlot) {
                     titleParts.push(
                       `[合同] ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} に統合 (${hostSlot.teacher})`
@@ -557,6 +610,63 @@ export function MonthView({
                       </div>
                     );
                   })}
+              {/* 振替で当日担当する予定のコマ (元日付は別) */}
+              {!isFullOff &&
+                incomingForDay.map(({ adj, slot }) => {
+                  const gc = GC(slot.grade);
+                  const tgtTime = adj.targetTime || slot.time;
+                  return (
+                    <div
+                      key={`rsch-in-${adj.id}`}
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                        padding: "2px 3px",
+                        margin: "1px 0",
+                        borderRadius: 3,
+                        background: ADJ_COLOR.reschedule.bg,
+                        borderLeft: `2px solid ${ADJ_COLOR.reschedule.color}`,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={`[振替で当日担当] ${slot.grade}${
+                        slot.cls && slot.cls !== "-" ? slot.cls : ""
+                      } ${slot.subj} (${tgtTime})\n元: ${adj.date} ${slot.time}${
+                        adj.memo ? "\n" + adj.memo : ""
+                      }`}
+                    >
+                      <span
+                        style={{
+                          background: ADJ_COLOR.reschedule.color,
+                          color: "#fff",
+                          fontSize: 8,
+                          fontWeight: 800,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        振
+                      </span>
+                      <span
+                        style={{
+                          background: gc.b,
+                          color: gc.f,
+                          fontSize: 8,
+                          fontWeight: 700,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        {slot.grade}
+                        {slot.cls && slot.cls !== "-" ? slot.cls : ""}
+                      </span>
+                      <b>{tgtTime.split("-")[0]}</b> {slot.subj}
+                    </div>
+                  );
+                })}
               {/* テスト直前特訓シフト (アルバイト講師のみ) */}
               {isPartTime &&
                 (() => {

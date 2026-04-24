@@ -154,6 +154,38 @@ describe("type guards", () => {
         memo: "",
       })
     ).toBe(true);
+    // reschedule は targetDate が ISO 形式必須
+    expect(
+      isScheduleAdjustment({
+        id: 4,
+        date: "2026-04-10",
+        type: "reschedule",
+        slotId: 3,
+        memo: "",
+      })
+    ).toBe(false);
+    expect(
+      isScheduleAdjustment({
+        id: 5,
+        date: "2026-04-10",
+        type: "reschedule",
+        slotId: 3,
+        targetDate: "not-a-date",
+        memo: "",
+      })
+    ).toBe(false);
+    // targetTeacher は文字列のみ
+    expect(
+      isScheduleAdjustment({
+        id: 6,
+        date: "2026-04-10",
+        type: "reschedule",
+        slotId: 3,
+        targetDate: "2026-04-17",
+        targetTeacher: 123,
+        memo: "",
+      })
+    ).toBe(false);
     expect(
       isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "cancel", slotId: 3 })
     ).toBe(false); // "cancel" is not a valid type

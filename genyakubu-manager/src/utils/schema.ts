@@ -103,14 +103,23 @@ export function isBiweeklyAnchor(x: unknown): x is BiweeklyAnchor {
 }
 
 export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
-  return (
-    isObject(x) &&
-    isNumber(x.id) &&
-    isString(x.date) &&
-    isString(x.type) &&
-    (x.type === "move" || x.type === "combine" || x.type === "reschedule") &&
-    isNumber(x.slotId)
-  );
+  if (
+    !(
+      isObject(x) &&
+      isNumber(x.id) &&
+      isString(x.date) &&
+      isString(x.type) &&
+      (x.type === "move" || x.type === "combine" || x.type === "reschedule") &&
+      isNumber(x.slotId)
+    )
+  ) {
+    return false;
+  }
+  // reschedule は targetDate (ISO 形式) が必須
+  if (x.type === "reschedule" && !isIsoDate(x.targetDate)) return false;
+  // targetTeacher は省略可だが、入っていれば文字列であること
+  if (x.targetTeacher !== undefined && !isString(x.targetTeacher)) return false;
+  return true;
 }
 
 export function isTimetable(x: unknown): x is Timetable {

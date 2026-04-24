@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { gradeColor as GC } from "../../../data";
+import { ADJ_COLOR, gradeColor as GC, timeToMin } from "../../../data";
 import {
   formatCount,
   getSlotTeachers,
@@ -66,6 +66,25 @@ export function ExcelSection({
     }
     return m;
   }, [adjIndex.combineHostBySlot, slotById]);
+
+  // 当日に他日から振替で来るコマのうち、本セクションのフィルタに該当するもの。
+  // 元コマ自体は別日付に属するため通常の slots ループには現れない。バナーで
+  // 補足表示する。
+  const incomingReschedules = useMemo(() => {
+    const out = [];
+    for (const adj of adjIndex.rescheduleInBySlot.values()) {
+      const slot = slotById.get(adj.slotId);
+      if (!slot) continue;
+      if (sectionFilterFn && !sectionFilterFn(slot)) continue;
+      out.push({ adj, slot });
+    }
+    out.sort(
+      (a, b) =>
+        timeToMin(a.adj.targetTime || a.slot.time || "00:00") -
+        timeToMin(b.adj.targetTime || b.slot.time || "00:00")
+    );
+    return out;
+  }, [adjIndex.rescheduleInBySlot, slotById, sectionFilterFn]);
 
   // 当日の移動 (move) を slot.time に反映した "effective slots"。
   // buildColumnDefs / buildTimeRows / findSlotForCell は全てこの effectiveSlots
@@ -223,6 +242,7 @@ export function ExcelSection({
     const isCombineHost = !!hostedSlots;
     const moveTarget = adjIndex.moveBySlot.get(slot.id) || null;
     const moveOriginalTime = originalTimeBySlot.get(slot.id) || null;
+    const rescheduleOut = adjIndex.rescheduleOutBySlot.get(slot.id) || null;
     return {
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
@@ -237,6 +257,7 @@ export function ExcelSection({
       hostedSlots,
       moveTarget,
       moveOriginalTime,
+      rescheduleOut,
       onCellClick: onCellClick
         ? (s, rect, el) => {
             // In combine mode, any cell can be clicked
@@ -274,6 +295,46 @@ export function ExcelSection({
           {formatCount(slotCount)}コマ
         </span>
       </div>
+      {/* 振替で当日に来るコマの案内バナー */}
+      {incomingReschedules.length > 0 && (
+        <div
+          style={{
+            background: ADJ_COLOR.reschedule.bannerBg,
+            border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
+            borderTop: "none",
+            padding: "6px 12px",
+            fontSize: 11,
+            color: ADJ_COLOR.reschedule.deep,
+          }}
+        >
+          <strong style={{ marginRight: 6 }}>
+            ↻ 振替で入るコマ ({incomingReschedules.length})
+          </strong>
+          {incomingReschedules.map(({ adj, slot }, idx) => {
+            const timeText = adj.targetTime || slot.time;
+            const teacherText = adj.targetTeacher || slot.teacher;
+            const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+            return (
+              <span
+                key={adj.id}
+                title={`元: ${adj.date} ${slot.time}${
+                  adj.memo ? ` / ${adj.memo}` : ""
+                }`}
+                style={{ marginRight: 8 }}
+              >
+                {idx > 0 && <span style={{ color: "#888" }}>・</span>}
+                <span style={{ fontWeight: 700 }}>{timeText}</span>{" "}
+                {slot.grade}
+                {cls} {slot.subj} ({teacherText})
+                <span style={{ color: "#888", marginLeft: 2 }}>
+                  ←{adj.date}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div
         style={{
           overflowX: "auto",

@@ -189,6 +189,39 @@ export function WeekView({
     return m;
   }, [adjustments, slots, teacher, winStart, winEnd, biweeklyAnchors]);
 
+  // 振替: 直近14日間に「振替元」または「振替先」となる予定。
+  // 該当する講師は (a) 元担当 = adj 対象 slot.teacher または
+  //               (b) targetTeacher が指定されていればその講師。
+  // 表示は targetDate (実際に実施される日) でソートする。
+  const upcomingReschedules = useMemo(() => {
+    if (!adjustments?.length) return [];
+    const slotById = new Map();
+    for (const s of slots) slotById.set(s.id, s);
+
+    const out = [];
+    for (const adj of adjustments) {
+      if (adj.type !== "reschedule") continue;
+      const slot = slotById.get(adj.slotId);
+      if (!slot) continue;
+      const involved =
+        isSlotForTeacher(slot, teacher) ||
+        (adj.targetTeacher && adj.targetTeacher === teacher);
+      if (!involved) continue;
+      // ウィンドウ内に「元日」または「振替先日」が入っていれば候補
+      const inSrc = isWithinWindow(adj.date, winStart, winEnd);
+      const inTgt =
+        adj.targetDate && isWithinWindow(adj.targetDate, winStart, winEnd);
+      if (!inSrc && !inTgt) continue;
+      out.push({ adj, slot });
+    }
+    out.sort((a, b) =>
+      (a.adj.targetDate || a.adj.date).localeCompare(
+        b.adj.targetDate || b.adj.date
+      )
+    );
+    return out;
+  }, [adjustments, slots, teacher, winStart, winEnd]);
+
   // 上部バナー用: フラット化 + 日付ソート
   const upcomingCombines = useMemo(() => {
     const list = [];
@@ -404,6 +437,82 @@ export function WeekView({
                     {slot.grade}
                     {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
                   </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {upcomingReschedules.length > 0 && (
+        <div
+          style={{
+            background: ADJ_COLOR.reschedule.bannerBg,
+            border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              marginBottom: 8,
+              color: ADJ_COLOR.reschedule.deep,
+            }}
+          >
+            ↻ 直近2週間の振替予定 ({upcomingReschedules.length}件)
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {upcomingReschedules.map(({ adj, slot }, i) => {
+              const tgtTime = adj.targetTime || slot.time;
+              const tgtTeacher = adj.targetTeacher || slot.teacher;
+              const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+              return (
+                <div
+                  key={`rsch-${adj.id}-${i}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#fff",
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                    {fmtDateWeekday(adj.targetDate)}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#888", minWidth: 130 }}>
+                    <span style={{ textDecoration: "line-through" }}>
+                      {adj.date} {slot.time}
+                    </span>
+                    <span style={{ margin: "0 4px" }}>→</span>
+                    <span
+                      style={{ fontWeight: 700, color: ADJ_COLOR.reschedule.deep }}
+                    >
+                      {tgtTime}
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 11 }}>
+                    {slot.grade}
+                    {cls} {slot.subj}
+                    <span style={{ color: "#666", marginLeft: 4 }}>
+                      ({tgtTeacher})
+                    </span>
+                  </span>
+                  {adj.memo && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#888",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      {adj.memo}
+                    </span>
+                  )}
                 </div>
               );
             })}

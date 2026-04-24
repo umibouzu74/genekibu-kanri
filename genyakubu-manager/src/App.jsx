@@ -750,6 +750,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
+              timetables={timetables}
               saveSubs={saveSubs}
               saveAdjustments={saveAdjustments}
               saveSessionOverrides={saveSessionOverrides}

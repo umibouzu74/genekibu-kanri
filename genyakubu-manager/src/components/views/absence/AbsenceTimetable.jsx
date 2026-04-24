@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { ADJ_COLOR, dateToDay, DEPT_COLOR } from "../../../data";
+import { ADJ_COLOR, dateToDay, DEPT_COLOR, timeToMin } from "../../../data";
 import { getDashSections } from "../../../constants/schedule";
 import { ContextMenu } from "../../ContextMenu";
 import { AbsenceSlotCard } from "./AbsenceSlotCard";
@@ -27,12 +27,16 @@ export function AbsenceTimetable({
   existingSubs, // 既存確定代行 (date フィルタ済み)
   existingAdjustments, // 既存調整 (date フィルタ前)
   removedAdjustmentIds, // Set<number> draft 上で解除マークされた adjustment id
+  removedSubIds, // Set<number> draft 上で解除マークされた substitute id
   sessionCountMap, // Map<slotId, number> draft 反映済み
   absentSlotIds, // Set<slotId>
   partTimeStaff,
   subjects,
   biweeklyAnchors,
   allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
+  timetables, // 振替先の有効時間割フィルタ用
+  isOffForGrade, // 振替先の休講/テスト期間警告用
+  sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -94,10 +98,10 @@ export function AbsenceTimetable({
       if (!slot) continue;
       out.push({ adj, slot });
     }
-    out.sort((a, b) =>
-      (a.adj.targetTime || a.slot.time || "").localeCompare(
-        b.adj.targetTime || b.slot.time || ""
-      )
+    out.sort(
+      (a, b) =>
+        timeToMin(a.adj.targetTime || a.slot.time || "00:00") -
+        timeToMin(b.adj.targetTime || b.slot.time || "00:00")
     );
     return out;
   }, [existingAdjustments, removedAdjustmentIds, date, allSlots]);
@@ -292,14 +296,18 @@ export function AbsenceTimetable({
           });
         }
 
-        // 振替 (他日への移動)
+        // 振替 (他日への移動)。合同 host の状態では振替不可 (排他)。
         const hasReschedule = rescheduleBySlot.has(slot.id);
+        const blockReschedule = isHost; // absorbed は分岐の外側で処理済み
         items.push({
           label: hasReschedule ? "振替を変更…" : "振替にする…",
-          onClick: () => {
-            const anchorRect = e.target.getBoundingClientRect();
-            setReschedulePicker({ slot, anchorRect });
-          },
+          disabled: blockReschedule,
+          onClick: blockReschedule
+            ? undefined
+            : () => {
+                const anchorRect = e.target.getBoundingClientRect();
+                setReschedulePicker({ slot, anchorRect });
+              },
         });
         if (hasReschedule) {
           const info = rescheduleBySlot.get(slot.id);
@@ -429,7 +437,7 @@ export function AbsenceTimetable({
         ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
         : null;
 
-      // 代行: draft or 既存確定
+      // 代行: draft or 既存確定 (removedSubIds でマーク済みは表示から除外)
       let substituteName = null;
       let substituteStatus = null;
       if (row.sub?.substitute) {
@@ -437,7 +445,10 @@ export function AbsenceTimetable({
         substituteStatus = row.sub.status || "confirmed";
       } else {
         const ex = (existingSubs || []).find(
-          (x) => x.date === date && x.slotId === s.id
+          (x) =>
+            x.date === date &&
+            x.slotId === s.id &&
+            !removedSubIds?.has(x.id)
         );
         if (ex?.substitute) {
           substituteName = ex.substitute;
@@ -481,16 +492,18 @@ export function AbsenceTimetable({
 
       const isMoved = !!row.move?.targetTime || moveSourceBySlot.get(s.id) === "saved";
 
-      // 振替情報
+      // 振替情報。targetTime が空なら元コマの時間帯を使う。
       const reschedule = rescheduleBySlot.get(s.id) || null;
       let rescheduleLabel = null;
       if (reschedule) {
+        const timeText = reschedule.targetTime || s.time;
         const parts = [`→ ${reschedule.targetDate}`];
-        if (reschedule.targetTime) parts.push(reschedule.targetTime);
+        if (timeText) parts.push(timeText);
         if (reschedule.targetTeacher && reschedule.targetTeacher !== s.teacher) {
           parts.push(`(${reschedule.targetTeacher})`);
         }
         rescheduleLabel = `振替 ${parts.join(" ")}`;
+        if (reschedule.memo) rescheduleLabel += ` - ${reschedule.memo}`;
       }
 
       return (
@@ -531,6 +544,7 @@ export function AbsenceTimetable({
       absentSlotIds,
       slots,
       existingSubs,
+      removedSubIds,
       date,
       biweeklyAnchors,
       combineSource,
@@ -702,10 +716,12 @@ export function AbsenceTimetable({
               const timeText = adj.targetTime || slot.time;
               const teacherText = adj.targetTeacher || slot.teacher;
               const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+              const titleParts = [`元: ${adj.date} ${slot.time}`];
+              if (adj.memo) titleParts.push(adj.memo);
               return (
                 <span
                   key={adj.id}
-                  title={`元: ${adj.date} ${slot.time}`}
+                  title={titleParts.join(" / ")}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -725,6 +741,17 @@ export function AbsenceTimetable({
                   </span>
                   <span style={{ color: "#666" }}>({teacherText})</span>
                   <span style={{ color: "#888" }}>← {adj.date}</span>
+                  {adj.memo && (
+                    <span
+                      style={{
+                        color: "#888",
+                        fontStyle: "italic",
+                        marginLeft: 2,
+                      }}
+                    >
+                      {adj.memo}
+                    </span>
+                  )}
                 </span>
               );
             })}
@@ -866,27 +893,71 @@ export function AbsenceTimetable({
           sourceDate={date}
           allSlots={allSlots}
           allTeachers={allTeachers}
+          timetables={timetables}
+          isOffForGrade={isOffForGrade}
+          hasAutoSkip={(() => {
+            const sid = reschedulePicker.slot.id;
+            // draft 上の override が skip ならそれを引き継ぐ。なければ
+            // 保存済み sessionOverrides を date+slotId で検索。
+            const draftOv = draft[sid]?.override;
+            if (draftOv) return draftOv.mode === "skip";
+            const ex = (sessionOverrides || []).find(
+              (o) => o.date === date && o.slotId === sid
+            );
+            return ex?.mode === "skip";
+          })()}
           initial={
             draft[reschedulePicker.slot.id]?.reschedule ||
             rescheduleBySlot.get(reschedulePicker.slot.id) ||
             null
           }
           onSave={(payload) => {
+            const slotId = reschedulePicker.slot.id;
+            const { autoSkip, ...reschedulePayload } = payload;
             // 既存 (saved) からの変更は draft に写した上で既存を除去マーク
-            const info = rescheduleBySlot.get(reschedulePicker.slot.id);
+            const info = rescheduleBySlot.get(slotId);
             if (info?.source === "saved") {
-              const existing = existingRescheduleBySlot.get(reschedulePicker.slot.id);
+              const existing = existingRescheduleBySlot.get(slotId);
               if (existing) draftApi.markAdjustmentRemoved(existing.id);
             }
-            draftApi.updateReschedule(reschedulePicker.slot.id, payload);
+            // 同コマで既に確定している代行があれば解除マーク
+            // (振替するなら同日の代行は不要のため)
+            for (const sub of existingSubs || []) {
+              if (sub.date === date && sub.slotId === slotId) {
+                draftApi.markSubRemoved(sub.id);
+              }
+            }
+            draftApi.updateReschedule(slotId, reschedulePayload);
+            // autoSkip: 元日付の回数カウントから外す skip override を付与
+            if (autoSkip) {
+              draftApi.updateOverride(slotId, {
+                mode: "skip",
+                memo: "振替に伴う skip",
+              });
+            } else {
+              // ユーザーが明示的にチェック解除した場合: 既存の skip override を解除
+              const existingOv = (sessionOverrides || []).find(
+                (o) => o.date === date && o.slotId === slotId && o.mode === "skip"
+              );
+              if (existingOv || draft[slotId]?.override?.mode === "skip") {
+                draftApi.updateOverride(slotId, null);
+              }
+            }
           }}
           onClear={() => {
-            const info = rescheduleBySlot.get(reschedulePicker.slot.id);
+            const slotId = reschedulePicker.slot.id;
+            const info = rescheduleBySlot.get(slotId);
             if (info?.source === "saved") {
-              const existing = existingRescheduleBySlot.get(reschedulePicker.slot.id);
+              const existing = existingRescheduleBySlot.get(slotId);
               if (existing) draftApi.markAdjustmentRemoved(existing.id);
             } else {
-              draftApi.clearReschedule(reschedulePicker.slot.id);
+              draftApi.clearReschedule(slotId);
+            }
+            // 振替設定時に解除マークしていた既存代行を取り消す (元の状態へ)
+            for (const sub of existingSubs || []) {
+              if (sub.date === date && sub.slotId === slotId) {
+                draftApi.unmarkSubRemoved(sub.id);
+              }
             }
           }}
           onClose={() => setReschedulePicker(null)}

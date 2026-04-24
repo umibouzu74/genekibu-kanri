@@ -58,12 +58,15 @@ function patchRow(prev, slotId, patch) {
 
 export function useAbsenceDraft() {
   const [draft, setDraft] = useState({});
-  // 保存済み adjustments の解除マーク (UI 上で取消した既存 combine/move の id)
+  // 保存済み adjustments の解除マーク (UI 上で取消した既存 combine/move/reschedule の id)
   const [removedAdjustmentIds, setRemovedAdjustmentIds] = useState(() => new Set());
+  // 保存済み substitute の解除マーク (振替設定時など、既存代行を解除する場合)
+  const [removedSubIds, setRemovedSubIds] = useState(() => new Set());
 
   const reset = useCallback(() => {
     setDraft({});
     setRemovedAdjustmentIds(new Set());
+    setRemovedSubIds(new Set());
   }, []);
 
   const markAdjustmentRemoved = useCallback((id) => {
@@ -77,6 +80,24 @@ export function useAbsenceDraft() {
 
   const unmarkAdjustmentRemoved = useCallback((id) => {
     setRemovedAdjustmentIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const markSubRemoved = useCallback((id) => {
+    setRemovedSubIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const unmarkSubRemoved = useCallback((id) => {
+    setRemovedSubIds((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
@@ -116,9 +137,14 @@ export function useAbsenceDraft() {
 
   // 振替 (他日への移動): targetDate は必須、targetTime / targetTeacher は省略可
   // (省略時はそれぞれ元コマの時間 / 元担当を使う前提)。
+  // 合同に取り込まれている / 合同 host のコマには振替を設定できない
+  // (意味的に排他のため呼び出し側で防ぐ前提だが、防衛的に黙って no-op)。
   const updateReschedule = useCallback((slotId, patch) => {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
+      if (cur.absorbedBy != null || cur.combine?.absorbedSlotIds?.length) {
+        return prev;
+      }
       // 振替を設定したら move / sub は解除 (意味的に排他)
       return patchRow(prev, slotId, {
         reschedule: {
@@ -270,22 +296,28 @@ export function useAbsenceDraft() {
         }
 
         if (row.reschedule?.targetDate) {
-          const entry = {
-            date,
-            type: "reschedule",
-            slotId,
-            targetDate: row.reschedule.targetDate,
-            memo: row.reschedule.memo || "",
-          };
-          if (row.reschedule.targetTime) {
-            entry.targetTime = row.reschedule.targetTime;
+          // 合同との二重指定はデータ上不整合のため、combine 優先で reschedule
+          // を黙って落とす (UI 側で排他にしているが防衛策)。
+          const conflictsWithCombine =
+            row.combine?.absorbedSlotIds?.length || row.absorbedBy != null;
+          if (!conflictsWithCombine) {
+            const entry = {
+              date,
+              type: "reschedule",
+              slotId,
+              targetDate: row.reschedule.targetDate,
+              memo: row.reschedule.memo || "",
+            };
+            if (row.reschedule.targetTime) {
+              entry.targetTime = row.reschedule.targetTime;
+            }
+            if (row.reschedule.targetTeacher) {
+              entry.targetTeacher = row.reschedule.targetTeacher;
+            }
+            draftAdjustments.push(entry);
+            const existingId = existingBySlotType.get(`${slotId}|reschedule`);
+            if (existingId != null) autoRemovedIds.add(existingId);
           }
-          if (row.reschedule.targetTeacher) {
-            entry.targetTeacher = row.reschedule.targetTeacher;
-          }
-          draftAdjustments.push(entry);
-          const existingId = existingBySlotType.get(`${slotId}|reschedule`);
-          if (existingId != null) autoRemovedIds.add(existingId);
         }
 
         if (row.override) {
@@ -319,14 +351,16 @@ export function useAbsenceDraft() {
         draftAdjustments,
         draftOverrides,
         removedAdjustmentIds: [...mergedRemoved],
+        removedSubIds: [...removedSubIds],
       };
     },
-    [draft, removedAdjustmentIds]
+    [draft, removedAdjustmentIds, removedSubIds]
   );
 
   return {
     draft,
     removedAdjustmentIds,
+    removedSubIds,
     reset,
     updateSub,
     clearSub,
@@ -339,6 +373,8 @@ export function useAbsenceDraft() {
     updateOverride,
     markAdjustmentRemoved,
     unmarkAdjustmentRemoved,
+    markSubRemoved,
+    unmarkSubRemoved,
     toBatchPayload,
   };
 }
