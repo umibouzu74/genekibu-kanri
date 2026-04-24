@@ -8,8 +8,8 @@ import { formatSessionNumber } from "../../../utils/sessionCount";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // ─── 欠勤 UI 用スロットカード ──────────────────────────────────
-// AdjustmentEditor.SlotCard の派生。欠勤バッジ・下書き状態・代行表示・
-// 回数バッジを統合し、DnD と右クリックはカード上で発火する。
+// 欠勤バッジ・下書き状態・代行表示・振替表示・回数バッジを統合し、
+// DnD と右クリックはカード上で発火する。
 
 export function AbsenceSlotCard({
   slot,
@@ -50,7 +50,7 @@ export function AbsenceSlotCard({
         : isRescheduled
           ? ADJ_COLOR.reschedule.color
           : isMoved
-            ? "#2a6a9e"
+            ? ADJ_COLOR.move.color
             : isCombineHost
               ? "#e0a020"
               : "#ddd";
@@ -58,7 +58,7 @@ export function AbsenceSlotCard({
   const background = isRescheduled
     ? ADJ_COLOR.reschedule.bg
     : isMoved
-      ? "#e8f4ff"
+      ? ADJ_COLOR.move.bg
       : isCombineHost
         ? "#fff8e0"
         : isAbsorbed
@@ -109,7 +109,7 @@ export function AbsenceSlotCard({
             <BadgeChip color={ADJ_COLOR.reschedule.color} label="振替" />
           )}
           {isMoved && (
-            <BadgeChip color="#2a6a9e" label="移動" />
+            <BadgeChip color={ADJ_COLOR.move.color} label="移動" />
           )}
           {isCombineHost && (
             <BadgeChip color="#c08020" label="合同" />

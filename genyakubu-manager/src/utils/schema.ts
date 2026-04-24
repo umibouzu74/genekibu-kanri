@@ -35,7 +35,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -679,6 +679,13 @@ export function migrateExportBundle(raw: unknown): unknown {
       bundle.examPrepSchedules = [];
     }
   }
+
+  // v11 → v12: ScheduleAdjustment に "reschedule" 種別を追加。
+  //             既存 adjustments は move/combine のみのため変換不要 (no-op
+  //             だがバージョン番号で「reschedule を理解する schema」と
+  //             明示する)。今後 reschedule 必須フィールドを追加した際の
+  //             ための切れ目として版を上げる。
+  // 既存データは触らない。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;
