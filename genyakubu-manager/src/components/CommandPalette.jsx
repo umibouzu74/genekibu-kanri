@@ -313,6 +313,7 @@ export function CommandPalette({
           <span>↑↓ 移動</span>
           <span>Enter 選択</span>
           <span>Esc 閉じる</span>
+          <span style={{ marginLeft: "auto", color: "#bbb" }}>? ショートカット一覧</span>
         </div>
       </div>
     </div>

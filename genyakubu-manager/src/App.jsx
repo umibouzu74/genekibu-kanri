@@ -89,6 +89,9 @@ const DataManager = lazy(() =>
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette }))
 );
+const ShortcutsHelp = lazy(() =>
+  import("./components/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp }))
+);
 
 function ViewFallback() {
   return (
@@ -223,6 +226,7 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -246,12 +250,30 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time migration on mount
   }, []);
 
-  // ─── Cmd+K global shortcut ─────────────────────────────────────
+  // ─── Global shortcuts ──────────────────────────────────────────
+  // Cmd+K: コマンドパレット / ?: ショートカットヘルプ
+  // フォーカスが入力要素にある場合は ? を無効化する (文字入力を妨げない)。
   useEffect(() => {
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
     const handleKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setCmdPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        setShortcutsHelpOpen((v) => !v);
       }
     };
     document.addEventListener("keydown", handleKey);
@@ -894,6 +916,16 @@ export default function App() {
               setCmdPaletteOpen(false);
             }}
             views={VIEWS}
+          />
+        </Suspense>
+      )}
+
+      {/* Shortcuts help (?) — lazy-loaded overlay */}
+      {shortcutsHelpOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsHelp
+            open={shortcutsHelpOpen}
+            onClose={() => setShortcutsHelpOpen(false)}
           />
         </Suspense>
       )}
