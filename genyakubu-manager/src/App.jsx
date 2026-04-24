@@ -515,7 +515,7 @@ export default function App() {
                     : view === VIEWS.HOLIDAYS
                       ? "休講日・テスト期間管理"
                       : view === VIEWS.SUBS
-                        ? "代行・振替・移動・合同授業管理"
+                        ? "授業管理"
                         : view === VIEWS.CONFIRMED_SUBS
                           ? "代行確定一覧"
                           : view === VIEWS.ABSENCE_FLOW

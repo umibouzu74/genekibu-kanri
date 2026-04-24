@@ -98,7 +98,7 @@ export function CommandPalette({
       { key: views.TIMETABLE, label: "時間割管理" },
       { key: views.HOLIDAYS, label: "休講日・テスト期間" },
       { key: views.MASTER, label: "コースマスター管理" },
-      { key: views.SUBS, label: "代行・振替・移動・合同授業管理" },
+      { key: views.SUBS, label: "授業管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
       { key: views.STAFF, label: "バイト管理" },
       { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },

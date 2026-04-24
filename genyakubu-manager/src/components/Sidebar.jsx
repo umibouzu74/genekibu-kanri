@@ -19,7 +19,7 @@ const MENU_CONFIG = [
     ],
   },
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
-  { key: VIEWS.SUBS, icon: "🔄", label: "代行・振替・移動・合同授業管理", badge: true },
+  { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
