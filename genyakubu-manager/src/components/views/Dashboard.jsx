@@ -89,6 +89,7 @@ export function Dashboard({
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* 表示モード切替 */}
       <div
+        className="no-print"
         style={{
           display: "flex",
           gap: 4,
@@ -120,16 +121,18 @@ export function Dashboard({
       </div>
 
       {/* 日付ナビゲーション (両モード共通) */}
-      <DashboardDateNav
-        startDate={startDate}
-        setStartDate={setStartDate}
-        daysInRange={daysInRange}
-        changeDayCount={changeDayCount}
-        todayStr={todayStr}
-        isToday={isToday}
-        days={days}
-        viewMode={viewMode}
-      />
+      <div className="no-print">
+        <DashboardDateNav
+          startDate={startDate}
+          setStartDate={setStartDate}
+          daysInRange={daysInRange}
+          changeDayCount={changeDayCount}
+          todayStr={todayStr}
+          isToday={isToday}
+          days={days}
+          viewMode={viewMode}
+        />
+      </div>
 
       {viewMode === "timetable" ? (
         <ExcelGridView
