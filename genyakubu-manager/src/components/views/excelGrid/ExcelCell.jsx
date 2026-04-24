@@ -309,6 +309,24 @@ export const ExcelCell = memo(function ExcelCell({
               : formatBiweeklyTeacher(slot.teacher, slot.note))}
         </div>
         {subDisplay}
+        {isCombineHost && hostedSlots && hostedSlots.length > 0 && (
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: ADJ_COLOR.combine.color,
+              marginTop: 2,
+              lineHeight: 1.3,
+            }}
+          >
+            {hostedSlots.map((hs) => (
+              <div key={hs.id}>
+                + {describeSlot(hs)}
+                {hs.teacher ? `（${hs.teacher}）` : ""}
+              </div>
+            ))}
+          </div>
+        )}
         {slot.note && !slot.note.startsWith("隔週") && slot.note !== "合同" && (
           <div style={{ fontSize: 10, color: "#a0331a", marginTop: 1 }}>
             {slot.note}
