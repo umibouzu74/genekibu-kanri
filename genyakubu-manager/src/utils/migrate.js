@@ -29,3 +29,20 @@ export const migrateSubs = (arr) =>
   Array.isArray(arr)
     ? arr.map((s) => (s?.status === "completed" ? { ...s, status: "confirmed" } : s))
     : arr;
+
+// Firebase RTDB は空オブジェクト / 空配列を保存時に破棄するため、
+// blankDay で初期化された `assignments: {}` が往復後に欠落する。
+// 読み込み時に必ず assignments / periods が存在する形へ戻す。
+export const migrateExamPrepSchedules = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((s) => ({
+        ...s,
+        days: Array.isArray(s?.days)
+          ? s.days.map((d) => ({
+              ...d,
+              periods: Array.isArray(d?.periods) ? d.periods : [],
+              assignments: d?.assignments ?? {},
+            }))
+          : [],
+      }))
+    : arr;

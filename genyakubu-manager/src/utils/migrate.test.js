@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { migrateHolidays, migratePartTimeStaff, migrateSubs } from "./migrate";
+import {
+  migrateExamPrepSchedules,
+  migrateHolidays,
+  migratePartTimeStaff,
+  migrateSubs,
+} from "./migrate";
 
 describe("migrateHolidays", () => {
   it("adds default scope, id, targetGrades, subjKeywords when missing", () => {
@@ -76,6 +81,60 @@ describe("migratePartTimeStaff", () => {
   it("returns non-array input unchanged", () => {
     expect(migratePartTimeStaff(null)).toBe(null);
     expect(migratePartTimeStaff(undefined)).toBe(undefined);
+  });
+});
+
+describe("migrateExamPrepSchedules", () => {
+  it("restores assignments dropped by Firebase RTDB empty-object behaviour", () => {
+    const input = [
+      {
+        examPeriodId: 1,
+        days: [
+          {
+            date: "2026-05-08",
+            periods: [{ no: 1, start: "18:00", end: "18:50" }],
+            // assignments missing (Firebase dropped the empty {})
+          },
+        ],
+      },
+    ];
+    const result = migrateExamPrepSchedules(input);
+    expect(result[0].days[0].assignments).toEqual({});
+  });
+
+  it("preserves existing non-empty assignments", () => {
+    const input = [
+      {
+        examPeriodId: 1,
+        days: [
+          {
+            date: "2026-05-08",
+            periods: [{ no: 1, start: "18:00", end: "18:50" }],
+            assignments: { 福武: [1] },
+          },
+        ],
+      },
+    ];
+    const result = migrateExamPrepSchedules(input);
+    expect(result[0].days[0].assignments).toEqual({ 福武: [1] });
+  });
+
+  it("defaults missing periods to empty array", () => {
+    const input = [{ examPeriodId: 1, days: [{ date: "2026-05-08" }] }];
+    const result = migrateExamPrepSchedules(input);
+    expect(result[0].days[0].periods).toEqual([]);
+    expect(result[0].days[0].assignments).toEqual({});
+  });
+
+  it("defaults missing days to empty array", () => {
+    const input = [{ examPeriodId: 1 }];
+    const result = migrateExamPrepSchedules(input);
+    expect(result[0].days).toEqual([]);
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migrateExamPrepSchedules(null)).toBe(null);
+    expect(migrateExamPrepSchedules(undefined)).toBe(undefined);
   });
 });
 

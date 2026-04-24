@@ -9,7 +9,12 @@ import {
   migrateExportBundle,
   validateExportBundle,
 } from "../utils/schema";
-import { migrateHolidays, migratePartTimeStaff, migrateSubs } from "../utils/migrate";
+import {
+  migrateExamPrepSchedules,
+  migrateHolidays,
+  migratePartTimeStaff,
+  migrateSubs,
+} from "../utils/migrate";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -150,7 +155,7 @@ export function useDataIO({
           if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
           if (Array.isArray(d.examPeriods)) saveExamPeriods(d.examPeriods);
           if (Array.isArray(d.examPrepSchedules) && saveExamPrepSchedules)
-            saveExamPrepSchedules(d.examPrepSchedules);
+            saveExamPrepSchedules(migrateExamPrepSchedules(d.examPrepSchedules));
           if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
           if (Array.isArray(d.sessionOverrides)) saveSessionOverrides(d.sessionOverrides);
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
@@ -255,4 +260,4 @@ export function useDataIO({
 }
 
 // Re-export migrate functions for convenience
-export { migrateHolidays, migratePartTimeStaff, migrateSubs };
+export { migrateExamPrepSchedules, migrateHolidays, migratePartTimeStaff, migrateSubs };
