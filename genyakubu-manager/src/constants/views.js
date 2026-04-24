@@ -15,5 +15,4 @@ export const VIEWS = Object.freeze({
   TIMETABLE: "timetable",
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",
-  ADJUSTMENT_LOG: "adjustment-log",
 });
