@@ -72,11 +72,6 @@ const AbsenceWorkflowView = lazy(() =>
     default: m.AbsenceWorkflowView,
   }))
 );
-const AdjustmentLogView = lazy(() =>
-  import("./components/views/AdjustmentLogView").then((m) => ({
-    default: m.AdjustmentLogView,
-  }))
-);
 
 // Lazy-loaded modals (only rendered on demand).
 const SubstituteForm = lazy(() =>
@@ -520,12 +515,14 @@ export default function App() {
                     : view === VIEWS.HOLIDAYS
                       ? "休講日・テスト期間管理"
                       : view === VIEWS.SUBS
-                        ? "アルバイト代行管理"
-                        : view === VIEWS.ABSENCE_FLOW
-                          ? "欠勤組み換え"
-                          : view === VIEWS.STAFF
-                            ? "バイト管理"
-                            : selected || ""}
+                        ? "授業管理"
+                        : view === VIEWS.CONFIRMED_SUBS
+                          ? "代行確定一覧"
+                          : view === VIEWS.ABSENCE_FLOW
+                            ? "欠勤組み換え"
+                            : view === VIEWS.STAFF
+                              ? "バイト管理"
+                              : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -758,9 +755,6 @@ export default function App() {
               saveSessionOverrides={saveSessionOverrides}
               isAdmin={isAdmin}
             />
-          )}
-          {view === VIEWS.ADJUSTMENT_LOG && !selected && (
-            <AdjustmentLogView slots={slots} subs={subs} adjustments={adjustments} />
           )}
           {view === VIEWS.STAFF && !selected && (
             <StaffManagerView
