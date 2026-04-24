@@ -399,7 +399,7 @@ export default function App() {
       body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
       .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
       @media print{
-        @page{size:A4 landscape;margin:12mm 8mm}
+        @page{size:A4 portrait;margin:12mm 8mm}
         body{padding:0;font-size:10px}
         *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
         .no-print{display:none !important}
