@@ -561,12 +561,21 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
           <div
             style={{
               textAlign: "center",
-              color: "#bbb",
-              padding: 30,
+              color: "#888",
+              padding: "32px 20px",
               fontSize: 13,
+              lineHeight: 1.7,
             }}
           >
-            登録された休講日はありません
+            <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📅</div>
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
+              {filter ? `「${filter}」対象の休講日はありません` : "登録された休講日はありません"}
+            </div>
+            {isAdmin && (
+              <div style={{ fontSize: 12, color: "#888" }}>
+                上のフォームから日付・対象を指定して追加してください
+              </div>
+            )}
           </div>
         ) : (
           filtered.map((h, i) => {
