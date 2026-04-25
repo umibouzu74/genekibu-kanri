@@ -67,7 +67,15 @@ export function LoginForm({ isAdmin, onSignIn, onSignOut }) {
         style={input}
       />
       {error && <div style={errStyle}>{error}</div>}
-      <button type="submit" disabled={busy} style={submitBtn}>
+      <button
+        type="submit"
+        disabled={busy}
+        style={{
+          ...submitBtn,
+          opacity: busy ? 0.6 : 1,
+          cursor: busy ? "not-allowed" : "pointer",
+        }}
+      >
         {busy ? "ログイン中…" : "ログイン"}
       </button>
     </form>

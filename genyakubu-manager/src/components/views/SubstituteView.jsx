@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
+import { colors } from "../../styles/tokens";
 import { sortJa } from "../../utils/sortJa";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
@@ -197,10 +198,11 @@ export function SubstituteView({
             style={{
               ...S.btn(false),
               fontSize: 11,
-              background: "#eef2ff",
-              color: "#1a1a6e",
-              border: "1px solid #c0c8e8",
+              background: colors.infoSoft,
+              color: colors.info,
+              border: `1px solid ${colors.infoBorder}`,
               opacity: sharing ? 0.6 : 1,
+              cursor: sharing ? "not-allowed" : "pointer",
             }}
           >
             {sharing ? "生成中..." : "共有リンクを作成"}

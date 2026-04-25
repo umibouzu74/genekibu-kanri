@@ -5,11 +5,12 @@
 // タイマーを持つ。マウスホバー中・タブ非アクティブ中はタイマーを
 // 一時停止し、復帰時に「残り時間」から再開する。
 import { useEffect, useRef, useState } from "react";
+import { colors } from "../styles/tokens";
 
 const TONE_STYLES = {
-  success: { bg: "#e8f5e8", fg: "#2a7a2a", border: "#bde0bd" },
-  error: { bg: "#fff5f5", fg: "#c44", border: "#fcc" },
-  info: { bg: "#eef2ff", fg: "#1a1a6e", border: "#ccd6f5" },
+  success: { bg: colors.successSoft, fg: colors.success, border: colors.successBorder },
+  error: { bg: colors.dangerSoft, fg: colors.danger, border: colors.dangerBorder },
+  info: { bg: colors.infoSoft, fg: colors.info, border: colors.infoBorder },
 };
 
 function ToastItem({ toast, onDismiss }) {
