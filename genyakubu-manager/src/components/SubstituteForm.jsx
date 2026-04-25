@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { dateToDay, fmtDate } from "../data";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { FieldError } from "./FieldError";
 import { SingleSubForm } from "./substitute/SingleSubForm";
 import { DayBulkSubForm } from "./substitute/DayBulkSubForm";
@@ -94,7 +95,7 @@ export function SubstituteForm({
 
       <div>
         <label htmlFor={dateInputId} style={S.formLabel}>
-          日付 <span style={{ color: "#c44" }} aria-label="必須">*</span>
+          日付 <span style={{ color: colors.danger }} aria-label="必須">*</span>
         </label>
         <input
           id={dateInputId}
@@ -103,7 +104,7 @@ export function SubstituteForm({
           onChange={handleDateChange}
           aria-invalid={dateError ? "true" : undefined}
           aria-describedby={dateError ? dateErrorId : undefined}
-          style={{ ...S.input, borderColor: dateError ? "#c44" : "#ccc" }}
+          style={{ ...S.input, borderColor: dateError ? colors.danger : "#ccc" }}
         />
         {dayOfDate && (
           <span style={{ fontSize: 11, color: "#888", marginLeft: 8 }}>

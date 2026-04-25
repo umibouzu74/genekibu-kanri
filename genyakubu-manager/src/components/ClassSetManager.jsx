@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ALL_GRADES, DAYS, DEPT_COLOR, gradeToDept } from "../data";
 import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import {
@@ -350,7 +351,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                       </span>
                     ))}
                     {setSlots.length < cs.slotIds.length && (
-                      <span style={{ color: "#c44" }}> ※ 一部スロット削除済み</span>
+                      <span style={{ color: colors.danger }}> ※ 一部スロット削除済み</span>
                     )}
                   </div>
                 </div>
@@ -372,7 +373,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                         ...S.btn(false),
                         fontSize: 10,
                         padding: "3px 8px",
-                        color: "#c44",
+                        color: colors.danger,
                       }}
                     >
                       削除

@@ -13,6 +13,7 @@ import {
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
 import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
+import { colors } from "../../../styles/tokens";
 
 // Single department / time-grouped slot column rendered inside DashDayRow.
 export function SectionColumn({
@@ -359,7 +360,7 @@ export function SectionColumn({
                           ) : s.teacher ? (
                             s.teacher
                           ) : (
-                            <span style={{ color: "#c44", fontSize: 14, fontStyle: "italic" }}>
+                            <span style={{ color: colors.danger, fontSize: 14, fontStyle: "italic" }}>
                               未割当
                             </span>
                           )}

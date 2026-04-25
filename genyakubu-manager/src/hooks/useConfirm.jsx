@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { Modal } from "../components/Modal";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 
 // ─── useConfirm ────────────────────────────────────────────────────
 // Replaces window.confirm() with a promise-based Modal dialog that
@@ -48,7 +49,7 @@ export function ConfirmProvider({ children }) {
 
   const okStyle =
     state?.tone === "danger"
-      ? { ...S.btn(true), background: "#c44" }
+      ? { ...S.btn(true), background: colors.danger }
       : S.btn(true);
 
   return (

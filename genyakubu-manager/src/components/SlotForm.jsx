@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { isBiweekly } from "../utils/biweekly";
 import { FieldError } from "./FieldError";
 
@@ -101,7 +102,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
               <label htmlFor={inputId} style={S.formLabelInline}>
                 {l}
                 {req && (
-                  <span style={{ color: "#c44" }} aria-label="必須">
+                  <span style={{ color: colors.danger }} aria-label="必須">
                     *
                   </span>
                 )}
@@ -129,7 +130,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
                   list={listIds[k]}
                   aria-invalid={errors[k] ? "true" : undefined}
                   aria-describedby={errors[k] ? errorId : undefined}
-                  style={{ ...S.input, borderColor: errors[k] ? "#c44" : "#ccc" }}
+                  style={{ ...S.input, borderColor: errors[k] ? colors.danger : "#ccc" }}
                 />
               )}
             </div>

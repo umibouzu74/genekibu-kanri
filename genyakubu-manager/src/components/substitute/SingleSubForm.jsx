@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { SUB_STATUS, SUB_STATUS_KEYS, sortSlots as sortS } from "../../data";
 import { S } from "../../styles/common";
+import { colors } from "../../styles/tokens";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
 import { sortJa } from "../../utils/sortJa";
@@ -143,7 +144,7 @@ export function SingleSubForm({
     <>
       <div>
         <label htmlFor={slotInputId} style={S.formLabel}>
-          対象コマ <span style={{ color: "#c44" }} aria-label="必須">*</span>
+          対象コマ <span style={{ color: colors.danger }} aria-label="必須">*</span>
         </label>
         <select
           id={slotInputId}
@@ -151,7 +152,7 @@ export function SingleSubForm({
           onChange={(e) => up("slotId", e.target.value)}
           aria-invalid={errors.slotId ? "true" : undefined}
           aria-describedby={errors.slotId ? slotErrorId : undefined}
-          style={{ ...S.input, borderColor: errors.slotId ? "#c44" : "#ccc" }}
+          style={{ ...S.input, borderColor: errors.slotId ? colors.danger : "#ccc" }}
         >
           <option value="">-- コマを選択 --</option>
           {slotOptions.map((s) => {

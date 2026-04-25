@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { dateToDay, DAY_COLOR as DC, fmtDate, WEEKDAYS } from "../../../data";
 import { S } from "../../../styles/common";
+import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
 import { isTimetableActiveForDate } from "../../../utils/timetable";
 
@@ -234,7 +235,7 @@ export function ReschedulePickerPopover({
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div>
           <label style={{ display: "block", color: "#555", marginBottom: 2 }}>
-            振替先の日付 <span style={{ color: "#c44" }}>*</span>
+            振替先の日付 <span style={{ color: colors.danger }} aria-label="必須">*</span>
           </label>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input
@@ -394,7 +395,7 @@ export function ReschedulePickerPopover({
           style={{
             background: "#fde8e8",
             border: "1px solid #f5c2c2",
-            color: "#c44",
+            color: colors.danger,
             padding: "4px 8px",
             margin: "0 10px 8px",
             borderRadius: 4,
@@ -425,7 +426,7 @@ export function ReschedulePickerPopover({
               ...S.btn(false),
               fontSize: 11,
               padding: "4px 10px",
-              color: "#c44",
+              color: colors.danger,
             }}
           >
             振替を解除

@@ -1,4 +1,5 @@
 import { S } from "../../../styles/common";
+import { colors } from "../../../styles/tokens";
 
 // 教科マスタータブ : カテゴリと教科のインライン CRUD。
 export function SubjectsMasterTab({
@@ -129,7 +130,7 @@ export function SubjectsMasterTab({
                       border: "none",
                       cursor: "pointer",
                       fontSize: 14,
-                      color: "#c44",
+                      color: colors.danger,
                     }}
                   >
                     ✕
@@ -182,7 +183,7 @@ export function SubjectsMasterTab({
                             border: "none",
                             cursor: "pointer",
                             fontSize: 13,
-                            color: "#c44",
+                            color: colors.danger,
                           }}
                         >
                           ✕
