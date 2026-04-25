@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { ALL_GRADES, DAYS, DEPT_COLOR, gradeToDept } from "../data";
 import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
-import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
+import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import {
   autoLabelFromUnits,
   buildClassUnits,
@@ -37,7 +37,10 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
 
   const toasts = useToasts();
-  const confirm = useConfirm();
+  const removeClassSetWithUndo = useRemoveWithUndo({
+    list: classSets,
+    save: onSave,
+  });
 
   // 全ユニット (フィルタ前)
   const allUnits = useMemo(() => buildClassUnits(slots), [slots]);
@@ -183,16 +186,10 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     setExpandedKeys(new Set());
   };
 
-  const handleDelete = async (cs) => {
-    const ok = await confirm({
-      title: "授業セットの削除",
-      message: `「${cs.label}」を削除しますか？`,
-      okLabel: "削除",
-      tone: "danger",
+  const handleDelete = (cs) => {
+    removeClassSetWithUndo(cs.id, {
+      successMsg: `授業セット「${cs.label}」を削除しました`,
     });
-    if (!ok) return;
-    onSave(classSets.filter((x) => x.id !== cs.id));
-    toasts.success("授業セットを削除しました");
   };
 
   const handleAcceptSuggestion = (sug) => {

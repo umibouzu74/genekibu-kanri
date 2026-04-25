@@ -47,11 +47,7 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
 
   const del = useCallback(
     (id) =>
-      crud.confirmedRemove(id, {
-        title: "調整の削除",
-        message: "この時間割調整を削除しますか？",
-        successMsg: "時間割調整を削除しました",
-      }),
+      crud.removeWithUndo(id, { successMsg: "時間割調整を削除しました" }),
     [crud]
   );
 
