@@ -4,6 +4,7 @@ import {
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
+  migrateSpecialEvents,
   migrateSubs,
 } from "./migrate";
 
@@ -165,6 +166,68 @@ describe("migrateExamPrepSchedules", () => {
   it("returns non-array input unchanged", () => {
     expect(migrateExamPrepSchedules(null)).toBe(null);
     expect(migrateExamPrepSchedules(undefined)).toBe(undefined);
+  });
+});
+
+describe("migrateSpecialEvents", () => {
+  it("preserves complete events as-is", () => {
+    const input = [
+      {
+        id: 7,
+        name: "修学旅行",
+        startDate: "2026-05-08",
+        endDate: "2026-05-12",
+        eventType: "trip",
+        targetGrades: ["高2"],
+        memo: "京都奈良",
+      },
+    ];
+    const result = migrateSpecialEvents(input);
+    expect(result).toEqual(input);
+  });
+
+  it("defaults missing fields and assigns sequential ids", () => {
+    const input = [{ name: "テスト発表", startDate: "2026-05-01" }];
+    const result = migrateSpecialEvents(input);
+    expect(result[0].id).toBe(1);
+    expect(result[0].endDate).toBe("2026-05-01"); // copied from start
+    expect(result[0].eventType).toBe("other");
+    expect(result[0].targetGrades).toEqual([]);
+    expect(result[0].memo).toBe("");
+  });
+
+  it("normalizes unknown eventType to 'other'", () => {
+    const input = [
+      {
+        id: 1,
+        name: "x",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        eventType: "bogus",
+        targetGrades: [],
+      },
+    ];
+    const result = migrateSpecialEvents(input);
+    expect(result[0].eventType).toBe("other");
+  });
+
+  it("restores targetGrades dropped by Firebase RTDB", () => {
+    const input = [
+      {
+        id: 1,
+        name: "x",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        eventType: "announcement",
+      },
+    ];
+    const result = migrateSpecialEvents(input);
+    expect(result[0].targetGrades).toEqual([]);
+  });
+
+  it("returns non-array input unchanged", () => {
+    expect(migrateSpecialEvents(null)).toBe(null);
+    expect(migrateSpecialEvents(undefined)).toBe(undefined);
   });
 });
 

@@ -28,6 +28,7 @@ import type {
   ScheduleAdjustment,
   SessionOverride,
   Slot,
+  SpecialEvent,
   Subject,
   SubjectCategory,
   Substitute,
@@ -35,7 +36,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -182,6 +183,25 @@ export function isSessionOverride(x: unknown): x is SessionOverride {
   if (x.mode !== "set" && x.mode !== "skip") return false;
   if (x.mode === "set" && !isNumber(x.value)) return false;
   if (x.displayAs !== undefined && !isNumber(x.displayAs)) return false;
+  return true;
+}
+
+export function isSpecialEvent(x: unknown): x is SpecialEvent {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.name)) return false;
+  if (!isString(x.startDate)) return false;
+  if (!isString(x.endDate)) return false;
+  if (
+    x.eventType !== "trip" &&
+    x.eventType !== "ceremony" &&
+    x.eventType !== "festival" &&
+    x.eventType !== "announcement" &&
+    x.eventType !== "other"
+  ) {
+    return false;
+  }
+  if (!Array.isArray(x.targetGrades)) return false;
   return true;
 }
 
@@ -378,6 +398,18 @@ export function validateExportBundle(
         ok: false,
         error: `sessionOverrides[${bad}] の形式が不正です`,
         path: `sessionOverrides[${bad}]`,
+      };
+  }
+
+  if (raw.specialEvents != null) {
+    if (!Array.isArray(raw.specialEvents))
+      return { ok: false, error: "specialEvents が配列ではありません" };
+    const bad = raw.specialEvents.findIndex((e: unknown) => !isSpecialEvent(e));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `specialEvents[${bad}] の形式が不正です`,
+        path: `specialEvents[${bad}]`,
       };
   }
 
@@ -690,6 +722,14 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             明示する)。今後 reschedule 必須フィールドを追加した際の
   //             ための切れ目として版を上げる。
   // 既存データは触らない。
+
+  // v12 → v13: specialEvents (特別イベント) を追加。
+  //             既存データは空配列で初期化。
+  if (version < 13) {
+    if (!Array.isArray(bundle.specialEvents)) {
+      bundle.specialEvents = [];
+    }
+  }
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

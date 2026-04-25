@@ -14,14 +14,15 @@ export function useSessionCtx({
   displayCutoff,
   holidays,
   examPeriods,
+  specialEvents,
   biweeklyAnchors,
   sessionOverrides,
 }) {
-  // holidays/examPeriods は makeHolidayHelpers 内で filter/some を呼ぶので
+  // holidays/examPeriods/specialEvents は makeHolidayHelpers 内で filter/some を呼ぶので
   // undefined 防御として空配列フォールバック。
   const helpers = useMemo(
-    () => makeHolidayHelpers(holidays || [], examPeriods || []),
-    [holidays, examPeriods]
+    () => makeHolidayHelpers(holidays || [], examPeriods || [], specialEvents || []),
+    [holidays, examPeriods, specialEvents]
   );
   const sessionCtx = useMemo(
     () => ({

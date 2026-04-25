@@ -14,6 +14,7 @@ import {
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
+  migrateSpecialEvents,
   migrateSubs,
 } from "../utils/migrate";
 
@@ -35,6 +36,7 @@ export function useDataIO({
   classSets,
   sessionOverrides,
   teacherSubjects,
+  specialEvents,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -51,6 +53,7 @@ export function useDataIO({
   saveClassSets,
   saveSessionOverrides,
   saveTeacherSubjects,
+  saveSpecialEvents,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -84,6 +87,7 @@ export function useDataIO({
           classSets,
           sessionOverrides,
           teacherSubjects,
+          specialEvents,
         },
         null,
         2
@@ -100,7 +104,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -159,6 +163,9 @@ export function useDataIO({
             saveExamPrepSchedules(migrateExamPrepSchedules(d.examPrepSchedules));
           if (Array.isArray(d.classSets)) saveClassSets(d.classSets);
           if (Array.isArray(d.sessionOverrides)) saveSessionOverrides(d.sessionOverrides);
+          if (Array.isArray(d.specialEvents) && saveSpecialEvents) {
+            saveSpecialEvents(migrateSpecialEvents(d.specialEvents));
+          }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -197,6 +204,7 @@ export function useDataIO({
       saveClassSets,
       saveSessionOverrides,
       saveTeacherSubjects,
+      saveSpecialEvents,
       setImporting,
       setShowDataMgr,
     ]
@@ -226,6 +234,7 @@ export function useDataIO({
     if (saveExamPrepSchedules) saveExamPrepSchedules([]);
     saveClassSets([]);
     saveSessionOverrides([]);
+    if (saveSpecialEvents) saveSpecialEvents([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -250,6 +259,7 @@ export function useDataIO({
     saveExamPrepSchedules,
     saveClassSets,
     saveSessionOverrides,
+    saveSpecialEvents,
     setActiveTimetableId,
     setSelected,
     setView,
@@ -266,5 +276,6 @@ export {
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
+  migrateSpecialEvents,
   migrateSubs,
 };

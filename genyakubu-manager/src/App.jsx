@@ -30,6 +30,7 @@ import {
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
+  migrateSpecialEvents,
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
@@ -85,6 +86,12 @@ const HolidayManager = lazy(() =>
 );
 const ExamPeriodManager = lazy(() =>
   import("./components/ExamPeriodManager").then((m) => ({ default: m.ExamPeriodManager }))
+);
+const SpecialEventManager = lazy(() =>
+  import("./components/SpecialEventManager").then((m) => ({ default: m.SpecialEventManager }))
+);
+const EventCalendarView = lazy(() =>
+  import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
 );
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
@@ -216,6 +223,11 @@ export default function App() {
     {},
     { onError: onStorageError }
   );
+  const [specialEvents, saveSpecialEvents] = useSyncedStorage(
+    LS.specialEvents,
+    [],
+    { migrate: migrateSpecialEvents, onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -336,6 +348,7 @@ export default function App() {
     classSets,
     sessionOverrides,
     teacherSubjects,
+    specialEvents,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -352,6 +365,7 @@ export default function App() {
     saveClassSets,
     saveSessionOverrides,
     saveTeacherSubjects,
+    saveSpecialEvents,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -563,16 +577,18 @@ export default function App() {
                     : view === VIEWS.MASTER
                     ? "コースマスター管理"
                     : view === VIEWS.HOLIDAYS
-                      ? "休講日・テスト期間管理"
-                      : view === VIEWS.SUBS
-                        ? "授業管理"
-                        : view === VIEWS.CONFIRMED_SUBS
-                          ? "代行確定一覧"
-                          : view === VIEWS.ABSENCE_FLOW
-                            ? "欠勤組み換え"
-                            : view === VIEWS.STAFF
-                              ? "バイト管理"
-                              : selected || ""}
+                      ? "休講日・テスト期間・イベント管理"
+                      : view === VIEWS.EVENTS
+                        ? "イベントカレンダー"
+                        : view === VIEWS.SUBS
+                          ? "授業管理"
+                          : view === VIEWS.CONFIRMED_SUBS
+                            ? "代行確定一覧"
+                            : view === VIEWS.ABSENCE_FLOW
+                              ? "欠勤組み換え"
+                              : view === VIEWS.STAFF
+                                ? "バイト管理"
+                                : selected || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -690,6 +706,7 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
+              specialEvents={specialEvents}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               adjustments={adjustments}
@@ -753,7 +770,19 @@ export default function App() {
                 examPrepSchedules={examPrepSchedules}
                 examPrepCrud={examPrepCrud}
               />
+              <SpecialEventManager
+                specialEvents={specialEvents}
+                onSave={saveSpecialEvents}
+                isAdmin={isAdmin}
+              />
             </>
+          )}
+          {view === VIEWS.EVENTS && !selected && (
+            <EventCalendarView
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+            />
           )}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
@@ -862,6 +891,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
+              specialEvents={specialEvents}
               partTimeStaff={partTimeStaff}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}

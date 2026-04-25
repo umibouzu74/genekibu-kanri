@@ -15,4 +15,5 @@ export const VIEWS = Object.freeze({
   TIMETABLE: "timetable",
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",
+  EVENTS: "events",
 });

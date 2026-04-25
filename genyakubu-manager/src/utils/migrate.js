@@ -45,6 +45,36 @@ export const migrateExamPeriods = (arr) =>
     : arr;
 
 /**
+ * Restore `targetGrades: []` dropped by Firebase RTDB and ensure each
+ * special event has every required field (id, eventType, memo).
+ */
+export const migrateSpecialEvents = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((ev, i) => ({
+        ...ev,
+        id: typeof ev?.id === "number" ? ev.id : i + 1,
+        name: typeof ev?.name === "string" ? ev.name : "",
+        startDate: typeof ev?.startDate === "string" ? ev.startDate : "",
+        endDate:
+          typeof ev?.endDate === "string" && ev.endDate
+            ? ev.endDate
+            : typeof ev?.startDate === "string"
+              ? ev.startDate
+              : "",
+        eventType:
+          ev?.eventType === "trip" ||
+          ev?.eventType === "ceremony" ||
+          ev?.eventType === "festival" ||
+          ev?.eventType === "announcement" ||
+          ev?.eventType === "other"
+            ? ev.eventType
+            : "other",
+        targetGrades: Array.isArray(ev?.targetGrades) ? ev.targetGrades : [],
+        memo: typeof ev?.memo === "string" ? ev.memo : "",
+      }))
+    : arr;
+
+/**
  * Restore `assignments: {}` dropped by Firebase RTDB.
  * Firebase RTDB discards empty objects/arrays on write, so days
  * initialized via `blankDay` come back missing `assignments` (and

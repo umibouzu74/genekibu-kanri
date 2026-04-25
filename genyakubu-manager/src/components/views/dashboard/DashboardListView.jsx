@@ -15,6 +15,7 @@ export function DashboardListView({
   todayStr,
   holidaysFor,
   examPeriodsFor,
+  specialEventsFor,
   isOffForGrade,
   sessionCtx,
   adjustments = [],
@@ -67,6 +68,9 @@ export function DashboardListView({
               subs={subs}
               adjustments={adjustments}
               examPeriodsForDate={examPeriodsFor(dateStr)}
+              specialEventsForDate={
+                specialEventsFor ? specialEventsFor(dateStr) : []
+              }
               sessionCtx={sessionCtx}
             />
           </div>

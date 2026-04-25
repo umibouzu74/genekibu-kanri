@@ -138,6 +138,27 @@ export interface ExamPrepSchedule {
   days: ExamPrepDay[];
 }
 
+// ─── Special event (特別イベント) ────────────────────────────────
+// テスト発表日や修学旅行・文化祭など、休講や試験期間とは別に
+// 「告知用」として扱いたい予定。`isOffForGrade` 等の出欠ロジックには
+// 影響せず、ダッシュボード/月次/イベントカレンダーに視覚的に表示する。
+export type SpecialEventType =
+  | "trip" // 修学旅行・遠足など (生徒不在)
+  | "ceremony" // 始業式・卒業式など
+  | "festival" // 文化祭・体育祭など
+  | "announcement" // テスト発表日・出願など
+  | "other";
+
+export interface SpecialEvent {
+  id: number;
+  name: string; // "修学旅行", "文化祭", "1学期中間テスト発表" 等
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string; // "YYYY-MM-DD" (単日イベントは start === end)
+  eventType: SpecialEventType;
+  targetGrades: string[]; // 空配列 = 全学年対象
+  memo: string;
+}
+
 // ─── Class set (授業セット) ──────────────────────────────────────
 // 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
 // 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると
@@ -190,6 +211,7 @@ export interface ExportBundle {
   classSets?: ClassSet[];
   sessionOverrides?: SessionOverride[];
   examPrepSchedules?: ExamPrepSchedule[];
+  specialEvents?: SpecialEvent[];
 }
 
 export interface ValidationResult<T> {

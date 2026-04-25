@@ -11,6 +11,7 @@ export const VIEW_CHORDS = Object.freeze({
   h: VIEWS.HOLIDAYS,
   m: VIEWS.MASTER,
   v: VIEWS.STAFF,
+  e: VIEWS.EVENTS,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -34,6 +35,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   h: "休講日",
   m: "マスター",
   v: "バイト",
+  e: "イベント",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。
