@@ -2,8 +2,9 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 
 // ─── Toast context ─────────────────────────────────────────────────
-// A very small in-memory toast system. Kept intentionally minimal:
-// no queueing, no variants other than tone; auto-dismiss after 2.5s.
+// 軽量なインメモリ通知。auto-dismiss / hover pause / visibility pause
+// は描画コンポーネント (ToastContainer) 側に委譲し、ここでは単に
+// 「toast の発行と削除」のみを担う。
 
 const ToastContext = createContext(null);
 
@@ -18,8 +19,8 @@ export function ToastProvider({ children, render }) {
   const push = useCallback(
     (message, { tone = "info", duration = 2500, action } = {}) => {
       const id = ++idRef.current;
-      // action は { label, onClick } 形式。toast クリックでも実行されるが、
-      // onClick は 1 回のみ呼ばれる保証を消費フラグで担保する。
+      // action は { label, onClick } 形式。onClick の throw / 多重押下に
+      // 耐える wrapper を作って toast 値に格納する。
       let consumed = false;
       const wrappedAction = action
         ? {
@@ -27,15 +28,23 @@ export function ToastProvider({ children, render }) {
             onClick: () => {
               if (consumed) return;
               consumed = true;
-              action.onClick();
-              remove(id);
+              try {
+                action.onClick();
+              } catch (e) {
+                // ユーザーの onClick が例外を投げても toast の dismiss は確実
+                // に行う。例外は再 throw せず console に出して握る — UI 全体
+                // の破壊的失敗より、Undo 失敗を黙って通知する方が安全。
+                console.error("toast action onClick threw:", e);
+              } finally {
+                remove(id);
+              }
             },
           }
         : null;
-      setToasts((prev) => [...prev, { id, message, tone, action: wrappedAction }]);
-      if (duration > 0) {
-        setTimeout(() => remove(id), duration);
-      }
+      setToasts((prev) => [
+        ...prev,
+        { id, message, tone, action: wrappedAction, duration },
+      ]);
       return id;
     },
     [remove]

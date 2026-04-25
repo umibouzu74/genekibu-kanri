@@ -965,9 +965,15 @@ export default function App() {
       {/* Responsive CSS */}
       <style>{`
         /* chord 待機バッジのタイムアウト残量バー（A19） */
+        /* toast の残量バーでも同じ keyframes を流用する。 */
         @keyframes chord-decay {
           from { width: 100%; }
           to   { width: 0%; }
+        }
+        /* toast 出現時の fade-in（A22） */
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         @media (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
