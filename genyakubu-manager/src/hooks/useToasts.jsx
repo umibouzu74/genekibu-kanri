@@ -16,9 +16,23 @@ export function ToastProvider({ children, render }) {
   }, []);
 
   const push = useCallback(
-    (message, { tone = "info", duration = 2500 } = {}) => {
+    (message, { tone = "info", duration = 2500, action } = {}) => {
       const id = ++idRef.current;
-      setToasts((prev) => [...prev, { id, message, tone }]);
+      // action は { label, onClick } 形式。toast クリックでも実行されるが、
+      // onClick は 1 回のみ呼ばれる保証を消費フラグで担保する。
+      let consumed = false;
+      const wrappedAction = action
+        ? {
+            label: action.label,
+            onClick: () => {
+              if (consumed) return;
+              consumed = true;
+              action.onClick();
+              remove(id);
+            },
+          }
+        : null;
+      setToasts((prev) => [...prev, { id, message, tone, action: wrappedAction }]);
       if (duration > 0) {
         setTimeout(() => remove(id), duration);
       }

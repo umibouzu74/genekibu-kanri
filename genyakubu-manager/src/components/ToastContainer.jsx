@@ -25,6 +25,8 @@ export function ToastContainer({ toasts, onDismiss }) {
     >
       {toasts.map((t) => {
         const s = TONE_STYLES[t.tone] || TONE_STYLES.info;
+        // action 付きの場合は toast 全体クリックで誤発火しないよう、ボタンに限定して操作させる。
+        const hasAction = !!t.action;
         return (
           <div
             key={t.id}
@@ -41,11 +43,33 @@ export function ToastContainer({ toasts, onDismiss }) {
               display: "flex",
               alignItems: "center",
               gap: 10,
-              cursor: "pointer",
+              cursor: hasAction ? "default" : "pointer",
             }}
-            onClick={() => onDismiss(t.id)}
+            onClick={hasAction ? undefined : () => onDismiss(t.id)}
           >
             <span style={{ flex: 1 }}>{t.message}</span>
+            {hasAction && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  t.action.onClick();
+                }}
+                style={{
+                  background: s.fg,
+                  color: s.bg,
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  lineHeight: 1.4,
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
