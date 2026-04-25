@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
-import { colors } from "../../styles/tokens";
 import { sortJa } from "../../utils/sortJa";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
+import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
@@ -191,22 +191,7 @@ export function SubstituteView({
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-          <button
-            type="button"
-            onClick={handleShare}
-            disabled={sharing}
-            style={{
-              ...S.btn(false),
-              fontSize: 11,
-              background: colors.infoSoft,
-              color: colors.info,
-              border: `1px solid ${colors.infoBorder}`,
-              opacity: sharing ? 0.6 : 1,
-              cursor: sharing ? "not-allowed" : "pointer",
-            }}
-          >
-            {sharing ? "生成中..." : "共有リンクを作成"}
-          </button>
+          <ShareLinkButton onClick={handleShare} busy={sharing} />
           <button
             type="button"
             onClick={onGoToStaffView}

@@ -73,10 +73,10 @@ export function DataManager({
       </div>
       <div
         style={{
-          background: "#fff5f5",
+          background: colors.dangerSoft,
           borderRadius: 8,
           padding: 14,
-          border: "1px solid #fcc",
+          border: `1px solid ${colors.dangerBorder}`,
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: colors.danger }}>

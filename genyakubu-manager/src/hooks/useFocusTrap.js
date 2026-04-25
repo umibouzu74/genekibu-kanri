@@ -3,6 +3,10 @@ import { useEffect } from "react";
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// アクティブなトラップを LIFO で積む。Modal を入れ子で開いたとき、
+// 一番上のトラップだけが Escape / Tab を処理する。
+const trapStack = [];
+
 // Trap Tab focus within `containerRef`, focus the first focusable
 // element on mount, restore previously-focused element on cleanup,
 // and call onClose when Escape is pressed.
@@ -27,7 +31,12 @@ export function useFocusTrap(containerRef, { onClose, enabled = true } = {}) {
     const initial = focusables()[0] || root;
     initial.focus?.();
 
+    const trap = Symbol("focusTrap");
+    trapStack.push(trap);
+
     const handleKey = (e) => {
+      // 入れ子のとき、最上位の trap のみが応答する
+      if (trapStack[trapStack.length - 1] !== trap) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose?.();
@@ -54,6 +63,8 @@ export function useFocusTrap(containerRef, { onClose, enabled = true } = {}) {
     document.addEventListener("keydown", handleKey);
     return () => {
       document.removeEventListener("keydown", handleKey);
+      const idx = trapStack.indexOf(trap);
+      if (idx !== -1) trapStack.splice(idx, 1);
       if (prevActive && "focus" in prevActive) prevActive.focus?.();
     };
     // containerRef は ref オブジェクト (識別子安定) なので依存に入れない

@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { dateToDay, fmtDate } from "../../data";
 import { S } from "../../styles/common";
-import { colors } from "../../styles/tokens";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
 import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable";
 import { PrintButton } from "../PrintButton";
+import { ShareLinkButton } from "../ShareLinkButton";
 
 // Shows a Dashboard-style listing of classes on days that have at least one
 // confirmed substitute.
@@ -140,22 +140,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
           </div>
         )}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            type="button"
-            onClick={handleShare}
-            disabled={sharing}
-            style={{
-              ...S.btn(false),
-              fontSize: 11,
-              background: colors.infoSoft,
-              color: colors.info,
-              border: `1px solid ${colors.infoBorder}`,
-              opacity: sharing ? 0.6 : 1,
-              cursor: sharing ? "not-allowed" : "pointer",
-            }}
-          >
-            {sharing ? "生成中..." : "共有リンクを作成"}
-          </button>
+          <ShareLinkButton onClick={handleShare} busy={sharing} />
           <PrintButton style={{ fontSize: 11 }} />
           <span style={{ fontSize: 11, color: "#888" }}>{days.length}日</span>
         </span>

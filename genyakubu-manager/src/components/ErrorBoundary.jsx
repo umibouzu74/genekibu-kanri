@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component {
           margin: "48px auto",
           background: "#fff",
           borderRadius: 12,
-          border: "1px solid #fcc",
+          border: `1px solid ${colors.dangerBorder}`,
           boxShadow: "0 8px 32px rgba(0,0,0,.08)",
         }}
         role="alert"

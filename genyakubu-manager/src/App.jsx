@@ -964,6 +964,12 @@ export default function App() {
 
       {/* Responsive CSS */}
       <style>{`
+        /* 既定で disabled なボタンに not-allowed カーソルを当てる。
+           インライン cursor: pointer (S.btn) を上書きするため !important
+           を使う。視覚的なフェード (opacity) は各コンポーネントで明示する */
+        button:disabled, [role="button"][aria-disabled="true"] {
+          cursor: not-allowed !important;
+        }
         /* chord 待機バッジのタイムアウト残量バー（A19） */
         /* toast の残量バーでも同じ keyframes を流用する。 */
         @keyframes chord-decay {
