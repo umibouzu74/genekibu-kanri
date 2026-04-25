@@ -117,6 +117,8 @@ const logoutBtn = {
   cursor: "pointer",
 };
 
+// サイドバー (#1a1a2e の濃紺地) 上で読みやすい明るめの赤。
+// colors.danger (#c44) だと暗いコントラストで視認性が落ちるため独立指定。
 const errStyle = {
   fontSize: 9,
   color: "#f44",

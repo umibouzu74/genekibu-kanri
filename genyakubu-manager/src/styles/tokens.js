@@ -33,7 +33,6 @@ export const colors = {
   infoBorder: "#ccd6f5",
   warning: "#e6a800",
   warningSoft: "#fffbe6",
-  warningBorder: "#f0d97a",
 };
 
 export const space = {
