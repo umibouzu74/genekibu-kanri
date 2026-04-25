@@ -11,11 +11,12 @@ import {
 } from "./data";
 
 import { VIEWS } from "./constants/views";
-import { VIEW_CHORDS } from "./constants/chords";
+import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
 import { useChordNavigation } from "./hooks/useChordNavigation";
+import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
@@ -381,6 +382,7 @@ export default function App() {
     chordMap: VIEW_CHORDS,
     onMatch: selectView,
     onTimeout: useCallback(() => setShortcutsHelpOpen(true), []),
+    timeoutMs: CHORD_TIMEOUT_MS,
   });
 
   // モーダル／パレットが開いたら chord 待機を即クリア。
@@ -958,53 +960,15 @@ export default function App() {
       )}
 
       {/* Chord waiting badge (g を押したあと次のキーを待っている間だけ表示) */}
-      {chordWaiting && (
-        <div
-          role="status"
-          aria-live="polite"
-          aria-label="g キーを受付中。対応する 2 キー目を入力してください。? でヘルプを表示。"
-          className="no-print"
-          style={{
-            position: "fixed",
-            bottom: 24,
-            left: 24,
-            background: "#1a1a2e",
-            color: "#fff",
-            padding: "8px 14px",
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 700,
-            boxShadow: "0 4px 20px rgba(0,0,0,.25)",
-            zIndex: 2000,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            pointerEvents: "none",
-          }}
-        >
-          <span aria-hidden="true" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <kbd
-              style={{
-                background: "#3a3a6e",
-                padding: "2px 8px",
-                borderRadius: 4,
-                fontSize: 11,
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              }}
-            >
-              g
-            </kbd>
-            <span style={{ color: "#8a8aa0" }}>→</span>
-            <span style={{ color: "#ccd" }}>次のキー…</span>
-            <span style={{ marginLeft: 4, fontSize: 10, color: "#6a6a8e", fontWeight: 400 }}>
-              ? でヘルプ
-            </span>
-          </span>
-        </div>
-      )}
+      <ChordWaitingBadge open={chordWaiting} />
 
       {/* Responsive CSS */}
       <style>{`
+        /* chord 待機バッジのタイムアウト残量バー（A19） */
+        @keyframes chord-decay {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
         @media (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
           .sidebar-close { display: none !important; }

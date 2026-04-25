@@ -22,3 +22,19 @@ export const VIEW_CHORD_BY_VIEW = (() => {
   }
   return m;
 })();
+
+// chord 待機中バッジで「次のキー一覧」を出すための短ラベル。
+// バッジ幅を抑えるため、サイドバーよりさらに短い表記を用意。
+export const VIEW_CHORD_LABEL = Object.freeze({
+  d: "ダッシュ",
+  a: "欠勤",
+  s: "授業",
+  c: "代行確定",
+  t: "時間割",
+  h: "休講日",
+  m: "マスター",
+  v: "バイト",
+});
+
+// chord タイムアウト ms（hook と badge で共有）。
+export const CHORD_TIMEOUT_MS = 1200;
