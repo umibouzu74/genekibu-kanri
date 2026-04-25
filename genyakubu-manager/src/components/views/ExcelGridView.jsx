@@ -299,6 +299,25 @@ export function ExcelGridView({
     return holidaysFor(displayDate);
   }, [dashboardMode, displayDate, holidaysFor]);
 
+  // 「scope=全部 かつ 学年/教科キーワード未指定」の休講が 1 件でもあれば
+  // 全部門が一律休講なので、各セクションを描画せず日全体で 1 回だけ
+  // メッセージを出す (DashDayRow の fullOff 相当)。
+  const dashboardFullOff = useMemo(() => {
+    return dashboardHolidaysForDay.some((h) => {
+      const sc = h.scope || ["全部"];
+      if (!sc.includes("全部")) return false;
+      if ((h.targetGrades || []).length > 0) return false;
+      if ((h.subjKeywords || []).length > 0) return false;
+      return true;
+    });
+  }, [dashboardHolidaysForDay]);
+
+  // 表示日の休講ラベル一覧 (各セクションの「本日休講」表示で利用)。
+  const dashboardHolidayLabels = useMemo(
+    () => dashboardHolidaysForDay.map((h) => h.label).filter(Boolean),
+    [dashboardHolidaysForDay]
+  );
+
   return (
     <div>
       {/* Date selector for substitution mode (only when enabled) */}
@@ -607,10 +626,34 @@ export function ExcelGridView({
                     sessionCountMap={sessionCountMap}
                     groupTeacherMap={groupTeacherMap}
                     dashboardMode={dashboardMode}
+                    closureLabels={dashboardHolidayLabels}
                     adjustments={dashboardMode || subMode.isSubMode ? adjustments : []}
                   />
                 );
               };
+              if (dashboardFullOff) {
+                return (
+                  <div
+                    style={{
+                      background: "#faf5e8",
+                      border: "1px solid #e0b860",
+                      borderRadius: 8,
+                      padding: "40px 20px",
+                      textAlign: "center",
+                      color: "#8a6010",
+                      fontSize: 16,
+                      fontWeight: 800,
+                    }}
+                  >
+                    本日休講
+                    {dashboardHolidayLabels.length > 0 && (
+                      <span style={{ fontWeight: 600 }}>
+                        （{dashboardHolidayLabels.join("・")}）
+                      </span>
+                    )}
+                  </div>
+                );
+              }
               return (
                 <div
                   className="excel-grid-sections"

@@ -43,6 +43,7 @@ export function ExcelSection({
   groupTeacherMap,
   dashboardMode = false,
   adjustments = [],
+  closureLabels = [],
 }) {
   // 当日の保存済み合同/移動を索引化
   const adjIndex = useMemo(
@@ -148,6 +149,23 @@ export function ExcelSection({
       sectionSlots.every((s) => holidayOffSlots.has(s.id)),
     [sectionSlots, holidayOffSlots]
   );
+
+  // セクション全休時に「本日休講」の下に併記する outgoing 振替一覧。
+  // 個別セルの「振」バッジが表示されなくなる代わりに、
+  // どのコマが別日へ振替えられたかを 1 箇所で確認できるようにする。
+  const sectionRescheduleOuts = useMemo(() => {
+    if (!allSectionOff) return [];
+    const out = [];
+    for (const s of sectionSlots) {
+      const adj = adjIndex.rescheduleOutBySlot.get(s.id);
+      if (adj) out.push({ slot: s, adj });
+    }
+    out.sort(
+      (a, b) =>
+        timeToMin(a.slot.time || "00:00") - timeToMin(b.slot.time || "00:00")
+    );
+    return out;
+  }, [allSectionOff, sectionSlots, adjIndex.rescheduleOutBySlot]);
 
   const handleDragStart = useCallback(
     (e, slot) => {
@@ -351,14 +369,63 @@ export function ExcelSection({
             borderTop: "none",
             borderRadius: "0 0 8px 8px",
             background: "#faf5e8",
-            padding: "30px 20px",
+            padding: "20px 16px",
             textAlign: "center",
             color: "#8a6010",
             fontSize: 14,
             fontWeight: 700,
           }}
         >
-          本日休講
+          <div>
+            本日休講
+            {closureLabels.length > 0 && (
+              <span style={{ fontWeight: 600 }}>
+                （{closureLabels.join("・")}）
+              </span>
+            )}
+          </div>
+          {sectionRescheduleOuts.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 12px",
+                background: ADJ_COLOR.reschedule.bannerBg,
+                border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                color: ADJ_COLOR.reschedule.deep,
+                textAlign: "left",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong style={{ marginRight: 6 }}>
+                ↻ 別日へ振替 ({sectionRescheduleOuts.length})
+              </strong>
+              {sectionRescheduleOuts.map(({ slot, adj }, idx) => {
+                const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+                const tgtParts = [adj.targetDate];
+                if (adj.targetTime) tgtParts.push(adj.targetTime);
+                if (adj.targetTeacher) tgtParts.push(`(${adj.targetTeacher})`);
+                return (
+                  <span
+                    key={adj.id}
+                    title={adj.memo || ""}
+                    style={{ marginRight: 8 }}
+                  >
+                    {idx > 0 && <span style={{ color: "#888" }}>・</span>}
+                    <span style={{ fontWeight: 700 }}>{slot.time}</span>{" "}
+                    {slot.grade}
+                    {cls} {slot.subj}
+                    {slot.teacher ? ` (${slot.teacher})` : ""}
+                    <span style={{ color: "#888", marginLeft: 2 }}>
+                      → {tgtParts.join(" ")}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
       <div
