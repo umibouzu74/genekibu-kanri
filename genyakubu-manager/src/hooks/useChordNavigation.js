@@ -61,6 +61,9 @@ export function useChordNavigation({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (hasOpenDialog()) return;
+      // OS のキーリピート（押しっぱなし）は chord 状態をリセットさせない。
+      // g を一瞬長く押してから 2 キー目に移る操作で誤って解除されないため。
+      if (e.repeat) return;
       const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
       if (waitingG) {
         const target = chordMapRef.current[key];
