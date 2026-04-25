@@ -1,5 +1,11 @@
 import { DAYS, WEEKDAYS } from "../constants/schools";
 
+// "YYYY-MM-DD" 形式かつ Date.parse で読める日付文字列か。
+// HolidayManager / ExamPeriodManager / SpecialEventManager の入力検証で共有。
+export function isValidDateStr(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+}
+
 export function timeToMin(t) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;

@@ -117,6 +117,21 @@ function ViewFallback() {
   );
 }
 
+// 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
+const VIEW_TITLES = {
+  [VIEWS.DASH]: "ダッシュボード",
+  [VIEWS.ALL]: "全講師コマ数一覧",
+  [VIEWS.COMPARE]: "講師比較",
+  [VIEWS.TIMETABLE]: "時間割管理",
+  [VIEWS.MASTER]: "コースマスター管理",
+  [VIEWS.HOLIDAYS]: "休講日・テスト期間・イベント管理",
+  [VIEWS.EVENTS]: "イベントカレンダー",
+  [VIEWS.SUBS]: "授業管理",
+  [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
+  [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
+  [VIEWS.STAFF]: "バイト管理",
+};
+
 export default function App() {
   const toasts = useToasts();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
@@ -566,29 +581,7 @@ export default function App() {
               ☰
             </button>
             <h1 className="app-h1" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
-              {view === VIEWS.DASH
-                ? "ダッシュボード"
-                : view === VIEWS.ALL
-                  ? "全講師コマ数一覧"
-                  : view === VIEWS.COMPARE
-                    ? "講師比較"
-                    : view === VIEWS.TIMETABLE
-                      ? "時間割管理"
-                    : view === VIEWS.MASTER
-                    ? "コースマスター管理"
-                    : view === VIEWS.HOLIDAYS
-                      ? "休講日・テスト期間・イベント管理"
-                      : view === VIEWS.EVENTS
-                        ? "イベントカレンダー"
-                        : view === VIEWS.SUBS
-                          ? "授業管理"
-                          : view === VIEWS.CONFIRMED_SUBS
-                            ? "代行確定一覧"
-                            : view === VIEWS.ABSENCE_FLOW
-                              ? "欠勤組み換え"
-                              : view === VIEWS.STAFF
-                                ? "バイト管理"
-                                : selected || ""}
+              {selected ? selected : VIEW_TITLES[view] || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>

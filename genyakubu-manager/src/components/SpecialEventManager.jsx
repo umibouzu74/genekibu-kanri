@@ -1,29 +1,26 @@
 import { useState } from "react";
-import { ALL_GRADES, gradeToDept } from "../data";
+import {
+  ALL_GRADES,
+  DEPT_COLOR,
+  HIGH_GRADES,
+  MIDDLE_GRADES,
+  gradeToDept,
+  isValidDateStr,
+} from "../data";
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import {
+  DEFAULT_SPECIAL_EVENT_TYPE,
   SPECIAL_EVENT_TYPES,
   specialEventTypeMeta,
 } from "../constants/specialEvents";
 
-const isValidDate = (s) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
-
-const MIDDLE_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "中学部");
-const HIGH_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "高校部");
-
-const GRADE_COLOR = {
-  中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
-  高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
-};
-
 export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
   const [name, setName] = useState("");
-  const [eventType, setEventType] = useState("announcement");
+  const [eventType, setEventType] = useState(DEFAULT_SPECIAL_EVENT_TYPE);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [memo, setMemo] = useState("");
@@ -72,7 +69,7 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
 
   const resetForm = () => {
     setName("");
-    setEventType("announcement");
+    setEventType(DEFAULT_SPECIAL_EVENT_TYPE);
     setStartDate("");
     setEndDate("");
     setMemo("");
@@ -88,12 +85,12 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
       setError("名称を入力してください");
       return;
     }
-    if (!startDate || !isValidDate(startDate)) {
+    if (!startDate || !isValidDateStr(startDate)) {
       setError("開始日を正しく入力してください");
       return;
     }
     const effectiveEnd = endDate || startDate;
-    if (!isValidDate(effectiveEnd)) {
+    if (!isValidDateStr(effectiveEnd)) {
       setError("終了日を正しく入力してください");
       return;
     }
@@ -350,7 +347,7 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {ALL_GRADES.map((g) => {
                 const dept = gradeToDept(g);
-                const col = GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                 const sel = isGradeSelected(g);
                 return (
                   <label
@@ -505,7 +502,7 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
                       (ev.targetGrades || []).map((g) => {
                         const dept = gradeToDept(g);
                         const col =
-                          GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                          DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                         return (
                           <span
                             key={g}

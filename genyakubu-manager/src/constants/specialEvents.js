@@ -9,6 +9,8 @@ export const SPECIAL_EVENT_TYPES = Object.freeze([
   { key: "other", label: "その他", icon: "📌", bg: "#e8e8e8", fg: "#444", accent: "#888" },
 ]);
 
+export const DEFAULT_SPECIAL_EVENT_TYPE = "announcement";
+
 export const SPECIAL_EVENT_TYPE_BY_KEY = (() => {
   const m = new Map();
   for (const t of SPECIAL_EVENT_TYPES) m.set(t.key, t);

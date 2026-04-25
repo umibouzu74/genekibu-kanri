@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { fmtDate, parseLocalDate, WEEKDAYS } from "../../data";
+import { fmtDate, WEEKDAYS } from "../../data";
+import { eachDateStrInRange } from "../../utils/dateHelpers";
 import { S } from "../../styles/common";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 
@@ -7,6 +8,38 @@ import { specialEventTypeMeta } from "../../constants/specialEvents";
 //
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
 // 種別ごとに色を分けてフィルタ可能。
+
+// 種別キー (kind 文字列の単一の出所)
+const KIND = Object.freeze({
+  HOLIDAY: "holiday",
+  EXAM: "exam",
+  SPECIAL: "special",
+});
+
+const KIND_LABELS = Object.freeze({
+  [KIND.HOLIDAY]: "休講",
+  [KIND.EXAM]: "テスト期間",
+  [KIND.SPECIAL]: "特別イベント",
+});
+
+const HOLIDAY_META = Object.freeze({ bg: "#f5dada", fg: "#a02020", accent: "#c44040" });
+const EXAM_META = Object.freeze({ bg: "#fde8c8", fg: "#7a4a10", accent: "#e0a030" });
+
+// フィルタチェックボックス UI 定義 (描画毎に再生成しないようモジュールレベルに)
+const FILTER_BUTTONS = Object.freeze([
+  { key: KIND.HOLIDAY, label: "休講", color: HOLIDAY_META.accent },
+  { key: KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
+  { key: KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
+]);
+
+// 連続バーの border-radius を、左右の継続フラグから決定する。
+function barBorderRadius(continuesLeft, continuesRight) {
+  if (continuesLeft && continuesRight) return 0;
+  if (continuesLeft) return "0 4px 4px 0";
+  if (continuesRight) return "4px 0 0 4px";
+  return 4;
+}
+
 export function EventCalendarView({
   holidays = [],
   examPeriods = [],
@@ -15,9 +48,9 @@ export function EventCalendarView({
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
   const [filters, setFilters] = useState({
-    holiday: true,
-    exam: true,
-    special: true,
+    [KIND.HOLIDAY]: true,
+    [KIND.EXAM]: true,
+    [KIND.SPECIAL]: true,
   });
 
   const vd = useMemo(
@@ -47,45 +80,44 @@ export function EventCalendarView({
   // 月内に重なるイベントだけを抽出 + 日付昇順
   const eventsInMonth = useMemo(() => {
     const all = [];
-    if (filters.holiday) {
+    if (filters[KIND.HOLIDAY]) {
       for (const h of holidays) {
         if (h.date < monthStart || h.date > monthEnd) continue;
         all.push({
-          kind: "holiday",
+          kind: KIND.HOLIDAY,
           id: `h-${h.id}`,
           name: h.label || "休講",
           startDate: h.date,
           endDate: h.date,
-          meta: { bg: "#f5dada", fg: "#a02020", accent: "#c44040" },
+          meta: HOLIDAY_META,
           source: h,
         });
       }
     }
-    if (filters.exam) {
+    if (filters[KIND.EXAM]) {
       for (const ep of examPeriods) {
         if (ep.endDate < monthStart || ep.startDate > monthEnd) continue;
         all.push({
-          kind: "exam",
+          kind: KIND.EXAM,
           id: `e-${ep.id}`,
           name: ep.name,
           startDate: ep.startDate,
           endDate: ep.endDate,
-          meta: { bg: "#fde8c8", fg: "#7a4a10", accent: "#e0a030" },
+          meta: EXAM_META,
           source: ep,
         });
       }
     }
-    if (filters.special) {
+    if (filters[KIND.SPECIAL]) {
       for (const ev of specialEvents) {
         if (ev.endDate < monthStart || ev.startDate > monthEnd) continue;
-        const tm = specialEventTypeMeta(ev.eventType);
         all.push({
-          kind: "special",
+          kind: KIND.SPECIAL,
           id: `s-${ev.id}`,
           name: ev.name,
           startDate: ev.startDate,
           endDate: ev.endDate,
-          meta: { bg: tm.bg, fg: tm.fg, accent: tm.accent, icon: tm.icon },
+          meta: specialEventTypeMeta(ev.eventType),
           source: ev,
         });
       }
@@ -101,29 +133,16 @@ export function EventCalendarView({
   const eventsByDate = useMemo(() => {
     const m = new Map();
     for (const ev of eventsInMonth) {
-      const start = parseLocalDate(ev.startDate);
-      const end = parseLocalDate(ev.endDate);
-      if (!start || !end) continue;
-      const cur = new Date(start);
-      while (cur <= end) {
-        const key = fmtDate(cur);
-        if (key >= monthStart && key <= monthEnd) {
-          if (!m.has(key)) m.set(key, []);
-          m.get(key).push(ev);
-        }
-        cur.setDate(cur.getDate() + 1);
+      for (const key of eachDateStrInRange(ev.startDate, ev.endDate)) {
+        if (key < monthStart || key > monthEnd) continue;
+        if (!m.has(key)) m.set(key, []);
+        m.get(key).push(ev);
       }
     }
     return m;
   }, [eventsInMonth, monthStart, monthEnd]);
 
   const todayStr = fmtDate(today);
-
-  const KIND_LABELS = {
-    holiday: "休講",
-    exam: "テスト期間",
-    special: "特別イベント",
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -172,11 +191,7 @@ export function EventCalendarView({
         />
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
-          {[
-            { key: "holiday", label: "休講", color: "#c44040" },
-            { key: "exam", label: "テスト期間", color: "#e0a030" },
-            { key: "special", label: "特別イベント", color: "#8a5ec4" },
-          ].map((f) => {
+          {FILTER_BUTTONS.map((f) => {
             const on = filters[f.key];
             return (
               <label
@@ -311,13 +326,7 @@ export function EventCalendarView({
                       borderLeft: continuesLeft
                         ? "none"
                         : `3px solid ${ev.meta.accent}`,
-                      borderRadius: continuesLeft && continuesRight
-                        ? 0
-                        : continuesLeft
-                          ? "0 4px 4px 0"
-                          : continuesRight
-                            ? "4px 0 0 4px"
-                            : 4,
+                      borderRadius: barBorderRadius(continuesLeft, continuesRight),
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -325,7 +334,7 @@ export function EventCalendarView({
                   >
                     {isStart ? (
                       <>
-                        {ev.kind === "special" && ev.meta.icon ? (
+                        {ev.kind === KIND.SPECIAL && ev.meta.icon ? (
                           <>
                             <span aria-hidden="true">{ev.meta.icon}</span>{" "}
                           </>
@@ -412,7 +421,7 @@ export function EventCalendarView({
                   textAlign: "center",
                 }}
               >
-                {ev.kind === "special" && ev.meta.icon ? `${ev.meta.icon} ` : ""}
+                {ev.kind === KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
                 {KIND_LABELS[ev.kind]}
               </span>
               <strong style={{ fontSize: 13 }}>{ev.name}</strong>
@@ -421,7 +430,7 @@ export function EventCalendarView({
                   ? ev.startDate
                   : `${ev.startDate} 〜 ${ev.endDate}`}
               </span>
-              {ev.kind === "special" && ev.source.memo && (
+              {ev.kind === KIND.SPECIAL && ev.source.memo && (
                 <span
                   style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
                 >

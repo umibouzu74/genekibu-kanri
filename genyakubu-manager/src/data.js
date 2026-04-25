@@ -13,11 +13,13 @@ export {
   WEEKDAYS,
   DEPARTMENTS,
   ALL_GRADES,
+  MIDDLE_GRADES,
+  HIGH_GRADES,
   SUB_STATUS,
   SUB_STATUS_KEYS,
 } from "./constants/schools";
 export { DAY_COLOR, DAY_BG, DEPT_COLOR, ADJ_COLOR, gradeColor } from "./constants/colors";
-export { timeToMin, fmtDate, fmtDateWeekday, dateToDay, parseLocalDate } from "./utils/dateHelpers";
+export { timeToMin, fmtDate, fmtDateWeekday, dateToDay, parseLocalDate, isValidDateStr } from "./utils/dateHelpers";
 export { sortSlots, gradeToDept, isKameiRoom } from "./utils/scheduleHelpers";
 export {
   getSubForSlot,
