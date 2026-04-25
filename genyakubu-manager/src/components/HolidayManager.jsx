@@ -4,6 +4,7 @@ import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 
@@ -284,7 +285,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
             }}
             aria-invalid={error ? "true" : undefined}
             aria-describedby={error ? "holiday-date-err" : undefined}
-            style={{ ...S.input, width: "auto", borderColor: error ? "#c44" : "#ccc" }}
+            style={{ ...S.input, width: "auto", borderColor: error ? colors.danger : "#ccc" }}
           />
           <input
             value={label}
@@ -297,7 +298,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
           <div
             id="holiday-date-err"
             role="alert"
-            style={{ fontSize: 11, color: "#c44", marginBottom: 8 }}
+            style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}
           >
             {error}
           </div>

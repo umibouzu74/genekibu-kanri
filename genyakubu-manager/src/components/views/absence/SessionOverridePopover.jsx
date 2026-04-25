@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { S } from "../../../styles/common";
+import { colors } from "../../../styles/tokens";
 
 // ─── 回数補正ポップオーバー ────────────────────────────────────
 // set モード: その日の回数を value に強制
@@ -186,7 +187,7 @@ export function SessionOverridePopover({
           style={{
             background: "#fde8e8",
             border: "1px solid #f5c2c2",
-            color: "#c44",
+            color: colors.danger,
             padding: "4px 8px",
             borderRadius: 4,
             marginBottom: 6,
@@ -209,7 +210,7 @@ export function SessionOverridePopover({
               ...S.btn(false),
               fontSize: 11,
               padding: "4px 10px",
-              color: "#c44",
+              color: colors.danger,
             }}
           >
             補正を解除

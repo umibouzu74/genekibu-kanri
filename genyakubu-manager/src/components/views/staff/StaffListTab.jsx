@@ -5,6 +5,7 @@ import {
   staffMonthlyWorkDates,
 } from "../../../data";
 import { S } from "../../../styles/common";
+import { colors } from "../../../styles/tokens";
 import { isSlotForTeacher } from "../../../utils/biweekly";
 
 // バイト一覧タブ : 新規追加フォーム + 各バイトの担当教科 + 今月の出勤状況。
@@ -125,7 +126,7 @@ export function StaffListTab({
                         border: "none",
                         cursor: "pointer",
                         fontSize: 14,
-                        color: "#c44",
+                        color: colors.danger,
                       }}
                     >
                       ✕

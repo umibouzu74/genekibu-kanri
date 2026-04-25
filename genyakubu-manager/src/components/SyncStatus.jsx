@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { db, authReady, authFailed, isConfigured } from "../firebase/config";
 import { ref, onValue, off } from "firebase/database";
 import { subscribeSyncActivity } from "../hooks/useSyncedStorage";
+import { colors } from "../styles/tokens";
 
 // ─── SyncStatus ─────────────────────────────────────────────────────
 // A small indicator showing Firebase connection state.
@@ -70,7 +71,7 @@ export function SyncStatus({ isAdmin }) {
     ? "#6a8fff"
     : connected
       ? "#4caf50"
-      : "#c44";
+      : colors.danger;
 
   return (
     <div

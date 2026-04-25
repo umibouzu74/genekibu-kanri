@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { colors } from "../styles/tokens";
 import { pickSubjectId } from "../utils/subjectMatch";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
 
@@ -198,7 +199,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
             style={{
               border: "none",
               background: "none",
-              color: "#c44",
+              color: colors.danger,
               fontSize: 11,
               cursor: "pointer",
               fontWeight: 700,

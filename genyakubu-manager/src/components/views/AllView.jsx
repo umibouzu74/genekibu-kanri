@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "../../data";
+import { colors } from "../../styles/tokens";
 import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
 
 export function AllView({ slots, onSelectTeacher }) {
@@ -124,7 +125,7 @@ export function AllView({ slots, onSelectTeacher }) {
                   fontWeight: 800,
                   fontSize: 18,
                   borderBottom: "1px solid #eee",
-                  color: t.total > 10 ? "#c44" : "#1a1a2e",
+                  color: t.total > 10 ? colors.danger : "#1a1a2e",
                 }}
               >
                 {formatCount(t.total)}

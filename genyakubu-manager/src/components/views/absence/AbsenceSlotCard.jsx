@@ -1,4 +1,5 @@
 import { ADJ_COLOR, gradeColor as GC } from "../../../data";
+import { colors } from "../../../styles/tokens";
 import {
   formatBiweeklyTeacher,
   getSlotWeekType,
@@ -46,7 +47,7 @@ export function AbsenceSlotCard({
     : isCombineCandidate
       ? "#ffc107"
       : isAbsent
-        ? "#c44"
+        ? colors.danger
         : isRescheduled
           ? ADJ_COLOR.reschedule.color
           : isMoved
@@ -116,7 +117,7 @@ export function AbsenceSlotCard({
           )}
           {substituteName && (
             <BadgeChip
-              color={substituteStatus === "confirmed" ? "#2a7a2a" : "#c44"}
+              color={substituteStatus === "confirmed" ? colors.success : colors.danger}
               label={substituteStatus === "confirmed" ? "代行" : "依頼"}
             />
           )}
@@ -130,7 +131,7 @@ export function AbsenceSlotCard({
             position: "absolute",
             top: -8,
             left: 4,
-            background: "#c44",
+            background: colors.danger,
             color: "#fff",
             fontSize: 9,
             fontWeight: 800,
@@ -176,7 +177,7 @@ export function AbsenceSlotCard({
           fontSize: 14,
           fontWeight: 800,
           marginTop: 2,
-          color: substituteName ? "#c44" : "#1a1a2e",
+          color: substituteName ? colors.danger : "#1a1a2e",
         }}
       >
         {substituteName ? (

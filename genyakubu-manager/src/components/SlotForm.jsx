@@ -1,7 +1,9 @@
 import { useId, useState } from "react";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { isBiweekly } from "../utils/biweekly";
+import { FieldError } from "./FieldError";
 
 export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, activeTimetableId }) {
   const formId = useId();
@@ -97,19 +99,10 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
         return (
           <div key={k}>
             <div className="slot-form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <label
-                htmlFor={inputId}
-                style={{
-                  width: 70,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  textAlign: "right",
-                  flexShrink: 0,
-                }}
-              >
+              <label htmlFor={inputId} style={S.formLabelInline}>
                 {l}
                 {req && (
-                  <span style={{ color: "#c44" }} aria-label="必須">
+                  <span style={{ color: colors.danger }} aria-label="必須">
                     *
                   </span>
                 )}
@@ -137,37 +130,24 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
                   list={listIds[k]}
                   aria-invalid={errors[k] ? "true" : undefined}
                   aria-describedby={errors[k] ? errorId : undefined}
-                  style={{ ...S.input, borderColor: errors[k] ? "#c44" : "#ccc" }}
+                  style={{ ...S.input, borderColor: errors[k] ? colors.danger : "#ccc" }}
                 />
               )}
             </div>
-            {errors[k] && (
-              <div
-                id={errorId}
-                role="alert"
-                className="slot-form-row-error"
-                style={{ marginLeft: 78, fontSize: 11, color: "#c44", marginTop: 2 }}
-              >
-                {errors[k]}
-              </div>
-            )}
+            <FieldError
+              id={errorId}
+              className="slot-form-row-error"
+              style={{ marginLeft: 78 }}
+            >
+              {errors[k]}
+            </FieldError>
           </div>
         );
       })}
       {timetables && timetables.length > 1 && (
         <div>
           <div className="slot-form-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label
-              style={{
-                width: 70,
-                fontSize: 12,
-                fontWeight: 700,
-                textAlign: "right",
-                flexShrink: 0,
-              }}
-            >
-              時間割
-            </label>
+            <label style={S.formLabelInline}>時間割</label>
             <select
               value={f.timetableId ?? 1}
               onChange={(e) => up("timetableId", Number(e.target.value))}

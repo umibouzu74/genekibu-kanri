@@ -4,6 +4,7 @@ import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
 
@@ -209,7 +210,7 @@ export function ExamPeriodManager({
               placeholder="名称（例: 1学期中間テスト期間）"
               aria-invalid={error ? "true" : undefined}
               aria-describedby={error ? "exam-period-err" : undefined}
-              style={{ ...S.input, width: "100%", maxWidth: 340, borderColor: error ? "#c44" : "#ccc" }}
+              style={{ ...S.input, width: "100%", maxWidth: 340, borderColor: error ? colors.danger : "#ccc" }}
             />
           </div>
 
@@ -352,7 +353,7 @@ export function ExamPeriodManager({
             <div
               id="exam-period-err"
               role="alert"
-              style={{ fontSize: 11, color: "#c44", marginBottom: 8 }}
+              style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}
             >
               {error}
             </div>

@@ -1,4 +1,5 @@
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { exportSlotsCsv, exportSubsCsv } from "../utils/csv";
 
 export function DataManager({
@@ -72,13 +73,13 @@ export function DataManager({
       </div>
       <div
         style={{
-          background: "#fff5f5",
+          background: colors.dangerSoft,
           borderRadius: 8,
           padding: 14,
-          border: "1px solid #fcc",
+          border: `1px solid ${colors.dangerBorder}`,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#c44" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: colors.danger }}>
           初期化（リセット）
         </div>
         <div style={{ fontSize: 11, color: "#666", marginBottom: 8 }}>
@@ -88,9 +89,9 @@ export function DataManager({
           onClick={onReset}
           style={{
             ...S.btn(false),
-            background: "#fee",
-            color: "#c44",
-            border: "1px solid #fcc",
+            background: colors.dangerSoft,
+            color: colors.danger,
+            border: `1px solid ${colors.dangerBorder}`,
           }}
         >
           データを初期化

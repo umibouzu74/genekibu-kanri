@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import { S } from "../styles/common";
+import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
 import {
   detectOverlaps,
@@ -271,7 +272,7 @@ export function ExamPrepScheduleEditor({
                   ...S.btn(false),
                   fontSize: 11,
                   padding: "4px 10px",
-                  color: "#c44",
+                  color: colors.danger,
                 }}
               >
                 この日を削除
@@ -334,7 +335,7 @@ export function ExamPrepScheduleEditor({
                       const invalid = periodWarnings.invalid.includes(p.no);
                       const overlap = periodWarnings.overlapping.has(p.no);
                       const borderColor = invalid
-                        ? "#c44"
+                        ? colors.danger
                         : overlap
                           ? "#d98a00"
                           : "#ccc";
@@ -381,7 +382,7 @@ export function ExamPrepScheduleEditor({
                                 border: "none",
                                 cursor: "pointer",
                                 fontSize: 14,
-                                color: "#c44",
+                                color: colors.danger,
                               }}
                             >
                               ✕
@@ -393,7 +394,7 @@ export function ExamPrepScheduleEditor({
                   </tbody>
                 </table>
                 {periodWarnings.invalid.length > 0 && (
-                  <div style={{ fontSize: 11, color: "#c44", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: colors.danger, marginTop: 4 }}>
                     校時 {periodWarnings.invalid.join(", ")} の時刻が不正です（開始 &lt; 終了）
                   </div>
                 )}

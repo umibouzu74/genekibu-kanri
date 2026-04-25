@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { colors } from "../styles/tokens";
 
 // ─── 汎用コンテキストメニュー ──────────────────────────────────
 // 右クリックで出す小さなポップオーバー。クリック外で自動クローズ。
@@ -31,9 +32,9 @@ export function ContextMenu({ x, y, items, onClose }) {
         fontSize: 13,
       }}
     >
-      {items.map((item, i) => (
+      {items.map((item) => (
         <button
-          key={i}
+          key={item.label}
           type="button"
           disabled={!!item.disabled}
           onClick={() => {
@@ -50,7 +51,7 @@ export function ContextMenu({ x, y, items, onClose }) {
             background: "none",
             cursor: item.disabled ? "not-allowed" : "pointer",
             fontSize: 13,
-            color: item.disabled ? "#aaa" : item.danger ? "#c44" : "#333",
+            color: item.disabled ? "#aaa" : item.danger ? colors.danger : "#333",
           }}
           onMouseEnter={(e) => {
             if (!item.disabled) e.target.style.background = "#f0f0f0";

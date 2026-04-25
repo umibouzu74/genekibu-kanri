@@ -9,6 +9,7 @@ import { S } from "../../styles/common";
 import { formatBiweeklyNote, getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
 import { sortJa } from "../../utils/sortJa";
+import { FieldError } from "../FieldError";
 
 // ─── 1日分まとめて代行フォーム ───────────────────────────────────
 // SubstituteForm の "full-day" モード相当。
@@ -162,6 +163,7 @@ export function DayBulkSubForm({
               status: "requested",
             };
             const listId = `sub-teacher-list-${slot.id}`;
+            const slotLabelId = `sub-row-label-${slot.id}`;
             const teachers = teachersForSlot(slot);
             return (
               <div
@@ -176,7 +178,7 @@ export function DayBulkSubForm({
                   gap: 6,
                 }}
               >
-                <div style={{ fontSize: 11, color: "#333", lineHeight: 1.35 }}>
+                <div id={slotLabelId} style={{ fontSize: 11, color: "#333", lineHeight: 1.35 }}>
                   {hasPT ? "★ " : ""}
                   <b>{slot.time}</b> / {slot.grade}
                   {slot.cls && slot.cls !== "-" ? slot.cls : ""} / {slot.subj}
@@ -205,6 +207,8 @@ export function DayBulkSubForm({
                       updateRow(slot.id, { substitute: e.target.value })
                     }
                     placeholder="代行者名"
+                    aria-label="代行者"
+                    aria-describedby={slotLabelId}
                     style={{ ...S.input, flex: "1 1 140px", minWidth: 120 }}
                   />
                   <datalist id={listId}>
@@ -212,7 +216,11 @@ export function DayBulkSubForm({
                       <option key={t} value={t} />
                     ))}
                   </datalist>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div
+                    role="radiogroup"
+                    aria-label="ステータス"
+                    style={{ display: "flex", gap: 4 }}
+                  >
                     {SUB_STATUS_KEYS.map((k) => {
                       const st = SUB_STATUS[k];
                       const active = row.status === k;
@@ -220,6 +228,8 @@ export function DayBulkSubForm({
                         <button
                           key={k}
                           type="button"
+                          role="radio"
+                          aria-checked={active}
                           onClick={() => updateRow(slot.id, { status: k })}
                           style={{
                             padding: "4px 8px",
@@ -244,9 +254,7 @@ export function DayBulkSubForm({
         </div>
       )}
 
-      {errors.rows && (
-        <div style={{ fontSize: 10, color: "#c44" }}>{errors.rows}</div>
-      )}
+      <FieldError>{errors.rows}</FieldError>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
         <button onClick={onCancel} style={S.btn(false)}>

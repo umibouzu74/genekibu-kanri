@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
+import { colors } from "../../styles/tokens";
 import { sortJa } from "../../utils/sortJa";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
@@ -366,7 +367,7 @@ export function ChainSubstitutionPanel({
                     onClick={() => handleRemoveManual(t.name)}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
-                      color: "#c44", fontSize: 14, padding: 0, lineHeight: 1,
+                      color: colors.danger, fontSize: 14, padding: 0, lineHeight: 1,
                     }}
                   >
                     x
@@ -460,7 +461,7 @@ export function ChainSubstitutionPanel({
                 <div style={{ fontSize: 11, color: "#555" }}>
                   カバー: {suggestions.length}件
                   {uncoveredSubs.length - suggestions.length > 0 && (
-                    <span style={{ color: "#c44", marginLeft: 8 }}>
+                    <span style={{ color: colors.danger, marginLeft: 8 }}>
                       未カバー: {uncoveredSubs.length - suggestions.length}件
                     </span>
                   )}
@@ -558,7 +559,7 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
           onChange={(e) => onChange(idx, e.target.value)}
           style={{
             ...S.input, width: "auto", flex: "0 1 100px",
-            borderColor: validation.timeConflict ? "#c44"
+            borderColor: validation.timeConflict ? colors.danger
               : validation.subjectMismatch ? "#e6a800" : "#ccc",
           }}
         >
@@ -579,7 +580,7 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
         </span>
       )}
       {validation.timeConflict && (
-        <span style={{ fontSize: 10, color: "#c44" }}>時間重複</span>
+        <span style={{ fontSize: 10, color: colors.danger }}>時間重複</span>
       )}
       {validation.subjectMismatch && (
         <span style={{ fontSize: 10, color: "#e6a800" }}>教科注意</span>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { S } from "../../../styles/common";
+import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
 import { pickSubjectId } from "../../../utils/subjectMatch";
 
@@ -213,7 +214,7 @@ export function SubstitutePickerPopover({
               ...S.btn(false),
               fontSize: 11,
               padding: "4px 10px",
-              color: "#c44",
+              color: colors.danger,
             }}
           >
             代行を解除

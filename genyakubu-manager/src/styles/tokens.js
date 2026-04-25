@@ -27,8 +27,10 @@ export const colors = {
   dangerBorder: "#ffcccc",
   success: "#2a7a2a",
   successSoft: "#e8f5e8",
+  successBorder: "#bde0bd",
   info: "#1a1a6e",
   infoSoft: "#eef2ff",
+  infoBorder: "#ccd6f5",
   warning: "#e6a800",
   warningSoft: "#fffbe6",
 };

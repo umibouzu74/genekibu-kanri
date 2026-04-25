@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
+import { colors } from "../styles/tokens";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
@@ -64,7 +65,7 @@ const SidebarTeacherButton = memo(function SidebarTeacherButton({
       <span
         style={{
           fontSize: 11,
-          background: count > 10 ? "#c44" : "#4a4a7e",
+          background: count > 10 ? colors.danger : "#4a4a7e",
           borderRadius: 10,
           padding: "2px 7px",
           fontWeight: 700,
@@ -342,7 +343,7 @@ export function Sidebar({
                 title="依頼中のみ表示"
                 style={{
                   marginLeft: 6,
-                  background: "#c44",
+                  background: colors.danger,
                   color: "#fff",
                   borderRadius: 10,
                   padding: "1px 6px",

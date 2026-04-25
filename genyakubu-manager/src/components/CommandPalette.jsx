@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SUB_STATUS } from "../data";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
@@ -15,17 +16,21 @@ export function CommandPalette({
   onShowShortcuts,
 }) {
   const inputRef = useRef(null);
+  const dialogRef = useRef(null);
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
 
+  // useFocusTrap が初期フォーカスを当てるが、ListBox 操作の起点として
+  // 検索 input に強制的にフォーカスする (combobox UX)。
   useEffect(() => {
     if (open) {
       setQuery("");
       setSelectedIdx(0);
-      // 次フレームでフォーカス
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
+
+  useFocusTrap(dialogRef, { onClose, enabled: open });
 
   const results = useMemo(() => {
     if (!query.trim()) return [];
@@ -126,10 +131,7 @@ export function CommandPalette({
   }, [results.length]);
 
   const handleKeyDown = (e) => {
-    if (e.key === "Escape") {
-      onClose();
-      return;
-    }
+    // Escape は useFocusTrap が document レベルで処理する
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
@@ -158,9 +160,6 @@ export function CommandPalette({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="コマンドパレット"
       style={{
         position: "fixed",
         inset: 0,
@@ -171,8 +170,13 @@ export function CommandPalette({
         paddingTop: 80,
       }}
       onClick={onClose}
+      role="presentation"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="コマンドパレット"
         style={{
           background: "#fff",
           borderRadius: 12,

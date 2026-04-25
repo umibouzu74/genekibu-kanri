@@ -4,6 +4,7 @@ import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
+import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
@@ -190,21 +191,7 @@ export function SubstituteView({
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-          <button
-            type="button"
-            onClick={handleShare}
-            disabled={sharing}
-            style={{
-              ...S.btn(false),
-              fontSize: 11,
-              background: "#eef2ff",
-              color: "#1a1a6e",
-              border: "1px solid #c0c8e8",
-              opacity: sharing ? 0.6 : 1,
-            }}
-          >
-            {sharing ? "生成中..." : "共有リンクを作成"}
-          </button>
+          <ShareLinkButton onClick={handleShare} busy={sharing} />
           <button
             type="button"
             onClick={onGoToStaffView}
