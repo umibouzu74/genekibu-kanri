@@ -240,7 +240,7 @@ export function ExcelGridView({
     return null;
   }, [subMode.subDate, viewDate, selectedDay]);
 
-  const { sessionCtx } = useSessionCtx({
+  const { sessionCtx, isOffForGrade, holidaysFor } = useSessionCtx({
     classSets,
     slots: displaySlots,
     displayCutoff,
@@ -275,6 +275,48 @@ export function ExcelGridView({
   const effectiveSubMap = subMode.isSubMode
     ? subMode.existingSubMap
     : dashboardSubMap;
+
+  // ダッシュボード表示モードでも休講・試験期間の対象スロットをセル側で
+  // ハイライトできるよう holidayOffSlots を組み立てる。代行モード中は
+  // subMode.holidayOffSlots を優先するので干渉しない。
+  const dashboardHolidayOffSlots = useMemo(() => {
+    if (!dashboardMode || !displayDate || !isOffForGrade) return new Set();
+    const offSet = new Set();
+    for (const s of displaySlots) {
+      if (s.day !== selectedDay) continue;
+      if (isOffForGrade(displayDate, s.grade, s.subj)) offSet.add(s.id);
+    }
+    return offSet;
+  }, [dashboardMode, displayDate, displaySlots, selectedDay, isOffForGrade]);
+
+  const effectiveHolidayOffSlots = subMode.isSubMode
+    ? subMode.holidayOffSlots
+    : dashboardHolidayOffSlots;
+
+  // ダッシュボード表示モードのみ: 表示日に該当する休講をヘッダで一覧表示。
+  const dashboardHolidaysForDay = useMemo(() => {
+    if (!dashboardMode || !displayDate || !holidaysFor) return [];
+    return holidaysFor(displayDate);
+  }, [dashboardMode, displayDate, holidaysFor]);
+
+  // 「scope=全部 かつ 学年/教科キーワード未指定」の休講が 1 件でもあれば
+  // 全部門が一律休講なので、各セクションを描画せず日全体で 1 回だけ
+  // メッセージを出す (DashDayRow の fullOff 相当)。
+  const dashboardFullOff = useMemo(() => {
+    return dashboardHolidaysForDay.some((h) => {
+      const sc = h.scope || ["全部"];
+      if (!sc.includes("全部")) return false;
+      if ((h.targetGrades || []).length > 0) return false;
+      if ((h.subjKeywords || []).length > 0) return false;
+      return true;
+    });
+  }, [dashboardHolidaysForDay]);
+
+  // 表示日の休講ラベル一覧 (各セクションの「本日休講」表示で利用)。
+  const dashboardHolidayLabels = useMemo(
+    () => dashboardHolidaysForDay.map((h) => h.label).filter(Boolean),
+    [dashboardHolidaysForDay]
+  );
 
   return (
     <div>
@@ -407,6 +449,53 @@ export function ExcelGridView({
             : "時間割の閲覧モード"}
       </div>
 
+      {/* Holiday banner (dashboard mode): 表示日に該当する休講をまとめて表示 */}
+      {dashboardMode && dashboardHolidaysForDay.length > 0 && (
+        <div
+          style={{
+            padding: "8px 12px",
+            marginBottom: 10,
+            background: "#fff5e0",
+            border: "1px solid #e0b860",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#8a5a10" }}>
+            🚫 休講
+          </span>
+          {dashboardHolidaysForDay.map((h) => {
+            const sc = h.scope || ["全部"];
+            const tg = h.targetGrades || [];
+            const sk = h.subjKeywords || [];
+            const parts = [];
+            if (sc.length > 0) parts.push(sc.join("・"));
+            if (tg.length > 0) parts.push(tg.join("・"));
+            if (sk.length > 0) parts.push(sk.join("・"));
+            return (
+              <span
+                key={h.id}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: "#fff",
+                  color: "#8a5a10",
+                  border: "1px solid #e0b860",
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                }}
+              >
+                {parts.join(" / ")}
+                {h.label ? ` (${h.label})` : ""}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Combine mode banner */}
       {combineMode && (
         <div
@@ -528,7 +617,7 @@ export function ExcelGridView({
                     unavailableTeachers={unavailableTeachers}
                     isSubMode={subMode.isSubMode}
                     subDate={displayDate}
-                    holidayOffSlots={subMode.holidayOffSlots}
+                    holidayOffSlots={effectiveHolidayOffSlots}
                     pendingSubMap={subMode.pendingSubMap}
                     existingSubMap={effectiveSubMap}
                     onCellClick={subMode.isSubMode ? handleCellClick : undefined}
@@ -537,10 +626,34 @@ export function ExcelGridView({
                     sessionCountMap={sessionCountMap}
                     groupTeacherMap={groupTeacherMap}
                     dashboardMode={dashboardMode}
+                    closureLabels={dashboardHolidayLabels}
                     adjustments={dashboardMode || subMode.isSubMode ? adjustments : []}
                   />
                 );
               };
+              if (dashboardFullOff) {
+                return (
+                  <div
+                    style={{
+                      background: "#faf5e8",
+                      border: "1px solid #e0b860",
+                      borderRadius: 8,
+                      padding: "40px 20px",
+                      textAlign: "center",
+                      color: "#8a6010",
+                      fontSize: 16,
+                      fontWeight: 800,
+                    }}
+                  >
+                    本日休講
+                    {dashboardHolidayLabels.length > 0 && (
+                      <span style={{ fontWeight: 600 }}>
+                        （{dashboardHolidayLabels.join("・")}）
+                      </span>
+                    )}
+                  </div>
+                );
+              }
               return (
                 <div
                   className="excel-grid-sections"

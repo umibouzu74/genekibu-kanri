@@ -1,7 +1,8 @@
-import { memo } from "react";
+import { Fragment, memo } from "react";
 import { ADJ_COLOR, fmtDate } from "../../../data";
 import {
   formatBiweeklyTeacher,
+  getSlotTeachers,
   getSlotWeekType,
   isBiweekly,
 } from "../../../utils/biweekly";
@@ -117,6 +118,9 @@ export const ExcelCell = memo(function ExcelCell({
   let teacherColor = "#1a1a2e";
   let teacherDecor = "none";
   let subDisplay = null;
+  // 多担任スロット (例: プレップ「香川·福江·川井」) で代行が出た時に、
+  // 取消線を「originalTeacher」だけに絞るためのフラグ。
+  let partialStrikeOriginal = null;
 
   // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
   // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
@@ -133,6 +137,7 @@ export const ExcelCell = memo(function ExcelCell({
     badges.push(mkBadge("#2a7a4a", "仮", "pending"));
     teacherColor = "#888";
     teacherDecor = "line-through";
+    partialStrikeOriginal = pendingSub.originalTeacher || null;
     subDisplay = (
       <div style={{ fontSize: 12, fontWeight: 800, color: "#2a7a4a", marginTop: 1 }}>
         ← {pendingSub.substitute}
@@ -144,6 +149,7 @@ export const ExcelCell = memo(function ExcelCell({
     badges.push(mkBadge("#3a6ea5", "代", "sub"));
     teacherColor = "#888";
     teacherDecor = "line-through";
+    partialStrikeOriginal = existingSub.originalTeacher || null;
     subDisplay = (
       <div style={{ fontSize: 12, fontWeight: 800, color: "#3a6ea5", marginTop: 1 }}>
         ← {existingSub.substitute}
@@ -215,30 +221,32 @@ export const ExcelCell = memo(function ExcelCell({
         )
       );
     }
+  }
 
-    // 振替で他日へ送り出されているコマ: 「振」バッジ + 担当を取消線で薄く
-    if (rescheduleOut) {
-      const tgtParts = [rescheduleOut.targetDate];
-      if (rescheduleOut.targetTime) tgtParts.push(rescheduleOut.targetTime);
-      if (rescheduleOut.targetTeacher) tgtParts.push(`(${rescheduleOut.targetTeacher})`);
-      badges.push(
-        mkBadge(
-          ADJ_COLOR.reschedule.color,
-          "振",
-          "reschedule-out",
-          `他日へ振替\n→ ${tgtParts.join(" ")}`
-        )
-      );
-      // 既に substitute / unavailable で teacherDecor が付いていない場合のみ
-      // 取消線にする (他状態の表示を上書きしない)
-      if (teacherDecor === "none") {
-        teacherColor = "#888";
-        teacherDecor = "line-through";
-      }
-      if (!borderLeft) {
-        bg = ADJ_COLOR.reschedule.bg;
-        borderLeft = `3px solid ${ADJ_COLOR.reschedule.color}`;
-      }
+  // 振替で他日へ送り出されているコマ: 「振」バッジ + 担当を取消線で薄く。
+  // 休講中でも「このコマは別日へ移した」という情報は重要なので、
+  // isHolidayOff の外で処理する。
+  if (rescheduleOut) {
+    const tgtParts = [rescheduleOut.targetDate];
+    if (rescheduleOut.targetTime) tgtParts.push(rescheduleOut.targetTime);
+    if (rescheduleOut.targetTeacher) tgtParts.push(`(${rescheduleOut.targetTeacher})`);
+    badges.push(
+      mkBadge(
+        ADJ_COLOR.reschedule.color,
+        "振",
+        "reschedule-out",
+        `他日へ振替\n→ ${tgtParts.join(" ")}`
+      )
+    );
+    // 既に substitute / unavailable で teacherDecor が付いていない場合のみ
+    // 取消線にする (他状態の表示を上書きしない)
+    if (teacherDecor === "none") {
+      teacherColor = "#888";
+      teacherDecor = "line-through";
+    }
+    if (!borderLeft) {
+      bg = ADJ_COLOR.reschedule.bg;
+      borderLeft = `3px solid ${ADJ_COLOR.reschedule.color}`;
     }
   }
 
@@ -329,10 +337,34 @@ export const ExcelCell = memo(function ExcelCell({
             textDecoration: teacherDecor,
           }}
         >
-          {teacherOverride ??
-            (activeBiweeklyTeacher
-              ? `${activeBiweeklyTeacher} (隔週)`
-              : formatBiweeklyTeacher(slot.teacher, slot.note))}
+          {(() => {
+            if (teacherOverride != null) return teacherOverride;
+            if (activeBiweeklyTeacher) return `${activeBiweeklyTeacher} (隔週)`;
+            // 多担任 (例: "香川·福江·川井") の slot で代行が発生している場合、
+            // 取消線を originalTeacher の名前のみに絞る。それ以外の担任は
+            // 通常の色で見える状態に戻す。
+            const teachers = getSlotTeachers(slot);
+            if (
+              partialStrikeOriginal &&
+              teacherDecor === "line-through" &&
+              teachers.length > 1 &&
+              teachers.includes(partialStrikeOriginal)
+            ) {
+              return teachers.map((t, i) => (
+                <Fragment key={i}>
+                  {i > 0 && (
+                    <span style={{ color: "#1a1a2e", textDecoration: "none" }}>·</span>
+                  )}
+                  {t === partialStrikeOriginal ? (
+                    <span>{t}</span>
+                  ) : (
+                    <span style={{ color: "#1a1a2e", textDecoration: "none" }}>{t}</span>
+                  )}
+                </Fragment>
+              ));
+            }
+            return formatBiweeklyTeacher(slot.teacher, slot.note);
+          })()}
         </div>
         {subDisplay}
         {isCombineHost && hostedSlots && hostedSlots.length > 0 && (
