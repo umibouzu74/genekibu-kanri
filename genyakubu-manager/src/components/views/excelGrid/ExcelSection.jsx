@@ -140,6 +140,15 @@ export function ExcelSection({
     [effectiveSlots, day, sectionFilterFn]
   );
 
+  // セクション内のコマが全て休講対象かどうか。true なら表の代わりに
+  // 「本日休講」メッセージを表示する (DashDayRow と UX を揃える)。
+  const allSectionOff = useMemo(
+    () =>
+      sectionSlots.length > 0 &&
+      sectionSlots.every((s) => holidayOffSlots.has(s.id)),
+    [sectionSlots, holidayOffSlots]
+  );
+
   const handleDragStart = useCallback(
     (e, slot) => {
       e.dataTransfer.setData("text/plain", String(slot.id));
@@ -335,6 +344,23 @@ export function ExcelSection({
         </div>
       )}
 
+      {allSectionOff ? (
+        <div
+          style={{
+            border: "1px solid #ccc",
+            borderTop: "none",
+            borderRadius: "0 0 8px 8px",
+            background: "#faf5e8",
+            padding: "30px 20px",
+            textAlign: "center",
+            color: "#8a6010",
+            fontSize: 14,
+            fontWeight: 700,
+          }}
+        >
+          本日休講
+        </div>
+      ) : (
       <div
         style={{
           overflowX: "auto",
@@ -602,6 +628,7 @@ export function ExcelSection({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
