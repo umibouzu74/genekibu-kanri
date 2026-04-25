@@ -40,12 +40,7 @@ export function useSessionOverridesCrud({ sessionOverrides, saveSessionOverrides
   const remove = crud.remove;
 
   const del = useCallback(
-    (id) =>
-      crud.confirmedRemove(id, {
-        title: "回数補正の削除",
-        message: "この回数補正を削除しますか？",
-        successMsg: "回数補正を削除しました",
-      }),
+    (id) => crud.removeWithUndo(id, { successMsg: "回数補正を削除しました" }),
     [crud]
   );
 

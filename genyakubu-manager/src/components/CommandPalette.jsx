@@ -12,6 +12,7 @@ export function CommandPalette({
   onSelectTeacher,
   onSelectView,
   views,
+  onShowShortcuts,
 }) {
   const inputRef = useRef(null);
   const [query, setQuery] = useState("");
@@ -313,6 +314,29 @@ export function CommandPalette({
           <span>↑↓ 移動</span>
           <span>Enter 選択</span>
           <span>Esc 閉じる</span>
+          {onShowShortcuts && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onShowShortcuts();
+              }}
+              style={{
+                marginLeft: "auto",
+                background: "none",
+                border: "none",
+                color: "#6a6a8e",
+                fontSize: 10,
+                cursor: "pointer",
+                padding: 0,
+                textDecoration: "underline",
+                textUnderlineOffset: 2,
+                fontFamily: "inherit",
+              }}
+            >
+              ? ショートカット一覧
+            </button>
+          )}
         </div>
       </div>
     </div>

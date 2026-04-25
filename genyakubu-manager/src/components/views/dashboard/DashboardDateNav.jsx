@@ -1,6 +1,6 @@
 import { S } from "../../../styles/common";
 import { shiftDate } from "../dashboardHelpers";
-import { DAY_COUNT_OPTIONS } from "./constants";
+import { DAY_COUNT_OPTIONS, DAY_COUNT_LABEL } from "./constants";
 
 export function DashboardDateNav({
   startDate,
@@ -69,13 +69,13 @@ export function DashboardDateNav({
                 minWidth: 32,
               }}
             >
-              {n}日
+              {DAY_COUNT_LABEL[n] ?? `${n}日`}
             </button>
           ))}
         </div>
       )}
       <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
-        {viewMode === "timetable"
+        {viewMode === "timetable" || daysInRange === 1
           ? startDate
           : `${startDate} 〜 ${days[days.length - 1].dateStr}（${daysInRange}日間）`}
       </span>

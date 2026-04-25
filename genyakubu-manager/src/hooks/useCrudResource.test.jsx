@@ -286,4 +286,105 @@ describe("useCrudResource", () => {
       ]);
     });
   });
+
+  describe("removeWithUndo", () => {
+    // confirm を介さず即削除されるため、ToastProvider を独立に使って
+    // toast に表示された Undo ボタンを押下する E2E 風のフローを検証する。
+    function UndoHarness({ initialList, saveSpy, apiRef }) {
+      const [list, setList] = useState(initialList);
+      const api = useCrudResource({
+        list,
+        save: (next) => {
+          saveSpy(next);
+          setList(next);
+        },
+      });
+      apiRef.current = api;
+      return null;
+    }
+
+    function renderUndoHarness(initialList) {
+      const saveSpy = vi.fn();
+      const apiRef = { current: null };
+      render(
+        <ToastProvider
+          render={(toasts) => (
+            <div data-testid="toasts">
+              {toasts.map((t) => (
+                <div key={t.id} data-tone={t.tone}>
+                  <span>{t.message}</span>
+                  {t.action && (
+                    <button onClick={t.action.onClick}>{t.action.label}</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        >
+          <ConfirmProvider>
+            <UndoHarness initialList={initialList} saveSpy={saveSpy} apiRef={apiRef} />
+          </ConfirmProvider>
+        </ToastProvider>
+      );
+      return { saveSpy, apiRef };
+    }
+
+    it("即削除され、toast に Undo ボタンが付く", () => {
+      const { saveSpy, apiRef } = renderUndoHarness([
+        { id: 1, name: "a" },
+        { id: 2, name: "b" },
+      ]);
+      act(() => {
+        apiRef.current.removeWithUndo(1, { successMsg: "削除しました" });
+      });
+      expect(saveSpy).toHaveBeenCalledWith([{ id: 2, name: "b" }]);
+      expect(screen.getByText("削除しました")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "元に戻す" })).toBeInTheDocument();
+    });
+
+    it("Undo クリックで削除前の record が復元される", () => {
+      const { saveSpy, apiRef } = renderUndoHarness([
+        { id: 1, name: "a" },
+        { id: 2, name: "b" },
+      ]);
+      act(() => {
+        apiRef.current.removeWithUndo(1);
+      });
+      saveSpy.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+      // 復元時は最新 list (= 削除後の list) に対象を append する。
+      const restored = saveSpy.mock.calls.at(-1)[0];
+      expect(restored).toEqual(
+        expect.arrayContaining([
+          { id: 2, name: "b" },
+          { id: 1, name: "a" },
+        ])
+      );
+      expect(restored).toHaveLength(2);
+    });
+
+    it("存在しない id を指定したら何もせず false を返す", () => {
+      const { saveSpy, apiRef } = renderUndoHarness([{ id: 1 }]);
+      let returned;
+      act(() => {
+        returned = apiRef.current.removeWithUndo(99);
+      });
+      expect(returned).toBe(false);
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it("Undo 後にもう一度 Undo を押しても二重投入しない", () => {
+      const { saveSpy, apiRef } = renderUndoHarness([{ id: 1 }, { id: 2 }]);
+      act(() => {
+        apiRef.current.removeWithUndo(1);
+      });
+      const undoBtn = screen.getByRole("button", { name: "元に戻す" });
+      fireEvent.click(undoBtn);
+      saveSpy.mockClear();
+      // wrapped action は consumed フラグで 2 度目以降を握りつぶし、
+      // toast 自体も remove されるためそもそもボタンが消えている。
+      expect(screen.queryByRole("button", { name: "元に戻す" })).not.toBeInTheDocument();
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+  });
 });

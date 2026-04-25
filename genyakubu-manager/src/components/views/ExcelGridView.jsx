@@ -442,14 +442,59 @@ export function ExcelGridView({
             <div
               style={{
                 textAlign: "center",
-                color: "#888",
-                padding: 40,
+                color: "#666",
+                padding: "40px 20px",
                 background: "#fff",
                 borderRadius: 8,
                 border: "1px solid #e0e0e0",
+                lineHeight: 1.7,
               }}
             >
-              {selectedDay}曜日のコマがありません
+              <div aria-hidden="true" style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>
+                📭
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                {selectedDay}曜日のコマがありません
+              </div>
+              {daysWithSlots.size > 0 ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#888",
+                    display: "flex",
+                    gap: 6,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    marginTop: 6,
+                  }}
+                >
+                  <span>コマのある曜日:</span>
+                  {DAYS.filter((d) => daysWithSlots.has(d)).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setSelectedDay(d)}
+                      style={{
+                        background: "#3a6ea5",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 4,
+                        padding: "3px 10px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "#888" }}>
+                  コースマスターからコマを登録してください
+                </div>
+              )}
             </div>
           ) : (
             (() => {

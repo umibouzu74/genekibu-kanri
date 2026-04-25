@@ -1,7 +1,51 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
+
+/**
+ * 楽観的削除 + Undo toast。confirm() を出さずに即削除し、トースト
+ * の「元に戻す」ボタンを押すと削除直前のレコードを再投入する。
+ *
+ * cascade を伴う削除には使わないこと（連鎖更新は復元できない）。
+ *
+ * Undo は「最新 list に対象 ID が無い場合のみ」追加する。間に同一
+ * ID が同期等で復活していたら何もしない安全側仕様。
+ */
+export function useRemoveWithUndo({ list, save, idKey = "id" }) {
+  const toasts = useToasts();
+  // Undo クリック時には「クリック時点の最新 list」が必要なので ref で参照する。
+  const listRef = useRef(list);
+  listRef.current = list;
+  return useCallback(
+    (
+      id,
+      {
+        successMsg = "削除しました",
+        undoLabel = "元に戻す",
+        duration = 6000,
+      } = {}
+    ) => {
+      const target = list.find((x) => x[idKey] === id);
+      if (!target) return false;
+      save(list.filter((x) => x[idKey] !== id));
+      toasts.push(successMsg, {
+        tone: "info",
+        duration,
+        action: {
+          label: undoLabel,
+          onClick: () => {
+            const current = listRef.current;
+            if (current.some((x) => x[idKey] === target[idKey])) return;
+            save([...current, target]);
+          },
+        },
+      });
+      return true;
+    },
+    [list, save, idKey, toasts]
+  );
+}
 
 /**
  * Generic CRUD primitives for list-backed resources stored in
@@ -20,6 +64,7 @@ import { nextNumericId } from "../utils/schema";
 export function useCrudResource({ list, save, idKey = "id" }) {
   const toasts = useToasts();
   const confirm = useConfirm();
+  const removeWithUndo = useRemoveWithUndo({ list, save, idKey });
 
   const add = useCallback(
     (
@@ -92,5 +137,5 @@ export function useCrudResource({ list, save, idKey = "id" }) {
     [list, save, idKey, confirm, toasts]
   );
 
-  return { add, update, remove, confirmedRemove };
+  return { add, update, remove, confirmedRemove, removeWithUndo };
 }

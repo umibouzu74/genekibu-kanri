@@ -46,12 +46,7 @@ export function useSubsCrud({ subs, saveSubs }) {
   );
 
   const del = useCallback(
-    (id) =>
-      crud.confirmedRemove(id, {
-        title: "代行の削除",
-        message: "この代行記録を削除しますか？",
-        successMsg: "代行記録を削除しました",
-      }),
+    (id) => crud.removeWithUndo(id, { successMsg: "代行記録を削除しました" }),
     [crud]
   );
 

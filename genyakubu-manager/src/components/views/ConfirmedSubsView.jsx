@@ -6,6 +6,7 @@ import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
 import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable";
+import { PrintButton } from "../PrintButton";
 
 // Shows a Dashboard-style listing of classes on days that have at least one
 // confirmed substitute.
@@ -153,6 +154,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
           >
             {sharing ? "生成中..." : "共有リンクを作成"}
           </button>
+          <PrintButton style={{ fontSize: 11 }} />
           <span style={{ fontSize: 11, color: "#888" }}>{days.length}日</span>
         </span>
       </div>

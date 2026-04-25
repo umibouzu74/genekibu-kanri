@@ -23,6 +23,7 @@ import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
+import { PrintButton } from "../PrintButton";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
 function getUpcomingWindow() {
@@ -289,6 +290,7 @@ export function WeekView({
         >
           📅 iCalエクスポート
         </button>
+        <PrintButton style={{ fontSize: 11 }} />
       </div>
       {upcomingCombines.length > 0 && (
         <div

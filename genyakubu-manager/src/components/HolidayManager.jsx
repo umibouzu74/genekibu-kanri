@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { ALL_GRADES, DEPARTMENTS, DEPT_COLOR, gradeToDept } from "../data";
 import { nextNumericId } from "../utils/schema";
-import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
+import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { S } from "../styles/common";
 
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
@@ -80,7 +80,10 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const toasts = useToasts();
-  const confirm = useConfirm();
+  const removeHolidayWithUndo = useRemoveWithUndo({
+    list: holidays,
+    save: onSave,
+  });
 
   // Derive available class groups from configured slots
   const availableClasses = useMemo(
@@ -231,16 +234,10 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
     setError("");
   };
 
-  const handleDel = async (h) => {
-    const ok = await confirm({
-      title: "休講日の削除",
-      message: `${h.date}${h.label ? `（${h.label}）` : ""} の休講日を削除しますか？`,
-      okLabel: "削除",
-      tone: "danger",
+  const handleDel = (h) => {
+    removeHolidayWithUndo(h.id, {
+      successMsg: `休講日を削除しました${h.label ? `（${h.label}）` : ""}`,
     });
-    if (!ok) return;
-    onSave(holidays.filter((x) => x.id !== h.id));
-    toasts.success("休講日を削除しました");
   };
 
   const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
@@ -561,12 +558,21 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
           <div
             style={{
               textAlign: "center",
-              color: "#bbb",
-              padding: 30,
+              color: "#888",
+              padding: "32px 20px",
               fontSize: 13,
+              lineHeight: 1.7,
             }}
           >
-            登録された休講日はありません
+            <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📅</div>
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
+              {filter ? `「${filter}」対象の休講日はありません` : "登録された休講日はありません"}
+            </div>
+            {isAdmin && (
+              <div style={{ fontSize: 12, color: "#888" }}>
+                上のフォームから日付・対象を指定して追加してください
+              </div>
+            )}
           </div>
         ) : (
           filtered.map((h, i) => {

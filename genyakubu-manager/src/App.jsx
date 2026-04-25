@@ -11,9 +11,12 @@ import {
 } from "./data";
 
 import { VIEWS } from "./constants/views";
+import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
+import { useChordNavigation } from "./hooks/useChordNavigation";
+import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
@@ -88,6 +91,9 @@ const DataManager = lazy(() =>
 );
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette }))
+);
+const ShortcutsHelp = lazy(() =>
+  import("./components/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp }))
 );
 
 function ViewFallback() {
@@ -223,6 +229,7 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -246,12 +253,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time migration on mount
   }, []);
 
-  // ─── Cmd+K global shortcut ─────────────────────────────────────
+  // ─── Global shortcuts ──────────────────────────────────────────
+  // Cmd+K: コマンドパレット / ?: ショートカットヘルプ
+  // フォーカスが入力要素にあるときや、他のダイアログが既に開いているときは
+  // ? を無効化する (文字入力や既存モーダルの Esc 処理を妨げない)。
   useEffect(() => {
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+    const hasOpenDialog = () =>
+      !!document.querySelector('[role="dialog"][aria-modal="true"]');
     const handleKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setCmdPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (isTypingTarget(e.target)) return;
+        // 他のダイアログ (Modal / CommandPalette / ShortcutsHelp 自身)
+        // が開いている場合は、その Esc 処理に委ねるため握りつぶす。
+        if (hasOpenDialog()) return;
+        e.preventDefault();
+        setShortcutsHelpOpen(true);
       }
     };
     document.addEventListener("keydown", handleKey);
@@ -342,6 +373,25 @@ export default function App() {
     setView(v);
     setSidebarOpen(false);
   }, []);
+
+  // ─── g-prefix chord navigation ──────────────────────────────────
+  // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
+  // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
+  // タイムアウト時は ShortcutsHelp を開く（chord 忘れ救済 = A14）。
+  const { waiting: chordWaiting, reset: resetChord } = useChordNavigation({
+    chordMap: VIEW_CHORDS,
+    onMatch: selectView,
+    onTimeout: useCallback(() => setShortcutsHelpOpen(true), []),
+    timeoutMs: CHORD_TIMEOUT_MS,
+  });
+
+  // モーダル／パレットが開いたら chord 待機を即クリア。
+  // バッジが最大 1.2 秒間モーダル上に残留するのを防ぐ。
+  useEffect(() => {
+    if (cmdPaletteOpen || shortcutsHelpOpen) {
+      resetChord();
+    }
+  }, [cmdPaletteOpen, shortcutsHelpOpen, resetChord]);
 
   // ─── Derived data ───────────────────────────────────────────────
   const now = new Date();
@@ -893,13 +943,38 @@ export default function App() {
               selectView(v);
               setCmdPaletteOpen(false);
             }}
+            onShowShortcuts={() => setShortcutsHelpOpen(true)}
             views={VIEWS}
           />
         </Suspense>
       )}
 
+      {/* Shortcuts help (?) — lazy-loaded overlay */}
+      {shortcutsHelpOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsHelp
+            open={shortcutsHelpOpen}
+            onClose={() => setShortcutsHelpOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* Chord waiting badge (g を押したあと次のキーを待っている間だけ表示) */}
+      <ChordWaitingBadge open={chordWaiting} />
+
       {/* Responsive CSS */}
       <style>{`
+        /* chord 待機バッジのタイムアウト残量バー（A19） */
+        /* toast の残量バーでも同じ keyframes を流用する。 */
+        @keyframes chord-decay {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+        /* toast 出現時の fade-in（A22） */
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
         @media (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
           .sidebar-close { display: none !important; }

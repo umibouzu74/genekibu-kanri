@@ -7,6 +7,7 @@ import { DAY_COUNT_OPTIONS } from "./dashboard/constants";
 import { DashboardDateNav } from "./dashboard/DashboardDateNav";
 import { DashboardListView } from "./dashboard/DashboardListView";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { PrintButton } from "../PrintButton";
 
 // Re-export DashDayRow so existing call sites (e.g. ConfirmedSubsView)
 // keep working without import-path churn.
@@ -118,6 +119,16 @@ export function Dashboard({
         >
           時間割
         </button>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 1,
+            height: 18,
+            background: "#e0e0e0",
+            margin: "0 6px",
+          }}
+        />
+        <PrintButton />
       </div>
 
       {/* 日付ナビゲーション (両モード共通) */}

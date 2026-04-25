@@ -5,10 +5,14 @@ import { getWeekType } from "../../utils/biweekly";
 import { ExcelGridView } from "./ExcelGridView";
 import { BiweeklyTab } from "./master/BiweeklyTab";
 import { MasterListTab } from "./master/MasterListTab";
+import { PrintButton } from "../PrintButton";
 
 function TabSwitcher({ tab, setTab }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+    <div
+      className="no-print"
+      style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}
+    >
       <button onClick={() => setTab("list")} style={S.btn(tab === "list")}>
         コマ一覧
       </button>
@@ -18,6 +22,9 @@ function TabSwitcher({ tab, setTab }) {
       <button onClick={() => setTab("excel")} style={S.btn(tab === "excel")}>
         時間割表
       </button>
+      <span style={{ marginLeft: "auto" }}>
+        <PrintButton />
+      </span>
     </div>
   );
 }

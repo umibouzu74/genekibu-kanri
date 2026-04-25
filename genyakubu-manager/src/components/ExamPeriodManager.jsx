@@ -384,12 +384,21 @@ export function ExamPeriodManager({
           <div
             style={{
               textAlign: "center",
-              color: "#bbb",
-              padding: 30,
+              color: "#888",
+              padding: "32px 20px",
               fontSize: 13,
+              lineHeight: 1.7,
             }}
           >
-            登録されたテスト期間はありません
+            <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📝</div>
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
+              登録されたテスト期間はありません
+            </div>
+            {isAdmin && (
+              <div style={{ fontSize: 12, color: "#888" }}>
+                上のフォームから開始日・終了日・対象を指定して追加してください
+              </div>
+            )}
           </div>
         ) : (
           sorted.map((ep, i) => (
