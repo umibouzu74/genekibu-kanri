@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { dateToDay, fmtDate } from "../data";
 import { S } from "../styles/common";
+import { FieldError } from "./FieldError";
 import { SingleSubForm } from "./substitute/SingleSubForm";
 import { DayBulkSubForm } from "./substitute/DayBulkSubForm";
 
@@ -22,6 +23,9 @@ export function SubstituteForm({
 }) {
   const isEdit = Boolean(sub);
   const today = fmtDate(new Date());
+  const formId = useId();
+  const dateInputId = `${formId}-date`;
+  const dateErrorId = `${dateInputId}-err`;
   const [mode, setMode] = useState("single");
   const [date, setDate] = useState(sub?.date || today);
   const [dateError, setDateError] = useState(null);
@@ -89,20 +93,16 @@ export function SubstituteForm({
       )}
 
       <div>
-        <label
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            display: "block",
-            marginBottom: 3,
-          }}
-        >
-          日付 <span style={{ color: "#c44" }}>*</span>
+        <label htmlFor={dateInputId} style={S.formLabel}>
+          日付 <span style={{ color: "#c44" }} aria-label="必須">*</span>
         </label>
         <input
+          id={dateInputId}
           type="date"
           value={date}
           onChange={handleDateChange}
+          aria-invalid={dateError ? "true" : undefined}
+          aria-describedby={dateError ? dateErrorId : undefined}
           style={{ ...S.input, borderColor: dateError ? "#c44" : "#ccc" }}
         />
         {dayOfDate && (
@@ -110,11 +110,7 @@ export function SubstituteForm({
             ({dayOfDate}曜日)
           </span>
         )}
-        {dateError && (
-          <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>
-            {dateError}
-          </div>
-        )}
+        <FieldError id={dateErrorId}>{dateError}</FieldError>
       </div>
 
       {activeMode === "single" ? (

@@ -68,6 +68,22 @@ export const S = {
     alignItems: "center",
     gap: 6,
   }),
+  // Block-form label sitting above its input (e.g. SingleSubForm).
+  formLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+    display: "block",
+    marginBottom: 3,
+  },
+  // Horizontal label aligned to the right of a fixed-width column
+  // (e.g. SlotForm rows).
+  formLabelInline: {
+    width: 70,
+    fontSize: 12,
+    fontWeight: 700,
+    textAlign: "right",
+    flexShrink: 0,
+  },
 };
 
 export { colors, font, radius, space };

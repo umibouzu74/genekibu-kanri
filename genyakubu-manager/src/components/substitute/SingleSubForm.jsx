@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { SUB_STATUS, SUB_STATUS_KEYS, sortSlots as sortS } from "../../data";
 import { S } from "../../styles/common";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
 import { sortJa } from "../../utils/sortJa";
+import { FieldError } from "../FieldError";
 
 // ─── 単一コマ代行フォーム ──────────────────────────────────────────
 // SubstituteForm の "single" モード相当。
@@ -24,6 +25,15 @@ export function SingleSubForm({
   onSave,
   onCancel,
 }) {
+  const formId = useId();
+  const slotInputId = `${formId}-slot`;
+  const slotErrorId = `${slotInputId}-err`;
+  const teacherErrorId = `${formId}-orig-teacher-err`;
+  const teacherGroupId = `${formId}-orig-teacher-label`;
+  const subInputId = `${formId}-substitute`;
+  const statusGroupId = `${formId}-status-label`;
+  const memoInputId = `${formId}-memo`;
+  const datalistId = `${formId}-sub-teacher-list`;
   const [errors, setErrors] = useState({});
 
   const up = (k, v) => {
@@ -132,14 +142,15 @@ export function SingleSubForm({
   return (
     <>
       <div>
-        <label
-          style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 3 }}
-        >
-          対象コマ <span style={{ color: "#c44" }}>*</span>
+        <label htmlFor={slotInputId} style={S.formLabel}>
+          対象コマ <span style={{ color: "#c44" }} aria-label="必須">*</span>
         </label>
         <select
+          id={slotInputId}
           value={f.slotId}
           onChange={(e) => up("slotId", e.target.value)}
+          aria-invalid={errors.slotId ? "true" : undefined}
+          aria-describedby={errors.slotId ? slotErrorId : undefined}
           style={{ ...S.input, borderColor: errors.slotId ? "#c44" : "#ccc" }}
         >
           <option value="">-- コマを選択 --</option>
@@ -165,11 +176,7 @@ export function SingleSubForm({
             該当コマがありません (代行済みを除く)
           </div>
         )}
-        {errors.slotId && (
-          <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>
-            {errors.slotId}
-          </div>
-        )}
+        <FieldError id={slotErrorId}>{errors.slotId}</FieldError>
       </div>
 
       {selectedSlot && (
@@ -184,7 +191,7 @@ export function SingleSubForm({
         >
           {isMultiTeacher ? (
             <>
-              <div style={{ marginBottom: 6 }}>
+              <div id={teacherGroupId} style={{ marginBottom: 6 }}>
                 元講師（{selectedSlotTeachers.length}名）: 代行が必要な講師を選択
                 {selectedSlot.note && (
                   <span style={{ marginLeft: 6, color: "#e67a00" }}>
@@ -192,7 +199,12 @@ export function SingleSubForm({
                   </span>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div
+                role="radiogroup"
+                aria-labelledby={teacherGroupId}
+                aria-describedby={errors.originalTeacher ? teacherErrorId : undefined}
+                style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+              >
                 {selectedSlotTeachers.map((t) => {
                   const active = f.originalTeacher === t;
                   const alreadyTaken =
@@ -201,6 +213,8 @@ export function SingleSubForm({
                     <button
                       key={t}
                       type="button"
+                      role="radio"
+                      aria-checked={active}
                       disabled={alreadyTaken}
                       onClick={() => up("originalTeacher", t)}
                       style={{
@@ -235,11 +249,9 @@ export function SingleSubForm({
                   );
                 })}
               </div>
-              {errors.originalTeacher && (
-                <div style={{ fontSize: 10, color: "#c44", marginTop: 4 }}>
-                  {errors.originalTeacher}
-                </div>
-              )}
+              <FieldError id={teacherErrorId} style={{ marginTop: 4 }}>
+                {errors.originalTeacher}
+              </FieldError>
             </>
           ) : (
             <>
@@ -258,9 +270,7 @@ export function SingleSubForm({
       )}
 
       <div>
-        <label
-          style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 3 }}
-        >
+        <label htmlFor={subInputId} style={S.formLabel}>
           代行者
         </label>
         {matchedSubject && (
@@ -296,13 +306,14 @@ export function SingleSubForm({
           </div>
         )}
         <input
-          list="sub-teacher-list"
+          id={subInputId}
+          list={datalistId}
           value={f.substitute}
           onChange={(e) => up("substitute", e.target.value)}
           placeholder="代行者名 (空欄なら依頼中)"
           style={S.input}
         />
-        <datalist id="sub-teacher-list">
+        <datalist id={datalistId}>
           {allTeachers.map((t) => (
             <option key={t} value={t} />
           ))}
@@ -310,12 +321,14 @@ export function SingleSubForm({
       </div>
 
       <div>
-        <label
-          style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 3 }}
-        >
+        <div id={statusGroupId} style={S.formLabel}>
           ステータス
-        </label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        </div>
+        <div
+          role="radiogroup"
+          aria-labelledby={statusGroupId}
+          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+        >
           {SUB_STATUS_KEYS.map((k) => {
             const st = SUB_STATUS[k];
             const active = f.status === k;
@@ -323,6 +336,8 @@ export function SingleSubForm({
               <button
                 key={k}
                 type="button"
+                role="radio"
+                aria-checked={active}
                 onClick={() => up("status", k)}
                 style={{
                   padding: "5px 12px",
@@ -348,12 +363,11 @@ export function SingleSubForm({
       </div>
 
       <div>
-        <label
-          style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 3 }}
-        >
+        <label htmlFor={memoInputId} style={S.formLabel}>
           メモ
         </label>
         <textarea
+          id={memoInputId}
           value={f.memo || ""}
           onChange={(e) => up("memo", e.target.value)}
           placeholder="理由・引継ぎ事項など"
