@@ -17,6 +17,7 @@ import {
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { specialEventTypeMeta } from "../../constants/specialEvents";
 
 export function MonthView({
   teacher,
@@ -32,6 +33,7 @@ export function MonthView({
   displayCutoff,
   examPeriods = [],
   examPrepSchedules = [],
+  specialEvents = [],
   partTimeStaff = [],
   classSets,
   biweeklyAnchors,
@@ -153,13 +155,14 @@ export function MonthView({
   }, [holidays]);
 
   // 各日付セルで使う sessionCtx (第N回バッジ用)。Dashboard/WeekView と同仕様。
-  // isOffForGrade は同じ hook から取得して makeHolidayHelpers の重複を避ける。
+  // isOffForGrade は同じ hook から取得して makeEventHelpers の重複を避ける。
   const { sessionCtx, isOffForGrade } = useSessionCtx({
     classSets,
     slots,
     displayCutoff,
     holidays,
     examPeriods,
+    specialEvents,
     biweeklyAnchors,
     sessionOverrides,
   });
@@ -168,6 +171,12 @@ export function MonthView({
   const examPeriodsForDate = useCallback(
     (ds) => examPeriods.filter((ep) => ds >= ep.startDate && ds <= ep.endDate),
     [examPeriods]
+  );
+
+  // Returns special events active on a given date (告知バッジ用)
+  const specialEventsForDate = useCallback(
+    (ds) => specialEvents.filter((ev) => ds >= ev.startDate && ds <= ev.endDate),
+    [specialEvents]
   );
 
   // この講師が (slot, ds) のコマを「月次ビューに載せるか」を判定する。
@@ -270,6 +279,8 @@ export function MonthView({
           );
           const epActive = examPeriodsForDate(ds);
           const hasExam = epActive.length > 0;
+          const evActive = specialEventsForDate(ds);
+          const hasEvent = evActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
           const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
           const sl = isFullOff || dayCutoff
@@ -363,6 +374,42 @@ export function MonthView({
                   </span>
                 )}
               </div>
+              {hasEvent && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1,
+                    margin: "2px 0",
+                  }}
+                >
+                  {evActive.map((ev) => {
+                    const meta = specialEventTypeMeta(ev.eventType);
+                    const shortName =
+                      ev.name.length > 8 ? ev.name.slice(0, 8) + "…" : ev.name;
+                    return (
+                      <span
+                        key={ev.id}
+                        title={`${meta.label}: ${ev.name}${ev.memo ? "\n" + ev.memo : ""}`}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          padding: "1px 4px",
+                          borderRadius: 3,
+                          background: meta.bg,
+                          color: meta.fg,
+                          borderLeft: `2px solid ${meta.accent}`,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {meta.icon} {shortName}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
               {dayCutoff ? (
                 <div
                   style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}

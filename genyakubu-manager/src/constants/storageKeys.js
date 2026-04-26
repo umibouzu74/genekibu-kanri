@@ -21,4 +21,5 @@ export const LS = {
   classSets: "genyakubu-class-sets",
   sessionOverrides: "genyakubu-session-overrides",
   examPrepSchedules: "genyakubu-exam-prep-schedules",
+  specialEvents: "genyakubu-special-events",
 };

@@ -7,7 +7,7 @@ import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
 import { buildSessionCountMap } from "../../utils/sessionCount";
-import { makeHolidayHelpers } from "./dashboardHelpers";
+import { makeEventHelpers } from "./dashboardHelpers";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { getAbsentSlotIds } from "../../utils/absenceHelpers";
@@ -63,7 +63,7 @@ export function AbsenceWorkflowView({
 
   // 休講/テスト期間判定 (sessionCount 計算 + 振替先警告で共有)
   const isOffForGrade = useMemo(
-    () => makeHolidayHelpers(holidays || [], examPeriods || []).isOffForGrade,
+    () => makeEventHelpers(holidays || [], examPeriods || []).isOffForGrade,
     [holidays, examPeriods]
   );
 

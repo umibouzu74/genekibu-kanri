@@ -6,7 +6,7 @@ import { sortJa } from "../../utils/sortJa";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { filterSlotsForDate } from "../../utils/timetable";
-import { makeHolidayHelpers } from "./dashboardHelpers";
+import { makeEventHelpers } from "./dashboardHelpers";
 import {
   computeAvailableTeachers,
   suggestChainSubstitutions,
@@ -66,7 +66,7 @@ export function ChainSubstitutionPanel({
   // その日の時間割（3列表示用）
   const daySchedule = useMemo(() => {
     if (!dayOfDate || !date) return [];
-    const { isOffForGrade } = makeHolidayHelpers(holidays, examPeriods);
+    const { isOffForGrade } = makeEventHelpers(holidays, examPeriods);
     const daySlots = filterSlotsForDate(slots, date, timetables).filter(
       (s) => s.day === dayOfDate
     );

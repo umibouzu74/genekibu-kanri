@@ -30,6 +30,7 @@ import {
   migrateExamPrepSchedules,
   migrateHolidays,
   migratePartTimeStaff,
+  migrateSpecialEvents,
   migrateSubs,
 } from "./hooks/useDataIO";
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
@@ -38,6 +39,7 @@ import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
+import { EVENT_KIND } from "./constants/eventKinds";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
 
@@ -86,6 +88,12 @@ const HolidayManager = lazy(() =>
 const ExamPeriodManager = lazy(() =>
   import("./components/ExamPeriodManager").then((m) => ({ default: m.ExamPeriodManager }))
 );
+const SpecialEventManager = lazy(() =>
+  import("./components/SpecialEventManager").then((m) => ({ default: m.SpecialEventManager }))
+);
+const EventCalendarView = lazy(() =>
+  import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -109,6 +117,21 @@ function ViewFallback() {
     </div>
   );
 }
+
+// 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
+const VIEW_TITLES = {
+  [VIEWS.DASH]: "ダッシュボード",
+  [VIEWS.ALL]: "全講師コマ数一覧",
+  [VIEWS.COMPARE]: "講師比較",
+  [VIEWS.TIMETABLE]: "時間割管理",
+  [VIEWS.MASTER]: "コースマスター管理",
+  [VIEWS.HOLIDAYS]: "休講日・テスト期間・イベント管理",
+  [VIEWS.EVENTS]: "イベントカレンダー",
+  [VIEWS.SUBS]: "授業管理",
+  [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
+  [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
+  [VIEWS.STAFF]: "バイト管理",
+};
 
 export default function App() {
   const toasts = useToasts();
@@ -216,6 +239,11 @@ export default function App() {
     {},
     { onError: onStorageError }
   );
+  const [specialEvents, saveSpecialEvents] = useSyncedStorage(
+    LS.specialEvents,
+    [],
+    { migrate: migrateSpecialEvents, onError: onStorageError }
+  );
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -228,6 +256,8 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
+  const [eventEditRequest, setEventEditRequest] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
@@ -336,6 +366,7 @@ export default function App() {
     classSets,
     sessionOverrides,
     teacherSubjects,
+    specialEvents,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -352,6 +383,7 @@ export default function App() {
     saveClassSets,
     saveSessionOverrides,
     saveTeacherSubjects,
+    saveSpecialEvents,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -552,27 +584,7 @@ export default function App() {
               ☰
             </button>
             <h1 className="app-h1" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
-              {view === VIEWS.DASH
-                ? "ダッシュボード"
-                : view === VIEWS.ALL
-                  ? "全講師コマ数一覧"
-                  : view === VIEWS.COMPARE
-                    ? "講師比較"
-                    : view === VIEWS.TIMETABLE
-                      ? "時間割管理"
-                    : view === VIEWS.MASTER
-                    ? "コースマスター管理"
-                    : view === VIEWS.HOLIDAYS
-                      ? "休講日・テスト期間管理"
-                      : view === VIEWS.SUBS
-                        ? "授業管理"
-                        : view === VIEWS.CONFIRMED_SUBS
-                          ? "代行確定一覧"
-                          : view === VIEWS.ABSENCE_FLOW
-                            ? "欠勤組み換え"
-                            : view === VIEWS.STAFF
-                              ? "バイト管理"
-                              : selected || ""}
+              {selected ? selected : VIEW_TITLES[view] || ""}
             </h1>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -690,6 +702,7 @@ export default function App() {
               timetables={timetables}
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
+              specialEvents={specialEvents}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               adjustments={adjustments}
@@ -700,6 +713,7 @@ export default function App() {
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
               saveSubs={saveSubs}
+              onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -744,7 +758,16 @@ export default function App() {
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
-              <HolidayManager holidays={holidays} slots={slots} onSave={saveHolidays} isAdmin={isAdmin} />
+              <HolidayManager
+                holidays={holidays}
+                slots={slots}
+                onSave={saveHolidays}
+                isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.HOLIDAY ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+              />
               <ExamPeriodManager
                 examPeriods={examPeriods}
                 onSave={saveExamPeriods}
@@ -752,8 +775,32 @@ export default function App() {
                 partTimeStaff={partTimeStaff}
                 examPrepSchedules={examPrepSchedules}
                 examPrepCrud={examPrepCrud}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+              />
+              <SpecialEventManager
+                specialEvents={specialEvents}
+                onSave={saveSpecialEvents}
+                isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.SPECIAL ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
               />
             </>
+          )}
+          {view === VIEWS.EVENTS && !selected && (
+            <EventCalendarView
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              onEventClick={(ev) => {
+                setEventEditRequest({ kind: ev.kind, id: ev.source.id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
+            />
           )}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
@@ -842,6 +889,7 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
+              specialEvents={specialEvents}
               partTimeStaff={partTimeStaff}
               displayCutoff={displayCutoff}
             />
@@ -862,6 +910,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
+              specialEvents={specialEvents}
               partTimeStaff={partTimeStaff}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
@@ -935,12 +984,20 @@ export default function App() {
             onClose={() => setCmdPaletteOpen(false)}
             slots={slots}
             subs={subs}
+            holidays={holidays}
+            examPeriods={examPeriods}
+            specialEvents={specialEvents}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);
             }}
             onSelectView={(v) => {
               selectView(v);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectEvent={(req) => {
+              setEventEditRequest(req);
+              selectView(VIEWS.HOLIDAYS);
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

@@ -1,5 +1,11 @@
 import { DAYS, WEEKDAYS } from "../constants/schools";
 
+// "YYYY-MM-DD" 形式かつ Date.parse で読める日付文字列か。
+// HolidayManager / ExamPeriodManager / SpecialEventManager の入力検証で共有。
+export function isValidDateStr(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+}
+
 export function timeToMin(t) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
@@ -47,4 +53,18 @@ export function eachDateStrInRange(startDate, endDate) {
     cur.setDate(cur.getDate() + 1);
   }
   return out;
+}
+
+// 期間 [start, end] が範囲 [rangeStart, rangeEnd] と重なるか。
+// すべて "YYYY-MM-DD" 文字列。辞書順比較で十分。
+export function overlapsRange(start, end, rangeStart, rangeEnd) {
+  return end >= rangeStart && start <= rangeEnd;
+}
+
+// 単日なら "YYYY-MM-DD"、複数日なら "YYYY-MM-DD 〜 YYYY-MM-DD" を返す。
+// イベントの期間表示で使うフォーマッタ。
+export function formatDateRange(start, end) {
+  if (!start) return "";
+  if (!end || start === end) return start;
+  return `${start} 〜 ${end}`;
 }

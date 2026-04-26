@@ -9,6 +9,7 @@ import {
   isPartTimeStaffObject,
   isScheduleAdjustment,
   isSlot,
+  isSpecialEvent,
   isSub,
   isSubject,
   isSubjectCategory,
@@ -264,6 +265,54 @@ describe("type guards", () => {
     ).toBe(false);
     expect(isExamPrepSchedule(null)).toBe(false);
     expect(isExamPrepSchedule({ examPeriodId: 1 })).toBe(false); // days 欠落
+  });
+
+  it("isSpecialEvent requires id, name, dates, eventType, targetGrades", () => {
+    expect(
+      isSpecialEvent({
+        id: 1,
+        name: "修学旅行",
+        startDate: "2026-05-08",
+        endDate: "2026-05-12",
+        eventType: "trip",
+        targetGrades: ["高2"],
+        memo: "",
+      })
+    ).toBe(true);
+    // memo は省略可（migrateSpecialEvents が補完する）
+    expect(
+      isSpecialEvent({
+        id: 1,
+        name: "テスト発表",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        eventType: "announcement",
+        targetGrades: [],
+      })
+    ).toBe(true);
+    // 不正な eventType は弾く
+    expect(
+      isSpecialEvent({
+        id: 1,
+        name: "x",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        eventType: "bogus",
+        targetGrades: [],
+      })
+    ).toBe(false);
+    // targetGrades が配列でない
+    expect(
+      isSpecialEvent({
+        id: 1,
+        name: "x",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        eventType: "other",
+        targetGrades: "全部",
+      })
+    ).toBe(false);
+    expect(isSpecialEvent(null)).toBe(false);
   });
 });
 
@@ -755,6 +804,64 @@ describe("v8 → v9 migration: classSets 初期化", () => {
     const bundle = {
       schemaVersion: 9,
       classSets: [{ id: "not-a-number", label: "x", slotIds: [1] }],
+    };
+    const v = validateExportBundle(bundle);
+    expect(v.ok).toBe(false);
+  });
+});
+
+describe("v12 → v13 migration: specialEvents 初期化", () => {
+  it("adds empty specialEvents when missing", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 12,
+      slots: [],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.specialEvents).toEqual([]);
+  });
+
+  it("preserves existing specialEvents", () => {
+    const existing = [
+      {
+        id: 1,
+        name: "修学旅行",
+        startDate: "2026-05-08",
+        endDate: "2026-05-12",
+        eventType: "trip",
+        targetGrades: ["高2"],
+        memo: "",
+      },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 12,
+      specialEvents: existing,
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.specialEvents).toEqual(existing);
+  });
+
+  it("v12 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 12,
+      slots: [],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("rejects specialEvents with malformed entries", () => {
+    const bundle = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      specialEvents: [
+        {
+          id: 1,
+          name: "x",
+          startDate: "2026-05-08",
+          endDate: "2026-05-12",
+          eventType: "unknown",
+          targetGrades: [],
+        },
+      ],
     };
     const v = validateExportBundle(bundle);
     expect(v.ok).toBe(false);

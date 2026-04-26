@@ -28,12 +28,17 @@ export function shiftDate(dateStr, days) {
 
 // Compute holiday / exam-period utilities shared between Dashboard and
 // ConfirmedSubsView.
-export function makeHolidayHelpers(holidays, examPeriods = []) {
+export function makeEventHelpers(holidays, examPeriods = [], specialEvents = []) {
   const holidaysFor = (d) => holidays.filter((h) => h.date === d);
 
   // Returns exam periods that are active on a given date.
   const examPeriodsFor = (d) =>
     examPeriods.filter((ep) => d >= ep.startDate && d <= ep.endDate);
+
+  // Returns special events active on a given date (purely informational; does
+  // NOT influence isOffForGrade).
+  const specialEventsFor = (d) =>
+    specialEvents.filter((ev) => d >= ev.startDate && d <= ev.endDate);
 
   // Check if a specific slot is off on a given date.
   // `subj` is optional for backward compat; when omitted, holidays with
@@ -70,5 +75,5 @@ export function makeHolidayHelpers(holidays, examPeriods = []) {
     });
   };
 
-  return { holidaysFor, examPeriodsFor, isOffForGrade };
+  return { holidaysFor, examPeriodsFor, specialEventsFor, isOffForGrade };
 }

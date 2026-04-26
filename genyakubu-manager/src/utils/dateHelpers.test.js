@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dateToDay, fmtDate, fmtDateWeekday, parseLocalDate, timeToMin } from "./dateHelpers";
+import {
+  dateToDay,
+  fmtDate,
+  fmtDateWeekday,
+  formatDateRange,
+  overlapsRange,
+  parseLocalDate,
+  timeToMin,
+} from "./dateHelpers";
 
 describe("parseLocalDate", () => {
   it("returns null for falsy or invalid input", () => {
@@ -56,6 +64,37 @@ describe("fmtDateWeekday", () => {
   it("appends (weekday) to the date", () => {
     // 2026-04-19 is a Sunday
     expect(fmtDateWeekday("2026-04-19")).toBe("2026-04-19 (日)");
+  });
+});
+
+describe("overlapsRange", () => {
+  it("returns true when ranges share any day (inclusive)", () => {
+    expect(overlapsRange("2026-05-01", "2026-05-05", "2026-05-03", "2026-05-10")).toBe(true);
+    expect(overlapsRange("2026-05-10", "2026-05-12", "2026-05-01", "2026-05-10")).toBe(true);
+    // Single-day overlaps
+    expect(overlapsRange("2026-05-05", "2026-05-05", "2026-05-05", "2026-05-05")).toBe(true);
+  });
+
+  it("returns false when ranges are disjoint", () => {
+    expect(overlapsRange("2026-05-01", "2026-05-03", "2026-05-04", "2026-05-10")).toBe(false);
+    expect(overlapsRange("2026-05-11", "2026-05-15", "2026-05-01", "2026-05-10")).toBe(false);
+  });
+});
+
+describe("formatDateRange", () => {
+  it("returns empty string for falsy start", () => {
+    expect(formatDateRange("", "2026-05-05")).toBe("");
+    expect(formatDateRange(null, "2026-05-05")).toBe("");
+  });
+
+  it("returns just the start date when end is missing or equal", () => {
+    expect(formatDateRange("2026-05-05")).toBe("2026-05-05");
+    expect(formatDateRange("2026-05-05", "")).toBe("2026-05-05");
+    expect(formatDateRange("2026-05-05", "2026-05-05")).toBe("2026-05-05");
+  });
+
+  it("returns 'start 〜 end' for multi-day ranges", () => {
+    expect(formatDateRange("2026-05-01", "2026-05-05")).toBe("2026-05-01 〜 2026-05-05");
   });
 });
 

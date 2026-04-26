@@ -42,6 +42,7 @@ export function Dashboard({
   timetables,
   displayCutoff,
   examPeriods = [],
+  specialEvents = [],
   classSets = [],
   biweeklyAnchors = [],
   adjustments = [],
@@ -52,6 +53,7 @@ export function Dashboard({
   subjectCategories,
   teacherSubjects,
   saveSubs,
+  onJumpToEventCalendar,
 }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
@@ -76,12 +78,19 @@ export function Dashboard({
   const isToday = startDate === todayStr;
 
   // Session count 用の共通 ctx + ホリデーヘルパをまとめて取得。
-  const { sessionCtx, holidaysFor, examPeriodsFor, isOffForGrade } = useSessionCtx({
+  const {
+    sessionCtx,
+    holidaysFor,
+    examPeriodsFor,
+    specialEventsFor,
+    isOffForGrade,
+  } = useSessionCtx({
     classSets,
     slots,
     displayCutoff,
     holidays,
     examPeriods,
+    specialEvents,
     biweeklyAnchors,
     sessionOverrides,
   });
@@ -176,12 +185,17 @@ export function Dashboard({
           timetables={timetables}
           displayCutoff={displayCutoff}
           days={days}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          specialEvents={specialEvents}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
+          specialEventsFor={specialEventsFor}
           isOffForGrade={isOffForGrade}
           sessionCtx={sessionCtx}
           todayStr={todayStr}
           adjustments={adjustments}
+          onJumpToEventCalendar={onJumpToEventCalendar}
         />
       )}
     </div>

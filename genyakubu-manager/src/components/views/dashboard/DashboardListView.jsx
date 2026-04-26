@@ -4,6 +4,7 @@ import {
   isTimetableActiveForDate,
 } from "../../../utils/timetable";
 import { DashDayRow } from "./DashDayRow";
+import { EventSummaryCards } from "./EventSummaryCards";
 import { SubSummaryCards } from "./SubSummaryCards";
 
 export function DashboardListView({
@@ -13,15 +14,27 @@ export function DashboardListView({
   displayCutoff,
   days,
   todayStr,
+  holidays = [],
+  examPeriods = [],
+  specialEvents = [],
   holidaysFor,
   examPeriodsFor,
+  specialEventsFor,
   isOffForGrade,
   sessionCtx,
   adjustments = [],
+  onJumpToEventCalendar,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <SubSummaryCards subs={subs} slots={slots} todayStr={todayStr} />
+      <EventSummaryCards
+        todayStr={todayStr}
+        holidays={holidays}
+        examPeriods={examPeriods}
+        specialEvents={specialEvents}
+        onJumpToEventCalendar={onJumpToEventCalendar}
+      />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
         const entireDayCutoff = isEntireDayBeyondCutoff(dateStr, displayCutoff);
@@ -67,6 +80,9 @@ export function DashboardListView({
               subs={subs}
               adjustments={adjustments}
               examPeriodsForDate={examPeriodsFor(dateStr)}
+              specialEventsForDate={
+                specialEventsFor ? specialEventsFor(dateStr) : []
+              }
               sessionCtx={sessionCtx}
             />
           </div>

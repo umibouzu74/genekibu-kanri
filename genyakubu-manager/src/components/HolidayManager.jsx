@@ -1,20 +1,19 @@
-import { useMemo, useState } from "react";
-import { ALL_GRADES, DEPARTMENTS, DEPT_COLOR, gradeToDept } from "../data";
+import { useMemo, useRef, useState } from "react";
+import {
+  ALL_GRADES,
+  DEPARTMENTS,
+  DEPT_COLOR,
+  HIGH_GRADES,
+  MIDDLE_GRADES,
+  gradeToDept,
+  isValidDateStr,
+} from "../data";
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
+import { useEditTarget } from "../hooks/useEditTarget";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
-
-const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
-
-const MIDDLE_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "中学部");
-const HIGH_GRADES = ALL_GRADES.filter((g) => gradeToDept(g) === "高校部");
-
-const GRADE_COLOR = {
-  中学部: { b: "#d4e8d4", f: "#2a5a2a", accent: "#4a9a4a" },
-  高校部: { b: "#f0e0c8", f: "#7a5a1a", accent: "#c08a2a" },
-};
 
 // Extract unique class groups (school/course names) from configured slots.
 // For high school, the class group is either:
@@ -70,7 +69,15 @@ function extractClassGroups(slots, grades) {
   return [...groups].sort();
 }
 
-export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
+export function HolidayManager({
+  holidays,
+  slots = [],
+  onSave,
+  isAdmin,
+  editTargetId = null,
+  onConsumeEditTarget,
+}) {
+  const formRef = useRef(null);
   const [date, setDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState(["全部"]);
@@ -192,7 +199,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
       setError("日付を入力してください");
       return;
     }
-    if (!isValidDate(date)) {
+    if (!isValidDateStr(date)) {
       setError("日付の形式が正しくありません");
       return;
     }
@@ -252,10 +259,20 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   // Show grade/keyword selection only when scope is NOT 全部
   const showGradeSelection = !scope.includes("全部");
 
+  useEditTarget({
+    editTargetId,
+    items: holidays,
+    onEdit: handleEdit,
+    onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
+
   return (
     <div style={{ marginTop: 12 }}>
       {isAdmin && (
       <div
+        ref={formRef}
         style={{
           background: "#fff",
           borderRadius: 8,
@@ -424,7 +441,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
                 return scope.includes(dept);
               }).map((g) => {
                 const dept = gradeToDept(g);
-                const col = GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                 const sel = isGradeSelected(g);
                 return (
                   <label
@@ -620,7 +637,7 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
                     ))}
                     {tg.map((g) => {
                       const dept = gradeToDept(g);
-                      const col = GRADE_COLOR[dept] || { b: "#eee", f: "#444" };
+                      const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                       return (
                         <span
                           key={g}

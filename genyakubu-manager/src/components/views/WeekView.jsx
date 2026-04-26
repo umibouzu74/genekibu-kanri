@@ -23,6 +23,9 @@ import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
+import { overlapsRange, formatDateRange } from "../../utils/dateHelpers";
+import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
+import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
@@ -54,6 +57,7 @@ export function WeekView({
   holidays = [],
   examPeriods = [],
   examPrepSchedules = [],
+  specialEvents = [],
   partTimeStaff = [],
   displayCutoff,
 }) {
@@ -276,6 +280,36 @@ export function WeekView({
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, teacher, winStart, winEnd]);
 
+  // 直近 14 日に重なるイベント (休講以外) を一覧に出す。休講は曜日マスに
+  // 既に休バッジが立っているので除外。
+  const upcomingEvents = useMemo(() => {
+    const winStartStr = fmtDate(winStart);
+    const winEndStr = fmtDate(winEnd);
+    const out = [];
+    for (const ep of examPeriods) {
+      if (!overlapsRange(ep.startDate, ep.endDate, winStartStr, winEndStr)) continue;
+      out.push({
+        kind: EVENT_KIND.EXAM,
+        id: `e-${ep.id}`,
+        name: ep.name,
+        startDate: ep.startDate,
+        endDate: ep.endDate,
+      });
+    }
+    for (const ev of specialEvents) {
+      if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
+      out.push({
+        kind: EVENT_KIND.SPECIAL,
+        id: `s-${ev.id}`,
+        name: ev.name,
+        startDate: ev.startDate,
+        endDate: ev.endDate,
+        eventType: ev.eventType,
+      });
+    }
+    return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }, [examPeriods, specialEvents, winStart, winEnd]);
+
   return (
     <div style={{ marginTop: 12 }}>
       <div
@@ -292,6 +326,60 @@ export function WeekView({
         </button>
         <PrintButton style={{ fontSize: 11 }} />
       </div>
+      {upcomingEvents.length > 0 && (
+        <div
+          style={{
+            background: "#fbf9f3",
+            border: "1px solid #e0d8c0",
+            borderRadius: 8,
+            padding: "8px 12px",
+            marginBottom: 10,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: "#7a6020",
+              marginRight: 4,
+            }}
+          >
+            直近2週間のイベント:
+          </span>
+          {upcomingEvents.map((ev) => {
+            const meta =
+              ev.kind === EVENT_KIND.SPECIAL
+                ? specialEventTypeMeta(ev.eventType)
+                : EXAM_META;
+            const range = formatDateRange(ev.startDate, ev.endDate);
+            return (
+              <span
+                key={ev.id}
+                title={`${range} ${ev.name}`}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: meta.bg,
+                  color: meta.fg,
+                  border: `1px solid ${meta.accent}`,
+                }}
+              >
+                {meta.icon ? `${meta.icon} ` : ""}
+                {ev.name}
+                <span style={{ fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
+                  {range}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      )}
       {upcomingCombines.length > 0 && (
         <div
           style={{

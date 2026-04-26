@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
+import { specialEventTypeMeta } from "../../../constants/specialEvents";
 import { SectionColumn } from "./SectionColumn";
 
 export function DashDayRow({
@@ -12,6 +13,7 @@ export function DashDayRow({
   subs,
   adjustments = [],
   examPeriodsForDate = [],
+  specialEventsForDate = [],
   sessionCtx,
 }) {
   const sessionCountMap = useMemo(() => {
@@ -121,6 +123,30 @@ export function DashDayRow({
           >
             {examLabel}
           </span>
+        )}
+        {specialEventsForDate.length > 0 && (
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+            {specialEventsForDate.map((ev) => {
+              const meta = specialEventTypeMeta(ev.eventType);
+              return (
+                <span
+                  key={ev.id}
+                  title={`${meta.label}: ${ev.name}${ev.memo ? "\n" + ev.memo : ""}`}
+                  style={{
+                    fontSize: 10,
+                    background: meta.bg,
+                    color: meta.fg,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    fontWeight: 700,
+                    border: `1px solid ${meta.accent}`,
+                  }}
+                >
+                  {meta.icon} {ev.name}
+                </span>
+              );
+            })}
+          </div>
         )}
       </div>
       {fullOff ? (
