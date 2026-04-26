@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -10,6 +10,8 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
+import { useEditTarget } from "../hooks/useEditTarget";
+import { formatDateRange } from "../utils/dateHelpers";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import {
@@ -158,26 +160,14 @@ export function SpecialEventManager({
     (a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id
   );
 
-  // 外部 (例: イベントカレンダー / コマンドパレット) からの編集要求を消化する。
-  // 該当 id が見つかれば編集モードに入れて、フォームをスクロールで可視化する。
-  useEffect(() => {
-    if (editTargetId == null) return;
-    const target = specialEvents.find((ev) => ev.id === editTargetId);
-    if (target && isAdmin) {
-      handleEdit(target);
-      // 次フレームで scroll (state 反映を待たないと位置がズレる)
-      requestAnimationFrame(() => {
-        formRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-    }
-    onConsumeEditTarget?.();
-    // handleEdit / onConsumeEditTarget はレンダごとに ID が変わるが、effect は
-    // editTargetId 変化のみで実行したい。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editTargetId]);
+  useEditTarget({
+    editTargetId,
+    items: specialEvents,
+    onEdit: handleEdit,
+    onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
 
   return (
     <div style={{ marginTop: 24 }}>
@@ -467,7 +457,6 @@ export function SpecialEventManager({
         ) : (
           sorted.map((ev, i) => {
             const meta = specialEventTypeMeta(ev.eventType);
-            const isSingle = ev.startDate === ev.endDate;
             return (
               <div
                 key={ev.id}
@@ -509,9 +498,7 @@ export function SpecialEventManager({
                   </span>
                   <strong style={{ fontSize: 13 }}>{ev.name}</strong>
                   <span style={{ fontSize: 11, color: "#666" }}>
-                    {isSingle
-                      ? ev.startDate
-                      : `${ev.startDate} 〜 ${ev.endDate}`}
+                    {formatDateRange(ev.startDate, ev.endDate)}
                   </span>
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {(ev.targetGrades || []).length === 0 ? (

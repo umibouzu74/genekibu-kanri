@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { fmtDate } from "../../../data";
+import { formatDateRange, overlapsRange } from "../../../utils/dateHelpers";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
 
 // ─── 直近 7 日のイベントサマリ ───────────────────────────────────────
@@ -22,18 +23,14 @@ export function EventSummaryCards({
     end.setDate(end.getDate() + 6);
     const endStr = fmtDate(end);
 
-    // 期間が today..endStr に重なるか判定 (endDate >= today && startDate <= endStr)
-    const overlapsRange = (start, finish) =>
-      finish >= todayStr && start <= endStr;
-
-    const upcomingHolidays = holidays.filter(
-      (h) => h.date >= todayStr && h.date <= endStr
+    const upcomingHolidays = holidays.filter((h) =>
+      overlapsRange(h.date, h.date, todayStr, endStr)
     );
     const upcomingExams = examPeriods.filter((ep) =>
-      overlapsRange(ep.startDate, ep.endDate)
+      overlapsRange(ep.startDate, ep.endDate, todayStr, endStr)
     );
     const upcomingSpecial = specialEvents.filter((ev) =>
-      overlapsRange(ev.startDate, ev.endDate)
+      overlapsRange(ev.startDate, ev.endDate, todayStr, endStr)
     );
 
     return { upcomingHolidays, upcomingExams, upcomingSpecial };
@@ -136,7 +133,7 @@ export function EventSummaryCards({
           accent="#e0a03033"
           items={upcomingExams}
           formatItem={(ep) =>
-            `${ep.startDate}〜${ep.endDate} ${ep.name}`
+            `${formatDateRange(ep.startDate, ep.endDate)} ${ep.name}`
           }
         />
       )}
@@ -150,11 +147,7 @@ export function EventSummaryCards({
           items={upcomingSpecial}
           formatItem={(ev) => {
             const meta = specialEventTypeMeta(ev.eventType);
-            const range =
-              ev.startDate === ev.endDate
-                ? ev.startDate
-                : `${ev.startDate}〜${ev.endDate}`;
-            return `${meta.icon} ${range} ${ev.name}`;
+            return `${meta.icon} ${formatDateRange(ev.startDate, ev.endDate)} ${ev.name}`;
           }}
         />
       )}

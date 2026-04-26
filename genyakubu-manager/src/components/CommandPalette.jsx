@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SUB_STATUS } from "../data";
+import { EVENT_KIND } from "../constants/eventKinds";
+import { formatDateRange } from "../utils/dateHelpers";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
 
@@ -111,7 +113,7 @@ export function CommandPalette({
           label: `休講: ${h.label || "(無題)"}`,
           detail: h.date,
           action: () => {
-            onSelectEvent({ kind: "holiday", id: h.id });
+            onSelectEvent({ kind: EVENT_KIND.HOLIDAY, id: h.id });
             onClose();
           },
         });
@@ -123,9 +125,9 @@ export function CommandPalette({
         hits.push({
           type: "event",
           label: `テスト期間: ${ep.name}`,
-          detail: `${ep.startDate} 〜 ${ep.endDate}`,
+          detail: formatDateRange(ep.startDate, ep.endDate),
           action: () => {
-            onSelectEvent({ kind: "exam", id: ep.id });
+            onSelectEvent({ kind: EVENT_KIND.EXAM, id: ep.id });
             onClose();
           },
         });
@@ -139,12 +141,9 @@ export function CommandPalette({
         hits.push({
           type: "event",
           label: `特別イベント: ${ev.name}`,
-          detail:
-            ev.startDate === ev.endDate
-              ? ev.startDate
-              : `${ev.startDate} 〜 ${ev.endDate}`,
+          detail: formatDateRange(ev.startDate, ev.endDate),
           action: () => {
-            onSelectEvent({ kind: "special", id: ev.id });
+            onSelectEvent({ kind: EVENT_KIND.SPECIAL, id: ev.id });
             onClose();
           },
         });

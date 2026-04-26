@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import { fmtDate, WEEKDAYS } from "../../data";
-import { eachDateStrInRange } from "../../utils/dateHelpers";
+import { eachDateStrInRange, formatDateRange, overlapsRange } from "../../utils/dateHelpers";
 import { S } from "../../styles/common";
+import {
+  EVENT_KIND,
+  EVENT_KIND_LABELS,
+  EXAM_META,
+  HOLIDAY_META,
+} from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 
@@ -10,27 +16,11 @@ import { PrintButton } from "../PrintButton";
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
 // 種別ごとに色を分けてフィルタ可能。
 
-// 種別キー (kind 文字列の単一の出所)
-const KIND = Object.freeze({
-  HOLIDAY: "holiday",
-  EXAM: "exam",
-  SPECIAL: "special",
-});
-
-const KIND_LABELS = Object.freeze({
-  [KIND.HOLIDAY]: "休講",
-  [KIND.EXAM]: "テスト期間",
-  [KIND.SPECIAL]: "特別イベント",
-});
-
-const HOLIDAY_META = Object.freeze({ bg: "#f5dada", fg: "#a02020", accent: "#c44040" });
-const EXAM_META = Object.freeze({ bg: "#fde8c8", fg: "#7a4a10", accent: "#e0a030" });
-
 // フィルタチェックボックス UI 定義 (描画毎に再生成しないようモジュールレベルに)
 const FILTER_BUTTONS = Object.freeze([
-  { key: KIND.HOLIDAY, label: "休講", color: HOLIDAY_META.accent },
-  { key: KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
-  { key: KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
+  { key: EVENT_KIND.HOLIDAY, label: "休講", color: HOLIDAY_META.accent },
+  { key: EVENT_KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
+  { key: EVENT_KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
 ]);
 
 // 連続バーの border-radius を、左右の継続フラグから決定する。
@@ -50,9 +40,9 @@ export function EventCalendarView({
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
   const [filters, setFilters] = useState({
-    [KIND.HOLIDAY]: true,
-    [KIND.EXAM]: true,
-    [KIND.SPECIAL]: true,
+    [EVENT_KIND.HOLIDAY]: true,
+    [EVENT_KIND.EXAM]: true,
+    [EVENT_KIND.SPECIAL]: true,
   });
 
   const vd = useMemo(
@@ -82,11 +72,11 @@ export function EventCalendarView({
   // 月内に重なるイベントだけを抽出 + 日付昇順
   const eventsInMonth = useMemo(() => {
     const all = [];
-    if (filters[KIND.HOLIDAY]) {
+    if (filters[EVENT_KIND.HOLIDAY]) {
       for (const h of holidays) {
-        if (h.date < monthStart || h.date > monthEnd) continue;
+        if (!overlapsRange(h.date, h.date, monthStart, monthEnd)) continue;
         all.push({
-          kind: KIND.HOLIDAY,
+          kind: EVENT_KIND.HOLIDAY,
           id: `h-${h.id}`,
           name: h.label || "休講",
           startDate: h.date,
@@ -96,11 +86,11 @@ export function EventCalendarView({
         });
       }
     }
-    if (filters[KIND.EXAM]) {
+    if (filters[EVENT_KIND.EXAM]) {
       for (const ep of examPeriods) {
-        if (ep.endDate < monthStart || ep.startDate > monthEnd) continue;
+        if (!overlapsRange(ep.startDate, ep.endDate, monthStart, monthEnd)) continue;
         all.push({
-          kind: KIND.EXAM,
+          kind: EVENT_KIND.EXAM,
           id: `e-${ep.id}`,
           name: ep.name,
           startDate: ep.startDate,
@@ -110,11 +100,11 @@ export function EventCalendarView({
         });
       }
     }
-    if (filters[KIND.SPECIAL]) {
+    if (filters[EVENT_KIND.SPECIAL]) {
       for (const ev of specialEvents) {
-        if (ev.endDate < monthStart || ev.startDate > monthEnd) continue;
+        if (!overlapsRange(ev.startDate, ev.endDate, monthStart, monthEnd)) continue;
         all.push({
-          kind: KIND.SPECIAL,
+          kind: EVENT_KIND.SPECIAL,
           id: `s-${ev.id}`,
           name: ev.name,
           startDate: ev.startDate,
@@ -318,9 +308,10 @@ export function EventCalendarView({
                 return (
                   <div
                     key={ev.id}
-                    title={`${KIND_LABELS[ev.kind]}: ${ev.name}\n${ev.startDate}${
-                      ev.startDate !== ev.endDate ? ` 〜 ${ev.endDate}` : ""
-                    }${ev.source.memo ? "\n" + ev.source.memo : ""}${
+                    title={`${EVENT_KIND_LABELS[ev.kind]}: ${ev.name}\n${formatDateRange(
+                      ev.startDate,
+                      ev.endDate
+                    )}${ev.source.memo ? "\n" + ev.source.memo : ""}${
                       clickable ? "\n\nクリックで編集画面を開きます" : ""
                     }`}
                     role={clickable ? "button" : undefined}
@@ -354,7 +345,7 @@ export function EventCalendarView({
                   >
                     {isStart ? (
                       <>
-                        {ev.kind === KIND.SPECIAL && ev.meta.icon ? (
+                        {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
                           <>
                             <span aria-hidden="true">{ev.meta.icon}</span>{" "}
                           </>
@@ -461,14 +452,12 @@ export function EventCalendarView({
                     textAlign: "center",
                   }}
                 >
-                  {ev.kind === KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
-                  {KIND_LABELS[ev.kind]}
+                  {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
+                  {EVENT_KIND_LABELS[ev.kind]}
                 </span>
                 <strong style={{ fontSize: 13 }}>{ev.name}</strong>
                 <span style={{ fontSize: 11, color: "#666" }}>
-                  {ev.startDate === ev.endDate
-                    ? ev.startDate
-                    : `${ev.startDate} 〜 ${ev.endDate}`}
+                  {formatDateRange(ev.startDate, ev.endDate)}
                 </span>
                 {isCurrent && (
                   <span
@@ -484,7 +473,7 @@ export function EventCalendarView({
                     今日
                   </span>
                 )}
-                {ev.kind === KIND.SPECIAL && ev.source.memo && (
+                {ev.kind === EVENT_KIND.SPECIAL && ev.source.memo && (
                   <span
                     style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
                   >

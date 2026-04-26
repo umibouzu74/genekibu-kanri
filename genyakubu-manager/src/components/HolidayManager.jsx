@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPARTMENTS,
@@ -11,6 +11,7 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
+import { useEditTarget } from "../hooks/useEditTarget";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 
@@ -258,21 +259,14 @@ export function HolidayManager({
   // Show grade/keyword selection only when scope is NOT 全部
   const showGradeSelection = !scope.includes("全部");
 
-  useEffect(() => {
-    if (editTargetId == null) return;
-    const target = holidays.find((h) => h.id === editTargetId);
-    if (target && isAdmin) {
-      handleEdit(target);
-      requestAnimationFrame(() => {
-        formRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-    }
-    onConsumeEditTarget?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editTargetId]);
+  useEditTarget({
+    editTargetId,
+    items: holidays,
+    onEdit: handleEdit,
+    onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
 
   return (
     <div style={{ marginTop: 12 }}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -10,6 +10,7 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
+import { useEditTarget } from "../hooks/useEditTarget";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
@@ -169,21 +170,14 @@ export function ExamPeriodManager({
     a.startDate.localeCompare(b.startDate)
   );
 
-  useEffect(() => {
-    if (editTargetId == null) return;
-    const target = examPeriods.find((ep) => ep.id === editTargetId);
-    if (target && isAdmin) {
-      handleEdit(target);
-      requestAnimationFrame(() => {
-        formRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-    }
-    onConsumeEditTarget?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editTargetId]);
+  useEditTarget({
+    editTargetId,
+    items: examPeriods,
+    onEdit: handleEdit,
+    onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
 
   return (
     <div style={{ marginTop: 24 }}>

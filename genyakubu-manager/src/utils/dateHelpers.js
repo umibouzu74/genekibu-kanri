@@ -54,3 +54,17 @@ export function eachDateStrInRange(startDate, endDate) {
   }
   return out;
 }
+
+// 期間 [start, end] が範囲 [rangeStart, rangeEnd] と重なるか。
+// すべて "YYYY-MM-DD" 文字列。辞書順比較で十分。
+export function overlapsRange(start, end, rangeStart, rangeEnd) {
+  return end >= rangeStart && start <= rangeEnd;
+}
+
+// 単日なら "YYYY-MM-DD"、複数日なら "YYYY-MM-DD 〜 YYYY-MM-DD" を返す。
+// イベントの期間表示で使うフォーマッタ。
+export function formatDateRange(start, end) {
+  if (!start) return "";
+  if (!end || start === end) return start;
+  return `${start} 〜 ${end}`;
+}

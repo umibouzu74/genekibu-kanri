@@ -39,6 +39,7 @@ import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
+import { EVENT_KIND } from "./constants/eventKinds";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
 
@@ -763,7 +764,7 @@ export default function App() {
                 onSave={saveHolidays}
                 isAdmin={isAdmin}
                 editTargetId={
-                  eventEditRequest?.kind === "holiday" ? eventEditRequest.id : null
+                  eventEditRequest?.kind === EVENT_KIND.HOLIDAY ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
               />
@@ -775,7 +776,7 @@ export default function App() {
                 examPrepSchedules={examPrepSchedules}
                 examPrepCrud={examPrepCrud}
                 editTargetId={
-                  eventEditRequest?.kind === "exam" ? eventEditRequest.id : null
+                  eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
               />
@@ -784,7 +785,7 @@ export default function App() {
                 onSave={saveSpecialEvents}
                 isAdmin={isAdmin}
                 editTargetId={
-                  eventEditRequest?.kind === "special" ? eventEditRequest.id : null
+                  eventEditRequest?.kind === EVENT_KIND.SPECIAL ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
               />

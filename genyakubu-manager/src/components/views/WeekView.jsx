@@ -23,6 +23,8 @@ import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
+import { overlapsRange, formatDateRange } from "../../utils/dateHelpers";
+import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 
@@ -279,17 +281,15 @@ export function WeekView({
   }, [subs, teacher, winStart, winEnd]);
 
   // 直近 14 日に重なるイベント (休講以外) を一覧に出す。休講は曜日マスに
-  // 既に休バッジが立っているので除外。文字列比較で十分なので
-  // parseLocalDate を介さない。
+  // 既に休バッジが立っているので除外。
   const upcomingEvents = useMemo(() => {
     const winStartStr = fmtDate(winStart);
     const winEndStr = fmtDate(winEnd);
-    const overlaps = (s, e) => e >= winStartStr && s <= winEndStr;
     const out = [];
     for (const ep of examPeriods) {
-      if (!overlaps(ep.startDate, ep.endDate)) continue;
+      if (!overlapsRange(ep.startDate, ep.endDate, winStartStr, winEndStr)) continue;
       out.push({
-        kind: "exam",
+        kind: EVENT_KIND.EXAM,
         id: `e-${ep.id}`,
         name: ep.name,
         startDate: ep.startDate,
@@ -297,9 +297,9 @@ export function WeekView({
       });
     }
     for (const ev of specialEvents) {
-      if (!overlaps(ev.startDate, ev.endDate)) continue;
+      if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
       out.push({
-        kind: "special",
+        kind: EVENT_KIND.SPECIAL,
         id: `s-${ev.id}`,
         name: ev.name,
         startDate: ev.startDate,
@@ -352,13 +352,10 @@ export function WeekView({
           </span>
           {upcomingEvents.map((ev) => {
             const meta =
-              ev.kind === "special"
+              ev.kind === EVENT_KIND.SPECIAL
                 ? specialEventTypeMeta(ev.eventType)
-                : { bg: "#fde8c8", fg: "#7a4a10", accent: "#e0a030", icon: "📝" };
-            const range =
-              ev.startDate === ev.endDate
-                ? ev.startDate
-                : `${ev.startDate}〜${ev.endDate}`;
+                : EXAM_META;
+            const range = formatDateRange(ev.startDate, ev.endDate);
             return (
               <span
                 key={ev.id}
