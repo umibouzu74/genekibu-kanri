@@ -4,7 +4,7 @@ import { S } from "../../styles/common";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
-import { makeHolidayHelpers, shiftDate } from "./dashboardHelpers";
+import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable";
 import { PrintButton } from "../PrintButton";
 import { ShareLinkButton } from "../ShareLinkButton";
@@ -23,7 +23,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
   const [toDate, setToDate] = useState(() => shiftDate(todayStr, -1));
 
   const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
-    () => makeHolidayHelpers(holidays, examPeriods),
+    () => makeEventHelpers(holidays, examPeriods),
     [holidays, examPeriods]
   );
 

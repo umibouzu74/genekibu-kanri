@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -22,7 +22,10 @@ export function ExamPeriodManager({
   partTimeStaff = [],
   examPrepSchedules = [],
   examPrepCrud = null,
+  editTargetId = null,
+  onConsumeEditTarget,
 }) {
+  const formRef = useRef(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -166,6 +169,22 @@ export function ExamPeriodManager({
     a.startDate.localeCompare(b.startDate)
   );
 
+  useEffect(() => {
+    if (editTargetId == null) return;
+    const target = examPeriods.find((ep) => ep.id === editTargetId);
+    if (target && isAdmin) {
+      handleEdit(target);
+      requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    onConsumeEditTarget?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTargetId]);
+
   return (
     <div style={{ marginTop: 24 }}>
       <div
@@ -183,6 +202,7 @@ export function ExamPeriodManager({
 
       {isAdmin && (
         <div
+          ref={formRef}
           style={{
             background: "#fff",
             borderRadius: 8,

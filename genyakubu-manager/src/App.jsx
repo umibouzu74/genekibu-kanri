@@ -255,6 +255,8 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
+  const [eventEditRequest, setEventEditRequest] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
@@ -710,6 +712,7 @@ export default function App() {
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
               saveSubs={saveSubs}
+              onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -754,7 +757,16 @@ export default function App() {
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
-              <HolidayManager holidays={holidays} slots={slots} onSave={saveHolidays} isAdmin={isAdmin} />
+              <HolidayManager
+                holidays={holidays}
+                slots={slots}
+                onSave={saveHolidays}
+                isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === "holiday" ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+              />
               <ExamPeriodManager
                 examPeriods={examPeriods}
                 onSave={saveExamPeriods}
@@ -762,11 +774,19 @@ export default function App() {
                 partTimeStaff={partTimeStaff}
                 examPrepSchedules={examPrepSchedules}
                 examPrepCrud={examPrepCrud}
+                editTargetId={
+                  eventEditRequest?.kind === "exam" ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
               />
               <SpecialEventManager
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
                 isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === "special" ? eventEditRequest.id : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
               />
             </>
           )}
@@ -775,6 +795,10 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               specialEvents={specialEvents}
+              onEventClick={(ev) => {
+                setEventEditRequest({ kind: ev.kind, id: ev.source.id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
             />
           )}
           {view === VIEWS.SUBS && !selected && (
@@ -864,6 +888,7 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
+              specialEvents={specialEvents}
               partTimeStaff={partTimeStaff}
               displayCutoff={displayCutoff}
             />
@@ -958,12 +983,20 @@ export default function App() {
             onClose={() => setCmdPaletteOpen(false)}
             slots={slots}
             subs={subs}
+            holidays={holidays}
+            examPeriods={examPeriods}
+            specialEvents={specialEvents}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);
             }}
             onSelectView={(v) => {
               selectView(v);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectEvent={(req) => {
+              setEventEditRequest(req);
+              selectView(VIEWS.HOLIDAYS);
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

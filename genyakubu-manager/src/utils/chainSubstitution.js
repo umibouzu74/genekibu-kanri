@@ -1,7 +1,7 @@
 // ─── 玉突き代行 提案ロジック ──────────────────────────────────────
 import { dateToDay, timeToMin } from "../data";
 import { getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
-import { makeHolidayHelpers } from "../components/views/dashboardHelpers";
+import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
 
@@ -58,7 +58,7 @@ export function scoreSubstituteCandidate(teacher, slotSubjectId, subjects) {
  * @param {string} name - teacher name
  * @param {string} date - YYYY-MM-DD
  * @param {Array} biweeklyAnchors
- * @param {boolean} cancelledByHoliday - makeHolidayHelpers.isOffForGrade の結果
+ * @param {boolean} cancelledByHoliday - makeEventHelpers.isOffForGrade の結果
  * @returns {{status:"active"|"cancelled", reason:string|null}}
  */
 export function classifySlotForTeacher(
@@ -194,7 +194,7 @@ export function computeAvailableTeachers(
   const daySlots = filterSlotsForDate(allSlots, date, timetables).filter(
     (s) => s.day === day
   );
-  const holidayHelpers = makeHolidayHelpers(holidays, examPeriods);
+  const holidayHelpers = makeEventHelpers(holidays, examPeriods);
   const slotCancelled = buildSlotCancellationMap(daySlots, date, holidayHelpers);
 
   const subsForDate = subs.filter((s) => s.date === date);

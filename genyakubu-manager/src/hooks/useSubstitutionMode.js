@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { dateToDay } from "../data";
 import { getSlotTeachers } from "../utils/biweekly";
 import { filterSlotsForDate } from "../utils/timetable";
-import { makeHolidayHelpers } from "../components/views/dashboardHelpers";
+import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import {
   computeAvailableTeachers,
   suggestChainSubstitutions,
@@ -44,7 +44,7 @@ export function useSubstitutionMode({
   // Holiday/exam-cancelled slots
   const holidayOffSlots = useMemo(() => {
     if (!subDate) return new Set();
-    const { isOffForGrade } = makeHolidayHelpers(holidays, examPeriods);
+    const { isOffForGrade } = makeEventHelpers(holidays, examPeriods);
     const offSet = new Set();
     for (const s of dateFilteredSlots) {
       if (s.day === dayOfDate && isOffForGrade(subDate, s.grade, s.subj)) {

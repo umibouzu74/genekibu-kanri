@@ -3,6 +3,7 @@ import { fmtDate, WEEKDAYS } from "../../data";
 import { eachDateStrInRange } from "../../utils/dateHelpers";
 import { S } from "../../styles/common";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
+import { PrintButton } from "../PrintButton";
 
 // イベントカレンダー (休講・テスト期間・特別イベントを統合表示)
 //
@@ -44,6 +45,7 @@ export function EventCalendarView({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
+  onEventClick,
 }) {
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
@@ -184,6 +186,7 @@ export function EventCalendarView({
           >
             今月
           </button>
+          <PrintButton style={{ fontSize: 11, marginLeft: 8 }} />
         </div>
         <div
           aria-hidden="true"
@@ -311,12 +314,28 @@ export function EventCalendarView({
                 const isEnd = ev.endDate === ds;
                 const continuesLeft = !isStart && ev.startDate < ds;
                 const continuesRight = !isEnd && ev.endDate > ds;
+                const clickable = !!onEventClick;
                 return (
                   <div
                     key={ev.id}
                     title={`${KIND_LABELS[ev.kind]}: ${ev.name}\n${ev.startDate}${
                       ev.startDate !== ev.endDate ? ` 〜 ${ev.endDate}` : ""
-                    }${ev.source.memo ? "\n" + ev.source.memo : ""}`}
+                    }${ev.source.memo ? "\n" + ev.source.memo : ""}${
+                      clickable ? "\n\nクリックで編集画面を開きます" : ""
+                    }`}
+                    role={clickable ? "button" : undefined}
+                    tabIndex={clickable ? 0 : undefined}
+                    onClick={clickable ? () => onEventClick(ev) : undefined}
+                    onKeyDown={
+                      clickable
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onEventClick(ev);
+                            }
+                          }
+                        : undefined
+                    }
                     style={{
                       fontSize: 10,
                       fontWeight: 700,
@@ -330,6 +349,7 @@ export function EventCalendarView({
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
+                      cursor: clickable ? "pointer" : "default",
                     }}
                   >
                     {isStart ? (
@@ -394,51 +414,86 @@ export function EventCalendarView({
             </div>
           </div>
         ) : (
-          eventsInMonth.map((ev, i) => (
-            <div
-              key={ev.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                flexWrap: "wrap",
-                padding: "8px 14px",
-                borderBottom:
-                  i < eventsInMonth.length - 1 ? "1px solid #eee" : "none",
-                background: i % 2 ? "#fafafa" : "#fff",
-              }}
-            >
-              <span
+          eventsInMonth.map((ev, i) => {
+            const isCurrent = ev.startDate <= todayStr && todayStr <= ev.endDate;
+            const isUpcoming = !isCurrent && ev.startDate > todayStr;
+            const clickable = !!onEventClick;
+            return (
+              <div
+                key={ev.id}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onClick={clickable ? () => onEventClick(ev) : undefined}
+                onKeyDown={
+                  clickable
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onEventClick(ev);
+                        }
+                      }
+                    : undefined
+                }
                 style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: ev.meta.bg,
-                  color: ev.meta.fg,
-                  border: `1px solid ${ev.meta.accent}`,
-                  minWidth: 88,
-                  textAlign: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  padding: "8px 14px",
+                  borderBottom:
+                    i < eventsInMonth.length - 1 ? "1px solid #eee" : "none",
+                  background: isCurrent ? "#fffbe6" : i % 2 ? "#fafafa" : "#fff",
+                  borderLeft: isCurrent ? "3px solid #e6a800" : "3px solid transparent",
+                  opacity: !isCurrent && !isUpcoming ? 0.55 : 1,
+                  cursor: clickable ? "pointer" : "default",
                 }}
               >
-                {ev.kind === KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
-                {KIND_LABELS[ev.kind]}
-              </span>
-              <strong style={{ fontSize: 13 }}>{ev.name}</strong>
-              <span style={{ fontSize: 11, color: "#666" }}>
-                {ev.startDate === ev.endDate
-                  ? ev.startDate
-                  : `${ev.startDate} 〜 ${ev.endDate}`}
-              </span>
-              {ev.kind === KIND.SPECIAL && ev.source.memo && (
                 <span
-                  style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: ev.meta.bg,
+                    color: ev.meta.fg,
+                    border: `1px solid ${ev.meta.accent}`,
+                    minWidth: 88,
+                    textAlign: "center",
+                  }}
                 >
-                  {ev.source.memo}
+                  {ev.kind === KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
+                  {KIND_LABELS[ev.kind]}
                 </span>
-              )}
-            </div>
-          ))
+                <strong style={{ fontSize: 13 }}>{ev.name}</strong>
+                <span style={{ fontSize: 11, color: "#666" }}>
+                  {ev.startDate === ev.endDate
+                    ? ev.startDate
+                    : `${ev.startDate} 〜 ${ev.endDate}`}
+                </span>
+                {isCurrent && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "#e6a800",
+                      color: "#fff",
+                    }}
+                  >
+                    今日
+                  </span>
+                )}
+                {ev.kind === KIND.SPECIAL && ev.source.memo && (
+                  <span
+                    style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
+                  >
+                    {ev.source.memo}
+                  </span>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

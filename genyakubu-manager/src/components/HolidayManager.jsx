@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPARTMENTS,
@@ -68,7 +68,15 @@ function extractClassGroups(slots, grades) {
   return [...groups].sort();
 }
 
-export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
+export function HolidayManager({
+  holidays,
+  slots = [],
+  onSave,
+  isAdmin,
+  editTargetId = null,
+  onConsumeEditTarget,
+}) {
+  const formRef = useRef(null);
   const [date, setDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState(["全部"]);
@@ -250,10 +258,27 @@ export function HolidayManager({ holidays, slots = [], onSave, isAdmin }) {
   // Show grade/keyword selection only when scope is NOT 全部
   const showGradeSelection = !scope.includes("全部");
 
+  useEffect(() => {
+    if (editTargetId == null) return;
+    const target = holidays.find((h) => h.id === editTargetId);
+    if (target && isAdmin) {
+      handleEdit(target);
+      requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    onConsumeEditTarget?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTargetId]);
+
   return (
     <div style={{ marginTop: 12 }}>
       {isAdmin && (
       <div
+        ref={formRef}
         style={{
           background: "#fff",
           borderRadius: 8,

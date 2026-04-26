@@ -10,8 +10,12 @@ export function CommandPalette({
   onClose,
   slots,
   subs,
+  holidays = [],
+  examPeriods = [],
+  specialEvents = [],
   onSelectTeacher,
   onSelectView,
+  onSelectEvent,
   views,
   onShowShortcuts,
 }) {
@@ -96,6 +100,57 @@ export function CommandPalette({
       });
     }
 
+    // イベント検索 (休講・テスト期間・特別イベント)
+    if (onSelectEvent) {
+      const matchedHolidays = holidays.filter((h) =>
+        (h.label || "").toLowerCase().includes(q)
+      );
+      for (const h of matchedHolidays.slice(0, 5)) {
+        hits.push({
+          type: "event",
+          label: `休講: ${h.label || "(無題)"}`,
+          detail: h.date,
+          action: () => {
+            onSelectEvent({ kind: "holiday", id: h.id });
+            onClose();
+          },
+        });
+      }
+      const matchedExams = examPeriods.filter((ep) =>
+        (ep.name || "").toLowerCase().includes(q)
+      );
+      for (const ep of matchedExams.slice(0, 5)) {
+        hits.push({
+          type: "event",
+          label: `テスト期間: ${ep.name}`,
+          detail: `${ep.startDate} 〜 ${ep.endDate}`,
+          action: () => {
+            onSelectEvent({ kind: "exam", id: ep.id });
+            onClose();
+          },
+        });
+      }
+      const matchedSpecial = specialEvents.filter(
+        (ev) =>
+          (ev.name || "").toLowerCase().includes(q) ||
+          (ev.memo || "").toLowerCase().includes(q)
+      );
+      for (const ev of matchedSpecial.slice(0, 5)) {
+        hits.push({
+          type: "event",
+          label: `特別イベント: ${ev.name}`,
+          detail:
+            ev.startDate === ev.endDate
+              ? ev.startDate
+              : `${ev.startDate} 〜 ${ev.endDate}`,
+          action: () => {
+            onSelectEvent({ kind: "special", id: ev.id });
+            onClose();
+          },
+        });
+      }
+    }
+
     // ビュー検索
     const viewNames = [
       { key: views.DASH, label: "ダッシュボード" },
@@ -125,7 +180,19 @@ export function CommandPalette({
     }
 
     return hits.slice(0, 20);
-  }, [query, slots, subs, onSelectTeacher, onSelectView, onClose, views]);
+  }, [
+    query,
+    slots,
+    subs,
+    holidays,
+    examPeriods,
+    specialEvents,
+    onSelectTeacher,
+    onSelectView,
+    onSelectEvent,
+    onClose,
+    views,
+  ]);
 
   useEffect(() => {
     setSelectedIdx(0);

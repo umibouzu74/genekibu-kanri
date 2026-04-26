@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -18,7 +18,14 @@ import {
   specialEventTypeMeta,
 } from "../constants/specialEvents";
 
-export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
+export function SpecialEventManager({
+  specialEvents,
+  onSave,
+  isAdmin,
+  editTargetId = null,
+  onConsumeEditTarget,
+}) {
+  const formRef = useRef(null);
   const [name, setName] = useState("");
   const [eventType, setEventType] = useState(DEFAULT_SPECIAL_EVENT_TYPE);
   const [startDate, setStartDate] = useState("");
@@ -151,6 +158,27 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
     (a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id
   );
 
+  // 外部 (例: イベントカレンダー / コマンドパレット) からの編集要求を消化する。
+  // 該当 id が見つかれば編集モードに入れて、フォームをスクロールで可視化する。
+  useEffect(() => {
+    if (editTargetId == null) return;
+    const target = specialEvents.find((ev) => ev.id === editTargetId);
+    if (target && isAdmin) {
+      handleEdit(target);
+      // 次フレームで scroll (state 反映を待たないと位置がズレる)
+      requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    onConsumeEditTarget?.();
+    // handleEdit / onConsumeEditTarget はレンダごとに ID が変わるが、effect は
+    // editTargetId 変化のみで実行したい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTargetId]);
+
   return (
     <div style={{ marginTop: 24 }}>
       <div
@@ -168,6 +196,7 @@ export function SpecialEventManager({ specialEvents, onSave, isAdmin }) {
 
       {isAdmin && (
         <div
+          ref={formRef}
           style={{
             background: "#fff",
             borderRadius: 8,

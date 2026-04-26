@@ -155,7 +155,7 @@ export function MonthView({
   }, [holidays]);
 
   // 各日付セルで使う sessionCtx (第N回バッジ用)。Dashboard/WeekView と同仕様。
-  // isOffForGrade は同じ hook から取得して makeHolidayHelpers の重複を避ける。
+  // isOffForGrade は同じ hook から取得して makeEventHelpers の重複を避ける。
   const { sessionCtx, isOffForGrade } = useSessionCtx({
     classSets,
     slots,

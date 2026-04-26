@@ -2,6 +2,10 @@
 // Pure data-transformation functions used during localStorage load
 // (useSyncedStorage migrate option) and JSON import (useDataIO).
 
+import { SPECIAL_EVENT_TYPES } from "../constants/specialEvents";
+
+const VALID_SPECIAL_EVENT_TYPES = new Set(SPECIAL_EVENT_TYPES.map((t) => t.key));
+
 /** Add default `scope`, `id`, `targetGrades`, `subjKeywords` to legacy holidays. */
 export const migrateHolidays = (arr) =>
   Array.isArray(arr)
@@ -61,14 +65,9 @@ export const migrateSpecialEvents = (arr) =>
             : typeof ev?.startDate === "string"
               ? ev.startDate
               : "",
-        eventType:
-          ev?.eventType === "trip" ||
-          ev?.eventType === "ceremony" ||
-          ev?.eventType === "festival" ||
-          ev?.eventType === "announcement" ||
-          ev?.eventType === "other"
-            ? ev.eventType
-            : "other",
+        eventType: VALID_SPECIAL_EVENT_TYPES.has(ev?.eventType)
+          ? ev.eventType
+          : "other",
         targetGrades: Array.isArray(ev?.targetGrades) ? ev.targetGrades : [],
         memo: typeof ev?.memo === "string" ? ev.memo : "",
       }))

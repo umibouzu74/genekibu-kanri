@@ -28,7 +28,7 @@ export function shiftDate(dateStr, days) {
 
 // Compute holiday / exam-period utilities shared between Dashboard and
 // ConfirmedSubsView.
-export function makeHolidayHelpers(holidays, examPeriods = [], specialEvents = []) {
+export function makeEventHelpers(holidays, examPeriods = [], specialEvents = []) {
   const holidaysFor = (d) => holidays.filter((h) => h.date === d);
 
   // Returns exam periods that are active on a given date.

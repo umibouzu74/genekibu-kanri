@@ -53,6 +53,7 @@ export function Dashboard({
   subjectCategories,
   teacherSubjects,
   saveSubs,
+  onJumpToEventCalendar,
 }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
@@ -184,6 +185,9 @@ export function Dashboard({
           timetables={timetables}
           displayCutoff={displayCutoff}
           days={days}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          specialEvents={specialEvents}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
           specialEventsFor={specialEventsFor}
@@ -191,6 +195,7 @@ export function Dashboard({
           sessionCtx={sessionCtx}
           todayStr={todayStr}
           adjustments={adjustments}
+          onJumpToEventCalendar={onJumpToEventCalendar}
         />
       )}
     </div>
