@@ -8,6 +8,8 @@ import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
+import { JointClassListTab } from "./substitute/JointClassListTab";
+import { OverrideListTab } from "./substitute/OverrideListTab";
 
 export function SubstituteView({
   subs,
@@ -33,6 +35,8 @@ export function SubstituteView({
   classSets,
   displayCutoff,
   onAddAdjustment,
+  onDelAdjustment,
+  onDelSessionOverride,
   adjustments = [],
   sessionOverrides = [],
 }) {
@@ -79,6 +83,11 @@ export function SubstituteView({
     if (fStatus) r = r.filter((s) => s.status === fStatus);
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
+
+  const combineCount = useMemo(
+    () => (adjustments || []).filter((a) => a.type === "combine").length,
+    [adjustments]
+  );
 
   const [ty, tm] = fMonth ? fMonth.split("-").map(Number) : [0, 0];
   const tally = useMemo(
@@ -188,6 +197,8 @@ export function SubstituteView({
         }}
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
+        <TabBtn k="joint" label="合同授業一覧" count={combineCount} />
+        <TabBtn k="override" label="回数補正一覧" count={sessionOverrides.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
@@ -222,6 +233,24 @@ export function SubstituteView({
           isAdmin={isAdmin}
           onEdit={onEdit}
           onDel={onDel}
+        />
+      )}
+
+      {tab === "joint" && (
+        <JointClassListTab
+          adjustments={adjustments}
+          slots={slots}
+          isAdmin={isAdmin}
+          onDel={onDelAdjustment}
+        />
+      )}
+
+      {tab === "override" && (
+        <OverrideListTab
+          sessionOverrides={sessionOverrides}
+          slots={slots}
+          isAdmin={isAdmin}
+          onDel={onDelSessionOverride}
         />
       )}
 

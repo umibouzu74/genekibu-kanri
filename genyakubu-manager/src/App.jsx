@@ -21,6 +21,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
+import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
@@ -331,6 +332,10 @@ export default function App() {
     }, [activeTimetableId, changeActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
+  const overridesCrud = useSessionOverridesCrud({
+    sessionOverrides,
+    saveSessionOverrides,
+  });
   const examPrepCrud = useExamPrepSchedulesCrud({
     examPrepSchedules,
     saveExamPrepSchedules,
@@ -826,6 +831,8 @@ export default function App() {
               classSets={classSets}
               displayCutoff={displayCutoff}
               onAddAdjustment={adjCrud.add}
+              onDelAdjustment={adjCrud.del}
+              onDelSessionOverride={overridesCrud.del}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
             />
