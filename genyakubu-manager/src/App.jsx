@@ -128,7 +128,7 @@ const VIEW_TITLES = {
   [VIEWS.COMPARE]: "講師比較",
   [VIEWS.TIMETABLE]: "時間割管理",
   [VIEWS.MASTER]: "コースマスター管理",
-  [VIEWS.HOLIDAYS]: "休講日・テスト期間・イベント管理",
+  [VIEWS.HOLIDAYS]: "休講・テスト期間・イベント",
   [VIEWS.EVENTS]: "イベントカレンダー",
   [VIEWS.SUBS]: "授業管理",
   [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
@@ -264,6 +264,10 @@ export default function App() {
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
+  // EventCalendar からの「新規登録フォームを開く」要求 ({ kind, token })。
+  // token は単調増加カウンタで、同じ kind を連続クリックしても useEffect が再発火するよう毎回別値にする。
+  const [eventNewRequest, setEventNewRequest] = useState(null);
+  const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
@@ -856,6 +860,10 @@ export default function App() {
                   eventEditRequest?.kind === EVENT_KIND.HOLIDAY ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.HOLIDAY ? eventNewRequest.token : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               <ExamPeriodManager
                 examPeriods={examPeriods}
@@ -868,6 +876,10 @@ export default function App() {
                   eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.EXAM ? eventNewRequest.token : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               <SpecialEventManager
                 specialEvents={specialEvents}
@@ -877,6 +889,10 @@ export default function App() {
                   eventEditRequest?.kind === EVENT_KIND.SPECIAL ? eventEditRequest.id : null
                 }
                 onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.token : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
               />
             </>
           )}
@@ -885,8 +901,14 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               specialEvents={specialEvents}
+              isAdmin={isAdmin}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
+              onAddNewEvent={(kind) => {
+                eventNewTokenRef.current += 1;
+                setEventNewRequest({ kind, token: eventNewTokenRef.current });
                 selectView(VIEWS.HOLIDAYS);
               }}
             />
