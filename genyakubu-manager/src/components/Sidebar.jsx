@@ -88,7 +88,7 @@ const MENU_CONFIG = [
   {
     key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理",
     children: [
-      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休講・テスト期間・イベント登録" },
+      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休講・テスト期間・イベント" },
       { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
     ],
   },

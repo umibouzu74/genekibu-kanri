@@ -128,7 +128,7 @@ const VIEW_TITLES = {
   [VIEWS.COMPARE]: "講師比較",
   [VIEWS.TIMETABLE]: "時間割管理",
   [VIEWS.MASTER]: "コースマスター管理",
-  [VIEWS.HOLIDAYS]: "休講日・テスト期間・イベント管理",
+  [VIEWS.HOLIDAYS]: "休講・テスト期間・イベント",
   [VIEWS.EVENTS]: "イベントカレンダー",
   [VIEWS.SUBS]: "授業管理",
   [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
@@ -264,8 +264,10 @@ export default function App() {
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
-  // EventCalendar からの「新規登録フォームを開く」要求 ({ kind, token })
+  // EventCalendar からの「新規登録フォームを開く」要求 ({ kind, token })。
+  // token は単調増加カウンタで、同じ kind を連続クリックしても useEffect が再発火するよう毎回別値にする。
   const [eventNewRequest, setEventNewRequest] = useState(null);
+  const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
@@ -905,7 +907,8 @@ export default function App() {
                 selectView(VIEWS.HOLIDAYS);
               }}
               onAddNewEvent={(kind) => {
-                setEventNewRequest({ kind, token: Date.now() });
+                eventNewTokenRef.current += 1;
+                setEventNewRequest({ kind, token: eventNewTokenRef.current });
                 selectView(VIEWS.HOLIDAYS);
               }}
             />

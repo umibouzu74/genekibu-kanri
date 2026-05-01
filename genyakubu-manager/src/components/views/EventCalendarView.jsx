@@ -138,9 +138,44 @@ export function EventCalendarView({
 
   const todayStr = fmtDate(today);
 
+  const showAdd = isAdmin && !!onAddNewEvent;
+
+  // 新規登録ボタン (ヘッダ・空状態で再利用)。hover で背景を薄く塗る。
+  const renderAddButton = (f) => (
+    <button
+      key={`add-${f.key}`}
+      type="button"
+      onClick={() => onAddNewEvent(f.key)}
+      title={`${f.label}を新規登録`}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = `${f.color}14`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "#fff";
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 12,
+        padding: "4px 10px",
+        borderRadius: 6,
+        cursor: "pointer",
+        background: "#fff",
+        color: f.color,
+        border: `1px dashed ${f.color}`,
+        fontWeight: 700,
+        transition: "background .15s",
+      }}
+    >
+      <span aria-hidden="true">+</span>
+      {f.label}
+    </button>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* ヘッダ: 月送り + フィルタ */}
+      {/* ヘッダ: 月送り + 新規登録 + フィルタ */}
       <div
         style={{
           display: "flex",
@@ -180,6 +215,27 @@ export function EventCalendarView({
           </button>
           <PrintButton style={{ fontSize: 11, marginLeft: 8 }} />
         </div>
+        {showAdd && (
+          <>
+            <div
+              aria-hidden="true"
+              style={{ width: 1, height: 22, background: "#e0e0e0" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>
+                新規登録:
+              </span>
+              {FILTER_BUTTONS.map((f) => renderAddButton(f))}
+            </div>
+          </>
+        )}
         <div
           aria-hidden="true"
           style={{ width: 1, height: 22, background: "#e0e0e0" }}
@@ -229,50 +285,6 @@ export function EventCalendarView({
             );
           })}
         </div>
-        {isAdmin && onAddNewEvent && (
-          <>
-            <div
-              aria-hidden="true"
-              style={{ width: 1, height: 22, background: "#e0e0e0" }}
-            />
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>
-                新規登録:
-              </span>
-              {FILTER_BUTTONS.map((f) => (
-                <button
-                  key={`add-${f.key}`}
-                  type="button"
-                  onClick={() => onAddNewEvent(f.key)}
-                  title={`${f.label}を新規登録`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    fontSize: 12,
-                    padding: "4px 10px",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    background: "#fff",
-                    color: f.color,
-                    border: `1px dashed ${f.color}`,
-                    fontWeight: 700,
-                  }}
-                >
-                  <span aria-hidden="true">＋</span>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
       </div>
 
       {/* 月グリッド */}
@@ -449,6 +461,19 @@ export function EventCalendarView({
             <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
               フィルタを切り替える、または別の月を確認してください
             </div>
+            {showAdd && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  justifyContent: "center",
+                  flexWrap: "wrap",
+                  marginTop: 14,
+                }}
+              >
+                {FILTER_BUTTONS.map((f) => renderAddButton(f))}
+              </div>
+            )}
           </div>
         ) : (
           eventsInMonth.map((ev, i) => {
