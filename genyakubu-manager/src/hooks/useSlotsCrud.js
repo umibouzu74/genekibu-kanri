@@ -98,22 +98,29 @@ export function useSlotsCrud({
 
   const del = async (id) => {
     const linkedSubs = subs.filter((s) => s.slotId === id);
-    const linkedAdjustments = (adjustments || []).filter(
+    // 調整は (a) host が消える = 完全削除、(b) 吸収側として参照される = 該当 id を抜くだけ、
+    // の 2 種類があるため、ユーザー説明用に分けてカウントする。
+    const removedAdjustments = (adjustments || []).filter((a) => a.slotId === id);
+    const updatedAdjustments = (adjustments || []).filter(
       (a) =>
-        a.slotId === id ||
-        (Array.isArray(a.combineSlotIds) && a.combineSlotIds.includes(id))
+        a.slotId !== id &&
+        a.type === "combine" &&
+        Array.isArray(a.combineSlotIds) &&
+        a.combineSlotIds.includes(id)
     );
     const linkedOverrides = (sessionOverrides || []).filter(
       (o) => o.slotId === id
     );
     const extras = [];
-    if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件`);
-    if (linkedAdjustments.length)
-      extras.push(`時間割調整 ${linkedAdjustments.length} 件`);
+    if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件削除`);
+    if (removedAdjustments.length)
+      extras.push(`時間割調整 ${removedAdjustments.length} 件削除`);
+    if (updatedAdjustments.length)
+      extras.push(`合同授業 ${updatedAdjustments.length} 件からこのコマを除外`);
     if (linkedOverrides.length)
-      extras.push(`回数補正 ${linkedOverrides.length} 件`);
+      extras.push(`回数補正 ${linkedOverrides.length} 件削除`);
     const extra = extras.length
-      ? `\n※この操作で次のデータも削除されます: ${extras.join(" / ")}`
+      ? `\n※この操作で次のデータも更新されます:\n - ${extras.join("\n - ")}`
       : "";
     const ok = await confirm({
       title: "コマの削除",
@@ -126,9 +133,7 @@ export function useSlotsCrud({
     if (linkedSubs.length) {
       saveSubs(subs.filter((s) => s.slotId !== id));
     }
-    if (linkedAdjustments.length && saveAdjustments) {
-      // 吸収側 (combineSlotIds) のみに含まれるケースは、host 側の合同から
-      // 該当 id を取り除いて存続させる。host 自体が消えるなら adjustment を削除。
+    if ((removedAdjustments.length || updatedAdjustments.length) && saveAdjustments) {
       const next = [];
       for (const adj of adjustments) {
         if (adj.slotId === id) continue;
@@ -151,15 +156,21 @@ export function useSlotsCrud({
     }
     const removedParts = [];
     if (linkedSubs.length) removedParts.push(`代行 ${linkedSubs.length} 件`);
-    if (linkedAdjustments.length)
-      removedParts.push(`調整 ${linkedAdjustments.length} 件`);
+    if (removedAdjustments.length)
+      removedParts.push(`調整 ${removedAdjustments.length} 件`);
     if (linkedOverrides.length)
       removedParts.push(`回数補正 ${linkedOverrides.length} 件`);
-    toasts.success(
-      removedParts.length
-        ? `コマと ${removedParts.join(" / ")} を削除しました`
-        : "コマを削除しました"
-    );
+    const updatedParts = [];
+    if (updatedAdjustments.length)
+      updatedParts.push(`合同 ${updatedAdjustments.length} 件を更新`);
+    let msg = "コマを削除しました";
+    if (removedParts.length || updatedParts.length) {
+      const segments = [];
+      if (removedParts.length) segments.push(`${removedParts.join(" / ")} を削除`);
+      if (updatedParts.length) segments.push(updatedParts.join(" / "));
+      msg = `コマを削除し、${segments.join(" / ")}しました`;
+    }
+    toasts.success(msg);
   };
 
   return { save, del, suggestions };

@@ -40,20 +40,25 @@ export function AbsenceWorkflowView({
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
-  const [date, setDate] = useState(fmtDate(new Date()));
+  // 一覧画面から特定日付つきで遷移してきた場合は、初期表示からその日付に
+  // することで「今日 → 目的日」のチラつきを防ぐ。
+  const [date, setDate] = useState(() => initDate || fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
 
-  // 一覧画面から日付指定で遷移してきた場合、ドラフトを破棄して該当日へ移る。
-  // (initDate は親が再利用しないよう onConsumeInitDate で消費通知する)
+  // initDate を消費通知 (親側でクリア)。マウント中に再ジャンプされた場合は
+  // 新しい日付に切り替え、保留中のドラフトは破棄する (別の日付の作業を
+  // 紛れ込ませないため)。
   useEffect(() => {
     if (!initDate) return;
-    setDate(initDate);
-    draft.reset();
+    if (initDate !== date) {
+      setDate(initDate);
+      draft.reset();
+    }
     onConsumeInitDate?.();
-    // draft / onConsumeInitDate は ref 安定でないため依存に含めない (初回 mount + initDate 変化時のみ実行)。
+    // date / draft / onConsumeInitDate は依存に含めない (initDate 変化時のみ実行)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initDate]);
 

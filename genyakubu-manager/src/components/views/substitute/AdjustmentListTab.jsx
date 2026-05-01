@@ -305,6 +305,14 @@ export function AdjustmentListTab({
                 const slot = slotMap[adj.slotId];
                 const dow = dateToDay(adj.date);
                 const meta = TYPE_META[adj.type];
+                // 月フィルタが reschedule の targetDate 側でヒットした場合、
+                // 「源泉日: YYYY-MM-DD だけど振替先が表示月」と一目で分かるよう
+                // targetDate にも小さな "★" バッジを付ける。
+                const matchedViaTargetDate =
+                  Boolean(fMonth) &&
+                  adj.type === "reschedule" &&
+                  !adj.date?.startsWith(fMonth) &&
+                  Boolean(adj.targetDate?.startsWith(fMonth));
                 return (
                   <tr
                     key={adj.id}
@@ -331,6 +339,23 @@ export function AdjustmentListTab({
                           }}
                         >
                           ({dow})
+                        </span>
+                      )}
+                      {matchedViaTargetDate && (
+                        <span
+                          title="月フィルタは振替先の日付でヒットしています"
+                          style={{
+                            marginLeft: 4,
+                            fontSize: 9,
+                            color: "#a65a00",
+                            background: "#fff3e0",
+                            padding: "1px 4px",
+                            borderRadius: 3,
+                            fontWeight: 700,
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          振替先一致
                         </span>
                       )}
                       {slot?.time && (
