@@ -15,6 +15,7 @@ import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
+import { useConfirm } from "./hooks/useConfirm";
 import { useChordNavigation } from "./hooks/useChordNavigation";
 import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
@@ -137,6 +138,7 @@ const VIEW_TITLES = {
 
 export default function App() {
   const toasts = useToasts();
+  const confirm = useConfirm();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
 
   // Flags to avoid spamming the same toast on every subsequent save.
@@ -433,9 +435,29 @@ export default function App() {
   );
 
   // データ管理モーダルから「孤立データ一括掃除」を実行する。
+  // バッチ destructive 操作 (CLAUDE.md 「cascade ありは confirmedRemove」
+  // ルール) に該当するため、適用前に確認ダイアログを挟む。
   const handleCleanupOrphans = useCallback(
-    (detection) => {
+    async (detection) => {
       if (!detection || detection.total === 0) return;
+      const summary = [];
+      if (detection.orphanSubs.length)
+        summary.push(`・代行記録: ${detection.orphanSubs.length} 件 (削除)`);
+      if (detection.orphanAdjustments.length)
+        summary.push(`・時間割調整: ${detection.orphanAdjustments.length} 件 (削除)`);
+      if (detection.updatedAdjustments.length)
+        summary.push(
+          `・合同授業: ${detection.updatedAdjustments.length} 件 (削除済みコマを除外)`
+        );
+      if (detection.orphanOverrides.length)
+        summary.push(`・回数補正: ${detection.orphanOverrides.length} 件 (削除)`);
+      const ok = await confirm({
+        title: "孤立データを掃除",
+        message: `次の孤立データを掃除します:\n\n${summary.join("\n")}\n\n実行しますか？`,
+        okLabel: "実行",
+        tone: "danger",
+      });
+      if (!ok) return;
       const { nextSubs, nextAdjustments, nextOverrides } = applyOrphanCleanup({
         subs,
         adjustments,
@@ -462,6 +484,7 @@ export default function App() {
       toasts.success(`孤立データを掃除しました (${parts.join(" / ")})`);
     },
     [
+      confirm,
       subs,
       adjustments,
       sessionOverrides,

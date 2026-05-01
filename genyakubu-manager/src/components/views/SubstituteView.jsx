@@ -50,13 +50,17 @@ export function SubstituteView({
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
 
-  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック /
-  // CommandPalette からのサブタブジャンプ)
+  // 外部から初期フィルタが渡された場合の処理。
+  //  - initFilter.status: Sidebar バッジクリック等。月フィルタは解除して
+  //    全件の中から該当ステータスを表示。タブは強制的に「代行一覧」へ。
+  //  - initFilter.tab:    CommandPalette からのサブタブジャンプ。月 / 講師 /
+  //    ステータスなどの既存フィルタは故意に保持する (「いま見ている範囲で
+  //    別タブの内容を確認する」操作を妨げないため)。
   useEffect(() => {
     if (initFilter) {
       if (initFilter.status) {
         setFStatus(initFilter.status);
-        setFMonth(""); // 月フィルタを解除して全件から依頼中を表示
+        setFMonth("");
         setTab("list");
       }
       if (initFilter.tab) {
