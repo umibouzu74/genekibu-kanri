@@ -1,20 +1,36 @@
+import { useMemo } from "react";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { exportSlotsCsv, exportSubsCsv } from "../utils/csv";
+import { detectOrphans } from "../utils/orphanCleanup";
 
 export function DataManager({
   slots,
   holidays,
   subs,
+  adjustments,
+  sessionOverrides,
   onExport,
   onImport,
   onReset,
+  onCleanupOrphans,
   importing,
 }) {
   const slotMap = {};
   if (subs && slots) {
     for (const s of slots) slotMap[s.id] = s;
   }
+
+  const orphanDetection = useMemo(
+    () =>
+      detectOrphans({
+        slots: slots || [],
+        subs: subs || [],
+        adjustments: adjustments || [],
+        sessionOverrides: sessionOverrides || [],
+      }),
+    [slots, subs, adjustments, sessionOverrides]
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -70,6 +86,56 @@ export function DataManager({
             style={{ display: "none" }}
           />
         </label>
+      </div>
+      <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+          孤立データ掃除
+        </div>
+        <div style={{ fontSize: 11, color: "#666", marginBottom: 8 }}>
+          コマ削除以前に作られて参照先を失った代行・時間割調整・回数補正を
+          検出します。
+        </div>
+        {orphanDetection.total === 0 ? (
+          <div style={{ fontSize: 11, color: "#888" }}>
+            孤立データはありません。
+          </div>
+        ) : (
+          <>
+            <ul
+              style={{
+                fontSize: 11,
+                color: "#444",
+                marginBottom: 10,
+                paddingLeft: 18,
+                lineHeight: 1.7,
+              }}
+            >
+              {orphanDetection.orphanSubs.length > 0 && (
+                <li>代行記録 {orphanDetection.orphanSubs.length} 件 (削除)</li>
+              )}
+              {orphanDetection.orphanAdjustments.length > 0 && (
+                <li>
+                  時間割調整 {orphanDetection.orphanAdjustments.length} 件 (削除)
+                </li>
+              )}
+              {orphanDetection.updatedAdjustments.length > 0 && (
+                <li>
+                  合同授業 {orphanDetection.updatedAdjustments.length} 件 (削除済みコマを除外)
+                </li>
+              )}
+              {orphanDetection.orphanOverrides.length > 0 && (
+                <li>回数補正 {orphanDetection.orphanOverrides.length} 件 (削除)</li>
+              )}
+            </ul>
+            <button
+              type="button"
+              onClick={() => onCleanupOrphans?.(orphanDetection)}
+              style={{ ...S.btn(false), fontSize: 12 }}
+            >
+              一括掃除を実行
+            </button>
+          </>
+        )}
       </div>
       <div
         style={{

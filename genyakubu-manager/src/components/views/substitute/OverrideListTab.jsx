@@ -21,6 +21,8 @@ export function OverrideListTab({
   );
   const [fTeacher, setFTeacher] = useState("");
   const [fMode, setFMode] = useState("");
+  // sortBy: "date" (補正対象日昇順) / "createdAt-desc" (作成日時 新→古)
+  const [sortBy, setSortBy] = useState("date");
 
   const slotMap = useMemo(() => {
     const m = {};
@@ -49,11 +51,18 @@ export function OverrideListTab({
     }
     if (fMode) r = r.filter((o) => o.mode === fMode);
     return r.sort((a, b) => {
+      if (sortBy === "createdAt-desc") {
+        const ac = a.createdAt || "";
+        const bc = b.createdAt || "";
+        const c = bc.localeCompare(ac);
+        if (c !== 0) return c;
+        return (b.id || 0) - (a.id || 0);
+      }
       const c = (a.date || "").localeCompare(b.date || "");
       if (c !== 0) return c;
       return (a.id || 0) - (b.id || 0);
     });
-  }, [sessionOverrides, fMonth, fTeacher, fMode, slotMap]);
+  }, [sessionOverrides, fMonth, fTeacher, fMode, slotMap, sortBy]);
 
   return (
     <div>
@@ -175,8 +184,22 @@ export function OverrideListTab({
                   内容
                 </th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  作成日時
+                <th
+                  style={{
+                    padding: "8px 10px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                  onClick={() =>
+                    setSortBy((s) =>
+                      s === "createdAt-desc" ? "date" : "createdAt-desc"
+                    )
+                  }
+                  title="クリックで作成日時の新しい順 / 補正対象日昇順 を切り替え"
+                >
+                  作成日時 {sortBy === "createdAt-desc" ? "↓" : "↕"}
                 </th>
                 {isAdmin && (
                   <th style={{ padding: "8px 10px", textAlign: "center", width: 80 }}>
@@ -292,7 +315,7 @@ export function OverrideListTab({
                       }}
                       title={ov.memo}
                     >
-                      {ov.memo}
+                      {ov.memo || <span style={{ color: "#ccc" }}>-</span>}
                     </td>
                     <td
                       style={{

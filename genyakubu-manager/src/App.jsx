@@ -43,6 +43,7 @@ import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
+import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -429,6 +430,46 @@ export default function App() {
       selectView(VIEWS.ABSENCE_FLOW);
     },
     [selectView]
+  );
+
+  // データ管理モーダルから「孤立データ一括掃除」を実行する。
+  const handleCleanupOrphans = useCallback(
+    (detection) => {
+      if (!detection || detection.total === 0) return;
+      const { nextSubs, nextAdjustments, nextOverrides } = applyOrphanCleanup({
+        subs,
+        adjustments,
+        sessionOverrides,
+        detection,
+      });
+      if (detection.orphanSubs.length > 0) saveSubs(nextSubs);
+      if (
+        detection.orphanAdjustments.length > 0 ||
+        detection.updatedAdjustments.length > 0
+      ) {
+        saveAdjustments(nextAdjustments);
+      }
+      if (detection.orphanOverrides.length > 0) saveSessionOverrides(nextOverrides);
+      const parts = [];
+      if (detection.orphanSubs.length)
+        parts.push(`代行 ${detection.orphanSubs.length} 件`);
+      if (detection.orphanAdjustments.length)
+        parts.push(`調整 ${detection.orphanAdjustments.length} 件`);
+      if (detection.updatedAdjustments.length)
+        parts.push(`合同 ${detection.updatedAdjustments.length} 件更新`);
+      if (detection.orphanOverrides.length)
+        parts.push(`回数補正 ${detection.orphanOverrides.length} 件`);
+      toasts.success(`孤立データを掃除しました (${parts.join(" / ")})`);
+    },
+    [
+      subs,
+      adjustments,
+      sessionOverrides,
+      saveSubs,
+      saveAdjustments,
+      saveSessionOverrides,
+      toasts,
+    ]
   );
 
   // ─── g-prefix chord navigation ──────────────────────────────────
@@ -996,9 +1037,12 @@ export default function App() {
               slots={slots}
               holidays={holidays}
               subs={subs}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
               onExport={dataIO.handleExport}
               onImport={dataIO.handleImport}
               onReset={dataIO.handleReset}
+              onCleanupOrphans={handleCleanupOrphans}
               importing={importing}
             />
           </Suspense>
@@ -1028,6 +1072,11 @@ export default function App() {
             onSelectEvent={(req) => {
               setEventEditRequest(req);
               selectView(VIEWS.HOLIDAYS);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectSubsSubTab={(tabKey) => {
+              setSubsInitFilter({ tab: tabKey });
+              selectView(VIEWS.SUBS);
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

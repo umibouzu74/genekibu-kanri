@@ -124,6 +124,8 @@ export function AdjustmentListTab({
   );
   const [fTeacher, setFTeacher] = useState("");
   const [fType, setFType] = useState("");
+  // sortBy: "date" (源泉日昇順) / "createdAt-desc" (作成日時 新→古)
+  const [sortBy, setSortBy] = useState("date");
 
   const slotMap = useMemo(() => {
     const m = {};
@@ -164,11 +166,19 @@ export function AdjustmentListTab({
       });
     }
     return r.sort((a, b) => {
+      if (sortBy === "createdAt-desc") {
+        // createdAt 新→古。同値時は id 降順 (新しいレコードを上)。
+        const ac = a.createdAt || "";
+        const bc = b.createdAt || "";
+        const c = bc.localeCompare(ac);
+        if (c !== 0) return c;
+        return (b.id || 0) - (a.id || 0);
+      }
       const c = (a.date || "").localeCompare(b.date || "");
       if (c !== 0) return c;
       return (a.id || 0) - (b.id || 0);
     });
-  }, [adjustments, fMonth, fTeacher, fType, slotMap]);
+  }, [adjustments, fMonth, fTeacher, fType, slotMap, sortBy]);
 
   const totalCount = useMemo(
     () => (adjustments || []).filter((a) => TYPE_META[a.type]).length,
@@ -290,8 +300,22 @@ export function AdjustmentListTab({
                 </th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>詳細</th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  作成日時
+                <th
+                  style={{
+                    padding: "8px 10px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                  onClick={() =>
+                    setSortBy((s) =>
+                      s === "createdAt-desc" ? "date" : "createdAt-desc"
+                    )
+                  }
+                  title="クリックで作成日時の新しい順 / 源泉日昇順 を切り替え"
+                >
+                  作成日時 {sortBy === "createdAt-desc" ? "↓" : "↕"}
                 </th>
                 {isAdmin && (
                   <th style={{ padding: "8px 10px", textAlign: "center", width: 80 }}>
@@ -395,7 +419,7 @@ export function AdjustmentListTab({
                       }}
                       title={adj.memo}
                     >
-                      {adj.memo}
+                      {adj.memo || <span style={{ color: "#ccc" }}>-</span>}
                     </td>
                     <td
                       style={{
@@ -433,6 +457,26 @@ export function AdjustmentListTab({
                             📅
                           </button>
                         )}
+                        {onJumpToDate &&
+                          adj.type === "reschedule" &&
+                          adj.targetDate && (
+                            <button
+                              type="button"
+                              onClick={() => onJumpToDate(adj.targetDate)}
+                              aria-label={`振替先 ${adj.targetDate} の欠勤振替画面を開く`}
+                              title="振替先の欠勤振替画面を開く"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: 12,
+                                padding: 2,
+                                marginRight: 2,
+                              }}
+                            >
+                              📅→
+                            </button>
+                          )}
                         <button
                           type="button"
                           onClick={() => onDel(adj)}

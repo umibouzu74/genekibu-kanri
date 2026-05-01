@@ -50,13 +50,17 @@ export function SubstituteView({
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
 
-  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック)
+  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック /
+  // CommandPalette からのサブタブジャンプ)
   useEffect(() => {
     if (initFilter) {
       if (initFilter.status) {
         setFStatus(initFilter.status);
         setFMonth(""); // 月フィルタを解除して全件から依頼中を表示
         setTab("list");
+      }
+      if (initFilter.tab) {
+        setTab(initFilter.tab);
       }
       onConsumeInitFilter?.();
     }
