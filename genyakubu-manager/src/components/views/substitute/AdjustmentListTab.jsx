@@ -5,11 +5,114 @@ import { sortJa } from "../../../utils/sortJa";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
 
-// 回数補正一覧タブ: sessionOverrides を月 / 講師 / モードでフィルタして表示。
-// 削除は removeWithUndo (6 秒間 Undo 可能なトースト)。
+// 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替) を月 / 講師 / 種別で
+// フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
 // 「📅」ボタンで該当日の欠勤振替画面に遷移する。
-export function OverrideListTab({
-  sessionOverrides,
+
+const TYPE_META = {
+  combine: { label: "合同授業", bg: "#e6f4ea", fg: "#1e6f3a" },
+  move: { label: "コマ移動", bg: "#e8eef9", fg: "#2a4a8a" },
+  reschedule: { label: "別日振替", bg: "#fdecea", fg: "#a52a2a" },
+};
+
+function SlotChip({ slot, fallback }) {
+  if (!slot) {
+    return (
+      <span style={{ color: "#bbb", fontSize: 11 }}>{fallback || "(削除済)"}</span>
+    );
+  }
+  const gc = GC(slot.grade);
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 6px",
+        borderRadius: 4,
+        background: "#f0f4f8",
+        fontSize: 11,
+        fontWeight: 600,
+        marginRight: 4,
+        marginBottom: 2,
+      }}
+    >
+      <span
+        style={{
+          background: gc.b,
+          color: gc.f,
+          borderRadius: 3,
+          padding: "0 4px",
+          fontSize: 10,
+          fontWeight: 700,
+        }}
+      >
+        {slot.grade}
+        {slot.cls && slot.cls !== "-" ? slot.cls : ""}
+      </span>
+      <span>{slot.subj}</span>
+      <span style={{ color: "#666", fontWeight: 400 }}>{slot.teacher}</span>
+    </span>
+  );
+}
+
+function detailFor(adj, slotMap) {
+  if (adj.type === "combine") {
+    const ids = adj.combineSlotIds || [];
+    if (ids.length === 0) return <span style={{ color: "#bbb" }}>-</span>;
+    return (
+      <div>
+        <div style={{ fontSize: 10, color: "#666", marginBottom: 2 }}>合同コマ:</div>
+        {ids.map((id) => (
+          <SlotChip key={id} slot={slotMap[id]} />
+        ))}
+      </div>
+    );
+  }
+  if (adj.type === "move") {
+    return (
+      <span>
+        <span style={{ color: "#666", fontSize: 11 }}>移動先: </span>
+        <span style={{ fontWeight: 700 }}>{adj.targetTime || "-"}</span>
+      </span>
+    );
+  }
+  if (adj.type === "reschedule") {
+    const dow = adj.targetDate ? dateToDay(adj.targetDate) : null;
+    return (
+      <span>
+        <span style={{ color: "#666", fontSize: 11 }}>振替先: </span>
+        <span style={{ fontWeight: 700 }}>{adj.targetDate || "-"}</span>
+        {dow && (
+          <span
+            style={{
+              marginLeft: 4,
+              fontSize: 10,
+              color: DC[dow],
+              fontWeight: 700,
+            }}
+          >
+            ({dow})
+          </span>
+        )}
+        {adj.targetTime && (
+          <span style={{ marginLeft: 6, color: "#666", fontSize: 11 }}>
+            {adj.targetTime}
+          </span>
+        )}
+        {adj.targetTeacher && (
+          <span style={{ marginLeft: 6, color: "#2a7a4a", fontSize: 11 }}>
+            → {adj.targetTeacher}
+          </span>
+        )}
+      </span>
+    );
+  }
+  return null;
+}
+
+export function AdjustmentListTab({
+  adjustments,
   slots,
   isAdmin,
   onDel,
@@ -20,7 +123,7 @@ export function OverrideListTab({
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   );
   const [fTeacher, setFTeacher] = useState("");
-  const [fMode, setFMode] = useState("");
+  const [fType, setFType] = useState("");
 
   const slotMap = useMemo(() => {
     const m = {};
@@ -39,21 +142,38 @@ export function OverrideListTab({
   }, [slots]);
 
   const filtered = useMemo(() => {
-    let r = [...sessionOverrides];
-    if (fMonth) r = r.filter((o) => o.date?.startsWith(fMonth));
-    if (fTeacher) {
-      r = r.filter((o) => {
-        const slot = slotMap[o.slotId];
-        return slot && getSlotTeachers(slot).includes(fTeacher);
+    let r = (adjustments || []).filter((a) => TYPE_META[a.type]);
+    if (fType) r = r.filter((a) => a.type === fType);
+    if (fMonth) {
+      r = r.filter((a) => {
+        if (a.date?.startsWith(fMonth)) return true;
+        if (a.type === "reschedule" && a.targetDate?.startsWith(fMonth)) return true;
+        return false;
       });
     }
-    if (fMode) r = r.filter((o) => o.mode === fMode);
+    if (fTeacher) {
+      r = r.filter((a) => {
+        const ids = [a.slotId, ...(a.combineSlotIds || [])];
+        const hit = ids.some((id) => {
+          const slot = slotMap[id];
+          return slot && getSlotTeachers(slot).includes(fTeacher);
+        });
+        if (hit) return true;
+        if (a.type === "reschedule" && a.targetTeacher === fTeacher) return true;
+        return false;
+      });
+    }
     return r.sort((a, b) => {
       const c = (a.date || "").localeCompare(b.date || "");
       if (c !== 0) return c;
       return (a.id || 0) - (b.id || 0);
     });
-  }, [sessionOverrides, fMonth, fTeacher, fMode, slotMap]);
+  }, [adjustments, fMonth, fTeacher, fType, slotMap]);
+
+  const totalCount = useMemo(
+    () => (adjustments || []).filter((a) => TYPE_META[a.type]).length,
+    [adjustments]
+  );
 
   return (
     <div>
@@ -109,20 +229,21 @@ export function OverrideListTab({
             種別
           </label>
           <select
-            value={fMode}
-            onChange={(e) => setFMode(e.target.value)}
-            style={{ ...S.input, width: "auto", minWidth: 90 }}
+            value={fType}
+            onChange={(e) => setFType(e.target.value)}
+            style={{ ...S.input, width: "auto", minWidth: 100 }}
           >
             <option value="">すべて</option>
-            <option value="set">回数指定</option>
-            <option value="skip">スキップ</option>
+            <option value="combine">合同授業</option>
+            <option value="move">コマ移動</option>
+            <option value="reschedule">別日振替</option>
           </select>
         </div>
         <button
           onClick={() => {
             setFMonth("");
             setFTeacher("");
-            setFMode("");
+            setFType("");
           }}
           style={{ ...S.btn(false), fontSize: 11 }}
         >
@@ -131,7 +252,7 @@ export function OverrideListTab({
       </div>
 
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
-        {filtered.length} / {sessionOverrides.length} 件表示
+        {filtered.length} / {totalCount} 件表示
       </div>
       <div
         style={{
@@ -145,7 +266,7 @@ export function OverrideListTab({
           <div
             style={{ textAlign: "center", color: "#bbb", padding: 40, fontSize: 13 }}
           >
-            該当する回数補正はありません
+            該当する時間割調整はありません
           </div>
         ) : (
           <table
@@ -153,7 +274,7 @@ export function OverrideListTab({
               width: "100%",
               borderCollapse: "collapse",
               fontSize: 12,
-              minWidth: 760,
+              minWidth: 880,
             }}
           >
             <thead>
@@ -161,19 +282,13 @@ export function OverrideListTab({
                 <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   日付
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  時間
+                <th style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                  種別
                 </th>
                 <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  学年
+                  対象コマ
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left" }}>科目</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  講師
-                </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  内容
-                </th>
+                <th style={{ padding: "8px 10px", textAlign: "left" }}>詳細</th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
                 <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   作成日時
@@ -186,13 +301,13 @@ export function OverrideListTab({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((ov, i) => {
-                const slot = slotMap[ov.slotId];
-                const gc = slot ? GC(slot.grade) : { b: "#eee", f: "#888" };
-                const dow = dateToDay(ov.date);
+              {filtered.map((adj, i) => {
+                const slot = slotMap[adj.slotId];
+                const dow = dateToDay(adj.date);
+                const meta = TYPE_META[adj.type];
                 return (
                   <tr
-                    key={ov.id}
+                    key={adj.id}
                     style={{
                       background: i % 2 ? "#f8f9fa" : "#fff",
                       borderTop: "1px solid #eee",
@@ -205,7 +320,7 @@ export function OverrideListTab({
                         fontWeight: 700,
                       }}
                     >
-                      {ov.date}
+                      {adj.date}
                       {dow && (
                         <span
                           style={{
@@ -218,68 +333,31 @@ export function OverrideListTab({
                           ({dow})
                         </span>
                       )}
-                    </td>
-                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                      {slot?.time || "-"}
-                    </td>
-                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                      {slot ? (
-                        <span
-                          style={{
-                            background: gc.b,
-                            color: gc.f,
-                            borderRadius: 4,
-                            padding: "1px 6px",
-                            fontSize: 10,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {slot.grade}
-                          {slot.cls && slot.cls !== "-" ? slot.cls : ""}
-                        </span>
-                      ) : (
-                        "(削除済)"
+                      {slot?.time && (
+                        <div style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
+                          {slot.time}
+                        </div>
                       )}
                     </td>
-                    <td style={{ padding: "8px 10px", fontWeight: 600 }}>
-                      {slot?.subj || "-"}
-                      {slot?.room ? (
-                        <span style={{ color: "#999", fontSize: 10, marginLeft: 4 }}>
-                          {slot.room}
-                        </span>
-                      ) : null}
+                    <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                      <span
+                        style={{
+                          background: meta.bg,
+                          color: meta.fg,
+                          borderRadius: 4,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {meta.label}
+                      </span>
                     </td>
-                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                      {slot?.teacher || "-"}
+                    <td style={{ padding: "8px 10px" }}>
+                      <SlotChip slot={slot} />
                     </td>
-                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                      {ov.mode === "set" ? (
-                        <span
-                          style={{
-                            background: "#e3f0ff",
-                            color: "#1f4d80",
-                            borderRadius: 4,
-                            padding: "2px 8px",
-                            fontWeight: 700,
-                          }}
-                        >
-                          回数指定: 第{ov.value}回
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            background: "#fff3e0",
-                            color: "#a65a00",
-                            borderRadius: 4,
-                            padding: "2px 8px",
-                            fontWeight: 700,
-                          }}
-                        >
-                          スキップ
-                          {ov.displayAs ? ` (表示: 第${ov.displayAs}回)` : ""}
-                        </span>
-                      )}
-                    </td>
+                    <td style={{ padding: "8px 10px" }}>{detailFor(adj, slotMap)}</td>
                     <td
                       style={{
                         padding: "8px 10px",
@@ -290,9 +368,9 @@ export function OverrideListTab({
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
-                      title={ov.memo}
+                      title={adj.memo}
                     >
-                      {ov.memo}
+                      {adj.memo}
                     </td>
                     <td
                       style={{
@@ -302,7 +380,7 @@ export function OverrideListTab({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {fmtIsoLocal(ov.createdAt)}
+                      {fmtIsoLocal(adj.createdAt)}
                     </td>
                     {isAdmin && (
                       <td
@@ -312,11 +390,11 @@ export function OverrideListTab({
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {onJumpToDate && ov.date && (
+                        {onJumpToDate && adj.date && (
                           <button
                             type="button"
-                            onClick={() => onJumpToDate(ov.date)}
-                            aria-label={`${ov.date} の欠勤振替画面を開く`}
+                            onClick={() => onJumpToDate(adj.date)}
+                            aria-label={`${adj.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
                             style={{
                               background: "none",
@@ -332,8 +410,8 @@ export function OverrideListTab({
                         )}
                         <button
                           type="button"
-                          onClick={() => onDel(ov.id)}
-                          aria-label={`${ov.date} の回数補正を削除`}
+                          onClick={() => onDel(adj)}
+                          aria-label={`${adj.date} の${meta.label}を削除`}
                           style={{
                             background: "none",
                             border: "none",

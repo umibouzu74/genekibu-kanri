@@ -68,3 +68,17 @@ export function formatDateRange(start, end) {
   if (!end || start === end) return start;
   return `${start} 〜 ${end}`;
 }
+
+// ISO 8601 文字列をローカルの "YYYY-MM-DD HH:MM" にフォーマット。
+// createdAt / updatedAt の表示で利用。無効値は "-"。
+export function fmtIsoLocal(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day} ${hh}:${mm}`;
+}

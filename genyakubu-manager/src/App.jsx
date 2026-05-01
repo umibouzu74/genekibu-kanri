@@ -257,6 +257,8 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
+  const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
@@ -322,7 +324,16 @@ export default function App() {
 
   // ─── CRUD hooks ───────────────────────────────────────────────────
   const slotsCrud = useSlotsCrud({
-    slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
+    slots,
+    saveSlots,
+    subs,
+    saveSubs,
+    subjects,
+    partTimeStaff,
+    adjustments,
+    saveAdjustments,
+    sessionOverrides,
+    saveSessionOverrides,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
   const ttCrud = useTimetablesCrud({
@@ -410,6 +421,15 @@ export default function App() {
     setView(v);
     setSidebarOpen(false);
   }, []);
+
+  // 一覧 (合同授業 / 回数補正など) から欠勤振替画面の特定日へ遷移する。
+  const jumpToAbsenceFlow = useCallback(
+    (date) => {
+      setAbsenceFlowInitDate(date || null);
+      selectView(VIEWS.ABSENCE_FLOW);
+    },
+    [selectView]
+  );
 
   // ─── g-prefix chord navigation ──────────────────────────────────
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
@@ -833,6 +853,7 @@ export default function App() {
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
               onDelSessionOverride={overridesCrud.del}
+              onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
             />
@@ -858,6 +879,8 @@ export default function App() {
               saveAdjustments={saveAdjustments}
               saveSessionOverrides={saveSessionOverrides}
               isAdmin={isAdmin}
+              initDate={absenceFlowInitDate}
+              onConsumeInitDate={() => setAbsenceFlowInitDate(null)}
             />
           )}
           {view === VIEWS.STAFF && !selected && (

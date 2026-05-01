@@ -7,7 +7,18 @@ import { BEHAVIOR } from "../constants/layout";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
 // App 本体から約 120 行削減する。
-export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partTimeStaff }) {
+export function useSlotsCrud({
+  slots,
+  saveSlots,
+  subs,
+  saveSubs,
+  subjects,
+  partTimeStaff,
+  adjustments = [],
+  saveAdjustments,
+  sessionOverrides = [],
+  saveSessionOverrides,
+}) {
   const toasts = useToasts();
   const confirm = useConfirm();
 
@@ -87,8 +98,22 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
 
   const del = async (id) => {
     const linkedSubs = subs.filter((s) => s.slotId === id);
-    const extra = linkedSubs.length
-      ? `\n※この操作で ${linkedSubs.length} 件の代行記録も削除されます。`
+    const linkedAdjustments = (adjustments || []).filter(
+      (a) =>
+        a.slotId === id ||
+        (Array.isArray(a.combineSlotIds) && a.combineSlotIds.includes(id))
+    );
+    const linkedOverrides = (sessionOverrides || []).filter(
+      (o) => o.slotId === id
+    );
+    const extras = [];
+    if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件`);
+    if (linkedAdjustments.length)
+      extras.push(`時間割調整 ${linkedAdjustments.length} 件`);
+    if (linkedOverrides.length)
+      extras.push(`回数補正 ${linkedOverrides.length} 件`);
+    const extra = extras.length
+      ? `\n※この操作で次のデータも削除されます: ${extras.join(" / ")}`
       : "";
     const ok = await confirm({
       title: "コマの削除",
@@ -101,9 +126,38 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
     if (linkedSubs.length) {
       saveSubs(subs.filter((s) => s.slotId !== id));
     }
+    if (linkedAdjustments.length && saveAdjustments) {
+      // 吸収側 (combineSlotIds) のみに含まれるケースは、host 側の合同から
+      // 該当 id を取り除いて存続させる。host 自体が消えるなら adjustment を削除。
+      const next = [];
+      for (const adj of adjustments) {
+        if (adj.slotId === id) continue;
+        if (
+          adj.type === "combine" &&
+          Array.isArray(adj.combineSlotIds) &&
+          adj.combineSlotIds.includes(id)
+        ) {
+          const remaining = adj.combineSlotIds.filter((sid) => sid !== id);
+          if (remaining.length === 0) continue;
+          next.push({ ...adj, combineSlotIds: remaining });
+        } else {
+          next.push(adj);
+        }
+      }
+      saveAdjustments(next);
+    }
+    if (linkedOverrides.length && saveSessionOverrides) {
+      saveSessionOverrides(sessionOverrides.filter((o) => o.slotId !== id));
+    }
+    const removedParts = [];
+    if (linkedSubs.length) removedParts.push(`代行 ${linkedSubs.length} 件`);
+    if (linkedAdjustments.length)
+      removedParts.push(`調整 ${linkedAdjustments.length} 件`);
+    if (linkedOverrides.length)
+      removedParts.push(`回数補正 ${linkedOverrides.length} 件`);
     toasts.success(
-      linkedSubs.length
-        ? `コマと ${linkedSubs.length} 件の代行記録を削除しました`
+      removedParts.length
+        ? `コマと ${removedParts.join(" / ")} を削除しました`
         : "コマを削除しました"
     );
   };

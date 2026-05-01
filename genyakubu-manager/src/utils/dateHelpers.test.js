@@ -3,6 +3,7 @@ import {
   dateToDay,
   fmtDate,
   fmtDateWeekday,
+  fmtIsoLocal,
   formatDateRange,
   overlapsRange,
   parseLocalDate,
@@ -107,5 +108,30 @@ describe("dateToDay", () => {
   it("returns null for Sundays (not in DAYS)", () => {
     // DAYS typically excludes 日
     expect(dateToDay("2026-04-19")).toBeNull();
+  });
+});
+
+describe("fmtIsoLocal", () => {
+  it("returns '-' for null / undefined / empty", () => {
+    expect(fmtIsoLocal(null)).toBe("-");
+    expect(fmtIsoLocal(undefined)).toBe("-");
+    expect(fmtIsoLocal("")).toBe("-");
+  });
+
+  it("returns '-' for an unparseable string", () => {
+    expect(fmtIsoLocal("not-a-date")).toBe("-");
+  });
+
+  it("formats a valid ISO string as 'YYYY-MM-DD HH:MM' in local time", () => {
+    // ローカルタイムでフォーマットするので、Date オブジェクト経由で
+    // 期待値を組み立てる (テスト環境のタイムゾーンに依存しない検証)。
+    const iso = "2026-05-01T14:30:00.000Z";
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    expect(fmtIsoLocal(iso)).toBe(`${y}-${m}-${day} ${hh}:${mm}`);
   });
 });

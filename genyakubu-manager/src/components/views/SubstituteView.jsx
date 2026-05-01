@@ -8,7 +8,7 @@ import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
-import { JointClassListTab } from "./substitute/JointClassListTab";
+import { AdjustmentListTab } from "./substitute/AdjustmentListTab";
 import { OverrideListTab } from "./substitute/OverrideListTab";
 
 export function SubstituteView({
@@ -37,6 +37,7 @@ export function SubstituteView({
   onAddAdjustment,
   onDelAdjustment,
   onDelSessionOverride,
+  onJumpToAbsenceFlow,
   adjustments = [],
   sessionOverrides = [],
 }) {
@@ -84,8 +85,11 @@ export function SubstituteView({
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
 
-  const combineCount = useMemo(
-    () => (adjustments || []).filter((a) => a.type === "combine").length,
+  const adjustmentCount = useMemo(
+    () =>
+      (adjustments || []).filter(
+        (a) => a.type === "combine" || a.type === "move" || a.type === "reschedule"
+      ).length,
     [adjustments]
   );
 
@@ -121,6 +125,30 @@ export function SubstituteView({
 
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
+
+  // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
+  // 孤立しがち。削除直後に件数を info トーストで案内する。
+  const handleDelAdjustment = useCallback(
+    (adj) => {
+      if (adj?.type === "combine") {
+        const ids = new Set([
+          adj.slotId,
+          ...(adj.combineSlotIds || []).filter((x) => x != null),
+        ]);
+        const related = (sessionOverrides || []).filter(
+          (o) => o.date === adj.date && ids.has(o.slotId)
+        );
+        if (related.length > 0) {
+          toasts.info(
+            `関連する回数補正が ${related.length} 件残っています。回数補正一覧で確認してください。`,
+            { duration: 8000 }
+          );
+        }
+      }
+      onDelAdjustment?.(adj.id);
+    },
+    [onDelAdjustment, sessionOverrides, toasts]
+  );
 
   const handleShare = useCallback(async () => {
     if (sharing) return;
@@ -197,7 +225,7 @@ export function SubstituteView({
         }}
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
-        <TabBtn k="joint" label="合同授業一覧" count={combineCount} />
+        <TabBtn k="adjustment" label="時間割調整一覧" count={adjustmentCount} />
         <TabBtn k="override" label="回数補正一覧" count={sessionOverrides.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
@@ -236,12 +264,13 @@ export function SubstituteView({
         />
       )}
 
-      {tab === "joint" && (
-        <JointClassListTab
+      {tab === "adjustment" && (
+        <AdjustmentListTab
           adjustments={adjustments}
           slots={slots}
           isAdmin={isAdmin}
-          onDel={onDelAdjustment}
+          onDel={handleDelAdjustment}
+          onJumpToDate={onJumpToAbsenceFlow}
         />
       )}
 
@@ -251,6 +280,7 @@ export function SubstituteView({
           slots={slots}
           isAdmin={isAdmin}
           onDel={onDelSessionOverride}
+          onJumpToDate={onJumpToAbsenceFlow}
         />
       )}
 

@@ -35,6 +35,8 @@ export function AbsenceWorkflowView({
   saveAdjustments,
   saveSessionOverrides,
   isAdmin,
+  initDate,
+  onConsumeInitDate,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -43,6 +45,17 @@ export function AbsenceWorkflowView({
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
+
+  // 一覧画面から日付指定で遷移してきた場合、ドラフトを破棄して該当日へ移る。
+  // (initDate は親が再利用しないよう onConsumeInitDate で消費通知する)
+  useEffect(() => {
+    if (!initDate) return;
+    setDate(initDate);
+    draft.reset();
+    onConsumeInitDate?.();
+    // draft / onConsumeInitDate は ref 安定でないため依存に含めない (初回 mount + initDate 変化時のみ実行)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initDate]);
 
   // ドロップダウン外クリックで閉じる
   useEffect(() => {
