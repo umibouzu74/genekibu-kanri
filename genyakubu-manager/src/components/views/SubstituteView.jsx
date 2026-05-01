@@ -8,6 +8,8 @@ import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
+import { AdjustmentListTab } from "./substitute/AdjustmentListTab";
+import { OverrideListTab } from "./substitute/OverrideListTab";
 
 export function SubstituteView({
   subs,
@@ -33,6 +35,9 @@ export function SubstituteView({
   classSets,
   displayCutoff,
   onAddAdjustment,
+  onDelAdjustment,
+  onDelSessionOverride,
+  onJumpToAbsenceFlow,
   adjustments = [],
   sessionOverrides = [],
 }) {
@@ -45,13 +50,21 @@ export function SubstituteView({
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
 
-  // 外部から初期フィルタが渡された場合 (例: Sidebar バッジクリック)
+  // 外部から初期フィルタが渡された場合の処理。
+  //  - initFilter.status: Sidebar バッジクリック等。月フィルタは解除して
+  //    全件の中から該当ステータスを表示。タブは強制的に「代行一覧」へ。
+  //  - initFilter.tab:    CommandPalette からのサブタブジャンプ。月 / 講師 /
+  //    ステータスなどの既存フィルタは故意に保持する (「いま見ている範囲で
+  //    別タブの内容を確認する」操作を妨げないため)。
   useEffect(() => {
     if (initFilter) {
       if (initFilter.status) {
         setFStatus(initFilter.status);
-        setFMonth(""); // 月フィルタを解除して全件から依頼中を表示
+        setFMonth("");
         setTab("list");
+      }
+      if (initFilter.tab) {
+        setTab(initFilter.tab);
       }
       onConsumeInitFilter?.();
     }
@@ -79,6 +92,14 @@ export function SubstituteView({
     if (fStatus) r = r.filter((s) => s.status === fStatus);
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
+
+  const adjustmentCount = useMemo(
+    () =>
+      (adjustments || []).filter(
+        (a) => a.type === "combine" || a.type === "move" || a.type === "reschedule"
+      ).length,
+    [adjustments]
+  );
 
   const [ty, tm] = fMonth ? fMonth.split("-").map(Number) : [0, 0];
   const tally = useMemo(
@@ -112,6 +133,30 @@ export function SubstituteView({
 
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
+
+  // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
+  // 孤立しがち。削除直後に件数を info トーストで案内する。
+  const handleDelAdjustment = useCallback(
+    (adj) => {
+      if (adj?.type === "combine") {
+        const ids = new Set([
+          adj.slotId,
+          ...(adj.combineSlotIds || []).filter((x) => x != null),
+        ]);
+        const related = (sessionOverrides || []).filter(
+          (o) => o.date === adj.date && ids.has(o.slotId)
+        );
+        if (related.length > 0) {
+          toasts.info(
+            `関連する回数補正が ${related.length} 件残っています。回数補正一覧で確認してください。`,
+            { duration: 8000 }
+          );
+        }
+      }
+      onDelAdjustment?.(adj.id);
+    },
+    [onDelAdjustment, sessionOverrides, toasts]
+  );
 
   const handleShare = useCallback(async () => {
     if (sharing) return;
@@ -188,6 +233,8 @@ export function SubstituteView({
         }}
       >
         <TabBtn k="list" label="代行一覧" count={subs.length} />
+        <TabBtn k="adjustment" label="時間割調整一覧" count={adjustmentCount} />
+        <TabBtn k="override" label="回数補正一覧" count={sessionOverrides.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
@@ -222,6 +269,26 @@ export function SubstituteView({
           isAdmin={isAdmin}
           onEdit={onEdit}
           onDel={onDel}
+        />
+      )}
+
+      {tab === "adjustment" && (
+        <AdjustmentListTab
+          adjustments={adjustments}
+          slots={slots}
+          isAdmin={isAdmin}
+          onDel={handleDelAdjustment}
+          onJumpToDate={onJumpToAbsenceFlow}
+        />
+      )}
+
+      {tab === "override" && (
+        <OverrideListTab
+          sessionOverrides={sessionOverrides}
+          slots={slots}
+          isAdmin={isAdmin}
+          onDel={onDelSessionOverride}
+          onJumpToDate={onJumpToAbsenceFlow}
         />
       )}
 

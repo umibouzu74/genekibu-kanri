@@ -7,7 +7,18 @@ import { BEHAVIOR } from "../constants/layout";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
 // App 本体から約 120 行削減する。
-export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partTimeStaff }) {
+export function useSlotsCrud({
+  slots,
+  saveSlots,
+  subs,
+  saveSubs,
+  subjects,
+  partTimeStaff,
+  adjustments = [],
+  saveAdjustments,
+  sessionOverrides = [],
+  saveSessionOverrides,
+}) {
   const toasts = useToasts();
   const confirm = useConfirm();
 
@@ -87,8 +98,29 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
 
   const del = async (id) => {
     const linkedSubs = subs.filter((s) => s.slotId === id);
-    const extra = linkedSubs.length
-      ? `\n※この操作で ${linkedSubs.length} 件の代行記録も削除されます。`
+    // 調整は (a) host が消える = 完全削除、(b) 吸収側として参照される = 該当 id を抜くだけ、
+    // の 2 種類があるため、ユーザー説明用に分けてカウントする。
+    const removedAdjustments = (adjustments || []).filter((a) => a.slotId === id);
+    const updatedAdjustments = (adjustments || []).filter(
+      (a) =>
+        a.slotId !== id &&
+        a.type === "combine" &&
+        Array.isArray(a.combineSlotIds) &&
+        a.combineSlotIds.includes(id)
+    );
+    const linkedOverrides = (sessionOverrides || []).filter(
+      (o) => o.slotId === id
+    );
+    const extras = [];
+    if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件削除`);
+    if (removedAdjustments.length)
+      extras.push(`時間割調整 ${removedAdjustments.length} 件削除`);
+    if (updatedAdjustments.length)
+      extras.push(`合同授業 ${updatedAdjustments.length} 件からこのコマを除外`);
+    if (linkedOverrides.length)
+      extras.push(`回数補正 ${linkedOverrides.length} 件削除`);
+    const extra = extras.length
+      ? `\n※この操作で次のデータも更新されます:\n - ${extras.join("\n - ")}`
       : "";
     const ok = await confirm({
       title: "コマの削除",
@@ -101,11 +133,44 @@ export function useSlotsCrud({ slots, saveSlots, subs, saveSubs, subjects, partT
     if (linkedSubs.length) {
       saveSubs(subs.filter((s) => s.slotId !== id));
     }
-    toasts.success(
-      linkedSubs.length
-        ? `コマと ${linkedSubs.length} 件の代行記録を削除しました`
-        : "コマを削除しました"
-    );
+    if ((removedAdjustments.length || updatedAdjustments.length) && saveAdjustments) {
+      const next = [];
+      for (const adj of adjustments) {
+        if (adj.slotId === id) continue;
+        if (
+          adj.type === "combine" &&
+          Array.isArray(adj.combineSlotIds) &&
+          adj.combineSlotIds.includes(id)
+        ) {
+          const remaining = adj.combineSlotIds.filter((sid) => sid !== id);
+          if (remaining.length === 0) continue;
+          next.push({ ...adj, combineSlotIds: remaining });
+        } else {
+          next.push(adj);
+        }
+      }
+      saveAdjustments(next);
+    }
+    if (linkedOverrides.length && saveSessionOverrides) {
+      saveSessionOverrides(sessionOverrides.filter((o) => o.slotId !== id));
+    }
+    const removedParts = [];
+    if (linkedSubs.length) removedParts.push(`代行 ${linkedSubs.length} 件`);
+    if (removedAdjustments.length)
+      removedParts.push(`調整 ${removedAdjustments.length} 件`);
+    if (linkedOverrides.length)
+      removedParts.push(`回数補正 ${linkedOverrides.length} 件`);
+    const updatedParts = [];
+    if (updatedAdjustments.length)
+      updatedParts.push(`合同 ${updatedAdjustments.length} 件を更新`);
+    let msg = "コマを削除しました";
+    if (removedParts.length || updatedParts.length) {
+      const segments = [];
+      if (removedParts.length) segments.push(`${removedParts.join(" / ")} を削除`);
+      if (updatedParts.length) segments.push(updatedParts.join(" / "));
+      msg = `コマを削除し、${segments.join(" / ")}しました`;
+    }
+    toasts.success(msg);
   };
 
   return { save, del, suggestions };

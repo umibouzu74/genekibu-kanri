@@ -9,6 +9,21 @@
   持たせ、セッション回数から教科を決定して表示する）が必要。
 
 ### Added
+- 授業管理 (`SubstituteView`) に「時間割調整一覧」「回数補正一覧」タブを
+  追加。代行一覧と同様に月 / 講師 / 種別フィルタ + 件数バッジを備え、
+  欠勤振替画面で行った合同授業 / コマ移動 / 別日振替 / 回数補正 (set / skip)
+  を一覧化、削除は `removeWithUndo` (6 秒間 Undo 可能なトースト) で
+  取り消し可能。各行に「📅 この日に飛ぶ」ボタンがあり、欠勤振替画面の
+  該当日を直接開ける。振替行は「📅→ 振替先へ飛ぶ」ボタンも併設。
+- 「作成日時」列のヘッダをクリックして昇順 / 降順を切り替え可能に
+  (「最近補正したものから取り消したい」操作を高速化)。
+- データ管理モーダルに「孤立データ掃除」セクションを追加。コマ削除以前に
+  作られた、参照先コマが存在しない代行 / 時間割調整 / 回数補正を一括で
+  検出・削除できる。
+- `Cmd+K` (Command Palette) の navigation 候補に「時間割調整一覧」
+  「回数補正一覧」を追加し、サブタブへ直接ジャンプ可能に。
+- ISO 文字列をローカルの `YYYY-MM-DD HH:MM` に整形する `fmtIsoLocal`
+  ヘルパを `utils/dateHelpers.js` に追加 + ユニットテスト。
 - ESLint (flat config) + Prettier + `npm run lint` / `npm run format`
 - TypeScript tooling (`tsconfig.json`, `npm run typecheck`) and initial
   migration of `src/utils/schema.ts` with full type annotations. Shared
@@ -80,6 +95,17 @@
   TypeScript tooling when appropriate).
 
 ### Fixed
+- コマ削除時に、関連する `adjustments` (合同 / 移動 / 振替) と
+  `sessionOverrides` も cascade 削除されるように修正
+  (CLAUDE.md 「cascade ありは confirmedRemove」ルールに準拠)。
+  合同授業の吸収側として参照されているケースは host 側を存続させ、
+  該当 id だけを `combineSlotIds` から取り除く丁寧な処理。確認
+  ダイアログとトーストには「削除」と「合同からの除外」を区別表示し、
+  件数のミスマッチを防止。
+- 一覧から欠勤振替画面に飛んだ際、`date` を lazy 初期化して
+  「今日 → 目的日」のチラつきを回避。
+- 合同削除時、その日の関連回数補正が孤立して残るケースを `info`
+  トーストで案内。
 - Several list components used `key={i}` (array index); replaced with
   stable IDs to prevent React reconciliation bugs when lists mutate
   (SlotCard in DayBlock, SectionColumn, WeekView, MonthView cells,

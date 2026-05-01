@@ -15,12 +15,14 @@ import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
+import { useConfirm } from "./hooks/useConfirm";
 import { useChordNavigation } from "./hooks/useChordNavigation";
 import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
+import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
@@ -42,6 +44,7 @@ import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
+import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -135,6 +138,7 @@ const VIEW_TITLES = {
 
 export default function App() {
   const toasts = useToasts();
+  const confirm = useConfirm();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
 
   // Flags to avoid spamming the same toast on every subsequent save.
@@ -256,6 +260,8 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
+  const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
@@ -321,7 +327,16 @@ export default function App() {
 
   // ─── CRUD hooks ───────────────────────────────────────────────────
   const slotsCrud = useSlotsCrud({
-    slots, saveSlots, subs, saveSubs, subjects, partTimeStaff,
+    slots,
+    saveSlots,
+    subs,
+    saveSubs,
+    subjects,
+    partTimeStaff,
+    adjustments,
+    saveAdjustments,
+    sessionOverrides,
+    saveSessionOverrides,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
   const ttCrud = useTimetablesCrud({
@@ -331,6 +346,10 @@ export default function App() {
     }, [activeTimetableId, changeActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
+  const overridesCrud = useSessionOverridesCrud({
+    sessionOverrides,
+    saveSessionOverrides,
+  });
   const examPrepCrud = useExamPrepSchedulesCrud({
     examPrepSchedules,
     saveExamPrepSchedules,
@@ -405,6 +424,76 @@ export default function App() {
     setView(v);
     setSidebarOpen(false);
   }, []);
+
+  // 一覧 (合同授業 / 回数補正など) から欠勤振替画面の特定日へ遷移する。
+  const jumpToAbsenceFlow = useCallback(
+    (date) => {
+      setAbsenceFlowInitDate(date || null);
+      selectView(VIEWS.ABSENCE_FLOW);
+    },
+    [selectView]
+  );
+
+  // データ管理モーダルから「孤立データ一括掃除」を実行する。
+  // バッチ destructive 操作 (CLAUDE.md 「cascade ありは confirmedRemove」
+  // ルール) に該当するため、適用前に確認ダイアログを挟む。
+  const handleCleanupOrphans = useCallback(
+    async (detection) => {
+      if (!detection || detection.total === 0) return;
+      const summary = [];
+      if (detection.orphanSubs.length)
+        summary.push(`・代行記録: ${detection.orphanSubs.length} 件 (削除)`);
+      if (detection.orphanAdjustments.length)
+        summary.push(`・時間割調整: ${detection.orphanAdjustments.length} 件 (削除)`);
+      if (detection.updatedAdjustments.length)
+        summary.push(
+          `・合同授業: ${detection.updatedAdjustments.length} 件 (削除済みコマを除外)`
+        );
+      if (detection.orphanOverrides.length)
+        summary.push(`・回数補正: ${detection.orphanOverrides.length} 件 (削除)`);
+      const ok = await confirm({
+        title: "孤立データを掃除",
+        message: `次の孤立データを掃除します:\n\n${summary.join("\n")}\n\n実行しますか？`,
+        okLabel: "実行",
+        tone: "danger",
+      });
+      if (!ok) return;
+      const { nextSubs, nextAdjustments, nextOverrides } = applyOrphanCleanup({
+        subs,
+        adjustments,
+        sessionOverrides,
+        detection,
+      });
+      if (detection.orphanSubs.length > 0) saveSubs(nextSubs);
+      if (
+        detection.orphanAdjustments.length > 0 ||
+        detection.updatedAdjustments.length > 0
+      ) {
+        saveAdjustments(nextAdjustments);
+      }
+      if (detection.orphanOverrides.length > 0) saveSessionOverrides(nextOverrides);
+      const parts = [];
+      if (detection.orphanSubs.length)
+        parts.push(`代行 ${detection.orphanSubs.length} 件`);
+      if (detection.orphanAdjustments.length)
+        parts.push(`調整 ${detection.orphanAdjustments.length} 件`);
+      if (detection.updatedAdjustments.length)
+        parts.push(`合同 ${detection.updatedAdjustments.length} 件更新`);
+      if (detection.orphanOverrides.length)
+        parts.push(`回数補正 ${detection.orphanOverrides.length} 件`);
+      toasts.success(`孤立データを掃除しました (${parts.join(" / ")})`);
+    },
+    [
+      confirm,
+      subs,
+      adjustments,
+      sessionOverrides,
+      saveSubs,
+      saveAdjustments,
+      saveSessionOverrides,
+      toasts,
+    ]
+  );
 
   // ─── g-prefix chord navigation ──────────────────────────────────
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
@@ -826,6 +915,9 @@ export default function App() {
               classSets={classSets}
               displayCutoff={displayCutoff}
               onAddAdjustment={adjCrud.add}
+              onDelAdjustment={adjCrud.del}
+              onDelSessionOverride={overridesCrud.del}
+              onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
             />
@@ -851,6 +943,8 @@ export default function App() {
               saveAdjustments={saveAdjustments}
               saveSessionOverrides={saveSessionOverrides}
               isAdmin={isAdmin}
+              initDate={absenceFlowInitDate}
+              onConsumeInitDate={() => setAbsenceFlowInitDate(null)}
             />
           )}
           {view === VIEWS.STAFF && !selected && (
@@ -966,9 +1060,12 @@ export default function App() {
               slots={slots}
               holidays={holidays}
               subs={subs}
+              adjustments={adjustments}
+              sessionOverrides={sessionOverrides}
               onExport={dataIO.handleExport}
               onImport={dataIO.handleImport}
               onReset={dataIO.handleReset}
+              onCleanupOrphans={handleCleanupOrphans}
               importing={importing}
             />
           </Suspense>
@@ -998,6 +1095,11 @@ export default function App() {
             onSelectEvent={(req) => {
               setEventEditRequest(req);
               selectView(VIEWS.HOLIDAYS);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectSubsSubTab={(tabKey) => {
+              setSubsInitFilter({ tab: tabKey });
+              selectView(VIEWS.SUBS);
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

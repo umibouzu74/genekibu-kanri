@@ -18,6 +18,7 @@ export function CommandPalette({
   onSelectTeacher,
   onSelectView,
   onSelectEvent,
+  onSelectSubsSubTab,
   views,
   onShowShortcuts,
 }) {
@@ -178,6 +179,30 @@ export function CommandPalette({
       }
     }
 
+    // 授業管理のサブタブ (時間割調整一覧 / 回数補正一覧 / 代行一覧 など) も
+    // 名前で直接呼び出せるようにする。
+    if (onSelectSubsSubTab) {
+      const subTabs = [
+        { tab: "list", label: "代行一覧" },
+        { tab: "adjustment", label: "時間割調整一覧" },
+        { tab: "override", label: "回数補正一覧" },
+        { tab: "tally", label: "月次集計" },
+      ];
+      for (const t of subTabs) {
+        if (t.label.toLowerCase().includes(q)) {
+          hits.push({
+            type: "view",
+            label: t.label,
+            detail: "授業管理のサブタブに移動",
+            action: () => {
+              onSelectSubsSubTab(t.tab);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
     return hits.slice(0, 20);
   }, [
     query,
@@ -189,6 +214,7 @@ export function CommandPalette({
     onSelectTeacher,
     onSelectView,
     onSelectEvent,
+    onSelectSubsSubTab,
     onClose,
     views,
   ]);
