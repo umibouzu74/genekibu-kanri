@@ -36,6 +36,8 @@ export function EventCalendarView({
   examPeriods = [],
   specialEvents = [],
   onEventClick,
+  onAddNewEvent,
+  isAdmin = false,
 }) {
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
@@ -227,6 +229,50 @@ export function EventCalendarView({
             );
           })}
         </div>
+        {isAdmin && onAddNewEvent && (
+          <>
+            <div
+              aria-hidden="true"
+              style={{ width: 1, height: 22, background: "#e0e0e0" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>
+                新規登録:
+              </span>
+              {FILTER_BUTTONS.map((f) => (
+                <button
+                  key={`add-${f.key}`}
+                  type="button"
+                  onClick={() => onAddNewEvent(f.key)}
+                  title={`${f.label}を新規登録`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 12,
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    background: "#fff",
+                    color: f.color,
+                    border: `1px dashed ${f.color}`,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span aria-hidden="true">＋</span>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* 月グリッド */}

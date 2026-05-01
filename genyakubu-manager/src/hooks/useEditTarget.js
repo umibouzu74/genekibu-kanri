@@ -33,3 +33,26 @@ export function useEditTarget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editTargetId]);
 }
+
+// 外部からの「新規登録フォームを開く」要求を消化するフック。
+// token が変化したら resetForm + scrollIntoView を行う。トークンは
+// クリック毎に変化させる必要があるため、親側で Date.now() などを設定する。
+export function useNewEntryTarget({
+  token,
+  onReset,
+  onConsume,
+  formRef,
+  isAdmin,
+}) {
+  useEffect(() => {
+    if (token == null) return;
+    if (isAdmin) {
+      onReset?.();
+      requestAnimationFrame(() => {
+        formRef?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    onConsume?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+}

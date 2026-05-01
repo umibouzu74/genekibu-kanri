@@ -11,7 +11,7 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget } from "../hooks/useEditTarget";
+import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 
@@ -76,6 +76,8 @@ export function HolidayManager({
   isAdmin,
   editTargetId = null,
   onConsumeEditTarget,
+  newEntryToken = null,
+  onConsumeNewEntry,
 }) {
   const formRef = useRef(null);
   const [date, setDate] = useState("");
@@ -264,6 +266,14 @@ export function HolidayManager({
     items: holidays,
     onEdit: handleEdit,
     onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
+
+  useNewEntryTarget({
+    token: newEntryToken,
+    onReset: resetForm,
+    onConsume: onConsumeNewEntry,
     formRef,
     isAdmin,
   });
