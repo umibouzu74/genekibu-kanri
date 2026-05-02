@@ -324,6 +324,10 @@ export function EventCalendarView({
                 const continuesLeft = !isStart && ev.startDate < ds;
                 const continuesRight = !isEnd && ev.endDate > ds;
                 const clickable = !!onEventClick;
+                // 複数日イベントは「開始日」と「週頭 (日曜) で前日から続いている日」だけ
+                // 名前を表示し、それ以外は色帯のみ。1ヶ月続くイベントの名前が 30 セル
+                // 並ぶのを抑える。
+                const showName = isStart || (continuesLeft && dow === 0);
                 return (
                   <div
                     key={ev.id}
@@ -362,12 +366,19 @@ export function EventCalendarView({
                       cursor: clickable ? "pointer" : "default",
                     }}
                   >
-                    {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
+                    {showName ? (
                       <>
-                        <span aria-hidden="true">{ev.meta.icon}</span>{" "}
+                        {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
+                          <>
+                            <span aria-hidden="true">{ev.meta.icon}</span>{" "}
+                          </>
+                        ) : null}
+                        {ev.name}
                       </>
-                    ) : null}
-                    {ev.name}
+                    ) : (
+                      // 名前を出さないセルでも色帯の高さを維持するため、不可視文字
+                      " "
+                    )}
                   </div>
                 );
               })}

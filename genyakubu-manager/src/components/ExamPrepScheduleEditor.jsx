@@ -71,6 +71,7 @@ export function ExamPrepScheduleEditor({
 
   const [activeDate, setActiveDate] = useState(rangeDates[0] || "");
   const [copyTargets, setCopyTargets] = useState([]);
+  const [staffQuery, setStaffQuery] = useState("");
 
   // 出勤候補リスト: アルバイト + 通常授業の担当講師 (重複排除)。
   // 各エントリに教科情報を付与し、教科 ID 昇順 → 名前 (五十音) で並べる。
@@ -135,6 +136,13 @@ export function ExamPrepScheduleEditor({
     for (const s of subjects) m.set(s.id, s.name);
     return m;
   }, [subjects]);
+
+  // 講師名の部分一致で絞り込み (大文字小文字無視)。空クエリは全件。
+  const filteredStaffEntries = useMemo(() => {
+    const q = staffQuery.trim().toLowerCase();
+    if (!q) return staffEntries;
+    return staffEntries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [staffEntries, staffQuery]);
 
   const activeDay = useMemo(() => {
     return findDay(schedule, activeDate);
@@ -491,16 +499,42 @@ export function ExamPrepScheduleEditor({
               <div style={{ marginBottom: 16 }}>
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
                     marginBottom: 6,
                   }}
                 >
-                  出勤（該当校時にチェック / 教科別表示）
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>
+                    出勤（該当校時にチェック / 教科別表示）
+                  </div>
+                  <input
+                    type="search"
+                    value={staffQuery}
+                    onChange={(e) => setStaffQuery(e.target.value)}
+                    placeholder="講師名で絞り込み"
+                    aria-label="講師名で絞り込み"
+                    style={{
+                      ...S.input,
+                      width: 160,
+                      padding: "3px 8px",
+                      fontSize: 11,
+                    }}
+                  />
+                  {staffQuery && (
+                    <span style={{ fontSize: 11, color: "#888" }}>
+                      {filteredStaffEntries.length} / {staffEntries.length} 件
+                    </span>
+                  )}
                 </div>
                 {staffEntries.length === 0 ? (
                   <div style={{ fontSize: 11, color: "#888" }}>
                     出勤候補の講師が登録されていません
+                  </div>
+                ) : filteredStaffEntries.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "#888" }}>
+                    「{staffQuery}」に該当する講師がいません
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
@@ -523,7 +557,7 @@ export function ExamPrepScheduleEditor({
                       </tr>
                     </thead>
                     <tbody>
-                      {staffEntries.map((entry, idx) => {
+                      {filteredStaffEntries.map((entry, idx) => {
                         const nos = activeDay.assignments?.[entry.name] || [];
                         const subjectLabel = entry.subjectIds.length > 0
                           ? entry.subjectIds
@@ -531,7 +565,7 @@ export function ExamPrepScheduleEditor({
                               .filter(Boolean)
                               .join("·")
                           : "—";
-                        const prev = idx > 0 ? staffEntries[idx - 1] : null;
+                        const prev = idx > 0 ? filteredStaffEntries[idx - 1] : null;
                         const isSubjectBoundary =
                           prev && prev.primarySubjectId !== entry.primarySubjectId;
                         return (

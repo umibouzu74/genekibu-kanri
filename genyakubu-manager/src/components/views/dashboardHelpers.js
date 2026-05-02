@@ -74,19 +74,20 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
     });
   };
 
-  // Check if a specific slot is off on a given date.
-  // `subj` is optional for backward compat; when omitted, holidays with
-  // subjKeywords set will NOT match (safe-side).
-  const isOffForGrade = (d, grade, subj) => {
-    if (isHolidayForSlot(d, grade, subj)) return true;
-
-    // Exam period check (unchanged)
-    return examPeriods.some((ep) => {
+  // Check whether (date, grade) falls within any exam period.
+  // 休講判定とは別軸で、欠勤組み換え画面で「テスト期間」表示の判定に使う。
+  const isInExamPeriodForGrade = (d, grade) =>
+    examPeriods.some((ep) => {
       if (d < ep.startDate || d > ep.endDate) return false;
       if (ep.targetGrades.length === 0) return true; // empty = all grades
       return ep.targetGrades.includes(grade);
     });
-  };
+
+  // Check if a specific slot is off on a given date.
+  // `subj` is optional for backward compat; when omitted, holidays with
+  // subjKeywords set will NOT match (safe-side).
+  const isOffForGrade = (d, grade, subj) =>
+    isHolidayForSlot(d, grade, subj) || isInExamPeriodForGrade(d, grade);
 
   return {
     holidaysFor,
@@ -94,5 +95,6 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
     specialEventsFor,
     isOffForGrade,
     isHolidayForSlot,
+    isInExamPeriodForGrade,
   };
 }

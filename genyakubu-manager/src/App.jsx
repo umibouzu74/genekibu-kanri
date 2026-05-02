@@ -13,6 +13,7 @@ import {
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
+import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
@@ -249,7 +250,9 @@ export default function App() {
     [],
     { migrate: migrateSpecialEvents, onError: onStorageError }
   );
-  const [eventVisibility, saveEventVisibility] = useSyncedStorage(
+  // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
+  // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
+  const [eventVisibility, saveEventVisibility] = useLocalStorage(
     LS.eventVisibility,
     DEFAULT_EVENT_VISIBILITY,
     { onError: onStorageError }
@@ -1036,6 +1039,8 @@ export default function App() {
               specialEvents={specialEvents}
               partTimeStaff={partTimeStaff}
               displayCutoff={displayCutoff}
+              visibility={eventVisibility}
+              onChangeVisibility={saveEventVisibility}
             />
           )}
           {selected && view === VIEWS.MONTH && (

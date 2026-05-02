@@ -17,7 +17,7 @@ export function AbsenceSlotCard({
   date, // 対象日 (YYYY-MM-DD) — 隔週の A/B 判定に使用
   biweeklyAnchors,
   isAbsent,
-  isHoliday, // 当日が休講に該当するスロット (操作不可・「休講」表示)
+  cancelLabel, // 当日が「休講」「テスト期間」等で授業が走らない場合のラベル
   isMoved,
   isCombineHost,
   absorbedLabel, // host のとき: "+ 中3A 理科"
@@ -43,8 +43,8 @@ export function AbsenceSlotCard({
     ? getSlotWeekType(date, slot, biweeklyAnchors)
     : null;
 
-  // 休講: 操作系をすべて無効化し、「休講」バッジ + 灰色化で簡素表示。
-  if (isHoliday) {
+  // 休講 / テスト期間: 操作系をすべて無効化し、ラベル + 灰色化で簡素表示。
+  if (cancelLabel) {
     return (
       <div
         style={{
@@ -86,7 +86,7 @@ export function AbsenceSlotCard({
             letterSpacing: 1,
           }}
         >
-          休講
+          {cancelLabel}
         </div>
         {slot.teacher && (
           <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>

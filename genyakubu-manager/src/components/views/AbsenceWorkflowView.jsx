@@ -79,11 +79,23 @@ export function AbsenceWorkflowView({
 
   const dayName = useMemo(() => dateToDay(date), [date]);
 
-  // 休講/テスト期間判定 (sessionCount 計算 + 振替先警告で共有)
-  // isHolidayForSlot は休講のみを判定し、欠勤コマ画面で「休講」表示するために使う
-  const { isOffForGrade, isHolidayForSlot } = useMemo(
+  // 休講 / テスト期間判定 (sessionCount 計算 + 振替先警告 + コマ単位ラベル表示で共有)
+  const {
+    isOffForGrade,
+    isHolidayForSlot,
+    isInExamPeriodForGrade,
+    holidaysFor,
+    examPeriodsFor,
+  } = useMemo(
     () => makeEventHelpers(holidays || [], examPeriods || []),
     [holidays, examPeriods]
+  );
+
+  // 当日のヘッダバナー用 (休講・テスト期間が設定されているか一目で分かるように)
+  const holidaysToday = useMemo(() => holidaysFor(date), [holidaysFor, date]);
+  const examPeriodsToday = useMemo(
+    () => examPeriodsFor(date),
+    [examPeriodsFor, date]
   );
 
   // 全先生リスト
@@ -436,6 +448,9 @@ export function AbsenceWorkflowView({
         timetables={timetables}
         isOffForGrade={isOffForGrade}
         isHolidayForSlot={isHolidayForSlot}
+        isInExamPeriodForGrade={isInExamPeriodForGrade}
+        holidaysToday={holidaysToday}
+        examPeriodsToday={examPeriodsToday}
         sessionOverrides={sessionOverrides}
         date={date}
       />
