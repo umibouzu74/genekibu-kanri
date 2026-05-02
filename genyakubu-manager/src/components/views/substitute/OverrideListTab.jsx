@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
-import { S } from "../../../styles/common";
+import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortJa } from "../../../utils/sortJa";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
@@ -81,11 +81,13 @@ export function OverrideListTab({
       >
         <div>
           <label
+            htmlFor="ov-list-filter-month"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             月
           </label>
           <input
+            id="ov-list-filter-month"
             type="month"
             value={fMonth}
             onChange={(e) => setFMonth(e.target.value)}
@@ -94,11 +96,13 @@ export function OverrideListTab({
         </div>
         <div>
           <label
+            htmlFor="ov-list-filter-teacher"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             講師
           </label>
           <select
+            id="ov-list-filter-teacher"
             value={fTeacher}
             onChange={(e) => setFTeacher(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 110 }}
@@ -113,11 +117,13 @@ export function OverrideListTab({
         </div>
         <div>
           <label
+            htmlFor="ov-list-filter-mode"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             種別
           </label>
           <select
+            id="ov-list-filter-mode"
             value={fMode}
             onChange={(e) => setFMode(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 90 }}
@@ -199,10 +205,16 @@ export function OverrideListTab({
                   }
                   title="クリックで作成日時の新しい順 / 補正対象日昇順 を切り替え"
                 >
-                  作成日時 {sortBy === "createdAt-desc" ? "↓" : "↕"}
+                  作成日時{" "}
+                  <span className="no-print" aria-hidden="true">
+                    {sortBy === "createdAt-desc" ? "↓" : "↕"}
+                  </span>
                 </th>
                 {isAdmin && (
-                  <th style={{ padding: "8px 10px", textAlign: "center", width: 80 }}>
+                  <th
+                    className="no-print"
+                    style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
+                  >
                     操作
                   </th>
                 )}
@@ -329,6 +341,7 @@ export function OverrideListTab({
                     </td>
                     {isAdmin && (
                       <td
+                        className="no-print"
                         style={{
                           padding: "8px 10px",
                           textAlign: "center",
@@ -341,14 +354,8 @@ export function OverrideListTab({
                             onClick={() => onJumpToDate(ov.date)}
                             aria-label={`${ov.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              padding: 2,
-                              marginRight: 2,
-                            }}
+                            className={ICON_BTN_CLASS}
+                            style={{ ...S.iconBtn, marginRight: 2 }}
                           >
                             📅
                           </button>
@@ -357,13 +364,8 @@ export function OverrideListTab({
                           type="button"
                           onClick={() => onDel(ov.id)}
                           aria-label={`${ov.date} の回数補正を削除`}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            fontSize: 13,
-                            padding: 2,
-                          }}
+                          className={ICON_BTN_CLASS}
+                          style={S.iconBtn}
                         >
                           🗑
                         </button>

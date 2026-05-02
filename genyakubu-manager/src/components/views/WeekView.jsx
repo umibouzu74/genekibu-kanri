@@ -318,7 +318,7 @@ export function WeekView({
       >
         <button
           type="button"
-          onClick={() => exportTeacherIcs(teacher, slots)}
+          onClick={() => exportTeacherIcs(teacher, slots, biweeklyAnchors)}
           style={{ ...S.btn(false), fontSize: 11 }}
           title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
         >

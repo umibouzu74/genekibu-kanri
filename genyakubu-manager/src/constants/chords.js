@@ -2,6 +2,11 @@ import { VIEWS } from "./views";
 
 // `g` プレフィックス chord による view 遷移定義。
 // useChordNavigation と Sidebar のヒント表示で共有する単一の定義元。
+//
+// 注意: WEEK / MONTH は「講師が選択されている」前提のビューなので、
+// selected が null の時に chord で飛ぶと空画面になる。実際の遷移は
+// App.jsx 側のラッパで selected を保ちつつ view だけ切り替え、
+// selected が null なら chord を no-op にする。
 export const VIEW_CHORDS = Object.freeze({
   d: VIEWS.DASH,
   a: VIEWS.ABSENCE_FLOW,
@@ -12,6 +17,9 @@ export const VIEW_CHORDS = Object.freeze({
   m: VIEWS.MASTER,
   v: VIEWS.STAFF,
   e: VIEWS.EVENTS,
+  w: VIEWS.WEEK,
+  // MONTH は m が MASTER で取られているので mOnth から o を採用。
+  o: VIEWS.MONTH,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -36,6 +44,8 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   m: "マスター",
   v: "バイト",
   e: "イベント",
+  w: "週間",
+  o: "月間",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

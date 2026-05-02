@@ -109,7 +109,10 @@ export function SessionOverridePopover({
       <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
         <button
           type="button"
-          onClick={() => setMode("set")}
+          onClick={() => {
+            setMode("set");
+            setError(null);
+          }}
           style={{
             ...S.btn(mode === "set"),
             fontSize: 11,
@@ -120,7 +123,10 @@ export function SessionOverridePopover({
         </button>
         <button
           type="button"
-          onClick={() => setMode("skip")}
+          onClick={() => {
+            setMode("skip");
+            setError(null);
+          }}
           style={{
             ...S.btn(mode === "skip"),
             fontSize: 11,
@@ -140,7 +146,12 @@ export function SessionOverridePopover({
             type="number"
             min={1}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value);
+              // 入力修正中はエラー赤帯を即時リセット (適用ボタン
+              // 押下まで残るとユーザが混乱するため)。
+              setError(null);
+            }}
             placeholder="例: 4"
             style={{ ...S.input, width: "100%" }}
           />
@@ -159,7 +170,10 @@ export function SessionOverridePopover({
             type="number"
             min={1}
             value={displayAs}
-            onChange={(e) => setDisplayAs(e.target.value)}
+            onChange={(e) => {
+              setDisplayAs(e.target.value);
+              setError(null);
+            }}
             placeholder="例: 4 (未入力なら空欄)"
             style={{ ...S.input, width: "100%" }}
           />

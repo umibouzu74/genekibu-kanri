@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+### Fixed (校正レビュー 2 回目反映)
+- `SubstitutePickerPopover` で新規追加した矢印キーハンドラに
+  `isField` チェックが抜けており、ステータス `<select>` 内で矢印キーが
+  preventDefault されてオプション切替できなくなっていた回帰を解消。
+- `AdjustmentListTab` / `OverrideListTab` で 📅 / 📅→ ボタンを
+  `S.iconBtn` 共通スタイルに集約した際に `marginRight: 2` を引き継ぎ忘れて
+  隣接ボタンが密着していた点を修正。
+
+### Fixed (校正レビュー 3 回目反映)
+- ICS エクスポートの SUMMARY / DESCRIPTION が、隔週コマで「週ごとの
+  実態」を反映していなかった点を修正。複合教科 "英/数" の隔週コマでは
+  A 週担当には先頭教科 (`英`)、B 週パートナーには 2 つ目の教科 (`数`)
+  を出すように `biweeklyDisplaySubject` を経由。`DESCRIPTION` の講師欄も
+  パートナー側エクスポート時はパートナー名のみ表示。
+- ICS に Asia/Tokyo の `VTIMEZONE` ブロックを追加 (RFC 5545 準拠、
+  Apple Calendar / Outlook 等の厳格パーサ対策)。
+- `SessionOverridePopover` の `value` / `displayAs` 入力 `onChange` でも
+  `setError(null)` を呼ぶように修正。エラー後に値を直すと適用ボタンを
+  押すまでエラー赤帯が残っていた UX を解消。
+- インポート完了後に孤立データを検出した場合、データ管理モーダルを
+  閉じずに残すよう変更 (孤立件数の info トースト表示と「孤立データ掃除」
+  ボタンへの動線を保つため)。0 件のときは従来通りモーダルを閉じる。
+
+### Added (校正レビュー 3 回目反映)
+- `g` chord ナビゲーションに `g w` (週間) / `g o` (月間) を追加。
+  WEEK / MONTH は講師選択中専用ビューなので、`selected` が `null` の
+  ときは chord を no-op にして誤操作で講師選択を失わないよう保護。
+  `m` キーは MASTER で取られているため、MONTH には mOnth の `o` を採用。
+- `ShortcutsHelp` に `g w` / `g o` を追記。
+- `S.iconBtn` 用のグローバル CSS `.icon-btn:hover` / `.icon-btn:focus-visible`
+  を `App.jsx` の style ブロックに追加。一覧操作ボタンに `ICON_BTN_CLASS`
+  を併用して、薄いグレーホバー背景とフォーカスリングを表示。
+- `SubstitutePickerPopover` の矢印キー操作で focusIdx 変更時に
+  対応 `<button role="option">` を `scrollIntoView({ block: "nearest" })`
+  でスクロール表示。長い候補リストでも見えなくならない。
+
+### Tests (校正レビュー 3 回目反映)
+- `ics.test.js` に VTIMEZONE / 複合教科隔週 / DESCRIPTION 講師名の
+  ケースを追加 (5 件 → 10 件)。
+- `orphanCleanup.test.js` の `applyOrphanCleanup` に move / reschedule の
+  `targetSlotId` updated ケースを追加 (14 件 → 16 件)。
+
+### Fixed
+- ICS エクスポートが隔週コマを毎週として出力していた不具合を修正。
+  `RRULE:FREQ=WEEKLY;INTERVAL=2` を付け、隔週パートナーの ICS は最初の
+  該当日を B 週側にずらして出力する。`utils/ics.js` から純粋関数
+  `buildTeacherIcsContent` を切り出し、5 件のユニットテストを追加。
+- 回数補正ポップオーバー (`SessionOverridePopover`) で「回数を指定 ↔
+  カウントしない」を切り替えてもバリデーションエラーの赤帯が残り続けて
+  いた点を修正。モード切替時に `setError(null)` する。
+- 孤立データ掃除 (`utils/orphanCleanup.js`) が、`reschedule` / `move` の
+  `targetSlotId` (振替先・移動先のコマ) が削除済になっているケースを
+  検出していなかった。元コマが生きていれば `targetSlotId` のみ取り除いて
+  テキスト情報 (targetDate / targetTime / targetTeacher) は残す部分修正の
+  ロジックを追加。3 件のユニットテストを追加。
+
+### Changed
+- 授業管理 3 タブ (代行 / 時間割調整 / 回数補正) の削除コールバック
+  `onDel` の引数規約を **id に統一**。`AdjustmentListTab` だけ
+  `onDel(adj)` でオブジェクトを渡していたのを `onDel(adj.id)` に揃え、
+  合同削除時の関連回数補正トーストは `SubstituteView.handleDelAdjustment`
+  内で `adjustments.find` で再取得するように。
+- `CommandPalette` (Cmd+K) のビュー候補に「週間 / 月間」を追加。空のビュー
+  に飛ばさないため、講師選択中のときだけ候補に出す
+  (`selectedTeacher` prop)。
+- 一覧 3 タブ (Sub / Adjustment / Override) の操作列・ソートインジケータ
+  を `@media print` で隠すよう `className="no-print"` を付与。フィルタ
+  `<label>` に `htmlFor` を、対応する `<input>` / `<select>` に `id` を
+  付与してスクリーンリーダー読み上げを改善。
+- 一覧操作ボタン (✏️ / 🗑 / 📅 など) を `S.iconBtn` 共通スタイルに集約。
+  最小タッチ領域 32×32px を確保 (WCAG 2.5.5 / 2.5.8 準拠)。
+- 代行ピッカー (`SubstitutePickerPopover`) に矢印キー + Enter による
+  キーボード操作を追加。`role="listbox"` / `role="option"` /
+  `aria-activedescendant` で a11y 対応。
+- データインポート完了後に `detectOrphans` を実行し、孤立データが
+  含まれる場合は件数を info トーストで案内 (古いバックアップに対する
+  防御策)。
+
 ### TODO / 課題
 - 確認テストの教科ローテーション（英→数→国→理→社）未対応。現状は
   `subj:"確認テスト"` で固定表示。回数に応じた教科表示をサポートする

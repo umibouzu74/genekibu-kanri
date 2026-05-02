@@ -503,9 +503,26 @@ export default function App() {
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
   // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
   // タイムアウト時は ShortcutsHelp を開く（chord 忘れ救済 = A14）。
+  //
+  // WEEK / MONTH は「講師選択中」専用ビューなので、selected が無いまま飛ぶと
+  // 空画面になる。chord ハンドラ側で:
+  //   - selected が null なら g w / g o は no-op (誤操作で講師を失わない)
+  //   - selected がある場合は selected を保ったまま view だけ切り替える
+  const handleChordMatch = useCallback(
+    (v) => {
+      if (v === VIEWS.WEEK || v === VIEWS.MONTH) {
+        if (!selected) return;
+        setView(v);
+        setSidebarOpen(false);
+        return;
+      }
+      selectView(v);
+    },
+    [selected, selectView]
+  );
   const { waiting: chordWaiting, reset: resetChord } = useChordNavigation({
     chordMap: VIEW_CHORDS,
-    onMatch: selectView,
+    onMatch: handleChordMatch,
     onTimeout: useCallback(() => setShortcutsHelpOpen(true), []),
     timeoutMs: CHORD_TIMEOUT_MS,
   });
@@ -1106,6 +1123,7 @@ export default function App() {
             holidays={holidays}
             examPeriods={examPeriods}
             specialEvents={specialEvents}
+            selectedTeacher={selected}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);
@@ -1150,6 +1168,16 @@ export default function App() {
            を使う。視覚的なフェード (opacity) は各コンポーネントで明示する */
         button:disabled, [role="button"][aria-disabled="true"] {
           cursor: not-allowed !important;
+        }
+        /* 一覧操作列のアイコンボタン (S.iconBtn 併用)。
+           インラインスタイルで書けない :hover / :focus-visible のフィードバックを
+           グローバル CSS で当てる。disabled の時はホバー演出を消す。 */
+        .icon-btn:hover:not(:disabled) {
+          background: #eef0f5 !important;
+        }
+        .icon-btn:focus-visible {
+          outline: 2px solid #5b8dee;
+          outline-offset: 1px;
         }
         /* chord 待機バッジのタイムアウト残量バー（A19） */
         /* toast の残量バーでも同じ keyframes を流用する。 */

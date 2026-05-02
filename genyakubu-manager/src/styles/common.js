@@ -84,6 +84,26 @@ export const S = {
     textAlign: "right",
     flexShrink: 0,
   },
+  // 一覧操作列に並ぶアイコンボタン (✏️ / 🗑 / 📅 等)。
+  // 視覚上は地味だが WCAG 2.5.5 / 2.5.8 の最小タッチ領域 (24x24 以上、
+  // 推奨 44x44) を満たすため min-width / min-height を確保する。
+  // ホバー時の薄いグレー背景は App.jsx のグローバル CSS 内で
+  // `.icon-btn:hover` に当てている (インラインで :hover が書けないため)。
+  iconBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 13,
+    padding: 4,
+    minWidth: 32,
+    minHeight: 32,
+    lineHeight: 1,
+    borderRadius: radius.sm,
+  },
 };
+
+// `S.iconBtn` を使う <button> に併せて指定する className。
+// :hover / :focus-visible のグローバル CSS と紐付けるための識別子。
+export const ICON_BTN_CLASS = "icon-btn";
 
 export { colors, font, radius, space };

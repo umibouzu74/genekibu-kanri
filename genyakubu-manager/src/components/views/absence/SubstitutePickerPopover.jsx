@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
@@ -38,21 +38,11 @@ export function SubstitutePickerPopover({
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
   const [status, setStatus] = useState(currentStatus || "confirmed");
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose();
-    };
-    const keyHandler = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("keydown", keyHandler);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", keyHandler);
-    };
-  }, [onClose]);
+  // 矢印キーで選択中の候補のインデックス。-1 はリスト未フォーカス。
+  // 開いた直後は何もハイライトせず、↓ を押した時点で先頭に移る挙動。
+  const [focusIdx, setFocusIdx] = useState(-1);
+  const listboxId = "sub-picker-listbox";
+  const optionId = (i) => `sub-picker-opt-${i}`;
 
   const pos = anchorRect
     ? computePosition(anchorRect)
@@ -62,31 +52,89 @@ export function SubstitutePickerPopover({
   //   subjId が解決できた場合   → subjectIds に該当 id を持つ講師
   //   subjId が解決できない場合 → 教科フィルタを適用できないので全員
   const subjId = pickSubjectId(slot.subj, subjects);
-  const allStaff = partTimeStaff || [];
-  const staffSubjectMatch =
-    subjId != null
-      ? allStaff.filter(
-          (p) => Array.isArray(p.subjectIds) && p.subjectIds.includes(subjId)
-        )
-      : allStaff;
-
-  // 同日の他のコマで担当している先生 (常勤含む) を secondary 候補に加える
-  const dayTeachers = new Set();
-  for (const s of daySlots || []) {
-    if (s.teacher) {
-      for (const t of s.teacher.split("·")) dayTeachers.add(t.trim());
-    }
-  }
-  dayTeachers.delete(slot.teacher);
-
-  const primary = sortJa(staffSubjectMatch.map((s) => s.name));
-  const rest = sortJa(
-    [...new Set([...allStaff.map((s) => s.name), ...dayTeachers])].filter(
-      (n) => !primary.includes(n) && n !== slot.teacher
-    )
+  const allStaff = useMemo(() => partTimeStaff || [], [partTimeStaff]);
+  const staffSubjectMatch = useMemo(
+    () =>
+      subjId != null
+        ? allStaff.filter(
+            (p) => Array.isArray(p.subjectIds) && p.subjectIds.includes(subjId)
+          )
+        : allStaff,
+    [subjId, allStaff]
   );
 
-  const list = showAll ? [...primary, ...rest] : primary;
+  // 同日の他のコマで担当している先生 (常勤含む) を secondary 候補に加える
+  const dayTeachers = useMemo(() => {
+    const set = new Set();
+    for (const s of daySlots || []) {
+      if (s.teacher) {
+        for (const t of s.teacher.split("·")) set.add(t.trim());
+      }
+    }
+    set.delete(slot.teacher);
+    return set;
+  }, [daySlots, slot.teacher]);
+
+  const primary = useMemo(
+    () => sortJa(staffSubjectMatch.map((s) => s.name)),
+    [staffSubjectMatch]
+  );
+  const list = useMemo(() => {
+    if (!showAll) return primary;
+    const rest = sortJa(
+      [
+        ...new Set([...allStaff.map((s) => s.name), ...dayTeachers]),
+      ].filter((n) => !primary.includes(n) && n !== slot.teacher)
+    );
+    return [...primary, ...rest];
+  }, [showAll, primary, allStaff, dayTeachers, slot.teacher]);
+
+  // showAll 切替などで候補が変わったらフォーカスをリセット (範囲外参照防止)。
+  useEffect(() => {
+    setFocusIdx((idx) => (idx >= list.length ? -1 : idx));
+  }, [list.length]);
+
+  // 矢印キーでリスト内を移動し、Enter で確定する。
+  // ピッカー上で focus が当たっていない時 (開いた直後) でもキー操作で
+  // 選べるよう、document レベルで ↑↓ Enter を捕捉する。
+  // input / select / textarea にフォーカスがある時はブラウザ標準動作
+  // (select のオプション切替、テキスト入力等) を優先させるため握り潰さない。
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = e.target?.tagName;
+      const isField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+      if (isField) return;
+      if (e.key === "ArrowDown") {
+        if (list.length === 0) return;
+        e.preventDefault();
+        setFocusIdx((idx) => Math.min(list.length - 1, idx < 0 ? 0 : idx + 1));
+      } else if (e.key === "ArrowUp") {
+        if (list.length === 0) return;
+        e.preventDefault();
+        setFocusIdx((idx) => Math.max(0, idx < 0 ? 0 : idx - 1));
+      } else if (e.key === "Enter") {
+        if (focusIdx >= 0 && focusIdx < list.length) {
+          e.preventDefault();
+          onAssign(list[focusIdx], status);
+          onClose();
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [list, focusIdx, status, onAssign, onClose]);
+
+  // 矢印キーで focusIdx が画面外へ進んだら、対応する <button role="option">
+  // を可視範囲へスクロール。block:"nearest" でリストが上下にバウンドするのを防ぐ。
+  // mouseenter で focusIdx を更新するケースは scroll 不要 (既に可視) なので
+  // 連発を避けるため、focusIdx >= 0 の時だけ呼ぶ。
+  useEffect(() => {
+    if (focusIdx < 0 || !ref.current) return;
+    const el = ref.current.querySelector(`#${optionId(focusIdx)}`);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }, [focusIdx]);
 
   return (
     <div
@@ -152,38 +200,52 @@ export function SubstitutePickerPopover({
         </label>
       </div>
 
-      <div style={{ padding: "4px 0" }}>
+      <div
+        id={listboxId}
+        role="listbox"
+        aria-label="代行候補"
+        aria-activedescendant={
+          focusIdx >= 0 && focusIdx < list.length ? optionId(focusIdx) : undefined
+        }
+        style={{ padding: "4px 0" }}
+      >
         {list.length === 0 ? (
           <div style={{ padding: "8px 10px", color: "#888" }}>
             候補が見つかりません
           </div>
         ) : (
-          list.map((name) => {
+          list.map((name, i) => {
             const isCurrent = name === currentSubstitute;
             const isPrimary = primary.includes(name);
+            const isFocused = i === focusIdx;
+            const bg = isFocused
+              ? "#dcebff"
+              : isCurrent
+                ? "#e8f4ff"
+                : "transparent";
             return (
               <button
                 key={name}
+                id={optionId(i)}
+                role="option"
+                aria-selected={isFocused}
                 type="button"
                 onClick={() => {
                   onAssign(name, status);
                   onClose();
                 }}
+                onMouseEnter={() => setFocusIdx(i)}
                 style={{
                   display: "flex",
                   width: "100%",
                   padding: "6px 10px",
                   border: "none",
-                  background: isCurrent ? "#e8f4ff" : "transparent",
+                  background: bg,
                   textAlign: "left",
                   cursor: "pointer",
                   fontSize: 12,
                   justifyContent: "space-between",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = isCurrent ? "#e8f4ff" : "transparent")
-                }
               >
                 <span style={{ fontWeight: isPrimary ? 700 : 400 }}>{name}</span>
                 {isPrimary && (

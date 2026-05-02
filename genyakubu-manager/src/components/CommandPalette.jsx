@@ -15,6 +15,7 @@ export function CommandPalette({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
+  selectedTeacher,
   onSelectTeacher,
   onSelectView,
   onSelectEvent,
@@ -165,6 +166,14 @@ export function CommandPalette({
       { key: views.STAFF, label: "バイト管理" },
       { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
     ];
+    // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
+    // 選択されているときだけ候補に出す。空のビューに飛ばさないため。
+    if (selectedTeacher) {
+      viewNames.push(
+        { key: views.WEEK, label: `週間 (${selectedTeacher})` },
+        { key: views.MONTH, label: `月間 (${selectedTeacher})` }
+      );
+    }
     for (const v of viewNames) {
       if (v.label.toLowerCase().includes(q)) {
         hits.push({
@@ -211,6 +220,7 @@ export function CommandPalette({
     holidays,
     examPeriods,
     specialEvents,
+    selectedTeacher,
     onSelectTeacher,
     onSelectView,
     onSelectEvent,
