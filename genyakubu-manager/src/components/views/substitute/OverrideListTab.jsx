@@ -354,7 +354,7 @@ export function OverrideListTab({
                             onClick={() => onJumpToDate(ov.date)}
                             aria-label={`${ov.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
-                            style={S.iconBtn}
+                            style={{ ...S.iconBtn, marginRight: 2 }}
                           >
                             📅
                           </button>

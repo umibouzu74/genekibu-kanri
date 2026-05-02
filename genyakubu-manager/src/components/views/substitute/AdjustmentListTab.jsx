@@ -458,7 +458,7 @@ export function AdjustmentListTab({
                             onClick={() => onJumpToDate(adj.date)}
                             aria-label={`${adj.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
-                            style={S.iconBtn}
+                            style={{ ...S.iconBtn, marginRight: 2 }}
                           >
                             📅
                           </button>
@@ -471,7 +471,7 @@ export function AdjustmentListTab({
                               onClick={() => onJumpToDate(adj.targetDate)}
                               aria-label={`振替先 ${adj.targetDate} の欠勤振替画面を開く`}
                               title="振替先の欠勤振替画面を開く"
-                              style={{ ...S.iconBtn, fontSize: 12 }}
+                              style={{ ...S.iconBtn, fontSize: 12, marginRight: 2 }}
                             >
                               📅→
                             </button>

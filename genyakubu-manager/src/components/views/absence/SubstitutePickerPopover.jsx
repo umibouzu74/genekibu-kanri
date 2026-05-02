@@ -97,12 +97,13 @@ export function SubstitutePickerPopover({
   // 矢印キーでリスト内を移動し、Enter で確定する。
   // ピッカー上で focus が当たっていない時 (開いた直後) でもキー操作で
   // 選べるよう、document レベルで ↑↓ Enter を捕捉する。
-  // input / select にフォーカスがある時は標準動作 (オプション選択など) を
-  // 優先させるため握り潰さない。
+  // input / select / textarea にフォーカスがある時はブラウザ標準動作
+  // (select のオプション切替、テキスト入力等) を優先させるため握り潰さない。
   useEffect(() => {
     const handler = (e) => {
       const tag = e.target?.tagName;
       const isField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+      if (isField) return;
       if (e.key === "ArrowDown") {
         if (list.length === 0) return;
         e.preventDefault();
@@ -112,9 +113,6 @@ export function SubstitutePickerPopover({
         e.preventDefault();
         setFocusIdx((idx) => Math.max(0, idx < 0 ? 0 : idx - 1));
       } else if (e.key === "Enter") {
-        // input/select 上での Enter は通常動作 (フォーム送信 / 選択確定) に
-        // 任せる。リスト選択中 (focusIdx >= 0) の Enter のみ確定に使う。
-        if (isField) return;
         if (focusIdx >= 0 && focusIdx < list.length) {
           e.preventDefault();
           onAssign(list[focusIdx], status);
