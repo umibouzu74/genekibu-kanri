@@ -18,6 +18,12 @@ import {
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
+import { EVENT_KIND } from "../../constants/eventKinds";
+import {
+  DEFAULT_EVENT_VISIBILITY,
+  EventVisibilityToggles,
+  isEventKindVisible,
+} from "../EventVisibilityToggles";
 
 export function MonthView({
   teacher,
@@ -38,7 +44,11 @@ export function MonthView({
   classSets,
   biweeklyAnchors,
   sessionOverrides,
+  visibility = DEFAULT_EVENT_VISIBILITY,
+  onChangeVisibility,
 }) {
+  const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
+  const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   const isPartTime = useMemo(
     () => (partTimeStaff || []).some((p) => p.name === teacher),
     [partTimeStaff, teacher]
@@ -226,6 +236,14 @@ export function MonthView({
 
   return (
     <div style={{ marginTop: 12 }}>
+      {onChangeVisibility && (
+        <div style={{ marginBottom: 8 }}>
+          <EventVisibilityToggles
+            visibility={visibility}
+            onChange={onChangeVisibility}
+          />
+        </div>
+      )}
       <div
         style={{
           display: "grid",
@@ -277,9 +295,9 @@ export function MonthView({
           const granularHols = hols.filter(
             (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
           );
-          const epActive = examPeriodsForDate(ds);
+          const epActive = showExam ? examPeriodsForDate(ds) : [];
           const hasExam = epActive.length > 0;
-          const evActive = specialEventsForDate(ds);
+          const evActive = showSpecial ? specialEventsForDate(ds) : [];
           const hasEvent = evActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
           const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);

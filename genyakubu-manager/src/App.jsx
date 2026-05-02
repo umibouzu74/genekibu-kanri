@@ -42,6 +42,7 @@ import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
+import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
@@ -247,6 +248,11 @@ export default function App() {
     LS.specialEvents,
     [],
     { migrate: migrateSpecialEvents, onError: onStorageError }
+  );
+  const [eventVisibility, saveEventVisibility] = useSyncedStorage(
+    LS.eventVisibility,
+    DEFAULT_EVENT_VISIBILITY,
+    { onError: onStorageError }
   );
 
   // ─── UI state ─────────────────────────────────────────────────────
@@ -919,6 +925,8 @@ export default function App() {
               examPeriods={examPeriods}
               specialEvents={specialEvents}
               isAdmin={isAdmin}
+              visibility={eventVisibility}
+              onChangeVisibility={saveEventVisibility}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1048,6 +1056,8 @@ export default function App() {
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
+              visibility={eventVisibility}
+              onChangeVisibility={saveEventVisibility}
             />
           )}
           </Suspense>

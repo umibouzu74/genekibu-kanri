@@ -10,14 +10,19 @@ import {
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
+import {
+  DEFAULT_EVENT_VISIBILITY,
+  EventVisibilityToggles,
+  isEventKindVisible,
+} from "../EventVisibilityToggles";
 
 // イベントカレンダー (休講・テスト期間・特別イベントを統合表示)
 //
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
-// 種別ごとに色を分けてフィルタ可能。
+// 休講は常時表示。テスト期間 / 特別イベントは visibility プロパティで切替。
 
-// フィルタチェックボックス UI 定義 (描画毎に再生成しないようモジュールレベルに)
-const FILTER_BUTTONS = Object.freeze([
+// 新規登録ボタン定義 (休講含む 3 種)。
+const ADD_BUTTONS = Object.freeze([
   { key: EVENT_KIND.HOLIDAY, label: "休講", color: HOLIDAY_META.accent },
   { key: EVENT_KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
   { key: EVENT_KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
@@ -38,14 +43,11 @@ export function EventCalendarView({
   onEventClick,
   onAddNewEvent,
   isAdmin = false,
+  visibility = DEFAULT_EVENT_VISIBILITY,
+  onChangeVisibility,
 }) {
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
-  const [filters, setFilters] = useState({
-    [EVENT_KIND.HOLIDAY]: true,
-    [EVENT_KIND.EXAM]: true,
-    [EVENT_KIND.SPECIAL]: true,
-  });
 
   const vd = useMemo(
     () => new Date(today.getFullYear(), today.getMonth() + monthOff, 1),
@@ -71,24 +73,24 @@ export function EventCalendarView({
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(dim).padStart(2, "0")}`;
 
-  // 月内に重なるイベントだけを抽出 + 日付昇順
+  // 月内に重なるイベントだけを抽出 + 日付昇順。休講は常時表示。
+  const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
+  const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   const eventsInMonth = useMemo(() => {
     const all = [];
-    if (filters[EVENT_KIND.HOLIDAY]) {
-      for (const h of holidays) {
-        if (!overlapsRange(h.date, h.date, monthStart, monthEnd)) continue;
-        all.push({
-          kind: EVENT_KIND.HOLIDAY,
-          id: `h-${h.id}`,
-          name: h.label || "休講",
-          startDate: h.date,
-          endDate: h.date,
-          meta: HOLIDAY_META,
-          source: h,
-        });
-      }
+    for (const h of holidays) {
+      if (!overlapsRange(h.date, h.date, monthStart, monthEnd)) continue;
+      all.push({
+        kind: EVENT_KIND.HOLIDAY,
+        id: `h-${h.id}`,
+        name: h.label || "休講",
+        startDate: h.date,
+        endDate: h.date,
+        meta: HOLIDAY_META,
+        source: h,
+      });
     }
-    if (filters[EVENT_KIND.EXAM]) {
+    if (showExam) {
       for (const ep of examPeriods) {
         if (!overlapsRange(ep.startDate, ep.endDate, monthStart, monthEnd)) continue;
         all.push({
@@ -102,7 +104,7 @@ export function EventCalendarView({
         });
       }
     }
-    if (filters[EVENT_KIND.SPECIAL]) {
+    if (showSpecial) {
       for (const ev of specialEvents) {
         if (!overlapsRange(ev.startDate, ev.endDate, monthStart, monthEnd)) continue;
         all.push({
@@ -121,7 +123,7 @@ export function EventCalendarView({
         a.startDate.localeCompare(b.startDate) ||
         a.endDate.localeCompare(b.endDate)
     );
-  }, [holidays, examPeriods, specialEvents, filters, monthStart, monthEnd]);
+  }, [holidays, examPeriods, specialEvents, showExam, showSpecial, monthStart, monthEnd]);
 
   // 日付 → イベント[] の索引 (グリッド表示用)
   const eventsByDate = useMemo(() => {
@@ -232,7 +234,7 @@ export function EventCalendarView({
               <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>
                 新規登録:
               </span>
-              {FILTER_BUTTONS.map((f) => renderAddButton(f))}
+              {ADD_BUTTONS.map((f) => renderAddButton(f))}
             </div>
           </>
         )}
@@ -240,51 +242,10 @@ export function EventCalendarView({
           aria-hidden="true"
           style={{ width: 1, height: 22, background: "#e0e0e0" }}
         />
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
-          {FILTER_BUTTONS.map((f) => {
-            const on = filters[f.key];
-            return (
-              <label
-                key={f.key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 12,
-                  padding: "4px 10px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  background: on ? "#fff" : "#f5f5f5",
-                  color: on ? f.color : "#aaa",
-                  border: `1px solid ${on ? f.color : "#ddd"}`,
-                  fontWeight: on ? 700 : 400,
-                  userSelect: "none",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() =>
-                    setFilters((p) => ({ ...p, [f.key]: !p[f.key] }))
-                  }
-                  style={{ display: "none" }}
-                />
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    background: f.color,
-                    opacity: on ? 1 : 0.3,
-                  }}
-                />
-                {f.label}
-              </label>
-            );
-          })}
-        </div>
+        <EventVisibilityToggles
+          visibility={visibility}
+          onChange={onChangeVisibility}
+        />
       </div>
 
       {/* 月グリッド */}
@@ -465,7 +426,7 @@ export function EventCalendarView({
                   marginTop: 14,
                 }}
               >
-                {FILTER_BUTTONS.map((f) => renderAddButton(f))}
+                {ADD_BUTTONS.map((f) => renderAddButton(f))}
               </div>
             )}
           </div>
