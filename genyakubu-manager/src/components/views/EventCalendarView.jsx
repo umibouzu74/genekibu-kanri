@@ -401,18 +401,12 @@ export function EventCalendarView({
                       cursor: clickable ? "pointer" : "default",
                     }}
                   >
-                    {isStart ? (
+                    {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
                       <>
-                        {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
-                          <>
-                            <span aria-hidden="true">{ev.meta.icon}</span>{" "}
-                          </>
-                        ) : null}
-                        {ev.name}
+                        <span aria-hidden="true">{ev.meta.icon}</span>{" "}
                       </>
-                    ) : (
-                      <span style={{ opacity: 0.55 }}>↳</span>
-                    )}
+                    ) : null}
+                    {ev.name}
                   </div>
                 );
               })}
