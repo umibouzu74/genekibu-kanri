@@ -36,6 +36,10 @@ export function AbsenceTimetable({
   allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
   timetables, // 振替先の有効時間割フィルタ用
   isOffForGrade, // 振替先の休講/テスト期間警告用
+  isHolidayForSlot, // 「休講」表示用 (休講のみ判定)
+  isInExamPeriodForGrade, // 「テスト期間」表示用 (休講に該当しない場合のフォールバック)
+  holidaysToday = [], // 当日に該当する休講エントリ (バナー表示用)
+  examPeriodsToday = [], // 当日に該当するテスト期間 (バナー表示用)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   date,
 }) {
@@ -506,6 +510,19 @@ export function AbsenceTimetable({
         if (reschedule.memo) rescheduleLabel += ` - ${reschedule.memo}`;
       }
 
+      // 休講優先 → テスト期間 の順で判定。両方とも当日のコマは流れないので
+      // 操作不能 (drag/contextmenu/click 抑止)。
+      let cancelLabel = null;
+      if (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) {
+        cancelLabel = "休講";
+      } else if (
+        isInExamPeriodForGrade &&
+        isInExamPeriodForGrade(date, s.grade)
+      ) {
+        cancelLabel = "テスト期間";
+      }
+      const isCancelled = cancelLabel != null;
+
       return (
         <AbsenceSlotCard
           key={s.id}
@@ -513,6 +530,7 @@ export function AbsenceTimetable({
           date={date}
           biweeklyAnchors={biweeklyAnchors}
           isAbsent={isAbsent}
+          cancelLabel={cancelLabel}
           isMoved={isMoved}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
@@ -524,13 +542,13 @@ export function AbsenceTimetable({
           sessionCount={sessionCountMap?.get(s.id) || 0}
           isCombineCandidate={isCombineCandidate}
           isCombineSource={isCombineSource}
-          disableDrag={disableDrag}
+          disableDrag={disableDrag || isCancelled}
           dimmed={dimmed}
           isRescheduled={!!reschedule}
           rescheduleLabel={rescheduleLabel}
-          onContextMenu={(e) => openContextMenu(e, s)}
+          onContextMenu={isCancelled ? undefined : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
-          onClick={() => handleSlotClick(s)}
+          onClick={isCancelled ? undefined : () => handleSlotClick(s)}
         />
       );
     },
@@ -553,6 +571,8 @@ export function AbsenceTimetable({
       openContextMenu,
       handleDragStart,
       handleSlotClick,
+      isHolidayForSlot,
+      isInExamPeriodForGrade,
     ]
   );
 
@@ -574,8 +594,89 @@ export function AbsenceTimetable({
     return slotLabel;
   };
 
+  // 休講エントリを「ラベル + 適用範囲 (部・学年・科目)」のテキストに整形。
+  const formatHolidayRange = (h) => {
+    const parts = [];
+    const sc = (h.scope || ["全部"]).filter(Boolean);
+    if (sc.length > 0 && !sc.includes("全部")) parts.push(sc.join("・"));
+    if ((h.targetGrades || []).length > 0) parts.push(h.targetGrades.join("・"));
+    if ((h.subjKeywords || []).length > 0) parts.push(h.subjKeywords.join("・"));
+    return parts.join(" / ");
+  };
+
   return (
     <div>
+      {/* 当日の休講・テスト期間バナー (部分休講も含めて全体感を掴むため) */}
+      {(holidaysToday.length > 0 || examPeriodsToday.length > 0) && (
+        <div
+          style={{
+            background: "#fdf5e8",
+            border: "1px solid #e0c080",
+            borderRadius: 6,
+            padding: "8px 14px",
+            marginBottom: 10,
+            fontSize: 12,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          {holidaysToday.map((h) => {
+            const range = formatHolidayRange(h);
+            return (
+              <span
+                key={`hol-${h.id}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "#f5dada",
+                  color: "#a02020",
+                  border: "1px solid #c44040",
+                  borderRadius: 12,
+                  padding: "2px 10px",
+                  fontWeight: 700,
+                }}
+              >
+                <span style={{ fontSize: 10 }}>休講</span>
+                <span>{h.label || "休講"}</span>
+                {range && (
+                  <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
+                    ({range})
+                  </span>
+                )}
+              </span>
+            );
+          })}
+          {examPeriodsToday.map((ep) => {
+            const grades = (ep.targetGrades || []).join("・") || "全学年";
+            return (
+              <span
+                key={`exam-${ep.id}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "#fde8c8",
+                  color: "#7a4a10",
+                  border: "1px solid #e0a030",
+                  borderRadius: 12,
+                  padding: "2px 10px",
+                  fontWeight: 700,
+                }}
+              >
+                <span style={{ fontSize: 10 }}>テスト期間</span>
+                <span>{ep.name}</span>
+                <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
+                  ({grades})
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* 解除予定バナー (保存前なら個別に取り消せる) */}
       {pendingRemovals.length > 0 && (
         <div

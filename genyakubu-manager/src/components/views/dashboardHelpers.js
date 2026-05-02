@@ -40,40 +40,61 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
   const specialEventsFor = (d) =>
     specialEvents.filter((ev) => d >= ev.startDate && d <= ev.endDate);
 
-  // Check if a specific slot is off on a given date.
-  // `subj` is optional for backward compat; when omitted, holidays with
-  // subjKeywords set will NOT match (safe-side).
-  const isOffForGrade = (d, grade, subj) => {
-    const dept = gradeToDept(grade);
-    const offByHoliday = holidays.some((h) => {
-      if (h.date !== d) return false;
+  // 日付 → その日の休講エントリ群、の索引。
+  // isHolidayForSlot は時間割描画ループから 1 スロットあたり 1 回呼ばれるため、
+  // 全 holidays の線形走査を毎回行うと O(slots × holidays) になる。
+  const holidaysByDate = new Map();
+  for (const h of holidays) {
+    if (!holidaysByDate.has(h.date)) holidaysByDate.set(h.date, []);
+    holidaysByDate.get(h.date).push(h);
+  }
 
-      // 1. Department scope check (always applied)
+  // Check if a specific (date, grade, subj) is cancelled by a holiday entry.
+  // 「テスト期間」は含めない (テスト期間中は別途振替が走るためここでは別扱い)。
+  const isHolidayForSlot = (d, grade, subj) => {
+    const dayHols = holidaysByDate.get(d);
+    if (!dayHols) return false;
+    const dept = gradeToDept(grade);
+    return dayHols.some((h) => {
+      // 1. Department scope check
       const sc = h.scope || ["全部"];
       if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
 
-      // 2. Grade-level check (when targetGrades is set)
+      // 2. Grade-level check
       const tg = h.targetGrades || [];
       if (tg.length > 0 && !tg.includes(grade)) return false;
 
       // 3. Subject keyword check
       const sk = h.subjKeywords || [];
       if (sk.length > 0) {
-        if (!subj) return false; // cannot match without subject info
+        if (!subj) return false;
         if (!sk.some((kw) => subj.includes(kw))) return false;
       }
-
       return true;
     });
-    if (offByHoliday) return true;
+  };
 
-    // Exam period check (unchanged)
-    return examPeriods.some((ep) => {
+  // Check whether (date, grade) falls within any exam period.
+  // 休講判定とは別軸で、欠勤組み換え画面で「テスト期間」表示の判定に使う。
+  const isInExamPeriodForGrade = (d, grade) =>
+    examPeriods.some((ep) => {
       if (d < ep.startDate || d > ep.endDate) return false;
       if (ep.targetGrades.length === 0) return true; // empty = all grades
       return ep.targetGrades.includes(grade);
     });
-  };
 
-  return { holidaysFor, examPeriodsFor, specialEventsFor, isOffForGrade };
+  // Check if a specific slot is off on a given date.
+  // `subj` is optional for backward compat; when omitted, holidays with
+  // subjKeywords set will NOT match (safe-side).
+  const isOffForGrade = (d, grade, subj) =>
+    isHolidayForSlot(d, grade, subj) || isInExamPeriodForGrade(d, grade);
+
+  return {
+    holidaysFor,
+    examPeriodsFor,
+    specialEventsFor,
+    isOffForGrade,
+    isHolidayForSlot,
+    isInExamPeriodForGrade,
+  };
 }

@@ -17,6 +17,7 @@ export function AbsenceSlotCard({
   date, // 対象日 (YYYY-MM-DD) — 隔週の A/B 判定に使用
   biweeklyAnchors,
   isAbsent,
+  cancelLabel, // 当日が「休講」「テスト期間」等で授業が走らない場合のラベル
   isMoved,
   isCombineHost,
   absorbedLabel, // host のとき: "+ 中3A 理科"
@@ -41,6 +42,60 @@ export function AbsenceSlotCard({
   const weekType = biweekly && date
     ? getSlotWeekType(date, slot, biweeklyAnchors)
     : null;
+
+  // 休講 / テスト期間: 操作系をすべて無効化し、ラベル + 灰色化で簡素表示。
+  if (cancelLabel) {
+    return (
+      <div
+        style={{
+          background: "#f5f5f5",
+          border: "1px dashed #c0c0c0",
+          borderRadius: 6,
+          padding: "6px 8px",
+          minWidth: 0,
+          position: "relative",
+          opacity: 0.7,
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+          <span
+            style={{
+              background: gc.b,
+              color: gc.f,
+              borderRadius: 3,
+              padding: "1px 4px",
+              fontSize: 10,
+              fontWeight: 700,
+              opacity: 0.6,
+            }}
+          >
+            {slot.grade}
+            {slot.cls && slot.cls !== "-" ? slot.cls : ""}
+          </span>
+          <span style={{ fontSize: 12, color: "#888", textDecoration: "line-through" }}>
+            {slot.subj}
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            marginTop: 2,
+            color: colors.danger,
+            letterSpacing: 1,
+          }}
+        >
+          {cancelLabel}
+        </div>
+        {slot.teacher && (
+          <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>
+            {formatBiweeklyTeacher(slot.teacher, slot.note)}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const borderColor = isCombineSource
     ? "#e0a020"

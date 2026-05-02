@@ -12,6 +12,9 @@ import {
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
+import { compareJa } from "../utils/sortJa";
+import { getSlotTeachers } from "../utils/biweekly";
+import { pickSubjectId } from "../utils/subjectMatch";
 
 // 各日のデフォルト雛形（添付画像の平日枠: 4 校時 18:00-21:50）。
 // 校時数や時刻は編集画面で自由に変えられるので、あくまで初期値。
@@ -52,6 +55,9 @@ export function ExamPrepScheduleEditor({
   examPeriod,
   schedule,
   partTimeStaff,
+  slots = [],
+  subjects = [],
+  teacherSubjects = {},
   crud,
   onClose,
 }) {
@@ -65,6 +71,78 @@ export function ExamPrepScheduleEditor({
 
   const [activeDate, setActiveDate] = useState(rangeDates[0] || "");
   const [copyTargets, setCopyTargets] = useState([]);
+  const [staffQuery, setStaffQuery] = useState("");
+
+  // 出勤候補リスト: アルバイト + 通常授業の担当講師 (重複排除)。
+  // 各エントリに教科情報を付与し、教科 ID 昇順 → 名前 (五十音) で並べる。
+  // 教科未設定の講師は末尾にまとめる。
+  //
+  // 教科解決: getTeacherSubjectIds は講師ごとに全 slots を走査するため、
+  // 単純に呼び出すと O(教師 × slots) になる。スロット 1 周で逆引きマップを作り
+  // O(slots + 教師) に抑える。優先順位は resolveTeacherSubjectIds と同じく
+  //   (1) teacherSubjects[name] の明示オーバーライド
+  //   (2) partTimeStaff.subjectIds
+  //   (3) slots からの推定
+  const staffEntries = useMemo(() => {
+    const ptByName = new Map();
+    for (const p of partTimeStaff) ptByName.set(p.name, p.subjectIds || []);
+
+    const fromSlotsByName = new Map(); // teacher → Set<subjectId>
+    for (const slot of slots) {
+      const sid = pickSubjectId(slot.subj, subjects);
+      if (sid == null) continue;
+      for (const t of getSlotTeachers(slot)) {
+        if (!t) continue;
+        if (!fromSlotsByName.has(t)) fromSlotsByName.set(t, new Set());
+        fromSlotsByName.get(t).add(sid);
+      }
+    }
+
+    const overrides = teacherSubjects || {};
+    const allNames = new Set([...ptByName.keys(), ...fromSlotsByName.keys()]);
+
+    const entries = [...allNames].map((name) => {
+      const override = overrides[name];
+      let subjectIds;
+      if (override && override.length > 0) {
+        subjectIds = override;
+      } else if (ptByName.has(name)) {
+        subjectIds = ptByName.get(name);
+      } else {
+        const s = fromSlotsByName.get(name);
+        subjectIds = s ? [...s] : [];
+      }
+      return {
+        name,
+        isPartTime: ptByName.has(name),
+        subjectIds,
+        // primarySubjectId: 教科 ID の最小値で並べる (subjects 配列の自然順)。
+        primarySubjectId: subjectIds.length > 0 ? Math.min(...subjectIds) : Infinity,
+      };
+    });
+
+    entries.sort((a, b) => {
+      if (a.primarySubjectId !== b.primarySubjectId) {
+        return a.primarySubjectId - b.primarySubjectId;
+      }
+      return compareJa(a.name, b.name);
+    });
+
+    return entries;
+  }, [partTimeStaff, slots, subjects, teacherSubjects]);
+
+  const subjectNameById = useMemo(() => {
+    const m = new Map();
+    for (const s of subjects) m.set(s.id, s.name);
+    return m;
+  }, [subjects]);
+
+  // 講師名の部分一致で絞り込み (大文字小文字無視)。空クエリは全件。
+  const filteredStaffEntries = useMemo(() => {
+    const q = staffQuery.trim().toLowerCase();
+    if (!q) return staffEntries;
+    return staffEntries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [staffEntries, staffQuery]);
 
   const activeDay = useMemo(() => {
     return findDay(schedule, activeDate);
@@ -421,16 +499,42 @@ export function ExamPrepScheduleEditor({
               <div style={{ marginBottom: 16 }}>
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
                     marginBottom: 6,
                   }}
                 >
-                  アルバイト出勤（該当校時にチェック）
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>
+                    出勤（該当校時にチェック / 教科別表示）
+                  </div>
+                  <input
+                    type="search"
+                    value={staffQuery}
+                    onChange={(e) => setStaffQuery(e.target.value)}
+                    placeholder="講師名で絞り込み"
+                    aria-label="講師名で絞り込み"
+                    style={{
+                      ...S.input,
+                      width: 160,
+                      padding: "3px 8px",
+                      fontSize: 11,
+                    }}
+                  />
+                  {staffQuery && (
+                    <span style={{ fontSize: 11, color: "#888" }}>
+                      {filteredStaffEntries.length} / {staffEntries.length} 件
+                    </span>
+                  )}
                 </div>
-                {partTimeStaff.length === 0 ? (
+                {staffEntries.length === 0 ? (
                   <div style={{ fontSize: 11, color: "#888" }}>
-                    アルバイト講師が登録されていません
+                    出勤候補の講師が登録されていません
+                  </div>
+                ) : filteredStaffEntries.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "#888" }}>
+                    「{staffQuery}」に該当する講師がいません
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
@@ -442,6 +546,7 @@ export function ExamPrepScheduleEditor({
                   >
                     <thead>
                       <tr style={{ background: "#f5f5f5" }}>
+                        <th style={{ ...thStyle, minWidth: 60 }}>教科</th>
                         <th style={{ ...thStyle, minWidth: 80 }}>講師</th>
                         {activeDay.periods.map((p) => (
                           <th key={p.no} style={{ ...thStyle, minWidth: 50 }}>
@@ -452,11 +557,53 @@ export function ExamPrepScheduleEditor({
                       </tr>
                     </thead>
                     <tbody>
-                      {partTimeStaff.map((s) => {
-                        const nos = activeDay.assignments?.[s.name] || [];
+                      {filteredStaffEntries.map((entry, idx) => {
+                        const nos = activeDay.assignments?.[entry.name] || [];
+                        const subjectLabel = entry.subjectIds.length > 0
+                          ? entry.subjectIds
+                              .map((id) => subjectNameById.get(id))
+                              .filter(Boolean)
+                              .join("·")
+                          : "—";
+                        const prev = idx > 0 ? filteredStaffEntries[idx - 1] : null;
+                        const isSubjectBoundary =
+                          prev && prev.primarySubjectId !== entry.primarySubjectId;
                         return (
-                          <tr key={s.name}>
-                            <td style={tdStyle}>{s.name}</td>
+                          <tr
+                            key={entry.name}
+                            style={{
+                              borderTop: isSubjectBoundary
+                                ? "2px solid #aaa"
+                                : undefined,
+                            }}
+                          >
+                            <td
+                              style={{
+                                ...tdStyle,
+                                color:
+                                  entry.subjectIds.length > 0 ? "#444" : "#aaa",
+                                fontWeight: 600,
+                                fontSize: 11,
+                              }}
+                            >
+                              {subjectLabel}
+                            </td>
+                            <td style={tdStyle}>
+                              {entry.name}
+                              {!entry.isPartTime && (
+                                <span
+                                  style={{
+                                    marginLeft: 4,
+                                    fontSize: 9,
+                                    color: "#888",
+                                    fontWeight: 400,
+                                  }}
+                                  title="通常授業の担当講師"
+                                >
+                                  常勤
+                                </span>
+                              )}
+                            </td>
                             {activeDay.periods.map((p) => {
                               const checked = nos.includes(p.no);
                               return (
@@ -465,9 +612,9 @@ export function ExamPrepScheduleEditor({
                                     type="checkbox"
                                     checked={checked}
                                     onChange={() =>
-                                      handleToggleAssignment(s.name, p.no)
+                                      handleToggleAssignment(entry.name, p.no)
                                     }
-                                    aria-label={`${s.name} ${p.no} 校時`}
+                                    aria-label={`${entry.name} ${p.no} 校時`}
                                   />
                                 </td>
                               );
@@ -475,7 +622,7 @@ export function ExamPrepScheduleEditor({
                             <td style={tdStyle}>
                               <button
                                 type="button"
-                                onClick={() => handleToggleAllForStaff(s.name)}
+                                onClick={() => handleToggleAllForStaff(entry.name)}
                                 style={{
                                   ...S.btn(false),
                                   fontSize: 10,

@@ -27,6 +27,11 @@ import { overlapsRange, formatDateRange } from "../../utils/dateHelpers";
 import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
+import {
+  DEFAULT_EVENT_VISIBILITY,
+  EventVisibilityToggles,
+  isEventKindVisible,
+} from "../EventVisibilityToggles";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
 function getUpcomingWindow() {
@@ -60,7 +65,11 @@ export function WeekView({
   specialEvents = [],
   partTimeStaff = [],
   displayCutoff,
+  visibility = DEFAULT_EVENT_VISIBILITY,
+  onChangeVisibility,
 }) {
+  const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
+  const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   // 隔週スロットは「今週の実施側講師」のビューにだけ出す。今日を基準週として扱う。
   const refDateStr = useMemo(() => fmtDate(new Date()), []);
   const ts = useMemo(
@@ -286,45 +295,63 @@ export function WeekView({
     const winStartStr = fmtDate(winStart);
     const winEndStr = fmtDate(winEnd);
     const out = [];
-    for (const ep of examPeriods) {
-      if (!overlapsRange(ep.startDate, ep.endDate, winStartStr, winEndStr)) continue;
-      out.push({
-        kind: EVENT_KIND.EXAM,
-        id: `e-${ep.id}`,
-        name: ep.name,
-        startDate: ep.startDate,
-        endDate: ep.endDate,
-      });
+    if (showExam) {
+      for (const ep of examPeriods) {
+        if (!overlapsRange(ep.startDate, ep.endDate, winStartStr, winEndStr)) continue;
+        out.push({
+          kind: EVENT_KIND.EXAM,
+          id: `e-${ep.id}`,
+          name: ep.name,
+          startDate: ep.startDate,
+          endDate: ep.endDate,
+        });
+      }
     }
-    for (const ev of specialEvents) {
-      if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
-      out.push({
-        kind: EVENT_KIND.SPECIAL,
-        id: `s-${ev.id}`,
-        name: ev.name,
-        startDate: ev.startDate,
-        endDate: ev.endDate,
-        eventType: ev.eventType,
-      });
+    if (showSpecial) {
+      for (const ev of specialEvents) {
+        if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
+        out.push({
+          kind: EVENT_KIND.SPECIAL,
+          id: `s-${ev.id}`,
+          name: ev.name,
+          startDate: ev.startDate,
+          endDate: ev.endDate,
+          eventType: ev.eventType,
+        });
+      }
     }
     return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [examPeriods, specialEvents, winStart, winEnd]);
+  }, [examPeriods, specialEvents, showExam, showSpecial, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>
       <div
         className="no-print"
-        style={{ display: "flex", gap: 6, marginBottom: 8, justifyContent: "flex-end" }}
+        style={{
+          display: "flex",
+          gap: 6,
+          marginBottom: 8,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
       >
-        <button
-          type="button"
-          onClick={() => exportTeacherIcs(teacher, slots, biweeklyAnchors)}
-          style={{ ...S.btn(false), fontSize: 11 }}
-          title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
-        >
-          📅 iCalエクスポート
-        </button>
-        <PrintButton style={{ fontSize: 11 }} />
+        {onChangeVisibility && (
+          <EventVisibilityToggles
+            visibility={visibility}
+            onChange={onChangeVisibility}
+          />
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => exportTeacherIcs(teacher, slots, biweeklyAnchors)}
+            style={{ ...S.btn(false), fontSize: 11 }}
+            title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
+          >
+            📅 iCalエクスポート
+          </button>
+          <PrintButton style={{ fontSize: 11 }} />
+        </div>
       </div>
       {upcomingEvents.length > 0 && (
         <div
