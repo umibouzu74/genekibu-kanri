@@ -25,6 +25,16 @@ const SHORTCUTS = [
       { keys: ["g", "e"], sequential: true, label: "イベントカレンダー" },
       { keys: ["g", "m"], sequential: true, label: "コースマスター管理" },
       { keys: ["g", "v"], sequential: true, label: "バイト管理" },
+      {
+        keys: ["g", "w"],
+        sequential: true,
+        label: "週間 (講師選択中のみ)",
+      },
+      {
+        keys: ["g", "o"],
+        sequential: true,
+        label: "月間 (講師選択中のみ)",
+      },
     ],
   },
   {

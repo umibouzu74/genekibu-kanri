@@ -5,7 +5,7 @@ import {
   SUB_STATUS,
   SUB_STATUS_KEYS,
 } from "../../../data";
-import { S } from "../../../styles/common";
+import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { StatusBadge } from "../../StatusBadge";
 
 // Sub list tab : フィルタ (月 / 講師 / ステータス) + 代行レコード一覧テーブル。
@@ -270,6 +270,7 @@ export function SubListTab({
                           type="button"
                           onClick={() => onEdit(sub)}
                           aria-label={`${sub.date} の代行を編集`}
+                          className={ICON_BTN_CLASS}
                           style={S.iconBtn}
                         >
                           ✏️
@@ -278,6 +279,7 @@ export function SubListTab({
                           type="button"
                           onClick={() => onDel(sub.id)}
                           aria-label={`${sub.date} の代行を削除`}
+                          className={ICON_BTN_CLASS}
                           style={S.iconBtn}
                         >
                           🗑

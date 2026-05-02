@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
-import { S } from "../../../styles/common";
+import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortJa } from "../../../utils/sortJa";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
@@ -354,6 +354,7 @@ export function OverrideListTab({
                             onClick={() => onJumpToDate(ov.date)}
                             aria-label={`${ov.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
+                            className={ICON_BTN_CLASS}
                             style={{ ...S.iconBtn, marginRight: 2 }}
                           >
                             📅
@@ -363,6 +364,7 @@ export function OverrideListTab({
                           type="button"
                           onClick={() => onDel(ov.id)}
                           aria-label={`${ov.date} の回数補正を削除`}
+                          className={ICON_BTN_CLASS}
                           style={S.iconBtn}
                         >
                           🗑

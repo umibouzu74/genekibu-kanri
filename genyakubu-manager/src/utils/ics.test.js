@@ -52,4 +52,47 @@ describe("buildTeacherIcsContent", () => {
     expect(ical).toMatch(/END:VCALENDAR$/);
     expect(ical).toContain("X-WR-TIMEZONE:Asia/Tokyo");
   });
+
+  it("VTIMEZONE Asia/Tokyo ブロックを VCALENDAR の中に含む", () => {
+    const ical = buildTeacherIcsContent("堀上", [baseSlot], ANCHORS, NOW);
+    expect(ical).toContain("BEGIN:VTIMEZONE");
+    expect(ical).toContain("TZID:Asia/Tokyo");
+    expect(ical).toContain("TZOFFSETTO:+0900");
+    expect(ical).toContain("END:VTIMEZONE");
+    // VEVENT より前に置かれていること
+    const tzIdx = ical.indexOf("BEGIN:VTIMEZONE");
+    const evIdx = ical.indexOf("BEGIN:VEVENT");
+    expect(tzIdx).toBeGreaterThan(0);
+    expect(tzIdx).toBeLessThan(evIdx);
+  });
+
+  it("複合教科の隔週コマでは A 週担当には先頭教科を SUMMARY に出す", () => {
+    const slot = { ...baseSlot, subj: "英/数", note: "隔週(河野)" };
+    const ical = buildTeacherIcsContent("堀上", [slot], ANCHORS, NOW);
+    // 堀上 は A 週担当 → SUMMARY は "英 中3"
+    expect(ical).toMatch(/SUMMARY:英 中3/);
+    expect(ical).not.toMatch(/SUMMARY:英\/数/);
+  });
+
+  it("複合教科の隔週コマでは B 週パートナーには 2 つ目の教科を SUMMARY に出す", () => {
+    const slot = { ...baseSlot, subj: "英/数", note: "隔週(河野)" };
+    const ical = buildTeacherIcsContent("河野", [slot], ANCHORS, NOW);
+    // 河野 は B 週担当 → SUMMARY は "数 中3"
+    expect(ical).toMatch(/SUMMARY:数 中3/);
+    expect(ical).not.toMatch(/SUMMARY:英\/数/);
+  });
+
+  it("隔週コマの DESCRIPTION 講師名は B 週側エクスポート時はパートナー名のみ", () => {
+    const slot = { ...baseSlot, note: "隔週(河野)" };
+    const ical = buildTeacherIcsContent("河野", [slot], ANCHORS, NOW);
+    // 河野 用 ICS では DESCRIPTION の講師欄が "河野" になる
+    expect(ical).toMatch(/講師: 河野/);
+    expect(ical).not.toMatch(/講師: 堀上/);
+  });
+
+  it("通常コマの SUMMARY / DESCRIPTION は slot.subj / slot.teacher のまま", () => {
+    const ical = buildTeacherIcsContent("堀上", [baseSlot], ANCHORS, NOW);
+    expect(ical).toMatch(/SUMMARY:数学 中3/);
+    expect(ical).toMatch(/講師: 堀上/);
+  });
 });

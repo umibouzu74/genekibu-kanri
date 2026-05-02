@@ -223,4 +223,63 @@ describe("applyOrphanCleanup", () => {
     expect(result.nextAdjustments).toEqual(adjustments);
     expect(result.nextOverrides).toEqual(sessionOverrides);
   });
+
+  it("reschedule の死んだ targetSlotId を抜いた状態で apply される", () => {
+    const slots = makeSlots([1]);
+    const adjustments = [
+      {
+        id: 1,
+        type: "reschedule",
+        slotId: 1,
+        targetSlotId: 99,
+        targetDate: "2026-05-01",
+        targetTime: "19:00-20:20",
+      },
+    ];
+    const detection = detectOrphans({
+      slots,
+      subs: [],
+      adjustments,
+      sessionOverrides: [],
+    });
+    const { nextAdjustments } = applyOrphanCleanup({
+      subs: [],
+      adjustments,
+      sessionOverrides: [],
+      detection,
+    });
+    expect(nextAdjustments).toHaveLength(1);
+    expect(nextAdjustments[0]).not.toHaveProperty("targetSlotId");
+    expect(nextAdjustments[0].targetDate).toBe("2026-05-01");
+    expect(nextAdjustments[0].targetTime).toBe("19:00-20:20");
+    expect(nextAdjustments[0].id).toBe(1);
+  });
+
+  it("move の死んだ targetSlotId を抜いた状態で apply される", () => {
+    const slots = makeSlots([1]);
+    const adjustments = [
+      {
+        id: 1,
+        type: "move",
+        slotId: 1,
+        targetSlotId: 99,
+        targetTime: "17:00-18:20",
+      },
+    ];
+    const detection = detectOrphans({
+      slots,
+      subs: [],
+      adjustments,
+      sessionOverrides: [],
+    });
+    const { nextAdjustments } = applyOrphanCleanup({
+      subs: [],
+      adjustments,
+      sessionOverrides: [],
+      detection,
+    });
+    expect(nextAdjustments).toHaveLength(1);
+    expect(nextAdjustments[0]).not.toHaveProperty("targetSlotId");
+    expect(nextAdjustments[0].targetTime).toBe("17:00-18:20");
+  });
 });

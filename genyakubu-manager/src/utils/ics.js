@@ -1,7 +1,13 @@
 // ─── iCal/ICS export ───────────────────────────────────────────────
 // 講師の週間スケジュールを iCalendar (.ics) 形式でエクスポートする。
 // Google Calendar にインポートして講師のスケジュールを共有できる。
-import { isBiweekly, isSlotForTeacher, isTeacherActiveOnDate } from "./biweekly";
+import {
+  biweeklyDisplaySubject,
+  getSlotTeachers,
+  isBiweekly,
+  isSlotForTeacher,
+  isTeacherActiveOnDate,
+} from "./biweekly";
 import { escapeIcal } from "./escape";
 
 function pad(n) {
@@ -25,6 +31,22 @@ const DAY_INDEX = { "月": 1, "火": 2, "水": 3, "木": 4, "金": 5, "土": 6 }
 
 // iCal の曜日略称
 const ICAL_DAYS = { "月": "MO", "火": "TU", "水": "WE", "木": "TH", "金": "FR", "土": "SA" };
+
+// JST は固定オフセットの単純帯。RFC 5545 で TZID を使うなら VTIMEZONE
+// ブロックを ICS 内に持っている方が厳格パーサ (Apple Calendar 等) に対して
+// 安全。Asia/Tokyo は DST なし・常に UTC+9 なので静的に書き下せる。
+const ASIA_TOKYO_VTIMEZONE = [
+  "BEGIN:VTIMEZONE",
+  "TZID:Asia/Tokyo",
+  "X-LIC-LOCATION:Asia/Tokyo",
+  "BEGIN:STANDARD",
+  "DTSTART:19700101T000000",
+  "TZOFFSETFROM:+0900",
+  "TZOFFSETTO:+0900",
+  "TZNAME:JST",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+].join("\r\n");
 
 // iCal 形式のタイムスタンプ (ローカル時間)
 function icalDateTime(date, h, m) {
@@ -60,6 +82,26 @@ function nextActiveDayForTeacher(baseDate, dayIdx, slot, teacher, anchors) {
   return next;
 }
 
+// teacher 視点での「実態に即した教科」と「実態に即した担当表記」を返す。
+// 隔週コマは A 週 / B 週で実施科目・実施担当が違うため、ICS の SUMMARY /
+// DESCRIPTION にそのまま slot.subj / slot.teacher を出すと誤解を招く。
+//   - subject: A 週担当には A 週側の科目 (複合 "英/数" の場合)
+//              B 週パートナーには B 週側の科目
+//   - teacher 表記: 該当週に実際に実施する人だけを書く
+function effectiveSubjectAndTeacher(slot, teacher, eventDate, anchors) {
+  if (!isBiweekly(slot.note)) {
+    return { subject: slot.subj, teacherDisplay: slot.teacher };
+  }
+  const dateStr = fmtIsoDate(eventDate);
+  const subject = biweeklyDisplaySubject(slot, dateStr, anchors);
+  const mainTeachers = getSlotTeachers(slot);
+  // teacher が main 側にいる = A 週担当のいずれか。それ以外は partner。
+  const teacherDisplay = mainTeachers.includes(teacher)
+    ? slot.teacher
+    : teacher;
+  return { subject, teacherDisplay };
+}
+
 // 副作用 (Blob 書き出し) のない純粋な ICS テキスト生成関数。
 // テスト容易性と再利用性のために `exportTeacherIcs` から切り出してある。
 // `now` を引数化して時刻に依存しないテストを書けるようにしている。
@@ -89,14 +131,21 @@ export function buildTeacherIcsContent(teacher, slots, biweeklyAnchors = [], now
       ? `RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${icalDay}`
       : `RRULE:FREQ=WEEKLY;BYDAY=${icalDay}`;
 
+    const { subject, teacherDisplay } = effectiveSubjectAndTeacher(
+      s,
+      teacher,
+      eventDate,
+      biweeklyAnchors
+    );
+
     events.push([
       "BEGIN:VEVENT",
       `UID:slot-${s.id}-${uid}@genyakubu`,
       `DTSTART;TZID=Asia/Tokyo:${icalDateTime(eventDate, startH, startM)}`,
       `DTEND;TZID=Asia/Tokyo:${icalDateTime(eventDate, endH, endM)}`,
       rrule,
-      `SUMMARY:${escapeIcal(s.subj)} ${escapeIcal(s.grade)}${s.cls && s.cls !== "-" ? s.cls : ""}`,
-      `DESCRIPTION:${escapeIcal(`講師: ${s.teacher}\\n教室: ${s.room || ""}\\n備考: ${s.note || ""}`)}`,
+      `SUMMARY:${escapeIcal(subject)} ${escapeIcal(s.grade)}${s.cls && s.cls !== "-" ? s.cls : ""}`,
+      `DESCRIPTION:${escapeIcal(`講師: ${teacherDisplay}\\n教室: ${s.room || ""}\\n備考: ${s.note || ""}`)}`,
       s.room ? `LOCATION:${escapeIcal(s.room)}` : null,
       "END:VEVENT",
     ].filter(Boolean).join("\r\n"));
@@ -109,6 +158,7 @@ export function buildTeacherIcsContent(teacher, slots, biweeklyAnchors = [], now
     "CALSCALE:GREGORIAN",
     "X-WR-CALNAME:" + escapeIcal(`${teacher} 授業予定`),
     "X-WR-TIMEZONE:Asia/Tokyo",
+    ASIA_TOKYO_VTIMEZONE,
     ...events,
     "END:VCALENDAR",
   ].join("\r\n");

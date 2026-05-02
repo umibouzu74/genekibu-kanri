@@ -124,6 +124,18 @@ export function SubstitutePickerPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [list, focusIdx, status, onAssign, onClose]);
 
+  // 矢印キーで focusIdx が画面外へ進んだら、対応する <button role="option">
+  // を可視範囲へスクロール。block:"nearest" でリストが上下にバウンドするのを防ぐ。
+  // mouseenter で focusIdx を更新するケースは scroll 不要 (既に可視) なので
+  // 連発を避けるため、focusIdx >= 0 の時だけ呼ぶ。
+  useEffect(() => {
+    if (focusIdx < 0 || !ref.current) return;
+    const el = ref.current.querySelector(`#${optionId(focusIdx)}`);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }, [focusIdx]);
+
   return (
     <div
       ref={ref}
