@@ -202,11 +202,13 @@ export function AdjustmentListTab({
       >
         <div>
           <label
+            htmlFor="adj-list-filter-month"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             月
           </label>
           <input
+            id="adj-list-filter-month"
             type="month"
             value={fMonth}
             onChange={(e) => setFMonth(e.target.value)}
@@ -215,11 +217,13 @@ export function AdjustmentListTab({
         </div>
         <div>
           <label
+            htmlFor="adj-list-filter-teacher"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             講師
           </label>
           <select
+            id="adj-list-filter-teacher"
             value={fTeacher}
             onChange={(e) => setFTeacher(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 110 }}
@@ -234,11 +238,13 @@ export function AdjustmentListTab({
         </div>
         <div>
           <label
+            htmlFor="adj-list-filter-type"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             種別
           </label>
           <select
+            id="adj-list-filter-type"
             value={fType}
             onChange={(e) => setFType(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 100 }}
@@ -315,10 +321,16 @@ export function AdjustmentListTab({
                   }
                   title="クリックで作成日時の新しい順 / 源泉日昇順 を切り替え"
                 >
-                  作成日時 {sortBy === "createdAt-desc" ? "↓" : "↕"}
+                  作成日時{" "}
+                  <span className="no-print" aria-hidden="true">
+                    {sortBy === "createdAt-desc" ? "↓" : "↕"}
+                  </span>
                 </th>
                 {isAdmin && (
-                  <th style={{ padding: "8px 10px", textAlign: "center", width: 80 }}>
+                  <th
+                    className="no-print"
+                    style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
+                  >
                     操作
                   </th>
                 )}
@@ -433,6 +445,7 @@ export function AdjustmentListTab({
                     </td>
                     {isAdmin && (
                       <td
+                        className="no-print"
                         style={{
                           padding: "8px 10px",
                           textAlign: "center",
@@ -445,14 +458,7 @@ export function AdjustmentListTab({
                             onClick={() => onJumpToDate(adj.date)}
                             aria-label={`${adj.date} の欠勤振替画面を開く`}
                             title="この日の欠勤振替画面を開く"
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              padding: 2,
-                              marginRight: 2,
-                            }}
+                            style={S.iconBtn}
                           >
                             📅
                           </button>
@@ -465,29 +471,16 @@ export function AdjustmentListTab({
                               onClick={() => onJumpToDate(adj.targetDate)}
                               aria-label={`振替先 ${adj.targetDate} の欠勤振替画面を開く`}
                               title="振替先の欠勤振替画面を開く"
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                fontSize: 12,
-                                padding: 2,
-                                marginRight: 2,
-                              }}
+                              style={{ ...S.iconBtn, fontSize: 12 }}
                             >
                               📅→
                             </button>
                           )}
                         <button
                           type="button"
-                          onClick={() => onDel(adj)}
+                          onClick={() => onDel(adj.id)}
                           aria-label={`${adj.date} の${meta.label}を削除`}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            fontSize: 13,
-                            padding: 2,
-                          }}
+                          style={S.iconBtn}
                         >
                           🗑
                         </button>

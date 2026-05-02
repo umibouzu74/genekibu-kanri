@@ -1106,6 +1106,7 @@ export default function App() {
             holidays={holidays}
             examPeriods={examPeriods}
             specialEvents={specialEvents}
+            selectedTeacher={selected}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);

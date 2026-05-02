@@ -136,8 +136,10 @@ export function SubstituteView({
 
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
   // 孤立しがち。削除直後に件数を info トーストで案内する。
+  // 削除コールバックの引数規約は 3 タブ通して id に統一 (sub.id / ov.id / adj.id)。
   const handleDelAdjustment = useCallback(
-    (adj) => {
+    (id) => {
+      const adj = (adjustments || []).find((a) => a.id === id);
       if (adj?.type === "combine") {
         const ids = new Set([
           adj.slotId,
@@ -153,9 +155,9 @@ export function SubstituteView({
           );
         }
       }
-      onDelAdjustment?.(adj.id);
+      onDelAdjustment?.(id);
     },
-    [onDelAdjustment, sessionOverrides, toasts]
+    [adjustments, onDelAdjustment, sessionOverrides, toasts]
   );
 
   const handleShare = useCallback(async () => {

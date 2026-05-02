@@ -41,11 +41,13 @@ export function SubListTab({
       >
         <div>
           <label
+            htmlFor="sub-list-filter-month"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             月
           </label>
           <input
+            id="sub-list-filter-month"
             type="month"
             value={fMonth}
             onChange={(e) => setFMonth(e.target.value)}
@@ -54,11 +56,13 @@ export function SubListTab({
         </div>
         <div>
           <label
+            htmlFor="sub-list-filter-staff"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             講師・代行者
           </label>
           <select
+            id="sub-list-filter-staff"
             value={fStaff}
             onChange={(e) => setFStaff(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 110 }}
@@ -73,11 +77,13 @@ export function SubListTab({
         </div>
         <div>
           <label
+            htmlFor="sub-list-filter-status"
             style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
           >
             ステータス
           </label>
           <select
+            id="sub-list-filter-status"
             value={fStatus}
             onChange={(e) => setFStatus(e.target.value)}
             style={{ ...S.input, width: "auto", minWidth: 90 }}
@@ -148,7 +154,10 @@ export function SubListTab({
                 </th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
                 {isAdmin && (
-                  <th style={{ padding: "8px 10px", textAlign: "center", width: 60 }}>
+                  <th
+                    className="no-print"
+                    style={{ padding: "8px 10px", textAlign: "center", width: 60 }}
+                  >
                     操作
                   </th>
                 )}
@@ -250,6 +259,7 @@ export function SubListTab({
                     </td>
                     {isAdmin && (
                       <td
+                        className="no-print"
                         style={{
                           padding: "8px 10px",
                           textAlign: "center",
@@ -260,13 +270,7 @@ export function SubListTab({
                           type="button"
                           onClick={() => onEdit(sub)}
                           aria-label={`${sub.date} の代行を編集`}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            fontSize: 13,
-                            padding: 2,
-                          }}
+                          style={S.iconBtn}
                         >
                           ✏️
                         </button>
@@ -274,13 +278,7 @@ export function SubListTab({
                           type="button"
                           onClick={() => onDel(sub.id)}
                           aria-label={`${sub.date} の代行を削除`}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            fontSize: 13,
-                            padding: 2,
-                          }}
+                          style={S.iconBtn}
                         >
                           🗑
                         </button>

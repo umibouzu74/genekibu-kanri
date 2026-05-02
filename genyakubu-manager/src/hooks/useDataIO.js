@@ -17,6 +17,7 @@ import {
   migrateSpecialEvents,
   migrateSubs,
 } from "../utils/migrate";
+import { detectOrphans } from "../utils/orphanCleanup";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -171,6 +172,23 @@ export function useDataIO({
           }
           setShowDataMgr(false);
           toasts.success("データをインポートしました");
+
+          // 古いバックアップには cascade 削除前の孤立データが含まれることが
+          // ある。導入直後にユーザが気付けるよう件数を案内 (削除は強制しない)。
+          const orphanCounts = detectOrphans({
+            slots: Array.isArray(d.slots) ? d.slots : [],
+            subs: Array.isArray(d.substitutions) ? d.substitutions : [],
+            adjustments: Array.isArray(d.adjustments) ? d.adjustments : [],
+            sessionOverrides: Array.isArray(d.sessionOverrides)
+              ? d.sessionOverrides
+              : [],
+          });
+          if (orphanCounts.total > 0) {
+            toasts.info(
+              `参照先が消えた孤立データを ${orphanCounts.total} 件検出しました。データ管理 → 孤立データ掃除で整理できます。`,
+              { duration: 8000 }
+            );
+          }
         } catch (err) {
           console.error(err);
           toasts.error("JSONファイルの読み込みに失敗しました");

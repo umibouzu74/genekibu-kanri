@@ -109,7 +109,10 @@ export function SessionOverridePopover({
       <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
         <button
           type="button"
-          onClick={() => setMode("set")}
+          onClick={() => {
+            setMode("set");
+            setError(null);
+          }}
           style={{
             ...S.btn(mode === "set"),
             fontSize: 11,
@@ -120,7 +123,10 @@ export function SessionOverridePopover({
         </button>
         <button
           type="button"
-          onClick={() => setMode("skip")}
+          onClick={() => {
+            setMode("skip");
+            setError(null);
+          }}
           style={{
             ...S.btn(mode === "skip"),
             fontSize: 11,

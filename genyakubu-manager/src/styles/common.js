@@ -84,6 +84,20 @@ export const S = {
     textAlign: "right",
     flexShrink: 0,
   },
+  // 一覧操作列に並ぶアイコンボタン (✏️ / 🗑 / 📅 等)。
+  // 視覚上は地味だが WCAG 2.5.5 / 2.5.8 の最小タッチ領域 (24x24 以上、
+  // 推奨 44x44) を満たすため min-width / min-height を確保する。
+  iconBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 13,
+    padding: 4,
+    minWidth: 32,
+    minHeight: 32,
+    lineHeight: 1,
+    borderRadius: radius.sm,
+  },
 };
 
 export { colors, font, radius, space };

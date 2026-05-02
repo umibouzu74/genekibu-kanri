@@ -33,10 +33,15 @@ export function findOrphanOverrides(sessionOverrides, slots) {
 
 /**
  * 時間割調整の orphan 解析。
- * - removed: host slot が削除済 → 完全削除対象
- * - updated: combine の吸収側 (combineSlotIds) のみに含まれる削除済 id を
- *   抜くだけ。すべての吸収側が削除済 (host は生きている) なら、結果として
- *   combineSlotIds が空になり、その合同自体は無意味になるため removed 扱い。
+ * - removed: 完全削除対象。
+ *     - host slot (adj.slotId) が削除済
+ *     - move: 元コマも targetSlotId の参照先も両方とも削除済
+ *     - combine の吸収側がすべて削除済 (host だけ生存しているケース)
+ * - updated: 部分修正で生存させられるケース。
+ *     - combine: 一部の combineSlotIds だけ削除済 → 抜くだけ
+ *     - reschedule / move: targetSlotId の参照先だけ削除済 → ピッカーで
+ *       選んだ参照は失うが、targetDate / targetTime / targetTeacher 等の
+ *       テキスト情報は意味があるので残し、targetSlotId のみ取り除く。
  *
  * @returns {{
  *   removed: Array<object>,
@@ -49,10 +54,13 @@ export function analyzeOrphanAdjustments(adjustments, slots) {
   const updated = [];
   for (const adj of adjustments || []) {
     if (!adj) continue;
+
+    // 元コマ (adj.slotId) が消えていたら、調整自体が無意味なので removed。
     if (!live.has(adj.slotId)) {
       removed.push(adj);
       continue;
     }
+
     if (adj.type === "combine" && Array.isArray(adj.combineSlotIds)) {
       const remaining = adj.combineSlotIds.filter((id) => live.has(id));
       if (remaining.length === adj.combineSlotIds.length) continue; // 変化なし
@@ -61,6 +69,19 @@ export function analyzeOrphanAdjustments(adjustments, slots) {
       } else {
         updated.push({ original: adj, next: { ...adj, combineSlotIds: remaining } });
       }
+      continue;
+    }
+
+    // move / reschedule の targetSlotId は省略可だが、入っていて参照先が
+    // 消えていれば、targetSlotId だけ落とす (テキスト情報は残す)。
+    if (
+      (adj.type === "move" || adj.type === "reschedule") &&
+      adj.targetSlotId != null &&
+      !live.has(adj.targetSlotId)
+    ) {
+      const next = { ...adj };
+      delete next.targetSlotId;
+      updated.push({ original: adj, next });
     }
   }
   return { removed, updated };
