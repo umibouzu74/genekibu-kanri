@@ -40,32 +40,36 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
   const specialEventsFor = (d) =>
     specialEvents.filter((ev) => d >= ev.startDate && d <= ev.endDate);
 
-  // Check if a specific slot is off on a given date.
-  // `subj` is optional for backward compat; when omitted, holidays with
-  // subjKeywords set will NOT match (safe-side).
-  const isOffForGrade = (d, grade, subj) => {
+  // Check if a specific (date, grade, subj) is cancelled by a holiday entry.
+  // 「テスト期間」は含めない (テスト期間中は別途振替が走るためここでは別扱い)。
+  const isHolidayForSlot = (d, grade, subj) => {
     const dept = gradeToDept(grade);
-    const offByHoliday = holidays.some((h) => {
+    return holidays.some((h) => {
       if (h.date !== d) return false;
 
-      // 1. Department scope check (always applied)
+      // 1. Department scope check
       const sc = h.scope || ["全部"];
       if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
 
-      // 2. Grade-level check (when targetGrades is set)
+      // 2. Grade-level check
       const tg = h.targetGrades || [];
       if (tg.length > 0 && !tg.includes(grade)) return false;
 
       // 3. Subject keyword check
       const sk = h.subjKeywords || [];
       if (sk.length > 0) {
-        if (!subj) return false; // cannot match without subject info
+        if (!subj) return false;
         if (!sk.some((kw) => subj.includes(kw))) return false;
       }
-
       return true;
     });
-    if (offByHoliday) return true;
+  };
+
+  // Check if a specific slot is off on a given date.
+  // `subj` is optional for backward compat; when omitted, holidays with
+  // subjKeywords set will NOT match (safe-side).
+  const isOffForGrade = (d, grade, subj) => {
+    if (isHolidayForSlot(d, grade, subj)) return true;
 
     // Exam period check (unchanged)
     return examPeriods.some((ep) => {
@@ -75,5 +79,11 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
     });
   };
 
-  return { holidaysFor, examPeriodsFor, specialEventsFor, isOffForGrade };
+  return {
+    holidaysFor,
+    examPeriodsFor,
+    specialEventsFor,
+    isOffForGrade,
+    isHolidayForSlot,
+  };
 }

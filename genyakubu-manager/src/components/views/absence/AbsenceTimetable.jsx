@@ -36,6 +36,7 @@ export function AbsenceTimetable({
   allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
   timetables, // 振替先の有効時間割フィルタ用
   isOffForGrade, // 振替先の休講/テスト期間警告用
+  isHolidayForSlot, // 当日が休講のスロットを「休講」表示にするため (テスト期間は含まない)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   date,
 }) {
@@ -506,6 +507,10 @@ export function AbsenceTimetable({
         if (reschedule.memo) rescheduleLabel += ` - ${reschedule.memo}`;
       }
 
+      const isHoliday = isHolidayForSlot
+        ? isHolidayForSlot(date, s.grade, s.subj)
+        : false;
+
       return (
         <AbsenceSlotCard
           key={s.id}
@@ -513,6 +518,7 @@ export function AbsenceTimetable({
           date={date}
           biweeklyAnchors={biweeklyAnchors}
           isAbsent={isAbsent}
+          isHoliday={isHoliday}
           isMoved={isMoved}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
@@ -524,13 +530,13 @@ export function AbsenceTimetable({
           sessionCount={sessionCountMap?.get(s.id) || 0}
           isCombineCandidate={isCombineCandidate}
           isCombineSource={isCombineSource}
-          disableDrag={disableDrag}
+          disableDrag={disableDrag || isHoliday}
           dimmed={dimmed}
           isRescheduled={!!reschedule}
           rescheduleLabel={rescheduleLabel}
-          onContextMenu={(e) => openContextMenu(e, s)}
+          onContextMenu={isHoliday ? undefined : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
-          onClick={() => handleSlotClick(s)}
+          onClick={isHoliday ? undefined : () => handleSlotClick(s)}
         />
       );
     },
@@ -553,6 +559,7 @@ export function AbsenceTimetable({
       openContextMenu,
       handleDragStart,
       handleSlotClick,
+      isHolidayForSlot,
     ]
   );
 

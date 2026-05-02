@@ -895,6 +895,9 @@ export default function App() {
                 partTimeStaff={partTimeStaff}
                 examPrepSchedules={examPrepSchedules}
                 examPrepCrud={examPrepCrud}
+                slots={slots}
+                subjects={subjects}
+                teacherSubjects={teacherSubjects}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
                 }

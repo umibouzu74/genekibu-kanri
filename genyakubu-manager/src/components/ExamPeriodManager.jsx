@@ -23,6 +23,9 @@ export function ExamPeriodManager({
   partTimeStaff = [],
   examPrepSchedules = [],
   examPrepCrud = null,
+  slots = [],
+  subjects = [],
+  teacherSubjects = {},
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
@@ -545,7 +548,7 @@ export function ExamPeriodManager({
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
         ※テスト期間中は対象学年の通常授業が休止扱いになります。「全学年」＝全学年対象。
-        {examPrepCrud && "「特訓シフト」からアルバイトの出勤日・校時を設定できます。"}
+        {examPrepCrud && "「特訓シフト」から出勤日・校時を設定できます (アルバイト・常勤共通)。"}
       </div>
 
       {scheduleEditingEp && examPrepCrud && (
@@ -556,6 +559,9 @@ export function ExamPeriodManager({
             scheduleEditingEp.id
           )}
           partTimeStaff={partTimeStaff}
+          slots={slots}
+          subjects={subjects}
+          teacherSubjects={teacherSubjects}
           crud={examPrepCrud}
           onClose={() => setScheduleEditingEp(null)}
         />
