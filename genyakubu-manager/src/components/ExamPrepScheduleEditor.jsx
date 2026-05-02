@@ -12,9 +12,9 @@ import {
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
-import { resolveTeacherSubjectIds } from "../utils/chainSubstitution";
 import { compareJa } from "../utils/sortJa";
 import { getSlotTeachers } from "../utils/biweekly";
+import { pickSubjectId } from "../utils/subjectMatch";
 
 // 各日のデフォルト雛形（添付画像の平日枠: 4 校時 18:00-21:50）。
 // 校時数や時刻は編集画面で自由に変えられるので、あくまで初期値。
@@ -75,28 +75,45 @@ export function ExamPrepScheduleEditor({
   // 出勤候補リスト: アルバイト + 通常授業の担当講師 (重複排除)。
   // 各エントリに教科情報を付与し、教科 ID 昇順 → 名前 (五十音) で並べる。
   // 教科未設定の講師は末尾にまとめる。
+  //
+  // 教科解決: getTeacherSubjectIds は講師ごとに全 slots を走査するため、
+  // 単純に呼び出すと O(教師 × slots) になる。スロット 1 周で逆引きマップを作り
+  // O(slots + 教師) に抑える。優先順位は resolveTeacherSubjectIds と同じく
+  //   (1) teacherSubjects[name] の明示オーバーライド
+  //   (2) partTimeStaff.subjectIds
+  //   (3) slots からの推定
   const staffEntries = useMemo(() => {
-    const ptNames = new Set(partTimeStaff.map((p) => p.name));
-    const fullTimeNames = new Set();
-    for (const s of slots) {
-      for (const t of getSlotTeachers(s)) {
-        if (t && !ptNames.has(t)) fullTimeNames.add(t);
+    const ptByName = new Map();
+    for (const p of partTimeStaff) ptByName.set(p.name, p.subjectIds || []);
+
+    const fromSlotsByName = new Map(); // teacher → Set<subjectId>
+    for (const slot of slots) {
+      const sid = pickSubjectId(slot.subj, subjects);
+      if (sid == null) continue;
+      for (const t of getSlotTeachers(slot)) {
+        if (!t) continue;
+        if (!fromSlotsByName.has(t)) fromSlotsByName.set(t, new Set());
+        fromSlotsByName.get(t).add(sid);
       }
     }
 
-    const ctx = {
-      teacherSubjects: teacherSubjects || {},
-      partTimeStaff,
-      staffNameSet: ptNames,
-      slots,
-      subjects,
-    };
+    const overrides = teacherSubjects || {};
+    const allNames = new Set([...ptByName.keys(), ...fromSlotsByName.keys()]);
 
-    const entries = [...ptNames, ...fullTimeNames].map((name) => {
-      const subjectIds = resolveTeacherSubjectIds(name, ctx);
+    const entries = [...allNames].map((name) => {
+      const override = overrides[name];
+      let subjectIds;
+      if (override && override.length > 0) {
+        subjectIds = override;
+      } else if (ptByName.has(name)) {
+        subjectIds = ptByName.get(name);
+      } else {
+        const s = fromSlotsByName.get(name);
+        subjectIds = s ? [...s] : [];
+      }
       return {
         name,
-        isPartTime: ptNames.has(name),
+        isPartTime: ptByName.has(name),
         subjectIds,
         // primarySubjectId: 教科 ID の最小値で並べる (subjects 配列の自然順)。
         primarySubjectId: subjectIds.length > 0 ? Math.min(...subjectIds) : Infinity,

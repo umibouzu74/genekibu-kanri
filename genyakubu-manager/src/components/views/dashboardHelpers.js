@@ -40,13 +40,22 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
   const specialEventsFor = (d) =>
     specialEvents.filter((ev) => d >= ev.startDate && d <= ev.endDate);
 
+  // 日付 → その日の休講エントリ群、の索引。
+  // isHolidayForSlot は時間割描画ループから 1 スロットあたり 1 回呼ばれるため、
+  // 全 holidays の線形走査を毎回行うと O(slots × holidays) になる。
+  const holidaysByDate = new Map();
+  for (const h of holidays) {
+    if (!holidaysByDate.has(h.date)) holidaysByDate.set(h.date, []);
+    holidaysByDate.get(h.date).push(h);
+  }
+
   // Check if a specific (date, grade, subj) is cancelled by a holiday entry.
   // 「テスト期間」は含めない (テスト期間中は別途振替が走るためここでは別扱い)。
   const isHolidayForSlot = (d, grade, subj) => {
+    const dayHols = holidaysByDate.get(d);
+    if (!dayHols) return false;
     const dept = gradeToDept(grade);
-    return holidays.some((h) => {
-      if (h.date !== d) return false;
-
+    return dayHols.some((h) => {
       // 1. Department scope check
       const sc = h.scope || ["全部"];
       if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
