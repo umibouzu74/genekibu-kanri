@@ -46,6 +46,7 @@ import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
+import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
 import { Modal } from "./components/Modal";
@@ -264,7 +265,7 @@ export default function App() {
     for (const ep of examPeriods) {
       for (const t of ep.tags || []) if (t) set.add(t);
     }
-    return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+    return sortJa([...set]);
   }, [examPeriods]);
 
   // ─── UI state ─────────────────────────────────────────────────────

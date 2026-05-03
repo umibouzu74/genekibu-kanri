@@ -180,16 +180,18 @@ export function MonthView({
   });
 
   // Returns exam period names active on a given date (for label display)
-  // 表示用 (タグフィルタ済み)。授業停止判定 (isInExamPeriodForGrade) とは別軸。
+  // 表示用にタグフィルタ済みのリストを 1 度だけ作り、各セルでは日付 in 範囲
+  // だけを判定する。授業停止判定 (isInExamPeriodForGrade) とは別軸。
+  const visibleExamPeriods = useMemo(
+    () => examPeriods.filter((ep) => isExamPeriodVisible(ep, visibility)),
+    [examPeriods, visibility]
+  );
   const examPeriodsForDate = useCallback(
     (ds) =>
-      examPeriods.filter(
-        (ep) =>
-          ds >= ep.startDate &&
-          ds <= ep.endDate &&
-          isExamPeriodVisible(ep, visibility)
+      visibleExamPeriods.filter(
+        (ep) => ds >= ep.startDate && ds <= ep.endDate
       ),
-    [examPeriods, visibility]
+    [visibleExamPeriods]
   );
 
   // Returns special events active on a given date (告知バッジ用)

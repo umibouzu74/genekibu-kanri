@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 共有定数 (DEFAULT/isEventKindVisible) を同居 */
-import { EVENT_KIND, EXAM_META } from "../constants/eventKinds";
+import { EVENT_KIND, EXAM_META, TAG_META } from "../constants/eventKinds";
 
 // 月次ビュー / イベントカレンダーで共有する「表示種別フィルタ」のチップ。
 // 休講は常時表示なのでトグル対象外。
@@ -110,9 +110,9 @@ export function EventVisibilityToggles({
                   padding: "2px 8px",
                   borderRadius: 10,
                   cursor: "pointer",
-                  background: on ? "#e6eef9" : "#f5f5f5",
-                  color: on ? "#234a78" : "#aaa",
-                  border: `1px solid ${on ? "#b4cde8" : "#ddd"}`,
+                  background: on ? TAG_META.bg : "#f5f5f5",
+                  color: on ? TAG_META.fg : "#aaa",
+                  border: `1px solid ${on ? TAG_META.accent : "#ddd"}`,
                   fontWeight: on ? 700 : 400,
                 }}
               >

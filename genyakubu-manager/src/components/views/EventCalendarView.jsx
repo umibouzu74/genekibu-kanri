@@ -7,6 +7,7 @@ import {
   EVENT_KIND_LABELS,
   EXAM_META,
   HOLIDAY_META,
+  TAG_META,
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
@@ -529,9 +530,9 @@ export function EventCalendarView({
                         fontWeight: 700,
                         padding: "1px 6px",
                         borderRadius: 4,
-                        background: "#e6eef9",
-                        color: "#234a78",
-                        border: "1px solid #b4cde8",
+                        background: TAG_META.bg,
+                        color: TAG_META.fg,
+                        border: `1px solid ${TAG_META.accent}`,
                       }}
                     >
                       {t}

@@ -15,6 +15,8 @@ import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
+import { sortJa } from "../utils/sortJa";
+import { TAG_META } from "../constants/eventKinds";
 
 export function ExamPeriodManager({
   examPeriods,
@@ -52,7 +54,7 @@ export function ExamPeriodManager({
     for (const ep of examPeriods) {
       for (const t of ep.tags || []) if (t) set.add(t);
     }
-    return [...set].sort();
+    return sortJa([...set]);
   }, [examPeriods]);
 
   const addTag = (raw) => {
@@ -466,9 +468,9 @@ export function ExamPeriodManager({
                     fontSize: 11,
                     padding: "2px 4px 2px 8px",
                     borderRadius: 12,
-                    background: "#e6eef9",
-                    color: "#234a78",
-                    border: "1px solid #b4cde8",
+                    background: TAG_META.bg,
+                    color: TAG_META.fg,
+                    border: `1px solid ${TAG_META.accent}`,
                     fontWeight: 700,
                   }}
                 >
@@ -479,8 +481,8 @@ export function ExamPeriodManager({
                     aria-label={`タグ ${t} を外す`}
                     style={{
                       border: "none",
-                      background: "#cfdcec",
-                      color: "#234a78",
+                      background: TAG_META.accent,
+                      color: TAG_META.fg,
                       borderRadius: "50%",
                       width: 16,
                       height: 16,
@@ -521,9 +523,9 @@ export function ExamPeriodManager({
                         fontSize: 10,
                         padding: "1px 8px",
                         borderRadius: 10,
-                        border: "1px dashed #b4cde8",
+                        border: `1px dashed ${TAG_META.accent}`,
                         background: "#fff",
-                        color: "#234a78",
+                        color: TAG_META.fg,
                         cursor: "pointer",
                       }}
                     >
@@ -679,9 +681,9 @@ export function ExamPeriodManager({
                           fontWeight: 700,
                           padding: "1px 6px",
                           borderRadius: 4,
-                          background: "#e6eef9",
-                          color: "#234a78",
-                          border: "1px solid #b4cde8",
+                          background: TAG_META.bg,
+                          color: TAG_META.fg,
+                          border: `1px solid ${TAG_META.accent}`,
                         }}
                       >
                         {t}
