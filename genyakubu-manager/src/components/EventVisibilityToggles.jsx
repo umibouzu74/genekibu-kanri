@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 共有定数 (DEFAULT/isEventKindVisible) を同居 */
 import { EVENT_KIND, EXAM_META } from "../constants/eventKinds";
+import { TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
 
 // 月次ビュー / イベントカレンダーで共有する「表示種別フィルタ」のチップ。
 // 休講は常時表示なのでトグル対象外。
@@ -26,7 +27,9 @@ export function EventVisibilityToggles({ visibility, onChange }) {
         return (
           <label
             key={t.key}
+            className={TOGGLE_LABEL_CLASS}
             style={{
+              position: "relative",
               display: "flex",
               alignItems: "center",
               gap: 4,
@@ -47,7 +50,7 @@ export function EventVisibilityToggles({ visibility, onChange }) {
               onChange={() =>
                 onChange((p) => ({ ...(p || {}), [t.key]: !p?.[t.key] }))
               }
-              style={{ display: "none" }}
+              style={VISUALLY_HIDDEN}
             />
             <span
               aria-hidden="true"

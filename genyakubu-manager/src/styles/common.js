@@ -106,4 +106,26 @@ export const S = {
 // :hover / :focus-visible のグローバル CSS と紐付けるための識別子。
 export const ICON_BTN_CLASS = "icon-btn";
 
+// 視覚上は見えないがフォーカス・スクリーンリーダーには露出するスタイル。
+// `<label>` が独自の見た目を持っていて、内側の `<input>` 自体は隠したいが
+// キーボード操作 (Tab) と支援技術への露出を維持したいケースで使う。
+// 単純な `display:none` だとレンダーツリーから外れて Tab で当たらず、
+// チェック状態の読み上げも失われるためこちらを使うこと。
+//
+// 併せて、ラップする `<label>` に `TOGGLE_LABEL_CLASS` を付けると、
+// グローバル CSS の `.toggle-label:focus-within` で囲み枠が表示される。
+export const VISUALLY_HIDDEN = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+};
+
+export const TOGGLE_LABEL_CLASS = "toggle-label";
+
 export { colors, font, radius, space };

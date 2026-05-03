@@ -101,6 +101,15 @@ export function MonthView({
     return m;
   }, [subs]);
 
+  // slotId → slot の逆引き。cells.map ループ内で合同ホスト・吸収先・
+  // 代行元・振替元のスロットを引くのに以前は毎回 slots.find していたため、
+  // 月 30 セル × 各セル数件 × O(slots) になっていた。
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of slots) m.set(s.id, s);
+    return m;
+  }, [slots]);
+
   // 合同の索引
   //   hostByAbsorbedKey:   (date|absorbedSlotId) -> hostSlotId  (吸収された側)
   //   absorbedByHostKey:   (date|hostSlotId) -> absorbedSlotIds[]  (ホスト側に何を吸収したか)
@@ -311,7 +320,7 @@ export function MonthView({
               ? []
               : (rescheduleInByDate.get(ds) || [])
                   .map((adj) => {
-                    const slot = slots.find((x) => x.id === adj.slotId);
+                    const slot = slotById.get(adj.slotId);
                     if (!slot) return null;
                     const tgtTeacher = adj.targetTeacher || slot.teacher;
                     if (tgtTeacher !== teacher) return null;
@@ -330,7 +339,7 @@ export function MonthView({
                       sub.substitute === teacher &&
                       !sl.some((s) => s.id === sub.slotId)
                   )
-                  .map((sub) => slots.find((x) => x.id === sub.slotId))
+                  .map((sub) => slotById.get(sub.slotId))
                   .filter(Boolean);
           const sessionCountMap =
             displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
@@ -448,7 +457,7 @@ export function MonthView({
                   const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
                   const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
                   const absorbed = hostSlotId != null;
-                  const hostSlot = absorbed ? slots.find((x) => x.id === hostSlotId) : null;
+                  const hostSlot = absorbed ? slotById.get(hostSlotId) : null;
                   const hostedIds = absorbedByHostKey.get(`${ds}|${s.id}`);
                   const isHost = !absorbed && !!hostedIds;
                   const moveTarget = moveByKey.get(`${ds}|${s.id}`);
@@ -506,7 +515,7 @@ export function MonthView({
                   if (isHost && hostedIds) {
                     const labels = hostedIds
                       .map((id) => {
-                        const a = slots.find((x) => x.id === id);
+                        const a = slotById.get(id);
                         return a
                           ? `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`
                           : `#${id}`;
@@ -604,7 +613,7 @@ export function MonthView({
                       !sl.some((s) => s.id === sub.slotId)
                   )
                   .map((sub) => {
-                    const slot = slots.find((s) => s.id === sub.slotId);
+                    const slot = slotById.get(sub.slotId);
                     if (!slot) return null;
                     const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
                     const gc = GC(slot.grade);

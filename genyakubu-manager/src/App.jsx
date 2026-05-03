@@ -1197,6 +1197,13 @@ export default function App() {
           outline: 2px solid #5b8dee;
           outline-offset: 1px;
         }
+        /* VISUALLY_HIDDEN な checkbox を内包する <label>。
+           input 自体は視覚上隠れているので、Tab フォーカス時に label 側に
+           リングを出してキーボード位置を可視化する。 */
+        .toggle-label:focus-within {
+          outline: 2px solid #5b8dee;
+          outline-offset: 1px;
+        }
         /* chord 待機バッジのタイムアウト残量バー（A19） */
         /* toast の残量バーでも同じ keyframes を流用する。 */
         @keyframes chord-decay {
