@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
-import { S } from "../styles/common";
+import { S, TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
 import {
@@ -668,7 +668,9 @@ export function ExamPrepScheduleEditor({
                       return (
                         <label
                           key={ds}
+                          className={TOGGLE_LABEL_CLASS}
                           style={{
+                            position: "relative",
                             fontSize: 11,
                             padding: "3px 8px",
                             borderRadius: 4,
@@ -682,7 +684,7 @@ export function ExamPrepScheduleEditor({
                             type="checkbox"
                             checked={sel}
                             onChange={() => toggleCopyTarget(ds)}
-                            style={{ display: "none" }}
+                            style={VISUALLY_HIDDEN}
                           />
                           {fmtDateWeekday(ds)}
                         </label>
