@@ -47,6 +47,56 @@ function isWithinWindow(dateStr, start, end) {
   return !!dt && dt >= start && dt <= end;
 }
 
+// ─── 直近2週間のお知らせバナー (合同 / 移動 / 振替 / 特訓 / 代行) ──
+// 5 種類のバナーが「枠 + タイトル + 行リスト」という同じ構造を共有して
+// いたため、外殻と各行を共通コンポーネントに切り出す。配色は呼び出し側
+// から指定する (ADJ_COLOR.* または個別カラー)。
+function UpcomingBanner({ bg, borderColor, titleColor, title, children }) {
+  return (
+    <div
+      style={{
+        background: bg,
+        border: `1px solid ${borderColor}`,
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 12,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          marginBottom: 8,
+          color: titleColor,
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function UpcomingRow({ children }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        background: "#fff",
+        padding: "6px 10px",
+        borderRadius: 6,
+        flexWrap: "wrap",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function WeekView({
   teacher,
   slots,
@@ -411,377 +461,261 @@ export function WeekView({
         </div>
       )}
       {upcomingCombines.length > 0 && (
-        <div
-          style={{
-            background: ADJ_COLOR.combine.bannerBg,
-            border: `1px solid ${ADJ_COLOR.combine.bannerBorder}`,
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-          }}
+        <UpcomingBanner
+          bg={ADJ_COLOR.combine.bannerBg}
+          borderColor={ADJ_COLOR.combine.bannerBorder}
+          titleColor={ADJ_COLOR.combine.deep}
+          title={`🔗 直近2週間の合同予定 (${upcomingCombines.length}件)`}
         >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 800,
-              marginBottom: 8,
-              color: ADJ_COLOR.combine.deep,
-            }}
-          >
-            🔗 直近2週間の合同予定 ({upcomingCombines.length}件)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingCombines.map((c, i) => {
-              const host = c.hostSlot;
-              const hostLabel = `${host.grade}${host.cls && host.cls !== "-" ? host.cls : ""} ${host.subj}`;
-              const isHost = c.role === "host";
-              return (
-                <div
-                  key={`${c.date}-${c.role}-${i}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
-                    {fmtDateWeekday(c.date)}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#666", minWidth: 90 }}>
-                    {host.time}
-                  </span>
-                  {isHost ? (
-                    <>
-                      <span style={{ fontSize: 11, fontWeight: 700 }}>{hostLabel}</span>
-                      <span style={{ fontSize: 11, color: "#888" }}>
-                        + {c.absorbedSlots
-                          .map((a) => `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`)
-                          .join(" / ")}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 9,
-                          background: ADJ_COLOR.combine.chipBg,
-                          color: ADJ_COLOR.combine.deep,
-                          padding: "1px 6px",
-                          borderRadius: 10,
-                          fontWeight: 700,
-                          marginLeft: "auto",
-                        }}
-                      >
-                        ホスト側
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 11, fontWeight: 700 }}>
-                        {c.absorbedSlot.grade}
-                        {c.absorbedSlot.cls && c.absorbedSlot.cls !== "-" ? c.absorbedSlot.cls : ""}{" "}
-                        {c.absorbedSlot.subj}
-                      </span>
-                      <span style={{ fontSize: 11, color: "#888" }}>
-                        → {hostLabel} ({host.teacher})
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 9,
-                          background: ADJ_COLOR.combine.bg,
-                          color: ADJ_COLOR.combine.color,
-                          padding: "1px 6px",
-                          borderRadius: 10,
-                          fontWeight: 700,
-                          marginLeft: "auto",
-                        }}
-                      >
-                        吸収される側
-                      </span>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {upcomingMoves.length > 0 && (
-        <div
-          style={{
-            background: ADJ_COLOR.move.bannerBg,
-            border: `1px solid ${ADJ_COLOR.move.bannerBorder}`,
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 800,
-              marginBottom: 8,
-              color: ADJ_COLOR.move.deep,
-            }}
-          >
-            ↔ 直近2週間の時間変更予定 ({upcomingMoves.length}件)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingMoves.map((mv, i) => {
-              const slot = mv.slot;
-              return (
-                <div
-                  key={`mv-${mv.date}-${i}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
-                    {fmtDateWeekday(mv.date)}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#888", minWidth: 110 }}>
-                    <span style={{ textDecoration: "line-through" }}>{slot.time}</span>
-                    <span style={{ margin: "0 4px" }}>→</span>
-                    <span style={{ fontWeight: 700, color: ADJ_COLOR.move.deep }}>
-                      {mv.targetTime}
+          {upcomingCombines.map((c, i) => {
+            const host = c.hostSlot;
+            const hostLabel = `${host.grade}${host.cls && host.cls !== "-" ? host.cls : ""} ${host.subj}`;
+            const isHost = c.role === "host";
+            return (
+              <UpcomingRow key={`${c.date}-${c.role}-${i}`}>
+                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                  {fmtDateWeekday(c.date)}
+                </span>
+                <span style={{ fontSize: 11, color: "#666", minWidth: 90 }}>
+                  {host.time}
+                </span>
+                {isHost ? (
+                  <>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{hostLabel}</span>
+                    <span style={{ fontSize: 11, color: "#888" }}>
+                      + {c.absorbedSlots
+                        .map((a) => `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`)
+                        .join(" / ")}
                     </span>
-                  </span>
-                  <span style={{ fontSize: 11 }}>
-                    {slot.grade}
-                    {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {upcomingReschedules.length > 0 && (
-        <div
-          style={{
-            background: ADJ_COLOR.reschedule.bannerBg,
-            border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 800,
-              marginBottom: 8,
-              color: ADJ_COLOR.reschedule.deep,
-            }}
-          >
-            ↻ 直近2週間の振替予定 ({upcomingReschedules.length}件)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingReschedules.map(({ adj, slot }, i) => {
-              const tgtTime = adj.targetTime || slot.time;
-              const tgtTeacher = adj.targetTeacher || slot.teacher;
-              const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
-              return (
-                <div
-                  key={`rsch-${adj.id}-${i}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
-                    {fmtDateWeekday(adj.targetDate)}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#888", minWidth: 130 }}>
-                    <span style={{ textDecoration: "line-through" }}>
-                      {adj.date} {slot.time}
-                    </span>
-                    <span style={{ margin: "0 4px" }}>→</span>
-                    <span
-                      style={{ fontWeight: 700, color: ADJ_COLOR.reschedule.deep }}
-                    >
-                      {tgtTime}
-                    </span>
-                  </span>
-                  <span style={{ fontSize: 11 }}>
-                    {slot.grade}
-                    {cls} {slot.subj}
-                    <span style={{ color: "#666", marginLeft: 4 }}>
-                      ({tgtTeacher})
-                    </span>
-                  </span>
-                  {adj.memo && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "#888",
-                        fontStyle: "italic",
-                      }}
-                    >
-                      {adj.memo}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {upcomingExamPrep.length > 0 && (
-        <div
-          style={{
-            background: "#fdf5e8",
-            border: "1px solid #e0a030",
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: "#8a5a1a" }}>
-            📝 直近2週間のテスト直前特訓シフト ({upcomingExamPrep.length}日)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingExamPrep.map((e) => {
-              const first = e.shifts[0];
-              const last = e.shifts[e.shifts.length - 1];
-              return (
-                <div
-                  key={e.date}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
-                    {fmtDateWeekday(e.date)}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#666", minWidth: 110 }}>
-                    {first.start}〜{last.end}
-                  </span>
-                  <span style={{ fontSize: 11 }}>
-                    {e.shifts.map((s) => `${s.no}校時`).join(" / ")}
-                  </span>
-                  {e.examPeriodName && (
                     <span
                       style={{
                         fontSize: 9,
-                        background: "#fff2d8",
-                        color: "#8a5a1a",
+                        background: ADJ_COLOR.combine.chipBg,
+                        color: ADJ_COLOR.combine.deep,
                         padding: "1px 6px",
                         borderRadius: 10,
                         fontWeight: 700,
                         marginLeft: "auto",
                       }}
                     >
-                      {e.examPeriodName}
+                      ホスト側
                     </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>
+                      {c.absorbedSlot.grade}
+                      {c.absorbedSlot.cls && c.absorbedSlot.cls !== "-" ? c.absorbedSlot.cls : ""}{" "}
+                      {c.absorbedSlot.subj}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#888" }}>
+                      → {hostLabel} ({host.teacher})
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        background: ADJ_COLOR.combine.bg,
+                        color: ADJ_COLOR.combine.color,
+                        padding: "1px 6px",
+                        borderRadius: 10,
+                        fontWeight: 700,
+                        marginLeft: "auto",
+                      }}
+                    >
+                      吸収される側
+                    </span>
+                  </>
+                )}
+              </UpcomingRow>
+            );
+          })}
+        </UpcomingBanner>
+      )}
+      {upcomingMoves.length > 0 && (
+        <UpcomingBanner
+          bg={ADJ_COLOR.move.bannerBg}
+          borderColor={ADJ_COLOR.move.bannerBorder}
+          titleColor={ADJ_COLOR.move.deep}
+          title={`↔ 直近2週間の時間変更予定 (${upcomingMoves.length}件)`}
+        >
+          {upcomingMoves.map((mv, i) => {
+            const slot = mv.slot;
+            return (
+              <UpcomingRow key={`mv-${mv.date}-${i}`}>
+                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                  {fmtDateWeekday(mv.date)}
+                </span>
+                <span style={{ fontSize: 11, color: "#888", minWidth: 110 }}>
+                  <span style={{ textDecoration: "line-through" }}>{slot.time}</span>
+                  <span style={{ margin: "0 4px" }}>→</span>
+                  <span style={{ fontWeight: 700, color: ADJ_COLOR.move.deep }}>
+                    {mv.targetTime}
+                  </span>
+                </span>
+                <span style={{ fontSize: 11 }}>
+                  {slot.grade}
+                  {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
+                </span>
+              </UpcomingRow>
+            );
+          })}
+        </UpcomingBanner>
+      )}
+      {upcomingReschedules.length > 0 && (
+        <UpcomingBanner
+          bg={ADJ_COLOR.reschedule.bannerBg}
+          borderColor={ADJ_COLOR.reschedule.bannerBorder}
+          titleColor={ADJ_COLOR.reschedule.deep}
+          title={`↻ 直近2週間の振替予定 (${upcomingReschedules.length}件)`}
+        >
+          {upcomingReschedules.map(({ adj, slot }, i) => {
+            const tgtTime = adj.targetTime || slot.time;
+            const tgtTeacher = adj.targetTeacher || slot.teacher;
+            const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+            return (
+              <UpcomingRow key={`rsch-${adj.id}-${i}`}>
+                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                  {fmtDateWeekday(adj.targetDate)}
+                </span>
+                <span style={{ fontSize: 11, color: "#888", minWidth: 130 }}>
+                  <span style={{ textDecoration: "line-through" }}>
+                    {adj.date} {slot.time}
+                  </span>
+                  <span style={{ margin: "0 4px" }}>→</span>
+                  <span
+                    style={{ fontWeight: 700, color: ADJ_COLOR.reschedule.deep }}
+                  >
+                    {tgtTime}
+                  </span>
+                </span>
+                <span style={{ fontSize: 11 }}>
+                  {slot.grade}
+                  {cls} {slot.subj}
+                  <span style={{ color: "#666", marginLeft: 4 }}>
+                    ({tgtTeacher})
+                  </span>
+                </span>
+                {adj.memo && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "#888",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {adj.memo}
+                  </span>
+                )}
+              </UpcomingRow>
+            );
+          })}
+        </UpcomingBanner>
+      )}
+      {upcomingExamPrep.length > 0 && (
+        <UpcomingBanner
+          bg="#fdf5e8"
+          borderColor="#e0a030"
+          titleColor="#8a5a1a"
+          title={`📝 直近2週間のテスト直前特訓シフト (${upcomingExamPrep.length}日)`}
+        >
+          {upcomingExamPrep.map((e) => {
+            const first = e.shifts[0];
+            const last = e.shifts[e.shifts.length - 1];
+            return (
+              <UpcomingRow key={e.date}>
+                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                  {fmtDateWeekday(e.date)}
+                </span>
+                <span style={{ fontSize: 11, color: "#666", minWidth: 110 }}>
+                  {first.start}〜{last.end}
+                </span>
+                <span style={{ fontSize: 11 }}>
+                  {e.shifts.map((s) => `${s.no}校時`).join(" / ")}
+                </span>
+                {e.examPeriodName && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      background: "#fff2d8",
+                      color: "#8a5a1a",
+                      padding: "1px 6px",
+                      borderRadius: 10,
+                      fontWeight: 700,
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {e.examPeriodName}
+                  </span>
+                )}
+              </UpcomingRow>
+            );
+          })}
+        </UpcomingBanner>
       )}
       {upcomingSubs.length > 0 && (
-        <div
-          style={{
-            background: "#fffbe6",
-            border: "1px solid #f0d878",
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-          }}
+        <UpcomingBanner
+          bg="#fffbe6"
+          borderColor="#f0d878"
+          titleColor="#8a6a1a"
+          title={`🔄 直近2週間の代行予定 (${upcomingSubs.length}件)`}
         >
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: "#8a6a1a" }}>
-            🔄 直近2週間の代行予定 ({upcomingSubs.length}件)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingSubs.map((sub) => {
-              const slot = slotById.get(sub.slotId);
-              const isOriginal = sub.originalTeacher === teacher;
-              return (
-                <div
-                  key={sub.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
-                    {fmtDateWeekday(sub.date)}
+          {upcomingSubs.map((sub) => {
+            const slot = slotById.get(sub.slotId);
+            const isOriginal = sub.originalTeacher === teacher;
+            return (
+              <UpcomingRow key={sub.id}>
+                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                  {fmtDateWeekday(sub.date)}
+                </span>
+                <span style={{ fontSize: 11, color: "#666", minWidth: 90 }}>
+                  {slot?.time || "-"}
+                </span>
+                <span style={{ fontSize: 11 }}>
+                  {slot
+                    ? `${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`
+                    : "(削除済)"}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>
+                  <span style={{ color: isOriginal ? "#c03030" : "#888" }}>
+                    {sub.originalTeacher}
                   </span>
-                  <span style={{ fontSize: 11, color: "#666", minWidth: 90 }}>
-                    {slot?.time || "-"}
+                  <span style={{ margin: "0 4px", color: "#888" }}>→</span>
+                  <span style={{ color: !isOriginal ? "#2a7a4a" : "#888" }}>
+                    {sub.substitute || "未定"}
                   </span>
-                  <span style={{ fontSize: 11 }}>
-                    {slot
-                      ? `${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`
-                      : "(削除済)"}
+                </span>
+                <StatusBadge status={sub.status} />
+                {isOriginal ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      background: "#fde4e4",
+                      color: "#c03030",
+                      padding: "1px 6px",
+                      borderRadius: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    お願いする側
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>
-                    <span style={{ color: isOriginal ? "#c03030" : "#888" }}>
-                      {sub.originalTeacher}
-                    </span>
-                    <span style={{ margin: "0 4px", color: "#888" }}>→</span>
-                    <span style={{ color: !isOriginal ? "#2a7a4a" : "#888" }}>
-                      {sub.substitute || "未定"}
-                    </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      background: "#e0f2e4",
+                      color: "#2a7a4a",
+                      padding: "1px 6px",
+                      borderRadius: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    代行する側
                   </span>
-                  <StatusBadge status={sub.status} />
-                  {isOriginal ? (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        background: "#fde4e4",
-                        color: "#c03030",
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 700,
-                      }}
-                    >
-                      お願いする側
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        background: "#e0f2e4",
-                        color: "#2a7a4a",
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 700,
-                      }}
-                    >
-                      代行する側
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                )}
+              </UpcomingRow>
+            );
+          })}
+        </UpcomingBanner>
       )}
       <div style={{ overflowX: "auto" }}>
         <div
