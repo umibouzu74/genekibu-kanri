@@ -97,6 +97,15 @@ export function WeekView({
   // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
   const [winStart, winEnd] = useMemo(() => getUpcomingWindow(), []);
 
+  // slotId → slot の逆引き。合同・移動・振替・代行の各 useMemo が
+  // それぞれローカルで Map を作っていたため、slots に変化が無くても
+  // 4 回構築されていた。コンポーネントスコープで 1 度だけ作る。
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of slots) m.set(s.id, s);
+    return m;
+  }, [slots]);
+
   // ダッシュボードと同じ仕組みで 第N回 (①②③…) バッジを出す。
   // 曜日ごとに「今日以降で最初に実際の講義が成立する日」の回数マップを保持。
   const { sessionCtx } = useSessionCtx({
@@ -138,8 +147,6 @@ export function WeekView({
   // 隔週スロットは「その日付に実施する側の講師」にだけ通知を出す。
   const slotCombineMap = useMemo(() => {
     if (!adjustments?.length) return new Map();
-    const slotById = new Map();
-    for (const s of slots) slotById.set(s.id, s);
 
     const m = new Map();
     const push = (slotId, entry) => {
@@ -175,14 +182,12 @@ export function WeekView({
       }
     }
     return m;
-  }, [adjustments, slots, teacher, winStart, winEnd, biweeklyAnchors]);
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors]);
 
   // 移動: 各スロットに対する直近14日間の移動予定
   // 隔週スロットは「その日付に実施する側の講師」にだけ通知を出す。
   const slotMoveMap = useMemo(() => {
     if (!adjustments?.length) return new Map();
-    const slotById = new Map();
-    for (const s of slots) slotById.set(s.id, s);
 
     const m = new Map();
     for (const adj of adjustments) {
@@ -201,7 +206,7 @@ export function WeekView({
       m.get(adj.slotId).push({ date: adj.date, slot, targetTime: adj.targetTime });
     }
     return m;
-  }, [adjustments, slots, teacher, winStart, winEnd, biweeklyAnchors]);
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors]);
 
   // 振替: 直近14日間に「振替元」または「振替先」となる予定。
   // 該当する講師は (a) 元担当 = adj 対象 slot.teacher または
@@ -209,8 +214,6 @@ export function WeekView({
   // 表示は targetDate (実際に実施される日) でソートする。
   const upcomingReschedules = useMemo(() => {
     if (!adjustments?.length) return [];
-    const slotById = new Map();
-    for (const s of slots) slotById.set(s.id, s);
 
     const out = [];
     for (const adj of adjustments) {
@@ -234,7 +237,7 @@ export function WeekView({
       )
     );
     return out;
-  }, [adjustments, slots, teacher, winStart, winEnd]);
+  }, [adjustments, slotById, teacher, winStart, winEnd]);
 
   // 上部バナー用: フラット化 + 日付ソート
   const upcomingCombines = useMemo(() => {
@@ -711,7 +714,7 @@ export function WeekView({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {upcomingSubs.map((sub) => {
-              const slot = slots.find((s) => s.id === sub.slotId);
+              const slot = slotById.get(sub.slotId);
               const isOriginal = sub.originalTeacher === teacher;
               return (
                 <div
