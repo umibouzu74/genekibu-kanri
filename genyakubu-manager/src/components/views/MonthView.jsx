@@ -23,6 +23,7 @@ import {
   DEFAULT_EVENT_VISIBILITY,
   EventVisibilityToggles,
   isEventKindVisible,
+  isExamPeriodVisible,
 } from "../EventVisibilityToggles";
 
 export function MonthView({
@@ -46,6 +47,7 @@ export function MonthView({
   sessionOverrides,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
+  availableExamTags = [],
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
@@ -178,9 +180,16 @@ export function MonthView({
   });
 
   // Returns exam period names active on a given date (for label display)
+  // 表示用 (タグフィルタ済み)。授業停止判定 (isInExamPeriodForGrade) とは別軸。
   const examPeriodsForDate = useCallback(
-    (ds) => examPeriods.filter((ep) => ds >= ep.startDate && ds <= ep.endDate),
-    [examPeriods]
+    (ds) =>
+      examPeriods.filter(
+        (ep) =>
+          ds >= ep.startDate &&
+          ds <= ep.endDate &&
+          isExamPeriodVisible(ep, visibility)
+      ),
+    [examPeriods, visibility]
   );
 
   // Returns special events active on a given date (告知バッジ用)
@@ -241,6 +250,7 @@ export function MonthView({
           <EventVisibilityToggles
             visibility={visibility}
             onChange={onChangeVisibility}
+            availableExamTags={availableExamTags}
           />
         </div>
       )}
@@ -389,6 +399,11 @@ export function MonthView({
                 {!isFullOff && hasExam && (
                   <span style={{ fontSize: 7, color: "#b07020", fontWeight: 700 }}>
                     {epActive[0].name.length > 8 ? epActive[0].name.slice(0, 8) + "…" : epActive[0].name}
+                    {(epActive[0].tags || []).length > 0 && (
+                      <span style={{ opacity: 0.7 }}>
+                        [{epActive[0].tags.join("·")}]
+                      </span>
+                    )}
                   </span>
                 )}
               </div>

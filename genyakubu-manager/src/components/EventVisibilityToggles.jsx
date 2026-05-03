@@ -17,7 +17,37 @@ export function isEventKindVisible(visibility, kind) {
   return !!visibility?.[kind];
 }
 
-export function EventVisibilityToggles({ visibility, onChange }) {
+// タグ別フィルタの判定。examTagFilters[tag] === false なら「OFF」、それ以外は ON。
+// タグ無しの ExamPeriod は常に表示 (master toggle が ON 前提)。
+// 複数タグを持つ ExamPeriod は「いずれかが ON」なら表示。
+export function isExamPeriodVisible(period, visibility) {
+  if (!isEventKindVisible(visibility, EVENT_KIND.EXAM)) return false;
+  const tags = period?.tags || [];
+  if (tags.length === 0) return true;
+  const filters = visibility?.examTagFilters || {};
+  return tags.some((t) => filters[t] !== false);
+}
+
+export function EventVisibilityToggles({
+  visibility,
+  onChange,
+  availableExamTags = [],
+}) {
+  const examOn = isEventKindVisible(visibility, EVENT_KIND.EXAM);
+  const tagFilters = visibility?.examTagFilters || {};
+
+  const toggleTag = (tag) => {
+    onChange((p) => {
+      const cur = p?.examTagFilters || {};
+      // 既定で ON 扱いなので、最初のクリックは OFF にする (false 明示)。
+      // false → undefined (= ON) に戻す。
+      const next = { ...cur };
+      if (next[tag] === false) delete next[tag];
+      else next[tag] = false;
+      return { ...(p || {}), examTagFilters: next };
+    });
+  };
+
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
@@ -63,6 +93,35 @@ export function EventVisibilityToggles({ visibility, onChange }) {
           </label>
         );
       })}
+      {examOn && availableExamTags.length > 0 && (
+        <>
+          <span style={{ fontSize: 11, color: "#aaa" }}>|</span>
+          <span style={{ fontSize: 11, color: "#888" }}>テスト期間タグ:</span>
+          {availableExamTags.map((tag) => {
+            const on = tagFilters[tag] !== false;
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => toggleTag(tag)}
+                aria-pressed={on}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  background: on ? "#e6eef9" : "#f5f5f5",
+                  color: on ? "#234a78" : "#aaa",
+                  border: `1px solid ${on ? "#b4cde8" : "#ddd"}`,
+                  fontWeight: on ? 700 : 400,
+                }}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

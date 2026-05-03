@@ -115,6 +115,13 @@ export interface ExamPeriod {
   startDate: string; // "YYYY-MM-DD"
   endDate: string; // "YYYY-MM-DD"
   targetGrades: string[]; // ["中1","中2","中3"] 等。空配列 = 全学年対象
+  // stopsClasses: 対象学年の通常授業を休止扱いにするか。
+  // 既定 (undefined / true): 中学テストのように授業停止 (従来挙動)。
+  // false: 高校テストのように表示のみで授業は継続。
+  stopsClasses?: boolean;
+  // tags: 学校名等の任意ラベル ("桜井", "第一" など)。
+  // 表示・フィルタの整理用で、slot とのマッチには使わない。
+  tags?: string[];
 }
 
 // ─── Exam prep (テスト直前特訓) shift schedule ────────────────────

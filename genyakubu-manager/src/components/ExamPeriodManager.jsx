@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -37,11 +37,35 @@ export function ExamPeriodManager({
   const [endDate, setEndDate] = useState("");
   const [targetGrades, setTargetGrades] = useState([]);
   const [allGrades, setAllGrades] = useState(true);
+  const [stopsClasses, setStopsClasses] = useState(true);
+  const [tagsArr, setTagsArr] = useState([]);
+  const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const [scheduleEditingEp, setScheduleEditingEp] = useState(null);
   const toasts = useToasts();
   const confirm = useConfirm();
+
+  // 既存タグ集合 (他テスト期間からの再利用候補)
+  const existingTagSet = useMemo(() => {
+    const set = new Set();
+    for (const ep of examPeriods) {
+      for (const t of ep.tags || []) if (t) set.add(t);
+    }
+    return [...set].sort();
+  }, [examPeriods]);
+
+  const addTag = (raw) => {
+    const t = raw.trim();
+    if (!t) return;
+    if (tagsArr.includes(t)) return;
+    setTagsArr([...tagsArr, t]);
+    setTagInput("");
+  };
+
+  const removeTag = (t) => {
+    setTagsArr(tagsArr.filter((x) => x !== t));
+  };
 
   const toggleGrade = (g) => {
     if (allGrades) {
@@ -70,11 +94,15 @@ export function ExamPeriodManager({
   const selectMiddle = () => {
     setAllGrades(false);
     setTargetGrades(MIDDLE_GRADES);
+    // 中学テストは授業停止が既定挙動
+    setStopsClasses(true);
   };
 
   const selectHigh = () => {
     setAllGrades(false);
     setTargetGrades(HIGH_GRADES);
+    // 高校テストは授業継続が既定挙動 (各校別管理 + 通塾は止めない)
+    setStopsClasses(false);
   };
 
   const isGradeSelected = (g) => allGrades || targetGrades.includes(g);
@@ -103,23 +131,30 @@ export function ExamPeriodManager({
     }
 
     const grades = allGrades ? [] : [...targetGrades];
+    // 入力中のタグも保存対象に含める (Enter を押し忘れた場合の救済)
+    const pending = tagInput.trim();
+    const tags = pending && !tagsArr.includes(pending)
+      ? [...tagsArr, pending]
+      : [...tagsArr];
+    const payload = {
+      name: name.trim(),
+      startDate,
+      endDate,
+      targetGrades: grades,
+      stopsClasses,
+      tags,
+    };
     if (editId != null) {
       const updated = examPeriods.map((ep) =>
-        ep.id === editId
-          ? { ...ep, name: name.trim(), startDate, endDate, targetGrades: grades }
-          : ep
+        ep.id === editId ? { ...ep, ...payload } : ep
       );
       onSave(updated);
       toasts.success("テスト期間を更新しました");
     } else {
-      const entry = {
-        id: nextNumericId(examPeriods),
-        name: name.trim(),
-        startDate,
-        endDate,
-        targetGrades: grades,
-      };
-      onSave([...examPeriods, entry]);
+      onSave([
+        ...examPeriods,
+        { id: nextNumericId(examPeriods), ...payload },
+      ]);
       toasts.success("テスト期間を追加しました");
     }
     resetForm();
@@ -136,6 +171,10 @@ export function ExamPeriodManager({
       setAllGrades(false);
       setTargetGrades([...ep.targetGrades]);
     }
+    // 既存データは stopsClasses 未設定 = true 扱い (中学テスト相当)
+    setStopsClasses(ep.stopsClasses !== false);
+    setTagsArr([...(ep.tags || [])]);
+    setTagInput("");
     setEditId(ep.id);
     setError("");
   };
@@ -146,6 +185,9 @@ export function ExamPeriodManager({
     setEndDate("");
     setTargetGrades([]);
     setAllGrades(true);
+    setStopsClasses(true);
+    setTagsArr([]);
+    setTagInput("");
     setEditId(null);
     setError("");
   };
@@ -372,6 +414,126 @@ export function ExamPeriodManager({
             </div>
           </div>
 
+          {/* 授業休止フラグ */}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={stopsClasses}
+                onChange={(e) => setStopsClasses(e.target.checked)}
+              />
+              <span style={{ fontWeight: 700 }}>
+                授業を休止する (対象学年の通常コマを停止)
+              </span>
+            </label>
+            <div style={{ fontSize: 10, color: "#888", marginTop: 4, paddingLeft: 22 }}>
+              {stopsClasses
+                ? "中学テスト等。期間中は対象学年のコマが「休止扱い」になります。"
+                : "高校テスト等。表示のみで通常授業は継続します。"}
+            </div>
+          </div>
+
+          {/* タグ */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+              タグ (学校名等、任意)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 4,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              {tagsArr.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 11,
+                    padding: "2px 4px 2px 8px",
+                    borderRadius: 12,
+                    background: "#e6eef9",
+                    color: "#234a78",
+                    border: "1px solid #b4cde8",
+                    fontWeight: 700,
+                  }}
+                >
+                  {t}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(t)}
+                    aria-label={`タグ ${t} を外す`}
+                    style={{
+                      border: "none",
+                      background: "#cfdcec",
+                      color: "#234a78",
+                      borderRadius: "50%",
+                      width: 16,
+                      height: 16,
+                      lineHeight: "14px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    addTag(tagInput);
+                  }
+                }}
+                placeholder="例: 桜井 (Enter で追加)"
+                style={{ ...S.input, width: 160, padding: "3px 8px", fontSize: 11 }}
+              />
+            </div>
+            {existingTagSet.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                <span style={{ fontSize: 10, color: "#888" }}>既存タグ:</span>
+                {existingTagSet
+                  .filter((t) => !tagsArr.includes(t))
+                  .map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => addTag(t)}
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 8px",
+                        borderRadius: 10,
+                        border: "1px dashed #b4cde8",
+                        background: "#fff",
+                        color: "#234a78",
+                        cursor: "pointer",
+                      }}
+                    >
+                      + {t}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
           {error && (
             <div
               id="exam-period-err"
@@ -455,6 +617,22 @@ export function ExamPeriodManager({
                 <span style={{ fontSize: 11, color: "#666" }}>
                   {ep.startDate} 〜 {ep.endDate}
                 </span>
+                {ep.stopsClasses === false && (
+                  <span
+                    title="授業を休止しない (表示のみ)"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "#fff",
+                      color: "#7a4a10",
+                      border: "1px dashed #e0a030",
+                    }}
+                  >
+                    表示のみ
+                  </span>
+                )}
                 <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                   {ep.targetGrades.length === 0 ? (
                     <span
@@ -491,6 +669,26 @@ export function ExamPeriodManager({
                     })
                   )}
                 </div>
+                {(ep.tags || []).length > 0 && (
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                    {ep.tags.map((t) => (
+                      <span
+                        key={t}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          background: "#e6eef9",
+                          color: "#234a78",
+                          border: "1px solid #b4cde8",
+                        }}
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {isAdmin && (
                 <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
@@ -547,7 +745,8 @@ export function ExamPeriodManager({
         )}
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
-        ※テスト期間中は対象学年の通常授業が休止扱いになります。「全学年」＝全学年対象。
+        ※「授業を休止する」が ON のテスト期間は対象学年の通常コマが休止扱いになります (中学テスト等)。
+        OFF にすると表示のみで授業は継続します (高校テスト等)。タグは学校名等の任意ラベルで、表示の整理に使えます。
         {examPrepCrud && "「特訓シフト」から出勤日・校時を設定できます (アルバイト・常勤共通)。"}
       </div>
 

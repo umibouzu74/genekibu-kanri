@@ -258,6 +258,15 @@ export default function App() {
     { onError: onStorageError }
   );
 
+  // タグ別フィルタ用の候補一覧 (全テスト期間から重複なく抽出、五十音順)。
+  const availableExamTags = useMemo(() => {
+    const set = new Set();
+    for (const ep of examPeriods) {
+      for (const t of ep.tags || []) if (t) set.add(t);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [examPeriods]);
+
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
   const [view, setView] = useState(VIEWS.DASH);
@@ -933,6 +942,7 @@ export default function App() {
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1041,6 +1051,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
             />
           )}
           {selected && view === VIEWS.MONTH && (
@@ -1066,6 +1077,7 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
             />
           )}
           </Suspense>
