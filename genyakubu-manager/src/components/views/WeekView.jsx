@@ -31,6 +31,7 @@ import {
   DEFAULT_EVENT_VISIBILITY,
   EventVisibilityToggles,
   isEventKindVisible,
+  isExamPeriodVisible,
 } from "../EventVisibilityToggles";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
@@ -117,6 +118,7 @@ export function WeekView({
   displayCutoff,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
+  availableExamTags = [],
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
@@ -350,6 +352,7 @@ export function WeekView({
     const out = [];
     if (showExam) {
       for (const ep of examPeriods) {
+        if (!isExamPeriodVisible(ep, visibility)) continue;
         if (!overlapsRange(ep.startDate, ep.endDate, winStartStr, winEndStr)) continue;
         out.push({
           kind: EVENT_KIND.EXAM,
@@ -357,6 +360,8 @@ export function WeekView({
           name: ep.name,
           startDate: ep.startDate,
           endDate: ep.endDate,
+          tags: ep.tags || [],
+          stopsClasses: ep.stopsClasses,
         });
       }
     }
@@ -374,7 +379,7 @@ export function WeekView({
       }
     }
     return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [examPeriods, specialEvents, showExam, showSpecial, winStart, winEnd]);
+  }, [examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -392,6 +397,7 @@ export function WeekView({
           <EventVisibilityToggles
             visibility={visibility}
             onChange={onChangeVisibility}
+            availableExamTags={availableExamTags}
           />
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -452,6 +458,11 @@ export function WeekView({
               >
                 {meta.icon ? `${meta.icon} ` : ""}
                 {ev.name}
+                {(ev.tags || []).length > 0 && (
+                  <span style={{ marginLeft: 4, opacity: 0.75 }}>
+                    [{ev.tags.join("·")}]
+                  </span>
+                )}
                 <span style={{ fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
                   {range}
                 </span>

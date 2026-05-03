@@ -46,6 +46,7 @@ import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
+import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
 import { Modal } from "./components/Modal";
@@ -257,6 +258,15 @@ export default function App() {
     DEFAULT_EVENT_VISIBILITY,
     { onError: onStorageError }
   );
+
+  // タグ別フィルタ用の候補一覧 (全テスト期間から重複なく抽出、五十音順)。
+  const availableExamTags = useMemo(() => {
+    const set = new Set();
+    for (const ep of examPeriods) {
+      for (const t of ep.tags || []) if (t) set.add(t);
+    }
+    return sortJa([...set]);
+  }, [examPeriods]);
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -933,6 +943,7 @@ export default function App() {
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1041,6 +1052,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
             />
           )}
           {selected && view === VIEWS.MONTH && (
@@ -1066,6 +1078,7 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
+              availableExamTags={availableExamTags}
             />
           )}
           </Suspense>

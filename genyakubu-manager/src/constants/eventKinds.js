@@ -30,3 +30,10 @@ export const EXAM_META = Object.freeze({
   accent: "#e0a030",
   icon: "📝",
 });
+
+// テスト期間のタグ ("桜井" 等) の表示色。チップ・バッジ用で複数箇所から参照する。
+export const TAG_META = Object.freeze({
+  bg: "#e6eef9",
+  fg: "#234a78",
+  accent: "#b4cde8",
+});

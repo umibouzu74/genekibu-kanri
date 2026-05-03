@@ -651,23 +651,32 @@ export function AbsenceTimetable({
           })}
           {examPeriodsToday.map((ep) => {
             const grades = (ep.targetGrades || []).join("・") || "全学年";
+            const isDisplayOnly = ep.stopsClasses === false;
             return (
               <span
                 key={`exam-${ep.id}`}
+                title={isDisplayOnly ? "授業を休止しない (表示のみ)" : undefined}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 4,
-                  background: "#fde8c8",
+                  background: isDisplayOnly ? "#fff" : "#fde8c8",
                   color: "#7a4a10",
-                  border: "1px solid #e0a030",
+                  border: `1px ${isDisplayOnly ? "dashed" : "solid"} #e0a030`,
                   borderRadius: 12,
                   padding: "2px 10px",
                   fontWeight: 700,
                 }}
               >
-                <span style={{ fontSize: 10 }}>テスト期間</span>
+                <span style={{ fontSize: 10 }}>
+                  テスト期間{isDisplayOnly ? " (表示のみ)" : ""}
+                </span>
                 <span>{ep.name}</span>
+                {(ep.tags || []).length > 0 && (
+                  <span style={{ fontSize: 10, opacity: 0.85 }}>
+                    [{ep.tags.join("·")}]
+                  </span>
+                )}
                 <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
                   ({grades})
                 </span>

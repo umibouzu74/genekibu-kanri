@@ -7,6 +7,7 @@ import {
   EVENT_KIND_LABELS,
   EXAM_META,
   HOLIDAY_META,
+  TAG_META,
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
@@ -14,6 +15,7 @@ import {
   DEFAULT_EVENT_VISIBILITY,
   EventVisibilityToggles,
   isEventKindVisible,
+  isExamPeriodVisible,
 } from "../EventVisibilityToggles";
 
 // イベントカレンダー (休講・テスト期間・特別イベントを統合表示)
@@ -45,6 +47,7 @@ export function EventCalendarView({
   isAdmin = false,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
+  availableExamTags = [],
 }) {
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
@@ -92,6 +95,7 @@ export function EventCalendarView({
     }
     if (showExam) {
       for (const ep of examPeriods) {
+        if (!isExamPeriodVisible(ep, visibility)) continue;
         if (!overlapsRange(ep.startDate, ep.endDate, monthStart, monthEnd)) continue;
         all.push({
           kind: EVENT_KIND.EXAM,
@@ -123,7 +127,7 @@ export function EventCalendarView({
         a.startDate.localeCompare(b.startDate) ||
         a.endDate.localeCompare(b.endDate)
     );
-  }, [holidays, examPeriods, specialEvents, showExam, showSpecial, monthStart, monthEnd]);
+  }, [holidays, examPeriods, specialEvents, showExam, showSpecial, visibility, monthStart, monthEnd]);
 
   // 日付 → イベント[] の索引 (グリッド表示用)
   const eventsByDate = useMemo(() => {
@@ -245,6 +249,7 @@ export function EventCalendarView({
         <EventVisibilityToggles
           visibility={visibility}
           onChange={onChangeVisibility}
+          availableExamTags={availableExamTags}
         />
       </div>
 
@@ -374,6 +379,12 @@ export function EventCalendarView({
                           </>
                         ) : null}
                         {ev.name}
+                        {ev.kind === EVENT_KIND.EXAM &&
+                          (ev.source.tags || []).length > 0 && (
+                            <span style={{ opacity: 0.7, marginLeft: 3 }}>
+                              [{ev.source.tags.join("·")}]
+                            </span>
+                          )}
                       </>
                     ) : (
                       // 名前を出さないセルでも色帯の高さを維持するため、不可視文字
@@ -493,6 +504,40 @@ export function EventCalendarView({
                   {EVENT_KIND_LABELS[ev.kind]}
                 </span>
                 <strong style={{ fontSize: 13 }}>{ev.name}</strong>
+                {ev.kind === EVENT_KIND.EXAM &&
+                  ev.source.stopsClasses === false && (
+                    <span
+                      title="授業を休止しない (表示のみ)"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: "#fff",
+                        color: "#7a4a10",
+                        border: "1px dashed #e0a030",
+                      }}
+                    >
+                      表示のみ
+                    </span>
+                  )}
+                {ev.kind === EVENT_KIND.EXAM &&
+                  (ev.source.tags || []).map((t) => (
+                    <span
+                      key={t}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: TAG_META.bg,
+                        color: TAG_META.fg,
+                        border: `1px solid ${TAG_META.accent}`,
+                      }}
+                    >
+                      {t}
+                    </span>
+                  ))}
                 <span style={{ fontSize: 11, color: "#666" }}>
                   {formatDateRange(ev.startDate, ev.endDate)}
                 </span>

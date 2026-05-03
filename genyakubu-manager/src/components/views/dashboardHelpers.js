@@ -74,10 +74,12 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
     });
   };
 
-  // Check whether (date, grade) falls within any exam period.
-  // 休講判定とは別軸で、欠勤組み換え画面で「テスト期間」表示の判定に使う。
+  // Check whether (date, grade) falls within any exam period that stops classes.
+  // 高校テスト期間など `stopsClasses: false` のものは授業停止扱いにしない。
+  // (これらは表示専用で、休講ラベルは出さず通常授業として扱う)
   const isInExamPeriodForGrade = (d, grade) =>
     examPeriods.some((ep) => {
+      if (ep.stopsClasses === false) return false;
       if (d < ep.startDate || d > ep.endDate) return false;
       if (ep.targetGrades.length === 0) return true; // empty = all grades
       return ep.targetGrades.includes(grade);
