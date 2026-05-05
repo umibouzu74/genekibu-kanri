@@ -263,9 +263,9 @@ export function MonthView({
   const todayY = today.getFullYear();
 
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className="month-print-root" style={{ marginTop: 12 }}>
       {onChangeVisibility && (
-        <div style={{ marginBottom: 8 }}>
+        <div className="no-print" style={{ marginBottom: 8 }}>
           <EventVisibilityToggles
             visibility={visibility}
             onChange={onChangeVisibility}
@@ -274,6 +274,7 @@ export function MonthView({
         </div>
       )}
       <div
+        className="month-print-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(7,1fr)",
@@ -368,6 +369,7 @@ export function MonthView({
           return (
             <div
               key={ds}
+              className="month-print-cell"
               style={{
                 background: dayCutoff
                   ? "#f5f5f0"
@@ -581,6 +583,7 @@ export function MonthView({
                   return (
                     <div
                       key={`slot-${s.id}`}
+                      className="month-print-card"
                       style={{
                         fontSize: 11,
                         lineHeight: 1.4,
@@ -672,6 +675,7 @@ export function MonthView({
                     return (
                       <div
                         key={`ext-${sub.id}`}
+                        className="month-print-card"
                         style={{
                           fontSize: 11,
                           lineHeight: 1.4,
@@ -741,6 +745,7 @@ export function MonthView({
                   return (
                     <div
                       key={`rsch-in-${adj.id}`}
+                      className="month-print-card"
                       style={{
                         fontSize: 11,
                         lineHeight: 1.4,
@@ -799,6 +804,7 @@ export function MonthView({
                   const last = shifts[shifts.length - 1];
                   return (
                     <div
+                      className="month-print-card"
                       style={{
                         fontSize: 11,
                         lineHeight: 1.4,

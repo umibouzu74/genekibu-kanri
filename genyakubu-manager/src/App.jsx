@@ -604,8 +604,50 @@ export default function App() {
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
-    const docTitle = selected ? `${selected} 授業予定` : dateLabel;
     const hasTimetableGrid = !!el.querySelector(".excel-print-col-ms");
+    const hasMonthView =
+      view === VIEWS.MONTH && !!el.querySelector(".month-print-root");
+    const monthLabel = hasMonthView
+      ? `${selected ? selected + "　" : ""}${vy}年${String(vm).padStart(2, "0")}月 月次予定`
+      : "";
+    const docTitle = hasMonthView
+      ? monthLabel
+      : selected
+        ? `${selected} 授業予定`
+        : dateLabel;
+
+    // 月次カレンダー印刷: 横 A4、セルを潰さず文字を折り返し、
+    // 罫線を明示し、各日セルがページ境界で割れないようにする。
+    const monthPrintCss = hasMonthView ? `
+      .month-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #444}
+      @media print{
+        @page{size:A4 landscape;margin:8mm}
+        .month-print-root{margin-top:0 !important}
+        .month-print-grid{
+          gap:0 !important;
+          background:#fff !important;
+          border:1px solid #888 !important;
+          border-radius:0 !important;
+        }
+        .month-print-grid > *{
+          border:1px solid #bbb !important;
+          box-sizing:border-box;
+        }
+        .month-print-cell{
+          min-height:0 !important;
+          break-inside:avoid;
+          page-break-inside:avoid;
+        }
+        .month-print-card{
+          white-space:normal !important;
+          overflow:visible !important;
+          text-overflow:clip !important;
+          line-height:1.3 !important;
+          cursor:default !important;
+          opacity:1 !important;
+        }
+      }
+    ` : "";
 
     const printStyles = `
       body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
@@ -621,6 +663,7 @@ export default function App() {
         .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
         ` : ""}
       }
+      ${monthPrintCss}
     `;
 
     let bodyHtml = el.innerHTML;
@@ -632,6 +675,13 @@ export default function App() {
       );
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>)/,
+        `${header}$1`
+      );
+    }
+    if (hasMonthView) {
+      const header = `<h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>`;
+      bodyHtml = bodyHtml.replace(
+        /(<div[^>]*class="[^"]*\bmonth-print-root\b[^"]*"[^>]*>)/,
         `${header}$1`
       );
     }
