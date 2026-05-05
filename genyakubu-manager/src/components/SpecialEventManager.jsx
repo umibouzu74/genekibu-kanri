@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -14,7 +14,6 @@ import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { formatDateRange } from "../utils/dateHelpers";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
-import { sortJa } from "../utils/sortJa";
 import { TAG_META } from "../constants/eventKinds";
 import {
   DEFAULT_SPECIAL_EVENT_TYPE,
@@ -47,15 +46,8 @@ export function SpecialEventManager({
   const [error, setError] = useState("");
   const toasts = useToasts();
 
-  // 既存タグ: 自分自身 (specialEvents) 由来 + 親から渡された ExamPeriod 由来。
-  // フォームの「+ 桜井」サジェストで現在編集中の tags を除外したものを並べる。
-  const existingTagSet = useMemo(() => {
-    const set = new Set(knownTags);
-    for (const ev of specialEvents) {
-      for (const t of ev.tags || []) if (t) set.add(t);
-    }
-    return sortJa([...set]);
-  }, [knownTags, specialEvents]);
+  // 既存タグ: 親 App から共通空間として受け取る (両ソース集約済み・五十音順)。
+  const existingTagSet = knownTags;
 
   const addTag = (raw) => {
     const t = raw.trim();

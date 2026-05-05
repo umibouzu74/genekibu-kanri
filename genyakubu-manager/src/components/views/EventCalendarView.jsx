@@ -381,12 +381,11 @@ export function EventCalendarView({
                           </>
                         ) : null}
                         {ev.name}
-                        {ev.kind !== EVENT_KIND.HOLIDAY &&
-                          (ev.source.tags || []).length > 0 && (
-                            <span style={{ opacity: 0.7, marginLeft: 3 }}>
-                              [{ev.source.tags.join("·")}]
-                            </span>
-                          )}
+                        {(ev.source.tags || []).length > 0 && (
+                          <span style={{ opacity: 0.7, marginLeft: 3 }}>
+                            [{ev.source.tags.join("·")}]
+                          </span>
+                        )}
                       </>
                     ) : (
                       // 名前を出さないセルでも色帯の高さを維持するため、不可視文字
@@ -523,8 +522,7 @@ export function EventCalendarView({
                       表示のみ
                     </span>
                   )}
-                {ev.kind !== EVENT_KIND.HOLIDAY &&
-                  (ev.source.tags || []).map((t) => (
+                {(ev.source.tags || []).map((t) => (
                     <span
                       key={t}
                       style={{

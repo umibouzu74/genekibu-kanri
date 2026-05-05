@@ -24,28 +24,21 @@ function getTagFilters(visibility) {
   return visibility?.tagFilters || visibility?.examTagFilters || {};
 }
 
-// タグ単位の可視判定。filters[tag] === false なら「OFF」、それ以外は ON。
-// 複数タグを持つエントリは「いずれかが ON」なら表示 (タグ無しは常に表示)。
-function isVisibleByTags(tags, visibility) {
+// テスト期間 / 特別イベント の master toggle + タグフィルタを統合した判定。
+// 複数タグを持つエントリは「いずれかが ON」なら表示。タグ無しは master 通過時に常に表示。
+export function isTaggedEventVisible(entry, kind, visibility) {
+  if (!isEventKindVisible(visibility, kind)) return false;
+  const tags = entry?.tags;
   if (!tags || tags.length === 0) return true;
   const filters = getTagFilters(visibility);
   return tags.some((t) => filters[t] !== false);
 }
 
-// テスト期間 / 特別イベント の master toggle + タグフィルタを統合した判定。
-// kind は EVENT_KIND.EXAM / EVENT_KIND.SPECIAL を受け付ける。
-export function isTaggedEventVisible(entry, kind, visibility) {
-  if (!isEventKindVisible(visibility, kind)) return false;
-  return isVisibleByTags(entry?.tags, visibility);
-}
-
-// 互換: 既存呼び出し用。
-export function isExamPeriodVisible(period, visibility) {
-  return isTaggedEventVisible(period, EVENT_KIND.EXAM, visibility);
-}
-export function isSpecialEventVisible(event, visibility) {
-  return isTaggedEventVisible(event, EVENT_KIND.SPECIAL, visibility);
-}
+// 呼び出し側可読性のための薄ラッパ。
+export const isExamPeriodVisible = (period, visibility) =>
+  isTaggedEventVisible(period, EVENT_KIND.EXAM, visibility);
+export const isSpecialEventVisible = (event, visibility) =>
+  isTaggedEventVisible(event, EVENT_KIND.SPECIAL, visibility);
 
 export function EventVisibilityToggles({
   visibility,
