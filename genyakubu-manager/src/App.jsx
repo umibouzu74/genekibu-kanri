@@ -124,6 +124,21 @@ function ViewFallback() {
   );
 }
 
+// 月次カレンダー印刷ヘッダに出す「現在のフィルタ状態」サマリ。
+// デフォルト (テスト期間/特別イベント とも非表示・タグ除外なし) の場合は
+// 空文字を返し、印刷時に行ごと省く。
+function describeMonthVisibility(visibility) {
+  const shown = [];
+  if (visibility?.[EVENT_KIND.EXAM]) shown.push("テスト期間");
+  if (visibility?.[EVENT_KIND.SPECIAL]) shown.push("特別イベント");
+  const tagFilters = visibility?.tagFilters || visibility?.examTagFilters || {};
+  const offTags = Object.keys(tagFilters).filter((k) => tagFilters[k] === false);
+  const parts = [];
+  if (shown.length > 0) parts.push(`表示: ${shown.join("・")}`);
+  if (offTags.length > 0) parts.push(`除外タグ: ${offTags.join(", ")}`);
+  return parts.join(" / ");
+}
+
 // 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
 const VIEW_TITLES = {
   [VIEWS.DASH]: "ダッシュボード",
@@ -616,12 +631,22 @@ export default function App() {
         ? `${selected} 授業予定`
         : dateLabel;
 
-    // 月次カレンダー印刷: 横 A4、セルを潰さず文字を折り返し、
-    // 罫線を明示し、各日セルがページ境界で割れないようにする。
+    // 用紙設定: 月次は横、それ以外は縦。@page を場合分けして
+    // ブラウザ間の cascade 解釈差で portrait に倒れるリスクを排除する。
+    const pageRule = hasMonthView
+      ? "@page{size:A4 landscape;margin:8mm}"
+      : "@page{size:A4 portrait;margin:12mm 8mm}";
+
+    // 月次カレンダー印刷スタイル: 罫線を明示し、各日セルがページ境界で
+    // 割れないよう抑制、コマカードは折り返し可・操作 UI 風表現を解除。
     const monthPrintCss = hasMonthView ? `
-      .month-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #444}
+      .month-print-header{margin:0 0 6px}
+      .month-print-page-title{font-size:13pt;font-weight:700;margin:0 0 3px;padding:0 0 3px;border-bottom:1px solid #444}
+      .month-print-meta{font-size:9pt;color:#555;display:flex;gap:12px;flex-wrap:wrap;margin:0 0 3px}
+      .month-print-legend{font-size:8pt;color:#555;display:flex;gap:10px;flex-wrap:wrap}
+      .month-print-legend>span{white-space:nowrap}
+      .month-print-legend b{background:#444;color:#fff;font-weight:700;padding:0 4px;border-radius:2px;margin-right:3px}
       @media print{
-        @page{size:A4 landscape;margin:8mm}
         .month-print-root{margin-top:0 !important}
         .month-print-grid{
           gap:0 !important;
@@ -634,14 +659,12 @@ export default function App() {
           box-sizing:border-box;
         }
         .month-print-cell{
-          min-height:0 !important;
           break-inside:avoid;
           page-break-inside:avoid;
         }
         .month-print-card{
           white-space:normal !important;
           overflow:visible !important;
-          text-overflow:clip !important;
           line-height:1.3 !important;
           cursor:default !important;
           opacity:1 !important;
@@ -653,7 +676,7 @@ export default function App() {
       body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
       .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
       @media print{
-        @page{size:A4 portrait;margin:12mm 8mm}
+        ${pageRule}
         body{padding:0;font-size:10px}
         *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
         .no-print{display:none !important}
@@ -679,7 +702,14 @@ export default function App() {
       );
     }
     if (hasMonthView) {
-      const header = `<h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>`;
+      const filterDesc = describeMonthVisibility(eventVisibility);
+      const t = new Date();
+      const printedAt = `${t.getFullYear()}年${String(t.getMonth() + 1).padStart(2, "0")}月${String(t.getDate()).padStart(2, "0")}日 印刷`;
+      const meta = filterDesc
+        ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
+        : `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span></div>`;
+      const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span></div>`;
+      const header = `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bmonth-print-root\b[^"]*"[^>]*>)/,
         `${header}$1`
@@ -690,6 +720,8 @@ export default function App() {
       `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
     );
     w.document.close();
+    // 印刷ダイアログが閉じたらポップアップも自動で閉じる (取り消した場合含む)。
+    w.onafterprint = () => w.close();
     setTimeout(() => w.print(), 300);
   };
 
