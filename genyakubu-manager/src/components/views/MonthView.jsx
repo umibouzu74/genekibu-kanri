@@ -24,6 +24,7 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
+  isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
 export function MonthView({
@@ -47,7 +48,7 @@ export function MonthView({
   sessionOverrides,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
-  availableExamTags = [],
+  availableTags = [],
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
@@ -203,10 +204,17 @@ export function MonthView({
     [visibleExamPeriods]
   );
 
-  // Returns special events active on a given date (告知バッジ用)
+  // 表示用にタグフィルタ済みの特別イベントリストを 1 度だけ作る。
+  const visibleSpecialEvents = useMemo(
+    () => specialEvents.filter((ev) => isSpecialEventVisible(ev, visibility)),
+    [specialEvents, visibility]
+  );
   const specialEventsForDate = useCallback(
-    (ds) => specialEvents.filter((ev) => ds >= ev.startDate && ds <= ev.endDate),
-    [specialEvents]
+    (ds) =>
+      visibleSpecialEvents.filter(
+        (ev) => ds >= ev.startDate && ds <= ev.endDate
+      ),
+    [visibleSpecialEvents]
   );
 
   // この講師が (slot, ds) のコマを「月次ビューに載せるか」を判定する。
@@ -261,7 +269,7 @@ export function MonthView({
           <EventVisibilityToggles
             visibility={visibility}
             onChange={onChangeVisibility}
-            availableExamTags={availableExamTags}
+            availableTags={availableTags}
           />
         </div>
       )}
@@ -449,6 +457,11 @@ export function MonthView({
                         }}
                       >
                         {meta.icon} {shortName}
+                        {(ev.tags || []).length > 0 && (
+                          <span style={{ opacity: 0.7 }}>
+                            [{ev.tags.join("·")}]
+                          </span>
+                        )}
                       </span>
                     );
                   })}

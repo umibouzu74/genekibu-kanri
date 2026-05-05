@@ -18,34 +18,53 @@ export function isEventKindVisible(visibility, kind) {
   return !!visibility?.[kind];
 }
 
-// タグ別フィルタの判定。examTagFilters[tag] === false なら「OFF」、それ以外は ON。
-// タグ無しの ExamPeriod は常に表示 (master toggle が ON 前提)。
-// 複数タグを持つ ExamPeriod は「いずれかが ON」なら表示。
-export function isExamPeriodVisible(period, visibility) {
-  if (!isEventKindVisible(visibility, EVENT_KIND.EXAM)) return false;
-  const tags = period?.tags || [];
-  if (tags.length === 0) return true;
-  const filters = visibility?.examTagFilters || {};
+// タグ別フィルタの内部表現を取得。新キー `tagFilters` を優先しつつ、旧キー
+// `examTagFilters` (テスト期間専用時代の名残) も読み出してフォールバックする。
+function getTagFilters(visibility) {
+  return visibility?.tagFilters || visibility?.examTagFilters || {};
+}
+
+// タグ単位の可視判定。filters[tag] === false なら「OFF」、それ以外は ON。
+// 複数タグを持つエントリは「いずれかが ON」なら表示 (タグ無しは常に表示)。
+function isVisibleByTags(tags, visibility) {
+  if (!tags || tags.length === 0) return true;
+  const filters = getTagFilters(visibility);
   return tags.some((t) => filters[t] !== false);
+}
+
+// テスト期間 / 特別イベント の master toggle + タグフィルタを統合した判定。
+// kind は EVENT_KIND.EXAM / EVENT_KIND.SPECIAL を受け付ける。
+export function isTaggedEventVisible(entry, kind, visibility) {
+  if (!isEventKindVisible(visibility, kind)) return false;
+  return isVisibleByTags(entry?.tags, visibility);
+}
+
+// 互換: 既存呼び出し用。
+export function isExamPeriodVisible(period, visibility) {
+  return isTaggedEventVisible(period, EVENT_KIND.EXAM, visibility);
+}
+export function isSpecialEventVisible(event, visibility) {
+  return isTaggedEventVisible(event, EVENT_KIND.SPECIAL, visibility);
 }
 
 export function EventVisibilityToggles({
   visibility,
   onChange,
-  availableExamTags = [],
+  availableTags = [],
 }) {
   const examOn = isEventKindVisible(visibility, EVENT_KIND.EXAM);
-  const tagFilters = visibility?.examTagFilters || {};
+  const specialOn = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
+  const tagFilters = getTagFilters(visibility);
 
   const toggleTag = (tag) => {
     onChange((p) => {
-      const cur = p?.examTagFilters || {};
-      // 既定で ON 扱いなので、最初のクリックは OFF にする (false 明示)。
-      // false → undefined (= ON) に戻す。
+      const cur = getTagFilters(p);
+      // 既定で ON 扱いなので、最初のクリックは OFF (false 明示)、再クリックで
+      // delete して ON に戻す。書き込みは常に新キー `tagFilters` 側のみ。
       const next = { ...cur };
       if (next[tag] === false) delete next[tag];
       else next[tag] = false;
-      return { ...(p || {}), examTagFilters: next };
+      return { ...(p || {}), tagFilters: next };
     });
   };
 
@@ -96,11 +115,11 @@ export function EventVisibilityToggles({
           </label>
         );
       })}
-      {examOn && availableExamTags.length > 0 && (
+      {(examOn || specialOn) && availableTags.length > 0 && (
         <>
           <span style={{ fontSize: 11, color: "#aaa" }}>|</span>
-          <span style={{ fontSize: 11, color: "#888" }}>テスト期間タグ:</span>
-          {availableExamTags.map((tag) => {
+          <span style={{ fontSize: 11, color: "#888" }}>タグ:</span>
+          {availableTags.map((tag) => {
             const on = tagFilters[tag] !== false;
             return (
               <button

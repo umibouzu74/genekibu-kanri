@@ -28,6 +28,7 @@ export function ExamPeriodManager({
   slots = [],
   subjects = [],
   teacherSubjects = {},
+  knownTags = [],
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
@@ -48,14 +49,14 @@ export function ExamPeriodManager({
   const toasts = useToasts();
   const confirm = useConfirm();
 
-  // 既存タグ集合 (他テスト期間からの再利用候補)
+  // 既存タグ集合 (他テスト期間 + 親から受け取る共通タグ空間)。
   const existingTagSet = useMemo(() => {
-    const set = new Set();
+    const set = new Set(knownTags);
     for (const ep of examPeriods) {
       for (const t of ep.tags || []) if (t) set.add(t);
     }
     return sortJa([...set]);
-  }, [examPeriods]);
+  }, [examPeriods, knownTags]);
 
   const addTag = (raw) => {
     const t = raw.trim();

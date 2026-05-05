@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -14,6 +14,8 @@ import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { formatDateRange } from "../utils/dateHelpers";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
+import { sortJa } from "../utils/sortJa";
+import { TAG_META } from "../constants/eventKinds";
 import {
   DEFAULT_SPECIAL_EVENT_TYPE,
   SPECIAL_EVENT_TYPES,
@@ -24,6 +26,8 @@ export function SpecialEventManager({
   specialEvents,
   onSave,
   isAdmin,
+  // 既存タグ候補は ExamPeriod とも共通空間。親 (App) から既存タグ集計を受け取る。
+  knownTags = [],
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
@@ -37,9 +41,33 @@ export function SpecialEventManager({
   const [memo, setMemo] = useState("");
   const [targetGrades, setTargetGrades] = useState([]);
   const [allGrades, setAllGrades] = useState(true);
+  const [tagsArr, setTagsArr] = useState([]);
+  const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const toasts = useToasts();
+
+  // 既存タグ: 自分自身 (specialEvents) 由来 + 親から渡された ExamPeriod 由来。
+  // フォームの「+ 桜井」サジェストで現在編集中の tags を除外したものを並べる。
+  const existingTagSet = useMemo(() => {
+    const set = new Set(knownTags);
+    for (const ev of specialEvents) {
+      for (const t of ev.tags || []) if (t) set.add(t);
+    }
+    return sortJa([...set]);
+  }, [knownTags, specialEvents]);
+
+  const addTag = (raw) => {
+    const t = raw.trim();
+    if (!t) return;
+    if (tagsArr.includes(t)) return;
+    setTagsArr([...tagsArr, t]);
+    setTagInput("");
+  };
+
+  const removeTag = (t) => {
+    setTagsArr(tagsArr.filter((x) => x !== t));
+  };
 
   const removeEventWithUndo = useRemoveWithUndo({
     list: specialEvents,
@@ -86,6 +114,8 @@ export function SpecialEventManager({
     setMemo("");
     setTargetGrades([]);
     setAllGrades(true);
+    setTagsArr([]);
+    setTagInput("");
     setEditId(null);
     setError("");
   };
@@ -115,6 +145,11 @@ export function SpecialEventManager({
     }
 
     const grades = allGrades ? [] : [...targetGrades];
+    // 入力中タグも保存対象に含める (Enter を押し忘れた場合の救済)
+    const pending = tagInput.trim();
+    const tags = pending && !tagsArr.includes(pending)
+      ? [...tagsArr, pending]
+      : [...tagsArr];
     const base = {
       name: name.trim(),
       eventType,
@@ -122,6 +157,7 @@ export function SpecialEventManager({
       endDate: effectiveEnd,
       targetGrades: grades,
       memo: memo.trim(),
+      tags,
     };
     if (editId != null) {
       onSave(
@@ -148,6 +184,8 @@ export function SpecialEventManager({
       setAllGrades(false);
       setTargetGrades([...ev.targetGrades]);
     }
+    setTagsArr([...(ev.tags || [])]);
+    setTagInput("");
     setEditId(ev.id);
     setError("");
   };
@@ -410,6 +448,98 @@ export function SpecialEventManager({
             </div>
           </div>
 
+          {/* タグ */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+              タグ (学校名等、任意)
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 4,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              {tagsArr.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 11,
+                    padding: "2px 4px 2px 8px",
+                    borderRadius: 12,
+                    background: TAG_META.bg,
+                    color: TAG_META.fg,
+                    border: `1px solid ${TAG_META.accent}`,
+                    fontWeight: 700,
+                  }}
+                >
+                  {t}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(t)}
+                    aria-label={`タグ ${t} を外す`}
+                    style={{
+                      border: "none",
+                      background: TAG_META.accent,
+                      color: TAG_META.fg,
+                      borderRadius: "50%",
+                      width: 16,
+                      height: 16,
+                      lineHeight: "14px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    addTag(tagInput);
+                  }
+                }}
+                placeholder="例: 桜井 (Enter で追加)"
+                style={{ ...S.input, width: 160, padding: "3px 8px", fontSize: 11 }}
+              />
+            </div>
+            {existingTagSet.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                <span style={{ fontSize: 10, color: "#888" }}>既存タグ:</span>
+                {existingTagSet
+                  .filter((t) => !tagsArr.includes(t))
+                  .map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => addTag(t)}
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 8px",
+                        borderRadius: 10,
+                        border: `1px dashed ${TAG_META.accent}`,
+                        background: "#fff",
+                        color: TAG_META.fg,
+                        cursor: "pointer",
+                      }}
+                    >
+                      + {t}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
           {error && (
             <div
               id="special-event-err"
@@ -547,6 +677,26 @@ export function SpecialEventManager({
                       })
                     )}
                   </div>
+                  {(ev.tags || []).length > 0 && (
+                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                      {ev.tags.map((t) => (
+                        <span
+                          key={t}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 6px",
+                            borderRadius: 4,
+                            background: TAG_META.bg,
+                            color: TAG_META.fg,
+                            border: `1px solid ${TAG_META.accent}`,
+                          }}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {ev.memo && (
                     <span
                       style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}

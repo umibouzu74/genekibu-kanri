@@ -164,6 +164,9 @@ export interface SpecialEvent {
   eventType: SpecialEventType;
   targetGrades: string[]; // 空配列 = 全学年対象
   memo: string;
+  // tags: 学校名等の任意ラベル ("桜井", "第一" など)。ExamPeriod と
+  // 共通のタグ空間で表示・フィルタを統一する。
+  tags?: string[];
 }
 
 // ─── Class set (授業セット) ──────────────────────────────────────
