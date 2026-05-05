@@ -16,6 +16,7 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
+  isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
 // イベントカレンダー (休講・テスト期間・特別イベントを統合表示)
@@ -47,7 +48,7 @@ export function EventCalendarView({
   isAdmin = false,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
-  availableExamTags = [],
+  availableTags = [],
 }) {
   const today = useMemo(() => new Date(), []);
   const [monthOff, setMonthOff] = useState(0);
@@ -110,6 +111,7 @@ export function EventCalendarView({
     }
     if (showSpecial) {
       for (const ev of specialEvents) {
+        if (!isSpecialEventVisible(ev, visibility)) continue;
         if (!overlapsRange(ev.startDate, ev.endDate, monthStart, monthEnd)) continue;
         all.push({
           kind: EVENT_KIND.SPECIAL,
@@ -249,7 +251,7 @@ export function EventCalendarView({
         <EventVisibilityToggles
           visibility={visibility}
           onChange={onChangeVisibility}
-          availableExamTags={availableExamTags}
+          availableTags={availableTags}
         />
       </div>
 
@@ -379,12 +381,11 @@ export function EventCalendarView({
                           </>
                         ) : null}
                         {ev.name}
-                        {ev.kind === EVENT_KIND.EXAM &&
-                          (ev.source.tags || []).length > 0 && (
-                            <span style={{ opacity: 0.7, marginLeft: 3 }}>
-                              [{ev.source.tags.join("·")}]
-                            </span>
-                          )}
+                        {(ev.source.tags || []).length > 0 && (
+                          <span style={{ opacity: 0.7, marginLeft: 3 }}>
+                            [{ev.source.tags.join("·")}]
+                          </span>
+                        )}
                       </>
                     ) : (
                       // 名前を出さないセルでも色帯の高さを維持するため、不可視文字
@@ -521,8 +522,7 @@ export function EventCalendarView({
                       表示のみ
                     </span>
                   )}
-                {ev.kind === EVENT_KIND.EXAM &&
-                  (ev.source.tags || []).map((t) => (
+                {(ev.source.tags || []).map((t) => (
                     <span
                       key={t}
                       style={{

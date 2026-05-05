@@ -32,6 +32,7 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
+  isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
@@ -118,7 +119,7 @@ export function WeekView({
   displayCutoff,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
-  availableExamTags = [],
+  availableTags = [],
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
@@ -367,6 +368,7 @@ export function WeekView({
     }
     if (showSpecial) {
       for (const ev of specialEvents) {
+        if (!isSpecialEventVisible(ev, visibility)) continue;
         if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
         out.push({
           kind: EVENT_KIND.SPECIAL,
@@ -375,6 +377,7 @@ export function WeekView({
           startDate: ev.startDate,
           endDate: ev.endDate,
           eventType: ev.eventType,
+          tags: ev.tags || [],
         });
       }
     }
@@ -397,7 +400,7 @@ export function WeekView({
           <EventVisibilityToggles
             visibility={visibility}
             onChange={onChangeVisibility}
-            availableExamTags={availableExamTags}
+            availableTags={availableTags}
           />
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>

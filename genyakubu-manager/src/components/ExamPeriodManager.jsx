@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -15,7 +15,6 @@ import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
-import { sortJa } from "../utils/sortJa";
 import { TAG_META } from "../constants/eventKinds";
 
 export function ExamPeriodManager({
@@ -28,6 +27,7 @@ export function ExamPeriodManager({
   slots = [],
   subjects = [],
   teacherSubjects = {},
+  knownTags = [],
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
@@ -48,14 +48,9 @@ export function ExamPeriodManager({
   const toasts = useToasts();
   const confirm = useConfirm();
 
-  // 既存タグ集合 (他テスト期間からの再利用候補)
-  const existingTagSet = useMemo(() => {
-    const set = new Set();
-    for (const ep of examPeriods) {
-      for (const t of ep.tags || []) if (t) set.add(t);
-    }
-    return sortJa([...set]);
-  }, [examPeriods]);
+  // 既存タグ集合 (親 App から共通空間として受け取る、五十音順済み)。
+  // 自身の examPeriods は親が availableTags 集約時に既に取り込み済み。
+  const existingTagSet = knownTags;
 
   const addTag = (raw) => {
     const t = raw.trim();

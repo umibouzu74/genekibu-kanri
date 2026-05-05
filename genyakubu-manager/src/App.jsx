@@ -259,14 +259,18 @@ export default function App() {
     { onError: onStorageError }
   );
 
-  // タグ別フィルタ用の候補一覧 (全テスト期間から重複なく抽出、五十音順)。
-  const availableExamTags = useMemo(() => {
+  // タグ別フィルタ用の候補一覧。テスト期間 + 特別イベント の両方から
+  // 重複なく抽出 (五十音順)。タグは両者で共有する空間として扱う。
+  const availableTags = useMemo(() => {
     const set = new Set();
     for (const ep of examPeriods) {
       for (const t of ep.tags || []) if (t) set.add(t);
     }
+    for (const ev of specialEvents) {
+      for (const t of ev.tags || []) if (t) set.add(t);
+    }
     return sortJa([...set]);
-  }, [examPeriods]);
+  }, [examPeriods, specialEvents]);
 
   // ─── UI state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
@@ -911,6 +915,7 @@ export default function App() {
                 slots={slots}
                 subjects={subjects}
                 teacherSubjects={teacherSubjects}
+                knownTags={availableTags}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
                 }
@@ -924,6 +929,7 @@ export default function App() {
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
                 isAdmin={isAdmin}
+                knownTags={availableTags}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.SPECIAL ? eventEditRequest.id : null
                 }
@@ -943,7 +949,7 @@ export default function App() {
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
-              availableExamTags={availableExamTags}
+              availableTags={availableTags}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1052,7 +1058,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
-              availableExamTags={availableExamTags}
+              availableTags={availableTags}
             />
           )}
           {selected && view === VIEWS.MONTH && (
@@ -1078,7 +1084,7 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
-              availableExamTags={availableExamTags}
+              availableTags={availableTags}
             />
           )}
           </Suspense>
