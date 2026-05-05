@@ -416,13 +416,34 @@ export function MonthView({
                   </span>
                 )}
                 {!isFullOff && hasExam && (
-                  <span style={{ fontSize: 7, color: "#b07020", fontWeight: 700 }}>
-                    {epActive[0].name.length > 8 ? epActive[0].name.slice(0, 8) + "…" : epActive[0].name}
-                    {(epActive[0].tags || []).length > 0 && (
-                      <span style={{ opacity: 0.7 }}>
-                        [{epActive[0].tags.join("·")}]
+                  <span
+                    style={{
+                      fontSize: 7,
+                      color: "#b07020",
+                      fontWeight: 700,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      textAlign: "right",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {epActive.map((ep, i) => (
+                      <span
+                        key={ep.id ?? i}
+                        style={{
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {ep.name}
+                        {(ep.tags || []).length > 0 && (
+                          <span style={{ opacity: 0.7 }}>
+                            [{ep.tags.join("·")}]
+                          </span>
+                        )}
                       </span>
-                    )}
+                    ))}
                   </span>
                 )}
               </div>
@@ -437,8 +458,6 @@ export function MonthView({
                 >
                   {evActive.map((ev) => {
                     const meta = specialEventTypeMeta(ev.eventType);
-                    const shortName =
-                      ev.name.length > 8 ? ev.name.slice(0, 8) + "…" : ev.name;
                     return (
                       <span
                         key={ev.id}
@@ -451,12 +470,12 @@ export function MonthView({
                           background: meta.bg,
                           color: meta.fg,
                           borderLeft: `2px solid ${meta.accent}`,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                          lineHeight: 1.3,
                         }}
                       >
-                        {meta.icon} {shortName}
+                        {meta.icon} {ev.name}
                         {(ev.tags || []).length > 0 && (
                           <span style={{ opacity: 0.7 }}>
                             [{ev.tags.join("·")}]
