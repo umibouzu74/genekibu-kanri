@@ -429,8 +429,14 @@ export function MonthView({
                     }}
                   >
                     {epActive.map((ep, i) => (
-                      <span key={ep.id ?? i}>
-                        {ep.name.length > 8 ? ep.name.slice(0, 8) + "…" : ep.name}
+                      <span
+                        key={ep.id ?? i}
+                        style={{
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {ep.name}
                         {(ep.tags || []).length > 0 && (
                           <span style={{ opacity: 0.7 }}>
                             [{ep.tags.join("·")}]
