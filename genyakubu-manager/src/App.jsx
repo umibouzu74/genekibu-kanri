@@ -737,8 +737,11 @@ export default function App() {
             setSelected(t);
             setView(VIEWS.MONTH);
           });
-          // useMemo の再評価が DOM へ反映されるまで 1 フレーム待つ。
-          await new Promise((r) => requestAnimationFrame(r));
+          // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
+          // (1 frame だと concurrent rendering で間に合わないケースの保険)。
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r))
+          );
           if (ac.signal.aborted) break;
           const root = document.querySelector(".month-print-root");
           if (!root) continue;

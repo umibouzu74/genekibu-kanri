@@ -14,6 +14,12 @@ import { escapeHtml } from "./escape";
 
 // ─── 1. 共通レイアウト ─────────────────────────────────────────────
 
+// 印刷ヘッダのメタ行に出す印刷日 (YYYY年MM月DD日 印刷)。月次・時間割の
+// 双方で同形式にしたいので、フォーマットを 1 箇所にまとめる。
+function formatPrintedAt(now) {
+  return `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+}
+
 // 印刷時の用紙サイズ・余白ルール。
 // 月次カレンダーは横向き、それ以外 (タイムテーブル・通常ビュー) は縦向き。
 export function buildPageRule({ hasMonthView }) {
@@ -79,7 +85,7 @@ export function buildMonthHeaderHtml({
   now = new Date(),
 }) {
   const monthLabel = buildMonthLabel({ teacher, year, month });
-  const printedAt = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+  const printedAt = formatPrintedAt(now);
   const filterDesc = describeMonthVisibility(visibility);
   const meta = filterDesc
     ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
@@ -151,7 +157,7 @@ export function buildTimetableHeaderHtml({
   else titleParts.push("時間割");
   if (dateText) titleParts.push(dateText);
   const title = titleParts.join(" — ");
-  const printedAt = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+  const printedAt = formatPrintedAt(now);
   const metaParts = [`<span>${escapeHtml(printedAt)}</span>`];
   if (selected) metaParts.push(`<span>担当: ${escapeHtml(selected)}</span>`);
   return `<h2 class="excel-print-page-title">${escapeHtml(title)}</h2><div class="excel-print-meta">${metaParts.join("")}</div>`;

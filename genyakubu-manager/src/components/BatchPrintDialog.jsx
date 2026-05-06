@@ -68,7 +68,8 @@ export function BatchPrintDialog({
   return (
     <Modal
       title="月次予定をまとめて印刷"
-      onClose={busy ? () => {} : onClose}
+      onClose={onClose}
+      closeDisabled={busy}
       width={560}
     >
       {/* fieldset で busy 中の選択 UI を一括ロック (内部の input/button が
@@ -281,6 +282,7 @@ export function BatchPrintDialog({
           <progress
             value={progress.current}
             max={progress.total}
+            aria-label="一括印刷の生成進捗"
             style={{ width: "100%", height: 8 }}
           />
         </div>
