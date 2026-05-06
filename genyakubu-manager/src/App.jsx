@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -47,6 +48,7 @@ import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
 import {
+  buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPrintStyles,
@@ -113,6 +115,9 @@ const CommandPalette = lazy(() =>
 );
 const ShortcutsHelp = lazy(() =>
   import("./components/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp }))
+);
+const BatchPrintDialog = lazy(() =>
+  import("./components/BatchPrintDialog").then((m) => ({ default: m.BatchPrintDialog }))
 );
 
 function ViewFallback() {
@@ -298,6 +303,10 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  // バイト一括印刷ダイアログ。busy 中は閉じられないようロックする。
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false);
+  const [batchPrintBusy, setBatchPrintBusy] = useState(false);
+  const [batchPrintProgress, setBatchPrintProgress] = useState("");
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -659,6 +668,80 @@ export default function App() {
     setTimeout(() => w.print(), 300);
   };
 
+  // ─── Batch Print ────────────────────────────────────────────────
+  // バイトを複数選択して各人の月次予定を 1 ジョブにまとめて印刷する。
+  // selected (現在の MonthView 表示講師) を順次差し替えて React に再描画
+  // させ、各回の .month-print-root の outerHTML をスナップショット。
+  // 全員ぶん集まったら popup window に流し込んで window.print() する。
+  // 終了後は元の selected に戻す。
+  const handleBatchPrint = useCallback(
+    async (teachers) => {
+      if (!Array.isArray(teachers) || teachers.length === 0) return;
+      const savedSelected = selected;
+      setBatchPrintBusy(true);
+      setBatchPrintProgress("");
+      try {
+        const slides = [];
+        for (let i = 0; i < teachers.length; i++) {
+          const t = teachers[i];
+          setBatchPrintProgress(
+            `${i + 1} / ${teachers.length} 名分を生成中… (${t})`
+          );
+          // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
+          flushSync(() => {
+            setSelected(t);
+            setView(VIEWS.MONTH);
+          });
+          // useMemo の再評価が DOM へ反映されるまで 1 フレーム待つ。
+          await new Promise((r) => requestAnimationFrame(r));
+          const root = document.querySelector(".month-print-root");
+          if (!root) continue;
+          slides.push({
+            headerHtml: buildMonthHeaderHtml({
+              teacher: t,
+              year: vy,
+              month: vm,
+              visibility: eventVisibility,
+            }),
+            monthRootHtml: root.outerHTML,
+          });
+        }
+
+        if (slides.length === 0) {
+          toasts.error("印刷データを生成できませんでした。");
+          return;
+        }
+
+        const w = window.open("", "_blank");
+        if (!w) {
+          toasts.error(
+            "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
+          );
+          return;
+        }
+        const printStyles = buildPrintStyles({
+          hasTimetableGrid: false,
+          hasMonthView: true,
+        });
+        const bodyHtml = buildBatchPrintBodyHtml({ slides });
+        const docTitle = `月次予定 一括印刷 (${slides.length}名・${vy}年${String(vm).padStart(2, "0")}月)`;
+        w.document.write(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
+        );
+        w.document.close();
+        w.onafterprint = () => w.close();
+        setTimeout(() => w.print(), 300);
+      } finally {
+        // 元の選択状態に戻す。null だった場合も含めそのまま代入。
+        setSelected(savedSelected);
+        setBatchPrintBusy(false);
+        setBatchPrintProgress("");
+        setBatchPrintOpen(false);
+      }
+    },
+    [selected, vy, vm, eventVisibility, toasts]
+  );
+
   // ─── Render ─────────────────────────────────────────────────────
   return (
     <div
@@ -771,6 +854,16 @@ export default function App() {
             >
               🖨 印刷
             </button>
+            {view === VIEWS.MONTH && (
+              <button
+                type="button"
+                onClick={() => setBatchPrintOpen(true)}
+                aria-label="バイトを選んでまとめて印刷"
+                style={{ ...S.btn(false), border: "1px solid #ccc" }}
+              >
+                📋 まとめて印刷
+              </button>
+            )}
           </div>
         </div>
 
@@ -1207,6 +1300,20 @@ export default function App() {
           <ShortcutsHelp
             open={shortcutsHelpOpen}
             onClose={() => setShortcutsHelpOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* バイト一括印刷ダイアログ — lazy-loaded */}
+      {batchPrintOpen && (
+        <Suspense fallback={null}>
+          <BatchPrintDialog
+            partTimeStaff={partTimeStaff}
+            subjects={subjects}
+            onClose={() => setBatchPrintOpen(false)}
+            onPrint={handleBatchPrint}
+            busy={batchPrintBusy}
+            progress={batchPrintProgress}
           />
         </Suspense>
       )}

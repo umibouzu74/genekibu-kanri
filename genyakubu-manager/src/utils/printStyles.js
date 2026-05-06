@@ -49,6 +49,7 @@ function timetablePrintCss() {
 
 // 月次カレンダー印刷専用 CSS。罫線を明示し、各日セルがページ境界で
 // 割れないよう抑制し、コマカードは折り返し可・操作 UI 風表現を解除する。
+// 一括印刷時の .batch-print-page (講師ごとの 1 枚) は最後を除き改ページする。
 function monthPrintCss() {
   return `
     .month-print-header{margin:0 0 6px}
@@ -80,6 +81,14 @@ function monthPrintCss() {
         cursor:default !important;
         opacity:1 !important;
       }
+      .batch-print-page{
+        page-break-after:always;
+        break-after:page;
+      }
+      .batch-print-page:last-child{
+        page-break-after:auto;
+        break-after:auto;
+      }
     }
   `;
 }
@@ -102,6 +111,59 @@ export function buildPrintStyles({ hasTimetableGrid, hasMonthView }) {
     }
     ${month}
   `;
+}
+
+// 一括印刷ダイアログ用に、バイト (partTimeStaff) を教科ごとにグループ化する。
+// 各 staff の subjectIds から教科名を引き、所属する教科すべてに重複登録する。
+// subjectIds 未指定の staff は「未分類」グループに入れる。グループ間は
+// subjects の登場順、グループ内の staff は五十音順で並べる。該当者ゼロの
+// グループは結果から省く。
+export function groupStaffBySubject({ partTimeStaff = [], subjects = [] }) {
+  const subjectIdToName = new Map(subjects.map((s) => [s.id, s.name]));
+  const groups = new Map();
+  for (const s of subjects) {
+    groups.set(s.name, { subjectName: s.name, staff: [] });
+  }
+  groups.set("未分類", { subjectName: "未分類", staff: [] });
+  for (const p of partTimeStaff) {
+    if (!p?.name) continue;
+    const ids = Array.isArray(p.subjectIds) ? p.subjectIds : [];
+    if (ids.length === 0) {
+      groups.get("未分類").staff.push(p.name);
+      continue;
+    }
+    let assigned = false;
+    for (const id of ids) {
+      const name = subjectIdToName.get(id);
+      if (!name) continue;
+      const g = groups.get(name);
+      if (g) {
+        g.staff.push(p.name);
+        assigned = true;
+      }
+    }
+    // subjectIds は持っているが対応する教科が無い場合も「未分類」に逃がす
+    if (!assigned) groups.get("未分類").staff.push(p.name);
+  }
+  return Array.from(groups.values())
+    .map((g) => ({
+      ...g,
+      staff: [...g.staff].sort((a, b) => a.localeCompare(b, "ja")),
+    }))
+    .filter((g) => g.staff.length > 0);
+}
+
+// 一括印刷の <body> HTML。各 slide を <section.batch-print-page> で
+// 包み、CSS の page-break-after で講師 1 人ずつ別ページに分ける。
+// slide は { headerHtml, monthRootHtml } の形。
+export function buildBatchPrintBodyHtml({ slides }) {
+  if (!Array.isArray(slides) || slides.length === 0) return "";
+  return slides
+    .map(
+      ({ headerHtml = "", monthRootHtml = "" }) =>
+        `<section class="batch-print-page">${headerHtml}${monthRootHtml}</section>`
+    )
+    .join("");
 }
 
 // 月次カレンダー印刷ヘッダ HTML (タイトル + メタ + 凡例) を組み立てる。

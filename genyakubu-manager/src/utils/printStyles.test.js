@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPageRule,
   buildPrintStyles,
   describeMonthVisibility,
+  groupStaffBySubject,
 } from "./printStyles";
 
 describe("describeMonthVisibility", () => {
@@ -222,5 +224,122 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("振</b>振替");
     expect(html).toContain("移</b>時間変更");
     expect(html).toContain("特訓</b>テスト直前特訓");
+  });
+});
+
+describe("groupStaffBySubject", () => {
+  const subjects = [
+    { id: 1, name: "英語" },
+    { id: 2, name: "数学" },
+    { id: 3, name: "国語" },
+  ];
+
+  it("subjectIds に従って各教科グループに登録 (重複担当も両方に出す)", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [1, 2] },
+        { name: "佐藤", subjectIds: [2] },
+        { name: "鈴木", subjectIds: [1] },
+      ],
+      subjects,
+    });
+    const map = Object.fromEntries(
+      result.map((g) => [g.subjectName, g.staff])
+    );
+    expect(map["英語"]).toEqual(["山田", "鈴木"].sort((a, b) => a.localeCompare(b, "ja")));
+    expect(map["数学"]).toEqual(["山田", "佐藤"].sort((a, b) => a.localeCompare(b, "ja")));
+    expect(map["国語"]).toBeUndefined(); // 該当者ゼロのグループは省く
+  });
+
+  it("subjectIds 未指定または空配列は 未分類 グループに入る", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [] },
+        { name: "佐藤" },
+      ],
+      subjects,
+    });
+    const unassigned = result.find((g) => g.subjectName === "未分類");
+    expect(unassigned).toBeDefined();
+    expect(unassigned.staff).toEqual(["佐藤", "山田"]);
+  });
+
+  it("存在しない subjectId のみを持つ staff も 未分類 に逃がす", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [{ name: "山田", subjectIds: [999] }],
+      subjects,
+    });
+    expect(result).toEqual([{ subjectName: "未分類", staff: ["山田"] }]);
+  });
+
+  it("グループ間の順序は subjects の登場順 + 末尾に 未分類", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "A", subjectIds: [3] },
+        { name: "B", subjectIds: [1] },
+        { name: "C", subjectIds: [] },
+      ],
+      subjects,
+    });
+    expect(result.map((g) => g.subjectName)).toEqual(["英語", "国語", "未分類"]);
+  });
+
+  it("グループ内 staff は五十音順", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [1] },
+        { name: "佐藤", subjectIds: [1] },
+        { name: "あいうえお", subjectIds: [1] },
+      ],
+      subjects,
+    });
+    expect(result[0].staff).toEqual(["あいうえお", "佐藤", "山田"]);
+  });
+
+  it("空入力は空配列を返す", () => {
+    expect(groupStaffBySubject({})).toEqual([]);
+    expect(groupStaffBySubject({ partTimeStaff: [], subjects: [] })).toEqual(
+      []
+    );
+  });
+});
+
+describe("buildBatchPrintBodyHtml", () => {
+  it("各 slide を batch-print-page で包んで連結する", () => {
+    const html = buildBatchPrintBodyHtml({
+      slides: [
+        { headerHtml: "<h2>A</h2>", monthRootHtml: "<div>cal-A</div>" },
+        { headerHtml: "<h2>B</h2>", monthRootHtml: "<div>cal-B</div>" },
+      ],
+    });
+    expect(html).toBe(
+      `<section class="batch-print-page"><h2>A</h2><div>cal-A</div></section>` +
+        `<section class="batch-print-page"><h2>B</h2><div>cal-B</div></section>`
+    );
+  });
+
+  it("空 slides では空文字を返す", () => {
+    expect(buildBatchPrintBodyHtml({ slides: [] })).toBe("");
+    expect(buildBatchPrintBodyHtml({})).toBe("");
+  });
+
+  it("欠損プロパティは空文字でフォールバック", () => {
+    const html = buildBatchPrintBodyHtml({
+      slides: [{ headerHtml: "<h2>only</h2>" }, { monthRootHtml: "<div>cal</div>" }],
+    });
+    expect(html).toContain("<h2>only</h2></section>");
+    expect(html).toContain("<section class=\"batch-print-page\"><div>cal</div></section>");
+  });
+});
+
+describe("buildPrintStyles (batch print rules)", () => {
+  it("月次有効時は .batch-print-page の改ページルールを含む", () => {
+    const css = buildPrintStyles({
+      hasTimetableGrid: false,
+      hasMonthView: true,
+    });
+    expect(css).toContain(".batch-print-page");
+    expect(css).toContain("page-break-after:always");
+    expect(css).toContain(".batch-print-page:last-child");
   });
 });
