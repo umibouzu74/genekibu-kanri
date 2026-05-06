@@ -26,7 +26,7 @@ export function describeMonthVisibility(visibility) {
 // 月次カレンダー印刷タイトル。docTitle (印刷ジョブ名) と
 // 紙面ヘッダ h2 で共通利用する。
 export function buildMonthLabel({ teacher, year, month }) {
-  const prefix = teacher ? `${teacher}　` : "";
+  const prefix = teacher ? `${teacher}\u3000` : "";
   return `${prefix}${year}年${String(month).padStart(2, "0")}月 月次予定`;
 }
 
