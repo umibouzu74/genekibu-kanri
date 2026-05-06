@@ -1,15 +1,23 @@
-import { useId, useRef } from "react";
+import { useCallback, useId, useRef } from "react";
 import { S } from "../styles/common";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
-export function Modal({ title, onClose, children, width }) {
+// closeDisabled=true のとき、× ボタン・背景クリック・Esc のすべてを
+// 無効化する。一括印刷のように「処理中だから閉じさせたくない」モーダル
+// から渡される。視覚上も × ボタンを薄く / not-allowed にする。
+export function Modal({ title, onClose, children, width, closeDisabled = false }) {
   const dialogRef = useRef(null);
   const titleId = useId();
 
-  useFocusTrap(dialogRef, { onClose });
+  const handleClose = useCallback(() => {
+    if (closeDisabled) return;
+    onClose?.();
+  }, [closeDisabled, onClose]);
+
+  useFocusTrap(dialogRef, { onClose: handleClose });
 
   return (
-    <div style={S.modal} onClick={onClose} role="presentation">
+    <div style={S.modal} onClick={handleClose} role="presentation">
       <div
         ref={dialogRef}
         className="mobile-card-pad"
@@ -32,9 +40,16 @@ export function Modal({ title, onClose, children, width }) {
           </h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="閉じる"
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
+            disabled={closeDisabled}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 18,
+              opacity: closeDisabled ? 0.4 : 1,
+            }}
           >
             ✕
           </button>

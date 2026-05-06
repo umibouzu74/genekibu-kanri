@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPageRule,
   buildPrintStyles,
+  buildTimetableHeaderHtml,
   describeMonthVisibility,
+  groupStaffBySubject,
 } from "./printStyles";
 
 describe("describeMonthVisibility", () => {
@@ -222,5 +225,219 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("振</b>振替");
     expect(html).toContain("移</b>時間変更");
     expect(html).toContain("特訓</b>テスト直前特訓");
+  });
+});
+
+describe("groupStaffBySubject", () => {
+  const subjects = [
+    { id: 1, name: "英語" },
+    { id: 2, name: "数学" },
+    { id: 3, name: "国語" },
+  ];
+
+  it("subjectIds に従って各教科グループに登録 (重複担当も両方に出す)", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [1, 2] },
+        { name: "佐藤", subjectIds: [2] },
+        { name: "鈴木", subjectIds: [1] },
+      ],
+      subjects,
+    });
+    const map = Object.fromEntries(
+      result.map((g) => [g.subjectName, g.staff])
+    );
+    expect(map["英語"]).toEqual(["山田", "鈴木"].sort((a, b) => a.localeCompare(b, "ja")));
+    expect(map["数学"]).toEqual(["山田", "佐藤"].sort((a, b) => a.localeCompare(b, "ja")));
+    expect(map["国語"]).toBeUndefined(); // 該当者ゼロのグループは省く
+  });
+
+  it("subjectIds 未指定または空配列は 未分類 グループに入る", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [] },
+        { name: "佐藤" },
+      ],
+      subjects,
+    });
+    const unassigned = result.find((g) => g.subjectName === "未分類");
+    expect(unassigned).toBeDefined();
+    expect(unassigned.staff).toEqual(["佐藤", "山田"]);
+  });
+
+  it("存在しない subjectId のみを持つ staff も 未分類 に逃がす", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [{ name: "山田", subjectIds: [999] }],
+      subjects,
+    });
+    expect(result).toEqual([{ subjectName: "未分類", staff: ["山田"] }]);
+  });
+
+  it("グループ間の順序は subjects の登場順 + 末尾に 未分類", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "A", subjectIds: [3] },
+        { name: "B", subjectIds: [1] },
+        { name: "C", subjectIds: [] },
+      ],
+      subjects,
+    });
+    expect(result.map((g) => g.subjectName)).toEqual(["英語", "国語", "未分類"]);
+  });
+
+  it("グループ内 staff は五十音順", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "山田", subjectIds: [1] },
+        { name: "佐藤", subjectIds: [1] },
+        { name: "あいうえお", subjectIds: [1] },
+      ],
+      subjects,
+    });
+    expect(result[0].staff).toEqual(["あいうえお", "佐藤", "山田"]);
+  });
+
+  it("空入力は空配列を返す", () => {
+    expect(groupStaffBySubject({})).toEqual([]);
+    expect(groupStaffBySubject({ partTimeStaff: [], subjects: [] })).toEqual(
+      []
+    );
+  });
+
+  it("subjects に 未分類 という教科があっても フォールバックの未分類グループと衝突しない", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "A", subjectIds: [99] }, // subjects に存在する 未分類 教科
+        { name: "B", subjectIds: [] }, // subjectIds 空 → 末尾の未分類グループへ
+      ],
+      subjects: [{ id: 99, name: "未分類" }],
+    });
+    // 両方とも subjectName は "未分類" だが、A は教科として、B はフォールバック先
+    // にそれぞれ独立して入る。staff が消えないことを担保する。
+    const allStaff = result.flatMap((g) => g.staff);
+    expect(allStaff.sort()).toEqual(["A", "B"]);
+  });
+});
+
+describe("buildBatchPrintBodyHtml", () => {
+  it("各 slide を batch-print-page で包んで連結する", () => {
+    const html = buildBatchPrintBodyHtml({
+      slides: [
+        { headerHtml: "<h2>A</h2>", monthRootHtml: "<div>cal-A</div>" },
+        { headerHtml: "<h2>B</h2>", monthRootHtml: "<div>cal-B</div>" },
+      ],
+    });
+    expect(html).toBe(
+      `<section class="batch-print-page"><h2>A</h2><div>cal-A</div></section>` +
+        `<section class="batch-print-page"><h2>B</h2><div>cal-B</div></section>`
+    );
+  });
+
+  it("空 slides では空文字を返す", () => {
+    expect(buildBatchPrintBodyHtml({ slides: [] })).toBe("");
+    expect(buildBatchPrintBodyHtml({})).toBe("");
+  });
+
+  it("欠損プロパティは空文字でフォールバック", () => {
+    const html = buildBatchPrintBodyHtml({
+      slides: [{ headerHtml: "<h2>only</h2>" }, { monthRootHtml: "<div>cal</div>" }],
+    });
+    expect(html).toContain("<h2>only</h2></section>");
+    expect(html).toContain("<section class=\"batch-print-page\"><div>cal</div></section>");
+  });
+});
+
+describe("buildPrintStyles (batch print rules)", () => {
+  it("月次有効時は .batch-print-page の改ページルールを含む", () => {
+    const css = buildPrintStyles({
+      hasTimetableGrid: false,
+      hasMonthView: true,
+    });
+    expect(css).toContain(".batch-print-page");
+    expect(css).toContain("page-break-after:always");
+    expect(css).toContain(".batch-print-page:last-child");
+  });
+
+  it("タイムテーブル有効時は .excel-print-meta のスタイルを含む", () => {
+    const css = buildPrintStyles({
+      hasTimetableGrid: true,
+      hasMonthView: false,
+    });
+    expect(css).toContain(".excel-print-meta");
+  });
+});
+
+describe("buildTimetableHeaderHtml", () => {
+  const fixedNow = new Date(2026, 4, 6); // 2026-05-06
+
+  it("中学セクションのタイトルと日付・印刷日を含む", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: null,
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割 — 2026-05-06（水）");
+    expect(html).toContain("2026年05月06日 印刷");
+    expect(html).toContain('class="excel-print-page-title"');
+    expect(html).toContain('class="excel-print-meta"');
+  });
+
+  it("高校セクションのタイトル", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "高校",
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).toContain("高校の時間割 — 2026-05-06（水）");
+  });
+
+  it("section 未指定では 時間割 のみを出す", () => {
+    const html = buildTimetableHeaderHtml({
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).toContain("時間割 — 2026-05-06（水）");
+    expect(html).not.toContain("中学の時間割");
+    expect(html).not.toContain("高校の時間割");
+  });
+
+  it("dateText 未指定では 区切り — を出さず時間割のみ", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割</h2>");
+    expect(html).not.toContain("—");
+  });
+
+  it("selected を渡すと meta 行に 担当: が追加される", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: "山田",
+      now: fixedNow,
+    });
+    expect(html).toContain("担当: 山田");
+  });
+
+  it("selected が無い場合は 担当 行を出さない", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).not.toContain("担当:");
+  });
+
+  it("講師名が HTML 特殊文字を含むとエスケープされる (XSS 防止)", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: "<script>alert(1)</script>",
+      now: fixedNow,
+    });
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
   });
 });

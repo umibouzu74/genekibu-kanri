@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -47,9 +48,11 @@ import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
 import {
+  buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPrintStyles,
+  buildTimetableHeaderHtml,
 } from "./utils/printStyles";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
@@ -113,6 +116,9 @@ const CommandPalette = lazy(() =>
 );
 const ShortcutsHelp = lazy(() =>
   import("./components/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp }))
+);
+const BatchPrintDialog = lazy(() =>
+  import("./components/BatchPrintDialog").then((m) => ({ default: m.BatchPrintDialog }))
 );
 
 function ViewFallback() {
@@ -298,6 +304,17 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  // バイト一括印刷ダイアログ。busy 中は閉じられないようロックする。
+  // progress は { current, total, name } を持ち、ダイアログで <progress>
+  // 要素として描画する。abortRef は中断ボタンから for ループへの伝達役。
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false);
+  const [batchPrintBusy, setBatchPrintBusy] = useState(false);
+  const [batchPrintProgress, setBatchPrintProgress] = useState({
+    current: 0,
+    total: 0,
+    name: "",
+  });
+  const batchPrintAbortRef = useRef(null);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -611,6 +628,9 @@ export default function App() {
     const dateInput = el.querySelector('input[type="date"]');
     const printDate = dateInput?.value || "";
     const printDay = printDate ? dateToDay(printDate) : "";
+    const dateText = printDate
+      ? `${printDate}${printDay ? `（${printDay}）` : ""}`
+      : "";
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
@@ -627,14 +647,25 @@ export default function App() {
 
     let bodyHtml = el.innerHTML;
     if (hasTimetableGrid) {
-      const header = `<h2 class="excel-print-page-title">${escapeHtml(dateLabel)}</h2>`;
+      // 中学/高校で別々のヘッダを注入する (印刷時は別ページ)。各ヘッダには
+      // セクション名・日付・印刷日・講師名 (選択中のみ) を載せる。
+      const msHeader = buildTimetableHeaderHtml({
+        section: "中学",
+        dateText,
+        selected,
+      });
+      const hsHeader = buildTimetableHeaderHtml({
+        section: "高校",
+        dateText,
+        selected,
+      });
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bexcel-print-col-ms\b[^"]*"[^>]*>)/,
-        `${header}$1`
+        `${msHeader}$1`
       );
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>)/,
-        `${header}$1`
+        `${hsHeader}$1`
       );
     }
     if (hasMonthView) {
@@ -658,6 +689,109 @@ export default function App() {
     w.onafterprint = () => w.close();
     setTimeout(() => w.print(), 300);
   };
+
+  // ─── Batch Print ────────────────────────────────────────────────
+  // バイトを複数選択して各人の月次予定を 1 ジョブにまとめて印刷する。
+  // selected (現在の MonthView 表示講師) を順次差し替えて React に再描画
+  // させ、各回の .month-print-root の outerHTML をスナップショット。
+  // 全員ぶん集まったら popup window に流し込んで window.print() する。
+  // 終了後は元の selected / view に戻す。
+  //
+  // popup は user gesture (ボタンクリック) 直下で開かないと Safari/Firefox
+  // でブロックされやすい。await を挟む前に先に window.open しておく。
+  //
+  // 途中中断は AbortController 経由で handleBatchPrintAbort から signal を
+  // 立てて、ループ先頭で aborted を見て break する。
+  const handleBatchPrintAbort = useCallback(() => {
+    batchPrintAbortRef.current?.abort();
+  }, []);
+
+  const handleBatchPrint = useCallback(
+    async (teachers) => {
+      if (!Array.isArray(teachers) || teachers.length === 0) return;
+      const w = window.open("", "_blank");
+      if (!w) {
+        toasts.error(
+          "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
+        );
+        return;
+      }
+      const ac = new AbortController();
+      batchPrintAbortRef.current = ac;
+      const savedSelected = selected;
+      const savedView = view;
+      setBatchPrintBusy(true);
+      setBatchPrintProgress({ current: 0, total: teachers.length, name: "" });
+      try {
+        const slides = [];
+        for (let i = 0; i < teachers.length; i++) {
+          if (ac.signal.aborted) break;
+          const t = teachers[i];
+          setBatchPrintProgress({
+            current: i + 1,
+            total: teachers.length,
+            name: t,
+          });
+          // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
+          flushSync(() => {
+            setSelected(t);
+            setView(VIEWS.MONTH);
+          });
+          // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
+          // (1 frame だと concurrent rendering で間に合わないケースの保険)。
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r))
+          );
+          if (ac.signal.aborted) break;
+          const root = document.querySelector(".month-print-root");
+          if (!root) continue;
+          slides.push({
+            headerHtml: buildMonthHeaderHtml({
+              teacher: t,
+              year: vy,
+              month: vm,
+              visibility: eventVisibility,
+            }),
+            monthRootHtml: root.outerHTML,
+          });
+        }
+
+        if (ac.signal.aborted) {
+          toasts.info("一括印刷を中断しました");
+          w.close();
+          return;
+        }
+
+        if (slides.length === 0) {
+          toasts.error("印刷データを生成できませんでした。");
+          w.close();
+          return;
+        }
+
+        const printStyles = buildPrintStyles({
+          hasTimetableGrid: false,
+          hasMonthView: true,
+        });
+        const bodyHtml = buildBatchPrintBodyHtml({ slides });
+        const docTitle = `月次予定 一括印刷 (${slides.length}名・${vy}年${String(vm).padStart(2, "0")}月)`;
+        w.document.write(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
+        );
+        w.document.close();
+        w.onafterprint = () => w.close();
+        setTimeout(() => w.print(), 300);
+      } finally {
+        // 元の選択状態 / view に戻す。null だった場合も含めそのまま代入。
+        batchPrintAbortRef.current = null;
+        setSelected(savedSelected);
+        setView(savedView);
+        setBatchPrintBusy(false);
+        setBatchPrintProgress({ current: 0, total: 0, name: "" });
+        setBatchPrintOpen(false);
+      }
+    },
+    [selected, view, vy, vm, eventVisibility, toasts]
+  );
 
   // ─── Render ─────────────────────────────────────────────────────
   return (
@@ -771,6 +905,16 @@ export default function App() {
             >
               🖨 印刷
             </button>
+            {view === VIEWS.MONTH && (
+              <button
+                type="button"
+                onClick={() => setBatchPrintOpen(true)}
+                aria-label="バイトを選んでまとめて印刷"
+                style={{ ...S.btn(false), border: "1px solid #ccc" }}
+              >
+                📋 まとめて印刷
+              </button>
+            )}
           </div>
         </div>
 
@@ -1207,6 +1351,21 @@ export default function App() {
           <ShortcutsHelp
             open={shortcutsHelpOpen}
             onClose={() => setShortcutsHelpOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* バイト一括印刷ダイアログ — lazy-loaded */}
+      {batchPrintOpen && (
+        <Suspense fallback={null}>
+          <BatchPrintDialog
+            partTimeStaff={partTimeStaff}
+            subjects={subjects}
+            onClose={() => setBatchPrintOpen(false)}
+            onPrint={handleBatchPrint}
+            onAbort={handleBatchPrintAbort}
+            busy={batchPrintBusy}
+            progress={batchPrintProgress}
           />
         </Suspense>
       )}
