@@ -1,0 +1,125 @@
+// 印刷ポップアップ (App.jsx の handlePrint) で使う CSS / HTML ビルダ。
+// 純粋関数として切り出してあり、handlePrint 本体からは DOM 操作だけが
+// 残るようにする。値は popup window の <style> / <body> 内に直接埋め込まれる
+// ため、文字列で返す。
+
+import { EVENT_KIND } from "../constants/eventKinds";
+import { escapeHtml } from "./escape";
+
+// 月次カレンダー印刷ヘッダに出す「現在のフィルタ状態」サマリ。
+// デフォルト (テスト期間/特別イベント とも非表示・タグ除外なし) の場合は
+// 空文字を返し、印刷時に行ごと省く。
+export function describeMonthVisibility(visibility) {
+  const shown = [];
+  if (visibility?.[EVENT_KIND.EXAM]) shown.push("テスト期間");
+  if (visibility?.[EVENT_KIND.SPECIAL]) shown.push("特別イベント");
+  // 旧キー examTagFilters は EventVisibilityToggles 側で
+  // フォールバック対応されているのでここでも踏襲する。
+  const tagFilters = visibility?.tagFilters || visibility?.examTagFilters || {};
+  const offTags = Object.keys(tagFilters).filter((k) => tagFilters[k] === false);
+  const parts = [];
+  if (shown.length > 0) parts.push(`表示: ${shown.join("・")}`);
+  if (offTags.length > 0) parts.push(`除外タグ: ${offTags.join(", ")}`);
+  return parts.join(" / ");
+}
+
+// 月次カレンダー印刷タイトル。docTitle (印刷ジョブ名) と
+// 紙面ヘッダ h2 で共通利用する。
+export function buildMonthLabel({ teacher, year, month }) {
+  const prefix = teacher ? `${teacher}\u3000` : "";
+  return `${prefix}${year}年${String(month).padStart(2, "0")}月 月次予定`;
+}
+
+// 印刷時の用紙サイズ・余白ルール。
+// 月次カレンダーは横向き、それ以外 (タイムテーブル・通常ビュー) は縦向き。
+export function buildPageRule({ hasMonthView }) {
+  return hasMonthView
+    ? "@page{size:A4 landscape;margin:8mm}"
+    : "@page{size:A4 portrait;margin:12mm 8mm}";
+}
+
+// タイムテーブル (中学/高校 2 段) 印刷専用 CSS。中高間で改ページ。
+function timetablePrintCss() {
+  return `
+    .excel-grid-sections{display:block !important;grid-template-columns:none !important}
+    .excel-print-col-ms{break-after:page;page-break-after:always}
+    .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
+  `;
+}
+
+// 月次カレンダー印刷専用 CSS。罫線を明示し、各日セルがページ境界で
+// 割れないよう抑制し、コマカードは折り返し可・操作 UI 風表現を解除する。
+function monthPrintCss() {
+  return `
+    .month-print-header{margin:0 0 6px}
+    .month-print-page-title{font-size:13pt;font-weight:700;margin:0 0 3px;padding:0 0 3px;border-bottom:1px solid #444}
+    .month-print-meta{font-size:9pt;color:#555;display:flex;gap:12px;flex-wrap:wrap;margin:0 0 3px}
+    .month-print-legend{font-size:8pt;color:#555;display:flex;gap:10px;flex-wrap:wrap}
+    .month-print-legend>span{white-space:nowrap}
+    .month-print-legend b{background:#444;color:#fff;font-weight:700;padding:0 4px;border-radius:2px;margin-right:3px}
+    @media print{
+      .month-print-root{margin-top:0 !important}
+      .month-print-grid{
+        gap:0 !important;
+        background:#fff !important;
+        border:1px solid #888 !important;
+        border-radius:0 !important;
+      }
+      .month-print-grid > *{
+        border:1px solid #bbb !important;
+        box-sizing:border-box;
+      }
+      .month-print-cell{
+        break-inside:avoid;
+        page-break-inside:avoid;
+      }
+      .month-print-card{
+        white-space:normal !important;
+        overflow:visible !important;
+        line-height:1.3 !important;
+        cursor:default !important;
+        opacity:1 !important;
+      }
+    }
+  `;
+}
+
+// printStyles 全体を組み立てる。handlePrint から呼ばれ、popup window の
+// <style> 内に直接挿入される。
+export function buildPrintStyles({ hasTimetableGrid, hasMonthView }) {
+  const pageRule = buildPageRule({ hasMonthView });
+  const tt = hasTimetableGrid ? timetablePrintCss() : "";
+  const month = hasMonthView ? monthPrintCss() : "";
+  return `
+    body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
+    .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
+    @media print{
+      ${pageRule}
+      body{padding:0;font-size:10px}
+      *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
+      .no-print{display:none !important}
+      ${tt}
+    }
+    ${month}
+  `;
+}
+
+// 月次カレンダー印刷ヘッダ HTML (タイトル + メタ + 凡例) を組み立てる。
+// .month-print-root の直前に挿入される。`now` を引数で受けるのは決定的に
+// テストするため。
+export function buildMonthHeaderHtml({
+  teacher,
+  year,
+  month,
+  visibility,
+  now = new Date(),
+}) {
+  const monthLabel = buildMonthLabel({ teacher, year, month });
+  const printedAt = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+  const filterDesc = describeMonthVisibility(visibility);
+  const meta = filterDesc
+    ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
+    : `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span></div>`;
+  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span></div>`;
+  return `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
+}

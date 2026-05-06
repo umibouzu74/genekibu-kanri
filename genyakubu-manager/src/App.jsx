@@ -46,6 +46,11 @@ import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay } from "./utils/dateHelpers";
+import {
+  buildMonthHeaderHtml,
+  buildMonthLabel,
+  buildPrintStyles,
+} from "./utils/printStyles";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
@@ -588,6 +593,11 @@ export default function App() {
   const selSlotCount = selDayCounts.total;
 
   // ─── Print ──────────────────────────────────────────────────────
+  // popup window を開いて #main-content の innerHTML をコピーし、
+  // ビュー別の印刷スタイルとヘッダ HTML を注入してから print() を呼ぶ。
+  // CSS / HTML ビルダは `utils/printStyles` に切り出してテスト可能にしている。
+  // (各ビューの PrintButton はメインドキュメント側を直接 window.print() する
+  // 別系統。ヘッダや凡例の整った印刷物が必要なビューはこちらを使う。)
   const handlePrint = () => {
     const el = document.getElementById("main-content");
     if (!el) return;
@@ -604,24 +614,16 @@ export default function App() {
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
-    const docTitle = selected ? `${selected} 授業予定` : dateLabel;
     const hasTimetableGrid = !!el.querySelector(".excel-print-col-ms");
+    const hasMonthView =
+      view === VIEWS.MONTH && !!el.querySelector(".month-print-root");
+    const docTitle = hasMonthView
+      ? buildMonthLabel({ teacher: selected, year: vy, month: vm })
+      : selected
+        ? `${selected} 授業予定`
+        : dateLabel;
 
-    const printStyles = `
-      body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
-      .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
-      @media print{
-        @page{size:A4 portrait;margin:12mm 8mm}
-        body{padding:0;font-size:10px}
-        *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
-        .no-print{display:none !important}
-        ${hasTimetableGrid ? `
-        .excel-grid-sections{display:block !important;grid-template-columns:none !important}
-        .excel-print-col-ms{break-after:page;page-break-after:always}
-        .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
-        ` : ""}
-      }
-    `;
+    const printStyles = buildPrintStyles({ hasTimetableGrid, hasMonthView });
 
     let bodyHtml = el.innerHTML;
     if (hasTimetableGrid) {
@@ -635,11 +637,25 @@ export default function App() {
         `${header}$1`
       );
     }
+    if (hasMonthView) {
+      const header = buildMonthHeaderHtml({
+        teacher: selected,
+        year: vy,
+        month: vm,
+        visibility: eventVisibility,
+      });
+      bodyHtml = bodyHtml.replace(
+        /(<div[^>]*class="[^"]*\bmonth-print-root\b[^"]*"[^>]*>)/,
+        `${header}$1`
+      );
+    }
 
     w.document.write(
       `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
     );
     w.document.close();
+    // 印刷ダイアログが閉じたらポップアップも自動で閉じる (取り消した場合含む)。
+    w.onafterprint = () => w.close();
     setTimeout(() => w.print(), 300);
   };
 

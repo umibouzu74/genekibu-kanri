@@ -1,7 +1,15 @@
 import { S } from "../styles/common";
 
-// 各ビュー上部に並べる印刷クイックボタン。
-// 既存の no-print / @media print CSS と組み合わせるだけで動作する。
+// 各ビュー上部に並べる印刷クイックボタン。メインドキュメントを直接
+// `window.print()` するシンプル方式。App.jsx 末尾の `@media print`
+// グローバルルール (サイドバー/ハンバーガーの非表示など) と各ビューが
+// 自前で持つ印刷 CSS だけで仕上がるビュー (Dashboard / WeekView /
+// EventCalendarView / ConfirmedSubsView / MasterView) で使う。
+//
+// ヘッダ・凡例・ページタイトルなど DOM に常設しづらい要素を紙面に
+// 載せたいビュー (例: 月次カレンダー / タイムテーブル) は、トップバーの
+// 🖨 ボタン (`handlePrint`) を使う。あちらは popup 経由で動的に HTML を
+// 注入する別系統。
 export function PrintButton({ label = "印刷", style }) {
   return (
     <button

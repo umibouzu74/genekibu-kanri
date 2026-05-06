@@ -39,6 +39,35 @@ Claude Code セッション間で共有したい規約や「やらないこと�
 
 判断に迷う場合は cascade ありとして `confirmedRemove` を使うこと。
 
+## 印刷システムの二系統 (重要)
+
+印刷機構は意図的に 2 系統あり、統合しない。**新しい印刷導線を増やす際は
+どちらに寄せるかを必ず判断すること。**
+
+- **`PrintButton` (`src/components/PrintButton.jsx`)** — メインドキュメントを
+  そのまま `window.print()` する単純方式
+  - 適用先: Dashboard / WeekView / EventCalendarView / ConfirmedSubsView /
+    MasterView
+  - 仕上げは App.jsx 末尾のグローバル `@media print` と各ビュー自前の
+    印刷 CSS だけで完結。**popup を使わない。**
+
+- **`handlePrint` (App.jsx, トップバー右の 🖨 ボタン)** — 新ウィンドウを
+  開いて `#main-content.innerHTML` をコピーし、ビュー別の印刷スタイルと
+  ヘッダ HTML を動的に注入してから印刷する方式
+  - 適用先: 月次カレンダー (MonthView) / タイムテーブル (ExcelGridView)
+  - 「ページタイトル h2」「印刷日」「フィルタ状態」「凡例」など、
+    DOM に常設しづらい要素を紙面に載せる必要がある場合はこちら
+  - CSS / HTML ビルダは `src/utils/printStyles.js` に切り出し、
+    `printStyles.test.js` で純粋関数としてテストしている
+
+**両者を統合する案 (E-2: 全部 window.print() 方式に寄せる) は
+2026-05-05 に検討の上で却下。** 月次の印刷ヘッダ (タイトル・印刷日・
+フィルタ状態・凡例) を `window.print()` で出すには各コンポーネントに
+print-only DOM (`@media screen { display:none }` / `@media print { display:block }`)
+を仕込む必要があり、コンポーネントが汚れる割に得るものが薄い。
+popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
+`toasts.error` 表示まで実装済みなので運用コストは小さい。
+
 ## 参考: 今後の候補として残っている未実装アイデア
 
 ブラッシュアップ作業のメモ。優先度は都度相談。
