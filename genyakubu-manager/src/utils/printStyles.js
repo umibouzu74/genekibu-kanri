@@ -39,8 +39,11 @@ export function buildPageRule({ hasMonthView }) {
 }
 
 // タイムテーブル (中学/高校 2 段) 印刷専用 CSS。中高間で改ページ。
+// excel-print-meta はセクション別ヘッダのサブ行 (印刷日 / 講師名) を整える。
 function timetablePrintCss() {
   return `
+    .excel-print-meta{font-size:9pt;color:#555;display:flex;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+    .excel-print-meta>span{white-space:nowrap}
     .excel-grid-sections{display:block !important;grid-template-columns:none !important}
     .excel-print-col-ms{break-after:page;page-break-after:always}
     .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
@@ -164,6 +167,27 @@ export function buildBatchPrintBodyHtml({ slides }) {
         `<section class="batch-print-page">${headerHtml}${monthRootHtml}</section>`
     )
     .join("");
+}
+
+// タイムテーブル印刷ヘッダ HTML (セクション名 + 日付 + メタ) を組み立てる。
+// MS/HS の各ページ先頭に挿入される。section は "中学" / "高校" を期待し、
+// 未指定なら「時間割」のみを出す。selected が指定されている場合は副題に
+// 講師名を併記する。`now` を引数で受けるのは決定的にテストするため。
+export function buildTimetableHeaderHtml({
+  section,
+  dateText,
+  selected,
+  now = new Date(),
+}) {
+  const titleParts = [];
+  if (section) titleParts.push(`${section}の時間割`);
+  else titleParts.push("時間割");
+  if (dateText) titleParts.push(dateText);
+  const title = titleParts.join(" — ");
+  const printedAt = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+  const metaParts = [`<span>${escapeHtml(printedAt)}</span>`];
+  if (selected) metaParts.push(`<span>担当: ${escapeHtml(selected)}</span>`);
+  return `<h2 class="excel-print-page-title">${escapeHtml(title)}</h2><div class="excel-print-meta">${metaParts.join("")}</div>`;
 }
 
 // 月次カレンダー印刷ヘッダ HTML (タイトル + メタ + 凡例) を組み立てる。

@@ -5,6 +5,7 @@ import {
   buildMonthLabel,
   buildPageRule,
   buildPrintStyles,
+  buildTimetableHeaderHtml,
   describeMonthVisibility,
   groupStaffBySubject,
 } from "./printStyles";
@@ -341,5 +342,88 @@ describe("buildPrintStyles (batch print rules)", () => {
     expect(css).toContain(".batch-print-page");
     expect(css).toContain("page-break-after:always");
     expect(css).toContain(".batch-print-page:last-child");
+  });
+
+  it("タイムテーブル有効時は .excel-print-meta のスタイルを含む", () => {
+    const css = buildPrintStyles({
+      hasTimetableGrid: true,
+      hasMonthView: false,
+    });
+    expect(css).toContain(".excel-print-meta");
+  });
+});
+
+describe("buildTimetableHeaderHtml", () => {
+  const fixedNow = new Date(2026, 4, 6); // 2026-05-06
+
+  it("中学セクションのタイトルと日付・印刷日を含む", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: null,
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割 — 2026-05-06（水）");
+    expect(html).toContain("2026年05月06日 印刷");
+    expect(html).toContain('class="excel-print-page-title"');
+    expect(html).toContain('class="excel-print-meta"');
+  });
+
+  it("高校セクションのタイトル", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "高校",
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).toContain("高校の時間割 — 2026-05-06（水）");
+  });
+
+  it("section 未指定では 時間割 のみを出す", () => {
+    const html = buildTimetableHeaderHtml({
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).toContain("時間割 — 2026-05-06（水）");
+    expect(html).not.toContain("中学の時間割");
+    expect(html).not.toContain("高校の時間割");
+  });
+
+  it("dateText 未指定では 区切り — を出さず時間割のみ", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割</h2>");
+    expect(html).not.toContain("—");
+  });
+
+  it("selected を渡すと meta 行に 担当: が追加される", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: "山田",
+      now: fixedNow,
+    });
+    expect(html).toContain("担当: 山田");
+  });
+
+  it("selected が無い場合は 担当 行を出さない", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      now: fixedNow,
+    });
+    expect(html).not.toContain("担当:");
+  });
+
+  it("講師名が HTML 特殊文字を含むとエスケープされる (XSS 防止)", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026-05-06（水）",
+      selected: "<script>alert(1)</script>",
+      now: fixedNow,
+    });
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
   });
 });

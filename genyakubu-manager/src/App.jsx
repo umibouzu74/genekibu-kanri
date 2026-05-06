@@ -52,6 +52,7 @@ import {
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPrintStyles,
+  buildTimetableHeaderHtml,
 } from "./utils/printStyles";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
@@ -620,6 +621,9 @@ export default function App() {
     const dateInput = el.querySelector('input[type="date"]');
     const printDate = dateInput?.value || "";
     const printDay = printDate ? dateToDay(printDate) : "";
+    const dateText = printDate
+      ? `${printDate}${printDay ? `（${printDay}）` : ""}`
+      : "";
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
@@ -636,14 +640,25 @@ export default function App() {
 
     let bodyHtml = el.innerHTML;
     if (hasTimetableGrid) {
-      const header = `<h2 class="excel-print-page-title">${escapeHtml(dateLabel)}</h2>`;
+      // 中学/高校で別々のヘッダを注入する (印刷時は別ページ)。各ヘッダには
+      // セクション名・日付・印刷日・講師名 (選択中のみ) を載せる。
+      const msHeader = buildTimetableHeaderHtml({
+        section: "中学",
+        dateText,
+        selected,
+      });
+      const hsHeader = buildTimetableHeaderHtml({
+        section: "高校",
+        dateText,
+        selected,
+      });
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bexcel-print-col-ms\b[^"]*"[^>]*>)/,
-        `${header}$1`
+        `${msHeader}$1`
       );
       bodyHtml = bodyHtml.replace(
         /(<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>)/,
-        `${header}$1`
+        `${hsHeader}$1`
       );
     }
     if (hasMonthView) {
