@@ -305,9 +305,16 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   // バイト一括印刷ダイアログ。busy 中は閉じられないようロックする。
+  // progress は { current, total, name } を持ち、ダイアログで <progress>
+  // 要素として描画する。abortRef は中断ボタンから for ループへの伝達役。
   const [batchPrintOpen, setBatchPrintOpen] = useState(false);
   const [batchPrintBusy, setBatchPrintBusy] = useState(false);
-  const [batchPrintProgress, setBatchPrintProgress] = useState("");
+  const [batchPrintProgress, setBatchPrintProgress] = useState({
+    current: 0,
+    total: 0,
+    name: "",
+  });
+  const batchPrintAbortRef = useRef(null);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -692,6 +699,13 @@ export default function App() {
   //
   // popup は user gesture (ボタンクリック) 直下で開かないと Safari/Firefox
   // でブロックされやすい。await を挟む前に先に window.open しておく。
+  //
+  // 途中中断は AbortController 経由で handleBatchPrintAbort から signal を
+  // 立てて、ループ先頭で aborted を見て break する。
+  const handleBatchPrintAbort = useCallback(() => {
+    batchPrintAbortRef.current?.abort();
+  }, []);
+
   const handleBatchPrint = useCallback(
     async (teachers) => {
       if (!Array.isArray(teachers) || teachers.length === 0) return;
@@ -702,17 +716,22 @@ export default function App() {
         );
         return;
       }
+      const ac = new AbortController();
+      batchPrintAbortRef.current = ac;
       const savedSelected = selected;
       const savedView = view;
       setBatchPrintBusy(true);
-      setBatchPrintProgress("");
+      setBatchPrintProgress({ current: 0, total: teachers.length, name: "" });
       try {
         const slides = [];
         for (let i = 0; i < teachers.length; i++) {
+          if (ac.signal.aborted) break;
           const t = teachers[i];
-          setBatchPrintProgress(
-            `${i + 1} / ${teachers.length} 名分を生成中… (${t})`
-          );
+          setBatchPrintProgress({
+            current: i + 1,
+            total: teachers.length,
+            name: t,
+          });
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);
@@ -720,6 +739,7 @@ export default function App() {
           });
           // useMemo の再評価が DOM へ反映されるまで 1 フレーム待つ。
           await new Promise((r) => requestAnimationFrame(r));
+          if (ac.signal.aborted) break;
           const root = document.querySelector(".month-print-root");
           if (!root) continue;
           slides.push({
@@ -731,6 +751,12 @@ export default function App() {
             }),
             monthRootHtml: root.outerHTML,
           });
+        }
+
+        if (ac.signal.aborted) {
+          toasts.info("一括印刷を中断しました");
+          w.close();
+          return;
         }
 
         if (slides.length === 0) {
@@ -753,10 +779,11 @@ export default function App() {
         setTimeout(() => w.print(), 300);
       } finally {
         // 元の選択状態 / view に戻す。null だった場合も含めそのまま代入。
+        batchPrintAbortRef.current = null;
         setSelected(savedSelected);
         setView(savedView);
         setBatchPrintBusy(false);
-        setBatchPrintProgress("");
+        setBatchPrintProgress({ current: 0, total: 0, name: "" });
         setBatchPrintOpen(false);
       }
     },
@@ -1333,6 +1360,7 @@ export default function App() {
             subjects={subjects}
             onClose={() => setBatchPrintOpen(false)}
             onPrint={handleBatchPrint}
+            onAbort={handleBatchPrintAbort}
             busy={batchPrintBusy}
             progress={batchPrintProgress}
           />

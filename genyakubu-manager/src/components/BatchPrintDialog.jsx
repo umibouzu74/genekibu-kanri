@@ -8,16 +8,18 @@ import { S } from "../styles/common";
 // 同一バイトが複数教科を担当する場合は両方のグループに出すが、選択状態は名前
 // 単位で共有する (重複印刷は呼び出し側で起きない)。
 //
-// onPrint には選択された名前配列が渡る。busy true のあいだは閉じることも
-// 操作することもできなくして、印刷準備中に state を破壊されないようにする。
-// 内部の input/button は外側 fieldset の disabled で一括無効化する (DRY)。
+// onPrint には選択された名前配列が渡る。busy true のあいだは選択 UI を
+// fieldset disabled でロックし、フッタの「中断」ボタンだけ反応するようにする。
+// onAbort は中断ボタン押下時のコールバック (省略可、未指定時は中断ボタンを
+// 出さない)。progress は { current, total, name } を期待する。
 export function BatchPrintDialog({
   partTimeStaff = [],
   subjects = [],
   onClose,
   onPrint,
+  onAbort,
   busy = false,
-  progress = "",
+  progress = { current: 0, total: 0, name: "" },
 }) {
   const groups = useMemo(
     () => groupStaffBySubject({ partTimeStaff, subjects }),
@@ -69,7 +71,9 @@ export function BatchPrintDialog({
       onClose={busy ? () => {} : onClose}
       width={560}
     >
-      {/* fieldset で busy 中の操作を一括ロック (内部の input/button が disabled になる) */}
+      {/* fieldset で busy 中の選択 UI を一括ロック (内部の input/button が
+          disabled になる)。フッタの「中断」ボタンは fieldset の外に出して
+          busy 中でも押せるようにする。 */}
       <fieldset
         disabled={busy}
         style={{
@@ -214,14 +218,6 @@ export function BatchPrintDialog({
             gap: 8,
           }}
         >
-          {progress && (
-            <span
-              style={{ flex: 1, fontSize: 12, color: "#666" }}
-              aria-live="polite"
-            >
-              {progress}
-            </span>
-          )}
           <button type="button" onClick={onClose} style={S.btn(false)}>
             キャンセル
           </button>
@@ -235,6 +231,60 @@ export function BatchPrintDialog({
           </button>
         </div>
       </fieldset>
+
+      {/* busy 中の進捗表示と中断ボタン。fieldset の外に出すことで disabled
+          の影響を受けず、ループ実行中でも中断ボタンが押せる。 */}
+      {busy && progress.total > 0 && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 12px",
+            border: "1px solid #d8e0ec",
+            borderRadius: 8,
+            background: "#f4f7fb",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+          aria-live="polite"
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              fontSize: 12,
+              color: "#444",
+            }}
+          >
+            <span>
+              {progress.current} / {progress.total} 名分を生成中…
+              {progress.name ? `（${progress.name}）` : ""}
+            </span>
+            {onAbort && (
+              <button
+                type="button"
+                onClick={onAbort}
+                style={{
+                  ...S.btn(false),
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  background: "#fde4e4",
+                  color: "#a02020",
+                }}
+              >
+                中断
+              </button>
+            )}
+          </div>
+          <progress
+            value={progress.current}
+            max={progress.total}
+            style={{ width: "100%", height: 8 }}
+          />
+        </div>
+      )}
     </Modal>
   );
 }
