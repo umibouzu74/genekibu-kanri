@@ -303,6 +303,20 @@ describe("groupStaffBySubject", () => {
       []
     );
   });
+
+  it("subjects に 未分類 という教科があっても フォールバックの未分類グループと衝突しない", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "A", subjectIds: [99] }, // subjects に存在する 未分類 教科
+        { name: "B", subjectIds: [] }, // subjectIds 空 → 末尾の未分類グループへ
+      ],
+      subjects: [{ id: 99, name: "未分類" }],
+    });
+    // 両方とも subjectName は "未分類" だが、A は教科として、B はフォールバック先
+    // にそれぞれ独立して入る。staff が消えないことを担保する。
+    const allStaff = result.flatMap((g) => g.staff);
+    expect(allStaff.sort()).toEqual(["A", "B"]);
+  });
 });
 
 describe("buildBatchPrintBodyHtml", () => {

@@ -10,6 +10,7 @@ import { S } from "../styles/common";
 //
 // onPrint には選択された名前配列が渡る。busy true のあいだは閉じることも
 // 操作することもできなくして、印刷準備中に state を破壊されないようにする。
+// 内部の input/button は外側 fieldset の disabled で一括無効化する (DRY)。
 export function BatchPrintDialog({
   partTimeStaff = [],
   subjects = [],
@@ -68,165 +69,172 @@ export function BatchPrintDialog({
       onClose={busy ? () => {} : onClose}
       width={560}
     >
-      <div
-        style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
-      >
-        <span style={{ fontSize: 12, color: "#666", flex: 1 }}>
-          {count} / {total} 名選択中
-        </span>
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          style={{ ...S.btn(false), padding: "4px 10px", fontSize: 12 }}
-          disabled={busy || total === 0}
-        >
-          全選択
-        </button>
-        <button
-          type="button"
-          onClick={() => setAll(false)}
-          style={{ ...S.btn(false), padding: "4px 10px", fontSize: 12 }}
-          disabled={busy || count === 0}
-        >
-          全解除
-        </button>
-      </div>
-
-      <div
+      {/* fieldset で busy 中の操作を一括ロック (内部の input/button が disabled になる) */}
+      <fieldset
+        disabled={busy}
         style={{
-          maxHeight: 360,
-          overflow: "auto",
-          marginBottom: 12,
-          border: "1px solid #eee",
-          borderRadius: 8,
-          padding: 8,
+          border: "none",
+          padding: 0,
+          margin: 0,
+          opacity: busy ? 0.6 : 1,
         }}
       >
-        {groups.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#888", padding: "16px 8px" }}>
-            登録されたバイトがありません。
-          </div>
-        ) : (
-          groups.map((g) => {
-            const selectedInGroup = g.staff.filter((n) =>
-              selected.has(n)
-            ).length;
-            const allSelected =
-              g.staff.length > 0 && selectedInGroup === g.staff.length;
-            return (
-              <fieldset
-                key={g.subjectName}
-                style={{
-                  margin: "0 0 10px",
-                  padding: "6px 10px 10px",
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                }}
-              >
-                <legend
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    padding: "0 6px",
-                    color: "#444",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <span>
-                    {g.subjectName} ({selectedInGroup} / {g.staff.length})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setGroup(g, !allSelected)}
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 8px",
-                      border: "1px solid #ccc",
-                      borderRadius: 4,
-                      background: "#fff",
-                      cursor: busy ? "not-allowed" : "pointer",
-                    }}
-                    disabled={busy}
-                  >
-                    {allSelected ? "解除" : "選択"}
-                  </button>
-                </legend>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fill, minmax(120px, 1fr))",
-                    gap: 4,
-                  }}
-                >
-                  {g.staff.map((name) => {
-                    const on = selected.has(name);
-                    return (
-                      <label
-                        key={name}
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          alignItems: "center",
-                          fontSize: 13,
-                          padding: "4px 6px",
-                          borderRadius: 4,
-                          cursor: busy ? "not-allowed" : "pointer",
-                          background: on ? "#eef" : "transparent",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => toggleOne(name)}
-                          disabled={busy}
-                        />
-                        {name}
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            );
-          })
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        {progress && (
-          <span
-            style={{ flex: 1, fontSize: 12, color: "#666" }}
-            aria-live="polite"
-          >
-            {progress}
+        <div
+          style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
+        >
+          <span style={{ fontSize: 12, color: "#666", flex: 1 }}>
+            {count} / {total} 名選択中
           </span>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          style={S.btn(false)}
-          disabled={busy}
+          <button
+            type="button"
+            onClick={() => setAll(true)}
+            style={{ ...S.btn(false), padding: "4px 10px", fontSize: 12 }}
+            disabled={total === 0}
+          >
+            全選択
+          </button>
+          <button
+            type="button"
+            onClick={() => setAll(false)}
+            style={{ ...S.btn(false), padding: "4px 10px", fontSize: 12 }}
+            disabled={count === 0}
+          >
+            全解除
+          </button>
+        </div>
+
+        <div
+          style={{
+            maxHeight: 360,
+            overflow: "auto",
+            marginBottom: 12,
+            border: "1px solid #eee",
+            borderRadius: 8,
+            padding: 8,
+          }}
         >
-          キャンセル
-        </button>
-        <button
-          type="button"
-          onClick={handlePrint}
-          style={S.btn(true)}
-          disabled={count === 0 || busy}
+          {groups.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#888", padding: "16px 8px" }}>
+              登録されたバイトがありません。
+            </div>
+          ) : (
+            groups.map((g) => {
+              const selectedInGroup = g.staff.filter((n) =>
+                selected.has(n)
+              ).length;
+              const allSelected =
+                g.staff.length > 0 && selectedInGroup === g.staff.length;
+              return (
+                <fieldset
+                  key={g.subjectName}
+                  style={{
+                    margin: "0 0 10px",
+                    padding: "6px 10px 10px",
+                    border: "1px solid #ddd",
+                    borderRadius: 8,
+                  }}
+                >
+                  <legend
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      padding: "0 6px",
+                      color: "#444",
+                    }}
+                  >
+                    {g.subjectName} ({selectedInGroup} / {g.staff.length})
+                  </legend>
+                  {/* グループ単位の全選択/解除トグルは legend semantics を壊さないよう
+                      legend の外に出す */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setGroup(g, !allSelected)}
+                      style={{
+                        fontSize: 11,
+                        padding: "2px 10px",
+                        border: "1px solid #ccc",
+                        borderRadius: 4,
+                        background: "#fff",
+                      }}
+                    >
+                      {allSelected ? "グループ解除" : "グループ選択"}
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(120px, 1fr))",
+                      gap: 4,
+                    }}
+                  >
+                    {g.staff.map((name) => {
+                      const on = selected.has(name);
+                      return (
+                        <label
+                          key={name}
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            fontSize: 13,
+                            padding: "4px 6px",
+                            borderRadius: 4,
+                            background: on ? "#eef" : "transparent",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => toggleOne(name)}
+                          />
+                          {name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              );
+            })
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            gap: 8,
+          }}
         >
-          {busy ? "準備中…" : `${count} 名分を印刷`}
-        </button>
-      </div>
+          {progress && (
+            <span
+              style={{ flex: 1, fontSize: 12, color: "#666" }}
+              aria-live="polite"
+            >
+              {progress}
+            </span>
+          )}
+          <button type="button" onClick={onClose} style={S.btn(false)}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            style={S.btn(true)}
+            disabled={count === 0}
+          >
+            {busy ? "準備中…" : `${count} 名分を印刷`}
+          </button>
+        </div>
+      </fieldset>
     </Modal>
   );
 }

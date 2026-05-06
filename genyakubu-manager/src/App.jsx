@@ -688,11 +688,22 @@ export default function App() {
   // selected (現在の MonthView 表示講師) を順次差し替えて React に再描画
   // させ、各回の .month-print-root の outerHTML をスナップショット。
   // 全員ぶん集まったら popup window に流し込んで window.print() する。
-  // 終了後は元の selected に戻す。
+  // 終了後は元の selected / view に戻す。
+  //
+  // popup は user gesture (ボタンクリック) 直下で開かないと Safari/Firefox
+  // でブロックされやすい。await を挟む前に先に window.open しておく。
   const handleBatchPrint = useCallback(
     async (teachers) => {
       if (!Array.isArray(teachers) || teachers.length === 0) return;
+      const w = window.open("", "_blank");
+      if (!w) {
+        toasts.error(
+          "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
+        );
+        return;
+      }
       const savedSelected = selected;
+      const savedView = view;
       setBatchPrintBusy(true);
       setBatchPrintProgress("");
       try {
@@ -724,16 +735,10 @@ export default function App() {
 
         if (slides.length === 0) {
           toasts.error("印刷データを生成できませんでした。");
+          w.close();
           return;
         }
 
-        const w = window.open("", "_blank");
-        if (!w) {
-          toasts.error(
-            "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
-          );
-          return;
-        }
         const printStyles = buildPrintStyles({
           hasTimetableGrid: false,
           hasMonthView: true,
@@ -747,14 +752,15 @@ export default function App() {
         w.onafterprint = () => w.close();
         setTimeout(() => w.print(), 300);
       } finally {
-        // 元の選択状態に戻す。null だった場合も含めそのまま代入。
+        // 元の選択状態 / view に戻す。null だった場合も含めそのまま代入。
         setSelected(savedSelected);
+        setView(savedView);
         setBatchPrintBusy(false);
         setBatchPrintProgress("");
         setBatchPrintOpen(false);
       }
     },
-    [selected, vy, vm, eventVisibility, toasts]
+    [selected, view, vy, vm, eventVisibility, toasts]
   );
 
   // ─── Render ─────────────────────────────────────────────────────

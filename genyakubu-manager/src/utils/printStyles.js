@@ -121,32 +121,35 @@ export function buildPrintStyles({ hasTimetableGrid, hasMonthView }) {
 // subjectIds 未指定の staff は「未分類」グループに入れる。グループ間は
 // subjects の登場順、グループ内の staff は五十音順で並べる。該当者ゼロの
 // グループは結果から省く。
+//
+// 教科グループは Map で id→{name,staff} を保持し、未分類は専用シンボル
+// キーで持つことで「未分類」という名前の subject が存在しても衝突しない。
+const UNASSIGNED_KEY = Symbol("UNASSIGNED");
 export function groupStaffBySubject({ partTimeStaff = [], subjects = [] }) {
   const subjectIdToName = new Map(subjects.map((s) => [s.id, s.name]));
   const groups = new Map();
   for (const s of subjects) {
-    groups.set(s.name, { subjectName: s.name, staff: [] });
+    groups.set(s.id, { subjectName: s.name, staff: [] });
   }
-  groups.set("未分類", { subjectName: "未分類", staff: [] });
+  groups.set(UNASSIGNED_KEY, { subjectName: "未分類", staff: [] });
   for (const p of partTimeStaff) {
     if (!p?.name) continue;
     const ids = Array.isArray(p.subjectIds) ? p.subjectIds : [];
     if (ids.length === 0) {
-      groups.get("未分類").staff.push(p.name);
+      groups.get(UNASSIGNED_KEY).staff.push(p.name);
       continue;
     }
     let assigned = false;
     for (const id of ids) {
-      const name = subjectIdToName.get(id);
-      if (!name) continue;
-      const g = groups.get(name);
+      if (!subjectIdToName.has(id)) continue;
+      const g = groups.get(id);
       if (g) {
         g.staff.push(p.name);
         assigned = true;
       }
     }
     // subjectIds は持っているが対応する教科が無い場合も「未分類」に逃がす
-    if (!assigned) groups.get("未分類").staff.push(p.name);
+    if (!assigned) groups.get(UNASSIGNED_KEY).staff.push(p.name);
   }
   return Array.from(groups.values())
     .map((g) => ({
