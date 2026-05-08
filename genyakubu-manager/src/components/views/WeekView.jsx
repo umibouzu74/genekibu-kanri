@@ -115,7 +115,6 @@ export function WeekView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
-  partTimeStaff = [],
   displayCutoff,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
@@ -305,13 +304,8 @@ export function WeekView({
     return list.sort((a, b) => a.date.localeCompare(b.date));
   }, [slotMoveMap]);
 
-  // 今日から+14日間の特訓シフト (アルバイト講師の場合のみ)
-  const isPartTime = useMemo(
-    () => partTimeStaff.some((p) => p.name === teacher),
-    [partTimeStaff, teacher]
-  );
+  // 今日から+14日間の特訓シフト (assignments に登録のある講師全員)
   const upcomingExamPrep = useMemo(() => {
-    if (!isPartTime) return [];
     if (!examPrepSchedules?.length || !examPeriods?.length) return [];
     const out = [];
     const cur = new Date(winStart);
@@ -332,7 +326,7 @@ export function WeekView({
       cur.setDate(cur.getDate() + 1);
     }
     return out;
-  }, [isPartTime, examPrepSchedules, examPeriods, teacher, winStart, winEnd]);
+  }, [examPrepSchedules, examPeriods, teacher, winStart, winEnd]);
 
   // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
   const upcomingSubs = useMemo(() => {

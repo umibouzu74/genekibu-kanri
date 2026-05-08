@@ -1214,7 +1214,6 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
-              partTimeStaff={partTimeStaff}
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1238,7 +1237,6 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
-              partTimeStaff={partTimeStaff}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
