@@ -42,7 +42,6 @@ export function MonthView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
-  partTimeStaff = [],
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -52,13 +51,9 @@ export function MonthView({
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
-  const isPartTime = useMemo(
-    () => (partTimeStaff || []).some((p) => p.name === teacher),
-    [partTimeStaff, teacher]
-  );
   // 日付 → この講師の特訓シフト一覧。cells.map の各セルで O(1) 参照するための索引。
+  // assignments は名前キーなので、アルバイト・通常講師を問わず該当者全員を拾う。
   const examPrepByDate = useMemo(() => {
-    if (!isPartTime) return new Map();
     const m = new Map();
     for (const ep of examPeriods || []) {
       if (!ep.startDate || !ep.endDate) continue;
@@ -82,7 +77,7 @@ export function MonthView({
       }
     }
     return m;
-  }, [isPartTime, examPeriods, examPrepSchedules, teacher, year, month]);
+  }, [examPeriods, examPrepSchedules, teacher, year, month]);
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -795,9 +790,8 @@ export function MonthView({
                     </div>
                   );
                 })}
-              {/* テスト直前特訓シフト (アルバイト講師のみ) */}
-              {isPartTime &&
-                (() => {
+              {/* テスト直前特訓シフト (assignments に登録のある講師全員) */}
+              {(() => {
                   const shifts = examPrepByDate.get(ds);
                   if (!shifts || shifts.length === 0) return null;
                   const first = shifts[0];
