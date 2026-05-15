@@ -208,6 +208,201 @@ describe("getSlotWeekType", () => {
   });
 });
 
+describe("getSlotWeekType with holiday-aware shift", () => {
+  // 2026-04-24 (Fri) を A 週基準にしたうえで Friday 隔週コマを考える。
+  // 4/24=A, 5/1=B, 5/8=A, 5/15=B, 5/22=A という素のローテーション。
+  const anchors = [{ date: "2026-04-24", weekType: "A" }];
+  const fridaySlot = {
+    day: "金",
+    grade: "中3",
+    subj: "英",
+    note: "隔週(河野)",
+    teacher: "堀上",
+  };
+
+  it("休講なしのときは素のローテーションと一致 (regression guard)", () => {
+    expect(getSlotWeekType("2026-04-24", fridaySlot, anchors, [])).toBe("A");
+    expect(getSlotWeekType("2026-05-01", fridaySlot, anchors, [])).toBe("B");
+    expect(getSlotWeekType("2026-05-08", fridaySlot, anchors, [])).toBe("A");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [])).toBe("B");
+  });
+
+  it("holidays 引数を省略しても従来挙動 (undefined / null も安全)", () => {
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors)).toBe("B");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, null)).toBe("B");
+  });
+
+  it("5/1=B → 5/8 休講 → 5/15 は A 週へシフトする (ユーザ報告ケース)", () => {
+    const holidays = [
+      {
+        id: 1,
+        date: "2026-05-08",
+        label: "特訓",
+        scope: ["全部"],
+        targetGrades: [],
+        subjKeywords: [],
+      },
+    ];
+    // 5/8 を消化していないので、本来 5/15 が消化するはずだった B が 5/8 側へ
+    // 戻ったと考え、5/15 はもう片方 (=A) を消化する扱いに反転。
+    expect(getSlotWeekType("2026-05-08", fridaySlot, anchors, holidays)).toBe("A");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, holidays)).toBe("A");
+    // 以降は 1 週ずつ後ろにずれる
+    expect(getSlotWeekType("2026-05-22", fridaySlot, anchors, holidays)).toBe("B");
+    expect(getSlotWeekType("2026-05-29", fridaySlot, anchors, holidays)).toBe("A");
+  });
+
+  it("休講 2 回ぶんで偶数になれば反転は打ち消され元のローテに戻る", () => {
+    const holidays = [
+      { id: 1, date: "2026-05-08", label: "特訓1", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+      { id: 2, date: "2026-05-15", label: "特訓2", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 5/8 (A) と 5/15 (B) の両方を休講 → 5/22 は素のローテのまま A
+    expect(getSlotWeekType("2026-05-22", fridaySlot, anchors, holidays)).toBe("A");
+    expect(getSlotWeekType("2026-05-29", fridaySlot, anchors, holidays)).toBe("B");
+  });
+
+  it("anchor 当日の休講はカウントしない (anchor の A は確定)", () => {
+    const holidays = [
+      { id: 1, date: "2026-04-24", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // anchor 自体は常に A、以後のローテーションも変化しない
+    expect(getSlotWeekType("2026-04-24", fridaySlot, anchors, holidays)).toBe("A");
+    expect(getSlotWeekType("2026-05-01", fridaySlot, anchors, holidays)).toBe("B");
+  });
+
+  it("scope/grade/subj が一致しない休講は補正対象外 (slot 固有)", () => {
+    // 高校部のみの休講 → 中3 (中学部) 金曜 slot には影響しない
+    const holidays = [
+      { id: 1, date: "2026-05-08", label: "高校テスト", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, holidays)).toBe("B");
+  });
+
+  it("subjKeywords が指定された休講は subj が一致するときだけ補正", () => {
+    const matchingHoliday = [
+      { id: 1, date: "2026-05-08", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: ["英"] },
+    ];
+    const nonMatchingHoliday = [
+      { id: 1, date: "2026-05-08", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: ["数"] },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, matchingHoliday)).toBe("A");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, nonMatchingHoliday)).toBe("B");
+  });
+
+  it("slot.day と違う曜日の休講はカウントしない (金曜の休講だけ見る)", () => {
+    const mondayHoliday = [
+      { id: 1, date: "2026-05-04", label: "祝日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 5/4 は月曜 → 金曜 slot のローテーションには無関係
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, mondayHoliday)).toBe("B");
+  });
+
+  it("anchor より前の日付は補正されない (素のローテに従う)", () => {
+    const holidays = [
+      { id: 1, date: "2026-05-08", label: "特訓", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 4/17 は anchor 4/24 より前 → 補正なし (4/17 は 1 週前 → B)
+    expect(getSlotWeekType("2026-04-17", fridaySlot, anchors, holidays)).toBe("B");
+  });
+
+  it("複数 anchor: 直近 anchor が補正の起点になり、それより前の休講は無視", () => {
+    const multiAnchors = [
+      { date: "2026-04-24", weekType: "A" },
+      { date: "2026-05-22", weekType: "A" }, // 手動で打ち直した anchor
+    ];
+    const holidays = [
+      { id: 1, date: "2026-05-08", label: "特訓", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 5/29 は anchor2 (5/22) を基準にしたカレンダー parity がそのまま反映される。
+    // anchor1 と anchor2 の間にある 5/8 の休講は無視。
+    expect(getSlotWeekType("2026-05-29", fridaySlot, multiAnchors, holidays)).toBe("B");
+    // 一方、anchor1 のみが基準になる 5/15 は補正の対象 (5/8 休講で A 週へ反転)。
+    expect(getSlotWeekType("2026-05-15", fridaySlot, multiAnchors, holidays)).toBe("A");
+  });
+
+  it("slot 固有の anchor が global anchor を完全に置き換える (休講補正含む)", () => {
+    const slotWithOwnAnchor = {
+      ...fridaySlot,
+      biweeklyAnchors: [{ date: "2026-04-10", weekType: "A" }],
+    };
+    const holidays = [
+      { id: 1, date: "2026-04-17", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // slot 固有 anchor 4/10 (A) 基準 → 4/17 は B 週で休講 → 4/24 は素なら A だが
+    // 持ち越し分で B 週へ反転。global の anchors (4/24=A) は使われない。
+    expect(getSlotWeekType("2026-04-24", slotWithOwnAnchor, anchors, holidays)).toBe("B");
+    // 念のため global を見ていたら 4/24 はそのまま A になるので、ここで明確に
+    // 「使われていない」ことを確認する。
+    const slotWithoutOwnAnchor = { ...fridaySlot };
+    expect(getSlotWeekType("2026-04-24", slotWithoutOwnAnchor, anchors, holidays)).toBe("A");
+  });
+
+  it("連続する休講: 偶数回ぶんローテーション反転は打ち消される", () => {
+    // 5/1 (B) と 5/8 (A) の両方を休講にする
+    const holidays = [
+      { id: 1, date: "2026-05-01", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+      { id: 2, date: "2026-05-08", label: "Y", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // B と A 両方が消化されなかったので 5/15 は素のローテどおり B
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, holidays)).toBe("B");
+    // 5/22 も同様に A
+    expect(getSlotWeekType("2026-05-22", fridaySlot, anchors, holidays)).toBe("A");
+  });
+
+  it("targetGrades 指定の休講は学年が一致するときだけ補正", () => {
+    const onlyChu3 = [
+      { id: 1, date: "2026-05-08", label: "X", scope: ["全部"], targetGrades: ["中3"], subjKeywords: [] },
+    ];
+    const onlyChu2 = [
+      { id: 1, date: "2026-05-08", label: "X", scope: ["全部"], targetGrades: ["中2"], subjKeywords: [] },
+    ];
+    // slot は 中3 なので onlyChu3 では補正 (B→A) されるが onlyChu2 では補正されない
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, onlyChu3)).toBe("A");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, onlyChu2)).toBe("B");
+  });
+
+  it("anchor の曜日と slot.day が違うときも slot.day だけを歩く", () => {
+    // anchor は 4/27 (月)、slot は金曜
+    const mondayAnchor = [{ date: "2026-04-27", weekType: "A" }];
+    // 4/27 (月) は A、5/1 (金) は同週 (diff=4 days, floor=0) で A、
+    // 5/8 (金) は diff=11, floor=1 → B、5/15 (金) は diff=18, floor=2 → A
+    expect(getSlotWeekType("2026-05-01", fridaySlot, mondayAnchor, [])).toBe("A");
+    expect(getSlotWeekType("2026-05-08", fridaySlot, mondayAnchor, [])).toBe("B");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, mondayAnchor, [])).toBe("A");
+    // 5/1 (金) を休講にすると 5/8 (B) は反転して A、5/15 (A) は反転して B になる
+    const holidays = [
+      { id: 1, date: "2026-05-01", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    expect(getSlotWeekType("2026-05-08", fridaySlot, mondayAnchor, holidays)).toBe("A");
+    expect(getSlotWeekType("2026-05-15", fridaySlot, mondayAnchor, holidays)).toBe("B");
+    // anchor 4/27 自体は月曜なので「金曜の休講」候補にはならない (= 月曜の休講は無視)
+    const mondayHoliday = [
+      { id: 1, date: "2026-04-27", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, mondayAnchor, mondayHoliday)).toBe("A");
+  });
+
+  it("isTeacherActiveOnDate / biweeklyDisplaySubject も同じ休講補正に従う", () => {
+    const compositeSubjSlot = {
+      ...fridaySlot,
+      subj: "英/数",
+      teacher: "堀上",
+      note: "隔週(河野)",
+    };
+    const holidays = [
+      { id: 1, date: "2026-05-08", label: "特訓", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 補正後の 5/15 は A 週なので主担当 堀上 が active、教科は先頭の "英"
+    expect(isTeacherActiveOnDate(compositeSubjSlot, "堀上", "2026-05-15", anchors, holidays)).toBe(true);
+    expect(isTeacherActiveOnDate(compositeSubjSlot, "河野", "2026-05-15", anchors, holidays)).toBe(false);
+    expect(biweeklyDisplaySubject(compositeSubjSlot, "2026-05-15", anchors, holidays)).toBe("英");
+    // holidays を渡さなければ素のローテどおり 5/15 = B、河野が active、教科は "数"
+    expect(isTeacherActiveOnDate(compositeSubjSlot, "河野", "2026-05-15", anchors)).toBe(true);
+    expect(biweeklyDisplaySubject(compositeSubjSlot, "2026-05-15", anchors)).toBe("数");
+  });
+});
+
 describe("slotWeight", () => {
   it("returns 0.5 for biweekly notes", () => {
     expect(slotWeight("隔週(河野)")).toBe(0.5);

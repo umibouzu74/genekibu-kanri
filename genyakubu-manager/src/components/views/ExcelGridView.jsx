@@ -609,6 +609,7 @@ export function ExcelGridView({
                     sectionFilterFn={sec.filterFn}
                     isAdmin={isAdmin}
                     biweeklyAnchors={biweeklyAnchors}
+                    holidays={holidays}
                     onEdit={onEdit}
                     saveSlots={saveSlots}
                     allSlots={slots}

@@ -169,6 +169,7 @@ export function MasterView({
           addAnchor={addAnchor}
           removeAnchor={removeAnchor}
           biweeklyGroups={biweeklyGroups}
+          holidays={holidays}
           isAdmin={isAdmin}
           onEdit={onEdit}
         />

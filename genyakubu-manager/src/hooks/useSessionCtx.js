@@ -31,11 +31,14 @@ export function useSessionCtx({
       displayCutoff,
       isOffForGrade: helpers.isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
+      // 隔週ローテーションを「休講で実施されなかった週ぶんスキップする」
+      // 補正に使う。休講以外 (テスト期間・振替) は対象外。
+      holidays: holidays || [],
       sessionOverrides: sessionOverrides || [],
       // 中学部の開講日 1 限目をオリエン扱いとして第1回を 2 限目に繰下げる。
       orientationOnFirstDay: true,
     }),
-    [classSets, allSlots, slots, displayCutoff, helpers, biweeklyAnchors, sessionOverrides]
+    [classSets, allSlots, slots, displayCutoff, helpers, biweeklyAnchors, holidays, sessionOverrides]
   );
   return { sessionCtx, ...helpers };
 }

@@ -21,6 +21,7 @@ export function BiweeklyTab({
   addAnchor,
   removeAnchor,
   biweeklyGroups,
+  holidays,
   isAdmin,
   onEdit,
 }) {
@@ -48,6 +49,7 @@ export function BiweeklyTab({
           <div style={{ fontSize: 13, fontWeight: 700 }}>隔週の基準設定</div>
           {currentWeekType && (
             <span
+              title="休講シフトを考慮しない、カレンダー上の基準週です。個別コマの今週は下表で確認してください。"
               style={{
                 background: currentWeekType === "A" ? "#2e6a9e" : "#c05030",
                 color: "#fff",
@@ -57,7 +59,7 @@ export function BiweeklyTab({
                 fontSize: 13,
               }}
             >
-              今週は {currentWeekType}週
+              基準は {currentWeekType}週
             </span>
           )}
         </div>
@@ -149,6 +151,8 @@ export function BiweeklyTab({
         <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
           ここで設定する基準日は全隔週コマのデフォルトです。
           個別にずれたコマは、コマの編集画面から専用の基準日を設定できます。
+          休講が入った週はローテーションを 1 週ぶん持ち越して表示するため、
+          休講のたびに基準日を打ち直す必要はありません。
         </div>
       </div>
       {biweeklyGroups.length === 0 ? (
@@ -211,7 +215,8 @@ export function BiweeklyTab({
                       const slotWt = getSlotWeekType(
                         fmtDate(new Date()),
                         s,
-                        biweeklyAnchors
+                        biweeklyAnchors,
+                        holidays
                       );
                       const hasCustomAnchors =
                         s.biweeklyAnchors && s.biweeklyAnchors.length > 0;

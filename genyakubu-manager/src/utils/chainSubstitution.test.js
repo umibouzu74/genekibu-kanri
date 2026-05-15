@@ -190,6 +190,25 @@ describe("classifySlotForTeacher", () => {
     const r = classifySlotForTeacher(slot, "A太郎", MON_B, anchors, true);
     expect(r.reason).toBe("隔週(B週)");
   });
+
+  it("holidays を渡すと隔週の A/B も休講シフトを反映する", () => {
+    // 月曜 anchor (4/6=A) で 4/13 が本来 B 週。途中の月曜 4/13 を休講にする
+    // と、4/20 は本来 A 週だが補正で B 週へ反転する。
+    // すると 4/20 で「A太郎 (メイン)」は cancelled (隔週(B週)) になる。
+    const slot = { ...baseSlot, note: "隔週(B子)" };
+    const holidays = [
+      { id: 1, date: "2026-04-13", label: "X", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    // 補正なしなら 4/20 は A 週で active になる
+    const baseline = classifySlotForTeacher(slot, "A太郎", "2026-04-20", anchors, false);
+    expect(baseline.status).toBe("active");
+    // 補正ありなら B 週へ反転 → メイン教師は cancelled
+    const shifted = classifySlotForTeacher(
+      slot, "A太郎", "2026-04-20", anchors, false, holidays
+    );
+    expect(shifted.status).toBe("cancelled");
+    expect(shifted.reason).toBe("隔週(B週)");
+  });
 });
 
 describe("resolveTeacherSubjectIds", () => {

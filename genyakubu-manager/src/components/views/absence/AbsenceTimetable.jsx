@@ -33,6 +33,7 @@ export function AbsenceTimetable({
   partTimeStaff,
   subjects,
   biweeklyAnchors,
+  holidays, // 隔週ローテーションの休講シフトに使用 (任意)
   allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
   timetables, // 振替先の有効時間割フィルタ用
   isOffForGrade, // 振替先の休講/テスト期間警告用
@@ -529,6 +530,7 @@ export function AbsenceTimetable({
           slot={s}
           date={date}
           biweeklyAnchors={biweeklyAnchors}
+          holidays={holidays}
           isAbsent={isAbsent}
           cancelLabel={cancelLabel}
           isMoved={isMoved}
@@ -565,6 +567,7 @@ export function AbsenceTimetable({
       removedSubIds,
       date,
       biweeklyAnchors,
+      holidays,
       combineSource,
       subjects,
       sessionCountMap,
