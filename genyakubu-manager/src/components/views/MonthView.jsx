@@ -235,13 +235,13 @@ export function MonthView({
       // 隔週スロットは「その週に実施する側の講師」のビューにだけ載せる。
       if (
         isBiweekly(slot.note) &&
-        !isTeacherActiveOnDate(slot, teacher, ds, biweeklyAnchors)
+        !isTeacherActiveOnDate(slot, teacher, ds, biweeklyAnchors, holidays)
       ) {
         return false;
       }
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff, teacher, biweeklyAnchors]
+    [isOffForGrade, timetables, displayCutoff, teacher, biweeklyAnchors, holidays]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -644,7 +644,7 @@ export function MonthView({
                       </span>
                       <b>{displayTime}</b>{" "}
                       {isBiweekly(s.note)
-                        ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors)}（隔週）`
+                        ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors, holidays)}（隔週）`
                         : s.subj}
                     </div>
                   );

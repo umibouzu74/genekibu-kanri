@@ -25,6 +25,7 @@ export function ExcelSection({
   sectionFilterFn,
   isAdmin,
   biweeklyAnchors,
+  holidays,
   onEdit,
   saveSlots,
   allSlots,
@@ -631,6 +632,7 @@ export function ExcelSection({
                             onDragEnd={handleDragEnd}
                             onEdit={onEdit}
                             biweeklyAnchors={biweeklyAnchors}
+                            holidays={holidays}
                             sessionNumber={
                               sessionCountMap
                                 ? sessionCountMap.get(combined.slot.id) || 0
@@ -678,6 +680,7 @@ export function ExcelSection({
                         onDragEnd={handleDragEnd}
                         onEdit={onEdit}
                         biweeklyAnchors={biweeklyAnchors}
+                        holidays={holidays}
                         sessionNumber={
                           slot && sessionCountMap
                             ? sessionCountMap.get(slot.id) || 0

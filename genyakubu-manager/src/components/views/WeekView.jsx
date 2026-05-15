@@ -132,10 +132,10 @@ export function WeekView({
           .filter(
             (s) =>
               !isBiweekly(s.note) ||
-              isTeacherActiveOnDate(s, teacher, refDateStr, biweeklyAnchors)
+              isTeacherActiveOnDate(s, teacher, refDateStr, biweeklyAnchors, holidays)
           )
       ),
-    [teacher, slots, refDateStr, biweeklyAnchors]
+    [teacher, slots, refDateStr, biweeklyAnchors, holidays]
   );
   const byDay = useMemo(() => {
     const m = {};
@@ -207,7 +207,7 @@ export function WeekView({
     };
     const isTeacherInactiveOnDate = (slot, dateStr) =>
       isBiweekly(slot.note) &&
-      !isTeacherActiveOnDate(slot, teacher, dateStr, biweeklyAnchors);
+      !isTeacherActiveOnDate(slot, teacher, dateStr, biweeklyAnchors, holidays);
 
     for (const adj of adjustments) {
       if (adj.type !== "combine") continue;
@@ -234,7 +234,7 @@ export function WeekView({
       }
     }
     return m;
-  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors]);
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors, holidays]);
 
   // 移動: 各スロットに対する直近14日間の移動予定
   // 隔週スロットは「その日付に実施する側の講師」にだけ通知を出す。
@@ -250,7 +250,7 @@ export function WeekView({
       if (!isSlotForTeacher(slot, teacher)) continue;
       if (
         isBiweekly(slot.note) &&
-        !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors)
+        !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors, holidays)
       ) {
         continue;
       }
@@ -258,7 +258,7 @@ export function WeekView({
       m.get(adj.slotId).push({ date: adj.date, slot, targetTime: adj.targetTime });
     }
     return m;
-  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors]);
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors, holidays]);
 
   // 振替: 直近14日間に「振替元」または「振替先」となる予定。
   // 該当する講師は (a) 元担当 = adj 対象 slot.teacher または
@@ -808,7 +808,7 @@ export function WeekView({
                           onDel={isAdmin ? onDel : undefined}
                           displaySubject={
                             isBiweekly(s.note)
-                              ? `${biweeklyDisplaySubject(s, refDateStr, biweeklyAnchors)}（隔週）`
+                              ? `${biweeklyDisplaySubject(s, refDateStr, biweeklyAnchors, holidays)}（隔週）`
                               : undefined
                           }
                           hideNote={isBiweekly(s.note)}

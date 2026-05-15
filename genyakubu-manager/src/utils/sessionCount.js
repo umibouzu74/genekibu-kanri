@@ -174,7 +174,7 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
   const bi = isBiweekly(slot.note);
 
   if (bi) {
-    const w = getSlotWeekType(dateStr, slot, ctx.biweeklyAnchors || []);
+    const w = getSlotWeekType(dateStr, slot, ctx.biweeklyAnchors || [], ctx.holidays);
     if (parts.length > 1) {
       // 複合教科の隔週: 毎週実施、教科が A/B で入れ替わる。
       if (!w) return parts[0];

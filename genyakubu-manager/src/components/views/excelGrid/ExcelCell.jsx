@@ -47,6 +47,7 @@ export const ExcelCell = memo(function ExcelCell({
   onDragEnd,
   onEdit,
   biweeklyAnchors,
+  holidays,
   subDate,
   isUnavailable,
   isHolidayOff,
@@ -93,7 +94,7 @@ export const ExcelCell = memo(function ExcelCell({
 
   const biweekly = isBiweekly(slot.note);
   const weekType = biweekly
-    ? getSlotWeekType(subDate || fmtDate(new Date()), slot, biweeklyAnchors)
+    ? getSlotWeekType(subDate || fmtDate(new Date()), slot, biweeklyAnchors, holidays)
     : null;
 
   // ダッシュボード時のみ: note が "隔週(partner)" 形式の隔週スロットで、

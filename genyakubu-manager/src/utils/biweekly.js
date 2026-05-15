@@ -1,4 +1,10 @@
 // ─── Biweekly helpers ──────────────────────────────────────────────
+import { WEEKDAYS } from "../constants/schools";
+import { fmtDate, parseLocalDate } from "./dateHelpers";
+import { isSlotCancelledByHoliday } from "./scheduleHelpers";
+
+// "月"〜"土" → Date#getDay() の index (日=0)。
+const JP_DAY_TO_IDX = Object.fromEntries(WEEKDAYS.map((w, i) => [w, i]));
 
 // Format a teacher name with a biweekly partner extracted from the
 // free-form note field. e.g. teacher="堀上", note="隔週(河野)"
@@ -74,14 +80,66 @@ export function isBiweekly(note) {
   return !!note && note.includes("隔週");
 }
 
+// anchor 以降・target 未満の範囲で、slot.day に当たる日付のうち
+// 休講 (holidays) で実施されなかった回数を数える。
+// 隔週ローテーションのシフト補正用 (休講で消化されなかった A/B 側が
+// 次回に持ち越される)。
+function countCancelledSlotDaysBefore(targetDateStr, anchorDateStr, slot, holidays) {
+  if (!holidays || holidays.length === 0) return 0;
+  if (!slot || !slot.day) return 0;
+  const slotDayIdx = JP_DAY_TO_IDX[slot.day];
+  if (slotDayIdx == null) return 0;
+
+  const anchorD = parseLocalDate(anchorDateStr);
+  const targetD = parseLocalDate(targetDateStr);
+  if (!anchorD || !targetD || targetD <= anchorD) return 0;
+
+  // anchor 以降で最初の slot.day を起点に 7 日ずつ進む。
+  // anchor 当日に slot.day が当たる場合は anchor 自身を起点とせず、
+  // 次の slot.day (7 日後) から数える (anchor の A=確定 を尊重)。
+  const anchorDayIdx = anchorD.getDay();
+  const daysToFirstSlotDay = (slotDayIdx - anchorDayIdx + 7) % 7;
+  const cursor = new Date(anchorD);
+  cursor.setDate(cursor.getDate() + (daysToFirstSlotDay === 0 ? 7 : daysToFirstSlotDay));
+
+  let count = 0;
+  while (cursor < targetD) {
+    const cursorStr = fmtDate(cursor);
+    if (isSlotCancelledByHoliday(slot, cursorStr, holidays)) count++;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return count;
+}
+
 // Determine the week type for a specific slot on a given date.
 // Uses per-slot anchors when present, otherwise falls back to global anchors.
-export function getSlotWeekType(dateStr, slot, globalAnchors) {
+//
+// holidays を渡すと、anchor 以降に slot が休講で実施されなかった回数の
+// パリティ分だけ A/B を反転させる (=実施されなかった週は隔週ローテーションを
+// 進めない)。例: 5/1=B → 5/8 休講 → 5/15 は B のままではなく A になる。
+// 休講以外 (テスト期間・振替) は対象外。
+export function getSlotWeekType(dateStr, slot, globalAnchors, holidays) {
   const anchors =
     slot.biweeklyAnchors && slot.biweeklyAnchors.length > 0
       ? slot.biweeklyAnchors
       : globalAnchors;
-  return getWeekType(dateStr, anchors);
+  const base = getWeekType(dateStr, anchors);
+  if (base == null) return null;
+  if (!holidays || holidays.length === 0) return base;
+  if (!Array.isArray(anchors) || anchors.length === 0) return base;
+
+  // anchor 以降のみ補正 (anchor より前は素直なカレンダー parity に従う)
+  let best = null;
+  for (const a of anchors) {
+    if (a.date && a.date <= dateStr) {
+      if (!best || a.date > best.date) best = a;
+    }
+  }
+  if (!best) return base;
+
+  const cancelled = countCancelledSlotDaysBefore(dateStr, best.date, slot, holidays);
+  if (cancelled % 2 === 0) return base;
+  return base === "A" ? "B" : "A";
 }
 
 // Returns the weight of a slot for コマ数 calculation.
@@ -128,9 +186,9 @@ export function formatCount(n) {
 //   - B 週: note "隔週(partner)" の partner が実施
 // アンカー未設定 (weekType null) の場合は安全側で true を返す
 // (表示側で隠さない = 従来挙動)。
-export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors) {
+export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays) {
   if (!isBiweekly(slot.note)) return true;
-  const wt = getSlotWeekType(dateStr, slot, anchors);
+  const wt = getSlotWeekType(dateStr, slot, anchors, holidays);
   if (wt == null) return true;
   const mainTeachers = getSlotTeachers(slot);
   const m = slot.note.match(/隔週\(([^)]+)\)/);
@@ -143,12 +201,12 @@ export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors) {
 // 表示用の「実施される教科」を返す。
 // 複合教科 ("英/数") の隔週スロットでは A 週 → 先頭、B 週 → 2 つ目。
 // 単独教科 / アンカー未設定 の場合は slot.subj をそのまま返す。
-export function biweeklyDisplaySubject(slot, dateStr, anchors) {
+export function biweeklyDisplaySubject(slot, dateStr, anchors, holidays) {
   const raw = slot.subj || "";
   if (!isBiweekly(slot.note)) return raw;
   const parts = raw.split("/").map((s) => s.trim()).filter(Boolean);
   if (parts.length <= 1) return raw;
-  const wt = getSlotWeekType(dateStr, slot, anchors);
+  const wt = getSlotWeekType(dateStr, slot, anchors, holidays);
   if (wt == null) return parts[0];
   const idx = wt === "A" ? 0 : 1;
   return parts[idx] || parts[parts.length - 1];

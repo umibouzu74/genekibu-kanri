@@ -23,9 +23,13 @@ export function sortSlots(arr) {
  * Centralised here to avoid duplication between dashboard helpers and staff
  * monthly-date computations.
  */
-export function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
+// holidays のうち (date, slot.grade, slot.subj) にマッチして当該 slot を
+// 休講扱いにするものが 1 つでもあるか。examPeriods は見ない。
+// 隔週ローテーションのスキップ判定でも共用するため pure 関数として切り出す。
+export function isSlotCancelledByHoliday(slot, dateStr, holidays) {
+  if (!holidays || holidays.length === 0) return false;
   const dept = slot.grade ? gradeToDept(slot.grade) : null;
-  const offByHoliday = (holidays || []).some((h) => {
+  return holidays.some((h) => {
     if (h.date !== dateStr) return false;
     const sc = h.scope || ["全部"];
     if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
@@ -38,7 +42,10 @@ export function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
     }
     return true;
   });
-  if (offByHoliday) return true;
+}
+
+export function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
+  if (isSlotCancelledByHoliday(slot, dateStr, holidays)) return true;
   return (examPeriods || []).some((ep) => {
     if (dateStr < ep.startDate || dateStr > ep.endDate) return false;
     if (!ep.targetGrades || ep.targetGrades.length === 0) return true;
