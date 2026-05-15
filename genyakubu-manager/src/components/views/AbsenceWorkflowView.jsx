@@ -445,6 +445,7 @@ export function AbsenceWorkflowView({
         subjects={subjects}
         biweeklyAnchors={biweeklyAnchors}
         holidays={holidays}
+        examPeriods={examPeriods}
         allTeachers={allTeachers}
         timetables={timetables}
         isOffForGrade={isOffForGrade}

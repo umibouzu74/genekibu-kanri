@@ -1,7 +1,7 @@
 // ─── Biweekly helpers ──────────────────────────────────────────────
 import { WEEKDAYS } from "../constants/schools";
 import { fmtDate, parseLocalDate } from "./dateHelpers";
-import { isSlotCancelledByHoliday } from "./scheduleHelpers";
+import { isSlotCancelledForBiweeklyShift } from "./scheduleHelpers";
 
 // "月"〜"土" → Date#getDay() の index (日=0)。
 const JP_DAY_TO_IDX = Object.fromEntries(WEEKDAYS.map((w, i) => [w, i]));
@@ -81,11 +81,16 @@ export function isBiweekly(note) {
 }
 
 // anchor 以降・target 未満の範囲で、slot.day に当たる日付のうち
-// 休講 (holidays) で実施されなかった回数を数える。
-// 隔週ローテーションのシフト補正用 (休講で消化されなかった A/B 側が
-// 次回に持ち越される)。
-function countCancelledSlotDaysBefore(targetDateStr, anchorDateStr, slot, holidays) {
-  if (!holidays || holidays.length === 0) return 0;
+// 休講 (holidays) または stopsClasses≠false のテスト期間 (examPeriods) で
+// 実施されなかった回数を数える。
+// 隔週ローテーションのシフト補正用 (消化されなかった A/B 側が次回に
+// 持ち越される)。
+function countCancelledSlotDaysBefore(
+  targetDateStr, anchorDateStr, slot, holidays, examPeriods
+) {
+  const noHolidays = !holidays || holidays.length === 0;
+  const noExams = !examPeriods || examPeriods.length === 0;
+  if (noHolidays && noExams) return 0;
   if (!slot || !slot.day) return 0;
   const slotDayIdx = JP_DAY_TO_IDX[slot.day];
   if (slotDayIdx == null) return 0;
@@ -105,7 +110,9 @@ function countCancelledSlotDaysBefore(targetDateStr, anchorDateStr, slot, holida
   let count = 0;
   while (cursor < targetD) {
     const cursorStr = fmtDate(cursor);
-    if (isSlotCancelledByHoliday(slot, cursorStr, holidays)) count++;
+    if (isSlotCancelledForBiweeklyShift(slot, cursorStr, holidays, examPeriods)) {
+      count++;
+    }
     cursor.setDate(cursor.getDate() + 7);
   }
   return count;
@@ -114,18 +121,23 @@ function countCancelledSlotDaysBefore(targetDateStr, anchorDateStr, slot, holida
 // Determine the week type for a specific slot on a given date.
 // Uses per-slot anchors when present, otherwise falls back to global anchors.
 //
-// holidays を渡すと、anchor 以降に slot が休講で実施されなかった回数の
-// パリティ分だけ A/B を反転させる (=実施されなかった週は隔週ローテーションを
-// 進めない)。例: 5/1=B → 5/8 休講 → 5/15 は B のままではなく A になる。
-// 休講以外 (テスト期間・振替) は対象外。
-export function getSlotWeekType(dateStr, slot, globalAnchors, holidays) {
+// holidays / examPeriods を渡すと、anchor 以降に slot が「実施されなかった」
+// 回数のパリティ分だけ A/B を反転させる (=実施されなかった週は隔週
+// ローテーションを進めない)。例: 5/1=B → 5/8 休講/特訓 → 5/15 は B の
+// ままではなく A になる。
+// 「実施されなかった」= 休講 (Holiday) または stopsClasses≠false の
+// テスト期間 (ExamPeriod) で当該 slot が休止になる場合。stopsClasses=false の
+// 高校テスト等は対象外 (授業継続扱い)。
+export function getSlotWeekType(dateStr, slot, globalAnchors, holidays, examPeriods) {
   const anchors =
     slot.biweeklyAnchors && slot.biweeklyAnchors.length > 0
       ? slot.biweeklyAnchors
       : globalAnchors;
   const base = getWeekType(dateStr, anchors);
   if (base == null) return null;
-  if (!holidays || holidays.length === 0) return base;
+  const noHolidays = !holidays || holidays.length === 0;
+  const noExams = !examPeriods || examPeriods.length === 0;
+  if (noHolidays && noExams) return base;
   if (!Array.isArray(anchors) || anchors.length === 0) return base;
 
   // anchor 以降のみ補正 (anchor より前は素直なカレンダー parity に従う)
@@ -137,7 +149,9 @@ export function getSlotWeekType(dateStr, slot, globalAnchors, holidays) {
   }
   if (!best) return base;
 
-  const cancelled = countCancelledSlotDaysBefore(dateStr, best.date, slot, holidays);
+  const cancelled = countCancelledSlotDaysBefore(
+    dateStr, best.date, slot, holidays, examPeriods
+  );
   if (cancelled % 2 === 0) return base;
   return base === "A" ? "B" : "A";
 }
@@ -186,9 +200,9 @@ export function formatCount(n) {
 //   - B 週: note "隔週(partner)" の partner が実施
 // アンカー未設定 (weekType null) の場合は安全側で true を返す
 // (表示側で隠さない = 従来挙動)。
-export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays) {
+export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays, examPeriods) {
   if (!isBiweekly(slot.note)) return true;
-  const wt = getSlotWeekType(dateStr, slot, anchors, holidays);
+  const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null) return true;
   const mainTeachers = getSlotTeachers(slot);
   const m = slot.note.match(/隔週\(([^)]+)\)/);
@@ -201,12 +215,12 @@ export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays)
 // 表示用の「実施される教科」を返す。
 // 複合教科 ("英/数") の隔週スロットでは A 週 → 先頭、B 週 → 2 つ目。
 // 単独教科 / アンカー未設定 の場合は slot.subj をそのまま返す。
-export function biweeklyDisplaySubject(slot, dateStr, anchors, holidays) {
+export function biweeklyDisplaySubject(slot, dateStr, anchors, holidays, examPeriods) {
   const raw = slot.subj || "";
   if (!isBiweekly(slot.note)) return raw;
   const parts = raw.split("/").map((s) => s.trim()).filter(Boolean);
   if (parts.length <= 1) return raw;
-  const wt = getSlotWeekType(dateStr, slot, anchors, holidays);
+  const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null) return parts[0];
   const idx = wt === "A" ? 0 : 1;
   return parts[idx] || parts[parts.length - 1];

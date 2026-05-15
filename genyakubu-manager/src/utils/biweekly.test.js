@@ -383,6 +383,96 @@ describe("getSlotWeekType with holiday-aware shift", () => {
     expect(getSlotWeekType("2026-05-15", fridaySlot, mondayAnchor, mondayHoliday)).toBe("A");
   });
 
+  it("テスト期間 (stopsClasses=true) も休講と同じくシフト対象", () => {
+    // 5/8 が中3 対象のテスト期間 (授業停止) → 5/15 が A 週へ反転する
+    const examPeriods = [
+      {
+        id: 1,
+        name: "1学期中間テスト期間",
+        startDate: "2026-05-08",
+        endDate: "2026-05-08",
+        targetGrades: ["中3"],
+        stopsClasses: true,
+      },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("A");
+  });
+
+  it("stopsClasses=false (高校テスト等) は授業継続扱いなのでシフト対象外", () => {
+    // 5/8 が高校テスト (stopsClasses=false) → 5/15 は素のローテどおり B のまま
+    const examPeriods = [
+      {
+        id: 1,
+        name: "高校 1 学期中間",
+        startDate: "2026-05-08",
+        endDate: "2026-05-08",
+        targetGrades: ["中3"], // 学年マッチでも stopsClasses=false なので無視
+        stopsClasses: false,
+      },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("B");
+  });
+
+  it("stopsClasses 未指定 (undefined) はデフォルトで授業停止 → シフト対象", () => {
+    const examPeriods = [
+      {
+        id: 1,
+        name: "X",
+        startDate: "2026-05-08",
+        endDate: "2026-05-08",
+        targetGrades: ["中3"],
+        // stopsClasses 未指定
+      },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("A");
+  });
+
+  it("targetGrades が空のテスト期間は全学年対象 → シフト対象に含まれる", () => {
+    const examPeriods = [
+      {
+        id: 1,
+        name: "X",
+        startDate: "2026-05-08",
+        endDate: "2026-05-08",
+        targetGrades: [],
+        stopsClasses: true,
+      },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("A");
+  });
+
+  it("targetGrades 指定でマッチしないテスト期間はシフト対象外", () => {
+    const examPeriods = [
+      {
+        id: 1,
+        name: "X",
+        startDate: "2026-05-08",
+        endDate: "2026-05-08",
+        targetGrades: ["中2"], // 中3 slot にはマッチしない
+        stopsClasses: true,
+      },
+    ];
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("B");
+  });
+
+  it("テスト期間の範囲が複数日に渡る場合、slot.day に当たる日だけカウント", () => {
+    // 5/7 (木) - 5/11 (月) のテスト期間に 5/8 (金) が含まれる
+    const examPeriods = [
+      {
+        id: 1,
+        name: "X",
+        startDate: "2026-05-07",
+        endDate: "2026-05-11",
+        targetGrades: [],
+        stopsClasses: true,
+      },
+    ];
+    // 金曜 slot のローテに影響するのは 5/8 (金) の 1 回だけ → 5/15 は A
+    expect(getSlotWeekType("2026-05-15", fridaySlot, anchors, [], examPeriods)).toBe("A");
+    // 5/22 はその次の金曜なので素ローテの A → B 反転
+    expect(getSlotWeekType("2026-05-22", fridaySlot, anchors, [], examPeriods)).toBe("B");
+  });
+
   it("isTeacherActiveOnDate / biweeklyDisplaySubject も同じ休講補正に従う", () => {
     const compositeSubjSlot = {
       ...fridaySlot,

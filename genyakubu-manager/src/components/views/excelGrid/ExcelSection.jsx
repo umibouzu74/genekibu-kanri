@@ -26,6 +26,7 @@ export function ExcelSection({
   isAdmin,
   biweeklyAnchors,
   holidays,
+  examPeriods,
   onEdit,
   saveSlots,
   allSlots,
@@ -633,6 +634,7 @@ export function ExcelSection({
                             onEdit={onEdit}
                             biweeklyAnchors={biweeklyAnchors}
                             holidays={holidays}
+                            examPeriods={examPeriods}
                             sessionNumber={
                               sessionCountMap
                                 ? sessionCountMap.get(combined.slot.id) || 0
@@ -681,6 +683,7 @@ export function ExcelSection({
                         onEdit={onEdit}
                         biweeklyAnchors={biweeklyAnchors}
                         holidays={holidays}
+                        examPeriods={examPeriods}
                         sessionNumber={
                           slot && sessionCountMap
                             ? sessionCountMap.get(slot.id) || 0

@@ -59,7 +59,8 @@ export function scoreSubstituteCandidate(teacher, slotSubjectId, subjects) {
  * @param {string} date - YYYY-MM-DD
  * @param {Array} biweeklyAnchors
  * @param {boolean} cancelledByHoliday - makeEventHelpers.isOffForGrade の結果
- * @param {Array} [holidays] - 隔週ローテーションの休講シフトに使用 (任意)
+ * @param {Array} [holidays] - 隔週ローテーションのシフトに使用 (任意)
+ * @param {Array} [examPeriods] - 隔週ローテーションのシフトに使用 (任意)
  * @returns {{status:"active"|"cancelled", reason:string|null}}
  */
 export function classifySlotForTeacher(
@@ -68,10 +69,11 @@ export function classifySlotForTeacher(
   date,
   biweeklyAnchors,
   cancelledByHoliday,
-  holidays
+  holidays,
+  examPeriods
 ) {
   if (isBiweekly(slot.note)) {
-    const wt = getSlotWeekType(date, slot, biweeklyAnchors, holidays);
+    const wt = getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods);
     const mainTeachers = getSlotTeachers(slot);
     const m = slot.note.match(/隔週\(([^)]+)\)/);
     const partner = m ? m[1] : null;
@@ -217,7 +219,8 @@ export function computeAvailableTeachers(
         date,
         biweeklyAnchors,
         slotCancelled.get(slot.id),
-        holidays
+        holidays,
+        examPeriods
       );
       if (classification.status === "cancelled") {
         cancelledSlots.push(slot);

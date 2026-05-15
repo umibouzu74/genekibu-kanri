@@ -2,27 +2,31 @@
 
 ## [Unreleased]
 
-### Fixed (隔週ローテーションの休講シフト)
-- 隔週コマのローテーションが休講を考慮せず、休講を挟むと A/B 担当が
-  片方に偏る (or 別教科側の進度が進まない) 不具合を修正。例として
-  5/1 B 週 → 5/8 休講 → 5/15 が B 週のままになっていたケースが、
-  自動的に 5/15 = A 週へシフトするようになり、毎回「隔週管理」で
-  基準日を打ち直す手間が不要に。
-- 補正対象は休講 (Holiday) のみで、テスト期間 (`stopsClasses=true`)
-  や振替 (`ScheduleAdjustment`) は対象外。スキップ判定は slot 固有
-  (slot.day かつ scope/学年/科目キーワードがマッチする休講のみ)。
+### Fixed (隔週ローテーションのシフト)
+- 隔週コマのローテーションが休講・テスト期間を考慮せず、休講や特訓を
+  挟むと A/B 担当が片方に偏る (or 別教科側の進度が進まない) 不具合を修正。
+  例: 5/1 B 週 → 5/8 休講/特訓 → 5/15 が B 週のままになっていたケースが、
+  自動的に 5/15 = A 週へシフトする。毎回「隔週管理」で基準日を打ち直す
+  手間が不要に。
+- シフトトリガは「休講 (Holiday)」と「テスト期間 (ExamPeriod) で
+  stopsClasses≠false のもの」。`stopsClasses=false` の高校テスト等は
+  授業継続扱いなのでシフトしない。振替 (`ScheduleAdjustment`) は対象外。
+- スキップ判定は slot 固有 (slot.day かつ scope/学年/科目キーワードが
+  マッチするもののみ)。
 - 手動で追加した基準日 (`BiweeklyAnchor`) は引き続き優先され、
   基準日以降のみ自動補正が走る。意図しない補正があれば手動 anchor で
   上書き可能 (従来の挙動を踏襲)。
-- 関連実装: `utils/biweekly.js` (`getSlotWeekType` に `holidays` 引数
-  追加、`isTeacherActiveOnDate` / `biweeklyDisplaySubject` も同様)、
-  `utils/scheduleHelpers.js` (`isSlotCancelledByHoliday` を切り出し)、
-  `utils/chainSubstitution.js` / `utils/sessionCount.js` / `hooks/useSessionCtx.js`
-  (`holidays` を sessionCtx 経由で伝播)、表示系
+- 関連実装: `utils/biweekly.js` (`getSlotWeekType` に `holidays` /
+  `examPeriods` 引数追加、`isTeacherActiveOnDate` / `biweeklyDisplaySubject`
+  も同様)、`utils/scheduleHelpers.js` (`isSlotCancelledByHoliday` と
+  `isSlotCancelledForBiweeklyShift` を切り出し)、`utils/chainSubstitution.js` /
+  `utils/sessionCount.js` / `hooks/useSessionCtx.js`
+  (`holidays` / `examPeriods` を sessionCtx 経由で伝播)、表示系
   (`MonthView`, `WeekView`, `MasterView` / `BiweeklyTab`, `ExcelGridView` /
   `ExcelSection` / `ExcelCell`, `AbsenceWorkflowView` / `AbsenceTimetable` /
-  `AbsenceSlotCard`) はそれぞれ `holidays` を thread 済み。
-- `biweekly.test.js` に休講シフトの 8 ケースを追加 (56 件 → 64 件)。
+  `AbsenceSlotCard`) はそれぞれ `holidays` / `examPeriods` を thread 済み。
+- `biweekly.test.js` に休講シフト・テスト期間シフトの 14 ケースを追加
+  (56 件 → 76 件)。`chainSubstitution.test.js` に統合テスト 1 件追加。
 
 ### Fixed (校正レビュー 2 回目反映)
 - `SubstitutePickerPopover` で新規追加した矢印キーハンドラに
