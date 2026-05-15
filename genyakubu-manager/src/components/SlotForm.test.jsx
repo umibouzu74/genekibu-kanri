@@ -83,4 +83,53 @@ describe("SlotForm", () => {
     const datalists = container.querySelectorAll("datalist");
     expect(datalists.length).toBe(5);
   });
+
+  describe("biweeklyAnchors", () => {
+    const baseSlot = {
+      day: "金",
+      time: "18:55-19:40",
+      grade: "中3",
+      cls: "S",
+      room: "501",
+      subj: "英/数",
+      teacher: "堀上",
+      note: "隔週(川井)",
+    };
+
+    it("既存の個別 anchor の ✕ を押して保存すると undefined になる", () => {
+      const slot = {
+        ...baseSlot,
+        biweeklyAnchors: [{ date: "2026-04-24", weekType: "A" }],
+      };
+      const onSave = vi.fn();
+      render(<SlotForm slot={slot} onSave={onSave} onCancel={noop} />);
+      // 個別 anchor の ✕ ボタンを押す
+      const removeBtn = screen.getByText("✕");
+      fireEvent.click(removeBtn);
+      // 保存
+      const saveBtn = screen.getAllByText("保存")[0];
+      fireEvent.click(saveBtn);
+      expect(onSave).toHaveBeenCalledTimes(1);
+      const arg = onSave.mock.calls[0][0];
+      expect(arg.biweeklyAnchors).toBeUndefined();
+    });
+
+    it("チェックボックスを外して保存すると undefined になる", () => {
+      const slot = {
+        ...baseSlot,
+        biweeklyAnchors: [{ date: "2026-04-24", weekType: "A" }],
+      };
+      const onSave = vi.fn();
+      render(<SlotForm slot={slot} onSave={onSave} onCancel={noop} />);
+      // 「このコマ専用の基準日を設定する」のチェックを外す
+      const checkbox = screen.getByLabelText("このコマ専用の基準日を設定する");
+      fireEvent.click(checkbox);
+      // 保存
+      const saveBtn = screen.getAllByText("保存")[0];
+      fireEvent.click(saveBtn);
+      expect(onSave).toHaveBeenCalledTimes(1);
+      const arg = onSave.mock.calls[0][0];
+      expect(arg.biweeklyAnchors).toBeUndefined();
+    });
+  });
 });

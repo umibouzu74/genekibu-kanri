@@ -25,6 +25,7 @@ export function BiweeklyTab({
   examPeriods,
   isAdmin,
   onEdit,
+  onClearSlotAnchors,
 }) {
   return (
     <>
@@ -264,15 +265,42 @@ export function BiweeklyTab({
                             {hasCustomAnchors ? (
                               <span
                                 style={{
-                                  background: "#e67a00",
-                                  color: "#fff",
-                                  padding: "1px 6px",
-                                  borderRadius: 3,
-                                  fontSize: 9,
-                                  fontWeight: 700,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
                                 }}
                               >
-                                個別
+                                <span
+                                  style={{
+                                    background: "#e67a00",
+                                    color: "#fff",
+                                    padding: "1px 6px",
+                                    borderRadius: 3,
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  個別
+                                </span>
+                                {isAdmin && onClearSlotAnchors && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onClearSlotAnchors(s.id)}
+                                    title="個別の基準日を削除してグローバル基準に戻す"
+                                    aria-label={`${s.subj} の個別基準日を削除`}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      fontSize: 11,
+                                      color: "#c05030",
+                                      padding: 0,
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
                               </span>
                             ) : (
                               <span style={{ fontSize: 10, color: "#aaa" }}>共通</span>
@@ -308,6 +336,7 @@ export function BiweeklyTab({
       <div style={{ marginTop: 16, fontSize: 11, color: "#888" }}>
         ※ 備考欄に「隔週」を含むコマが自動的に表示されます。
         「個別」マーク付きのコマは独自の基準日が設定されています。
+        個別の ✕ ボタンでグローバル基準へ戻せます。
       </div>
     </>
   );

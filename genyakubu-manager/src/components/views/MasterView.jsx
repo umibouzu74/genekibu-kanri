@@ -131,6 +131,19 @@ export function MasterView({
     onSetBiweeklyAnchors(biweeklyAnchors.filter((a) => a.date !== date));
   };
 
+  // slot.biweeklyAnchors (個別の隔週基準) を解除してグローバル基準に戻す。
+  // SlotForm を開かなくても隔週管理タブから直接リセットできるようにする。
+  const clearSlotBiweeklyAnchors = (slotId) => {
+    saveSlots(
+      slots.map((s) => {
+        if (s.id !== slotId) return s;
+        const next = { ...s };
+        delete next.biweeklyAnchors;
+        return next;
+      })
+    );
+  };
+
   if (tab === "excel") {
     return (
       <div style={{ marginTop: 12 }}>
@@ -173,6 +186,7 @@ export function MasterView({
           examPeriods={examPeriods}
           isAdmin={isAdmin}
           onEdit={onEdit}
+          onClearSlotAnchors={clearSlotBiweeklyAnchors}
         />
       </div>
     );
