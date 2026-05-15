@@ -16,7 +16,8 @@ export function AbsenceSlotCard({
   slot,
   date, // 対象日 (YYYY-MM-DD) — 隔週の A/B 判定に使用
   biweeklyAnchors,
-  holidays, // 隔週ローテーションの休講シフトに使う (任意)
+  holidays, // 隔週ローテーションのシフトに使う (任意)
+  examPeriods, // 隔週ローテーションのシフトに使う (任意)
   isAbsent,
   cancelLabel, // 当日が「休講」「テスト期間」等で授業が走らない場合のラベル
   isMoved,
@@ -41,7 +42,7 @@ export function AbsenceSlotCard({
   const gc = GC(slot.grade);
   const biweekly = isBiweekly(slot.note);
   const weekType = biweekly && date
-    ? getSlotWeekType(date, slot, biweeklyAnchors, holidays)
+    ? getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods)
     : null;
 
   // 休講 / テスト期間: 操作系をすべて無効化し、ラベル + 灰色化で簡素表示。

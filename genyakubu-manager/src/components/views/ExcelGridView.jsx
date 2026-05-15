@@ -610,6 +610,7 @@ export function ExcelGridView({
                     isAdmin={isAdmin}
                     biweeklyAnchors={biweeklyAnchors}
                     holidays={holidays}
+                    examPeriods={examPeriods}
                     onEdit={onEdit}
                     saveSlots={saveSlots}
                     allSlots={slots}

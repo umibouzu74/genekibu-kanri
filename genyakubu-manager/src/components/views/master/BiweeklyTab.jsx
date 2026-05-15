@@ -22,6 +22,7 @@ export function BiweeklyTab({
   removeAnchor,
   biweeklyGroups,
   holidays,
+  examPeriods,
   isAdmin,
   onEdit,
 }) {
@@ -151,8 +152,9 @@ export function BiweeklyTab({
         <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
           ここで設定する基準日は全隔週コマのデフォルトです。
           個別にずれたコマは、コマの編集画面から専用の基準日を設定できます。
-          休講が入った週はローテーションを 1 週ぶん持ち越して表示するため、
-          休講のたびに基準日を打ち直す必要はありません。
+          休講・テスト期間 (授業停止) が入った週はローテーションを 1 週ぶん
+          持ち越して表示するため、それぞれのたびに基準日を打ち直す必要は
+          ありません。
         </div>
       </div>
       {biweeklyGroups.length === 0 ? (
@@ -216,7 +218,8 @@ export function BiweeklyTab({
                         fmtDate(new Date()),
                         s,
                         biweeklyAnchors,
-                        holidays
+                        holidays,
+                        examPeriods
                       );
                       const hasCustomAnchors =
                         s.biweeklyAnchors && s.biweeklyAnchors.length > 0;

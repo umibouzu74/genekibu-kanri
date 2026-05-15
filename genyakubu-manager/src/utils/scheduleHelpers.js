@@ -52,3 +52,17 @@ export function isSlotOffOnDate(slot, dateStr, holidays, examPeriods) {
     return ep.targetGrades.includes(slot.grade);
   });
 }
+
+// 隔週ローテーション補正で「実施されなかった週」と判定するか。
+// 休講 (Holiday) または stopsClasses≠false のテスト期間 (ExamPeriod) で
+// 当該 slot が当日休止になる場合に true。
+// stopsClasses=false の高校テスト等は授業継続扱いなので対象外。
+export function isSlotCancelledForBiweeklyShift(slot, dateStr, holidays, examPeriods) {
+  if (isSlotCancelledByHoliday(slot, dateStr, holidays)) return true;
+  return (examPeriods || []).some((ep) => {
+    if (ep.stopsClasses === false) return false;
+    if (dateStr < ep.startDate || dateStr > ep.endDate) return false;
+    if (!ep.targetGrades || ep.targetGrades.length === 0) return true;
+    return ep.targetGrades.includes(slot.grade);
+  });
+}
