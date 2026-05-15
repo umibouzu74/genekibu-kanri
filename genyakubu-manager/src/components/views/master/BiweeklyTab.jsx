@@ -49,6 +49,7 @@ export function BiweeklyTab({
           <div style={{ fontSize: 13, fontWeight: 700 }}>隔週の基準設定</div>
           {currentWeekType && (
             <span
+              title="休講シフトを考慮しない、カレンダー上の基準週です。個別コマの今週は下表で確認してください。"
               style={{
                 background: currentWeekType === "A" ? "#2e6a9e" : "#c05030",
                 color: "#fff",
@@ -58,7 +59,7 @@ export function BiweeklyTab({
                 fontSize: 13,
               }}
             >
-              今週は {currentWeekType}週
+              基準は {currentWeekType}週
             </span>
           )}
         </div>
