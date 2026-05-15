@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added (隔週管理タブの個別 anchor 解除)
+- 隔週管理タブで「個別」マークの右に ✕ ボタンを追加 (admin のみ)。
+  これまで slot ごとの個別基準日を解除するにはコマ編集モーダルまで
+  掘る必要があったが、隔週管理タブから直接グローバル基準へ戻せるように。
+- cascade なしの単純削除 (slot.biweeklyAnchors を `delete` するだけ) なので
+  CLAUDE.md の規約に沿って即削除 + 6 秒 Undo toast を表示。Undo 中に
+  別経路で再設定されていれば上書きしない安全策入り。
+- `BiweeklyTab.test.jsx` を新設し、✕ ボタンの表示条件 (個別 anchor 有無、
+  isAdmin、後方互換) と click → onClearSlotAnchors(id) 経路を計 5 ケース
+  で検証。
+
 ### Fixed (隔週ローテーションのシフト)
 - 隔週コマのローテーションが休講・テスト期間を考慮せず、休講や特訓を
   挟むと A/B 担当が片方に偏る (or 別教科側の進度が進まない) 不具合を修正。

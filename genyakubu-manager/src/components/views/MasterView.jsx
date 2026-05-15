@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { DAYS, fmtDate, sortSlots as sortS, timeToMin } from "../../data";
 import { S } from "../../styles/common";
 import { getWeekType } from "../../utils/biweekly";
+import { useToasts } from "../../hooks/useToasts";
 import { ExcelGridView } from "./ExcelGridView";
 import { BiweeklyTab } from "./master/BiweeklyTab";
 import { MasterListTab } from "./master/MasterListTab";
@@ -49,6 +50,7 @@ export function MasterView({
   adjustments = [],
   sessionOverrides = [],
 }) {
+  const toasts = useToasts();
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
   const [filterTeacher, setFilterTeacher] = useState("");
@@ -133,7 +135,13 @@ export function MasterView({
 
   // slot.biweeklyAnchors (個別の隔週基準) を解除してグローバル基準に戻す。
   // SlotForm を開かなくても隔週管理タブから直接リセットできるようにする。
+  // cascade なしの単純削除なので即削除 + 6 秒 Undo toast (CLAUDE.md 準拠)。
   const clearSlotBiweeklyAnchors = (slotId) => {
+    const target = slots.find((s) => s.id === slotId);
+    if (!target || !target.biweeklyAnchors || target.biweeklyAnchors.length === 0) {
+      return;
+    }
+    const original = target.biweeklyAnchors;
     saveSlots(
       slots.map((s) => {
         if (s.id !== slotId) return s;
@@ -142,6 +150,24 @@ export function MasterView({
         return next;
       })
     );
+    toasts.push("個別基準日を削除しました", {
+      tone: "info",
+      duration: 6000,
+      action: {
+        label: "元に戻す",
+        onClick: () => {
+          saveSlots((prev) =>
+            prev.map((s) => {
+              if (s.id !== slotId) return s;
+              // 6 秒のあいだに別経路 (SlotForm 等) で再設定されていたら
+              // 上書きしない (Undo 中の意図しないデータ破壊を避ける)。
+              if (s.biweeklyAnchors && s.biweeklyAnchors.length > 0) return s;
+              return { ...s, biweeklyAnchors: original };
+            })
+          );
+        },
+      },
+    });
   };
 
   if (tab === "excel") {
