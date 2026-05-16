@@ -32,6 +32,7 @@ export default function Header() {
   //   1. 動的 import の失敗と Excel 生成の失敗を文言で区別
   //   2. 進行中はボタンを disabled + スピナー表示
   //   3. catch では console.error も残してデバッグ可能に
+  //   4. exceljs ベースで download* は async なので await する
   const handleExport = async (type) => {
     setExportingType(type);
     let mod;
@@ -45,10 +46,10 @@ export default function Header() {
     }
     try {
       if (type === 'all') {
-        mod.downloadScheduleExcel(project);
+        await mod.downloadScheduleExcel(project);
         showToast('全体Excelをダウンロードしました');
       } else {
-        mod.downloadTeacherExcel(project);
+        await mod.downloadTeacherExcel(project);
         showToast('個人別Excelをダウンロードしました');
       }
     } catch (err) {
