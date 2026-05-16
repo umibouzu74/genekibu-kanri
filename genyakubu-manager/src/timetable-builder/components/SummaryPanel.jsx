@@ -36,7 +36,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
             <div className="flex flex-wrap gap-2">
               {project.teachers.filter(t => t.name !== "未定").map(t => {
                 let total = 0;
-                currentConfig.dates.forEach(d => { total += analysis.teacherDailyCounts[makeExternalKey(d, t.name)]?.total || 0; });
+                currentConfig.dates.forEach(d => { total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0; });
                 if (total === 0) return null;
                 return (
                   <div key={t.name} className="bg-white px-2 py-1 rounded border shadow-sm text-sm flex items-center gap-2">

@@ -93,9 +93,20 @@ export function loadInitialProject() {
     const defaultsStr = savedDefaults || legacyDefaults;
     if (defaultsStr) {
       const defaults = JSON.parse(defaultsStr);
+      const rawConfig = defaults.config || DEFAULT_TAB_CONFIG_BASE;
+      // v2 形式 (string 配列) で保存された user defaults を v3 形式 ({id, label})
+      // に正規化する。既に v3 形式 (object 配列) なら素通し。
+      const isV3Shape = (arr) => Array.isArray(arr) && (arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]));
+      const wrap = (arr) => isV3Shape(arr) ? arr : arr.map((label, i) => ({ id: i + 1, label }));
+      const normalizedConfig = {
+        ...rawConfig,
+        dates: wrap(rawConfig.dates || []),
+        periods: wrap(rawConfig.periods || []),
+        classes: wrap(rawConfig.classes || []),
+      };
       return {
         project: createNewProject(
-          [{ id: 1, name: "メイン", config: defaults.config || DEFAULT_TAB_CONFIG_BASE, schedule: {} }],
+          [{ id: 1, name: "メイン", config: normalizedConfig, schedule: {} }],
           defaults.teachers || DEFAULT_INITIAL_TEACHERS,
         ),
         loadError: null,
@@ -111,13 +122,32 @@ export function loadInitialProject() {
       {
         id: 1,
         name: "中３",
-        config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["３S", "３A", "３B", "３C"] },
+        config: {
+          ...DEFAULT_TAB_CONFIG_BASE,
+          classes: [
+            { id: 1, label: "３S" },
+            { id: 2, label: "３A" },
+            { id: 3, label: "３B" },
+            { id: 4, label: "３C" },
+          ],
+        },
         schedule: {}
       },
       {
         id: 2,
         name: "中１・２",
-        config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["１S", "１AB", "１附属", "２S", "２AB", "２C", "２附属"] },
+        config: {
+          ...DEFAULT_TAB_CONFIG_BASE,
+          classes: [
+            { id: 1, label: "１S" },
+            { id: 2, label: "１AB" },
+            { id: 3, label: "１附属" },
+            { id: 4, label: "２S" },
+            { id: 5, label: "２AB" },
+            { id: 6, label: "２C" },
+            { id: 7, label: "２附属" },
+          ],
+        },
         schedule: {}
       }
     ]),

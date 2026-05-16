@@ -5,6 +5,12 @@ import { makeKey, makeNgKey } from '../utils/scheduleKey';
 // ─── テストヘルパ ──────────────────────────────────────────────────
 // 制約充足ソルバのテストは「最小限の構成 + 1 つの制約」で書くのが読みやすい。
 
+// v3: dates / periods / classes をラベル文字列の配列で受け取り、
+// { id: 1+, label } の entity 配列に自動 wrap する。
+function wrapEntities(arr) {
+  return arr.map((label, i) => ({ id: i + 1, label }));
+}
+
 function makeProject({
   teachers = [],
   dates = ['12/25(木)'],
@@ -17,14 +23,19 @@ function makeProject({
   maxDailyHours,
 } = {}) {
   return {
-    version: 2,
+    version: 3,
     name: 'test',
     teachers,
     activeTabId: 1,
     tabs: [{
       id: 1,
       name: 'tab1',
-      config: { dates, periods, classes, subjectCounts },
+      config: {
+        dates: wrapEntities(dates),
+        periods: wrapEntities(periods),
+        classes: wrapEntities(classes),
+        subjectCounts,
+      },
       schedule,
     }],
     externalCounts,
@@ -58,13 +69,13 @@ describe('generateSinglePattern — 基本動作', () => {
     const project = makeProject({
       teachers: [teacher('堀上', ['英語'])],
       schedule: {
-        [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.totalSlots).toBe(0);
     expect(r.solution).toEqual({
-      [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
     });
   });
 
@@ -76,7 +87,7 @@ describe('generateSinglePattern — 基本動作', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
     expect(r.totalSlots).toBe(1);
-    expect(r.solution[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
   });
 
   it('該当講師がいなければ solution は null、totalSlots は 1', () => {
@@ -115,7 +126,7 @@ describe('generateSinglePattern — 制約', () => {
       subjectCounts: { '英語': 1 },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 42 });
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('田中');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
   });
 
   it('講師の NG クラスは割り当てない', () => {
@@ -127,7 +138,7 @@ describe('generateSinglePattern — 制約', () => {
       subjectCounts: { '英語': 1 },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 42 });
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('田中');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
   });
 
   it('同日同クラスに同じ科目が 2 回入らない', () => {
@@ -139,8 +150,8 @@ describe('generateSinglePattern — 制約', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
     const subjects = [
-      r.solution[makeKey(0, 0, 0)].subject,
-      r.solution[makeKey(0, 1, 0)].subject,
+      r.solution[makeKey(1, 1, 1)].subject,
+      r.solution[makeKey(1, 2, 1)].subject,
     ];
     expect(new Set(subjects).size).toBe(2);
   });
@@ -153,8 +164,8 @@ describe('generateSinglePattern — 制約', () => {
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 7 });
     expect(r.solution).not.toBeNull();
-    const t1 = r.solution[makeKey(0, 0, 0)].teacher;
-    const t2 = r.solution[makeKey(0, 0, 1)].teacher;
+    const t1 = r.solution[makeKey(1, 1, 1)].teacher;
+    const t2 = r.solution[makeKey(1, 1, 2)].teacher;
     expect(t1).not.toBe(t2);
   });
 
@@ -163,11 +174,11 @@ describe('generateSinglePattern — 制約', () => {
     const project = makeProject({
       teachers: [teacher('堀上', ['英語'])],
       schedule: {
-        [makeKey(0, 0, 0)]: { subject: '英語', teacher: '田中', locked: true },
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '田中', locked: true },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    expect(r.solution[makeKey(0, 0, 0)]).toEqual({
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({
       subject: '英語',
       teacher: '田中',
       locked: true,
@@ -181,11 +192,11 @@ describe('generateSinglePattern — 制約', () => {
       teachers: [teacher('堀上', ['数学']), teacher('田中', ['英語'])],
       subjectCounts: { '英語': 1, '数学': 1 },
       schedule: {
-        [makeKey(0, 0, 0)]: { subject: '英語', teacher: '', locked: true },
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '', locked: true },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    expect(r.solution[makeKey(0, 0, 0)]).toEqual({
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({
       subject: '英語',
       teacher: '田中',
       locked: true,
@@ -197,11 +208,11 @@ describe('generateSinglePattern — 制約', () => {
       teachers: [teacher('堀上', ['英語']), teacher('田中', ['数学'])],
       subjectCounts: { '英語': 1, '数学': 1 },
       schedule: {
-        [makeKey(0, 0, 0)]: { subject: '数学', teacher: '' },
+        [makeKey(1, 1, 1)]: { subject: '数学', teacher: '' },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    expect(r.solution[makeKey(0, 0, 0)]).toEqual({ subject: '数学', teacher: '田中' });
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({ subject: '数学', teacher: '田中' });
   });
 });
 
@@ -219,7 +230,7 @@ describe('generateSinglePattern — 優先度', () => {
       subjectCounts: { '英語': 1 },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('堀上');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('堀上');
   });
 });
 
@@ -237,8 +248,8 @@ describe('generateSinglePattern — 合同グループ', () => {
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
-    const a = r.solution[makeKey(0, 0, 0)];
-    const b = r.solution[makeKey(0, 0, 1)];
+    const a = r.solution[makeKey(1, 1, 1)];
+    const b = r.solution[makeKey(1, 1, 2)];
     expect(a).toEqual({ subject: '英語', teacher: '堀上' });
     expect(b).toEqual({ subject: '英語', teacher: '堀上' });
   });
@@ -260,7 +271,7 @@ describe('generateSinglePattern — 日別コマ数上限', () => {
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('田中');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
   });
 
   it('externalCounts と既存割当を合算して上限判定する', () => {
@@ -276,13 +287,13 @@ describe('generateSinglePattern — 日別コマ数上限', () => {
       subjectCounts: { '英語': 1, '数学': 1 },
       externalCounts: { '12/25(木)-堀上': 5 },
       schedule: {
-        [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上', locked: true },
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
     // 2 限目 (数学) の割当は堀上以外 (= 田中)
-    expect(r.solution[makeKey(0, 1, 0)].teacher).toBe('田中');
+    expect(r.solution[makeKey(1, 2, 1)].teacher).toBe('田中');
   });
 
   it('project.maxDailyHours で上限を上書きできる', () => {
@@ -294,7 +305,7 @@ describe('generateSinglePattern — 日別コマ数上限', () => {
       maxDailyHours: 2,
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('田中');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
   });
 
   it('未定 は上限の対象外 (placeholder 扱い)', () => {
@@ -306,7 +317,7 @@ describe('generateSinglePattern — 日別コマ数上限', () => {
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
-    expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('未定');
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('未定');
   });
 
   it('externalCounts 無し + 上限の範囲内 → 従来通り割当てる (回帰)', () => {

@@ -41,15 +41,15 @@ export default function BasicSettings() {
       </div>
       <div>
         <label className="text-xs font-bold text-gray-500">日付 (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-20 rounded" value={currentConfig.dates.join(", ")} onChange={(e) => handleConfigChange('dates', e.target.value)} />
+        <textarea className="w-full border p-2 text-sm h-20 rounded" value={currentConfig.dates.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('dates', e.target.value)} />
       </div>
       <div>
         <label className="text-xs font-bold text-gray-500">時限 (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.periods.join(", ")} onChange={(e) => handleConfigChange('periods', e.target.value)} />
+        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.periods.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('periods', e.target.value)} />
       </div>
       <div>
         <label className="text-xs font-bold text-gray-500">クラス (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.classes.join(", ")} onChange={(e) => handleConfigChange('classes', e.target.value)} />
+        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.classes.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('classes', e.target.value)} />
       </div>
       <div className="pt-2">
         <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-700 shadow-sm text-sm">

@@ -39,7 +39,10 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
 
   if (!contextMenu) return null;
 
-  const { dIdx, pIdx, cIdx, type, val } = contextMenu;
+  // ScheduleCell からの onContextMenu(e, dateId, periodId, classId) 経由で
+  // ScheduleApp が contextMenu に dIdx/pIdx/cIdx として詰めるが、v3 では
+  // これらは実際には dateId/periodId/classId (ID)。名前は legacy のまま。
+  const { dIdx: dateId, pIdx: periodId, cIdx: classId, type, val } = contextMenu;
 
   const handleAction = async (action) => {
     if (action === 'rename') {
@@ -53,23 +56,23 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
       handleBulkAction(action, type, val);
     } else {
       if (action === 'copy') {
-        const copied = handleCellCopy(dIdx, pIdx, cIdx);
+        const copied = handleCellCopy(dateId, periodId, classId);
         if (copied) {
           onClose(copied);
           showToast(`${copied.subject}${copied.teacher ? ` / ${copied.teacher}` : ''} をコピーしました`, 'success', 1500);
         }
         return;
       }
-      if (action === 'paste') { handleCellPaste(dIdx, pIdx, cIdx, clipboard); }
-      if (action === 'lock') { toggleLock(dIdx, pIdx, cIdx); }
-      if (action === 'clear') { handleCellClear(dIdx, pIdx, cIdx); }
-      if (action === 'set-ng') { handleSetNg(dIdx, pIdx, cIdx); }
+      if (action === 'paste') { handleCellPaste(dateId, periodId, classId, clipboard); }
+      if (action === 'lock') { toggleLock(dateId, periodId, classId); }
+      if (action === 'clear') { handleCellClear(dateId, periodId, classId); }
+      if (action === 'set-ng') { handleSetNg(dateId, periodId, classId); }
     }
     onClose();
   };
 
-  const cellKey = (dIdx !== undefined && pIdx !== undefined && cIdx !== undefined)
-    ? makeKey(dIdx, pIdx, cIdx) : null;
+  const cellKey = (dateId !== undefined && periodId !== undefined && classId !== undefined && dateId !== null && periodId !== null && classId !== null)
+    ? makeKey(dateId, periodId, classId) : null;
 
   return (
     <div ref={menuRef} className="fixed bg-white border border-gray-200 shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>

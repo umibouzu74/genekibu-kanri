@@ -9,39 +9,39 @@ export default function NgSettings() {
     toggleTeacherNg,
   } = useProjectContext();
 
-  // 折りたたみ状態: 各日付の開閉
+  // 折りたたみ状態: 各日付の開閉 (date.id をキーに)
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
-    currentConfig.dates.forEach(d => { initial[d] = true; });
+    currentConfig.dates.forEach(d => { initial[d.id] = true; });
     return initial;
   });
 
-  const toggleDate = (date) => {
-    setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }));
+  const toggleDate = (dateId) => {
+    setExpandedDates(prev => ({ ...prev, [dateId]: !prev[dateId] }));
   };
 
   const expandAll = () => {
     const all = {};
-    currentConfig.dates.forEach(d => { all[d] = true; });
+    currentConfig.dates.forEach(d => { all[d.id] = true; });
     setExpandedDates(all);
   };
 
   const collapseAll = () => {
     const all = {};
-    currentConfig.dates.forEach(d => { all[d] = false; });
+    currentConfig.dates.forEach(d => { all[d.id] = false; });
     setExpandedDates(all);
   };
 
-  // 日付ごとのNG件数を計算
+  // 日付ごとのNG件数を計算 (date.label と period.label で makeNgKey)
   const ngCountByDate = {};
   currentConfig.dates.forEach(d => {
     let count = 0;
     project.teachers.forEach(t => {
       currentConfig.periods.forEach(p => {
-        if (t.ngSlots?.includes(makeNgKey(d, p))) count++;
+        if (t.ngSlots?.includes(makeNgKey(d.label, p.label))) count++;
       });
     });
-    ngCountByDate[d] = count;
+    ngCountByDate[d.id] = count;
   });
 
   return (
@@ -57,17 +57,17 @@ export default function NgSettings() {
       </div>
       <div className="space-y-2">
         {currentConfig.dates.map(d => {
-          const isExpanded = expandedDates[d] !== false;
-          const ngCount = ngCountByDate[d] || 0;
+          const isExpanded = expandedDates[d.id] !== false;
+          const ngCount = ngCountByDate[d.id] || 0;
           return (
-            <div key={d} className="border rounded overflow-hidden">
+            <div key={d.id} className="border rounded overflow-hidden">
               <button
-                onClick={() => toggleDate(d)}
+                onClick={() => toggleDate(d.id)}
                 className="w-full flex items-center justify-between px-3 py-2 bg-gray-100 hover:bg-gray-200 text-sm font-bold text-left"
               >
                 <span>
                   <span className="mr-1">{isExpanded ? '▼' : '▶'}</span>
-                  {d}
+                  {d.label}
                 </span>
                 {ngCount > 0 && (
                   <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded">{ngCount}件NG</span>
@@ -80,7 +80,7 @@ export default function NgSettings() {
                       <tr>
                         <th className="border-t border-r p-2 bg-gray-50 sticky left-0 z-10">講師名</th>
                         {currentConfig.periods.map(p => (
-                          <th key={p} className="border-t border-r p-1 bg-gray-50 font-normal min-w-[60px] text-center">{p}</th>
+                          <th key={p.id} className="border-t border-r p-1 bg-gray-50 font-normal min-w-[60px] text-center">{p.label}</th>
                         ))}
                       </tr>
                     </thead>
@@ -89,12 +89,12 @@ export default function NgSettings() {
                         <tr key={t.name}>
                           <td className="border-t border-r p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
                           {currentConfig.periods.map(p => {
-                            const k = makeNgKey(d, p);
+                            const k = makeNgKey(d.label, p.label);
                             const isNg = t.ngSlots?.includes(k);
                             return (
                               <td
-                                key={p}
-                                onClick={() => toggleTeacherNg(idx, d, p)}
+                                key={p.id}
+                                onClick={() => toggleTeacherNg(idx, d.label, p.label)}
                                 className={`border-t border-r p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${isNg ? "bg-red-500 text-white font-bold" : "bg-white"}`}
                               >
                                 {isNg ? "NG" : ""}

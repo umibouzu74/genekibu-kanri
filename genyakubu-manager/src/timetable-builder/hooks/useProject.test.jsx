@@ -8,9 +8,10 @@ import { makeKey, makeExternalKey, makeNgKey } from '../utils/scheduleKey';
 // 各テストの初期 project を localStorage に流し込んでから renderHook する。
 // useHistoryStack が loadInitialProject 経由で localStorage を読むため、これで
 // 任意の初期状態を作れる。
+// v3 schema で保存する。dates/periods/classes は { id, label } の entity 配列。
 function setupHook(override = {}) {
   const baseProject = {
-    version: 2,
+    version: 3,
     name: 'test',
     teachers: [
       { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -21,9 +22,9 @@ function setupHook(override = {}) {
       id: 1,
       name: 'メイン',
       config: {
-        dates: ['12/25(木)'],
-        periods: ['1限'],
-        classes: ['３S', '３A'],
+        dates: [{ id: 1, label: '12/25(木)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
         subjectCounts: { '英語': 1, '数学': 1 },
       },
       schedule: {},
@@ -72,12 +73,12 @@ describe('useProject — renameTeacher (cascade)', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
       externalCounts: { [makeExternalKey('12/25(木)', '堀上')]: 3 },
@@ -87,9 +88,9 @@ describe('useProject — renameTeacher (cascade)', () => {
     // teachers
     expect(proj.teachers[0].name).toBe('ホリウエ');
     // schedule の teacher 名
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 0)].teacher).toBe('ホリウエ');
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('ホリウエ');
     // 田中 は影響なし
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 1)].teacher).toBe('田中');
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('田中');
     // externalCounts のキー
     expect(proj.externalCounts[makeExternalKey('12/25(木)', 'ホリウエ')]).toBe(3);
     expect(proj.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
@@ -116,23 +117,23 @@ describe('useProject — removeTeacher (cascade)', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
     });
     act(() => result.current.removeTeacher(0));
     const proj = result.current.project;
     expect(proj.teachers.find(t => t.name === '堀上')).toBeUndefined();
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 0)].teacher).toBe('');
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('');
     // subject はそのまま
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 0)].subject).toBe('英語');
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 1)].subject).toBe('英語');
     // 田中 は無事
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 1)].teacher).toBe('田中');
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('田中');
   });
 });
 
@@ -170,12 +171,12 @@ describe('useProject — addSubject / removeSubject (cascade)', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
       teachers: [
@@ -190,9 +191,9 @@ describe('useProject — addSubject / removeSubject (cascade)', () => {
     // subjectCounts
     expect(proj.tabs[0].config.subjectCounts['英語']).toBeUndefined();
     // schedule cell: subject/teacher が空に
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 0)]).toEqual({ subject: '', teacher: '' });
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '', teacher: '' });
     // 数学のセルは無事
-    expect(proj.tabs[0].schedule[makeKey(0, 0, 1)]).toMatchObject({ subject: '数学', teacher: '田中' });
+    expect(proj.tabs[0].schedule[makeKey(1, 1, 2)]).toMatchObject({ subject: '数学', teacher: '田中' });
     // teachers から科目を除去
     expect(proj.teachers[0].subjects).toEqual(['数学']);
     expect(proj.teachers[1].subjects).toEqual(['数学']);
@@ -249,16 +250,16 @@ describe('useProject — タブ管理', () => {
 describe('useProject — handleAssign 基本', () => {
   it('subject を割り当てると teacher は空文字にリセットされる', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    const cell = result.current.currentSchedule[makeKey(0, 0, 0)];
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    const cell = result.current.currentSchedule[makeKey(1, 1, 1)];
     expect(cell).toEqual({ subject: '英語', teacher: '' });
   });
 
   it('teacher を割り当てると subject は保持される', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.handleAssign(0, 0, 0, 'teacher', '堀上'));
-    const cell = result.current.currentSchedule[makeKey(0, 0, 0)];
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'teacher', '堀上'));
+    const cell = result.current.currentSchedule[makeKey(1, 1, 1)];
     expect(cell).toEqual({ subject: '英語', teacher: '堀上' });
   });
 
@@ -267,16 +268,16 @@ describe('useProject — handleAssign 基本', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
         },
       }],
     });
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '数学'));
-    const cell = result.current.currentSchedule[makeKey(0, 0, 0)];
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '数学'));
+    const cell = result.current.currentSchedule[makeKey(1, 1, 1)];
     expect(cell).toMatchObject({ subject: '英語', teacher: '堀上', locked: true });
   });
 });
@@ -289,31 +290,31 @@ describe('useProject — handleAssign 合同グループ伝播', () => {
 
   it('subject の伝播: ３S に英語を入れると ３A にも英語が入る (teacher は空)', () => {
     const { result } = setupHook(withCombined);
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
     const sch = result.current.currentSchedule;
-    expect(sch[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '' });
-    expect(sch[makeKey(0, 0, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(sch[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(sch[makeKey(1, 1, 2)]).toEqual({ subject: '英語', teacher: '' });
   });
 
   it('teacher の伝播: 合同セルの講師変更が他クラスにも反映', () => {
     const { result } = setupHook(withCombined);
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.handleAssign(0, 0, 0, 'teacher', '堀上'));
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'teacher', '堀上'));
     const sch = result.current.currentSchedule;
-    expect(sch[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '堀上' });
-    expect(sch[makeKey(0, 0, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(sch[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(sch[makeKey(1, 1, 2)]).toEqual({ subject: '英語', teacher: '堀上' });
   });
 
   it('subject 変更時、旧合同のセカンダリ (非ロック) は削除される', () => {
     const { result } = setupHook(withCombined);
     // ３S・３A を英語にしてから、３S を数学に変更
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    expect(result.current.currentSchedule[makeKey(0, 0, 1)]).toBeTruthy();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '数学'));
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    expect(result.current.currentSchedule[makeKey(1, 1, 2)]).toBeTruthy();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '数学'));
     const sch = result.current.currentSchedule;
-    expect(sch[makeKey(0, 0, 0)]).toEqual({ subject: '数学', teacher: '' });
+    expect(sch[makeKey(1, 1, 1)]).toEqual({ subject: '数学', teacher: '' });
     // ３A の合同セルは消える (lock されていないため)
-    expect(sch[makeKey(0, 0, 1)]).toBeUndefined();
+    expect(sch[makeKey(1, 1, 2)]).toBeUndefined();
   });
 
   it('locked のセカンダリは合同伝播でも上書きされない', () => {
@@ -322,19 +323,19 @@ describe('useProject — handleAssign 合同グループ伝播', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中', locked: true },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中', locked: true },
         },
       }],
     });
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
     const sch = result.current.currentSchedule;
-    expect(sch[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '' });
+    expect(sch[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
     // locked セルは変わらない
-    expect(sch[makeKey(0, 0, 1)]).toMatchObject({ subject: '数学', teacher: '田中', locked: true });
+    expect(sch[makeKey(1, 1, 2)]).toMatchObject({ subject: '数学', teacher: '田中', locked: true });
   });
 });
 
@@ -343,26 +344,26 @@ describe('useProject — handleAssign 合同グループ伝播', () => {
 describe('useProject — toggleLock / handleCellClear', () => {
   it('toggleLock は locked フラグを反転する', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.toggleLock(0, 0, 0));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)].locked).toBe(true);
-    act(() => result.current.toggleLock(0, 0, 0));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)].locked).toBe(false);
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.toggleLock(1, 1, 1));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)].locked).toBe(true);
+    act(() => result.current.toggleLock(1, 1, 1));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)].locked).toBe(false);
   });
 
   it('handleCellClear: 非ロックセルは消える', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.handleCellClear(0, 0, 0));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toBeUndefined();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleCellClear(1, 1, 1));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
   });
 
   it('handleCellClear: ロック済セルは消えない', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.toggleLock(0, 0, 0));
-    act(() => result.current.handleCellClear(0, 0, 0));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toMatchObject({
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.toggleLock(1, 1, 1));
+    act(() => result.current.handleCellClear(1, 1, 1));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toMatchObject({
       subject: '英語', locked: true,
     });
   });
@@ -371,18 +372,18 @@ describe('useProject — toggleLock / handleCellClear', () => {
     const { result } = setupHook({
       combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
     });
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.handleCellClear(0, 0, 0));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toBeUndefined();
-    expect(result.current.currentSchedule[makeKey(0, 0, 1)]).toBeUndefined();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleCellClear(1, 1, 1));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(result.current.currentSchedule[makeKey(1, 1, 2)]).toBeUndefined();
   });
 });
 
 describe('useProject — handleCellPaste', () => {
   it('handleCellPaste: clipboard の subject/teacher をペースト', () => {
     const { result } = setupHook();
-    act(() => result.current.handleCellPaste(0, 0, 0, { subject: '英語', teacher: '堀上' }));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toMatchObject({
+    act(() => result.current.handleCellPaste(1, 1, 1, { subject: '英語', teacher: '堀上' }));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toMatchObject({
       subject: '英語', teacher: '堀上',
     });
   });
@@ -392,16 +393,16 @@ describe('useProject — handleCellPaste', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '数学', teacher: '田中', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '数学', teacher: '田中', locked: true },
         },
       }],
     });
-    act(() => result.current.handleCellPaste(0, 0, 0, { subject: '英語', teacher: '堀上' }));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toMatchObject({
+    act(() => result.current.handleCellPaste(1, 1, 1, { subject: '英語', teacher: '堀上' }));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toMatchObject({
       subject: '数学', teacher: '田中', locked: true,
     });
   });
@@ -412,13 +413,13 @@ describe('useProject — handleCellPaste', () => {
 describe('useProject — handleSwapCells', () => {
   it('単純なスワップ: A と B のセル内容が入れ替わる', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    act(() => result.current.handleAssign(0, 0, 0, 'teacher', '堀上'));
-    act(() => result.current.handleAssign(0, 0, 1, 'subject', '数学'));
-    act(() => result.current.handleAssign(0, 0, 1, 'teacher', '田中'));
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'teacher', '堀上'));
+    act(() => result.current.handleAssign(1, 1, 2, 'subject', '数学'));
+    act(() => result.current.handleAssign(1, 1, 2, 'teacher', '田中'));
 
-    const key1 = makeKey(0, 0, 0);
-    const key2 = makeKey(0, 0, 1);
+    const key1 = makeKey(1, 1, 1);
+    const key2 = makeKey(1, 1, 2);
     const source = { ...result.current.currentSchedule[key1] };
     const target = { ...result.current.currentSchedule[key2] };
     act(() => result.current.handleSwapCells(key1, source, key2, target));
@@ -432,17 +433,17 @@ describe('useProject — handleSwapCells', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中', locked: true },
         },
       }],
     });
-    const key1 = makeKey(0, 0, 0);
-    const key2 = makeKey(0, 0, 1);
+    const key1 = makeKey(1, 1, 1);
+    const key2 = makeKey(1, 1, 2);
     const source = { ...result.current.currentSchedule[key1] };
     const target = { ...result.current.currentSchedule[key2] };
     act(() => result.current.handleSwapCells(key1, source, key2, target));
@@ -456,17 +457,17 @@ describe('useProject — handleSwapCells', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上', locked: true },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
     });
-    const key1 = makeKey(0, 0, 0);
-    const key2 = makeKey(0, 0, 1);
+    const key1 = makeKey(1, 1, 1);
+    const key2 = makeKey(1, 1, 2);
     const source = { ...result.current.currentSchedule[key1] };
     const target = { ...result.current.currentSchedule[key2] };
     act(() => result.current.handleSwapCells(key1, source, key2, target));
@@ -480,10 +481,10 @@ describe('useProject — handleSwapCells', () => {
 describe('useProject — undo/redo', () => {
   it('handleAssign → undo で前の状態に戻る', () => {
     const { result } = setupHook();
-    act(() => result.current.handleAssign(0, 0, 0, 'subject', '英語'));
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toBeTruthy();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeTruthy();
     act(() => result.current.undo());
-    expect(result.current.currentSchedule[makeKey(0, 0, 0)]).toBeUndefined();
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
   });
 });
 

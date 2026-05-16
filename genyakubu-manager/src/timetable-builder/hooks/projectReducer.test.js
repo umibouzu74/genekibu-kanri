@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { projectReducer, MAX_HISTORY } from './projectReducer';
 import { makeKey, makeExternalKey, makeNgKey } from '../utils/scheduleKey';
 
-// テスト用ヘルパー: 単純な project + state を生成
+// テスト用ヘルパー: 単純な project + state を生成 (v3 schema)
 function makeProject(overrides = {}) {
   return {
-    version: 2,
+    version: 3,
     name: 'test',
     teachers: [
       { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -16,9 +16,9 @@ function makeProject(overrides = {}) {
       id: 1,
       name: 'メイン',
       config: {
-        dates: ['12/25(木)'],
-        periods: ['1限'],
-        classes: ['３S', '３A'],
+        dates: [{ id: 1, label: '12/25(木)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
         subjectCounts: { '英語': 1, '数学': 1 },
       },
       schedule: {},
@@ -191,12 +191,14 @@ describe('projectReducer — 講師管理', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
       externalCounts: { [makeExternalKey('12/25(木)', '堀上')]: 3 },
@@ -206,8 +208,8 @@ describe('projectReducer — 講師管理', () => {
       payload: { idx: 0, newName: 'ホリウエ' },
     });
     expect(next.project.teachers[0].name).toBe('ホリウエ');
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)].teacher).toBe('ホリウエ');
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 1)].teacher).toBe('田中');
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('ホリウエ');
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('田中');
     expect(next.project.externalCounts[makeExternalKey('12/25(木)', 'ホリウエ')]).toBe(3);
     expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
   });
@@ -223,19 +225,21 @@ describe('projectReducer — 講師管理', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
         },
       }],
     });
     const next = projectReducer(state, { type: 'teacher/remove', payload: { idx: 0 } });
     expect(next.project.teachers.find(t => t.name === '堀上')).toBeUndefined();
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)].teacher).toBe('');
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 1)].teacher).toBe('田中');
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('');
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('田中');
   });
 
   it('teacher/toggleNg: ngSlots を toggle', () => {
@@ -282,11 +286,13 @@ describe('projectReducer — 科目マスタ', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
         },
       }],
       teachers: [
@@ -296,7 +302,7 @@ describe('projectReducer — 科目マスタ', () => {
     const next = projectReducer(state, { type: 'subject/remove', payload: { name: '英語' } });
     expect(next.project.subjects).not.toContain('英語');
     expect(next.project.tabs[0].config.subjectCounts['英語']).toBeUndefined();
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)]).toEqual({ subject: '', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '', teacher: '' });
     expect(next.project.teachers[0].subjects).toEqual(['数学']);
     expect(next.project.subjectColors['英語']).toBeUndefined();
     expect(next.project.subjectColors['数学']).toBe('#fff');
@@ -314,9 +320,9 @@ describe('projectReducer — セル操作', () => {
     const state = makeState();
     const next = projectReducer(state, {
       type: 'cell/assign',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, type: 'subject', val: '英語' },
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
     });
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
   });
 
   it('cell/assign: locked セルは no-op', () => {
@@ -324,17 +330,19 @@ describe('projectReducer — セル操作', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
         },
       }],
     });
     expect(projectReducer(state, {
       type: 'cell/assign',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, type: 'subject', val: '数学' },
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '数学' },
     })).toBe(state);
   });
 
@@ -344,30 +352,30 @@ describe('projectReducer — セル操作', () => {
     });
     const next = projectReducer(state, {
       type: 'cell/assign',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, type: 'subject', val: '英語' },
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
     });
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)]).toEqual({ subject: '英語', teacher: '' });
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)]).toEqual({ subject: '英語', teacher: '' });
   });
 
   it('cell/clear: 非ロックセルを削除', () => {
     let state = makeState();
     state = projectReducer(state, {
       type: 'cell/assign',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, type: 'subject', val: '英語' },
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
     });
     state = projectReducer(state, {
       type: 'cell/clear',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0 },
+      payload: { dateId: 1, periodId: 1, classId: 1 },
     });
-    expect(state.project.tabs[0].schedule[makeKey(0, 0, 0)]).toBeUndefined();
+    expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
   });
 
   it('cell/paste: clipboard 無し / locked は no-op', () => {
     const state = makeState();
     expect(projectReducer(state, {
       type: 'cell/paste',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, clipboard: null },
+      payload: { dateId: 1, periodId: 1, classId: 1, clipboard: null },
     })).toBe(state);
   });
 
@@ -376,21 +384,23 @@ describe('projectReducer — セル操作', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中', locked: true },
         },
       }],
     });
     expect(projectReducer(state, {
       type: 'cell/swap',
       payload: {
-        sourceKey: makeKey(0, 0, 0),
+        sourceKey: makeKey(1, 1, 1),
         sourceData: { subject: '英語', teacher: '堀上' },
-        targetKey: makeKey(0, 0, 1),
+        targetKey: makeKey(1, 1, 2),
         targetData: { subject: '数学', teacher: '田中', locked: true },
       },
     })).toBe(state);
@@ -400,13 +410,13 @@ describe('projectReducer — セル操作', () => {
     let state = makeState();
     state = projectReducer(state, {
       type: 'cell/assign',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0, type: 'subject', val: '英語' },
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
     });
     state = projectReducer(state, {
       type: 'cell/toggleLock',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0 },
+      payload: { dateId: 1, periodId: 1, classId: 1 },
     });
-    expect(state.project.tabs[0].schedule[makeKey(0, 0, 0)].locked).toBe(true);
+    expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(true);
   });
 
   it('cell/setNg: セル講師の NG slot を toggle', () => {
@@ -414,15 +424,17 @@ describe('projectReducer — セル操作', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
-        schedule: { [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' } },
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
       }],
     });
     const next = projectReducer(state, {
       type: 'cell/setNg',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0 },
+      payload: { dateId: 1, periodId: 1, classId: 1 },
     });
     expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('12/25(木)', '1限')]);
   });
@@ -432,15 +444,17 @@ describe('projectReducer — セル操作', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
-        schedule: { [makeKey(0, 0, 0)]: { subject: '英語', teacher: '未定' } },
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' } },
       }],
     });
     expect(projectReducer(state, {
       type: 'cell/setNg',
-      payload: { dIdx: 0, pIdx: 0, cIdx: 0 },
+      payload: { dateId: 1, periodId: 1, classId: 1 },
     })).toBe(state);
   });
 });
@@ -459,18 +473,20 @@ describe('projectReducer — schedule 一括操作', () => {
       tabs: [{
         id: 1, name: 'メイン',
         config: {
-          dates: ['12/25(木)'], periods: ['1限'], classes: ['３S', '３A'],
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
           subjectCounts: { '英語': 1, '数学': 1 },
         },
         schedule: {
-          [makeKey(0, 0, 0)]: { subject: '英語', teacher: '堀上' },
-          [makeKey(0, 0, 1)]: { subject: '数学', teacher: '田中', locked: true },
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中', locked: true },
         },
       }],
     });
     const next = projectReducer(state, { type: 'schedule/clearUnlocked' });
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 0)]).toBeUndefined();
-    expect(next.project.tabs[0].schedule[makeKey(0, 0, 1)]).toEqual({
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)]).toEqual({
       subject: '数学', teacher: '田中', locked: true,
     });
   });

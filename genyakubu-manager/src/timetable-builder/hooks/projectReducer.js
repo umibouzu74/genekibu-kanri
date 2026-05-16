@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -94,12 +94,33 @@ function applyAction(project, action) {
 
     // ─── タブ別 config ───────────────────
     case 'config/setList': {
+      // value はカンマ区切りのラベル文字列。key は 'dates' | 'periods' | 'classes'。
+      // v3: 既存ラベル一致 entity は ID を維持、新規ラベルには nextId を採番、
+      // 消えたラベルの entity は drop。これで schedule キー (ID ベース) の継続性を
+      // 担保しつつ UI 編集 (ラベル並び替え/追加/削除) を反映できる。
       const { key, value } = action.payload;
-      const arr = value.split(',').map(s => s.trim()).filter(s => s);
+      const newLabels = value.split(',').map(s => s.trim()).filter(s => s);
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const oldArr = activeTab.config[key] || [];
+      const oldByLabel = new Map(oldArr.map(e => [e.label, e]));
+      const resultArr = [];
+      const consumedIds = new Set(oldArr.map(e => e.id));
+      newLabels.forEach(label => {
+        const existing = oldByLabel.get(label);
+        if (existing) {
+          resultArr.push(existing);
+        } else {
+          const id = nextId([...resultArr, ...oldArr.filter(e => !resultArr.includes(e))]);
+          consumedIds.add(id);
+          resultArr.push({ id, label });
+        }
+      });
       const newTabs = project.tabs.map(t =>
-        t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: arr } } : t
+        t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
       );
-      return { ...project, tabs: newTabs };
+      // cleanSchedule で消えた entity を参照する schedule キーを掃除する。
+      // (例: ラベル "12/25" を削除した時、その dateId を含むキーを drop)
+      return cleanSchedule({ ...project, tabs: newTabs });
     }
     case 'config/setSubjectCount': {
       const { subject, value } = action.payload;
@@ -259,13 +280,14 @@ function applyAction(project, action) {
     }
 
     // ─── セル操作 ────────────────────────
+    // payload の dateId/periodId/classId は v3 の永続 ID (number)。
     case 'cell/assign': {
-      const { dIdx, pIdx, cIdx, type, val } = action.payload;
+      const { dateId, periodId, classId, type, val } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
       const currentConfig = activeTab.config;
 
-      const k = makeKey(dIdx, pIdx, cIdx);
+      const k = makeKey(dateId, periodId, classId);
       if (currentSchedule[k]?.locked) return project;
 
       const e = { ...(currentSchedule[k] || {}) };
@@ -277,20 +299,20 @@ function applyAction(project, action) {
       if (type === 'subject') {
         const oldSubject = (currentSchedule[k] || {}).subject;
         if (oldSubject && oldSubject !== val) {
-          newSchedule = cleanupOldCombined(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, oldSubject);
+          newSchedule = cleanupOldCombined(newSchedule, currentConfig, groups, dateId, periodId, classId, oldSubject);
         }
-        newSchedule = propagateAssignment(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, e);
+        newSchedule = propagateAssignment(newSchedule, currentConfig, groups, dateId, periodId, classId, e);
       } else if (type === 'teacher' && e.subject) {
-        newSchedule = propagateTeacherChange(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, e.subject, val);
+        newSchedule = propagateTeacherChange(newSchedule, currentConfig, groups, dateId, periodId, classId, e.subject, val);
       }
 
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: newSchedule } : t);
       return { ...project, tabs: newTabs };
     }
     case 'cell/toggleLock': {
-      const { dIdx, pIdx, cIdx } = action.payload;
+      const { dateId, periodId, classId } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const k = makeKey(dIdx, pIdx, cIdx);
+      const k = makeKey(dateId, periodId, classId);
       const e = { ...(activeTab.schedule[k] || {}) };
       e.locked = !e.locked;
       const newTabs = project.tabs.map(t =>
@@ -299,27 +321,27 @@ function applyAction(project, action) {
       return { ...project, tabs: newTabs };
     }
     case 'cell/clear': {
-      const { dIdx, pIdx, cIdx } = action.payload;
+      const { dateId, periodId, classId } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
       const currentConfig = activeTab.config;
-      const k = makeKey(dIdx, pIdx, cIdx);
+      const k = makeKey(dateId, periodId, classId);
       const curr = currentSchedule[k] || {};
       if (curr.locked) return project;
 
-      let ns = cleanupOldCombined(currentSchedule, currentConfig, project.combinedGroups, dIdx, pIdx, cIdx, curr.subject);
+      let ns = cleanupOldCombined(currentSchedule, currentConfig, project.combinedGroups, dateId, periodId, classId, curr.subject);
       ns = { ...ns };
       delete ns[k];
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
     }
     case 'cell/paste': {
-      const { dIdx, pIdx, cIdx, clipboard } = action.payload;
+      const { dateId, periodId, classId, clipboard } = action.payload;
       if (!clipboard) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
       const currentConfig = activeTab.config;
-      const k = makeKey(dIdx, pIdx, cIdx);
+      const k = makeKey(dateId, periodId, classId);
       const curr = currentSchedule[k] || {};
       if (curr.locked) return project;
 
@@ -327,12 +349,12 @@ function applyAction(project, action) {
       const groups = project.combinedGroups;
 
       if (curr.subject && curr.subject !== clipboard.subject) {
-        ns = cleanupOldCombined(ns, currentConfig, groups, dIdx, pIdx, cIdx, curr.subject);
+        ns = cleanupOldCombined(ns, currentConfig, groups, dateId, periodId, classId, curr.subject);
       }
 
       const newEntry = { ...curr, subject: clipboard.subject, teacher: clipboard.teacher };
       ns[k] = newEntry;
-      ns = propagateAssignment(ns, currentConfig, groups, dIdx, pIdx, cIdx, newEntry);
+      ns = propagateAssignment(ns, currentConfig, groups, dateId, periodId, classId, newEntry);
 
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
@@ -350,15 +372,15 @@ function applyAction(project, action) {
       const groups = project.combinedGroups;
       let ns = { ...currentSchedule };
 
-      ns = cleanupOldCombined(ns, currentConfig, groups, sParsed.dIdx, sParsed.pIdx, sParsed.cIdx, sourceData.subject);
-      ns = cleanupOldCombined(ns, currentConfig, groups, tParsed.dIdx, tParsed.pIdx, tParsed.cIdx, targetData.subject);
+      ns = cleanupOldCombined(ns, currentConfig, groups, sParsed.dateId, sParsed.periodId, sParsed.classId, sourceData.subject);
+      ns = cleanupOldCombined(ns, currentConfig, groups, tParsed.dateId, tParsed.periodId, tParsed.classId, targetData.subject);
 
       ns = { ...ns };
       ns[sourceKey] = { ...targetData, locked: false };
       ns[targetKey] = { ...sourceData, locked: false };
 
-      ns = propagateAssignment(ns, currentConfig, groups, sParsed.dIdx, sParsed.pIdx, sParsed.cIdx, ns[sourceKey]);
-      ns = propagateAssignment(ns, currentConfig, groups, tParsed.dIdx, tParsed.pIdx, tParsed.cIdx, ns[targetKey]);
+      ns = propagateAssignment(ns, currentConfig, groups, sParsed.dateId, sParsed.periodId, sParsed.classId, ns[sourceKey]);
+      ns = propagateAssignment(ns, currentConfig, groups, tParsed.dateId, tParsed.periodId, tParsed.classId, ns[targetKey]);
 
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
@@ -367,18 +389,19 @@ function applyAction(project, action) {
       // 指定セルの講師の NG slot を toggle する。teacher が未定 or 未割当なら no-op。
       // handleSetNg のロジックを 1 アクションに集約 (元は cell の state を読んで
       // teacher/toggleNg を呼び出すラッパだった)。
-      const { dIdx, pIdx, cIdx } = action.payload;
+      const { dateId, periodId, classId } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const k = makeKey(dIdx, pIdx, cIdx);
+      const k = makeKey(dateId, periodId, classId);
       const curr = activeTab.schedule[k] || {};
       if (!curr.teacher || curr.teacher === '未定') return project;
       const teacherIdx = project.teachers.findIndex(t => t.name === curr.teacher);
       if (teacherIdx < 0) return project;
-      const date = activeTab.config.dates[dIdx];
-      const period = activeTab.config.periods[pIdx];
+      const dateEnt = activeTab.config.dates.find(d => d.id === dateId);
+      const periodEnt = activeTab.config.periods.find(p => p.id === periodId);
+      if (!dateEnt || !periodEnt) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[teacherIdx] };
-      const ngK = makeNgKey(date, period);
+      const ngK = makeNgKey(dateEnt.label, periodEnt.label);
       if (!t.ngSlots) t.ngSlots = [];
       if (t.ngSlots.includes(ngK)) t.ngSlots = t.ngSlots.filter(x => x !== ngK);
       else t.ngSlots = [...t.ngSlots, ngK];
@@ -388,13 +411,17 @@ function applyAction(project, action) {
 
     // ─── スケジュール一括/メタ ───────────
     case 'schedule/renameHeader': {
+      // type は 'date' | 'period' | 'class'。oldVal / newVal はラベル文字列。
+      // v3: entity の label のみ書き換え、id は不変。schedule キーは ID ベース
+      // なので影響なし。
       const { type, oldVal, newVal } = action.payload;
       if (!newVal || newVal === oldVal) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const newConfig = { ...activeTab.config };
-      if (type === 'date') newConfig.dates = newConfig.dates.map(d => d === oldVal ? newVal : d);
-      else if (type === 'period') newConfig.periods = newConfig.periods.map(p => p === oldVal ? newVal : p);
-      else if (type === 'class') newConfig.classes = newConfig.classes.map(c => c === oldVal ? newVal : c);
+      const renameLabel = (arr) => arr.map(e => e.label === oldVal ? { ...e, label: newVal } : e);
+      if (type === 'date') newConfig.dates = renameLabel(newConfig.dates);
+      else if (type === 'period') newConfig.periods = renameLabel(newConfig.periods);
+      else if (type === 'class') newConfig.classes = renameLabel(newConfig.classes);
 
       if (type === 'date' || type === 'period') {
         const newTeachers = project.teachers.map(t => {
@@ -417,6 +444,7 @@ function applyAction(project, action) {
       return { ...project, tabs: newTabs };
     }
     case 'schedule/bulkAction': {
+      // val はラベル文字列 (UI で選択された日付/時限/クラス名)。
       const { action: bulk, type, val } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
@@ -424,9 +452,9 @@ function applyAction(project, action) {
 
       const ns = { ...currentSchedule };
       let upd = false;
-      currentConfig.dates.forEach((date, dIdx) => currentConfig.periods.forEach((per, pIdx) => currentConfig.classes.forEach((cls, cIdx) => {
-        if ((type === 'date' && date === val) || (type === 'class' && cls === val) || (type === 'period' && per === val)) {
-          const k = makeKey(dIdx, pIdx, cIdx);
+      currentConfig.dates.forEach((date) => currentConfig.periods.forEach((per) => currentConfig.classes.forEach((cls) => {
+        if ((type === 'date' && date.label === val) || (type === 'class' && cls.label === val) || (type === 'period' && per.label === val)) {
+          const k = makeKey(date.id, per.id, cls.id);
           if (!ns[k]) ns[k] = {};
           if (bulk === 'lock-all') { ns[k] = { ...ns[k], locked: true }; upd = true; }
           if (bulk === 'unlock-all') { ns[k] = { ...ns[k], locked: false }; upd = true; }

@@ -18,7 +18,7 @@ export default function ExternalCounts() {
         <thead>
           <tr>
             <th className="border p-2 bg-gray-100 min-w-[100px] sticky left-0 z-10">講師名</th>
-            {currentConfig.dates.map(d => <th key={d} className="border p-2 bg-gray-100 min-w-[60px] text-center">{d}</th>)}
+            {currentConfig.dates.map(d => <th key={d.id} className="border p-2 bg-gray-100 min-w-[60px] text-center">{d.label}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -26,14 +26,14 @@ export default function ExternalCounts() {
             <tr key={t.name}>
               <td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
               {currentConfig.dates.map(d => (
-                <td key={d} className="border p-0">
+                <td key={d.id} className="border p-0">
                   <input
                     type="number"
                     min="0"
                     className="w-full h-full p-2 text-center focus:bg-blue-50 focus:outline-none"
-                    value={project.externalCounts?.[makeExternalKey(d, t.name)] || ""}
+                    value={project.externalCounts?.[makeExternalKey(d.label, t.name)] || ""}
                     placeholder="-"
-                    onChange={(e) => handleExternalCountChange(d, t.name, e.target.value)}
+                    onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
                   />
                 </td>
               ))}

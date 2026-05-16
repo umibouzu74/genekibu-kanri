@@ -1,5 +1,9 @@
 // 自動生成ロジック（MRV法 + バックトラッキング）
 // 純粋関数として抽出。UI依存なし。
+//
+// v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
+// スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
+// externalCounts) には label を渡す。
 import { makeKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
 import {
   canTeachSubject,
@@ -69,10 +73,10 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   });
 
   // 既存の科目カウントを集計
-  currentConfig.dates.forEach((d, dIdx) => {
-    currentConfig.periods.forEach((p, pIdx) => {
+  currentConfig.dates.forEach((d) => {
+    currentConfig.periods.forEach((p) => {
       currentConfig.classes.forEach((c, cIdx) => {
-        const k = makeKey(dIdx, pIdx, cIdx);
+        const k = makeKey(d.id, p.id, c.id);
         const e = currentSchedule[k];
         if (e?.subject) {
           if (currentCounts[cIdx]) currentCounts[cIdx][e.subject] = (currentCounts[cIdx][e.subject] || 0) + 1;
@@ -93,32 +97,33 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   });
 
   const seenCombinedDay = new Set();
-  currentConfig.dates.forEach((d, dIdx) => {
-    currentConfig.periods.forEach((_p, pIdx) => {
-      currentConfig.classes.forEach((cName, cIdx) => {
-        const k = makeKey(dIdx, pIdx, cIdx);
+  currentConfig.dates.forEach((d) => {
+    currentConfig.periods.forEach((p) => {
+      currentConfig.classes.forEach((c) => {
+        const k = makeKey(d.id, p.id, c.id);
         const entry = currentSchedule[k];
         if (!entry?.teacher || entry.teacher === DAILY_LIMIT_EXEMPT_TEACHER) return;
 
-        const group = findCombinedGroup(combinedGroups, entry.subject, cName, d);
+        const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
         if (group) {
-          const tk = `${dIdx}-${pIdx}-${group.id}-${entry.teacher}`;
+          const tk = `${d.id}-${p.id}-${group.id}-${entry.teacher}`;
           if (seenCombinedDay.has(tk)) return;
           seenCombinedDay.add(tk);
         }
 
-        const dayKey = makeExternalKey(d, entry.teacher);
+        const dayKey = makeExternalKey(d.label, entry.teacher);
         initialDaily[dayKey] = (initialDaily[dayKey] || 0) + 1;
       });
     });
   });
 
   // 未充填スロットを構築
-  currentConfig.dates.forEach((d, dIdx) => currentConfig.periods.forEach((p, pIdx) => currentConfig.classes.forEach((c, cIdx) => {
-    const k = makeKey(dIdx, pIdx, cIdx);
+  // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
+  currentConfig.dates.forEach((d) => currentConfig.periods.forEach((p) => currentConfig.classes.forEach((c, cIdx) => {
+    const k = makeKey(d.id, p.id, c.id);
     const entry = currentSchedule[k];
     if (!entry || !entry.subject || !entry.teacher) {
-      slots.push({ dIdx, pIdx, cIdx, d, p, c, k, fixedSubject: entry?.subject });
+      slots.push({ cIdx, d, p, c, k, fixedSubject: entry?.subject });
     }
   })));
 
@@ -130,7 +135,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToCheck = slot.fixedSubject ? [slot.fixedSubject] : commonSubjects;
     subjectsToCheck.forEach(subj => {
       project.teachers.forEach(t => {
-        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d, slot.p) && !isNgClass(t, slot.c)) {
+        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d.label, slot.p.label) && !isNgClass(t, slot.c.label)) {
           validCandidates++;
         }
       });
@@ -162,7 +167,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
       return;
     }
 
-    const { dIdx, pIdx, cIdx, d, p, c, k, fixedSubject } = slots[idx];
+    const { cIdx, d, p, c, k, fixedSubject } = slots[idx];
 
     // 合同グループの伝播により既に充填されている場合はスキップ
     if (tempSch[k]?.subject && tempSch[k]?.teacher) {
@@ -175,19 +180,20 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     for (const s of subjectsToTry) {
       if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
       // 同日・同クラスに同じ科目があるかチェック
-      if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, dIdx, cIdx, s)) continue;
+      if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, d.id, c.id, s)) continue;
 
-      // 合同グループチェック
-      const group = findCombinedGroup(combinedGroups, s, c, d);
+      // 合同グループチェック (label ベース)
+      const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
       let secondarySlots = [];
       let canUseCombined = true;
 
       if (group) {
-        for (const otherClass of group.classes) {
-          if (otherClass === c) continue;
-          const otherCIdx = currentConfig.classes.indexOf(otherClass);
+        for (const otherClassLabel of group.classes) {
+          if (otherClassLabel === c.label) continue;
+          const otherCIdx = currentConfig.classes.findIndex(cc => cc.label === otherClassLabel);
           if (otherCIdx < 0) continue;
-          const otherKey = makeKey(dIdx, pIdx, otherCIdx);
+          const otherClassEntity = currentConfig.classes[otherCIdx];
+          const otherKey = makeKey(d.id, p.id, otherClassEntity.id);
           const otherEntry = tempSch[otherKey];
 
           // ロックされていて別の科目が入っている場合は不可
@@ -206,7 +212,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             break;
           }
           // 同日・同クラスに同じ科目が既にある場合は不可 (今コマは除外)
-          if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, dIdx, otherCIdx, s, pIdx)) {
+          if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, d.id, otherClassEntity.id, s, p.id)) {
             canUseCombined = false;
             break;
           }
@@ -217,7 +223,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             secondarySlots.push({
               cIdx: otherCIdx,
               key: otherKey,
-              className: otherClass,
+              className: otherClassLabel,
               hadSubject,
               original: otherEntry ? { ...otherEntry } : null,
             });
@@ -233,9 +239,9 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         isTeacherCandidateFor({
           teacher: t,
           subject: s,
-          date: d,
-          period: p,
-          className: c,
+          date: d.label,
+          period: p.label,
+          className: c.label,
           secondaryClassNames,
         })
       );
@@ -243,7 +249,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
       const priorityGroup = [];
       const neutralGroup = [];
       validT.forEach(t => {
-        if (t.priorityClasses?.includes(c)) priorityGroup.push(t);
+        if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
         else neutralGroup.push(t);
       });
 
@@ -252,23 +258,25 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         ...seededShuffle(neutralGroup, rng)
       ];
 
-      // 合同グループのクラスインデックスリスト
-      const combinedClassIndices = group
-        ? group.classes.map(gc => currentConfig.classes.indexOf(gc)).filter(i => i >= 0)
+      // 合同グループのクラス ID リスト (hasTeacherInSamePeriod の除外用)
+      const combinedClassIds = group
+        ? group.classes
+            .map(gcLabel => currentConfig.classes.find(cc => cc.label === gcLabel)?.id)
+            .filter(id => id != null)
         : [];
 
       for (const tObj of shuffledT) {
         const tName = tObj.name;
-        const dayKey = makeExternalKey(d, tName);
+        const dayKey = makeExternalKey(d.label, tName);
         const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
 
         // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
-        if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, dIdx, pIdx, cIdx, tName, combinedClassIndices)) continue;
+        if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
 
         // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
         // 合同グループでも 1 コマとしてカウント (下の increment と整合)
         if (wouldExceedDailyLimit({
-          teacherName: tName, date: d, tempDaily, maxDailyHours,
+          teacherName: tName, date: d.label, tempDaily, maxDailyHours,
           exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
         })) continue;
 

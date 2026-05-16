@@ -19,7 +19,7 @@ export default function ClassPriority() {
         <thead>
           <tr>
             <th className="border p-2 bg-gray-100 min-w-[100px] sticky left-0 z-10">講師名</th>
-            {currentConfig.classes.map(c => <th key={c} className="border p-2 bg-gray-100 min-w-[100px] text-center">{c}</th>)}
+            {currentConfig.classes.map(c => <th key={c.id} className="border p-2 bg-gray-100 min-w-[100px] text-center">{c.label}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -27,12 +27,12 @@ export default function ClassPriority() {
             <tr key={t.name}>
               <td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
               {currentConfig.classes.map(c => {
-                const isNg = t.ngClasses?.includes(c);
-                const isPri = t.priorityClasses?.includes(c);
+                const isNg = t.ngClasses?.includes(c.label);
+                const isPri = t.priorityClasses?.includes(c.label);
                 return (
                   <td
-                    key={c}
-                    onClick={() => toggleTeacherClassPriority(idx, c)}
+                    key={c.id}
+                    onClick={() => toggleTeacherClassPriority(idx, c.label)}
                     className={`border p-2 text-center cursor-pointer transition-colors hover:opacity-80 ${isPri ? "bg-blue-500 text-white font-bold" : (isNg ? "bg-red-500 text-white font-bold" : "bg-white text-gray-600")}`}
                   >
                     {isPri ? "優先" : (isNg ? "NG" : "-")}

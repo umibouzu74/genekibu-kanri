@@ -88,18 +88,18 @@ export default function CombinedGroupSettings() {
           </label>
           <div className="flex flex-wrap gap-2">
             {allClasses.map(cls => {
-              const selected = classes.includes(cls);
+              const selected = classes.includes(cls.label);
               return (
                 <button
-                  key={cls}
-                  onClick={() => setField('classes', toggleClass(classes, cls))}
+                  key={cls.id}
+                  onClick={() => setField('classes', toggleClass(classes, cls.label))}
                   className={`px-3 py-1 rounded text-sm border transition-colors ${
                     selected
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
                   }`}
                 >
-                  {cls}
+                  {cls.label}
                 </button>
               );
             })}
@@ -126,18 +126,18 @@ export default function CombinedGroupSettings() {
           {!isAllDates && (
             <div className="flex flex-wrap gap-2">
               {allDates.map(date => {
-                const selected = dates?.includes(date);
+                const selected = dates?.includes(date.label);
                 return (
                   <button
-                    key={date}
-                    onClick={() => setField('dates', toggleDate(dates, date))}
+                    key={date.id}
+                    onClick={() => setField('dates', toggleDate(dates, date.label))}
                     className={`px-2 py-1 rounded text-xs border transition-colors ${
                       selected
                         ? 'bg-green-600 text-white border-green-600'
                         : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
                     }`}
                   >
-                    {date}
+                    {date.label}
                   </button>
                 );
               })}

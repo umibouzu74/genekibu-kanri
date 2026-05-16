@@ -75,15 +75,15 @@ export function downloadScheduleExcel(project) {
 
     const combinedGroups = project.combinedGroups || [];
 
-    // データ行を構築
-    const headerRow = ["日付", "時限", ...classes];
-    const dataRows = dates.flatMap((d, dIdx) =>
-      periods.map((p, pIdx) =>
-        [d, p, ...classes.map((c, cIdx) => {
-          const e = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
+    // データ行を構築 (v3: dates/periods/classes は { id, label } の配列)
+    const headerRow = ["日付", "時限", ...classes.map(c => c.label)];
+    const dataRows = dates.flatMap((d) =>
+      periods.map((p) =>
+        [d.label, p.label, ...classes.map((c) => {
+          const e = tab.schedule[makeKey(d.id, p.id, c.id)];
           if (!e || !e.subject) return "";
-          const group = findCombinedGroup(combinedGroups, e.subject, c, d);
-          if (group && !isPrimaryCombinedClass(group, c)) {
+          const group = findCombinedGroup(combinedGroups, e.subject, c.label, d.label);
+          if (group && !isPrimaryCombinedClass(group, c.label)) {
             return `${e.subject}\n(合同)`;
           }
           return `${e.subject}\n${e.teacher}`;
@@ -114,8 +114,8 @@ export function downloadScheduleExcel(project) {
 
     // データ行スタイル
     let rowIdx = 1;
-    dates.forEach((d, dIdx) => {
-      periods.forEach((p, pIdx) => {
+    dates.forEach((d) => {
+      periods.forEach((p) => {
         // 日付列
         const dateRef = XLSX.utils.encode_cell({ r: rowIdx, c: 0 });
         styles[dateRef] = DATE_HEADER_STYLE;
@@ -127,7 +127,7 @@ export function downloadScheduleExcel(project) {
         // クラス列（科目カラー）
         classes.forEach((cls, cIdx) => {
           const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 2 + cIdx });
-          const entry = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
+          const entry = tab.schedule[makeKey(d.id, p.id, cls.id)];
           if (entry && entry.subject) {
             styles[cellRef] = makeSubjectCellStyle(entry.subject, subjectColors);
           } else {
@@ -186,15 +186,15 @@ export function downloadTeacherExcel(project) {
     const personalSubjects = [null]; // ヘッダー行は null
 
     project.tabs.forEach(tab => {
-      tab.config.dates.forEach((d, dIdx) => {
-        tab.config.periods.forEach((p, pIdx) => {
-          tab.config.classes.forEach((c, cIdx) => {
-            const k = makeKey(dIdx, pIdx, cIdx);
+      tab.config.dates.forEach((d) => {
+        tab.config.periods.forEach((p) => {
+          tab.config.classes.forEach((c) => {
+            const k = makeKey(d.id, p.id, c.id);
             const entry = tab.schedule[k];
             if (entry && entry.teacher === t.name) {
-              const group = findCombinedGroup(combinedGroups, entry.subject, c, d);
+              const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
               const note = group ? `合同(${group.classes.join(',')})` : "";
-              const row = [d, p, c, entry.subject, tab.name, note];
+              const row = [d.label, p.label, c.label, entry.subject, tab.name, note];
               personalRows.push(row);
               personalSubjects.push(entry.subject);
               allRows.push([t.name, ...row]);
