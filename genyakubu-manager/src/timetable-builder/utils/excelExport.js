@@ -72,7 +72,7 @@ const BODY_CELL_STYLE = {
 };
 
 // HEX カラー (#RRGGBB) を ARGB (FFRRGGBB) に変換
-function hexToArgb(hex) {
+export function hexToArgb(hex) {
   return 'FF' + hex.replace('#', '').toUpperCase();
 }
 
@@ -114,8 +114,9 @@ async function downloadWorkbook(workbook, filename) {
   URL.revokeObjectURL(url);
 }
 
-// ─── 全体 Excel 出力 ───────────────────────────────────────────────
-export async function downloadScheduleExcel(project) {
+// ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
+// project から ExcelJS.Workbook を構築して返す。副作用無し。
+export function buildScheduleWorkbook(project) {
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
@@ -183,13 +184,24 @@ export async function downloadScheduleExcel(project) {
     });
   });
 
-  const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
-  const datePart = new Date().toISOString().slice(0, 10);
-  await downloadWorkbook(workbook, `${projectName}_全体_${datePart}.xlsx`);
+  return workbook;
 }
 
-// ─── 講師別 Excel 出力 ─────────────────────────────────────────────
-export async function downloadTeacherExcel(project) {
+// ファイル名を組み立てる小ヘルパー (テスト用に分離)
+export function buildExcelFilename(project, suffix) {
+  const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
+  const datePart = new Date().toISOString().slice(0, 10);
+  return `${projectName}_${suffix}_${datePart}.xlsx`;
+}
+
+// ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
+export async function downloadScheduleExcel(project) {
+  const workbook = buildScheduleWorkbook(project);
+  await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
+}
+
+// ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
+export function buildTeacherWorkbook(project) {
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
   const combinedGroups = project.combinedGroups || [];
@@ -276,7 +288,11 @@ export async function downloadTeacherExcel(project) {
     workbook.addWorksheet('全講師リスト');
   }
 
-  const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
-  const datePart = new Date().toISOString().slice(0, 10);
-  await downloadWorkbook(workbook, `${projectName}_講師別_${datePart}.xlsx`);
+  return workbook;
+}
+
+// ─── 講師別 Excel: 公開エントリ ────────────────────────────────────
+export async function downloadTeacherExcel(project) {
+  const workbook = buildTeacherWorkbook(project);
+  await downloadWorkbook(workbook, buildExcelFilename(project, '講師別'));
 }

@@ -498,6 +498,100 @@ describe('projectReducer — schedule 一括操作', () => {
       payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(木)' },
     })).toBe(state);
   });
+
+  it('schedule/renameHeader (date): entity の label が書き換わり id は不変', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
+    });
+    const dateEnt = next.project.tabs[0].config.dates[0];
+    expect(dateEnt).toEqual({ id: 1, label: '12/25(祝)' });
+  });
+
+  it('schedule/renameHeader (class): entity の label が書き換わる', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'class', oldVal: '３S', newVal: '３年S' },
+    });
+    expect(next.project.tabs[0].config.classes[0]).toEqual({ id: 1, label: '３年S' });
+    expect(next.project.tabs[0].config.classes[1]).toEqual({ id: 2, label: '３A' });
+  });
+
+  it('schedule/renameHeader (date/period): NG slot キーも rename', () => {
+    const state = makeState({
+      teachers: [
+        {
+          name: '堀上',
+          subjects: ['英語'],
+          ngSlots: [makeNgKey('12/25(木)', '1限'), makeNgKey('12/26(金)', '2限')],
+          ngClasses: [], priorityClasses: [],
+        },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
+    });
+    expect(next.project.teachers[0].ngSlots).toContain(makeNgKey('12/25(祝)', '1限'));
+    expect(next.project.teachers[0].ngSlots).not.toContain(makeNgKey('12/25(木)', '1限'));
+    expect(next.project.teachers[0].ngSlots).toContain(makeNgKey('12/26(金)', '2限'));
+  });
+
+  it('schedule/bulkAction (lock-all by class): 該当クラスの全コマが locked', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/bulkAction',
+      payload: { action: 'lock-all', type: 'class', val: '３S' },
+    });
+    // ３S (classId=1) の全セルが locked
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(true);
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)].locked).toBe(true);
+    // ３A は触らない
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)].locked).toBeFalsy();
+  });
+
+  it('schedule/bulkAction (clear-all by date): 該当日付のセルが消える (locked は残る)', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/bulkAction',
+      payload: { action: 'clear-all', type: 'date', val: '12/26(金)' },
+    });
+    // 12/26 の locked セルは残る
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toMatchObject({ locked: true });
+    // 12/25 の non-locked は変わらず残る (12/26 削除対象外)
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toMatchObject({ subject: '英語' });
+  });
 });
 
 describe('projectReducer — 合同グループ', () => {
