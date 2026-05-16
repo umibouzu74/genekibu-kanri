@@ -28,6 +28,7 @@ export function useProject() {
     pushHistory,
     undo,
     redo,
+    loadError,
   } = useHistoryStack();
 
   // 派生データ
@@ -126,6 +127,7 @@ export function useProject() {
     pushHistory,
     undo,
     redo,
+    loadError,
     // タブ管理
     handleAddTab,
     handleDeleteTab,

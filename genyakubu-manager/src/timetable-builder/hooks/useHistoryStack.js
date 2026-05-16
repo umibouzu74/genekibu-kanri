@@ -7,9 +7,14 @@ const SAVE_DEBOUNCE_MS = 800;
 
 // プロジェクトの state と Undo/Redo 履歴、LocalStorage 自動保存をひとつに
 // 束ねたフック。useProject の中で他のアクションがすべて参照する基盤。
+//
+// loadInitialProject の戻り値 { project, loadError } のうち loadError は
+// 初期マウント時のみ意味を持つ静的な値 (useState の initializer で 1 度だけ
+// 評価される)。UI 層で toast 表示後に消費する想定。
 export function useHistoryStack() {
-  const [project, setProject] = useState(loadInitialProject);
-  const [history, setHistory] = useState(() => [project]);
+  const [initialLoad] = useState(loadInitialProject);
+  const [project, setProject] = useState(initialLoad.project);
+  const [history, setHistory] = useState(() => [initialLoad.project]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState("✅ 保存済");
 
@@ -78,5 +83,6 @@ export function useHistoryStack() {
     pushHistory,
     undo,
     redo,
+    loadError: initialLoad.loadError,
   };
 }

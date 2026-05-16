@@ -69,7 +69,7 @@ describe('loadInitialProject — branches', () => {
       subjectColors: {},
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.name).toBe('saved');
     expect(loaded.version).toBe(2);
   });
@@ -87,7 +87,7 @@ describe('loadInitialProject — branches', () => {
       subjectColors: {},
     };
     localStorage.setItem(LEGACY_STORAGE_KEYS[0], JSON.stringify(saved));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.name).toBe('legacy-1');
     // 旧キーは削除され、新キーへ移行されている
     expect(localStorage.getItem(LEGACY_STORAGE_KEYS[0])).toBeNull();
@@ -107,7 +107,7 @@ describe('loadInitialProject — branches', () => {
       subjectColors: {},
     };
     localStorage.setItem(LEGACY_STORAGE_KEYS[1], JSON.stringify(saved));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.name).toBe('legacy-2');
     expect(localStorage.getItem(LEGACY_STORAGE_KEYS[1])).toBeNull();
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).not.toBeNull();
@@ -119,7 +119,7 @@ describe('loadInitialProject — branches', () => {
       teachers: [{ name: 'X', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.teachers[0].name).toBe('X');
     expect(loaded.tabs).toHaveLength(1);
     expect(loaded.tabs[0].config.classes).toEqual(['A']);
@@ -131,23 +131,37 @@ describe('loadInitialProject — branches', () => {
       teachers: [{ name: 'Y', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     };
     localStorage.setItem('schedule_user_defaults', JSON.stringify(defaults));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.teachers[0].name).toBe('Y');
     expect(loaded.tabs[0].config.classes).toEqual(['L']);
   });
 
   it('全部空ならデフォルトの 2 タブ (中３ / 中１・２) を返す', () => {
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.tabs).toHaveLength(2);
     expect(loaded.tabs[0].name).toBe('中３');
     expect(loaded.tabs[1].name).toBe('中１・２');
   });
 
-  it('壊れた JSON は読み込み失敗して fallback default を返す', () => {
+  it('壊れた JSON は読み込み失敗して fallback default + loadError を返す', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, '{not-json');
-    const loaded = loadInitialProject();
+    const { project: loaded, loadError } = loadInitialProject();
     // 例外が外に出ず、フォールバックの 2 タブが返る
     expect(loaded.tabs).toHaveLength(2);
+    // loadError に説明文が入る (UI 層で toast 通知用)
+    expect(loadError).toBeTruthy();
+    expect(typeof loadError).toBe('string');
+  });
+
+  it('読み込み成功時は loadError が null', () => {
+    const saved = {
+      version: 2, name: 'ok',
+      tabs: [{ id: 1, name: 'a', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
+      teachers: [], activeTabId: 1, combinedGroups: [], externalCounts: {}, subjects: [], subjectColors: {},
+    };
+    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
+    const { loadError } = loadInitialProject();
+    expect(loadError).toBeNull();
   });
 
   it('version 未指定の旧形式は migrate で version=2 に補正される', () => {
@@ -159,7 +173,7 @@ describe('loadInitialProject — branches', () => {
       activeTabId: 1,
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(legacy));
-    const loaded = loadInitialProject();
+    const { project: loaded } = loadInitialProject();
     expect(loaded.version).toBe(2);
     // combinedGroups / subjectColors / subjects も自動補完される
     expect(loaded.combinedGroups).toEqual([]);

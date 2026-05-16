@@ -16,7 +16,7 @@ import ConfigModal from './components/ConfigModal';
 const NUM_PATTERNS = 3;
 
 function ScheduleApp() {
-  const { project, undo, redo } = useProjectContext();
+  const { project, undo, redo, loadError } = useProjectContext();
   const { showToast } = useUI();
 
   useEffect(() => {
@@ -28,6 +28,20 @@ function ScheduleApp() {
       document.title = previousTitle;
     };
   }, [project.name]);
+
+  // 初期マウント時に load error があれば toast で通知 (一度のみ)。
+  // 起動時のサイレント失敗を可視化するため。
+  useEffect(() => {
+    if (loadError) {
+      showToast(
+        `プロジェクトの読み込みに失敗しました。デフォルト設定で起動します。(${loadError})`,
+        'error',
+        8000,
+      );
+    }
+    // loadError は初期マウントで決定された静的値なので deps に入れない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
   useEffect(() => {
