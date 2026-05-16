@@ -4,7 +4,7 @@ import { ProjectProvider } from './contexts/ProjectContext';
 import { UIProvider } from './contexts/UIContext';
 import { useUI } from './contexts/uiContextValue';
 import { useProjectContext } from './contexts/projectContextValue';
-import { generateSinglePattern } from './logic/autoGenerator';
+import { runGeneratorInWorker } from './logic/runGenerator';
 import Header from './components/Header';
 import TabBar from './components/TabBar';
 import Toolbar from './components/Toolbar';
@@ -54,57 +54,66 @@ function ScheduleApp() {
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
-  const generatingRef = useRef(false);
+  // 起動中の worker handle を ref で保持 (アンマウント時にキャンセル)
+  const generationRef = useRef(null);
 
   const handleGenerate = useCallback(() => {
+    // 多重起動を防ぐため、既に走っているなら一旦キャンセル
+    generationRef.current?.cancel();
+
     setIsGenerating(true);
     setGeneratedPatterns([]);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
-    generatingRef.current = true;
 
     const results = [];
-    const baseSeed = Date.now();
+    const handle = runGeneratorInWorker({
+      project,
+      activeTabId: project.activeTabId,
+      numPatterns: NUM_PATTERNS,
+      baseSeed: Date.now(),
+      onPattern: (index, result) => {
+        results[index] = result;
+        setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
+      },
+      onError: (msg) => {
+        showToast(`生成エラー: ${msg}`, "error", 5000);
+      },
+    });
 
-    const generateNext = (index) => {
-      if (!generatingRef.current || index >= NUM_PATTERNS) {
-        const patterns = results.map(r => ({
+    generationRef.current = handle;
+
+    handle.done.then(() => {
+      const patterns = results
+        .filter(Boolean)
+        .map(r => ({
           schedule: r.solution || r.bestPartial,
           isPartial: r.solution === null,
           filledCount: r.solution ? r.totalSlots : r.filledCount,
           totalSlots: r.totalSlots,
-        })).filter(r => r.schedule !== null);
+        }))
+        .filter(r => r.schedule !== null);
 
-        if (patterns.length > 0) {
-          setGeneratedPatterns(patterns);
-          const hasPartial = patterns.some(p => p.isPartial);
-          if (hasPartial) {
-            showToast("一部の案は完全解が見つからなかったため、可能な範囲で埋めた部分解です。", "warning", 5000);
-          }
-        } else {
-          showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
+      if (patterns.length > 0) {
+        setGeneratedPatterns(patterns);
+        const hasPartial = patterns.some(p => p.isPartial);
+        if (hasPartial) {
+          showToast("一部の案は完全解が見つからなかったため、可能な範囲で埋めた部分解です。", "warning", 5000);
         }
-        setIsGenerating(false);
-        generatingRef.current = false;
-        return;
+      } else {
+        showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
       }
-
-      setGenerateProgress({ current: index, total: NUM_PATTERNS });
-
-      setTimeout(() => {
-        const seed = baseSeed + index * 7919;
-        const result = generateSinglePattern({
-          project,
-          activeTabId: project.activeTabId,
-          seed,
-        });
-        results.push(result);
-        setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
-        generateNext(index + 1);
-      }, 50);
-    };
-
-    setTimeout(() => generateNext(0), 50);
+      setIsGenerating(false);
+      generationRef.current = null;
+    });
   }, [project, showToast]);
+
+  // アンマウント時に進行中の生成をキャンセル (リーク防止)
+  useEffect(() => {
+    return () => {
+      generationRef.current?.cancel();
+      generationRef.current = null;
+    };
+  }, []);
 
   const handleContextMenu = (e, dIdx, pIdx, cIdx, type = null, val = null) => {
     e.preventDefault();
