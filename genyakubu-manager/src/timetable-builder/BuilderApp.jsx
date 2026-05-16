@@ -121,14 +121,16 @@ function ScheduleApp() {
   // 親アプリ側でも .no-print を扱っているため、ここでは @page のみ。
   const printStyle = `@media print { @page { size: landscape; } .print-container { max-height: none !important; border: none !important; overflow: visible !important; } }`;
 
+  // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
+  // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
-    <div className="p-4 bg-gray-100 font-sans" onClick={() => setContextMenu(null)}>
+    <div className="font-sans" onClick={() => setContextMenu(null)}>
       <style>{printStyle}</style>
 
       <Header />
       <TabBar />
 
-      <div className="bg-white p-4 rounded-b-lg rounded-tr-lg shadow-md min-h-[600px]">
+      <div className="bg-white p-4 rounded-b-lg rounded-tr-lg shadow-sm border border-gray-200 min-h-[600px]">
         <Toolbar
           isCompact={isCompact}
           setIsCompact={setIsCompact}
