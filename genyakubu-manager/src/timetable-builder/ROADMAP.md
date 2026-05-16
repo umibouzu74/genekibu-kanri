@@ -270,7 +270,239 @@ ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出�
 
 ---
 
-## 5. このドキュメントの更新ルール
+## D. 完成度を上げるための今後の課題 (新規セクション、2026-05-16 追加)
+
+A〜C 系を完了してマージ準備が整った状態で、**「ここから時間割作成ツールを
+完成形にしていくための」** 課題を整理する。各項目は **規模 / 価値 /
+推奨タイミング** を併記している。スコープは「機能完成度」「テスト」
+「パフォーマンス」「再設計レベルの判断」を含む。
+
+### D1. ユーザビリティ / UX
+
+#### D1a. 🟠 オンボーディング無し
+- **現状**: 初回起動でいきなりスケジュール表が表示される。`grep onboard tutorial welcome firstRun` で 0 ヒット。
+- **改善**: 空状態の説明オーバーレイ、または「初回ガイドツアー」。最低限「右クリックで日付/クラス名を変更できる」「⚙️設定で講師・科目を編集」「🧙‍♂️自動作成で MRV+バックトラックの解を試せる」を案内。
+- **規模**: 中 / **価値**: 高 / **推奨**: 早期に着手
+
+#### D1b. 🟠 モバイル / 狭画面対応
+- **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel と ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。スケジュール表は overflow-auto で横スクロールで対応するが、Toolbar 内のボタン群は折り返さない。
+- **改善**: Toolbar の sm 向け折りたたみ、Header の Excel ボタンを dropdown 化、ScheduleTable は max-w を CSS variable で制御。
+- **規模**: 中 / **価値**: 中 (主用途は PC だが移動先での確認ニーズあり)
+
+#### D1c. 🟠 バリデーションの可視化不足
+- **現状**: Toolbar 進捗バーと「⚠️N件」のみ。「科目クォータ未達」「NG セルに講師ゼロ」「講師 1 日上限近接」などは個別セルにしか出ない。
+- **改善**: 「タブごとに残課題件数を表示」「設定モーダル内で『今のままだと解けない制約』を可視化」。
+- **規模**: 中 / **価値**: 高 (自動生成失敗時のデバッグが現状辛い)
+
+#### D1d. 🟡 名前付きスナップショット
+- **現状**: undo/redo の history はあるが、特定状態を「Pattern A」のように名前付き保存できない。生成結果 3 案も SummaryPanel に居る間だけ。
+- **改善**: スロット型の保存・適用 (project レベル or タブレベル)。
+- **規模**: 中 / **価値**: 中
+
+#### D1e. 🟡 スケジュール差分ビュー
+- **現状**: 自動生成 N 案は SummaryPanel で集計のみ。実セルの違いは適用前後比較しないと見えない。
+- **改善**: A/B 案の cell-by-cell diff (色違いハイライト)。
+- **規模**: 中 / **価値**: 中
+
+#### D1f. ⚪ ショートカット (既存項目)
+- 別記 (CLAUDE.md `A7` / `A8`): Shift+? の実機検証 / ユーザカスタマイズ。本ロードマップでも継続。
+
+---
+
+### D2. テスト網羅性
+
+#### D2a. 🟠 useAnalysis のテスト 0 件
+- **現状**: `hooks/useAnalysis.js` (約 120 行) に対応するテストが無い。conflictMap / errorKeys / teacherDailyCounts / subjectOrders / dailySubjectMap の計算ロジックが untested。
+- **改善**: hook を切り分けて純粋関数に近づけ、テストを追加。再構築 (D4e) と同時にやると効率的。
+- **規模**: 小〜中 / **価値**: 高 (UI 多数が依存)
+
+#### D2b. 🟡 UI コンポーネントテスト 0 件
+- **現状**: `components/*.test.*` 0 ファイル。Header / Toolbar / ScheduleCell / ConfigModal 各 tab は useProject 経由の動作テストでカバーされているが、コンポーネント固有のロジック (Header の Excel 出力中 disabled、Toolbar の scrollToFirstError、ScheduleCell のキーボードナビ) は黒箱。
+- **改善**: 主要 3 コンポーネント (Header / Toolbar / ScheduleCell) に絞った testing-library テスト。
+- **規模**: 中〜大 / **価値**: 中
+
+#### D2c. 🟡 実 Worker 経路のテスト無し
+- **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ実行。本番 (`new Worker()` 経由) は untested。cancel・terminate・error メッセージプロトコルが silent regression し得る。
+- **改善**: Playwright もしくは vitest browser mode で Worker 動作を E2E。
+- **規模**: 中 / **価値**: 中
+
+#### D2d. 🟡 Excel 実バイナリ検証
+- **現状**: C4 で `buildScheduleWorkbook` / `buildTeacherWorkbook` の構造テスト 18 件を追加したが、実 xlsx ファイルを開いた時の見栄え (色・罫線・列幅) は手動確認のみ。
+- **改善**: exceljs で書き出し → 同じ exceljs で再読込 → round-trip 比較。または Playwright で download → 解凍 → OOXML XML 検証。
+- **規模**: 中 / **価値**: 中
+
+---
+
+### D3. パフォーマンス / スケーラビリティ
+
+#### D3a. 🟢 cleanSchedule の O(D×P×C) → O(K) 化
+- **現状**: `constants.js:cleanSchedule` は全 (dates × periods × classes) を iterate して valid key Set を作り、schedule を filter。デフォルト 6×3×4=72 だが、ピーク利用で数百になり得る。
+- **改善**: 既存 schedule keys を iterate し、entity が存在するか即時判定する方向に反転。
+- **規模**: 小 / **価値**: 低〜中
+
+#### D3b. 🟡 solver スケーリング計測
+- **現状**: `MAX_ITERATIONS = 500,000`。実データで何コマまでなら数秒以内に解けるか未計測。3 学年 × 7 クラス × 6 日 × 4 時限 ≒ 504 セルあたりが現実上限と思われるが unknown。
+- **改善**: ベンチマーク + 必要に応じ部分解戦略の改善 (現状は MRV のみ)。
+- **規模**: 中 / **価値**: 中
+
+#### D3c. ⚪ excelExport バンドル削減 (旧 C4 残課題)
+- **現状**: 944 kB (gzip 273 kB)。dynamic import で起動には影響無いが、初回 Excel 出力に数百 ms 遅延。
+- **改善**: exceljs の Workbook + xlsx writer のみ tree-shake、もしくは OOXML 自前書き出し。
+- **規模**: 大 / **価値**: 低 (動的 import で吸収済み)
+
+---
+
+### D4. アーキテクチャ改善 (再設計レベル)
+
+#### D4a. 🟢 schedule キー object 化
+- **現状**: 文字列 `"d1-p1-c1"` を `parseKey` で分解。C1 移行で形式は単純化されたが、`parseInt` が走る。
+- **改善**: `{dateId, periodId, classId}` の object key (`Map` を使う)。
+- **規模**: 大 (192 makeKey 呼び出しすべて touch、C1 と同等)
+- **価値**: 低〜中
+- **「壊した方が良い」判断**: 現状でほぼ問題無い。文字列 key は localStorage に保存しやすい (object key は JSON 化困難)。**やらなくて良い**寄り。
+
+#### D4b. 🟡 combinedGroups / externalCounts を ID 化
+- **現状**: ラベル文字列で参照。今回 (校正対応) で cascade cleanup helper を入れたが、reducer の責務が膨らんだ。
+- **改善**: タブ横断の class / teacher / subject ID を導入し、cleanup を不要にする。
+- **規模**: 大
+- **価値**: 中〜高
+- **判断**: ラベル ベースの利点 (JSON 可読性、タブ間で同名クラスが自動共有される) を失う。**ユーザのデータ移植性とのトレードオフ**。「壊す」価値はあるが、慎重に。
+
+#### D4c. 🔴 Tailwind と inline-style の二系統解消
+- **現状**: Builder は Tailwind (C3 で `builder-*` トークン化)、親アプリは inline style + `tokens.js`。色値だけは同期したが、styling paradigm は別物。
+- **改善**: どちらかに統一。
+  - 親を Tailwind 化: 親アプリ全 view 触る。巨大。
+  - Builder を inline style 化: Tailwind を Builder から外す。中規模。
+- **規模**: 大 / **価値**: 中
+- **「壊した方が良い」候補**: 長期 maintenance を考えると統一が望ましい。**但し、親アプリの方針として inline style + tokens.js が確立しているなら、Builder を inline style に書き換える方が一貫性が出る**。決定は別途相談。
+
+#### D4d. 🟡 ScheduleCell.jsx の分解
+- **現状**: 137 行。subject select / lock button / teacher select / matrix navigation / conflict 表示 / 合同表示などが 1 コンポーネント内。
+- **改善**: SubjectSelect / TeacherSelect / CellLockButton / 別ファイルへ。Navigation は useCellNavigation hook へ。
+- **規模**: 中 / **価値**: 中 (可読性 + テスト容易性 = D2b の前提)
+
+#### D4e. 🟡 useAnalysis の分解
+- **現状**: 1 つの useMemo で 5 種類の集計を計算 (約 75 行)。conflictMap だけ欲しい consumer も全部計算される。
+- **改善**: セクション分割 (useConflicts / useSubjectOrders / useTeacherCounts)、必要なものだけ subscribe。
+- **規模**: 中 / **価値**: 中 (テスト容易性 + 部分再計算)
+
+#### D4f. 🟢 handleResetAll の reload 回避
+- **現状**: `window.location.reload()` で強制リロード。React 外の hack。
+- **改善**: dispatch('project/replace') で初期 project (`createNewProject(...)`) に差し戻す。LocalStorage クリアは別 effect。
+- **規模**: 小 / **価値**: 小〜中
+
+#### D4g. 🟢 cell/setNg と teacher/toggleNg の重複
+- **現状**: `cell/setNg` (UI セルから NG 登録) と `teacher/toggleNg` (講師タブから NG 登録) が同じ操作を異なる payload で行う。
+- **改善**: `teacher/toggleNg` のみ残し、`cell/setNg` は派生 action でラップ。
+- **規模**: 小 / **価値**: 小
+
+---
+
+### D5. アクセシビリティ / 国際化
+
+#### D5a. 🟠 ARIA / role 属性ゼロ
+- **現状**: `grep "aria-\|role="` で Builder 配下 0 件。スクリーンリーダーに対して構造が全く伝わらない。
+- **改善**: 最低限以下を入れる:
+  - `<table>` に `<th scope="col">` / `<th scope="row">`
+  - ConfigModal に `role="dialog"` + `aria-modal="true"` + `aria-labelledby`
+  - selectbox に `aria-label`
+  - 進捗バーに `role="progressbar" aria-valuenow={dashboard.progress}`
+- **規模**: 中 / **価値**: 中 (法人ユース想定なら必須化する可能性)
+
+#### D5b. 🟡 キーボード操作の完成度
+- **現状**: ScheduleCell に矢印ナビあり (D4d で hook 化候補)。ConfigModal の tab 切り替え (基本/科目/クラス/...) は左右矢印未対応。
+- **改善**: 評価表作成 → 不足を補う。
+- **規模**: 中 / **価値**: 中
+
+#### D5c. ⚪ 日本語固定 (i18n)
+- **現状**: 文言ハードコード。当面ターゲットが日本国内塾なので保留で良い。
+- **判断**: 海外展開などの要件が出るまで触らない。
+
+---
+
+### D6. 機能拡張 (新規)
+
+#### D6a. 🟠 CSV / Excel からの bulk import
+- **現状**: 講師マスタも NG 設定も手入力。初期セットアップ時の負担大。
+- **改善**: CSV import (講師名・担当科目 / NG 日時) と、既存 Excel スケジュールからの取り込み。
+- **規模**: 中 / **価値**: 高 (新規ユーザの導入障壁を下げる)
+
+#### D6b. 🟡 自動修復 (conflict resolution wizard)
+- **現状**: 自動生成が完全解を返せないと部分解 + warning のみ。
+- **改善**: 「この conflict を解消するにはこの講師を別の日に動かす必要があります」のような提案。
+- **規模**: 大 / **価値**: 中 (制約緩和の意思決定 UI が必要)
+
+#### D6c. 🟡 講師の連続コマ数制約
+- **現状**: 1 日合計 `maxDailyHours` のみ。「2 コマ連続 NG」「3 コマ連続後は休憩」のような連続性制約は無い。
+- **改善**: teacherConstraints に追加。
+- **規模**: 中 / **価値**: 中
+
+#### D6d. 🟡 テンプレート機能 (年度間コピー)
+- **現状**: project ごとに完全独立。「去年のテンプレを今年に流用」する正規ルート無し (JSON 保存→読込で代替可)。
+- **改善**: テンプレ保存・適用、講師マスタだけ引き継ぎ・スケジュールだけ引き継ぎ、などの options。
+- **規模**: 中 / **価値**: 中
+
+#### D6e. ⚪ Firebase 同期 (ROADMAP 既知の「意図的に未対応」)
+- **現状**: localStorage 単独運用 (R2)。共有ニーズが顕在化したら検討。
+- **判断**: ユースケース次第。組織内共有が要件化したら着手。
+- **規模**: 大
+
+---
+
+### D7. 既知の技術的負債
+
+#### D7a. 🟡 TypeScript 化
+- **現状**: Builder 配下は JS のみ。親アプリも部分的 TS。
+- **改善**: Builder 配下を `.jsx` → `.tsx`、`.js` → `.ts` に。`Project` / `Tab` / `Config` / `ScheduleEntry` / `CombinedGroup` の型定義から始める。
+- **規模**: 大 / **価値**: 中
+- **判断材料**: D4b / D4e の再設計と同時にやると二度手間にならない。
+
+#### D7b. ⚪ 印刷システム二系統の文書化
+- **現状**: `CLAUDE.md` に運用ルール記載済。各 view にも inline コメントがあれば理想。
+- **規模**: 小 / **価値**: 低
+
+#### D7c. ⚪ Builder vs 親アプリのテスト共通基盤
+- **現状**: Builder は Vitest + testing-library、親も同じ構成だが setup は別。共通 mock / helper があれば便利。
+- **規模**: 小 / **価値**: 低
+
+---
+
+### D 系の推奨着手順
+
+| Phase | 着手項目 | 規模 | 効果 |
+|---|---|---|---|
+| **Quick wins** (1 セッション) | D4f handleResetAll / D4g cell/setNg 統合 / D7b 印刷文書 | 小 | 軽量、即効 |
+| **Test foundation** (2-3 セッション) | D2a useAnalysis / D2b UI components / D4e useAnalysis 分解 (D2a の前提) | 中 | 後続改善の安全網 |
+| **UX phase** (2-3 セッション) | D1a オンボーディング / D1c バリデーション可視化 / D6a bulk import / D5a a11y | 中 | ユーザ価値最大 |
+| **Code quality** (1-2 セッション) | D4d ScheduleCell 分解 / D3a cleanSchedule O(K) | 中 | 可読性 + 安定性 |
+| **Major refactor** (要決断) | D4b 全 ID 化 / D4c styling 統一 / D7a TS 化 / D6e Firebase | 大 | 長期負債解消 |
+
+### D 系の「一旦壊した方が良い」候補
+
+これらは現状動作している部分を **意図的に破壊して作り直す** ことで長期的な
+ベネフィットが見込める案件。実施判断は別途相談 (失敗時の影響大):
+
+1. **D4c: Tailwind と inline-style の統一**
+   - 二系統が残るのは長期 maintenance の負債。どちらに寄せるかは戦略判断。
+   - 推奨: 親アプリの paradigm が確立しているので Builder を inline style 化。
+   - リスク: Builder UI を全面書き直し。tailwind.config.js / tailwind.css 削除。
+
+2. **D4b: combinedGroups / externalCounts の完全 ID 化**
+   - cascade cleanup helper を撤廃できる。reducer がスリムに。
+   - リスク: JSON 出力が人間可読でなくなる、タブ間の自動共有が失われる。
+   - 推奨: ユーザがJSON を直接編集することがあるなら見送り。
+
+3. **D7a: TypeScript 化**
+   - 上記 D4b / D4e と同時にやれば型と structure を一発で固められる。
+   - リスク: Vite/Vitest 設定追加、JSX→TSX 全置換、外部型のインストール。
+   - 推奨: D4b / D4e のリファクタが決まったら抱き合わせ。
+
+4. **D6e: Firebase 同期 (ローカル運用からの脱却)**
+   - LocalStorage 容量 (R2) の根本解決にも繋がる。
+   - リスク: 認証・コンフリクト解決・コスト管理。
+   - 推奨: 共有運用ニーズが具体化してから。
+
+---
 
 - 各項目を実装したら ✅ を付けて短縮する (詳細は commit message とコードのコメントに残す)
 - 新たに発見された問題は適切なセクション (A/B/C) に追加
