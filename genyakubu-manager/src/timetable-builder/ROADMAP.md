@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1 + C2 + C3 完了後
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1-C4 完了 (ROADMAP 主要項目 全て対応済)
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -148,18 +148,18 @@ re-render で identity 不変。pushHistory / setProject は旧 API 互換ラッ
 
 ---
 
-### C4. 🟢 xlsx-js-style → exceljs への置き換え検討
-**現状の問題**:
-- xlsx-js-style: 874kB（gzip 324kB）。動的 import で初期負荷は無いが、Excel 出力時に重い
-- `xlsx-js-style` は `xlsx` (SheetJS) のフォーク。本家がライセンス変更後 (CC-BY → 商用) も MIT のフォークが続いているが、メンテ状況は要確認
-- 代替: `exceljs` (1MB クラスだが API が綺麗)、`@e965/xlsx` (xlsx の MIT フォーク)、自前で OOXML 書き出し
+### ~~C4~~. ✅ Excel 出力ライブラリの置換
+完了。xlsx-js-style (2022-04 以降未更新、31 open issues) から exceljs
+(MIT / 活発な保守 / 2024-10 リリース) へ置換。`@e965/xlsx` は SheetJS
+Community Edition のスタイル機能を持たないため除外。`utils/excelExport.js`
+は ExcelJS API で全面書き換えしつつ、公開 API
+(`downloadScheduleExcel` / `downloadTeacherExcel`) は維持。
 
-**提案**:
-- 大規模調査: 各候補のサイズ・スタイル機能の充実度・メンテ状況・ライセンスを比較
-- 移行する場合は `excelExport.js` の API（downloadScheduleExcel / downloadTeacherExcel）を保ったまま実装差し替え
+バンドル変化: gzip 圧縮後 **324 kB → 273 kB (-16%)**、非圧縮は 874 kB →
+944 kB (+8%)。dynamic import は維持で BuilderApp 本体 88 kB に影響なし。
 
-**コスト**: 調査 1 日 + 実装 2〜3 日
-**やる価値**: 低〜中。現状で動いているので緊急度は低い
+**残課題**: 生成された Excel ファイルの視覚的確認 (科目カラー / セル結合 /
+罫線 / 列幅・行高) はユーザ環境での手動チェックが必要。
 
 ---
 
@@ -185,10 +185,8 @@ re-render で identity 不変。pushHistory / setProject は旧 API 互換ラッ
 - 履歴は最大 N 件 or N MB のしきい値で間引き
 - IndexedDB 移行（容量制限が緩い）
 
-### R3. xlsx-js-style のメンテ状況
-- 詳細未調査。最新バージョン・コミット頻度・open issues を要確認
-- 万一メンテ停止していても、現状動いているので緊急度低
-- 長期的には C4 を検討
+### ~~R3~~. ✅ xlsx-js-style のメンテ状況
+C4 で exceljs に置換済み (活発に保守されている MIT パッケージ)。リスク解消。
 
 ### R4. 親アプリの View キー衝突
 - 現在 chord は `b` を BUILDER に割当て済み。他に空いているのは `f`, `g`, `i`, `j`, `k`, `l`, `n`, `p`, `q`, `r`, `u`, `x`, `y`, `z` 程度
@@ -235,9 +233,14 @@ npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-A 系・B 系および C1 / C2 / C3 は完了済。残るのは C4 のみ。
+ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出てきたら適切な
+セクション (A/B/C) に追加して、優先度に応じて着手する。
 
-- C4 (xlsx 置き換え)：現状動いているので緊急度低
+未着手の改善候補 (1.2 表の 🔴 項目):
+- オンボーディング: 初見ユーザ向けガイダンス無し
+- モバイル対応: 大画面前提のレイアウト
+- TypeScript 化: Builder 配下は未対応 (親アプリは部分的に TS)
+- Firebase 同期: 意図的に未対応
 
 ### 4.5 やる前に必ず読むべきファイル
 - このファイル (ROADMAP.md)
@@ -252,7 +255,8 @@ A 系・B 系および C1 / C2 / C3 は完了済。残るのは C4 のみ。
 ### 4.7 既存 PR / 関連リンク
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
-- A1-A8 + B1-B4 + C1 + C2 + C3 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
+- A1-A8 + B1-B4 + C1-C4 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
+  (ROADMAP 主要項目 13 件すべて完了)
 - 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
