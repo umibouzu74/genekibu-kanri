@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1-C4 完了 (ROADMAP 主要項目 全て対応済)
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1-C4 完了 + 校正レビュー対応済
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -39,23 +39,26 @@
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **898 件** (timetable-builder 配下は約 221 件、他は親アプリ)
+合計 **934 件** (timetable-builder 配下は約 257 件、他は親アプリ)
 主なファイル:
-- `utils/scheduleKey.test.js` (26)
+- `utils/scheduleKey.test.js` (35)
 - `utils/combinedPropagation.test.js` (19)
+- `utils/excelExport.test.js` (18)
 - `logic/autoGenerator.test.js` (23)
 - `logic/runGenerator.test.js` (4)
 - `logic/constraints/teacherConstraints.test.js` (19)
 - `logic/constraints/scheduleConstraints.test.js` (13)
 - `hooks/useHistoryStack.test.jsx` (13)
 - `hooks/useProject.test.jsx` (36)
-- `hooks/projectFactory.test.js` (19)
-- `hooks/projectReducer.test.js` (43)
+- `hooks/projectFactory.test.js` (20)
+- `hooks/projectReducer.test.js` (57)
 
-カバー: マイグレーション・キー round-trip・MRV 制約・seed 決定性・部分解・
-合同伝播・cell ops cascade・LocalStorage 保存・undo/redo・load error 通知・
-30+ action types の reducer 純粋関数テスト。
-**未カバー**: useAnalysis 詳細・UI コンポーネント・Excel 出力。
+カバー: マイグレーション (v1→v2→v3、混在空配列、範囲外キー drop)・
+キー round-trip・MRV 制約・seed 決定性・部分解・合同伝播・cell ops cascade・
+LocalStorage 保存・undo/redo・load error 通知・30+ action types の reducer
+純粋関数テスト・cascade cleanup (combinedGroups / externalCounts)・
+Excel workbook 構築 (hexToArgb / merge / fill / 合同備考)。
+**未カバー**: useAnalysis 詳細・UI コンポーネント。
 
 ---
 
@@ -227,9 +230,9 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 40 files / 898 tests (timetable-builder 約 221 件)
+npm test            # 41 files / 934 tests (timetable-builder 約 257 件)
 npm run typecheck   # tsc --noEmit
-npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
+npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
@@ -256,7 +259,13 @@ ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出�
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
 - A1-A8 + B1-B4 + C1-C4 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
-  (ROADMAP 主要項目 13 件すべて完了)
+  (ROADMAP 主要項目 13 件 + 校正レビュー指摘の Critical / High / Medium / Low /
+  Nit 対応 完了)
+- 校正レビューで発見された修正:
+  - Critical: migrateTabV2toV3 の混在空配列 corruption
+  - High: combinedGroups / externalCounts の cascade cleanup (3 箇所)
+  - Medium: cell/swap source.locked 防御、config/setList の dedupe、
+    excelExport テスト追加、renameHeader/bulkAction 正常系テスト追加
 - 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
