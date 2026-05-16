@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 完了後
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C2 完了後
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -23,7 +23,7 @@
 | データモデル | 🟢 v2 で安定。マイグレーション関数あり |
 | 自動生成 (MRV+バックトラック) | 🟢 制約充足は動く・複数案・部分解・Web Worker 化済・externalCounts と日次上限を尊重 (A1) |
 | 制約システム | 🟢 純粋関数として `logic/constraints/` に切り出し済 (B3) |
-| 状態管理 | 🟢 useProject は composer (155 行)、3 つのアクションフックに分割済 (B2) |
+| 状態管理 | 🟢 useReducer + 30+ action types で集約 (C2)、アクションフックは dispatch ラッパ |
 | 合同グループ伝播 | 🟢 `utils/combinedPropagation.js` に共通化済 (B1) |
 | UI 主要操作 (セル編集・D&D・コピペ・ロック) | 🟢 動く |
 | タブ管理 | 🟢 動く |
@@ -39,7 +39,7 @@
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **849 件** (timetable-builder 配下は約 172 件、他は親アプリ)
+合計 **892 件** (timetable-builder 配下は約 215 件、他は親アプリ)
 主なファイル:
 - `utils/scheduleKey.test.js` (26)
 - `utils/combinedPropagation.test.js` (19)
@@ -50,9 +50,11 @@
 - `hooks/useHistoryStack.test.jsx` (13)
 - `hooks/useProject.test.jsx` (36)
 - `hooks/projectFactory.test.js` (19)
+- `hooks/projectReducer.test.js` (43)
 
 カバー: マイグレーション・キー round-trip・MRV 制約・seed 決定性・部分解・
-合同伝播・cell ops cascade・LocalStorage 保存・undo/redo・load error 通知。
+合同伝播・cell ops cascade・LocalStorage 保存・undo/redo・load error 通知・
+30+ action types の reducer 純粋関数テスト。
 **未カバー**: useAnalysis 詳細・UI コンポーネント・Excel 出力。
 
 ---
@@ -138,25 +140,13 @@
 
 ---
 
-### C2. 🟡 状態管理を useReducer + action types に
-**現状の問題**:
-- useProject はサブフック (useTeacherActions / useSubjectActions / useScheduleActions) に分割済 (B2) だが、各 `useCallback` が `{...project, key: newValue}` パターンで状態を更新
-- 30+ の useCallback が `[project, pushHistory]` を deps に持つ → project 変化のたびに全部再生成
-- B1/B2/B3 で内部構造は整理されたが、reducer 化は別の独立した整理軸
-
-**提案**:
-- `useReducer((state, action) => newState, initialProject)` に置き換え
-- action types: `'tab/add'`, `'teacher/rename'`, `'cell/assign'`, `'cell/swap'`, etc.
-- reducer は純粋関数なので単体テストが書きやすい
-- redux-style middleware 風に履歴管理 (undo/redo) を組み込み可
-
-**移行戦略**:
-- 既に B1/B2 で ops の境界は明確 (combinedPropagation + 3 アクションフック)
-- そのうえで「action 化」する → 既存テストが安全網
-
-**コスト**: 中規模。3〜5 日
-**リスク**: 公開 API (useProject の return) の互換性を保つラッパが必要
-**やる価値**: 中〜高。テストの書きやすさが大きく変わる
+### ~~C2~~. ✅ 状態管理を useReducer + action types に
+完了。`hooks/projectReducer.js` (485 行) に 30+ action types を純粋関数として
+集約、`useHistoryStack` を useReducer ベースに書き換え。3 つのアクションフックは
+386 行 → 76 行の dispatch ラッパに。dispatch が stable なので callback も
+re-render で identity 不変。pushHistory / setProject は旧 API 互換ラッパとして
+残置。projectReducer.test.js で 43 ケース、既存 useProject.test.jsx 36 ケースは
+そのまま PASS で挙動等価。
 
 ---
 
@@ -238,12 +228,13 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 
 ### 4.2 Builder の構成把握
 - メインエントリ: `src/timetable-builder/BuilderApp.jsx`
-- 状態管理 (B2 で分割):
-  - `hooks/useProject.js` (composer 155 行)
-  - `hooks/useHistoryStack.js` (state + undo/redo + autosave)
-  - `hooks/useScheduleActions.js` (cell ops、合同伝播は combinedPropagation 委譲)
-  - `hooks/useTeacherActions.js` (講師・externalCounts)
-  - `hooks/useSubjectActions.js` (科目・色)
+- 状態管理 (B2 で分割 + C2 で reducer 化):
+  - `hooks/projectReducer.js` (純粋 reducer、30+ action types を 1 箇所に集約)
+  - `hooks/useProject.js` (composer 151 行)
+  - `hooks/useHistoryStack.js` (useReducer + autosave、61 行)
+  - `hooks/useScheduleActions.js` (dispatch ラッパ、40 行)
+  - `hooks/useTeacherActions.js` (dispatch ラッパ、21 行)
+  - `hooks/useSubjectActions.js` (dispatch ラッパ、15 行)
   - `hooks/useJsonIO.js` (JSON I/O)
   - `hooks/projectFactory.js` (load + migrate)
 - 制約 (B3 で抽出): `logic/constraints/teacherConstraints.js` / `scheduleConstraints.js`
@@ -256,15 +247,14 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 39 files / 849 tests (timetable-builder 約 172 件)
+npm test            # 40 files / 892 tests (timetable-builder 約 215 件)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-A 系・B 系は全て完了済。残るのは C 系の破壊的再設計のみ。優先度の参考:
+A 系・B 系および C2 は完了済。残るのは C1 / C3 / C4。優先度の参考:
 
-- C2 (reducer 化)：内部リファクタとして比較的安全、テスト網羅で書きやすさ向上
 - C1 (ID 化)：データモデル変更でリスク高、不具合報告が増えてから検討
 - C3 (デザイン統合)：機能改善ではないので優先度低、機能完成後に検討
 - C4 (xlsx 置き換え)：現状動いているので緊急度低
@@ -282,8 +272,7 @@ A 系・B 系は全て完了済。残るのは C 系の破壊的再設計のみ�
 ### 4.7 既存 PR / 関連リンク
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
-- A1-A8 + B1-B4 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
-  (このドキュメント更新時点で 10 commits)
+- A1-A8 + B1-B4 + C2 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
 - 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
