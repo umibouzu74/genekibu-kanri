@@ -1,0 +1,31 @@
+/*
+ * timetable-builder モジュール専用の Tailwind エントリ。
+ *
+ * 親アプリ (genyakubu-manager) は inline style ベースで作られているため、
+ * Tailwind の preflight (base レイヤ) を当てると親側の <button> / <h1> /
+ * <ul> などへ予期せぬリセットが波及してしまう。それを避けるため、
+ * ここでは components と utilities のみを読み込む。
+ *
+ * Tailwind の content スコープは tailwind.config.js で
+ * src/timetable-builder/** のみに絞っているので、生成されるユーティリティ
+ * クラス名が親側で衝突するリスクはほぼゼロ。
+ */
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Toast / Modal / ContextMenu などで使うカスタムアニメーション。
+ * 旧スタンドアロン版 (jikanwarikun-main/src/index.css) で定義されていたが、
+ * 移植時に index.css を取り込まなかったため落ちていた。
+ * 元の挙動を取り戻すため移植。
+ */
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-slide-in { animation: slide-in 0.3s ease-out; }
+.animate-fade-in { animation: fade-in 0.15s ease-out; }

@@ -16,4 +16,5 @@ export const VIEWS = Object.freeze({
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",
   EVENTS: "events",
+  BUILDER: "builder",
 });

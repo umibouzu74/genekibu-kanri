@@ -20,6 +20,8 @@ export const VIEW_CHORDS = Object.freeze({
   w: VIEWS.WEEK,
   // MONTH は m が MASTER で取られているので mOnth から o を採用。
   o: VIEWS.MONTH,
+  // BUILDER (講習時間割作成) は b。
+  b: VIEWS.BUILDER,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -46,6 +48,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   e: "イベント",
   w: "週間",
   o: "月間",
+  b: "講習作成",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。
