@@ -24,10 +24,28 @@ export const DEFAULT_INITIAL_TEACHERS = [
 export const DEFAULT_SUBJECTS = ["英語", "数学", "国語", "理科", "社会"];
 
 // --- デフォルトタブ設定 ---
+// v3: dates / periods / classes は { id, label } の object 配列。
+// ID は tab-local の 1 始まり incremental。
 export const DEFAULT_TAB_CONFIG_BASE = {
-  dates: ["12/25(木)", "12/26(金)", "12/27(土)", "1/4(日)", "1/6(火)", "1/7(水)"],
-  periods: ["1限 (13:00~)", "2限 (14:10~)", "3限 (15:20~)"],
-  classes: ["３S", "３A", "３B", "３C"],
+  dates: [
+    { id: 1, label: "12/25(木)" },
+    { id: 2, label: "12/26(金)" },
+    { id: 3, label: "12/27(土)" },
+    { id: 4, label: "1/4(日)" },
+    { id: 5, label: "1/6(火)" },
+    { id: 6, label: "1/7(水)" },
+  ],
+  periods: [
+    { id: 1, label: "1限 (13:00~)" },
+    { id: 2, label: "2限 (14:10~)" },
+    { id: 3, label: "3限 (15:20~)" },
+  ],
+  classes: [
+    { id: 1, label: "３S" },
+    { id: 2, label: "３A" },
+    { id: 3, label: "３B" },
+    { id: 4, label: "３C" },
+  ],
   subjectCounts: { "英語": 4, "数学": 4, "国語": 3, "理科": 4, "社会": 3 }
 };
 
@@ -86,17 +104,19 @@ export const toCircleNum = (num) => {
 };
 
 // --- プロジェクトバージョン ---
-export const CURRENT_PROJECT_VERSION = 2;
+export const CURRENT_PROJECT_VERSION = 3;
 
 // --- スケジュールのクリーンアップ ---
+// v3: dates/periods/classes は { id, label } で、key は ID ベース。
+// config から消滅した ID を参照する schedule entry を破棄する。
 export const cleanSchedule = (proj) => {
   const newTabs = proj.tabs.map(tab => {
     const newSch = {};
     const validKeys = new Set();
-    tab.config.dates.forEach((_, dIdx) => {
-      tab.config.periods.forEach((_, pIdx) => {
-        tab.config.classes.forEach((_, cIdx) => {
-          validKeys.add(`d${dIdx}-p${pIdx}-c${cIdx}`);
+    tab.config.dates.forEach(d => {
+      tab.config.periods.forEach(p => {
+        tab.config.classes.forEach(c => {
+          validKeys.add(`d${d.id}-p${p.id}-c${c.id}`);
         });
       });
     });

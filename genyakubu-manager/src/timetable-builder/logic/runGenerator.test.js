@@ -12,14 +12,19 @@ import { makeKey } from '../utils/scheduleKey';
 
 function makeMiniProject() {
   return {
-    version: 2,
+    version: 3,
     name: 't',
     teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     activeTabId: 1,
     tabs: [{
       id: 1,
       name: 'a',
-      config: { dates: ['12/25(木)'], periods: ['1限'], classes: ['３S'], subjectCounts: { '英語': 1 } },
+      config: {
+        dates: [{ id: 1, label: '12/25(木)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }],
+        subjectCounts: { '英語': 1 },
+      },
       schedule: {},
     }],
     externalCounts: {},
@@ -61,7 +66,7 @@ describe('runGeneratorInWorker (sync fallback)', () => {
     expect(results).toHaveLength(2);
     for (const r of results) {
       expect(r.solution).not.toBeNull();
-      expect(r.solution[makeKey(0, 0, 0)].teacher).toBe('堀上');
+      expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('堀上');
     }
   });
 

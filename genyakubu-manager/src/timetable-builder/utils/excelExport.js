@@ -1,200 +1,230 @@
-import * as XLSX from 'xlsx-js-style';
+// Excel 出力 (exceljs ベース)。
+//
+// 元は xlsx-js-style を使っていたが、2022-04 以降更新が止まりリスクが
+// 蓄積していたため C4 で exceljs に置換。公開 API
+// (downloadScheduleExcel / downloadTeacherExcel) は維持。
+//
+// 注意点:
+// - exceljs の行/列インデックスは 1-based (旧 SheetJS は 0-based)
+// - 色指定は ARGB (FF + RRGGBB)、旧 SheetJS の RGB (RRGGBB) と異なる
+// - 出力は async (workbook.xlsx.writeBuffer)、ブラウザでは Blob 経由で download
+//
+// バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
+import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass } from './scheduleKey';
 
-// --- 共通スタイル定義 ---
+// ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
+
+// SheetJS の `{ rgb: 'RRGGBB' }` 色指定は exceljs では
+// `{ argb: 'FFRRGGBB' }` (アルファ FF = 不透明) となる。
+const ARGB_FF = 'FFFFFFFF';
+const ARGB_AAA = 'FFAAAAAA';
+const ARGB_4472C4 = 'FF4472C4';
+const ARGB_548235 = 'FF548235';
+const ARGB_E2EFDA = 'FFE2EFDA';
+const ARGB_F2F2F2 = 'FFF2F2F2';
 
 const THIN_BORDER = {
-  top: { style: 'thin', color: { rgb: 'AAAAAA' } },
-  bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
-  left: { style: 'thin', color: { rgb: 'AAAAAA' } },
-  right: { style: 'thin', color: { rgb: 'AAAAAA' } },
+  top: { style: 'thin', color: { argb: ARGB_AAA } },
+  bottom: { style: 'thin', color: { argb: ARGB_AAA } },
+  left: { style: 'thin', color: { argb: ARGB_AAA } },
+  right: { style: 'thin', color: { argb: ARGB_AAA } },
 };
 
 const HEADER_STYLE = {
-  font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-  fill: { fgColor: { rgb: '4472C4' } },
-  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  font: { bold: true, size: 11, color: { argb: ARGB_FF } },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_4472C4 } },
+  alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  border: THIN_BORDER,
+};
+
+const TEACHER_HEADER_STYLE = {
+  font: { bold: true, size: 11, color: { argb: ARGB_FF } },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_548235 } },
+  alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
 const DATE_HEADER_STYLE = {
-  font: { bold: true, sz: 10 },
-  fill: { fgColor: { rgb: 'E2EFDA' } },
-  alignment: { horizontal: 'center', vertical: 'center' },
+  font: { bold: true, size: 10 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_E2EFDA } },
+  alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
 const PERIOD_STYLE = {
-  font: { sz: 9 },
-  fill: { fgColor: { rgb: 'F2F2F2' } },
-  alignment: { horizontal: 'center', vertical: 'center' },
+  font: { size: 9 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_F2F2F2 } },
+  alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
 const EMPTY_CELL_STYLE = {
-  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
   border: THIN_BORDER,
 };
 
-// HEX カラー (#RRGGBB) を RRGGBB に変換
-function hexToRgb(hex) {
-  return hex.replace('#', '').toUpperCase();
+const BODY_CELL_STYLE = {
+  font: { size: 10 },
+  alignment: { horizontal: 'center', vertical: 'middle' },
+  border: THIN_BORDER,
+};
+
+// HEX カラー (#RRGGBB) を ARGB (FFRRGGBB) に変換
+export function hexToArgb(hex) {
+  return 'FF' + hex.replace('#', '').toUpperCase();
 }
 
-// 科目カラーからセルスタイルを生成
+// 科目カラーから cell style を生成
 function makeSubjectCellStyle(subject, subjectColors) {
   const color = getSubjectColor(subject, subjectColors);
   const style = {
-    font: { sz: 10 },
-    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    font: { size: 10 },
+    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
     border: THIN_BORDER,
   };
   if (color) {
-    style.fill = { fgColor: { rgb: hexToRgb(color) } };
+    style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: hexToArgb(color) } };
   }
   return style;
 }
 
-// ワークシートの全セルにスタイルを適用するヘルパー
-function applyStylesToRange(ws, styleMap) {
-  Object.keys(styleMap).forEach(cellRef => {
-    if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
-    ws[cellRef].s = styleMap[cellRef];
-  });
+// exceljs cell に style オブジェクトを適用。null / undefined は cell に
+// 設定しないことで「style 未指定」の状態を保つ。
+function applyCellStyle(cell, style) {
+  if (style.font) cell.font = style.font;
+  if (style.fill) cell.fill = style.fill;
+  if (style.alignment) cell.alignment = style.alignment;
+  if (style.border) cell.border = style.border;
 }
 
-// --- 全体Excel出力 ---
-export function downloadScheduleExcel(project) {
+// ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
+// 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。
+async function downloadWorkbook(workbook, filename) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
+// project から ExcelJS.Workbook を構築して返す。副作用無し。
+export function buildScheduleWorkbook(project) {
   const cleaned = cleanSchedule(project);
-  const wb = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
+  const subjectColors = project.subjectColors || {};
 
   cleaned.tabs.forEach(tab => {
     const { dates, periods, classes } = tab.config;
-    const subjectColors = project.subjectColors || {};
-
     const combinedGroups = project.combinedGroups || [];
+    const ws = workbook.addWorksheet(tab.name);
 
-    // データ行を構築
-    const headerRow = ["日付", "時限", ...classes];
-    const dataRows = dates.flatMap((d, dIdx) =>
-      periods.map((p, pIdx) =>
-        [d, p, ...classes.map((c, cIdx) => {
-          const e = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
-          if (!e || !e.subject) return "";
-          const group = findCombinedGroup(combinedGroups, e.subject, c, d);
-          if (group && !isPrimaryCombinedClass(group, c)) {
+    // ヘッダー行
+    const headerRow = ['日付', '時限', ...classes.map(c => c.label)];
+    ws.addRow(headerRow);
+    headerRow.forEach((_, ci) => applyCellStyle(ws.getCell(1, ci + 1), HEADER_STYLE));
+
+    // データ行を組み立て (日付ごとに時限分の行が生成される)
+    let rowIdx = 2; // 1 = header
+    dates.forEach((d) => {
+      periods.forEach((p) => {
+        const cells = [d.label, p.label, ...classes.map((c) => {
+          const e = tab.schedule[makeKey(d.id, p.id, c.id)];
+          if (!e || !e.subject) return '';
+          const group = findCombinedGroup(combinedGroups, e.subject, c.label, d.label);
+          if (group && !isPrimaryCombinedClass(group, c.label)) {
             return `${e.subject}\n(合同)`;
           }
           return `${e.subject}\n${e.teacher}`;
-        })]
-      )
-    );
-    const allRows = [headerRow, ...dataRows];
+        })];
+        ws.addRow(cells);
 
-    const ws = XLSX.utils.aoa_to_sheet(allRows);
+        applyCellStyle(ws.getCell(rowIdx, 1), DATE_HEADER_STYLE);
+        applyCellStyle(ws.getCell(rowIdx, 2), PERIOD_STYLE);
 
-    // 列幅設定
-    ws['!cols'] = [{ wch: 14 }, { wch: 14 }, ...classes.map(() => ({ wch: 16 }))];
-
-    // 行高設定（データ行は2行分の高さ）
-    ws['!rows'] = [{ hpt: 24 }]; // ヘッダー行
-    for (let i = 0; i < dataRows.length; i++) {
-      ws['!rows'].push({ hpt: 36 }); // データ行（科目＋講師の2行表示）
-    }
-
-    const styles = {};
-    const numCols = 2 + classes.length;
-
-    // ヘッダー行スタイル
-    for (let c = 0; c < numCols; c++) {
-      const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-      styles[cellRef] = HEADER_STYLE;
-    }
-
-    // データ行スタイル
-    let rowIdx = 1;
-    dates.forEach((d, dIdx) => {
-      periods.forEach((p, pIdx) => {
-        // 日付列
-        const dateRef = XLSX.utils.encode_cell({ r: rowIdx, c: 0 });
-        styles[dateRef] = DATE_HEADER_STYLE;
-
-        // 時限列
-        const periodRef = XLSX.utils.encode_cell({ r: rowIdx, c: 1 });
-        styles[periodRef] = PERIOD_STYLE;
-
-        // クラス列（科目カラー）
         classes.forEach((cls, cIdx) => {
-          const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 2 + cIdx });
-          const entry = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
+          const cell = ws.getCell(rowIdx, 3 + cIdx);
+          const entry = tab.schedule[makeKey(d.id, p.id, cls.id)];
           if (entry && entry.subject) {
-            styles[cellRef] = makeSubjectCellStyle(entry.subject, subjectColors);
+            applyCellStyle(cell, makeSubjectCellStyle(entry.subject, subjectColors));
           } else {
-            styles[cellRef] = EMPTY_CELL_STYLE;
+            applyCellStyle(cell, EMPTY_CELL_STYLE);
           }
         });
+
+        ws.getRow(rowIdx).height = 36;
         rowIdx++;
       });
     });
 
-    applyStylesToRange(ws, styles);
+    // ヘッダー行高
+    ws.getRow(1).height = 24;
 
-    // 日付セルの結合（同一日付の時限をまとめる）
-    const merges = [];
-    let currentRow = 1;
+    // 列幅 (1-based)
+    ws.getColumn(1).width = 14;
+    ws.getColumn(2).width = 14;
+    classes.forEach((_, cIdx) => {
+      ws.getColumn(3 + cIdx).width = 16;
+    });
+
+    // 日付セルの結合 (同一日付の時限分をまとめる)。1-based 行範囲。
+    let mergeStart = 2;
     dates.forEach(() => {
       if (periods.length > 1) {
-        merges.push({
-          s: { r: currentRow, c: 0 },
-          e: { r: currentRow + periods.length - 1, c: 0 },
-        });
+        ws.mergeCells(mergeStart, 1, mergeStart + periods.length - 1, 1);
       }
-      currentRow += periods.length;
+      mergeStart += periods.length;
     });
-    if (merges.length > 0) {
-      ws['!merges'] = merges;
-    }
-
-    XLSX.utils.book_append_sheet(wb, ws, tab.name);
   });
 
-  const projectName = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
-  const datePart = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `${projectName}_全体_${datePart}.xlsx`);
+  return workbook;
 }
 
-// --- 講師別Excel出力 ---
-export function downloadTeacherExcel(project) {
-  const wb = XLSX.utils.book_new();
+// ファイル名を組み立てる小ヘルパー (テスト用に分離)
+export function buildExcelFilename(project, suffix) {
+  const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
+  const datePart = new Date().toISOString().slice(0, 10);
+  return `${projectName}_${suffix}_${datePart}.xlsx`;
+}
+
+// ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
+export async function downloadScheduleExcel(project) {
+  const workbook = buildScheduleWorkbook(project);
+  await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
+}
+
+// ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
+export function buildTeacherWorkbook(project) {
+  const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
-
-  // 講師別ヘッダースタイル
-  const teacherHeaderStyle = {
-    font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-    fill: { fgColor: { rgb: '548235' } },
-    alignment: { horizontal: 'center', vertical: 'center' },
-    border: THIN_BORDER,
-  };
-
   const combinedGroups = project.combinedGroups || [];
-  const allRows = [["講師名", "日付", "時限", "クラス", "科目", "タブ名", "備考"]];
-  const allRowSubjects = [null]; // ヘッダー行は null
+
+  // 「全講師リスト」シート用の集約
+  const allRows = [];
+  const allRowSubjects = [];
 
   project.teachers.forEach(t => {
-    const personalRows = [["日付", "時限", "クラス", "科目", "場所(タブ)", "備考"]];
-    const personalSubjects = [null]; // ヘッダー行は null
+    // この講師の出勤コマを集める
+    const personalRows = [];
+    const personalSubjects = [];
 
     project.tabs.forEach(tab => {
-      tab.config.dates.forEach((d, dIdx) => {
-        tab.config.periods.forEach((p, pIdx) => {
-          tab.config.classes.forEach((c, cIdx) => {
-            const k = makeKey(dIdx, pIdx, cIdx);
+      tab.config.dates.forEach((d) => {
+        tab.config.periods.forEach((p) => {
+          tab.config.classes.forEach((c) => {
+            const k = makeKey(d.id, p.id, c.id);
             const entry = tab.schedule[k];
             if (entry && entry.teacher === t.name) {
-              const group = findCombinedGroup(combinedGroups, entry.subject, c, d);
-              const note = group ? `合同(${group.classes.join(',')})` : "";
-              const row = [d, p, c, entry.subject, tab.name, note];
+              const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
+              const note = group ? `合同(${group.classes.join(',')})` : '';
+              const row = [d.label, p.label, c.label, entry.subject, tab.name, note];
               personalRows.push(row);
               personalSubjects.push(entry.subject);
               allRows.push([t.name, ...row]);
@@ -205,72 +235,64 @@ export function downloadTeacherExcel(project) {
       });
     });
 
-    if (personalRows.length > 1) {
-      const ws = XLSX.utils.aoa_to_sheet(personalRows);
-      ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
+    if (personalRows.length === 0) return;
 
-      // ヘッダースタイル
-      const styles = {};
-      for (let c = 0; c < 6; c++) {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-        styles[cellRef] = teacherHeaderStyle;
-      }
-      // データ行スタイル
-      for (let r = 1; r < personalRows.length; r++) {
-        const subject = personalSubjects[r];
-        for (let c = 0; c < 6; c++) {
-          const cellRef = XLSX.utils.encode_cell({ r, c });
-          if (c === 3 && subject) {
-            // 科目列にカラーを適用
-            styles[cellRef] = makeSubjectCellStyle(subject, subjectColors);
-          } else {
-            styles[cellRef] = {
-              font: { sz: 10 },
-              alignment: { horizontal: 'center', vertical: 'center' },
-              border: THIN_BORDER,
-            };
-          }
+    const safeName = t.name.replace(/[\\/:?*[\]]/g, '').substring(0, 30);
+    const ws = workbook.addWorksheet(safeName);
+
+    // ヘッダ
+    const header = ['日付', '時限', 'クラス', '科目', '場所(タブ)', '備考'];
+    ws.addRow(header);
+    header.forEach((_, ci) => applyCellStyle(ws.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
+
+    // データ行
+    personalRows.forEach((row, ri) => {
+      ws.addRow(row);
+      const subject = personalSubjects[ri];
+      row.forEach((_, ci) => {
+        const cell = ws.getCell(ri + 2, ci + 1);
+        if (ci === 3 && subject) {
+          applyCellStyle(cell, makeSubjectCellStyle(subject, subjectColors));
+        } else {
+          applyCellStyle(cell, BODY_CELL_STYLE);
         }
-      }
-      applyStylesToRange(ws, styles);
+      });
+    });
 
-      const safeName = t.name.replace(/[\\/:?*[\]]/g, "").substring(0, 30);
-      XLSX.utils.book_append_sheet(wb, ws, safeName);
-    }
+    [14, 14, 10, 10, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
   });
 
   // 全講師リストシート
-  const wsAll = XLSX.utils.aoa_to_sheet(allRows);
-  wsAll['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
+  if (allRows.length > 0) {
+    const wsAll = workbook.addWorksheet('全講師リスト');
+    const allHeader = ['講師名', '日付', '時限', 'クラス', '科目', 'タブ名', '備考'];
+    wsAll.addRow(allHeader);
+    allHeader.forEach((_, ci) => applyCellStyle(wsAll.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
 
-  const allStyles = {};
-  // ヘッダースタイル
-  for (let c = 0; c < 7; c++) {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-    allStyles[cellRef] = teacherHeaderStyle;
+    allRows.forEach((row, ri) => {
+      wsAll.addRow(row);
+      const subject = allRowSubjects[ri];
+      row.forEach((_, ci) => {
+        const cell = wsAll.getCell(ri + 2, ci + 1);
+        if (ci === 4 && subject) {
+          applyCellStyle(cell, makeSubjectCellStyle(subject, subjectColors));
+        } else {
+          applyCellStyle(cell, BODY_CELL_STYLE);
+        }
+      });
+    });
+
+    [10, 14, 14, 10, 10, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
+  } else {
+    // 該当なしでも空シートを作って一貫性を保つ
+    workbook.addWorksheet('全講師リスト');
   }
-  // データ行スタイル
-  for (let r = 1; r < allRows.length; r++) {
-    const subject = allRowSubjects[r];
-    for (let c = 0; c < 7; c++) {
-      const cellRef = XLSX.utils.encode_cell({ r, c });
-      if (c === 4 && subject) {
-        // 科目列にカラーを適用
-        allStyles[cellRef] = makeSubjectCellStyle(subject, subjectColors);
-      } else {
-        allStyles[cellRef] = {
-          font: { sz: 10 },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: THIN_BORDER,
-        };
-      }
-    }
-  }
-  applyStylesToRange(wsAll, allStyles);
 
-  XLSX.utils.book_append_sheet(wb, wsAll, "全講師リスト");
+  return workbook;
+}
 
-  const projectName = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
-  const datePart = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `${projectName}_講師別_${datePart}.xlsx`);
+// ─── 講師別 Excel: 公開エントリ ────────────────────────────────────
+export async function downloadTeacherExcel(project) {
+  const workbook = buildTeacherWorkbook(project);
+  await downloadWorkbook(workbook, buildExcelFilename(project, '講師別'));
 }

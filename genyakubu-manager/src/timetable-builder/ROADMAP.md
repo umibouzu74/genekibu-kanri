@@ -1,10 +1,10 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / PR [#116](https://github.com/umibouzu74/genekibu-kanri/pull/116) マージ後想定
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1-C4 完了 + 校正レビュー対応済
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
-迷わず作業を引き継げる」ことを目的にしている。コミット粒度・ファイル位置・
-判断の経緯までできるだけ具体的に書く。
+迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
+未着手の C 系再設計だけ詳細を残す。
 
 ---
 
@@ -20,25 +20,45 @@
 ### 1.2 完成度の体感
 | 領域 | 状態 |
 |---|---|
-| データモデル | 🟢 v2 で安定。マイグレーション関数あり |
-| 自動生成 (MRV+バックトラック) | 🟢 制約充足は動く・複数案・部分解・Web Worker 化済 |
+| データモデル | 🟢 v3 で ID ベース。並び替え/追加/削除で schedule キーがずれない (C1) |
+| 自動生成 (MRV+バックトラック) | 🟢 制約充足は動く・複数案・部分解・Web Worker 化済・externalCounts と日次上限を尊重 (A1) |
+| 制約システム | 🟢 純粋関数として `logic/constraints/` に切り出し済 (B3) |
+| 状態管理 | 🟢 useReducer + 30+ action types で集約 (C2)、アクションフックは dispatch ラッパ |
+| 合同グループ伝播 | 🟢 `utils/combinedPropagation.js` に共通化済 (B1) |
 | UI 主要操作 (セル編集・D&D・コピペ・ロック) | 🟢 動く |
 | タブ管理 | 🟢 動く |
-| Excel 出力 (全体・講師別) | 🟢 動的 import で軽量起動 |
+| Excel 出力 (全体・講師別) | 🟢 動的 import + loading 表示 + エラー文言区別 (A3) |
 | JSON 入出力 | 🟢 講師マスタ差分検出付き |
 | Undo/Redo | 🟢 max 50 スナップショット |
+| 印刷 | 🟢 Toolbar に 🖨️ ボタン + 既存 CSS (A6) |
+| エラー通知 | 🟢 load 失敗を toast 通知 (B4) |
 | 合同グループ | 🟡 機能・UI ともにあるが実運用検証が浅い |
-| 印刷 | 🟡 CSS は整っているが Builder 内に印刷ボタンが無い |
-| エラー通知 | 🟡 console.error 止まりの箇所が散在 |
 | オンボーディング | 🔴 初見ユーザ向けガイダンス無し |
 | モバイル対応 | 🔴 大画面前提のレイアウト |
 | TypeScript 化 | 🔴 未対応 (親アプリは部分的に TS) |
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **49 件**（scheduleKey 28 / autoGenerator 18 / runGenerator 3）
-- カバー: マイグレーション・キー round-trip・MRV 制約・seed 決定性・部分解
-- **未カバー**: useProject 系フック全般、useAnalysis、UI コンポーネント、Excel 出力
+合計 **934 件** (timetable-builder 配下は約 257 件、他は親アプリ)
+主なファイル:
+- `utils/scheduleKey.test.js` (35)
+- `utils/combinedPropagation.test.js` (19)
+- `utils/excelExport.test.js` (18)
+- `logic/autoGenerator.test.js` (23)
+- `logic/runGenerator.test.js` (4)
+- `logic/constraints/teacherConstraints.test.js` (19)
+- `logic/constraints/scheduleConstraints.test.js` (13)
+- `hooks/useHistoryStack.test.jsx` (13)
+- `hooks/useProject.test.jsx` (36)
+- `hooks/projectFactory.test.js` (20)
+- `hooks/projectReducer.test.js` (57)
+
+カバー: マイグレーション (v1→v2→v3、混在空配列、範囲外キー drop)・
+キー round-trip・MRV 制約・seed 決定性・部分解・合同伝播・cell ops cascade・
+LocalStorage 保存・undo/redo・load error 通知・30+ action types の reducer
+純粋関数テスト・cascade cleanup (combinedGroups / externalCounts)・
+Excel workbook 構築 (hexToArgb / merge / fill / 合同備考)。
+**未カバー**: useAnalysis 詳細・UI コンポーネント。
 
 ---
 
@@ -46,306 +66,103 @@
 
 凡例: 🟡 = production 動作にじわっと効く / 🟢 = 品質・保守性
 
-各項目は「**A. 増分改善** → **B. 中規模リファクタ** → **C. 再設計**」の順。
-番号は優先度の参考だが、組み合わせて作業しても良い。
+完了項目は ✅ で短縮、未着手 (C 系再設計) は詳細を保持。
 
 ---
 
-## A. 増分改善（壊さずに足せる）
+## A. 増分改善 (全て完了)
 
-### A1. 🟡 externalCounts を solver の制約に組み込む
-**現状の問題**:
-- UI (`components/ConfigModal/ExternalCounts.jsx`) で「他学年・午前のコマ数」を講師×日付ごとに入力できる
-- `useAnalysis.js:50` ではこれを **集計表示** に使っているだけ
-- `logic/autoGenerator.js` の solver は **externalCounts を一切参照していない**
-- 結果：講師がすでに別学年で午前 4 コマ持っているのに、午後の生成で 4 コマ追加されて 1 日 8 コマ（過密）になる
-
-**やること**:
-1. `autoGenerator.js` の solve 内で `tempDaily[dayKey]` に加えて `externalCounts[dayKey]` を考慮
-2. ある講師の `tempDaily + external > MAX_DAILY_HOURS` ならその割当てを skip
-3. MAX_DAILY_HOURS は config 化（デフォルト 5 か 6）
-4. テスト追加: 「external 4 + 当該タブで 2 コマ目が候補に出ない」ケース
-
-**注意点**:
-- 既に書いた `tempDaily` インクリメントは生かせる（今は dead code）
-- MAX_DAILY_HOURS をハードコードでなく config / 講師個別設定にするか要相談
-- 工数: 1〜2 時間（テスト込み）
-
-**ファイル**: `logic/autoGenerator.js:225,251`, `hooks/useAnalysis.js:50`, 新規 test
-
----
-
-### A2. 🟢 useProject 系フックのテスト追加
-**現状の問題**:
-- `useProject.js` (555 行) / `useHistoryStack.js` / `useJsonIO.js` / `projectFactory.js` のロジックが完全に untested
-- 私の useProject 分割 (commit `4f5366a`) は per-function diff で挙動等価を確認したが、自動回帰検知できない
-- 今後の cell ops cascade 共通化（B1）や reducer 化（C2）でリグレッション risk
-
-**やること**:
-1. `@testing-library/react` の `renderHook` を使って useProject をテスト
-2. 優先順位:
-   - useHistoryStack: pushHistory / undo / redo / max 50 制限 / branch 切り捨て
-   - projectFactory: createNewProject / loadInitialProject の各分岐 (新キー/旧キー/defaults/全空)
-   - useProject: addTeacher / renameTeacher (cascade) / removeSubject (cascade) / handleAssign の合同グループ伝播
-3. handleSwapCells のような 70+ 行関数は別途集中して
-
-**注意点**:
-- jsdom 環境が要るので `// @vitest-environment jsdom` を冒頭に
-- LocalStorage モック（jsdom デフォルトで動く）
-- 工数: 4〜6 時間で 30〜40 ケース
-
-**ファイル**: 新規 `hooks/useProject.test.jsx`, `hooks/useHistoryStack.test.jsx`, `hooks/projectFactory.test.js`
+- ✅ **A1**: externalCounts を solver の制約に組み込む  
+  `project.maxDailyHours` (デフォルト 6) で 1 日あたりコマ数上限を判定。
+  未定は対象外。tempDaily は existing 割当 + externalCounts で pre-seed。
+- ✅ **A2**: useProject 系フックのテスト追加 (+67 ケース)  
+  useHistoryStack / projectFactory / useProject に renderHook テストを整備。
+- ✅ **A3**: Excel 出力ボタンに loading state とエラー詳細  
+  exportingType state で多重押下防止。動的 import 失敗と Excel 生成失敗を
+  toast 文言で区別。
+- ✅ **A4**: worker error 経路の重複 toast 回避  
+  errored フラグで done.then 側の「条件を見直してください」toast を skip。
+- ✅ **A5**: document.title の cleanup  
+  Builder アンマウント時に親アプリの title へ復帰。
+- ✅ **A6**: Builder 内に印刷ボタンを置く  
+  Toolbar.jsx に 🖨️ + window.print() (案 1)。CLAUDE.md の印刷二系統ルール準拠。
+- ✅ **A7**: dead code 整理  
+  resolveKey 削除。tempDaily は A1 で生きた。useRef は generationRef で使用中。
+- ✅ **A8**: ProjectContext.value の useMemo 化  
+  state-driving な fields だけを deps に置く。ROADMAP の `[projectState, ...]`
+  は毎レンダー object literal が変わるため意図通り効かないので
+  `[projectState.project, projectState.saveStatus, analysis, dashboard]` + eslint-disable。
 
 ---
 
-### A3. 🟡 Excel 出力ボタンにロード中スピナー & エラー詳細
-**現状の問題**:
-- `Header.jsx` の「📊 全Excel」「👤 個人Excel」は動的 import 完了まで無反応（冷キャッシュで数秒）
-- 二度押し可能 → 二重ダウンロード
-- `catch {}` で error を捨てているのでデバッグ困難（agent 指摘）
+## B. 中規模リファクタ (全て完了)
 
-**やること**:
-1. ボタンに `isLoading` state、押下中は disabled + spinner
-2. catch で `console.error(err)` を残す
-3. エラー toast にコンテキスト付与（"xlsx の読み込みに失敗しました" "ファイル生成に失敗しました" を区別）
-
-**工数**: 30 分
-
-**ファイル**: `components/Header.jsx`
-
----
-
-### A4. 🟡 worker error 経路で重複 toast を回避
-**現状の問題**:
-- `BuilderApp.jsx:78-104`: worker から error イベント → onError で toast、その後 done resolve → patterns.length === 0 で「条件を見直してください」toast、の二重表示
-
-**やること**:
-- onError 呼出時に local flag を立て、done.then の `else { showToast(...) }` を skip
-- もしくは onError の toast 文言だけにして done.then の error 分岐を削除
-
-**工数**: 15 分
-
-**ファイル**: `BuilderApp.jsx:62-107`
-
----
-
-### A5. 🟢 BuilderApp の document.title cleanup
-**現状の問題**:
-- `BuilderApp.jsx:22-24` で `document.title = "...時間割作成くん"` に変更
-- アンマウント時のクリーンアップなし
-- 別ビューに切り替えても title が「時間割作成くん」のまま
-
-**やること**:
-- useEffect cleanup で親アプリのデフォルト title (`"現役部 授業管理システム"`) に戻す
-
-**工数**: 10 分
-
-**ファイル**: `BuilderApp.jsx:21-24`
-
----
-
-### A6. 🟡 Builder 内に印刷ボタンを置く
-**現状の問題**:
-- 印刷 CSS (`@media print` / `.no-print`) は整っているが、Builder 内に明示的な印刷トリガが無い
-- ユーザは「ブラウザの印刷ダイアログを Cmd+P で開け」と察する必要あり
-- 親アプリには `PrintButton` コンポーネントがあるが、Builder は独立しているので使い分け要判断
-
-**選択肢**:
-1. `Toolbar.jsx` に 🖨 ボタンを追加して `window.print()` を呼ぶ（シンプル）
-2. 親の `PrintButton` を import して使う（統一感）
-3. 親の `handlePrint` (popup 方式 — `App.jsx`) に乗せる（ヘッダ・フィルタ等を紙面に出すパターン）
-
-**注意点**:
-- CLAUDE.md の「印刷システムの二系統」ルールに沿うこと
-- Builder のメインビュー = ScheduleTable は popup 方式の必要性は薄い（フィルタや凡例なし）
-- 推奨: 案 1（Toolbar に 🖨 を置いて window.print）
-
-**工数**: 30 分（推奨案 1）
-
-**ファイル**: `components/Toolbar.jsx`, `BuilderApp.jsx`
-
----
-
-### A7. 🟢 dead code 整理
-**項目**:
-1. `utils/scheduleKey.js:16` の `resolveKey` — テスト以外で未使用。pre-existing
-2. `logic/autoGenerator.js:225-251` の `tempDaily` — A1 を実装すれば「使われる」状態になる。A1 をやらないなら削除
-3. `BuilderApp.jsx` の `useRef` import が cell-related のみで使われているか要確認
-
-**工数**: 30 分
-
----
-
-### A8. 🟢 ProjectContext.value の useMemo 化
-**現状の問題**:
-- `contexts/ProjectContext.jsx:13-17` で value object を毎レンダー新規生成
-- useContext を呼ぶ全コンポーネントが毎回 re-render
-- 中の関数はそれぞれ useCallback されているので各自は stable だが、context value 自体の参照が変わる
-
-**やること**:
-- `value` を `useMemo` で囲む（deps は projectState の依存全部）
-- ※ projectState の各キーは hook 内で stable なので、`useMemo(() => ({...}), [projectState, analysis, dashboard])` で十分
-
-**工数**: 20 分
-
-**ファイル**: `contexts/ProjectContext.jsx`
-
----
-
-## B. 中規模リファクタ（内部構造の改善）
-
-### B1. 🟢 セル操作の cascade ロジック共通化
-**現状の問題**:
-- `handleAssign` / `handleCellPaste` / `handleCellClear` / `handleSwapCells` の 4 関数で「合同グループ伝播」「旧合同のクリーンアップ」のロジックが繰り返されている
-- 例: `useProject.js:230-280` (handleAssign) と `:380-410` (handleCellPaste) と `:420-440` (handleCellClear) と `:455-485` (handleSwapCells) で類似コード
-- 新しい合同関連の挙動を追加するたびに 4 箇所を直す必要 → 同期忘れリスク
-
-**やること**:
-1. `utils/combinedPropagation.js` を新設し、純粋関数として:
-   - `propagateAssignment(schedule, config, combinedGroups, dIdx, pIdx, cIdx, entry) → newSchedule`
-   - `cleanupOldCombined(schedule, config, combinedGroups, dIdx, pIdx, cIdx, oldSubject) → newSchedule`
-   - `getCombinedClassIndices(combinedGroups, subject, className, date, config) → number[]`
-2. 4 つのフック関数を上記呼び出しに書き直す
-3. ユニットテスト追加（純粋関数なので書きやすい）
-
-**注意点**:
-- リグレッション risk が高い領域なので、A2 (useProject テスト) を先に追加してから着手するのが安全
-- 工数: 4〜6 時間（テスト込み）
-
-**ファイル**: 新規 `utils/combinedPropagation.js` + test, `hooks/useProject.js` 大幅修正
-
----
-
-### B2. 🟢 useProject をさらに分割
-**現状の問題**:
-- 555 行は前回 787 → 555 に減らしたが、まだ大きい
-- handleAssign (40 行)・handleSwapCells (60 行)・handleCellPaste (50 行) など、cell 系だけで 200 行
-
-**やること**:
-1. B1 完了後、cell ops 系を `useScheduleActions.js` に抽出
-2. teacher 系 (addTeacher/removeTeacher/renameTeacher/toggle*) を `useTeacherActions.js` に
-3. subject 系 (addSubject/removeSubject/reorderSubjects) を `useSubjectActions.js` に
-4. 結果: useProject.js は 200 行未満の composer に
-
-**注意点**:
-- B1 の cascade 共通化と同時にやると一気に整理できる
-- A2 のテストが揃っていないとリスキー
-- 工数: 2〜3 時間（B1 後）
-
----
-
-### B3. 🟡 制約システムの拡張可能化
-**現状の問題**:
-- `autoGenerator.js` 内に制約チェックがインライン（`t.ngSlots?.includes(...)` など）
-- 新しい制約を足すたびに solver 内に分岐追加 → コードが太る・テスト面倒
-- 例: 「講師の 1 日あたり最大コマ数」「講師×時限のペア NG (午後のみ可など)」「クラスごとの曜日別必修科目」などの要望が来たら大変
-
-**やること**:
-1. `constraints/` ディレクトリ新設
-2. 各制約を `(state, candidate) => boolean` の純粋関数として表現
-3. solver は `constraints.every(c => c(state, candidate))` で判定
-4. 既存の制約 (NG slot / NG class / 同日同科目 / 同時限同講師) もこの形に書き直す
-
-**注意点**:
-- パフォーマンス影響に注意（制約チェック頻度が高い hot path）
-- 関数 call overhead を避けるため、closure で制約を pre-compile するパターンが良いかも
-- 工数: 1〜2 日
-
-**ファイル**: 新規 `logic/constraints/`, `logic/autoGenerator.js` 大幅修正
-
----
-
-### B4. 🟢 エラーハンドリング統一
-**現状の問題**:
-- `projectFactory.js:95` `console.error("Load failed", e)` で読込失敗時にユーザに通知なし
-- 似たような silent failure が他にも散在
-
-**やること**:
-1. `useUI` の `showToast` をユーティリティ層からも呼べるよう、エラーバウンダリ的な仕組みを用意
-2. または `loadInitialProject` を `(notify) => project` のシグネチャにして UI 層から notify を渡す
-3. 設定: 失敗時のフォールバック挙動（壊れたデータ → デフォルトに戻す → toast でユーザに通知）
-
-**工数**: 1〜2 時間
+- ✅ **B1**: cell ops の cascade ロジック共通化  
+  `utils/combinedPropagation.js` に 3 関数を抽出
+  (cleanupOldCombined / propagateAssignment / propagateTeacherChange)。
+  handleAssign / handleCellPaste / handleCellClear / handleSwapCells の
+  4 箇所が共通呼び出しに。useProject.js は 595 → 479 行 (B1 単独で -116)。
+- ✅ **B2**: useProject を 3 つのアクションフックに分割  
+  useScheduleActions / useTeacherActions / useSubjectActions に切り出し、
+  useProject.js は composer 155 行に。handleSetNg のみ cross-cutting で
+  toggleTeacherNg を受け取る。
+- ✅ **B3**: 制約システムの拡張可能化  
+  `logic/constraints/` に teacherConstraints / scheduleConstraints を新設。
+  9 個の純粋関数で既存制約 (NG / クォータ / 重複 / 日次上限) を表現、
+  autoGenerator から named function 呼び出しに。「constraints registry」
+  までは進めず、register 化は将来必要時の進化形として残す。
+- ✅ **B4**: エラーハンドリング統一  
+  loadInitialProject の戻り値を `{ project, loadError }` 化、useHistoryStack
+  → useProject → BuilderApp を経由して読込失敗を toast 通知。
 
 ---
 
 ## C. 破壊的再設計（一旦壊した方が良い候補）
 
-### C1. 🔴 データモデルの ID 化
-**現状の問題**:
-- 現データモデルは「インデックス」で日付・時限・クラスを参照（`d0-p1-c2`）
-- インデックスが UI 操作（並べ替え・追加・削除）でずれる → スケジュールキーがずれる → 整合性管理が複雑化
-- すでに `cleanSchedule` で「無効キーを破棄」している現実的回避策あり、しかし壊れたまま気づかないリスク残
+### ~~C1~~. ✅ データモデルの ID 化 (Project v3)
+完了。config.dates/periods/classes を `{ id, label }` の entity 配列に、
+schedule キーを ID ベースに移行。tab-local incremental ID (max+1)。v1→v2→v3
+チェーンマイグレーションで既存データを自動変換。NG キー / external キーは
+ラベル基準を維持 (タブ横断参照と JSON 可読性のため)。
 
-**提案**:
-- `dates: [{id, label}]`, `periods: [{id, label, startTime}]`, `classes: [{id, label}]` のような ID 付き entity
-- スケジュールキー: `d{dateId}-p{periodId}-c{classId}` のように ID ベース
-- ID は UUID か incremental
-- 並べ替え・名称変更で ID が変わらない → 整合性が自然に保たれる
-
-**移行戦略**:
-1. 新スキーマで Project v3 を定義
-2. v2 → v3 マイグレーションを書く（既存ユーザの LocalStorage を v3 に変換）
-3. すべての参照箇所（autoGenerator / cell ops / Excel 出力 / 集計）を ID ベースに修正
-4. インデックスベース API は廃止
-
-**コスト**: 大規模。1〜2 週間
-**リスク**: 既存データの移行に bug が入ると LocalStorage の中身を壊す → JSON 出力でバックアップを取るフローを必ず先に整備
-**やる価値**: 中。現状の cleanSchedule 戦法でもまあ動いているので、不具合報告が多発したら検討
+並び替え・追加・削除で schedule キーがずれない構造が確立。192 箇所の
+`makeKey` 参照と 17 ファイルを ID 名 (dateId/periodId/classId) に更新。
+scheduleKey.test.js で migrateProject の v1→v3 チェーンを 31 件で検証、
+全 898 tests / lint / typecheck / production build pass で挙動等価。
 
 ---
 
-### C2. 🟡 状態管理を useReducer + action types に
-**現状の問題**:
-- `useProject.js` の各 useCallback が `{...project, key: newValue}` パターンで状態を更新
-- 30+ の useCallback が `[project, pushHistory]` を deps に持つ → project 変化のたびに全部再生成
-- テストするには renderHook で各関数を呼んで結果を見る必要がある（B1/B2 で多少改善するが）
-
-**提案**:
-- `useReducer((state, action) => newState, initialProject)` に置き換え
-- action types: `'tab/add'`, `'teacher/rename'`, `'cell/assign'`, `'cell/swap'`, etc.
-- reducer は純粋関数なので単体テストが書きやすい
-- redux-style middleware 風に履歴管理 (undo/redo) を組み込み可
-
-**移行戦略**:
-- B1/B2 を先にやって ops の境界を明確化
-- そのうえで「action 化」する
-
-**コスト**: 中規模。3〜5 日
-**リスク**: 公開 API (useProject の return) の互換性を保つラッパが必要
-**やる価値**: 中〜高。テストの書きやすさが大きく変わる
+### ~~C2~~. ✅ 状態管理を useReducer + action types に
+完了。`hooks/projectReducer.js` (485 行) に 30+ action types を純粋関数として
+集約、`useHistoryStack` を useReducer ベースに書き換え。3 つのアクションフックは
+386 行 → 76 行の dispatch ラッパに。dispatch が stable なので callback も
+re-render で identity 不変。pushHistory / setProject は旧 API 互換ラッパとして
+残置。projectReducer.test.js で 43 ケース、既存 useProject.test.jsx 36 ケースは
+そのまま PASS で挙動等価。
 
 ---
 
-### C3. 🔴 UI のデザインシステム統合
-**現状の問題**:
-- Builder UI: Tailwind の鮮色 (`bg-blue-600` `bg-green-600` `bg-purple-50` 等)
-- 親アプリ: dark sidebar + muted パレット (`colors.bg = #f0f1f3`, `colors.primary = #1a1a2e`, `S.btn` の柔らかいトーン)
-- 配色が違いすぎて Builder が「貼り付け感」を出している（前回 commit `a2ebcfb` で外側 padding/背景を整えたが、内部のボタン・モーダル色は手付かず）
-
-**提案**:
-1. `styles/builderTokens.js` を新設し、親の `colors` / `S` をマッピングして Builder トークンを作る
-2. 全 UI 要素を tailwind 鮮色 → builder トークンへ書き換え（`<button>` の className 全部）
-3. もしくは Tailwind を捨てて inline style ベース（親と同じパターン）に書き直す
-
-**コスト**: 大規模。1〜2 週間（全 UI コンポーネントを触る）
-**やる価値**: 中。視覚的統一は UX 改善になるが、機能改善ではない
-**注意**: A6（印刷ボタン）と一緒にやると効率良いかも
+### ~~C3~~. ✅ UI のデザインシステム統合
+完了。tailwind.config.js に `builder-*` 名前空間で親アプリの `colors` と
+同値のトークンを定義し、Builder 配下 18 ファイルの className を muted
+パレットに置換。主要 CTA は `builder-primary` (#1a1a2e)、副次アクションは
+`builder-blue` (#2e6a9e) を中心に機能差別化を維持。`bg-purple-600` 等の
+鮮色は全消滅。BuilderApp バンドル +2.92 kB のみ。
 
 ---
 
-### C4. 🟢 xlsx-js-style → exceljs への置き換え検討
-**現状の問題**:
-- xlsx-js-style: 874kB（gzip 324kB）。動的 import で初期負荷は無いが、Excel 出力時に重い
-- `xlsx-js-style` は `xlsx` (SheetJS) のフォーク。本家がライセンス変更後 (CC-BY → 商用) も MIT のフォークが続いているが、メンテ状況は要確認
-- 代替: `exceljs` (1MB クラスだが API が綺麗)、`@e965/xlsx` (xlsx の MIT フォーク)、自前で OOXML 書き出し
+### ~~C4~~. ✅ Excel 出力ライブラリの置換
+完了。xlsx-js-style (2022-04 以降未更新、31 open issues) から exceljs
+(MIT / 活発な保守 / 2024-10 リリース) へ置換。`@e965/xlsx` は SheetJS
+Community Edition のスタイル機能を持たないため除外。`utils/excelExport.js`
+は ExcelJS API で全面書き換えしつつ、公開 API
+(`downloadScheduleExcel` / `downloadTeacherExcel`) は維持。
 
-**提案**:
-- 大規模調査: 各候補のサイズ・スタイル機能の充実度・メンテ状況・ライセンスを比較
-- 移行する場合は `excelExport.js` の API（downloadScheduleExcel / downloadTeacherExcel）を保ったまま実装差し替え
+バンドル変化: gzip 圧縮後 **324 kB → 273 kB (-16%)**、非圧縮は 874 kB →
+944 kB (+8%)。dynamic import は維持で BuilderApp 本体 88 kB に影響なし。
 
-**コスト**: 調査 1 日 + 実装 2〜3 日
-**やる価値**: 低〜中。現状で動いているので緊急度は低い
+**残課題**: 生成された Excel ファイルの視覚的確認 (科目カラー / セル結合 /
+罫線 / 列幅・行高) はユーザ環境での手動チェックが必要。
 
 ---
 
@@ -371,10 +188,8 @@
 - 履歴は最大 N 件 or N MB のしきい値で間引き
 - IndexedDB 移行（容量制限が緩い）
 
-### R3. xlsx-js-style のメンテ状況
-- 詳細未調査。最新バージョン・コミット頻度・open issues を要確認
-- 万一メンテ停止していても、現状動いているので緊急度低
-- 長期的には C4 を検討
+### ~~R3~~. ✅ xlsx-js-style のメンテ状況
+C4 で exceljs に置換済み (活発に保守されている MIT パッケージ)。リスク解消。
 
 ### R4. 親アプリの View キー衝突
 - 現在 chord は `b` を BUILDER に割当て済み。他に空いているのは `f`, `g`, `i`, `j`, `k`, `l`, `n`, `p`, `q`, `r`, `u`, `x`, `y`, `z` 程度
@@ -396,24 +211,39 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 
 ### 4.2 Builder の構成把握
 - メインエントリ: `src/timetable-builder/BuilderApp.jsx`
-- 状態管理: `src/timetable-builder/hooks/useProject.js` (composer) + `useHistoryStack.js` + `useJsonIO.js` + `projectFactory.js`
-- 自動生成: `src/timetable-builder/logic/autoGenerator.js` (純粋) + `runGenerator.js` (Worker ラッパ) + `autoGenerator.worker.js` (Worker entry)
-- データキー: `src/timetable-builder/utils/scheduleKey.js` (インデックスベース + 旧形式マイグレーション)
-- 親への接続点: `src/App.jsx` (lazy import + view 配置), `src/constants/views.js` (BUILDER), `src/constants/chords.js` (b), `src/components/Sidebar.jsx` (メニュー)
+- 状態管理 (B2 で分割 + C2 で reducer 化):
+  - `hooks/projectReducer.js` (純粋 reducer、30+ action types を 1 箇所に集約)
+  - `hooks/useProject.js` (composer 151 行)
+  - `hooks/useHistoryStack.js` (useReducer + autosave、61 行)
+  - `hooks/useScheduleActions.js` (dispatch ラッパ、40 行)
+  - `hooks/useTeacherActions.js` (dispatch ラッパ、21 行)
+  - `hooks/useSubjectActions.js` (dispatch ラッパ、15 行)
+  - `hooks/useJsonIO.js` (JSON I/O)
+  - `hooks/projectFactory.js` (load + migrate)
+- 制約 (B3 で抽出): `logic/constraints/teacherConstraints.js` / `scheduleConstraints.js`
+- 合同伝播 (B1): `utils/combinedPropagation.js`
+- 自動生成: `logic/autoGenerator.js` (純粋) + `runGenerator.js` (Worker ラッパ)
+- データキー: `utils/scheduleKey.js` (インデックスベース + 旧形式マイグレーション)
+- 親への接続点: `src/App.jsx` (lazy import), `src/constants/views.js` (BUILDER),
+  `src/constants/chords.js` (b), `src/components/Sidebar.jsx`
 
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 33 files / 727 tests
+npm test            # 41 files / 934 tests (timetable-builder 約 257 件)
 npm run typecheck   # tsc --noEmit
-npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
+npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-- まず A1 (externalCounts を solver に組み込む)：効果が見えやすく、小さい
-- 並行で A2 (useProject テスト追加)：以後のリファクタの安全網
-- A2 が揃ったら B1 (cell ops cascade 共通化) → B2 (さらに分割)
-- 余裕があれば A3〜A8 を順次
+ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出てきたら適切な
+セクション (A/B/C) に追加して、優先度に応じて着手する。
+
+未着手の改善候補 (1.2 表の 🔴 項目):
+- オンボーディング: 初見ユーザ向けガイダンス無し
+- モバイル対応: 大画面前提のレイアウト
+- TypeScript 化: Builder 配下は未対応 (親アプリは部分的に TS)
+- Firebase 同期: 意図的に未対応
 
 ### 4.5 やる前に必ず読むべきファイル
 - このファイル (ROADMAP.md)
@@ -426,14 +256,255 @@ npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
 - 削除 UX で `confirmedRemove` が必要なところに `removeWithUndo` を使う
 
 ### 4.7 既存 PR / 関連リンク
-- PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（このロードマップ作成前の全作業）
-- 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可（もう物理ファイルはない）
+- PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
+- PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
+- A1-A8 + B1-B4 + C1-C4 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
+  (ROADMAP 主要項目 13 件 + 校正レビュー指摘の Critical / High / Medium / Low /
+  Nit 対応 完了)
+- 校正レビューで発見された修正:
+  - Critical: migrateTabV2toV3 の混在空配列 corruption
+  - High: combinedGroups / externalCounts の cascade cleanup (3 箇所)
+  - Medium: cell/swap source.locked 防御、config/setList の dedupe、
+    excelExport テスト追加、renameHeader/bulkAction 正常系テスト追加
+- 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
 
-## 5. このドキュメントの更新ルール
+## D. 完成度を上げるための今後の課題 (新規セクション、2026-05-16 追加)
 
-- 各項目を実装したら ✅ を付けるか、項目自体を削除する
+A〜C 系を完了してマージ準備が整った状態で、**「ここから時間割作成ツールを
+完成形にしていくための」** 課題を整理する。各項目は **規模 / 価値 /
+推奨タイミング** を併記している。スコープは「機能完成度」「テスト」
+「パフォーマンス」「再設計レベルの判断」を含む。
+
+### D1. ユーザビリティ / UX
+
+#### D1a. 🟠 オンボーディング無し
+- **現状**: 初回起動でいきなりスケジュール表が表示される。`grep onboard tutorial welcome firstRun` で 0 ヒット。
+- **改善**: 空状態の説明オーバーレイ、または「初回ガイドツアー」。最低限「右クリックで日付/クラス名を変更できる」「⚙️設定で講師・科目を編集」「🧙‍♂️自動作成で MRV+バックトラックの解を試せる」を案内。
+- **規模**: 中 / **価値**: 高 / **推奨**: 早期に着手
+
+#### D1b. 🟠 モバイル / 狭画面対応
+- **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel と ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。スケジュール表は overflow-auto で横スクロールで対応するが、Toolbar 内のボタン群は折り返さない。
+- **改善**: Toolbar の sm 向け折りたたみ、Header の Excel ボタンを dropdown 化、ScheduleTable は max-w を CSS variable で制御。
+- **規模**: 中 / **価値**: 中 (主用途は PC だが移動先での確認ニーズあり)
+
+#### D1c. 🟠 バリデーションの可視化不足
+- **現状**: Toolbar 進捗バーと「⚠️N件」のみ。「科目クォータ未達」「NG セルに講師ゼロ」「講師 1 日上限近接」などは個別セルにしか出ない。
+- **改善**: 「タブごとに残課題件数を表示」「設定モーダル内で『今のままだと解けない制約』を可視化」。
+- **規模**: 中 / **価値**: 高 (自動生成失敗時のデバッグが現状辛い)
+
+#### D1d. 🟡 名前付きスナップショット
+- **現状**: undo/redo の history はあるが、特定状態を「Pattern A」のように名前付き保存できない。生成結果 3 案も SummaryPanel に居る間だけ。
+- **改善**: スロット型の保存・適用 (project レベル or タブレベル)。
+- **規模**: 中 / **価値**: 中
+
+#### D1e. 🟡 スケジュール差分ビュー
+- **現状**: 自動生成 N 案は SummaryPanel で集計のみ。実セルの違いは適用前後比較しないと見えない。
+- **改善**: A/B 案の cell-by-cell diff (色違いハイライト)。
+- **規模**: 中 / **価値**: 中
+
+#### D1f. ⚪ ショートカット (既存項目)
+- 別記 (CLAUDE.md `A7` / `A8`): Shift+? の実機検証 / ユーザカスタマイズ。本ロードマップでも継続。
+
+---
+
+### D2. テスト網羅性
+
+#### D2a. 🟠 useAnalysis のテスト 0 件
+- **現状**: `hooks/useAnalysis.js` (約 120 行) に対応するテストが無い。conflictMap / errorKeys / teacherDailyCounts / subjectOrders / dailySubjectMap の計算ロジックが untested。
+- **改善**: hook を切り分けて純粋関数に近づけ、テストを追加。再構築 (D4e) と同時にやると効率的。
+- **規模**: 小〜中 / **価値**: 高 (UI 多数が依存)
+
+#### D2b. 🟡 UI コンポーネントテスト 0 件
+- **現状**: `components/*.test.*` 0 ファイル。Header / Toolbar / ScheduleCell / ConfigModal 各 tab は useProject 経由の動作テストでカバーされているが、コンポーネント固有のロジック (Header の Excel 出力中 disabled、Toolbar の scrollToFirstError、ScheduleCell のキーボードナビ) は黒箱。
+- **改善**: 主要 3 コンポーネント (Header / Toolbar / ScheduleCell) に絞った testing-library テスト。
+- **規模**: 中〜大 / **価値**: 中
+
+#### D2c. 🟡 実 Worker 経路のテスト無し
+- **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ実行。本番 (`new Worker()` 経由) は untested。cancel・terminate・error メッセージプロトコルが silent regression し得る。
+- **改善**: Playwright もしくは vitest browser mode で Worker 動作を E2E。
+- **規模**: 中 / **価値**: 中
+
+#### D2d. 🟡 Excel 実バイナリ検証
+- **現状**: C4 で `buildScheduleWorkbook` / `buildTeacherWorkbook` の構造テスト 18 件を追加したが、実 xlsx ファイルを開いた時の見栄え (色・罫線・列幅) は手動確認のみ。
+- **改善**: exceljs で書き出し → 同じ exceljs で再読込 → round-trip 比較。または Playwright で download → 解凍 → OOXML XML 検証。
+- **規模**: 中 / **価値**: 中
+
+---
+
+### D3. パフォーマンス / スケーラビリティ
+
+#### D3a. 🟢 cleanSchedule の O(D×P×C) → O(K) 化
+- **現状**: `constants.js:cleanSchedule` は全 (dates × periods × classes) を iterate して valid key Set を作り、schedule を filter。デフォルト 6×3×4=72 だが、ピーク利用で数百になり得る。
+- **改善**: 既存 schedule keys を iterate し、entity が存在するか即時判定する方向に反転。
+- **規模**: 小 / **価値**: 低〜中
+
+#### D3b. 🟡 solver スケーリング計測
+- **現状**: `MAX_ITERATIONS = 500,000`。実データで何コマまでなら数秒以内に解けるか未計測。3 学年 × 7 クラス × 6 日 × 4 時限 ≒ 504 セルあたりが現実上限と思われるが unknown。
+- **改善**: ベンチマーク + 必要に応じ部分解戦略の改善 (現状は MRV のみ)。
+- **規模**: 中 / **価値**: 中
+
+#### D3c. ⚪ excelExport バンドル削減 (旧 C4 残課題)
+- **現状**: 944 kB (gzip 273 kB)。dynamic import で起動には影響無いが、初回 Excel 出力に数百 ms 遅延。
+- **改善**: exceljs の Workbook + xlsx writer のみ tree-shake、もしくは OOXML 自前書き出し。
+- **規模**: 大 / **価値**: 低 (動的 import で吸収済み)
+
+---
+
+### D4. アーキテクチャ改善 (再設計レベル)
+
+#### D4a. 🟢 schedule キー object 化
+- **現状**: 文字列 `"d1-p1-c1"` を `parseKey` で分解。C1 移行で形式は単純化されたが、`parseInt` が走る。
+- **改善**: `{dateId, periodId, classId}` の object key (`Map` を使う)。
+- **規模**: 大 (192 makeKey 呼び出しすべて touch、C1 と同等)
+- **価値**: 低〜中
+- **「壊した方が良い」判断**: 現状でほぼ問題無い。文字列 key は localStorage に保存しやすい (object key は JSON 化困難)。**やらなくて良い**寄り。
+
+#### D4b. 🟡 combinedGroups / externalCounts を ID 化
+- **現状**: ラベル文字列で参照。今回 (校正対応) で cascade cleanup helper を入れたが、reducer の責務が膨らんだ。
+- **改善**: タブ横断の class / teacher / subject ID を導入し、cleanup を不要にする。
+- **規模**: 大
+- **価値**: 中〜高
+- **判断**: ラベル ベースの利点 (JSON 可読性、タブ間で同名クラスが自動共有される) を失う。**ユーザのデータ移植性とのトレードオフ**。「壊す」価値はあるが、慎重に。
+
+#### D4c. 🔴 Tailwind と inline-style の二系統解消
+- **現状**: Builder は Tailwind (C3 で `builder-*` トークン化)、親アプリは inline style + `tokens.js`。色値だけは同期したが、styling paradigm は別物。
+- **改善**: どちらかに統一。
+  - 親を Tailwind 化: 親アプリ全 view 触る。巨大。
+  - Builder を inline style 化: Tailwind を Builder から外す。中規模。
+- **規模**: 大 / **価値**: 中
+- **「壊した方が良い」候補**: 長期 maintenance を考えると統一が望ましい。**但し、親アプリの方針として inline style + tokens.js が確立しているなら、Builder を inline style に書き換える方が一貫性が出る**。決定は別途相談。
+
+#### D4d. 🟡 ScheduleCell.jsx の分解
+- **現状**: 137 行。subject select / lock button / teacher select / matrix navigation / conflict 表示 / 合同表示などが 1 コンポーネント内。
+- **改善**: SubjectSelect / TeacherSelect / CellLockButton / 別ファイルへ。Navigation は useCellNavigation hook へ。
+- **規模**: 中 / **価値**: 中 (可読性 + テスト容易性 = D2b の前提)
+
+#### D4e. 🟡 useAnalysis の分解
+- **現状**: 1 つの useMemo で 5 種類の集計を計算 (約 75 行)。conflictMap だけ欲しい consumer も全部計算される。
+- **改善**: セクション分割 (useConflicts / useSubjectOrders / useTeacherCounts)、必要なものだけ subscribe。
+- **規模**: 中 / **価値**: 中 (テスト容易性 + 部分再計算)
+
+#### D4f. 🟢 handleResetAll の reload 回避
+- **現状**: `window.location.reload()` で強制リロード。React 外の hack。
+- **改善**: dispatch('project/replace') で初期 project (`createNewProject(...)`) に差し戻す。LocalStorage クリアは別 effect。
+- **規模**: 小 / **価値**: 小〜中
+
+#### D4g. 🟢 cell/setNg と teacher/toggleNg の重複
+- **現状**: `cell/setNg` (UI セルから NG 登録) と `teacher/toggleNg` (講師タブから NG 登録) が同じ操作を異なる payload で行う。
+- **改善**: `teacher/toggleNg` のみ残し、`cell/setNg` は派生 action でラップ。
+- **規模**: 小 / **価値**: 小
+
+---
+
+### D5. アクセシビリティ / 国際化
+
+#### D5a. 🟠 ARIA / role 属性ゼロ
+- **現状**: `grep "aria-\|role="` で Builder 配下 0 件。スクリーンリーダーに対して構造が全く伝わらない。
+- **改善**: 最低限以下を入れる:
+  - `<table>` に `<th scope="col">` / `<th scope="row">`
+  - ConfigModal に `role="dialog"` + `aria-modal="true"` + `aria-labelledby`
+  - selectbox に `aria-label`
+  - 進捗バーに `role="progressbar" aria-valuenow={dashboard.progress}`
+- **規模**: 中 / **価値**: 中 (法人ユース想定なら必須化する可能性)
+
+#### D5b. 🟡 キーボード操作の完成度
+- **現状**: ScheduleCell に矢印ナビあり (D4d で hook 化候補)。ConfigModal の tab 切り替え (基本/科目/クラス/...) は左右矢印未対応。
+- **改善**: 評価表作成 → 不足を補う。
+- **規模**: 中 / **価値**: 中
+
+#### D5c. ⚪ 日本語固定 (i18n)
+- **現状**: 文言ハードコード。当面ターゲットが日本国内塾なので保留で良い。
+- **判断**: 海外展開などの要件が出るまで触らない。
+
+---
+
+### D6. 機能拡張 (新規)
+
+#### D6a. 🟠 CSV / Excel からの bulk import
+- **現状**: 講師マスタも NG 設定も手入力。初期セットアップ時の負担大。
+- **改善**: CSV import (講師名・担当科目 / NG 日時) と、既存 Excel スケジュールからの取り込み。
+- **規模**: 中 / **価値**: 高 (新規ユーザの導入障壁を下げる)
+
+#### D6b. 🟡 自動修復 (conflict resolution wizard)
+- **現状**: 自動生成が完全解を返せないと部分解 + warning のみ。
+- **改善**: 「この conflict を解消するにはこの講師を別の日に動かす必要があります」のような提案。
+- **規模**: 大 / **価値**: 中 (制約緩和の意思決定 UI が必要)
+
+#### D6c. 🟡 講師の連続コマ数制約
+- **現状**: 1 日合計 `maxDailyHours` のみ。「2 コマ連続 NG」「3 コマ連続後は休憩」のような連続性制約は無い。
+- **改善**: teacherConstraints に追加。
+- **規模**: 中 / **価値**: 中
+
+#### D6d. 🟡 テンプレート機能 (年度間コピー)
+- **現状**: project ごとに完全独立。「去年のテンプレを今年に流用」する正規ルート無し (JSON 保存→読込で代替可)。
+- **改善**: テンプレ保存・適用、講師マスタだけ引き継ぎ・スケジュールだけ引き継ぎ、などの options。
+- **規模**: 中 / **価値**: 中
+
+#### D6e. ⚪ Firebase 同期 (ROADMAP 既知の「意図的に未対応」)
+- **現状**: localStorage 単独運用 (R2)。共有ニーズが顕在化したら検討。
+- **判断**: ユースケース次第。組織内共有が要件化したら着手。
+- **規模**: 大
+
+---
+
+### D7. 既知の技術的負債
+
+#### D7a. 🟡 TypeScript 化
+- **現状**: Builder 配下は JS のみ。親アプリも部分的 TS。
+- **改善**: Builder 配下を `.jsx` → `.tsx`、`.js` → `.ts` に。`Project` / `Tab` / `Config` / `ScheduleEntry` / `CombinedGroup` の型定義から始める。
+- **規模**: 大 / **価値**: 中
+- **判断材料**: D4b / D4e の再設計と同時にやると二度手間にならない。
+
+#### D7b. ⚪ 印刷システム二系統の文書化
+- **現状**: `CLAUDE.md` に運用ルール記載済。各 view にも inline コメントがあれば理想。
+- **規模**: 小 / **価値**: 低
+
+#### D7c. ⚪ Builder vs 親アプリのテスト共通基盤
+- **現状**: Builder は Vitest + testing-library、親も同じ構成だが setup は別。共通 mock / helper があれば便利。
+- **規模**: 小 / **価値**: 低
+
+---
+
+### D 系の推奨着手順
+
+| Phase | 着手項目 | 規模 | 効果 |
+|---|---|---|---|
+| **Quick wins** (1 セッション) | D4f handleResetAll / D4g cell/setNg 統合 / D7b 印刷文書 | 小 | 軽量、即効 |
+| **Test foundation** (2-3 セッション) | D2a useAnalysis / D2b UI components / D4e useAnalysis 分解 (D2a の前提) | 中 | 後続改善の安全網 |
+| **UX phase** (2-3 セッション) | D1a オンボーディング / D1c バリデーション可視化 / D6a bulk import / D5a a11y | 中 | ユーザ価値最大 |
+| **Code quality** (1-2 セッション) | D4d ScheduleCell 分解 / D3a cleanSchedule O(K) | 中 | 可読性 + 安定性 |
+| **Major refactor** (要決断) | D4b 全 ID 化 / D4c styling 統一 / D7a TS 化 / D6e Firebase | 大 | 長期負債解消 |
+
+### D 系の「一旦壊した方が良い」候補
+
+これらは現状動作している部分を **意図的に破壊して作り直す** ことで長期的な
+ベネフィットが見込める案件。実施判断は別途相談 (失敗時の影響大):
+
+1. **D4c: Tailwind と inline-style の統一**
+   - 二系統が残るのは長期 maintenance の負債。どちらに寄せるかは戦略判断。
+   - 推奨: 親アプリの paradigm が確立しているので Builder を inline style 化。
+   - リスク: Builder UI を全面書き直し。tailwind.config.js / tailwind.css 削除。
+
+2. **D4b: combinedGroups / externalCounts の完全 ID 化**
+   - cascade cleanup helper を撤廃できる。reducer がスリムに。
+   - リスク: JSON 出力が人間可読でなくなる、タブ間の自動共有が失われる。
+   - 推奨: ユーザがJSON を直接編集することがあるなら見送り。
+
+3. **D7a: TypeScript 化**
+   - 上記 D4b / D4e と同時にやれば型と structure を一発で固められる。
+   - リスク: Vite/Vitest 設定追加、JSX→TSX 全置換、外部型のインストール。
+   - 推奨: D4b / D4e のリファクタが決まったら抱き合わせ。
+
+4. **D6e: Firebase 同期 (ローカル運用からの脱却)**
+   - LocalStorage 容量 (R2) の根本解決にも繋がる。
+   - リスク: 認証・コンフリクト解決・コスト管理。
+   - 推奨: 共有運用ニーズが具体化してから。
+
+---
+
+- 各項目を実装したら ✅ を付けて短縮する (詳細は commit message とコードのコメントに残す)
 - 新たに発見された問題は適切なセクション (A/B/C) に追加
 - リスク (R*) は実害が出たり対策が完了したら更新
-- 「次セッション quick start」のコマンドは npm スクリプトが変わったら追従
+- 「次セッション quick start」のコマンドと検証数値 (test 件数等) は変わったら追従

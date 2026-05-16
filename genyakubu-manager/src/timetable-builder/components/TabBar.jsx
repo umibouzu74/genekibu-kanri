@@ -35,13 +35,13 @@ export default function TabBar() {
           key={tab.id}
           onClick={() => switchTab(tab.id)}
           onDoubleClick={(e) => handleRenameClick(e, tab)}
-          className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${project.activeTabId === tab.id ? "bg-white text-blue-700 font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-gray-200 text-gray-500 hover:bg-gray-300 mt-1"}`}
+          className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${project.activeTabId === tab.id ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
         >
           {tab.name}
           {project.tabs.length > 1 && (
             <span
               onClick={(e) => handleDeleteClick(e, tab.id)}
-              className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors cursor-pointer"
+              className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-danger-soft hover:text-builder-red text-builder-ink-ghost transition-colors cursor-pointer"
               title="このタブを削除"
             >×</span>
           )}
@@ -49,7 +49,7 @@ export default function TabBar() {
       ))}
       <button
         onClick={handleAddClick}
-        className="px-3 py-2 text-gray-500 hover:text-blue-600 font-bold text-sm"
+        className="px-3 py-2 text-builder-ink-muted hover:text-builder-blue font-bold text-sm"
         title="新しい学年タブを追加"
       >+ タブ追加</button>
     </div>

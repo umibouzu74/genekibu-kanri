@@ -1,6 +1,23 @@
 // 自動生成ロジック（MRV法 + バックトラッキング）
 // 純粋関数として抽出。UI依存なし。
-import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+//
+// v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
+// スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
+// externalCounts) には label を渡す。
+import { makeKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import {
+  canTeachSubject,
+  isNgSlot,
+  isNgClass,
+  isTeacherCandidateFor,
+  wouldExceedDailyLimit,
+} from './constraints/teacherConstraints';
+import {
+  hasSubjectInSameDayClass,
+  hasSubjectInSameDayClassExcept,
+  hasTeacherInSamePeriod,
+  hasSubjectQuotaRemaining,
+} from './constraints/scheduleConstraints';
 
 // シード付き疑似乱数生成器 (Mulberry32)
 function mulberry32(seed) {
@@ -25,6 +42,15 @@ function seededShuffle(arr, rng) {
 
 const MAX_ITERATIONS = 500000;
 
+// 講師 1 人あたりの 1 日コマ数上限のデフォルト。
+// externalCounts (他タブ・他学年での既存コマ数) + 当該タブの割当 + 既存セル
+// の合計がこの値を超える講師は候補から外す。
+// project.maxDailyHours で上書き可。
+const DEFAULT_MAX_DAILY_HOURS = 6;
+
+// 講師の名前のうち daily 上限の対象外とするもの (placeholder)。
+const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
+
 /**
  * 単一パターンを生成する（シード指定可能）
  * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number }}
@@ -36,6 +62,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const currentConfig = activeTab.config;
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
+  const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
 
   let solution = null;
   const slots = [];
@@ -46,10 +73,10 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   });
 
   // 既存の科目カウントを集計
-  currentConfig.dates.forEach((d, dIdx) => {
-    currentConfig.periods.forEach((p, pIdx) => {
+  currentConfig.dates.forEach((d) => {
+    currentConfig.periods.forEach((p) => {
       currentConfig.classes.forEach((c, cIdx) => {
-        const k = makeKey(dIdx, pIdx, cIdx);
+        const k = makeKey(d.id, p.id, c.id);
         const e = currentSchedule[k];
         if (e?.subject) {
           if (currentCounts[cIdx]) currentCounts[cIdx][e.subject] = (currentCounts[cIdx][e.subject] || 0) + 1;
@@ -58,12 +85,45 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     });
   });
 
+  // 講師の日別コマ数を pre-seed:
+  //   1. project.externalCounts (他タブ・他学年などの外部コマ) を加算
+  //   2. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
+  // ここで作った initialDaily を solve に渡し、上限チェックの基準とする。
+  const initialDaily = {};
+  const externalCounts = project.externalCounts || {};
+  Object.keys(externalCounts).forEach(k => {
+    const v = externalCounts[k] || 0;
+    if (v > 0) initialDaily[k] = v;
+  });
+
+  const seenCombinedDay = new Set();
+  currentConfig.dates.forEach((d) => {
+    currentConfig.periods.forEach((p) => {
+      currentConfig.classes.forEach((c) => {
+        const k = makeKey(d.id, p.id, c.id);
+        const entry = currentSchedule[k];
+        if (!entry?.teacher || entry.teacher === DAILY_LIMIT_EXEMPT_TEACHER) return;
+
+        const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
+        if (group) {
+          const tk = `${d.id}-${p.id}-${group.id}-${entry.teacher}`;
+          if (seenCombinedDay.has(tk)) return;
+          seenCombinedDay.add(tk);
+        }
+
+        const dayKey = makeExternalKey(d.label, entry.teacher);
+        initialDaily[dayKey] = (initialDaily[dayKey] || 0) + 1;
+      });
+    });
+  });
+
   // 未充填スロットを構築
-  currentConfig.dates.forEach((d, dIdx) => currentConfig.periods.forEach((p, pIdx) => currentConfig.classes.forEach((c, cIdx) => {
-    const k = makeKey(dIdx, pIdx, cIdx);
+  // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
+  currentConfig.dates.forEach((d) => currentConfig.periods.forEach((p) => currentConfig.classes.forEach((c, cIdx) => {
+    const k = makeKey(d.id, p.id, c.id);
     const entry = currentSchedule[k];
     if (!entry || !entry.subject || !entry.teacher) {
-      slots.push({ dIdx, pIdx, cIdx, d, p, c, k, fixedSubject: entry?.subject });
+      slots.push({ cIdx, d, p, c, k, fixedSubject: entry?.subject });
     }
   })));
 
@@ -75,9 +135,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToCheck = slot.fixedSubject ? [slot.fixedSubject] : commonSubjects;
     subjectsToCheck.forEach(subj => {
       project.teachers.forEach(t => {
-        if (t.subjects.includes(subj) &&
-          !t.ngSlots?.includes(makeNgKey(slot.d, slot.p)) &&
-          !t.ngClasses?.includes(slot.c)) {
+        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d.label, slot.p.label) && !isNgClass(t, slot.c.label)) {
           validCandidates++;
         }
       });
@@ -109,7 +167,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
       return;
     }
 
-    const { dIdx, pIdx, cIdx, d, p, c, k, fixedSubject } = slots[idx];
+    const { cIdx, d, p, c, k, fixedSubject } = slots[idx];
 
     // 合同グループの伝播により既に充填されている場合はスキップ
     if (tempSch[k]?.subject && tempSch[k]?.teacher) {
@@ -120,21 +178,22 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
 
     for (const s of subjectsToTry) {
-      if (!fixedSubject && (tempCnt[cIdx][s] || 0) >= currentConfig.subjectCounts[s]) continue;
+      if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
       // 同日・同クラスに同じ科目があるかチェック
-      if (!fixedSubject && currentConfig.periods.some((per, pi) => tempSch[makeKey(dIdx, pi, cIdx)]?.subject === s)) continue;
+      if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, d.id, c.id, s)) continue;
 
-      // 合同グループチェック
-      const group = findCombinedGroup(combinedGroups, s, c, d);
+      // 合同グループチェック (label ベース)
+      const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
       let secondarySlots = [];
       let canUseCombined = true;
 
       if (group) {
-        for (const otherClass of group.classes) {
-          if (otherClass === c) continue;
-          const otherCIdx = currentConfig.classes.indexOf(otherClass);
+        for (const otherClassLabel of group.classes) {
+          if (otherClassLabel === c.label) continue;
+          const otherCIdx = currentConfig.classes.findIndex(cc => cc.label === otherClassLabel);
           if (otherCIdx < 0) continue;
-          const otherKey = makeKey(dIdx, pIdx, otherCIdx);
+          const otherClassEntity = currentConfig.classes[otherCIdx];
+          const otherKey = makeKey(d.id, p.id, otherClassEntity.id);
           const otherEntry = tempSch[otherKey];
 
           // ロックされていて別の科目が入っている場合は不可
@@ -148,12 +207,12 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             break;
           }
           // 科目枠が残っていない場合は不可
-          if (!otherEntry?.subject && (tempCnt[otherCIdx]?.[s] || 0) >= currentConfig.subjectCounts[s]) {
+          if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
             canUseCombined = false;
             break;
           }
-          // 同日・同クラスに同じ科目が既にある場合は不可
-          if (!otherEntry?.subject && currentConfig.periods.some((per, pi) => pi !== pIdx && tempSch[makeKey(dIdx, pi, otherCIdx)]?.subject === s)) {
+          // 同日・同クラスに同じ科目が既にある場合は不可 (今コマは除外)
+          if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, d.id, otherClassEntity.id, s, p.id)) {
             canUseCombined = false;
             break;
           }
@@ -164,7 +223,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             secondarySlots.push({
               cIdx: otherCIdx,
               key: otherKey,
-              className: otherClass,
+              className: otherClassLabel,
               hadSubject,
               original: otherEntry ? { ...otherEntry } : null,
             });
@@ -174,24 +233,23 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         if (!canUseCombined) continue;
       }
 
-      // 有効な講師を検索
-      const validT = project.teachers.filter(t => {
-        if (!t.subjects.includes(s)) return false;
-        if (t.ngSlots?.includes(makeNgKey(d, p))) return false;
-        if (t.ngClasses?.includes(c)) return false;
-        // 合同グループの場合、セカンダリクラスのNGもチェック
-        if (group) {
-          for (const ss of secondarySlots) {
-            if (t.ngClasses?.includes(ss.className)) return false;
-          }
-        }
-        return true;
-      });
+      // 有効な講師を検索 (subject 担当・NG slot/class・合同セカンダリ NG class)
+      const secondaryClassNames = group ? secondarySlots.map(ss => ss.className) : [];
+      const validT = project.teachers.filter(t =>
+        isTeacherCandidateFor({
+          teacher: t,
+          subject: s,
+          date: d.label,
+          period: p.label,
+          className: c.label,
+          secondaryClassNames,
+        })
+      );
 
       const priorityGroup = [];
       const neutralGroup = [];
       validT.forEach(t => {
-        if (t.priorityClasses?.includes(c)) priorityGroup.push(t);
+        if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
         else neutralGroup.push(t);
       });
 
@@ -200,21 +258,27 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         ...seededShuffle(neutralGroup, rng)
       ];
 
-      // 合同グループのクラスインデックスリスト
-      const combinedClassIndices = group
-        ? group.classes.map(gc => currentConfig.classes.indexOf(gc)).filter(i => i >= 0)
+      // 合同グループのクラス ID リスト (hasTeacherInSamePeriod の除外用)
+      const combinedClassIds = group
+        ? group.classes
+            .map(gcLabel => currentConfig.classes.find(cc => cc.label === gcLabel)?.id)
+            .filter(id => id != null)
         : [];
 
       for (const tObj of shuffledT) {
         const tName = tObj.name;
-        const dayKey = makeExternalKey(d, tName);
+        const dayKey = makeExternalKey(d.label, tName);
+        const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
 
-        // 同じ日付・時限で他クラスに同じ講師がいるかチェック（合同グループ内は除外）
-        if (currentConfig.classes.some((oc, oci) =>
-          oci !== cIdx &&
-          !combinedClassIndices.includes(oci) &&
-          tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName
-        )) continue;
+        // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
+        if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
+
+        // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
+        // 合同グループでも 1 コマとしてカウント (下の increment と整合)
+        if (wouldExceedDailyLimit({
+          teacherName: tName, date: d.label, tempDaily, maxDailyHours,
+          exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
+        })) continue;
 
         // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
         // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
@@ -222,8 +286,10 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         const primaryLocked = tempSch[k]?.locked;
         tempSch[k] = { subject: s, teacher: tName, ...(primaryLocked ? { locked: true } : {}) };
         if (!fixedSubject) tempCnt[cIdx][s]++;
-        if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
-        tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+        if (countsTowardDaily) {
+          if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
+          tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+        }
 
         // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
         secondarySlots.forEach(ss => {
@@ -248,7 +314,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
           delete tempSch[k];
           tempCnt[cIdx][s]--;
         }
-        tempDaily[dayKey]--;
+        if (countsTowardDaily) tempDaily[dayKey]--;
 
         // バックトラック: セカンダリスロット（元の状態に復元）
         secondarySlots.forEach(ss => {
@@ -265,8 +331,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     }
   };
 
-  const initialDaily = {};
-  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), initialDaily);
+  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
 
   return {
     solution,

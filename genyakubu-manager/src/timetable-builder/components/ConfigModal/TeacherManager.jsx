@@ -17,7 +17,7 @@ function InlineNameEdit({ value, onSave }) {
     return (
       <input
         autoFocus
-        className="w-full border border-blue-400 rounded px-1.5 py-0.5 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full border border-builder-blue rounded px-1.5 py-0.5 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-builder-blue"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={handleSubmit}
@@ -31,7 +31,7 @@ function InlineNameEdit({ value, onSave }) {
 
   return (
     <span
-      className="cursor-pointer hover:text-blue-600 hover:underline"
+      className="cursor-pointer hover:text-builder-blue hover:underline"
       onClick={() => { setDraft(value); setEditing(true); }}
       title="クリックで名前を変更"
     >
@@ -62,37 +62,37 @@ export default function TeacherManager() {
   };
 
   return (
-    <div className="border-l pl-6 space-y-4">
-      <div className="flex justify-between items-center border-b pb-1">
-        <h3 className="font-bold text-green-800">👤 講師マスタ (全タブ共通)</h3>
-        <button onClick={handleAddClick} className="text-xs bg-green-600 text-white px-2 py-1 rounded shadow">+ 追加</button>
+    <div className="border-l border-builder-border pl-6 space-y-4">
+      <div className="flex justify-between items-center border-b border-builder-border pb-1">
+        <h3 className="font-bold text-builder-ink">👤 講師マスタ (全タブ共通)</h3>
+        <button onClick={handleAddClick} className="text-xs bg-builder-green text-white px-2 py-1 rounded shadow hover:bg-builder-green-hover">+ 追加</button>
       </div>
-      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border">氏名をクリックすると名前を変更できます。スケジュールの講師名も自動更新されます。</div>
-      <div className="overflow-y-auto max-h-[400px] border rounded bg-gray-50 p-2">
+      <div className="text-xs text-builder-ink-muted bg-builder-surface-alt p-2 rounded border border-builder-border">氏名をクリックすると名前を変更できます。スケジュールの講師名も自動更新されます。</div>
+      <div className="overflow-y-auto max-h-[400px] border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>
             <tr>
-              <th className="text-left p-1">氏名</th>
-              <th className="text-left p-1">担当科目</th>
+              <th className="text-left p-1 text-builder-ink-muted">氏名</th>
+              <th className="text-left p-1 text-builder-ink-muted">担当科目</th>
               <th className="w-8"></th>
             </tr>
           </thead>
           <tbody>
             {project.teachers.map((t, i) => (
-              <tr key={i} className="border-b bg-white last:border-0">
-                <td className="p-2 font-bold">
+              <tr key={i} className="border-b border-builder-border bg-builder-surface last:border-0">
+                <td className="p-2 font-bold text-builder-ink">
                   <InlineNameEdit value={t.name} onSave={(newName) => renameTeacher(i, newName)} />
                 </td>
                 <td className="p-2 flex flex-wrap gap-1">
                   {commonSubjects.map(s => (
-                    <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-400 border-gray-200"}`}>
+                    <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-builder-blue text-white border-builder-blue" : "bg-builder-surface text-builder-ink-ghost border-builder-border"}`}>
                       <input type="checkbox" className="hidden" checked={t.subjects.includes(s)} onChange={() => toggleTeacherSubject(i, s)} />
                       {s}
                     </label>
                   ))}
                 </td>
                 <td className="p-2 text-center">
-                  <button onClick={() => handleRemoveClick(i)} className="text-gray-400 hover:text-red-500">×</button>
+                  <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-ghost hover:text-builder-red">×</button>
                 </td>
               </tr>
             ))}

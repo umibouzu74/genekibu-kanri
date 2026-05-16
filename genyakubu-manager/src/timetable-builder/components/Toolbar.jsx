@@ -33,39 +33,40 @@ export default function Toolbar({
     const firstKey = analysis.errorKeys[0];
     const parsed = parseKey(firstKey);
     if (parsed) {
-      const targetId = `select-${parsed.dIdx}-${parsed.pIdx}-${parsed.cIdx}-cell`;
+      const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
       const el = document.getElementById(targetId);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-slate-50 border border-slate-200 rounded no-print">
-      <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded border border-gray-200 shadow-sm flex-1 min-w-[250px]">
-        <div className="text-xs font-bold text-gray-500">進捗</div>
-        <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden relative">
-          <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
+    <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
+      <div className="flex items-center gap-3 bg-builder-surface px-3 py-1.5 rounded border border-builder-border shadow-sm flex-1 min-w-[250px]">
+        <div className="text-xs font-bold text-builder-ink-muted">進捗</div>
+        <div className="flex-1 h-3 bg-builder-border rounded-full overflow-hidden relative">
+          <div className="h-full bg-builder-blue transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
         </div>
-        <div className="text-sm font-bold text-blue-600 w-12 text-right">{dashboard.progress}%</div>
+        <div className="text-sm font-bold text-builder-blue w-12 text-right">{dashboard.progress}%</div>
         {analysis.errorKeys.length > 0 ? (
-          <button onClick={scrollToFirstError} className="ml-2 text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-200 font-bold animate-pulse hover:bg-red-200">
+          <button onClick={scrollToFirstError} className="ml-2 text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border">
             ⚠️ {analysis.errorKeys.length}件
           </button>
-        ) : <span className="ml-2 text-xs text-green-600 font-bold">✨ OK</span>}
+        ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 shadow-sm text-sm" title="表示サイズを切り替え">
+        <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="表示サイズを切り替え">
           {isCompact ? "🔍 標準" : "📏 縮小"}
         </button>
-        <div className="h-6 w-px bg-gray-300 mx-1"></div>
-        <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30 border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
-        <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30 border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
-        <div className="h-6 w-px bg-gray-300 mx-1"></div>
-        <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
-        <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
-        <div className="h-6 w-px bg-gray-300 mx-1"></div>
-        <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 shadow-sm text-sm font-bold" title="ロックされていないセルを全てクリア">🗑️ 生成クリア</button>
-        <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-purple-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"}`}>
+        <div className="h-6 w-px bg-builder-border mx-1"></div>
+        <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
+        <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
+        <div className="h-6 w-px bg-builder-border mx-1"></div>
+        <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
+        <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
+        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
+        <div className="h-6 w-px bg-builder-border mx-1"></div>
+        <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-builder-danger-soft text-builder-red border border-builder-danger-border rounded hover:bg-builder-danger-border shadow-sm text-sm font-bold" title="ロックされていないセルを全てクリア">🗑️ 生成クリア</button>
+        <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-builder-primary opacity-60 cursor-not-allowed" : "bg-builder-primary hover:bg-builder-primary-hover"}`}>
           {isGenerating ? (
             <>
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>

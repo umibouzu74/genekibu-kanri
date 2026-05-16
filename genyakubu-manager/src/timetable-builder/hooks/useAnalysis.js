@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { makeKey, makeExternalKey, parseKey, findCombinedGroup } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, parseKey, findCombinedGroup, findEntityById } from '../utils/scheduleKey';
 
 export function useAnalysis(project, currentSchedule, currentConfig) {
   const analysis = useMemo(() => {
@@ -21,11 +21,14 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
         if (!entry || !entry.teacher || entry.teacher === "未定") return;
         const parsed = parseKey(key);
         if (!parsed) return;
-        const { dIdx, pIdx, cIdx } = parsed;
-        const date = tab.config.dates[dIdx];
-        const period = tab.config.periods[pIdx];
-        const className = tab.config.classes[cIdx];
-        if (!date || !period) return;
+        const { dateId, periodId, classId } = parsed;
+        const dateEnt = findEntityById(tab.config.dates, dateId);
+        const periodEnt = findEntityById(tab.config.periods, periodId);
+        const classEnt = findEntityById(tab.config.classes, classId);
+        if (!dateEnt || !periodEnt || !classEnt) return;
+        const date = dateEnt.label;
+        const period = periodEnt.label;
+        const className = classEnt.label;
 
         // 合同グループチェック
         const group = findCombinedGroup(combinedGroups, entry.subject, className, date);
@@ -72,20 +75,20 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
     }
 
     // 現在タブの分析
-    currentConfig.dates.forEach((d, dIdx) => {
-      currentConfig.periods.forEach((p, pIdx) => {
-        currentConfig.classes.forEach((c, cIdx) => {
-          const key = makeKey(dIdx, pIdx, cIdx);
+    currentConfig.dates.forEach((d) => {
+      currentConfig.periods.forEach((p) => {
+        currentConfig.classes.forEach((c) => {
+          const key = makeKey(d.id, p.id, c.id);
           const entry = currentSchedule[key];
           if (entry && entry.subject) {
-            const subjKey = `c${cIdx}-d${dIdx}-${entry.subject}`;
+            const subjKey = `c${c.id}-d${d.id}-${entry.subject}`;
             dailySubjectMap[subjKey] = (dailySubjectMap[subjKey] || 0) + 1;
           }
           if (entry && entry.teacher && entry.teacher !== "未定") {
-            const usageKey = `${d}-${p}-${entry.teacher}`;
+            const usageKey = `${d.label}-${p.label}-${entry.teacher}`;
             const effectiveCount = getEffectiveUsageCount(globalUsage[usageKey] || []);
             if (effectiveCount > 1) {
-              conflictMap[`${d}-${p}-${entry.teacher}`] = true;
+              conflictMap[`${d.label}-${p.label}-${entry.teacher}`] = true;
               errorKeys.push(key);
             }
           }
@@ -94,11 +97,11 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
     });
 
     // 科目順序の計算
-    currentConfig.classes.forEach((c, cIdx) => {
+    currentConfig.classes.forEach((c) => {
       const counts = {};
-      currentConfig.dates.forEach((d, dIdx) => {
-        currentConfig.periods.forEach((p, pIdx) => {
-          const key = makeKey(dIdx, pIdx, cIdx);
+      currentConfig.dates.forEach((d) => {
+        currentConfig.periods.forEach((p) => {
+          const key = makeKey(d.id, p.id, c.id);
           const s = currentSchedule[key]?.subject;
           if (s) { counts[s] = (counts[s] || 0) + 1; subjectOrders[key] = counts[s]; }
         });
