@@ -1,187 +1,43 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  DEFAULT_INITIAL_TEACHERS,
-  DEFAULT_TAB_CONFIG_BASE,
-  DEFAULT_SUBJECTS,
-  DEFAULT_SUBJECT_COLORS,
-  STORAGE_KEY_PROJECT,
-  STORAGE_KEY_USER_DEFAULTS,
-  LEGACY_STORAGE_KEYS,
-  CURRENT_PROJECT_VERSION,
-  cleanSchedule,
-} from '../utils/constants';
-import { makeKey, parseKey, makeNgKey, makeExternalKey, migrateProject, findCombinedGroup } from '../utils/scheduleKey';
+import { useCallback } from 'react';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { useHistoryStack } from './useHistoryStack';
+import { useJsonIO } from './useJsonIO';
 
-// 講師マスタの差分を検出する
-function detectTeacherDiffs(currentTeachers, loadedTeachers) {
-  const diffs = [];
-  const currentNames = new Set(currentTeachers.map(t => t.name));
-  const loadedNames = new Set(loadedTeachers.map(t => t.name));
-
-  // 読み込みデータにのみ存在する講師
-  const added = loadedTeachers.filter(t => !currentNames.has(t.name));
-  if (added.length > 0) {
-    diffs.push(`【追加】${added.map(t => t.name).join('、')}`);
-  }
-
-  // 現在のデータにのみ存在する講師
-  const removed = currentTeachers.filter(t => !loadedNames.has(t.name));
-  if (removed.length > 0) {
-    diffs.push(`【削除】${removed.map(t => t.name).join('、')}`);
-  }
-
-  // 担当科目が異なる講師
-  loadedTeachers.forEach(lt => {
-    const ct = currentTeachers.find(t => t.name === lt.name);
-    if (ct) {
-      const currentSubjects = [...ct.subjects].sort().join(',');
-      const loadedSubjects = [...(lt.subjects || [])].sort().join(',');
-      if (currentSubjects !== loadedSubjects) {
-        diffs.push(`【科目変更】${lt.name}: ${ct.subjects.join('/')} → ${lt.subjects.join('/')}`);
-      }
-    }
-  });
-
-  return diffs;
-}
-
-function createNewProject(tabs, teachers, subjectColors, subjects) {
-  return {
-    version: CURRENT_PROJECT_VERSION,
-    name: "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    teachers: teachers || DEFAULT_INITIAL_TEACHERS,
-    activeTabId: tabs[0]?.id || 1,
-    tabs,
-    subjects: subjects || [...DEFAULT_SUBJECTS],
-    subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
-    combinedGroups: [],
-    externalCounts: {},
-  };
-}
-
-function loadInitialProject() {
-  try {
-    // 新キーから読み込み
-    let savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
-
-    // 旧キーからのマイグレーション
-    if (!savedProject) {
-      for (const legacyKey of LEGACY_STORAGE_KEYS) {
-        savedProject = localStorage.getItem(legacyKey);
-        if (savedProject) {
-          // 新キーに移行して旧キーを削除
-          localStorage.setItem(STORAGE_KEY_PROJECT, savedProject);
-          localStorage.removeItem(legacyKey);
-          break;
-        }
-      }
-    }
-
-    if (savedProject) {
-      const parsed = JSON.parse(savedProject);
-      return migrateProject(parsed);
-    }
-
-    const savedDefaults = localStorage.getItem(STORAGE_KEY_USER_DEFAULTS);
-    // 旧キーのデフォルト設定も参照（スタンドアロン版互換）
-    const legacyDefaults = !savedDefaults
-      ? localStorage.getItem('schedule_user_defaults') ||
-        localStorage.getItem('winter_schedule_user_defaults')
-      : null;
-    const defaultsStr = savedDefaults || legacyDefaults;
-    if (defaultsStr) {
-      const defaults = JSON.parse(defaultsStr);
-      return createNewProject(
-        [{ id: 1, name: "メイン", config: defaults.config || DEFAULT_TAB_CONFIG_BASE, schedule: {} }],
-        defaults.teachers || DEFAULT_INITIAL_TEACHERS,
-      );
-    }
-  } catch (e) { console.error("Load failed", e); }
-
-  return createNewProject([
-    {
-      id: 1,
-      name: "中３",
-      config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["３S", "３A", "３B", "３C"] },
-      schedule: {}
-    },
-    {
-      id: 2,
-      name: "中１・２",
-      config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["１S", "１AB", "１附属", "２S", "２AB", "２C", "２附属"] },
-      schedule: {}
-    }
-  ]);
-}
-
+// 講習時間割プロジェクトの一元状態管理フック。
+//
+// 内訳:
+//   - useHistoryStack: project state + Undo/Redo + LocalStorage 自動保存
+//   - useJsonIO:       JSON 保存/読込/デフォルト保存/全リセット
+//   - 本ファイル:      残りのアクション (タブ/科目/講師/セル/合同) と
+//                      派生データ (activeTab, currentSchedule, etc.) を集約
+//
+// 公開 API は ProjectContext 経由で全コンポーネントから参照されるため、
+// 返り値のキー名・関数シグネチャは安易に変更しない。
 export function useProject() {
-  const [project, setProject] = useState(loadInitialProject);
-  const [history, setHistory] = useState(() => [project]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [saveStatus, setSaveStatus] = useState("✅ 保存済");
-
-  const fileInputRef = useRef(null);
-  const saveTimerRef = useRef(null);
-  const isInitialMount = useRef(true);
-  const historyRef = useRef(history);
-  const historyIndexRef = useRef(historyIndex);
-  historyRef.current = history;
-  historyIndexRef.current = historyIndex;
-
-  // localStorage 自動保存
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(project));
-    setSaveStatus("💾 保存中...");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => setSaveStatus("✅ 保存済"), 800);
-  }, [project]);
-
-  const pushHistory = useCallback((newProject) => {
-    const updated = { ...newProject, updatedAt: new Date().toISOString() };
-    setHistory(prev => {
-      const idx = historyIndexRef.current;
-      const newHistory = prev.slice(0, idx + 1);
-      newHistory.push(updated);
-      if (newHistory.length > 50) newHistory.shift();
-      const newIdx = newHistory.length - 1;
-      setHistoryIndex(newIdx);
-      historyIndexRef.current = newIdx;
-      return newHistory;
-    });
-    setProject(updated);
-  }, []);
-
-  const undo = useCallback(() => {
-    const idx = historyIndexRef.current;
-    const hist = historyRef.current;
-    if (idx > 0) {
-      setHistoryIndex(idx - 1);
-      historyIndexRef.current = idx - 1;
-      setProject(hist[idx - 1]);
-    }
-  }, []);
-
-  const redo = useCallback(() => {
-    const idx = historyIndexRef.current;
-    const hist = historyRef.current;
-    if (idx < hist.length - 1) {
-      setHistoryIndex(idx + 1);
-      historyIndexRef.current = idx + 1;
-      setProject(hist[idx + 1]);
-    }
-  }, []);
+  const {
+    project,
+    setProject,
+    history,
+    historyIndex,
+    saveStatus,
+    pushHistory,
+    undo,
+    redo,
+  } = useHistoryStack();
 
   // 派生データ
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   const currentConfig = activeTab.config;
   const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
+
+  const {
+    fileInputRef,
+    handleSaveAsDefault,
+    handleResetAll,
+    handleLoadJson,
+    handleSaveJson,
+  } = useJsonIO({ project, activeTab, pushHistory });
 
   // --- タブ管理 ---
   const handleAddTab = useCallback((name) => {
@@ -204,7 +60,7 @@ export function useProject() {
 
   const switchTab = useCallback((id) => {
     setProject({ ...project, activeTabId: id });
-  }, [project]);
+  }, [project, setProject]);
 
   // --- 設定変更 ---
   const handleListConfigChange = useCallback((key, value) => {
@@ -369,7 +225,7 @@ export function useProject() {
             if (gci >= 0 && gci !== cIdx) {
               const gk = makeKey(dIdx, pIdx, gci);
               if (newSchedule[gk]?.subject === oldSubject && !newSchedule[gk]?.locked) {
-                const { [gk]: _, ...rest } = newSchedule;
+                const { [gk]: _removed, ...rest } = newSchedule;
                 newSchedule = rest;
               }
             }
@@ -637,66 +493,13 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, currentSchedule, currentConfig, pushHistory]);
 
-  // --- 保存/読込 ---
-  const handleSaveAsDefault = useCallback(() => {
-    const defaults = { teachers: project.teachers, config: activeTab.config };
-    localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
-  }, [project, activeTab]);
-
-  const handleResetAll = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY_PROJECT);
-    LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
-    window.location.reload();
-  }, []);
-
+  // --- 自動生成パターン適用 ---
   const applyPattern = useCallback((pat) => {
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t);
     pushHistory({ ...project, tabs: newTabs });
   }, [project, pushHistory]);
 
-  const handleLoadJson = useCallback((e, onNotify, onConfirm) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = async (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        const migrated = migrateProject(data);
-
-        // 講師マスタの差分検出
-        const diffs = detectTeacherDiffs(project.teachers, migrated.teachers || []);
-        if (diffs.length > 0 && onConfirm) {
-          const diffText = diffs.join("\n");
-          const confirmed = await onConfirm(
-            `読み込むデータの講師マスタに現在のプロジェクトとの差分があります:\n\n${diffText}\n\nこのまま読み込みますか？`,
-            { title: "講師マスタの差分検出", confirmLabel: "読み込む" }
-          );
-          if (!confirmed) return;
-        }
-
-        pushHistory(cleanSchedule(migrated));
-        if (onNotify) onNotify("読込完了", "success");
-      } catch {
-        if (onNotify) onNotify("読み込みエラー", "error");
-      }
-    };
-    r.readAsText(f);
-    e.target.value = '';
-  }, [project.teachers, pushHistory]);
-
-  const handleSaveJson = useCallback(() => {
-    const cleaned = cleanSchedule(project);
-    const b = new Blob([JSON.stringify(cleaned, null, 2)], { type: "application/json" });
-    const u = URL.createObjectURL(b);
-    const a = document.createElement('a');
-    a.href = u;
-    const datePart = new Date().toISOString().slice(0, 10);
-    const namePart = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
-    a.download = `${namePart}_${datePart}.json`;
-    a.click();
-    URL.revokeObjectURL(u);
-  }, [project]);
-
+  // --- メタデータ ---
   const updateProjectName = useCallback((name) => {
     pushHistory({ ...project, name });
   }, [project, pushHistory]);
