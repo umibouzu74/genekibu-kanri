@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { makeKey, parseKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { cleanSchedule } from '../utils/constants';
 import { useHistoryStack } from './useHistoryStack';
 import { useJsonIO } from './useJsonIO';
 
@@ -494,9 +495,13 @@ export function useProject() {
   }, [project, currentSchedule, currentConfig, pushHistory]);
 
   // --- 自動生成パターン適用 ---
+  // pat は生成時の project スナップショットを前提にしたインデックスベース
+  // キー (d0-p0-c0 等) を持つ。生成中〜採用までの間にユーザが config の
+  // dates/periods/classes を編集していた場合、無効キーが残ると以後の集計や
+  // 表示が壊れるので cleanSchedule で範囲外キーを破棄する。
   const applyPattern = useCallback((pat) => {
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t);
-    pushHistory({ ...project, tabs: newTabs });
+    pushHistory(cleanSchedule({ ...project, tabs: newTabs }));
   }, [project, pushHistory]);
 
   // --- メタデータ ---
