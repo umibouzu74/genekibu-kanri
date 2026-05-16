@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1 + C2 完了後
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1 + C2 + C3 完了後
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -139,19 +139,12 @@ re-render で identity 不変。pushHistory / setProject は旧 API 互換ラッ
 
 ---
 
-### C3. 🔴 UI のデザインシステム統合
-**現状の問題**:
-- Builder UI: Tailwind の鮮色 (`bg-blue-600` `bg-green-600` `bg-purple-50` 等)
-- 親アプリ: dark sidebar + muted パレット (`colors.bg = #f0f1f3`, `colors.primary = #1a1a2e`, `S.btn` の柔らかいトーン)
-- 配色が違いすぎて Builder が「貼り付け感」を出している（前回 commit `a2ebcfb` で外側 padding/背景を整えたが、内部のボタン・モーダル色は手付かず）
-
-**提案**:
-1. `styles/builderTokens.js` を新設し、親の `colors` / `S` をマッピングして Builder トークンを作る
-2. 全 UI 要素を tailwind 鮮色 → builder トークンへ書き換え（`<button>` の className 全部）
-3. もしくは Tailwind を捨てて inline style ベース（親と同じパターン）に書き直す
-
-**コスト**: 大規模。1〜2 週間（全 UI コンポーネントを触る）
-**やる価値**: 中。視覚的統一は UX 改善になるが、機能改善ではない
+### ~~C3~~. ✅ UI のデザインシステム統合
+完了。tailwind.config.js に `builder-*` 名前空間で親アプリの `colors` と
+同値のトークンを定義し、Builder 配下 18 ファイルの className を muted
+パレットに置換。主要 CTA は `builder-primary` (#1a1a2e)、副次アクションは
+`builder-blue` (#2e6a9e) を中心に機能差別化を維持。`bg-purple-600` 等の
+鮮色は全消滅。BuilderApp バンドル +2.92 kB のみ。
 
 ---
 
@@ -242,9 +235,8 @@ npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-A 系・B 系および C1 / C2 は完了済。残るのは C3 / C4。優先度の参考:
+A 系・B 系および C1 / C2 / C3 は完了済。残るのは C4 のみ。
 
-- C3 (デザイン統合)：機能改善ではないので優先度低、機能完成後に検討
 - C4 (xlsx 置き換え)：現状動いているので緊急度低
 
 ### 4.5 やる前に必ず読むべきファイル
@@ -260,7 +252,7 @@ A 系・B 系および C1 / C2 は完了済。残るのは C3 / C4。優先度�
 ### 4.7 既存 PR / 関連リンク
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
-- A1-A8 + B1-B4 + C1 + C2 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
+- A1-A8 + B1-B4 + C1 + C2 + C3 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
 - 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
