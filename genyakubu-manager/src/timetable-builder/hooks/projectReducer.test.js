@@ -568,6 +568,167 @@ describe('projectReducer — project 全体操作', () => {
   });
 });
 
+describe('projectReducer — cascade cleanup', () => {
+  // teacher/remove で externalCounts も掃除される (H-2)
+  it('teacher/remove: 削除された講師の externalCounts キーが drop される', () => {
+    const state = makeState({
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 3,
+        [makeExternalKey('12/26(金)', '堀上')]: 2,
+        [makeExternalKey('12/25(木)', '田中')]: 1,
+      },
+    });
+    const next = projectReducer(state, { type: 'teacher/remove', payload: { idx: 0 } });
+    // 堀上 のキーは drop、田中 のキーは残存
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
+    expect(next.project.externalCounts[makeExternalKey('12/26(金)', '堀上')]).toBeUndefined();
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '田中')]).toBe(1);
+  });
+
+  // schedule/renameHeader で externalCounts キーが書き換えられる (H-3)
+  it('schedule/renameHeader (date): externalCounts キーも書き換えられる', () => {
+    const state = makeState({
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 3,
+        [makeExternalKey('12/26(金)', '田中')]: 2,
+      },
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
+    });
+    expect(next.project.externalCounts[makeExternalKey('12/25(祝)', '堀上')]).toBe(3);
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
+    // 他の日付のキーは不変
+    expect(next.project.externalCounts[makeExternalKey('12/26(金)', '田中')]).toBe(2);
+  });
+
+  // combinedGroups の cascade cleanup (H-1)
+  it('config/setList (classes 削除): combinedGroups から消えたクラスが drop', () => {
+    const state = makeState({
+      combinedGroups: [
+        { id: 1, subject: '英語', classes: ['３S', '３A', '３B'], dates: null },
+        { id: 2, subject: '数学', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    // ３A を削除
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'classes', value: '３S, ３B' },
+    });
+    const groups = next.project.combinedGroups;
+    // group 1: ３S, ３B が残る (2 クラス → group 維持)
+    expect(groups.find(g => g.id === 1).classes).toEqual(['３S', '３B']);
+    // group 2: ３A が消えて ３S だけ → 1 クラスでは合同にならないので drop
+    expect(groups.find(g => g.id === 2)).toBeUndefined();
+  });
+
+  it('config/setList (dates 削除): combinedGroups から消えた日付が drop', () => {
+    const state = makeState({
+      combinedGroups: [
+        { id: 1, subject: '英語', classes: ['３S', '３A'], dates: ['12/25(木)', '12/26(金)'] },
+        { id: 2, subject: '数学', classes: ['３S', '３A'], dates: ['12/25(木)'] },
+        { id: 3, subject: '国語', classes: ['３S', '３A'], dates: null }, // 全日扱い
+      ],
+    });
+    // 12/26(金) を削除 (元の dates は 12/25(木) のみ)
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'dates', value: '12/25(木)' },
+    });
+    const groups = next.project.combinedGroups;
+    // group 1: 12/26 が消えて 12/25 だけ残る
+    expect(groups.find(g => g.id === 1).dates).toEqual(['12/25(木)']);
+    // group 2: 12/25 のみで該当
+    expect(groups.find(g => g.id === 2).dates).toEqual(['12/25(木)']);
+    // group 3: dates: null は全日扱いで影響なし
+    expect(groups.find(g => g.id === 3).dates).toBeNull();
+  });
+
+  it('subject/remove: 削除された科目を持つ combinedGroups が drop', () => {
+    const state = makeState({
+      combinedGroups: [
+        { id: 1, subject: '英語', classes: ['３S', '３A'], dates: null },
+        { id: 2, subject: '数学', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    const next = projectReducer(state, { type: 'subject/remove', payload: { name: '英語' } });
+    expect(next.project.combinedGroups).toHaveLength(1);
+    expect(next.project.combinedGroups[0].subject).toBe('数学');
+  });
+
+  it('schedule/renameHeader (class): combinedGroups[*].classes も rename', () => {
+    const state = makeState({
+      combinedGroups: [
+        { id: 1, subject: '英語', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'class', oldVal: '３S', newVal: '３年S' },
+    });
+    expect(next.project.combinedGroups[0].classes).toEqual(['３年S', '３A']);
+  });
+
+  it('schedule/renameHeader (date): combinedGroups[*].dates も rename', () => {
+    const state = makeState({
+      combinedGroups: [
+        { id: 1, subject: '英語', classes: ['３S', '３A'], dates: ['12/25(木)', '12/26(金)'] },
+        { id: 2, subject: '数学', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
+    });
+    expect(next.project.combinedGroups[0].dates).toEqual(['12/25(祝)', '12/26(金)']);
+    expect(next.project.combinedGroups[1].dates).toBeNull(); // 全日扱いは不変
+  });
+});
+
+describe('projectReducer — reducer guards', () => {
+  // M-1: cell/swap で source も locked チェック
+  it('cell/swap: source が locked なら no-op', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/swap',
+      payload: {
+        sourceKey: makeKey(1, 1, 1),
+        sourceData: { subject: '英語', teacher: '堀上', locked: true },
+        targetKey: makeKey(1, 1, 2),
+        targetData: { subject: '数学', teacher: '田中' },
+      },
+    });
+    expect(next).toBe(state);
+  });
+
+  // M-2: config/setList で重複ラベルは dedupe される
+  it('config/setList: 重複ラベルは dedupe される', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'classes', value: '３S, ３A, ３S, ３A' },
+    });
+    const classes = next.project.tabs[0].config.classes;
+    expect(classes).toHaveLength(2);
+    expect(classes.map(c => c.label)).toEqual(['３S', '３A']);
+  });
+});
+
 describe('projectReducer — 未知 action', () => {
   it('未知の type は no-op', () => {
     const state = makeState();

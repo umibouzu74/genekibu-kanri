@@ -452,7 +452,7 @@ describe('useProject — handleSwapCells', () => {
     expect(result.current.currentSchedule[key2]).toMatchObject({ subject: '数学', teacher: '田中', locked: true });
   });
 
-  it('スワップ後は両セルの locked が false になる', () => {
+  it('source が locked なら no-op (UI も dragStart で止めるが reducer 側でも防衛)', () => {
     const { result } = setupHook({
       tabs: [{
         id: 1, name: 'メイン',
@@ -471,8 +471,9 @@ describe('useProject — handleSwapCells', () => {
     const source = { ...result.current.currentSchedule[key1] };
     const target = { ...result.current.currentSchedule[key2] };
     act(() => result.current.handleSwapCells(key1, source, key2, target));
-    expect(result.current.currentSchedule[key1].locked).toBeFalsy();
-    expect(result.current.currentSchedule[key2].locked).toBeFalsy();
+    // 変化なし: locked source からの swap は防御される
+    expect(result.current.currentSchedule[key1]).toMatchObject({ subject: '英語', teacher: '堀上', locked: true });
+    expect(result.current.currentSchedule[key2]).toMatchObject({ subject: '数学', teacher: '田中' });
   });
 });
 

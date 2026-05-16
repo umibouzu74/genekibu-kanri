@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, nextId } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -66,6 +66,76 @@ function pushToHistory(state, newProject) {
   };
 }
 
+// ─── cascade cleanup ヘルパー ────────────────────────────────────
+// combinedGroups と externalCounts はラベルベースで cross-tab 参照されるため、
+// クラス/日付/科目/講師の編集に応じて孤児を防ぐ。
+
+// 残るラベル集合に合うよう combinedGroups から消えたものを filter。
+// dimension: 'classes' | 'dates'
+function cleanCombinedGroupsForLabelChange(groups, dimension, validLabelSet) {
+  return groups
+    .map(g => {
+      if (dimension === 'classes') {
+        const newClasses = g.classes.filter(c => validLabelSet.has(c));
+        return { ...g, classes: newClasses };
+      }
+      // dimension === 'dates' (null は全日扱いで不変)
+      if (g.dates === null) return g;
+      const newDates = g.dates.filter(d => validLabelSet.has(d));
+      return { ...g, dates: newDates };
+    })
+    .filter(g => {
+      if (dimension === 'classes') return g.classes.length >= 2; // 1 クラスでは合同にならない
+      // dates の全消失は「全日無し」= 対象が無いので drop。null (全日) は残す。
+      return g.dates === null || g.dates.length > 0;
+    });
+}
+
+// 科目削除に伴う combinedGroups の cleanup。subject 一致グループを drop。
+function cleanCombinedGroupsForSubjectRemoval(groups, removedSubject) {
+  return groups.filter(g => g.subject !== removedSubject);
+}
+
+// クラス/日付ラベルのリネームに伴う combinedGroups の label 書き換え。
+function renameCombinedGroupsLabel(groups, dimension, oldLabel, newLabel) {
+  return groups.map(g => {
+    if (dimension === 'classes') {
+      return { ...g, classes: g.classes.map(c => c === oldLabel ? newLabel : c) };
+    }
+    // dimension === 'dates'
+    if (g.dates === null) return g;
+    return { ...g, dates: g.dates.map(d => d === oldLabel ? newLabel : d) };
+  });
+}
+
+// 講師削除に伴う externalCounts の cleanup。`{date}-{teacherName}` 形式のキーを
+// 末尾一致で drop する。
+function cleanExternalCountsForTeacher(externalCounts, teacherName) {
+  if (!externalCounts) return externalCounts;
+  const suffix = `-${teacherName}`;
+  const out = {};
+  Object.keys(externalCounts).forEach(k => {
+    if (!k.endsWith(suffix)) out[k] = externalCounts[k];
+  });
+  return out;
+}
+
+// 日付ラベルのリネームに伴う externalCounts キーの書き換え。
+// キー形式は `{dateLabel}-{teacherName}` で、dateLabel が先頭一致するものを更新。
+function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
+  if (!externalCounts) return externalCounts;
+  const prefix = `${oldLabel}-`;
+  const out = {};
+  Object.keys(externalCounts).forEach(k => {
+    if (k.startsWith(prefix)) {
+      out[`${newLabel}-${k.substring(prefix.length)}`] = externalCounts[k];
+    } else {
+      out[k] = externalCounts[k];
+    }
+  });
+  return out;
+}
+
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
 function applyAction(project, action) {
@@ -98,29 +168,45 @@ function applyAction(project, action) {
       // v3: 既存ラベル一致 entity は ID を維持、新規ラベルには nextId を採番、
       // 消えたラベルの entity は drop。これで schedule キー (ID ベース) の継続性を
       // 担保しつつ UI 編集 (ラベル並び替え/追加/削除) を反映できる。
+      // 重複ラベルは dedupe (同じラベルが複数あっても entity は 1 つに集約)。
       const { key, value } = action.payload;
-      const newLabels = value.split(',').map(s => s.trim()).filter(s => s);
+      const rawLabels = value.split(',').map(s => s.trim()).filter(s => s);
+      const newLabels = [...new Set(rawLabels)]; // 重複除去 (順序は保つ)
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const oldArr = activeTab.config[key] || [];
       const oldByLabel = new Map(oldArr.map(e => [e.label, e]));
       const resultArr = [];
-      const consumedIds = new Set(oldArr.map(e => e.id));
       newLabels.forEach(label => {
         const existing = oldByLabel.get(label);
         if (existing) {
           resultArr.push(existing);
         } else {
-          const id = nextId([...resultArr, ...oldArr.filter(e => !resultArr.includes(e))]);
-          consumedIds.add(id);
-          resultArr.push({ id, label });
+          // nextId はこれまでの (resultArr に積んだ + 元 oldArr の) ID 全体から max+1
+          const usedIds = new Set([...resultArr.map(e => e.id), ...oldArr.map(e => e.id)]);
+          let candidate = 1;
+          while (usedIds.has(candidate)) candidate++;
+          resultArr.push({ id: candidate, label });
         }
       });
       const newTabs = project.tabs.map(t =>
         t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
       );
+      // ラベル削除に伴う combinedGroups の cascade cleanup:
+      // - key='classes': 消えたクラスを groups[*].classes から filter、結果が <2
+      //   なら group ごと削除
+      // - key='dates': 消えたラベルを groups[*].dates から filter (null は全日扱いで不変)
+      //   結果が空配列ならグループ自体は残す? UI 上は「対象日なし」になるので drop。
+      // - key='periods': groups に period 次元は無いので影響無し
+      let newCombined = project.combinedGroups;
+      if (key === 'classes' || key === 'dates') {
+        newCombined = cleanCombinedGroupsForLabelChange(
+          project.combinedGroups || [],
+          key === 'classes' ? 'classes' : 'dates',
+          new Set(newLabels)
+        );
+      }
       // cleanSchedule で消えた entity を参照する schedule キーを掃除する。
-      // (例: ラベル "12/25" を削除した時、その dateId を含むキーを drop)
-      return cleanSchedule({ ...project, tabs: newTabs });
+      return cleanSchedule({ ...project, tabs: newTabs, combinedGroups: newCombined });
     }
     case 'config/setSubjectCount': {
       const { subject, value } = action.payload;
@@ -167,12 +253,15 @@ function applyAction(project, action) {
       }));
       const newColors = { ...(project.subjectColors || {}) };
       delete newColors[name];
+      // 削除された科目を参照する合同グループも drop (cascade)
+      const newCombined = cleanCombinedGroupsForSubjectRemoval(project.combinedGroups || [], name);
       return {
         ...project,
         subjects: newSubjects,
         tabs: newTabs,
         teachers: newTeachers,
         subjectColors: newColors,
+        combinedGroups: newCombined,
       };
     }
     case 'subject/reorder': {
@@ -211,7 +300,9 @@ function applyAction(project, action) {
         });
         return { ...tab, schedule: newSch };
       });
-      return { ...project, teachers: newTeachers, tabs: newTabs };
+      // 削除された講師の externalCounts キーも drop (孤児化防止)
+      const newExternal = cleanExternalCountsForTeacher(project.externalCounts, targetName);
+      return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal };
     }
     case 'teacher/rename': {
       const { idx, newName } = action.payload;
@@ -361,7 +452,10 @@ function applyAction(project, action) {
     }
     case 'cell/swap': {
       const { sourceKey, sourceData, targetKey, targetData } = action.payload;
-      if (targetData.locked) return project;
+      // どちらかが locked なら swap しない。UI 側でも guard しているが、
+      // dispatch 経由で source が locked のまま渡ると line `locked: false` で
+      // lock が剥がれてしまうため、ここでも防衛する。
+      if (sourceData.locked || targetData.locked) return project;
       const sParsed = parseKey(sourceKey);
       const tParsed = parseKey(targetKey);
       if (!sParsed || !tParsed) return project;
@@ -413,7 +507,10 @@ function applyAction(project, action) {
     case 'schedule/renameHeader': {
       // type は 'date' | 'period' | 'class'。oldVal / newVal はラベル文字列。
       // v3: entity の label のみ書き換え、id は不変。schedule キーは ID ベース
-      // なので影響なし。
+      // なので影響なし。ただし以下の label-based 参照は cascade で更新する:
+      //   - 講師の ngSlots キー (`{date}-{period}` 形式、date/period 変更時)
+      //   - externalCounts キー (`{date}-{teacher}` 形式、date 変更時)
+      //   - combinedGroups の classes/dates 配列 (class/date 変更時)
       const { type, oldVal, newVal } = action.payload;
       if (!newVal || newVal === oldVal) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
@@ -423,8 +520,13 @@ function applyAction(project, action) {
       else if (type === 'period') newConfig.periods = renameLabel(newConfig.periods);
       else if (type === 'class') newConfig.classes = renameLabel(newConfig.classes);
 
+      let newTeachers = project.teachers;
+      let newExternal = project.externalCounts;
+      let newCombined = project.combinedGroups;
+
       if (type === 'date' || type === 'period') {
-        const newTeachers = project.teachers.map(t => {
+        // NG slot のキーを書き換え
+        newTeachers = project.teachers.map(t => {
           if (!t.ngSlots || t.ngSlots.length === 0) return t;
           const newNgSlots = t.ngSlots.map(slot => {
             if (type === 'date' && slot.startsWith(`${oldVal}-`)) {
@@ -437,11 +539,23 @@ function applyAction(project, action) {
           });
           return { ...t, ngSlots: newNgSlots };
         });
-        const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
-        return { ...project, teachers: newTeachers, tabs: newTabs };
       }
+
+      if (type === 'date') {
+        newExternal = renameExternalCountsDateLabel(project.externalCounts, oldVal, newVal);
+        newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'dates', oldVal, newVal);
+      } else if (type === 'class') {
+        newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'classes', oldVal, newVal);
+      }
+
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
-      return { ...project, tabs: newTabs };
+      return {
+        ...project,
+        tabs: newTabs,
+        teachers: newTeachers,
+        externalCounts: newExternal,
+        combinedGroups: newCombined,
+      };
     }
     case 'schedule/bulkAction': {
       // val はラベル文字列 (UI で選択された日付/時限/クラス名)。
