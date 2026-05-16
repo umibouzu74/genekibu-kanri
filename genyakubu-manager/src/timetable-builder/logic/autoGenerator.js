@@ -25,6 +25,15 @@ function seededShuffle(arr, rng) {
 
 const MAX_ITERATIONS = 500000;
 
+// 講師 1 人あたりの 1 日コマ数上限のデフォルト。
+// externalCounts (他タブ・他学年での既存コマ数) + 当該タブの割当 + 既存セル
+// の合計がこの値を超える講師は候補から外す。
+// project.maxDailyHours で上書き可。
+const DEFAULT_MAX_DAILY_HOURS = 6;
+
+// 講師の名前のうち daily 上限の対象外とするもの (placeholder)。
+const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
+
 /**
  * 単一パターンを生成する（シード指定可能）
  * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number }}
@@ -36,6 +45,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const currentConfig = activeTab.config;
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
+  const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
 
   let solution = null;
   const slots = [];
@@ -54,6 +64,38 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         if (e?.subject) {
           if (currentCounts[cIdx]) currentCounts[cIdx][e.subject] = (currentCounts[cIdx][e.subject] || 0) + 1;
         }
+      });
+    });
+  });
+
+  // 講師の日別コマ数を pre-seed:
+  //   1. project.externalCounts (他タブ・他学年などの外部コマ) を加算
+  //   2. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
+  // ここで作った initialDaily を solve に渡し、上限チェックの基準とする。
+  const initialDaily = {};
+  const externalCounts = project.externalCounts || {};
+  Object.keys(externalCounts).forEach(k => {
+    const v = externalCounts[k] || 0;
+    if (v > 0) initialDaily[k] = v;
+  });
+
+  const seenCombinedDay = new Set();
+  currentConfig.dates.forEach((d, dIdx) => {
+    currentConfig.periods.forEach((_p, pIdx) => {
+      currentConfig.classes.forEach((cName, cIdx) => {
+        const k = makeKey(dIdx, pIdx, cIdx);
+        const entry = currentSchedule[k];
+        if (!entry?.teacher || entry.teacher === DAILY_LIMIT_EXEMPT_TEACHER) return;
+
+        const group = findCombinedGroup(combinedGroups, entry.subject, cName, d);
+        if (group) {
+          const tk = `${dIdx}-${pIdx}-${group.id}-${entry.teacher}`;
+          if (seenCombinedDay.has(tk)) return;
+          seenCombinedDay.add(tk);
+        }
+
+        const dayKey = makeExternalKey(d, entry.teacher);
+        initialDaily[dayKey] = (initialDaily[dayKey] || 0) + 1;
       });
     });
   });
@@ -208,6 +250,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
       for (const tObj of shuffledT) {
         const tName = tObj.name;
         const dayKey = makeExternalKey(d, tName);
+        const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
 
         // 同じ日付・時限で他クラスに同じ講師がいるかチェック（合同グループ内は除外）
         if (currentConfig.classes.some((oc, oci) =>
@@ -216,14 +259,20 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
           tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName
         )) continue;
 
+        // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
+        // 合同グループでも 1 コマとしてカウント (下の increment と整合)
+        if (countsTowardDaily && (tempDaily[dayKey] || 0) + 1 > maxDailyHours) continue;
+
         // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
         // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
         // 落ちないようにする)
         const primaryLocked = tempSch[k]?.locked;
         tempSch[k] = { subject: s, teacher: tName, ...(primaryLocked ? { locked: true } : {}) };
         if (!fixedSubject) tempCnt[cIdx][s]++;
-        if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
-        tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+        if (countsTowardDaily) {
+          if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
+          tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+        }
 
         // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
         secondarySlots.forEach(ss => {
@@ -248,7 +297,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
           delete tempSch[k];
           tempCnt[cIdx][s]--;
         }
-        tempDaily[dayKey]--;
+        if (countsTowardDaily) tempDaily[dayKey]--;
 
         // バックトラック: セカンダリスロット（元の状態に復元）
         secondarySlots.forEach(ss => {
@@ -265,8 +314,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     }
   };
 
-  const initialDaily = {};
-  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), initialDaily);
+  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
 
   return {
     solution,
