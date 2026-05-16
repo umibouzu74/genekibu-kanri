@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 + C2 完了後
+最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1 + C2 完了後
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -20,7 +20,7 @@
 ### 1.2 完成度の体感
 | 領域 | 状態 |
 |---|---|
-| データモデル | 🟢 v2 で安定。マイグレーション関数あり |
+| データモデル | 🟢 v3 で ID ベース。並び替え/追加/削除で schedule キーがずれない (C1) |
 | 自動生成 (MRV+バックトラック) | 🟢 制約充足は動く・複数案・部分解・Web Worker 化済・externalCounts と日次上限を尊重 (A1) |
 | 制約システム | 🟢 純粋関数として `logic/constraints/` に切り出し済 (B3) |
 | 状態管理 | 🟢 useReducer + 30+ action types で集約 (C2)、アクションフックは dispatch ラッパ |
@@ -39,7 +39,7 @@
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **892 件** (timetable-builder 配下は約 215 件、他は親アプリ)
+合計 **898 件** (timetable-builder 配下は約 221 件、他は親アプリ)
 主なファイル:
 - `utils/scheduleKey.test.js` (26)
 - `utils/combinedPropagation.test.js` (19)
@@ -116,27 +116,16 @@
 
 ## C. 破壊的再設計（一旦壊した方が良い候補）
 
-### C1. 🔴 データモデルの ID 化
-**現状の問題**:
-- 現データモデルは「インデックス」で日付・時限・クラスを参照（`d0-p1-c2`）
-- インデックスが UI 操作（並べ替え・追加・削除）でずれる → スケジュールキーがずれる → 整合性管理が複雑化
-- すでに `cleanSchedule` で「無効キーを破棄」している現実的回避策あり、しかし壊れたまま気づかないリスク残
+### ~~C1~~. ✅ データモデルの ID 化 (Project v3)
+完了。config.dates/periods/classes を `{ id, label }` の entity 配列に、
+schedule キーを ID ベースに移行。tab-local incremental ID (max+1)。v1→v2→v3
+チェーンマイグレーションで既存データを自動変換。NG キー / external キーは
+ラベル基準を維持 (タブ横断参照と JSON 可読性のため)。
 
-**提案**:
-- `dates: [{id, label}]`, `periods: [{id, label, startTime}]`, `classes: [{id, label}]` のような ID 付き entity
-- スケジュールキー: `d{dateId}-p{periodId}-c{classId}` のように ID ベース
-- ID は UUID か incremental
-- 並べ替え・名称変更で ID が変わらない → 整合性が自然に保たれる
-
-**移行戦略**:
-1. 新スキーマで Project v3 を定義
-2. v2 → v3 マイグレーションを書く（既存ユーザの LocalStorage を v3 に変換）
-3. すべての参照箇所（autoGenerator / cell ops / Excel 出力 / 集計）を ID ベースに修正
-4. インデックスベース API は廃止
-
-**コスト**: 大規模。1〜2 週間
-**リスク**: 既存データの移行に bug が入ると LocalStorage の中身を壊す → JSON 出力でバックアップを取るフローを必ず先に整備
-**やる価値**: 中。現状の cleanSchedule 戦法でもまあ動いているので、不具合報告が多発したら検討
+並び替え・追加・削除で schedule キーがずれない構造が確立。192 箇所の
+`makeKey` 参照と 17 ファイルを ID 名 (dateId/periodId/classId) に更新。
+scheduleKey.test.js で migrateProject の v1→v3 チェーンを 31 件で検証、
+全 898 tests / lint / typecheck / production build pass で挙動等価。
 
 ---
 
@@ -247,15 +236,14 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 40 files / 892 tests (timetable-builder 約 215 件)
+npm test            # 40 files / 898 tests (timetable-builder 約 221 件)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は xlsx-js-style chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-A 系・B 系および C2 は完了済。残るのは C1 / C3 / C4。優先度の参考:
+A 系・B 系および C1 / C2 は完了済。残るのは C3 / C4。優先度の参考:
 
-- C1 (ID 化)：データモデル変更でリスク高、不具合報告が増えてから検討
 - C3 (デザイン統合)：機能改善ではないので優先度低、機能完成後に検討
 - C4 (xlsx 置き換え)：現状動いているので緊急度低
 
@@ -272,7 +260,7 @@ A 系・B 系および C2 は完了済。残るのは C1 / C3 / C4。優先度�
 ### 4.7 既存 PR / 関連リンク
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
-- A1-A8 + B1-B4 + C2 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
+- A1-A8 + B1-B4 + C1 + C2 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
 - 旧スタンドアロン版の handoff.md: `git show 89e0b25:jikanwarikun-main/handoff.md` で参照可
 
 ---
