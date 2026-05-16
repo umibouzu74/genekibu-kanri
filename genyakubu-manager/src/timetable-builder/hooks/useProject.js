@@ -8,24 +8,26 @@ import { useTeacherActions } from './useTeacherActions';
 // 講習時間割プロジェクトの一元状態管理フック。
 //
 // 内訳:
-//   - useHistoryStack:    project state + Undo/Redo + LocalStorage 自動保存
+//   - useHistoryStack:    useReducer ベースで project + 履歴 + 自動保存
 //   - useJsonIO:          JSON 保存/読込/デフォルト保存/全リセット
-//   - useTeacherActions:  講師管理アクション + externalCounts
+//   - useTeacherActions:  講師管理 dispatch ラッパ + externalCounts
 //   - useSubjectActions:  科目マスタ管理 + 科目カラー
-//   - useScheduleActions: セル操作 (合同伝播は combinedPropagation 委譲) +
-//                         applyPattern + 一括操作
+//   - useScheduleActions: セル操作 dispatch ラッパ + applyPattern + 一括操作
 //   - 本ファイル:         残りのアクション (タブ/設定/合同/メタ) と composer
+//
+// C2 (reducer 化) 以降: 状態変更は全て dispatch 経由。各アクションフックの
+// callback は dispatch (stable) のみに依存するので re-render で identity が
+// 変わらない。
 //
 // 公開 API は ProjectContext 経由で全コンポーネントから参照されるため、
 // 返り値のキー名・関数シグネチャは安易に変更しない。
 export function useProject() {
   const {
     project,
-    setProject,
+    dispatch,
     history,
     historyIndex,
     saveStatus,
-    pushHistory,
     undo,
     redo,
     loadError,
@@ -43,75 +45,66 @@ export function useProject() {
     handleResetAll,
     handleLoadJson,
     handleSaveJson,
-  } = useJsonIO({ project, activeTab, pushHistory });
+  } = useJsonIO({ project, activeTab, dispatch });
 
-  const teacherActions = useTeacherActions({ project, pushHistory });
-  const subjectActions = useSubjectActions({ project, pushHistory });
-  const scheduleActions = useScheduleActions({
-    project,
-    pushHistory,
-    currentConfig,
-    currentSchedule,
-    toggleTeacherNg: teacherActions.toggleTeacherNg,
-  });
+  const teacherActions = useTeacherActions(dispatch);
+  const subjectActions = useSubjectActions(dispatch);
+  const scheduleActions = useScheduleActions(dispatch, currentSchedule);
+
+  // setProject 互換 (switchTab 以外で project 全体を差し替える稀なケース用)。
+  // 履歴に積まない project/setActive を直接呼ぶ。
+  const setProject = useCallback((newProject) => {
+    dispatch({ type: 'project/setActive', payload: newProject });
+  }, [dispatch]);
+
+  // pushHistory 互換: 旧 API を保つために残す。新規コードは dispatch を使うこと。
+  const pushHistory = useCallback((newProject) => {
+    dispatch({ type: 'project/replace', payload: { project: newProject } });
+  }, [dispatch]);
 
   // --- タブ管理 ---
   const handleAddTab = useCallback((name) => {
-    if (!name) return;
-    const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
-    const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
-    const newTab = { id: newId, name, config: configToCopy, schedule: {} };
-    pushHistory({ ...project, tabs: [...project.tabs, newTab], activeTabId: newId });
-  }, [project, activeTab, pushHistory]);
+    dispatch({ type: 'tab/add', payload: { name } });
+  }, [dispatch]);
 
   const handleDeleteTab = useCallback((id) => {
-    if (project.tabs.length <= 1) return;
-    const newTabs = project.tabs.filter(t => t.id !== id);
-    pushHistory({ ...project, tabs: newTabs, activeTabId: newTabs[0].id });
-  }, [project, pushHistory]);
+    dispatch({ type: 'tab/delete', payload: { id } });
+  }, [dispatch]);
 
   const handleRenameTab = useCallback((id, newName) => {
-    if (newName) pushHistory({ ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name: newName } : t) });
-  }, [project, pushHistory]);
+    dispatch({ type: 'tab/rename', payload: { id, name: newName } });
+  }, [dispatch]);
 
   const switchTab = useCallback((id) => {
-    setProject({ ...project, activeTabId: id });
-  }, [project, setProject]);
+    dispatch({ type: 'tab/switch', payload: { id } });
+  }, [dispatch]);
 
   // --- タブ別 config (dates/periods/classes/subjectCounts) ---
   const handleListConfigChange = useCallback((key, value) => {
-    const arr = value.split(',').map(s => s.trim()).filter(s => s);
-    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: arr } } : t);
-    pushHistory({ ...project, tabs: newTabs });
-  }, [project, pushHistory]);
+    dispatch({ type: 'config/setList', payload: { key, value } });
+  }, [dispatch]);
 
-  const handleSubjectCountChange = useCallback((subj, val) => {
-    const newCounts = { ...currentConfig.subjectCounts, [subj]: parseInt(val) || 0 };
-    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t);
-    pushHistory({ ...project, tabs: newTabs });
-  }, [project, currentConfig, pushHistory]);
+  const handleSubjectCountChange = useCallback((subject, value) => {
+    dispatch({ type: 'config/setSubjectCount', payload: { subject, value } });
+  }, [dispatch]);
 
   // --- メタデータ ---
   const updateProjectName = useCallback((name) => {
-    pushHistory({ ...project, name });
-  }, [project, pushHistory]);
+    dispatch({ type: 'project/updateName', payload: { name } });
+  }, [dispatch]);
 
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group) => {
-    const groups = project.combinedGroups || [];
-    const newId = groups.reduce((max, g) => Math.max(max, g.id), 0) + 1;
-    pushHistory({ ...project, combinedGroups: [...groups, { ...group, id: newId }] });
-  }, [project, pushHistory]);
+    dispatch({ type: 'combinedGroup/add', payload: { group } });
+  }, [dispatch]);
 
   const updateCombinedGroup = useCallback((id, updates) => {
-    const newGroups = (project.combinedGroups || []).map(g => g.id === id ? { ...g, ...updates } : g);
-    pushHistory({ ...project, combinedGroups: newGroups });
-  }, [project, pushHistory]);
+    dispatch({ type: 'combinedGroup/update', payload: { id, updates } });
+  }, [dispatch]);
 
   const removeCombinedGroup = useCallback((id) => {
-    const newGroups = (project.combinedGroups || []).filter(g => g.id !== id);
-    pushHistory({ ...project, combinedGroups: newGroups });
-  }, [project, pushHistory]);
+    dispatch({ type: 'combinedGroup/remove', payload: { id } });
+  }, [dispatch]);
 
   return {
     project,
@@ -124,6 +117,7 @@ export function useProject() {
     currentSchedule,
     currentConfig,
     commonSubjects,
+    dispatch,
     pushHistory,
     undo,
     redo,

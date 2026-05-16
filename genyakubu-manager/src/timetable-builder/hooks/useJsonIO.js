@@ -10,7 +10,8 @@ import { detectTeacherDiffs } from './projectFactory';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
-export function useJsonIO({ project, activeTab, pushHistory }) {
+// load 系は dispatch({ type: 'project/replace' }) で reducer に流す。
+export function useJsonIO({ project, activeTab, dispatch }) {
   const fileInputRef = useRef(null);
 
   const handleSaveAsDefault = useCallback(() => {
@@ -43,7 +44,7 @@ export function useJsonIO({ project, activeTab, pushHistory }) {
           if (!confirmed) return;
         }
 
-        pushHistory(cleanSchedule(migrated));
+        dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
         if (onNotify) onNotify("読込完了", "success");
       } catch {
         if (onNotify) onNotify("読み込みエラー", "error");
@@ -51,7 +52,7 @@ export function useJsonIO({ project, activeTab, pushHistory }) {
     };
     r.readAsText(f);
     e.target.value = '';
-  }, [project.teachers, pushHistory]);
+  }, [project.teachers, dispatch]);
 
   const handleSaveJson = useCallback(() => {
     const cleaned = cleanSchedule(project);
