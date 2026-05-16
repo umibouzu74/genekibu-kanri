@@ -143,9 +143,9 @@ function ScheduleApp() {
     };
   }, []);
 
-  const handleContextMenu = (e, dIdx, pIdx, cIdx, type = null, val = null) => {
+  const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, dIdx, pIdx, cIdx, type, val });
+    setContextMenu({ x: e.pageX, y: e.pageY, dateId, periodId, classId, type, val });
   };
 
   const handleContextMenuClose = (copiedData) => {

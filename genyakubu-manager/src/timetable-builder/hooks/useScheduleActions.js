@@ -6,9 +6,18 @@ import { makeKey } from '../utils/scheduleKey';
 // v3: 引数は ID ベース (dateId, periodId, classId)。UI 側は config.dates[i].id 等で
 // 取得して渡す。合同伝播・cleanup・並列更新はすべて projectReducer の各 case で処理。
 //
-// currentSchedule は handleCellCopy が現状のセルを読むためだけに必要
-// (state を変えない reader)。currentSchedule の identity が変わるたびに memo を
-// 作り直すが、cell ops 自体は dispatch のみで stable。
+// メモ化の説明:
+//   - handleCellCopy は currentSchedule を読む読み取り専用関数で、最新の
+//     schedule を見る必要があるため currentSchedule に依存する。
+//   - dispatch-only な cell ops は dispatch のみ参照で本来は stable にできるが、
+//     handleCellCopy と一緒にひとつの object に詰めているため、結局
+//     currentSchedule 変化で memo が invalidate される。
+//   - 実用上、currentSchedule が変わるのは schedule 変更時 (= project state
+//     変化時) で、ProjectContext.value の memo も同じタイミングで invalidate
+//     されるため、ここで個別 callback を stable にしても context consumer
+//     の re-render 回避には繋がらない。よって 1 つの memo に束ねている。
+//   - 仮に handleCellCopy 不要になれば deps を [dispatch] のみにして本当に
+//     stable にできる。
 export function useScheduleActions(dispatch, currentSchedule) {
   return useMemo(() => ({
     handleAssign: (dateId, periodId, classId, type, val) =>

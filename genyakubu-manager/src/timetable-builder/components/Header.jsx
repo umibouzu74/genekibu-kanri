@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 
-// xlsx-js-style はバンドルが大きい (圧縮後 ~350kB) ので、Excel 出力ボタンを
+// exceljs はバンドルが大きい (gzip 後 ~270kB) ので、Excel 出力ボタンを
 // 押した時にだけロードする。初回クリックの体感は数百ms 遅れるが、起動時には
 // ロードしない方が大きい。
 const loadExcelExport = () => import('../utils/excelExport');

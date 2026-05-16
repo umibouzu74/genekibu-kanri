@@ -39,10 +39,9 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
 
   if (!contextMenu) return null;
 
-  // ScheduleCell からの onContextMenu(e, dateId, periodId, classId) 経由で
-  // ScheduleApp が contextMenu に dIdx/pIdx/cIdx として詰めるが、v3 では
-  // これらは実際には dateId/periodId/classId (ID)。名前は legacy のまま。
-  const { dIdx: dateId, pIdx: periodId, cIdx: classId, type, val } = contextMenu;
+  // ScheduleCell からの onContextMenu(e, dateId, periodId, classId) を
+  // ScheduleApp が contextMenu state に詰める。v3 (C1 移行後) 以降の ID。
+  const { dateId, periodId, classId, type, val } = contextMenu;
 
   const handleAction = async (action) => {
     if (action === 'rename') {
