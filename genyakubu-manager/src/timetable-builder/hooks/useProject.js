@@ -1,5 +1,10 @@
 import { useCallback } from 'react';
-import { makeKey, parseKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import {
+  cleanupOldCombined,
+  propagateAssignment,
+  propagateTeacherChange,
+} from '../utils/combinedPropagation';
 import { cleanSchedule } from '../utils/constants';
 import { useHistoryStack } from './useHistoryStack';
 import { useJsonIO } from './useJsonIO';
@@ -209,61 +214,16 @@ export function useProject() {
     if (type === 'subject') { e.subject = val; e.teacher = ""; } else { e[type] = val; }
 
     let newSchedule = { ...currentSchedule, [k]: e };
-
-    // 合同グループの伝播
-    const date = currentConfig.dates[dIdx];
-    const subject = type === 'subject' ? val : e.subject;
+    const groups = project.combinedGroups;
 
     if (type === 'subject') {
-      // 旧科目の合同グループをクリア
       const oldSubject = (currentSchedule[k] || {}).subject;
       if (oldSubject && oldSubject !== val) {
-        const oldClassName = currentConfig.classes[cIdx];
-        const oldGroup = findCombinedGroup(project.combinedGroups, oldSubject, oldClassName, date);
-        if (oldGroup) {
-          oldGroup.classes.forEach(gc => {
-            const gci = currentConfig.classes.indexOf(gc);
-            if (gci >= 0 && gci !== cIdx) {
-              const gk = makeKey(dIdx, pIdx, gci);
-              if (newSchedule[gk]?.subject === oldSubject && !newSchedule[gk]?.locked) {
-                const { [gk]: _removed, ...rest } = newSchedule;
-                newSchedule = rest;
-              }
-            }
-          });
-        }
+        newSchedule = cleanupOldCombined(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, oldSubject);
       }
-      // 新科目の合同グループに伝播
-      if (val) {
-        const className = currentConfig.classes[cIdx];
-        const group = findCombinedGroup(project.combinedGroups, val, className, date);
-        if (group) {
-          group.classes.forEach(gc => {
-            const gci = currentConfig.classes.indexOf(gc);
-            if (gci >= 0 && gci !== cIdx) {
-              const gk = makeKey(dIdx, pIdx, gci);
-              if (!newSchedule[gk]?.locked) {
-                newSchedule[gk] = { ...(newSchedule[gk] || {}), subject: val, teacher: "" };
-              }
-            }
-          });
-        }
-      }
-    } else if (type === 'teacher' && subject) {
-      // 講師変更を合同グループに伝播
-      const className = currentConfig.classes[cIdx];
-      const group = findCombinedGroup(project.combinedGroups, subject, className, date);
-      if (group) {
-        group.classes.forEach(gc => {
-          const gci = currentConfig.classes.indexOf(gc);
-          if (gci >= 0 && gci !== cIdx) {
-            const gk = makeKey(dIdx, pIdx, gci);
-            if (newSchedule[gk]?.subject === subject && !newSchedule[gk]?.locked) {
-              newSchedule[gk] = { ...newSchedule[gk], teacher: val };
-            }
-          }
-        });
-      }
+      newSchedule = propagateAssignment(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, e);
+    } else if (type === 'teacher' && e.subject) {
+      newSchedule = propagateTeacherChange(newSchedule, currentConfig, groups, dIdx, pIdx, cIdx, e.subject, val);
     }
 
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: newSchedule } : t);
@@ -338,77 +298,33 @@ export function useProject() {
   const handleCellPaste = useCallback((dIdx, pIdx, cIdx, clipboard) => {
     const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
-    if (clipboard && !curr.locked) {
-      let ns = { ...currentSchedule };
-      const date = currentConfig.dates[dIdx];
-      const className = currentConfig.classes[cIdx];
+    if (!clipboard || curr.locked) return;
 
-      // 旧科目の合同グループをクリア
-      if (curr.subject && curr.subject !== clipboard.subject) {
-        const oldGroup = findCombinedGroup(project.combinedGroups, curr.subject, className, date);
-        if (oldGroup) {
-          oldGroup.classes.forEach(gc => {
-            const gci = currentConfig.classes.indexOf(gc);
-            if (gci >= 0 && gci !== cIdx) {
-              const gk = makeKey(dIdx, pIdx, gci);
-              if (ns[gk]?.subject === curr.subject && !ns[gk]?.locked) {
-                delete ns[gk];
-              }
-            }
-          });
-        }
-      }
+    let ns = { ...currentSchedule };
+    const groups = project.combinedGroups;
 
-      // ペースト実行
-      ns[k] = { ...curr, subject: clipboard.subject, teacher: clipboard.teacher };
-
-      // 新科目の合同グループに伝播
-      if (clipboard.subject) {
-        const newGroup = findCombinedGroup(project.combinedGroups, clipboard.subject, className, date);
-        if (newGroup) {
-          newGroup.classes.forEach(gc => {
-            const gci = currentConfig.classes.indexOf(gc);
-            if (gci >= 0 && gci !== cIdx) {
-              const gk = makeKey(dIdx, pIdx, gci);
-              if (!ns[gk]?.locked) {
-                ns[gk] = { ...(ns[gk] || {}), subject: clipboard.subject, teacher: clipboard.teacher };
-              }
-            }
-          });
-        }
-      }
-
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
-      pushHistory({ ...project, tabs: newTabs });
+    if (curr.subject && curr.subject !== clipboard.subject) {
+      ns = cleanupOldCombined(ns, currentConfig, groups, dIdx, pIdx, cIdx, curr.subject);
     }
+
+    const newEntry = { ...curr, subject: clipboard.subject, teacher: clipboard.teacher };
+    ns[k] = newEntry;
+    ns = propagateAssignment(ns, currentConfig, groups, dIdx, pIdx, cIdx, newEntry);
+
+    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
+    pushHistory({ ...project, tabs: newTabs });
   }, [project, currentSchedule, currentConfig, pushHistory]);
 
   const handleCellClear = useCallback((dIdx, pIdx, cIdx) => {
     const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
-    if (!curr.locked) {
-      const ns = { ...currentSchedule };
-      // 合同グループの連動クリア
-      if (curr.subject) {
-        const date = currentConfig.dates[dIdx];
-        const className = currentConfig.classes[cIdx];
-        const group = findCombinedGroup(project.combinedGroups, curr.subject, className, date);
-        if (group) {
-          group.classes.forEach(gc => {
-            const gci = currentConfig.classes.indexOf(gc);
-            if (gci >= 0 && gci !== cIdx) {
-              const gk = makeKey(dIdx, pIdx, gci);
-              if (ns[gk]?.subject === curr.subject && !ns[gk]?.locked) {
-                delete ns[gk];
-              }
-            }
-          });
-        }
-      }
-      delete ns[k];
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
-      pushHistory({ ...project, tabs: newTabs });
-    }
+    if (curr.locked) return;
+
+    let ns = cleanupOldCombined(currentSchedule, currentConfig, project.combinedGroups, dIdx, pIdx, cIdx, curr.subject);
+    ns = { ...ns };
+    delete ns[k];
+    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
+    pushHistory({ ...project, tabs: newTabs });
   }, [project, currentSchedule, currentConfig, pushHistory]);
 
   const handleSetNg = useCallback((dIdx, pIdx, cIdx) => {
@@ -442,53 +358,21 @@ export function useProject() {
     const tParsed = parseKey(targetKey);
     if (!sParsed || !tParsed) return;
 
-    const ns = { ...currentSchedule };
+    const groups = project.combinedGroups;
+    let ns = { ...currentSchedule };
 
-    // スワップ前: 旧合同グループのセカンダリをクリア
-    const clearOldCombined = (parsed, data) => {
-      if (!data.subject) return;
-      const date = currentConfig.dates[parsed.dIdx];
-      const cls = currentConfig.classes[parsed.cIdx];
-      const group = findCombinedGroup(project.combinedGroups, data.subject, cls, date);
-      if (group) {
-        group.classes.forEach(gc => {
-          const gci = currentConfig.classes.indexOf(gc);
-          if (gci >= 0 && gci !== parsed.cIdx) {
-            const gk = makeKey(parsed.dIdx, parsed.pIdx, gci);
-            if (ns[gk]?.subject === data.subject && !ns[gk]?.locked) {
-              delete ns[gk];
-            }
-          }
-        });
-      }
-    };
-    clearOldCombined(sParsed, sourceData);
-    clearOldCombined(tParsed, targetData);
+    // スワップ前: 両セルの旧合同グループ secondary をクリア
+    ns = cleanupOldCombined(ns, currentConfig, groups, sParsed.dIdx, sParsed.pIdx, sParsed.cIdx, sourceData.subject);
+    ns = cleanupOldCombined(ns, currentConfig, groups, tParsed.dIdx, tParsed.pIdx, tParsed.cIdx, targetData.subject);
 
-    // スワップ実行
+    // スワップ実行 (locked は false に落とす)
+    ns = { ...ns };
     ns[sourceKey] = { ...targetData, locked: false };
     ns[targetKey] = { ...sourceData, locked: false };
 
     // スワップ後: 新合同グループに伝播
-    const propagateNewCombined = (parsed, entry) => {
-      if (!entry.subject) return;
-      const date = currentConfig.dates[parsed.dIdx];
-      const cls = currentConfig.classes[parsed.cIdx];
-      const group = findCombinedGroup(project.combinedGroups, entry.subject, cls, date);
-      if (group) {
-        group.classes.forEach(gc => {
-          const gci = currentConfig.classes.indexOf(gc);
-          if (gci >= 0 && gci !== parsed.cIdx) {
-            const gk = makeKey(parsed.dIdx, parsed.pIdx, gci);
-            if (!ns[gk]?.locked) {
-              ns[gk] = { ...(ns[gk] || {}), subject: entry.subject, teacher: entry.teacher };
-            }
-          }
-        });
-      }
-    };
-    propagateNewCombined(sParsed, ns[sourceKey]);
-    propagateNewCombined(tParsed, ns[targetKey]);
+    ns = propagateAssignment(ns, currentConfig, groups, sParsed.dIdx, sParsed.pIdx, sParsed.cIdx, ns[sourceKey]);
+    ns = propagateAssignment(ns, currentConfig, groups, tParsed.dIdx, tParsed.pIdx, tParsed.cIdx, ns[targetKey]);
 
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
     pushHistory({ ...project, tabs: newTabs });
