@@ -155,33 +155,37 @@ export function migrateScheduleKeys(schedule, config) {
 // dates/periods/classes が string[] のものを [{id, label}] に変換し、既存
 // schedule キー (d{dIdx}-p{pIdx}-c{cIdx}) を新 ID キー (d{dateId}-p{periodId}-c{classId})
 // に書き換える。ID はタブごとに 1 始まりの incremental。
+//
+// 注意: 各次元を独立に判定する (v3 と v2 が混在しても各次元で正しく処理)。
+// 空配列は v3 互換とみなす (v3 schema は length 0 を許容する)。これにより
+// 「片方の次元だけ空で他は v3」というケースで残りの次元を破壊しない。
 export function migrateTabV2toV3(tab) {
-  // すでに v3 形式 (object 配列) ならそのまま
-  const isV3 = (entities) => Array.isArray(entities) && entities.length > 0 && typeof entities[0] === 'object' && 'id' in entities[0];
-  if (isV3(tab.config.dates) && isV3(tab.config.periods) && isV3(tab.config.classes)) {
+  // entity 配列の形を判定: 空配列は v3 互換、内部が { id, label } object なら v3
+  const isV3Shape = (arr) =>
+    Array.isArray(arr) && (arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]));
+
+  // 全 dimension が v3 形式 (空含む) ならそのまま返す
+  if (isV3Shape(tab.config.dates) && isV3Shape(tab.config.periods) && isV3Shape(tab.config.classes)) {
     return tab;
   }
 
-  // 各次元のインデックス → 新規 id の対応マップを作る
-  const wrap = (arr) => arr.map((label, idx) => ({ id: idx + 1, label, _oldIdx: idx }));
-  const newDatesRaw = wrap(tab.config.dates);
-  const newPeriodsRaw = wrap(tab.config.periods);
-  const newClassesRaw = wrap(tab.config.classes);
-
-  const idxToId = (rawArr) => {
-    const m = new Map();
-    rawArr.forEach(e => m.set(e._oldIdx, e.id));
-    return m;
+  // 次元ごとに「v3 形式 → そのまま使う」「string array → wrap」を独立判定。
+  // 戻り値: { arr: 新配列, idxToId: 配列位置(0-based) → entity.id の Map }
+  const normalize = (arr) => {
+    if (isV3Shape(arr)) {
+      return { arr, idxToId: new Map(arr.map((e, idx) => [idx, e.id])) };
+    }
+    const wrapped = arr.map((label, idx) => ({ id: idx + 1, label }));
+    return { arr: wrapped, idxToId: new Map(wrapped.map((e, idx) => [idx, e.id])) };
   };
-  const dateMap = idxToId(newDatesRaw);
-  const periodMap = idxToId(newPeriodsRaw);
-  const classMap = idxToId(newClassesRaw);
 
-  const stripOldIdx = (e) => ({ id: e.id, label: e.label });
-  const newDates = newDatesRaw.map(stripOldIdx);
-  const newPeriods = newPeriodsRaw.map(stripOldIdx);
-  const newClasses = newClassesRaw.map(stripOldIdx);
+  const { arr: newDates, idxToId: dateMap } = normalize(tab.config.dates);
+  const { arr: newPeriods, idxToId: periodMap } = normalize(tab.config.periods);
+  const { arr: newClasses, idxToId: classMap } = normalize(tab.config.classes);
 
+  // schedule キーは「v2 のインデックスベース」を前提に書き換える。
+  // version < 3 のときにだけここに来るので、key の数値部分は配列位置と解釈してよい。
+  // 範囲外のキーは drop (cleanSchedule 相当)。
   const newSchedule = {};
   Object.keys(tab.schedule).forEach(oldKey => {
     const m = oldKey.match(/^d(\d+)-p(\d+)-c(\d+)$/);
@@ -190,7 +194,7 @@ export function migrateTabV2toV3(tab) {
     const dateId = dateMap.get(dIdx);
     const periodId = periodMap.get(pIdx);
     const classId = classMap.get(cIdx);
-    if (dateId == null || periodId == null || classId == null) return; // 範囲外 (cleanSchedule 相当)
+    if (dateId == null || periodId == null || classId == null) return; // 範囲外
     newSchedule[makeKey(dateId, periodId, classId)] = tab.schedule[oldKey];
   });
 

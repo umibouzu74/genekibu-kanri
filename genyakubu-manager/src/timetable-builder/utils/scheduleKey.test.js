@@ -240,6 +240,80 @@ describe('migrateTabV2toV3', () => {
     };
     expect(migrateTabV2toV3(v3Tab)).toBe(v3Tab);
   });
+
+  it('全 dimension が空配列 (v3 互換) ならそのまま返す', () => {
+    // 空配列は v3 schema として有効。再 wrap して corruption しないこと。
+    const tab = {
+      id: 1, name: 'main',
+      config: { dates: [], periods: [], classes: [], subjectCounts: {} },
+      schedule: {},
+    };
+    expect(migrateTabV2toV3(tab)).toBe(tab);
+  });
+
+  it('混在: 1 次元だけ空で他は v3 でも残りを破壊しない', () => {
+    // 回帰テスト: 旧実装では isV3() が length>0 を要求するため、片方が空だと
+    // 全 dimension が wrap() を経由して既存 v3 entity が二重ネスト化した。
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: [],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }],
+        subjectCounts: {},
+      },
+      schedule: {},
+    };
+    const result = migrateTabV2toV3(tab);
+    expect(result.config.periods).toEqual([{ id: 1, label: '1限' }]);
+    expect(result.config.classes).toEqual([{ id: 1, label: '３S' }]);
+    expect(result.config.dates).toEqual([]);
+  });
+
+  it('混在: v2 string と v3 object が次元別に混在しても各次元を独立処理', () => {
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: ['12/25', '12/26'],          // v2 string
+        periods: [{ id: 5, label: '1限' }],  // v3 (ID 5)
+        classes: ['３S'],                    // v2 string
+        subjectCounts: {},
+      },
+      schedule: {},
+    };
+    const result = migrateTabV2toV3(tab);
+    // v2 だった dates は 1 始まり ID で wrap
+    expect(result.config.dates).toEqual([
+      { id: 1, label: '12/25' },
+      { id: 2, label: '12/26' },
+    ]);
+    // v3 だった periods は ID を維持
+    expect(result.config.periods).toEqual([{ id: 5, label: '1限' }]);
+    // v2 だった classes は wrap
+    expect(result.config.classes).toEqual([{ id: 1, label: '３S' }]);
+  });
+
+  it('範囲外の v2 schedule キーは drop される', () => {
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: ['12/25'],
+        periods: ['1限'],
+        classes: ['３S'],
+        subjectCounts: {},
+      },
+      schedule: {
+        'd0-p0-c0': { subject: '英語', teacher: '堀上' },  // valid
+        'd99-p0-c0': { subject: '数学', teacher: '田中' }, // out-of-range date
+        'd0-p99-c0': { subject: '国語', teacher: '佐藤' }, // out-of-range period
+        'd0-p0-c99': { subject: '理科', teacher: '高松' }, // out-of-range class
+        'not-a-key': { subject: 'x', teacher: 'y' },        // 不正形式
+      },
+    };
+    const result = migrateTabV2toV3(tab);
+    expect(Object.keys(result.schedule)).toEqual(['d1-p1-c1']);
+    expect(result.schedule['d1-p1-c1']).toEqual({ subject: '英語', teacher: '堀上' });
+  });
 });
 
 describe('migrateProject', () => {
