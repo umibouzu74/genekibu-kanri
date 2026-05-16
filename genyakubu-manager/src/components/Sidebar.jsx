@@ -90,6 +90,7 @@ const MENU_CONFIG = [
     children: [
       { key: VIEWS.HOLIDAYS, icon: "📅", label: "休講・テスト期間・イベント" },
       { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
+      { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成" },
     ],
   },
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },

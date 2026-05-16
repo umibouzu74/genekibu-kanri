@@ -1,0 +1,14 @@
+/*
+ * timetable-builder モジュール専用の Tailwind エントリ。
+ *
+ * 親アプリ (genyakubu-manager) は inline style ベースで作られているため、
+ * Tailwind の preflight (base レイヤ) を当てると親側の <button> / <h1> /
+ * <ul> などへ予期せぬリセットが波及してしまう。それを避けるため、
+ * ここでは components と utilities のみを読み込む。
+ *
+ * Tailwind の content スコープは tailwind.config.js で
+ * src/timetable-builder/** のみに絞っているので、生成されるユーティリティ
+ * クラス名が親側で衝突するリスクはほぼゼロ。
+ */
+@tailwind components;
+@tailwind utilities;

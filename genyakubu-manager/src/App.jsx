@@ -91,6 +91,10 @@ const AbsenceWorkflowView = lazy(() =>
     default: m.AbsenceWorkflowView,
   }))
 );
+// 旧 jikanwarikun を timetable-builder/ として取り込み。
+// 講習 (夏・冬・春) 用の時間割を MRV+バックトラッキングで自動生成する。
+// 親アプリの Slot/Sub データには触れず、独自に LocalStorage で永続化。
+const BuilderApp = lazy(() => import("./timetable-builder/BuilderApp"));
 
 // Lazy-loaded modals (only rendered on demand).
 const SubstituteForm = lazy(() =>
@@ -148,6 +152,7 @@ const VIEW_TITLES = {
   [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
   [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
   [VIEWS.STAFF]: "バイト管理",
+  [VIEWS.BUILDER]: "講習時間割作成",
 };
 
 export default function App() {
@@ -1121,6 +1126,7 @@ export default function App() {
               }}
             />
           )}
+          {view === VIEWS.BUILDER && !selected && <BuilderApp />}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
               subs={subs}
