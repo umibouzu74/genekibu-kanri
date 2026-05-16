@@ -1,6 +1,19 @@
 // 自動生成ロジック（MRV法 + バックトラッキング）
 // 純粋関数として抽出。UI依存なし。
-import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import {
+  canTeachSubject,
+  isNgSlot,
+  isNgClass,
+  isTeacherCandidateFor,
+  wouldExceedDailyLimit,
+} from './constraints/teacherConstraints';
+import {
+  hasSubjectInSameDayClass,
+  hasSubjectInSameDayClassExcept,
+  hasTeacherInSamePeriod,
+  hasSubjectQuotaRemaining,
+} from './constraints/scheduleConstraints';
 
 // シード付き疑似乱数生成器 (Mulberry32)
 function mulberry32(seed) {
@@ -117,9 +130,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToCheck = slot.fixedSubject ? [slot.fixedSubject] : commonSubjects;
     subjectsToCheck.forEach(subj => {
       project.teachers.forEach(t => {
-        if (t.subjects.includes(subj) &&
-          !t.ngSlots?.includes(makeNgKey(slot.d, slot.p)) &&
-          !t.ngClasses?.includes(slot.c)) {
+        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d, slot.p) && !isNgClass(t, slot.c)) {
           validCandidates++;
         }
       });
@@ -162,9 +173,9 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
 
     for (const s of subjectsToTry) {
-      if (!fixedSubject && (tempCnt[cIdx][s] || 0) >= currentConfig.subjectCounts[s]) continue;
+      if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
       // 同日・同クラスに同じ科目があるかチェック
-      if (!fixedSubject && currentConfig.periods.some((per, pi) => tempSch[makeKey(dIdx, pi, cIdx)]?.subject === s)) continue;
+      if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, dIdx, cIdx, s)) continue;
 
       // 合同グループチェック
       const group = findCombinedGroup(combinedGroups, s, c, d);
@@ -190,12 +201,12 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             break;
           }
           // 科目枠が残っていない場合は不可
-          if (!otherEntry?.subject && (tempCnt[otherCIdx]?.[s] || 0) >= currentConfig.subjectCounts[s]) {
+          if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
             canUseCombined = false;
             break;
           }
-          // 同日・同クラスに同じ科目が既にある場合は不可
-          if (!otherEntry?.subject && currentConfig.periods.some((per, pi) => pi !== pIdx && tempSch[makeKey(dIdx, pi, otherCIdx)]?.subject === s)) {
+          // 同日・同クラスに同じ科目が既にある場合は不可 (今コマは除外)
+          if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, dIdx, otherCIdx, s, pIdx)) {
             canUseCombined = false;
             break;
           }
@@ -216,19 +227,18 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         if (!canUseCombined) continue;
       }
 
-      // 有効な講師を検索
-      const validT = project.teachers.filter(t => {
-        if (!t.subjects.includes(s)) return false;
-        if (t.ngSlots?.includes(makeNgKey(d, p))) return false;
-        if (t.ngClasses?.includes(c)) return false;
-        // 合同グループの場合、セカンダリクラスのNGもチェック
-        if (group) {
-          for (const ss of secondarySlots) {
-            if (t.ngClasses?.includes(ss.className)) return false;
-          }
-        }
-        return true;
-      });
+      // 有効な講師を検索 (subject 担当・NG slot/class・合同セカンダリ NG class)
+      const secondaryClassNames = group ? secondarySlots.map(ss => ss.className) : [];
+      const validT = project.teachers.filter(t =>
+        isTeacherCandidateFor({
+          teacher: t,
+          subject: s,
+          date: d,
+          period: p,
+          className: c,
+          secondaryClassNames,
+        })
+      );
 
       const priorityGroup = [];
       const neutralGroup = [];
@@ -252,16 +262,15 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         const dayKey = makeExternalKey(d, tName);
         const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
 
-        // 同じ日付・時限で他クラスに同じ講師がいるかチェック（合同グループ内は除外）
-        if (currentConfig.classes.some((oc, oci) =>
-          oci !== cIdx &&
-          !combinedClassIndices.includes(oci) &&
-          tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName
-        )) continue;
+        // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
+        if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, dIdx, pIdx, cIdx, tName, combinedClassIndices)) continue;
 
         // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
         // 合同グループでも 1 コマとしてカウント (下の increment と整合)
-        if (countsTowardDaily && (tempDaily[dayKey] || 0) + 1 > maxDailyHours) continue;
+        if (wouldExceedDailyLimit({
+          teacherName: tName, date: d, tempDaily, maxDailyHours,
+          exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
+        })) continue;
 
         // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
         // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
