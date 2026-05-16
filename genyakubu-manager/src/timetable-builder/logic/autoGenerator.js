@@ -216,8 +216,11 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
           tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName
         )) continue;
 
-        // プライマリスロットを割り当て
-        tempSch[k] = { subject: s, teacher: tName };
+        // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
+        // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
+        // 落ちないようにする)
+        const primaryLocked = tempSch[k]?.locked;
+        tempSch[k] = { subject: s, teacher: tName, ...(primaryLocked ? { locked: true } : {}) };
         if (!fixedSubject) tempCnt[cIdx][s]++;
         if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
         tempDaily[dayKey]++; // 合同でも1コマとしてカウント
@@ -234,9 +237,17 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
         if (solution !== null) return;
 
-        // バックトラック: プライマリスロット
-        if (fixedSubject) tempSch[k] = { subject: fixedSubject, teacher: "" };
-        else { delete tempSch[k]; tempCnt[cIdx][s]--; }
+        // バックトラック: プライマリスロット (locked 保持)
+        if (fixedSubject) {
+          tempSch[k] = { subject: fixedSubject, teacher: "", ...(primaryLocked ? { locked: true } : {}) };
+        } else if (primaryLocked) {
+          // 元が空 + locked のセル: 空に戻すが lock は保持
+          tempSch[k] = { locked: true };
+          tempCnt[cIdx][s]--;
+        } else {
+          delete tempSch[k];
+          tempCnt[cIdx][s]--;
+        }
         tempDaily[dayKey]--;
 
         // バックトラック: セカンダリスロット（元の状態に復元）

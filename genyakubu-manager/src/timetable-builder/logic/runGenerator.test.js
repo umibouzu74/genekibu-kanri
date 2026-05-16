@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runGeneratorInWorker } from './runGenerator';
 import { makeKey } from '../utils/scheduleKey';
-// 注意: jsdom には Worker がないため runGeneratorInWorker は sync 経路に
-// 落ちる。sync fallback は Promise 本体を即時実行するので cancel テストは
-// 行えない (Worker 側は terminate で即停止する)。
+// 注意: vite.config.js の test.environment は "node" で、node にも
+// Worker は無いため runGeneratorInWorker は sync 経路に落ちる。sync
+// fallback は Promise 本体を即時実行するので cancel の中断テストは
+// 行えない (本番 Worker は terminate で即停止する)。
 
 // jsdom には Worker がないので、runGeneratorInWorker は sync fallback に
 // 落ちる。ここではその経路の挙動 (onPattern が numPatterns 回呼ばれる、
@@ -64,18 +65,19 @@ describe('runGeneratorInWorker (sync fallback)', () => {
     }
   });
 
-  it('handle.done を await すると全パターン完了後に resolve する', async () => {
+  it('handle.done を await すると numPatterns 回の onPattern 完了後に resolve', async () => {
     const project = makeMiniProject();
-    let completedAfterDone = false;
+    const callIndices = [];
     const handle = runGeneratorInWorker({
       project,
       activeTabId: 1,
-      numPatterns: 2,
+      numPatterns: 4,
       baseSeed: 1,
-      onPattern: () => { completedAfterDone = true; },
+      onPattern: (i) => callIndices.push(i),
     });
     await handle.done;
-    expect(completedAfterDone).toBe(true);
+    // 4 回正しい順序で呼ばれていることを検証
+    expect(callIndices).toEqual([0, 1, 2, 3]);
   });
 
   it('cancel API は呼べる (sync fallback では no-op 相当)', () => {

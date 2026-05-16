@@ -156,12 +156,30 @@ describe('generateSinglePattern — 制約', () => {
     expect(t1).not.toBe(t2);
   });
 
-  it('ロック済みセルは保持される (未充填扱いされない)', () => {
-    // 未充填がゼロなら solution は schedule そのまま。手動で入れたコマも残る。
+  it('完全に埋まった既存セルは solver が触らない (未充填判定で除外)', () => {
+    // subject も teacher も埋まっていれば slots[] に入らず、solver は触らない。
     const project = makeProject({
       teachers: [teacher('堀上', ['英語'])],
       schedule: {
         [makeKey(0, 0, 0)]: { subject: '英語', teacher: '田中', locked: true },
+      },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution[makeKey(0, 0, 0)]).toEqual({
+      subject: '英語',
+      teacher: '田中',
+      locked: true,
+    });
+  });
+
+  it('「科目だけ固定 + locked」のセルを solver が埋めても locked が保持される', () => {
+    // teacher 空のセルは slots[] に入って solver が埋めるが、その際 locked
+    // フラグが落ちると UI 側のロック表示と齟齬が出る。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['数学']), teacher('田中', ['英語'])],
+      subjectCounts: { '英語': 1, '数学': 1 },
+      schedule: {
+        [makeKey(0, 0, 0)]: { subject: '英語', teacher: '', locked: true },
       },
     });
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
@@ -244,14 +262,20 @@ describe('generateSinglePattern — seed による決定性', () => {
     expect(flatten(r1.solution)).toEqual(flatten(r2.solution));
   });
 
-  it('違う seed なら結果が変わりうる (固定 seed の組で異なる)', () => {
-    // 解空間が複数ある状況で、ある seed ペアで異なる解が出ることを確認。
-    // 必ずしも違う必要はないが、現実装の seed の挙動として観測される性質。
-    const r1 = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
-    const r2 = generateSinglePattern({ project, activeTabId: 1, seed: 999 });
-    // 解は両方とも有効なはず
-    expect(r1.solution).not.toBeNull();
-    expect(r2.solution).not.toBeNull();
+  it('違う seed なら結果が変わる (複数解空間で seed が解多様性を担う)', () => {
+    // 講師 2 人 × 科目 2 つ × 時限 2 × クラス 2 = 解空間が広い構成で、
+    // 複数の seed ペアのうち少なくとも 1 ペアで異なる解が出ることを確認。
+    // 単一ペアだけだと偶然同じ解になることもあるので、複数を試す。
+    const baseline = flatten(generateSinglePattern({ project, activeTabId: 1, seed: 0 }).solution);
+    let foundDifferent = false;
+    for (const seed of [1, 7, 42, 100, 999, 31337]) {
+      const sol = flatten(generateSinglePattern({ project, activeTabId: 1, seed }).solution);
+      if (JSON.stringify(sol) !== JSON.stringify(baseline)) {
+        foundDifferent = true;
+        break;
+      }
+    }
+    expect(foundDifferent).toBe(true);
   });
 });
 
