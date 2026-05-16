@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   makeKey,
   parseKey,
-  resolveKey,
   makeNgKey,
   makeExternalKey,
   findCombinedGroup,
@@ -36,26 +35,6 @@ describe('makeKey / parseKey', () => {
     for (const [d, p, c] of [[0, 0, 0], [5, 3, 2], [99, 7, 11]]) {
       expect(parseKey(makeKey(d, p, c))).toEqual({ dIdx: d, pIdx: p, cIdx: c });
     }
-  });
-});
-
-describe('resolveKey', () => {
-  const config = {
-    dates: ['12/25(木)', '12/26(金)'],
-    periods: ['1限 (13:00~)', '2限 (14:10~)'],
-    classes: ['３S', '３A'],
-  };
-
-  it('インデックスキーから実際の値を解決する', () => {
-    expect(resolveKey('d0-p1-c0', config)).toEqual({
-      date: '12/25(木)',
-      period: '2限 (14:10~)',
-      class: '３S',
-    });
-  });
-
-  it('不正なキーには null を返す', () => {
-    expect(resolveKey('invalid', config)).toBeNull();
   });
 });
 

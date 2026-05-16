@@ -12,17 +12,6 @@ export const parseKey = (key) => {
   return { dIdx: parseInt(m[1]), pIdx: parseInt(m[2]), cIdx: parseInt(m[3]) };
 };
 
-// インデックスキーから実際の値を解決
-export const resolveKey = (key, config) => {
-  const parsed = parseKey(key);
-  if (!parsed) return null;
-  return {
-    date: config.dates[parsed.dIdx],
-    period: config.periods[parsed.pIdx],
-    class: config.classes[parsed.cIdx],
-  };
-};
-
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // （config 変更時にインデックスがずれる問題を避けるため）

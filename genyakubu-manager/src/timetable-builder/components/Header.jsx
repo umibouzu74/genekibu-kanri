@@ -20,10 +20,43 @@ export default function Header() {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(project.name || "");
+  // null | 'all' | 'teacher'。Excel 出力ボタンの多重押下を防ぐ。
+  const [exportingType, setExportingType] = useState(null);
 
   const handleNameSubmit = () => {
     updateProjectName(nameInput.trim());
     setIsEditingName(false);
+  };
+
+  // Excel 出力ボタンの共通ハンドラ。
+  //   1. 動的 import の失敗と Excel 生成の失敗を文言で区別
+  //   2. 進行中はボタンを disabled + スピナー表示
+  //   3. catch では console.error も残してデバッグ可能に
+  const handleExport = async (type) => {
+    setExportingType(type);
+    let mod;
+    try {
+      mod = await loadExcelExport();
+    } catch (err) {
+      console.error('Excel module load failed', err);
+      showToast('Excel出力ライブラリの読み込みに失敗しました', 'error');
+      setExportingType(null);
+      return;
+    }
+    try {
+      if (type === 'all') {
+        mod.downloadScheduleExcel(project);
+        showToast('全体Excelをダウンロードしました');
+      } else {
+        mod.downloadTeacherExcel(project);
+        showToast('個人別Excelをダウンロードしました');
+      }
+    } catch (err) {
+      console.error('Excel generate failed', err);
+      showToast('Excelファイルの生成に失敗しました', 'error');
+    } finally {
+      setExportingType(null);
+    }
   };
 
   const displayName = project.name || "無題のプロジェクト";
@@ -57,34 +90,20 @@ export default function Header() {
         <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>
         <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold" title="JSONファイルからプロジェクトを開く">📂 開く</button>
         <button
-          onClick={async () => {
-            try {
-              const { downloadScheduleExcel } = await loadExcelExport();
-              downloadScheduleExcel(project);
-              showToast("全体Excelをダウンロードしました");
-            } catch {
-              showToast("Excel出力に失敗しました", "error");
-            }
-          }}
-          className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold"
+          onClick={() => handleExport('all')}
+          disabled={exportingType !== null}
+          className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
           title="全タブのスケジュールをExcel出力"
         >
-          📊 全Excel
+          {exportingType === 'all' ? '⏳ 出力中...' : '📊 全Excel'}
         </button>
         <button
-          onClick={async () => {
-            try {
-              const { downloadTeacherExcel } = await loadExcelExport();
-              downloadTeacherExcel(project);
-              showToast("個人別Excelをダウンロードしました");
-            } catch {
-              showToast("Excel出力に失敗しました", "error");
-            }
-          }}
-          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold"
+          onClick={() => handleExport('teacher')}
+          disabled={exportingType !== null}
+          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
           title="講師別スケジュールをExcel出力"
         >
-          👤 個人Excel
+          {exportingType === 'teacher' ? '⏳ 出力中...' : '👤 個人Excel'}
         </button>
         <input type="file" accept=".json" ref={fileInputRef} onChange={(e) => handleLoadJson(e, showToast, showConfirm)} className="hidden" />
       </div>

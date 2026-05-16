@@ -63,6 +63,7 @@ export default function Toolbar({
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
         <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
+        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
         <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 shadow-sm text-sm font-bold" title="ロックされていないセルを全てクリア">🗑️ 生成クリア</button>
         <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-purple-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"}`}>

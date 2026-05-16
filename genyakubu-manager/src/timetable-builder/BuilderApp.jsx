@@ -21,7 +21,12 @@ function ScheduleApp() {
 
   useEffect(() => {
     const base = '時間割作成くん';
+    const previousTitle = document.title;
     document.title = project.name ? `${project.name} - ${base}` : base;
+    return () => {
+      // Builder アンマウント時に親アプリの title へ戻す
+      document.title = previousTitle;
+    };
   }, [project.name]);
 
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
@@ -66,6 +71,9 @@ function ScheduleApp() {
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
 
     const results = [];
+    // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
+    // の二重 toast が出ないよう、エラー発生フラグで done 側の文言を抑制する
+    let errored = false;
     const handle = runGeneratorInWorker({
       project,
       activeTabId: project.activeTabId,
@@ -76,6 +84,7 @@ function ScheduleApp() {
         setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
       },
       onError: (msg) => {
+        errored = true;
         showToast(`生成エラー: ${msg}`, "error", 5000);
       },
     });
@@ -103,7 +112,8 @@ function ScheduleApp() {
         if (hasPartial) {
           showToast("一部の案は完全解が見つからなかったため、可能な範囲で埋めた部分解です。", "warning", 5000);
         }
-      } else {
+      } else if (!errored) {
+        // onError 経由のエラー toast は既に出ているので、それ以外の "パターン 0" のみ
         showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
       }
       setIsGenerating(false);
