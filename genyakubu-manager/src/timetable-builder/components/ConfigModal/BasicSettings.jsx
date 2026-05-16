@@ -33,26 +33,26 @@ export default function BasicSettings() {
 
   return (
     <div className="space-y-4">
-      <h3 className="font-bold text-blue-800 border-b pb-1">📅 カレンダー設定 ({activeTab.name})</h3>
-      <div className="bg-blue-50 p-2 text-xs text-blue-800 border border-blue-200 rounded">
+      <h3 className="font-bold text-builder-ink border-b border-builder-border pb-1">📅 カレンダー設定 ({activeTab.name})</h3>
+      <div className="bg-builder-info-soft p-2 text-xs text-builder-ink border border-builder-info-border rounded">
         <strong>便利機能:</strong> カレンダーの日付やクラス名を右クリックすると、名称を変更できます（データも引き継がれます）。<br />
         現在の設定を保存したい場合は、下の「現在の設定を初期値にする」ボタンを押してください。
         科目の追加・コマ数設定は「📚 科目」タブで行えます。
       </div>
       <div>
-        <label className="text-xs font-bold text-gray-500">日付 (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-20 rounded" value={currentConfig.dates.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('dates', e.target.value)} />
+        <label className="text-xs font-bold text-builder-ink-muted">日付 (カンマ区切り)</label>
+        <textarea className="w-full border border-builder-border p-2 text-sm h-20 rounded" value={currentConfig.dates.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('dates', e.target.value)} />
       </div>
       <div>
-        <label className="text-xs font-bold text-gray-500">時限 (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.periods.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('periods', e.target.value)} />
+        <label className="text-xs font-bold text-builder-ink-muted">時限 (カンマ区切り)</label>
+        <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={currentConfig.periods.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('periods', e.target.value)} />
       </div>
       <div>
-        <label className="text-xs font-bold text-gray-500">クラス (カンマ区切り)</label>
-        <textarea className="w-full border p-2 text-sm h-16 rounded" value={currentConfig.classes.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('classes', e.target.value)} />
+        <label className="text-xs font-bold text-builder-ink-muted">クラス (カンマ区切り)</label>
+        <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={currentConfig.classes.map(e => e.label).join(", ")} onChange={(e) => handleConfigChange('classes', e.target.value)} />
       </div>
       <div className="pt-2">
-        <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-700 shadow-sm text-sm">
+        <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-builder-ink text-white font-bold rounded hover:bg-builder-primary-hover shadow-sm text-sm">
           💾 現在の設定を初期値にする
         </button>
       </div>

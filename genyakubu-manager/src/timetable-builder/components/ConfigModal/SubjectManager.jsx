@@ -32,34 +32,34 @@ export default function SubjectManager() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center border-b pb-1">
-        <h3 className="font-bold text-purple-800">📚 科目マスタ (全タブ共通)</h3>
-        <button onClick={handleAddClick} className="text-xs bg-purple-600 text-white px-2 py-1 rounded shadow">+ 追加</button>
+      <div className="flex justify-between items-center border-b border-builder-border pb-1">
+        <h3 className="font-bold text-builder-ink">📚 科目マスタ (全タブ共通)</h3>
+        <button onClick={handleAddClick} className="text-xs bg-builder-primary text-white px-2 py-1 rounded shadow hover:bg-builder-primary-hover">+ 追加</button>
       </div>
-      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border">
+      <div className="text-xs text-builder-ink-muted bg-builder-surface-alt p-2 rounded border border-builder-border">
         科目の追加・削除・並び替えができます。必要コマ数はタブごとに設定されます。
       </div>
       <div className="space-y-1">
         {commonSubjects.map((s, idx) => (
-          <div key={s} className="flex items-center gap-2 bg-white border rounded p-2">
+          <div key={s} className="flex items-center gap-2 bg-builder-surface border border-builder-border rounded p-2">
             <div className="flex flex-col gap-0.5">
               <button
                 onClick={() => moveUp(idx)}
                 disabled={idx === 0}
-                className="text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-20 leading-none"
+                className="text-[10px] text-builder-ink-ghost hover:text-builder-ink disabled:opacity-20 leading-none"
               >▲</button>
               <button
                 onClick={() => moveDown(idx)}
                 disabled={idx === commonSubjects.length - 1}
-                className="text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-20 leading-none"
+                className="text-[10px] text-builder-ink-ghost hover:text-builder-ink disabled:opacity-20 leading-none"
               >▼</button>
             </div>
-            <span className="font-bold text-sm flex-1">{s}</span>
+            <span className="font-bold text-sm flex-1 text-builder-ink">{s}</span>
             <div className="flex items-center gap-1">
-              <label className="text-xs text-gray-500">コマ数:</label>
+              <label className="text-xs text-builder-ink-muted">コマ数:</label>
               <input
                 type="number"
-                className="w-14 text-right text-sm border rounded px-1 py-0.5"
+                className="w-14 text-right text-sm border border-builder-border rounded px-1 py-0.5"
                 value={currentConfig.subjectCounts[s] || 0}
                 onChange={(e) => handleSubjectCountChange(s, e.target.value)}
                 min={0}
@@ -67,7 +67,7 @@ export default function SubjectManager() {
             </div>
             <button
               onClick={() => handleRemoveClick(s)}
-              className="text-gray-400 hover:text-red-500 text-sm px-1"
+              className="text-builder-ink-ghost hover:text-builder-red text-sm px-1"
             >×</button>
           </div>
         ))}

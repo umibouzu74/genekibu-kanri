@@ -39,8 +39,8 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, cLabel);
 
   const cellBgColor = isConflict ? "#FECACA" : getSubjectColor(entry.subject, project.subjectColors);
-  const combinedBorder = isCombined ? (isPrimary ? "border-2 border-purple-500" : "border-2 border-purple-300 border-dashed") : "";
-  const lockedStyle = isLocked ? "border-2 border-gray-600 opacity-90" : (combinedBorder || "border border-gray-200");
+  const combinedBorder = isCombined ? (isPrimary ? "border-2 border-builder-primary" : "border-2 border-builder-ink-ghost border-dashed") : "";
+  const lockedStyle = isLocked ? "border-2 border-builder-ink-muted opacity-90" : (combinedBorder || "border border-builder-border");
   const cellStyle = {
     ...(cellBgColor ? { backgroundColor: cellBgColor } : {}),
     ...(isLocked ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' } : {}),
@@ -79,7 +79,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   return (
     <td
       id={`select-${dateId}-${periodId}-${classId}-cell`}
-      className={`border-r last:border-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-blue-400 ring-inset bg-blue-50" : ""} ${isDragOver && isLocked ? "ring-2 ring-red-300 ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
+      className={`border-r last:border-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
@@ -93,7 +93,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
           <div className="flex-1 min-w-0 flex items-center gap-0.5">
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
-              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-gray-800 min-w-0 ${isSubjDup ? "text-red-600 underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
+              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink min-w-0 ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
               value={entry.subject || ""}
               onChange={(e) => handleAssign(dateId, periodId, classId, 'subject', e.target.value)}
               onKeyDown={(e) => handleCellNavigation(e, 'subject')}
@@ -101,21 +101,21 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
               <option value="">-</option>
               {commonSubjects.map(s => {
                 const isAlreadyUsed = analysis.dailySubjectMap[`c${classId}-d${dateId}-${s}`] > 0 && entry.subject !== s;
-                return <option key={s} value={s} disabled={isAlreadyUsed} className={isAlreadyUsed ? "bg-gray-200" : ""}>{s}</option>;
+                return <option key={s} value={s} disabled={isAlreadyUsed} className={isAlreadyUsed ? "bg-builder-border" : ""}>{s}</option>;
               })}
             </select>
-            {isSubjDup && <span className={`bg-red-600 text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
-            {isConflict && <span className={`bg-red-600 text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
-            {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-red-600" : "text-gray-700"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
-            {isCombined && <span className={`bg-purple-600 text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
+            {isSubjDup && <span className={`bg-builder-red text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
+            {isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
+            {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-builder-red" : "text-builder-ink-muted"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
+            {isCombined && <span className={`bg-builder-primary text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
-          <button onClick={() => toggleLock(dateId, periodId, classId)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
+          <button onClick={() => toggleLock(dateId, periodId, classId)} className={`focus:outline-none text-builder-ink-ghost hover:text-builder-ink shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
             {isLocked ? "🔒" : "🔓"}
           </button>
         </div>
         <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
-          className={`w-full rounded cursor-pointer ${isConflict ? "text-red-800 font-extrabold" : "text-blue-900"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-white"}`}
+          className={`w-full rounded cursor-pointer ${isConflict ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
@@ -127,10 +127,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             const isNg = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
             let label = t.name;
             if (t.name !== "未定") { if (isNg) label += " (NG)"; else label += ` (計${daily.total})`; }
-            return <option key={t.name} value={t.name} className={isNg ? "bg-gray-300 text-gray-500" : (daily.total >= 4 ? "bg-yellow-100" : "")} disabled={isNg}>{label}</option>;
+            return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={isNg}>{label}</option>;
           })}
         </select>
-        {isConflict && !isCompact && <div className="text-[10px] text-red-700 font-bold text-center bg-red-100 rounded mt-1 border border-red-300">⚠️ 重複</div>}
+        {isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ 重複</div>}
       </div>
     </td>
   );

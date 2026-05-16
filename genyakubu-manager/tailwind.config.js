@@ -7,7 +7,45 @@ export default {
   // 親側の <h1> や <button> などへ Tailwind preflight が当たらないよう、
   // base レイヤは tailwind.css 側で読み込まない方針にしている。
   theme: {
-    extend: {},
+    extend: {
+      // ─── Builder design tokens (parent palette と整合) ─────────────
+      // 親アプリの src/styles/tokens.js の colors と同値。Tailwind の
+      // 鮮色 (bg-blue-600 等) を使うと親と「貼り付け感」が出るので、
+      // Builder UI は基本これらの builder-* トークンだけを使うこと。
+      colors: {
+        // Brand / surface
+        'builder-bg': '#f0f1f3',
+        'builder-surface': '#ffffff',
+        'builder-surface-alt': '#f8f9fa',
+        'builder-border': '#e0e0e0',
+        // Text
+        'builder-ink': '#1a1a2e',
+        'builder-ink-muted': '#666666',
+        'builder-ink-subtle': '#888888',
+        'builder-ink-ghost': '#bbbbbb',
+        // Primary action (autoGenerate / 全Excel など主要 CTA)
+        'builder-primary': '#1a1a2e',
+        'builder-primary-hover': '#2a2a4e',
+        // Accent (副次的アクション)
+        'builder-blue': '#2e6a9e',
+        'builder-blue-hover': '#26597f',
+        'builder-green': '#2a7a4a',
+        'builder-green-hover': '#21603a',
+        'builder-red': '#c03030',
+        'builder-red-hover': '#a02525',
+        'builder-orange': '#e67a00',
+        'builder-orange-hover': '#c66700',
+        // Tones (status, soft surfaces)
+        'builder-danger-soft': '#fff5f5',
+        'builder-danger-border': '#ffcccc',
+        'builder-success-soft': '#e8f5e8',
+        'builder-success-border': '#bde0bd',
+        'builder-info-soft': '#eef2ff',
+        'builder-info-border': '#ccd6f5',
+        'builder-warning-soft': '#fffbe6',
+        'builder-warning-border': '#ffe4a0',
+      },
+    },
   },
   plugins: [],
 };

@@ -167,7 +167,7 @@ function ScheduleApp() {
       <Header />
       <TabBar />
 
-      <div className="bg-white p-4 rounded-b-lg rounded-tr-lg shadow-sm border border-gray-200 min-h-[600px]">
+      <div className="bg-builder-surface p-4 rounded-b-lg rounded-tr-lg shadow-sm border border-builder-border min-h-[600px]">
         <Toolbar
           isCompact={isCompact}
           setIsCompact={setIsCompact}

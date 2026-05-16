@@ -62,13 +62,13 @@ export default function Header() {
   const displayName = project.name || "無題のプロジェクト";
 
   return (
-    <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
+    <div className="flex justify-between items-center mb-2 no-print bg-builder-surface p-3 rounded shadow-sm border-b border-builder-border">
       <div className="flex items-center gap-2">
         <span className="text-xl">📅</span>
         {isEditingName ? (
           <input
             autoFocus
-            className="text-xl font-bold text-gray-700 border-b-2 border-blue-500 outline-none bg-transparent px-1"
+            className="text-xl font-bold text-builder-ink border-b-2 border-builder-blue outline-none bg-transparent px-1"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
             onBlur={handleNameSubmit}
@@ -77,22 +77,22 @@ export default function Header() {
           />
         ) : (
           <h1
-            className="text-xl font-bold text-gray-700 cursor-pointer hover:text-blue-600 hover:underline"
+            className="text-xl font-bold text-builder-ink cursor-pointer hover:text-builder-blue hover:underline"
             onClick={() => { setNameInput(project.name || ""); setIsEditingName(true); }}
             title="クリックで名前を変更"
           >
             {displayName}
           </h1>
         )}
-        <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span>
+        <span className="text-xs text-builder-green bg-builder-success-soft px-2 py-1 rounded border border-builder-success-border">{saveStatus}</span>
       </div>
       <div className="flex gap-2">
-        <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>
-        <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold" title="JSONファイルからプロジェクトを開く">📂 開く</button>
+        <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>
+        <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-builder-green text-white rounded hover:bg-builder-green-hover shadow text-sm font-bold" title="JSONファイルからプロジェクトを開く">📂 開く</button>
         <button
           onClick={() => handleExport('all')}
           disabled={exportingType !== null}
-          className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
+          className="flex items-center gap-1 px-3 py-1.5 bg-builder-primary text-white rounded hover:bg-builder-primary-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
           title="全タブのスケジュールをExcel出力"
         >
           {exportingType === 'all' ? '⏳ 出力中...' : '📊 全Excel'}
@@ -100,7 +100,7 @@ export default function Header() {
         <button
           onClick={() => handleExport('teacher')}
           disabled={exportingType !== null}
-          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
+          className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
           title="講師別スケジュールをExcel出力"
         >
           {exportingType === 'teacher' ? '⏳ 出力中...' : '👤 個人Excel'}
