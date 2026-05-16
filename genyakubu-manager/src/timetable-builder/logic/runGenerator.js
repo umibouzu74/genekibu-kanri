@@ -22,36 +22,40 @@ export function runGeneratorInWorker({
 
   const worker = new GeneratorWorker();
   let cancelled = false;
+  // cancel() からも done を解決できるよう resolver を外スコープへ。
+  // (terminate するだけだと done が pending のまま GC されず、closure リーク)
+  let resolveDone;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
 
-  const done = new Promise((resolve) => {
-    worker.addEventListener('message', (e) => {
-      if (cancelled) return;
-      const { type, index, result, message } = e.data || {};
-      if (type === 'pattern') {
-        onPattern?.(index, result);
-      } else if (type === 'done') {
-        worker.terminate();
-        resolve();
-      } else if (type === 'error') {
-        onError?.(message);
-        worker.terminate();
-        resolve();
-      }
-    });
-    worker.addEventListener('error', (err) => {
-      if (cancelled) return;
-      onError?.(err?.message || 'worker error');
+  worker.addEventListener('message', (e) => {
+    if (cancelled) return;
+    const { type, index, result, message } = e.data || {};
+    if (type === 'pattern') {
+      onPattern?.(index, result);
+    } else if (type === 'done') {
       worker.terminate();
-      resolve();
-    });
-    worker.postMessage({ project, activeTabId, numPatterns, baseSeed });
+      resolveDone();
+    } else if (type === 'error') {
+      onError?.(message);
+      worker.terminate();
+      resolveDone();
+    }
   });
+  worker.addEventListener('error', (err) => {
+    if (cancelled) return;
+    onError?.(err?.message || 'worker error');
+    worker.terminate();
+    resolveDone();
+  });
+  worker.postMessage({ project, activeTabId, numPatterns, baseSeed });
 
   return {
     done,
     cancel: () => {
+      if (cancelled) return;
       cancelled = true;
       worker.terminate();
+      resolveDone();
     },
   };
 }

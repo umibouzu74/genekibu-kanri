@@ -83,6 +83,10 @@ function ScheduleApp() {
     generationRef.current = handle;
 
     handle.done.then(() => {
+      // この handle が走っている間に新しい生成が始まっていたら (cancel された)
+      // ここでの state 更新は skip。新しい handle の done が代わりに UI を更新する。
+      if (generationRef.current !== handle) return;
+
       const patterns = results
         .filter(Boolean)
         .map(r => ({
