@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Tests (Builder Test foundation: D2b)
+- **D2b** Header / Toolbar / ScheduleCell の主要 3 コンポーネントに
+  testing-library で UI テストを追加 (計 28 件):
+  - `Toolbar.test.jsx` 9 件 (errorKeys ⚠️ ボタン / scrollToFirstError /
+    progress 表示 / undo/redo disabled / 生成クリア confirm / isGenerating
+    時の disabled)
+  - `Header.test.jsx` 9 件 (project.name 表示 / 名前編集の Enter/Escape /
+    saveStatus 表示 / プロジェクト保存ボタン / Excel 出力中の disabled +
+    "⏳ 出力中..." / 完了後の toast)
+  - `ScheduleCell.test.jsx` 10 件 (subject/teacher onChange / ロック切替 /
+    locked 表示 / conflict ラベル / NG slot disabled / 既使用科目 disabled /
+    矢印キーナビ ArrowDown/ArrowRight / config 不一致時の null return)
+- ProjectContext / UIContext の Provider を直接 mock 値で wrap する形式で、
+  vi.mock は最小限 (Header の `excelExport` 動的 import のみ)。
+- 全体: 957 → 985 件、lint 0 / typecheck 0 / build OK。
+
 ### Changed (Builder Test foundation: D4e + D2a)
 - **D4e + D2a** `hooks/useAnalysis.js` の 120 行モノリス useMemo を
   `utils/analysisHelpers.js` の 3 純粋関数 (`computeGlobalUsage` /

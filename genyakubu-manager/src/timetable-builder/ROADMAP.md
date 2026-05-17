@@ -1,7 +1,7 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
 最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
-+ D-Test foundation (D4e + D2a) 完了
++ D-Test foundation (D2a + D2b + D4e) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -317,10 +317,13 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 `utils/analysisHelpers.test.js` に 18 ケース追加 (computeGlobalUsage 6 /
 computeActiveAnalysis 7 / computeDashboard 5)。
 
-#### D2b. 🟡 UI コンポーネントテスト 0 件
-- **現状**: `components/*.test.*` 0 ファイル。Header / Toolbar / ScheduleCell / ConfigModal 各 tab は useProject 経由の動作テストでカバーされているが、コンポーネント固有のロジック (Header の Excel 出力中 disabled、Toolbar の scrollToFirstError、ScheduleCell のキーボードナビ) は黒箱。
-- **改善**: 主要 3 コンポーネント (Header / Toolbar / ScheduleCell) に絞った testing-library テスト。
-- **規模**: 中〜大 / **価値**: 中
+#### ~~D2b~~. ✅ UI コンポーネントテスト
+完了 (2026-05-17)。Header / Toolbar / ScheduleCell の主要 3 コンポーネントに
+testing-library で 28 ケース追加 (Toolbar 9 / Header 9 / ScheduleCell 10)。
+ProjectContext / UIContext を Provider で wrap する形で、vi.mock は最小限
+(Header の excelExport 動的 import のみ)。ConfigModal 内タブは
+useProject 経由のテスト + 一部 BiweeklyTab で既にカバー済みなのでひとまず
+対象外。
 
 #### D2c. 🟡 実 Worker 経路のテスト無し
 - **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ実行。本番 (`new Worker()` 経由) は untested。cancel・terminate・error メッセージプロトコルが silent regression し得る。
@@ -485,7 +488,7 @@ popup 系のどちらに属するか、新しい印刷導線を増やす際に�
 | Phase | 着手項目 | 規模 | 効果 |
 |---|---|---|---|
 | **Quick wins** ✅ 完了 | ~~D4f handleResetAll~~ / ~~D4g cell/setNg 統合~~ / ~~D7b 印刷文書~~ | 小 | 軽量、即効 |
-| **Test foundation** D2a + D4e ✅ 完了 / D2b 残 | ~~D2a useAnalysis~~ / D2b UI components / ~~D4e useAnalysis 分解~~ | 中 | 後続改善の安全網 |
+| **Test foundation** ✅ 完了 | ~~D2a useAnalysis~~ / ~~D2b UI components~~ / ~~D4e useAnalysis 分解~~ | 中 | 後続改善の安全網 |
 | **UX phase** (2-3 セッション) | D1a オンボーディング / D1c バリデーション可視化 / D6a bulk import / D5a a11y | 中 | ユーザ価値最大 |
 | **Code quality** (1-2 セッション) | D4d ScheduleCell 分解 / D3a cleanSchedule O(K) | 中 | 可読性 + 安定性 |
 | **Major refactor** (要決断) | D4b 全 ID 化 / D4c styling 統一 / D7a TS 化 / D6e Firebase | 大 | 長期負債解消 |
