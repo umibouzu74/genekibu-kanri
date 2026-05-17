@@ -5,8 +5,9 @@ import {
   computeDashboard,
   computeTabViolationCounts,
   computeViolations,
+  computeInfeasibilities,
 } from './analysisHelpers';
-import { makeKey, makeExternalKey } from './scheduleKey';
+import { makeKey, makeExternalKey, makeNgKey } from './scheduleKey';
 
 // テスト用ヘルパー: v3 schema の config と schedule を組み立てる。
 function makeConfig(overrides = {}) {
@@ -438,5 +439,94 @@ describe('computeViolations', () => {
     expect(v.teacherOverDaily.items[0]).toMatchObject({
       date: '12/25', teacher: '堀上一郎',
     });
+  });
+});
+
+// ─── computeInfeasibilities (D1c-C) ──────────────────────────────
+
+describe('computeInfeasibilities', () => {
+  const baseConfig = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    subjectCounts: { '英語': 2, '数学': 2 },
+  });
+
+  it('講師が十分にいれば noTeacherForSlot も capacity shortage も 0', () => {
+    const r = computeInfeasibilities({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.noTeacherForSlot.count).toBe(0);
+    expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+
+  it('"未定" のみの状態は全 (date,period,subject) で noTeacherForSlot として検出', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    // 2 dates × 2 periods × 2 subjects = 8
+    expect(r.noTeacherForSlot.count).toBe(8);
+  });
+
+  it('該当時限が NG の場合 noTeacherForSlot に出る', () => {
+    const r = computeInfeasibilities({
+      teachers: [
+        // 堀上が 12/25 1限 のみ NG、他の人は居ない
+        { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25', '1限')] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.noTeacherForSlot.count).toBe(1);
+    expect(r.noTeacherForSlot.items[0]).toEqual({ date: '12/25', period: '1限', subject: '英語' });
+  });
+
+  it('subjectCapacityShortage: 必要 > capacity で検出', () => {
+    // 英語: 必要 = subjectCounts(2) * classes(2) = 4 コマ
+    //       capacity = teachers(1) * dates(2) * max(1) = 2 → 不足
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 1,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toEqual({
+      subject: '英語', demand: 4, capacity: 2, teacherCount: 1,
+    });
+  });
+
+  it('subjectCapacityShortage: "未定" を除外して capacity を計算する', () => {
+    // 「未定」だけでは capacity ゼロ扱い → 全 subject で不足
+    const r = computeInfeasibilities({
+      teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(2);
+    r.subjectCapacityShortage.items.forEach(it => expect(it.teacherCount).toBe(0));
+  });
+
+  it('subjectCounts に登録されていない (= 0) subject は capacity 判定をスキップ', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語', '理科'], // 理科 は subjectCounts に無い
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    // 理科 は capacity チェック対象外。英語 は capacity 十分。
+    expect(r.subjectCapacityShortage.count).toBe(0);
   });
 });

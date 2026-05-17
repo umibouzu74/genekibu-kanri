@@ -24,7 +24,15 @@ export default function Toolbar({
     handleClearUnlocked,
   } = useProjectContext();
   const { showConfirm } = useUI();
-  const { violations } = analysis;
+  const { violations, infeasibilities } = analysis;
+  const infeasItems = [
+    ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
+      kind: 'noTeacher', label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+    })),
+    ...(infeasibilities?.subjectCapacityShortage?.items || []).map(it => ({
+      kind: 'capacity', label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+    })),
+  ];
 
   // popover の開閉と外側クリック検知
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -83,14 +91,15 @@ export default function Toolbar({
   }
   const teacherOverItems = violations.teacherOverDaily.items;
   const totalViolationCount =
-    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length;
-  // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily が全て 0)
-  // の場合は popover を開かず即スクロールする (旧挙動互換)。
+    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length + infeasItems.length;
+  // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
+  // infeasItems が全て 0) の場合は popover を開かず即スクロールする (旧挙動互換)。
   const isOnlyTeacherConflict =
     violations.teacherConflict.count > 0 &&
     violations.subjectDup.count === 0 &&
     violations.subjectOver.count === 0 &&
-    teacherOverItems.length === 0;
+    teacherOverItems.length === 0 &&
+    infeasItems.length === 0;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
@@ -168,6 +177,19 @@ export default function Toolbar({
                         ))}
                         {teacherOverItems.length > 5 && (
                           <li className="italic">他 {teacherOverItems.length - 5} 件</li>
+                        )}
+                      </ul>
+                    </li>
+                  )}
+                  {infeasItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {infeasItems.slice(0, 8).map((it, i) => (
+                          <li key={`infeas-${i}`} className="text-[11px]">{it.label}</li>
+                        ))}
+                        {infeasItems.length > 8 && (
+                          <li className="italic">他 {infeasItems.length - 8} 件</li>
                         )}
                       </ul>
                     </li>

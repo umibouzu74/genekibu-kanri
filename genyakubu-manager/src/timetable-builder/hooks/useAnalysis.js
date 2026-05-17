@@ -5,6 +5,7 @@ import {
   computeDashboard,
   computeTabViolationCounts,
   computeViolations,
+  computeInfeasibilities,
 } from '../utils/analysisHelpers';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
@@ -14,11 +15,9 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 //
 // 公開 API:
 //   - analysis: { conflictMap, subjectOrders, dailySubjectMap, errorKeys,
-//                 teacherDailyCounts, tabErrorCounts, violations }
+//                 teacherDailyCounts, tabErrorCounts, violations,
+//                 infeasibilities }
 //   - dashboard: { progress, filled, total }
-//
-// tabErrorCounts は M3 で「4 種別合計」に拡張されたが、後方互換のため
-// キー名は維持。consumer (TabBar) は意味として「タブ別の違反合計」を使う。
 export function useAnalysis(project, currentSchedule, currentConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
     () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts),
@@ -51,9 +50,24 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
     [currentConfig, currentSchedule, activeAnalysis, teacherDailyCounts, maxDailyHours, project.teachers],
   );
 
+  const commonSubjects = useMemo(
+    () => project.subjects || Object.keys(currentConfig.subjectCounts || {}),
+    [project.subjects, currentConfig.subjectCounts],
+  );
+
+  const infeasibilities = useMemo(
+    () => computeInfeasibilities({
+      teachers: project.teachers,
+      commonSubjects,
+      currentConfig,
+      maxDailyHours,
+    }),
+    [project.teachers, commonSubjects, currentConfig, maxDailyHours],
+  );
+
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities],
   );
 
   const dashboard = useMemo(

@@ -33,6 +33,10 @@ const defaultAnalysis = () => ({
     subjectOver: { count: 0, firstKey: null },
     teacherOverDaily: { count: 0, items: [] },
   },
+  infeasibilities: {
+    noTeacherForSlot: { count: 0, items: [] },
+    subjectCapacityShortage: { count: 0, items: [] },
+  },
 });
 
 // 必要な context value を mock してから Toolbar を render する。
@@ -284,5 +288,42 @@ describe('Toolbar', () => {
     expect(bar).toHaveAttribute('aria-valuenow', '42');
     expect(bar).toHaveAttribute('aria-valuemin', '0');
     expect(bar).toHaveAttribute('aria-valuemax', '100');
+  });
+
+  // ─── D1c-C: 静的 infeasibility ─────────────────────────────────
+
+  it('infeasibilities が 1 件以上ある時、popover に「設定の問題」セクションを表示する', () => {
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: { count: 1, items: [{ date: '12/25', period: '1限', subject: '英語' }] },
+            subjectCapacityShortage: { count: 1, items: [{ subject: '数学', demand: 30, capacity: 12, teacherCount: 1 }] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 2件/));
+    expect(screen.getByRole('dialog', { name: '違反の内訳' })).toBeInTheDocument();
+    expect(screen.getByText(/設定の問題 \(2件\)/)).toBeInTheDocument();
+    expect(screen.getByText(/12\/25 1限 の英語/)).toBeInTheDocument();
+    expect(screen.getByText(/数学.*必要 30 コマ.*12/)).toBeInTheDocument();
+  });
+
+  it('infeasibilities 単独 (violations は全 0) でも popover が開く', () => {
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: { count: 0, items: [] },
+            subjectCapacityShortage: { count: 1, items: [{ subject: '英語', demand: 16, capacity: 6, teacherCount: 1 }] },
+          },
+        },
+      },
+    });
+    // totalViolationCount は infeasItems.length のみ = 1
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    expect(screen.getByRole('dialog', { name: '違反の内訳' })).toBeInTheDocument();
+    expect(screen.getByText(/設定の問題/)).toBeInTheDocument();
   });
 });

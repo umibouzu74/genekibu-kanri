@@ -2,7 +2,7 @@
 // ユニットテスト可能にし、useAnalysis 側は useMemo の deps を最小化する
 // orchestrator に専念させる (D4e + D2a)。
 
-import { makeKey, makeExternalKey, parseKey, findCombinedGroup, findEntityById } from './scheduleKey';
+import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findEntityById } from './scheduleKey';
 
 // 全タブ横断の講師使用状況を集計する。
 //
@@ -293,5 +293,53 @@ export function computeViolations({
     subjectDup: { count: subjectDupCount, firstKey: subjectDupFirstKey },
     subjectOver: { count: subjectOverCount, firstKey: subjectOverFirstKey },
     teacherOverDaily: { count: teacherOverItems.length, items: teacherOverItems },
+  };
+}
+
+// 設定値だけで判定できる infeasibility (静的検証) を集計する (D1c-C)。
+// 自動生成を走らせなくても「これは絶対 / 構造的に解けない」と分かる
+// ケースを事前に表示する。
+//
+// 種別:
+//   - noTeacherForSlot: (date, period, subject) で「未定」を除く担当講師が
+//       全員 NG → そのスロットは担当者が見つからず埋まらない (致命)
+//   - subjectCapacityShortage: 科目別の総需要 > 担当講師の理論最大 capacity
+//       「未定」を除いた担当講師数 × dates.length × maxDailyHours と
+//       (subjectCounts[s] × classes.length) を比較
+//
+// 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
+export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours }) {
+  const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
+  const subjects = commonSubjects || [];
+
+  // C1: noTeacherForSlot
+  const noTeacherItems = [];
+  currentConfig.dates.forEach(d => {
+    currentConfig.periods.forEach(p => {
+      subjects.forEach(subject => {
+        const ngKey = makeNgKey(d.label, p.label);
+        const eligible = reals.filter(t => t.subjects?.includes(subject) && !t.ngSlots?.includes(ngKey));
+        if (eligible.length === 0) {
+          noTeacherItems.push({ date: d.label, period: p.label, subject });
+        }
+      });
+    });
+  });
+
+  // C2: subjectCapacityShortage
+  const capacityItems = [];
+  subjects.forEach(subject => {
+    const demand = (currentConfig.subjectCounts?.[subject] || 0) * currentConfig.classes.length;
+    if (demand === 0) return;
+    const eligible = reals.filter(t => t.subjects?.includes(subject));
+    const capacity = eligible.length * currentConfig.dates.length * maxDailyHours;
+    if (demand > capacity) {
+      capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+    }
+  });
+
+  return {
+    noTeacherForSlot: { count: noTeacherItems.length, items: noTeacherItems },
+    subjectCapacityShortage: { count: capacityItems.length, items: capacityItems },
   };
 }

@@ -298,7 +298,7 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **実装 (A + B)**:
   - **A**: TabBar の各タブに `⚠️N` / `✨` badge を表示。`computeTabViolationCounts({tabs, globalUsage})` で全タブの違反件数 (teacherConflict + subjectDup + subjectOver) を集計し、useAnalysis から `analysis.tabErrorCounts` として公開 (M3 review fix で teacherConflict のみ → 3 種別合計に拡張)。
   - **B**: Toolbar の「⚠️N件」を popover 化。`computeViolations({...})` で 4 種別 (teacherConflict / subjectDup / subjectOver / teacherOverDaily) に分解集計し、useAnalysis から `analysis.violations` として公開。popover 内で「→」ボタン押下で該当セルへスクロール (teacherOverDaily も含む / S1 review fix)、種別が teacherConflict のみのときは旧挙動 (即スクロール) を維持。`role="dialog"` + `aria-haspopup` + `aria-expanded` 付き。外側クリック / Escape で閉じる。
-  - **延期 (C)**: 設定値による静的 infeasibility (講師 capacity 不足 / NG 過多) は別セッションへ。
+  - **C (2026-05-17 追加完了)**: 設定値による静的 infeasibility。`computeInfeasibilities({teachers, commonSubjects, currentConfig, maxDailyHours})` で 2 種別 (noTeacherForSlot / subjectCapacityShortage) を集計し、useAnalysis から `analysis.infeasibilities` として公開。Toolbar popover の最後に「設定の問題」セクションを追加。「未定」を除外して候補を計算するので「全員 NG」「担当者ゼロ」のような実際的なケースを検出。analysisHelpers に +6 件 / Toolbar に +2 件のテスト追加。
 - **テスト**: analysisHelpers / Toolbar / TabBar に合計 +18 件追加。
 - **同日 review で発覚した修正 (F1 / M1 / M2 / M3 + S1/S2/S3/S5/S6/S7)**:
   - **F1**: OnboardingOverlay で Escape / ✕ / 背景クリックが「次回から表示しない」flag を立てるバグ (初見ユーザが反射的に閉じると永久消失) を修正。flag は「始める」押下時のみ立てる。
