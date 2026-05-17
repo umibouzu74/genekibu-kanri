@@ -41,6 +41,12 @@ export function projectReducer(state, action) {
     case 'project/setActive': {
       return { ...state, project: action.payload };
     }
+    case 'project/reset': {
+      // 全リセット: project を差し替えて history も初期化。Undo で reset 前の
+      // 状態に戻れないようにする (戻れると誤クリックで全部消えるリスクが大きい)。
+      const fresh = action.payload;
+      return { project: fresh, history: [fresh], historyIndex: 0, loadError: null };
+    }
     case 'tab/switch': {
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
@@ -289,6 +295,38 @@ function applyAction(project, action) {
         ],
       };
     }
+    case 'teacher/import': {
+      // D6a: CSV から複数講師を atomic に投入する。
+      // mode='append' (デフォルト): 既存に追加、同名は subjects を新しい
+      //   値で上書きしつつ ngSlots/ngClasses/priorityClasses は維持。
+      // mode='replace': 既存の teachers を全て破棄して payload に置き換える。
+      //   ng/priority も新規定義なのでクリア。
+      const { teachers: incoming, mode = 'append' } = action.payload;
+      if (!Array.isArray(incoming) || incoming.length === 0) return project;
+      if (mode === 'replace') {
+        return {
+          ...project,
+          teachers: incoming.map(t => ({
+            name: t.name,
+            subjects: Array.isArray(t.subjects) ? t.subjects : [],
+            ngSlots: [],
+            ngClasses: [],
+            priorityClasses: [],
+          })),
+        };
+      }
+      const map = new Map(project.teachers.map(t => [t.name, t]));
+      incoming.forEach(t => {
+        const subjects = Array.isArray(t.subjects) ? t.subjects : [];
+        const existing = map.get(t.name);
+        if (existing) {
+          map.set(t.name, { ...existing, subjects });
+        } else {
+          map.set(t.name, { name: t.name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
+        }
+      });
+      return { ...project, teachers: Array.from(map.values()) };
+    }
     case 'teacher/remove': {
       const { idx } = action.payload;
       const targetName = project.teachers[idx].name;
@@ -479,30 +517,6 @@ function applyAction(project, action) {
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
     }
-    case 'cell/setNg': {
-      // 指定セルの講師の NG slot を toggle する。teacher が未定 or 未割当なら no-op。
-      // handleSetNg のロジックを 1 アクションに集約 (元は cell の state を読んで
-      // teacher/toggleNg を呼び出すラッパだった)。
-      const { dateId, periodId, classId } = action.payload;
-      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const k = makeKey(dateId, periodId, classId);
-      const curr = activeTab.schedule[k] || {};
-      if (!curr.teacher || curr.teacher === '未定') return project;
-      const teacherIdx = project.teachers.findIndex(t => t.name === curr.teacher);
-      if (teacherIdx < 0) return project;
-      const dateEnt = activeTab.config.dates.find(d => d.id === dateId);
-      const periodEnt = activeTab.config.periods.find(p => p.id === periodId);
-      if (!dateEnt || !periodEnt) return project;
-      const newTeachers = [...project.teachers];
-      const t = { ...newTeachers[teacherIdx] };
-      const ngK = makeNgKey(dateEnt.label, periodEnt.label);
-      if (!t.ngSlots) t.ngSlots = [];
-      if (t.ngSlots.includes(ngK)) t.ngSlots = t.ngSlots.filter(x => x !== ngK);
-      else t.ngSlots = [...t.ngSlots, ngK];
-      newTeachers[teacherIdx] = t;
-      return { ...project, teachers: newTeachers };
-    }
-
     // ─── スケジュール一括/メタ ───────────
     case 'schedule/renameHeader': {
       // type は 'date' | 'period' | 'class'。oldVal / newVal はラベル文字列。

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
@@ -11,6 +12,7 @@ export default function Toolbar({
   isGenerating,
   generateProgress,
   onGenerate,
+  onShowHelp,
 }) {
   const {
     analysis,
@@ -22,35 +24,180 @@ export default function Toolbar({
     handleClearUnlocked,
   } = useProjectContext();
   const { showConfirm } = useUI();
+  const { violations, infeasibilities } = analysis;
+  const infeasItems = [
+    ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
+      kind: 'noTeacher', label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+    })),
+    ...(infeasibilities?.subjectCapacityShortage?.items || []).map(it => ({
+      kind: 'capacity', label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+    })),
+  ];
+
+  // popover の開閉と外側クリック検知
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef(null);
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const handler = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setPopoverOpen(false);
+      }
+    };
+    // mousedown で先に閉じることで「ボタンの再クリックで閉じる」も両立
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [popoverOpen]);
 
   const handleClearClick = async () => {
     const ok = await showConfirm("ロックされていないセルを全てクリアしますか？", { title: "生成クリア", danger: true, confirmLabel: "クリア" });
     if (ok) handleClearUnlocked();
   };
 
-  const scrollToFirstError = () => {
-    if (analysis.errorKeys.length === 0) return;
-    const firstKey = analysis.errorKeys[0];
-    const parsed = parseKey(firstKey);
-    if (parsed) {
-      const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
-      const el = document.getElementById(targetId);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+  const scrollToKey = (key) => {
+    if (!key) return;
+    const parsed = parseKey(key);
+    if (!parsed) return;
+    const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+
+  // popover に表示すべき violation 種別 (count > 0 のみ)
+  const popoverRows = [];
+  if (violations.teacherConflict.count > 0) {
+    popoverRows.push({
+      kind: 'teacherConflict',
+      label: '講師重複',
+      count: violations.teacherConflict.count,
+      firstKey: violations.teacherConflict.firstKey,
+    });
+  }
+  if (violations.subjectDup.count > 0) {
+    popoverRows.push({
+      kind: 'subjectDup',
+      label: '同一クラス×同日に同一科目',
+      count: violations.subjectDup.count,
+      firstKey: violations.subjectDup.firstKey,
+    });
+  }
+  if (violations.subjectOver.count > 0) {
+    popoverRows.push({
+      kind: 'subjectOver',
+      label: '科目クォータ超過',
+      count: violations.subjectOver.count,
+      firstKey: violations.subjectOver.firstKey,
+    });
+  }
+  const teacherOverItems = violations.teacherOverDaily.items;
+  const totalViolationCount =
+    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length + infeasItems.length;
+  // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
+  // infeasItems が全て 0) の場合は popover を開かず即スクロールする (旧挙動互換)。
+  const isOnlyTeacherConflict =
+    violations.teacherConflict.count > 0 &&
+    violations.subjectDup.count === 0 &&
+    violations.subjectOver.count === 0 &&
+    teacherOverItems.length === 0 &&
+    infeasItems.length === 0;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
       <div className="flex items-center gap-3 bg-builder-surface px-3 py-1.5 rounded border border-builder-border shadow-sm flex-1 min-w-[250px]">
         <div className="text-xs font-bold text-builder-ink-muted">進捗</div>
-        <div className="flex-1 h-3 bg-builder-border rounded-full overflow-hidden relative">
+        <div
+          role="progressbar"
+          aria-label="完成度"
+          aria-valuenow={dashboard.progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="flex-1 h-3 bg-builder-border rounded-full overflow-hidden relative"
+        >
           <div className="h-full bg-builder-blue transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
         </div>
         <div className="text-sm font-bold text-builder-blue w-12 text-right">{dashboard.progress}%</div>
-        {analysis.errorKeys.length > 0 ? (
-          <button onClick={scrollToFirstError} className="ml-2 text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border">
-            ⚠️ {analysis.errorKeys.length}件
-          </button>
+        {totalViolationCount > 0 ? (
+          <div className="relative ml-2" ref={popoverRef}>
+            <button
+              type="button"
+              onClick={() => {
+                if (isOnlyTeacherConflict) {
+                  scrollToKey(violations.teacherConflict.firstKey);
+                  return;
+                }
+                setPopoverOpen((v) => !v);
+              }}
+              aria-haspopup="dialog"
+              aria-expanded={popoverOpen}
+              className="text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border"
+              title="違反の内訳を開く"
+            >
+              ⚠️ {totalViolationCount}件
+            </button>
+            {popoverOpen && (
+              <div
+                role="dialog"
+                aria-label="違反の内訳"
+                className="absolute z-30 top-full left-0 mt-1 w-72 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+              >
+                <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
+                <ul className="space-y-1.5 text-xs">
+                  {popoverRows.map((row) => (
+                    <li key={row.kind} className="flex items-center justify-between gap-2">
+                      <span className="flex-1 min-w-0 truncate">{row.label}</span>
+                      <span className="font-bold text-builder-red">{row.count}件</span>
+                      {row.firstKey && (
+                        <button
+                          type="button"
+                          onClick={() => { scrollToKey(row.firstKey); setPopoverOpen(false); }}
+                          className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                          title="最初の該当セルへ移動"
+                        >→</button>
+                      )}
+                    </li>
+                  ))}
+                  {teacherOverItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1">講師日上限超 ({teacherOverItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {teacherOverItems.slice(0, 5).map((it) => (
+                          <li key={`${it.date}-${it.teacher}`} className="flex items-center justify-between gap-2">
+                            <span className="flex-1 min-w-0 truncate">
+                              {it.teacher} {it.date}: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
+                            </span>
+                            {it.firstKey && (
+                              <button
+                                type="button"
+                                onClick={() => { scrollToKey(it.firstKey); setPopoverOpen(false); }}
+                                className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                                title="該当先生の最初のセルへ移動"
+                              >→</button>
+                            )}
+                          </li>
+                        ))}
+                        {teacherOverItems.length > 5 && (
+                          <li className="italic">他 {teacherOverItems.length - 5} 件</li>
+                        )}
+                      </ul>
+                    </li>
+                  )}
+                  {infeasItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {infeasItems.slice(0, 8).map((it, i) => (
+                          <li key={`infeas-${i}`} className="text-[11px]">{it.label}</li>
+                        ))}
+                        {infeasItems.length > 8 && (
+                          <li className="italic">他 {infeasItems.length - 8} 件</li>
+                        )}
+                      </ul>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
       <div className="flex items-center gap-2">
@@ -64,6 +211,9 @@ export default function Toolbar({
         <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
+        {onShowHelp && (
+          <button onClick={onShowHelp} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="操作ガイドを表示">❓ ヘルプ</button>
+        )}
         <div className="h-6 w-px bg-builder-border mx-1"></div>
         <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-builder-danger-soft text-builder-red border border-builder-danger-border rounded hover:bg-builder-danger-border shadow-sm text-sm font-bold" title="ロックされていないセルを全てクリア">🗑️ 生成クリア</button>
         <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-builder-primary opacity-60 cursor-not-allowed" : "bg-builder-primary hover:bg-builder-primary-hover"}`}>

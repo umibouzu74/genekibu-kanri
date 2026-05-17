@@ -13,6 +13,9 @@ import { ShareLinkButton } from "../ShareLinkButton";
 // confirmed substitute.
 //
 // Default (future mode): only today and later confirmed subs are shown.
+//
+// 印刷系統: PrintButton (window.print() 直接呼び) を使う。
+// ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 // Past mode: toggle reveals from/to date pickers for arbitrary range lookup
 // over confirmed subs whose date falls within the selected range.
 export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCutoff, examPeriods = [] }) {

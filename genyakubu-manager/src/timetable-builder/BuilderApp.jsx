@@ -12,6 +12,8 @@ import ScheduleTable from './components/ScheduleTable';
 import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
+import OnboardingOverlay from './components/OnboardingOverlay';
+import { STORAGE_KEY_ONBOARDING_SEEN } from './utils/constants';
 
 const NUM_PATTERNS = 3;
 
@@ -73,6 +75,25 @@ function ScheduleApp() {
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
+  // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return window.localStorage.getItem(STORAGE_KEY_ONBOARDING_SEEN) !== '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleCloseOnboarding = useCallback(({ dontShowAgain } = {}) => {
+    setShowOnboarding(false);
+    if (dontShowAgain) {
+      try {
+        window.localStorage.setItem(STORAGE_KEY_ONBOARDING_SEEN, '1');
+      } catch {
+        // private mode 等での失敗は無視 (次回も表示されるだけ)
+      }
+    }
+  }, []);
   // 起動中の worker handle を ref で保持 (アンマウント時にキャンセル)
   const generationRef = useRef(null);
 
@@ -177,6 +198,7 @@ function ScheduleApp() {
           isGenerating={isGenerating}
           generateProgress={generateProgress}
           onGenerate={handleGenerate}
+          onShowHelp={() => setShowOnboarding(true)}
         />
 
         <SummaryPanel
@@ -195,6 +217,8 @@ function ScheduleApp() {
         clipboard={clipboard}
         onClose={handleContextMenuClose}
       />
+
+      <OnboardingOverlay open={showOnboarding} onClose={handleCloseOnboarding} />
     </div>
   );
 }

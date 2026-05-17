@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+### Tests (Builder Test foundation: D2b)
+- **D2b** Header / Toolbar / ScheduleCell の主要 3 コンポーネントに
+  testing-library で UI テストを追加 (計 28 件):
+  - `Toolbar.test.jsx` 9 件 (errorKeys ⚠️ ボタン / scrollToFirstError /
+    progress 表示 / undo/redo disabled / 生成クリア confirm / isGenerating
+    時の disabled)
+  - `Header.test.jsx` 9 件 (project.name 表示 / 名前編集の Enter/Escape /
+    saveStatus 表示 / プロジェクト保存ボタン / Excel 出力中の disabled +
+    "⏳ 出力中..." / 完了後の toast)
+  - `ScheduleCell.test.jsx` 10 件 (subject/teacher onChange / ロック切替 /
+    locked 表示 / conflict ラベル / NG slot disabled / 既使用科目 disabled /
+    矢印キーナビ ArrowDown/ArrowRight / config 不一致時の null return)
+- ProjectContext / UIContext の Provider を直接 mock 値で wrap する形式で、
+  vi.mock は最小限 (Header の `excelExport` 動的 import のみ)。
+- 全体: 957 → 985 件、lint 0 / typecheck 0 / build OK。
+
+### Changed (Builder Test foundation: D4e + D2a)
+- **D4e + D2a** `hooks/useAnalysis.js` の 120 行モノリス useMemo を
+  `utils/analysisHelpers.js` の 3 純粋関数 (`computeGlobalUsage` /
+  `computeActiveAnalysis` / `computeDashboard`) に切り出し、テスト可能化。
+  `useAnalysis` 自体は React-deps 最小化の orchestrator (44 行) に縮小し、
+  useMemo を 3 段に分けて部分再計算を実現:
+  - globalUsage / teacherDailyCounts は `project.tabs / combinedGroups /
+    externalCounts` のみ依存 (現タブの schedule 変化で再計算しない)
+  - activeAnalysis (conflict / dailySubject / subjectOrder) は
+    `currentConfig / currentSchedule / globalUsage`
+  - dashboard は `currentSchedule / currentConfig`
+  公開 API (`{ analysis, dashboard }`) は不変なので、Toolbar / SummaryPanel /
+  ScheduleCell / ProjectContext は無変更。
+- `utils/analysisHelpers.test.js` 18 ケース新規:
+  - computeGlobalUsage 6 件 (単純集計 / "未定" スキップ / externalCounts /
+    合同グループ重複防止 / 複数タブ横断 / subject 未割当)
+  - computeActiveAnalysis 7 件 (conflict / 合同グループ除外 / タブ横断 /
+    dailySubjectMap / subjectOrders / 空 schedule / "未定" 除外)
+  - computeDashboard 5 件 (0% / 50% / 100% / 空 config / subject 未割当)
+- 全体: 939 → 957 件、lint 0 / typecheck 0 / build OK。
+
+### Changed (Builder Quick wins: D4f / D4g / D7b)
+- **D4f** Builder の「全データリセット」が `window.location.reload()` で強制
+  リロードする hack を撤廃。新 reducer action `project/reset` を追加し、
+  LocalStorage クリア後に `loadInitialProject()` を再実行して dispatch
+  経由で state を初期化する方式に変更。挙動は等価 (user defaults があれば
+  user defaults ベース、無ければ hardcoded default で再構築) で、reload に
+  伴う体感ラグと React state の途切れが無くなる。`project/reset` は
+  history も `[freshProject]` / `historyIndex=0` に初期化するため、Undo で
+  「リセット前」に戻ってしまう事故を防止。
+- **D4g** `cell/setNg` reducer case (23 行、cell 位置から講師名・date.label・
+  period.label を引いて NG slot を toggle) を削除し、`useProject.js` の
+  composer 内で `teacherActions.toggleTeacherNg` を呼ぶ派生 callback として
+  `handleSetNg` を再定義。`teacher/toggleNg` と同じロジックを 2 箇所に
+  持つ重複を解消。ContextMenu からの呼び出しシグネチャは不変。
+- **D7b** 印刷システムの二系統 (`PrintButton` 直接系 / `handlePrint` popup 系)
+  の所属を 7 ビューのファイル冒頭に inline コメントとして明記。Dashboard /
+  WeekView / EventCalendarView / ConfirmedSubsView / MasterView が
+  PrintButton 系、MonthView / ExcelGridView が popup 系。新しい印刷導線を
+  足す際にどちらに寄せるか即判断できる。
+
+### Tests
+- `projectReducer.test.js`: 旧 `cell/setNg` 2 ケースを削除し `project/reset`
+  2 ケースを追加 (57 件のまま)。
+- `useProject.test.jsx`: `handleResetAll` 2 件 + `handleSetNg` 3 件を追加
+  (36 → 41 件)。
+- 全体: 934 → 939 件、lint 0 / typecheck 0 / build OK。
+
 ### Added (隔週管理タブの個別 anchor 解除)
 - 隔週管理タブで「個別」マークの右に ✕ ボタンを追加 (admin のみ)。
   これまで slot ごとの個別基準日を解除するにはコマ編集モーダルまで

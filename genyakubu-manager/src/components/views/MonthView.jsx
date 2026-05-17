@@ -27,6 +27,13 @@ import {
   isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
+// 印刷系統: App.jsx の handlePrint (popup 経由でヘッダ/凡例を注入する方式)。
+// トップバー右の 🖨 ボタンから起動。ヘッダ HTML 生成は
+// src/utils/printStyles.js の buildMonthHeaderHtml / buildMonthLabel。
+// 月内 DOM ルートに `.month-print-root` クラスを付けておくと、handlePrint が
+// その直前にヘッダを差し込んでくる。
+// PrintButton (window.print() 直接) は使わない。
+
 export function MonthView({
   teacher,
   slots,

@@ -56,6 +56,9 @@ export const DEFAULT_TAB_CONFIG_BASE = {
 // 残してあり、見つかれば新キーへ移行する。
 export const STORAGE_KEY_PROJECT = 'builder.schedule_project';
 export const STORAGE_KEY_USER_DEFAULTS = 'builder.schedule_user_defaults';
+// 初回オンボーディングを表示済みかの 1 bit flag。値の存在 ('1') のみを見る
+// ので UI を学習・自動変形するものではない (CLAUDE.md の禁止事項に抵触しない)。
+export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
 
 // 旧キー（互換性のため読み込み時に参照）
 export const LEGACY_STORAGE_KEYS = [

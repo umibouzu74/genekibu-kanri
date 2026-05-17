@@ -6,6 +6,8 @@ import { useMemo } from 'react';
 export function useTeacherActions(dispatch) {
   return useMemo(() => ({
     addTeacher: (name) => dispatch({ type: 'teacher/add', payload: { name } }),
+    importTeachers: (teachers, mode) =>
+      dispatch({ type: 'teacher/import', payload: { teachers, mode } }),
     removeTeacher: (idx) => dispatch({ type: 'teacher/remove', payload: { idx } }),
     renameTeacher: (idx, newName) =>
       dispatch({ type: 'teacher/rename', payload: { idx, newName } }),

@@ -20,6 +20,14 @@ import { filterSlotsByActiveTimetable } from "../../utils/timetable";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { ExcelSection } from "./excelGrid/ExcelSection";
 
+// 印刷系統: App.jsx の handlePrint (popup 経由でヘッダ/凡例を注入する方式)。
+// トップバー右の 🖨 ボタンから起動。ヘッダ HTML 生成は
+// src/utils/printStyles.js の buildTimetableHeaderHtml。
+// 中学・高校セクションそれぞれの DOM ルートに `.excel-print-col-ms` /
+// `.excel-print-col-hs` クラスを付けておくと、handlePrint が直前に
+// セクションヘッダを差し込んでくる。
+// PrintButton (window.print() 直接) は使わない。
+
 // DAYS = ["月","火","水","木","金","土"]。viewDate を含む週の月曜日を起点に
 // 各曜日の日付 (YYYY-MM-DD) を算出して返す。viewDate 未指定時は空 Map。
 function computeWeekDates(viewDate) {

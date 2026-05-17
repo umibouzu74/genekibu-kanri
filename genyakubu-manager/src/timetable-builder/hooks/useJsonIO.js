@@ -6,7 +6,7 @@ import {
   cleanSchedule,
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
-import { detectTeacherDiffs } from './projectFactory';
+import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
@@ -20,10 +20,15 @@ export function useJsonIO({ project, activeTab, dispatch }) {
   }, [project, activeTab]);
 
   const handleResetAll = useCallback(() => {
+    // LocalStorage を消した上で loadInitialProject を再実行する。これにより
+    // 「user defaults があれば user defaults ベースで、無ければ hardcoded
+    // default で再構築」という reload 経路と同じ挙動を維持する。
+    // 履歴も初期化したいので project/replace ではなく project/reset を dispatch。
     localStorage.removeItem(STORAGE_KEY_PROJECT);
     LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
-    window.location.reload();
-  }, []);
+    const { project: freshProject } = loadInitialProject();
+    dispatch({ type: 'project/reset', payload: freshProject });
+  }, [dispatch]);
 
   const handleLoadJson = useCallback((e, onNotify, onConfirm) => {
     const f = e.target.files[0];

@@ -35,6 +35,9 @@ import {
   isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
+// 印刷系統: PrintButton (window.print() 直接呼び) を使う。
+// ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
+
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
 function getUpcomingWindow() {
   const today = new Date();
