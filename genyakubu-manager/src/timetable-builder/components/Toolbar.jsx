@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
@@ -23,22 +24,73 @@ export default function Toolbar({
     handleClearUnlocked,
   } = useProjectContext();
   const { showConfirm } = useUI();
+  const violations = analysis?.violations || null;
+
+  // popover の開閉と外側クリック検知
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef(null);
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const handler = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setPopoverOpen(false);
+      }
+    };
+    // mousedown で先に閉じることで「ボタンの再クリックで閉じる」も両立
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [popoverOpen]);
 
   const handleClearClick = async () => {
     const ok = await showConfirm("ロックされていないセルを全てクリアしますか？", { title: "生成クリア", danger: true, confirmLabel: "クリア" });
     if (ok) handleClearUnlocked();
   };
 
+  const scrollToKey = (key) => {
+    if (!key) return;
+    const parsed = parseKey(key);
+    if (!parsed) return;
+    const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   const scrollToFirstError = () => {
     if (analysis.errorKeys.length === 0) return;
-    const firstKey = analysis.errorKeys[0];
-    const parsed = parseKey(firstKey);
-    if (parsed) {
-      const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
-      const el = document.getElementById(targetId);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    scrollToKey(analysis.errorKeys[0]);
   };
+
+  // popover に表示すべき violation 種別 (count > 0 のみ)
+  const popoverRows = [];
+  if (violations) {
+    if (violations.teacherConflict.count > 0) {
+      popoverRows.push({
+        kind: 'teacherConflict',
+        label: '講師重複',
+        count: violations.teacherConflict.count,
+        firstKey: violations.teacherConflict.firstKey,
+      });
+    }
+    if (violations.subjectDup.count > 0) {
+      popoverRows.push({
+        kind: 'subjectDup',
+        label: '同一クラス×同日に同一科目',
+        count: violations.subjectDup.count,
+        firstKey: violations.subjectDup.firstKey,
+      });
+    }
+    if (violations.subjectOver.count > 0) {
+      popoverRows.push({
+        kind: 'subjectOver',
+        label: '科目クォータ超過',
+        count: violations.subjectOver.count,
+        firstKey: violations.subjectOver.firstKey,
+      });
+    }
+  }
+  const teacherOverItems = violations?.teacherOverDaily?.items || [];
+  const totalViolationCount =
+    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
@@ -48,10 +100,67 @@ export default function Toolbar({
           <div className="h-full bg-builder-blue transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
         </div>
         <div className="text-sm font-bold text-builder-blue w-12 text-right">{dashboard.progress}%</div>
-        {analysis.errorKeys.length > 0 ? (
-          <button onClick={scrollToFirstError} className="ml-2 text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border">
-            ⚠️ {analysis.errorKeys.length}件
-          </button>
+        {totalViolationCount > 0 ? (
+          <div className="relative ml-2" ref={popoverRef}>
+            <button
+              type="button"
+              onClick={() => {
+                // 種別が 1 つだけかつ teacherConflict のみなら、popover を開かず
+                // 直接スクロール (旧挙動と同じく即移動)。
+                if (popoverRows.length === 1 && popoverRows[0].kind === 'teacherConflict' && teacherOverItems.length === 0) {
+                  scrollToFirstError();
+                  return;
+                }
+                setPopoverOpen((v) => !v);
+              }}
+              aria-haspopup="dialog"
+              aria-expanded={popoverOpen}
+              className="text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border"
+              title="違反の内訳を開く"
+            >
+              ⚠️ {totalViolationCount}件
+            </button>
+            {popoverOpen && (
+              <div
+                role="dialog"
+                aria-label="違反の内訳"
+                className="absolute z-30 top-full left-0 mt-1 w-72 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+              >
+                <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
+                <ul className="space-y-1.5 text-xs">
+                  {popoverRows.map((row) => (
+                    <li key={row.kind} className="flex items-center justify-between gap-2">
+                      <span className="flex-1 min-w-0 truncate">{row.label}</span>
+                      <span className="font-bold text-builder-red">{row.count}件</span>
+                      {row.firstKey && (
+                        <button
+                          type="button"
+                          onClick={() => { scrollToKey(row.firstKey); setPopoverOpen(false); }}
+                          className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                          title="最初の該当セルへ移動"
+                        >→</button>
+                      )}
+                    </li>
+                  ))}
+                  {teacherOverItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1">講師日上限超 ({teacherOverItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {teacherOverItems.slice(0, 5).map((it) => (
+                          <li key={`${it.date}-${it.teacher}`}>
+                            {it.teacher} {it.date}: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
+                          </li>
+                        ))}
+                        {teacherOverItems.length > 5 && (
+                          <li className="italic">他 {teacherOverItems.length - 5} 件</li>
+                        )}
+                      </ul>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
       <div className="flex items-center gap-2">

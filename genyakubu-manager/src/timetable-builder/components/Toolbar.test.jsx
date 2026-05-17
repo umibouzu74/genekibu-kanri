@@ -12,7 +12,20 @@ afterEach(cleanup);
 // useProjectContext / useUI が呼ばれるが Provider 経由で値を与えるだけ。
 function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } = {}) {
   const projectValue = {
-    analysis: { errorKeys: [], conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {} },
+    analysis: {
+      errorKeys: [],
+      conflictMap: {},
+      subjectOrders: {},
+      dailySubjectMap: {},
+      teacherDailyCounts: {},
+      tabErrorCounts: {},
+      violations: {
+        teacherConflict: { count: 0, firstKey: null },
+        subjectDup: { count: 0, firstKey: null },
+        subjectOver: { count: 0, firstKey: null },
+        teacherOverDaily: { count: 0, items: [] },
+      },
+    },
     dashboard: { progress: 0, filled: 0, total: 100 },
     historyIndex: 0,
     history: [{}],
@@ -57,33 +70,129 @@ describe('Toolbar', () => {
   it('errorKeys がある時は ⚠️N件 ボタンを表示する', () => {
     renderToolbar({
       projectOverrides: {
-        analysis: { errorKeys: ['k1', 'k2', 'k3'], conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {} },
+        analysis: {
+          errorKeys: ['k1', 'k2', 'k3'],
+          conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 3, firstKey: 'k1' },
+            subjectDup: { count: 0, firstKey: null },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 0, items: [] },
+          },
+        },
       },
     });
     expect(screen.getByText(/⚠️ 3件/)).toBeInTheDocument();
   });
 
-  it('⚠️N件 クリックで最初のエラーセルへ scrollIntoView する', () => {
+  it('種別が teacherConflict のみのとき、⚠️N件 クリックで即スクロール (popover を開かない)', () => {
     const errorKey = makeKey(1, 2, 3);
-    // jsdom は scrollIntoView 未実装なので prototype に mock を生やす
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy;
-    // 対象 cell DOM 要素を事前に挿入しておく (Toolbar の scrollToFirstError が
-    // getElementById でターゲットを探す)
     const target = document.createElement('div');
     target.id = `select-1-2-3-cell`;
     document.body.appendChild(target);
 
     renderToolbar({
       projectOverrides: {
-        analysis: { errorKeys: [errorKey], conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {} },
+        analysis: {
+          errorKeys: [errorKey],
+          conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 1, firstKey: errorKey },
+            subjectDup: { count: 0, firstKey: null },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 0, items: [] },
+          },
+        },
       },
     });
     fireEvent.click(screen.getByText(/⚠️ 1件/));
-    expect(scrollSpy).toHaveBeenCalledTimes(1);
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
-
+    // popover は開かない
+    expect(screen.queryByRole('dialog', { name: '違反の内訳' })).not.toBeInTheDocument();
     document.body.removeChild(target);
+  });
+
+  it('違反種別が複数あるとき、⚠️N件 クリックで popover が開き内訳を表示する', () => {
+    const key1 = makeKey(1, 1, 1);
+    const key2 = makeKey(1, 2, 1);
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          errorKeys: [key1],
+          conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 1, firstKey: key1 },
+            subjectDup: { count: 2, firstKey: key2 },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 1, items: [{ date: '12/25(木)', teacher: '堀上', total: 7, max: 6 }] },
+          },
+        },
+      },
+    });
+    // ⚠️合計件数 (1 + 2 + 1) = 4
+    fireEvent.click(screen.getByText(/⚠️ 4件/));
+    const popover = screen.getByRole('dialog', { name: '違反の内訳' });
+    expect(popover).toBeInTheDocument();
+    expect(screen.getByText('講師重複')).toBeInTheDocument();
+    expect(screen.getByText('同一クラス×同日に同一科目')).toBeInTheDocument();
+    expect(screen.getByText(/講師日上限超/)).toBeInTheDocument();
+    expect(screen.getByText(/7\/6/)).toBeInTheDocument();
+  });
+
+  it('popover 内の「→」クリックで該当セルへスクロールして popover が閉じる', () => {
+    const key = makeKey(2, 3, 1);
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const target = document.createElement('div');
+    target.id = `select-2-3-1-cell`;
+    document.body.appendChild(target);
+
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          errorKeys: [], conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 0, firstKey: null },
+            subjectDup: { count: 1, firstKey: key },
+            subjectOver: { count: 1, firstKey: key },
+            teacherOverDaily: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 2件/));
+    // 種別 2 つ + 「→」も 2 つ
+    const jumpBtns = screen.getAllByTitle('最初の該当セルへ移動');
+    expect(jumpBtns).toHaveLength(2);
+    fireEvent.click(jumpBtns[0]);
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    // popover が閉じている
+    expect(screen.queryByRole('dialog', { name: '違反の内訳' })).not.toBeInTheDocument();
+    document.body.removeChild(target);
+  });
+
+  it('popover 外クリックで popover が閉じる', () => {
+    const key = makeKey(1, 1, 1);
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          errorKeys: [], conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 1, firstKey: key },
+            subjectDup: { count: 1, firstKey: key },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 2件/));
+    expect(screen.getByRole('dialog', { name: '違反の内訳' })).toBeInTheDocument();
+    // 外側 (document.body) を mousedown
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: '違反の内訳' })).not.toBeInTheDocument();
   });
 
   it('progress を 0-100% で表示する', () => {

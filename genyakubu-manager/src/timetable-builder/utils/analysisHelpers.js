@@ -157,3 +157,118 @@ export function computeDashboard(currentSchedule, currentConfig) {
   Object.values(currentSchedule).forEach(v => { if (v.subject) filled++; });
   return { progress: total > 0 ? Math.round((filled / total) * 100) : 0, filled, total };
 }
+
+// 各タブの講師重複 (teacherConflict) 件数を計算する軽量版。
+// computeActiveAnalysis を全タブで走らせるよりも安価 (subjectOrders /
+// dailySubjectMap を作らない)。TabBar の各タブ badge 表示用。
+//
+// 返り値: { [tabId: number]: count }
+export function computeTabErrorCounts(tabs, globalUsage) {
+  const result = {};
+  tabs.forEach(tab => {
+    let count = 0;
+    tab.config.dates.forEach(d => {
+      tab.config.periods.forEach(p => {
+        tab.config.classes.forEach(c => {
+          const key = makeKey(d.id, p.id, c.id);
+          const entry = tab.schedule[key];
+          if (!entry || !entry.teacher || entry.teacher === '未定') return;
+          const usageKey = `${d.label}-${p.label}-${entry.teacher}`;
+          const effectiveCount = getEffectiveUsageCount(globalUsage[usageKey] || []);
+          if (effectiveCount > 1) count++;
+        });
+      });
+    });
+    result[tab.id] = count;
+  });
+  return result;
+}
+
+// 現タブの violation を種別ごとに集計する。Toolbar popover 用。
+//
+// 種別:
+//   - teacherConflict: 同時刻同講師重複 (errorKeys に既出)
+//   - subjectDup: 同一クラス×同日に同一科目 2 回以上
+//   - subjectOver: 科目クォータを超えた割当 (order > subjectCounts[subject])
+//   - teacherOverDaily: 講師の 1 日合計コマ数が maxDailyHours を超過
+//
+// 返り値: 各種別ごとに { count, firstKey? } または teacherOverDaily は
+//   { count, items: [{ date, teacher, total, max }] }。
+//   count = 0 の種別も含めて返す (consumer 側で >0 のものだけ表示)。
+export function computeViolations({
+  currentConfig,
+  currentSchedule,
+  errorKeys,
+  dailySubjectMap,
+  subjectOrders,
+  teacherDailyCounts,
+  maxDailyHours,
+}) {
+  // teacherConflict: errorKeys と同じ。最初のキーをスクロール対象に。
+  const teacherConflict = {
+    count: errorKeys.length,
+    firstKey: errorKeys[0] || null,
+  };
+
+  // subjectDup: dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1
+  //   重複している {dateId, classId, subject} ごとに 2 回目以降のセルを 1 件と数える
+  //   (count しすぎないよう、重複ペアあたり「超過コマ数 = count - 1」と数える)
+  let subjectDupCount = 0;
+  let subjectDupFirstKey = null;
+  Object.entries(dailySubjectMap).forEach(([k, cnt]) => {
+    if (cnt > 1) {
+      subjectDupCount += cnt - 1;
+      if (!subjectDupFirstKey) {
+        // k = `c${classId}-d${dateId}-${subject}` から該当する最初のセルを探す
+        const m = k.match(/^c(\d+)-d(\d+)-(.+)$/);
+        if (m) {
+          const classId = Number(m[1]);
+          const dateId = Number(m[2]);
+          const subject = m[3];
+          // 同条件の最初の cell key (period 順)
+          for (const p of currentConfig.periods) {
+            const key = makeKey(dateId, p.id, classId);
+            if (currentSchedule[key]?.subject === subject) {
+              subjectDupFirstKey = key;
+              break;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // subjectOver: 科目クォータ超過 (order > maxCnt)
+  let subjectOverCount = 0;
+  let subjectOverFirstKey = null;
+  Object.entries(subjectOrders).forEach(([key, order]) => {
+    const entry = currentSchedule[key];
+    const subject = entry?.subject;
+    if (!subject) return;
+    const maxCnt = currentConfig.subjectCounts[subject] || 0;
+    if (maxCnt > 0 && order > maxCnt) {
+      subjectOverCount++;
+      if (!subjectOverFirstKey) subjectOverFirstKey = key;
+    }
+  });
+
+  // teacherOverDaily: 1 日 maxDailyHours 超過した (date, teacher) を列挙
+  // dayKey は makeExternalKey(date, teacher) = `${date}-${teacher}`。
+  // date に "-" は含まれない想定 (例: "12/25(木)") のため、最初の "-" で split。
+  const teacherOverItems = [];
+  Object.entries(teacherDailyCounts).forEach(([dayKey, daily]) => {
+    if (daily.total > maxDailyHours) {
+      const sepIdx = dayKey.indexOf('-');
+      const date = sepIdx >= 0 ? dayKey.slice(0, sepIdx) : '?';
+      const teacher = sepIdx >= 0 ? dayKey.slice(sepIdx + 1) : dayKey;
+      teacherOverItems.push({ date, teacher, total: daily.total, max: maxDailyHours });
+    }
+  });
+
+  return {
+    teacherConflict,
+    subjectDup: { count: subjectDupCount, firstKey: subjectDupFirstKey },
+    subjectOver: { count: subjectOverCount, firstKey: subjectOverFirstKey },
+    teacherOverDaily: { count: teacherOverItems.length, items: teacherOverItems },
+  };
+}

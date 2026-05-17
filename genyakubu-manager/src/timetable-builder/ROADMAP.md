@@ -291,10 +291,15 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **改善**: Toolbar の sm 向け折りたたみ、Header の Excel ボタンを dropdown 化、ScheduleTable は max-w を CSS variable で制御。
 - **規模**: 中 / **価値**: 中 (主用途は PC だが移動先での確認ニーズあり)
 
-#### D1c. 🟠 バリデーションの可視化不足
+#### D1c. ✅ バリデーション可視化 (2026-05-17 完了 / 一部延期)
 - **現状**: Toolbar 進捗バーと「⚠️N件」のみ。「科目クォータ未達」「NG セルに講師ゼロ」「講師 1 日上限近接」などは個別セルにしか出ない。
 - **改善**: 「タブごとに残課題件数を表示」「設定モーダル内で『今のままだと解けない制約』を可視化」。
 - **規模**: 中 / **価値**: 高 (自動生成失敗時のデバッグが現状辛い)
+- **実装 (A + B)**:
+  - **A**: TabBar の各タブに `⚠️N` / `✨` badge を表示。`computeTabErrorCounts(tabs, globalUsage)` で全タブの講師重複件数を軽量集計し、useAnalysis から `analysis.tabErrorCounts` として公開。
+  - **B**: Toolbar の「⚠️N件」を popover 化。`computeViolations({...})` で 4 種別 (teacherConflict / subjectDup / subjectOver / teacherOverDaily) に分解集計し、useAnalysis から `analysis.violations` として公開。popover 内で「→」ボタン押下で該当セルへスクロール、種別が teacherConflict のみのときは旧挙動 (即スクロール) を維持。`role="dialog"` + `aria-haspopup` + `aria-expanded` 付き。外側クリック / Escape で閉じる。
+  - **延期 (C)**: 設定値による静的 infeasibility (講師 capacity 不足 / NG 過多) は別セッションへ。
+- **テスト**: analysisHelpers に 9 件 (computeTabErrorCounts 3 / computeViolations 6)、Toolbar に 4 件 (popover 表示・即スクロール・「→」スクロール・外側クリック)、TabBar.test.jsx 新規 5 件。合計 +18 件、全 337/337 PASS。
 
 #### D1d. 🟡 名前付きスナップショット
 - **現状**: undo/redo の history はあるが、特定状態を「Pattern A」のように名前付き保存できない。生成結果 3 案も SummaryPanel に居る間だけ。
