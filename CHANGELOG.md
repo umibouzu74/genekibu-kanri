@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed (Builder Quick wins: D4f / D4g / D7b)
+- **D4f** Builder の「全データリセット」が `window.location.reload()` で強制
+  リロードする hack を撤廃。新 reducer action `project/reset` を追加し、
+  LocalStorage クリア後に `loadInitialProject()` を再実行して dispatch
+  経由で state を初期化する方式に変更。挙動は等価 (user defaults があれば
+  user defaults ベース、無ければ hardcoded default で再構築) で、reload に
+  伴う体感ラグと React state の途切れが無くなる。`project/reset` は
+  history も `[freshProject]` / `historyIndex=0` に初期化するため、Undo で
+  「リセット前」に戻ってしまう事故を防止。
+- **D4g** `cell/setNg` reducer case (23 行、cell 位置から講師名・date.label・
+  period.label を引いて NG slot を toggle) を削除し、`useProject.js` の
+  composer 内で `teacherActions.toggleTeacherNg` を呼ぶ派生 callback として
+  `handleSetNg` を再定義。`teacher/toggleNg` と同じロジックを 2 箇所に
+  持つ重複を解消。ContextMenu からの呼び出しシグネチャは不変。
+- **D7b** 印刷システムの二系統 (`PrintButton` 直接系 / `handlePrint` popup 系)
+  の所属を 7 ビューのファイル冒頭に inline コメントとして明記。Dashboard /
+  WeekView / EventCalendarView / ConfirmedSubsView / MasterView が
+  PrintButton 系、MonthView / ExcelGridView が popup 系。新しい印刷導線を
+  足す際にどちらに寄せるか即判断できる。
+
+### Tests
+- `projectReducer.test.js`: 旧 `cell/setNg` 2 ケースを削除し `project/reset`
+  2 ケースを追加 (57 件のまま)。
+- `useProject.test.jsx`: `handleResetAll` 2 件 + `handleSetNg` 3 件を追加
+  (36 → 41 件)。
+- 全体: 934 → 939 件、lint 0 / typecheck 0 / build OK。
+
 ### Added (隔週管理タブの個別 anchor 解除)
 - 隔週管理タブで「個別」マークの右に ✕ ボタンを追加 (admin のみ)。
   これまで slot ごとの個別基準日を解除するにはコマ編集モーダルまで

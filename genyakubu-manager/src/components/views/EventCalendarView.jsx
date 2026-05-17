@@ -23,6 +23,9 @@ import {
 //
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
 // 休講は常時表示。テスト期間 / 特別イベントは visibility プロパティで切替。
+//
+// 印刷系統: PrintButton (window.print() 直接呼び) を使う。
+// ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 
 // 新規登録ボタン定義 (休講含む 3 種)。
 const ADD_BUTTONS = Object.freeze([

@@ -9,6 +9,11 @@ import { DashboardListView } from "./dashboard/DashboardListView";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { PrintButton } from "../PrintButton";
 
+// 印刷系統: PrintButton (window.print() 直接呼び) を使う。
+// ヘッダ/凡例の動的注入は不要、App.jsx 末尾のグローバル @media print +
+// 各 DOM 自前の no-print CSS で仕上がる。詳細は src/components/PrintButton.jsx
+// 冒頭コメント。
+
 // Re-export DashDayRow so existing call sites (e.g. ConfirmedSubsView)
 // keep working without import-path churn.
 export { DashDayRow } from "./dashboard/DashDayRow";

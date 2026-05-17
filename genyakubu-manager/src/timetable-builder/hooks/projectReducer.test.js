@@ -419,44 +419,9 @@ describe('projectReducer — セル操作', () => {
     expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(true);
   });
 
-  it('cell/setNg: セル講師の NG slot を toggle', () => {
-    const state = makeState({
-      tabs: [{
-        id: 1, name: 'メイン',
-        config: {
-          dates: [{ id: 1, label: '12/25(木)' }],
-          periods: [{ id: 1, label: '1限' }],
-          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
-          subjectCounts: { '英語': 1, '数学': 1 },
-        },
-        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
-      }],
-    });
-    const next = projectReducer(state, {
-      type: 'cell/setNg',
-      payload: { dateId: 1, periodId: 1, classId: 1 },
-    });
-    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('12/25(木)', '1限')]);
-  });
-
-  it('cell/setNg: 未定 / 未割当は no-op', () => {
-    const state = makeState({
-      tabs: [{
-        id: 1, name: 'メイン',
-        config: {
-          dates: [{ id: 1, label: '12/25(木)' }],
-          periods: [{ id: 1, label: '1限' }],
-          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
-          subjectCounts: { '英語': 1, '数学': 1 },
-        },
-        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' } },
-      }],
-    });
-    expect(projectReducer(state, {
-      type: 'cell/setNg',
-      payload: { dateId: 1, periodId: 1, classId: 1 },
-    })).toBe(state);
-  });
+  // 旧 cell/setNg case は D4g で削除。handleSetNg は useProject.js の composer
+  // 側で teacher/toggleNg のラッパとして提供しているため、テストは
+  // useProject.test.jsx の "handleSetNg" describe ブロックに移動。
 });
 
 describe('projectReducer — schedule 一括操作', () => {
@@ -659,6 +624,33 @@ describe('projectReducer — project 全体操作', () => {
     });
     expect(next.project.name).toBe('replaced');
     expect(next.history).toHaveLength(2);
+  });
+
+  it('project/reset: project を差し替え、history を初期化、loadError をクリア', () => {
+    // 履歴を伸ばしてから reset すると history が 1 件に戻る
+    let state = makeState();
+    state = projectReducer(state, { type: 'project/updateName', payload: { name: 'a' } });
+    state = projectReducer(state, { type: 'project/updateName', payload: { name: 'b' } });
+    state = { ...state, loadError: '読込失敗' };
+    expect(state.history).toHaveLength(3);
+
+    const freshProj = makeProject({ name: 'reset 後' });
+    const next = projectReducer(state, { type: 'project/reset', payload: freshProj });
+
+    expect(next.project).toBe(freshProj);
+    expect(next.history).toEqual([freshProj]);
+    expect(next.historyIndex).toBe(0);
+    expect(next.loadError).toBeNull();
+  });
+
+  it('project/reset 後は undo で reset 前の状態に戻れない', () => {
+    let state = makeState();
+    state = projectReducer(state, { type: 'project/updateName', payload: { name: 'before reset' } });
+    const freshProj = makeProject({ name: '後' });
+    state = projectReducer(state, { type: 'project/reset', payload: freshProj });
+    const afterUndo = projectReducer(state, { type: 'history/undo' });
+    expect(afterUndo).toBe(state); // historyIndex 0 で undo は no-op
+    expect(afterUndo.project.name).toBe('後');
   });
 });
 

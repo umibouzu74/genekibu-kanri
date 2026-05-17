@@ -39,8 +39,8 @@ export function useScheduleActions(dispatch, currentSchedule) {
       dispatch({ type: 'cell/paste', payload: { dateId, periodId, classId, clipboard } }),
     handleCellClear: (dateId, periodId, classId) =>
       dispatch({ type: 'cell/clear', payload: { dateId, periodId, classId } }),
-    handleSetNg: (dateId, periodId, classId) =>
-      dispatch({ type: 'cell/setNg', payload: { dateId, periodId, classId } }),
+    // handleSetNg は useProject.js の composer 側で teacher/toggleNg のラッパとして
+    // 定義する (cell 位置 → 講師名・date.label・period.label の解決が必要なため)。
     handleClearUnlocked: () =>
       dispatch({ type: 'schedule/clearUnlocked' }),
     handleSwapCells: (sourceKey, sourceData, targetKey, targetData) =>

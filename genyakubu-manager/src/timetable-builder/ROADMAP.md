@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-16 / A1-A8 + B1-B4 + C1-C4 完了 + 校正レビュー対応済
+最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -386,15 +386,21 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **改善**: セクション分割 (useConflicts / useSubjectOrders / useTeacherCounts)、必要なものだけ subscribe。
 - **規模**: 中 / **価値**: 中 (テスト容易性 + 部分再計算)
 
-#### D4f. 🟢 handleResetAll の reload 回避
-- **現状**: `window.location.reload()` で強制リロード。React 外の hack。
-- **改善**: dispatch('project/replace') で初期 project (`createNewProject(...)`) に差し戻す。LocalStorage クリアは別 effect。
-- **規模**: 小 / **価値**: 小〜中
+#### ~~D4f~~. ✅ handleResetAll の reload 回避
+完了 (2026-05-17)。新 reducer action `project/reset` を追加し、
+useJsonIO.handleResetAll で `loadInitialProject()` を再実行して dispatch
+経由で state 初期化する方式に変更。`project/reset` は history も
+`[freshProject]` / `historyIndex=0` に初期化するため Undo で reset 前に
+戻れない。テスト: `projectReducer.test.js` に 2 ケース、
+`useProject.test.jsx` に 2 ケース追加。
 
-#### D4g. 🟢 cell/setNg と teacher/toggleNg の重複
-- **現状**: `cell/setNg` (UI セルから NG 登録) と `teacher/toggleNg` (講師タブから NG 登録) が同じ操作を異なる payload で行う。
-- **改善**: `teacher/toggleNg` のみ残し、`cell/setNg` は派生 action でラップ。
-- **規模**: 小 / **価値**: 小
+#### ~~D4g~~. ✅ cell/setNg と teacher/toggleNg の重複
+完了 (2026-05-17)。`cell/setNg` reducer case (23 行) を削除し、
+useProject.js の composer 内で `teacherActions.toggleTeacherNg` を呼ぶ
+派生 callback として `handleSetNg` を再定義。ContextMenu からの呼び出し
+シグネチャ (dateId, periodId, classId) は不変で動作互換。テスト: 旧
+`cell/setNg` テスト 2 件を削除し `useProject.test.jsx` の handleSetNg
+ブロックに 3 ケース移植 + 拡充。
 
 ---
 
@@ -457,9 +463,11 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **規模**: 大 / **価値**: 中
 - **判断材料**: D4b / D4e の再設計と同時にやると二度手間にならない。
 
-#### D7b. ⚪ 印刷システム二系統の文書化
-- **現状**: `CLAUDE.md` に運用ルール記載済。各 view にも inline コメントがあれば理想。
-- **規模**: 小 / **価値**: 低
+#### ~~D7b~~. ✅ 印刷システム二系統の文書化
+完了 (2026-05-17)。7 ビュー (Dashboard / WeekView / EventCalendarView /
+ConfirmedSubsView / MasterView / MonthView / ExcelGridView) のファイル
+冒頭に所属系統を 2-5 行のコメントで明記。PrintButton 系と handlePrint
+popup 系のどちらに属するか、新しい印刷導線を増やす際に即判断できる。
 
 #### D7c. ⚪ Builder vs 親アプリのテスト共通基盤
 - **現状**: Builder は Vitest + testing-library、親も同じ構成だが setup は別。共通 mock / helper があれば便利。
@@ -471,7 +479,7 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 
 | Phase | 着手項目 | 規模 | 効果 |
 |---|---|---|---|
-| **Quick wins** (1 セッション) | D4f handleResetAll / D4g cell/setNg 統合 / D7b 印刷文書 | 小 | 軽量、即効 |
+| **Quick wins** ✅ 完了 | ~~D4f handleResetAll~~ / ~~D4g cell/setNg 統合~~ / ~~D7b 印刷文書~~ | 小 | 軽量、即効 |
 | **Test foundation** (2-3 セッション) | D2a useAnalysis / D2b UI components / D4e useAnalysis 分解 (D2a の前提) | 中 | 後続改善の安全網 |
 | **UX phase** (2-3 セッション) | D1a オンボーディング / D1c バリデーション可視化 / D6a bulk import / D5a a11y | 中 | ユーザ価値最大 |
 | **Code quality** (1-2 セッション) | D4d ScheduleCell 分解 / D3a cleanSchedule O(K) | 中 | 可読性 + 安定性 |

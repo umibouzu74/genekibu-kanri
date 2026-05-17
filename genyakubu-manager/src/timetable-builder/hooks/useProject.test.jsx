@@ -155,6 +155,43 @@ describe('useProject — toggleTeacherSubject / toggleTeacherNg', () => {
   });
 });
 
+// ─── handleSetNg (D4g: teacher/toggleNg のラッパ) ─────────────────────
+
+describe('useProject — handleSetNg', () => {
+  it('セルに講師が割り当たっていれば teacher/toggleNg を呼ぶ', () => {
+    const { result } = setupHook();
+    // 先にセルに講師を割り当てる
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'teacher', '堀上'));
+    expect(result.current.project.teachers[0].ngSlots).toEqual([]);
+
+    act(() => result.current.handleSetNg(1, 1, 1));
+    expect(result.current.project.teachers[0].ngSlots).toEqual([makeNgKey('12/25(木)', '1限')]);
+
+    // もう一度呼ぶと toggle される
+    act(() => result.current.handleSetNg(1, 1, 1));
+    expect(result.current.project.teachers[0].ngSlots).toEqual([]);
+  });
+
+  it('teacher が "未定" のセルは no-op', () => {
+    const { result } = setupHook();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleAssign(1, 1, 1, 'teacher', '未定'));
+    const before = result.current.project.teachers.map(t => t.ngSlots);
+    act(() => result.current.handleSetNg(1, 1, 1));
+    const after = result.current.project.teachers.map(t => t.ngSlots);
+    expect(after).toEqual(before);
+  });
+
+  it('セルに何も無いとき (subject/teacher 共に未割当) は no-op', () => {
+    const { result } = setupHook();
+    const before = result.current.project.teachers.map(t => t.ngSlots);
+    act(() => result.current.handleSetNg(1, 1, 1));
+    const after = result.current.project.teachers.map(t => t.ngSlots);
+    expect(after).toEqual(before);
+  });
+});
+
 // ─── 科目マスタ ─────────────────────────────────────────────────
 
 describe('useProject — addSubject / removeSubject (cascade)', () => {
@@ -486,6 +523,39 @@ describe('useProject — undo/redo', () => {
     expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeTruthy();
     act(() => result.current.undo());
     expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
+  });
+});
+
+// ─── handleResetAll (D4f) ────────────────────────────────────────
+
+describe('useProject — handleResetAll', () => {
+  it('reload なしで state を hardcoded default に差し替える', () => {
+    const { result } = setupHook();
+    // 何か変更してから reset
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeTruthy();
+
+    act(() => result.current.handleResetAll());
+
+    // state は hardcoded default に戻る (user defaults 無し)。
+    // 旧 project の schedule は残らない。
+    expect(result.current.project.tabs[0].name).toBe('中３');
+    expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
+    // LocalStorage は autosave で fresh default に上書きされる (旧データは消える)。
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT));
+    expect(saved.tabs[0].name).toBe('中３');
+    expect(saved.tabs[0].schedule).toEqual({});
+  });
+
+  it('reset 後は undo で reset 前の状態に戻れない (history が初期化される)', () => {
+    const { result } = setupHook();
+    act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
+    act(() => result.current.handleResetAll());
+    // historyIndex が 0 にリセットされたので undo は no-op
+    expect(result.current.historyIndex).toBe(0);
+    act(() => result.current.undo());
+    // reset 後の project のまま
+    expect(result.current.project.tabs[0].name).toBe('中３');
   });
 });
 

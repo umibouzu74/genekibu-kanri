@@ -8,6 +8,11 @@ import { BiweeklyTab } from "./master/BiweeklyTab";
 import { MasterListTab } from "./master/MasterListTab";
 import { PrintButton } from "../PrintButton";
 
+// 印刷系統: PrintButton (window.print() 直接呼び) を使う。
+// ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
+// ただし MasterView 内に埋め込まれる ExcelGridView は handlePrint (popup) 系統
+// なので、時間割タブから印刷する場合はトップバー右の 🖨 ボタンを使うこと。
+
 function TabSwitcher({ tab, setTab }) {
   return (
     <div

@@ -41,6 +41,12 @@ export function projectReducer(state, action) {
     case 'project/setActive': {
       return { ...state, project: action.payload };
     }
+    case 'project/reset': {
+      // 全リセット: project を差し替えて history も初期化。Undo で reset 前の
+      // 状態に戻れないようにする (戻れると誤クリックで全部消えるリスクが大きい)。
+      const fresh = action.payload;
+      return { project: fresh, history: [fresh], historyIndex: 0, loadError: null };
+    }
     case 'tab/switch': {
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
@@ -479,30 +485,6 @@ function applyAction(project, action) {
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
     }
-    case 'cell/setNg': {
-      // 指定セルの講師の NG slot を toggle する。teacher が未定 or 未割当なら no-op。
-      // handleSetNg のロジックを 1 アクションに集約 (元は cell の state を読んで
-      // teacher/toggleNg を呼び出すラッパだった)。
-      const { dateId, periodId, classId } = action.payload;
-      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const k = makeKey(dateId, periodId, classId);
-      const curr = activeTab.schedule[k] || {};
-      if (!curr.teacher || curr.teacher === '未定') return project;
-      const teacherIdx = project.teachers.findIndex(t => t.name === curr.teacher);
-      if (teacherIdx < 0) return project;
-      const dateEnt = activeTab.config.dates.find(d => d.id === dateId);
-      const periodEnt = activeTab.config.periods.find(p => p.id === periodId);
-      if (!dateEnt || !periodEnt) return project;
-      const newTeachers = [...project.teachers];
-      const t = { ...newTeachers[teacherIdx] };
-      const ngK = makeNgKey(dateEnt.label, periodEnt.label);
-      if (!t.ngSlots) t.ngSlots = [];
-      if (t.ngSlots.includes(ngK)) t.ngSlots = t.ngSlots.filter(x => x !== ngK);
-      else t.ngSlots = [...t.ngSlots, ngK];
-      newTeachers[teacherIdx] = t;
-      return { ...project, teachers: newTeachers };
-    }
-
     // ─── スケジュール一括/メタ ───────────
     case 'schedule/renameHeader': {
       // type は 'date' | 'period' | 'class'。oldVal / newVal はラベル文字列。

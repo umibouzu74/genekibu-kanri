@@ -4,6 +4,7 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
+import { makeKey } from '../utils/scheduleKey';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -50,6 +51,23 @@ export function useProject() {
   const teacherActions = useTeacherActions(dispatch);
   const subjectActions = useSubjectActions(dispatch);
   const scheduleActions = useScheduleActions(dispatch, currentSchedule);
+
+  // handleSetNg: cell 位置 → 講師 idx + date.label + period.label を解決し、
+  // teacher/toggleNg に委譲する派生 action。元は projectReducer の
+  // cell/setNg case に同じロジックが書かれていたが、teacher/toggleNg と重複
+  // していたため統合 (D4g)。teacher が未定/未割当のときは no-op。
+  const { toggleTeacherNg } = teacherActions;
+  const handleSetNg = useCallback((dateId, periodId, classId) => {
+    const k = makeKey(dateId, periodId, classId);
+    const curr = currentSchedule[k] || {};
+    if (!curr.teacher || curr.teacher === '未定') return;
+    const teacherIdx = project.teachers.findIndex(t => t.name === curr.teacher);
+    if (teacherIdx < 0) return;
+    const dateEnt = currentConfig.dates.find(d => d.id === dateId);
+    const periodEnt = currentConfig.periods.find(p => p.id === periodId);
+    if (!dateEnt || !periodEnt) return;
+    toggleTeacherNg(teacherIdx, dateEnt.label, periodEnt.label);
+  }, [currentSchedule, project.teachers, currentConfig.dates, currentConfig.periods, toggleTeacherNg]);
 
   // setProject 互換 (switchTab 以外で project 全体を差し替える稀なケース用)。
   // 履歴に積まない project/setActive を直接呼ぶ。
@@ -136,6 +154,9 @@ export function useProject() {
     ...teacherActions,
     // スケジュール (useScheduleActions)
     ...scheduleActions,
+    // handleSetNg は scheduleActions に含めず composer で teacher/toggleNg
+    // のラッパとして提供 (D4g)。
+    handleSetNg,
     // 保存/読込 (useJsonIO)
     handleSaveAsDefault,
     handleResetAll,
