@@ -184,4 +184,22 @@ describe('ScheduleCell', () => {
     // 何も render されていないこと (table > tbody > tr の中身)
     expect(container.querySelector('td')).toBeNull();
   });
+
+  // ─── a11y (D5a) ────────────────────────────────────────────────
+
+  it('subject / teacher select に日付・時限・クラスを含む aria-label が付く', () => {
+    renderCell();
+    expect(document.getElementById('select-1-1-1-subject')).toHaveAttribute('aria-label', '12/25(木) 1限 ３S の科目');
+    expect(document.getElementById('select-1-1-1-teacher')).toHaveAttribute('aria-label', '12/25(木) 1限 ３S の講師');
+  });
+
+  it('ロックボタンに aria-label と aria-pressed が付く (locked 状態を反映)', () => {
+    renderCell({
+      contextOverrides: {
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上', locked: true } },
+      },
+    });
+    const lockBtn = screen.getByRole('button', { name: 'ロック解除' });
+    expect(lockBtn).toHaveAttribute('aria-pressed', 'true');
+  });
 });

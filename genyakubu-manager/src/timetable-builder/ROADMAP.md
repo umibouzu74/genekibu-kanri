@@ -431,7 +431,7 @@ useProject.js の composer 内で `teacherActions.toggleTeacherNg` を呼ぶ
 
 ### D5. アクセシビリティ / 国際化
 
-#### D5a. 🟠 ARIA / role 属性ゼロ
+#### D5a. ✅ ARIA / role 属性 (2026-05-17 完了)
 - **現状**: `grep "aria-\|role="` で Builder 配下 0 件。スクリーンリーダーに対して構造が全く伝わらない。
 - **改善**: 最低限以下を入れる:
   - `<table>` に `<th scope="col">` / `<th scope="row">`
@@ -439,6 +439,14 @@ useProject.js の composer 内で `teacherActions.toggleTeacherNg` を呼ぶ
   - selectbox に `aria-label`
   - 進捗バーに `role="progressbar" aria-valuenow={dashboard.progress}`
 - **規模**: 中 / **価値**: 中 (法人ユース想定なら必須化する可能性)
+- **実装**:
+  - **ScheduleTable**: `<table aria-label>` + 列ヘッダ `<th scope="col">` + 日付セル `<th scope="rowgroup" rowSpan>` + 時限セル `<th scope="row" font-normal>`。`<td>` を `<th>` に変えたので font-normal で見栄えは維持。
+  - **ConfigModal**: `role="dialog"` + `aria-modal="true"` + `aria-labelledby="builder-config-modal-title"`。Escape / 背景クリック / ✕ ボタン (aria-label="設定を閉じる") で閉じる。
+  - **ScheduleCell**: subject / teacher select に `aria-label="${date} ${period} ${class} の科目/講師"`。ロックボタンに `aria-label` + `aria-pressed`。
+  - **Toolbar**: 進捗バーに `role="progressbar"` + `aria-valuenow` + `aria-valuemin=0` + `aria-valuemax=100` + `aria-label="完成度"`。
+  - **OnboardingOverlay** (D1a で先取り) / **TabBar** badge (D1c で先取り): 既に対応済み。
+- **テスト**: ScheduleCell +2 / Toolbar +1 / ConfigModal 新規 4 件、全 349/349 PASS。
+- **延期**: 完全な focus trap (Tab で ConfigModal 外に抜けない)、TabBar の `role="tablist"`/`tab` 化は D5b で。
 
 #### D5b. 🟡 キーボード操作の完成度
 - **現状**: ScheduleCell に矢印ナビあり (D4d で hook 化候補)。ConfigModal の tab 切り替え (基本/科目/クラス/...) は左右矢印未対応。

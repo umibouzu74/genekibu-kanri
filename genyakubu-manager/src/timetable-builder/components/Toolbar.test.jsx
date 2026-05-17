@@ -273,4 +273,16 @@ describe('Toolbar', () => {
     renderToolbar();
     expect(screen.queryByTitle('操作ガイドを表示')).not.toBeInTheDocument();
   });
+
+  // ─── a11y (D5a) ────────────────────────────────────────────────
+
+  it('進捗バーに role="progressbar" + aria-valuenow が付く', () => {
+    renderToolbar({
+      projectOverrides: { dashboard: { progress: 42, filled: 4, total: 10 } },
+    });
+    const bar = screen.getByRole('progressbar', { name: '完成度' });
+    expect(bar).toHaveAttribute('aria-valuenow', '42');
+    expect(bar).toHaveAttribute('aria-valuemin', '0');
+    expect(bar).toHaveAttribute('aria-valuemax', '100');
+  });
 });

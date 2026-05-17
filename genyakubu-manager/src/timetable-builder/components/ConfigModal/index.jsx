@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import BasicSettings from './BasicSettings';
@@ -10,11 +10,25 @@ import SubjectColorSettings from './SubjectColorSettings';
 import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
 
+const TITLE_ID = 'builder-config-modal-title';
+
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName } = useProjectContext();
   const { showConfirm } = useUI();
   const [projectNameInput, setProjectNameInput] = useState(project.name || "");
+
+  // Escape で閉じる (D5a)
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleProjectNameBlur = () => {
     const trimmed = projectNameInput.trim();
@@ -29,11 +43,19 @@ export default function ConfigModal({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print">
-      <div className="bg-builder-surface w-full max-w-5xl h-[85vh] rounded-lg shadow-2xl flex flex-col overflow-hidden animate-fade-in">
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={TITLE_ID}
+        className="bg-builder-surface w-full max-w-5xl h-[85vh] rounded-lg shadow-2xl flex flex-col overflow-hidden animate-fade-in"
+      >
         <div className="p-4 border-b border-builder-border flex justify-between items-center bg-builder-surface-alt">
-          <h2 className="font-bold text-lg text-builder-ink">⚙️ 設定メニュー</h2>
-          <button onClick={onClose} className="text-2xl font-bold text-builder-ink-ghost hover:text-builder-ink-muted">×</button>
+          <h2 id={TITLE_ID} className="font-bold text-lg text-builder-ink">⚙️ 設定メニュー</h2>
+          <button onClick={onClose} aria-label="設定を閉じる" className="text-2xl font-bold text-builder-ink-ghost hover:text-builder-ink-muted">×</button>
         </div>
         <div className="flex gap-4 px-6 pt-4 border-b border-builder-border">
           {[

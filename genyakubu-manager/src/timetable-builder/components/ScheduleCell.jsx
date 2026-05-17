@@ -93,6 +93,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
           <div className="flex-1 min-w-0 flex items-center gap-0.5">
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
+              aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}
               className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink min-w-0 ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
               value={entry.subject || ""}
               onChange={(e) => handleAssign(dateId, periodId, classId, 'subject', e.target.value)}
@@ -109,12 +110,13 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-builder-red" : "text-builder-ink-muted"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
             {isCombined && <span className={`bg-builder-primary text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
-          <button onClick={() => toggleLock(dateId, periodId, classId)} className={`focus:outline-none text-builder-ink-ghost hover:text-builder-ink shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
+          <button onClick={() => toggleLock(dateId, periodId, classId)} aria-label={isLocked ? "ロック解除" : "ロック"} aria-pressed={!!isLocked} className={`focus:outline-none text-builder-ink-ghost hover:text-builder-ink shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
             {isLocked ? "🔒" : "🔓"}
           </button>
         </div>
         <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
+          aria-label={`${dLabel} ${pLabel} ${cLabel} の講師`}
           className={`w-full rounded cursor-pointer ${isConflict ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}

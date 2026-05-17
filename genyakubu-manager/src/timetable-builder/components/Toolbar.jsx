@@ -96,7 +96,14 @@ export default function Toolbar({
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
       <div className="flex items-center gap-3 bg-builder-surface px-3 py-1.5 rounded border border-builder-border shadow-sm flex-1 min-w-[250px]">
         <div className="text-xs font-bold text-builder-ink-muted">進捗</div>
-        <div className="flex-1 h-3 bg-builder-border rounded-full overflow-hidden relative">
+        <div
+          role="progressbar"
+          aria-label="完成度"
+          aria-valuenow={dashboard.progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="flex-1 h-3 bg-builder-border rounded-full overflow-hidden relative"
+        >
           <div className="h-full bg-builder-blue transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
         </div>
         <div className="text-sm font-bold text-builder-blue w-12 text-right">{dashboard.progress}%</div>
