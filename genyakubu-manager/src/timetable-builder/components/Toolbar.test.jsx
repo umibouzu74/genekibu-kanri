@@ -138,4 +138,18 @@ describe('Toolbar', () => {
     const genBtn = screen.getByText(/生成中 \(1\/3\)/).closest('button');
     expect(genBtn).toBeDisabled();
   });
+
+  it('onShowHelp が渡されると ❓ヘルプ ボタンを表示し、クリックで呼ぶ', () => {
+    const onShowHelp = vi.fn();
+    renderToolbar({ props: { onShowHelp } });
+    const helpBtn = screen.getByTitle('操作ガイドを表示');
+    expect(helpBtn).toBeInTheDocument();
+    fireEvent.click(helpBtn);
+    expect(onShowHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it('onShowHelp が無ければ ❓ヘルプ ボタンは描画しない', () => {
+    renderToolbar();
+    expect(screen.queryByTitle('操作ガイドを表示')).not.toBeInTheDocument();
+  });
 });

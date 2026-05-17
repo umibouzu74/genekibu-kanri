@@ -280,10 +280,11 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 
 ### D1. ユーザビリティ / UX
 
-#### D1a. 🟠 オンボーディング無し
+#### D1a. ✅ オンボーディング (2026-05-17 完了)
 - **現状**: 初回起動でいきなりスケジュール表が表示される。`grep onboard tutorial welcome firstRun` で 0 ヒット。
 - **改善**: 空状態の説明オーバーレイ、または「初回ガイドツアー」。最低限「右クリックで日付/クラス名を変更できる」「⚙️設定で講師・科目を編集」「🧙‍♂️自動作成で MRV+バックトラックの解を試せる」を案内。
 - **規模**: 中 / **価値**: 高 / **推奨**: 早期に着手
+- **実装**: `OnboardingOverlay.jsx` (5 ステップガイド) + Toolbar の「❓ ヘルプ」ボタンから再表示可能。LocalStorage `builder.onboarding_seen` に 1 bit flag のみ保存 (UI 自動変形は無し、CLAUDE.md の禁止規約に抵触しない)。`role="dialog"` `aria-modal` `aria-labelledby` を付与し D5a の a11y も先取り。Escape / ✕ / 背景クリック / 「始める」のいずれでも閉じる。テスト 10 件 (OnboardingOverlay.test.jsx) + Toolbar.test.jsx に 2 件追加。
 
 #### D1b. 🟠 モバイル / 狭画面対応
 - **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel と ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。スケジュール表は overflow-auto で横スクロールで対応するが、Toolbar 内のボタン群は折り返さない。
