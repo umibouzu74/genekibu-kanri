@@ -552,7 +552,327 @@ popup 系のどちらに属するか、新しい印刷導線を増やす際に�
 
 ---
 
+## E. 完成形へ向けた継続課題 (2026-05-17 追加、UX phase 完了後)
+
+D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時間割
+作成ツールを実運用に耐えるプロダクトとして完成させる」** ための残課題
+を整理する。D 系で未完のものは E への pointer に置き換え、加えて今回の
+作業を通じて新たに見えた論点を新規番号で並べる。
+
+各項目は **規模 / 価値 / リスク / 推奨タイミング** を併記。「壊す」
+候補と「Major refactor」はセクション末でまとめる。
+
+### E1. UX 完成度の残り
+
+#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b)
+- **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel / ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。
+- **改善**: Toolbar の sm 折りたたみ、Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で。
+- **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
+
+#### E1b. 🟠 キーボード操作完成度 (旧 D5b + D5a 延期分)
+- **現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装。Tab で背景まで抜ける。OnboardingOverlay は実装済 (M2 修正)。
+- **改善**:
+  - ConfigModal に簡易 focus trap (OnboardingOverlay の実装をヘルパー化して再利用)
+  - ConfigModal タブ群を `role="tablist"` / `role="tab"` + 左右矢印で切替
+  - TabBar (project タブ) も同様に `role="tablist"` 化
+  - ScheduleCell の矢印ナビは既存。エッジ動作 (端 → 反対端へ wrap?) を統一
+- **規模**: 中 / **価値**: 中
+
+#### E1c. 🟡 名前付きスナップショット (旧 D1d)
+- **現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できない。生成 3 案も SummaryPanel 居る間だけ。
+- **改善**: スロット型の保存・適用 (project レベル or タブレベル)。
+- **規模**: 中 / **価値**: 中
+
+#### E1d. 🟡 スケジュール差分ビュー (旧 D1e)
+- **現状**: 自動生成 N 案は集計のみ。実セル差は適用前後比較しないと見えない。
+- **改善**: A/B 案の cell-by-cell diff (色違いハイライト)。
+- **規模**: 中 / **価値**: 中
+
+#### E1e. 🟠 色覚 / コントラスト WCAG AA 準拠 (新規)
+- **現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定。「⚠️N件」の赤背景 / 「✨ OK」の緑文字 / 科目カラーが背景の薄色など、AA (4.5:1) を満たすか不明。
+- **改善**: axe-core / Lighthouse の audit を入れて全配色を検証、未達のトークンを調整。focus ring も色弱対応 (現状 builder-blue 系の単色)。
+- **規模**: 中 / **価値**: 中 (法人ユースで必須化の可能性)
+
+#### E1f. 🟡 タッチ操作対応 (新規)
+- **現状**: DnD ベース。長押しコンテキストメニュー無し。タッチ右クリック (= 長押し) は OS 依存。
+- **改善**: 長押しジェスチャ → ContextMenu open、ピンチズーム抑止、ボタンの最低タップ領域 44px。E1a (モバイル) とセットで。
+- **規模**: 中 / **価値**: 中
+
+#### E1g. 🟡 エラー時の修正提案 (新規 / D1c-C の延長)
+- **現状**: D1c-C で「noTeacherForSlot」「subjectCapacityShortage」を検出。違反/不可は表示するが、解決のヒントは出さない。
+- **改善**: 「12/25 1限 の英語は全員 NG → A 案: 別時限へ移動 / B 案: 別講師を登録」のような選択肢を popover 内に出す。E2b (修復 wizard) の MVP 版。
+- **規模**: 中 / **価値**: 高 (デバッグ時間を大幅短縮)
+
+#### E1h. ⚪ 印刷スタイル微調整 (新規)
+- **現状**: 2 系統の印刷経路 (CLAUDE.md 印刷ルール参照) で運用中。MonthView / ExcelGridView は popup 方式、その他は `window.print()`。
+- **改善**: 紙面ヘッダの日付フォーマット統一、改ページ制御 (`break-inside: avoid`)、ロックセルのハッチングが薄すぎないか確認。
+- **規模**: 小 / **価値**: 低〜中
+
+---
+
+### E2. 機能拡張
+
+#### E2a. 🟠 CSV インポートの拡張 (旧 D6a の続き)
+- **現状**: 講師マスタの CSV import (paste 型) のみ完了 (D6a-MVP)。
+- **改善 (優先順)**:
+  - ファイル D&D / `<input type="file">` 対応 (paste より導入障壁低い)
+  - NG 日時 CSV (`teacher,date,period` 形式) で ngSlots を一括設定
+  - 既存 Excel スケジュール (旧 winter_schedule .xlsx) からセル全体を取り込み (要 mapping UI)
+  - subjectCounts / classes 等の config も CSV 化
+- **規模**: 中〜大 / **価値**: 高 (新規ユーザ全体の体験を底上げ)
+
+#### E2b. 🟡 自動修復 wizard (旧 D6b)
+- **現状**: 生成失敗時は部分解 + warning toast。手詰まりの解消は手作業。
+- **改善**: conflict 1 件ごとに「この講師を別の日へ」「この科目を別クラスへ」のような提案 → 適用 / スキップ / カスタム編集の選択 UI。
+- **規模**: 大 / **価値**: 中 (制約緩和の意思決定 UI 設計が必要)
+
+#### E2c. 🟡 講師の連続コマ数制約 (旧 D6c)
+- **現状**: 1 日合計 `maxDailyHours` のみ。「2 コマ連続 NG」「3 コマ連続後は休憩」等の連続性制約は無い。
+- **改善**: teacherConstraints に追加。constraint check を増やすので solver の探索空間も増える。
+- **規模**: 中 / **価値**: 中
+
+#### E2d. 🟡 テンプレート機能 (年度間コピー) (旧 D6d)
+- **現状**: project ごとに完全独立。去年 → 今年の流用は JSON 保存→読込で代替可。
+- **改善**: テンプレ保存・適用、「講師マスタだけ引き継ぎ」「スケジュールだけ引き継ぎ」等の options。
+- **規模**: 中 / **価値**: 中
+
+#### E2e. 🟡 生成パラメータ UI 化 (新規)
+- **現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。
+- **改善**: ConfigModal に「自動生成」タブを追加し、3 つを slider / number input で。advanced ユーザ向け折りたたみで OK。
+- **規模**: 小〜中 / **価値**: 中
+
+#### E2f. 🟡 自動生成中の進捗詳細 (新規)
+- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」が不可視。
+- **改善**: Worker から進捗イベントを増やし、Toolbar の進捗ボタンクリックで「詳細パネル」を出す。長時間生成時の cancel 判断材料に。
+- **規模**: 中 / **価値**: 中 (大規模 project で生成時間が読めない問題の解消)
+
+#### E2g. ⚪ 履歴ブランチング (新規)
+- **現状**: undo/redo は単線。新しい操作をすると redo 履歴は破棄される (一般的な動作)。
+- **改善**: 分岐履歴を保持し「履歴ツリー」として可視化。E1c (名前付きスナップショット) と組み合わせれば「試行錯誤の枝」として残せる。
+- **規模**: 大 / **価値**: 低〜中 (一般ユーザには複雑かも)
+
+---
+
+### E3. テスト / 信頼性
+
+#### E3a. 🟡 実 Worker 経路の E2E (旧 D2c)
+- **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ。本番 (`new Worker()`) は untested。cancel・terminate・message protocol が silent regression し得る。
+- **改善**: Playwright で実 Chromium に load → 「自動生成」クリック → 結果アサート。または vitest browser mode。
+- **規模**: 中 / **価値**: 中
+
+#### E3b. 🟡 Excel 出力のバイナリ検証 (旧 D2d)
+- **現状**: 構造テスト 18 件 (C4) はあるが、実 xlsx を開いた時の見栄え (色・罫線・列幅) は手動確認。
+- **改善**: exceljs 書き出し → 再読込 round-trip 比較、または Playwright で download → 解凍 → OOXML XML 検証。
+- **規模**: 中 / **価値**: 中
+
+#### E3c. 🟡 印刷出力スナップショット (新規)
+- **現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
+- **改善**: Playwright で `page.pdf()` → PDF を画像化 → pixelmatch / VRT。少なくとも 7 ビュー × 1 サンプルずつ。
+- **規模**: 中 / **価値**: 中 (印刷バグは現場でしか発覚しない)
+
+#### E3d. 🟠 project JSON 読込時の schema バリデーション (新規)
+- **現状**: `projectFactory.loadInitialProject` は JSON.parse 失敗のみ捕捉 (test fixture でも確認済み)。schema 違反 (`teachers` が配列でない等) は crash する可能性。
+- **改善**: zod / valibot 等で schema を宣言、`migrateProject` の手前で validate。失敗時は defaults にフォールバック + 「JSON が壊れています」toast。
+- **規模**: 中 / **価値**: 高 (R2: LocalStorage 容量との合わせ技、データ損失への保険)
+
+#### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
+- **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
+- **改善**: TeacherManager (CSV import 含む) / BasicSettings / NgSettings / CombinedGroupSettings に直接の UI テストを追加。D5a で a11y 属性追加分の回帰もここで捕捉。
+- **規模**: 中 / **価値**: 中
+
+#### E3f. ⚪ 視覚回帰テスト (新規)
+- **現状**: 無し。
+- **改善**: Chromatic / Percy / Playwright snapshot で主要 view のスクリーンショット VRT。
+- **規模**: 中 / **価値**: 低〜中 (UI 変更が多くないので overkill かも)
+
+#### E3g. ⚪ クロスブラウザ E2E (新規)
+- **現状**: Chromium のみ手動確認。Safari / Firefox の WebWorker / LocalStorage 挙動は未検証 (R1)。
+- **改善**: Playwright で 3 ブラウザ × 主要シナリオを走らせる。
+- **規模**: 中 / **価値**: 中
+
+---
+
+### E4. パフォーマンス / スケーラビリティ
+
+#### E4a. 🟢 cleanSchedule O(K) 化 (旧 D3a)
+- **現状**: `constants.js:cleanSchedule` は全 (dates × periods × classes) を iterate して valid key Set を作り filter。デフォルト 72、ピーク数百。
+- **改善**: 既存 schedule keys を iterate し entity 存在を即時判定する方向に反転。
+- **規模**: 小 / **価値**: 低〜中
+
+#### E4b. 🟡 solver スケーリング計測 (旧 D3b)
+- **現状**: `MAX_ITERATIONS = 500_000`。何コマまでなら数秒以内に解けるか未計測。
+- **改善**: ベンチマーク (大規模 fixture を作って autoGenerator を走らせ ms 計測) + 必要に応じ部分解戦略の改善。
+- **規模**: 中 / **価値**: 中
+
+#### E4c. ⚪ excelExport バンドル削減 (旧 D3c)
+- **現状**: 944 kB (gzip 273 kB)。dynamic import で起動には影響無いが、初回 Excel 出力に数百 ms 遅延。
+- **改善**: exceljs の Workbook + xlsx writer のみ tree-shake、または OOXML 自前。
+- **規模**: 大 / **価値**: 低 (動的 import で吸収済み)
+
+#### E4d. 🟡 useAnalysis 再計算プロファイル (新規)
+- **現状**: useAnalysis は 5 段 useMemo (D4e + D1c で追加)。`project.tabs` が変わると `globalUsage` / `tabErrorCounts` 両方が再計算。タブ数 / セル数が増えた時の hot path を計測していない。
+- **改善**: React Profiler で 100 操作分の reflow を記録し、ボトルネックがあれば WeakMap キャッシュや selective recompute 化。
+- **規模**: 小〜中 / **価値**: 中
+
+#### E4e. ⚪ React 19 / Compiler 移行検討 (新規)
+- **現状**: 手書きの useMemo / useCallback / Context value memo (CLAUDE.md 別記載なし)。
+- **改善**: React Compiler が安定したら手書き最適化を外して compiler に任せる。useAnalysis の 5 段 memo がシンプルになる可能性。
+- **規模**: 大 / **価値**: 中 (依存ライブラリの追従次第)
+
+#### E4f. ⚪ 大規模 schedule の virtualization (新規)
+- **現状**: ScheduleTable は全セルを DOM に出す。3 学年 × 7 クラス × 6 日 × 4 時限 = 504 セル + 講師 select で各セル 3 要素 → 1500+ ノード。スマホで重い。
+- **改善**: react-window 等で virtualize。ただし sticky thead / rowSpan / 矢印ナビとの相性が悪く実装難。
+- **規模**: 大 / **価値**: 低〜中
+
+---
+
+### E5. アーキテクチャ (再設計 / 「壊す」候補)
+
+#### E5a. 🟢 schedule キー object 化 (旧 D4a)
+- **現状**: 文字列 `"d1-p1-c1"` を `parseKey` で分解。
+- **改善**: `Map<{dateId, periodId, classId}, Entry>` に。
+- **判断**: 文字列 key は localStorage 直接 JSON 化できるメリット。**やらない寄り**。
+
+#### E5b. 🟡 combinedGroups / externalCounts の完全 ID 化 (旧 D4b)
+- **現状**: ラベル文字列で参照。cascade cleanup helper で吸収済みだが reducer の責務が膨らんだ。
+- **改善**: タブ横断の class / teacher / subject ID 導入で cleanup 不要に。
+- **規模**: 大 / **価値**: 中〜高 / **「壊す」候補**
+
+#### E5c. 🔴 Tailwind と inline-style の二系統解消 (旧 D4c)
+- **現状**: Builder Tailwind / 親アプリ inline+tokens.js。色は同期したが paradigm が違う。
+- **規模**: 大 / **価値**: 中 / **「壊す」候補** (親に寄せて Builder を inline 化が推奨)
+
+#### E5d. 🟡 ScheduleCell.jsx の分解 (旧 D4d)
+- **現状**: 137 行。subject/teacher select / lock / matrix navigation / conflict 表示 / combined 表示が同居。
+- **改善**: SubjectSelect / TeacherSelect / CellLockButton 分離 + `useCellNavigation` hook。
+- **規模**: 中 / **価値**: 中 (E3e の UI テスト容易性 UP)
+
+#### E5e. 🟡 TypeScript 化 (旧 D7a)
+- **現状**: Builder 配下は JS。Project / Tab / Config / ScheduleEntry / CombinedGroup の型定義が無いため、reducer や analysisHelpers のリファクタが reflective に進めにくい。
+- **改善**: `.jsx` → `.tsx`、型定義を `types/` に。E5b と同時実施で「型と structure を一発で固める」のがベスト。
+- **規模**: 大 / **価値**: 中〜高 / **「壊す」候補**
+
+#### E5f. ⚪ state management ライブラリ検討 (新規)
+- **現状**: useReducer + Context + 手書き useMemo (CLAUDE.md にも記載) で re-render を抑えている。
+- **改善**: Zustand / Jotai / Redux Toolkit に置き換えて selector ベースの purity / devtools 統合を得る。
+- **判断**: 動いているものを置き換えるコストが高い。**「壊す」候補だが優先度低**。
+
+#### E5g. 🟡 project schema v4 migration path 設計 (新規)
+- **現状**: v1→v2→v3 の migration は `migrateProject` で実装済み。v4 (combinedGroups の ID 化 / teacher 安定 ID 等) を入れる時のテンプレートを決めておきたい。
+- **改善**: 「version up はリリースの最後に 1 度だけ」「migration は順次関数合成」「失敗時 fallback は前 version」のルール化。
+- **規模**: 小 (設計のみ) / **価値**: 中
+
+#### E5h. ⚪ Worker への analysis 移動 (新規, 「壊す」候補)
+- **現状**: useAnalysis は main thread。大規模 schedule で UI スレッドを止める潜在リスク。
+- **改善**: analysisHelpers を Worker に移し、`postMessage` で結果を返す。autoGenerator Worker と共通基盤。
+- **規模**: 大 / **価値**: 低〜中 / **「壊す」候補** (現状 60fps を割っていないので effort 過剰の可能性)
+
+---
+
+### E6. データ管理 / コラボ
+
+#### E6a. ⚪ Firebase 同期 (旧 D6e, 「壊す」候補)
+- **現状**: LocalStorage 単独 (R2)。
+- **改善**: Firestore / Supabase 同期で複数デバイス + R2 解決。
+- **規模**: 大 / **価値**: 高 (組織内共有が要件化した時) / **「壊す」候補**
+
+#### E6b. ⚪ 複数ユーザー同時編集 (新規)
+- **現状**: 想定外。
+- **改善**: OT (Operational Transform) or CRDT (yjs/automerge) で同時編集 + コンフリクト解決。
+- **規模**: 超大 / **価値**: 条件付き高 (E6a の延長)
+
+#### E6c. 🟡 LocalStorage 容量監視 (新規, R2 の能動管理)
+- **現状**: R2 で「ピーク 12 KB 程度なので 1-2 桁の余裕」と評価済みだが、運用中の実値モニタリング無し。
+- **改善**: 起動時に `JSON.stringify(project).length` を計測し、5MB の 50% を超えたら toast。
+- **規模**: 小 / **価値**: 中
+
+#### E6d. 🟡 同一ブラウザ複数タブの競合検出 (新規)
+- **現状**: 同 project を 2 タブで開くと localStorage を相互に上書きする可能性 (debounce 経由)。
+- **改善**: `BroadcastChannel` で「他タブが同 project を開いた」を検出し warning。Lock 取得方式 (`navigator.locks`) も検討。
+- **規模**: 中 / **価値**: 中 (実害が出てからでも遅くない)
+
+---
+
+### E7. AI 活用 (新規領域)
+
+CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触しないよう、AI
+提案は **ユーザ操作で発火する明示的なもの** に限定する (操作履歴からの
+自動学習・自動配置は対象外)。
+
+#### E7a. ⚪ 自然言語制約入力
+- **現状**: NG / priorityClasses は UI で 1 件ずつ設定。
+- **改善**: 「月曜 1 限は田中先生 NG」「３A クラスは英語を優先的に堀上先生に」を自然言語で入力 → LLM で `toggleTeacherNg` 等の action 列に変換 → preview → 適用。
+- **規模**: 中〜大 / **価値**: 中 (初心者ユーザにとっての導入障壁を下げる)
+- **判断**: API コスト / レイテンシ / privacy (講師名を外部送信) を考慮。社内 ollama 等の選択肢も。
+
+#### E7b. ⚪ 自動生成失敗時の緩和提案 (E2b の AI 版)
+- **現状**: 部分解 + warning のみ。
+- **改善**: 「英語クォータを 4→3 に減らす」「未定講師を 1 人増やす」等の選択肢を LLM が生成。
+- **規模**: 大 / **価値**: 中
+
+#### E7c. ⚪ 過去パターンからの初期化提案 (要規約確認)
+- **現状**: テンプレート (E2d) は手動。
+- **改善**: 「過去 project と新 project の差分を見て、流用可能なセルを提案」型。**ユーザがボタンを押した時のみ**動作するなら CLAUDE.md A18 に抵触しない。
+- **判断**: 自動学習 / 自動配置 / アクセス頻度の自動反映は禁止条項なので、設計時に明示的にユーザ発火型として実装する。
+
+---
+
+### E8. ドキュメント
+
+#### E8a. 🟡 ユーザーマニュアル
+- **現状**: 無し。README は開発者向けのみ。
+- **改善**: 「初回セットアップ」「自動生成の使い方」「Excel 出力」等の操作ガイド。Markdown + スクリーンショット。配布方法は `docs/` または GitHub Pages。
+- **規模**: 中 / **価値**: 中 (E1g の修正提案や onboarding と併用)
+
+#### E8b. 🟡 開発者ガイド (アーキテクチャ図 / データフロー)
+- **現状**: ROADMAP.md + CLAUDE.md + コード冒頭コメントに散在。
+- **改善**: `docs/architecture.md` に Mermaid 図で「project → reducer → hooks → contexts → components」と「solver pipeline」を可視化。
+- **規模**: 小 / **価値**: 中
+
+#### E8c. ⚪ スクリーンキャスト / GIF
+- **現状**: 無し。
+- **改善**: 主要操作を 30 秒 GIF で。README / オンボーディング再生にも使える。
+- **規模**: 小 / **価値**: 低〜中
+
+#### E8d. ⚪ ROADMAP の整理
+- **現状**: A/B/C (完了済) + D + E が並走。長大化。
+- **改善**: D 系を A/B/C と同じく折りたたみ表記にし、E 系を main トラックに。
+- **規模**: 小 (ドキュメント整形のみ)
+
+---
+
+### E 系の推奨着手順
+
+| Phase | 着手項目 | 規模 | 効果 |
+|---|---|---|---|
+| **UX 仕上げ** | E1b (キーボード完成) / E1e (コントラスト) / E1g (修正提案 MVP) | 中 | a11y/UX を spec 水準に |
+| **データ堅牢化** | E3d (schema validation) / E6c (容量監視) / E6d (タブ競合検出) | 小〜中 | 実運用での事故予防 |
+| **テスト深化** | E3a (Worker E2E) / E3e (Config sub-tests) / E3b (Excel 検証) | 中 | 触っても壊れない基盤 |
+| **機能拡張** | E2a (CSV 拡張) / E2e (生成 param UI) / E2b (修復 wizard) | 中〜大 | 新規ユーザ獲得 + 上級者対応 |
+| **モバイル対応** | E1a (狭画面) / E1f (タッチ) | 中 | 移動先確認の体験 |
+| **Major refactor (要決断)** | E5e (TS) → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
+| **新領域 (要 PM 判断)** | E6a (Firebase) / E7a (NL 制約) / E7b (緩和提案) | 大 | プロダクト方向性の選択 |
+
+### E 系の「一旦壊した方が良い」候補
+
+| # | 項目 | 推奨アプローチ | リスク |
+|---|---|---|---|
+| **E5e** | TypeScript 化 | Builder 配下を `.tsx` 化、型定義を `types/` に集約。E5b と抱き合わせ | Vite/Vitest 設定追加、外部型のインストール |
+| **E5b** | combinedGroups / externalCounts 完全 ID 化 | E5e と一緒に。reducer の cascade cleanup を撤廃 | JSON 出力が人間可読でなくなる、タブ間自動共有が失われる |
+| **E5c** | Tailwind / inline-style 統一 | 親アプリの paradigm に合わせ Builder を inline 化 | Builder UI 全面書き直し |
+| **E6a** | Firebase 同期 | LocalStorage は cache レイヤとして残し sync は subscribe 型 | 認証 / コンフリクト / コスト |
+| **E5h** | analysis の Worker 化 | postMessage で結果を返す。autoGenerator と共通基盤 | UI 60fps を割っていないなら effort 過剰 |
+| **E5f** | state management ライブラリ | Zustand へ部分置換から | 動いているものを置き換えるコスト |
+
+優先度判断の目安:
+- **必ずやる**: E5e (TS) → 残りすべての refactor の前提
+- **やる価値が高い**: E5b (ID 化) → reducer 簡略化、E5c (style 統一) → 長期 maintenance
+- **要件次第**: E6a (Firebase) → 共有ニーズが顕在化したら
+- **慎重に判断**: E5f / E5h → 動作優先で見送りもアリ
+
+---
+
 - 各項目を実装したら ✅ を付けて短縮する (詳細は commit message とコードのコメントに残す)
-- 新たに発見された問題は適切なセクション (A/B/C) に追加
+- 新たに発見された問題は適切なセクション (A/B/C/D/E) に追加
 - リスク (R*) は実害が出たり対策が完了したら更新
 - 「次セッション quick start」のコマンドと検証数値 (test 件数等) は変わったら追従
