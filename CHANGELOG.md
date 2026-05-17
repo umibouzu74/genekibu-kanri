@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Changed (Builder Test foundation: D4e + D2a)
+- **D4e + D2a** `hooks/useAnalysis.js` の 120 行モノリス useMemo を
+  `utils/analysisHelpers.js` の 3 純粋関数 (`computeGlobalUsage` /
+  `computeActiveAnalysis` / `computeDashboard`) に切り出し、テスト可能化。
+  `useAnalysis` 自体は React-deps 最小化の orchestrator (44 行) に縮小し、
+  useMemo を 3 段に分けて部分再計算を実現:
+  - globalUsage / teacherDailyCounts は `project.tabs / combinedGroups /
+    externalCounts` のみ依存 (現タブの schedule 変化で再計算しない)
+  - activeAnalysis (conflict / dailySubject / subjectOrder) は
+    `currentConfig / currentSchedule / globalUsage`
+  - dashboard は `currentSchedule / currentConfig`
+  公開 API (`{ analysis, dashboard }`) は不変なので、Toolbar / SummaryPanel /
+  ScheduleCell / ProjectContext は無変更。
+- `utils/analysisHelpers.test.js` 18 ケース新規:
+  - computeGlobalUsage 6 件 (単純集計 / "未定" スキップ / externalCounts /
+    合同グループ重複防止 / 複数タブ横断 / subject 未割当)
+  - computeActiveAnalysis 7 件 (conflict / 合同グループ除外 / タブ横断 /
+    dailySubjectMap / subjectOrders / 空 schedule / "未定" 除外)
+  - computeDashboard 5 件 (0% / 50% / 100% / 空 config / subject 未割当)
+- 全体: 939 → 957 件、lint 0 / typecheck 0 / build OK。
+
 ### Changed (Builder Quick wins: D4f / D4g / D7b)
 - **D4f** Builder の「全データリセット」が `window.location.reload()` で強制
   リロードする hack を撤廃。新 reducer action `project/reset` を追加し、

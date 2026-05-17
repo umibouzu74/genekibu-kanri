@@ -1,6 +1,7 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b) 完了
+最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
++ D-Test foundation (D4e + D2a) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -311,10 +312,10 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 
 ### D2. テスト網羅性
 
-#### D2a. 🟠 useAnalysis のテスト 0 件
-- **現状**: `hooks/useAnalysis.js` (約 120 行) に対応するテストが無い。conflictMap / errorKeys / teacherDailyCounts / subjectOrders / dailySubjectMap の計算ロジックが untested。
-- **改善**: hook を切り分けて純粋関数に近づけ、テストを追加。再構築 (D4e) と同時にやると効率的。
-- **規模**: 小〜中 / **価値**: 高 (UI 多数が依存)
+#### ~~D2a~~. ✅ useAnalysis のテスト (D4e と抱き合わせ)
+完了 (2026-05-17)。D4e の純粋関数化と一緒に実施。
+`utils/analysisHelpers.test.js` に 18 ケース追加 (computeGlobalUsage 6 /
+computeActiveAnalysis 7 / computeDashboard 5)。
 
 #### D2b. 🟡 UI コンポーネントテスト 0 件
 - **現状**: `components/*.test.*` 0 ファイル。Header / Toolbar / ScheduleCell / ConfigModal 各 tab は useProject 経由の動作テストでカバーされているが、コンポーネント固有のロジック (Header の Excel 出力中 disabled、Toolbar の scrollToFirstError、ScheduleCell のキーボードナビ) は黒箱。
@@ -381,10 +382,14 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **改善**: SubjectSelect / TeacherSelect / CellLockButton / 別ファイルへ。Navigation は useCellNavigation hook へ。
 - **規模**: 中 / **価値**: 中 (可読性 + テスト容易性 = D2b の前提)
 
-#### D4e. 🟡 useAnalysis の分解
-- **現状**: 1 つの useMemo で 5 種類の集計を計算 (約 75 行)。conflictMap だけ欲しい consumer も全部計算される。
-- **改善**: セクション分割 (useConflicts / useSubjectOrders / useTeacherCounts)、必要なものだけ subscribe。
-- **規模**: 中 / **価値**: 中 (テスト容易性 + 部分再計算)
+#### ~~D4e~~. ✅ useAnalysis の分解
+完了 (2026-05-17)。サブフック分割案ではなく、`utils/analysisHelpers.js` に
+3 純粋関数 (`computeGlobalUsage` / `computeActiveAnalysis` /
+`computeDashboard`) を切り出し、`useAnalysis` 側を 3 段の useMemo に分けて
+deps を最小化する形で実現。公開 API は不変なので consumer は無変更。
+部分再計算: globalUsage は `project.tabs / combinedGroups / externalCounts`
+のみ依存、activeAnalysis は `currentConfig / currentSchedule / globalUsage`、
+dashboard は `currentSchedule / currentConfig`。
 
 #### ~~D4f~~. ✅ handleResetAll の reload 回避
 完了 (2026-05-17)。新 reducer action `project/reset` を追加し、
@@ -480,7 +485,7 @@ popup 系のどちらに属するか、新しい印刷導線を増やす際に�
 | Phase | 着手項目 | 規模 | 効果 |
 |---|---|---|---|
 | **Quick wins** ✅ 完了 | ~~D4f handleResetAll~~ / ~~D4g cell/setNg 統合~~ / ~~D7b 印刷文書~~ | 小 | 軽量、即効 |
-| **Test foundation** (2-3 セッション) | D2a useAnalysis / D2b UI components / D4e useAnalysis 分解 (D2a の前提) | 中 | 後続改善の安全網 |
+| **Test foundation** D2a + D4e ✅ 完了 / D2b 残 | ~~D2a useAnalysis~~ / D2b UI components / ~~D4e useAnalysis 分解~~ | 中 | 後続改善の安全網 |
 | **UX phase** (2-3 セッション) | D1a オンボーディング / D1c バリデーション可視化 / D6a bulk import / D5a a11y | 中 | ユーザ価値最大 |
 | **Code quality** (1-2 セッション) | D4d ScheduleCell 分解 / D3a cleanSchedule O(K) | 中 | 可読性 + 安定性 |
 | **Major refactor** (要決断) | D4b 全 ID 化 / D4c styling 統一 / D7a TS 化 / D6e Firebase | 大 | 長期負債解消 |

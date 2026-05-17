@@ -1,0 +1,254 @@
+import { describe, expect, it } from 'vitest';
+import {
+  computeGlobalUsage,
+  computeActiveAnalysis,
+  computeDashboard,
+} from './analysisHelpers';
+import { makeKey, makeExternalKey } from './scheduleKey';
+
+// テスト用ヘルパー: v3 schema の config と schedule を組み立てる。
+function makeConfig(overrides = {}) {
+  return {
+    dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+    subjectCounts: { '英語': 2, '数学': 2 },
+    ...overrides,
+  };
+}
+
+function makeTab(id, schedule, configOverrides = {}) {
+  return { id, name: `tab-${id}`, config: makeConfig(configOverrides), schedule };
+}
+
+// ─── computeGlobalUsage ──────────────────────────────────────────
+
+describe('computeGlobalUsage', () => {
+  it('単純な 1 タブの集計: 講師ごとの日次コマ数を返す', () => {
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' },
+      [makeKey(1, 2, 2)]: { subject: '数学', teacher: '田中' },
+    });
+    const { teacherDailyCounts, globalUsage } = computeGlobalUsage([tab], [], {});
+
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]).toEqual({
+      current: 1, external: 0, total: 1,
+    });
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '田中')]).toEqual({
+      current: 2, external: 0, total: 2,
+    });
+    // globalUsage は (date, period, teacher) を key にして tabId 配列を持つ
+    expect(globalUsage['12/25(木)-1限-堀上']).toEqual([{ tabId: 1, combinedGroupId: null }]);
+    expect(globalUsage['12/25(木)-2限-田中']).toHaveLength(2);
+  });
+
+  it('"未定" の講師は集計対象外', () => {
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' },
+      [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' },
+    });
+    const { teacherDailyCounts, globalUsage } = computeGlobalUsage([tab], [], {});
+
+    expect(Object.keys(teacherDailyCounts)).toHaveLength(1);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '田中')].current).toBe(1);
+    expect(globalUsage['12/25(木)-1限-未定']).toBeUndefined();
+  });
+
+  it('externalCounts は teacherDailyCounts.external / total に加算される', () => {
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    });
+    const ext = { [makeExternalKey('12/25(木)', '堀上')]: 3 };
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], ext);
+
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]).toEqual({
+      current: 1, external: 3, total: 4,
+    });
+  });
+
+  it('合同グループ内の複数クラスは 1 コマとして集計される', () => {
+    // ３S と ３A を英語で合同 → 同日同時限の同じ講師は 1 コマ扱い
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // ３S
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' }, // ３A
+    });
+    const combinedGroups = [
+      { id: 1, subject: '英語', classes: ['３S', '３A'], dates: null },
+    ];
+    const { teacherDailyCounts, globalUsage } = computeGlobalUsage([tab], combinedGroups, {});
+
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')].current).toBe(1);
+    // globalUsage は両方の cell を記録 (conflict 判定で combinedGroupId を見て dedupe する)
+    expect(globalUsage['12/25(木)-1限-堀上']).toHaveLength(2);
+    expect(globalUsage['12/25(木)-1限-堀上'].every(u => u.combinedGroupId === 1)).toBe(true);
+  });
+
+  it('複数タブを横断して集計する', () => {
+    const tab1 = makeTab(1, { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } });
+    const tab2 = makeTab(2, { [makeKey(1, 1, 1)]: { subject: '数学', teacher: '堀上' } });
+    const { teacherDailyCounts, globalUsage } = computeGlobalUsage([tab1, tab2], [], {});
+
+    // 同日同講師は 2 コマ
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')].current).toBe(2);
+    // globalUsage は同 (date, period, teacher) を 2 タブから記録
+    expect(globalUsage['12/25(木)-1限-堀上']).toHaveLength(2);
+    expect(globalUsage['12/25(木)-1限-堀上'].map(u => u.tabId).sort()).toEqual([1, 2]);
+  });
+
+  it('subject 未割当 (teacher のみ存在) でも teacher が "未定" でなければ集計', () => {
+    // 実運用上は subject だけ先に決まる流れだが、teacher が "未定" 以外なら
+    // 何らかの理由で集計される点は仕様として保つ。
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { teacher: '堀上' }, // subject なし
+    });
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], {});
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]?.current).toBe(1);
+  });
+});
+
+// ─── computeActiveAnalysis ───────────────────────────────────────
+
+describe('computeActiveAnalysis', () => {
+  it('同一タブ内の同講師同時限は conflict として errorKeys に入る', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 2)]: { subject: '数学', teacher: '堀上' }, // 同日同時限・別クラス
+    };
+    const { teacherDailyCounts: _, globalUsage } = computeGlobalUsage(
+      [makeTab(1, schedule)], [], {},
+    );
+    void _;
+    const { conflictMap, errorKeys } = computeActiveAnalysis(config, schedule, globalUsage);
+
+    expect(conflictMap['12/25(木)-1限-堀上']).toBe(true);
+    expect(errorKeys).toHaveLength(2);
+    expect(errorKeys).toContain(makeKey(1, 1, 1));
+    expect(errorKeys).toContain(makeKey(1, 1, 2));
+  });
+
+  it('合同グループ内の重複は conflict としてカウントしない', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // ３S
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' }, // ３A
+    };
+    const combinedGroups = [
+      { id: 1, subject: '英語', classes: ['３S', '３A'], dates: null },
+    ];
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], combinedGroups, {});
+    const { conflictMap, errorKeys } = computeActiveAnalysis(config, schedule, globalUsage);
+
+    expect(conflictMap['12/25(木)-1限-堀上']).toBeUndefined();
+    expect(errorKeys).toEqual([]);
+  });
+
+  it('タブ横断の conflict も errorKeys に入る (現タブのセルだけ)', () => {
+    const config = makeConfig();
+    const tab1Schedule = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const tab2Schedule = { [makeKey(1, 1, 1)]: { subject: '数学', teacher: '堀上' } };
+    const { globalUsage } = computeGlobalUsage(
+      [makeTab(1, tab1Schedule), makeTab(2, tab2Schedule)],
+      [], {},
+    );
+    // 現タブが tab1 視点
+    const { conflictMap, errorKeys } = computeActiveAnalysis(config, tab1Schedule, globalUsage);
+    expect(conflictMap['12/25(木)-1限-堀上']).toBe(true);
+    expect(errorKeys).toContain(makeKey(1, 1, 1));
+  });
+
+  it('同一クラス・同一日に同じ科目が複数あれば dailySubjectMap > 1', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '田中' }, // 同 class・同 date・同 subject
+    };
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], [], {});
+    const { dailySubjectMap } = computeActiveAnalysis(config, schedule, globalUsage);
+    expect(dailySubjectMap['c1-d1-英語']).toBe(2);
+    // 別クラスは別 key
+    expect(dailySubjectMap['c2-d1-英語']).toBeUndefined();
+  });
+
+  it('subjectOrders は同一クラス内・順番に従って 1-based 連番', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // ３S, 12/25, 1限 → 1
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '田中' }, // ３S, 12/25, 2限 → 2
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' }, // ３S, 12/26, 1限 → 3
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '田中' }, // ３A, 12/25, 1限 → 1 (別クラスはリセット)
+    };
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], [], {});
+    const { subjectOrders } = computeActiveAnalysis(config, schedule, globalUsage);
+
+    expect(subjectOrders[makeKey(1, 1, 1)]).toBe(1);
+    expect(subjectOrders[makeKey(1, 2, 1)]).toBe(2);
+    expect(subjectOrders[makeKey(2, 1, 1)]).toBe(3);
+    expect(subjectOrders[makeKey(1, 1, 2)]).toBe(1);
+  });
+
+  it('空 schedule は全部空 object を返す', () => {
+    const config = makeConfig();
+    const result = computeActiveAnalysis(config, {}, {});
+    expect(result.conflictMap).toEqual({});
+    expect(result.errorKeys).toEqual([]);
+    expect(result.dailySubjectMap).toEqual({});
+    expect(result.subjectOrders).toEqual({});
+  });
+
+  it('teacher 未定のセルは conflict 判定の対象外', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' },
+      [makeKey(1, 1, 2)]: { subject: '数学', teacher: '未定' },
+    };
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], [], {});
+    const { conflictMap, errorKeys } = computeActiveAnalysis(config, schedule, globalUsage);
+    expect(conflictMap).toEqual({});
+    expect(errorKeys).toEqual([]);
+  });
+});
+
+// ─── computeDashboard ────────────────────────────────────────────
+
+describe('computeDashboard', () => {
+  it('空 schedule は progress 0%', () => {
+    const config = makeConfig(); // 2 subjects × 2 each × 2 classes = 8 total
+    const result = computeDashboard({}, config);
+    expect(result).toEqual({ progress: 0, filled: 0, total: 8 });
+  });
+
+  it('半分埋まると progress 50%', () => {
+    const config = makeConfig({ subjectCounts: { '英語': 2 }, classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }] });
+    // total = 2 × 2 = 4。filled = 2 にする
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '田中' },
+    };
+    expect(computeDashboard(schedule, config)).toEqual({ progress: 50, filled: 2, total: 4 });
+  });
+
+  it('全埋まると progress 100%', () => {
+    const config = makeConfig({ subjectCounts: { '英語': 2 }, classes: [{ id: 1, label: 'A' }] });
+    // total = 2 × 1 = 2
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '田中' },
+    };
+    expect(computeDashboard(schedule, config)).toEqual({ progress: 100, filled: 2, total: 2 });
+  });
+
+  it('subjectCounts 空・classes 空でも total=0 で progress=0', () => {
+    const config = makeConfig({ subjectCounts: {}, classes: [] });
+    expect(computeDashboard({}, config)).toEqual({ progress: 0, filled: 0, total: 0 });
+  });
+
+  it('subject 未割当の entry は filled に数えない (teacher だけあっても)', () => {
+    const config = makeConfig({ subjectCounts: { '英語': 1 }, classes: [{ id: 1, label: 'A' }] });
+    const schedule = {
+      [makeKey(1, 1, 1)]: { teacher: '堀上' }, // subject 無し
+    };
+    expect(computeDashboard(schedule, config)).toEqual({ progress: 0, filled: 0, total: 1 });
+  });
+});
