@@ -186,6 +186,64 @@ describe('projectReducer — 講師管理', () => {
     expect(projectReducer(state, { type: 'teacher/add', payload: { name: '' } })).toBe(state);
   });
 
+  it('teacher/import (append): 既存に追加、同名は subjects のみ上書きしつつ ng/priority は維持', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: ['ng1'], ngClasses: ['c1'], priorityClasses: ['p1'] },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'teacher/import',
+      payload: {
+        teachers: [
+          { name: '堀上', subjects: ['英語', '数学'] }, // 既存
+          { name: '山田', subjects: ['理科'] },         // 新規
+        ],
+        mode: 'append',
+      },
+    });
+    expect(next.project.teachers).toHaveLength(2);
+    expect(next.project.teachers[0]).toEqual({
+      name: '堀上',
+      subjects: ['英語', '数学'],
+      ngSlots: ['ng1'],
+      ngClasses: ['c1'],
+      priorityClasses: ['p1'],
+    });
+    expect(next.project.teachers[1]).toEqual({
+      name: '山田',
+      subjects: ['理科'],
+      ngSlots: [], ngClasses: [], priorityClasses: [],
+    });
+  });
+
+  it('teacher/import (replace): 既存を破棄して payload に置き換え、ng/priority も全クリア', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: ['ng1'], ngClasses: [], priorityClasses: ['p1'] },
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'teacher/import',
+      payload: {
+        teachers: [{ name: '新人', subjects: ['英語'] }],
+        mode: 'replace',
+      },
+    });
+    expect(next.project.teachers).toEqual([
+      { name: '新人', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ]);
+  });
+
+  it('teacher/import: 空配列は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, {
+      type: 'teacher/import',
+      payload: { teachers: [], mode: 'append' },
+    })).toBe(state);
+  });
+
   it('teacher/rename: schedule と externalCounts を cascade', () => {
     const state = makeState({
       tabs: [{

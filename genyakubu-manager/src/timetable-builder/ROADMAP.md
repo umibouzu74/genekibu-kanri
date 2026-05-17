@@ -461,10 +461,17 @@ useProject.js の composer 内で `teacherActions.toggleTeacherNg` を呼ぶ
 
 ### D6. 機能拡張 (新規)
 
-#### D6a. 🟠 CSV / Excel からの bulk import
+#### D6a. ✅ CSV からの bulk import (講師マスタ MVP / 2026-05-17 完了)
 - **現状**: 講師マスタも NG 設定も手入力。初期セットアップ時の負担大。
 - **改善**: CSV import (講師名・担当科目 / NG 日時) と、既存 Excel スケジュールからの取り込み。
 - **規模**: 中 / **価値**: 高 (新規ユーザの導入障壁を下げる)
+- **実装 (MVP: 講師マスタ CSV のみ)**:
+  - **utils/csvImport.js**: `parseTeachersCsv(text, { commonSubjects })`。`name,subjects` ヘッダ、subjects は `|` 区切り。RFC4180 風のダブルクォート + エスケープ ("") 対応。空行スキップ、重複 / 空 name はエラー集約、commonSubjects に無い subject は warning。
+  - **reducer**: `teacher/import` action を追加。mode='append' (既存に追加、同名は subjects のみ上書きしつつ ng/priority は維持) / mode='replace' (全置換、ng/priority もクリア)。atomic で undo 1 ステップ。
+  - **useTeacherActions**: `importTeachers(teachers, mode)` を export。
+  - **TeacherManager**: 「📥 CSV インポート」ボタンで折りたたみパネル。textarea + live parse preview (件数 / エラー行 / 未登録科目) + 「追加 / 更新」「全置換」ボタン。replace は confirm ダイアログで誤操作防止。aria-label / aria-expanded 付き。
+- **テスト**: csvImport.test.js 新規 12 件 + projectReducer.test.js +3 件 (teacher/import の append / replace / 空配列 no-op)。合計 +15 件、全 372/372 PASS。
+- **延期 (将来 D6a 追加)**: NG 日時の CSV import / 既存 Excel スケジュールの取り込み / CSV ファイルドロップ UI (現状は paste のみ)。
 
 #### D6b. 🟡 自動修復 (conflict resolution wizard)
 - **現状**: 自動生成が完全解を返せないと部分解 + warning のみ。

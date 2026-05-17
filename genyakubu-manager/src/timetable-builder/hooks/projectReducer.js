@@ -295,6 +295,38 @@ function applyAction(project, action) {
         ],
       };
     }
+    case 'teacher/import': {
+      // D6a: CSV から複数講師を atomic に投入する。
+      // mode='append' (デフォルト): 既存に追加、同名は subjects を新しい
+      //   値で上書きしつつ ngSlots/ngClasses/priorityClasses は維持。
+      // mode='replace': 既存の teachers を全て破棄して payload に置き換える。
+      //   ng/priority も新規定義なのでクリア。
+      const { teachers: incoming, mode = 'append' } = action.payload;
+      if (!Array.isArray(incoming) || incoming.length === 0) return project;
+      if (mode === 'replace') {
+        return {
+          ...project,
+          teachers: incoming.map(t => ({
+            name: t.name,
+            subjects: Array.isArray(t.subjects) ? t.subjects : [],
+            ngSlots: [],
+            ngClasses: [],
+            priorityClasses: [],
+          })),
+        };
+      }
+      const map = new Map(project.teachers.map(t => [t.name, t]));
+      incoming.forEach(t => {
+        const subjects = Array.isArray(t.subjects) ? t.subjects : [];
+        const existing = map.get(t.name);
+        if (existing) {
+          map.set(t.name, { ...existing, subjects });
+        } else {
+          map.set(t.name, { name: t.name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
+        }
+      });
+      return { ...project, teachers: Array.from(map.values()) };
+    }
     case 'teacher/remove': {
       const { idx } = action.payload;
       const targetName = project.teachers[idx].name;
