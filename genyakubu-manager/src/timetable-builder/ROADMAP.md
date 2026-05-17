@@ -291,15 +291,26 @@ A〜C 系を完了してマージ準備が整った状態で、**「ここから
 - **改善**: Toolbar の sm 向け折りたたみ、Header の Excel ボタンを dropdown 化、ScheduleTable は max-w を CSS variable で制御。
 - **規模**: 中 / **価値**: 中 (主用途は PC だが移動先での確認ニーズあり)
 
-#### D1c. ✅ バリデーション可視化 (2026-05-17 完了 / 一部延期)
+#### D1c. ✅ バリデーション可視化 (2026-05-17 完了 / 一部延期 / 同日 review fix 反映)
 - **現状**: Toolbar 進捗バーと「⚠️N件」のみ。「科目クォータ未達」「NG セルに講師ゼロ」「講師 1 日上限近接」などは個別セルにしか出ない。
 - **改善**: 「タブごとに残課題件数を表示」「設定モーダル内で『今のままだと解けない制約』を可視化」。
 - **規模**: 中 / **価値**: 高 (自動生成失敗時のデバッグが現状辛い)
 - **実装 (A + B)**:
-  - **A**: TabBar の各タブに `⚠️N` / `✨` badge を表示。`computeTabErrorCounts(tabs, globalUsage)` で全タブの講師重複件数を軽量集計し、useAnalysis から `analysis.tabErrorCounts` として公開。
-  - **B**: Toolbar の「⚠️N件」を popover 化。`computeViolations({...})` で 4 種別 (teacherConflict / subjectDup / subjectOver / teacherOverDaily) に分解集計し、useAnalysis から `analysis.violations` として公開。popover 内で「→」ボタン押下で該当セルへスクロール、種別が teacherConflict のみのときは旧挙動 (即スクロール) を維持。`role="dialog"` + `aria-haspopup` + `aria-expanded` 付き。外側クリック / Escape で閉じる。
+  - **A**: TabBar の各タブに `⚠️N` / `✨` badge を表示。`computeTabViolationCounts({tabs, globalUsage})` で全タブの違反件数 (teacherConflict + subjectDup + subjectOver) を集計し、useAnalysis から `analysis.tabErrorCounts` として公開 (M3 review fix で teacherConflict のみ → 3 種別合計に拡張)。
+  - **B**: Toolbar の「⚠️N件」を popover 化。`computeViolations({...})` で 4 種別 (teacherConflict / subjectDup / subjectOver / teacherOverDaily) に分解集計し、useAnalysis から `analysis.violations` として公開。popover 内で「→」ボタン押下で該当セルへスクロール (teacherOverDaily も含む / S1 review fix)、種別が teacherConflict のみのときは旧挙動 (即スクロール) を維持。`role="dialog"` + `aria-haspopup` + `aria-expanded` 付き。外側クリック / Escape で閉じる。
   - **延期 (C)**: 設定値による静的 infeasibility (講師 capacity 不足 / NG 過多) は別セッションへ。
-- **テスト**: analysisHelpers に 9 件 (computeTabErrorCounts 3 / computeViolations 6)、Toolbar に 4 件 (popover 表示・即スクロール・「→」スクロール・外側クリック)、TabBar.test.jsx 新規 5 件。合計 +18 件、全 337/337 PASS。
+- **テスト**: analysisHelpers / Toolbar / TabBar に合計 +18 件追加。
+- **同日 review で発覚した修正 (F1 / M1 / M2 / M3 + S1/S2/S3/S5/S6/S7)**:
+  - **F1**: OnboardingOverlay で Escape / ✕ / 背景クリックが「次回から表示しない」flag を立てるバグ (初見ユーザが反射的に閉じると永久消失) を修正。flag は「始める」押下時のみ立てる。
+  - **M1**: `computeViolations` の teacherOverDaily が `dayKey.indexOf('-')` で date/teacher を split しており日付ラベルや講師名に `-` を含むと壊れる問題を修正。`teachers` 引数で受け取り longest-suffix-match で復元。
+  - **M2**: OnboardingOverlay に Tab / Shift+Tab の簡易 focus trap を追加 (aria-modal の宣言と実挙動を一致させる)。
+  - **M3**: TabBar badge を「teacherConflict のみ」から「3 種別合計」に拡張 (popover との整合性)。
+  - **S1**: teacherOverDaily にも popover 内「→」ボタンを追加 (各 item に firstKey を含める)。
+  - **S2**: popover の即スクロール判定を順序依存しない条件式に書き直し。
+  - **S3**: `subjectDupFirstKey` を regex parse から `subjectOrders >= 2` の直接探索に変更。仕様変更で「2 個目のセル」へ飛ぶ (超過の起点が分かる UX)。
+  - **S5**: Toolbar テストの `Element.prototype.scrollIntoView` を beforeEach/afterEach で保存復元 (mock 漏れ防止)。
+  - **S6**: Toolbar の `analysis?.violations` 防御フォールバックを削除 (本番は useAnalysis が必ず渡す)。
+  - **S7**: OnboardingOverlay テストの `advanceToLastStep` で STEPS を import し magic number 20 を STEPS.length+1 に。
 
 #### D1d. 🟡 名前付きスナップショット
 - **現状**: undo/redo の history はあるが、特定状態を「Pattern A」のように名前付き保存できない。生成結果 3 案も SummaryPanel に居る間だけ。

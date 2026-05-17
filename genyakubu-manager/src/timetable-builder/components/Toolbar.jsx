@@ -24,7 +24,7 @@ export default function Toolbar({
     handleClearUnlocked,
   } = useProjectContext();
   const { showConfirm } = useUI();
-  const violations = analysis?.violations || null;
+  const { violations } = analysis;
 
   // popover の開閉と外側クリック検知
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -55,42 +55,42 @@ export default function Toolbar({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  const scrollToFirstError = () => {
-    if (analysis.errorKeys.length === 0) return;
-    scrollToKey(analysis.errorKeys[0]);
-  };
-
   // popover に表示すべき violation 種別 (count > 0 のみ)
   const popoverRows = [];
-  if (violations) {
-    if (violations.teacherConflict.count > 0) {
-      popoverRows.push({
-        kind: 'teacherConflict',
-        label: '講師重複',
-        count: violations.teacherConflict.count,
-        firstKey: violations.teacherConflict.firstKey,
-      });
-    }
-    if (violations.subjectDup.count > 0) {
-      popoverRows.push({
-        kind: 'subjectDup',
-        label: '同一クラス×同日に同一科目',
-        count: violations.subjectDup.count,
-        firstKey: violations.subjectDup.firstKey,
-      });
-    }
-    if (violations.subjectOver.count > 0) {
-      popoverRows.push({
-        kind: 'subjectOver',
-        label: '科目クォータ超過',
-        count: violations.subjectOver.count,
-        firstKey: violations.subjectOver.firstKey,
-      });
-    }
+  if (violations.teacherConflict.count > 0) {
+    popoverRows.push({
+      kind: 'teacherConflict',
+      label: '講師重複',
+      count: violations.teacherConflict.count,
+      firstKey: violations.teacherConflict.firstKey,
+    });
   }
-  const teacherOverItems = violations?.teacherOverDaily?.items || [];
+  if (violations.subjectDup.count > 0) {
+    popoverRows.push({
+      kind: 'subjectDup',
+      label: '同一クラス×同日に同一科目',
+      count: violations.subjectDup.count,
+      firstKey: violations.subjectDup.firstKey,
+    });
+  }
+  if (violations.subjectOver.count > 0) {
+    popoverRows.push({
+      kind: 'subjectOver',
+      label: '科目クォータ超過',
+      count: violations.subjectOver.count,
+      firstKey: violations.subjectOver.firstKey,
+    });
+  }
+  const teacherOverItems = violations.teacherOverDaily.items;
   const totalViolationCount =
     popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length;
+  // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily が全て 0)
+  // の場合は popover を開かず即スクロールする (旧挙動互換)。
+  const isOnlyTeacherConflict =
+    violations.teacherConflict.count > 0 &&
+    violations.subjectDup.count === 0 &&
+    violations.subjectOver.count === 0 &&
+    teacherOverItems.length === 0;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
@@ -105,10 +105,8 @@ export default function Toolbar({
             <button
               type="button"
               onClick={() => {
-                // 種別が 1 つだけかつ teacherConflict のみなら、popover を開かず
-                // 直接スクロール (旧挙動と同じく即移動)。
-                if (popoverRows.length === 1 && popoverRows[0].kind === 'teacherConflict' && teacherOverItems.length === 0) {
-                  scrollToFirstError();
+                if (isOnlyTeacherConflict) {
+                  scrollToKey(violations.teacherConflict.firstKey);
                   return;
                 }
                 setPopoverOpen((v) => !v);
@@ -147,8 +145,18 @@ export default function Toolbar({
                       <div className="font-bold mb-1">講師日上限超 ({teacherOverItems.length}件)</div>
                       <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
                         {teacherOverItems.slice(0, 5).map((it) => (
-                          <li key={`${it.date}-${it.teacher}`}>
-                            {it.teacher} {it.date}: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
+                          <li key={`${it.date}-${it.teacher}`} className="flex items-center justify-between gap-2">
+                            <span className="flex-1 min-w-0 truncate">
+                              {it.teacher} {it.date}: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
+                            </span>
+                            {it.firstKey && (
+                              <button
+                                type="button"
+                                onClick={() => { scrollToKey(it.firstKey); setPopoverOpen(false); }}
+                                className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                                title="該当先生の最初のセルへ移動"
+                              >→</button>
+                            )}
                           </li>
                         ))}
                         {teacherOverItems.length > 5 && (

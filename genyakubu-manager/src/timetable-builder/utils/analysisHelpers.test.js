@@ -3,7 +3,7 @@ import {
   computeGlobalUsage,
   computeActiveAnalysis,
   computeDashboard,
-  computeTabErrorCounts,
+  computeTabViolationCounts,
   computeViolations,
 } from './analysisHelpers';
 import { makeKey, makeExternalKey } from './scheduleKey';
@@ -255,12 +255,12 @@ describe('computeDashboard', () => {
   });
 });
 
-// ─── computeTabErrorCounts (D1c) ─────────────────────────────────
+// ─── computeTabViolationCounts (D1c + M3) ────────────────────────
 
-describe('computeTabErrorCounts', () => {
-  it('全タブの講師重複件数を {tabId: count} で返す', () => {
-    // タブ 1 で 堀上が 12/25 1限 ３S と ３A に重複 → 2 件
-    // タブ 2 は重複なし
+describe('computeTabViolationCounts', () => {
+  it('全タブの違反件数 (teacherConflict + subjectDup + subjectOver) を {tabId: count} で返す', () => {
+    // タブ 1: 堀上が 12/25 1限 ３S と ３A に重複 → teacherConflict 2 件
+    // タブ 2: 重複なし
     const tab1 = makeTab(1, {
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' },
@@ -269,30 +269,45 @@ describe('computeTabErrorCounts', () => {
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '田中' },
     });
     const { globalUsage } = computeGlobalUsage([tab1, tab2], [], {});
-    const counts = computeTabErrorCounts([tab1, tab2], globalUsage);
+    const counts = computeTabViolationCounts({ tabs: [tab1, tab2], globalUsage });
     expect(counts[1]).toBe(2);
     expect(counts[2]).toBe(0);
   });
 
-  it('"未定" は重複判定の対象外', () => {
+  it('subjectDup と subjectOver も合算する (M3 修正)', () => {
+    // ３S の 12/25 に 英語 2 コマ (subjectDup 1)、英語クォータ 2 を超えた
+    // 配置にすると subjectOver も発生する
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 2 },
+    };
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '高松' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '南條' },
+    }, config);
+    const { globalUsage } = computeGlobalUsage([tab], [], {});
+    const counts = computeTabViolationCounts({ tabs: [tab], globalUsage });
+    // subjectDup: 3 - 1 = 2 件、subjectOver: 1 件
+    expect(counts[1]).toBe(3);
+  });
+
+  it('"未定" は teacherConflict の対象外', () => {
     const tab = makeTab(1, {
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' },
       [makeKey(1, 1, 2)]: { subject: '英語', teacher: '未定' },
     });
     const { globalUsage } = computeGlobalUsage([tab], [], {});
-    expect(computeTabErrorCounts([tab], globalUsage)).toEqual({ 1: 0 });
+    expect(computeTabViolationCounts({ tabs: [tab], globalUsage })).toEqual({ 1: 0 });
   });
 
   it('タブ横断の重複も各タブ側で件数として現れる', () => {
-    // 堀上が tab1 と tab2 で同時刻に登場 → 両タブの該当セルが count される
-    const tab1 = makeTab(1, {
-      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
-    });
-    const tab2 = makeTab(2, {
-      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
-    });
+    const tab1 = makeTab(1, { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } });
+    const tab2 = makeTab(2, { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } });
     const { globalUsage } = computeGlobalUsage([tab1, tab2], [], {});
-    const counts = computeTabErrorCounts([tab1, tab2], globalUsage);
+    const counts = computeTabViolationCounts({ tabs: [tab1, tab2], globalUsage });
     expect(counts[1]).toBe(1);
     expect(counts[2]).toBe(1);
   });
@@ -313,6 +328,7 @@ describe('computeViolations', () => {
       subjectOrders: activeAnalysis.subjectOrders,
       teacherDailyCounts,
       maxDailyHours: opts.maxDailyHours ?? 6,
+      teachers: opts.teachers,
     });
   }
 
@@ -336,15 +352,15 @@ describe('computeViolations', () => {
     expect(v.teacherConflict.firstKey).toBe(makeKey(1, 1, 1));
   });
 
-  it('subjectDup: 同クラス同日に同科目 2 回以上を count - 1 で集計', () => {
+  it('subjectDup: 同クラス同日に同科目 2 回以上を count - 1 で集計、firstKey は 2 個目のセル', () => {
     // ３S の 12/25 に 英語 が 2 コマ → 超過 1 件
+    // 新仕様 (S3 修正): firstKey は「超過の起点」つまり 2 個目以降の最初のセル
     const v = buildAndCompute({
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 2, 1)]: { subject: '英語', teacher: '高松' },
     });
     expect(v.subjectDup.count).toBe(1);
-    // firstKey は p1 のセル (先に見つかる)
-    expect(v.subjectDup.firstKey).toBe(makeKey(1, 1, 1));
+    expect(v.subjectDup.firstKey).toBe(makeKey(1, 2, 1));
   });
 
   it('subjectOver: subjectCounts を超えた割当を count', () => {
@@ -365,16 +381,16 @@ describe('computeViolations', () => {
     expect(v.subjectOver.firstKey).toBe(makeKey(1, 3, 1));
   });
 
-  it('teacherOverDaily: maxDailyHours 超過した (date, teacher) を列挙', () => {
+  it('teacherOverDaily: maxDailyHours 超過した (date, teacher) を列挙 + firstKey に当該講師の最初のセル', () => {
     // 堀上が 12/25 に 3 コマ、maxDailyHours=2 → 超過 1 件
     const v = buildAndCompute({
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' },
-    }, {}, { maxDailyHours: 2 });
+    }, {}, { maxDailyHours: 2, teachers: [{ name: '堀上' }] });
     expect(v.teacherOverDaily.count).toBe(1);
     expect(v.teacherOverDaily.items[0]).toEqual({
-      date: '12/25(木)', teacher: '堀上', total: 3, max: 2,
+      date: '12/25(木)', teacher: '堀上', total: 3, max: 2, firstKey: makeKey(1, 1, 1),
     });
   });
 
@@ -382,7 +398,45 @@ describe('computeViolations', () => {
     const v = buildAndCompute({
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
-    }, {}, { maxDailyHours: 2 });
+    }, {}, { maxDailyHours: 2, teachers: [{ name: '堀上' }] });
     expect(v.teacherOverDaily.count).toBe(0);
+  });
+
+  it('teacherOverDaily: 日付ラベルに "-" を含んでも teachers の suffix match で復元できる (M1)', () => {
+    // 日付ラベル "2026-01-04" に "-" が含まれるケース。teachers list を渡せば復元可能。
+    const config = {
+      dates: [{ id: 1, label: '2026-01-04' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 2, teachers: [{ name: '堀上' }] });
+    expect(v.teacherOverDaily.items[0]).toMatchObject({
+      date: '2026-01-04',
+      teacher: '堀上',
+      total: 3,
+    });
+  });
+
+  it('teacherOverDaily: 講師名が部分一致するケースは長い方を優先 (suffix match の longest-first)', () => {
+    // 「堀上」「堀上一郎」が両方居る場合、堀上一郎の dayKey が 堀上 にマッチしないように
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上一郎' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上一郎' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上一郎' },
+    }, config, { maxDailyHours: 2, teachers: [{ name: '堀上' }, { name: '堀上一郎' }] });
+    expect(v.teacherOverDaily.items[0]).toMatchObject({
+      date: '12/25', teacher: '堀上一郎',
+    });
   });
 });

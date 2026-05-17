@@ -1,56 +1,50 @@
 import { useEffect, useRef, useState } from 'react';
-
-const STEPS = [
-  {
-    title: '時間割作成くんへようこそ',
-    body: 'スケジュール表の上で右クリック / セルクリック / 自動生成の 3 つで日々の組み立てができます。所要 30 秒で主要操作を案内します。',
-  },
-  {
-    title: '日付・時限・クラス名を右クリックで編集',
-    body: '表のヘッダ (左上の空欄を含む) を右クリックすると、日付・時限・クラス名の追加 / 名称変更 / 削除メニューが開きます。',
-  },
-  {
-    title: '⚙️ 設定で講師・科目・コマ数・NG を管理',
-    body: '右上ツールバーの ⚙️設定 から、講師の追加 / 担当科目 / NG 時間帯 / 各クラスのコマ数を編集できます。',
-  },
-  {
-    title: 'セルを右クリックでコピー / 貼付 / NG 登録',
-    body: '時間割セルの右クリックで「コピー」「貼付」「クリア」「ロック」「NG として登録」が選べます。Ctrl+Z で元に戻せます。',
-  },
-  {
-    title: '🧙‍♂️ 自動作成で MRV+バックトラックの解を試す',
-    body: '右上の 🧙‍♂️自動作成 を押すと、3 パターンを生成します。集計パネルから採用したい案を反映できます。',
-  },
-];
+import { ONBOARDING_STEPS as STEPS } from './onboardingSteps';
 
 /**
  * 初回起動時のオンボーディングオーバーレイ。
  * - 起動時に表示されるかは BuilderApp 側で LocalStorage flag から判定する。
- * - Toolbar の「？ヘルプ」ボタンからも開ける (props.open で制御)。
- * - 「始める」または ✕ で onClose を呼ぶ。
- *   onClose に { dontShowAgain: true } を渡すと flag を永続化する想定。
+ * - Toolbar の「❓ヘルプ」ボタンからも開ける (props.open で制御)。
+ * - onClose 引数:
+ *     `{ dontShowAgain: true }`  → 「始める」を押した時のみ。LocalStorage flag を立てる
+ *     `{ dontShowAgain: false }` → ✕ / Escape / 背景クリックで閉じた時。当該セッションのみ閉じる
+ *   (F1 修正: 初回ユーザが反射的に Escape を押して永久消失するのを防ぐ)
  */
 export default function OnboardingOverlay({ open, onClose }) {
   const [stepIndex, setStepIndex] = useState(0);
   const titleId = 'builder-onboarding-title';
+  const dialogRef = useRef(null);
   const closeBtnRef = useRef(null);
 
   // 開く度に最初のステップへ戻す + 閉じるボタンへ初期フォーカス
   useEffect(() => {
-    if (open) {
-      setStepIndex(0);
-      // フォーカス移動は次のレンダ後
-      queueMicrotask(() => closeBtnRef.current?.focus());
-    }
+    if (!open) return;
+    setStepIndex(0);
+    closeBtnRef.current?.focus();
   }, [open]);
 
-  // Escape で閉じる (ヘルプ再表示時も同様)
+  // Escape で閉じる + Tab / Shift+Tab で dialog 内のフォーカスを循環 (M2 簡易 focus trap)
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
       if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose?.({ dontShowAgain: false });
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusables = dialogRef.current.querySelectorAll(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        onClose?.({ dontShowAgain: true });
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener('keydown', handler);
@@ -65,18 +59,18 @@ export default function OnboardingOverlay({ open, onClose }) {
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 no-print"
       onClick={(e) => {
-        // 背景クリックで閉じる (内部クリックは伝播停止しているので無視される)
-        if (e.target === e.currentTarget) onClose?.({ dontShowAgain: true });
+        // 背景クリックで閉じる (dontShowAgain=false で当該セッションのみ閉じる)
+        if (e.target === e.currentTarget) onClose?.({ dontShowAgain: false });
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="bg-builder-surface text-builder-ink rounded-lg shadow-xl border border-builder-border w-[90%] max-w-md p-6"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 mb-3">
           <h2 id={titleId} className="text-lg font-bold">{step.title}</h2>
@@ -84,7 +78,7 @@ export default function OnboardingOverlay({ open, onClose }) {
             ref={closeBtnRef}
             type="button"
             aria-label="閉じる"
-            onClick={() => onClose?.({ dontShowAgain: true })}
+            onClick={() => onClose?.({ dontShowAgain: false })}
             className="text-builder-ink-muted hover:text-builder-ink text-xl leading-none"
           >
             ✕

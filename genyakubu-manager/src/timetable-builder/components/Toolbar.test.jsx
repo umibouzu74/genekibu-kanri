@@ -1,38 +1,54 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import Toolbar from './Toolbar';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { UIContext } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
 
-afterEach(cleanup);
+// jsdom は scrollIntoView 未実装なので prototype に spy を生やす。
+// 各テストで上書きすると次のテストに mock が漏れるため、保存&復元する。
+let originalScrollIntoView;
+let scrollSpy;
+beforeEach(() => {
+  originalScrollIntoView = Element.prototype.scrollIntoView;
+  scrollSpy = vi.fn();
+  Element.prototype.scrollIntoView = scrollSpy;
+});
+afterEach(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+  cleanup();
+});
+
+const defaultAnalysis = () => ({
+  errorKeys: [],
+  conflictMap: {},
+  subjectOrders: {},
+  dailySubjectMap: {},
+  teacherDailyCounts: {},
+  tabErrorCounts: {},
+  violations: {
+    teacherConflict: { count: 0, firstKey: null },
+    subjectDup: { count: 0, firstKey: null },
+    subjectOver: { count: 0, firstKey: null },
+    teacherOverDaily: { count: 0, items: [] },
+  },
+});
 
 // 必要な context value を mock してから Toolbar を render する。
-// useProjectContext / useUI が呼ばれるが Provider 経由で値を与えるだけ。
+// projectOverrides.analysis は defaultAnalysis() に対する shallow merge
+// (violations 等の必須フィールドを毎テストで書き直さなくて良いように)。
 function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } = {}) {
+  const { analysis: analysisOverride, ...restProjectOverrides } = projectOverrides;
   const projectValue = {
-    analysis: {
-      errorKeys: [],
-      conflictMap: {},
-      subjectOrders: {},
-      dailySubjectMap: {},
-      teacherDailyCounts: {},
-      tabErrorCounts: {},
-      violations: {
-        teacherConflict: { count: 0, firstKey: null },
-        subjectDup: { count: 0, firstKey: null },
-        subjectOver: { count: 0, firstKey: null },
-        teacherOverDaily: { count: 0, items: [] },
-      },
-    },
+    analysis: { ...defaultAnalysis(), ...analysisOverride },
     dashboard: { progress: 0, filled: 0, total: 100 },
     historyIndex: 0,
     history: [{}],
     undo: vi.fn(),
     redo: vi.fn(),
     handleClearUnlocked: vi.fn(),
-    ...projectOverrides,
+    ...restProjectOverrides,
   };
   const uiValue = {
     showConfirm: vi.fn().mockResolvedValue(true),
@@ -87,8 +103,6 @@ describe('Toolbar', () => {
 
   it('種別が teacherConflict のみのとき、⚠️N件 クリックで即スクロール (popover を開かない)', () => {
     const errorKey = makeKey(1, 2, 3);
-    const scrollSpy = vi.fn();
-    Element.prototype.scrollIntoView = scrollSpy;
     const target = document.createElement('div');
     target.id = `select-1-2-3-cell`;
     document.body.appendChild(target);
@@ -143,8 +157,6 @@ describe('Toolbar', () => {
 
   it('popover 内の「→」クリックで該当セルへスクロールして popover が閉じる', () => {
     const key = makeKey(2, 3, 1);
-    const scrollSpy = vi.fn();
-    Element.prototype.scrollIntoView = scrollSpy;
     const target = document.createElement('div');
     target.id = `select-2-3-1-cell`;
     document.body.appendChild(target);

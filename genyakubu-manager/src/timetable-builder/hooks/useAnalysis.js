@@ -3,7 +3,7 @@ import {
   computeGlobalUsage,
   computeActiveAnalysis,
   computeDashboard,
-  computeTabErrorCounts,
+  computeTabViolationCounts,
   computeViolations,
 } from '../utils/analysisHelpers';
 
@@ -12,19 +12,13 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 // project 状態から派生する集計データを返すフック。
 // 純粋関数は utils/analysisHelpers.js に切り出してテスト可能にしてある (D4e)。
 //
-// useMemo を 5 段に分けて deps を最小化:
-//   - globalUsage / teacherDailyCounts: 全タブの schedule + combinedGroups +
-//     externalCounts に依存
-//   - activeAnalysis (conflictMap / errorKeys / dailySubjectMap /
-//     subjectOrders): 現タブの config + schedule + globalUsage に依存
-//   - dashboard: 現タブの schedule + config (subjectCounts / classes) に依存
-//   - tabErrorCounts: 全タブ × globalUsage (TabBar の各タブ badge 用、D1c)
-//   - violations: 現タブの種別別 violation 集計 (Toolbar popover 用、D1c)
-//
 // 公開 API:
 //   - analysis: { conflictMap, subjectOrders, dailySubjectMap, errorKeys,
 //                 teacherDailyCounts, tabErrorCounts, violations }
 //   - dashboard: { progress, filled, total }
+//
+// tabErrorCounts は M3 で「4 種別合計」に拡張されたが、後方互換のため
+// キー名は維持。consumer (TabBar) は意味として「タブ別の違反合計」を使う。
 export function useAnalysis(project, currentSchedule, currentConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
     () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts),
@@ -37,7 +31,7 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
   );
 
   const tabErrorCounts = useMemo(
-    () => computeTabErrorCounts(project.tabs, globalUsage),
+    () => computeTabViolationCounts({ tabs: project.tabs, globalUsage }),
     [project.tabs, globalUsage],
   );
 
@@ -52,8 +46,9 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
       subjectOrders: activeAnalysis.subjectOrders,
       teacherDailyCounts,
       maxDailyHours,
+      teachers: project.teachers,
     }),
-    [currentConfig, currentSchedule, activeAnalysis, teacherDailyCounts, maxDailyHours],
+    [currentConfig, currentSchedule, activeAnalysis, teacherDailyCounts, maxDailyHours, project.teachers],
   );
 
   const analysis = useMemo(

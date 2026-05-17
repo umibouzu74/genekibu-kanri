@@ -158,28 +158,29 @@ export function computeDashboard(currentSchedule, currentConfig) {
   return { progress: total > 0 ? Math.round((filled / total) * 100) : 0, filled, total };
 }
 
-// 各タブの講師重複 (teacherConflict) 件数を計算する軽量版。
-// computeActiveAnalysis を全タブで走らせるよりも安価 (subjectOrders /
-// dailySubjectMap を作らない)。TabBar の各タブ badge 表示用。
+// 各タブの違反件数 (現タブ内 3 種別合計) を計算する。TabBar の各タブ badge 表示用。
+// teacherConflict だけだと popover との整合性が取れないので、subjectDup /
+// subjectOver も含めた合計を返す (M3)。
+// teacherOverDaily は date × teacher の全タブ集計なので、各タブの badge
+// には算入しない (重複表示防止)。
 //
 // 返り値: { [tabId: number]: count }
-export function computeTabErrorCounts(tabs, globalUsage) {
+export function computeTabViolationCounts({ tabs, globalUsage }) {
   const result = {};
   tabs.forEach(tab => {
-    let count = 0;
-    tab.config.dates.forEach(d => {
-      tab.config.periods.forEach(p => {
-        tab.config.classes.forEach(c => {
-          const key = makeKey(d.id, p.id, c.id);
-          const entry = tab.schedule[key];
-          if (!entry || !entry.teacher || entry.teacher === '未定') return;
-          const usageKey = `${d.label}-${p.label}-${entry.teacher}`;
-          const effectiveCount = getEffectiveUsageCount(globalUsage[usageKey] || []);
-          if (effectiveCount > 1) count++;
-        });
-      });
+    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage);
+    let subjectDupCount = 0;
+    Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {
+      if (cnt > 1) subjectDupCount += cnt - 1;
     });
-    result[tab.id] = count;
+    let subjectOverCount = 0;
+    Object.entries(tabAnalysis.subjectOrders).forEach(([key, order]) => {
+      const subject = tab.schedule[key]?.subject;
+      if (!subject) return;
+      const maxCnt = tab.config.subjectCounts[subject] || 0;
+      if (maxCnt > 0 && order > maxCnt) subjectOverCount++;
+    });
+    result[tab.id] = tabAnalysis.errorKeys.length + subjectDupCount + subjectOverCount;
   });
   return result;
 }
@@ -193,8 +194,12 @@ export function computeTabErrorCounts(tabs, globalUsage) {
 //   - teacherOverDaily: 講師の 1 日合計コマ数が maxDailyHours を超過
 //
 // 返り値: 各種別ごとに { count, firstKey? } または teacherOverDaily は
-//   { count, items: [{ date, teacher, total, max }] }。
+//   { count, items: [{ date, teacher, total, max, firstKey? }] }。
 //   count = 0 の種別も含めて返す (consumer 側で >0 のものだけ表示)。
+//
+// teachers: teacherOverDaily の date/teacher 復元に使う (M1)。
+//   makeExternalKey は `${date}-${teacher}` で teacher 名末尾 match で
+//   復元する。teachers が未指定なら teacherOverDaily の date は '?'。
 export function computeViolations({
   currentConfig,
   currentSchedule,
@@ -203,6 +208,7 @@ export function computeViolations({
   subjectOrders,
   teacherDailyCounts,
   maxDailyHours,
+  teachers,
 }) {
   // teacherConflict: errorKeys と同じ。最初のキーをスクロール対象に。
   const teacherConflict = {
@@ -211,32 +217,28 @@ export function computeViolations({
   };
 
   // subjectDup: dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1
-  //   重複している {dateId, classId, subject} ごとに 2 回目以降のセルを 1 件と数える
-  //   (count しすぎないよう、重複ペアあたり「超過コマ数 = count - 1」と数える)
+  //   重複ペアあたり「超過コマ数 = count - 1」と数える。
+  //   firstKey は subjectOrders から「order >= 2 && 同 subject」の最初のキー。
   let subjectDupCount = 0;
+  Object.values(dailySubjectMap).forEach(cnt => {
+    if (cnt > 1) subjectDupCount += cnt - 1;
+  });
   let subjectDupFirstKey = null;
-  Object.entries(dailySubjectMap).forEach(([k, cnt]) => {
-    if (cnt > 1) {
-      subjectDupCount += cnt - 1;
-      if (!subjectDupFirstKey) {
-        // k = `c${classId}-d${dateId}-${subject}` から該当する最初のセルを探す
-        const m = k.match(/^c(\d+)-d(\d+)-(.+)$/);
-        if (m) {
-          const classId = Number(m[1]);
-          const dateId = Number(m[2]);
-          const subject = m[3];
-          // 同条件の最初の cell key (period 順)
-          for (const p of currentConfig.periods) {
-            const key = makeKey(dateId, p.id, classId);
-            if (currentSchedule[key]?.subject === subject) {
-              subjectDupFirstKey = key;
-              break;
-            }
+  if (subjectDupCount > 0) {
+    // subjectOrders[key] >= 2 のセルが重複の 2 つ目。最初のものを取る。
+    // config 順で先頭を取りたいので config を iterate。
+    outer: for (const d of currentConfig.dates) {
+      for (const p of currentConfig.periods) {
+        for (const c of currentConfig.classes) {
+          const key = makeKey(d.id, p.id, c.id);
+          if ((subjectOrders[key] || 0) >= 2) {
+            subjectDupFirstKey = key;
+            break outer;
           }
         }
       }
     }
-  });
+  }
 
   // subjectOver: 科目クォータ超過 (order > maxCnt)
   let subjectOverCount = 0;
@@ -252,17 +254,38 @@ export function computeViolations({
     }
   });
 
-  // teacherOverDaily: 1 日 maxDailyHours 超過した (date, teacher) を列挙
-  // dayKey は makeExternalKey(date, teacher) = `${date}-${teacher}`。
-  // date に "-" は含まれない想定 (例: "12/25(木)") のため、最初の "-" で split。
+  // teacherOverDaily: 1 日 maxDailyHours 超過した (date, teacher) を列挙。
+  // makeExternalKey = `${date}-${teacher}`。date label に "-" を含む場合
+  // でも teachers のうち末尾一致する name で復元する (M1)。
   const teacherOverItems = [];
+  const teacherNamesByLength = (teachers || []).map(t => t.name).sort((a, b) => b.length - a.length);
   Object.entries(teacherDailyCounts).forEach(([dayKey, daily]) => {
-    if (daily.total > maxDailyHours) {
-      const sepIdx = dayKey.indexOf('-');
-      const date = sepIdx >= 0 ? dayKey.slice(0, sepIdx) : '?';
-      const teacher = sepIdx >= 0 ? dayKey.slice(sepIdx + 1) : dayKey;
-      teacherOverItems.push({ date, teacher, total: daily.total, max: maxDailyHours });
+    if (daily.total <= maxDailyHours) return;
+    let date = '?';
+    let teacher = dayKey;
+    // teachers が渡されたら suffix match (最長 name 優先) で復元
+    const match = teacherNamesByLength.find(name => dayKey.endsWith(`-${name}`));
+    if (match) {
+      teacher = match;
+      date = dayKey.slice(0, dayKey.length - match.length - 1);
     }
+    // 現タブ内で {date, teacher} に一致する最初のセル (firstKey) を探す。
+    // 他タブの違反でも teacherOverDaily に出るが、その場合 firstKey は null
+    // (現タブから飛び先が無い)。
+    let firstKey = null;
+    outer: for (const d of currentConfig.dates) {
+      if (d.label !== date) continue;
+      for (const p of currentConfig.periods) {
+        for (const c of currentConfig.classes) {
+          const key = makeKey(d.id, p.id, c.id);
+          if (currentSchedule[key]?.teacher === teacher) {
+            firstKey = key;
+            break outer;
+          }
+        }
+      }
+    }
+    teacherOverItems.push({ date, teacher, total: daily.total, max: maxDailyHours, firstKey });
   });
 
   return {
