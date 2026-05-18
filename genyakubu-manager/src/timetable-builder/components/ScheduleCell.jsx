@@ -2,7 +2,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 
-export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
+export default function ScheduleCell({ dateId, periodId, classId, isCompact, isDayEnd, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
   const {
     project,
     currentSchedule,
@@ -79,7 +79,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   return (
     <td
       id={`select-${dateId}-${periodId}-${classId}-cell`}
-      className={`border-r last:border-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
+      className={`border-r last:border-0 ${isDayEnd ? "border-b-[6px] border-b-builder-ink" : ""} ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
