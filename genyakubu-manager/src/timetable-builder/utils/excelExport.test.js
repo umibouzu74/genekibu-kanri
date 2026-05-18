@@ -5,7 +5,7 @@ import {
   buildTeacherWorkbook,
   buildExcelFilename,
 } from './excelExport';
-import { makeKey } from './scheduleKey';
+import { makeKey, makeNgKey, makeExternalKey } from './scheduleKey';
 
 // 共通の v3 project ファクトリ (テスト局所)
 function makeProject(overrides = {}) {
@@ -87,13 +87,80 @@ describe('buildScheduleWorkbook', () => {
     expect(ws.getCell(1, 4).value).toBe('３A');
   });
 
-  it('データ行のセルに subject + teacher の改行表記が入る', () => {
+  it('データ行のセルに subject + teacher(中学X:計Y) の改行表記が入る', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
     // 2 行目 (1 行目は header): 12/25 / 1限 / ３S 列に英語/堀上
+    // 堀上は 12/25(木) に 1限+2限 で計 2 コマ、externalCounts なしなので 計=2
     expect(ws.getCell(2, 1).value).toBe('12/25(木)');
     expect(ws.getCell(2, 2).value).toBe('1限');
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上');
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)');
+  });
+
+  it('externalCounts (予備校・高校等の外部コマ) が「計」に加算される', () => {
+    const project = makeProject({
+      externalCounts: { [makeExternalKey('12/25(木)', '堀上')]: 3 },
+    });
+    const wb = buildScheduleWorkbook(project);
+    const ws = wb.getWorksheet('メイン');
+    // 12/25 の 堀上: 中学=2 (schedule内)、外部=3 → 計=5
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計5)');
+  });
+
+  it('NG が設定されたコマに講師が割当たっていれば ⚠NG が追記される', () => {
+    const project = makeProject({
+      teachers: [
+        {
+          name: '堀上',
+          subjects: ['英語'],
+          ngSlots: [makeNgKey('12/25(木)', '1限')],
+          ngClasses: [],
+          priorityClasses: [],
+        },
+      ],
+    });
+    const wb = buildScheduleWorkbook(project);
+    const ws = wb.getWorksheet('メイン');
+    // 12/25 1限 = 堀上 の NG スロット → ⚠NG が追記
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+    // 12/25 2限 = NG ではない → ⚠NG なし
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
+  });
+
+  it('teacher 未定 (空 or "未定") のセルは中学/計の suffix を付けない', () => {
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '' },
+          [makeKey(1, 2, 1)]: { subject: '英語', teacher: '未定' },
+        },
+      }],
+    });
+    const wb = buildScheduleWorkbook(project);
+    const ws = wb.getWorksheet('メイン');
+    expect(ws.getCell(2, 3).value).toBe('英語\n');
+    expect(ws.getCell(3, 3).value).toBe('英語\n未定');
+  });
+
+  it('合同グループの非 primary クラスは "(合同)" 表記を維持 (count 付かない)', () => {
+    const project = makeProject({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // primary
+          [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' }, // 合同
+        },
+      }],
+    });
+    const wb = buildScheduleWorkbook(project);
+    const ws = wb.getWorksheet('メイン');
+    // 合同コマは 1 コマ扱い (computeGlobalUsage 側で重複除外)
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学1:計1)');
+    expect(ws.getCell(2, 4).value).toBe('英語\n(合同)');
   });
 
   it('未充填セルは空文字', () => {

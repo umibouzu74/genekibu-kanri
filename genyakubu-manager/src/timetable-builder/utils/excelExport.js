@@ -12,7 +12,8 @@
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey } from './scheduleKey';
+import { computeGlobalUsage } from './analysisHelpers';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -120,10 +121,19 @@ export function buildScheduleWorkbook(project) {
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
+  const combinedGroups = project.combinedGroups || [];
+
+  // 講師の日次稼働回数 (中学=schedule内コマ, 計=中学+externalCounts) を全タブ横断で集計。
+  // 講習時間割本体 (中1/中2/中3 タブ) のコマが current、予備校・高校等の外部カウントが external。
+  const { teacherDailyCounts } = computeGlobalUsage(
+    cleaned.tabs,
+    combinedGroups,
+    cleaned.externalCounts || {},
+  );
+  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
 
   cleaned.tabs.forEach(tab => {
     const { dates, periods, classes } = tab.config;
-    const combinedGroups = project.combinedGroups || [];
     const ws = workbook.addWorksheet(tab.name);
 
     // ヘッダー行
@@ -142,7 +152,16 @@ export function buildScheduleWorkbook(project) {
           if (group && !isPrimaryCombinedClass(group, c.label)) {
             return `${e.subject}\n(合同)`;
           }
-          return `${e.subject}\n${e.teacher}`;
+          if (e.teacher && e.teacher !== '未定') {
+            const daily = teacherDailyCounts[makeExternalKey(d.label, e.teacher)];
+            const current = daily?.current ?? 0;
+            const total = daily?.total ?? 0;
+            const teacherEnt = teachersByName.get(e.teacher);
+            const isNg = teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label));
+            const ngMark = isNg ? '\n⚠NG' : '';
+            return `${e.subject}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
+          }
+          return `${e.subject}\n${e.teacher || ''}`;
         })];
         ws.addRow(cells);
 
