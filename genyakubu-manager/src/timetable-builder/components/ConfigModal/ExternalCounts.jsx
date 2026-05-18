@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { makeExternalKey } from '../../utils/scheduleKey';
 
@@ -17,14 +17,23 @@ export default function ExternalCounts() {
   const [formLabel, setFormLabel] = useState('');
   const [formMemo, setFormMemo] = useState('');
 
-  const sessions = project.externalSessions || [];
+  // project.externalSessions が undefined の場合に新しい [] を都度作って
+  // 子の useMemo を毎回 invalidate しないよう、ここで memoize する。
+  const sessions = useMemo(
+    () => project.externalSessions || [],
+    [project.externalSessions],
+  );
 
-  // (date, teacher) ごとの詳細セッション件数
-  const sessionCountMap = {};
-  sessions.forEach(s => {
-    const k = makeExternalKey(s.date, s.teacherName);
-    sessionCountMap[k] = (sessionCountMap[k] || 0) + 1;
-  });
+  // (date, teacher) ごとの詳細セッション件数。グリッド render のたびに
+  // 再計算する必要はないので sessions が変わった時だけ作り直す。
+  const sessionCountMap = useMemo(() => {
+    const map = {};
+    sessions.forEach(s => {
+      const k = makeExternalKey(s.date, s.teacherName);
+      map[k] = (map[k] || 0) + 1;
+    });
+    return map;
+  }, [sessions]);
 
   const handleAdd = () => {
     if (!formDate || !formTeacher) return;

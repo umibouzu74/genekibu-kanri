@@ -368,6 +368,19 @@ describe('migrateProject', () => {
     expect(result.combinedGroups).toEqual([]);
   });
 
+  it('externalSessions が未設定なら空配列で補完', () => {
+    const result = migrateProject(makeLegacyProject());
+    expect(result.externalSessions).toEqual([]);
+  });
+
+  it('externalSessions が既にあれば上書きしない', () => {
+    const p = makeLegacyProject();
+    p.externalSessions = [{ id: 1, date: '7/29(水)', teacherName: '堀上', label: '1限', memo: '予備校' }];
+    const result = migrateProject(p);
+    expect(result.externalSessions).toHaveLength(1);
+    expect(result.externalSessions[0].id).toBe(1);
+  });
+
   it('v2 プロジェクトは v3 へだけマイグレーションされる', () => {
     const v2 = {
       version: 2,
