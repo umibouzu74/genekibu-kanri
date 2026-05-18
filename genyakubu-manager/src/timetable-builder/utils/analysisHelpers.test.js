@@ -70,6 +70,31 @@ describe('computeGlobalUsage', () => {
     });
   });
 
+  it('externalSessions が登録されていれば externalCounts より優先して件数集計', () => {
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    });
+    // externalCounts は 3 を入れているが、sessions が 2 件あるので 2 が採用される
+    const ext = { [makeExternalKey('12/25(木)', '堀上')]: 3 };
+    const sessions = [
+      { id: 1, date: '12/25(木)', teacherName: '堀上', label: '1限', memo: '予備校' },
+      { id: 2, date: '12/25(木)', teacherName: '堀上', label: '2限', memo: '予備校' },
+    ];
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], ext, sessions);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]).toEqual({
+      current: 1, external: 2, total: 3,
+    });
+  });
+
+  it('externalSessions が無ければ externalCounts (legacy) にフォールバック', () => {
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    });
+    const ext = { [makeExternalKey('12/25(木)', '堀上')]: 5 };
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], ext, []);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')].external).toBe(5);
+  });
+
   it('合同グループ内の複数クラスは 1 コマとして集計される', () => {
     // ３S と ３A を英語で合同 → 同日同時限の同じ講師は 1 コマ扱い
     const tab = makeTab(1, {

@@ -53,6 +53,7 @@ export function createNewProject(tabs, teachers, subjectColors, subjects) {
     subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
     combinedGroups: [],
     externalCounts: {},
+    externalSessions: [],
   };
 }
 

@@ -255,5 +255,10 @@ export function migrateProject(project) {
     result = { ...result, combinedGroups: [] };
   }
 
+  // externalSessions が未設定の場合は空配列で初期化 (v3 で追加された後発フィールド)
+  if (!result.externalSessions) {
+    result = { ...result, externalSessions: [] };
+  }
+
   return result;
 }

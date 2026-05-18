@@ -21,10 +21,19 @@ import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findE
 //   tabs: [{ id, schedule: { [makeKey]: { subject, teacher, ... } }, config }]
 //   combinedGroups: [{ id, subject, classes: string[], dates: string[]|null }]
 //   externalCounts: { [makeExternalKey]: number }
-export function computeGlobalUsage(tabs, combinedGroups, externalCounts) {
+export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externalSessions = []) {
   const teacherDailyCounts = {};
   const globalUsage = {};
   const groups = combinedGroups || [];
+
+  // 詳細セッションが登録されていれば件数として優先採用、
+  // 無ければ legacy externalCounts (数値) にフォールバック。
+  const sessionCounts = {};
+  (externalSessions || []).forEach(s => {
+    if (!s?.date || !s?.teacherName) return;
+    const k = makeExternalKey(s.date, s.teacherName);
+    sessionCounts[k] = (sessionCounts[k] || 0) + 1;
+  });
 
   tabs.forEach(tab => {
     // 合同グループで既にカウント済みの (date, period, groupId) を追跡。
@@ -63,7 +72,9 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts) {
       if (!isCombinedDuplicate) {
         const dayKey = makeExternalKey(date, entry.teacher);
         if (!teacherDailyCounts[dayKey]) {
-          const ext = (externalCounts?.[dayKey] || 0);
+          const ext = sessionCounts[dayKey] !== undefined
+            ? sessionCounts[dayKey]
+            : (externalCounts?.[dayKey] || 0);
           teacherDailyCounts[dayKey] = { current: 0, external: ext, total: ext };
         }
         teacherDailyCounts[dayKey].current++;

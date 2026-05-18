@@ -432,6 +432,26 @@ function applyAction(project, action) {
       };
       return { ...project, externalCounts: counts };
     }
+    case 'teacher/addExternalSession': {
+      const { date, teacherName, label, memo } = action.payload;
+      if (!date || !teacherName) return project;
+      const sessions = project.externalSessions || [];
+      const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      return {
+        ...project,
+        externalSessions: [
+          ...sessions,
+          { id: newId, date, teacherName, label: label || '', memo: memo || '' },
+        ],
+      };
+    }
+    case 'teacher/removeExternalSession': {
+      const { id } = action.payload;
+      const sessions = project.externalSessions || [];
+      const filtered = sessions.filter(s => s.id !== id);
+      if (filtered.length === sessions.length) return project;
+      return { ...project, externalSessions: filtered };
+    }
 
     // ─── セル操作 ────────────────────────
     // payload の dateId/periodId/classId は v3 の永続 ID (number)。
