@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { makeKey } from '../utils/scheduleKey';
 import ScheduleCell from './ScheduleCell';
@@ -76,20 +76,19 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
           </tr>
         </thead>
         <tbody>
-          {currentConfig.dates.map((d) => (
-            currentConfig.periods.map((p, pIdx) => {
-              const isDayEnd = pIdx === currentConfig.periods.length - 1;
-              return (
-                <tr key={`${d.id}-${p.id}`} className={`bg-builder-surface ${isDayEnd ? "" : "border-b border-builder-border hover:bg-builder-bg"}`}>
+          {currentConfig.dates.map((d, dIdx) => (
+            <Fragment key={d.id}>
+              {currentConfig.periods.map((p, pIdx) => (
+                <tr key={p.id} className="bg-builder-surface border-b border-builder-border hover:bg-builder-bg">
                   {pIdx === 0 && (
                     <th scope="rowgroup" rowSpan={currentConfig.periods.length}
-                      className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 border-b-[6px] border-b-builder-ink cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
+                      className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
                       style={dateColStyle}
                       onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
                       {d.label}
                     </th>
                   )}
-                  <th scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isDayEnd ? "border-b-[6px] border-b-builder-ink" : ""} ${isCompact ? "p-1" : "p-3"}`}
+                  <th scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}
                     style={periodColStyle}
                     onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
                     {p.label}
@@ -101,7 +100,6 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
                         key={c.id}
                         dateId={d.id} periodId={p.id} classId={c.id}
                         isCompact={isCompact}
-                        isDayEnd={isDayEnd}
                         onContextMenu={onContextMenu}
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
@@ -114,8 +112,15 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
                     );
                   })}
                 </tr>
-              );
-            })
+              ))}
+              {dIdx < currentConfig.dates.length - 1 && (
+                <tr aria-hidden="true" className="bg-builder-ink">
+                  <td className="sticky z-20 bg-builder-ink p-0" style={{ ...dateColStyle, height: '6px' }}></td>
+                  <td className="sticky z-10 bg-builder-ink p-0" style={{ ...periodColStyle, height: '6px' }}></td>
+                  <td colSpan={currentConfig.classes.length} className="bg-builder-ink p-0" style={{ height: '6px' }}></td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
