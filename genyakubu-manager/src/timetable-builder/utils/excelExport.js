@@ -129,6 +129,7 @@ export function buildScheduleWorkbook(project) {
     cleaned.tabs,
     combinedGroups,
     cleaned.externalCounts || {},
+    cleaned.externalSessions || [],
   );
   const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
 

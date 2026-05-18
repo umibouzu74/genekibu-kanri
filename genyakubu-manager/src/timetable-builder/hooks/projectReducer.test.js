@@ -396,6 +396,53 @@ describe('projectReducer — 講師管理', () => {
     expect(next.project).toBe(state.project);
   });
 
+  it('teacher/addExternalSession: 詳細セッションを追加し ID を採番', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '7/29(水)', teacherName: '堀上', label: '1限', memo: '予備校' },
+    });
+    expect(state.project.externalSessions).toEqual([
+      { id: 1, date: '7/29(水)', teacherName: '堀上', label: '1限', memo: '予備校' },
+    ]);
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '7/30(木)', teacherName: '堀上', label: '', memo: '' },
+    });
+    expect(state.project.externalSessions[1].id).toBe(2);
+  });
+
+  it('teacher/addExternalSession: date/teacherName が空なら no-op', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '', teacherName: '堀上', label: '', memo: '' },
+    });
+    expect(next.project).toBe(state.project);
+  });
+
+  it('teacher/removeExternalSession: ID 一致のセッションを削除', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '7/29(水)', teacherName: '堀上', label: '1限', memo: '' },
+    });
+    state = projectReducer(state, {
+      type: 'teacher/removeExternalSession',
+      payload: { id: 1 },
+    });
+    expect(state.project.externalSessions).toEqual([]);
+  });
+
+  it('teacher/removeExternalSession: 存在しない ID は no-op (同参照)', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/removeExternalSession',
+      payload: { id: 999 },
+    });
+    expect(next.project).toBe(state.project);
+  });
+
   it('teacher/setExternalCount: 数値以外は 0 に解釈', () => {
     const state = makeState();
     const next = projectReducer(state, {

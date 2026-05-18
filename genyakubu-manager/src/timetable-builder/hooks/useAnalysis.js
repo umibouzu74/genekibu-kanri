@@ -20,8 +20,8 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 //   - dashboard: { progress, filled, total }
 export function useAnalysis(project, currentSchedule, currentConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
-    () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts),
-    [project.tabs, project.combinedGroups, project.externalCounts],
+    () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions),
+    [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions],
   );
 
   const activeAnalysis = useMemo(
