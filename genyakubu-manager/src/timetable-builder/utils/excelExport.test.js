@@ -4,6 +4,7 @@ import {
   buildScheduleWorkbook,
   buildTeacherWorkbook,
   buildExcelFilename,
+  computeSubjectStats,
 } from './excelExport';
 import { makeKey, makeNgKey, makeExternalKey } from './scheduleKey';
 
@@ -67,7 +68,7 @@ describe('buildExcelFilename', () => {
 });
 
 describe('buildScheduleWorkbook', () => {
-  it('タブ数だけ worksheet を作る', () => {
+  it('タブ数だけ worksheet を作り、科目別シートも追記する', () => {
     const project = makeProject({
       tabs: [
         { id: 1, name: 'tab-A', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
@@ -75,7 +76,8 @@ describe('buildScheduleWorkbook', () => {
       ],
     });
     const wb = buildScheduleWorkbook(project);
-    expect(wb.worksheets.map(w => w.name)).toEqual(['tab-A', 'tab-B']);
+    // タブ 2 つ + 科目別 (英語)
+    expect(wb.worksheets.map(w => w.name)).toEqual(['tab-A', 'tab-B', '科目別_英語']);
   });
 
   it('ヘッダ行に「日付」「時限」と各クラス名が並ぶ', () => {
@@ -289,5 +291,175 @@ describe('buildTeacherWorkbook', () => {
     const ws = wb.getWorksheet('堀上');
     // 1 行目=header、2 行目=１つめ。備考欄 (6 列目) に合同表記
     expect(ws.getCell(2, 6).value).toMatch(/^合同\(/);
+  });
+});
+
+describe('computeSubjectStats', () => {
+  // 中3 + 中1中2 の 2 タブ構成。各タブで英語コマがある状態。
+  function makeMultiTabProject(overrides = {}) {
+    return {
+      version: 3,
+      name: 'test',
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '松川', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      activeTabId: 1,
+      tabs: [
+        {
+          id: 1, name: '中3',
+          config: {
+            dates: [{ id: 1, label: '7/29(水)' }, { id: 2, label: '7/30(木)' }],
+            periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+            classes: [{ id: 1, label: '3SS' }, { id: 2, label: '3A' }],
+            subjectCounts: { 英語: 2 },
+          },
+          schedule: {
+            [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+            [makeKey(1, 1, 2)]: { subject: '英語', teacher: '松川' },
+            [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          },
+        },
+        {
+          id: 2, name: '中1中2',
+          config: {
+            dates: [{ id: 10, label: '7/29(水)' }],
+            periods: [{ id: 10, label: '1限' }],
+            classes: [{ id: 10, label: '1A' }],
+            subjectCounts: { 英語: 1 },
+          },
+          schedule: {
+            [makeKey(10, 10, 10)]: { subject: '英語', teacher: '松川' },
+          },
+        },
+      ],
+      combinedGroups: [],
+      externalCounts: {},
+      subjects: ['英語'],
+      subjectColors: {},
+      ...overrides,
+    };
+  }
+
+  it('必要 = subjectCounts * classes.length、充足 = 該当 subject の schedule 件数', () => {
+    const stats = computeSubjectStats(makeMultiTabProject(), '英語');
+    expect(stats.tabStats).toEqual([
+      { tabName: '中3', needed: 4, filled: 3 },  // 2 * 2 classes = 4 必要、3 件充足
+      { tabName: '中1中2', needed: 1, filled: 1 }, // 1 * 1 = 1 必要、1 件充足
+    ]);
+  });
+
+  it('講師別集計はタブごとに分かれる', () => {
+    const stats = computeSubjectStats(makeMultiTabProject(), '英語');
+    expect(stats.teacherStats['堀上']).toEqual({ '中3': 2 });
+    expect(stats.teacherStats['松川']).toEqual({ '中3': 1, '中1中2': 1 });
+  });
+
+  it('合同非 primary は teacher 集計から除外、充足には含まれる', () => {
+    const project = makeMultiTabProject({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['3SS', '3A'], dates: null }],
+    });
+    const stats = computeSubjectStats(project, '英語');
+    // 中3 タブの 1 限で 3SS (primary) と 3A (合同) — 講師カウントは primary だけ
+    expect(stats.teacherStats['堀上']['中3']).toBe(2); // 7/29 1限 (合同 primary) + 7/30 1限
+    expect(stats.teacherStats['松川']['中3']).toBeUndefined(); // 3A は 合同非 primary なのでカウント外
+    // 充足は cell 数なので変わらない
+    expect(stats.tabStats[0].filled).toBe(3);
+  });
+
+  it('未定講師は "(未定)" として集計される', () => {
+    const project = makeMultiTabProject({
+      tabs: [{
+        id: 1, name: '中3',
+        config: makeMultiTabProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '' },
+          [makeKey(1, 1, 2)]: { subject: '英語', teacher: '未定' },
+        },
+      }, makeMultiTabProject().tabs[1]],
+    });
+    const stats = computeSubjectStats(project, '英語');
+    expect(stats.teacherStats['(未定)']).toEqual({ '中3': 2 });
+    expect(stats.teachersFound.has('(未定)')).toBe(true);
+  });
+
+  it('NG コマには detail.note に ⚠NG が入る', () => {
+    const project = makeMultiTabProject({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('7/29(水)', '1限')], ngClasses: [], priorityClasses: [] },
+        { name: '松川', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    const stats = computeSubjectStats(project, '英語');
+    const ngRow = stats.detailRows.find(r => r.date === '7/29(水)' && r.className === '3SS' && r.teacher === '堀上');
+    expect(ngRow.note).toContain('⚠NG');
+  });
+
+  it('合同グループの detail.note に "合同(...)" が入る', () => {
+    const project = makeMultiTabProject({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['3SS', '3A'], dates: null }],
+    });
+    const stats = computeSubjectStats(project, '英語');
+    const r = stats.detailRows.find(r => r.date === '7/29(水)' && r.className === '3SS');
+    expect(r.note).toMatch(/合同\(/);
+  });
+});
+
+describe('buildScheduleWorkbook — 科目別シート', () => {
+  function makeMultiTabProject() {
+    return {
+      version: 3,
+      name: 'test',
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      activeTabId: 1,
+      tabs: [
+        {
+          id: 1, name: '中3',
+          config: {
+            dates: [{ id: 1, label: '7/29(水)' }],
+            periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+            classes: [{ id: 1, label: '3SS' }],
+            subjectCounts: { 英語: 1, 数学: 1 },
+          },
+          schedule: {
+            [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+            [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' },
+          },
+        },
+      ],
+      combinedGroups: [],
+      externalCounts: {},
+      subjects: ['英語', '数学'],
+      subjectColors: { 英語: '#DBEAFE', 数学: '#FEE2E2' },
+    };
+  }
+
+  it('科目ごとにシートが作られる (科目別_英語, 科目別_数学)', () => {
+    const wb = buildScheduleWorkbook(makeMultiTabProject());
+    const names = wb.worksheets.map(w => w.name);
+    expect(names).toContain('科目別_英語');
+    expect(names).toContain('科目別_数学');
+  });
+
+  it('科目別シートのタイトル行に「科目: ◯◯」と科目カラーが入る', () => {
+    const wb = buildScheduleWorkbook(makeMultiTabProject());
+    const ws = wb.getWorksheet('科目別_英語');
+    expect(ws.getCell(1, 1).value).toBe('科目: 英語');
+    expect(ws.getCell(1, 1).fill).toEqual(expect.objectContaining({
+      fgColor: { argb: 'FFDBEAFE' },
+    }));
+  });
+
+  it('シート名禁則文字を除去する', () => {
+    const project = makeMultiTabProject();
+    project.subjects = ['英/語'];
+    project.tabs[0].config.subjectCounts = { '英/語': 1 };
+    project.tabs[0].schedule = { [makeKey(1, 1, 1)]: { subject: '英/語', teacher: '堀上' } };
+    const wb = buildScheduleWorkbook(project);
+    const names = wb.worksheets.map(w => w.name);
+    expect(names).toContain('科目別_英語');
   });
 });

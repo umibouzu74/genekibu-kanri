@@ -203,7 +203,197 @@ export function buildScheduleWorkbook(project) {
     });
   });
 
+  // 科目別集計シート (英語・数学… ごとに 1 枚)
+  collectAllSubjects(cleaned).forEach(subject => {
+    buildOneSubjectSheet(workbook, cleaned, subject);
+  });
+
   return workbook;
+}
+
+// ─── 科目別集計シート ─────────────────────────────────────────────
+
+// project から登場する全科目を収集する (project.subjects ∪ 各タブの
+// subjectCounts のキー ∪ schedule entry の subject)。
+function collectAllSubjects(project) {
+  const set = new Set(project.subjects || []);
+  (project.tabs || []).forEach(tab => {
+    Object.keys(tab.config?.subjectCounts || {}).forEach(s => set.add(s));
+    Object.values(tab.schedule || {}).forEach(e => {
+      if (e?.subject) set.add(e.subject);
+    });
+  });
+  return Array.from(set);
+}
+
+// 1 科目分の集計を計算する純粋関数 (テスト用に export)。
+// 返り値:
+//   - tabStats: [{ tabName, needed, filled }]  必要 = subjectCounts*classes
+//   - teacherStats: { [teacherName]: { [tabName]: count } }
+//       (合同非 primary は除外、未定は "(未定)" キーで集計)
+//   - teachersFound: Set<string>  teacherStats に登場した講師
+//   - detailRows: [{ date, period, className, tabName, teacher, note }]
+//       note には "合同(...)" / "⚠NG" が入る
+export function computeSubjectStats(project, subject) {
+  const combinedGroups = project.combinedGroups || [];
+  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
+  const UNASSIGNED_KEY = '(未定)';
+
+  const tabStats = [];
+  const teacherStats = {};
+  const teachersFound = new Set();
+  const detailRows = [];
+
+  (project.tabs || []).forEach(tab => {
+    const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
+    let filled = 0;
+
+    (tab.config?.dates || []).forEach(d => {
+      (tab.config?.periods || []).forEach(p => {
+        (tab.config?.classes || []).forEach(c => {
+          const e = tab.schedule?.[makeKey(d.id, p.id, c.id)];
+          if (!e || e.subject !== subject) return;
+          filled++;
+
+          const group = findCombinedGroup(combinedGroups, subject, c.label, d.label);
+          const isNonPrimary = group && !isPrimaryCombinedClass(group, c.label);
+
+          const noteParts = [];
+          if (group) noteParts.push(`合同(${group.classes.join(',')})`);
+          if (e.teacher && e.teacher !== '未定') {
+            const teacherEnt = teachersByName.get(e.teacher);
+            if (teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label))) {
+              noteParts.push('⚠NG');
+            }
+          }
+
+          detailRows.push({
+            date: d.label,
+            period: p.label,
+            className: c.label,
+            tabName: tab.name,
+            teacher: e.teacher || '',
+            note: noteParts.join(' '),
+          });
+
+          if (!isNonPrimary) {
+            const tKey = (e.teacher && e.teacher !== '未定') ? e.teacher : UNASSIGNED_KEY;
+            teachersFound.add(tKey);
+            if (!teacherStats[tKey]) teacherStats[tKey] = {};
+            teacherStats[tKey][tab.name] = (teacherStats[tKey][tab.name] || 0) + 1;
+          }
+        });
+      });
+    });
+
+    tabStats.push({ tabName: tab.name, needed, filled });
+  });
+
+  return { subject, tabStats, teacherStats, teachersFound, detailRows };
+}
+
+// Excel 上のシート名は 31 文字 + 一部の禁則文字。重複した場合は suffix を付与。
+function uniqueSheetName(workbook, baseName) {
+  let name = baseName.substring(0, 31);
+  if (!workbook.getWorksheet(name)) return name;
+  let suffix = 1;
+  while (true) {
+    const tail = `_${suffix}`;
+    name = (baseName.substring(0, 31 - tail.length) + tail);
+    if (!workbook.getWorksheet(name)) return name;
+    suffix++;
+  }
+}
+
+function buildOneSubjectSheet(workbook, project, subject) {
+  const safeSubject = subject.replace(/[\\/:?*[\]]/g, '');
+  const ws = workbook.addWorksheet(uniqueSheetName(workbook, `科目別_${safeSubject}`));
+
+  const stats = computeSubjectStats(project, subject);
+  const subjColor = (project.subjectColors || {})[subject];
+  const tabNames = (project.tabs || []).map(t => t.name);
+
+  // 行ごとに値を書きつつ style 適用する小ヘルパ。
+  let rowIdx = 1;
+  const writeRow = (values, style) => {
+    values.forEach((v, ci) => {
+      const cell = ws.getCell(rowIdx, ci + 1);
+      cell.value = v;
+      if (style) applyCellStyle(cell, style);
+    });
+    rowIdx++;
+  };
+
+  // ── タイトル ──
+  ws.getCell(rowIdx, 1).value = `科目: ${subject}`;
+  ws.getCell(rowIdx, 1).font = { bold: true, size: 14 };
+  if (subjColor) {
+    ws.getCell(rowIdx, 1).fill = {
+      type: 'pattern', pattern: 'solid', fgColor: { argb: hexToArgb(subjColor) },
+    };
+  }
+  rowIdx += 2;
+
+  // ── Section 1: 必要コマ数 ──
+  ws.getCell(rowIdx, 1).value = '【必要コマ数】';
+  ws.getCell(rowIdx, 1).font = { bold: true };
+  rowIdx++;
+  writeRow(['タブ', '必要', '充足', '不足'], HEADER_STYLE);
+
+  let totalNeeded = 0;
+  let totalFilled = 0;
+  stats.tabStats.forEach(({ tabName, needed, filled }) => {
+    totalNeeded += needed;
+    totalFilled += filled;
+    writeRow([tabName, needed, filled, Math.max(needed - filled, 0)], BODY_CELL_STYLE);
+  });
+  writeRow(['計', totalNeeded, totalFilled, Math.max(totalNeeded - totalFilled, 0)], DATE_HEADER_STYLE);
+  rowIdx++;
+
+  // ── Section 2: 講師別集計 (合同は 1 コマ扱い) ──
+  ws.getCell(rowIdx, 1).value = '【講師別集計 (合同は 1 コマで集計)】';
+  ws.getCell(rowIdx, 1).font = { bold: true };
+  rowIdx++;
+  writeRow(['講師', ...tabNames, '計'], HEADER_STYLE);
+
+  // project.teachers の順 → 並び替え。未知名と (未定) は末尾に。
+  const projectTeacherNames = (project.teachers || []).map(t => t.name);
+  const orderedTeachers = [
+    ...projectTeacherNames.filter(n => stats.teachersFound.has(n)),
+    ...[...stats.teachersFound].filter(n => !projectTeacherNames.includes(n)),
+  ];
+
+  const tabTotals = new Array(tabNames.length).fill(0);
+  let grandTotal = 0;
+  orderedTeachers.forEach(tName => {
+    const tabCounts = tabNames.map(tn => stats.teacherStats[tName]?.[tn] || 0);
+    const sum = tabCounts.reduce((a, b) => a + b, 0);
+    tabCounts.forEach((c, i) => { tabTotals[i] += c; });
+    grandTotal += sum;
+    writeRow([tName, ...tabCounts, sum], BODY_CELL_STYLE);
+  });
+  if (orderedTeachers.length > 0) {
+    writeRow(['計', ...tabTotals, grandTotal], DATE_HEADER_STYLE);
+  }
+  rowIdx++;
+
+  // ── Section 3: 詳細 ──
+  ws.getCell(rowIdx, 1).value = '【詳細 (タブ → 日付 → 時限 → クラス 順)】';
+  ws.getCell(rowIdx, 1).font = { bold: true };
+  rowIdx++;
+  writeRow(['日付', '時限', 'クラス', 'タブ', '講師', '備考'], HEADER_STYLE);
+
+  stats.detailRows.forEach(d => {
+    writeRow([d.date, d.period, d.className, d.tabName, d.teacher, d.note], BODY_CELL_STYLE);
+  });
+
+  // 列幅
+  ws.getColumn(1).width = 14;
+  ws.getColumn(2).width = 12;
+  ws.getColumn(3).width = 12;
+  ws.getColumn(4).width = 14;
+  ws.getColumn(5).width = 14;
+  ws.getColumn(6).width = 22;
 }
 
 // ファイル名を組み立てる小ヘルパー (テスト用に分離)
