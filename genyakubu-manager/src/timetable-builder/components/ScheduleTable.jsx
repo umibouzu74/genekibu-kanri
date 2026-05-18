@@ -80,16 +80,16 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
             currentConfig.periods.map((p, pIdx) => {
               const isDayEnd = pIdx === currentConfig.periods.length - 1;
               return (
-                <tr key={`${d.id}-${p.id}`} className={`bg-builder-surface ${isDayEnd ? "border-b-4 border-builder-ink-ghost" : "border-b border-builder-border hover:bg-builder-bg"}`}>
+                <tr key={`${d.id}-${p.id}`} className={`bg-builder-surface ${isDayEnd ? "border-b-[6px] border-builder-ink-muted" : "border-b border-builder-border hover:bg-builder-bg"}`}>
                   {pIdx === 0 && (
                     <th scope="rowgroup" rowSpan={currentConfig.periods.length}
-                      className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 border-b-4 border-b-builder-ink-ghost cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
+                      className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 border-b-[6px] border-b-builder-ink-muted cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
                       style={dateColStyle}
                       onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
                       {d.label}
                     </th>
                   )}
-                  <th scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isDayEnd ? "border-b-4 border-b-builder-ink-ghost" : ""} ${isCompact ? "p-1" : "p-3"}`}
+                  <th scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isDayEnd ? "border-b-[6px] border-b-builder-ink-muted" : ""} ${isCompact ? "p-1" : "p-3"}`}
                     style={periodColStyle}
                     onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
                     {p.label}
