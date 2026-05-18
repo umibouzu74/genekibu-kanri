@@ -15,6 +15,8 @@ export function useTeacherActions(dispatch) {
       dispatch({ type: 'teacher/toggleSubject', payload: { idx, subject } }),
     toggleTeacherNg: (idx, date, period) =>
       dispatch({ type: 'teacher/toggleNg', payload: { idx, date, period } }),
+    setNgBatch: (idxs, dateLabels, periodLabels, value) =>
+      dispatch({ type: 'teacher/setNgBatch', payload: { idxs, dateLabels, periodLabels, value } }),
     toggleTeacherClassPriority: (idx, className) =>
       dispatch({ type: 'teacher/toggleClassPriority', payload: { idx, className } }),
     handleExternalCountChange: (date, teacherName, value) =>
