@@ -385,6 +385,31 @@ function applyAction(project, action) {
       newTeachers[idx] = t;
       return { ...project, teachers: newTeachers };
     }
+    case 'teacher/setNgBatch': {
+      const { idxs, dateLabels, periodLabels, value } = action.payload;
+      if (!idxs?.length || !dateLabels?.length || !periodLabels?.length) return project;
+      const newTeachers = [...project.teachers];
+      let changed = false;
+      for (const idx of idxs) {
+        if (idx < 0 || idx >= newTeachers.length) continue;
+        const t = newTeachers[idx];
+        const ngSet = new Set(t.ngSlots || []);
+        const before = ngSet.size;
+        for (const d of dateLabels) {
+          for (const p of periodLabels) {
+            const k = makeNgKey(d, p);
+            if (value) ngSet.add(k);
+            else ngSet.delete(k);
+          }
+        }
+        if (ngSet.size !== before) {
+          newTeachers[idx] = { ...t, ngSlots: Array.from(ngSet) };
+          changed = true;
+        }
+      }
+      if (!changed) return project;
+      return { ...project, teachers: newTeachers };
+    }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
       const newTeachers = [...project.teachers];

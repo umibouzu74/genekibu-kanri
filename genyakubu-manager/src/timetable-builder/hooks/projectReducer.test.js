@@ -314,6 +314,88 @@ describe('projectReducer — 講師管理', () => {
     expect(state.project.teachers[0].ngSlots).toEqual([]);
   });
 
+  it('teacher/setNgBatch (value=true): 複数日付×複数時限を一括でNGに設定', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/setNgBatch',
+      payload: {
+        idxs: [0],
+        dateLabels: ['7/28(火)', '7/29(水)', '7/30(木)'],
+        periodLabels: ['1限', '2限'],
+        value: true,
+      },
+    });
+    const ng = next.project.teachers[0].ngSlots.sort();
+    expect(ng).toEqual([
+      makeNgKey('7/28(火)', '1限'),
+      makeNgKey('7/28(火)', '2限'),
+      makeNgKey('7/29(水)', '1限'),
+      makeNgKey('7/29(水)', '2限'),
+      makeNgKey('7/30(木)', '1限'),
+      makeNgKey('7/30(木)', '2限'),
+    ].sort());
+    expect(next.project.teachers[1].ngSlots).toEqual([]);
+  });
+
+  it('teacher/setNgBatch (value=false): 既存NGを範囲で一括解除', () => {
+    const seeded = makeProject();
+    seeded.teachers[0].ngSlots = [
+      makeNgKey('7/28(火)', '1限'),
+      makeNgKey('7/29(水)', '1限'),
+      makeNgKey('8/1(土)', '1限'),
+    ];
+    const state = { project: seeded, history: [seeded], historyIndex: 0, loadError: null };
+    const next = projectReducer(state, {
+      type: 'teacher/setNgBatch',
+      payload: {
+        idxs: [0],
+        dateLabels: ['7/28(火)', '7/29(水)'],
+        periodLabels: ['1限'],
+        value: false,
+      },
+    });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('8/1(土)', '1限')]);
+  });
+
+  it('teacher/setNgBatch: 複数講師 (全講師) も一度に処理できる', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/setNgBatch',
+      payload: {
+        idxs: [0, 1],
+        dateLabels: ['7/29(水)'],
+        periodLabels: ['1限'],
+        value: true,
+      },
+    });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('7/29(水)', '1限')]);
+    expect(next.project.teachers[1].ngSlots).toEqual([makeNgKey('7/29(水)', '1限')]);
+  });
+
+  it('teacher/setNgBatch: 変更が無ければ同参照を返す (履歴を汚さない)', () => {
+    const state = makeState();
+    // 既に NG なし、value=false → 何も変わらない
+    const next = projectReducer(state, {
+      type: 'teacher/setNgBatch',
+      payload: {
+        idxs: [0],
+        dateLabels: ['7/29(水)'],
+        periodLabels: ['1限'],
+        value: false,
+      },
+    });
+    expect(next.project).toBe(state.project);
+  });
+
+  it('teacher/setNgBatch: 空配列は no-op (project 参照を維持)', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/setNgBatch',
+      payload: { idxs: [], dateLabels: ['7/29(水)'], periodLabels: ['1限'], value: true },
+    });
+    expect(next.project).toBe(state.project);
+  });
+
   it('teacher/setExternalCount: 数値以外は 0 に解釈', () => {
     const state = makeState();
     const next = projectReducer(state, {
