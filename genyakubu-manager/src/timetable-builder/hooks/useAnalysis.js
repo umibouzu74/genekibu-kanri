@@ -25,13 +25,13 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
   );
 
   const activeAnalysis = useMemo(
-    () => computeActiveAnalysis(currentConfig, currentSchedule, globalUsage),
-    [currentConfig, currentSchedule, globalUsage],
+    () => computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, project.teachers),
+    [currentConfig, currentSchedule, globalUsage, project.teachers],
   );
 
   const tabErrorCounts = useMemo(
-    () => computeTabViolationCounts({ tabs: project.tabs, globalUsage }),
-    [project.tabs, globalUsage],
+    () => computeTabViolationCounts({ tabs: project.tabs, globalUsage, teachers: project.teachers }),
+    [project.tabs, globalUsage, project.teachers],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
@@ -43,6 +43,7 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
       errorKeys: activeAnalysis.errorKeys,
       dailySubjectMap: activeAnalysis.dailySubjectMap,
       subjectOrders: activeAnalysis.subjectOrders,
+      ngViolationKeys: activeAnalysis.ngViolationKeys,
       teacherDailyCounts,
       maxDailyHours,
       teachers: project.teachers,

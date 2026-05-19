@@ -11,8 +11,9 @@ export default function ExternalCounts() {
     removeExternalSession,
   } = useProjectContext();
 
-  // 詳細セッション追加フォームの state
-  const [formDate, setFormDate] = useState(currentConfig.dates[0]?.label || '');
+  // 詳細セッション追加フォームの state。
+  // formDateIds は配列で、NG タブの時限 checkbox と同様に複数選択可能。
+  const [formDateIds, setFormDateIds] = useState([]);
   const [formTeacher, setFormTeacher] = useState(project.teachers[0]?.name || '');
   const [formLabel, setFormLabel] = useState('');
   const [formMemo, setFormMemo] = useState('');
@@ -35,11 +36,29 @@ export default function ExternalCounts() {
     return map;
   }, [sessions]);
 
+  const toggleDate = (id) => {
+    setFormDateIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    );
+  };
+  const selectAllDates = () => setFormDateIds(currentConfig.dates.map(d => d.id));
+  const clearAllDates = () => setFormDateIds([]);
+
+  const canAdd = formDateIds.length > 0 && !!formTeacher;
+
   const handleAdd = () => {
-    if (!formDate || !formTeacher) return;
-    addExternalSession(formDate, formTeacher, formLabel.trim(), formMemo.trim());
+    if (!canAdd) return;
+    // currentConfig.dates の順序を維持して追加 (一覧表示の自然な並びになるよう)。
+    const labelById = new Map(currentConfig.dates.map(d => [d.id, d.label]));
+    currentConfig.dates.forEach(d => {
+      if (!formDateIds.includes(d.id)) return;
+      const label = labelById.get(d.id);
+      if (!label) return;
+      addExternalSession(label, formTeacher, formLabel.trim(), formMemo.trim());
+    });
     setFormLabel('');
     setFormMemo('');
+    // 日付選択は次の入力で使い回せるよう残す (NG タブと同じ挙動)。
   };
 
   return (
@@ -97,68 +116,94 @@ export default function ExternalCounts() {
       </div>
 
       {/* 詳細セッション登録 */}
-      <div className="border border-builder-border rounded p-3 bg-builder-surface-alt">
-        <div className="font-bold text-builder-ink mb-2">詳細セッション登録 (高校・予備校など)</div>
+      <div className="border border-builder-ink-ghost rounded p-3 bg-builder-surface-alt">
+        <div className="font-bold text-builder-ink mb-1">詳細セッション登録 (高校・予備校など)</div>
         <div className="text-xs text-builder-ink-muted mb-3">
-          1 件ずつ「日付 / 講師 / ラベル (時限や時刻) / メモ」を登録。
-          後で何の予定で空けたかが確認できます。
+          日付は複数選択可。1 件「講師 / ラベル / メモ」を入力して追加すると、
+          選択した日付の分だけ同じ内容のセッションがまとめて登録されます。
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-builder-ink-muted">日付</span>
-            <select
-              value={formDate}
-              onChange={(e) => setFormDate(e.target.value)}
-              className="border border-builder-border rounded px-2 py-1 bg-builder-surface text-builder-ink"
-            >
-              {currentConfig.dates.map(d => (
-                <option key={d.id} value={d.label}>{d.label}</option>
-              ))}
-            </select>
-          </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-builder-ink-muted">講師</span>
             <select
               value={formTeacher}
               onChange={(e) => setFormTeacher(e.target.value)}
-              className="border border-builder-border rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              aria-label="セッション追加の対象講師"
             >
               {project.teachers.map(t => (
                 <option key={t.name} value={t.name}>{t.name}</option>
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-builder-ink-muted">ラベル</span>
-            <input
-              type="text"
-              value={formLabel}
-              onChange={(e) => setFormLabel(e.target.value)}
-              placeholder="1限 / 13:00-14:30 等"
-              className="border border-builder-border rounded px-2 py-1 bg-builder-surface text-builder-ink"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-builder-ink-muted">メモ</span>
-            <input
-              type="text"
-              value={formMemo}
-              onChange={(e) => setFormMemo(e.target.value)}
-              placeholder="予備校 / 高2 英語 等"
-              className="border border-builder-border rounded px-2 py-1 bg-builder-surface text-builder-ink"
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={handleAdd}
-              disabled={!formDate || !formTeacher}
-              className="w-full px-3 py-1 bg-builder-primary text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
-            >
-              追加
-            </button>
+          <div className="flex gap-2 text-xs">
+            <label className="flex flex-col gap-1 flex-1">
+              <span className="text-builder-ink-muted">ラベル (任意)</span>
+              <input
+                type="text"
+                value={formLabel}
+                onChange={(e) => setFormLabel(e.target.value)}
+                placeholder="1限 / 13:00-14:30 等"
+                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              />
+            </label>
+            <label className="flex flex-col gap-1 flex-1">
+              <span className="text-builder-ink-muted">メモ (任意)</span>
+              <input
+                type="text"
+                value={formMemo}
+                onChange={(e) => setFormMemo(e.target.value)}
+                placeholder="予備校 / 高2 英語 等"
+                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              />
+            </label>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1 mb-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-builder-ink-muted">日付 (複数選択可)</span>
+            <div className="flex gap-1">
+              <button type="button" onClick={selectAllDates}
+                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                全選択
+              </button>
+              <button type="button" onClick={clearAllDates}
+                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                全解除
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {currentConfig.dates.map(d => (
+              <label key={d.id}
+                className="flex items-center gap-1 px-2 py-1 border border-builder-ink-ghost rounded cursor-pointer bg-builder-surface hover:bg-builder-bg text-builder-ink text-xs">
+                <input
+                  type="checkbox"
+                  checked={formDateIds.includes(d.id)}
+                  onChange={() => toggleDate(d.id)}
+                />
+                <span>{d.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 items-center mb-3">
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!canAdd}
+            className="px-3 py-1 bg-builder-primary text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+          >
+            まとめて追加
+          </button>
+          {canAdd && (
+            <span className="text-xs text-builder-ink-muted">
+              対象: {formTeacher} × {formDateIds.length}日
+            </span>
+          )}
         </div>
 
         {sessions.length === 0 ? (

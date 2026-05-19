@@ -103,7 +103,7 @@ function getEffectiveUsageCount(usages) {
   return count;
 }
 
-// 現タブの分析結果を計算する (conflict / dailySubject / subjectOrder)。
+// 現タブの分析結果を計算する (conflict / dailySubject / subjectOrder / ngViolation)。
 //
 // 返り値:
 //   - conflictMap: { [`${date}-${period}-${teacher}`]: true }
@@ -114,11 +114,16 @@ function getEffectiveUsageCount(usages) {
 //       現タブ内・同一クラス×同一日の科目重複検出用。> 1 で重複。
 //   - subjectOrders: { [scheduleKey]: number }
 //       現タブ内・同一クラス内での該当科目の連番 (1-based、何回目か)。
-export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsage) {
+//   - ngViolationKeys: schedule key 配列。割当済み講師がその日時の
+//       ngSlots に該当するセル (後から NG 設定された場合に検出)。
+export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, teachers = []) {
   const conflictMap = {};
   const errorKeys = [];
   const dailySubjectMap = {};
   const subjectOrders = {};
+  const ngViolationKeys = [];
+  const teachersByName = new Map();
+  (teachers || []).forEach(t => { if (t?.name) teachersByName.set(t.name, t); });
 
   currentConfig.dates.forEach(d => {
     currentConfig.periods.forEach(p => {
@@ -135,6 +140,10 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
           if (effectiveCount > 1) {
             conflictMap[`${d.label}-${p.label}-${entry.teacher}`] = true;
             errorKeys.push(key);
+          }
+          const teacherEnt = teachersByName.get(entry.teacher);
+          if (teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label))) {
+            ngViolationKeys.push(key);
           }
         }
       });
@@ -155,7 +164,7 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
     });
   });
 
-  return { conflictMap, errorKeys, dailySubjectMap, subjectOrders };
+  return { conflictMap, errorKeys, dailySubjectMap, subjectOrders, ngViolationKeys };
 }
 
 // ダッシュボード集計 (進捗バー用)。
@@ -176,10 +185,10 @@ export function computeDashboard(currentSchedule, currentConfig) {
 // には算入しない (重複表示防止)。
 //
 // 返り値: { [tabId: number]: count }
-export function computeTabViolationCounts({ tabs, globalUsage }) {
+export function computeTabViolationCounts({ tabs, globalUsage, teachers = [] }) {
   const result = {};
   tabs.forEach(tab => {
-    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage);
+    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage, teachers);
     let subjectDupCount = 0;
     Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {
       if (cnt > 1) subjectDupCount += cnt - 1;
@@ -191,7 +200,7 @@ export function computeTabViolationCounts({ tabs, globalUsage }) {
       const maxCnt = tab.config.subjectCounts[subject] || 0;
       if (maxCnt > 0 && order > maxCnt) subjectOverCount++;
     });
-    result[tab.id] = tabAnalysis.errorKeys.length + subjectDupCount + subjectOverCount;
+    result[tab.id] = tabAnalysis.errorKeys.length + subjectDupCount + subjectOverCount + tabAnalysis.ngViolationKeys.length;
   });
   return result;
 }
@@ -220,11 +229,19 @@ export function computeViolations({
   teacherDailyCounts,
   maxDailyHours,
   teachers,
+  ngViolationKeys = [],
 }) {
   // teacherConflict: errorKeys と同じ。最初のキーをスクロール対象に。
   const teacherConflict = {
     count: errorKeys.length,
     firstKey: errorKeys[0] || null,
+  };
+
+  // teacherNgAssigned: 割当済み講師がその日時の NG 設定に該当するセル。
+  // 後から NG 設定を入れた際に既存割当が違反になるケースを検出。
+  const teacherNgAssigned = {
+    count: ngViolationKeys.length,
+    firstKey: ngViolationKeys[0] || null,
   };
 
   // subjectDup: dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1
@@ -301,6 +318,7 @@ export function computeViolations({
 
   return {
     teacherConflict,
+    teacherNgAssigned,
     subjectDup: { count: subjectDupCount, firstKey: subjectDupFirstKey },
     subjectOver: { count: subjectOverCount, firstKey: subjectOverFirstKey },
     teacherOverDaily: { count: teacherOverItems.length, items: teacherOverItems },
