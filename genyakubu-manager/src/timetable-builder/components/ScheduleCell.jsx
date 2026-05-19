@@ -33,14 +33,22 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const subjDupKey = `c${classId}-d${dateId}-${entry.subject}`;
   const isSubjDup = analysis.dailySubjectMap[subjDupKey] > 1;
 
+  // 後から NG 設定された場合に、既に割り当て済みの講師がその日時で
+  // NG になっていれば視覚的に警告する。
+  const assignedTeacher = (entry.teacher && entry.teacher !== '未定')
+    ? project.teachers.find(t => t.name === entry.teacher)
+    : null;
+  const isNgAssigned = !!assignedTeacher?.ngSlots?.includes(makeNgKey(dLabel, pLabel));
+
   // 合同グループ判定 (label ベース)
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
   const isCombined = !!combinedGroup;
   const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, cLabel);
 
-  const cellBgColor = isConflict ? "#FECACA" : getSubjectColor(entry.subject, project.subjectColors);
+  const cellBgColor = (isConflict || isNgAssigned) ? "#FECACA" : getSubjectColor(entry.subject, project.subjectColors);
+  const ngBorder = isNgAssigned && !isLocked ? "border-2 border-builder-red" : "";
   const combinedBorder = isCombined ? (isPrimary ? "border-2 border-builder-primary" : "border-2 border-builder-ink-ghost border-dashed") : "";
-  const lockedStyle = isLocked ? "border-2 border-builder-ink-muted opacity-90" : (combinedBorder || "border border-builder-border");
+  const lockedStyle = isLocked ? "border-2 border-builder-ink-muted opacity-90" : (ngBorder || combinedBorder || "border border-builder-border");
   const cellStyle = {
     ...(cellBgColor ? { backgroundColor: cellBgColor } : {}),
     ...(isLocked ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' } : {}),
@@ -107,6 +115,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             </select>
             {isSubjDup && <span className={`bg-builder-red text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
             {isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
+            {isNgAssigned && !isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️NG</span>}
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-builder-red" : "text-builder-ink-muted"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
             {isCombined && <span className={`bg-builder-primary text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
@@ -117,7 +126,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
         <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
           aria-label={`${dLabel} ${pLabel} ${cLabel} の講師`}
-          className={`w-full rounded cursor-pointer ${isConflict ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-builder-surface"}`}
+          className={`w-full rounded cursor-pointer ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
@@ -129,10 +138,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             const isNg = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
             let label = t.name;
             if (t.name !== "未定") { if (isNg) label += " (NG)"; else label += ` (計${daily.total})`; }
-            return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={isNg}>{label}</option>;
+            // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
+            // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。
+            const shouldDisable = isNg && entry.teacher !== t.name;
+            return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
           })}
         </select>
         {isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ 重複</div>}
+        {isNgAssigned && !isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ NG設定違反</div>}
       </div>
     </td>
   );

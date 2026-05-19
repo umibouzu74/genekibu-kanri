@@ -236,6 +236,29 @@ describe('computeActiveAnalysis', () => {
     expect(conflictMap).toEqual({});
     expect(errorKeys).toEqual([]);
   });
+
+  it('割当済み講師が ngSlots に該当するセルは ngViolationKeys に入る', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    };
+    const teachers = [
+      { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25(木)', '1限')] },
+    ];
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], [], {});
+    const { ngViolationKeys } = computeActiveAnalysis(config, schedule, globalUsage, teachers);
+    expect(ngViolationKeys).toEqual([makeKey(1, 1, 1)]);
+  });
+
+  it('teachers が未指定なら ngViolationKeys は空 (後方互換)', () => {
+    const config = makeConfig();
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    };
+    const { globalUsage } = computeGlobalUsage([makeTab(1, schedule)], [], {});
+    const { ngViolationKeys } = computeActiveAnalysis(config, schedule, globalUsage);
+    expect(ngViolationKeys).toEqual([]);
+  });
 });
 
 // ─── computeDashboard ────────────────────────────────────────────

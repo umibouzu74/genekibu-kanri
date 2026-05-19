@@ -29,6 +29,7 @@ const defaultAnalysis = () => ({
   tabErrorCounts: {},
   violations: {
     teacherConflict: { count: 0, firstKey: null },
+    teacherNgAssigned: { count: 0, firstKey: null },
     subjectDup: { count: 0, firstKey: null },
     subjectOver: { count: 0, firstKey: null },
     teacherOverDaily: { count: 0, items: [] },
@@ -325,5 +326,24 @@ describe('Toolbar', () => {
     fireEvent.click(screen.getByText(/⚠️ 1件/));
     expect(screen.getByRole('dialog', { name: '違反の内訳' })).toBeInTheDocument();
     expect(screen.getByText(/設定の問題/)).toBeInTheDocument();
+  });
+
+  it('teacherNgAssigned があれば popover に「NG設定違反」行を表示する', () => {
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          violations: {
+            teacherConflict: { count: 0, firstKey: null },
+            teacherNgAssigned: { count: 2, firstKey: 'k_ng' },
+            subjectDup: { count: 0, firstKey: null },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 2件/));
+    expect(screen.getByRole('dialog', { name: '違反の内訳' })).toBeInTheDocument();
+    expect(screen.getByText(/NG設定違反/)).toBeInTheDocument();
   });
 });

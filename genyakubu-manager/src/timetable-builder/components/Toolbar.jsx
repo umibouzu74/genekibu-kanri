@@ -73,6 +73,14 @@ export default function Toolbar({
       firstKey: violations.teacherConflict.firstKey,
     });
   }
+  if (violations.teacherNgAssigned?.count > 0) {
+    popoverRows.push({
+      kind: 'teacherNgAssigned',
+      label: 'NG設定違反 (後付けNG)',
+      count: violations.teacherNgAssigned.count,
+      firstKey: violations.teacherNgAssigned.firstKey,
+    });
+  }
   if (violations.subjectDup.count > 0) {
     popoverRows.push({
       kind: 'subjectDup',
@@ -96,6 +104,7 @@ export default function Toolbar({
   // infeasItems が全て 0) の場合は popover を開かず即スクロールする (旧挙動互換)。
   const isOnlyTeacherConflict =
     violations.teacherConflict.count > 0 &&
+    (violations.teacherNgAssigned?.count || 0) === 0 &&
     violations.subjectDup.count === 0 &&
     violations.subjectOver.count === 0 &&
     teacherOverItems.length === 0 &&
@@ -138,7 +147,7 @@ export default function Toolbar({
               <div
                 role="dialog"
                 aria-label="違反の内訳"
-                className="absolute z-30 top-full left-0 mt-1 w-72 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+                className="absolute z-50 top-full left-0 mt-1 w-72 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
               >
                 <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
                 <ul className="space-y-1.5 text-xs">
