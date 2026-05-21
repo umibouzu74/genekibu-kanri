@@ -9,6 +9,13 @@ export function gradeToDept(grade) {
 
 export const isKameiRoom = (room) => room?.startsWith("亀");
 
+// 休講の subjKeywords マッチ用に slot.subj / keyword を正規化する。
+// HolidayManager は表示用に "・" を除いて "古文・漢文" と "古文漢文" を
+// 同じ選択肢に畳む。マッチ側も同じ正規化を適用しないと、保存された
+// キーワード "古文漢文" がスロット "古文・漢文" にヒットしない。
+export const normalizeSubjForMatch = (s) =>
+  typeof s === "string" ? s.replace(/・/g, "").trim() : "";
+
 export function sortSlots(arr) {
   const idx = Object.fromEntries(DAYS.map((d, i) => [d, i]));
   return [...arr].sort((a, b) => {
@@ -38,7 +45,8 @@ export function isSlotCancelledByHoliday(slot, dateStr, holidays) {
     const sk = h.subjKeywords || [];
     if (sk.length > 0) {
       if (!slot.subj) return false;
-      if (!sk.some((kw) => slot.subj.includes(kw))) return false;
+      const subjNorm = normalizeSubjForMatch(slot.subj);
+      if (!sk.some((kw) => subjNorm.includes(normalizeSubjForMatch(kw)))) return false;
     }
     return true;
   });

@@ -118,6 +118,66 @@ describe("isSlotOffOnDate", () => {
         )
       ).toBe(false);
     });
+
+    // HolidayManager は表示用に "・" を除いて選択肢を畳むため、保存される
+    // キーワードは正規化済み ("古文漢文")。slot.subj 側が "古文・漢文" だと
+    // 素朴な .includes() ではマッチしないので、マッチ側も同じ正規化を行う。
+    it('subjKeywords=["古文漢文"] + subj="古文・漢文" → off (・ 正規化)', () => {
+      const holidays = [
+        {
+          date: "2026-05-21",
+          scope: ["高校部"],
+          targetGrades: ["高2"],
+          subjKeywords: ["古文漢文"],
+        },
+      ];
+      expect(
+        isSlotOffOnDate(
+          { ...baseSlot, grade: "高2", subj: "古文・漢文" },
+          "2026-05-21",
+          holidays,
+          []
+        )
+      ).toBe(true);
+    });
+
+    it('subjKeywords=["古文・漢文"] + subj="古文漢文" → off (逆方向の ・ 正規化)', () => {
+      const holidays = [
+        {
+          date: "2026-05-21",
+          scope: ["高校部"],
+          targetGrades: ["高2"],
+          subjKeywords: ["古文・漢文"],
+        },
+      ];
+      expect(
+        isSlotOffOnDate(
+          { ...baseSlot, grade: "高2", subj: "古文漢文" },
+          "2026-05-21",
+          holidays,
+          []
+        )
+      ).toBe(true);
+    });
+
+    it('subjKeywords=["古文漢文"] + subj="古文漢文" → off (従来挙動を維持)', () => {
+      const holidays = [
+        {
+          date: "2026-05-21",
+          scope: ["高校部"],
+          targetGrades: ["高2"],
+          subjKeywords: ["古文漢文"],
+        },
+      ];
+      expect(
+        isSlotOffOnDate(
+          { ...baseSlot, grade: "高2", subj: "古文漢文" },
+          "2026-05-21",
+          holidays,
+          []
+        )
+      ).toBe(true);
+    });
   });
 
   describe("日付不一致", () => {

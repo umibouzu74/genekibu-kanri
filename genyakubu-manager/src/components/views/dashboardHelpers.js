@@ -1,4 +1,5 @@
 import { fmtDate, gradeToDept, WEEKDAYS } from "../../data";
+import { normalizeSubjForMatch } from "../../utils/scheduleHelpers";
 
 // Parse a "YYYY-MM-DD" string into a local Date. Avoids timezone drift that
 // `new Date("YYYY-MM-DD")` can introduce (UTC parsing).
@@ -65,10 +66,14 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
       if (tg.length > 0 && !tg.includes(grade)) return false;
 
       // 3. Subject keyword check
+      // HolidayManager の表示側は "・" を除いて選択肢を畳む (古文・漢文/
+      // 古文漢文 を 1 つに) ため、マッチ側も同じ正規化を適用する。
+      // scheduleHelpers.isSlotCancelledByHoliday と挙動を揃える。
       const sk = h.subjKeywords || [];
       if (sk.length > 0) {
         if (!subj) return false;
-        if (!sk.some((kw) => subj.includes(kw))) return false;
+        const subjNorm = normalizeSubjForMatch(subj);
+        if (!sk.some((kw) => subjNorm.includes(normalizeSubjForMatch(kw)))) return false;
       }
       return true;
     });
