@@ -186,6 +186,57 @@ describe('projectReducer — 講師管理', () => {
     expect(projectReducer(state, { type: 'teacher/add', payload: { name: '' } })).toBe(state);
   });
 
+  it('teacher/add: 既存と同名は no-op (silent data 混線を防ぐ)', () => {
+    const state = makeState({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
+    });
+    const next = projectReducer(state, { type: 'teacher/add', payload: { name: '堀上' } });
+    expect(next).toBe(state);
+  });
+
+  it('teacher/rename: 別の講師と同名になるリネームは no-op', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    const next = projectReducer(state, { type: 'teacher/rename', payload: { idx: 0, newName: '田中' } });
+    expect(next).toBe(state);
+  });
+
+  it('teacher/rename: idx 不正は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/rename', payload: { idx: -1, newName: 'X' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/rename', payload: { idx: 999, newName: 'X' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/rename', payload: { idx: undefined, newName: 'X' } })).toBe(state);
+  });
+
+  it('teacher/toggleNg: idx 不正は no-op (undefined / 範囲外)', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/toggleNg', payload: { idx: undefined, date: 'd', period: 'p' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/toggleNg', payload: { idx: -1, date: 'd', period: 'p' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/toggleNg', payload: { idx: 999, date: 'd', period: 'p' } })).toBe(state);
+  });
+
+  it('teacher/toggleSubject: idx 不正は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/toggleSubject', payload: { idx: undefined, subject: '英語' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/toggleSubject', payload: { idx: 999, subject: '英語' } })).toBe(state);
+  });
+
+  it('teacher/toggleClassPriority: idx 不正は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/toggleClassPriority', payload: { idx: undefined, className: '３S' } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/toggleClassPriority', payload: { idx: 999, className: '３S' } })).toBe(state);
+  });
+
+  it('teacher/remove: idx 不正は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/remove', payload: { idx: undefined } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/remove', payload: { idx: 999 } })).toBe(state);
+  });
+
   it('teacher/import (append): 既存に追加、同名は subjects のみ上書きしつつ ng/priority は維持', () => {
     const state = makeState({
       teachers: [

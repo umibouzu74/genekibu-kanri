@@ -186,7 +186,7 @@ export default function TeacherManager() {
           </thead>
           <tbody>
             {teacherGroups.map(group => (
-              <Fragment key={group.label}>
+              <Fragment key={group.key}>
                 <tr className="bg-builder-bg">
                   <td colSpan={3} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
                     ━━ {group.label} ({group.teachers.length})
@@ -194,8 +194,12 @@ export default function TeacherManager() {
                 </tr>
                 {group.teachers.map(t => {
                   const i = teacherIdxByName.get(t.name);
+                  // key は teacher.name でなく i (project.teachers index) を
+                  // 使う: InlineNameEdit が編集中に外部要因で t.name が
+                  // 変わると t.name キーでは remount されて draft 文字列が
+                  // 失われる (code-review P2)。i は rename で変わらないので安定。
                   return (
-                    <tr key={t.name} className="border-b border-builder-border bg-builder-surface last:border-0">
+                    <tr key={i} className="border-b border-builder-border bg-builder-surface last:border-0">
                       <td className="p-2 font-bold text-builder-ink">
                         <InlineNameEdit value={t.name} onSave={(newName) => renameTeacher(i, newName)} />
                       </td>

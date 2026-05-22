@@ -224,7 +224,7 @@ export default function ExternalCounts() {
           </thead>
           <tbody>
             {teacherGroups.map(group => (
-              <Fragment key={group.label}>
+              <Fragment key={group.key}>
                 <tr className="bg-builder-bg">
                   <td
                     colSpan={1 + currentConfig.dates.length}
@@ -313,18 +313,23 @@ export default function ExternalCounts() {
           </div>
           <div className="flex flex-col gap-2">
             {teacherGroups.map(group => {
-              // 各グループ内で「グループ全選択 / 全解除」を出す。
+              // 表示用 allSelected はレンダー時の formTeacherNames から計算
+              // (ボタンラベル切り替え用)。実際の add/delete 判定は setState
+              // updater 内で prev から再計算する — レンダー時 snapshot を
+              // closure 経由で使うと、連打 / バッチ更新時に分岐が stale に
+              // なって追加と削除が逆転する (code-review P3)。
               const allSelected = group.teachers.every(t => formTeacherNames.has(t.name));
               const toggleGroup = () => {
                 setFormTeacherNames(prev => {
+                  const isAll = group.teachers.every(t => prev.has(t.name));
                   const next = new Set(prev);
-                  if (allSelected) group.teachers.forEach(t => next.delete(t.name));
+                  if (isAll) group.teachers.forEach(t => next.delete(t.name));
                   else group.teachers.forEach(t => next.add(t.name));
                   return next;
                 });
               };
               return (
-                <div key={group.label}>
+                <div key={group.key}>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[11px] font-bold text-builder-ink-muted">━ {group.label} ({group.teachers.length})</span>
                     <button

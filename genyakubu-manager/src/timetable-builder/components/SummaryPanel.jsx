@@ -11,15 +11,20 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   // totals に存在しない (= 0 コマ) 講師は省く。
   const teachersWithCount = (teachers || []).filter(t => t.name !== '未定' && (totals[t.name] || 0) > 0);
   const groups = groupTeachersBySubject(teachersWithCount, subjects);
+  // 削除済み等の orphan (totals にはあるが project.teachers に存在しない名前)
+  // を明示的に拾って警告グループとして表示する (code-review P3 — diff 前は
+  // Object.entries(totals) で自動的に列挙されていたので、その feedback を維持)。
+  const knownNames = new Set((teachers || []).map(t => t.name));
+  const orphanNames = Object.keys(totals).filter(n => !knownNames.has(n) && (totals[n] || 0) > 0);
   return (
     <div className="bg-builder-surface p-4 border border-builder-border rounded">
       <h3 className="font-bold mb-2 text-builder-ink">📊 この案の集計</h3>
       <div className="flex flex-col gap-1">
         {groups.map(group => (
-          <Fragment key={group.label}>
+          <Fragment key={group.key}>
             <div className="text-[11px] font-bold text-builder-ink-muted">━ {group.label}</div>
             <div className="flex flex-wrap gap-1.5 mb-1">
-              {group.teachers
+              {[...group.teachers]
                 .sort((a, b) => (totals[b.name] || 0) - (totals[a.name] || 0))
                 .map(t => (
                   <span key={t.name} className="bg-builder-info-soft text-builder-ink px-2 rounded text-sm">
@@ -29,6 +34,18 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
             </div>
           </Fragment>
         ))}
+        {orphanNames.length > 0 && (
+          <>
+            <div className="text-[11px] font-bold text-builder-red">⚠️ 不明な講師 (講師マスタに存在しない名前)</div>
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {orphanNames.map(n => (
+                <span key={n} className="bg-builder-danger-soft text-builder-red border border-builder-danger-border px-2 rounded text-sm">
+                  {n}:{totals[n]}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -64,7 +81,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   }).filter(x => x.total > 0);
                   if (entries.length === 0) return null;
                   return (
-                    <Fragment key={group.label}>
+                    <Fragment key={group.key}>
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
                       <div className="flex flex-wrap gap-2">
                         {entries.map(({ t, total }) => (

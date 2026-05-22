@@ -129,21 +129,26 @@ export function CompareView({ slots, partTimeStaff = [], subjects = [] }) {
           </div>
         )}
 
-        {/* 講師候補リスト (教科ごとにグループ表示) */}
+        {/* 講師候補リスト (教科ごとにグループ表示)。
+            グループが 1 つだけのときは見出しを省略して flat 表示 (1 教科
+            しか出ない検索結果でヘッダが空間を無駄にするのを防ぐ — code-review P3)。
+            maxHeight は折りたたみ全体が見えやすいよう 280 に拡張。 */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             gap: 4,
-            maxHeight: 200,
+            maxHeight: 280,
             overflowY: "auto",
           }}
         >
           {teacherGroups.map((group) => (
             <Fragment key={group.key}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#666", marginTop: 2 }}>
-                ━ {group.label}
-              </div>
+              {teacherGroups.length > 1 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#666", marginTop: 2 }}>
+                  ━ {group.label}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                 {group.teachers.map((t) => {
                   const isSelected = selectedTeachers.includes(t);

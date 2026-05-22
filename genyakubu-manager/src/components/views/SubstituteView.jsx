@@ -271,7 +271,7 @@ export function SubstituteView({
           isAdmin={isAdmin}
           slots={slots}
           partTimeStaff={partTimeStaff}
-          subjects={subjects || []}
+          subjects={subjects}
           onEdit={onEdit}
           onDel={onDel}
         />
@@ -283,7 +283,7 @@ export function SubstituteView({
           slots={slots}
           isAdmin={isAdmin}
           partTimeStaff={partTimeStaff}
-          subjects={subjects || []}
+          subjects={subjects}
           onDel={handleDelAdjustment}
           onJumpToDate={onJumpToAbsenceFlow}
         />
@@ -295,7 +295,7 @@ export function SubstituteView({
           slots={slots}
           isAdmin={isAdmin}
           partTimeStaff={partTimeStaff}
-          subjects={subjects || []}
+          subjects={subjects}
           onDel={onDelSessionOverride}
           onJumpToDate={onJumpToAbsenceFlow}
         />

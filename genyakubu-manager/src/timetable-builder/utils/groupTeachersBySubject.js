@@ -5,25 +5,52 @@
 // 入力:
 //   teachers: Array<{ name, subjects: string[], ... }>
 //   subjectOrder: string[]  表示順序の基準 (通常 project.subjects)
+//   options.flattenIntoSingleSubject?: string
+//     非 null の場合、teachers を「指定 subject の単一グループ」として返す。
+//     ScheduleCell が `entry.subject` で filter 済みの講師を表示する時に使う:
+//     『filter 済み = 全員その subject を教えられる』が前提なので '複数教科'
+//     グループに分離せず 1 まとまりで見せる方が UX 上自然。
 //
-// 戻り値: Array<{ label, teachers }>
+// 戻り値: Array<{ key, label, teachers }>
 //   - 単一教科担当: 当該教科グループに分類
 //   - 複数教科担当: 「複数教科」グループに分類 (重複表示しない)
 //   - 担当無し: 「その他」グループに分類
 //   - subjectOrder で指定した順 → それ以外の教科 → 複数教科 → その他 の順
 //   - 空のグループは省く
 //   - teachers の順序は入力配列の元の順 (= 安定ソート)
+//   - key は React の `key` prop 用 (label と異なり sentinel: ユーザが
+//     subject 名を '複数教科' / 'その他' にしてもキー衝突しない)。
+export const MULTI_SUBJECT_GROUP_KEY = '__multi__';
 export const MULTI_SUBJECT_GROUP_LABEL = '複数教科';
+export const OTHER_GROUP_KEY = '__other__';
 export const OTHER_GROUP_LABEL = 'その他';
 
-export function groupTeachersBySubject(teachers, subjectOrder) {
+// subject 名から React key を作る。ユーザ定義 subject の key は 'subj:<name>'
+// の prefix で sentinel と衝突しないようにする。
+const subjectKey = (s) => `subj:${s}`;
+
+export function groupTeachersBySubject(teachers, subjectOrder, options = {}) {
+  // flattenIntoSingleSubject: filtered ScheduleCell 用の bypass モード。
+  // 渡された subject の単一グループに集約する。
+  if (options.flattenIntoSingleSubject) {
+    const flat = (teachers || []).filter(Boolean);
+    if (flat.length === 0) return [];
+    return [{
+      key: subjectKey(options.flattenIntoSingleSubject),
+      label: options.flattenIntoSingleSubject,
+      teachers: flat,
+    }];
+  }
+
   const order = Array.isArray(subjectOrder) ? subjectOrder : [];
   const bySubject = new Map();
   const multi = [];
   const none = [];
 
   for (const t of teachers || []) {
-    const subjects = (t?.subjects || []).filter(Boolean);
+    // 同一 subject の重複 (['英語','英語']) は dedupe してから length 判定
+    // (data 入力ミス / migration 由来の重複を『複数教科』に誤分類するのを防止)
+    const subjects = Array.from(new Set((t?.subjects || []).filter(Boolean)));
     if (subjects.length === 0) {
       none.push(t);
     } else if (subjects.length === 1) {
@@ -39,12 +66,18 @@ export function groupTeachersBySubject(teachers, subjectOrder) {
   // 順序: subjectOrder の指定順 → それ以外の教科 → 複数教科 → その他
   for (const s of order) {
     const arr = bySubject.get(s);
-    if (arr && arr.length) groups.push({ label: s, teachers: arr });
+    if (arr && arr.length) groups.push({ key: subjectKey(s), label: s, teachers: arr });
   }
   for (const [s, arr] of bySubject) {
-    if (!order.includes(s) && arr.length) groups.push({ label: s, teachers: arr });
+    if (!order.includes(s) && arr.length) {
+      groups.push({ key: subjectKey(s), label: s, teachers: arr });
+    }
   }
-  if (multi.length) groups.push({ label: MULTI_SUBJECT_GROUP_LABEL, teachers: multi });
-  if (none.length) groups.push({ label: OTHER_GROUP_LABEL, teachers: none });
+  if (multi.length) {
+    groups.push({ key: MULTI_SUBJECT_GROUP_KEY, label: MULTI_SUBJECT_GROUP_LABEL, teachers: multi });
+  }
+  if (none.length) {
+    groups.push({ key: OTHER_GROUP_KEY, label: OTHER_GROUP_LABEL, teachers: none });
+  }
   return groups;
 }

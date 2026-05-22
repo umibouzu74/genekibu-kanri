@@ -36,7 +36,7 @@ export default function ClassPriority() {
         </thead>
         <tbody>
           {teacherGroups.map(group => (
-            <Fragment key={group.label}>
+            <Fragment key={group.key}>
               <tr className="bg-builder-bg">
                 <td
                   colSpan={1 + currentConfig.classes.length}

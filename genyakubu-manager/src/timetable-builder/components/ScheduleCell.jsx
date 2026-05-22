@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
@@ -17,23 +18,41 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const dateEnt = findEntityById(currentConfig.dates, dateId);
   const periodEnt = findEntityById(currentConfig.periods, periodId);
   const classEnt = findEntityById(currentConfig.classes, classId);
+
+  const key = makeKey(dateId, periodId, classId);
+  const entry = currentSchedule[key] || {};
+
+  // 教科ごとに optgroup でドロップダウンを分類する。
+  // useMemo は早期 return (dateEnt 等が null) の前に呼ぶ必要があるため、
+  // ここで先に計算する (rules-of-hooks)。
+  // subject 選択済み: 全候補が当該 subject を教えられる前提なので
+  //   flatten モードで「<optgroup label=英語>...全員...</optgroup>」の単一
+  //   グループに集約する (複数教科担当の '未定' を '複数教科' グループに
+  //   逃さないため — code-review P2)。
+  // subject 未選択: 通常の教科別分類で全講師を見せる。
+  // filter は useMemo 内で実行 (毎回新しい配列リテラルになって memo が
+  // 効かないのを防ぐ — code-review P2)。
+  const teacherGroups = useMemo(() => {
+    const candidates = entry.subject
+      ? project.teachers.filter(t => t.subjects.includes(entry.subject))
+      : project.teachers;
+    return groupTeachersBySubject(
+      candidates,
+      project.subjects,
+      entry.subject ? { flattenIntoSingleSubject: entry.subject } : undefined,
+    );
+  }, [project.teachers, project.subjects, entry.subject]);
+
   if (!dateEnt || !periodEnt || !classEnt) return null;
   const dLabel = dateEnt.label;
   const pLabel = periodEnt.label;
   const cLabel = classEnt.label;
 
-  const key = makeKey(dateId, periodId, classId);
-  const entry = currentSchedule[key] || {};
   const isLocked = entry.locked;
   const isConflict = analysis.conflictMap[`${dLabel}-${pLabel}-${entry.teacher}`];
   const order = analysis.subjectOrders[key] || 0;
   const maxCnt = currentConfig.subjectCounts[entry.subject] || 0;
   const isOver = maxCnt > 0 && order > maxCnt;
-  const filteredTeachers = entry.subject ? project.teachers.filter(t => t.subjects.includes(entry.subject)) : project.teachers;
-  // 教科ごとに optgroup でドロップダウンを分類する。
-  // subject が選択されているとき (filtered) も含めて、常にグループ表示で
-  // 一貫性を保つ。
-  const teacherGroups = groupTeachersBySubject(filteredTeachers, project.subjects);
 
   const subjDupKey = `c${classId}-d${dateId}-${entry.subject}`;
   const isSubjDup = analysis.dailySubjectMap[subjDupKey] > 1;
@@ -146,7 +165,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
         >
           <option value="">-</option>
           {teacherGroups.map(group => (
-            <optgroup key={group.label} label={group.label}>
+            <optgroup key={group.key} label={group.label}>
               {group.teachers.map(t => {
                 const dayKey = makeExternalKey(dLabel, t.name);
                 const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };

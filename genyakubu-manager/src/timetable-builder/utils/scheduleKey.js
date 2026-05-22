@@ -266,5 +266,42 @@ export function migrateProject(project) {
     result = { ...result, externalSessionPresets: [] };
   }
 
+  // 同名講師がいる場合は " (2)" / " (3)" の suffix を付けて自動で uniq 化する。
+  // teacher.name は NG / 優先度 / 他学年セッション等の参照キーになるため、
+  // 重複したまま load すると UI で『どちらの行を操作しているか分からない』
+  // 状態になる (code-review P1)。古い projects に対する idempotent な migration。
+  if (Array.isArray(result.teachers)) {
+    const deduped = dedupeTeacherNames(result.teachers);
+    if (deduped !== result.teachers) {
+      result = { ...result, teachers: deduped };
+    }
+  }
+
   return result;
+}
+
+// 配列内の同名講師に suffix を振って衝突を解消する純粋関数。
+// 戻り値が === で元と等しいなら変更無し (no-op)。
+export function dedupeTeacherNames(teachers) {
+  if (!Array.isArray(teachers)) return teachers;
+  const seen = new Set();
+  let changed = false;
+  const result = teachers.map(t => {
+    if (!t?.name) return t;
+    if (!seen.has(t.name)) {
+      seen.add(t.name);
+      return t;
+    }
+    // 2 件目以降は " (2)" / " (3)" の suffix を試して空きを探す
+    changed = true;
+    let suffix = 2;
+    let newName;
+    do {
+      newName = `${t.name} (${suffix})`;
+      suffix++;
+    } while (seen.has(newName));
+    seen.add(newName);
+    return { ...t, name: newName };
+  });
+  return changed ? result : teachers;
 }

@@ -158,7 +158,7 @@ export default function NgSettings() {
               <option value="">(選択してください)</option>
               <option value={ALL_TEACHERS}>すべての講師</option>
               {teacherGroups.map(group => (
-                <optgroup key={group.label} label={group.label}>
+                <optgroup key={group.key} label={group.label}>
                   {group.teachers.map(t => (
                     <option key={t.name} value={t.name}>{t.name}</option>
                   ))}
@@ -284,7 +284,7 @@ export default function NgSettings() {
                     </thead>
                     <tbody>
                       {teacherGroups.map(group => (
-                        <Fragment key={group.label}>
+                        <Fragment key={group.key}>
                           <tr className="bg-builder-bg">
                             <td
                               colSpan={1 + currentConfig.periods.length}

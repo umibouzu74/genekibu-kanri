@@ -303,6 +303,10 @@ function applyAction(project, action) {
     case 'teacher/add': {
       const { name } = action.payload;
       if (!name) return project;
+      // 同名講師は許可しない。許すと NG / クラス優先度 / 他学年セッション
+      // 等が teacher.name で参照されるため UI 上どちらの行を操作している
+      // のか区別できず silent data 混線を生む (code-review P1)。
+      if (project.teachers.some(t => t.name === name)) return project;
       return {
         ...project,
         teachers: [
@@ -363,6 +367,7 @@ function applyAction(project, action) {
     }
     case 'teacher/remove': {
       const { idx } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const targetName = project.teachers[idx].name;
       const newTeachers = project.teachers.filter((_, i) => i !== idx);
       const newTabs = project.tabs.map(tab => {
@@ -382,8 +387,12 @@ function applyAction(project, action) {
     case 'teacher/rename': {
       const { idx, newName } = action.payload;
       if (!newName) return project;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const oldName = project.teachers[idx].name;
       if (oldName === newName) return project;
+      // 別の講師と同名になるリネームは reject (同名チェックは teacher/add と
+      // 同じ理由: silent data 混線を防ぐ)
+      if (project.teachers.some((t, i) => i !== idx && t.name === newName)) return project;
       const newTeachers = project.teachers.map((t, i) => i === idx ? { ...t, name: newName } : t);
       const newTabs = project.tabs.map(tab => {
         const newSch = {};
@@ -406,6 +415,7 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleSubject': {
       const { idx, subject } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       if (t.subjects.includes(subject)) t.subjects = t.subjects.filter(s => s !== subject);
@@ -415,6 +425,11 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleNg': {
       const { idx, date, period } = action.payload;
+      // idx 不正 (undefined / 範囲外) は no-op。UI 側の teacherIdxByName 解決が
+      // 失敗した場合に reducer まで届くので、ここで防衛しておくと
+      // 'newTeachers[undefined] = t' で arrays が文字列キーで汚染される
+      // 事故を防げる (code-review P3)。
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       const k = makeNgKey(date, period);
@@ -451,6 +466,7 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       if (!t.ngClasses) t.ngClasses = [];

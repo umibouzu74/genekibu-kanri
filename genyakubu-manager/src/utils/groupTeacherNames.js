@@ -25,23 +25,40 @@ export const STAFF_GROUP_KEY = "__staff__";
 export const OTHER_GROUP_KEY = "__other__";
 export const STAFF_GROUP_LABEL = "バイト";
 export const OTHER_GROUP_LABEL = "その他";
-const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
+// subjectOrder 未指定時のフォールバック (builder の project.subjects が
+// 渡されていれば groupTeacherNames はそちらの順を尊重する)
+const DEFAULT_SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
 
 // 教員名 → primary 教科 (name | null) の Map を構築する純粋関数。
 // 「バイト」判定は別途 partTimeStaff 名簿で行う (この関数は subject のみ)。
 export function buildTeacherPrimarySubjectMap(slots, subjects) {
+  // substring matching は『長い名前優先』にしておくと、短い subject 名
+  // ('A' など) が長い subject 名 ('A英語特訓' の中の '英語') を hijack する
+  // のを防げる (code-review P4)。aliases も同じく長い順に並べ替えてから
+  // 評価する。
+  const byNameLongFirst = [...(subjects || [])].sort(
+    (a, b) => (b?.name?.length || 0) - (a?.name?.length || 0),
+  );
   const matchSubject = (subjStr) => {
     if (!subjStr) return null;
     const exact = subjects.find((s) => s.name === subjStr);
     if (exact) return exact;
-    const byName = subjects.find((s) => subjStr.includes(s.name));
+    const byName = byNameLongFirst.find((s) => s?.name && subjStr.includes(s.name));
     if (byName) return byName;
-    const byAlias = subjects.find(
-      (s) =>
-        Array.isArray(s.aliases) &&
-        s.aliases.some((a) => a && subjStr.includes(a))
-    );
-    return byAlias || null;
+    // alias も長い順に評価
+    let bestAliasSubject = null;
+    let bestAliasLen = 0;
+    for (const s of subjects || []) {
+      if (!Array.isArray(s.aliases)) continue;
+      for (const a of s.aliases) {
+        if (!a) continue;
+        if (subjStr.includes(a) && a.length > bestAliasLen) {
+          bestAliasSubject = s;
+          bestAliasLen = a.length;
+        }
+      }
+    }
+    return bestAliasSubject;
   };
 
   const counts = new Map(); // teacher → Map<subjectName, count>
@@ -73,9 +90,21 @@ export function buildTeacherPrimarySubjectMap(slots, subjects) {
 
 // 「給与済み」「バイト」「教科別」「その他」に分類して返す。
 // useTeacherGroups の戻り値と同形式 (key/label/teachers)。
-export function groupTeacherNames(names, { slots, partTimeStaff, subjects }) {
+// subjectOrder: 任意の string[]。指定があればその順で教科グループを並べ、
+//   無指定なら DEFAULT_SUBJECT_ORDER (英→数→国→理→社) を使う。
+//   builder で project.subjects を渡せば、ユーザのリオーダ操作が
+//   本体側 (CompareView 等) の表示順にも反映される (code-review P3)。
+export function groupTeacherNames(names, { slots, partTimeStaff, subjects, subjectOrder }) {
   const staffNameSet = new Set((partTimeStaff || []).map((s) => s.name));
   const primary = buildTeacherPrimarySubjectMap(slots || [], subjects || []);
+  // subject 並び順の決定: 引数 subjectOrder > subjects[].name 配列 >
+  // ハードコード DEFAULT_SUBJECT_ORDER。
+  // 本体側の subjects は { id, name, ... } の object 配列なので name を抽出。
+  const order = (Array.isArray(subjectOrder) && subjectOrder.length > 0)
+    ? subjectOrder
+    : (Array.isArray(subjects) && subjects.length > 0
+        ? subjects.map(s => s?.name).filter(Boolean)
+        : DEFAULT_SUBJECT_ORDER);
 
   const staffGroup = [];
   const bySubject = new Map();
@@ -105,13 +134,13 @@ export function groupTeacherNames(names, { slots, partTimeStaff, subjects }) {
   if (staffGroup.length) {
     groups.push({ key: STAFF_GROUP_KEY, label: STAFF_GROUP_LABEL, teachers: staffGroup });
   }
-  for (const name of SUBJECT_ORDER) {
+  for (const name of order) {
     const arr = bySubject.get(name);
-    if (arr && arr.length) groups.push({ key: name, label: name, teachers: arr });
+    if (arr && arr.length) groups.push({ key: `subj:${name}`, label: name, teachers: arr });
   }
   for (const [name, arr] of bySubject) {
-    if (!SUBJECT_ORDER.includes(name) && arr.length) {
-      groups.push({ key: name, label: name, teachers: arr });
+    if (!order.includes(name) && arr.length) {
+      groups.push({ key: `subj:${name}`, label: name, teachers: arr });
     }
   }
   if (other.length) {
