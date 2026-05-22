@@ -381,6 +381,42 @@ describe('migrateProject', () => {
     expect(result.externalSessions[0].id).toBe(1);
   });
 
+  it('externalSessionPresets が未設定なら空配列で補完', () => {
+    const result = migrateProject(makeLegacyProject());
+    expect(result.externalSessionPresets).toEqual([]);
+  });
+
+  it('externalSessionPresets が既にあれば上書きしない', () => {
+    const p = makeLegacyProject();
+    p.externalSessionPresets = [{ id: 1, name: '予備校（早朝）', startTime: '12:25', endTime: '13:35' }];
+    const result = migrateProject(p);
+    expect(result.externalSessionPresets).toHaveLength(1);
+    expect(result.externalSessionPresets[0].name).toBe('予備校（早朝）');
+  });
+
+  it('講師名の重複は migration で " (2)" / " (3)" の suffix を付けて uniq 化', () => {
+    const p = makeLegacyProject();
+    p.teachers = [
+      { name: '堀上', subjects: ['英語'] },
+      { name: '堀上', subjects: ['数学'] },
+      { name: '堀上', subjects: ['国語'] },
+      { name: '田中', subjects: ['英語'] },
+    ];
+    const result = migrateProject(p);
+    expect(result.teachers.map(t => t.name)).toEqual(['堀上', '堀上 (2)', '堀上 (3)', '田中']);
+  });
+
+  it('重複が無い teachers 配列は migration で参照そのまま (no-op)', () => {
+    const p = makeLegacyProject();
+    p.teachers = [
+      { name: '堀上', subjects: ['英語'] },
+      { name: '田中', subjects: ['数学'] },
+    ];
+    const before = p.teachers;
+    const result = migrateProject(p);
+    expect(result.teachers).toBe(before);
+  });
+
   it('v2 プロジェクトは v3 へだけマイグレーションされる', () => {
     const v2 = {
       version: 2,

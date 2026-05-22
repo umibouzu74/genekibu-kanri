@@ -2,6 +2,114 @@
 
 ## [Unreleased]
 
+### Fixed (講師グループ表示のコードレビュー指摘 P1-P4 を一括対応)
+コードレビューで判明したバグを修正。
+
+P1 (silent data corruption):
+- **同名講師の禁止**: `teacher/add` / `teacher/rename` で名前重複を no-op に。
+  以前は重複を許容していたため、teacherIdxByName Map の last-write-wins で
+  『見ている行と書き込まれる行がズレる』状況が NgSettings / TeacherManager /
+  ClassPriority で発生していた。`<tr key={t.name}>` もキー衝突を起こしていた。
+- **既存重複への migration**: `migrateProject` 時に重複名を " (2)" / " (3)"
+  suffix で uniq 化。古いプロジェクトを開いても自動的に修復される
+  (`utils/scheduleKey.js#dedupeTeacherNames`)。
+- **reducer 側の idx 検証**: `teacher/toggleNg` / `teacher/toggleSubject` /
+  `teacher/toggleClassPriority` / `teacher/remove` / `teacher/rename` で
+  `idx` の範囲チェックを追加。undefined や範囲外を no-op にし、
+  `newTeachers[undefined]` で配列が文字列キーで汚染される事故を防ぐ。
+- **group.key の sentinel 化**: `groupTeachersBySubject` の戻り値に `key` を
+  追加 (`subj:<name>` / `__multi__` / `__other__`)。ユーザが教科名に
+  '複数教科' や 'その他' を入れても React のキー衝突が起きない。全 6 consumer
+  を `key={group.key}` に統一。
+
+P2 (実バグ):
+- **ScheduleCell の '複数教科' 罠**: subject 選択済み時は flatten モードで
+  単一 optgroup に集約。未定など多教科担当が '複数教科' に分離される問題を
+  解消 (新オプション `flattenIntoSingleSubject`)。
+- **ScheduleCell の useMemo 漏れ**: `groupTeachersBySubject` を useMemo で
+  包み、grid 内のすべての cell で毎レンダー再計算されていた問題を解消。
+- **SummaryPanel の in-place sort**: `[...group.teachers].sort(...)` で
+  groupTeachersBySubject の戻り配列を破壊しないように。
+- **TeacherManager の InlineNameEdit unmount**: `<tr key>` を `t.name` から
+  index `i` に戻し、外部リネーム中のドラフト消失を防止。
+
+P3 (一貫性 / 設計):
+- **subjectOrder 連携**: `groupTeacherNames` (本体側) が `subjects[].name`
+  または明示の `subjectOrder` を尊重するように。ユーザが builder で
+  リオーダした教科順が本体側 (CompareView / Sub・Adjustment・OverrideListTab)
+  にも反映される。
+- **CompareView 単一グループ時の flat 表示**: グループが 1 つだけのとき
+  ヘッダ行を省略、`maxHeight` を 200 → 280 に拡張。
+- **orphan 講師の警告再表示**: SummaryTable で project.teachers に存在しない
+  名前を ⚠️ 不明な講師 ブロックで表示 (diff 前の自動 chip 化 feedback を維持)。
+- **`subjects || []` フォールバック撤去**: SubstituteView で `subjects` を
+  そのまま透過。子側のデフォルト引数で吸収する形にして、毎レンダーの
+  新規 array literal による useMemo 無効化を防止。
+
+P4 (低優先):
+- **substring matching の長い順優先**: 短い subject 名 ('A' など) が
+  長い名 ('英語' を含む '英語特訓') を hijack しないように、subjects と
+  aliases ともに長い順に評価する。
+- **per-group toggle の stale 解消**: ExternalCounts の『このグループを
+  選択/解除』ボタン押下で `allSelected` を setState updater 内で再計算。
+- **teacher.subjects 重複の dedupe**: `['英語','英語']` のような corruption
+  data を Set で正規化してから length 判定 — '複数教科' 誤分類を防止。
+
+Tests: +16 件 (reducer 8 / migration 2 / groupTeachersBySubject 3 /
+groupTeacherNames 3)。全体 1181 件、lint 0 / typecheck 0 / build OK。
+
+### Changed (講師一覧を教科ごとにグループ表示 — アプリ全体)
+- すべての講師リスト・ドロップダウン・チェックボックス一覧を
+  「教科 (英語 / 数学 / 国語 / 理科 / 社会) ごと → 複数教科 → その他」の
+  グループ見出し付きで表示するよう統一。
+- 講師ビルダー側 (project.teachers ベース) で新ユーティリティ
+  `utils/groupTeachersBySubject` を導入。単一教科講師は当該グループ、
+  複数教科担当 (未定など) は「複数教科」グループに 1 度だけ表示、担当無しは
+  「その他」。
+- 影響を受けた builder 側コンポーネント (計 6):
+  - ExternalCounts: クイック入力グリッド (teacher rows) と
+    複数講師チェックボックス一覧。各グループ単位の「グループ全選択 / 解除」
+    ボタンも追加して複数人登録をさらに高速化
+  - NgSettings: 日付ごとの NG テーブル (teacher rows) と一括設定の講師
+    select (optgroup 化)
+  - TeacherManager: 講師マスタ管理表 (rename / 削除 / 科目編集)
+  - ClassPriority: クラス優先度設定テーブル
+  - ScheduleCell: コマセルの講師ドロップダウン (optgroup 化)
+  - SummaryPanel: 講師別コマ数の集計 (showSummary パネル + 自動生成案の
+    集計表) を教科グループ見出し付きで表示
+- 本体側 (slots ベース) では既存の `useTeacherGroups` のコアロジックを
+  純粋関数 `utils/groupTeacherNames` に切り出し、任意の name 配列を
+  「バイト → 英数国理社 → その他」にグループ化できるように。
+- 影響を受けた本体側コンポーネント (計 4):
+  - CompareView: 講師候補チップ一覧をグループ見出し付きで縦並びに
+  - SubListTab / AdjustmentListTab / OverrideListTab: 講師フィルタ
+    `<select>` を `<optgroup>` 化 (代行/調整/補正一覧)
+- Tests: 19 件追加 (groupTeachersBySubject 9 / groupTeacherNames 10)。
+  全体 1165 件、lint 0 / typecheck 0 / build OK。
+
+### Added (他学年セッションのプリセット + 複数講師の一括登録)
+- 「📅 他学年・午前」タブにプリセット管理パネル (折りたたみ) を追加。
+  「予備校（早朝）= 12:25-13:35, 7/24~7/31, メモ"予備校"」のような
+  時刻・期間・メモの組み合わせを保存し、詳細セッション登録フォームから
+  1 クリックで時刻/期間/メモを展開できる。
+- 詳細セッション登録フォームの講師欄を単一 `<select>` から **チェックボックス
+  一覧** に変更し、複数講師を 1 クリックずつ選択可能。「全選択 / 全解除」
+  ショートカット付き。
+- 「まとめて追加」が M 人 × N 日 を 1 アクション (teacher/addExternalSessions
+  既存 batch) で atomic に登録。プレビューも「M 名 × N 日 = K 件」と
+  「→ 自動NG (M × N_overlap) 件」を表示。
+- データ: project に `externalSessionPresets: Preset[]` を追加。
+  `Preset = { id, name, startTime?, endTime?, startDateLabel?, endDateLabel?, memo? }`。
+  既存プロジェクトは migrate 時に空配列で補完。
+- 新 reducer actions: `preset/add` / `preset/update` / `preset/remove`。
+  空文字フィールドは保存しない、startTime が無い場合は endTime も連動 drop、
+  name 必須など defense-in-depth な検証を備える。
+- 日付ラベル変更 (`schedule/renameHeader` 'date') 時に
+  `externalSessions[].date` と `externalSessionPresets[].startDateLabel /
+  endDateLabel` を cascade 更新 (孤児化防止)。
+- Tests: 13 件追加 (reducer 11: preset add/update/remove + cascade,
+  scheduleKey 2: migration)。全体 1146 件、lint 0 / typecheck 0 / build OK。
+
 ### Added (他学年セッション → 日時NG の自動派生)
 - 「📅 他学年・午前」タブで時刻入りセッション (例: 12:25-13:35) を登録すると、
   その時間帯と重なる時限が「🚫 日時NG」タブで自動的にNG扱いになる。

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { makeNgKey } from '../../utils/scheduleKey';
+import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 
 const ALL_TEACHERS = '__all__';
 
@@ -79,6 +80,19 @@ export default function NgSettings() {
     ngCountByDate[d.id] = count;
   });
 
+  // 教科ごとにグループ化した講師一覧 (各日付テーブルで共有)。
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects],
+  );
+  // toggleTeacherNg 用に teacher.name → idx の lookup を事前構築
+  // (グループ化で .map の idx を直接使えなくなるため)。
+  const teacherIdxByName = useMemo(() => {
+    const map = new Map();
+    project.teachers.forEach((t, i) => map.set(t.name, i));
+    return map;
+  }, [project.teachers]);
+
   // ── 範囲指定一括設定: 計算ヘルパ ─────────────────────────
   const selectedTeacherIdxs = (() => {
     if (bulkTeacher === ALL_TEACHERS) return project.teachers.map((_, i) => i);
@@ -143,8 +157,12 @@ export default function NgSettings() {
             >
               <option value="">(選択してください)</option>
               <option value={ALL_TEACHERS}>すべての講師</option>
-              {project.teachers.map(t => (
-                <option key={t.name} value={t.name}>{t.name}</option>
+              {teacherGroups.map(group => (
+                <optgroup key={group.key} label={group.label}>
+                  {group.teachers.map(t => (
+                    <option key={t.name} value={t.name}>{t.name}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
@@ -265,53 +283,63 @@ export default function NgSettings() {
                       </tr>
                     </thead>
                     <tbody>
-                      {project.teachers.map((t, idx) => {
-                        const autoEntries = autoNgByTeacher?.get(t.name);
-                        return (
-                          <tr key={t.name}>
-                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
-                            {currentConfig.periods.map(p => {
-                              const k = makeNgKey(d.label, p.label);
-                              const isManualNg = t.ngSlots?.includes(k);
-                              const autoEntry = autoEntries?.get(k);
-                              const isAutoNg = !!autoEntry;
-                              // 表示の優先順位: 手動NG (赤) > 自動NG (灰) > OK (白)
-                              const cellClass = isManualNg
-                                ? 'bg-builder-red text-white font-bold'
-                                : isAutoNg
-                                  ? 'bg-builder-border text-builder-ink-muted italic'
-                                  : 'bg-builder-surface';
-                              const tooltipParts = [];
-                              if (isManualNg) tooltipParts.push('手動NG');
-                              if (isAutoNg) {
-                                // 外側の teacher 変数 `t` を上書きしないよう
-                                // `timeText` 名で受ける (将来 tooltip に teacher.name を
-                                // 足したくなった時に shadow で silently 壊れるのを防ぐ)。
-                                const memos = autoEntry.sessions
-                                  .map(s => {
-                                    const timeText = s.startTime
-                                      ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
-                                      : (s.label || '');
-                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
-                                  })
-                                  .filter(Boolean)
-                                  .join(', ');
-                                tooltipParts.push(`自動NG (他学年: ${memos})`);
-                              }
-                              return (
-                                <td
-                                  key={p.id}
-                                  onClick={() => toggleTeacherNg(idx, d.label, p.label)}
-                                  title={tooltipParts.join(' / ') || undefined}
-                                  className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${cellClass}`}
-                                >
-                                  {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
-                                </td>
-                              );
-                            })}
+                      {teacherGroups.map(group => (
+                        <Fragment key={group.key}>
+                          <tr className="bg-builder-bg">
+                            <td
+                              colSpan={1 + currentConfig.periods.length}
+                              className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted sticky left-0 z-10"
+                            >
+                              ━━ {group.label} ━━
+                            </td>
                           </tr>
-                        );
-                      })}
+                          {group.teachers.map(t => {
+                            const idx = teacherIdxByName.get(t.name);
+                            const autoEntries = autoNgByTeacher?.get(t.name);
+                            return (
+                              <tr key={t.name}>
+                                <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                                {currentConfig.periods.map(p => {
+                                  const k = makeNgKey(d.label, p.label);
+                                  const isManualNg = t.ngSlots?.includes(k);
+                                  const autoEntry = autoEntries?.get(k);
+                                  const isAutoNg = !!autoEntry;
+                                  // 表示の優先順位: 手動NG (赤) > 自動NG (灰) > OK (白)
+                                  const cellClass = isManualNg
+                                    ? 'bg-builder-red text-white font-bold'
+                                    : isAutoNg
+                                      ? 'bg-builder-border text-builder-ink-muted italic'
+                                      : 'bg-builder-surface';
+                                  const tooltipParts = [];
+                                  if (isManualNg) tooltipParts.push('手動NG');
+                                  if (isAutoNg) {
+                                    const memos = autoEntry.sessions
+                                      .map(s => {
+                                        const timeText = s.startTime
+                                          ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+                                          : (s.label || '');
+                                        return s.memo ? `${s.memo} (${timeText})` : timeText;
+                                      })
+                                      .filter(Boolean)
+                                      .join(', ');
+                                    tooltipParts.push(`自動NG (他学年: ${memos})`);
+                                  }
+                                  return (
+                                    <td
+                                      key={p.id}
+                                      onClick={() => toggleTeacherNg(idx, d.label, p.label)}
+                                      title={tooltipParts.join(' / ') || undefined}
+                                      className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${cellClass}`}
+                                    >
+                                      {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
                     </tbody>
                   </table>
                 </div>

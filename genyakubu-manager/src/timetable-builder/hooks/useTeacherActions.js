@@ -30,5 +30,12 @@ export function useTeacherActions(dispatch) {
       dispatch({ type: 'teacher/addExternalSessions', payload: { items } }),
     removeExternalSession: (id) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
+    // 他学年セッション登録プリセット (時刻 / 期間 / メモ の頻出パターン)
+    addExternalSessionPreset: (preset) =>
+      dispatch({ type: 'preset/add', payload: preset }),
+    updateExternalSessionPreset: (id, updates) =>
+      dispatch({ type: 'preset/update', payload: { id, updates } }),
+    removeExternalSessionPreset: (id) =>
+      dispatch({ type: 'preset/remove', payload: { id } }),
   }), [dispatch]);
 }

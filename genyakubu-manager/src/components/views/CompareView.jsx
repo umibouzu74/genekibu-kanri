@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   DAY_BG as DB,
   DAY_COLOR as DC,
@@ -9,10 +9,11 @@ import {
 import { S } from "../../styles/common";
 import { sortJa } from "../../utils/sortJa";
 import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
+import { groupTeacherNames } from "../../utils/groupTeacherNames";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
-export function CompareView({ slots }) {
+export function CompareView({ slots, partTimeStaff = [], subjects = [] }) {
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [searchInput, setSearchInput] = useState("");
 
@@ -30,6 +31,11 @@ export function CompareView({ slots }) {
         ? allTeachers.filter((t) => t.includes(searchInput))
         : allTeachers,
     [allTeachers, searchInput]
+  );
+  // 教科ごとにグループ化したチップ一覧 (バイト → 英数国理社 → その他)
+  const teacherGroups = useMemo(
+    () => groupTeacherNames(filteredTeachers, { slots, partTimeStaff, subjects }),
+    [filteredTeachers, slots, partTimeStaff, subjects],
   );
 
   const toggleTeacher = (t) => {
@@ -123,47 +129,61 @@ export function CompareView({ slots }) {
           </div>
         )}
 
-        {/* 講師候補リスト */}
+        {/* 講師候補リスト (教科ごとにグループ表示)。
+            グループが 1 つだけのときは見出しを省略して flat 表示 (1 教科
+            しか出ない検索結果でヘッダが空間を無駄にするのを防ぐ — code-review P3)。
+            maxHeight は折りたたみ全体が見えやすいよう 280 に拡張。 */}
         <div
           style={{
             display: "flex",
+            flexDirection: "column",
             gap: 4,
-            flexWrap: "wrap",
-            maxHeight: 120,
+            maxHeight: 280,
             overflowY: "auto",
           }}
         >
-          {filteredTeachers.map((t) => {
-            const isSelected = selectedTeachers.includes(t);
-            const idx = selectedTeachers.indexOf(t);
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => toggleTeacher(t)}
-                disabled={!isSelected && selectedTeachers.length >= 4}
-                style={{
-                  padding: "3px 8px",
-                  borderRadius: 4,
-                  border: isSelected
-                    ? `2px solid ${TEACHER_COLORS[idx]}`
-                    : "1px solid #ddd",
-                  background: isSelected ? TEACHER_COLORS[idx] + "18" : "#fff",
-                  color: isSelected ? TEACHER_COLORS[idx] : "#555",
-                  fontSize: 11,
-                  fontWeight: isSelected ? 700 : 400,
-                  cursor:
-                    !isSelected && selectedTeachers.length >= 4
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity:
-                    !isSelected && selectedTeachers.length >= 4 ? 0.4 : 1,
-                }}
-              >
-                {t}
-              </button>
-            );
-          })}
+          {teacherGroups.map((group) => (
+            <Fragment key={group.key}>
+              {teacherGroups.length > 1 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#666", marginTop: 2 }}>
+                  ━ {group.label}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {group.teachers.map((t) => {
+                  const isSelected = selectedTeachers.includes(t);
+                  const idx = selectedTeachers.indexOf(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTeacher(t)}
+                      disabled={!isSelected && selectedTeachers.length >= 4}
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: 4,
+                        border: isSelected
+                          ? `2px solid ${TEACHER_COLORS[idx]}`
+                          : "1px solid #ddd",
+                        background: isSelected ? TEACHER_COLORS[idx] + "18" : "#fff",
+                        color: isSelected ? TEACHER_COLORS[idx] : "#555",
+                        fontSize: 11,
+                        fontWeight: isSelected ? 700 : 400,
+                        cursor:
+                          !isSelected && selectedTeachers.length >= 4
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          !isSelected && selectedTeachers.length >= 4 ? 0.4 : 1,
+                      }}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </Fragment>
+          ))}
         </div>
       </div>
 

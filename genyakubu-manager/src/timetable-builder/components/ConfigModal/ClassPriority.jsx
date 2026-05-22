@@ -1,4 +1,6 @@
+import { Fragment, useMemo } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 
 export default function ClassPriority() {
   const {
@@ -6,6 +8,16 @@ export default function ClassPriority() {
     currentConfig,
     toggleTeacherClassPriority,
   } = useProjectContext();
+
+  const teacherIdxByName = useMemo(() => {
+    const m = new Map();
+    project.teachers.forEach((t, i) => m.set(t.name, i));
+    return m;
+  }, [project.teachers]);
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects],
+  );
 
   return (
     <div className="overflow-x-auto">
@@ -23,23 +35,38 @@ export default function ClassPriority() {
           </tr>
         </thead>
         <tbody>
-          {project.teachers.map((t, idx) => (
-            <tr key={t.name}>
-              <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
-              {currentConfig.classes.map(c => {
-                const isNg = t.ngClasses?.includes(c.label);
-                const isPri = t.priorityClasses?.includes(c.label);
+          {teacherGroups.map(group => (
+            <Fragment key={group.key}>
+              <tr className="bg-builder-bg">
+                <td
+                  colSpan={1 + currentConfig.classes.length}
+                  className="border border-builder-border px-2 py-1 text-[11px] font-bold text-builder-ink-muted sticky left-0 z-10"
+                >
+                  ━━ {group.label} ━━
+                </td>
+              </tr>
+              {group.teachers.map(t => {
+                const idx = teacherIdxByName.get(t.name);
                 return (
-                  <td
-                    key={c.id}
-                    onClick={() => toggleTeacherClassPriority(idx, c.label)}
-                    className={`border border-builder-border p-2 text-center cursor-pointer transition-colors hover:opacity-80 ${isPri ? "bg-builder-blue text-white font-bold" : (isNg ? "bg-builder-red text-white font-bold" : "bg-builder-surface text-builder-ink-muted")}`}
-                  >
-                    {isPri ? "優先" : (isNg ? "NG" : "-")}
-                  </td>
+                  <tr key={t.name}>
+                    <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                    {currentConfig.classes.map(c => {
+                      const isNg = t.ngClasses?.includes(c.label);
+                      const isPri = t.priorityClasses?.includes(c.label);
+                      return (
+                        <td
+                          key={c.id}
+                          onClick={() => toggleTeacherClassPriority(idx, c.label)}
+                          className={`border border-builder-border p-2 text-center cursor-pointer transition-colors hover:opacity-80 ${isPri ? "bg-builder-blue text-white font-bold" : (isNg ? "bg-builder-red text-white font-bold" : "bg-builder-surface text-builder-ink-muted")}`}
+                        >
+                          {isPri ? "優先" : (isNg ? "NG" : "-")}
+                        </td>
+                      );
+                    })}
+                  </tr>
                 );
               })}
-            </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>

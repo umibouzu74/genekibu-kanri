@@ -303,6 +303,10 @@ function applyAction(project, action) {
     case 'teacher/add': {
       const { name } = action.payload;
       if (!name) return project;
+      // 同名講師は許可しない。許すと NG / クラス優先度 / 他学年セッション
+      // 等が teacher.name で参照されるため UI 上どちらの行を操作している
+      // のか区別できず silent data 混線を生む (code-review P1)。
+      if (project.teachers.some(t => t.name === name)) return project;
       return {
         ...project,
         teachers: [
@@ -363,6 +367,7 @@ function applyAction(project, action) {
     }
     case 'teacher/remove': {
       const { idx } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const targetName = project.teachers[idx].name;
       const newTeachers = project.teachers.filter((_, i) => i !== idx);
       const newTabs = project.tabs.map(tab => {
@@ -382,8 +387,12 @@ function applyAction(project, action) {
     case 'teacher/rename': {
       const { idx, newName } = action.payload;
       if (!newName) return project;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const oldName = project.teachers[idx].name;
       if (oldName === newName) return project;
+      // 別の講師と同名になるリネームは reject (同名チェックは teacher/add と
+      // 同じ理由: silent data 混線を防ぐ)
+      if (project.teachers.some((t, i) => i !== idx && t.name === newName)) return project;
       const newTeachers = project.teachers.map((t, i) => i === idx ? { ...t, name: newName } : t);
       const newTabs = project.tabs.map(tab => {
         const newSch = {};
@@ -406,6 +415,7 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleSubject': {
       const { idx, subject } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       if (t.subjects.includes(subject)) t.subjects = t.subjects.filter(s => s !== subject);
@@ -415,6 +425,11 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleNg': {
       const { idx, date, period } = action.payload;
+      // idx 不正 (undefined / 範囲外) は no-op。UI 側の teacherIdxByName 解決が
+      // 失敗した場合に reducer まで届くので、ここで防衛しておくと
+      // 'newTeachers[undefined] = t' で arrays が文字列キーで汚染される
+      // 事故を防げる (code-review P3)。
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       const k = makeNgKey(date, period);
@@ -451,6 +466,7 @@ function applyAction(project, action) {
     }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
       const newTeachers = [...project.teachers];
       const t = { ...newTeachers[idx] };
       if (!t.ngClasses) t.ngClasses = [];
@@ -519,6 +535,58 @@ function applyAction(project, action) {
       const filtered = sessions.filter(s => s.id !== id);
       if (filtered.length === sessions.length) return project;
       return { ...project, externalSessions: filtered };
+    }
+
+    // ─── 他学年セッションプリセット ─────────
+    // 「予備校 12:25-13:35 を 7/24~7/31」のような頻出パターンを保存し、
+    // 詳細セッション登録フォームから 1 クリックで呼び出せるようにする。
+    // payload で受け取る fields は全て optional (id/name 以外)。空文字は省く。
+    case 'preset/add': {
+      const { name, startTime, endTime, startDateLabel, endDateLabel, memo } = action.payload;
+      if (!name) return project;
+      const presets = project.externalSessionPresets || [];
+      const newId = presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+      const newPreset = { id: newId, name };
+      if (startTime) newPreset.startTime = startTime;
+      if (startTime && endTime) newPreset.endTime = endTime;
+      if (startDateLabel) newPreset.startDateLabel = startDateLabel;
+      if (endDateLabel) newPreset.endDateLabel = endDateLabel;
+      if (memo) newPreset.memo = memo;
+      return { ...project, externalSessionPresets: [...presets, newPreset] };
+    }
+    case 'preset/update': {
+      const { id, updates } = action.payload;
+      const presets = project.externalSessionPresets || [];
+      const target = presets.find(p => p.id === id);
+      if (!target) return project;
+      // updates のフィールドは空文字なら削除、値があれば上書き。
+      // startTime が落ちる場合は endTime も落とす (orphan endTime 防止)。
+      const merged = { ...target };
+      const writeOrDelete = (key, val) => {
+        if (val == null || val === '') delete merged[key];
+        else merged[key] = val;
+      };
+      if ('name' in updates) {
+        if (!updates.name) return project; // name は必須なので空は no-op
+        merged.name = updates.name;
+      }
+      if ('startTime' in updates) writeOrDelete('startTime', updates.startTime);
+      if ('endTime' in updates) writeOrDelete('endTime', updates.endTime);
+      if ('startDateLabel' in updates) writeOrDelete('startDateLabel', updates.startDateLabel);
+      if ('endDateLabel' in updates) writeOrDelete('endDateLabel', updates.endDateLabel);
+      if ('memo' in updates) writeOrDelete('memo', updates.memo);
+      if (!merged.startTime) delete merged.endTime;
+      return {
+        ...project,
+        externalSessionPresets: presets.map(p => p.id === id ? merged : p),
+      };
+    }
+    case 'preset/remove': {
+      const { id } = action.payload;
+      const presets = project.externalSessionPresets || [];
+      const filtered = presets.filter(p => p.id !== id);
+      if (filtered.length === presets.length) return project;
+      return { ...project, externalSessionPresets: filtered };
     }
 
     // ─── セル操作 ────────────────────────
@@ -650,6 +718,8 @@ function applyAction(project, action) {
       let newTeachers = project.teachers;
       let newExternal = project.externalCounts;
       let newCombined = project.combinedGroups;
+      let newSessions = project.externalSessions;
+      let newPresets = project.externalSessionPresets;
 
       if (type === 'date' || type === 'period') {
         // NG slot のキーを書き換え
@@ -671,6 +741,17 @@ function applyAction(project, action) {
       if (type === 'date') {
         newExternal = renameExternalCountsDateLabel(project.externalCounts, oldVal, newVal);
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'dates', oldVal, newVal);
+        // externalSessions の date と externalSessionPresets の
+        // startDateLabel / endDateLabel もラベル基準なので追従させる。
+        newSessions = (project.externalSessions || []).map(s =>
+          s.date === oldVal ? { ...s, date: newVal } : s
+        );
+        newPresets = (project.externalSessionPresets || []).map(p => {
+          let q = p;
+          if (q.startDateLabel === oldVal) q = { ...q, startDateLabel: newVal };
+          if (q.endDateLabel === oldVal) q = { ...q, endDateLabel: newVal };
+          return q;
+        });
       } else if (type === 'class') {
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'classes', oldVal, newVal);
       }
@@ -681,6 +762,8 @@ function applyAction(project, action) {
         tabs: newTabs,
         teachers: newTeachers,
         externalCounts: newExternal,
+        externalSessions: newSessions,
+        externalSessionPresets: newPresets,
         combinedGroups: newCombined,
       };
     }
