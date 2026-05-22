@@ -1,0 +1,1016 @@
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useProjectContext } from '../../contexts/projectContextValue';
+import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
+import { computeAutoNgEntries } from '../../utils/autoNg';
+import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
+import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
+
+// 「📅 講師不在・NG」タブ。旧 'external' (他学年・午前) + 'ng' (日時NG) を統合。
+//
+// 上から下のレイアウト:
+//   1. プリセット管理 (折りたたみ)
+//   2. 統合一括登録フォーム
+//      - 「他学年セッション」「手動NG」の 2 モードをラジオで切替
+//      - 共通フィールド: 講師 (複数チェック) / 期間 (start-end date) / メモ
+//      - mode='external': 時刻 (start-end)、追加で自動NG派生もまとめて発火
+//      - mode='ng': 時限チェックボックス、「まとめてNG / 解除」2 アクション
+//   3. 日付ごとの折りたたみセクション (日付ヘッダを共有)
+//      - その日の他学年セッション一覧 (× で削除)
+//      - その日の NG マトリクス (講師×時限、教科グループ付き、自動NG は『自』)
+//   4. クイック数値入力グリッド (折りたたみ、最下部)
+export default function AbsenceNgPanel() {
+  const {
+    project,
+    currentConfig,
+    handleExternalCountChange,
+    addExternalSessions,
+    removeExternalSession,
+    addExternalSessionPreset,
+    updateExternalSessionPreset,
+    removeExternalSessionPreset,
+    toggleTeacherNg,
+    setNgBatch,
+    analysis,
+  } = useProjectContext();
+  const autoNgByTeacher = analysis?.autoNgByTeacher;
+
+  // ── 折りたたみ state ───────────────────────
+  const [expandedDates, setExpandedDates] = useState(() => {
+    const initial = {};
+    currentConfig.dates.forEach(d => { initial[d.id] = true; });
+    return initial;
+  });
+  const [quickGridExpanded, setQuickGridExpanded] = useState(false);
+
+  // ── unified bulk form state ───────────────
+  const [mode, setMode] = useState('external'); // 'external' | 'ng'
+  const [formTeacherNames, setFormTeacherNames] = useState(() => new Set());
+  const [formMemo, setFormMemo] = useState('');
+  // 他学年モード用 (時刻)
+  const [formStartTime, setFormStartTime] = useState('');
+  const [formEndTime, setFormEndTime] = useState('');
+  // NG モード用 (時限選択)
+  const [formPeriodIds, setFormPeriodIds] = useState(() => currentConfig.periods.map(p => p.id));
+  // 共通: 期間
+  const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? null);
+  const [formEndDateId, setFormEndDateId] = useState(
+    currentConfig.dates[currentConfig.dates.length - 1]?.id ?? currentConfig.dates[0]?.id ?? null,
+  );
+
+  // dates が変わって start/end が無効になったら再同期
+  useEffect(() => {
+    const ids = currentConfig.dates.map(d => d.id);
+    if (!ids.includes(formStartDateId)) setFormStartDateId(ids[0] ?? null);
+    if (!ids.includes(formEndDateId)) setFormEndDateId(ids[ids.length - 1] ?? null);
+  }, [currentConfig.dates, formStartDateId, formEndDateId]);
+  // periods が変わったら formPeriodIds を整合
+  useEffect(() => {
+    const validIds = new Set(currentConfig.periods.map(p => p.id));
+    setFormPeriodIds(prev => {
+      const filtered = prev.filter(id => validIds.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [currentConfig.periods]);
+  // teachers が変わったら選択も同期
+  useEffect(() => {
+    const names = new Set(project.teachers.map(t => t.name));
+    setFormTeacherNames(prev => {
+      const filtered = new Set(Array.from(prev).filter(n => names.has(n)));
+      return filtered.size === prev.size ? prev : filtered;
+    });
+  }, [project.teachers]);
+
+  const sessions = useMemo(
+    () => project.externalSessions || [],
+    [project.externalSessions],
+  );
+  const presets = useMemo(
+    () => project.externalSessionPresets || [],
+    [project.externalSessionPresets],
+  );
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects],
+  );
+  const teacherIdxByName = useMemo(() => {
+    const m = new Map();
+    project.teachers.forEach((t, i) => m.set(t.name, i));
+    return m;
+  }, [project.teachers]);
+
+  // 日付セクション表示用: (date, teacher) → sessions
+  const sessionsByDate = useMemo(() => {
+    const m = new Map();
+    sessions.forEach(s => {
+      if (!m.has(s.date)) m.set(s.date, []);
+      m.get(s.date).push(s);
+    });
+    return m;
+  }, [sessions]);
+  // (date, teacher) ごとのセッション件数 (クイックグリッド用)
+  const sessionCountMap = useMemo(() => {
+    const map = {};
+    sessions.forEach(s => {
+      const k = makeExternalKey(s.date, s.teacherName);
+      map[k] = (map[k] || 0) + 1;
+    });
+    return map;
+  }, [sessions]);
+
+  // 日付ヘッダの NG 件数 (手動 + 自動 両方)
+  const ngCountByDate = useMemo(() => {
+    const out = {};
+    currentConfig.dates.forEach(d => {
+      let count = 0;
+      project.teachers.forEach(t => {
+        const autoEntries = autoNgByTeacher?.get(t.name);
+        currentConfig.periods.forEach(p => {
+          const k = makeNgKey(d.label, p.label);
+          if (t.ngSlots?.includes(k) || autoEntries?.has(k)) count++;
+        });
+      });
+      out[d.id] = count;
+    });
+    return out;
+  }, [currentConfig.dates, currentConfig.periods, project.teachers, autoNgByTeacher]);
+
+  // 期間内の date ラベル配列
+  const dateLabelsInRange = useMemo(() => {
+    const sIdx = currentConfig.dates.findIndex(d => d.id === formStartDateId);
+    const eIdx = currentConfig.dates.findIndex(d => d.id === formEndDateId);
+    if (sIdx < 0 || eIdx < 0) return [];
+    const lo = Math.min(sIdx, eIdx);
+    const hi = Math.max(sIdx, eIdx);
+    return currentConfig.dates.slice(lo, hi + 1).map(d => d.label);
+  }, [currentConfig.dates, formStartDateId, formEndDateId]);
+
+  // 期間内の teacher idx 配列
+  const selectedTeacherIdxs = useMemo(() => {
+    return project.teachers
+      .map((t, i) => formTeacherNames.has(t.name) ? i : -1)
+      .filter(i => i >= 0);
+  }, [project.teachers, formTeacherNames]);
+
+  // 他学年モード: 時刻検証
+  const timeValidation = useMemo(() => {
+    if (mode !== 'external') return { error: null };
+    const startMin = formStartTime ? parseHHmm(formStartTime) : null;
+    const endMin = formEndTime ? parseHHmm(formEndTime) : null;
+    if (!formStartTime && formEndTime) return { error: '終了時刻だけでなく開始時刻も入力してください' };
+    if (formStartTime && startMin == null) return { error: '開始時刻が不正な形式です' };
+    if (formEndTime && endMin == null) return { error: '終了時刻が不正な形式です' };
+    if (startMin != null && endMin != null && startMin >= endMin) return { error: '開始時刻は終了時刻より前にしてください' };
+    return { error: null };
+  }, [mode, formStartTime, formEndTime]);
+
+  // 自動NG プレビュー (1 講師あたりの件数)
+  const previewPerTeacherNgCount = useMemo(() => {
+    if (mode !== 'external' || timeValidation.error) return 0;
+    if (!formStartTime || dateLabelsInRange.length === 0) return 0;
+    const fakeSessions = dateLabelsInRange.map((dl, idx) => ({
+      id: idx, date: dl, teacherName: '*',
+      startTime: formStartTime, endTime: formEndTime || undefined,
+    }));
+    return computeAutoNgEntries('*', fakeSessions, currentConfig.periods).size;
+  }, [mode, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods, timeValidation.error]);
+
+  // NG モード: 選択時限のラベル
+  const periodLabelsSelected = useMemo(
+    () => currentConfig.periods.filter(p => formPeriodIds.includes(p.id)).map(p => p.label),
+    [currentConfig.periods, formPeriodIds],
+  );
+
+  const canAddExternal =
+    mode === 'external' &&
+    formTeacherNames.size > 0 &&
+    dateLabelsInRange.length > 0 &&
+    timeValidation.error == null;
+  const canApplyNg =
+    mode === 'ng' &&
+    selectedTeacherIdxs.length > 0 &&
+    dateLabelsInRange.length > 0 &&
+    periodLabelsSelected.length > 0;
+
+  // ── teacher 選択ヘルパ ────────────────────
+  const toggleTeacher = (name) => {
+    setFormTeacherNames(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+  const selectAllTeachers = () => setFormTeacherNames(new Set(project.teachers.map(t => t.name)));
+  const clearAllTeachers = () => setFormTeacherNames(new Set());
+
+  // ── handleAdd (mode 別) ───────────────────
+  const handleAddExternal = () => {
+    if (!canAddExternal) return;
+    const selectedNames = Array.from(formTeacherNames);
+    const autoLabel = formStartTime
+      ? (formEndTime ? `${formStartTime}-${formEndTime}` : formStartTime)
+      : '';
+    const items = [];
+    for (const teacherName of selectedNames) {
+      for (const dl of dateLabelsInRange) {
+        items.push({
+          date: dl, teacherName, label: autoLabel, memo: formMemo.trim(),
+          startTime: formStartTime || undefined,
+          endTime: formEndTime || undefined,
+        });
+      }
+    }
+    addExternalSessions(items);
+    setFormStartTime('');
+    setFormEndTime('');
+    setFormMemo('');
+  };
+
+  const handleApplyNg = (value) => {
+    if (!canApplyNg) return;
+    setNgBatch(selectedTeacherIdxs, dateLabelsInRange, periodLabelsSelected, value);
+  };
+
+  // プリセット適用 (他学年モードでのみ有効)
+  const applyPreset = (presetId) => {
+    if (!presetId) return;
+    const p = presets.find(x => x.id === Number(presetId));
+    if (!p) return;
+    setMode('external');
+    if (p.startTime != null) setFormStartTime(p.startTime);
+    if (p.endTime != null) setFormEndTime(p.endTime);
+    if (p.memo != null) setFormMemo(p.memo);
+    if (p.startDateLabel) {
+      const d = currentConfig.dates.find(x => x.label === p.startDateLabel);
+      if (d) setFormStartDateId(d.id);
+    }
+    if (p.endDateLabel) {
+      const d = currentConfig.dates.find(x => x.label === p.endDateLabel);
+      if (d) setFormEndDateId(d.id);
+    }
+  };
+
+  // ── 折りたたみヘルパ ──────────────────────
+  const toggleDate = (id) => setExpandedDates(prev => ({ ...prev, [id]: !prev[id] }));
+  const expandAll = () => {
+    const all = {};
+    currentConfig.dates.forEach(d => { all[d.id] = true; });
+    setExpandedDates(all);
+  };
+  const collapseAll = () => {
+    const all = {};
+    currentConfig.dates.forEach(d => { all[d.id] = false; });
+    setExpandedDates(all);
+  };
+
+  // 時限の時刻読み取り可否 (注意書き用)
+  const periodHasTime = (p) => getPeriodTimeRange(p) != null;
+  const periodsMissingTime = currentConfig.periods.filter(p => !periodHasTime(p));
+
+  // ── render ────────────────────────────────
+  return (
+    <div>
+      <div className="bg-builder-info-soft p-3 mb-4 rounded text-sm text-builder-ink border border-builder-info-border">
+        <strong>講師不在 + NG 設定:</strong><br />
+        <strong>他学年セッション</strong> (予備校 / 高校等) を時刻付きで登録すると、
+        重複時限が自動でNG扱いになります。<br />
+        <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
+        どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
+      </div>
+
+      {/* プリセット管理 */}
+      <PresetPanel
+        presets={presets}
+        dates={currentConfig.dates}
+        addPreset={addExternalSessionPreset}
+        updatePreset={updateExternalSessionPreset}
+        removePreset={removeExternalSessionPreset}
+      />
+
+      {/* 統合一括登録フォーム */}
+      <div className="border border-builder-ink-ghost rounded p-3 bg-builder-surface-alt mb-4">
+        <div className="font-bold text-builder-ink mb-2">📝 まとめて登録</div>
+
+        {/* モード切替 */}
+        <div className="flex flex-wrap gap-2 mb-3" role="radiogroup" aria-label="登録モード">
+          <label className={`flex items-center gap-1 px-3 py-1 rounded cursor-pointer text-xs ${mode === 'external' ? 'bg-builder-info-soft border-2 border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border border-builder-ink-ghost text-builder-ink'}`}>
+            <input type="radio" name="absence-ng-mode" value="external" checked={mode === 'external'} onChange={() => setMode('external')} />
+            📅 他学年セッション (時刻あり)
+          </label>
+          <label className={`flex items-center gap-1 px-3 py-1 rounded cursor-pointer text-xs ${mode === 'ng' ? 'bg-builder-danger-soft border-2 border-builder-red text-builder-ink font-bold' : 'bg-builder-surface border border-builder-ink-ghost text-builder-ink'}`}>
+            <input type="radio" name="absence-ng-mode" value="ng" checked={mode === 'ng'} onChange={() => setMode('ng')} />
+            🚫 手動NG (時限指定)
+          </label>
+        </div>
+
+        {/* プリセット選択 (他学年モード時のみ表示) */}
+        {mode === 'external' && presets.length > 0 && (
+          <div className="mb-3 flex items-center gap-2 text-xs">
+            <span className="text-builder-ink-muted shrink-0">プリセット:</span>
+            <select
+              defaultValue=""
+              onChange={(e) => { applyPreset(e.target.value); e.target.value = ''; }}
+              className="flex-1 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              aria-label="プリセットを選んで時刻・期間・メモをフォームに展開"
+            >
+              <option value="">— プリセットを選んで適用 —</option>
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>{formatPresetSummary(p)}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 講師選択 (共通) */}
+        <div className="flex flex-col gap-1 mb-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-builder-ink-muted">講師 (複数選択可) — 選択 {formTeacherNames.size} 名</span>
+            <div className="flex gap-1">
+              <button type="button" onClick={selectAllTeachers}
+                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                全選択
+              </button>
+              <button type="button" onClick={clearAllTeachers}
+                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                全解除
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {teacherGroups.map(group => {
+              const allSelected = group.teachers.every(t => formTeacherNames.has(t.name));
+              const toggleGroup = () => {
+                setFormTeacherNames(prev => {
+                  const isAll = group.teachers.every(t => prev.has(t.name));
+                  const next = new Set(prev);
+                  if (isAll) group.teachers.forEach(t => next.delete(t.name));
+                  else group.teachers.forEach(t => next.add(t.name));
+                  return next;
+                });
+              };
+              return (
+                <div key={group.key}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-bold text-builder-ink-muted">━ {group.label} ({group.teachers.length})</span>
+                    <button
+                      type="button"
+                      onClick={toggleGroup}
+                      className="text-[10px] px-1.5 py-0 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink-muted"
+                    >
+                      {allSelected ? 'このグループを解除' : 'このグループを選択'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.teachers.map(t => {
+                      const checked = formTeacherNames.has(t.name);
+                      return (
+                        <label
+                          key={t.name}
+                          className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${checked ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleTeacher(t.name)}
+                            aria-label={`${t.name} を対象に含める`}
+                          />
+                          <span>{t.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 期間 (共通) */}
+        <div className="flex flex-col gap-1 text-xs mb-3 max-w-md">
+          <span className="text-builder-ink-muted">期間 (開始日〜終了日)</span>
+          <div className="flex items-center gap-1">
+            <select
+              value={formStartDateId ?? ''}
+              onChange={(e) => setFormStartDateId(Number(e.target.value))}
+              className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              aria-label="開始日"
+            >
+              {currentConfig.dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+            <span className="text-builder-ink-muted shrink-0">〜</span>
+            <select
+              value={formEndDateId ?? ''}
+              onChange={(e) => setFormEndDateId(Number(e.target.value))}
+              className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              aria-label="終了日"
+            >
+              {currentConfig.dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* mode 別: 時刻 OR 時限 */}
+        {mode === 'external' ? (
+          <>
+            <div className="flex flex-col gap-1 text-xs mb-2 max-w-md">
+              <span className="text-builder-ink-muted">時刻 (重複時限を自動NG)</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="time"
+                  value={formStartTime}
+                  onChange={(e) => setFormStartTime(e.target.value)}
+                  className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                  aria-label="開始時刻"
+                />
+                <span className="text-builder-ink-muted shrink-0">〜</span>
+                <input
+                  type="time"
+                  value={formEndTime}
+                  onChange={(e) => setFormEndTime(e.target.value)}
+                  className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                  aria-label="終了時刻"
+                />
+              </div>
+            </div>
+            <label className="flex flex-col gap-1 text-xs mb-3 max-w-md">
+              <span className="text-builder-ink-muted">メモ (任意)</span>
+              <input
+                type="text"
+                value={formMemo}
+                onChange={(e) => setFormMemo(e.target.value)}
+                placeholder="予備校 / 高2 英語 等"
+                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+              />
+            </label>
+          </>
+        ) : (
+          <div className="flex flex-col gap-1 text-xs mb-3">
+            <div className="flex items-center justify-between max-w-md">
+              <span className="text-builder-ink-muted">時限</span>
+              <div className="flex gap-1">
+                <button type="button" onClick={() => setFormPeriodIds(currentConfig.periods.map(p => p.id))}
+                  className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                  全選択
+                </button>
+                <button type="button" onClick={() => setFormPeriodIds([])}
+                  className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                  全解除
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {currentConfig.periods.map(p => (
+                <label key={p.id}
+                  className="flex items-center gap-1 px-2 py-1 border border-builder-ink-ghost rounded cursor-pointer bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                  <input
+                    type="checkbox"
+                    checked={formPeriodIds.includes(p.id)}
+                    onChange={() => setFormPeriodIds(prev =>
+                      prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id]
+                    )}
+                  />
+                  <span>{p.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* アクション + プレビュー */}
+        <div className="flex flex-wrap gap-2 items-center">
+          {mode === 'external' ? (
+            <button
+              type="button"
+              onClick={handleAddExternal}
+              disabled={!canAddExternal}
+              className="px-3 py-1 bg-builder-primary text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+            >
+              他学年セッションとして追加
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleApplyNg(true)}
+                disabled={!canApplyNg}
+                className="px-3 py-1 bg-builder-red text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+              >
+                まとめてNGにする
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyNg(false)}
+                disabled={!canApplyNg}
+                className="px-3 py-1 bg-builder-surface border border-builder-ink-ghost text-builder-ink rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-builder-bg"
+              >
+                まとめてOKに解除
+              </button>
+            </>
+          )}
+          {timeValidation.error && (
+            <span className="text-xs text-builder-red font-bold">⚠️ {timeValidation.error}</span>
+          )}
+          {mode === 'external' && canAddExternal && (
+            <span className="text-xs text-builder-ink-muted">
+              対象: {formTeacherNames.size}名 × {dateLabelsInRange.length}日 = {formTeacherNames.size * dateLabelsInRange.length} 件
+              {formStartTime && (
+                <>
+                  {' / '}
+                  {previewPerTeacherNgCount > 0
+                    ? <>→ 自動NG {formTeacherNames.size * previewPerTeacherNgCount} 件</>
+                    : <span className="text-builder-orange">→ 重複する時限なし</span>}
+                </>
+              )}
+            </span>
+          )}
+          {mode === 'ng' && canApplyNg && (
+            <span className="text-xs text-builder-ink-muted">
+              対象: {selectedTeacherIdxs.length}名 × {dateLabelsInRange.length}日 × {periodLabelsSelected.length}時限
+            </span>
+          )}
+        </div>
+
+        {mode === 'external' && periodsMissingTime.length > 0 && (
+          <div className="text-[11px] text-builder-orange mt-2">
+            ⚠️ 時刻が読み取れない時限: {periodsMissingTime.map(p => p.label).join(', ')}
+            {' '}(「1限 (13:00~13:45)」のように時刻を入れると自動NG対象に)
+          </div>
+        )}
+      </div>
+
+      {/* 日付ごとの折りたたみセクション */}
+      <div className="mb-2 flex justify-between items-center">
+        <div className="font-bold text-builder-ink text-sm">📅 日付ごとの設定</div>
+        <div className="flex gap-2">
+          <button onClick={expandAll} className="text-xs px-2 py-1 bg-builder-surface-alt border border-builder-border rounded hover:bg-builder-bg text-builder-ink">すべて展開</button>
+          <button onClick={collapseAll} className="text-xs px-2 py-1 bg-builder-surface-alt border border-builder-border rounded hover:bg-builder-bg text-builder-ink">すべて折りたたむ</button>
+        </div>
+      </div>
+      <div className="space-y-2 mb-4">
+        {currentConfig.dates.map(d => (
+          <DateSection
+            key={d.id}
+            date={d}
+            expanded={expandedDates[d.id] !== false}
+            onToggle={() => toggleDate(d.id)}
+            periods={currentConfig.periods}
+            teacherGroups={teacherGroups}
+            teacherIdxByName={teacherIdxByName}
+            autoNgByTeacher={autoNgByTeacher}
+            sessions={sessionsByDate.get(d.label) || []}
+            removeExternalSession={removeExternalSession}
+            toggleTeacherNg={toggleTeacherNg}
+            ngCount={ngCountByDate[d.id] || 0}
+          />
+        ))}
+      </div>
+
+      {/* クイック数値入力グリッド (折りたたみ・最下部) */}
+      <div className="border border-builder-ink-ghost rounded mb-4 bg-builder-surface-alt">
+        <button
+          type="button"
+          onClick={() => setQuickGridExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm font-bold text-left text-builder-ink hover:bg-builder-bg"
+        >
+          <span>
+            <span className="mr-1">{quickGridExpanded ? '▼' : '▶'}</span>
+            🧮 クイック数値入力 (他学年コマ数のみ)
+          </span>
+          <span className="text-xs text-builder-ink-muted font-normal">
+            時刻を伴わない『他学年でN コマ』だけの記録に。詳細セッションがあるセルは件数を表示
+          </span>
+        </button>
+        {quickGridExpanded && (
+          <div className="p-3 border-t border-builder-ink-ghost overflow-x-auto">
+            <div className="text-xs text-builder-ink-muted mb-2">
+              詳細セッション (時刻付き) を登録している場合はそちらが優先。ここでは数字だけの粗い管理に使います。
+            </div>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 text-builder-ink">講師名</th>
+                  {currentConfig.dates.map(d => <th key={d.id} className="border border-builder-border p-2 bg-builder-bg min-w-[60px] text-center text-builder-ink">{d.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {teacherGroups.map(group => (
+                  <Fragment key={group.key}>
+                    <tr className="bg-builder-bg">
+                      <td colSpan={1 + currentConfig.dates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10">
+                        ━━ {group.label} ━━
+                      </td>
+                    </tr>
+                    {group.teachers.map(t => (
+                      <tr key={t.name}>
+                        <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                        {currentConfig.dates.map(d => {
+                          const k = makeExternalKey(d.label, t.name);
+                          const sessionCnt = sessionCountMap[k];
+                          if (sessionCnt) {
+                            return (
+                              <td key={d.id} className="border border-builder-border p-2 text-center bg-builder-info-soft text-builder-ink"
+                                title="詳細セッション登録あり (上の日付別セクションで編集)">
+                                {sessionCnt}
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={d.id} className="border border-builder-border p-0">
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-full h-full p-2 text-center focus:bg-builder-info-soft focus:outline-none text-builder-ink"
+                                value={project.externalCounts?.[k] || ""}
+                                placeholder="-"
+                                onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 日付ごとのセクション ────────────────────
+// 1 日分の (a) 他学年セッション一覧 + (b) NG マトリクス (講師×時限) を表示。
+// expanded=false なら header だけ。
+function DateSection({
+  date, expanded, onToggle,
+  periods, teacherGroups, teacherIdxByName, autoNgByTeacher,
+  sessions, removeExternalSession,
+  toggleTeacherNg, ngCount,
+}) {
+  return (
+    <div className="border border-builder-border rounded overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2 bg-builder-surface-alt hover:bg-builder-bg text-sm font-bold text-left text-builder-ink"
+      >
+        <span>
+          <span className="mr-1">{expanded ? '▼' : '▶'}</span>
+          {date.label}
+        </span>
+        <span className="flex items-center gap-2 text-xs font-normal">
+          {sessions.length > 0 && (
+            <span className="bg-builder-info-soft text-builder-ink px-1.5 py-0.5 rounded">他学年 {sessions.length}件</span>
+          )}
+          {ngCount > 0 && (
+            <span className="bg-builder-red text-white px-1.5 py-0.5 rounded">NG {ngCount}件</span>
+          )}
+        </span>
+      </button>
+      {expanded && (
+        <div className="bg-builder-surface">
+          {/* 他学年セッション (この日) */}
+          <div className="px-3 py-2 border-b border-builder-border">
+            <div className="text-xs font-bold text-builder-ink-muted mb-1">
+              📅 他学年セッション ({sessions.length}件)
+            </div>
+            {sessions.length === 0 ? (
+              <div className="text-[11px] text-builder-ink-muted italic">
+                この日の他学年セッションはまだ登録されていません。上の『まとめて登録』からどうぞ。
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink text-left">講師</th>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions.map(s => {
+                      const timeText = s.startTime
+                        ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+                        : (s.label || '-');
+                      return (
+                        <tr key={s.id}>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">{s.teacherName}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo || '-'}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeExternalSession(s.id)}
+                              aria-label={`${s.date} ${s.teacherName} のセッションを削除`}
+                              className="text-builder-red hover:text-red-700 font-bold"
+                            >×</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* NG マトリクス (講師×時限) */}
+          <div className="px-3 py-2">
+            <div className="text-xs font-bold text-builder-ink-muted mb-1">
+              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=自動NG / 空=OK)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs whitespace-nowrap">
+                <thead>
+                  <tr>
+                    <th className="border border-builder-ink-ghost p-2 bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">講師名</th>
+                    {periods.map(p => (
+                      <th key={p.id} className="border border-builder-ink-ghost p-1 bg-builder-surface-alt font-normal min-w-[60px] text-center text-builder-ink">{p.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {teacherGroups.map(group => (
+                    <Fragment key={group.key}>
+                      <tr className="bg-builder-bg">
+                        <td
+                          colSpan={1 + periods.length}
+                          className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted sticky left-0 z-10"
+                        >
+                          ━━ {group.label} ━━
+                        </td>
+                      </tr>
+                      {group.teachers.map(t => {
+                        const idx = teacherIdxByName.get(t.name);
+                        const autoEntries = autoNgByTeacher?.get(t.name);
+                        return (
+                          <tr key={t.name}>
+                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                            {periods.map(p => {
+                              const k = makeNgKey(date.label, p.label);
+                              const isManualNg = t.ngSlots?.includes(k);
+                              const autoEntry = autoEntries?.get(k);
+                              const isAutoNg = !!autoEntry;
+                              const cellClass = isManualNg
+                                ? 'bg-builder-red text-white font-bold'
+                                : isAutoNg
+                                  ? 'bg-builder-border text-builder-ink-muted italic'
+                                  : 'bg-builder-surface';
+                              const tooltipParts = [];
+                              if (isManualNg) tooltipParts.push('手動NG');
+                              if (isAutoNg) {
+                                const memos = autoEntry.sessions
+                                  .map(s => {
+                                    const timeText = s.startTime
+                                      ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+                                      : (s.label || '');
+                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
+                                  })
+                                  .filter(Boolean)
+                                  .join(', ');
+                                tooltipParts.push(`自動NG (他学年: ${memos})`);
+                              }
+                              return (
+                                <td
+                                  key={p.id}
+                                  onClick={() => toggleTeacherNg(idx, date.label, p.label)}
+                                  title={tooltipParts.join(' / ') || undefined}
+                                  className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${cellClass}`}
+                                >
+                                  {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── プリセット管理 (折りたたみ式) ─────────────────
+// 旧 ExternalCounts.jsx 内の PresetPanel をそのまま流用。
+function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) {
+  const [expanded, setExpanded] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const blankDraft = () => ({
+    name: '', startTime: '', endTime: '',
+    startDateId: dates[0]?.id ?? null,
+    endDateId: dates[0]?.id ?? null,
+    memo: '',
+  });
+  const [draft, setDraft] = useState(blankDraft());
+
+  useEffect(() => {
+    const ids = dates.map(d => d.id);
+    setDraft(d => {
+      const startOk = ids.includes(d.startDateId);
+      const endOk = ids.includes(d.endDateId);
+      if (startOk && endOk) return d;
+      return {
+        ...d,
+        startDateId: startOk ? d.startDateId : (ids[0] ?? null),
+        endDateId: endOk ? d.endDateId : (ids[0] ?? null),
+      };
+    });
+  }, [dates]);
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setDraft({
+      name: p.name,
+      startTime: p.startTime || '',
+      endTime: p.endTime || '',
+      startDateId: dates.find(d => d.label === p.startDateLabel)?.id ?? (dates[0]?.id ?? null),
+      endDateId: dates.find(d => d.label === p.endDateLabel)?.id ?? (dates[0]?.id ?? null),
+      memo: p.memo || '',
+    });
+    setExpanded(true);
+  };
+  const cancelEdit = () => { setEditingId(null); setDraft(blankDraft()); };
+
+  const draftValidation = useMemo(() => {
+    if (!draft.name.trim()) return '名前を入力してください';
+    const sMin = draft.startTime ? parseHHmm(draft.startTime) : null;
+    const eMin = draft.endTime ? parseHHmm(draft.endTime) : null;
+    if (!draft.startTime && draft.endTime) return '終了時刻だけでなく開始時刻も入力してください';
+    if (draft.startTime && sMin == null) return '開始時刻が不正な形式です';
+    if (draft.endTime && eMin == null) return '終了時刻が不正な形式です';
+    if (sMin != null && eMin != null && sMin >= eMin) return '開始時刻は終了時刻より前にしてください';
+    return null;
+  }, [draft]);
+
+  const saveDraft = () => {
+    if (draftValidation) return;
+    const startDateLabel = dates.find(d => d.id === draft.startDateId)?.label;
+    const endDateLabel = dates.find(d => d.id === draft.endDateId)?.label;
+    const payload = {
+      name: draft.name.trim(),
+      startTime: draft.startTime || '',
+      endTime: draft.endTime || '',
+      startDateLabel: startDateLabel || '',
+      endDateLabel: endDateLabel || '',
+      memo: draft.memo.trim(),
+    };
+    if (editingId == null) addPreset(payload);
+    else updatePreset(editingId, payload);
+    cancelEdit();
+  };
+
+  return (
+    <div className="border border-builder-ink-ghost rounded mb-4 bg-builder-surface-alt">
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-sm font-bold text-left text-builder-ink hover:bg-builder-bg"
+      >
+        <span>
+          <span className="mr-1">{expanded ? '▼' : '▶'}</span>
+          📋 プリセット管理 ({presets.length})
+        </span>
+        <span className="text-xs text-builder-ink-muted font-normal">
+          頻出パターン (例: 予備校 12:25-13:35) を登録すると 1 クリックで展開できます
+        </span>
+      </button>
+      {expanded && (
+        <div className="p-3 border-t border-builder-ink-ghost">
+          {presets.length === 0 ? (
+            <div className="text-xs text-builder-ink-muted italic mb-3">
+              まだプリセットがありません。下のフォームから登録してください。
+            </div>
+          ) : (
+            <div className="overflow-x-auto mb-3">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink text-left">名前</th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">期間</th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {presets.map(p => (
+                    <tr key={p.id} className={editingId === p.id ? 'bg-builder-info-soft' : ''}>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">{p.name}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">
+                        {p.startTime ? (p.endTime ? `${p.startTime}〜${p.endTime}` : `${p.startTime}〜`) : '-'}
+                      </td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">
+                        {p.startDateLabel ? (p.endDateLabel && p.endDateLabel !== p.startDateLabel ? `${p.startDateLabel}〜${p.endDateLabel}` : p.startDateLabel) : '-'}
+                      </td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{p.memo || '-'}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center whitespace-nowrap">
+                        <button type="button" onClick={() => startEdit(p)}
+                          className="text-builder-blue hover:underline text-[11px] mr-2"
+                          aria-label={`${p.name} を編集`}>編集</button>
+                        <button type="button" onClick={() => removePreset(p.id)}
+                          className="text-builder-red hover:underline text-[11px]"
+                          aria-label={`${p.name} を削除`}>削除</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="bg-builder-surface border border-builder-ink-ghost rounded p-3">
+            <div className="font-bold text-builder-ink text-xs mb-2">
+              {editingId == null ? '新規プリセットを追加' : `プリセットを編集 (id ${editingId})`}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-builder-ink-muted">名前 *</span>
+                <input type="text" value={draft.name}
+                  onChange={(e) => setDraft(d => ({ ...d, name: e.target.value }))}
+                  placeholder="予備校（早朝）"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-builder-ink-muted">メモ (任意)</span>
+                <input type="text" value={draft.memo}
+                  onChange={(e) => setDraft(d => ({ ...d, memo: e.target.value }))}
+                  placeholder="予備校 / 高2 英語 等"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink" />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="text-builder-ink-muted">期間 (任意)</span>
+                <div className="flex items-center gap-1">
+                  <select value={draft.startDateId ?? ''}
+                    onChange={(e) => setDraft(d => ({ ...d, startDateId: Number(e.target.value) }))}
+                    className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                    aria-label="プリセット開始日">
+                    {dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                  <span className="text-builder-ink-muted shrink-0">〜</span>
+                  <select value={draft.endDateId ?? ''}
+                    onChange={(e) => setDraft(d => ({ ...d, endDateId: Number(e.target.value) }))}
+                    className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                    aria-label="プリセット終了日">
+                    {dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="text-builder-ink-muted">時刻 (任意)</span>
+                <div className="flex items-center gap-1">
+                  <input type="time" value={draft.startTime}
+                    onChange={(e) => setDraft(d => ({ ...d, startTime: e.target.value }))}
+                    className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                    aria-label="プリセット開始時刻" />
+                  <span className="text-builder-ink-muted shrink-0">〜</span>
+                  <input type="time" value={draft.endTime}
+                    onChange={(e) => setDraft(d => ({ ...d, endTime: e.target.value }))}
+                    className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                    aria-label="プリセット終了時刻" />
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button type="button" onClick={saveDraft}
+                disabled={draftValidation != null}
+                className="px-3 py-1 bg-builder-primary text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90">
+                {editingId == null ? 'プリセットを追加' : '変更を保存'}
+              </button>
+              {editingId != null && (
+                <button type="button" onClick={cancelEdit}
+                  className="px-3 py-1 border border-builder-ink-ghost bg-builder-surface text-builder-ink rounded text-xs hover:bg-builder-bg">
+                  キャンセル
+                </button>
+              )}
+              {draftValidation && (
+                <span className="text-xs text-builder-red font-bold">⚠️ {draftValidation}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatPresetSummary(p) {
+  const parts = [p.name];
+  if (p.startTime) parts.push(p.endTime ? `${p.startTime}-${p.endTime}` : `${p.startTime}〜`);
+  if (p.startDateLabel) {
+    parts.push(
+      p.endDateLabel && p.endDateLabel !== p.startDateLabel
+        ? `${p.startDateLabel}〜${p.endDateLabel}`
+        : p.startDateLabel,
+    );
+  }
+  return parts.join(' / ');
+}

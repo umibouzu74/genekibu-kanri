@@ -4,8 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import BasicSettings from './BasicSettings';
 import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
-import ExternalCounts from './ExternalCounts';
-import NgSettings from './NgSettings';
+import AbsenceNgPanel from './AbsenceNgPanel';
 import SubjectColorSettings from './SubjectColorSettings';
 import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
@@ -62,8 +61,7 @@ export default function ConfigModal({ onClose }) {
             ['basic', '基本設定'],
             ['subjects', '📚 科目'],
             ['classes', '🏫 クラス優先度'],
-            ['external', '📅 他学年・午前'],
-            ['ng', '🚫 日時NG'],
+            ['absence-ng', '📅 講師不在・NG'],
             ['combined', '🔗 合同授業'],
             ['colors', '🎨 科目カラー'],
           ].map(([id, label]) => (
@@ -83,10 +81,8 @@ export default function ConfigModal({ onClose }) {
             <CombinedGroupSettings />
           ) : configTab === 'colors' ? (
             <SubjectColorSettings />
-          ) : configTab === 'external' ? (
-            <ExternalCounts />
-          ) : configTab === 'ng' ? (
-            <NgSettings />
+          ) : configTab === 'absence-ng' ? (
+            <AbsenceNgPanel />
           ) : configTab === 'classes' ? (
             <ClassPriority />
           ) : (
