@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
@@ -32,9 +33,13 @@ export default function AbsenceNgPanel() {
     setNgBatch,
     analysis,
   } = useProjectContext();
+  const { showConfirm, showToast } = useUI();
   const autoNgByTeacher = analysis?.autoNgByTeacher;
 
   // ── 折りたたみ state ───────────────────────
+  // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
+  // クリーンアップする useEffect で id 再利用時の silent collapse を防ぐ
+  // (code-review P3)。
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
     currentConfig.dates.forEach(d => { initial[d.id] = true; });
@@ -44,41 +49,82 @@ export default function AbsenceNgPanel() {
 
   // ── unified bulk form state ───────────────
   const [mode, setMode] = useState('external'); // 'external' | 'ng'
-  const [formTeacherNames, setFormTeacherNames] = useState(() => new Set());
+  // 講師選択は『動的全選択モード』を持つ。allMode=true のとき
+  // selectedTeacherIdxs は『現在の project.teachers』から動的に解決する
+  // (旧 NgSettings の ALL_TEACHERS sentinel と等価)。個別チェックで manual に
+  // 切替わり、formTeacherNames で明示管理される (code-review P1)。
+  const [formTeachers, setFormTeachers] = useState(() => ({ allMode: false, names: new Set() }));
+  // periodIds も同様に『動的全選択』モードを持つ (code-review P2)。
+  const [formPeriods, setFormPeriods] = useState(() => ({ allMode: true, ids: new Set() }));
   const [formMemo, setFormMemo] = useState('');
   // 他学年モード用 (時刻)
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
-  // NG モード用 (時限選択)
-  const [formPeriodIds, setFormPeriodIds] = useState(() => currentConfig.periods.map(p => p.id));
-  // 共通: 期間
+  // 共通: 期間。両方とも dates[0] を初期 default に (誤って全期間に広げて
+  // 大量セッションが生成される事故を防ぐ — code-review P1)。
   const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? null);
-  const [formEndDateId, setFormEndDateId] = useState(
-    currentConfig.dates[currentConfig.dates.length - 1]?.id ?? currentConfig.dates[0]?.id ?? null,
-  );
+  const [formEndDateId, setFormEndDateId] = useState(currentConfig.dates[0]?.id ?? null);
 
-  // dates が変わって start/end が無効になったら再同期
+  // dates が変わって start/end が無効になったら再同期。
+  // 無効化時の snap 先は『nearest valid』とし、widening (last へジャンプ) は
+  // しない (code-review P1)。end が無効なら start に揃え (= 単日)、start が
+  // 無効なら dates[0] に揃える。
   useEffect(() => {
-    const ids = currentConfig.dates.map(d => d.id);
-    if (!ids.includes(formStartDateId)) setFormStartDateId(ids[0] ?? null);
-    if (!ids.includes(formEndDateId)) setFormEndDateId(ids[ids.length - 1] ?? null);
+    const idList = currentConfig.dates.map(d => d.id);
+    const ids = new Set(idList);
+    if (!ids.has(formStartDateId)) {
+      setFormStartDateId(idList[0] ?? null);
+    }
+    if (!ids.has(formEndDateId)) {
+      // start が valid なら end を start に揃える (単日に縮退)
+      // start も無効なら dates[0] (start と揃う)
+      const fallback = ids.has(formStartDateId) ? formStartDateId : (idList[0] ?? null);
+      setFormEndDateId(fallback);
+    }
   }, [currentConfig.dates, formStartDateId, formEndDateId]);
-  // periods が変わったら formPeriodIds を整合
+
+  // expandedDates の stale key を削除する (id 再利用で silent collapse する
+  // 事故を防ぐ — code-review P3)
   useEffect(() => {
-    const validIds = new Set(currentConfig.periods.map(p => p.id));
-    setFormPeriodIds(prev => {
-      const filtered = prev.filter(id => validIds.has(id));
-      return filtered.length === prev.length ? prev : filtered;
+    const validIds = new Set(currentConfig.dates.map(d => d.id));
+    setExpandedDates(prev => {
+      const next = {};
+      let changed = false;
+      for (const key of Object.keys(prev)) {
+        const idNum = Number(key);
+        if (validIds.has(idNum)) next[idNum] = prev[key];
+        else changed = true;
+      }
+      return changed ? next : prev;
     });
-  }, [currentConfig.periods]);
-  // teachers が変わったら選択も同期
+  }, [currentConfig.dates]);
+
+  // teachers が変わったら manual 選択の Set を整合させる。
+  // size 比較ではなく Set membership 比較で行う (rename swap 等で size が
+  // 変わらなくても内容が変わるケースに対応 — code-review P3)。
   useEffect(() => {
     const names = new Set(project.teachers.map(t => t.name));
-    setFormTeacherNames(prev => {
-      const filtered = new Set(Array.from(prev).filter(n => names.has(n)));
-      return filtered.size === prev.size ? prev : filtered;
+    setFormTeachers(prev => {
+      if (prev.allMode) return prev;
+      const filteredArr = Array.from(prev.names).filter(n => names.has(n));
+      const sameSize = filteredArr.length === prev.names.size;
+      const sameContent = sameSize && filteredArr.every(n => prev.names.has(n));
+      if (sameSize && sameContent) return prev;
+      return { ...prev, names: new Set(filteredArr) };
     });
   }, [project.teachers]);
+  // periods が変わったら manual 選択の Set を整合させる (同様に membership 比較)
+  useEffect(() => {
+    const validIds = new Set(currentConfig.periods.map(p => p.id));
+    setFormPeriods(prev => {
+      if (prev.allMode) return prev;
+      const filteredArr = Array.from(prev.ids).filter(id => validIds.has(id));
+      const sameSize = filteredArr.length === prev.ids.size;
+      const sameContent = sameSize && filteredArr.every(id => prev.ids.has(id));
+      if (sameSize && sameContent) return prev;
+      return { ...prev, ids: new Set(filteredArr) };
+    });
+  }, [currentConfig.periods]);
 
   const sessions = useMemo(
     () => project.externalSessions || [],
@@ -144,12 +190,26 @@ export default function AbsenceNgPanel() {
     return currentConfig.dates.slice(lo, hi + 1).map(d => d.label);
   }, [currentConfig.dates, formStartDateId, formEndDateId]);
 
-  // 期間内の teacher idx 配列
-  const selectedTeacherIdxs = useMemo(() => {
+  // ── 講師 / 時限 選択の派生 ───────────────
+  // allMode のとき: 現在の project.teachers をそのまま反映 (動的解決)
+  // manual のとき: names Set との一致
+  // formTeachers.names は teachers 同期 useEffect で常に valid な name しか
+  // 持たないので、selectedNames は『現在の project に存在する名前のみ』を
+  // 含む (canApply の 1-render ズレを防ぐ — code-review P2)。
+  const selectedTeacherNames = useMemo(() => {
+    if (formTeachers.allMode) return project.teachers.map(t => t.name);
     return project.teachers
-      .map((t, i) => formTeacherNames.has(t.name) ? i : -1)
+      .map(t => t.name)
+      .filter(n => formTeachers.names.has(n));
+  }, [project.teachers, formTeachers]);
+  const selectedTeacherIdxs = useMemo(() => {
+    const namesSet = new Set(selectedTeacherNames);
+    return project.teachers
+      .map((t, i) => namesSet.has(t.name) ? i : -1)
       .filter(i => i >= 0);
-  }, [project.teachers, formTeacherNames]);
+  }, [project.teachers, selectedTeacherNames]);
+  const isTeacherSelected = (name) =>
+    formTeachers.allMode || formTeachers.names.has(name);
 
   // 他学年モード: 時刻検証
   const timeValidation = useMemo(() => {
@@ -174,43 +234,74 @@ export default function AbsenceNgPanel() {
     return computeAutoNgEntries('*', fakeSessions, currentConfig.periods).size;
   }, [mode, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods, timeValidation.error]);
 
-  // NG モード: 選択時限のラベル
+  // NG モード: 選択時限の派生 (teachers と同じ動的全選択パターン)
+  const selectedPeriodIds = useMemo(() => {
+    if (formPeriods.allMode) return currentConfig.periods.map(p => p.id);
+    return currentConfig.periods.map(p => p.id).filter(id => formPeriods.ids.has(id));
+  }, [currentConfig.periods, formPeriods]);
   const periodLabelsSelected = useMemo(
-    () => currentConfig.periods.filter(p => formPeriodIds.includes(p.id)).map(p => p.label),
-    [currentConfig.periods, formPeriodIds],
+    () => currentConfig.periods.filter(p => selectedPeriodIds.includes(p.id)).map(p => p.label),
+    [currentConfig.periods, selectedPeriodIds],
   );
+  const isPeriodSelected = (id) =>
+    formPeriods.allMode || formPeriods.ids.has(id);
 
+  // canAdd は両モードで selectedTeacherNames を使って判定統一
+  // (formTeacherNames.size と selectedTeacherIdxs.length の 1-render ズレ
+  // による button 状態矛盾を防ぐ — code-review P2)。
   const canAddExternal =
     mode === 'external' &&
-    formTeacherNames.size > 0 &&
+    selectedTeacherNames.length > 0 &&
     dateLabelsInRange.length > 0 &&
     timeValidation.error == null;
   const canApplyNg =
     mode === 'ng' &&
-    selectedTeacherIdxs.length > 0 &&
+    selectedTeacherNames.length > 0 &&
     dateLabelsInRange.length > 0 &&
     periodLabelsSelected.length > 0;
 
   // ── teacher 選択ヘルパ ────────────────────
+  // 個別 toggle: allMode のときは『all 以外を選択した状態』に切替えるため
+  // 全名前から該当を除いた Set を manual で持つ。
   const toggleTeacher = (name) => {
-    setFormTeacherNames(prev => {
-      const next = new Set(prev);
+    setFormTeachers(prev => {
+      if (prev.allMode) {
+        const allNames = project.teachers.map(t => t.name);
+        const next = new Set(allNames.filter(n => n !== name));
+        return { allMode: false, names: next };
+      }
+      const next = new Set(prev.names);
       if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
+      return { allMode: false, names: next };
     });
   };
-  const selectAllTeachers = () => setFormTeacherNames(new Set(project.teachers.map(t => t.name)));
-  const clearAllTeachers = () => setFormTeacherNames(new Set());
+  const selectAllTeachers = () => setFormTeachers({ allMode: true, names: new Set() });
+  const clearAllTeachers = () => setFormTeachers({ allMode: false, names: new Set() });
+
+  // ── period 選択ヘルパ (NG モード用、teacher と同形) ────
+  const togglePeriod = (id) => {
+    setFormPeriods(prev => {
+      if (prev.allMode) {
+        const allIds = currentConfig.periods.map(p => p.id);
+        const next = new Set(allIds.filter(x => x !== id));
+        return { allMode: false, ids: next };
+      }
+      const next = new Set(prev.ids);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return { allMode: false, ids: next };
+    });
+  };
+  const selectAllPeriods = () => setFormPeriods({ allMode: true, ids: new Set() });
+  const clearAllPeriods = () => setFormPeriods({ allMode: false, ids: new Set() });
 
   // ── handleAdd (mode 別) ───────────────────
   const handleAddExternal = () => {
     if (!canAddExternal) return;
-    const selectedNames = Array.from(formTeacherNames);
     const autoLabel = formStartTime
       ? (formEndTime ? `${formStartTime}-${formEndTime}` : formStartTime)
       : '';
     const items = [];
-    for (const teacherName of selectedNames) {
+    for (const teacherName of selectedTeacherNames) {
       for (const dl of dateLabelsInRange) {
         items.push({
           date: dl, teacherName, label: autoLabel, memo: formMemo.trim(),
@@ -220,32 +311,80 @@ export default function AbsenceNgPanel() {
       }
     }
     addExternalSessions(items);
+    showToast(`他学年セッション ${items.length} 件を登録しました`, 'success', 3000);
+    // 時刻・メモは clear (連打による重複登録を視覚的に防ぐ — code-review P2)。
+    // 講師 / date range は連続追加用に残す。
     setFormStartTime('');
     setFormEndTime('');
     setFormMemo('');
   };
 
-  const handleApplyNg = (value) => {
+  const handleApplyNg = async (value) => {
     if (!canApplyNg) return;
+    const teacherCount = selectedTeacherIdxs.length;
+    const dayCount = dateLabelsInRange.length;
+    const periodCount = periodLabelsSelected.length;
+    // OK解除は destructive (既にある NG を消す方向) なので明示確認 —
+    // 同じ teachers/dates/periods が selected のまま再クリックで silent に
+    // 戻されるのを防ぐ (code-review P2)。
+    if (!value) {
+      const ok = await showConfirm(
+        `${teacherCount} 名 × ${dayCount} 日 × ${periodCount} 時限 の NG を解除します。\nよろしいですか?`,
+        { title: 'NG解除の確認', danger: true, confirmLabel: '解除する' },
+      );
+      if (!ok) return;
+    }
     setNgBatch(selectedTeacherIdxs, dateLabelsInRange, periodLabelsSelected, value);
+    showToast(
+      value
+        ? `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 を NG にしました`
+        : `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 の NG を解除しました`,
+      value ? 'warning' : 'success',
+      3000,
+    );
   };
 
-  // プリセット適用 (他学年モードでのみ有効)
+  // プリセット適用 (他学年モードでのみ呼ばれる UI)
+  // 日付は片方だけ解決成功して片方失敗するパターンを禁止 (silent な範囲拡張
+  // を防ぐ — code-review P1)。両方解決した場合のみ両方更新する。
   const applyPreset = (presetId) => {
     if (!presetId) return;
     const p = presets.find(x => x.id === Number(presetId));
     if (!p) return;
-    setMode('external');
-    if (p.startTime != null) setFormStartTime(p.startTime);
-    if (p.endTime != null) setFormEndTime(p.endTime);
-    if (p.memo != null) setFormMemo(p.memo);
-    if (p.startDateLabel) {
-      const d = currentConfig.dates.find(x => x.label === p.startDateLabel);
-      if (d) setFormStartDateId(d.id);
+    if (p.startTime) setFormStartTime(p.startTime);
+    if (p.endTime) setFormEndTime(p.endTime);
+    if (p.memo) setFormMemo(p.memo);
+    const startD = p.startDateLabel ? currentConfig.dates.find(x => x.label === p.startDateLabel) : null;
+    const endD = p.endDateLabel ? currentConfig.dates.find(x => x.label === p.endDateLabel) : null;
+    if (p.startDateLabel && p.endDateLabel) {
+      if (startD && endD) {
+        setFormStartDateId(startD.id);
+        setFormEndDateId(endD.id);
+      } else {
+        // 片方しか解決しない場合は両方触らず警告
+        showToast(
+          `プリセットの期間 (${p.startDateLabel}〜${p.endDateLabel}) が現在の日付設定に存在しないため、日付は適用しませんでした`,
+          'warning', 4000,
+        );
+      }
+    } else if (p.startDateLabel && startD) {
+      // 開始のみ指定 (= 単日プリセット): start に揃え end も同じ日にする
+      setFormStartDateId(startD.id);
+      setFormEndDateId(startD.id);
     }
-    if (p.endDateLabel) {
-      const d = currentConfig.dates.find(x => x.label === p.endDateLabel);
-      if (d) setFormEndDateId(d.id);
+  };
+
+  // mode 切替時の state クリア。external モード固有の時刻 / メモが ng モード
+  // 中も残り、戻ったとき stale な値で submit されるのを防ぐ (code-review P2)。
+  // 共通の teachers / 期間 / period 選択は保持 (フォーム横断で使い回せる)。
+  const handleModeChange = (nextMode) => {
+    if (nextMode === mode) return;
+    setMode(nextMode);
+    if (nextMode === 'ng') {
+      // 他学年用フィールドは ng モードでは隠れるので clear
+      setFormStartTime('');
+      setFormEndTime('');
+      setFormMemo('');
     }
   };
 
@@ -293,22 +432,25 @@ export default function AbsenceNgPanel() {
         {/* モード切替 */}
         <div className="flex flex-wrap gap-2 mb-3" role="radiogroup" aria-label="登録モード">
           <label className={`flex items-center gap-1 px-3 py-1 rounded cursor-pointer text-xs ${mode === 'external' ? 'bg-builder-info-soft border-2 border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border border-builder-ink-ghost text-builder-ink'}`}>
-            <input type="radio" name="absence-ng-mode" value="external" checked={mode === 'external'} onChange={() => setMode('external')} />
+            <input type="radio" name="absence-ng-mode" value="external" checked={mode === 'external'} onChange={() => handleModeChange('external')} />
             📅 他学年セッション (時刻あり)
           </label>
           <label className={`flex items-center gap-1 px-3 py-1 rounded cursor-pointer text-xs ${mode === 'ng' ? 'bg-builder-danger-soft border-2 border-builder-red text-builder-ink font-bold' : 'bg-builder-surface border border-builder-ink-ghost text-builder-ink'}`}>
-            <input type="radio" name="absence-ng-mode" value="ng" checked={mode === 'ng'} onChange={() => setMode('ng')} />
+            <input type="radio" name="absence-ng-mode" value="ng" checked={mode === 'ng'} onChange={() => handleModeChange('ng')} />
             🚫 手動NG (時限指定)
           </label>
         </div>
 
-        {/* プリセット選択 (他学年モード時のみ表示) */}
+        {/* プリセット選択 (他学年モード時のみ表示) — controlled。
+            旧コードは defaultValue + 直接 DOM mutation でリセットしていたが、
+            条件 remount で stale な選択が再出現するリスクがあったため controlled に
+            (code-review P3)。 */}
         {mode === 'external' && presets.length > 0 && (
           <div className="mb-3 flex items-center gap-2 text-xs">
             <span className="text-builder-ink-muted shrink-0">プリセット:</span>
             <select
-              defaultValue=""
-              onChange={(e) => { applyPreset(e.target.value); e.target.value = ''; }}
+              value=""
+              onChange={(e) => applyPreset(e.target.value)}
               className="flex-1 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
               aria-label="プリセットを選んで時刻・期間・メモをフォームに展開"
             >
@@ -323,7 +465,12 @@ export default function AbsenceNgPanel() {
         {/* 講師選択 (共通) */}
         <div className="flex flex-col gap-1 mb-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-builder-ink-muted">講師 (複数選択可) — 選択 {formTeacherNames.size} 名</span>
+            <span className="text-xs text-builder-ink-muted">
+              講師 (複数選択可) — 選択 {selectedTeacherNames.length} 名
+              {formTeachers.allMode && (
+                <span className="ml-1 text-builder-blue font-bold">[全講師 (動的)]</span>
+              )}
+            </span>
             <div className="flex gap-1">
               <button type="button" onClick={selectAllTeachers}
                 className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
@@ -337,14 +484,20 @@ export default function AbsenceNgPanel() {
           </div>
           <div className="flex flex-col gap-2">
             {teacherGroups.map(group => {
-              const allSelected = group.teachers.every(t => formTeacherNames.has(t.name));
+              const allSelected = group.teachers.every(t => isTeacherSelected(t.name));
               const toggleGroup = () => {
-                setFormTeacherNames(prev => {
-                  const isAll = group.teachers.every(t => prev.has(t.name));
-                  const next = new Set(prev);
+                setFormTeachers(prev => {
+                  if (prev.allMode) {
+                    // allMode のとき: グループ内を抜く = manual {全 - group}
+                    const allNames = project.teachers.map(t => t.name);
+                    const exclude = new Set(group.teachers.map(t => t.name));
+                    return { allMode: false, names: new Set(allNames.filter(n => !exclude.has(n))) };
+                  }
+                  const isAll = group.teachers.every(t => prev.names.has(t.name));
+                  const next = new Set(prev.names);
                   if (isAll) group.teachers.forEach(t => next.delete(t.name));
                   else group.teachers.forEach(t => next.add(t.name));
-                  return next;
+                  return { allMode: false, names: next };
                 });
               };
               return (
@@ -361,7 +514,7 @@ export default function AbsenceNgPanel() {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {group.teachers.map(t => {
-                      const checked = formTeacherNames.has(t.name);
+                      const checked = isTeacherSelected(t.name);
                       return (
                         <label
                           key={t.name}
@@ -445,13 +598,18 @@ export default function AbsenceNgPanel() {
         ) : (
           <div className="flex flex-col gap-1 text-xs mb-3">
             <div className="flex items-center justify-between max-w-md">
-              <span className="text-builder-ink-muted">時限</span>
+              <span className="text-builder-ink-muted">
+                時限 (選択 {selectedPeriodIds.length} / {currentConfig.periods.length})
+                {formPeriods.allMode && (
+                  <span className="ml-1 text-builder-blue font-bold">[全時限 (動的)]</span>
+                )}
+              </span>
               <div className="flex gap-1">
-                <button type="button" onClick={() => setFormPeriodIds(currentConfig.periods.map(p => p.id))}
+                <button type="button" onClick={selectAllPeriods}
                   className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
                   全選択
                 </button>
-                <button type="button" onClick={() => setFormPeriodIds([])}
+                <button type="button" onClick={clearAllPeriods}
                   className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
                   全解除
                 </button>
@@ -460,13 +618,11 @@ export default function AbsenceNgPanel() {
             <div className="flex flex-wrap gap-2">
               {currentConfig.periods.map(p => (
                 <label key={p.id}
-                  className="flex items-center gap-1 px-2 py-1 border border-builder-ink-ghost rounded cursor-pointer bg-builder-surface hover:bg-builder-bg text-builder-ink">
+                  className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
                   <input
                     type="checkbox"
-                    checked={formPeriodIds.includes(p.id)}
-                    onChange={() => setFormPeriodIds(prev =>
-                      prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id]
-                    )}
+                    checked={isPeriodSelected(p.id)}
+                    onChange={() => togglePeriod(p.id)}
                   />
                   <span>{p.label}</span>
                 </label>
@@ -511,12 +667,12 @@ export default function AbsenceNgPanel() {
           )}
           {mode === 'external' && canAddExternal && (
             <span className="text-xs text-builder-ink-muted">
-              対象: {formTeacherNames.size}名 × {dateLabelsInRange.length}日 = {formTeacherNames.size * dateLabelsInRange.length} 件
+              対象: {selectedTeacherNames.length}名 × {dateLabelsInRange.length}日 = {selectedTeacherNames.length * dateLabelsInRange.length} 件
               {formStartTime && (
                 <>
                   {' / '}
                   {previewPerTeacherNgCount > 0
-                    ? <>→ 自動NG {formTeacherNames.size * previewPerTeacherNgCount} 件</>
+                    ? <>→ 自動NG {selectedTeacherNames.length * previewPerTeacherNgCount} 件</>
                     : <span className="text-builder-orange">→ 重複する時限なし</span>}
                 </>
               )}
@@ -619,7 +775,9 @@ export default function AbsenceNgPanel() {
                                 type="number"
                                 min="0"
                                 className="w-full h-full p-2 text-center focus:bg-builder-info-soft focus:outline-none text-builder-ink"
-                                value={project.externalCounts?.[k] || ""}
+                                // `?? ''` で 0 を空表示に潰さない (明示的に 0 と
+                                // 入力したセルと未入力セルを区別する — code-review P4)
+                                value={project.externalCounts?.[k] ?? ""}
                                 placeholder="-"
                                 onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
                               />
@@ -809,7 +967,8 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
     endDateId: dates[0]?.id ?? null,
     memo: '',
   });
-  const [draft, setDraft] = useState(blankDraft());
+  // lazy init (毎レンダーで blankDraft() を呼ばないため — code-review P3)
+  const [draft, setDraft] = useState(() => blankDraft());
 
   useEffect(() => {
     const ids = dates.map(d => d.id);
