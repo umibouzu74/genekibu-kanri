@@ -10,7 +10,11 @@ export default function NgSettings() {
     currentConfig,
     toggleTeacherNg,
     setNgBatch,
+    analysis,
   } = useProjectContext();
+  // 自動NG (他学年セッションとの時間重複から派生) は useAnalysis で
+  // 計算済みのものを共有する。Map<teacherName, Map<ngKey, {sessions:[]}>>。
+  const autoNgByTeacher = analysis?.autoNgByTeacher;
 
   // 折りたたみ状態: 各日付の開閉 (date.id をキーに)
   const [expandedDates, setExpandedDates] = useState(() => {
@@ -61,13 +65,15 @@ export default function NgSettings() {
     setExpandedDates(all);
   };
 
-  // 日付ごとのNG件数を計算 (date.label と period.label で makeNgKey)
+  // 日付ごとのNG件数を計算 (手動NG + 自動NG 両方を含む)
   const ngCountByDate = {};
   currentConfig.dates.forEach(d => {
     let count = 0;
     project.teachers.forEach(t => {
+      const autoEntries = autoNgByTeacher?.get(t.name);
       currentConfig.periods.forEach(p => {
-        if (t.ngSlots?.includes(makeNgKey(d.label, p.label))) count++;
+        const k = makeNgKey(d.label, p.label);
+        if (t.ngSlots?.includes(k) || autoEntries?.has(k)) count++;
       });
     });
     ngCountByDate[d.id] = count;
@@ -113,6 +119,9 @@ export default function NgSettings() {
       <div className="bg-builder-danger-soft p-3 mb-4 rounded text-sm text-builder-red border border-builder-danger-border">
         <strong>NG一括設定:</strong><br />
         クリックしてNG（赤）/ OK（白）を切り替えます。全タブ共通の設定です。<br />
+        他学年タブで「時刻」入りセッションを登録すると、重複時限は自動で
+        <span className="bg-builder-border text-builder-ink-muted italic px-1 mx-0.5">自</span>
+        (グレー) になります。<br />
         日付ごとに折りたたみが可能です。
       </div>
 
@@ -256,24 +265,53 @@ export default function NgSettings() {
                       </tr>
                     </thead>
                     <tbody>
-                      {project.teachers.map((t, idx) => (
-                        <tr key={t.name}>
-                          <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
-                          {currentConfig.periods.map(p => {
-                            const k = makeNgKey(d.label, p.label);
-                            const isNg = t.ngSlots?.includes(k);
-                            return (
-                              <td
-                                key={p.id}
-                                onClick={() => toggleTeacherNg(idx, d.label, p.label)}
-                                className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${isNg ? "bg-builder-red text-white font-bold" : "bg-builder-surface"}`}
-                              >
-                                {isNg ? "NG" : ""}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
+                      {project.teachers.map((t, idx) => {
+                        const autoEntries = autoNgByTeacher?.get(t.name);
+                        return (
+                          <tr key={t.name}>
+                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                            {currentConfig.periods.map(p => {
+                              const k = makeNgKey(d.label, p.label);
+                              const isManualNg = t.ngSlots?.includes(k);
+                              const autoEntry = autoEntries?.get(k);
+                              const isAutoNg = !!autoEntry;
+                              // 表示の優先順位: 手動NG (赤) > 自動NG (灰) > OK (白)
+                              const cellClass = isManualNg
+                                ? 'bg-builder-red text-white font-bold'
+                                : isAutoNg
+                                  ? 'bg-builder-border text-builder-ink-muted italic'
+                                  : 'bg-builder-surface';
+                              const tooltipParts = [];
+                              if (isManualNg) tooltipParts.push('手動NG');
+                              if (isAutoNg) {
+                                // 外側の teacher 変数 `t` を上書きしないよう
+                                // `timeText` 名で受ける (将来 tooltip に teacher.name を
+                                // 足したくなった時に shadow で silently 壊れるのを防ぐ)。
+                                const memos = autoEntry.sessions
+                                  .map(s => {
+                                    const timeText = s.startTime
+                                      ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+                                      : (s.label || '');
+                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
+                                  })
+                                  .filter(Boolean)
+                                  .join(', ');
+                                tooltipParts.push(`自動NG (他学年: ${memos})`);
+                              }
+                              return (
+                                <td
+                                  key={p.id}
+                                  onClick={() => toggleTeacherNg(idx, d.label, p.label)}
+                                  title={tooltipParts.join(' / ') || undefined}
+                                  className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${cellClass}`}
+                                >
+                                  {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

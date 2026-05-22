@@ -7,6 +7,7 @@ import {
   computeViolations,
   computeInfeasibilities,
 } from '../utils/analysisHelpers';
+import { computeAutoNgByTeacher } from '../utils/autoNg';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
 
@@ -24,14 +25,31 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
     [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions],
   );
 
+  // 他学年セッションと時限の時間重複から派生する自動NG (講師ごと)。
+  // ScheduleCell や computeActiveAnalysis から共有して使う。
+  const autoNgByTeacher = useMemo(
+    () => computeAutoNgByTeacher(
+      project.teachers,
+      project.externalSessions || [],
+      currentConfig.periods,
+    ),
+    [project.teachers, project.externalSessions, currentConfig.periods],
+  );
+
   const activeAnalysis = useMemo(
-    () => computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, project.teachers),
-    [currentConfig, currentSchedule, globalUsage, project.teachers],
+    () => computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, project.teachers, autoNgByTeacher),
+    [currentConfig, currentSchedule, globalUsage, project.teachers, autoNgByTeacher],
   );
 
   const tabErrorCounts = useMemo(
-    () => computeTabViolationCounts({ tabs: project.tabs, globalUsage, teachers: project.teachers }),
-    [project.tabs, globalUsage, project.teachers],
+    // externalSessions を渡し、各タブの period に合わせた自動NGを内部で再計算させる
+    // (タブ毎に period ラベルが違う可能性があるため、active タブの autoNgByTeacher
+    //  を流用せず再計算する)。
+    () => computeTabViolationCounts({
+      tabs: project.tabs, globalUsage, teachers: project.teachers,
+      externalSessions: project.externalSessions || [],
+    }),
+    [project.tabs, globalUsage, project.teachers, project.externalSessions],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
@@ -62,13 +80,14 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
       commonSubjects,
       currentConfig,
       maxDailyHours,
+      autoNgByTeacher,
     }),
-    [project.teachers, commonSubjects, currentConfig, maxDailyHours],
+    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher],
   );
 
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher],
   );
 
   const dashboard = useMemo(

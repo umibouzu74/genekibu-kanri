@@ -5,6 +5,7 @@
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
 import { makeKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { computeAutoNgByTeacher } from '../utils/autoNg';
 import {
   canTeachSubject,
   isNgSlot,
@@ -63,6 +64,14 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
+
+  // 自動NG (他学年セッションと時限の時間重複から派生) を pre-compute。
+  // solver の NG 判定でも手動NGと同等に扱う。
+  const autoNgByTeacher = computeAutoNgByTeacher(
+    project.teachers,
+    project.externalSessions || [],
+    currentConfig.periods,
+  );
 
   let solution = null;
   const slots = [];
@@ -135,7 +144,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     const subjectsToCheck = slot.fixedSubject ? [slot.fixedSubject] : commonSubjects;
     subjectsToCheck.forEach(subj => {
       project.teachers.forEach(t => {
-        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d.label, slot.p.label) && !isNgClass(t, slot.c.label)) {
+        const autoEntries = autoNgByTeacher.get(t.name);
+        if (canTeachSubject(t, subj) && !isNgSlot(t, slot.d.label, slot.p.label, autoEntries) && !isNgClass(t, slot.c.label)) {
           validCandidates++;
         }
       });
@@ -243,6 +253,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
           period: p.label,
           className: c.label,
           secondaryClassNames,
+          autoNgEntries: autoNgByTeacher.get(t.name),
         })
       );
 

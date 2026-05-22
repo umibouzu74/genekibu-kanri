@@ -35,10 +35,18 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
 
   // 後から NG 設定された場合に、既に割り当て済みの講師がその日時で
   // NG になっていれば視覚的に警告する。
+  // 手動NG (teacher.ngSlots) + 自動NG (他学年セッションとの時間重複) の両方を考慮。
+  // '未定' は placeholder 講師として project.teachers に含まれるものの、
+  // assignedTeacher の早期 null 化と autoNgByTeacher が '未定' を含まないため
+  // 自動NG/手動NG ともに常に false 扱いになる (placeholder にコマ数制限を
+  // 課さない既存仕様と整合)。
   const assignedTeacher = (entry.teacher && entry.teacher !== '未定')
     ? project.teachers.find(t => t.name === entry.teacher)
     : null;
-  const isNgAssigned = !!assignedTeacher?.ngSlots?.includes(makeNgKey(dLabel, pLabel));
+  const ngKey = makeNgKey(dLabel, pLabel);
+  const isManualNg = !!assignedTeacher?.ngSlots?.includes(ngKey);
+  const isAutoNg = !!analysis.autoNgByTeacher?.get(entry.teacher)?.has(ngKey);
+  const isNgAssigned = isManualNg || isAutoNg;
 
   // 合同グループ判定 (label ベース)
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
@@ -135,9 +143,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
           {filteredTeachers.map(t => {
             const dayKey = makeExternalKey(dLabel, t.name);
             const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
-            const isNg = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
+            const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
+            const isAuto = !!analysis.autoNgByTeacher?.get(t.name)?.has(ngKey);
+            const isNg = isManual || isAuto;
             let label = t.name;
-            if (t.name !== "未定") { if (isNg) label += " (NG)"; else label += ` (計${daily.total})`; }
+            if (t.name !== "未定") {
+              if (isNg) label += isAuto && !isManual ? " (NG:他学年)" : " (NG)";
+              else label += ` (計${daily.total})`;
+            }
             // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
             // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。
             const shouldDisable = isNg && entry.teacher !== t.name;

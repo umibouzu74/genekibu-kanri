@@ -9,9 +9,14 @@ export function canTeachSubject(teacher, subject) {
   return teacher.subjects?.includes(subject) ?? false;
 }
 
-// 講師が指定の (date, period) を NG にしているか
-export function isNgSlot(teacher, date, period) {
-  return teacher.ngSlots?.includes(makeNgKey(date, period)) ?? false;
+// 講師が指定の (date, period) を NG にしているか。
+// autoNgEntries は当該講師の自動NG Map<ngKey, {sessions:[]}> (任意)。
+// 渡せば手動NG + 自動NG の OR を返す。
+export function isNgSlot(teacher, date, period, autoNgEntries = null) {
+  const k = makeNgKey(date, period);
+  if (teacher.ngSlots?.includes(k)) return true;
+  if (autoNgEntries?.has(k)) return true;
+  return false;
 }
 
 // 講師が指定の className を NG にしているか
@@ -37,9 +42,10 @@ export function wouldExceedDailyLimit({
 // 講師が候補として有効か (subject + NG slot + NG class + 合同先 NG class)。
 // validT のフィルタリングを共通化したもの。
 // secondaryClassNames は合同グループ secondary のクラス名配列 (なければ [])。
-export function isTeacherCandidateFor({ teacher, subject, date, period, className, secondaryClassNames = [] }) {
+// autoNgEntries は当該講師の自動NG Map (任意)。
+export function isTeacherCandidateFor({ teacher, subject, date, period, className, secondaryClassNames = [], autoNgEntries = null }) {
   if (!canTeachSubject(teacher, subject)) return false;
-  if (isNgSlot(teacher, date, period)) return false;
+  if (isNgSlot(teacher, date, period, autoNgEntries)) return false;
   if (isNgClass(teacher, className)) return false;
   for (const sc of secondaryClassNames) {
     if (isNgClass(teacher, sc)) return false;

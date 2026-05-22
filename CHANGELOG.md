@@ -2,6 +2,73 @@
 
 ## [Unreleased]
 
+### Added (他学年セッション → 日時NG の自動派生)
+- 「📅 他学年・午前」タブで時刻入りセッション (例: 12:25-13:35) を登録すると、
+  その時間帯と重なる時限が「🚫 日時NG」タブで自動的にNG扱いになる。
+  例: 堀上 7/29 12:25-13:35 の予備校 → 13:00-13:45 の中3 1限が自動NG。
+  毎日NGを 1 セルずつクリックする手間を削減。
+- 自動NGは保存せず計算で導出する方式 (utils/autoNg.js)。セッションを削除すれば
+  NG表示もその場で消える。手動NG (teacher.ngSlots) との merge は表示・
+  constraint 両方で行い、ScheduleCell の (NG) ラベル / NgSettings のグリッド /
+  autoGenerator (solver) すべて手動NGと同等に扱う。
+- 「📅 他学年・午前」の詳細セッション登録フォームを刷新:
+  - 日付は「複数チェックボックス」から「期間 (開始日〜終了日)」のレンジに変更。
+    NGタブと UI を揃え、毎日チェックする手間を削減。
+  - 「時刻 (開始〜終了)」のピッカーを追加。type="time" で時刻入力を簡素化。
+  - 自由ラベル欄は廃止 (時刻指定があれば自動で「HH:mm-HH:mm」を label として保存)。
+  - 「→ 自動NG N 件」のプレビューを追加で、登録前に効果が見える。
+- 時限ラベルから時刻を自動解析するパーサ (utils/timeRange.js) を新規。
+  「1限 (13:00~13:45)」「13:00~」「12:25-13:35」など freeform を minutes に
+  正規化。終了時刻が不明な場合は開始のみで重複判定 (始点 ∈ 他方範囲)。
+- データ層: externalSession に optional `startTime` / `endTime` (HH:mm 文字列)
+  を追加。既存セッションは未設定で表示は label にフォールバックするので
+  backward compat あり。
+- Tests: timeRange.test.js (25 件), autoNg.test.js (12 件), projectReducer
+  (新フィールドの保存 / 空文字省略 2 件), teacherConstraints (autoNgEntries 経由 3 件),
+  autoGenerator (時間重複セッションで solver が候補を外す 1 件) を追加。
+  全体 1121 件、lint 0 / typecheck 0 / build OK。
+
+### Fixed (自動NG: コードレビュー指摘の修正)
+P1〜P3 を一括対応 (詳細は本変更の commit message を参照):
+- **タブバッジ違反カウント**: `computeTabViolationCounts` がタブごとに
+  `autoNgByTeacher` を再計算するように変更。それまではアクティブタブの
+  ScheduleCell では NG 警告が出るのに、TabBar の他タブ badge が自動NG違反を
+  カウントせず数字がズレていた。
+- **静的検証 (実行不能スロット)**: `computeInfeasibilities` が
+  `autoNgByTeacher` を受理し、全候補講師が他学年セッションで塞がれている
+  スロットを『不可能』として警告するように。これまで solver が空セルを
+  返す原因を事前に表示できていなかった。
+- **Excel 出力の ⚠NG**: `excelExport` の 2 箇所 (シフト表 / 科目別シート) で
+  自動NG (他学年セッションとの時間重複) も ⚠NG マークとして出力するように。
+  これまで配布された Excel で自動NG違反が見落とされていた。
+- **講師の削除/リネーム/CSV置換時の cascade**: `teacher/remove` /
+  `teacher/rename` / `teacher/import (replace)` が `externalSessions` も
+  cascade clean / rename するように。これまでは孤児セッションが UI に
+  表示されながら自動NG派生の対象外になり状態が乖離していた。
+- **フォーム検証**: ExternalCounts の `canAdd` を `parseHHmm` ベースに統一
+  (regex 過剰許容を防ぐ)、`startTime` 必須化 (endTime のみの silent data loss
+  防止)、`startTime < endTime` 強制 (逆転で自動NGが付かない silent failure
+  防止)、エラー文言を直接表示。
+- **連打による重複登録**: `handleAdd` 後に時刻とメモをクリアし、フォームが
+  「処理された」視覚状態になることで意図しない二重登録を抑止。
+- **複数日 atomic 登録**: 新アクション `teacher/addExternalSessions` を追加し、
+  N 日選択時に 1 つの dispatch で全日登録 (履歴 push も 1 回、途中失敗時の
+  半端状態を排除)。
+- **`parseTimeRange` の終了のみ表記**: `~14:00` のような『終了 14:00 の意味』
+  で書かれた文字列を `開始 14:00` と誤解釈する反転を防ぐため、明示的に
+  `null` を返すように。
+- **NgSettings の変数 shadow 解消**: tooltip 生成内で外側講師 `t` を
+  `timeText` に rename し、将来 `t.name` を足したくなった時のバグ-on-touch
+  を排除。
+- **'未定' 講師の自動NG挙動を comment 化**: ScheduleCell で '未定' が
+  placeholder として自動NG/手動NG ともに常に false 扱いになる仕様を
+  明示。
+- **date ID 初期値の型ドリフト**: `formStartDateId` / `formEndDateId` の
+  初期値を `''` (string) から `null` に変更し、select の value を
+  `?? ''` で coerce することで型混在を排除。
+- Tests: 12 件追加 (timeRange 1 / analysisHelpers 3 / reducer 8)。
+  全体 1133 件、lint 0 / typecheck 0 / build OK。
+
 ### Tests (Builder Test foundation: D2b)
 - **D2b** Header / Toolbar / ScheduleCell の主要 3 コンポーネントに
   testing-library で UI テストを追加 (計 28 件):

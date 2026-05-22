@@ -129,6 +129,23 @@ describe('generateSinglePattern — 制約', () => {
     expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
   });
 
+  it('他学年セッションと時間重複する時限は自動でNG扱い (auto-NG)', () => {
+    // 堀上は 7/29 12:25-13:35 に予備校 → 1限 (13:00~13:45) は重複でNG
+    // 田中は外部セッション無し → 候補として残る
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('田中', ['英語'])],
+      dates: ['7/29(水)'],
+      periods: ['1限 (13:00~13:45)'],
+      subjectCounts: { '英語': 1 },
+    });
+    project.externalSessions = [
+      { id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校',
+        startTime: '12:25', endTime: '13:35' },
+    ];
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 42 });
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('田中');
+  });
+
   it('講師の NG クラスは割り当てない', () => {
     const project = makeProject({
       teachers: [

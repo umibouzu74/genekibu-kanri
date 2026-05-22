@@ -14,6 +14,7 @@ import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
+import { computeAutoNgByTeacher } from './autoNg';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -137,6 +138,14 @@ export function buildScheduleWorkbook(project) {
     const { dates, periods, classes } = tab.config;
     const ws = workbook.addWorksheet(tab.name);
 
+    // タブ毎の period に合わせて自動NG (他学年セッションとの時間重複) を計算。
+    // ⚠NG マークは手動NG (teacher.ngSlots) と自動NG の OR で出す。
+    const autoNgByTeacher = computeAutoNgByTeacher(
+      project.teachers || [],
+      cleaned.externalSessions || [],
+      periods,
+    );
+
     // ヘッダー行
     const headerRow = ['日付', '時限', ...classes.map(c => c.label)];
     ws.addRow(headerRow);
@@ -158,8 +167,10 @@ export function buildScheduleWorkbook(project) {
             const current = daily?.current ?? 0;
             const total = daily?.total ?? 0;
             const teacherEnt = teachersByName.get(e.teacher);
-            const isNg = teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label));
-            const ngMark = isNg ? '\n⚠NG' : '';
+            const ngKey = makeNgKey(d.label, p.label);
+            const isManualNg = !!teacherEnt?.ngSlots?.includes(ngKey);
+            const isAutoNg = !!autoNgByTeacher.get(e.teacher)?.has(ngKey);
+            const ngMark = (isManualNg || isAutoNg) ? '\n⚠NG' : '';
             return `${e.subject}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
           }
           return `${e.subject}\n${e.teacher || ''}`;
@@ -248,6 +259,12 @@ export function computeSubjectStats(project, subject) {
   (project.tabs || []).forEach(tab => {
     const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
     let filled = 0;
+    // タブごとに自動NGを再計算 (period 表記がタブで異なり得るため)
+    const autoNgByTeacher = computeAutoNgByTeacher(
+      project.teachers || [],
+      project.externalSessions || [],
+      tab.config?.periods || [],
+    );
 
     (tab.config?.dates || []).forEach(d => {
       (tab.config?.periods || []).forEach(p => {
@@ -263,9 +280,10 @@ export function computeSubjectStats(project, subject) {
           if (group) noteParts.push(`合同(${group.classes.join(',')})`);
           if (e.teacher && e.teacher !== '未定') {
             const teacherEnt = teachersByName.get(e.teacher);
-            if (teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label))) {
-              noteParts.push('⚠NG');
-            }
+            const ngKey = makeNgKey(d.label, p.label);
+            const isManualNg = !!teacherEnt?.ngSlots?.includes(ngKey);
+            const isAutoNg = !!autoNgByTeacher.get(e.teacher)?.has(ngKey);
+            if (isManualNg || isAutoNg) noteParts.push('⚠NG');
           }
 
           detailRows.push({

@@ -126,6 +126,22 @@ function cleanExternalCountsForTeacher(externalCounts, teacherName) {
   return out;
 }
 
+// 講師削除に伴う externalSessions の cleanup。teacherName が一致する
+// 詳細セッションを drop する。残しておくと「孤児セッション」として UI に
+// 表示されるが自動NGの対象から外れ、状態が乖離する。
+function cleanExternalSessionsForTeacher(externalSessions, teacherName) {
+  if (!externalSessions) return externalSessions;
+  return externalSessions.filter(s => s.teacherName !== teacherName);
+}
+
+// 講師リネームに伴う externalSessions の teacherName 書き換え。
+function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
+  if (!externalSessions) return externalSessions;
+  return externalSessions.map(s =>
+    s.teacherName === oldName ? { ...s, teacherName: newName } : s
+  );
+}
+
 // 日付ラベルのリネームに伴う externalCounts キーの書き換え。
 // キー形式は `{dateLabel}-{teacherName}` で、dateLabel が先頭一致するものを更新。
 function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
@@ -300,19 +316,37 @@ function applyAction(project, action) {
       // mode='append' (デフォルト): 既存に追加、同名は subjects を新しい
       //   値で上書きしつつ ngSlots/ngClasses/priorityClasses は維持。
       // mode='replace': 既存の teachers を全て破棄して payload に置き換える。
-      //   ng/priority も新規定義なのでクリア。
+      //   ng/priority と externalCounts/externalSessions も新講師リストに
+      //   含まれないものは孤児になるので drop。
       const { teachers: incoming, mode = 'append' } = action.payload;
       if (!Array.isArray(incoming) || incoming.length === 0) return project;
       if (mode === 'replace') {
+        const newTeachers = incoming.map(t => ({
+          name: t.name,
+          subjects: Array.isArray(t.subjects) ? t.subjects : [],
+          ngSlots: [],
+          ngClasses: [],
+          priorityClasses: [],
+        }));
+        // 新講師リストに含まれない名前のセッションは孤児なので drop。
+        // externalCounts キー (`{date}-{teacherName}`) も同様。
+        const validNames = new Set(newTeachers.map(t => t.name));
+        const newSessions = (project.externalSessions || []).filter(s => validNames.has(s.teacherName));
+        const newExternalCounts = {};
+        Object.keys(project.externalCounts || {}).forEach(k => {
+          // suffix が validNames に含まれるかは末尾一致でチェック
+          for (const name of validNames) {
+            if (k.endsWith(`-${name}`)) {
+              newExternalCounts[k] = project.externalCounts[k];
+              break;
+            }
+          }
+        });
         return {
           ...project,
-          teachers: incoming.map(t => ({
-            name: t.name,
-            subjects: Array.isArray(t.subjects) ? t.subjects : [],
-            ngSlots: [],
-            ngClasses: [],
-            priorityClasses: [],
-          })),
+          teachers: newTeachers,
+          externalSessions: newSessions,
+          externalCounts: newExternalCounts,
         };
       }
       const map = new Map(project.teachers.map(t => [t.name, t]));
@@ -338,9 +372,12 @@ function applyAction(project, action) {
         });
         return { ...tab, schedule: newSch };
       });
-      // 削除された講師の externalCounts キーも drop (孤児化防止)
+      // 削除された講師の externalCounts キーと externalSessions も drop
+      // (孤児化防止)。残すと UI には表示されるのに自動NG派生の対象から
+      // 外れて状態が乖離する。
       const newExternal = cleanExternalCountsForTeacher(project.externalCounts, targetName);
-      return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal };
+      const newSessions = cleanExternalSessionsForTeacher(project.externalSessions, targetName);
+      return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal, externalSessions: newSessions };
     }
     case 'teacher/rename': {
       const { idx, newName } = action.payload;
@@ -363,7 +400,9 @@ function applyAction(project, action) {
           newExternal[newKey] = project.externalCounts[k];
         });
       }
-      return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal };
+      // externalSessions の teacherName も追従させる (孤児化防止)。
+      const newSessions = renameExternalSessionsTeacher(project.externalSessions, oldName, newName);
+      return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal, externalSessions: newSessions };
     }
     case 'teacher/toggleSubject': {
       const { idx, subject } = action.payload;
@@ -433,17 +472,46 @@ function applyAction(project, action) {
       return { ...project, externalCounts: counts };
     }
     case 'teacher/addExternalSession': {
-      const { date, teacherName, label, memo } = action.payload;
+      // 構造化時刻 (startTime / endTime, HH:mm) は省略可。あれば
+      // 自動NG派生 (utils/autoNg) の対象になる。空文字列は格納しない。
+      // endTime だけが指定されて startTime が空の場合は endTime も
+      // 落とす (orphan endTime を残すと getSessionTimeRange が start を
+      // 復元できず、データだけが残って自動NGに反映されない silent failure
+      // になるため)。
+      const { date, teacherName, label, memo, startTime, endTime } = action.payload;
       if (!date || !teacherName) return project;
       const sessions = project.externalSessions || [];
       const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const newSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
+      if (startTime) {
+        newSession.startTime = startTime;
+        if (endTime) newSession.endTime = endTime;
+      }
       return {
         ...project,
-        externalSessions: [
-          ...sessions,
-          { id: newId, date, teacherName, label: label || '', memo: memo || '' },
-        ],
+        externalSessions: [...sessions, newSession],
       };
+    }
+    case 'teacher/addExternalSessions': {
+      // 複数日の詳細セッションを 1 アクションで atomic に追加する
+      // (UI でレンジ指定された場合に N 件の dispatch にならないように)。
+      // payload.items = [{ date, teacherName, label, memo, startTime?, endTime? }, ...]
+      const { items } = action.payload;
+      if (!Array.isArray(items) || items.length === 0) return project;
+      const sessions = project.externalSessions || [];
+      let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const newOnes = [];
+      for (const it of items) {
+        if (!it?.date || !it?.teacherName) continue;
+        const ns = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        if (it.startTime) {
+          ns.startTime = it.startTime;
+          if (it.endTime) ns.endTime = it.endTime;
+        }
+        newOnes.push(ns);
+      }
+      if (newOnes.length === 0) return project;
+      return { ...project, externalSessions: [...sessions, ...newOnes] };
     }
     case 'teacher/removeExternalSession': {
       const { id } = action.payload;
