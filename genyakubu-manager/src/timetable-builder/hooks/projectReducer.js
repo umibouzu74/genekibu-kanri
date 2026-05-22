@@ -433,16 +433,18 @@ function applyAction(project, action) {
       return { ...project, externalCounts: counts };
     }
     case 'teacher/addExternalSession': {
-      const { date, teacherName, label, memo } = action.payload;
+      // 構造化時刻 (startTime / endTime, HH:mm) は省略可。あれば
+      // 自動NG派生 (utils/autoNg) の対象になる。空文字列は格納しない。
+      const { date, teacherName, label, memo, startTime, endTime } = action.payload;
       if (!date || !teacherName) return project;
       const sessions = project.externalSessions || [];
       const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const newSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
+      if (startTime) newSession.startTime = startTime;
+      if (endTime) newSession.endTime = endTime;
       return {
         ...project,
-        externalSessions: [
-          ...sessions,
-          { id: newId, date, teacherName, label: label || '', memo: memo || '' },
-        ],
+        externalSessions: [...sessions, newSession],
       };
     }
     case 'teacher/removeExternalSession': {

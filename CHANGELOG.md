@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added (他学年セッション → 日時NG の自動派生)
+- 「📅 他学年・午前」タブで時刻入りセッション (例: 12:25-13:35) を登録すると、
+  その時間帯と重なる時限が「🚫 日時NG」タブで自動的にNG扱いになる。
+  例: 堀上 7/29 12:25-13:35 の予備校 → 13:00-13:45 の中3 1限が自動NG。
+  毎日NGを 1 セルずつクリックする手間を削減。
+- 自動NGは保存せず計算で導出する方式 (utils/autoNg.js)。セッションを削除すれば
+  NG表示もその場で消える。手動NG (teacher.ngSlots) との merge は表示・
+  constraint 両方で行い、ScheduleCell の (NG) ラベル / NgSettings のグリッド /
+  autoGenerator (solver) すべて手動NGと同等に扱う。
+- 「📅 他学年・午前」の詳細セッション登録フォームを刷新:
+  - 日付は「複数チェックボックス」から「期間 (開始日〜終了日)」のレンジに変更。
+    NGタブと UI を揃え、毎日チェックする手間を削減。
+  - 「時刻 (開始〜終了)」のピッカーを追加。type="time" で時刻入力を簡素化。
+  - 自由ラベル欄は廃止 (時刻指定があれば自動で「HH:mm-HH:mm」を label として保存)。
+  - 「→ 自動NG N 件」のプレビューを追加で、登録前に効果が見える。
+- 時限ラベルから時刻を自動解析するパーサ (utils/timeRange.js) を新規。
+  「1限 (13:00~13:45)」「13:00~」「12:25-13:35」など freeform を minutes に
+  正規化。終了時刻が不明な場合は開始のみで重複判定 (始点 ∈ 他方範囲)。
+- データ層: externalSession に optional `startTime` / `endTime` (HH:mm 文字列)
+  を追加。既存セッションは未設定で表示は label にフォールバックするので
+  backward compat あり。
+- Tests: timeRange.test.js (25 件), autoNg.test.js (12 件), projectReducer
+  (新フィールドの保存 / 空文字省略 2 件), teacherConstraints (autoNgEntries 経由 3 件),
+  autoGenerator (時間重複セッションで solver が候補を外す 1 件) を追加。
+  全体 1121 件、lint 0 / typecheck 0 / build OK。
+
 ### Tests (Builder Test foundation: D2b)
 - **D2b** Header / Toolbar / ScheduleCell の主要 3 コンポーネントに
   testing-library で UI テストを追加 (計 28 件):

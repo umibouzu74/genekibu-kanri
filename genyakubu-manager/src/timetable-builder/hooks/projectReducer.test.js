@@ -412,6 +412,32 @@ describe('projectReducer — 講師管理', () => {
     expect(state.project.externalSessions[1].id).toBe(2);
   });
 
+  it('teacher/addExternalSession: startTime/endTime を保存', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: {
+        date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校',
+        startTime: '12:25', endTime: '13:35',
+      },
+    });
+    expect(state.project.externalSessions[0]).toEqual({
+      id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校',
+      startTime: '12:25', endTime: '13:35',
+    });
+  });
+
+  it('teacher/addExternalSession: 空文字の startTime/endTime は省略 (フィールドを格納しない)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '7/29(水)', teacherName: '堀上', label: '', memo: '', startTime: '', endTime: '' },
+    });
+    const sess = state.project.externalSessions[0];
+    expect(sess).not.toHaveProperty('startTime');
+    expect(sess).not.toHaveProperty('endTime');
+  });
+
   it('teacher/addExternalSession: date/teacherName が空なら no-op', () => {
     const state = makeState();
     const next = projectReducer(state, {

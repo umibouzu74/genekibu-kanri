@@ -21,8 +21,11 @@ export function useTeacherActions(dispatch) {
       dispatch({ type: 'teacher/toggleClassPriority', payload: { idx, className } }),
     handleExternalCountChange: (date, teacherName, value) =>
       dispatch({ type: 'teacher/setExternalCount', payload: { date, teacherName, value } }),
-    addExternalSession: (date, teacherName, label, memo) =>
-      dispatch({ type: 'teacher/addExternalSession', payload: { date, teacherName, label, memo } }),
+    addExternalSession: (date, teacherName, label, memo, startTime, endTime) =>
+      dispatch({
+        type: 'teacher/addExternalSession',
+        payload: { date, teacherName, label, memo, startTime, endTime },
+      }),
     removeExternalSession: (id) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
   }), [dispatch]);

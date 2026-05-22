@@ -116,7 +116,7 @@ function getEffectiveUsageCount(usages) {
 //       現タブ内・同一クラス内での該当科目の連番 (1-based、何回目か)。
 //   - ngViolationKeys: schedule key 配列。割当済み講師がその日時の
 //       ngSlots に該当するセル (後から NG 設定された場合に検出)。
-export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, teachers = []) {
+export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, teachers = [], autoNgByTeacher = null) {
   const conflictMap = {};
   const errorKeys = [];
   const dailySubjectMap = {};
@@ -142,7 +142,10 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
             errorKeys.push(key);
           }
           const teacherEnt = teachersByName.get(entry.teacher);
-          if (teacherEnt?.ngSlots?.includes(makeNgKey(d.label, p.label))) {
+          const ngKey = makeNgKey(d.label, p.label);
+          const isManualNg = !!teacherEnt?.ngSlots?.includes(ngKey);
+          const isAutoNg = !!autoNgByTeacher?.get(entry.teacher)?.has(ngKey);
+          if (isManualNg || isAutoNg) {
             ngViolationKeys.push(key);
           }
         }

@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { makeExternalKey } from '../../utils/scheduleKey';
+import { computeAutoNgEntries } from '../../utils/autoNg';
+import { getPeriodTimeRange } from '../../utils/timeRange';
 
 export default function ExternalCounts() {
   const {
@@ -11,22 +13,29 @@ export default function ExternalCounts() {
     removeExternalSession,
   } = useProjectContext();
 
-  // 詳細セッション追加フォームの state。
-  // formDateIds は配列で、NG タブの時限 checkbox と同様に複数選択可能。
-  const [formDateIds, setFormDateIds] = useState([]);
+  // 詳細セッション追加フォームの state。日付は (start, end) のレンジ指定に
+  // 変更 (NG タブと UI を揃え、毎日チェックする手間を削減)。
   const [formTeacher, setFormTeacher] = useState(project.teachers[0]?.name || '');
-  const [formLabel, setFormLabel] = useState('');
   const [formMemo, setFormMemo] = useState('');
+  const [formStartTime, setFormStartTime] = useState('');
+  const [formEndTime, setFormEndTime] = useState('');
+  const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? '');
+  const [formEndDateId, setFormEndDateId] = useState(currentConfig.dates[0]?.id ?? '');
 
-  // project.externalSessions が undefined の場合に新しい [] を都度作って
-  // 子の useMemo を毎回 invalidate しないよう、ここで memoize する。
+  // 設定の dates が変わって start/end が無効になった場合は再同期
+  useEffect(() => {
+    const ids = currentConfig.dates.map(d => d.id);
+    if (!ids.includes(formStartDateId)) setFormStartDateId(ids[0] ?? '');
+    if (!ids.includes(formEndDateId)) setFormEndDateId(ids[0] ?? '');
+  }, [currentConfig.dates, formStartDateId, formEndDateId]);
+
   const sessions = useMemo(
     () => project.externalSessions || [],
     [project.externalSessions],
   );
 
-  // (date, teacher) ごとの詳細セッション件数。グリッド render のたびに
-  // 再計算する必要はないので sessions が変わった時だけ作り直す。
+  // (date, teacher) ごとの詳細セッション件数。クイック入力グリッドの
+  // 表示で「件数だけ」セルに使う。
   const sessionCountMap = useMemo(() => {
     const map = {};
     sessions.forEach(s => {
@@ -36,37 +45,57 @@ export default function ExternalCounts() {
     return map;
   }, [sessions]);
 
-  const toggleDate = (id) => {
-    setFormDateIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
-    );
-  };
-  const selectAllDates = () => setFormDateIds(currentConfig.dates.map(d => d.id));
-  const clearAllDates = () => setFormDateIds([]);
+  // 期間内に含まれる date.label の配列 (start/end の順序は逆転しても許容)
+  const dateLabelsInRange = useMemo(() => {
+    const sIdx = currentConfig.dates.findIndex(d => d.id === formStartDateId);
+    const eIdx = currentConfig.dates.findIndex(d => d.id === formEndDateId);
+    if (sIdx < 0 || eIdx < 0) return [];
+    const lo = Math.min(sIdx, eIdx);
+    const hi = Math.max(sIdx, eIdx);
+    return currentConfig.dates.slice(lo, hi + 1).map(d => d.label);
+  }, [currentConfig.dates, formStartDateId, formEndDateId]);
 
-  const canAdd = formDateIds.length > 0 && !!formTeacher;
+  // 「この設定で追加したら自動NGが何件付くか」のプレビュー。
+  // 仮の sessions (dateLabels × {teacher, time}) を作って computeAutoNgEntries を呼ぶ。
+  const previewNgKeys = useMemo(() => {
+    if (!formTeacher || !formStartTime || dateLabelsInRange.length === 0) return [];
+    const fakeSessions = dateLabelsInRange.map((dl, idx) => ({
+      id: idx, date: dl, teacherName: formTeacher,
+      startTime: formStartTime, endTime: formEndTime || undefined,
+    }));
+    const entries = computeAutoNgEntries(formTeacher, fakeSessions, currentConfig.periods);
+    return Array.from(entries.keys());
+  }, [formTeacher, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods]);
+
+  const canAdd =
+    !!formTeacher &&
+    dateLabelsInRange.length > 0 &&
+    (formStartTime ? /^\d{1,2}:\d{2}$/.test(formStartTime) : true) &&
+    (formEndTime ? /^\d{1,2}:\d{2}$/.test(formEndTime) : true);
 
   const handleAdd = () => {
     if (!canAdd) return;
-    // currentConfig.dates の順序を維持して追加 (一覧表示の自然な並びになるよう)。
-    const labelById = new Map(currentConfig.dates.map(d => [d.id, d.label]));
-    currentConfig.dates.forEach(d => {
-      if (!formDateIds.includes(d.id)) return;
-      const label = labelById.get(d.id);
-      if (!label) return;
-      addExternalSession(label, formTeacher, formLabel.trim(), formMemo.trim());
-    });
-    setFormLabel('');
+    // 時刻が指定されていれば label を自動で「HH:mm-HH:mm」風に整形 (表示用)
+    const autoLabel = formStartTime
+      ? (formEndTime ? `${formStartTime}-${formEndTime}` : formStartTime)
+      : '';
+    for (const dl of dateLabelsInRange) {
+      addExternalSession(dl, formTeacher, autoLabel, formMemo.trim(), formStartTime, formEndTime);
+    }
+    // 入力は使い回せるよう残す (NG タブと同じ挙動)
     setFormMemo('');
-    // 日付選択は次の入力で使い回せるよう残す (NG タブと同じ挙動)。
   };
+
+  // 時限の表示用補助 (時間情報の有無を見える化)
+  const periodHasTime = (p) => getPeriodTimeRange(p) != null;
 
   return (
     <div>
       <div className="bg-builder-warning-soft p-3 mb-4 rounded text-sm text-builder-orange border border-builder-warning-border">
         <strong>他学年・午前のコマ数登録:</strong><br />
         ここで入力した数字は、自動作成時の制限や、プルダウンの「(計X)」に加算されます。<br />
-        詳細セッションを登録すると、その件数が数値より優先して採用されます。
+        詳細セッションを登録すると、その件数が数値より優先して採用されます。<br />
+        <strong>時刻を入力すると</strong>、同時間帯の時限が自動で「日時NG」になります。
       </div>
 
       {/* 既存グリッド (クイック入力) */}
@@ -119,8 +148,9 @@ export default function ExternalCounts() {
       <div className="border border-builder-ink-ghost rounded p-3 bg-builder-surface-alt">
         <div className="font-bold text-builder-ink mb-1">詳細セッション登録 (高校・予備校など)</div>
         <div className="text-xs text-builder-ink-muted mb-3">
-          日付は複数選択可。1 件「講師 / ラベル / メモ」を入力して追加すると、
-          選択した日付の分だけ同じ内容のセッションがまとめて登録されます。
+          講師・期間 (開始〜終了) ・時刻を入れて「まとめて追加」を押すと、
+          期間内の各日付に同じセッションが登録されます。
+          時刻を入れた場合は重なる時限が自動で日時NGになります。
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
@@ -137,56 +167,64 @@ export default function ExternalCounts() {
               ))}
             </select>
           </label>
-          <div className="flex gap-2 text-xs">
-            <label className="flex flex-col gap-1 flex-1">
-              <span className="text-builder-ink-muted">ラベル (任意)</span>
-              <input
-                type="text"
-                value={formLabel}
-                onChange={(e) => setFormLabel(e.target.value)}
-                placeholder="1限 / 13:00-14:30 等"
-                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
-              />
-            </label>
-            <label className="flex flex-col gap-1 flex-1">
-              <span className="text-builder-ink-muted">メモ (任意)</span>
-              <input
-                type="text"
-                value={formMemo}
-                onChange={(e) => setFormMemo(e.target.value)}
-                placeholder="予備校 / 高2 英語 等"
-                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
-              />
-            </label>
-          </div>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-builder-ink-muted">メモ (任意)</span>
+            <input
+              type="text"
+              value={formMemo}
+              onChange={(e) => setFormMemo(e.target.value)}
+              placeholder="予備校 / 高2 英語 等"
+              className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+            />
+          </label>
         </div>
 
-        <div className="flex flex-col gap-1 mb-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-builder-ink-muted">日付 (複数選択可)</span>
-            <div className="flex gap-1">
-              <button type="button" onClick={selectAllDates}
-                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
-                全選択
-              </button>
-              <button type="button" onClick={clearAllDates}
-                className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">
-                全解除
-              </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          <div className="flex flex-col gap-1 text-xs">
+            <span className="text-builder-ink-muted">期間 (開始日〜終了日)</span>
+            <div className="flex items-center gap-1">
+              <select
+                value={formStartDateId}
+                onChange={(e) => setFormStartDateId(Number(e.target.value))}
+                className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                aria-label="セッション開始日"
+              >
+                {currentConfig.dates.map(d => (
+                  <option key={d.id} value={d.id}>{d.label}</option>
+                ))}
+              </select>
+              <span className="text-builder-ink-muted shrink-0">〜</span>
+              <select
+                value={formEndDateId}
+                onChange={(e) => setFormEndDateId(Number(e.target.value))}
+                className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                aria-label="セッション終了日"
+              >
+                {currentConfig.dates.map(d => (
+                  <option key={d.id} value={d.id}>{d.label}</option>
+                ))}
+              </select>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {currentConfig.dates.map(d => (
-              <label key={d.id}
-                className="flex items-center gap-1 px-2 py-1 border border-builder-ink-ghost rounded cursor-pointer bg-builder-surface hover:bg-builder-bg text-builder-ink text-xs">
-                <input
-                  type="checkbox"
-                  checked={formDateIds.includes(d.id)}
-                  onChange={() => toggleDate(d.id)}
-                />
-                <span>{d.label}</span>
-              </label>
-            ))}
+          <div className="flex flex-col gap-1 text-xs">
+            <span className="text-builder-ink-muted">時刻 (任意, 重複時限を自動NG)</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={formStartTime}
+                onChange={(e) => setFormStartTime(e.target.value)}
+                className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                aria-label="セッション開始時刻"
+              />
+              <span className="text-builder-ink-muted shrink-0">〜</span>
+              <input
+                type="time"
+                value={formEndTime}
+                onChange={(e) => setFormEndTime(e.target.value)}
+                className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                aria-label="セッション終了時刻"
+              />
+            </div>
           </div>
         </div>
 
@@ -201,10 +239,30 @@ export default function ExternalCounts() {
           </button>
           {canAdd && (
             <span className="text-xs text-builder-ink-muted">
-              対象: {formTeacher} × {formDateIds.length}日
+              対象: {formTeacher} × {dateLabelsInRange.length}日
+              {formStartTime && (
+                <>
+                  {' / '}
+                  {previewNgKeys.length > 0
+                    ? <>→ 自動NG {previewNgKeys.length} 件</>
+                    : <span className="text-builder-orange">→ 重複する時限なし (時限ラベルに時刻が無い可能性)</span>
+                  }
+                </>
+              )}
             </span>
           )}
         </div>
+
+        {/* 時限の時刻設定状況をユーザに把握させる注意書き */}
+        {currentConfig.periods.some(p => !periodHasTime(p)) && (
+          <div className="text-[11px] text-builder-orange mb-3">
+            ⚠️ 時刻が読み取れない時限があります:
+            {' '}
+            {currentConfig.periods.filter(p => !periodHasTime(p)).map(p => p.label).join(', ')}
+            {' '}
+            (基本設定で「1限 (13:00~13:45)」のように記述すると自動NGの対象になります)
+          </div>
+        )}
 
         {sessions.length === 0 ? (
           <div className="text-xs text-builder-ink-muted italic py-2">
@@ -217,30 +275,35 @@ export default function ExternalCounts() {
                 <tr>
                   <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">日付</th>
                   <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">講師</th>
-                  <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">ラベル</th>
+                  <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
                   <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
                   <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {sessions.map(s => (
-                  <tr key={s.id}>
-                    <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.date}</td>
-                    <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.teacherName}</td>
-                    <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.label}</td>
-                    <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo}</td>
-                    <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeExternalSession(s.id)}
-                        aria-label={`${s.date} ${s.teacherName} のセッションを削除`}
-                        className="text-builder-red hover:text-red-700 font-bold"
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {sessions.map(s => {
+                  const timeText = s.startTime
+                    ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+                    : (s.label || '-');
+                  return (
+                    <tr key={s.id}>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.date}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.teacherName}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo}</td>
+                      <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeExternalSession(s.id)}
+                          aria-label={`${s.date} ${s.teacherName} のセッションを削除`}
+                          className="text-builder-red hover:text-red-700 font-bold"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

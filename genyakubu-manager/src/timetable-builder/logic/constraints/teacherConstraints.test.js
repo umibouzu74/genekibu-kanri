@@ -41,6 +41,18 @@ describe('isNgSlot', () => {
   it('ngSlots 未定義でも false', () => {
     expect(isNgSlot({ name: 'X' }, '12/25', '1限')).toBe(false);
   });
+
+  it('autoNgEntries に該当キーがあれば true (手動NG 無くても)', () => {
+    const teacher = t({ ngSlots: [] });
+    const autoNg = new Map([[makeNgKey('12/25', '1限'), { sessions: [] }]]);
+    expect(isNgSlot(teacher, '12/25', '1限', autoNg)).toBe(true);
+  });
+
+  it('autoNgEntries 未一致なら手動NGに従う', () => {
+    const teacher = t({ ngSlots: [] });
+    const autoNg = new Map([[makeNgKey('12/25', '2限'), { sessions: [] }]]);
+    expect(isNgSlot(teacher, '12/25', '1限', autoNg)).toBe(false);
+  });
 });
 
 describe('isNgClass', () => {
@@ -133,5 +145,12 @@ describe('isTeacherCandidateFor', () => {
       teacher: t({ subjects: ['英語'], ngClasses: [] }),
       secondaryClassNames: ['３A'],
     })).toBe(true);
+  });
+
+  it('autoNgEntries に該当キーがあれば false (自動NGを尊重)', () => {
+    expect(isTeacherCandidateFor({
+      ...base,
+      autoNgEntries: new Map([[makeNgKey('12/25', '1限'), { sessions: [] }]]),
+    })).toBe(false);
   });
 });
