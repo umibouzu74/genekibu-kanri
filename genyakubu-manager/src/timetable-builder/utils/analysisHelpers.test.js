@@ -360,6 +360,47 @@ describe('computeTabViolationCounts', () => {
     expect(counts[1]).toBe(1);
     expect(counts[2]).toBe(1);
   });
+
+  it('他学年セッションの時間重複も ngViolation としてバッジに加算', () => {
+    // 堀上が 12/25 1限 (13:00-13:45) にアサインされているが、
+    // 12/25 12:25-13:35 の予備校セッションが登録されている → 自動NG違反
+    const config = {
+      dates: [{ id: 1, label: '12/25(木)' }],
+      periods: [{ id: 1, label: '1限 (13:00~13:45)' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 1 },
+    };
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config);
+    const teachers = [{ name: '堀上', subjects: ['英語'], ngSlots: [] }];
+    const sessions = [
+      { id: 1, date: '12/25(木)', teacherName: '堀上', startTime: '12:25', endTime: '13:35' },
+    ];
+    const { globalUsage } = computeGlobalUsage([tab], [], {}, sessions);
+    const counts = computeTabViolationCounts({
+      tabs: [tab], globalUsage, teachers, externalSessions: sessions,
+    });
+    expect(counts[1]).toBe(1);
+  });
+
+  it('externalSessions が空ならバッジ値は手動NGのみで決まる', () => {
+    const config = {
+      dates: [{ id: 1, label: '12/25(木)' }],
+      periods: [{ id: 1, label: '1限 (13:00~13:45)' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 1 },
+    };
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config);
+    const teachers = [{ name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25(木)', '1限 (13:00~13:45)')] }];
+    const { globalUsage } = computeGlobalUsage([tab], [], {}, []);
+    const counts = computeTabViolationCounts({
+      tabs: [tab], globalUsage, teachers, externalSessions: [],
+    });
+    expect(counts[1]).toBe(1);
+  });
 });
 
 // ─── computeViolations (D1c) ─────────────────────────────────────
@@ -538,6 +579,39 @@ describe('computeInfeasibilities', () => {
     });
     expect(r.noTeacherForSlot.count).toBe(1);
     expect(r.noTeacherForSlot.items[0]).toEqual({ date: '12/25', period: '1限', subject: '英語' });
+  });
+
+  it('autoNgByTeacher で塞がれた時限も noTeacherForSlot に入る', () => {
+    // 堀上は手動NG なし、田中は数学担当 → 英語の担当は堀上のみ。
+    // 自動NG (12/25 1限) で堀上が塞がれているため英語が誰も担当できない。
+    const autoNgByTeacher = new Map([
+      ['堀上', new Map([[makeNgKey('12/25', '1限'), { sessions: [] }]])],
+    ]);
+    const r = computeInfeasibilities({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+      autoNgByTeacher,
+    });
+    expect(r.noTeacherForSlot.count).toBe(1);
+    expect(r.noTeacherForSlot.items[0]).toEqual({ date: '12/25', period: '1限', subject: '英語' });
+  });
+
+  it('autoNgByTeacher が null なら従来通り (後方互換)', () => {
+    const r = computeInfeasibilities({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.noTeacherForSlot.count).toBe(0);
   });
 
   it('subjectCapacityShortage: 必要 > capacity で検出', () => {

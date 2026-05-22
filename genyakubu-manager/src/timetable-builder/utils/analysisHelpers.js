@@ -3,6 +3,7 @@
 // orchestrator に専念させる (D4e + D2a)。
 
 import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findEntityById } from './scheduleKey';
+import { computeAutoNgByTeacher } from './autoNg';
 
 // 全タブ横断の講師使用状況を集計する。
 //
@@ -188,10 +189,15 @@ export function computeDashboard(currentSchedule, currentConfig) {
 // には算入しない (重複表示防止)。
 //
 // 返り値: { [tabId: number]: count }
-export function computeTabViolationCounts({ tabs, globalUsage, teachers = [] }) {
+export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], externalSessions = [] }) {
   const result = {};
   tabs.forEach(tab => {
-    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage, teachers);
+    // タブごとに period ラベルが違う可能性があるため (例: 中3 タブの
+    // '1限 (13:00~13:45)' vs 中1 タブの '1限 (14:00~14:45)')、
+    // 自動NG はタブごとに再計算する。一度きりの badge 計算なので
+    // ホット path ではない。
+    const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, tab.config.periods);
+    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage, teachers, autoNgByTeacher);
     let subjectDupCount = 0;
     Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {
       if (cnt > 1) subjectDupCount += cnt - 1;
@@ -340,17 +346,24 @@ export function computeViolations({
 //       (subjectCounts[s] × classes.length) を比較
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
-export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours }) {
+export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null }) {
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
-  // C1: noTeacherForSlot
+  // C1: noTeacherForSlot — 手動NG + 自動NG 両方で candidate を絞る。
+  // 自動NG (他学年セッションとの時間重複) も含めないと、全候補講師が
+  // 予備校に取られているスロットを『不可能』として警告できない。
   const noTeacherItems = [];
   currentConfig.dates.forEach(d => {
     currentConfig.periods.forEach(p => {
       subjects.forEach(subject => {
         const ngKey = makeNgKey(d.label, p.label);
-        const eligible = reals.filter(t => t.subjects?.includes(subject) && !t.ngSlots?.includes(ngKey));
+        const eligible = reals.filter(t => {
+          if (!t.subjects?.includes(subject)) return false;
+          if (t.ngSlots?.includes(ngKey)) return false;
+          if (autoNgByTeacher?.get(t.name)?.has(ngKey)) return false;
+          return true;
+        });
         if (eligible.length === 0) {
           noTeacherItems.push({ date: d.label, period: p.label, subject });
         }

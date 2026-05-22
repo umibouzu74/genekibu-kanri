@@ -26,6 +26,8 @@ export function useTeacherActions(dispatch) {
         type: 'teacher/addExternalSession',
         payload: { date, teacherName, label, memo, startTime, endTime },
       }),
+    addExternalSessions: (items) =>
+      dispatch({ type: 'teacher/addExternalSessions', payload: { items } }),
     removeExternalSession: (id) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
   }), [dispatch]);

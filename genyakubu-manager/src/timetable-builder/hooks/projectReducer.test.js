@@ -438,6 +438,61 @@ describe('projectReducer — 講師管理', () => {
     expect(sess).not.toHaveProperty('endTime');
   });
 
+  it('teacher/addExternalSession: startTime が空なら endTime も格納しない (orphan 防止)', () => {
+    // endTime だけ残ると getSessionTimeRange が start を復元できず silent no-op
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSession',
+      payload: { date: '7/29(水)', teacherName: '堀上', label: '', memo: '', startTime: '', endTime: '13:35' },
+    });
+    const sess = state.project.externalSessions[0];
+    expect(sess).not.toHaveProperty('startTime');
+    expect(sess).not.toHaveProperty('endTime');
+  });
+
+  it('teacher/addExternalSessions: 複数日を 1 アクションで atomic に追加', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          { date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+          { date: '7/30(木)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+        ],
+      },
+    });
+    expect(state.project.externalSessions).toHaveLength(2);
+    expect(state.project.externalSessions[0].id).toBe(1);
+    expect(state.project.externalSessions[1].id).toBe(2);
+    expect(state.project.externalSessions[0].date).toBe('7/29(水)');
+    expect(state.project.externalSessions[1].date).toBe('7/30(木)');
+    // 履歴 push は 1 回
+    expect(state.history.length).toBe(2); // initial + 1 push
+  });
+
+  it('teacher/addExternalSessions: items 空・undefined は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'teacher/addExternalSessions', payload: { items: [] } })).toBe(state);
+    expect(projectReducer(state, { type: 'teacher/addExternalSessions', payload: {} })).toBe(state);
+  });
+
+  it('teacher/addExternalSessions: date/teacherName 欠落の items は skip し残りで作成', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          { date: '7/29(水)', teacherName: '堀上' },
+          { date: '', teacherName: '堀上' }, // skip
+          { date: '7/30(木)', teacherName: '' }, // skip
+          { date: '7/31(金)', teacherName: '堀上' },
+        ],
+      },
+    });
+    expect(state.project.externalSessions).toHaveLength(2);
+    expect(state.project.externalSessions.map(s => s.date)).toEqual(['7/29(水)', '7/31(金)']);
+  });
+
   it('teacher/addExternalSession: date/teacherName が空なら no-op', () => {
     const state = makeState();
     const next = projectReducer(state, {
@@ -882,6 +937,62 @@ describe('projectReducer — cascade cleanup', () => {
     expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
     expect(next.project.externalCounts[makeExternalKey('12/26(金)', '堀上')]).toBeUndefined();
     expect(next.project.externalCounts[makeExternalKey('12/25(木)', '田中')]).toBe(1);
+  });
+
+  it('teacher/remove: 削除された講師の externalSessions も drop される (孤児化防止)', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '', startTime: '12:25', endTime: '13:35' },
+        { id: 2, date: '7/30(木)', teacherName: '堀上', label: '', memo: '' },
+        { id: 3, date: '7/29(水)', teacherName: '田中', label: '', memo: '' },
+      ],
+    });
+    const next = projectReducer(state, { type: 'teacher/remove', payload: { idx: 0 } });
+    expect(next.project.externalSessions).toEqual([
+      { id: 3, date: '7/29(水)', teacherName: '田中', label: '', memo: '' },
+    ]);
+  });
+
+  it('teacher/rename: externalSessions の teacherName も追従する', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '', startTime: '12:25', endTime: '13:35' },
+        { id: 2, date: '7/29(水)', teacherName: '田中', label: '', memo: '' },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'teacher/rename',
+      payload: { idx: 0, newName: '堀上(新)' },
+    });
+    expect(next.project.externalSessions[0].teacherName).toBe('堀上(新)');
+    expect(next.project.externalSessions[1].teacherName).toBe('田中');
+  });
+
+  it('teacher/import (replace): 新講師に含まれない externalSessions と externalCounts は drop', () => {
+    const state = makeState({
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 3,
+        [makeExternalKey('12/25(木)', '田中')]: 1,
+      },
+      externalSessions: [
+        { id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '' },
+        { id: 2, date: '7/29(水)', teacherName: '田中', label: '', memo: '' },
+      ],
+    });
+    // replace で '堀上' だけ残し '田中' を消す
+    const next = projectReducer(state, {
+      type: 'teacher/import',
+      payload: {
+        teachers: [{ name: '堀上', subjects: ['英語'] }],
+        mode: 'replace',
+      },
+    });
+    expect(next.project.teachers.map(t => t.name)).toEqual(['堀上']);
+    // 田中 のセッション・カウントは drop
+    expect(next.project.externalSessions).toHaveLength(1);
+    expect(next.project.externalSessions[0].teacherName).toBe('堀上');
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBe(3);
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '田中')]).toBeUndefined();
   });
 
   // schedule/renameHeader で externalCounts キーが書き換えられる (H-3)

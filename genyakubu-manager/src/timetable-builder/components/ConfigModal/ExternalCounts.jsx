@@ -2,31 +2,34 @@ import { useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
-import { getPeriodTimeRange } from '../../utils/timeRange';
+import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 
 export default function ExternalCounts() {
   const {
     project,
     currentConfig,
     handleExternalCountChange,
-    addExternalSession,
+    addExternalSessions,
     removeExternalSession,
   } = useProjectContext();
 
   // 詳細セッション追加フォームの state。日付は (start, end) のレンジ指定に
   // 変更 (NG タブと UI を揃え、毎日チェックする手間を削減)。
+  // date ID 初期値は number に正規化 (currentConfig.dates 空時は null)。
+  // string '' を混ぜると lookup の === 比較で number と一致せず canAdd が
+  // 1 render だけ false になるなどの型ドリフトを生むため。
   const [formTeacher, setFormTeacher] = useState(project.teachers[0]?.name || '');
   const [formMemo, setFormMemo] = useState('');
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
-  const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? '');
-  const [formEndDateId, setFormEndDateId] = useState(currentConfig.dates[0]?.id ?? '');
+  const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? null);
+  const [formEndDateId, setFormEndDateId] = useState(currentConfig.dates[0]?.id ?? null);
 
   // 設定の dates が変わって start/end が無効になった場合は再同期
   useEffect(() => {
     const ids = currentConfig.dates.map(d => d.id);
-    if (!ids.includes(formStartDateId)) setFormStartDateId(ids[0] ?? '');
-    if (!ids.includes(formEndDateId)) setFormEndDateId(ids[0] ?? '');
+    if (!ids.includes(formStartDateId)) setFormStartDateId(ids[0] ?? null);
+    if (!ids.includes(formEndDateId)) setFormEndDateId(ids[0] ?? null);
   }, [currentConfig.dates, formStartDateId, formEndDateId]);
 
   const sessions = useMemo(
@@ -55,9 +58,33 @@ export default function ExternalCounts() {
     return currentConfig.dates.slice(lo, hi + 1).map(d => d.label);
   }, [currentConfig.dates, formStartDateId, formEndDateId]);
 
+  // ── 時刻入力の検証 ──────────────────────
+  // parseHHmm の有効域 (h≤47, mm≤59) に揃える。canAdd 用の regex を別に
+  // 持つと '99:30' のような pass-through 不正値を許容してしまうため、
+  // 同じパーサで validate する。
+  // 戻り値: { startMin, endMin, error: string|null }
+  const timeValidation = useMemo(() => {
+    const startMin = formStartTime ? parseHHmm(formStartTime) : null;
+    const endMin = formEndTime ? parseHHmm(formEndTime) : null;
+    if (!formStartTime && formEndTime) {
+      return { startMin, endMin, error: '終了時刻だけでなく開始時刻も入力してください' };
+    }
+    if (formStartTime && startMin == null) {
+      return { startMin, endMin, error: '開始時刻が不正な形式です' };
+    }
+    if (formEndTime && endMin == null) {
+      return { startMin, endMin, error: '終了時刻が不正な形式です' };
+    }
+    if (startMin != null && endMin != null && startMin >= endMin) {
+      return { startMin, endMin, error: '開始時刻は終了時刻より前にしてください' };
+    }
+    return { startMin, endMin, error: null };
+  }, [formStartTime, formEndTime]);
+
   // 「この設定で追加したら自動NGが何件付くか」のプレビュー。
   // 仮の sessions (dateLabels × {teacher, time}) を作って computeAutoNgEntries を呼ぶ。
   const previewNgKeys = useMemo(() => {
+    if (timeValidation.error) return [];
     if (!formTeacher || !formStartTime || dateLabelsInRange.length === 0) return [];
     const fakeSessions = dateLabelsInRange.map((dl, idx) => ({
       id: idx, date: dl, teacherName: formTeacher,
@@ -65,13 +92,12 @@ export default function ExternalCounts() {
     }));
     const entries = computeAutoNgEntries(formTeacher, fakeSessions, currentConfig.periods);
     return Array.from(entries.keys());
-  }, [formTeacher, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods]);
+  }, [formTeacher, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods, timeValidation.error]);
 
   const canAdd =
     !!formTeacher &&
     dateLabelsInRange.length > 0 &&
-    (formStartTime ? /^\d{1,2}:\d{2}$/.test(formStartTime) : true) &&
-    (formEndTime ? /^\d{1,2}:\d{2}$/.test(formEndTime) : true);
+    timeValidation.error == null;
 
   const handleAdd = () => {
     if (!canAdd) return;
@@ -79,10 +105,21 @@ export default function ExternalCounts() {
     const autoLabel = formStartTime
       ? (formEndTime ? `${formStartTime}-${formEndTime}` : formStartTime)
       : '';
-    for (const dl of dateLabelsInRange) {
-      addExternalSession(dl, formTeacher, autoLabel, formMemo.trim(), formStartTime, formEndTime);
-    }
-    // 入力は使い回せるよう残す (NG タブと同じ挙動)
+    const items = dateLabelsInRange.map(dl => ({
+      date: dl,
+      teacherName: formTeacher,
+      label: autoLabel,
+      memo: formMemo.trim(),
+      startTime: formStartTime || undefined,
+      endTime: formEndTime || undefined,
+    }));
+    // 1 アクションで全日 atomic に登録 (途中 reject 時の不整合と
+    // O(N) 履歴 push を回避)。
+    addExternalSessions(items);
+    // 時刻・メモはクリア (連打による重複登録を視覚的に防ぐ)。
+    // teacher / date range は連続追加できるよう残す。
+    setFormStartTime('');
+    setFormEndTime('');
     setFormMemo('');
   };
 
@@ -184,7 +221,7 @@ export default function ExternalCounts() {
             <span className="text-builder-ink-muted">期間 (開始日〜終了日)</span>
             <div className="flex items-center gap-1">
               <select
-                value={formStartDateId}
+                value={formStartDateId ?? ''}
                 onChange={(e) => setFormStartDateId(Number(e.target.value))}
                 className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                 aria-label="セッション開始日"
@@ -195,7 +232,7 @@ export default function ExternalCounts() {
               </select>
               <span className="text-builder-ink-muted shrink-0">〜</span>
               <select
-                value={formEndDateId}
+                value={formEndDateId ?? ''}
                 onChange={(e) => setFormEndDateId(Number(e.target.value))}
                 className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                 aria-label="セッション終了日"
@@ -237,6 +274,11 @@ export default function ExternalCounts() {
           >
             まとめて追加
           </button>
+          {timeValidation.error && (
+            <span className="text-xs text-builder-red font-bold">
+              ⚠️ {timeValidation.error}
+            </span>
+          )}
           {canAdd && (
             <span className="text-xs text-builder-ink-muted">
               対象: {formTeacher} × {dateLabelsInRange.length}日

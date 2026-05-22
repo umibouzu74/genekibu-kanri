@@ -284,12 +284,15 @@ export default function NgSettings() {
                               const tooltipParts = [];
                               if (isManualNg) tooltipParts.push('手動NG');
                               if (isAutoNg) {
+                                // 外側の teacher 変数 `t` を上書きしないよう
+                                // `timeText` 名で受ける (将来 tooltip に teacher.name を
+                                // 足したくなった時に shadow で silently 壊れるのを防ぐ)。
                                 const memos = autoEntry.sessions
                                   .map(s => {
-                                    const t = s.startTime
+                                    const timeText = s.startTime
                                       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
                                       : (s.label || '');
-                                    return s.memo ? `${s.memo} (${t})` : t;
+                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
                                   })
                                   .filter(Boolean)
                                   .join(', ');

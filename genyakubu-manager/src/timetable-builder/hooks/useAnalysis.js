@@ -42,8 +42,14 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
   );
 
   const tabErrorCounts = useMemo(
-    () => computeTabViolationCounts({ tabs: project.tabs, globalUsage, teachers: project.teachers }),
-    [project.tabs, globalUsage, project.teachers],
+    // externalSessions を渡し、各タブの period に合わせた自動NGを内部で再計算させる
+    // (タブ毎に period ラベルが違う可能性があるため、active タブの autoNgByTeacher
+    //  を流用せず再計算する)。
+    () => computeTabViolationCounts({
+      tabs: project.tabs, globalUsage, teachers: project.teachers,
+      externalSessions: project.externalSessions || [],
+    }),
+    [project.tabs, globalUsage, project.teachers, project.externalSessions],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
@@ -74,8 +80,9 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
       commonSubjects,
       currentConfig,
       maxDailyHours,
+      autoNgByTeacher,
     }),
-    [project.teachers, commonSubjects, currentConfig, maxDailyHours],
+    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher],
   );
 
   const analysis = useMemo(

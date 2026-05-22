@@ -63,6 +63,15 @@ describe('parseTimeRange', () => {
     expect(parseTimeRange('1限')).toBeNull();
     expect(parseTimeRange('予備校')).toBeNull();
   });
+
+  it('「区切り→HH:mm」(終了のみ表記) は ambiguous として null', () => {
+    // '~14:00' / '-14:00' / '~ 14:00' などは『終了 14:00』の意味で
+    // 書かれる可能性が高い。これを開始扱いすると自動NGが反転する。
+    expect(parseTimeRange('~14:00')).toBeNull();
+    expect(parseTimeRange('-14:00')).toBeNull();
+    expect(parseTimeRange('1限 (~14:00)')).toBeNull();
+    expect(parseTimeRange('～ 14:00')).toBeNull();
+  });
 });
 
 describe('getPeriodTimeRange', () => {

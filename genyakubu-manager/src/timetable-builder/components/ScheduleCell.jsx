@@ -36,6 +36,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   // 後から NG 設定された場合に、既に割り当て済みの講師がその日時で
   // NG になっていれば視覚的に警告する。
   // 手動NG (teacher.ngSlots) + 自動NG (他学年セッションとの時間重複) の両方を考慮。
+  // '未定' は placeholder 講師として project.teachers に含まれるものの、
+  // assignedTeacher の早期 null 化と autoNgByTeacher が '未定' を含まないため
+  // 自動NG/手動NG ともに常に false 扱いになる (placeholder にコマ数制限を
+  // 課さない既存仕様と整合)。
   const assignedTeacher = (entry.teacher && entry.teacher !== '未定')
     ? project.teachers.find(t => t.name === entry.teacher)
     : null;

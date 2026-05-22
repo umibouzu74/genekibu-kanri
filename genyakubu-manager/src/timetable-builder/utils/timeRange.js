@@ -53,6 +53,13 @@ export function parseTimeRange(text) {
     if (startMin != null) return { startMin, endMin: null };
   }
 
+  // 「区切り → HH:mm」(終了のみ表記、例: '~14:00', '1限 (~14:00)') は
+  // ambiguous なので null を返す。下の single fallback で '14:00' を
+  // 抜き出して『開始のみ』と誤解釈すると終端が開始に反転して自動NGが
+  // 全く違う時限にかかるため、明示的に reject する。
+  const endOnlyMatch = normalized.match(/[~～\-–]\s*(\d{1,2}:\d{2})/);
+  if (endOnlyMatch) return null;
+
   // 単独 HH:mm
   const single = normalized.match(/(\d{1,2}:\d{2})/);
   if (single) {
