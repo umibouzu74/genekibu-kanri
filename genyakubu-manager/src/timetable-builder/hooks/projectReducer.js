@@ -521,6 +521,58 @@ function applyAction(project, action) {
       return { ...project, externalSessions: filtered };
     }
 
+    // ─── 他学年セッションプリセット ─────────
+    // 「予備校 12:25-13:35 を 7/24~7/31」のような頻出パターンを保存し、
+    // 詳細セッション登録フォームから 1 クリックで呼び出せるようにする。
+    // payload で受け取る fields は全て optional (id/name 以外)。空文字は省く。
+    case 'preset/add': {
+      const { name, startTime, endTime, startDateLabel, endDateLabel, memo } = action.payload;
+      if (!name) return project;
+      const presets = project.externalSessionPresets || [];
+      const newId = presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+      const newPreset = { id: newId, name };
+      if (startTime) newPreset.startTime = startTime;
+      if (startTime && endTime) newPreset.endTime = endTime;
+      if (startDateLabel) newPreset.startDateLabel = startDateLabel;
+      if (endDateLabel) newPreset.endDateLabel = endDateLabel;
+      if (memo) newPreset.memo = memo;
+      return { ...project, externalSessionPresets: [...presets, newPreset] };
+    }
+    case 'preset/update': {
+      const { id, updates } = action.payload;
+      const presets = project.externalSessionPresets || [];
+      const target = presets.find(p => p.id === id);
+      if (!target) return project;
+      // updates のフィールドは空文字なら削除、値があれば上書き。
+      // startTime が落ちる場合は endTime も落とす (orphan endTime 防止)。
+      const merged = { ...target };
+      const writeOrDelete = (key, val) => {
+        if (val == null || val === '') delete merged[key];
+        else merged[key] = val;
+      };
+      if ('name' in updates) {
+        if (!updates.name) return project; // name は必須なので空は no-op
+        merged.name = updates.name;
+      }
+      if ('startTime' in updates) writeOrDelete('startTime', updates.startTime);
+      if ('endTime' in updates) writeOrDelete('endTime', updates.endTime);
+      if ('startDateLabel' in updates) writeOrDelete('startDateLabel', updates.startDateLabel);
+      if ('endDateLabel' in updates) writeOrDelete('endDateLabel', updates.endDateLabel);
+      if ('memo' in updates) writeOrDelete('memo', updates.memo);
+      if (!merged.startTime) delete merged.endTime;
+      return {
+        ...project,
+        externalSessionPresets: presets.map(p => p.id === id ? merged : p),
+      };
+    }
+    case 'preset/remove': {
+      const { id } = action.payload;
+      const presets = project.externalSessionPresets || [];
+      const filtered = presets.filter(p => p.id !== id);
+      if (filtered.length === presets.length) return project;
+      return { ...project, externalSessionPresets: filtered };
+    }
+
     // ─── セル操作 ────────────────────────
     // payload の dateId/periodId/classId は v3 の永続 ID (number)。
     case 'cell/assign': {
@@ -650,6 +702,8 @@ function applyAction(project, action) {
       let newTeachers = project.teachers;
       let newExternal = project.externalCounts;
       let newCombined = project.combinedGroups;
+      let newSessions = project.externalSessions;
+      let newPresets = project.externalSessionPresets;
 
       if (type === 'date' || type === 'period') {
         // NG slot のキーを書き換え
@@ -671,6 +725,17 @@ function applyAction(project, action) {
       if (type === 'date') {
         newExternal = renameExternalCountsDateLabel(project.externalCounts, oldVal, newVal);
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'dates', oldVal, newVal);
+        // externalSessions の date と externalSessionPresets の
+        // startDateLabel / endDateLabel もラベル基準なので追従させる。
+        newSessions = (project.externalSessions || []).map(s =>
+          s.date === oldVal ? { ...s, date: newVal } : s
+        );
+        newPresets = (project.externalSessionPresets || []).map(p => {
+          let q = p;
+          if (q.startDateLabel === oldVal) q = { ...q, startDateLabel: newVal };
+          if (q.endDateLabel === oldVal) q = { ...q, endDateLabel: newVal };
+          return q;
+        });
       } else if (type === 'class') {
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'classes', oldVal, newVal);
       }
@@ -681,6 +746,8 @@ function applyAction(project, action) {
         tabs: newTabs,
         teachers: newTeachers,
         externalCounts: newExternal,
+        externalSessions: newSessions,
+        externalSessionPresets: newPresets,
         combinedGroups: newCombined,
       };
     }

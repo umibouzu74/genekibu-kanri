@@ -534,6 +534,139 @@ describe('projectReducer — 講師管理', () => {
   });
 });
 
+describe('projectReducer — externalSessionPresets', () => {
+  it('preset/add: name 必須、空ペイロードは no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'preset/add', payload: { name: '' } })).toBe(state);
+    expect(projectReducer(state, { type: 'preset/add', payload: {} })).toBe(state);
+  });
+
+  it('preset/add: 全フィールド指定で保存し、id 自動採番', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: {
+        name: '予備校（早朝）',
+        startTime: '12:25', endTime: '13:35',
+        startDateLabel: '7/29(水)', endDateLabel: '7/31(金)',
+        memo: '予備校',
+      },
+    });
+    expect(state.project.externalSessionPresets).toEqual([{
+      id: 1, name: '予備校（早朝）',
+      startTime: '12:25', endTime: '13:35',
+      startDateLabel: '7/29(水)', endDateLabel: '7/31(金)',
+      memo: '予備校',
+    }]);
+    state = projectReducer(state, { type: 'preset/add', payload: { name: 'B' } });
+    expect(state.project.externalSessionPresets[1].id).toBe(2);
+  });
+
+  it('preset/add: 空文字フィールドは保存しない (省略扱い)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: 'X', startTime: '', endTime: '', memo: '' },
+    });
+    const p = state.project.externalSessionPresets[0];
+    expect(p).toEqual({ id: 1, name: 'X' });
+  });
+
+  it('preset/add: startTime が無ければ endTime も保存しない (orphan 防止)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: 'X', startTime: '', endTime: '13:35' },
+    });
+    const p = state.project.externalSessionPresets[0];
+    expect(p).not.toHaveProperty('startTime');
+    expect(p).not.toHaveProperty('endTime');
+  });
+
+  it('preset/update: 指定フィールドだけ更新、他は維持', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: 'A', startTime: '12:25', endTime: '13:35', memo: '予備校' },
+    });
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { memo: '予備校(更新)' } },
+    });
+    const p = state.project.externalSessionPresets[0];
+    expect(p.memo).toBe('予備校(更新)');
+    expect(p.startTime).toBe('12:25');
+    expect(p.endTime).toBe('13:35');
+    expect(p.name).toBe('A');
+  });
+
+  it('preset/update: 空文字を渡すとフィールドを削除 (startTime 削除で endTime も連動 drop)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: 'A', startTime: '12:25', endTime: '13:35' },
+    });
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { startTime: '' } },
+    });
+    const p = state.project.externalSessionPresets[0];
+    expect(p).not.toHaveProperty('startTime');
+    expect(p).not.toHaveProperty('endTime');
+  });
+
+  it('preset/update: 存在しない id は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'preset/update', payload: { id: 999, updates: { name: 'X' } } })).toBe(state);
+  });
+
+  it('preset/update: name を空にする更新は no-op (name 必須)', () => {
+    let state = makeState();
+    state = projectReducer(state, { type: 'preset/add', payload: { name: 'A' } });
+    const before = state;
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { name: '' } },
+    });
+    expect(state).toBe(before);
+  });
+
+  it('preset/remove: 指定 id を drop', () => {
+    let state = makeState();
+    state = projectReducer(state, { type: 'preset/add', payload: { name: 'A' } });
+    state = projectReducer(state, { type: 'preset/add', payload: { name: 'B' } });
+    state = projectReducer(state, { type: 'preset/remove', payload: { id: 1 } });
+    expect(state.project.externalSessionPresets.map(p => p.name)).toEqual(['B']);
+  });
+
+  it('preset/remove: 存在しない id は no-op (同参照)', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'preset/remove', payload: { id: 999 } })).toBe(state);
+  });
+
+  it('schedule/renameHeader (date): externalSessions.date と externalSessionPresets の日付ラベルも追従', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '' },
+        { id: 2, date: '12/26(金)', teacherName: '堀上', label: '', memo: '' },
+      ],
+      externalSessionPresets: [
+        { id: 1, name: 'A', startDateLabel: '12/25(木)', endDateLabel: '12/26(金)' },
+        { id: 2, name: 'B', startDateLabel: '12/25(木)' },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
+    });
+    expect(next.project.externalSessions[0].date).toBe('12/25(祝)');
+    expect(next.project.externalSessions[1].date).toBe('12/26(金)');
+    expect(next.project.externalSessionPresets[0].startDateLabel).toBe('12/25(祝)');
+    expect(next.project.externalSessionPresets[0].endDateLabel).toBe('12/26(金)');
+    expect(next.project.externalSessionPresets[1].startDateLabel).toBe('12/25(祝)');
+  });
+});
+
 describe('projectReducer — 科目マスタ', () => {
   it('subject/add: 全タブの subjectCounts に 0 で追加', () => {
     const state = makeState();

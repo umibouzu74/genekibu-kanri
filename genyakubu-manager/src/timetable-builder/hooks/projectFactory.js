@@ -54,6 +54,7 @@ export function createNewProject(tabs, teachers, subjectColors, subjects) {
     combinedGroups: [],
     externalCounts: {},
     externalSessions: [],
+    externalSessionPresets: [],
   };
 }
 

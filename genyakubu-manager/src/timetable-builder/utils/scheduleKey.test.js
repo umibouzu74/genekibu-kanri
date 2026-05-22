@@ -381,6 +381,19 @@ describe('migrateProject', () => {
     expect(result.externalSessions[0].id).toBe(1);
   });
 
+  it('externalSessionPresets が未設定なら空配列で補完', () => {
+    const result = migrateProject(makeLegacyProject());
+    expect(result.externalSessionPresets).toEqual([]);
+  });
+
+  it('externalSessionPresets が既にあれば上書きしない', () => {
+    const p = makeLegacyProject();
+    p.externalSessionPresets = [{ id: 1, name: '予備校（早朝）', startTime: '12:25', endTime: '13:35' }];
+    const result = migrateProject(p);
+    expect(result.externalSessionPresets).toHaveLength(1);
+    expect(result.externalSessionPresets[0].name).toBe('予備校（早朝）');
+  });
+
   it('v2 プロジェクトは v3 へだけマイグレーションされる', () => {
     const v2 = {
       version: 2,

@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added (他学年セッションのプリセット + 複数講師の一括登録)
+- 「📅 他学年・午前」タブにプリセット管理パネル (折りたたみ) を追加。
+  「予備校（早朝）= 12:25-13:35, 7/24~7/31, メモ"予備校"」のような
+  時刻・期間・メモの組み合わせを保存し、詳細セッション登録フォームから
+  1 クリックで時刻/期間/メモを展開できる。
+- 詳細セッション登録フォームの講師欄を単一 `<select>` から **チェックボックス
+  一覧** に変更し、複数講師を 1 クリックずつ選択可能。「全選択 / 全解除」
+  ショートカット付き。
+- 「まとめて追加」が M 人 × N 日 を 1 アクション (teacher/addExternalSessions
+  既存 batch) で atomic に登録。プレビューも「M 名 × N 日 = K 件」と
+  「→ 自動NG (M × N_overlap) 件」を表示。
+- データ: project に `externalSessionPresets: Preset[]` を追加。
+  `Preset = { id, name, startTime?, endTime?, startDateLabel?, endDateLabel?, memo? }`。
+  既存プロジェクトは migrate 時に空配列で補完。
+- 新 reducer actions: `preset/add` / `preset/update` / `preset/remove`。
+  空文字フィールドは保存しない、startTime が無い場合は endTime も連動 drop、
+  name 必須など defense-in-depth な検証を備える。
+- 日付ラベル変更 (`schedule/renameHeader` 'date') 時に
+  `externalSessions[].date` と `externalSessionPresets[].startDateLabel /
+  endDateLabel` を cascade 更新 (孤児化防止)。
+- Tests: 13 件追加 (reducer 11: preset add/update/remove + cascade,
+  scheduleKey 2: migration)。全体 1146 件、lint 0 / typecheck 0 / build OK。
+
 ### Added (他学年セッション → 日時NG の自動派生)
 - 「📅 他学年・午前」タブで時刻入りセッション (例: 12:25-13:35) を登録すると、
   その時間帯と重なる時限が「🚫 日時NG」タブで自動的にNG扱いになる。

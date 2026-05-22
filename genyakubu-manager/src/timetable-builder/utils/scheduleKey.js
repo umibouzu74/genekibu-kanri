@@ -260,5 +260,11 @@ export function migrateProject(project) {
     result = { ...result, externalSessions: [] };
   }
 
+  // externalSessionPresets が未設定の場合は空配列で初期化 (他学年セッション
+  // 登録テンプレートの保存先、後発フィールド)
+  if (!result.externalSessionPresets) {
+    result = { ...result, externalSessionPresets: [] };
+  }
+
   return result;
 }
