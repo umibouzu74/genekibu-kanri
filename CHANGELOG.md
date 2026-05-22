@@ -2,6 +2,85 @@
 
 ## [Unreleased]
 
+### Fixed (AbsenceNgPanel のコードレビュー指摘 P1-P3 を対応)
+タブ統合直後のコードレビューで判明したバグを修正。
+
+P1 (致命的・mass action リスク):
+- **end date デフォルトを単日に**: `formEndDateId` 初期値を `dates[last]` から
+  `dates[0]` に修正。デフォルト範囲が全期間 (例: 14 日) から単日に縮退し、
+  ユーザが他学年モードで誤って『M 名 × N 日』のセッションを大量生成する
+  事故を防ぐ。
+- **ALL_TEACHERS sentinel 復活**: 講師選択 state を `{ allMode, names }` に変更し、
+  `allMode=true` のときは『現在の project.teachers』から動的に解決する
+  (旧 NgSettings の挙動と等価)。『全選択』後に追加された講師も次の操作で
+  自動的に対象に含まれる。同パターンを period 選択にも適用 (新 period 追加で
+  silent miss を起こす問題も解消)。
+- **日付削除時の snap を nearest に**: end date が削除された時、これまで
+  `dates[last]` へジャンプして範囲を widen していたのを、`start に揃える
+  (= 単日)` に変更。意図しない範囲拡張を防ぐ。
+- **applyPreset の partial date update を防止**: preset の `startDateLabel` /
+  `endDateLabel` が両方とも現在の dates に存在する場合のみ両方を update。
+  片方しか resolve しない場合は両方を skip して toast 警告。
+
+P2 (実バグ):
+- **canApply 判定の統一**: NG / 他学年 両モードで `selectedTeacherNames.length` を
+  使い、`formTeacherNames.size` と `selectedTeacherIdxs.length` の 1-render
+  ズレで NG ボタンだけが矛盾して disabled になる問題を解消。
+- **mode 切替時の state クリア**: external → ng 切替時に時刻/メモを clear。
+  ng モード中も裏で stale な値が残って戻ったとき silent に submit される
+  事故を防ぐ。
+- **OK解除の確認ダイアログ**: `handleApplyNg(false)` (OK解除) を実行する前に
+  対象件数を表示した showConfirm を必須化。直近 NG したばかりの設定を
+  silent に全消去する事故を防ぐ。
+- **action 後の toast 通知**: 他学年セッション追加 / NG / OK解除 の各 action
+  で件数付きの toast を表示し、『反応してない』勘違いによる再クリックを抑止。
+
+P3 (設計 / 一貫性):
+- **expandedDates の stale key cleanup**: dates 配列が変わる度に削除済み
+  id を expandedDates から除く useEffect を追加。config/setList で id が
+  再利用されて新しい date が silent に折りたたまれる事故を防ぐ。
+- **teacher / period 同期の membership 比較**: size 比較だけだと rename swap
+  で素通りする問題を解消。`Array#every` で内容も比較する。
+- **preset select を controlled に**: 旧 `defaultValue` + 直接 DOM mutation
+  を `value=""` + `onChange` に変更。条件 remount 時に古い選択が再出現する
+  リスクを排除。
+- **applyPreset の `!= null` を `if (truthy)` に**: 空文字 (`''`) は『未設定』
+  扱いとして、preset 適用時に formStartTime/Memo が誤って空に上書きされる
+  のを防ぐ。
+- **quick グリッド `|| ''` を `?? ''`**: `0` を空表示に潰さず、明示的な
+  『0 コマ』入力と未入力の区別を保つ。
+- **PresetPanel `useState(blankDraft())` を lazy init に**: `useState(() => blankDraft())`
+  に変更。毎レンダーの不要な実行を排除。
+- **ROADMAP の stale 参照を更新**: 削除済み NgSettings.jsx → AbsenceNgPanel.jsx
+  に書き換え。
+
+Tests: 全体 1181 件、lint 0 / typecheck 0 / build OK。
+(AbsenceNgPanel 自体への直接 UI テスト追加は ROADMAP の E3e に明記済み。)
+
+### Changed (「他学年・午前」と「日時NG」タブを統合)
+旧『📅 他学年・午前』タブと『🚫 日時NG』タブを 1 つの『📅 講師不在・NG』タブに
+統合した。日付ヘッダを共有し、同じ日に対するセッション登録と NG 設定を
+1 つのセクションで縦に並べて見られるようになった。
+
+新タブ (`AbsenceNgPanel.jsx`) の構成 (上から下):
+1. **プリセット管理** (折りたたみ): 旧 ExternalCounts と同等
+2. **統合一括登録フォーム**: 上部のラジオで「📅 他学年セッション (時刻あり)」
+   と「🚫 手動NG (時限指定)」を切替。共通フィールド (講師複数 / 期間 / メモ)
+   はそのまま、モード固有の入力欄だけが切替わる。プリセットは他学年モードでのみ
+   表示される。
+3. **日付ごとの折りたたみセクション**: 各日付ヘッダの下に
+   (a) その日の他学年セッション一覧、(b) NG マトリクス (講師×時限) を縦に
+   並べて表示。日付ヘッダには「他学年 N 件」「NG N 件」のバッジを併記。
+4. **クイック数値入力グリッド** (折りたたみ・最下部): 時刻無しの粗い
+   コマ数管理用に旧 ExternalCounts のグリッドを移植。教科グループ見出し付き。
+
+旧ファイル `ExternalCounts.jsx` / `NgSettings.jsx` は削除。ConfigModal の
+タブ ID も `external` + `ng` → `absence-ng` に変更 (旧 ID は廃止)。reducer の
+action は変えていない (`teacher/toggleNg` / `setNgBatch` / `addExternalSessions` /
+`teacher/addExternalSessionPreset` 等はそのまま再利用)。
+
+Tests: 全体 1181 件、lint 0 / typecheck 0 / build OK。
+
 ### Fixed (講師グループ表示のコードレビュー指摘 P1-P4 を一括対応)
 コードレビューで判明したバグを修正。
 

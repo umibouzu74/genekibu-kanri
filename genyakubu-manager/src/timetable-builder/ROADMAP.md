@@ -677,7 +677,7 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 #### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
 - **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
-- **改善**: TeacherManager (CSV import 含む) / BasicSettings / NgSettings / CombinedGroupSettings に直接の UI テストを追加。D5a で a11y 属性追加分の回帰もここで捕捉。
+- **改善**: TeacherManager (CSV import 含む) / BasicSettings / AbsenceNgPanel (旧 NgSettings + ExternalCounts を統合した 1000 行コンポーネント) / CombinedGroupSettings に直接の UI テストを追加。D5a で a11y 属性追加分の回帰もここで捕捉。
 - **規模**: 中 / **価値**: 中
 
 #### E3f. ⚪ 視覚回帰テスト (新規)
