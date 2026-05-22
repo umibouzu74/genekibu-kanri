@@ -4,6 +4,7 @@ import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortJa } from "../../../utils/sortJa";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
+import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
 // 回数補正一覧タブ: sessionOverrides を月 / 講師 / モードでフィルタして表示。
 // 削除は removeWithUndo (6 秒間 Undo 可能なトースト)。
@@ -12,6 +13,8 @@ export function OverrideListTab({
   sessionOverrides,
   slots,
   isAdmin,
+  partTimeStaff = [],
+  subjects = [],
   onDel,
   onJumpToDate,
 }) {
@@ -39,6 +42,10 @@ export function OverrideListTab({
     });
     return sortJa([...set]);
   }, [slots]);
+  const teacherGroups = useMemo(
+    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
+    [allTeachers, slots, partTimeStaff, subjects],
+  );
 
   const filtered = useMemo(() => {
     let r = [...sessionOverrides];
@@ -108,10 +115,14 @@ export function OverrideListTab({
             style={{ ...S.input, width: "auto", minWidth: 110 }}
           >
             <option value="">すべて</option>
-            {allTeachers.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+            {teacherGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.teachers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

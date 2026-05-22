@@ -1,6 +1,7 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
+import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 
 export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
   const {
@@ -29,6 +30,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const maxCnt = currentConfig.subjectCounts[entry.subject] || 0;
   const isOver = maxCnt > 0 && order > maxCnt;
   const filteredTeachers = entry.subject ? project.teachers.filter(t => t.subjects.includes(entry.subject)) : project.teachers;
+  // 教科ごとに optgroup でドロップダウンを分類する。
+  // subject が選択されているとき (filtered) も含めて、常にグループ表示で
+  // 一貫性を保つ。
+  const teacherGroups = groupTeachersBySubject(filteredTeachers, project.subjects);
 
   const subjDupKey = `c${classId}-d${dateId}-${entry.subject}`;
   const isSubjDup = analysis.dailySubjectMap[subjDupKey] > 1;
@@ -140,22 +145,26 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
         >
           <option value="">-</option>
-          {filteredTeachers.map(t => {
-            const dayKey = makeExternalKey(dLabel, t.name);
-            const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
-            const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
-            const isAuto = !!analysis.autoNgByTeacher?.get(t.name)?.has(ngKey);
-            const isNg = isManual || isAuto;
-            let label = t.name;
-            if (t.name !== "未定") {
-              if (isNg) label += isAuto && !isManual ? " (NG:他学年)" : " (NG)";
-              else label += ` (計${daily.total})`;
-            }
-            // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
-            // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。
-            const shouldDisable = isNg && entry.teacher !== t.name;
-            return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
-          })}
+          {teacherGroups.map(group => (
+            <optgroup key={group.label} label={group.label}>
+              {group.teachers.map(t => {
+                const dayKey = makeExternalKey(dLabel, t.name);
+                const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
+                const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
+                const isAuto = !!analysis.autoNgByTeacher?.get(t.name)?.has(ngKey);
+                const isNg = isManual || isAuto;
+                let label = t.name;
+                if (t.name !== "未定") {
+                  if (isNg) label += isAuto && !isManual ? " (NG:他学年)" : " (NG)";
+                  else label += ` (計${daily.total})`;
+                }
+                // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
+                // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。
+                const shouldDisable = isNg && entry.teacher !== t.name;
+                return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
+              })}
+            </optgroup>
+          ))}
         </select>
         {isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ 重複</div>}
         {isNgAssigned && !isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ NG設定違反</div>}

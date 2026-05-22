@@ -1,17 +1,33 @@
+import { Fragment } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
+import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 
-function SummaryTable({ target, config, combinedGroups }) {
+function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
-  // 未定を除外
   delete totals["未定"];
+  // 教科ごとにグループ化して表示。teachers/subjects は project から渡される。
+  // totals に存在しない (= 0 コマ) 講師は省く。
+  const teachersWithCount = (teachers || []).filter(t => t.name !== '未定' && (totals[t.name] || 0) > 0);
+  const groups = groupTeachersBySubject(teachersWithCount, subjects);
   return (
     <div className="bg-builder-surface p-4 border border-builder-border rounded">
       <h3 className="font-bold mb-2 text-builder-ink">📊 この案の集計</h3>
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(totals).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(([n, c]) => (
-          <span key={n} className="bg-builder-info-soft text-builder-ink px-2 rounded text-sm">{n}:{c}</span>
+      <div className="flex flex-col gap-1">
+        {groups.map(group => (
+          <Fragment key={group.label}>
+            <div className="text-[11px] font-bold text-builder-ink-muted">━ {group.label}</div>
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {group.teachers
+                .sort((a, b) => (totals[b.name] || 0) - (totals[a.name] || 0))
+                .map(t => (
+                  <span key={t.name} className="bg-builder-info-soft text-builder-ink px-2 rounded text-sm">
+                    {t.name}:{totals[t.name]}
+                  </span>
+                ))}
+            </div>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -29,26 +45,43 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
 
   return (
     <>
-      {showSummary && (
-        <div className="mb-4 no-print animate-fade-in">
-          <div className="p-4 bg-builder-info-soft border border-builder-info-border rounded">
-            <h3 className="font-bold text-builder-ink mb-2">📊 講師別コマ数 (全タブ合計)</h3>
-            <div className="flex flex-wrap gap-2">
-              {project.teachers.filter(t => t.name !== "未定").map(t => {
-                let total = 0;
-                currentConfig.dates.forEach(d => { total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0; });
-                if (total === 0) return null;
-                return (
-                  <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
-                    <span className="font-bold text-builder-ink">{t.name}</span>
-                    <span className="bg-builder-info-soft text-builder-ink px-1 rounded">{total}</span>
-                  </div>
-                );
-              })}
+      {showSummary && (() => {
+        // 教科ごとにグループ化、'未定' は除外したいので予め filter してから group 化。
+        const teachersForSummary = project.teachers.filter(t => t.name !== '未定');
+        const groups = groupTeachersBySubject(teachersForSummary, project.subjects);
+        return (
+          <div className="mb-4 no-print animate-fade-in">
+            <div className="p-4 bg-builder-info-soft border border-builder-info-border rounded">
+              <h3 className="font-bold text-builder-ink mb-2">📊 講師別コマ数 (全タブ合計)</h3>
+              <div className="flex flex-col gap-2">
+                {groups.map(group => {
+                  const entries = group.teachers.map(t => {
+                    let total = 0;
+                    currentConfig.dates.forEach(d => {
+                      total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
+                    });
+                    return { t, total };
+                  }).filter(x => x.total > 0);
+                  if (entries.length === 0) return null;
+                  return (
+                    <Fragment key={group.label}>
+                      <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {entries.map(({ t, total }) => (
+                          <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
+                            <span className="font-bold text-builder-ink">{t.name}</span>
+                            <span className="bg-builder-info-soft text-builder-ink px-1 rounded">{total}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Fragment>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {generatedPatterns.length > 0 && (
         <div className="mb-4 p-4 bg-builder-bg border-2 border-builder-border rounded no-print">
@@ -77,7 +110,13 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                     </span>
                   )}
                 </div>
-                <SummaryTable target={pat.schedule} config={currentConfig} combinedGroups={project.combinedGroups || []} />
+                <SummaryTable
+                  target={pat.schedule}
+                  config={currentConfig}
+                  combinedGroups={project.combinedGroups || []}
+                  teachers={project.teachers}
+                  subjects={project.subjects}
+                />
                 <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); showToast(`案 ${i + 1} を適用しました`); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-builder-orange hover:bg-builder-orange-hover' : 'bg-builder-primary hover:bg-builder-primary-hover'}`}>
                   この案を採用
                 </button>

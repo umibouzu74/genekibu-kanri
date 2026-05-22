@@ -1018,7 +1018,7 @@ export default function App() {
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
           )}
           {view === VIEWS.COMPARE && !selected && (
-            <CompareView slots={ttFilteredSlots} />
+            <CompareView slots={ttFilteredSlots} partTimeStaff={partTimeStaff} subjects={subjects} />
           )}
           {view === VIEWS.MASTER && !selected && (
             <MasterView

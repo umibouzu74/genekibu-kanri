@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { parseTeachersCsv } from '../../utils/csvImport';
+import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 
 const CSV_PLACEHOLDER = `name,subjects
 堀上,英語
@@ -74,6 +75,19 @@ export default function TeacherManager() {
   const csvParsed = useMemo(
     () => csvText.trim() ? parseTeachersCsv(csvText, { commonSubjects }) : null,
     [csvText, commonSubjects],
+  );
+
+  // 教科ごとにグループ化した講師一覧 (rename / 削除 / 担当科目編集を
+  // グループ見出し付きで表示)。元の i (project.teachers index) を維持する
+  // ため teacher.name → i の lookup を経由する。
+  const teacherIdxByName = useMemo(() => {
+    const m = new Map();
+    project.teachers.forEach((t, i) => m.set(t.name, i));
+    return m;
+  }, [project.teachers]);
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects],
   );
 
   const handleCsvImport = async (mode) => {
@@ -171,23 +185,35 @@ export default function TeacherManager() {
             </tr>
           </thead>
           <tbody>
-            {project.teachers.map((t, i) => (
-              <tr key={i} className="border-b border-builder-border bg-builder-surface last:border-0">
-                <td className="p-2 font-bold text-builder-ink">
-                  <InlineNameEdit value={t.name} onSave={(newName) => renameTeacher(i, newName)} />
-                </td>
-                <td className="p-2 flex flex-wrap gap-1">
-                  {commonSubjects.map(s => (
-                    <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-builder-blue text-white border-builder-blue" : "bg-builder-surface text-builder-ink-ghost border-builder-border"}`}>
-                      <input type="checkbox" className="hidden" checked={t.subjects.includes(s)} onChange={() => toggleTeacherSubject(i, s)} />
-                      {s}
-                    </label>
-                  ))}
-                </td>
-                <td className="p-2 text-center">
-                  <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-ghost hover:text-builder-red">×</button>
-                </td>
-              </tr>
+            {teacherGroups.map(group => (
+              <Fragment key={group.label}>
+                <tr className="bg-builder-bg">
+                  <td colSpan={3} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
+                    ━━ {group.label} ({group.teachers.length})
+                  </td>
+                </tr>
+                {group.teachers.map(t => {
+                  const i = teacherIdxByName.get(t.name);
+                  return (
+                    <tr key={t.name} className="border-b border-builder-border bg-builder-surface last:border-0">
+                      <td className="p-2 font-bold text-builder-ink">
+                        <InlineNameEdit value={t.name} onSave={(newName) => renameTeacher(i, newName)} />
+                      </td>
+                      <td className="p-2 flex flex-wrap gap-1">
+                        {commonSubjects.map(s => (
+                          <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-builder-blue text-white border-builder-blue" : "bg-builder-surface text-builder-ink-ghost border-builder-border"}`}>
+                            <input type="checkbox" className="hidden" checked={t.subjects.includes(s)} onChange={() => toggleTeacherSubject(i, s)} />
+                            {s}
+                          </label>
+                        ))}
+                      </td>
+                      <td className="p-2 text-center">
+                        <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-ghost hover:text-builder-red">×</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </Fragment>
             ))}
           </tbody>
         </table>

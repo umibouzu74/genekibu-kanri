@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
+import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 
 // 「他学年・午前」タブ。コマ数のクイック入力 + 詳細セッション登録 +
 // プリセット (時刻 / 期間 / メモ の頻出パターン) 管理を 1 画面にまとめる。
@@ -53,6 +54,12 @@ export default function ExternalCounts() {
   const presets = useMemo(
     () => project.externalSessionPresets || [],
     [project.externalSessionPresets],
+  );
+
+  // 教科ごとにグループ化した講師一覧 (quick グリッド、チェックボックス一覧で共有)。
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects],
   );
 
   // (date, teacher) ごとの詳細セッション件数。クイック入力グリッドの
@@ -203,7 +210,7 @@ export default function ExternalCounts() {
         removePreset={removeExternalSessionPreset}
       />
 
-      {/* クイック入力グリッド */}
+      {/* クイック入力グリッド (教科ごとにグループ化) */}
       <div className="overflow-x-auto mb-6">
         <div className="text-xs text-builder-ink-muted mb-1">
           クイック入力 (数字のみ・詳細セッションがあるセルは件数表示)
@@ -216,34 +223,46 @@ export default function ExternalCounts() {
             </tr>
           </thead>
           <tbody>
-            {project.teachers.map(t => (
-              <tr key={t.name}>
-                <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
-                {currentConfig.dates.map(d => {
-                  const k = makeExternalKey(d.label, t.name);
-                  const sessionCnt = sessionCountMap[k];
-                  if (sessionCnt) {
-                    return (
-                      <td key={d.id} className="border border-builder-border p-2 text-center bg-builder-info-soft text-builder-ink"
-                        title="詳細セッション登録あり (下の一覧で編集)">
-                        {sessionCnt}
-                      </td>
-                    );
-                  }
-                  return (
-                    <td key={d.id} className="border border-builder-border p-0">
-                      <input
-                        type="number"
-                        min="0"
-                        className="w-full h-full p-2 text-center focus:bg-builder-info-soft focus:outline-none text-builder-ink"
-                        value={project.externalCounts?.[k] || ""}
-                        placeholder="-"
-                        onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
+            {teacherGroups.map(group => (
+              <Fragment key={group.label}>
+                <tr className="bg-builder-bg">
+                  <td
+                    colSpan={1 + currentConfig.dates.length}
+                    className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10"
+                  >
+                    ━━ {group.label} ━━
+                  </td>
+                </tr>
+                {group.teachers.map(t => (
+                  <tr key={t.name}>
+                    <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                    {currentConfig.dates.map(d => {
+                      const k = makeExternalKey(d.label, t.name);
+                      const sessionCnt = sessionCountMap[k];
+                      if (sessionCnt) {
+                        return (
+                          <td key={d.id} className="border border-builder-border p-2 text-center bg-builder-info-soft text-builder-ink"
+                            title="詳細セッション登録あり (下の一覧で編集)">
+                            {sessionCnt}
+                          </td>
+                        );
+                      }
+                      return (
+                        <td key={d.id} className="border border-builder-border p-0">
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-full h-full p-2 text-center focus:bg-builder-info-soft focus:outline-none text-builder-ink"
+                            value={project.externalCounts?.[k] || ""}
+                            placeholder="-"
+                            onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -277,7 +296,7 @@ export default function ExternalCounts() {
           </div>
         )}
 
-        {/* 講師チェックボックス一覧 */}
+        {/* 講師チェックボックス一覧 (教科ごとにグループ化) */}
         <div className="flex flex-col gap-1 mb-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-builder-ink-muted">講師 (複数選択可) — 選択 {formTeacherNames.size} 名</span>
@@ -292,22 +311,50 @@ export default function ExternalCounts() {
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {project.teachers.map(t => {
-              const checked = formTeacherNames.has(t.name);
+          <div className="flex flex-col gap-2">
+            {teacherGroups.map(group => {
+              // 各グループ内で「グループ全選択 / 全解除」を出す。
+              const allSelected = group.teachers.every(t => formTeacherNames.has(t.name));
+              const toggleGroup = () => {
+                setFormTeacherNames(prev => {
+                  const next = new Set(prev);
+                  if (allSelected) group.teachers.forEach(t => next.delete(t.name));
+                  else group.teachers.forEach(t => next.add(t.name));
+                  return next;
+                });
+              };
               return (
-                <label
-                  key={t.name}
-                  className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${checked ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleTeacher(t.name)}
-                    aria-label={`${t.name} を対象に含める`}
-                  />
-                  <span>{t.name}</span>
-                </label>
+                <div key={group.label}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-bold text-builder-ink-muted">━ {group.label} ({group.teachers.length})</span>
+                    <button
+                      type="button"
+                      onClick={toggleGroup}
+                      className="text-[10px] px-1.5 py-0 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink-muted"
+                    >
+                      {allSelected ? 'このグループを解除' : 'このグループを選択'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.teachers.map(t => {
+                      const checked = formTeacherNames.has(t.name);
+                      return (
+                        <label
+                          key={t.name}
+                          className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${checked ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleTeacher(t.name)}
+                            aria-label={`${t.name} を対象に含める`}
+                          />
+                          <span>{t.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>

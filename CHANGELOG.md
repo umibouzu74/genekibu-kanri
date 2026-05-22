@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Changed (講師一覧を教科ごとにグループ表示 — アプリ全体)
+- すべての講師リスト・ドロップダウン・チェックボックス一覧を
+  「教科 (英語 / 数学 / 国語 / 理科 / 社会) ごと → 複数教科 → その他」の
+  グループ見出し付きで表示するよう統一。
+- 講師ビルダー側 (project.teachers ベース) で新ユーティリティ
+  `utils/groupTeachersBySubject` を導入。単一教科講師は当該グループ、
+  複数教科担当 (未定など) は「複数教科」グループに 1 度だけ表示、担当無しは
+  「その他」。
+- 影響を受けた builder 側コンポーネント (計 6):
+  - ExternalCounts: クイック入力グリッド (teacher rows) と
+    複数講師チェックボックス一覧。各グループ単位の「グループ全選択 / 解除」
+    ボタンも追加して複数人登録をさらに高速化
+  - NgSettings: 日付ごとの NG テーブル (teacher rows) と一括設定の講師
+    select (optgroup 化)
+  - TeacherManager: 講師マスタ管理表 (rename / 削除 / 科目編集)
+  - ClassPriority: クラス優先度設定テーブル
+  - ScheduleCell: コマセルの講師ドロップダウン (optgroup 化)
+  - SummaryPanel: 講師別コマ数の集計 (showSummary パネル + 自動生成案の
+    集計表) を教科グループ見出し付きで表示
+- 本体側 (slots ベース) では既存の `useTeacherGroups` のコアロジックを
+  純粋関数 `utils/groupTeacherNames` に切り出し、任意の name 配列を
+  「バイト → 英数国理社 → その他」にグループ化できるように。
+- 影響を受けた本体側コンポーネント (計 4):
+  - CompareView: 講師候補チップ一覧をグループ見出し付きで縦並びに
+  - SubListTab / AdjustmentListTab / OverrideListTab: 講師フィルタ
+    `<select>` を `<optgroup>` 化 (代行/調整/補正一覧)
+- Tests: 19 件追加 (groupTeachersBySubject 9 / groupTeacherNames 10)。
+  全体 1165 件、lint 0 / typecheck 0 / build OK。
+
 ### Added (他学年セッションのプリセット + 複数講師の一括登録)
 - 「📅 他学年・午前」タブにプリセット管理パネル (折りたたみ) を追加。
   「予備校（早朝）= 12:25-13:35, 7/24~7/31, メモ"予備校"」のような

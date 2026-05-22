@@ -4,6 +4,7 @@ import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortJa } from "../../../utils/sortJa";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
+import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
 // 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替) を月 / 講師 / 種別で
 // フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
@@ -115,6 +116,8 @@ export function AdjustmentListTab({
   adjustments,
   slots,
   isAdmin,
+  partTimeStaff = [],
+  subjects = [],
   onDel,
   onJumpToDate,
 }) {
@@ -142,6 +145,10 @@ export function AdjustmentListTab({
     });
     return sortJa([...set]);
   }, [slots]);
+  const teacherGroups = useMemo(
+    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
+    [allTeachers, slots, partTimeStaff, subjects],
+  );
 
   const filtered = useMemo(() => {
     let r = (adjustments || []).filter((a) => TYPE_META[a.type]);
@@ -229,10 +236,14 @@ export function AdjustmentListTab({
             style={{ ...S.input, width: "auto", minWidth: 110 }}
           >
             <option value="">すべて</option>
-            {allTeachers.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+            {teacherGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.teachers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   DAY_COLOR as DC,
   dateToDay,
@@ -7,6 +8,7 @@ import {
 } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { StatusBadge } from "../../StatusBadge";
+import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
 // Sub list tab : フィルタ (月 / 講師 / ステータス) + 代行レコード一覧テーブル。
 export function SubListTab({
@@ -21,9 +23,16 @@ export function SubListTab({
   fStatus,
   setFStatus,
   isAdmin,
+  slots = [],
+  partTimeStaff = [],
+  subjects = [],
   onEdit,
   onDel,
 }) {
+  const teacherGroups = useMemo(
+    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
+    [allTeachers, slots, partTimeStaff, subjects],
+  );
   return (
     <div>
       <div
@@ -68,10 +77,14 @@ export function SubListTab({
             style={{ ...S.input, width: "auto", minWidth: 110 }}
           >
             <option value="">すべて</option>
-            {allTeachers.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+            {teacherGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.teachers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
