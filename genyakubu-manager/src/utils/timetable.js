@@ -119,11 +119,12 @@ function gradeMatchesCutoffGroup(grade, groupGrades) {
 
 /**
  * Find the cutoff group whose grades include the given grade.
+ * Handles combined grades ("中1-3") via range expansion.
  * @param {string} grade
  * @param {import("../types").CutoffGroup[] | undefined} groups
  * @returns {import("../types").CutoffGroup | null}
  */
-function findGroupForGrade(grade, groups) {
+export function findGroupForGrade(grade, groups) {
   if (!Array.isArray(groups)) return null;
   for (const group of groups) {
     if (gradeMatchesCutoffGroup(grade, group.grades)) return group;
@@ -178,29 +179,23 @@ export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
  * Check whether ALL grades on a given date are outside their display range.
  * Used to show "未確定" banners / blank an entire day.
  *
- * Cohort 終講日 can only EXTEND a group's effective end here (never shorten
- * it): a single cohort ending early doesn't make the whole day "beyond" while
- * other cohorts in the same group still run — that early cohort is hidden by
- * the per-slot isSlotBeyondCutoff instead. When a group's end is null
- * (unlimited) it stays unlimited regardless of cohorts.
+ * Grade-group level only — deliberately cohort-free. The group end date is the
+ * OUTER display bound: a per-cohort 終講日 (isSlotBeyondCutoff) can only shorten
+ * a cohort's visibility WITHIN that window, never push a day past the group end.
+ * To display a cohort beyond its group end, raise the group's end date (the
+ * CohortCutoffEditor warns when a cohort date exceeds it). Keeping this gate
+ * cohort-free avoids leaking one cohort's extension into count-based paths
+ * (e.g. findNextSessionMap) that don't re-apply per-slot cutoffs, and avoids a
+ * grade-matching mismatch for combined grades ("中1-3").
  * @param {string} dateStr
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
  * @returns {boolean}
  */
 export function isEntireDayBeyondCutoff(dateStr, displayCutoff) {
   if (!displayCutoff || !displayCutoff.groups || displayCutoff.groups.length === 0) return false;
-  const cohorts = Array.isArray(displayCutoff.cohorts) ? displayCutoff.cohorts : [];
   return displayCutoff.groups.every((group) => {
-    let effEnd = group.date || null;
-    if (effEnd != null) {
-      for (const c of cohorts) {
-        if (c.date && c.date > effEnd && group.grades?.includes(c.grade)) {
-          effEnd = c.date;
-        }
-      }
-    }
-    const pastEnd = effEnd != null && dateStr > effEnd;
-    const beforeStart = group.startDate != null && dateStr < group.startDate;
-    return pastEnd || beforeStart;
+    if (group.startDate && dateStr < group.startDate) return true;
+    if (group.date && dateStr > group.date) return true;
+    return false;
   });
 }

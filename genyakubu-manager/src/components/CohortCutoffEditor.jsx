@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { S } from "../styles/common";
 import { deriveCohortsFromSlots } from "../utils/cohorts";
+import { findGroupForGrade } from "../utils/timetable";
 
 // ─── コース別 終講日エディタ ───────────────────────────────────────
 // 学年グループ (中1・2 / 中3 / 高1・2 / 高3) では表現できない、
@@ -55,7 +56,18 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
     onSave({ ...displayCutoff, cohorts: next });
   };
 
-  const setCount = savedById.size - orphans.length;
+  // 表示中コホートのうち終講日が設定されている件数。Map サイズ引き算では
+  // なく直接数える (date:null の取り込みデータや重複 id に対して頑健)。
+  const setCount = useMemo(
+    () => cohorts.filter((c) => savedById.get(c.id)?.date).length,
+    [cohorts, savedById]
+  );
+
+  // コホート grade からその学年グループの終了日を引く。コホート終講日が
+  // グループ終了日より後の場合は表示されない (isEntireDayBeyondCutoff が
+  // グループ終了日で打ち切るため) ので、行に警告を出す。
+  const groupEndForGrade = (grade) =>
+    findGroupForGrade(grade, displayCutoff?.groups)?.date || null;
 
   return (
     <div
@@ -129,6 +141,8 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
               {items.map((cohort) => {
                 const saved = savedById.get(cohort.id);
                 const date = saved?.date || "";
+                const groupEnd = groupEndForGrade(cohort.grade);
+                const exceedsGroup = date && groupEnd && date > groupEnd;
                 return (
                   <CohortRow
                     key={cohort.id}
@@ -136,6 +150,11 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
                     count={cohort.slotCount}
                     date={date}
                     isAdmin={isAdmin}
+                    warn={
+                      exceedsGroup
+                        ? `グループ終了日 (${groupEnd}) より後です。表示するには上の「表示期間設定」でこの学年の終了日も延ばしてください。`
+                        : ""
+                    }
                     onChange={(v) => setCohortDate(cohort, v)}
                   />
                 );
@@ -178,45 +197,53 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
   );
 }
 
-function CohortRow({ label, count, date, isAdmin, stale, onChange }) {
+function CohortRow({ label, count, date, isAdmin, stale, warn, onChange }) {
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap",
         padding: "6px 8px",
         borderRadius: 8,
-        border: "1px solid #eee",
-        background: date ? "#f3f8f3" : stale ? "#fdf6ec" : "#fff",
+        border: warn ? "1px solid #e0c080" : "1px solid #eee",
+        background: warn ? "#fffaf0" : date ? "#f3f8f3" : stale ? "#fdf6ec" : "#fff",
       }}
     >
-      <span style={{ fontWeight: 700, fontSize: 13, flex: 1, minWidth: 120 }}>
-        {label}
-        {count > 0 && (
-          <span style={{ marginLeft: 6, fontSize: 10, color: "#999", fontWeight: 600 }}>
-            {count} コマ
-          </span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: 13, flex: 1, minWidth: 120 }}>
+          {label}
+          {count > 0 && (
+            <span style={{ marginLeft: 6, fontSize: 10, color: "#999", fontWeight: 600 }}>
+              {count} コマ
+            </span>
+          )}
+        </span>
+        <span style={{ fontSize: 11, color: "#888" }}>終講日</span>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => onChange(e.target.value || "")}
+          disabled={!isAdmin}
+          aria-label={`${label} の終講日`}
+          style={{ ...S.input, width: "auto", minWidth: 150 }}
+        />
+        {date && isAdmin && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}
+          >
+            解除
+          </button>
         )}
-      </span>
-      <span style={{ fontSize: 11, color: "#888" }}>終講日</span>
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => onChange(e.target.value || "")}
-        disabled={!isAdmin}
-        aria-label={`${label} の終講日`}
-        style={{ ...S.input, width: "auto", minWidth: 150 }}
-      />
-      {date && isAdmin && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}
-        >
-          解除
-        </button>
+      </div>
+      {warn && (
+        <div style={{ fontSize: 10, color: "#a05a00", marginTop: 4 }}>⚠ {warn}</div>
       )}
     </div>
   );

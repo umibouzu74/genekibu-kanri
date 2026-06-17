@@ -10,6 +10,7 @@ import {
   validateExportBundle,
 } from "../utils/schema";
 import {
+  migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
@@ -293,6 +294,7 @@ export function useDataIO({
 
 // Re-export migrate functions for convenience
 export {
+  migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,

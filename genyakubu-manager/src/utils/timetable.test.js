@@ -308,30 +308,41 @@ describe("isSlotBeyondCutoff", () => {
     expect(isSlotBeyondCutoff("2026-04-07", s, cutoff)).toBe(false);
   });
 
+  it("matches a combined-grade slot (中1-3) to its group and cohort", () => {
+    const cc = {
+      groups: [{ label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], startDate: "2026-04-07", date: "2026-07-16" }],
+      cohorts: [{ id: "M|中1-3|土", label: "中1-3 土", grade: "中1-3", date: "2026-07-22" }],
+    };
+    // 土 cohort id = M|中1-3|土; group resolved via range expansion (中1-3 → 中1)
+    const s = slot({ grade: "中1-3", day: "土", subj: "プレップ" });
+    expect(isSlotBeyondCutoff("2026-07-18", s, cc)).toBe(false); // within cohort end 7/22
+    expect(isSlotBeyondCutoff("2026-07-23", s, cc)).toBe(true); // past cohort end
+    expect(isSlotBeyondCutoff("2026-04-06", s, cc)).toBe(true); // before group start
+  });
+
   it("returns false when displayCutoff or slot is missing", () => {
     expect(isSlotBeyondCutoff("2026-07-20", slot(), null)).toBe(false);
     expect(isSlotBeyondCutoff("2026-07-20", null, cutoff)).toBe(false);
   });
 });
 
-describe("isEntireDayBeyondCutoff with cohorts", () => {
-  it("a cohort end date extends the group's effective end", () => {
+describe("isEntireDayBeyondCutoff with cohorts (group end is the outer bound)", () => {
+  it("a later cohort date does NOT extend the whole-day gate past the group end", () => {
     const cutoff = {
       groups: [{ label: "中3", grades: ["中3", "附中3"], startDate: null, date: "2026-07-16" }],
       cohorts: [{ id: "M|中3|水金", label: "中3 水金", grade: "中3", date: "2026-07-17" }],
     };
-    // group ends 7/16 but the 水金 cohort runs through 7/17 → day not entirely beyond
+    // The day gate is deliberately cohort-free: 7/17 is past the group end (7/16)
+    // so the whole day is "beyond". To show 水金 on 7/17 the group end must be raised.
     expect(isEntireDayBeyondCutoff("2026-07-16", cutoff)).toBe(false);
-    expect(isEntireDayBeyondCutoff("2026-07-17", cutoff)).toBe(false);
-    expect(isEntireDayBeyondCutoff("2026-07-18", cutoff)).toBe(true);
+    expect(isEntireDayBeyondCutoff("2026-07-17", cutoff)).toBe(true);
   });
 
-  it("a cohort ending early does not blank the day (group still open)", () => {
+  it("an early cohort date does not blank the day while the group is open", () => {
     const cutoff = {
       groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: null, date: "2026-07-16" }],
       cohorts: [{ id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" }],
     };
-    // 高松西 ends 7/10, but the group runs to 7/16 → not entirely beyond on 7/12
     expect(isEntireDayBeyondCutoff("2026-07-12", cutoff)).toBe(false);
     expect(isEntireDayBeyondCutoff("2026-07-17", cutoff)).toBe(true);
   });

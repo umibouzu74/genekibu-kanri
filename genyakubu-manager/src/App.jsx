@@ -30,6 +30,7 @@ import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import {
   useDataIO,
+  migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
@@ -235,7 +236,7 @@ export default function App() {
   const [displayCutoff, saveDisplayCutoff] = useSyncedStorage(
     LS.displayCutoff,
     DEFAULT_DISPLAY_CUTOFF,
-    { onError: onStorageError }
+    { migrate: migrateDisplayCutoff, onError: onStorageError }
   );
   const [examPeriods, saveExamPeriods] = useSyncedStorage(
     LS.examPeriods,
