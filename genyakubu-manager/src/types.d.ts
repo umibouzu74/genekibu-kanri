@@ -198,8 +198,24 @@ export interface CutoffGroup {
   date: string | null; // "YYYY-MM-DD" or null（終了日制限なし）
 }
 
+// ─── Cohort cutoff (学校・曜日コホート別 終講日) ──────────────────
+// 学年グループより細かい「学校別 (高校) / 曜日ペア別 (中学)」の終講日。
+// id は utils/cohorts.js の slotCohortId と同形式の安定キーで、slot との
+// 照合に使う:
+//   - 高校:  `H|<学年>|<学校>`      (学校 = subj 先頭トークン)
+//   - 中学:  `M|<学年>|<曜日ペア>`  (火木 / 水金 / 月 / 土 …)
+// date (終講日) のみ持ち、開始日は学年グループ (CutoffGroup.startDate) を
+// そのまま使う。回数計算の起点は従来どおりグループ単位で不変。
+export interface CohortCutoff {
+  id: string; // slotCohortId 形式の安定キー
+  label: string; // 表示用 (例: "高1 高松西", "中3 火木")
+  grade: string; // 対象学年 (グルーピング・表示用)
+  date: string | null; // "YYYY-MM-DD" 終講日。null = グループ設定にフォールバック
+}
+
 export interface DisplayCutoff {
   groups: CutoffGroup[];
+  cohorts?: CohortCutoff[]; // 学校・曜日コホート別の終講日 (任意)
 }
 
 export interface ExportBundle {

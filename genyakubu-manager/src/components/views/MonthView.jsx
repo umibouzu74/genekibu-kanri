@@ -8,7 +8,7 @@ import {
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
-import { isTimetableActiveForDate, isBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
+import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import {
   biweeklyDisplaySubject,
   isBiweekly,
@@ -238,7 +238,7 @@ export function MonthView({
       ) {
         return false;
       }
-      if (isBeyondCutoff(ds, slot.grade, displayCutoff)) return false;
+      if (isSlotBeyondCutoff(ds, slot, displayCutoff)) return false;
       // 隔週スロットは「その週に実施する側の講師」のビューにだけ載せる。
       if (
         isBiweekly(slot.note) &&

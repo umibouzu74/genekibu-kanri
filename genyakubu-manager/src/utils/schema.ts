@@ -18,6 +18,7 @@
 import type {
   BiweeklyAnchor,
   ClassSet,
+  CohortCutoff,
   CutoffGroup,
   DisplayCutoff,
   ExamPeriod,
@@ -36,7 +37,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -146,11 +147,24 @@ export function isCutoffGroup(x: unknown): x is CutoffGroup {
   );
 }
 
+export function isCohortCutoff(x: unknown): x is CohortCutoff {
+  return (
+    isObject(x) &&
+    isString(x.id) &&
+    isString(x.label) &&
+    isString(x.grade) &&
+    (x.date === null || isString(x.date))
+  );
+}
+
 export function isDisplayCutoff(x: unknown): x is DisplayCutoff {
   return (
     isObject(x) &&
     Array.isArray(x.groups) &&
-    x.groups.every((g: unknown) => isCutoffGroup(g))
+    x.groups.every((g: unknown) => isCutoffGroup(g)) &&
+    (x.cohorts === undefined ||
+      (Array.isArray(x.cohorts) &&
+        x.cohorts.every((c: unknown) => isCohortCutoff(c))))
   );
 }
 
@@ -731,6 +745,19 @@ export function migrateExportBundle(raw: unknown): unknown {
     }
   }
 
+  // v13 → v14: DisplayCutoff に cohorts (学校・曜日コホート別 終講日) を追加。
+  //             既存 displayCutoff に空配列を補う。
+  if (version < 14) {
+    if (
+      isObject(bundle.displayCutoff) &&
+      !Array.isArray(
+        (bundle.displayCutoff as Record<string, unknown>).cohorts
+      )
+    ) {
+      (bundle.displayCutoff as Record<string, unknown>).cohorts = [];
+    }
+  }
+
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;
 }
@@ -752,6 +779,7 @@ export const DEFAULT_DISPLAY_CUTOFF: DisplayCutoff = {
     { label: "高1・2", grades: ["高1", "高2"], startDate: null, date: null },
     { label: "高3", grades: ["高3"], startDate: null, date: null },
   ],
+  cohorts: [],
 };
 
 // ─── ID generation ─────────────────────────────────────────────────
