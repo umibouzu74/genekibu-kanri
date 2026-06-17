@@ -1,5 +1,5 @@
 import {
-  isBeyondCutoff,
+  isSlotBeyondCutoff,
   isEntireDayBeyondCutoff,
   isTimetableActiveForDate,
 } from "../../../utils/timetable";
@@ -51,7 +51,7 @@ export function DashboardListView({
                     dateStr,
                     s.grade
                   )) &&
-                !isBeyondCutoff(dateStr, s.grade, displayCutoff)
+                !isSlotBeyondCutoff(dateStr, s, displayCutoff)
             );
         return (
           <div key={dateStr}>

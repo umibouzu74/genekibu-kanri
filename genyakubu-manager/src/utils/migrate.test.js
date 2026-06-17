@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
   migrateHolidays,
@@ -7,6 +8,26 @@ import {
   migrateSpecialEvents,
   migrateSubs,
 } from "./migrate";
+
+describe("migrateDisplayCutoff", () => {
+  it("backfills an empty cohorts array when missing (Firebase drops [])", () => {
+    const input = {
+      groups: [{ label: "高3", grades: ["高3"], startDate: null, date: "2026-07-21" }],
+    };
+    expect(migrateDisplayCutoff(input)).toEqual({ ...input, cohorts: [] });
+  });
+
+  it("preserves an existing cohorts array", () => {
+    const cohorts = [{ id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" }];
+    const input = { groups: [], cohorts };
+    expect(migrateDisplayCutoff(input).cohorts).toBe(cohorts);
+  });
+
+  it("returns malformed input unchanged", () => {
+    expect(migrateDisplayCutoff(null)).toBe(null);
+    expect(migrateDisplayCutoff({ foo: 1 })).toEqual({ foo: 1 });
+  });
+});
 
 describe("migrateHolidays", () => {
   it("adds default scope, id, targetGrades, subjKeywords when missing", () => {

@@ -74,6 +74,19 @@ export const migrateSpecialEvents = (arr) =>
     : arr;
 
 /**
+ * Ensure displayCutoff carries a `cohorts` array. Firebase RTDB discards
+ * empty arrays on write, and data saved before v14 predates the field, so
+ * displayCutoff comes back with `cohorts` missing. Backfill `[]` so the
+ * loaded shape matches DEFAULT_DISPLAY_CUTOFF and the v14 schema.
+ * Returns the value unchanged when it is not a well-formed cutoff object
+ * (consumers / the default value handle that case).
+ */
+export const migrateDisplayCutoff = (dc) =>
+  dc && typeof dc === "object" && Array.isArray(dc.groups)
+    ? { ...dc, cohorts: Array.isArray(dc.cohorts) ? dc.cohorts : [] }
+    : dc;
+
+/**
  * Restore `assignments: {}` dropped by Firebase RTDB.
  * Firebase RTDB discards empty objects/arrays on write, so days
  * initialized via `blankDay` come back missing `assignments` (and

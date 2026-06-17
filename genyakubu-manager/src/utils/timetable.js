@@ -1,6 +1,8 @@
 // ─── Timetable / display-cutoff filtering utilities ─────────────────
 // All date strings are "YYYY-MM-DD".
 
+import { findCohortCutoff } from "./cohorts";
+
 /**
  * Check if a slot's grade matches a timetable's grade list.
  * Handles combined grades like "中1-3" by checking if ANY of the
@@ -116,8 +118,24 @@ function gradeMatchesCutoffGroup(grade, groupGrades) {
 }
 
 /**
+ * Find the cutoff group whose grades include the given grade.
+ * Handles combined grades ("中1-3") via range expansion.
+ * @param {string} grade
+ * @param {import("../types").CutoffGroup[] | undefined} groups
+ * @returns {import("../types").CutoffGroup | null}
+ */
+export function findGroupForGrade(grade, groups) {
+  if (!Array.isArray(groups)) return null;
+  for (const group of groups) {
+    if (gradeMatchesCutoffGroup(grade, group.grades)) return group;
+  }
+  return null;
+}
+
+/**
  * Check whether a date is outside the display range for a given grade.
  * Returns true when dateStr falls before startDate or after date (end).
+ * Grade-group level only — see isSlotBeyondCutoff for cohort-aware checks.
  * @param {string} dateStr
  * @param {string} grade
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
@@ -125,20 +143,50 @@ function gradeMatchesCutoffGroup(grade, groupGrades) {
  */
 export function isBeyondCutoff(dateStr, grade, displayCutoff) {
   if (!displayCutoff || !displayCutoff.groups) return false;
-  for (const group of displayCutoff.groups) {
-    if (gradeMatchesCutoffGroup(grade, group.grades)) {
-      if (group.startDate && dateStr < group.startDate) return true;
-      if (group.date && dateStr > group.date) return true;
-      return false;
-    }
-  }
-  // No matching group → no cutoff
+  const group = findGroupForGrade(grade, displayCutoff.groups);
+  if (!group) return false; // No matching group → no cutoff
+  if (group.startDate && dateStr < group.startDate) return true;
+  if (group.date && dateStr > group.date) return true;
+  return false;
+}
+
+/**
+ * Cohort-aware variant of isBeyondCutoff. Layers a per-cohort 終講日
+ * (last-class date) over the grade-group range:
+ *   - start: always the grade group's startDate (cohorts refine the END only)
+ *   - end:   the matching cohort's date if set, otherwise the group's date
+ * High-school cohorts split by school (subj prefix); middle-school cohorts
+ * split by weekday pair (火木 / 水金). See utils/cohorts.js.
+ * @param {string} dateStr
+ * @param {import("../types").Slot} slot
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @returns {boolean}
+ */
+export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
+  if (!displayCutoff || !slot) return false;
+  const group = findGroupForGrade(slot.grade, displayCutoff.groups);
+  const cohort = findCohortCutoff(slot, displayCutoff.cohorts);
+
+  const startDate = group?.startDate || null;
+  const endDate = (cohort && cohort.date) || group?.date || null;
+
+  if (startDate && dateStr < startDate) return true;
+  if (endDate && dateStr > endDate) return true;
   return false;
 }
 
 /**
  * Check whether ALL grades on a given date are outside their display range.
- * Used to show "未確定" banners for an entire day.
+ * Used to show "未確定" banners / blank an entire day.
+ *
+ * Grade-group level only — deliberately cohort-free. The group end date is the
+ * OUTER display bound: a per-cohort 終講日 (isSlotBeyondCutoff) can only shorten
+ * a cohort's visibility WITHIN that window, never push a day past the group end.
+ * To display a cohort beyond its group end, raise the group's end date (the
+ * CohortCutoffEditor warns when a cohort date exceeds it). Keeping this gate
+ * cohort-free avoids leaking one cohort's extension into count-based paths
+ * (e.g. findNextSessionMap) that don't re-apply per-slot cutoffs, and avoids a
+ * grade-matching mismatch for combined grades ("中1-3").
  * @param {string} dateStr
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
  * @returns {boolean}
@@ -146,8 +194,8 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
 export function isEntireDayBeyondCutoff(dateStr, displayCutoff) {
   if (!displayCutoff || !displayCutoff.groups || displayCutoff.groups.length === 0) return false;
   return displayCutoff.groups.every((group) => {
-    const pastEnd = group.date != null && dateStr > group.date;
-    const beforeStart = group.startDate != null && dateStr < group.startDate;
-    return pastEnd || beforeStart;
+    if (group.startDate && dateStr < group.startDate) return true;
+    if (group.date && dateStr > group.date) return true;
+    return false;
   });
 }

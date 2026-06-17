@@ -6,6 +6,7 @@ import {
   getActiveTimetableIds,
   filterSlotsForDate,
   isBeyondCutoff,
+  isSlotBeyondCutoff,
   isEntireDayBeyondCutoff,
 } from "./timetable";
 
@@ -261,5 +262,96 @@ describe("isEntireDayBeyondCutoff with startDate", () => {
       ],
     };
     expect(isEntireDayBeyondCutoff("2026-04-15", cutoff)).toBe(false);
+  });
+});
+
+describe("isSlotBeyondCutoff", () => {
+  const cutoff = {
+    groups: [
+      { label: "高1・2", grades: ["高1", "高2"], startDate: "2026-04-07", date: "2026-07-16" },
+      { label: "中3", grades: ["中3", "附中3"], startDate: "2026-04-07", date: "2026-07-16" },
+    ],
+    cohorts: [
+      // 高松西 は学校の都合で 7/10 終講 (グループ 7/16 より早い)
+      { id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" },
+      // 中3 水金 は 7/17 まで (グループ 7/16 より遅い)
+      { id: "M|中3|水金", label: "中3 水金", grade: "中3", date: "2026-07-17" },
+    ],
+  };
+  const slot = (over) => ({
+    id: 1, day: "火", time: "19:00-20:20", grade: "高1", cls: "",
+    room: "401", subj: "高松西 数学", teacher: "x", note: "", ...over,
+  });
+
+  it("uses the cohort end date when it is earlier than the group", () => {
+    const s = slot({ grade: "高1", subj: "高松西 数学" });
+    expect(isSlotBeyondCutoff("2026-07-11", s, cutoff)).toBe(true); // past cohort end
+    expect(isSlotBeyondCutoff("2026-07-10", s, cutoff)).toBe(false); // on cohort end (inclusive)
+  });
+
+  it("uses the cohort end date when it is later than the group", () => {
+    const s = slot({ grade: "中3", day: "金", subj: "数学" });
+    // グループは 7/16 終了だが 水金 コホートは 7/17 まで表示する
+    expect(isSlotBeyondCutoff("2026-07-17", s, cutoff)).toBe(false);
+    expect(isSlotBeyondCutoff("2026-07-18", s, cutoff)).toBe(true);
+  });
+
+  it("falls back to the group end date when no cohort matches", () => {
+    const s = slot({ grade: "高1", subj: "高松一 数学" }); // 別学校・コホート未設定
+    expect(isSlotBeyondCutoff("2026-07-16", s, cutoff)).toBe(false);
+    expect(isSlotBeyondCutoff("2026-07-17", s, cutoff)).toBe(true);
+  });
+
+  it("still applies the group start date even when a cohort end is set", () => {
+    const s = slot({ grade: "高1", subj: "高松西 数学" });
+    expect(isSlotBeyondCutoff("2026-04-06", s, cutoff)).toBe(true); // before group start
+    expect(isSlotBeyondCutoff("2026-04-07", s, cutoff)).toBe(false);
+  });
+
+  it("matches a combined-grade slot (中1-3) to its group and cohort", () => {
+    const cc = {
+      groups: [{ label: "中1・2", grades: ["中1", "中2", "附中1", "附中2"], startDate: "2026-04-07", date: "2026-07-16" }],
+      cohorts: [{ id: "M|中1-3|土", label: "中1-3 土", grade: "中1-3", date: "2026-07-22" }],
+    };
+    // 土 cohort id = M|中1-3|土; group resolved via range expansion (中1-3 → 中1)
+    const s = slot({ grade: "中1-3", day: "土", subj: "プレップ" });
+    expect(isSlotBeyondCutoff("2026-07-18", s, cc)).toBe(false); // within cohort end 7/22
+    expect(isSlotBeyondCutoff("2026-07-23", s, cc)).toBe(true); // past cohort end
+    expect(isSlotBeyondCutoff("2026-04-06", s, cc)).toBe(true); // before group start
+  });
+
+  it("returns false when displayCutoff or slot is missing", () => {
+    expect(isSlotBeyondCutoff("2026-07-20", slot(), null)).toBe(false);
+    expect(isSlotBeyondCutoff("2026-07-20", null, cutoff)).toBe(false);
+  });
+});
+
+describe("isEntireDayBeyondCutoff with cohorts (group end is the outer bound)", () => {
+  it("a later cohort date does NOT extend the whole-day gate past the group end", () => {
+    const cutoff = {
+      groups: [{ label: "中3", grades: ["中3", "附中3"], startDate: null, date: "2026-07-16" }],
+      cohorts: [{ id: "M|中3|水金", label: "中3 水金", grade: "中3", date: "2026-07-17" }],
+    };
+    // The day gate is deliberately cohort-free: 7/17 is past the group end (7/16)
+    // so the whole day is "beyond". To show 水金 on 7/17 the group end must be raised.
+    expect(isEntireDayBeyondCutoff("2026-07-16", cutoff)).toBe(false);
+    expect(isEntireDayBeyondCutoff("2026-07-17", cutoff)).toBe(true);
+  });
+
+  it("an early cohort date does not blank the day while the group is open", () => {
+    const cutoff = {
+      groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: null, date: "2026-07-16" }],
+      cohorts: [{ id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" }],
+    };
+    expect(isEntireDayBeyondCutoff("2026-07-12", cutoff)).toBe(false);
+    expect(isEntireDayBeyondCutoff("2026-07-17", cutoff)).toBe(true);
+  });
+
+  it("a null group end stays unlimited regardless of cohorts", () => {
+    const cutoff = {
+      groups: [{ label: "高3", grades: ["高3"], startDate: null, date: null }],
+      cohorts: [{ id: "H|高3|岡広大", label: "高3 岡広大", grade: "高3", date: "2026-07-10" }],
+    };
+    expect(isEntireDayBeyondCutoff("2099-12-31", cutoff)).toBe(false);
   });
 });

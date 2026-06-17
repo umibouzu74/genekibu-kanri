@@ -5,7 +5,7 @@ import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { DashDayRow } from "./Dashboard";
 import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
-import { isTimetableActiveForDate, isBeyondCutoff } from "../../utils/timetable";
+import { isTimetableActiveForDate, isSlotBeyondCutoff } from "../../utils/timetable";
 import { PrintButton } from "../PrintButton";
 import { ShareLinkButton } from "../ShareLinkButton";
 
@@ -192,7 +192,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
                   dateStr,
                   s.grade
                 )) &&
-              !isBeyondCutoff(dateStr, s.grade, displayCutoff)
+              !isSlotBeyondCutoff(dateStr, s, displayCutoff)
           );
           return (
             <DashDayRow

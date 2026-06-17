@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { S } from "../../styles/common";
 import { formatCount, slotWeight } from "../../utils/biweekly";
 import { ClassSetManager } from "../ClassSetManager";
+import { CohortCutoffEditor } from "../CohortCutoffEditor";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -402,6 +403,14 @@ export function TimetableManagerView({
           ))}
         </div>
       </div>
+
+      {/* コース別 終講日設定 (学校別・曜日別) */}
+      <CohortCutoffEditor
+        slots={slots}
+        displayCutoff={displayCutoff}
+        onSave={onSaveDisplayCutoff}
+        isAdmin={isAdmin}
+      />
 
       {/* 授業セット管理 */}
       <ClassSetManager

@@ -848,6 +848,54 @@ describe("v12 → v13 migration: specialEvents 初期化", () => {
     const v = validateExportBundle(out);
     expect(v.ok).toBe(true);
   });
+});
+
+describe("v13 → v14 migration: displayCutoff.cohorts 初期化", () => {
+  it("adds empty cohorts to an existing displayCutoff", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 13,
+      displayCutoff: {
+        groups: [{ label: "高3", grades: ["高3"], startDate: null, date: null }],
+      },
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect((out.displayCutoff as { cohorts: unknown }).cohorts).toEqual([]);
+  });
+
+  it("preserves existing cohorts", () => {
+    const cohorts = [
+      { id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 13,
+      displayCutoff: {
+        groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: null, date: null }],
+        cohorts,
+      },
+    }) as Record<string, unknown>;
+    expect((out.displayCutoff as { cohorts: unknown }).cohorts).toEqual(cohorts);
+  });
+
+  it("v13 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 13,
+      slots: [],
+    });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("rejects displayCutoff with malformed cohort entries", () => {
+    const bundle = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      displayCutoff: {
+        groups: [{ label: "高3", grades: ["高3"], startDate: null, date: null }],
+        cohorts: [{ id: "H|高3|岡広大", label: "高3 岡広大" }], // grade/date 欠落
+      },
+    };
+    const v = validateExportBundle(bundle);
+    expect(v.ok).toBe(false);
+  });
 
   it("rejects specialEvents with malformed entries", () => {
     const bundle = {
