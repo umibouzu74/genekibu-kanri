@@ -41,26 +41,16 @@ describe("firstSubjToken", () => {
 describe("partitionDaysIntoCourses", () => {
   const part = (days) => partitionDaysIntoCourses(new Set(days));
 
-  it("keeps a single twice-weekly course as one group (中1=火金, 中2=月木)", () => {
-    expect(part(["火", "金"])).toEqual([["火", "金"]]);
-    expect(part(["月", "木"])).toEqual([["月", "木"]]);
-  });
-
-  it("keeps a once-weekly course as one group (附中=水)", () => {
-    expect(part(["水"])).toEqual([["水"]]);
-  });
-
-  it("splits into 火木 / 水金 only when both pairs are present (中3)", () => {
-    expect(part(["火", "水", "木", "金"])).toEqual([
-      ["火", "木"],
-      ["水", "金"],
-    ]);
+  it("groups all weekdays of a grade into one course", () => {
+    expect(part(["火", "金"])).toEqual([["火", "金"]]); // 中1
+    expect(part(["月", "木"])).toEqual([["月", "木"]]); // 中2
+    expect(part(["水"])).toEqual([["水"]]); // 附中
+    expect(part(["火", "水", "木", "金"])).toEqual([["火", "水", "木", "金"]]); // 中3
   });
 
   it("treats 土 as its own course, separate from weekdays", () => {
-    expect(part(["火", "木", "水", "金", "土"])).toEqual([
-      ["火", "木"],
-      ["水", "金"],
+    expect(part(["火", "水", "木", "金", "土"])).toEqual([
+      ["火", "水", "木", "金"],
       ["土"],
     ]);
     expect(part(["土"])).toEqual([["土"]]);
@@ -101,14 +91,16 @@ describe("deriveCohortsFromSlots", () => {
     expect(byId["M|中1|水金"]).toBeUndefined();
   });
 
-  it("splits 中3 into 火木 / 水金 / 土 cohorts", () => {
+  it("groups 中3 weekdays into ONE course, keeping 土 separate", () => {
     const byId = Object.fromEntries(
       deriveCohortsFromSlots(slots).map((c) => [c.id, c])
     );
-    expect(byId["M|中3|火木"].slotCount).toBe(2);
-    expect(byId["M|中3|水金"].slotCount).toBe(2);
+    expect(byId["M|中3|火水木金"].slotCount).toBe(4);
+    expect(byId["M|中3|火水木金"].label).toBe("中3 火水木金");
     expect(byId["M|中3|土"].slotCount).toBe(1);
-    expect(byId["M|中3|火木"].label).toBe("中3 火木");
+    // 旧モデルの曜日ペア分割 ID は生成されない。
+    expect(byId["M|中3|火木"]).toBeUndefined();
+    expect(byId["M|中3|水金"]).toBeUndefined();
   });
 
   it("keys high-school cohorts by grade + school (subj prefix)", () => {
