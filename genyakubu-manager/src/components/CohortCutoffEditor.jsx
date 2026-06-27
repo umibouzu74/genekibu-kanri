@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { S } from "../styles/common";
-import { deriveCohortsFromSlots } from "../utils/cohorts";
+import { DAYS } from "../constants/schools";
+import { deriveCohortsFromSlots, firstSubjToken } from "../utils/cohorts";
 import { findGroupForGrade } from "../utils/timetable";
 
 // ─── コース別 終講日エディタ ───────────────────────────────────────
@@ -12,6 +13,56 @@ import { findGroupForGrade } from "../utils/timetable";
 // 開始日は学年グループ (表示期間設定) を流用する。回数計算には影響しない。
 export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
   const cohorts = useMemo(() => deriveCohortsFromSlots(slots), [slots]);
+
+  const slotById = useMemo(() => {
+    const m = new Map();
+    for (const s of slots || []) m.set(s.id, s);
+    return m;
+  }, [slots]);
+
+  // コホートの内訳 (曜日・科目) を member slots から作る。検証・確認用の表示。
+  const cohortDetail = (cohort) => {
+    const ss = (cohort.slotIds || []).map((id) => slotById.get(id)).filter(Boolean);
+    const days = [...new Set(ss.map((s) => s.day))]
+      .sort((a, b) => DAYS.indexOf(a) - DAYS.indexOf(b))
+      .join("");
+    const subjSet = new Set();
+    for (const s of ss) {
+      if (cohort.dept === "高校部") {
+        // 高校は学校トークンを除いた科目名を表示 (例: "高松西 英語" → "英語")。
+        const body = s.subj.trim().slice(firstSubjToken(s.subj).length).trim();
+        subjSet.add(body || s.subj);
+      } else {
+        subjSet.add(s.subj);
+      }
+    }
+    return { days, subjects: [...subjSet] };
+  };
+
+  // どのコホートにも属さない授業 (= グループ終了日に従う)。高1・2 の英数以外
+  // (理科・古文漢文等) などが該当。(学年, 科目) でまとめて件数を出す。
+  const excludedSummary = useMemo(() => {
+    const owned = new Set(cohorts.flatMap((c) => c.slotIds || []));
+    const m = new Map();
+    for (const s of slots || []) {
+      if (!s || !s.grade || owned.has(s.id)) continue;
+      const key = `${s.grade}${s.subj}`;
+      const e = m.get(key) || { grade: s.grade, subj: s.subj, count: 0 };
+      e.count += 1;
+      m.set(key, e);
+    }
+    return [...m.values()].sort((a, b) =>
+      a.grade !== b.grade
+        ? a.grade < b.grade
+          ? -1
+          : 1
+        : a.subj < b.subj
+          ? -1
+          : a.subj > b.subj
+            ? 1
+            : 0
+    );
+  }, [cohorts, slots]);
 
   // cohortId → 保存済み終講日エントリ
   const savedById = useMemo(() => {
@@ -148,6 +199,7 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
                     key={cohort.id}
                     label={cohort.label}
                     count={cohort.slotCount}
+                    detail={cohortDetail(cohort)}
                     date={date}
                     isAdmin={isAdmin}
                     warn={
@@ -192,12 +244,55 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
             </div>
           </div>
         )}
+
+        {excludedSummary.length > 0 && (
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#888",
+                marginBottom: 6,
+                borderLeft: "3px solid #ccc",
+                paddingLeft: 6,
+              }}
+            >
+              コホート対象外（上の「表示期間設定」の終了日に従う）
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {excludedSummary.slice(0, 40).map((e) => (
+                <span
+                  key={`${e.grade}-${e.subj}`}
+                  style={{
+                    fontSize: 11,
+                    color: "#777",
+                    background: "#f5f5f5",
+                    border: "1px solid #eee",
+                    borderRadius: 8,
+                    padding: "2px 8px",
+                  }}
+                >
+                  {e.grade} {e.subj}
+                  {e.count > 1 ? ` ×${e.count}` : ""}
+                </span>
+              ))}
+              {excludedSummary.length > 40 && (
+                <span style={{ fontSize: 10, color: "#aaa", alignSelf: "center" }}>
+                  他 {excludedSummary.length - 40} 件
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
+              ※ 終講日コホートを持たない授業です（高1・2 の英数以外など）。個別の終講日は設定できません。
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function CohortRow({ label, count, date, isAdmin, stale, warn, onChange }) {
+function CohortRow({ label, count, detail, date, isAdmin, stale, warn, onChange }) {
   return (
     <div
       style={{
@@ -242,6 +337,16 @@ function CohortRow({ label, count, date, isAdmin, stale, warn, onChange }) {
           </button>
         )}
       </div>
+      {detail && (detail.days || (detail.subjects && detail.subjects.length > 0)) && (
+        <div style={{ fontSize: 10, color: "#999", marginTop: 3 }}>
+          {detail.days && <span style={{ fontWeight: 600 }}>{detail.days}</span>}
+          {detail.subjects && detail.subjects.length > 0 && (
+            <span style={{ marginLeft: detail.days ? 6 : 0 }}>
+              {detail.subjects.join(" / ")}
+            </span>
+          )}
+        </div>
+      )}
       {warn && (
         <div style={{ fontSize: 10, color: "#a05a00", marginTop: 4 }}>⚠ {warn}</div>
       )}

@@ -5,6 +5,7 @@ import {
   partitionDaysIntoCourses,
   deriveCohortsFromSlots,
   findCohortCutoff,
+  buildSlotCohortIndex,
 } from "./cohorts";
 import { INIT_SLOTS } from "../data";
 
@@ -225,6 +226,19 @@ describe("findCohortCutoff", () => {
       }
     }
     expect(mismatches).toEqual([]);
+  });
+
+  it("buildSlotCohortIndex maps each slot to its cohort's slotIds (≥2 only)", () => {
+    const idx = buildSlotCohortIndex([
+      slot({ id: 1, grade: "高1", subj: "高松西 数学", day: "月" }),
+      slot({ id: 2, grade: "高1", subj: "高松西 英語", day: "木" }),
+      slot({ id: 3, grade: "高1", subj: "高松西 物理", day: "金" }), // 英数外 → 除外
+      slot({ id: 4, grade: "中1", subj: "数学", day: "火" }), // 単体コホート → 除外
+    ]);
+    expect(idx.get(1)).toEqual([1, 2]); // 高1 高松西 英数
+    expect(idx.get(2)).toEqual([1, 2]);
+    expect(idx.has(3)).toBe(false); // 物理はコホート対象外
+    expect(idx.has(4)).toBe(false); // 1 コマだけのコホートは索引しない
   });
 
   it("excludes exactly the non-英数 高1・2 subjects from cohorts (INIT_SLOTS)", () => {

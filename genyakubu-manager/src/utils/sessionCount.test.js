@@ -583,6 +583,49 @@ describe("computeSessionNumber - 学年×曜日ペアセット内の cohort 別�
   });
 });
 
+describe("computeSessionNumber - コホートフォールバック (ClassSet 未登録)", () => {
+  // 高1 高松西: 月(数/英) + 木(数/英) = 週2。ClassSet 未登録でも英数が
+  // コース (コホート) 単位で通算される。2026-04-06 月 / 04-09 木 / 04-13 月。
+  const monMath = makeSlot(1, "月", "19:40-20:40", "高1", { subj: "高松西 数学" });
+  const monEng = makeSlot(2, "月", "20:50-21:50", "高1", { subj: "高松西 英語" });
+  const thuMath = makeSlot(3, "木", "19:40-20:40", "高1", { subj: "高松西 数学" });
+  const thuEng = makeSlot(4, "木", "20:50-21:50", "高1", { subj: "高松西 英語" });
+  const HS_CUTOFF = {
+    groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: "2026-04-06" }],
+  };
+  const ctx = {
+    classSets: [],
+    allSlots: [monMath, monEng, thuMath, thuEng],
+    displayCutoff: HS_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+  };
+
+  it("数学は 月=① 木=② 月=③ と週2で通算される", () => {
+    expect(computeSessionNumber(monMath, "2026-04-06", ctx)).toBe(1);
+    expect(computeSessionNumber(thuMath, "2026-04-09", ctx)).toBe(2);
+    expect(computeSessionNumber(monMath, "2026-04-13", ctx)).toBe(3);
+  });
+
+  it("英語は数学と独立して通算される", () => {
+    expect(computeSessionNumber(monEng, "2026-04-06", ctx)).toBe(1);
+    expect(computeSessionNumber(thuEng, "2026-04-09", ctx)).toBe(2);
+  });
+
+  it("英数以外 (物理) はコホート外なので単体カウント", () => {
+    // 04-10 金 / 04-17 金
+    const phys = makeSlot(5, "金", "18:30-19:30", "高1", { subj: "高松西 物理" });
+    const ctx2 = { ...ctx, allSlots: [...ctx.allSlots, phys] };
+    expect(computeSessionNumber(phys, "2026-04-10", ctx2)).toBe(1);
+    expect(computeSessionNumber(phys, "2026-04-17", ctx2)).toBe(2);
+  });
+
+  it("明示的 ClassSet があればそちらが優先される", () => {
+    const ctx3 = { ...ctx, classSets: [{ id: 1, label: "数学のみ", slotIds: [1, 3] }] };
+    expect(computeSessionNumber(monMath, "2026-04-06", ctx3)).toBe(1);
+    expect(computeSessionNumber(thuMath, "2026-04-09", ctx3)).toBe(2);
+  });
+});
+
 describe("computeSessionNumber - same-day multiple slots ordered by time", () => {
   // 両方とも火曜同時刻帯に並ぶスロット
   const early = makeSlot(1, "火", "18:00-19:00", "中3");

@@ -49,7 +49,10 @@ export function firstSubjToken(subj) {
 export function isEnglishOrMathSubject(subj) {
   if (!subj) return false;
   const trimmed = subj.trim();
-  const body = trimmed.slice(firstSubjToken(trimmed).length);
+  // 学校トークンがある場合はトークン以降だけを見る (学校名の英/数 誤検出を防ぐ)。
+  // スペースなし (科目名のみ) はその全体を見る (例: "数学" 単独でも英数扱い)。
+  const sp = trimmed.search(/\s/);
+  const body = sp >= 0 ? trimmed.slice(sp + 1) : trimmed;
   return /[英数]/.test(body);
 }
 
@@ -147,9 +150,27 @@ export function deriveCohortsFromSlots(slots) {
     const dr = deptRank(a.dept) - deptRank(b.dept);
     if (dr !== 0) return dr;
     if (a.grade !== b.grade) return a.grade < b.grade ? -1 : 1;
+    // 中学は曜日 (週順) 順に並べ、平日コースを土曜より前に出す。
+    const dayRank = (c) => (c.days && c.days.length ? DAYS.indexOf(c.days[0]) : -1);
+    const da = dayRank(a);
+    const db = dayRank(b);
+    if (da !== db) return da - db;
     return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
   });
   return arr;
+}
+
+// slotId → そのスロットが属するコホートの slotIds (2 コマ以上のコホートのみ)。
+// 回数カウント (sessionCount) が ClassSet 未登録時のフォールバック束ねに使う:
+// 「コース」単位の終講日と回数の集計単位を 1 つの定義 (コホート) に揃える。
+// 単体コホート (1 コマ) は索引に載せない (= 従来どおり単体集計)。
+export function buildSlotCohortIndex(slots) {
+  const index = new Map();
+  for (const c of deriveCohortsFromSlots(slots)) {
+    if (!c.slotIds || c.slotIds.length < 2) continue;
+    for (const id of c.slotIds) index.set(id, c.slotIds);
+  }
+  return index;
 }
 
 // displayCutoff.cohorts から、slot が属するコホート終講日エントリを返す。
