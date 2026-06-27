@@ -17,6 +17,7 @@
 // から参照する単一情報源。
 
 import { gradeToDept } from "./scheduleHelpers";
+import { DAYS } from "../constants/schools";
 
 // subj の先頭トークン (= 学校 / コース名)。半角・全角スペース両対応。
 // 例: "高松西 数学" → "高松西", "東大京大医進 英語" → "東大京大医進",
@@ -89,6 +90,8 @@ function describeCohort(slot) {
 export function deriveCohortsFromSlots(slots) {
   if (!Array.isArray(slots)) return [];
   const byId = new Map();
+  // 中学部コホート ID → 実際に授業がある曜日の集合 (高校部は曜日を持たない)。
+  const daysById = new Map();
   for (const s of slots) {
     if (!s || !s.grade) continue;
     const id = slotCohortId(s);
@@ -100,8 +103,26 @@ export function deriveCohortsFromSlots(slots) {
     }
     c.slotIds.push(s.id);
     c.slotCount += 1;
+    if (c.dept !== "高校部" && s.day) {
+      let set = daysById.get(id);
+      if (!set) daysById.set(id, (set = new Set()));
+      set.add(s.day);
+    }
   }
   const arr = [...byId.values()];
+  // 中学部のラベル/days は「実際に授業がある曜日」だけから作り直す。
+  // dayPairLabel は 火→火木・水→水金 とペアへ寄せて ID を安定させるが、
+  // 片曜日しか授業がない学年 (中1=火/金, 中2=月/木, 附中=水 など) で
+  // そのままラベルにすると授業の無い曜日 (中1 の木/水 等) が出てしまう。
+  // 例: 中1 が火のみ → "中1 火木" ではなく "中1 火"。両曜日あれば従来どおり。
+  for (const c of arr) {
+    const set = daysById.get(c.id);
+    if (!set) continue;
+    const days = DAYS.filter((d) => set.has(d));
+    if (days.length === 0) continue;
+    c.days = days;
+    c.label = `${c.grade} ${days.join("")}`;
+  }
   arr.sort((a, b) => {
     const deptRank = (d) => (d === "中学部" ? 0 : 1);
     const dr = deptRank(a.dept) - deptRank(b.dept);

@@ -100,6 +100,7 @@ describe("deriveCohortsFromSlots", () => {
     slot({ id: 4, grade: "中3", subj: "数学", day: "火" }),
     slot({ id: 5, grade: "中3", subj: "国語", day: "木" }),
     slot({ id: 6, grade: "中3", subj: "数学", day: "水" }),
+    slot({ id: 7, grade: "中3", subj: "英語", day: "金" }),
   ];
 
   it("dedupes by cohort and counts member slots", () => {
@@ -109,7 +110,7 @@ describe("deriveCohortsFromSlots", () => {
     expect(byId["H|高1|高松西"].slotIds).toEqual([1, 2]);
     expect(byId["H|高1|高松一"].slotCount).toBe(1);
     expect(byId["M|中3|火木"].slotCount).toBe(2);
-    expect(byId["M|中3|水金"].slotCount).toBe(1);
+    expect(byId["M|中3|水金"].slotCount).toBe(2);
   });
 
   it("orders middle school before high school", () => {
@@ -128,6 +129,33 @@ describe("deriveCohortsFromSlots", () => {
     expect(labels).toContain("高1 高松西");
     expect(labels).toContain("中3 火木");
     expect(labels).toContain("中3 水金");
+  });
+
+  it("labels middle-school cohorts by days that actually have slots, not the paired day", () => {
+    // 中1 が火・金のみ (木/水なし)、附中1 が水のみ。授業の無い曜日
+    // (中1 の木/水, 附中1 の金) をラベルに出さない。
+    const cohorts = deriveCohortsFromSlots([
+      slot({ id: 1, grade: "中1", subj: "数学", day: "火" }),
+      slot({ id: 2, grade: "中1", subj: "国語", day: "金" }),
+      slot({ id: 3, grade: "附中1", subj: "英語", day: "水" }),
+    ]);
+    const byId = Object.fromEntries(cohorts.map((c) => [c.id, c]));
+    // ID (グルーピング) は従来どおりペアで安定。
+    expect(byId["M|中1|火木"].label).toBe("中1 火");
+    expect(byId["M|中1|火木"].days).toEqual(["火"]);
+    expect(byId["M|中1|水金"].label).toBe("中1 金");
+    expect(byId["M|中1|水金"].days).toEqual(["金"]);
+    expect(byId["M|附中1|水金"].label).toBe("附中1 水");
+  });
+
+  it("keeps the paired label and orders days week-wise when both days have slots", () => {
+    const cohorts = deriveCohortsFromSlots([
+      slot({ id: 1, grade: "中3", subj: "理科", day: "木" }),
+      slot({ id: 2, grade: "中3", subj: "数学", day: "火" }),
+    ]);
+    const byId = Object.fromEntries(cohorts.map((c) => [c.id, c]));
+    expect(byId["M|中3|火木"].label).toBe("中3 火木");
+    expect(byId["M|中3|火木"].days).toEqual(["火", "木"]);
   });
 
   it("returns [] for non-array input", () => {
