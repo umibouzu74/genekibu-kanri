@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   firstSubjToken,
-  dayPairLabel,
-  daysForPairLabel,
-  slotCohortId,
+  partitionDaysIntoCourses,
   deriveCohortsFromSlots,
   findCohortCutoff,
 } from "./cohorts";
+import { INIT_SLOTS } from "../data";
 
 const slot = (over) => ({
   id: 1,
@@ -39,56 +38,36 @@ describe("firstSubjToken", () => {
   });
 });
 
-describe("dayPairLabel / daysForPairLabel", () => {
-  it("pairs 火木 and 水金", () => {
-    expect(dayPairLabel("火")).toBe("火木");
-    expect(dayPairLabel("木")).toBe("火木");
-    expect(dayPairLabel("水")).toBe("水金");
-    expect(dayPairLabel("金")).toBe("水金");
-  });
-  it("leaves other days standalone", () => {
-    expect(dayPairLabel("月")).toBe("月");
-    expect(dayPairLabel("土")).toBe("土");
-  });
-  it("expands pair labels back to days", () => {
-    expect(daysForPairLabel("火木")).toEqual(["火", "木"]);
-    expect(daysForPairLabel("水金")).toEqual(["水", "金"]);
-    expect(daysForPairLabel("月")).toEqual(["月"]);
-  });
-});
+describe("partitionDaysIntoCourses", () => {
+  const part = (days) => partitionDaysIntoCourses(new Set(days));
 
-describe("slotCohortId", () => {
-  it("keys high-school slots by grade + school (subj prefix)", () => {
-    expect(slotCohortId(slot({ grade: "高1", subj: "高松西 数学" }))).toBe(
-      "H|高1|高松西"
-    );
-    // same school, different subject → same cohort
-    expect(slotCohortId(slot({ grade: "高1", subj: "高松西 英語" }))).toBe(
-      "H|高1|高松西"
-    );
-    // different school → different cohort
-    expect(slotCohortId(slot({ grade: "高1", subj: "高松一 数学" }))).toBe(
-      "H|高1|高松一"
-    );
+  it("keeps a single twice-weekly course as one group (中1=火金, 中2=月木)", () => {
+    expect(part(["火", "金"])).toEqual([["火", "金"]]);
+    expect(part(["月", "木"])).toEqual([["月", "木"]]);
   });
-  it("keys middle-school slots by grade + day pair", () => {
-    expect(slotCohortId(slot({ grade: "中3", day: "火", subj: "数学" }))).toBe(
-      "M|中3|火木"
-    );
-    expect(slotCohortId(slot({ grade: "中3", day: "木", subj: "理科" }))).toBe(
-      "M|中3|火木"
-    );
-    expect(slotCohortId(slot({ grade: "中3", day: "水", subj: "数学" }))).toBe(
-      "M|中3|水金"
-    );
-    expect(slotCohortId(slot({ grade: "中3", day: "金", subj: "国語" }))).toBe(
-      "M|中3|水金"
-    );
+
+  it("keeps a once-weekly course as one group (附中=水)", () => {
+    expect(part(["水"])).toEqual([["水"]]);
   });
-  it("treats 附中 as middle school", () => {
-    expect(slotCohortId(slot({ grade: "附中3", day: "火", subj: "数学" }))).toBe(
-      "M|附中3|火木"
-    );
+
+  it("splits into 火木 / 水金 only when both pairs are present (中3)", () => {
+    expect(part(["火", "水", "木", "金"])).toEqual([
+      ["火", "木"],
+      ["水", "金"],
+    ]);
+  });
+
+  it("treats 土 as its own course, separate from weekdays", () => {
+    expect(part(["火", "木", "水", "金", "土"])).toEqual([
+      ["火", "木"],
+      ["水", "金"],
+      ["土"],
+    ]);
+    expect(part(["土"])).toEqual([["土"]]);
+  });
+
+  it("orders days within a group week-wise regardless of insertion order", () => {
+    expect(part(["金", "火"])).toEqual([["火", "金"]]);
   });
 });
 
@@ -97,20 +76,49 @@ describe("deriveCohortsFromSlots", () => {
     slot({ id: 1, grade: "高1", subj: "高松西 数学", day: "火" }),
     slot({ id: 2, grade: "高1", subj: "高松西 英語", day: "木" }),
     slot({ id: 3, grade: "高1", subj: "高松一 数学", day: "火" }),
-    slot({ id: 4, grade: "中3", subj: "数学", day: "火" }),
-    slot({ id: 5, grade: "中3", subj: "国語", day: "木" }),
-    slot({ id: 6, grade: "中3", subj: "数学", day: "水" }),
-    slot({ id: 7, grade: "中3", subj: "英語", day: "金" }),
+    // 中1 は火・金のみ (= 同じ生徒が週2回通う1コース)
+    slot({ id: 4, grade: "中1", subj: "数学", day: "火" }),
+    slot({ id: 5, grade: "中1", subj: "国語", day: "金" }),
+    // 中3 は火木と水金で生徒が分かれる2コース + 土曜特訓
+    slot({ id: 6, grade: "中3", subj: "数学", day: "火" }),
+    slot({ id: 7, grade: "中3", subj: "国語", day: "木" }),
+    slot({ id: 8, grade: "中3", subj: "数学", day: "水" }),
+    slot({ id: 9, grade: "中3", subj: "英語", day: "金" }),
+    slot({ id: 10, grade: "中3", subj: "理科A", day: "土" }),
   ];
 
-  it("dedupes by cohort and counts member slots", () => {
-    const cohorts = deriveCohortsFromSlots(slots);
-    const byId = Object.fromEntries(cohorts.map((c) => [c.id, c]));
+  it("groups a single twice-weekly middle-school course into ONE cohort", () => {
+    const byId = Object.fromEntries(
+      deriveCohortsFromSlots(slots).map((c) => [c.id, c])
+    );
+    expect(byId["M|中1|火金"]).toBeTruthy();
+    expect(byId["M|中1|火金"].label).toBe("中1 火金");
+    expect(byId["M|中1|火金"].days).toEqual(["火", "金"]);
+    expect(byId["M|中1|火金"].slotCount).toBe(2);
+    expect(byId["M|中1|火金"].slotIds).toEqual([4, 5]);
+    // 旧モデルの偽ペア ID は生成されない。
+    expect(byId["M|中1|火木"]).toBeUndefined();
+    expect(byId["M|中1|水金"]).toBeUndefined();
+  });
+
+  it("splits 中3 into 火木 / 水金 / 土 cohorts", () => {
+    const byId = Object.fromEntries(
+      deriveCohortsFromSlots(slots).map((c) => [c.id, c])
+    );
+    expect(byId["M|中3|火木"].slotCount).toBe(2);
+    expect(byId["M|中3|水金"].slotCount).toBe(2);
+    expect(byId["M|中3|土"].slotCount).toBe(1);
+    expect(byId["M|中3|火木"].label).toBe("中3 火木");
+  });
+
+  it("keys high-school cohorts by grade + school (subj prefix)", () => {
+    const byId = Object.fromEntries(
+      deriveCohortsFromSlots(slots).map((c) => [c.id, c])
+    );
     expect(byId["H|高1|高松西"].slotCount).toBe(2);
     expect(byId["H|高1|高松西"].slotIds).toEqual([1, 2]);
     expect(byId["H|高1|高松一"].slotCount).toBe(1);
-    expect(byId["M|中3|火木"].slotCount).toBe(2);
-    expect(byId["M|中3|水金"].slotCount).toBe(2);
+    expect(byId["H|高1|高松西"].label).toBe("高1 高松西");
   });
 
   it("orders middle school before high school", () => {
@@ -123,41 +131,6 @@ describe("deriveCohortsFromSlots", () => {
     expect(lastMidIdx).toBeLessThan(firstHighIdx);
   });
 
-  it("builds readable labels", () => {
-    const cohorts = deriveCohortsFromSlots(slots);
-    const labels = cohorts.map((c) => c.label);
-    expect(labels).toContain("高1 高松西");
-    expect(labels).toContain("中3 火木");
-    expect(labels).toContain("中3 水金");
-  });
-
-  it("labels middle-school cohorts by days that actually have slots, not the paired day", () => {
-    // 中1 が火・金のみ (木/水なし)、附中1 が水のみ。授業の無い曜日
-    // (中1 の木/水, 附中1 の金) をラベルに出さない。
-    const cohorts = deriveCohortsFromSlots([
-      slot({ id: 1, grade: "中1", subj: "数学", day: "火" }),
-      slot({ id: 2, grade: "中1", subj: "国語", day: "金" }),
-      slot({ id: 3, grade: "附中1", subj: "英語", day: "水" }),
-    ]);
-    const byId = Object.fromEntries(cohorts.map((c) => [c.id, c]));
-    // ID (グルーピング) は従来どおりペアで安定。
-    expect(byId["M|中1|火木"].label).toBe("中1 火");
-    expect(byId["M|中1|火木"].days).toEqual(["火"]);
-    expect(byId["M|中1|水金"].label).toBe("中1 金");
-    expect(byId["M|中1|水金"].days).toEqual(["金"]);
-    expect(byId["M|附中1|水金"].label).toBe("附中1 水");
-  });
-
-  it("keeps the paired label and orders days week-wise when both days have slots", () => {
-    const cohorts = deriveCohortsFromSlots([
-      slot({ id: 1, grade: "中3", subj: "理科", day: "木" }),
-      slot({ id: 2, grade: "中3", subj: "数学", day: "火" }),
-    ]);
-    const byId = Object.fromEntries(cohorts.map((c) => [c.id, c]));
-    expect(byId["M|中3|火木"].label).toBe("中3 火木");
-    expect(byId["M|中3|火木"].days).toEqual(["火", "木"]);
-  });
-
   it("returns [] for non-array input", () => {
     expect(deriveCohortsFromSlots(null)).toEqual([]);
   });
@@ -167,19 +140,44 @@ describe("findCohortCutoff", () => {
   const cohortCutoffs = [
     { id: "H|高1|高松西", label: "高1 高松西", grade: "高1", date: "2026-07-10" },
     { id: "M|中3|水金", label: "中3 水金", grade: "中3", date: "2026-07-17" },
+    { id: "M|中1|火金", label: "中1 火金", grade: "中1", date: "2026-07-15" },
   ];
 
-  it("matches a slot to its cohort cutoff by id", () => {
+  it("matches a high-school slot by grade + school", () => {
     expect(
       findCohortCutoff(slot({ grade: "高1", subj: "高松西 数学" }), cohortCutoffs)
         .date
     ).toBe("2026-07-10");
+  });
+
+  it("matches a middle-school slot when its day is in the cohort's day list", () => {
+    // 中3 水金 コホートは水・金どちらの slot にも一致する。
     expect(
-      findCohortCutoff(
-        slot({ grade: "中3", day: "金", subj: "数学" }),
-        cohortCutoffs
-      ).date
+      findCohortCutoff(slot({ grade: "中3", day: "水", subj: "数学" }), cohortCutoffs)
+        .date
     ).toBe("2026-07-17");
+    expect(
+      findCohortCutoff(slot({ grade: "中3", day: "金", subj: "国語" }), cohortCutoffs)
+        .date
+    ).toBe("2026-07-17");
+  });
+
+  it("matches both days of a merged twice-weekly course (中1 火金)", () => {
+    expect(
+      findCohortCutoff(slot({ grade: "中1", day: "火", subj: "数学" }), cohortCutoffs)
+        .date
+    ).toBe("2026-07-15");
+    expect(
+      findCohortCutoff(slot({ grade: "中1", day: "金", subj: "国語" }), cohortCutoffs)
+        .date
+    ).toBe("2026-07-15");
+  });
+
+  it("does not match a slot whose day is outside the cohort's day list", () => {
+    // 中3 木 は 水金 コホートには属さない (火木側)。
+    expect(
+      findCohortCutoff(slot({ grade: "中3", day: "木", subj: "国語" }), cohortCutoffs)
+    ).toBeNull();
   });
 
   it("returns null when no cohort entry matches", () => {
@@ -187,5 +185,26 @@ describe("findCohortCutoff", () => {
       findCohortCutoff(slot({ grade: "高1", subj: "高松一 数学" }), cohortCutoffs)
     ).toBeNull();
     expect(findCohortCutoff(slot(), [])).toBeNull();
+  });
+
+  it("round-trips INIT_SLOTS: each slot resolves to the cohort that owns it", () => {
+    const cohorts = deriveCohortsFromSlots(INIT_SLOTS);
+    const cutoffs = cohorts.map((c) => ({
+      id: c.id,
+      label: c.label,
+      grade: c.grade,
+      date: "2026-07-20",
+    }));
+    const mismatches = [];
+    for (const s of INIT_SLOTS) {
+      const owner = cohorts.find((c) => c.slotIds.includes(s.id));
+      const match = findCohortCutoff(s, cutoffs);
+      if (!owner || !match || match.id !== owner.id) {
+        mismatches.push(
+          `slot ${s.id} (${s.grade}/${s.day}) owner=${owner?.id} match=${match?.id}`
+        );
+      }
+    }
+    expect(mismatches).toEqual([]);
   });
 });

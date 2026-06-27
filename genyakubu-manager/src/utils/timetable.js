@@ -156,7 +156,9 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
  *   - start: always the grade group's startDate (cohorts refine the END only)
  *   - end:   the matching cohort's date if set, otherwise the group's date
  * High-school cohorts split by school (subj prefix); middle-school cohorts
- * split by weekday pair (火木 / 水金). See utils/cohorts.js.
+ * split by course (the days a track actually meets: 火金 / 月木 / 火木 /
+ * 水金 / 土 …). See utils/cohorts.js. Matching is by day membership, so a
+ * cohort's stored day list need not be a fixed pair.
  * @param {string} dateStr
  * @param {import("../types").Slot} slot
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
