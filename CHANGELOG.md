@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: NG 日時の CSV 一括取り込み — E2a)
+講師の不可時間 (NG) を CSV で一括登録できるように。初期セットアップの手入力を軽減。
+
+- **パーサ** (`utils/csvImport.js` の `parseNgCsv`): ヘッダ
+  <code>name(または teacher),date,period</code>。空欄エラー集約・重複行 dedupe・
+  未登録の講師/日付/時限を warning として返す。
+- **reducer** (`teacher/importNg`): name 一致の講師にのみ NG を追加 (dedupe)、
+  未登録 name は skip、変更なしは同参照で履歴を汚さない。
+- **UI** (`ConfigModal/NgCsvImport.jsx`): 「📅 講師不在・NG」タブに折りたたみ
+  パネル。paste / ファイル選択 / ドラッグ&ドロップ + ライブプレビュー。
+- **テスト**: parseNgCsv 8 / reducer 3 / NgCsvImport 5。
+
+### Added (講習時間割作成: 自動生成の手応え可視化 — E2f)
+大規模プロジェクトで「生成にどれだけ時間がかかり、どこで詰まったか」が読めるように。
+
+- **生成統計** (`autoGenerator.generateSinglePattern`): 探索回数 (iterations)・
+  上限到達 (hitLimit)・最初に埋められなかったコマ (stuckSlot) を返す。
+- **経過時間**: 生成中は Toolbar に「⏱ X.Xs」をライブ表示、完了後は結果
+  ヘッダに総時間。
+- **結果パネル**: 各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
+- **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
+
+### Changed (講習時間割作成: コントラストを WCAG AA 準拠に — E1e)
+- **builder-orange** を #e67a00 (白背景 2.94:1 で AA 未達) → **#c2410c**
+  (5.18:1) に。部分解テキスト/ボタン・warning 系の可読性が AA を満たす。
+- 読めるアイコンボタン (×閉じる/削除・▲▼並べ替え) を ink-ghost (1.92:1) →
+  ink-muted (5.74:1) に。ink-ghost は罫線・disabled 等の装飾用途に限定。
+- **コントラスト計算** (`utils/contrast.js`): WCAG 2.x の純粋関数を追加し、
+  `contrast.test.js` で「読めるテキスト」配色 21 ペアが AA を満たすことを
+  回帰テスト化。テスト +27 件。
+
 ### Added (講習時間割作成: キーボード操作の完成度向上 — E1b)
 マウスに頼らず設定モーダルとタブを操作できるように。
 

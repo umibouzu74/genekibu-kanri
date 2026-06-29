@@ -8,7 +8,9 @@
 + E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
 + E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化)
 + E1b (キーボード操作完成度: focus trap + tablist 矢印ナビ)
-+ E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出) 完了
++ E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出)
++ E2a-NG (NG 日時 CSV 取り込み) + E2f-stats (生成の探索回数/経過時間/詰まりセル)
++ E1e (コントラスト WCAG AA 準拠) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -604,10 +606,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: scheduleDiff.test.js (新規 10) / SnapshotMenu.test.jsx (+3 比較操作)。
 - **延期**: 自動生成 N 案どうしの diff、ScheduleTable 上での直接ハイライト (rowSpan/sticky との兼ね合いで重いので別途)。
 
-#### E1e. 🟠 色覚 / コントラスト WCAG AA 準拠 (新規)
-- **現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定。「⚠️N件」の赤背景 / 「✨ OK」の緑文字 / 科目カラーが背景の薄色など、AA (4.5:1) を満たすか不明。
-- **改善**: axe-core / Lighthouse の audit を入れて全配色を検証、未達のトークンを調整。focus ring も色弱対応 (現状 builder-blue 系の単色)。
-- **規模**: 中 / **価値**: 中 (法人ユースで必須化の可能性)
+#### E1e. ✅ コントラスト WCAG AA 準拠 (2026-06-29 完了 / focus ring は残)
+- **旧現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定だった。
+- **実装**:
+  - **utils/contrast.js**: 純粋関数 `hexToRgb` / `relativeLuminance` / `contrastRatio` / `meetsAA` (WCAG 2.x の式)。外部依存 (axe-core 等) は足さない。
+  - **トークン調整**: `builder-orange` #e67a00 (白背景 2.94:1 で AA 未達) → **#c2410c** (5.18:1)。白文字ボタン / warning-soft 上でも AA を満たす。hover も追従。
+  - **ghost トークンの用途限定**: 読めるアイコンボタン (×閉じる/削除・▲▼並べ替え) を `ink-ghost` (1.92:1) → `ink-muted` (5.74:1) に。`ink-ghost` は罫線・disabled・装飾用途のみに限定 (disabled UI は WCAG 適用外)。
+  - **回帰テスト**: contrast.test.js で「読めるテキスト」配色 21 ペアが AA (4.5:1) 以上であることを検証。トークンを変えたら test の同期コピーも更新する運用。
+- **テスト**: contrast.test.js (新規 27)。
+- **残り**: focus ring の色弱対応 (現状 builder-blue 単色)、科目カラーパレット自体の AA 検証は別途 (ユーザが任意色を選べるため固定検証になじまない)。
 
 #### E1f. 🟡 タッチ操作対応 (新規)
 - **現状**: DnD ベース。長押しコンテキストメニュー無し。タッチ右クリック (= 長押し) は OS 依存。
@@ -632,11 +639,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E2. 機能拡張
 
-#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 一部完了)
-- **現状**: 講師マスタの CSV import は paste + ✅ ファイル選択 / ドラッグ&ドロップ 対応済 (2026-06-29)。
+#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 講師マスタ + NG 日時 完了)
+- **現状**: 講師マスタ CSV (paste + ファイル選択 + D&D) と NG 日時 CSV が対応済 (2026-06-29)。
 - **✅ 完了分 (ファイル取り込み)**: TeacherManager の CSV パネルに「📂 ファイルを選択」(hidden `<input type="file" accept=".csv,...">`) と textarea へのドラッグ&ドロップを追加。`readCsvFile` が `file.text()` で読み取り → 既存の `csvText` → parse → preview フローに合流。非 CSV 拡張子はエラー toast でガード、ドラッグ中は枠をハイライト。テスト: TeacherManager.test.jsx 新規 3 件 (選択 / D&D / 非 CSV ガード)。
+- **✅ 完了分 (NG 日時 CSV / 2026-06-29)**:
+  - **utils/csvImport.js**: `parseNgCsv(text, { teacherNames, knownDates, knownPeriods })`。ヘッダ `name`(または `teacher`)`,date,period`。空フィールドはエラー集約、同一行は dedupe、未登録の講師/日付/時限は warning として返す。
+  - **reducer**: `teacher/importNg` action。name 一致の講師にのみ `makeNgKey` で NG を追加 (dedupe)、未登録 name は skip、変更なしは同参照で履歴を汚さない。`useTeacherActions.importNgSlots` で公開。
+  - **UI**: `components/ConfigModal/NgCsvImport.jsx` を「📅 講師不在・NG」タブに同梱。paste / ファイル選択 / D&D + ライブプレビュー (件数・エラー・未登録 warning)。
+  - **テスト**: parseNgCsv 8 / reducer 3 / NgCsvImport 5。
 - **残り (優先順)**:
-  - NG 日時 CSV (`teacher,date,period` 形式) で ngSlots を一括設定
   - 既存 Excel スケジュール (旧 winter_schedule .xlsx) からセル全体を取り込み (要 mapping UI)
   - subjectCounts / classes 等の config も CSV 化
 - **規模**: 中〜大 / **価値**: 高 (新規ユーザ全体の体験を底上げ)
@@ -676,11 +687,16 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
 - **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (一部完了 — cancel 2026-06-29)
-- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」は依然不可視。
-- **✅ 完了分 (cancel)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
-- **残り**: Worker から進捗イベントを増やし、進捗ボタンクリックで「詳細パネル」(詰まっているセル / backtrack 回数 / 経過時間)。
-- **規模**: 中 / **価値**: 中 (大規模 project で生成時間が読めない問題の解消)
+#### E2f. 🟡 自動生成中の進捗詳細 (cancel + 統計表示 完了 / live worker イベントのみ残)
+- **現状**: cancel・経過時間・探索回数・詰まりセルは可視化済。残るは Worker からの逐次 (パターン途中) イベント。
+- **✅ 完了分 (cancel / 2026-06-29)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
+- **✅ 完了分 (統計表示 / 2026-06-29)**:
+  - **autoGenerator**: `generateSinglePattern` が `iterations` (探索回数=solve 呼び出し数) / `hitLimit` (上限到達) / `stuckSlot` (MRV 順で最初に埋められなかったコマのラベル) を返す。`iter` を solve の外で確保して読む。
+  - **BuilderApp**: 生成中の経過時間を 100ms interval で更新し、完了時に総時間を確定。各 pattern に統計フィールドを乗せて SummaryPanel へ。
+  - **Toolbar**: 生成中ボタンに「⏱ X.Xs」。**SummaryPanel**: 結果ヘッダに総生成時間、各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
+  - **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
+- **残り**: Worker から「パターン内のどこまで進んだか」を postMessage で逐次通知し、進捗ボタンで live 詳細パネルを開く (現状は各パターン完了後の事後統計)。
+- **規模**: 中 / **価値**: 中
 
 #### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
 - **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
