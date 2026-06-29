@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTeachersCsv } from './csvImport';
+import { parseTeachersCsv, parseNgCsv } from './csvImport';
 
 describe('parseTeachersCsv', () => {
   it('正常な CSV を {name, subjects[]} 配列に parse する', () => {
@@ -101,5 +101,76 @@ describe('parseTeachersCsv', () => {
   it('空文字 / null 入力で エラー 1 件を返す', () => {
     expect(parseTeachersCsv('').errors).toHaveLength(1);
     expect(parseTeachersCsv(null).errors).toHaveLength(1);
+  });
+});
+
+describe('parseNgCsv (E2a)', () => {
+  const ctx = {
+    teacherNames: ['田中', '未定'],
+    knownDates: ['12/25', '12/26'],
+    knownPeriods: ['1限', '2限', '3限'],
+  };
+
+  it('基本: name,date,period をパースする', () => {
+    const csv = `name,date,period
+田中,12/25,1限
+田中,12/25,2限`;
+    const r = parseNgCsv(csv, ctx);
+    expect(r.rows).toEqual([
+      { name: '田中', date: '12/25', period: '1限' },
+      { name: '田中', date: '12/25', period: '2限' },
+    ]);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('teacher 列名も name の別名として使える', () => {
+    const csv = `teacher,date,period
+田中,12/25,1限`;
+    const r = parseNgCsv(csv, ctx);
+    expect(r.rows).toEqual([{ name: '田中', date: '12/25', period: '1限' }]);
+  });
+
+  it('name/date/period 必須ヘッダ欠落でエラー', () => {
+    expect(parseNgCsv('date,period\n12/25,1限', ctx).errors[0].message).toMatch(/name/);
+    expect(parseNgCsv('name,period\n田中,1限', ctx).errors[0].message).toMatch(/date/);
+  });
+
+  it('空フィールドはエラー行として集約', () => {
+    const csv = `name,date,period
+田中,,1限
+,12/25,2限`;
+    const r = parseNgCsv(csv, ctx);
+    expect(r.rows).toHaveLength(0);
+    expect(r.errors).toHaveLength(2);
+    expect(r.errors[0].message).toMatch(/date/);
+    expect(r.errors[1].message).toMatch(/name/);
+  });
+
+  it('同一 (name,date,period) の重複は 1 件に集約', () => {
+    const csv = `name,date,period
+田中,12/25,1限
+田中,12/25,1限`;
+    expect(parseNgCsv(csv, ctx).rows).toHaveLength(1);
+  });
+
+  it('未登録の講師 / 日付 / 時限を warning として返す', () => {
+    const csv = `name,date,period
+佐藤,12/31,4限`;
+    const r = parseNgCsv(csv, ctx);
+    expect(r.rows).toHaveLength(1); // row 自体は残す
+    expect(r.unknownTeachers).toEqual(['佐藤']);
+    expect(r.unknownDates).toEqual(['12/31']);
+    expect(r.unknownPeriods).toEqual(['4限']);
+  });
+
+  it('ctx 未指定なら warning 判定をスキップ', () => {
+    const r = parseNgCsv('name,date,period\n誰か,X,Y');
+    expect(r.rows).toHaveLength(1);
+    expect(r.unknownTeachers).toEqual([]);
+    expect(r.unknownDates).toEqual([]);
+  });
+
+  it('空入力はエラー 1 件', () => {
+    expect(parseNgCsv('', ctx).errors).toHaveLength(1);
   });
 });

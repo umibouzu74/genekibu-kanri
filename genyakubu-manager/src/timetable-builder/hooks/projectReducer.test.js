@@ -447,6 +447,47 @@ describe('projectReducer — 講師管理', () => {
     expect(next.project).toBe(state.project);
   });
 
+  it('teacher/importNg: 名前一致の講師に NG を追加 (dedupe)', () => {
+    const seeded = makeProject();
+    seeded.teachers[0].ngSlots = [makeNgKey('12/25', '1限')];
+    const state = { project: seeded, history: [seeded], historyIndex: 0, loadError: null };
+    const next = projectReducer(state, {
+      type: 'teacher/importNg',
+      payload: {
+        entries: [
+          { name: '堀上', date: '12/25', period: '1限' }, // 既存 → dedupe
+          { name: '堀上', date: '12/25', period: '2限' },
+          { name: '田中', date: '12/26', period: '3限' },
+        ],
+      },
+    });
+    expect(next.project.teachers[0].ngSlots.sort()).toEqual(
+      [makeNgKey('12/25', '1限'), makeNgKey('12/25', '2限')].sort(),
+    );
+    expect(next.project.teachers[1].ngSlots).toEqual([makeNgKey('12/26', '3限')]);
+  });
+
+  it('teacher/importNg: 未登録の name は skip', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/importNg',
+      payload: { entries: [{ name: '居ない先生', date: '12/25', period: '1限' }] },
+    });
+    expect(next.project).toBe(state.project); // 変更なし → 同参照
+  });
+
+  it('teacher/importNg: 空配列 / 全て既存は no-op (同参照)', () => {
+    const seeded = makeProject();
+    seeded.teachers[0].ngSlots = [makeNgKey('12/25', '1限')];
+    const state = { project: seeded, history: [seeded], historyIndex: 0, loadError: null };
+    expect(projectReducer(state, { type: 'teacher/importNg', payload: { entries: [] } }).project).toBe(seeded);
+    const noChange = projectReducer(state, {
+      type: 'teacher/importNg',
+      payload: { entries: [{ name: '堀上', date: '12/25', period: '1限' }] },
+    });
+    expect(noChange.project).toBe(seeded);
+  });
+
   it('teacher/addExternalSession: 詳細セッションを追加し ID を採番', () => {
     let state = makeState();
     state = projectReducer(state, {
