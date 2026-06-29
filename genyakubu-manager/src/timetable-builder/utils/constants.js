@@ -59,6 +59,9 @@ export const STORAGE_KEY_USER_DEFAULTS = 'builder.schedule_user_defaults';
 // 初回オンボーディングを表示済みかの 1 bit flag。値の存在 ('1') のみを見る
 // ので UI を学習・自動変形するものではない (CLAUDE.md の禁止事項に抵触しない)。
 export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
+// 年度間コピー用のテンプレート保存先 (E2d)。ユーザが明示的に保存した
+// プロジェクトのスナップショット配列。自動学習・自動変形ではない。
+export const STORAGE_KEY_TEMPLATES = 'builder.templates';
 
 // 旧キー（互換性のため読み込み時に参照）
 export const LEGACY_STORAGE_KEYS = [

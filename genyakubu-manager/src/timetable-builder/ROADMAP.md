@@ -5,7 +5,7 @@
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
 + E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
-+ E2b-MVP (修正提案のワンクリック適用) 完了
++ E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -652,10 +652,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: teacherConstraints.test.js (+5) / autoGenerator.test.js (+3 制限0で3連続OK・上限2で不成立・未定は対象外) / constants / GenerationSettings / projectReducer に各追記。
 - **既定値 0 で従来挙動を維持** (オプトイン)。
 
-#### E2d. 🟡 テンプレート機能 (年度間コピー) (旧 D6d)
-- **現状**: project ごとに完全独立。去年 → 今年の流用は JSON 保存→読込で代替可。
-- **改善**: テンプレ保存・適用、「講師マスタだけ引き継ぎ」「スケジュールだけ引き継ぎ」等の options。
-- **規模**: 中 / **価値**: 中
+#### E2d. ✅ テンプレート機能 (年度間コピー) (2026-06-29 完了 / 旧 D6d)
+- **旧現状**: 去年 → 今年の流用は JSON 保存→読込でしか代替できなかった。
+- **実装**:
+  - **utils/templates.js**: 純粋関数 `buildTemplatePayload` (snapshots を除外し deep copy) / `addTemplate` (id max+1) / `removeTemplate` + localStorage I/O ラッパ `loadTemplates` / `persistTemplates` (壊れたデータは空配列フォールバック)。保存先は `STORAGE_KEY_TEMPLATES` (project state とは独立)。
+  - **useProject**: `applyTemplateFull(payload)` (migrate + cleanSchedule → project/replace、Undo 可)。「講師マスタのみ」は既存 `importTeachers(..., 'replace')` を再利用。
+  - **UI**: ConfigModal に「🗂 テンプレート」タブ。保存 / 一覧 (作成日・講師数・タブ数) / 「全体を適用」/「講師のみ」/ 削除。適用は confirm + Undo 可能。
+- **テスト**: templates.test.js (新規 8) / TemplateManager.test.jsx (新規 7)。
+- **延期**: 「スケジュールだけ引き継ぎ」「カレンダー構成だけ」等の細粒度オプションは未実装 (全体 / 講師のみ の 2 択)。
 
 #### E2e. ✅ 生成パラメータ UI 化 (2026-06-29 完了)
 - **旧現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。

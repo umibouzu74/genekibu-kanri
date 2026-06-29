@@ -4,7 +4,8 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
-import { makeKey } from '../utils/scheduleKey';
+import { makeKey, migrateProject } from '../utils/scheduleKey';
+import { cleanSchedule } from '../utils/constants';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -135,6 +136,15 @@ export function useProject() {
     dispatch({ type: 'snapshot/remove', payload: { id } });
   }, [dispatch]);
 
+  // --- テンプレート適用 (E2d) ---
+  // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
+  // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
+  const applyTemplateFull = useCallback((payload) => {
+    if (!payload) return;
+    const migrated = migrateProject(payload);
+    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
+  }, [dispatch]);
+
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group) => {
     dispatch({ type: 'combinedGroup/add', payload: { group } });
@@ -195,6 +205,8 @@ export function useProject() {
     applySnapshot,
     renameSnapshot,
     removeSnapshot,
+    // テンプレート (E2d)
+    applyTemplateFull,
     // 合同グループ
     addCombinedGroup,
     updateCombinedGroup,
