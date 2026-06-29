@@ -472,6 +472,36 @@ function applyAction(project, action) {
       if (!changed) return project;
       return { ...project, teachers: newTeachers };
     }
+    case 'teacher/importNg': {
+      // E2a: NG 日時 CSV を atomic に投入する。entries は
+      // [{ name, date, period }]。name が既存講師に一致する行のみ反映し、
+      // makeNgKey(date, period) を ngSlots に追加 (dedupe)。一致しない name は
+      // skip (CSV パース側で unknownTeachers として warning 済み)。
+      const { entries } = action.payload;
+      if (!Array.isArray(entries) || entries.length === 0) return project;
+      // name → 追加すべき ngKey の集合
+      const addByName = new Map();
+      for (const e of entries) {
+        if (!e || !e.name || !e.date || !e.period) continue;
+        const k = makeNgKey(e.date, e.period);
+        if (!addByName.has(e.name)) addByName.set(e.name, new Set());
+        addByName.get(e.name).add(k);
+      }
+      if (addByName.size === 0) return project;
+      let changed = false;
+      const newTeachers = project.teachers.map(t => {
+        const toAdd = addByName.get(t.name);
+        if (!toAdd) return t;
+        const ngSet = new Set(t.ngSlots || []);
+        const before = ngSet.size;
+        toAdd.forEach(k => ngSet.add(k));
+        if (ngSet.size === before) return t;
+        changed = true;
+        return { ...t, ngSlots: Array.from(ngSet) };
+      });
+      if (!changed) return project;
+      return { ...project, teachers: newTeachers };
+    }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
       if (idx == null || idx < 0 || idx >= project.teachers.length) return project;

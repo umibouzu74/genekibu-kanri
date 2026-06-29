@@ -1,7 +1,17 @@
 import { Fragment, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { makeKey } from '../utils/scheduleKey';
+import { useLongPress } from '../hooks/useLongPress';
 import ScheduleCell from './ScheduleCell';
+
+// 右クリック (onContextMenu) に加えてタッチ長押しでも同じメニューを開ける <th>。
+// ヘッダ (日付/時限/クラス) の追加・名称変更・削除をタッチ端末から行うため (E1f)。
+function LongPressTh({ onLongPressOpen, children, ...props }) {
+  const lp = useLongPress(({ pageX, pageY }) =>
+    onLongPressOpen({ preventDefault: () => {}, pageX, pageY }),
+  );
+  return <th {...props} {...lp}>{children}</th>;
+}
 
 // スティッキー列の幅定義（CSS変数として使用）
 const COL_WIDTHS = {
@@ -68,10 +78,11 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
               時限
             </th>
             {currentConfig.classes.map(c => (
-              <th key={c.id} scope="col" className={`border-r border-builder-primary-hover cursor-context-menu hover:bg-builder-primary-hover ${isCompact ? "p-1 min-w-[80px]" : "p-3 min-w-[140px]"}`}
-                onContextMenu={(e) => onContextMenu(e, null, null, null, 'class', c.label)}>
+              <LongPressTh key={c.id} scope="col" className={`border-r border-builder-primary-hover cursor-context-menu hover:bg-builder-primary-hover ${isCompact ? "p-1 min-w-[80px]" : "p-3 min-w-[140px]"}`}
+                onContextMenu={(e) => onContextMenu(e, null, null, null, 'class', c.label)}
+                onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'class', c.label)}>
                 {c.label}
-              </th>
+              </LongPressTh>
             ))}
           </tr>
         </thead>
@@ -81,18 +92,20 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
               {currentConfig.periods.map((p, pIdx) => (
                 <tr key={p.id} className="bg-builder-surface border-b border-builder-border hover:bg-builder-bg">
                   {pIdx === 0 && (
-                    <th scope="rowgroup" rowSpan={currentConfig.periods.length}
+                    <LongPressTh scope="rowgroup" rowSpan={currentConfig.periods.length}
                       className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
                       style={dateColStyle}
-                      onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
+                      onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}
+                      onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
                       {d.label}
-                    </th>
+                    </LongPressTh>
                   )}
-                  <th scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}
+                  <LongPressTh scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}
                     style={periodColStyle}
-                    onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
+                    onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}
+                    onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
                     {p.label}
-                  </th>
+                  </LongPressTh>
                   {currentConfig.classes.map((c) => {
                     const cellKey = makeKey(d.id, p.id, c.id);
                     return (

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ONBOARDING_STEPS as STEPS } from './onboardingSteps';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /**
  * 初回起動時のオンボーディングオーバーレイ。
@@ -14,42 +15,17 @@ export default function OnboardingOverlay({ open, onClose }) {
   const [stepIndex, setStepIndex] = useState(0);
   const titleId = 'builder-onboarding-title';
   const dialogRef = useRef(null);
-  const closeBtnRef = useRef(null);
 
-  // 開く度に最初のステップへ戻す + 閉じるボタンへ初期フォーカス
+  // 開く度に最初のステップへ戻す
   useEffect(() => {
     if (!open) return;
     setStepIndex(0);
-    closeBtnRef.current?.focus();
   }, [open]);
 
-  // Escape で閉じる + Tab / Shift+Tab で dialog 内のフォーカスを循環 (M2 簡易 focus trap)
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose?.({ dontShowAgain: false });
-        return;
-      }
-      if (e.key !== 'Tab' || !dialogRef.current) return;
-      const focusables = dialogRef.current.querySelectorAll(
-        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  // Escape / Tab focus trap は共通フック (E1b) に委譲。Escape では
+  // dontShowAgain=false で閉じる (F1: 初見ユーザの永久消失を防ぐ)。
+  const handleTrapClose = useCallback(() => onClose?.({ dontShowAgain: false }), [onClose]);
+  useFocusTrap(dialogRef, { onClose: handleTrapClose, enabled: open });
 
   if (!open) return null;
 
@@ -75,7 +51,6 @@ export default function OnboardingOverlay({ open, onClose }) {
         <div className="flex items-start justify-between gap-4 mb-3">
           <h2 id={titleId} className="text-lg font-bold">{step.title}</h2>
           <button
-            ref={closeBtnRef}
             type="button"
             aria-label="閉じる"
             onClick={() => onClose?.({ dontShowAgain: false })}

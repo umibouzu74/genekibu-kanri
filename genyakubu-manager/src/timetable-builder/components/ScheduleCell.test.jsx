@@ -179,6 +179,32 @@ describe('ScheduleCell', () => {
     expect(document.activeElement).toBe(teacherSelect);
   });
 
+  it('ArrowLeft: 行頭 (先頭クラスの subject) では行末 (末尾クラスの teacher) へ wrap する (E1b)', () => {
+    const { container } = renderCell(); // (1,1,1) = 先頭クラス
+    const wrapTarget = document.createElement('select');
+    wrapTarget.id = 'select-1-1-2-teacher'; // 末尾クラス (id=2) の teacher
+    container.appendChild(wrapTarget);
+    const subjectSelect = document.getElementById('select-1-1-1-subject');
+    subjectSelect.focus();
+    fireEvent.keyDown(subjectSelect, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(wrapTarget);
+  });
+
+  it('ArrowRight: 行末 (末尾クラスの teacher) では行頭 (先頭クラスの subject) へ wrap する (E1b)', () => {
+    // teacher select は subject がある時のみ描画されるので (1,1,2) に subject を与える
+    const { container } = renderCell({
+      classId: 2, // (1,1,2) = 末尾クラス
+      contextOverrides: { currentSchedule: { [makeKey(1, 1, 2)]: { subject: '英語' } } },
+    });
+    const wrapTarget = document.createElement('select');
+    wrapTarget.id = 'select-1-1-1-subject'; // 先頭クラス (id=1) の subject
+    container.appendChild(wrapTarget);
+    const teacherSelect = document.getElementById('select-1-1-2-teacher');
+    teacherSelect.focus();
+    fireEvent.keyDown(teacherSelect, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(wrapTarget);
+  });
+
   it('config に entity 一致が無いと null を返す (config 削除直後の race 対策)', () => {
     const { container } = renderCell({ dateId: 999 });
     // 何も render されていないこと (table > tbody > tr の中身)

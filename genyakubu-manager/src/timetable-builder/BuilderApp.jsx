@@ -14,6 +14,8 @@ import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
+import { checkStorageHealth, formatBytes } from './utils/storageHealth';
+import { useTabPresence } from './hooks/useTabPresence';
 
 function ScheduleApp() {
   const { project, undo, redo, loadError } = useProjectContext();
@@ -46,6 +48,32 @@ function ScheduleApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 起動時に保存サイズを概算し、localStorage 上限に近づいていたら警告 (E6c)。
+  // データ消失 (silent な保存失敗) の予防。マウント時 1 回のみ。
+  useEffect(() => {
+    const { warn, bytes } = checkStorageHealth(project);
+    if (warn) {
+      showToast(
+        `保存データが大きくなっています (約 ${formatBytes(bytes)})。不要なスナップショットやタブを整理するか、JSON 書き出しでバックアップしてください。`,
+        'warning',
+        8000,
+      );
+    }
+    // 起動時 1 回のみ。project の逐次変化では再警告しない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 同一ブラウザで複数タブ開いた時に一度だけ警告 (E6d)。autosave の相互上書き予防。
+  useTabPresence(
+    useCallback(() => {
+      showToast(
+        'このツールを別のタブでも開いています。複数タブで編集すると保存が競合し、変更が失われることがあります。1 つのタブに絞ることをおすすめします。',
+        'warning',
+        8000,
+      );
+    }, [showToast]),
+  );
+
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -73,6 +101,11 @@ function ScheduleApp() {
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
+  // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
+  const [generateElapsedMs, setGenerateElapsedMs] = useState(0);
+  const genStartRef = useRef(0);
+  // E2f live: 探索の途中経過 (案番号 / 充填数 / 探索回数)。null = 未通知。
+  const [generateLive, setGenerateLive] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
@@ -105,6 +138,9 @@ function ScheduleApp() {
     setIsGenerating(true);
     setGeneratedPatterns([]);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    genStartRef.current = Date.now();
+    setGenerateElapsedMs(0);
+    setGenerateLive(null);
 
     const results = [];
     // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
@@ -118,6 +154,10 @@ function ScheduleApp() {
       onPattern: (index, result) => {
         results[index] = result;
         setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
+      },
+      // 探索の途中経過 (間引き済) を live 表示用 state に反映 (E2f)
+      onProgress: (index, progress) => {
+        setGenerateLive({ index, ...progress });
       },
       onError: (msg) => {
         errored = true;
@@ -139,8 +179,15 @@ function ScheduleApp() {
           isPartial: r.solution === null,
           filledCount: r.solution ? r.totalSlots : r.filledCount,
           totalSlots: r.totalSlots,
+          // E2f: 生成の手応え (探索回数 / 上限到達 / 詰まりセル)
+          iterations: r.iterations,
+          hitLimit: r.hitLimit,
+          stuckSlot: r.stuckSlot,
         }))
         .filter(r => r.schedule !== null);
+
+      // 生成にかかった総時間を確定 (E2f)
+      setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);
 
       if (patterns.length > 0) {
         setGeneratedPatterns(patterns);
@@ -153,6 +200,7 @@ function ScheduleApp() {
         showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
       }
       setIsGenerating(false);
+      setGenerateLive(null);
       generationRef.current = null;
     });
   }, [project, showToast, NUM_PATTERNS]);
@@ -168,6 +216,7 @@ function ScheduleApp() {
     handle.cancel();
     setIsGenerating(false);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    setGenerateLive(null);
     showToast('自動作成を中止しました', 'warning', 2000);
   }, [showToast, NUM_PATTERNS]);
 
@@ -178,6 +227,15 @@ function ScheduleApp() {
       generationRef.current = null;
     };
   }, []);
+
+  // 生成中だけ経過時間を 100ms 間隔で更新する (E2f)。完了/中止で停止。
+  useEffect(() => {
+    if (!isGenerating) return undefined;
+    const id = setInterval(() => {
+      if (genStartRef.current) setGenerateElapsedMs(Date.now() - genStartRef.current);
+    }, 100);
+    return () => clearInterval(id);
+  }, [isGenerating]);
 
   const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
     e.preventDefault();
@@ -197,7 +255,7 @@ function ScheduleApp() {
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
-    <div className="font-sans" onClick={() => setContextMenu(null)}>
+    <div className="font-sans builder-root" onClick={() => setContextMenu(null)}>
       <style>{printStyle}</style>
 
       <Header />
@@ -212,6 +270,8 @@ function ScheduleApp() {
           setShowConfig={setShowConfig}
           isGenerating={isGenerating}
           generateProgress={generateProgress}
+          generateElapsedMs={generateElapsedMs}
+          generateLive={generateLive}
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
@@ -221,6 +281,7 @@ function ScheduleApp() {
           showSummary={showSummary}
           generatedPatterns={generatedPatterns}
           setGeneratedPatterns={setGeneratedPatterns}
+          generatedElapsedMs={generateElapsedMs}
         />
 
         {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}

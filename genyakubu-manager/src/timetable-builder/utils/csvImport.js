@@ -59,6 +59,105 @@ function parseLine(line) {
   return fields;
 }
 
+// NG 日時 CSV のパーサ (E2a)。講師の不可時間を一括登録する。
+//
+// フォーマット (1 行目はヘッダ、必須カラム: name(または teacher), date, period):
+//   name,date,period
+//   田中,12/25,1限
+//   田中,12/25,2限
+//   未定,12/26,3限
+//
+// - date / period は config の「日付ラベル」「時限ラベル」と一致させる
+//   (NG キーはラベルベースのため。タブ横断で同名ラベルに適用される)
+// - 空行は無視、name/date/period のいずれかが空の行はエラー
+// - 同一 (name,date,period) の重複行は 1 件に集約 (エラーにしない)
+//
+// 返り値:
+//   {
+//     rows: [{ name, date, period }],            // 正常に parse できた行 (重複除去済)
+//     errors: [{ line, message }],               // エラー行
+//     unknownTeachers: string[],                 // teacherNames に無い name (warning)
+//     unknownDates: string[],                    // knownDates に無い date (warning)
+//     unknownPeriods: string[],                  // knownPeriods に無い period (warning)
+//   }
+const NG_REQUIRED = ['date', 'period']; // name は teacher 別名を許すので別判定
+
+export function parseNgCsv(text, { teacherNames, knownDates, knownPeriods } = {}) {
+  const rows = [];
+  const errors = [];
+  const unknownTeacherSet = new Set();
+  const unknownDateSet = new Set();
+  const unknownPeriodSet = new Set();
+  const teacherSet = new Set(teacherNames || []);
+  const dateSet = new Set(knownDates || []);
+  const periodSet = new Set(knownPeriods || []);
+
+  const lines = (text || '').split(/\n/).map(l => l.replace(/\r$/, ''));
+  if (lines.length === 0) {
+    return { rows, errors: [{ line: 0, message: '空の入力です' }], unknownTeachers: [], unknownDates: [], unknownPeriods: [] };
+  }
+
+  const headerFields = parseLine(lines[0]).map(s => s.trim().toLowerCase());
+  // name または teacher のどちらかが必須
+  const nameIdx = headerFields.includes('name')
+    ? headerFields.indexOf('name')
+    : headerFields.indexOf('teacher');
+  if (nameIdx < 0) {
+    return {
+      rows,
+      errors: [{ line: 1, message: '必須カラム "name" (または "teacher") がヘッダに見つかりません' }],
+      unknownTeachers: [], unknownDates: [], unknownPeriods: [],
+    };
+  }
+  for (const required of NG_REQUIRED) {
+    if (!headerFields.includes(required)) {
+      return {
+        rows,
+        errors: [{ line: 1, message: `必須カラム "${required}" がヘッダに見つかりません (期待: name, date, period)` }],
+        unknownTeachers: [], unknownDates: [], unknownPeriods: [],
+      };
+    }
+  }
+  const dateIdx = headerFields.indexOf('date');
+  const periodIdx = headerFields.indexOf('period');
+
+  const seen = new Set();
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!raw || raw.trim() === '') continue;
+    const fields = parseLine(raw);
+    const lineNo = i + 1;
+
+    const name = (fields[nameIdx] || '').trim();
+    const date = (fields[dateIdx] || '').trim();
+    const period = (fields[periodIdx] || '').trim();
+
+    if (!name || !date || !period) {
+      const missing = [!name && 'name', !date && 'date', !period && 'period'].filter(Boolean).join(', ');
+      errors.push({ line: lineNo, message: `${missing} が空です` });
+      continue;
+    }
+
+    const dedupeKey = `${name} ${date} ${period}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    if (teacherSet.size > 0 && !teacherSet.has(name)) unknownTeacherSet.add(name);
+    if (dateSet.size > 0 && !dateSet.has(date)) unknownDateSet.add(date);
+    if (periodSet.size > 0 && !periodSet.has(period)) unknownPeriodSet.add(period);
+
+    rows.push({ name, date, period });
+  }
+
+  return {
+    rows,
+    errors,
+    unknownTeachers: Array.from(unknownTeacherSet),
+    unknownDates: Array.from(unknownDateSet),
+    unknownPeriods: Array.from(unknownPeriodSet),
+  };
+}
+
 export function parseTeachersCsv(text, { commonSubjects } = {}) {
   const rows = [];
   const errors = [];

@@ -59,11 +59,18 @@ const DEFAULT_MAX_DAILY_HOURS = CONST_DEFAULT_MAX_DAILY_HOURS;
 // 講師の名前のうち daily 上限の対象外とするもの (placeholder)。
 const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
 
+// 進捗コールバックの間引き間隔 (solve 呼び出し回数)。頻度が高すぎると
+// postMessage / setState が溢れるので、この回数ごとに 1 回だけ通知する。
+const PROGRESS_INTERVAL = 20000;
+
 /**
  * 単一パターンを生成する（シード指定可能）
- * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number }}
+ * @param {object} args
+ * @param {(p: { iterations: number, filledCount: number, totalSlots: number }) => void} [args.onProgress]
+ *   探索の途中経過を間引いて通知する (E2f live progress)。省略可。
+ * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number, iterations: number, hitLimit: boolean, stuckSlot: object|null }}
  */
-export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
+export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress }) {
   const rng = mulberry32(seed);
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
@@ -180,6 +187,11 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     if (idx > bestFilledCount) {
       bestFilledCount = idx;
       bestPartial = JSON.parse(JSON.stringify(tempSch));
+    }
+
+    // 探索の途中経過を間引いて通知 (E2f)。bestFilledCount 更新後に出す。
+    if (onProgress && iter.c % PROGRESS_INTERVAL === 0) {
+      onProgress({ iterations: iter.c, filledCount: bestFilledCount, totalSlots });
     }
 
     if (idx >= slots.length) {
@@ -362,13 +374,29 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     }
   };
 
-  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
+  // iter を外で確保して solve 後に探索回数 (backtrack の規模) を読めるようにする (E2f)
+  const iter = { c: 0 };
+  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily }, iter);
+
+  // 完全解が出なかった場合、MRV 順で最初に埋められなかったコマ (= 詰まり位置)。
+  // bestFilledCount は到達した最大 idx なので slots[bestFilledCount] が次に
+  // 埋めるべきコマ。範囲外 (= 全埋まり) は null。
+  const stuckSlotRaw = solution === null && bestFilledCount >= 0 && bestFilledCount < slots.length
+    ? slots[bestFilledCount]
+    : null;
+  const stuckSlot = stuckSlotRaw
+    ? { date: stuckSlotRaw.d.label, period: stuckSlotRaw.p.label, class: stuckSlotRaw.c.label }
+    : null;
 
   return {
     solution,
     bestPartial,
     filledCount: bestFilledCount,
     totalSlots,
+    // E2f: 生成の手応えを UI に出すための統計
+    iterations: iter.c,
+    hitLimit: iter.c > maxIterations,
+    stuckSlot,
   };
 }
 

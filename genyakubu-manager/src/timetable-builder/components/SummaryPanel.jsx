@@ -67,7 +67,27 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns }) {
+// 探索の手応えを 1 行で表す補助テキスト (E2f)。
+function PatternStats({ pat }) {
+  if (pat.iterations == null && !pat.stuckSlot) return null;
+  return (
+    <div className="text-[11px] text-builder-ink-muted text-center mb-2 -mt-1 space-y-0.5">
+      {pat.iterations != null && (
+        <div>
+          探索 <span className="tabular-nums font-bold">{pat.iterations.toLocaleString()}</span> 回
+          {pat.hitLimit && <span className="text-builder-orange font-bold ml-1">(上限到達)</span>}
+        </div>
+      )}
+      {pat.stuckSlot && (
+        <div title="この案で最初に埋められなかったコマ (制約がきつい箇所)">
+          詰まり: <span className="font-bold text-builder-orange">{pat.stuckSlot.date} {pat.stuckSlot.period} {pat.stuckSlot.class}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs }) {
   const {
     project,
     analysis,
@@ -119,7 +139,14 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
       {generatedPatterns.length > 0 && (
         <div className="mb-4 p-4 bg-builder-bg border-2 border-builder-border rounded no-print">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="font-bold text-builder-ink">✨ 自動生成の結果 ({generatedPatterns.length}案)</h3>
+            <h3 className="font-bold text-builder-ink">
+              ✨ 自動生成の結果 ({generatedPatterns.length}案)
+              {generatedElapsedMs > 0 && (
+                <span className="ml-2 text-xs font-normal text-builder-ink-muted" aria-label="生成にかかった時間">
+                  ⏱ {(generatedElapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
+            </h3>
             <button onClick={() => setGeneratedPatterns([])} className="text-sm text-builder-ink-muted underline">キャンセル</button>
           </div>
           {generatedPatterns.some(p => p.isPartial) && (
@@ -143,6 +170,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                     </span>
                   )}
                 </div>
+                <PatternStats pat={pat} />
                 <SummaryTable
                   target={pat.schedule}
                   config={currentConfig}

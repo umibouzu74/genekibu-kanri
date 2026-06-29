@@ -262,7 +262,7 @@ export default function TeacherManager() {
                         ))}
                       </td>
                       <td className="p-2 text-center">
-                        <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-ghost hover:text-builder-red">×</button>
+                        <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-muted hover:text-builder-red">×</button>
                       </td>
                     </tr>
                   );

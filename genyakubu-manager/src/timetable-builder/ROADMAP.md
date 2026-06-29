@@ -6,11 +6,44 @@
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
 + E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
 + E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
-+ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化) 完了
++ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化)
++ E1b (キーボード操作完成度: focus trap + tablist 矢印ナビ)
++ E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出)
++ E2a-NG (NG 日時 CSV 取り込み) + E2f-stats (生成の探索回数/経過時間/詰まりセル)
++ E1e (コントラスト WCAG AA 準拠) + E1a-toolbar (狭画面でボタン折返し)
++ E1f-longpress (タッチ長押しでコンテキストメニュー)
++ E8a (ユーザーマニュアル) + E8b (アーキテクチャ図) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
 未着手の C 系再設計だけ詳細を残す。
+
+関連ドキュメント:
+- ユーザ操作: [`docs/USER_GUIDE.md`](./docs/USER_GUIDE.md)
+- 設計・データフロー (Mermaid): [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+
+---
+
+## §0. 完了済み一覧 (E8d インデックス)
+
+詳細は各セクションの該当項目を参照。「残あり」は一部完了で残課題あり。
+
+| 系統 | 完了項目 |
+|---|---|
+| A (増分改善) | A1-A8 すべて完了 |
+| B (中規模リファクタ) | B1-B4 すべて完了 |
+| C (破壊的再設計) | C1 ID 化 / C2 reducer 化 / C3 デザイン統合 / C4 Excel ライブラリ置換 |
+| D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
+| E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
+| E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live(残あり) / E2h 負荷偏り |
+| E3 (テスト/信頼性) | E3d schema 検証 |
+| E4 (パフォーマンス) | E4a cleanSchedule O(K) |
+| E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
+| E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
+
+**主な未着手**: E1a/E1f 残り (Header dropdown は完了・ScheduleTable 幅 / 44px / ピンチ抑止が残) ·
+E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e テスト深化 · E4b ソルバ計測 ·
+E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
 ---
 
@@ -569,19 +602,21 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E1. UX 完成度の残り
 
-#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b)
-- **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel / ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。
-- **改善**: Toolbar の sm 折りたたみ、Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で。
+#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b / Toolbar 折返し 完了)
+- **現状**: Toolbar のボタン群は狭画面で折り返すように修正済 (2026-06-29)。Header の Excel ボタン dropdown 化と ScheduleTable の max-w 制御は残。
+- **✅ 完了分**: Toolbar 右側のボタンクラスタを `flex` → `flex flex-wrap justify-end` に。768px 以下でボタンが画面外へはみ出さず段組みで折り返す。
+- **残り**: Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で制御。
 - **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
 
-#### E1b. 🟠 キーボード操作完成度 (旧 D5b + D5a 延期分)
-- **現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装。Tab で背景まで抜ける。OnboardingOverlay は実装済 (M2 修正)。
-- **改善**:
-  - ConfigModal に簡易 focus trap (OnboardingOverlay の実装をヘルパー化して再利用)
-  - ConfigModal タブ群を `role="tablist"` / `role="tab"` + 左右矢印で切替
-  - TabBar (project タブ) も同様に `role="tablist"` 化
-  - ScheduleCell の矢印ナビは既存。エッジ動作 (端 → 反対端へ wrap?) を統一
-- **規模**: 中 / **価値**: 中
+#### E1b. ✅ キーボード操作完成度 (2026-06-29 完了 / 旧 D5b + D5a 延期分 / ScheduleCell 端動作のみ残)
+- **旧現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装で Tab が背景まで抜けた。タブ群も矢印キー非対応。
+- **実装**:
+  - **hooks/useFocusTrap.js**: OnboardingOverlay のインライン実装をヘルパー化 (E1b の「再利用」指示どおり)。親アプリの `src/hooks/useFocusTrap` と同等 API だが Builder 自己完結のためローカル新設。`trapStack` で入れ子 dialog の LIFO 制御、`enabled` フラグ、マウント時の初期フォーカス + cleanup でのフォーカス復帰。Builder の慣習に合わせ keydown は `window` で捕捉。
+  - **OnboardingOverlay**: 自前の Escape/Tab ハンドラ (M2) を `useFocusTrap` 呼び出しに置換 (-30 行)。Escape は従来どおり `dontShowAgain:false` で閉じる (F1 維持)。
+  - **ConfigModal**: `useFocusTrap` で focus trap 化。タブ群を `role="tablist"` / `role="tab"` / `role="tabpanel"` + roving tabindex 化、← → / Home / End で切替 (wrap あり)。自前 Escape effect は trap に統合。
+  - **TabBar (学年タブ)**: `role="tablist"` / `role="tab"` + aria-selected + roving tabindex、← → / Home / End で `switchTab` (wrap あり)。
+- **テスト**: useFocusTrap.test.jsx (新規 6) / ConfigModal index.test.jsx (+5) / TabBar.test.jsx (+5)。OnboardingOverlay の既存 12 件はそのまま PASS で挙動等価。
+- **残り (低優先)**: ScheduleCell の矢印ナビの端動作 (端 → 反対端へ wrap?) の統一は別途。
 
 #### E1c. ✅ 名前付きスナップショット (2026-06-29 完了 / 旧 D1d)
 - **旧現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できなかった。
@@ -601,14 +636,24 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: scheduleDiff.test.js (新規 10) / SnapshotMenu.test.jsx (+3 比較操作)。
 - **延期**: 自動生成 N 案どうしの diff、ScheduleTable 上での直接ハイライト (rowSpan/sticky との兼ね合いで重いので別途)。
 
-#### E1e. 🟠 色覚 / コントラスト WCAG AA 準拠 (新規)
-- **現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定。「⚠️N件」の赤背景 / 「✨ OK」の緑文字 / 科目カラーが背景の薄色など、AA (4.5:1) を満たすか不明。
-- **改善**: axe-core / Lighthouse の audit を入れて全配色を検証、未達のトークンを調整。focus ring も色弱対応 (現状 builder-blue 系の単色)。
-- **規模**: 中 / **価値**: 中 (法人ユースで必須化の可能性)
+#### E1e. ✅ コントラスト WCAG AA 準拠 (2026-06-29 完了 / focus ring は残)
+- **旧現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定だった。
+- **実装**:
+  - **utils/contrast.js**: 純粋関数 `hexToRgb` / `relativeLuminance` / `contrastRatio` / `meetsAA` (WCAG 2.x の式)。外部依存 (axe-core 等) は足さない。
+  - **トークン調整**: `builder-orange` #e67a00 (白背景 2.94:1 で AA 未達) → **#c2410c** (5.18:1)。白文字ボタン / warning-soft 上でも AA を満たす。hover も追従。
+  - **ghost トークンの用途限定**: 読めるアイコンボタン (×閉じる/削除・▲▼並べ替え) を `ink-ghost` (1.92:1) → `ink-muted` (5.74:1) に。`ink-ghost` は罫線・disabled・装飾用途のみに限定 (disabled UI は WCAG 適用外)。
+  - **回帰テスト**: contrast.test.js で「読めるテキスト」配色 21 ペアが AA (4.5:1) 以上であることを検証。トークンを変えたら test の同期コピーも更新する運用。
+- **テスト**: contrast.test.js (新規 27)。
+- **残り**: focus ring の色弱対応 (現状 builder-blue 単色)、科目カラーパレット自体の AA 検証は別途 (ユーザが任意色を選べるため固定検証になじまない)。
 
-#### E1f. 🟡 タッチ操作対応 (新規)
-- **現状**: DnD ベース。長押しコンテキストメニュー無し。タッチ右クリック (= 長押し) は OS 依存。
-- **改善**: 長押しジェスチャ → ContextMenu open、ピンチズーム抑止、ボタンの最低タップ領域 44px。E1a (モバイル) とセットで。
+#### E1f. 🟡 タッチ操作対応 (長押しメニュー 完了 / 2026-06-29)
+- **旧現状**: DnD ベースで、タッチでのコンテキストメニューは OS 依存 (不安定)。
+- **✅ 完了分 (長押し → ContextMenu)**:
+  - **hooks/useLongPress.js**: 純粋寄りのフック。touchstart で 500ms タイマー、10px 以上の移動 (スクロール/フリック) でキャンセル、マルチタッチ無視、発火直後の click 抑止。返り値を要素へ spread する設計。
+  - **ScheduleCell**: `{...useLongPress(...)}` を `<td>` に付与し、長押しで `onContextMenu` を発火 (右クリックと同じメニュー)。HTML5 DnD はタッチで発火しないので drag と競合しない。hooks-rules を守るため早期 return 前で呼ぶ。
+  - **オンボーディング**: 「右クリック (タッチ端末では長押し)」と案内追記。
+  - **テスト**: useLongPress.test.jsx 新規 6。
+- **残り**: ピンチズーム抑止、ボタンの最低タップ領域 44px の徹底、ヘッダ (日付/時限/クラス) セルへの長押し適用。
 - **規模**: 中 / **価値**: 中
 
 #### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)
@@ -629,11 +674,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E2. 機能拡張
 
-#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 一部完了)
-- **現状**: 講師マスタの CSV import は paste + ✅ ファイル選択 / ドラッグ&ドロップ 対応済 (2026-06-29)。
+#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 講師マスタ + NG 日時 完了)
+- **現状**: 講師マスタ CSV (paste + ファイル選択 + D&D) と NG 日時 CSV が対応済 (2026-06-29)。
 - **✅ 完了分 (ファイル取り込み)**: TeacherManager の CSV パネルに「📂 ファイルを選択」(hidden `<input type="file" accept=".csv,...">`) と textarea へのドラッグ&ドロップを追加。`readCsvFile` が `file.text()` で読み取り → 既存の `csvText` → parse → preview フローに合流。非 CSV 拡張子はエラー toast でガード、ドラッグ中は枠をハイライト。テスト: TeacherManager.test.jsx 新規 3 件 (選択 / D&D / 非 CSV ガード)。
+- **✅ 完了分 (NG 日時 CSV / 2026-06-29)**:
+  - **utils/csvImport.js**: `parseNgCsv(text, { teacherNames, knownDates, knownPeriods })`。ヘッダ `name`(または `teacher`)`,date,period`。空フィールドはエラー集約、同一行は dedupe、未登録の講師/日付/時限は warning として返す。
+  - **reducer**: `teacher/importNg` action。name 一致の講師にのみ `makeNgKey` で NG を追加 (dedupe)、未登録 name は skip、変更なしは同参照で履歴を汚さない。`useTeacherActions.importNgSlots` で公開。
+  - **UI**: `components/ConfigModal/NgCsvImport.jsx` を「📅 講師不在・NG」タブに同梱。paste / ファイル選択 / D&D + ライブプレビュー (件数・エラー・未登録 warning)。
+  - **テスト**: parseNgCsv 8 / reducer 3 / NgCsvImport 5。
 - **残り (優先順)**:
-  - NG 日時 CSV (`teacher,date,period` 形式) で ngSlots を一括設定
   - 既存 Excel スケジュール (旧 winter_schedule .xlsx) からセル全体を取り込み (要 mapping UI)
   - subjectCounts / classes 等の config も CSV 化
 - **規模**: 中〜大 / **価値**: 高 (新規ユーザ全体の体験を底上げ)
@@ -673,11 +722,16 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
 - **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (一部完了 — cancel 2026-06-29)
-- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」は依然不可視。
-- **✅ 完了分 (cancel)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
-- **残り**: Worker から進捗イベントを増やし、進捗ボタンクリックで「詳細パネル」(詰まっているセル / backtrack 回数 / 経過時間)。
-- **規模**: 中 / **価値**: 中 (大規模 project で生成時間が読めない問題の解消)
+#### E2f. 🟡 自動生成中の進捗詳細 (cancel + 統計表示 完了 / live worker イベントのみ残)
+- **現状**: cancel・経過時間・探索回数・詰まりセルは可視化済。残るは Worker からの逐次 (パターン途中) イベント。
+- **✅ 完了分 (cancel / 2026-06-29)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
+- **✅ 完了分 (統計表示 / 2026-06-29)**:
+  - **autoGenerator**: `generateSinglePattern` が `iterations` (探索回数=solve 呼び出し数) / `hitLimit` (上限到達) / `stuckSlot` (MRV 順で最初に埋められなかったコマのラベル) を返す。`iter` を solve の外で確保して読む。
+  - **BuilderApp**: 生成中の経過時間を 100ms interval で更新し、完了時に総時間を確定。各 pattern に統計フィールドを乗せて SummaryPanel へ。
+  - **Toolbar**: 生成中ボタンに「⏱ X.Xs」。**SummaryPanel**: 結果ヘッダに総生成時間、各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
+  - **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
+- **残り**: Worker から「パターン内のどこまで進んだか」を postMessage で逐次通知し、進捗ボタンで live 詳細パネルを開く (現状は各パターン完了後の事後統計)。
+- **規模**: 中 / **価値**: 中
 
 #### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
 - **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
@@ -823,15 +877,22 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: OT (Operational Transform) or CRDT (yjs/automerge) で同時編集 + コンフリクト解決。
 - **規模**: 超大 / **価値**: 条件付き高 (E6a の延長)
 
-#### E6c. 🟡 LocalStorage 容量監視 (新規, R2 の能動管理)
-- **現状**: R2 で「ピーク 12 KB 程度なので 1-2 桁の余裕」と評価済みだが、運用中の実値モニタリング無し。
-- **改善**: 起動時に `JSON.stringify(project).length` を計測し、5MB の 50% を超えたら toast。
-- **規模**: 小 / **価値**: 中
+#### E6c. ✅ LocalStorage 容量監視 (2026-06-29 完了 / R2 の能動管理)
+- **旧現状**: R2 で「ピーク 12 KB 程度」と評価済みだが運用中の実値モニタリング無し。
+- **実装**:
+  - **utils/storageHealth.js**: 純粋関数 `estimateStorageBytes(value)` (UTF-16 想定で `length*2`、直列化不能/循環は 0) / `checkStorageHealth(project, {limitBytes, warnRatio})` → `{ bytes, ratio, warn }` (デフォルト 5MB の 50%) / `formatBytes` (B/KB/MB)。0 除算ガード付き。
+  - **BuilderApp**: マウント時 1 回だけ `checkStorageHealth(project)` を評価し、warn なら概算サイズ付きの warning toast (スナップショット/タブ整理 + JSON バックアップを案内)。逐次変化では再警告しない。
+- **テスト**: storageHealth.test.js (新規 13)。
+- **判断**: 通常運用 (~12KB) では発火しない閾値 (2.5MB) なので false-positive なし。履歴は RAM 保持 (R2) なので測定対象は project 本体のみで十分。
 
-#### E6d. 🟡 同一ブラウザ複数タブの競合検出 (新規)
-- **現状**: 同 project を 2 タブで開くと localStorage を相互に上書きする可能性 (debounce 経由)。
-- **改善**: `BroadcastChannel` で「他タブが同 project を開いた」を検出し warning。Lock 取得方式 (`navigator.locks`) も検討。
-- **規模**: 中 / **価値**: 中 (実害が出てからでも遅くない)
+#### E6d. ✅ 同一ブラウザ複数タブの競合検出 (2026-06-29 完了)
+- **旧現状**: 同 project を 2 タブで開くと localStorage を相互に上書きする可能性 (debounce 経由)。
+- **実装**:
+  - **utils/tabPresence.js**: 純粋関数 `interpretPresenceMessage(msg, selfId)` → `{ conflict, shouldAck }` (hello/ack のみ解釈、自分発・不正メッセージは無視)。チャネル名定数 `TAB_PRESENCE_CHANNEL`。
+  - **hooks/useTabPresence.js**: マウント時に `BroadcastChannel` で `hello` を broadcast。既存タブは受信して `ack` 返信 + 警告、新規タブは `ack` 受信で警告。`onConflict` はセッション中 1 回のみ (warned フラグ)。BroadcastChannel 非対応環境 (古いブラウザ/jsdom) は完全 no-op。`onConflict` は ref 経由で effect 再貼り付けを回避。
+  - **BuilderApp**: `useTabPresence` で競合時に warning toast (「1 つのタブに絞ることを推奨」)。
+- **テスト**: tabPresence.test.js (新規 7) / useTabPresence.test.jsx (新規 4、FakeBroadcastChannel で 2-3 タブを模擬)。
+- **延期**: `navigator.locks` による排他取得や project ID 単位の判定は未実装 (現状は「Builder を複数タブで開いた」を検出する粒度)。
 
 ---
 
@@ -861,24 +922,20 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 
 ### E8. ドキュメント
 
-#### E8a. 🟡 ユーザーマニュアル
-- **現状**: 無し。README は開発者向けのみ。
-- **改善**: 「初回セットアップ」「自動生成の使い方」「Excel 出力」等の操作ガイド。Markdown + スクリーンショット。配布方法は `docs/` または GitHub Pages。
-- **規模**: 中 / **価値**: 中 (E1g の修正提案や onboarding と併用)
+#### E8a. ✅ ユーザーマニュアル (2026-06-29 完了)
+- **実装**: `docs/USER_GUIDE.md`。画面構成 / 初回セットアップ / CSV 一括登録 / 基本操作 (右クリック・長押し・D&D・矢印ナビ) / 自動作成 / スナップショット・差分・テンプレート / 出力 / 注意・トラブルシュートを網羅。スクリーンショットは未添付 (文章ベース)。
 
-#### E8b. 🟡 開発者ガイド (アーキテクチャ図 / データフロー)
-- **現状**: ROADMAP.md + CLAUDE.md + コード冒頭コメントに散在。
-- **改善**: `docs/architecture.md` に Mermaid 図で「project → reducer → hooks → contexts → components」と「solver pipeline」を可視化。
-- **規模**: 小 / **価値**: 中
+#### E8b. ✅ 開発者ガイド (アーキテクチャ図 / データフロー) (2026-06-29 完了)
+- **実装**: `docs/ARCHITECTURE.md`。Mermaid で 4 図 (全体構成 / 編集 1 操作の sequence / 自動生成パイプライン / データモデル概要) + ディレクトリ責務表 + 守るべき設計上の約束。
 
 #### E8c. ⚪ スクリーンキャスト / GIF
 - **現状**: 無し。
 - **改善**: 主要操作を 30 秒 GIF で。README / オンボーディング再生にも使える。
 - **規模**: 小 / **価値**: 低〜中
 
-#### E8d. ⚪ ROADMAP の整理
-- **現状**: A/B/C (完了済) + D + E が並走。長大化。
-- **改善**: D 系を A/B/C と同じく折りたたみ表記にし、E 系を main トラックに。
+#### E8d. 🟡 ROADMAP の整理 (一部: 完了インデックス追加)
+- **✅ 完了分 (2026-06-29)**: 冒頭に「§0 完了済み一覧」のインデックス表を追加し、長大化したドキュメントでも完了項目を一覧把握できるようにした。
+- **残り**: D 系を A/B/C と同じく折りたたみ表記にし E 系を main トラックに寄せる全面整形は未実施 (情報量を保ったまま圧縮する必要があり別途)。
 - **規模**: 小 (ドキュメント整形のみ)
 
 ---

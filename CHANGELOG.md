@@ -2,6 +2,90 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: ドキュメント整備 — E8a / E8b / E8d)
+- **ユーザーガイド** (`src/timetable-builder/docs/USER_GUIDE.md`): 画面構成・
+  初回セットアップ・CSV 一括登録・基本操作・自動作成・スナップショット/差分/
+  テンプレート・出力・トラブルシュートを網羅した操作マニュアル。
+- **アーキテクチャ** (`src/timetable-builder/docs/ARCHITECTURE.md`): Mermaid で
+  全体構成 / 編集 1 操作の sequence / 自動生成パイプライン / データモデルを図示。
+- **ROADMAP**: 冒頭に「§0 完了済み一覧」インデックス表を追加。
+
+### Changed (講習時間割作成: 操作系の UX 仕上げ — E1a / E1b / E1e / E1f)
+- **Excel 出力を dropdown 化**: ヘッダの全/個人 Excel 2 ボタンを「📊 Excel出力 ▾」
+  に集約し、ボタン群を flex-wrap で折り返す (狭画面対応)。
+- **フォーカス可視化**: `.builder-root :focus-visible` に太い (3px) リング + offset
+  を追加。色だけに頼らず形状で認識でき、濃色ボタン上でもコントラストを確保。
+- **矢印ナビの端動作統一**: セルの ← → が行頭/行末で反対端へ wrap し、移動が
+  途切れない。
+- **ヘッダの長押し対応**: スケジュール表のヘッダ (日付/時限/クラス) もタッチ
+  長押しでメニューを開けるように。
+
+### Added (講習時間割作成: 自動生成の live 進捗 — E2f)
+- 探索の途中経過 (充填数 / 探索回数) を Worker から間引き通知し、生成中の
+  ツールバーにライブ表示。`onProgress` を autoGenerator → worker → runGenerator →
+  BuilderApp に配線。テスト +5 件。
+
+### Added (講習時間割作成: タッチ操作・狭画面対応 — E1f / E1a)
+- **長押しでコンテキストメニュー** (`hooks/useLongPress.js`): タッチ端末で
+  時間割セルを長押しすると、右クリックと同じメニュー (コピー/貼付/クリア/
+  ロック/NG 登録) が開く。500ms 判定、スクロール (10px 移動) でキャンセル、
+  マルチタッチ無視。HTML5 ドラッグはタッチで発火しないため D&D と競合しない。
+  テスト +6 件。
+- **Toolbar の折り返し**: 狭画面でボタン群が画面外へはみ出さず段組みで
+  折り返すように (`flex-wrap justify-end`)。
+- オンボーディングに「タッチ端末では長押し」と追記。
+
+### Added (講習時間割作成: NG 日時の CSV 一括取り込み — E2a)
+講師の不可時間 (NG) を CSV で一括登録できるように。初期セットアップの手入力を軽減。
+
+- **パーサ** (`utils/csvImport.js` の `parseNgCsv`): ヘッダ
+  <code>name(または teacher),date,period</code>。空欄エラー集約・重複行 dedupe・
+  未登録の講師/日付/時限を warning として返す。
+- **reducer** (`teacher/importNg`): name 一致の講師にのみ NG を追加 (dedupe)、
+  未登録 name は skip、変更なしは同参照で履歴を汚さない。
+- **UI** (`ConfigModal/NgCsvImport.jsx`): 「📅 講師不在・NG」タブに折りたたみ
+  パネル。paste / ファイル選択 / ドラッグ&ドロップ + ライブプレビュー。
+- **テスト**: parseNgCsv 8 / reducer 3 / NgCsvImport 5。
+
+### Added (講習時間割作成: 自動生成の手応え可視化 — E2f)
+大規模プロジェクトで「生成にどれだけ時間がかかり、どこで詰まったか」が読めるように。
+
+- **生成統計** (`autoGenerator.generateSinglePattern`): 探索回数 (iterations)・
+  上限到達 (hitLimit)・最初に埋められなかったコマ (stuckSlot) を返す。
+- **経過時間**: 生成中は Toolbar に「⏱ X.Xs」をライブ表示、完了後は結果
+  ヘッダに総時間。
+- **結果パネル**: 各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
+- **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
+
+### Changed (講習時間割作成: コントラストを WCAG AA 準拠に — E1e)
+- **builder-orange** を #e67a00 (白背景 2.94:1 で AA 未達) → **#c2410c**
+  (5.18:1) に。部分解テキスト/ボタン・warning 系の可読性が AA を満たす。
+- 読めるアイコンボタン (×閉じる/削除・▲▼並べ替え) を ink-ghost (1.92:1) →
+  ink-muted (5.74:1) に。ink-ghost は罫線・disabled 等の装飾用途に限定。
+- **コントラスト計算** (`utils/contrast.js`): WCAG 2.x の純粋関数を追加し、
+  `contrast.test.js` で「読めるテキスト」配色 21 ペアが AA を満たすことを
+  回帰テスト化。テスト +27 件。
+
+### Added (講習時間割作成: キーボード操作の完成度向上 — E1b)
+マウスに頼らず設定モーダルとタブを操作できるように。
+
+- **focus trap の共通化** (`hooks/useFocusTrap.js`): OnboardingOverlay の
+  インライン実装をヘルパー化し、Escape で閉じる + Tab/Shift+Tab で dialog 内に
+  フォーカスを閉じ込める。入れ子 dialog は最上位だけが応答 (LIFO)。
+- **設定モーダル**: focus trap を適用し Tab が背景へ抜けないように。カテゴリ
+  タブを `role="tablist"` 化し ← → / Home / End で切替 (端で wrap)。
+- **学年タブ (TabBar)**: 同様に `role="tablist"` + 矢印キーで切替、
+  aria-selected / roving tabindex 付き。
+- **テスト**: useFocusTrap (新規 6) / ConfigModal (+5) / TabBar (+5)。
+
+### Added (講習時間割作成: データ消失を防ぐ 2 つの保険 — E6c / E6d)
+- **LocalStorage 容量監視** (`utils/storageHealth.js`): 起動時に保存サイズを
+  概算し、5MB の 50% を超えていたら整理・バックアップを促す warning toast。
+  通常運用 (~12KB) では発火しない閾値。テスト +13 件。
+- **複数タブ競合検出** (`utils/tabPresence.js` / `hooks/useTabPresence.js`):
+  `BroadcastChannel` で同一ブラウザの別タブが Builder を開いていることを検出し、
+  autosave の相互上書きを防ぐため一度だけ警告。非対応環境は no-op。テスト +11 件。
+
 ### Fixed (講習時間割作成: 校正レビューでの指摘修正)
 3 観点の独立レビューで見つかった不具合を修正:
 

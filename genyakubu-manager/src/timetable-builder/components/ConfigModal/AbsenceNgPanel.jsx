@@ -5,6 +5,7 @@ import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
+import NgCsvImport from './NgCsvImport';
 
 // 「📅 講師不在・NG」タブ。旧 'external' (他学年・午前) + 'ng' (日時NG) を統合。
 //
@@ -414,6 +415,11 @@ export default function AbsenceNgPanel() {
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
         どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
+      </div>
+
+      {/* NG 日時の CSV 一括登録 (E2a) */}
+      <div className="mb-4">
+        <NgCsvImport />
       </div>
 
       {/* プリセット管理 */}

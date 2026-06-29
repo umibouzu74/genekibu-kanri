@@ -12,6 +12,8 @@ export default function Toolbar({
   setShowConfig,
   isGenerating,
   generateProgress,
+  generateElapsedMs,
+  generateLive,
   onGenerate,
   onCancelGenerate,
   onShowHelp,
@@ -262,7 +264,7 @@ export default function Toolbar({
           </div>
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="表示サイズを切り替え">
           {isCompact ? "🔍 標準" : "📏 縮小"}
         </button>
@@ -284,6 +286,11 @@ export default function Toolbar({
             <>
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
               生成中 ({generateProgress?.current || 0}/{generateProgress?.total || 3})
+              {generateElapsedMs > 0 && (
+                <span className="font-normal tabular-nums" aria-label="経過時間">
+                  {' '}⏱ {(generateElapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
             </>
           ) : "🧙‍♂️ 自動作成"}
         </button>
@@ -297,6 +304,21 @@ export default function Toolbar({
           </button>
         )}
       </div>
+      {isGenerating && generateLive && (
+        <div
+          className="w-full text-xs text-builder-ink-muted bg-builder-surface border border-builder-border rounded px-3 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-1"
+          aria-live="polite"
+        >
+          <span>案 <span className="font-bold text-builder-ink">{(generateLive.index ?? 0) + 1}</span> 探索中</span>
+          {generateLive.totalSlots > 0 && (
+            <span>
+              充填 <span className="font-bold text-builder-blue tabular-nums">{generateLive.filledCount}</span>
+              {' / '}{generateLive.totalSlots} コマ
+            </span>
+          )}
+          <span>探索 <span className="font-bold tabular-nums">{(generateLive.iterations ?? 0).toLocaleString()}</span> 回</span>
+        </div>
+      )}
     </div>
   );
 }

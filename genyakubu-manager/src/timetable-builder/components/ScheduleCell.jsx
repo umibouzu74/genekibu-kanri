@@ -3,6 +3,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
+import { useLongPress } from '../hooks/useLongPress';
 
 export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
   const {
@@ -42,6 +43,12 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       entry.subject ? { flattenIntoSingleSubject: entry.subject } : undefined,
     );
   }, [project.teachers, project.subjects, entry.subject]);
+
+  // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
+  // hooks-rules を守るため早期 return より前で呼ぶ。
+  const longPress = useLongPress(({ pageX, pageY }) =>
+    onContextMenu({ preventDefault: () => {}, pageX, pageY }, dateId, periodId, classId),
+  );
 
   if (!dateEnt || !periodEnt || !classEnt) return null;
   const dLabel = dateEnt.label;
@@ -102,11 +109,16 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       if (pIdx < currentConfig.periods.length - 1) nextP++;
       else if (dIdx < currentConfig.dates.length - 1) { nextD++; nextP = 0; }
     } else if (e.key === 'ArrowLeft') {
+      // 行内で連続移動: teacher→subject、左端の subject では前クラスの teacher へ。
+      // 行頭 (先頭クラスの subject) では行末 (末尾クラスの teacher) へ wrap し、
+      // 矢印移動が途切れないようにする (E1b 端動作の統一)。
       if (type === 'teacher') nextType = 'subject';
       else if (cIdx > 0) { nextC--; nextType = 'teacher'; }
+      else { nextC = currentConfig.classes.length - 1; nextType = 'teacher'; }
     } else if (e.key === 'ArrowRight') {
       if (type === 'subject') nextType = 'teacher';
       else if (cIdx < currentConfig.classes.length - 1) { nextC++; nextType = 'subject'; }
+      else { nextC = 0; nextType = 'subject'; } // 行末 → 行頭へ wrap
     }
     const nextD_id = currentConfig.dates[nextD]?.id;
     const nextP_id = currentConfig.periods[nextP]?.id;
@@ -127,6 +139,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       onDrop={(e) => onDrop(e, key, entry)}
       onDragEnd={onDragEnd}
       onContextMenu={(e) => onContextMenu(e, dateId, periodId, classId)}
+      {...longPress}
     >
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>
         <div className={`flex justify-between items-center ${isCompact ? "gap-0.5" : "gap-1"}`}>

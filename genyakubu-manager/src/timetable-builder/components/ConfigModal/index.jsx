@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import BasicSettings from './BasicSettings';
 import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
@@ -13,23 +14,46 @@ import TemplateManager from './TemplateManager';
 
 const TITLE_ID = 'builder-config-modal-title';
 
+// タブ定義 (id / ラベル)。tablist の左右矢印ナビ (E1b) はこの順序に従う。
+const TABS = [
+  ['basic', '基本設定'],
+  ['subjects', '📚 科目'],
+  ['classes', '🏫 クラス優先度'],
+  ['absence-ng', '📅 講師不在・NG'],
+  ['combined', '🔗 合同授業'],
+  ['colors', '🎨 科目カラー'],
+  ['generation', '⚡ 自動生成'],
+  ['templates', '🗂 テンプレート'],
+];
+
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName } = useProjectContext();
   const { showConfirm } = useUI();
   const [projectNameInput, setProjectNameInput] = useState(project.name || "");
+  const dialogRef = useRef(null);
+  const tablistRef = useRef(null);
 
-  // Escape で閉じる (D5a)
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // Escape で閉じる + Tab フォーカスを dialog 内に閉じ込める (E1b focus trap)。
+  useFocusTrap(dialogRef, { onClose });
+
+  // tablist の左右/Home/End 矢印ナビ。フォーカスをそのタブボタンへ移して選択する。
+  const handleTablistKeyDown = (e) => {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const currentIndex = TABS.findIndex(([id]) => id === configTab);
+    let nextIndex = currentIndex;
+    if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TABS.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = TABS.length - 1;
+    const nextId = TABS[nextIndex][0];
+    setConfigTab(nextId);
+    // 次のタブボタンへフォーカス移動 (roving tabindex)
+    const nextBtn = tablistRef.current?.querySelector(`#builder-config-tab-${nextId}`);
+    nextBtn?.focus();
+  };
 
   const handleProjectNameBlur = () => {
     const trimmed = projectNameInput.trim();
@@ -49,6 +73,7 @@ export default function ConfigModal({ onClose }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
@@ -56,29 +81,39 @@ export default function ConfigModal({ onClose }) {
       >
         <div className="p-4 border-b border-builder-border flex justify-between items-center bg-builder-surface-alt">
           <h2 id={TITLE_ID} className="font-bold text-lg text-builder-ink">⚙️ 設定メニュー</h2>
-          <button onClick={onClose} aria-label="設定を閉じる" className="text-2xl font-bold text-builder-ink-ghost hover:text-builder-ink-muted">×</button>
+          <button onClick={onClose} aria-label="設定を閉じる" className="text-2xl font-bold text-builder-ink-muted hover:text-builder-ink">×</button>
         </div>
-        <div className="flex gap-4 px-6 pt-4 border-b border-builder-border">
-          {[
-            ['basic', '基本設定'],
-            ['subjects', '📚 科目'],
-            ['classes', '🏫 クラス優先度'],
-            ['absence-ng', '📅 講師不在・NG'],
-            ['combined', '🔗 合同授業'],
-            ['colors', '🎨 科目カラー'],
-            ['generation', '⚡ 自動生成'],
-            ['templates', '🗂 テンプレート'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setConfigTab(id)}
-              className={`pb-2 font-bold ${configTab === id ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
-            >
-              {label}
-            </button>
-          ))}
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="設定カテゴリ"
+          onKeyDown={handleTablistKeyDown}
+          className="flex gap-4 px-6 pt-4 border-b border-builder-border overflow-x-auto"
+        >
+          {TABS.map(([id, label]) => {
+            const selected = configTab === id;
+            return (
+              <button
+                key={id}
+                id={`builder-config-tab-${id}`}
+                role="tab"
+                aria-selected={selected}
+                aria-controls="builder-config-tabpanel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setConfigTab(id)}
+                className={`pb-2 font-bold whitespace-nowrap ${selected ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
-        <div className="flex-1 overflow-y-auto p-6">
+        <div
+          id="builder-config-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`builder-config-tab-${configTab}`}
+          className="flex-1 overflow-y-auto p-6"
+        >
           {configTab === 'subjects' ? (
             <SubjectManager />
           ) : configTab === 'generation' ? (
