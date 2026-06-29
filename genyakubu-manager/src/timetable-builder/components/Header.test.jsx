@@ -103,10 +103,11 @@ describe('Header', () => {
     expect(handleSaveJson).toHaveBeenCalled();
   });
 
-  it('Excel 出力ボタンをクリック直後は disabled + "⏳ 出力中..." 表示', async () => {
+  it('Excel ドロップダウンを開いて項目を選ぶと disabled + "⏳ 出力中..." 表示', async () => {
     renderHeader();
-    const btn = screen.getByText(/全Excel/).closest('button');
-    fireEvent.click(btn);
+    // ドロップダウンを開く
+    fireEvent.click(screen.getByText(/Excel出力/).closest('button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /全体スケジュール/ }));
     // 同期的に exportingType='all' が set されるはず → 次の microtask で再描画
     await vi.waitFor(() => expect(screen.getByText(/⏳ 出力中/)).toBeInTheDocument());
     expect(screen.getByText(/⏳ 出力中/).closest('button')).toBeDisabled();
@@ -115,9 +116,18 @@ describe('Header', () => {
   it('Excel 出力完了後は disabled が解除され成功 toast が出る', async () => {
     const showToast = vi.fn();
     renderHeader({ uiOverrides: { showToast } });
-    fireEvent.click(screen.getByText(/全Excel/).closest('button'));
+    fireEvent.click(screen.getByText(/Excel出力/).closest('button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /全体スケジュール/ }));
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('全体Excelをダウンロードしました'));
     // ボタン文言が元に戻っていることを確認
-    await vi.waitFor(() => expect(screen.getByText(/📊 全Excel/)).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByText(/📊 Excel出力/)).toBeInTheDocument());
+  });
+
+  it('講師別スケジュールの項目で個人別 Excel を出力する', async () => {
+    const showToast = vi.fn();
+    renderHeader({ uiOverrides: { showToast } });
+    fireEvent.click(screen.getByText(/Excel出力/).closest('button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /講師別スケジュール/ }));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('個人別Excelをダウンロードしました'));
   });
 });

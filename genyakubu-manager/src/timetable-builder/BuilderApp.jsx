@@ -246,7 +246,7 @@ function ScheduleApp() {
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
-    <div className="font-sans" onClick={() => setContextMenu(null)}>
+    <div className="font-sans builder-root" onClick={() => setContextMenu(null)}>
       <style>{printStyle}</style>
 
       <Header />

@@ -29,3 +29,19 @@
 }
 .animate-slide-in { animation: slide-in 0.3s ease-out; }
 .animate-fade-in { animation: fade-in 0.15s ease-out; }
+
+/*
+ * キーボードフォーカスの可視化 (E1e a11y)。
+ * 色だけに頼らず「太い (3px) リング + offset」で形状としても認識できるように
+ * する (色覚特性に配慮)。リングは offset により要素の外側=明るいページ背景に
+ * 出るので、濃い色のボタン (builder-primary 等) の上でもコントラストを確保
+ * できる (blue #2e6a9e vs bg #f0f1f3 = 5.4:1 ≥ WCAG 1.4.11 の 3:1)。
+ *
+ * .builder-root 配下のみに限定し、親アプリ (inline style) へ波及させない。
+ * マウス操作では :focus-visible が概ね発火しないため、見た目のノイズは最小。
+ */
+.builder-root :focus-visible {
+  outline: 3px solid #2e6a9e;
+  outline-offset: 2px;
+  border-radius: 2px;
+}

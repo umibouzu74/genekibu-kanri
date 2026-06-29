@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 
@@ -22,6 +22,19 @@ export default function Header() {
   const [nameInput, setNameInput] = useState(project.name || "");
   // null | 'all' | 'teacher'。Excel 出力ボタンの多重押下を防ぐ。
   const [exportingType, setExportingType] = useState(null);
+  // Excel 出力ドロップダウン (E1a: 狭画面でヘッダのボタンを減らす)
+  const [excelMenuOpen, setExcelMenuOpen] = useState(false);
+  const excelMenuRef = useRef(null);
+  useEffect(() => {
+    if (!excelMenuOpen) return undefined;
+    const handler = (e) => {
+      if (excelMenuRef.current && !excelMenuRef.current.contains(e.target)) {
+        setExcelMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [excelMenuOpen]);
 
   const handleNameSubmit = () => {
     updateProjectName(nameInput.trim());
@@ -34,6 +47,7 @@ export default function Header() {
   //   3. catch では console.error も残してデバッグ可能に
   //   4. exceljs ベースで download* は async なので await する
   const handleExport = async (type) => {
+    setExcelMenuOpen(false);
     setExportingType(type);
     let mod;
     try {
@@ -87,25 +101,38 @@ export default function Header() {
         )}
         <span className="text-xs text-builder-green bg-builder-success-soft px-2 py-1 rounded border border-builder-success-border">{saveStatus}</span>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>
         <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-builder-green text-white rounded hover:bg-builder-green-hover shadow text-sm font-bold" title="JSONファイルからプロジェクトを開く">📂 開く</button>
-        <button
-          onClick={() => handleExport('all')}
-          disabled={exportingType !== null}
-          className="flex items-center gap-1 px-3 py-1.5 bg-builder-primary text-white rounded hover:bg-builder-primary-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
-          title="全タブのスケジュールをExcel出力"
-        >
-          {exportingType === 'all' ? '⏳ 出力中...' : '📊 全Excel'}
-        </button>
-        <button
-          onClick={() => handleExport('teacher')}
-          disabled={exportingType !== null}
-          className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
-          title="講師別スケジュールをExcel出力"
-        >
-          {exportingType === 'teacher' ? '⏳ 出力中...' : '👤 個人Excel'}
-        </button>
+        <div className="relative" ref={excelMenuRef}>
+          <button
+            onClick={() => setExcelMenuOpen((v) => !v)}
+            disabled={exportingType !== null}
+            aria-haspopup="menu"
+            aria-expanded={excelMenuOpen}
+            className="flex items-center gap-1 px-3 py-1.5 bg-builder-primary text-white rounded hover:bg-builder-primary-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
+            title="Excel 出力メニューを開く"
+          >
+            {exportingType === 'all' ? '⏳ 出力中...' : exportingType === 'teacher' ? '⏳ 出力中...' : '📊 Excel出力'}
+            <span aria-hidden="true" className="text-[10px]">▾</span>
+          </button>
+          {excelMenuOpen && (
+            <div role="menu" className="absolute z-50 top-full right-0 mt-1 w-44 bg-builder-surface border border-builder-border rounded shadow-lg py-1 text-builder-ink">
+              <button
+                role="menuitem"
+                onClick={() => handleExport('all')}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
+                title="全タブのスケジュールをExcel出力"
+              >📊 全体スケジュール</button>
+              <button
+                role="menuitem"
+                onClick={() => handleExport('teacher')}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
+                title="講師別スケジュールをExcel出力"
+              >👤 講師別スケジュール</button>
+            </div>
+          )}
+        </div>
         <input type="file" accept=".json" ref={fileInputRef} onChange={(e) => handleLoadJson(e, showToast, showConfirm)} className="hidden" />
       </div>
     </div>
