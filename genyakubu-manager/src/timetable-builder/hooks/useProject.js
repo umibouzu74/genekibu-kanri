@@ -103,8 +103,10 @@ export function useProject() {
     dispatch({ type: 'config/setList', payload: { key, value } });
   }, [dispatch]);
 
-  const handleSubjectCountChange = useCallback((subject, value) => {
-    dispatch({ type: 'config/setSubjectCount', payload: { subject, value } });
+  // tabId 省略時はアクティブタブを更新 (従来挙動)。タブ別に編集する画面は
+  // 対象タブの id を明示で渡す。
+  const handleSubjectCountChange = useCallback((subject, value, tabId) => {
+    dispatch({ type: 'config/setSubjectCount', payload: { subject, value, tabId } });
   }, [dispatch]);
 
   // --- メタデータ ---

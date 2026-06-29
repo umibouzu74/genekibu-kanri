@@ -3,14 +3,16 @@ import { useUI } from '../../contexts/uiContextValue';
 
 export default function SubjectManager() {
   const {
+    project,
     commonSubjects,
-    currentConfig,
     addSubject,
     removeSubject,
     reorderSubjects,
     handleSubjectCountChange,
   } = useProjectContext();
   const { showInput, showConfirm } = useUI();
+
+  const tabs = project.tabs;
 
   const handleAddClick = async () => {
     const name = await showInput("科目名を入力してください", { title: "科目の追加", placeholder: "例: 情報" });
@@ -33,11 +35,21 @@ export default function SubjectManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center border-b border-builder-border pb-1">
-        <h3 className="font-bold text-builder-ink">📚 科目マスタ (全タブ共通)</h3>
+        <h3 className="font-bold text-builder-ink">📚 科目マスタ</h3>
         <button onClick={handleAddClick} className="text-xs bg-builder-primary text-white px-2 py-1 rounded shadow hover:bg-builder-primary-hover">+ 追加</button>
       </div>
       <div className="text-xs text-builder-ink-muted bg-builder-surface-alt p-2 rounded border border-builder-border">
-        科目の追加・削除・並び替えができます。必要コマ数はタブごとに設定されます。
+        科目の追加・削除・並び替えは全タブ共通です。コマ数 (上限) はタブ (学年) ごとに設定できます。
+      </div>
+      {/* 科目ごとに、各タブ (学年) のコマ数を横並びで編集する。
+          ヘッダ行でタブ名を示し、列をそろえる。 */}
+      <div className="flex items-center gap-2 px-2 text-[11px] font-bold text-builder-ink-muted">
+        <div className="w-4" />
+        <span className="flex-1">科目</span>
+        {tabs.map((tab) => (
+          <span key={tab.id} className="w-16 text-center truncate" title={tab.name}>{tab.name}</span>
+        ))}
+        <span className="w-5" />
       </div>
       <div className="space-y-1">
         {commonSubjects.map((s, idx) => (
@@ -55,16 +67,17 @@ export default function SubjectManager() {
               >▼</button>
             </div>
             <span className="font-bold text-sm flex-1 text-builder-ink">{s}</span>
-            <div className="flex items-center gap-1">
-              <label className="text-xs text-builder-ink-muted">コマ数:</label>
+            {tabs.map((tab) => (
               <input
+                key={tab.id}
                 type="number"
-                className="w-14 text-right text-sm border border-builder-border rounded px-1 py-0.5"
-                value={currentConfig.subjectCounts[s] || 0}
-                onChange={(e) => handleSubjectCountChange(s, e.target.value)}
+                aria-label={`${tab.name} の ${s} コマ数`}
+                className="w-16 text-right text-sm border border-builder-border rounded px-1 py-0.5"
+                value={tab.config.subjectCounts[s] || 0}
+                onChange={(e) => handleSubjectCountChange(s, e.target.value, tab.id)}
                 min={0}
               />
-            </div>
+            ))}
             <button
               onClick={() => handleRemoveClick(s)}
               className="text-builder-ink-muted hover:text-builder-red text-sm px-1"
