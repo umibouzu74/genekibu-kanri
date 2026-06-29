@@ -13,7 +13,27 @@ import {
   migrateProject,
   findEntityById,
   nextId,
+  activeDatesForTab,
 } from './scheduleKey';
+
+describe('activeDatesForTab', () => {
+  const pool = [{ id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' }];
+  it('activeDateIds 未指定 (undefined) はプール全体を返す', () => {
+    expect(activeDatesForTab(pool, { config: {} })).toBe(pool);
+    expect(activeDatesForTab(pool, {})).toBe(pool);
+  });
+  it('activeDateIds で絞った subset をプール順で返す', () => {
+    expect(activeDatesForTab(pool, { config: { activeDateIds: [3, 1] } })).toEqual([
+      { id: 1, label: 'A' }, { id: 3, label: 'C' },
+    ]);
+  });
+  it('空配列なら 0 件', () => {
+    expect(activeDatesForTab(pool, { config: { activeDateIds: [] } })).toEqual([]);
+  });
+  it('pool が空/未定義でも安全', () => {
+    expect(activeDatesForTab(undefined, { config: { activeDateIds: [1] } })).toEqual([]);
+  });
+});
 
 describe('makeKey / parseKey', () => {
   it('makeKey は ID から "dN-pN-cN" 形式の文字列を生成する', () => {
@@ -339,18 +359,21 @@ describe('migrateProject', () => {
     expect(migrateProject(undefined)).toBeUndefined();
   });
 
-  it('v1 → v3 までチェーンマイグレーション: version=3, createdAt/updatedAt/name 補完', () => {
+  it('v1 → v4 までチェーンマイグレーション: version=4, createdAt/updatedAt/name 補完', () => {
     const result = migrateProject(makeLegacyProject());
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(4);
     expect(result.name).toBe('');
     expect(result.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('v1 → v3: schedule キーが ID ベースに、dates/periods/classes が entity 配列に', () => {
+  it('v1 → v4: schedule キーが ID ベースに、dates/periods は project 共通、classes は tab', () => {
     const result = migrateProject(makeLegacyProject());
-    expect(result.tabs[0].config.dates).toEqual([{ id: 1, label: '12/25(木)' }]);
-    expect(result.tabs[0].config.periods).toEqual([{ id: 1, label: '1限 (13:00~)' }]);
+    // v4: dates / periods は project レベルへ昇格
+    expect(result.dates).toEqual([{ id: 1, label: '12/25(木)' }]);
+    expect(result.periods).toEqual([{ id: 1, label: '1限 (13:00~)' }]);
+    expect(result.tabs[0].config.dates).toBeUndefined();
+    expect(result.tabs[0].config.periods).toBeUndefined();
     expect(result.tabs[0].config.classes).toEqual([{ id: 1, label: '３S' }]);
     expect(result.tabs[0].schedule).toEqual({
       'd1-p1-c1': { subject: '英語', teacher: '堀上' },
@@ -417,7 +440,7 @@ describe('migrateProject', () => {
     expect(result.teachers).toBe(before);
   });
 
-  it('v2 プロジェクトは v3 へだけマイグレーションされる', () => {
+  it('v2 プロジェクトは v4 までマイグレーションされる', () => {
     const v2 = {
       version: 2,
       teachers: [],
@@ -429,12 +452,14 @@ describe('migrateProject', () => {
       }],
     };
     const result = migrateProject(v2);
-    expect(result.version).toBe(3);
-    expect(result.tabs[0].config.dates).toEqual([{ id: 1, label: 'x' }]);
+    expect(result.version).toBe(4);
+    expect(result.dates).toEqual([{ id: 1, label: 'x' }]);
+    expect(result.periods).toEqual([{ id: 1, label: 'y' }]);
+    expect(result.tabs[0].config.classes).toEqual([{ id: 1, label: 'z' }]);
     expect(result.tabs[0].schedule).toEqual({ 'd1-p1-c1': { subject: '英', teacher: 'T' } });
   });
 
-  it('v3 プロジェクトはそのまま (再マイグレーション無し)', () => {
+  it('v3 プロジェクトは v4 へ昇格 (dates/periods を project へ移動)', () => {
     const v3 = {
       version: 3,
       teachers: [],
@@ -451,8 +476,73 @@ describe('migrateProject', () => {
       }],
     };
     const result = migrateProject(v3);
-    expect(result.version).toBe(3);
-    expect(result.tabs[0].config.dates).toBe(v3.tabs[0].config.dates);
-    expect(result.tabs[0].schedule).toBe(v3.tabs[0].schedule);
+    expect(result.version).toBe(4);
+    expect(result.dates).toEqual([{ id: 1, label: 'x' }]);
+    expect(result.periods).toEqual([{ id: 1, label: 'y' }]);
+    expect(result.tabs[0].config.dates).toBeUndefined();
+    expect(result.tabs[0].config.periods).toBeUndefined();
+    expect(result.tabs[0].config.classes).toEqual([{ id: 1, label: 'z' }]);
+    expect(result.tabs[0].schedule).toEqual({ 'd1-p1-c1': { subject: '英', teacher: 'T' } });
+  });
+
+  it('v4 プロジェクトはそのまま (再マイグレーション無し)', () => {
+    const v4 = {
+      version: 4,
+      teachers: [],
+      dates: [{ id: 1, label: 'x' }],
+      periods: [{ id: 1, label: 'y' }],
+      tabs: [{
+        id: 1,
+        name: 'a',
+        config: { classes: [{ id: 1, label: 'z' }], subjectCounts: { '英': 1 } },
+        schedule: { 'd1-p1-c1': { subject: '英', teacher: 'T' } },
+      }],
+    };
+    const result = migrateProject(v4);
+    expect(result.version).toBe(4);
+    expect(result.dates).toBe(v4.dates);
+    expect(result.tabs[0].schedule).toBe(v4.tabs[0].schedule);
+  });
+
+  it('v3 → v4: 複数タブの dates/periods を union し schedule を remap する', () => {
+    // tab1 は [A, B] 日 / [1限] 時限、tab2 は [B, C] 日 / [1限]。
+    // union = [A, B, C] (出現順保持)。schedule キーは旧 tab-local ID から
+    // ラベル経由で新 project ID に remap される。
+    const v3 = {
+      version: 3,
+      teachers: [],
+      tabs: [
+        {
+          id: 1, name: 'tab1',
+          config: {
+            dates: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: 'S' }],
+            subjectCounts: {},
+          },
+          // B(id2)-1限(id1)-S(id1)
+          schedule: { 'd2-p1-c1': { subject: '英', teacher: 'T1' } },
+        },
+        {
+          id: 2, name: 'tab2',
+          config: {
+            dates: [{ id: 1, label: 'B' }, { id: 2, label: 'C' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: 'S' }],
+            subjectCounts: {},
+          },
+          // C(id2)-1限(id1)-S(id1)
+          schedule: { 'd2-p1-c1': { subject: '数', teacher: 'T2' } },
+        },
+      ],
+    };
+    const result = migrateProject(v3);
+    expect(result.dates).toEqual([
+      { id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' },
+    ]);
+    // tab1 の B コマは project の B(id2) を指す → d2-p1-c1 のまま
+    expect(result.tabs[0].schedule).toEqual({ 'd2-p1-c1': { subject: '英', teacher: 'T1' } });
+    // tab2 の C コマは project の C(id3) へ remap → d3-p1-c1
+    expect(result.tabs[1].schedule).toEqual({ 'd3-p1-c1': { subject: '数', teacher: 'T2' } });
   });
 });

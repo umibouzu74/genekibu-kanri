@@ -42,13 +42,18 @@ export default function AbsenceNgPanel() {
   const { showConfirm, showToast } = useUI();
   const autoNgByTeacher = analysis?.autoNgByTeacher;
 
+  // v4(Y): NG / 他学年セッションは全タブ共通。日付軸は currentConfig (タブの使う日)
+  // ではなく『プール全日』(project.dates) を使う。これにより、現タブが使わない日
+  // (他学年だけの日) にも講師の不在・NG を設定できる。時限は project 共通。
+  const poolDates = useMemo(() => project.dates || [], [project.dates]);
+
   // ── 折りたたみ state ───────────────────────
   // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
   // クリーンアップする useEffect で id 再利用時の silent collapse を防ぐ
   // (code-review P3)。
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
-    currentConfig.dates.forEach(d => { initial[d.id] = true; });
+    poolDates.forEach(d => { initial[d.id] = true; });
     return initial;
   });
   const [quickGridExpanded, setQuickGridExpanded] = useState(false);
@@ -68,15 +73,15 @@ export default function AbsenceNgPanel() {
   const [formEndTime, setFormEndTime] = useState('');
   // 共通: 期間。両方とも dates[0] を初期 default に (誤って全期間に広げて
   // 大量セッションが生成される事故を防ぐ — code-review P1)。
-  const [formStartDateId, setFormStartDateId] = useState(currentConfig.dates[0]?.id ?? null);
-  const [formEndDateId, setFormEndDateId] = useState(currentConfig.dates[0]?.id ?? null);
+  const [formStartDateId, setFormStartDateId] = useState(poolDates[0]?.id ?? null);
+  const [formEndDateId, setFormEndDateId] = useState(poolDates[0]?.id ?? null);
 
   // dates が変わって start/end が無効になったら再同期。
   // 無効化時の snap 先は『nearest valid』とし、widening (last へジャンプ) は
   // しない (code-review P1)。end が無効なら start に揃え (= 単日)、start が
   // 無効なら dates[0] に揃える。
   useEffect(() => {
-    const idList = currentConfig.dates.map(d => d.id);
+    const idList = poolDates.map(d => d.id);
     const ids = new Set(idList);
     if (!ids.has(formStartDateId)) {
       setFormStartDateId(idList[0] ?? null);
@@ -87,12 +92,12 @@ export default function AbsenceNgPanel() {
       const fallback = ids.has(formStartDateId) ? formStartDateId : (idList[0] ?? null);
       setFormEndDateId(fallback);
     }
-  }, [currentConfig.dates, formStartDateId, formEndDateId]);
+  }, [poolDates, formStartDateId, formEndDateId]);
 
   // expandedDates の stale key を削除する (id 再利用で silent collapse する
   // 事故を防ぐ — code-review P3)
   useEffect(() => {
-    const validIds = new Set(currentConfig.dates.map(d => d.id));
+    const validIds = new Set(poolDates.map(d => d.id));
     setExpandedDates(prev => {
       const next = {};
       let changed = false;
@@ -103,7 +108,7 @@ export default function AbsenceNgPanel() {
       }
       return changed ? next : prev;
     });
-  }, [currentConfig.dates]);
+  }, [poolDates]);
 
   // teachers が変わったら manual 選択の Set を整合させる。
   // size 比較ではなく Set membership 比較で行う (rename swap 等で size が
@@ -172,7 +177,7 @@ export default function AbsenceNgPanel() {
   // 日付ヘッダの NG 件数 (手動 + 自動 両方)
   const ngCountByDate = useMemo(() => {
     const out = {};
-    currentConfig.dates.forEach(d => {
+    poolDates.forEach(d => {
       let count = 0;
       project.teachers.forEach(t => {
         const autoEntries = autoNgByTeacher?.get(t.name);
@@ -184,17 +189,17 @@ export default function AbsenceNgPanel() {
       out[d.id] = count;
     });
     return out;
-  }, [currentConfig.dates, currentConfig.periods, project.teachers, autoNgByTeacher]);
+  }, [poolDates, currentConfig.periods, project.teachers, autoNgByTeacher]);
 
   // 期間内の date ラベル配列
   const dateLabelsInRange = useMemo(() => {
-    const sIdx = currentConfig.dates.findIndex(d => d.id === formStartDateId);
-    const eIdx = currentConfig.dates.findIndex(d => d.id === formEndDateId);
+    const sIdx = poolDates.findIndex(d => d.id === formStartDateId);
+    const eIdx = poolDates.findIndex(d => d.id === formEndDateId);
     if (sIdx < 0 || eIdx < 0) return [];
     const lo = Math.min(sIdx, eIdx);
     const hi = Math.max(sIdx, eIdx);
-    return currentConfig.dates.slice(lo, hi + 1).map(d => d.label);
-  }, [currentConfig.dates, formStartDateId, formEndDateId]);
+    return poolDates.slice(lo, hi + 1).map(d => d.label);
+  }, [poolDates, formStartDateId, formEndDateId]);
 
   // ── 講師 / 時限 選択の派生 ───────────────
   // allMode のとき: 現在の project.teachers をそのまま反映 (動的解決)
@@ -360,8 +365,8 @@ export default function AbsenceNgPanel() {
     if (p.startTime) setFormStartTime(p.startTime);
     if (p.endTime) setFormEndTime(p.endTime);
     if (p.memo) setFormMemo(p.memo);
-    const startD = p.startDateLabel ? currentConfig.dates.find(x => x.label === p.startDateLabel) : null;
-    const endD = p.endDateLabel ? currentConfig.dates.find(x => x.label === p.endDateLabel) : null;
+    const startD = p.startDateLabel ? poolDates.find(x => x.label === p.startDateLabel) : null;
+    const endD = p.endDateLabel ? poolDates.find(x => x.label === p.endDateLabel) : null;
     if (p.startDateLabel && p.endDateLabel) {
       if (startD && endD) {
         setFormStartDateId(startD.id);
@@ -398,12 +403,12 @@ export default function AbsenceNgPanel() {
   const toggleDate = (id) => setExpandedDates(prev => ({ ...prev, [id]: !prev[id] }));
   const expandAll = () => {
     const all = {};
-    currentConfig.dates.forEach(d => { all[d.id] = true; });
+    poolDates.forEach(d => { all[d.id] = true; });
     setExpandedDates(all);
   };
   const collapseAll = () => {
     const all = {};
-    currentConfig.dates.forEach(d => { all[d.id] = false; });
+    poolDates.forEach(d => { all[d.id] = false; });
     setExpandedDates(all);
   };
 
@@ -430,7 +435,7 @@ export default function AbsenceNgPanel() {
       {/* プリセット管理 */}
       <PresetPanel
         presets={presets}
-        dates={currentConfig.dates}
+        dates={poolDates}
         addPreset={addExternalSessionPreset}
         updatePreset={updateExternalSessionPreset}
         removePreset={removeExternalSessionPreset}
@@ -558,7 +563,7 @@ export default function AbsenceNgPanel() {
               className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
               aria-label="開始日"
             >
-              {currentConfig.dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+              {poolDates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
             </select>
             <span className="text-builder-ink-muted shrink-0">〜</span>
             <select
@@ -567,7 +572,7 @@ export default function AbsenceNgPanel() {
               className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
               aria-label="終了日"
             >
-              {currentConfig.dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+              {poolDates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
             </select>
           </div>
         </div>
@@ -715,7 +720,7 @@ export default function AbsenceNgPanel() {
         </div>
       </div>
       <div className="space-y-2 mb-4">
-        {currentConfig.dates.map(d => (
+        {poolDates.map(d => (
           <DateSection
             key={d.id}
             date={d}
@@ -757,21 +762,21 @@ export default function AbsenceNgPanel() {
               <thead>
                 <tr>
                   <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 text-builder-ink">講師名</th>
-                  {currentConfig.dates.map(d => <th key={d.id} className="border border-builder-border p-2 bg-builder-bg min-w-[60px] text-center text-builder-ink">{d.label}</th>)}
+                  {poolDates.map(d => <th key={d.id} className="border border-builder-border p-2 bg-builder-bg min-w-[60px] text-center text-builder-ink">{d.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {teacherGroups.map(group => (
                   <Fragment key={group.key}>
                     <tr className="bg-builder-bg">
-                      <td colSpan={1 + currentConfig.dates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10">
+                      <td colSpan={1 + poolDates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10">
                         ━━ {group.label} ━━
                       </td>
                     </tr>
                     {group.teachers.map(t => (
                       <tr key={t.name}>
                         <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
-                        {currentConfig.dates.map(d => {
+                        {poolDates.map(d => {
                           const k = makeExternalKey(d.label, t.name);
                           const sessionCnt = sessionCountMap[k];
                           if (sessionCnt) {

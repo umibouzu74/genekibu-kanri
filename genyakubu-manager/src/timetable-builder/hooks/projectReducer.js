@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -158,6 +158,15 @@ function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
   return out;
 }
 
+// v4: dates / periods は project 共通。tab.config (classes / subjectCounts) に
+// project の dates / periods をマージした『実効 config』を返す。schedule の
+// cascade ロジック (combinedPropagation 等) は config.dates / .periods を読むため、
+// reducer 内でもこの実効 config を渡す必要がある。
+function effectiveConfig(project, tab) {
+  // dates は『このタブが使う日』(activeDateIds で絞った subset)、periods は project 共通。
+  return { ...tab.config, dates: activeDatesForTab(project.dates, tab), periods: project.periods || [] };
+}
+
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
 function applyAction(project, action) {
@@ -199,11 +208,14 @@ function applyAction(project, action) {
       // 消えたラベルの entity は drop。これで schedule キー (ID ベース) の継続性を
       // 担保しつつ UI 編集 (ラベル並び替え/追加/削除) を反映できる。
       // 重複ラベルは dedupe (同じラベルが複数あっても entity は 1 つに集約)。
+      // v4: key='dates' | 'periods' は project 共通 (全タブに反映)、
+      // key='classes' は従来どおり active タブ単位。
       const { key, value } = action.payload;
+      const isShared = key === 'dates' || key === 'periods';
       const rawLabels = value.split(',').map(s => s.trim()).filter(s => s);
       const newLabels = [...new Set(rawLabels)]; // 重複除去 (順序は保つ)
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const oldArr = activeTab.config[key] || [];
+      const oldArr = isShared ? (project[key] || []) : (activeTab.config[key] || []);
       const oldByLabel = new Map(oldArr.map(e => [e.label, e]));
       const resultArr = [];
       newLabels.forEach(label => {
@@ -218,25 +230,32 @@ function applyAction(project, action) {
           resultArr.push({ id: candidate, label });
         }
       });
-      const newTabs = project.tabs.map(t =>
-        t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
-      );
+      // 書き込み先: shared は project[key]、classes は active タブの config。
+      const baseProject = isShared
+        ? { ...project, [key]: resultArr }
+        : {
+            ...project,
+            tabs: project.tabs.map(t =>
+              t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
+            ),
+          };
       // ラベル削除に伴う combinedGroups の cascade cleanup:
       // - key='classes': 消えたクラスを groups[*].classes から filter、結果が <2
       //   なら group ごと削除
       // - key='dates': 消えたラベルを groups[*].dates から filter (null は全日扱いで不変)
       //   結果が空配列ならグループ自体は残す? UI 上は「対象日なし」になるので drop。
       // - key='periods': groups に period 次元は無いので影響無し
-      let newCombined = project.combinedGroups;
+      let newCombined = baseProject.combinedGroups;
       if (key === 'classes' || key === 'dates') {
         newCombined = cleanCombinedGroupsForLabelChange(
-          project.combinedGroups || [],
+          baseProject.combinedGroups || [],
           key === 'classes' ? 'classes' : 'dates',
           new Set(newLabels)
         );
       }
-      // cleanSchedule で消えた entity を参照する schedule キーを掃除する。
-      return cleanSchedule({ ...project, tabs: newTabs, combinedGroups: newCombined });
+      // cleanSchedule で消えた entity を参照する schedule キーを掃除する
+      // (dates/periods は project 共通なので全タブの schedule が対象)。
+      return cleanSchedule({ ...baseProject, combinedGroups: newCombined });
     }
     case 'config/setSubjectCount': {
       // tabId 省略時はアクティブタブを対象にする (従来挙動)。
@@ -250,6 +269,93 @@ function applyAction(project, action) {
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
       return { ...project, tabs: newTabs };
+    }
+
+    // ─── タブ別『使う日』(activeDateIds) + 共通日付プール ─────
+    // v4(Y): project.dates は全タブの和集合プール (NG はこの全日に設定可)。
+    // 各タブは config.activeDateIds で『この学年が使う日』を選ぶ (未指定=全日)。
+
+    // ラベル配列でタブの使う日を設定する。新規ラベルはプールへ merge (id 採番)、
+    // タブの activeDateIds を該当 id 群に更新。手動入力 / 自動生成の両方が使う。
+    // プールから日付を削除はしない (削除は dates/removeFromPool)。
+    case 'tabDates/setByLabels': {
+      const { tabId, labels } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const cleanLabels = [...new Set((labels || []).map(s => String(s).trim()).filter(Boolean))];
+      const pool = project.dates || [];
+      const poolByLabel = new Map(pool.map(d => [d.label, d]));
+      let nextIdNum = nextId(pool);
+      const newPool = [...pool];
+      const activeIds = [];
+      cleanLabels.forEach(label => {
+        let ent = poolByLabel.get(label);
+        if (!ent) {
+          ent = { id: nextIdNum++, label };
+          newPool.push(ent);
+          poolByLabel.set(label, ent);
+        }
+        activeIds.push(ent.id);
+      });
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
+      );
+      // プールは増えるだけなので cell は落ちないが、整合のため cleanSchedule を通す。
+      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs });
+    }
+
+    // チェックリストの単一トグル。プールは変更せず active 集合だけ更新する
+    // (off にしてもその日付の cell / NG は保持され、再 on で復活する)。
+    case 'tabDates/toggle': {
+      const { tabId, dateId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const pool = project.dates || [];
+      if (!pool.some(d => d.id === dateId)) return project;
+      const current = target.config.activeDateIds ?? pool.map(d => d.id);
+      const set = new Set(current);
+      if (set.has(dateId)) set.delete(dateId); else set.add(dateId);
+      const activeIds = pool.map(d => d.id).filter(id => set.has(id));
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+
+    // 全選択 (active=true → null = 全日) / 全解除 (active=false → []).
+    case 'tabDates/setAllActive': {
+      const { tabId, active } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const activeDateIds = active ? null : [];
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+
+    // 日付をプールから完全削除 (全タブ・NG から消える)。cascade で schedule /
+    // combinedGroups を掃除し、全タブの activeDateIds からも除去する。
+    case 'dates/removeFromPool': {
+      const { dateId } = action.payload;
+      const pool = project.dates || [];
+      const target = pool.find(d => d.id === dateId);
+      if (!target) return project;
+      const newPool = pool.filter(d => d.id !== dateId);
+      const newTabs = project.tabs.map(t => {
+        const ids = t.config.activeDateIds;
+        if (!ids || !ids.includes(dateId)) return t;
+        return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => id !== dateId) } };
+      });
+      const newCombined = cleanCombinedGroupsForLabelChange(
+        project.combinedGroups || [],
+        'dates',
+        new Set(newPool.map(d => d.label)),
+      );
+      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs, combinedGroups: newCombined });
     }
 
     // ─── 科目マスタ ──────────────────────
@@ -637,7 +743,7 @@ function applyAction(project, action) {
       const { dateId, periodId, classId, type, val } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
-      const currentConfig = activeTab.config;
+      const currentConfig = effectiveConfig(project, activeTab);
 
       const k = makeKey(dateId, periodId, classId);
       if (currentSchedule[k]?.locked) return project;
@@ -676,7 +782,7 @@ function applyAction(project, action) {
       const { dateId, periodId, classId } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
-      const currentConfig = activeTab.config;
+      const currentConfig = effectiveConfig(project, activeTab);
       const k = makeKey(dateId, periodId, classId);
       const curr = currentSchedule[k] || {};
       if (curr.locked) return project;
@@ -692,7 +798,7 @@ function applyAction(project, action) {
       if (!clipboard) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
-      const currentConfig = activeTab.config;
+      const currentConfig = effectiveConfig(project, activeTab);
       const k = makeKey(dateId, periodId, classId);
       const curr = currentSchedule[k] || {};
       if (curr.locked) return project;
@@ -723,7 +829,7 @@ function applyAction(project, action) {
 
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
-      const currentConfig = activeTab.config;
+      const currentConfig = effectiveConfig(project, activeTab);
       const groups = project.combinedGroups;
       let ns = { ...currentSchedule };
 
@@ -751,11 +857,17 @@ function applyAction(project, action) {
       const { type, oldVal, newVal } = action.payload;
       if (!newVal || newVal === oldVal) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const newConfig = { ...activeTab.config };
-      const renameLabel = (arr) => arr.map(e => e.label === oldVal ? { ...e, label: newVal } : e);
-      if (type === 'date') newConfig.dates = renameLabel(newConfig.dates);
-      else if (type === 'period') newConfig.periods = renameLabel(newConfig.periods);
-      else if (type === 'class') newConfig.classes = renameLabel(newConfig.classes);
+      const renameLabel = (arr) => (arr || []).map(e => e.label === oldVal ? { ...e, label: newVal } : e);
+      // v4: date / period は project 共通、class は active タブ単位。
+      let newTabs = project.tabs;
+      let newDates = project.dates;
+      let newPeriods = project.periods;
+      if (type === 'date') newDates = renameLabel(project.dates);
+      else if (type === 'period') newPeriods = renameLabel(project.periods);
+      else if (type === 'class') {
+        const newConfig = { ...activeTab.config, classes: renameLabel(activeTab.config.classes) };
+        newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
+      }
 
       let newTeachers = project.teachers;
       let newExternal = project.externalCounts;
@@ -798,9 +910,10 @@ function applyAction(project, action) {
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'classes', oldVal, newVal);
       }
 
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
       return {
         ...project,
+        dates: newDates,
+        periods: newPeriods,
         tabs: newTabs,
         teachers: newTeachers,
         externalCounts: newExternal,
@@ -814,7 +927,7 @@ function applyAction(project, action) {
       const { action: bulk, type, val } = action.payload;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
-      const currentConfig = activeTab.config;
+      const currentConfig = effectiveConfig(project, activeTab);
 
       const ns = { ...currentSchedule };
       let upd = false;

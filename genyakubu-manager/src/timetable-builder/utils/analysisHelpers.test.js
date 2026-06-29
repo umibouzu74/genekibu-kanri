@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeGlobalUsage,
+  computeGlobalUsage as _computeGlobalUsage,
   computeActiveAnalysis,
   computeDashboard,
-  computeTabViolationCounts,
+  computeTabViolationCounts as _computeTabViolationCounts,
   computeViolations,
   computeInfeasibilities,
 } from './analysisHelpers';
 import { makeKey, makeExternalKey, makeNgKey } from './scheduleKey';
 
-// テスト用ヘルパー: v3 schema の config と schedule を組み立てる。
+// v4: dates / periods は project 共通になり、computeGlobalUsage /
+// computeTabViolationCounts は引数で受け取る。本テストの fixture は従来どおり
+// tab.config に dates / periods を持たせているので、その値を引数へ橋渡しする
+// 薄いシムを噛ませる (全 call site を無改修に保つ)。tab を跨いだ dates /
+// periods は共通である前提なので tabs[0].config を代表値として使う。
+const computeGlobalUsage = (tabs, combined = [], ext = {}, sessions = []) =>
+  _computeGlobalUsage(tabs, combined, ext, sessions, tabs[0].config.dates, tabs[0].config.periods);
+const computeTabViolationCounts = (args) =>
+  _computeTabViolationCounts({ ...args, dates: args.tabs[0].config.dates, periods: args.tabs[0].config.periods });
+
+// テスト用ヘルパー: config (実効: dates/periods 含む) と schedule を組み立てる。
 function makeConfig(overrides = {}) {
   return {
     dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],

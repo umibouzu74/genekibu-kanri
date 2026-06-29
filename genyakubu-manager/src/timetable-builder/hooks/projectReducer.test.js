@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { projectReducer, MAX_HISTORY } from './projectReducer';
 import { makeKey, makeExternalKey, makeNgKey } from '../utils/scheduleKey';
 
-// テスト用ヘルパー: 単純な project + state を生成 (v3 schema)
+// テスト用ヘルパー: 単純な project + state を生成 (v4 schema)
+// v4: dates / periods は project 共通。fixture は従来どおり tab.config にも
+// dates / periods を残しているが (個別テストの可読性のため)、overrides 適用後に
+// tabs[0].config から project レベルへ hoist する。明示的な dates/periods
+// override も可能。
 function makeProject(overrides = {}) {
-  return {
-    version: 3,
+  const base = {
+    version: 4,
     name: 'test',
     teachers: [
       { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -27,7 +31,13 @@ function makeProject(overrides = {}) {
     externalCounts: {},
     subjects: ['英語', '数学'],
     subjectColors: {},
-    ...overrides,
+  };
+  const merged = { ...base, ...overrides };
+  const t0 = merged.tabs[0]?.config || {};
+  return {
+    ...merged,
+    dates: overrides.dates || merged.dates || t0.dates || [],
+    periods: overrides.periods || merged.periods || t0.periods || [],
   };
 }
 
@@ -989,7 +999,8 @@ describe('projectReducer — schedule 一括操作', () => {
       type: 'schedule/renameHeader',
       payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
     });
-    const dateEnt = next.project.tabs[0].config.dates[0];
+    // v4: date は project レベルで rename される
+    const dateEnt = next.project.dates[0];
     expect(dateEnt).toEqual({ id: 1, label: '12/25(祝)' });
   });
 
@@ -1576,5 +1587,68 @@ describe('projectReducer — 未知 action', () => {
   it('未知の type は no-op', () => {
     const state = makeState();
     expect(projectReducer(state, { type: 'unknown/type' })).toBe(state);
+  });
+});
+
+describe('projectReducer — タブ別「使う日」(activeDateIds) + 日付プール (v4 Y)', () => {
+  it('tabDates/setByLabels: 既存ラベルは id 維持、新規はプールへ追加し active に設定', () => {
+    // makeState default: project.dates = [{id:1,'12/25(木)'}]
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'tabDates/setByLabels',
+      payload: { labels: ['12/25(木)', '12/26(金)'] },
+    });
+    expect(next.project.dates).toEqual([
+      { id: 1, label: '12/25(木)' },
+      { id: 2, label: '12/26(金)' },
+    ]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([1, 2]);
+  });
+
+  it('tabDates/setByLabels: プールから日付は消さない (active だけ縮小)', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activeDateIds: [1, 2] }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'tabDates/setByLabels', payload: { labels: ['D1'] } });
+    // プールは 2 件のまま、active は D1 だけ
+    expect(next.project.dates).toEqual([{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([1]);
+  });
+
+  it('tabDates/toggle: undefined(全日) から materialize して off にする', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'tabDates/toggle', payload: { dateId: 1 } });
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([2]);
+  });
+
+  it('tabDates/setAllActive: true → null (全日)、false → [] (全解除)', () => {
+    const state = makeState({
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activeDateIds: [1] }, schedule: {} }],
+    });
+    const off = projectReducer(state, { type: 'tabDates/setAllActive', payload: { active: false } });
+    expect(off.project.tabs[0].config.activeDateIds).toEqual([]);
+    const on = projectReducer(off, { type: 'tabDates/setAllActive', payload: { active: true } });
+    expect(on.project.tabs[0].config.activeDateIds).toBeNull();
+  });
+
+  it('dates/removeFromPool: プールから消し、全タブの activeDateIds と schedule を掃除', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      periods: [{ id: 1, label: '1限' }],
+      tabs: [{
+        id: 1, name: 'a',
+        config: { classes: [{ id: 1, label: 'S' }], subjectCounts: {}, activeDateIds: [1, 2] },
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英' }, [makeKey(2, 1, 1)]: { subject: '数' } },
+      }],
+    });
+    const next = projectReducer(state, { type: 'dates/removeFromPool', payload: { dateId: 1 } });
+    expect(next.project.dates).toEqual([{ id: 2, label: 'D2' }]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([2]);
+    // 削除した日付 (d1) のコマは消え、残った日付 (d2) のコマは残る
+    expect(next.project.tabs[0].schedule).toEqual({ [makeKey(2, 1, 1)]: { subject: '数' } });
   });
 });

@@ -1,12 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
   hexToArgb,
-  buildScheduleWorkbook,
-  buildTeacherWorkbook,
+  buildScheduleWorkbook as _buildScheduleWorkbook,
+  buildTeacherWorkbook as _buildTeacherWorkbook,
   buildExcelFilename,
-  computeSubjectStats,
+  computeSubjectStats as _computeSubjectStats,
 } from './excelExport';
 import { makeKey, makeNgKey, makeExternalKey } from './scheduleKey';
+
+// v4: dates / periods は project 共通。本テストの fixture は tab.config に
+// dates / periods を持たせているので、project レベルへ hoist してから渡す
+// シムを噛ませる (全 fixture を無改修に保つ。tab を跨いだ dates / periods は
+// 共通である前提なので tabs[0].config を代表値として使う)。
+const hoist = (project) => ({
+  ...project,
+  dates: project.dates || project.tabs?.[0]?.config?.dates || [],
+  periods: project.periods || project.tabs?.[0]?.config?.periods || [],
+});
+const buildScheduleWorkbook = (project) => _buildScheduleWorkbook(hoist(project));
+const buildTeacherWorkbook = (project) => _buildTeacherWorkbook(hoist(project));
+const computeSubjectStats = (project, subject) => _computeSubjectStats(hoist(project), subject);
 
 // 共通の v3 project ファクトリ (テスト局所)
 function makeProject(overrides = {}) {
@@ -322,14 +335,14 @@ describe('computeSubjectStats', () => {
         },
         {
           id: 2, name: '中1中2',
+          // v4: dates / periods は project 共通。'7/29(水)'=id1, '1限'=id1 を共有し、
+          // schedule もその共通 ID を使う (class のみ tab 固有 id10)。
           config: {
-            dates: [{ id: 10, label: '7/29(水)' }],
-            periods: [{ id: 10, label: '1限' }],
             classes: [{ id: 10, label: '1A' }],
             subjectCounts: { 英語: 1 },
           },
           schedule: {
-            [makeKey(10, 10, 10)]: { subject: '英語', teacher: '松川' },
+            [makeKey(1, 1, 10)]: { subject: '英語', teacher: '松川' },
           },
         },
       ],

@@ -1,6 +1,8 @@
 import {
   DEFAULT_INITIAL_TEACHERS,
   DEFAULT_TAB_CONFIG_BASE,
+  DEFAULT_PROJECT_DATES,
+  DEFAULT_PROJECT_PERIODS,
   DEFAULT_SUBJECTS,
   DEFAULT_SUBJECT_COLORS,
   STORAGE_KEY_PROJECT,
@@ -41,15 +43,26 @@ export function detectTeacherDiffs(currentTeachers, loadedTeachers) {
   return diffs;
 }
 
-export function createNewProject(tabs, teachers, subjectColors, subjects) {
+export function createNewProject(tabs, teachers, subjectColors, subjects, dates, periods) {
+  // v4: dates / periods は project 共通。明示引数 > tabs[0].config > 既定 の順で
+  // 解決し、各 tab.config からは strip して二重持ちを防ぐ (project が単一の正)。
+  const srcDates = dates || tabs[0]?.config?.dates || DEFAULT_PROJECT_DATES;
+  const srcPeriods = periods || tabs[0]?.config?.periods || DEFAULT_PROJECT_PERIODS;
+  const strippedTabs = tabs.map(t => {
+    const cfg = t.config || {};
+    const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
+    return { ...t, config: restConfig };
+  });
   return {
     version: CURRENT_PROJECT_VERSION,
     name: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     teachers: teachers || DEFAULT_INITIAL_TEACHERS,
-    activeTabId: tabs[0]?.id || 1,
-    tabs,
+    activeTabId: strippedTabs[0]?.id || 1,
+    dates: srcDates,
+    periods: srcPeriods,
+    tabs: strippedTabs,
     subjects: subjects || [...DEFAULT_SUBJECTS],
     subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
     combinedGroups: [],

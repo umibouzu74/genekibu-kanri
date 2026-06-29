@@ -16,7 +16,10 @@ export function useJsonIO({ project, activeTab, dispatch }) {
   const fileInputRef = useRef(null);
 
   const handleSaveAsDefault = useCallback(() => {
-    const defaults = { teachers: project.teachers, config: activeTab.config };
+    // v4: dates / periods は project 共通。config に混ぜて保存しておくと
+    // loadInitialProject → createNewProject が project へ hoist して復元できる。
+    const config = { ...activeTab.config, dates: project.dates, periods: project.periods };
+    const defaults = { teachers: project.teachers, config };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
   }, [project, activeTab]);
 

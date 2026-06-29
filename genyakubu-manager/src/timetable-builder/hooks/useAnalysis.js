@@ -22,8 +22,8 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 //   - dashboard: { progress, filled, total }
 export function useAnalysis(project, currentSchedule, currentConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
-    () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions),
-    [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions],
+    () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods),
+    [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods],
   );
 
   // 他学年セッションと時限の時間重複から派生する自動NG (講師ごと)。
@@ -43,14 +43,13 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
   );
 
   const tabErrorCounts = useMemo(
-    // externalSessions を渡し、各タブの period に合わせた自動NGを内部で再計算させる
-    // (タブ毎に period ラベルが違う可能性があるため、active タブの autoNgByTeacher
-    //  を流用せず再計算する)。
+    // v4: dates / periods は project 共通。各タブの実効 config で分析する。
     () => computeTabViolationCounts({
       tabs: project.tabs, globalUsage, teachers: project.teachers,
       externalSessions: project.externalSessions || [],
+      dates: project.dates, periods: project.periods,
     }),
-    [project.tabs, globalUsage, project.teachers, project.externalSessions],
+    [project.tabs, globalUsage, project.teachers, project.externalSessions, project.dates, project.periods],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;

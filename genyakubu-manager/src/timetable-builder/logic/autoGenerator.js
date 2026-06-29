@@ -4,7 +4,7 @@
 // v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
-import { makeKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, findCombinedGroup, activeDatesForTab } from '../utils/scheduleKey';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
 import {
   canTeachSubject,
@@ -74,7 +74,12 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   const rng = mulberry32(seed);
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
-  const currentConfig = activeTab.config;
+  // v4(Y): periods は project 共通、dates は『このタブが使う日』(activeDateIds)。
+  const currentConfig = {
+    ...activeTab.config,
+    dates: activeDatesForTab(project.dates, activeTab),
+    periods: project.periods || [],
+  };
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
