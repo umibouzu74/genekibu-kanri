@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: ドキュメント整備 — E8a / E8b / E8d)
+- **ユーザーガイド** (`src/timetable-builder/docs/USER_GUIDE.md`): 画面構成・
+  初回セットアップ・CSV 一括登録・基本操作・自動作成・スナップショット/差分/
+  テンプレート・出力・トラブルシュートを網羅した操作マニュアル。
+- **アーキテクチャ** (`src/timetable-builder/docs/ARCHITECTURE.md`): Mermaid で
+  全体構成 / 編集 1 操作の sequence / 自動生成パイプライン / データモデルを図示。
+- **ROADMAP**: 冒頭に「§0 完了済み一覧」インデックス表を追加。
+
+### Changed (講習時間割作成: 操作系の UX 仕上げ — E1a / E1b / E1e / E1f)
+- **Excel 出力を dropdown 化**: ヘッダの全/個人 Excel 2 ボタンを「📊 Excel出力 ▾」
+  に集約し、ボタン群を flex-wrap で折り返す (狭画面対応)。
+- **フォーカス可視化**: `.builder-root :focus-visible` に太い (3px) リング + offset
+  を追加。色だけに頼らず形状で認識でき、濃色ボタン上でもコントラストを確保。
+- **矢印ナビの端動作統一**: セルの ← → が行頭/行末で反対端へ wrap し、移動が
+  途切れない。
+- **ヘッダの長押し対応**: スケジュール表のヘッダ (日付/時限/クラス) もタッチ
+  長押しでメニューを開けるように。
+
+### Added (講習時間割作成: 自動生成の live 進捗 — E2f)
+- 探索の途中経過 (充填数 / 探索回数) を Worker から間引き通知し、生成中の
+  ツールバーにライブ表示。`onProgress` を autoGenerator → worker → runGenerator →
+  BuilderApp に配線。テスト +5 件。
+
 ### Added (講習時間割作成: タッチ操作・狭画面対応 — E1f / E1a)
 - **長押しでコンテキストメニュー** (`hooks/useLongPress.js`): タッチ端末で
   時間割セルを長押しすると、右クリックと同じメニュー (コピー/貼付/クリア/
