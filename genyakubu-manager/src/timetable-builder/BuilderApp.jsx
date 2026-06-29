@@ -104,6 +104,8 @@ function ScheduleApp() {
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
   const [generateElapsedMs, setGenerateElapsedMs] = useState(0);
   const genStartRef = useRef(0);
+  // E2f live: 探索の途中経過 (案番号 / 充填数 / 探索回数)。null = 未通知。
+  const [generateLive, setGenerateLive] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
@@ -138,6 +140,7 @@ function ScheduleApp() {
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
     genStartRef.current = Date.now();
     setGenerateElapsedMs(0);
+    setGenerateLive(null);
 
     const results = [];
     // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
@@ -151,6 +154,10 @@ function ScheduleApp() {
       onPattern: (index, result) => {
         results[index] = result;
         setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
+      },
+      // 探索の途中経過 (間引き済) を live 表示用 state に反映 (E2f)
+      onProgress: (index, progress) => {
+        setGenerateLive({ index, ...progress });
       },
       onError: (msg) => {
         errored = true;
@@ -193,6 +200,7 @@ function ScheduleApp() {
         showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
       }
       setIsGenerating(false);
+      setGenerateLive(null);
       generationRef.current = null;
     });
   }, [project, showToast, NUM_PATTERNS]);
@@ -208,6 +216,7 @@ function ScheduleApp() {
     handle.cancel();
     setIsGenerating(false);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    setGenerateLive(null);
     showToast('自動作成を中止しました', 'warning', 2000);
   }, [showToast, NUM_PATTERNS]);
 
@@ -262,6 +271,7 @@ function ScheduleApp() {
           isGenerating={isGenerating}
           generateProgress={generateProgress}
           generateElapsedMs={generateElapsedMs}
+          generateLive={generateLive}
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}

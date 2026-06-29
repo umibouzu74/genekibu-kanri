@@ -292,6 +292,22 @@ describe('Toolbar', () => {
     expect(screen.queryByTitle('自動作成を中止する')).not.toBeInTheDocument();
   });
 
+  it('生成中に live 進捗 (充填数・探索回数) を表示する (E2f)', () => {
+    renderToolbar({ props: {
+      isGenerating: true,
+      generateProgress: { current: 1, total: 3 },
+      generateLive: { index: 0, filledCount: 12, totalSlots: 30, iterations: 123456 },
+    } });
+    expect(screen.getByText(/案/)).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument(); // 充填数
+    expect(screen.getByText('123,456')).toBeInTheDocument(); // 探索回数 (locale 区切り)
+  });
+
+  it('生成中でも generateLive が null なら live 行を出さない', () => {
+    renderToolbar({ props: { isGenerating: true, generateProgress: { current: 1, total: 3 }, generateLive: null } });
+    expect(screen.queryByText(/探索 /)).not.toBeInTheDocument();
+  });
+
   it('onShowHelp が渡されると ❓ヘルプ ボタンを表示し、クリックで呼ぶ', () => {
     const onShowHelp = vi.fn();
     renderToolbar({ props: { onShowHelp } });

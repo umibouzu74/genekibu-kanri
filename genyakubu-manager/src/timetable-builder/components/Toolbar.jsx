@@ -13,6 +13,7 @@ export default function Toolbar({
   isGenerating,
   generateProgress,
   generateElapsedMs,
+  generateLive,
   onGenerate,
   onCancelGenerate,
   onShowHelp,
@@ -303,6 +304,21 @@ export default function Toolbar({
           </button>
         )}
       </div>
+      {isGenerating && generateLive && (
+        <div
+          className="w-full text-xs text-builder-ink-muted bg-builder-surface border border-builder-border rounded px-3 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-1"
+          aria-live="polite"
+        >
+          <span>案 <span className="font-bold text-builder-ink">{(generateLive.index ?? 0) + 1}</span> 探索中</span>
+          {generateLive.totalSlots > 0 && (
+            <span>
+              充填 <span className="font-bold text-builder-blue tabular-nums">{generateLive.filledCount}</span>
+              {' / '}{generateLive.totalSlots} コマ
+            </span>
+          )}
+          <span>探索 <span className="font-bold tabular-nums">{(generateLive.iterations ?? 0).toLocaleString()}</span> 回</span>
+        </div>
+      )}
     </div>
   );
 }

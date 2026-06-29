@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateSinglePattern, generateSchedule } from './autoGenerator';
 import { makeKey, makeNgKey } from '../utils/scheduleKey';
 
@@ -169,6 +169,18 @@ describe('generateSinglePattern — 生成統計 (E2f)', () => {
     expect(r.solution).toBeNull();
     expect(r.stuckSlot).toMatchObject({ period: expect.any(String), class: expect.any(String) });
     expect(r.stuckSlot.date).toBeTruthy();
+  });
+
+  it('onProgress は任意。小さい問題では間引き閾値未満で呼ばれず、結果は不変', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+    });
+    const onProgress = vi.fn();
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1, onProgress });
+    // 1 コマの問題は数十イテレーションで解けるので間引き (20000) に達せず未通知
+    expect(onProgress).not.toHaveBeenCalled();
+    expect(r.solution).not.toBeNull();
   });
 });
 
