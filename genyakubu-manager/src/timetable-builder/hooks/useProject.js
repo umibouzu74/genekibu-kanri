@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useHistoryStack } from './useHistoryStack';
 import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
@@ -38,7 +38,15 @@ export function useProject() {
   // 派生データ
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
-  const currentConfig = activeTab.config;
+  // v4: dates / periods は project 共通。currentConfig は tab.config (classes /
+  // subjectCounts) に project の dates / periods をマージした派生ビュー。
+  // これにより currentConfig.dates / .periods を読む既存の全 consumer は
+  // 無改修で動く。
+  const currentConfig = useMemo(() => ({
+    ...activeTab.config,
+    dates: project.dates || [],
+    periods: project.periods || [],
+  }), [activeTab.config, project.dates, project.periods]);
   const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
 
   const {

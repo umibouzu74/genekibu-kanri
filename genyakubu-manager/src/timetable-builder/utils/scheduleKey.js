@@ -205,6 +205,79 @@ export function migrateTabV2toV3(tab) {
   };
 }
 
+// v3 → v4: dates / periods を tab.config から project レベルへ昇格する。
+// 各タブが個別に持っていた dates / periods を『ラベル基準の union』で 1 つに
+// 統合し (出現順を保持)、project.dates / project.periods に project-global な
+// ID を振り直す。schedule キー (d{id}-p{id}-c{id}) と snapshot.schedule は
+// 旧 tab-local ID → ラベル → 新 project ID で remap する。classId は不変。
+//
+// 共通ケース (全タブが同一の dates / periods) では union = 元の配列で、ID も
+// 元の並び順どおりなので remap は実質 identity になる。タブごとに日程が違う
+// 場合も、union により全タブの日付が残るので schedule は失われない。
+export function migrateProjectV3toV4(project) {
+  const tabs = project.tabs || [];
+
+  const dateLabels = [];
+  const periodLabels = [];
+  const seenDate = new Set();
+  const seenPeriod = new Set();
+  tabs.forEach(t => {
+    (t.config?.dates || []).forEach(d => {
+      if (!seenDate.has(d.label)) { seenDate.add(d.label); dateLabels.push(d.label); }
+    });
+    (t.config?.periods || []).forEach(p => {
+      if (!seenPeriod.has(p.label)) { seenPeriod.add(p.label); periodLabels.push(p.label); }
+    });
+  });
+  const projDates = dateLabels.map((label, i) => ({ id: i + 1, label }));
+  const projPeriods = periodLabels.map((label, i) => ({ id: i + 1, label }));
+  const dateIdByLabel = new Map(projDates.map(d => [d.label, d.id]));
+  const periodIdByLabel = new Map(projPeriods.map(p => [p.label, p.id]));
+
+  // 旧 tab-local の dates / periods (id→label) を使い schedule キーを remap する。
+  const remapSchedule = (schedule, oldDates, oldPeriods) => {
+    const oldDateLabelById = new Map((oldDates || []).map(d => [d.id, d.label]));
+    const oldPeriodLabelById = new Map((oldPeriods || []).map(p => [p.id, p.label]));
+    const out = {};
+    Object.keys(schedule || {}).forEach(key => {
+      const m = key.match(/^d(\d+)-p(\d+)-c(\d+)$/);
+      if (!m) return;
+      const dLabel = oldDateLabelById.get(Number(m[1]));
+      const pLabel = oldPeriodLabelById.get(Number(m[2]));
+      if (dLabel == null || pLabel == null) return;
+      const nDId = dateIdByLabel.get(dLabel);
+      const nPId = periodIdByLabel.get(pLabel);
+      if (nDId == null || nPId == null) return;
+      out[makeKey(nDId, nPId, Number(m[3]))] = schedule[key];
+    });
+    return out;
+  };
+
+  const newTabs = tabs.map(t => {
+    const cfg = t.config || {};
+    const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
+    return { ...t, config: restConfig, schedule: remapSchedule(t.schedule, cfg.dates, cfg.periods) };
+  });
+
+  // snapshot は schedule のみ保持し source tabId に紐づくので、そのタブの旧
+  // dates / periods で remap する。元タブが消えている snapshot はそのまま残す。
+  const oldConfigByTabId = new Map(tabs.map(t => [t.id, t.config || {}]));
+  const newSnapshots = (project.snapshots || []).map(s => {
+    const cfg = oldConfigByTabId.get(s.tabId);
+    if (!cfg) return s;
+    return { ...s, schedule: remapSchedule(s.schedule, cfg.dates, cfg.periods) };
+  });
+
+  return {
+    ...project,
+    version: 4,
+    dates: projDates,
+    periods: projPeriods,
+    tabs: newTabs,
+    snapshots: newSnapshots,
+  };
+}
+
 // プロジェクト全体のマイグレーション
 export function migrateProject(project) {
   if (!project) return project;
@@ -235,6 +308,14 @@ export function migrateProject(project) {
       version: 3,
       updatedAt: new Date().toISOString(),
       tabs: migratedTabs,
+    };
+  }
+
+  // v3 → v4: dates/periods を project レベルへ昇格 (全タブ共通)
+  if (!result.version || result.version < 4) {
+    result = {
+      ...migrateProjectV3toV4(result),
+      updatedAt: new Date().toISOString(),
     };
   }
 

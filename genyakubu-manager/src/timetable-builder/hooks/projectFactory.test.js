@@ -25,12 +25,19 @@ describe('createNewProject', () => {
     const colors = { 英語: '#000' };
     const subjects = ['英語'];
     const p = createNewProject(tabs, teachers, colors, subjects);
-    expect(p.tabs).toBe(tabs);
+    // v4: createNewProject は dates/periods を tab.config から strip するので
+    // tabs は同一参照ではない。id/name の保持を確認する。
+    expect(p.tabs).toHaveLength(1);
+    expect(p.tabs[0].id).toBe(7);
+    expect(p.tabs[0].name).toBe('x');
     expect(p.teachers).toBe(teachers);
     expect(p.subjectColors).toBe(colors);
     expect(p.subjects).toBe(subjects);
     expect(p.activeTabId).toBe(7);
     expect(p.version).toBe(CURRENT_PROJECT_VERSION);
+    // dates/periods が省略されれば既定が project レベルに入る
+    expect(Array.isArray(p.dates)).toBe(true);
+    expect(Array.isArray(p.periods)).toBe(true);
     expect(p.combinedGroups).toEqual([]);
     expect(p.externalCounts).toEqual({});
   });
@@ -71,10 +78,10 @@ describe('loadInitialProject — branches', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
     const { project: loaded } = loadInitialProject();
     expect(loaded.name).toBe('saved');
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(4);
   });
 
-  it('STORAGE_KEY_PROJECT に v3 形式があればそのまま返す', () => {
+  it('STORAGE_KEY_PROJECT に v3 形式があれば v4 に昇格する (dates/periods を project へ)', () => {
     const saved = {
       version: 3,
       name: 'v3-saved',
@@ -98,8 +105,10 @@ describe('loadInitialProject — branches', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
     const { project: loaded } = loadInitialProject();
     expect(loaded.name).toBe('v3-saved');
-    expect(loaded.version).toBe(3);
-    expect(loaded.tabs[0].config.dates).toEqual([{ id: 1, label: 'x' }]);
+    expect(loaded.version).toBe(4);
+    expect(loaded.dates).toEqual([{ id: 1, label: 'x' }]);
+    expect(loaded.periods).toEqual([{ id: 1, label: 'y' }]);
+    expect(loaded.tabs[0].config.dates).toBeUndefined();
   });
 
   it('STORAGE_KEY_PROJECT 不在で legacy schedule_project があれば新キーに移行する', () => {
@@ -151,7 +160,8 @@ describe('loadInitialProject — branches', () => {
     expect(loaded.teachers[0].name).toBe('X');
     expect(loaded.tabs).toHaveLength(1);
     expect(loaded.tabs[0].config.classes).toEqual([{ id: 1, label: 'A' }]);
-    expect(loaded.tabs[0].config.dates).toEqual([{ id: 1, label: '1/1' }]);
+    // v4: dates は project レベルへ昇格
+    expect(loaded.dates).toEqual([{ id: 1, label: '1/1' }]);
   });
 
   it('legacy schedule_user_defaults があれば user defaults として読み込む', () => {
@@ -211,7 +221,7 @@ describe('loadInitialProject — branches', () => {
     expect(loadError).toBeNull();
   });
 
-  it('version 未指定の旧形式は migrate で v3 に補正され entity 配列になる', () => {
+  it('version 未指定の旧形式は migrate で v4 に補正され entity 配列になる', () => {
     const legacy = {
       // version 無し
       name: 'old',
@@ -221,9 +231,10 @@ describe('loadInitialProject — branches', () => {
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(legacy));
     const { project: loaded } = loadInitialProject();
-    expect(loaded.version).toBe(3);
-    expect(loaded.tabs[0].config.dates).toEqual([{ id: 1, label: '12/25' }]);
-    expect(loaded.tabs[0].config.periods).toEqual([{ id: 1, label: '1限' }]);
+    expect(loaded.version).toBe(4);
+    // v4: dates / periods は project レベル、classes は tab.config
+    expect(loaded.dates).toEqual([{ id: 1, label: '12/25' }]);
+    expect(loaded.periods).toEqual([{ id: 1, label: '1限' }]);
     expect(loaded.tabs[0].config.classes).toEqual([{ id: 1, label: 'S' }]);
     // combinedGroups / subjectColors / subjects も自動補完される
     expect(loaded.combinedGroups).toEqual([]);

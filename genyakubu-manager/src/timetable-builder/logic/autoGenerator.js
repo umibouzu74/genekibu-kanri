@@ -74,7 +74,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   const rng = mulberry32(seed);
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
-  const currentConfig = activeTab.config;
+  // v4: dates / periods は project 共通。tab.config にマージした実効 config を使う。
+  const currentConfig = { ...activeTab.config, dates: project.dates || [], periods: project.periods || [] };
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;

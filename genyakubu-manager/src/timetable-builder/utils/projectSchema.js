@@ -16,6 +16,13 @@ export function validateProjectShape(obj) {
   if ('teachers' in obj && !Array.isArray(obj.teachers)) {
     return { valid: false, error: 'teachers が配列ではありません' };
   }
+  // v4: dates / periods は project レベル。存在する場合のみ配列性を検証する
+  // (v3 以前は tab.config 側に入っており migrate で project へ昇格する)。
+  for (const key of ['dates', 'periods']) {
+    if (key in obj && !Array.isArray(obj[key])) {
+      return { valid: false, error: `${key} が配列ではありません` };
+    }
+  }
   for (let i = 0; i < obj.tabs.length; i++) {
     const tab = obj.tabs[i];
     if (!tab || typeof tab !== 'object') {
@@ -25,8 +32,13 @@ export function validateProjectShape(obj) {
     if (!cfg || typeof cfg !== 'object') {
       return { valid: false, error: `tabs[${i}].config がありません` };
     }
-    for (const key of ['dates', 'periods', 'classes']) {
-      if (!Array.isArray(cfg[key])) {
+    // classes は v4 でも tab 単位なので必須。dates / periods は v3 以前のデータ
+    // 互換のため『存在する場合のみ』配列性を検証する (v4 では tab 側に無い)。
+    if (!Array.isArray(cfg.classes)) {
+      return { valid: false, error: `tabs[${i}].config.classes が配列ではありません` };
+    }
+    for (const key of ['dates', 'periods']) {
+      if (key in cfg && !Array.isArray(cfg[key])) {
         return { valid: false, error: `tabs[${i}].config.${key} が配列ではありません` };
       }
     }

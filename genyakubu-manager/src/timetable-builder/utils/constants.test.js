@@ -79,44 +79,46 @@ describe('resolveGenerationParams', () => {
 });
 
 describe('cleanSchedule (E4a)', () => {
+  // v4: dates / periods は project 共通。classes のみ tab.config。
+  const DATES = [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }];
+  const PERIODS = [{ id: 1, label: '1限' }];
   const tab = (schedule) => ({
     id: 1,
     name: 'メイン',
     config: {
-      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
-      periods: [{ id: 1, label: '1限' }],
       classes: [{ id: 1, label: 'A' }],
       subjectCounts: {},
     },
     schedule,
   });
+  const proj = (...tabs) => ({ dates: DATES, periods: PERIODS, tabs });
 
   it('config に存在するキーは残す', () => {
-    const proj = { tabs: [tab({ 'd1-p1-c1': { subject: '英語' } })] };
-    expect(cleanSchedule(proj).tabs[0].schedule).toEqual({ 'd1-p1-c1': { subject: '英語' } });
+    const p = proj(tab({ 'd1-p1-c1': { subject: '英語' } }));
+    expect(cleanSchedule(p).tabs[0].schedule).toEqual({ 'd1-p1-c1': { subject: '英語' } });
   });
 
   it('消滅した date/period/class を参照するキーは破棄する', () => {
-    const proj = { tabs: [tab({
+    const p = proj(tab({
       'd1-p1-c1': { subject: '英語' },
       'd9-p1-c1': { subject: '数学' },
       'd1-p9-c1': { subject: '国語' },
       'd1-p1-c9': { subject: '理科' },
-    })] };
-    expect(Object.keys(cleanSchedule(proj).tabs[0].schedule)).toEqual(['d1-p1-c1']);
+    }));
+    expect(Object.keys(cleanSchedule(p).tabs[0].schedule)).toEqual(['d1-p1-c1']);
   });
 
   it('不正な形式のキーは破棄する', () => {
-    const proj = { tabs: [tab({ 'garbage': { subject: '英語' }, 'd2-p1-c1': { subject: '数学' } })] };
-    expect(Object.keys(cleanSchedule(proj).tabs[0].schedule)).toEqual(['d2-p1-c1']);
+    const p = proj(tab({ 'garbage': { subject: '英語' }, 'd2-p1-c1': { subject: '数学' } }));
+    expect(Object.keys(cleanSchedule(p).tabs[0].schedule)).toEqual(['d2-p1-c1']);
   });
 
   it('複数タブを独立に処理する', () => {
-    const proj = { tabs: [
+    const p = proj(
       tab({ 'd1-p1-c1': { subject: 'a' } }),
       { ...tab({ 'd1-p1-c1': { subject: 'b' }, 'd9-p1-c1': { subject: 'x' } }), id: 2 },
-    ] };
-    const out = cleanSchedule(proj);
+    );
+    const out = cleanSchedule(p);
     expect(Object.keys(out.tabs[0].schedule)).toEqual(['d1-p1-c1']);
     expect(Object.keys(out.tabs[1].schedule)).toEqual(['d1-p1-c1']);
   });

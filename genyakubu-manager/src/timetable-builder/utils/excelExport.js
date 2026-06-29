@@ -131,11 +131,16 @@ export function buildScheduleWorkbook(project) {
     combinedGroups,
     cleaned.externalCounts || {},
     cleaned.externalSessions || [],
+    cleaned.dates || [],
+    cleaned.periods || [],
   );
   const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
 
+  // v4: dates / periods は project 共通。
+  const dates = cleaned.dates || [];
+  const periods = cleaned.periods || [];
   cleaned.tabs.forEach(tab => {
-    const { dates, periods, classes } = tab.config;
+    const { classes } = tab.config;
     const ws = workbook.addWorksheet(tab.name);
 
     // タブ毎の period に合わせて自動NG (他学年セッションとの時間重複) を計算。
@@ -256,18 +261,21 @@ export function computeSubjectStats(project, subject) {
   const teachersFound = new Set();
   const detailRows = [];
 
+  // v4: dates / periods は project 共通。自動NG も project の periods で一度だけ計算。
+  const dates = project.dates || [];
+  const periods = project.periods || [];
+  const autoNgByTeacher = computeAutoNgByTeacher(
+    project.teachers || [],
+    project.externalSessions || [],
+    periods,
+  );
+
   (project.tabs || []).forEach(tab => {
     const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
     let filled = 0;
-    // タブごとに自動NGを再計算 (period 表記がタブで異なり得るため)
-    const autoNgByTeacher = computeAutoNgByTeacher(
-      project.teachers || [],
-      project.externalSessions || [],
-      tab.config?.periods || [],
-    );
 
-    (tab.config?.dates || []).forEach(d => {
-      (tab.config?.periods || []).forEach(p => {
+    dates.forEach(d => {
+      periods.forEach(p => {
         (tab.config?.classes || []).forEach(c => {
           const e = tab.schedule?.[makeKey(d.id, p.id, c.id)];
           if (!e || e.subject !== subject) return;
@@ -438,14 +446,18 @@ export function buildTeacherWorkbook(project) {
   const allRows = [];
   const allRowSubjects = [];
 
+  // v4: dates / periods は project 共通。
+  const dates = project.dates || [];
+  const periods = project.periods || [];
+
   project.teachers.forEach(t => {
     // この講師の出勤コマを集める
     const personalRows = [];
     const personalSubjects = [];
 
     project.tabs.forEach(tab => {
-      tab.config.dates.forEach((d) => {
-        tab.config.periods.forEach((p) => {
+      dates.forEach((d) => {
+        periods.forEach((p) => {
           tab.config.classes.forEach((c) => {
             const k = makeKey(d.id, p.id, c.id);
             const entry = tab.schedule[k];

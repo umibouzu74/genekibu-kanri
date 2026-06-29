@@ -25,16 +25,17 @@ function makeProject({
   maxConsecutivePeriods,
 } = {}) {
   return {
-    version: 3,
+    version: 4,
     name: 'test',
     teachers,
     activeTabId: 1,
+    // v4: dates / periods は project 共通。
+    dates: wrapEntities(dates),
+    periods: wrapEntities(periods),
     tabs: [{
       id: 1,
       name: 'tab1',
       config: {
-        dates: wrapEntities(dates),
-        periods: wrapEntities(periods),
         classes: wrapEntities(classes),
         subjectCounts,
       },

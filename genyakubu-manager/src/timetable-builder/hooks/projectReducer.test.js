@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { projectReducer, MAX_HISTORY } from './projectReducer';
 import { makeKey, makeExternalKey, makeNgKey } from '../utils/scheduleKey';
 
-// テスト用ヘルパー: 単純な project + state を生成 (v3 schema)
+// テスト用ヘルパー: 単純な project + state を生成 (v4 schema)
+// v4: dates / periods は project 共通。fixture は従来どおり tab.config にも
+// dates / periods を残しているが (個別テストの可読性のため)、overrides 適用後に
+// tabs[0].config から project レベルへ hoist する。明示的な dates/periods
+// override も可能。
 function makeProject(overrides = {}) {
-  return {
-    version: 3,
+  const base = {
+    version: 4,
     name: 'test',
     teachers: [
       { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -27,7 +31,13 @@ function makeProject(overrides = {}) {
     externalCounts: {},
     subjects: ['英語', '数学'],
     subjectColors: {},
-    ...overrides,
+  };
+  const merged = { ...base, ...overrides };
+  const t0 = merged.tabs[0]?.config || {};
+  return {
+    ...merged,
+    dates: overrides.dates || merged.dates || t0.dates || [],
+    periods: overrides.periods || merged.periods || t0.periods || [],
   };
 }
 
@@ -989,7 +999,8 @@ describe('projectReducer — schedule 一括操作', () => {
       type: 'schedule/renameHeader',
       payload: { type: 'date', oldVal: '12/25(木)', newVal: '12/25(祝)' },
     });
-    const dateEnt = next.project.tabs[0].config.dates[0];
+    // v4: date は project レベルで rename される
+    const dateEnt = next.project.dates[0];
     expect(dateEnt).toEqual({ id: 1, label: '12/25(祝)' });
   });
 

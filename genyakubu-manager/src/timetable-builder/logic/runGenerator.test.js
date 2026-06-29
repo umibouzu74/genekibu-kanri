@@ -12,16 +12,17 @@ import { makeKey } from '../utils/scheduleKey';
 
 function makeMiniProject() {
   return {
-    version: 3,
+    version: 4,
     name: 't',
     teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     activeTabId: 1,
+    // v4: dates / periods は project 共通。
+    dates: [{ id: 1, label: '12/25(木)' }],
+    periods: [{ id: 1, label: '1限' }],
     tabs: [{
       id: 1,
       name: 'a',
       config: {
-        dates: [{ id: 1, label: '12/25(木)' }],
-        periods: [{ id: 1, label: '1限' }],
         classes: [{ id: 1, label: '３S' }],
         subjectCounts: { '英語': 1 },
       },

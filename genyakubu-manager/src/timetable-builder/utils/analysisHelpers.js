@@ -22,7 +22,9 @@ import { computeAutoNgByTeacher } from './autoNg';
 //   tabs: [{ id, schedule: { [makeKey]: { subject, teacher, ... } }, config }]
 //   combinedGroups: [{ id, subject, classes: string[], dates: string[]|null }]
 //   externalCounts: { [makeExternalKey]: number }
-export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externalSessions = []) {
+// v4: dates / periods は project 共通になったため引数で受け取る (各タブの
+// config からは消えた)。classes は従来どおり tab.config 由来。
+export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externalSessions = [], dates = [], periods = []) {
   const teacherDailyCounts = {};
   const globalUsage = {};
   const groups = combinedGroups || [];
@@ -47,8 +49,8 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
       const parsed = parseKey(key);
       if (!parsed) return;
       const { dateId, periodId, classId } = parsed;
-      const dateEnt = findEntityById(tab.config.dates, dateId);
-      const periodEnt = findEntityById(tab.config.periods, periodId);
+      const dateEnt = findEntityById(dates, dateId);
+      const periodEnt = findEntityById(periods, periodId);
       const classEnt = findEntityById(tab.config.classes, classId);
       if (!dateEnt || !periodEnt || !classEnt) return;
       const date = dateEnt.label;
@@ -189,15 +191,14 @@ export function computeDashboard(currentSchedule, currentConfig) {
 // には算入しない (重複表示防止)。
 //
 // 返り値: { [tabId: number]: count }
-export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], externalSessions = [] }) {
+export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], externalSessions = [], dates = [], periods = [] }) {
   const result = {};
+  // v4: dates / periods は project 共通。自動NG は project の periods で計算し、
+  // 各タブの実効 config (classes / subjectCounts + 共通 dates / periods) で分析する。
+  const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, periods);
   tabs.forEach(tab => {
-    // タブごとに period ラベルが違う可能性があるため (例: 中3 タブの
-    // '1限 (13:00~13:45)' vs 中1 タブの '1限 (14:00~14:45)')、
-    // 自動NG はタブごとに再計算する。一度きりの badge 計算なので
-    // ホット path ではない。
-    const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, tab.config.periods);
-    const tabAnalysis = computeActiveAnalysis(tab.config, tab.schedule, globalUsage, teachers, autoNgByTeacher);
+    const effective = { ...tab.config, dates, periods };
+    const tabAnalysis = computeActiveAnalysis(effective, tab.schedule, globalUsage, teachers, autoNgByTeacher);
     let subjectDupCount = 0;
     Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {
       if (cnt > 1) subjectDupCount += cnt - 1;
