@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -286,7 +286,7 @@ function applyAction(project, action) {
       const cleanLabels = [...new Set((labels || []).map(s => String(s).trim()).filter(Boolean))];
       const pool = project.dates || [];
       const poolByLabel = new Map(pool.map(d => [d.label, d]));
-      let nextIdNum = pool.reduce((max, d) => Math.max(max, d.id), 0) + 1;
+      let nextIdNum = nextId(pool);
       const newPool = [...pool];
       const activeIds = [];
       cleanLabels.forEach(label => {

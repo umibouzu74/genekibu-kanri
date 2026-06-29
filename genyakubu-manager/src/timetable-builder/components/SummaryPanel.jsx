@@ -110,7 +110,11 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                 {groups.map(group => {
                   const entries = group.teachers.map(t => {
                     let total = 0;
-                    currentConfig.dates.forEach(d => {
+                    // v4(Y): teacherDailyCounts は全タブ横断の集計。「全タブ合計」は
+                    // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
+                    // (project.dates) で合算しないと、他タブだけで使う日のコマが
+                    // 漏れて undercount になる。
+                    (project.dates || []).forEach(d => {
                       total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
                     });
                     return { t, total };
