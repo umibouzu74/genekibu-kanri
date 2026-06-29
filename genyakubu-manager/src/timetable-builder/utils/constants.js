@@ -1,3 +1,5 @@
+import { parseKey } from './scheduleKey';
+
 // --- デフォルト講師データ ---
 export const DEFAULT_INITIAL_TEACHERS = [
   { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -149,19 +151,22 @@ export const CURRENT_PROJECT_VERSION = 3;
 // --- スケジュールのクリーンアップ ---
 // v3: dates/periods/classes は { id, label } で、key は ID ベース。
 // config から消滅した ID を参照する schedule entry を破棄する。
+//
+// E4a: 旧実装は全 (dates × periods × classes) を展開して validKey Set を
+// 作っていた (O(D×P×C + K))。既存 schedule キーを走査して entity の存在を
+// 直接判定する方式に反転し O(D+P+C + K) に。挙動は等価 (有効キー =
+// date/period/class が全て config に存在)。
 export const cleanSchedule = (proj) => {
   const newTabs = proj.tabs.map(tab => {
+    const dateIds = new Set(tab.config.dates.map(d => d.id));
+    const periodIds = new Set(tab.config.periods.map(p => p.id));
+    const classIds = new Set(tab.config.classes.map(c => c.id));
     const newSch = {};
-    const validKeys = new Set();
-    tab.config.dates.forEach(d => {
-      tab.config.periods.forEach(p => {
-        tab.config.classes.forEach(c => {
-          validKeys.add(`d${d.id}-p${p.id}-c${c.id}`);
-        });
-      });
-    });
     Object.keys(tab.schedule).forEach(k => {
-      if (validKeys.has(k)) newSch[k] = tab.schedule[k];
+      const p = parseKey(k);
+      if (p && dateIds.has(p.dateId) && periodIds.has(p.periodId) && classIds.has(p.classId)) {
+        newSch[k] = tab.schedule[k];
+      }
     });
     return { ...tab, schedule: newSch };
   });

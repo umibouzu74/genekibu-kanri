@@ -6,7 +6,7 @@
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
 + E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
 + E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
-+ E3d (JSON schema バリデーション) 完了
++ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -736,10 +736,10 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E4. パフォーマンス / スケーラビリティ
 
-#### E4a. 🟢 cleanSchedule O(K) 化 (旧 D3a)
-- **現状**: `constants.js:cleanSchedule` は全 (dates × periods × classes) を iterate して valid key Set を作り filter。デフォルト 72、ピーク数百。
-- **改善**: 既存 schedule keys を iterate し entity 存在を即時判定する方向に反転。
-- **規模**: 小 / **価値**: 低〜中
+#### E4a. ✅ cleanSchedule O(K) 化 (2026-06-29 完了 / 旧 D3a)
+- **旧現状**: 全 (dates × periods × classes) を展開して valid key Set を作り filter (O(D×P×C + K))。
+- **実装**: date/period/class の ID Set を作り (O(D+P+C))、既存 schedule キーを `parseKey` で分解して存在判定する方向に反転 (O(D+P+C + K))。挙動は等価 (不正キーは破棄、消滅 entity 参照は破棄)。constants.js が `scheduleKey.parseKey` を import (scheduleKey 側は無 import で循環なし)。
+- **テスト**: constants.test.js に cleanSchedule の 4 ケース追加 (有効キー保持 / 消滅 entity 破棄 / 不正形式破棄 / 複数タブ独立)。
 
 #### E4b. 🟡 solver スケーリング計測 (旧 D3b)
 - **現状**: `MAX_ITERATIONS = 500_000`。何コマまでなら数秒以内に解けるか未計測。
