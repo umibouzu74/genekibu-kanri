@@ -17,6 +17,12 @@ function renderMenu({ projectOverrides = {}, ui = {} } = {}) {
   const projectValue = {
     project: { snapshots: [] },
     activeTab: { id: 1, name: 'メイン' },
+    currentSchedule: {},
+    currentConfig: {
+      dates: [{ id: 1, label: '12/25(木)' }],
+      periods: [{ id: 1, label: '1限' }],
+      classes: [{ id: 1, label: '３S' }],
+    },
     ...fns,
     ...projectOverrides,
   };
@@ -102,6 +108,45 @@ describe('SnapshotMenu', () => {
     fireEvent.click(screen.getByText('復元'));
     await Promise.resolve();
     expect(fns.applySnapshot).not.toHaveBeenCalled();
+  });
+
+  it('「🔍 差分」で現在の状態との差分パネルを表示する', () => {
+    const snapWithCell = { id: 1, name: 'A', tabId: 1, createdAt: null, schedule: { 'd1-p1-c1': { subject: '英語', teacher: '堀上' } } };
+    renderMenu({
+      projectOverrides: {
+        project: { snapshots: [snapWithCell] },
+        currentSchedule: {}, // 現在は空 → スナップショットにあった割当が消えている (removed)
+      },
+    });
+    fireEvent.click(screen.getByTitle('現在の状態を名前を付けて保存・復元'));
+    fireEvent.click(screen.getByLabelText('A と現在の状態を比較'));
+    expect(screen.getByText('－1')).toBeInTheDocument();
+    expect(screen.getByText(/12\/25\(木\) 1限 ３S: 英語\/堀上 → （空）/)).toBeInTheDocument();
+  });
+
+  it('差分が無ければ「変更なし」', () => {
+    const sameCell = { subject: '英語', teacher: '堀上' };
+    renderMenu({
+      projectOverrides: {
+        project: { snapshots: [{ id: 1, name: 'A', tabId: 1, createdAt: null, schedule: { 'd1-p1-c1': { ...sameCell } } }] },
+        currentSchedule: { 'd1-p1-c1': { ...sameCell } },
+      },
+    });
+    fireEvent.click(screen.getByTitle('現在の状態を名前を付けて保存・復元'));
+    fireEvent.click(screen.getByLabelText('A と現在の状態を比較'));
+    expect(screen.getByText('変更なし')).toBeInTheDocument();
+  });
+
+  it('もう一度「🔍 差分」を押すと差分パネルを閉じる', () => {
+    renderMenu({
+      projectOverrides: { project: { snapshots: [{ id: 1, name: 'A', tabId: 1, createdAt: null, schedule: {} }] } },
+    });
+    fireEvent.click(screen.getByTitle('現在の状態を名前を付けて保存・復元'));
+    const btn = screen.getByLabelText('A と現在の状態を比較');
+    fireEvent.click(btn);
+    expect(screen.getByText('変更なし')).toBeInTheDocument();
+    fireEvent.click(btn);
+    expect(screen.queryByText('変更なし')).not.toBeInTheDocument();
   });
 
   it('🗑️ で showConfirm → removeSnapshot を呼ぶ', async () => {

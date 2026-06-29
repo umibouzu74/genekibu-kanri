@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
+import { parseKey } from '../utils/scheduleKey';
+import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
 
 // E1c: 名前付きスナップショット。現在のタブの時間割を名前を付けて保存し、
 // あとから復元できる。undo/redo の単線履歴とは別に「試行錯誤の枝」を残す手段。
@@ -10,6 +12,8 @@ export default function SnapshotMenu() {
   const {
     project,
     activeTab,
+    currentSchedule,
+    currentConfig,
     saveSnapshot,
     applySnapshot,
     removeSnapshot,
@@ -18,6 +22,8 @@ export default function SnapshotMenu() {
   const { showInput, showConfirm, showToast } = useUI();
 
   const [open, setOpen] = useState(false);
+  // 現在の状態と差分比較中のスナップショット id (null = 比較なし)
+  const [comparingId, setComparingId] = useState(null);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -32,6 +38,11 @@ export default function SnapshotMenu() {
       window.removeEventListener('mousedown', handler);
       window.removeEventListener('keydown', onKey);
     };
+  }, [open]);
+
+  // popover を閉じたら比較状態もリセット
+  useEffect(() => {
+    if (!open) setComparingId(null);
   }, [open]);
 
   // アクティブタブのスナップショットのみ (新しい順)。
@@ -90,6 +101,30 @@ export default function SnapshotMenu() {
     return d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  // schedule key → 「日付 時限 クラス」ラベル (config から解決)
+  const keyLabel = (key) => {
+    const p = parseKey(key);
+    if (!p) return key;
+    const d = currentConfig?.dates?.find(e => e.id === p.dateId)?.label ?? `d${p.dateId}`;
+    const pe = currentConfig?.periods?.find(e => e.id === p.periodId)?.label ?? `p${p.periodId}`;
+    const c = currentConfig?.classes?.find(e => e.id === p.classId)?.label ?? `c${p.classId}`;
+    return `${d} ${pe} ${c}`;
+  };
+
+  const entryText = (e) => (e ? `${e.subject}${e.teacher ? `/${e.teacher}` : ''}` : '（空）');
+
+  // 比較中のスナップショット → 現在の状態への差分
+  const comparing = comparingId != null ? snapshots.find(s => s.id === comparingId) : null;
+  const diffs = comparing ? diffSchedules(comparing.schedule, currentSchedule) : [];
+  const diffCounts = summarizeDiff(diffs);
+  const DIFF_TYPE_STYLE = {
+    added: { mark: '＋', cls: 'text-builder-green' },
+    removed: { mark: '－', cls: 'text-builder-red' },
+    changed: { mark: '≠', cls: 'text-builder-orange' },
+  };
+
+  const toggleCompare = (id) => setComparingId(prev => (prev === id ? null : id));
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -130,40 +165,83 @@ export default function SnapshotMenu() {
               {snapshots.map((snap) => (
                 <li
                   key={snap.id}
-                  className="flex items-center gap-1.5 border border-builder-border rounded px-2 py-1.5"
+                  className="border border-builder-border rounded px-2 py-1.5"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold truncate" title={snap.name}>{snap.name}</div>
-                    {snap.createdAt && (
-                      <div className="text-[11px] text-builder-ink-muted">{fmt(snap.createdAt)}</div>
-                    )}
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate" title={snap.name}>{snap.name}</div>
+                      {snap.createdAt && (
+                        <div className="text-[11px] text-builder-ink-muted">{fmt(snap.createdAt)}</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleCompare(snap.id)}
+                      aria-pressed={comparingId === snap.id}
+                      className={`text-xs px-1.5 py-1 border rounded whitespace-nowrap ${comparingId === snap.id ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border text-builder-ink-muted hover:bg-builder-surface-alt'}`}
+                      title="現在の状態との差分を表示"
+                      aria-label={`${snap.name} と現在の状態を比較`}
+                    >
+                      🔍 差分
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApply(snap)}
+                      className="text-xs bg-builder-blue text-white px-2 py-1 rounded hover:bg-builder-blue-hover font-bold whitespace-nowrap"
+                      title="この状態に復元"
+                    >
+                      復元
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRename(snap)}
+                      className="text-xs px-1.5 py-1 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                      title="名前を変更"
+                      aria-label={`${snap.name} の名前を変更`}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(snap)}
+                      className="text-xs px-1.5 py-1 border border-builder-danger-border rounded text-builder-red hover:bg-builder-danger-soft"
+                      title="削除"
+                      aria-label={`${snap.name} を削除`}
+                    >
+                      🗑️
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleApply(snap)}
-                    className="text-xs bg-builder-blue text-white px-2 py-1 rounded hover:bg-builder-blue-hover font-bold whitespace-nowrap"
-                    title="この状態に復元"
-                  >
-                    復元
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRename(snap)}
-                    className="text-xs px-1.5 py-1 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
-                    title="名前を変更"
-                    aria-label={`${snap.name} の名前を変更`}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRemove(snap)}
-                    className="text-xs px-1.5 py-1 border border-builder-danger-border rounded text-builder-red hover:bg-builder-danger-soft"
-                    title="削除"
-                    aria-label={`${snap.name} を削除`}
-                  >
-                    🗑️
-                  </button>
+                  {comparingId === snap.id && (
+                    <div className="mt-2 pt-2 border-t border-builder-border">
+                      <div className="text-[11px] text-builder-ink-muted mb-1">
+                        このスナップショット → 現在の状態の差分:{' '}
+                        {diffCounts.total === 0 ? (
+                          <span className="text-builder-green font-bold">変更なし</span>
+                        ) : (
+                          <span className="font-bold">
+                            <span className="text-builder-green">＋{diffCounts.added}</span>{' '}
+                            <span className="text-builder-red">－{diffCounts.removed}</span>{' '}
+                            <span className="text-builder-orange">≠{diffCounts.changed}</span>
+                          </span>
+                        )}
+                      </div>
+                      {diffCounts.total > 0 && (
+                        <ul className="space-y-0.5 max-h-40 overflow-y-auto text-[11px]">
+                          {diffs.slice(0, 30).map((d) => (
+                            <li key={d.key} className="flex items-start gap-1">
+                              <span className={`font-bold ${DIFF_TYPE_STYLE[d.type].cls}`}>{DIFF_TYPE_STYLE[d.type].mark}</span>
+                              <span className="text-builder-ink-muted">
+                                {keyLabel(d.key)}: {entryText(d.before)} → {entryText(d.after)}
+                              </span>
+                            </li>
+                          ))}
+                          {diffs.length > 30 && (
+                            <li className="italic text-builder-ink-muted">他 {diffs.length - 30} 件</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

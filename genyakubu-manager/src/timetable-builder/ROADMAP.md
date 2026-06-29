@@ -2,7 +2,8 @@
 
 最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
-+ E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット) 完了
++ E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
++ E1d (スケジュール差分ビュー) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -589,10 +590,13 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: projectReducer.test.js (+10) / SnapshotMenu.test.jsx (新規 9) / Toolbar.test.jsx の mock 拡張。
 - **設計判断**: undo で戻せるが「復元」「削除」は名前付き資産の上書き/喪失なので confirm を付与。CLAUDE.md の「行動統計で UI 自動変形」禁止には抵触しない (明示的なユーザ保存のみ、自動学習なし)。
 
-#### E1d. 🟡 スケジュール差分ビュー (旧 D1e)
-- **現状**: 自動生成 N 案は集計のみ。実セル差は適用前後比較しないと見えない。
-- **改善**: A/B 案の cell-by-cell diff (色違いハイライト)。
-- **規模**: 中 / **価値**: 中
+#### E1d. ✅ スケジュール差分ビュー (2026-06-29 完了 / 旧 D1e)
+- **旧現状**: 実セル差は適用前後を見比べないと分からなかった。
+- **実装 (スナップショット比較版)**:
+  - **utils/scheduleDiff.js**: 純粋関数 `diffSchedules(from, to)` (セル単位で added / removed / changed を判定、subject+teacher のみ比較し locked は無視、空 subject は未割当扱い、null 安全) + `summarizeDiff(diffs)` (種別件数)。
+  - **UI**: SnapshotMenu の各スナップショット行に「🔍 差分」トグルを追加。押すと「このスナップショット → 現在の状態」の差分を ＋N（追加・緑）／－N（削除・赤）／≠N（変更・橙）のサマリ + セル一覧 (日付 時限 クラス: 旧→新、最大 30 件 + 他 N 件) で表示。`aria-pressed`、popover を閉じると比較状態もリセット。
+- **テスト**: scheduleDiff.test.js (新規 10) / SnapshotMenu.test.jsx (+3 比較操作)。
+- **延期**: 自動生成 N 案どうしの diff、ScheduleTable 上での直接ハイライト (rowSpan/sticky との兼ね合いで重いので別途)。
 
 #### E1e. 🟠 色覚 / コントラスト WCAG AA 準拠 (新規)
 - **現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定。「⚠️N件」の赤背景 / 「✨ OK」の緑文字 / 科目カラーが背景の薄色など、AA (4.5:1) を満たすか不明。

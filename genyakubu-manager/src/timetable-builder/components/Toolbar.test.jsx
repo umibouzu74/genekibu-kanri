@@ -56,6 +56,8 @@ function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } =
     // SnapshotMenu (Toolbar 内に同梱) が参照する最小 context。
     project: { snapshots: [] },
     activeTab: { id: 1, name: 'メイン' },
+    currentSchedule: {},
+    currentConfig: { dates: [], periods: [], classes: [] },
     saveSnapshot: vi.fn(),
     applySnapshot: vi.fn(),
     renameSnapshot: vi.fn(),
