@@ -106,6 +106,36 @@ export const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
+// --- 自動生成パラメータ (E2e) ---
+// 生成する案の数 / 講師 1 人あたり 1 日コマ数上限 / solver の探索上限。
+// project レベルに保存し、未設定時はこのデフォルトを使う。
+export const DEFAULT_NUM_PATTERNS = 3;
+export const DEFAULT_MAX_DAILY_HOURS = 6;
+export const DEFAULT_MAX_ITERATIONS = 500000;
+
+// 各パラメータの許容範囲。UI の input と reducer の両方で clamp に使う。
+export const GENERATION_PARAM_BOUNDS = {
+  numPatterns: { min: 1, max: 6 },
+  maxDailyHours: { min: 1, max: 12 },
+  maxIterations: { min: 50000, max: 5000000 },
+};
+
+// 値を許容範囲内に丸める。NaN / 非数は min にフォールバック。
+export const clampGenerationParam = (key, value) => {
+  const b = GENERATION_PARAM_BOUNDS[key];
+  if (!b) return value;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return b.min;
+  return Math.max(b.min, Math.min(b.max, n));
+};
+
+// project から有効な生成パラメータを取り出す (未設定はデフォルト + clamp)。
+export const resolveGenerationParams = (project) => ({
+  numPatterns: clampGenerationParam('numPatterns', project?.numPatterns ?? DEFAULT_NUM_PATTERNS),
+  maxDailyHours: clampGenerationParam('maxDailyHours', project?.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS),
+  maxIterations: clampGenerationParam('maxIterations', project?.maxIterations ?? DEFAULT_MAX_ITERATIONS),
+});
+
 // --- プロジェクトバージョン ---
 export const CURRENT_PROJECT_VERSION = 3;
 

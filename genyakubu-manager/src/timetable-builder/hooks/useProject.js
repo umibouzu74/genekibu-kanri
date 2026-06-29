@@ -111,6 +111,12 @@ export function useProject() {
     dispatch({ type: 'project/updateName', payload: { name } });
   }, [dispatch]);
 
+  // --- 自動生成パラメータ (E2e) ---
+  // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
+  const updateGenerationParams = useCallback((updates) => {
+    dispatch({ type: 'project/setGenerationParams', payload: updates });
+  }, [dispatch]);
+
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group) => {
     dispatch({ type: 'combinedGroup/add', payload: { group } });
@@ -164,6 +170,8 @@ export function useProject() {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    // 自動生成パラメータ
+    updateGenerationParams,
     // 合同グループ
     addCombinedGroup,
     updateCombinedGroup,

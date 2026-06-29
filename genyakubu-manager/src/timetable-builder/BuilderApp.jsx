@@ -13,13 +13,14 @@ import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import { STORAGE_KEY_ONBOARDING_SEEN } from './utils/constants';
-
-const NUM_PATTERNS = 3;
+import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
 
 function ScheduleApp() {
   const { project, undo, redo, loadError } = useProjectContext();
   const { showToast } = useUI();
+
+  // 自動生成の案の数はユーザ設定 (project.numPatterns) を尊重 (E2e)。
+  const NUM_PATTERNS = resolveGenerationParams(project).numPatterns;
 
   useEffect(() => {
     const base = '時間割作成くん';
@@ -154,7 +155,21 @@ function ScheduleApp() {
       setIsGenerating(false);
       generationRef.current = null;
     });
-  }, [project, showToast]);
+  }, [project, showToast, NUM_PATTERNS]);
+
+  // ユーザ操作による生成キャンセル。worker を止め、done.then の state 更新を
+  // skip させてから isGenerating を解除する。既存セルはそのまま残す。
+  const handleCancelGenerate = useCallback(() => {
+    const handle = generationRef.current;
+    if (!handle) return;
+    // generationRef を先に null にすると done.then の guard
+    // (generationRef.current !== handle) が真になり state 更新が skip される。
+    generationRef.current = null;
+    handle.cancel();
+    setIsGenerating(false);
+    setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    showToast('自動作成を中止しました', 'warning', 2000);
+  }, [showToast, NUM_PATTERNS]);
 
   // アンマウント時に進行中の生成をキャンセル (リーク防止)
   useEffect(() => {
@@ -198,6 +213,7 @@ function ScheduleApp() {
           isGenerating={isGenerating}
           generateProgress={generateProgress}
           onGenerate={handleGenerate}
+          onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
         />
 

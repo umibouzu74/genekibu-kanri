@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: 自動生成の操作性向上 — E2e / E2f-cancel / E2h)
+「🧙‍♂️ 自動作成」周りの操作性を底上げ。これまでハードコードだった生成
+パラメータを設定可能にし、生成の中止と採用案の比較を支援する。
+
+- **生成パラメータの UI 化** (`ConfigModal`「⚡ 自動生成」タブ / E2e):
+  「生成する案の数」「講師 1 人の 1 日コマ数上限」「探索回数の上限」を
+  number input + スライダーで調整可能に。`project.numPatterns /
+  maxDailyHours / maxIterations` に保存し、`resolveGenerationParams` /
+  `clampGenerationParam` で範囲外値を防御。reducer は
+  `project/setGenerationParams` で部分更新。
+- **自動生成の中止ボタン** (Toolbar / E2f 一部): 生成中に「✕ 中止」を
+  表示。worker を止めて既存セルは保持したまま中断できる。
+- **生成案の負荷偏り表示** (`SummaryPanel` / E2h): 各案の集計に
+  「最多 / 最少 / 偏り」を中立表示 (`summarizePatternLoad`)。完全解どうしを
+  講師コマ数の均等さで比較して採用案を選べる。
+- **テスト**: constants / patternLoad / GenerationSettings を新規追加、
+  projectReducer / autoGenerator / Toolbar に追記 (計 +32 件、全 1257 件 pass)。
+
 ### Changed (回数カウントを「コース」単位に整合 + コホートUI改善)
 コース別終講日のレビューで判明した「終講日コホート」と「回数カウント
 (授業セット)」の二重管理を整理。ClassSet 未登録だと 高1・2 の英数 (週2) が

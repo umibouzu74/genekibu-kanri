@@ -4,7 +4,7 @@ import {
   propagateAssignment,
   propagateTeacherChange,
 } from '../utils/combinedPropagation';
-import { cleanSchedule } from '../utils/constants';
+import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 
 // プロジェクト状態の遷移を一元化する pure reducer。
 //
@@ -825,6 +825,22 @@ function applyAction(project, action) {
     // ─── プロジェクト全体 ────────────────
     case 'project/updateName': {
       return { ...project, name: action.payload.name };
+    }
+    case 'project/setGenerationParams': {
+      // 自動生成パラメータ (numPatterns / maxDailyHours / maxIterations) を
+      // 部分更新する。渡されたキーのみ clamp して反映 (未指定は据え置き)。
+      const updates = action.payload || {};
+      const next = { ...project };
+      let changed = false;
+      for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations']) {
+        if (updates[key] === undefined) continue;
+        const clamped = clampGenerationParam(key, updates[key]);
+        if (next[key] !== clamped) {
+          next[key] = clamped;
+          changed = true;
+        }
+      }
+      return changed ? next : project;
     }
     case 'project/replace': {
       // JSON 読込で project 全体を差し替える (cleanSchedule 済みのものを渡す前提)

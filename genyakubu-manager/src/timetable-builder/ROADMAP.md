@@ -1,7 +1,8 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
-+ D-Test foundation (D2a + D2b + D4e) 完了
+最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
++ D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
++ E2h (生成案の負荷偏り表示) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -636,15 +637,27 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: テンプレ保存・適用、「講師マスタだけ引き継ぎ」「スケジュールだけ引き継ぎ」等の options。
 - **規模**: 中 / **価値**: 中
 
-#### E2e. 🟡 生成パラメータ UI 化 (新規)
-- **現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。
-- **改善**: ConfigModal に「自動生成」タブを追加し、3 つを slider / number input で。advanced ユーザ向け折りたたみで OK。
-- **規模**: 小〜中 / **価値**: 中
+#### E2e. ✅ 生成パラメータ UI 化 (2026-06-29 完了)
+- **旧現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。
+- **実装**:
+  - **constants.js**: 3 パラメータのデフォルト (`DEFAULT_NUM_PATTERNS` / `DEFAULT_MAX_DAILY_HOURS` / `DEFAULT_MAX_ITERATIONS`) と許容範囲 `GENERATION_PARAM_BOUNDS`、`clampGenerationParam(key, value)` (NaN→min, 四捨五入, clamp)、`resolveGenerationParams(project)` を追加。autoGenerator.js のローカル定数はこれを import する形に統一。
+  - **autoGenerator.js**: `generateSinglePattern` が `project.maxIterations ?? MAX_ITERATIONS` を読み、`solve` の探索上限に反映。`generateSchedule` の numPatterns デフォルトも定数化。
+  - **reducer**: `project/setGenerationParams` action (部分更新 + clamp + 値不変なら同一参照 no-op)。`useProject.updateGenerationParams({ numPatterns?, maxDailyHours?, maxIterations? })` で公開。
+  - **BuilderApp**: `NUM_PATTERNS` を `resolveGenerationParams(project).numPatterns` に。
+  - **GenerationSettings.jsx**: ConfigModal に「⚡ 自動生成」タブを新設。number input + range slider + 説明文 + 「既定値に戻す」。
+- **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
+- **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (新規)
-- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」が不可視。
-- **改善**: Worker から進捗イベントを増やし、Toolbar の進捗ボタンクリックで「詳細パネル」を出す。長時間生成時の cancel 判断材料に。
+#### E2f. 🟡 自動生成中の進捗詳細 (一部完了 — cancel 2026-06-29)
+- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」は依然不可視。
+- **✅ 完了分 (cancel)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
+- **残り**: Worker から進捗イベントを増やし、進捗ボタンクリックで「詳細パネル」(詰まっているセル / backtrack 回数 / 経過時間)。
 - **規模**: 中 / **価値**: 中 (大規模 project で生成時間が読めない問題の解消)
+
+#### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
+- **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
+- **実装**: `utils/patternLoad.js` の純粋関数 `summarizePatternLoad(totals)` (最多 / 最少 / spread / teacherCount、0 コマ除外、null 安全)。SummaryPanel の各案集計ヘッダに「最多 X / 最少 Y (偏り Z)」を中立表示 (spread 0 は緑)。「最良」の自動判定はしない (priorityClasses 等で意図的に偏らせるケースがあるため)。
+- **テスト**: patternLoad.test.js 新規 6 件。
 
 #### E2g. ⚪ 履歴ブランチング (新規)
 - **現状**: undo/redo は単線。新しい操作をすると redo 履歴は破棄される (一般的な動作)。

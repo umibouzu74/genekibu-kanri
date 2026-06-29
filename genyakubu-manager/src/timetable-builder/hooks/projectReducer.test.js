@@ -1078,6 +1078,60 @@ describe('projectReducer — project 全体操作', () => {
     expect(next.history).toHaveLength(2);
   });
 
+  it('project/setGenerationParams: 渡したキーのみ更新する', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { numPatterns: 5 },
+    });
+    expect(next.project.numPatterns).toBe(5);
+    // 未指定のキーは付与されない
+    expect(next.project.maxDailyHours).toBeUndefined();
+    expect(next.project.maxIterations).toBeUndefined();
+    // history に積まれる
+    expect(next.history).toHaveLength(2);
+  });
+
+  it('project/setGenerationParams: 複数キーを同時更新する', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { numPatterns: 2, maxDailyHours: 8, maxIterations: 100000 },
+    });
+    expect(next.project.numPatterns).toBe(2);
+    expect(next.project.maxDailyHours).toBe(8);
+    expect(next.project.maxIterations).toBe(100000);
+  });
+
+  it('project/setGenerationParams: 範囲外の値は clamp される', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { numPatterns: 99, maxDailyHours: 0, maxIterations: 10 },
+    });
+    expect(next.project.numPatterns).toBe(6); // max 6
+    expect(next.project.maxDailyHours).toBe(1); // min 1
+    expect(next.project.maxIterations).toBe(50000); // min 50000
+  });
+
+  it('project/setGenerationParams: 値が変わらなければ no-op (同一参照)', () => {
+    const state = makeState({ numPatterns: 3 });
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { numPatterns: 3 },
+    });
+    expect(next).toBe(state);
+  });
+
+  it('project/setGenerationParams: 空 payload は no-op', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: {},
+    });
+    expect(next).toBe(state);
+  });
+
   it('project/reset: project を差し替え、history を初期化、loadError をクリア', () => {
     // 履歴を伸ばしてから reset すると history が 1 件に戻る
     let state = makeState();

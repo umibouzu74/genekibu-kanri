@@ -3,6 +3,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
+import { summarizePatternLoad } from '../utils/patternLoad';
 
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
@@ -16,9 +17,24 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   // Object.entries(totals) で自動的に列挙されていたので、その feedback を維持)。
   const knownNames = new Set((teachers || []).map(t => t.name));
   const orphanNames = Object.keys(totals).filter(n => !knownNames.has(n) && (totals[n] || 0) > 0);
+  // 講師コマ数の偏り (採用案を選ぶ際の判断材料)。spread が小さいほど均等。
+  const load = summarizePatternLoad(totals);
   return (
     <div className="bg-builder-surface p-4 border border-builder-border rounded">
-      <h3 className="font-bold mb-2 text-builder-ink">📊 この案の集計</h3>
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h3 className="font-bold text-builder-ink">📊 この案の集計</h3>
+        {load.teacherCount > 0 && (
+          <span
+            className="text-[11px] text-builder-ink-muted whitespace-nowrap"
+            title="講師ごとのコマ数の最多・最少とその差。差が小さいほど均等な配分です。"
+          >
+            最多 {load.max} / 最少 {load.min}
+            <span className={load.spread === 0 ? 'text-builder-green font-bold ml-1' : 'ml-1'}>
+              (偏り {load.spread})
+            </span>
+          </span>
+        )}
+      </div>
       <div className="flex flex-col gap-1">
         {groups.map(group => (
           <Fragment key={group.key}>

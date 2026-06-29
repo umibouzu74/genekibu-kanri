@@ -12,6 +12,7 @@ export default function Toolbar({
   isGenerating,
   generateProgress,
   onGenerate,
+  onCancelGenerate,
   onShowHelp,
 }) {
   const {
@@ -233,6 +234,15 @@ export default function Toolbar({
             </>
           ) : "🧙‍♂️ 自動作成"}
         </button>
+        {isGenerating && onCancelGenerate && (
+          <button
+            onClick={onCancelGenerate}
+            className="flex items-center gap-1 px-3 py-2 bg-builder-danger-soft text-builder-red border border-builder-danger-border rounded hover:bg-builder-danger-border shadow-sm text-sm font-bold"
+            title="自動作成を中止する"
+          >
+            ✕ 中止
+          </button>
+        )}
       </div>
     </div>
   );

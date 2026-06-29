@@ -19,6 +19,11 @@ import {
   hasTeacherInSamePeriod,
   hasSubjectQuotaRemaining,
 } from './constraints/scheduleConstraints';
+import {
+  DEFAULT_MAX_DAILY_HOURS as CONST_DEFAULT_MAX_DAILY_HOURS,
+  DEFAULT_MAX_ITERATIONS as CONST_DEFAULT_MAX_ITERATIONS,
+  DEFAULT_NUM_PATTERNS as CONST_DEFAULT_NUM_PATTERNS,
+} from '../utils/constants';
 
 // シード付き疑似乱数生成器 (Mulberry32)
 function mulberry32(seed) {
@@ -41,13 +46,14 @@ function seededShuffle(arr, rng) {
   return a;
 }
 
-const MAX_ITERATIONS = 500000;
+// solver の探索上限のデフォルト。project.maxIterations で上書き可。
+const MAX_ITERATIONS = CONST_DEFAULT_MAX_ITERATIONS;
 
 // 講師 1 人あたりの 1 日コマ数上限のデフォルト。
 // externalCounts (他タブ・他学年での既存コマ数) + 当該タブの割当 + 既存セル
 // の合計がこの値を超える講師は候補から外す。
 // project.maxDailyHours で上書き可。
-const DEFAULT_MAX_DAILY_HOURS = 6;
+const DEFAULT_MAX_DAILY_HOURS = CONST_DEFAULT_MAX_DAILY_HOURS;
 
 // 講師の名前のうち daily 上限の対象外とするもの (placeholder)。
 const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
@@ -64,6 +70,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
+  const maxIterations = project.maxIterations ?? MAX_ITERATIONS;
 
   // 自動NG (他学年セッションと時限の時間重複から派生) を pre-compute。
   // solver の NG 判定でも手動NGと同等に扱う。
@@ -164,7 +171,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   let bestFilledCount = -1;
 
   const solve = (idx, tempSch, tempCnt, tempDaily, iter = { c: 0 }) => {
-    if (iter.c++ > MAX_ITERATIONS || solution !== null) return;
+    if (iter.c++ > maxIterations || solution !== null) return;
 
     // 部分解の更新（現在の充填度が最高なら保存）
     if (idx > bestFilledCount) {
@@ -356,7 +363,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
  * 複数パターンを生成する（後方互換のためのラッパー）
  * onProgress コールバックで進捗を通知可能
  */
-export function generateSchedule({ project, activeTabId, numPatterns = 3 }) {
+export function generateSchedule({ project, activeTabId, numPatterns = CONST_DEFAULT_NUM_PATTERNS }) {
   const results = [];
   const baseSeed = Date.now();
 

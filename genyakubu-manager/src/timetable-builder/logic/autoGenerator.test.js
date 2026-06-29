@@ -21,6 +21,7 @@ function makeProject({
   schedule = {},
   externalCounts = {},
   maxDailyHours,
+  maxIterations,
 } = {}) {
   return {
     version: 3,
@@ -43,6 +44,7 @@ function makeProject({
     subjects: Object.keys(subjectCounts),
     subjectColors: {},
     ...(maxDailyHours !== undefined ? { maxDailyHours } : {}),
+    ...(maxIterations !== undefined ? { maxIterations } : {}),
   };
 }
 
@@ -98,6 +100,38 @@ describe('generateSinglePattern — 基本動作', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).toBeNull();
     expect(r.totalSlots).toBe(1);
+  });
+});
+
+// ─── 探索上限 (maxIterations) のテスト ───────────────────────────────
+
+describe('generateSinglePattern — project.maxIterations', () => {
+  // 複数スロットの解ける問題を用意。十分な探索上限なら解け、
+  // 上限を極端に小さくすると解に到達できず solution が null になる。
+  // 別日に英語 2 コマ (同日同科目の禁止に抵触しない) → 解けるが
+  // 解到達には複数回の再帰が必要なので maxIterations の効きを検証できる。
+  const makeMultiSlot = (maxIterations) => makeProject({
+    teachers: [teacher('堀上', ['英語'])],
+    dates: ['12/25(木)', '12/26(金)'],
+    subjectCounts: { '英語': 2 },
+    maxIterations,
+  });
+
+  it('探索上限を超えると solution に到達できない (null + 部分解)', () => {
+    const r = generateSinglePattern({ project: makeMultiSlot(1), activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.totalSlots).toBe(2);
+  });
+
+  it('上限が十分なら同じ問題でも解ける', () => {
+    const r = generateSinglePattern({ project: makeMultiSlot(500000), activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(Object.keys(r.solution)).toHaveLength(2);
+  });
+
+  it('未指定ならデフォルト上限で解ける', () => {
+    const r = generateSinglePattern({ project: makeMultiSlot(undefined), activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
   });
 });
 

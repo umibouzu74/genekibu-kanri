@@ -265,6 +265,20 @@ describe('Toolbar', () => {
     expect(genBtn).toBeDisabled();
   });
 
+  it('生成中かつ onCancelGenerate ありで「✕ 中止」ボタンを表示し、クリックで呼ぶ', () => {
+    const onCancelGenerate = vi.fn();
+    renderToolbar({ props: { isGenerating: true, generateProgress: { current: 1, total: 3 }, onCancelGenerate } });
+    const cancelBtn = screen.getByTitle('自動作成を中止する');
+    expect(cancelBtn).toBeInTheDocument();
+    fireEvent.click(cancelBtn);
+    expect(onCancelGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('生成中でなければ「✕ 中止」ボタンは描画しない', () => {
+    renderToolbar({ props: { isGenerating: false, onCancelGenerate: vi.fn() } });
+    expect(screen.queryByTitle('自動作成を中止する')).not.toBeInTheDocument();
+  });
+
   it('onShowHelp が渡されると ❓ヘルプ ボタンを表示し、クリックで呼ぶ', () => {
     const onShowHelp = vi.fn();
     renderToolbar({ props: { onShowHelp } });
