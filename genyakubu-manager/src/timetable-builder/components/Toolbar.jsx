@@ -24,8 +24,28 @@ export default function Toolbar({
     undo,
     redo,
     handleClearUnlocked,
+    project,
+    toggleTeacherNg,
+    updateGenerationParams,
   } = useProjectContext();
-  const { showConfirm } = useUI();
+  const { showConfirm, showToast } = useUI();
+
+  // E2b: 修正提案のワンクリック適用。action 種別ごとに対応する dispatch を呼ぶ。
+  const applyFix = (action) => {
+    if (!action) return;
+    if (action.type === 'releaseNg') {
+      const idx = (project?.teachers || []).findIndex(t => t.name === action.teacherName);
+      if (idx < 0) {
+        showToast?.('対象の講師が見つかりません', 'error', 3000);
+        return;
+      }
+      toggleTeacherNg?.(idx, action.date, action.period);
+      showToast?.(`${action.teacherName} の ${action.date} ${action.period} の NG を解除しました`, 'success', 2500);
+    } else if (action.type === 'setMaxDaily') {
+      updateGenerationParams?.({ maxDailyHours: action.value });
+      showToast?.(`1日コマ数上限を ${action.value} に変更しました`, 'success', 2500);
+    }
+  };
   const { violations, infeasibilities } = analysis;
   const infeasItems = [
     ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
@@ -208,7 +228,15 @@ export default function Toolbar({
                                 {it.suggestions.map((s, j) => (
                                   <li key={j} className="text-builder-blue flex items-start gap-1">
                                     <span aria-hidden="true">💡</span>
-                                    <span>{s}</span>
+                                    <span className="flex-1">{s.text}</span>
+                                    {s.action && (
+                                      <button
+                                        type="button"
+                                        onClick={() => applyFix(s.action)}
+                                        className="ml-1 px-1.5 py-0.5 border border-builder-blue rounded text-builder-blue hover:bg-builder-info-soft whitespace-nowrap"
+                                        title="この修正を適用する"
+                                      >適用</button>
+                                    )}
                                   </li>
                                 ))}
                               </ul>

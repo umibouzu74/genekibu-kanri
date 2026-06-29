@@ -54,7 +54,7 @@ function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } =
     redo: vi.fn(),
     handleClearUnlocked: vi.fn(),
     // SnapshotMenu (Toolbar 内に同梱) が参照する最小 context。
-    project: { snapshots: [] },
+    project: { snapshots: [], teachers: [] },
     activeTab: { id: 1, name: 'メイン' },
     currentSchedule: {},
     currentConfig: { dates: [], periods: [], classes: [] },
@@ -62,6 +62,9 @@ function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } =
     applySnapshot: vi.fn(),
     renameSnapshot: vi.fn(),
     removeSnapshot: vi.fn(),
+    // E2b: 修正提案のワンクリック適用が参照する。
+    toggleTeacherNg: vi.fn(),
+    updateGenerationParams: vi.fn(),
     ...restProjectOverrides,
   };
   const uiValue = {
@@ -344,7 +347,10 @@ describe('Toolbar', () => {
               count: 1,
               items: [{
                 date: '12/25', period: '1限', subject: '英語',
-                suggestions: ['12/25 1限 の NG を解除する: 堀上', '別の時限なら担当可能: 2限'],
+                suggestions: [
+                  { text: '堀上 の 12/25 1限 の NG を解除', action: { type: 'releaseNg', teacherName: '堀上', date: '12/25', period: '1限' } },
+                  { text: '別の時限なら担当可能: 2限' },
+                ],
               }],
             },
             subjectCapacityShortage: { count: 0, items: [] },
@@ -353,8 +359,57 @@ describe('Toolbar', () => {
       },
     });
     fireEvent.click(screen.getByText(/⚠️ 1件/));
-    expect(screen.getByText('12/25 1限 の NG を解除する: 堀上')).toBeInTheDocument();
+    expect(screen.getByText('堀上 の 12/25 1限 の NG を解除')).toBeInTheDocument();
     expect(screen.getByText('別の時限なら担当可能: 2限')).toBeInTheDocument();
+  });
+
+  it('修正提案の「適用」で releaseNg → toggleTeacherNg を呼ぶ (E2b)', () => {
+    const toggleTeacherNg = vi.fn();
+    renderToolbar({
+      projectOverrides: {
+        project: { snapshots: [], teachers: [{ name: '堀上' }, { name: '石原' }] },
+        toggleTeacherNg,
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: {
+              count: 1,
+              items: [{
+                date: '12/25', period: '1限', subject: '英語',
+                suggestions: [{ text: '堀上 の NG を解除', action: { type: 'releaseNg', teacherName: '堀上', date: '12/25', period: '1限' } }],
+              }],
+            },
+            subjectCapacityShortage: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    fireEvent.click(screen.getByTitle('この修正を適用する'));
+    expect(toggleTeacherNg).toHaveBeenCalledWith(0, '12/25', '1限');
+  });
+
+  it('修正提案の「適用」で setMaxDaily → updateGenerationParams を呼ぶ (E2b)', () => {
+    const updateGenerationParams = vi.fn();
+    renderToolbar({
+      projectOverrides: {
+        updateGenerationParams,
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: { count: 0, items: [] },
+            subjectCapacityShortage: {
+              count: 1,
+              items: [{
+                subject: '英語', demand: 50, capacity: 36, teacherCount: 1,
+                suggestions: [{ text: '1日コマ数上限を 6 → 9 に上げる', action: { type: 'setMaxDaily', value: 9 } }],
+              }],
+            },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    fireEvent.click(screen.getByTitle('この修正を適用する'));
+    expect(updateGenerationParams).toHaveBeenCalledWith({ maxDailyHours: 9 });
   });
 
   it('infeasibilities 単独 (violations は全 0) でも popover が開く', () => {

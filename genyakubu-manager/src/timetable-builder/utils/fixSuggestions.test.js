@@ -7,41 +7,48 @@ const config = {
   periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
   classes: [{ id: 1, label: 'A' }],
 };
+const texts = (arr) => arr.map(s => s.text);
 
 describe('suggestForNoTeacher', () => {
-  it('担当できる講師が居ない場合は登録を促す', () => {
+  it('担当できる講師が居ない場合は登録を促す (action なし)', () => {
     const out = suggestForNoTeacher(
       { date: '12/25', period: '1限', subject: '数学' },
       { currentConfig: config, teachers: [teacher('堀上', ['英語'])] },
     );
     expect(out).toHaveLength(1);
-    expect(out[0]).toContain('担当できる講師が居ません');
+    expect(out[0].text).toContain('担当できる講師が居ません');
+    expect(out[0].action).toBeUndefined();
   });
 
-  it('手動 NG の講師が居れば NG 解除を提案 (名前入り)', () => {
+  it('手動 NG の講師は releaseNg アクション付きで提案 (名前入り)', () => {
     const out = suggestForNoTeacher(
       { date: '12/25', period: '1限', subject: '英語' },
       { currentConfig: config, teachers: [teacher('堀上', ['英語'], ['12/25-1限'])] },
     );
-    expect(out.some(s => s.includes('NG を解除') && s.includes('堀上'))).toBe(true);
+    const ng = out.find(s => s.action?.type === 'releaseNg');
+    expect(ng).toBeTruthy();
+    expect(ng.text).toContain('堀上');
+    expect(ng.action).toEqual({ type: 'releaseNg', teacherName: '堀上', date: '12/25', period: '1限' });
   });
 
-  it('別の時限で担当可能なら移動を提案', () => {
+  it('別の時限で担当可能なら移動を提案 (action なしのヒント)', () => {
     const out = suggestForNoTeacher(
       { date: '12/25', period: '1限', subject: '英語' },
       { currentConfig: config, teachers: [teacher('堀上', ['英語'], ['12/25-1限'])] },
     );
-    expect(out.some(s => s.includes('別の時限') && s.includes('2限'))).toBe(true);
+    const alt = out.find(s => s.text.includes('別の時限'));
+    expect(alt).toBeTruthy();
+    expect(alt.text).toContain('2限');
+    expect(alt.action).toBeUndefined();
   });
 
   it('自動 NG も考慮する (autoNgByTeacher)', () => {
-    // 堀上は 1限 手動 NG、2限 は自動 NG → 移動先候補が無くなる
     const autoNg = new Map([['堀上', new Set(['12/25-2限'])]]);
     const out = suggestForNoTeacher(
       { date: '12/25', period: '1限', subject: '英語' },
       { currentConfig: config, teachers: [teacher('堀上', ['英語'], ['12/25-1限'])], autoNgByTeacher: autoNg },
     );
-    expect(out.some(s => s.includes('別の時限'))).toBe(false);
+    expect(out.some(s => s.text.includes('別の時限'))).toBe(false);
   });
 
   it('「未定」は担当候補に数えない', () => {
@@ -49,19 +56,21 @@ describe('suggestForNoTeacher', () => {
       { date: '12/25', period: '1限', subject: '数学' },
       { currentConfig: config, teachers: [teacher('未定', ['英語', '数学'])] },
     );
-    expect(out[0]).toContain('担当できる講師が居ません');
+    expect(out[0].text).toContain('担当できる講師が居ません');
   });
 });
 
 describe('suggestForCapacity', () => {
-  it('講師を増やす / 上限を上げる / コマ数を減らす を提案', () => {
+  it('講師を増やす / 上限を上げる(適用可) / コマ数を減らす を提案', () => {
     const out = suggestForCapacity(
       { subject: '英語', demand: 50, capacity: 36, teacherCount: 1 },
       { currentConfig: { ...config, dates: [1, 2, 3, 4, 5, 6].map(id => ({ id, label: `d${id}` })) }, maxDailyHours: 6 },
     );
-    expect(out.some(s => s.includes('あと 1 名'))).toBe(true);
-    expect(out.some(s => s.includes('1日コマ数上限を 6 → 9'))).toBe(true);
-    expect(out.some(s => s.includes('コマ数を減らす'))).toBe(true);
+    expect(texts(out).some(t => t.includes('あと 1 名'))).toBe(true);
+    const setMax = out.find(s => s.action?.type === 'setMaxDaily');
+    expect(setMax.text).toContain('1日コマ数上限を 6 → 9');
+    expect(setMax.action).toEqual({ type: 'setMaxDaily', value: 9 });
+    expect(texts(out).some(t => t.includes('コマ数を減らす'))).toBe(true);
   });
 
   it('teacherCount 0 でも落ちず、コマ数削減は提案する', () => {
@@ -69,7 +78,7 @@ describe('suggestForCapacity', () => {
       { subject: '理科', demand: 10, capacity: 0, teacherCount: 0 },
       { currentConfig: config, maxDailyHours: 6 },
     );
-    expect(out.some(s => s.includes('コマ数を減らす'))).toBe(true);
+    expect(texts(out).some(t => t.includes('コマ数を減らす'))).toBe(true);
   });
 });
 
@@ -83,7 +92,6 @@ describe('buildFixSuggestions', () => {
     const out = buildFixSuggestions(infeas, { currentConfig: config, teachers: [teacher('堀上', ['英語'])], maxDailyHours: 6 });
     expect(out.noTeacherForSlot.items[0].suggestions.length).toBeGreaterThan(0);
     expect(out.subjectCapacityShortage.items[0].suggestions.length).toBeGreaterThan(0);
-    // count はそのまま
     expect(out.noTeacherForSlot.count).toBe(1);
   });
 
