@@ -112,12 +112,15 @@ export const toCircleNum = (num) => {
 export const DEFAULT_NUM_PATTERNS = 3;
 export const DEFAULT_MAX_DAILY_HOURS = 6;
 export const DEFAULT_MAX_ITERATIONS = 500000;
+// 講師の連続コマ数上限 (E2c)。0 = 制限なし (既定で従来挙動を維持)。
+export const DEFAULT_MAX_CONSECUTIVE_PERIODS = 0;
 
 // 各パラメータの許容範囲。UI の input と reducer の両方で clamp に使う。
 export const GENERATION_PARAM_BOUNDS = {
   numPatterns: { min: 1, max: 6 },
   maxDailyHours: { min: 1, max: 12 },
   maxIterations: { min: 50000, max: 5000000 },
+  maxConsecutivePeriods: { min: 0, max: 8 },
 };
 
 // 値を許容範囲内に丸める。NaN / 非数は min にフォールバック。
@@ -134,6 +137,7 @@ export const resolveGenerationParams = (project) => ({
   numPatterns: clampGenerationParam('numPatterns', project?.numPatterns ?? DEFAULT_NUM_PATTERNS),
   maxDailyHours: clampGenerationParam('maxDailyHours', project?.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS),
   maxIterations: clampGenerationParam('maxIterations', project?.maxIterations ?? DEFAULT_MAX_ITERATIONS),
+  maxConsecutivePeriods: clampGenerationParam('maxConsecutivePeriods', project?.maxConsecutivePeriods ?? DEFAULT_MAX_CONSECUTIVE_PERIODS),
 });
 
 // --- プロジェクトバージョン ---

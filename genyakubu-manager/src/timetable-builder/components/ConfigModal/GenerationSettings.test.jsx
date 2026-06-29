@@ -7,6 +7,7 @@ import {
   DEFAULT_NUM_PATTERNS,
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
+  DEFAULT_MAX_CONSECUTIVE_PERIODS,
 } from '../../utils/constants';
 
 afterEach(cleanup);
@@ -41,6 +42,13 @@ describe('GenerationSettings', () => {
     expect(updateGenerationParams).toHaveBeenCalledWith({ numPatterns: 4 });
   });
 
+  it('連続コマ数上限の入力 (E2c) で updateGenerationParams を呼ぶ', () => {
+    const { updateGenerationParams } = renderPanel({ maxConsecutivePeriods: 0 });
+    expect(screen.getByLabelText('講師の連続コマ数上限')).toHaveValue(0);
+    fireEvent.change(screen.getByLabelText('講師の連続コマ数上限'), { target: { value: '3' } });
+    expect(updateGenerationParams).toHaveBeenCalledWith({ maxConsecutivePeriods: 3 });
+  });
+
   it('スライダーの変更でも updateGenerationParams を呼ぶ', () => {
     const { updateGenerationParams } = renderPanel({});
     fireEvent.change(screen.getByLabelText('講師 1 人の 1 日コマ数上限 (スライダー)'), {
@@ -62,6 +70,7 @@ describe('GenerationSettings', () => {
       numPatterns: DEFAULT_NUM_PATTERNS,
       maxDailyHours: DEFAULT_MAX_DAILY_HOURS,
       maxIterations: DEFAULT_MAX_ITERATIONS,
+      maxConsecutivePeriods: DEFAULT_MAX_CONSECUTIVE_PERIODS,
     });
   });
 });

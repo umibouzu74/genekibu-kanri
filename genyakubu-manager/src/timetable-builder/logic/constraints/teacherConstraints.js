@@ -39,6 +39,23 @@ export function wouldExceedDailyLimit({
   return (tempDaily[dayKey] || 0) + 1 > maxDailyHours;
 }
 
+// 講師にこのコマ (date, period) を足すと「連続コマ数」が上限を超えるか (E2c)。
+// periodsOrder は config.periods (表示順の配列)。isOccupied(periodId) は
+// 「その日のその時限に当該講師が既に割り当て済みか」を返すコールバック。
+// maxConsecutive が 0 以下 / 未設定なら制約なし (false)。
+export function wouldExceedConsecutive({ periodsOrder, periodId, isOccupied, maxConsecutive }) {
+  if (!maxConsecutive || maxConsecutive <= 0) return false;
+  const order = (periodsOrder || []).map(p => p.id);
+  const placeIdx = order.indexOf(periodId);
+  if (placeIdx < 0) return false;
+  // 今置こうとしている placeIdx は埋まる前提。それ以外は isOccupied で判定。
+  const occ = (i) => i === placeIdx || isOccupied(order[i]);
+  let run = 1;
+  for (let i = placeIdx - 1; i >= 0 && occ(i); i--) run++;
+  for (let i = placeIdx + 1; i < order.length && occ(i); i++) run++;
+  return run > maxConsecutive;
+}
+
 // 講師が候補として有効か (subject + NG slot + NG class + 合同先 NG class)。
 // validT のフィルタリングを共通化したもの。
 // secondaryClassNames は合同グループ secondary のクラス名配列 (なければ [])。

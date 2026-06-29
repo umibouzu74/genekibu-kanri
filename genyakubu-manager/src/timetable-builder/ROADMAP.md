@@ -4,7 +4,7 @@
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
-+ E1g (エラー時の修正提案) 完了
++ E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -641,10 +641,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: conflict 1 件ごとに「この講師を別の日へ」「この科目を別クラスへ」のような提案 → 適用 / スキップ / カスタム編集の選択 UI。
 - **規模**: 大 / **価値**: 中 (制約緩和の意思決定 UI 設計が必要)
 
-#### E2c. 🟡 講師の連続コマ数制約 (旧 D6c)
-- **現状**: 1 日合計 `maxDailyHours` のみ。「2 コマ連続 NG」「3 コマ連続後は休憩」等の連続性制約は無い。
-- **改善**: teacherConstraints に追加。constraint check を増やすので solver の探索空間も増える。
-- **規模**: 中 / **価値**: 中
+#### E2c. ✅ 講師の連続コマ数制約 (2026-06-29 完了 / 旧 D6c)
+- **旧現状**: 1 日合計 `maxDailyHours` のみ。連続性の制約は無かった。
+- **実装**:
+  - **teacherConstraints**: 純粋関数 `wouldExceedConsecutive({ periodsOrder, periodId, isOccupied, maxConsecutive })`。置こうとする時限を含む連続ランの長さが上限を超えるか判定。`maxConsecutive <= 0` は制限なし。
+  - **autoGenerator**: solver の daily limit チェックの直後に呼ぶ。`isOccupied(periodId)` は「その日のその時限に当該講師が居るか」を全クラス走査で判定。`未定` (DAILY_LIMIT_EXEMPT_TEACHER) は対象外。`project.maxConsecutivePeriods ?? 0`。
+  - **constants / reducer / UI**: `DEFAULT_MAX_CONSECUTIVE_PERIODS = 0` + bounds {0..8}、`resolveGenerationParams` / `project/setGenerationParams` に追加、GenerationSettings (⚡自動生成タブ) に「講師の連続コマ数上限 (0 = 制限なし)」の input/slider。
+- **テスト**: teacherConstraints.test.js (+5) / autoGenerator.test.js (+3 制限0で3連続OK・上限2で不成立・未定は対象外) / constants / GenerationSettings / projectReducer に各追記。
+- **既定値 0 で従来挙動を維持** (オプトイン)。
 
 #### E2d. 🟡 テンプレート機能 (年度間コピー) (旧 D6d)
 - **現状**: project ごとに完全独立。去年 → 今年の流用は JSON 保存→読込で代替可。

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: 講師の連続コマ数制約 — E2c)
+「同じ講師に N コマを超える連続担当をさせない」制約を自動生成に追加。
+1 日合計の上限だけでなく、連続性も指定できる。
+
+- **設定** (⚡自動生成タブ):「講師の連続コマ数上限」を追加。0 = 制限なし
+  (既定なので従来挙動を維持)。
+- **solver** (`wouldExceedConsecutive` / autoGenerator): 時限の並び順を見て、
+  講師を置くと連続ランが上限を超える場合は候補から外す。「未定」は対象外。
+- **テスト**: teacherConstraints / autoGenerator / constants / GenerationSettings
+  / projectReducer に追記 (計 +11 件、全 1314 件 pass)。
+
 ### Added (講習時間割作成: エラー時の修正提案 — E1g)
 自動生成が構造的に解けない設定 (担当講師ゼロ / 科目 capacity 不足) に対し、
 「では、どう直すか」の具体策を提示してデバッグ時間を短縮する。

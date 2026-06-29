@@ -12,6 +12,7 @@ import {
   isNgClass,
   isTeacherCandidateFor,
   wouldExceedDailyLimit,
+  wouldExceedConsecutive,
 } from './constraints/teacherConstraints';
 import {
   hasSubjectInSameDayClass,
@@ -71,6 +72,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
   const maxIterations = project.maxIterations ?? MAX_ITERATIONS;
+  // 連続コマ数上限 (E2c)。0 = 制限なし。
+  const maxConsecutive = project.maxConsecutivePeriods ?? 0;
 
   // 自動NG (他学年セッションと時限の時間重複から派生) を pre-compute。
   // solver の NG 判定でも手動NGと同等に扱う。
@@ -296,6 +299,16 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         if (wouldExceedDailyLimit({
           teacherName: tName, date: d.label, tempDaily, maxDailyHours,
           exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
+        })) continue;
+
+        // 連続コマ数上限チェック (E2c)。"未定" は対象外。
+        if (countsTowardDaily && wouldExceedConsecutive({
+          periodsOrder: currentConfig.periods,
+          periodId: p.id,
+          isOccupied: (pid) => currentConfig.classes.some(
+            cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
+          ),
+          maxConsecutive,
         })) continue;
 
         // プライマリスロットを割り当て (locked フラグは既存の値を保持する。

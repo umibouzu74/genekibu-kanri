@@ -5,6 +5,7 @@ import {
   DEFAULT_NUM_PATTERNS,
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
+  DEFAULT_MAX_CONSECUTIVE_PERIODS,
 } from '../../utils/constants';
 
 // E2e: 自動生成 (MRV + バックトラック) のパラメータを UI から調整する。
@@ -33,6 +34,13 @@ export default function GenerationSettings() {
       step: 1,
     },
     {
+      key: 'maxConsecutivePeriods',
+      label: '講師の連続コマ数上限',
+      unit: 'コマ',
+      help: '同じ講師が連続して担当できる時限数の上限。0 にすると制限なし（連続を許可）。',
+      step: 1,
+    },
+    {
       key: 'maxIterations',
       label: '探索回数の上限',
       unit: '回',
@@ -51,6 +59,7 @@ export default function GenerationSettings() {
       numPatterns: DEFAULT_NUM_PATTERNS,
       maxDailyHours: DEFAULT_MAX_DAILY_HOURS,
       maxIterations: DEFAULT_MAX_ITERATIONS,
+      maxConsecutivePeriods: DEFAULT_MAX_CONSECUTIVE_PERIODS,
     });
   };
 

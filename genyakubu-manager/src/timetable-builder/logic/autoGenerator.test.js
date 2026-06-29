@@ -22,6 +22,7 @@ function makeProject({
   externalCounts = {},
   maxDailyHours,
   maxIterations,
+  maxConsecutivePeriods,
 } = {}) {
   return {
     version: 3,
@@ -45,6 +46,7 @@ function makeProject({
     subjectColors: {},
     ...(maxDailyHours !== undefined ? { maxDailyHours } : {}),
     ...(maxIterations !== undefined ? { maxIterations } : {}),
+    ...(maxConsecutivePeriods !== undefined ? { maxConsecutivePeriods } : {}),
   };
 }
 
@@ -132,6 +134,44 @@ describe('generateSinglePattern — project.maxIterations', () => {
   it('未指定ならデフォルト上限で解ける', () => {
     const r = generateSinglePattern({ project: makeMultiSlot(undefined), activeTabId: 1, seed: 1 });
     expect(r.solution).not.toBeNull();
+  });
+});
+
+// ─── 連続コマ数制約 (E2c) ────────────────────────────────────────────
+
+describe('generateSinglePattern — project.maxConsecutivePeriods', () => {
+  // 唯一の講師 (堀上) が英数国を担当。3 時限 1 クラスを全部埋めるには
+  // 堀上を 3 連続で入れるしかない構成。
+  const make3 = (maxConsecutivePeriods) => makeProject({
+    teachers: [teacher('堀上', ['英語', '数学', '国語'])],
+    periods: ['1限', '2限', '3限'],
+    subjectCounts: { '英語': 1, '数学': 1, '国語': 1 },
+    maxConsecutivePeriods,
+  });
+
+  it('制限なし (0) なら 3 連続でも完全解', () => {
+    const r = generateSinglePattern({ project: make3(0), activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(Object.keys(r.solution)).toHaveLength(3);
+  });
+
+  it('連続上限 2 だと 3 連続が作れず完全解にならない', () => {
+    const r = generateSinglePattern({ project: make3(2), activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    // 部分解では 2 コマまでは埋まる
+    expect(r.filledCount).toBeLessThanOrEqual(2);
+  });
+
+  it('「未定」は連続上限の対象外', () => {
+    const project = makeProject({
+      teachers: [teacher('未定', ['英語', '数学', '国語'])],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1, '数学': 1, '国語': 1 },
+      maxConsecutivePeriods: 1,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(Object.keys(r.solution)).toHaveLength(3);
   });
 });
 

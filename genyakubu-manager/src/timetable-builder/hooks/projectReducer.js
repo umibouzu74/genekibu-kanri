@@ -885,7 +885,7 @@ function applyAction(project, action) {
       const updates = action.payload || {};
       const next = { ...project };
       let changed = false;
-      for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations']) {
+      for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods']) {
         if (updates[key] === undefined) continue;
         const clamped = clampGenerationParam(key, updates[key]);
         if (next[key] !== clamped) {

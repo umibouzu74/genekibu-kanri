@@ -1096,11 +1096,21 @@ describe('projectReducer — project 全体操作', () => {
     const state = makeState();
     const next = projectReducer(state, {
       type: 'project/setGenerationParams',
-      payload: { numPatterns: 2, maxDailyHours: 8, maxIterations: 100000 },
+      payload: { numPatterns: 2, maxDailyHours: 8, maxIterations: 100000, maxConsecutivePeriods: 3 },
     });
     expect(next.project.numPatterns).toBe(2);
     expect(next.project.maxDailyHours).toBe(8);
     expect(next.project.maxIterations).toBe(100000);
+    expect(next.project.maxConsecutivePeriods).toBe(3);
+  });
+
+  it('project/setGenerationParams: maxConsecutivePeriods は 0 (制限なし) を許容', () => {
+    const state = makeState({ maxConsecutivePeriods: 3 });
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { maxConsecutivePeriods: 0 },
+    });
+    expect(next.project.maxConsecutivePeriods).toBe(0);
   });
 
   it('project/setGenerationParams: 範囲外の値は clamp される', () => {
