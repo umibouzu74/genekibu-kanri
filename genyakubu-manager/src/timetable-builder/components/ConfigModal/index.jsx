@@ -81,7 +81,7 @@ export default function ConfigModal({ onClose }) {
       >
         <div className="p-4 border-b border-builder-border flex justify-between items-center bg-builder-surface-alt">
           <h2 id={TITLE_ID} className="font-bold text-lg text-builder-ink">⚙️ 設定メニュー</h2>
-          <button onClick={onClose} aria-label="設定を閉じる" className="text-2xl font-bold text-builder-ink-ghost hover:text-builder-ink-muted">×</button>
+          <button onClick={onClose} aria-label="設定を閉じる" className="text-2xl font-bold text-builder-ink-muted hover:text-builder-ink">×</button>
         </div>
         <div
           ref={tablistRef}

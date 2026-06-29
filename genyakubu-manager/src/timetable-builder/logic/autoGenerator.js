@@ -362,13 +362,29 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     }
   };
 
-  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
+  // iter を外で確保して solve 後に探索回数 (backtrack の規模) を読めるようにする (E2f)
+  const iter = { c: 0 };
+  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily }, iter);
+
+  // 完全解が出なかった場合、MRV 順で最初に埋められなかったコマ (= 詰まり位置)。
+  // bestFilledCount は到達した最大 idx なので slots[bestFilledCount] が次に
+  // 埋めるべきコマ。範囲外 (= 全埋まり) は null。
+  const stuckSlotRaw = solution === null && bestFilledCount >= 0 && bestFilledCount < slots.length
+    ? slots[bestFilledCount]
+    : null;
+  const stuckSlot = stuckSlotRaw
+    ? { date: stuckSlotRaw.d.label, period: stuckSlotRaw.p.label, class: stuckSlotRaw.c.label }
+    : null;
 
   return {
     solution,
     bestPartial,
     filledCount: bestFilledCount,
     totalSlots,
+    // E2f: 生成の手応えを UI に出すための統計
+    iterations: iter.c,
+    hitLimit: iter.c > maxIterations,
+    stuckSlot,
   };
 }
 

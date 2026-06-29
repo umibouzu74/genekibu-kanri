@@ -33,8 +33,11 @@ export default {
         'builder-green-hover': '#21603a',
         'builder-red': '#c03030',
         'builder-red-hover': '#a02525',
-        'builder-orange': '#e67a00',
-        'builder-orange-hover': '#c66700',
+        // E1e: 旧 #e67a00 は白背景で 2.94:1 と WCAG AA (4.5:1) 未達だった。
+        // 白上・warning-soft 上・白文字ボタンのいずれでも AA を満たす濃いめの
+        // バーントオレンジへ調整 (白との対比 5.18:1)。
+        'builder-orange': '#c2410c',
+        'builder-orange-hover': '#9a330a',
         // Tones (status, soft surfaces)
         'builder-danger-soft': '#fff5f5',
         'builder-danger-border': '#ffcccc',

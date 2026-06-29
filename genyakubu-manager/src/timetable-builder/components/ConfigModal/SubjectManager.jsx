@@ -46,12 +46,12 @@ export default function SubjectManager() {
               <button
                 onClick={() => moveUp(idx)}
                 disabled={idx === 0}
-                className="text-[10px] text-builder-ink-ghost hover:text-builder-ink disabled:opacity-20 leading-none"
+                className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
               >▲</button>
               <button
                 onClick={() => moveDown(idx)}
                 disabled={idx === commonSubjects.length - 1}
-                className="text-[10px] text-builder-ink-ghost hover:text-builder-ink disabled:opacity-20 leading-none"
+                className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
               >▼</button>
             </div>
             <span className="font-bold text-sm flex-1 text-builder-ink">{s}</span>
@@ -67,7 +67,7 @@ export default function SubjectManager() {
             </div>
             <button
               onClick={() => handleRemoveClick(s)}
-              className="text-builder-ink-ghost hover:text-builder-red text-sm px-1"
+              className="text-builder-ink-muted hover:text-builder-red text-sm px-1"
             >×</button>
           </div>
         ))}

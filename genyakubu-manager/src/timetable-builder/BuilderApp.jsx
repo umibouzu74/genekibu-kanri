@@ -101,6 +101,9 @@ function ScheduleApp() {
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
+  // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
+  const [generateElapsedMs, setGenerateElapsedMs] = useState(0);
+  const genStartRef = useRef(0);
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
@@ -133,6 +136,8 @@ function ScheduleApp() {
     setIsGenerating(true);
     setGeneratedPatterns([]);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    genStartRef.current = Date.now();
+    setGenerateElapsedMs(0);
 
     const results = [];
     // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
@@ -167,8 +172,15 @@ function ScheduleApp() {
           isPartial: r.solution === null,
           filledCount: r.solution ? r.totalSlots : r.filledCount,
           totalSlots: r.totalSlots,
+          // E2f: 生成の手応え (探索回数 / 上限到達 / 詰まりセル)
+          iterations: r.iterations,
+          hitLimit: r.hitLimit,
+          stuckSlot: r.stuckSlot,
         }))
         .filter(r => r.schedule !== null);
+
+      // 生成にかかった総時間を確定 (E2f)
+      setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);
 
       if (patterns.length > 0) {
         setGeneratedPatterns(patterns);
@@ -207,6 +219,15 @@ function ScheduleApp() {
     };
   }, []);
 
+  // 生成中だけ経過時間を 100ms 間隔で更新する (E2f)。完了/中止で停止。
+  useEffect(() => {
+    if (!isGenerating) return undefined;
+    const id = setInterval(() => {
+      if (genStartRef.current) setGenerateElapsedMs(Date.now() - genStartRef.current);
+    }, 100);
+    return () => clearInterval(id);
+  }, [isGenerating]);
+
   const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
     e.preventDefault();
     setContextMenu({ x: e.pageX, y: e.pageY, dateId, periodId, classId, type, val });
@@ -240,6 +261,7 @@ function ScheduleApp() {
           setShowConfig={setShowConfig}
           isGenerating={isGenerating}
           generateProgress={generateProgress}
+          generateElapsedMs={generateElapsedMs}
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
@@ -249,6 +271,7 @@ function ScheduleApp() {
           showSummary={showSummary}
           generatedPatterns={generatedPatterns}
           setGeneratedPatterns={setGeneratedPatterns}
+          generatedElapsedMs={generateElapsedMs}
         />
 
         {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}

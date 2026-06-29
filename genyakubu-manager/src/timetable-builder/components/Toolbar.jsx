@@ -12,6 +12,7 @@ export default function Toolbar({
   setShowConfig,
   isGenerating,
   generateProgress,
+  generateElapsedMs,
   onGenerate,
   onCancelGenerate,
   onShowHelp,
@@ -284,6 +285,11 @@ export default function Toolbar({
             <>
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
               生成中 ({generateProgress?.current || 0}/{generateProgress?.total || 3})
+              {generateElapsedMs > 0 && (
+                <span className="font-normal tabular-nums" aria-label="経過時間">
+                  {' '}⏱ {(generateElapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
             </>
           ) : "🧙‍♂️ 自動作成"}
         </button>

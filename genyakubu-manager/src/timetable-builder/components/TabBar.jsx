@@ -82,7 +82,7 @@ export default function TabBar() {
             {project.tabs.length > 1 && (
               <span
                 onClick={(e) => handleDeleteClick(e, tab.id)}
-                className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-danger-soft hover:text-builder-red text-builder-ink-ghost transition-colors cursor-pointer"
+                className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-danger-soft hover:text-builder-red text-builder-ink-muted transition-colors cursor-pointer"
                 title="このタブを削除"
               >×</span>
             )}

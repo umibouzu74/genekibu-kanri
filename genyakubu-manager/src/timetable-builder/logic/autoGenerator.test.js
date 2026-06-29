@@ -137,6 +137,41 @@ describe('generateSinglePattern — project.maxIterations', () => {
   });
 });
 
+// ─── 生成統計 (E2f: iterations / hitLimit / stuckSlot) ───────────────
+
+describe('generateSinglePattern — 生成統計 (E2f)', () => {
+  it('iterations を返す (探索回数 > 0)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(typeof r.iterations).toBe('number');
+    expect(r.iterations).toBeGreaterThan(0);
+  });
+
+  it('解けるときは hitLimit=false / stuckSlot=null', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.hitLimit).toBe(false);
+    expect(r.stuckSlot).toBeNull();
+  });
+
+  it('解けないときは stuckSlot に最初に詰まったコマのラベルが入る', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['数学'])], // 英語担当なし → 充填不能
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.stuckSlot).toMatchObject({ period: expect.any(String), class: expect.any(String) });
+    expect(r.stuckSlot.date).toBeTruthy();
+  });
+});
+
 // ─── 連続コマ数制約 (E2c) ────────────────────────────────────────────
 
 describe('generateSinglePattern — project.maxConsecutivePeriods', () => {
