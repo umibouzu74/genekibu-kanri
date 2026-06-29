@@ -1589,3 +1589,66 @@ describe('projectReducer — 未知 action', () => {
     expect(projectReducer(state, { type: 'unknown/type' })).toBe(state);
   });
 });
+
+describe('projectReducer — タブ別「使う日」(activeDateIds) + 日付プール (v4 Y)', () => {
+  it('tabDates/setByLabels: 既存ラベルは id 維持、新規はプールへ追加し active に設定', () => {
+    // makeState default: project.dates = [{id:1,'12/25(木)'}]
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'tabDates/setByLabels',
+      payload: { labels: ['12/25(木)', '12/26(金)'] },
+    });
+    expect(next.project.dates).toEqual([
+      { id: 1, label: '12/25(木)' },
+      { id: 2, label: '12/26(金)' },
+    ]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([1, 2]);
+  });
+
+  it('tabDates/setByLabels: プールから日付は消さない (active だけ縮小)', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activeDateIds: [1, 2] }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'tabDates/setByLabels', payload: { labels: ['D1'] } });
+    // プールは 2 件のまま、active は D1 だけ
+    expect(next.project.dates).toEqual([{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([1]);
+  });
+
+  it('tabDates/toggle: undefined(全日) から materialize して off にする', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'tabDates/toggle', payload: { dateId: 1 } });
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([2]);
+  });
+
+  it('tabDates/setAllActive: true → null (全日)、false → [] (全解除)', () => {
+    const state = makeState({
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activeDateIds: [1] }, schedule: {} }],
+    });
+    const off = projectReducer(state, { type: 'tabDates/setAllActive', payload: { active: false } });
+    expect(off.project.tabs[0].config.activeDateIds).toEqual([]);
+    const on = projectReducer(off, { type: 'tabDates/setAllActive', payload: { active: true } });
+    expect(on.project.tabs[0].config.activeDateIds).toBeNull();
+  });
+
+  it('dates/removeFromPool: プールから消し、全タブの activeDateIds と schedule を掃除', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: 'D1' }, { id: 2, label: 'D2' }],
+      periods: [{ id: 1, label: '1限' }],
+      tabs: [{
+        id: 1, name: 'a',
+        config: { classes: [{ id: 1, label: 'S' }], subjectCounts: {}, activeDateIds: [1, 2] },
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英' }, [makeKey(2, 1, 1)]: { subject: '数' } },
+      }],
+    });
+    const next = projectReducer(state, { type: 'dates/removeFromPool', payload: { dateId: 1 } });
+    expect(next.project.dates).toEqual([{ id: 2, label: 'D2' }]);
+    expect(next.project.tabs[0].config.activeDateIds).toEqual([2]);
+    // 削除した日付 (d1) のコマは消え、残った日付 (d2) のコマは残る
+    expect(next.project.tabs[0].schedule).toEqual({ [makeKey(2, 1, 1)]: { subject: '数' } });
+  });
+});

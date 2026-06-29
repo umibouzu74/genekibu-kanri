@@ -41,6 +41,17 @@ export function nextId(entities) {
   return Math.max(...entities.map(e => e.id)) + 1;
 }
 
+// v4(Y): project.dates は全タブの和集合プール。各タブは config.activeDateIds で
+// 「この学年が実際に使う日」を選ぶ。未指定 (undefined/null) は『全日使う』の
+// 意味 (後方互換: 既存タブはプール全体をそのまま表示)。
+// 戻り値はプールの並び順を保った subset。
+export function activeDatesForTab(poolDates, tab) {
+  const ids = tab?.config?.activeDateIds;
+  if (!ids) return poolDates || [];
+  const set = new Set(ids);
+  return (poolDates || []).filter(d => set.has(d.id));
+}
+
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // (config 変更時にインデックスがずれる問題を避けるため)

@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -163,7 +163,8 @@ function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
 // cascade ロジック (combinedPropagation 等) は config.dates / .periods を読むため、
 // reducer 内でもこの実効 config を渡す必要がある。
 function effectiveConfig(project, tab) {
-  return { ...tab.config, dates: project.dates || [], periods: project.periods || [] };
+  // dates は『このタブが使う日』(activeDateIds で絞った subset)、periods は project 共通。
+  return { ...tab.config, dates: activeDatesForTab(project.dates, tab), periods: project.periods || [] };
 }
 
 // 履歴に積む系のアクションを処理する純粋関数。
@@ -268,6 +269,93 @@ function applyAction(project, action) {
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
       return { ...project, tabs: newTabs };
+    }
+
+    // ─── タブ別『使う日』(activeDateIds) + 共通日付プール ─────
+    // v4(Y): project.dates は全タブの和集合プール (NG はこの全日に設定可)。
+    // 各タブは config.activeDateIds で『この学年が使う日』を選ぶ (未指定=全日)。
+
+    // ラベル配列でタブの使う日を設定する。新規ラベルはプールへ merge (id 採番)、
+    // タブの activeDateIds を該当 id 群に更新。手動入力 / 自動生成の両方が使う。
+    // プールから日付を削除はしない (削除は dates/removeFromPool)。
+    case 'tabDates/setByLabels': {
+      const { tabId, labels } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const cleanLabels = [...new Set((labels || []).map(s => String(s).trim()).filter(Boolean))];
+      const pool = project.dates || [];
+      const poolByLabel = new Map(pool.map(d => [d.label, d]));
+      let nextIdNum = pool.reduce((max, d) => Math.max(max, d.id), 0) + 1;
+      const newPool = [...pool];
+      const activeIds = [];
+      cleanLabels.forEach(label => {
+        let ent = poolByLabel.get(label);
+        if (!ent) {
+          ent = { id: nextIdNum++, label };
+          newPool.push(ent);
+          poolByLabel.set(label, ent);
+        }
+        activeIds.push(ent.id);
+      });
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
+      );
+      // プールは増えるだけなので cell は落ちないが、整合のため cleanSchedule を通す。
+      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs });
+    }
+
+    // チェックリストの単一トグル。プールは変更せず active 集合だけ更新する
+    // (off にしてもその日付の cell / NG は保持され、再 on で復活する)。
+    case 'tabDates/toggle': {
+      const { tabId, dateId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const pool = project.dates || [];
+      if (!pool.some(d => d.id === dateId)) return project;
+      const current = target.config.activeDateIds ?? pool.map(d => d.id);
+      const set = new Set(current);
+      if (set.has(dateId)) set.delete(dateId); else set.add(dateId);
+      const activeIds = pool.map(d => d.id).filter(id => set.has(id));
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+
+    // 全選択 (active=true → null = 全日) / 全解除 (active=false → []).
+    case 'tabDates/setAllActive': {
+      const { tabId, active } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const activeDateIds = active ? null : [];
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activeDateIds } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+
+    // 日付をプールから完全削除 (全タブ・NG から消える)。cascade で schedule /
+    // combinedGroups を掃除し、全タブの activeDateIds からも除去する。
+    case 'dates/removeFromPool': {
+      const { dateId } = action.payload;
+      const pool = project.dates || [];
+      const target = pool.find(d => d.id === dateId);
+      if (!target) return project;
+      const newPool = pool.filter(d => d.id !== dateId);
+      const newTabs = project.tabs.map(t => {
+        const ids = t.config.activeDateIds;
+        if (!ids || !ids.includes(dateId)) return t;
+        return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => id !== dateId) } };
+      });
+      const newCombined = cleanCombinedGroupsForLabelChange(
+        project.combinedGroups || [],
+        'dates',
+        new Set(newPool.map(d => d.label)),
+      );
+      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs, combinedGroups: newCombined });
     }
 
     // ─── 科目マスタ ──────────────────────

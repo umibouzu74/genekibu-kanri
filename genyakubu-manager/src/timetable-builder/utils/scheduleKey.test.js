@@ -13,7 +13,27 @@ import {
   migrateProject,
   findEntityById,
   nextId,
+  activeDatesForTab,
 } from './scheduleKey';
+
+describe('activeDatesForTab', () => {
+  const pool = [{ id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' }];
+  it('activeDateIds 未指定 (undefined) はプール全体を返す', () => {
+    expect(activeDatesForTab(pool, { config: {} })).toBe(pool);
+    expect(activeDatesForTab(pool, {})).toBe(pool);
+  });
+  it('activeDateIds で絞った subset をプール順で返す', () => {
+    expect(activeDatesForTab(pool, { config: { activeDateIds: [3, 1] } })).toEqual([
+      { id: 1, label: 'A' }, { id: 3, label: 'C' },
+    ]);
+  });
+  it('空配列なら 0 件', () => {
+    expect(activeDatesForTab(pool, { config: { activeDateIds: [] } })).toEqual([]);
+  });
+  it('pool が空/未定義でも安全', () => {
+    expect(activeDatesForTab(undefined, { config: { activeDateIds: [1] } })).toEqual([]);
+  });
+});
 
 describe('makeKey / parseKey', () => {
   it('makeKey は ID から "dN-pN-cN" 形式の文字列を生成する', () => {

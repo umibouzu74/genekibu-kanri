@@ -112,7 +112,9 @@ Project {
   name, createdAt, updatedAt
   activeTabId
   dates[], periods[]          // v4: 全タブ共通の講習カレンダー (project レベル)
-  tabs: [{ id, name, config: { classes[], subjectCounts }, schedule }]
+                              //   dates は全学年の和集合「プール」(NG はこの全日に設定可)
+  tabs: [{ id, name, config: { classes[], subjectCounts, activeDateIds? }, schedule }]
+                              //   activeDateIds: そのタブが使う日 (未指定=全日)
   teachers: [{ name, subjects[], ngSlots[], ngClasses[], priorityClasses[] }]
   combinedGroups[]            // 合同授業（ラベル参照）
   externalCounts / externalSessions   // 他学年セッション
@@ -126,11 +128,17 @@ Project {
 - **v4: `dates` / `periods` は project 共通**（全タブが同じ講習カレンダーを参照）。
   `classes` / `subjectCounts` は引き続きタブ（学年）ごと。これにより講師不在・NG
   （`teacher.ngSlots`、ラベルベースでもともと全タブ共通）が全タブで噛み合う。
-  - 読み取り側は `useProject` の `currentConfig`（= `tab.config` に project の
-    `dates`/`periods` をマージした派生ビュー）経由で無改修。全タブ走査する集計
-    （`computeGlobalUsage` / `excelExport` 等）は `dates`/`periods` を引数で受け取る。
-  - 書き込み: `config/setList('dates'|'periods')` と `schedule/renameHeader('date'|'period')`
-    は project レベルを更新（= 全タブに反映）。`classes` はタブ単位。
+  - **`dates` は全学年の和集合「プール」**。各タブは `config.activeDateIds`（未指定=全日）で
+    「この学年が実際に使う日」を選ぶ（学年で期間がズレても・歯抜けの日があってもOK）。
+    `activeDatesForTab(pool, tab)` が subset を返す（`scheduleKey.js`）。
+  - 読み取り側は `useProject` の `currentConfig`（= `tab.config` に project の `periods` と
+    **そのタブの使う日**をマージした派生ビュー）経由で無改修。時間割 / 自動生成 / 分析 /
+    Excel は各タブの使う日だけを対象にする。**NG パネルだけはプール全日**
+    （`project.dates`）を使い、どのタブからでも全日に不在・NG を設定できる。
+  - 書き込み: 日付プール+使う日は `tabDates/setByLabels`（手動/自動生成）・`tabDates/toggle`・
+    `tabDates/setAllActive`・`dates/removeFromPool`。`periods` は `config/setList('periods')`
+    で project 共通、`classes` はタブ単位。日付の自動生成は `utils/dateGenerate.js`
+    （期間+曜日+除外日→ラベル、純粋関数）。
 - NG・合同・externalCounts は **ラベルベース**（JSON 可読性・タブ間共有のため。cascade cleanup で整合を維持）。
 - マイグレーション: `migrateProject` が v1→v2→v3→v4 を順次合成。v3→v4 は各タブの
   `dates`/`periods` を**ラベル union** で 1 つに統合し、schedule / snapshot のキーを

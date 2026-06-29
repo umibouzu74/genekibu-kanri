@@ -4,7 +4,7 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
-import { makeKey, migrateProject } from '../utils/scheduleKey';
+import { makeKey, migrateProject, activeDatesForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
 
 // 講習時間割プロジェクトの一元状態管理フック。
@@ -39,14 +39,15 @@ export function useProject() {
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   // v4: dates / periods は project 共通。currentConfig は tab.config (classes /
-  // subjectCounts) に project の dates / periods をマージした派生ビュー。
-  // これにより currentConfig.dates / .periods を読む既存の全 consumer は
-  // 無改修で動く。
+  // subjectCounts) に project の periods と『このタブが使う日付 (activeDateIds で
+  // 絞った subset)』をマージした派生ビュー。これにより時間割・自動生成・分析は
+  // その学年の使う日だけを対象にし、currentConfig.dates / .periods を読む既存の
+  // 全 consumer は無改修で動く。NG パネルだけは別途プール全体 (project.dates) を使う。
   const currentConfig = useMemo(() => ({
     ...activeTab.config,
-    dates: project.dates || [],
+    dates: activeDatesForTab(project.dates, activeTab),
     periods: project.periods || [],
-  }), [activeTab.config, project.dates, project.periods]);
+  }), [activeTab, project.dates, project.periods]);
   const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
 
   const {
@@ -115,6 +116,24 @@ export function useProject() {
   // 対象タブの id を明示で渡す。
   const handleSubjectCountChange = useCallback((subject, value, tabId) => {
     dispatch({ type: 'config/setSubjectCount', payload: { subject, value, tabId } });
+  }, [dispatch]);
+
+  // --- タブ別『使う日』(activeDateIds) + 共通日付プール (v4 Y) ---
+  // ラベル配列でタブの使う日を設定 (新規ラベルはプールへ merge)。手動入力 / 自動生成共通。
+  const handleSetTabDatesByLabels = useCallback((labels, tabId) => {
+    dispatch({ type: 'tabDates/setByLabels', payload: { labels, tabId } });
+  }, [dispatch]);
+  // チェックリストの単一トグル
+  const handleToggleTabDate = useCallback((dateId, tabId) => {
+    dispatch({ type: 'tabDates/toggle', payload: { dateId, tabId } });
+  }, [dispatch]);
+  // 全選択 (active=true) / 全解除 (active=false)
+  const handleSetAllTabDates = useCallback((active, tabId) => {
+    dispatch({ type: 'tabDates/setAllActive', payload: { active, tabId } });
+  }, [dispatch]);
+  // 日付をプールから完全削除 (全タブ・NG から消える)
+  const handleRemoveDateFromPool = useCallback((dateId) => {
+    dispatch({ type: 'dates/removeFromPool', payload: { dateId } });
   }, [dispatch]);
 
   // --- メタデータ ---
@@ -192,6 +211,11 @@ export function useProject() {
     // タブ別 config
     handleListConfigChange,
     handleSubjectCountChange,
+    // タブ別『使う日』+ 共通日付プール (v4 Y)
+    handleSetTabDatesByLabels,
+    handleToggleTabDate,
+    handleSetAllTabDates,
+    handleRemoveDateFromPool,
     // 科目マスタ (useSubjectActions)
     ...subjectActions,
     // 講師 (useTeacherActions)
