@@ -3,7 +3,7 @@
 最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
-+ E1d (スケジュール差分ビュー) 完了
++ E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -622,10 +622,10 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E2. 機能拡張
 
-#### E2a. 🟠 CSV インポートの拡張 (旧 D6a の続き)
-- **現状**: 講師マスタの CSV import (paste 型) のみ完了 (D6a-MVP)。
-- **改善 (優先順)**:
-  - ファイル D&D / `<input type="file">` 対応 (paste より導入障壁低い)
+#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 一部完了)
+- **現状**: 講師マスタの CSV import は paste + ✅ ファイル選択 / ドラッグ&ドロップ 対応済 (2026-06-29)。
+- **✅ 完了分 (ファイル取り込み)**: TeacherManager の CSV パネルに「📂 ファイルを選択」(hidden `<input type="file" accept=".csv,...">`) と textarea へのドラッグ&ドロップを追加。`readCsvFile` が `file.text()` で読み取り → 既存の `csvText` → parse → preview フローに合流。非 CSV 拡張子はエラー toast でガード、ドラッグ中は枠をハイライト。テスト: TeacherManager.test.jsx 新規 3 件 (選択 / D&D / 非 CSV ガード)。
+- **残り (優先順)**:
   - NG 日時 CSV (`teacher,date,period` 形式) で ngSlots を一括設定
   - 既存 Excel スケジュール (旧 winter_schedule .xlsx) からセル全体を取り込み (要 mapping UI)
   - subjectCounts / classes 等の config も CSV 化

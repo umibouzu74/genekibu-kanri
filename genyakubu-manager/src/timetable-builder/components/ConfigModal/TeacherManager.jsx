@@ -60,6 +60,41 @@ export default function TeacherManager() {
   const { showConfirm, showInput, showToast } = useUI();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
   const [csvText, setCsvText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+
+  // CSV ファイル (選択 or ドロップ) を読み取って textarea に流し込む (E2a)。
+  // 中身は既存の paste フロー (csvText → parse → preview) に合流するので、
+  // ここでは読み取りと軽いガードのみ。
+  const readCsvFile = async (file) => {
+    if (!file) return;
+    const name = file.name || '';
+    const looksCsv = /\.csv$/i.test(name) || ['text/csv', 'text/plain', 'application/vnd.ms-excel', ''].includes(file.type);
+    if (!looksCsv) {
+      showToast('CSV (.csv) ファイルを選択してください', 'error', 3000);
+      return;
+    }
+    try {
+      const text = await file.text();
+      setCsvText(text);
+      showToast(`「${name || 'ファイル'}」を読み込みました`, 'success', 2000);
+    } catch {
+      showToast('ファイルの読み込みに失敗しました', 'error', 3000);
+    }
+  };
+
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    readCsvFile(file);
+    // 同じファイルを再選択しても change が発火するよう value をリセット
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    readCsvFile(file);
+  };
 
   const handleAddClick = async () => {
     const name = await showInput("講師名を入力してください", { title: "講師の追加", placeholder: "例: 山田" });
@@ -125,15 +160,30 @@ export default function TeacherManager() {
       </div>
       {csvPanelOpen && (
         <div className="border border-builder-border rounded bg-builder-surface-alt p-3 space-y-2">
-          <div className="text-xs text-builder-ink-muted">
-            ヘッダ行は <code>name,subjects</code>。subjects は <code>|</code> 区切り (例: <code>英語|数学</code>)。
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-builder-ink-muted">
+              ヘッダ行は <code>name,subjects</code>。subjects は <code>|</code> 区切り (例: <code>英語|数学</code>)。
+            </div>
+            <label className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface cursor-pointer whitespace-nowrap">
+              📂 ファイルを選択
+              <input
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                className="hidden"
+                aria-label="CSV ファイルを選択"
+                onChange={handleFileInputChange}
+              />
+            </label>
           </div>
           <textarea
             aria-label="講師マスタ CSV テキスト"
-            className="w-full h-32 border border-builder-border rounded p-2 text-xs font-mono focus:outline-none focus:border-builder-blue bg-builder-surface"
-            placeholder={CSV_PLACEHOLDER}
+            className={`w-full h-32 border rounded p-2 text-xs font-mono focus:outline-none focus:border-builder-blue bg-builder-surface transition-colors ${isDragging ? 'border-builder-blue border-2 bg-builder-info-soft' : 'border-builder-border'}`}
+            placeholder={`${CSV_PLACEHOLDER}\n\n（CSV ファイルをここにドラッグ&ドロップでも読み込めます）`}
             value={csvText}
             onChange={(e) => setCsvText(e.target.value)}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
           />
           {csvParsed && (
             <div className="text-xs space-y-1">
