@@ -29,10 +29,14 @@ export default function Toolbar({
   const { violations, infeasibilities } = analysis;
   const infeasItems = [
     ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
-      kind: 'noTeacher', label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+      kind: 'noTeacher',
+      label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+      suggestions: it.suggestions || [],
     })),
     ...(infeasibilities?.subjectCapacityShortage?.items || []).map(it => ({
-      kind: 'capacity', label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+      kind: 'capacity',
+      label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+      suggestions: it.suggestions || [],
     })),
   ];
 
@@ -195,9 +199,21 @@ export default function Toolbar({
                   {infeasItems.length > 0 && (
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
-                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                      <ul className="space-y-1 pl-2 text-builder-ink-muted">
                         {infeasItems.slice(0, 8).map((it, i) => (
-                          <li key={`infeas-${i}`} className="text-[11px]">{it.label}</li>
+                          <li key={`infeas-${i}`} className="text-[11px]">
+                            <div>{it.label}</div>
+                            {it.suggestions.length > 0 && (
+                              <ul className="mt-0.5 pl-2 space-y-0.5">
+                                {it.suggestions.map((s, j) => (
+                                  <li key={j} className="text-builder-blue flex items-start gap-1">
+                                    <span aria-hidden="true">💡</span>
+                                    <span>{s}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
                         ))}
                         {infeasItems.length > 8 && (
                           <li className="italic">他 {infeasItems.length - 8} 件</li>

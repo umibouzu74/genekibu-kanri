@@ -3,7 +3,8 @@
 最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
-+ E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み) 完了
++ E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
++ E1g (エラー時の修正提案) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -608,10 +609,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: 長押しジェスチャ → ContextMenu open、ピンチズーム抑止、ボタンの最低タップ領域 44px。E1a (モバイル) とセットで。
 - **規模**: 中 / **価値**: 中
 
-#### E1g. 🟡 エラー時の修正提案 (新規 / D1c-C の延長)
-- **現状**: D1c-C で「noTeacherForSlot」「subjectCapacityShortage」を検出。違反/不可は表示するが、解決のヒントは出さない。
-- **改善**: 「12/25 1限 の英語は全員 NG → A 案: 別時限へ移動 / B 案: 別講師を登録」のような選択肢を popover 内に出す。E2b (修復 wizard) の MVP 版。
-- **規模**: 中 / **価値**: 高 (デバッグ時間を大幅短縮)
+#### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)
+- **旧現状**: D1c-C で infeasibility を検出するが、解決のヒントは無かった。
+- **実装**:
+  - **utils/fixSuggestions.js**: 純粋関数 `suggestForNoTeacher(item, ctx)` (担当講師未登録 → 登録 / 手動 NG → 該当時限の NG 解除〔名前入り〕/ 別時限で担当可 → 移動。自動 NG も候補から除外) + `suggestForCapacity(item, ctx)` (講師を あと N 名 / 1 日上限を X→Y に / コマ数を減らす) + `buildFixSuggestions(infeasibilities, ctx)` (各 item に `suggestions[]` を非破壊で付与)。
+  - **useAnalysis**: `computeInfeasibilities` の結果を `buildFixSuggestions` で包んで公開 (deps 不変)。
+  - **Toolbar**: popover「設定の問題」の各項目の下に 💡 修正提案を箇条書き表示。
+- **テスト**: fixSuggestions.test.js (新規 11) / Toolbar.test.jsx (+1)。
+- **延期**: 提案のワンクリック自動適用は E2b (修復 wizard) で扱う。ここまでは提示のみ。
 
 #### E1h. ⚪ 印刷スタイル微調整 (新規)
 - **現状**: 2 系統の印刷経路 (CLAUDE.md 印刷ルール参照) で運用中。MonthView / ExcelGridView は popup 方式、その他は `window.print()`。

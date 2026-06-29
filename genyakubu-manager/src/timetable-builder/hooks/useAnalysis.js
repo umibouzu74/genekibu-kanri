@@ -8,6 +8,7 @@ import {
   computeInfeasibilities,
 } from '../utils/analysisHelpers';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
+import { buildFixSuggestions } from '../utils/fixSuggestions';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
 
@@ -75,13 +76,16 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
   );
 
   const infeasibilities = useMemo(
-    () => computeInfeasibilities({
-      teachers: project.teachers,
-      commonSubjects,
-      currentConfig,
-      maxDailyHours,
-      autoNgByTeacher,
-    }),
+    () => buildFixSuggestions(
+      computeInfeasibilities({
+        teachers: project.teachers,
+        commonSubjects,
+        currentConfig,
+        maxDailyHours,
+        autoNgByTeacher,
+      }),
+      { currentConfig, teachers: project.teachers, maxDailyHours, autoNgByTeacher },
+    ),
     [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher],
   );
 

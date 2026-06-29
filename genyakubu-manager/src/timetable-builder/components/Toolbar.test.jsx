@@ -335,6 +335,28 @@ describe('Toolbar', () => {
     expect(screen.getByText(/数学.*必要 30 コマ.*12/)).toBeInTheDocument();
   });
 
+  it('infeasibility に suggestions があれば 💡 修正提案を表示する (E1g)', () => {
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: {
+              count: 1,
+              items: [{
+                date: '12/25', period: '1限', subject: '英語',
+                suggestions: ['12/25 1限 の NG を解除する: 堀上', '別の時限なら担当可能: 2限'],
+              }],
+            },
+            subjectCapacityShortage: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    expect(screen.getByText('12/25 1限 の NG を解除する: 堀上')).toBeInTheDocument();
+    expect(screen.getByText('別の時限なら担当可能: 2限')).toBeInTheDocument();
+  });
+
   it('infeasibilities 単独 (violations は全 0) でも popover が開く', () => {
     renderToolbar({
       projectOverrides: {
