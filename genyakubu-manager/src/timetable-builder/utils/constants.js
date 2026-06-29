@@ -1,3 +1,5 @@
+import { parseKey } from './scheduleKey';
+
 // --- デフォルト講師データ ---
 export const DEFAULT_INITIAL_TEACHERS = [
   { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -59,6 +61,9 @@ export const STORAGE_KEY_USER_DEFAULTS = 'builder.schedule_user_defaults';
 // 初回オンボーディングを表示済みかの 1 bit flag。値の存在 ('1') のみを見る
 // ので UI を学習・自動変形するものではない (CLAUDE.md の禁止事項に抵触しない)。
 export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
+// 年度間コピー用のテンプレート保存先 (E2d)。ユーザが明示的に保存した
+// プロジェクトのスナップショット配列。自動学習・自動変形ではない。
+export const STORAGE_KEY_TEMPLATES = 'builder.templates';
 
 // 旧キー（互換性のため読み込み時に参照）
 export const LEGACY_STORAGE_KEYS = [
@@ -106,25 +111,62 @@ export const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
+// --- 自動生成パラメータ (E2e) ---
+// 生成する案の数 / 講師 1 人あたり 1 日コマ数上限 / solver の探索上限。
+// project レベルに保存し、未設定時はこのデフォルトを使う。
+export const DEFAULT_NUM_PATTERNS = 3;
+export const DEFAULT_MAX_DAILY_HOURS = 6;
+export const DEFAULT_MAX_ITERATIONS = 500000;
+// 講師の連続コマ数上限 (E2c)。0 = 制限なし (既定で従来挙動を維持)。
+export const DEFAULT_MAX_CONSECUTIVE_PERIODS = 0;
+
+// 各パラメータの許容範囲。UI の input と reducer の両方で clamp に使う。
+export const GENERATION_PARAM_BOUNDS = {
+  numPatterns: { min: 1, max: 6 },
+  maxDailyHours: { min: 1, max: 12 },
+  maxIterations: { min: 50000, max: 5000000 },
+  maxConsecutivePeriods: { min: 0, max: 8 },
+};
+
+// 値を許容範囲内に丸める。NaN / 非数は min にフォールバック。
+export const clampGenerationParam = (key, value) => {
+  const b = GENERATION_PARAM_BOUNDS[key];
+  if (!b) return value;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return b.min;
+  return Math.max(b.min, Math.min(b.max, n));
+};
+
+// project から有効な生成パラメータを取り出す (未設定はデフォルト + clamp)。
+export const resolveGenerationParams = (project) => ({
+  numPatterns: clampGenerationParam('numPatterns', project?.numPatterns ?? DEFAULT_NUM_PATTERNS),
+  maxDailyHours: clampGenerationParam('maxDailyHours', project?.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS),
+  maxIterations: clampGenerationParam('maxIterations', project?.maxIterations ?? DEFAULT_MAX_ITERATIONS),
+  maxConsecutivePeriods: clampGenerationParam('maxConsecutivePeriods', project?.maxConsecutivePeriods ?? DEFAULT_MAX_CONSECUTIVE_PERIODS),
+});
+
 // --- プロジェクトバージョン ---
 export const CURRENT_PROJECT_VERSION = 3;
 
 // --- スケジュールのクリーンアップ ---
 // v3: dates/periods/classes は { id, label } で、key は ID ベース。
 // config から消滅した ID を参照する schedule entry を破棄する。
+//
+// E4a: 旧実装は全 (dates × periods × classes) を展開して validKey Set を
+// 作っていた (O(D×P×C + K))。既存 schedule キーを走査して entity の存在を
+// 直接判定する方式に反転し O(D+P+C + K) に。挙動は等価 (有効キー =
+// date/period/class が全て config に存在)。
 export const cleanSchedule = (proj) => {
   const newTabs = proj.tabs.map(tab => {
+    const dateIds = new Set(tab.config.dates.map(d => d.id));
+    const periodIds = new Set(tab.config.periods.map(p => p.id));
+    const classIds = new Set(tab.config.classes.map(c => c.id));
     const newSch = {};
-    const validKeys = new Set();
-    tab.config.dates.forEach(d => {
-      tab.config.periods.forEach(p => {
-        tab.config.classes.forEach(c => {
-          validKeys.add(`d${d.id}-p${p.id}-c${c.id}`);
-        });
-      });
-    });
     Object.keys(tab.schedule).forEach(k => {
-      if (validKeys.has(k)) newSch[k] = tab.schedule[k];
+      const p = parseKey(k);
+      if (p && dateIds.has(p.dateId) && periodIds.has(p.periodId) && classIds.has(p.classId)) {
+        newSch[k] = tab.schedule[k];
+      }
     });
     return { ...tab, schedule: newSch };
   });

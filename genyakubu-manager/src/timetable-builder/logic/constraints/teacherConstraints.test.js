@@ -4,6 +4,7 @@ import {
   isNgSlot,
   isNgClass,
   wouldExceedDailyLimit,
+  wouldExceedConsecutive,
   isTeacherCandidateFor,
 } from './teacherConstraints';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
@@ -152,5 +153,33 @@ describe('isTeacherCandidateFor', () => {
       ...base,
       autoNgEntries: new Map([[makeNgKey('12/25', '1限'), { sessions: [] }]]),
     })).toBe(false);
+  });
+});
+
+describe('wouldExceedConsecutive', () => {
+  const periodsOrder = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+  // occupied: 講師が割り当て済みの periodId 集合
+  const occ = (...ids) => (pid) => ids.includes(pid);
+
+  it('maxConsecutive 0 / 未設定なら常に false (制限なし)', () => {
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 2, isOccupied: occ(1), maxConsecutive: 0 })).toBe(false);
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 2, isOccupied: occ(1), maxConsecutive: undefined })).toBe(false);
+  });
+
+  it('p1 既割当 + p2 を置くと連続2。上限2なら OK、上限1なら超過', () => {
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 2, isOccupied: occ(1), maxConsecutive: 2 })).toBe(false);
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 2, isOccupied: occ(1), maxConsecutive: 1 })).toBe(true);
+  });
+
+  it('p1,p3 既割当 + p2 を置くと連続3 (前後が繋がる)。上限2なら超過', () => {
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 2, isOccupied: occ(1, 3), maxConsecutive: 2 })).toBe(true);
+  });
+
+  it('間が空いていれば連続にならない (p1 割当 + p3 を置く → run 1)', () => {
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 3, isOccupied: occ(1), maxConsecutive: 1 })).toBe(false);
+  });
+
+  it('未知の periodId は false', () => {
+    expect(wouldExceedConsecutive({ periodsOrder, periodId: 99, isOccupied: occ(1, 2), maxConsecutive: 1 })).toBe(false);
   });
 });

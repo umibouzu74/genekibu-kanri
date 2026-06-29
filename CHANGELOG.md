@@ -2,6 +2,148 @@
 
 ## [Unreleased]
 
+### Fixed (講習時間割作成: 校正レビューでの指摘修正)
+3 観点の独立レビューで見つかった不具合を修正:
+
+- **生成パラメータの数値入力が打ち直せない (HIGH)**: controlled value が毎キー
+  入力で clamp され、特に「探索回数の上限」(最小 5万) を入力できなかった問題を
+  修正。ローカル draft を持ち blur / Enter で確定する方式に (スライダーは即時)。
+- **修正提案「1日コマ数上限を上げる」が上限超過値を提案 (MEDIUM)**: 適用時に
+  clamp される値を提案し、toast の表示と実際の適用値が食い違わないように。
+- **読込検証が schedule 欠落を許容 (MEDIUM)**: `schedule` を必須化し、旧
+  バージョンの migrate がクラッシュする経路を事前に弾くように。
+- **NG 解除のワンクリック適用が二度押しで付け直す (MEDIUM)**: 現在 NG の
+  ときのみ解除する冪等動作に。
+- **テンプレート全体適用が未検証 (LOW)**: 適用前に構造を検証し、壊れた
+  テンプレートはエラー通知して中断。
+- **autosave の容量超過が未捕捉 (LOW)**: `localStorage.setItem` を try/catch で
+  保護し、失敗時はステータス表示に反映。
+
+### Changed (講習時間割作成: cleanSchedule の計算量を O(K) 化 — E4a)
+- `cleanSchedule` を「全 (日付×時限×クラス) を展開して照合」から「既存
+  スケジュールキーを走査して entity の存在を直接判定」に変更
+  (O(D×P×C+K) → O(D+P+C+K))。挙動は等価。大きめのプロジェクトでの
+  保存・読込・パターン適用が軽くなる。テスト +4 件 (全 1347 件 pass)。
+
+### Added (講習時間割作成: 読込データの構造バリデーション — E3d)
+壊れた localStorage / 不正な JSON によるクラッシュやデータ損失を防ぐ保険。
+
+- **構造検証** (`utils/projectSchema.js`): `validateProjectShape` が
+  tabs / config.dates・periods・classes / subjectCounts / teachers などの
+  致命的な型崩れを検出。zod 等の依存は追加せず手書き (バンドル増ゼロ)。
+- **起動時** (`loadInitialProject`): 検証 NG ならデフォルトにフォールバック
+  して toast 通知 (従来の JSON.parse 失敗と同じ経路)。
+- **JSON 取り込み** (`handleLoadJson`): 検証 NG なら適用せずエラー toast。
+- **テスト**: projectSchema を新規追加、projectFactory に fallback を追記
+  (計 +12 件、全 1343 件 pass)。
+
+### Added (講習時間割作成: テンプレート機能・年度間コピー — E2d)
+去年の設定を今年に流用できるテンプレート機能。プロジェクトを名前付きで
+保存し、翌年などに「全体」または「講師マスタのみ」を適用して使い回せる。
+
+- **テンプレート管理** (ConfigModal「🗂 テンプレート」タブ): 現在の
+  プロジェクトを保存 / 一覧 (作成日・講師数・タブ数) / 「全体を適用」/
+  「講師のみ」/ 削除。適用は確認ダイアログ + Undo (Ctrl+Z) で取り消し可。
+- **保存先**: localStorage (`builder.templates`、project state とは独立)。
+  snapshots は除外して保存。壊れたデータは空配列にフォールバック。
+- **テスト**: templates / TemplateManager を新規追加 (計 +15 件、
+  全 1331 件 pass)。
+
+### Added (講習時間割作成: 修正提案のワンクリック適用 — E2b MVP)
+E1g の修正提案のうち、機械的に確実なものをその場で適用できるように。
+
+- **「適用」ボタン** (`Toolbar` の「設定の問題」popover): 提案を
+  `{ text, action }` 構造化し、action 付きの提案に適用ボタンを表示。
+  - `releaseNg`: 該当講師の手動 NG をワンクリック解除。
+  - `setMaxDaily`: 1 日コマ数上限を必要値へ引き上げ。
+  - 適用は単発操作なので Undo (Ctrl+Z) で戻せる。
+- **テスト**: fixSuggestions を action 構造に更新、Toolbar に適用経路を追記
+  (全 1316 件 pass)。
+
+### Added (講習時間割作成: 講師の連続コマ数制約 — E2c)
+「同じ講師に N コマを超える連続担当をさせない」制約を自動生成に追加。
+1 日合計の上限だけでなく、連続性も指定できる。
+
+- **設定** (⚡自動生成タブ):「講師の連続コマ数上限」を追加。0 = 制限なし
+  (既定なので従来挙動を維持)。
+- **solver** (`wouldExceedConsecutive` / autoGenerator): 時限の並び順を見て、
+  講師を置くと連続ランが上限を超える場合は候補から外す。「未定」は対象外。
+- **テスト**: teacherConstraints / autoGenerator / constants / GenerationSettings
+  / projectReducer に追記 (計 +11 件、全 1314 件 pass)。
+
+### Added (講習時間割作成: エラー時の修正提案 — E1g)
+自動生成が構造的に解けない設定 (担当講師ゼロ / 科目 capacity 不足) に対し、
+「では、どう直すか」の具体策を提示してデバッグ時間を短縮する。
+
+- **修正提案** (`Toolbar` の「設定の問題」popover): 各 infeasibility の下に
+  💡 で解決策を箇条書き。例:「12/25 1限 の NG を解除する: 堀上」「別の時限
+  なら担当可能: 2限」「英語担当を あと 1 名 増やす」「1日コマ数上限を 6 → 9
+  に上げる」など。
+- **純粋関数** (`utils/fixSuggestions.js`): `suggestForNoTeacher` /
+  `suggestForCapacity` / `buildFixSuggestions`。手動 NG と自動 NG を区別し、
+  解除可能な NG や移動先の時限を具体的に挙げる。提示のみで自動適用はしない。
+- **テスト**: fixSuggestions を新規追加、Toolbar に表示確認を追記
+  (計 +12 件、全 1303 件 pass)。
+
+### Added (講習時間割作成: 講師マスタ CSV のファイル取り込み — E2a)
+講師マスタ CSV インポートが貼り付け (paste) に加えて、ファイル選択と
+ドラッグ&ドロップに対応。新規セットアップ時の導入障壁を下げる。
+
+- **ファイル選択 / D&D** (`TeacherManager` の CSV パネル):「📂 ファイルを
+  選択」ボタンと textarea へのドラッグ&ドロップで CSV を読み込み。読み取った
+  内容は既存の paste フロー (parse + プレビュー + 追加/更新/全置換) に合流。
+- **ガード**: CSV 以外の拡張子はエラー toast、ドラッグ中は枠をハイライト。
+- **テスト**: TeacherManager を新規追加 (ファイル選択 / D&D / 非 CSV ガード
+  の 3 件、全 1291 件 pass)。
+
+### Added (講習時間割作成: スケジュール差分ビュー — E1d)
+保存したスナップショットと現在の状態が「どのセルでどう違うか」を一目で
+確認できる機能。スナップショットと組み合わせて試行錯誤の比較ができる。
+
+- **差分表示** (`SnapshotMenu` に「🔍 差分」トグル): 各スナップショット行で
+  「このスナップショット → 現在の状態」の差分を ＋追加(緑)／－削除(赤)／
+  ≠変更(橙)のサマリ + セル一覧(日付 時限 クラス: 旧→新)で表示。
+- **純粋関数** (`utils/scheduleDiff.js`): `diffSchedules(from, to)` は
+  セル単位で added/removed/changed を判定(subject+teacher のみ比較、
+  locked は無視、空セルは未割当扱い)。`summarizeDiff` で種別件数。
+- **テスト**: scheduleDiff を新規追加、SnapshotMenu に比較操作を追記
+  (計 +13 件、全 1288 件 pass)。
+
+### Added (講習時間割作成: 名前付きスナップショット — E1c)
+試行錯誤しながら時間割を作る際に「いまの状態を保存 → 別案を試す →
+いつでも戻す」ができる便利機能。undo/redo の単線履歴とは別に、名前付きで
+複数の状態を残せる。
+
+- **保存・復元 UI** (`SnapshotMenu`, Toolbar に同梱): 📌 ボタンから現在の
+  タブの時間割を名前を付けて保存。一覧から「復元 / 改名 / 削除」。
+  アクティブタブのものだけ表示し、件数バッジ付き。
+- **データモデル**: `project.snapshots`(`{ id, name, tabId, createdAt,
+  schedule }`)。schedule は deep copy。タブ削除時は紐づくスナップショットも
+  掃除。`migrateProject` で後発フィールドとして空配列に初期化。
+- **reducer**: `snapshot/save` / `apply`(記録元タブへ復元 + 切替)/
+  `rename` / `remove`。`useProject` に対応 callback を追加(createdAt は
+  hook 側で付与し reducer の純粋性を維持)。
+- **テスト**: SnapshotMenu を新規追加、projectReducer に追記(計 +19 件、
+  全 1275 件 pass)。
+
+### Added (講習時間割作成: 自動生成の操作性向上 — E2e / E2f-cancel / E2h)
+「🧙‍♂️ 自動作成」周りの操作性を底上げ。これまでハードコードだった生成
+パラメータを設定可能にし、生成の中止と採用案の比較を支援する。
+
+- **生成パラメータの UI 化** (`ConfigModal`「⚡ 自動生成」タブ / E2e):
+  「生成する案の数」「講師 1 人の 1 日コマ数上限」「探索回数の上限」を
+  number input + スライダーで調整可能に。`project.numPatterns /
+  maxDailyHours / maxIterations` に保存し、`resolveGenerationParams` /
+  `clampGenerationParam` で範囲外値を防御。reducer は
+  `project/setGenerationParams` で部分更新。
+- **自動生成の中止ボタン** (Toolbar / E2f 一部): 生成中に「✕ 中止」を
+  表示。worker を止めて既存セルは保持したまま中断できる。
+- **生成案の負荷偏り表示** (`SummaryPanel` / E2h): 各案の集計に
+  「最多 / 最少 / 偏り」を中立表示 (`summarizePatternLoad`)。完全解どうしを
+  講師コマ数の均等さで比較して採用案を選べる。
+- **テスト**: constants / patternLoad / GenerationSettings を新規追加、
+  projectReducer / autoGenerator / Toolbar に追記 (計 +32 件、全 1257 件 pass)。
+
 ### Changed (回数カウントを「コース」単位に整合 + コホートUI改善)
 コース別終講日のレビューで判明した「終講日コホート」と「回数カウント
 (授業セット)」の二重管理を整理。ClassSet 未登録だと 高1・2 の英数 (週2) が

@@ -1,7 +1,12 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-05-17 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
-+ D-Test foundation (D2a + D2b + D4e) 完了
+最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
++ D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
++ E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
++ E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
++ E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
++ E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
++ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -578,15 +583,23 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
   - ScheduleCell の矢印ナビは既存。エッジ動作 (端 → 反対端へ wrap?) を統一
 - **規模**: 中 / **価値**: 中
 
-#### E1c. 🟡 名前付きスナップショット (旧 D1d)
-- **現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できない。生成 3 案も SummaryPanel 居る間だけ。
-- **改善**: スロット型の保存・適用 (project レベル or タブレベル)。
-- **規模**: 中 / **価値**: 中
+#### E1c. ✅ 名前付きスナップショット (2026-06-29 完了 / 旧 D1d)
+- **旧現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できなかった。
+- **実装 (タブレベル)**:
+  - **data model**: `project.snapshots = [{ id, name, tabId, createdAt, schedule }]`。source tabId を記録し、schedule は deep copy で保持。`createNewProject` / `migrateProject` (後発フィールドとして空配列 default) に追加。
+  - **reducer**: `snapshot/save` (アクティブタブを捕捉、id=max+1、空名 no-op) / `snapshot/apply` (記録元タブへ復元 + activeTabId 切替、cleanSchedule、削除済みタブ/不明 id は no-op) / `snapshot/rename` / `snapshot/remove`。`tab/delete` で当該タブの snapshot も掃除。
+  - **useProject**: `saveSnapshot(name)` (createdAt は hook 側で付与し reducer の純粋性を維持) / `applySnapshot` / `renameSnapshot` / `removeSnapshot`。
+  - **UI**: `SnapshotMenu.jsx` を Toolbar に同梱 (📌 ボタン + popover)。保存 (showInput) / 復元 (showConfirm) / 改名 / 削除 (showConfirm)。アクティブタブのものだけ一覧、件数バッジ、`role="dialog"` + aria 属性、外側クリック/Escape で閉じる。
+- **テスト**: projectReducer.test.js (+10) / SnapshotMenu.test.jsx (新規 9) / Toolbar.test.jsx の mock 拡張。
+- **設計判断**: undo で戻せるが「復元」「削除」は名前付き資産の上書き/喪失なので confirm を付与。CLAUDE.md の「行動統計で UI 自動変形」禁止には抵触しない (明示的なユーザ保存のみ、自動学習なし)。
 
-#### E1d. 🟡 スケジュール差分ビュー (旧 D1e)
-- **現状**: 自動生成 N 案は集計のみ。実セル差は適用前後比較しないと見えない。
-- **改善**: A/B 案の cell-by-cell diff (色違いハイライト)。
-- **規模**: 中 / **価値**: 中
+#### E1d. ✅ スケジュール差分ビュー (2026-06-29 完了 / 旧 D1e)
+- **旧現状**: 実セル差は適用前後を見比べないと分からなかった。
+- **実装 (スナップショット比較版)**:
+  - **utils/scheduleDiff.js**: 純粋関数 `diffSchedules(from, to)` (セル単位で added / removed / changed を判定、subject+teacher のみ比較し locked は無視、空 subject は未割当扱い、null 安全) + `summarizeDiff(diffs)` (種別件数)。
+  - **UI**: SnapshotMenu の各スナップショット行に「🔍 差分」トグルを追加。押すと「このスナップショット → 現在の状態」の差分を ＋N（追加・緑）／－N（削除・赤）／≠N（変更・橙）のサマリ + セル一覧 (日付 時限 クラス: 旧→新、最大 30 件 + 他 N 件) で表示。`aria-pressed`、popover を閉じると比較状態もリセット。
+- **テスト**: scheduleDiff.test.js (新規 10) / SnapshotMenu.test.jsx (+3 比較操作)。
+- **延期**: 自動生成 N 案どうしの diff、ScheduleTable 上での直接ハイライト (rowSpan/sticky との兼ね合いで重いので別途)。
 
 #### E1e. 🟠 色覚 / コントラスト WCAG AA 準拠 (新規)
 - **現状**: `builder-*` トークン化 (C3) で見た目は統一されたが、コントラスト比は未測定。「⚠️N件」の赤背景 / 「✨ OK」の緑文字 / 科目カラーが背景の薄色など、AA (4.5:1) を満たすか不明。
@@ -598,10 +611,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: 長押しジェスチャ → ContextMenu open、ピンチズーム抑止、ボタンの最低タップ領域 44px。E1a (モバイル) とセットで。
 - **規模**: 中 / **価値**: 中
 
-#### E1g. 🟡 エラー時の修正提案 (新規 / D1c-C の延長)
-- **現状**: D1c-C で「noTeacherForSlot」「subjectCapacityShortage」を検出。違反/不可は表示するが、解決のヒントは出さない。
-- **改善**: 「12/25 1限 の英語は全員 NG → A 案: 別時限へ移動 / B 案: 別講師を登録」のような選択肢を popover 内に出す。E2b (修復 wizard) の MVP 版。
-- **規模**: 中 / **価値**: 高 (デバッグ時間を大幅短縮)
+#### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)
+- **旧現状**: D1c-C で infeasibility を検出するが、解決のヒントは無かった。
+- **実装**:
+  - **utils/fixSuggestions.js**: 純粋関数 `suggestForNoTeacher(item, ctx)` (担当講師未登録 → 登録 / 手動 NG → 該当時限の NG 解除〔名前入り〕/ 別時限で担当可 → 移動。自動 NG も候補から除外) + `suggestForCapacity(item, ctx)` (講師を あと N 名 / 1 日上限を X→Y に / コマ数を減らす) + `buildFixSuggestions(infeasibilities, ctx)` (各 item に `suggestions[]` を非破壊で付与)。
+  - **useAnalysis**: `computeInfeasibilities` の結果を `buildFixSuggestions` で包んで公開 (deps 不変)。
+  - **Toolbar**: popover「設定の問題」の各項目の下に 💡 修正提案を箇条書き表示。
+- **テスト**: fixSuggestions.test.js (新規 11) / Toolbar.test.jsx (+1)。
+- **延期**: 提案のワンクリック自動適用は E2b (修復 wizard) で扱う。ここまでは提示のみ。
 
 #### E1h. ⚪ 印刷スタイル微調整 (新規)
 - **現状**: 2 系統の印刷経路 (CLAUDE.md 印刷ルール参照) で運用中。MonthView / ExcelGridView は popup 方式、その他は `window.print()`。
@@ -612,39 +629,60 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E2. 機能拡張
 
-#### E2a. 🟠 CSV インポートの拡張 (旧 D6a の続き)
-- **現状**: 講師マスタの CSV import (paste 型) のみ完了 (D6a-MVP)。
-- **改善 (優先順)**:
-  - ファイル D&D / `<input type="file">` 対応 (paste より導入障壁低い)
+#### E2a. 🟡 CSV インポートの拡張 (旧 D6a の続き / 一部完了)
+- **現状**: 講師マスタの CSV import は paste + ✅ ファイル選択 / ドラッグ&ドロップ 対応済 (2026-06-29)。
+- **✅ 完了分 (ファイル取り込み)**: TeacherManager の CSV パネルに「📂 ファイルを選択」(hidden `<input type="file" accept=".csv,...">`) と textarea へのドラッグ&ドロップを追加。`readCsvFile` が `file.text()` で読み取り → 既存の `csvText` → parse → preview フローに合流。非 CSV 拡張子はエラー toast でガード、ドラッグ中は枠をハイライト。テスト: TeacherManager.test.jsx 新規 3 件 (選択 / D&D / 非 CSV ガード)。
+- **残り (優先順)**:
   - NG 日時 CSV (`teacher,date,period` 形式) で ngSlots を一括設定
   - 既存 Excel スケジュール (旧 winter_schedule .xlsx) からセル全体を取り込み (要 mapping UI)
   - subjectCounts / classes 等の config も CSV 化
 - **規模**: 中〜大 / **価値**: 高 (新規ユーザ全体の体験を底上げ)
 
-#### E2b. 🟡 自動修復 wizard (旧 D6b)
-- **現状**: 生成失敗時は部分解 + warning toast。手詰まりの解消は手作業。
-- **改善**: conflict 1 件ごとに「この講師を別の日へ」「この科目を別クラスへ」のような提案 → 適用 / スキップ / カスタム編集の選択 UI。
-- **規模**: 大 / **価値**: 中 (制約緩和の意思決定 UI 設計が必要)
+#### E2b. 🟡 自動修復 wizard (旧 D6b / MVP 完了 2026-06-29)
+- **現状**: E1g の修正提案のうち、機械的に確実なものはワンクリック適用できる。
+- **✅ 完了分 (提案のワンクリック適用)**: `fixSuggestions` の提案を `{ text, action? }` 構造化。action 付きの提案には Toolbar popover で「適用」ボタンを出す。対応アクション: `releaseNg` (該当講師の手動 NG を解除 → toggleTeacherNg) / `setMaxDaily` (1 日コマ数上限を必要値へ → updateGenerationParams)。適用は単発の dispatch なので Undo で戻せる。テスト: fixSuggestions (action 構造) / Toolbar (+2 適用経路)。
+- **残り**: schedule そのものを動かす提案 (「この講師を別の日へ」「この科目を別クラスへ」) の自動適用と、適用 / スキップ / カスタム編集のウィザード化。これは制約緩和の意思決定 UI が必要で規模大。
+- **規模**: 大 / **価値**: 中
 
-#### E2c. 🟡 講師の連続コマ数制約 (旧 D6c)
-- **現状**: 1 日合計 `maxDailyHours` のみ。「2 コマ連続 NG」「3 コマ連続後は休憩」等の連続性制約は無い。
-- **改善**: teacherConstraints に追加。constraint check を増やすので solver の探索空間も増える。
-- **規模**: 中 / **価値**: 中
+#### E2c. ✅ 講師の連続コマ数制約 (2026-06-29 完了 / 旧 D6c)
+- **旧現状**: 1 日合計 `maxDailyHours` のみ。連続性の制約は無かった。
+- **実装**:
+  - **teacherConstraints**: 純粋関数 `wouldExceedConsecutive({ periodsOrder, periodId, isOccupied, maxConsecutive })`。置こうとする時限を含む連続ランの長さが上限を超えるか判定。`maxConsecutive <= 0` は制限なし。
+  - **autoGenerator**: solver の daily limit チェックの直後に呼ぶ。`isOccupied(periodId)` は「その日のその時限に当該講師が居るか」を全クラス走査で判定。`未定` (DAILY_LIMIT_EXEMPT_TEACHER) は対象外。`project.maxConsecutivePeriods ?? 0`。
+  - **constants / reducer / UI**: `DEFAULT_MAX_CONSECUTIVE_PERIODS = 0` + bounds {0..8}、`resolveGenerationParams` / `project/setGenerationParams` に追加、GenerationSettings (⚡自動生成タブ) に「講師の連続コマ数上限 (0 = 制限なし)」の input/slider。
+- **テスト**: teacherConstraints.test.js (+5) / autoGenerator.test.js (+3 制限0で3連続OK・上限2で不成立・未定は対象外) / constants / GenerationSettings / projectReducer に各追記。
+- **既定値 0 で従来挙動を維持** (オプトイン)。
 
-#### E2d. 🟡 テンプレート機能 (年度間コピー) (旧 D6d)
-- **現状**: project ごとに完全独立。去年 → 今年の流用は JSON 保存→読込で代替可。
-- **改善**: テンプレ保存・適用、「講師マスタだけ引き継ぎ」「スケジュールだけ引き継ぎ」等の options。
-- **規模**: 中 / **価値**: 中
+#### E2d. ✅ テンプレート機能 (年度間コピー) (2026-06-29 完了 / 旧 D6d)
+- **旧現状**: 去年 → 今年の流用は JSON 保存→読込でしか代替できなかった。
+- **実装**:
+  - **utils/templates.js**: 純粋関数 `buildTemplatePayload` (snapshots を除外し deep copy) / `addTemplate` (id max+1) / `removeTemplate` + localStorage I/O ラッパ `loadTemplates` / `persistTemplates` (壊れたデータは空配列フォールバック)。保存先は `STORAGE_KEY_TEMPLATES` (project state とは独立)。
+  - **useProject**: `applyTemplateFull(payload)` (migrate + cleanSchedule → project/replace、Undo 可)。「講師マスタのみ」は既存 `importTeachers(..., 'replace')` を再利用。
+  - **UI**: ConfigModal に「🗂 テンプレート」タブ。保存 / 一覧 (作成日・講師数・タブ数) / 「全体を適用」/「講師のみ」/ 削除。適用は confirm + Undo 可能。
+- **テスト**: templates.test.js (新規 8) / TemplateManager.test.jsx (新規 7)。
+- **延期**: 「スケジュールだけ引き継ぎ」「カレンダー構成だけ」等の細粒度オプションは未実装 (全体 / 講師のみ の 2 択)。
 
-#### E2e. 🟡 生成パラメータ UI 化 (新規)
-- **現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。
-- **改善**: ConfigModal に「自動生成」タブを追加し、3 つを slider / number input で。advanced ユーザ向け折りたたみで OK。
-- **規模**: 小〜中 / **価値**: 中
+#### E2e. ✅ 生成パラメータ UI 化 (2026-06-29 完了)
+- **旧現状**: `NUM_PATTERNS = 3` (BuilderApp.jsx hardcoded), `MAX_ITERATIONS = 500_000` (autoGenerator.js hardcoded), `DEFAULT_MAX_DAILY_HOURS = 6` (project.maxDailyHours で上書き可だが UI 無し)。
+- **実装**:
+  - **constants.js**: 3 パラメータのデフォルト (`DEFAULT_NUM_PATTERNS` / `DEFAULT_MAX_DAILY_HOURS` / `DEFAULT_MAX_ITERATIONS`) と許容範囲 `GENERATION_PARAM_BOUNDS`、`clampGenerationParam(key, value)` (NaN→min, 四捨五入, clamp)、`resolveGenerationParams(project)` を追加。autoGenerator.js のローカル定数はこれを import する形に統一。
+  - **autoGenerator.js**: `generateSinglePattern` が `project.maxIterations ?? MAX_ITERATIONS` を読み、`solve` の探索上限に反映。`generateSchedule` の numPatterns デフォルトも定数化。
+  - **reducer**: `project/setGenerationParams` action (部分更新 + clamp + 値不変なら同一参照 no-op)。`useProject.updateGenerationParams({ numPatterns?, maxDailyHours?, maxIterations? })` で公開。
+  - **BuilderApp**: `NUM_PATTERNS` を `resolveGenerationParams(project).numPatterns` に。
+  - **GenerationSettings.jsx**: ConfigModal に「⚡ 自動生成」タブを新設。number input + range slider + 説明文 + 「既定値に戻す」。
+- **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
+- **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (新規)
-- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」が不可視。
-- **改善**: Worker から進捗イベントを増やし、Toolbar の進捗ボタンクリックで「詳細パネル」を出す。長時間生成時の cancel 判断材料に。
+#### E2f. 🟡 自動生成中の進捗詳細 (一部完了 — cancel 2026-06-29)
+- **現状**: `current/total` (パターン数) のみ。「どのセルで詰まっているか」「backtrack 回数」「経過時間」は依然不可視。
+- **✅ 完了分 (cancel)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
+- **残り**: Worker から進捗イベントを増やし、進捗ボタンクリックで「詳細パネル」(詰まっているセル / backtrack 回数 / 経過時間)。
 - **規模**: 中 / **価値**: 中 (大規模 project で生成時間が読めない問題の解消)
+
+#### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
+- **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
+- **実装**: `utils/patternLoad.js` の純粋関数 `summarizePatternLoad(totals)` (最多 / 最少 / spread / teacherCount、0 コマ除外、null 安全)。SummaryPanel の各案集計ヘッダに「最多 X / 最少 Y (偏り Z)」を中立表示 (spread 0 は緑)。「最良」の自動判定はしない (priorityClasses 等で意図的に偏らせるケースがあるため)。
+- **テスト**: patternLoad.test.js 新規 6 件。
 
 #### E2g. ⚪ 履歴ブランチング (新規)
 - **現状**: undo/redo は単線。新しい操作をすると redo 履歴は破棄される (一般的な動作)。
@@ -670,10 +708,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: Playwright で `page.pdf()` → PDF を画像化 → pixelmatch / VRT。少なくとも 7 ビュー × 1 サンプルずつ。
 - **規模**: 中 / **価値**: 中 (印刷バグは現場でしか発覚しない)
 
-#### E3d. 🟠 project JSON 読込時の schema バリデーション (新規)
-- **現状**: `projectFactory.loadInitialProject` は JSON.parse 失敗のみ捕捉 (test fixture でも確認済み)。schema 違反 (`teachers` が配列でない等) は crash する可能性。
-- **改善**: zod / valibot 等で schema を宣言、`migrateProject` の手前で validate。失敗時は defaults にフォールバック + 「JSON が壊れています」toast。
-- **規模**: 中 / **価値**: 高 (R2: LocalStorage 容量との合わせ技、データ損失への保険)
+#### E3d. ✅ project JSON 読込時の schema バリデーション (2026-06-29 完了)
+- **旧現状**: `loadInitialProject` は JSON.parse 失敗のみ捕捉。schema 違反 (`tabs` / `config.dates` が配列でない等) は migrate / downstream で crash しうる。
+- **実装**:
+  - **utils/projectSchema.js**: 純粋関数 `validateProjectShape(obj)` → `{ valid, error }`。致命的な構造崩れ (tabs 非配列/空・config 欠落・dates/periods/classes 非配列・subjectCounts 非オブジェクト・teachers 非配列・schedule 非オブジェクト) のみ検出。任意フィールドの欠落は migrate が default 補完するので見ない。zod 等の依存は足さず手書き (バンドル増ゼロ)。
+  - **projectFactory.loadInitialProject**: parse 後・migrate 前に validate。不正なら throw → 既存 catch でフォールバック default + loadError → 起動時 toast。
+  - **useJsonIO.handleLoadJson**: ファイル取り込みでも validate。不正なら適用せず error toast。
+- **テスト**: projectSchema.test.js (新規 10) / projectFactory.test.js (+2 fallback)。
+- **判断**: 手書きバリデータで十分 (構造チェックのみ)。値レベルの厳密検証 (例: id の一意性) は過剰なので入れない。
 
 #### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
 - **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
@@ -694,10 +736,10 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E4. パフォーマンス / スケーラビリティ
 
-#### E4a. 🟢 cleanSchedule O(K) 化 (旧 D3a)
-- **現状**: `constants.js:cleanSchedule` は全 (dates × periods × classes) を iterate して valid key Set を作り filter。デフォルト 72、ピーク数百。
-- **改善**: 既存 schedule keys を iterate し entity 存在を即時判定する方向に反転。
-- **規模**: 小 / **価値**: 低〜中
+#### E4a. ✅ cleanSchedule O(K) 化 (2026-06-29 完了 / 旧 D3a)
+- **旧現状**: 全 (dates × periods × classes) を展開して valid key Set を作り filter (O(D×P×C + K))。
+- **実装**: date/period/class の ID Set を作り (O(D+P+C))、既存 schedule キーを `parseKey` で分解して存在判定する方向に反転 (O(D+P+C + K))。挙動は等価 (不正キーは破棄、消滅 entity 参照は破棄)。constants.js が `scheduleKey.parseKey` を import (scheduleKey 側は無 import で循環なし)。
+- **テスト**: constants.test.js に cleanSchedule の 4 ケース追加 (有効キー保持 / 消滅 entity 破棄 / 不正形式破棄 / 複数タブ独立)。
 
 #### E4b. 🟡 solver スケーリング計測 (旧 D3b)
 - **現状**: `MAX_ITERATIONS = 500_000`。何コマまでなら数秒以内に解けるか未計測。

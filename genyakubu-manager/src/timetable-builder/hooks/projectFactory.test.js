@@ -182,6 +182,24 @@ describe('loadInitialProject — branches', () => {
     expect(typeof loadError).toBe('string');
   });
 
+  it('構造が壊れた JSON (tabs が配列でない) は fallback + loadError (E3d)', () => {
+    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify({ version: 3, tabs: 'oops', teachers: [] }));
+    const { project: loaded, loadError } = loadInitialProject();
+    expect(loaded.tabs).toHaveLength(2); // フォールバックの 2 タブ
+    expect(loadError).toBeTruthy();
+    expect(loadError).toContain('構造');
+  });
+
+  it('config.dates が配列でない保存データも fallback する (E3d)', () => {
+    const broken = {
+      version: 3, name: 'broken', activeTabId: 1, teachers: [],
+      tabs: [{ id: 1, name: 'a', config: { dates: 'x', periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
+    };
+    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(broken));
+    const { loadError } = loadInitialProject();
+    expect(loadError).toBeTruthy();
+  });
+
   it('読み込み成功時は loadError が null', () => {
     const saved = {
       version: 2, name: 'ok',

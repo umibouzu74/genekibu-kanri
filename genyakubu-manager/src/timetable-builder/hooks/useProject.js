@@ -4,7 +4,8 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
-import { makeKey } from '../utils/scheduleKey';
+import { makeKey, migrateProject } from '../utils/scheduleKey';
+import { cleanSchedule } from '../utils/constants';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -111,6 +112,39 @@ export function useProject() {
     dispatch({ type: 'project/updateName', payload: { name } });
   }, [dispatch]);
 
+  // --- 自動生成パラメータ (E2e) ---
+  // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
+  const updateGenerationParams = useCallback((updates) => {
+    dispatch({ type: 'project/setGenerationParams', payload: updates });
+  }, [dispatch]);
+
+  // --- スナップショット (E1c) ---
+  // createdAt は表示用なので副作用 (時刻取得) は reducer の外で行い、純粋性を保つ。
+  const saveSnapshot = useCallback((name) => {
+    dispatch({ type: 'snapshot/save', payload: { name, createdAt: new Date().toISOString() } });
+  }, [dispatch]);
+
+  const applySnapshot = useCallback((id) => {
+    dispatch({ type: 'snapshot/apply', payload: { id } });
+  }, [dispatch]);
+
+  const renameSnapshot = useCallback((id, name) => {
+    dispatch({ type: 'snapshot/rename', payload: { id, name } });
+  }, [dispatch]);
+
+  const removeSnapshot = useCallback((id) => {
+    dispatch({ type: 'snapshot/remove', payload: { id } });
+  }, [dispatch]);
+
+  // --- テンプレート適用 (E2d) ---
+  // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
+  // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
+  const applyTemplateFull = useCallback((payload) => {
+    if (!payload) return;
+    const migrated = migrateProject(payload);
+    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
+  }, [dispatch]);
+
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group) => {
     dispatch({ type: 'combinedGroup/add', payload: { group } });
@@ -164,6 +198,15 @@ export function useProject() {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    // 自動生成パラメータ
+    updateGenerationParams,
+    // スナップショット
+    saveSnapshot,
+    applySnapshot,
+    renameSnapshot,
+    removeSnapshot,
+    // テンプレート (E2d)
+    applyTemplateFull,
     // 合同グループ
     addCombinedGroup,
     updateCombinedGroup,

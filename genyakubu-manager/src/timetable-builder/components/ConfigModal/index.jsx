@@ -8,6 +8,8 @@ import AbsenceNgPanel from './AbsenceNgPanel';
 import SubjectColorSettings from './SubjectColorSettings';
 import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
+import GenerationSettings from './GenerationSettings';
+import TemplateManager from './TemplateManager';
 
 const TITLE_ID = 'builder-config-modal-title';
 
@@ -64,6 +66,8 @@ export default function ConfigModal({ onClose }) {
             ['absence-ng', '📅 講師不在・NG'],
             ['combined', '🔗 合同授業'],
             ['colors', '🎨 科目カラー'],
+            ['generation', '⚡ 自動生成'],
+            ['templates', '🗂 テンプレート'],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -77,6 +81,10 @@ export default function ConfigModal({ onClose }) {
         <div className="flex-1 overflow-y-auto p-6">
           {configTab === 'subjects' ? (
             <SubjectManager />
+          ) : configTab === 'generation' ? (
+            <GenerationSettings />
+          ) : configTab === 'templates' ? (
+            <TemplateManager />
           ) : configTab === 'combined' ? (
             <CombinedGroupSettings />
           ) : configTab === 'colors' ? (

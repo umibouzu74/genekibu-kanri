@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { parseKey } from '../utils/scheduleKey';
+import { parseKey, makeNgKey } from '../utils/scheduleKey';
+import SnapshotMenu from './SnapshotMenu';
 
 export default function Toolbar({
   isCompact,
@@ -12,6 +13,7 @@ export default function Toolbar({
   isGenerating,
   generateProgress,
   onGenerate,
+  onCancelGenerate,
   onShowHelp,
 }) {
   const {
@@ -22,15 +24,46 @@ export default function Toolbar({
     undo,
     redo,
     handleClearUnlocked,
+    project,
+    toggleTeacherNg,
+    updateGenerationParams,
   } = useProjectContext();
-  const { showConfirm } = useUI();
+  const { showConfirm, showToast } = useUI();
+
+  // E2b: 修正提案のワンクリック適用。action 種別ごとに対応する dispatch を呼ぶ。
+  const applyFix = (action) => {
+    if (!action) return;
+    if (action.type === 'releaseNg') {
+      const idx = (project?.teachers || []).findIndex(t => t.name === action.teacherName);
+      if (idx < 0) {
+        showToast?.('対象の講師が見つかりません', 'error', 3000);
+        return;
+      }
+      // toggleTeacherNg はトグルなので、二度押し / 再計算前クリックで NG を
+      // 付け直さないよう、現在 NG のときだけ解除する (冪等化, review F3)。
+      const k = makeNgKey(action.date, action.period);
+      if (!(project?.teachers?.[idx]?.ngSlots || []).includes(k)) {
+        showToast?.(`${action.teacherName} の ${action.date} ${action.period} は既に NG ではありません`, 'warning', 2500);
+        return;
+      }
+      toggleTeacherNg?.(idx, action.date, action.period);
+      showToast?.(`${action.teacherName} の ${action.date} ${action.period} の NG を解除しました`, 'success', 2500);
+    } else if (action.type === 'setMaxDaily') {
+      updateGenerationParams?.({ maxDailyHours: action.value });
+      showToast?.(`1日コマ数上限を ${action.value} に変更しました`, 'success', 2500);
+    }
+  };
   const { violations, infeasibilities } = analysis;
   const infeasItems = [
     ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
-      kind: 'noTeacher', label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+      kind: 'noTeacher',
+      label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+      suggestions: it.suggestions || [],
     })),
     ...(infeasibilities?.subjectCapacityShortage?.items || []).map(it => ({
-      kind: 'capacity', label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+      kind: 'capacity',
+      label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+      suggestions: it.suggestions || [],
     })),
   ];
 
@@ -193,9 +226,29 @@ export default function Toolbar({
                   {infeasItems.length > 0 && (
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
-                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                      <ul className="space-y-1 pl-2 text-builder-ink-muted">
                         {infeasItems.slice(0, 8).map((it, i) => (
-                          <li key={`infeas-${i}`} className="text-[11px]">{it.label}</li>
+                          <li key={`infeas-${i}`} className="text-[11px]">
+                            <div>{it.label}</div>
+                            {it.suggestions.length > 0 && (
+                              <ul className="mt-0.5 pl-2 space-y-0.5">
+                                {it.suggestions.map((s, j) => (
+                                  <li key={j} className="text-builder-blue flex items-start gap-1">
+                                    <span aria-hidden="true">💡</span>
+                                    <span className="flex-1">{s.text}</span>
+                                    {s.action && (
+                                      <button
+                                        type="button"
+                                        onClick={() => applyFix(s.action)}
+                                        className="ml-1 px-1.5 py-0.5 border border-builder-blue rounded text-builder-blue hover:bg-builder-info-soft whitespace-nowrap"
+                                        title="この修正を適用する"
+                                      >適用</button>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
                         ))}
                         {infeasItems.length > 8 && (
                           <li className="italic">他 {infeasItems.length - 8} 件</li>
@@ -217,6 +270,7 @@ export default function Toolbar({
         <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
         <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
         <div className="h-6 w-px bg-builder-border mx-1"></div>
+        <SnapshotMenu />
         <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
@@ -233,6 +287,15 @@ export default function Toolbar({
             </>
           ) : "🧙‍♂️ 自動作成"}
         </button>
+        {isGenerating && onCancelGenerate && (
+          <button
+            onClick={onCancelGenerate}
+            className="flex items-center gap-1 px-3 py-2 bg-builder-danger-soft text-builder-red border border-builder-danger-border rounded hover:bg-builder-danger-border shadow-sm text-sm font-bold"
+            title="自動作成を中止する"
+          >
+            ✕ 中止
+          </button>
+        )}
       </div>
     </div>
   );

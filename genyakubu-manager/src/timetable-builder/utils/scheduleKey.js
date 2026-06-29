@@ -266,6 +266,11 @@ export function migrateProject(project) {
     result = { ...result, externalSessionPresets: [] };
   }
 
+  // snapshots が未設定 / 不正な場合は空配列で初期化 (E1c で追加された後発フィールド)
+  if (!Array.isArray(result.snapshots)) {
+    result = { ...result, snapshots: [] };
+  }
+
   // 同名講師がいる場合は " (2)" / " (3)" の suffix を付けて自動で uniq 化する。
   // teacher.name は NG / 優先度 / 他学年セッション等の参照キーになるため、
   // 重複したまま load すると UI で『どちらの行を操作しているか分からない』

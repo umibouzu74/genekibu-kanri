@@ -4,7 +4,7 @@ import {
   propagateAssignment,
   propagateTeacherChange,
 } from '../utils/combinedPropagation';
-import { cleanSchedule } from '../utils/constants';
+import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 
 // プロジェクト状態の遷移を一元化する pure reducer。
 //
@@ -176,7 +176,15 @@ function applyAction(project, action) {
       const { id } = action.payload;
       if (project.tabs.length <= 1) return project;
       const newTabs = project.tabs.filter(t => t.id !== id);
-      return { ...project, tabs: newTabs, activeTabId: newTabs[0].id };
+      // 削除タブに紐づくスナップショットも併せて掃除 (orphan 防止)。
+      const snapshots = project.snapshots || [];
+      const newSnapshots = snapshots.filter(s => s.tabId !== id);
+      return {
+        ...project,
+        tabs: newTabs,
+        activeTabId: newTabs[0].id,
+        ...(newSnapshots.length !== snapshots.length ? { snapshots: newSnapshots } : {}),
+      };
     }
     case 'tab/rename': {
       const { id, name } = action.payload;
@@ -804,6 +812,53 @@ function applyAction(project, action) {
       return cleanSchedule({ ...project, tabs: newTabs });
     }
 
+    // ─── スナップショット (E1c) ───────────
+    // ユーザが明示的に名前を付けて保存する「現在のタブの状態」。
+    // タブ単位で source tabId を記録し、apply で同じタブへ復元する。
+    // undo/redo の単線履歴とは別に、試行錯誤の分岐を残せる手段。
+    case 'snapshot/save': {
+      const { name, createdAt } = action.payload;
+      if (!name) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const snapshots = project.snapshots || [];
+      const newId = snapshots.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const snapshot = {
+        id: newId,
+        name,
+        tabId: activeTab.id,
+        createdAt: createdAt || null,
+        schedule: JSON.parse(JSON.stringify(activeTab.schedule)),
+      };
+      return { ...project, snapshots: [...snapshots, snapshot] };
+    }
+    case 'snapshot/apply': {
+      const { id } = action.payload;
+      const snapshot = (project.snapshots || []).find(s => s.id === id);
+      if (!snapshot) return project;
+      // 記録元タブが存在しなければ no-op (削除済みタブのスナップショット)。
+      if (!project.tabs.some(t => t.id === snapshot.tabId)) return project;
+      const restored = JSON.parse(JSON.stringify(snapshot.schedule));
+      const newTabs = project.tabs.map(t => t.id === snapshot.tabId ? { ...t, schedule: restored } : t);
+      // 復元先タブを active にして結果が見えるようにする。
+      // save は raw schedule を保存するが、apply 側で cleanSchedule して
+      // 「保存後に config から消えた entity」を取り除く (非対称だが意図的)。
+      return cleanSchedule({ ...project, tabs: newTabs, activeTabId: snapshot.tabId });
+    }
+    case 'snapshot/rename': {
+      const { id, name } = action.payload;
+      if (!name) return project;
+      const snapshots = project.snapshots || [];
+      if (!snapshots.some(s => s.id === id)) return project;
+      return { ...project, snapshots: snapshots.map(s => s.id === id ? { ...s, name } : s) };
+    }
+    case 'snapshot/remove': {
+      const { id } = action.payload;
+      const snapshots = project.snapshots || [];
+      const next = snapshots.filter(s => s.id !== id);
+      if (next.length === snapshots.length) return project;
+      return { ...project, snapshots: next };
+    }
+
     // ─── 合同グループ ────────────────────
     case 'combinedGroup/add': {
       const { group } = action.payload;
@@ -825,6 +880,22 @@ function applyAction(project, action) {
     // ─── プロジェクト全体 ────────────────
     case 'project/updateName': {
       return { ...project, name: action.payload.name };
+    }
+    case 'project/setGenerationParams': {
+      // 自動生成パラメータ (numPatterns / maxDailyHours / maxIterations) を
+      // 部分更新する。渡されたキーのみ clamp して反映 (未指定は据え置き)。
+      const updates = action.payload || {};
+      const next = { ...project };
+      let changed = false;
+      for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods']) {
+        if (updates[key] === undefined) continue;
+        const clamped = clampGenerationParam(key, updates[key]);
+        if (next[key] !== clamped) {
+          next[key] = clamped;
+          changed = true;
+        }
+      }
+      return changed ? next : project;
     }
     case 'project/replace': {
       // JSON 読込で project 全体を差し替える (cleanSchedule 済みのものを渡す前提)
