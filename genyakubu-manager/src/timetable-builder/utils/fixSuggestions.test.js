@@ -73,6 +73,17 @@ describe('suggestForCapacity', () => {
     expect(texts(out).some(t => t.includes('コマ数を減らす'))).toBe(true);
   });
 
+  it('setMaxDaily 提案は上限 (12) を超えない & toast と一致する値にする', () => {
+    const out = suggestForCapacity(
+      { subject: '英語', demand: 300, capacity: 60, teacherCount: 1 },
+      { currentConfig: { ...config, dates: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, label: `d${i}` })) }, maxDailyHours: 6 },
+    );
+    const setMax = out.find(s => s.action?.type === 'setMaxDaily');
+    // neededMax = ceil(300/10) = 30 → clamp 12
+    expect(setMax.action.value).toBe(12);
+    expect(setMax.text).toContain('→ 12');
+  });
+
   it('teacherCount 0 でも落ちず、コマ数削減は提案する', () => {
     const out = suggestForCapacity(
       { subject: '理科', demand: 10, capacity: 0, teacherCount: 0 },

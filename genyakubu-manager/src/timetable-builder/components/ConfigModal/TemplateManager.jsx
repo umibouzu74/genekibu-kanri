@@ -7,6 +7,7 @@ import {
   addTemplate,
   removeTemplate,
 } from '../../utils/templates';
+import { validateProjectShape } from '../../utils/projectSchema';
 
 // E2d: 年度間コピー用テンプレートの管理 UI。
 // 現在のプロジェクトを名前付きで保存し、「全体」または「講師マスタのみ」を
@@ -34,6 +35,13 @@ export default function TemplateManager() {
   };
 
   const handleApplyFull = async (tpl) => {
+    // localStorage を手編集されたテンプレートでも crash しないよう、適用前に
+    // 構造を検証する (review F5: JSON 取り込み経路と挙動を揃える)。
+    const { valid, error } = validateProjectShape(tpl.payload);
+    if (!valid) {
+      showToast(`テンプレートのデータが壊れています: ${error}`, 'error', 4000);
+      return;
+    }
     const ok = await showConfirm(
       `現在のプロジェクトを破棄して、テンプレート「${tpl.name}」を全体適用しますか？\n（元に戻す Ctrl+Z で戻せます）`,
       { title: 'テンプレートを全体適用', danger: true, confirmLabel: '適用' },
@@ -75,6 +83,7 @@ export default function TemplateManager() {
       <div className="flex justify-between items-center border-b border-builder-border pb-1">
         <h3 className="font-bold text-builder-ink">🗂 テンプレート（年度間コピー）</h3>
         <button
+          type="button"
           onClick={handleSave}
           className="text-xs bg-builder-primary text-white px-3 py-1.5 rounded shadow hover:bg-builder-primary-hover font-bold"
         >＋ 現在のプロジェクトを保存</button>
@@ -101,16 +110,19 @@ export default function TemplateManager() {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => handleApplyFull(tpl)}
                 className="text-xs bg-builder-blue text-white px-2 py-1 rounded font-bold hover:bg-builder-blue-hover whitespace-nowrap"
                 title="講師・カレンダー・時間割をまるごと適用"
               >全体を適用</button>
               <button
+                type="button"
                 onClick={() => handleApplyTeachers(tpl)}
                 className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded hover:bg-builder-surface-alt whitespace-nowrap"
                 title="講師マスタだけを引き継ぐ"
               >講師のみ</button>
               <button
+                type="button"
                 onClick={() => handleDelete(tpl)}
                 className="text-xs px-1.5 py-1 border border-builder-danger-border rounded text-builder-red hover:bg-builder-danger-soft"
                 title="削除"

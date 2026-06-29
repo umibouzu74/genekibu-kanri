@@ -31,7 +31,13 @@ function renderManager({ project: projectOverride = {}, ui = {} } = {}) {
 }
 
 const seed = (templates) => localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(templates));
-const tpl = (id, name, payload = { teachers: [{ name: 'A' }], tabs: [{ id: 1 }] }) =>
+// validateProjectShape を通る最小の payload。
+const validPayload = (over = {}) => ({
+  teachers: [{ name: 'A' }],
+  tabs: [{ id: 1, config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
+  ...over,
+});
+const tpl = (id, name, payload = validPayload()) =>
   ({ id, name, createdAt: '2026-06-29T00:00:00.000Z', payload });
 
 describe('TemplateManager (E2d)', () => {
@@ -57,10 +63,21 @@ describe('TemplateManager (E2d)', () => {
   });
 
   it('「全体を適用」で confirm → applyTemplateFull(payload) を呼ぶ', async () => {
-    seed([tpl(1, 'A', { teachers: [], tabs: [{ id: 9 }] })]);
+    const payload = validPayload({ teachers: [] });
+    seed([tpl(1, 'A', payload)]);
     const { fns } = renderManager({ ui: { showConfirm: vi.fn().mockResolvedValue(true) } });
     fireEvent.click(screen.getByText('全体を適用'));
-    await waitFor(() => expect(fns.applyTemplateFull).toHaveBeenCalledWith({ teachers: [], tabs: [{ id: 9 }] }));
+    await waitFor(() => expect(fns.applyTemplateFull).toHaveBeenCalledWith(payload));
+  });
+
+  it('壊れたテンプレートは「全体を適用」で検証エラー → applyTemplateFull を呼ばない (F5)', async () => {
+    seed([tpl(1, 'A', { teachers: [], tabs: 'broken' })]);
+    const { fns, uiValue } = renderManager();
+    fireEvent.click(screen.getByText('全体を適用'));
+    await waitFor(() =>
+      expect(uiValue.showToast).toHaveBeenCalledWith(expect.stringContaining('壊れています'), 'error', 4000),
+    );
+    expect(fns.applyTemplateFull).not.toHaveBeenCalled();
   });
 
   it('「講師のみ」で confirm → importTeachers(teachers, "replace") を呼ぶ', async () => {

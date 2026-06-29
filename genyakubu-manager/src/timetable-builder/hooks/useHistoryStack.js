@@ -35,10 +35,17 @@ export function useHistoryStack() {
       isInitialMount.current = false;
       return;
     }
-    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(state.project));
-    setSaveStatus("💾 保存中...");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => setSaveStatus("✅ 保存済"), SAVE_DEBOUNCE_MS);
+    // LocalStorage 書き込みは容量超過 (QuotaExceededError) や private mode で
+    // throw しうる。未捕捉だと render エフェクトが落ちるので握って status に出す。
+    try {
+      localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(state.project));
+      setSaveStatus("💾 保存中...");
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => setSaveStatus("✅ 保存済"), SAVE_DEBOUNCE_MS);
+    } catch (e) {
+      console.error("Autosave failed", e);
+      setSaveStatus("⚠️ 保存失敗");
+    }
   }, [state.project]);
 
   const undo = useCallback(() => {

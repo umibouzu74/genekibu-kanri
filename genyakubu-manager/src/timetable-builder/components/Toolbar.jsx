@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { parseKey } from '../utils/scheduleKey';
+import { parseKey, makeNgKey } from '../utils/scheduleKey';
 import SnapshotMenu from './SnapshotMenu';
 
 export default function Toolbar({
@@ -37,6 +37,13 @@ export default function Toolbar({
       const idx = (project?.teachers || []).findIndex(t => t.name === action.teacherName);
       if (idx < 0) {
         showToast?.('対象の講師が見つかりません', 'error', 3000);
+        return;
+      }
+      // toggleTeacherNg はトグルなので、二度押し / 再計算前クリックで NG を
+      // 付け直さないよう、現在 NG のときだけ解除する (冪等化, review F3)。
+      const k = makeNgKey(action.date, action.period);
+      if (!(project?.teachers?.[idx]?.ngSlots || []).includes(k)) {
+        showToast?.(`${action.teacherName} の ${action.date} ${action.period} は既に NG ではありません`, 'warning', 2500);
         return;
       }
       toggleTeacherNg?.(idx, action.date, action.period);

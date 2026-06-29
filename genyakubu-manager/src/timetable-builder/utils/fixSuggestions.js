@@ -8,6 +8,7 @@
 //   - { type: 'setMaxDaily', value }: 1 日コマ数上限を value に変更
 // action 無しの提案は手作業が必要なヒント (別時限へ移動 / 講師を増やす等)。
 import { makeNgKey } from './scheduleKey';
+import { clampGenerationParam } from './constants';
 
 const hint = (text) => ({ text });
 
@@ -70,10 +71,15 @@ export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) 
 
   if (teacherCount > 0 && dates > 0) {
     const neededMax = Math.ceil(demand / (teacherCount * dates));
-    if (neededMax > maxDailyHours) {
+    // 設定可能な上限 (GENERATION_PARAM_BOUNDS.maxDailyHours.max) を超える値は
+    // 適用しても clamp されるので、提案値・表示・action を実際に適用される値に
+    // 揃える (review F2: toast が嘘にならないように)。clamp 後も現状を上回る
+    // 場合のみ提案する。
+    const applicableMax = clampGenerationParam('maxDailyHours', neededMax);
+    if (applicableMax > maxDailyHours) {
       suggestions.push({
-        text: `1日コマ数上限を ${maxDailyHours} → ${neededMax} に上げる`,
-        action: { type: 'setMaxDaily', value: neededMax },
+        text: `1日コマ数上限を ${maxDailyHours} → ${applicableMax} に上げる`,
+        action: { type: 'setMaxDaily', value: applicableMax },
       });
     }
   }

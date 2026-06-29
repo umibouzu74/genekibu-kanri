@@ -840,6 +840,8 @@ function applyAction(project, action) {
       const restored = JSON.parse(JSON.stringify(snapshot.schedule));
       const newTabs = project.tabs.map(t => t.id === snapshot.tabId ? { ...t, schedule: restored } : t);
       // 復元先タブを active にして結果が見えるようにする。
+      // save は raw schedule を保存するが、apply 側で cleanSchedule して
+      // 「保存後に config から消えた entity」を取り除く (非対称だが意図的)。
       return cleanSchedule({ ...project, tabs: newTabs, activeTabId: snapshot.tabId });
     }
     case 'snapshot/rename': {

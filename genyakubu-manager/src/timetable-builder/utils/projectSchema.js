@@ -33,7 +33,10 @@ export function validateProjectShape(obj) {
     if (!cfg.subjectCounts || typeof cfg.subjectCounts !== 'object' || Array.isArray(cfg.subjectCounts)) {
       return { valid: false, error: `tabs[${i}].config.subjectCounts がオブジェクトではありません` };
     }
-    if ('schedule' in tab && (typeof tab.schedule !== 'object' || tab.schedule === null || Array.isArray(tab.schedule))) {
+    // schedule は必須 (オブジェクト)。欠落すると migrateScheduleKeys /
+    // migrateTabV2toV3 / cleanSchedule が Object.keys(undefined) で crash する
+    // ため、optional 扱いにせず構造崩れとして弾く (review F4)。
+    if (typeof tab.schedule !== 'object' || tab.schedule === null || Array.isArray(tab.schedule)) {
       return { valid: false, error: `tabs[${i}].schedule がオブジェクトではありません` };
     }
   }

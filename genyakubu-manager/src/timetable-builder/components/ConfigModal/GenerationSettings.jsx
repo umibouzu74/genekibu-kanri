@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import {
   GENERATION_PARAM_BOUNDS,
+  clampGenerationParam,
   resolveGenerationParams,
   DEFAULT_NUM_PATTERNS,
   DEFAULT_MAX_DAILY_HOURS,
@@ -8,12 +10,64 @@ import {
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
 } from '../../utils/constants';
 
+// 1 パラメータの行 (number 入力 + スライダー + 説明)。
+// number 入力はローカル draft を持ち、入力中は自由に編集できる。確定 (blur /
+// Enter) で clamp して commit する。こうしないと controlled value が毎キー
+// 入力で clamp されてしまい、特に maxIterations (min 50000) のような大きい
+// 下限の値を打ち直せない (review F1)。スライダーは即時 commit で問題ない。
+function ParamRow({ row, bounds, value, onCommit }) {
+  const [draft, setDraft] = useState(String(value));
+
+  // 外部要因 (リセットボタン等) で value が変わったら draft を同期する。
+  useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const commit = () => {
+    if (draft.trim() === '') { setDraft(String(value)); return; }
+    const clamped = clampGenerationParam(row.key, Number(draft));
+    setDraft(String(clamped));
+    onCommit(row.key, clamped);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor={`gen-${row.key}`} className="text-sm font-bold text-builder-ink">
+          {row.label}
+        </label>
+        <div className="flex items-center gap-1.5">
+          <input
+            id={`gen-${row.key}`}
+            type="number"
+            min={bounds.min}
+            max={bounds.max}
+            step={row.step}
+            value={draft}
+            aria-label={row.label}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+            className="w-28 border border-builder-border rounded px-2 py-1 text-sm text-right focus:outline-none focus:border-builder-blue"
+          />
+          <span className="text-xs text-builder-ink-muted w-8">{row.unit}</span>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={bounds.min}
+        max={bounds.max}
+        step={row.step}
+        value={value}
+        aria-label={`${row.label} (スライダー)`}
+        onChange={(e) => onCommit(row.key, Number(e.target.value))}
+        className="w-full accent-builder-blue"
+      />
+      <p className="text-xs text-builder-ink-muted leading-snug">{row.help}</p>
+    </div>
+  );
+}
+
 // E2e: 自動生成 (MRV + バックトラック) のパラメータを UI から調整する。
 // project レベルに保存し、未設定時はデフォルト値を表示する。
-//
-// - numPatterns:   一度に生成する案の数 (多いほど比較しやすいが時間がかかる)
-// - maxDailyHours: 講師 1 人あたり 1 日コマ数の上限
-// - maxIterations: solver の探索上限 (大きいほど解けやすいが時間がかかる)
 export default function GenerationSettings() {
   const { project, updateGenerationParams } = useProjectContext();
   const params = resolveGenerationParams(project);
@@ -49,9 +103,8 @@ export default function GenerationSettings() {
     },
   ];
 
-  const handleChange = (key, raw) => {
-    if (raw === '') return; // 入力途中の空欄は無視 (blur で clamp)
-    updateGenerationParams({ [key]: Number(raw) });
+  const handleCommit = (key, num) => {
+    updateGenerationParams({ [key]: num });
   };
 
   const handleReset = () => {
@@ -73,47 +126,15 @@ export default function GenerationSettings() {
         うまく解けない時は「探索回数の上限」を増やす、生成が重い時は「案の数」を減らすと効果的です。
       </div>
 
-      {rows.map((row) => {
-        const bounds = GENERATION_PARAM_BOUNDS[row.key];
-        const value = params[row.key];
-        return (
-          <div key={row.key} className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <label
-                htmlFor={`gen-${row.key}`}
-                className="text-sm font-bold text-builder-ink"
-              >
-                {row.label}
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  id={`gen-${row.key}`}
-                  type="number"
-                  min={bounds.min}
-                  max={bounds.max}
-                  step={row.step}
-                  value={value}
-                  aria-label={row.label}
-                  onChange={(e) => handleChange(row.key, e.target.value)}
-                  className="w-28 border border-builder-border rounded px-2 py-1 text-sm text-right focus:outline-none focus:border-builder-blue"
-                />
-                <span className="text-xs text-builder-ink-muted w-8">{row.unit}</span>
-              </div>
-            </div>
-            <input
-              type="range"
-              min={bounds.min}
-              max={bounds.max}
-              step={row.step}
-              value={value}
-              aria-label={`${row.label} (スライダー)`}
-              onChange={(e) => handleChange(row.key, e.target.value)}
-              className="w-full accent-builder-blue"
-            />
-            <p className="text-xs text-builder-ink-muted leading-snug">{row.help}</p>
-          </div>
-        );
-      })}
+      {rows.map((row) => (
+        <ParamRow
+          key={row.key}
+          row={row}
+          bounds={GENERATION_PARAM_BOUNDS[row.key]}
+          value={params[row.key]}
+          onCommit={handleCommit}
+        />
+      ))}
 
       <div className="pt-2 text-right">
         <button

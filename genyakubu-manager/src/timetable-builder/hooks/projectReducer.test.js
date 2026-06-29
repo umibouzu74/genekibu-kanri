@@ -1233,6 +1233,20 @@ describe('projectReducer — スナップショット (E1c)', () => {
     expect(applied.project.activeTabId).toBe(1);
   });
 
+  it('snapshot/apply: 記録元タブが削除済みなら no-op (undo/redo race の防御)', () => {
+    // tabId 99 (存在しないタブ) を参照する snapshot を手で仕込む
+    let state = withSchedule();
+    state = {
+      ...state,
+      project: {
+        ...state.project,
+        snapshots: [{ id: 1, name: 'orphan', tabId: 99, createdAt: null, schedule: { [makeKey(1, 1, 1)]: { subject: '数学', teacher: '田中' } } }],
+      },
+    };
+    const applied = projectReducer(state, { type: 'snapshot/apply', payload: { id: 1 } });
+    expect(applied).toBe(state); // 記録元タブが無いので何もしない
+  });
+
   it('snapshot/apply: 存在しない id は no-op', () => {
     let state = withSchedule();
     state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });

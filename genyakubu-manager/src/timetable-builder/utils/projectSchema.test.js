@@ -25,10 +25,10 @@ describe('validateProjectShape', () => {
     expect(validateProjectShape(p).valid).toBe(true);
   });
 
-  it('schedule 省略でも valid', () => {
+  it('schedule 欠落は invalid (migrate が crash するため必須)', () => {
     const p = validProject();
     delete p.tabs[0].schedule;
-    expect(validateProjectShape(p).valid).toBe(true);
+    expect(validateProjectShape(p).valid).toBe(false);
   });
 
   it('オブジェクトでなければ invalid', () => {

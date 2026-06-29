@@ -367,7 +367,7 @@ describe('Toolbar', () => {
     const toggleTeacherNg = vi.fn();
     renderToolbar({
       projectOverrides: {
-        project: { snapshots: [], teachers: [{ name: '堀上' }, { name: '石原' }] },
+        project: { snapshots: [], teachers: [{ name: '堀上', ngSlots: ['12/25-1限'] }, { name: '石原' }] },
         toggleTeacherNg,
         analysis: {
           infeasibilities: {
@@ -386,6 +386,31 @@ describe('Toolbar', () => {
     fireEvent.click(screen.getByText(/⚠️ 1件/));
     fireEvent.click(screen.getByTitle('この修正を適用する'));
     expect(toggleTeacherNg).toHaveBeenCalledWith(0, '12/25', '1限');
+  });
+
+  it('releaseNg: 既に NG でない講師には toggleTeacherNg を呼ばない (冪等, E2b)', () => {
+    const toggleTeacherNg = vi.fn();
+    renderToolbar({
+      projectOverrides: {
+        project: { snapshots: [], teachers: [{ name: '堀上', ngSlots: [] }] },
+        toggleTeacherNg,
+        analysis: {
+          infeasibilities: {
+            noTeacherForSlot: {
+              count: 1,
+              items: [{
+                date: '12/25', period: '1限', subject: '英語',
+                suggestions: [{ text: '堀上 の NG を解除', action: { type: 'releaseNg', teacherName: '堀上', date: '12/25', period: '1限' } }],
+              }],
+            },
+            subjectCapacityShortage: { count: 0, items: [] },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    fireEvent.click(screen.getByTitle('この修正を適用する'));
+    expect(toggleTeacherNg).not.toHaveBeenCalled();
   });
 
   it('修正提案の「適用」で setMaxDaily → updateGenerationParams を呼ぶ (E2b)', () => {

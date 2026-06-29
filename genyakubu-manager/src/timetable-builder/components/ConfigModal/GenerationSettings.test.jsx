@@ -36,20 +36,36 @@ describe('GenerationSettings', () => {
     expect(screen.getByLabelText('講師 1 人の 1 日コマ数上限')).toHaveValue(8);
   });
 
-  it('number 入力の変更で updateGenerationParams を呼ぶ', () => {
+  it('number 入力は blur で確定して updateGenerationParams を呼ぶ', () => {
     const { updateGenerationParams } = renderPanel({});
-    fireEvent.change(screen.getByLabelText('生成する案の数'), { target: { value: '4' } });
+    const input = screen.getByLabelText('生成する案の数');
+    fireEvent.change(input, { target: { value: '4' } });
+    // 入力途中 (change だけ) では commit しない
+    expect(updateGenerationParams).not.toHaveBeenCalled();
+    fireEvent.blur(input);
     expect(updateGenerationParams).toHaveBeenCalledWith({ numPatterns: 4 });
   });
 
-  it('連続コマ数上限の入力 (E2c) で updateGenerationParams を呼ぶ', () => {
+  it('number 入力は blur 時に clamp して確定する (maxIterations を打ち直せる)', () => {
+    const { updateGenerationParams } = renderPanel({ maxIterations: 500000 });
+    const input = screen.getByLabelText('探索回数の上限');
+    // 打ち直し中は draft をそのまま表示 (毎キー clamp されない)
+    fireEvent.change(input, { target: { value: '1000000' } });
+    expect(input).toHaveValue(1000000);
+    fireEvent.blur(input);
+    expect(updateGenerationParams).toHaveBeenCalledWith({ maxIterations: 1000000 });
+  });
+
+  it('連続コマ数上限の入力 (E2c) は blur で確定する', () => {
     const { updateGenerationParams } = renderPanel({ maxConsecutivePeriods: 0 });
-    expect(screen.getByLabelText('講師の連続コマ数上限')).toHaveValue(0);
-    fireEvent.change(screen.getByLabelText('講師の連続コマ数上限'), { target: { value: '3' } });
+    const input = screen.getByLabelText('講師の連続コマ数上限');
+    expect(input).toHaveValue(0);
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.blur(input);
     expect(updateGenerationParams).toHaveBeenCalledWith({ maxConsecutivePeriods: 3 });
   });
 
-  it('スライダーの変更でも updateGenerationParams を呼ぶ', () => {
+  it('スライダーの変更は即時 updateGenerationParams を呼ぶ', () => {
     const { updateGenerationParams } = renderPanel({});
     fireEvent.change(screen.getByLabelText('講師 1 人の 1 日コマ数上限 (スライダー)'), {
       target: { value: '10' },
@@ -57,10 +73,13 @@ describe('GenerationSettings', () => {
     expect(updateGenerationParams).toHaveBeenCalledWith({ maxDailyHours: 10 });
   });
 
-  it('空入力は無視する (clamp は blur まで待つ)', () => {
-    const { updateGenerationParams } = renderPanel({});
-    fireEvent.change(screen.getByLabelText('探索回数の上限'), { target: { value: '' } });
+  it('空入力で blur すると commit せず元の値に戻す', () => {
+    const { updateGenerationParams } = renderPanel({ maxIterations: 500000 });
+    const input = screen.getByLabelText('探索回数の上限');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
     expect(updateGenerationParams).not.toHaveBeenCalled();
+    expect(input).toHaveValue(500000);
   });
 
   it('「既定値に戻す」で 3 パラメータをデフォルトへ', () => {

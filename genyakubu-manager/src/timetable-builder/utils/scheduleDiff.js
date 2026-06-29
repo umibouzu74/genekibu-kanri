@@ -43,6 +43,8 @@ export function diffSchedules(from, to) {
 // 差分の種別ごとの件数を集計する。
 export function summarizeDiff(diffs) {
   const counts = { added: 0, removed: 0, changed: 0, total: diffs.length };
-  for (const d of diffs) counts[d.type] += 1;
+  for (const d of diffs) {
+    if (d.type in counts && d.type !== 'total') counts[d.type] += 1;
+  }
   return counts;
 }
