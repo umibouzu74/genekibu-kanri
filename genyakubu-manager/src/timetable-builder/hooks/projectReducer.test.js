@@ -1160,6 +1160,110 @@ describe('projectReducer — project 全体操作', () => {
   });
 });
 
+describe('projectReducer — スナップショット (E1c)', () => {
+  const withSchedule = () => makeState({
+    tabs: [{
+      id: 1,
+      name: 'メイン',
+      config: {
+        dates: [{ id: 1, label: '12/25(木)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }],
+        subjectCounts: { '英語': 1 },
+      },
+      schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+    }],
+  });
+
+  it('snapshot/save: 現在のタブ schedule を捕捉し id / tabId / createdAt を付与', () => {
+    const state = withSchedule();
+    const next = projectReducer(state, {
+      type: 'snapshot/save',
+      payload: { name: '案A', createdAt: '2026-06-29T00:00:00.000Z' },
+    });
+    expect(next.project.snapshots).toHaveLength(1);
+    const snap = next.project.snapshots[0];
+    expect(snap).toMatchObject({ id: 1, name: '案A', tabId: 1, createdAt: '2026-06-29T00:00:00.000Z' });
+    expect(snap.schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('snapshot/save: schedule は deep copy される (元の変更に追随しない)', () => {
+    const state = withSchedule();
+    const next = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    // 元タブを書き換えても snapshot は不変
+    const after = projectReducer(next, {
+      type: 'cell/clear', payload: { dateId: 1, periodId: 1, classId: 1 },
+    });
+    expect(after.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(after.project.snapshots[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('snapshot/save: 空名は no-op', () => {
+    const state = withSchedule();
+    const next = projectReducer(state, { type: 'snapshot/save', payload: { name: '' } });
+    expect(next).toBe(state);
+  });
+
+  it('snapshot/save: id は max+1 で採番', () => {
+    let state = withSchedule();
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'B' } });
+    expect(state.project.snapshots.map(s => s.id)).toEqual([1, 2]);
+  });
+
+  it('snapshot/apply: schedule を復元し activeTabId を記録元タブに', () => {
+    let state = withSchedule();
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    // 現タブを別内容に変更
+    state = projectReducer(state, {
+      type: 'cell/assign', payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '数学' },
+    });
+    const applied = projectReducer(state, { type: 'snapshot/apply', payload: { id: 1 } });
+    expect(applied.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(applied.project.activeTabId).toBe(1);
+  });
+
+  it('snapshot/apply: 存在しない id は no-op', () => {
+    let state = withSchedule();
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    const applied = projectReducer(state, { type: 'snapshot/apply', payload: { id: 999 } });
+    expect(applied).toBe(state);
+  });
+
+  it('snapshot/rename: 名前を変更', () => {
+    let state = withSchedule();
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    const renamed = projectReducer(state, { type: 'snapshot/rename', payload: { id: 1, name: 'A改' } });
+    expect(renamed.project.snapshots[0].name).toBe('A改');
+  });
+
+  it('snapshot/remove: 削除する。存在しない id は no-op', () => {
+    let state = withSchedule();
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'A' } });
+    const removed = projectReducer(state, { type: 'snapshot/remove', payload: { id: 1 } });
+    expect(removed.project.snapshots).toHaveLength(0);
+    const noop = projectReducer(removed, { type: 'snapshot/remove', payload: { id: 1 } });
+    expect(noop).toBe(removed);
+  });
+
+  it('tab/delete: 削除タブのスナップショットも掃除される', () => {
+    let state = makeState({
+      activeTabId: 1,
+      tabs: [
+        { id: 1, name: 'T1', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: 'T2', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'T1 のA' } }); // tabId 1
+    state = projectReducer(state, { type: 'tab/switch', payload: { id: 2 } });
+    state = projectReducer(state, { type: 'snapshot/save', payload: { name: 'T2 のA' } }); // tabId 2
+    expect(state.project.snapshots).toHaveLength(2);
+    const afterDelete = projectReducer(state, { type: 'tab/delete', payload: { id: 1 } });
+    expect(afterDelete.project.snapshots).toHaveLength(1);
+    expect(afterDelete.project.snapshots[0].tabId).toBe(2);
+  });
+});
+
 describe('projectReducer — cascade cleanup', () => {
   // teacher/remove で externalCounts も掃除される (H-2)
   it('teacher/remove: 削除された講師の externalCounts キーが drop される', () => {

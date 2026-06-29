@@ -55,6 +55,7 @@ export function createNewProject(tabs, teachers, subjectColors, subjects) {
     externalCounts: {},
     externalSessions: [],
     externalSessionPresets: [],
+    snapshots: [],
   };
 }
 

@@ -117,6 +117,24 @@ export function useProject() {
     dispatch({ type: 'project/setGenerationParams', payload: updates });
   }, [dispatch]);
 
+  // --- スナップショット (E1c) ---
+  // createdAt は表示用なので副作用 (時刻取得) は reducer の外で行い、純粋性を保つ。
+  const saveSnapshot = useCallback((name) => {
+    dispatch({ type: 'snapshot/save', payload: { name, createdAt: new Date().toISOString() } });
+  }, [dispatch]);
+
+  const applySnapshot = useCallback((id) => {
+    dispatch({ type: 'snapshot/apply', payload: { id } });
+  }, [dispatch]);
+
+  const renameSnapshot = useCallback((id, name) => {
+    dispatch({ type: 'snapshot/rename', payload: { id, name } });
+  }, [dispatch]);
+
+  const removeSnapshot = useCallback((id) => {
+    dispatch({ type: 'snapshot/remove', payload: { id } });
+  }, [dispatch]);
+
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group) => {
     dispatch({ type: 'combinedGroup/add', payload: { group } });
@@ -172,6 +190,11 @@ export function useProject() {
     updateProjectName,
     // 自動生成パラメータ
     updateGenerationParams,
+    // スナップショット
+    saveSnapshot,
+    applySnapshot,
+    renameSnapshot,
+    removeSnapshot,
     // 合同グループ
     addCombinedGroup,
     updateCombinedGroup,

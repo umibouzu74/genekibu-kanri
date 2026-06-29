@@ -53,11 +53,19 @@ function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } =
     undo: vi.fn(),
     redo: vi.fn(),
     handleClearUnlocked: vi.fn(),
+    // SnapshotMenu (Toolbar 内に同梱) が参照する最小 context。
+    project: { snapshots: [] },
+    activeTab: { id: 1, name: 'メイン' },
+    saveSnapshot: vi.fn(),
+    applySnapshot: vi.fn(),
+    renameSnapshot: vi.fn(),
+    removeSnapshot: vi.fn(),
     ...restProjectOverrides,
   };
   const uiValue = {
     showConfirm: vi.fn().mockResolvedValue(true),
     showToast: vi.fn(),
+    showInput: vi.fn().mockResolvedValue(null),
     ...uiOverrides,
   };
   const defaultProps = {

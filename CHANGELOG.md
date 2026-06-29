@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: 名前付きスナップショット — E1c)
+試行錯誤しながら時間割を作る際に「いまの状態を保存 → 別案を試す →
+いつでも戻す」ができる便利機能。undo/redo の単線履歴とは別に、名前付きで
+複数の状態を残せる。
+
+- **保存・復元 UI** (`SnapshotMenu`, Toolbar に同梱): 📌 ボタンから現在の
+  タブの時間割を名前を付けて保存。一覧から「復元 / 改名 / 削除」。
+  アクティブタブのものだけ表示し、件数バッジ付き。
+- **データモデル**: `project.snapshots`(`{ id, name, tabId, createdAt,
+  schedule }`)。schedule は deep copy。タブ削除時は紐づくスナップショットも
+  掃除。`migrateProject` で後発フィールドとして空配列に初期化。
+- **reducer**: `snapshot/save` / `apply`(記録元タブへ復元 + 切替)/
+  `rename` / `remove`。`useProject` に対応 callback を追加(createdAt は
+  hook 側で付与し reducer の純粋性を維持)。
+- **テスト**: SnapshotMenu を新規追加、projectReducer に追記(計 +19 件、
+  全 1275 件 pass)。
+
 ### Added (講習時間割作成: 自動生成の操作性向上 — E2e / E2f-cancel / E2h)
 「🧙‍♂️ 自動作成」周りの操作性を底上げ。これまでハードコードだった生成
 パラメータを設定可能にし、生成の中止と採用案の比較を支援する。

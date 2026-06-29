@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
+import SnapshotMenu from './SnapshotMenu';
 
 export default function Toolbar({
   isCompact,
@@ -218,6 +219,7 @@ export default function Toolbar({
         <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
         <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
         <div className="h-6 w-px bg-builder-border mx-1"></div>
+        <SnapshotMenu />
         <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>

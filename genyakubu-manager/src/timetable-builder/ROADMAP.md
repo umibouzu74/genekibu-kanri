@@ -2,7 +2,7 @@
 
 最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
-+ E2h (生成案の負荷偏り表示) 完了
++ E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -579,10 +579,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
   - ScheduleCell の矢印ナビは既存。エッジ動作 (端 → 反対端へ wrap?) を統一
 - **規模**: 中 / **価値**: 中
 
-#### E1c. 🟡 名前付きスナップショット (旧 D1d)
-- **現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できない。生成 3 案も SummaryPanel 居る間だけ。
-- **改善**: スロット型の保存・適用 (project レベル or タブレベル)。
-- **規模**: 中 / **価値**: 中
+#### E1c. ✅ 名前付きスナップショット (2026-06-29 完了 / 旧 D1d)
+- **旧現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できなかった。
+- **実装 (タブレベル)**:
+  - **data model**: `project.snapshots = [{ id, name, tabId, createdAt, schedule }]`。source tabId を記録し、schedule は deep copy で保持。`createNewProject` / `migrateProject` (後発フィールドとして空配列 default) に追加。
+  - **reducer**: `snapshot/save` (アクティブタブを捕捉、id=max+1、空名 no-op) / `snapshot/apply` (記録元タブへ復元 + activeTabId 切替、cleanSchedule、削除済みタブ/不明 id は no-op) / `snapshot/rename` / `snapshot/remove`。`tab/delete` で当該タブの snapshot も掃除。
+  - **useProject**: `saveSnapshot(name)` (createdAt は hook 側で付与し reducer の純粋性を維持) / `applySnapshot` / `renameSnapshot` / `removeSnapshot`。
+  - **UI**: `SnapshotMenu.jsx` を Toolbar に同梱 (📌 ボタン + popover)。保存 (showInput) / 復元 (showConfirm) / 改名 / 削除 (showConfirm)。アクティブタブのものだけ一覧、件数バッジ、`role="dialog"` + aria 属性、外側クリック/Escape で閉じる。
+- **テスト**: projectReducer.test.js (+10) / SnapshotMenu.test.jsx (新規 9) / Toolbar.test.jsx の mock 拡張。
+- **設計判断**: undo で戻せるが「復元」「削除」は名前付き資産の上書き/喪失なので confirm を付与。CLAUDE.md の「行動統計で UI 自動変形」禁止には抵触しない (明示的なユーザ保存のみ、自動学習なし)。
 
 #### E1d. 🟡 スケジュール差分ビュー (旧 D1e)
 - **現状**: 自動生成 N 案は集計のみ。実セル差は適用前後比較しないと見えない。
