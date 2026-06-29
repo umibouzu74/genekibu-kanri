@@ -7,6 +7,11 @@ import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import NgCsvImport from './NgCsvImport';
 
+// 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
+// なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
+// スピナー / 上下キー 1 操作で 5 分動かす (任意の分のタイプ入力は引き続き可)。
+const TIME_STEP_SEC = 300;
+
 // 「📅 講師不在・NG」タブ。旧 'external' (他学年・午前) + 'ng' (日時NG) を統合。
 //
 // 上から下のレイアウト:
@@ -575,6 +580,7 @@ export default function AbsenceNgPanel() {
               <div className="flex items-center gap-1">
                 <input
                   type="time"
+                  step={TIME_STEP_SEC}
                   value={formStartTime}
                   onChange={(e) => setFormStartTime(e.target.value)}
                   className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
@@ -583,6 +589,7 @@ export default function AbsenceNgPanel() {
                 <span className="text-builder-ink-muted shrink-0">〜</span>
                 <input
                   type="time"
+                  step={TIME_STEP_SEC}
                   value={formEndTime}
                   onChange={(e) => setFormEndTime(e.target.value)}
                   className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
@@ -1004,6 +1011,20 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
   };
   const cancelEdit = () => { setEditingId(null); setDraft(blankDraft()); };
 
+  // プリセットを複製。時刻 / 期間 / メモはそのまま、名前に「 (コピー)」を
+  // 付けて即追加する (preset/add の自動採番に乗せる)。頻出パターンの
+  // 微調整版を作るときの手間を省く。
+  const duplicatePreset = (p) => {
+    addPreset({
+      name: `${p.name} (コピー)`,
+      startTime: p.startTime || '',
+      endTime: p.endTime || '',
+      startDateLabel: p.startDateLabel || '',
+      endDateLabel: p.endDateLabel || '',
+      memo: p.memo || '',
+    });
+  };
+
   const draftValidation = useMemo(() => {
     if (!draft.name.trim()) return '名前を入力してください';
     const sMin = draft.startTime ? parseHHmm(draft.startTime) : null;
@@ -1062,7 +1083,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">期間</th>
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
-                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-20"></th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-28"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1080,6 +1101,9 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                         <button type="button" onClick={() => startEdit(p)}
                           className="text-builder-blue hover:underline text-[11px] mr-2"
                           aria-label={`${p.name} を編集`}>編集</button>
+                        <button type="button" onClick={() => duplicatePreset(p)}
+                          className="text-builder-ink hover:underline text-[11px] mr-2"
+                          aria-label={`${p.name} を複製`}>複製</button>
                         <button type="button" onClick={() => removePreset(p.id)}
                           className="text-builder-red hover:underline text-[11px]"
                           aria-label={`${p.name} を削除`}>削除</button>
@@ -1132,12 +1156,12 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
               <div className="flex flex-col gap-1 text-xs">
                 <span className="text-builder-ink-muted">時刻 (任意)</span>
                 <div className="flex items-center gap-1">
-                  <input type="time" value={draft.startTime}
+                  <input type="time" step={TIME_STEP_SEC} value={draft.startTime}
                     onChange={(e) => setDraft(d => ({ ...d, startTime: e.target.value }))}
                     className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                     aria-label="プリセット開始時刻" />
                   <span className="text-builder-ink-muted shrink-0">〜</span>
-                  <input type="time" value={draft.endTime}
+                  <input type="time" step={TIME_STEP_SEC} value={draft.endTime}
                     onChange={(e) => setDraft(d => ({ ...d, endTime: e.target.value }))}
                     className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                     aria-label="プリセット終了時刻" />
