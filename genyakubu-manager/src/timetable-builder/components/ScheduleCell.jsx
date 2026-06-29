@@ -3,6 +3,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
+import { useLongPress } from '../hooks/useLongPress';
 
 export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
   const {
@@ -42,6 +43,12 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       entry.subject ? { flattenIntoSingleSubject: entry.subject } : undefined,
     );
   }, [project.teachers, project.subjects, entry.subject]);
+
+  // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
+  // hooks-rules を守るため早期 return より前で呼ぶ。
+  const longPress = useLongPress(({ pageX, pageY }) =>
+    onContextMenu({ preventDefault: () => {}, pageX, pageY }, dateId, periodId, classId),
+  );
 
   if (!dateEnt || !periodEnt || !classEnt) return null;
   const dLabel = dateEnt.label;
@@ -127,6 +134,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       onDrop={(e) => onDrop(e, key, entry)}
       onDragEnd={onDragEnd}
       onContextMenu={(e) => onContextMenu(e, dateId, periodId, classId)}
+      {...longPress}
     >
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>
         <div className={`flex justify-between items-center ${isCompact ? "gap-0.5" : "gap-1"}`}>

@@ -10,7 +10,8 @@
 + E1b (キーボード操作完成度: focus trap + tablist 矢印ナビ)
 + E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出)
 + E2a-NG (NG 日時 CSV 取り込み) + E2f-stats (生成の探索回数/経過時間/詰まりセル)
-+ E1e (コントラスト WCAG AA 準拠) 完了
++ E1e (コントラスト WCAG AA 準拠) + E1a-toolbar (狭画面でボタン折返し)
++ E1f-longpress (タッチ長押しでコンテキストメニュー) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -573,9 +574,10 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E1. UX 完成度の残り
 
-#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b)
-- **現状**: Tailwind `md:` breakpoint を使うのは SummaryPanel / ConfigModal の 2 箇所のみ。Toolbar / Header / ScheduleTable は 768px 以下で崩れる。
-- **改善**: Toolbar の sm 折りたたみ、Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で。
+#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b / Toolbar 折返し 完了)
+- **現状**: Toolbar のボタン群は狭画面で折り返すように修正済 (2026-06-29)。Header の Excel ボタン dropdown 化と ScheduleTable の max-w 制御は残。
+- **✅ 完了分**: Toolbar 右側のボタンクラスタを `flex` → `flex flex-wrap justify-end` に。768px 以下でボタンが画面外へはみ出さず段組みで折り返す。
+- **残り**: Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で制御。
 - **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
 
 #### E1b. ✅ キーボード操作完成度 (2026-06-29 完了 / 旧 D5b + D5a 延期分 / ScheduleCell 端動作のみ残)
@@ -616,9 +618,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: contrast.test.js (新規 27)。
 - **残り**: focus ring の色弱対応 (現状 builder-blue 単色)、科目カラーパレット自体の AA 検証は別途 (ユーザが任意色を選べるため固定検証になじまない)。
 
-#### E1f. 🟡 タッチ操作対応 (新規)
-- **現状**: DnD ベース。長押しコンテキストメニュー無し。タッチ右クリック (= 長押し) は OS 依存。
-- **改善**: 長押しジェスチャ → ContextMenu open、ピンチズーム抑止、ボタンの最低タップ領域 44px。E1a (モバイル) とセットで。
+#### E1f. 🟡 タッチ操作対応 (長押しメニュー 完了 / 2026-06-29)
+- **旧現状**: DnD ベースで、タッチでのコンテキストメニューは OS 依存 (不安定)。
+- **✅ 完了分 (長押し → ContextMenu)**:
+  - **hooks/useLongPress.js**: 純粋寄りのフック。touchstart で 500ms タイマー、10px 以上の移動 (スクロール/フリック) でキャンセル、マルチタッチ無視、発火直後の click 抑止。返り値を要素へ spread する設計。
+  - **ScheduleCell**: `{...useLongPress(...)}` を `<td>` に付与し、長押しで `onContextMenu` を発火 (右クリックと同じメニュー)。HTML5 DnD はタッチで発火しないので drag と競合しない。hooks-rules を守るため早期 return 前で呼ぶ。
+  - **オンボーディング**: 「右クリック (タッチ端末では長押し)」と案内追記。
+  - **テスト**: useLongPress.test.jsx 新規 6。
+- **残り**: ピンチズーム抑止、ボタンの最低タップ領域 44px の徹底、ヘッダ (日付/時限/クラス) セルへの長押し適用。
 - **規模**: 中 / **価値**: 中
 
 #### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)

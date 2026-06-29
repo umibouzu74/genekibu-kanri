@@ -263,7 +263,7 @@ export default function Toolbar({
           </div>
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="表示サイズを切り替え">
           {isCompact ? "🔍 標準" : "📏 縮小"}
         </button>
