@@ -6,6 +6,7 @@ import {
   cleanSchedule,
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
+import { validateProjectShape } from '../utils/projectSchema';
 import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
@@ -37,6 +38,12 @@ export function useJsonIO({ project, activeTab, dispatch }) {
     r.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
+        // 構造を検証してから migrate / 適用 (E3d)。不正なら適用せず通知。
+        const { valid, error } = validateProjectShape(data);
+        if (!valid) {
+          if (onNotify) onNotify(`JSON の構造が不正です: ${error}`, 'error');
+          return;
+        }
         const migrated = migrateProject(data);
 
         const diffs = detectTeacherDiffs(project.teachers, migrated.teachers || []);

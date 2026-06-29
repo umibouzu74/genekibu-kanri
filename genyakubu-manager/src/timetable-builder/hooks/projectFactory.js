@@ -9,6 +9,7 @@ import {
   CURRENT_PROJECT_VERSION,
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
+import { validateProjectShape } from '../utils/projectSchema';
 
 // 講師マスタの差分を検出する。JSON 読み込み時の確認ダイアログ用。
 export function detectTeacherDiffs(currentTeachers, loadedTeachers) {
@@ -85,6 +86,13 @@ export function loadInitialProject() {
 
     if (savedProject) {
       const parsed = JSON.parse(savedProject);
+      // 構造が致命的に壊れていたら migrate で crash する前に検出し、
+      // デフォルトへフォールバックさせる (E3d)。
+      const { valid, error } = validateProjectShape(parsed);
+      if (!valid) {
+        console.error('Invalid project shape', error);
+        throw new Error(`保存データの構造が不正です: ${error}`);
+      }
       return { project: migrateProject(parsed), loadError: null };
     }
 

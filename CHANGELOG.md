@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: 読込データの構造バリデーション — E3d)
+壊れた localStorage / 不正な JSON によるクラッシュやデータ損失を防ぐ保険。
+
+- **構造検証** (`utils/projectSchema.js`): `validateProjectShape` が
+  tabs / config.dates・periods・classes / subjectCounts / teachers などの
+  致命的な型崩れを検出。zod 等の依存は追加せず手書き (バンドル増ゼロ)。
+- **起動時** (`loadInitialProject`): 検証 NG ならデフォルトにフォールバック
+  して toast 通知 (従来の JSON.parse 失敗と同じ経路)。
+- **JSON 取り込み** (`handleLoadJson`): 検証 NG なら適用せずエラー toast。
+- **テスト**: projectSchema を新規追加、projectFactory に fallback を追記
+  (計 +12 件、全 1343 件 pass)。
+
 ### Added (講習時間割作成: テンプレート機能・年度間コピー — E2d)
 去年の設定を今年に流用できるテンプレート機能。プロジェクトを名前付きで
 保存し、翌年などに「全体」または「講師マスタのみ」を適用して使い回せる。

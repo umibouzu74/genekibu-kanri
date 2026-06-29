@@ -5,7 +5,8 @@
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
 + E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
-+ E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能) 完了
++ E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
++ E3d (JSON schema バリデーション) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -707,10 +708,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: Playwright で `page.pdf()` → PDF を画像化 → pixelmatch / VRT。少なくとも 7 ビュー × 1 サンプルずつ。
 - **規模**: 中 / **価値**: 中 (印刷バグは現場でしか発覚しない)
 
-#### E3d. 🟠 project JSON 読込時の schema バリデーション (新規)
-- **現状**: `projectFactory.loadInitialProject` は JSON.parse 失敗のみ捕捉 (test fixture でも確認済み)。schema 違反 (`teachers` が配列でない等) は crash する可能性。
-- **改善**: zod / valibot 等で schema を宣言、`migrateProject` の手前で validate。失敗時は defaults にフォールバック + 「JSON が壊れています」toast。
-- **規模**: 中 / **価値**: 高 (R2: LocalStorage 容量との合わせ技、データ損失への保険)
+#### E3d. ✅ project JSON 読込時の schema バリデーション (2026-06-29 完了)
+- **旧現状**: `loadInitialProject` は JSON.parse 失敗のみ捕捉。schema 違反 (`tabs` / `config.dates` が配列でない等) は migrate / downstream で crash しうる。
+- **実装**:
+  - **utils/projectSchema.js**: 純粋関数 `validateProjectShape(obj)` → `{ valid, error }`。致命的な構造崩れ (tabs 非配列/空・config 欠落・dates/periods/classes 非配列・subjectCounts 非オブジェクト・teachers 非配列・schedule 非オブジェクト) のみ検出。任意フィールドの欠落は migrate が default 補完するので見ない。zod 等の依存は足さず手書き (バンドル増ゼロ)。
+  - **projectFactory.loadInitialProject**: parse 後・migrate 前に validate。不正なら throw → 既存 catch でフォールバック default + loadError → 起動時 toast。
+  - **useJsonIO.handleLoadJson**: ファイル取り込みでも validate。不正なら適用せず error toast。
+- **テスト**: projectSchema.test.js (新規 10) / projectFactory.test.js (+2 fallback)。
+- **判断**: 手書きバリデータで十分 (構造チェックのみ)。値レベルの厳密検証 (例: id の一意性) は過剰なので入れない。
 
 #### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
 - **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
