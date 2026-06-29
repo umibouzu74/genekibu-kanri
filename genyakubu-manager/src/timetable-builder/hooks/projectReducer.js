@@ -239,11 +239,15 @@ function applyAction(project, action) {
       return cleanSchedule({ ...project, tabs: newTabs, combinedGroups: newCombined });
     }
     case 'config/setSubjectCount': {
-      const { subject, value } = action.payload;
-      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-      const newCounts = { ...activeTab.config.subjectCounts, [subject]: parseInt(value) || 0 };
+      // tabId 省略時はアクティブタブを対象にする (従来挙動)。
+      // SubjectManager の「タブ別コマ数」編集では各タブの id を明示で渡す。
+      const { subject, value, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const newCounts = { ...target.config.subjectCounts, [subject]: parseInt(value) || 0 };
       const newTabs = project.tabs.map(t =>
-        t.id === project.activeTabId ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
+        t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
       return { ...project, tabs: newTabs };
     }

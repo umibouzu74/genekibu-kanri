@@ -806,6 +806,32 @@ describe('projectReducer — 科目マスタ', () => {
     const next = projectReducer(state, { type: 'subject/reorder', payload: { fromIdx: 0, toIdx: 2 } });
     expect(next.project.subjects).toEqual(['数学', '国語', '英語']);
   });
+
+  it('config/setSubjectCount: tabId 省略時はアクティブタブを更新', () => {
+    const state = makeState();
+    const next = projectReducer(state, { type: 'config/setSubjectCount', payload: { subject: '英語', value: '5' } });
+    expect(next.project.tabs[0].config.subjectCounts['英語']).toBe(5);
+  });
+
+  it('config/setSubjectCount: tabId 指定で非アクティブタブも更新できる (学年別の上限)', () => {
+    const state = makeState({
+      activeTabId: 1,
+      tabs: [
+        { id: 1, name: '中３', config: { dates: [], periods: [], classes: [], subjectCounts: { '英語': 4 } }, schedule: {} },
+        { id: 2, name: '中１・２', config: { dates: [], periods: [], classes: [], subjectCounts: { '英語': 4 } }, schedule: {} },
+      ],
+    });
+    const next = projectReducer(state, { type: 'config/setSubjectCount', payload: { subject: '英語', value: '6', tabId: 2 } });
+    // 対象タブのみ更新され、アクティブタブは据え置き
+    expect(next.project.tabs[1].config.subjectCounts['英語']).toBe(6);
+    expect(next.project.tabs[0].config.subjectCounts['英語']).toBe(4);
+  });
+
+  it('config/setSubjectCount: 数値化できない値は 0 にフォールバック', () => {
+    const state = makeState();
+    const next = projectReducer(state, { type: 'config/setSubjectCount', payload: { subject: '英語', value: '' } });
+    expect(next.project.tabs[0].config.subjectCounts['英語']).toBe(0);
+  });
 });
 
 describe('projectReducer — セル操作', () => {
