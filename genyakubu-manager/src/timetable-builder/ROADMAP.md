@@ -6,7 +6,9 @@
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
 + E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
 + E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
-+ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化) 完了
++ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化)
++ E1b (キーボード操作完成度: focus trap + tablist 矢印ナビ)
++ E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出) 完了
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -574,14 +576,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: Toolbar の sm 折りたたみ、Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で。
 - **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
 
-#### E1b. 🟠 キーボード操作完成度 (旧 D5b + D5a 延期分)
-- **現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装。Tab で背景まで抜ける。OnboardingOverlay は実装済 (M2 修正)。
-- **改善**:
-  - ConfigModal に簡易 focus trap (OnboardingOverlay の実装をヘルパー化して再利用)
-  - ConfigModal タブ群を `role="tablist"` / `role="tab"` + 左右矢印で切替
-  - TabBar (project タブ) も同様に `role="tablist"` 化
-  - ScheduleCell の矢印ナビは既存。エッジ動作 (端 → 反対端へ wrap?) を統一
-- **規模**: 中 / **価値**: 中
+#### E1b. ✅ キーボード操作完成度 (2026-06-29 完了 / 旧 D5b + D5a 延期分 / ScheduleCell 端動作のみ残)
+- **旧現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装で Tab が背景まで抜けた。タブ群も矢印キー非対応。
+- **実装**:
+  - **hooks/useFocusTrap.js**: OnboardingOverlay のインライン実装をヘルパー化 (E1b の「再利用」指示どおり)。親アプリの `src/hooks/useFocusTrap` と同等 API だが Builder 自己完結のためローカル新設。`trapStack` で入れ子 dialog の LIFO 制御、`enabled` フラグ、マウント時の初期フォーカス + cleanup でのフォーカス復帰。Builder の慣習に合わせ keydown は `window` で捕捉。
+  - **OnboardingOverlay**: 自前の Escape/Tab ハンドラ (M2) を `useFocusTrap` 呼び出しに置換 (-30 行)。Escape は従来どおり `dontShowAgain:false` で閉じる (F1 維持)。
+  - **ConfigModal**: `useFocusTrap` で focus trap 化。タブ群を `role="tablist"` / `role="tab"` / `role="tabpanel"` + roving tabindex 化、← → / Home / End で切替 (wrap あり)。自前 Escape effect は trap に統合。
+  - **TabBar (学年タブ)**: `role="tablist"` / `role="tab"` + aria-selected + roving tabindex、← → / Home / End で `switchTab` (wrap あり)。
+- **テスト**: useFocusTrap.test.jsx (新規 6) / ConfigModal index.test.jsx (+5) / TabBar.test.jsx (+5)。OnboardingOverlay の既存 12 件はそのまま PASS で挙動等価。
+- **残り (低優先)**: ScheduleCell の矢印ナビの端動作 (端 → 反対端へ wrap?) の統一は別途。
 
 #### E1c. ✅ 名前付きスナップショット (2026-06-29 完了 / 旧 D1d)
 - **旧現状**: undo/redo はあるが、特定状態を「Pattern A」のように名前保存できなかった。
@@ -823,15 +826,22 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: OT (Operational Transform) or CRDT (yjs/automerge) で同時編集 + コンフリクト解決。
 - **規模**: 超大 / **価値**: 条件付き高 (E6a の延長)
 
-#### E6c. 🟡 LocalStorage 容量監視 (新規, R2 の能動管理)
-- **現状**: R2 で「ピーク 12 KB 程度なので 1-2 桁の余裕」と評価済みだが、運用中の実値モニタリング無し。
-- **改善**: 起動時に `JSON.stringify(project).length` を計測し、5MB の 50% を超えたら toast。
-- **規模**: 小 / **価値**: 中
+#### E6c. ✅ LocalStorage 容量監視 (2026-06-29 完了 / R2 の能動管理)
+- **旧現状**: R2 で「ピーク 12 KB 程度」と評価済みだが運用中の実値モニタリング無し。
+- **実装**:
+  - **utils/storageHealth.js**: 純粋関数 `estimateStorageBytes(value)` (UTF-16 想定で `length*2`、直列化不能/循環は 0) / `checkStorageHealth(project, {limitBytes, warnRatio})` → `{ bytes, ratio, warn }` (デフォルト 5MB の 50%) / `formatBytes` (B/KB/MB)。0 除算ガード付き。
+  - **BuilderApp**: マウント時 1 回だけ `checkStorageHealth(project)` を評価し、warn なら概算サイズ付きの warning toast (スナップショット/タブ整理 + JSON バックアップを案内)。逐次変化では再警告しない。
+- **テスト**: storageHealth.test.js (新規 13)。
+- **判断**: 通常運用 (~12KB) では発火しない閾値 (2.5MB) なので false-positive なし。履歴は RAM 保持 (R2) なので測定対象は project 本体のみで十分。
 
-#### E6d. 🟡 同一ブラウザ複数タブの競合検出 (新規)
-- **現状**: 同 project を 2 タブで開くと localStorage を相互に上書きする可能性 (debounce 経由)。
-- **改善**: `BroadcastChannel` で「他タブが同 project を開いた」を検出し warning。Lock 取得方式 (`navigator.locks`) も検討。
-- **規模**: 中 / **価値**: 中 (実害が出てからでも遅くない)
+#### E6d. ✅ 同一ブラウザ複数タブの競合検出 (2026-06-29 完了)
+- **旧現状**: 同 project を 2 タブで開くと localStorage を相互に上書きする可能性 (debounce 経由)。
+- **実装**:
+  - **utils/tabPresence.js**: 純粋関数 `interpretPresenceMessage(msg, selfId)` → `{ conflict, shouldAck }` (hello/ack のみ解釈、自分発・不正メッセージは無視)。チャネル名定数 `TAB_PRESENCE_CHANNEL`。
+  - **hooks/useTabPresence.js**: マウント時に `BroadcastChannel` で `hello` を broadcast。既存タブは受信して `ack` 返信 + 警告、新規タブは `ack` 受信で警告。`onConflict` はセッション中 1 回のみ (warned フラグ)。BroadcastChannel 非対応環境 (古いブラウザ/jsdom) は完全 no-op。`onConflict` は ref 経由で effect 再貼り付けを回避。
+  - **BuilderApp**: `useTabPresence` で競合時に warning toast (「1 つのタブに絞ることを推奨」)。
+- **テスト**: tabPresence.test.js (新規 7) / useTabPresence.test.jsx (新規 4、FakeBroadcastChannel で 2-3 タブを模擬)。
+- **延期**: `navigator.locks` による排他取得や project ID 単位の判定は未実装 (現状は「Builder を複数タブで開いた」を検出する粒度)。
 
 ---
 

@@ -14,6 +14,8 @@ import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
+import { checkStorageHealth, formatBytes } from './utils/storageHealth';
+import { useTabPresence } from './hooks/useTabPresence';
 
 function ScheduleApp() {
   const { project, undo, redo, loadError } = useProjectContext();
@@ -45,6 +47,32 @@ function ScheduleApp() {
     // loadError は初期マウントで決定された静的値なので deps に入れない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 起動時に保存サイズを概算し、localStorage 上限に近づいていたら警告 (E6c)。
+  // データ消失 (silent な保存失敗) の予防。マウント時 1 回のみ。
+  useEffect(() => {
+    const { warn, bytes } = checkStorageHealth(project);
+    if (warn) {
+      showToast(
+        `保存データが大きくなっています (約 ${formatBytes(bytes)})。不要なスナップショットやタブを整理するか、JSON 書き出しでバックアップしてください。`,
+        'warning',
+        8000,
+      );
+    }
+    // 起動時 1 回のみ。project の逐次変化では再警告しない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 同一ブラウザで複数タブ開いた時に一度だけ警告 (E6d)。autosave の相互上書き予防。
+  useTabPresence(
+    useCallback(() => {
+      showToast(
+        'このツールを別のタブでも開いています。複数タブで編集すると保存が競合し、変更が失われることがあります。1 つのタブに絞ることをおすすめします。',
+        'warning',
+        8000,
+      );
+    }, [showToast]),
+  );
 
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
   useEffect(() => {

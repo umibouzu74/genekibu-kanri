@@ -79,3 +79,45 @@ describe('TabBar (D1c)', () => {
     expect(switchTab).toHaveBeenCalledWith(2);
   });
 });
+
+describe('TabBar (E1b キーボード a11y)', () => {
+  it('role="tablist" と role="tab" を持ち、アクティブタブが aria-selected', () => {
+    renderTabBar();
+    expect(screen.getByRole('tablist', { name: '学年タブ' })).toBeInTheDocument();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true'); // activeTabId=1
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('アクティブタブのみ tabIndex=0 (roving tabindex)', () => {
+    renderTabBar();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs[0]).toHaveAttribute('tabindex', '0');
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('ArrowRight で次のタブへ switchTab', () => {
+    const switchTab = vi.fn();
+    renderTabBar({ projectOverrides: { switchTab } });
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' });
+    expect(switchTab).toHaveBeenCalledWith(2);
+  });
+
+  it('ArrowLeft は端で wrap して最後のタブへ', () => {
+    const switchTab = vi.fn();
+    renderTabBar({ projectOverrides: { switchTab } }); // activeTabId=1 (先頭)
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowLeft' });
+    expect(switchTab).toHaveBeenCalledWith(2); // wrap → 末尾
+  });
+
+  it('End で最後、Home で最初のタブへ', () => {
+    const switchTab = vi.fn();
+    renderTabBar({ projectOverrides: { switchTab } });
+    const tablist = screen.getByRole('tablist');
+    fireEvent.keyDown(tablist, { key: 'End' });
+    expect(switchTab).toHaveBeenLastCalledWith(2);
+    fireEvent.keyDown(tablist, { key: 'Home' });
+    expect(switchTab).toHaveBeenLastCalledWith(1);
+  });
+});

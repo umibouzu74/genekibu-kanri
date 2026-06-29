@@ -30,16 +30,40 @@ export default function TabBar() {
     if (name) handleAddTab(name);
   };
 
+  // 学年タブの左右/Home/End 矢印ナビ (E1b)。フォーカスを移しつつそのタブを開く。
+  const handleTabKeyDown = (e) => {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const tabs = project.tabs;
+    const currentIndex = tabs.findIndex(t => t.id === project.activeTabId);
+    let nextIndex = currentIndex < 0 ? 0 : currentIndex;
+    if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = tabs.length - 1;
+    const nextTab = tabs[nextIndex];
+    if (!nextTab) return;
+    switchTab(nextTab.id);
+    document.getElementById(`builder-grade-tab-${nextTab.id}`)?.focus();
+  };
+
   return (
-    <div className="flex items-end gap-1 px-2 no-print overflow-x-auto">
+    <div role="tablist" aria-label="学年タブ" onKeyDown={handleTabKeyDown} className="flex items-end gap-1 px-2 no-print overflow-x-auto">
       {project.tabs.map(tab => {
         const errorCount = tabErrorCounts[tab.id] || 0;
+        const selected = project.activeTabId === tab.id;
         return (
           <div
             key={tab.id}
+            id={`builder-grade-tab-${tab.id}`}
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            title="クリックで切替 / ダブルクリックで名前変更"
             onClick={() => switchTab(tab.id)}
             onDoubleClick={(e) => handleRenameClick(e, tab)}
-            className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${project.activeTabId === tab.id ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
+            className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
           >
             {tab.name}
             {errorCount > 0 ? (

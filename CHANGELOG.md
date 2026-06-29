@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: キーボード操作の完成度向上 — E1b)
+マウスに頼らず設定モーダルとタブを操作できるように。
+
+- **focus trap の共通化** (`hooks/useFocusTrap.js`): OnboardingOverlay の
+  インライン実装をヘルパー化し、Escape で閉じる + Tab/Shift+Tab で dialog 内に
+  フォーカスを閉じ込める。入れ子 dialog は最上位だけが応答 (LIFO)。
+- **設定モーダル**: focus trap を適用し Tab が背景へ抜けないように。カテゴリ
+  タブを `role="tablist"` 化し ← → / Home / End で切替 (端で wrap)。
+- **学年タブ (TabBar)**: 同様に `role="tablist"` + 矢印キーで切替、
+  aria-selected / roving tabindex 付き。
+- **テスト**: useFocusTrap (新規 6) / ConfigModal (+5) / TabBar (+5)。
+
+### Added (講習時間割作成: データ消失を防ぐ 2 つの保険 — E6c / E6d)
+- **LocalStorage 容量監視** (`utils/storageHealth.js`): 起動時に保存サイズを
+  概算し、5MB の 50% を超えていたら整理・バックアップを促す warning toast。
+  通常運用 (~12KB) では発火しない閾値。テスト +13 件。
+- **複数タブ競合検出** (`utils/tabPresence.js` / `hooks/useTabPresence.js`):
+  `BroadcastChannel` で同一ブラウザの別タブが Builder を開いていることを検出し、
+  autosave の相互上書きを防ぐため一度だけ警告。非対応環境は no-op。テスト +11 件。
+
 ### Fixed (講習時間割作成: 校正レビューでの指摘修正)
 3 観点の独立レビューで見つかった不具合を修正:
 
