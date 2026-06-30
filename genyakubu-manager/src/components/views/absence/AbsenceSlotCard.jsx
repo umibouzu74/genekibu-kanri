@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import { ADJ_COLOR, gradeColor as GC } from "../../../data";
 import { colors } from "../../../styles/tokens";
 import {
   formatBiweeklyTeacher,
+  getSlotTeachers,
   getSlotWeekType,
   isBiweekly,
 } from "../../../utils/biweekly";
@@ -27,6 +29,8 @@ export function AbsenceSlotCard({
   hostLabel, // absorbed のとき: "→ 中3S 理科"
   substituteName, // 代行済みなら代行者名。未設定なら null
   substituteStatus, // "confirmed" | "requested"
+  substituteOriginalTeacher, // 多担任スロットで代行対象の元講師 (1 名)。なければ null
+
   overrideLabel, // 補正バッジ文字列 (例: "第4回 補正" / "カウント外")
   sessionCount, // 回数 (override 反映後)
   isCombineCandidate, // 合同モード中の候補ハイライト用
@@ -239,7 +243,30 @@ export function AbsenceSlotCard({
       >
         {substituteName ? (
           <>
-            {formatBiweeklyTeacher(slot.teacher, slot.note)}
+            {(() => {
+              // 多担任スロット (プレップ等) で代行対象が 1 名に特定できる場合は、
+              // その講師だけに取消線を付け、他の講師は通常表示のまま残す。
+              const teachers = getSlotTeachers(slot);
+              if (
+                substituteOriginalTeacher &&
+                teachers.length > 1 &&
+                teachers.includes(substituteOriginalTeacher)
+              ) {
+                return teachers.map((t, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && (
+                      <span style={{ color: "#1a1a2e", fontWeight: 600 }}>·</span>
+                    )}
+                    {t === substituteOriginalTeacher ? (
+                      <span style={{ textDecoration: "line-through" }}>{t}</span>
+                    ) : (
+                      <span style={{ color: "#1a1a2e", fontWeight: 600 }}>{t}</span>
+                    )}
+                  </Fragment>
+                ));
+              }
+              return formatBiweeklyTeacher(slot.teacher, slot.note);
+            })()}
             <span style={{ margin: "0 2px" }}>⇒</span>
             {substituteName}
           </>

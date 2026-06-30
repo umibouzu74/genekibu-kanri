@@ -265,15 +265,19 @@ export function useAbsenceDraft() {
         if (!slot) continue;
 
         if (row.sub?.substitute || row.sub?.status) {
-          const originalTeacher = biweekly
-            ? biweeklyActiveTeacher(
-                slot,
-                date,
-                biweekly.anchors,
-                biweekly.holidays,
-                biweekly.examPeriods
-              )
-            : slot.teacher;
+          // 多担任スロットで明示選択された元講師を最優先。なければ隔週の
+          // 週 (A/B) で解決し、それも無ければ slot.teacher 全体。
+          const originalTeacher =
+            row.sub.originalTeacher ||
+            (biweekly
+              ? biweeklyActiveTeacher(
+                  slot,
+                  date,
+                  biweekly.anchors,
+                  biweekly.holidays,
+                  biweekly.examPeriods
+                )
+              : slot.teacher);
           draftSubs.push({
             date,
             slotId,

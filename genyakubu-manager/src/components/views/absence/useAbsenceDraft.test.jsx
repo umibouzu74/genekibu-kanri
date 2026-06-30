@@ -258,6 +258,38 @@ describe("useAbsenceDraft", () => {
       expect(outA.draftSubs[0].originalTeacher).toBe("堀上");
     });
 
+    it("prefers an explicit per-slot originalTeacher (多担任 prep slot)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      const prepSlots = [
+        {
+          id: 30,
+          day: "土",
+          time: "10:00-11:20",
+          grade: "中3",
+          cls: "-",
+          subj: "プレップ",
+          teacher: "香川·福江·川井",
+          note: "",
+          room: "",
+        },
+      ];
+      act(() => {
+        // 川井 の代行を福武に。originalTeacher を明示。
+        result.current.updateSub(30, {
+          substitute: "福武",
+          status: "confirmed",
+          originalTeacher: "川井",
+        });
+      });
+      const out = result.current.toBatchPayload("2026-07-11", prepSlots, [], {
+        anchors: [],
+        holidays: [],
+        examPeriods: [],
+      });
+      // slot.teacher 全体 ("香川·福江·川井") ではなく、選んだ川井のみ。
+      expect(out.draftSubs[0].originalTeacher).toBe("川井");
+    });
+
     it("returns removedSubIds in payload", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {

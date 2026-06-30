@@ -446,9 +446,11 @@ export function AbsenceTimetable({
       // 代行: draft or 既存確定 (removedSubIds でマーク済みは表示から除外)
       let substituteName = null;
       let substituteStatus = null;
+      let substituteOriginalTeacher = null;
       if (row.sub?.substitute) {
         substituteName = row.sub.substitute;
         substituteStatus = row.sub.status || "confirmed";
+        substituteOriginalTeacher = row.sub.originalTeacher || null;
       } else {
         const ex = (existingSubs || []).find(
           (x) =>
@@ -459,6 +461,7 @@ export function AbsenceTimetable({
         if (ex?.substitute) {
           substituteName = ex.substitute;
           substituteStatus = ex.status;
+          substituteOriginalTeacher = ex.originalTeacher || null;
         }
       }
 
@@ -542,6 +545,7 @@ export function AbsenceTimetable({
           hostLabel={hostLabel}
           substituteName={substituteName}
           substituteStatus={substituteStatus}
+          substituteOriginalTeacher={substituteOriginalTeacher}
           overrideLabel={overrideLabel}
           sessionCount={sessionCountMap?.get(s.id) || 0}
           isCombineCandidate={isCombineCandidate}
@@ -985,8 +989,13 @@ export function AbsenceTimetable({
           daySlots={slots}
           currentSubstitute={draft[subPicker.slot.id]?.sub?.substitute || ""}
           currentStatus={draft[subPicker.slot.id]?.sub?.status || "confirmed"}
-          onAssign={(name, status) =>
-            draftApi.updateSub(subPicker.slot.id, { substitute: name, status })
+          currentOriginalTeacher={draft[subPicker.slot.id]?.sub?.originalTeacher || ""}
+          onAssign={(name, status, originalTeacher) =>
+            draftApi.updateSub(subPicker.slot.id, {
+              substitute: name,
+              status,
+              ...(originalTeacher ? { originalTeacher } : {}),
+            })
           }
           onClear={() => draftApi.clearSub(subPicker.slot.id)}
           onClose={() => setSubPicker(null)}
