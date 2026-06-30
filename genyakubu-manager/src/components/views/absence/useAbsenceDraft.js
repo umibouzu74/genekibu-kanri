@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { biweeklyActiveTeacher } from "../../../utils/biweekly";
 
 // ─── Teacher Absence workflow: local draft state ──────────────────
 // 代行・合同/移動/振替・回数補正の下書きを slot ごとに保持する。
@@ -238,8 +239,11 @@ export function useAbsenceDraft() {
   // 1 スロットが sub + move の両方を持つ場合は両方のレコードを出力する。
   // existingAdjustments を渡すと、draft で上書きされる同 slot の既存 combine/move を
   // 自動的に removedAdjustmentIds に追加する (二重保存防止)。
+  // biweekly ({ anchors, holidays, examPeriods }) を渡すと、隔週スロットの
+  // originalTeacher を対象日の週 (A/B) に合わせて解決する。B 週は note の
+  // partner を、A 週・非隔週は slot.teacher を採用する。
   const toBatchPayload = useCallback(
-    (date, slots, existingAdjustments = []) => {
+    (date, slots, existingAdjustments = [], biweekly = null) => {
       const draftSubs = [];
       const draftAdjustments = [];
       const draftOverrides = [];
@@ -261,10 +265,19 @@ export function useAbsenceDraft() {
         if (!slot) continue;
 
         if (row.sub?.substitute || row.sub?.status) {
+          const originalTeacher = biweekly
+            ? biweeklyActiveTeacher(
+                slot,
+                date,
+                biweekly.anchors,
+                biweekly.holidays,
+                biweekly.examPeriods
+              )
+            : slot.teacher;
           draftSubs.push({
             date,
             slotId,
-            originalTeacher: slot.teacher,
+            originalTeacher,
             substitute: row.sub.substitute || "",
             status: row.sub.status || "requested",
             memo: row.sub.memo || "",

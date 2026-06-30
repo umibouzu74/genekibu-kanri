@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  biweeklyActiveTeacher,
   biweeklyDisplaySubject,
   formatBiweeklyNote,
   formatBiweeklyTeacher,
@@ -641,6 +642,36 @@ describe("biweeklyDisplaySubject", () => {
   it("subj が空のときは空文字を返す", () => {
     const slot = { note: "隔週(河野)", subj: "" };
     expect(biweeklyDisplaySubject(slot, "2026-04-06", anchors)).toBe("");
+  });
+});
+
+describe("biweeklyActiveTeacher", () => {
+  const anchors = [{ date: "2026-04-06", weekType: "A" }];
+
+  it("非 biweekly は slot.teacher をそのまま返す", () => {
+    const slot = { teacher: "堀上", note: "" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-13", anchors)).toBe("堀上");
+  });
+
+  it("A 週 → slot.teacher", () => {
+    const slot = { teacher: "堀上", note: "隔週(川井)" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-06", anchors)).toBe("堀上");
+  });
+
+  it("B 週 → note の partner (川井)", () => {
+    const slot = { teacher: "堀上", note: "隔週(川井)" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-13", anchors)).toBe("川井");
+  });
+
+  it("アンカー未設定のときは slot.teacher にフォールバック", () => {
+    const slot = { teacher: "堀上", note: "隔週(川井)" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-13", [])).toBe("堀上");
+  });
+
+  it("teacher と partner が逆順のスロットでも A 週は slot.teacher", () => {
+    // 中1AB: teacher=川井, partner=堀上 の A 週 → 川井
+    const slot = { teacher: "川井", note: "隔週(堀上)" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-06", anchors)).toBe("川井");
   });
 });
 

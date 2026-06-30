@@ -3,6 +3,7 @@ import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
 import { pickSubjectId } from "../../../utils/subjectMatch";
+import { biweeklyActiveTeacher, biweeklyDisplaySubject } from "../../../utils/biweekly";
 
 // ─── 代行ピッカーポップオーバー ───────────────────────────────
 // 欠勤組み換え UI 用の簡易ピッカー。
@@ -26,6 +27,10 @@ function computePosition(anchorRect) {
 export function SubstitutePickerPopover({
   anchorRect,
   slot,
+  date,
+  biweeklyAnchors,
+  holidays,
+  examPeriods,
   partTimeStaff,
   subjects,
   daySlots,
@@ -160,7 +165,15 @@ export function SubstitutePickerPopover({
         </div>
         <div style={{ color: "#666", fontSize: 11, marginTop: 2 }}>
           {slot.grade}
-          {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj} ({slot.teacher})
+          {slot.cls && slot.cls !== "-" ? slot.cls : ""}{" "}
+          {date
+            ? biweeklyDisplaySubject(slot, date, biweeklyAnchors, holidays, examPeriods)
+            : slot.subj}{" "}
+          (
+          {date
+            ? biweeklyActiveTeacher(slot, date, biweeklyAnchors, holidays, examPeriods)
+            : slot.teacher}
+          )
         </div>
       </div>
 

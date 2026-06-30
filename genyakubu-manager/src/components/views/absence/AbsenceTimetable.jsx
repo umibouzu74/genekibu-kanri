@@ -976,6 +976,10 @@ export function AbsenceTimetable({
         <SubstitutePickerPopover
           anchorRect={subPicker.anchorRect}
           slot={subPicker.slot}
+          date={date}
+          biweeklyAnchors={biweeklyAnchors}
+          holidays={holidays}
+          examPeriods={examPeriods}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
           daySlots={slots}

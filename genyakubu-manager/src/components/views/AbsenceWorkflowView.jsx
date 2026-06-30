@@ -292,7 +292,11 @@ export function AbsenceWorkflowView({
       draftOverrides,
       removedAdjustmentIds,
       removedSubIds,
-    } = draft.toBatchPayload(date, slots, adjustments || []);
+    } = draft.toBatchPayload(date, slots, adjustments || [], {
+      anchors: biweeklyAnchors || [],
+      holidays: holidays || [],
+      examPeriods: examPeriods || [],
+    });
     if (
       draftSubs.length === 0 &&
       draftAdjustments.length === 0 &&
@@ -329,7 +333,7 @@ export function AbsenceWorkflowView({
       console.error(err);
       toasts.error("保存に失敗しました");
     }
-  }, [draft, date, slots, subs, adjustments, sessionOverrides, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
+  }, [draft, date, slots, subs, adjustments, sessionOverrides, biweeklyAnchors, holidays, examPeriods, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
 
   if (!isAdmin) {
     return (

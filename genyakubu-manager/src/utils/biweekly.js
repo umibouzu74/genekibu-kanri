@@ -212,6 +212,20 @@ export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays,
   return partner != null && teacher === partner;
 }
 
+// 指定日にこのスロットを実際に担当する講師名を返す。
+//   - 非隔週         → slot.teacher をそのまま (複数担当 "·" 区切りも含む)
+//   - A 週           → slot.teacher
+//   - B 週           → note "隔週(partner)" の partner
+//   - アンカー未設定 → slot.teacher (従来挙動 / 安全側)
+// 代行登録時の originalTeacher を曜日 (A/B) に合わせて解決するために使う。
+export function biweeklyActiveTeacher(slot, dateStr, anchors, holidays, examPeriods) {
+  if (!isBiweekly(slot.note)) return slot.teacher;
+  const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
+  if (wt == null || wt === "A") return slot.teacher;
+  const m = slot.note.match(/隔週\(([^)]+)\)/);
+  return m ? m[1] : slot.teacher;
+}
+
 // 表示用の「実施される教科」を返す。
 // 複合教科 ("英/数") の隔週スロットでは A 週 → 先頭、B 週 → 2 つ目。
 // 単独教科 / アンカー未設定 の場合は slot.subj をそのまま返す。
