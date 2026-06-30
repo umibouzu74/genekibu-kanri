@@ -207,6 +207,89 @@ describe("useAbsenceDraft", () => {
       expect(out.draftAdjustments.filter((a) => a.type === "combine")).toHaveLength(1);
     });
 
+    it("records originalTeacher as slot.teacher when no biweekly context", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.updateSub(10, { substitute: "福江", status: "confirmed" });
+      });
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, []);
+      expect(out.draftSubs[0].originalTeacher).toBe("本多");
+    });
+
+    it("resolves originalTeacher to the B週 partner for biweekly slots", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      // 中3S: teacher=堀上, partner=川井。2026-04-13 は anchor(04-06=A) から B 週。
+      const biweeklySlots = [
+        {
+          id: 20,
+          day: "月",
+          time: "18:55-19:40",
+          grade: "中3",
+          cls: "S",
+          subj: "英/数",
+          teacher: "堀上",
+          note: "隔週(川井)",
+          room: "501",
+        },
+      ];
+      const biweekly = {
+        anchors: [{ date: "2026-04-06", weekType: "A" }],
+        holidays: [],
+        examPeriods: [],
+      };
+      act(() => {
+        result.current.updateSub(20, { substitute: "福江", status: "confirmed" });
+      });
+      const outB = result.current.toBatchPayload(
+        "2026-04-13",
+        biweeklySlots,
+        [],
+        biweekly
+      );
+      expect(outB.draftSubs[0].originalTeacher).toBe("川井");
+
+      // A 週 (anchor 当日) なら slot.teacher のまま
+      const outA = result.current.toBatchPayload(
+        "2026-04-06",
+        biweeklySlots,
+        [],
+        biweekly
+      );
+      expect(outA.draftSubs[0].originalTeacher).toBe("堀上");
+    });
+
+    it("prefers an explicit per-slot originalTeacher (多担任 prep slot)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      const prepSlots = [
+        {
+          id: 30,
+          day: "土",
+          time: "10:00-11:20",
+          grade: "中3",
+          cls: "-",
+          subj: "プレップ",
+          teacher: "香川·福江·川井",
+          note: "",
+          room: "",
+        },
+      ];
+      act(() => {
+        // 川井 の代行を福武に。originalTeacher を明示。
+        result.current.updateSub(30, {
+          substitute: "福武",
+          status: "confirmed",
+          originalTeacher: "川井",
+        });
+      });
+      const out = result.current.toBatchPayload("2026-07-11", prepSlots, [], {
+        anchors: [],
+        holidays: [],
+        examPeriods: [],
+      });
+      // slot.teacher 全体 ("香川·福江·川井") ではなく、選んだ川井のみ。
+      expect(out.draftSubs[0].originalTeacher).toBe("川井");
+    });
+
     it("returns removedSubIds in payload", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {

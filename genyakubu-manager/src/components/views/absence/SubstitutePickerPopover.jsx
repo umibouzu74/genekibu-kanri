@@ -3,6 +3,12 @@ import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
 import { pickSubjectId } from "../../../utils/subjectMatch";
+import {
+  biweeklyActiveTeacher,
+  biweeklyDisplaySubject,
+  getSlotTeachers,
+  isBiweekly,
+} from "../../../utils/biweekly";
 
 // ─── 代行ピッカーポップオーバー ───────────────────────────────
 // 欠勤組み換え UI 用の簡易ピッカー。
@@ -26,11 +32,16 @@ function computePosition(anchorRect) {
 export function SubstitutePickerPopover({
   anchorRect,
   slot,
+  date,
+  biweeklyAnchors,
+  holidays,
+  examPeriods,
   partTimeStaff,
   subjects,
   daySlots,
   currentSubstitute,
   currentStatus,
+  currentOriginalTeacher,
   onAssign,
   onClear,
   onClose,
@@ -38,6 +49,21 @@ export function SubstitutePickerPopover({
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
   const [status, setStatus] = useState(currentStatus || "confirmed");
+
+  // 多担任スロット (例: プレップ "香川·福江·川井") では「どの講師の代行か」を
+  // 明示的に選ぶ。隔週 (note partner 方式) は単一 teacher なので対象外。
+  const slotTeachers = useMemo(
+    () => (isBiweekly(slot.note) ? [] : getSlotTeachers(slot)),
+    [slot]
+  );
+  const isMultiTeacher = slotTeachers.length > 1;
+  const [originalTeacher, setOriginalTeacher] = useState(() =>
+    currentOriginalTeacher && slotTeachers.includes(currentOriginalTeacher)
+      ? currentOriginalTeacher
+      : isMultiTeacher
+        ? slotTeachers[0]
+        : ""
+  );
   // 矢印キーで選択中の候補のインデックス。-1 はリスト未フォーカス。
   // 開いた直後は何もハイライトせず、↓ を押した時点で先頭に移る挙動。
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -115,14 +141,14 @@ export function SubstitutePickerPopover({
       } else if (e.key === "Enter") {
         if (focusIdx >= 0 && focusIdx < list.length) {
           e.preventDefault();
-          onAssign(list[focusIdx], status);
+          onAssign(list[focusIdx], status, isMultiTeacher ? originalTeacher : undefined);
           onClose();
         }
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [list, focusIdx, status, onAssign, onClose]);
+  }, [list, focusIdx, status, isMultiTeacher, originalTeacher, onAssign, onClose]);
 
   // 矢印キーで focusIdx が画面外へ進んだら、対応する <button role="option">
   // を可視範囲へスクロール。block:"nearest" でリストが上下にバウンドするのを防ぐ。
@@ -160,7 +186,15 @@ export function SubstitutePickerPopover({
         </div>
         <div style={{ color: "#666", fontSize: 11, marginTop: 2 }}>
           {slot.grade}
-          {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj} ({slot.teacher})
+          {slot.cls && slot.cls !== "-" ? slot.cls : ""}{" "}
+          {date
+            ? biweeklyDisplaySubject(slot, date, biweeklyAnchors, holidays, examPeriods)
+            : slot.subj}{" "}
+          (
+          {date
+            ? biweeklyActiveTeacher(slot, date, biweeklyAnchors, holidays, examPeriods)
+            : slot.teacher}
+          )
         </div>
       </div>
 
@@ -200,6 +234,45 @@ export function SubstitutePickerPopover({
         </label>
       </div>
 
+      {/* 多担任スロット: どの講師の代行かを選ぶ (プレップ等で他講師に
+          代行表記が波及しないように originalTeacher を確定させる) */}
+      {isMultiTeacher && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 4,
+            padding: "6px 10px",
+            borderBottom: "1px solid #f0f0f0",
+          }}
+        >
+          <span style={{ color: "#555" }}>元講師:</span>
+          {slotTeachers.map((t) => {
+            const active = t === originalTeacher;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setOriginalTeacher(t)}
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: `1px solid ${active ? colors.danger : "#ccc"}`,
+                  background: active ? "#fdecec" : "#fff",
+                  color: active ? colors.danger : "#444",
+                  fontWeight: active ? 700 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div
         id={listboxId}
         role="listbox"
@@ -231,7 +304,7 @@ export function SubstitutePickerPopover({
                 aria-selected={isFocused}
                 type="button"
                 onClick={() => {
-                  onAssign(name, status);
+                  onAssign(name, status, isMultiTeacher ? originalTeacher : undefined);
                   onClose();
                 }}
                 onMouseEnter={() => setFocusIdx(i)}
