@@ -81,7 +81,7 @@ export default function BasicSettings() {
     }
     handleSetTabDatesByLabels([...current, label]);
     setManualDate('');
-    showToast(`「${label}」を追加しました`, 'success', 2000);
+    showToast(`「${label}」を「${activeTab.name}」に追加しました`, 'success', 2000);
   };
 
   const removeFromPool = async (d) => {
@@ -187,7 +187,7 @@ export default function BasicSettings() {
         {/* 使う日チェックリスト */}
         <div className="space-y-1">
           <div className="flex items-center justify-between flex-wrap gap-1">
-            <span className="text-xs text-builder-ink-muted">使う日 (チェックを外すとこのタブの時間割から隠れます・日付順で表示)</span>
+            <span className="text-xs text-builder-ink-muted">使う日 (チェックを外すとこのタブの時間割から隠れます)</span>
             <div className="flex gap-1">
               {!showAllTabs && (
                 <>
@@ -196,7 +196,7 @@ export default function BasicSettings() {
                 </>
               )}
               <button type="button" onClick={() => setShowAllTabs(v => !v)} aria-pressed={showAllTabs} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabs ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
-                {showAllTabs ? '通常表示に戻す' : '🗂 全タブまとめて表示'}
+                {showAllTabs ? '📋 通常表示に戻す' : '🗂 全タブまとめて表示'}
               </button>
             </div>
           </div>
@@ -212,8 +212,8 @@ export default function BasicSettings() {
                       <th key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center whitespace-nowrap font-bold">
                         <div className={tab.id === activeTab.id ? 'text-builder-blue' : 'text-builder-ink'}>{tab.name}</div>
                         <div className="flex justify-center gap-1 mt-1 font-normal">
-                          <button type="button" onClick={() => handleSetAllTabDates(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全</button>
-                          <button type="button" onClick={() => handleSetAllTabDates(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">無</button>
+                          <button type="button" onClick={() => handleSetAllTabDates(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全選</button>
+                          <button type="button" onClick={() => handleSetAllTabDates(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全解</button>
                         </div>
                       </th>
                     ))}
