@@ -60,4 +60,33 @@ export function generateDateLabels({ startYmd, endYmd, weekdays, excludeYmd = []
   return out;
 }
 
+// 'M/D' 部分だけ取り出す (曜日サフィックスの有無は問わない)。取れなければ null。
+function parseMonthDay(label) {
+  const m = String(label ?? '').match(/^(\d{1,2})\/(\d{1,2})/);
+  if (!m) return null;
+  return { month: Number(m[1]), day: Number(m[2]) };
+}
+
+// 日付プール ({id, label, ...} の配列) を実日付順に並べ替える (表示専用の
+// 純粋関数。呼び出し側の配列は変更しない)。ラベルは年を持たないため月日だけで
+// 比較する。10〜12月と1〜3月が混在するプールは「年をまたぐ短期講習 (冬期講習
+// など)」とみなし、1〜3月を翌年 (13〜15月) 扱いにして繰り上げる。
+// 前提: 数ヶ月規模の集中講習であり、1年通しの通期コースには非対応。
+// M/D として解釈できないラベルは末尾へ (元の並び順を保ったまま)。
+export function sortPoolDatesByCalendar(poolDates) {
+  const entries = (poolDates || []).map((d, idx) => ({ d, idx, md: parseMonthDay(d.label) }));
+  const months = entries.map(e => e.md?.month).filter(Boolean);
+  const wrapsYear = months.some(m => m >= 10) && months.some(m => m <= 3);
+  const sortableMonth = (m) => (wrapsYear && m <= 3 ? m + 12 : m);
+  return entries
+    .slice()
+    .sort((a, b) => {
+      if (!a.md && !b.md) return a.idx - b.idx;
+      if (!a.md) return 1;
+      if (!b.md) return -1;
+      return sortableMonth(a.md.month) - sortableMonth(b.md.month) || a.md.day - b.md.day || a.idx - b.idx;
+    })
+    .map(e => e.d);
+}
+
 export { WEEKDAY_LABELS };

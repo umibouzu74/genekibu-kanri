@@ -138,7 +138,14 @@ Project {
   - 書き込み: 日付プール+使う日は `tabDates/setByLabels`（手動/自動生成）・`tabDates/toggle`・
     `tabDates/setAllActive`・`dates/removeFromPool`。`periods` は `config/setList('periods')`
     で project 共通、`classes` はタブ単位。日付の自動生成は `utils/dateGenerate.js`
-    （期間+曜日+除外日→ラベル、純粋関数）。
+    （期間+曜日+除外日→ラベル、純粋関数）。手動追加も日付ピッカー経由で同じ
+    `dateToLabel`/`ymdToLabel` を通すため、ラベルは常に `M/D(曜)` 形式で揺れない
+    （文字列完全一致でプール重複判定しているため、表記揺れ=重複データの原因になる）。
+  - `BasicSettings` の日付チェックリストは `sortPoolDatesByCalendar`（`dateGenerate.js`、
+    表示専用の純粋関数）で常に実日付順に並べ替えて表示する（保存順序=挿入順は変更しない）。
+    「🗂 全タブまとめて表示」トグルで、行=プールの日付・列=各タブのマトリクス表示に切り替え、
+    他タブの日付を `handleToggleTabDate(dateId, tabId)` / `handleSetAllTabDates(active, tabId)`
+    で直接編集できる（両 handler は元々 tabId 引数を受けるため reducer 変更は不要だった）。
 - NG・合同・externalCounts は **ラベルベース**（JSON 可読性・タブ間共有のため。cascade cleanup で整合を維持）。
 - マイグレーション: `migrateProject` が v1→v2→v3→v4 を順次合成。v3→v4 は各タブの
   `dates`/`periods` を**ラベル union** で 1 つに統合し、schedule / snapshot のキーを
