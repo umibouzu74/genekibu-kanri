@@ -52,6 +52,17 @@ export function activeDatesForTab(poolDates, tab) {
   return (poolDates || []).filter(d => set.has(d.id));
 }
 
+// dates と同じ仕組みを periods にも適用 (E-3)。config.activePeriodIds
+// (未指定=全時限使う) で「このタブが実際に使う時限」を選ぶ。
+// 講師不在・NG はラベルベースでプール全時限を対象にするため、そちらは
+// このフィルタを通さず project.periods を直接参照する (AbsenceNgPanel)。
+export function activePeriodsForTab(poolPeriods, tab) {
+  const ids = tab?.config?.activePeriodIds;
+  if (!ids) return poolPeriods || [];
+  const set = new Set(ids);
+  return (poolPeriods || []).filter(p => set.has(p.id));
+}
+
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // (config 変更時にインデックスがずれる問題を避けるため)

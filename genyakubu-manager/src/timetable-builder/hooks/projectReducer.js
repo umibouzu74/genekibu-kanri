@@ -231,8 +231,23 @@ function applyAction(project, action) {
         }
       });
       // 書き込み先: shared は project[key]、classes は active タブの config。
+      // key='periods' はプールから消えた id を全タブの activePeriodIds からも
+      // 除去する (dates/removeFromPool の cascade と同じ考え方。periods には
+      // 専用の removeFromPool アクションが無く、このテキストエリア編集がその役目を兼ねる)。
+      const resultIds = new Set(resultArr.map(e => e.id));
       const baseProject = isShared
-        ? { ...project, [key]: resultArr }
+        ? {
+            ...project,
+            [key]: resultArr,
+            ...(key === 'periods' ? {
+              tabs: project.tabs.map(t => {
+                const ids = t.config.activePeriodIds;
+                if (!ids) return t;
+                const filtered = ids.filter(id => resultIds.has(id));
+                return filtered.length === ids.length ? t : { ...t, config: { ...t.config, activePeriodIds: filtered } };
+              }),
+            } : {}),
+          }
         : {
             ...project,
             tabs: project.tabs.map(t =>
@@ -356,6 +371,38 @@ function applyAction(project, action) {
         new Set(newPool.map(d => d.label)),
       );
       return cleanSchedule({ ...project, dates: newPool, tabs: newTabs, combinedGroups: newCombined });
+    }
+
+    // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は
+    // 引き続き config/setList('periods') のテキストエリア編集で行う (periods は
+    // 自動生成が無く手打ちの短いリストなので、日付のような setByLabels は不要)。
+    case 'tabPeriods/toggle': {
+      const { tabId, periodId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const pool = project.periods || [];
+      if (!pool.some(p => p.id === periodId)) return project;
+      const current = target.config.activePeriodIds ?? pool.map(p => p.id);
+      const set = new Set(current);
+      if (set.has(periodId)) set.delete(periodId); else set.add(periodId);
+      const activeIds = pool.map(p => p.id).filter(id => set.has(id));
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activePeriodIds: activeIds } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+
+    case 'tabPeriods/setAllActive': {
+      const { tabId, active } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
+      if (!target) return project;
+      const activePeriodIds = active ? null : [];
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, activePeriodIds } } : t
+      );
+      return { ...project, tabs: newTabs };
     }
 
     // ─── 科目マスタ ──────────────────────

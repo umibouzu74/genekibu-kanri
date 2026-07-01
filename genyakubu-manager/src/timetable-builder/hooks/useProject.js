@@ -4,7 +4,7 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
-import { makeKey, migrateProject, activeDatesForTab } from '../utils/scheduleKey';
+import { makeKey, migrateProject, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
 
 // 講習時間割プロジェクトの一元状態管理フック。
@@ -39,14 +39,15 @@ export function useProject() {
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   // v4: dates / periods は project 共通。currentConfig は tab.config (classes /
-  // subjectCounts) に project の periods と『このタブが使う日付 (activeDateIds で
-  // 絞った subset)』をマージした派生ビュー。これにより時間割・自動生成・分析は
-  // その学年の使う日だけを対象にし、currentConfig.dates / .periods を読む既存の
-  // 全 consumer は無改修で動く。NG パネルだけは別途プール全体 (project.dates) を使う。
+  // subjectCounts) に『このタブが使う日付 (activeDateIds で絞った subset)』と
+  // 『このタブが使う時限 (activePeriodIds で絞った subset、E-3)』をマージした
+  // 派生ビュー。これにより時間割・自動生成・分析は各学年が使う日・時限だけを
+  // 対象にし、currentConfig.dates / .periods を読む既存の全 consumer は無改修で
+  // 動く。NG パネルだけは別途プール全体 (project.dates / project.periods) を使う。
   const currentConfig = useMemo(() => ({
     ...activeTab.config,
     dates: activeDatesForTab(project.dates, activeTab),
-    periods: project.periods || [],
+    periods: activePeriodsForTab(project.periods, activeTab),
   }), [activeTab, project.dates, project.periods]);
   const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
 
@@ -136,6 +137,16 @@ export function useProject() {
     dispatch({ type: 'dates/removeFromPool', payload: { dateId } });
   }, [dispatch]);
 
+  // --- タブ別『使う時限』(activePeriodIds、E-3) ---
+  // チェックリストの単一トグル
+  const handleToggleTabPeriod = useCallback((periodId, tabId) => {
+    dispatch({ type: 'tabPeriods/toggle', payload: { periodId, tabId } });
+  }, [dispatch]);
+  // 全選択 (active=true) / 全解除 (active=false)
+  const handleSetAllTabPeriods = useCallback((active, tabId) => {
+    dispatch({ type: 'tabPeriods/setAllActive', payload: { active, tabId } });
+  }, [dispatch]);
+
   // --- メタデータ ---
   const updateProjectName = useCallback((name) => {
     dispatch({ type: 'project/updateName', payload: { name } });
@@ -216,6 +227,9 @@ export function useProject() {
     handleToggleTabDate,
     handleSetAllTabDates,
     handleRemoveDateFromPool,
+    // タブ別『使う時限』(E-3)
+    handleToggleTabPeriod,
+    handleSetAllTabPeriods,
     // 科目マスタ (useSubjectActions)
     ...subjectActions,
     // 講師 (useTeacherActions)
