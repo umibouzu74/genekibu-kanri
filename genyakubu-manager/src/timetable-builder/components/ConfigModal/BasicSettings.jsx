@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { generateDateLabels, WEEKDAY_LABELS } from '../../utils/dateGenerate';
+import { generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
 
 export default function BasicSettings() {
   const {
@@ -19,17 +19,25 @@ export default function BasicSettings() {
 
   // v4(Y): project.dates は全タブ共通の『日付プール』。activeTab.config.activeDateIds
   // で「この学年が使う日」を選ぶ (未指定=全日)。NG はプール全日に設定できる。
-  const poolDates = project.dates || [];
+  const poolDates = useMemo(() => project.dates || [], [project.dates]);
   const activeDateIds = activeTab.config.activeDateIds; // undefined = 全日
   const isActive = (id) => !activeDateIds || activeDateIds.includes(id);
   const activeCount = poolDates.filter(d => isActive(d.id)).length;
+  // 設定画面では常に実日付順で表示する (保存順序=挿入順はそのまま)。
+  const sortedPoolDates = useMemo(() => sortPoolDatesByCalendar(poolDates), [poolDates]);
+  const isActiveForTab = (tab, dateId) => {
+    const ids = tab.config.activeDateIds;
+    return !ids || ids.includes(dateId);
+  };
 
   // ── 日付ジェネレータ form state ──
   const [genStart, setGenStart] = useState('');
   const [genEnd, setGenEnd] = useState('');
   const [genWeekdays, setGenWeekdays] = useState(() => new Set([0, 1, 2, 3, 4, 5, 6]));
   const [genExclude, setGenExclude] = useState('');
-  const [manualAdd, setManualAdd] = useState('');
+  const [manualDate, setManualDate] = useState('');
+  // 全タブまとめて表示 (行=プールの日付・列=各タブ) トグル
+  const [showAllTabs, setShowAllTabs] = useState(false);
 
   const toggleWeekday = (idx) => {
     setGenWeekdays(prev => {
@@ -61,12 +69,19 @@ export default function BasicSettings() {
   };
 
   const addManual = () => {
-    const labels = manualAdd.split(',').map(s => s.trim()).filter(Boolean);
-    if (labels.length === 0) return;
+    const label = ymdToLabel(manualDate);
+    if (!label) {
+      showToast('日付を選択してください', 'error', 2000);
+      return;
+    }
     const current = poolDates.filter(d => isActive(d.id)).map(d => d.label);
-    handleSetTabDatesByLabels([...current, ...labels]);
-    setManualAdd('');
-    showToast(`${labels.length} 件を追加しました`, 'success', 2000);
+    if (current.includes(label)) {
+      showToast(`「${label}」は既に「${activeTab.name}」に追加されています`, 'warning', 2500);
+      return;
+    }
+    handleSetTabDatesByLabels([...current, label]);
+    setManualDate('');
+    showToast(`「${label}」を追加しました`, 'success', 2000);
   };
 
   const removeFromPool = async (d) => {
@@ -171,18 +186,64 @@ export default function BasicSettings() {
 
         {/* 使う日チェックリスト */}
         <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-builder-ink-muted">使う日 (チェックを外すとこのタブの時間割から隠れます)</span>
+          <div className="flex items-center justify-between flex-wrap gap-1">
+            <span className="text-xs text-builder-ink-muted">使う日 (チェックを外すとこのタブの時間割から隠れます・日付順で表示)</span>
             <div className="flex gap-1">
-              <button type="button" onClick={() => handleSetAllTabDates(true)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
-              <button type="button" onClick={() => handleSetAllTabDates(false)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+              {!showAllTabs && (
+                <>
+                  <button type="button" onClick={() => handleSetAllTabDates(true)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
+                  <button type="button" onClick={() => handleSetAllTabDates(false)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+                </>
+              )}
+              <button type="button" onClick={() => setShowAllTabs(v => !v)} aria-pressed={showAllTabs} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabs ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
+                {showAllTabs ? '通常表示に戻す' : '🗂 全タブまとめて表示'}
+              </button>
             </div>
           </div>
           {poolDates.length === 0 ? (
             <div className="text-[11px] text-builder-ink-muted italic">まだ日付がありません。上の「自動生成」か下の「手動で追加」から登録してください。</div>
+          ) : showAllTabs ? (
+            <div className="overflow-x-auto border border-builder-border rounded">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-builder-surface-alt">
+                    <th className="text-left px-2 py-1 border-b border-builder-border sticky left-0 bg-builder-surface-alt">日付</th>
+                    {project.tabs.map(tab => (
+                      <th key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center whitespace-nowrap font-bold">
+                        <div className={tab.id === activeTab.id ? 'text-builder-blue' : 'text-builder-ink'}>{tab.name}</div>
+                        <div className="flex justify-center gap-1 mt-1 font-normal">
+                          <button type="button" onClick={() => handleSetAllTabDates(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全</button>
+                          <button type="button" onClick={() => handleSetAllTabDates(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">無</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedPoolDates.map(d => (
+                    <tr key={d.id} className="odd:bg-builder-surface even:bg-builder-bg/40">
+                      <td className="px-2 py-1 border-b border-builder-border whitespace-nowrap sticky left-0 bg-inherit">
+                        {d.label}
+                        <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (全タブ・NG から消えます)" aria-label={`${d.label} をプールから削除`} className="ml-1 text-builder-red hover:text-red-700 font-bold leading-none">×</button>
+                      </td>
+                      {project.tabs.map(tab => (
+                        <td key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center">
+                          <input
+                            type="checkbox"
+                            checked={isActiveForTab(tab, d.id)}
+                            onChange={() => handleToggleTabDate(d.id, tab.id)}
+                            aria-label={`${d.label} を「${tab.name}」で使う`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {poolDates.map(d => {
+              {sortedPoolDates.map(d => {
                 const on = isActive(d.id);
                 return (
                   <span key={d.id} className={`inline-flex items-center gap-1 px-2 py-1 border rounded text-xs ${on ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}>
@@ -198,13 +259,13 @@ export default function BasicSettings() {
           )}
         </div>
 
-        {/* 手動追加 */}
+        {/* 手動追加: 日付ピッカーで1日ずつ追加 (実日付から M/D(曜) を自動生成するため表記が揺れない) */}
         <div className="flex items-end gap-2 text-xs">
-          <label className="flex flex-col gap-0.5 flex-1 min-w-0">
-            <span className="text-builder-ink-muted">手動で追加 (カンマ区切り・例: 7/24(金), 8/1(土))</span>
-            <input type="text" value={manualAdd} onChange={(e) => setManualAdd(e.target.value)} className={inputCls} />
+          <label className="flex flex-col gap-0.5">
+            <span className="text-builder-ink-muted">手動で追加 (1日ずつ選択)</span>
+            <input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} className={inputCls} aria-label="手動追加する日付" />
           </label>
-          <button type="button" onClick={addManual} disabled={!manualAdd.trim()} className="px-3 py-1 border border-builder-border bg-builder-surface text-builder-ink rounded text-xs font-bold disabled:opacity-50 hover:bg-builder-bg">追加</button>
+          <button type="button" onClick={addManual} disabled={!manualDate} className="px-3 py-1 border border-builder-border bg-builder-surface text-builder-ink rounded text-xs font-bold disabled:opacity-50 hover:bg-builder-bg">追加</button>
         </div>
       </div>
 
