@@ -208,8 +208,8 @@ export default function BasicSettings() {
             <div className="flex gap-1">
               {!showAllTabs && (
                 <>
-                  <button type="button" onClick={() => handleSetAllTabDates(true)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
-                  <button type="button" onClick={() => handleSetAllTabDates(false)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+                  <button type="button" onClick={() => handleSetAllTabDates(true)} aria-label="日付を全選択" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
+                  <button type="button" onClick={() => handleSetAllTabDates(false)} aria-label="日付を全解除" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
                 </>
               )}
               <button type="button" onClick={() => setShowAllTabs(v => !v)} aria-pressed={showAllTabs} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabs ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
@@ -291,7 +291,7 @@ export default function BasicSettings() {
         <div className="font-bold text-builder-ink text-sm">
           ⏰ 時限
           <span className="ml-2 text-xs font-normal text-builder-ink-muted">
-            選択 {activePeriodCount} / プール {poolPeriods.length}
+            選択 {activePeriodCount} / プール {poolPeriods.length} コマ
           </span>
         </div>
 
@@ -307,8 +307,8 @@ export default function BasicSettings() {
             <div className="flex gap-1">
               {!showAllTabsPeriods && (
                 <>
-                  <button type="button" onClick={() => handleSetAllTabPeriods(true)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
-                  <button type="button" onClick={() => handleSetAllTabPeriods(false)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+                  <button type="button" onClick={() => handleSetAllTabPeriods(true)} aria-label="時限を全選択" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
+                  <button type="button" onClick={() => handleSetAllTabPeriods(false)} aria-label="時限を全解除" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
                 </>
               )}
               <button type="button" onClick={() => setShowAllTabsPeriods(v => !v)} aria-pressed={showAllTabsPeriods} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabsPeriods ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>

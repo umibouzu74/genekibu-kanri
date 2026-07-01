@@ -162,9 +162,9 @@ describe('BasicSettings — 使う時限チェックリスト', () => {
 
   it('全選択/全解除ボタンは tabId 無しで handleSetAllTabPeriods を呼ぶ', () => {
     const { handleSetAllTabPeriods } = renderSettings();
-    fireEvent.click(screen.getAllByRole('button', { name: '全選択' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: '時限を全選択' }));
     expect(handleSetAllTabPeriods).toHaveBeenCalledWith(true);
-    fireEvent.click(screen.getAllByRole('button', { name: '全解除' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: '時限を全解除' }));
     expect(handleSetAllTabPeriods).toHaveBeenCalledWith(false);
   });
 });
