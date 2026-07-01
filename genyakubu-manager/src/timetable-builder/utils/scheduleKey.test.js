@@ -14,6 +14,7 @@ import {
   findEntityById,
   nextId,
   activeDatesForTab,
+  activePeriodsForTab,
 } from './scheduleKey';
 
 describe('activeDatesForTab', () => {
@@ -32,6 +33,25 @@ describe('activeDatesForTab', () => {
   });
   it('pool が空/未定義でも安全', () => {
     expect(activeDatesForTab(undefined, { config: { activeDateIds: [1] } })).toEqual([]);
+  });
+});
+
+describe('activePeriodsForTab', () => {
+  const pool = [{ id: 1, label: '1限' }, { id: 2, label: '2限' }, { id: 3, label: '3限' }];
+  it('activePeriodIds 未指定 (undefined) はプール全体を返す', () => {
+    expect(activePeriodsForTab(pool, { config: {} })).toBe(pool);
+    expect(activePeriodsForTab(pool, {})).toBe(pool);
+  });
+  it('activePeriodIds で絞った subset をプール順で返す', () => {
+    expect(activePeriodsForTab(pool, { config: { activePeriodIds: [3, 1] } })).toEqual([
+      { id: 1, label: '1限' }, { id: 3, label: '3限' },
+    ]);
+  });
+  it('空配列なら 0 件', () => {
+    expect(activePeriodsForTab(pool, { config: { activePeriodIds: [] } })).toEqual([]);
+  });
+  it('pool が空/未定義でも安全', () => {
+    expect(activePeriodsForTab(undefined, { config: { activePeriodIds: [1] } })).toEqual([]);
   });
 });
 

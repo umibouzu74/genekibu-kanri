@@ -14,6 +14,8 @@ export default function BasicSettings() {
     handleToggleTabDate,
     handleSetAllTabDates,
     handleRemoveDateFromPool,
+    handleToggleTabPeriod,
+    handleSetAllTabPeriods,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
 
@@ -30,6 +32,19 @@ export default function BasicSettings() {
     return !ids || ids.includes(dateId);
   };
 
+  // v4(Y) + E-3: project.periods も同じ「プール + タブごとの使う時限」構造。
+  // 時限プールのテキストエリアは project.periods (全件) を編集対象にする。
+  // currentConfig.periods を使うと「今のタブが使う時限だけ」が表示され、
+  // 保存すると他タブの時限がプールごと消えてしまうため誤り (AbsenceNgPanel と同じ注意点)。
+  const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
+  const activePeriodIds = activeTab.config.activePeriodIds; // undefined = 全時限
+  const isPeriodActive = (id) => !activePeriodIds || activePeriodIds.includes(id);
+  const activePeriodCount = poolPeriods.filter(p => isPeriodActive(p.id)).length;
+  const isPeriodActiveForTab = (tab, periodId) => {
+    const ids = tab.config.activePeriodIds;
+    return !ids || ids.includes(periodId);
+  };
+
   // ── 日付ジェネレータ form state ──
   const [genStart, setGenStart] = useState('');
   const [genEnd, setGenEnd] = useState('');
@@ -38,6 +53,8 @@ export default function BasicSettings() {
   const [manualDate, setManualDate] = useState('');
   // 全タブまとめて表示 (行=プールの日付・列=各タブ) トグル
   const [showAllTabs, setShowAllTabs] = useState(false);
+  // 時限版の同トグル (日付とは独立)
+  const [showAllTabsPeriods, setShowAllTabsPeriods] = useState(false);
 
   const toggleWeekday = (idx) => {
     setGenWeekdays(prev => {
@@ -123,9 +140,9 @@ export default function BasicSettings() {
     <div className="space-y-4">
       <h3 className="font-bold text-builder-ink border-b border-builder-border pb-1">📅 カレンダー設定</h3>
       <div className="bg-builder-info-soft p-2 text-xs text-builder-ink border border-builder-info-border rounded">
-        <strong>仕組み:</strong> 日付は<strong>全タブ共通の「プール」</strong>で管理し、各学年タブは
-        「この学年が実際に使う日」だけを選びます（期間がズレる学年も歯抜けの日もOK）。<br />
-        講師不在・NG はプールの<strong>全日</strong>に設定できます。日付やクラス名は右クリックでも改名できます。
+        <strong>仕組み:</strong> 日付・時限は<strong>全タブ共通の「プール」</strong>で管理し、各学年タブは
+        「この学年が実際に使う日・時限」だけを選びます（期間や時間帯がズレる学年も歯抜けもOK）。<br />
+        講師不在・NG はプールの<strong>全日・全時限</strong>に設定できます。日付やクラス名は右クリックでも改名できます。
       </div>
 
       {/* ── この学年が使う日 ── */}
@@ -191,12 +208,12 @@ export default function BasicSettings() {
             <div className="flex gap-1">
               {!showAllTabs && (
                 <>
-                  <button type="button" onClick={() => handleSetAllTabDates(true)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
-                  <button type="button" onClick={() => handleSetAllTabDates(false)} className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+                  <button type="button" onClick={() => handleSetAllTabDates(true)} aria-label="日付を全選択" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
+                  <button type="button" onClick={() => handleSetAllTabDates(false)} aria-label="日付を全解除" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
                 </>
               )}
               <button type="button" onClick={() => setShowAllTabs(v => !v)} aria-pressed={showAllTabs} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabs ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
-                {showAllTabs ? '📋 通常表示に戻す' : '🗂 全タブまとめて表示'}
+                {showAllTabs ? '📋 日付の通常表示に戻す' : '🗂 日付を全タブまとめて表示'}
               </button>
             </div>
           </div>
@@ -269,17 +286,95 @@ export default function BasicSettings() {
         </div>
       </div>
 
-      {/* ── 時限 (全タブ共通) ── */}
-      <div>
-        <label className="text-xs font-bold text-builder-ink-muted">時限 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</label>
-        <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={currentConfig.periods.map(e => e.label).join(', ')} onChange={(e) => handleConfigChange('periods', e.target.value)} />
+      {/* ── 時限 ── */}
+      <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">
+        <div className="font-bold text-builder-ink text-sm">
+          ⏰ 時限
+          <span className="ml-2 text-xs font-normal text-builder-ink-muted">
+            選択 {activePeriodCount} / プール {poolPeriods.length} コマ
+          </span>
+        </div>
+
+        <label className="block">
+          <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
+          <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={poolPeriods.map(e => e.label).join(', ')} onChange={(e) => handleConfigChange('periods', e.target.value)} />
+        </label>
+
+        {/* 使う時限チェックリスト */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between flex-wrap gap-1">
+            <span className="text-xs text-builder-ink-muted">「{activeTab.name}」で使う時限 (チェックを外すとこのタブの時間割から隠れます)</span>
+            <div className="flex gap-1">
+              {!showAllTabsPeriods && (
+                <>
+                  <button type="button" onClick={() => handleSetAllTabPeriods(true)} aria-label="時限を全選択" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全選択</button>
+                  <button type="button" onClick={() => handleSetAllTabPeriods(false)} aria-label="時限を全解除" className="text-xs px-2 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg text-builder-ink">全解除</button>
+                </>
+              )}
+              <button type="button" onClick={() => setShowAllTabsPeriods(v => !v)} aria-pressed={showAllTabsPeriods} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabsPeriods ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
+                {showAllTabsPeriods ? '📋 時限の通常表示に戻す' : '🗂 時限を全タブまとめて表示'}
+              </button>
+            </div>
+          </div>
+          {poolPeriods.length === 0 ? (
+            <div className="text-[11px] text-builder-ink-muted italic">まだ時限がありません。上のテキストエリアで追加してください。</div>
+          ) : showAllTabsPeriods ? (
+            <div className="overflow-x-auto border border-builder-border rounded">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-builder-surface-alt">
+                    <th className="text-left px-2 py-1 border-b border-builder-border sticky left-0 bg-builder-surface-alt">時限</th>
+                    {project.tabs.map(tab => (
+                      <th key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center whitespace-nowrap font-bold">
+                        <div className={tab.id === activeTab.id ? 'text-builder-blue' : 'text-builder-ink'}>{tab.name}</div>
+                        <div className="flex justify-center gap-1 mt-1 font-normal">
+                          <button type="button" onClick={() => handleSetAllTabPeriods(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全選</button>
+                          <button type="button" onClick={() => handleSetAllTabPeriods(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全解</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {poolPeriods.map(p => (
+                    <tr key={p.id} className="odd:bg-builder-surface even:bg-builder-bg/40">
+                      <td className="px-2 py-1 border-b border-builder-border whitespace-nowrap sticky left-0 bg-inherit">{p.label}</td>
+                      {project.tabs.map(tab => (
+                        <td key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center">
+                          <input
+                            type="checkbox"
+                            checked={isPeriodActiveForTab(tab, p.id)}
+                            onChange={() => handleToggleTabPeriod(p.id, tab.id)}
+                            aria-label={`${p.label} を「${tab.name}」で使う`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {poolPeriods.map(p => {
+                const on = isPeriodActive(p.id);
+                return (
+                  <label key={p.id} className={`inline-flex items-center gap-1 px-2 py-1 border rounded text-xs cursor-pointer ${on ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}>
+                    <input type="checkbox" checked={on} onChange={() => handleToggleTabPeriod(p.id)} aria-label={`${p.label} をこのタブで使う`} />
+                    <span>{p.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── クラス (このタブ専用) ── */}
-      <div>
-        <label className="text-xs font-bold text-builder-ink-muted">クラス (カンマ区切り・このタブ「{activeTab.name}」専用)</label>
+      <label className="block">
+        <span className="text-xs font-bold text-builder-ink-muted">クラス (カンマ区切り・このタブ「{activeTab.name}」専用)</span>
         <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={currentConfig.classes.map(e => e.label).join(', ')} onChange={(e) => handleConfigChange('classes', e.target.value)} />
-      </div>
+      </label>
 
       <div className="pt-2">
         <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-builder-ink text-white font-bold rounded hover:bg-builder-primary-hover shadow-sm text-sm">

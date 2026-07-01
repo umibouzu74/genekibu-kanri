@@ -1652,3 +1652,62 @@ describe('projectReducer — タブ別「使う日」(activeDateIds) + 日付プ
     expect(next.project.tabs[0].schedule).toEqual({ [makeKey(2, 1, 1)]: { subject: '数' } });
   });
 });
+
+describe('projectReducer — タブ別「使う時限」(activePeriodIds、E-3)', () => {
+  it('tabPeriods/toggle: undefined(全時限) から materialize して off にする', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'tabPeriods/toggle', payload: { periodId: 1 } });
+    expect(next.project.tabs[0].config.activePeriodIds).toEqual([2]);
+  });
+
+  it('tabPeriods/toggle: tabId を明示すれば他タブを操作できる (アクティブタブは無変更)', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      activeTabId: 1,
+      tabs: [
+        { id: 1, name: 'a', config: { classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: 'b', config: { classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const next = projectReducer(state, { type: 'tabPeriods/toggle', payload: { periodId: 1, tabId: 2 } });
+    expect(next.project.tabs[0].config.activePeriodIds).toBeUndefined();
+    expect(next.project.tabs[1].config.activePeriodIds).toEqual([2]);
+  });
+
+  it('tabPeriods/setAllActive: true → null (全時限)、false → [] (全解除)', () => {
+    const state = makeState({
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activePeriodIds: [1] }, schedule: {} }],
+    });
+    const off = projectReducer(state, { type: 'tabPeriods/setAllActive', payload: { active: false } });
+    expect(off.project.tabs[0].config.activePeriodIds).toEqual([]);
+    const on = projectReducer(off, { type: 'tabPeriods/setAllActive', payload: { active: true } });
+    expect(on.project.tabs[0].config.activePeriodIds).toBeNull();
+  });
+
+  it('config/setList(periods): プールから消えた時限 id は全タブの activePeriodIds からも除去される', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }, { id: 3, label: '3限' }],
+      tabs: [
+        { id: 1, name: 'a', config: { classes: [], subjectCounts: {}, activePeriodIds: [1, 2] }, schedule: {} },
+        { id: 2, name: 'b', config: { classes: [], subjectCounts: {}, activePeriodIds: [2, 3] }, schedule: {} },
+      ],
+    });
+    // テキストエリアから「2限」を消して保存 → 1限・3限だけのプールになる
+    const next = projectReducer(state, { type: 'config/setList', payload: { key: 'periods', value: '1限, 3限' } });
+    expect(next.project.periods.map(p => p.label)).toEqual(['1限', '3限']);
+    expect(next.project.tabs[0].config.activePeriodIds).toEqual([1]);
+    expect(next.project.tabs[1].config.activePeriodIds).toEqual([3]);
+  });
+
+  it('config/setList(periods): activePeriodIds が undefined(全時限) のタブは無変更', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{ id: 1, name: 'a', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    });
+    const next = projectReducer(state, { type: 'config/setList', payload: { key: 'periods', value: '1限' } });
+    expect(next.project.tabs[0].config.activePeriodIds).toBeUndefined();
+  });
+});

@@ -28,7 +28,6 @@ const TIME_STEP_SEC = 300;
 export default function AbsenceNgPanel() {
   const {
     project,
-    currentConfig,
     handleExternalCountChange,
     addExternalSessions,
     removeExternalSession,
@@ -44,8 +43,12 @@ export default function AbsenceNgPanel() {
 
   // v4(Y): NG / 他学年セッションは全タブ共通。日付軸は currentConfig (タブの使う日)
   // ではなく『プール全日』(project.dates) を使う。これにより、現タブが使わない日
-  // (他学年だけの日) にも講師の不在・NG を設定できる。時限は project 共通。
+  // (他学年だけの日) にも講師の不在・NG を設定できる。
+  // 時限も同じ理由で E-3 (タブ別 activePeriodIds 絞り込み) の対象外とし、
+  // currentConfig.periods ではなく『プール全時限』(project.periods) を使う
+  // (例: 中３の昼タブから中1・2専用の夜の時限にも NG を設定できる必要がある)。
   const poolDates = useMemo(() => project.dates || [], [project.dates]);
+  const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
 
   // ── 折りたたみ state ───────────────────────
   // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
@@ -126,7 +129,7 @@ export default function AbsenceNgPanel() {
   }, [project.teachers]);
   // periods が変わったら manual 選択の Set を整合させる (同様に membership 比較)
   useEffect(() => {
-    const validIds = new Set(currentConfig.periods.map(p => p.id));
+    const validIds = new Set(poolPeriods.map(p => p.id));
     setFormPeriods(prev => {
       if (prev.allMode) return prev;
       const filteredArr = Array.from(prev.ids).filter(id => validIds.has(id));
@@ -135,7 +138,7 @@ export default function AbsenceNgPanel() {
       if (sameSize && sameContent) return prev;
       return { ...prev, ids: new Set(filteredArr) };
     });
-  }, [currentConfig.periods]);
+  }, [poolPeriods]);
 
   const sessions = useMemo(
     () => project.externalSessions || [],
@@ -181,7 +184,7 @@ export default function AbsenceNgPanel() {
       let count = 0;
       project.teachers.forEach(t => {
         const autoEntries = autoNgByTeacher?.get(t.name);
-        currentConfig.periods.forEach(p => {
+        poolPeriods.forEach(p => {
           const k = makeNgKey(d.label, p.label);
           if (t.ngSlots?.includes(k) || autoEntries?.has(k)) count++;
         });
@@ -189,7 +192,7 @@ export default function AbsenceNgPanel() {
       out[d.id] = count;
     });
     return out;
-  }, [poolDates, currentConfig.periods, project.teachers, autoNgByTeacher]);
+  }, [poolDates, poolPeriods, project.teachers, autoNgByTeacher]);
 
   // 期間内の date ラベル配列
   const dateLabelsInRange = useMemo(() => {
@@ -242,17 +245,17 @@ export default function AbsenceNgPanel() {
       id: idx, date: dl, teacherName: '*',
       startTime: formStartTime, endTime: formEndTime || undefined,
     }));
-    return computeAutoNgEntries('*', fakeSessions, currentConfig.periods).size;
-  }, [mode, formStartTime, formEndTime, dateLabelsInRange, currentConfig.periods, timeValidation.error]);
+    return computeAutoNgEntries('*', fakeSessions, poolPeriods).size;
+  }, [mode, formStartTime, formEndTime, dateLabelsInRange, poolPeriods, timeValidation.error]);
 
   // NG モード: 選択時限の派生 (teachers と同じ動的全選択パターン)
   const selectedPeriodIds = useMemo(() => {
-    if (formPeriods.allMode) return currentConfig.periods.map(p => p.id);
-    return currentConfig.periods.map(p => p.id).filter(id => formPeriods.ids.has(id));
-  }, [currentConfig.periods, formPeriods]);
+    if (formPeriods.allMode) return poolPeriods.map(p => p.id);
+    return poolPeriods.map(p => p.id).filter(id => formPeriods.ids.has(id));
+  }, [poolPeriods, formPeriods]);
   const periodLabelsSelected = useMemo(
-    () => currentConfig.periods.filter(p => selectedPeriodIds.includes(p.id)).map(p => p.label),
-    [currentConfig.periods, selectedPeriodIds],
+    () => poolPeriods.filter(p => selectedPeriodIds.includes(p.id)).map(p => p.label),
+    [poolPeriods, selectedPeriodIds],
   );
   const isPeriodSelected = (id) =>
     formPeriods.allMode || formPeriods.ids.has(id);
@@ -293,7 +296,7 @@ export default function AbsenceNgPanel() {
   const togglePeriod = (id) => {
     setFormPeriods(prev => {
       if (prev.allMode) {
-        const allIds = currentConfig.periods.map(p => p.id);
+        const allIds = poolPeriods.map(p => p.id);
         const next = new Set(allIds.filter(x => x !== id));
         return { allMode: false, ids: next };
       }
@@ -414,7 +417,7 @@ export default function AbsenceNgPanel() {
 
   // 時限の時刻読み取り可否 (注意書き用)
   const periodHasTime = (p) => getPeriodTimeRange(p) != null;
-  const periodsMissingTime = currentConfig.periods.filter(p => !periodHasTime(p));
+  const periodsMissingTime = poolPeriods.filter(p => !periodHasTime(p));
 
   // ── render ────────────────────────────────
   return (
@@ -617,7 +620,7 @@ export default function AbsenceNgPanel() {
           <div className="flex flex-col gap-1 text-xs mb-3">
             <div className="flex items-center justify-between max-w-md">
               <span className="text-builder-ink-muted">
-                時限 (選択 {selectedPeriodIds.length} / {currentConfig.periods.length})
+                時限 (選択 {selectedPeriodIds.length} / {poolPeriods.length})
                 {formPeriods.allMode && (
                   <span className="ml-1 text-builder-blue font-bold">[全時限 (動的)]</span>
                 )}
@@ -634,7 +637,7 @@ export default function AbsenceNgPanel() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {currentConfig.periods.map(p => (
+              {poolPeriods.map(p => (
                 <label key={p.id}
                   className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
                   <input
@@ -726,7 +729,7 @@ export default function AbsenceNgPanel() {
             date={d}
             expanded={expandedDates[d.id] !== false}
             onToggle={() => toggleDate(d.id)}
-            periods={currentConfig.periods}
+            periods={poolPeriods}
             teacherGroups={teacherGroups}
             teacherIdxByName={teacherIdxByName}
             autoNgByTeacher={autoNgByTeacher}
