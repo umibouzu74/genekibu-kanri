@@ -67,6 +67,16 @@ export default function Toolbar({
       label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
       suggestions: it.suggestions || [],
     })),
+    ...(infeasibilities?.quotaCellMismatch?.items || []).map(it => ({
+      kind: 'quotaMismatch',
+      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells} (使う日 × 使う時限)`,
+      suggestions: it.suggestions || [],
+    })),
+    ...(infeasibilities?.subjectQuotaOverDays?.items || []).map(it => ({
+      kind: 'quotaOverDays',
+      label: `${it.subject}: コマ数 ${it.quota} > 使う日数 ${it.days} (同日重複禁止のため達成不能)`,
+      suggestions: it.suggestions || [],
+    })),
   ];
 
   // popover の開閉と外側クリック検知

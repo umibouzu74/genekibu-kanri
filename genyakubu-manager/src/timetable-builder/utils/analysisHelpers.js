@@ -62,7 +62,11 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
       const group = findCombinedGroup(groups, entry.subject, className, date);
       let isCombinedDuplicate = false;
       if (group) {
-        const combinedTrackKey = `${date}-${period}-${group.id}`;
+        // dedupe キーに講師名を含める (solver の seenCombinedDay /
+        // countTeacherHoursWithCombined と同じ規則)。含めないと、合同の
+        // 各クラスに別々の講師が入っている (壊れた) 状態で 2 人目以降の
+        // 日次カウントが丸ごと欠落し、teacherOverDaily を見逃す。
+        const combinedTrackKey = `${date}-${period}-${group.id}-${entry.teacher}`;
         if (tabCombinedCounted.has(combinedTrackKey)) {
           isCombinedDuplicate = true;
         } else {
@@ -346,8 +350,15 @@ export function computeViolations({
 //   - noTeacherForSlot: (date, period, subject) で「未定」を除く担当講師が
 //       全員 NG → そのスロットは担当者が見つからず埋まらない (致命)
 //   - subjectCapacityShortage: 科目別の総需要 > 担当講師の理論最大 capacity
-//       「未定」を除いた担当講師数 × dates.length × maxDailyHours と
-//       (subjectCounts[s] × classes.length) を比較
+//       「未定」を除いた担当講師数 × dates.length ×
+//       min(maxDailyHours, periods.length) と (subjectCounts[s] ×
+//       classes.length) を比較 (1 日に教えられる上限は時限数を超えない)
+//   - quotaCellMismatch: 1 クラスあたりの科目コマ数の合計が「使う日 × 使う
+//       時限」のセル数と不一致。solver は全セル充填を要求するため、合計が
+//       セル数未満だと完全解が構造的に存在しない (逆に超過ならクォータを
+//       消化しきれない)
+//   - subjectQuotaOverDays: 科目コマ数 > 使う日数。同日・同クラスの同一科目
+//       は 1 コマまでなので達成不能
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
 export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null }) {
@@ -376,19 +387,44 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   });
 
   // C2: subjectCapacityShortage
+  // 1 日に教えられる実上限は「時限数」を超えない (同時限に複数クラスを
+  // 持てるのは合同のみ)。maxDailyHours だけを使うと capacity を過大評価し、
+  // 実際は不足なのに警告が出ない false negative になる。
   const capacityItems = [];
+  const perDayCap = currentConfig.periods.length > 0
+    ? Math.min(maxDailyHours, currentConfig.periods.length)
+    : maxDailyHours;
   subjects.forEach(subject => {
     const demand = (currentConfig.subjectCounts?.[subject] || 0) * currentConfig.classes.length;
     if (demand === 0) return;
     const eligible = reals.filter(t => t.subjects?.includes(subject));
-    const capacity = eligible.length * currentConfig.dates.length * maxDailyHours;
+    const capacity = eligible.length * currentConfig.dates.length * perDayCap;
     if (demand > capacity) {
       capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+    }
+  });
+
+  // C3: quotaCellMismatch — クォータ合計 ≠ セル数 (クラスあたり)
+  const quotaMismatchItems = [];
+  const cellsPerClass = currentConfig.dates.length * currentConfig.periods.length;
+  const totalQuota = subjects.reduce((sum, s) => sum + (currentConfig.subjectCounts?.[s] || 0), 0);
+  if (cellsPerClass > 0 && totalQuota !== cellsPerClass) {
+    quotaMismatchItems.push({ totalQuota, cells: cellsPerClass });
+  }
+
+  // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)
+  const quotaOverDaysItems = [];
+  subjects.forEach(subject => {
+    const quota = currentConfig.subjectCounts?.[subject] || 0;
+    if (quota > currentConfig.dates.length) {
+      quotaOverDaysItems.push({ subject, quota, days: currentConfig.dates.length });
     }
   });
 
   return {
     noTeacherForSlot: { count: noTeacherItems.length, items: noTeacherItems },
     subjectCapacityShortage: { count: capacityItems.length, items: capacityItems },
+    quotaCellMismatch: { count: quotaMismatchItems.length, items: quotaMismatchItems },
+    subjectQuotaOverDays: { count: quotaOverDaysItems.length, items: quotaOverDaysItems },
   };
 }

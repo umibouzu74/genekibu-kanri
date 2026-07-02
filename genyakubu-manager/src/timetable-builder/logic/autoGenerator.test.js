@@ -216,6 +216,75 @@ describe('generateSinglePattern — 他タブの確定割当', () => {
   });
 });
 
+// ─── ソルバ/分析の整合 (M5/M6/M7) ──────────────────────────────────
+
+describe('generateSinglePattern — externalSessions の日次反映 (M5)', () => {
+  it('externalCounts が無くてもセッション詳細が日次上限に効く', () => {
+    // 12/25 に堀上のセッション 1 件 + 上限 1 → 同日は割り当て不可
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+      maxDailyHours: 1,
+    });
+    project.externalSessions = [
+      { teacherName: '堀上', date: '12/25(木)', note: '予備校' },
+    ];
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+  });
+});
+
+describe('generateSinglePattern — 未定の扱い (M6)', () => {
+  it('「未定」は同一時限に複数クラス置ける (placeholder 用途)', () => {
+    const project = makeProject({
+      teachers: [teacher('未定', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('未定');
+    expect(r.solution[makeKey(1, 1, 2)].teacher).toBe('未定');
+  });
+});
+
+describe('generateSinglePattern — 合同グループの講師固定 (M7)', () => {
+  it('合同の片側に講師が確定済みなら primary も同じ講師になる', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('石原', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      schedule: {
+        // ３A 側だけ手動で講師まで確定済み
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '石原' },
+      },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    // 旧実装は primary に堀上を選べてしまい「合同なのに 2 講師」になり得た
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+
+  it('確定済み講師との合同割当は日次を二重計上しない', () => {
+    // ３A に石原が確定済み (日次 1)。上限 1 でも primary への石原の合同
+    // 割当は同一コマ扱いなので成立する。
+    const project = makeProject({
+      teachers: [teacher('石原', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+      maxDailyHours: 1,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      schedule: {
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '石原' },
+      },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+});
+
 // ─── リスタート戦略 (P1) ────────────────────────────────────────────
 
 describe('generateSinglePattern — リスタート戦略', () => {

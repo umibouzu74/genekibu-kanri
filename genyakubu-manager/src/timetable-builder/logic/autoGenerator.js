@@ -171,9 +171,19 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   //   2. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
   // ここで作った initialDaily を solve に渡し、上限チェックの基準とする。
   const initialDaily = {};
+  // 詳細セッション (externalSessions) が登録されていれば件数として優先採用、
+  // 無ければ legacy externalCounts。分析側 computeGlobalUsage と同じ規則に
+  // 揃える (M5: 従来は externalCounts しか見ておらず、セッション詳細だけ
+  // 登録する運用だと日次上限がすり抜けて生成直後に違反表示になっていた)。
   const externalCounts = project.externalCounts || {};
-  Object.keys(externalCounts).forEach(k => {
-    const v = externalCounts[k] || 0;
+  const sessionCounts = {};
+  (project.externalSessions || []).forEach(s => {
+    if (!s?.date || !s?.teacherName) return;
+    const k = makeExternalKey(s.date, s.teacherName);
+    sessionCounts[k] = (sessionCounts[k] || 0) + 1;
+  });
+  new Set([...Object.keys(externalCounts), ...Object.keys(sessionCounts)]).forEach(k => {
+    const v = sessionCounts[k] !== undefined ? sessionCounts[k] : (externalCounts[k] || 0);
     if (v > 0) initialDaily[k] = v;
   });
   // H2: 他タブ (他学年) の確定割当も日次上限の基準に合算する
@@ -293,6 +303,9 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
         const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
         let secondarySlots = [];
         let canUseCombined = true;
+        // 合同の別クラスに既に入っている講師 (居れば primary も必ず同じ講師)。
+        // これを見ないと「合同授業なのに 2 講師に分裂」した案が生成される (M7)。
+        let groupTeacher = null;
 
         if (group) {
           for (const otherClassLabel of group.classes) {
@@ -312,6 +325,15 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
             if (otherEntry?.subject && otherEntry.subject !== s) {
               canUseCombined = false;
               break;
+            }
+            // 同じ科目で講師が確定済みのセル: primary もその講師に固定する。
+            // 既に別々の講師が入っている (壊れた既存データ) 場合は合同不可。
+            if (otherEntry?.subject === s && otherEntry?.teacher && otherEntry.teacher !== DAILY_LIMIT_EXEMPT_TEACHER) {
+              if (groupTeacher && groupTeacher !== otherEntry.teacher) {
+                canUseCombined = false;
+                break;
+              }
+              groupTeacher = otherEntry.teacher;
             }
             // 科目枠が残っていない場合は不可
             if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
@@ -361,10 +383,14 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           else neutralGroup.push(t);
         });
 
-        const shuffledT = [
+        let shuffledT = [
           ...seededShuffle(priorityGroup, rng),
           ...seededShuffle(neutralGroup, rng)
         ];
+        // 合同の別クラスに講師が確定済みなら、その講師以外は候補にしない
+        if (groupTeacher) {
+          shuffledT = shuffledT.filter(t => t.name === groupTeacher);
+        }
 
         // 合同グループのクラス ID リスト (hasTeacherInSamePeriod の除外用)
         const combinedClassIds = group
@@ -376,24 +402,32 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
         for (const tObj of shuffledT) {
           const tName = tObj.name;
           const dayKey = makeExternalKey(d.label, tName);
-          const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
+          const isRealTeacher = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
+          // この合同スロットは既存 secondary セル由来で initialDaily に
+          // カウント済み (合同は 1 コマ扱い) なので、日次は二重計上しない
+          const groupAlreadyCounted = groupTeacher != null && groupTeacher === tName;
+          const countsTowardDaily = isRealTeacher && !groupAlreadyCounted;
 
-          // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
-          if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
+          // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は
+          // 除外)。"未定" は placeholder なので同時限に複数クラス置けてよい
+          // (M6: 分析側も未定を conflict 対象外にしている)。
+          if (isRealTeacher && hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
 
           // H2: 他タブ (他学年) の同日同時限に既に入っている講師は物理的に
           // 兼務できないので除外 ("未定" は placeholder なので対象外)
-          if (countsTowardDaily && otherTabs.busy.has(`${d.id}|${p.id}|${tName}`)) continue;
+          if (isRealTeacher && otherTabs.busy.has(`${d.id}|${p.id}|${tName}`)) continue;
 
           // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
-          // 合同グループでも 1 コマとしてカウント (下の increment と整合)
-          if (wouldExceedDailyLimit({
+          // 合同グループでも 1 コマとしてカウント (下の increment と整合)。
+          // カウント済みの合同スロット (groupAlreadyCounted) は +1 しないので
+          // 上限チェックも掛けない
+          if (countsTowardDaily && wouldExceedDailyLimit({
             teacherName: tName, date: d.label, tempDaily, maxDailyHours,
             exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
           })) continue;
 
           // 連続コマ数上限チェック (E2c)。"未定" は対象外。
-          if (countsTowardDaily && wouldExceedConsecutive({
+          if (isRealTeacher && wouldExceedConsecutive({
             periodsOrder: currentConfig.periods,
             periodId: p.id,
             isOccupied: (pid) => currentConfig.classes.some(
