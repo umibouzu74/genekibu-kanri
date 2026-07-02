@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, nextId } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, activePeriodsForTab, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -48,6 +48,10 @@ export function projectReducer(state, action) {
       return { project: fresh, history: [fresh], historyIndex: 0, loadError: null };
     }
     case 'tab/switch': {
+      // 存在しないタブ ID を許すと、以降の書き込み系 (t.id === activeTabId で
+      // map) が全て silent no-op になり「表示は tabs[0]・編集はどこにも
+      // 書かれない」状態になるため弾く。
+      if (!state.project.tabs.some(t => t.id === action.payload.id)) return state;
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
     default: {
@@ -191,7 +195,8 @@ function applyAction(project, action) {
       return {
         ...project,
         tabs: newTabs,
-        activeTabId: newTabs[0].id,
+        // 非アクティブタブを削除した場合は作業中のタブを維持する
+        activeTabId: id === project.activeTabId ? newTabs[0].id : project.activeTabId,
         ...(newSnapshots.length !== snapshots.length ? { snapshots: newSnapshots } : {}),
       };
     }
@@ -381,7 +386,32 @@ function applyAction(project, action) {
         'dates',
         new Set(newPool.map(d => d.label)),
       );
-      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs, combinedGroups: newCombined });
+      // ラベルベース参照の cascade cleanup。これを怠ると、同じラベルの日付を
+      // 後で再追加したときに古い NG・外部コマ数・他学年セッションが silent に
+      // 復活する (UI の確認文言も「講師不在/NG から消えます」と約束している)。
+      // NG キーは makeNgKey(date, period) = `${date}-${period}` なので、
+      // 削除対象の日付ラベルを prefix に持つキーを落とす。
+      const ngPrefix = `${target.label}-`;
+      const newTeachers = (project.teachers || []).map(t => {
+        const ngSlots = t.ngSlots || [];
+        const filtered = ngSlots.filter(k => !k.startsWith(ngPrefix));
+        return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+      });
+      // externalCounts キーは makeExternalKey(date, teacher) = `${date}-${teacher}`
+      const newExternal = {};
+      Object.keys(project.externalCounts || {}).forEach(k => {
+        if (!k.startsWith(ngPrefix)) newExternal[k] = project.externalCounts[k];
+      });
+      const newSessions = (project.externalSessions || []).filter(s => s.date !== target.label);
+      return cleanSchedule({
+        ...project,
+        dates: newPool,
+        tabs: newTabs,
+        combinedGroups: newCombined,
+        teachers: newTeachers,
+        externalCounts: newExternal,
+        externalSessions: newSessions,
+      });
     }
 
     // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は
@@ -465,6 +495,8 @@ function applyAction(project, action) {
     case 'subject/reorder': {
       const { fromIdx, toIdx } = action.payload;
       const subjects = [...(project.subjects || [])];
+      // 範囲外 idx を許すと splice(-1) の末尾誤移動や undefined 混入が起きる
+      if (fromIdx < 0 || fromIdx >= subjects.length || toIdx < 0 || toIdx >= subjects.length) return project;
       const [moved] = subjects.splice(fromIdx, 1);
       subjects.splice(toIdx, 0, moved);
       return { ...project, subjects };
@@ -1004,9 +1036,18 @@ function applyAction(project, action) {
     }
     case 'schedule/clearUnlocked': {
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      // 「使う日・使う時限」から外れて非表示のまま温存されているセルは
+      // クリア対象外 (tabDates/toggle の「off にしてもセルは保持、再 on で
+      // 復活」という不変条件を守る)。画面に見えているセルだけを消す。
+      const visibleDateIds = new Set(activeDatesForTab(project.dates, activeTab).map(d => d.id));
+      const visiblePeriodIds = new Set(activePeriodsForTab(project.periods, activeTab).map(p => p.id));
       const ns = {};
       Object.keys(activeTab.schedule).forEach(k => {
-        if (activeTab.schedule[k].locked) ns[k] = activeTab.schedule[k];
+        const entry = activeTab.schedule[k];
+        if (entry.locked) { ns[k] = entry; return; }
+        const parsed = parseKey(k);
+        const hidden = parsed && (!visibleDateIds.has(parsed.dateId) || !visiblePeriodIds.has(parsed.periodId));
+        if (hidden) ns[k] = entry;
       });
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };

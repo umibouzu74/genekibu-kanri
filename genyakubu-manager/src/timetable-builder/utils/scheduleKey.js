@@ -374,6 +374,21 @@ export function migrateProject(project) {
     result = { ...result, snapshots: [] };
   }
 
+  // teachers が欠落した JSON はバリデーション ('teachers' in obj のときのみ
+  // 型検証) を通過するが、読込直後の render で project.teachers.filter が
+  // throw して画面ごと落ちる。空配列で補完して起動させる。
+  if (!Array.isArray(result.teachers)) {
+    result = { ...result, teachers: [] };
+  }
+
+  // activeTabId がどのタブとも一致しない場合は先頭タブに正規化する。
+  // dangling のまま残すと「読み取りは tabs[0] へフォールバック・書き込みは
+  // silent no-op」という乖離が起きる (編集しても何も保存されない)。
+  if (Array.isArray(result.tabs) && result.tabs.length > 0
+    && !result.tabs.some(t => t.id === result.activeTabId)) {
+    result = { ...result, activeTabId: result.tabs[0].id };
+  }
+
   // 同名講師がいる場合は " (2)" / " (3)" の suffix を付けて自動で uniq 化する。
   // teacher.name は NG / 優先度 / 他学年セッション等の参照キーになるため、
   // 重複したまま load すると UI で『どちらの行を操作しているか分からない』

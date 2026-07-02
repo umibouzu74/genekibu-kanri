@@ -400,6 +400,19 @@ describe('migrateProject', () => {
     });
   });
 
+  it('teachers 欠落 JSON は空配列で補完される (読込直後の crash 防止)', () => {
+    const p = makeLegacyProject();
+    delete p.teachers;
+    const result = migrateProject(p);
+    expect(result.teachers).toEqual([]);
+  });
+
+  it('dangling activeTabId は先頭タブへ正規化される', () => {
+    const p = { ...makeLegacyProject(), activeTabId: 99 };
+    const result = migrateProject(p);
+    expect(result.activeTabId).toBe(1);
+  });
+
   it('subjects が無ければ subjectCounts のキーから生成', () => {
     const result = migrateProject(makeLegacyProject());
     expect(result.subjects).toEqual(['英語', '数学']);
