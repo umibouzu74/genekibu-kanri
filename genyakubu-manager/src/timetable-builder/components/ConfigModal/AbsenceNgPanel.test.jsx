@@ -105,3 +105,53 @@ describe('AbsenceNgPanel — 時刻入力の刻み', () => {
     expect(screen.getByLabelText('プリセット終了時刻')).toHaveAttribute('step', '300');
   });
 });
+
+describe('AbsenceNgPanel — 期間指定のカレンダー順解決 (F5j)', () => {
+  // プールは挿入順 (tabDates/setByLabels の末尾 push) なので、後からタブに
+  // 前倒しの日付を足すとカレンダー順と乖離する。期間は配列位置の slice で
+  // 解決されるため、生順のままだと選択範囲が別の日群に化けて NG が誤登録
+  // される。パネルはカレンダーソート済みのプールを使うことを固定する。
+  const outOfOrderProject = {
+    teachers: [{ name: '堀上', subjects: ['英語'] }],
+    subjects: ['英語'],
+    externalSessions: [],
+    externalSessionPresets: [],
+    externalCounts: {},
+    // 挿入順: 7/20, 7/25 が先で、7/15 が後から追加された状態
+    dates: [
+      { id: 1, label: '7/20(月)' },
+      { id: 2, label: '7/25(土)' },
+      { id: 3, label: '7/15(水)' },
+    ],
+    periods: [{ id: 1, label: '1限' }],
+  };
+
+  it('開始日/終了日 select がカレンダー順で並ぶ', () => {
+    renderPanel({ overrides: { project: outOfOrderProject } });
+    const startSelect = screen.getByLabelText('開始日');
+    const labels = Array.from(startSelect.options).map(o => o.textContent);
+    expect(labels).toEqual(['7/15(水)', '7/20(月)', '7/25(土)']);
+  });
+
+  it('まとめてNGはカレンダー上の範囲 (7/15〜7/25) に適用される', () => {
+    const setNgBatch = vi.fn();
+    const { container } = renderPanel({
+      overrides: { project: outOfOrderProject, setNgBatch },
+    });
+    // NG モードへ切替
+    fireEvent.click(container.querySelector('input[name="absence-ng-mode"][value="ng"]'));
+    // 講師を全選択 (先頭の 全選択 ボタンが講師用)
+    fireEvent.click(screen.getAllByText('全選択')[0]);
+    // 開始 7/15 (id=3)、終了 7/25 (id=2)
+    fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('まとめてNGにする'));
+    expect(setNgBatch).toHaveBeenCalledTimes(1);
+    const [idxs, dateLabels, periodLabels, value] = setNgBatch.mock.calls[0];
+    expect(idxs).toEqual([0]);
+    // 挿入順 slice だと ['7/25(土)', '7/15(水)'] (+7/20 漏れ) になっていた
+    expect(dateLabels).toEqual(['7/15(水)', '7/20(月)', '7/25(土)']);
+    expect(periodLabels).toEqual(['1限']);
+    expect(value).toBe(true);
+  });
+});

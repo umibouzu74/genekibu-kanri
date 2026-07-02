@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
+import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import NgCsvImport from './NgCsvImport';
 
@@ -47,7 +48,14 @@ export default function AbsenceNgPanel() {
   // 時限も同じ理由で E-3 (タブ別 activePeriodIds 絞り込み) の対象外とし、
   // currentConfig.periods ではなく『プール全時限』(project.periods) を使う
   // (例: 中３の昼タブから中1・2専用の夜の時限にも NG を設定できる必要がある)。
-  const poolDates = useMemo(() => project.dates || [], [project.dates]);
+  // プールはカレンダー順に並べ替えて使う (F5j)。project.dates は挿入順
+  // (tabDates/setByLabels が新ラベルを末尾 push) なので、後からタブに前倒しの
+  // 日付を足すとカレンダー順と乖離する。このパネルの期間指定
+  // (dateLabelsInRange) は配列位置の slice で範囲を作るため、生順のままだと
+  // 「7/15〜7/25」指定が別の日群に化けて一括 NG / セッションが誤登録される。
+  // 表示 (NG マトリクス列・クイックグリッド・select) も BasicSettings の
+  // sortPoolDatesByCalendar 表示と揃う。パース不能ラベルは末尾 (安定順)。
+  const poolDates = useMemo(() => sortPoolDatesByCalendar(project.dates || []), [project.dates]);
   const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
 
   // ── 折りたたみ state ───────────────────────

@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 78 files / 1616 tests (2026-07-02 F.5 系統 A 対応後)
+npm test            # 78 files / 1618 tests (2026-07-02 F5j 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1216,13 +1216,17 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 #### 系統 C: 設定モーダル UI
 
-- **F5j (High)**: 「まとめて登録」の期間 (開始日〜終了日) が **日付プールの
+- ✅ **F5j (High)**: 「まとめて登録」の期間 (開始日〜終了日) が **日付プールの
   挿入順の positional slice** で解決される (AbsenceNgPanel
   `dateLabelsInRange`)。タブ B で前倒しの日付を後から追加するとプールは
   末尾 push (tabDates/setByLabels) でカレンダー順と乖離し、
   「7/15〜7/25」指定が別の日群に化けて一括 NG / セッションが誤登録される。
   BasicSettings は表示を sortPoolDatesByCalendar で直しており、乖離は
-  実際に起こる前提の状態。select の並びも生順で分かりにくい
+  実際に起こる前提の状態。select の並びも生順で分かりにくい。
+  **✅ 修正 (2026-07-02)**: パネル冒頭の `poolDates` を
+  `sortPoolDatesByCalendar` でカレンダー順に統一。期間 slice・select・
+  NG マトリクス列・クイックグリッドの並びが BasicSettings 表示と揃う
+  (パース不能ラベルは末尾・安定順)。回帰テスト +2 (AbsenceNgPanel.test.jsx)
 - **F5k (Medium)**: ConfigModal のプロジェクト名入力が
   `useState(project.name)` 初期化のみで stale 化。モーダル内テンプレート
   適用・undo・リセット後に旧名を表示し、blur で**新名を旧名で上書き**
@@ -1293,7 +1297,7 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 1. ~~**系統 A + F2f**~~ ✅ 完了 (2026-07-02) — migrate 正規化 + F2f 退避 +
    統合テスト + テストの穴 3 件。F5f (v2/v3 混在 dim) のみ残 (要検証・外部データ限定)
-2. **F5j** — 期間 slice のカレンダー順化 (誤 NG 一括登録は実データ破壊)
+2. ~~**F5j**~~ ✅ 完了 (2026-07-02) — poolDates をカレンダーソートに統一
 3. **小粒即効セット** — F2c (autosave debounce) / F5aa (setData 1 行) /
    F5q・F5r (focus trap 2 件) / F5g-F5i (Excel throw 3 件)
 4. **F2g + F5x** — 分析の誤警告・絞り忘れ
