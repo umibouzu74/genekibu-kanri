@@ -332,7 +332,9 @@ function applyAction(project, action) {
       const targetId = tabId ?? project.activeTabId;
       const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
       if (!target) return project;
-      const newCounts = { ...target.config.subjectCounts, [subject]: parseInt(value) || 0 };
+      // F5o: 負数の直接入力 (input の min はスピナーにしか効かない) を 0 に
+      // clamp。負のコマ数は分析の合計を狂わせる。
+      const newCounts = { ...target.config.subjectCounts, [subject]: Math.max(0, parseInt(value) || 0) };
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
@@ -765,9 +767,11 @@ function applyAction(project, action) {
     }
     case 'teacher/setExternalCount': {
       const { date, teacherName, value } = action.payload;
+      // F5o: 負数は 0 に clamp (負の外部コマ数は講師の日次合計を過小評価し、
+      // 過負荷警告を見逃す)。
       const counts = {
         ...(project.externalCounts || {}),
-        [makeExternalKey(date, teacherName)]: parseInt(value) || 0,
+        [makeExternalKey(date, teacherName)]: Math.max(0, parseInt(value) || 0),
       };
       return { ...project, externalCounts: counts };
     }

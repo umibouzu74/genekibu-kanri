@@ -1955,3 +1955,27 @@ describe('projectReducer — タブ別「使う時限」(activePeriodIds、E-3)'
     expect(next.project.tabs[0].config.activePeriodIds).toBeUndefined();
   });
 });
+
+
+// ─── F5o: 数値入力の負数 clamp ──────────────────────────────────
+
+describe('F5o — 負数入力の clamp', () => {
+  it('config/setSubjectCount は負数を 0 に clamp する', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'config/setSubjectCount',
+      payload: { subject: '英語', value: '-3' },
+    });
+    const tab = next.project.tabs.find(t => t.id === next.project.activeTabId);
+    expect(tab.config.subjectCounts['英語']).toBe(0);
+  });
+
+  it('teacher/setExternalCount は負数を 0 に clamp する', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'teacher/setExternalCount',
+      payload: { date: '12/25', teacherName: '堀上', value: '-2' },
+    });
+    expect(next.project.externalCounts['12/25-堀上']).toBe(0);
+  });
+});

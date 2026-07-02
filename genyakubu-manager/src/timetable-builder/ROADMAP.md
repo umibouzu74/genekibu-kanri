@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 78 files / 1631 tests (2026-07-02 F2g+F5x 対応後)
+npm test            # 79 files / 1642 tests (2026-07-02 設定モーダル UI 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1229,19 +1229,19 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
   `sortPoolDatesByCalendar` でカレンダー順に統一。期間 slice・select・
   NG マトリクス列・クイックグリッドの並びが BasicSettings 表示と揃う
   (パース不能ラベルは末尾・安定順)。回帰テスト +2 (AbsenceNgPanel.test.jsx)
-- **F5k (Medium)**: ConfigModal のプロジェクト名入力が
+- ✅ **F5k (Medium)**: ConfigModal のプロジェクト名入力が
   `useState(project.name)` 初期化のみで stale 化。モーダル内テンプレート
   適用・undo・リセット後に旧名を表示し、blur で**新名を旧名で上書き**
-- **F5l (Medium)**: プリセット適用が部分上書き (`if (p.endTime)` 等)。
+- ✅ **F5l (Medium)**: プリセット適用が部分上書き (`if (p.endTime)` 等)。
   開始時刻のみのプリセット適用で前回の終了時刻・メモが残留した混成
   フォームになり、意図しない広域自動NGが登録される
-- **F5m (Medium)**: プリセット編集フォームが「期間なし」を表現できない。
+- ✅ **F5m (Medium)**: プリセット編集フォームが「期間なし」を表現できない。
   期間なしプリセットを改名だけして保存するとプール先頭日の期間が勝手に
   付与される。プール外ラベルの期間も編集を開くだけで silent 置換
-- **F5n (Medium)**: 合同グループの**編集**経路 (setField → 即 dispatch) が
+- ✅ **F5n (Medium)**: 合同グループの**編集**経路 (setField → 即 dispatch) が
   無検証で、クラス 1 個以下・`dates: []` のグループが恒久化する
   (新規追加側には classes.length < 2 ガードあり。赤字警告は表示のみ)
-- **F5o (Low)**: クイックグリッド / SubjectManager の数値入力が負数の直接
+- ✅ **F5o (Low)**: クイックグリッド / SubjectManager の数値入力が負数の直接
   入力を受け付ける (`parseInt(value) || 0` がそのまま格納)。externalCounts
   の負数は講師日次合計を過小評価し過負荷警告を見逃す
 - **F5p (Low・要検証)**: 他タブで作った合同グループを編集すると他タブの
@@ -1308,6 +1308,13 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 4. ~~**F2g + F5x**~~ ✅ 完了 (2026-07-02) — noTeacherForSlot をクォータ考慮に
    再設計 (真に構造的に解けないときだけ「致命」)、進捗バーの E-3 絞り込み。
    テスト: C1 の旧仕様 3 件を新セマンティクスに書換 + 新規 4 件 / dashboard +1
-5. **設定モーダル UI まとめ** — F5k〜F5o (+ F5p の設計判断)
+5. ~~**設定モーダル UI まとめ**~~ ✅ 完了 (2026-07-02) — F5k (名前 draft を
+   project.name に同期) / F5l (プリセット適用は時刻・メモ全置換) / F5m
+   (「期間なし」を第一級化、先頭日への silent snap を廃止) / F5n
+   (合同グループ編集を draft-commit 化 + 対象日 0 日の検証を新規側にも追加) /
+   F5o (負数を reducer で 0 に clamp)。F5p (他タブグループの編集) は
+   仕様判断が必要なため未着手のまま残す。テスト +11
+   (CombinedGroupSettings 新規 5 / AbsenceNgPanel +3 / ConfigModal +1 /
+   reducer +2)
 6. **ソルバ整合** — F5t / F5v (+ F5w の仕様判断、F2n/F2p の fingerprint 失効と同時)
 7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり
