@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-07-02 (F.4: 再チェック — ベースライン検証 + F.2 全項目の現存確認 + F2o/F2p 新規追加) / 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F.5: 並列レビュー第 2 波 — 未カバー領域から F5a-F5aa 発見、統合推奨順を再編) / 2026-07-02 (F.4: 再チェック — ベースライン検証 + F.2 全項目の現存確認 + F2o/F2p 新規追加) / 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -1135,3 +1135,142 @@ Worker が使える環境では影響なし。
    H3/H5/F2o を 1 セッションで
 5. **F2n (+F2p)** — 生成結果の config fingerprint 失効
 6. **F2a/F2b** — a11y はまとめて 1 セッション
+
+※ F.5 の並列レビュー結果を踏まえた統合版の推奨順は F.5 末尾を参照。
+
+### F.5 2026-07-02 並列レビュー第 2 波 (F.4 の未カバー領域) の結果
+
+F.4 で精読済みの箇所を除外し、4 班 (utils 深掘り / ConfigModal 大物 /
+メイン UI・IO / 制約・小物) で並列レビュー。既知 F2a-F2p との重複は排除済み。
+主要な指摘はエージェントの再現テストに加えて本体側でもコード裏取り済み。
+
+#### 系統 A: JSON 読込の検証・正規化の穴 (クラッシュループ級、最優先)
+
+`validateProjectShape` (E3d) は tabs/teachers/dates/periods/classes/
+subjectCounts/schedule しか見ず、`migrateProject` も以下を正規化しないため、
+外部 JSON 経由で壊れた形が入ると **render で TypeError → autosave が汚染を
+永続化 → リロードしても再クラッシュ** (localStorage 手動削除が必要) になる。
+
+- **F5a (High)**: `combinedGroups: {}` / `externalSessions: {}` /
+  `subjects: "文字列"` が素通し。`combinedGroups.find` (scheduleKey.js
+  findCombinedGroup 経由、常時マウントの SummaryPanel から到達) /
+  `externalSessions.forEach` (autoGenerator / analysisHelpers) で crash。
+  `snapshots: {}` + version≤3 は migrateProjectV3toV4 で throw
+- **F5b (High)**: teacher に `subjects` が無いと、(同名講師ありなら)
+  `detectTeacherDiffs` の guard 漏れ (projectFactory.js:38 —
+  36 行目はガード済みなのに 38 行目は素通し) で読込拒否、
+  (衝突なしなら) 読込成功後 ScheduleCell の `t.subjects.includes` で
+  全画面クラッシュ。reducer の subject/remove・teacher/toggleSubject も無防備
+- **F5c (Medium)**: combinedGroups の `dates` キー欠落で
+  `g.dates.includes` が TypeError (F5a と同根)
+- **F5d (Medium)**: ソルバが `project.maxDailyHours ?? デフォルト` を
+  **clamp なしの生値**で使用 (autoGenerator.js:142-147)。UI は
+  `resolveGenerationParams` で clamp 表示するため乖離。`maxDailyHours: 0`
+  の JSON で「UI は 1 と表示・実際は全講師除外で全コマ未定」になり原因不明
+- **F5e (Low)**: version≤2 で config.dates/periods 欠落 → migrate 全体が
+  TypeError (validateProjectShape は v4 互換のため optional 扱い)
+- **F5f (Low・要検証)**: v2/v3 混在 dim + ID キーの schedule は
+  migrateTabV2toV3 のインデックス前提でシフト/消失 (正規経路では混在時
+  schedule 空のため実害は外部データのみ)
+
+**修正方向**: validateProjectShape の対象拡大 + migrateProject での
+フィールド正規化 (teacher 4 配列 / combinedGroups.dates / 型崩れ drop) +
+ソルバも resolveGenerationParams を使う。F2f (壊れデータ退避) と同時実施が良い。
+
+#### 系統 B: Excel 出力が throw する名前
+
+- **F5g (Medium)**: `uniqueSheetName` の重複判定が case-sensitive
+  (`workbook.getWorksheet`) なのに exceljs の addWorksheet は
+  case-insensitive で throw。"classA"/"CLASSA" 等、大小文字違いの
+  タブ名・講師名・科目名で出力が恒久的に失敗 (再現確認済み。日本語運用では
+  遭遇率低のため Medium)
+- **F5h (Medium)**: `sanitizeSheetName` がアポストロフィ非除去。先頭/末尾
+  `'` の名前で exceljs が throw (再現確認済み)
+- **F5i (Low)**: 講師名が「全講師リスト」だと固定名
+  `addWorksheet('全講師リスト')` (uniqueSheetName 不通) が重複 throw
+
+#### 系統 C: 設定モーダル UI
+
+- **F5j (High)**: 「まとめて登録」の期間 (開始日〜終了日) が **日付プールの
+  挿入順の positional slice** で解決される (AbsenceNgPanel
+  `dateLabelsInRange`)。タブ B で前倒しの日付を後から追加するとプールは
+  末尾 push (tabDates/setByLabels) でカレンダー順と乖離し、
+  「7/15〜7/25」指定が別の日群に化けて一括 NG / セッションが誤登録される。
+  BasicSettings は表示を sortPoolDatesByCalendar で直しており、乖離は
+  実際に起こる前提の状態。select の並びも生順で分かりにくい
+- **F5k (Medium)**: ConfigModal のプロジェクト名入力が
+  `useState(project.name)` 初期化のみで stale 化。モーダル内テンプレート
+  適用・undo・リセット後に旧名を表示し、blur で**新名を旧名で上書き**
+- **F5l (Medium)**: プリセット適用が部分上書き (`if (p.endTime)` 等)。
+  開始時刻のみのプリセット適用で前回の終了時刻・メモが残留した混成
+  フォームになり、意図しない広域自動NGが登録される
+- **F5m (Medium)**: プリセット編集フォームが「期間なし」を表現できない。
+  期間なしプリセットを改名だけして保存するとプール先頭日の期間が勝手に
+  付与される。プール外ラベルの期間も編集を開くだけで silent 置換
+- **F5n (Medium)**: 合同グループの**編集**経路 (setField → 即 dispatch) が
+  無検証で、クラス 1 個以下・`dates: []` のグループが恒久化する
+  (新規追加側には classes.length < 2 ガードあり。赤字警告は表示のみ)
+- **F5o (Low)**: クイックグリッド / SubjectManager の数値入力が負数の直接
+  入力を受け付ける (`parseInt(value) || 0` がそのまま格納)。externalCounts
+  の負数は講師日次合計を過小評価し過負荷警告を見逃す
+- **F5p (Low・要検証)**: 他タブで作った合同グループを編集すると他タブの
+  クラスが未選択表示になり、解除も不能 (タブ混成グループが作れる)。
+  combinedGroups が project 共有ラベル参照なので仕様の可能性あり、要設計判断
+
+#### 系統 D: focus / 入力系
+
+- **F5q (Medium)**: useFocusTrap は**フォーカスが trap 外にあるときの前方
+  Tab を捕捉しない** (`!root.contains(active)` の救済が Shift+Tab 分岐に
+  しかない)。オーバーレイクリック → Tab でモーダル背後の UI を操作できる
+- **F5r (Medium)**: useFocusTrap の Escape が `e.isComposing` を見ない。
+  **IME 変換キャンセルの Escape でダイアログごと閉じる** (InputModal では
+  入力消失)。日本語入力前提のアプリなので発生頻度高
+- **F5s (Low・要検証)**: useLongPress のゴースト click (メニューが指の
+  真下に出るため長押し後の click が先頭メニュー項目を誤爆しうる) と、
+  抑止フラグの解除漏れ (ハイブリッド端末で次のマウスクリック 1 回が無視)。
+  実機検証が必要
+
+#### 系統 E: ソルバ / 分析の整合
+
+- **F5t (Medium)**: 連続コマ制約 (E2c) の `isOccupied` が**自タブの
+  tempSch しか見ない**。H2 (同時限 busy / 日次上限) は他タブを合算するのに
+  連続だけ非考慮で、学年横断では上限超えの連続が生成される
+- **F5u (Medium)**: SummaryPanel「講師別コマ数 (全タブ合計)」が
+  `teacherDailyCounts[].total` (= 講習セル + external) を合算。予備校等の
+  外部コマが混入し、しかも「その日にセルがある日だけ」混入する不定値。
+  `.current` 合算にすべきと思われる (orphan 講師名の漏れも非対称)
+- **F5v (Medium)**: v3→v4 migration で「日程 (時限) 0 のタブ」が
+  `oldDateIds.length > 0` 条件により activeDateIds 未設定 = **全日使用**に
+  化ける (正しくは `[]`)
+- **F5w (Medium・要検証)**: ソルバが「空 + ロック済み」セルに科目・講師を
+  書き込む (slot 構築が locked 空セルを除外しない。backtrack に専用処理が
+  あるため意図的の可能性もある)。UI 側は locked への変更を全経路で拒否して
+  おり意味論が矛盾。「空 lock = 空けておく」なら quotaCellMismatch との
+  関係も含めて仕様を決める必要あり
+- **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
+  数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)
+- **F5y (Low)**: 歯抜け時限タブ (activePeriodIds=[1限,3限]) で連続コマ制約が
+  実際は休憩を挟むのに「連続」と誤判定 (過剰に候補を弾く)
+- **F5z (Low・要検証)**: 同一科目で同一クラスを共有する合同グループが
+  重複登録でき、伝播・集計は first-match のみで不整合
+
+#### 系統 F: その他
+
+- **F5aa (Medium・要実機確認)**: dragstart で `dataTransfer.setData()` を
+  呼ばないため **Firefox では HTML5 drag が開始しない**既知仕様に抵触
+  (ScheduleTable)。`setData('text/plain', k)` の 1 行で解消
+- **テストの穴**: useLongPress の click 抑止 0 件 / useFocusTrap の
+  trapStack 解除側・フォーカス復帰 0 件 / 「validate 通過 JSON は migrate と
+  初回利用でクラッシュしない」統合テスト不在 (F5a-F5f が素通りする構造)
+
+#### F.4 + F.5 統合の推奨着手順
+
+1. **系統 A + F2f** — 読込検証・migrate 正規化・壊れデータ退避を 1 セッション
+   (クラッシュループの根絶。テストの穴 3 も同時に埋める)
+2. **F5j** — 期間 slice のカレンダー順化 (誤 NG 一括登録は実データ破壊)
+3. **小粒即効セット** — F2c (autosave debounce) / F5aa (setData 1 行) /
+   F5q・F5r (focus trap 2 件) / F5g-F5i (Excel throw 3 件)
+4. **F2g + F5x** — 分析の誤警告・絞り忘れ
+5. **設定モーダル UI まとめ** — F5k〜F5o (+ F5p の設計判断)
+6. **ソルバ整合** — F5t / F5v (+ F5w の仕様判断、F2n/F2p の fingerprint 失効と同時)
+7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり
