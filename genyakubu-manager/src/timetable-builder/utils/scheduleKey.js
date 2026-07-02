@@ -278,6 +278,23 @@ export function migrateProjectV3toV4(project) {
   const newTabs = tabs.map(t => {
     const cfg = t.config || {};
     const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
+    // 旧タブが union プールの一部しか持っていなかった場合、そのタブの
+    // 「使う日・使う時限」を旧 subset に設定して学年別日程を保存する。
+    // これをしないと migration 後に全タブが union 全日・全時限を使う扱いに
+    // なり、自動生成が他学年の日にもコマを埋めてしまう。プール全体と一致
+    // するタブは undefined のまま (= 全日・全時限、従来表現)。
+    const oldDateIds = (cfg.dates || [])
+      .map(d => dateIdByLabel.get(d.label))
+      .filter(id => id != null);
+    const oldPeriodIds = (cfg.periods || [])
+      .map(p => periodIdByLabel.get(p.label))
+      .filter(id => id != null);
+    if (oldDateIds.length > 0 && oldDateIds.length < projDates.length) {
+      restConfig.activeDateIds = oldDateIds;
+    }
+    if (oldPeriodIds.length > 0 && oldPeriodIds.length < projPeriods.length) {
+      restConfig.activePeriodIds = oldPeriodIds;
+    }
     return { ...t, config: restConfig, schedule: remapSchedule(t.schedule, cfg.dates, cfg.periods) };
   });
 

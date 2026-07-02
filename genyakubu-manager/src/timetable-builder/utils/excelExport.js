@@ -12,7 +12,7 @@
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, activeDatesForTab } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 
@@ -136,10 +136,11 @@ export function buildScheduleWorkbook(project) {
   );
   const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
 
-  // v4: periods は project 共通。dates は『そのタブが使う日』(activeDateIds)。
-  const periods = cleaned.periods || [];
   cleaned.tabs.forEach(tab => {
+    // v4(Y)+E-3: そのタブが使う日・使う時限だけをシートに出す
+    // (使わない時限の空行や stale セルを紙面に出さない)。
     const dates = activeDatesForTab(cleaned.dates, tab);
+    const periods = activePeriodsForTab(cleaned.periods, tab);
     const { classes } = tab.config;
     // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
@@ -262,19 +263,19 @@ export function computeSubjectStats(project, subject) {
   const teachersFound = new Set();
   const detailRows = [];
 
-  // v4: periods は project 共通。自動NG も project の periods で一度だけ計算。
-  const periods = project.periods || [];
+  // 自動NG は project の periods (プール全体) で一度だけ計算。
   const autoNgByTeacher = computeAutoNgByTeacher(
     project.teachers || [],
     project.externalSessions || [],
-    periods,
+    project.periods || [],
   );
 
   (project.tabs || []).forEach(tab => {
     const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
     let filled = 0;
-    // v4(Y): そのタブが使う日だけを集計対象にする。
+    // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする。
     const dates = activeDatesForTab(project.dates, tab);
+    const periods = activePeriodsForTab(project.periods, tab);
 
     dates.forEach(d => {
       periods.forEach(p => {
@@ -457,16 +458,15 @@ export function buildTeacherWorkbook(project) {
   const allRows = [];
   const allRowSubjects = [];
 
-  // v4: periods は project 共通。dates はタブごとに『使う日』で絞る。
-  const periods = project.periods || [];
-
   project.teachers.forEach(t => {
     // この講師の出勤コマを集める
     const personalRows = [];
     const personalSubjects = [];
 
     project.tabs.forEach(tab => {
+      // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
       const dates = activeDatesForTab(project.dates, tab);
+      const periods = activePeriodsForTab(project.periods, tab);
       dates.forEach((d) => {
         periods.forEach((p) => {
           tab.config.classes.forEach((c) => {

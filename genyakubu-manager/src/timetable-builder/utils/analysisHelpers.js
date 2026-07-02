@@ -2,7 +2,7 @@
 // ユニットテスト可能にし、useAnalysis 側は useMemo の deps を最小化する
 // orchestrator に専念させる (D4e + D2a)。
 
-import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findEntityById, activeDatesForTab } from './scheduleKey';
+import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findEntityById, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
 
 // 全タブ横断の講師使用状況を集計する。
@@ -42,8 +42,10 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
     // 合同グループで既にカウント済みの (date, period, groupId) を追跡。
     // 同一タブ内の合同グループは 1 コマとしてカウントする。
     const tabCombinedCounted = new Set();
-    // v4(Y): このタブが使う日だけを対象にする (inactive な日の stale cell は除外)。
+    // v4(Y)+E-3: このタブが使う日・使う時限だけを対象にする
+    // (inactive な日・時限の stale cell は除外)。
     const tabDates = activeDatesForTab(dates, tab);
+    const tabPeriods = activePeriodsForTab(periods, tab);
 
     Object.keys(tab.schedule).forEach(key => {
       const entry = tab.schedule[key];
@@ -52,7 +54,7 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
       if (!parsed) return;
       const { dateId, periodId, classId } = parsed;
       const dateEnt = findEntityById(tabDates, dateId);
-      const periodEnt = findEntityById(periods, periodId);
+      const periodEnt = findEntityById(tabPeriods, periodId);
       const classEnt = findEntityById(tab.config.classes, classId);
       if (!dateEnt || !periodEnt || !classEnt) return;
       const date = dateEnt.label;
@@ -203,8 +205,10 @@ export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], ex
   // 各タブの実効 config (classes / subjectCounts + 共通 dates / periods) で分析する。
   const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, periods);
   tabs.forEach(tab => {
-    // v4(Y): このタブが使う日だけで分析する。
-    const effective = { ...tab.config, dates: activeDatesForTab(dates, tab), periods };
+    // v4(Y)+E-3: このタブが使う日・使う時限だけで分析する (dates と対称)。
+    // periods をプール全体にすると inactive 時限の stale セルまで数え、
+    // Toolbar popover (絞った currentConfig で計算) と件数が食い違う。
+    const effective = { ...tab.config, dates: activeDatesForTab(dates, tab), periods: activePeriodsForTab(periods, tab) };
     const tabAnalysis = computeActiveAnalysis(effective, tab.schedule, globalUsage, teachers, autoNgByTeacher);
     let subjectDupCount = 0;
     Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {
