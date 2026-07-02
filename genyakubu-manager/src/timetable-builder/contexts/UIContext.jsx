@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UIContext } from './uiContextValue';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // --- Toast ---
 function ToastContainer({ toasts, removeToast }) {
@@ -22,10 +23,16 @@ function ToastContainer({ toasts, removeToast }) {
 
 // --- ConfirmModal ---
 function ConfirmModalComponent({ config, onResult }) {
+  const boxRef = useRef(null);
+  const okRef = useRef(null);
+  // trapStack に参加する (最上位の trap だけが Escape / Tab を処理)。
+  // これが無いと ConfigModal の上で confirm を開いたとき、Escape が
+  // 下の ConfigModal に届いて設定モーダルごと閉じてしまう。
+  useFocusTrap(boxRef, { onClose: () => onResult(false), enabled: !!config, initialFocusRef: okRef });
   if (!config) return null;
   return (
     <div className="fixed inset-0 bg-black/40 z-[90] flex justify-center items-center p-4" onClick={() => onResult(false)}>
-      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
+      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
         <div className="p-5">
           <h3 className="font-bold text-lg text-gray-800 mb-3">{config.title || '確認'}</h3>
           <p className="text-sm text-gray-600 whitespace-pre-line">{config.message}</p>
@@ -38,6 +45,7 @@ function ConfirmModalComponent({ config, onResult }) {
             キャンセル
           </button>
           <button
+            ref={okRef}
             onClick={() => onResult(true)}
             className={`px-4 py-2 text-sm text-white rounded font-bold ${config.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
             autoFocus
@@ -54,6 +62,9 @@ function ConfirmModalComponent({ config, onResult }) {
 function InputModalComponent({ config, onResult }) {
   const [value, setValue] = useState(config?.defaultValue || '');
   const inputRef = useRef(null);
+  const boxRef = useRef(null);
+  // trapStack 参加 (ConfirmModalComponent と同じ理由)
+  useFocusTrap(boxRef, { onClose: () => onResult(null), enabled: !!config, initialFocusRef: inputRef });
 
   useEffect(() => {
     if (config) {
@@ -71,7 +82,7 @@ function InputModalComponent({ config, onResult }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-[90] flex justify-center items-center p-4" onClick={() => onResult(null)}>
-      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
+      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
         <form onSubmit={handleSubmit}>
           <div className="p-5">
             <h3 className="font-bold text-lg text-gray-800 mb-3">{config.title || '入力'}</h3>
@@ -133,6 +144,10 @@ export function UIProvider({ children }) {
 
   const showConfirm = useCallback((message, options = {}) => {
     return new Promise((resolve) => {
+      // 先行の confirm が未解決のまま resolver を上書きすると、先行の
+      // await が永久に pending になり呼び出し元のフローが停止する。
+      // 後勝ちで、先行はキャンセル扱い (false) にして解決しておく。
+      if (confirmResolveRef.current) confirmResolveRef.current(false);
       confirmResolveRef.current = resolve;
       setConfirmConfig({ message, ...options });
     });
@@ -148,6 +163,8 @@ export function UIProvider({ children }) {
 
   const showInput = useCallback((message, options = {}) => {
     return new Promise((resolve) => {
+      // showConfirm と同じ理由で先行分をキャンセル扱いで解決する
+      if (inputResolveRef.current) inputResolveRef.current(null);
       inputResolveRef.current = resolve;
       setInputConfig({ message, ...options });
     });

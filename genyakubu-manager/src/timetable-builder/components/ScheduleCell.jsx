@@ -46,8 +46,8 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
 
   // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
   // hooks-rules を守るため早期 return より前で呼ぶ。
-  const longPress = useLongPress(({ pageX, pageY }) =>
-    onContextMenu({ preventDefault: () => {}, pageX, pageY }, dateId, periodId, classId),
+  const longPress = useLongPress(({ clientX, clientY }) =>
+    onContextMenu({ preventDefault: () => {}, clientX, clientY }, dateId, periodId, classId),
   );
 
   if (!dateEnt || !periodEnt || !classEnt) return null;
@@ -147,10 +147,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
               aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}
-              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink min-w-0 ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
+              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink min-w-0 ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"}`}
               value={entry.subject || ""}
               onChange={(e) => handleAssign(dateId, periodId, classId, 'subject', e.target.value)}
               onKeyDown={(e) => handleCellNavigation(e, 'subject')}
+              // pointer-events-none だけだとキーボードで値を変えられ、reducer
+              // 側 guard で state は不変なのに DOM 表示だけ変わる desync が
+              // 起きる。disabled なら AT にもロック状態が伝わる。
+              disabled={!!isLocked}
             >
               <option value="">-</option>
               {commonSubjects.map(s => {
@@ -171,10 +175,11 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
         <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
           aria-label={`${dLabel} ${pLabel} ${cLabel} の講師`}
-          className={`w-full rounded cursor-pointer ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-builder-surface"}`}
+          className={`w-full rounded cursor-pointer ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
+          disabled={!entry.subject || !!isLocked}
         >
           <option value="">-</option>
           {teacherGroups.map(group => (

@@ -23,7 +23,8 @@ describe('useLongPress', () => {
     fireEvent.touchStart(el, touch(10, 20));
     expect(cb).not.toHaveBeenCalled();
     vi.advanceTimersByTime(500);
-    expect(cb).toHaveBeenCalledWith({ pageX: 10, pageY: 20 });
+    // ContextMenu が position:fixed のため client 座標 (viewport 基準) を渡す
+    expect(cb).toHaveBeenCalledWith({ clientX: 10, clientY: 20 });
   });
 
   it('delay 前に touchEnd するとキャンセル', () => {

@@ -89,9 +89,16 @@ export default function Toolbar({
         setPopoverOpen(false);
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === 'Escape') setPopoverOpen(false);
+    };
     // mousedown で先に閉じることで「ボタンの再クリックで閉じる」も両立
     window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
+    window.addEventListener('keydown', keyHandler);
+    return () => {
+      window.removeEventListener('mousedown', handler);
+      window.removeEventListener('keydown', keyHandler);
+    };
   }, [popoverOpen]);
 
   const handleClearClick = async () => {

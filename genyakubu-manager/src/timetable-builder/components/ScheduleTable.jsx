@@ -7,8 +7,8 @@ import ScheduleCell from './ScheduleCell';
 // 右クリック (onContextMenu) に加えてタッチ長押しでも同じメニューを開ける <th>。
 // ヘッダ (日付/時限/クラス) の追加・名称変更・削除をタッチ端末から行うため (E1f)。
 function LongPressTh({ onLongPressOpen, children, ...props }) {
-  const lp = useLongPress(({ pageX, pageY }) =>
-    onLongPressOpen({ preventDefault: () => {}, pageX, pageY }),
+  const lp = useLongPress(({ clientX, clientY }) =>
+    onLongPressOpen({ preventDefault: () => {}, clientX, clientY }),
   );
   return <th {...props} {...lp}>{children}</th>;
 }

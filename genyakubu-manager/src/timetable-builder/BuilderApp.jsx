@@ -254,7 +254,9 @@ function ScheduleApp() {
 
   const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, dateId, periodId, classId, type, val });
+    // ContextMenu は position:fixed (viewport 基準) なので clientX/Y を使う。
+    // pageX/Y だとページがスクロールしている分だけメニューが下にずれる。
+    setContextMenu({ x: e.clientX, y: e.clientY, dateId, periodId, classId, type, val });
   };
 
   const handleContextMenuClose = (copiedData) => {
