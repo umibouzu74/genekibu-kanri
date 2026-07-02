@@ -53,6 +53,14 @@ describe('parseTimeRange', () => {
     expect(parseTimeRange('1限 (13:00~)')).toEqual({ startMin: 13 * 60, endMin: null });
   });
 
+  it('波ダッシュ U+301C (〜、macOS IME 既定) も区切りとして許容', () => {
+    // 取りこぼすと range が「開始のみ」に誤解釈され、他学年セッションの
+    // 自動 NG が別時限に立たなくなる (U+FF5E ～ とは別コードポイント)
+    expect(parseTimeRange('13:00〜15:00')).toEqual({ startMin: 13 * 60, endMin: 15 * 60 });
+    expect(parseTimeRange('13:00〜')).toEqual({ startMin: 13 * 60, endMin: null });
+    expect(parseTimeRange('〜14:00')).toBeNull(); // 終了のみは従来どおり reject
+  });
+
   it('単独 HH:mm は開始のみ扱い', () => {
     expect(parseTimeRange('13:00')).toEqual({ startMin: 13 * 60, endMin: null });
   });

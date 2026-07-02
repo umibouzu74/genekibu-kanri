@@ -93,6 +93,32 @@ describe('buildScheduleWorkbook', () => {
     expect(wb.worksheets.map(w => w.name)).toEqual(['tab-A', 'tab-B', '科目別_英語']);
   });
 
+  it('タブ名の禁則文字は除去され、重複タブ名には suffix が付く (throw しない)', () => {
+    const project = makeProject({
+      tabs: [
+        { id: 1, name: '中3 (1/7)', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: '中3', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 3, name: '中3', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const wb = buildScheduleWorkbook(project);
+    const names = wb.worksheets.map(w => w.name);
+    // '/' は exceljs の禁則文字 → 除去。同名 '中3' の 2 枚目は suffix。
+    expect(names).toContain('中3 (17)');
+    expect(names).toContain('中3');
+    expect(names).toContain('中3_1');
+  });
+
+  it('禁則文字のみのタブ名は "Sheet" にフォールバック (空文字 throw の防止)', () => {
+    const project = makeProject({
+      tabs: [
+        { id: 1, name: '***', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const wb = buildScheduleWorkbook(project);
+    expect(wb.worksheets.map(w => w.name)).toContain('Sheet');
+  });
+
   it('ヘッダ行に「日付」「時限」と各クラス名が並ぶ', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');

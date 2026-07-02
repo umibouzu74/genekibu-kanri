@@ -81,13 +81,16 @@ function ScheduleApp() {
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      // Shift 押下時は e.key が大文字 ('Z') になるため必ず小文字化して比較する。
+      // 'z' と直接比較すると Ctrl+Shift+Z (redo) が一度も発火しない。
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'z' && e.shiftKey) {
         e.preventDefault();
         redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault();
         redo();
       }

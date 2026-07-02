@@ -23,17 +23,16 @@ export default function NgCsvImport() {
 
   const teacherNames = useMemo(() => (project.teachers || []).map(t => t.name), [project.teachers]);
 
-  // 全タブの日付・時限ラベルの和集合。NG キーはラベルベースでタブ横断なので、
-  // どのタブの config にも無いラベルだけを「未登録」warning にする。
-  const { knownDates, knownPeriods } = useMemo(() => {
-    const dates = new Set();
-    const periods = new Set();
-    (project.tabs || []).forEach(tab => {
-      (tab.config?.dates || []).forEach(d => dates.add(d.label));
-      (tab.config?.periods || []).forEach(p => periods.add(p.label));
-    });
-    return { knownDates: Array.from(dates), knownPeriods: Array.from(periods) };
-  }, [project.tabs]);
+  // 日付・時限プールのラベル。NG キーはラベルベースでタブ横断なので、
+  // プールに無いラベルだけを「未登録」warning にする。
+  // v4 で dates / periods は project レベルへ昇格済み (tab.config には無い)。
+  // 旧実装は tab.config.dates/periods を集めていたため集合が常に空になり、
+  // 未登録ラベル検出 (parseNgCsv は known が空だと判定スキップ) が silent に
+  // 無効化されていた — typo の NG が「N 件追加しました」のまま効かない。
+  const { knownDates, knownPeriods } = useMemo(() => ({
+    knownDates: (project.dates || []).map(d => d.label),
+    knownPeriods: (project.periods || []).map(p => p.label),
+  }), [project.dates, project.periods]);
 
   const parsed = useMemo(
     () => csvText.trim() ? parseNgCsv(csvText, { teacherNames, knownDates, knownPeriods }) : null,

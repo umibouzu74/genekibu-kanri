@@ -141,7 +141,8 @@ export function buildScheduleWorkbook(project) {
   cleaned.tabs.forEach(tab => {
     const dates = activeDatesForTab(cleaned.dates, tab);
     const { classes } = tab.config;
-    const ws = workbook.addWorksheet(tab.name);
+    // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
+    const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
 
     // タブ毎の period に合わせて自動NG (他学年セッションとの時間重複) を計算。
     // ⚠NG マークは手動NG (teacher.ngSlots) と自動NG の OR で出す。
@@ -320,6 +321,15 @@ export function computeSubjectStats(project, subject) {
   return { subject, tabStats, teacherStats, teachersFound, detailRows };
 }
 
+// exceljs の addWorksheet は禁則文字 (\\ / : ? * [ ])・空文字・予約名
+// 'History'・重複名で throw する。ユーザ入力 (タブ名・講師名) を
+// シート名にする前に必ずこれを通すこと。
+function sanitizeSheetName(name) {
+  const stripped = String(name || '').replace(/[\\/:?*[\]]/g, '').trim();
+  const safe = stripped || 'Sheet';
+  return /^history$/i.test(safe) ? `${safe}_` : safe;
+}
+
 // Excel 上のシート名は 31 文字 + 一部の禁則文字。重複した場合は suffix を付与。
 function uniqueSheetName(workbook, baseName) {
   let name = baseName.substring(0, 31);
@@ -478,8 +488,9 @@ export function buildTeacherWorkbook(project) {
 
     if (personalRows.length === 0) return;
 
-    const safeName = t.name.replace(/[\\/:?*[\]]/g, '').substring(0, 30);
-    const ws = workbook.addWorksheet(safeName);
+    // 禁則文字を strip した結果の空文字・重複 (例: 「田中/A」と「田中A」) で
+    // throw しないよう sanitize + unique を通す
+    const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(t.name)));
 
     // ヘッダ
     const header = ['日付', '時限', 'クラス', '科目', '場所(タブ)', '備考'];
