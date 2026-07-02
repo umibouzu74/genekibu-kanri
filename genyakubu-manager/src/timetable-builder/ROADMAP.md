@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 78 files / 1627 tests (2026-07-02 小粒セット対応後)
+npm test            # 78 files / 1631 tests (2026-07-02 F2g+F5x 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1130,8 +1130,9 @@ Worker が使える環境では影響なし。
    `builder.schedule_project_corrupt` へ退避し、toast に退避先を明記
 2. ~~**F2c**~~ ✅ 完了 (F.5 小粒セットと同時対応) — 実書き込みを 800ms
    debounce 化し、アンマウント / pagehide / beforeunload で flush
-3. **F2g** — クォータ 0 科目の除外 + クォータ考慮 (誤警告は「致命」表示の
-   信頼を毀損する)
+3. ~~**F2g**~~ ✅ 完了 (F.5 と同時対応) — C1 をクォータ考慮に再設計
+   (クォータ 0 除外 / 担当者ゼロは C2 に一本化 / 置ける日数 < クォータの
+   ときだけ丸ふさがりの日を列挙)
 4. **rename/削除系の参照整合まとめ** — F2k ヘルパー一元化と同時に
    H3/H5/F2o を 1 セッションで
 5. **F2n (+F2p)** — 生成結果の config fingerprint 失効
@@ -1277,8 +1278,9 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
   あるため意図的の可能性もある)。UI 側は locked への変更を全経路で拒否して
   おり意味論が矛盾。「空 lock = 空けておく」なら quotaCellMismatch との
   関係も含めて仕様を決める必要あり
-- **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
-  数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)
+- ✅ **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
+  数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)。
+  **✅ 修正 (2026-07-02)**: parseKey + 可視 id Set で filter
 - **F5y (Low)**: 歯抜け時限タブ (activePeriodIds=[1限,3限]) で連続コマ制約が
   実際は休憩を挟むのに「連続」と誤判定 (過剰に候補を弾く)
 - **F5z (Low・要検証)**: 同一科目で同一クラスを共有する合同グループが
@@ -1303,7 +1305,9 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    F5aa (setData) / F5q・F5r (focus trap、親アプリ側の同一実装にも適用) /
    F5g-F5i (Excel シート名)。回帰テスト +9 (autosave 5 / focus trap 3 /
    Excel 3、既存 2 件は debounce 対応に更新)
-4. **F2g + F5x** — 分析の誤警告・絞り忘れ
+4. ~~**F2g + F5x**~~ ✅ 完了 (2026-07-02) — noTeacherForSlot をクォータ考慮に
+   再設計 (真に構造的に解けないときだけ「致命」)、進捗バーの E-3 絞り込み。
+   テスト: C1 の旧仕様 3 件を新セマンティクスに書換 + 新規 4 件 / dashboard +1
 5. **設定モーダル UI まとめ** — F5k〜F5o (+ F5p の設計判断)
 6. **ソルバ整合** — F5t / F5v (+ F5w の仕様判断、F2n/F2p の fingerprint 失効と同時)
 7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり
