@@ -17,6 +17,11 @@
 // (`{dateLabel}-{teacherName}`) はラベル基準のまま維持。タブ横断の参照と
 // JSON 出力の人間可読性のため。
 
+// 注意: constants.js は本ファイルの parseKey を import しているため、
+// ここから constants.js を import すると循環になる。import してよいのは
+// 無依存モジュール (generationParams.js) のみ。
+import { clampGenerationParam } from './generationParams';
+
 // --- キー生成・パース ---
 
 export const makeKey = (dateId, periodId, classId) => `d${dateId}-p${periodId}-c${classId}`;
@@ -135,6 +140,13 @@ export function migrateScheduleKeys(schedule, config) {
   const hasLegacy = Object.keys(schedule).some(isLegacyKey);
   if (!hasLegacy) return schedule;
 
+  // 外部 JSON では config の次元が欠落し得る (F5e)。undefined.length で
+  // migration 全体が落ちると読込自体が失敗するので空配列として扱う
+  // (対応するキーは復元できず drop されるが、起動は守る)。
+  const dates = Array.isArray(config.dates) ? config.dates : [];
+  const periods = Array.isArray(config.periods) ? config.periods : [];
+  const classes = Array.isArray(config.classes) ? config.classes : [];
+
   const newSchedule = {};
   Object.keys(schedule).forEach(oldKey => {
     if (!isLegacyKey(oldKey)) {
@@ -148,15 +160,15 @@ export function migrateScheduleKeys(schedule, config) {
     // makeKey(dIdx, pIdx, cIdx) と書いていたものはそのままインデックスで OK。
     // (v2→v3 migration が後段で ID ベースに振り直す)
     let matched = false;
-    for (let dIdx = 0; dIdx < config.dates.length; dIdx++) {
-      const d = config.dates[dIdx];
+    for (let dIdx = 0; dIdx < dates.length; dIdx++) {
+      const d = dates[dIdx];
       if (!oldKey.startsWith(d + '-')) continue;
       const rest1 = oldKey.substring(d.length + 1);
-      for (let pIdx = 0; pIdx < config.periods.length; pIdx++) {
-        const p = config.periods[pIdx];
+      for (let pIdx = 0; pIdx < periods.length; pIdx++) {
+        const p = periods[pIdx];
         if (!rest1.startsWith(p + '-')) continue;
         const rest2 = rest1.substring(p.length + 1);
-        const cIdx = config.classes.indexOf(rest2);
+        const cIdx = classes.indexOf(rest2);
         if (cIdx >= 0) {
           // v1→v2 では「インデックス」をそのままキーに埋める
           newSchedule[`d${dIdx}-p${pIdx}-c${cIdx}`] = schedule[oldKey];
@@ -196,7 +208,10 @@ export function migrateTabV2toV3(tab) {
 
   // 次元ごとに「v3 形式 → そのまま使う」「string array → wrap」を独立判定。
   // 戻り値: { arr: 新配列, idxToId: 配列位置(0-based) → entity.id の Map }
-  const normalize = (arr) => {
+  // 次元が配列でない (欠落等の外部 JSON、F5e) 場合は空配列として扱い、
+  // undefined.map で migration 全体が落ちるのを防ぐ。
+  const normalize = (raw) => {
+    const arr = Array.isArray(raw) ? raw : [];
     if (isV3Shape(arr)) {
       return { arr, idxToId: new Map(arr.map((e, idx) => [idx, e.id])) };
     }
@@ -303,8 +318,10 @@ export function migrateProjectV3toV4(project) {
 
   // snapshot は schedule のみ保持し source tabId に紐づくので、そのタブの旧
   // dates / periods で remap する。元タブが消えている snapshot はそのまま残す。
+  // snapshots が配列でない外部 JSON ({} 等、F5a) は truthy なので `|| []` では
+  // 防げず .map で throw する。Array.isArray で正規化する。
   const oldConfigByTabId = new Map(tabs.map(t => [t.id, t.config || {}]));
-  const newSnapshots = (project.snapshots || []).map(s => {
+  const newSnapshots = (Array.isArray(project.snapshots) ? project.snapshots : []).map(s => {
     const cfg = oldConfigByTabId.get(s.tabId);
     if (!cfg) return s;
     return { ...s, schedule: remapSchedule(s.schedule, cfg.dates, cfg.periods) };
@@ -361,32 +378,77 @@ export function migrateProject(project) {
     };
   }
 
-  // subjectColors が未設定の場合はデフォルト値を追加
-  if (!result.subjectColors) {
+  // ── 後発フィールドの補完 + 型崩れの正規化 (F.5 系統 A) ──
+  // validateProjectShape は tabs / config / schedule の致命的構造しか見ない。
+  // 以下のフィールドは「無ければ default 補完」に加えて「配列/オブジェクトで
+  // ない外部 JSON ({} や文字列は truthy なので `!x` を素通りする)」も既定値に
+  // 正規化する。放置すると .find / .forEach / .filter が render や生成で
+  // throw → autosave が汚染を永続化してリロードでも再クラッシュする。
+
+  // subjectColors が未設定 / 型崩れの場合はデフォルト値を追加
+  if (!result.subjectColors || typeof result.subjectColors !== 'object' || Array.isArray(result.subjectColors)) {
     result = { ...result, subjectColors: {} };
   }
 
-  // subjects が未設定の場合は subjectCounts のキーから生成
-  if (!result.subjects) {
+  // subjects が未設定 / 型崩れの場合は subjectCounts のキーから生成
+  if (!Array.isArray(result.subjects)) {
     const firstTab = result.tabs[0];
     const subjects = firstTab ? Object.keys(firstTab.config.subjectCounts) : [];
     result = { ...result, subjects };
   }
 
-  // combinedGroups が未設定の場合は空配列で初期化
-  if (!result.combinedGroups) {
+  // combinedGroups が未設定 / 型崩れの場合は空配列で初期化
+  if (!Array.isArray(result.combinedGroups)) {
     result = { ...result, combinedGroups: [] };
   }
-
-  // externalSessions が未設定の場合は空配列で初期化 (v3 で追加された後発フィールド)
-  if (!result.externalSessions) {
-    result = { ...result, externalSessions: [] };
+  // 要素レベルの正規化: dates キー欠落 (undefined) は findCombinedGroup の
+  // `g.dates.includes` で throw する (F5c)。classes 非配列のグループも drop。
+  {
+    const normalized = normalizeCombinedGroups(result.combinedGroups);
+    if (normalized !== result.combinedGroups) {
+      result = { ...result, combinedGroups: normalized };
+    }
   }
 
-  // externalSessionPresets が未設定の場合は空配列で初期化 (他学年セッション
-  // 登録テンプレートの保存先、後発フィールド)
-  if (!result.externalSessionPresets) {
+  // externalSessions が未設定 / 型崩れの場合は空配列で初期化 (後発フィールド)。
+  // 配列でも object でない要素は落とす (`s?.date` guard の効かない文字列等)。
+  if (!Array.isArray(result.externalSessions)) {
+    result = { ...result, externalSessions: [] };
+  } else if (result.externalSessions.some(s => !s || typeof s !== 'object')) {
+    result = { ...result, externalSessions: result.externalSessions.filter(s => s && typeof s === 'object') };
+  }
+
+  // externalSessionPresets が未設定 / 型崩れの場合は空配列で初期化 (他学年
+  // セッション登録テンプレートの保存先、後発フィールド)
+  if (!Array.isArray(result.externalSessionPresets)) {
     result = { ...result, externalSessionPresets: [] };
+  }
+
+  // externalCounts が型崩れ ({} 以外) の場合は空オブジェクトに正規化
+  if (result.externalCounts != null
+    && (typeof result.externalCounts !== 'object' || Array.isArray(result.externalCounts))) {
+    result = { ...result, externalCounts: {} };
+  }
+
+  // 自動生成パラメータ (numPatterns 等) が保存値として範囲外の場合は clamp
+  // する (F5d)。UI は resolveGenerationParams で clamp 表示する一方、solver は
+  // 保存値をそのまま読むため、ここで正規化しないと「表示は 1・実動作は 0 で
+  // 全講師除外」のような UI と実挙動の乖離が起きる。reducer 編集時は
+  // clamp 済みなので、外部 JSON / 旧データだけがここに該当する。
+  {
+    const clampedParams = {};
+    let paramsChanged = false;
+    for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods']) {
+      if (result[key] === undefined) continue;
+      const clamped = clampGenerationParam(key, result[key]);
+      if (clamped !== result[key]) {
+        clampedParams[key] = clamped;
+        paramsChanged = true;
+      }
+    }
+    if (paramsChanged) {
+      result = { ...result, ...clampedParams };
+    }
   }
 
   // snapshots が未設定 / 不正な場合は空配列で初期化 (E1c で追加された後発フィールド)
@@ -399,6 +461,16 @@ export function migrateProject(project) {
   // throw して画面ごと落ちる。空配列で補完して起動させる。
   if (!Array.isArray(result.teachers)) {
     result = { ...result, teachers: [] };
+  }
+  // 要素レベルの正規化 (F5b): teacher.subjects 等の配列フィールドが欠落した
+  // JSON は ScheduleCell の `t.subjects.includes` / reducer の
+  // `t.subjects.filter` で throw する。name の無い要素は参照キーとして
+  // 機能しないので drop。
+  {
+    const normalized = normalizeTeacherFields(result.teachers);
+    if (normalized !== result.teachers) {
+      result = { ...result, teachers: normalized };
+    }
   }
 
   // activeTabId がどのタブとも一致しない場合は先頭タブに正規化する。
@@ -421,6 +493,56 @@ export function migrateProject(project) {
   }
 
   return result;
+}
+
+// teacher 要素の配列フィールド (subjects/ngSlots/ngClasses/priorityClasses) を
+// 補完する純粋関数 (F5b)。object でない要素・name の無い要素は drop。
+// 変更が無ければ元の配列をそのまま返す (no-op 判定用)。
+export function normalizeTeacherFields(teachers) {
+  if (!Array.isArray(teachers)) return teachers;
+  let changed = false;
+  const result = [];
+  teachers.forEach(t => {
+    if (!t || typeof t !== 'object' || typeof t.name !== 'string' || !t.name) {
+      changed = true; // drop
+      return;
+    }
+    let nt = t;
+    for (const key of ['subjects', 'ngSlots', 'ngClasses', 'priorityClasses']) {
+      if (!Array.isArray(nt[key])) {
+        if (nt === t) nt = { ...t };
+        nt[key] = [];
+        changed = true;
+      }
+    }
+    result.push(nt);
+  });
+  return changed ? result : teachers;
+}
+
+// combinedGroups 要素を正規化する純粋関数 (F5c)。
+// - object でない / classes が配列でない / subject が文字列でないグループは drop
+//   (findCombinedGroup の `g.classes.includes` / `g.subject ===` が前提とする形)
+// - dates は null (全日) か配列のみ許容。欠落 (undefined) や型崩れは null に
+//   倒す (`g.dates.includes` の throw 防止。全日扱いは保存時の既定と同じ)
+// 変更が無ければ元の配列をそのまま返す (no-op 判定用)。
+export function normalizeCombinedGroups(groups) {
+  if (!Array.isArray(groups)) return groups;
+  let changed = false;
+  const result = [];
+  groups.forEach(g => {
+    if (!g || typeof g !== 'object' || typeof g.subject !== 'string' || !Array.isArray(g.classes)) {
+      changed = true; // drop
+      return;
+    }
+    if (g.dates === null || Array.isArray(g.dates)) {
+      result.push(g);
+      return;
+    }
+    changed = true;
+    result.push({ ...g, dates: null });
+  });
+  return changed ? result : groups;
 }
 
 // 配列内の同名講師に suffix を振って衝突を解消する純粋関数。

@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 77 files / 1573 tests (2026-07-02 F 系レビュー後)
+npm test            # 78 files / 1616 tests (2026-07-02 F.5 系統 A 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1126,8 +1126,8 @@ production build 成功 (excelExport chunk 警告のみ、期待動作)。
 Worker が使える環境では影響なし。
 
 **推奨着手順 (次セッション向け)**:
-1. **F2f** — データ保全。壊れたデータを `builder.schedule_project_corrupt`
-   等へ退避してからフォールバック (小規模・実害大の予防)
+1. ~~**F2f**~~ ✅ 完了 (F.5 系統 A と同時対応) — 読込失敗時に原本を
+   `builder.schedule_project_corrupt` へ退避し、toast に退避先を明記
 2. **F2c** — autosave の実 debounce 化 (入力レイテンシ源、小規模)
 3. **F2g** — クォータ 0 科目の除外 + クォータ考慮 (誤警告は「致命」表示の
    信頼を毀損する)
@@ -1146,36 +1146,61 @@ F.4 で精読済みの箇所を除外し、4 班 (utils 深掘り / ConfigModal 
 
 #### 系統 A: JSON 読込の検証・正規化の穴 (クラッシュループ級、最優先)
 
+**✅ F5a-F5e + F2f 対応済み (2026-07-02、F5f のみ残)。実装方針:**
+- 「reject より正規化」— validateProjectShape は据え置き (tabs/config/schedule
+  の致命的構造のみ)、**migrateProject が要素レベルまで正規化**する方に寄せた。
+  reject するとフォールバックでユーザデータを失うが、正規化なら型崩れ
+  フィールドだけ既定値に落ちて残りは救える
+- `normalizeTeacherFields` / `normalizeCombinedGroups` を scheduleKey.js に
+  新設 (純粋関数・no-op 参照保存)。combinedGroups/externalSessions/subjects/
+  externalCounts/snapshots の非配列・型崩れも既定値へ (F5a/F5b/F5c)
+- **F5d は migrate 時 clamp で対応** (solver 内 clamp ではない)。state への
+  全流入経路 (JSON 読込 / テンプレート適用 = migrate 経由、UI 編集 = reducer)
+  が clamp 済みになるので solver は保存値を信頼してよい。clamp 関数は
+  `utils/generationParams.js` へ切り出し (scheduleKey ← constants の循環回避、
+  constants.js から再エクスポートで既存 import 互換)
+- **F2f**: loadInitialProject の読込失敗時、フォールバック前に原本を
+  `STORAGE_KEY_PROJECT_BACKUP` (builder.schedule_project_corrupt) へ退避し、
+  toast (loadError) に退避先を明記
+- **統合テスト** `utils/projectLoadIntegrity.test.js` 新設: 「validate 通過
+  JSON は migrate + 主要 consumer (render 相当 / computeGlobalUsage / solver)
+  の初回利用でクラッシュしない」を型崩れ fixture 13 種で固定 (テストの穴 3)
+- テスト +43 (scheduleKey 正規化 13 / projectFactory 退避+guard 7 /
+  統合 15 / useLongPress click 抑止 3 / useFocusTrap 解除側 3 ほか)
+
 `validateProjectShape` (E3d) は tabs/teachers/dates/periods/classes/
 subjectCounts/schedule しか見ず、`migrateProject` も以下を正規化しないため、
 外部 JSON 経由で壊れた形が入ると **render で TypeError → autosave が汚染を
-永続化 → リロードしても再クラッシュ** (localStorage 手動削除が必要) になる。
+永続化 → リロードしても再クラッシュ** (localStorage 手動削除が必要) になる
+— **という状態だった (以下は対応前の記録)**。
 
-- **F5a (High)**: `combinedGroups: {}` / `externalSessions: {}` /
+- ✅ **F5a (High)**: `combinedGroups: {}` / `externalSessions: {}` /
   `subjects: "文字列"` が素通し。`combinedGroups.find` (scheduleKey.js
   findCombinedGroup 経由、常時マウントの SummaryPanel から到達) /
   `externalSessions.forEach` (autoGenerator / analysisHelpers) で crash。
   `snapshots: {}` + version≤3 は migrateProjectV3toV4 で throw
-- **F5b (High)**: teacher に `subjects` が無いと、(同名講師ありなら)
+- ✅ **F5b (High)**: teacher に `subjects` が無いと、(同名講師ありなら)
   `detectTeacherDiffs` の guard 漏れ (projectFactory.js:38 —
   36 行目はガード済みなのに 38 行目は素通し) で読込拒否、
   (衝突なしなら) 読込成功後 ScheduleCell の `t.subjects.includes` で
   全画面クラッシュ。reducer の subject/remove・teacher/toggleSubject も無防備
-- **F5c (Medium)**: combinedGroups の `dates` キー欠落で
+- ✅ **F5c (Medium)**: combinedGroups の `dates` キー欠落で
   `g.dates.includes` が TypeError (F5a と同根)
-- **F5d (Medium)**: ソルバが `project.maxDailyHours ?? デフォルト` を
+- ✅ **F5d (Medium)**: ソルバが `project.maxDailyHours ?? デフォルト` を
   **clamp なしの生値**で使用 (autoGenerator.js:142-147)。UI は
   `resolveGenerationParams` で clamp 表示するため乖離。`maxDailyHours: 0`
   の JSON で「UI は 1 と表示・実際は全講師除外で全コマ未定」になり原因不明
-- **F5e (Low)**: version≤2 で config.dates/periods 欠落 → migrate 全体が
+- ✅ **F5e (Low)**: version≤2 で config.dates/periods 欠落 → migrate 全体が
   TypeError (validateProjectShape は v4 互換のため optional 扱い)
 - **F5f (Low・要検証)**: v2/v3 混在 dim + ID キーの schedule は
   migrateTabV2toV3 のインデックス前提でシフト/消失 (正規経路では混在時
   schedule 空のため実害は外部データのみ)
 
-**修正方向**: validateProjectShape の対象拡大 + migrateProject での
-フィールド正規化 (teacher 4 配列 / combinedGroups.dates / 型崩れ drop) +
-ソルバも resolveGenerationParams を使う。F2f (壊れデータ退避) と同時実施が良い。
+**修正方向 (当初案)**: validateProjectShape の対象拡大 + migrateProject での
+フィールド正規化 + ソルバも resolveGenerationParams を使う、だったが、
+実装は「migrate 正規化 + migrate 時 clamp」に一本化した (冒頭の実装方針参照。
+solver 内 clamp はテストの maxIterations=1 のような意図的な範囲外指定と
+衝突するため見送り)。
 
 #### 系統 B: Excel 出力が throw する名前
 
@@ -1259,14 +1284,15 @@ subjectCounts/schedule しか見ず、`migrateProject` も以下を正規化し�
 - **F5aa (Medium・要実機確認)**: dragstart で `dataTransfer.setData()` を
   呼ばないため **Firefox では HTML5 drag が開始しない**既知仕様に抵触
   (ScheduleTable)。`setData('text/plain', k)` の 1 行で解消
-- **テストの穴**: useLongPress の click 抑止 0 件 / useFocusTrap の
-  trapStack 解除側・フォーカス復帰 0 件 / 「validate 通過 JSON は migrate と
-  初回利用でクラッシュしない」統合テスト不在 (F5a-F5f が素通りする構造)
+- ✅ **テストの穴** (3 件とも 2026-07-02 対応済み): useLongPress の click 抑止
+  +3 / useFocusTrap の trapStack 解除側・フォーカス復帰・focusable ゼロ +3 /
+  「validate 通過 JSON は migrate と初回利用でクラッシュしない」統合テスト
+  (projectLoadIntegrity.test.js) を新設
 
 #### F.4 + F.5 統合の推奨着手順
 
-1. **系統 A + F2f** — 読込検証・migrate 正規化・壊れデータ退避を 1 セッション
-   (クラッシュループの根絶。テストの穴 3 も同時に埋める)
+1. ~~**系統 A + F2f**~~ ✅ 完了 (2026-07-02) — migrate 正規化 + F2f 退避 +
+   統合テスト + テストの穴 3 件。F5f (v2/v3 混在 dim) のみ残 (要検証・外部データ限定)
 2. **F5j** — 期間 slice のカレンダー順化 (誤 NG 一括登録は実データ破壊)
 3. **小粒即効セット** — F2c (autosave debounce) / F5aa (setData 1 行) /
    F5q・F5r (focus trap 2 件) / F5g-F5i (Excel throw 3 件)

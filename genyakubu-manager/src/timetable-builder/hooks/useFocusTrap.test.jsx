@@ -86,4 +86,63 @@ describe('useFocusTrap', () => {
     expect(inner).toHaveBeenCalledTimes(1);
     expect(outer).not.toHaveBeenCalled();
   });
+
+  // ─── trapStack の解除側 (F.5 テストの穴 2) ───
+
+  it('入れ子の内側を閉じた後は外側 trap が Escape に再応答する', () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const { rerender } = render(
+      <>
+        <TrapDialog onClose={outer} />
+        <TrapDialog onClose={inner} />
+      </>,
+    );
+    // 内側 dialog を unmount (= 閉じる) → trapStack から pop される
+    rerender(<TrapDialog onClose={outer} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(inner).not.toHaveBeenCalled();
+    expect(outer).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanup 時に trap を開く前のフォーカス位置へ復帰する', () => {
+    const { getByText, rerender } = render(
+      <>
+        <button>opener</button>
+      </>,
+    );
+    getByText('opener').focus();
+    rerender(
+      <>
+        <button>opener</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    // trap がマウントされ dialog 内へフォーカスが移る
+    expect(document.activeElement).toBe(getByText('first'));
+    rerender(
+      <>
+        <button>opener</button>
+      </>,
+    );
+    // dialog を閉じると opener へ復帰する
+    expect(document.activeElement).toBe(getByText('opener'));
+  });
+
+  it('focusable がゼロの dialog では Tab がデフォルト動作ごと抑止される', () => {
+    function EmptyDialog({ onClose }) {
+      const ref = useRef(null);
+      useFocusTrap(ref, { onClose });
+      return <div ref={ref} role="dialog">中身なし</div>;
+    }
+    render(
+      <>
+        <button>outside</button>
+        <EmptyDialog onClose={vi.fn()} />
+      </>,
+    );
+    const prevented = !fireEvent.keyDown(window, { key: 'Tab' });
+    // preventDefault されている (背後の focusable へ抜けようとしない)
+    expect(prevented).toBe(true);
+  });
 });

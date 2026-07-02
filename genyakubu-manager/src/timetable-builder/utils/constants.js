@@ -67,6 +67,10 @@ export const DEFAULT_TAB_CONFIG_BASE = {
 // 残してあり、見つかれば新キーへ移行する。
 export const STORAGE_KEY_PROJECT = 'builder.schedule_project';
 export const STORAGE_KEY_USER_DEFAULTS = 'builder.schedule_user_defaults';
+// 読込失敗 (JSON 壊れ / 構造不正 / migration throw) 時に元データを退避する
+// 先 (F2f)。デフォルトへフォールバック後の最初の autosave が
+// STORAGE_KEY_PROJECT を上書きしても、こちらに原本が残り手動復旧できる。
+export const STORAGE_KEY_PROJECT_BACKUP = 'builder.schedule_project_corrupt';
 // 初回オンボーディングを表示済みかの 1 bit flag。値の存在 ('1') のみを見る
 // ので UI を学習・自動変形するものではない (CLAUDE.md の禁止事項に抵触しない)。
 export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
@@ -125,38 +129,18 @@ export const toCircleNum = (num) => {
 };
 
 // --- 自動生成パラメータ (E2e) ---
-// 生成する案の数 / 講師 1 人あたり 1 日コマ数上限 / solver の探索上限。
-// project レベルに保存し、未設定時はこのデフォルトを使う。
-export const DEFAULT_NUM_PATTERNS = 3;
-export const DEFAULT_MAX_DAILY_HOURS = 6;
-export const DEFAULT_MAX_ITERATIONS = 500000;
-// 講師の連続コマ数上限 (E2c)。0 = 制限なし (既定で従来挙動を維持)。
-export const DEFAULT_MAX_CONSECUTIVE_PERIODS = 0;
-
-// 各パラメータの許容範囲。UI の input と reducer の両方で clamp に使う。
-export const GENERATION_PARAM_BOUNDS = {
-  numPatterns: { min: 1, max: 6 },
-  maxDailyHours: { min: 1, max: 12 },
-  maxIterations: { min: 50000, max: 5000000 },
-  maxConsecutivePeriods: { min: 0, max: 8 },
-};
-
-// 値を許容範囲内に丸める。NaN / 非数は min にフォールバック。
-export const clampGenerationParam = (key, value) => {
-  const b = GENERATION_PARAM_BOUNDS[key];
-  if (!b) return value;
-  const n = Math.round(Number(value));
-  if (!Number.isFinite(n)) return b.min;
-  return Math.max(b.min, Math.min(b.max, n));
-};
-
-// project から有効な生成パラメータを取り出す (未設定はデフォルト + clamp)。
-export const resolveGenerationParams = (project) => ({
-  numPatterns: clampGenerationParam('numPatterns', project?.numPatterns ?? DEFAULT_NUM_PATTERNS),
-  maxDailyHours: clampGenerationParam('maxDailyHours', project?.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS),
-  maxIterations: clampGenerationParam('maxIterations', project?.maxIterations ?? DEFAULT_MAX_ITERATIONS),
-  maxConsecutivePeriods: clampGenerationParam('maxConsecutivePeriods', project?.maxConsecutivePeriods ?? DEFAULT_MAX_CONSECUTIVE_PERIODS),
-});
+// 実体は utils/generationParams.js (無依存モジュール、F5d で切り出し)。
+// migrateProject (scheduleKey.js) が clamp を使うため、constants.js に置くと
+// 循環 import になる。既存の import 元互換のためここから再エクスポートする。
+export {
+  DEFAULT_NUM_PATTERNS,
+  DEFAULT_MAX_DAILY_HOURS,
+  DEFAULT_MAX_ITERATIONS,
+  DEFAULT_MAX_CONSECUTIVE_PERIODS,
+  GENERATION_PARAM_BOUNDS,
+  clampGenerationParam,
+  resolveGenerationParams,
+} from './generationParams';
 
 // --- プロジェクトバージョン ---
 // v4: dates / periods を tab.config から project レベルへ昇格 (全タブ共通)。

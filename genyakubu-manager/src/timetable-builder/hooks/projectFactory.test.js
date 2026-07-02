@@ -12,6 +12,7 @@ import {
   DEFAULT_SUBJECT_COLORS,
   LEGACY_STORAGE_KEYS,
   STORAGE_KEY_PROJECT,
+  STORAGE_KEY_PROJECT_BACKUP,
   STORAGE_KEY_USER_DEFAULTS,
 } from '../utils/constants';
 
@@ -287,5 +288,61 @@ describe('detectTeacherDiffs', () => {
     expect(diffs.some(d => d.includes('【追加】') && d.includes('C'))).toBe(true);
     expect(diffs.some(d => d.includes('【削除】') && d.includes('B'))).toBe(true);
     expect(diffs.some(d => d.includes('【科目変更】') && d.includes('A'))).toBe(true);
+  });
+});
+
+// ─── F2f: 読込失敗時の元データ退避 / F5b: detectTeacherDiffs ガード ──
+
+describe('loadInitialProject — 壊れたデータの退避 (F2f)', () => {
+  it('壊れた JSON はフォールバック前に退避キーへ原本コピーされる', () => {
+    localStorage.setItem(STORAGE_KEY_PROJECT, '{invalid json!');
+    const { loadError } = loadInitialProject();
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBe('{invalid json!');
+    expect(loadError).toContain(STORAGE_KEY_PROJECT_BACKUP);
+  });
+
+  it('構造不正 (validate 弾き) でも原本が退避される', () => {
+    const bad = JSON.stringify({ version: 4, tabs: 'not-an-array' });
+    localStorage.setItem(STORAGE_KEY_PROJECT, bad);
+    const { loadError } = loadInitialProject();
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBe(bad);
+    expect(loadError).toBeTruthy();
+  });
+
+  it('読み込み成功時は退避キーに書き込まない', () => {
+    const ok = {
+      version: 2,
+      tabs: [{ id: 1, name: 'a', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
+      teachers: [],
+      activeTabId: 1,
+    };
+    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(ok));
+    loadInitialProject();
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBeNull();
+  });
+
+  it('保存データが無いときのフォールバックでは退避キーに触れない', () => {
+    const { loadError } = loadInitialProject();
+    expect(loadError).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBeNull();
+  });
+});
+
+describe('detectTeacherDiffs — subjects 欠落ガード (F5b)', () => {
+  it('loaded 側の subjects 欠落でも throw せず科目変更として報告する', () => {
+    const current = [{ name: 'A', subjects: ['英語'] }];
+    const loaded = [{ name: 'A' }];
+    const diffs = detectTeacherDiffs(current, loaded);
+    expect(diffs.some(d => d.includes('【科目変更】') && d.includes('A'))).toBe(true);
+  });
+
+  it('current 側の subjects 欠落でも throw しない', () => {
+    const current = [{ name: 'A' }];
+    const loaded = [{ name: 'A', subjects: ['英語'] }];
+    expect(() => detectTeacherDiffs(current, loaded)).not.toThrow();
+  });
+
+  it('両側とも欠落なら差分なし', () => {
+    expect(detectTeacherDiffs([{ name: 'A' }], [{ name: 'A' }])).toEqual([]);
   });
 });
