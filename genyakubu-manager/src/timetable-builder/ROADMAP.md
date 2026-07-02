@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F.4: 再チェック — ベースライン検証 + F.2 全項目の現存確認 + F2o/F2p 新規追加) / 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -35,7 +35,7 @@
 | C (破壊的再設計) | C1 ID 化 / C2 reducer 化 / C3 デザイン統合 / C4 Excel ライブラリ置換 |
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
 | E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
-| E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live(残あり) / E2h 負荷偏り |
+| E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
 | E3 (テスト/信頼性) | E3d schema 検証 |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
@@ -722,16 +722,20 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
 - **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (cancel + 統計表示 完了 / live worker イベントのみ残)
-- **現状**: cancel・経過時間・探索回数・詰まりセルは可視化済。残るは Worker からの逐次 (パターン途中) イベント。
+#### E2f. ✅ 自動生成中の進捗詳細 (cancel + 統計表示 + live 通知 完了)
+- **現状**: cancel・経過時間・探索回数・詰まりセルに加え、live 途中経過も可視化済
+  (F.4 再チェックで確認: worker が `{ type: 'progress' }` を間引き通知 →
+  BuilderApp `generateLive` → Toolbar に「案 N 探索中 / 充填 X/Y / 探索 N 回」)。
+  旧「残り」記述は stale だったので削除。
 - **✅ 完了分 (cancel / 2026-06-29)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
 - **✅ 完了分 (統計表示 / 2026-06-29)**:
   - **autoGenerator**: `generateSinglePattern` が `iterations` (探索回数=solve 呼び出し数) / `hitLimit` (上限到達) / `stuckSlot` (MRV 順で最初に埋められなかったコマのラベル) を返す。`iter` を solve の外で確保して読む。
   - **BuilderApp**: 生成中の経過時間を 100ms interval で更新し、完了時に総時間を確定。各 pattern に統計フィールドを乗せて SummaryPanel へ。
   - **Toolbar**: 生成中ボタンに「⏱ X.Xs」。**SummaryPanel**: 結果ヘッダに総生成時間、各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
   - **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
-- **残り**: Worker から「パターン内のどこまで進んだか」を postMessage で逐次通知し、進捗ボタンで live 詳細パネルを開く (現状は各パターン完了後の事後統計)。
-- **規模**: 中 / **価値**: 中
+- **✅ 完了分 (live 通知)**: `autoGenerator.onProgress` (PROGRESS_INTERVAL=20000 で間引き) →
+  worker `postMessage({ type: 'progress', index, progress })` → BuilderApp `generateLive` →
+  Toolbar のインライン live 表示。「詳細パネル化」はインライン表示で十分と判断し不要。
 
 #### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
 - **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
@@ -1068,3 +1072,66 @@ F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を
 - **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
   生成後の config 変更 (クラス削除・使う日 off・クォータ変更) では
   stale な案を採用できる。config fingerprint での無効化を検討)
+
+### F.4 2026-07-02 再チェック (koushu-jikanwari-check セッション) の結果
+
+F.1/F.3 マージ後の main に対して、ベースライン検証 + F.2 全項目の現存確認 +
+新規の目でのコード再読を実施。
+
+**ベースライン**: lint 0 / typecheck 0 / テスト 77 files・1573 件全 PASS /
+production build 成功 (excelExport chunk 警告のみ、期待動作)。
+
+**F.2 の現存確認** — 全項目が現存 (該当箇所を行レベルで再特定済み):
+- F2a: AbsenceNgPanel の NG マトリクス `<td onClick>`、ClassPriority の
+  `<td onClick>`、TabBar の削除 `<span onClick>`・改名 dblclick、
+  ContextMenu (Escape で閉じない・focus 移動なし)
+- F2b: ScheduleCell `handleCellNavigation` が矢印キーを無条件
+  `preventDefault` (Alt+↓ 等の素通し無し・modifier チェック無し)
+- F2c: useHistoryStack の autosave は毎 dispatch で同期 stringify+setItem
+  (debounce はステータス表示のみ)。tab/switch でも全量書き込み
+- F2d: no-op ガード無しの action が残存 — tab/rename (同名) /
+  config/setSubjectCount (同値) / subject/setColor (同色) /
+  project/updateName (同名) / combinedGroup/update (同値)
+- F2e: cell/swap は dragstart 時点の payload を信頼 (現 schedule 不読)
+- F2f: loadInitialProject の migrate/validate 失敗 → デフォルトへ
+  フォールバック → 最初の編集の autosave が元データを上書きし復旧不能
+  (退避コピー無し)
+- F2g: computeInfeasibilities C1 (noTeacherForSlot) はクォータを見ない。
+  **増幅ケースを新発見**: クォータ 0 の科目も全 (date×period) を走査する
+  ため、担当者ゼロ × クォータ 0 の科目 1 つで dates×periods 件の
+  「致命」が出る (例 6 日×3 限 = 18 件のノイズ)
+- F2h: NG CSV の空白結合 dedupe キー / renameHeader の重複ラベル許容
+  (H3) / entity ID 再利用 × snapshot (H4: config/setList は最小空き ID を
+  再利用する) / class rename・削除で teacher.ngClasses / priorityClasses
+  非追従 (H5: renameHeader type='class' は combinedGroups しか更新しない)
+- F2n: BuilderApp の失効は project.createdAt 変化 + applyPattern の
+  タブ存在チェックのみ
+
+**新規発見 (F2 系に追加)**:
+- **F2o (小)**: `teacher/rename` の externalCounts キー書き換えが
+  `k.replace('-旧名', '-新名')` で**最初の一致**を置換する
+  (projectReducer)。日付ラベルが `-旧名` を含むと日付側が壊れる
+  (例: 日付「8/1-田中」×講師「田中」)。dates/removeFromPool や
+  config/setList(periods) は最長一致で対応済みなのにここだけ素朴
+  replace。F2k (ラベル参照 cascade の一元化) で吸収するのが良い
+- **F2p (小)**: タブ ID 再利用 × 生成結果。最大 ID のタブを削除 →
+  新タブ追加 (tab/add は max+1) で ID が再利用され、残っている生成結果の
+  「この案を採用」(schedule/applyPattern は ID 存在チェックのみ) が
+  無関係な新タブへ旧案を書き込める。H4 と同族で、F2n の fingerprint
+  失効を入れれば同時に解消する
+- **docs**: E2f の「live worker イベントが残」は stale だった (実装済み)。
+  本セクションと同時に修正
+
+**リスク再確認**: R1 (sync fallback は cancel 不能・同期実行) は現存。
+Worker が使える環境では影響なし。
+
+**推奨着手順 (次セッション向け)**:
+1. **F2f** — データ保全。壊れたデータを `builder.schedule_project_corrupt`
+   等へ退避してからフォールバック (小規模・実害大の予防)
+2. **F2c** — autosave の実 debounce 化 (入力レイテンシ源、小規模)
+3. **F2g** — クォータ 0 科目の除外 + クォータ考慮 (誤警告は「致命」表示の
+   信頼を毀損する)
+4. **rename/削除系の参照整合まとめ** — F2k ヘルパー一元化と同時に
+   H3/H5/F2o を 1 セッションで
+5. **F2n (+F2p)** — 生成結果の config fingerprint 失効
+6. **F2a/F2b** — a11y はまとめて 1 セッション
