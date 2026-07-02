@@ -105,6 +105,9 @@ export function countTeacherHoursWithCombined(schedule, config, combinedGroups) 
     const dateEnt = findEntityById(config.dates, dateId);
     const classEnt = findEntityById(config.classes, classId);
     if (!dateEnt || !classEnt) return;
+    // config.periods が渡されていれば時限も照合する (E-3: タブが使わない
+    // 時限に温存された非表示セルを集計に混入させない。dates と対称)。
+    if (config.periods && !findEntityById(config.periods, periodId)) return;
 
     const group = findCombinedGroup(combinedGroups, entry.subject, classEnt.label, dateEnt.label);
     if (group) {
@@ -278,6 +281,23 @@ export function migrateProjectV3toV4(project) {
   const newTabs = tabs.map(t => {
     const cfg = t.config || {};
     const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
+    // 旧タブが union プールの一部しか持っていなかった場合、そのタブの
+    // 「使う日・使う時限」を旧 subset に設定して学年別日程を保存する。
+    // これをしないと migration 後に全タブが union 全日・全時限を使う扱いに
+    // なり、自動生成が他学年の日にもコマを埋めてしまう。プール全体と一致
+    // するタブは undefined のまま (= 全日・全時限、従来表現)。
+    const oldDateIds = (cfg.dates || [])
+      .map(d => dateIdByLabel.get(d.label))
+      .filter(id => id != null);
+    const oldPeriodIds = (cfg.periods || [])
+      .map(p => periodIdByLabel.get(p.label))
+      .filter(id => id != null);
+    if (oldDateIds.length > 0 && oldDateIds.length < projDates.length) {
+      restConfig.activeDateIds = oldDateIds;
+    }
+    if (oldPeriodIds.length > 0 && oldPeriodIds.length < projPeriods.length) {
+      restConfig.activePeriodIds = oldPeriodIds;
+    }
     return { ...t, config: restConfig, schedule: remapSchedule(t.schedule, cfg.dates, cfg.periods) };
   });
 
@@ -372,6 +392,21 @@ export function migrateProject(project) {
   // snapshots が未設定 / 不正な場合は空配列で初期化 (E1c で追加された後発フィールド)
   if (!Array.isArray(result.snapshots)) {
     result = { ...result, snapshots: [] };
+  }
+
+  // teachers が欠落した JSON はバリデーション ('teachers' in obj のときのみ
+  // 型検証) を通過するが、読込直後の render で project.teachers.filter が
+  // throw して画面ごと落ちる。空配列で補完して起動させる。
+  if (!Array.isArray(result.teachers)) {
+    result = { ...result, teachers: [] };
+  }
+
+  // activeTabId がどのタブとも一致しない場合は先頭タブに正規化する。
+  // dangling のまま残すと「読み取りは tabs[0] へフォールバック・書き込みは
+  // silent no-op」という乖離が起きる (編集しても何も保存されない)。
+  if (Array.isArray(result.tabs) && result.tabs.length > 0
+    && !result.tabs.some(t => t.id === result.activeTabId)) {
+    result = { ...result, activeTabId: result.tabs[0].id };
   }
 
   // 同名講師がいる場合は " (2)" / " (3)" の suffix を付けて自動で uniq 化する。

@@ -28,13 +28,18 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
 
   // 他学年セッションと時限の時間重複から派生する自動NG (講師ごと)。
   // ScheduleCell や computeActiveAnalysis から共有して使う。
+  // 時限は currentConfig (タブの subset) ではなく **プール全体** で計算する。
+  // NG パネルはプール全時限を表示する仕様 (他タブ専用の時限にも『自』マークを
+  // 出す必要がある) で、subset だとタブを切り替えるたびに表示が変わり、
+  // 一括登録プレビューの件数ともズレていた。キーはラベルベースなので
+  // superset にしても既存の参照先 (可視セルの NG 判定) には影響しない。
   const autoNgByTeacher = useMemo(
     () => computeAutoNgByTeacher(
       project.teachers,
       project.externalSessions || [],
-      currentConfig.periods,
+      project.periods || [],
     ),
-    [project.teachers, project.externalSessions, currentConfig.periods],
+    [project.teachers, project.externalSessions, project.periods],
   );
 
   const activeAnalysis = useMemo(
@@ -82,10 +87,11 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
         currentConfig,
         maxDailyHours,
         autoNgByTeacher,
+        combinedGroups: project.combinedGroups || [],
       }),
       { currentConfig, teachers: project.teachers, maxDailyHours, autoNgByTeacher },
     ),
-    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher],
+    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher, project.combinedGroups],
   );
 
   const analysis = useMemo(

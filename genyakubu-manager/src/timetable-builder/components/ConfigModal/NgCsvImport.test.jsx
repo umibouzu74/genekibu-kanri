@@ -11,12 +11,10 @@ function renderPanel({ projectOverrides = {}, importNgSlots = vi.fn(), showToast
   const projectValue = {
     project: {
       teachers: [{ name: '田中', ngSlots: [] }],
-      tabs: [{
-        config: {
-          dates: [{ id: 1, label: '12/25' }],
-          periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
-        },
-      }],
+      // v4: dates / periods は project レベル (tab.config には無い)
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{ config: {} }],
       ...projectOverrides,
     },
     importNgSlots,
@@ -75,5 +73,11 @@ describe('NgCsvImport (E2a)', () => {
     renderPanel();
     openAndType('name,date,period\n田中,9/99,1限');
     expect(screen.getByText(/未登録の日付ラベル/)).toBeInTheDocument();
+  });
+
+  it('未登録の時限ラベルを warning 表示する (v4: project.periods を参照)', () => {
+    renderPanel();
+    openAndType('name,date,period\n田中,12/25,9限');
+    expect(screen.getByText(/未登録の時限ラベル/)).toBeInTheDocument();
   });
 });

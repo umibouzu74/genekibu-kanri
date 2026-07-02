@@ -400,6 +400,63 @@ describe('migrateProject', () => {
     });
   });
 
+  it('v3→v4: タブ別の dates / periods は activeDateIds / activePeriodIds として保存される', () => {
+    const p = {
+      version: 3,
+      teachers: [],
+      activeTabId: 1,
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }],
+            periods: [{ id: 1, label: '昼1限' }],
+            classes: [{ id: 1, label: '３S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2,
+          name: '中１・２',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+            periods: [{ id: 1, label: '夜1限' }],
+            classes: [{ id: 1, label: '１S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+      ],
+    };
+    const result = migrateProject(p);
+    // union プール: 日付 2 件 / 時限 2 件
+    expect(result.dates.map(d => d.label)).toEqual(['12/25(木)', '12/26(金)']);
+    expect(result.periods.map(x => x.label)).toEqual(['昼1限', '夜1限']);
+    // 中３ は 12/25 + 昼1限 のみ使う (旧 subset を保存)
+    const tab1 = result.tabs.find(t => t.id === 1);
+    expect(tab1.config.activeDateIds).toEqual([1]);
+    expect(tab1.config.activePeriodIds).toEqual([1]);
+    // 中１・２ は全日使う (プールと一致 → undefined = 全日) + 夜1限のみ
+    const tab2 = result.tabs.find(t => t.id === 2);
+    expect(tab2.config.activeDateIds).toBeUndefined();
+    expect(tab2.config.activePeriodIds).toEqual([2]);
+  });
+
+  it('teachers 欠落 JSON は空配列で補完される (読込直後の crash 防止)', () => {
+    const p = makeLegacyProject();
+    delete p.teachers;
+    const result = migrateProject(p);
+    expect(result.teachers).toEqual([]);
+  });
+
+  it('dangling activeTabId は先頭タブへ正規化される', () => {
+    const p = { ...makeLegacyProject(), activeTabId: 99 };
+    const result = migrateProject(p);
+    expect(result.activeTabId).toBe(1);
+  });
+
   it('subjects が無ければ subjectCounts のキーから生成', () => {
     const result = migrateProject(makeLegacyProject());
     expect(result.subjects).toEqual(['英語', '数学']);

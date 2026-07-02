@@ -52,6 +52,26 @@ describe('useFocusTrap', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('onClose の identity が変わっても trap は再初期化されずフォーカスを奪わない', () => {
+    const { getByText, rerender } = render(<TrapDialog onClose={vi.fn()} />);
+    // ユーザが dialog 内の別要素で作業中…
+    getByText('middle').focus();
+    // 親の再レンダーでインライン onClose の identity が変わる
+    rerender(<TrapDialog onClose={vi.fn()} />);
+    // 再初期化されると first へ focus() が走ってしまう (焦点強奪の回帰)
+    expect(document.activeElement).toBe(getByText('middle'));
+  });
+
+  it('onClose の identity が変わった後も最新の onClose が呼ばれる', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(<TrapDialog onClose={first} />);
+    rerender(<TrapDialog onClose={second} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it('入れ子では最上位 (後から開いた) trap のみが Escape に応答する', () => {
     const outer = vi.fn();
     const inner = vi.fn();

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 // 長押し (タッチ) を検出してコールバックを呼ぶ (E1f タッチ操作対応)。
 //
@@ -7,7 +7,9 @@ import { useCallback, useRef } from 'react';
 // フリックと誤検出しないよう、閾値 (既定 10px) 以上動いたらキャンセルする。
 //
 // 返り値をそのまま要素へ spread する: <td {...useLongPress(fn)}>。
-// callback には発火位置を含む `{ pageX, pageY }` を渡す。
+// callback には発火位置を含む `{ clientX, clientY }` (viewport 基準) を渡す。
+// ContextMenu が position:fixed で描画されるため page 座標ではなく client
+// 座標に統一している。
 //
 // 注意: HTML5 のネイティブ drag-and-drop はタッチでは発火しないため、
 // draggable な要素に併用しても競合しない。
@@ -31,7 +33,7 @@ export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {})
     clear();
     timerRef.current = setTimeout(() => {
       firedRef.current = true;
-      callback?.({ pageX: t.pageX, pageY: t.pageY });
+      callback?.({ clientX: t.clientX, clientY: t.clientY });
     }, delay);
   }, [callback, delay, clear]);
 
@@ -46,6 +48,10 @@ export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {})
   const onTouchEnd = useCallback(() => {
     clear();
   }, [clear]);
+
+  // アンマウント時にタイマーを解除 (タブ切替等でセルが消えた後に
+  // 消滅済み要素の座標でメニューが開くのを防ぐ)
+  useEffect(() => clear, [clear]);
 
   // 長押し発火直後の click を抑止 (select 等の誤操作防止)
   const onClickCapture = useCallback((e) => {

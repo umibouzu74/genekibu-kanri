@@ -12,7 +12,7 @@
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, activeDatesForTab } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 
@@ -136,12 +136,14 @@ export function buildScheduleWorkbook(project) {
   );
   const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
 
-  // v4: periods は project 共通。dates は『そのタブが使う日』(activeDateIds)。
-  const periods = cleaned.periods || [];
   cleaned.tabs.forEach(tab => {
+    // v4(Y)+E-3: そのタブが使う日・使う時限だけをシートに出す
+    // (使わない時限の空行や stale セルを紙面に出さない)。
     const dates = activeDatesForTab(cleaned.dates, tab);
+    const periods = activePeriodsForTab(cleaned.periods, tab);
     const { classes } = tab.config;
-    const ws = workbook.addWorksheet(tab.name);
+    // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
+    const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
 
     // タブ毎の period に合わせて自動NG (他学年セッションとの時間重複) を計算。
     // ⚠NG マークは手動NG (teacher.ngSlots) と自動NG の OR で出す。
@@ -261,19 +263,19 @@ export function computeSubjectStats(project, subject) {
   const teachersFound = new Set();
   const detailRows = [];
 
-  // v4: periods は project 共通。自動NG も project の periods で一度だけ計算。
-  const periods = project.periods || [];
+  // 自動NG は project の periods (プール全体) で一度だけ計算。
   const autoNgByTeacher = computeAutoNgByTeacher(
     project.teachers || [],
     project.externalSessions || [],
-    periods,
+    project.periods || [],
   );
 
   (project.tabs || []).forEach(tab => {
     const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
     let filled = 0;
-    // v4(Y): そのタブが使う日だけを集計対象にする。
+    // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする。
     const dates = activeDatesForTab(project.dates, tab);
+    const periods = activePeriodsForTab(project.periods, tab);
 
     dates.forEach(d => {
       periods.forEach(p => {
@@ -318,6 +320,15 @@ export function computeSubjectStats(project, subject) {
   });
 
   return { subject, tabStats, teacherStats, teachersFound, detailRows };
+}
+
+// exceljs の addWorksheet は禁則文字 (\\ / : ? * [ ])・空文字・予約名
+// 'History'・重複名で throw する。ユーザ入力 (タブ名・講師名) を
+// シート名にする前に必ずこれを通すこと。
+function sanitizeSheetName(name) {
+  const stripped = String(name || '').replace(/[\\/:?*[\]]/g, '').trim();
+  const safe = stripped || 'Sheet';
+  return /^history$/i.test(safe) ? `${safe}_` : safe;
 }
 
 // Excel 上のシート名は 31 文字 + 一部の禁則文字。重複した場合は suffix を付与。
@@ -447,16 +458,15 @@ export function buildTeacherWorkbook(project) {
   const allRows = [];
   const allRowSubjects = [];
 
-  // v4: periods は project 共通。dates はタブごとに『使う日』で絞る。
-  const periods = project.periods || [];
-
   project.teachers.forEach(t => {
     // この講師の出勤コマを集める
     const personalRows = [];
     const personalSubjects = [];
 
     project.tabs.forEach(tab => {
+      // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
       const dates = activeDatesForTab(project.dates, tab);
+      const periods = activePeriodsForTab(project.periods, tab);
       dates.forEach((d) => {
         periods.forEach((p) => {
           tab.config.classes.forEach((c) => {
@@ -478,8 +488,9 @@ export function buildTeacherWorkbook(project) {
 
     if (personalRows.length === 0) return;
 
-    const safeName = t.name.replace(/[\\/:?*[\]]/g, '').substring(0, 30);
-    const ws = workbook.addWorksheet(safeName);
+    // 禁則文字を strip した結果の空文字・重複 (例: 「田中/A」と「田中A」) で
+    // throw しないよう sanitize + unique を通す
+    const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(t.name)));
 
     // ヘッダ
     const header = ['日付', '時限', 'クラス', '科目', '場所(タブ)', '備考'];

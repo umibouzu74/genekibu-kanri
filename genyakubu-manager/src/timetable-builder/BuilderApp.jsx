@@ -81,13 +81,16 @@ function ScheduleApp() {
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      // Shift 押下時は e.key が大文字 ('Z') になるため必ず小文字化して比較する。
+      // 'z' と直接比較すると Ctrl+Shift+Z (redo) が一度も発火しない。
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'z' && e.shiftKey) {
         e.preventDefault();
         redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault();
         redo();
       }
@@ -99,6 +102,9 @@ function ScheduleApp() {
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
+  // 生成元タブ ({id, name})。結果パネルはタブ切替後も表示されたままなので、
+  // 「この案を採用」はアクティブタブではなく必ずこのタブへ適用する。
+  const [generatedForTab, setGeneratedForTab] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
@@ -118,6 +124,10 @@ function ScheduleApp() {
     }
   });
 
+  // ConfigModal の focus trap が onClose の identity 変化で再初期化されない
+  // よう stable callback にする (useFocusTrap 側の ref 化と二重の防御)。
+  const handleCloseConfig = useCallback(() => setShowConfig(false), []);
+
   const handleCloseOnboarding = useCallback(({ dontShowAgain } = {}) => {
     setShowOnboarding(false);
     if (dontShowAgain) {
@@ -131,12 +141,31 @@ function ScheduleApp() {
   // 起動中の worker handle を ref で保持 (アンマウント時にキャンセル)
   const generationRef = useRef(null);
 
+  // JSON 読込・全リセットで project が丸ごと入れ替わったら生成結果を破棄する。
+  // ScheduleApp は unmount されないため、放置すると旧プロジェクト由来の案を
+  // 「この案を採用」で新プロジェクトへ書き込めてしまう (tabId は両者とも
+  // 1 始まりの連番で衝突するため reducer の存在チェックを通過する)。
+  // createdAt は同一プロジェクト内の編集では変わらない識別子。
+  useEffect(() => {
+    setGeneratedPatterns([]);
+    setGeneratedForTab(null);
+    // 旧プロジェクト相手に走っている生成も止める (完了後に旧案が届くのを防ぐ)
+    if (generationRef.current) {
+      generationRef.current.cancel();
+      generationRef.current = null;
+      setIsGenerating(false);
+      setGenerateLive(null);
+    }
+  }, [project.createdAt]);
+
   const handleGenerate = useCallback(() => {
     // 多重起動を防ぐため、既に走っているなら一旦キャンセル
     generationRef.current?.cancel();
 
     setIsGenerating(true);
     setGeneratedPatterns([]);
+    const forTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+    setGeneratedForTab(forTab ? { id: forTab.id, name: forTab.name } : null);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
     genStartRef.current = Date.now();
     setGenerateElapsedMs(0);
@@ -184,7 +213,10 @@ function ScheduleApp() {
           hitLimit: r.hitLimit,
           stuckSlot: r.stuckSlot,
         }))
-        .filter(r => r.schedule !== null);
+        .filter(r => r.schedule !== null)
+        // 完全解を先頭に、部分解は充填数の多い順 (P2)。生成順のままだと
+        // 完全解が 3 列目に埋もれて部分解を採用してしまいやすい。
+        .sort((a, b) => (a.isPartial - b.isPartial) || (b.filledCount - a.filledCount));
 
       // 生成にかかった総時間を確定 (E2f)
       setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);
@@ -239,7 +271,9 @@ function ScheduleApp() {
 
   const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, dateId, periodId, classId, type, val });
+    // ContextMenu は position:fixed (viewport 基準) なので clientX/Y を使う。
+    // pageX/Y だとページがスクロールしている分だけメニューが下にずれる。
+    setContextMenu({ x: e.clientX, y: e.clientY, dateId, periodId, classId, type, val });
   };
 
   const handleContextMenuClose = (copiedData) => {
@@ -282,9 +316,10 @@ function ScheduleApp() {
           generatedPatterns={generatedPatterns}
           setGeneratedPatterns={setGeneratedPatterns}
           generatedElapsedMs={generateElapsedMs}
+          generatedForTab={generatedForTab}
         />
 
-        {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
+        {showConfig && <ConfigModal onClose={handleCloseConfig} />}
 
         <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} />
       </div>

@@ -1477,6 +1477,250 @@ describe('projectReducer — cascade cleanup', () => {
     expect(groups.find(g => g.id === 2)).toBeUndefined();
   });
 
+  it('schedule/clearUnlocked: 使わない日・時限に温存された非表示セルは消さない', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: {
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+          activeDateIds: [1],   // 12/26 は使わない (セルは温存)
+          activePeriodIds: [1], // 2限 も使わない
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },                 // 可視 → 消える
+          [makeKey(1, 1, 1).replace('d1', 'd1')]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '田中' },                 // 非表示日 → 残る
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' },                 // 非表示時限 → 残る
+          [makeKey(2, 2, 1)]: { subject: '数学', teacher: '堀上', locked: true },   // locked → 残る
+        },
+      }],
+    });
+    const next = projectReducer(state, { type: 'schedule/clearUnlocked' });
+    const sch = next.project.tabs[0].schedule;
+    expect(sch[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(sch[makeKey(2, 1, 1)]).toEqual({ subject: '英語', teacher: '田中' });
+    expect(sch[makeKey(1, 2, 1)]).toEqual({ subject: '数学', teacher: '田中' });
+    expect(sch[makeKey(2, 2, 1)]).toEqual({ subject: '数学', teacher: '堀上', locked: true });
+  });
+
+  it('dates/removeFromPool: ngSlots / externalCounts / externalSessions も cascade で消える', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25(木)', '1限'), makeNgKey('12/26(金)', '1限')], ngClasses: [], priorityClasses: [] },
+      ],
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 2,
+        [makeExternalKey('12/26(金)', '堀上')]: 1,
+      },
+      externalSessions: [
+        { teacherName: '堀上', date: '12/25(木)', startTime: '13:00', endTime: '15:00' },
+        { teacherName: '堀上', date: '12/26(金)', startTime: '13:00', endTime: '15:00' },
+      ],
+    });
+    const next = projectReducer(state, { type: 'dates/removeFromPool', payload: { dateId: 1 } });
+    const p = next.project;
+    expect(p.teachers[0].ngSlots).toEqual([makeNgKey('12/26(金)', '1限')]);
+    expect(p.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBeUndefined();
+    expect(p.externalCounts[makeExternalKey('12/26(金)', '堀上')]).toBe(1);
+    expect(p.externalSessions).toHaveLength(1);
+    expect(p.externalSessions[0].date).toBe('12/26(金)');
+  });
+
+  it('config/setList(periods): プールから消えた時限の NG キーも cascade で消える (最長一致)', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '番外-1限' }],
+      teachers: [{
+        name: '堀上',
+        subjects: ['英語'],
+        ngSlots: [makeNgKey('12/25(木)', '1限'), makeNgKey('12/25(木)', '番外-1限')],
+        ngClasses: [],
+        priorityClasses: [],
+      }],
+    });
+    // 「1限」だけ削除。「番外-1限」は suffix に "-1限" を含むが最長一致で保護される
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'periods', value: '番外-1限' },
+    });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('12/25(木)', '番外-1限')]);
+  });
+
+  it('dates/removeFromPool: prefix 関係にある別日付ラベルの NG は巻き添えにしない (最長一致)', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '8/1' }, { id: 2, label: '8/1-補講' }],
+      teachers: [{
+        name: '堀上',
+        subjects: ['英語'],
+        ngSlots: [makeNgKey('8/1', '1限'), makeNgKey('8/1-補講', '1限')],
+        ngClasses: [],
+        priorityClasses: [],
+      }],
+      externalCounts: {
+        [makeExternalKey('8/1', '堀上')]: 1,
+        [makeExternalKey('8/1-補講', '堀上')]: 2,
+      },
+    });
+    const next = projectReducer(state, { type: 'dates/removeFromPool', payload: { dateId: 1 } });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('8/1-補講', '1限')]);
+    expect(next.project.externalCounts[makeExternalKey('8/1-補講', '堀上')]).toBe(2);
+    expect(next.project.externalCounts[makeExternalKey('8/1', '堀上')]).toBeUndefined();
+  });
+
+  it('schedule/bulkAction: 日付軸の一括操作は使わない時限のセルに触れない', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '12/25(木)' }],
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: {
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+          activePeriodIds: [1], // 2限 は使わない
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 可視
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' }, // 非表示時限に温存
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/bulkAction',
+      payload: { action: 'clear-all', type: 'date', val: '12/25(木)' },
+    });
+    const sch = next.project.tabs[0].schedule;
+    expect(sch[makeKey(1, 1, 1)]).toBeUndefined(); // 可視セルは消える
+    expect(sch[makeKey(1, 2, 1)]).toEqual({ subject: '数学', teacher: '田中' }); // 温存
+  });
+
+  it('tab/switch: 存在しないタブ ID は no-op', () => {
+    const state = makeState();
+    const next = projectReducer(state, { type: 'tab/switch', payload: { id: 99 } });
+    expect(next).toBe(state);
+  });
+
+  it('tab/delete: 非アクティブタブの削除では作業中のタブを維持する', () => {
+    const state = makeState({
+      activeTabId: 2,
+      tabs: [
+        { id: 1, name: 'A', config: { classes: [{ id: 1, label: 'X' }], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: 'B', config: { classes: [{ id: 1, label: 'Y' }], subjectCounts: {} }, schedule: {} },
+        { id: 3, name: 'C', config: { classes: [{ id: 1, label: 'Z' }], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const next = projectReducer(state, { type: 'tab/delete', payload: { id: 3 } });
+    expect(next.project.activeTabId).toBe(2);
+  });
+
+  it('subject/reorder: 範囲外 idx は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'subject/reorder', payload: { fromIdx: -1, toIdx: 0 } })).toBe(state);
+    expect(projectReducer(state, { type: 'subject/reorder', payload: { fromIdx: 0, toIdx: 5 } })).toBe(state);
+  });
+
+  it('schedule/applyPattern: tabId 指定でそのタブへ適用し active も切り替える', () => {
+    const state = makeState({
+      activeTabId: 2,
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: '３S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2,
+          name: '中１・２',
+          config: {
+            classes: [{ id: 1, label: '１S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '田中' } },
+        },
+      ],
+    });
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    // アクティブは中１・２だが、生成元 (tabId=1) へ適用されること
+    const next = projectReducer(state, {
+      type: 'schedule/applyPattern',
+      payload: { pat, tabId: 1 },
+    });
+    expect(next.project.tabs.find(t => t.id === 1).schedule[makeKey(1, 1, 1)].teacher).toBe('堀上');
+    // 中１・２のスケジュールは無傷
+    expect(next.project.tabs.find(t => t.id === 2).schedule[makeKey(1, 1, 1)].teacher).toBe('田中');
+    // 適用先タブへ切り替わる (snapshot/apply と同じ挙動)
+    expect(next.project.activeTabId).toBe(1);
+  });
+
+  it('schedule/applyPattern: tabId 省略時は従来どおりアクティブタブへ適用', () => {
+    const state = makeState();
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const next = projectReducer(state, { type: 'schedule/applyPattern', payload: { pat } });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('堀上');
+  });
+
+  it('schedule/applyPattern: 生成後に削除されたタブ (存在しない tabId) は no-op', () => {
+    const state = makeState();
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const next = projectReducer(state, { type: 'schedule/applyPattern', payload: { pat, tabId: 99 } });
+    expect(next).toBe(state);
+  });
+
+  it('config/setList (classes): 他タブのクラスを参照する combinedGroups は巻き添えにしない', () => {
+    const state = makeState({
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2,
+          name: '中１・２',
+          config: {
+            classes: [{ id: 1, label: '１S' }, { id: 2, label: '１AB' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+      ],
+      combinedGroups: [
+        // 他タブ (中１・２) のクラスのみを参照するグループ
+        { id: 1, subject: '英語', classes: ['１S', '１AB'], dates: null },
+        // アクティブタブのクラスを参照するグループ (従来の cleanup 対象)
+        { id: 2, subject: '英語', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    // アクティブタブ (中３) のクラス欄から ３A を削除
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'classes', value: '３S, ３B' },
+    });
+    const groups = next.project.combinedGroups;
+    // 他タブのグループは無傷で残る
+    expect(groups.find(g => g.id === 1)).toEqual(
+      { id: 1, subject: '英語', classes: ['１S', '１AB'], dates: null },
+    );
+    // アクティブタブ側は従来どおり ３A が消えて 1 クラス → drop
+    expect(groups.find(g => g.id === 2)).toBeUndefined();
+  });
+
   it('config/setList (dates 削除): combinedGroups から消えた日付が drop', () => {
     const state = makeState({
       combinedGroups: [

@@ -23,6 +23,9 @@ function makeProject({
   maxDailyHours,
   maxIterations,
   maxConsecutivePeriods,
+  activeDateIds,
+  activePeriodIds,
+  otherTabs = [], // H2: 他学年タブ (id/name/config/schedule をそのまま追加)
 } = {}) {
   return {
     version: 4,
@@ -38,9 +41,11 @@ function makeProject({
       config: {
         classes: wrapEntities(classes),
         subjectCounts,
+        ...(activeDateIds !== undefined ? { activeDateIds } : {}),
+        ...(activePeriodIds !== undefined ? { activePeriodIds } : {}),
       },
       schedule,
-    }],
+    }, ...otherTabs],
     externalCounts,
     combinedGroups,
     subjects: Object.keys(subjectCounts),
@@ -103,6 +108,229 @@ describe('generateSinglePattern — 基本動作', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).toBeNull();
     expect(r.totalSlots).toBe(1);
+  });
+});
+
+// ─── タブ別「使う日・使う時限」(E-3) の尊重 ─────────────────────────
+
+describe('generateSinglePattern — activeDateIds / activePeriodIds', () => {
+  it('タブが使わない時限はスロット化されず、クォータどおりで完全解になる', () => {
+    // プールは 2 時限だが、このタブは 1限 だけ使う (2限 は他学年専用)。
+    // クォータは可視セル数 (1 コマ) に一致 → 絞りが効いていれば完全解。
+    // 絞りが効かないと 2 セル分のスロットに対しクォータ 1 なので解けない。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限'],
+      activePeriodIds: [1],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.totalSlots).toBe(1);
+    expect(r.solution).not.toBeNull();
+    // 使わない時限 (id=2) のセルには何も書き込まれない
+    expect(r.solution[makeKey(1, 2, 1)]).toBeUndefined();
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('タブが使わない日はスロット化されない (既存挙動の回帰確認)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      dates: ['12/25(木)', '12/26(金)'],
+      activeDateIds: [1],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.totalSlots).toBe(1);
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(2, 1, 1)]).toBeUndefined();
+  });
+});
+
+// ─── 他タブ (他学年) との整合 (H2) ──────────────────────────────────
+
+describe('generateSinglePattern — 他タブの確定割当', () => {
+  // 他タブ: 同じ日付/時限プール (id 共有)、クラスはタブ固有
+  const otherTab = (schedule, config = {}) => [{
+    id: 2,
+    name: '他学年',
+    config: { classes: [{ id: 1, label: '１S' }], subjectCounts: { '英語': 1 }, ...config },
+    schedule,
+  }];
+
+  it('他タブで同日同時限に入っている講師は割り当てない', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('石原', ['英語'])],
+      subjectCounts: { '英語': 1 },
+      otherTabs: otherTab({
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 堀上は他学年で授業中
+      }),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+
+  it('他タブで同日同時限に入っている講師しか居なければ解なし', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+      otherTabs: otherTab({
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      }),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+  });
+
+  it('他タブの同日のコマ数は 1 日上限の基準に合算される', () => {
+    // 同日の別時限に他タブで 1 コマ + 自タブ 1 コマ = 2 > maxDailyHours 1
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限'],
+      subjectCounts: { '英語': 1 },
+      activePeriodIds: [1],
+      maxDailyHours: 1,
+      otherTabs: otherTab({
+        [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' }, // 他学年 2限
+      }, { activePeriodIds: [2] }),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull(); // 堀上は日次上限で不可
+  });
+
+  it('他タブの stale セル (そのタブが使わない日) は数えない', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      dates: ['12/25(木)', '12/26(金)'],
+      activeDateIds: [1],
+      subjectCounts: { '英語': 1 },
+      otherTabs: otherTab(
+        // 他タブは 12/26 のみ使う。12/25 のセルは stale (温存されたゴミ)
+        { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+        { activeDateIds: [2] },
+      ),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('堀上');
+  });
+});
+
+// ─── ソルバ/分析の整合 (M5/M6/M7) ──────────────────────────────────
+
+describe('generateSinglePattern — externalSessions の日次反映 (M5)', () => {
+  it('externalCounts が無くてもセッション詳細が日次上限に効く', () => {
+    // 12/25 に堀上のセッション 1 件 + 上限 1 → 同日は割り当て不可
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+      maxDailyHours: 1,
+    });
+    project.externalSessions = [
+      { teacherName: '堀上', date: '12/25(木)', note: '予備校' },
+    ];
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+  });
+});
+
+describe('generateSinglePattern — 未定の扱い (M6)', () => {
+  it('「未定」は同一時限に複数クラス置ける (placeholder 用途)', () => {
+    const project = makeProject({
+      teachers: [teacher('未定', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('未定');
+    expect(r.solution[makeKey(1, 1, 2)].teacher).toBe('未定');
+  });
+});
+
+describe('generateSinglePattern — 合同グループの講師固定 (M7)', () => {
+  it('合同の片側に講師が確定済みなら primary も同じ講師になる', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('石原', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      schedule: {
+        // ３A 側だけ手動で講師まで確定済み
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '石原' },
+      },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    // 旧実装は primary に堀上を選べてしまい「合同なのに 2 講師」になり得た
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+
+  it('確定済み講師との合同割当は日次を二重計上しない', () => {
+    // ３A に石原が確定済み (日次 1)。上限 1 でも primary への石原の合同
+    // 割当は同一コマ扱いなので成立する。
+    const project = makeProject({
+      teachers: [teacher('石原', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+      maxDailyHours: 1,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      schedule: {
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '石原' },
+      },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+});
+
+// ─── リスタート戦略 (P1) ────────────────────────────────────────────
+
+describe('generateSinglePattern — リスタート戦略', () => {
+  it('1 回目の探索順で解けなくても、リスタートで別の順序を試して解ける', () => {
+    // 2 日 × 2 時限 × 2 クラス (8 スロット)、講師 2 名。restartInterval=12 は
+    // 「深さ 8 + わずかなバックトラック」しか許さないので、探索順の運が
+    // 悪い run は budget を使い切る。seed=17 は最初の run では解けず、
+    // リスタート後の順序で解ける (iterations=28 > interval が発動の証拠)。
+    // 注: リスタートは探索順を変えるだけで深さは増えないため、interval が
+    // スロット数以下だと原理的に解けない。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('片岡', ['数学'])],
+      dates: ['12/25(木)', '12/26(金)'],
+      periods: ['1限', '2限'],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 2, '数学': 2 },
+      maxIterations: 100000,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 17, restartInterval: 12 });
+    expect(r.solution).not.toBeNull();
+    expect(r.iterations).toBeGreaterThan(12); // 2 回以上の run を跨いだ
+    expect(r.hitLimit).toBe(false);
+  });
+
+  it('解なし問題では探索空間を使い切った時点で打ち切る (上限まで空回りしない)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['数学'])], // 英語の担当者ゼロ
+      subjectCounts: { '英語': 1 },
+      // maxIterations は既定 (500,000)
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.hitLimit).toBe(false);
+    expect(r.iterations).toBeLessThan(100); // リスタートで空回りしていない
+  });
+
+  it('同じ seed なら同じ結果 (リスタート込みの決定性)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語']), teacher('石原', ['英語'])],
+      dates: ['12/25(木)', '12/26(金)'],
+      subjectCounts: { '英語': 2 },
+    });
+    const a = generateSinglePattern({ project, activeTabId: 1, seed: 42 });
+    const b = generateSinglePattern({ project, activeTabId: 1, seed: 42 });
+    expect(a.solution).toEqual(b.solution);
+    expect(a.iterations).toBe(b.iterations);
   });
 });
 

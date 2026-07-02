@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
+import { makeExternalKey, countTeacherHoursWithCombined, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad } from '../utils/patternLoad';
 
@@ -87,7 +87,7 @@ function PatternStats({ pat }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs }) {
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }) {
   const {
     project,
     analysis,
@@ -96,30 +96,54 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
   } = useProjectContext();
   const { showToast } = useUI();
 
+  // 生成結果はタブ切替後もパネルに残るため、集計・採用は「今のタブ」ではなく
+  // 生成元タブを基準にする。生成元タブが分からない (古い state) 場合は従来
+  // どおりアクティブタブへフォールバック。
+  const tabs = project.tabs || [];
+  const forTab = generatedForTab
+    ? tabs.find(t => t.id === generatedForTab.id)
+    : (tabs.find(t => t.id === project.activeTabId) || tabs[0]);
+  const forTabDeleted = Boolean(generatedForTab) && !forTab;
+  const patternConfig = forTab
+    ? {
+        ...forTab.config,
+        dates: activeDatesForTab(project.dates, forTab),
+        periods: activePeriodsForTab(project.periods, forTab),
+      }
+    : currentConfig;
+  const isOtherTab = forTab && forTab.id !== project.activeTabId;
+
   return (
     <>
       {showSummary && (() => {
         // 教科ごとにグループ化、'未定' は除外したいので予め filter してから group 化。
         const teachersForSummary = project.teachers.filter(t => t.name !== '未定');
         const groups = groupTeachersBySubject(teachersForSummary, project.subjects);
+        const groupRows = groups.map(group => {
+          const entries = group.teachers.map(t => {
+            let total = 0;
+            // v4(Y): teacherDailyCounts は全タブ横断の集計。「全タブ合計」は
+            // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
+            // (project.dates) で合算しないと、他タブだけで使う日のコマが
+            // 漏れて undercount になる。
+            (project.dates || []).forEach(d => {
+              total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
+            });
+            return { t, total };
+          }).filter(x => x.total > 0);
+          return { group, entries };
+        }).filter(row => row.entries.length > 0);
         return (
           <div className="mb-4 no-print animate-fade-in">
             <div className="p-4 bg-builder-info-soft border border-builder-info-border rounded">
               <h3 className="font-bold text-builder-ink mb-2">📊 講師別コマ数 (全タブ合計)</h3>
+              {groupRows.length === 0 && (
+                <div className="text-sm text-builder-ink-muted">
+                  まだ集計するコマがありません。セルに講師を割り当てるか、🧙‍♂️ 自動作成をお試しください。
+                </div>
+              )}
               <div className="flex flex-col gap-2">
-                {groups.map(group => {
-                  const entries = group.teachers.map(t => {
-                    let total = 0;
-                    // v4(Y): teacherDailyCounts は全タブ横断の集計。「全タブ合計」は
-                    // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
-                    // (project.dates) で合算しないと、他タブだけで使う日のコマが
-                    // 漏れて undercount になる。
-                    (project.dates || []).forEach(d => {
-                      total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
-                    });
-                    return { t, total };
-                  }).filter(x => x.total > 0);
-                  if (entries.length === 0) return null;
+                {groupRows.map(({ group, entries }) => {
                   return (
                     <Fragment key={group.key}>
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
@@ -145,14 +169,33 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-bold text-builder-ink">
               ✨ 自動生成の結果 ({generatedPatterns.length}案)
+              {generatedForTab && (
+                <span className="ml-2 text-xs font-normal text-builder-ink bg-builder-info-soft border border-builder-info-border px-2 py-0.5 rounded" aria-label="生成元のタブ">
+                  対象タブ: {generatedForTab.name}
+                </span>
+              )}
               {generatedElapsedMs > 0 && (
                 <span className="ml-2 text-xs font-normal text-builder-ink-muted" aria-label="生成にかかった時間">
                   ⏱ {(generatedElapsedMs / 1000).toFixed(1)}s
                 </span>
               )}
             </h3>
-            <button onClick={() => setGeneratedPatterns([])} className="text-sm text-builder-ink-muted underline">キャンセル</button>
+            <button
+              onClick={() => setGeneratedPatterns([])}
+              className="text-sm text-builder-ink-muted underline"
+              title="生成結果を閉じます (再表示はできません)"
+            >✕ 破棄</button>
           </div>
+          {forTabDeleted && (
+            <div className="mb-3 p-2 bg-builder-danger-soft border border-builder-danger-border rounded text-sm text-builder-red">
+              ⚠️ 生成元のタブ「{generatedForTab.name}」は削除されたため、この結果は適用できません。
+            </div>
+          )}
+          {isOtherTab && (
+            <div className="mb-3 p-2 bg-builder-info-soft border border-builder-info-border rounded text-sm text-builder-ink">
+              ℹ️ この結果は「{forTab.name}」タブ用です。採用すると「{forTab.name}」に適用され、そのタブへ切り替わります。
+            </div>
+          )}
           {generatedPatterns.some(p => p.isPartial) && (
             <div className="mb-3 p-2 bg-builder-warning-soft border border-builder-warning-border rounded text-sm text-builder-orange">
               ⚠️ 完全解が見つからなかった案があります。部分解として可能な範囲で埋めた結果を表示しています。
@@ -177,12 +220,20 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                 <PatternStats pat={pat} />
                 <SummaryTable
                   target={pat.schedule}
-                  config={currentConfig}
+                  config={patternConfig}
                   combinedGroups={project.combinedGroups || []}
                   teachers={project.teachers}
                   subjects={project.subjects}
                 />
-                <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); showToast(`案 ${i + 1} を適用しました`); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-builder-orange hover:bg-builder-orange-hover' : 'bg-builder-primary hover:bg-builder-primary-hover'}`}>
+                <button
+                  disabled={forTabDeleted}
+                  onClick={() => {
+                    applyPattern(pat.schedule, forTab?.id);
+                    setGeneratedPatterns([]);
+                    showToast(forTab ? `案 ${i + 1} を「${forTab.name}」に適用しました` : `案 ${i + 1} を適用しました`);
+                  }}
+                  className={`w-full mt-2 py-1 text-white rounded text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed ${pat.isPartial ? 'bg-builder-orange hover:bg-builder-orange-hover' : 'bg-builder-primary hover:bg-builder-primary-hover'}`}
+                >
                   この案を採用
                 </button>
               </div>

@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, nextId } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, activePeriodsForTab, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -48,6 +48,10 @@ export function projectReducer(state, action) {
       return { project: fresh, history: [fresh], historyIndex: 0, loadError: null };
     }
     case 'tab/switch': {
+      // 存在しないタブ ID を許すと、以降の書き込み系 (t.id === activeTabId で
+      // map) が全て silent no-op になり「表示は tabs[0]・編集はどこにも
+      // 書かれない」状態になるため弾く。
+      if (!state.project.tabs.some(t => t.id === action.payload.id)) return state;
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
     default: {
@@ -163,8 +167,17 @@ function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
 // cascade ロジック (combinedPropagation 等) は config.dates / .periods を読むため、
 // reducer 内でもこの実効 config を渡す必要がある。
 function effectiveConfig(project, tab) {
-  // dates は『このタブが使う日』(activeDateIds で絞った subset)、periods は project 共通。
-  return { ...tab.config, dates: activeDatesForTab(project.dates, tab), periods: project.periods || [] };
+  // dates / periods とも『このタブが使う分』に絞る (useProject の currentConfig
+  // と同じ)。periods をプール全体にすると schedule/bulkAction の一括操作が
+  // 非表示時限まで走査し、「使わない時限のセルは温存」の不変条件
+  // (schedule/clearUnlocked, tabPeriods/toggle) を破ったり {locked:true} の
+  // ゴミセルを非表示時限に生成したりする。cell/* 系の対象セルは可視セル
+  // (= active な時限) なので絞っても影響しない。
+  return {
+    ...tab.config,
+    dates: activeDatesForTab(project.dates, tab),
+    periods: activePeriodsForTab(project.periods, tab),
+  };
 }
 
 // 履歴に積む系のアクションを処理する純粋関数。
@@ -191,7 +204,8 @@ function applyAction(project, action) {
       return {
         ...project,
         tabs: newTabs,
-        activeTabId: newTabs[0].id,
+        // 非アクティブタブを削除した場合は作業中のタブを維持する
+        activeTabId: id === project.activeTabId ? newTabs[0].id : project.activeTabId,
         ...(newSnapshots.length !== snapshots.length ? { snapshots: newSnapshots } : {}),
       };
     }
@@ -254,6 +268,34 @@ function applyAction(project, action) {
               t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
             ),
           };
+      // key='periods' のプール削除では NG キー (`${date}-${period}`) も掃除する
+      // (dates/removeFromPool と同じ理由: 残すと同ラベル再追加で古い NG が
+      // silent に復活し、ラベル不在の間は NG パネルに表示されず消せない)。
+      // 照合はラベルの suffix 一致だが、「1限」と「番外-1限」のように一方が
+      // 他方の suffix になるラベルの誤射を避けるため、旧ラベル全体の中で
+      // 最長一致したものが削除対象のときだけ消す。
+      let cascadedTabsProject = baseProject;
+      if (key === 'periods') {
+        const newLabelSet = new Set(newLabels);
+        const removedLabels = oldArr.map(e => e.label).filter(l => !newLabelSet.has(l));
+        if (removedLabels.length > 0) {
+          const allOldLabels = oldArr.map(e => e.label);
+          const removedSet = new Set(removedLabels);
+          const shouldDrop = (ngKey) => {
+            let longest = null;
+            allOldLabels.forEach(l => {
+              if (ngKey.endsWith(`-${l}`) && (longest === null || l.length > longest.length)) longest = l;
+            });
+            return longest !== null && removedSet.has(longest);
+          };
+          const newTeachers = (baseProject.teachers || []).map(t => {
+            const ngSlots = t.ngSlots || [];
+            const filtered = ngSlots.filter(k2 => !shouldDrop(k2));
+            return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+          });
+          cascadedTabsProject = { ...baseProject, teachers: newTeachers };
+        }
+      }
       // ラベル削除に伴う combinedGroups の cascade cleanup:
       // - key='classes': 消えたクラスを groups[*].classes から filter、結果が <2
       //   なら group ごと削除
@@ -262,15 +304,26 @@ function applyAction(project, action) {
       // - key='periods': groups に period 次元は無いので影響無し
       let newCombined = baseProject.combinedGroups;
       if (key === 'classes' || key === 'dates') {
+        // combinedGroups は project 全体で共有 (タブ ID を持たない) なので、
+        // key='classes' のときは「編集したタブの新ラベル + 他タブの既存ラベル」
+        // の和集合で判定する。アクティブタブの newLabels だけを渡すと、
+        // 他タブのクラスを参照する合同グループが全て巻き添えで削除される。
+        const validLabels = new Set(newLabels);
+        if (key === 'classes') {
+          project.tabs.forEach(t => {
+            if (t.id === activeTab.id) return;
+            (t.config.classes || []).forEach(c => validLabels.add(c.label));
+          });
+        }
         newCombined = cleanCombinedGroupsForLabelChange(
           baseProject.combinedGroups || [],
           key === 'classes' ? 'classes' : 'dates',
-          new Set(newLabels)
+          validLabels
         );
       }
       // cleanSchedule で消えた entity を参照する schedule キーを掃除する
       // (dates/periods は project 共通なので全タブの schedule が対象)。
-      return cleanSchedule({ ...baseProject, combinedGroups: newCombined });
+      return cleanSchedule({ ...cascadedTabsProject, combinedGroups: newCombined });
     }
     case 'config/setSubjectCount': {
       // tabId 省略時はアクティブタブを対象にする (従来挙動)。
@@ -370,7 +423,41 @@ function applyAction(project, action) {
         'dates',
         new Set(newPool.map(d => d.label)),
       );
-      return cleanSchedule({ ...project, dates: newPool, tabs: newTabs, combinedGroups: newCombined });
+      // ラベルベース参照の cascade cleanup。これを怠ると、同じラベルの日付を
+      // 後で再追加したときに古い NG・外部コマ数・他学年セッションが silent に
+      // 復活する (UI の確認文言も「講師不在/NG から消えます」と約束している)。
+      // NG キーは makeNgKey(date, period) = `${date}-${period}`、externalCounts
+      // キーは makeExternalKey(date, teacher) = `${date}-${teacher}`。
+      // 照合は prefix 一致だが、「8/1」と「8/1-補講」のように一方が他方の
+      // prefix になるラベル (renameHeader は自由入力) の巻き添えを避けるため、
+      // プール全ラベルの中で最長一致したものが削除対象のときだけ消す。
+      const poolLabels = pool.map(d => d.label);
+      const shouldDropDateKey = (k) => {
+        let longest = null;
+        poolLabels.forEach(l => {
+          if (k.startsWith(`${l}-`) && (longest === null || l.length > longest.length)) longest = l;
+        });
+        return longest === target.label;
+      };
+      const newTeachers = (project.teachers || []).map(t => {
+        const ngSlots = t.ngSlots || [];
+        const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
+        return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+      });
+      const newExternal = {};
+      Object.keys(project.externalCounts || {}).forEach(k => {
+        if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
+      });
+      const newSessions = (project.externalSessions || []).filter(s => s.date !== target.label);
+      return cleanSchedule({
+        ...project,
+        dates: newPool,
+        tabs: newTabs,
+        combinedGroups: newCombined,
+        teachers: newTeachers,
+        externalCounts: newExternal,
+        externalSessions: newSessions,
+      });
     }
 
     // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は
@@ -454,6 +541,8 @@ function applyAction(project, action) {
     case 'subject/reorder': {
       const { fromIdx, toIdx } = action.payload;
       const subjects = [...(project.subjects || [])];
+      // 範囲外 idx を許すと splice(-1) の末尾誤移動や undefined 混入が起きる
+      if (fromIdx < 0 || fromIdx >= subjects.length || toIdx < 0 || toIdx >= subjects.length) return project;
       const [moved] = subjects.splice(fromIdx, 1);
       subjects.splice(toIdx, 0, moved);
       return { ...project, subjects };
@@ -993,17 +1082,34 @@ function applyAction(project, action) {
     }
     case 'schedule/clearUnlocked': {
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      // 「使う日・使う時限」から外れて非表示のまま温存されているセルは
+      // クリア対象外 (tabDates/toggle の「off にしてもセルは保持、再 on で
+      // 復活」という不変条件を守る)。画面に見えているセルだけを消す。
+      const visibleDateIds = new Set(activeDatesForTab(project.dates, activeTab).map(d => d.id));
+      const visiblePeriodIds = new Set(activePeriodsForTab(project.periods, activeTab).map(p => p.id));
       const ns = {};
       Object.keys(activeTab.schedule).forEach(k => {
-        if (activeTab.schedule[k].locked) ns[k] = activeTab.schedule[k];
+        const entry = activeTab.schedule[k];
+        if (entry.locked) { ns[k] = entry; return; }
+        const parsed = parseKey(k);
+        const hidden = parsed && (!visibleDateIds.has(parsed.dateId) || !visiblePeriodIds.has(parsed.periodId));
+        if (hidden) ns[k] = entry;
       });
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
     }
     case 'schedule/applyPattern': {
-      const { pat } = action.payload;
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t);
-      return cleanSchedule({ ...project, tabs: newTabs });
+      // tabId = 生成時のタブ。結果パネルはタブ切替後も表示されたままなので、
+      // dispatch 時点の activeTabId に書くと別タブのスケジュールを上書き
+      // してしまう (クラス ID はタブ間で再利用されるため silent に混入する)。
+      // snapshot/apply と同じく「記録されたタブへ適用 + そのタブを active に」。
+      // tabId 省略時は従来互換でアクティブタブ。
+      const { pat, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      // 生成後にタブが削除されたケースは no-op (snapshot/apply と同じ扱い)
+      if (!project.tabs.some(t => t.id === targetId)) return project;
+      const newTabs = project.tabs.map(t => t.id === targetId ? { ...t, schedule: pat } : t);
+      return cleanSchedule({ ...project, tabs: newTabs, activeTabId: targetId });
     }
 
     // ─── スナップショット (E1c) ───────────

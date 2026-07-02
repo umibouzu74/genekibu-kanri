@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 41 files / 934 tests (timetable-builder 約 257 件)
+npm test            # 77 files / 1573 tests (2026-07-02 F 系レビュー後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -975,3 +975,96 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 - 新たに発見された問題は適切なセクション (A/B/C/D/E) に追加
 - リスク (R*) は実害が出たり対策が完了したら更新
 - 「次セッション quick start」のコマンドと検証数値 (test 件数等) は変わったら追従
+
+---
+
+## F. 2026-07-02 フレッシュアイズレビュー (Fable 初見チェック) の結果
+
+コードレビュー (状態管理 / UI / ソルバの 3 レイヤ) + Playwright 実機操作で
+全面チェックを実施。**発見した Critical 4 + High 8 + Medium 14 のうち大半を
+同日中に修正済み** (詳細は commit log 参照)。その後 F.3 の校正レビューで
+修正自体を再検証し、確定した 14 件も同日修正。テスト 1524 → 1573 件。
+PR 化済み (このセクションの F.1 / F.3 が本 PR の内容、F.2 が持ち越し)。
+
+### F.1 修正済み (2026-07-02)
+
+- **設定モーダル複合バグ**: focus trap 再初期化による入力不能 /
+  textarea keystroke commit によるデータ破壊 / 他タブ合同グループ全滅
+- **生成結果のタブ追従**: タブ切替後の「この案を採用」が別タブを上書き
+  (実機再現→修正、snapshot/apply と同型に)
+- **ソルバ**: activePeriodIds 無視 / タブ間講師重複の未考慮 (H2) /
+  リスタート戦略 (P1: 中３タブ完全解 1/3 → 12/12・平均 244ms) /
+  externalSessions の日次反映 / 未定の同時限複数配置 / 合同の講師固定
+- **infeasibility**: capacity 式の 2 倍過大評価 / quotaCellMismatch ·
+  subjectQuotaOverDays の新規検出
+- **E-3 取りこぼし一族**: タブバッジ・globalUsage・Excel の periods 絞り /
+  NG パネル自動NG のプール全時限化 / v3→v4 移行の activeDateIds 保存
+- **小粒**: NG CSV 検証の v4 死亡 / 波ダッシュ U+301C / Ctrl+Shift+Z /
+  Excel シート名 throw / clearUnlocked の非表示セル保護 / removeFromPool
+  cascade / teachers 欠落クラッシュ / dangling activeTabId / confirm の
+  trap 参加 / ContextMenu 座標 / 生成 UX (完全解優先ソート等)
+
+### F.2 未修正の残課題 (次セッション向け、発見順位順)
+
+F.3 の校正レビュー後も残っているもの (F.3 で部分対応した項目は注記)。
+
+- **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
+  `<td onClick>` (AbsenceNgPanel)、クラス優先度セル (ClassPriority)、
+  タブ削除 `<span onClick>`・改名 dblclick のみ (TabBar)、ContextMenu の
+  全機能 (キーボード代替なし・Escape で閉じない)
+- **F2b (a11y, 中)**: ScheduleCell の矢印ナビが select のネイティブ
+  キー操作を preventDefault で全て潰す (Firefox で値変更がほぼ不可能の
+  恐れ)。Alt+↓ 等は素通しにする除外が必要 (ScheduleCell.jsx
+  handleCellNavigation)。※ F.3 で disabled セルのスキップは実装済み、
+  ネイティブ操作の素通しが残
+- **F2c (小)**: autosave が実は debounce されていない — useHistoryStack は
+  毎 dispatch で project 全体を同期 JSON.stringify + setItem
+  (debounce はステータス表示のみ)。大規模プロジェクトで入力レイテンシ源
+- **F2d (小)**: no-op アクションが履歴を汚す — 変化ゼロでも新 object を
+  返す action が複数あり、実効 Undo 深度 (MAX 50) を削る。
+  ※ subject/reorder・tab/switch・Header 名前編集は個別ガード済み、
+  一般的な no-op 検出 (reducer wrap 層での deep-equal 等) が残
+- **F2e (小)**: cell/swap が dragstart 時点の payload を信頼し、現在の
+  schedule を読まない (狭い競合窓で stale 書き込み・lock 剥がし)
+- **F2f (小)**: 保存データが migration 中に throw するとデフォルトに
+  フォールバックし、最初の編集の autosave が元データを上書きして復旧不能に
+  (壊れたデータの退避コピーを別キーに残すべき)
+- **F2g (小)**: computeInfeasibilities C1 (noTeacherForSlot) の false
+  positive — クォータ上そのスロットに置く必要が無い科目も「致命」扱い。
+  ※ C2 (capacity) 側は F.3 で合同割引・時限数上限を反映済み、C1 が残
+- **F2h (nit)**: NG CSV 重複キーが空白結合 (`name date period`) で
+  名前に空白を含む講師と衝突し得る / renameHeader の重複ラベル許容
+  (H3: externalCounts キー衝突で片方消失) / entity ID 再利用 × snapshot
+  復元の化け (H4) / クラス rename・削除で teacher.ngClasses /
+  priorityClasses が非追従 (H5)
+
+※ H3/H4/H5 は F2h にまとめたが元レビューでは High 判定。rename/削除系の
+   参照整合はまとめて 1 セッションで設計するのが良い (ラベルベース参照の
+   cascade を一元化するヘルパーの導入を検討)。
+
+### F.3 校正レビュー (2026-07-02、8 観点 × 個別検証) の結果
+
+F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を個別検証し
+13 CONFIRMED / 1 PLAUSIBLE — **全 14 件を同日修正済み** (commit 参照)。
+主な回帰: select disabled 化による矢印ナビ停止 / IME Esc での draft 全破棄 /
+リスタートの探索深度キャップ / quotaCellMismatch のバッジ常時点灯。
+主な穴埋め: JSON 読込後の stale 生成結果 / effectiveConfig の periods 絞り /
+時限プール削除の NG cascade / ラベル照合の最長一致化 / 合同の capacity 割引。
+
+レビューで出た**構造改善の提案 (未実施、F2 系に追加)**:
+- **F2i**: `effectiveConfigForTab(project, tab)` を scheduleKey.js に新設し、
+  同型の 3 行合成 7 箇所 (useProject / autoGenerator / analysisHelpers ×2 /
+  excelExport ×3 / SummaryPanel / projectReducer) を集約 — E-3 型の
+  「絞り忘れ」の構造的再発防止
+- **F2j**: collectOtherTabsUsage (autoGenerator) と computeGlobalUsage
+  (analysisHelpers) の集計規則統合 (合同 dedupe キーで既に一度食い違った)
+- **F2k**: ラベルベース参照の cascade (削除/リネーム) を単一モジュールへ
+  一元化 (makeNgKey/makeExternalKey のパース知識が 5 箇所に分散)
+- **F2l**: draft-commit 入力 (DraftListTextarea / InlineNameEdit / ParamRow) と
+  dismissable-popover (Header / Toolbar / SnapshotMenu) の共有フック化。
+  SubjectManager / AbsenceNgPanel の即時 commit 数値入力にも draft 化を展開
+- **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
+  fixSuggestions の同型 4 連ブロック解消)
+- **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
+  生成後の config 変更 (クラス削除・使う日 off・クォータ変更) では
+  stale な案を採用できる。config fingerprint での無効化を検討)

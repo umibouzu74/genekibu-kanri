@@ -662,3 +662,137 @@ describe('computeInfeasibilities', () => {
     expect(r.subjectCapacityShortage.count).toBe(0);
   });
 });
+
+// ─── M7b: 合同 dedupe キーの講師名 / M8: 静的 infeasibility 追加分 ────
+
+describe('computeGlobalUsage — 合同グループの講師別カウント (M7b)', () => {
+  it('合同の各クラスに別々の講師が入っている場合、両講師の日次がカウントされる', () => {
+    const config = makeConfig();
+    const tabs = [{
+      id: 1,
+      config,
+      schedule: {
+        // 同じ合同グループ (英語, ３S+３A, 全日) の 2 セルに別講師
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '石原' },
+      },
+    }];
+    const combined = [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }];
+    const { teacherDailyCounts } = computeGlobalUsage(tabs, combined);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]?.total).toBe(1);
+    // 旧実装は dedupe キーに講師名が無く、2 人目 (石原) の日次が欠落していた
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '石原')]?.total).toBe(1);
+  });
+
+  it('同一講師の合同セルは従来どおり 1 コマ扱い', () => {
+    const config = makeConfig();
+    const tabs = [{
+      id: 1,
+      config,
+      schedule: {
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+        [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' },
+      },
+    }];
+    const combined = [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }];
+    const { teacherDailyCounts } = computeGlobalUsage(tabs, combined);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')]?.total).toBe(1);
+  });
+});
+
+describe('computeInfeasibilities — M8 追加分', () => {
+  const twoByTwo = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }],
+    subjectCounts: { '英語': 2, '数学': 2 },
+  });
+  const teachers = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [] },
+    { name: '田中', subjects: ['数学'], ngSlots: [] },
+  ];
+
+  it('capacity は min(maxDailyHours, 時限数) で評価する (過大評価の修正)', () => {
+    // 1 講師 × 2 日 × min(6, 2 時限) = capacity 4 < demand 6 → 検出。
+    // 旧式 (× maxDailyHours) だと 12 で見逃していた。
+    const config = { ...twoByTwo(), classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' }], subjectCounts: { '英語': 2, '数学': 2 } };
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ subject: '英語', demand: 6, capacity: 4 });
+  });
+
+  it('クォータ合計 ≠ セル数を quotaCellMismatch として検出', () => {
+    const config = { ...twoByTwo(), subjectCounts: { '英語': 1, '数学': 1 } }; // 合計 2 ≠ セル 4
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 2, cells: 4 });
+  });
+
+  it('クォータ合計 = セル数なら quotaCellMismatch は 0', () => {
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: twoByTwo(), // 合計 4 = 2 日 × 2 時限
+      maxDailyHours: 6,
+    });
+    expect(r.quotaCellMismatch.count).toBe(0);
+  });
+
+  it('コマ数 > 日数を subjectQuotaOverDays として検出 (同日重複禁止で達成不能)', () => {
+    const config = { ...twoByTwo(), subjectCounts: { '英語': 3, '数学': 1 } };
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    expect(r.subjectQuotaOverDays.count).toBe(1);
+    expect(r.subjectQuotaOverDays.items[0]).toEqual({ subject: '英語', quota: 3, days: 2 });
+  });
+});
+
+describe('computeInfeasibilities — 合同グループの capacity 割引 (校正レビュー対応)', () => {
+  it('常時合同 (dates:null) のクラス群は 1 クラス相当に割り引いて false positive を出さない', () => {
+    // 2 クラス常時合同・講師 1 名・1 日 1 時限・クォータ 1:
+    // 割引なしだと demand=2 > capacity=1 で誤警告になる構成
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+        subjectCounts: { '英語': 1 },
+      },
+      maxDailyHours: 6,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: null }],
+    });
+    expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+
+  it('日付限定の合同 (dates 指定あり) は保守的に割引しない', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+        subjectCounts: { '英語': 1 },
+      },
+      maxDailyHours: 6,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: ['12/26'] }],
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+  });
+});

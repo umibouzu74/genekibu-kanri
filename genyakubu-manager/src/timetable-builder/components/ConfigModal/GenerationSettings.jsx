@@ -98,7 +98,7 @@ export default function GenerationSettings() {
       key: 'maxIterations',
       label: '探索回数の上限',
       unit: '回',
-      help: 'solver が諦めるまでの試行回数。大きくすると難しい条件でも解けやすくなりますが、生成が長くなります。',
+      help: 'solver が諦めるまでの試行回数の合計。内部では複数回の仕切り直し (リスタート) に分割して使い、上限を大きくすると 1 回あたりの探索も深くなります。難しい条件で解けやすくなる代わりに生成が長くなります。',
       step: 50000,
     },
   ];

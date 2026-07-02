@@ -61,10 +61,18 @@ describe('suggestForNoTeacher', () => {
 });
 
 describe('suggestForCapacity', () => {
+  // 1 日に教えられる実上限は時限数を超えないため、fixture には十分な数の
+  // 時限を持たせる (時限 2 つのまま maxDailyHours 6 という旧 fixture は
+  // capacity 過大評価バグの上に成立していた)。
+  const manyPeriods = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, label: `p${i + 1}` }));
+
   it('講師を増やす / 上限を上げる(適用可) / コマ数を減らす を提案', () => {
     const out = suggestForCapacity(
       { subject: '英語', demand: 50, capacity: 36, teacherCount: 1 },
-      { currentConfig: { ...config, dates: [1, 2, 3, 4, 5, 6].map(id => ({ id, label: `d${id}` })) }, maxDailyHours: 6 },
+      {
+        currentConfig: { ...config, dates: [1, 2, 3, 4, 5, 6].map(id => ({ id, label: `d${id}` })), periods: manyPeriods(9) },
+        maxDailyHours: 6,
+      },
     );
     expect(texts(out).some(t => t.includes('あと 1 名'))).toBe(true);
     const setMax = out.find(s => s.action?.type === 'setMaxDaily');
@@ -76,12 +84,27 @@ describe('suggestForCapacity', () => {
   it('setMaxDaily 提案は上限 (12) を超えない & toast と一致する値にする', () => {
     const out = suggestForCapacity(
       { subject: '英語', demand: 300, capacity: 60, teacherCount: 1 },
-      { currentConfig: { ...config, dates: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, label: `d${i}` })) }, maxDailyHours: 6 },
+      {
+        currentConfig: { ...config, dates: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, label: `d${i}` })), periods: manyPeriods(12) },
+        maxDailyHours: 6,
+      },
     );
     const setMax = out.find(s => s.action?.type === 'setMaxDaily');
     // neededMax = ceil(300/10) = 30 → clamp 12
     expect(setMax.action.value).toBe(12);
     expect(setMax.text).toContain('→ 12');
+  });
+
+  it('時限数を超える上限引き上げは提案しない (効果が無いため)', () => {
+    const out = suggestForCapacity(
+      { subject: '英語', demand: 50, capacity: 36, teacherCount: 1 },
+      {
+        // 時限 3 つ → 上限を 6→9 に上げてもコマは 3 つしか置けない
+        currentConfig: { ...config, dates: [1, 2, 3, 4, 5, 6].map(id => ({ id, label: `d${id}` })), periods: manyPeriods(3) },
+        maxDailyHours: 6,
+      },
+    );
+    expect(out.find(s => s.action?.type === 'setMaxDaily')).toBeUndefined();
   });
 
   it('teacherCount 0 でも落ちず、コマ数削減は提案する', () => {

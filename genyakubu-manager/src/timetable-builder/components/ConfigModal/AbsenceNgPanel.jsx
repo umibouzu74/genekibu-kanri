@@ -883,7 +883,7 @@ function DateSection({
                               type="button"
                               onClick={() => removeExternalSession(s.id)}
                               aria-label={`${s.date} ${s.teacherName} のセッションを削除`}
-                              className="text-builder-red hover:text-red-700 font-bold"
+                              className="text-builder-red hover:text-builder-red-hover font-bold"
                             >×</button>
                           </td>
                         </tr>

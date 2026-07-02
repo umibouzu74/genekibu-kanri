@@ -31,8 +31,10 @@ export function parseTimeRange(text) {
 
   // 文字列中の「HH:mm[~|-|–]HH:mm」「HH:mm[~|-|–]」「HH:mm」を順に探索
   // (装飾文字を許容するため、最初に見つけた数値ペアを採用)
-  // 全角コロンを半角に正規化してから検索
-  const normalized = s.replace(/：/g, ':');
+  // 全角コロンを半角に正規化してから検索。波ダッシュ U+301C (〜、macOS の
+  // 日本語 IME が既定で出す) は下の文字クラスの U+FF5E (～) と見た目が
+  // ほぼ同じで取りこぼしやすいので、ここで ~ に正規化してしまう。
+  const normalized = s.replace(/：/g, ':').replace(/〜/g, '~');
 
   // 範囲表記を優先 (HH:mm + 区切り + HH:mm)
   const rangeMatch = normalized.match(

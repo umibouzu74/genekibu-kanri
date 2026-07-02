@@ -42,7 +42,7 @@ describe('TabBar (D1c)', () => {
   it('errorCount = 0 のタブには ✨ badge を表示', () => {
     renderTabBar();
     // 2 タブとも 0 なので ✨ が 2 つ
-    expect(screen.getAllByLabelText('講師重複なし')).toHaveLength(2);
+    expect(screen.getAllByLabelText('違反なし')).toHaveLength(2);
   });
 
   it('errorCount > 0 のタブには ⚠️N badge を表示', () => {
@@ -51,10 +51,10 @@ describe('TabBar (D1c)', () => {
         analysis: { tabErrorCounts: { 1: 3, 2: 0 } },
       },
     });
-    expect(screen.getByLabelText('講師重複 3 件')).toBeInTheDocument();
+    expect(screen.getByLabelText('違反 3 件')).toBeInTheDocument();
     expect(screen.getByText('⚠️3')).toBeInTheDocument();
     // タブ 2 は ✨ のまま
-    expect(screen.getByLabelText('講師重複なし')).toBeInTheDocument();
+    expect(screen.getByLabelText('違反なし')).toBeInTheDocument();
   });
 
   it('tabErrorCounts に未登録のタブは ✨ 扱いになる', () => {
@@ -63,13 +63,13 @@ describe('TabBar (D1c)', () => {
         analysis: { tabErrorCounts: { 1: 2 } }, // tab 2 はキー無し
       },
     });
-    expect(screen.getByLabelText('講師重複 2 件')).toBeInTheDocument();
-    expect(screen.getByLabelText('講師重複なし')).toBeInTheDocument();
+    expect(screen.getByLabelText('違反 2 件')).toBeInTheDocument();
+    expect(screen.getByLabelText('違反なし')).toBeInTheDocument();
   });
 
   it('analysis が undefined でも crash しない (✨ がデフォルト)', () => {
     renderTabBar({ projectOverrides: { analysis: undefined } });
-    expect(screen.getAllByLabelText('講師重複なし')).toHaveLength(2);
+    expect(screen.getAllByLabelText('違反なし')).toHaveLength(2);
   });
 
   it('タブ名クリックで switchTab が呼ばれる', () => {

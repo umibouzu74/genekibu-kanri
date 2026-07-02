@@ -59,10 +59,13 @@ export function suggestForNoTeacher(item, { currentConfig, teachers, autoNgByTea
 export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) {
   const { subject, demand, teacherCount } = item;
   const dates = currentConfig?.dates?.length || 0;
+  const periodsLen = currentConfig?.periods?.length || 0;
+  // 1 日に教えられる実上限は時限数を超えない (computeInfeasibilities C2 と同じ式)
+  const perDayCap = periodsLen > 0 ? Math.min(maxDailyHours, periodsLen) : maxDailyHours;
   const suggestions = [];
 
-  if (dates > 0 && maxDailyHours > 0) {
-    const neededTeachers = Math.ceil(demand / (dates * maxDailyHours));
+  if (dates > 0 && perDayCap > 0) {
+    const neededTeachers = Math.ceil(demand / (dates * perDayCap));
     const add = Math.max(0, neededTeachers - teacherCount);
     if (add > 0) {
       suggestions.push(hint(`「${subject}」担当の講師を あと ${add} 名 増やす`));
@@ -74,9 +77,9 @@ export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) 
     // 設定可能な上限 (GENERATION_PARAM_BOUNDS.maxDailyHours.max) を超える値は
     // 適用しても clamp されるので、提案値・表示・action を実際に適用される値に
     // 揃える (review F2: toast が嘘にならないように)。clamp 後も現状を上回る
-    // 場合のみ提案する。
+    // 場合のみ提案する。時限数を超える引き上げは効果が無いので提案しない。
     const applicableMax = clampGenerationParam('maxDailyHours', neededMax);
-    if (applicableMax > maxDailyHours) {
+    if (applicableMax > maxDailyHours && (periodsLen === 0 || applicableMax <= periodsLen)) {
       suggestions.push({
         text: `1日コマ数上限を ${maxDailyHours} → ${applicableMax} に上げる`,
         action: { type: 'setMaxDaily', value: applicableMax },
@@ -90,10 +93,27 @@ export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) 
 
 // infeasibilities (computeInfeasibilities の戻り値) の各 item に suggestions を
 // 付与した新しいオブジェクトを返す。元のオブジェクトは変更しない。
+// quotaCellMismatch: クォータ合計 ≠ セル数。方向に応じた文言のヒントのみ。
+export function suggestForQuotaMismatch(item) {
+  const { totalQuota, cells } = item;
+  if (totalQuota < cells) {
+    return [hint(`科目コマ数の合計 (${totalQuota}) がセル数 (${cells}) より少なく、全セルを埋める完全解が存在しません。コマ数を増やすか、使う日・時限を減らしてください。`)];
+  }
+  return [hint(`科目コマ数の合計 (${totalQuota}) がセル数 (${cells}) を超えており、全コマを消化できません。コマ数を減らすか、使う日・時限を増やしてください。`)];
+}
+
+// subjectQuotaOverDays: コマ数 > 日数。同日重複禁止のため達成不能。
+export function suggestForQuotaOverDays(item) {
+  const { subject, quota, days } = item;
+  return [hint(`「${subject}」のコマ数 (${quota}) が使う日数 (${days}) を超えています。同じ日に同じ科目は 1 コマまでのため、コマ数を減らすか日数を増やしてください。`)];
+}
+
 export function buildFixSuggestions(infeasibilities, ctx = {}) {
   if (!infeasibilities) return infeasibilities;
   const noTeacher = infeasibilities.noTeacherForSlot || { count: 0, items: [] };
   const capacity = infeasibilities.subjectCapacityShortage || { count: 0, items: [] };
+  const quotaMismatch = infeasibilities.quotaCellMismatch || { count: 0, items: [] };
+  const quotaOverDays = infeasibilities.subjectQuotaOverDays || { count: 0, items: [] };
   return {
     noTeacherForSlot: {
       ...noTeacher,
@@ -102,6 +122,14 @@ export function buildFixSuggestions(infeasibilities, ctx = {}) {
     subjectCapacityShortage: {
       ...capacity,
       items: (capacity.items || []).map(it => ({ ...it, suggestions: suggestForCapacity(it, ctx) })),
+    },
+    quotaCellMismatch: {
+      ...quotaMismatch,
+      items: (quotaMismatch.items || []).map(it => ({ ...it, suggestions: suggestForQuotaMismatch(it) })),
+    },
+    subjectQuotaOverDays: {
+      ...quotaOverDays,
+      items: (quotaOverDays.items || []).map(it => ({ ...it, suggestions: suggestForQuotaOverDays(it) })),
     },
   };
 }

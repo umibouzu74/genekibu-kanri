@@ -32,12 +32,23 @@ export default function Header() {
         setExcelMenuOpen(false);
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === 'Escape') setExcelMenuOpen(false);
+    };
     window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
+    window.addEventListener('keydown', keyHandler);
+    return () => {
+      window.removeEventListener('mousedown', handler);
+      window.removeEventListener('keydown', keyHandler);
+    };
   }, [excelMenuOpen]);
 
   const handleNameSubmit = () => {
-    updateProjectName(nameInput.trim());
+    // 変更が無ければ dispatch しない (無駄な Undo 履歴 + autosave を防ぐ)
+    const trimmed = nameInput.trim();
+    if (trimmed !== (project.name || '')) {
+      updateProjectName(trimmed);
+    }
     setIsEditingName(false);
   };
 
