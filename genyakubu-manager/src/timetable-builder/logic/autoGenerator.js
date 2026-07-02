@@ -4,7 +4,7 @@
 // v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
-import { makeKey, makeExternalKey, findCombinedGroup, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, parseKey, findCombinedGroup, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
 import {
   canTeachSubject,
@@ -63,6 +63,52 @@ const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
 // postMessage / setState が溢れるので、この回数ごとに 1 回だけ通知する。
 const PROGRESS_INTERVAL = 20000;
 
+// 1 回のリスタートに割り当てる探索回数 (P1)。バックトラック探索の実行時間は
+// heavy-tailed で、探索順の運が悪いと上限まで粘っても解けない一方、別の
+// 順序なら数万回で解けることが多い。maxIterations を 1 本の DFS で使い
+// 切るより、この間隔でシードを変えて仕切り直す方が完全解率・速度とも良い
+// (実測: デフォルトデータの 50 万回一本勝負は 3 案中 2 案が部分解、
+//  シード次第では 5 万回程度で完全解が出ていた)。
+const RESTART_INTERVAL = 60000;
+
+// 他タブ (他学年) の確定割当を集計する (H2)。
+// - busy: 同日・同時限に他タブで授業を持つ講師 (物理的に兼務不可)
+// - daily: 講師の日次コマ数 (1 日上限の基準に合算する)
+// dates / periods の ID は project 共通プールなのでタブをまたいでそのまま
+// 比較できる。classes はタブ固有。そのタブが使わない日・時限や削除済み
+// クラスに残る stale セルは数えない。合同グループは 1 コマとして dedupe。
+// なお externalCounts / externalSessions は「このツールの外」(予備校・高校
+// 等) の負荷で、ここで数える他タブ分とは別枠。
+function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName) {
+  const busy = new Set();   // `${dateId}|${periodId}|${teacher}`
+  const daily = {};         // makeExternalKey(dateLabel, teacher) → count
+  (project.tabs || []).forEach(tab => {
+    if (tab.id === activeTabId) return;
+    const tabDates = new Map(activeDatesForTab(project.dates, tab).map(d => [d.id, d]));
+    const tabPeriodIds = new Set(activePeriodsForTab(project.periods, tab).map(p => p.id));
+    const classById = new Map((tab.config?.classes || []).map(c => [c.id, c]));
+    const seenCombined = new Set();
+    Object.entries(tab.schedule || {}).forEach(([key, entry]) => {
+      if (!entry?.teacher || entry.teacher === exemptName) return;
+      const parsed = parseKey(key);
+      if (!parsed) return;
+      const d = tabDates.get(parsed.dateId);
+      const cls = classById.get(parsed.classId);
+      if (!d || !cls || !tabPeriodIds.has(parsed.periodId)) return; // stale セル
+      busy.add(`${parsed.dateId}|${parsed.periodId}|${entry.teacher}`);
+      const group = findCombinedGroup(combinedGroups, entry.subject, cls.label, d.label);
+      if (group) {
+        const tk = `${parsed.dateId}-${parsed.periodId}-${group.id}-${entry.teacher}`;
+        if (seenCombined.has(tk)) return;
+        seenCombined.add(tk);
+      }
+      const dayKey = makeExternalKey(d.label, entry.teacher);
+      daily[dayKey] = (daily[dayKey] || 0) + 1;
+    });
+  });
+  return { busy, daily };
+}
+
 /**
  * 単一パターンを生成する（シード指定可能）
  * @param {object} args
@@ -70,8 +116,7 @@ const PROGRESS_INTERVAL = 20000;
  *   探索の途中経過を間引いて通知する (E2f live progress)。省略可。
  * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number, iterations: number, hitLimit: boolean, stuckSlot: object|null }}
  */
-export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress }) {
-  const rng = mulberry32(seed);
+export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress, restartInterval = RESTART_INTERVAL }) {
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   // v4(Y)+E-3: dates も periods も『このタブが使う分』に絞る (useProject の
@@ -98,7 +143,9 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
     currentConfig.periods,
   );
 
-  let solution = null;
+  // H2: 他タブの確定割当 (同時限 busy + 日次コマ数)
+  const otherTabs = collectOtherTabsUsage(project, activeTab.id, combinedGroups, DAILY_LIMIT_EXEMPT_TEACHER);
+
   const slots = [];
   const currentCounts = {};
   currentConfig.classes.forEach((c, cIdx) => {
@@ -128,6 +175,10 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   Object.keys(externalCounts).forEach(k => {
     const v = externalCounts[k] || 0;
     if (v > 0) initialDaily[k] = v;
+  });
+  // H2: 他タブ (他学年) の確定割当も日次上限の基準に合算する
+  Object.keys(otherTabs.daily).forEach(k => {
+    initialDaily[k] = (initialDaily[k] || 0) + otherTabs.daily[k];
   });
 
   const seenCombinedDay = new Set();
@@ -176,224 +227,270 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
       });
     });
     slot.score = validCandidates;
-    slot.tieBreaker = rng();
   });
 
-  slots.sort((a, b) => {
-    if (a.score === b.score) return a.tieBreaker - b.tieBreaker;
-    return a.score - b.score;
-  });
-
-  // 部分解の追跡
+  // ここから下はリスタート 1 回分の探索 (P1)。
+  // - スロット順の MRV タイブレークと科目/講師のシャッフルはリスタート
+  //   ごとの rng で引き直す (= 毎回別の探索順を試す)
+  // - solution / bestPartial / 詰まり位置はリスタート横断で集約する
+  const seedGen = mulberry32(seed);
+  let solution = null;
   let bestPartial = null;
   let bestFilledCount = -1;
+  let bestStuckSlot = null; // bestFilledCount を出した run の詰まりスロット
+  let totalIter = 0;
 
-  const solve = (idx, tempSch, tempCnt, tempDaily, iter = { c: 0 }) => {
-    if (iter.c++ > maxIterations || solution !== null) return;
+  const runOnce = (budget) => {
+    const rng = mulberry32(Math.floor(seedGen() * 0x7fffffff));
+    const runSlots = slots
+      .map(s => ({ ...s, tieBreaker: rng() }))
+      .sort((a, b) => (a.score === b.score ? a.tieBreaker - b.tieBreaker : a.score - b.score));
 
-    // 部分解の更新（現在の充填度が最高なら保存）
-    if (idx > bestFilledCount) {
-      bestFilledCount = idx;
-      bestPartial = JSON.parse(JSON.stringify(tempSch));
-    }
+    let runSolution = null;
+    let runBestPartial = null;
+    let runBestFilled = -1;
+    const iter = { c: 0 };
 
-    // 探索の途中経過を間引いて通知 (E2f)。bestFilledCount 更新後に出す。
-    if (onProgress && iter.c % PROGRESS_INTERVAL === 0) {
-      onProgress({ iterations: iter.c, filledCount: bestFilledCount, totalSlots });
-    }
+    const solve = (idx, tempSch, tempCnt, tempDaily) => {
+      if (iter.c++ > budget || runSolution !== null) return;
 
-    if (idx >= slots.length) {
-      solution = JSON.parse(JSON.stringify(tempSch));
-      return;
-    }
-
-    const { cIdx, d, p, c, k, fixedSubject } = slots[idx];
-
-    // 合同グループの伝播により既に充填されている場合はスキップ
-    if (tempSch[k]?.subject && tempSch[k]?.teacher) {
-      solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
-      return;
-    }
-
-    const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
-
-    for (const s of subjectsToTry) {
-      if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
-      // 同日・同クラスに同じ科目があるかチェック
-      if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, d.id, c.id, s)) continue;
-
-      // 合同グループチェック (label ベース)
-      const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
-      let secondarySlots = [];
-      let canUseCombined = true;
-
-      if (group) {
-        for (const otherClassLabel of group.classes) {
-          if (otherClassLabel === c.label) continue;
-          const otherCIdx = currentConfig.classes.findIndex(cc => cc.label === otherClassLabel);
-          if (otherCIdx < 0) continue;
-          const otherClassEntity = currentConfig.classes[otherCIdx];
-          const otherKey = makeKey(d.id, p.id, otherClassEntity.id);
-          const otherEntry = tempSch[otherKey];
-
-          // ロックされていて別の科目が入っている場合は不可
-          if (otherEntry?.locked && otherEntry.subject !== s) {
-            canUseCombined = false;
-            break;
-          }
-          // 別の科目が既に入っている場合は不可
-          if (otherEntry?.subject && otherEntry.subject !== s) {
-            canUseCombined = false;
-            break;
-          }
-          // 科目枠が残っていない場合は不可
-          if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
-            canUseCombined = false;
-            break;
-          }
-          // 同日・同クラスに同じ科目が既にある場合は不可 (今コマは除外)
-          if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, d.id, otherClassEntity.id, s, p.id)) {
-            canUseCombined = false;
-            break;
-          }
-
-          // 未充填のセカンダリスロットを収集（元の状態を保存）
-          if (!otherEntry?.subject || !otherEntry?.teacher) {
-            const hadSubject = !!otherEntry?.subject;
-            secondarySlots.push({
-              cIdx: otherCIdx,
-              key: otherKey,
-              className: otherClassLabel,
-              hadSubject,
-              original: otherEntry ? { ...otherEntry } : null,
-            });
-          }
-        }
-
-        if (!canUseCombined) continue;
+      // 部分解の更新（現在の充填度が最高なら保存）
+      if (idx > runBestFilled) {
+        runBestFilled = idx;
+        runBestPartial = JSON.parse(JSON.stringify(tempSch));
       }
 
-      // 有効な講師を検索 (subject 担当・NG slot/class・合同セカンダリ NG class)
-      const secondaryClassNames = group ? secondarySlots.map(ss => ss.className) : [];
-      const validT = project.teachers.filter(t =>
-        isTeacherCandidateFor({
-          teacher: t,
-          subject: s,
-          date: d.label,
-          period: p.label,
-          className: c.label,
-          secondaryClassNames,
-          autoNgEntries: autoNgByTeacher.get(t.name),
-        })
-      );
+      // 探索の途中経過を間引いて通知 (E2f)。リスタート横断の累計を出す。
+      if (onProgress && iter.c % PROGRESS_INTERVAL === 0) {
+        onProgress({
+          iterations: totalIter + iter.c,
+          filledCount: Math.max(bestFilledCount, runBestFilled),
+          totalSlots,
+        });
+      }
 
-      const priorityGroup = [];
-      const neutralGroup = [];
-      validT.forEach(t => {
-        if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
-        else neutralGroup.push(t);
-      });
+      if (idx >= runSlots.length) {
+        runSolution = JSON.parse(JSON.stringify(tempSch));
+        return;
+      }
 
-      const shuffledT = [
-        ...seededShuffle(priorityGroup, rng),
-        ...seededShuffle(neutralGroup, rng)
-      ];
+      const { cIdx, d, p, c, k, fixedSubject } = runSlots[idx];
 
-      // 合同グループのクラス ID リスト (hasTeacherInSamePeriod の除外用)
-      const combinedClassIds = group
-        ? group.classes
-            .map(gcLabel => currentConfig.classes.find(cc => cc.label === gcLabel)?.id)
-            .filter(id => id != null)
-        : [];
+      // 合同グループの伝播により既に充填されている場合はスキップ
+      if (tempSch[k]?.subject && tempSch[k]?.teacher) {
+        solve(idx + 1, tempSch, tempCnt, tempDaily);
+        return;
+      }
 
-      for (const tObj of shuffledT) {
-        const tName = tObj.name;
-        const dayKey = makeExternalKey(d.label, tName);
-        const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
+      const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
 
-        // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
-        if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
+      for (const s of subjectsToTry) {
+        if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
+        // 同日・同クラスに同じ科目があるかチェック
+        if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, d.id, c.id, s)) continue;
 
-        // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
-        // 合同グループでも 1 コマとしてカウント (下の increment と整合)
-        if (wouldExceedDailyLimit({
-          teacherName: tName, date: d.label, tempDaily, maxDailyHours,
-          exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
-        })) continue;
+        // 合同グループチェック (label ベース)
+        const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
+        let secondarySlots = [];
+        let canUseCombined = true;
 
-        // 連続コマ数上限チェック (E2c)。"未定" は対象外。
-        if (countsTowardDaily && wouldExceedConsecutive({
-          periodsOrder: currentConfig.periods,
-          periodId: p.id,
-          isOccupied: (pid) => currentConfig.classes.some(
-            cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
-          ),
-          maxConsecutive,
-        })) continue;
+        if (group) {
+          for (const otherClassLabel of group.classes) {
+            if (otherClassLabel === c.label) continue;
+            const otherCIdx = currentConfig.classes.findIndex(cc => cc.label === otherClassLabel);
+            if (otherCIdx < 0) continue;
+            const otherClassEntity = currentConfig.classes[otherCIdx];
+            const otherKey = makeKey(d.id, p.id, otherClassEntity.id);
+            const otherEntry = tempSch[otherKey];
 
-        // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
-        // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
-        // 落ちないようにする)
-        const primaryLocked = tempSch[k]?.locked;
-        tempSch[k] = { subject: s, teacher: tName, ...(primaryLocked ? { locked: true } : {}) };
-        if (!fixedSubject) tempCnt[cIdx][s]++;
-        if (countsTowardDaily) {
-          if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
-          tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+            // ロックされていて別の科目が入っている場合は不可
+            if (otherEntry?.locked && otherEntry.subject !== s) {
+              canUseCombined = false;
+              break;
+            }
+            // 別の科目が既に入っている場合は不可
+            if (otherEntry?.subject && otherEntry.subject !== s) {
+              canUseCombined = false;
+              break;
+            }
+            // 科目枠が残っていない場合は不可
+            if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
+              canUseCombined = false;
+              break;
+            }
+            // 同日・同クラスに同じ科目が既にある場合は不可 (今コマは除外)
+            if (!otherEntry?.subject && hasSubjectInSameDayClassExcept(tempSch, currentConfig.periods, d.id, otherClassEntity.id, s, p.id)) {
+              canUseCombined = false;
+              break;
+            }
+
+            // 未充填のセカンダリスロットを収集（元の状態を保存）
+            if (!otherEntry?.subject || !otherEntry?.teacher) {
+              const hadSubject = !!otherEntry?.subject;
+              secondarySlots.push({
+                cIdx: otherCIdx,
+                key: otherKey,
+                className: otherClassLabel,
+                hadSubject,
+                original: otherEntry ? { ...otherEntry } : null,
+              });
+            }
+          }
+
+          if (!canUseCombined) continue;
         }
 
-        // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
-        secondarySlots.forEach(ss => {
-          const locked = tempSch[ss.key]?.locked;
-          tempSch[ss.key] = { subject: s, teacher: tName, ...(locked ? { locked: true } : {}) };
-          if (!ss.hadSubject && tempCnt[ss.cIdx]) {
-            tempCnt[ss.cIdx][s] = (tempCnt[ss.cIdx][s] || 0) + 1;
-          }
+        // 有効な講師を検索 (subject 担当・NG slot/class・合同セカンダリ NG class)
+        const secondaryClassNames = group ? secondarySlots.map(ss => ss.className) : [];
+        const validT = project.teachers.filter(t =>
+          isTeacherCandidateFor({
+            teacher: t,
+            subject: s,
+            date: d.label,
+            period: p.label,
+            className: c.label,
+            secondaryClassNames,
+            autoNgEntries: autoNgByTeacher.get(t.name),
+          })
+        );
+
+        const priorityGroup = [];
+        const neutralGroup = [];
+        validT.forEach(t => {
+          if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
+          else neutralGroup.push(t);
         });
 
-        solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
-        if (solution !== null) return;
+        const shuffledT = [
+          ...seededShuffle(priorityGroup, rng),
+          ...seededShuffle(neutralGroup, rng)
+        ];
 
-        // バックトラック: プライマリスロット (locked 保持)
-        if (fixedSubject) {
-          tempSch[k] = { subject: fixedSubject, teacher: "", ...(primaryLocked ? { locked: true } : {}) };
-        } else if (primaryLocked) {
-          // 元が空 + locked のセル: 空に戻すが lock は保持
-          tempSch[k] = { locked: true };
-          tempCnt[cIdx][s]--;
-        } else {
-          delete tempSch[k];
-          tempCnt[cIdx][s]--;
-        }
-        if (countsTowardDaily) tempDaily[dayKey]--;
+        // 合同グループのクラス ID リスト (hasTeacherInSamePeriod の除外用)
+        const combinedClassIds = group
+          ? group.classes
+              .map(gcLabel => currentConfig.classes.find(cc => cc.label === gcLabel)?.id)
+              .filter(id => id != null)
+          : [];
 
-        // バックトラック: セカンダリスロット（元の状態に復元）
-        secondarySlots.forEach(ss => {
-          if (ss.original) {
-            tempSch[ss.key] = { ...ss.original };
+        for (const tObj of shuffledT) {
+          const tName = tObj.name;
+          const dayKey = makeExternalKey(d.label, tName);
+          const countsTowardDaily = tName !== DAILY_LIMIT_EXEMPT_TEACHER;
+
+          // 同日同時限の他クラスに同じ講師がいるかチェック (合同グループ内は除外)
+          if (hasTeacherInSamePeriod(tempSch, currentConfig.classes, d.id, p.id, c.id, tName, combinedClassIds)) continue;
+
+          // H2: 他タブ (他学年) の同日同時限に既に入っている講師は物理的に
+          // 兼務できないので除外 ("未定" は placeholder なので対象外)
+          if (countsTowardDaily && otherTabs.busy.has(`${d.id}|${p.id}|${tName}`)) continue;
+
+          // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
+          // 合同グループでも 1 コマとしてカウント (下の increment と整合)
+          if (wouldExceedDailyLimit({
+            teacherName: tName, date: d.label, tempDaily, maxDailyHours,
+            exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
+          })) continue;
+
+          // 連続コマ数上限チェック (E2c)。"未定" は対象外。
+          if (countsTowardDaily && wouldExceedConsecutive({
+            periodsOrder: currentConfig.periods,
+            periodId: p.id,
+            isOccupied: (pid) => currentConfig.classes.some(
+              cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
+            ),
+            maxConsecutive,
+          })) continue;
+
+          // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
+          // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
+          // 落ちないようにする)
+          const primaryLocked = tempSch[k]?.locked;
+          tempSch[k] = { subject: s, teacher: tName, ...(primaryLocked ? { locked: true } : {}) };
+          if (!fixedSubject) tempCnt[cIdx][s]++;
+          if (countsTowardDaily) {
+            if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
+            tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+          }
+
+          // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
+          secondarySlots.forEach(ss => {
+            const locked = tempSch[ss.key]?.locked;
+            tempSch[ss.key] = { subject: s, teacher: tName, ...(locked ? { locked: true } : {}) };
+            if (!ss.hadSubject && tempCnt[ss.cIdx]) {
+              tempCnt[ss.cIdx][s] = (tempCnt[ss.cIdx][s] || 0) + 1;
+            }
+          });
+
+          solve(idx + 1, tempSch, tempCnt, tempDaily);
+          if (runSolution !== null) return;
+
+          // バックトラック: プライマリスロット (locked 保持)
+          if (fixedSubject) {
+            tempSch[k] = { subject: fixedSubject, teacher: "", ...(primaryLocked ? { locked: true } : {}) };
+          } else if (primaryLocked) {
+            // 元が空 + locked のセル: 空に戻すが lock は保持
+            tempSch[k] = { locked: true };
+            tempCnt[cIdx][s]--;
           } else {
-            delete tempSch[ss.key];
+            delete tempSch[k];
+            tempCnt[cIdx][s]--;
           }
-          if (!ss.hadSubject && tempCnt[ss.cIdx]) {
-            tempCnt[ss.cIdx][s]--;
-          }
-        });
+          if (countsTowardDaily) tempDaily[dayKey]--;
+
+          // バックトラック: セカンダリスロット（元の状態に復元）
+          secondarySlots.forEach(ss => {
+            if (ss.original) {
+              tempSch[ss.key] = { ...ss.original };
+            } else {
+              delete tempSch[ss.key];
+            }
+            if (!ss.hadSubject && tempCnt[ss.cIdx]) {
+              tempCnt[ss.cIdx][s]--;
+            }
+          });
+        }
       }
-    }
+    };
+
+    solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
+
+    // この run で最初に埋められなかったコマ (= 詰まり位置)。runBestFilled は
+    // 到達した最大 idx なので runSlots[runBestFilled] が次に埋めるべきコマ。
+    // 範囲外 (= 全埋まり) は null。
+    const stuck = runSolution === null && runBestFilled >= 0 && runBestFilled < runSlots.length
+      ? runSlots[runBestFilled]
+      : null;
+    return {
+      runSolution,
+      runBestPartial,
+      runBestFilled,
+      iterUsed: iter.c,
+      hitBudget: iter.c > budget,
+      stuck,
+    };
   };
 
-  // iter を外で確保して solve 後に探索回数 (backtrack の規模) を読めるようにする (E2f)
-  const iter = { c: 0 };
-  solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily }, iter);
+  while (solution === null && totalIter < maxIterations) {
+    const budget = Math.min(restartInterval, maxIterations - totalIter);
+    const r = runOnce(budget);
+    totalIter += r.iterUsed;
+    if (r.runBestFilled > bestFilledCount) {
+      bestFilledCount = r.runBestFilled;
+      bestPartial = r.runBestPartial;
+      bestStuckSlot = r.stuck;
+    }
+    if (r.runSolution) {
+      solution = r.runSolution;
+      break;
+    }
+    // budget 内で探索空間を使い切った (= 順序を変えても結果は同じ) 場合は
+    // リスタートしても無駄なので打ち切る (解なし問題での空回り防止)
+    if (!r.hitBudget) break;
+  }
 
-  // 完全解が出なかった場合、MRV 順で最初に埋められなかったコマ (= 詰まり位置)。
-  // bestFilledCount は到達した最大 idx なので slots[bestFilledCount] が次に
-  // 埋めるべきコマ。範囲外 (= 全埋まり) は null。
-  const stuckSlotRaw = solution === null && bestFilledCount >= 0 && bestFilledCount < slots.length
-    ? slots[bestFilledCount]
-    : null;
-  const stuckSlot = stuckSlotRaw
-    ? { date: stuckSlotRaw.d.label, period: stuckSlotRaw.p.label, class: stuckSlotRaw.c.label }
+  const stuckSlot = solution === null && bestStuckSlot
+    ? { date: bestStuckSlot.d.label, period: bestStuckSlot.p.label, class: bestStuckSlot.c.label }
     : null;
 
   return {
@@ -401,9 +498,9 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
     bestPartial,
     filledCount: bestFilledCount,
     totalSlots,
-    // E2f: 生成の手応えを UI に出すための統計
-    iterations: iter.c,
-    hitLimit: iter.c > maxIterations,
+    // E2f: 生成の手応えを UI に出すための統計 (リスタート横断の累計)
+    iterations: totalIter,
+    hitLimit: solution === null && totalIter > maxIterations,
     stuckSlot,
   };
 }
