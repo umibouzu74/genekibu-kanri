@@ -14,6 +14,7 @@ import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
+import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, formatBytes } from './utils/storageHealth';
 import { useTabPresence } from './hooks/useTabPresence';
 
@@ -105,6 +106,9 @@ function ScheduleApp() {
   // 生成元タブ ({id, name})。結果パネルはタブ切替後も表示されたままなので、
   // 「この案を採用」はアクティブタブではなく必ずこのタブへ適用する。
   const [generatedForTab, setGeneratedForTab] = useState(null);
+  // 生成開始時点の config fingerprint (F2n/F2p)。project 変化のたびに
+  // 再計算して一致しなくなったら生成結果を破棄する (下の effect)。
+  const [generatedFingerprint, setGeneratedFingerprint] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
@@ -149,6 +153,7 @@ function ScheduleApp() {
   useEffect(() => {
     setGeneratedPatterns([]);
     setGeneratedForTab(null);
+    setGeneratedFingerprint(null);
     // 旧プロジェクト相手に走っている生成も止める (完了後に旧案が届くのを防ぐ)
     if (generationRef.current) {
       generationRef.current.cancel();
@@ -158,6 +163,23 @@ function ScheduleApp() {
     }
   }, [project.createdAt]);
 
+  // F2n/F2p: 生成後に案の前提となる構造 (使う日・時限・クラス・クォータ・
+  // 合同・生成制約) が変わったら生成結果を破棄する。タブ削除も fingerprint
+  // が null になるためここで検出される (削除 → 同 ID 再作成の間に必ず
+  // 「ID 不在」の render を挟むので、ID 再利用による別タブへの誤適用も防ぐ)。
+  // teachers / 外部コマ / schedule の変更では破棄しない (fingerprint の
+  // 対象外。理由は utils/generationFingerprint.js を参照)。
+  useEffect(() => {
+    if (generatedPatterns.length === 0 || !generatedForTab) return;
+    const current = computeGenerationFingerprint(project, generatedForTab.id);
+    if (current !== generatedFingerprint) {
+      setGeneratedPatterns([]);
+      setGeneratedForTab(null);
+      setGeneratedFingerprint(null);
+      showToast('設定が変更されたため、以前の生成結果を破棄しました。必要なら再度 🧙‍♂️ 自動作成してください。', 'warning', 4000);
+    }
+  }, [project, generatedPatterns.length, generatedForTab, generatedFingerprint, showToast]);
+
   const handleGenerate = useCallback(() => {
     // 多重起動を防ぐため、既に走っているなら一旦キャンセル
     generationRef.current?.cancel();
@@ -166,6 +188,7 @@ function ScheduleApp() {
     setGeneratedPatterns([]);
     const forTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
     setGeneratedForTab(forTab ? { id: forTab.id, name: forTab.name } : null);
+    setGeneratedFingerprint(forTab ? computeGenerationFingerprint(project, forTab.id) : null);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
     genStartRef.current = Date.now();
     setGenerateElapsedMs(0);

@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 79 files / 1654 tests (2026-07-02 F5w 対応後)
+npm test            # 80 files / 1660 tests (2026-07-02 F2n/F2p 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1069,9 +1069,10 @@ F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を
   SubjectManager / AbsenceNgPanel の即時 commit 数値入力にも draft 化を展開
 - **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
   fixSuggestions の同型 4 連ブロック解消)
-- **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
+- ✅ **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
   生成後の config 変更 (クラス削除・使う日 off・クォータ変更) では
   stale な案を採用できる。config fingerprint での無効化を検討)
+  → **2026-07-02 実装済み** (F.4 推奨着手順 5 参照)
 
 ### F.4 2026-07-02 再チェック (koushu-jikanwari-check セッション) の結果
 
@@ -1114,7 +1115,7 @@ production build 成功 (excelExport chunk 警告のみ、期待動作)。
   (例: 日付「8/1-田中」×講師「田中」)。dates/removeFromPool や
   config/setList(periods) は最長一致で対応済みなのにここだけ素朴
   replace。F2k (ラベル参照 cascade の一元化) で吸収するのが良い
-- **F2p (小)**: タブ ID 再利用 × 生成結果。最大 ID のタブを削除 →
+- ✅ **F2p (小)**: タブ ID 再利用 × 生成結果。最大 ID のタブを削除 →
   新タブ追加 (tab/add は max+1) で ID が再利用され、残っている生成結果の
   「この案を採用」(schedule/applyPattern は ID 存在チェックのみ) が
   無関係な新タブへ旧案を書き込める。H4 と同族で、F2n の fingerprint
@@ -1135,7 +1136,13 @@ Worker が使える環境では影響なし。
    ときだけ丸ふさがりの日を列挙)
 4. **rename/削除系の参照整合まとめ** — F2k ヘルパー一元化と同時に
    H3/H5/F2o を 1 セッションで
-5. **F2n (+F2p)** — 生成結果の config fingerprint 失効
+5. ~~**F2n (+F2p)**~~ ✅ 完了 (2026-07-02) — `utils/generationFingerprint.js`
+   を新設。生成開始時に「使う日・時限・クラス・クォータ・合同・生成制約」の
+   fingerprint を捕捉し、project 変化で一致しなくなったら生成結果を破棄
+   (warning toast)。タブ削除は fingerprint=null で検出され、同 ID 再作成
+   (F2p) も削除時点で破棄済みになる。teachers / 外部コマ / schedule の変更
+   では破棄しない (構造は壊れず違反 UI が検出する領域。理由はモジュールの
+   コメントに明記)
 6. **F2a/F2b** — a11y はまとめて 1 セッション
 
 ※ F.5 の並列レビュー結果を踏まえた統合版の推奨順は F.5 末尾を参照。
@@ -1325,7 +1332,7 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    判定に他タブの busy を合算) / F5y (判定をプール全時限の並びに変更、歯抜け
    タブの誤隣接を解消) / F5v (v3→v4 で 0 日タブの subset を保存) / F5u
    (全タブ合計を .current に)。テスト +6。
-   **残**: F2n/F2p (生成結果の config fingerprint 失効)。
+   F2n/F2p は generationFingerprint で ✅ 完了 (2026-07-02、F.4 の 5 参照)。
    F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
 7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり。
    その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
