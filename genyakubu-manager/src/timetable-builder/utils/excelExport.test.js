@@ -502,3 +502,59 @@ describe('buildScheduleWorkbook — 科目別シート', () => {
     expect(names).toContain('科目別_英語');
   });
 });
+
+// ─── シート名の防御 (F5g / F5h / F5i) ───────────────────────────────
+
+describe('シート名の防御 (F5g/F5h/F5i)', () => {
+  const tabConfig = () => ({
+    dates: [{ id: 1, label: '12/25(木)' }],
+    periods: [{ id: 1, label: '1限' }],
+    classes: [{ id: 1, label: '３S' }],
+    subjectCounts: { '英語': 1 },
+  });
+
+  it('大小文字違いのタブ名でも throw せず一意なシート名になる (F5g)', () => {
+    // exceljs の addWorksheet は toLowerCase 比較で重複 reject するため、
+    // 完全一致判定の uniq だと "classA"/"CLASSA" で throw していた。
+    const p = makeProject({
+      tabs: [
+        { id: 1, name: 'classA', config: tabConfig(), schedule: {} },
+        { id: 2, name: 'CLASSA', config: tabConfig(), schedule: {} },
+      ],
+    });
+    const wb = buildScheduleWorkbook(p);
+    const lower = wb.worksheets.map(ws => ws.name.toLowerCase());
+    expect(new Set(lower).size).toBe(lower.length);
+    expect(lower).toContain('classa');
+    expect(lower).toContain('classa_1');
+  });
+
+  it('先頭/末尾のシングルクォートは除去される (F5h)', () => {
+    // exceljs は先頭/末尾 ' のシート名を reject する。
+    const p = makeProject({
+      tabs: [{ id: 1, name: "'中3'", config: tabConfig(), schedule: {} }],
+    });
+    const wb = buildScheduleWorkbook(p);
+    expect(wb.worksheets[0].name).toBe('中3');
+  });
+
+  it('講師名が「全講師リスト」でも講師別出力が throw しない (F5i)', () => {
+    const p = makeProject({
+      teachers: [
+        { name: '全講師リスト', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: tabConfig(),
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '全講師リスト' } },
+      }],
+    });
+    const wb = buildTeacherWorkbook(p);
+    const names = wb.worksheets.map(ws => ws.name);
+    // 個人シートが固定名を先取りしても、集約シートは suffix 付きで共存する
+    expect(names).toHaveLength(2);
+    expect(new Set(names.map(n => n.toLowerCase())).size).toBe(2);
+    expect(names).toContain('全講師リスト');
+  });
+});

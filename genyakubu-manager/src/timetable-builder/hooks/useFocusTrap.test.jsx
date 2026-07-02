@@ -129,6 +129,44 @@ describe('useFocusTrap', () => {
     expect(document.activeElement).toBe(getByText('opener'));
   });
 
+  it('フォーカスが trap 外にあるとき前方 Tab でも trap 内へ引き戻す (F5q)', () => {
+    const { getByText } = render(
+      <>
+        <button>outside</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    // オーバーレイクリック等でフォーカスが trap 外へ落ちた状況を再現
+    getByText('outside').focus();
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(document.activeElement).toBe(getByText('first'));
+  });
+
+  it('フォーカスが trap 外にあるとき Shift+Tab は末尾へ引き戻す (従来動作の維持)', () => {
+    const { getByText } = render(
+      <>
+        <button>outside</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    getByText('outside').focus();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(getByText('last'));
+  });
+
+  it('IME 変換中 (isComposing) の Escape では閉じない (F5r)', () => {
+    const onClose = vi.fn();
+    render(<TrapDialog onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape', isComposing: true });
+    expect(onClose).not.toHaveBeenCalled();
+    // 旧ブラウザ互換: keyCode 229 も変換中扱い
+    fireEvent.keyDown(window, { key: 'Escape', keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    // 変換中でなければ従来どおり閉じる
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('focusable がゼロの dialog では Tab がデフォルト動作ごと抑止される', () => {
     function EmptyDialog({ onClose }) {
       const ref = useRef(null);

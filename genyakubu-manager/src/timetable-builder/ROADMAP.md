@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 78 files / 1618 tests (2026-07-02 F5j 対応後)
+npm test            # 78 files / 1627 tests (2026-07-02 小粒セット対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1128,7 +1128,8 @@ Worker が使える環境では影響なし。
 **推奨着手順 (次セッション向け)**:
 1. ~~**F2f**~~ ✅ 完了 (F.5 系統 A と同時対応) — 読込失敗時に原本を
    `builder.schedule_project_corrupt` へ退避し、toast に退避先を明記
-2. **F2c** — autosave の実 debounce 化 (入力レイテンシ源、小規模)
+2. ~~**F2c**~~ ✅ 完了 (F.5 小粒セットと同時対応) — 実書き込みを 800ms
+   debounce 化し、アンマウント / pagehide / beforeunload で flush
 3. **F2g** — クォータ 0 科目の除外 + クォータ考慮 (誤警告は「致命」表示の
    信頼を毀損する)
 4. **rename/削除系の参照整合まとめ** — F2k ヘルパー一元化と同時に
@@ -1204,14 +1205,14 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 #### 系統 B: Excel 出力が throw する名前
 
-- **F5g (Medium)**: `uniqueSheetName` の重複判定が case-sensitive
+- ✅ **F5g (Medium)**: `uniqueSheetName` の重複判定が case-sensitive
   (`workbook.getWorksheet`) なのに exceljs の addWorksheet は
   case-insensitive で throw。"classA"/"CLASSA" 等、大小文字違いの
   タブ名・講師名・科目名で出力が恒久的に失敗 (再現確認済み。日本語運用では
   遭遇率低のため Medium)
-- **F5h (Medium)**: `sanitizeSheetName` がアポストロフィ非除去。先頭/末尾
+- ✅ **F5h (Medium)**: `sanitizeSheetName` がアポストロフィ非除去。先頭/末尾
   `'` の名前で exceljs が throw (再現確認済み)
-- **F5i (Low)**: 講師名が「全講師リスト」だと固定名
+- ✅ **F5i (Low)**: 講師名が「全講師リスト」だと固定名
   `addWorksheet('全講師リスト')` (uniqueSheetName 不通) が重複 throw
 
 #### 系統 C: 設定モーダル UI
@@ -1248,10 +1249,10 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 #### 系統 D: focus / 入力系
 
-- **F5q (Medium)**: useFocusTrap は**フォーカスが trap 外にあるときの前方
+- ✅ **F5q (Medium)**: useFocusTrap は**フォーカスが trap 外にあるときの前方
   Tab を捕捉しない** (`!root.contains(active)` の救済が Shift+Tab 分岐に
   しかない)。オーバーレイクリック → Tab でモーダル背後の UI を操作できる
-- **F5r (Medium)**: useFocusTrap の Escape が `e.isComposing` を見ない。
+- ✅ **F5r (Medium)**: useFocusTrap の Escape が `e.isComposing` を見ない。
   **IME 変換キャンセルの Escape でダイアログごと閉じる** (InputModal では
   入力消失)。日本語入力前提のアプリなので発生頻度高
 - **F5s (Low・要検証)**: useLongPress のゴースト click (メニューが指の
@@ -1285,7 +1286,7 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 #### 系統 F: その他
 
-- **F5aa (Medium・要実機確認)**: dragstart で `dataTransfer.setData()` を
+- ✅ **F5aa (Medium・要実機確認)**: dragstart で `dataTransfer.setData()` を
   呼ばないため **Firefox では HTML5 drag が開始しない**既知仕様に抵触
   (ScheduleTable)。`setData('text/plain', k)` の 1 行で解消
 - ✅ **テストの穴** (3 件とも 2026-07-02 対応済み): useLongPress の click 抑止
@@ -1298,8 +1299,10 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 1. ~~**系統 A + F2f**~~ ✅ 完了 (2026-07-02) — migrate 正規化 + F2f 退避 +
    統合テスト + テストの穴 3 件。F5f (v2/v3 混在 dim) のみ残 (要検証・外部データ限定)
 2. ~~**F5j**~~ ✅ 完了 (2026-07-02) — poolDates をカレンダーソートに統一
-3. **小粒即効セット** — F2c (autosave debounce) / F5aa (setData 1 行) /
-   F5q・F5r (focus trap 2 件) / F5g-F5i (Excel throw 3 件)
+3. ~~**小粒即効セット**~~ ✅ 完了 (2026-07-02) — F2c (debounce+flush) /
+   F5aa (setData) / F5q・F5r (focus trap、親アプリ側の同一実装にも適用) /
+   F5g-F5i (Excel シート名)。回帰テスト +9 (autosave 5 / focus trap 3 /
+   Excel 3、既存 2 件は debounce 対応に更新)
 4. **F2g + F5x** — 分析の誤警告・絞り忘れ
 5. **設定モーダル UI まとめ** — F5k〜F5o (+ F5p の設計判断)
 6. **ソルバ整合** — F5t / F5v (+ F5w の仕様判断、F2n/F2p の fingerprint 失効と同時)

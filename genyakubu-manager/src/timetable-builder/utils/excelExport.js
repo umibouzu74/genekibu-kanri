@@ -326,20 +326,29 @@ export function computeSubjectStats(project, subject) {
 // 'History'・重複名で throw する。ユーザ入力 (タブ名・講師名) を
 // シート名にする前に必ずこれを通すこと。
 function sanitizeSheetName(name) {
-  const stripped = String(name || '').replace(/[\\/:?*[\]]/g, '').trim();
+  // 先頭/末尾のシングルクォートも exceljs が reject する (F5h)。内側の
+  // クォートは合法なので端だけ落とす (空白と交互に現れても残らないよう
+  // 文字クラスでまとめて strip)。
+  const stripped = String(name || '')
+    .replace(/[\\/:?*[\]]/g, '')
+    .replace(/^['\s]+|['\s]+$/g, '');
   const safe = stripped || 'Sheet';
   return /^history$/i.test(safe) ? `${safe}_` : safe;
 }
 
 // Excel 上のシート名は 31 文字 + 一部の禁則文字。重複した場合は suffix を付与。
+// 重複判定は case-insensitive (F5g)。exceljs の addWorksheet は
+// toLowerCase 比較で重複を reject するため、getWorksheet (完全一致) で
+// 判定すると "classA"/"CLASSA" のような大小文字違いの名前で throw する。
 function uniqueSheetName(workbook, baseName) {
+  const taken = new Set(workbook.worksheets.map(ws => ws.name.toLowerCase()));
   let name = baseName.substring(0, 31);
-  if (!workbook.getWorksheet(name)) return name;
+  if (!taken.has(name.toLowerCase())) return name;
   let suffix = 1;
   while (true) {
     const tail = `_${suffix}`;
     name = (baseName.substring(0, 31 - tail.length) + tail);
-    if (!workbook.getWorksheet(name)) return name;
+    if (!taken.has(name.toLowerCase())) return name;
     suffix++;
   }
 }
@@ -516,7 +525,8 @@ export function buildTeacherWorkbook(project) {
 
   // 全講師リストシート
   if (allRows.length > 0) {
-    const wsAll = workbook.addWorksheet('全講師リスト');
+    // 講師名が「全講師リスト」でも throw しないよう固定名も uniq を通す (F5i)
+    const wsAll = workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト'));
     const allHeader = ['講師名', '日付', '時限', 'クラス', '科目', 'タブ名', '備考'];
     wsAll.addRow(allHeader);
     allHeader.forEach((_, ci) => applyCellStyle(wsAll.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
@@ -537,7 +547,7 @@ export function buildTeacherWorkbook(project) {
     [10, 14, 14, 10, 10, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
   } else {
     // 該当なしでも空シートを作って一貫性を保つ
-    workbook.addWorksheet('全講師リスト');
+    workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト'));
   }
 
   return workbook;

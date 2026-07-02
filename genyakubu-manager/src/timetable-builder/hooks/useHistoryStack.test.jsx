@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistoryStack } from './useHistoryStack';
 import { STORAGE_KEY_PROJECT } from '../utils/constants';
 
@@ -139,23 +139,66 @@ describe('useHistoryStack — branch 切り捨て', () => {
   });
 });
 
-describe('useHistoryStack — LocalStorage 保存', () => {
+describe('useHistoryStack — LocalStorage 保存 (F2c: 実書き込みの debounce)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   it('初回マウントでは保存しない (loadInitialProject 直後の書き戻しを避ける)', () => {
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
     renderHook(() => useHistoryStack());
+    act(() => vi.advanceTimersByTime(1000));
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
   });
 
-  it('dispatch 後に localStorage に保存される', () => {
+  it('dispatch 後、debounce 経過で localStorage に保存される', () => {
     const { result } = renderHook(() => useHistoryStack());
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
+    // debounce 中はまだ書き込まれない
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
+    act(() => vi.advanceTimersByTime(800));
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT));
     expect(saved.name).toBe('proj-1');
   });
 
-  it('保存中の saveStatus が「💾 保存中...」に切り替わる', () => {
+  it('連続 dispatch は 1 回の書き込みにまとまり、最後の project が保存される', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const { result } = renderHook(() => useHistoryStack());
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(3) } }));
+    expect(setItemSpy).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(800));
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-3');
+    setItemSpy.mockRestore();
+  });
+
+  it('debounce 確定前にアンマウントしても未保存分が flush される', () => {
+    const { result, unmount } = renderHook(() => useHistoryStack());
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(7) } }));
+    unmount();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-7');
+  });
+
+  it('pagehide (タブ閉じ/リロード) で未保存分が flush される', () => {
+    const { result } = renderHook(() => useHistoryStack());
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(8) } }));
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-8');
+    // flush 済みなので debounce 発火で二重書き込みしない
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    act(() => vi.advanceTimersByTime(800));
+    expect(setItemSpy).not.toHaveBeenCalled();
+    setItemSpy.mockRestore();
+  });
+
+  it('保存中の saveStatus が「💾 保存中...」→ debounce 後「✅ 保存済」に遷移する', () => {
     const { result } = renderHook(() => useHistoryStack());
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     expect(result.current.saveStatus).toBe('💾 保存中...');
+    act(() => vi.advanceTimersByTime(800));
+    expect(result.current.saveStatus).toBe('✅ 保存済');
   });
 });

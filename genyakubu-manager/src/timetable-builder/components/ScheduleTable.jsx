@@ -27,6 +27,10 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
   const handleDragStart = (e, k, d) => {
     if (d.locked || !d.subject) { e.preventDefault(); return; }
     setDragSource({ key: k, data: d });
+    // Firefox は dragstart でデータ項目をセットしないと HTML5 drag 自体を
+    // 開始しない (F5aa)。swap の実データは dragSource state で持ち回るので
+    // 中身はキー文字列で十分。
+    e.dataTransfer.setData('text/plain', k);
     e.dataTransfer.effectAllowed = "move";
     e.target.style.opacity = '0.5';
   };

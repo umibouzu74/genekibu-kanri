@@ -530,7 +530,7 @@ describe('useProject — undo/redo', () => {
 
 describe('useProject — handleResetAll', () => {
   it('reload なしで state を hardcoded default に差し替える', () => {
-    const { result } = setupHook();
+    const { result, unmount } = setupHook();
     // 何か変更してから reset
     act(() => result.current.handleAssign(1, 1, 1, 'subject', '英語'));
     expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeTruthy();
@@ -542,6 +542,8 @@ describe('useProject — handleResetAll', () => {
     expect(result.current.project.tabs[0].name).toBe('中３');
     expect(result.current.currentSchedule[makeKey(1, 1, 1)]).toBeUndefined();
     // LocalStorage は autosave で fresh default に上書きされる (旧データは消える)。
+    // F2c: 実書き込みは debounce されるため、アンマウント flush で確定させる。
+    unmount();
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT));
     expect(saved.tabs[0].name).toBe('中３');
     expect(saved.tabs[0].schedule).toEqual({});
