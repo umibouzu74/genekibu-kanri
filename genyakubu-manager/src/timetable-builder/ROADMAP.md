@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 80 files / 1660 tests (2026-07-02 F2n/F2p 対応後)
+npm test            # 81 files / 1678 tests (2026-07-02 参照整合対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1134,8 +1134,15 @@ Worker が使える環境では影響なし。
 3. ~~**F2g**~~ ✅ 完了 (F.5 と同時対応) — C1 をクォータ考慮に再設計
    (クォータ 0 除外 / 担当者ゼロは C2 に一本化 / 置ける日数 < クォータの
    ときだけ丸ふさがりの日を列挙)
-4. **rename/削除系の参照整合まとめ** — F2k ヘルパー一元化と同時に
-   H3/H5/F2o を 1 セッションで
+4. ~~**rename/削除系の参照整合まとめ**~~ ✅ 完了 (2026-07-02) —
+   `utils/labelRefs.js` を新設しラベルキーのパース知識を一元化 (F2k)。
+   同時に修正: **H3** (renameHeader の重複ラベルを reject + ContextMenu で
+   理由 toast) / **H5** (クラス rename に teacher.ngClasses/priorityClasses
+   が追従、config/setList のクラス削除で参照を掃除〔他タブの同名は温存〕) /
+   **F2o** (teacher/rename の externalCounts を suffix-slice 置換に)。
+   reducer のローカルヘルパー 5 個を labelRefs へ移設。
+   NG CSV の空白結合 dedupe (F2h 前段) は実害が「重複行の skip 漏れ」のみ
+   なので保留
 5. ~~**F2n (+F2p)**~~ ✅ 完了 (2026-07-02) — `utils/generationFingerprint.js`
    を新設。生成開始時に「使う日・時限・クラス・クォータ・合同・生成制約」の
    fingerprint を捕捉し、project 変化で一致しなくなったら生成結果を破棄
@@ -1334,7 +1341,7 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    (全タブ合計を .current に)。テスト +6。
    F2n/F2p は generationFingerprint で ✅ 完了 (2026-07-02、F.4 の 5 参照)。
    F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
-7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり。
+7. **参照整合 ✅ (2026-07-02、F.4 の 4 参照) / a11y (F2a/F2b) は残**。
    その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
    ゴースト click、実機検証) / F2d (no-op 履歴) / F2e (swap stale payload) /
-   F5f (v2/v3 混在 dim、外部データ限定)
+   F5f (v2/v3 混在 dim、外部データ限定) / F2h 前段 (NG CSV dedupe キー)

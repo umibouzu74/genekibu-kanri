@@ -1979,3 +1979,90 @@ describe('F5o — 負数入力の clamp', () => {
     expect(next.project.externalCounts['12/25-堀上']).toBe(0);
   });
 });
+
+// ─── H3 / H5 / F2o: ラベル参照の整合 (F2k と同時対応) ─────────────
+
+describe('schedule/renameHeader — 重複ラベルの reject (H3)', () => {
+  it('既存の日付ラベルへのリネームは no-op (キー衝突による混線防止)', () => {
+    const state = makeState();
+    const labels = state.project.dates.map(d => d.label);
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'date', oldVal: labels[0], newVal: labels[1] },
+    });
+    expect(next).toBe(state);
+  });
+
+  it('既存の時限ラベルへのリネームも no-op', () => {
+    const state = makeState();
+    const labels = state.project.periods.map(p => p.label);
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'period', oldVal: labels[0], newVal: labels[1] },
+    });
+    expect(next).toBe(state);
+  });
+
+  it('既存のクラスラベルへのリネームも no-op', () => {
+    const state = makeState();
+    const tab = state.project.tabs.find(t => t.id === state.project.activeTabId);
+    const labels = tab.config.classes.map(c => c.label);
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'class', oldVal: labels[0], newVal: labels[1] },
+    });
+    expect(next).toBe(state);
+  });
+});
+
+describe('クラスラベルと teacher.ngClasses / priorityClasses の追従 (H5)', () => {
+  it('クラスの rename に priorityClasses / ngClasses が追従する', () => {
+    const state = makeState();
+    const tab = state.project.tabs.find(t => t.id === state.project.activeTabId);
+    const oldLabel = tab.config.classes[0].label;
+    state.project.teachers = [
+      { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [oldLabel], priorityClasses: [] },
+      { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [oldLabel] },
+    ];
+    const next = projectReducer(state, {
+      type: 'schedule/renameHeader',
+      payload: { type: 'class', oldVal: oldLabel, newVal: '新クラス' },
+    });
+    expect(next.project.teachers[0].ngClasses).toEqual(['新クラス']);
+    expect(next.project.teachers[1].priorityClasses).toEqual(['新クラス']);
+  });
+
+  it('config/setList でクラスを削除すると参照も掃除される (他タブの同名は温存)', () => {
+    const state = makeState();
+    const tab = state.project.tabs.find(t => t.id === state.project.activeTabId);
+    const labels = tab.config.classes.map(c => c.label);
+    const removed = labels[0];
+    const kept = labels.slice(1);
+    state.project.teachers = [
+      { name: '堀上', subjects: [], ngSlots: [], ngClasses: [removed], priorityClasses: [kept[0]] },
+    ];
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'classes', value: kept.join(',') },
+    });
+    expect(next.project.teachers[0].ngClasses).toEqual([]);
+    expect(next.project.teachers[0].priorityClasses).toEqual([kept[0]]);
+  });
+});
+
+describe('teacher/rename と externalCounts キー (F2o)', () => {
+  it('日付ラベルが「-旧名」を含んでいても講師部分だけを書き換える', () => {
+    const state = makeState();
+    state.project.teachers = [
+      { name: '田中', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ];
+    // 日付ラベル「8/1-田中」× 講師「田中」→ キー '8/1-田中-田中'
+    state.project.externalCounts = { '8/1-田中-田中': 2 };
+    const next = projectReducer(state, {
+      type: 'teacher/rename',
+      payload: { idx: 0, newName: '佐藤' },
+    });
+    // 旧実装 (replace 最初の一致) は '8/1-佐藤-田中' (日付側が壊れる) だった
+    expect(next.project.externalCounts).toEqual({ '8/1-田中-佐藤': 2 });
+  });
+});

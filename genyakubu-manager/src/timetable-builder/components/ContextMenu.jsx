@@ -26,6 +26,8 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
   }, [contextMenu]);
 
   const {
+    project,
+    currentConfig,
     currentSchedule,
     handleRenameHeader,
     handleBulkAction,
@@ -47,7 +49,18 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     if (action === 'rename') {
       onClose();
       const newVal = await showInput(`「${val}」の新しい名称を入力してください`, { title: "名称の変更", defaultValue: val });
-      if (newVal) handleRenameHeader(type, val, newVal);
+      if (!newVal || newVal === val) return;
+      // H3: 既存ラベルへのリネームは reducer が reject する (キー衝突で
+      // NG / 外部コマ数が silent に混線するため)。silent no-op だと
+      // 「直ったように見える」ので、ここで理由を伝える。
+      const labels = type === 'date' ? (project.dates || [])
+        : type === 'period' ? (project.periods || [])
+        : (currentConfig.classes || []);
+      if (labels.some(e => e.label === newVal)) {
+        showToast(`「${newVal}」は既に存在するため変更できません。別の名称にしてください。`, 'error', 4000);
+        return;
+      }
+      handleRenameHeader(type, val, newVal);
       return;
     }
 
