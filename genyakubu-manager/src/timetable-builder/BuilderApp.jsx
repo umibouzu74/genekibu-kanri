@@ -196,7 +196,10 @@ function ScheduleApp() {
           hitLimit: r.hitLimit,
           stuckSlot: r.stuckSlot,
         }))
-        .filter(r => r.schedule !== null);
+        .filter(r => r.schedule !== null)
+        // 完全解を先頭に、部分解は充填数の多い順 (P2)。生成順のままだと
+        // 完全解が 3 列目に埋もれて部分解を採用してしまいやすい。
+        .sort((a, b) => (a.isPartial - b.isPartial) || (b.filledCount - a.filledCount));
 
       // 生成にかかった総時間を確定 (E2f)
       setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);

@@ -273,7 +273,7 @@ export default function BasicSettings() {
                     <tr key={d.id} className="odd:bg-builder-surface even:bg-builder-bg/40">
                       <td className="px-2 py-1 border-b border-builder-border whitespace-nowrap sticky left-0 bg-inherit">
                         {d.label}
-                        <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (全タブ・NG から消えます)" aria-label={`${d.label} をプールから削除`} className="ml-1 text-builder-red hover:text-red-700 font-bold leading-none">×</button>
+                        <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (全タブ・NG から消えます)" aria-label={`${d.label} をプールから削除`} className="ml-1 text-builder-red hover:text-builder-red-hover font-bold leading-none">×</button>
                       </td>
                       {project.tabs.map(tab => (
                         <td key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center">
@@ -300,7 +300,7 @@ export default function BasicSettings() {
                       <input type="checkbox" checked={on} onChange={() => handleToggleTabDate(d.id)} aria-label={`${d.label} をこのタブで使う`} />
                       <span>{d.label}</span>
                     </label>
-                    <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (全タブ・NG から消えます)" aria-label={`${d.label} をプールから削除`} className="text-builder-red hover:text-red-700 font-bold leading-none">×</button>
+                    <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (全タブ・NG から消えます)" aria-label={`${d.label} をプールから削除`} className="text-builder-red hover:text-builder-red-hover font-bold leading-none">×</button>
                   </span>
                 );
               })}

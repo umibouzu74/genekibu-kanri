@@ -119,24 +119,31 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
         // 教科ごとにグループ化、'未定' は除外したいので予め filter してから group 化。
         const teachersForSummary = project.teachers.filter(t => t.name !== '未定');
         const groups = groupTeachersBySubject(teachersForSummary, project.subjects);
+        const groupRows = groups.map(group => {
+          const entries = group.teachers.map(t => {
+            let total = 0;
+            // v4(Y): teacherDailyCounts は全タブ横断の集計。「全タブ合計」は
+            // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
+            // (project.dates) で合算しないと、他タブだけで使う日のコマが
+            // 漏れて undercount になる。
+            (project.dates || []).forEach(d => {
+              total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
+            });
+            return { t, total };
+          }).filter(x => x.total > 0);
+          return { group, entries };
+        }).filter(row => row.entries.length > 0);
         return (
           <div className="mb-4 no-print animate-fade-in">
             <div className="p-4 bg-builder-info-soft border border-builder-info-border rounded">
               <h3 className="font-bold text-builder-ink mb-2">📊 講師別コマ数 (全タブ合計)</h3>
+              {groupRows.length === 0 && (
+                <div className="text-sm text-builder-ink-muted">
+                  まだ集計するコマがありません。セルに講師を割り当てるか、🧙‍♂️ 自動作成をお試しください。
+                </div>
+              )}
               <div className="flex flex-col gap-2">
-                {groups.map(group => {
-                  const entries = group.teachers.map(t => {
-                    let total = 0;
-                    // v4(Y): teacherDailyCounts は全タブ横断の集計。「全タブ合計」は
-                    // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
-                    // (project.dates) で合算しないと、他タブだけで使う日のコマが
-                    // 漏れて undercount になる。
-                    (project.dates || []).forEach(d => {
-                      total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
-                    });
-                    return { t, total };
-                  }).filter(x => x.total > 0);
-                  if (entries.length === 0) return null;
+                {groupRows.map(({ group, entries }) => {
                   return (
                     <Fragment key={group.key}>
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
@@ -173,7 +180,11 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                 </span>
               )}
             </h3>
-            <button onClick={() => setGeneratedPatterns([])} className="text-sm text-builder-ink-muted underline">キャンセル</button>
+            <button
+              onClick={() => setGeneratedPatterns([])}
+              className="text-sm text-builder-ink-muted underline"
+              title="生成結果を閉じます (再表示はできません)"
+            >✕ 破棄</button>
           </div>
           {forTabDeleted && (
             <div className="mb-3 p-2 bg-builder-danger-soft border border-builder-danger-border rounded text-sm text-builder-red">

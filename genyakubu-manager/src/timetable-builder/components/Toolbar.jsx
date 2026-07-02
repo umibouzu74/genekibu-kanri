@@ -285,7 +285,9 @@ export default function Toolbar({
           {isGenerating ? (
             <>
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-              生成中 ({generateProgress?.current || 0}/{generateProgress?.total || 3})
+              {/* current は「完了した案の数」。ライブ行の「案 N 探索中」と
+                  基準を揃え、探索中の案番号 (完了数+1、上限 total) を出す */}
+              生成中 ({Math.min((generateProgress?.current || 0) + 1, generateProgress?.total || 1)}/{generateProgress?.total || 1})
               {generateElapsedMs > 0 && (
                 <span className="font-normal tabular-nums" aria-label="経過時間">
                   {' '}⏱ {(generateElapsedMs / 1000).toFixed(1)}s

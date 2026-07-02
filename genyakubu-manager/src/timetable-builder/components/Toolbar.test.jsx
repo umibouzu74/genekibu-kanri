@@ -273,9 +273,16 @@ describe('Toolbar', () => {
   });
 
   it('isGenerating=true のとき生成ボタンは disabled + 進捗表示', () => {
+    // current=1 は「1 案完了」= 現在 2 案目を探索中。ライブ行の「案 N 探索中」
+    // と同じ基準で (2/3) を表示する
     renderToolbar({ props: { isGenerating: true, generateProgress: { current: 1, total: 3 } } });
-    const genBtn = screen.getByText(/生成中 \(1\/3\)/).closest('button');
+    const genBtn = screen.getByText(/生成中 \(2\/3\)/).closest('button');
     expect(genBtn).toBeDisabled();
+  });
+
+  it('全案完了直後 (current=total) は total を超えて表示しない', () => {
+    renderToolbar({ props: { isGenerating: true, generateProgress: { current: 3, total: 3 } } });
+    expect(screen.getByText(/生成中 \(3\/3\)/)).toBeInTheDocument();
   });
 
   it('生成中かつ onCancelGenerate ありで「✕ 中止」ボタンを表示し、クリックで呼ぶ', () => {

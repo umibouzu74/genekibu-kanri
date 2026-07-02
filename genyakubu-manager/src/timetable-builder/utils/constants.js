@@ -103,6 +103,10 @@ export const SUBJECT_COLOR_PALETTE = [
   { label: "ライム系", value: "#ECFCCB" },
 ];
 
+// 違反セル (講師重複 / NG 違反) の背景色。inline style で使うため hex で持つ
+// (Tailwind の builder-danger-soft は淡すぎて科目カラーと区別しづらい)。
+export const CONFLICT_CELL_BG = '#FECACA';
+
 export const getSubjectColor = (subject, subjectColors) => {
   if (!subject) return null;
   if (subjectColors && subjectColors[subject]) return subjectColors[subject];

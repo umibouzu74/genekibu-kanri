@@ -69,14 +69,14 @@ export default function TabBar() {
             {errorCount > 0 ? (
               <span
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"
-                title={`このタブに講師重複が ${errorCount} 件あります`}
-                aria-label={`講師重複 ${errorCount} 件`}
+                title={`このタブに違反が ${errorCount} 件あります (講師重複・科目重複・クォータ超過)`}
+                aria-label={`違反 ${errorCount} 件`}
               >⚠️{errorCount}</span>
             ) : (
               <span
                 className="text-[10px] font-bold text-builder-green"
-                title="このタブに講師重複はありません"
-                aria-label="講師重複なし"
+                title="このタブに違反はありません"
+                aria-label="違反なし"
               >✨</span>
             )}
             {project.tabs.length > 1 && (

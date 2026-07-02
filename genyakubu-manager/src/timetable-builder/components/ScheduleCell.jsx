@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
-import { getSubjectColor, toCircleNum } from '../utils/constants';
+import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
@@ -84,7 +84,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isCombined = !!combinedGroup;
   const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, cLabel);
 
-  const cellBgColor = (isConflict || isNgAssigned) ? "#FECACA" : getSubjectColor(entry.subject, project.subjectColors);
+  const cellBgColor = (isConflict || isNgAssigned) ? CONFLICT_CELL_BG : getSubjectColor(entry.subject, project.subjectColors);
   const ngBorder = isNgAssigned && !isLocked ? "border-2 border-builder-red" : "";
   const combinedBorder = isCombined ? (isPrimary ? "border-2 border-builder-primary" : "border-2 border-builder-ink-ghost border-dashed") : "";
   const lockedStyle = isLocked ? "border-2 border-builder-ink-muted opacity-90" : (ngBorder || combinedBorder || "border border-builder-border");
@@ -193,7 +193,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
                 // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。
                 const shouldDisable = isNg && entry.teacher !== t.name;
-                return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (daily.total >= 4 ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
+                // 上限到達済み (これ以上選ぶと超過) の講師を警告色にする。
+                // 閾値は設定可能な maxDailyHours に追従 (旧: 4 固定)。
+                const nearLimit = daily.total >= resolveGenerationParams(project).maxDailyHours;
+                return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (nearLimit ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
               })}
             </optgroup>
           ))}
