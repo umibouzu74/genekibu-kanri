@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 41 files / 934 tests (timetable-builder 約 257 件)
+npm test            # 77 files / 1573 tests (2026-07-02 F 系レビュー後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -982,7 +982,9 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 
 コードレビュー (状態管理 / UI / ソルバの 3 レイヤ) + Playwright 実機操作で
 全面チェックを実施。**発見した Critical 4 + High 8 + Medium 14 のうち大半を
-同日中に修正済み** (詳細は本日の commit log 参照)。テスト 1524 → 1568 件。
+同日中に修正済み** (詳細は commit log 参照)。その後 F.3 の校正レビューで
+修正自体を再検証し、確定した 14 件も同日修正。テスト 1524 → 1573 件。
+PR 化済み (このセクションの F.1 / F.3 が本 PR の内容、F.2 が持ち越し)。
 
 ### F.1 修正済み (2026-07-02)
 
@@ -1004,25 +1006,32 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 
 ### F.2 未修正の残課題 (次セッション向け、発見順位順)
 
+F.3 の校正レビュー後も残っているもの (F.3 で部分対応した項目は注記)。
+
 - **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
   `<td onClick>` (AbsenceNgPanel)、クラス優先度セル (ClassPriority)、
   タブ削除 `<span onClick>`・改名 dblclick のみ (TabBar)、ContextMenu の
   全機能 (キーボード代替なし・Escape で閉じない)
 - **F2b (a11y, 中)**: ScheduleCell の矢印ナビが select のネイティブ
   キー操作を preventDefault で全て潰す (Firefox で値変更がほぼ不可能の
-  恐れ)。Alt+↓ 等は素通しにする除外が必要 (ScheduleCell.jsx handleCellNavigation)
+  恐れ)。Alt+↓ 等は素通しにする除外が必要 (ScheduleCell.jsx
+  handleCellNavigation)。※ F.3 で disabled セルのスキップは実装済み、
+  ネイティブ操作の素通しが残
 - **F2c (小)**: autosave が実は debounce されていない — useHistoryStack は
   毎 dispatch で project 全体を同期 JSON.stringify + setItem
   (debounce はステータス表示のみ)。大規模プロジェクトで入力レイテンシ源
 - **F2d (小)**: no-op アクションが履歴を汚す — 変化ゼロでも新 object を
-  返す action が複数あり、実効 Undo 深度 (MAX 50) を削る
+  返す action が複数あり、実効 Undo 深度 (MAX 50) を削る。
+  ※ subject/reorder・tab/switch・Header 名前編集は個別ガード済み、
+  一般的な no-op 検出 (reducer wrap 層での deep-equal 等) が残
 - **F2e (小)**: cell/swap が dragstart 時点の payload を信頼し、現在の
   schedule を読まない (狭い競合窓で stale 書き込み・lock 剥がし)
 - **F2f (小)**: 保存データが migration 中に throw するとデフォルトに
   フォールバックし、最初の編集の autosave が元データを上書きして復旧不能に
   (壊れたデータの退避コピーを別キーに残すべき)
 - **F2g (小)**: computeInfeasibilities C1 (noTeacherForSlot) の false
-  positive — クォータ上そのスロットに置く必要が無い科目も「致命」扱い
+  positive — クォータ上そのスロットに置く必要が無い科目も「致命」扱い。
+  ※ C2 (capacity) 側は F.3 で合同割引・時限数上限を反映済み、C1 が残
 - **F2h (nit)**: NG CSV 重複キーが空白結合 (`name date period`) で
   名前に空白を含む講師と衝突し得る / renameHeader の重複ラベル許容
   (H3: externalCounts キー衝突で片方消失) / entity ID 再利用 × snapshot
