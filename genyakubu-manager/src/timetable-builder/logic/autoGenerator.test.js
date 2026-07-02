@@ -23,6 +23,8 @@ function makeProject({
   maxDailyHours,
   maxIterations,
   maxConsecutivePeriods,
+  activeDateIds,
+  activePeriodIds,
 } = {}) {
   return {
     version: 4,
@@ -38,6 +40,8 @@ function makeProject({
       config: {
         classes: wrapEntities(classes),
         subjectCounts,
+        ...(activeDateIds !== undefined ? { activeDateIds } : {}),
+        ...(activePeriodIds !== undefined ? { activePeriodIds } : {}),
       },
       schedule,
     }],
@@ -103,6 +107,41 @@ describe('generateSinglePattern — 基本動作', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).toBeNull();
     expect(r.totalSlots).toBe(1);
+  });
+});
+
+// ─── タブ別「使う日・使う時限」(E-3) の尊重 ─────────────────────────
+
+describe('generateSinglePattern — activeDateIds / activePeriodIds', () => {
+  it('タブが使わない時限はスロット化されず、クォータどおりで完全解になる', () => {
+    // プールは 2 時限だが、このタブは 1限 だけ使う (2限 は他学年専用)。
+    // クォータは可視セル数 (1 コマ) に一致 → 絞りが効いていれば完全解。
+    // 絞りが効かないと 2 セル分のスロットに対しクォータ 1 なので解けない。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限'],
+      activePeriodIds: [1],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.totalSlots).toBe(1);
+    expect(r.solution).not.toBeNull();
+    // 使わない時限 (id=2) のセルには何も書き込まれない
+    expect(r.solution[makeKey(1, 2, 1)]).toBeUndefined();
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('タブが使わない日はスロット化されない (既存挙動の回帰確認)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      dates: ['12/25(木)', '12/26(金)'],
+      activeDateIds: [1],
+      subjectCounts: { '英語': 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.totalSlots).toBe(1);
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(2, 1, 1)]).toBeUndefined();
   });
 });
 

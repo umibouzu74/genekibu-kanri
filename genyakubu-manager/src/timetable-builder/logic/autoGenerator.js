@@ -4,7 +4,7 @@
 // v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
-import { makeKey, makeExternalKey, findCombinedGroup, activeDatesForTab } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, findCombinedGroup, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
 import {
   canTeachSubject,
@@ -74,11 +74,14 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   const rng = mulberry32(seed);
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
-  // v4(Y): periods は project 共通、dates は『このタブが使う日』(activeDateIds)。
+  // v4(Y)+E-3: dates も periods も『このタブが使う分』に絞る (useProject の
+  // currentConfig と同じ)。periods をプール全体にすると、タブが使わない時限
+  // まで未充填スロット化され、科目クォータは可視セル数前提なので完全解が
+  // 構造的に不可能になる (上限まで探索して部分解 + 不可視セルへのゴミ書込)。
   const currentConfig = {
     ...activeTab.config,
     dates: activeDatesForTab(project.dates, activeTab),
-    periods: project.periods || [],
+    periods: activePeriodsForTab(project.periods, activeTab),
   };
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
