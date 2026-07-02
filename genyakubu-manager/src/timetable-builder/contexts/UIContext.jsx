@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UIContext } from './uiContextValue';
 
 // --- Toast ---
@@ -161,7 +161,12 @@ export function UIProvider({ children }) {
     setInputConfig(null);
   }, []);
 
-  const value = { showToast, showConfirm, showInput };
+  // 各コールバックは useCallback で stable。value 自体も memo しないと
+  // toast の出現/消滅ごとに全 consumer が再レンダーされる。
+  const value = useMemo(
+    () => ({ showToast, showConfirm, showInput }),
+    [showToast, showConfirm, showInput],
+  );
 
   return (
     <UIContext.Provider value={value}>

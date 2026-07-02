@@ -262,10 +262,21 @@ function applyAction(project, action) {
       // - key='periods': groups に period 次元は無いので影響無し
       let newCombined = baseProject.combinedGroups;
       if (key === 'classes' || key === 'dates') {
+        // combinedGroups は project 全体で共有 (タブ ID を持たない) なので、
+        // key='classes' のときは「編集したタブの新ラベル + 他タブの既存ラベル」
+        // の和集合で判定する。アクティブタブの newLabels だけを渡すと、
+        // 他タブのクラスを参照する合同グループが全て巻き添えで削除される。
+        const validLabels = new Set(newLabels);
+        if (key === 'classes') {
+          project.tabs.forEach(t => {
+            if (t.id === activeTab.id) return;
+            (t.config.classes || []).forEach(c => validLabels.add(c.label));
+          });
+        }
         newCombined = cleanCombinedGroupsForLabelChange(
           baseProject.combinedGroups || [],
           key === 'classes' ? 'classes' : 'dates',
-          new Set(newLabels)
+          validLabels
         );
       }
       // cleanSchedule で消えた entity を参照する schedule キーを掃除する

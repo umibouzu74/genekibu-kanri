@@ -1477,6 +1477,51 @@ describe('projectReducer — cascade cleanup', () => {
     expect(groups.find(g => g.id === 2)).toBeUndefined();
   });
 
+  it('config/setList (classes): 他タブのクラスを参照する combinedGroups は巻き添えにしない', () => {
+    const state = makeState({
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2,
+          name: '中１・２',
+          config: {
+            classes: [{ id: 1, label: '１S' }, { id: 2, label: '１AB' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+      ],
+      combinedGroups: [
+        // 他タブ (中１・２) のクラスのみを参照するグループ
+        { id: 1, subject: '英語', classes: ['１S', '１AB'], dates: null },
+        // アクティブタブのクラスを参照するグループ (従来の cleanup 対象)
+        { id: 2, subject: '英語', classes: ['３S', '３A'], dates: null },
+      ],
+    });
+    // アクティブタブ (中３) のクラス欄から ３A を削除
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'classes', value: '３S, ３B' },
+    });
+    const groups = next.project.combinedGroups;
+    // 他タブのグループは無傷で残る
+    expect(groups.find(g => g.id === 1)).toEqual(
+      { id: 1, subject: '英語', classes: ['１S', '１AB'], dates: null },
+    );
+    // アクティブタブ側は従来どおり ３A が消えて 1 クラス → drop
+    expect(groups.find(g => g.id === 2)).toBeUndefined();
+  });
+
   it('config/setList (dates 削除): combinedGroups から消えた日付が drop', () => {
     const state = makeState({
       combinedGroups: [

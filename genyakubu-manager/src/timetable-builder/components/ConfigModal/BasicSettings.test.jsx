@@ -139,10 +139,36 @@ describe('BasicSettings — 時限プール編集 (タブでフィルタしな�
     expect(screen.getByLabelText(/時限プールを編集/)).toHaveValue('1限(昼), 2限, 3限(夜)');
   });
 
-  it('プール編集を保存すると handleListConfigChange(\'periods\', ...) を呼ぶ', () => {
+  it('プール編集はフォーカスを外した時にだけ handleListConfigChange(\'periods\', ...) を呼ぶ', () => {
     const { handleListConfigChange } = renderSettings();
-    fireEvent.change(screen.getByLabelText(/時限プールを編集/), { target: { value: '1限(昼), 2限, 3限(夜), 4限(昼)' } });
+    const ta = screen.getByLabelText(/時限プールを編集/);
+    fireEvent.focus(ta);
+    fireEvent.change(ta, { target: { value: '1限(昼), 2限, 3限(夜), 4限(昼)' } });
+    // 編集途中 (keystroke ごと) には commit しない — 中間状態が reducer に
+    // 届くと「entity 削除 + 新規追加」となり全タブのセルが消える回帰の防止
+    expect(handleListConfigChange).not.toHaveBeenCalled();
+    fireEvent.blur(ta);
+    expect(handleListConfigChange).toHaveBeenCalledTimes(1);
     expect(handleListConfigChange).toHaveBeenCalledWith('periods', '1限(昼), 2限, 3限(夜), 4限(昼)');
+  });
+
+  it('プール編集を Escape で取り消すと commit されず表示も元に戻る', () => {
+    const { handleListConfigChange } = renderSettings();
+    const ta = screen.getByLabelText(/時限プールを編集/);
+    fireEvent.focus(ta);
+    fireEvent.change(ta, { target: { value: '全部消した' } });
+    fireEvent.keyDown(ta, { key: 'Escape' });
+    expect(ta).toHaveValue('1限(昼), 2限, 3限(夜)');
+    fireEvent.blur(ta);
+    expect(handleListConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('変更せずフォーカスを外しただけでは commit しない', () => {
+    const { handleListConfigChange } = renderSettings();
+    const ta = screen.getByLabelText(/時限プールを編集/);
+    fireEvent.focus(ta);
+    fireEvent.blur(ta);
+    expect(handleListConfigChange).not.toHaveBeenCalled();
   });
 });
 

@@ -118,6 +118,10 @@ function ScheduleApp() {
     }
   });
 
+  // ConfigModal の focus trap が onClose の identity 変化で再初期化されない
+  // よう stable callback にする (useFocusTrap 側の ref 化と二重の防御)。
+  const handleCloseConfig = useCallback(() => setShowConfig(false), []);
+
   const handleCloseOnboarding = useCallback(({ dontShowAgain } = {}) => {
     setShowOnboarding(false);
     if (dontShowAgain) {
@@ -284,7 +288,7 @@ function ScheduleApp() {
           generatedElapsedMs={generateElapsedMs}
         />
 
-        {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
+        {showConfig && <ConfigModal onClose={handleCloseConfig} />}
 
         <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} />
       </div>

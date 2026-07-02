@@ -3,6 +3,38 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
 
+// カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
+// フォーカスを外した時にだけ onCommit で確定する。
+// keystroke ごとに commit すると (a) ラベルの編集途中の中間状態が
+// 「entity 削除 + 新規追加」として reducer に届き、全タブの該当セルが
+// cleanSchedule で即消える、(b) 末尾に打ったカンマが state 再導出で即消えて
+// 項目を追加できない、(c) 1 打鍵 = 1 Undo 履歴で MAX_HISTORY を食い潰す、
+// という 3 重の実害があるため、必ず確定タイミングを blur に寄せること。
+function DraftListTextarea({ value, onCommit }) {
+  const [draft, setDraft] = useState(null); // null = 非編集 (canonical を表示)
+  // aria-label は付けない (ラップする <label> の文言が accessible name になる)
+  return (
+    <textarea
+      className="w-full border border-builder-border p-2 text-sm h-16 rounded"
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setDraft((d) => d ?? value)}
+      onBlur={() => {
+        if (draft != null && draft !== value) onCommit(draft);
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          // 編集の取り消し。stopPropagation しないと ConfigModal の
+          // focus trap まで届いてモーダルごと閉じてしまう。
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+    />
+  );
+}
+
 export default function BasicSettings() {
   const {
     project,
@@ -297,7 +329,11 @@ export default function BasicSettings() {
 
         <label className="block">
           <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
-          <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={poolPeriods.map(e => e.label).join(', ')} onChange={(e) => handleConfigChange('periods', e.target.value)} />
+          <DraftListTextarea
+            value={poolPeriods.map(e => e.label).join(', ')}
+            onCommit={(v) => handleConfigChange('periods', v)}
+          />
+          <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
         </label>
 
         {/* 使う時限チェックリスト */}
@@ -373,7 +409,11 @@ export default function BasicSettings() {
       {/* ── クラス (このタブ専用) ── */}
       <label className="block">
         <span className="text-xs font-bold text-builder-ink-muted">クラス (カンマ区切り・このタブ「{activeTab.name}」専用)</span>
-        <textarea className="w-full border border-builder-border p-2 text-sm h-16 rounded" value={currentConfig.classes.map(e => e.label).join(', ')} onChange={(e) => handleConfigChange('classes', e.target.value)} />
+        <DraftListTextarea
+          value={currentConfig.classes.map(e => e.label).join(', ')}
+          onCommit={(v) => handleConfigChange('classes', v)}
+        />
+        <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
       </label>
 
       <div className="pt-2">
