@@ -852,3 +852,48 @@ describe('generateSinglePattern — 連続コマ制約の整合 (F5t/F5y)', () =
     expect(r.solution).toBeNull();
   });
 });
+
+// ─── 空 + ロック済みセルの扱い (F5w) ─────────────────────────────────
+
+describe('generateSinglePattern — 空 + ロック済みセル (F5w)', () => {
+  it('空ロックセルは生成対象にせず {locked:true} のまま残す', () => {
+    // 1 日 × 2 時限 × 1 クラス = 2 セル、うち 2限 を空ロック。
+    // クォータ 1 = 生成対象セル 1 で完全解になる。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限'],
+      subjectCounts: { '英語': 1 },
+      schedule: { [makeKey(1, 2, 1)]: { locked: true } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.totalSlots).toBe(1);
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)]).toMatchObject({ subject: '英語', teacher: '堀上' });
+    // 空ロックセルには書き込まれない (旧仕様はここに科目・講師が入った)
+    expect(r.solution[makeKey(1, 2, 1)]).toEqual({ locked: true });
+  });
+
+  it('科目だけ事前指定 + ロックのセルは従来どおり講師を埋める (仕様維持)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      subjectCounts: { '英語': 1 },
+      schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '', locked: true } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上', locked: true });
+  });
+
+  it('合同グループの相手クラスが空ロックなら合同は成立しない (既存挙動の固定)', () => {
+    // 合同の secondary (3A) が空ロック → その科目では置けず、解なし
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      classes: ['３S', '３A'],
+      subjectCounts: { '英語': 1 },
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      schedule: { [makeKey(1, 1, 2)]: { locked: true } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+  });
+});

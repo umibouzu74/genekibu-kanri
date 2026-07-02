@@ -870,3 +870,57 @@ describe('computeInfeasibilities — 合同グループの capacity 割引 (校�
     expect(r.subjectCapacityShortage.count).toBe(1);
   });
 });
+
+describe('computeInfeasibilities — quotaCellMismatch と空ロックセル (F5w)', () => {
+  const config = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    subjectCounts: { '英語': 2, '数学': 1 }, // 合計 3
+  });
+  const teachers = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [] },
+    { name: '田中', subjects: ['数学'], ngSlots: [] },
+  ];
+
+  it('空ロックセルは生成対象セル数から除外される (全クラス同数なら 1 item)', () => {
+    // 4 セル/クラス − 空ロック 1 = 3 = クォータ合計 3 → 不一致なし
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: {
+        [makeKey(1, 1, 1)]: { locked: true },
+        [makeKey(1, 1, 2)]: { locked: true },
+      },
+    });
+    expect(r.quotaCellMismatch.count).toBe(0);
+  });
+
+  it('クラスごとにロック数が違う場合は不一致のクラスだけ item にする', () => {
+    // A は空ロック 1 (3 セル = クォータ 3 で一致)、B はロック無し (4 セル ≠ 3)
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: { [makeKey(1, 1, 1)]: { locked: true } },
+    });
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4, className: 'B' });
+  });
+
+  it('科目入りのロックセルは除外しない (生成対象: 講師を埋める)', () => {
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', locked: true } },
+    });
+    // 4 セル ≠ 3 の従来判定のまま (全クラス同数 → 1 item・旧形状)
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4 });
+  });
+});

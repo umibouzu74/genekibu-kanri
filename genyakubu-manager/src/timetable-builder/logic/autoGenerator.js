@@ -234,9 +234,14 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
 
   // 未充填スロットを構築
   // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
+  // F5w: 空 + ロック済みセルは「この枠は空けておく」の意思表示なので生成
+  // 対象にしない (UI は locked への変更を全経路で拒否しており、solver だけが
+  // 書き込めるのは lock の意味論と矛盾していた)。totalSlots にも数えない。
+  // 「科目だけ事前指定 + ロック」(fixedSubject) は従来どおり講師を埋める。
   currentConfig.dates.forEach((d) => currentConfig.periods.forEach((p) => currentConfig.classes.forEach((c, cIdx) => {
     const k = makeKey(d.id, p.id, c.id);
     const entry = currentSchedule[k];
+    if (entry?.locked && !entry.subject) return;
     if (!entry || !entry.subject || !entry.teacher) {
       slots.push({ cIdx, d, p, c, k, fixedSubject: entry?.subject });
     }
@@ -485,13 +490,11 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           solve(idx + 1, tempSch, tempCnt, tempDaily);
           if (runSolution !== null) return;
 
-          // バックトラック: プライマリスロット (locked 保持)
+          // バックトラック: プライマリスロット (locked 保持)。
+          // 「空 + locked」は F5w で slot 化されなくなったため、locked が
+          // 立つのは fixedSubject (科目固定) のケースのみ。
           if (fixedSubject) {
             tempSch[k] = { subject: fixedSubject, teacher: "", ...(primaryLocked ? { locked: true } : {}) };
-          } else if (primaryLocked) {
-            // 元が空 + locked のセル: 空に戻すが lock は保持
-            tempSch[k] = { locked: true };
-            tempCnt[cIdx][s]--;
           } else {
             delete tempSch[k];
             tempCnt[cIdx][s]--;

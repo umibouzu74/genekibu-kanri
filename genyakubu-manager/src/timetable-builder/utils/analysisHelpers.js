@@ -371,14 +371,15 @@ export function computeViolations({
 //       min(maxDailyHours, periods.length) と (subjectCounts[s] ×
 //       classes.length) を比較 (1 日に教えられる上限は時限数を超えない)
 //   - quotaCellMismatch: 1 クラスあたりの科目コマ数の合計が「使う日 × 使う
-//       時限」のセル数と不一致。solver は全セル充填を要求するため、合計が
-//       セル数未満だと完全解が構造的に存在しない (逆に超過ならクォータを
-//       消化しきれない)
+//       時限 − 空ロックセル」の生成対象セル数と不一致。solver は対象セルの
+//       全充填を要求するため、合計がセル数未満だと完全解が構造的に存在しない
+//       (逆に超過ならクォータを消化しきれない)。F5w: 空 + ロック済みセルは
+//       「空けておく」の意思表示で生成対象外のため除外して数える
 //   - subjectQuotaOverDays: 科目コマ数 > 使う日数。同日・同クラスの同一科目
 //       は 1 コマまでなので達成不能
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
-export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [] }) {
+export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [], currentSchedule = {} }) {
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
@@ -458,12 +459,39 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
     }
   });
 
-  // C3: quotaCellMismatch — クォータ合計 ≠ セル数 (クラスあたり)
+  // C3: quotaCellMismatch — クォータ合計 ≠ 生成対象セル数 (クラスあたり)。
+  // F5w: 空 + ロック済みセルは生成対象外なので除外。ロック数はクラスごとに
+  // 違い得るためクラス単位で判定し、全クラス同値なら従来どおり 1 item に
+  // 集約する (ロック無しの共通ケースで item がクラス数分並ぶのを防ぐ)。
   const quotaMismatchItems = [];
   const cellsPerClass = currentConfig.dates.length * currentConfig.periods.length;
   const totalQuota = subjects.reduce((sum, s) => sum + (currentConfig.subjectCounts?.[s] || 0), 0);
-  if (cellsPerClass > 0 && totalQuota !== cellsPerClass) {
-    quotaMismatchItems.push({ totalQuota, cells: cellsPerClass });
+  if (cellsPerClass > 0) {
+    const perClass = currentConfig.classes.map(c => {
+      let lockedEmpty = 0;
+      currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => {
+        const e = currentSchedule?.[makeKey(d.id, p.id, c.id)];
+        if (e?.locked && !e.subject) lockedEmpty++;
+      }));
+      return { className: c.label, cells: cellsPerClass - lockedEmpty, lockedEmpty };
+    });
+    const mismatched = perClass.filter(pc => totalQuota !== pc.cells);
+    if (mismatched.length > 0) {
+      const allSame = perClass.every(pc => pc.cells === perClass[0].cells);
+      if (allSame) {
+        const { cells, lockedEmpty } = perClass[0];
+        quotaMismatchItems.push({ totalQuota, cells, ...(lockedEmpty > 0 ? { lockedEmpty } : {}) });
+      } else {
+        mismatched.forEach(pc => {
+          quotaMismatchItems.push({
+            totalQuota,
+            cells: pc.cells,
+            className: pc.className,
+            ...(pc.lockedEmpty > 0 ? { lockedEmpty: pc.lockedEmpty } : {}),
+          });
+        });
+      }
+    }
   }
 
   // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)

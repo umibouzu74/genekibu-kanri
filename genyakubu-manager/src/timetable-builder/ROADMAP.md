@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 79 files / 1648 tests (2026-07-02 ソルバ整合対応後)
+npm test            # 79 files / 1654 tests (2026-07-02 F5w 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1273,11 +1273,16 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 - ✅ **F5v (Medium)**: v3→v4 migration で「日程 (時限) 0 のタブ」が
   `oldDateIds.length > 0` 条件により activeDateIds 未設定 = **全日使用**に
   化ける (正しくは `[]`)
-- **F5w (Medium・要検証)**: ソルバが「空 + ロック済み」セルに科目・講師を
-  書き込む (slot 構築が locked 空セルを除外しない。backtrack に専用処理が
-  あるため意図的の可能性もある)。UI 側は locked への変更を全経路で拒否して
-  おり意味論が矛盾。「空 lock = 空けておく」なら quotaCellMismatch との
-  関係も含めて仕様を決める必要あり
+- ✅ **F5w (Medium)**: ソルバが「空 + ロック済み」セルに科目・講師を
+  書き込んでいた。**仕様決定 (2026-07-02、ユーザ判断): 「空 lock = この枠は
+  空けておく」**。
+  **✅ 実装**: slot 構築で空ロックセルを除外 (totalSlots にも数えない、
+  backtrack の空ロック分岐は到達不能になり削除)。quotaCellMismatch (C3) は
+  「使う日 × 使う時限 − 空ロック」の生成対象セル数で判定するよう変更
+  (クラスごとにロック数が違う場合は不一致クラスのみ item 化、Toolbar
+  ラベルに【クラス】と空ロック数を表示)。科目だけ事前指定 + ロックは
+  従来どおり講師のみ自動で埋める。合同の相手クラスが空ロックの場合は
+  従来から合同不成立 (既存挙動をテストで固定)。USER_GUIDE に明記
 - ✅ **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
   数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)。
   **✅ 修正 (2026-07-02)**: parseKey + 可視 id Set で filter
@@ -1320,9 +1325,8 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    判定に他タブの busy を合算) / F5y (判定をプール全時限の並びに変更、歯抜け
    タブの誤隣接を解消) / F5v (v3→v4 で 0 日タブの subset を保存) / F5u
    (全タブ合計を .current に)。テスト +6。
-   **残**: F2n/F2p (生成結果の config fingerprint 失効) と **F5w (仕様判断:
-   空 + ロック済みセルに solver が書き込む — 「空 lock = 空けておく」に
-   するなら quotaCellMismatch との整合も要検討)**
+   **残**: F2n/F2p (生成結果の config fingerprint 失効)。
+   F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
 7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり。
    その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
    ゴースト click、実機検証) / F2d (no-op 履歴) / F2e (swap stale payload) /

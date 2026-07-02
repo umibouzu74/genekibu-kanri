@@ -73,7 +73,7 @@ export default function Toolbar({
     ...(infeasibilities?.quotaCellMismatch?.items || []).map(it => ({
       kind: 'quotaMismatch',
       informational: true,
-      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells} (使う日 × 使う時限)。完全解を狙う場合は一致させてください`,
+      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells}${it.className ? `【${it.className}】` : ''} (使う日 × 使う時限${it.lockedEmpty ? ` − 空ロック ${it.lockedEmpty}` : ''})。完全解を狙う場合は一致させてください`,
       suggestions: it.suggestions || [],
     })),
     ...(infeasibilities?.subjectQuotaOverDays?.items || []).map(it => ({
