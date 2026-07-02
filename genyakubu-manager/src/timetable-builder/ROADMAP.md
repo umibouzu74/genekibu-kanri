@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -975,3 +975,60 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 - 新たに発見された問題は適切なセクション (A/B/C/D/E) に追加
 - リスク (R*) は実害が出たり対策が完了したら更新
 - 「次セッション quick start」のコマンドと検証数値 (test 件数等) は変わったら追従
+
+---
+
+## F. 2026-07-02 フレッシュアイズレビュー (Fable 初見チェック) の結果
+
+コードレビュー (状態管理 / UI / ソルバの 3 レイヤ) + Playwright 実機操作で
+全面チェックを実施。**発見した Critical 4 + High 8 + Medium 14 のうち大半を
+同日中に修正済み** (詳細は本日の commit log 参照)。テスト 1524 → 1568 件。
+
+### F.1 修正済み (2026-07-02)
+
+- **設定モーダル複合バグ**: focus trap 再初期化による入力不能 /
+  textarea keystroke commit によるデータ破壊 / 他タブ合同グループ全滅
+- **生成結果のタブ追従**: タブ切替後の「この案を採用」が別タブを上書き
+  (実機再現→修正、snapshot/apply と同型に)
+- **ソルバ**: activePeriodIds 無視 / タブ間講師重複の未考慮 (H2) /
+  リスタート戦略 (P1: 中３タブ完全解 1/3 → 12/12・平均 244ms) /
+  externalSessions の日次反映 / 未定の同時限複数配置 / 合同の講師固定
+- **infeasibility**: capacity 式の 2 倍過大評価 / quotaCellMismatch ·
+  subjectQuotaOverDays の新規検出
+- **E-3 取りこぼし一族**: タブバッジ・globalUsage・Excel の periods 絞り /
+  NG パネル自動NG のプール全時限化 / v3→v4 移行の activeDateIds 保存
+- **小粒**: NG CSV 検証の v4 死亡 / 波ダッシュ U+301C / Ctrl+Shift+Z /
+  Excel シート名 throw / clearUnlocked の非表示セル保護 / removeFromPool
+  cascade / teachers 欠落クラッシュ / dangling activeTabId / confirm の
+  trap 参加 / ContextMenu 座標 / 生成 UX (完全解優先ソート等)
+
+### F.2 未修正の残課題 (次セッション向け、発見順位順)
+
+- **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
+  `<td onClick>` (AbsenceNgPanel)、クラス優先度セル (ClassPriority)、
+  タブ削除 `<span onClick>`・改名 dblclick のみ (TabBar)、ContextMenu の
+  全機能 (キーボード代替なし・Escape で閉じない)
+- **F2b (a11y, 中)**: ScheduleCell の矢印ナビが select のネイティブ
+  キー操作を preventDefault で全て潰す (Firefox で値変更がほぼ不可能の
+  恐れ)。Alt+↓ 等は素通しにする除外が必要 (ScheduleCell.jsx handleCellNavigation)
+- **F2c (小)**: autosave が実は debounce されていない — useHistoryStack は
+  毎 dispatch で project 全体を同期 JSON.stringify + setItem
+  (debounce はステータス表示のみ)。大規模プロジェクトで入力レイテンシ源
+- **F2d (小)**: no-op アクションが履歴を汚す — 変化ゼロでも新 object を
+  返す action が複数あり、実効 Undo 深度 (MAX 50) を削る
+- **F2e (小)**: cell/swap が dragstart 時点の payload を信頼し、現在の
+  schedule を読まない (狭い競合窓で stale 書き込み・lock 剥がし)
+- **F2f (小)**: 保存データが migration 中に throw するとデフォルトに
+  フォールバックし、最初の編集の autosave が元データを上書きして復旧不能に
+  (壊れたデータの退避コピーを別キーに残すべき)
+- **F2g (小)**: computeInfeasibilities C1 (noTeacherForSlot) の false
+  positive — クォータ上そのスロットに置く必要が無い科目も「致命」扱い
+- **F2h (nit)**: NG CSV 重複キーが空白結合 (`name date period`) で
+  名前に空白を含む講師と衝突し得る / renameHeader の重複ラベル許容
+  (H3: externalCounts キー衝突で片方消失) / entity ID 再利用 × snapshot
+  復元の化け (H4) / クラス rename・削除で teacher.ngClasses /
+  priorityClasses が非追従 (H5)
+
+※ H3/H4/H5 は F2h にまとめたが元レビューでは High 判定。rename/削除系の
+   参照整合はまとめて 1 セッションで設計するのが良い (ラベルベース参照の
+   cascade を一元化するヘルパーの導入を検討)。
