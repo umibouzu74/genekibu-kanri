@@ -99,6 +99,9 @@ function ScheduleApp() {
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
+  // 生成元タブ ({id, name})。結果パネルはタブ切替後も表示されたままなので、
+  // 「この案を採用」はアクティブタブではなく必ずこのタブへ適用する。
+  const [generatedForTab, setGeneratedForTab] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
@@ -141,6 +144,8 @@ function ScheduleApp() {
 
     setIsGenerating(true);
     setGeneratedPatterns([]);
+    const forTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+    setGeneratedForTab(forTab ? { id: forTab.id, name: forTab.name } : null);
     setGenerateProgress({ current: 0, total: NUM_PATTERNS });
     genStartRef.current = Date.now();
     setGenerateElapsedMs(0);
@@ -286,6 +291,7 @@ function ScheduleApp() {
           generatedPatterns={generatedPatterns}
           setGeneratedPatterns={setGeneratedPatterns}
           generatedElapsedMs={generateElapsedMs}
+          generatedForTab={generatedForTab}
         />
 
         {showConfig && <ConfigModal onClose={handleCloseConfig} />}

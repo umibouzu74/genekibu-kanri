@@ -1477,6 +1477,59 @@ describe('projectReducer — cascade cleanup', () => {
     expect(groups.find(g => g.id === 2)).toBeUndefined();
   });
 
+  it('schedule/applyPattern: tabId 指定でそのタブへ適用し active も切り替える', () => {
+    const state = makeState({
+      activeTabId: 2,
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '12/25(木)' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: '３S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2,
+          name: '中１・２',
+          config: {
+            classes: [{ id: 1, label: '１S' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '田中' } },
+        },
+      ],
+    });
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    // アクティブは中１・２だが、生成元 (tabId=1) へ適用されること
+    const next = projectReducer(state, {
+      type: 'schedule/applyPattern',
+      payload: { pat, tabId: 1 },
+    });
+    expect(next.project.tabs.find(t => t.id === 1).schedule[makeKey(1, 1, 1)].teacher).toBe('堀上');
+    // 中１・２のスケジュールは無傷
+    expect(next.project.tabs.find(t => t.id === 2).schedule[makeKey(1, 1, 1)].teacher).toBe('田中');
+    // 適用先タブへ切り替わる (snapshot/apply と同じ挙動)
+    expect(next.project.activeTabId).toBe(1);
+  });
+
+  it('schedule/applyPattern: tabId 省略時は従来どおりアクティブタブへ適用', () => {
+    const state = makeState();
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const next = projectReducer(state, { type: 'schedule/applyPattern', payload: { pat } });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)].teacher).toBe('堀上');
+  });
+
+  it('schedule/applyPattern: 生成後に削除されたタブ (存在しない tabId) は no-op', () => {
+    const state = makeState();
+    const pat = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const next = projectReducer(state, { type: 'schedule/applyPattern', payload: { pat, tabId: 99 } });
+    expect(next).toBe(state);
+  });
+
   it('config/setList (classes): 他タブのクラスを参照する combinedGroups は巻き添えにしない', () => {
     const state = makeState({
       tabs: [

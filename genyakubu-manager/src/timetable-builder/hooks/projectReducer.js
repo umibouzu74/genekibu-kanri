@@ -1012,9 +1012,17 @@ function applyAction(project, action) {
       return { ...project, tabs: newTabs };
     }
     case 'schedule/applyPattern': {
-      const { pat } = action.payload;
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t);
-      return cleanSchedule({ ...project, tabs: newTabs });
+      // tabId = 生成時のタブ。結果パネルはタブ切替後も表示されたままなので、
+      // dispatch 時点の activeTabId に書くと別タブのスケジュールを上書き
+      // してしまう (クラス ID はタブ間で再利用されるため silent に混入する)。
+      // snapshot/apply と同じく「記録されたタブへ適用 + そのタブを active に」。
+      // tabId 省略時は従来互換でアクティブタブ。
+      const { pat, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      // 生成後にタブが削除されたケースは no-op (snapshot/apply と同じ扱い)
+      if (!project.tabs.some(t => t.id === targetId)) return project;
+      const newTabs = project.tabs.map(t => t.id === targetId ? { ...t, schedule: pat } : t);
+      return cleanSchedule({ ...project, tabs: newTabs, activeTabId: targetId });
     }
 
     // ─── スナップショット (E1c) ───────────

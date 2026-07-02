@@ -45,7 +45,9 @@ export function useScheduleActions(dispatch, currentSchedule) {
       dispatch({ type: 'schedule/clearUnlocked' }),
     handleSwapCells: (sourceKey, sourceData, targetKey, targetData) =>
       dispatch({ type: 'cell/swap', payload: { sourceKey, sourceData, targetKey, targetData } }),
-    applyPattern: (pat) =>
-      dispatch({ type: 'schedule/applyPattern', payload: { pat } }),
+    // tabId = 生成元タブ (省略時はアクティブタブ)。結果パネルはタブ切替後も
+    // 残るため、必ず生成時に記録したタブへ適用する。
+    applyPattern: (pat, tabId) =>
+      dispatch({ type: 'schedule/applyPattern', payload: { pat, tabId } }),
   }), [dispatch, currentSchedule]);
 }

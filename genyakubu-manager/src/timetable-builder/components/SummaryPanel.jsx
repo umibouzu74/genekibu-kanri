@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
+import { makeExternalKey, countTeacherHoursWithCombined, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad } from '../utils/patternLoad';
 
@@ -87,7 +87,7 @@ function PatternStats({ pat }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs }) {
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }) {
   const {
     project,
     analysis,
@@ -95,6 +95,23 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
     applyPattern,
   } = useProjectContext();
   const { showToast } = useUI();
+
+  // 生成結果はタブ切替後もパネルに残るため、集計・採用は「今のタブ」ではなく
+  // 生成元タブを基準にする。生成元タブが分からない (古い state) 場合は従来
+  // どおりアクティブタブへフォールバック。
+  const tabs = project.tabs || [];
+  const forTab = generatedForTab
+    ? tabs.find(t => t.id === generatedForTab.id)
+    : (tabs.find(t => t.id === project.activeTabId) || tabs[0]);
+  const forTabDeleted = Boolean(generatedForTab) && !forTab;
+  const patternConfig = forTab
+    ? {
+        ...forTab.config,
+        dates: activeDatesForTab(project.dates, forTab),
+        periods: activePeriodsForTab(project.periods, forTab),
+      }
+    : currentConfig;
+  const isOtherTab = forTab && forTab.id !== project.activeTabId;
 
   return (
     <>
@@ -145,6 +162,11 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-bold text-builder-ink">
               ✨ 自動生成の結果 ({generatedPatterns.length}案)
+              {generatedForTab && (
+                <span className="ml-2 text-xs font-normal text-builder-ink bg-builder-info-soft border border-builder-info-border px-2 py-0.5 rounded" aria-label="生成元のタブ">
+                  対象タブ: {generatedForTab.name}
+                </span>
+              )}
               {generatedElapsedMs > 0 && (
                 <span className="ml-2 text-xs font-normal text-builder-ink-muted" aria-label="生成にかかった時間">
                   ⏱ {(generatedElapsedMs / 1000).toFixed(1)}s
@@ -153,6 +175,16 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
             </h3>
             <button onClick={() => setGeneratedPatterns([])} className="text-sm text-builder-ink-muted underline">キャンセル</button>
           </div>
+          {forTabDeleted && (
+            <div className="mb-3 p-2 bg-builder-danger-soft border border-builder-danger-border rounded text-sm text-builder-red">
+              ⚠️ 生成元のタブ「{generatedForTab.name}」は削除されたため、この結果は適用できません。
+            </div>
+          )}
+          {isOtherTab && (
+            <div className="mb-3 p-2 bg-builder-info-soft border border-builder-info-border rounded text-sm text-builder-ink">
+              ℹ️ この結果は「{forTab.name}」タブ用です。採用すると「{forTab.name}」に適用され、そのタブへ切り替わります。
+            </div>
+          )}
           {generatedPatterns.some(p => p.isPartial) && (
             <div className="mb-3 p-2 bg-builder-warning-soft border border-builder-warning-border rounded text-sm text-builder-orange">
               ⚠️ 完全解が見つからなかった案があります。部分解として可能な範囲で埋めた結果を表示しています。
@@ -177,12 +209,20 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                 <PatternStats pat={pat} />
                 <SummaryTable
                   target={pat.schedule}
-                  config={currentConfig}
+                  config={patternConfig}
                   combinedGroups={project.combinedGroups || []}
                   teachers={project.teachers}
                   subjects={project.subjects}
                 />
-                <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); showToast(`案 ${i + 1} を適用しました`); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-builder-orange hover:bg-builder-orange-hover' : 'bg-builder-primary hover:bg-builder-primary-hover'}`}>
+                <button
+                  disabled={forTabDeleted}
+                  onClick={() => {
+                    applyPattern(pat.schedule, forTab?.id);
+                    setGeneratedPatterns([]);
+                    showToast(forTab ? `案 ${i + 1} を「${forTab.name}」に適用しました` : `案 ${i + 1} を適用しました`);
+                  }}
+                  className={`w-full mt-2 py-1 text-white rounded text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed ${pat.isPartial ? 'bg-builder-orange hover:bg-builder-orange-hover' : 'bg-builder-primary hover:bg-builder-primary-hover'}`}
+                >
                   この案を採用
                 </button>
               </div>
