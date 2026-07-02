@@ -773,3 +773,41 @@ describe('migrateProject — 型崩れ JSON の正規化 (F5a-F5e)', () => {
     expect(q.maxDailyHours).toBeUndefined();
   });
 });
+
+describe('migrateProjectV3toV4 — 空タブの subset 保存 (F5v)', () => {
+  it('日程・時限が空 (0 件) のタブは activeDateIds/activePeriodIds = [] を保存する', () => {
+    const v3 = {
+      version: 3,
+      activeTabId: 1,
+      teachers: [],
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: 'A' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          // 未設定のタブ: v3 では 0 日・0 時限 = 何も表示しない
+          id: 2,
+          name: '中１・２',
+          config: { dates: [], periods: [], classes: [{ id: 1, label: 'B' }], subjectCounts: {} },
+          schedule: {},
+        },
+      ],
+    };
+    const p = migrateProject(v3);
+    // 旧実装は `length > 0` 条件で空配列を保存せず、0 日タブが
+    // 「絞り込みなし = union 全日」に化けて全学年の日付を表示していた
+    expect(p.tabs[1].config.activeDateIds).toEqual([]);
+    expect(p.tabs[1].config.activePeriodIds).toEqual([]);
+    // プール全体と一致するタブは従来どおり undefined (= 全日・全時限)
+    expect(p.tabs[0].config.activeDateIds).toBeUndefined();
+    expect(p.tabs[0].config.activePeriodIds).toBeUndefined();
+  });
+});

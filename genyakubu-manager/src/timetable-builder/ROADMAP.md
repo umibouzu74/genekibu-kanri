@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 79 files / 1642 tests (2026-07-02 設定モーダル UI 対応後)
+npm test            # 79 files / 1648 tests (2026-07-02 ソルバ整合対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1263,14 +1263,14 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 
 #### 系統 E: ソルバ / 分析の整合
 
-- **F5t (Medium)**: 連続コマ制約 (E2c) の `isOccupied` が**自タブの
+- ✅ **F5t (Medium)**: 連続コマ制約 (E2c) の `isOccupied` が**自タブの
   tempSch しか見ない**。H2 (同時限 busy / 日次上限) は他タブを合算するのに
   連続だけ非考慮で、学年横断では上限超えの連続が生成される
-- **F5u (Medium)**: SummaryPanel「講師別コマ数 (全タブ合計)」が
+- ✅ **F5u (Medium)**: SummaryPanel「講師別コマ数 (全タブ合計)」が
   `teacherDailyCounts[].total` (= 講習セル + external) を合算。予備校等の
   外部コマが混入し、しかも「その日にセルがある日だけ」混入する不定値。
   `.current` 合算にすべきと思われる (orphan 講師名の漏れも非対称)
-- **F5v (Medium)**: v3→v4 migration で「日程 (時限) 0 のタブ」が
+- ✅ **F5v (Medium)**: v3→v4 migration で「日程 (時限) 0 のタブ」が
   `oldDateIds.length > 0` 条件により activeDateIds 未設定 = **全日使用**に
   化ける (正しくは `[]`)
 - **F5w (Medium・要検証)**: ソルバが「空 + ロック済み」セルに科目・講師を
@@ -1281,7 +1281,7 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
 - ✅ **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
   数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)。
   **✅ 修正 (2026-07-02)**: parseKey + 可視 id Set で filter
-- **F5y (Low)**: 歯抜け時限タブ (activePeriodIds=[1限,3限]) で連続コマ制約が
+- ✅ **F5y (Low)**: 歯抜け時限タブ (activePeriodIds=[1限,3限]) で連続コマ制約が
   実際は休憩を挟むのに「連続」と誤判定 (過剰に候補を弾く)
 - **F5z (Low・要検証)**: 同一科目で同一クラスを共有する合同グループが
   重複登録でき、伝播・集計は first-match のみで不整合
@@ -1316,5 +1316,14 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    仕様判断が必要なため未着手のまま残す。テスト +11
    (CombinedGroupSettings 新規 5 / AbsenceNgPanel +3 / ConfigModal +1 /
    reducer +2)
-6. **ソルバ整合** — F5t / F5v (+ F5w の仕様判断、F2n/F2p の fingerprint 失効と同時)
-7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり
+6. ~~**ソルバ整合 (fingerprint 以外)**~~ ✅ 完了 (2026-07-02) — F5t (連続コマ
+   判定に他タブの busy を合算) / F5y (判定をプール全時限の並びに変更、歯抜け
+   タブの誤隣接を解消) / F5v (v3→v4 で 0 日タブの subset を保存) / F5u
+   (全タブ合計を .current に)。テスト +6。
+   **残**: F2n/F2p (生成結果の config fingerprint 失効) と **F5w (仕様判断:
+   空 + ロック済みセルに solver が書き込む — 「空 lock = 空けておく」に
+   するなら quotaCellMismatch との整合も要検討)**
+7. **参照整合 (F2k 一元化 + H3/H5/F2o) / a11y (F2a/F2b)** — 従来どおり。
+   その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
+   ゴースト click、実機検証) / F2d (no-op 履歴) / F2e (swap stale payload) /
+   F5f (v2/v3 混在 dim、外部データ限定)

@@ -779,3 +779,76 @@ describe('generateSchedule', () => {
     expect(results).toHaveLength(1);
   });
 });
+
+// ─── 連続コマ数制約の他タブ考慮 (F5t) / 歯抜け時限 (F5y) ─────────────
+
+describe('generateSinglePattern — 連続コマ制約の整合 (F5t/F5y)', () => {
+  const otherTab = (schedule, config = {}) => [{
+    id: 2,
+    name: '他学年',
+    config: { classes: [{ id: 1, label: '１S' }], subjectCounts: { '英語': 1 }, ...config },
+    schedule,
+  }];
+
+  it('他タブ (他学年) の確定割当も連続ランに含めて判定する (F5t)', () => {
+    // 他学年で 1限・2限 に確定済み。自タブが 3限 に置くと実質 3 連続 > 上限 2。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1 },
+      activePeriodIds: [3],
+      maxConsecutivePeriods: 2,
+      otherTabs: otherTab({
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+        [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      }, { activePeriodIds: [1, 2] }),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+  });
+
+  it('他タブの割当と連続しなければ配置できる (F5t の対照)', () => {
+    // 他学年は 1限 のみ。自タブの 3限 は 2限 (空き) を挟むので 2 連続にならない。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'])],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1 },
+      activePeriodIds: [3],
+      maxConsecutivePeriods: 2,
+      otherTabs: otherTab({
+        [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      }, { activePeriodIds: [1] }),
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+  });
+
+  it('歯抜けの使う時限 (1限・3限) は休憩を挟むため連続と判定しない (F5y)', () => {
+    // 旧実装はタブの使う時限 [1限,3限] を隣接扱いし、maxConsecutive=1 で
+    // 3限 への配置を誤って弾いていた (実時間では 2限 が休憩)。
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学'])],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1, '数学': 1 },
+      activePeriodIds: [1, 3],
+      maxConsecutivePeriods: 1,
+      schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.solution[makeKey(1, 3, 1)]).toMatchObject({ teacher: '堀上' });
+  });
+
+  it('本当に隣接する時限では従来どおり弾く (F5y の対照)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学'])],
+      periods: ['1限', '2限'],
+      subjectCounts: { '英語': 1, '数学': 1 },
+      maxConsecutivePeriods: 1,
+      schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    // 2限 は 1限 と連続するため堀上を置けず、完全解は存在しない
+    expect(r.solution).toBeNull();
+  });
+});

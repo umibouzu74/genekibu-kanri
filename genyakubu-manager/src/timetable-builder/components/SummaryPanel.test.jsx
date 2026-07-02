@@ -14,7 +14,7 @@ const CONFIG = {
   subjectCounts: { 英語: 1 },
 };
 
-function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, project = {} } = {}) {
+function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
   const applyPattern = vi.fn();
   const projectValue = {
     project: {
@@ -23,7 +23,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
       combinedGroups: [],
       ...project,
     },
-    analysis: { teacherDailyCounts: {} },
+    analysis,
     currentConfig: CONFIG,
     applyPattern,
   };
@@ -31,7 +31,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
     <ProjectContext.Provider value={projectValue}>
       <UIContext.Provider value={{ showToast: vi.fn() }}>
         <SummaryPanel
-          showSummary={false}
+          showSummary={showSummary}
           generatedPatterns={generatedPatterns}
           setGeneratedPatterns={vi.fn()}
           generatedElapsedMs={generatedElapsedMs}
@@ -127,5 +127,21 @@ describe('SummaryPanel (生成元タブへの適用)', () => {
     expect(btn).toBeDisabled();
     fireEvent.click(btn);
     expect(applyPattern).not.toHaveBeenCalled();
+  });
+});
+
+describe('SummaryPanel — 講師別コマ数は講習セルのみ (F5u)', () => {
+  it('externalCounts (ツール外の負荷) は「全タブ合計」に混入しない', () => {
+    renderPanel({
+      project: { dates: [{ id: 1, label: '12/25' }] },
+      // 講習セル 2 コマ + 外部 3 コマ。旧実装は .total (5) を表示し、しかも
+    // 「セルがある日だけ」外部分が混入する不定値だった。
+      analysis: { teacherDailyCounts: { '12/25-堀上': { current: 2, external: 3, total: 5 } } },
+      showSummary: true,
+    });
+    // 講師バッジの数値は current (2) のみ
+    expect(screen.getByText('堀上')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.queryByText('5')).toBeNull();
   });
 });

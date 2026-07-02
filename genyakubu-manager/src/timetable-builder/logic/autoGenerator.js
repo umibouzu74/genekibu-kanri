@@ -157,6 +157,13 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   // H2: 他タブの確定割当 (同時限 busy + 日次コマ数)
   const otherTabs = collectOtherTabsUsage(project, activeTab.id, combinedGroups, DAILY_LIMIT_EXEMPT_TEACHER);
 
+  // E2c 連続コマ判定用 (F5t/F5y)。判定はプール全時限の並びで行う
+  // (タブの使う時限だけだと歯抜け [1限,3限] が隣接扱いになり、実際は休憩を
+  // 挟むのに連続と誤判定する)。自タブの占有は使う時限のセルのみ
+  // (非表示時限の温存セルは実勢ではない)、他タブの確定割当は busy から見る。
+  const poolPeriods = project.periods || [];
+  const activePeriodIdSet = new Set(currentConfig.periods.map(p => p.id));
+
   const slots = [];
   const currentCounts = {};
   currentConfig.classes.forEach((c, cIdx) => {
@@ -440,12 +447,18 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           })) continue;
 
           // 連続コマ数上限チェック (E2c)。"未定" は対象外。
+          // F5y: プール全時限の並びで判定 (歯抜けタブの誤隣接を防ぐ)。
+          // F5t: 他タブ (他学年) の確定割当も連続ランに含める (busy /
+          // 日次上限は他タブを合算するのに連続だけ見ないと学年横断で
+          // 上限超えの連続が生成される)。
           if (isRealTeacher && wouldExceedConsecutive({
-            periodsOrder: currentConfig.periods,
+            periodsOrder: poolPeriods,
             periodId: p.id,
-            isOccupied: (pid) => currentConfig.classes.some(
-              cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
-            ),
+            isOccupied: (pid) =>
+              (activePeriodIdSet.has(pid) && currentConfig.classes.some(
+                cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
+              ))
+              || otherTabs.busy.has(`${d.id}|${pid}|${tName}`),
             maxConsecutive,
           })) continue;
 

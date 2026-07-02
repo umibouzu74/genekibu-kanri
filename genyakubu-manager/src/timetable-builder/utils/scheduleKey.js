@@ -307,10 +307,14 @@ export function migrateProjectV3toV4(project) {
     const oldPeriodIds = (cfg.periods || [])
       .map(p => periodIdByLabel.get(p.label))
       .filter(id => id != null);
-    if (oldDateIds.length > 0 && oldDateIds.length < projDates.length) {
+    // F5v: 空 (0 日 / 0 時限) のタブも subset として保存する。
+    // `length > 0` を条件に含めると空配列が「絞り込みなし = union 全日」に
+    // 化け、0 日だったタブが migration 後に全学年の日付を表示し、自動生成が
+    // 他学年の日にコマを埋めてしまう。
+    if (oldDateIds.length < projDates.length) {
       restConfig.activeDateIds = oldDateIds;
     }
-    if (oldPeriodIds.length > 0 && oldPeriodIds.length < projPeriods.length) {
+    if (oldPeriodIds.length < projPeriods.length) {
       restConfig.activePeriodIds = oldPeriodIds;
     }
     return { ...t, config: restConfig, schedule: remapSchedule(t.schedule, cfg.dates, cfg.periods) };
