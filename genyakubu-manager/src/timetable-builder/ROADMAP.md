@@ -1032,3 +1032,30 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 ※ H3/H4/H5 は F2h にまとめたが元レビューでは High 判定。rename/削除系の
    参照整合はまとめて 1 セッションで設計するのが良い (ラベルベース参照の
    cascade を一元化するヘルパーの導入を検討)。
+
+### F.3 校正レビュー (2026-07-02、8 観点 × 個別検証) の結果
+
+F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を個別検証し
+13 CONFIRMED / 1 PLAUSIBLE — **全 14 件を同日修正済み** (commit 参照)。
+主な回帰: select disabled 化による矢印ナビ停止 / IME Esc での draft 全破棄 /
+リスタートの探索深度キャップ / quotaCellMismatch のバッジ常時点灯。
+主な穴埋め: JSON 読込後の stale 生成結果 / effectiveConfig の periods 絞り /
+時限プール削除の NG cascade / ラベル照合の最長一致化 / 合同の capacity 割引。
+
+レビューで出た**構造改善の提案 (未実施、F2 系に追加)**:
+- **F2i**: `effectiveConfigForTab(project, tab)` を scheduleKey.js に新設し、
+  同型の 3 行合成 7 箇所 (useProject / autoGenerator / analysisHelpers ×2 /
+  excelExport ×3 / SummaryPanel / projectReducer) を集約 — E-3 型の
+  「絞り忘れ」の構造的再発防止
+- **F2j**: collectOtherTabsUsage (autoGenerator) と computeGlobalUsage
+  (analysisHelpers) の集計規則統合 (合同 dedupe キーで既に一度食い違った)
+- **F2k**: ラベルベース参照の cascade (削除/リネーム) を単一モジュールへ
+  一元化 (makeNgKey/makeExternalKey のパース知識が 5 箇所に分散)
+- **F2l**: draft-commit 入力 (DraftListTextarea / InlineNameEdit / ParamRow) と
+  dismissable-popover (Header / Toolbar / SnapshotMenu) の共有フック化。
+  SubjectManager / AbsenceNgPanel の即時 commit 数値入力にも draft 化を展開
+- **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
+  fixSuggestions の同型 4 連ブロック解消)
+- **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
+  生成後の config 変更 (クラス削除・使う日 off・クォータ変更) では
+  stale な案を採用できる。config fingerprint での無効化を検討)
