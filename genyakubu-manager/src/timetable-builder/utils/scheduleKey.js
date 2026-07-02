@@ -105,6 +105,9 @@ export function countTeacherHoursWithCombined(schedule, config, combinedGroups) 
     const dateEnt = findEntityById(config.dates, dateId);
     const classEnt = findEntityById(config.classes, classId);
     if (!dateEnt || !classEnt) return;
+    // config.periods が渡されていれば時限も照合する (E-3: タブが使わない
+    // 時限に温存された非表示セルを集計に混入させない。dates と対称)。
+    if (config.periods && !findEntityById(config.periods, periodId)) return;
 
     const group = findCombinedGroup(combinedGroups, entry.subject, classEnt.label, dateEnt.label);
     if (group) {

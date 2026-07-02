@@ -30,7 +30,15 @@ function InlineNameEdit({ value, onSave }) {
         onBlur={handleSubmit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') handleSubmit();
-          if (e.key === 'Escape') { setDraft(value); setEditing(false); }
+          if (e.key === 'Escape') {
+            // IME 変換中の Esc (変換キャンセル) では編集を破棄しない
+            if (e.nativeEvent?.isComposing) return;
+            // stopPropagation しないと ConfigModal の focus trap まで届いて
+            // モーダルごと閉じてしまう (DraftListTextarea と同じ対策)
+            e.stopPropagation();
+            setDraft(value);
+            setEditing(false);
+          }
         }}
       />
     );

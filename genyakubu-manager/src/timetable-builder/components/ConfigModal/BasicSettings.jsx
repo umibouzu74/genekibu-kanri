@@ -25,6 +25,10 @@ function DraftListTextarea({ value, onCommit }) {
       }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
+          // IME 変換中の Esc は「変換のキャンセル」であって編集の取り消しでは
+          // ない (Chrome は composition 中も key='Escape' の keydown を配信する)。
+          // ここで draft を破棄すると未確定の編集内容が丸ごと消える。
+          if (e.nativeEvent?.isComposing) return;
           // 編集の取り消し。stopPropagation しないと ConfigModal の
           // focus trap まで届いてモーダルごと閉じてしまう。
           e.stopPropagation();

@@ -760,3 +760,39 @@ describe('computeInfeasibilities — M8 追加分', () => {
     expect(r.subjectQuotaOverDays.items[0]).toEqual({ subject: '英語', quota: 3, days: 2 });
   });
 });
+
+describe('computeInfeasibilities — 合同グループの capacity 割引 (校正レビュー対応)', () => {
+  it('常時合同 (dates:null) のクラス群は 1 クラス相当に割り引いて false positive を出さない', () => {
+    // 2 クラス常時合同・講師 1 名・1 日 1 時限・クォータ 1:
+    // 割引なしだと demand=2 > capacity=1 で誤警告になる構成
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+        subjectCounts: { '英語': 1 },
+      },
+      maxDailyHours: 6,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: null }],
+    });
+    expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+
+  it('日付限定の合同 (dates 指定あり) は保守的に割引しない', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+        subjectCounts: { '英語': 1 },
+      },
+      maxDailyHours: 6,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: ['12/26'] }],
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+  });
+});

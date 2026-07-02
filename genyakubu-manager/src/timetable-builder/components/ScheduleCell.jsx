@@ -84,6 +84,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isCombined = !!combinedGroup;
   const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, cLabel);
 
+  // option ループ (講師数×セル数) の内側で毎回呼ばないよう、ここで 1 回だけ解決
+  const { maxDailyHours } = resolveGenerationParams(project);
+
   const cellBgColor = (isConflict || isNgAssigned) ? CONFLICT_CELL_BG : getSubjectColor(entry.subject, project.subjectColors);
   const ngBorder = isNgAssigned && !isLocked ? "border-2 border-builder-red" : "";
   const combinedBorder = isCombined ? (isPrimary ? "border-2 border-builder-primary" : "border-2 border-builder-ink-ghost border-dashed") : "";
@@ -95,37 +98,64 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
 
   // 矢印キーナビゲーション: 現在の (dateId, periodId, classId) を起点に隣接セルへ。
   // 隣接は config 配列の並び順で算出する。
+  //
+  // ロック済み・科目未選択の select は disabled (focus() が no-op) なので、
+  // disabled な要素に当たったら同方向へ進み続けて次のフォーカス可能な
+  // select を探す。これをしないと空セルの teacher select で横移動が停止し、
+  // ロックセルを縦移動で通過できない (E1b「矢印移動が途切れない」の維持)。
   const handleCellNavigation = (e, type) => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
-    const dIdx = currentConfig.dates.findIndex(x => x.id === dateId);
-    const pIdx = currentConfig.periods.findIndex(x => x.id === periodId);
-    const cIdx = currentConfig.classes.findIndex(x => x.id === classId);
-    let nextD = dIdx, nextP = pIdx, nextC = cIdx, nextType = type;
-    if (e.key === 'ArrowUp') {
-      if (pIdx > 0) nextP--;
-      else if (dIdx > 0) { nextD--; nextP = currentConfig.periods.length - 1; }
-    } else if (e.key === 'ArrowDown') {
-      if (pIdx < currentConfig.periods.length - 1) nextP++;
-      else if (dIdx < currentConfig.dates.length - 1) { nextD++; nextP = 0; }
-    } else if (e.key === 'ArrowLeft') {
-      // 行内で連続移動: teacher→subject、左端の subject では前クラスの teacher へ。
-      // 行頭 (先頭クラスの subject) では行末 (末尾クラスの teacher) へ wrap し、
-      // 矢印移動が途切れないようにする (E1b 端動作の統一)。
-      if (type === 'teacher') nextType = 'subject';
-      else if (cIdx > 0) { nextC--; nextType = 'teacher'; }
-      else { nextC = currentConfig.classes.length - 1; nextType = 'teacher'; }
-    } else if (e.key === 'ArrowRight') {
-      if (type === 'subject') nextType = 'teacher';
-      else if (cIdx < currentConfig.classes.length - 1) { nextC++; nextType = 'subject'; }
-      else { nextC = 0; nextType = 'subject'; } // 行末 → 行頭へ wrap
+    const { dates, periods, classes } = currentConfig;
+
+    // 1 ステップ分の移動。端で進めない場合は null (vertical のみ)。
+    const step = (pos) => {
+      let { d, p, c, t } = pos;
+      if (e.key === 'ArrowUp') {
+        if (p > 0) p--;
+        else if (d > 0) { d--; p = periods.length - 1; }
+        else return null;
+      } else if (e.key === 'ArrowDown') {
+        if (p < periods.length - 1) p++;
+        else if (d < dates.length - 1) { d++; p = 0; }
+        else return null;
+      } else if (e.key === 'ArrowLeft') {
+        // 行内で連続移動: teacher→subject、左端の subject では前クラスの teacher へ。
+        // 行頭では行末へ wrap (E1b 端動作の統一)。
+        if (t === 'teacher') t = 'subject';
+        else if (c > 0) { c--; t = 'teacher'; }
+        else { c = classes.length - 1; t = 'teacher'; }
+      } else if (e.key === 'ArrowRight') {
+        if (t === 'subject') t = 'teacher';
+        else if (c < classes.length - 1) { c++; t = 'subject'; }
+        else { c = 0; t = 'subject'; } // 行末 → 行頭へ wrap
+      }
+      return { d, p, c, t };
+    };
+
+    let pos = {
+      d: dates.findIndex(x => x.id === dateId),
+      p: periods.findIndex(x => x.id === periodId),
+      c: classes.findIndex(x => x.id === classId),
+      t: type,
+    };
+    const startKey = `${pos.d}|${pos.p}|${pos.c}|${pos.t}`;
+    const maxSteps = dates.length * periods.length * classes.length * 2 + 2;
+    for (let i = 0; i < maxSteps; i++) {
+      pos = step(pos);
+      if (!pos) return; // 端で移動不能 (vertical)
+      if (`${pos.d}|${pos.p}|${pos.c}|${pos.t}` === startKey) return; // 一周した
+      const dId = dates[pos.d]?.id;
+      const pId = periods[pos.p]?.id;
+      const cId = classes[pos.c]?.id;
+      if (dId == null || pId == null || cId == null) return;
+      const el = document.getElementById(`select-${dId}-${pId}-${cId}-${pos.t}`);
+      if (el && !el.disabled) {
+        el.focus();
+        return;
+      }
+      // disabled (ロック済み / 科目未選択の teacher) はスキップして続行
     }
-    const nextD_id = currentConfig.dates[nextD]?.id;
-    const nextP_id = currentConfig.periods[nextP]?.id;
-    const nextC_id = currentConfig.classes[nextC]?.id;
-    if (nextD_id == null || nextP_id == null || nextC_id == null) return;
-    const nextElement = document.getElementById(`select-${nextD_id}-${nextP_id}-${nextC_id}-${nextType}`);
-    if (nextElement) nextElement.focus();
   };
 
   return (
@@ -200,7 +230,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const shouldDisable = isNg && entry.teacher !== t.name;
                 // 上限到達済み (これ以上選ぶと超過) の講師を警告色にする。
                 // 閾値は設定可能な maxDailyHours に追従 (旧: 4 固定)。
-                const nearLimit = daily.total >= resolveGenerationParams(project).maxDailyHours;
+                const nearLimit = daily.total >= maxDailyHours;
                 return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (nearLimit ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
               })}
             </optgroup>

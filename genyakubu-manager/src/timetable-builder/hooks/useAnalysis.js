@@ -87,10 +87,11 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
         currentConfig,
         maxDailyHours,
         autoNgByTeacher,
+        combinedGroups: project.combinedGroups || [],
       }),
       { currentConfig, teachers: project.teachers, maxDailyHours, autoNgByTeacher },
     ),
-    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher],
+    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher, project.combinedGroups],
   );
 
   const analysis = useMemo(

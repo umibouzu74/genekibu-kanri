@@ -1531,6 +1531,73 @@ describe('projectReducer — cascade cleanup', () => {
     expect(p.externalSessions[0].date).toBe('12/26(金)');
   });
 
+  it('config/setList(periods): プールから消えた時限の NG キーも cascade で消える (最長一致)', () => {
+    const state = makeState({
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '番外-1限' }],
+      teachers: [{
+        name: '堀上',
+        subjects: ['英語'],
+        ngSlots: [makeNgKey('12/25(木)', '1限'), makeNgKey('12/25(木)', '番外-1限')],
+        ngClasses: [],
+        priorityClasses: [],
+      }],
+    });
+    // 「1限」だけ削除。「番外-1限」は suffix に "-1限" を含むが最長一致で保護される
+    const next = projectReducer(state, {
+      type: 'config/setList',
+      payload: { key: 'periods', value: '番外-1限' },
+    });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('12/25(木)', '番外-1限')]);
+  });
+
+  it('dates/removeFromPool: prefix 関係にある別日付ラベルの NG は巻き添えにしない (最長一致)', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '8/1' }, { id: 2, label: '8/1-補講' }],
+      teachers: [{
+        name: '堀上',
+        subjects: ['英語'],
+        ngSlots: [makeNgKey('8/1', '1限'), makeNgKey('8/1-補講', '1限')],
+        ngClasses: [],
+        priorityClasses: [],
+      }],
+      externalCounts: {
+        [makeExternalKey('8/1', '堀上')]: 1,
+        [makeExternalKey('8/1-補講', '堀上')]: 2,
+      },
+    });
+    const next = projectReducer(state, { type: 'dates/removeFromPool', payload: { dateId: 1 } });
+    expect(next.project.teachers[0].ngSlots).toEqual([makeNgKey('8/1-補講', '1限')]);
+    expect(next.project.externalCounts[makeExternalKey('8/1-補講', '堀上')]).toBe(2);
+    expect(next.project.externalCounts[makeExternalKey('8/1', '堀上')]).toBeUndefined();
+  });
+
+  it('schedule/bulkAction: 日付軸の一括操作は使わない時限のセルに触れない', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '12/25(木)' }],
+      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: {
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+          activePeriodIds: [1], // 2限 は使わない
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 可視
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' }, // 非表示時限に温存
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/bulkAction',
+      payload: { action: 'clear-all', type: 'date', val: '12/25(木)' },
+    });
+    const sch = next.project.tabs[0].schedule;
+    expect(sch[makeKey(1, 1, 1)]).toBeUndefined(); // 可視セルは消える
+    expect(sch[makeKey(1, 2, 1)]).toEqual({ subject: '数学', teacher: '田中' }); // 温存
+  });
+
   it('tab/switch: 存在しないタブ ID は no-op', () => {
     const state = makeState();
     const next = projectReducer(state, { type: 'tab/switch', payload: { id: 99 } });

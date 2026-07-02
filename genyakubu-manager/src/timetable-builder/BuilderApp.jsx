@@ -141,6 +141,23 @@ function ScheduleApp() {
   // 起動中の worker handle を ref で保持 (アンマウント時にキャンセル)
   const generationRef = useRef(null);
 
+  // JSON 読込・全リセットで project が丸ごと入れ替わったら生成結果を破棄する。
+  // ScheduleApp は unmount されないため、放置すると旧プロジェクト由来の案を
+  // 「この案を採用」で新プロジェクトへ書き込めてしまう (tabId は両者とも
+  // 1 始まりの連番で衝突するため reducer の存在チェックを通過する)。
+  // createdAt は同一プロジェクト内の編集では変わらない識別子。
+  useEffect(() => {
+    setGeneratedPatterns([]);
+    setGeneratedForTab(null);
+    // 旧プロジェクト相手に走っている生成も止める (完了後に旧案が届くのを防ぐ)
+    if (generationRef.current) {
+      generationRef.current.cancel();
+      generationRef.current = null;
+      setIsGenerating(false);
+      setGenerateLive(null);
+    }
+  }, [project.createdAt]);
+
   const handleGenerate = useCallback(() => {
     // 多重起動を防ぐため、既に走っているなら一旦キャンセル
     generationRef.current?.cancel();

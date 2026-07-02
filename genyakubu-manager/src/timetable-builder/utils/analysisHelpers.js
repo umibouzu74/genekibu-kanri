@@ -365,7 +365,7 @@ export function computeViolations({
 //       は 1 コマまでなので達成不能
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
-export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null }) {
+export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [] }) {
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
@@ -398,8 +398,21 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   const perDayCap = currentConfig.periods.length > 0
     ? Math.min(maxDailyHours, currentConfig.periods.length)
     : maxDailyHours;
+  const classLabels = new Set(currentConfig.classes.map(c => c.label));
   subjects.forEach(subject => {
-    const demand = (currentConfig.subjectCounts?.[subject] || 0) * currentConfig.classes.length;
+    // 合同グループ (全日: dates === null) は 1 講師スロットで複数クラスの
+    // demand を同時に消化できるため、常時合同のクラス群は 1 クラス相当に
+    // 割り引いて数える。これをしないと「常時 2 クラス合同 + 講師 1 名」の
+    // 正常な構成が『致命』と誤警告される。日付限定の合同 (dates 指定あり)
+    // は保守的に割引しない (警告が出るのは供給不足側に倒れる)。
+    let discount = 0;
+    (combinedGroups || []).forEach(g => {
+      if (g.subject !== subject || g.dates !== null) return;
+      const overlap = (g.classes || []).filter(label => classLabels.has(label));
+      if (overlap.length >= 2) discount += overlap.length - 1;
+    });
+    const effectiveClasses = Math.max(1, currentConfig.classes.length - discount);
+    const demand = (currentConfig.subjectCounts?.[subject] || 0) * effectiveClasses;
     if (demand === 0) return;
     const eligible = reals.filter(t => t.subjects?.includes(subject));
     const capacity = eligible.length * currentConfig.dates.length * perDayCap;

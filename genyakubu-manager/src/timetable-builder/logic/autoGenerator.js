@@ -51,9 +51,11 @@ function seededShuffle(arr, rng) {
 const MAX_ITERATIONS = CONST_DEFAULT_MAX_ITERATIONS;
 
 // 講師 1 人あたりの 1 日コマ数上限のデフォルト。
-// externalCounts (他タブ・他学年での既存コマ数) + 当該タブの割当 + 既存セル
-// の合計がこの値を超える講師は候補から外す。
-// project.maxDailyHours で上書き可。
+// externalCounts/externalSessions (ツール外: 予備校・高校等) + 他タブの
+// 確定割当 (H2 で自動集計) + 当該タブの割当 + 既存セルの合計がこの値を
+// 超える講師は候補から外す。project.maxDailyHours で上書き可。
+// 注意: 他タブ分は自動集計されるため externalCounts に手入力しないこと
+// (二重計上になり、解ける構成でも部分解に劣化する)。
 const DEFAULT_MAX_DAILY_HOURS = CONST_DEFAULT_MAX_DAILY_HOURS;
 
 // 講師の名前のうち daily 上限の対象外とするもの (placeholder)。
@@ -63,13 +65,20 @@ const DAILY_LIMIT_EXEMPT_TEACHER = '未定';
 // postMessage / setState が溢れるので、この回数ごとに 1 回だけ通知する。
 const PROGRESS_INTERVAL = 20000;
 
-// 1 回のリスタートに割り当てる探索回数 (P1)。バックトラック探索の実行時間は
-// heavy-tailed で、探索順の運が悪いと上限まで粘っても解けない一方、別の
-// 順序なら数万回で解けることが多い。maxIterations を 1 本の DFS で使い
-// 切るより、この間隔でシードを変えて仕切り直す方が完全解率・速度とも良い
+// 1 回のリスタートに割り当てる探索回数の下限 (P1)。バックトラック探索の
+// 実行時間は heavy-tailed で、探索順の運が悪いと上限まで粘っても解けない
+// 一方、別の順序なら数万回で解けることが多い。maxIterations を 1 本の DFS で
+// 使い切るより、この間隔でシードを変えて仕切り直す方が完全解率・速度とも良い
 // (実測: デフォルトデータの 50 万回一本勝負は 3 案中 2 案が部分解、
 //  シード次第では 5 万回程度で完全解が出ていた)。
 const RESTART_INTERVAL = 60000;
+
+// maxIterations をおよそ何本の run に分割するか。リスタート間隔を
+// max(RESTART_INTERVAL, maxIterations / RESTART_FRACTION) にすることで、
+// ユーザが設定 UI で「探索回数の上限」を引き上げたとき 1 本の DFS の深さも
+// 比例して伸びる (固定間隔だと上限を上げてもリスタート回数が増えるだけで
+// 深さが変わらず、設定の意味が変質してしまう)。
+const RESTART_FRACTION = 8;
 
 // 他タブ (他学年) の確定割当を集計する (H2)。
 // - busy: 同日・同時限に他タブで授業を持つ講師 (物理的に兼務不可)
@@ -116,7 +125,7 @@ function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName)
  *   探索の途中経過を間引いて通知する (E2f live progress)。省略可。
  * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number, iterations: number, hitLimit: boolean, stuckSlot: object|null }}
  */
-export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress, restartInterval = RESTART_INTERVAL }) {
+export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress, restartInterval = null }) {
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   // v4(Y)+E-3: dates も periods も『このタブが使う分』に絞る (useProject の
@@ -132,6 +141,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
   const maxIterations = project.maxIterations ?? MAX_ITERATIONS;
+  // リスタート間隔: 明示指定 (テスト用) が無ければ maxIterations に比例。
+  const runInterval = restartInterval ?? Math.max(RESTART_INTERVAL, Math.ceil(maxIterations / RESTART_FRACTION));
   // 連続コマ数上限 (E2c)。0 = 制限なし。
   const maxConsecutive = project.maxConsecutivePeriods ?? 0;
 
@@ -167,9 +178,11 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   });
 
   // 講師の日別コマ数を pre-seed:
-  //   1. project.externalCounts (他タブ・他学年などの外部コマ) を加算
-  //   2. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
+  //   1. project.externalCounts / externalSessions (ツール外: 予備校・高校等)
+  //   2. 他タブ (他学年) の確定割当 (otherTabs.daily、H2 で自動集計)
+  //   3. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
   // ここで作った initialDaily を solve に渡し、上限チェックの基準とする。
+  // 1 と 2 は別枠 — 他タブ分を externalCounts に手入力すると二重計上になる。
   const initialDaily = {};
   // 詳細セッション (externalSessions) が登録されていれば件数として優先採用、
   // 無ければ legacy externalCounts。分析側 computeGlobalUsage と同じ規則に
@@ -506,7 +519,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   };
 
   while (solution === null && totalIter < maxIterations) {
-    const budget = Math.min(restartInterval, maxIterations - totalIter);
+    const budget = Math.min(runInterval, maxIterations - totalIter);
     const r = runOnce(budget);
     totalIter += r.iterUsed;
     if (r.runBestFilled > bestFilledCount) {

@@ -67,9 +67,13 @@ export default function Toolbar({
       label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
       suggestions: it.suggestions || [],
     })),
+    // quotaCellMismatch は「意図的にコマ数をセル数未満にして残りを手動運用」
+    // が正当にあり得るため informational 扱い: popover には出すが ⚠ バッジの
+    // 件数には数えない (数えると違反ゼロでも赤バッジが恒久点灯してしまう)
     ...(infeasibilities?.quotaCellMismatch?.items || []).map(it => ({
       kind: 'quotaMismatch',
-      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells} (使う日 × 使う時限)`,
+      informational: true,
+      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells} (使う日 × 使う時限)。完全解を狙う場合は一致させてください`,
       suggestions: it.suggestions || [],
     })),
     ...(infeasibilities?.subjectQuotaOverDays?.items || []).map(it => ({
@@ -102,7 +106,10 @@ export default function Toolbar({
   }, [popoverOpen]);
 
   const handleClearClick = async () => {
-    const ok = await showConfirm("ロックされていないセルを全てクリアしますか？", { title: "生成クリア", danger: true, confirmLabel: "クリア" });
+    const ok = await showConfirm(
+      "表示中のロックされていないセルを全てクリアしますか？\n(「使う日・使う時限」から外して非表示になっているコマは温存されます)",
+      { title: "生成クリア", danger: true, confirmLabel: "クリア" },
+    );
     if (ok) handleClearUnlocked();
   };
 
@@ -150,17 +157,20 @@ export default function Toolbar({
     });
   }
   const teacherOverItems = violations.teacherOverDaily.items;
+  // informational (quotaCellMismatch) はバッジの件数に数えない
+  const countedInfeasItems = infeasItems.filter(it => !it.informational);
   const totalViolationCount =
-    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length + infeasItems.length;
+    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length + countedInfeasItems.length;
   // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
-  // infeasItems が全て 0) の場合は popover を開かず即スクロールする (旧挙動互換)。
+  // カウント対象の infeasItems が全て 0) の場合は popover を開かず即スクロール
+  // する (旧挙動互換)。informational は fast path を妨げない。
   const isOnlyTeacherConflict =
     violations.teacherConflict.count > 0 &&
     (violations.teacherNgAssigned?.count || 0) === 0 &&
     violations.subjectDup.count === 0 &&
     violations.subjectOver.count === 0 &&
     teacherOverItems.length === 0 &&
-    infeasItems.length === 0;
+    countedInfeasItems.length === 0;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-builder-surface-alt border border-builder-border rounded no-print">
