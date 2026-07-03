@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { splitTeacherField } from "../utils/biweekly";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
@@ -53,7 +54,9 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
       setErrors(errs);
       return;
     }
-    onSave(f);
+    // 複数講師の区切りを正史の "·" に正規化して保存する (H1f と同じ理由:
+    // IME の素の入力は "・" になりがちで、"·" 前提の消費側と食い違う)。
+    onSave({ ...f, teacher: splitTeacherField(f.teacher).join("·") });
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

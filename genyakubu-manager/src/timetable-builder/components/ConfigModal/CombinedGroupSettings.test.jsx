@@ -192,7 +192,7 @@ describe('CombinedGroupSettings — 他タブ由来グループは読み取り�
     fireEvent.click(edit);
     expect(updateCombinedGroup).not.toHaveBeenCalled();
     expect(screen.queryByText('保存')).toBeNull();
-    expect(screen.getByText(/他タブのクラス・日程 \(中1A\) を含むため/)).toBeInTheDocument();
+    expect(screen.getByText(/現在のタブに無いクラス・日程 \(中1A\) を含むため/)).toBeInTheDocument();
   });
 
   it('現タブに無い日程を含むグループも編集 disabled', () => {
@@ -213,5 +213,41 @@ describe('CombinedGroupSettings — 他タブ由来グループは読み取り�
     const { removeCombinedGroup } = renderSettings({ combinedGroups: [crossTab] });
     fireEvent.click(screen.getByText('削除'));
     expect(removeCombinedGroup).toHaveBeenCalledWith(9);
+  });
+
+  it('編集中に project が変わって draft が現タブに無いラベルを抱えたら保存を弾く (F5p 補強)', () => {
+    // 編集ボタンの disabled は render 時のゲートでしかない。編集を開いた後に
+    // Undo 等で currentConfig からクラスが消えると、draft は見えないラベルを
+    // 持ったままになる — 保存時の再検証で混成グループの保存を防ぐ。
+    const updateCombinedGroup = vi.fn();
+    const makeValue = (classes) => ({
+      project: { combinedGroups: [GROUP] },
+      currentConfig: {
+        classes,
+        dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+      },
+      commonSubjects: ['英語', '数学'],
+      addCombinedGroup: vi.fn(),
+      updateCombinedGroup,
+      removeCombinedGroup: vi.fn(),
+    });
+    const full = [{ id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' }];
+    const { rerender } = render(
+      <ProjectContext.Provider value={makeValue(full)}>
+        <CombinedGroupSettings />
+      </ProjectContext.Provider>,
+    );
+    fireEvent.click(screen.getByText('編集')); // GROUP (A・B) を編集開始
+    // 編集中に B が現タブから消える (Undo / 基本設定の変更を模擬)
+    rerender(
+      <ProjectContext.Provider value={makeValue([{ id: 1, label: 'A' }, { id: 3, label: 'C' }])}>
+        <CombinedGroupSettings />
+      </ProjectContext.Provider>,
+    );
+    expect(screen.getByText(/現在のタブに無いクラス・日程 \(B\) が含まれています/)).toBeInTheDocument();
+    const save = screen.getByText('保存');
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(updateCombinedGroup).not.toHaveBeenCalled();
   });
 });

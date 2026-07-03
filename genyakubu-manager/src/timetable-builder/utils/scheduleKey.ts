@@ -506,9 +506,10 @@ export function migrateProject(project: any): Project {
     result = { ...result, externalSessionPresets: [] };
   }
 
-  // externalCounts が型崩れ ({} 以外) の場合は空オブジェクトに正規化
-  if (result.externalCounts != null
-    && (typeof result.externalCounts !== 'object' || Array.isArray(result.externalCounts))) {
+  // externalCounts が欠落 / 型崩れの場合は空オブジェクトに正規化
+  // (types.ts では必須宣言なので、migrate 後は必ずオブジェクトにする)
+  if (result.externalCounts == null
+    || typeof result.externalCounts !== 'object' || Array.isArray(result.externalCounts)) {
     result = { ...result, externalCounts: {} };
   }
 

@@ -462,6 +462,20 @@ describe('migrateTabV2toV3', () => {
   });
 });
 
+describe('migrateProject — externalCounts の補完', () => {
+  it('externalCounts が欠落した JSON は {} に補完される (types.ts の必須宣言との整合)', () => {
+    const project = {
+      version: 4,
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1限' }],
+      tabs: [{ id: 1, name: 'A', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+      teachers: [],
+    };
+    const migrated = migrateProject(project);
+    expect(migrated.externalCounts).toEqual({});
+  });
+});
+
 describe('migrateProject', () => {
   const makeLegacyProject = () => ({
     teachers: [{ name: '堀上', subjects: ['英語'] }],

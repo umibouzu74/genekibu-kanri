@@ -1,3 +1,4 @@
+import { splitTeacherField } from "./biweekly";
 // コマの科目文字列から対応する Subject.id を推定する。
 // 完全一致 → 名前を含む → 別名を含む の順で判定し、最初のマッチを返す。
 export function pickSubjectId(subjStr, subjects) {
@@ -19,11 +20,7 @@ export function pickSubjectId(subjStr, subjects) {
 export function getTeacherSubjectIds(teacherName, slots, subjects) {
   const ids = new Set();
   for (const slot of slots) {
-    if (!slot.teacher) continue;
-    const teachers = slot.teacher.includes("·")
-      ? slot.teacher.split("·")
-      : [slot.teacher];
-    if (!teachers.includes(teacherName)) continue;
+    if (!splitTeacherField(slot.teacher).includes(teacherName)) continue;
     const sid = pickSubjectId(slot.subj, subjects);
     if (sid != null) ids.add(sid);
   }

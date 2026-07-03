@@ -83,8 +83,9 @@ export interface ExternalSession {
   /** 日付ラベル (プールの label 参照) */
   date: string;
   teacherName: string;
-  label: string;
-  memo: string;
+  /** reducer 経由では常に '' が入るが、外部 JSON は欠落し得る (migrate は補完しない) */
+  label?: string;
+  memo?: string;
   /** "HH:mm"。あれば自動NG派生 (utils/autoNg) の対象 */
   startTime?: string;
   /** startTime がある場合のみ保持 (orphan endTime は作らない) */

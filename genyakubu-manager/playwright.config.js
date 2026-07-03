@@ -29,7 +29,9 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: "http://localhost:5173/genekibu-kanri/",
-    reuseExistingServer: true,
+    // ローカルは起動済み dev server を再利用 (高速)。CI では常に自前起動
+    // (5173 に別物が居ても誤対象でテストしないための慣習)。
+    reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
 });

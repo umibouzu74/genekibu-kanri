@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { splitTeacherField } from "../../utils/biweekly";
 import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
@@ -48,9 +49,7 @@ export function ChainSubstitutionPanel({
   const allTeachers = useMemo(() => {
     const set = new Set(partTimeStaff.map((s) => s.name));
     slots.forEach((s) => {
-      if (!s.teacher) return;
-      const names = s.teacher.includes("·") ? s.teacher.split("·") : [s.teacher];
-      names.forEach((n) => set.add(n));
+      splitTeacherField(s.teacher).forEach((n) => set.add(n));
     });
     return sortJa([...set]);
   }, [slots, partTimeStaff]);
@@ -131,9 +130,7 @@ export function ChainSubstitutionPanel({
     } else {
       subjectIds = [];
       slots.forEach((s) => {
-        if (!s.teacher) return;
-        const ts = s.teacher.includes("·") ? s.teacher.split("·") : [s.teacher];
-        if (ts.includes(manualTeacher)) {
+        if (splitTeacherField(s.teacher).includes(manualTeacher)) {
           const sid = pickSubjectId(s.subj, subjects);
           if (sid != null && !subjectIds.includes(sid)) subjectIds.push(sid);
         }

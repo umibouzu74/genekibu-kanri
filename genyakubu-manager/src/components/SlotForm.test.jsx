@@ -61,6 +61,32 @@ describe("SlotForm", () => {
     );
   });
 
+  it("担当講師の全角中点 (・) 区切りは正規の · 区切りに正規化して保存する", () => {
+    // IME の素の入力は "・" になる。"·" 前提の消費側 (代行ピッカー等) と
+    // 食い違わないよう保存時に揃える (H1f の週次スロット版)。
+    const onSave = vi.fn();
+    render(
+      <SlotForm
+        slot={{
+          day: "月",
+          time: "17:00-18:00",
+          grade: "中1-3",
+          cls: "",
+          room: "",
+          subj: "プレップ個別指導",
+          teacher: "香川・福江 ・ 川井",
+          note: "",
+        }}
+        onSave={onSave}
+        onCancel={noop}
+      />
+    );
+    fireEvent.click(screen.getAllByText("保存")[0]);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ teacher: "香川·福江·川井" })
+    );
+  });
+
   it("calls onCancel when cancel button is clicked", () => {
     const onCancel = vi.fn();
     render(<SlotForm slot={null} onSave={noop} onCancel={onCancel} />);

@@ -81,7 +81,11 @@ export function suggestForNoTeacher(
 // 提案: 担当講師を増やす / 1日上限を上げる (適用可) / コマ数を減らす。
 export function suggestForCapacity(
   item: { subject: string; demand: number; teacherCount: number },
-  { currentConfig, maxDailyHours = 0 }: SuggestContext = {},
+  // maxDailyHours にデフォルト値は与えない (旧 JS は undefined のとき比較が
+  // すべて false になり setMaxDaily 提案を出さなかった。= 0 を置くと
+  // 「0 → N に上げる」という嘘の提案が生成される)。production 経路
+  // (useAnalysis) は常に数値を渡す。
+  { currentConfig, maxDailyHours }: SuggestContext = {},
 ): FixSuggestion[] {
   const { subject, demand, teacherCount } = item;
   const dates = currentConfig?.dates?.length || 0;

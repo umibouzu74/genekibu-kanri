@@ -72,8 +72,12 @@
  * (ROADMAP G.2 の実機検証項目)。
  */
 @media (pointer: coarse) {
-  .builder-root button,
-  .builder-root select {
+  /* スケジュール表 (.print-container 内) の select / 🔒 は除外する。
+     セル内に縦 2 つ並ぶため 44px にすると行が ~2.5 倍に膨れ、compact
+     モードが機能しなくなる (校正レビュー 2026-07-03)。表のセルは td
+     全体がタップ・長押し対象なので実効タップ領域は既に広い。 */
+  .builder-root button:not(.print-container *),
+  .builder-root select:not(.print-container *) {
     min-height: 44px;
   }
   .builder-root th[scope],

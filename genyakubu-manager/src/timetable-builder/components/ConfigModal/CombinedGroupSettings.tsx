@@ -59,6 +59,17 @@ export default function CombinedGroupSettings() {
     if (!d.subject) return '科目を選択してください';
     if (d.classes.length < 2) return '2つ以上のクラスを選択してください';
     if (d.dates !== null && d.dates.length === 0) return '対象日程を選択するか「全日程」にしてください';
+    // F5p 補強: 編集開始後に Undo 等で project が変わると、draft が現タブに
+    // 無いラベルを抱えたまま (editor に表示されず解除も不能で) 保存できて
+    // しまう。編集ボタンの disabled は render 時のゲートなので、保存時にも
+    // 再検証する。
+    const foreignInDraft = [
+      ...d.classes.filter((c) => !classLabelSet.has(c)),
+      ...(d.dates || []).filter((x) => !dateLabelSet.has(x)),
+    ];
+    if (foreignInDraft.length > 0) {
+      return `現在のタブに無いクラス・日程 (${foreignInDraft.join('・')}) が含まれています。編集をキャンセルしてください`;
+    }
     const conflict = findConflictingCombinedGroup(combinedGroups, d, d.id);
     if (conflict) {
       return `既存の合同グループ (${conflict.subject}: ${conflict.classes.join('・')}) とクラス・日程が重なっています`;
@@ -236,7 +247,7 @@ export default function CombinedGroupSettings() {
                       </span>
                       {foreignRefs.length > 0 && (
                         <span className="text-xs text-builder-orange">
-                          🔒 他タブのクラス・日程 ({foreignRefs.join('・')}) を含むため、このタブでは編集できません
+                          🔒 現在のタブに無いクラス・日程 ({foreignRefs.join('・')}) を含むため、このタブでは編集できません
                         </span>
                       )}
                     </div>
@@ -245,7 +256,7 @@ export default function CombinedGroupSettings() {
                         onClick={() => startEdit(group)}
                         disabled={foreignRefs.length > 0}
                         title={foreignRefs.length > 0
-                          ? '作成したタブ (全クラス・日程が揃うタブ) で編集してください'
+                          ? '全クラス・日程が揃うタブで編集するか、基本設定で日付・クラスを戻してから編集してください'
                           : undefined}
                         className="text-xs text-builder-blue hover:underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
                       >

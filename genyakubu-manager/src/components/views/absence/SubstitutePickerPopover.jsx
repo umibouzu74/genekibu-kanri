@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { splitTeacherField } from "../../../utils/biweekly";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortJa } from "../../../utils/sortJa";
@@ -93,9 +94,7 @@ export function SubstitutePickerPopover({
   const dayTeachers = useMemo(() => {
     const set = new Set();
     for (const s of daySlots || []) {
-      if (s.teacher) {
-        for (const t of s.teacher.split("·")) set.add(t.trim());
-      }
+      for (const t of splitTeacherField(s.teacher)) set.add(t);
     }
     set.delete(slot.teacher);
     return set;

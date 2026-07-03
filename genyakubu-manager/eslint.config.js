@@ -32,6 +32,11 @@ export default [
   { ignores: ["dist", "node_modules"] },
   js.configs.recommended,
   {
+    // ルート直下の設定ファイルは Node で実行される (process 等を使う)
+    files: ["*.config.js"],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ["**/*.{js,jsx}"],
     languageOptions: {
       ecmaVersion: 2022,
