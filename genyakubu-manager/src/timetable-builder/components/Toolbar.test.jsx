@@ -496,3 +496,47 @@ describe('Toolbar', () => {
     expect(screen.getByText(/NG設定違反/)).toBeInTheDocument();
   });
 });
+
+describe('Toolbar — 講師ハイライト (L2a)', () => {
+  it('setHighlightTeacher があれば講師選択 select を表示し、変更で通知する', () => {
+    const setHighlightTeacher = vi.fn();
+    renderToolbar({
+      projectOverrides: { project: { snapshots: [], teachers: [{ name: '堀上' }, { name: '田中' }] } },
+      props: { highlightTeacher: null, setHighlightTeacher },
+    });
+    const select = screen.getByLabelText('講師ハイライト');
+    fireEvent.change(select, { target: { value: '堀上' } });
+    expect(setHighlightTeacher).toHaveBeenCalledWith('堀上');
+    // 空 (なし) へ戻すと null
+    fireEvent.change(select, { target: { value: '' } });
+    expect(setHighlightTeacher).toHaveBeenCalledWith(null);
+  });
+
+  it('setHighlightTeacher が無ければ select を出さない (後方互換)', () => {
+    renderToolbar();
+    expect(screen.queryByLabelText('講師ハイライト')).toBeNull();
+  });
+});
+
+describe('Toolbar — 講師通算上限超の popover 表示 (L3b)', () => {
+  it('teacherOverTotal がバッジ件数に加算され、popover に内訳が出る', () => {
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          violations: {
+            teacherConflict: { count: 0, firstKey: null },
+            teacherNgAssigned: { count: 0, firstKey: null },
+            subjectDup: { count: 0, firstKey: null },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 0, items: [] },
+            teacherOverTotal: { count: 1, items: [{ teacher: '堀上', total: 9, max: 8, firstKey: null }] },
+          },
+        },
+      },
+    });
+    const badge = screen.getByText('⚠️ 1件');
+    fireEvent.click(badge);
+    expect(screen.getByText(/講師通算上限超/)).toBeInTheDocument();
+    expect(screen.getByText(/9\/8/)).toBeInTheDocument();
+  });
+});

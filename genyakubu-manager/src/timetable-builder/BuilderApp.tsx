@@ -128,6 +128,9 @@ function ScheduleApp() {
   const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
   const [isCompact, setIsCompact] = useState(false);
+  // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
+  // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
+  const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -371,6 +374,8 @@ function ScheduleApp() {
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
+          highlightTeacher={highlightTeacher}
+          setHighlightTeacher={setHighlightTeacher}
         />
 
         <SummaryPanel
@@ -395,7 +400,7 @@ function ScheduleApp() {
           <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
         </div>
 
-        <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} />
+        <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} highlightTeacher={highlightTeacher} />
       </div>
 
       <ContextMenu

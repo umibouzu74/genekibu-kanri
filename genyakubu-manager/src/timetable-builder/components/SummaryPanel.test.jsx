@@ -156,3 +156,31 @@ describe('SummaryPanel — 講師別コマ数は講習セルのみ (F5u)', () =>
     expect(screen.queryByText('5')).toBeNull();
   });
 });
+
+describe('SummaryPanel — 部分解の未充填内訳 (L3e)', () => {
+  it('部分解の案カードに未充填セルと科目不足を表示する', () => {
+    renderPanel({
+      generatedPatterns: [{
+        schedule: {}, // 1 セル構成 (CONFIG) が全て未充填
+        isPartial: true,
+        filledCount: 0,
+        totalSlots: 1,
+      }],
+    });
+    expect(screen.getByLabelText('未充填の内訳')).toHaveTextContent('未充填 1 コマ');
+    expect(screen.getByText(/科目別の不足: 英語 1コマ/)).toBeInTheDocument();
+    expect(screen.getByText('12/25 1限 ３S')).toBeInTheDocument();
+  });
+
+  it('完全解の案には内訳を出さない', () => {
+    renderPanel({
+      generatedPatterns: [{
+        schedule: { 'd1-p1-c1': { subject: '英語', teacher: '堀上' } },
+        isPartial: false,
+        filledCount: 1,
+        totalSlots: 1,
+      }],
+    });
+    expect(screen.queryByLabelText('未充填の内訳')).toBeNull();
+  });
+});

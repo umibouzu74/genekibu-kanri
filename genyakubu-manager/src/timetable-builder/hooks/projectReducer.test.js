@@ -1075,6 +1075,112 @@ describe('projectReducer — セル操作', () => {
     })).toBe(state);
   });
 
+  it('cell/applyToAllDates: 起点セルの割当を全日の同じ時限・クラスへ適用 (L2c)', () => {
+    let state = makeState({
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }, { id: 3, label: '12/27' }],
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign', payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign', payload: { dateId: 1, periodId: 1, classId: 1, type: 'teacher', val: '堀上' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/applyToAllDates', payload: { dateId: 1, periodId: 1, classId: 1 },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(next.project.tabs[0].schedule[makeKey(3, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    // 他クラスには影響しない
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toBeUndefined();
+  });
+
+  it('cell/applyToAllDates: ロック済みセルはスキップし、空科目の起点は no-op (L2c)', () => {
+    let state = makeState({
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '数学', teacher: '田中', locked: true },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/applyToAllDates', payload: { dateId: 1, periodId: 1, classId: 1 },
+    });
+    // ロック済みは変更されない → 変更対象ゼロで no-op (同一参照)
+    expect(next).toBe(state);
+    // 空科目の起点も no-op
+    const empty = makeState({
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    });
+    expect(projectReducer(empty, {
+      type: 'cell/applyToAllDates', payload: { dateId: 1, periodId: 1, classId: 1 },
+    })).toBe(empty);
+  });
+
+  it('schedule/copyDateColumn: 1 日分の列を別の日へ複製 (L2c)', () => {
+    let state = makeState({
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign', payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign', payload: { dateId: 1, periodId: 1, classId: 2, type: 'subject', val: '数学' },
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 2 },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toEqual({ subject: '数学', teacher: '' });
+  });
+
+  it('schedule/copyDateColumn: 複製元が空のセルは複製先も空にし、ロック済み複製先は温存 (L2c)', () => {
+    const state = makeState({
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          // 複製元 12/25: ３S のみ空
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+          // 複製先 12/26: ３S は既存割当 (上書きで消える)、３A はロック済み
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 2)]: { subject: '英語', teacher: '堀上', locked: true },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 2 },
+    });
+    // 複製元が空 → 複製先も空 (削除)
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toBeUndefined();
+    // ロック済み複製先は温存
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toEqual({ subject: '英語', teacher: '堀上', locked: true });
+  });
+
+  it('schedule/copyDateColumn: 同一日・不明な日は no-op (L2c)', () => {
+    const state = makeState();
+    expect(projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 1 },
+    })).toBe(state);
+    expect(projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 99 },
+    })).toBe(state);
+  });
+
   it('cell/toggleLock: locked フラグを反転', () => {
     let state = makeState();
     state = projectReducer(state, {
@@ -1329,6 +1435,53 @@ describe('projectReducer — project 全体操作', () => {
       payload: { maxConsecutivePeriods: 0 },
     });
     expect(next.project.maxConsecutivePeriods).toBe(0);
+  });
+
+  it('teacher/setLimit: maxDailyHours / maxTotalHours を設定できる (L3a/L3b)', () => {
+    const state = makeState();
+    let next = projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxDailyHours', value: 2 },
+    });
+    expect(next.project.teachers[0].maxDailyHours).toBe(2);
+    next = projectReducer(next, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxTotalHours', value: '8' },
+    });
+    expect(next.project.teachers[0].maxTotalHours).toBe(8);
+  });
+
+  it('teacher/setLimit: 0 以下・非数はフィールドを落とす (未設定に戻す)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxDailyHours', value: 2 },
+    });
+    const next = projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxDailyHours', value: '' },
+    });
+    expect('maxDailyHours' in next.project.teachers[0]).toBe(false);
+  });
+
+  it('teacher/setLimit: 同値は no-op (同一参照)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxDailyHours', value: 2 },
+    });
+    expect(projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxDailyHours', value: 2 },
+    })).toBe(state);
+    // 未設定 → 未設定も no-op
+    expect(projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxTotalHours', value: 0 },
+    })).toBe(state);
+  });
+
+  it('teacher/setLimit: 不正な key / idx は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'name', value: 'X' },
+    })).toBe(state);
+    expect(projectReducer(state, {
+      type: 'teacher/setLimit', payload: { idx: 99, key: 'maxDailyHours', value: 2 },
+    })).toBe(state);
   });
 
   it('project/setGenerationParams: generationSeed を更新でき、0 (毎回ランダム) に戻せる (L1e)', () => {

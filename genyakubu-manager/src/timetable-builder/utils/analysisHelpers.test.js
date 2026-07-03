@@ -477,6 +477,7 @@ describe('computeViolations', () => {
     expect(v.subjectDup).toEqual({ count: 0, firstKey: null });
     expect(v.subjectOver).toEqual({ count: 0, firstKey: null });
     expect(v.teacherOverDaily).toEqual({ count: 0, items: [] });
+    expect(v.teacherOverTotal).toEqual({ count: 0, items: [] });
   });
 
   it('teacherConflict: errorKeys と同数で firstKey は errorKeys[0]', () => {
@@ -588,6 +589,91 @@ describe('computeViolations', () => {
     expect(v.teacherOverDaily.items[0]).toMatchObject({
       date: '12/25', teacher: '堀上一郎',
     });
+  });
+
+  it('teacherOverDaily: 講師個別の maxDailyHours が全体値より優先される (L3a)', () => {
+    // 全体上限 6 だが堀上の個人上限は 2 → 1 日 3 コマで超過
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxDailyHours: 2 }] });
+    expect(v.teacherOverDaily.count).toBe(1);
+    expect(v.teacherOverDaily.items[0]).toMatchObject({ teacher: '堀上', total: 3, max: 2 });
+  });
+
+  it('teacherOverDaily: 個人上限が全体値より緩ければ違反にならない (L3a)', () => {
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 2, teachers: [{ name: '堀上', maxDailyHours: 4 }] });
+    expect(v.teacherOverDaily.count).toBe(0);
+  });
+
+  it('teacherOverTotal: 通算上限の超過を講師別に列挙 (L3b)', () => {
+    // 2 日 × 2 コマ = 通算 4 > 上限 3
+    const config = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 2 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 2, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxTotalHours: 3 }] });
+    expect(v.teacherOverTotal.count).toBe(1);
+    expect(v.teacherOverTotal.items[0]).toEqual({
+      teacher: '堀上', total: 4, max: 3, firstKey: makeKey(1, 1, 1),
+    });
+  });
+
+  it('teacherOverTotal: ぎりぎり (==) は超過にしない (L3b)', () => {
+    const config = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 1 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxTotalHours: 2 }] });
+    expect(v.teacherOverTotal.count).toBe(0);
+  });
+
+  it('teacherOverTotal: 外部コマも通算に合算するが、builder 割当ゼロの講師は違反にしない (L3b)', () => {
+    // 堀上: builder 1 + 外部 3 = 4 > 3 → 違反 / 田中: 外部のみ 5 > 3 → 数えない
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, {}, {
+      maxDailyHours: 6,
+      teachers: [
+        { name: '堀上', maxTotalHours: 3 },
+        { name: '田中', maxTotalHours: 3 },
+      ],
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 3,
+        [makeExternalKey('12/25(木)', '田中')]: 5,
+      },
+    });
+    expect(v.teacherOverTotal.count).toBe(1);
+    expect(v.teacherOverTotal.items[0]).toMatchObject({ teacher: '堀上', total: 4, max: 3 });
   });
 });
 

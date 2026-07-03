@@ -5,7 +5,7 @@ import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById,
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 
-export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
+export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null }) {
   const {
     project,
     currentSchedule,
@@ -165,7 +165,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   return (
     <td
       id={`select-${dateId}-${periodId}-${classId}-cell`}
-      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
+      // L2a: 講師ハイライト。ドラッグ中の ring 表示と衝突しないよう、
+      // isDragOver 中はハイライトを一時的に譲る
+      data-teacher-highlight={!!highlightTeacher && entry.teacher === highlightTeacher ? '' : undefined}
+      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}

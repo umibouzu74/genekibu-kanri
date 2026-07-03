@@ -13,7 +13,9 @@ import {
   isNgClass,
   isTeacherCandidateFor,
   wouldExceedDailyLimit,
+  wouldExceedTotalLimit,
   wouldExceedConsecutive,
+  resolveTeacherDailyLimit,
 } from './constraints/teacherConstraints';
 import {
   hasSubjectInSameDayClass,
@@ -317,6 +319,23 @@ export function generateSinglePattern({
     });
   });
 
+  // L3b: 講師別の通算コマ数 (全タブ + 外部コマ) を pre-seed する。
+  // initialDaily キーの分解は date label に "-" を含むと壊れる (K2h) ため、
+  // teachers × 日付プールで正引きして合算する。通算上限を持つ講師が
+  // 居なければ空のまま (チェックも走らない)。
+  const initialTotal: Record<string, number> = {};
+  const hasTotalLimits = project.teachers.some(
+    t => typeof t.maxTotalHours === 'number' && Number.isFinite(t.maxTotalHours) && t.maxTotalHours > 0);
+  if (hasTotalLimits) {
+    project.teachers.forEach(t => {
+      let sum = 0;
+      (project.dates || []).forEach(d => {
+        sum += initialDaily[makeExternalKey(d.label, t.name)] || 0;
+      });
+      if (sum > 0) initialTotal[t.name] = sum;
+    });
+  }
+
   // 未充填スロットを構築
   // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
   // F5w: 空 + ロック済みセルは「この枠は空けておく」の意思表示なので生成
@@ -376,6 +395,7 @@ export function generateSinglePattern({
       tempSch: Schedule,
       tempCnt: Record<number, Record<string, number>>,
       tempDaily: Record<string, number>,
+      tempTotal: Record<string, number>,
     ) => {
       if (iter.c++ > budget || runSolution !== null) return;
 
@@ -403,7 +423,7 @@ export function generateSinglePattern({
 
       // 合同グループの伝播により既に充填されている場合はスキップ
       if (tempSch[k]?.subject && tempSch[k]?.teacher) {
-        solve(idx + 1, tempSch, tempCnt, tempDaily);
+        solve(idx + 1, tempSch, tempCnt, tempDaily, tempTotal);
         return;
       }
 
@@ -557,10 +577,18 @@ export function generateSinglePattern({
           // 1日あたりのコマ数上限チェック (externalCounts + 既存割当 + 今回のスロット)
           // 合同グループでも 1 コマとしてカウント (下の increment と整合)。
           // カウント済みの合同スロット (groupAlreadyCounted) は +1 しないので
-          // 上限チェックも掛けない
+          // 上限チェックも掛けない。
+          // L3a: 講師個別の上限があれば全体値より優先する。
           if (countsTowardDaily && wouldExceedDailyLimit({
-            teacherName: tName, date: d.label, tempDaily, maxDailyHours,
+            teacherName: tName, date: d.label, tempDaily,
+            maxDailyHours: resolveTeacherDailyLimit(tObj, maxDailyHours),
             exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
+          })) continue;
+
+          // L3b: 通算 (全タブ + 外部コマ) 上限チェック。上限未設定の講師は
+          // 常に false ですぐ抜ける。
+          if (countsTowardDaily && wouldExceedTotalLimit({
+            teacher: tObj, tempTotal, exemptName: DAILY_LIMIT_EXEMPT_TEACHER,
           })) continue;
 
           // 連続コマ数上限チェック (E2c)。"未定" は対象外。
@@ -588,6 +616,7 @@ export function generateSinglePattern({
           if (countsTowardDaily) {
             if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
             tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+            tempTotal[tName] = (tempTotal[tName] || 0) + 1; // L3b: 通算も同枠で増減
           }
 
           // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
@@ -599,7 +628,7 @@ export function generateSinglePattern({
             }
           });
 
-          solve(idx + 1, tempSch, tempCnt, tempDaily);
+          solve(idx + 1, tempSch, tempCnt, tempDaily, tempTotal);
           if (runSolution !== null) return;
 
           // バックトラック: プライマリスロット (locked 保持)。
@@ -611,7 +640,10 @@ export function generateSinglePattern({
             delete tempSch[k];
             tempCnt[cIdx][s]--;
           }
-          if (countsTowardDaily) tempDaily[dayKey]--;
+          if (countsTowardDaily) {
+            tempDaily[dayKey]--;
+            tempTotal[tName]--;
+          }
 
           // バックトラック: セカンダリスロット（元の状態に復元）
           secondarySlots.forEach(ss => {
@@ -628,7 +660,7 @@ export function generateSinglePattern({
       }
     };
 
-    solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily });
+    solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), { ...initialDaily }, { ...initialTotal });
 
     // この run で最初に埋められなかったコマ (= 詰まり位置)。runBestFilled は
     // 到達した最大 idx なので runSlots[runBestFilled] が次に埋めるべきコマ。

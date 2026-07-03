@@ -27,6 +27,10 @@ export interface Teacher {
   ngClasses: string[];
   /** 優先クラス (ラベル参照) */
   priorityClasses: string[];
+  /** L3a: 講師個別の 1 日コマ数上限。未設定/0 = project 全体値を使う */
+  maxDailyHours?: number;
+  /** L3b: 講師個別の通算コマ数上限 (全タブ + 外部コマ)。未設定/0 = 無制限 */
+  maxTotalHours?: number;
 }
 
 export interface ScheduleEntry {

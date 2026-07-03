@@ -62,6 +62,7 @@ export type ProjectAction =
   | { type: 'teacher/remove'; payload: { idx: number } }
   | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
   | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
+  | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours'; value: unknown } }
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
@@ -78,6 +79,8 @@ export type ProjectAction =
   | { type: 'cell/clear'; payload: { dateId: number; periodId: number; classId: number } }
   | { type: 'cell/paste'; payload: { dateId: number; periodId: number; classId: number; clipboard: { subject?: string; teacher?: string } | null } }
   | { type: 'cell/swap'; payload: { sourceKey: string; targetKey: string } }
+  | { type: 'cell/applyToAllDates'; payload: { dateId: number; periodId: number; classId: number } }
+  | { type: 'schedule/copyDateColumn'; payload: { sourceDateId: number; targetDateId: number } }
   | { type: 'schedule/renameHeader'; payload: { type: 'date' | 'period' | 'class'; oldVal: string; newVal: string } }
   | { type: 'schedule/bulkAction'; payload: { action: 'lock-all' | 'unlock-all' | 'clear-all'; type: 'date' | 'period' | 'class'; val: string } }
   | { type: 'schedule/clearUnlocked' }
@@ -725,6 +728,23 @@ function applyAction(project: Project, action: ProjectAction): Project {
       newTeachers[idx] = t;
       return { ...project, teachers: newTeachers };
     }
+    case 'teacher/setLimit': {
+      // L3a/L3b: 講師個別のコマ数上限 (1 日 / 通算)。value が正の有限数で
+      // なければ「未設定」としてフィールドごと落とす。同値は no-op (F2d)。
+      const { idx, key, value } = action.payload;
+      if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
+      if (key !== 'maxDailyHours' && key !== 'maxTotalHours') return project;
+      const num = Math.round(Number(value));
+      const v = Number.isFinite(num) && num > 0 ? num : undefined;
+      const curr = project.teachers[idx][key];
+      if ((curr ?? undefined) === v) return project;
+      const newTeachers = [...project.teachers];
+      const t = { ...newTeachers[idx] };
+      if (v === undefined) delete t[key];
+      else t[key] = v;
+      newTeachers[idx] = t;
+      return { ...project, teachers: newTeachers };
+    }
     case 'teacher/toggleNg': {
       const { idx, date, period } = action.payload;
       // idx 不正 (undefined / 範囲外) は no-op。UI 側の teacherIdxByName 解決が
@@ -1049,6 +1069,82 @@ function applyAction(project: Project, action: ProjectAction): Project {
       ns = propagateAssignment(ns, currentConfig, groups, sParsed.dateId, sParsed.periodId, sParsed.classId, ns[sourceKey]);
       ns = propagateAssignment(ns, currentConfig, groups, tParsed.dateId, tParsed.periodId, tParsed.classId, ns[targetKey]);
 
+      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
+      return { ...project, tabs: newTabs };
+    }
+    case 'cell/applyToAllDates': {
+      // L2c: 起点セルの割当 (科目 + 講師) を、使う全日の同じ時限・クラスへ
+      // 適用する。「クラスA 1限は毎日 英語 (田中)」の反復入力を 1 操作に。
+      // ロック済みセルと同値セルはスキップ。cascade は cell/paste と同じ
+      // (旧科目の合同 cleanup → 上書き → 合同伝播)。
+      const { dateId, periodId, classId } = action.payload;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const currentConfig = effectiveConfig(project, activeTab);
+      const srcKey = makeKey(dateId, periodId, classId);
+      const src = activeTab.schedule[srcKey];
+      if (!src?.subject) return project;
+      const srcTeacher = src.teacher || '';
+      const groups = project.combinedGroups;
+      let ns = { ...activeTab.schedule };
+      let changed = false;
+      currentConfig.dates.forEach(d => {
+        if (d.id === dateId) return;
+        const k = makeKey(d.id, periodId, classId);
+        const curr = ns[k] || {};
+        if (curr.locked) return;
+        if (curr.subject === src.subject && (curr.teacher || '') === srcTeacher) return;
+        if (curr.subject && curr.subject !== src.subject) {
+          ns = cleanupOldCombined(ns, currentConfig, groups, d.id, periodId, classId, curr.subject);
+        }
+        const newEntry = { ...(ns[k] || {}), subject: src.subject, teacher: srcTeacher };
+        ns[k] = newEntry;
+        ns = propagateAssignment(ns, currentConfig, groups, d.id, periodId, classId, newEntry);
+        changed = true;
+      });
+      if (!changed) return project;
+      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
+      return { ...project, tabs: newTabs };
+    }
+    case 'schedule/copyDateColumn': {
+      // L2c: 1 日分の列 (全時限 × 全クラス) を別の日へ複製する。「8/1 を
+      // 8/2 にコピーして微修正」の頻出操作。ロック済みの複製先はスキップ、
+      // 複製元が空のセルは複製先も空にする (複製の意味論)。Undo 1 ステップ。
+      const { sourceDateId, targetDateId } = action.payload;
+      if (sourceDateId === targetDateId) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const currentConfig = effectiveConfig(project, activeTab);
+      const activeIds = new Set(currentConfig.dates.map(d => d.id));
+      if (!activeIds.has(sourceDateId) || !activeIds.has(targetDateId)) return project;
+      const groups = project.combinedGroups;
+      let ns = { ...activeTab.schedule };
+      let changed = false;
+      currentConfig.periods.forEach(p => {
+        currentConfig.classes.forEach(c => {
+          const srcK = makeKey(sourceDateId, p.id, c.id);
+          const tgtK = makeKey(targetDateId, p.id, c.id);
+          const src = ns[srcK];
+          const curr = ns[tgtK] || {};
+          if (curr.locked) return;
+          const srcSubject = src?.subject || '';
+          const srcTeacher = src?.teacher || '';
+          if ((curr.subject || '') === srcSubject && (curr.teacher || '') === srcTeacher) return;
+          if (curr.subject && curr.subject !== srcSubject) {
+            ns = cleanupOldCombined(ns, currentConfig, groups, targetDateId, p.id, c.id, curr.subject);
+          }
+          if (!srcSubject) {
+            if (ns[tgtK] && !ns[tgtK].locked) {
+              delete ns[tgtK]; // ns はこの case 内で毎回複製済みなので直接消してよい
+              changed = true;
+            }
+            return;
+          }
+          const newEntry = { ...(ns[tgtK] || {}), subject: srcSubject, teacher: srcTeacher };
+          ns[tgtK] = newEntry;
+          ns = propagateAssignment(ns, currentConfig, groups, targetDateId, p.id, c.id, newEntry);
+          changed = true;
+        });
+      });
+      if (!changed) return project;
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
     }
