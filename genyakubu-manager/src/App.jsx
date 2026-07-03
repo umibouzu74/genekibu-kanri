@@ -1273,6 +1273,10 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              onEditExtraLesson={(id) => {
+                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1297,6 +1301,10 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              onEditExtraLesson={(id) => {
+                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}

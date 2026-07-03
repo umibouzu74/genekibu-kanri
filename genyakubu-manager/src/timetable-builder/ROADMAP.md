@@ -1982,13 +1982,14 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - **K3b (中)**: クリック可能なテーブルコントロールのキーボード対応の横展開 —
   ソート列ヘッダ (AdjustmentListTab / OverrideListTab)、月次集計の展開行
   (SubTallyTab、aria-expanded も無し)、MonthView の編集用コマカード
-- **K3c (小)**: AbsenceWorkflowView の自前ドロップダウンに
-  aria-expanded/aria-haspopup 無し、Escape で閉じない
+- ✅ **K3c (2026-07-03)**: AbsenceWorkflowView の講師ドロップダウンに
+  aria-expanded/aria-haspopup を追加し、Escape (IME 変換中は無視) で
+  閉じられるように
 - **K3d (小)**: リスト系の空状態に CTA が無い (MasterListTab / SubListTab /
   Adjustment/OverrideListTab)。EventCalendarView の空状態 (アイコン + 案内 +
   クイック追加) が手本
-- **K3e (小)**: 「第N回」バッジの見た目がビュー間で不揃い (Dashboard /
-  MonthView は青地白文字、AbsenceSlotCard は背景無し青文字)
+- ✅ **K3e (2026-07-03)**: AbsenceSlotCard の「第N回」を Dashboard /
+  MonthView と同じ青地・白文字の塗りバッジに統一 (aria-label も付与)
 - ✅ **K3f (2026-07-03)**: 月次集計タブを fMonth 空で開いたら当月へ
   フォールバックする effect を追加 (集計に「月なし」は無意味なため)
 - ✅ **K3g (2026-07-03)**: ContextMenu の NG メニューが現在の状態を反映
@@ -2010,9 +2011,9 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - **K4b (中・要ベンチ)**: 自動生成の numPatterns 案を複数 Worker で並列化 —
   現状単一 worker 直列で 3 案 ~10 秒 → 理論 ~3 秒。案は独立 (シード違い)
   なので分割は素直
-- **K4c (app・中)**: MonthView / WeekView の追加授業表示にもクリック編集
-  ジャンプを付ける (EventCalendarView は H1b で対応済み。既存の
-  eventEditRequest 経路をそのまま使える)
+- ✅ **K4c (2026-07-03)**: MonthView の追加授業カードと WeekView の直近
+  バナー行にクリック / Enter·Space で ExtraLessonManager の編集へジャンプ
+  する導線を追加 (H1b の eventEditRequest 経路を流用)
 
 ### K.5 アーキテクチャ級 (要相談、着手前に方針決定)
 

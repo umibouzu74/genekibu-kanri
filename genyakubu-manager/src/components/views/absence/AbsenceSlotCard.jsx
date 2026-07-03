@@ -221,11 +221,22 @@ export function AbsenceSlotCard({
         <span style={{ fontSize: 12, fontWeight: 600 }}>{slot.subj}</span>
         {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
         {sessionCount > 0 && (
+          // 第N回バッジは Dashboard (SectionColumn) / MonthView と同じ
+          // 青地・白文字の塗りスタイルに統一 (K3e)
           <span
+            title={`第${sessionCount}回`}
+            aria-label={`第${sessionCount}回`}
             style={{
+              background: "#3a6ea5",
+              color: "#fff",
+              borderRadius: 4,
+              padding: "0 5px",
               fontSize: 11,
-              color: "#2a6a9e",
-              fontWeight: 700,
+              fontWeight: 800,
+              lineHeight: "16px",
+              minWidth: 18,
+              textAlign: "center",
+              flexShrink: 0,
             }}
           >
             {formatSessionNumber(sessionCount)}

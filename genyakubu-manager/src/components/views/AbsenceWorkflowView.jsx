@@ -62,7 +62,8 @@ export function AbsenceWorkflowView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initDate]);
 
-  // ドロップダウン外クリックで閉じる
+  // ドロップダウン外クリック / Escape で閉じる (K3c: キーボードでも
+  // 閉じられるように。IME 変換中の Escape は無視する)
   useEffect(() => {
     if (!teacherDropdownOpen) return undefined;
     const handler = (e) => {
@@ -73,8 +74,15 @@ export function AbsenceWorkflowView({
         setTeacherDropdownOpen(false);
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === "Escape" && !e.isComposing) setTeacherDropdownOpen(false);
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
   }, [teacherDropdownOpen]);
 
   const dayName = useMemo(() => dateToDay(date), [date]);
@@ -386,6 +394,8 @@ export function AbsenceWorkflowView({
           <button
             type="button"
             onClick={() => setTeacherDropdownOpen((v) => !v)}
+            aria-expanded={teacherDropdownOpen}
+            aria-haspopup="listbox"
             style={{ ...S.btn(false), cursor: "pointer" }}
           >
             {selectedTeachers.length > 0
