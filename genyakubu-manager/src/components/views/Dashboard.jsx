@@ -57,6 +57,7 @@ export function Dashboard({
   subjects,
   subjectCategories,
   teacherSubjects,
+  extraLessons = [],
   saveSubs,
   onJumpToEventCalendar,
 }) {
@@ -193,6 +194,7 @@ export function Dashboard({
           holidays={holidays}
           examPeriods={examPeriods}
           specialEvents={specialEvents}
+          extraLessons={extraLessons}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
           specialEventsFor={specialEventsFor}

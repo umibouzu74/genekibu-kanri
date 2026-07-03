@@ -8,6 +8,8 @@ import {
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
+import { EXTRA_LESSON_COLOR } from "../../constants/colors";
+import { extraLessonsForTeacherOnDate } from "../../utils/extraLessons";
 import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import {
   biweeklyDisplaySubject,
@@ -49,6 +51,7 @@ export function MonthView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
+  extraLessons = [],
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -350,6 +353,12 @@ export function MonthView({
                     return { adj, slot };
                   })
                   .filter(Boolean);
+          // 追加授業 (この日付に単発で入るコマ、この teacher が担当する分)。
+          // 休講日でも表示する (通常授業と違い「その日にやる」と明示的に
+          // 登録した単発コマなので、休講の巻き添えで消さない)。
+          const extraForDay = dayCutoff
+            ? []
+            : extraLessonsForTeacherOnDate(extraLessons, teacher, ds);
           // この teacher が他人のコマを代行する行で使う slot も session count
           // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
           const externalSubSlots =
@@ -797,6 +806,62 @@ export function MonthView({
                     </div>
                   );
                 })}
+              {/* 追加授業 (特定日付の単発コマ) */}
+              {extraForDay.map((lesson) => {
+                const gc = GC(lesson.grade);
+                return (
+                  <div
+                    key={`extra-${lesson.id}`}
+                    className="month-print-card"
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      padding: "2px 3px",
+                      margin: "1px 0",
+                      borderRadius: 3,
+                      background: EXTRA_LESSON_COLOR.bg,
+                      borderLeft: `2px solid ${EXTRA_LESSON_COLOR.color}`,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={`[追加授業${lesson.label ? `: ${lesson.label}` : ""}] ${lesson.grade}${
+                      lesson.cls && lesson.cls !== "-" ? lesson.cls : ""
+                    } ${lesson.subj} (${lesson.time})${
+                      lesson.room ? `\n教室: ${lesson.room}` : ""
+                    }${lesson.note ? "\n" + lesson.note : ""}`}
+                  >
+                    <span
+                      style={{
+                        background: EXTRA_LESSON_COLOR.color,
+                        color: "#fff",
+                        fontSize: 8,
+                        fontWeight: 800,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
+                      }}
+                    >
+                      追
+                    </span>
+                    <span
+                      style={{
+                        background: gc.b,
+                        color: gc.f,
+                        fontSize: 8,
+                        fontWeight: 700,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
+                      }}
+                    >
+                      {lesson.grade}
+                      {lesson.cls && lesson.cls !== "-" ? lesson.cls : ""}
+                    </span>
+                    <b>{lesson.time.split("-")[0]}</b> {lesson.subj}
+                  </div>
+                );
+              })}
               {/* テスト直前特訓シフト (assignments に登録のある講師全員) */}
               {(() => {
                   const shifts = examPrepByDate.get(ds);

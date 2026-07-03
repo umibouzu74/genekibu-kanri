@@ -22,5 +22,6 @@ export const LS = {
   sessionOverrides: "genyakubu-session-overrides",
   examPrepSchedules: "genyakubu-exam-prep-schedules",
   specialEvents: "genyakubu-special-events",
+  extraLessons: "genyakubu-extra-lessons",
   eventVisibility: "genyakubu-event-visibility",
 };

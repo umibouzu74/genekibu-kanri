@@ -110,6 +110,9 @@ const ExamPeriodManager = lazy(() =>
 const SpecialEventManager = lazy(() =>
   import("./components/SpecialEventManager").then((m) => ({ default: m.SpecialEventManager }))
 );
+const ExtraLessonManager = lazy(() =>
+  import("./components/ExtraLessonManager").then((m) => ({ default: m.ExtraLessonManager }))
+);
 const EventCalendarView = lazy(() =>
   import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
 );
@@ -267,6 +270,11 @@ export default function App() {
     LS.specialEvents,
     [],
     { migrate: migrateSpecialEvents, onError: onStorageError }
+  );
+  const [extraLessons, saveExtraLessons] = useSyncedStorage(
+    LS.extraLessons,
+    [],
+    { onError: onStorageError }
   );
   // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
   // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
@@ -441,6 +449,7 @@ export default function App() {
     sessionOverrides,
     teacherSubjects,
     specialEvents,
+    extraLessons,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -458,6 +467,7 @@ export default function App() {
     saveSessionOverrides,
     saveTeacherSubjects,
     saveSpecialEvents,
+    saveExtraLessons,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -1011,6 +1021,7 @@ export default function App() {
               subjects={subjects}
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
+              extraLessons={extraLessons}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
             />
@@ -1104,6 +1115,11 @@ export default function App() {
                   eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.token : null
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
+              />
+              <ExtraLessonManager
+                extraLessons={extraLessons}
+                onSave={saveExtraLessons}
+                isAdmin={isAdmin}
               />
             </>
           )}
@@ -1221,6 +1237,7 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
+              extraLessons={extraLessons}
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1244,6 +1261,7 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
+              extraLessons={extraLessons}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
