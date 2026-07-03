@@ -105,6 +105,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   // ロックセルを縦移動で通過できない (E1b「矢印移動が途切れない」の維持)。
   const handleCellNavigation = (e, type) => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    // F2b: 修飾キー付きは select のネイティブ操作 (Alt+↓ でドロップダウンを
+    // 開く等) なので乗っ取らない。素の矢印だけをセル間ナビに使う。
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     const { dates, periods, classes } = currentConfig;
 

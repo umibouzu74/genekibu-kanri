@@ -53,11 +53,23 @@ export default function ClassPriority() {
                     {currentConfig.classes.map(c => {
                       const isNg = t.ngClasses?.includes(c.label);
                       const isPri = t.priorityClasses?.includes(c.label);
+                      // F2a: キーボードでも 普通 → 優先 → NG → 普通 を回せるように
+                      const toggle = () => toggleTeacherClassPriority(idx, c.label);
+                      const stateLabel = isPri ? '優先' : (isNg ? 'NG' : '普通');
                       return (
                         <td
                           key={c.id}
-                          onClick={() => toggleTeacherClassPriority(idx, c.label)}
-                          className={`border border-builder-border p-2 text-center cursor-pointer transition-colors hover:opacity-80 ${isPri ? "bg-builder-blue text-white font-bold" : (isNg ? "bg-builder-red text-white font-bold" : "bg-builder-surface text-builder-ink-muted")}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${t.name} ${c.label}: ${stateLabel} (切替)`}
+                          onClick={toggle}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggle();
+                            }
+                          }}
+                          className={`border border-builder-border p-2 text-center cursor-pointer transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-builder-blue focus-visible:ring-inset ${isPri ? "bg-builder-blue text-white font-bold" : (isNg ? "bg-builder-red text-white font-bold" : "bg-builder-surface text-builder-ink-muted")}`}
                         >
                           {isPri ? "優先" : (isNg ? "NG" : "-")}
                         </td>
