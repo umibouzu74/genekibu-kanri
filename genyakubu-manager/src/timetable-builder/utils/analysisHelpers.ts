@@ -504,6 +504,11 @@ export function computeInfeasibilities({
   // 持てるのは合同のみ)。maxDailyHours だけを使うと capacity を過大評価し、
   // 実際は不足なのに警告が出ない false negative になる。
   const capacityItems: Array<{ subject: string; demand: number; capacity: number; teacherCount: number }> = [];
+  // K2d: 実講師 0 名でも「未定」が担当する科目は、solver が未定で埋められる
+  // ため致命 (capacity) ではなく情報 (placeholderOnly) として分離する。
+  // 「実講師がまだ居ない」事実自体は実運用までに解消すべき有益な情報なので
+  // 握りつぶさず、⚠ バッジに数えない informational 種別で出す
+  const placeholderOnlyItems: Array<{ subject: string; demand: number }> = [];
   const perDayCap = currentConfig.periods.length > 0
     ? Math.min(maxDailyHours, currentConfig.periods.length)
     : maxDailyHours;
@@ -526,7 +531,14 @@ export function computeInfeasibilities({
     const eligible = reals.filter(t => t.subjects?.includes(subject));
     const capacity = eligible.length * currentConfig.dates.length * perDayCap;
     if (demand > capacity) {
-      capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+      const placeholderTeaches = (teachers || []).some(
+        t => t?.name === '未定' && t.subjects?.includes(subject)
+      );
+      if (eligible.length === 0 && placeholderTeaches) {
+        placeholderOnlyItems.push({ subject, demand });
+      } else {
+        capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+      }
     }
   });
 
@@ -577,6 +589,7 @@ export function computeInfeasibilities({
   return {
     noTeacherForSlot: { count: noTeacherItems.length, items: noTeacherItems },
     subjectCapacityShortage: { count: capacityItems.length, items: capacityItems },
+    subjectPlaceholderOnly: { count: placeholderOnlyItems.length, items: placeholderOnlyItems },
     quotaCellMismatch: { count: quotaMismatchItems.length, items: quotaMismatchItems },
     subjectQuotaOverDays: { count: quotaOverDaysItems.length, items: quotaOverDaysItems },
   };

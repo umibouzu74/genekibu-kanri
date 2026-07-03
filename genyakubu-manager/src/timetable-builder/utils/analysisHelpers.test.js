@@ -615,19 +615,31 @@ describe('computeInfeasibilities', () => {
     expect(r.subjectCapacityShortage.count).toBe(0);
   });
 
-  it('"未定" のみの状態は C2 (capacity) が科目単位で検出し、C1 はスロットを列挙しない (F2g)', () => {
+  it('"未定" のみの状態は placeholderOnly (情報) が科目単位で検出し、致命 (capacity) には数えない (K2d)', () => {
     const r = computeInfeasibilities({
       teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
       commonSubjects: ['英語', '数学'],
       currentConfig: baseConfig(),
       maxDailyHours: 6,
     });
-    // 旧仕様は 2 dates × 2 periods × 2 subjects = 8 件のスロットを列挙して
-    // いたが、担当者ゼロは C2 が「科目単位の 1 行 + 講師を増やす提案」で
-    // 検出するため C1 では重複ノイズを出さない。
+    // C1 はスロットを列挙しない (F2g)。未定は solver が配置できるため
+    // 「設定の問題 (供給不足)」ではなく informational な placeholderOnly に
+    // 分離する (K2d: 生成は通るのに致命警告が点く不整合の解消)。
     expect(r.noTeacherForSlot.count).toBe(0);
-    expect(r.subjectCapacityShortage.count).toBe(2);
-    expect(r.subjectCapacityShortage.items.map(i => i.subject).sort()).toEqual(['数学', '英語']);
+    expect(r.subjectCapacityShortage.count).toBe(0);
+    expect(r.subjectPlaceholderOnly.count).toBe(2);
+    expect(r.subjectPlaceholderOnly.items.map(i => i.subject).sort()).toEqual(['数学', '英語']);
+  });
+
+  it('実講師も「未定」も担当しない科目は従来どおり致命 (capacity) のまま (K2d)', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語', '数学'], // 数学は誰も担当しない
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectPlaceholderOnly.count).toBe(0);
+    expect(r.subjectCapacityShortage.items.some(i => i.subject === '数学')).toBe(true);
   });
 
   it('個別スロットの NG は置ける日数が足りていれば報告しない (F2g: 旧 false positive)', () => {
@@ -744,16 +756,23 @@ describe('computeInfeasibilities', () => {
     });
   });
 
-  it('subjectCapacityShortage: "未定" を除外して capacity を計算する', () => {
-    // 「未定」だけでは capacity ゼロ扱い → 全 subject で不足
+  it('subjectCapacityShortage: "未定" を capacity (実供給) に数えない', () => {
+    // 実講師 1 名 + 未定。capacity は実講師分だけで計算される
+    // (未定のみの科目は K2d で placeholderOnly へ分離 — 別テストで固定)
+    const cfg = baseConfig();
+    cfg.subjectCounts = { '英語': 99 }; // 実講師 1 名では明確に不足する需要
     const r = computeInfeasibilities({
-      teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
-      commonSubjects: ['英語', '数学'],
-      currentConfig: baseConfig(),
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [] },
+        { name: '未定', subjects: ['英語'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語'],
+      currentConfig: cfg,
       maxDailyHours: 6,
     });
-    expect(r.subjectCapacityShortage.count).toBe(2);
-    r.subjectCapacityShortage.items.forEach(it => expect(it.teacherCount).toBe(0));
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0].teacherCount).toBe(1);
+    expect(r.subjectPlaceholderOnly.count).toBe(0);
   });
 
   it('subjectCounts に登録されていない (= 0) subject は capacity 判定をスキップ', () => {
