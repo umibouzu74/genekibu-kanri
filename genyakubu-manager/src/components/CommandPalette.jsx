@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SUB_STATUS } from "../data";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { formatDateRange } from "../utils/dateHelpers";
+import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
 
@@ -15,6 +16,7 @@ export function CommandPalette({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
+  extraLessons = [],
   selectedTeacher,
   onSelectTeacher,
   onSelectView,
@@ -146,6 +148,24 @@ export function CommandPalette({
           detail: formatDateRange(ev.startDate, ev.endDate),
           action: () => {
             onSelectEvent({ kind: EVENT_KIND.SPECIAL, id: ev.id });
+            onClose();
+          },
+        });
+      }
+      // 追加授業 (科目・種別ラベル・担当・日付を横断検索)。選択すると
+      // ExtraLessonManager の編集フォームへジャンプ (H1b の editTargetId 経路)
+      const matchedExtra = extraLessons.filter((l) =>
+        [l.subj, l.label, l.teacher, l.note, l.date, "追加授業"]
+          .filter(Boolean)
+          .some((f) => f.toLowerCase().includes(q))
+      );
+      for (const l of matchedExtra.slice(0, 5)) {
+        hits.push({
+          type: "event",
+          label: `追加授業: ${describeExtraLesson(l)}`,
+          detail: `${l.date} ${l.time}${l.teacher ? " / " + l.teacher : ""}`,
+          action: () => {
+            onSelectEvent({ kind: EVENT_KIND.EXTRA_LESSON, id: l.id });
             onClose();
           },
         });

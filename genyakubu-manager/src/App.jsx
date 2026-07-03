@@ -1361,6 +1361,7 @@ export default function App() {
             holidays={holidays}
             examPeriods={examPeriods}
             specialEvents={specialEvents}
+            extraLessons={extraLessons}
             selectedTeacher={selected}
             onSelectTeacher={(t) => {
               selectTeacher(t);

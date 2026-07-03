@@ -827,7 +827,8 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **判断メモ**: pixel 比較 (page.pdf → pixelmatch) は環境のフォント差で
   flaky になるため導入しない。構造検証 + printStyles.test.js (純関数) の
   2 層で守る
-- **残り**: ExcelGridView (タイムテーブル) の popup 注入と
+- **残り**: ~~ExcelGridView (タイムテーブル) の popup 注入~~ ✅ e2e 追加
+  (2026-07-03、中学/高校ヘッダ + 和式対象日 + 印刷日)。
   ConfirmedSubsView / MasterView の print 検証は未カバー (同型なので
   必要になったら追加)
 
@@ -1740,6 +1741,9 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 - ✅ **H1g (2026-07-03)**: 追加授業の 📋 コピーボタン。一覧の内容を
   フォームへ複製して新規登録状態にする (実施日は誤登録防止のため
   引き継がず選び直し)。次の講習期の一括登録が楽になる。テスト +2
+- ✅ **H1h (2026-07-03)**: Cmd+K パレットで追加授業を横断検索
+  (科目・種別ラベル・担当・日付・「追加授業」)。選択すると
+  ExtraLessonManager の編集フォームへジャンプ (H1b の editTargetId 経路)
 
 ### H.2 調査で見つかった既存コードの改善候補 (2026-07-03)
 

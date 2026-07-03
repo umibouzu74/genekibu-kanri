@@ -99,6 +99,38 @@ test("講師の週間予定: print で操作 UI が消える", async ({ page }) 
   await expect(page.locator(".app-h1")).toBeVisible();
 });
 
+test("タイムテーブル: popup 印刷に中学/高校のセクションヘッダが注入される", async ({
+  page,
+  context,
+}) => {
+  // popup 側の window.print() を止めて onafterprint → close を防ぐ
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto("/genekibu-kanri/");
+  // Dashboard の既定は時間割モード (ExcelGridView)
+  await expect(page.locator(".excel-grid-sections")).toBeVisible();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.getByRole("button", { name: "現在のビューを印刷" }).click(),
+  ]);
+
+  // buildTimetableHeaderHtml が中学 / 高校の各セクション先頭に注入するヘッダ
+  await expect(popup.locator(".excel-print-page-title").first()).toContainText(
+    "中学の時間割"
+  );
+  await expect(popup.locator(".excel-print-page-title").nth(1)).toContainText(
+    "高校の時間割"
+  );
+  // 対象日は和式 (E1h: formatPrintDate)
+  await expect(popup.locator(".excel-print-page-title").first()).toContainText(
+    /\d{4}年\d{2}月\d{2}日/
+  );
+  await expect(popup.locator(".excel-print-meta").first()).toContainText("印刷");
+});
+
 test("月次カレンダー: popup 印刷にタイトル・印刷日・凡例が注入される", async ({
   page,
   context,
