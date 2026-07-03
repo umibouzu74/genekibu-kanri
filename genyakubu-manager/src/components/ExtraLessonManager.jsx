@@ -250,6 +250,8 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
               onChange={(e) => { setTime(e.target.value); if (error) setError(""); }}
               placeholder="18:30-19:30"
               aria-label="時間"
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "extra-lesson-err" : undefined}
               style={{ ...S.input, width: 120 }}
             />
             <span style={fieldLabel}>学年:</span>
@@ -258,6 +260,8 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
               onChange={(e) => { setGrade(e.target.value); if (error) setError(""); }}
               placeholder="中3 / 高1高2 など"
               aria-label="対象学年"
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "extra-lesson-err" : undefined}
               list="extra-lesson-grades"
               style={{ ...S.input, width: 110 }}
             />
@@ -292,6 +296,8 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
               onChange={(e) => { setSubj(e.target.value); if (error) setError(""); }}
               placeholder="プレップ個別指導 / 英語 など"
               aria-label="科目・講座名"
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "extra-lesson-err" : undefined}
               style={{ ...S.input, width: 200 }}
             />
             <span style={fieldLabel}>担当:</span>
@@ -341,6 +347,7 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
 
           {error && (
             <div
+              id="extra-lesson-err"
               role="alert"
               style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}
             >
@@ -480,8 +487,10 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
         )}
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
-        ※追加授業はダッシュボード (日別)・講師別の月間カレンダー・週間予定の直近リストに表示されます。
-        授業回数のカウント (第N回) には現在含まれません。
+        ※追加授業はダッシュボード (日別) に表示されます。担当講師を入力すると、
+        その講師の月間カレンダー・週間予定の直近リストにも表示されます
+        (担当未入力のコマはダッシュボードのみ)。
+        授業回数のカウント (第N回) には含まれません。
       </div>
     </div>
   );

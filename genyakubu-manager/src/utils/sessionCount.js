@@ -16,6 +16,9 @@
 //                    が displayAs に到達すると自動で飛び越す。
 
 import { gradeToDept, WEEKDAYS } from "../data";
+// time 文字列 ("19:00-20:20") → 開始時刻の分数 (ソートキー)。
+// 実装は dateHelpers.timeStartToMin に一元化し、このファイル内の従来名で使う。
+import { timeStartToMin as timeToMinutes } from "./dateHelpers";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
@@ -63,14 +66,6 @@ export function resolveSetSlotIds(slot, classSets, cohortIndex) {
   return [slot.id];
 }
 
-// time 文字列 ("19:00-20:20") から開始時刻の分数を返す。
-// 並び替え用のソート可能キー。
-function timeToMinutes(time) {
-  if (!time) return 0;
-  const m = time.match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return 0;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
 
 // 略称を正式名に正規化 (複合教科 "英/数" の分割時に使用)。
 // 組み込み主要教科のみ対応; 未登録の文字列はそのまま返す。

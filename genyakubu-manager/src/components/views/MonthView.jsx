@@ -9,7 +9,7 @@ import {
   WEEKDAYS,
 } from "../../data";
 import { EXTRA_LESSON_COLOR } from "../../constants/colors";
-import { extraLessonsForTeacherOnDate } from "../../utils/extraLessons";
+import { indexExtraLessonsByDate } from "../../utils/extraLessons";
 import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import {
   biweeklyDisplaySubject,
@@ -88,6 +88,12 @@ export function MonthView({
     }
     return m;
   }, [examPeriods, examPrepSchedules, teacher, year, month]);
+  // 日付 → この講師の追加授業。cells.map の各セルで O(1) 参照するための索引
+  // (examPrepByDate と同型。セルごとの全走査を避ける)。
+  const extraByDate = useMemo(
+    () => indexExtraLessonsByDate(extraLessons, teacher),
+    [extraLessons, teacher]
+  );
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
     () =>
@@ -356,9 +362,7 @@ export function MonthView({
           // 追加授業 (この日付に単発で入るコマ、この teacher が担当する分)。
           // 休講日でも表示する (通常授業と違い「その日にやる」と明示的に
           // 登録した単発コマなので、休講の巻き添えで消さない)。
-          const extraForDay = dayCutoff
-            ? []
-            : extraLessonsForTeacherOnDate(extraLessons, teacher, ds);
+          const extraForDay = dayCutoff ? [] : extraByDate.get(ds) || [];
           // この teacher が他人のコマを代行する行で使う slot も session count
           // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
           const externalSubSlots =

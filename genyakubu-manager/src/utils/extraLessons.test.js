@@ -3,6 +3,7 @@ import {
   describeExtraLesson,
   extraLessonsOnDate,
   extraLessonsForTeacherOnDate,
+  indexExtraLessonsByDate,
   upcomingExtraLessons,
 } from "./extraLessons";
 
@@ -45,6 +46,37 @@ describe("extraLessonsForTeacherOnDate", () => {
   it('"·" 区切りの複数講師でもマッチする (Slot と同じ規則)', () => {
     const out = extraLessonsForTeacherOnDate(lessons, "福江", "2026-07-25");
     expect(out.map((l) => l.id)).toEqual([2]);
+  });
+});
+
+describe("indexExtraLessonsByDate", () => {
+  it("日付 → 時刻順リストの Map を返す (teacher 指定で絞り込み)", () => {
+    const all = indexExtraLessonsByDate(lessons);
+    expect([...all.keys()].sort()).toEqual(["2026-07-25", "2026-07-28", "2026-08-01"]);
+    expect(all.get("2026-07-25").map((l) => l.id)).toEqual([2, 1]);
+
+    const forTeacher = indexExtraLessonsByDate(lessons, "堀上");
+    expect(forTeacher.get("2026-07-25").map((l) => l.id)).toEqual([1]);
+    expect(forTeacher.has("2026-08-01")).toBe(false);
+  });
+
+  it("入力不正は空 Map", () => {
+    expect(indexExtraLessonsByDate(null).size).toBe(0);
+  });
+});
+
+describe("teacher フィールド欠落への防御 (校正レビュー 2026-07-03)", () => {
+  // isSlotForTeacher は slot.teacher.includes を無ガードで呼ぶため、
+  // Firebase 別クライアント書込等で teacher 欠落レコードが state に届いても
+  // ヘルパ側の正規化で throw しないことを固定する。
+  const broken = [{ id: 1, date: "2026-07-25", time: "19:00-20:00", grade: "中3", subj: "英語" }];
+  it("teacher が undefined のレコードでも throw せず単に非マッチになる", () => {
+    expect(() => extraLessonsForTeacherOnDate(broken, "堀上", "2026-07-25")).not.toThrow();
+    expect(extraLessonsForTeacherOnDate(broken, "堀上", "2026-07-25")).toEqual([]);
+    expect(() =>
+      upcomingExtraLessons(broken, { teacher: "堀上", winStartStr: "2026-07-01", winEndStr: "2026-07-31" })
+    ).not.toThrow();
+    expect(indexExtraLessonsByDate(broken, "堀上").size).toBe(0);
   });
 });
 

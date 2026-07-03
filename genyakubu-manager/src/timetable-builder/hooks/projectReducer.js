@@ -1,4 +1,6 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab, nextId } from '../utils/scheduleKey';
+// effectiveConfigForTab はこのファイル内の従来名 effectiveConfig で使う
+// (呼び出し 6 箇所の命名統一。alias 定数を挟むと同一関数が 2 名で混在する)。
+import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab as effectiveConfig, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -120,7 +122,6 @@ function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
 // tabPeriods/toggle) を破ったり {locked:true} のゴミセルを非表示時限に
 // 生成したりする。cell/* 系の対象セルは可視セル (= active な時限) なので
 // 絞っても影響しない。
-const effectiveConfig = effectiveConfigForTab;
 
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
@@ -1043,7 +1044,7 @@ function applyAction(project, action) {
       // 「使う日・使う時限」から外れて非表示のまま温存されているセルは
       // クリア対象外 (tabDates/toggle の「off にしてもセルは保持、再 on で
       // 復活」という不変条件を守る)。画面に見えているセルだけを消す。
-      const visibleCfg = effectiveConfigForTab(project, activeTab);
+      const visibleCfg = effectiveConfig(project, activeTab);
       const visibleDateIds = new Set(visibleCfg.dates.map(d => d.id));
       const visiblePeriodIds = new Set(visibleCfg.periods.map(p => p.id));
       const ns = {};
