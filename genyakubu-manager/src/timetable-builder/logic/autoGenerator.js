@@ -4,7 +4,8 @@
 // v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
-import { makeKey, makeExternalKey, parseKey, findCombinedGroup, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, findCombinedGroup, effectiveConfigForTab } from '../utils/scheduleKey';
+import { forEachCountedAssignment } from '../utils/tabUsage';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
 import {
   canTeachSubject,
@@ -84,8 +85,9 @@ const RESTART_FRACTION = 8;
 // - busy: 同日・同時限に他タブで授業を持つ講師 (物理的に兼務不可)
 // - daily: 講師の日次コマ数 (1 日上限の基準に合算する)
 // dates / periods の ID は project 共通プールなのでタブをまたいでそのまま
-// 比較できる。classes はタブ固有。そのタブが使わない日・時限や削除済み
-// クラスに残る stale セルは数えない。合同グループは 1 コマとして dedupe。
+// 比較できる。「数える / 数えない」の規則 (stale セル除外・合同 dedupe) は
+// forEachCountedAssignment (utils/tabUsage.js, F2j) に一元化されており、
+// 分析側の computeGlobalUsage と共通。
 // なお externalCounts / externalSessions は「このツールの外」(予備校・高校
 // 等) の負荷で、ここで数える他タブ分とは別枠。
 function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName) {
@@ -93,27 +95,13 @@ function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName)
   const daily = {};         // makeExternalKey(dateLabel, teacher) → count
   (project.tabs || []).forEach(tab => {
     if (tab.id === activeTabId) return;
-    const tabDates = new Map(activeDatesForTab(project.dates, tab).map(d => [d.id, d]));
-    const tabPeriodIds = new Set(activePeriodsForTab(project.periods, tab).map(p => p.id));
-    const classById = new Map((tab.config?.classes || []).map(c => [c.id, c]));
-    const seenCombined = new Set();
-    Object.entries(tab.schedule || {}).forEach(([key, entry]) => {
-      if (!entry?.teacher || entry.teacher === exemptName) return;
-      const parsed = parseKey(key);
-      if (!parsed) return;
-      const d = tabDates.get(parsed.dateId);
-      const cls = classById.get(parsed.classId);
-      if (!d || !cls || !tabPeriodIds.has(parsed.periodId)) return; // stale セル
-      busy.add(`${parsed.dateId}|${parsed.periodId}|${entry.teacher}`);
-      const group = findCombinedGroup(combinedGroups, entry.subject, cls.label, d.label);
-      if (group) {
-        const tk = `${parsed.dateId}-${parsed.periodId}-${group.id}-${entry.teacher}`;
-        if (seenCombined.has(tk)) return;
-        seenCombined.add(tk);
-      }
-      const dayKey = makeExternalKey(d.label, entry.teacher);
-      daily[dayKey] = (daily[dayKey] || 0) + 1;
-    });
+    forEachCountedAssignment(project, tab, combinedGroups, exemptName,
+      ({ entry, parsed, dateEnt, isCombinedDuplicate }) => {
+        busy.add(`${parsed.dateId}|${parsed.periodId}|${entry.teacher}`);
+        if (isCombinedDuplicate) return;
+        const dayKey = makeExternalKey(dateEnt.label, entry.teacher);
+        daily[dayKey] = (daily[dayKey] || 0) + 1;
+      });
   });
   return { busy, daily };
 }
@@ -132,11 +120,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   // currentConfig と同じ)。periods をプール全体にすると、タブが使わない時限
   // まで未充填スロット化され、科目クォータは可視セル数前提なので完全解が
   // 構造的に不可能になる (上限まで探索して部分解 + 不可視セルへのゴミ書込)。
-  const currentConfig = {
-    ...activeTab.config,
-    dates: activeDatesForTab(project.dates, activeTab),
-    periods: activePeriodsForTab(project.periods, activeTab),
-  };
+  const currentConfig = effectiveConfigForTab(project, activeTab);
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;

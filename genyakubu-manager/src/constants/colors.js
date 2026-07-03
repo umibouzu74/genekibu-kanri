@@ -43,6 +43,17 @@ export const ADJ_COLOR = {
   },
 };
 
+// 追加授業 (単発コマ) のバッジ / カード / バナーに使う共通色。
+// 調整系 (ADJ_COLOR) と同じ構造で、緑系 (「追加」= プラスの印象) を割当て。
+export const EXTRA_LESSON_COLOR = {
+  color: "#2e7d4f",
+  deep: "#1f5c39",
+  bg: "#e8f5ec",
+  bannerBg: "#f0f9f3",
+  bannerBorder: "#9cd0ae",
+  chipBg: "#ddefe3",
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };

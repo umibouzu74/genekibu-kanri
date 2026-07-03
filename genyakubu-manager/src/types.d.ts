@@ -169,6 +169,25 @@ export interface SpecialEvent {
   tags?: string[];
 }
 
+// ─── Extra lesson (追加授業) ─────────────────────────────────────
+// 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
+// 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
+// 通常授業と同様にスケジュール表示 (Dashboard 日別 / MonthView /
+// WeekView バナー) へ反映する。回数カウント (sessionCount) には現状
+// 含めない (既存コマへの紐付けと通算は将来拡張、ROADMAP 参照)。
+export interface ExtraLesson {
+  id: number;
+  date: string; // "YYYY-MM-DD" 実施日
+  time: string; // "18:30-19:30"
+  grade: string; // Slot.grade と同じ語彙 ("中3", "高1高2" 等)
+  cls?: string; // クラス (任意)
+  room?: string; // 教室 (任意)
+  subj: string; // 科目・講座名
+  teacher: string; // 担当講師 ("·" 区切りの複数名も可、Slot と同じ)
+  label?: string; // 種別ラベル (例: "夏期講習", "テスト対策")
+  note?: string; // メモ (任意)
+}
+
 // ─── Class set (授業セット) ──────────────────────────────────────
 // 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
 // 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると
@@ -238,6 +257,7 @@ export interface ExportBundle {
   sessionOverrides?: SessionOverride[];
   examPrepSchedules?: ExamPrepSchedule[];
   specialEvents?: SpecialEvent[];
+  extraLessons?: ExtraLesson[];
 }
 
 export interface ValidationResult<T> {

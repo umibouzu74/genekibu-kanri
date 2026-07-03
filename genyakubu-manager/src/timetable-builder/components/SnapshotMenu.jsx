@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
 import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
+import { useDismissablePopover } from '../hooks/useDismissablePopover';
 
 // E1c: 名前付きスナップショット。現在のタブの時間割を名前を付けて保存し、
 // あとから復元できる。undo/redo の単線履歴とは別に「試行錯誤の枝」を残す手段。
@@ -21,24 +22,10 @@ export default function SnapshotMenu() {
   } = useProjectContext();
   const { showInput, showConfirm, showToast } = useUI();
 
-  const [open, setOpen] = useState(false);
+  // 開閉と外側クリック / Escape での dismiss は共有フック (F2l)。
+  const { open, setOpen, ref } = useDismissablePopover();
   // 現在の状態と差分比較中のスナップショット id (null = 比較なし)
   const [comparingId, setComparingId] = useState(null);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
-    window.addEventListener('mousedown', handler);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', handler);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   // popover を閉じたら比較状態もリセット
   useEffect(() => {

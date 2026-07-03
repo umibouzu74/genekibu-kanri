@@ -17,6 +17,8 @@ import {
   nextId,
   activeDatesForTab,
   activePeriodsForTab,
+  effectiveConfigForTab,
+  findConflictingCombinedGroup,
 } from './scheduleKey';
 
 describe('activeDatesForTab', () => {
@@ -54,6 +56,69 @@ describe('activePeriodsForTab', () => {
   });
   it('pool が空/未定義でも安全', () => {
     expect(activePeriodsForTab(undefined, { config: { activePeriodIds: [1] } })).toEqual([]);
+  });
+});
+
+describe('effectiveConfigForTab (F2i)', () => {
+  const project = {
+    dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+  };
+  it('tab.config を保ちつつ dates / periods を絞った実効 config を返す', () => {
+    const tab = {
+      config: {
+        classes: [{ id: 1, label: 'A' }],
+        subjectCounts: { 英語: 2 },
+        activeDateIds: [2],
+        activePeriodIds: [1],
+      },
+    };
+    const eff = effectiveConfigForTab(project, tab);
+    expect(eff.classes).toEqual([{ id: 1, label: 'A' }]);
+    expect(eff.subjectCounts).toEqual({ 英語: 2 });
+    expect(eff.dates).toEqual([{ id: 2, label: '7/2' }]);
+    expect(eff.periods).toEqual([{ id: 1, label: '1限' }]);
+  });
+  it('activeDateIds / activePeriodIds 未指定はプール全体を使う', () => {
+    const eff = effectiveConfigForTab(project, { config: { classes: [] } });
+    expect(eff.dates).toBe(project.dates);
+    expect(eff.periods).toBe(project.periods);
+  });
+  it('project / tab が欠けていても安全 (dates / periods は空配列)', () => {
+    const eff = effectiveConfigForTab(undefined, undefined);
+    expect(eff.dates).toEqual([]);
+    expect(eff.periods).toEqual([]);
+  });
+});
+
+describe('findConflictingCombinedGroup (F5z)', () => {
+  const groups = [
+    { id: 1, subject: '英語', classes: ['A', 'B'], dates: null },
+    { id: 2, subject: '数学', classes: ['A', 'B'], dates: ['7/1'] },
+  ];
+  it('同じ科目でクラスと日程が重なる既存グループを返す', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['B', 'C'], dates: ['7/2'] }))
+      .toBe(groups[0]);
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A'], dates: null }))
+      .toBe(groups[1]);
+  });
+  it('科目が違えば競合しない', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '国語', classes: ['A', 'B'], dates: null })).toBeNull();
+  });
+  it('クラスが交差しなければ競合しない', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['C', 'D'], dates: null })).toBeNull();
+  });
+  it('日程が交差しなければ競合しない (null = 全日程は常に交差)', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A', 'B'], dates: ['7/2'] })).toBeNull();
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A', 'B'], dates: null })).toBe(groups[1]);
+  });
+  it('excludeId で編集中の自分自身は除外する', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['A', 'B'], dates: null }, 1)).toBeNull();
+  });
+  it('groups / candidate が空でも安全', () => {
+    expect(findConflictingCombinedGroup(null, { subject: '英語', classes: ['A'] })).toBeNull();
+    expect(findConflictingCombinedGroup(groups, null)).toBeNull();
+    expect(findConflictingCombinedGroup(groups, { subject: '英語' })).toBeNull();
   });
 });
 
@@ -333,6 +398,45 @@ describe('migrateTabV2toV3', () => {
     expect(result.config.periods).toEqual([{ id: 5, label: '1限' }]);
     // v2 だった classes は wrap
     expect(result.config.classes).toEqual([{ id: 1, label: '３S' }]);
+  });
+
+  it('混在: v3 次元の schedule キー成分は ID として解釈する (F5f: シフト/消失しない)', () => {
+    // dates は v3 で ID が歯抜け ([1, 3])、periods / classes は v2 string。
+    // 旧実装は v3 次元もインデックス解釈したため、d1 (ID 1) を「位置 1」と
+    // 読んで ID 3 へシフト、d3 (ID 3) は「位置 3 = 範囲外」で消失した。
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: [{ id: 1, label: '12/25' }, { id: 3, label: '12/27' }], // v3 (歯抜け ID)
+        periods: ['1限'],   // v2 → index 0 = id 1
+        classes: ['３S'],   // v2 → index 0 = id 1
+        subjectCounts: {},
+      },
+      schedule: {
+        'd1-p0-c0': { subject: '英語', teacher: '堀上' }, // dateId=1 (ID として)
+        'd3-p0-c0': { subject: '数学', teacher: '田中' }, // dateId=3 (ID として)
+      },
+    };
+    const result = migrateTabV2toV3(tab);
+    expect(result.schedule['d1-p1-c1']).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(result.schedule['d3-p1-c1']).toEqual({ subject: '数学', teacher: '田中' });
+    expect(Object.keys(result.schedule)).toHaveLength(2);
+  });
+
+  it('混在: v3 次元に存在しない ID のキーは drop される (F5f)', () => {
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: ['1限'],
+        classes: ['３S'],
+        subjectCounts: {},
+      },
+      schedule: {
+        'd9-p0-c0': { subject: '英語', teacher: '堀上' }, // ID 9 は存在しない
+      },
+    };
+    expect(migrateTabV2toV3(tab).schedule).toEqual({});
   });
 
   it('範囲外の v2 schedule キーは drop される', () => {

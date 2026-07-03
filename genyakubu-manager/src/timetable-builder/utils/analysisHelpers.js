@@ -2,8 +2,9 @@
 // ユニットテスト可能にし、useAnalysis 側は useMemo の deps を最小化する
 // orchestrator に専念させる (D4e + D2a)。
 
-import { makeKey, makeExternalKey, makeNgKey, parseKey, findCombinedGroup, findEntityById, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
+import { makeKey, makeExternalKey, makeNgKey, parseKey, effectiveConfigForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
+import { forEachCountedAssignment } from './tabUsage';
 
 // 全タブ横断の講師使用状況を集計する。
 //
@@ -39,59 +40,30 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
   });
 
   tabs.forEach(tab => {
-    // 合同グループで既にカウント済みの (date, period, groupId) を追跡。
-    // 同一タブ内の合同グループは 1 コマとしてカウントする。
-    const tabCombinedCounted = new Set();
-    // v4(Y)+E-3: このタブが使う日・使う時限だけを対象にする
-    // (inactive な日・時限の stale cell は除外)。
-    const tabDates = activeDatesForTab(dates, tab);
-    const tabPeriods = activePeriodsForTab(periods, tab);
+    // どのセルを 1 コマと数えるか (stale 除外・合同 dedupe) は
+    // forEachCountedAssignment (utils/tabUsage.js, F2j) に一元化。
+    // ソルバの collectOtherTabsUsage と同じ規則で走査する。
+    forEachCountedAssignment({ dates, periods }, tab, groups, '未定',
+      ({ entry, dateEnt, periodEnt, group, isCombinedDuplicate }) => {
+        const date = dateEnt.label;
+        const period = periodEnt.label;
 
-    Object.keys(tab.schedule).forEach(key => {
-      const entry = tab.schedule[key];
-      if (!entry || !entry.teacher || entry.teacher === '未定') return;
-      const parsed = parseKey(key);
-      if (!parsed) return;
-      const { dateId, periodId, classId } = parsed;
-      const dateEnt = findEntityById(tabDates, dateId);
-      const periodEnt = findEntityById(tabPeriods, periodId);
-      const classEnt = findEntityById(tab.config.classes, classId);
-      if (!dateEnt || !periodEnt || !classEnt) return;
-      const date = dateEnt.label;
-      const period = periodEnt.label;
-      const className = classEnt.label;
+        const usageKey = `${date}-${period}-${entry.teacher}`;
+        if (!globalUsage[usageKey]) globalUsage[usageKey] = [];
+        globalUsage[usageKey].push({ tabId: tab.id, combinedGroupId: group?.id || null });
 
-      const group = findCombinedGroup(groups, entry.subject, className, date);
-      let isCombinedDuplicate = false;
-      if (group) {
-        // dedupe キーに講師名を含める (solver の seenCombinedDay /
-        // countTeacherHoursWithCombined と同じ規則)。含めないと、合同の
-        // 各クラスに別々の講師が入っている (壊れた) 状態で 2 人目以降の
-        // 日次カウントが丸ごと欠落し、teacherOverDaily を見逃す。
-        const combinedTrackKey = `${date}-${period}-${group.id}-${entry.teacher}`;
-        if (tabCombinedCounted.has(combinedTrackKey)) {
-          isCombinedDuplicate = true;
-        } else {
-          tabCombinedCounted.add(combinedTrackKey);
+        if (!isCombinedDuplicate) {
+          const dayKey = makeExternalKey(date, entry.teacher);
+          if (!teacherDailyCounts[dayKey]) {
+            const ext = sessionCounts[dayKey] !== undefined
+              ? sessionCounts[dayKey]
+              : (externalCounts?.[dayKey] || 0);
+            teacherDailyCounts[dayKey] = { current: 0, external: ext, total: ext };
+          }
+          teacherDailyCounts[dayKey].current++;
+          teacherDailyCounts[dayKey].total++;
         }
-      }
-
-      const usageKey = `${date}-${period}-${entry.teacher}`;
-      if (!globalUsage[usageKey]) globalUsage[usageKey] = [];
-      globalUsage[usageKey].push({ tabId: tab.id, combinedGroupId: group?.id || null });
-
-      if (!isCombinedDuplicate) {
-        const dayKey = makeExternalKey(date, entry.teacher);
-        if (!teacherDailyCounts[dayKey]) {
-          const ext = sessionCounts[dayKey] !== undefined
-            ? sessionCounts[dayKey]
-            : (externalCounts?.[dayKey] || 0);
-          teacherDailyCounts[dayKey] = { current: 0, external: ext, total: ext };
-        }
-        teacherDailyCounts[dayKey].current++;
-        teacherDailyCounts[dayKey].total++;
-      }
-    });
+      });
   });
 
   return { teacherDailyCounts, globalUsage };
@@ -221,7 +193,7 @@ export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], ex
     // v4(Y)+E-3: このタブが使う日・使う時限だけで分析する (dates と対称)。
     // periods をプール全体にすると inactive 時限の stale セルまで数え、
     // Toolbar popover (絞った currentConfig で計算) と件数が食い違う。
-    const effective = { ...tab.config, dates: activeDatesForTab(dates, tab), periods: activePeriodsForTab(periods, tab) };
+    const effective = effectiveConfigForTab({ dates, periods }, tab);
     const tabAnalysis = computeActiveAnalysis(effective, tab.schedule, globalUsage, teachers, autoNgByTeacher);
     let subjectDupCount = 0;
     Object.values(tabAnalysis.dailySubjectMap).forEach(cnt => {

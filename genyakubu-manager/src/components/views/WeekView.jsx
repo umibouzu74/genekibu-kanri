@@ -20,6 +20,8 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
+import { upcomingExtraLessons } from "../../utils/extraLessons";
+import { EXTRA_LESSON_COLOR } from "../../constants/colors";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
@@ -118,6 +120,7 @@ export function WeekView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
+  extraLessons = [],
   displayCutoff,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
@@ -330,6 +333,17 @@ export function WeekView({
     }
     return out;
   }, [examPrepSchedules, examPeriods, teacher, winStart, winEnd]);
+
+  // 今日から+14日間の追加授業 (この teacher が担当する分)
+  const upcomingExtras = useMemo(
+    () =>
+      upcomingExtraLessons(extraLessons, {
+        teacher,
+        winStartStr: fmtDate(winStart),
+        winEndStr: fmtDate(winEnd),
+      }),
+    [extraLessons, teacher, winStart, winEnd]
+  );
 
   // 今日から+14日間の代行予定 (この teacher が元講師 or 代行者)
   const upcomingSubs = useMemo(() => {
@@ -726,6 +740,45 @@ export function WeekView({
               </UpcomingRow>
             );
           })}
+        </UpcomingBanner>
+      )}
+      {upcomingExtras.length > 0 && (
+        <UpcomingBanner
+          bg={EXTRA_LESSON_COLOR.bannerBg}
+          borderColor={EXTRA_LESSON_COLOR.bannerBorder}
+          titleColor={EXTRA_LESSON_COLOR.deep}
+          title={`➕ 直近2週間の追加授業 (${upcomingExtras.length}件)`}
+        >
+          {upcomingExtras.map((l) => (
+            <UpcomingRow key={l.id}>
+              <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                {fmtDateWeekday(l.date)}
+              </span>
+              <span style={{ fontSize: 11, color: "#666", minWidth: 90 }}>
+                {l.time}
+              </span>
+              <span style={{ fontSize: 11 }}>
+                {l.grade}
+                {l.cls && l.cls !== "-" ? l.cls : ""} {l.subj}
+                {l.room ? ` @${l.room}` : ""}
+              </span>
+              {l.label && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    background: EXTRA_LESSON_COLOR.chipBg,
+                    color: EXTRA_LESSON_COLOR.deep,
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    marginLeft: "auto",
+                  }}
+                >
+                  {l.label}
+                </span>
+              )}
+            </UpcomingRow>
+          ))}
         </UpcomingBanner>
       )}
       <div style={{ overflowX: "auto" }}>

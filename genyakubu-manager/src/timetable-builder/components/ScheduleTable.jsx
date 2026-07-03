@@ -53,7 +53,7 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
     e.preventDefault();
     setDragOverKey(null);
     if (!dragSource || dragSource.key === tk || td.locked) return;
-    handleSwapCells(dragSource.key, dragSource.data, tk, td);
+    handleSwapCells(dragSource.key, tk);
     setDragSource(null);
     e.target.style.opacity = '1';
   };

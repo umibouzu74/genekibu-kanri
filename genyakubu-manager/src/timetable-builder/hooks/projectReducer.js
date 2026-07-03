@@ -1,4 +1,6 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, activePeriodsForTab, nextId } from '../utils/scheduleKey';
+// effectiveConfigForTab はこのファイル内の従来名 effectiveConfig で使う
+// (呼び出し 6 箇所の命名統一。alias 定数を挟むと同一関数が 2 名で混在する)。
+import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab as effectiveConfig, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -112,23 +114,14 @@ function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
   );
 }
 
-// v4: dates / periods は project 共通。tab.config (classes / subjectCounts) に
-// project の dates / periods をマージした『実効 config』を返す。schedule の
-// cascade ロジック (combinedPropagation 等) は config.dates / .periods を読むため、
-// reducer 内でもこの実効 config を渡す必要がある。
-function effectiveConfig(project, tab) {
-  // dates / periods とも『このタブが使う分』に絞る (useProject の currentConfig
-  // と同じ)。periods をプール全体にすると schedule/bulkAction の一括操作が
-  // 非表示時限まで走査し、「使わない時限のセルは温存」の不変条件
-  // (schedule/clearUnlocked, tabPeriods/toggle) を破ったり {locked:true} の
-  // ゴミセルを非表示時限に生成したりする。cell/* 系の対象セルは可視セル
-  // (= active な時限) なので絞っても影響しない。
-  return {
-    ...tab.config,
-    dates: activeDatesForTab(project.dates, tab),
-    periods: activePeriodsForTab(project.periods, tab),
-  };
-}
+// v4: dates / periods は project 共通。schedule の cascade ロジック
+// (combinedPropagation 等) は config.dates / .periods を読むため、reducer 内でも
+// 実効 config (F2i: effectiveConfigForTab) を渡す必要がある。periods を
+// プール全体にすると schedule/bulkAction の一括操作が非表示時限まで走査し、
+// 「使わない時限のセルは温存」の不変条件 (schedule/clearUnlocked,
+// tabPeriods/toggle) を破ったり {locked:true} のゴミセルを非表示時限に
+// 生成したりする。cell/* 系の対象セルは可視セル (= active な時限) なので
+// 絞っても影響しない。
 
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
@@ -162,6 +155,9 @@ function applyAction(project, action) {
     case 'tab/rename': {
       const { id, name } = action.payload;
       if (!name) return project;
+      // F2d: 同名 rename は履歴を汚さない (実効 Undo 深度 MAX 50 を守る)
+      const target = project.tabs.find(t => t.id === id);
+      if (!target || target.name === name) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
     }
 
@@ -284,7 +280,10 @@ function applyAction(project, action) {
       if (!target) return project;
       // F5o: 負数の直接入力 (input の min はスピナーにしか効かない) を 0 に
       // clamp。負のコマ数は分析の合計を狂わせる。
-      const newCounts = { ...target.config.subjectCounts, [subject]: Math.max(0, parseInt(value) || 0) };
+      const clamped = Math.max(0, parseInt(value) || 0);
+      // F2d: 同値なら no-op (blur 等での再 commit が履歴を汚さない)
+      if (target.config.subjectCounts[subject] === clamped) return project;
+      const newCounts = { ...target.config.subjectCounts, [subject]: clamped };
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
@@ -494,6 +493,8 @@ function applyAction(project, action) {
     }
     case 'subject/setColor': {
       const { subject, color } = action.payload;
+      // F2d: 同色なら no-op (カラーピッカーの連続イベント対策)
+      if ((project.subjectColors || {})[subject] === color) return project;
       const newColors = { ...(project.subjectColors || {}), [subject]: color };
       return { ...project, subjectColors: newColors };
     }
@@ -708,10 +709,11 @@ function applyAction(project, action) {
       const { date, teacherName, value } = action.payload;
       // F5o: 負数は 0 に clamp (負の外部コマ数は講師の日次合計を過小評価し、
       // 過負荷警告を見逃す)。
-      const counts = {
-        ...(project.externalCounts || {}),
-        [makeExternalKey(date, teacherName)]: Math.max(0, parseInt(value) || 0),
-      };
+      const key = makeExternalKey(date, teacherName);
+      const clamped = Math.max(0, parseInt(value) || 0);
+      // F2d: 同値なら no-op (履歴を汚さない)
+      if ((project.externalCounts || {})[key] === clamped) return project;
+      const counts = { ...(project.externalCounts || {}), [key]: clamped };
       return { ...project, externalCounts: counts };
     }
     case 'teacher/addExternalSession': {
@@ -897,17 +899,26 @@ function applyAction(project, action) {
       return { ...project, tabs: newTabs };
     }
     case 'cell/swap': {
-      const { sourceKey, sourceData, targetKey, targetData } = action.payload;
-      // どちらかが locked なら swap しない。UI 側でも guard しているが、
-      // dispatch 経由で source が locked のまま渡ると line `locked: false` で
-      // lock が剥がれてしまうため、ここでも防衛する。
-      if (sourceData.locked || targetData.locked) return project;
+      const { sourceKey, targetKey } = action.payload;
+      if (sourceKey === targetKey) return project;
       const sParsed = parseKey(sourceKey);
       const tParsed = parseKey(targetKey);
       if (!sParsed || !tParsed) return project;
 
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
+      // F2e: dragstart 時点の payload を信頼せず、dispatch 時点の schedule を
+      // 正とする。payload 経由だと dragstart 後にセルが変わった場合 (undo /
+      // 他操作の狭い競合窓) に stale な内容を書き戻したり、lock された
+      // セルの lock を剥がしたりする。
+      const sourceData = currentSchedule[sourceKey];
+      const targetData = currentSchedule[targetKey] || {};
+      // source が空になっていたら swap の意味が無いので no-op (UI は
+      // subject 無しセルの drag を開始しない)。locked はどちらか一方でも
+      // 立っていれば no-op (下の `locked: false` で剥がさないための防衛)。
+      if (!sourceData?.subject) return project;
+      if (sourceData.locked || targetData.locked) return project;
+
       const currentConfig = effectiveConfig(project, activeTab);
       const groups = project.combinedGroups;
       let ns = { ...currentSchedule };
@@ -1033,8 +1044,9 @@ function applyAction(project, action) {
       // 「使う日・使う時限」から外れて非表示のまま温存されているセルは
       // クリア対象外 (tabDates/toggle の「off にしてもセルは保持、再 on で
       // 復活」という不変条件を守る)。画面に見えているセルだけを消す。
-      const visibleDateIds = new Set(activeDatesForTab(project.dates, activeTab).map(d => d.id));
-      const visiblePeriodIds = new Set(activePeriodsForTab(project.periods, activeTab).map(p => p.id));
+      const visibleCfg = effectiveConfig(project, activeTab);
+      const visibleDateIds = new Set(visibleCfg.dates.map(d => d.id));
+      const visiblePeriodIds = new Set(visibleCfg.periods.map(p => p.id));
       const ns = {};
       Object.keys(activeTab.schedule).forEach(k => {
         const entry = activeTab.schedule[k];
@@ -1116,7 +1128,16 @@ function applyAction(project, action) {
     }
     case 'combinedGroup/update': {
       const { id, updates } = action.payload;
-      const newGroups = (project.combinedGroups || []).map(g => g.id === id ? { ...g, ...updates } : g);
+      const groups = project.combinedGroups || [];
+      const target = groups.find(g => g.id === id);
+      if (!target) return project;
+      // F2d: 全フィールド同値なら no-op。classes / dates は小さい配列なので
+      // JSON 比較で十分 (dates: null = 全日程 も正しく比較される)。
+      const same = Object.entries(updates || {}).every(
+        ([k, v]) => JSON.stringify(target[k]) === JSON.stringify(v)
+      );
+      if (same) return project;
+      const newGroups = groups.map(g => g.id === id ? { ...g, ...updates } : g);
       return { ...project, combinedGroups: newGroups };
     }
     case 'combinedGroup/remove': {
@@ -1127,6 +1148,8 @@ function applyAction(project, action) {
 
     // ─── プロジェクト全体 ────────────────
     case 'project/updateName': {
+      // F2d: 同名なら no-op (Header の blur 再 commit 対策)
+      if (action.payload.name === project.name) return project;
       return { ...project, name: action.payload.name };
     }
     case 'project/setGenerationParams': {

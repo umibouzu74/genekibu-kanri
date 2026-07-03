@@ -68,6 +68,19 @@ export function activePeriodsForTab(poolPeriods, tab) {
   return (poolPeriods || []).filter(p => set.has(p.id));
 }
 
+// F2i: タブの実効 config = tab.config (classes / subjectCounts) + 『このタブが
+// 使う日・使う時限』に絞った dates / periods。この合成の唯一の入口。
+// activeDatesForTab / activePeriodsForTab を個別に並べると片方を絞り忘れる
+// 事故 (E-3 型) が再発するため、dates と periods を対で使う consumer は
+// 必ずこの関数を通すこと。project は { dates, periods } だけ読む。
+export function effectiveConfigForTab(project, tab) {
+  return {
+    ...tab?.config,
+    dates: activeDatesForTab(project?.dates, tab),
+    periods: activePeriodsForTab(project?.periods, tab),
+  };
+}
+
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // (config 変更時にインデックスがずれる問題を避けるため)
@@ -87,6 +100,24 @@ export function findCombinedGroup(combinedGroups, subject, className, date) {
     g.subject === subject &&
     g.classes.includes(className) &&
     (g.dates === null || g.dates.includes(date))
+  ) || null;
+}
+
+// F5z: 追加/編集しようとするグループ (candidate) と「同じ科目で、クラスと
+// 対象日の両方が重なる」既存グループを探す。findCombinedGroup は first-match
+// なので、重なるグループが 2 つ登録されると伝播・集計が片方しか見ず
+// 不整合になる。登録前 (CombinedGroupSettings の draft 検証) にこれで弾く。
+// dates は null = 全日程 (何とでも重なる)。excludeId は編集中の自分自身。
+export function findConflictingCombinedGroup(combinedGroups, candidate, excludeId = null) {
+  if (!combinedGroups || !candidate?.subject) return null;
+  const candClasses = candidate.classes || [];
+  const candDates = candidate.dates ?? null;
+  const datesOverlap = (a, b) => a === null || b === null || a.some(d => b.includes(d));
+  return combinedGroups.find(g =>
+    g.id !== excludeId &&
+    g.subject === candidate.subject &&
+    (g.classes || []).some(c => candClasses.includes(c)) &&
+    datesOverlap(g.dates ?? null, candDates)
   ) || null;
 }
 
@@ -207,34 +238,40 @@ export function migrateTabV2toV3(tab) {
   }
 
   // 次元ごとに「v3 形式 → そのまま使う」「string array → wrap」を独立判定。
-  // 戻り値: { arr: 新配列, idxToId: 配列位置(0-based) → entity.id の Map }
+  // 戻り値: { arr: 新配列, resolve: schedule キーの数値成分 → entity.id }
   // 次元が配列でない (欠落等の外部 JSON、F5e) 場合は空配列として扱い、
   // undefined.map で migration 全体が落ちるのを防ぐ。
+  //
+  // F5f: schedule キーの数値成分の解釈は次元の形式で異なる —
+  //   - v2 (string[]) の次元: 数値は「配列位置 (0-based)」 → wrap 後の id へ
+  //   - v3 ({id,label}[]) の次元: 数値は「既に ID」 → 存在確認だけして素通し。
+  //     インデックスと解釈すると、ID が位置とずれた配列 (削除で歯抜けの
+  //     [{id:1},{id:3}] 等) でセルが隣へシフト / 消失する
   const normalize = (raw) => {
     const arr = Array.isArray(raw) ? raw : [];
     if (isV3Shape(arr)) {
-      return { arr, idxToId: new Map(arr.map((e, idx) => [idx, e.id])) };
+      const ids = new Set(arr.map(e => e.id));
+      return { arr, resolve: (n) => (ids.has(n) ? n : null) };
     }
     const wrapped = arr.map((label, idx) => ({ id: idx + 1, label }));
-    return { arr: wrapped, idxToId: new Map(wrapped.map((e, idx) => [idx, e.id])) };
+    return { arr: wrapped, resolve: (n) => (n >= 0 && n < wrapped.length ? wrapped[n].id : null) };
   };
 
-  const { arr: newDates, idxToId: dateMap } = normalize(tab.config.dates);
-  const { arr: newPeriods, idxToId: periodMap } = normalize(tab.config.periods);
-  const { arr: newClasses, idxToId: classMap } = normalize(tab.config.classes);
+  const dates = normalize(tab.config.dates);
+  const periods = normalize(tab.config.periods);
+  const classes = normalize(tab.config.classes);
+  const newDates = dates.arr, newPeriods = periods.arr, newClasses = classes.arr;
 
-  // schedule キーは「v2 のインデックスベース」を前提に書き換える。
-  // version < 3 のときにだけここに来るので、key の数値部分は配列位置と解釈してよい。
-  // 範囲外のキーは drop (cleanSchedule 相当)。
+  // schedule キーを次元ごとの resolve で新 ID キーに書き換える。
+  // 解決できない (範囲外 / 存在しない ID の) キーは drop (cleanSchedule 相当)。
   const newSchedule = {};
   Object.keys(tab.schedule).forEach(oldKey => {
     const m = oldKey.match(/^d(\d+)-p(\d+)-c(\d+)$/);
     if (!m) return; // 不正キー
-    const dIdx = parseInt(m[1]), pIdx = parseInt(m[2]), cIdx = parseInt(m[3]);
-    const dateId = dateMap.get(dIdx);
-    const periodId = periodMap.get(pIdx);
-    const classId = classMap.get(cIdx);
-    if (dateId == null || periodId == null || classId == null) return; // 範囲外
+    const dateId = dates.resolve(parseInt(m[1]));
+    const periodId = periods.resolve(parseInt(m[2]));
+    const classId = classes.resolve(parseInt(m[3]));
+    if (dateId == null || periodId == null || classId == null) return;
     newSchedule[makeKey(dateId, periodId, classId)] = tab.schedule[oldKey];
   });
 

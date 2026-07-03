@@ -1,5 +1,6 @@
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
+import DraftNumberInput from './DraftNumberInput';
 
 export default function SubjectManager() {
   const {
@@ -68,13 +69,12 @@ export default function SubjectManager() {
             </div>
             <span className="font-bold text-sm flex-1 text-builder-ink">{s}</span>
             {tabs.map((tab) => (
-              <input
+              <DraftNumberInput
                 key={tab.id}
-                type="number"
                 aria-label={`${tab.name} の ${s} コマ数`}
                 className="w-16 text-right text-sm border border-builder-border rounded px-1 py-0.5"
                 value={tab.config.subjectCounts[s] || 0}
-                onChange={(e) => handleSubjectCountChange(s, e.target.value, tab.id)}
+                onCommit={(v) => handleSubjectCountChange(s, v, tab.id)}
                 min={0}
               />
             ))}

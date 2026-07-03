@@ -11,6 +11,16 @@ export function timeToMin(t) {
   return h * 60 + m;
 }
 
+// "19:00-20:20" / "19:00" → 開始時刻の分数。パース不能・空は 0
+// (ソート用途で末尾に落とさず先頭寄せ)。timeToMin と違い range 文字列を
+// そのまま受け、失敗時に NaN でなく 0 を返す。sessionCount / extraLessons
+// のソートで共有。
+export function timeStartToMin(time) {
+  const m = String(time || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
 export function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

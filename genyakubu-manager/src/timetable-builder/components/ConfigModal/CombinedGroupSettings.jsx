@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { findConflictingCombinedGroup } from '../../utils/scheduleKey';
 
 // 合同授業グループの設定タブ。
 //
@@ -37,12 +38,18 @@ export default function CombinedGroupSettings() {
     });
   };
 
-  // 検証: 科目必須 / クラス 2 以上 / 「全日程」でないなら対象日 1 日以上。
+  // 検証: 科目必須 / クラス 2 以上 / 「全日程」でないなら対象日 1 日以上 /
+  // 既存グループとの重複なし (F5z: 伝播・集計は first-match のみで、重なる
+  // グループが 2 つあると片方が silent に無視されるため登録時に弾く)。
   const draftError = (d) => {
     if (!d) return null;
     if (!d.subject) return '科目を選択してください';
     if (d.classes.length < 2) return '2つ以上のクラスを選択してください';
     if (d.dates !== null && d.dates.length === 0) return '対象日程を選択するか「全日程」にしてください';
+    const conflict = findConflictingCombinedGroup(combinedGroups, d, d.id);
+    if (conflict) {
+      return `既存の合同グループ (${conflict.subject}: ${conflict.classes.join('・')}) とクラス・日程が重なっています`;
+    }
     return null;
   };
 

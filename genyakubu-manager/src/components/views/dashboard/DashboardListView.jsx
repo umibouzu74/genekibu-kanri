@@ -3,6 +3,7 @@ import {
   isEntireDayBeyondCutoff,
   isTimetableActiveForDate,
 } from "../../../utils/timetable";
+import { extraLessonsOnDate } from "../../../utils/extraLessons";
 import { DashDayRow } from "./DashDayRow";
 import { EventSummaryCards } from "./EventSummaryCards";
 import { SubSummaryCards } from "./SubSummaryCards";
@@ -17,6 +18,7 @@ export function DashboardListView({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
+  extraLessons = [],
   holidaysFor,
   examPeriodsFor,
   specialEventsFor,
@@ -82,6 +84,9 @@ export function DashboardListView({
               examPeriodsForDate={examPeriodsFor(dateStr)}
               specialEventsForDate={
                 specialEventsFor ? specialEventsFor(dateStr) : []
+              }
+              extraLessonsForDate={
+                entireDayCutoff ? [] : extraLessonsOnDate(extraLessons, dateStr)
               }
               sessionCtx={sessionCtx}
             />

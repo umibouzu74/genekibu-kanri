@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
+import { useDismissablePopover } from '../hooks/useDismissablePopover';
 
 // exceljs はバンドルが大きい (gzip 後 ~270kB) ので、Excel 出力ボタンを
 // 押した時にだけロードする。初回クリックの体感は数百ms 遅れるが、起動時には
@@ -23,25 +24,8 @@ export default function Header() {
   // null | 'all' | 'teacher'。Excel 出力ボタンの多重押下を防ぐ。
   const [exportingType, setExportingType] = useState(null);
   // Excel 出力ドロップダウン (E1a: 狭画面でヘッダのボタンを減らす)
-  const [excelMenuOpen, setExcelMenuOpen] = useState(false);
-  const excelMenuRef = useRef(null);
-  useEffect(() => {
-    if (!excelMenuOpen) return undefined;
-    const handler = (e) => {
-      if (excelMenuRef.current && !excelMenuRef.current.contains(e.target)) {
-        setExcelMenuOpen(false);
-      }
-    };
-    const keyHandler = (e) => {
-      if (e.key === 'Escape') setExcelMenuOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    window.addEventListener('keydown', keyHandler);
-    return () => {
-      window.removeEventListener('mousedown', handler);
-      window.removeEventListener('keydown', keyHandler);
-    };
-  }, [excelMenuOpen]);
+  // 開閉と外側クリック / Escape での dismiss は共有フック (F2l)。
+  const { open: excelMenuOpen, setOpen: setExcelMenuOpen, ref: excelMenuRef } = useDismissablePopover();
 
   const handleNameSubmit = () => {
     // 変更が無ければ dispatch しない (無駄な Undo 履歴 + autosave を防ぐ)

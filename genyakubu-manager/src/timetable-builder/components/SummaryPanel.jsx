@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { makeExternalKey, countTeacherHoursWithCombined, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
+import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad } from '../utils/patternLoad';
 
@@ -104,13 +104,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
     ? tabs.find(t => t.id === generatedForTab.id)
     : (tabs.find(t => t.id === project.activeTabId) || tabs[0]);
   const forTabDeleted = Boolean(generatedForTab) && !forTab;
-  const patternConfig = forTab
-    ? {
-        ...forTab.config,
-        dates: activeDatesForTab(project.dates, forTab),
-        periods: activePeriodsForTab(project.periods, forTab),
-      }
-    : currentConfig;
+  const patternConfig = forTab ? effectiveConfigForTab(project, forTab) : currentConfig;
   const isOtherTab = forTab && forTab.id !== project.activeTabId;
 
   return (

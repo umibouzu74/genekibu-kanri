@@ -4,7 +4,7 @@ import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
-import { makeKey, migrateProject, activeDatesForTab, activePeriodsForTab } from '../utils/scheduleKey';
+import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
 
 // 講習時間割プロジェクトの一元状態管理フック。
@@ -44,11 +44,10 @@ export function useProject() {
   // 派生ビュー。これにより時間割・自動生成・分析は各学年が使う日・時限だけを
   // 対象にし、currentConfig.dates / .periods を読む既存の全 consumer は無改修で
   // 動く。NG パネルだけは別途プール全体 (project.dates / project.periods) を使う。
-  const currentConfig = useMemo(() => ({
-    ...activeTab.config,
-    dates: activeDatesForTab(project.dates, activeTab),
-    periods: activePeriodsForTab(project.periods, activeTab),
-  }), [activeTab, project.dates, project.periods]);
+  const currentConfig = useMemo(
+    () => effectiveConfigForTab({ dates: project.dates, periods: project.periods }, activeTab),
+    [activeTab, project.dates, project.periods],
+  );
   const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
 
   const {

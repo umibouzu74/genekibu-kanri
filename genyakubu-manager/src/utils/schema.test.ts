@@ -5,6 +5,7 @@ import {
   isCutoffGroup,
   isExamPeriod,
   isExamPrepSchedule,
+  isExtraLesson,
   isHoliday,
   isPartTimeStaffObject,
   isScheduleAdjustment,
@@ -847,6 +848,79 @@ describe("v12 → v13 migration: specialEvents 初期化", () => {
     });
     const v = validateExportBundle(out);
     expect(v.ok).toBe(true);
+  });
+});
+
+describe("isExtraLesson (追加授業)", () => {
+  const good = {
+    id: 1,
+    date: "2026-07-25",
+    time: "18:30-19:30",
+    grade: "中3",
+    subj: "英語",
+    teacher: "堀上",
+  };
+
+  it("必須フィールドが揃っていれば true (任意フィールドは省略可)", () => {
+    expect(isExtraLesson(good)).toBe(true);
+    expect(
+      isExtraLesson({ ...good, cls: "A", room: "601", label: "夏期講習", note: "m" })
+    ).toBe(true);
+    expect(isExtraLesson({ ...good, teacher: "" })).toBe(true); // 担当未定も可
+  });
+
+  it("必須欠落 / 型不正 / 非 ISO 日付は false", () => {
+    expect(isExtraLesson({ ...good, id: "1" })).toBe(false);
+    expect(isExtraLesson({ ...good, date: "7/25" })).toBe(false);
+    expect(isExtraLesson({ ...good, time: undefined })).toBe(false);
+    expect(isExtraLesson({ ...good, subj: 1 })).toBe(false);
+    expect(isExtraLesson({ ...good, label: 5 })).toBe(false);
+    expect(isExtraLesson(null)).toBe(false);
+  });
+});
+
+describe("v14 → v15 migration: extraLessons 初期化", () => {
+  it("adds empty extraLessons when missing", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 14,
+      slots: [],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.extraLessons).toEqual([]);
+  });
+
+  it("preserves existing extraLessons", () => {
+    const existing = [
+      {
+        id: 1,
+        date: "2026-07-25",
+        time: "18:30-19:30",
+        grade: "中3",
+        subj: "プレップ",
+        teacher: "香川",
+        label: "夏期講習",
+      },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 14,
+      extraLessons: existing,
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.extraLessons).toEqual(existing);
+  });
+
+  it("v14 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({ schemaVersion: 14, slots: [] });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("validateExportBundle rejects malformed extraLessons", () => {
+    const v = validateExportBundle({
+      extraLessons: [{ id: 1, date: "bad", time: "18:30", grade: "中3", subj: "英語", teacher: "" }],
+    });
+    expect(v.ok).toBe(false);
+    expect(v.error).toContain("extraLessons[0]");
   });
 });
 

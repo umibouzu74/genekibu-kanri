@@ -12,7 +12,7 @@
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 
@@ -139,8 +139,7 @@ export function buildScheduleWorkbook(project) {
   cleaned.tabs.forEach(tab => {
     // v4(Y)+E-3: そのタブが使う日・使う時限だけをシートに出す
     // (使わない時限の空行や stale セルを紙面に出さない)。
-    const dates = activeDatesForTab(cleaned.dates, tab);
-    const periods = activePeriodsForTab(cleaned.periods, tab);
+    const { dates, periods } = effectiveConfigForTab(cleaned, tab);
     const { classes } = tab.config;
     // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
@@ -274,8 +273,7 @@ export function computeSubjectStats(project, subject) {
     const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
     let filled = 0;
     // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする。
-    const dates = activeDatesForTab(project.dates, tab);
-    const periods = activePeriodsForTab(project.periods, tab);
+    const { dates, periods } = effectiveConfigForTab(project, tab);
 
     dates.forEach(d => {
       periods.forEach(p => {
@@ -474,8 +472,7 @@ export function buildTeacherWorkbook(project) {
 
     project.tabs.forEach(tab => {
       // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
-      const dates = activeDatesForTab(project.dates, tab);
-      const periods = activePeriodsForTab(project.periods, tab);
+      const { dates, periods } = effectiveConfigForTab(project, tab);
       dates.forEach((d) => {
         periods.forEach((p) => {
           tab.config.classes.forEach((c) => {

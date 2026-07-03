@@ -39,6 +39,7 @@ export function useDataIO({
   sessionOverrides,
   teacherSubjects,
   specialEvents,
+  extraLessons,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -56,6 +57,7 @@ export function useDataIO({
   saveSessionOverrides,
   saveTeacherSubjects,
   saveSpecialEvents,
+  saveExtraLessons,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -90,6 +92,7 @@ export function useDataIO({
           sessionOverrides,
           teacherSubjects,
           specialEvents,
+          extraLessons,
         },
         null,
         2
@@ -106,7 +109,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -168,6 +171,9 @@ export function useDataIO({
           if (Array.isArray(d.specialEvents) && saveSpecialEvents) {
             saveSpecialEvents(migrateSpecialEvents(d.specialEvents));
           }
+          if (Array.isArray(d.extraLessons) && saveExtraLessons) {
+            saveExtraLessons(d.extraLessons);
+          }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -227,6 +233,7 @@ export function useDataIO({
       saveSessionOverrides,
       saveTeacherSubjects,
       saveSpecialEvents,
+      saveExtraLessons,
       setImporting,
       setShowDataMgr,
     ]
@@ -257,6 +264,7 @@ export function useDataIO({
     saveClassSets([]);
     saveSessionOverrides([]);
     if (saveSpecialEvents) saveSpecialEvents([]);
+    if (saveExtraLessons) saveExtraLessons([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -282,6 +290,7 @@ export function useDataIO({
     saveClassSets,
     saveSessionOverrides,
     saveSpecialEvents,
+    saveExtraLessons,
     setActiveTimetableId,
     setSelected,
     setView,

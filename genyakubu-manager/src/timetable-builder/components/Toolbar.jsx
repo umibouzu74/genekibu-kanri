@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey, makeNgKey } from '../utils/scheduleKey';
+import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
+import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import SnapshotMenu from './SnapshotMenu';
 
 export default function Toolbar({
@@ -56,54 +57,18 @@ export default function Toolbar({
     }
   };
   const { violations, infeasibilities } = analysis;
-  const infeasItems = [
-    ...(infeasibilities?.noTeacherForSlot?.items || []).map(it => ({
-      kind: 'noTeacher',
-      label: `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+  // 種別ごとのラベル文言・informational 判定 (バッジに数えない種別) は
+  // INFEASIBILITY_KINDS レジストリ (utils/fixSuggestions.js, F2m) に集約。
+  const infeasItems = INFEASIBILITY_KINDS.flatMap(def =>
+    (infeasibilities?.[def.key]?.items || []).map(it => ({
+      kind: def.kind,
+      ...(def.informational ? { informational: true } : {}),
+      label: def.label(it),
       suggestions: it.suggestions || [],
-    })),
-    ...(infeasibilities?.subjectCapacityShortage?.items || []).map(it => ({
-      kind: 'capacity',
-      label: `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
-      suggestions: it.suggestions || [],
-    })),
-    // quotaCellMismatch は「意図的にコマ数をセル数未満にして残りを手動運用」
-    // が正当にあり得るため informational 扱い: popover には出すが ⚠ バッジの
-    // 件数には数えない (数えると違反ゼロでも赤バッジが恒久点灯してしまう)
-    ...(infeasibilities?.quotaCellMismatch?.items || []).map(it => ({
-      kind: 'quotaMismatch',
-      informational: true,
-      label: `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells}${it.className ? `【${it.className}】` : ''} (使う日 × 使う時限${it.lockedEmpty ? ` − 空ロック ${it.lockedEmpty}` : ''})。完全解を狙う場合は一致させてください`,
-      suggestions: it.suggestions || [],
-    })),
-    ...(infeasibilities?.subjectQuotaOverDays?.items || []).map(it => ({
-      kind: 'quotaOverDays',
-      label: `${it.subject}: コマ数 ${it.quota} > 使う日数 ${it.days} (同日重複禁止のため達成不能)`,
-      suggestions: it.suggestions || [],
-    })),
-  ];
+    })));
 
-  // popover の開閉と外側クリック検知
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const popoverRef = useRef(null);
-  useEffect(() => {
-    if (!popoverOpen) return;
-    const handler = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        setPopoverOpen(false);
-      }
-    };
-    const keyHandler = (e) => {
-      if (e.key === 'Escape') setPopoverOpen(false);
-    };
-    // mousedown で先に閉じることで「ボタンの再クリックで閉じる」も両立
-    window.addEventListener('mousedown', handler);
-    window.addEventListener('keydown', keyHandler);
-    return () => {
-      window.removeEventListener('mousedown', handler);
-      window.removeEventListener('keydown', keyHandler);
-    };
-  }, [popoverOpen]);
+  // popover の開閉と外側クリック検知 (F2l: 共有フック)
+  const { open: popoverOpen, setOpen: setPopoverOpen, ref: popoverRef } = useDismissablePopover();
 
   const handleClearClick = async () => {
     const ok = await showConfirm(

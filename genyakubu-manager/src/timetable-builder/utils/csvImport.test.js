@@ -153,6 +153,19 @@ describe('parseNgCsv (E2a)', () => {
     expect(parseNgCsv(csv, ctx).rows).toHaveLength(1);
   });
 
+  it('空白を含む講師名でも別の 3 つ組と誤って重複扱いされない (F2h)', () => {
+    // 空白結合キーだと両行とも「田中 太郎 12/25 1限」に化けて 2 行目が
+    // silent に skip されていた。
+    const csv = `name,date,period
+田中 太郎,12/25,1限
+田中,太郎 12/25,1限`;
+    const r = parseNgCsv(csv, ctx);
+    expect(r.rows).toEqual([
+      { name: '田中 太郎', date: '12/25', period: '1限' },
+      { name: '田中', date: '太郎 12/25', period: '1限' },
+    ]);
+  });
+
   it('未登録の講師 / 日付 / 時限を warning として返す', () => {
     const csv = `name,date,period
 佐藤,12/31,4限`;

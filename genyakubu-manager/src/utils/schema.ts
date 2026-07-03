@@ -24,6 +24,7 @@ import type {
   ExamPeriod,
   ExamPrepSchedule,
   ExportBundle,
+  ExtraLesson,
   Holiday,
   PartTimeStaffObject,
   ScheduleAdjustment,
@@ -37,7 +38,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -216,6 +217,20 @@ export function isSpecialEvent(x: unknown): x is SpecialEvent {
     return false;
   }
   if (!Array.isArray(x.targetGrades)) return false;
+  return true;
+}
+
+export function isExtraLesson(x: unknown): x is ExtraLesson {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isIsoDate(x.date)) return false;
+  if (!isString(x.time)) return false;
+  if (!isString(x.grade)) return false;
+  if (!isString(x.subj)) return false;
+  if (!isString(x.teacher)) return false;
+  for (const k of ["cls", "room", "label", "note"] as const) {
+    if (x[k] !== undefined && !isString(x[k])) return false;
+  }
   return true;
 }
 
@@ -438,6 +453,18 @@ export function validateExportBundle(
         ok: false,
         error: `examPrepSchedules[${bad}] の形式が不正です`,
         path: `examPrepSchedules[${bad}]`,
+      };
+  }
+
+  if (raw.extraLessons != null) {
+    if (!Array.isArray(raw.extraLessons))
+      return { ok: false, error: "extraLessons が配列ではありません" };
+    const bad = raw.extraLessons.findIndex((l: unknown) => !isExtraLesson(l));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `extraLessons[${bad}] の形式が不正です`,
+        path: `extraLessons[${bad}]`,
       };
   }
 
@@ -755,6 +782,14 @@ export function migrateExportBundle(raw: unknown): unknown {
       )
     ) {
       (bundle.displayCutoff as Record<string, unknown>).cohorts = [];
+    }
+  }
+
+  // v14 → v15: extraLessons (追加授業: 特定日付の単発コマ) を追加。
+  //             既存データは空配列で初期化。
+  if (version < 15) {
+    if (!Array.isArray(bundle.extraLessons)) {
+      bundle.extraLessons = [];
     }
   }
 
