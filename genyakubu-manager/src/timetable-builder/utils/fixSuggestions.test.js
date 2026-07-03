@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { suggestForNoTeacher, suggestForCapacity, buildFixSuggestions } from './fixSuggestions';
+import { suggestForNoTeacher, suggestForCapacity, buildFixSuggestions, INFEASIBILITY_KINDS } from './fixSuggestions';
 
 const teacher = (name, subjects, ngSlots = []) => ({ name, subjects, ngSlots });
 const config = {
@@ -144,5 +144,48 @@ describe('buildFixSuggestions', () => {
       { currentConfig: config, teachers: [], maxDailyHours: 6 },
     );
     expect(out.noTeacherForSlot.items).toEqual([]);
+  });
+});
+
+describe('INFEASIBILITY_KINDS (F2m レジストリ)', () => {
+  it('computeInfeasibilities の 4 種別を全てカバーする', () => {
+    expect(INFEASIBILITY_KINDS.map(d => d.key)).toEqual([
+      'noTeacherForSlot',
+      'subjectCapacityShortage',
+      'quotaCellMismatch',
+      'subjectQuotaOverDays',
+    ]);
+  });
+
+  it('informational は quotaCellMismatch のみ (バッジに数えない種別)', () => {
+    expect(INFEASIBILITY_KINDS.filter(d => d.informational).map(d => d.key))
+      .toEqual(['quotaCellMismatch']);
+  });
+
+  it('各種別の label が item から表示文言を生成する', () => {
+    const byKey = Object.fromEntries(INFEASIBILITY_KINDS.map(d => [d.key, d]));
+    expect(byKey.noTeacherForSlot.label({ date: '12/25', period: '1限', subject: '数学' }))
+      .toContain('担当できる講師が居ません');
+    expect(byKey.subjectCapacityShortage.label({ subject: '英語', demand: 5, capacity: 3, teacherCount: 1 }))
+      .toContain('必要 5 コマ');
+    expect(byKey.quotaCellMismatch.label({ totalQuota: 3, cells: 6, className: 'A', lockedEmpty: 1 }))
+      .toContain('【A】');
+    expect(byKey.subjectQuotaOverDays.label({ subject: '数学', quota: 4, days: 3 }))
+      .toContain('コマ数 4 > 使う日数 3');
+  });
+
+  it('buildFixSuggestions はレジストリの全種別に suggestions を付与する', () => {
+    const out = buildFixSuggestions(
+      {
+        noTeacherForSlot: { count: 1, items: [{ date: '12/25', period: '1限', subject: '数学' }] },
+        subjectCapacityShortage: { count: 1, items: [{ subject: '英語', demand: 50, capacity: 36, teacherCount: 1 }] },
+        quotaCellMismatch: { count: 1, items: [{ totalQuota: 3, cells: 6 }] },
+        subjectQuotaOverDays: { count: 1, items: [{ subject: '数学', quota: 4, days: 3 }] },
+      },
+      { currentConfig: config, teachers: [teacher('堀上', ['英語'])], maxDailyHours: 6 },
+    );
+    INFEASIBILITY_KINDS.forEach(({ key }) => {
+      expect(out[key].items[0].suggestions.length).toBeGreaterThan(0);
+    });
   });
 });

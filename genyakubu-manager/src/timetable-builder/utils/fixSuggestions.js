@@ -108,28 +108,54 @@ export function suggestForQuotaOverDays(item) {
   return [hint(`「${subject}」のコマ数 (${quota}) が使う日数 (${days}) を超えています。同じ日に同じ科目は 1 コマまでのため、コマ数を減らすか日数を増やしてください。`)];
 }
 
+// F2m: infeasibility 種別のレジストリ。種別ごとの「popover 表示ラベル」と
+// 「修正提案の生成関数」をここに集約し、buildFixSuggestions と Toolbar の
+// 同型 4 連ブロックを解消する。新しい種別を computeInfeasibilities に
+// 追加するときは、ここに 1 エントリ足せば表示と提案の両方に反映される。
+//   - key: computeInfeasibilities の戻り値のフィールド名
+//   - kind: 表示側の種別識別子 (Toolbar の item.kind)
+//   - informational: true = popover には出すが ⚠ バッジ件数には数えない
+//     (quotaCellMismatch は「意図的にコマ数をセル数未満にして残りを手動
+//     運用」が正当にあり得るため。数えると違反ゼロでも赤バッジが恒久点灯)
+//   - label(item): popover に出す 1 行文言
+//   - suggest(item, ctx): 修正提案 ({ text, action? }[])
+export const INFEASIBILITY_KINDS = [
+  {
+    key: 'noTeacherForSlot',
+    kind: 'noTeacher',
+    label: (it) => `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+    suggest: suggestForNoTeacher,
+  },
+  {
+    key: 'subjectCapacityShortage',
+    kind: 'capacity',
+    label: (it) => `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+    suggest: suggestForCapacity,
+  },
+  {
+    key: 'quotaCellMismatch',
+    kind: 'quotaMismatch',
+    informational: true,
+    label: (it) => `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells}${it.className ? `【${it.className}】` : ''} (使う日 × 使う時限${it.lockedEmpty ? ` − 空ロック ${it.lockedEmpty}` : ''})。完全解を狙う場合は一致させてください`,
+    suggest: suggestForQuotaMismatch,
+  },
+  {
+    key: 'subjectQuotaOverDays',
+    kind: 'quotaOverDays',
+    label: (it) => `${it.subject}: コマ数 ${it.quota} > 使う日数 ${it.days} (同日重複禁止のため達成不能)`,
+    suggest: suggestForQuotaOverDays,
+  },
+];
+
 export function buildFixSuggestions(infeasibilities, ctx = {}) {
   if (!infeasibilities) return infeasibilities;
-  const noTeacher = infeasibilities.noTeacherForSlot || { count: 0, items: [] };
-  const capacity = infeasibilities.subjectCapacityShortage || { count: 0, items: [] };
-  const quotaMismatch = infeasibilities.quotaCellMismatch || { count: 0, items: [] };
-  const quotaOverDays = infeasibilities.subjectQuotaOverDays || { count: 0, items: [] };
-  return {
-    noTeacherForSlot: {
-      ...noTeacher,
-      items: (noTeacher.items || []).map(it => ({ ...it, suggestions: suggestForNoTeacher(it, ctx) })),
-    },
-    subjectCapacityShortage: {
-      ...capacity,
-      items: (capacity.items || []).map(it => ({ ...it, suggestions: suggestForCapacity(it, ctx) })),
-    },
-    quotaCellMismatch: {
-      ...quotaMismatch,
-      items: (quotaMismatch.items || []).map(it => ({ ...it, suggestions: suggestForQuotaMismatch(it) })),
-    },
-    subjectQuotaOverDays: {
-      ...quotaOverDays,
-      items: (quotaOverDays.items || []).map(it => ({ ...it, suggestions: suggestForQuotaOverDays(it) })),
-    },
-  };
+  const out = {};
+  INFEASIBILITY_KINDS.forEach(({ key, suggest }) => {
+    const src = infeasibilities[key] || { count: 0, items: [] };
+    out[key] = {
+      ...src,
+      items: (src.items || []).map(it => ({ ...it, suggestions: suggest(it, ctx) })),
+    };
+  });
+  return out;
 }
