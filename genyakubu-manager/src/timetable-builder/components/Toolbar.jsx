@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey, makeNgKey } from '../utils/scheduleKey';
 import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
+import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import SnapshotMenu from './SnapshotMenu';
 
 export default function Toolbar({
@@ -67,27 +67,8 @@ export default function Toolbar({
       suggestions: it.suggestions || [],
     })));
 
-  // popover の開閉と外側クリック検知
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const popoverRef = useRef(null);
-  useEffect(() => {
-    if (!popoverOpen) return;
-    const handler = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        setPopoverOpen(false);
-      }
-    };
-    const keyHandler = (e) => {
-      if (e.key === 'Escape') setPopoverOpen(false);
-    };
-    // mousedown で先に閉じることで「ボタンの再クリックで閉じる」も両立
-    window.addEventListener('mousedown', handler);
-    window.addEventListener('keydown', keyHandler);
-    return () => {
-      window.removeEventListener('mousedown', handler);
-      window.removeEventListener('keydown', keyHandler);
-    };
-  }, [popoverOpen]);
+  // popover の開閉と外側クリック検知 (F2l: 共有フック)
+  const { open: popoverOpen, setOpen: setPopoverOpen, ref: popoverRef } = useDismissablePopover();
 
   const handleClearClick = async () => {
     const ok = await showConfirm(
