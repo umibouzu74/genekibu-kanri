@@ -919,10 +919,17 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: exceljs の Workbook + xlsx writer のみ tree-shake、または OOXML 自前。
 - **規模**: 大 / **価値**: 低 (動的 import で吸収済み)
 
-#### E4d. 🟡 useAnalysis 再計算プロファイル (新規)
-- **現状**: useAnalysis は 5 段 useMemo (D4e + D1c で追加)。`project.tabs` が変わると `globalUsage` / `tabErrorCounts` 両方が再計算。タブ数 / セル数が増えた時の hot path を計測していない。
-- **改善**: React Profiler で 100 操作分の reflow を記録し、ボトルネックがあれば WeakMap キャッシュや selective recompute 化。
-- **規模**: 小〜中 / **価値**: 中
+#### E4d. ✅ useAnalysis 再計算プロファイル (2026-07-03 計測完了・最適化不要と判断)
+- **旧現状**: useAnalysis は 5 段 useMemo。タブ数 / セル数が増えた時の hot path が未計測だった。
+- **計測**: `utils/analysisScaling.test.js` + `npm run bench:analysis`
+  (BENCH=1 ガード)。実運用超級の合成 project (3 タブ × 7 クラス × 12 日 ×
+  4 限 = 1008 セル全充填・講師 30 名) で関数別のフル再計算コストを実測
+- **結果 (2026-07-03、コンテナ環境)**: 合計 **~4.3ms/回**
+  (内訳: tabViolationCounts 1.9 / globalUsage 1.2 / activeAnalysis 0.6 /
+  violations 0.3 / infeasibilities+fix 0.1 / dashboard 0.1)。
+  キー入力のフレーム予算 16ms に対して十分小さい
+- **判断**: WeakMap キャッシュ / selective recompute は**不要** (時期尚早)。
+  タブ数が 10 超級になったら bench:analysis を再実行して判断し直す
 
 #### E4e. ⚪ React 19 / Compiler 移行検討 (新規)
 - **現状**: 手書きの useMemo / useCallback / Context value memo (CLAUDE.md 別記載なし)。
