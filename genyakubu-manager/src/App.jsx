@@ -54,6 +54,7 @@ import {
   buildMonthLabel,
   buildPrintStyles,
   buildTimetableHeaderHtml,
+  formatPrintDate,
 } from "./utils/printStyles";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
@@ -644,9 +645,8 @@ export default function App() {
     const dateInput = el.querySelector('input[type="date"]');
     const printDate = dateInput?.value || "";
     const printDay = printDate ? dateToDay(printDate) : "";
-    const dateText = printDate
-      ? `${printDate}${printDay ? `（${printDay}）` : ""}`
-      : "";
+    // 紙面ヘッダは和式 (YYYY年MM月DD日（曜）) に統一 (E1h)
+    const dateText = printDate ? formatPrintDate(printDate, printDay) : "";
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
@@ -1494,6 +1494,8 @@ export default function App() {
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
           .no-print { display: none !important; }
+          /* E1h: 時間グループ / カレンダーセルがページ境界で割れないように */
+          .dash-time-group, .event-cal-cell { break-inside: avoid; page-break-inside: avoid; }
           body { font-size: 10px !important; }
           input, select, textarea { font-size: 10px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }

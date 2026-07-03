@@ -7,8 +7,25 @@ import {
   buildPrintStyles,
   buildTimetableHeaderHtml,
   describeMonthVisibility,
+  formatPrintDate,
   groupStaffBySubject,
 } from "./printStyles";
+
+describe("formatPrintDate", () => {
+  it("ISO 日付を和式 (YYYY年MM月DD日（曜）) に整形する", () => {
+    expect(formatPrintDate("2026-07-03", "金")).toBe("2026年07月03日（金）");
+  });
+
+  it("曜日なしなら日付のみ", () => {
+    expect(formatPrintDate("2026-07-03")).toBe("2026年07月03日");
+  });
+
+  it("ISO 形式でない入力・空はそのまま返す (安全側)", () => {
+    expect(formatPrintDate("7/3", "金")).toBe("7/3");
+    expect(formatPrintDate("")).toBe("");
+    expect(formatPrintDate(undefined)).toBe("");
+  });
+});
 
 describe("describeMonthVisibility", () => {
   it("デフォルト (両方 false・タグ除外なし) は空文字", () => {
@@ -212,7 +229,7 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("バッジ凡例 (代/合/振/移/特訓) を含む", () => {
+  it("バッジ凡例 (代/合/振/移/特訓/追) を含む", () => {
     const html = buildMonthHeaderHtml({
       teacher: "山田",
       year: 2026,
@@ -225,6 +242,7 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("振</b>振替");
     expect(html).toContain("移</b>時間変更");
     expect(html).toContain("特訓</b>テスト直前特訓");
+    expect(html).toContain("追</b>追加授業");
   });
 });
 

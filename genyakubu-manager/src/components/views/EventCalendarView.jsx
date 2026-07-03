@@ -11,7 +11,10 @@ import {
   TAG_META,
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
-import { describeExtraLesson } from "../../utils/extraLessons";
+import {
+  describeExtraLesson,
+  upcomingExtraLessons,
+} from "../../utils/extraLessons";
 import { PrintButton } from "../PrintButton";
 import {
   DEFAULT_EVENT_VISIBILITY,
@@ -134,8 +137,12 @@ export function EventCalendarView({
       }
     }
     if (showExtra) {
-      for (const l of extraLessons) {
-        if (l.date < monthStart || l.date > monthEnd) continue;
+      // 日付 → 時刻順に整列済みのヘルパを使う (同日複数コマの表示順を保証。
+      // 最終 sort は stable + startDate 比較のみなので、この順が保たれる)
+      for (const l of upcomingExtraLessons(extraLessons, {
+        winStartStr: monthStart,
+        winEndStr: monthEnd,
+      })) {
         all.push({
           kind: EVENT_KIND.EXTRA_LESSON,
           id: `x-${l.id}`,
@@ -320,6 +327,7 @@ export function EventCalendarView({
             return (
               <div
                 key={`empty-${i}`}
+                className="event-cal-cell"
                 style={{ background: "#fafafa", minHeight: 110 }}
               />
             );
@@ -331,6 +339,7 @@ export function EventCalendarView({
           return (
             <div
               key={ds}
+              className="event-cal-cell"
               style={{
                 background: isT
                   ? "#fffbe6"

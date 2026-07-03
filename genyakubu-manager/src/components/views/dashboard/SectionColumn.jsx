@@ -106,7 +106,8 @@ export function SectionColumn({
                 ...new Set(movedIn.map((s) => s.time).filter(Boolean)),
               ];
               return (
-              <div key={time}>
+              // dash-time-group: 印刷時にページ境界で割れないようにする (E1h)
+              <div key={time} className="dash-time-group">
                 <div
                   style={{
                     fontSize: 12,
