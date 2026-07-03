@@ -1646,9 +1646,14 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
   slot の曜日ベースで動的生成 (`buildColumnDefs`) されるため、特定日付の
   単発コマは「追加授業専用セクション」等の設計判断が必要。
   Dashboard の「時間割」モードも同経路。規模: 中
-- **H1b. EventCalendarView への表示**: 現状イベント (休講/テスト期間/
-  特別イベント) 専用。追加授業をバーとして出すなら visibility トグル
-  (EventVisibilityToggles) の種別追加も必要。規模: 小〜中
+- ✅ **H1b (2026-07-03)**: イベントカレンダーに追加授業を表示。
+  visibility トグル「追加授業」(緑・既定 OFF) を追加 — イベントカレンダー
+  専用の opt-in (`includeExtraLessons`) で、MonthView の追加授業は
+  「講師本人の担当コマ」なので従来どおり常時表示のまま。グリッドは
+  「開始時刻 + 短ラベル」の単日バッジ、一覧行は種別ラベル・担当・教室・
+  メモ付き。バッジクリックで ExtraLessonManager の編集フォームへジャンプ
+  (useEditTarget/useNewEntryTarget を配線)、新規登録ボタンにも 4 種目と
+  して追加。テスト +7 (EventCalendarView.test.jsx 新設 5 + Manager 2)
 - ~~**H1c. 回数カウント (第N回) への通算**~~ **却下 (2026-07-03、
   ユーザ判断: 不要)**。追加授業は回数に数えない仕様で確定。
   再提案しないこと (リポジトリ CLAUDE.md の却下リストにも記載)

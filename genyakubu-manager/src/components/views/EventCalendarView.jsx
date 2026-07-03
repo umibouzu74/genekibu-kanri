@@ -6,10 +6,12 @@ import {
   EVENT_KIND,
   EVENT_KIND_LABELS,
   EXAM_META,
+  EXTRA_LESSON_META,
   HOLIDAY_META,
   TAG_META,
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
+import { describeExtraLesson } from "../../utils/extraLessons";
 import { PrintButton } from "../PrintButton";
 import {
   DEFAULT_EVENT_VISIBILITY,
@@ -19,19 +21,21 @@ import {
   isSpecialEventVisible,
 } from "../EventVisibilityToggles";
 
-// イベントカレンダー (休講・テスト期間・特別イベントを統合表示)
+// イベントカレンダー (休講・テスト期間・特別イベント・追加授業を統合表示)
 //
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
-// 休講は常時表示。テスト期間 / 特別イベントは visibility プロパティで切替。
+// 休講は常時表示。テスト期間 / 特別イベント / 追加授業は visibility
+// プロパティで切替。
 //
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 
-// 新規登録ボタン定義 (休講含む 3 種)。
+// 新規登録ボタン定義 (休講含む 4 種)。
 const ADD_BUTTONS = Object.freeze([
   { key: EVENT_KIND.HOLIDAY, label: "休講", color: HOLIDAY_META.accent },
   { key: EVENT_KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
   { key: EVENT_KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
+  { key: EVENT_KIND.EXTRA_LESSON, label: "追加授業", color: EXTRA_LESSON_META.accent },
 ]);
 
 // 連続バーの border-radius を、左右の継続フラグから決定する。
@@ -46,6 +50,7 @@ export function EventCalendarView({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
+  extraLessons = [],
   onEventClick,
   onAddNewEvent,
   isAdmin = false,
@@ -83,6 +88,7 @@ export function EventCalendarView({
   // 月内に重なるイベントだけを抽出 + 日付昇順。休講は常時表示。
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
+  const showExtra = isEventKindVisible(visibility, EVENT_KIND.EXTRA_LESSON);
   const eventsInMonth = useMemo(() => {
     const all = [];
     for (const h of holidays) {
@@ -127,12 +133,36 @@ export function EventCalendarView({
         });
       }
     }
+    if (showExtra) {
+      for (const l of extraLessons) {
+        if (l.date < monthStart || l.date > monthEnd) continue;
+        all.push({
+          kind: EVENT_KIND.EXTRA_LESSON,
+          id: `x-${l.id}`,
+          // グリッドのバッジ幅が限られるので開始時刻のみ + 短ラベル
+          name: `${(l.time || "").split(/[-〜~]/)[0].trim()} ${describeExtraLesson(l)}`,
+          startDate: l.date,
+          endDate: l.date,
+          meta: EXTRA_LESSON_META,
+          // ツールチップ用の詳細 (時間全体・担当・教室・メモ)
+          detail: [
+            l.time,
+            l.teacher,
+            l.room ? `@${l.room}` : "",
+            l.note,
+          ]
+            .filter(Boolean)
+            .join(" / "),
+          source: l,
+        });
+      }
+    }
     return all.sort(
       (a, b) =>
         a.startDate.localeCompare(b.startDate) ||
         a.endDate.localeCompare(b.endDate)
     );
-  }, [holidays, examPeriods, specialEvents, showExam, showSpecial, visibility, monthStart, monthEnd]);
+  }, [holidays, examPeriods, specialEvents, extraLessons, showExam, showSpecial, showExtra, visibility, monthStart, monthEnd]);
 
   // 日付 → イベント[] の索引 (グリッド表示用)
   const eventsByDate = useMemo(() => {
@@ -255,6 +285,7 @@ export function EventCalendarView({
           visibility={visibility}
           onChange={onChangeVisibility}
           availableTags={availableTags}
+          includeExtraLessons
         />
       </div>
 
@@ -344,9 +375,9 @@ export function EventCalendarView({
                     title={`${EVENT_KIND_LABELS[ev.kind]}: ${ev.name}\n${formatDateRange(
                       ev.startDate,
                       ev.endDate
-                    )}${ev.source.memo ? "\n" + ev.source.memo : ""}${
-                      clickable ? "\n\nクリックで編集画面を開きます" : ""
-                    }`}
+                    )}${ev.detail ? "\n" + ev.detail : ""}${
+                      ev.source.memo ? "\n" + ev.source.memo : ""
+                    }${clickable ? "\n\nクリックで編集画面を開きます" : ""}`}
                     role={clickable ? "button" : undefined}
                     tabIndex={clickable ? 0 : undefined}
                     onClick={clickable ? () => onEventClick(ev) : undefined}
@@ -541,6 +572,31 @@ export function EventCalendarView({
                       {t}
                     </span>
                   ))}
+                {ev.kind === EVENT_KIND.EXTRA_LESSON && ev.source.label && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: EXTRA_LESSON_META.bg,
+                      color: EXTRA_LESSON_META.fg,
+                      border: `1px solid ${EXTRA_LESSON_META.accent}`,
+                    }}
+                  >
+                    {ev.source.label}
+                  </span>
+                )}
+                {ev.kind === EVENT_KIND.EXTRA_LESSON && ev.source.teacher && (
+                  <span style={{ fontSize: 11, color: "#666" }}>
+                    {ev.source.teacher}
+                  </span>
+                )}
+                {ev.kind === EVENT_KIND.EXTRA_LESSON && ev.source.room && (
+                  <span style={{ fontSize: 11, color: "#888" }}>
+                    @{ev.source.room}
+                  </span>
+                )}
                 <span style={{ fontSize: 11, color: "#666" }}>
                   {formatDateRange(ev.startDate, ev.endDate)}
                 </span>
@@ -563,6 +619,13 @@ export function EventCalendarView({
                     style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
                   >
                     {ev.source.memo}
+                  </span>
+                )}
+                {ev.kind === EVENT_KIND.EXTRA_LESSON && ev.source.note && (
+                  <span
+                    style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}
+                  >
+                    {ev.source.note}
                   </span>
                 )}
               </div>

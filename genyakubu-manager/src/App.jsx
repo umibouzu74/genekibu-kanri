@@ -1120,6 +1120,18 @@ export default function App() {
                 extraLessons={extraLessons}
                 onSave={saveExtraLessons}
                 isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.EXTRA_LESSON
+                    ? eventEditRequest.id
+                    : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON
+                    ? eventNewRequest.token
+                    : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
               />
             </>
           )}
@@ -1128,6 +1140,7 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               specialEvents={specialEvents}
+              extraLessons={extraLessons}
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
