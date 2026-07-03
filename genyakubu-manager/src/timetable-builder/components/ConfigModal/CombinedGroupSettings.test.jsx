@@ -177,3 +177,41 @@ describe('CombinedGroupSettings — 削除経路 (E3e)', () => {
     expect(screen.getByText('保存')).toBeInTheDocument();
   });
 });
+
+describe('CombinedGroupSettings — 他タブ由来グループは読み取り専用 (F5p)', () => {
+  // combinedGroups は project 共有・ラベル参照。現タブに無いクラス / 日程を
+  // 含むグループを編集すると、その要素が editor に表示されず解除も不能な
+  // まま保存できてしまう (タブ混成グループ)。編集は全要素が揃うタブでのみ
+  // 許可し、削除は孤立グループの掃除のため全タブで許可する。
+  it('現タブに無いクラスを含むグループは編集 disabled + 案内表示', () => {
+    // currentConfig.classes は A/B/C のみ — 「中1A」は他タブのクラス
+    const crossTab = { id: 9, subject: '英語', classes: ['A', '中1A'], dates: null };
+    const { updateCombinedGroup } = renderSettings({ combinedGroups: [crossTab] });
+    const edit = screen.getByText('編集');
+    expect(edit).toBeDisabled();
+    fireEvent.click(edit);
+    expect(updateCombinedGroup).not.toHaveBeenCalled();
+    expect(screen.queryByText('保存')).toBeNull();
+    expect(screen.getByText(/他タブのクラス・日程 \(中1A\) を含むため/)).toBeInTheDocument();
+  });
+
+  it('現タブに無い日程を含むグループも編集 disabled', () => {
+    // currentConfig.dates は 7/1, 7/2 のみ — 8/1 は他タブの日程
+    const crossDate = { id: 10, subject: '英語', classes: ['A', 'B'], dates: ['7/1', '8/1'] };
+    renderSettings({ combinedGroups: [crossDate] });
+    expect(screen.getByText('編集')).toBeDisabled();
+    expect(screen.getByText(/\(8\/1\) を含むため/)).toBeInTheDocument();
+  });
+
+  it('全日程 (dates=null) は日程チェックの対象外 (クラスが揃えば編集可)', () => {
+    renderSettings(); // GROUP: 英語 A・B 全日程
+    expect(screen.getByText('編集')).toBeEnabled();
+  });
+
+  it('読み取り専用でも削除 (孤立グループの掃除) はできる', () => {
+    const crossTab = { id: 9, subject: '英語', classes: ['A', '中1A'], dates: null };
+    const { removeCombinedGroup } = renderSettings({ combinedGroups: [crossTab] });
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(9);
+  });
+});

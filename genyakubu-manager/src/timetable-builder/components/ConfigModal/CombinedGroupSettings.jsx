@@ -25,6 +25,19 @@ export default function CombinedGroupSettings() {
   const allClasses = currentConfig.classes;
   const allDates = currentConfig.dates;
 
+  // F5p (2026-07-03 決定): 他タブ由来のグループは現タブから読み取り専用。
+  // combinedGroups は project 共有・ラベル参照なので、現タブに無いクラス /
+  // 日程ラベルを含むグループをこのタブで編集すると、その要素が editor 上で
+  // 見えない・解除もできないままタブ混成グループとして保存できてしまう。
+  // 編集は「全要素が現タブに存在するタブ」でのみ許可し、削除は孤立グループ
+  // (作成元タブが消えた等) の掃除経路として全タブで許可する。
+  const classLabelSet = new Set(allClasses.map((c) => c.label));
+  const dateLabelSet = new Set(allDates.map((d) => d.label));
+  const foreignRefsOf = (group) => [
+    ...group.classes.filter((c) => !classLabelSet.has(c)),
+    ...(group.dates || []).filter((d) => !dateLabelSet.has(d)),
+  ];
+
   const startNewGroup = () => {
     setDraft({ id: null, subject: commonSubjects[0] || "", classes: [], dates: null });
   };
@@ -199,45 +212,57 @@ export default function CombinedGroupSettings() {
       {/* 既存グループ一覧 */}
       {combinedGroups.length > 0 ? (
         <div className="space-y-3 mb-4">
-          {combinedGroups.map(group => (
-            <div key={group.id}>
-              {draft?.id === group.id ? (
-                renderGroupEditor()
-              ) : (
-                <div className="border border-builder-border rounded-lg p-3 bg-builder-surface flex items-center justify-between hover:shadow-sm transition-shadow">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-bold text-sm bg-builder-info-soft text-builder-ink px-2 py-0.5 rounded">
-                      {group.subject}
-                    </span>
-                    <div className="flex gap-1">
-                      {group.classes.map(cls => (
-                        <span key={cls} className="text-xs bg-builder-surface-alt text-builder-ink-muted px-2 py-0.5 rounded border border-builder-border">
-                          {cls}
+          {combinedGroups.map(group => {
+            const foreignRefs = foreignRefsOf(group);
+            return (
+              <div key={group.id}>
+                {draft?.id === group.id ? (
+                  renderGroupEditor()
+                ) : (
+                  <div className="border border-builder-border rounded-lg p-3 bg-builder-surface flex items-center justify-between hover:shadow-sm transition-shadow">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-bold text-sm bg-builder-info-soft text-builder-ink px-2 py-0.5 rounded">
+                        {group.subject}
+                      </span>
+                      <div className="flex gap-1">
+                        {group.classes.map(cls => (
+                          <span key={cls} className="text-xs bg-builder-surface-alt text-builder-ink-muted px-2 py-0.5 rounded border border-builder-border">
+                            {cls}
+                          </span>
+                        ))}
+                      </div>
+                      <span className="text-xs text-builder-ink-muted">
+                        {group.dates === null ? '全日程' : `${group.dates.length}日`}
+                      </span>
+                      {foreignRefs.length > 0 && (
+                        <span className="text-xs text-builder-orange">
+                          🔒 他タブのクラス・日程 ({foreignRefs.join('・')}) を含むため、このタブでは編集できません
                         </span>
-                      ))}
+                      )}
                     </div>
-                    <span className="text-xs text-builder-ink-muted">
-                      {group.dates === null ? '全日程' : `${group.dates.length}日`}
-                    </span>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => startEdit(group)}
+                        disabled={foreignRefs.length > 0}
+                        title={foreignRefs.length > 0
+                          ? '作成したタブ (全クラス・日程が揃うタブ) で編集してください'
+                          : undefined}
+                        className="text-xs text-builder-blue hover:underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
+                      >
+                        編集
+                      </button>
+                      <button
+                        onClick={() => handleRemove(group.id)}
+                        className="text-xs text-builder-red hover:underline"
+                      >
+                        削除
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => startEdit(group)}
-                      className="text-xs text-builder-blue hover:underline"
-                    >
-                      編集
-                    </button>
-                    <button
-                      onClick={() => handleRemove(group.id)}
-                      className="text-xs text-builder-red hover:underline"
-                    >
-                      削除
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="text-sm text-builder-ink-muted mb-4 p-4 bg-builder-surface-alt rounded border border-dashed border-builder-border text-center">

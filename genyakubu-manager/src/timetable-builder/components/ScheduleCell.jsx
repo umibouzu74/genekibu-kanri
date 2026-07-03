@@ -172,6 +172,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       onDrop={(e) => onDrop(e, key, entry)}
       onDragEnd={onDragEnd}
       onContextMenu={(e) => onContextMenu(e, dateId, periodId, classId)}
+      // タッチ端末で長押しメニューを開く際のテキスト選択抑止セレクタ
+      // (tailwind.css の @media (pointer: coarse) ブロック) の対象マーカー
+      data-longpress=""
       {...longPress}
     >
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>

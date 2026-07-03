@@ -45,3 +45,42 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/*
+ * タッチ操作対応 (E1f 残)。
+ *
+ * touch-action: manipulation — 操作要素上のダブルタップズームを無効化する
+ * (連続タップでの誤ズーム防止)。スクロールとピンチズームは殺さないので
+ * アクセシビリティ (拡大表示) は維持される。視覚変化はゼロ。
+ */
+.builder-root button,
+.builder-root select,
+.builder-root input,
+.builder-root textarea,
+.builder-root [role="button"],
+.builder-root th[scope] {
+  touch-action: manipulation;
+}
+
+/*
+ * タッチ主体の端末 (pointer: coarse) のみ:
+ * - ボタン / select の最低タップ領域を 44px に (WCAG 2.5.5 / Apple HIG)。
+ *   デスクトップには適用されないので既存レイアウトは不変。
+ * - 長押しメニューを持つ要素 (ヘッダ th / スケジュールセル / NG マトリクス)
+ *   で長押し中のテキスト選択・コールアウトを抑止する。
+ * 実機 (iOS Safari / Android Chrome) での見た目・操作感の確認は未実施
+ * (ROADMAP G.2 の実機検証項目)。
+ */
+@media (pointer: coarse) {
+  .builder-root button,
+  .builder-root select {
+    min-height: 44px;
+  }
+  .builder-root th[scope],
+  .builder-root td[role="button"],
+  .builder-root [data-longpress] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}

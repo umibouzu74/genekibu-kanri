@@ -33,7 +33,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | B (中規模リファクタ) | B1-B4 すべて完了 |
 | C (破壊的再設計) | C1 ID 化 / C2 reducer 化 / C3 デザイン統合 / C4 Excel ライブラリ置換 |
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
-| E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
+| E1 (UX 完成度) | E1a モバイル / E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1f タッチ / E1g 修正提案 (E1a/E1f は実機確認のみ残 → G.2) |
 | E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
 | E3 (テスト/信頼性) | E3d schema 検証 / E3e ConfigModal sub-tests |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
@@ -42,7 +42,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | F (レビュー起点の修正) | F.1/F.3 一括修正 (2026-07-02) / F.4-F.5 の改善 10 バッチ (2026-07-02〜03、PR #141): 読込クラッシュループ根絶 F5a-F5e+F2f / 期間カレンダー順 F5j / autosave debounce F2c / focus trap F5q-F5r / Excel シート名 F5g-F5i / infeasibility 再設計 F2g+F5x / モーダル UI F5k-F5o / ソルバ整合 F5t-F5y / 空ロック仕様 F5w / fingerprint 失効 F2n-F2p / 参照整合 F2k+H3/H5/F2o / a11y F2a-F2b |
 | G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
-**残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統: E1a/E1f 残り ·
+**残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統:
 E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3f/E3g テスト深化 ·
 E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
@@ -77,7 +77,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | キーボード操作 / a11y | 🟢 focus trap・全操作のキーボード代替・ARIA 対応済 (E1b + F2a/F2b)。スクリーンリーダーでの実機検証は未実施 |
 | 合同グループ | 🟡 機能・UI・検証は揃ったが実運用検証が浅い。他タブグループの編集挙動は仕様判断待ち (F5p) |
 | オンボーディング | 🟢 初回 5 ステップガイド + ❓ ヘルプから再表示 (D1a) |
-| モバイル対応 | 🟡 Toolbar 折返し・長押しメニュー済。ScheduleTable 幅 / 44px / ピンチ抑止が残 (E1a/E1f) |
+| モバイル対応 | 🟢 コード側は完了 (Toolbar 折返し / Excel dropdown / 長押し / 44px / ダブルタップズーム抑止)。実機確認のみ残 (G.2) |
 | TypeScript 化 | 🔴 未対応 (親アプリは部分的に TS) |
 | Firebase 同期 | 🔴 意図的に未対応 |
 
@@ -598,11 +598,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E1. UX 完成度の残り
 
-#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b / Toolbar 折返し 完了)
-- **現状**: Toolbar のボタン群は狭画面で折り返すように修正済 (2026-06-29)。Header の Excel ボタン dropdown 化と ScheduleTable の max-w 制御は残。
-- **✅ 完了分**: Toolbar 右側のボタンクラスタを `flex` → `flex flex-wrap justify-end` に。768px 以下でボタンが画面外へはみ出さず段組みで折り返す。
-- **残り**: Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で制御。
-- **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
+#### E1a. ✅ モバイル / 狭画面対応 (旧 D1b / 2026-07-03 コード側完了)
+- **✅ Toolbar 折返し** (2026-06-29): ボタンクラスタを `flex flex-wrap justify-end` に。
+- **✅ Header Excel dropdown** (2026-06-29, commit 62f8639): 出力 2 ボタンを
+  「📊 Excel出力 ▾」dropdown (role=menu) に集約。
+- **✅ ScheduleTable 幅** (2026-07-03 クローズ判断): テーブルは
+  `overflow-auto` コンテナ内で横スクロールし、親 (app-main) の幅を
+  はみ出さない現行構造で解消済み。CSS variable 化は不要と判断。
+- **残り**: 実機 (タブレット/スマホ) での通し確認のみ (G.2)。
 
 #### E1b. ✅ キーボード操作完成度 (2026-06-29 完了 / 旧 D5b + D5a 延期分 / ScheduleCell 端動作のみ残)
 - **旧現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装で Tab が背景まで抜けた。タブ群も矢印キー非対応。
@@ -649,7 +652,20 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
   - **ScheduleCell**: `{...useLongPress(...)}` を `<td>` に付与し、長押しで `onContextMenu` を発火 (右クリックと同じメニュー)。HTML5 DnD はタッチで発火しないので drag と競合しない。hooks-rules を守るため早期 return 前で呼ぶ。
   - **オンボーディング**: 「右クリック (タッチ端末では長押し)」と案内追記。
   - **テスト**: useLongPress.test.jsx 新規 6。
-- **残り**: ピンチズーム抑止、ボタンの最低タップ領域 44px の徹底、ヘッダ (日付/時限/クラス) セルへの長押し適用。
+- **✅ 完了分 (ヘッダ長押し / 2026-06-29, commit 62f8639)**: ScheduleTable の
+  ヘッダ (日付/時限/クラス) に LongPressTh を導入し、長押しで追加・名称変更・
+  削除メニューを開けるように。
+- **✅ 完了分 (タッチ CSS / 2026-07-03)**: tailwind.css の `.builder-root`
+  スコープに追加。
+  - `touch-action: manipulation` を操作要素 (button / select / input /
+    role=button / th) に常時適用 — ダブルタップズームの誤爆を防止。
+    ピンチズーム自体は a11y (拡大表示) のため殺さない (「ピンチ抑止」は
+    manipulation で足りると判断)。
+  - `@media (pointer: coarse)` (タッチ主体端末のみ): button / select の
+    min-height 44px (WCAG 2.5.5)、長押し対象 (th / td[role=button] /
+    [data-longpress]) の長押し中テキスト選択・コールアウト抑止。
+    デスクトップのレイアウトは不変。
+- **残り**: 実機 (iOS Safari / Android Chrome) での操作感確認のみ (G.2)。
 - **規模**: 中 / **価値**: 中
 
 #### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)
@@ -1399,11 +1415,11 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 
 ### G.1 判断待ち (実装前にユーザ/PM の決定が必要)
 
-- **F5p**: 他タブで作った合同グループを現タブで「編集」すると、他タブの
-  クラスが未選択表示になり解除も不能 (タブ混成グループが作れる)。
-  combinedGroups が project 共有・ラベル参照である以上、仕様の可能性もある。
-  選択肢: (a) 編集は全タブのクラスを表示 (b) 他タブ由来のグループは
-  現タブから読み取り専用 (c) 現状維持を仕様と明記
+- ✅ **F5p** (2026-07-03 案 (b) で実装): 他タブ由来 (= 現タブに無いクラス /
+  日程ラベルを含む) 合同グループは現タブから**読み取り専用**。編集ボタンを
+  disabled にし「🔒 他タブのクラス・日程 (...) を含むため、このタブでは
+  編集できません」を表示。削除は孤立グループ (作成元タブが消えた等) の
+  掃除経路として全タブで許可。テスト 4 件 (CombinedGroupSettings.test.jsx)
 - **E5 系の着手判断** (壊す系): E5e TypeScript 化 → E5b 完全 ID 化 →
   E5c style 統一 の順が推奨 (E 系末尾の表参照)。着手は要相談
 
@@ -1414,6 +1430,9 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 - **F5s**: useLongPress のゴースト click (メニューが指の真下に出るため
   長押し後の click が先頭項目を誤爆しうる) / 抑止フラグの解除漏れ。
   iOS Safari 等での実機検証が必要
+- **E1a/E1f 残**: タッチ CSS (44px min-height / ダブルタップズーム抑止 /
+  長押し中の選択抑止) とモバイルレイアウト全般の実機確認
+  (コード側は 2026-07-03 完了)
 - **C4 残**: exceljs 出力の見栄え (科目カラー / 結合 / 罫線 / 列幅) の目視確認
 - **A7** (CLAUDE.md 既存): Shift+? の US/JP キーレイアウト実機検証
 - **スクリーンリーダー実機検証**: F2a で操作は可能になったが NVDA/VoiceOver
@@ -1475,9 +1494,8 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 ### G.5 機能・テストの未着手 (E 系、規模順)
 
 小〜中: E1h 印刷微調整 · E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
-E4d useAnalysis プロファイル ·
-E1a/E1f 残 (ScheduleTable 幅 / 44px / ピンチ抑止 / ヘッダ長押し) ·
-D7c テスト共通基盤
+E4d useAnalysis プロファイル · D7c テスト共通基盤
+(~~E1a/E1f 残~~ ✅ 2026-07-03 コード側完了、実機確認は G.2)
 
 中: E3a Worker E2E · E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
 E3g クロスブラウザ · E4b ソルバ計測 ·
@@ -1505,10 +1523,9 @@ F2h前段 / F2j / F2m も同時に解消)。
 1. ~~2 バッチ分の PR レビュー・マージ~~ ✅ PR #143 マージ済み (2026-07-03)
 2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-3. コードの軽い一手なら **E3a** (Worker E2E) のテスト深化、
-   あるいは **E1a/E1f 残** (モバイル)
-4. 仕様判断が要るもの: **F5p** (他タブ合同グループの編集挙動、G.1 参照)
-5. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
+3. コードの軽い一手なら **E3a** (Worker E2E) のテスト深化
+   (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ 2026-07-03 完了)
+4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
 
 ---
 
