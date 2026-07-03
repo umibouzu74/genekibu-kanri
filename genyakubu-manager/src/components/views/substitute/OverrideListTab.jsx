@@ -168,10 +168,16 @@ export function OverrideListTab({
         }}
       >
         {filtered.length === 0 ? (
+          // 空状態に作成場所への案内を出す (K3d)
           <div
-            style={{ textAlign: "center", color: "#bbb", padding: 40, fontSize: 13 }}
+            style={{ textAlign: "center", color: "#888", padding: 40, fontSize: 13 }}
           >
-            該当する回数補正はありません
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 6 }}>
+              該当する回数補正はありません
+            </div>
+            <div style={{ fontSize: 11, color: "#888" }}>
+              回数補正は「欠勤組み換え」画面の第N回調整から登録されます
+            </div>
           </div>
         ) : (
           <table

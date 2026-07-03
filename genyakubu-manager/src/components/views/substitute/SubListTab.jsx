@@ -28,6 +28,7 @@ export function SubListTab({
   subjects = [],
   onEdit,
   onDel,
+  onNew,
 }) {
   const teacherGroups = useMemo(
     () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
@@ -133,10 +134,44 @@ export function SubListTab({
         }}
       >
         {filtered.length === 0 ? (
+          // 空状態に次アクションへの導線を出す (K3d)
           <div
-            style={{ textAlign: "center", color: "#bbb", padding: 40, fontSize: 13 }}
+            style={{ textAlign: "center", color: "#888", padding: 40, fontSize: 13 }}
           >
-            該当する代行記録はありません
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 10 }}>
+              該当する代行記録はありません
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              {(fMonth || fStaff || fStatus) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFMonth("");
+                    setFStaff("");
+                    setFStatus("");
+                  }}
+                  style={{ ...S.btn(false), fontSize: 12 }}
+                >
+                  フィルタをクリア
+                </button>
+              )}
+              {isAdmin && onNew && (
+                <button
+                  type="button"
+                  onClick={onNew}
+                  style={{ ...S.btn(true), fontSize: 12 }}
+                >
+                  ＋ 代行を登録
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <table

@@ -1990,9 +1990,10 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - ✅ **K3c (2026-07-03)**: AbsenceWorkflowView の講師ドロップダウンに
   aria-expanded/aria-haspopup を追加し、Escape (IME 変換中は無視) で
   閉じられるように
-- **K3d (小)**: リスト系の空状態に CTA が無い (MasterListTab / SubListTab /
-  Adjustment/OverrideListTab)。EventCalendarView の空状態 (アイコン + 案内 +
-  クイック追加) が手本
+- ✅ **K3d (2026-07-03)**: リスト系の空状態を底上げ — MasterListTab /
+  SubListTab は「フィルタをクリア」+ 新規登録 CTA (admin のみ)、
+  Adjustment/OverrideListTab は作成場所への案内文 (これらは他画面の操作から
+  作られるため CTA ではなく導線案内)
 - ✅ **K3e (2026-07-03)**: AbsenceSlotCard の「第N回」を Dashboard /
   MonthView と同じ青地・白文字の塗りバッジに統一 (aria-label も付与)
 - ✅ **K3f (2026-07-03)**: 月次集計タブを fMonth 空で開いたら当月へ

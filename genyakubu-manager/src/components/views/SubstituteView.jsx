@@ -287,6 +287,7 @@ export function SubstituteView({
           subjects={subjects}
           onEdit={onEdit}
           onDel={onDel}
+          onNew={onNew}
         />
       )}
 
