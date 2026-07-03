@@ -548,6 +548,24 @@ describe("isSlotForTeacher", () => {
     expect(isSlotForTeacher({ teacher: "堀上", note: "隔週(川井)" }, "河野")).toBe(false);
   });
 
+  // IME の素の入力は "・" (U+30FB) / "･" (U+FF65) になる。正史の "·" しか
+  // 見ないと、手入力の複数講師 (追加授業の担当など) が講師のスケジュール
+  // から silent に欠落する。
+  it("matches multi-teacher separated by full-width ・ (IME input)", () => {
+    expect(isSlotForTeacher({ teacher: "香川・福江", note: "" }, "香川")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "香川・福江", note: "" }, "福江")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "香川・福江", note: "" }, "川井")).toBe(false);
+  });
+
+  it("matches multi-teacher separated by half-width ･ and trims spaces", () => {
+    expect(isSlotForTeacher({ teacher: "香川･福江", note: "" }, "福江")).toBe(true);
+    expect(isSlotForTeacher({ teacher: "香川 ・ 福江", note: "" }, "香川")).toBe(true);
+  });
+
+  it("does not throw on missing teacher field (Firebase 別クライアント由来)", () => {
+    expect(isSlotForTeacher({ note: "" }, "堀上")).toBe(false);
+  });
+
   it("handles null/empty note gracefully", () => {
     expect(isSlotForTeacher({ teacher: "堀上", note: null }, "堀上")).toBe(true);
     expect(isSlotForTeacher({ teacher: "堀上", note: undefined }, "堀上")).toBe(true);
@@ -566,6 +584,11 @@ describe("getSlotTeachers", () => {
 
   it("returns empty array for empty teacher", () => {
     expect(getSlotTeachers({ teacher: "" })).toEqual([]);
+  });
+
+  it("splits IME middle dots (・/･) and trims each name", () => {
+    expect(getSlotTeachers({ teacher: "香川・福江" })).toEqual(["香川", "福江"]);
+    expect(getSlotTeachers({ teacher: "香川 ･ 福江" })).toEqual(["香川", "福江"]);
   });
 });
 

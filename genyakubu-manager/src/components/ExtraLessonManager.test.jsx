@@ -117,7 +117,51 @@ describe("ExtraLessonManager", () => {
     renderManager({ isAdmin: false });
     expect(screen.queryByText("登録")).toBeNull();
     expect(screen.queryByLabelText(/を削除$/)).toBeNull();
+    expect(screen.queryByLabelText(/をコピー$/)).toBeNull();
     // 一覧は見える
     expect(screen.getByText(/プレップ個別指導/)).toBeInTheDocument();
+  });
+
+  it("担当の全角中点 (・) 区切りは正規の · 区切りに正規化して保存する", () => {
+    // IME で普通に入力すると "・" になる。そのまま保存すると "·" しか
+    // 見ない消費側で複数講師と認識されないため、保存時に揃える。
+    const { onSave } = renderManager({ extraLessons: [] });
+    fill("実施日を選択", "2026-07-28");
+    fireEvent.click(screen.getByText("＋ 日付を追加"));
+    fill("時間", "17:00-18:00");
+    fill("対象学年", "中1-3");
+    fill("科目・講座名", "プレップ個別指導");
+    fill("担当講師", "香川・福江 ・ 川井");
+    fireEvent.click(screen.getByText("登録"));
+    const saved = onSave.mock.calls[0][0];
+    expect(saved[0].teacher).toBe("香川·福江·川井");
+  });
+
+  it("📋 コピーはフォームへ内容を複製し、実施日は引き継がず新規登録になる", () => {
+    const { onSave } = renderManager();
+    fireEvent.click(screen.getByLabelText(/をコピー$/));
+    // 内容はコピーされる (時間・担当など)
+    expect(screen.getByLabelText("時間")).toHaveValue("18:30-20:00");
+    expect(screen.getByLabelText("担当講師")).toHaveValue("香川·福江");
+    // 編集モードではなく新規登録 (実施日は空 → 日付を選ばないとエラー)
+    expect(screen.getByText("登録")).toBeInTheDocument();
+    expect(screen.queryByText("更新")).toBeNull();
+    fireEvent.click(screen.getByText("登録"));
+    expect(screen.getByRole("alert")).toHaveTextContent("実施日");
+    expect(onSave).not.toHaveBeenCalled();
+    // 新しい実施日を選べば元レコードはそのままに追加される
+    fill("実施日を選択", "2026-08-05");
+    fireEvent.click(screen.getByText("＋ 日付を追加"));
+    fireEvent.click(screen.getByText("登録"));
+    const saved = onSave.mock.calls[0][0];
+    expect(saved).toHaveLength(2);
+    expect(saved[1]).toMatchObject({
+      id: 2,
+      date: "2026-08-05",
+      time: "18:30-20:00",
+      subj: "プレップ個別指導",
+      teacher: "香川·福江",
+      label: "夏期講習",
+    });
   });
 });
