@@ -101,3 +101,55 @@ describe('CombinedGroupSettings — draft-commit (F5n)', () => {
     });
   });
 });
+
+describe('CombinedGroupSettings — 重複グループの登録ガード (F5z)', () => {
+  it('既存グループと科目・クラス・日程が重なる新規は追加できない', () => {
+    const { addCombinedGroup } = renderSettings(); // 既存: 英語 A・B 全日程
+    fireEvent.click(screen.getByText('+ 合同グループを追加'));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'C' }));
+    // 英語 B・C は既存 (英語 A・B 全日程) とクラス B で重なる
+    expect(screen.getByText(/既存の合同グループ.*と.*重なっています/)).toBeInTheDocument();
+    const add = screen.getByText('追加');
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(addCombinedGroup).not.toHaveBeenCalled();
+  });
+
+  it('科目が違えば同じクラスの組でも追加できる', () => {
+    const { addCombinedGroup } = renderSettings(); // 既存: 英語 A・B 全日程
+    fireEvent.click(screen.getByText('+ 合同グループを追加'));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '数学' } });
+    fireEvent.click(screen.getByRole('button', { name: 'A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
+    fireEvent.click(screen.getByText('追加'));
+    expect(addCombinedGroup).toHaveBeenCalledWith({
+      subject: '数学',
+      classes: ['A', 'B'],
+      dates: null,
+    });
+  });
+
+  it('日程が重ならなければ同じ科目・クラスでも追加できる', () => {
+    const dated = { id: 1, subject: '英語', classes: ['A', 'B'], dates: ['7/1'] };
+    const { addCombinedGroup } = renderSettings({ combinedGroups: [dated] });
+    fireEvent.click(screen.getByText('+ 合同グループを追加'));
+    fireEvent.click(screen.getByRole('button', { name: 'A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
+    fireEvent.click(screen.getByLabelText('全日程')); // 全日程を外す
+    fireEvent.click(screen.getByRole('button', { name: '7/2' }));
+    fireEvent.click(screen.getByText('追加'));
+    expect(addCombinedGroup).toHaveBeenCalledWith({
+      subject: '英語',
+      classes: ['A', 'B'],
+      dates: ['7/2'],
+    });
+  });
+
+  it('編集では自分自身とは競合しない (既存テストの保存経路の再確認)', () => {
+    const { updateCombinedGroup } = renderSettings();
+    fireEvent.click(screen.getByText('編集'));
+    fireEvent.click(screen.getByText('保存'));
+    expect(updateCombinedGroup).toHaveBeenCalledTimes(1);
+  });
+});

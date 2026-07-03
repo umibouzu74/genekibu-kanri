@@ -18,6 +18,7 @@ import {
   activeDatesForTab,
   activePeriodsForTab,
   effectiveConfigForTab,
+  findConflictingCombinedGroup,
 } from './scheduleKey';
 
 describe('activeDatesForTab', () => {
@@ -87,6 +88,37 @@ describe('effectiveConfigForTab (F2i)', () => {
     const eff = effectiveConfigForTab(undefined, undefined);
     expect(eff.dates).toEqual([]);
     expect(eff.periods).toEqual([]);
+  });
+});
+
+describe('findConflictingCombinedGroup (F5z)', () => {
+  const groups = [
+    { id: 1, subject: '英語', classes: ['A', 'B'], dates: null },
+    { id: 2, subject: '数学', classes: ['A', 'B'], dates: ['7/1'] },
+  ];
+  it('同じ科目でクラスと日程が重なる既存グループを返す', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['B', 'C'], dates: ['7/2'] }))
+      .toBe(groups[0]);
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A'], dates: null }))
+      .toBe(groups[1]);
+  });
+  it('科目が違えば競合しない', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '国語', classes: ['A', 'B'], dates: null })).toBeNull();
+  });
+  it('クラスが交差しなければ競合しない', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['C', 'D'], dates: null })).toBeNull();
+  });
+  it('日程が交差しなければ競合しない (null = 全日程は常に交差)', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A', 'B'], dates: ['7/2'] })).toBeNull();
+    expect(findConflictingCombinedGroup(groups, { subject: '数学', classes: ['A', 'B'], dates: null })).toBe(groups[1]);
+  });
+  it('excludeId で編集中の自分自身は除外する', () => {
+    expect(findConflictingCombinedGroup(groups, { subject: '英語', classes: ['A', 'B'], dates: null }, 1)).toBeNull();
+  });
+  it('groups / candidate が空でも安全', () => {
+    expect(findConflictingCombinedGroup(null, { subject: '英語', classes: ['A'] })).toBeNull();
+    expect(findConflictingCombinedGroup(groups, null)).toBeNull();
+    expect(findConflictingCombinedGroup(groups, { subject: '英語' })).toBeNull();
   });
 });
 

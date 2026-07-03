@@ -103,6 +103,24 @@ export function findCombinedGroup(combinedGroups, subject, className, date) {
   ) || null;
 }
 
+// F5z: 追加/編集しようとするグループ (candidate) と「同じ科目で、クラスと
+// 対象日の両方が重なる」既存グループを探す。findCombinedGroup は first-match
+// なので、重なるグループが 2 つ登録されると伝播・集計が片方しか見ず
+// 不整合になる。登録前 (CombinedGroupSettings の draft 検証) にこれで弾く。
+// dates は null = 全日程 (何とでも重なる)。excludeId は編集中の自分自身。
+export function findConflictingCombinedGroup(combinedGroups, candidate, excludeId = null) {
+  if (!combinedGroups || !candidate?.subject) return null;
+  const candClasses = candidate.classes || [];
+  const candDates = candidate.dates ?? null;
+  const datesOverlap = (a, b) => a === null || b === null || a.some(d => b.includes(d));
+  return combinedGroups.find(g =>
+    g.id !== excludeId &&
+    g.subject === candidate.subject &&
+    (g.classes || []).some(c => candClasses.includes(c)) &&
+    datesOverlap(g.dates ?? null, candDates)
+  ) || null;
+}
+
 // クラスが合同グループの代表（先頭）クラスかどうか
 export function isPrimaryCombinedClass(group, className) {
   return group && group.classes[0] === className;
