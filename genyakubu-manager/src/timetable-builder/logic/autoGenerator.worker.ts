@@ -7,10 +7,18 @@
 // autoGenerator.js は純粋関数なのでそのまま import するだけで動く。
 import { generateSinglePattern } from './autoGenerator';
 
-self.addEventListener('message', (e) => {
+// tsconfig の lib は DOM (メインスレッド) なので、worker グローバルは
+// 最小限のローカル型で受ける (lib.webworker と DOM は同居できない)。
+// ctx === self なので実行時の挙動は変わらない。
+const ctx = self as unknown as {
+  postMessage: (msg: unknown) => void;
+  addEventListener: (type: 'message', listener: (e: MessageEvent) => void) => void;
+};
+
+ctx.addEventListener('message', (e) => {
   const { project, activeTabId, numPatterns, baseSeed } = e.data || {};
   if (!project || typeof numPatterns !== 'number') {
-    self.postMessage({ type: 'error', message: 'invalid request' });
+    ctx.postMessage({ type: 'error', message: 'invalid request' });
     return;
   }
 
@@ -23,12 +31,12 @@ self.addEventListener('message', (e) => {
         activeTabId,
         seed,
         // 探索の途中経過を逐次通知 (E2f live progress)
-        onProgress: (p) => self.postMessage({ type: 'progress', index: i, progress: p }),
+        onProgress: (p) => ctx.postMessage({ type: 'progress', index: i, progress: p }),
       });
-      self.postMessage({ type: 'pattern', index: i, result });
+      ctx.postMessage({ type: 'pattern', index: i, result });
     }
-    self.postMessage({ type: 'done' });
+    ctx.postMessage({ type: 'done' });
   } catch (err) {
-    self.postMessage({ type: 'error', message: err?.message || String(err) });
+    ctx.postMessage({ type: 'error', message: (err as Error | null)?.message || String(err) });
   }
 });

@@ -11,27 +11,38 @@
 //     - type 'changed': 両方にあるが subject か teacher が違う
 //   before / after は { subject, teacher } | null。
 
-const normalize = (entry) => {
+import type { Schedule, ScheduleEntry } from '../types';
+
+export type NormalizedEntry = { subject: string; teacher: string } | null;
+export type DiffType = 'added' | 'removed' | 'changed';
+export interface ScheduleDiff {
+  key: string;
+  type: DiffType;
+  before: NormalizedEntry;
+  after: NormalizedEntry;
+}
+
+const normalize = (entry: ScheduleEntry | undefined): NormalizedEntry => {
   if (!entry || !entry.subject) return null;
   return { subject: entry.subject, teacher: entry.teacher || '' };
 };
 
-const sameEntry = (a, b) => {
+const sameEntry = (a: NormalizedEntry, b: NormalizedEntry) => {
   if (a === null && b === null) return true;
   if (a === null || b === null) return false;
   return a.subject === b.subject && a.teacher === b.teacher;
 };
 
-export function diffSchedules(from, to) {
+export function diffSchedules(from: Schedule | null | undefined, to: Schedule | null | undefined): ScheduleDiff[] {
   const fromMap = from || {};
   const toMap = to || {};
   const keys = new Set([...Object.keys(fromMap), ...Object.keys(toMap)]);
-  const diffs = [];
+  const diffs: ScheduleDiff[] = [];
   for (const key of keys) {
     const before = normalize(fromMap[key]);
     const after = normalize(toMap[key]);
     if (sameEntry(before, after)) continue;
-    let type;
+    let type: DiffType;
     if (before === null) type = 'added';
     else if (after === null) type = 'removed';
     else type = 'changed';
@@ -41,10 +52,11 @@ export function diffSchedules(from, to) {
 }
 
 // 差分の種別ごとの件数を集計する。
-export function summarizeDiff(diffs) {
+export function summarizeDiff(diffs: ScheduleDiff[]): { added: number; removed: number; changed: number; total: number } {
   const counts = { added: 0, removed: 0, changed: 0, total: diffs.length };
   for (const d of diffs) {
-    if (d.type in counts && d.type !== 'total') counts[d.type] += 1;
+    // 型上は DiffType のみだが、外部 JSON 等の untyped 経路に備えて runtime でも絞る
+    if (d.type === 'added' || d.type === 'removed' || d.type === 'changed') counts[d.type] += 1;
   }
   return counts;
 }

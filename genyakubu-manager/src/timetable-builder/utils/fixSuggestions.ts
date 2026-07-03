@@ -9,16 +9,39 @@
 // action 無しの提案は手作業が必要なヒント (別時限へ移動 / 講師を増やす等)。
 import { makeNgKey } from './scheduleKey';
 import { clampGenerationParam } from './constants';
+import type { Entity, Teacher } from '../types';
+import type { AutoNgEntries } from './autoNg';
 
-const hint = (text) => ({ text });
+export type FixAction =
+  | { type: 'releaseNg'; teacherName: string; date: string; period: string }
+  | { type: 'setMaxDaily'; value: number };
+
+export interface FixSuggestion {
+  text: string;
+  action?: FixAction;
+}
+
+// 提案生成が読む文脈。item は computeInfeasibilities (analysisHelpers) の
+// 戻り値要素なので、Phase 2b 時点では最小限のフィールドだけ型に貼る。
+export interface SuggestContext {
+  currentConfig?: { dates?: Entity[]; periods?: Entity[] };
+  teachers?: Teacher[];
+  autoNgByTeacher?: Map<string, AutoNgEntries> | null;
+  maxDailyHours?: number;
+}
+
+const hint = (text: string): FixSuggestion => ({ text });
 
 // noTeacherForSlot: (date, period, subject) で担当できる講師が居ない。
 // 提案: 担当登録 / NG 解除 (適用可) / 別時限へ移動。
-export function suggestForNoTeacher(item, { currentConfig, teachers, autoNgByTeacher = null } = {}) {
+export function suggestForNoTeacher(
+  item: { date: string; period: string; subject: string },
+  { currentConfig, teachers, autoNgByTeacher = null }: SuggestContext = {},
+): FixSuggestion[] {
   const { date, period, subject } = item;
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const teaches = reals.filter(t => t.subjects?.includes(subject));
-  const suggestions = [];
+  const suggestions: FixSuggestion[] = [];
 
   if (teaches.length === 0) {
     return [hint(`「${subject}」を担当できる講師が居ません。講師マスタで誰かに「${subject}」を割り当ててください。`)];
@@ -56,13 +79,16 @@ export function suggestForNoTeacher(item, { currentConfig, teachers, autoNgByTea
 
 // subjectCapacityShortage: 科目の総需要 > 講師の理論最大 capacity。
 // 提案: 担当講師を増やす / 1日上限を上げる (適用可) / コマ数を減らす。
-export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) {
+export function suggestForCapacity(
+  item: { subject: string; demand: number; teacherCount: number },
+  { currentConfig, maxDailyHours = 0 }: SuggestContext = {},
+): FixSuggestion[] {
   const { subject, demand, teacherCount } = item;
   const dates = currentConfig?.dates?.length || 0;
   const periodsLen = currentConfig?.periods?.length || 0;
   // 1 日に教えられる実上限は時限数を超えない (computeInfeasibilities C2 と同じ式)
   const perDayCap = periodsLen > 0 ? Math.min(maxDailyHours, periodsLen) : maxDailyHours;
-  const suggestions = [];
+  const suggestions: FixSuggestion[] = [];
 
   if (dates > 0 && perDayCap > 0) {
     const neededTeachers = Math.ceil(demand / (dates * perDayCap));
@@ -94,7 +120,7 @@ export function suggestForCapacity(item, { currentConfig, maxDailyHours } = {}) 
 // infeasibilities (computeInfeasibilities の戻り値) の各 item に suggestions を
 // 付与した新しいオブジェクトを返す。元のオブジェクトは変更しない。
 // quotaCellMismatch: クォータ合計 ≠ セル数。方向に応じた文言のヒントのみ。
-export function suggestForQuotaMismatch(item) {
+export function suggestForQuotaMismatch(item: { totalQuota: number; cells: number }): FixSuggestion[] {
   const { totalQuota, cells } = item;
   if (totalQuota < cells) {
     return [hint(`科目コマ数の合計 (${totalQuota}) がセル数 (${cells}) より少なく、全セルを埋める完全解が存在しません。コマ数を増やすか、使う日・時限を減らしてください。`)];
@@ -103,7 +129,7 @@ export function suggestForQuotaMismatch(item) {
 }
 
 // subjectQuotaOverDays: コマ数 > 日数。同日重複禁止のため達成不能。
-export function suggestForQuotaOverDays(item) {
+export function suggestForQuotaOverDays(item: { subject: string; quota: number; days: number }): FixSuggestion[] {
   const { subject, quota, days } = item;
   return [hint(`「${subject}」のコマ数 (${quota}) が使う日数 (${days}) を超えています。同じ日に同じ科目は 1 コマまでのため、コマ数を減らすか日数を増やしてください。`)];
 }
@@ -119,42 +145,51 @@ export function suggestForQuotaOverDays(item) {
 //     運用」が正当にあり得るため。数えると違反ゼロでも赤バッジが恒久点灯)
 //   - label(item): popover に出す 1 行文言
 //   - suggest(item, ctx): 修正提案 ({ text, action? }[])
-export const INFEASIBILITY_KINDS = [
+export interface InfeasibilityKind {
+  key: string;
+  kind: string;
+  /** true = popover には出すが ⚠ バッジ件数には数えない */
+  informational?: boolean;
+  label: (item: any) => string;
+  suggest: (item: any, ctx: SuggestContext) => FixSuggestion[];
+}
+
+export const INFEASIBILITY_KINDS: InfeasibilityKind[] = [
   {
     key: 'noTeacherForSlot',
     kind: 'noTeacher',
-    label: (it) => `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
+    label: (it: any) => `${it.date} ${it.period} の${it.subject}: 担当できる講師が居ません (全員 NG または未登録)`,
     suggest: suggestForNoTeacher,
   },
   {
     key: 'subjectCapacityShortage',
     kind: 'capacity',
-    label: (it) => `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
+    label: (it: any) => `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
     suggest: suggestForCapacity,
   },
   {
     key: 'quotaCellMismatch',
     kind: 'quotaMismatch',
     informational: true,
-    label: (it) => `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells}${it.className ? `【${it.className}】` : ''} (使う日 × 使う時限${it.lockedEmpty ? ` − 空ロック ${it.lockedEmpty}` : ''})。完全解を狙う場合は一致させてください`,
+    label: (it: any) => `科目コマ数の合計 ${it.totalQuota} ≠ セル数 ${it.cells}${it.className ? `【${it.className}】` : ''} (使う日 × 使う時限${it.lockedEmpty ? ` − 空ロック ${it.lockedEmpty}` : ''})。完全解を狙う場合は一致させてください`,
     suggest: suggestForQuotaMismatch,
   },
   {
     key: 'subjectQuotaOverDays',
     kind: 'quotaOverDays',
-    label: (it) => `${it.subject}: コマ数 ${it.quota} > 使う日数 ${it.days} (同日重複禁止のため達成不能)`,
+    label: (it: any) => `${it.subject}: コマ数 ${it.quota} > 使う日数 ${it.days} (同日重複禁止のため達成不能)`,
     suggest: suggestForQuotaOverDays,
   },
 ];
 
-export function buildFixSuggestions(infeasibilities, ctx = {}) {
+export function buildFixSuggestions(infeasibilities: any, ctx: SuggestContext = {}): any {
   if (!infeasibilities) return infeasibilities;
-  const out = {};
+  const out: Record<string, any> = {};
   INFEASIBILITY_KINDS.forEach(({ key, suggest }) => {
     const src = infeasibilities[key] || { count: 0, items: [] };
     out[key] = {
       ...src,
-      items: (src.items || []).map(it => ({ ...it, suggestions: suggest(it, ctx) })),
+      items: (src.items || []).map((it: any) => ({ ...it, suggestions: suggest(it, ctx) })),
     };
   });
   return out;

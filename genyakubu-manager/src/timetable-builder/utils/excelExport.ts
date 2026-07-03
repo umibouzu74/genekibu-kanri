@@ -12,6 +12,7 @@
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
+import type { Project } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
@@ -27,61 +28,69 @@ const ARGB_548235 = 'FF548235';
 const ARGB_E2EFDA = 'FFE2EFDA';
 const ARGB_F2F2F2 = 'FFF2F2F2';
 
-const THIN_BORDER = {
+// exceljs の型に合わせた style 断片。applyCellStyle でセルへ適用する。
+interface CellStyleSpec {
+  font?: Partial<ExcelJS.Font>;
+  fill?: ExcelJS.Fill;
+  alignment?: Partial<ExcelJS.Alignment>;
+  border?: Partial<ExcelJS.Borders>;
+}
+
+const THIN_BORDER: Partial<ExcelJS.Borders> = {
   top: { style: 'thin', color: { argb: ARGB_AAA } },
   bottom: { style: 'thin', color: { argb: ARGB_AAA } },
   left: { style: 'thin', color: { argb: ARGB_AAA } },
   right: { style: 'thin', color: { argb: ARGB_AAA } },
 };
 
-const HEADER_STYLE = {
+const HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 11, color: { argb: ARGB_FF } },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_4472C4 } },
   alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
   border: THIN_BORDER,
 };
 
-const TEACHER_HEADER_STYLE = {
+const TEACHER_HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 11, color: { argb: ARGB_FF } },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_548235 } },
   alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
-const DATE_HEADER_STYLE = {
+const DATE_HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 10 },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_E2EFDA } },
   alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
-const PERIOD_STYLE = {
+const PERIOD_STYLE: CellStyleSpec = {
   font: { size: 9 },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_F2F2F2 } },
   alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
-const EMPTY_CELL_STYLE = {
+const EMPTY_CELL_STYLE: CellStyleSpec = {
   alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
   border: THIN_BORDER,
 };
 
-const BODY_CELL_STYLE = {
+const BODY_CELL_STYLE: CellStyleSpec = {
   font: { size: 10 },
   alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
 
 // HEX カラー (#RRGGBB) を ARGB (FFRRGGBB) に変換
-export function hexToArgb(hex) {
+export function hexToArgb(hex: string): string {
   return 'FF' + hex.replace('#', '').toUpperCase();
 }
 
 // 科目カラーから cell style を生成
-function makeSubjectCellStyle(subject, subjectColors) {
+function makeSubjectCellStyle(subject: string, subjectColors?: Record<string, string> | null): CellStyleSpec {
   const color = getSubjectColor(subject, subjectColors);
-  const style = {
+  const style: CellStyleSpec = {
     font: { size: 10 },
     alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
     border: THIN_BORDER,
@@ -94,7 +103,7 @@ function makeSubjectCellStyle(subject, subjectColors) {
 
 // exceljs cell に style オブジェクトを適用。null / undefined は cell に
 // 設定しないことで「style 未指定」の状態を保つ。
-function applyCellStyle(cell, style) {
+function applyCellStyle(cell: ExcelJS.Cell, style: CellStyleSpec) {
   if (style.font) cell.font = style.font;
   if (style.fill) cell.fill = style.fill;
   if (style.alignment) cell.alignment = style.alignment;
@@ -103,9 +112,9 @@ function applyCellStyle(cell, style) {
 
 // ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
 // 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。
-async function downloadWorkbook(workbook, filename) {
+async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
+  const blob = new Blob([buffer as unknown as BlobPart], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
   const url = URL.createObjectURL(blob);
@@ -118,7 +127,7 @@ async function downloadWorkbook(workbook, filename) {
 
 // ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
 // project から ExcelJS.Workbook を構築して返す。副作用無し。
-export function buildScheduleWorkbook(project) {
+export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
@@ -134,7 +143,7 @@ export function buildScheduleWorkbook(project) {
     cleaned.dates || [],
     cleaned.periods || [],
   );
-  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
+  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t] as const));
 
   cleaned.tabs.forEach(tab => {
     // v4(Y)+E-3: そのタブが使う日・使う時限だけをシートに出す
@@ -233,8 +242,8 @@ export function buildScheduleWorkbook(project) {
 
 // project から登場する全科目を収集する (project.subjects ∪ 各タブの
 // subjectCounts のキー ∪ schedule entry の subject)。
-function collectAllSubjects(project) {
-  const set = new Set(project.subjects || []);
+function collectAllSubjects(project: Project): string[] {
+  const set = new Set<string>(project.subjects || []);
   (project.tabs || []).forEach(tab => {
     Object.keys(tab.config?.subjectCounts || {}).forEach(s => set.add(s));
     Object.values(tab.schedule || {}).forEach(e => {
@@ -252,15 +261,15 @@ function collectAllSubjects(project) {
 //   - teachersFound: Set<string>  teacherStats に登場した講師
 //   - detailRows: [{ date, period, className, tabName, teacher, note }]
 //       note には "合同(...)" / "⚠NG" が入る
-export function computeSubjectStats(project, subject) {
+export function computeSubjectStats(project: Project, subject: string) {
   const combinedGroups = project.combinedGroups || [];
-  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t]));
+  const teachersByName = new Map((project.teachers || []).map(t => [t.name, t] as const));
   const UNASSIGNED_KEY = '(未定)';
 
-  const tabStats = [];
-  const teacherStats = {};
-  const teachersFound = new Set();
-  const detailRows = [];
+  const tabStats: Array<{ tabName: string; needed: number; filled: number }> = [];
+  const teacherStats: Record<string, Record<string, number>> = {};
+  const teachersFound = new Set<string>();
+  const detailRows: Array<{ date: string; period: string; className: string; tabName: string; teacher: string; note: string }> = [];
 
   // 自動NG は project の periods (プール全体) で一度だけ計算。
   const autoNgByTeacher = computeAutoNgByTeacher(
@@ -285,7 +294,7 @@ export function computeSubjectStats(project, subject) {
           const group = findCombinedGroup(combinedGroups, subject, c.label, d.label);
           const isNonPrimary = group && !isPrimaryCombinedClass(group, c.label);
 
-          const noteParts = [];
+          const noteParts: string[] = [];
           if (group) noteParts.push(`合同(${group.classes.join(',')})`);
           if (e.teacher && e.teacher !== '未定') {
             const teacherEnt = teachersByName.get(e.teacher);
@@ -323,7 +332,7 @@ export function computeSubjectStats(project, subject) {
 // exceljs の addWorksheet は禁則文字 (\\ / : ? * [ ])・空文字・予約名
 // 'History'・重複名で throw する。ユーザ入力 (タブ名・講師名) を
 // シート名にする前に必ずこれを通すこと。
-function sanitizeSheetName(name) {
+function sanitizeSheetName(name: unknown): string {
   // 先頭/末尾のシングルクォートも exceljs が reject する (F5h)。内側の
   // クォートは合法なので端だけ落とす (空白と交互に現れても残らないよう
   // 文字クラスでまとめて strip)。
@@ -338,7 +347,7 @@ function sanitizeSheetName(name) {
 // 重複判定は case-insensitive (F5g)。exceljs の addWorksheet は
 // toLowerCase 比較で重複を reject するため、getWorksheet (完全一致) で
 // 判定すると "classA"/"CLASSA" のような大小文字違いの名前で throw する。
-function uniqueSheetName(workbook, baseName) {
+function uniqueSheetName(workbook: ExcelJS.Workbook, baseName: string): string {
   const taken = new Set(workbook.worksheets.map(ws => ws.name.toLowerCase()));
   let name = baseName.substring(0, 31);
   if (!taken.has(name.toLowerCase())) return name;
@@ -351,7 +360,7 @@ function uniqueSheetName(workbook, baseName) {
   }
 }
 
-function buildOneSubjectSheet(workbook, project, subject) {
+function buildOneSubjectSheet(workbook: ExcelJS.Workbook, project: Project, subject: string) {
   const safeSubject = subject.replace(/[\\/:?*[\]]/g, '');
   const ws = workbook.addWorksheet(uniqueSheetName(workbook, `科目別_${safeSubject}`));
 
@@ -361,7 +370,7 @@ function buildOneSubjectSheet(workbook, project, subject) {
 
   // 行ごとに値を書きつつ style 適用する小ヘルパ。
   let rowIdx = 1;
-  const writeRow = (values, style) => {
+  const writeRow = (values: Array<string | number>, style?: CellStyleSpec) => {
     values.forEach((v, ci) => {
       const cell = ws.getCell(rowIdx, ci + 1);
       cell.value = v;
@@ -443,32 +452,32 @@ function buildOneSubjectSheet(workbook, project, subject) {
 }
 
 // ファイル名を組み立てる小ヘルパー (テスト用に分離)
-export function buildExcelFilename(project, suffix) {
+export function buildExcelFilename(project: Pick<Project, 'name'>, suffix: string): string {
   const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
   const datePart = new Date().toISOString().slice(0, 10);
   return `${projectName}_${suffix}_${datePart}.xlsx`;
 }
 
 // ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
-export async function downloadScheduleExcel(project) {
+export async function downloadScheduleExcel(project: Project) {
   const workbook = buildScheduleWorkbook(project);
   await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
 }
 
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
-export function buildTeacherWorkbook(project) {
+export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
   const combinedGroups = project.combinedGroups || [];
 
   // 「全講師リスト」シート用の集約
-  const allRows = [];
-  const allRowSubjects = [];
+  const allRows: string[][] = [];
+  const allRowSubjects: Array<string | undefined> = [];
 
   project.teachers.forEach(t => {
     // この講師の出勤コマを集める
-    const personalRows = [];
-    const personalSubjects = [];
+    const personalRows: string[][] = [];
+    const personalSubjects: Array<string | undefined> = [];
 
     project.tabs.forEach(tab => {
       // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
@@ -551,7 +560,7 @@ export function buildTeacherWorkbook(project) {
 }
 
 // ─── 講師別 Excel: 公開エントリ ────────────────────────────────────
-export async function downloadTeacherExcel(project) {
+export async function downloadTeacherExcel(project: Project) {
   const workbook = buildTeacherWorkbook(project);
   await downloadWorkbook(workbook, buildExcelFilename(project, '講師別'));
 }

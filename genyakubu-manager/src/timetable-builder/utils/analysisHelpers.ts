@@ -5,6 +5,32 @@
 import { makeKey, makeExternalKey, makeNgKey, parseKey, effectiveConfigForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
 import { forEachCountedAssignment } from './tabUsage';
+import type { AutoNgEntries } from './autoNg';
+import type {
+  CombinedGroup,
+  EffectiveConfig,
+  Entity,
+  ExternalSession,
+  Schedule,
+  Tab,
+  Teacher,
+} from '../types';
+
+/** 日付×講師ごとのコマ数 (current=自タブ, external=外部, total=合計) */
+export interface TeacherDailyCount {
+  current: number;
+  external: number;
+  total: number;
+}
+
+/** globalUsage の 1 使用箇所 (タブ + 合同グループ) */
+export interface UsageRef {
+  tabId: number;
+  combinedGroupId: number | null;
+}
+
+/** `${date}-${period}-${teacher}` → 使用箇所リスト */
+export type GlobalUsage = Record<string, UsageRef[]>;
 
 // 全タブ横断の講師使用状況を集計する。
 //
@@ -25,14 +51,21 @@ import { forEachCountedAssignment } from './tabUsage';
 //   externalCounts: { [makeExternalKey]: number }
 // v4: dates / periods は project 共通になったため引数で受け取る (各タブの
 // config からは消えた)。classes は従来どおり tab.config 由来。
-export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externalSessions = [], dates = [], periods = []) {
-  const teacherDailyCounts = {};
-  const globalUsage = {};
+export function computeGlobalUsage(
+  tabs: Tab[],
+  combinedGroups: CombinedGroup[] | null | undefined,
+  externalCounts: Record<string, number> | null | undefined,
+  externalSessions: ExternalSession[] = [],
+  dates: Entity[] = [],
+  periods: Entity[] = [],
+): { teacherDailyCounts: Record<string, TeacherDailyCount>; globalUsage: GlobalUsage } {
+  const teacherDailyCounts: Record<string, TeacherDailyCount> = {};
+  const globalUsage: GlobalUsage = {};
   const groups = combinedGroups || [];
 
   // 詳細セッションが登録されていれば件数として優先採用、
   // 無ければ legacy externalCounts (数値) にフォールバック。
-  const sessionCounts = {};
+  const sessionCounts: Record<string, number> = {};
   (externalSessions || []).forEach(s => {
     if (!s?.date || !s?.teacherName) return;
     const k = makeExternalKey(s.date, s.teacherName);
@@ -72,8 +105,8 @@ export function computeGlobalUsage(tabs, combinedGroups, externalCounts, externa
 // globalUsage 内の (tabId, combinedGroupId) ペアを 1 回扱いにして、
 // 実効的な使用回数を返す。合同グループ内の複数クラスは 1 コマとして
 // カウントするため、conflict 判定に使う。
-function getEffectiveUsageCount(usages) {
-  const seen = new Set();
+function getEffectiveUsageCount(usages: UsageRef[]): number {
+  const seen = new Set<string>();
   let count = 0;
   usages.forEach(u => {
     if (u.combinedGroupId) {
@@ -99,13 +132,19 @@ function getEffectiveUsageCount(usages) {
 //       現タブ内・同一クラス内での該当科目の連番 (1-based、何回目か)。
 //   - ngViolationKeys: schedule key 配列。割当済み講師がその日時の
 //       ngSlots に該当するセル (後から NG 設定された場合に検出)。
-export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsage, teachers = [], autoNgByTeacher = null) {
-  const conflictMap = {};
-  const errorKeys = [];
-  const dailySubjectMap = {};
-  const subjectOrders = {};
-  const ngViolationKeys = [];
-  const teachersByName = new Map();
+export function computeActiveAnalysis(
+  currentConfig: EffectiveConfig,
+  currentSchedule: Schedule,
+  globalUsage: GlobalUsage,
+  teachers: Teacher[] = [],
+  autoNgByTeacher: Map<string, AutoNgEntries> | null = null,
+) {
+  const conflictMap: Record<string, boolean> = {};
+  const errorKeys: string[] = [];
+  const dailySubjectMap: Record<string, number> = {};
+  const subjectOrders: Record<string, number> = {};
+  const ngViolationKeys: string[] = [];
+  const teachersByName = new Map<string, Teacher>();
   (teachers || []).forEach(t => { if (t?.name) teachersByName.set(t.name, t); });
 
   currentConfig.dates.forEach(d => {
@@ -137,7 +176,7 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
   });
 
   currentConfig.classes.forEach(c => {
-    const counts = {};
+    const counts: Record<string, number> = {};
     currentConfig.dates.forEach(d => {
       currentConfig.periods.forEach(p => {
         const key = makeKey(d.id, p.id, c.id);
@@ -160,7 +199,7 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
 // F5x: 「使う日・使う時限」から外れて温存されている非表示セルは filled に
 // 数えない (violation 集計・生成・Excel と同じ E-3 絞り込み)。数えると
 // 埋めた日をタブの使う日から外しても進捗 % が下がらない。
-export function computeDashboard(currentSchedule, currentConfig) {
+export function computeDashboard(currentSchedule: Schedule, currentConfig: EffectiveConfig) {
   const total = Object.values(currentConfig.subjectCounts).reduce((a, b) => a + b, 0) * currentConfig.classes.length;
   const dateIds = new Set(currentConfig.dates.map(d => d.id));
   const periodIds = new Set(currentConfig.periods.map(p => p.id));
@@ -184,8 +223,22 @@ export function computeDashboard(currentSchedule, currentConfig) {
 // には算入しない (重複表示防止)。
 //
 // 返り値: { [tabId: number]: count }
-export function computeTabViolationCounts({ tabs, globalUsage, teachers = [], externalSessions = [], dates = [], periods = [] }) {
-  const result = {};
+export function computeTabViolationCounts({
+  tabs,
+  globalUsage,
+  teachers = [],
+  externalSessions = [],
+  dates = [],
+  periods = [],
+}: {
+  tabs: Tab[];
+  globalUsage: GlobalUsage;
+  teachers?: Teacher[];
+  externalSessions?: ExternalSession[];
+  dates?: Entity[];
+  periods?: Entity[];
+}): Record<number, number> {
+  const result: Record<number, number> = {};
   // v4: dates / periods は project 共通。自動NG は project の periods で計算し、
   // 各タブの実効 config (classes / subjectCounts + 共通 dates / periods) で分析する。
   const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, periods);
@@ -236,6 +289,16 @@ export function computeViolations({
   maxDailyHours,
   teachers,
   ngViolationKeys = [],
+}: {
+  currentConfig: EffectiveConfig;
+  currentSchedule: Schedule;
+  errorKeys: string[];
+  dailySubjectMap: Record<string, number>;
+  subjectOrders: Record<string, number>;
+  teacherDailyCounts: Record<string, TeacherDailyCount>;
+  maxDailyHours: number;
+  teachers?: Teacher[];
+  ngViolationKeys?: string[];
 }) {
   // teacherConflict: errorKeys と同じ。最初のキーをスクロール対象に。
   const teacherConflict = {
@@ -257,7 +320,7 @@ export function computeViolations({
   Object.values(dailySubjectMap).forEach(cnt => {
     if (cnt > 1) subjectDupCount += cnt - 1;
   });
-  let subjectDupFirstKey = null;
+  let subjectDupFirstKey: string | null = null;
   if (subjectDupCount > 0) {
     // subjectOrders[key] >= 2 のセルが重複の 2 つ目。最初のものを取る。
     // config 順で先頭を取りたいので config を iterate。
@@ -276,7 +339,7 @@ export function computeViolations({
 
   // subjectOver: 科目クォータ超過 (order > maxCnt)
   let subjectOverCount = 0;
-  let subjectOverFirstKey = null;
+  let subjectOverFirstKey: string | null = null;
   Object.entries(subjectOrders).forEach(([key, order]) => {
     const entry = currentSchedule[key];
     const subject = entry?.subject;
@@ -291,7 +354,7 @@ export function computeViolations({
   // teacherOverDaily: 1 日 maxDailyHours 超過した (date, teacher) を列挙。
   // makeExternalKey = `${date}-${teacher}`。date label に "-" を含む場合
   // でも teachers のうち末尾一致する name で復元する (M1)。
-  const teacherOverItems = [];
+  const teacherOverItems: Array<{ date: string; teacher: string; total: number; max: number; firstKey: string | null }> = [];
   const teacherNamesByLength = (teachers || []).map(t => t.name).sort((a, b) => b.length - a.length);
   Object.entries(teacherDailyCounts).forEach(([dayKey, daily]) => {
     if (daily.total <= maxDailyHours) return;
@@ -306,7 +369,7 @@ export function computeViolations({
     // 現タブ内で {date, teacher} に一致する最初のセル (firstKey) を探す。
     // 他タブの違反でも teacherOverDaily に出るが、その場合 firstKey は null
     // (現タブから飛び先が無い)。
-    let firstKey = null;
+    let firstKey: string | null = null;
     outer: for (const d of currentConfig.dates) {
       if (d.label !== date) continue;
       for (const p of currentConfig.periods) {
@@ -351,7 +414,23 @@ export function computeViolations({
 //       は 1 コマまでなので達成不能
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
-export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [], currentSchedule = {} }) {
+export function computeInfeasibilities({
+  teachers,
+  commonSubjects,
+  currentConfig,
+  maxDailyHours,
+  autoNgByTeacher = null,
+  combinedGroups = [],
+  currentSchedule = {},
+}: {
+  teachers: Teacher[] | null | undefined;
+  commonSubjects: string[] | null | undefined;
+  currentConfig: EffectiveConfig;
+  maxDailyHours: number;
+  autoNgByTeacher?: Map<string, AutoNgEntries> | null;
+  combinedGroups?: CombinedGroup[];
+  currentSchedule?: Schedule;
+}) {
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
@@ -370,13 +449,13 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   //    置ける日数が足りていれば solver は回避できる → 報告しない。
   //    置ける日数 < クォータのときだけ、完全にふさがった日のスロットを列挙
   //    する (そこの NG を解消しない限り構造的に解けない)
-  const noTeacherItems = [];
+  const noTeacherItems: Array<{ date: string; period: string; subject: string }> = [];
   subjects.forEach(subject => {
     const quota = currentConfig.subjectCounts?.[subject] || 0;
     if (quota === 0) return;
     const teaches = reals.filter(t => t.subjects?.includes(subject));
     if (teaches.length === 0) return; // C2 が科目単位で検出済み
-    const blockedDays = [];
+    const blockedDays: Array<{ d: Entity; blockedPeriods: Entity[] }> = [];
     let availableDays = 0;
     currentConfig.dates.forEach(d => {
       const blockedPeriods = currentConfig.periods.filter(p => {
@@ -404,7 +483,7 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   // 1 日に教えられる実上限は「時限数」を超えない (同時限に複数クラスを
   // 持てるのは合同のみ)。maxDailyHours だけを使うと capacity を過大評価し、
   // 実際は不足なのに警告が出ない false negative になる。
-  const capacityItems = [];
+  const capacityItems: Array<{ subject: string; demand: number; capacity: number; teacherCount: number }> = [];
   const perDayCap = currentConfig.periods.length > 0
     ? Math.min(maxDailyHours, currentConfig.periods.length)
     : maxDailyHours;
@@ -435,7 +514,7 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   // F5w: 空 + ロック済みセルは生成対象外なので除外。ロック数はクラスごとに
   // 違い得るためクラス単位で判定し、全クラス同値なら従来どおり 1 item に
   // 集約する (ロック無しの共通ケースで item がクラス数分並ぶのを防ぐ)。
-  const quotaMismatchItems = [];
+  const quotaMismatchItems: Array<{ totalQuota: number; cells: number; className?: string; lockedEmpty?: number }> = [];
   const cellsPerClass = currentConfig.dates.length * currentConfig.periods.length;
   const totalQuota = subjects.reduce((sum, s) => sum + (currentConfig.subjectCounts?.[s] || 0), 0);
   if (cellsPerClass > 0) {
@@ -467,7 +546,7 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
   }
 
   // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)
-  const quotaOverDaysItems = [];
+  const quotaOverDaysItems: Array<{ subject: string; quota: number; days: number }> = [];
   subjects.forEach(subject => {
     const quota = currentConfig.subjectCounts?.[subject] || 0;
     if (quota > currentConfig.dates.length) {

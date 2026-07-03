@@ -7,10 +7,23 @@
 // 時刻は分単位の整数で表現する (例: 13:00 → 780)。終了が不明な場合は end=null。
 // 開始も取れない場合は parse 結果自体が null。
 
+/** 分単位の時間帯。endMin=null は「終了不明 (開始のみ判明)」 */
+export interface TimeRange {
+  startMin: number;
+  endMin: number | null;
+}
+
+/** 構造化時刻 (startTime/endTime) か label 自由記述のどちらかを持つ入力 */
+interface TimedLike {
+  startTime?: string | null;
+  endTime?: string | null;
+  label?: string | null;
+}
+
 const HHMM_REGEX = /^\s*(\d{1,2})\s*[:：]\s*(\d{2})\s*$/;
 
 // 「HH:mm」一つを minutes に変換 (失敗時 null)。全角コロンも許容。
-export function parseHHmm(text) {
+export function parseHHmm(text: unknown): number | null {
   if (text == null) return null;
   const m = String(text).match(HHMM_REGEX);
   if (!m) return null;
@@ -25,7 +38,7 @@ export function parseHHmm(text) {
 // 戻り値: { startMin, endMin } | null
 //   - startMin: 必須 (取れなければ null を返す)
 //   - endMin: 取れなければ null (= 開始のみ判明)
-export function parseTimeRange(text) {
+export function parseTimeRange(text: unknown): TimeRange | null {
   if (text == null) return null;
   const s = String(text);
 
@@ -75,7 +88,7 @@ export function parseTimeRange(text) {
 // 時限エンティティから時間帯を取得。
 // 構造化フィールド (startTime / endTime, HH:mm 文字列) があれば優先、
 // 無ければ label から自動解析。両方無ければ null。
-export function getPeriodTimeRange(period) {
+export function getPeriodTimeRange(period: TimedLike | null | undefined): TimeRange | null {
   if (!period) return null;
   const startFromField = parseHHmm(period.startTime);
   const endFromField = parseHHmm(period.endTime);
@@ -88,7 +101,7 @@ export function getPeriodTimeRange(period) {
 // 他学年セッションから時間帯を取得。
 // 構造化フィールド (startTime / endTime) があれば優先、無ければ
 // label を解析してフォールバック。
-export function getSessionTimeRange(session) {
+export function getSessionTimeRange(session: TimedLike | null | undefined): TimeRange | null {
   if (!session) return null;
   const startFromField = parseHHmm(session.startTime);
   const endFromField = parseHHmm(session.endTime);
@@ -103,7 +116,7 @@ export function getSessionTimeRange(session) {
 //   - 片方終了不明: その点が他方の [start, end] 内にあれば重なり
 //   - 双方終了あり: [s1, e1] と [s2, e2] が overlap するか (端点接触は非重複)
 // 戻り値: boolean。どちらかが null/未取得なら false。
-export function timeRangesOverlap(a, b) {
+export function timeRangesOverlap(a: TimeRange | null | undefined, b: TimeRange | null | undefined): boolean {
   if (!a || !b) return false;
   if (a.startMin == null || b.startMin == null) return false;
 
@@ -124,7 +137,7 @@ export function timeRangesOverlap(a, b) {
 }
 
 // minutes を "HH:mm" に整形 (UI 表示・プレビュー用)。null/undefined は null。
-export function formatHHmm(minutes) {
+export function formatHHmm(minutes: number | null | undefined): string | null {
   if (minutes == null) return null;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;

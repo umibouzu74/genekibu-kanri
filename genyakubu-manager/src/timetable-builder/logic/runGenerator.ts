@@ -1,5 +1,23 @@
+/// <reference types="vite/client" />
 import GeneratorWorker from './autoGenerator.worker?worker';
 import { generateSinglePattern } from './autoGenerator';
+import type { GenerationProgress, GenerationResult } from './autoGenerator';
+import type { Project } from '../types';
+
+export interface GeneratorHandle {
+  done: Promise<void>;
+  cancel: () => void;
+}
+
+interface RunGeneratorArgs {
+  project: Project;
+  activeTabId: number;
+  numPatterns: number;
+  baseSeed?: number;
+  onPattern?: (index: number, result: GenerationResult) => void;
+  onProgress?: (index: number, progress: GenerationProgress) => void;
+  onError?: (message: string) => void;
+}
 
 // Web Worker で自動生成を実行する。worker 起動は呼び出し側のタイミングで。
 // onPattern: パターン 1 件生成のたびに (index, result) で呼ばれる
@@ -16,7 +34,7 @@ export function runGeneratorInWorker({
   onPattern,
   onProgress,
   onError,
-}) {
+}: RunGeneratorArgs): GeneratorHandle {
   // typeof Worker チェックで test 環境を判別 (jsdom には Worker がない)
   if (typeof Worker === 'undefined') {
     return runGeneratorSync({ project, activeTabId, numPatterns, baseSeed, onPattern, onProgress, onError });
@@ -26,8 +44,8 @@ export function runGeneratorInWorker({
   let cancelled = false;
   // cancel() からも done を解決できるよう resolver を外スコープへ。
   // (terminate するだけだと done が pending のまま GC されず、closure リーク)
-  let resolveDone;
-  const done = new Promise((resolve) => { resolveDone = resolve; });
+  let resolveDone: () => void;
+  const done = new Promise<void>((resolve) => { resolveDone = resolve; });
 
   worker.addEventListener('message', (e) => {
     if (cancelled) return;
@@ -65,9 +83,17 @@ export function runGeneratorInWorker({
 }
 
 // Worker が使えない環境向けの同期フォールバック (テスト・SSR 用)。
-function runGeneratorSync({ project, activeTabId, numPatterns, baseSeed, onPattern, onProgress, onError }) {
+function runGeneratorSync({
+  project,
+  activeTabId,
+  numPatterns,
+  baseSeed,
+  onPattern,
+  onProgress,
+  onError,
+}: RunGeneratorArgs): GeneratorHandle {
   let cancelled = false;
-  const done = new Promise((resolve) => {
+  const done = new Promise<void>((resolve) => {
     try {
       for (let i = 0; i < numPatterns; i++) {
         if (cancelled) break;
@@ -81,7 +107,7 @@ function runGeneratorSync({ project, activeTabId, numPatterns, baseSeed, onPatte
         onPattern?.(i, result);
       }
     } catch (err) {
-      onError?.(err?.message || String(err));
+      onError?.((err as Error | null)?.message || String(err));
     }
     resolve();
   });

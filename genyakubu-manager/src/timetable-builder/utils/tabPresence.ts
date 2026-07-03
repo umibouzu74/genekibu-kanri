@@ -9,15 +9,18 @@
 
 export const TAB_PRESENCE_CHANNEL = 'builder.tab_presence';
 
-/**
- * 受信メッセージを解釈し、競合警告すべきか / ack を返すべきかを判定する。
- * @param {{ type?: string, id?: string }} msg 受信メッセージ
- * @param {string} selfId 自タブの一意 ID
- * @returns {{ conflict: boolean, shouldAck: boolean }}
- *   conflict: 他タブの存在を検出 (= 警告対象)
- *   shouldAck: 新規タブの hello に対して「既に開いている」と返答すべき
- */
-export function interpretPresenceMessage(msg, selfId) {
+export interface PresenceMessage {
+  type?: string;
+  id?: string;
+}
+
+// 受信メッセージを解釈し、競合警告すべきか / ack を返すべきかを判定する。
+//   conflict: 他タブの存在を検出 (= 警告対象)
+//   shouldAck: 新規タブの hello に対して「既に開いている」と返答すべき
+export function interpretPresenceMessage(
+  msg: PresenceMessage | null | undefined,
+  selfId: string,
+): { conflict: boolean; shouldAck: boolean } {
   const none = { conflict: false, shouldAck: false };
   if (!msg || typeof msg !== 'object') return none;
   if (!msg.id || msg.id === selfId) return none;

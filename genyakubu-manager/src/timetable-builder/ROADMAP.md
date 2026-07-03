@@ -925,11 +925,26 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **✅ Phase 2a (reducer の cascade 依存)**: `utils/combinedPropagation.ts` /
   `utils/labelRefs.ts` / `utils/tabUsage.ts` も `.ts` 化 (同日)。reducer が
   import する層は全て型付きになり、データモデル核が閉じた
-- **残り (Phase 2b)**: utils 残り (analysisHelpers / excelExport / csvImport /
-  templates / autoNg / fixSuggestions / scheduleDiff 等) と
-  logic (autoGenerator / runGenerator / constraints) の `.ts` 化
-- **残り (Phase 3)**: hooks (useProject 系) と components の `.tsx` 化。
-  E5b (完全 ID 化) をやるならこの段階で抱き合わせ
+- **✅ Phase 2b (utils 残り + logic 全部、同日)**: **utils と logic は全ファイル
+  TS 化完了** (計 20 ファイル)。
+  - utils: patternLoad / tabPresence / generationFingerprint / templates /
+    scheduleDiff / storageHealth / autoNg / contrast / timeRange /
+    dateGenerate / groupTeachersBySubject / fixSuggestions / csvImport /
+    analysisHelpers / excelExport
+  - logic: constraints ×2 / autoGenerator / runGenerator /
+    autoGenerator.worker
+  - 公開した主な型: `GenerationResult` / `GenerationProgress` /
+    `GeneratorHandle` (ソルバ) / `GlobalUsage` / `TeacherDailyCount` (分析) /
+    `AutoNgEntries` / `FixSuggestion` / `TimeRange` / `ScheduleDiff` /
+    `TeacherGroup` / `ProjectTemplate` など
+  - worker (.ts) は tsconfig が DOM lib のため `self` をローカル型で cast
+    (実行時挙動は不変)。runGenerator は `vite/client` の型参照で
+    `?worker` import を解決
+  - 検証: vitest 1814 + lint + build + **Playwright E2E (実 Worker 経路) 2 件**
+    全パス
+- **残り (Phase 3)**: hooks / contexts の `.js` 14 ファイルと components の
+  `.jsx` 24 ファイル (→ `.tsx`)。E5b (完全 ID 化) をやるならこの段階で
+  抱き合わせ
 - **規模**: 大 / **価値**: 中〜高
 
 #### E5f. ⚪ state management ライブラリ検討 (新規)
@@ -1578,7 +1593,7 @@ F2h前段 / F2j / F2m も同時に解消)。
    (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ / ~~E3b~~ ✅ 2026-07-03 完了)
 4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり) —
    **Phase 1 (types.ts + データモデル核 6 ファイル) は 2026-07-03 完了**。
-   次は Phase 2 (utils / logic の残り) → Phase 3 (hooks / components tsx 化)
+   Phase 2 (utils / logic 全 20 ファイル) も同日完了。次は Phase 3 (hooks / components の tsx 化)
 
 ---
 

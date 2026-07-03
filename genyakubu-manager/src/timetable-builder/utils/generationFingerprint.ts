@@ -19,8 +19,9 @@
 //     手動編集は「採用したら破棄される」ことをユーザが選択できてよい
 //   - numPatterns / maxIterations: 生成の探索量であって案の意味を変えない
 import { resolveGenerationParams } from './generationParams';
+import type { Project } from '../types';
 
-export function computeGenerationFingerprint(project, tabId) {
+export function computeGenerationFingerprint(project: Project | null | undefined, tabId: number): string | null {
   const tab = (project?.tabs || []).find(t => t.id === tabId);
   if (!tab) return null;
   const { maxDailyHours, maxConsecutivePeriods } = resolveGenerationParams(project);

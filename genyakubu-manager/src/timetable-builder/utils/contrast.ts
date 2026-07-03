@@ -5,12 +5,8 @@
 //
 // 参照: https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
 
-/**
- * "#rrggbb" / "#rgb" を { r, g, b } (0-255) に変換する。
- * @param {string} hex
- * @returns {{ r: number, g: number, b: number }}
- */
-export function hexToRgb(hex) {
+// "#rrggbb" / "#rgb" を { r, g, b } (0-255) に変換する。
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
   let h = String(hex).trim().replace(/^#/, '');
   if (h.length === 3) h = h.split('').map(c => c + c).join('');
   if (!/^[0-9a-fA-F]{6}$/.test(h)) {
@@ -23,27 +19,18 @@ export function hexToRgb(hex) {
   };
 }
 
-/**
- * sRGB の相対輝度 (relative luminance) を返す (0..1)。
- * @param {string} hex
- * @returns {number}
- */
-export function relativeLuminance(hex) {
+// sRGB の相対輝度 (relative luminance) を返す (0..1)。
+export function relativeLuminance(hex: string): number {
   const { r, g, b } = hexToRgb(hex);
-  const lin = (c) => {
+  const lin = (c: number) => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   };
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-/**
- * 2 色のコントラスト比 (1..21) を返す。順序非依存。
- * @param {string} a
- * @param {string} b
- * @returns {number}
- */
-export function contrastRatio(a, b) {
+// 2 色のコントラスト比 (1..21) を返す。順序非依存。
+export function contrastRatio(a: string, b: string): number {
   const la = relativeLuminance(a);
   const lb = relativeLuminance(b);
   const hi = Math.max(la, lb);
@@ -55,13 +42,7 @@ export function contrastRatio(a, b) {
 export const AA_NORMAL = 4.5;
 export const AA_LARGE = 3;
 
-/**
- * AA を満たすか判定する。
- * @param {string} fg 前景 (テキスト) 色
- * @param {string} bg 背景色
- * @param {{ large?: boolean }} [opts] large=true で大きいテキスト基準 (3:1)
- * @returns {boolean}
- */
-export function meetsAA(fg, bg, { large = false } = {}) {
+// AA を満たすか判定する。large=true で大きいテキスト基準 (3:1)。
+export function meetsAA(fg: string, bg: string, { large = false }: { large?: boolean } = {}): boolean {
   return contrastRatio(fg, bg) >= (large ? AA_LARGE : AA_NORMAL);
 }

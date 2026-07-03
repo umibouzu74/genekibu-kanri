@@ -26,9 +26,39 @@ import {
   DEFAULT_MAX_ITERATIONS as CONST_DEFAULT_MAX_ITERATIONS,
   DEFAULT_NUM_PATTERNS as CONST_DEFAULT_NUM_PATTERNS,
 } from '../utils/constants';
+import type { CombinedGroup, Entity, Project, Schedule, ScheduleEntry, Teacher } from '../types';
+
+/** onProgress で通知する探索の途中経過 (E2f live progress) */
+export interface GenerationProgress {
+  iterations: number;
+  filledCount: number;
+  totalSlots: number;
+}
+
+/** generateSinglePattern の戻り値 (1 案分) */
+export interface GenerationResult {
+  solution: Schedule | null;
+  bestPartial: Schedule | null;
+  filledCount: number;
+  totalSlots: number;
+  iterations: number;
+  hitLimit: boolean;
+  stuckSlot: { date: string; period: string; class: string } | null;
+}
+
+/** solver が埋める 1 スロット */
+interface SolverSlot {
+  cIdx: number;
+  d: Entity;
+  p: Entity;
+  c: Entity;
+  k: string;
+  fixedSubject?: string;
+  score?: number;
+}
 
 // シード付き疑似乱数生成器 (Mulberry32)
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let a = seed | 0;
   return function () {
     a = a + 0x6D2B79F5 | 0;
@@ -39,7 +69,7 @@ function mulberry32(seed) {
 }
 
 // シード付きシャッフル（Fisher-Yates）
-function seededShuffle(arr, rng) {
+function seededShuffle<T>(arr: T[], rng: () => number): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -90,9 +120,14 @@ const RESTART_FRACTION = 8;
 // 分析側の computeGlobalUsage と共通。
 // なお externalCounts / externalSessions は「このツールの外」(予備校・高校
 // 等) の負荷で、ここで数える他タブ分とは別枠。
-function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName) {
-  const busy = new Set();   // `${dateId}|${periodId}|${teacher}`
-  const daily = {};         // makeExternalKey(dateLabel, teacher) → count
+function collectOtherTabsUsage(
+  project: Project,
+  activeTabId: number,
+  combinedGroups: CombinedGroup[],
+  exemptName: string,
+): { busy: Set<string>; daily: Record<string, number> } {
+  const busy = new Set<string>();   // `${dateId}|${periodId}|${teacher}`
+  const daily: Record<string, number> = {};         // makeExternalKey(dateLabel, teacher) → count
   (project.tabs || []).forEach(tab => {
     if (tab.id === activeTabId) return;
     forEachCountedAssignment(project, tab, combinedGroups, exemptName,
@@ -106,14 +141,21 @@ function collectOtherTabsUsage(project, activeTabId, combinedGroups, exemptName)
   return { busy, daily };
 }
 
-/**
- * 単一パターンを生成する（シード指定可能）
- * @param {object} args
- * @param {(p: { iterations: number, filledCount: number, totalSlots: number }) => void} [args.onProgress]
- *   探索の途中経過を間引いて通知する (E2f live progress)。省略可。
- * @returns {{ solution: object|null, bestPartial: object, filledCount: number, totalSlots: number, iterations: number, hitLimit: boolean, stuckSlot: object|null }}
- */
-export function generateSinglePattern({ project, activeTabId, seed = 0, onProgress, restartInterval = null }) {
+// 単一パターンを生成する (シード指定可能)。onProgress は探索の途中経過を
+// 間引いて通知する (E2f live progress)。省略可。
+export function generateSinglePattern({
+  project,
+  activeTabId,
+  seed = 0,
+  onProgress,
+  restartInterval = null,
+}: {
+  project: Project;
+  activeTabId: number;
+  seed?: number;
+  onProgress?: (p: GenerationProgress) => void;
+  restartInterval?: number | null;
+}): GenerationResult {
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   // v4(Y)+E-3: dates も periods も『このタブが使う分』に絞る (useProject の
@@ -148,8 +190,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   const poolPeriods = project.periods || [];
   const activePeriodIdSet = new Set(currentConfig.periods.map(p => p.id));
 
-  const slots = [];
-  const currentCounts = {};
+  const slots: SolverSlot[] = [];
+  const currentCounts: Record<number, Record<string, number>> = {};
   currentConfig.classes.forEach((c, cIdx) => {
     currentCounts[cIdx] = {};
     commonSubjects.forEach(s => currentCounts[cIdx][s] = 0);
@@ -174,13 +216,13 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   //   3. 既存スケジュールの確定割当 (合同グループ重複は 1 カウント、未定は除外)
   // ここで作った initialDaily を solve に渡し、上限チェックの基準とする。
   // 1 と 2 は別枠 — 他タブ分を externalCounts に手入力すると二重計上になる。
-  const initialDaily = {};
+  const initialDaily: Record<string, number> = {};
   // 詳細セッション (externalSessions) が登録されていれば件数として優先採用、
   // 無ければ legacy externalCounts。分析側 computeGlobalUsage と同じ規則に
   // 揃える (M5: 従来は externalCounts しか見ておらず、セッション詳細だけ
   // 登録する運用だと日次上限がすり抜けて生成直後に違反表示になっていた)。
   const externalCounts = project.externalCounts || {};
-  const sessionCounts = {};
+  const sessionCounts: Record<string, number> = {};
   (project.externalSessions || []).forEach(s => {
     if (!s?.date || !s?.teacherName) return;
     const k = makeExternalKey(s.date, s.teacherName);
@@ -195,7 +237,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
     initialDaily[k] = (initialDaily[k] || 0) + otherTabs.daily[k];
   });
 
-  const seenCombinedDay = new Set();
+  const seenCombinedDay = new Set<string>();
   currentConfig.dates.forEach((d) => {
     currentConfig.periods.forEach((p) => {
       currentConfig.classes.forEach((c) => {
@@ -253,24 +295,29 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   //   ごとの rng で引き直す (= 毎回別の探索順を試す)
   // - solution / bestPartial / 詰まり位置はリスタート横断で集約する
   const seedGen = mulberry32(seed);
-  let solution = null;
-  let bestPartial = null;
+  let solution: Schedule | null = null;
+  let bestPartial: Schedule | null = null;
   let bestFilledCount = -1;
-  let bestStuckSlot = null; // bestFilledCount を出した run の詰まりスロット
+  let bestStuckSlot: SolverSlot | null = null; // bestFilledCount を出した run の詰まりスロット
   let totalIter = 0;
 
-  const runOnce = (budget) => {
+  const runOnce = (budget: number) => {
     const rng = mulberry32(Math.floor(seedGen() * 0x7fffffff));
     const runSlots = slots
       .map(s => ({ ...s, tieBreaker: rng() }))
       .sort((a, b) => (a.score === b.score ? a.tieBreaker - b.tieBreaker : a.score - b.score));
 
-    let runSolution = null;
-    let runBestPartial = null;
+    let runSolution: Schedule | null = null;
+    let runBestPartial: Schedule | null = null;
     let runBestFilled = -1;
     const iter = { c: 0 };
 
-    const solve = (idx, tempSch, tempCnt, tempDaily) => {
+    const solve = (
+      idx: number,
+      tempSch: Schedule,
+      tempCnt: Record<number, Record<string, number>>,
+      tempDaily: Record<string, number>,
+    ) => {
       if (iter.c++ > budget || runSolution !== null) return;
 
       // 部分解の更新（現在の充填度が最高なら保存）
@@ -310,11 +357,17 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
 
         // 合同グループチェック (label ベース)
         const group = findCombinedGroup(combinedGroups, s, c.label, d.label);
-        let secondarySlots = [];
+        const secondarySlots: Array<{
+          cIdx: number;
+          key: string;
+          className: string;
+          hadSubject: boolean;
+          original: ScheduleEntry | null;
+        }> = [];
         let canUseCombined = true;
         // 合同の別クラスに既に入っている講師 (居れば primary も必ず同じ講師)。
         // これを見ないと「合同授業なのに 2 講師に分裂」した案が生成される (M7)。
-        let groupTeacher = null;
+        let groupTeacher: string | null = null;
 
         if (group) {
           for (const otherClassLabel of group.classes) {
@@ -385,8 +438,8 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           })
         );
 
-        const priorityGroup = [];
-        const neutralGroup = [];
+        const priorityGroup: Teacher[] = [];
+        const neutralGroup: Teacher[] = [];
         validT.forEach(t => {
           if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
           else neutralGroup.push(t);
@@ -556,8 +609,16 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
  * 複数パターンを生成する（後方互換のためのラッパー）
  * onProgress コールバックで進捗を通知可能
  */
-export function generateSchedule({ project, activeTabId, numPatterns = CONST_DEFAULT_NUM_PATTERNS }) {
-  const results = [];
+export function generateSchedule({
+  project,
+  activeTabId,
+  numPatterns = CONST_DEFAULT_NUM_PATTERNS,
+}: {
+  project: Project;
+  activeTabId: number;
+  numPatterns?: number;
+}): GenerationResult[] {
+  const results: GenerationResult[] = [];
   const baseSeed = Date.now();
 
   for (let i = 0; i < numPatterns; i++) {

@@ -23,12 +23,17 @@
 // commonSubjects を渡すと unknownSubjects を warning として返す。
 // commonSubjects 自体は filter せず保持 (ユーザが新規追加したいケースを想定)。
 
+export interface CsvError {
+  line: number;
+  message: string;
+}
+
 const REQUIRED_HEADERS = ['name', 'subjects'];
 
-function parseLine(line) {
+function parseLine(line: string): string[] {
   // RFC4180 風: ダブルクォート対応の最小実装。
   // フィールド内に "," を含めたい場合は "..." で囲み、内部の " は "" にエスケープ。
-  const fields = [];
+  const fields: string[] = [];
   let cur = '';
   let inQuote = false;
   for (let i = 0; i < line.length; i++) {
@@ -82,12 +87,25 @@ function parseLine(line) {
 //   }
 const NG_REQUIRED = ['date', 'period']; // name は teacher 別名を許すので別判定
 
-export function parseNgCsv(text, { teacherNames, knownDates, knownPeriods } = {}) {
-  const rows = [];
-  const errors = [];
-  const unknownTeacherSet = new Set();
-  const unknownDateSet = new Set();
-  const unknownPeriodSet = new Set();
+export function parseNgCsv(
+  text: string | null | undefined,
+  { teacherNames, knownDates, knownPeriods }: {
+    teacherNames?: string[];
+    knownDates?: string[];
+    knownPeriods?: string[];
+  } = {},
+): {
+  rows: Array<{ name: string; date: string; period: string }>;
+  errors: CsvError[];
+  unknownTeachers: string[];
+  unknownDates: string[];
+  unknownPeriods: string[];
+} {
+  const rows: Array<{ name: string; date: string; period: string }> = [];
+  const errors: CsvError[] = [];
+  const unknownTeacherSet = new Set<string>();
+  const unknownDateSet = new Set<string>();
+  const unknownPeriodSet = new Set<string>();
   const teacherSet = new Set(teacherNames || []);
   const dateSet = new Set(knownDates || []);
   const periodSet = new Set(knownPeriods || []);
@@ -121,7 +139,7 @@ export function parseNgCsv(text, { teacherNames, knownDates, knownPeriods } = {}
   const dateIdx = headerFields.indexOf('date');
   const periodIdx = headerFields.indexOf('period');
 
-  const seen = new Set();
+  const seen = new Set<string>();
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
     if (!raw || raw.trim() === '') continue;
@@ -161,10 +179,17 @@ export function parseNgCsv(text, { teacherNames, knownDates, knownPeriods } = {}
   };
 }
 
-export function parseTeachersCsv(text, { commonSubjects } = {}) {
-  const rows = [];
-  const errors = [];
-  const unknownSet = new Set();
+export function parseTeachersCsv(
+  text: string | null | undefined,
+  { commonSubjects }: { commonSubjects?: string[] } = {},
+): {
+  rows: Array<{ name: string; subjects: string[] }>;
+  errors: CsvError[];
+  unknownSubjects: string[];
+} {
+  const rows: Array<{ name: string; subjects: string[] }> = [];
+  const errors: CsvError[] = [];
+  const unknownSet = new Set<string>();
   const knownSubjects = new Set(commonSubjects || []);
 
   const lines = (text || '').split(/\n/).map(l => l.replace(/\r$/, ''));
@@ -186,7 +211,7 @@ export function parseTeachersCsv(text, { commonSubjects } = {}) {
   const nameIdx = headerFields.indexOf('name');
   const subjectsIdx = headerFields.indexOf('subjects');
 
-  const seenNames = new Set();
+  const seenNames = new Set<string>();
 
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];

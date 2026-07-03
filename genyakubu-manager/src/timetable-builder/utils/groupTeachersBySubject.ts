@@ -20,6 +20,14 @@
 //   - teachers の順序は入力配列の元の順 (= 安定ソート)
 //   - key は React の `key` prop 用 (label と異なり sentinel: ユーザが
 //     subject 名を '複数教科' / 'その他' にしてもキー衝突しない)。
+import type { Teacher } from '../types';
+
+export interface TeacherGroup {
+  key: string;
+  label: string;
+  teachers: Teacher[];
+}
+
 export const MULTI_SUBJECT_GROUP_KEY = '__multi__';
 export const MULTI_SUBJECT_GROUP_LABEL = '複数教科';
 export const OTHER_GROUP_KEY = '__other__';
@@ -27,9 +35,13 @@ export const OTHER_GROUP_LABEL = 'その他';
 
 // subject 名から React key を作る。ユーザ定義 subject の key は 'subj:<name>'
 // の prefix で sentinel と衝突しないようにする。
-const subjectKey = (s) => `subj:${s}`;
+const subjectKey = (s: string) => `subj:${s}`;
 
-export function groupTeachersBySubject(teachers, subjectOrder, options = {}) {
+export function groupTeachersBySubject(
+  teachers: Teacher[] | null | undefined,
+  subjectOrder: string[] | null | undefined,
+  options: { flattenIntoSingleSubject?: string } = {},
+): TeacherGroup[] {
   // flattenIntoSingleSubject: filtered ScheduleCell 用の bypass モード。
   // 渡された subject の単一グループに集約する。
   if (options.flattenIntoSingleSubject) {
@@ -43,9 +55,9 @@ export function groupTeachersBySubject(teachers, subjectOrder, options = {}) {
   }
 
   const order = Array.isArray(subjectOrder) ? subjectOrder : [];
-  const bySubject = new Map();
-  const multi = [];
-  const none = [];
+  const bySubject = new Map<string, Teacher[]>();
+  const multi: Teacher[] = [];
+  const none: Teacher[] = [];
 
   for (const t of teachers || []) {
     // 同一 subject の重複 (['英語','英語']) は dedupe してから length 判定
@@ -56,13 +68,13 @@ export function groupTeachersBySubject(teachers, subjectOrder, options = {}) {
     } else if (subjects.length === 1) {
       const s = subjects[0];
       if (!bySubject.has(s)) bySubject.set(s, []);
-      bySubject.get(s).push(t);
+      bySubject.get(s)!.push(t);
     } else {
       multi.push(t);
     }
   }
 
-  const groups = [];
+  const groups: TeacherGroup[] = [];
   // 順序: subjectOrder の指定順 → それ以外の教科 → 複数教科 → その他
   for (const s of order) {
     const arr = bySubject.get(s);

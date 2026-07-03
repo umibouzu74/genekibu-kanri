@@ -9,7 +9,9 @@
 // 戻り値: { teacherCount, max, min, spread }。
 //   - 0 コマの講師は対象外。
 //   - 対象講師が 0 人なら全て 0 を返す。
-export function summarizePatternLoad(totals) {
+export function summarizePatternLoad(
+  totals: Record<string, number> | null | undefined,
+): { teacherCount: number; max: number; min: number; spread: number } {
   const counts = Object.values(totals || {}).filter((n) => typeof n === 'number' && n > 0);
   if (counts.length === 0) {
     return { teacherCount: 0, max: 0, min: 0, spread: 0 };
