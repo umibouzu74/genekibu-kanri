@@ -4,7 +4,8 @@
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
 (schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
-(テスト 1695 → 1766 件)。
+(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) を完了**
+(テスト 1766 → 1804 件)。
 **builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
 校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
@@ -33,7 +34,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
 | E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
 | E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
-| E3 (テスト/信頼性) | E3d schema 検証 |
+| E3 (テスト/信頼性) | E3d schema 検証 / E3e ConfigModal sub-tests |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
@@ -41,7 +42,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
 **残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統: E1a/E1f 残り ·
-E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e/E3f/E3g テスト深化 ·
+E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3f/E3g テスト深化 ·
 E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
 ---
@@ -80,7 +81,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1766 件 / 88 ファイル** (2026-07-03 校正レビュー後。timetable-builder
+合計 **1804 件 / 88 ファイル** (2026-07-03 E3e 完了後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -266,7 +267,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 88 files / 1766 tests (2026-07-03 校正レビュー後)
+npm test            # 88 files / 1804 tests (2026-07-03 E3e 完了後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -769,10 +770,28 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: projectSchema.test.js (新規 10) / projectFactory.test.js (+2 fallback)。
 - **判断**: 手書きバリデータで十分 (構造チェックのみ)。値レベルの厳密検証 (例: id の一意性) は過剰なので入れない。
 
-#### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
-- **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
-- **改善**: TeacherManager (CSV import 含む) / BasicSettings / AbsenceNgPanel (旧 NgSettings + ExternalCounts を統合した 1000 行コンポーネント) / CombinedGroupSettings に直接の UI テストを追加。D5a で a11y 属性追加分の回帰もここで捕捉。
-- **規模**: 中 / **価値**: 中
+#### E3e. ✅ ConfigModal sub-components のテスト拡充 (2026-07-03 完了)
+- **旧現状**: 各 sub-component のテストは回帰シナリオ中心で薄かった
+  (TeacherManager 3 件 / AbsenceNgPanel 11 件 (1254 行) / SubjectManager 3 件)。
+- **実装 (+38 件、いずれも既存ファイルへ追記)**:
+  - **TeacherManager (3→18)**: 追加 (showInput→addTeacher) / 削除 (confirm ゲート) /
+    InlineNameEdit (Enter・blur commit / Escape 破棄 / 同値・空白 no-op) /
+    担当科目トグル / CSV import 実行 (append は confirm なし・replace は confirm、
+    0 行 disabled、未登録科目 warning、キャンセル)。教科グループ表示で並びが
+    変わっても「元の teachers index」で dispatch されることを固定。
+  - **AbsenceNgPanel (11→26)**: 他学年セッション一括登録 (講師×期間の直積、
+    登録後の時刻・メモ clear と講師・期間の保持) / 時刻バリデーション 2 種 /
+    まとめてNG・OK解除 (解除のみ confirm、拒否で no-op、全時限 allMode の解決) /
+    モード切替での external フィールド clear / 日付セクション (セッション一覧・
+    削除、自動NG セルの「自」+ tooltip + NG 件数バッジ、折りたたみ・再展開) /
+    クイック数値グリッド (draft-commit、セッション有セルは件数表示、
+    明示 0 と未入力の区別)。
+  - **SubjectManager (3→9)**: 科目の追加 / 削除 (cascade 警告 confirm) /
+    並び替え (▲▼ と端の disabled)。
+  - **CombinedGroupSettings (9→11)**: 削除経路 (confirm なしの即時 dispatch) /
+    編集中に別グループを削除しても draft が維持されること。
+- **対象外**: BasicSettings (17 件) / ClassPriority / GenerationSettings /
+  NgCsvImport / TemplateManager / DraftNumberInput は既に十分な直接テストあり。
 
 #### E3f. ⚪ 視覚回帰テスト (新規)
 - **現状**: 無し。
@@ -1460,8 +1479,9 @@ E1a/E1f 残 (ScheduleTable 幅 / 44px / ピンチ抑止 / ヘッダ長押し) ·
 D7c テスト共通基盤
 
 中: E3a Worker E2E · E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
-E3e ConfigModal sub-tests 拡充 · E3g クロスブラウザ · E4b ソルバ計測 ·
+E3g クロスブラウザ · E4b ソルバ計測 ·
 E2a Excel 取込 (要 mapping UI)
+(~~E3e ConfigModal sub-tests 拡充~~ ✅ 2026-07-03 完了、+38 件)
 
 大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
 E5 系 (TS / ID / style / state lib / Worker 分析) · E6a Firebase ·
@@ -1477,14 +1497,15 @@ F2h前段 / F2j / F2m も同時に解消)。
 **G.3 / G.4 のコード側課題はこれで全て完了** — 残るのは判断待ち (G.1)、
 実機検証 (G.2)、E 系の未着手 (G.5) のみ。
 
+~~3. コードの軽い一手なら E3e~~ ✅ E3e 完了 (2026-07-03、+38 件で 1804 に)。
+
 現在の推奨順:
 
-1. **2 バッチ分の PR レビュー・マージ**
-   (claude/roadmap-improvements-7hmnva ブランチ)
+1. ~~2 バッチ分の PR レビュー・マージ~~ ✅ PR #143 マージ済み (2026-07-03)
 2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-3. コードの軽い一手なら **E3e** (ConfigModal sub-tests 拡充) →
-   **E3a** (Worker E2E) のテスト深化、あるいは **E1a/E1f 残** (モバイル)
+3. コードの軽い一手なら **E3a** (Worker E2E) のテスト深化、
+   あるいは **E1a/E1f 残** (モバイル)
 4. 仕様判断が要るもの: **F5p** (他タブ合同グループの編集挙動、G.1 参照)
 5. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
 

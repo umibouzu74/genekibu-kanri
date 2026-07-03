@@ -153,3 +153,27 @@ describe('CombinedGroupSettings — 重複グループの登録ガード (F5z)',
     expect(updateCombinedGroup).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CombinedGroupSettings — 削除経路 (E3e)', () => {
+  // 合同グループの削除は cascade 無しの draft/list 操作なので confirm を
+  // 挟まない (Undo 可能な単発 dispatch)。CLAUDE.md の削除 UX ルールの対象は
+  // 親アプリの永続リソースで、こちらは reducer 経由の即時削除 + Undo。
+  it('削除ボタンで removeCombinedGroup(id) を呼ぶ', () => {
+    const { removeCombinedGroup } = renderSettings();
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(1);
+  });
+
+  it('編集中に別グループを削除しても編集中の draft は維持される', () => {
+    const other = { id: 2, subject: '数学', classes: ['A', 'C'], dates: null };
+    const { removeCombinedGroup } = renderSettings({ combinedGroups: [GROUP, other] });
+    // group 1 を編集開始 (この行の削除ボタンは editor に置き換わる)
+    fireEvent.click(screen.getAllByText('編集')[0]);
+    expect(screen.getByText('保存')).toBeInTheDocument();
+    // 残っている削除ボタンは group 2 のもの
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(2);
+    // group 1 の編集 draft は開いたまま
+    expect(screen.getByText('保存')).toBeInTheDocument();
+  });
+});
