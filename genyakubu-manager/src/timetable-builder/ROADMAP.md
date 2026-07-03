@@ -1,7 +1,8 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: **2026-07-03** — §G.6 推奨順の小粒バッチ完了 (F2i / F5z / F2e /
-F2h前段 / F2d / F2j / F2m の 7 件、テスト 1695 → 1727 件)。
+最終更新: **2026-07-03** — §G.6 推奨順の小粒バッチ ×2 完了
+(第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
+第 2 弾: F2l / F5f / E5g。テスト 1695 → 1743 件)。
 **現在の残課題は §G に一本化**。それ以前の履歴: 2026-07-03 F.4/F.5 改善
 サイクル (PR #141) / 2026-07-02 F 系レビュー (F.1-F.5) / 2026-06-29 E 系
 UX 仕上げ / A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
@@ -33,7 +34,7 @@ UX 仕上げ / A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクショ�
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
 | F (レビュー起点の修正) | F.1/F.3 一括修正 (2026-07-02) / F.4-F.5 の改善 10 バッチ (2026-07-02〜03、PR #141): 読込クラッシュループ根絶 F5a-F5e+F2f / 期間カレンダー順 F5j / autosave debounce F2c / focus trap F5q-F5r / Excel シート名 F5g-F5i / infeasibility 再設計 F2g+F5x / モーダル UI F5k-F5o / ソルバ整合 F5t-F5y / 空ロック仕様 F5w / fingerprint 失効 F2n-F2p / 参照整合 F2k+H3/H5/F2o / a11y F2a-F2b |
-| G (残課題の一本化後) | 2026-07-03 小粒バッチ: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード |
+| G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
 **残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統: E1a/E1f 残り ·
 E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e/E3f/E3g テスト深化 ·
@@ -75,7 +76,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1727 件 / 84 ファイル** (2026-07-03 小粒バッチ後。timetable-builder
+合計 **1743 件 / 86 ファイル** (2026-07-03 小粒バッチ ×2 後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -261,7 +262,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 84 files / 1727 tests (2026-07-03 小粒バッチ後)
+npm test            # 86 files / 1743 tests (2026-07-03 小粒バッチ ×2 後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -846,10 +847,15 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: Zustand / Jotai / Redux Toolkit に置き換えて selector ベースの purity / devtools 統合を得る。
 - **判断**: 動いているものを置き換えるコストが高い。**「壊す」候補だが優先度低**。
 
-#### E5g. 🟡 project schema v4 migration path 設計 (新規)
-- **現状**: v1→v2→v3 の migration は `migrateProject` で実装済み。v4 (combinedGroups の ID 化 / teacher 安定 ID 等) を入れる時のテンプレートを決めておきたい。
-- **改善**: 「version up はリリースの最後に 1 度だけ」「migration は順次関数合成」「失敗時 fallback は前 version」のルール化。
-- **規模**: 小 (設計のみ) / **価値**: 中
+#### E5g. ✅ project schema migration path 設計 (2026-07-03 完了)
+- **旧現状**: v1→v4 の migration は `migrateProject` で実装済みだが、v5
+  (combinedGroups の ID 化 / teacher 安定 ID 等) を入れる時のルールが不文律だった。
+- **実装**: `docs/ARCHITECTURE.md` §4.1 に 7 項目のルールを明文化 —
+  1 リリース 1 インクリメント / 順次関数合成 (既存 migration は凍結) /
+  reject より正規化 (F.5 系統 A) / 失敗時は退避 + フォールバック (F2f) /
+  ID 参照変更は「旧 ID → ラベル → 新 ID」の 2 段 remap (F5f の教訓含む) /
+  テスト 3 点セット (正常系 / 正規化系 / projectLoadIntegrity) /
+  書き込み側 (createNewProject / validateProjectShape) との同時更新。
 
 #### E5h. ⚪ Worker への analysis 移動 (新規, 「壊す」候補)
 - **現状**: useAnalysis は main thread。大規模 schedule で UI スレッドを止める潜在リスク。
@@ -1069,10 +1075,9 @@ F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を
 - ✅ **F2k**: ラベルベース参照の cascade (削除/リネーム) を単一モジュールへ
   一元化 (makeNgKey/makeExternalKey のパース知識が 5 箇所に分散)
   → **2026-07-02 実装済み** (utils/labelRefs.js)
-- **F2l**: draft-commit 入力 (DraftListTextarea / InlineNameEdit / ParamRow) と
-  dismissable-popover (Header / Toolbar / SnapshotMenu) の共有フック化。
-  SubjectManager / AbsenceNgPanel の即時 commit 数値入力にも draft 化を展開
-  (CombinedGroupSettings の draft 化のみ F5n で実施済み、残りは §G.4)
+- ✅ **F2l**: draft-commit 入力と dismissable-popover の共有フック化
+  → **2026-07-03 完了** (useDismissablePopover / DraftNumberInput。
+  3 つの draft テキスト入力の統合のみ設計判断で見送り。§G.4 参照)
 - ✅ **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
   fixSuggestions の同型 4 連ブロック解消)
   → **2026-07-03 実装済み** (INFEASIBILITY_KINDS、§G.4 参照)
@@ -1171,7 +1176,8 @@ F.4 で精読済みの箇所を除外し、4 班 (utils 深掘り / ConfigModal 
 
 #### 系統 A: JSON 読込の検証・正規化の穴 (クラッシュループ級、最優先)
 
-**✅ F5a-F5e + F2f 対応済み (2026-07-02、F5f のみ残)。実装方針:**
+**✅ F5a-F5e + F2f 対応済み (2026-07-02)、F5f も 2026-07-03 に対応済みで
+系統 A は完了。実装方針:**
 - 「reject より正規化」— validateProjectShape は据え置き (tabs/config/schedule
   の致命的構造のみ)、**migrateProject が要素レベルまで正規化**する方に寄せた。
   reject するとフォールバックでユーザデータを失うが、正規化なら型崩れ
@@ -1217,9 +1223,10 @@ subjectCounts/schedule しか見ず、`migrateProject` も以下を正規化し�
   の JSON で「UI は 1 と表示・実際は全講師除外で全コマ未定」になり原因不明
 - ✅ **F5e (Low)**: version≤2 で config.dates/periods 欠落 → migrate 全体が
   TypeError (validateProjectShape は v4 互換のため optional 扱い)
-- **F5f (Low・要検証)**: v2/v3 混在 dim + ID キーの schedule は
+- ✅ **F5f (Low)**: v2/v3 混在 dim + ID キーの schedule は
   migrateTabV2toV3 のインデックス前提でシフト/消失 (正規経路では混在時
-  schedule 空のため実害は外部データのみ)
+  schedule 空のため実害は外部データのみ)。
+  **✅ 修正 (2026-07-03)**: キー成分の解釈を次元別に分離 (§G.3 参照)
 
 **修正方向 (当初案)**: validateProjectShape の対象拡大 + migrateProject での
 フィールド正規化 + ソルバも resolveGenerationParams を使う、だったが、
@@ -1353,10 +1360,11 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    F2n/F2p は generationFingerprint で ✅ 完了 (2026-07-02、F.4 の 5 参照)。
    F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
 7. **参照整合 ✅ (2026-07-02) / a11y ✅ (2026-07-03、F.4 の 6 参照)**。
-   **2026-07-03 小粒バッチで F2d / F2e / F2h 前段 / F5z も ✅**。
+   **2026-07-03 小粒バッチ ×2 で F2d / F2e / F2h 前段 / F5z / F5f /
+   F2l も ✅**。
    **残り (すべて判断待ち or 実機検証)**: F5p (他タブ合同グループの編集、
-   仕様判断) / F5s (long-press ゴースト click、実機検証) / F5f (v2/v3 混在
-   dim、外部データ限定) / A7 (Shift+? 実機検証、既存)
+   仕様判断) / F5s (long-press ゴースト click、実機検証) / A7 (Shift+?
+   実機検証、既存)
 
 ---
 
@@ -1406,8 +1414,10 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
   **残り (新規メモ)**: ガードは UI 登録経路のみ。JSON 読込・テンプレート
   適用経由では重複グループが依然流入しうる (migrate 側での警告 or 正規化は
   未実装。伝播・集計が first-match なのは従来どおりなので実害は限定的)
-- **F5f**: v2/v3 混在 dim + ID キーの schedule が migrateTabV2toV3 の
-  インデックス解釈でシフト/消失 (壊れた外部データ限定)
+- ✅ **F5f** (2026-07-03): migrateTabV2toV3 の schedule キー解釈を次元別に
+  分離。v3 次元 (既に {id,label}) のキー成分は「ID」として存在確認つき
+  素通し、v2 次元 (string[]) のみ「配列位置」→ ID 変換。歯抜け ID を含む
+  外部 JSON でセルが隣へシフト / 消失する問題を解消
 
 ### G.4 構造改善の提案 (F.3 起源)
 
@@ -1419,9 +1429,19 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 - ✅ **F2j** (2026-07-03): `utils/tabUsage.js` の `forEachCountedAssignment`
   に「どのセルを 1 コマと数えるか」(exempt 除外・stale 除外・合同 dedupe) を
   一元化。collectOtherTabsUsage / computeGlobalUsage は集計だけを行う
-- **F2l 残り**: draft-commit 入力と dismissable-popover の共有フック化
-  (CombinedGroupSettings の draft 化は F5n で実施済み。共有フック化と
-  SubjectManager / AbsenceNgPanel の数値入力 draft 化が残)
+- ✅ **F2l** (2026-07-03 完了):
+  - **dismissable-popover**: `hooks/useDismissablePopover.js` に共有化
+    (Header の Excel メニュー / Toolbar の違反 popover / SnapshotMenu)。
+    Escape は IME 変換中を無視する改善込み
+  - **数値入力の draft 化**: `components/ConfigModal/DraftNumberInput.jsx`
+    を新設し、SubjectManager (タブ別コマ数) と AbsenceNgPanel (外部コマ数
+    グリッド) の keystroke ごと dispatch を blur/Enter 時 1 回の commit に。
+    teacher/setExternalCount に同値 no-op ガードも追加 (F2d 同型)
+  - **見送り (設計判断)**: DraftListTextarea / InlineNameEdit / ParamRow の
+    3 つの draft-commit テキスト入力を単一フックに統合する案は不採用。
+    「非編集時は canonical 表示」「編集モードのトグル」「clamp + 外部同期」
+    と意味論がそれぞれ異なり、共通化すると分岐だらけの抽象になる。
+    現状の 3 実装はどれも 30 行以下で自己完結しており重複コストが小さい
 - ✅ **F2m** (2026-07-03): `INFEASIBILITY_KINDS` レジストリ
   (utils/fixSuggestions.js) に種別ごとの label / informational / suggest を
   集約し、Toolbar と buildFixSuggestions の同型 4 連ブロックを解消。
@@ -1431,7 +1451,7 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 ### G.5 機能・テストの未着手 (E 系、規模順)
 
 小〜中: E1h 印刷微調整 · E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
-E5g v5 migration path 設計 · E4d useAnalysis プロファイル ·
+E4d useAnalysis プロファイル ·
 E1a/E1f 残 (ScheduleTable 幅 / 44px / ピンチ抑止 / ヘッダ長押し) ·
 D7c テスト共通基盤
 
@@ -1449,14 +1469,17 @@ E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
 ~~2. 軽い一手 F2i / F5z~~ ✅ 完了 (2026-07-03 小粒バッチで F2d / F2e /
 F2h前段 / F2j / F2m も同時に解消)。
 
+~~第 2 弾: F2l / E5g~~ ✅ 完了 (2026-07-03、F5f も同時に解消)。
+**G.3 / G.4 のコード側課題はこれで全て完了** — 残るのは判断待ち (G.1)、
+実機検証 (G.2)、E 系の未着手 (G.5) のみ。
+
 現在の推奨順:
 
-1. **今回のバッチの PR レビュー・マージ**
+1. **2 バッチ分の PR レビュー・マージ**
    (claude/roadmap-improvements-7hmnva ブランチ)
-2. 軽い一手の続き: **G.4 の F2l 残り** (draft-commit / dismissable-popover の
-   共有フック化、中規模) か **G.5 小の E5g** (v5 migration path の設計、
-   ドキュメントのみ)
-3. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
+2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-4. テスト深化なら **E3e** (ConfigModal sub-tests) → **E3a** (Worker E2E) の順
+3. コードの軽い一手なら **E3e** (ConfigModal sub-tests 拡充) →
+   **E3a** (Worker E2E) のテスト深化、あるいは **E1a/E1f 残** (モバイル)
+4. 仕様判断が要るもの: **F5p** (他タブ合同グループの編集挙動、G.1 参照)
 5. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
