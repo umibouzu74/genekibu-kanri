@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useCrudResource } from "./useCrudResource";
 import { useToasts } from "./useToasts";
+import { nextNumericId } from "../utils/schema";
 
 const ADJ_LABEL = {
   move: "コマ移動",
@@ -35,7 +36,7 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
     (oldId, newAdj) => {
       const ts = new Date().toISOString();
       const filtered = adjustments.filter((a) => a.id !== oldId);
-      const id = Math.max(0, ...filtered.map((a) => a.id || 0)) + 1;
+      const id = nextNumericId(filtered);
       saveAdjustments([
         ...filtered,
         { ...newAdj, id, createdAt: ts },

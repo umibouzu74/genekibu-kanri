@@ -4,8 +4,9 @@
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
 (schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
-(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) を完了**
-(テスト 1766 → 1804 件)。
+(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) と
+親アプリ側の小粒 2 件 (H2c 深夜 0 時跨ぎ / H2d id 採番統一) を完了**
+(テスト 1766 → 1808 件)。
 **builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
 校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
@@ -81,7 +82,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1804 件 / 88 ファイル** (2026-07-03 E3e 完了後。timetable-builder
+合計 **1808 件 / 89 ファイル** (2026-07-03 E3e + H2c/H2d 完了後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -267,7 +268,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 88 files / 1804 tests (2026-07-03 E3e 完了後)
+npm test            # 89 files / 1808 tests (2026-07-03 E3e + H2c/H2d 完了後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1549,12 +1550,14 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
   (types.d.ts / schema.ts)。「講習」の表現が builder / koshu timetable /
   extraLessons の 3 概念に割れないよう、koshu type を正式実装するか
   廃止するかの設計判断が要る
-- **H2c. ExcelGridView の回数計算が深夜 0 時跨ぎで更新されない**
-  (`new Date()` が useMemo deps 外、コード内コメントで既知)。実害は
-  日付を跨いで開きっぱなしのタブのみ。規模: 小
-- **H2d. id 採番の手書き重複**: `useSessionOverridesCrud.upsert` と
-  `useAdjustmentsCrud.replace` が `Math.max(...)+1` を手書きしており
-  `nextNumericId` (schema.ts) を使っていない。統一余地。規模: 小
+- ✅ **H2c** (2026-07-03): ExcelGridView の回数計算が深夜 0 時跨ぎで
+  更新されない問題を修正。`hooks/useToday.js` を新設 (「今日」の
+  "YYYY-MM-DD" を state 化し、翌 0 時 +1 秒に setTimeout で更新・再アーム)
+  し、`sessionTargetDate` の useMemo が `today` を deps に取る形に。
+  テスト 4 件 (useToday.test.jsx、fake timers で日跨ぎ・再アーム・cleanup)
+- ✅ **H2d** (2026-07-03): `useSessionOverridesCrud.upsert` と
+  `useAdjustmentsCrud.replace` の手書き `Math.max(...)+1` を
+  `nextNumericId` (schema.ts) に統一。挙動等価 (非数値 id の防御は向上)
 - **H2e. 孤立データ検出 (`detectOrphans`) が import 時のみ**: slot 削除の
   cascade は useSlotsCrud にあるが、adjustments / sessionOverrides を直接
   削除しても classSets の slotIds 参照は掃除されない (FK 検証は import 時

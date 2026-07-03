@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useCrudResource } from "./useCrudResource";
 import { useToasts } from "./useToasts";
+import { nextNumericId } from "../utils/schema";
 
 // 回数手動補正 (SessionOverride) の CRUD ロジック。
 // 同じ (slotId, date) の組に対する override は 1 件だけ許容し、
@@ -21,7 +22,7 @@ export function useSessionOverridesCrud({ sessionOverrides, saveSessionOverrides
       if (existing) {
         const ts = new Date().toISOString();
         const filtered = sessionOverrides.filter((o) => o.id !== existing.id);
-        const id = Math.max(0, ...filtered.map((o) => o.id || 0)) + 1;
+        const id = nextNumericId(filtered);
         saveSessionOverrides([
           ...filtered,
           { ...override, id, createdAt: ts },
