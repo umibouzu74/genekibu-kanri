@@ -173,6 +173,36 @@ describe('Toolbar', () => {
     expect(screen.getByText(/7\/6/)).toBeInTheDocument();
   });
 
+  it('講師日上限超が 5 件超のとき「他 N 件を表示」で全件展開できる (N3e)', () => {
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      date: '12/25(木)', teacher: `講師${i + 1}`, total: 7, max: 6,
+    }));
+    renderToolbar({
+      projectOverrides: {
+        analysis: {
+          errorKeys: [makeKey(1, 1, 1)],
+          conflictMap: {}, subjectOrders: {}, dailySubjectMap: {}, teacherDailyCounts: {}, tabErrorCounts: {},
+          violations: {
+            teacherConflict: { count: 1, firstKey: makeKey(1, 1, 1) },
+            subjectDup: { count: 1, firstKey: null },
+            subjectOver: { count: 0, firstKey: null },
+            teacherOverDaily: { count: 7, items },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️/));
+    // 既定は先頭 5 件 + 展開ボタン
+    expect(screen.queryByText(/講師6/)).toBeNull();
+    const expandBtn = screen.getByRole('button', { name: '▼ 他 2 件を表示' });
+    fireEvent.click(expandBtn);
+    expect(screen.getByText(/講師6/)).toBeInTheDocument();
+    expect(screen.getByText(/講師7/)).toBeInTheDocument();
+    // 折りたたみに戻せる
+    fireEvent.click(screen.getByRole('button', { name: '▲ 折りたたむ' }));
+    expect(screen.queryByText(/講師6/)).toBeNull();
+  });
+
   it('popover 内の「→」クリックで該当セルへスクロールして popover が閉じる', () => {
     const key = makeKey(2, 3, 1);
     const target = document.createElement('div');

@@ -147,8 +147,23 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
     analysis,
     currentConfig,
     applyPattern,
+    updateGenerationParams,
   } = useProjectContext();
   const { showToast } = useUI();
+
+  // N3c: 表示 seed をワンクリックで生成パラメータに固定/解除する。
+  // 従来は表示を読んで ⚙️ → ⚡自動生成 → 数値入力の 4 手が必要だった。
+  const isSeedPinned = generatedSeed != null && project.generationSeed === generatedSeed;
+  const handleToggleSeedPin = () => {
+    if (generatedSeed == null || !updateGenerationParams) return;
+    if (isSeedPinned) {
+      updateGenerationParams({ generationSeed: 0 });
+      showToast('seed の固定を解除しました (次回から毎回ランダム)', 'success', 3000);
+    } else {
+      updateGenerationParams({ generationSeed: generatedSeed });
+      showToast(`seed ${generatedSeed} を固定しました。同じ設定なら次回も同じ結果になります`, 'success', 4000);
+    }
+  };
 
   // 生成結果はタブ切替後もパネルに残るため、集計・採用は「今のタブ」ではなく
   // 生成元タブを基準にする。生成元タブが分からない (古い state) 場合は従来
@@ -238,6 +253,16 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   title="⚙️ 設定 > ⚡ 自動生成 の「乱数 seed」にこの値を入力すると、同じ設定で同じ結果を再現できます。"
                 >
                   seed {generatedSeed}
+                  {/* N3c: ⚙️ を開かずにその場で固定/解除 */}
+                  <button
+                    type="button"
+                    onClick={handleToggleSeedPin}
+                    aria-pressed={isSeedPinned}
+                    className={`ml-1 px-1.5 py-0.5 rounded border text-[11px] ${isSeedPinned ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border text-builder-ink-muted hover:bg-builder-surface-alt'}`}
+                    title={isSeedPinned ? 'クリックで固定を解除 (次回から毎回ランダム)' : 'この seed を生成パラメータに固定し、同じ結果を再現できるようにする'}
+                  >
+                    {isSeedPinned ? '🔒 固定中' : '🔒 固定'}
+                  </button>
                 </span>
               )}
             </h3>

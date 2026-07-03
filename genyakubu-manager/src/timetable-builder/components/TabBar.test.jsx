@@ -243,3 +243,38 @@ describe('TabBar — タブ間複製 (K4a)', () => {
     expect(copyScheduleFromTab).not.toHaveBeenCalled();
   });
 });
+
+describe('TabBar — タブ削除 confirm の割当件数 (N2e)', () => {
+  it('割当のあるタブの削除 confirm には件数を出す (空 entry は数えない)', async () => {
+    const { uiValue } = renderTabBar({
+      projectOverrides: {
+        project: {
+          activeTabId: 1,
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          tabs: [
+            {
+              id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] },
+              schedule: {
+                '1-1-1': { subject: '英語', teacher: '堀上' },
+                '1-1-2': { subject: '数学', teacher: '' },
+                '1-1-3': {},                              // 空 entry は数えない
+              },
+            },
+            { id: 2, name: '高2', config: { classes: [{ id: 1, label: 'A' }] } },
+          ],
+        },
+      },
+    });
+    fireEvent.click(screen.getByLabelText('高3 タブを削除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('2 コマの割当');
+  });
+
+  it('割当のないタブは従来の汎用文言のまま', async () => {
+    const { uiValue } = renderTabBar();
+    fireEvent.click(screen.getByLabelText('高3 タブを削除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toBe('このタブを削除しますか？');
+  });
+});

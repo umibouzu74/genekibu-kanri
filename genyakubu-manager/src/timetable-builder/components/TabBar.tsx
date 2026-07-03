@@ -33,7 +33,16 @@ export default function TabBar() {
 
   const handleDeleteClick = async (e, tabId) => {
     e.stopPropagation();
-    const ok = await showConfirm("このタブを削除しますか？", { title: "タブの削除", danger: true, confirmLabel: "削除" });
+    // N2e: 何を失うかを件数で示す (生成クリア等の件数付き confirm と同型)。
+    // 空 entry (subject も teacher も無い) は数えない。
+    const tab = project.tabs.find(t => t.id === tabId);
+    const cellCount = Object.values(tab?.schedule || {}).filter(en => en && (en.subject || en.teacher)).length;
+    const ok = await showConfirm(
+      cellCount > 0
+        ? `このタブには ${cellCount} コマの割当があります。削除しますか？\n(Undo で元に戻せます)`
+        : "このタブを削除しますか？",
+      { title: "タブの削除", danger: true, confirmLabel: "削除" },
+    );
     if (ok) handleDeleteTab(tabId);
   };
 

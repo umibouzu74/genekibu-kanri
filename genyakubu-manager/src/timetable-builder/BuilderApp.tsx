@@ -13,12 +13,13 @@ import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
+import { STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { formatPrintDateJa } from './utils/printHeader';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, checkOriginStorageHealth, formatBytes } from './utils/storageHealth';
 import { dedupePatterns } from './utils/patternDedupe';
+import { usePersistedToggle } from './hooks/usePersistedToggle';
 import { useTabPresence } from './hooks/useTabPresence';
 import type { GeneratorHandle } from './logic/runGenerator';
 import type { GenerationResult } from './logic/autoGenerator';
@@ -120,7 +121,8 @@ function ScheduleApp() {
   }, [undo, redo]);
 
   const [showConfig, setShowConfig] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
+  // N2h: 表示トグルはリロード後も維持する (明示操作の永続化)
+  const [showSummary, setShowSummary] = usePersistedToggle(STORAGE_KEY_VIEW_SUMMARY, false);
   const [generatedPatterns, setGeneratedPatterns] = useState<GeneratedPattern[]>([]);
   // 生成元タブ ({id, name})。結果パネルはタブ切替後も表示されたままなので、
   // 「この案を採用」はアクティブタブではなく必ずこのタブへ適用する。
@@ -140,7 +142,7 @@ function ScheduleApp() {
   const [generateLive, setGenerateLive] = useState<{ index: number; iterations: number; filledCount: number; totalSlots: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
-  const [isCompact, setIsCompact] = useState(false);
+  const [isCompact, setIsCompact] = usePersistedToggle(STORAGE_KEY_VIEW_COMPACT, false);
   // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
   // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
   const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
