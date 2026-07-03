@@ -2001,9 +2001,12 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 ### K.4 追加機能・便利機能
 
-- **K4a (中・便利)**: builder タブ間のスケジュール複製 — 「1 年生タブの
-  割当を 2 年生タブへ流用して手直し」の正規ルートが無い。
-  schedule/applyPattern の再利用で安く作れる (projectReducer.ts:1142)
+- ✅ **K4a (2026-07-03)**: builder タブ間のスケジュール複製を実装。
+  非アクティブタブの ⧉ ボタン → confirm → `schedule/copyFromTab` で
+  現在のタブへ複製 (Undo 可)。クラスの対応付けは **label 一致を優先、
+  無ければ同じ並び位置 (index)**。対象タブが使わない日付・時限
+  (activeDateIds/activePeriodIds) のセルは複製しない (不可視セルへの
+  ゴミ書込防止、E-3 と同じ扱い)。テスト +6 (reducer 4 + TabBar 2)
 - **K4b (中・要ベンチ)**: 自動生成の numPatterns 案を複数 Worker で並列化 —
   現状単一 worker 直列で 3 案 ~10 秒 → 理論 ~3 秒。案は独立 (シード違い)
   なので分割は素直

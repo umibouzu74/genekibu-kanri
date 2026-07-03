@@ -58,5 +58,8 @@ export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSch
     // 残るため、必ず生成時に記録したタブへ適用する。
     applyPattern: (pat: Schedule, tabId?: number) =>
       dispatch({ type: 'schedule/applyPattern', payload: { pat, tabId } }),
+    // K4a: 別タブの割当を現在のタブへ複製 (クラスは label 一致 > index)
+    copyScheduleFromTab: (sourceTabId: number) =>
+      dispatch({ type: 'schedule/copyFromTab', payload: { sourceTabId } }),
   }), [dispatch, currentSchedule]);
 }

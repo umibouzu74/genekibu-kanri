@@ -8,6 +8,7 @@ export default function TabBar() {
     handleAddTab,
     handleDeleteTab,
     handleRenameTab,
+    copyScheduleFromTab,
     analysis,
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
@@ -33,6 +34,23 @@ export default function TabBar() {
     e.stopPropagation();
     const ok = await showConfirm("このタブを削除しますか？", { title: "タブの削除", danger: true, confirmLabel: "削除" });
     if (ok) handleDeleteTab(tabId);
+  };
+
+  // K4a: 別タブ (source) の割当を現在のタブへ複製する。上書きになるので
+  // confirm を挟む。適用後は Undo で戻せる (履歴に積まれる)
+  const handleCopyFromClick = async (e, sourceTab) => {
+    e.stopPropagation();
+    const activeTab = project.tabs.find(t => t.id === project.activeTabId);
+    if (!activeTab || sourceTab.id === activeTab.id) return;
+    const hasCells = Object.keys(activeTab.schedule || {}).length > 0;
+    const ok = await showConfirm(
+      `タブ「${sourceTab.name}」の割当を現在のタブ「${activeTab.name}」へ複製しますか？` +
+        (hasCells ? "\n現在のタブの割当は置き換えられます (Undo で戻せます)。" : ""),
+      { title: "タブ間の複製", confirmLabel: "複製する" }
+    );
+    if (!ok) return;
+    copyScheduleFromTab(sourceTab.id);
+    showToast(`「${sourceTab.name}」の割当を「${activeTab.name}」へ複製しました`, 'success', 3000);
   };
 
   const handleAddClick = async () => {
@@ -106,6 +124,17 @@ export default function TabBar() {
                 title="このタブに違反はありません"
                 aria-label="違反なし"
               >✨</span>
+            )}
+            {/* K4a: 非アクティブタブの割当を現在のタブへ複製する導線 */}
+            {!selected && (
+              <button
+                type="button"
+                onClick={(e) => handleCopyFromClick(e, tab)}
+                tabIndex={-1}
+                aria-label={`${tab.name} タブの割当を現在のタブへ複製`}
+                className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-info-soft hover:text-builder-blue text-builder-ink-muted transition-colors cursor-pointer"
+                title={`このタブ (${tab.name}) の割当を現在のタブへ複製`}
+              >⧉</button>
             )}
             {project.tabs.length > 1 && (
               <button

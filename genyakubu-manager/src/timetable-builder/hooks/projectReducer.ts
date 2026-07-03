@@ -82,6 +82,7 @@ export type ProjectAction =
   | { type: 'schedule/bulkAction'; payload: { action: 'lock-all' | 'unlock-all' | 'clear-all'; type: 'date' | 'period' | 'class'; val: string } }
   | { type: 'schedule/clearUnlocked' }
   | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
+  | { type: 'schedule/copyFromTab'; payload: { sourceTabId: number } }
   | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
   | { type: 'snapshot/apply'; payload: { id: number } }
   | { type: 'snapshot/rename'; payload: { id: number; name: string } }
@@ -1157,6 +1158,44 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!project.tabs.some(t => t.id === targetId)) return project;
       const newTabs = project.tabs.map(t => t.id === targetId ? { ...t, schedule: pat } : t);
       return cleanSchedule({ ...project, tabs: newTabs, activeTabId: targetId });
+    }
+
+    // ─── タブ間複製 (K4a) ─────────────────
+    // 別タブの割当を「現在のタブ」へ複製する (例: 中3 タブの割当を
+    // 中1・2 タブへ流用して手直しする)。dates / periods は project 共通
+    // (v4) なので変換不要だが、classes はタブごとに別 entity なので
+    // 「label 一致を優先、無ければ同じ並び位置 (index)」で対応付ける。
+    // 対象タブが使わない日付・時限 (activeDateIds/activePeriodIds の絞り) の
+    // セルは複製しない (不可視セルへのゴミ書込を防ぐ。E-3 と同じ扱い)。
+    case 'schedule/copyFromTab': {
+      const { sourceTabId } = action.payload;
+      const target = project.tabs.find(t => t.id === project.activeTabId);
+      const source = project.tabs.find(t => t.id === sourceTabId);
+      if (!source || !target || source.id === target.id) return project;
+      const srcClasses = source.config.classes || [];
+      const tgtClasses = target.config.classes || [];
+      const classIdMap = new Map<number, number>();
+      srcClasses.forEach((sc, i) => {
+        const byLabel = tgtClasses.find(tc => tc.label === sc.label);
+        const tgt = byLabel ?? tgtClasses[i];
+        if (tgt) classIdMap.set(sc.id, tgt.id);
+      });
+      const tgtEffective = effectiveConfig(project, target);
+      const visibleDateIds = new Set(tgtEffective.dates.map(d => d.id));
+      const visiblePeriodIds = new Set(tgtEffective.periods.map(p => p.id));
+      const newSchedule: Schedule = {};
+      Object.entries(source.schedule || {}).forEach(([key, entry]) => {
+        const parsed = parseKey(key);
+        if (!parsed) return;
+        if (!visibleDateIds.has(parsed.dateId) || !visiblePeriodIds.has(parsed.periodId)) return;
+        const tgtClassId = classIdMap.get(parsed.classId);
+        if (tgtClassId === undefined) return;
+        newSchedule[makeKey(parsed.dateId, parsed.periodId, tgtClassId)] = { ...entry };
+      });
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, schedule: newSchedule } : t
+      );
+      return cleanSchedule({ ...project, tabs: newTabs });
     }
 
     // ─── スナップショット (E1c) ───────────
