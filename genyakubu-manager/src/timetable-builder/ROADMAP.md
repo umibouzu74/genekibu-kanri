@@ -4,9 +4,10 @@
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
 (schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
-(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) と
-親アプリ側の小粒 2 件 (H2c 深夜 0 時跨ぎ / H2d id 採番統一) を完了**
-(テスト 1766 → 1808 件)。
+(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) /
+親アプリ側の小粒 2 件 (H2c 深夜 0 時跨ぎ / H2d id 採番統一) / F5p (案 b で
+読み取り専用化) / E1a・E1f のタッチ CSS / E3a (Playwright E2E ×2) を完了**
+(vitest 1766 → 1812 件 + E2E 2 件)。
 **builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
 校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
@@ -35,7 +36,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
 | E1 (UX 完成度) | E1a モバイル / E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1f タッチ / E1g 修正提案 (E1a/E1f は実機確認のみ残 → G.2) |
 | E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
-| E3 (テスト/信頼性) | E3d schema 検証 / E3e ConfigModal sub-tests |
+| E3 (テスト/信頼性) | E3a Worker E2E (Playwright) / E3d schema 検証 / E3e ConfigModal sub-tests |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
@@ -43,7 +44,7 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
 **残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統:
-E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3f/E3g テスト深化 ·
+E2a Excel 取込 · E2b wizard 本体 · E3b/E3c/E3f/E3g テスト深化 ·
 E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
 ---
@@ -82,7 +83,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1808 件 / 89 ファイル** (2026-07-03 E3e + H2c/H2d 完了後。timetable-builder
+合計 **1812 件 / 89 ファイル** (2026-07-03 ブラッシュアップ後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -95,8 +96,10 @@ infeasibilities / dashboard)・CSV / Excel / テンプレート / スナップ�
 主要 UI コンポーネント (Toolbar / Header / ScheduleCell / TabBar /
 ContextMenu / ConfigModal 各タブ / SnapshotMenu / SummaryPanel)・
 focus trap / long-press / タブ競合検出。
-**未カバー**: 実 Worker 経路 (E3a)・実 xlsx の見栄え (E3b)・印刷出力 (E3c)・
-視覚回帰 (E3f)・クロスブラウザ (E3g)。
+加えて Playwright E2E ×2 (実 Worker 経由の生成・中止 — E3a、
+`npm run test:e2e` で別実行)。
+**未カバー**: worker 内エラープロトコル (E3a 残)・実 xlsx の見栄え (E3b)・
+印刷出力 (E3c)・視覚回帰 (E3f)・クロスブラウザ (E3g)。
 
 ---
 
@@ -268,7 +271,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 89 files / 1808 tests (2026-07-03 E3e + H2c/H2d 完了後)
+npm test            # 89 files / 1812 tests (2026-07-03 ブラッシュアップ後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -763,10 +766,27 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E3. テスト / 信頼性
 
-#### E3a. 🟡 実 Worker 経路の E2E (旧 D2c)
-- **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ。本番 (`new Worker()`) は untested。cancel・terminate・message protocol が silent regression し得る。
-- **改善**: Playwright で実 Chromium に load → 「自動生成」クリック → 結果アサート。または vitest browser mode。
-- **規模**: 中 / **価値**: 中
+#### E3a. ✅ 実 Worker 経路の E2E (旧 D2c / 2026-07-03 完了)
+- **旧現状**: `runGenerator.test.js` は jsdom で sync fallback のみ。本番
+  (`new Worker()`) の生成・cancel メッセージプロトコルが untested だった。
+- **実装 (Playwright)**:
+  - **playwright.config.js**: `npm run dev` を webServer として自動起動。
+    リモート実行環境のプリインストール Chromium (`/opt/pw-browsers/chromium`)
+    があれば executablePath で直接使い、無ければ通常のブラウザ解決
+    (ローカルは `npx playwright install chromium` が必要)。
+  - **e2e/builder-worker.spec.js** (2 件):
+    1. Worker コンストラクタ spy で「実 Worker が構築された = sync fallback
+       ではない」ことを確認しつつ、デフォルト project で自動作成 → 結果
+       パネル → 案 1 採用 → スケジュール反映まで通し検証
+    2. 探索が長引く重い project (8 クラス × 10 日 × 6 限のほぼ満杯 +
+       講師 4 名 + maxIterations 500 万) を localStorage にシードし、
+       生成中の「✕ 中止」→ warning toast + 生成ボタン復帰 + 結果パネル
+       無しを検証
+  - **実行**: `npm run test:e2e` (vitest の `npm test` とは別立て。
+    include が `src/**/*.test.*` なので相互に干渉しない)。3 連続実行で
+    安定を確認済み
+- **残り**: worker 内エラー (`type: 'error'`) プロトコルの E2E は未
+  (レアパスを強制注入する仕組みが必要)。クロスブラウザは E3g。
 
 #### E3b. 🟡 Excel 出力のバイナリ検証 (旧 D2d)
 - **現状**: 構造テスト 18 件 (C4) はあるが、実 xlsx を開いた時の見栄え (色・罫線・列幅) は手動確認。
@@ -1497,10 +1517,11 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 E4d useAnalysis プロファイル · D7c テスト共通基盤
 (~~E1a/E1f 残~~ ✅ 2026-07-03 コード側完了、実機確認は G.2)
 
-中: E3a Worker E2E · E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
+中: E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
 E3g クロスブラウザ · E4b ソルバ計測 ·
 E2a Excel 取込 (要 mapping UI)
-(~~E3e ConfigModal sub-tests 拡充~~ ✅ 2026-07-03 完了、+38 件)
+(~~E3e ConfigModal sub-tests 拡充~~ ✅ +38 件 / ~~E3a Worker E2E~~ ✅
+Playwright ×2 — いずれも 2026-07-03 完了)
 
 大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
 E5 系 (TS / ID / style / state lib / Worker 分析) · E6a Firebase ·
@@ -1523,8 +1544,9 @@ F2h前段 / F2j / F2m も同時に解消)。
 1. ~~2 バッチ分の PR レビュー・マージ~~ ✅ PR #143 マージ済み (2026-07-03)
 2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-3. コードの軽い一手なら **E3a** (Worker E2E) のテスト深化
-   (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ 2026-07-03 完了)
+3. コードの軽い一手なら **E3b** (Excel バイナリ round-trip 検証) や
+   **E3c** (印刷スナップショット — Playwright 基盤は E3a で導入済み)
+   (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ 2026-07-03 完了)
 4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
 
 ---
