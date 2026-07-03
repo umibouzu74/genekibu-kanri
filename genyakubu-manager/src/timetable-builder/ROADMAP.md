@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 81 files / 1678 tests (2026-07-02 参照整合対応後)
+npm test            # 83 files / 1695 tests (2026-07-03 a11y 対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1012,15 +1012,23 @@ PR 化済み (このセクションの F.1 / F.3 が本 PR の内容、F.2 が�
 
 F.3 の校正レビュー後も残っているもの (F.3 で部分対応した項目は注記)。
 
-- **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
+- ✅ **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
   `<td onClick>` (AbsenceNgPanel)、クラス優先度セル (ClassPriority)、
   タブ削除 `<span onClick>`・改名 dblclick のみ (TabBar)、ContextMenu の
-  全機能 (キーボード代替なし・Escape で閉じない)
-- **F2b (a11y, 中)**: ScheduleCell の矢印ナビが select のネイティブ
+  全機能 (キーボード代替なし・Escape で閉じない)。
+  **✅ 修正 (2026-07-03)**: NG マトリクス / クラス優先度セルは
+  role="button" + tabIndex=0 + Enter/Space + aria-label (状態入り) +
+  focus-visible ring。TabBar は F2=改名 / Delete=削除 (確認あり) を
+  tablist キーハンドラに追加し × を aria-label 付き button 化 (tabIndex=-1、
+  Tab 順は roving tabindex を維持)。ContextMenu は開いたら先頭項目へ
+  フォーカス + ↑↓ ナビ (wrap) + Escape で閉じる + role="menu""
+- ✅ **F2b (a11y, 中)**: ScheduleCell の矢印ナビが select のネイティブ
   キー操作を preventDefault で全て潰す (Firefox で値変更がほぼ不可能の
   恐れ)。Alt+↓ 等は素通しにする除外が必要 (ScheduleCell.jsx
   handleCellNavigation)。※ F.3 で disabled セルのスキップは実装済み、
-  ネイティブ操作の素通しが残
+  ネイティブ操作の素通しが残。
+  **✅ 修正 (2026-07-03)**: Alt / Ctrl / Meta 付きの矢印は素通しにした
+  (Alt+↓ = ドロップダウンを開く等)。素の矢印のみセル間ナビに使う
 - **F2c (小)**: autosave が実は debounce されていない — useHistoryStack は
   毎 dispatch で project 全体を同期 JSON.stringify + setItem
   (debounce はステータス表示のみ)。大規模プロジェクトで入力レイテンシ源
@@ -1150,7 +1158,9 @@ Worker が使える環境では影響なし。
    (F2p) も削除時点で破棄済みになる。teachers / 外部コマ / schedule の変更
    では破棄しない (構造は壊れず違反 UI が検出する領域。理由はモジュールの
    コメントに明記)
-6. **F2a/F2b** — a11y はまとめて 1 セッション
+6. ~~**F2a/F2b**~~ ✅ 完了 (2026-07-03) — a11y まとめ対応。テスト +17
+   (TabBar 4 / ClassPriority 3 / ContextMenu 5 / ScheduleCell 3 /
+   NG マトリクス 2)
 
 ※ F.5 の並列レビュー結果を踏まえた統合版の推奨順は F.5 末尾を参照。
 
@@ -1341,7 +1351,8 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    (全タブ合計を .current に)。テスト +6。
    F2n/F2p は generationFingerprint で ✅ 完了 (2026-07-02、F.4 の 5 参照)。
    F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
-7. **参照整合 ✅ (2026-07-02、F.4 の 4 参照) / a11y (F2a/F2b) は残**。
-   その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
-   ゴースト click、実機検証) / F2d (no-op 履歴) / F2e (swap stale payload) /
-   F5f (v2/v3 混在 dim、外部データ限定) / F2h 前段 (NG CSV dedupe キー)
+7. **参照整合 ✅ (2026-07-02) / a11y ✅ (2026-07-03、F.4 の 6 参照)**。
+   **残り (すべて小粒 or 判断待ち)**: F5p (他タブ合同グループの編集、
+   仕様判断) / F5s (long-press ゴースト click、実機検証) / F2d (no-op 履歴
+   の一般化) / F2e (swap stale payload) / F5f (v2/v3 混在 dim、外部データ
+   限定) / F2h 前段 (NG CSV dedupe キー) / A7 (Shift+? 実機検証、既存)

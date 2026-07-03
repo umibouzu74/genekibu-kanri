@@ -14,6 +14,31 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     return () => window.removeEventListener('scroll', handleScroll, true);
   }, [contextMenu, onClose]);
 
+  // F2a: キーボード対応。開いたら最初の項目へフォーカスし、↑↓ で項目移動、
+  // Escape で閉じる (従来は Escape でも閉じられず、フォーカスも背後に残った)。
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+    menuRef.current?.querySelector('button')?.focus();
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const items = Array.from(menuRef.current?.querySelectorAll('button') || []);
+      if (items.length === 0) return;
+      const i = items.indexOf(document.activeElement);
+      const next = e.key === 'ArrowDown'
+        ? (i + 1) % items.length
+        : (i - 1 + items.length) % items.length;
+      items[next].focus();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [contextMenu, onClose]);
+
   // メニュー位置を画面内にクランプ（DOM更新後に即座に調整）
   useLayoutEffect(() => {
     const el = menuRef.current;
@@ -87,7 +112,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     ? makeKey(dateId, periodId, classId) : null;
 
   return (
-    <div ref={menuRef} className="fixed bg-builder-surface border border-builder-border shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
+    <div ref={menuRef} role="menu" aria-label={type ? `${val} の一括操作` : 'セルの操作'} className="fixed bg-builder-surface border border-builder-border shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
       {type ? (
         <>
           <div className="px-4 py-2 bg-builder-surface-alt border-b border-builder-border font-bold text-builder-ink-muted text-xs">{val} の一括操作</div>

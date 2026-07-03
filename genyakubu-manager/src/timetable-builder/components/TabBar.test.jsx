@@ -121,3 +121,41 @@ describe('TabBar (E1b キーボード a11y)', () => {
     expect(switchTab).toHaveBeenLastCalledWith(1);
   });
 });
+
+describe('TabBar — キーボード操作 (F2a)', () => {
+  it('F2 でアクティブタブの改名フローが開く', async () => {
+    const { projectValue, uiValue } = renderTabBar();
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'F2' });
+    // showInput が resolve するのを待つ
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(uiValue.showInput).toHaveBeenCalled();
+    expect(projectValue.handleRenameTab).toHaveBeenCalledWith(1, '新名前');
+  });
+
+  it('Delete でアクティブタブの削除フロー (確認あり) が走る', async () => {
+    const { projectValue, uiValue } = renderTabBar();
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'Delete' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(uiValue.showConfirm).toHaveBeenCalled();
+    expect(projectValue.handleDeleteTab).toHaveBeenCalledWith(1);
+  });
+
+  it('タブが 1 つしか無ければ Delete は無視される', async () => {
+    const { projectValue } = renderTabBar({
+      projectOverrides: {
+        project: { activeTabId: 1, tabs: [{ id: 1, name: '高3' }] },
+        analysis: { tabErrorCounts: {} },
+      },
+    });
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'Delete' });
+    await Promise.resolve();
+    expect(projectValue.handleDeleteTab).not.toHaveBeenCalled();
+  });
+
+  it('削除 × は aria-label 付きの button になっている', () => {
+    renderTabBar();
+    expect(screen.getByLabelText('高3 タブを削除')).toBeInstanceOf(HTMLButtonElement);
+  });
+});

@@ -229,3 +229,26 @@ describe('ScheduleCell', () => {
     expect(lockBtn).toHaveAttribute('aria-pressed', 'true');
   });
 });
+
+describe('ScheduleCell — 矢印ナビと select ネイティブ操作 (F2b)', () => {
+  it('素の矢印キーはセル間ナビとして preventDefault される', () => {
+    renderCell();
+    const select = document.getElementById('select-1-1-1-subject');
+    const notPrevented = fireEvent.keyDown(select, { key: 'ArrowDown' });
+    expect(notPrevented).toBe(false); // preventDefault 済み = ナビが乗っ取る
+  });
+
+  it('Alt+矢印 (ドロップダウンを開くネイティブ操作) は乗っ取らない', () => {
+    renderCell();
+    const select = document.getElementById('select-1-1-1-subject');
+    expect(fireEvent.keyDown(select, { key: 'ArrowDown', altKey: true })).toBe(true);
+    expect(fireEvent.keyDown(select, { key: 'ArrowUp', altKey: true })).toBe(true);
+  });
+
+  it('Ctrl / Meta 付きの矢印も素通しする', () => {
+    renderCell();
+    const select = document.getElementById('select-1-1-1-subject');
+    expect(fireEvent.keyDown(select, { key: 'ArrowDown', ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(select, { key: 'ArrowLeft', metaKey: true })).toBe(true);
+  });
+});

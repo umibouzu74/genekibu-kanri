@@ -225,3 +225,36 @@ describe('AbsenceNgPanel — プリセットの「期間なし」(F5m)', () => {
     expect(payload.endDateLabel).toBe('');
   });
 });
+
+describe('AbsenceNgPanel — NG マトリクスのキーボード操作 (F2a)', () => {
+  const matrixProject = {
+    teachers: [{ name: '堀上', subjects: ['英語'] }],
+    subjects: ['英語'],
+    externalSessions: [],
+    externalSessionPresets: [],
+    externalCounts: {},
+    dates: [{ id: 1, label: '7/20(月)' }],
+    periods: [{ id: 1, label: '1限' }],
+  };
+
+  it('セルは role="button" + tabIndex=0 で Enter/Space で toggle できる', () => {
+    const toggleTeacherNg = vi.fn();
+    renderPanel({ overrides: { project: matrixProject, toggleTeacherNg } });
+    const cell = screen.getByLabelText('堀上 7/20(月) 1限 の手動NG');
+    expect(cell).toHaveAttribute('tabindex', '0');
+    expect(cell).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    expect(toggleTeacherNg).toHaveBeenCalledWith(0, '7/20(月)', '1限');
+    fireEvent.keyDown(cell, { key: ' ' });
+    expect(toggleTeacherNg).toHaveBeenCalledTimes(2);
+  });
+
+  it('手動 NG 済みセルは aria-pressed=true', () => {
+    const withNg = {
+      ...matrixProject,
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: ['7/20(月)-1限'] }],
+    };
+    renderPanel({ overrides: { project: withNg } });
+    expect(screen.getByLabelText('堀上 7/20(月) 1限 の手動NG')).toHaveAttribute('aria-pressed', 'true');
+  });
+});

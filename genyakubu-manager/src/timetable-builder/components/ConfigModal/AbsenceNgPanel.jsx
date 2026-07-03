@@ -962,12 +962,26 @@ function DateSection({
                                   .join(', ');
                                 tooltipParts.push(`自動NG (他学年: ${memos})`);
                               }
+                              // F2a: td onClick だけだとキーボード到達不能。
+                              // role="button" + tabIndex + Enter/Space で
+                              // toggle できるようにする (click と同経路)。
+                              const toggle = () => toggleTeacherNg(idx, date.label, p.label);
                               return (
                                 <td
                                   key={p.id}
-                                  onClick={() => toggleTeacherNg(idx, date.label, p.label)}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-pressed={!!isManualNg}
+                                  aria-label={`${t.name} ${date.label} ${p.label} の手動NG${isAutoNg ? ' (自動NGあり)' : ''}`}
+                                  onClick={toggle}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      toggle();
+                                    }
+                                  }}
                                   title={tooltipParts.join(' / ') || undefined}
-                                  className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${cellClass}`}
+                                  className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-builder-blue focus-visible:ring-inset ${cellClass}`}
                                 >
                                   {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
                                 </td>

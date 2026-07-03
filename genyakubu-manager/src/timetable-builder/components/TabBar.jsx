@@ -31,7 +31,20 @@ export default function TabBar() {
   };
 
   // 学年タブの左右/Home/End 矢印ナビ (E1b)。フォーカスを移しつつそのタブを開く。
+  // F2a: 改名 (dblclick のみ) と削除 (× ボタン) のキーボード代替として
+  // F2 = 改名 / Delete = 削除 をフォーカス中のタブに提供する。
   const handleTabKeyDown = (e) => {
+    const activeTab = project.tabs.find(t => t.id === project.activeTabId);
+    if (e.key === 'F2' && activeTab) {
+      e.preventDefault();
+      handleRenameClick(e, activeTab);
+      return;
+    }
+    if (e.key === 'Delete' && activeTab && project.tabs.length > 1) {
+      e.preventDefault();
+      handleDeleteClick(e, activeTab.id);
+      return;
+    }
     const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
     if (!keys.includes(e.key)) return;
     e.preventDefault();
@@ -60,7 +73,7 @@ export default function TabBar() {
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
-            title="クリックで切替 / ダブルクリックで名前変更"
+            title="クリックで切替 / ダブルクリック or F2 で名前変更 / Delete で削除"
             onClick={() => switchTab(tab.id)}
             onDoubleClick={(e) => handleRenameClick(e, tab)}
             className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
@@ -80,11 +93,16 @@ export default function TabBar() {
               >✨</span>
             )}
             {project.tabs.length > 1 && (
-              <span
+              <button
+                type="button"
                 onClick={(e) => handleDeleteClick(e, tab.id)}
+                // Tab 順は roving tabindex (タブ本体) に任せ、キーボード削除は
+                // フォーカス中タブへの Delete キーで提供する (F2a)
+                tabIndex={-1}
+                aria-label={`${tab.name} タブを削除`}
                 className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-danger-soft hover:text-builder-red text-builder-ink-muted transition-colors cursor-pointer"
-                title="このタブを削除"
-              >×</span>
+                title="このタブを削除 (Delete)"
+              >×</button>
             )}
           </div>
         );
