@@ -162,12 +162,22 @@ export default function TeacherManager() {
       if (!ok) return;
     }
     importTeachers(csvParsed.rows, mode);
-    showToast(
-      mode === 'replace'
-        ? `${csvParsed.rows.length} 件の講師で置換しました`
-        : `${csvParsed.rows.length} 件を追加 / 更新しました`,
-      'success', 4000,
-    );
+    if (mode === 'replace') {
+      showToast(`${csvParsed.rows.length} 件の講師で置換しました`, 'success', 4000);
+    } else {
+      // N4b: 何名が新規で何名が既存更新かを親取込 (L5a) と同様に明示する。
+      // 既存かつ CSV 行の subjects が空の行は担当維持 (N1c) なので
+      // 「担当科目の変更なし」として数える。
+      const existingNames = new Set(project.teachers.map(t => t.name));
+      const newCount = csvParsed.rows.filter(r => !existingNames.has(r.name)).length;
+      const updCount = csvParsed.rows.length - newCount;
+      const keptCount = csvParsed.rows.filter(r => existingNames.has(r.name) && (r.subjects || []).length === 0).length;
+      showToast(
+        `新規 ${newCount} 名を追加 / 既存 ${updCount} 名を更新しました` +
+          (keptCount > 0 ? ` (うち ${keptCount} 名は科目列が空のため担当科目を維持)` : ''),
+        'success', 4000,
+      );
+    }
     setCsvPanelOpen(false);
     setCsvText('');
   };
@@ -268,6 +278,12 @@ export default function TeacherManager() {
             <div className="text-xs space-y-1">
               <div>
                 <span className="font-bold text-builder-green">{csvParsed.rows.length} 件</span> parse 成功
+                {/* N4b: 何名が新規で何名が既存更新かを取込前に見せる (親取込 L5a と同じ UX) */}
+                {csvParsed.rows.length > 0 && (() => {
+                  const existingNames = new Set(project.teachers.map(t => t.name));
+                  const newCount = csvParsed.rows.filter(r => !existingNames.has(r.name)).length;
+                  return <span className="text-builder-ink-muted"> (新規 {newCount} / 既存の更新 {csvParsed.rows.length - newCount})</span>;
+                })()}
                 {csvParsed.errors.length > 0 && (
                   <> / <span className="font-bold text-builder-red">{csvParsed.errors.length} 件</span> エラー</>
                 )}

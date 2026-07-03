@@ -39,6 +39,18 @@ export function removeTemplate(templates: ProjectTemplate[] | null | undefined, 
   return list.filter(t => t.id !== id);
 }
 
+// N4a: 既存テンプレートの payload を現在の project で差し替えた新配列を返す
+// (純粋)。id・name は維持し、createdAt は更新時刻に付け替える。
+// 対象 id が無ければ元の配列をそのまま返す。
+export function updateTemplate(
+  templates: ProjectTemplate[] | null | undefined,
+  { id, project, createdAt = null }: { id: number; project: Project; createdAt?: string | null },
+): ProjectTemplate[] {
+  const list = Array.isArray(templates) ? templates : [];
+  if (!list.some(t => t.id === id)) return list;
+  return list.map(t => (t.id === id ? { ...t, createdAt, payload: buildTemplatePayload(project) } : t));
+}
+
 // localStorage から読み込む。壊れていれば空配列 (UI を blank にしない)。
 export function loadTemplates(): ProjectTemplate[] {
   try {

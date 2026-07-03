@@ -199,7 +199,8 @@ describe('TeacherManager — CSV インポート実行 (E3e)', () => {
       'append',
     );
     expect(uiValue.showToast).toHaveBeenCalledWith(
-      expect.stringContaining('追加 / 更新'), 'success', 4000,
+      // N4b: 新規 / 既存更新の内訳付き toast
+      expect.stringMatching(/新規 \d+ 名を追加 \/ 既存 \d+ 名を更新/), 'success', 4000,
     );
     // パネルは閉じ、textarea は破棄される
     expect(screen.queryByLabelText('講師マスタ CSV テキスト')).toBeNull();

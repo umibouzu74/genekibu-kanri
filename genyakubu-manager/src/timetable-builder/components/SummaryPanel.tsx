@@ -3,7 +3,8 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
-import { summarizePatternLoad } from '../utils/patternLoad';
+import { summarizePatternLoad, summarizeSingleSlotDays } from '../utils/patternLoad';
+import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
 import { summarizeUnfilled } from '../utils/partialSummary';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Schedule } from '../types';
@@ -34,6 +35,27 @@ interface SummaryPanelProps {
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
   delete totals["未定"];
+  // N3g: 通算上限 (L3b) を持つ講師は「使用/上限」で表示し、この案だけで
+  // 上限に達する講師を色で警告する (他タブ・他学年コマを含まないタブ内の
+  // 数字なので、実際の残りはさらに少ない = 到達表示は保守的に正しい)。
+  const limitOf = new Map((teachers || []).map(t => [t.name, t.maxTotalHours]));
+  const badgeFor = (name) => {
+    const total = totals[name] || 0;
+    const limit = limitOf.get(name);
+    const hasLimit = typeof limit === 'number' && limit > 0;
+    const atLimit = hasLimit && total >= limit;
+    return {
+      text: hasLimit ? `${name}:${total}/${limit}` : `${name}:${total}`,
+      cls: atLimit
+        ? 'bg-builder-warning-soft text-builder-orange border border-builder-warning-border font-bold'
+        : 'bg-builder-info-soft text-builder-ink',
+      title: atLimit
+        ? `この案だけで通算上限 (${limit}) に達しています。他タブ・他学年のコマを含めるとさらに超過するため、手直しの余地がありません`
+        : hasLimit
+          ? `通算上限 ${limit} コマ (この数字はこの案のタブ内のみ。他タブ・他学年コマは含みません)`
+          : undefined,
+    };
+  };
   // 教科ごとにグループ化して表示。teachers/subjects は project から渡される。
   // totals に存在しない (= 0 コマ) 講師は省く。
   const teachersWithCount = (teachers || []).filter(t => t.name !== '未定' && (totals[t.name] || 0) > 0);
@@ -68,11 +90,14 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
             <div className="flex flex-wrap gap-1.5 mb-1">
               {[...group.teachers]
                 .sort((a, b) => (totals[b.name] || 0) - (totals[a.name] || 0))
-                .map(t => (
-                  <span key={t.name} className="bg-builder-info-soft text-builder-ink px-2 rounded text-sm">
-                    {t.name}:{totals[t.name]}
-                  </span>
-                ))}
+                .map(t => {
+                  const badge = badgeFor(t.name);
+                  return (
+                    <span key={t.name} className={`px-2 rounded text-sm ${badge.cls}`} title={badge.title}>
+                      {badge.text}
+                    </span>
+                  );
+                })}
             </div>
           </Fragment>
         ))}
@@ -215,12 +240,28 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                     <Fragment key={group.key}>
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
                       <div className="flex flex-wrap gap-2">
-                        {entries.map(({ t, total }) => (
-                          <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
-                            <span className="font-bold text-builder-ink">{t.name}</span>
-                            <span className="bg-builder-info-soft text-builder-ink px-1 rounded">{total}</span>
-                          </div>
-                        ))}
+                        {entries.map(({ t, total }) => {
+                          // N3g: 通算上限 (L3b) 持ちは「使用/上限」で表示。
+                          // この数字は講習セルのみ (F5u) で、上限判定には
+                          // 他学年コマも含まれるため到達表示は保守的に正しい。
+                          const limit = typeof t.maxTotalHours === 'number' && t.maxTotalHours > 0 ? t.maxTotalHours : null;
+                          const atLimit = limit != null && total >= limit;
+                          return (
+                            <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
+                              <span className="font-bold text-builder-ink">{t.name}</span>
+                              <span
+                                className={`px-1 rounded ${atLimit ? 'bg-builder-warning-soft text-builder-orange border border-builder-warning-border font-bold' : 'bg-builder-info-soft text-builder-ink'}`}
+                                title={limit != null
+                                  ? (atLimit
+                                    ? `通算上限 (${limit}) に達しています (他学年のコマを含めるとさらに超過)`
+                                    : `通算上限 ${limit} コマ (この数字は講習セルのみ。他学年のコマは含みません)`)
+                                  : undefined}
+                              >
+                                {limit != null ? `${total}/${limit}` : total}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </Fragment>
                   );
@@ -320,6 +361,41 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   teachers={project.teachers}
                   subjects={project.subjects}
                 />
+                {(() => {
+                  // N3d: 採用が現在の (生成元タブの) 時間割を何コマ変えるかを
+                  // 事前に示す。従来は無確認即実行で、部分解の反復運用では
+                  // 既存編集が上書きされるか不安だった。
+                  const diffCounts = forTab
+                    ? summarizeDiff(diffSchedules(forTab.schedule || {}, pat.schedule))
+                    : { added: 0, removed: 0, changed: 0, total: 0 };
+                  // N3f: 「その日 1 コマだけ出勤」の講師 (稼働効率の判断材料)
+                  const singleDays = summarizeSingleSlotDays(pat.schedule, patternConfig, project.combinedGroups || []);
+                  const MAX_NAMES = 3;
+                  return (
+                    <div className="text-[11px] text-builder-ink-muted text-center mt-1 space-y-0.5">
+                      {diffCounts.total > 0 && (
+                        <div
+                          aria-label={`案 ${i + 1} を採用した場合の変更`}
+                          title="この案を採用したとき、現在の時間割から変わるコマ数 (＋追加 / ≠変更 / −削除)"
+                        >
+                          採用すると:
+                          {diffCounts.added > 0 && <span className="text-builder-green font-bold ml-1">＋{diffCounts.added}</span>}
+                          {diffCounts.changed > 0 && <span className="text-builder-orange font-bold ml-1">≠{diffCounts.changed}</span>}
+                          {diffCounts.removed > 0 && <span className="text-builder-red font-bold ml-1">−{diffCounts.removed}</span>}
+                        </div>
+                      )}
+                      {singleDays.length > 0 && (
+                        <div
+                          aria-label={`案 ${i + 1} の 1 コマ出勤日`}
+                          title={`その日 1 コマだけのために出勤する日がある講師: ${singleDays.map(s => `${s.teacher} (${s.days.join(', ')})`).join(' / ')}`}
+                        >
+                          🚶 1コマ出勤日あり: {singleDays.slice(0, MAX_NAMES).map(s => s.teacher).join('・')}
+                          {singleDays.length > MAX_NAMES && ` 他${singleDays.length - MAX_NAMES}名`}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <button
                   disabled={forTabDeleted}
                   onClick={() => {
