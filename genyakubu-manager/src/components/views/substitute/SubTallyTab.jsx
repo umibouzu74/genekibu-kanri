@@ -79,6 +79,8 @@ export function SubTallyTab({
               return (
                 <Fragment key={r.name}>
                   <tr
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
                     style={{
                       background: i % 2 ? "#f8f9fa" : "#fff",
                       borderTop: "1px solid #eee",
@@ -91,6 +93,17 @@ export function SubTallyTab({
                         else next.add(r.name);
                         return next;
                       });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setExpandedTally((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(r.name)) next.delete(r.name);
+                          else next.add(r.name);
+                          return next;
+                        });
+                      }
                     }}
                   >
                     <td style={{ padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>

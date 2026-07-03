@@ -318,6 +318,8 @@ export function AdjustmentListTab({
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>詳細</th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
                 <th
+                  tabIndex={0}
+                  aria-sort={sortBy === "createdAt-desc" ? "descending" : "none"}
                   style={{
                     padding: "8px 10px",
                     textAlign: "left",
@@ -330,6 +332,14 @@ export function AdjustmentListTab({
                       s === "createdAt-desc" ? "date" : "createdAt-desc"
                     )
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSortBy((s) =>
+                        s === "createdAt-desc" ? "date" : "createdAt-desc"
+                      );
+                    }
+                  }}
                   title="クリックで作成日時の新しい順 / 源泉日昇順 を切り替え"
                 >
                   作成日時{" "}

@@ -596,10 +596,13 @@ export function MonthView({
                     );
                   }
                   if (isAdmin) titleParts.push("クリックで編集");
+                  const cardEditable = isAdmin && !!onEdit;
                   return (
                     <div
                       key={`slot-${s.id}`}
                       className="month-print-card"
+                      role={cardEditable ? "button" : undefined}
+                      tabIndex={cardEditable ? 0 : undefined}
                       style={{
                         fontSize: 11,
                         lineHeight: 1.4,
@@ -611,10 +614,20 @@ export function MonthView({
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        cursor: isAdmin && onEdit ? "pointer" : "default",
+                        cursor: cardEditable ? "pointer" : "default",
                         opacity: away ? 0.55 : 1,
                       }}
-                      onClick={() => isAdmin && onEdit && onEdit(s)}
+                      onClick={() => cardEditable && onEdit(s)}
+                      onKeyDown={
+                        cardEditable
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onEdit(s);
+                              }
+                            }
+                          : undefined
+                      }
                       title={titleParts.join("\n")}
                     >
                       {badges.map((b, i) => (

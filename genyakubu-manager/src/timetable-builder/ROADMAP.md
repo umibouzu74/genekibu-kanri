@@ -1982,9 +1982,11 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - ✅ **K3a (2026-07-03)**: 確定代行一覧の日別表示に sessionCtx (第N回) /
   追加授業バナー / 調整カードを配線し、Dashboard 日別と情報密度を統一
   (makeEventHelpers は useSessionCtx に置換)
-- **K3b (中)**: クリック可能なテーブルコントロールのキーボード対応の横展開 —
-  ソート列ヘッダ (AdjustmentListTab / OverrideListTab)、月次集計の展開行
-  (SubTallyTab、aria-expanded も無し)、MonthView の編集用コマカード
+- ✅ **K3b (2026-07-03)**: クリック可能なテーブルコントロールのキーボード
+  対応を横展開 — ソート列ヘッダ (AdjustmentListTab / OverrideListTab に
+  tabIndex + Enter·Space + aria-sort)、月次集計の展開行 (SubTallyTab に
+  tabIndex + Enter·Space + aria-expanded)、MonthView の編集用コマカード
+  (role=button + tabIndex + Enter·Space)
 - ✅ **K3c (2026-07-03)**: AbsenceWorkflowView の講師ドロップダウンに
   aria-expanded/aria-haspopup を追加し、Escape (IME 変換中は無視) で
   閉じられるように
@@ -2027,9 +2029,14 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - ✅ **K5b (2026-07-03)**: Firebase 初回 seed を migrate 済みの値で
   書き込むよう修正 (raw のままだと旧形式が Firebase に入り他端末が毎回
   migrate し直す)
-- **K5c (中)**: FK 検証の対象外リレーション (partTimeStaff.subjectIds /
-  teacherSubjects / adjustments.targetSlotId / examPrepSchedules.examPeriodId)
-  — runtime cascade はあるが手編集バンドルが検証をすり抜ける
+- **K5c (見送り判断 2026-07-03)**: FK 検証の対象外リレーション
+  (partTimeStaff.subjectIds / teacherSubjects / adjustments.targetSlotId /
+  examPrepSchedules.examPeriodId)。**ハード検証の追加は不採用**: これらの
+  dangling 参照は (a) 消費側が防御済みで実害が無い (未分類フォールバック等)、
+  (b) targetSlotId は orphanCleanup が「修復可能」として扱う設計であり、
+  import を丸ごと拒否すると修復可能なバックアップまで取り込めなくなる。
+  やるなら **detectOrphans の対象拡張 (修復志向)** が正しい方向だが、
+  runtime は cascade 済みで手編集バンドル経由のみの穴なので優先度低
 - **K5d (設計トレードオフ)**: isSlotForTeacher の note 部分一致は
   隔週パートナー検出のための意図的設計だが、短い講師名の過剰マッチが理論上
   ありうる (biweekly.js:193)。実害が出たらトークン化を検討
