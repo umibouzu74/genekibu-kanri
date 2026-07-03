@@ -7,6 +7,7 @@ import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import NgCsvImport from './NgCsvImport';
+import DraftNumberInput from './DraftNumberInput';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
 // なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
@@ -803,15 +804,15 @@ export default function AbsenceNgPanel() {
                           }
                           return (
                             <td key={d.id} className="border border-builder-border p-0">
-                              <input
-                                type="number"
+                              <DraftNumberInput
                                 min="0"
                                 className="w-full h-full p-2 text-center focus:bg-builder-info-soft focus:outline-none text-builder-ink"
+                                aria-label={`${d.label} の ${t.name} の外部コマ数`}
                                 // `?? ''` で 0 を空表示に潰さない (明示的に 0 と
                                 // 入力したセルと未入力セルを区別する — code-review P4)
                                 value={project.externalCounts?.[k] ?? ""}
                                 placeholder="-"
-                                onChange={(e) => handleExternalCountChange(d.label, t.name, e.target.value)}
+                                onCommit={(v) => handleExternalCountChange(d.label, t.name, v)}
                               />
                             </td>
                           );

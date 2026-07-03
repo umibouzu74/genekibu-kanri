@@ -235,6 +235,22 @@ describe('projectReducer — 同値 no-op ガード (F2d)', () => {
     })).toBe(state);
   });
 
+  it('teacher/setExternalCount: 同値は no-op', () => {
+    const state = makeState({
+      externalCounts: { [makeExternalKey('12/25(木)', '堀上')]: 3 },
+    });
+    expect(projectReducer(state, {
+      type: 'teacher/setExternalCount',
+      payload: { date: '12/25(木)', teacherName: '堀上', value: '3' },
+    })).toBe(state);
+    // 別値は反映される
+    const next = projectReducer(state, {
+      type: 'teacher/setExternalCount',
+      payload: { date: '12/25(木)', teacherName: '堀上', value: '5' },
+    });
+    expect(next.project.externalCounts[makeExternalKey('12/25(木)', '堀上')]).toBe(5);
+  });
+
   it('combinedGroup/update: 全フィールド同値は no-op (dates: null も比較可)', () => {
     const state = makeState({
       combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],

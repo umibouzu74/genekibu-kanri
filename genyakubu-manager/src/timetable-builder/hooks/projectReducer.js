@@ -708,10 +708,11 @@ function applyAction(project, action) {
       const { date, teacherName, value } = action.payload;
       // F5o: 負数は 0 に clamp (負の外部コマ数は講師の日次合計を過小評価し、
       // 過負荷警告を見逃す)。
-      const counts = {
-        ...(project.externalCounts || {}),
-        [makeExternalKey(date, teacherName)]: Math.max(0, parseInt(value) || 0),
-      };
+      const key = makeExternalKey(date, teacherName);
+      const clamped = Math.max(0, parseInt(value) || 0);
+      // F2d: 同値なら no-op (履歴を汚さない)
+      if ((project.externalCounts || {})[key] === clamped) return project;
+      const counts = { ...(project.externalCounts || {}), [key]: clamped };
       return { ...project, externalCounts: counts };
     }
     case 'teacher/addExternalSession': {

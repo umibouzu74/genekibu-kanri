@@ -49,9 +49,23 @@ describe('SubjectManager — タブ別コマ数', () => {
     expect(screen.getByLabelText('中１・２ の 数学 コマ数')).toHaveValue(3);
   });
 
-  it('入力変更は対象タブの id 付きで handleSubjectCountChange を呼ぶ', () => {
+  it('入力変更は blur 時に対象タブの id 付きで handleSubjectCountChange を呼ぶ (F2l: draft-commit)', () => {
     const { handleSubjectCountChange } = renderManager();
-    fireEvent.change(screen.getByLabelText('中１・２ の 英語 コマ数'), { target: { value: '6' } });
+    const input = screen.getByLabelText('中１・２ の 英語 コマ数');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '6' } });
+    // 入力途中 (フォーカス中) は commit されない
+    expect(handleSubjectCountChange).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(handleSubjectCountChange).toHaveBeenCalledTimes(1);
     expect(handleSubjectCountChange).toHaveBeenCalledWith('英語', '6', 2);
+  });
+
+  it('変更せず blur した場合は commit しない (F2l)', () => {
+    const { handleSubjectCountChange } = renderManager();
+    const input = screen.getByLabelText('中１・２ の 英語 コマ数');
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(handleSubjectCountChange).not.toHaveBeenCalled();
   });
 });
