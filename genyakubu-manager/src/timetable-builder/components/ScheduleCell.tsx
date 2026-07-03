@@ -2,10 +2,11 @@ import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
+import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 
-export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
+export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null }) {
   const {
     project,
     currentSchedule,
@@ -165,7 +166,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   return (
     <td
       id={`select-${dateId}-${periodId}-${classId}-cell`}
-      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
+      // L2a: 講師ハイライト。ドラッグ中の ring 表示と衝突しないよう、
+      // isDragOver 中はハイライトを一時的に譲る
+      data-teacher-highlight={!!highlightTeacher && entry.teacher === highlightTeacher ? '' : undefined}
+      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
@@ -237,7 +241,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const shouldDisable = isNg && entry.teacher !== t.name;
                 // 上限到達済み (これ以上選ぶと超過) の講師を警告色にする。
                 // 閾値は設定可能な maxDailyHours に追従 (旧: 4 固定)。
-                const nearLimit = daily.total >= maxDailyHours;
+                // §M: L3a の講師個別上限があればそちらを優先 (分析・solver と
+                // 同じ判定にしないと、警告なしで選べて直後に違反表示になる)。
+                const nearLimit = daily.total >= resolveTeacherDailyLimit(t, maxDailyHours);
                 return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (nearLimit ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
               })}
             </optgroup>

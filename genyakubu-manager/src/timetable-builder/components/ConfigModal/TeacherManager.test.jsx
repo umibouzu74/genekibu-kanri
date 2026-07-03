@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import TeacherManager from './TeacherManager';
 import { ProjectContext } from '../../contexts/projectContextValue';
@@ -14,6 +14,8 @@ function renderManager({ project: projectOverride = {}, ui = {} } = {}) {
     removeTeacher: vi.fn(),
     renameTeacher: vi.fn(),
     toggleTeacherSubject: vi.fn(),
+    setTeacherLimit: vi.fn(),
+    addSubjects: vi.fn(),
   };
   const projectValue = {
     project: { teachers: [], subjects: ['英語', '数学', '国語', '理科', '社会'], ...projectOverride },
@@ -255,5 +257,189 @@ describe('TeacherManager — CSV インポート実行 (E3e)', () => {
     fireEvent.click(screen.getByText('キャンセル'));
     expect(fns.importTeachers).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('講師マスタ CSV テキスト')).toBeNull();
+  });
+});
+
+describe('TeacherManager — 担当科目未設定の警告 (L1g)', () => {
+  it('担当科目が空の講師が居れば人数と名前を警告表示する', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '新人A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '新人B', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('担当科目が未設定の講師が 2 名います');
+    expect(alert).toHaveTextContent('新人A・新人B');
+  });
+
+  it("placeholder の '未定' は担当が空でも警告対象にしない", () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '未定', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('全員に担当科目があれば警告を出さない', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('TeacherManager — 講師個別の上限入力 (L3a/L3b)', () => {
+  const teachersFixture = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 2 },
+    { name: '未定', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  ];
+
+  it('1 日上限・通算上限の入力が表示され、保存値が入る', () => {
+    renderManager({ project: { teachers: teachersFixture } });
+    const daily = screen.getByLabelText('堀上 の 1 日コマ数上限 (空欄 = 全体設定)');
+    expect(daily).toHaveValue(2);
+    const total = screen.getByLabelText('堀上 の通算コマ数上限 (空欄 = 無制限)');
+    expect(total).toHaveValue(null); // 未設定 = 空欄
+  });
+
+  it('blur で setTeacherLimit が呼ばれる', () => {
+    const { fns } = renderManager({ project: { teachers: teachersFixture } });
+    const total = screen.getByLabelText('堀上 の通算コマ数上限 (空欄 = 無制限)');
+    fireEvent.focus(total);
+    fireEvent.change(total, { target: { value: '8' } });
+    fireEvent.blur(total);
+    expect(fns.setTeacherLimit).toHaveBeenCalledWith(0, 'maxTotalHours', '8');
+  });
+
+  it("placeholder の '未定' には上限入力を出さない", () => {
+    renderManager({ project: { teachers: teachersFixture } });
+    expect(screen.queryByLabelText('未定 の 1 日コマ数上限 (空欄 = 全体設定)')).toBeNull();
+    expect(screen.queryByLabelText('未定 の通算コマ数上限 (空欄 = 無制限)')).toBeNull();
+  });
+});
+
+describe('TeacherManager — 親アプリからの取込 (L5a)', () => {
+  const LS_PART_TIME = 'genyakubu-part-time-staff';
+  const LS_SUBJECTS = 'genyakubu-subjects';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('親データが無ければ error toast を出して何もしない', async () => {
+    const { fns, uiValue } = renderManager();
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(uiValue.showToast).toHaveBeenCalled());
+    expect(uiValue.showToast.mock.calls[0][1]).toBe('error');
+    expect(fns.importTeachers).not.toHaveBeenCalled();
+  });
+
+  it('confirm 承認で importTeachers(entries, append) が呼ばれる', async () => {
+    localStorage.setItem(LS_PART_TIME, JSON.stringify([
+      { name: '福武', subjectIds: [1] },
+      { name: '河野', subjectIds: [] },
+    ]));
+    localStorage.setItem(LS_SUBJECTS, JSON.stringify([{ id: 1, name: '英語' }]));
+    const { fns, uiValue } = renderManager();
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(uiValue.showConfirm).toHaveBeenCalled();
+    expect(fns.importTeachers).toHaveBeenCalledWith([
+      { name: '福武', subjects: ['英語'] },
+      { name: '河野', subjects: [] },
+    ], 'append');
+  });
+
+  it('同名で担当科目が空の親講師は除外する (builder 側の担当を消さない)', async () => {
+    localStorage.setItem(LS_PART_TIME, JSON.stringify([
+      { name: '堀上', subjectIds: [] }, // 既存 + 空 → 除外
+      { name: '新規', subjectIds: [] }, // 新規 → 取り込む
+    ]));
+    const { fns } = renderManager({
+      project: {
+        teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
+      },
+    });
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(fns.importTeachers).toHaveBeenCalledWith([{ name: '新規', subjects: [] }], 'append');
+  });
+
+  it('confirm キャンセルで取り込まない', async () => {
+    localStorage.setItem(LS_PART_TIME, JSON.stringify([{ name: '福武', subjectIds: [] }]));
+    const { fns, uiValue } = renderManager({ ui: { showConfirm: vi.fn().mockResolvedValue(false) } });
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(fns.importTeachers).not.toHaveBeenCalled();
+  });
+});
+
+describe('TeacherManager — 未登録科目のマスタ一括追加 (L4c)', () => {
+  it('プレビューの「＋ マスタへ一括追加」で addSubjects が呼ばれる', () => {
+    const { fns, uiValue } = renderManager();
+    openPanel();
+    fireEvent.change(screen.getByLabelText('講師マスタ CSV テキスト'), {
+      target: { value: 'name,subjects\n佐藤,プログラミング|情報' },
+    });
+    fireEvent.click(screen.getByText('＋ マスタへ一括追加'));
+    expect(fns.addSubjects).toHaveBeenCalledWith(['プログラミング', '情報']);
+    expect(uiValue.showToast).toHaveBeenCalledWith('2 科目をマスタへ追加しました', 'success', 3000);
+  });
+
+  it('未登録科目が無ければ追加ボタンを出さない', () => {
+    renderManager();
+    openPanel();
+    fireEvent.change(screen.getByLabelText('講師マスタ CSV テキスト'), {
+      target: { value: 'name,subjects\n佐藤,英語' },
+    });
+    expect(screen.queryByText('＋ マスタへ一括追加')).toBeNull();
+  });
+});
+
+describe('TeacherManager — 雛形 CSV ダウンロード (L4f)', () => {
+  it('雛形CSV ボタンが CSV パネル内に表示される', () => {
+    renderManager();
+    openPanel();
+    expect(screen.getByText('⬇ 雛形CSV')).toBeInTheDocument();
+  });
+});
+
+describe('TeacherManager — 親取込の未登録科目 (§M)', () => {
+  const LS_PART_TIME2 = 'genyakubu-part-time-staff';
+  const LS_SUBJECTS2 = 'genyakubu-subjects';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('builder に無い科目は confirm に明示され、addSubjects で併せて登録される', async () => {
+    localStorage.setItem(LS_PART_TIME2, JSON.stringify([{ name: '高橋', subjectIds: [9] }]));
+    localStorage.setItem(LS_SUBJECTS2, JSON.stringify([{ id: 9, name: '情報' }]));
+    const { fns, uiValue } = renderManager(); // builder 側は 英数国理社 のみ
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('未登録の科目 1 件 (情報)');
+    expect(fns.addSubjects).toHaveBeenCalledWith(['情報']);
+  });
+
+  it('全て登録済みの科目なら addSubjects を呼ばない', async () => {
+    localStorage.setItem(LS_PART_TIME2, JSON.stringify([{ name: '高橋', subjectIds: [1] }]));
+    localStorage.setItem(LS_SUBJECTS2, JSON.stringify([{ id: 1, name: '英語' }]));
+    const { fns } = renderManager();
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(fns.addSubjects).not.toHaveBeenCalled();
   });
 });

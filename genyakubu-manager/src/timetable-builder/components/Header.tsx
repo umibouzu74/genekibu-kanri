@@ -57,6 +57,10 @@ export default function Header() {
       if (type === 'all') {
         await mod.downloadScheduleExcel(project);
         showToast('全体Excelをダウンロードしました');
+      } else if (type === 'clean') {
+        // L5c: 稼働カウント・⚠NG 抜きの配布用 (生徒掲示・保護者向け)
+        await mod.downloadScheduleExcel(project, { clean: true });
+        showToast('配布用Excelをダウンロードしました');
       } else {
         await mod.downloadTeacherExcel(project);
         showToast('個人別Excelをダウンロードしました');
@@ -108,7 +112,7 @@ export default function Header() {
             className="flex items-center gap-1 px-3 py-1.5 bg-builder-primary text-white rounded hover:bg-builder-primary-hover shadow text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
             title="Excel 出力メニューを開く"
           >
-            {exportingType === 'all' ? '⏳ 出力中...' : exportingType === 'teacher' ? '⏳ 出力中...' : '📊 Excel出力'}
+            {exportingType !== null ? '⏳ 出力中...' : '📊 Excel出力'}
             <span aria-hidden="true" className="text-[10px]">▾</span>
           </button>
           {excelMenuOpen && (
@@ -119,6 +123,12 @@ export default function Header() {
                 className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
                 title="全タブのスケジュールをExcel出力"
               >📊 全体スケジュール</button>
+              <button
+                role="menuitem"
+                onClick={() => handleExport('clean')}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
+                title="稼働カウントやNGマークを省いた、生徒掲示・保護者配布向けのExcel出力"
+              >🎒 配布用 (注記なし)</button>
               <button
                 role="menuitem"
                 onClick={() => handleExport('teacher')}

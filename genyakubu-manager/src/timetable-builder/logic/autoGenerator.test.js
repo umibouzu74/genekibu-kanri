@@ -897,3 +897,91 @@ describe('generateSinglePattern — 空 + ロック済みセル (F5w)', () => {
     expect(r.solution).toBeNull();
   });
 });
+
+describe('generateSinglePattern — 講師個別の上限 (L3a/L3b)', () => {
+  it('講師個別の maxDailyHours が全体値より優先される (L3a)', () => {
+    // 1 日 2 コマ (英語 + 数学)、全体上限 6 だが堀上の個人上限は 1 →
+    // 兼任の堀上しか居ないので 1 コマしか埋まらない (部分解)
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学'], { maxDailyHours: 1 })],
+      periods: ['1限', '2限'],
+      subjectCounts: { '英語': 1, '数学': 1 },
+      maxDailyHours: 6,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.filledCount).toBe(1);
+  });
+
+  it('個人上限が無ければ全体値どおり解ける (L3a の対照)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学'])],
+      periods: ['1限', '2限'],
+      subjectCounts: { '英語': 1, '数学': 1 },
+      maxDailyHours: 6,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+  });
+
+  it('maxTotalHours で通算コマ数が制限される (L3b)', () => {
+    // 3 日 × 1 限 × 英語 3 コマ。堀上の通算上限 2 → 2 コマまで (部分解)
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'], { maxTotalHours: 2 })],
+      dates: ['12/25(木)', '12/26(金)', '12/27(土)'],
+      subjectCounts: { '英語': 3 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.filledCount).toBe(2);
+  });
+
+  it('通算上限が足りていれば完全解 (L3b の対照)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'], { maxTotalHours: 3 })],
+      dates: ['12/25(木)', '12/26(金)', '12/27(土)'],
+      subjectCounts: { '英語': 3 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+  });
+
+  it('maxTotalHours は externalCounts (ツール外の負荷) も合算する (L3b)', () => {
+    // 2 日 × 英語 2 コマ。堀上 通算上限 2 で外部コマ 1 → builder 側は 1 コマだけ
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語'], { maxTotalHours: 2 })],
+      dates: ['12/25(木)', '12/26(金)'],
+      subjectCounts: { '英語': 2 },
+      externalCounts: { [`12/25(木)-堀上`]: 1 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.filledCount).toBe(1);
+  });
+
+  it('通算上限に達した講師の残りは他講師にフォールバックする (L3b)', () => {
+    const project = makeProject({
+      teachers: [
+        teacher('堀上', ['英語'], { maxTotalHours: 1 }),
+        teacher('田中', ['英語']),
+      ],
+      dates: ['12/25(木)', '12/26(金)'],
+      subjectCounts: { '英語': 2 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    const teachers = Object.values(r.solution).map(e => e.teacher);
+    expect(teachers.filter(n => n === '堀上').length).toBeLessThanOrEqual(1);
+    expect(teachers.filter(n => n === '田中').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('「未定」は通算上限の対象外 (L3b)', () => {
+    const project = makeProject({
+      teachers: [teacher('未定', ['英語'], { maxTotalHours: 1 })],
+      dates: ['12/25(木)', '12/26(金)', '12/27(土)'],
+      subjectCounts: { '英語': 3 },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+  });
+});

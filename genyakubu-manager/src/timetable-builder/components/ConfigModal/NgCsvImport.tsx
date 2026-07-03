@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { parseNgCsv } from '../../utils/csvImport';
+import { buildNgCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
 
 const NG_CSV_PLACEHOLDER = `name,date,period
 田中,12/25,1限
@@ -99,6 +100,13 @@ export default function NgCsvImport() {
               ヘッダ行は <code>name,date,period</code>。<code>date</code> / <code>period</code> は
               設定済みの日付・時限ラベルと一致させてください。
             </div>
+            {/* L4f: 現在の講師・日付・時限ラベルを埋めた雛形 */}
+            <button
+              type="button"
+              onClick={() => downloadCsvFile('NG日時雛形.csv', buildNgCsvTemplate(teacherNames, knownDates, knownPeriods))}
+              className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt whitespace-nowrap"
+              title="現在の講師・日付・時限ラベルを埋めたヘッダ付きの雛形 CSV をダウンロードします"
+            >⬇ 雛形CSV</button>
             <label className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface cursor-pointer whitespace-nowrap">
               📂 ファイルを選択
               <input

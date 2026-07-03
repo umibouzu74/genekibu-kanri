@@ -118,6 +118,10 @@ test("生成中に中止すると Worker が破棄され警告 toast が出る",
 
   await page.getByRole("button", { name: /自動作成/ }).click();
 
+  // L1h: この構成は静的に解けない (コマ数 30 > 使う日数 10) ため、
+  // 生成前に「解けない設定の検出」confirm が出る → 「生成する」で続行
+  await page.getByRole("button", { name: "生成する" }).click();
+
   // 生成中 UI (中止ボタン) が出る
   const cancelBtn = page.getByRole("button", { name: /中止/ });
   await expect(cancelBtn).toBeVisible({ timeout: 15_000 });

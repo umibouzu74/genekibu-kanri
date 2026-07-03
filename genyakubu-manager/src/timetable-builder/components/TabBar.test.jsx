@@ -11,9 +11,13 @@ function renderTabBar({ projectOverrides = {}, uiOverrides = {} } = {}) {
   const projectValue = {
     project: {
       activeTabId: 1,
+      // L1b: セル容量 0 のタブは「空」badge になるため、デフォルト fixture は
+      // 日・時限・クラスを 1 件ずつ持つ非空タブにしておく
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1限' }],
       tabs: [
-        { id: 1, name: '高3' },
-        { id: 2, name: '高2' },
+        { id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] } },
+        { id: 2, name: '高2', config: { classes: [{ id: 1, label: 'A' }] } },
       ],
     },
     switchTab: vi.fn(),
@@ -158,6 +162,62 @@ describe('TabBar — キーボード操作 (F2a)', () => {
   it('削除 × は aria-label 付きの button になっている', () => {
     renderTabBar();
     expect(screen.getByLabelText('高3 タブを削除')).toBeInstanceOf(HTMLButtonElement);
+  });
+});
+
+describe('TabBar — 空タブ badge (L1b)', () => {
+  it('使う日が 0 件のタブは ✨ ではなく「空」badge を表示', () => {
+    renderTabBar({
+      projectOverrides: {
+        project: {
+          activeTabId: 1,
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          tabs: [
+            { id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] } },
+            { id: 2, name: '高2', config: { classes: [{ id: 1, label: 'A' }], activeDateIds: [] } },
+          ],
+        },
+      },
+    });
+    expect(screen.getByLabelText('時間割マスなし')).toHaveTextContent('空');
+    expect(screen.getAllByLabelText('違反なし')).toHaveLength(1);
+  });
+
+  it('クラスが 0 件のタブも「空」badge を表示', () => {
+    renderTabBar({
+      projectOverrides: {
+        project: {
+          activeTabId: 1,
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          tabs: [
+            { id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] } },
+            { id: 2, name: '高2', config: { classes: [] } },
+          ],
+        },
+      },
+    });
+    expect(screen.getByLabelText('時間割マスなし')).toBeInTheDocument();
+  });
+
+  it('違反のあるタブは空判定より ⚠️ を優先する', () => {
+    renderTabBar({
+      projectOverrides: {
+        project: {
+          activeTabId: 1,
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          tabs: [
+            { id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] } },
+            { id: 2, name: '高2', config: { classes: [], activeDateIds: [] } },
+          ],
+        },
+        analysis: { tabErrorCounts: { 2: 1 } },
+      },
+    });
+    expect(screen.getByLabelText('違反 1 件')).toBeInTheDocument();
+    expect(screen.queryByLabelText('時間割マスなし')).toBeNull();
   });
 });
 

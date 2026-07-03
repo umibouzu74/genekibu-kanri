@@ -19,6 +19,9 @@ interface ToolbarProps {
   onGenerate: () => void;
   onCancelGenerate: () => void;
   onShowHelp: () => void;
+  /** L2a: グリッド上で強調する講師名 (null = ハイライトなし) */
+  highlightTeacher?: string | null;
+  setHighlightTeacher?: Dispatch<SetStateAction<string | null>>;
 }
 
 export default function Toolbar({
@@ -34,6 +37,8 @@ export default function Toolbar({
   onGenerate,
   onCancelGenerate,
   onShowHelp,
+  highlightTeacher = null,
+  setHighlightTeacher,
 }: ToolbarProps) {
   const {
     analysis,
@@ -138,10 +143,14 @@ export default function Toolbar({
     });
   }
   const teacherOverItems = violations.teacherOverDaily.items;
+  // L3b: 通算上限超過 (講師別 maxTotalHours)。?. は violations を部分 mock
+  // するテストとの互換のため
+  const teacherOverTotalItems = violations.teacherOverTotal?.items || [];
   // informational (quotaCellMismatch) はバッジの件数に数えない
   const countedInfeasItems = infeasItems.filter(it => !it.informational);
   const totalViolationCount =
-    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length + countedInfeasItems.length;
+    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length +
+    teacherOverTotalItems.length + countedInfeasItems.length;
   // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
   // カウント対象の infeasItems が全て 0) の場合は popover を開かず即スクロール
   // する (旧挙動互換)。informational は fast path を妨げない。
@@ -151,6 +160,7 @@ export default function Toolbar({
     violations.subjectDup.count === 0 &&
     violations.subjectOver.count === 0 &&
     teacherOverItems.length === 0 &&
+    teacherOverTotalItems.length === 0 &&
     countedInfeasItems.length === 0;
 
   return (
@@ -233,6 +243,31 @@ export default function Toolbar({
                       </ul>
                     </li>
                   )}
+                  {teacherOverTotalItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1">講師通算上限超 ({teacherOverTotalItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {teacherOverTotalItems.slice(0, 5).map((it) => (
+                          <li key={`total-${it.teacher}`} className="flex items-center justify-between gap-2">
+                            <span className="flex-1 min-w-0 truncate">
+                              {it.teacher} 通算: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
+                            </span>
+                            {it.firstKey && (
+                              <button
+                                type="button"
+                                onClick={() => { scrollToKey(it.firstKey); setPopoverOpen(false); }}
+                                className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                                title="該当先生の最初のセルへ移動"
+                              >→</button>
+                            )}
+                          </li>
+                        ))}
+                        {teacherOverTotalItems.length > 5 && (
+                          <li className="italic">他 {teacherOverTotalItems.length - 5} 件</li>
+                        )}
+                      </ul>
+                    </li>
+                  )}
                   {infeasItems.length > 0 && (
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
@@ -273,6 +308,21 @@ export default function Toolbar({
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* L2a: 講師ハイライト。選んだ講師の割当セルをグリッド上で強調する */}
+        {setHighlightTeacher && (
+          <select
+            value={highlightTeacher ?? ''}
+            onChange={(e) => setHighlightTeacher(e.target.value || null)}
+            aria-label="講師ハイライト"
+            title="選んだ講師の割当セルをグリッド上で強調表示します"
+            className={`px-2 py-2 border rounded shadow-sm text-sm max-w-[9rem] ${highlightTeacher ? 'bg-builder-info-soft border-builder-blue text-builder-blue font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}
+          >
+            <option value="">👁 講師で探す</option>
+            {(project?.teachers || []).map(t => (
+              <option key={t.name} value={t.name}>{t.name}</option>
+            ))}
+          </select>
+        )}
         <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="表示サイズを切り替え">
           {isCompact ? "🔍 標準" : "📏 縮小"}
         </button>

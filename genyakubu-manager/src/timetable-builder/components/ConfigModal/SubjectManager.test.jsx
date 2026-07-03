@@ -24,14 +24,18 @@ function renderManager(overrides = {}, ui = {}) {
     project,
     commonSubjects: ['英語', '数学'],
     addSubject: vi.fn(),
+    addSubjects: vi.fn(),
     removeSubject: vi.fn(),
     reorderSubjects: vi.fn(),
     handleSubjectCountChange,
+    fillSubjectCounts: vi.fn(),
+    copySubjectCountsToOthers: vi.fn(),
     ...overrides,
   };
   const uiValue = {
     showInput: vi.fn().mockResolvedValue(null),
     showConfirm: vi.fn().mockResolvedValue(true),
+    showToast: vi.fn(),
     ...ui,
   };
   render(
@@ -125,5 +129,64 @@ describe('SubjectManager — 並び替え (E3e)', () => {
     fireEvent.click(firstUp);
     fireEvent.click(lastDown);
     expect(projectValue.reorderSubjects).not.toHaveBeenCalled();
+  });
+});
+
+describe('SubjectManager — コマ数の一括操作 (L4a)', () => {
+  it('⚡ で列の全科目を一括入力する (showInput の数値で fillSubjectCounts)', async () => {
+    const fillSubjectCounts = vi.fn();
+    const { uiValue } = renderManager(
+      { fillSubjectCounts },
+      { showInput: vi.fn().mockResolvedValue('4') },
+    );
+    fireEvent.click(screen.getByLabelText('中３ の全科目のコマ数を一括入力'));
+    await waitFor(() => expect(fillSubjectCounts).toHaveBeenCalledWith(1, 4));
+    expect(uiValue.showToast).toHaveBeenCalled();
+  });
+
+  it('⚡ の入力が非数ならエラー toast で何もしない', async () => {
+    const fillSubjectCounts = vi.fn();
+    const { uiValue } = renderManager(
+      { fillSubjectCounts },
+      { showInput: vi.fn().mockResolvedValue('abc') },
+    );
+    fireEvent.click(screen.getByLabelText('中３ の全科目のコマ数を一括入力'));
+    await waitFor(() => expect(uiValue.showToast).toHaveBeenCalled());
+    expect(uiValue.showToast.mock.calls[0][1]).toBe('error');
+    expect(fillSubjectCounts).not.toHaveBeenCalled();
+  });
+
+  it('⧉ で confirm 承認後に copySubjectCountsToOthers を呼ぶ', async () => {
+    const copySubjectCountsToOthers = vi.fn();
+    const { uiValue } = renderManager({ copySubjectCountsToOthers });
+    fireEvent.click(screen.getByLabelText('中３ のコマ数を他の全タブへコピー'));
+    await waitFor(() => expect(copySubjectCountsToOthers).toHaveBeenCalledWith(1));
+    expect(uiValue.showConfirm).toHaveBeenCalled();
+  });
+});
+
+describe('SubjectManager — 科目の一括追加 (L4d)', () => {
+  it('カンマ区切り入力は addSubjects (一括) を呼ぶ', async () => {
+    const addSubjects = vi.fn();
+    const addSubject = vi.fn();
+    renderManager(
+      { addSubjects, addSubject },
+      { showInput: vi.fn().mockResolvedValue('情報, 小論文、理科') },
+    );
+    fireEvent.click(screen.getByText('+ 追加'));
+    await waitFor(() => expect(addSubjects).toHaveBeenCalledWith(['情報', '小論文', '理科']));
+    expect(addSubject).not.toHaveBeenCalled();
+  });
+
+  it('単一名は従来どおり addSubject を呼ぶ', async () => {
+    const addSubjects = vi.fn();
+    const addSubject = vi.fn();
+    renderManager(
+      { addSubjects, addSubject },
+      { showInput: vi.fn().mockResolvedValue('情報') },
+    );
+    fireEvent.click(screen.getByText('+ 追加'));
+    await waitFor(() => expect(addSubject).toHaveBeenCalledWith('情報'));
+    expect(addSubjects).not.toHaveBeenCalled();
   });
 });

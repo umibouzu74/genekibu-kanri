@@ -4,8 +4,10 @@ import {
   isNgSlot,
   isNgClass,
   wouldExceedDailyLimit,
+  wouldExceedTotalLimit,
   wouldExceedConsecutive,
   isTeacherCandidateFor,
+  resolveTeacherDailyLimit,
 } from './teacherConstraints';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 
@@ -181,5 +183,53 @@ describe('wouldExceedConsecutive', () => {
 
   it('未知の periodId は false', () => {
     expect(wouldExceedConsecutive({ periodsOrder, periodId: 99, isOccupied: occ(1, 2), maxConsecutive: 1 })).toBe(false);
+  });
+});
+
+describe('resolveTeacherDailyLimit (L3a)', () => {
+  it('講師個別値 (正の有限数) があればそれを返す', () => {
+    expect(resolveTeacherDailyLimit(t({ maxDailyHours: 2 }), 6)).toBe(2);
+  });
+
+  it('未設定 / 0 / 不正値は project 全体値へフォールバック', () => {
+    expect(resolveTeacherDailyLimit(t(), 6)).toBe(6);
+    expect(resolveTeacherDailyLimit(t({ maxDailyHours: 0 }), 6)).toBe(6);
+    expect(resolveTeacherDailyLimit(t({ maxDailyHours: -1 }), 6)).toBe(6);
+    expect(resolveTeacherDailyLimit(t({ maxDailyHours: NaN }), 6)).toBe(6);
+    expect(resolveTeacherDailyLimit(null, 6)).toBe(6);
+    expect(resolveTeacherDailyLimit(undefined, 6)).toBe(6);
+  });
+});
+
+describe('wouldExceedTotalLimit (L3b)', () => {
+  it('上限に達していれば true (次の 1 コマで超過)', () => {
+    expect(wouldExceedTotalLimit({
+      teacher: t({ maxTotalHours: 3 }),
+      tempTotal: { '堀上': 3 },
+    })).toBe(true);
+  });
+
+  it('上限未満なら false', () => {
+    expect(wouldExceedTotalLimit({
+      teacher: t({ maxTotalHours: 3 }),
+      tempTotal: { '堀上': 2 },
+    })).toBe(false);
+    expect(wouldExceedTotalLimit({
+      teacher: t({ maxTotalHours: 3 }),
+      tempTotal: {},
+    })).toBe(false);
+  });
+
+  it('上限未設定 / 0 / 不正値は制約なし', () => {
+    expect(wouldExceedTotalLimit({ teacher: t(), tempTotal: { '堀上': 99 } })).toBe(false);
+    expect(wouldExceedTotalLimit({ teacher: t({ maxTotalHours: 0 }), tempTotal: { '堀上': 99 } })).toBe(false);
+    expect(wouldExceedTotalLimit({ teacher: t({ maxTotalHours: NaN }), tempTotal: { '堀上': 99 } })).toBe(false);
+  });
+
+  it('未定 (exemptName) は対象外', () => {
+    expect(wouldExceedTotalLimit({
+      teacher: t({ name: '未定', maxTotalHours: 1 }),
+      tempTotal: { '未定': 5 },
+    })).toBe(false);
   });
 });

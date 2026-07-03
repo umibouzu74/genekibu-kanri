@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
+  DEFAULT_GENERATION_SEED,
 } from '../../utils/constants';
 
 // 1 パラメータの行 (number 入力 + スライダー + 説明)。
@@ -51,16 +52,19 @@ function ParamRow({ row, bounds, value, onCommit }) {
           <span className="text-xs text-builder-ink-muted w-8">{row.unit}</span>
         </div>
       </div>
-      <input
-        type="range"
-        min={bounds.min}
-        max={bounds.max}
-        step={row.step}
-        value={value}
-        aria-label={`${row.label} (スライダー)`}
-        onChange={(e) => onCommit(row.key, Number(e.target.value))}
-        className="w-full accent-builder-blue"
-      />
+      {/* seed のような広レンジ値はスライダーで操作できないので省く (L1e) */}
+      {!row.noSlider && (
+        <input
+          type="range"
+          min={bounds.min}
+          max={bounds.max}
+          step={row.step}
+          value={value}
+          aria-label={`${row.label} (スライダー)`}
+          onChange={(e) => onCommit(row.key, Number(e.target.value))}
+          className="w-full accent-builder-blue"
+        />
+      )}
       <p className="text-xs text-builder-ink-muted leading-snug">{row.help}</p>
     </div>
   );
@@ -101,6 +105,14 @@ export default function GenerationSettings() {
       help: 'solver が諦めるまでの試行回数の合計。内部では複数回の仕切り直し (リスタート) に分割して使い、上限を大きくすると 1 回あたりの探索も深くなります。難しい条件で解けやすくなる代わりに生成が長くなります。',
       step: 50000,
     },
+    {
+      key: 'generationSeed',
+      label: '乱数 seed (0 = 毎回ランダム)',
+      unit: '',
+      help: '同じ seed と同じ設定なら同じ案を再現できます。結果パネルに表示される「seed」の値をここに入力すると、その時の生成をやり直せます。',
+      step: 1,
+      noSlider: true,
+    },
   ];
 
   const handleCommit = (key, num) => {
@@ -113,6 +125,7 @@ export default function GenerationSettings() {
       maxDailyHours: DEFAULT_MAX_DAILY_HOURS,
       maxIterations: DEFAULT_MAX_ITERATIONS,
       maxConsecutivePeriods: DEFAULT_MAX_CONSECUTIVE_PERIODS,
+      generationSeed: DEFAULT_GENERATION_SEED,
     });
   };
 

@@ -81,3 +81,42 @@ describe('NgCsvImport (E2a)', () => {
     expect(screen.getByText(/未登録の時限ラベル/)).toBeInTheDocument();
   });
 });
+
+describe('NgCsvImport — 雛形 CSV ダウンロード (L4f)', () => {
+  it('雛形CSV ボタンがパネル内に表示される', () => {
+    renderPanel();
+    fireEvent.click(screen.getByText(/NG 日時を CSV で一括登録/));
+    expect(screen.getByText('⬇ 雛形CSV')).toBeInTheDocument();
+  });
+});
+
+describe('NgCsvImport — 雛形 CSV の配線 (§M)', () => {
+  it('雛形は実在の講師・日付・時限ラベルで生成される (引数順の固定)', async () => {
+    let captured = null;
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn((b) => { captured = b; return 'blob:x'; });
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      renderPanel();
+      fireEvent.click(screen.getByText(/NG 日時を CSV で一括登録/));
+      fireEvent.click(screen.getByText('⬇ 雛形CSV'));
+      expect(captured).not.toBeNull();
+      // BOM は text() (UTF-8 デコード) だと剥がされるのでバイト列で確認
+      const bytes = new Uint8Array(await captured.arrayBuffer());
+      expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
+      const text = await captured.text();
+      const lines = text.split('\n');
+      expect(lines[0]).toBe('name,date,period');
+      const [name, date, period] = lines[1].split(',');
+      expect(name).toBe('田中'); // fixture の先頭講師
+      expect(date).toBe('12/25'); // fixture の先頭日付ラベル
+      expect(period).toBe('1限');
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      clickSpy.mockRestore();
+    }
+  });
+});

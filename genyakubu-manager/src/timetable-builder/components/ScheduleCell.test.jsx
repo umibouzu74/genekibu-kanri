@@ -46,7 +46,7 @@ function defaultContext(overrides = {}) {
 
 // ScheduleCell は <td> なので、テストでは <table><tbody><tr> でラップして
 // render する必要がある (jsdom でも valid な DOM 構造を保つため)。
-function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, contextOverrides = {} } = {}) {
+function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, contextOverrides = {} } = {}) {
   const ctx = defaultContext(contextOverrides);
   const utils = render(
     <ProjectContext.Provider value={ctx}>
@@ -64,6 +64,7 @@ function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, 
           onDragEnd={vi.fn()}
           isDragOver={false}
           isDragSource={false}
+          highlightTeacher={highlightTeacher}
         />
       </tr></tbody></table>
     </ProjectContext.Provider>,
@@ -250,5 +251,59 @@ describe('ScheduleCell — 矢印ナビと select ネイティブ操作 (F2b)', 
     const select = document.getElementById('select-1-1-1-subject');
     expect(fireEvent.keyDown(select, { key: 'ArrowDown', ctrlKey: true })).toBe(true);
     expect(fireEvent.keyDown(select, { key: 'ArrowLeft', metaKey: true })).toBe(true);
+  });
+});
+
+describe('ScheduleCell — 講師ハイライト (L2a)', () => {
+  const schedule = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+
+  it('一致する講師のセルに data-teacher-highlight が付く', () => {
+    const { container } = renderCell({
+      highlightTeacher: '堀上',
+      contextOverrides: { currentSchedule: schedule },
+    });
+    expect(container.querySelector('td[data-teacher-highlight]')).not.toBeNull();
+  });
+
+  it('一致しないセルは薄く表示され、ハイライトは付かない', () => {
+    const { container } = renderCell({
+      highlightTeacher: '田中',
+      contextOverrides: { currentSchedule: schedule },
+    });
+    const td = container.querySelector('td');
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(false);
+    expect(td.className).toContain('opacity-40');
+  });
+
+  it('highlightTeacher が null なら通常表示', () => {
+    const { container } = renderCell({ contextOverrides: { currentSchedule: schedule } });
+    const td = container.querySelector('td');
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(false);
+    expect(td.className).not.toContain('opacity-40');
+  });
+});
+
+describe('ScheduleCell — ハイライトとドラッグの競合 (§M)', () => {
+  it('isDragOver 中はハイライト ring より drag ring を優先する', () => {
+    const { container } = render(
+      <ProjectContext.Provider value={defaultContext({ currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } } })}>
+        <table><tbody><tr>
+          <ScheduleCell
+            dateId={1} periodId={1} classId={1}
+            isCompact={false}
+            onContextMenu={vi.fn()} onDragStart={vi.fn()} onDragOver={vi.fn()}
+            onDragLeave={vi.fn()} onDrop={vi.fn()} onDragEnd={vi.fn()}
+            isDragOver={true}
+            isDragSource={false}
+            highlightTeacher="堀上"
+          />
+        </tr></tbody></table>
+      </ProjectContext.Provider>,
+    );
+    const td = container.querySelector('td');
+    // drag ring (bg-builder-info-soft 付き) が出て、ハイライト専用 ring 分岐は抑止される
+    expect(td.className).toContain('bg-builder-info-soft');
+    // data 属性 (一致マーカー) は維持
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(true);
   });
 });

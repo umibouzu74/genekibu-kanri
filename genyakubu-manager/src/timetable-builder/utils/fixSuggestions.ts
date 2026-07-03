@@ -202,6 +202,16 @@ export const INFEASIBILITY_KINDS: InfeasibilityKind[] = [
   },
 ];
 
+// L1h: 生成前の事前警告用。informational でない種別 (= 完全解が静的に
+// 不可能な設定) の合計件数を返す。BuilderApp が 🧙‍♂️ 自動作成の前に
+// これを見て「それでも部分解を生成するか」を確認する。
+export function countFatalInfeasibilities(infeasibilities: any): number {
+  if (!infeasibilities) return 0;
+  return INFEASIBILITY_KINDS
+    .filter(k => !k.informational)
+    .reduce((n, k) => n + (infeasibilities[k.key]?.count || 0), 0);
+}
+
 export function buildFixSuggestions(infeasibilities: any, ctx: SuggestContext = {}): any {
   if (!infeasibilities) return infeasibilities;
   const out: Record<string, any> = {};

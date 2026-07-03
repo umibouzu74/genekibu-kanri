@@ -521,7 +521,7 @@ export function migrateProject(project: any): Project {
   {
     const clampedParams: Record<string, number> = {};
     let paramsChanged = false;
-    const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods'];
+    const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods', 'generationSeed'];
     for (const key of paramKeys) {
       if (result[key] === undefined) continue;
       const clamped = clampGenerationParam(key, result[key]);
@@ -596,6 +596,18 @@ export function normalizeTeacherFields(teachers: any): Teacher[] | any {
       if (!Array.isArray(nt[key])) {
         if (nt === t) nt = { ...t };
         nt[key] = [];
+        changed = true;
+      }
+    }
+    // §M (L3a/L3b): 講師個別上限は「正の有限数」以外を落とす。solver /
+    // 分析は型ガードで黙って無視するが、UI (TeacherManager) は保存値を
+    // そのまま表示するため、外部 JSON 由来の "3" (文字列) 等が残ると
+    // 「表示は効いているのに実動作は未設定」の乖離になる。
+    for (const key of ['maxDailyHours', 'maxTotalHours']) {
+      const v = nt[key];
+      if (v !== undefined && !(typeof v === 'number' && Number.isFinite(v) && v > 0)) {
+        if (nt === t) nt = { ...t };
+        delete nt[key];
         changed = true;
       }
     }

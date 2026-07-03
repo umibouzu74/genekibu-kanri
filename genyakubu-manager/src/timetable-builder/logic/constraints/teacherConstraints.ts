@@ -52,6 +52,34 @@ export function wouldExceedDailyLimit({
   return (tempDaily[dayKey] || 0) + 1 > maxDailyHours;
 }
 
+// L3a: 講師の実効 1 日上限。teacher.maxDailyHours (正の有限値) があれば
+// それを、無ければ project 全体値を使う。0 や不正値は「未設定」扱い。
+export function resolveTeacherDailyLimit(
+  teacher: Teacher | null | undefined,
+  projectMaxDailyHours: number,
+): number {
+  const v = teacher?.maxDailyHours;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : projectMaxDailyHours;
+}
+
+// L3b: 講師にこのコマを足すと通算 (全タブ + 外部コマ) 上限を超えるか。
+// maxTotalHours が未設定 / 0 以下なら制約なし。tempTotal は
+// { teacherName: count } (合同を 1 とカウント済み)。
+export function wouldExceedTotalLimit({
+  teacher,
+  tempTotal,
+  exemptName = '未定',
+}: {
+  teacher: Teacher;
+  tempTotal: Record<string, number>;
+  exemptName?: string;
+}): boolean {
+  if (!teacher || teacher.name === exemptName) return false;
+  const limit = teacher.maxTotalHours;
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return false;
+  return (tempTotal[teacher.name] || 0) + 1 > limit;
+}
+
 // 講師にこのコマ (date, period) を足すと「連続コマ数」が上限を超えるか (E2c)。
 // periodsOrder は config.periods (表示順の配列)。isOccupied(periodId) は
 // 「その日のその時限に当該講師が既に割り当て済みか」を返すコールバック。

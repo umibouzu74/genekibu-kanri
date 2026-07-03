@@ -131,3 +131,14 @@ describe('Header', () => {
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('個人別Excelをダウンロードしました'));
   });
 });
+
+describe('Header — 配布用 Excel 出力 (L5c)', () => {
+  it('「🎒 配布用 (注記なし)」で clean オプション付きの downloadScheduleExcel を呼ぶ', async () => {
+    const mod = await import('../utils/excelExport');
+    renderHeader();
+    fireEvent.click(screen.getByText(/Excel出力/).closest('button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /配布用/ }));
+    await vi.waitFor(() =>
+      expect(mod.downloadScheduleExcel).toHaveBeenCalledWith(expect.anything(), { clean: true }));
+  });
+});

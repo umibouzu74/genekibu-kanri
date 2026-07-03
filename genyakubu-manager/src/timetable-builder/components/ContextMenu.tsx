@@ -89,8 +89,10 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
     handleCellClear,
     handleSetNg,
     toggleLock,
+    applyToAllDates,
+    copyDateColumn,
   } = useProjectContext();
-  const { showInput, showToast } = useUI();
+  const { showInput, showToast, showConfirm } = useUI();
 
   if (!contextMenu) return null;
 
@@ -114,6 +116,24 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
         return;
       }
       handleRenameHeader(type, val, newVal);
+      return;
+    }
+
+    // L2c: 起点セルの割当を全日へ適用 (ロック済みはスキップ、Undo 可)
+    if (action === 'apply-all-dates') {
+      onClose();
+      const src = cellKey ? currentSchedule[cellKey] : null;
+      if (!src?.subject) return;
+      // §M: 起点日はスキップされるので「他の N 日」と表現する (実変更数と一致)
+      const otherCount = (currentConfig.dates || []).length - 1;
+      const ok = await showConfirm(
+        `「${src.subject}${src.teacher ? ` / ${src.teacher}` : ''}」を、他の ${otherCount} 日の同じ時限・クラスへ適用しますか？\n` +
+          `既存の割当は上書きされます (ロック済みセルは変更されません。Undo で戻せます)。`,
+        { title: '全日に適用', confirmLabel: '適用する' },
+      );
+      if (!ok) return;
+      applyToAllDates(dateId, periodId, classId);
+      showToast(`${src.subject}${src.teacher ? ` / ${src.teacher}` : ''} を全日に適用しました`, 'success', 3000);
       return;
     }
 
@@ -147,7 +167,34 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
           <button onClick={() => handleAction('rename')} className="block w-full text-left px-4 py-2 hover:bg-builder-info-soft text-builder-blue font-bold border-b border-builder-border">✏️ 名称を変更</button>
           <button onClick={() => handleAction('lock-all')} className="block w-full text-left px-4 py-2 hover:bg-builder-bg border-b border-builder-border text-builder-ink">🔒 一括ロック</button>
           <button onClick={() => handleAction('unlock-all')} className="block w-full text-left px-4 py-2 hover:bg-builder-bg border-b border-builder-border text-builder-ink">🔓 一括解除</button>
-          <button onClick={() => handleAction('clear-all')} className="block w-full text-left px-4 py-2 hover:bg-builder-danger-soft text-builder-red">🗑️ 一括クリア</button>
+          <button onClick={() => handleAction('clear-all')} className={`block w-full text-left px-4 py-2 hover:bg-builder-danger-soft text-builder-red ${type === 'date' ? 'border-b border-builder-border' : ''}`}>🗑️ 一括クリア</button>
+          {/* L2c: この日の列 (全時限 × 全クラス) を別の日へ複製する */}
+          {type === 'date' && (currentConfig.dates || []).length > 1 && (
+            <>
+              <div className="px-4 py-1.5 bg-builder-surface-alt border-b border-builder-border font-bold text-builder-ink-muted text-xs">⧉ この日の割当をコピー →</div>
+              <div className="max-h-48 overflow-y-auto">
+                {(currentConfig.dates || []).filter(d => d.label !== val).map(d => (
+                  <button
+                    key={d.id}
+                    onClick={async () => {
+                      onClose();
+                      const sourceEnt = (currentConfig.dates || []).find(dd => dd.label === val);
+                      if (!sourceEnt) return;
+                      const ok = await showConfirm(
+                        `「${val}」の割当 (全時限 × 全クラス) を「${d.label}」へ複製しますか？\n` +
+                          `「${d.label}」の既存の割当は上書きされます (ロック済みセルは変更されません。Undo で戻せます)。`,
+                        { title: '日付列の複製', confirmLabel: '複製する' },
+                      );
+                      if (!ok) return;
+                      copyDateColumn(sourceEnt.id, d.id);
+                      showToast(`「${val}」の割当を「${d.label}」へ複製しました`, 'success', 3000);
+                    }}
+                    className="block w-full text-left px-6 py-1.5 hover:bg-builder-info-soft text-builder-ink text-xs border-b border-builder-border last:border-0"
+                  >{d.label}</button>
+                ))}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -174,6 +221,12 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
               </button>
             );
           })()}
+          {/* L2c: 「クラスA 1限は毎日これ」の反復入力を 1 操作に */}
+          {cellKey && currentSchedule[cellKey]?.subject && (currentConfig.dates || []).length > 1 && (
+            <button onClick={() => handleAction('apply-all-dates')} className="block w-full text-left px-4 py-2 hover:bg-builder-info-soft border-b border-builder-border text-builder-blue">
+              📅 この割当を全日に適用
+            </button>
+          )}
           <button onClick={() => handleAction('lock')} className="block w-full text-left px-4 py-2 hover:bg-builder-bg border-b border-builder-border text-builder-ink">🔒 ロック切替</button>
           <button onClick={() => handleAction('clear')} className="block w-full text-left px-4 py-2 hover:bg-builder-danger-soft text-builder-red">🗑️ クリア</button>
         </>

@@ -54,6 +54,12 @@ export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSch
     // (dragstart 時点の stale なデータで上書きしないため)。
     handleSwapCells: (sourceKey: string, targetKey: string) =>
       dispatch({ type: 'cell/swap', payload: { sourceKey, targetKey } }),
+    // L2c: 起点セルの割当を使う全日の同じ時限・クラスへ適用
+    applyToAllDates: (dateId: number, periodId: number, classId: number) =>
+      dispatch({ type: 'cell/applyToAllDates', payload: { dateId, periodId, classId } }),
+    // L2c: 1 日分の列を別の日へ複製
+    copyDateColumn: (sourceDateId: number, targetDateId: number) =>
+      dispatch({ type: 'schedule/copyDateColumn', payload: { sourceDateId, targetDateId } }),
     // tabId = 生成元タブ (省略時はアクティブタブ)。結果パネルはタブ切替後も
     // 残るため、必ず生成時に記録したタブへ適用する。
     applyPattern: (pat: Schedule, tabId?: number) =>

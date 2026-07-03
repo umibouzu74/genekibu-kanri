@@ -136,6 +136,17 @@ export function useProject() {
   const handleRemoveDateFromPool = useCallback((dateId: number) => {
     dispatch({ type: 'dates/removeFromPool', payload: { dateId } });
   }, [dispatch]);
+  // L4b: どのタブも使っていない日をまとめてプールから削除
+  const handleRemoveUnusedDatesFromPool = useCallback(() => {
+    dispatch({ type: 'dates/removeUnusedFromPool' });
+  }, [dispatch]);
+  // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
+  const handleCopyTabDatesToOthers = useCallback((sourceTabId: number) => {
+    dispatch({ type: 'tabDates/copyActiveToOthers', payload: { sourceTabId } });
+  }, [dispatch]);
+  const handleCopyTabPeriodsToOthers = useCallback((sourceTabId: number) => {
+    dispatch({ type: 'tabPeriods/copyActiveToOthers', payload: { sourceTabId } });
+  }, [dispatch]);
 
   // --- タブ別『使う時限』(activePeriodIds、E-3) ---
   // チェックリストの単一トグル
@@ -227,6 +238,9 @@ export function useProject() {
     handleToggleTabDate,
     handleSetAllTabDates,
     handleRemoveDateFromPool,
+    handleRemoveUnusedDatesFromPool,
+    handleCopyTabDatesToOthers,
+    handleCopyTabPeriodsToOthers,
     // タブ別『使う時限』(E-3)
     handleToggleTabPeriod,
     handleSetAllTabPeriods,

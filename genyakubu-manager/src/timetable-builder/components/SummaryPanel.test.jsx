@@ -14,7 +14,7 @@ const CONFIG = {
   subjectCounts: { 英語: 1 },
 };
 
-function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
+function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, generatedSeed = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
   const applyPattern = vi.fn();
   const projectValue = {
     project: {
@@ -36,6 +36,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
           setGeneratedPatterns={vi.fn()}
           generatedElapsedMs={generatedElapsedMs}
           generatedForTab={generatedForTab}
+          generatedSeed={generatedSeed}
         />
       </UIContext.Provider>
     </ProjectContext.Provider>,
@@ -81,6 +82,16 @@ describe('SummaryPanel (E2f 生成統計)', () => {
   it('iterations が無い案では統計行を出さない (後方互換)', () => {
     renderPanel({ generatedPatterns: [{ schedule: {}, isPartial: false, filledCount: 1, totalSlots: 1 }] });
     expect(screen.queryByText(/探索/)).not.toBeInTheDocument();
+  });
+
+  it('使用 seed を結果ヘッダに表示する (L1e)', () => {
+    renderPanel({ generatedPatterns: [fullPattern], generatedSeed: 42 });
+    expect(screen.getByLabelText('生成に使った乱数 seed')).toHaveTextContent('seed 42');
+  });
+
+  it('generatedSeed が null なら seed 表示を出さない (後方互換)', () => {
+    renderPanel({ generatedPatterns: [fullPattern] });
+    expect(screen.queryByLabelText('生成に使った乱数 seed')).toBeNull();
   });
 });
 
@@ -143,5 +154,33 @@ describe('SummaryPanel — 講師別コマ数は講習セルのみ (F5u)', () =>
     expect(screen.getByText('堀上')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.queryByText('5')).toBeNull();
+  });
+});
+
+describe('SummaryPanel — 部分解の未充填内訳 (L3e)', () => {
+  it('部分解の案カードに未充填セルと科目不足を表示する', () => {
+    renderPanel({
+      generatedPatterns: [{
+        schedule: {}, // 1 セル構成 (CONFIG) が全て未充填
+        isPartial: true,
+        filledCount: 0,
+        totalSlots: 1,
+      }],
+    });
+    expect(screen.getByLabelText('未充填の内訳')).toHaveTextContent('未充填 1 コマ');
+    expect(screen.getByText(/科目別の不足: 英語 1コマ/)).toBeInTheDocument();
+    expect(screen.getByText('12/25 1限 ３S')).toBeInTheDocument();
+  });
+
+  it('完全解の案には内訳を出さない', () => {
+    renderPanel({
+      generatedPatterns: [{
+        schedule: { 'd1-p1-c1': { subject: '英語', teacher: '堀上' } },
+        isPartial: false,
+        filledCount: 1,
+        totalSlots: 1,
+      }],
+    });
+    expect(screen.queryByLabelText('未充填の内訳')).toBeNull();
   });
 });

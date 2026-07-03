@@ -27,6 +27,10 @@ export interface Teacher {
   ngClasses: string[];
   /** 優先クラス (ラベル参照) */
   priorityClasses: string[];
+  /** L3a: 講師個別の 1 日コマ数上限。未設定/0 = project 全体値を使う */
+  maxDailyHours?: number;
+  /** L3b: 講師個別の通算コマ数上限 (全タブ + 外部コマ)。未設定/0 = 無制限 */
+  maxTotalHours?: number;
 }
 
 export interface ScheduleEntry {
@@ -117,6 +121,8 @@ export interface GenerationParams {
   maxDailyHours: number;
   maxIterations: number;
   maxConsecutivePeriods: number;
+  /** 乱数 seed。0 = 実行ごとにランダム、非 0 で固定 (再現可能) */
+  generationSeed: number;
 }
 
 export type GenerationParamKey = keyof GenerationParams;
@@ -146,6 +152,7 @@ export interface Project {
   maxDailyHours?: number;
   maxIterations?: number;
   maxConsecutivePeriods?: number;
+  generationSeed?: number;
 }
 
 /** useHistoryStack (useReducer) が持つ state */

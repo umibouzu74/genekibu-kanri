@@ -141,9 +141,11 @@ export {
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
+  DEFAULT_GENERATION_SEED,
   GENERATION_PARAM_BOUNDS,
   clampGenerationParam,
   resolveGenerationParams,
+  resolveBaseSeed,
 } from './generationParams';
 
 // --- プロジェクトバージョン ---

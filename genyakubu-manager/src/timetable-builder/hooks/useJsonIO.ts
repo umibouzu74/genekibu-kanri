@@ -14,6 +14,7 @@ import {
 import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
 import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
+import { addTemplate, loadTemplates, persistTemplates } from '../utils/templates';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
@@ -62,31 +63,74 @@ export function useJsonIO({
           if (onNotify) onNotify(`JSON の構造が不正です: ${error}`, 'error');
           return;
         }
-        const migrated = migrateProject(data);
+        // L1d: 同梱テンプレート (任意フィールド) は project state とは別管理
+        // なので、migrate / replace に流す前に分離する。
+        const { templates: importedTemplates, ...projectData } = data;
+        const migrated = migrateProject(projectData);
 
+        // L1c: 読込は現プロジェクトの全置換。undo は RAM のみで autosave が
+        // 即上書きするため、講師差分の有無に関わらず必ず確認を挟む。
         const diffs = detectTeacherDiffs(project.teachers, migrated.teachers || []);
-        if (diffs.length > 0 && onConfirm) {
-          const diffText = diffs.join("\n");
-          const confirmed = await onConfirm(
-            `読み込むデータの講師マスタに現在のプロジェクトとの差分があります:\n\n${diffText}\n\nこのまま読み込みますか？`,
-            { title: "講師マスタの差分検出", confirmLabel: "読み込む" }
-          );
+        if (onConfirm) {
+          const cellCount = (project.tabs || []).reduce(
+            (n, t) => n + Object.keys(t.schedule || {}).length, 0);
+          let msg = `現在のプロジェクト「${project.name || '時間割'}」` +
+            `(タブ ${(project.tabs || []).length} 件・割当 ${cellCount} コマ) は読み込む内容に置き換わります。`;
+          if (diffs.length > 0) {
+            msg += `\n\n講師マスタの差分:\n${diffs.join("\n")}`;
+          }
+          msg += "\n\nこのまま読み込みますか？";
+          const confirmed = await onConfirm(msg, { title: "プロジェクトの読み込み", confirmLabel: "読み込む" });
           if (!confirmed) return;
         }
 
         dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
-        if (onNotify) onNotify("読込完了", "success");
+
+        // L1d: 同梱テンプレートは既存を温存しつつ追記マージする。
+        // 「同名 + 同 createdAt」は同一テンプレの再取込とみなして skip。
+        // dedupe キーは F2h と同じ JSON 配列方式 (区切り文字の衝突なし)。
+        let importedCount = 0;
+        if (Array.isArray(importedTemplates) && importedTemplates.length > 0) {
+          const existing = loadTemplates();
+          const dedupeKey = (t: { name?: string; createdAt?: string | null }) =>
+            JSON.stringify([t.name, t.createdAt ?? '']);
+          const seen = new Set(existing.map(dedupeKey));
+          let mergedTemplates = existing;
+          for (const t of importedTemplates) {
+            if (!t || typeof t !== 'object' || !t.name || !t.payload || typeof t.payload !== 'object') continue;
+            const key = dedupeKey(t);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            // addTemplate が payload の deep copy と id 採番 (max+1) を行う
+            mergedTemplates = addTemplate(mergedTemplates, { name: t.name, project: t.payload, createdAt: t.createdAt ?? null });
+            importedCount += 1;
+          }
+          if (importedCount > 0) persistTemplates(mergedTemplates);
+        }
+        if (onNotify) onNotify(
+          importedCount > 0 ? `読込完了 (テンプレート ${importedCount} 件を取り込みました)` : "読込完了",
+          "success");
       } catch {
         if (onNotify) onNotify("読み込みエラー", "error");
       }
     };
+    // §M: FileReader 自体の失敗 (NotReadableError 等) は onload が発火しない
+    // ため、ここを塞がないと無反応 (input は既にクリア済み) で終わる
+    r.onerror = () => {
+      if (onNotify) onNotify("読み込みエラー", "error");
+    };
     r.readAsText(f);
     e.target.value = '';
-  }, [project.teachers, dispatch]);
+  }, [project, dispatch]);
 
   const handleSaveJson = useCallback(() => {
     const cleaned = cleanSchedule(project);
-    const b = new Blob([JSON.stringify(cleaned, null, 2)], { type: "application/json" });
+    // L1d: テンプレートは project state と別の localStorage キーに居るため、
+    // 同梱しないと「JSON でバックアップ → 別端末で読込」でテンプレだけ
+    // 静かに失われる。空のときはフィールド自体を出さない (従来形を維持)。
+    const templates = loadTemplates();
+    const out = templates.length > 0 ? { ...cleaned, templates } : cleaned;
+    const b = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const u = URL.createObjectURL(b);
     const a = document.createElement('a');
     a.href = u;

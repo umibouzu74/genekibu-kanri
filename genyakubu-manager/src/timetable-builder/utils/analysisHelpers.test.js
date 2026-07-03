@@ -477,6 +477,7 @@ describe('computeViolations', () => {
     expect(v.subjectDup).toEqual({ count: 0, firstKey: null });
     expect(v.subjectOver).toEqual({ count: 0, firstKey: null });
     expect(v.teacherOverDaily).toEqual({ count: 0, items: [] });
+    expect(v.teacherOverTotal).toEqual({ count: 0, items: [] });
   });
 
   it('teacherConflict: errorKeys と同数で firstKey は errorKeys[0]', () => {
@@ -588,6 +589,91 @@ describe('computeViolations', () => {
     expect(v.teacherOverDaily.items[0]).toMatchObject({
       date: '12/25', teacher: '堀上一郎',
     });
+  });
+
+  it('teacherOverDaily: 講師個別の maxDailyHours が全体値より優先される (L3a)', () => {
+    // 全体上限 6 だが堀上の個人上限は 2 → 1 日 3 コマで超過
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxDailyHours: 2 }] });
+    expect(v.teacherOverDaily.count).toBe(1);
+    expect(v.teacherOverDaily.items[0]).toMatchObject({ teacher: '堀上', total: 3, max: 2 });
+  });
+
+  it('teacherOverDaily: 個人上限が全体値より緩ければ違反にならない (L3a)', () => {
+    const config = {
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }, { id: 3, label: '3' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 3 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 3, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 2, teachers: [{ name: '堀上', maxDailyHours: 4 }] });
+    expect(v.teacherOverDaily.count).toBe(0);
+  });
+
+  it('teacherOverTotal: 通算上限の超過を講師別に列挙 (L3b)', () => {
+    // 2 日 × 2 コマ = 通算 4 > 上限 3
+    const config = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1' }, { id: 2, label: '2' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 2 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 2, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxTotalHours: 3 }] });
+    expect(v.teacherOverTotal.count).toBe(1);
+    expect(v.teacherOverTotal.items[0]).toEqual({
+      teacher: '堀上', total: 4, max: 3, firstKey: makeKey(1, 1, 1),
+    });
+  });
+
+  it('teacherOverTotal: ぎりぎり (==) は超過にしない (L3b)', () => {
+    const config = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1' }],
+      classes: [{ id: 1, label: 'A' }],
+      subjectCounts: { '英語': 1 },
+    };
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, config, { maxDailyHours: 6, teachers: [{ name: '堀上', maxTotalHours: 2 }] });
+    expect(v.teacherOverTotal.count).toBe(0);
+  });
+
+  it('teacherOverTotal: 外部コマも通算に合算するが、builder 割当ゼロの講師は違反にしない (L3b)', () => {
+    // 堀上: builder 1 + 外部 3 = 4 > 3 → 違反 / 田中: 外部のみ 5 > 3 → 数えない
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, {}, {
+      maxDailyHours: 6,
+      teachers: [
+        { name: '堀上', maxTotalHours: 3 },
+        { name: '田中', maxTotalHours: 3 },
+      ],
+      externalCounts: {
+        [makeExternalKey('12/25(木)', '堀上')]: 3,
+        [makeExternalKey('12/25(木)', '田中')]: 5,
+      },
+    });
+    expect(v.teacherOverTotal.count).toBe(1);
+    expect(v.teacherOverTotal.items[0]).toMatchObject({ teacher: '堀上', total: 4, max: 3 });
   });
 });
 
@@ -972,5 +1058,54 @@ describe('computeInfeasibilities — quotaCellMismatch と空ロックセル (F5
     // 4 セル ≠ 3 の従来判定のまま (全クラス同数 → 1 item・旧形状)
     expect(r.quotaCellMismatch.count).toBe(1);
     expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4 });
+  });
+});
+
+describe('computeInfeasibilities — 講師個別上限の反映 (§M)', () => {
+  const twoDayConfig = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }],
+    subjectCounts: { '英語': 2 },
+  });
+
+  it('通算上限 (maxTotalHours) の合計 < 需要なら capacity 警告が出る (L3b)', () => {
+    // 需要 2、講師 1 名 (通算上限 1) → 静的に不可能
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], maxTotalHours: 1 }],
+      commonSubjects: ['英語'],
+      currentConfig: twoDayConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ subject: '英語', demand: 2, capacity: 1 });
+  });
+
+  it('個別の 1 日上限 (maxDailyHours) も capacity に反映される (L3a)', () => {
+    // 需要 4 (2コマ×2クラス相当を 1 クラス設定で再現: quota 2 × 2 日構成)。
+    // 個人上限 1 コマ/日 × 2 日 = capacity 2 < 需要 4 → 警告
+    const config = {
+      ...twoDayConfig(),
+      classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    };
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], maxDailyHours: 1 }],
+      commonSubjects: ['英語'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ demand: 4, capacity: 2 });
+  });
+
+  it('個別上限が無ければ従来どおり全体値で計算 (回帰確認)', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: twoDayConfig(),
+      maxDailyHours: 6,
+    });
+    // capacity = min(6, 2時限) × 2日 = 4 ≥ 需要 2 → 警告なし
+    expect(r.subjectCapacityShortage.count).toBe(0);
   });
 });

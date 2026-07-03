@@ -13,7 +13,9 @@ import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
+import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
+import { formatPrintDateJa } from './utils/printHeader';
+import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, formatBytes } from './utils/storageHealth';
 import { useTabPresence } from './hooks/useTabPresence';
@@ -23,11 +25,11 @@ import type { GeneratedPattern } from './components/SummaryPanel';
 import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
 
 function ScheduleApp() {
-  const { project, undo, redo, loadError } = useProjectContext();
-  const { showToast } = useUI();
+  const { project, undo, redo, loadError, analysis } = useProjectContext();
+  const { showToast, showConfirm } = useUI();
 
   // 自動生成の案の数はユーザ設定 (project.numPatterns) を尊重 (E2e)。
-  const NUM_PATTERNS = resolveGenerationParams(project).numPatterns;
+  const { numPatterns: NUM_PATTERNS, generationSeed: GENERATION_SEED } = resolveGenerationParams(project);
 
   useEffect(() => {
     const base = '時間割作成くん';
@@ -113,6 +115,9 @@ function ScheduleApp() {
   // 生成開始時点の config fingerprint (F2n/F2p)。project 変化のたびに
   // 再計算して一致しなくなったら生成結果を破棄する (下の effect)。
   const [generatedFingerprint, setGeneratedFingerprint] = useState<string | null>(null);
+  // L1e: この結果を生成した baseSeed。結果パネルに表示し、⚙️自動生成の
+  // 「乱数 seed」に入力すれば同じ設定で同じ案を再現できる。
+  const [generatedSeed, setGeneratedSeed] = useState<number | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
@@ -123,6 +128,18 @@ function ScheduleApp() {
   const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
   const [isCompact, setIsCompact] = useState(false);
+  // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
+  // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
+  const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
+
+  // §M: ハイライト中の講師がリネーム / 削除されると、全セルが薄表示のまま
+  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。講師が
+  // 実在しなくなったらハイライトを解除する。
+  useEffect(() => {
+    if (highlightTeacher && !project.teachers.some(t => t.name === highlightTeacher)) {
+      setHighlightTeacher(null);
+    }
+  }, [project.teachers, highlightTeacher]);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -184,7 +201,22 @@ function ScheduleApp() {
     }
   }, [project, generatedPatterns.length, generatedForTab, generatedFingerprint, showToast]);
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
+    // L1h: 静的に「完全解は出ない」と分かっている設定 (担当講師ゼロ /
+    // capacity 不足 / コマ数 > 使う日数) なら、数秒〜数十秒の生成を走らせる
+    // 前に確認する。informational な種別 (未定のみ等) は生成可能なので
+    // 数えない (K2d)。データは Toolbar の ⚠️ popover と同じ。
+    const fatalCount = countFatalInfeasibilities(analysis?.infeasibilities);
+    if (fatalCount > 0) {
+      const ok = await showConfirm(
+        `設定に解けない問題が ${fatalCount} 件あり、このままでは完全解を生成できません` +
+          `(ツールバーの「⚠️」から詳細と修正提案を確認できます)。\n\n` +
+          `可能な範囲まで埋めた部分解の生成を試しますか？`,
+        { title: '解けない設定の検出', confirmLabel: '生成する' },
+      );
+      if (!ok) return;
+    }
+
     // 多重起動を防ぐため、既に走っているなら一旦キャンセル
     generationRef.current?.cancel();
 
@@ -198,6 +230,12 @@ function ScheduleApp() {
     setGenerateElapsedMs(0);
     setGenerateLive(null);
 
+    // L1e: seed 設定 (非 0) があればそれを使い、0 (既定) は実行ごとに
+    // ランダム。使った値は結果パネルに表示して再現可能にする。
+    // §M: 表示 seed は必ず ⚙️ の入力上限内に収める (resolveBaseSeed 参照)。
+    const baseSeed = resolveBaseSeed(GENERATION_SEED, Date.now());
+    setGeneratedSeed(baseSeed);
+
     const results: GenerationResult[] = [];
     // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
     // の二重 toast が出ないよう、エラー発生フラグで done 側の文言を抑制する
@@ -206,7 +244,7 @@ function ScheduleApp() {
       project,
       activeTabId: project.activeTabId,
       numPatterns: NUM_PATTERNS,
-      baseSeed: Date.now(),
+      baseSeed,
       onPattern: (index, result) => {
         results[index] = result;
         setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
@@ -262,7 +300,7 @@ function ScheduleApp() {
       setGenerateLive(null);
       generationRef.current = null;
     });
-  }, [project, showToast, NUM_PATTERNS]);
+  }, [project, showToast, showConfirm, analysis, NUM_PATTERNS, GENERATION_SEED]);
 
   // ユーザ操作による生成キャンセル。worker を止め、done.then の state 更新を
   // skip させてから isGenerating を解除する。既存セルはそのまま残す。
@@ -320,6 +358,9 @@ function ScheduleApp() {
   // 親アプリ側でも .no-print を扱っているため、ここでは @page のみ。
   const printStyle = `@media print { @page { size: landscape; } .print-container { max-height: none !important; border: none !important; overflow: visible !important; } }`;
 
+  // L1f: 印刷見出し用。生成結果パネル等と違い「今表示しているタブ」を刷る。
+  const activeTabForPrint = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
@@ -343,6 +384,8 @@ function ScheduleApp() {
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
+          highlightTeacher={highlightTeacher}
+          setHighlightTeacher={setHighlightTeacher}
         />
 
         <SummaryPanel
@@ -351,11 +394,23 @@ function ScheduleApp() {
           setGeneratedPatterns={setGeneratedPatterns}
           generatedElapsedMs={generateElapsedMs}
           generatedForTab={generatedForTab}
+          generatedSeed={generatedSeed}
         />
 
         {showConfig && <ConfigModal onClose={handleCloseConfig} />}
 
-        <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} />
+        {/* L1f: 印刷専用の見出し。Header (プロジェクト名) と TabBar (学年) は
+            no-print のため、これが無いと紙面が無記名になり、複数学年を刷った
+            ときにどの紙がどの学年か分からない。 */}
+        <div className="hidden print:block mb-2" aria-hidden="true">
+          <div className="text-lg font-bold text-builder-ink">
+            {(project.name || '講習時間割')}
+            {activeTabForPrint ? ` — ${activeTabForPrint.name}` : ''}
+          </div>
+          <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
+        </div>
+
+        <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} highlightTeacher={highlightTeacher} />
       </div>
 
       <ContextMenu

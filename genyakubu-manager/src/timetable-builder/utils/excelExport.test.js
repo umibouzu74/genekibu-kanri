@@ -626,3 +626,26 @@ describe('xlsx round-trip (E3b)', () => {
     expect(texts.join('\n')).toContain('英語');
   });
 });
+
+describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
+  it('clean=true は稼働カウントと ⚠NG を省き、科目 + 講師名のみになる', () => {
+    const project = makeProject({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: ['12/25(木)-1限'], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
+    const ws = wb.getWorksheet(1);
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上');
+    // 作業用 (既定) は従来どおり注記入り
+    const wb2 = _buildScheduleWorkbook(hoist(project));
+    expect(wb2.getWorksheet(1).getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+  });
+
+  it("clean=true では '未定' の講師名を出さず科目のみ", () => {
+    const project = makeProject();
+    project.tabs[0].schedule['d1-p1-c1'] = { subject: '英語', teacher: '未定' };
+    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
+    expect(wb.getWorksheet(1).getCell(2, 3).value).toBe('英語');
+  });
+});

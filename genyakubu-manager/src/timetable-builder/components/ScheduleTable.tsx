@@ -40,9 +40,11 @@ const COL_WIDTHS = {
 interface ScheduleTableProps {
   isCompact: boolean;
   onContextMenu: HeaderContextMenuHandler;
+  /** L2a: 強調表示する講師名 (null = なし) */
+  highlightTeacher?: string | null;
 }
 
-export default function ScheduleTable({ isCompact, onContextMenu }: ScheduleTableProps) {
+export default function ScheduleTable({ isCompact, onContextMenu, highlightTeacher = null }: ScheduleTableProps) {
   const { currentConfig, handleSwapCells } = useProjectContext();
   const { showToast } = useUI();
   const [dragSource, setDragSource] = useState<{ key: string; data: ScheduleEntry } | null>(null);
@@ -155,6 +157,7 @@ export default function ScheduleTable({ isCompact, onContextMenu }: ScheduleTabl
                         onDragEnd={handleDragEnd}
                         isDragOver={dragOverKey === cellKey}
                         isDragSource={dragSource !== null && dragSource.key === cellKey}
+                        highlightTeacher={highlightTeacher}
                       />
                     );
                   })}

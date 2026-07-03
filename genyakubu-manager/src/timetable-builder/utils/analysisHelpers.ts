@@ -5,6 +5,7 @@
 import { makeKey, makeExternalKey, makeNgKey, parseKey, effectiveConfigForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
 import { forEachCountedAssignment } from './tabUsage';
+import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import type { AutoNgEntries } from './autoNg';
 import type {
   CombinedGroup,
@@ -367,42 +368,66 @@ export function computeViolations({
     }
   });
 
-  // teacherOverDaily: 1 日 maxDailyHours 超過した (date, teacher) を列挙。
+  // teacherOverDaily: 1 日上限を超過した (date, teacher) を列挙。
   // makeExternalKey = `${date}-${teacher}`。date label に "-" を含む場合
   // でも teachers のうち末尾一致する name で復元する (M1)。
+  // L3a: 上限は講師個別値 (teacher.maxDailyHours) を全体値より優先する。
   const teacherOverItems: Array<{ date: string; teacher: string; total: number; max: number; firstKey: string | null }> = [];
   const teacherNamesByLength = (teachers || []).map(t => t.name).sort((a, b) => b.length - a.length);
+  const teacherByName = new Map((teachers || []).map(t => [t.name, t]));
+  // 現タブ内で teacher に一致する最初のセルを探す (date 指定は任意)。
+  // 他タブの違反でも items に出るが、その場合は null (現タブから飛び先が無い)。
+  const findFirstCellOfTeacher = (teacher: string, date: string | null): string | null => {
+    for (const d of currentConfig.dates) {
+      if (date !== null && d.label !== date) continue;
+      for (const p of currentConfig.periods) {
+        for (const c of currentConfig.classes) {
+          const key = makeKey(d.id, p.id, c.id);
+          if (currentSchedule[key]?.teacher === teacher) return key;
+        }
+      }
+    }
+    return null;
+  };
+  // L3b 用: dayKey を講師へ復元しつつ通算 (total / current) を講師別に合算
+  const totalsByTeacher: Record<string, { total: number; current: number }> = {};
   Object.entries(teacherDailyCounts).forEach(([dayKey, daily]) => {
-    if (daily.total <= maxDailyHours) return;
-    // 外部コマのみ (builder 割当ゼロ) の日は違反にしない。K2a の seed で
-    // entry は立つが、builder 側で解消できない負荷を違反として数えると
-    // ノイズになる (従来も entry が無く違反対象外だった挙動を維持)
-    if (daily.current === 0) return;
     let date = '?';
-    let teacher = dayKey;
+    let teacher: string | null = null;
     // teachers が渡されたら suffix match (最長 name 優先) で復元
     const match = teacherNamesByLength.find(name => dayKey.endsWith(`-${name}`));
     if (match) {
       teacher = match;
       date = dayKey.slice(0, dayKey.length - match.length - 1);
+      const acc = totalsByTeacher[match] || (totalsByTeacher[match] = { total: 0, current: 0 });
+      acc.total += daily.total || 0;
+      acc.current += daily.current || 0;
     }
-    // 現タブ内で {date, teacher} に一致する最初のセル (firstKey) を探す。
-    // 他タブの違反でも teacherOverDaily に出るが、その場合 firstKey は null
-    // (現タブから飛び先が無い)。
-    let firstKey: string | null = null;
-    outer: for (const d of currentConfig.dates) {
-      if (d.label !== date) continue;
-      for (const p of currentConfig.periods) {
-        for (const c of currentConfig.classes) {
-          const key = makeKey(d.id, p.id, c.id);
-          if (currentSchedule[key]?.teacher === teacher) {
-            firstKey = key;
-            break outer;
-          }
-        }
-      }
-    }
-    teacherOverItems.push({ date, teacher, total: daily.total, max: maxDailyHours, firstKey });
+    const effMax = resolveTeacherDailyLimit(teacher ? teacherByName.get(teacher) : undefined, maxDailyHours);
+    if (daily.total <= effMax) return;
+    // 外部コマのみ (builder 割当ゼロ) の日は違反にしない。K2a の seed で
+    // entry は立つが、builder 側で解消できない負荷を違反として数えると
+    // ノイズになる (従来も entry が無く違反対象外だった挙動を維持)
+    if (daily.current === 0) return;
+    const firstKey = teacher ? findFirstCellOfTeacher(teacher, date) : null;
+    teacherOverItems.push({ date, teacher: teacher ?? dayKey, total: daily.total, max: effMax, firstKey });
+  });
+
+  // teacherOverTotal (L3b): 通算 (全タブ + 外部コマ) 上限の超過。builder の
+  // 割当が 1 つも無い講師は違反にしない (teacherOverDaily の K2a と同じ規則)。
+  const teacherOverTotalItems: Array<{ teacher: string; total: number; max: number; firstKey: string | null }> = [];
+  (teachers || []).forEach(t => {
+    const limit = t.maxTotalHours;
+    if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return;
+    if (t.name === '未定') return;
+    const acc = totalsByTeacher[t.name];
+    if (!acc || acc.current === 0 || acc.total <= limit) return;
+    teacherOverTotalItems.push({
+      teacher: t.name,
+      total: acc.total,
+      max: limit,
+      firstKey: findFirstCellOfTeacher(t.name, null),
+    });
   });
 
   return {
@@ -411,6 +436,7 @@ export function computeViolations({
     subjectDup: { count: subjectDupCount, firstKey: subjectDupFirstKey },
     subjectOver: { count: subjectOverCount, firstKey: subjectOverFirstKey },
     teacherOverDaily: { count: teacherOverItems.length, items: teacherOverItems },
+    teacherOverTotal: { count: teacherOverTotalItems.length, items: teacherOverTotalItems },
   };
 }
 
@@ -509,9 +535,23 @@ export function computeInfeasibilities({
   // 「実講師がまだ居ない」事実自体は実運用までに解消すべき有益な情報なので
   // 握りつぶさず、⚠ バッジに数えない informational 種別で出す
   const placeholderOnlyItems: Array<{ subject: string; demand: number }> = [];
-  const perDayCap = currentConfig.periods.length > 0
-    ? Math.min(maxDailyHours, currentConfig.periods.length)
-    : maxDailyHours;
+  // §M (L3a/L3b): capacity は講師ごとに個別上限を反映して合算する。
+  //   - 1 日あたり = min(講師の実効 1 日上限, 時限数)
+  //   - 通算 = maxTotalHours があればさらにキャップ (科目横断の配分は
+  //     保守的に「この科目単独で使い切れる」前提 = 供給を過大評価しない
+  //     方向には倒れないが、過小評価で誤警告もしない)
+  // 全体値一律だと個別上限で静的に解けない設定でも警告が沈黙する。
+  const teacherCapacity = (t: Teacher): number => {
+    const perDay = currentConfig.periods.length > 0
+      ? Math.min(resolveTeacherDailyLimit(t, maxDailyHours), currentConfig.periods.length)
+      : resolveTeacherDailyLimit(t, maxDailyHours);
+    let cap = perDay * currentConfig.dates.length;
+    const total = t.maxTotalHours;
+    if (typeof total === 'number' && Number.isFinite(total) && total > 0) {
+      cap = Math.min(cap, total);
+    }
+    return cap;
+  };
   const classLabels = new Set(currentConfig.classes.map(c => c.label));
   subjects.forEach(subject => {
     // 合同グループ (全日: dates === null) は 1 講師スロットで複数クラスの
@@ -529,7 +569,7 @@ export function computeInfeasibilities({
     const demand = (currentConfig.subjectCounts?.[subject] || 0) * effectiveClasses;
     if (demand === 0) return;
     const eligible = reals.filter(t => t.subjects?.includes(subject));
-    const capacity = eligible.length * currentConfig.dates.length * perDayCap;
+    const capacity = eligible.reduce((sum, t) => sum + teacherCapacity(t), 0);
     if (demand > capacity) {
       const placeholderTeaches = (teachers || []).some(
         t => t?.name === '未定' && t.subjects?.includes(subject)

@@ -4,6 +4,7 @@ import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad } from '../utils/patternLoad';
+import { summarizeUnfilled } from '../utils/partialSummary';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Schedule } from '../types';
 
@@ -24,6 +25,8 @@ interface SummaryPanelProps {
   setGeneratedPatterns: Dispatch<SetStateAction<GeneratedPattern[]>>;
   generatedElapsedMs: number;
   generatedForTab: { id: number; name: string } | null;
+  /** この結果を生成した baseSeed (L1e)。null = 未生成 */
+  generatedSeed?: number | null;
 }
 
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
@@ -108,7 +111,35 @@ function PatternStats({ pat }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }: SummaryPanelProps) {
+// L3e: 部分解の未充填内訳。どのセルが埋まらなかったか + 科目別の不足を
+// 案カード内に出す。従来は「N/M コマ充填」と最初の詰まり 1 セルだけで、
+// 残りはグリッドを目視で探すしかなかった。
+function UnfilledBreakdown({ schedule, config }: { schedule: Schedule; config: any }) {
+  const { cells, shortages } = summarizeUnfilled(schedule, config);
+  if (cells.length === 0) return null;
+  const MAX_CELLS = 10;
+  return (
+    <div className="mt-1 mb-2 p-2 bg-builder-warning-soft border border-builder-warning-border rounded text-xs text-builder-ink" aria-label="未充填の内訳">
+      <div className="font-bold mb-1">未充填 {cells.length} コマ</div>
+      {shortages.length > 0 && (
+        <div className="mb-1 text-builder-ink-muted">
+          科目別の不足: {shortages.map(s => `${s.subject} ${s.missing}コマ`).join(' / ')}
+        </div>
+      )}
+      <ul className="space-y-0.5 text-builder-ink-muted">
+        {cells.slice(0, MAX_CELLS).map(c => (
+          <li key={c.key}>{c.date} {c.period} {c.className}</li>
+        ))}
+        {cells.length > MAX_CELLS && <li className="italic">他 {cells.length - MAX_CELLS} 件</li>}
+      </ul>
+      <div className="mt-1 text-builder-ink-muted">
+        💡 採用後にもう一度 🧙‍♂️ 自動作成すると、埋まったセルは保持して残りだけを再探索します。
+      </div>
+    </div>
+  );
+}
+
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab, generatedSeed = null }: SummaryPanelProps) {
   const {
     project,
     analysis,
@@ -198,6 +229,15 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   ⏱ {(generatedElapsedMs / 1000).toFixed(1)}s
                 </span>
               )}
+              {generatedSeed != null && (
+                <span
+                  className="ml-2 text-xs font-normal text-builder-ink-muted"
+                  aria-label="生成に使った乱数 seed"
+                  title="⚙️ 設定 > ⚡ 自動生成 の「乱数 seed」にこの値を入力すると、同じ設定で同じ結果を再現できます。"
+                >
+                  seed {generatedSeed}
+                </span>
+              )}
             </h3>
             <button
               onClick={() => setGeneratedPatterns([])}
@@ -237,6 +277,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   )}
                 </div>
                 <PatternStats pat={pat} />
+                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} />}
                 <SummaryTable
                   target={pat.schedule}
                   config={patternConfig}
