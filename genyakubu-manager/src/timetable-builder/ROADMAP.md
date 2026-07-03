@@ -1952,13 +1952,18 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - ✅ **K2c (2026-07-03 修正)**: dates/removeFromPool が
   externalSessionPresets の日付範囲参照を掃除しない非対称を解消 (該当
   フィールドだけ未指定に戻す。同名ラベル再追加時の誤参照を防ぐ)。テスト +1
-- **K2d (builder・中・要検証)**: computeInfeasibilities C2 が「未定のみが
-  担当する科目」を capacity 0 と数え、solver は解けるのに「設定の問題」を
-  点灯する不整合 (analysisHelpers.ts:434,506)
-- **K2e (app・小〜中・要検証)**: MonthView の cutoff/休講ガードがカード
-  種別で不揃い — 主スロット・追加授業は未確定日非表示だが、他人コマ代行
-  カードと特訓シフトカードはガード無しで描画 (MonthView.jsx:345,365 vs
-  674,869)
+- **K2d (builder・判断待ち)**: computeInfeasibilities C2 が「未定のみが
+  担当する科目」を capacity 0 と数え、solver は解ける (未定を配置できる)
+  のに「設定の問題」を点灯する不整合 (analysisHelpers.ts:434,506)。
+  **論点**: 「実講師が居ない」警告自体は有益な情報なので、(a) 現状維持 /
+  (b) 未定も capacity に数えて警告を消す / (c) informational (非ブロッキング
+  表示) に格下げ — のどれにするかは運用の好みで決めるべき
+- **K2e (app・判断待ち)**: MonthView の cutoff ガードがカード種別で不揃い —
+  主スロット・追加授業は「未確定期間 (終講日 cutoff 後) は非表示」だが、
+  他人コマ代行カードと特訓シフトカードはガード無しで描画される
+  (MonthView.jsx:345,365 vs 674,869)。**論点**: 代行・特訓は「日付を明示して
+  確定した予定」なので未確定期間でも出す方が正しい可能性があり、どちらへ
+  揃えるかは仕様判断 (揃えるなら追加授業・主スロット側の扱いも再検討)
 - ✅ **K2f (2026-07-03 修正)**: slotId 照合を orphanCleanup と
   useSlotsCrud の cascade でも String 正規化 (schema の toSlotIdKey と
   同一視ルールを統一)。文字列 slotId の関連データが cascade されない /
