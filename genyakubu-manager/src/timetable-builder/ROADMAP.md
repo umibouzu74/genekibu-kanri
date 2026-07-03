@@ -2,10 +2,12 @@
 
 最終更新: **2026-07-03** — §G.6 推奨順の小粒バッチ ×2 完了
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
-第 2 弾: F2l / F5f / E5g。テスト 1695 → 1743 件)。
-**現在の残課題は §G に一本化**。それ以前の履歴: 2026-07-03 F.4/F.5 改善
-サイクル (PR #141) / 2026-07-02 F 系レビュー (F.1-F.5) / 2026-06-29 E 系
-UX 仕上げ / A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
+第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
+(schema v15、テスト 1695 → 1763 件)。
+**builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H に集約**。
+それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
+2026-07-02 F 系レビュー (F.1-F.5) / 2026-06-29 E 系 UX 仕上げ /
+A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -76,7 +78,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1743 件 / 86 ファイル** (2026-07-03 小粒バッチ ×2 後。timetable-builder
+合計 **1763 件 / 88 ファイル** (2026-07-03 追加授業実装後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -262,7 +264,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 86 files / 1743 tests (2026-07-03 小粒バッチ ×2 後)
+npm test            # 88 files / 1763 tests (2026-07-03 追加授業実装後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1463,7 +1465,7 @@ E2a Excel 取込 (要 mapping UI)
 E5 系 (TS / ID / style / state lib / Worker 分析) · E6a Firebase ·
 E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
 
-### G.6 推奨する次の一手
+### G.6 推奨する次の一手 (§H の親アプリ側課題も参照)
 
 ~~1. PR #141 のレビュー・マージ~~ ✅ マージ済み (2026-07-03、PR #142 も)。
 ~~2. 軽い一手 F2i / F5z~~ ✅ 完了 (2026-07-03 小粒バッチで F2d / F2e /
@@ -1483,3 +1485,70 @@ F2h前段 / F2j / F2m も同時に解消)。
    **E3a** (Worker E2E) のテスト深化、あるいは **E1a/E1f 残** (モバイル)
 4. 仕様判断が要るもの: **F5p** (他タブ合同グループの編集挙動、G.1 参照)
 5. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
+
+---
+
+## H. 親アプリ (原学部管理) 側の課題 (2026-07-03 新設)
+
+講習時間割 (builder) 以外の課題をここに集約する。追加授業機能の実装
+(2026-07-03、schema v15) を機に、実装時の設計判断と調査で見つかった
+改善点を記録する。
+
+### H.1 追加授業 (extraLessons) の残課題
+
+✅ **実装済み (2026-07-03)**: データモデル (schema v15) / 管理 UI
+(ExtraLessonManager、複数日一括登録) / Dashboard 日別・講師別 MonthView・
+WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
+以下は意図的にスコープ外にした拡張:
+
+- **H1a. ExcelGridView (時間割グリッド) への表示**: グリッドの列は
+  slot の曜日ベースで動的生成 (`buildColumnDefs`) されるため、特定日付の
+  単発コマは「追加授業専用セクション」等の設計判断が必要。
+  Dashboard の「時間割」モードも同経路。規模: 中
+- **H1b. EventCalendarView への表示**: 現状イベント (休講/テスト期間/
+  特別イベント) 専用。追加授業をバーとして出すなら visibility トグル
+  (EventVisibilityToggles) の種別追加も必要。規模: 小〜中
+- **H1c. 回数カウント (第N回) への通算**: 「プレップ夏期講習の 4 回分も
+  通常回数に数えたい」場合、ExtraLesson に slotId (既存コマへの紐付け) を
+  追加し、sessionCount.js の走査 (`effectiveSubjectOnDay` /
+  `activeSlotsOnDay`) に「date を持つコマはその日だけ active」という
+  ゲートを入れる必要がある。設計スケッチは実装時の調査メモ参照。規模: 中〜大
+- **H1d. 追加授業への代行対応**: substitutions は slotId (週次 Slot) 前提。
+  追加授業の担当者が休む場合は現状「編集で担当を書き換える」運用。規模: 中
+- **H1e. 印刷対応の確認**: Dashboard 日別のカードは既存の印刷系統
+  (PrintButton) に乗るはずだが、紙面での見え方は未確認 (実機確認項目)
+
+### H.2 調査で見つかった既存コードの改善候補 (2026-07-03)
+
+- **H2a. プレップ/マークテストの土曜セクションが文字列マッチのハードコード**
+  (`constants/schedule.js` の `isPrep`/`isMarkTest` が note/subj の
+  `includes("プレップ")` 依存)。追加授業の正式データ化と合わせて、将来
+  これらを extraLessons or 明示フラグに移行するとハードコードを解消できる
+- **H2b. `Timetable.type: "koshu"` が型・型ガードのみで UI/ロジック未実装**
+  (types.d.ts / schema.ts)。「講習」の表現が builder / koshu timetable /
+  extraLessons の 3 概念に割れないよう、koshu type を正式実装するか
+  廃止するかの設計判断が要る
+- **H2c. ExcelGridView の回数計算が深夜 0 時跨ぎで更新されない**
+  (`new Date()` が useMemo deps 外、コード内コメントで既知)。実害は
+  日付を跨いで開きっぱなしのタブのみ。規模: 小
+- **H2d. id 採番の手書き重複**: `useSessionOverridesCrud.upsert` と
+  `useAdjustmentsCrud.replace` が `Math.max(...)+1` を手書きしており
+  `nextNumericId` (schema.ts) を使っていない。統一余地。規模: 小
+- **H2e. 孤立データ検出 (`detectOrphans`) が import 時のみ**: slot 削除の
+  cascade は useSlotsCrud にあるが、adjustments / sessionOverrides を直接
+  削除しても classSets の slotIds 参照は掃除されない (FK 検証は import 時
+  のみ)。新しい FK を作る際は同じ穴に注意。extraLessons は FK を持たない
+  設計にしたので今回は非該当
+- **H2f. specialEvents で追加授業を代用している既存データの案内**:
+  これまで「告知イベント」で代用していた場合、追加授業への移行を促す
+  一言を UI か運用メモに置くと親切 (specialEvents は授業ロジックに
+  影響しない設計のまま)
+
+### H.3 運用メモ
+
+- 追加授業の削除は cascade 無しの単純削除なので `removeWithUndo`
+  (リポジトリ CLAUDE.md の削除 UX ルールどおり)。参照 (FK) を持たせる
+  拡張 (H1c/H1d) をする場合は `confirmedRemove` への切替を検討すること
+- 追加授業は「その日にやる」と明示登録した単発コマなので、休講日でも
+  巻き添えにせず表示する仕様 (Dashboard / MonthView とも)。終講日
+  cutoff (未確定期間) では他と同様に非表示
