@@ -1551,6 +1551,13 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
   分離。v3 次元 (既に {id,label}) のキー成分は「ID」として存在確認つき
   素通し、v2 次元 (string[]) のみ「配列位置」→ ID 変換。歯抜け ID を含む
   外部 JSON でセルが隣へシフト / 消失する問題を解消
+- ✅ **E5e 回帰 (2026-07-03 ユーザ報告で発覚・修正)**: TypeScript 化で
+  builder の非テストソースが全て .ts/.tsx になったのに、tailwind.config.js
+  の content グロブが `**/*.{js,jsx}` のままだったため、Tailwind が
+  ユーティリティクラスをほぼ全てパージし builder UI が無スタイル
+  (素の HTML) になっていた。グロブに ts/tsx を追加して解消
+  (BuilderApp の CSS: 1.65 kB → 22.7 kB)。**教訓: ファイル拡張子を変える
+  リファクタでは tailwind.config 等ビルド設定の content グロブも要追従**
 
 ### G.4 構造改善の提案 (F.3 起源)
 
