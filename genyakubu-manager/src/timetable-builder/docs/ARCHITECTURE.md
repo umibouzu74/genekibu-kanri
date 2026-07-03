@@ -166,6 +166,47 @@ Project {
   旧タブ ID→ラベル→新 project ID で remap する。読込時に `validateProjectShape` で
   致命的な型崩れを弾く。
 
+### 4.1 スキーマ version を上げるときのルール（E5g: v5 以降の migration path）
+
+v1→v4 の migration 実装で確立したパターンを、次に version を上げる人
+（v5: combinedGroups の ID 化 / teacher 安定 ID 等が候補）向けにルール化する。
+
+1. **1 リリース 1 インクリメント**。version up はリリース（PR）の最後に
+   1 度だけ行う。開発途中の中間スキーマに version を割り当てない —
+   ユーザの localStorage に中間 version が保存されると、その形を永久に
+   migrate し続ける羽目になる。
+2. **順次関数合成**。`migrateProject`（`utils/scheduleKey.js`）は
+   `if (version < n)` ガード付きの v(n-1)→v(n) 変換を上から順に適用する
+   チェーン。v5 を足すときは `migrateProjectV4toV5(project)` を純粋関数で
+   新設し、チェーン末尾に 1 ブロック追加する。**既存の migration 関数には
+   手を入れない**（過去 version の解釈は凍結。直すのはバグのみ — 例: F5f）。
+3. **reject より正規化**（F.5 系統 A の方針）。`validateProjectShape` は
+   「tabs / config / schedule の致命的な構造崩れ」だけを見て reject し、
+   フィールドレベルの型崩れは migrate 側で既定値に落として救う。reject は
+   フォールバック（= ユーザデータ喪失）に直結するため増やさない。
+   新フィールドは「無ければ / 型が合わなければ default 補完」を
+   `migrateProject` 末尾の正規化ブロックに足す — 補完だけなら version を
+   上げなくてよい（`snapshots` や生成パラメータがこの方式）。
+4. **失敗時の安全網は退避 + フォールバック**（F2f）。migration 関数自身は
+   「解釈できないなら throw」でよい。`loadInitialProject` が catch して
+   原本を `builder.schedule_project_corrupt` へ退避し、default へ
+   フォールバック + toast で退避先を知らせる。migration 内で無理に
+   握りつぶさない。
+5. **ID 参照を変えるときは「旧 ID → ラベル → 新 ID」の 2 段 remap**
+   （v3→v4 方式）。schedule / snapshots のキー、NG・externalCounts の
+   ラベルキーなど、参照系をすべて列挙してから設計する（`utils/labelRefs.js`
+   にラベルキーのパース知識が集約されている）。キーの数値成分の解釈
+   （位置か ID か）は次元の形式で分岐が必要（F5f の教訓）。
+6. **テストは 3 点セット**。(a) v(n) fixture → v(n+1) の正常系、
+   (b) 型崩れ fixture が既定値に落ちる正規化系、(c)
+   `projectLoadIntegrity.test.js` に「validate 通過 JSON は migrate +
+   初回利用でクラッシュしない」fixture を追加。旧 version（v1〜v3）の
+   fixture テストは削除しない — チェーン全体の回帰検知になっている。
+7. **書き込み側も同時に上げる**。`createNewProject`（projectFactory）と
+   `migrateProject` の到達 version、`validateProjectShape` の許容形を
+   同じ PR で揃える。JSON 出力はそのとき時点の version をそのまま持つので、
+   エクスポート専用の変換は作らない。
+
 ---
 
 ## 5. 守るべき設計上の約束
