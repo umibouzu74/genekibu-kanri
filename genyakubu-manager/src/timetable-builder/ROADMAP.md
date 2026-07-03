@@ -3,8 +3,10 @@
 最終更新: **2026-07-03** — §G.6 推奨順の小粒バッチ ×2 完了
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
-(schema v15、テスト 1695 → 1763 件)。
-**builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H に集約**。
+(schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
+(テスト 1695 → 1766 件)。
+**builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
+校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
 2026-07-02 F 系レビュー (F.1-F.5) / 2026-06-29 E 系 UX 仕上げ /
 A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
@@ -78,7 +80,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1763 件 / 88 ファイル** (2026-07-03 追加授業実装後。timetable-builder
+合計 **1766 件 / 88 ファイル** (2026-07-03 校正レビュー後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -264,7 +266,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 88 files / 1763 tests (2026-07-03 追加授業実装後)
+npm test            # 88 files / 1766 tests (2026-07-03 校正レビュー後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -1550,3 +1552,53 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 - 追加授業は「その日にやる」と明示登録した単発コマなので、休講日でも
   巻き添えにせず表示する仕様 (Dashboard / MonthView とも)。終講日
   cutoff (未確定期間) では他と同様に非表示
+
+---
+
+## I. 2026-07-03 校正レビュー (本ブランチ全体、8 観点 × 個別検証) の結果
+
+claude/roadmap-improvements-7hmnva の全変更 (小粒バッチ ×2 + 追加授業機能、
+16 コミット) を 8 観点 (逐行 / 削除挙動 / クロスファイル / 再利用 / 単純化 /
+効率 / 抽象度 / CLAUDE.md 規約) で並列レビューし、候補 14 件を個別検証。
+**CONFIRMED 3 + PLAUSIBLE 7 + REFUTED 6** — 修正価値のある 7 件を同日修正済み
+(commit 参照)。テスト 1763 → 1766。
+
+### I.1 修正済み
+
+- extraLessons の teacher 欠落レコードで isSlotForTeacher が throw
+  (Firebase 別クライアント書込・localStorage 手編集経路のみ) → 正規化ラッパで防御
+- describeExtraLesson が describeSlot の再実装 → 委譲に変更
+- startMin / timeToMinutes のバイト同一コピー → dateHelpers.timeStartToMin に一元化
+- MonthView の追加授業セルごと全走査 → useMemo 日付索引 (examPrepByDate と同型)
+- projectReducer の effectiveConfig エイリアス定数 + 命名不統一 → import リネームに統一
+- ExtraLessonManager の必須入力に aria-invalid / aria-describedby (SpecialEvent と同水準に)
+- 末尾注記の言い過ぎ修正 (担当未入力の追加授業は講師別ビューに出ない旨を明記)
+
+### I.2 記録のみ (実害小 or 慣習準拠と判断、対応不要)
+
+- **合同 dedupe キーの ID 化 (F2j) と消費側ラベルキーの空間不一致**: 同一
+  ラベルの date/period entity が 2 つある腐敗 JSON でのみ日次コマ数が過大に
+  なる。アプリ内の全変更経路 (setList dedupe / H3 reject / v3→v4 union) は
+  重複ラベルを作れないため実害は手編集データ限定。ソルバと分析の規則統一が
+  目的の意図的変更
+- **追加授業カードの 3 ビュー個別実装**: バッジ文言・フォント・時刻表記が
+  ビューごとに異なるが、振替・特訓・代行など全イベント種別が「ビュー密度に
+  合わせた個別描画」で一貫しており慣習準拠。統一コンポーネント化は全種別
+  横断の別リファクタ
+- **DashDayRow の cutoff 絞りが呼び出し側**: daySlots と同型の既存パターン。
+  default [] で渡し忘れは安全側に倒れる
+- **effectiveConfigForTab の第 1 引数名 "project"**: 実際は {dates, periods}
+  しか読まない (doc comment に明記済み)。将来の拡張時は literal 呼び出し
+  3 箇所 (tabUsage / analysisHelpers / useProject) に注意
+- **ExtraLessonManager のフォーム state 12 useState**: SpecialEventManager と
+  同型のコードベース慣習。useEditTarget/useNewEntryTarget の欠落は
+  EventCalendarView 未連携 (H1b スコープ外) ゆえ妥当
+
+### I.3 REFUTED (誤検知と確認)
+
+import 検証迂回 (validateExportBundle が isExtraLesson を実行) /
+migrateTabV2toV3 hybrid 退行 (原子性不変条件に反する形はアプリで生成不能) /
+DraftNumberInput の Escape 飲み込み (DraftListTextarea 等と同じ確立済み設計) /
+DashboardListView の走査非対称 (holidaysFor 等も同方式) /
+no-op ガードの一般化 (F2d で不採用と記録済み) /
+ParamRow と DraftNumberInput の統合 (F2l で見送りと記録済み)
