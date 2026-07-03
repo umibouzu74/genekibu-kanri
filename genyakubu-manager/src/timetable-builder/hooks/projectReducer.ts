@@ -478,6 +478,18 @@ function applyAction(project: Project, action: ProjectAction): Project {
         if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
       });
       const newSessions = (project.externalSessions || []).filter(s => s.date !== target.label);
+      // K2c: externalSessionPresets の日付範囲参照も掃除する (renameHeader は
+      // 追従させているのに削除だけ放置だと、同名ラベルを後で再追加したとき
+      // 古いプリセットが別の日を指す)。該当フィールドだけ未指定に戻す。
+      const presets = project.externalSessionPresets || [];
+      const newPresets = presets.map(p => {
+        if (p.startDateLabel !== target.label && p.endDateLabel !== target.label) return p;
+        const next = { ...p };
+        if (next.startDateLabel === target.label) delete next.startDateLabel;
+        if (next.endDateLabel === target.label) delete next.endDateLabel;
+        return next;
+      });
+      const presetsChanged = newPresets.some((p, i) => p !== presets[i]);
       return cleanSchedule({
         ...project,
         dates: newPool,
@@ -486,6 +498,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
         teachers: newTeachers,
         externalCounts: newExternal,
         externalSessions: newSessions,
+        ...(presetsChanged ? { externalSessionPresets: newPresets } : {}),
       });
     }
 
@@ -546,7 +559,15 @@ function applyAction(project: Project, action: ProjectAction): Project {
         const newSch = {};
         Object.keys(tab.schedule).forEach(k => {
           const e = tab.schedule[k];
-          newSch[k] = e.subject === name ? { ...e, subject: '', teacher: '' } : e;
+          if (e.subject === name) {
+            // K2b: locked も落とす。残すと「空 + ロック = この枠は空けて
+            // おく」(F5w) に静かに変換され、科目削除がロックセルを solver の
+            // 生成対象から黙って除外してしまう。ロックの対象 (科目割当) が
+            // 消えた以上、セルは通常の未充填に戻すのが自然
+            newSch[k] = { subject: '', teacher: '' };
+          } else {
+            newSch[k] = e;
+          }
         });
         return { ...tab, config: { ...tab.config, subjectCounts: newCounts }, schedule: newSch };
       });

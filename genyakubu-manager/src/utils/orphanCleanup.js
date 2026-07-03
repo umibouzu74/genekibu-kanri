@@ -4,15 +4,23 @@
 
 /**
  * 既存コマが参照する slot id の集合を作る。
+ * K2f: schema の FK 検証 (toSlotIdKey) は string/number を同一視するのに、
+ * ここが厳格比較だと文字列 slotId (Firebase 手編集等) の参照が「孤立」と
+ * 誤検出される。String 化して型を正規化する (has 側も同様)。
  * @param {Array<{id:number}>} slots
- * @returns {Set<number>}
+ * @returns {Set<string>}
  */
 function buildLiveSlotIdSet(slots) {
   const set = new Set();
   for (const s of slots || []) {
-    if (s && s.id != null) set.add(s.id);
+    if (s && s.id != null) set.add(String(s.id));
   }
   return set;
+}
+
+// live set の照合キー (buildLiveSlotIdSet と対で使う)
+function slotIdKey(v) {
+  return String(v);
 }
 
 /**
@@ -20,7 +28,7 @@ function buildLiveSlotIdSet(slots) {
  */
 export function findOrphanSubs(subs, slots) {
   const live = buildLiveSlotIdSet(slots);
-  return (subs || []).filter((r) => !live.has(r.slotId));
+  return (subs || []).filter((r) => !live.has(slotIdKey(r.slotId)));
 }
 
 /**
@@ -28,7 +36,7 @@ export function findOrphanSubs(subs, slots) {
  */
 export function findOrphanOverrides(sessionOverrides, slots) {
   const live = buildLiveSlotIdSet(slots);
-  return (sessionOverrides || []).filter((o) => !live.has(o.slotId));
+  return (sessionOverrides || []).filter((o) => !live.has(slotIdKey(o.slotId)));
 }
 
 /**
@@ -56,13 +64,13 @@ export function analyzeOrphanAdjustments(adjustments, slots) {
     if (!adj) continue;
 
     // 元コマ (adj.slotId) が消えていたら、調整自体が無意味なので removed。
-    if (!live.has(adj.slotId)) {
+    if (!live.has(slotIdKey(adj.slotId))) {
       removed.push(adj);
       continue;
     }
 
     if (adj.type === "combine" && Array.isArray(adj.combineSlotIds)) {
-      const remaining = adj.combineSlotIds.filter((id) => live.has(id));
+      const remaining = adj.combineSlotIds.filter((id) => live.has(slotIdKey(id)));
       if (remaining.length === adj.combineSlotIds.length) continue; // 変化なし
       if (remaining.length === 0) {
         removed.push(adj);
@@ -77,7 +85,7 @@ export function analyzeOrphanAdjustments(adjustments, slots) {
     if (
       (adj.type === "move" || adj.type === "reschedule") &&
       adj.targetSlotId != null &&
-      !live.has(adj.targetSlotId)
+      !live.has(slotIdKey(adj.targetSlotId))
     ) {
       const next = { ...adj };
       delete next.targetSlotId;

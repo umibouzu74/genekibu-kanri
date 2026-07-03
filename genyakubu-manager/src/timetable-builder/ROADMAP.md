@@ -1946,13 +1946,12 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   current=0 の entry を seed。**teacherOverDaily 違反判定は current>0 のみ
   対象にして従来挙動を維持** (builder 側で解消できない負荷は違反にしない)。
   テスト +2
-- **K2b (builder・小・要検証)**: subject/remove が当該科目の locked セルを
-  「空 + locked = 空けておく」に黙って変換し、solver 生成対象から除外して
-  しまう (projectReducer.ts:540 / F5w 仕様との相互作用)。削除時に locked も
-  落とすのが自然か要判断
-- **K2c (builder・小・要検証)**: dates/removeFromPool が
-  externalSessionPresets の日付ラベルを掃除しない (renameHeader は追従
-  させており非対称。projectReducer.ts:439-483 vs :1076)
+- ✅ **K2b (2026-07-03 修正)**: subject/remove が当該科目の locked セルを
+  「空 + locked = 空けておく」(F5w) に黙って変換していた → ロックの対象
+  (科目割当) が消えた以上、locked も落として通常の未充填に戻す。テスト +1
+- ✅ **K2c (2026-07-03 修正)**: dates/removeFromPool が
+  externalSessionPresets の日付範囲参照を掃除しない非対称を解消 (該当
+  フィールドだけ未指定に戻す。同名ラベル再追加時の誤参照を防ぐ)。テスト +1
 - **K2d (builder・中・要検証)**: computeInfeasibilities C2 が「未定のみが
   担当する科目」を capacity 0 と数え、solver は解けるのに「設定の問題」を
   点灯する不整合 (analysisHelpers.ts:434,506)
@@ -1960,9 +1959,10 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   種別で不揃い — 主スロット・追加授業は未確定日非表示だが、他人コマ代行
   カードと特訓シフトカードはガード無しで描画 (MonthView.jsx:345,365 vs
   674,869)
-- **K2f (data・小・要検証)**: slotId の型不一致 — schema FK 検証は
-  string/number を正規化するが、runtime の cascade (useSlotsCrud) と
-  detectOrphans は厳格 `===` (文字列 slotId は掃除されず誤検出されうる)
+- ✅ **K2f (2026-07-03 修正)**: slotId 照合を orphanCleanup と
+  useSlotsCrud の cascade でも String 正規化 (schema の toSlotIdKey と
+  同一視ルールを統一)。文字列 slotId の関連データが cascade されない /
+  生存スロットが孤立と誤検出される問題を解消。テスト +2
 - **K2g (data・小・要検証)**: parseLocalDate が範囲検証せず
   "2026-02-30" → 3/2 に silent ロールオーバー (dateHelpers.js:46)。
   マネージャ入力は isValidDateStr で守られており、保存/取込データ経由のみ
