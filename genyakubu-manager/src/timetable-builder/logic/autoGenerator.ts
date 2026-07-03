@@ -515,6 +515,11 @@ export function generateSinglePattern({
           else neutralGroup.push(t);
         });
 
+        // 講師の試行順は priority 群 → neutral 群のシャッフルのまま。
+        // K5e (日次負荷の軽い順 = load balancing) は 2026-07-03 に実測の上で
+        // 不採用: 探索の成否にほぼ影響せず (iteration 数が完全一致)、
+        // 並べ替えコストだけ iteration 単価 +30% になった。詳細は
+        // ROADMAP K5e の記録を参照
         let shuffledT = [
           ...seededShuffle(priorityGroup, rng),
           ...seededShuffle(neutralGroup, rng)
