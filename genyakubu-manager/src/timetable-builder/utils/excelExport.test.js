@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   hexToArgb,
   buildScheduleWorkbook as _buildScheduleWorkbook,
@@ -77,6 +77,20 @@ describe('buildExcelFilename', () => {
   it('Windows 禁則文字は除去される', () => {
     const name = buildExcelFilename({ name: 'a/b?c:d*e' }, '全体');
     expect(name).toMatch(/^abcde_全体_/);
+  });
+
+  it('日付はローカル日付で組む (N1f: JST 深夜の出力で前日にならない)', () => {
+    // toISOString (UTC) だと TZ=Asia/Tokyo の 0〜9 時に前日日付へずれる。
+    // JST 2026-07-10 00:30 (= UTC 07-09 15:30) でローカル日付になることを確認。
+    vi.stubEnv('TZ', 'Asia/Tokyo');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-09T15:30:00Z'));
+    try {
+      expect(buildExcelFilename({ name: 'p' }, '全体')).toBe('p_全体_2026-07-10.xlsx');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -647,5 +661,14 @@ describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
     project.tabs[0].schedule['d1-p1-c1'] = { subject: '英語', teacher: '未定' };
     const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
     expect(wb.getWorksheet(1).getCell(2, 3).value).toBe('英語');
+  });
+
+  it('clean=true は科目別集計シートを出さない (N1a: 講師別集計・⚠NG の配布物への露出防止)', () => {
+    const project = makeProject();
+    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
+    expect(wb.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(false);
+    // 作業用 (既定) は従来どおり科目別シートあり
+    const wb2 = _buildScheduleWorkbook(hoist(project));
+    expect(wb2.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(true);
   });
 });

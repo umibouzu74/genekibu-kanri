@@ -13,7 +13,11 @@ import {
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
+import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
 import type { Entity, Project, Teacher } from '../types';
+
+// user defaults から復元してよい生成パラメータのホワイトリスト (N1e)。
+const GENERATION_PARAM_KEYS = new Set<string>(Object.keys(GENERATION_PARAM_BOUNDS));
 
 // 講師マスタの差分を検出する。JSON 読み込み時の確認ダイアログ用。
 export function detectTeacherDiffs(currentTeachers: Teacher[], loadedTeachers: Teacher[]): string[] {
@@ -144,13 +148,25 @@ export function loadInitialProject(): { project: Project; loadError: string | nu
         periods: wrap(rawConfig.periods || []),
         classes: wrap(rawConfig.classes || []),
       };
-      return {
-        project: createNewProject(
-          [{ id: 1, name: "メイン", config: normalizedConfig, schedule: {} }],
-          defaults.teachers || DEFAULT_INITIAL_TEACHERS,
-        ),
-        loadError: null,
-      };
+      // N1e: 保存されていれば科目マスタ・科目カラーも復元する
+      // (旧形式の defaults には無いので null → 既定へフォールバック)。
+      const fromDefaults = createNewProject(
+        [{ id: 1, name: "メイン", config: normalizedConfig, schedule: {} }],
+        defaults.teachers || DEFAULT_INITIAL_TEACHERS,
+        defaults.subjectColors || null,
+        Array.isArray(defaults.subjects) && defaults.subjects.length > 0 ? defaults.subjects : null,
+      );
+      // 生成パラメータ (numPatterns 等、project 直下の optional 数値) も復元。
+      // 値の妥当性は使用時に resolveGenerationParams / clamp が守るので、
+      // ここでは有限数のみ通す。
+      if (defaults.generationParams && typeof defaults.generationParams === 'object') {
+        for (const [key, value] of Object.entries(defaults.generationParams)) {
+          if (GENERATION_PARAM_KEYS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+            (fromDefaults as any)[key] = value;
+          }
+        }
+      }
+      return { project: fromDefaults, loadError: null };
     }
   } catch (e) {
     console.error("Load failed", e);

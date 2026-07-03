@@ -2349,53 +2349,53 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - 生成結果の整形に「fingerprint による案の重複排除」は存在しない
   (generationFingerprint は config 失効判定 F2n/F2p 専用) → N1h として起票
 
-### N1. バグ・実害系 (修正候補、価値順)
+### N1. バグ・実害系 (修正候補、価値順) — ✅ 全 10 件 2026-07-03 修正済み
 
-- **N1a (小・価値大)**: 「🎒 配布用 (注記なし)」Excel に科目別集計シートが
+- ✅ **N1a (2026-07-03 修正)**: 「🎒 配布用 (注記なし)」Excel に科目別集計シートが
   そのまま同梱される — `buildScheduleWorkbook` は `clean` をグリッドの
   セル文言にしか適用せず、`collectAllSubjects(...).forEach(buildOneSubjectSheet)`
   を無条件実行 (excelExport.ts)。講師別集計・⚠NG・必要/不足コマの分析情報が
   生徒・保護者向け配布物に露出する。clean 時は集計シートをスキップすべき
   (L5c の実装意図の完成)
-- **N1b (小・価値大)**: autosave 失敗が視覚的に「成功」に見える — Header の
+- ✅ **N1b (2026-07-03 修正)**: autosave 失敗が視覚的に「成功」に見える — Header の
   保存バッジが `text-builder-green bg-builder-success-soft` 固定で
   「⚠️ 保存失敗」も緑地に描画される。flushSave 失敗時の toast も無く
   (容量警告 toast との非対称)、QuotaExceeded (= データ喪失リスク) が最も
   静かに失敗する経路。状態別の色分け + 失敗 toast + `role="status"` を
-- **N1c (小・価値高)**: CSV 講師取込 (追加/更新) が空 subjects 行で既存の
+- ✅ **N1c (2026-07-03 修正)**: CSV 講師取込 (追加/更新) が空 subjects 行で既存の
   担当科目を消す — `teacher/import` append 分岐が
   `map.set(t.name, { ...existing, subjects })` で無条件上書き
   (projectReducer.ts)。親アプリ取込 (L5a) には「同名かつ親側担当が空は除外」
   ガードがあるのに CSV 経路に無い非対称。同思想のガード or confirm 明示を
-- **N1d (小・価値高)**: セル編集直後に Ctrl+Z が効かない — グローバル
+- ✅ **N1d (2026-07-03 修正)**: セル編集直後に Ctrl+Z が効かない — グローバル
   keydown が SELECT フォーカスで early return (BuilderApp.tsx)。セル編集は
   すべて select で、onChange 後もフォーカスが残るため「変更 → 即 Ctrl+Z」が
   無反応。select にネイティブ undo は無いので undo/redo だけは SELECT でも
   通してよい (L2d の Ctrl+C/V/Delete 未配線とは別問題 — こちらは配線済み
   機能の沈黙)
-- **N1e (小〜中)**: 「現在の設定を初期値にする」が科目マスタ・科目カラー・
+- ✅ **N1e (2026-07-03 修正)**: 「現在の設定を初期値にする」が科目マスタ・科目カラー・
   生成パラメータを保存しない — handleSaveAsDefault は `{ teachers, config }`
   のみ (useJsonIO.ts)。科目をカスタムした塾ではリセット後に科目・色が既定へ
   戻る一方、config.subjectCounts だけ保存され存在しない科目の孤児が残る
-- **N1f (小)**: Excel ファイル名の日付が UTC — buildExcelFilename が
+- ✅ **N1f (2026-07-03 修正)**: Excel ファイル名の日付が UTC — buildExcelFilename が
   `toISOString().slice(0, 10)` (excelExport.ts)。JST 0〜9 時の出力で
   ファイル名だけ前日になり、印刷見出し (ローカル日付、printHeader) と
   食い違う
-- **N1g (小〜中)**: 容量監視が project 単体しか測らない — checkStorageHealth
+- ✅ **N1g (2026-07-03 修正)**: 容量監視が project 単体しか測らない — checkStorageHealth
   は estimateStorageBytes(project) と 5MB の比較のみ (storageHealth.ts)。
   LocalStorage は親アプリと origin 共有で、テンプレート・corrupt バックアップ
   も別キー未計上。警告が「大丈夫」と言っている間に autosave が
   QuotaExceeded で失敗しうる (N1b とセットで直すのが筋)
-- **N1h (中)**: 生成案の重複排除が無い — 生成完了の整形は
+- ✅ **N1h (2026-07-03 修正)**: 生成案の重複排除が無い — 生成完了の整形は
   filter/map/sort のみで schedule 内容の dedup をしない (BuilderApp.tsx)。
   制約が厳しい構成では同一の完全解が複数カードに並び比較枠 (numPatterns) を
   消費する。正規化キーで dedup し「同一案 ×k」表示 or 追加生成を
-- **N1i (小)**: 他学年セッションの一括登録に重複ガードが無い —
+- ✅ **N1i (2026-07-03 修正)**: 他学年セッションの一括登録に重複ガードが無い —
   `teacher/addExternalSessions` は単純 append (projectReducer.ts)。同条件の
   再登録で一覧に二重に溜まる (自動NG はキー集約されるので実害は一覧の
   可読性と削除の手間)。NG CSV は dedupe 済み (F2h) との非対称。完全一致
   スキップ + skip 件数 toast を
-- **N1j (小〜中)**: CSV 取込が Shift-JIS を想定しない — readCsvFile が
+- ✅ **N1j (2026-07-03 修正)**: CSV 取込が Shift-JIS を想定しない — readCsvFile が
   `file.text()` = UTF-8 固定 (TeacherManager / NgCsvImport)。日本語 Excel の
   既定 CSV 保存 (CP932) が文字化けし、全行「未登録の講師/日付」warning に
   なるが原因に気づきにくい。U+FFFD 混入検出で `TextDecoder('shift_jis')`

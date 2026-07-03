@@ -238,10 +238,14 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     });
   });
 
-  // 科目別集計シート (英語・数学… ごとに 1 枚)
-  collectAllSubjects(cleaned).forEach(subject => {
-    buildOneSubjectSheet(workbook, cleaned, subject);
-  });
+  // 科目別集計シート (英語・数学… ごとに 1 枚)。
+  // N1a: 配布用 (clean) では出さない — 講師別集計・⚠NG・必要/不足コマは
+  // 作成者向けの分析情報で、生徒・保護者向け配布物に載せてはいけない。
+  if (!clean) {
+    collectAllSubjects(cleaned).forEach(subject => {
+      buildOneSubjectSheet(workbook, cleaned, subject);
+    });
+  }
 
   return workbook;
 }
@@ -462,7 +466,11 @@ function buildOneSubjectSheet(workbook: ExcelJS.Workbook, project: Project, subj
 // ファイル名を組み立てる小ヘルパー (テスト用に分離)
 export function buildExcelFilename(project: Pick<Project, 'name'>, suffix: string): string {
   const projectName = (project.name || '時間割').replace(/[\\/:?*[\]<>|"]/g, '');
-  const datePart = new Date().toISOString().slice(0, 10);
+  // N1f: toISOString() は UTC のため JST 0〜9 時の出力でファイル名だけ
+  // 前日になる。印刷見出し (printHeader) と同じくローカル日付で組む。
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   return `${projectName}_${suffix}_${datePart}.xlsx`;
 }
 

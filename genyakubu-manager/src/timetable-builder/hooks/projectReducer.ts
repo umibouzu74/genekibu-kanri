@@ -791,7 +791,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
         const subjects = Array.isArray(t.subjects) ? t.subjects : [];
         const existing = map.get(t.name);
         if (existing) {
-          map.set(t.name, { ...existing, subjects } as Teacher);
+          // N1c: 取込行の担当科目が空なら既存の担当を維持する (L5a 親取込の
+          // 「同名かつ担当空は除外」ガードと同思想)。雛形 CSV の科目列を
+          // 空欄のまま取り込んで既存講師の担当が全消去される事故を防ぐ。
+          const nextSubjects = subjects.length > 0 ? subjects : (existing.subjects || []);
+          map.set(t.name, { ...existing, subjects: nextSubjects } as Teacher);
         } else {
           map.set(t.name, { name: t.name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
         }
@@ -994,15 +998,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const { items } = action.payload;
       if (!Array.isArray(items) || items.length === 0) return project;
       const sessions = project.externalSessions || [];
+      // N1i: 内容が完全一致する既存セッションはスキップする (NG CSV の
+      // dedupe = F2h と同思想)。同条件の再登録で一覧に二重に溜まるのを防ぐ。
+      // バッチ内の重複も同じキーで弾く。
+      const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
+        JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+      const seen = new Set(sessions.map(contentKey));
       let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newOnes: ExternalSession[] = [];
       for (const it of items) {
         if (!it?.date || !it?.teacherName) continue;
-        const ns: ExternalSession = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const ns: ExternalSession = { id: nextId, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
         if (it.startTime) {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
         }
+        const key = contentKey(ns);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nextId++;
         newOnes.push(ns);
       }
       if (newOnes.length === 0) return project;

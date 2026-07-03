@@ -17,6 +17,8 @@ export interface GeneratedPattern {
   iterations?: number;
   hitLimit?: boolean;
   stuckSlot?: { date: string; period: string; class: string } | null;
+  /** 同一内容だった案の件数 (自身含む、N1h)。未設定 = 1 */
+  duplicateCount?: number;
 }
 
 interface SummaryPanelProps {
@@ -273,6 +275,14 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   {!pat.isPartial && (
                     <span className="ml-2 text-xs font-normal text-builder-green bg-builder-success-soft px-2 py-0.5 rounded">
                       完全解
+                    </span>
+                  )}
+                  {(pat.duplicateCount ?? 1) > 1 && (
+                    <span
+                      className="ml-2 text-xs font-normal text-builder-ink-muted"
+                      title="複数の生成案が同じ内容に収束したため 1 枚にまとめて表示しています"
+                    >
+                      (同一案 ×{pat.duplicateCount})
                     </span>
                   )}
                 </div>

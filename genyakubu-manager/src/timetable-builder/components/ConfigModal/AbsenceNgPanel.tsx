@@ -333,8 +333,31 @@ export default function AbsenceNgPanel() {
         });
       }
     }
+    // N1i: reducer は内容が完全一致する既存セッションをスキップするので、
+    // toast も実際の登録件数と重複スキップ件数を分けて出す (キーは reducer と同形)。
+    const contentKey = (s) =>
+      JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+    const seen = new Set((project.externalSessions || []).map(contentKey));
+    let added = 0;
+    for (const it of items) {
+      const key = contentKey(it);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added++;
+    }
+    const skipped = items.length - added;
     addExternalSessions(items);
-    showToast(`他学年セッション ${items.length} 件を登録しました`, 'success', 3000);
+    if (added === 0) {
+      showToast(`すべて登録済みの内容だったため追加しませんでした (${skipped} 件)`, 'warning', 3000);
+    } else {
+      showToast(
+        skipped > 0
+          ? `他学年セッション ${added} 件を登録しました (登録済み ${skipped} 件はスキップ)`
+          : `他学年セッション ${added} 件を登録しました`,
+        'success',
+        3000,
+      );
+    }
     // 時刻・メモは clear (連打による重複登録を視覚的に防ぐ — code-review P2)。
     // 講師 / date range は連続追加用に残す。
     setFormStartTime('');

@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { parseTeachersCsv, parseNgCsv } from './csvImport';
+import { parseTeachersCsv, parseNgCsv, decodeCsvBytes } from './csvImport';
+
+describe('decodeCsvBytes (N1j)', () => {
+  it('UTF-8 の CSV はそのまま UTF-8 として読む', () => {
+    const bytes = new TextEncoder().encode('name,subjects\n田中,英語\n');
+    const { text, encoding } = decodeCsvBytes(bytes.buffer);
+    expect(encoding).toBe('utf-8');
+    expect(text).toContain('田中');
+  });
+
+  it('BOM 付き UTF-8 (雛形 CSV) も UTF-8 として読む', () => {
+    const bytes = new TextEncoder().encode('﻿name,subjects\n田中,英語\n');
+    const { encoding } = decodeCsvBytes(bytes.buffer);
+    expect(encoding).toBe('utf-8');
+  });
+
+  it('Shift-JIS の CSV は shift_jis で再デコードする (日本語 Excel の既定保存)', () => {
+    // '田中' の CP932 バイト列: 0x93 0x63 0x92 0x86
+    const ascii = Array.from('name,subjects\n', c => c.charCodeAt(0));
+    const bytes = new Uint8Array([...ascii, 0x93, 0x63, 0x92, 0x86, 0x0a]);
+    const { text, encoding } = decodeCsvBytes(bytes.buffer);
+    expect(encoding).toBe('shift_jis');
+    expect(text).toContain('田中');
+  });
+});
 
 describe('parseTeachersCsv', () => {
   it('正常な CSV を {name, subjects[]} 配列に parse する', () => {

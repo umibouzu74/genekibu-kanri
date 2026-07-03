@@ -17,7 +17,8 @@ import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams, resolveBaseSeed }
 import { formatPrintDateJa } from './utils/printHeader';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
-import { checkStorageHealth, formatBytes } from './utils/storageHealth';
+import { checkStorageHealth, checkOriginStorageHealth, formatBytes } from './utils/storageHealth';
+import { dedupePatterns } from './utils/patternDedupe';
 import { useTabPresence } from './hooks/useTabPresence';
 import type { GeneratorHandle } from './logic/runGenerator';
 import type { GenerationResult } from './logic/autoGenerator';
@@ -57,11 +58,20 @@ function ScheduleApp() {
 
   // 起動時に保存サイズを概算し、localStorage 上限に近づいていたら警告 (E6c)。
   // データ消失 (silent な保存失敗) の予防。マウント時 1 回のみ。
+  // N1g: 上限は origin 単位で効く (親アプリ・テンプレート等と共有) ため、
+  // project 単体の概算に加えて origin 全体の実使用量も見る。
   useEffect(() => {
     const { warn, bytes } = checkStorageHealth(project);
+    const origin = checkOriginStorageHealth();
     if (warn) {
       showToast(
         `保存データが大きくなっています (約 ${formatBytes(bytes)})。不要なスナップショットやタブを整理するか、JSON 書き出しでバックアップしてください。`,
+        'warning',
+        8000,
+      );
+    } else if (origin?.warn) {
+      showToast(
+        `このブラウザの保存領域全体が上限に近づいています (約 ${formatBytes(origin.bytes)}、時間割以外のデータ含む)。保存が失敗する前に、JSON 書き出しでバックアップしておくことをおすすめします。`,
         'warning',
         8000,
       );
@@ -84,9 +94,12 @@ function ScheduleApp() {
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // input, select, textarea 内では無効化
+      // input / textarea 内ではテキスト編集のネイティブ undo と競合するため無効化。
+      // N1d: SELECT は除外しない — セル編集は全て <select> で onChange 後も
+      // フォーカスが残るため、ここで return すると「変更 → 即 Ctrl+Z」が
+      // 無反応になる。select にネイティブ undo は無いので通してよい。
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
       // Shift 押下時は e.key が大文字 ('Z') になるため必ず小文字化して比較する。
       // 'z' と直接比較すると Ctrl+Shift+Z (redo) が一度も発火しない。
@@ -266,22 +279,24 @@ function ScheduleApp() {
       // ここでの state 更新は skip。新しい handle の done が代わりに UI を更新する。
       if (generationRef.current !== handle) return;
 
-      const patterns = results
-        .filter(Boolean)
-        .map(r => ({
-          schedule: r.solution || r.bestPartial,
-          isPartial: r.solution === null,
-          filledCount: r.solution ? r.totalSlots : r.filledCount,
-          totalSlots: r.totalSlots,
-          // E2f: 生成の手応え (探索回数 / 上限到達 / 詰まりセル)
-          iterations: r.iterations,
-          hitLimit: r.hitLimit,
-          stuckSlot: r.stuckSlot,
-        }))
-        .filter(r => r.schedule !== null)
-        // 完全解を先頭に、部分解は充填数の多い順 (P2)。生成順のままだと
-        // 完全解が 3 列目に埋もれて部分解を採用してしまいやすい。
-        .sort((a, b) => (Number(a.isPartial) - Number(b.isPartial)) || (b.filledCount - a.filledCount));
+      const patterns = dedupePatterns(
+        results
+          .filter(Boolean)
+          .map(r => ({
+            schedule: r.solution || r.bestPartial,
+            isPartial: r.solution === null,
+            filledCount: r.solution ? r.totalSlots : r.filledCount,
+            totalSlots: r.totalSlots,
+            // E2f: 生成の手応え (探索回数 / 上限到達 / 詰まりセル)
+            iterations: r.iterations,
+            hitLimit: r.hitLimit,
+            stuckSlot: r.stuckSlot,
+          }))
+          .filter(r => r.schedule !== null)
+          // 完全解を先頭に、部分解は充填数の多い順 (P2)。生成順のままだと
+          // 完全解が 3 列目に埋もれて部分解を採用してしまいやすい。
+          .sort((a, b) => (Number(a.isPartial) - Number(b.isPartial)) || (b.filledCount - a.filledCount)),
+      );
 
       // 生成にかかった総時間を確定 (E2f)
       setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);

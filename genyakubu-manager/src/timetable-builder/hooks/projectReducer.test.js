@@ -361,6 +361,27 @@ describe('projectReducer — 講師管理', () => {
     });
   });
 
+  it('teacher/import (append): 取込行の subjects が空なら既存の担当科目を維持する (N1c)', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語', '数学'], ngSlots: ['ng1'], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    // 雛形 CSV の科目列を空欄のまま取り込んだケース
+    const next = projectReducer(state, {
+      type: 'teacher/import',
+      payload: {
+        teachers: [
+          { name: '堀上', subjects: [] },        // 既存 → 担当維持
+          { name: '山田', subjects: [] },        // 新規 → 空のまま追加 (L1g 警告対象)
+        ],
+        mode: 'append',
+      },
+    });
+    expect(next.project.teachers[0].subjects).toEqual(['英語', '数学']);
+    expect(next.project.teachers[1].subjects).toEqual([]);
+  });
+
   it('teacher/import (replace): 既存を破棄して payload に置き換え、ng/priority も全クリア', () => {
     const state = makeState({
       teachers: [
@@ -676,6 +697,50 @@ describe('projectReducer — 講師管理', () => {
     });
     expect(state.project.externalSessions).toHaveLength(2);
     expect(state.project.externalSessions.map(s => s.date)).toEqual(['7/29(水)', '7/31(金)']);
+  });
+
+  it('teacher/addExternalSessions: 内容が完全一致する既存セッションはスキップ (N1i)', () => {
+    let state = makeState();
+    const items = [
+      { date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+      { date: '7/30(木)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+    ];
+    state = projectReducer(state, { type: 'teacher/addExternalSessions', payload: { items } });
+    expect(state.project.externalSessions).toHaveLength(2);
+    // 同じ内容を再登録 → 全て skip で no-op (同参照 = 履歴も汚さない)
+    const again = projectReducer(state, { type: 'teacher/addExternalSessions', payload: { items } });
+    expect(again).toBe(state);
+    // 一部だけ新規なら新規分のみ追加
+    const mixed = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          ...items,
+          { date: '7/31(金)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+        ],
+      },
+    });
+    expect(mixed.project.externalSessions).toHaveLength(3);
+    // メモや時刻が違えば別内容として追加される
+    const differentMemo = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: { items: [{ ...items[0], memo: '別件' }] },
+    });
+    expect(differentMemo.project.externalSessions).toHaveLength(3);
+  });
+
+  it('teacher/addExternalSessions: バッチ内の重複も 1 件に dedupe (N1i)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          { date: '7/29(水)', teacherName: '堀上', label: '', memo: '' },
+          { date: '7/29(水)', teacherName: '堀上', label: '', memo: '' },
+        ],
+      },
+    });
+    expect(state.project.externalSessions).toHaveLength(1);
   });
 
   it('teacher/addExternalSession: date/teacherName が空なら no-op', () => {

@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { parseTeachersCsv } from '../../utils/csvImport';
+import { parseTeachersCsv, decodeCsvBytes } from '../../utils/csvImport';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { readParentTeachers } from '../../utils/parentTeachers';
 import { buildTeachersCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
@@ -87,9 +87,17 @@ export default function TeacherManager() {
       return;
     }
     try {
-      const text = await file.text();
+      // N1j: UTF-8 固定 (file.text()) だと日本語 Excel 既定の Shift-JIS CSV が
+      // 文字化けして全行「未登録」warning になる。バイト列から判定して読む。
+      const { text, encoding } = decodeCsvBytes(await file.arrayBuffer());
       setCsvText(text);
-      showToast(`「${name || 'ファイル'}」を読み込みました`, 'success', 2000);
+      showToast(
+        encoding === 'shift_jis'
+          ? `「${name || 'ファイル'}」を読み込みました (Shift-JIS として解釈)`
+          : `「${name || 'ファイル'}」を読み込みました`,
+        'success',
+        2000,
+      );
     } catch {
       showToast('ファイルの読み込みに失敗しました', 'error', 3000);
     }

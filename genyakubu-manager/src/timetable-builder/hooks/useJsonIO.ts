@@ -15,6 +15,7 @@ import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
 import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
 import { addTemplate, loadTemplates, persistTemplates } from '../utils/templates';
+import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
@@ -34,7 +35,22 @@ export function useJsonIO({
     // v4: dates / periods は project 共通。config に混ぜて保存しておくと
     // loadInitialProject → createNewProject が project へ hoist して復元できる。
     const config = { ...activeTab.config, dates: project.dates, periods: project.periods };
-    const defaults = { teachers: project.teachers, config };
+    // N1e: 科目マスタ・科目カラー・生成パラメータも初期値に含める。
+    // teachers + config だけだと、科目をカスタムした環境でリセット後に
+    // 科目・色が既定へ戻る一方、config.subjectCounts だけ保存されて
+    // 存在しない科目の孤児が残っていた。
+    const generationParams: Record<string, number> = {};
+    (Object.keys(GENERATION_PARAM_BOUNDS) as Array<keyof typeof GENERATION_PARAM_BOUNDS>).forEach((key) => {
+      const v = project[key];
+      if (typeof v === 'number' && Number.isFinite(v)) generationParams[key] = v;
+    });
+    const defaults = {
+      teachers: project.teachers,
+      config,
+      subjects: project.subjects,
+      subjectColors: project.subjectColors,
+      generationParams,
+    };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
   }, [project, activeTab]);
 

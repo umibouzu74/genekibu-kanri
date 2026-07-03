@@ -38,6 +38,37 @@ export function checkStorageHealth(
   return { bytes, ratio, warn: ratio >= warnRatio };
 }
 
+// N1g: origin に実際に格納されている全キーの合計バイト数を測る。
+// LocalStorage の上限は origin 単位で、builder は親アプリ (原学部管理) の
+// データ・テンプレート・corrupt バックアップと同居する。project 単体の
+// 概算だけでは「警告は出ないのに autosave が QuotaExceeded で失敗する」が
+// 起きうる。アクセス不能 (private mode 等) は null を返す。
+export function measureLocalStorageBytes(): number | null {
+  try {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key == null) continue;
+      const value = localStorage.getItem(key);
+      total += (key.length + (value?.length ?? 0)) * 2;
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
+// origin 全体の実使用量が警告しきい値を超えているか判定する (N1g)。
+// localStorage にアクセスできない環境では null。
+export function checkOriginStorageHealth(
+  { limitBytes = STORAGE_LIMIT_BYTES, warnRatio = STORAGE_WARN_RATIO }: { limitBytes?: number; warnRatio?: number } = {},
+): { bytes: number; ratio: number; warn: boolean } | null {
+  const bytes = measureLocalStorageBytes();
+  if (bytes == null) return null;
+  const ratio = limitBytes > 0 ? bytes / limitBytes : 0;
+  return { bytes, ratio, warn: ratio >= warnRatio };
+}
+
 // バイト数を人間可読な文字列にする (KB / MB)。
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
