@@ -390,6 +390,16 @@ export default function TeacherManager() {
                               aria-label={`${t.name} の通算コマ数上限 (空欄 = 無制限)`}
                               className="w-14 border border-builder-border rounded px-1 py-0.5 text-xs text-right bg-builder-surface"
                             />
+                            {/* N4d: 1日 > 通算 は矛盾 (実質は通算が効く)。ハード検証は
+                                せず、気づける注意アイコンだけ出す */}
+                            {typeof t.maxDailyHours === 'number' && typeof t.maxTotalHours === 'number' && t.maxDailyHours > t.maxTotalHours && (
+                              <span
+                                role="img"
+                                aria-label={`${t.name} の上限設定に矛盾があります`}
+                                title={`1 日上限 (${t.maxDailyHours}) が通算上限 (${t.maxTotalHours}) を上回っています。実際には通算 ${t.maxTotalHours} コマまでしか割当できません。`}
+                                className="text-builder-orange cursor-help"
+                              >⚠️</span>
+                            )}
                           </span>
                         )}
                       </td>

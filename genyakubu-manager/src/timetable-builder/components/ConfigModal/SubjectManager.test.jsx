@@ -190,3 +190,28 @@ describe('SubjectManager — 科目の一括追加 (L4d)', () => {
     expect(addSubjects).not.toHaveBeenCalled();
   });
 });
+
+describe('SubjectManager — 列合計と収容枠 (N4e)', () => {
+  const projectWithCapacity = {
+    dates: [{ id: 1, label: '1/1' }, { id: 2, label: '1/2' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    tabs: [
+      // 収容枠 = 2 日 × 2 時限 × 1 クラス = 4
+      { id: 1, name: '中３', config: { classes: [{ id: 1, label: 'A' }], subjectCounts: { 英語: 4, 数学: 5 } }, schedule: {} },
+      { id: 2, name: '中１・２', config: { classes: [{ id: 1, label: 'A' }], subjectCounts: { 英語: 2, 数学: 1 } }, schedule: {} },
+    ],
+  };
+
+  it('タブごとの合計と収容枠を表示し、超過は警告表示になる', () => {
+    renderManager({ project: projectWithCapacity });
+    // 中３: 合計 9 > 枠 4 → 超過
+    expect(screen.getByLabelText('中３ のコマ数合計 9、収容枠 4 (超過)')).toHaveTextContent('⚠9/4');
+    // 中１・２: 合計 3 ≤ 枠 4 → 通常表示
+    expect(screen.getByLabelText('中１・２ のコマ数合計 3、収容枠 4')).toHaveTextContent('3/4');
+  });
+
+  it('科目が無ければ合計行を出さない', () => {
+    renderManager({ project: projectWithCapacity, commonSubjects: [] });
+    expect(screen.queryByText('合計 / 収容枠')).toBeNull();
+  });
+});

@@ -328,6 +328,19 @@ describe('TeacherManager — 講師個別の上限入力 (L3a/L3b)', () => {
     expect(screen.queryByLabelText('未定 の 1 日コマ数上限 (空欄 = 全体設定)')).toBeNull();
     expect(screen.queryByLabelText('未定 の通算コマ数上限 (空欄 = 無制限)')).toBeNull();
   });
+
+  it('1 日上限 > 通算上限 の矛盾に注意アイコンを出す (N4d)', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '矛盾', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 8, maxTotalHours: 3 },
+          { name: '正常', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 2, maxTotalHours: 10 },
+        ],
+      },
+    });
+    expect(screen.getByLabelText('矛盾 の上限設定に矛盾があります')).toBeInTheDocument();
+    expect(screen.queryByLabelText('正常 の上限設定に矛盾があります')).toBeNull();
+  });
 });
 
 describe('TeacherManager — 親アプリからの取込 (L5a)', () => {

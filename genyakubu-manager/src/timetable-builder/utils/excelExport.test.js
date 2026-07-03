@@ -133,23 +133,25 @@ describe('buildScheduleWorkbook', () => {
     expect(wb.worksheets.map(w => w.name)).toContain('Sheet');
   });
 
-  it('ヘッダ行に「日付」「時限」と各クラス名が並ぶ', () => {
+  it('行 1 にタイトル、行 2 に「日付」「時限」と各クラス名が並ぶ (N5a)', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
-    expect(ws.getCell(1, 1).value).toBe('日付');
-    expect(ws.getCell(1, 2).value).toBe('時限');
-    expect(ws.getCell(1, 3).value).toBe('３S');
-    expect(ws.getCell(1, 4).value).toBe('３A');
+    // N5a: タイトル行 (プロジェクト名 — タブ名 / 期間 / 出力日)
+    expect(String(ws.getCell(1, 1).value)).toMatch(/メイン \/ 期間 12\/25\(木\)〜12\/26\(金\) \/ 出力日 \d+\/\d+/);
+    expect(ws.getCell(2, 1).value).toBe('日付');
+    expect(ws.getCell(2, 2).value).toBe('時限');
+    expect(ws.getCell(2, 3).value).toBe('３S');
+    expect(ws.getCell(2, 4).value).toBe('３A');
   });
 
   it('データ行のセルに subject + teacher(中学X:計Y) の改行表記が入る', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
-    // 2 行目 (1 行目は header): 12/25 / 1限 / ３S 列に英語/堀上
+    // 3 行目 (1 = タイトル, 2 = header): 12/25 / 1限 / ３S 列に英語/堀上
     // 堀上は 12/25(木) に 1限+2限 で計 2 コマ、externalCounts なしなので 計=2
-    expect(ws.getCell(2, 1).value).toBe('12/25(木)');
-    expect(ws.getCell(2, 2).value).toBe('1限');
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)');
+    expect(ws.getCell(3, 1).value).toBe('12/25(木)');
+    expect(ws.getCell(3, 2).value).toBe('1限');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
   });
 
   it('externalCounts (予備校・高校等の外部コマ) が「計」に加算される', () => {
@@ -159,7 +161,7 @@ describe('buildScheduleWorkbook', () => {
     const wb = buildScheduleWorkbook(project);
     const ws = wb.getWorksheet('メイン');
     // 12/25 の 堀上: 中学=2 (schedule内)、外部=3 → 計=5
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計5)');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計5)');
   });
 
   it('NG が設定されたコマに講師が割当たっていれば ⚠NG が追記される', () => {
@@ -177,9 +179,9 @@ describe('buildScheduleWorkbook', () => {
     const wb = buildScheduleWorkbook(project);
     const ws = wb.getWorksheet('メイン');
     // 12/25 1限 = 堀上 の NG スロット → ⚠NG が追記
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
     // 12/25 2限 = NG ではない → ⚠NG なし
-    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
+    expect(ws.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)');
   });
 
   it('teacher 未定 (空 or "未定") のセルは中学/計の suffix を付けない', () => {
@@ -195,8 +197,8 @@ describe('buildScheduleWorkbook', () => {
     });
     const wb = buildScheduleWorkbook(project);
     const ws = wb.getWorksheet('メイン');
-    expect(ws.getCell(2, 3).value).toBe('英語\n');
-    expect(ws.getCell(3, 3).value).toBe('英語\n未定');
+    expect(ws.getCell(3, 3).value).toBe('英語\n');
+    expect(ws.getCell(4, 3).value).toBe('英語\n未定');
   });
 
   it('合同グループの非 primary クラスは "(合同)" 表記を維持 (count 付かない)', () => {
@@ -214,15 +216,15 @@ describe('buildScheduleWorkbook', () => {
     const wb = buildScheduleWorkbook(project);
     const ws = wb.getWorksheet('メイン');
     // 合同コマは 1 コマ扱い (computeGlobalUsage 側で重複除外)
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学1:計1)');
-    expect(ws.getCell(2, 4).value).toBe('英語\n(合同)');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学1:計1)');
+    expect(ws.getCell(3, 4).value).toBe('英語\n(合同)');
   });
 
   it('未充填セルは空文字', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
     // 3A 列 (cIdx=4) は schedule に無いので空
-    expect(ws.getCell(2, 4).value).toBe('');
+    expect(ws.getCell(3, 4).value).toBe('');
   });
 
   it('日付列が時限の数だけ merge される (2 期間 × 2 日 → 2 つの merge 範囲)', () => {
@@ -232,17 +234,18 @@ describe('buildScheduleWorkbook', () => {
     const mergeKeys = Array.isArray(ws.model.merges)
       ? ws.model.merges
       : Object.keys(ws._merges || {});
-    expect(mergeKeys).toHaveLength(2);
-    // 1 日目: row 2-3、2 日目: row 4-5 (1-based)
+    // N5a: タイトル行の A1:C1 結合 + 日付 merge 2 つ
+    expect(mergeKeys).toHaveLength(3);
+    // 1 日目: row 3-4、2 日目: row 5-6 (1 = タイトル, 2 = header)
     const joined = mergeKeys.join(',');
-    expect(joined).toMatch(/A2:A3/);
-    expect(joined).toMatch(/A4:A5/);
+    expect(joined).toMatch(/A3:A4/);
+    expect(joined).toMatch(/A5:A6/);
   });
 
   it('科目カラーが指定されていれば fill が設定される (ARGB)', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
-    const cell = ws.getCell(2, 3); // 英語 (#DBEAFE)
+    const cell = ws.getCell(3, 3); // 英語 (#DBEAFE)
     expect(cell.fill).toEqual(expect.objectContaining({
       type: 'pattern',
       pattern: 'solid',
@@ -275,7 +278,8 @@ describe('buildScheduleWorkbook', () => {
     const mergeKeys = Array.isArray(ws.model.merges)
       ? ws.model.merges
       : Object.keys(ws._merges || {});
-    expect(mergeKeys).toHaveLength(0);
+    // N5a のタイトル行結合 (A1:C1) のみで、日付列の merge は作らない
+    expect(mergeKeys).toHaveLength(1);
   });
 });
 
@@ -307,6 +311,12 @@ describe('buildTeacherWorkbook', () => {
     expect(ws.rowCount).toBe(3);
     expect(ws.getCell(2, 1).value).toBe('堀上');
     expect(ws.getCell(2, 5).value).toBe('英語');
+  });
+
+  it('タブ列の見出しは個人シート・全講師リストとも「学年(タブ)」に統一 (N5d)', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    expect(wb.getWorksheet('堀上').getCell(1, 5).value).toBe('学年(タブ)');
+    expect(wb.getWorksheet('全講師リスト').getCell(1, 6).value).toBe('学年(タブ)');
   });
 
   it('講師名に Windows 禁則文字があれば sheet 名から除去', () => {
@@ -599,32 +609,34 @@ describe('xlsx round-trip (E3b)', () => {
     expect(names).toContain('科目別_英語');
 
     const ws = wb2.getWorksheet('メイン');
-    // 値 (ヘッダ + データセルの改行表記)
-    expect(ws.getCell(1, 1).value).toBe('日付');
-    expect(ws.getCell(1, 3).value).toBe('３S');
-    expect(ws.getCell(2, 1).value).toBe('12/25(木)');
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)');
+    // 値 (N5a タイトル + ヘッダ + データセルの改行表記)
+    expect(String(ws.getCell(1, 1).value)).toContain('test-proj — メイン');
+    expect(ws.getCell(2, 1).value).toBe('日付');
+    expect(ws.getCell(2, 3).value).toBe('３S');
+    expect(ws.getCell(3, 1).value).toBe('12/25(木)');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
 
-    // 日付セルの縦結合 (2 時限分): A2 が master、A3 は merged
-    expect(ws.getCell('A3').isMerged).toBe(true);
-    expect(ws.getCell('A3').master.address).toBe('A2');
+    // 日付セルの縦結合 (2 時限分): A3 が master、A4 は merged
+    // (行 1 = N5a タイトル、行 2 = ヘッダ)
+    expect(ws.getCell('A4').isMerged).toBe(true);
+    expect(ws.getCell('A4').master.address).toBe('A3');
 
     // 科目カラーの塗り (英語 #DBEAFE → FFDBEAFE)
-    const fill = ws.getCell(2, 3).fill;
+    const fill = ws.getCell(3, 3).fill;
     expect(fill?.type).toBe('pattern');
     expect(fill?.fgColor?.argb).toBe('FFDBEAFE');
 
     // 罫線 (THIN_BORDER) と wrapText
-    expect(ws.getCell(2, 3).border?.top?.style).toBe('thin');
-    expect(ws.getCell(2, 3).alignment?.wrapText).toBe(true);
+    expect(ws.getCell(3, 3).border?.top?.style).toBe('thin');
+    expect(ws.getCell(3, 3).alignment?.wrapText).toBe(true);
 
     // 列幅 (日付/時限 14、クラス列 16)
     expect(ws.getColumn(1).width).toBe(14);
     expect(ws.getColumn(3).width).toBe(16);
 
     // ヘッダの塗りと白文字 (4472C4 / FFFFFF)
-    expect(ws.getCell(1, 1).fill?.fgColor?.argb).toBe('FF4472C4');
-    expect(ws.getCell(1, 1).font?.color?.argb).toBe('FFFFFFFF');
+    expect(ws.getCell(2, 1).fill?.fgColor?.argb).toBe('FF4472C4');
+    expect(ws.getCell(2, 1).font?.color?.argb).toBe('FFFFFFFF');
   });
 
   it('講師別出力もバイナリ round-trip で壊れない', async () => {
@@ -650,17 +662,17 @@ describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
     });
     const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
     const ws = wb.getWorksheet(1);
-    expect(ws.getCell(2, 3).value).toBe('英語\n堀上');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上');
     // 作業用 (既定) は従来どおり注記入り
     const wb2 = _buildScheduleWorkbook(hoist(project));
-    expect(wb2.getWorksheet(1).getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+    expect(wb2.getWorksheet(1).getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
   });
 
   it("clean=true では '未定' の講師名を出さず科目のみ", () => {
     const project = makeProject();
     project.tabs[0].schedule['d1-p1-c1'] = { subject: '英語', teacher: '未定' };
     const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
-    expect(wb.getWorksheet(1).getCell(2, 3).value).toBe('英語');
+    expect(wb.getWorksheet(1).getCell(3, 3).value).toBe('英語');
   });
 
   it('clean=true は科目別集計シートを出さない (N1a: 講師別集計・⚠NG の配布物への露出防止)', () => {

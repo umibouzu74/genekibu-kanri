@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
+import { measureLocalStorageBytes, formatBytes, STORAGE_LIMIT_BYTES, STORAGE_WARN_RATIO } from '../utils/storageHealth';
 
 // N1b: 保存ステータスバッジの状態別スタイル。以前は成功色 (緑) 固定で、
 // 「⚠️ 保存失敗」まで緑地に描画され失敗が成功に見えていた。
@@ -34,6 +35,14 @@ export default function Header() {
   // Excel 出力ドロップダウン (E1a: 狭画面でヘッダのボタンを減らす)
   // 開閉と外側クリック / Escape での dismiss は共有フック (F2l)。
   const { open: excelMenuOpen, setOpen: setExcelMenuOpen, ref: excelMenuRef } = useDismissablePopover();
+
+  // N5c: 保存データ量の常時可視化。従来は起動時 1 回の警告 toast のみで、
+  // 閉じたら容量の手がかりがゼロだった。保存が走る (saveStatus が変わる)
+  // たびに再計測する。origin 全体 (親アプリ含む) の実測 (N1g と同じ物差し)。
+  // saveStatus は再計測のトリガとして意図的に deps に入れている
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const storageBytes = useMemo(() => measureLocalStorageBytes(), [saveStatus]);
+  const storageWarn = storageBytes != null && storageBytes / STORAGE_LIMIT_BYTES >= STORAGE_WARN_RATIO;
 
   // N1b: autosave 失敗 (QuotaExceeded / private mode 等) はデータ喪失に直結
   // するのに、以前はバッジの文言が変わるだけで最も静かに失敗する経路だった。
@@ -125,6 +134,14 @@ export default function Header() {
           aria-live="polite"
           className={`text-xs px-2 py-1 rounded border ${SAVE_STATUS_CLASSES[saveStatus] || SAVE_STATUS_DEFAULT_CLASSES}`}
         >{saveStatus}</span>
+        {storageBytes != null && (
+          <span
+            className={`text-[10px] ${storageWarn ? 'text-builder-orange font-bold' : 'text-builder-ink-ghost'}`}
+            title={`このブラウザの保存領域の使用量 (概算、時間割以外のデータ含む)。上限は約 ${formatBytes(STORAGE_LIMIT_BYTES)} で、超えると自動保存が失敗します。`}
+          >
+            {storageWarn ? '⚠ ' : ''}{formatBytes(storageBytes)}
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>

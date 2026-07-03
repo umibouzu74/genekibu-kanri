@@ -170,4 +170,15 @@ describe('Header — 保存ステータスの可視化 (N1b)', () => {
     expect(badge.className).not.toContain('text-builder-red');
     expect(uiValue.showToast).not.toHaveBeenCalled();
   });
+
+  it('保存領域の使用量を常時表示する (N5c)', () => {
+    localStorage.setItem('builder.test_dummy', 'x'.repeat(2048));
+    try {
+      renderHeader();
+      // jsdom の localStorage に入れた 2KB+ が概算表示に出る (単位付き)
+      expect(screen.getByTitle(/保存領域の使用量/)).toHaveTextContent(/(KB|MB|B)/);
+    } finally {
+      localStorage.removeItem('builder.test_dummy');
+    }
+  });
 });

@@ -50,6 +50,12 @@ const HEADER_STYLE: CellStyleSpec = {
   border: THIN_BORDER,
 };
 
+// 学年グリッドシート先頭のタイトル行 (N5a)。塗りなしの太字テキストのみ。
+const TITLE_ROW_STYLE: CellStyleSpec = {
+  font: { bold: true, size: 12 },
+  alignment: { horizontal: 'left', vertical: 'middle' },
+};
+
 const TEACHER_HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 11, color: { argb: ARGB_FF } },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_548235 } },
@@ -166,13 +172,30 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
       periods,
     );
 
+    // N5a: タイトル行。シートを単体で印刷・配布しても「何の・いつの時間割か」
+    // が紙面に残るようにする (印刷経路の見出し L1f と対になる)。学年・期間は
+    // 配布用 (clean) でも必要な情報なので常に出す。
+    const columnCount = 2 + classes.length;
+    const rangeText = dates.length > 0 ? `期間 ${dates[0].label}〜${dates[dates.length - 1].label}` : '';
+    const d0 = new Date();
+    const printedAt = `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`;
+    const titleText = [
+      `${project.name || '講習時間割'} — ${tab.name}`,
+      rangeText,
+      printedAt,
+    ].filter(Boolean).join(' / ');
+    ws.addRow([titleText]);
+    if (columnCount > 1) ws.mergeCells(1, 1, 1, columnCount);
+    applyCellStyle(ws.getCell(1, 1), TITLE_ROW_STYLE);
+    ws.getRow(1).height = 20;
+
     // ヘッダー行
     const headerRow = ['日付', '時限', ...classes.map(c => c.label)];
     ws.addRow(headerRow);
-    headerRow.forEach((_, ci) => applyCellStyle(ws.getCell(1, ci + 1), HEADER_STYLE));
+    headerRow.forEach((_, ci) => applyCellStyle(ws.getCell(2, ci + 1), HEADER_STYLE));
 
     // データ行を組み立て (日付ごとに時限分の行が生成される)
-    let rowIdx = 2; // 1 = header
+    let rowIdx = 3; // 1 = title, 2 = header
     dates.forEach((d) => {
       periods.forEach((p) => {
         const cells = [d.label, p.label, ...classes.map((c) => {
@@ -218,8 +241,8 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
       });
     });
 
-    // ヘッダー行高
-    ws.getRow(1).height = 24;
+    // ヘッダー行高 (行 2 = 「日付/時限/クラス…」)
+    ws.getRow(2).height = 24;
 
     // 列幅 (1-based)
     ws.getColumn(1).width = 14;
@@ -229,7 +252,8 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     });
 
     // 日付セルの結合 (同一日付の時限分をまとめる)。1-based 行範囲。
-    let mergeStart = 2;
+    // 行 1 = タイトル、行 2 = ヘッダなのでデータは行 3 から。
+    let mergeStart = 3;
     dates.forEach(() => {
       if (periods.length > 1) {
         ws.mergeCells(mergeStart, 1, mergeStart + periods.length - 1, 1);
@@ -524,7 +548,8 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(t.name)));
 
     // ヘッダ
-    const header = ['日付', '時限', 'クラス', '科目', '場所(タブ)', '備考'];
+    // N5d: 全講師リストと同じ「学年(タブ)」に統一 (旧「場所(タブ)」/「タブ名」)
+    const header = ['日付', '時限', 'クラス', '科目', '学年(タブ)', '備考'];
     ws.addRow(header);
     header.forEach((_, ci) => applyCellStyle(ws.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
 
@@ -549,7 +574,7 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   if (allRows.length > 0) {
     // 講師名が「全講師リスト」でも throw しないよう固定名も uniq を通す (F5i)
     const wsAll = workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト'));
-    const allHeader = ['講師名', '日付', '時限', 'クラス', '科目', 'タブ名', '備考'];
+    const allHeader = ['講師名', '日付', '時限', 'クラス', '科目', '学年(タブ)', '備考'];
     wsAll.addRow(allHeader);
     allHeader.forEach((_, ci) => applyCellStyle(wsAll.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
 

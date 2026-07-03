@@ -1,5 +1,6 @@
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
+import { effectiveConfigForTab } from '../../utils/scheduleKey';
 import DraftNumberInput from './DraftNumberInput';
 
 export default function SubjectManager() {
@@ -160,6 +161,34 @@ export default function SubjectManager() {
             >×</button>
           </div>
         ))}
+        {/* N4e: 列合計と収容枠 (使う日 × 使う時限 × クラス数) の対比。
+            入力中に「入れ過ぎ / 入れ足りない」へ設定段階で気づけるようにする。
+            超過は solver 的にも完全解が不可能な設定 (capacity 警告と同根)。 */}
+        {commonSubjects.length > 0 && (
+          <div className="flex items-center gap-2 px-2 pt-1 text-[11px] text-builder-ink-muted">
+            <div className="w-4" />
+            <span className="flex-1 font-bold">合計 / 収容枠</span>
+            {tabs.map((tab) => {
+              const total = commonSubjects.reduce((sum, s) => sum + (Number(tab.config.subjectCounts[s]) || 0), 0);
+              const cfg = effectiveConfigForTab(project, tab);
+              const capacity = cfg.dates.length * cfg.periods.length * (cfg.classes || []).length;
+              const over = total > capacity;
+              return (
+                <span
+                  key={tab.id}
+                  className={`w-16 text-center font-bold ${over ? 'text-builder-red' : 'text-builder-ink-muted'}`}
+                  title={over
+                    ? `コマ数の合計 (${total}) が「${tab.name}」の収容枠 (使う日 × 使う時限 × クラス数 = ${capacity}) を超えています。全てを配置することはできません`
+                    : `「${tab.name}」のコマ数合計 ${total} / 収容枠 ${capacity} (使う日 × 使う時限 × クラス数)`}
+                  aria-label={`${tab.name} のコマ数合計 ${total}、収容枠 ${capacity}${over ? ' (超過)' : ''}`}
+                >
+                  {over ? '⚠' : ''}{total}/{capacity}
+                </span>
+              );
+            })}
+            <span className="w-5" />
+          </div>
+        )}
       </div>
     </div>
   );
