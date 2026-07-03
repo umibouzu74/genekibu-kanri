@@ -10,13 +10,23 @@ export default function TabBar() {
     handleRenameTab,
     analysis,
   } = useProjectContext();
-  const { showConfirm, showInput } = useUI();
+  const { showConfirm, showInput, showToast } = useUI();
   const tabErrorCounts = analysis?.tabErrorCounts || {};
+
+  // 重複タブ名は reducer 側で no-op になる (K3i)。silent だと「直った
+  // ように見える」ので理由を伝える (ヘッダ rename の H3 と同じ扱い)
+  const isDupName = (name, exceptId = null) =>
+    project.tabs.some(t => t.name === name && t.id !== exceptId);
 
   const handleRenameClick = async (e, tab) => {
     e.stopPropagation();
     const newName = await showInput("新しいタブ名を入力してください", { title: "タブ名の変更", defaultValue: tab.name });
-    if (newName) handleRenameTab(tab.id, newName);
+    if (!newName || newName === tab.name) return;
+    if (isDupName(newName, tab.id)) {
+      showToast(`「${newName}」は既に存在するため変更できません。別の名前にしてください。`, 'error', 4000);
+      return;
+    }
+    handleRenameTab(tab.id, newName);
   };
 
   const handleDeleteClick = async (e, tabId) => {
@@ -27,7 +37,12 @@ export default function TabBar() {
 
   const handleAddClick = async () => {
     const name = await showInput("新しいタブの名前を入力してください", { title: "タブの追加", placeholder: "例: 1年生" });
-    if (name) handleAddTab(name);
+    if (!name) return;
+    if (isDupName(name)) {
+      showToast(`「${name}」は既に存在するため追加できません。別の名前にしてください。`, 'error', 4000);
+      return;
+    }
+    handleAddTab(name);
   };
 
   // 学年タブの左右/Home/End 矢印ナビ (E1b)。フォーカスを移しつつそのタブを開く。

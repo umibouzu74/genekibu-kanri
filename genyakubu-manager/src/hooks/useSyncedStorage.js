@@ -104,12 +104,15 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
 
           if (serverVal == null) {
             // Firebase is empty for this key — seed from localStorage
-            // if we have local data.
+            // if we have local data. migrate を通してから書き込む (K5b:
+            // raw のまま seed すると旧形式が Firebase に入り、他端末が
+            // 毎回 migrate し直すことになる)
             const raw = localStorage.getItem(key);
             if (raw != null) {
               try {
                 const parsed = JSON.parse(raw);
-                set(dbRef, parsed).catch((e) =>
+                const migrated = migrate ? migrate(parsed) : parsed;
+                set(dbRef, migrated).catch((e) =>
                   console.warn(`[useSyncedStorage] seed failed for "${key}":`, e)
                 );
               } catch {

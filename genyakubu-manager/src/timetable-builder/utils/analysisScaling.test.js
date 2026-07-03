@@ -12,6 +12,7 @@
 //   - 講師・設定編集: 上記に加えて computeAutoNgByTeacher
 // ここでは「フル再計算 1 回分」の関数別コストを大きめの合成 project で
 // 実測し、キー入力〜フレーム予算 (16ms) に収まっているかを確認する。
+/* global process -- BENCH=1 ガード (vitest の node 環境で実在) */
 import { describe, expect, it } from 'vitest';
 import {
   computeGlobalUsage,
@@ -151,7 +152,6 @@ describe.skipIf(!process.env.BENCH)('useAnalysis 再計算コスト計測 (E4d)'
 
     const totalMs = rows.reduce((a, r) => a + r['avg ms'], 0);
     rows.push({ fn: '合計 (フル再計算 1 回)', 'avg ms': +totalMs.toFixed(2) });
-    // eslint-disable-next-line no-console
     console.table(rows);
     expect(totalMs).toBeGreaterThan(0);
   }, 120_000);

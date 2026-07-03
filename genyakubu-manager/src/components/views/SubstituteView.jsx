@@ -71,6 +71,18 @@ export function SubstituteView({
     }
   }, [initFilter, onConsumeInitFilter]);
 
+  // 月次集計タブは対象月が必須 (fMonth 空だと無言で全行 0 になる)。
+  // ステータスバッジ経由 (initFilter.status で fMonth を解除) の後に
+  // 集計タブへ移った場合などは当月へフォールバックする (K3f)。
+  useEffect(() => {
+    if (tab === "tally" && !fMonth) {
+      setFMonth(
+        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- now は render 毎に新しいが月精度では安定
+  }, [tab, fMonth]);
+
   // partTimeStaff は新形式 {name, subjectIds}[] のみを想定
   const staffNameSet = useMemo(
     () => new Set(partTimeStaff.map((s) => s.name)),

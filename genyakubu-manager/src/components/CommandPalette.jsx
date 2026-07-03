@@ -240,6 +240,7 @@ export function CommandPalette({
     holidays,
     examPeriods,
     specialEvents,
+    extraLessons,
     selectedTeacher,
     onSelectTeacher,
     onSelectView,

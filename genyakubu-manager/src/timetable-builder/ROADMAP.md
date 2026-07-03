@@ -1976,9 +1976,9 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 ### K.3 改良・一貫性 (UX)
 
-- **K3a (中)**: 確定代行一覧の日別表示に「第N回」バッジと追加授業バナーが
-  出ない — 同じ DashDayRow を使う Dashboard 日別との情報密度差
-  (ConfirmedSubsView.jsx:198 に sessionCtx / extraLessonsForDate を配線)
+- ✅ **K3a (2026-07-03)**: 確定代行一覧の日別表示に sessionCtx (第N回) /
+  追加授業バナー / 調整カードを配線し、Dashboard 日別と情報密度を統一
+  (makeEventHelpers は useSessionCtx に置換)
 - **K3b (中)**: クリック可能なテーブルコントロールのキーボード対応の横展開 —
   ソート列ヘッダ (AdjustmentListTab / OverrideListTab)、月次集計の展開行
   (SubTallyTab、aria-expanded も無し)、MonthView の編集用コマカード
@@ -1989,15 +1989,15 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   クイック追加) が手本
 - **K3e (小)**: 「第N回」バッジの見た目がビュー間で不揃い (Dashboard /
   MonthView は青地白文字、AbsenceSlotCard は背景無し青文字)
-- **K3f (小)**: 月次集計タブがステータスバッジ経由 (fMonth="") だと無言で
-  空になる — 当月フォールバックか案内が欲しい (SubstituteView.jsx:60 /
-  SubTallyTab.jsx:38)
-- **K3g (小)**: builder ContextMenu の「🚫 この時間をNG登録」が既に NG の
-  セルでも同一文言 (実体はトグルなのに解除であることが伝わらない)
-- **K3h (小)**: builder のロックセルへの drop 拒否が赤リングのみで toast
-  無し / 貼り付けメニューが clipboard 空でも押せて no-op
-- **K3i (小)**: builder のタブ名重複ガードが無い (teacher/subject には
-  あるのにタブだけ無い非対称)
+- ✅ **K3f (2026-07-03)**: 月次集計タブを fMonth 空で開いたら当月へ
+  フォールバックする effect を追加 (集計に「月なし」は無意味なため)
+- ✅ **K3g (2026-07-03)**: ContextMenu の NG メニューが現在の状態を反映
+  (「🚫 NG登録」⇔「✅ NGを解除」。teacher.ngSlots × makeNgKey で判定)
+- ✅ **K3h (2026-07-03)**: ロックセルへの drop 拒否に error toast を追加 /
+  貼り付けメニューは clipboard 空で disabled (キーボードナビも disabled を
+  スキップ)
+- ✅ **K3i (2026-07-03)**: タブ名の重複ガードを追加 (reducer で no-op +
+  TabBar で理由 toast。ヘッダ rename の H3 と同じ扱い)
 
 ### K.4 追加機能・便利機能
 
@@ -2013,11 +2013,13 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 ### K.5 アーキテクチャ級 (要相談、着手前に方針決定)
 
-- **K5a (大)**: Firebase 同期がキー単位の last-writer-wins — 2 端末が同一
-  リソースの別レコードを並行編集すると後着が先着を丸ごと上書き
-  (useSyncedStorage.js:178)。レコード単位マージ or 楽観ロックの設計が必要
-- **K5b (小だが同系)**: Firebase 初回 seed が migrate 前の raw を書き込む
-  (useSyncedStorage.js:110)。K5a に着手するなら同時に直す
+- ~~**K5a (大)**: Firebase 同期がキー単位の last-writer-wins~~
+  **対応不要と決定 (2026-07-03、ユーザ判断)**: 2 端末での同時編集は運用上
+  発生しないため無視してよい。マージ/楽観ロックの設計はしない
+  (再提案しないこと)
+- ✅ **K5b (2026-07-03)**: Firebase 初回 seed を migrate 済みの値で
+  書き込むよう修正 (raw のままだと旧形式が Firebase に入り他端末が毎回
+  migrate し直す)
 - **K5c (中)**: FK 検証の対象外リレーション (partTimeStaff.subjectIds /
   teacherSubjects / adjustments.targetSlotId / examPrepSchedules.examPeriodId)
   — runtime cascade はあるが手編集バンドルが検証をすり抜ける

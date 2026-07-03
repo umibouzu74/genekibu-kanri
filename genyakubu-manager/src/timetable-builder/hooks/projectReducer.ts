@@ -209,6 +209,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
     case 'tab/add': {
       const { name } = action.payload;
       if (!name) return project;
+      // K3i: 重複タブ名は no-op (teacher/subject の重複ガードと同じ扱い。
+      // 生成結果パネル等の「対象タブ: {name}」表示が曖昧になるため)
+      if (project.tabs.some(t => t.name === name)) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
       const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
@@ -236,6 +239,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // F2d: 同名 rename は履歴を汚さない (実効 Undo 深度 MAX 50 を守る)
       const target = project.tabs.find(t => t.id === id);
       if (!target || target.name === name) return project;
+      // K3i: 他タブと重複する名前への rename も no-op (UI 側でも toast で
+      // reject するが、直接 dispatch 経路も守る)
+      if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
     }
 

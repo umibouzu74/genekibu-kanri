@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { makeKey } from '../utils/scheduleKey';
+import { makeKey, makeNgKey } from '../utils/scheduleKey';
 
 // BuilderApp が useState で持つ「開いているメニュー」の状態。
 // type=null はセルメニュー、'date'|'period'|'class' はヘッダメニュー (val=ラベル)。
@@ -52,7 +52,10 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
       }
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       e.preventDefault();
-      const items = Array.from(menuRef.current?.querySelectorAll('button') || []);
+      // disabled 項目 (clipboard 空の貼り付け等) はフォーカス対象から外す
+      const items = Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || []
+      );
       if (items.length === 0) return;
       const i = items.indexOf(document.activeElement as HTMLButtonElement);
       const next = e.key === 'ArrowDown'
@@ -149,10 +152,28 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
       ) : (
         <>
           <button onClick={() => handleAction('copy')} className="block w-full text-left px-4 py-2 hover:bg-builder-bg border-b border-builder-border text-builder-ink">📝 コピー</button>
-          <button onClick={() => handleAction('paste')} className={`block w-full text-left px-4 py-2 border-b border-builder-border ${!clipboard ? "text-builder-ink-ghost" : "hover:bg-builder-bg text-builder-ink"}`}>📋 貼り付け</button>
-          {cellKey && currentSchedule[cellKey]?.teacher && (
-            <button onClick={() => handleAction('set-ng')} className="block w-full text-left px-4 py-2 hover:bg-builder-warning-soft border-b border-builder-border text-builder-orange">🚫 この時間をNG登録</button>
-          )}
+          <button
+            onClick={() => handleAction('paste')}
+            disabled={!clipboard}
+            title={!clipboard ? '先にセルをコピーしてください' : undefined}
+            className={`block w-full text-left px-4 py-2 border-b border-builder-border ${!clipboard ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+          >
+            📋 貼り付け
+          </button>
+          {cellKey && currentSchedule[cellKey]?.teacher && (() => {
+            // 実体はトグル (toggleTeacherNg) なので、既に NG なら「解除」と
+            // 表示する (K3g: 登録のままだと解除操作であることが伝わらない)
+            const teacherName = currentSchedule[cellKey].teacher;
+            const dateEnt = currentConfig.dates?.find(d => d.id === dateId);
+            const periodEnt = currentConfig.periods?.find(p => p.id === periodId);
+            const ngKey = dateEnt && periodEnt ? makeNgKey(dateEnt.label, periodEnt.label) : null;
+            const isNg = !!ngKey && !!(project.teachers || []).find(t => t.name === teacherName)?.ngSlots?.includes(ngKey);
+            return (
+              <button onClick={() => handleAction('set-ng')} className="block w-full text-left px-4 py-2 hover:bg-builder-warning-soft border-b border-builder-border text-builder-orange">
+                {isNg ? '✅ この時間のNGを解除' : '🚫 この時間をNG登録'}
+              </button>
+            );
+          })()}
           <button onClick={() => handleAction('lock')} className="block w-full text-left px-4 py-2 hover:bg-builder-bg border-b border-builder-border text-builder-ink">🔒 ロック切替</button>
           <button onClick={() => handleAction('clear')} className="block w-full text-left px-4 py-2 hover:bg-builder-danger-soft text-builder-red">🗑️ クリア</button>
         </>

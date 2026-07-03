@@ -1199,7 +1199,19 @@ export default function App() {
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
-            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
+            <ConfirmedSubsView
+              slots={slots}
+              holidays={holidays}
+              subs={subs}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              adjustments={adjustments}
+              extraLessons={extraLessons}
+            />
           )}
           {view === VIEWS.ABSENCE_FLOW && !selected && (
             <AbsenceWorkflowView

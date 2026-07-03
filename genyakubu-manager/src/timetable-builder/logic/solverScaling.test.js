@@ -15,6 +15,7 @@
 //   - 上記から、既定 500k は「待ち時間の上限を数秒に抑える」妥当な既定。
 //     不均等クォータの改善余地はソルバの科目選択順 (LCV 化) にある
 //     (ROADMAP E4b の記録参照)
+/* global process -- BENCH=1 ガード (vitest の node 環境で実在) */
 import { describe, expect, it } from 'vitest';
 import { generateSinglePattern } from './autoGenerator';
 
@@ -119,7 +120,6 @@ describe.skipIf(!process.env.BENCH)('solver スケーリング計測 (E4b)', () 
         expect(r.totalSlots).toBeGreaterThan(0);
       }
     }
-    // eslint-disable-next-line no-console
     console.table(rows);
   }, 600_000);
 });

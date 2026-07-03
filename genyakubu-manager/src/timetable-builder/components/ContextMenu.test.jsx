@@ -45,14 +45,20 @@ describe('ContextMenu — キーボード対応 (F2a)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('↑↓ で項目間をフォーカス移動する (端は wrap)', () => {
+  it('↑↓ で項目間をフォーカス移動する (端は wrap、disabled はスキップ)', () => {
+    // clipboard=null なので「貼り付け」は disabled → 矢印ナビの対象外 (K3h)
     renderMenu();
     fireEvent.keyDown(window, { key: 'ArrowDown' });
-    expect(document.activeElement).toHaveTextContent('貼り付け');
+    expect(document.activeElement).toHaveTextContent('ロック切替');
     fireEvent.keyDown(window, { key: 'ArrowUp' });
     expect(document.activeElement).toHaveTextContent('コピー');
     fireEvent.keyDown(window, { key: 'ArrowUp' }); // 先頭から wrap して末尾へ
     expect(document.activeElement).toHaveTextContent('クリア');
+  });
+
+  it('clipboard が空のとき貼り付けは disabled (K3h)', () => {
+    renderMenu();
+    expect(screen.getByText('📋 貼り付け').closest('button')).toBeDisabled();
   });
 
   it('role="menu" を持つ', () => {

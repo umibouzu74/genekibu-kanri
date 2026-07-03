@@ -113,7 +113,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -251,6 +251,7 @@ export function useDataIO({
       saveTeacherSubjects,
       saveSpecialEvents,
       saveExtraLessons,
+      setActiveTimetableId,
       setImporting,
       setShowDataMgr,
     ]
@@ -310,6 +311,7 @@ export function useDataIO({
     saveExamPrepSchedules,
     saveClassSets,
     saveSessionOverrides,
+    saveTeacherSubjects,
     saveSpecialEvents,
     saveExtraLessons,
     setActiveTimetableId,
