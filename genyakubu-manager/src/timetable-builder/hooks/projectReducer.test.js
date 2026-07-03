@@ -193,6 +193,27 @@ describe('projectReducer — タブ管理', () => {
     const state = makeState();
     expect(projectReducer(state, { type: 'tab/rename', payload: { id: 1, name: 'メイン' } })).toBe(state);
   });
+
+  it('tab/reorder: タブを並べ替える (N2d)', () => {
+    const state = makeState({
+      tabs: [
+        { id: 1, name: '中1', config: { classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: '中3', config: { classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 3, name: '中2', config: { classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const next = projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 2, toIdx: 1 } });
+    expect(next.project.tabs.map(t => t.name)).toEqual(['中1', '中2', '中3']);
+    // 履歴 push は 1 回 (Undo 可)
+    expect(next.history).toHaveLength(2);
+  });
+
+  it('tab/reorder: 範囲外 idx・同一 idx は no-op (N2d)', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 0, toIdx: 0 } })).toBe(state);
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: -1, toIdx: 0 } })).toBe(state);
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 0, toIdx: 99 } })).toBe(state);
+  });
 });
 
 // ─── F2d: 同値 commit の no-op ガード ────────────────────────

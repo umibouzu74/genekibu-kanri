@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
@@ -96,12 +96,33 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
     setDragOverKey(null);
   };
 
+  // N2b: ドラッグ中の auto-scroll。グリッドは max-h-[70vh] の overflow
+  // コンテナ内にあり、掴んだ元と落とし先が同時に画面内に無いと届かなかった。
+  // dragover はドラッグ中連続発火するので、コンテナ端に近づいたら少しずつ
+  // スクロールする (端に近いほど速く)。
+  const containerRef = useRef<HTMLDivElement>(null);
+  const handleContainerDragOver = (e: { clientX: number; clientY: number }) => {
+    const el = containerRef.current;
+    if (!el || !dragSource) return;
+    const EDGE = 56;
+    const rect = el.getBoundingClientRect();
+    const step = (dist: number) => Math.ceil((EDGE - dist) / 3);
+    if (e.clientY - rect.top < EDGE) el.scrollTop -= step(e.clientY - rect.top);
+    else if (rect.bottom - e.clientY < EDGE) el.scrollTop += step(rect.bottom - e.clientY);
+    if (e.clientX - rect.left < EDGE) el.scrollLeft -= step(e.clientX - rect.left);
+    else if (rect.right - e.clientX < EDGE) el.scrollLeft += step(rect.right - e.clientX);
+  };
+
   const widths = isCompact ? COL_WIDTHS.compact : COL_WIDTHS.normal;
   const dateColStyle = { left: 0, width: widths.dateCol, minWidth: widths.dateCol };
   const periodColStyle = { left: widths.dateCol, width: widths.periodCol, minWidth: widths.periodCol };
 
   return (
-    <div className={`overflow-auto shadow border border-builder-border max-h-[70vh] bg-builder-bg print-container ${isCompact ? "text-xs" : "text-sm"}`}>
+    <div
+      ref={containerRef}
+      onDragOver={handleContainerDragOver}
+      className={`overflow-auto shadow border border-builder-border max-h-[70vh] bg-builder-bg print-container ${isCompact ? "text-xs" : "text-sm"}`}
+    >
       <table className="w-full border-collapse text-left relative" aria-label="時間割表">
         <thead className="sticky top-0 z-30 bg-builder-primary text-white shadow-md">
           <tr>

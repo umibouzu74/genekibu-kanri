@@ -45,6 +45,7 @@ export type ProjectAction =
   | { type: 'tab/add'; payload: { name: string } }
   | { type: 'tab/delete'; payload: { id: number } }
   | { type: 'tab/rename'; payload: { id: number; name: string } }
+  | { type: 'tab/reorder'; payload: { fromIdx: number; toIdx: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -317,6 +318,18 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // reject するが、直接 dispatch 経路も守る)
       if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
+    }
+
+    case 'tab/reorder': {
+      // N2d: 学年タブの並べ替え (subject/reorder と同型)。作成順を後から
+      // 直せるようにする。印刷・Excel の学年順 (tabs の並び) にも効く。
+      const { fromIdx, toIdx } = action.payload;
+      const tabs = [...project.tabs];
+      if (fromIdx < 0 || fromIdx >= tabs.length || toIdx < 0 || toIdx >= tabs.length) return project;
+      if (fromIdx === toIdx) return project;
+      const [moved] = tabs.splice(fromIdx, 1);
+      tabs.splice(toIdx, 0, moved);
+      return { ...project, tabs };
     }
 
     // ─── タブ別 config ───────────────────

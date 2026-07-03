@@ -2407,16 +2407,16 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   選択範囲の一括クリア・ロック・貼り付け。現状は 1 セル単位 or ヘッダ単位
   (日/時限/クラスまるごと) しかなく、「クラス A〜C の 3〜4 限だけロック」の
   ような矩形操作ができない。まず範囲クリア・範囲ロックの MVP から
-- **N2b (中)**: D&D 中の auto-scroll — グリッドは `max-h-[70vh]
+- ✅ **N2b (2026-07-03 実装)**: D&D 中の auto-scroll — グリッドは `max-h-[70vh]
   overflow-auto` 内で、掴んだ元と落とし先が同時に画面内に無いと物理的に
   届かない (ScheduleTable.tsx)。dragover でコンテナ端に近づいたら
   scrollTop を漸増させる hook を
-- **N2c (小〜中)**: D&D の発見可能性と操作性 — (1) draggable セルに
+- ✅ **N2c (2026-07-03 実装)**: D&D の発見可能性と操作性 — (1) draggable セルに
   cursor-move 等の手がかりが無く、オンボーディングもドラッグに触れない
   (onboardingSteps.ts)。(2) コンパクト表示では td padding 1px + select が
   セルを埋め、drag を開始できる非 select 領域がほぼ無い (ScheduleCell.tsx)。
   カーソル + ツアー 1 ステップ + ドラッグハンドル (⠿) を
-- **N2d (中)**: 学年タブの並べ替え — `tab/reorder` が無く作成順を後から
+- ✅ **N2d (2026-07-03 実装)**: 学年タブの並べ替え — `tab/reorder` が無く作成順を後から
   直せない (subject/reorder はあるのに非対称)。印刷・Excel の学年順にも効く
 - ✅ **N2e (2026-07-03 実装)**: タブ削除 confirm に割当数を出す — 現状は汎用文言のみ
   (TabBar.tsx)。「N コマの割当があります」の件数付き confirm (生成クリア等と

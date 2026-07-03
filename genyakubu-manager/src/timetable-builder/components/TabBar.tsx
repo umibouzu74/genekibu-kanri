@@ -9,6 +9,7 @@ export default function TabBar() {
     handleAddTab,
     handleDeleteTab,
     handleRenameTab,
+    reorderTabs,
     copyScheduleFromTab,
     analysis,
   } = useProjectContext();
@@ -88,6 +89,18 @@ export default function TabBar() {
       handleDeleteClick(e, activeTab.id);
       return;
     }
+    // N2d: Ctrl(⌘)+←/→ でアクティブタブを並べ替え (D&D のキーボード代替)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && activeTab) {
+      e.preventDefault();
+      const fromIdx = project.tabs.findIndex(t => t.id === activeTab.id);
+      const toIdx = e.key === 'ArrowLeft' ? fromIdx - 1 : fromIdx + 1;
+      if (toIdx >= 0 && toIdx < project.tabs.length) {
+        reorderTabs(fromIdx, toIdx);
+        // roving tabindex を維持 (並べ替え後も同じタブにフォーカスを残す)
+        requestAnimationFrame(() => document.getElementById(`builder-grade-tab-${activeTab.id}`)?.focus());
+      }
+      return;
+    }
     const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
     if (!keys.includes(e.key)) return;
     e.preventDefault();
@@ -106,7 +119,7 @@ export default function TabBar() {
 
   return (
     <div role="tablist" aria-label="学年タブ" onKeyDown={handleTabKeyDown} className="flex items-end gap-1 px-2 no-print overflow-x-auto">
-      {project.tabs.map(tab => {
+      {project.tabs.map((tab, tabIdx) => {
         const errorCount = tabErrorCounts[tab.id] || 0;
         const selected = project.activeTabId === tab.id;
         // L1b: 使う日・時限・クラスのいずれかが 0 のタブはセルが 1 つも
@@ -121,9 +134,25 @@ export default function TabBar() {
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
-            title="クリックで切替 / ダブルクリック or F2 で名前変更 / Delete で削除"
+            title="クリックで切替 / ダブルクリック or F2 で名前変更 / Delete で削除 / ドラッグ or Ctrl+←→ で並べ替え"
             onClick={() => switchTab(tab.id)}
             onDoubleClick={(e) => handleRenameClick(e, tab)}
+            // N2d: ドラッグで並べ替え (キーボード代替は Ctrl+←/→)
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/x-builder-tab-index', String(tabIdx));
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes('text/x-builder-tab-index')) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              const raw = e.dataTransfer.getData('text/x-builder-tab-index');
+              if (raw === '') return;
+              e.preventDefault();
+              const fromIdx = Number(raw);
+              if (Number.isInteger(fromIdx) && fromIdx !== tabIdx) reorderTabs(fromIdx, tabIdx);
+            }}
             className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
           >
             {tab.name}

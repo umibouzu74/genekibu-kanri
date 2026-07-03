@@ -169,7 +169,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       // L2a: 講師ハイライト。ドラッグ中の ring 表示と衝突しないよう、
       // isDragOver 中はハイライトを一時的に譲る
       data-teacher-highlight={!!highlightTeacher && entry.teacher === highlightTeacher ? '' : undefined}
-      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
+      // N2c: 掴めるセルには cursor-move の手がかりを出す (従来は視覚手がかり
+      // ゼロで D&D が発見不能だった)
+      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${!isLocked && entry.subject ? "cursor-move" : ""} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
@@ -185,6 +187,16 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>
         <div className={`flex justify-between items-center ${isCompact ? "gap-0.5" : "gap-1"}`}>
           <div className="flex-1 min-w-0 flex items-center gap-0.5">
+            {/* N2c: ドラッグハンドル。セルの大半は <select> で mousedown を
+                奪うため (特にコンパクト表示は padding 1px で余白がほぼ無い)、
+                確実に掴める非 select 領域を常設する */}
+            {!isLocked && !!entry.subject && (
+              <span
+                aria-hidden="true"
+                title="ドラッグで別のセルと入れ替え"
+                className={`shrink-0 select-none cursor-move text-builder-ink-ghost leading-none ${isCompact ? "text-[9px]" : "text-xs"}`}
+              >⠿</span>
+            )}
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
               aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}

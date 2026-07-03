@@ -104,6 +104,11 @@ export function useProject() {
     dispatch({ type: 'tab/rename', payload: { id, name: newName } });
   }, [dispatch]);
 
+  // N2d: 学年タブの並べ替え (印刷・Excel の学年順にも効く)
+  const reorderTabs = useCallback((fromIdx: number, toIdx: number) => {
+    dispatch({ type: 'tab/reorder', payload: { fromIdx, toIdx } });
+  }, [dispatch]);
+
   const switchTab = useCallback((id: number) => {
     dispatch({ type: 'tab/switch', payload: { id } });
   }, [dispatch]);
@@ -229,6 +234,7 @@ export function useProject() {
     handleAddTab,
     handleDeleteTab,
     handleRenameTab,
+    reorderTabs,
     switchTab,
     // タブ別 config
     handleListConfigChange,
