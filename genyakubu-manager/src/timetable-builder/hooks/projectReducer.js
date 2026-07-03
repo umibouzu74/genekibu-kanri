@@ -154,6 +154,9 @@ function applyAction(project, action) {
     case 'tab/rename': {
       const { id, name } = action.payload;
       if (!name) return project;
+      // F2d: 同名 rename は履歴を汚さない (実効 Undo 深度 MAX 50 を守る)
+      const target = project.tabs.find(t => t.id === id);
+      if (!target || target.name === name) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
     }
 
@@ -276,7 +279,10 @@ function applyAction(project, action) {
       if (!target) return project;
       // F5o: 負数の直接入力 (input の min はスピナーにしか効かない) を 0 に
       // clamp。負のコマ数は分析の合計を狂わせる。
-      const newCounts = { ...target.config.subjectCounts, [subject]: Math.max(0, parseInt(value) || 0) };
+      const clamped = Math.max(0, parseInt(value) || 0);
+      // F2d: 同値なら no-op (blur 等での再 commit が履歴を汚さない)
+      if (target.config.subjectCounts[subject] === clamped) return project;
+      const newCounts = { ...target.config.subjectCounts, [subject]: clamped };
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
@@ -486,6 +492,8 @@ function applyAction(project, action) {
     }
     case 'subject/setColor': {
       const { subject, color } = action.payload;
+      // F2d: 同色なら no-op (カラーピッカーの連続イベント対策)
+      if ((project.subjectColors || {})[subject] === color) return project;
       const newColors = { ...(project.subjectColors || {}), [subject]: color };
       return { ...project, subjectColors: newColors };
     }
@@ -1118,7 +1126,16 @@ function applyAction(project, action) {
     }
     case 'combinedGroup/update': {
       const { id, updates } = action.payload;
-      const newGroups = (project.combinedGroups || []).map(g => g.id === id ? { ...g, ...updates } : g);
+      const groups = project.combinedGroups || [];
+      const target = groups.find(g => g.id === id);
+      if (!target) return project;
+      // F2d: 全フィールド同値なら no-op。classes / dates は小さい配列なので
+      // JSON 比較で十分 (dates: null = 全日程 も正しく比較される)。
+      const same = Object.entries(updates || {}).every(
+        ([k, v]) => JSON.stringify(target[k]) === JSON.stringify(v)
+      );
+      if (same) return project;
+      const newGroups = groups.map(g => g.id === id ? { ...g, ...updates } : g);
       return { ...project, combinedGroups: newGroups };
     }
     case 'combinedGroup/remove': {
@@ -1129,6 +1146,8 @@ function applyAction(project, action) {
 
     // ─── プロジェクト全体 ────────────────
     case 'project/updateName': {
+      // F2d: 同名なら no-op (Header の blur 再 commit 対策)
+      if (action.payload.name === project.name) return project;
       return { ...project, name: action.payload.name };
     }
     case 'project/setGenerationParams': {

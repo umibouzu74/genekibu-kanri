@@ -188,6 +188,73 @@ describe('projectReducer — タブ管理', () => {
     const state = makeState();
     expect(projectReducer(state, { type: 'tab/rename', payload: { id: 1, name: '' } })).toBe(state);
   });
+
+  it('tab/rename: 同名は no-op (F2d: 履歴を汚さない)', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'tab/rename', payload: { id: 1, name: 'メイン' } })).toBe(state);
+  });
+});
+
+// ─── F2d: 同値 commit の no-op ガード ────────────────────────
+// blur 再 commit やカラーピッカーの連続イベントが実効 Undo 深度
+// (MAX_HISTORY=50) を削らないことを固定する。
+
+describe('projectReducer — 同値 no-op ガード (F2d)', () => {
+  it('config/setSubjectCount: 同値は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, {
+      type: 'config/setSubjectCount',
+      payload: { subject: '英語', value: 1 },
+    })).toBe(state);
+    // 文字列で来ても parseInt 後に比較される
+    expect(projectReducer(state, {
+      type: 'config/setSubjectCount',
+      payload: { subject: '英語', value: '1' },
+    })).toBe(state);
+  });
+
+  it('subject/setColor: 同色は no-op', () => {
+    const state = makeState({ subjectColors: { 英語: '#ff0000' } });
+    expect(projectReducer(state, {
+      type: 'subject/setColor',
+      payload: { subject: '英語', color: '#ff0000' },
+    })).toBe(state);
+    // 別色は変更される
+    const next = projectReducer(state, {
+      type: 'subject/setColor',
+      payload: { subject: '英語', color: '#00ff00' },
+    });
+    expect(next.project.subjectColors['英語']).toBe('#00ff00');
+  });
+
+  it('project/updateName: 同名は no-op', () => {
+    const state = makeState();
+    expect(projectReducer(state, {
+      type: 'project/updateName',
+      payload: { name: 'test' },
+    })).toBe(state);
+  });
+
+  it('combinedGroup/update: 全フィールド同値は no-op (dates: null も比較可)', () => {
+    const state = makeState({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+    });
+    expect(projectReducer(state, {
+      type: 'combinedGroup/update',
+      payload: { id: 1, updates: { subject: '英語', classes: ['３S', '３A'], dates: null } },
+    })).toBe(state);
+    // 存在しない id も no-op
+    expect(projectReducer(state, {
+      type: 'combinedGroup/update',
+      payload: { id: 99, updates: { subject: '数学' } },
+    })).toBe(state);
+    // 実変更は反映される
+    const next = projectReducer(state, {
+      type: 'combinedGroup/update',
+      payload: { id: 1, updates: { subject: '英語', classes: ['３S', '３A'], dates: ['12/25(木)'] } },
+    });
+    expect(next.project.combinedGroups[0].dates).toEqual(['12/25(木)']);
+  });
 });
 
 describe('projectReducer — 講師管理', () => {
