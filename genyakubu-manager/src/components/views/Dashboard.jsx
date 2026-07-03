@@ -182,6 +182,7 @@ export function Dashboard({
           onViewDateChange={setStartDate}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
+          extraLessons={extraLessons}
           dashboardMode
         />
       ) : (

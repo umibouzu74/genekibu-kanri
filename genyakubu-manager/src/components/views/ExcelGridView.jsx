@@ -9,10 +9,12 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
+import { extraLessonsOnDate } from "../../utils/extraLessons";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
 import { useToday } from "../../hooks/useToday";
+import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
@@ -74,6 +76,7 @@ export function ExcelGridView({
   enableSubMode = false,
   adjustments = [],
   sessionOverrides = [],
+  extraLessons = [],
   dashboardMode = false,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
@@ -329,6 +332,15 @@ export function ExcelGridView({
     [dashboardHolidaysForDay]
   );
 
+  // 表示日の追加授業 (H1a)。グリッドの列は曜日ベースで特定日付の単発コマを
+  // 埋め込めないため、Dashboard 日別と同じバナーとしてグリッド上部に出す。
+  // displayDate の意味論 (代行日 > viewDate > 選択曜日の直近日) は
+  // 第N回表示と同じ。休講日でも巻き添えにせず表示する。
+  const extraLessonsForDisplayDate = useMemo(
+    () => extraLessonsOnDate(extraLessons, displayDate),
+    [extraLessons, displayDate]
+  );
+
   return (
     <div>
       {/* Date selector for substitution mode (only when enabled) */}
@@ -538,6 +550,7 @@ export function ExcelGridView({
       <div className="mobile-stack" style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         {/* Sections */}
         <div style={{ flex: 1, minWidth: 0 }}>
+          <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
           {!daysWithSlots.has(selectedDay) ? (
             <div
               style={{

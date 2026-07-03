@@ -1184,6 +1184,7 @@ export default function App() {
               teacherSubjects={teacherSubjects}
               classSets={classSets}
               displayCutoff={displayCutoff}
+              extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
               onDelSessionOverride={overridesCrud.del}

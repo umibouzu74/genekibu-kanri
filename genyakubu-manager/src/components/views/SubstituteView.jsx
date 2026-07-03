@@ -40,6 +40,7 @@ export function SubstituteView({
   onJumpToAbsenceFlow,
   adjustments = [],
   sessionOverrides = [],
+  extraLessons = [],
 }) {
   const now = new Date();
   const [tab, setTab] = useState("list");
@@ -337,6 +338,7 @@ export function SubstituteView({
           onAddAdjustment={onAddAdjustment}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
+          extraLessons={extraLessons}
           enableSubMode
         />
       )}
