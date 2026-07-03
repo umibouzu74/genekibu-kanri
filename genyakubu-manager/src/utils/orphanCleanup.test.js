@@ -283,3 +283,26 @@ describe("applyOrphanCleanup", () => {
     expect(nextAdjustments[0].targetTime).toBe("17:00-18:20");
   });
 });
+
+describe("slotId の型正規化 (K2f)", () => {
+  it("文字列 slotId でも生存スロットを孤立と誤検出しない", () => {
+    const slots = [{ id: 1 }, { id: 2 }];
+    const subs = [
+      { id: 10, slotId: "1" }, // 文字列参照だが slot 1 は生存
+      { id: 11, slotId: 99 }, // 本物の孤立
+    ];
+    const result = findOrphanSubs(subs, slots);
+    expect(result.map((r) => r.id)).toEqual([11]);
+  });
+
+  it("combineSlotIds の文字列 id も同一視して部分更新できる", () => {
+    const slots = [{ id: 1 }, { id: 2 }];
+    const adjustments = [
+      { id: 20, type: "combine", slotId: 1, combineSlotIds: ["2", 99] },
+    ];
+    const { updated, removed } = analyzeOrphanAdjustments(adjustments, slots);
+    expect(removed).toHaveLength(0);
+    expect(updated).toHaveLength(1);
+    expect(updated[0].next.combineSlotIds).toEqual(["2"]);
+  });
+});

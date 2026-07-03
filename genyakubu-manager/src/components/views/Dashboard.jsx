@@ -60,6 +60,7 @@ export function Dashboard({
   extraLessons = [],
   saveSubs,
   onJumpToEventCalendar,
+  onJumpToRequestedSubs,
 }) {
   const todayStr = fmtDate(new Date());
   const [startDate, setStartDate] = useState(todayStr);
@@ -182,6 +183,7 @@ export function Dashboard({
           onViewDateChange={setStartDate}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
+          extraLessons={extraLessons}
           dashboardMode
         />
       ) : (
@@ -203,6 +205,7 @@ export function Dashboard({
           todayStr={todayStr}
           adjustments={adjustments}
           onJumpToEventCalendar={onJumpToEventCalendar}
+          onJumpToRequestedSubs={onJumpToRequestedSubs}
         />
       )}
     </div>

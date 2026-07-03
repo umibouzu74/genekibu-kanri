@@ -99,6 +99,22 @@ export function computeGlobalUsage(
       });
   });
 
+  // K2a: その日に builder のセルがまだ 1 つも無い講師の外部コマも entry を
+  // 立てる。無いと講師ドロップダウンの (計N) が (計0) になり、solver は
+  // 外部負荷で弾くのに UI は選べそうに見える非対称が生じる (最初の 1 コマを
+  // 置く瞬間こそ外部負荷の表示が要る)。current=0 で seed し、
+  // teacherOverDaily 違反判定は current>0 のみ対象なので違反の挙動は不変。
+  const seedExternalOnly = (dayKey: string, ext: number) => {
+    if (ext > 0 && !teacherDailyCounts[dayKey]) {
+      teacherDailyCounts[dayKey] = { current: 0, external: ext, total: ext };
+    }
+  };
+  Object.entries(sessionCounts).forEach(([k, n]) => seedExternalOnly(k, n));
+  Object.entries(externalCounts || {}).forEach(([k, n]) => {
+    // externalSessions がある dayKey は詳細セッション優先 (上と同じ規則)
+    if (sessionCounts[k] === undefined) seedExternalOnly(k, Number(n) || 0);
+  });
+
   return { teacherDailyCounts, globalUsage };
 }
 
@@ -358,6 +374,10 @@ export function computeViolations({
   const teacherNamesByLength = (teachers || []).map(t => t.name).sort((a, b) => b.length - a.length);
   Object.entries(teacherDailyCounts).forEach(([dayKey, daily]) => {
     if (daily.total <= maxDailyHours) return;
+    // 外部コマのみ (builder 割当ゼロ) の日は違反にしない。K2a の seed で
+    // entry は立つが、builder 側で解消できない負荷を違反として数えると
+    // ノイズになる (従来も entry が無く違反対象外だった挙動を維持)
+    if (daily.current === 0) return;
     let date = '?';
     let teacher = dayKey;
     // teachers が渡されたら suffix match (最長 name 優先) で復元
@@ -484,6 +504,11 @@ export function computeInfeasibilities({
   // 持てるのは合同のみ)。maxDailyHours だけを使うと capacity を過大評価し、
   // 実際は不足なのに警告が出ない false negative になる。
   const capacityItems: Array<{ subject: string; demand: number; capacity: number; teacherCount: number }> = [];
+  // K2d: 実講師 0 名でも「未定」が担当する科目は、solver が未定で埋められる
+  // ため致命 (capacity) ではなく情報 (placeholderOnly) として分離する。
+  // 「実講師がまだ居ない」事実自体は実運用までに解消すべき有益な情報なので
+  // 握りつぶさず、⚠ バッジに数えない informational 種別で出す
+  const placeholderOnlyItems: Array<{ subject: string; demand: number }> = [];
   const perDayCap = currentConfig.periods.length > 0
     ? Math.min(maxDailyHours, currentConfig.periods.length)
     : maxDailyHours;
@@ -506,7 +531,14 @@ export function computeInfeasibilities({
     const eligible = reals.filter(t => t.subjects?.includes(subject));
     const capacity = eligible.length * currentConfig.dates.length * perDayCap;
     if (demand > capacity) {
-      capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+      const placeholderTeaches = (teachers || []).some(
+        t => t?.name === '未定' && t.subjects?.includes(subject)
+      );
+      if (eligible.length === 0 && placeholderTeaches) {
+        placeholderOnlyItems.push({ subject, demand });
+      } else {
+        capacityItems.push({ subject, demand, capacity, teacherCount: eligible.length });
+      }
     }
   });
 
@@ -557,6 +589,7 @@ export function computeInfeasibilities({
   return {
     noTeacherForSlot: { count: noTeacherItems.length, items: noTeacherItems },
     subjectCapacityShortage: { count: capacityItems.length, items: capacityItems },
+    subjectPlaceholderOnly: { count: placeholderOnlyItems.length, items: placeholderOnlyItems },
     quotaCellMismatch: { count: quotaMismatchItems.length, items: quotaMismatchItems },
     subjectQuotaOverDays: { count: quotaOverDaysItems.length, items: quotaOverDaysItems },
   };

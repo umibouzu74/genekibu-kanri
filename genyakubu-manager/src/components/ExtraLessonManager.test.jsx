@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 追加授業管理: 複数日の一括登録 / 編集 / Undo 付き削除の骨格を固定する。
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ExtraLessonManager } from "./ExtraLessonManager";
 import { ToastProvider } from "../hooks/useToasts";
@@ -21,7 +21,7 @@ const LESSON = {
   note: "",
 };
 
-function renderManager({ extraLessons = [LESSON], isAdmin = true } = {}) {
+function renderManager({ extraLessons = [LESSON], isAdmin = true, ...rest } = {}) {
   const onSave = vi.fn();
   render(
     <ToastProvider
@@ -43,6 +43,7 @@ function renderManager({ extraLessons = [LESSON], isAdmin = true } = {}) {
           extraLessons={extraLessons}
           onSave={onSave}
           isAdmin={isAdmin}
+          {...rest}
         />
       </ConfirmProvider>
     </ToastProvider>
@@ -162,6 +163,34 @@ describe("ExtraLessonManager", () => {
       subj: "プレップ個別指導",
       teacher: "香川·福江",
       label: "夏期講習",
+    });
+  });
+
+  describe("外部からの編集 / 新規登録ジャンプ (H1b)", () => {
+    // jsdom は scrollIntoView 未実装なので prototype に spy を生やす
+    let originalScrollIntoView;
+    beforeEach(() => {
+      originalScrollIntoView = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = vi.fn();
+    });
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    it("editTargetId で該当レコードの編集フォームを開き、consume する", () => {
+      const onConsumeEditTarget = vi.fn();
+      renderManager({ editTargetId: 1, onConsumeEditTarget });
+      expect(screen.getByText("追加授業を編集")).toBeInTheDocument();
+      expect(screen.getByLabelText("時間")).toHaveValue("18:30-20:00");
+      expect(onConsumeEditTarget).toHaveBeenCalled();
+    });
+
+    it("newEntryToken で新規登録状態にリセットし、consume する", () => {
+      const onConsumeNewEntry = vi.fn();
+      renderManager({ newEntryToken: 123, onConsumeNewEntry });
+      expect(screen.getByText("追加授業を登録")).toBeInTheDocument();
+      expect(screen.getByLabelText("時間")).toHaveValue("");
+      expect(onConsumeNewEntry).toHaveBeenCalled();
     });
   });
 });

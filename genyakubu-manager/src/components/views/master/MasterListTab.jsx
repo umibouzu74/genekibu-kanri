@@ -286,6 +286,8 @@ export function MasterListTab({
           </div>
         ))}
         {dayGroups.length === 0 && (
+          // 空状態に次アクションへの導線を出す (K3d。EventCalendarView の
+          // 空状態が手本: 案内 + クイックアクション)
           <div
             style={{
               textAlign: "center",
@@ -296,7 +298,41 @@ export function MasterListTab({
               border: "1px solid #e0e0e0",
             }}
           >
-            該当するコマがありません
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 10 }}>
+              該当するコマがありません
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              {(filterDay || filterGrade || filterTeacher || filterSubj) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterDay("");
+                    setFilterGrade("");
+                    setFilterTeacher("");
+                    setFilterSubj("");
+                  }}
+                  style={{ ...S.btn(false), fontSize: 12 }}
+                >
+                  フィルタをクリア
+                </button>
+              )}
+              {isAdmin && onNew && (
+                <button
+                  type="button"
+                  onClick={onNew}
+                  style={{ ...S.btn(true), fontSize: 12 }}
+                >
+                  ＋ コマを追加
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

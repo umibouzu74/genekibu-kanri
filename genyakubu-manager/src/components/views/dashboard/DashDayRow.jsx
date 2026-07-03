@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
-import { EXTRA_LESSON_COLOR } from "../../../constants/colors";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
+import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { SectionColumn } from "./SectionColumn";
 
 export function DashDayRow({
@@ -153,56 +153,7 @@ export function DashDayRow({
       </div>
       {/* 追加授業 (特定日付の単発コマ)。「その日にやる」と明示登録された
           コマなので、休講日でも巻き添えにせず表示する。 */}
-      {extraLessonsForDate.length > 0 && (
-        <div
-          style={{
-            background: EXTRA_LESSON_COLOR.bannerBg,
-            border: `1px solid ${EXTRA_LESSON_COLOR.bannerBorder}`,
-            borderRadius: 8,
-            padding: "8px 12px",
-            marginBottom: 10,
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          {extraLessonsForDate.map((l) => (
-            <div
-              key={l.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-                fontSize: 12,
-              }}
-              title={l.note || undefined}
-            >
-              <span
-                style={{
-                  background: EXTRA_LESSON_COLOR.color,
-                  color: "#fff",
-                  fontSize: 10,
-                  fontWeight: 800,
-                  padding: "1px 6px",
-                  borderRadius: 3,
-                }}
-              >
-                追加授業{l.label ? ` ${l.label}` : ""}
-              </span>
-              <b>{l.time}</b>
-              <span style={{ fontWeight: 700 }}>
-                {l.grade}
-                {l.cls && l.cls !== "-" ? l.cls : ""} {l.subj}
-              </span>
-              {l.teacher && (
-                <span style={{ color: "#555" }}>{l.teacher}</span>
-              )}
-              {l.room && <span style={{ color: "#888" }}>@{l.room}</span>}
-            </div>
-          ))}
-        </div>
-      )}
+      <ExtraLessonBanner lessons={extraLessonsForDate} />
       {fullOff ? (
         <div
           style={{

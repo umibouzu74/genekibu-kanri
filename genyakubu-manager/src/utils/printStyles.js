@@ -20,6 +20,15 @@ function formatPrintedAt(now) {
   return `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
 }
 
+// 紙面ヘッダの対象日 (E1h: 日付フォーマット統一)。"YYYY-MM-DD" を
+// 「YYYY年MM月DD日（曜）」に整形する。月次タイトル・印刷日と同じ和式に
+// 揃える。ISO 形式でない入力はそのまま返す (安全側)。
+export function formatPrintDate(dateStr, day = "") {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+  if (!m) return dateStr || "";
+  return `${m[1]}年${m[2]}月${m[3]}日${day ? `（${day}）` : ""}`;
+}
+
 // 印刷時の用紙サイズ・余白ルール。
 // 月次カレンダーは横向き、それ以外 (タイムテーブル・通常ビュー) は縦向き。
 export function buildPageRule({ hasMonthView }) {
@@ -90,7 +99,7 @@ export function buildMonthHeaderHtml({
   const meta = filterDesc
     ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
     : `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span></div>`;
-  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span></div>`;
+  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span><span><b>追</b>追加授業</span></div>`;
   return `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
 }
 

@@ -138,6 +138,13 @@ export function suggestForQuotaOverDays(item: { subject: string; quota: number; 
   return [hint(`「${subject}」のコマ数 (${quota}) が使う日数 (${days}) を超えています。同じ日に同じ科目は 1 コマまでのため、コマ数を減らすか日数を増やしてください。`)];
 }
 
+// subjectPlaceholderOnly (K2d): 実講師 0 名で「未定」だけが担当する科目。
+// 生成は未定で埋まるため致命ではないが、実運用までに担当割当が必要。
+export function suggestForPlaceholderOnly(item: { subject: string; demand: number }): FixSuggestion[] {
+  const { subject, demand } = item;
+  return [hint(`「${subject}」(全クラス計 ${demand} コマ) は現在「未定」のみが担当しています。生成は未定で埋まりますが、実運用までに実講師を割り当ててください。`)];
+}
+
 // F2m: infeasibility 種別のレジストリ。種別ごとの「popover 表示ラベル」と
 // 「修正提案の生成関数」をここに集約し、buildFixSuggestions と Toolbar の
 // 同型 4 連ブロックを解消する。新しい種別を computeInfeasibilities に
@@ -170,6 +177,15 @@ export const INFEASIBILITY_KINDS: InfeasibilityKind[] = [
     kind: 'capacity',
     label: (it: any) => `${it.subject}: 必要 ${it.demand} コマ > 講師 capacity ${it.capacity} (担当${it.teacherCount}人)`,
     suggest: suggestForCapacity,
+  },
+  {
+    key: 'subjectPlaceholderOnly',
+    kind: 'placeholderOnly',
+    // 未定で生成は通るので致命ではない (⚠ バッジに数えない)。
+    // 「実講師がまだ居ない」の気付きとして popover にだけ出す (K2d)
+    informational: true,
+    label: (it: any) => `${it.subject}: 実講師の担当者がいません (現在は「未定」のみ。生成は可能)`,
+    suggest: suggestForPlaceholderOnly,
   },
   {
     key: 'quotaCellMismatch',

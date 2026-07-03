@@ -2,9 +2,11 @@ import { useCallback, useMemo, useState } from "react";
 import { dateToDay, fmtDate } from "../../data";
 import { S } from "../../styles/common";
 import { encodeShareData } from "../../utils/shareCodec";
+import { extraLessonsOnDate } from "../../utils/extraLessons";
 import { useToasts } from "../../hooks/useToasts";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { DashDayRow } from "./Dashboard";
-import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
+import { shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isSlotBeyondCutoff } from "../../utils/timetable";
 import { PrintButton } from "../PrintButton";
 import { ShareLinkButton } from "../ShareLinkButton";
@@ -18,17 +20,38 @@ import { ShareLinkButton } from "../ShareLinkButton";
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 // Past mode: toggle reveals from/to date pickers for arbitrary range lookup
 // over confirmed subs whose date falls within the selected range.
-export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCutoff, examPeriods = [] }) {
+export function ConfirmedSubsView({
+  slots,
+  holidays,
+  subs,
+  timetables,
+  displayCutoff,
+  examPeriods = [],
+  // 第N回バッジ・追加授業バナー・調整カード用 (K3a: Dashboard 日別と
+  // 同じ DashDayRow を使うので情報密度も揃える)
+  classSets = [],
+  biweeklyAnchors = [],
+  sessionOverrides = [],
+  adjustments = [],
+  extraLessons = [],
+}) {
   const todayStr = fmtDate(new Date());
   const [showPast, setShowPast] = useState(false);
   // Past-mode defaults: last 30 days, up to yesterday (inclusive of both ends).
   const [fromDate, setFromDate] = useState(() => shiftDate(todayStr, -30));
   const [toDate, setToDate] = useState(() => shiftDate(todayStr, -1));
 
-  const { holidaysFor, examPeriodsFor, isOffForGrade } = useMemo(
-    () => makeEventHelpers(holidays, examPeriods),
-    [holidays, examPeriods]
-  );
+  // makeEventHelpers 相当のヘルパ + 第N回計算用の sessionCtx をまとめて取得
+  const { sessionCtx, holidaysFor, examPeriodsFor, isOffForGrade } =
+    useSessionCtx({
+      classSets,
+      slots,
+      displayCutoff,
+      holidays,
+      examPeriods,
+      biweeklyAnchors,
+      sessionOverrides,
+    });
 
   const confirmedSubs = useMemo(
     () => subs.filter((s) => s.status === "confirmed"),
@@ -36,8 +59,11 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
   );
 
   const filteredSubs = useMemo(() => {
+    // from/to は空 (クリア) を「その側は無制限」として扱う
     return showPast
-      ? confirmedSubs.filter((s) => s.date >= fromDate && s.date <= toDate)
+      ? confirmedSubs.filter(
+          (s) => (!fromDate || s.date >= fromDate) && (!toDate || s.date <= toDate)
+        )
       : confirmedSubs.filter((s) => s.date >= todayStr);
   }, [confirmedSubs, showPast, fromDate, toDate, todayStr]);
 
@@ -85,7 +111,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
     }
   }, [filteredSubs, slots, sharing, toasts]);
 
-  const rangeInvalid = showPast && fromDate > toDate;
+  const rangeInvalid = showPast && !!fromDate && !!toDate && fromDate > toDate;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -130,14 +156,14 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
             <input
               type="date"
               value={fromDate}
-              onChange={(e) => e.target.value && setFromDate(e.target.value)}
+              onChange={(e) => setFromDate(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
             <span style={{ fontSize: 12, color: "#666" }}>〜</span>
             <input
               type="date"
               value={toDate}
-              onChange={(e) => e.target.value && setToDate(e.target.value)}
+              onChange={(e) => setToDate(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
           </div>
@@ -202,7 +228,10 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
               holidays={hols}
               slots={daySlots}
               subs={subs}
+              adjustments={adjustments}
               examPeriodsForDate={examPeriodsFor(dateStr)}
+              extraLessonsForDate={extraLessonsOnDate(extraLessons, dateStr)}
+              sessionCtx={sessionCtx}
             />
           );
         })

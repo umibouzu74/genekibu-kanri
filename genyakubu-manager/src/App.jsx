@@ -54,6 +54,7 @@ import {
   buildMonthLabel,
   buildPrintStyles,
   buildTimetableHeaderHtml,
+  formatPrintDate,
 } from "./utils/printStyles";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
@@ -450,6 +451,7 @@ export default function App() {
     teacherSubjects,
     specialEvents,
     extraLessons,
+    activeTimetableId,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -644,9 +646,8 @@ export default function App() {
     const dateInput = el.querySelector('input[type="date"]');
     const printDate = dateInput?.value || "";
     const printDay = printDate ? dateToDay(printDate) : "";
-    const dateText = printDate
-      ? `${printDate}${printDay ? `（${printDay}）` : ""}`
-      : "";
+    // 紙面ヘッダは和式 (YYYY年MM月DD日（曜）) に統一 (E1h)
+    const dateText = printDate ? formatPrintDate(printDate, printDay) : "";
     const dateLabel = printDate
       ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
       : "授業予定";
@@ -886,7 +887,11 @@ export default function App() {
               {selected ? selected : VIEW_TITLES[view] || ""}
             </h1>
           </div>
-          <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+          {/* 操作ボタン群は紙面に不要 (window.print() 系の印刷で写り込んでいた) */}
+          <div
+            className="no-print"
+            style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}
+          >
             {selected && (
               <>
                 <button onClick={() => setView(VIEWS.WEEK)} style={S.btn(view === VIEWS.WEEK)}>
@@ -1024,6 +1029,10 @@ export default function App() {
               extraLessons={extraLessons}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
+              onJumpToRequestedSubs={() => {
+                setSubsInitFilter({ status: "requested" });
+                selectView(VIEWS.SUBS);
+              }}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -1120,6 +1129,18 @@ export default function App() {
                 extraLessons={extraLessons}
                 onSave={saveExtraLessons}
                 isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.EXTRA_LESSON
+                    ? eventEditRequest.id
+                    : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON
+                    ? eventNewRequest.token
+                    : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
               />
             </>
           )}
@@ -1128,6 +1149,7 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               specialEvents={specialEvents}
+              extraLessons={extraLessons}
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1167,6 +1189,7 @@ export default function App() {
               teacherSubjects={teacherSubjects}
               classSets={classSets}
               displayCutoff={displayCutoff}
+              extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
               onDelSessionOverride={overridesCrud.del}
@@ -1176,7 +1199,19 @@ export default function App() {
             />
           )}
           {view === VIEWS.CONFIRMED_SUBS && !selected && (
-            <ConfirmedSubsView slots={slots} holidays={holidays} subs={subs} timetables={timetables} displayCutoff={displayCutoff} examPeriods={examPeriods} />
+            <ConfirmedSubsView
+              slots={slots}
+              holidays={holidays}
+              subs={subs}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              examPeriods={examPeriods}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              adjustments={adjustments}
+              extraLessons={extraLessons}
+            />
           )}
           {view === VIEWS.ABSENCE_FLOW && !selected && (
             <AbsenceWorkflowView
@@ -1238,6 +1273,10 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              onEditExtraLesson={(id) => {
+                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
               displayCutoff={displayCutoff}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1262,6 +1301,10 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              onEditExtraLesson={(id) => {
+                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -1343,6 +1386,7 @@ export default function App() {
             holidays={holidays}
             examPeriods={examPeriods}
             specialEvents={specialEvents}
+            extraLessons={extraLessons}
             selectedTeacher={selected}
             onSelectTeacher={(t) => {
               selectTeacher(t);
@@ -1477,6 +1521,8 @@ export default function App() {
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
           .no-print { display: none !important; }
+          /* E1h: 時間グループ / カレンダーセルがページ境界で割れないように */
+          .dash-time-group, .event-cal-cell { break-inside: avoid; page-break-inside: avoid; }
           body { font-size: 10px !important; }
           input, select, textarea { font-size: 10px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }

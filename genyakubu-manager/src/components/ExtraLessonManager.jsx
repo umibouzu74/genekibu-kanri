@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ALL_GRADES, isValidDateStr, fmtDateWeekday } from "../data";
 import { EXTRA_LESSON_COLOR } from "../constants/colors";
 import { nextNumericId } from "../utils/schema";
@@ -6,6 +6,7 @@ import { describeExtraLesson } from "../utils/extraLessons";
 import { splitTeacherField } from "../utils/biweekly";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
+import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 
@@ -18,8 +19,18 @@ const LABEL_PRESETS = ["夏期講習", "冬期講習", "春期講習", "テス�
 // 実施日を複数選んで一括登録できる (日付以外のフィールドは共通)。
 // 削除は cascade が無い単純削除なので removeWithUndo (Undo トースト) を使う
 // (リポジトリ CLAUDE.md の削除 UX ルール)。
-export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
+export function ExtraLessonManager({
+  extraLessons,
+  onSave,
+  isAdmin,
+  // イベントカレンダー等の外部からの編集 / 新規登録ジャンプ (H1b)。
+  editTargetId = null,
+  onConsumeEditTarget,
+  newEntryToken = null,
+  onConsumeNewEntry,
+}) {
   const toasts = useToasts();
+  const formRef = useRef(null);
   const [dates, setDates] = useState([]); // 実施日 (複数可)
   const [dateInput, setDateInput] = useState("");
   const [time, setTime] = useState("");
@@ -166,6 +177,23 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
     (a, b) => a.date.localeCompare(b.date) || a.id - b.id
   );
 
+  useEditTarget({
+    editTargetId,
+    items: extraLessons,
+    onEdit: handleEdit,
+    onConsume: onConsumeEditTarget,
+    formRef,
+    isAdmin,
+  });
+
+  useNewEntryTarget({
+    token: newEntryToken,
+    onReset: resetForm,
+    onConsume: onConsumeNewEntry,
+    formRef,
+    isAdmin,
+  });
+
   const fieldRow = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 };
   const fieldLabel = { fontSize: 12, fontWeight: 700 };
 
@@ -186,6 +214,7 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
 
       {isAdmin && (
         <div
+          ref={formRef}
           style={{
             background: "#fff",
             borderRadius: 8,
@@ -526,9 +555,10 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
         )}
       </div>
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
-        ※追加授業はダッシュボード (日別) に表示されます。担当講師を入力すると、
-        その講師の月間カレンダー・週間予定の直近リストにも表示されます
-        (担当未入力のコマはダッシュボードのみ)。
+        ※追加授業はダッシュボード (日別・時間割の両モード) と
+        イベントカレンダー (表示トグル ON 時) に表示され、Cmd+K 検索からも
+        引けます。担当講師を入力すると、その講師の月間カレンダー・週間予定の
+        直近リストにも表示されます (担当未入力のコマは全体ビューのみ)。
         授業回数のカウント (第N回) には含まれません。
       </div>
     </div>

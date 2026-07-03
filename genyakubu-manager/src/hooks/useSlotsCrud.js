@@ -97,19 +97,23 @@ export function useSlotsCrud({
   };
 
   const del = async (id) => {
-    const linkedSubs = subs.filter((s) => s.slotId === id);
+    // K2f: slotId は Firebase 手編集等で文字列になりうる。schema の FK 検証
+    // (toSlotIdKey) と同じく String 化で型を正規化して照合する (厳格 ===
+    // だと文字列 slotId の関連データが cascade されず残る)
+    const sameId = (v) => String(v) === String(id);
+    const linkedSubs = subs.filter((s) => sameId(s.slotId));
     // 調整は (a) host が消える = 完全削除、(b) 吸収側として参照される = 該当 id を抜くだけ、
     // の 2 種類があるため、ユーザー説明用に分けてカウントする。
-    const removedAdjustments = (adjustments || []).filter((a) => a.slotId === id);
+    const removedAdjustments = (adjustments || []).filter((a) => sameId(a.slotId));
     const updatedAdjustments = (adjustments || []).filter(
       (a) =>
-        a.slotId !== id &&
+        !sameId(a.slotId) &&
         a.type === "combine" &&
         Array.isArray(a.combineSlotIds) &&
-        a.combineSlotIds.includes(id)
+        a.combineSlotIds.some(sameId)
     );
-    const linkedOverrides = (sessionOverrides || []).filter(
-      (o) => o.slotId === id
+    const linkedOverrides = (sessionOverrides || []).filter((o) =>
+      sameId(o.slotId)
     );
     const extras = [];
     if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件削除`);
@@ -131,18 +135,18 @@ export function useSlotsCrud({
     if (!ok) return;
     saveSlots(slots.filter((s) => s.id !== id));
     if (linkedSubs.length) {
-      saveSubs(subs.filter((s) => s.slotId !== id));
+      saveSubs(subs.filter((s) => !sameId(s.slotId)));
     }
     if ((removedAdjustments.length || updatedAdjustments.length) && saveAdjustments) {
       const next = [];
       for (const adj of adjustments) {
-        if (adj.slotId === id) continue;
+        if (sameId(adj.slotId)) continue;
         if (
           adj.type === "combine" &&
           Array.isArray(adj.combineSlotIds) &&
-          adj.combineSlotIds.includes(id)
+          adj.combineSlotIds.some(sameId)
         ) {
-          const remaining = adj.combineSlotIds.filter((sid) => sid !== id);
+          const remaining = adj.combineSlotIds.filter((sid) => !sameId(sid));
           if (remaining.length === 0) continue;
           next.push({ ...adj, combineSlotIds: remaining });
         } else {
@@ -152,7 +156,7 @@ export function useSlotsCrud({
       saveAdjustments(next);
     }
     if (linkedOverrides.length && saveSessionOverrides) {
-      saveSessionOverrides(sessionOverrides.filter((o) => o.slotId !== id));
+      saveSessionOverrides(sessionOverrides.filter((o) => !sameId(o.slotId)));
     }
     const removedParts = [];
     if (linkedSubs.length) removedParts.push(`代行 ${linkedSubs.length} 件`);

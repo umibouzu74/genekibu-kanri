@@ -686,10 +686,18 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: fixSuggestions.test.js (新規 11) / Toolbar.test.jsx (+1)。
 - **延期**: 提案のワンクリック自動適用は E2b (修復 wizard) で扱う。ここまでは提示のみ。
 
-#### E1h. ⚪ 印刷スタイル微調整 (新規)
+#### E1h. 🟡 印刷スタイル微調整 (主要分 2026-07-03 完了)
 - **現状**: 2 系統の印刷経路 (CLAUDE.md 印刷ルール参照) で運用中。MonthView / ExcelGridView は popup 方式、その他は `window.print()`。
-- **改善**: 紙面ヘッダの日付フォーマット統一、改ページ制御 (`break-inside: avoid`)、ロックセルのハッチングが薄すぎないか確認。
-- **規模**: 小 / **価値**: 低〜中
+- **✅ 完了分 (2026-07-03)**:
+  - **日付フォーマット統一**: `formatPrintDate` (printStyles.js) を新設し、
+    タイムテーブル紙面ヘッダの対象日を「YYYY年MM月DD日（曜）」の和式に
+    (月次タイトル・印刷日と同形式)。テスト 3 件
+  - **改ページ制御**: window.print() 系にも `break-inside: avoid` を追加
+    (`.dash-time-group` = Dashboard の時間グループ / `.event-cal-cell` =
+    イベントカレンダーの日セル)。月次 popup 系は従来から対応済み
+  - **凡例の追従**: 月次印刷凡例に「追 = 追加授業」を追加 (H1b 対応)
+- **残り**: ロックセルのハッチング (builder 側) が紙面で薄すぎないかの
+  目視確認のみ (実機確認項目、G.2 に計上)
 
 ---
 
@@ -806,10 +814,23 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **残り**: 「Excel で開いた時の見栄え」の最終目視は引き続き C4 残
   (G.2 の実機確認項目)。バイナリ上のスタイル存在はここで自動検証済み。
 
-#### E3c. 🟡 印刷出力スナップショット (新規)
-- **現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
-- **改善**: Playwright で `page.pdf()` → PDF を画像化 → pixelmatch / VRT。少なくとも 7 ビュー × 1 サンプルずつ。
-- **規模**: 中 / **価値**: 中 (印刷バグは現場でしか発覚しない)
+#### E3c. 🟡 印刷出力スナップショット (第 1 弾完了 2026-07-03)
+- **旧現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
+- **✅ 完了分 (構造スモークテスト / e2e/print.spec.js 4 件)**:
+  - **window.print() 系**: print メディアエミュレーションで
+    「.sidebar と全 .no-print が消え、本文が残る」を Dashboard /
+    イベントカレンダー (追加授業バッジ込み) / 週間予定で検証。
+    トップバー操作ボタンの写り込み (H1e 確認中に発見・修正済み) の
+    ような回帰を検出できる
+  - **popup 注入系**: 月次カレンダーの 🖨 で popup にタイトル・印刷日・
+    凡例 (buildMonthHeaderHtml) と本文が注入されることを popup DOM で検証
+- **判断メモ**: pixel 比較 (page.pdf → pixelmatch) は環境のフォント差で
+  flaky になるため導入しない。構造検証 + printStyles.test.js (純関数) の
+  2 層で守る
+- **残り**: ~~ExcelGridView (タイムテーブル) の popup 注入~~ ✅ e2e 追加
+  (2026-07-03、中学/高校ヘッダ + 和式対象日 + 印刷日)。
+  ConfirmedSubsView / MasterView の print 検証は未カバー (同型なので
+  必要になったら追加)
 
 #### E3d. ✅ project JSON 読込時の schema バリデーション (2026-06-29 完了)
 - **旧現状**: `loadInitialProject` は JSON.parse 失敗のみ捕捉。schema 違反 (`tabs` / `config.dates` が配列でない等) は migrate / downstream で crash しうる。
@@ -862,20 +883,54 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **実装**: date/period/class の ID Set を作り (O(D+P+C))、既存 schedule キーを `parseKey` で分解して存在判定する方向に反転 (O(D+P+C + K))。挙動は等価 (不正キーは破棄、消滅 entity 参照は破棄)。constants.js が `scheduleKey.parseKey` を import (scheduleKey 側は無 import で循環なし)。
 - **テスト**: constants.test.js に cleanSchedule の 4 ケース追加 (有効キー保持 / 消滅 entity 破棄 / 不正形式破棄 / 複数タブ独立)。
 
-#### E4b. 🟡 solver スケーリング計測 (旧 D3b)
-- **現状**: `MAX_ITERATIONS = 500_000`。何コマまでなら数秒以内に解けるか未計測。
-- **改善**: ベンチマーク (大規模 fixture を作って autoGenerator を走らせ ms 計測) + 必要に応じ部分解戦略の改善。
-- **規模**: 中 / **価値**: 中
+#### E4b. 🟡 solver スケーリング計測 (計測完了 2026-07-03)
+- **✅ 完了分**: `logic/solverScaling.test.js` + `npm run bench:solver`
+  (BENCH=1 ガード付き。通常の `npm test` では skip)。D×P×C と科目クォータの
+  均等性を変えて generateSinglePattern を実測する
+- **実測結果 (2026-07-03、コンテナ環境、seed 2 種)**:
+  - 実行時間は maxIterations (500k) で頭打ち。**最悪でも 1 案 1.6 秒
+    (168 コマ) 〜 3.2 秒 (1008 コマ)** で返る。1 iteration ~3µs → 大規模で
+    ~6µs (コマ数にほぼ線形)
+  - **難易度はコマ数ではなくクォータの均等性に支配される**:
+    500 コマでも `D*P % 科目数 == 0` (均等) なら数百 iteration で完全解。
+    168 コマでも不均等 (24 = 5+5+5+5+4) だと 500k を使い切り部分解
+    (159/168 前後) に落ちる
+  - 既定 500k は「待ち時間の上限を数秒に抑える」妥当な既定と判断
+    (3 案生成でも 10 秒以内 + Worker 化済みで UI は塞がない)
+- ✅ **改善実施 (2026-07-03)**: 科目の試行順を単純シャッフルから
+  **slack 順 (= その科目をまだ置ける残り日数 - 残クォータ、昇順)** に変更
+  (`orderSubjectsBySlack`)。同点はシャッフル順を保持し探索多様性は維持。
+  - **効果 (実測)**: 168 コマ不均等構成が、旧実装では **200 万 iteration
+    でも部分解 (165/168)** だったのに対し、既定 50 万以内 (~20〜26 万,
+    1.4〜1.9 秒) で**完全解**に。小規模 (27 コマ) も 6.5 万 → 28 iteration
+    に短縮。均等クォータ構成は従来どおり数百 iteration で不変
+  - **コスト**: 1 node あたり O(日数×時限数) のスキャンが乗り iteration
+    単価は約 2 倍 (~6→12µs @ 大規模)。上限到達時の最悪待ち時間は
+    1 案 ~3.2 秒 → ~6.5 秒 (864 コマ) に伸びるが、実運用サイズでは
+    完全解率の向上が支配的と判断
+  - **途中で試して不採用**: 残クォータ降順のみ (スキャン不要で安いが、
+    168 コマ構成が 200 万 iteration でも解けず効果不足)
+  - **ベンチ側のバグも発見・修正**: 初版 XL (12d×6p×14c) は
+    periods(6) > 科目数(5) のため「同日同クラス科目重複禁止」で構造的に
+    解無しだった。XL を 12d×4p×18c に差し替え (periods ≤ 科目数 を
+    ベンチ構成の約束事としてコメント化)
 
 #### E4c. ⚪ excelExport バンドル削減 (旧 D3c)
 - **現状**: 944 kB (gzip 273 kB)。dynamic import で起動には影響無いが、初回 Excel 出力に数百 ms 遅延。
 - **改善**: exceljs の Workbook + xlsx writer のみ tree-shake、または OOXML 自前。
 - **規模**: 大 / **価値**: 低 (動的 import で吸収済み)
 
-#### E4d. 🟡 useAnalysis 再計算プロファイル (新規)
-- **現状**: useAnalysis は 5 段 useMemo (D4e + D1c で追加)。`project.tabs` が変わると `globalUsage` / `tabErrorCounts` 両方が再計算。タブ数 / セル数が増えた時の hot path を計測していない。
-- **改善**: React Profiler で 100 操作分の reflow を記録し、ボトルネックがあれば WeakMap キャッシュや selective recompute 化。
-- **規模**: 小〜中 / **価値**: 中
+#### E4d. ✅ useAnalysis 再計算プロファイル (2026-07-03 計測完了・最適化不要と判断)
+- **旧現状**: useAnalysis は 5 段 useMemo。タブ数 / セル数が増えた時の hot path が未計測だった。
+- **計測**: `utils/analysisScaling.test.js` + `npm run bench:analysis`
+  (BENCH=1 ガード)。実運用超級の合成 project (3 タブ × 7 クラス × 12 日 ×
+  4 限 = 1008 セル全充填・講師 30 名) で関数別のフル再計算コストを実測
+- **結果 (2026-07-03、コンテナ環境)**: 合計 **~4.3ms/回**
+  (内訳: tabViolationCounts 1.9 / globalUsage 1.2 / activeAnalysis 0.6 /
+  violations 0.3 / infeasibilities+fix 0.1 / dashboard 0.1)。
+  キー入力のフレーム予算 16ms に対して十分小さい
+- **判断**: WeakMap キャッシュ / selective recompute は**不要** (時期尚早)。
+  タブ数が 10 超級になったら bench:analysis を再実行して判断し直す
 
 #### E4e. ⚪ React 19 / Compiler 移行検討 (新規)
 - **現状**: 手書きの useMemo / useCallback / Context value memo (CLAUDE.md 別記載なし)。
@@ -1551,6 +1606,13 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
   分離。v3 次元 (既に {id,label}) のキー成分は「ID」として存在確認つき
   素通し、v2 次元 (string[]) のみ「配列位置」→ ID 変換。歯抜け ID を含む
   外部 JSON でセルが隣へシフト / 消失する問題を解消
+- ✅ **E5e 回帰 (2026-07-03 ユーザ報告で発覚・修正)**: TypeScript 化で
+  builder の非テストソースが全て .ts/.tsx になったのに、tailwind.config.js
+  の content グロブが `**/*.{js,jsx}` のままだったため、Tailwind が
+  ユーティリティクラスをほぼ全てパージし builder UI が無スタイル
+  (素の HTML) になっていた。グロブに ts/tsx を追加して解消
+  (BuilderApp の CSS: 1.65 kB → 22.7 kB)。**教訓: ファイル拡張子を変える
+  リファクタでは tailwind.config 等ビルド設定の content グロブも要追従**
 
 ### G.4 構造改善の提案 (F.3 起源)
 
@@ -1583,14 +1645,17 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 
 ### G.5 機能・テストの未着手 (E 系、規模順)
 
-小〜中: E1h 印刷微調整 · E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
-E4d useAnalysis プロファイル · D7c テスト共通基盤
-(~~E1a/E1f 残~~ ✅ 2026-07-03 コード側完了、実機確認は G.2)
+小〜中: E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
+D7c テスト共通基盤 (**判断メモ**: 具体的な痛みが無い投機的共通化なので
+当面見送り推奨 — F2l の見送りと同型の理由)
+(~~E1a/E1f 残~~ ✅ コード側完了・実機確認は G.2 / ~~E1h 主要分~~ ✅
+日付統一・改ページ・凡例 / ~~E4d useAnalysis プロファイル~~ ✅ 計測の結果
+最適化不要 — 2026-07-03 完了)
 
-中: E3c 印刷スナップショット · E3g クロスブラウザ · E4b ソルバ計測 ·
-E2a Excel 取込 (要 mapping UI)
+中: E3g クロスブラウザ · E2a Excel 取込 (要 mapping UI)
 (~~E3e ConfigModal sub-tests 拡充~~ ✅ +38 件 / ~~E3a Worker E2E~~ ✅
-Playwright ×2 / ~~E3b xlsx round-trip~~ ✅ — いずれも 2026-07-03 完了)
+Playwright ×2 / ~~E3b xlsx round-trip~~ ✅ / ~~E3c 印刷スモーク第 1 弾~~ ✅
+e2e 4 件 / ~~E4b ソルバ計測~~ ✅ bench:solver — いずれも 2026-07-03 完了)
 
 大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
 E5 系残り (ID / style / state lib / Worker 分析 — ~~TS~~ ✅ 完了) · E6a Firebase ·
@@ -1613,12 +1678,20 @@ F2h前段 / F2j / F2m も同時に解消)。
 1. ~~2 バッチ分の PR レビュー・マージ~~ ✅ PR #143 マージ済み (2026-07-03)
 2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-3. コードの軽い一手なら **E3c** (印刷スナップショット — Playwright 基盤は
-   E3a で導入済み) か **E4b** (ソルバ計測)
-   (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ / ~~E3b~~ ✅ 2026-07-03 完了)
-4. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
+3. ~~コードの軽い一手なら E3c か E4b~~ ✅ 両方完了 (2026-07-03。E1h 主要分・
+   H1b・H1e・H2f も同セッションで解消)。~~次は E4d か D7c~~ ✅ E4d 計測完了
+   (最適化不要)、D7c は見送り推奨 (G.5 の判断メモ)。
+   **追加授業まわり (H1a〜H1h) はコード側全て完了** — 残る H1d (代行対応)
+   は実運用で困ってから (H.1 の設計メモ参照)。
+   **新規の修正・改善候補は §K (2026-07-03 棚卸し) に集約** — 次の一手は
+   K2a (builder の (計N) 外部コマ取りこぼし) が最優先
+4. 親アプリ側の設計判断待ち: **H1d** (追加授業への代行) /
+   **H2a·H2b** (プレップのデータ化・koshu type) — いずれも方針決定が先
+5. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
    (2026-07-03)** — builder の非テスト source は 100% TypeScript。
    次の大物は **E5b (完全 ID 化)** か **E5c (style 統一)** (着手は要相談)
+6. ~~ソルバ改善の新候補 (E4b 計測より): 科目選択の LCV 化~~ ✅ slack 順で
+   実装完了 (2026-07-03)。168 コマ不均等構成が部分解 → 完全解に (E4b 参照)
 
 ---
 
@@ -1635,20 +1708,39 @@ F2h前段 / F2j / F2m も同時に解消)。
 WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 以下は意図的にスコープ外にした拡張:
 
-- **H1a. ExcelGridView (時間割グリッド) への表示**: グリッドの列は
-  slot の曜日ベースで動的生成 (`buildColumnDefs`) されるため、特定日付の
-  単発コマは「追加授業専用セクション」等の設計判断が必要。
-  Dashboard の「時間割」モードも同経路。規模: 中
-- **H1b. EventCalendarView への表示**: 現状イベント (休講/テスト期間/
-  特別イベント) 専用。追加授業をバーとして出すなら visibility トグル
-  (EventVisibilityToggles) の種別追加も必要。規模: 小〜中
+- ✅ **H1a (2026-07-03)**: 時間割グリッドに表示日の追加授業をバナー表示。
+  **設計判断**: グリッドの列は曜日ベースで特定日付の単発コマを埋め込めない
+  ため、セルには挿入せず「表示日 (displayDate = 代行日 > viewDate >
+  選択曜日の直近日、第N回表示と同じ意味論) の追加授業」を Dashboard 日別と
+  同じ緑バナーとしてグリッド上部に出す。バナーは `ExtraLessonBanner` に
+  共有化 (DashDayRow から抽出)。適用先は Dashboard 時間割モードと
+  欠勤組み換えの時間割タブ。**コースマスター管理は対象外** (週次テンプレの
+  編集画面で、特定日付の単発コマは文脈違いのため)。テスト +3
+- ✅ **H1b (2026-07-03)**: イベントカレンダーに追加授業を表示。
+  visibility トグル「追加授業」(緑・既定 OFF) を追加 — イベントカレンダー
+  専用の opt-in (`includeExtraLessons`) で、MonthView の追加授業は
+  「講師本人の担当コマ」なので従来どおり常時表示のまま。グリッドは
+  「開始時刻 + 短ラベル」の単日バッジ、一覧行は種別ラベル・担当・教室・
+  メモ付き。バッジクリックで ExtraLessonManager の編集フォームへジャンプ
+  (useEditTarget/useNewEntryTarget を配線)、新規登録ボタンにも 4 種目と
+  して追加。テスト +7 (EventCalendarView.test.jsx 新設 5 + Manager 2)
 - ~~**H1c. 回数カウント (第N回) への通算**~~ **却下 (2026-07-03、
   ユーザ判断: 不要)**。追加授業は回数に数えない仕様で確定。
   再提案しないこと (リポジトリ CLAUDE.md の却下リストにも記載)
 - **H1d. 追加授業への代行対応**: substitutions は slotId (週次 Slot) 前提。
   追加授業の担当者が休む場合は現状「編集で担当を書き換える」運用。規模: 中
-- **H1e. 印刷対応の確認**: Dashboard 日別のカードは既存の印刷系統
-  (PrintButton) に乗るはずだが、紙面での見え方は未確認 (実機確認項目)
+  - **設計メモ (2026-07-03)**: 実装するなら Substitute に `extraLessonId`
+    (slotId と排他) を追加し、SubstituteForm のピッカー・代行確定一覧・
+    月次/週間/日別の「代」バッジ・集計 (tally) の全消費側を対応させる
+    必要がある。触る面が広いので、実運用で「編集で書き換える」運用が
+    実際に困ってから着手するのが良い (要相談)。なお削除 UX は cascade が
+    生じるため confirmedRemove への切替が必要 (CLAUDE.md 削除ルール)
+- ✅ **H1e (2026-07-03 確認済み)**: Dashboard 日別の追加授業バナーは
+  Chromium の print メディアエミュレーションで紙面に正しく出ることを確認
+  (緑バナー・種別ラベル・担当・教室とも OK)。確認中に **トップバーの
+  操作ボタン群 (週間/月間・コマ追加・時間割セレクタ・🖨印刷・まとめて印刷)
+  が window.print() 系の印刷に写り込むバグを発見・修正** (コンテナに
+  no-print を付与。PrintButton を使う全ビューに効く)
 - ✅ **H1f (2026-07-03 ユーザ報告で発覚・修正)**: 複数講師の追加授業が
   講師のスケジュールに出ないバグ。原因は区切り文字の不一致 —
   isSlotForTeacher / getSlotTeachers は "·" (U+00B7) しか複数講師区切りと
@@ -1660,6 +1752,9 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 - ✅ **H1g (2026-07-03)**: 追加授業の 📋 コピーボタン。一覧の内容を
   フォームへ複製して新規登録状態にする (実施日は誤登録防止のため
   引き継がず選び直し)。次の講習期の一括登録が楽になる。テスト +2
+- ✅ **H1h (2026-07-03)**: Cmd+K パレットで追加授業を横断検索
+  (科目・種別ラベル・担当・日付・「追加授業」)。選択すると
+  ExtraLessonManager の編集フォームへジャンプ (H1b の editTargetId 経路)
 
 ### H.2 調査で見つかった既存コードの改善候補 (2026-07-03)
 
@@ -1684,10 +1779,10 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
   削除しても classSets の slotIds 参照は掃除されない (FK 検証は import 時
   のみ)。新しい FK を作る際は同じ穴に注意。extraLessons は FK を持たない
   設計にしたので今回は非該当
-- **H2f. specialEvents で追加授業を代用している既存データの案内**:
-  これまで「告知イベント」で代用していた場合、追加授業への移行を促す
-  一言を UI か運用メモに置くと親切 (specialEvents は授業ロジックに
-  影響しない設計のまま)
+- ✅ **H2f (2026-07-03)**: SpecialEventManager 末尾の注記に「授業として
+  実施する単発コマは追加授業管理で登録 (告知イベントで代用していた場合は
+  移行を推奨)」の一言を追加 (specialEvents は授業ロジックに影響しない
+  設計のまま)
 
 ### H.3 運用メモ
 
@@ -1812,3 +1907,150 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   のみ顕在化) — 修正済みだが実害は無し
 - Playwright の port 5173 固定は vite デフォルトとの整合前提 (strictPort は
   dev の UX を落とすため導入しない)
+
+---
+
+## K. 2026-07-03 棚卸しレビュー (3 方面並列調査) の結果
+
+親アプリ UI / builder / データ層・横断の 3 方面を並列調査し、既出
+(§E〜§J、CLAUDE.md 却下リスト) を除いた新規の発見 35 件を整理した。
+確定した小粒バグ 7 件は即日修正済み (K.1)。
+
+### K.1 修正済み (2026-07-03)
+
+- ✅ **K1a**: Dashboard「依頼中（未確定）」カードがクリック不能だった →
+  代行一覧 (依頼中フィルタ) へ遷移可能に (EventSummaryCards と同型の
+  role/tabIndex/Enter·Space 付き)
+- ✅ **K1b**: AllView の講師名セル (講師別スケジュールへの主要導線) が
+  キーボード到達不能 → role/tabIndex/onKeyDown を追加
+- ✅ **K1c**: MasterView の講師・科目フィルタが `s.teacher.includes(...)`
+  の生参照で、teacher 欠落レコード (Firebase 別クライアント書込等) で
+  ビューごとクラッシュしうる → null ガード
+- ✅ **K1d**: ConfirmedSubsView の期間フィルタが日付クリアを握り潰し、
+  入力表示 (空) と内部 state (旧値) が乖離 → 空 = その側は無制限として受理
+- ✅ **K1e**: データ初期化が teacherSubjects を残す (localStorage の
+  removeItem だけでは React state と Firebase が残り、リロード / 他端末
+  同期で復活) → `saveTeacherSubjects({})` を追加
+- ✅ **K1f**: インポート時に displayCutoff だけ migrate 未適用
+  (cohorts 等の後付けフィールドが補完されない) → migrateDisplayCutoff を適用
+- ✅ **K1g**: activeTimetableId が export/import 対象外で、取込後に時間割
+  選択が宙吊りになりうる → export に追加 + import は取込 timetables に
+  存在する ID のときだけ復元
+
+### K.2 修正候補 (バグ疑い、価値順)
+
+- ✅ **K2a (2026-07-03 修正)**: 講師ドロップダウンの「(計N)」が、その日に
+  builder のセルがまだ無い講師の externalCounts/externalSessions 分を
+  取りこぼして (計0) 表示 (solver は外部負荷で弾くのに UI は選べそうに
+  見える非対称)。computeGlobalUsage で外部コマのみの (date, teacher) にも
+  current=0 の entry を seed。**teacherOverDaily 違反判定は current>0 のみ
+  対象にして従来挙動を維持** (builder 側で解消できない負荷は違反にしない)。
+  テスト +2
+- ✅ **K2b (2026-07-03 修正)**: subject/remove が当該科目の locked セルを
+  「空 + locked = 空けておく」(F5w) に黙って変換していた → ロックの対象
+  (科目割当) が消えた以上、locked も落として通常の未充填に戻す。テスト +1
+- ✅ **K2c (2026-07-03 修正)**: dates/removeFromPool が
+  externalSessionPresets の日付範囲参照を掃除しない非対称を解消 (該当
+  フィールドだけ未指定に戻す。同名ラベル再追加時の誤参照を防ぐ)。テスト +1
+- ✅ **K2d (2026-07-03、ユーザ判断で案 (c) を採用)**: 「未定のみが担当する
+  科目」を致命の capacity 警告から **informational な新種別
+  `subjectPlaceholderOnly`** に分離。⚠ バッジには数えず popover にだけ
+  「実講師がまだ居ない (生成は可能)」と出す。実講師も未定も居ない科目は
+  従来どおり致命の capacity のまま。テスト更新 4 + 追加 2
+- ✅ **K2e (2026-07-03、ユーザ判断で現状維持に確定)**: MonthView の
+  未確定期間 (終講日 cutoff 後) における代行カード・特訓シフトの表示は
+  **現状どおり表示のまま**とする。日付を明示して確定させた予定なので、
+  隠すと「登録したのに見えない」混乱の方が大きい。週次テンプレの投影
+  (主スロット) と追加授業だけが cutoff 非表示、という仕様で確定
+  (コード変更なし。再提案しないこと)
+- ✅ **K2f (2026-07-03 修正)**: slotId 照合を orphanCleanup と
+  useSlotsCrud の cascade でも String 正規化 (schema の toSlotIdKey と
+  同一視ルールを統一)。文字列 slotId の関連データが cascade されない /
+  生存スロットが孤立と誤検出される問題を解消。テスト +2
+- **K2g (data・記録のみと判断 2026-07-03)**: parseLocalDate が範囲検証せず
+  "2026-02-30" → 3/2 に silent ロールオーバー (dateHelpers.js:46)。
+  **対応見送りの理由**: null を返す契約変更は既存呼び出し側 (biweekly /
+  eachDateStrInRange) の null 未対応を壊すリスクの方が大きい。入力境界は
+  isValidDateStr で防御済みで、保存/取込データの根本対策は K2i (schema の
+  日付検証統一) 側でやるのが筋
+- **K2h (builder・小・要検証)**: 分析キーが `${date}-${period}-${teacher}`
+  の素朴結合で、ヘッダラベルに "-" を含めると衝突しうる
+  (analysisHelpers.ts:84,160 / makeExternalKey)。labelRefs は cascade 側のみ対応済み
+- **K2i (data・中・確実だが要設計)**: schema の日付フィールド検証が
+  extraLessons/anchor だけ isIsoDate で他は isString の非対称。非 ISO
+  文字列が validation を通過し dateToDay / overlapsRange を破壊しうる。
+  既存データの互換 (どの形式が実在するか) を確認してから揃えること
+
+### K.3 改良・一貫性 (UX)
+
+- ✅ **K3a (2026-07-03)**: 確定代行一覧の日別表示に sessionCtx (第N回) /
+  追加授業バナー / 調整カードを配線し、Dashboard 日別と情報密度を統一
+  (makeEventHelpers は useSessionCtx に置換)
+- ✅ **K3b (2026-07-03)**: クリック可能なテーブルコントロールのキーボード
+  対応を横展開 — ソート列ヘッダ (AdjustmentListTab / OverrideListTab に
+  tabIndex + Enter·Space + aria-sort)、月次集計の展開行 (SubTallyTab に
+  tabIndex + Enter·Space + aria-expanded)、MonthView の編集用コマカード
+  (role=button + tabIndex + Enter·Space)
+- ✅ **K3c (2026-07-03)**: AbsenceWorkflowView の講師ドロップダウンに
+  aria-expanded/aria-haspopup を追加し、Escape (IME 変換中は無視) で
+  閉じられるように
+- ✅ **K3d (2026-07-03)**: リスト系の空状態を底上げ — MasterListTab /
+  SubListTab は「フィルタをクリア」+ 新規登録 CTA (admin のみ)、
+  Adjustment/OverrideListTab は作成場所への案内文 (これらは他画面の操作から
+  作られるため CTA ではなく導線案内)
+- ✅ **K3e (2026-07-03)**: AbsenceSlotCard の「第N回」を Dashboard /
+  MonthView と同じ青地・白文字の塗りバッジに統一 (aria-label も付与)
+- ✅ **K3f (2026-07-03)**: 月次集計タブを fMonth 空で開いたら当月へ
+  フォールバックする effect を追加 (集計に「月なし」は無意味なため)
+- ✅ **K3g (2026-07-03)**: ContextMenu の NG メニューが現在の状態を反映
+  (「🚫 NG登録」⇔「✅ NGを解除」。teacher.ngSlots × makeNgKey で判定)
+- ✅ **K3h (2026-07-03)**: ロックセルへの drop 拒否に error toast を追加 /
+  貼り付けメニューは clipboard 空で disabled (キーボードナビも disabled を
+  スキップ)
+- ✅ **K3i (2026-07-03)**: タブ名の重複ガードを追加 (reducer で no-op +
+  TabBar で理由 toast。ヘッダ rename の H3 と同じ扱い)
+
+### K.4 追加機能・便利機能
+
+- ✅ **K4a (2026-07-03)**: builder タブ間のスケジュール複製を実装。
+  非アクティブタブの ⧉ ボタン → confirm → `schedule/copyFromTab` で
+  現在のタブへ複製 (Undo 可)。クラスの対応付けは **label 一致を優先、
+  無ければ同じ並び位置 (index)**。対象タブが使わない日付・時限
+  (activeDateIds/activePeriodIds) のセルは複製しない (不可視セルへの
+  ゴミ書込防止、E-3 と同じ扱い)。テスト +6 (reducer 4 + TabBar 2)
+- **K4b (中・要ベンチ)**: 自動生成の numPatterns 案を複数 Worker で並列化 —
+  現状単一 worker 直列で 3 案 ~10 秒 → 理論 ~3 秒。案は独立 (シード違い)
+  なので分割は素直
+- ✅ **K4c (2026-07-03)**: MonthView の追加授業カードと WeekView の直近
+  バナー行にクリック / Enter·Space で ExtraLessonManager の編集へジャンプ
+  する導線を追加 (H1b の eventEditRequest 経路を流用)
+
+### K.5 アーキテクチャ級 (要相談、着手前に方針決定)
+
+- ~~**K5a (大)**: Firebase 同期がキー単位の last-writer-wins~~
+  **対応不要と決定 (2026-07-03、ユーザ判断)**: 2 端末での同時編集は運用上
+  発生しないため無視してよい。マージ/楽観ロックの設計はしない
+  (再提案しないこと)
+- ✅ **K5b (2026-07-03)**: Firebase 初回 seed を migrate 済みの値で
+  書き込むよう修正 (raw のままだと旧形式が Firebase に入り他端末が毎回
+  migrate し直す)
+- **K5c (見送り判断 2026-07-03)**: FK 検証の対象外リレーション
+  (partTimeStaff.subjectIds / teacherSubjects / adjustments.targetSlotId /
+  examPrepSchedules.examPeriodId)。**ハード検証の追加は不採用**: これらの
+  dangling 参照は (a) 消費側が防御済みで実害が無い (未分類フォールバック等)、
+  (b) targetSlotId は orphanCleanup が「修復可能」として扱う設計であり、
+  import を丸ごと拒否すると修復可能なバックアップまで取り込めなくなる。
+  やるなら **detectOrphans の対象拡張 (修復志向)** が正しい方向だが、
+  runtime は cascade 済みで手編集バンドル経由のみの穴なので優先度低
+- **K5d (設計トレードオフ)**: isSlotForTeacher の note 部分一致は
+  隔週パートナー検出のための意図的設計だが、短い講師名の過剰マッチが理論上
+  ありうる (biweekly.js:193)。実害が出たらトークン化を検討
+- ~~**K5e**: ソルバの講師選択に LCV / 動的 MRV を導入~~
+  **検証の上で不採用 (2026-07-03)**: 日次負荷の軽い順 (load balancing) を
+  実装して bench:solver で前後比較したところ、**iteration 数が全構成で
+  完全一致** (探索の成否に影響なし) のまま並べ替えコストで iteration 単価が
+  +30%。講師は衝突候補が事前フィルタで弾かれ、残る候補は (単科目講師なら)
+  下流の充足可能性に対して対称なため、試行順が効かない。**効く余地があると
+  すれば「多科目講師を温存する versatility 順」だが、それを測るには
+  多科目講師入りのベンチ構成が先** (必要になったら追加)。動的 MRV も
+  同様にベンチ整備が先行条件

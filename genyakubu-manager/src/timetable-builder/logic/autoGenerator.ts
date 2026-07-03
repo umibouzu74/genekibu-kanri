@@ -78,6 +78,65 @@ function seededShuffle<T>(arr: T[], rng: () => number): T[] {
   return a;
 }
 
+// 科目の試行順: slack (= その科目をまだ置ける残り日数 - 残クォータ) の
+// 昇順で試す (E4b の計測に基づく改善、2026-07-03)。
+//
+// 「同日・同クラスに同じ科目は 1 コマまで」の制約下では、科目 s を置ける
+// 上限は「クラス c に空きセルが残っていて、かつ s が未使用の日」の数。
+// slack が小さい科目 (= 今後の配置余地が残クォータぎりぎり) を先に消費
+// しないと、終盤に「残りコマ数 > 置ける日数」の袋小路へ深部で落ち、
+// バックトラックが探索上限を使い切って部分解になる。
+// 実測: 168 コマ・不均等クォータ (24 = 5+5+5+5+4) の構成が、単純
+// シャッフルでは 200 万 iteration でも部分解 (165/168) 止まりだったのに
+// 対し、slack 順は既定の 50 万 iteration 内 (~26 万) で完全解に到達。
+// 同点はシャッフル順を保つ (sort は stable) ので、リスタートごとの探索
+// 多様性は失われない。1 node あたり O(日数×時限数) のスキャンが乗るため
+// iteration 単価は約 2 倍になるが、袋小路の回避で総 iteration が桁で
+// 減る方が効く (詳細は logic/solverScaling.test.js と ROADMAP E4b)。
+function orderSubjectsBySlack({
+  subjects,
+  schedule,
+  dates,
+  periods,
+  classId,
+  placedCounts,
+  quotas,
+  rng,
+}: {
+  subjects: string[];
+  schedule: Schedule;
+  dates: Entity[];
+  periods: Entity[];
+  classId: number;
+  placedCounts: Record<string, number> | undefined;
+  quotas: Record<string, number>;
+  rng: () => number;
+}): string[] {
+  // 日ごとの「使用済み科目」と「空きセル有無」を 1 パスで収集
+  const dayInfo: Array<{ used: Set<string>; space: boolean }> = [];
+  for (const d of dates) {
+    const used = new Set<string>();
+    let space = false;
+    for (const p of periods) {
+      const e = schedule[makeKey(d.id, p.id, classId)];
+      if (e?.subject) used.add(e.subject);
+      else space = true;
+    }
+    dayInfo.push({ used, space });
+  }
+  return seededShuffle(subjects, rng)
+    .map(s => {
+      const remaining = (quotas[s] ?? 0) - (placedCounts?.[s] || 0);
+      let placeable = 0;
+      for (const di of dayInfo) {
+        if (di.space && !di.used.has(s)) placeable++;
+      }
+      return { s, slack: placeable - remaining };
+    })
+    .sort((a, b) => a.slack - b.slack)
+    .map(x => x.s);
+}
+
 // solver の探索上限のデフォルト。project.maxIterations で上書き可。
 const MAX_ITERATIONS = CONST_DEFAULT_MAX_ITERATIONS;
 
@@ -348,7 +407,18 @@ export function generateSinglePattern({
         return;
       }
 
-      const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
+      const subjectsToTry = fixedSubject
+        ? [fixedSubject]
+        : orderSubjectsBySlack({
+            subjects: commonSubjects,
+            schedule: tempSch,
+            dates: currentConfig.dates,
+            periods: currentConfig.periods,
+            classId: c.id,
+            placedCounts: tempCnt[cIdx],
+            quotas: currentConfig.subjectCounts,
+            rng,
+          });
 
       for (const s of subjectsToTry) {
         if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
@@ -445,6 +515,11 @@ export function generateSinglePattern({
           else neutralGroup.push(t);
         });
 
+        // 講師の試行順は priority 群 → neutral 群のシャッフルのまま。
+        // K5e (日次負荷の軽い順 = load balancing) は 2026-07-03 に実測の上で
+        // 不採用: 探索の成否にほぼ影響せず (iteration 数が完全一致)、
+        // 並べ替えコストだけ iteration 単価 +30% になった。詳細は
+        // ROADMAP K5e の記録を参照
         let shuffledT = [
           ...seededShuffle(priorityGroup, rng),
           ...seededShuffle(neutralGroup, rng)

@@ -52,6 +52,7 @@ export function MonthView({
   examPrepSchedules = [],
   specialEvents = [],
   extraLessons = [],
+  onEditExtraLesson,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -595,10 +596,13 @@ export function MonthView({
                     );
                   }
                   if (isAdmin) titleParts.push("クリックで編集");
+                  const cardEditable = isAdmin && !!onEdit;
                   return (
                     <div
                       key={`slot-${s.id}`}
                       className="month-print-card"
+                      role={cardEditable ? "button" : undefined}
+                      tabIndex={cardEditable ? 0 : undefined}
                       style={{
                         fontSize: 11,
                         lineHeight: 1.4,
@@ -610,10 +614,20 @@ export function MonthView({
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        cursor: isAdmin && onEdit ? "pointer" : "default",
+                        cursor: cardEditable ? "pointer" : "default",
                         opacity: away ? 0.55 : 1,
                       }}
-                      onClick={() => isAdmin && onEdit && onEdit(s)}
+                      onClick={() => cardEditable && onEdit(s)}
+                      onKeyDown={
+                        cardEditable
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onEdit(s);
+                              }
+                            }
+                          : undefined
+                      }
                       title={titleParts.join("\n")}
                     >
                       {badges.map((b, i) => (
@@ -810,13 +824,30 @@ export function MonthView({
                     </div>
                   );
                 })}
-              {/* 追加授業 (特定日付の単発コマ) */}
+              {/* 追加授業 (特定日付の単発コマ)。onEditExtraLesson があれば
+                  クリックで管理フォームの編集へジャンプ (K4c、H1b と同経路) */}
               {extraForDay.map((lesson) => {
                 const gc = GC(lesson.grade);
+                const clickable = !!onEditExtraLesson;
                 return (
                   <div
                     key={`extra-${lesson.id}`}
                     className="month-print-card"
+                    role={clickable ? "button" : undefined}
+                    tabIndex={clickable ? 0 : undefined}
+                    onClick={
+                      clickable ? () => onEditExtraLesson(lesson.id) : undefined
+                    }
+                    onKeyDown={
+                      clickable
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onEditExtraLesson(lesson.id);
+                            }
+                          }
+                        : undefined
+                    }
                     style={{
                       fontSize: 11,
                       lineHeight: 1.4,
@@ -828,12 +859,15 @@ export function MonthView({
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
+                      cursor: clickable ? "pointer" : "default",
                     }}
                     title={`[追加授業${lesson.label ? `: ${lesson.label}` : ""}] ${lesson.grade}${
                       lesson.cls && lesson.cls !== "-" ? lesson.cls : ""
                     } ${lesson.subj} (${lesson.time})${
                       lesson.room ? `\n教室: ${lesson.room}` : ""
-                    }${lesson.note ? "\n" + lesson.note : ""}`}
+                    }${lesson.note ? "\n" + lesson.note : ""}${
+                      clickable ? "\n\nクリックで編集画面を開きます" : ""
+                    }`}
                   >
                     <span
                       style={{

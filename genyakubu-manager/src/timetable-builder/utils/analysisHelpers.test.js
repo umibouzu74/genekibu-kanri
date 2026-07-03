@@ -105,6 +105,24 @@ describe('computeGlobalUsage', () => {
     expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')].external).toBe(5);
   });
 
+  it('その日にセルが無い講師の外部コマも entry が立つ (K2a: (計N) 表示用)', () => {
+    // 堀上はセルあり、田中はセル無しで外部コマのみ、佐藤はセッションのみ
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    });
+    const ext = { [makeExternalKey('12/25(木)', '田中')]: 4 };
+    const sessions = [
+      { id: 1, date: '12/26(金)', teacherName: '佐藤', label: '1限', memo: '予備校' },
+    ];
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], ext, sessions);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '田中')]).toEqual({
+      current: 0, external: 4, total: 4,
+    });
+    expect(teacherDailyCounts[makeExternalKey('12/26(金)', '佐藤')]).toEqual({
+      current: 0, external: 1, total: 1,
+    });
+  });
+
   it('合同グループ内の複数クラスは 1 コマとして集計される', () => {
     // ３S と ３A を英語で合同 → 同日同時限の同じ講師は 1 コマ扱い
     const tab = makeTab(1, {
@@ -521,6 +539,19 @@ describe('computeViolations', () => {
     expect(v.teacherOverDaily.count).toBe(0);
   });
 
+  it('teacherOverDaily: 外部コマのみ (builder 割当ゼロ) の超過は違反にしない (K2a)', () => {
+    // 田中はセル無しで外部コマ 5 (max 2 超過)。(計N) 表示用に entry は
+    // 立つ (K2a seed) が、builder 側で解消できない負荷なので違反には数えない
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, {}, {
+      maxDailyHours: 2,
+      teachers: [{ name: '堀上' }, { name: '田中' }],
+      externalCounts: { [makeExternalKey('12/25(木)', '田中')]: 5 },
+    });
+    expect(v.teacherOverDaily.count).toBe(0);
+  });
+
   it('teacherOverDaily: 日付ラベルに "-" を含んでも teachers の suffix match で復元できる (M1)', () => {
     // 日付ラベル "2026-01-04" に "-" が含まれるケース。teachers list を渡せば復元可能。
     const config = {
@@ -584,19 +615,31 @@ describe('computeInfeasibilities', () => {
     expect(r.subjectCapacityShortage.count).toBe(0);
   });
 
-  it('"未定" のみの状態は C2 (capacity) が科目単位で検出し、C1 はスロットを列挙しない (F2g)', () => {
+  it('"未定" のみの状態は placeholderOnly (情報) が科目単位で検出し、致命 (capacity) には数えない (K2d)', () => {
     const r = computeInfeasibilities({
       teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
       commonSubjects: ['英語', '数学'],
       currentConfig: baseConfig(),
       maxDailyHours: 6,
     });
-    // 旧仕様は 2 dates × 2 periods × 2 subjects = 8 件のスロットを列挙して
-    // いたが、担当者ゼロは C2 が「科目単位の 1 行 + 講師を増やす提案」で
-    // 検出するため C1 では重複ノイズを出さない。
+    // C1 はスロットを列挙しない (F2g)。未定は solver が配置できるため
+    // 「設定の問題 (供給不足)」ではなく informational な placeholderOnly に
+    // 分離する (K2d: 生成は通るのに致命警告が点く不整合の解消)。
     expect(r.noTeacherForSlot.count).toBe(0);
-    expect(r.subjectCapacityShortage.count).toBe(2);
-    expect(r.subjectCapacityShortage.items.map(i => i.subject).sort()).toEqual(['数学', '英語']);
+    expect(r.subjectCapacityShortage.count).toBe(0);
+    expect(r.subjectPlaceholderOnly.count).toBe(2);
+    expect(r.subjectPlaceholderOnly.items.map(i => i.subject).sort()).toEqual(['数学', '英語']);
+  });
+
+  it('実講師も「未定」も担当しない科目は従来どおり致命 (capacity) のまま (K2d)', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語', '数学'], // 数学は誰も担当しない
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectPlaceholderOnly.count).toBe(0);
+    expect(r.subjectCapacityShortage.items.some(i => i.subject === '数学')).toBe(true);
   });
 
   it('個別スロットの NG は置ける日数が足りていれば報告しない (F2g: 旧 false positive)', () => {
@@ -713,16 +756,23 @@ describe('computeInfeasibilities', () => {
     });
   });
 
-  it('subjectCapacityShortage: "未定" を除外して capacity を計算する', () => {
-    // 「未定」だけでは capacity ゼロ扱い → 全 subject で不足
+  it('subjectCapacityShortage: "未定" を capacity (実供給) に数えない', () => {
+    // 実講師 1 名 + 未定。capacity は実講師分だけで計算される
+    // (未定のみの科目は K2d で placeholderOnly へ分離 — 別テストで固定)
+    const cfg = baseConfig();
+    cfg.subjectCounts = { '英語': 99 }; // 実講師 1 名では明確に不足する需要
     const r = computeInfeasibilities({
-      teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
-      commonSubjects: ['英語', '数学'],
-      currentConfig: baseConfig(),
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [] },
+        { name: '未定', subjects: ['英語'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語'],
+      currentConfig: cfg,
       maxDailyHours: 6,
     });
-    expect(r.subjectCapacityShortage.count).toBe(2);
-    r.subjectCapacityShortage.items.forEach(it => expect(it.teacherCount).toBe(0));
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0].teacherCount).toBe(1);
+    expect(r.subjectPlaceholderOnly.count).toBe(0);
   });
 
   it('subjectCounts に登録されていない (= 0) subject は capacity 判定をスキップ', () => {

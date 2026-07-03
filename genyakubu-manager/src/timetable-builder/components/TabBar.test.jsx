@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TabBar from './TabBar';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { UIContext } from '../contexts/uiContextValue';
@@ -26,6 +26,7 @@ function renderTabBar({ projectOverrides = {}, uiOverrides = {} } = {}) {
   const uiValue = {
     showConfirm: vi.fn().mockResolvedValue(true),
     showInput: vi.fn().mockResolvedValue('新名前'),
+    showToast: vi.fn(),
     ...uiOverrides,
   };
   const utils = render(
@@ -157,5 +158,28 @@ describe('TabBar — キーボード操作 (F2a)', () => {
   it('削除 × は aria-label 付きの button になっている', () => {
     renderTabBar();
     expect(screen.getByLabelText('高3 タブを削除')).toBeInstanceOf(HTMLButtonElement);
+  });
+});
+
+describe('TabBar — タブ間複製 (K4a)', () => {
+  it('非アクティブタブの ⧉ で confirm 後に copyScheduleFromTab が呼ばれる', async () => {
+    const copyScheduleFromTab = vi.fn();
+    renderTabBar({ projectOverrides: { copyScheduleFromTab } });
+    // アクティブタブ (高3) には複製ボタンは出ない
+    expect(screen.queryByLabelText('高3 タブの割当を現在のタブへ複製')).toBeNull();
+    fireEvent.click(screen.getByLabelText('高2 タブの割当を現在のタブへ複製'));
+    await waitFor(() => expect(copyScheduleFromTab).toHaveBeenCalledWith(2));
+  });
+
+  it('confirm をキャンセルすると複製しない', async () => {
+    const copyScheduleFromTab = vi.fn();
+    const showConfirm = vi.fn().mockResolvedValue(false);
+    renderTabBar({
+      projectOverrides: { copyScheduleFromTab },
+      uiOverrides: { showConfirm },
+    });
+    fireEvent.click(screen.getByLabelText('高2 タブの割当を現在のタブへ複製'));
+    await waitFor(() => expect(showConfirm).toHaveBeenCalled());
+    expect(copyScheduleFromTab).not.toHaveBeenCalled();
   });
 });

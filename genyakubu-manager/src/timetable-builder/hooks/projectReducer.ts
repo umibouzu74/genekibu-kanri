@@ -82,6 +82,7 @@ export type ProjectAction =
   | { type: 'schedule/bulkAction'; payload: { action: 'lock-all' | 'unlock-all' | 'clear-all'; type: 'date' | 'period' | 'class'; val: string } }
   | { type: 'schedule/clearUnlocked' }
   | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
+  | { type: 'schedule/copyFromTab'; payload: { sourceTabId: number } }
   | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
   | { type: 'snapshot/apply'; payload: { id: number } }
   | { type: 'snapshot/rename'; payload: { id: number; name: string } }
@@ -209,6 +210,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
     case 'tab/add': {
       const { name } = action.payload;
       if (!name) return project;
+      // K3i: 重複タブ名は no-op (teacher/subject の重複ガードと同じ扱い。
+      // 生成結果パネル等の「対象タブ: {name}」表示が曖昧になるため)
+      if (project.tabs.some(t => t.name === name)) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
       const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
@@ -236,6 +240,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // F2d: 同名 rename は履歴を汚さない (実効 Undo 深度 MAX 50 を守る)
       const target = project.tabs.find(t => t.id === id);
       if (!target || target.name === name) return project;
+      // K3i: 他タブと重複する名前への rename も no-op (UI 側でも toast で
+      // reject するが、直接 dispatch 経路も守る)
+      if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
     }
 
@@ -471,6 +478,18 @@ function applyAction(project: Project, action: ProjectAction): Project {
         if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
       });
       const newSessions = (project.externalSessions || []).filter(s => s.date !== target.label);
+      // K2c: externalSessionPresets の日付範囲参照も掃除する (renameHeader は
+      // 追従させているのに削除だけ放置だと、同名ラベルを後で再追加したとき
+      // 古いプリセットが別の日を指す)。該当フィールドだけ未指定に戻す。
+      const presets = project.externalSessionPresets || [];
+      const newPresets = presets.map(p => {
+        if (p.startDateLabel !== target.label && p.endDateLabel !== target.label) return p;
+        const next = { ...p };
+        if (next.startDateLabel === target.label) delete next.startDateLabel;
+        if (next.endDateLabel === target.label) delete next.endDateLabel;
+        return next;
+      });
+      const presetsChanged = newPresets.some((p, i) => p !== presets[i]);
       return cleanSchedule({
         ...project,
         dates: newPool,
@@ -479,6 +498,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
         teachers: newTeachers,
         externalCounts: newExternal,
         externalSessions: newSessions,
+        ...(presetsChanged ? { externalSessionPresets: newPresets } : {}),
       });
     }
 
@@ -539,7 +559,15 @@ function applyAction(project: Project, action: ProjectAction): Project {
         const newSch = {};
         Object.keys(tab.schedule).forEach(k => {
           const e = tab.schedule[k];
-          newSch[k] = e.subject === name ? { ...e, subject: '', teacher: '' } : e;
+          if (e.subject === name) {
+            // K2b: locked も落とす。残すと「空 + ロック = この枠は空けて
+            // おく」(F5w) に静かに変換され、科目削除がロックセルを solver の
+            // 生成対象から黙って除外してしまう。ロックの対象 (科目割当) が
+            // 消えた以上、セルは通常の未充填に戻すのが自然
+            newSch[k] = { subject: '', teacher: '' };
+          } else {
+            newSch[k] = e;
+          }
         });
         return { ...tab, config: { ...tab.config, subjectCounts: newCounts }, schedule: newSch };
       });
@@ -1151,6 +1179,44 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!project.tabs.some(t => t.id === targetId)) return project;
       const newTabs = project.tabs.map(t => t.id === targetId ? { ...t, schedule: pat } : t);
       return cleanSchedule({ ...project, tabs: newTabs, activeTabId: targetId });
+    }
+
+    // ─── タブ間複製 (K4a) ─────────────────
+    // 別タブの割当を「現在のタブ」へ複製する (例: 中3 タブの割当を
+    // 中1・2 タブへ流用して手直しする)。dates / periods は project 共通
+    // (v4) なので変換不要だが、classes はタブごとに別 entity なので
+    // 「label 一致を優先、無ければ同じ並び位置 (index)」で対応付ける。
+    // 対象タブが使わない日付・時限 (activeDateIds/activePeriodIds の絞り) の
+    // セルは複製しない (不可視セルへのゴミ書込を防ぐ。E-3 と同じ扱い)。
+    case 'schedule/copyFromTab': {
+      const { sourceTabId } = action.payload;
+      const target = project.tabs.find(t => t.id === project.activeTabId);
+      const source = project.tabs.find(t => t.id === sourceTabId);
+      if (!source || !target || source.id === target.id) return project;
+      const srcClasses = source.config.classes || [];
+      const tgtClasses = target.config.classes || [];
+      const classIdMap = new Map<number, number>();
+      srcClasses.forEach((sc, i) => {
+        const byLabel = tgtClasses.find(tc => tc.label === sc.label);
+        const tgt = byLabel ?? tgtClasses[i];
+        if (tgt) classIdMap.set(sc.id, tgt.id);
+      });
+      const tgtEffective = effectiveConfig(project, target);
+      const visibleDateIds = new Set(tgtEffective.dates.map(d => d.id));
+      const visiblePeriodIds = new Set(tgtEffective.periods.map(p => p.id));
+      const newSchedule: Schedule = {};
+      Object.entries(source.schedule || {}).forEach(([key, entry]) => {
+        const parsed = parseKey(key);
+        if (!parsed) return;
+        if (!visibleDateIds.has(parsed.dateId) || !visiblePeriodIds.has(parsed.periodId)) return;
+        const tgtClassId = classIdMap.get(parsed.classId);
+        if (tgtClassId === undefined) return;
+        newSchedule[makeKey(parsed.dateId, parsed.periodId, tgtClassId)] = { ...entry };
+      });
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, schedule: newSchedule } : t
+      );
+      return cleanSchedule({ ...project, tabs: newTabs });
     }
 
     // ─── スナップショット (E1c) ───────────

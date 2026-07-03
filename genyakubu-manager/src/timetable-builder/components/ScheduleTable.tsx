@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
 import { useLongPress } from '../hooks/useLongPress';
 import ScheduleCell from './ScheduleCell';
@@ -43,6 +44,7 @@ interface ScheduleTableProps {
 
 export default function ScheduleTable({ isCompact, onContextMenu }: ScheduleTableProps) {
   const { currentConfig, handleSwapCells } = useProjectContext();
+  const { showToast } = useUI();
   const [dragSource, setDragSource] = useState<{ key: string; data: ScheduleEntry } | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
@@ -74,7 +76,13 @@ export default function ScheduleTable({ isCompact, onContextMenu }: ScheduleTabl
   const handleDrop = (e, tk, td) => {
     e.preventDefault();
     setDragOverKey(null);
-    if (!dragSource || dragSource.key === tk || td.locked) return;
+    if (!dragSource || dragSource.key === tk) return;
+    if (td.locked) {
+      // 赤リングだけだと「掴んだのに動かない」無反応に見えるので理由を出す
+      // (K3h。renameHeader の重複 reject と同じくフィードバックを揃える)
+      showToast('ロックされたセルとは入れ替えできません', 'error', 2500);
+      return;
+    }
     handleSwapCells(dragSource.key, tk);
     setDragSource(null);
     e.target.style.opacity = '1';

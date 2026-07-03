@@ -4,16 +4,22 @@
 // 特別イベントの細分化された type メタは constants/specialEvents.js を
 // 参照する。
 
+import { EXTRA_LESSON_COLOR } from "./colors";
+
 export const EVENT_KIND = Object.freeze({
   HOLIDAY: "holiday",
   EXAM: "exam",
   SPECIAL: "special",
+  // 追加授業 (単発コマ)。イベントカレンダーでの表示用 (H1b)。
+  // データ実体は ExtraLesson (schema v15) で、イベント系とは別リソース。
+  EXTRA_LESSON: "extraLesson",
 });
 
 export const EVENT_KIND_LABELS = Object.freeze({
   [EVENT_KIND.HOLIDAY]: "休講",
   [EVENT_KIND.EXAM]: "テスト期間",
   [EVENT_KIND.SPECIAL]: "特別イベント",
+  [EVENT_KIND.EXTRA_LESSON]: "追加授業",
 });
 
 // チップ・バッジで使う色 (背景・前景・アクセント)。特別イベントの
@@ -36,4 +42,12 @@ export const TAG_META = Object.freeze({
   bg: "#e6eef9",
   fg: "#234a78",
   accent: "#b4cde8",
+});
+
+// 追加授業のバッジ色。他ビュー (Dashboard / MonthView) の「追」バッジと
+// 同じ EXTRA_LESSON_COLOR (緑系) から組み立てて統一感を保つ。
+export const EXTRA_LESSON_META = Object.freeze({
+  bg: EXTRA_LESSON_COLOR.bg,
+  fg: EXTRA_LESSON_COLOR.deep,
+  accent: EXTRA_LESSON_COLOR.color,
 });

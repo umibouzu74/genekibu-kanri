@@ -290,10 +290,17 @@ export function AdjustmentListTab({
         }}
       >
         {filtered.length === 0 ? (
+          // 空状態に作成場所への案内を出す (K3d。調整はこの画面ではなく
+          // 欠勤組み換え / ダッシュボード時間割の操作から作られる)
           <div
-            style={{ textAlign: "center", color: "#bbb", padding: 40, fontSize: 13 }}
+            style={{ textAlign: "center", color: "#888", padding: 40, fontSize: 13 }}
           >
-            該当する時間割調整はありません
+            <div style={{ fontWeight: 700, color: "#555", marginBottom: 6 }}>
+              該当する時間割調整はありません
+            </div>
+            <div style={{ fontSize: 11, color: "#888" }}>
+              合同・移動・振替は「欠勤組み換え」画面のコマ操作から登録されます
+            </div>
           </div>
         ) : (
           <table
@@ -318,6 +325,8 @@ export function AdjustmentListTab({
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>詳細</th>
                 <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
                 <th
+                  tabIndex={0}
+                  aria-sort={sortBy === "createdAt-desc" ? "descending" : "none"}
                   style={{
                     padding: "8px 10px",
                     textAlign: "left",
@@ -330,6 +339,14 @@ export function AdjustmentListTab({
                       s === "createdAt-desc" ? "date" : "createdAt-desc"
                     )
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSortBy((s) =>
+                        s === "createdAt-desc" ? "date" : "createdAt-desc"
+                      );
+                    }
+                  }}
                   title="クリックで作成日時の新しい順 / 源泉日昇順 を切り替え"
                 >
                   作成日時{" "}

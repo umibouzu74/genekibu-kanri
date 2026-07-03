@@ -8,15 +8,26 @@ export default function TabBar() {
     handleAddTab,
     handleDeleteTab,
     handleRenameTab,
+    copyScheduleFromTab,
     analysis,
   } = useProjectContext();
-  const { showConfirm, showInput } = useUI();
+  const { showConfirm, showInput, showToast } = useUI();
   const tabErrorCounts = analysis?.tabErrorCounts || {};
+
+  // 重複タブ名は reducer 側で no-op になる (K3i)。silent だと「直った
+  // ように見える」ので理由を伝える (ヘッダ rename の H3 と同じ扱い)
+  const isDupName = (name, exceptId = null) =>
+    project.tabs.some(t => t.name === name && t.id !== exceptId);
 
   const handleRenameClick = async (e, tab) => {
     e.stopPropagation();
     const newName = await showInput("新しいタブ名を入力してください", { title: "タブ名の変更", defaultValue: tab.name });
-    if (newName) handleRenameTab(tab.id, newName);
+    if (!newName || newName === tab.name) return;
+    if (isDupName(newName, tab.id)) {
+      showToast(`「${newName}」は既に存在するため変更できません。別の名前にしてください。`, 'error', 4000);
+      return;
+    }
+    handleRenameTab(tab.id, newName);
   };
 
   const handleDeleteClick = async (e, tabId) => {
@@ -25,9 +36,31 @@ export default function TabBar() {
     if (ok) handleDeleteTab(tabId);
   };
 
+  // K4a: 別タブ (source) の割当を現在のタブへ複製する。上書きになるので
+  // confirm を挟む。適用後は Undo で戻せる (履歴に積まれる)
+  const handleCopyFromClick = async (e, sourceTab) => {
+    e.stopPropagation();
+    const activeTab = project.tabs.find(t => t.id === project.activeTabId);
+    if (!activeTab || sourceTab.id === activeTab.id) return;
+    const hasCells = Object.keys(activeTab.schedule || {}).length > 0;
+    const ok = await showConfirm(
+      `タブ「${sourceTab.name}」の割当を現在のタブ「${activeTab.name}」へ複製しますか？` +
+        (hasCells ? "\n現在のタブの割当は置き換えられます (Undo で戻せます)。" : ""),
+      { title: "タブ間の複製", confirmLabel: "複製する" }
+    );
+    if (!ok) return;
+    copyScheduleFromTab(sourceTab.id);
+    showToast(`「${sourceTab.name}」の割当を「${activeTab.name}」へ複製しました`, 'success', 3000);
+  };
+
   const handleAddClick = async () => {
     const name = await showInput("新しいタブの名前を入力してください", { title: "タブの追加", placeholder: "例: 1年生" });
-    if (name) handleAddTab(name);
+    if (!name) return;
+    if (isDupName(name)) {
+      showToast(`「${name}」は既に存在するため追加できません。別の名前にしてください。`, 'error', 4000);
+      return;
+    }
+    handleAddTab(name);
   };
 
   // 学年タブの左右/Home/End 矢印ナビ (E1b)。フォーカスを移しつつそのタブを開く。
@@ -91,6 +124,17 @@ export default function TabBar() {
                 title="このタブに違反はありません"
                 aria-label="違反なし"
               >✨</span>
+            )}
+            {/* K4a: 非アクティブタブの割当を現在のタブへ複製する導線 */}
+            {!selected && (
+              <button
+                type="button"
+                onClick={(e) => handleCopyFromClick(e, tab)}
+                tabIndex={-1}
+                aria-label={`${tab.name} タブの割当を現在のタブへ複製`}
+                className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-info-soft hover:text-builder-blue text-builder-ink-muted transition-colors cursor-pointer"
+                title={`このタブ (${tab.name}) の割当を現在のタブへ複製`}
+              >⧉</button>
             )}
             {project.tabs.length > 1 && (
               <button

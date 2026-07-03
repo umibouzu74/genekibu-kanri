@@ -86,9 +86,23 @@ function UpcomingBanner({ bg, borderColor, titleColor, title, children }) {
   );
 }
 
-function UpcomingRow({ children }) {
+function UpcomingRow({ children, onActivate, activateTitle }) {
   return (
     <div
+      role={onActivate ? "button" : undefined}
+      tabIndex={onActivate ? 0 : undefined}
+      onClick={onActivate}
+      onKeyDown={
+        onActivate
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onActivate();
+              }
+            }
+          : undefined
+      }
+      title={onActivate ? activateTitle : undefined}
       style={{
         display: "flex",
         alignItems: "center",
@@ -97,6 +111,7 @@ function UpcomingRow({ children }) {
         padding: "6px 10px",
         borderRadius: 6,
         flexWrap: "wrap",
+        cursor: onActivate ? "pointer" : "default",
       }}
     >
       {children}
@@ -121,6 +136,7 @@ export function WeekView({
   examPrepSchedules = [],
   specialEvents = [],
   extraLessons = [],
+  onEditExtraLesson,
   displayCutoff,
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
@@ -750,7 +766,13 @@ export function WeekView({
           title={`➕ 直近2週間の追加授業 (${upcomingExtras.length}件)`}
         >
           {upcomingExtras.map((l) => (
-            <UpcomingRow key={l.id}>
+            <UpcomingRow
+              key={l.id}
+              onActivate={
+                onEditExtraLesson ? () => onEditExtraLesson(l.id) : undefined
+              }
+              activateTitle="クリックで追加授業の編集画面を開きます"
+            >
               <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
                 {fmtDateWeekday(l.date)}
               </span>

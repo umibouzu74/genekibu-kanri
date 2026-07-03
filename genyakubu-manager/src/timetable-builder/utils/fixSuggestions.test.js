@@ -148,18 +148,19 @@ describe('buildFixSuggestions', () => {
 });
 
 describe('INFEASIBILITY_KINDS (F2m レジストリ)', () => {
-  it('computeInfeasibilities の 4 種別を全てカバーする', () => {
+  it('computeInfeasibilities の 5 種別を全てカバーする', () => {
     expect(INFEASIBILITY_KINDS.map(d => d.key)).toEqual([
       'noTeacherForSlot',
       'subjectCapacityShortage',
+      'subjectPlaceholderOnly',
       'quotaCellMismatch',
       'subjectQuotaOverDays',
     ]);
   });
 
-  it('informational は quotaCellMismatch のみ (バッジに数えない種別)', () => {
+  it('informational は placeholderOnly と quotaCellMismatch (バッジに数えない種別)', () => {
     expect(INFEASIBILITY_KINDS.filter(d => d.informational).map(d => d.key))
-      .toEqual(['quotaCellMismatch']);
+      .toEqual(['subjectPlaceholderOnly', 'quotaCellMismatch']);
   });
 
   it('各種別の label が item から表示文言を生成する', () => {
@@ -179,6 +180,7 @@ describe('INFEASIBILITY_KINDS (F2m レジストリ)', () => {
       {
         noTeacherForSlot: { count: 1, items: [{ date: '12/25', period: '1限', subject: '数学' }] },
         subjectCapacityShortage: { count: 1, items: [{ subject: '英語', demand: 50, capacity: 36, teacherCount: 1 }] },
+        subjectPlaceholderOnly: { count: 1, items: [{ subject: '国語', demand: 8 }] },
         quotaCellMismatch: { count: 1, items: [{ totalQuota: 3, cells: 6 }] },
         subjectQuotaOverDays: { count: 1, items: [{ subject: '数学', quota: 4, days: 3 }] },
       },

@@ -1,5 +1,10 @@
 /* eslint-disable react-refresh/only-export-components -- 共有定数 (DEFAULT/isEventKindVisible) を同居 */
-import { EVENT_KIND, EXAM_META, TAG_META } from "../constants/eventKinds";
+import {
+  EVENT_KIND,
+  EXAM_META,
+  EXTRA_LESSON_META,
+  TAG_META,
+} from "../constants/eventKinds";
 import { TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
 
 // 月次ビュー / イベントカレンダーで共有する「表示種別フィルタ」のチップ。
@@ -9,9 +14,19 @@ const TOGGLE_DEFS = Object.freeze([
   { key: EVENT_KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
 ]);
 
+// 追加授業トグルはイベントカレンダー専用 (includeExtraLessons で opt-in)。
+// MonthView の追加授業は「講師本人の担当コマ」なので通常コマと同様に常時
+// 表示され、visibility フィルタの対象にしない (H1b)。
+const EXTRA_LESSON_TOGGLE = Object.freeze({
+  key: EVENT_KIND.EXTRA_LESSON,
+  label: "追加授業",
+  color: EXTRA_LESSON_META.accent,
+});
+
 export const DEFAULT_EVENT_VISIBILITY = Object.freeze({
   [EVENT_KIND.EXAM]: false,
   [EVENT_KIND.SPECIAL]: false,
+  [EVENT_KIND.EXTRA_LESSON]: false,
 });
 
 export function isEventKindVisible(visibility, kind) {
@@ -44,10 +59,14 @@ export function EventVisibilityToggles({
   visibility,
   onChange,
   availableTags = [],
+  includeExtraLessons = false,
 }) {
   const examOn = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const specialOn = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   const tagFilters = getTagFilters(visibility);
+  const toggleDefs = includeExtraLessons
+    ? [...TOGGLE_DEFS, EXTRA_LESSON_TOGGLE]
+    : TOGGLE_DEFS;
 
   const toggleTag = (tag) => {
     onChange((p) => {
@@ -62,9 +81,15 @@ export function EventVisibilityToggles({
   };
 
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+    // no-print: 操作チップは紙面に不要 (印刷時のフィルタ状態は月次 popup 側が
+    // describeMonthVisibility でテキスト表示し、window.print() 系は表示結果
+    // そのものが紙面に出る)
+    <div
+      className="no-print"
+      style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}
+    >
       <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
-      {TOGGLE_DEFS.map((t) => {
+      {toggleDefs.map((t) => {
         const on = isEventKindVisible(visibility, t.key);
         return (
           <label
