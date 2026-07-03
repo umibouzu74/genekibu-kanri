@@ -1695,7 +1695,8 @@ F2h前段 / F2j / F2m も同時に解消)。
    L3a/L3b/L3e/L5a/L2a/L2c + L4a〜L4g + L5c まで実装済み。残る候補は
    L2b/L2d/L2e/L2f (編集系) · L3c/L3d/L3f (ソルバ系) ·
    L5b (全学年一括印刷) / L5d (親 slots から不在プレフィル、大) と、
-   仕様判断待ちの L6a
+   仕様判断待ちの L6a。**第 3 波の新規候補 35 件は §N** (同日、4 方面
+   ブラッシュアップレビュー) — 特にバグ・実害系の N1a〜N1j は未修正
 4. 親アプリ側の設計判断待ち: **H1d** (追加授業への代行) /
    **H2a·H2b** (プレップのデータ化・koshu type) — いずれも方針決定が先
 5. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
@@ -2326,3 +2327,173 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 - **L6b (仕様判断待ち、M19 起源)**: quotaCellMismatch を L1h の生成前
   confirm に数えるか。数える場合も ⚠ バッジ側は現状維持 (informational)
+
+---
+
+## N. 2026-07-03 ブラッシュアップレビュー第 3 波 (4 方面並列調査) の結果
+
+§K (棚卸し)・§L (新機能・便利機能) に続く同日第 3 波。「編集操作 /
+設定・データ入力 / 自動生成・分析 / 出力・全体 UI」の 4 方面を並列調査し、
+既出 (§D〜§M、CLAUDE.md 却下リスト) を除いた新規候補 35 件を整理した。
+全件コードの該当箇所まで裏取り済みで、N1 系 (バグ・実害) は本体
+セッションでも逐条再検証した。**本セクションは起票のみで未実装**。
+
+調査メモ:
+
+- 既知残課題 (L2b/L2d/L2e/L2f · L3c/L3d/L3f · L5b/L5d · L6a/L6b ·
+  K2h/K2i · K4b · E2a · E2b · E2g · E4c/E4f · E5b/E5c/E5d/E5h · E6a ·
+  E7 系 · E8c · D5c) はいずれも未実装のままであることを 4 方面で再確認
+- E1e の「focus ring は残」の残は「色弱対応 (単色 outline)」のみ。
+  ring 自体は `tailwind.css` の `.builder-root :focus-visible` で実装済み
+  (ステータス変更なし)
+- 生成結果の整形に「fingerprint による案の重複排除」は存在しない
+  (generationFingerprint は config 失効判定 F2n/F2p 専用) → N1h として起票
+
+### N1. バグ・実害系 (修正候補、価値順)
+
+- **N1a (小・価値大)**: 「🎒 配布用 (注記なし)」Excel に科目別集計シートが
+  そのまま同梱される — `buildScheduleWorkbook` は `clean` をグリッドの
+  セル文言にしか適用せず、`collectAllSubjects(...).forEach(buildOneSubjectSheet)`
+  を無条件実行 (excelExport.ts)。講師別集計・⚠NG・必要/不足コマの分析情報が
+  生徒・保護者向け配布物に露出する。clean 時は集計シートをスキップすべき
+  (L5c の実装意図の完成)
+- **N1b (小・価値大)**: autosave 失敗が視覚的に「成功」に見える — Header の
+  保存バッジが `text-builder-green bg-builder-success-soft` 固定で
+  「⚠️ 保存失敗」も緑地に描画される。flushSave 失敗時の toast も無く
+  (容量警告 toast との非対称)、QuotaExceeded (= データ喪失リスク) が最も
+  静かに失敗する経路。状態別の色分け + 失敗 toast + `role="status"` を
+- **N1c (小・価値高)**: CSV 講師取込 (追加/更新) が空 subjects 行で既存の
+  担当科目を消す — `teacher/import` append 分岐が
+  `map.set(t.name, { ...existing, subjects })` で無条件上書き
+  (projectReducer.ts)。親アプリ取込 (L5a) には「同名かつ親側担当が空は除外」
+  ガードがあるのに CSV 経路に無い非対称。同思想のガード or confirm 明示を
+- **N1d (小・価値高)**: セル編集直後に Ctrl+Z が効かない — グローバル
+  keydown が SELECT フォーカスで early return (BuilderApp.tsx)。セル編集は
+  すべて select で、onChange 後もフォーカスが残るため「変更 → 即 Ctrl+Z」が
+  無反応。select にネイティブ undo は無いので undo/redo だけは SELECT でも
+  通してよい (L2d の Ctrl+C/V/Delete 未配線とは別問題 — こちらは配線済み
+  機能の沈黙)
+- **N1e (小〜中)**: 「現在の設定を初期値にする」が科目マスタ・科目カラー・
+  生成パラメータを保存しない — handleSaveAsDefault は `{ teachers, config }`
+  のみ (useJsonIO.ts)。科目をカスタムした塾ではリセット後に科目・色が既定へ
+  戻る一方、config.subjectCounts だけ保存され存在しない科目の孤児が残る
+- **N1f (小)**: Excel ファイル名の日付が UTC — buildExcelFilename が
+  `toISOString().slice(0, 10)` (excelExport.ts)。JST 0〜9 時の出力で
+  ファイル名だけ前日になり、印刷見出し (ローカル日付、printHeader) と
+  食い違う
+- **N1g (小〜中)**: 容量監視が project 単体しか測らない — checkStorageHealth
+  は estimateStorageBytes(project) と 5MB の比較のみ (storageHealth.ts)。
+  LocalStorage は親アプリと origin 共有で、テンプレート・corrupt バックアップ
+  も別キー未計上。警告が「大丈夫」と言っている間に autosave が
+  QuotaExceeded で失敗しうる (N1b とセットで直すのが筋)
+- **N1h (中)**: 生成案の重複排除が無い — 生成完了の整形は
+  filter/map/sort のみで schedule 内容の dedup をしない (BuilderApp.tsx)。
+  制約が厳しい構成では同一の完全解が複数カードに並び比較枠 (numPatterns) を
+  消費する。正規化キーで dedup し「同一案 ×k」表示 or 追加生成を
+- **N1i (小)**: 他学年セッションの一括登録に重複ガードが無い —
+  `teacher/addExternalSessions` は単純 append (projectReducer.ts)。同条件の
+  再登録で一覧に二重に溜まる (自動NG はキー集約されるので実害は一覧の
+  可読性と削除の手間)。NG CSV は dedupe 済み (F2h) との非対称。完全一致
+  スキップ + skip 件数 toast を
+- **N1j (小〜中)**: CSV 取込が Shift-JIS を想定しない — readCsvFile が
+  `file.text()` = UTF-8 固定 (TeacherManager / NgCsvImport)。日本語 Excel の
+  既定 CSV 保存 (CP932) が文字化けし、全行「未登録の講師/日付」warning に
+  なるが原因に気づきにくい。U+FFFD 混入検出で `TextDecoder('shift_jis')`
+  再デコード or 案内 toast を
+
+### N2. 編集操作
+
+- **N2a (大・価値高)**: セルの複数選択 (Shift+クリック / ドラッグ矩形) →
+  選択範囲の一括クリア・ロック・貼り付け。現状は 1 セル単位 or ヘッダ単位
+  (日/時限/クラスまるごと) しかなく、「クラス A〜C の 3〜4 限だけロック」の
+  ような矩形操作ができない。まず範囲クリア・範囲ロックの MVP から
+- **N2b (中)**: D&D 中の auto-scroll — グリッドは `max-h-[70vh]
+  overflow-auto` 内で、掴んだ元と落とし先が同時に画面内に無いと物理的に
+  届かない (ScheduleTable.tsx)。dragover でコンテナ端に近づいたら
+  scrollTop を漸増させる hook を
+- **N2c (小〜中)**: D&D の発見可能性と操作性 — (1) draggable セルに
+  cursor-move 等の手がかりが無く、オンボーディングもドラッグに触れない
+  (onboardingSteps.ts)。(2) コンパクト表示では td padding 1px + select が
+  セルを埋め、drag を開始できる非 select 領域がほぼ無い (ScheduleCell.tsx)。
+  カーソル + ツアー 1 ステップ + ドラッグハンドル (⠿) を
+- **N2d (中)**: 学年タブの並べ替え — `tab/reorder` が無く作成順を後から
+  直せない (subject/reorder はあるのに非対称)。印刷・Excel の学年順にも効く
+- **N2e (小)**: タブ削除 confirm に割当数を出す — 現状は汎用文言のみ
+  (TabBar.tsx)。「N コマの割当があります」の件数付き confirm (生成クリア等と
+  同型) に
+- **N2f (中)**: undo/redo の内容可視化 — 変更セルが画面外だと押しても
+  無変化に見える。history は完全 Project 配列なので diffSchedules で
+  「元に戻す: 8/1 1限 クラスA (英語→数学)」toast + scrollIntoView が可能
+- **N2g (小)**: スナップショット差分から該当セルへジャンプ — 差分は
+  テキスト羅列のみで、違反 popover の「→」(scrollToKey) と非対称
+  (SnapshotMenu.tsx)。同パターンの流用 (関数の共有化も)
+- **N2h (小)**: 表示設定 (isCompact / showSummary) の永続化 — 純 useState で
+  リロード毎にリセット (BuilderApp.tsx)。明示トグルの 1 bit 保存であり
+  A18 (行動統計からの自動変形) には非該当
+
+### N3. 生成・分析
+
+- **N3a (中)**: 講師別の連続コマ上限 — 連続だけ project 全体値
+  (maxConsecutivePeriods) のみで、L3a (1日)・L3b (通算) の講師個別化から
+  取り残されている (Teacher 型にフィールド無し)。resolveTeacherDailyLimit と
+  同型の resolve + TeacherManager 上限列の拡張 + fingerprint 追随で、
+  既存パターンの踏襲
+- **N3b (中〜大)**: 部分解の未充填セルに「なぜ埋まらないか」を付ける —
+  現状は場所と科目別不足のみ (L3e)。セルごとに「該当時限に空き講師なし
+  (全員 NG/上限)」/「候補は居るが探索が尽きた (→ 探索回数↑を提案)」の
+  2 分類を既存の候補判定関数の逆引きで表示。生成後に「設定を直すか・
+  もう一度回すか」を判断できない欠落を埋める
+- **N3c (小)**: seed のワンクリック固定 — 結果パネルの seed 表示は title の
+  案内文のみで、再現には ⚙️ → 自動生成 → 数値入力の 4 手 (SummaryPanel.tsx)。
+  「🔒 この seed を固定」トグルで updateGenerationParams を直呼び
+- **N3d (小〜中)**: 「この案を採用」前の差分表示 — 採用は無確認即実行
+  (SummaryPanel.tsx)。diffSchedules / summarizeDiff は実装済みなので
+  「＋N 追加 / ≠N 変更」バッジ or diff 付き confirm が低コストで可能
+- **N3e (小)**: 違反 popover の「他 N 件」が展開できない — 各セクション
+  slice(0,5〜8) + プレーンテキストで、隠れた違反の中身を確認する手段が無い
+  (Toolbar.tsx)。トグル展開 or popover 内スクロール (L2b 巡回ナビとは別軸)
+- **N3f (小〜大)**: 飛び石出勤の可視化 — 「その日 1 コマだけ出勤」を避ける
+  仕組みも気付く指標も無い (制約は上限方向のみ)。まず案カードに「1 コマ
+  出勤日を持つ講師 N 名」の情報表示 (solver 変更不要)、発展は L3c ソフト
+  希望の枠組みで「出勤日集約」を重みに
+- **N3g (小〜中)**: 講師コマ数を「使用/上限」表記に — SummaryPanel の
+  講師別合計・案カードとも絶対数のみで、L3a/L3b の個別上限に対する余裕が
+  見えない。「田中: 6/6」+ 上限到達の色警告で、限界寸前の脆い案と余裕の
+  ある案を区別可能に (L3a/L3b の吟味フローへの還元)
+
+### N4. 設定・入力
+
+- **N4a (小)**: テンプレートの上書き更新と同名ガード — 保存は常に新規追加
+  (templates.ts addTemplate)。年度ベースを微修正するたび同名が重複蓄積し、
+  一覧から見分けられない。「上書き / 新規」の選択 + 行内「現在の内容で更新」
+- **N4b (小)**: CSV 講師取込に「新規 X / 更新 Y」内訳を表示 — 親取込 (L5a)
+  は confirm に内訳を出すのに CSV は合算 toast のみ (TeacherManager.tsx)。
+  N1c の空 subjects 警告と同じ突き合わせで実装できる
+- **N4c (中)**: 外部セッションプリセットに講師リストを保持 — 現状は
+  時刻/期間/メモのみで、適用のたび対象講師を選び直す (AbsenceNgPanel.tsx)。
+  「予備校 = 毎回同じ講師群」が典型なので任意で講師も保存 (存在しない講師は
+  無視 + warning)
+- **N4d (小)**: 講師別上限の矛盾表示 — 1日 > 通算 (例: 1日8・通算3) を
+  無警告で受理 (TeacherManager.tsx)。行内の注意アイコン/tooltip で十分
+- **N4e (小)**: コマ数マトリクスに列合計 — 学年ごとの総コマ数がどこにも
+  出ず暗算が必要 (SubjectManager.tsx)。「計 N / 収容 M (使う日×時限×クラス)」
+  を列に常時表示すれば入れ過ぎ/不足に設定段階で気づける
+- **N4f (中)**: ConfigModal 横断の講師名フィルタ — TeacherManager /
+  ClassPriority / NG マトリクス / クイックグリッドが講師 30 名規模で縦横に
+  長く、絞り込み手段が無い。名前 input 1 つで横断的に効く (明示操作なので
+  A18 非該当)
+
+### N5. 出力・オンボーディング・可視化
+
+- **N5a (小)**: Excel 学年グリッドシートにタイトル行が無い — 1 行目が
+  「日付/時限/…」ヘッダで、シートを印刷すると何の・いつの時間割か紙面に
+  出ない (印刷経路は L1f で見出し済みの非対称)。「プロジェクト名 — 学年 /
+  期間 / 出力日」の 1 行を先頭に (配布用でも学年・期間は残す)
+- **N5b (小)**: オンボーディングが出力に触れない — 5 ステップは編集・設定・
+  生成のみ (onboardingSteps.ts)。ゴール (Excel 3 種の使い分け・印刷・JSON
+  保存) への 1 ステップを追加
+- **N5c (小)**: 保存容量の常時表示 — 警告は起動時 1 回・ratio≥0.5 の toast
+  のみで、それ以外は情報ゼロ (BuilderApp.tsx)。ヘッダ or ⚙️ に「保存データ
+  約 X MB」(formatBytes 流用)。N1g とセットで
+- **N5d (小)**: 講師別 Excel の列見出し統一 — 個人シート「場所(タブ)」vs
+  全講師リスト「タブ名」の揺れ (excelExport.ts)。「学年(タブ)」等に統一
