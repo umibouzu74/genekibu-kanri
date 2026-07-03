@@ -928,9 +928,7 @@ describe('projectReducer — セル操作', () => {
       type: 'cell/swap',
       payload: {
         sourceKey: makeKey(1, 1, 1),
-        sourceData: { subject: '英語', teacher: '堀上' },
         targetKey: makeKey(1, 1, 2),
-        targetData: { subject: '数学', teacher: '田中', locked: true },
       },
     })).toBe(state);
   });
@@ -1806,10 +1804,75 @@ describe('projectReducer — reducer guards', () => {
       type: 'cell/swap',
       payload: {
         sourceKey: makeKey(1, 1, 1),
-        sourceData: { subject: '英語', teacher: '堀上', locked: true },
         targetKey: makeKey(1, 1, 2),
-        targetData: { subject: '数学', teacher: '田中' },
       },
+    });
+    expect(next).toBe(state);
+  });
+
+  // F2e: payload はキーのみ。内容・locked は dispatch 時点の schedule から読む
+  it('cell/swap: dispatch 時点の schedule を正とし、キーだけで swap する', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/swap',
+      payload: { sourceKey: makeKey(1, 1, 1), targetKey: makeKey(1, 1, 2) },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toMatchObject({ subject: '数学', teacher: '田中' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)]).toMatchObject({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('cell/swap: source が空になっていたら no-op (dragstart 後にクリアされた競合窓)', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/swap',
+      payload: { sourceKey: makeKey(1, 1, 1), targetKey: makeKey(1, 1, 2) },
+    });
+    expect(next).toBe(state);
+  });
+
+  it('cell/swap: source と target が同一キーなら no-op', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+        },
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/swap',
+      payload: { sourceKey: makeKey(1, 1, 1), targetKey: makeKey(1, 1, 1) },
     });
     expect(next).toBe(state);
   });

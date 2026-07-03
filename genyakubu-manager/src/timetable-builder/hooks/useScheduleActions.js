@@ -43,8 +43,10 @@ export function useScheduleActions(dispatch, currentSchedule) {
     // 定義する (cell 位置 → 講師名・date.label・period.label の解決が必要なため)。
     handleClearUnlocked: () =>
       dispatch({ type: 'schedule/clearUnlocked' }),
-    handleSwapCells: (sourceKey, sourceData, targetKey, targetData) =>
-      dispatch({ type: 'cell/swap', payload: { sourceKey, sourceData, targetKey, targetData } }),
+    // F2e: セル内容は渡さない。reducer が dispatch 時点の schedule から読む
+    // (dragstart 時点の stale なデータで上書きしないため)。
+    handleSwapCells: (sourceKey, targetKey) =>
+      dispatch({ type: 'cell/swap', payload: { sourceKey, targetKey } }),
     // tabId = 生成元タブ (省略時はアクティブタブ)。結果パネルはタブ切替後も
     // 残るため、必ず生成時に記録したタブへ適用する。
     applyPattern: (pat, tabId) =>

@@ -457,9 +457,7 @@ describe('useProject — handleSwapCells', () => {
 
     const key1 = makeKey(1, 1, 1);
     const key2 = makeKey(1, 1, 2);
-    const source = { ...result.current.currentSchedule[key1] };
-    const target = { ...result.current.currentSchedule[key2] };
-    act(() => result.current.handleSwapCells(key1, source, key2, target));
+    act(() => result.current.handleSwapCells(key1, key2));
 
     expect(result.current.currentSchedule[key1]).toMatchObject({ subject: '数学', teacher: '田中' });
     expect(result.current.currentSchedule[key2]).toMatchObject({ subject: '英語', teacher: '堀上' });
@@ -481,9 +479,7 @@ describe('useProject — handleSwapCells', () => {
     });
     const key1 = makeKey(1, 1, 1);
     const key2 = makeKey(1, 1, 2);
-    const source = { ...result.current.currentSchedule[key1] };
-    const target = { ...result.current.currentSchedule[key2] };
-    act(() => result.current.handleSwapCells(key1, source, key2, target));
+    act(() => result.current.handleSwapCells(key1, key2));
     // 変化なし
     expect(result.current.currentSchedule[key1]).toMatchObject({ subject: '英語', teacher: '堀上' });
     expect(result.current.currentSchedule[key2]).toMatchObject({ subject: '数学', teacher: '田中', locked: true });
@@ -505,9 +501,7 @@ describe('useProject — handleSwapCells', () => {
     });
     const key1 = makeKey(1, 1, 1);
     const key2 = makeKey(1, 1, 2);
-    const source = { ...result.current.currentSchedule[key1] };
-    const target = { ...result.current.currentSchedule[key2] };
-    act(() => result.current.handleSwapCells(key1, source, key2, target));
+    act(() => result.current.handleSwapCells(key1, key2));
     // 変化なし: locked source からの swap は防御される
     expect(result.current.currentSchedule[key1]).toMatchObject({ subject: '英語', teacher: '堀上', locked: true });
     expect(result.current.currentSchedule[key2]).toMatchObject({ subject: '数学', teacher: '田中' });

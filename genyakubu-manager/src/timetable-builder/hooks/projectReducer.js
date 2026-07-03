@@ -889,17 +889,26 @@ function applyAction(project, action) {
       return { ...project, tabs: newTabs };
     }
     case 'cell/swap': {
-      const { sourceKey, sourceData, targetKey, targetData } = action.payload;
-      // どちらかが locked なら swap しない。UI 側でも guard しているが、
-      // dispatch 経由で source が locked のまま渡ると line `locked: false` で
-      // lock が剥がれてしまうため、ここでも防衛する。
-      if (sourceData.locked || targetData.locked) return project;
+      const { sourceKey, targetKey } = action.payload;
+      if (sourceKey === targetKey) return project;
       const sParsed = parseKey(sourceKey);
       const tParsed = parseKey(targetKey);
       if (!sParsed || !tParsed) return project;
 
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentSchedule = activeTab.schedule;
+      // F2e: dragstart 時点の payload を信頼せず、dispatch 時点の schedule を
+      // 正とする。payload 経由だと dragstart 後にセルが変わった場合 (undo /
+      // 他操作の狭い競合窓) に stale な内容を書き戻したり、lock された
+      // セルの lock を剥がしたりする。
+      const sourceData = currentSchedule[sourceKey];
+      const targetData = currentSchedule[targetKey] || {};
+      // source が空になっていたら swap の意味が無いので no-op (UI は
+      // subject 無しセルの drag を開始しない)。locked はどちらか一方でも
+      // 立っていれば no-op (下の `locked: false` で剥がさないための防衛)。
+      if (!sourceData?.subject) return project;
+      if (sourceData.locked || targetData.locked) return project;
+
       const currentConfig = effectiveConfig(project, activeTab);
       const groups = project.combinedGroups;
       let ns = { ...currentSchedule };
