@@ -806,10 +806,22 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **残り**: 「Excel で開いた時の見栄え」の最終目視は引き続き C4 残
   (G.2 の実機確認項目)。バイナリ上のスタイル存在はここで自動検証済み。
 
-#### E3c. 🟡 印刷出力スナップショット (新規)
-- **現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
-- **改善**: Playwright で `page.pdf()` → PDF を画像化 → pixelmatch / VRT。少なくとも 7 ビュー × 1 サンプルずつ。
-- **規模**: 中 / **価値**: 中 (印刷バグは現場でしか発覚しない)
+#### E3c. 🟡 印刷出力スナップショット (第 1 弾完了 2026-07-03)
+- **旧現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
+- **✅ 完了分 (構造スモークテスト / e2e/print.spec.js 4 件)**:
+  - **window.print() 系**: print メディアエミュレーションで
+    「.sidebar と全 .no-print が消え、本文が残る」を Dashboard /
+    イベントカレンダー (追加授業バッジ込み) / 週間予定で検証。
+    トップバー操作ボタンの写り込み (H1e 確認中に発見・修正済み) の
+    ような回帰を検出できる
+  - **popup 注入系**: 月次カレンダーの 🖨 で popup にタイトル・印刷日・
+    凡例 (buildMonthHeaderHtml) と本文が注入されることを popup DOM で検証
+- **判断メモ**: pixel 比較 (page.pdf → pixelmatch) は環境のフォント差で
+  flaky になるため導入しない。構造検証 + printStyles.test.js (純関数) の
+  2 層で守る
+- **残り**: ExcelGridView (タイムテーブル) の popup 注入と
+  ConfirmedSubsView / MasterView の print 検証は未カバー (同型なので
+  必要になったら追加)
 
 #### E3d. ✅ project JSON 読込時の schema バリデーション (2026-06-29 完了)
 - **旧現状**: `loadInitialProject` は JSON.parse 失敗のみ捕捉。schema 違反 (`tabs` / `config.dates` が配列でない等) は migrate / downstream で crash しうる。
