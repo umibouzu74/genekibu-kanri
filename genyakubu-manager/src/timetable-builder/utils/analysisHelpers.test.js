@@ -105,6 +105,24 @@ describe('computeGlobalUsage', () => {
     expect(teacherDailyCounts[makeExternalKey('12/25(木)', '堀上')].external).toBe(5);
   });
 
+  it('その日にセルが無い講師の外部コマも entry が立つ (K2a: (計N) 表示用)', () => {
+    // 堀上はセルあり、田中はセル無しで外部コマのみ、佐藤はセッションのみ
+    const tab = makeTab(1, {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    });
+    const ext = { [makeExternalKey('12/25(木)', '田中')]: 4 };
+    const sessions = [
+      { id: 1, date: '12/26(金)', teacherName: '佐藤', label: '1限', memo: '予備校' },
+    ];
+    const { teacherDailyCounts } = computeGlobalUsage([tab], [], ext, sessions);
+    expect(teacherDailyCounts[makeExternalKey('12/25(木)', '田中')]).toEqual({
+      current: 0, external: 4, total: 4,
+    });
+    expect(teacherDailyCounts[makeExternalKey('12/26(金)', '佐藤')]).toEqual({
+      current: 0, external: 1, total: 1,
+    });
+  });
+
   it('合同グループ内の複数クラスは 1 コマとして集計される', () => {
     // ３S と ３A を英語で合同 → 同日同時限の同じ講師は 1 コマ扱い
     const tab = makeTab(1, {
@@ -518,6 +536,19 @@ describe('computeViolations', () => {
       [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
       [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
     }, {}, { maxDailyHours: 2, teachers: [{ name: '堀上' }] });
+    expect(v.teacherOverDaily.count).toBe(0);
+  });
+
+  it('teacherOverDaily: 外部コマのみ (builder 割当ゼロ) の超過は違反にしない (K2a)', () => {
+    // 田中はセル無しで外部コマ 5 (max 2 超過)。(計N) 表示用に entry は
+    // 立つ (K2a seed) が、builder 側で解消できない負荷なので違反には数えない
+    const v = buildAndCompute({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    }, {}, {
+      maxDailyHours: 2,
+      teachers: [{ name: '堀上' }, { name: '田中' }],
+      externalCounts: { [makeExternalKey('12/25(木)', '田中')]: 5 },
+    });
     expect(v.teacherOverDaily.count).toBe(0);
   });
 

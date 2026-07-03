@@ -1939,11 +1939,13 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 ### K.2 修正候補 (バグ疑い、価値順)
 
-- **K2a (builder・小〜中・確実)**: 講師ドロップダウンの「(計N)」が、
-  その日に自タブのセルがまだ無い講師の externalCounts/externalSessions 分を
-  取りこぼして (計0) 表示。solver は外部負荷を必ず加算するので「solver は
-  弾くのに UI は選べそうに見える」非対称 (analysisHelpers.ts:88 /
-  ScheduleCell.tsx:226,240)。過負荷回避 UI の主目的に関わるので最優先
+- ✅ **K2a (2026-07-03 修正)**: 講師ドロップダウンの「(計N)」が、その日に
+  builder のセルがまだ無い講師の externalCounts/externalSessions 分を
+  取りこぼして (計0) 表示 (solver は外部負荷で弾くのに UI は選べそうに
+  見える非対称)。computeGlobalUsage で外部コマのみの (date, teacher) にも
+  current=0 の entry を seed。**teacherOverDaily 違反判定は current>0 のみ
+  対象にして従来挙動を維持** (builder 側で解消できない負荷は違反にしない)。
+  テスト +2
 - **K2b (builder・小・要検証)**: subject/remove が当該科目の locked セルを
   「空 + locked = 空けておく」に黙って変換し、solver 生成対象から除外して
   しまう (projectReducer.ts:540 / F5w 仕様との相互作用)。削除時に locked も
