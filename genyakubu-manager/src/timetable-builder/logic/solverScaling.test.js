@@ -83,12 +83,18 @@ function buildBenchProject({ days, periods, classes }) {
 
 // 均等/不均等クォータの対比が付くようにサイズを選ぶ。
 // (D*P % 5 === 0 なら均等 → 簡単、それ以外は不均等 → 探索が刺さりやすい)
+//
+// 注意: periods > 科目数 の構成は「同日・同クラスで科目重複禁止」により
+// 構造的に解が存在しない (初版の XL 12d×6p×14c はこれで常に部分解だった)。
+// ベンチ構成を足すときは periods ≤ 科目数 を守ること。
 const SIZES = [
   { name: 'S 27 (3d×3p×3c, 不均等)', days: 3, periods: 3, classes: 3 },
   { name: 'M 168 (6d×4p×7c, 不均等)', days: 6, periods: 4, classes: 7 },
   { name: 'M2 210 (6d×5p×7c, 均等)', days: 6, periods: 5, classes: 7 },
   { name: 'L 500 (10d×5p×10c, 均等)', days: 10, periods: 5, classes: 10 },
-  { name: 'XL 1008 (12d×6p×14c, 不均等)', days: 12, periods: 6, classes: 14 },
+  // 実運用外のストレス構成 (18 クラス)。充足可能かは未検証で、
+  // 「上限到達時の挙動 (実行時間・部分解の充填度)」を見るのが目的
+  { name: 'XL 864 (12d×4p×18c, 不均等)', days: 12, periods: 4, classes: 18 },
 ];
 
 describe.skipIf(!process.env.BENCH)('solver スケーリング計測 (E4b)', () => {
