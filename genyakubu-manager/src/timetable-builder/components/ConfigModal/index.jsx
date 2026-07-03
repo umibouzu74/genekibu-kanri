@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -32,6 +32,14 @@ export default function ConfigModal({ onClose }) {
   const { showConfirm } = useUI();
   const [projectNameInput, setProjectNameInput] = useState(project.name || "");
   const dialogRef = useRef(null);
+
+  // F5k: モーダルを開いたまま project.name が外から変わる経路がある
+  // (テンプレート適用 / リセット / undo)。draft を同期しないと古い名前を
+  // 表示し続け、フィールドに触れて blur しただけで新しい名前を旧名で
+  // 上書きしてしまう。編集途中の draft は外部変更が勝つ (保守的挙動)。
+  useEffect(() => {
+    setProjectNameInput(project.name || "");
+  }, [project.name]);
   const tablistRef = useRef(null);
 
   // Escape で閉じる + Tab フォーカスを dialog 内に閉じ込める (E1b focus trap)。
@@ -131,8 +139,9 @@ export default function ConfigModal({ onClose }) {
           ) : (
             <>
               <div className="mb-6 p-4 bg-builder-info-soft border border-builder-info-border rounded">
-                <label className="block text-sm font-bold text-builder-ink mb-1">プロジェクト名</label>
+                <label htmlFor="builder-project-name" className="block text-sm font-bold text-builder-ink mb-1">プロジェクト名</label>
                 <input
+                  id="builder-project-name"
                   className="w-full border border-builder-border rounded px-3 py-2 text-sm focus:outline-none focus:border-builder-blue"
                   value={projectNameInput}
                   onChange={(e) => setProjectNameInput(e.target.value)}

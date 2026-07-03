@@ -11,6 +11,8 @@ import {
   migrateScheduleKeys,
   migrateTabV2toV3,
   migrateProject,
+  normalizeTeacherFields,
+  normalizeCombinedGroups,
   findEntityById,
   nextId,
   activeDatesForTab,
@@ -508,9 +510,11 @@ describe('migrateProject', () => {
 
   it('重複が無い teachers 配列は migration で参照そのまま (no-op)', () => {
     const p = makeLegacyProject();
+    // F5b の要素正規化が no-op になるよう完全な形の teacher を使う
+    // (配列フィールド欠落は補完されて参照が変わる、正規化テスト側で検証)
     p.teachers = [
-      { name: '堀上', subjects: ['英語'] },
-      { name: '田中', subjects: ['数学'] },
+      { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
     ];
     const before = p.teachers;
     const result = migrateProject(p);
@@ -621,5 +625,189 @@ describe('migrateProject', () => {
     expect(result.tabs[0].schedule).toEqual({ 'd2-p1-c1': { subject: '英', teacher: 'T1' } });
     // tab2 の C コマは project の C(id3) へ remap → d3-p1-c1
     expect(result.tabs[1].schedule).toEqual({ 'd3-p1-c1': { subject: '数', teacher: 'T2' } });
+  });
+});
+
+// ─── F.5 系統 A: 型崩れ JSON の正規化 ────────────────────────────────
+
+describe('normalizeTeacherFields', () => {
+  it('配列フィールドが欠落した teacher に空配列を補完する', () => {
+    const result = normalizeTeacherFields([{ name: 'A' }]);
+    expect(result).toEqual([
+      { name: 'A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ]);
+  });
+
+  it('object でない要素・name の無い要素は drop する', () => {
+    const result = normalizeTeacherFields(['x', null, { subjects: ['英語'] }, { name: 'B', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] }]);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('B');
+  });
+
+  it('全要素が正常なら同一参照を返す (no-op)', () => {
+    const teachers = [{ name: 'A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] }];
+    expect(normalizeTeacherFields(teachers)).toBe(teachers);
+  });
+});
+
+describe('normalizeCombinedGroups', () => {
+  it('dates キー欠落 (undefined) は null (全日) に正規化する', () => {
+    const result = normalizeCombinedGroups([{ id: 1, subject: '英語', classes: ['A', 'B'] }]);
+    expect(result).toEqual([{ id: 1, subject: '英語', classes: ['A', 'B'], dates: null }]);
+  });
+
+  it('classes 非配列 / subject 非文字列のグループは drop する', () => {
+    const result = normalizeCombinedGroups([
+      { id: 1, subject: '英語', classes: 'A' },
+      { id: 2, subject: 3, classes: ['A', 'B'], dates: null },
+      { id: 3, subject: '数学', classes: ['A', 'B'], dates: ['7/1'] },
+    ]);
+    expect(result).toEqual([{ id: 3, subject: '数学', classes: ['A', 'B'], dates: ['7/1'] }]);
+  });
+
+  it('全要素が正常なら同一参照を返す (no-op)', () => {
+    const groups = [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: null }];
+    expect(normalizeCombinedGroups(groups)).toBe(groups);
+  });
+});
+
+describe('migrateProject — 型崩れ JSON の正規化 (F5a-F5e)', () => {
+  const baseTab = () => ({
+    id: 1,
+    name: 'メイン',
+    config: { classes: [{ id: 1, label: 'A' }], subjectCounts: { '英語': 1 } },
+    schedule: {},
+  });
+  const v4base = (overrides = {}) => ({
+    version: 4,
+    dates: [{ id: 1, label: '7/1' }],
+    periods: [{ id: 1, label: '1限' }],
+    activeTabId: 1,
+    tabs: [baseTab()],
+    teachers: [],
+    ...overrides,
+  });
+
+  it('combinedGroups: {} (truthy な非配列) は空配列に正規化される', () => {
+    const p = migrateProject(v4base({ combinedGroups: {} }));
+    expect(p.combinedGroups).toEqual([]);
+  });
+
+  it('externalSessions: {} は空配列に、非 object 要素は drop される', () => {
+    expect(migrateProject(v4base({ externalSessions: {} })).externalSessions).toEqual([]);
+    const p = migrateProject(v4base({ externalSessions: ['x', { id: 1, date: '7/1', teacherName: 'A' }] }));
+    expect(p.externalSessions).toEqual([{ id: 1, date: '7/1', teacherName: 'A' }]);
+  });
+
+  it('subjects が文字列なら subjectCounts のキーから再生成される', () => {
+    const p = migrateProject(v4base({ subjects: '英語' }));
+    expect(p.subjects).toEqual(['英語']);
+  });
+
+  it('externalCounts が配列なら空オブジェクトに正規化される', () => {
+    const p = migrateProject(v4base({ externalCounts: [1, 2] }));
+    expect(p.externalCounts).toEqual({});
+  });
+
+  it('teacher.subjects 欠落は空配列補完され、name 無し要素は drop される', () => {
+    const p = migrateProject(v4base({ teachers: [{ name: 'A' }, { subjects: ['数学'] }] }));
+    expect(p.teachers).toEqual([
+      { name: 'A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ]);
+  });
+
+  it('combinedGroups の dates キー欠落は null に正規化される', () => {
+    const p = migrateProject(v4base({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'] }],
+    }));
+    expect(p.combinedGroups[0].dates).toBeNull();
+  });
+
+  it('snapshots: {} を含む v3 データでも migrateProjectV3toV4 が throw しない', () => {
+    const v3 = {
+      version: 3,
+      activeTabId: 1,
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '7/1' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: 'A' }],
+          subjectCounts: { '英語': 1 },
+        },
+        schedule: {},
+      }],
+      teachers: [],
+      snapshots: {},
+    };
+    const p = migrateProject(v3);
+    expect(p.version).toBe(4);
+    expect(p.snapshots).toEqual([]);
+  });
+
+  it('version 2 で config.dates が欠落したタブでも throw せず起動できる (F5e)', () => {
+    const v2 = {
+      version: 2,
+      activeTabId: 1,
+      tabs: [{
+        id: 1,
+        name: 'メイン',
+        config: { classes: ['A'], subjectCounts: { '英語': 1 } },
+        schedule: { 'd0-p0-c0': { subject: '英語', teacher: 'T' } },
+      }],
+      teachers: [],
+    };
+    const p = migrateProject(v2);
+    expect(p.version).toBe(4);
+    // 復元不能な schedule は drop されるが、クラスは v3 形に wrap される
+    expect(p.tabs[0].config.classes).toEqual([{ id: 1, label: 'A' }]);
+  });
+
+  it('範囲外の生成パラメータは clamp される (F5d)、範囲内・未設定は不変', () => {
+    const p = migrateProject(v4base({ maxDailyHours: 0, maxIterations: 99999999, numPatterns: 4 }));
+    expect(p.maxDailyHours).toBe(1);
+    expect(p.maxIterations).toBe(5000000);
+    expect(p.numPatterns).toBe(4);
+    const q = migrateProject(v4base());
+    expect(q.maxDailyHours).toBeUndefined();
+  });
+});
+
+describe('migrateProjectV3toV4 — 空タブの subset 保存 (F5v)', () => {
+  it('日程・時限が空 (0 件) のタブは activeDateIds/activePeriodIds = [] を保存する', () => {
+    const v3 = {
+      version: 3,
+      activeTabId: 1,
+      teachers: [],
+      tabs: [
+        {
+          id: 1,
+          name: '中３',
+          config: {
+            dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: 'A' }],
+            subjectCounts: { '英語': 1 },
+          },
+          schedule: {},
+        },
+        {
+          // 未設定のタブ: v3 では 0 日・0 時限 = 何も表示しない
+          id: 2,
+          name: '中１・２',
+          config: { dates: [], periods: [], classes: [{ id: 1, label: 'B' }], subjectCounts: {} },
+          schedule: {},
+        },
+      ],
+    };
+    const p = migrateProject(v3);
+    // 旧実装は `length > 0` 条件で空配列を保存せず、0 日タブが
+    // 「絞り込みなし = union 全日」に化けて全学年の日付を表示していた
+    expect(p.tabs[1].config.activeDateIds).toEqual([]);
+    expect(p.tabs[1].config.activePeriodIds).toEqual([]);
+    // プール全体と一致するタブは従来どおり undefined (= 全日・全時限)
+    expect(p.tabs[0].config.activeDateIds).toBeUndefined();
+    expect(p.tabs[0].config.activePeriodIds).toBeUndefined();
   });
 });

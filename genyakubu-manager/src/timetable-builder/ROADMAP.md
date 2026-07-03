@@ -1,6 +1,6 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
+最終更新: 2026-07-02 (F.5: 並列レビュー第 2 波 — 未カバー領域から F5a-F5aa 発見、統合推奨順を再編) / 2026-07-02 (F.4: 再チェック — ベースライン検証 + F.2 全項目の現存確認 + F2o/F2p 新規追加) / 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
 + D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
 + E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
 + E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
@@ -35,7 +35,7 @@
 | C (破壊的再設計) | C1 ID 化 / C2 reducer 化 / C3 デザイン統合 / C4 Excel ライブラリ置換 |
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
 | E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
-| E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live(残あり) / E2h 負荷偏り |
+| E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
 | E3 (テスト/信頼性) | E3d schema 検証 |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
@@ -269,7 +269,7 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 77 files / 1573 tests (2026-07-02 F 系レビュー後)
+npm test            # 81 files / 1678 tests (2026-07-02 参照整合対応後)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -722,16 +722,20 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: constants.test.js (新規 10) / projectReducer.test.js (+5) / GenerationSettings.test.jsx (新規 6) / autoGenerator.test.js (+3 maxIterations)。
 - **延期**: maxIterations の advanced 折りたたみ化は不要と判断 (3 つとも常時表示)。
 
-#### E2f. 🟡 自動生成中の進捗詳細 (cancel + 統計表示 完了 / live worker イベントのみ残)
-- **現状**: cancel・経過時間・探索回数・詰まりセルは可視化済。残るは Worker からの逐次 (パターン途中) イベント。
+#### E2f. ✅ 自動生成中の進捗詳細 (cancel + 統計表示 + live 通知 完了)
+- **現状**: cancel・経過時間・探索回数・詰まりセルに加え、live 途中経過も可視化済
+  (F.4 再チェックで確認: worker が `{ type: 'progress' }` を間引き通知 →
+  BuilderApp `generateLive` → Toolbar に「案 N 探索中 / 充填 X/Y / 探索 N 回」)。
+  旧「残り」記述は stale だったので削除。
 - **✅ 完了分 (cancel / 2026-06-29)**: 生成中に Toolbar へ「✕ 中止」ボタンを表示 (`BuilderApp.handleCancelGenerate` → `generationRef.current` を null 化して done.then の state 更新を skip → `handle.cancel()` → isGenerating 解除 + warning toast)。既存セルは保持。Toolbar.test.jsx に +2 件。
 - **✅ 完了分 (統計表示 / 2026-06-29)**:
   - **autoGenerator**: `generateSinglePattern` が `iterations` (探索回数=solve 呼び出し数) / `hitLimit` (上限到達) / `stuckSlot` (MRV 順で最初に埋められなかったコマのラベル) を返す。`iter` を solve の外で確保して読む。
   - **BuilderApp**: 生成中の経過時間を 100ms interval で更新し、完了時に総時間を確定。各 pattern に統計フィールドを乗せて SummaryPanel へ。
   - **Toolbar**: 生成中ボタンに「⏱ X.Xs」。**SummaryPanel**: 結果ヘッダに総生成時間、各案に「探索 N 回 / (上限到達) / 詰まり: 日付 時限 クラス」。
   - **テスト**: autoGenerator +3 / SummaryPanel 新規 4。
-- **残り**: Worker から「パターン内のどこまで進んだか」を postMessage で逐次通知し、進捗ボタンで live 詳細パネルを開く (現状は各パターン完了後の事後統計)。
-- **規模**: 中 / **価値**: 中
+- **✅ 完了分 (live 通知)**: `autoGenerator.onProgress` (PROGRESS_INTERVAL=20000 で間引き) →
+  worker `postMessage({ type: 'progress', index, progress })` → BuilderApp `generateLive` →
+  Toolbar のインライン live 表示。「詳細パネル化」はインライン表示で十分と判断し不要。
 
 #### E2h. ✅ 生成案の負荷偏り表示 (2026-06-29 完了)
 - **背景**: 完全解は全て 100% 充填なので、複数案から採用案を選ぶ主な差別化点は講師コマ数の均等さ。
@@ -1065,6 +1069,279 @@ F.1 の修正自体をプロ校正者視点で再レビュー。候補 14 件を
   SubjectManager / AbsenceNgPanel の即時 commit 数値入力にも draft 化を展開
 - **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
   fixSuggestions の同型 4 連ブロック解消)
-- **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
+- ✅ **F2n**: 生成結果の失効条件一般化 (現状はタブ削除・プロジェクト差替のみ。
   生成後の config 変更 (クラス削除・使う日 off・クォータ変更) では
   stale な案を採用できる。config fingerprint での無効化を検討)
+  → **2026-07-02 実装済み** (F.4 推奨着手順 5 参照)
+
+### F.4 2026-07-02 再チェック (koushu-jikanwari-check セッション) の結果
+
+F.1/F.3 マージ後の main に対して、ベースライン検証 + F.2 全項目の現存確認 +
+新規の目でのコード再読を実施。
+
+**ベースライン**: lint 0 / typecheck 0 / テスト 77 files・1573 件全 PASS /
+production build 成功 (excelExport chunk 警告のみ、期待動作)。
+
+**F.2 の現存確認** — 全項目が現存 (該当箇所を行レベルで再特定済み):
+- F2a: AbsenceNgPanel の NG マトリクス `<td onClick>`、ClassPriority の
+  `<td onClick>`、TabBar の削除 `<span onClick>`・改名 dblclick、
+  ContextMenu (Escape で閉じない・focus 移動なし)
+- F2b: ScheduleCell `handleCellNavigation` が矢印キーを無条件
+  `preventDefault` (Alt+↓ 等の素通し無し・modifier チェック無し)
+- F2c: useHistoryStack の autosave は毎 dispatch で同期 stringify+setItem
+  (debounce はステータス表示のみ)。tab/switch でも全量書き込み
+- F2d: no-op ガード無しの action が残存 — tab/rename (同名) /
+  config/setSubjectCount (同値) / subject/setColor (同色) /
+  project/updateName (同名) / combinedGroup/update (同値)
+- F2e: cell/swap は dragstart 時点の payload を信頼 (現 schedule 不読)
+- F2f: loadInitialProject の migrate/validate 失敗 → デフォルトへ
+  フォールバック → 最初の編集の autosave が元データを上書きし復旧不能
+  (退避コピー無し)
+- F2g: computeInfeasibilities C1 (noTeacherForSlot) はクォータを見ない。
+  **増幅ケースを新発見**: クォータ 0 の科目も全 (date×period) を走査する
+  ため、担当者ゼロ × クォータ 0 の科目 1 つで dates×periods 件の
+  「致命」が出る (例 6 日×3 限 = 18 件のノイズ)
+- F2h: NG CSV の空白結合 dedupe キー / renameHeader の重複ラベル許容
+  (H3) / entity ID 再利用 × snapshot (H4: config/setList は最小空き ID を
+  再利用する) / class rename・削除で teacher.ngClasses / priorityClasses
+  非追従 (H5: renameHeader type='class' は combinedGroups しか更新しない)
+- F2n: BuilderApp の失効は project.createdAt 変化 + applyPattern の
+  タブ存在チェックのみ
+
+**新規発見 (F2 系に追加)**:
+- **F2o (小)**: `teacher/rename` の externalCounts キー書き換えが
+  `k.replace('-旧名', '-新名')` で**最初の一致**を置換する
+  (projectReducer)。日付ラベルが `-旧名` を含むと日付側が壊れる
+  (例: 日付「8/1-田中」×講師「田中」)。dates/removeFromPool や
+  config/setList(periods) は最長一致で対応済みなのにここだけ素朴
+  replace。F2k (ラベル参照 cascade の一元化) で吸収するのが良い
+- ✅ **F2p (小)**: タブ ID 再利用 × 生成結果。最大 ID のタブを削除 →
+  新タブ追加 (tab/add は max+1) で ID が再利用され、残っている生成結果の
+  「この案を採用」(schedule/applyPattern は ID 存在チェックのみ) が
+  無関係な新タブへ旧案を書き込める。H4 と同族で、F2n の fingerprint
+  失効を入れれば同時に解消する
+- **docs**: E2f の「live worker イベントが残」は stale だった (実装済み)。
+  本セクションと同時に修正
+
+**リスク再確認**: R1 (sync fallback は cancel 不能・同期実行) は現存。
+Worker が使える環境では影響なし。
+
+**推奨着手順 (次セッション向け)**:
+1. ~~**F2f**~~ ✅ 完了 (F.5 系統 A と同時対応) — 読込失敗時に原本を
+   `builder.schedule_project_corrupt` へ退避し、toast に退避先を明記
+2. ~~**F2c**~~ ✅ 完了 (F.5 小粒セットと同時対応) — 実書き込みを 800ms
+   debounce 化し、アンマウント / pagehide / beforeunload で flush
+3. ~~**F2g**~~ ✅ 完了 (F.5 と同時対応) — C1 をクォータ考慮に再設計
+   (クォータ 0 除外 / 担当者ゼロは C2 に一本化 / 置ける日数 < クォータの
+   ときだけ丸ふさがりの日を列挙)
+4. ~~**rename/削除系の参照整合まとめ**~~ ✅ 完了 (2026-07-02) —
+   `utils/labelRefs.js` を新設しラベルキーのパース知識を一元化 (F2k)。
+   同時に修正: **H3** (renameHeader の重複ラベルを reject + ContextMenu で
+   理由 toast) / **H5** (クラス rename に teacher.ngClasses/priorityClasses
+   が追従、config/setList のクラス削除で参照を掃除〔他タブの同名は温存〕) /
+   **F2o** (teacher/rename の externalCounts を suffix-slice 置換に)。
+   reducer のローカルヘルパー 5 個を labelRefs へ移設。
+   NG CSV の空白結合 dedupe (F2h 前段) は実害が「重複行の skip 漏れ」のみ
+   なので保留
+5. ~~**F2n (+F2p)**~~ ✅ 完了 (2026-07-02) — `utils/generationFingerprint.js`
+   を新設。生成開始時に「使う日・時限・クラス・クォータ・合同・生成制約」の
+   fingerprint を捕捉し、project 変化で一致しなくなったら生成結果を破棄
+   (warning toast)。タブ削除は fingerprint=null で検出され、同 ID 再作成
+   (F2p) も削除時点で破棄済みになる。teachers / 外部コマ / schedule の変更
+   では破棄しない (構造は壊れず違反 UI が検出する領域。理由はモジュールの
+   コメントに明記)
+6. **F2a/F2b** — a11y はまとめて 1 セッション
+
+※ F.5 の並列レビュー結果を踏まえた統合版の推奨順は F.5 末尾を参照。
+
+### F.5 2026-07-02 並列レビュー第 2 波 (F.4 の未カバー領域) の結果
+
+F.4 で精読済みの箇所を除外し、4 班 (utils 深掘り / ConfigModal 大物 /
+メイン UI・IO / 制約・小物) で並列レビュー。既知 F2a-F2p との重複は排除済み。
+主要な指摘はエージェントの再現テストに加えて本体側でもコード裏取り済み。
+
+#### 系統 A: JSON 読込の検証・正規化の穴 (クラッシュループ級、最優先)
+
+**✅ F5a-F5e + F2f 対応済み (2026-07-02、F5f のみ残)。実装方針:**
+- 「reject より正規化」— validateProjectShape は据え置き (tabs/config/schedule
+  の致命的構造のみ)、**migrateProject が要素レベルまで正規化**する方に寄せた。
+  reject するとフォールバックでユーザデータを失うが、正規化なら型崩れ
+  フィールドだけ既定値に落ちて残りは救える
+- `normalizeTeacherFields` / `normalizeCombinedGroups` を scheduleKey.js に
+  新設 (純粋関数・no-op 参照保存)。combinedGroups/externalSessions/subjects/
+  externalCounts/snapshots の非配列・型崩れも既定値へ (F5a/F5b/F5c)
+- **F5d は migrate 時 clamp で対応** (solver 内 clamp ではない)。state への
+  全流入経路 (JSON 読込 / テンプレート適用 = migrate 経由、UI 編集 = reducer)
+  が clamp 済みになるので solver は保存値を信頼してよい。clamp 関数は
+  `utils/generationParams.js` へ切り出し (scheduleKey ← constants の循環回避、
+  constants.js から再エクスポートで既存 import 互換)
+- **F2f**: loadInitialProject の読込失敗時、フォールバック前に原本を
+  `STORAGE_KEY_PROJECT_BACKUP` (builder.schedule_project_corrupt) へ退避し、
+  toast (loadError) に退避先を明記
+- **統合テスト** `utils/projectLoadIntegrity.test.js` 新設: 「validate 通過
+  JSON は migrate + 主要 consumer (render 相当 / computeGlobalUsage / solver)
+  の初回利用でクラッシュしない」を型崩れ fixture 13 種で固定 (テストの穴 3)
+- テスト +43 (scheduleKey 正規化 13 / projectFactory 退避+guard 7 /
+  統合 15 / useLongPress click 抑止 3 / useFocusTrap 解除側 3 ほか)
+
+`validateProjectShape` (E3d) は tabs/teachers/dates/periods/classes/
+subjectCounts/schedule しか見ず、`migrateProject` も以下を正規化しないため、
+外部 JSON 経由で壊れた形が入ると **render で TypeError → autosave が汚染を
+永続化 → リロードしても再クラッシュ** (localStorage 手動削除が必要) になる
+— **という状態だった (以下は対応前の記録)**。
+
+- ✅ **F5a (High)**: `combinedGroups: {}` / `externalSessions: {}` /
+  `subjects: "文字列"` が素通し。`combinedGroups.find` (scheduleKey.js
+  findCombinedGroup 経由、常時マウントの SummaryPanel から到達) /
+  `externalSessions.forEach` (autoGenerator / analysisHelpers) で crash。
+  `snapshots: {}` + version≤3 は migrateProjectV3toV4 で throw
+- ✅ **F5b (High)**: teacher に `subjects` が無いと、(同名講師ありなら)
+  `detectTeacherDiffs` の guard 漏れ (projectFactory.js:38 —
+  36 行目はガード済みなのに 38 行目は素通し) で読込拒否、
+  (衝突なしなら) 読込成功後 ScheduleCell の `t.subjects.includes` で
+  全画面クラッシュ。reducer の subject/remove・teacher/toggleSubject も無防備
+- ✅ **F5c (Medium)**: combinedGroups の `dates` キー欠落で
+  `g.dates.includes` が TypeError (F5a と同根)
+- ✅ **F5d (Medium)**: ソルバが `project.maxDailyHours ?? デフォルト` を
+  **clamp なしの生値**で使用 (autoGenerator.js:142-147)。UI は
+  `resolveGenerationParams` で clamp 表示するため乖離。`maxDailyHours: 0`
+  の JSON で「UI は 1 と表示・実際は全講師除外で全コマ未定」になり原因不明
+- ✅ **F5e (Low)**: version≤2 で config.dates/periods 欠落 → migrate 全体が
+  TypeError (validateProjectShape は v4 互換のため optional 扱い)
+- **F5f (Low・要検証)**: v2/v3 混在 dim + ID キーの schedule は
+  migrateTabV2toV3 のインデックス前提でシフト/消失 (正規経路では混在時
+  schedule 空のため実害は外部データのみ)
+
+**修正方向 (当初案)**: validateProjectShape の対象拡大 + migrateProject での
+フィールド正規化 + ソルバも resolveGenerationParams を使う、だったが、
+実装は「migrate 正規化 + migrate 時 clamp」に一本化した (冒頭の実装方針参照。
+solver 内 clamp はテストの maxIterations=1 のような意図的な範囲外指定と
+衝突するため見送り)。
+
+#### 系統 B: Excel 出力が throw する名前
+
+- ✅ **F5g (Medium)**: `uniqueSheetName` の重複判定が case-sensitive
+  (`workbook.getWorksheet`) なのに exceljs の addWorksheet は
+  case-insensitive で throw。"classA"/"CLASSA" 等、大小文字違いの
+  タブ名・講師名・科目名で出力が恒久的に失敗 (再現確認済み。日本語運用では
+  遭遇率低のため Medium)
+- ✅ **F5h (Medium)**: `sanitizeSheetName` がアポストロフィ非除去。先頭/末尾
+  `'` の名前で exceljs が throw (再現確認済み)
+- ✅ **F5i (Low)**: 講師名が「全講師リスト」だと固定名
+  `addWorksheet('全講師リスト')` (uniqueSheetName 不通) が重複 throw
+
+#### 系統 C: 設定モーダル UI
+
+- ✅ **F5j (High)**: 「まとめて登録」の期間 (開始日〜終了日) が **日付プールの
+  挿入順の positional slice** で解決される (AbsenceNgPanel
+  `dateLabelsInRange`)。タブ B で前倒しの日付を後から追加するとプールは
+  末尾 push (tabDates/setByLabels) でカレンダー順と乖離し、
+  「7/15〜7/25」指定が別の日群に化けて一括 NG / セッションが誤登録される。
+  BasicSettings は表示を sortPoolDatesByCalendar で直しており、乖離は
+  実際に起こる前提の状態。select の並びも生順で分かりにくい。
+  **✅ 修正 (2026-07-02)**: パネル冒頭の `poolDates` を
+  `sortPoolDatesByCalendar` でカレンダー順に統一。期間 slice・select・
+  NG マトリクス列・クイックグリッドの並びが BasicSettings 表示と揃う
+  (パース不能ラベルは末尾・安定順)。回帰テスト +2 (AbsenceNgPanel.test.jsx)
+- ✅ **F5k (Medium)**: ConfigModal のプロジェクト名入力が
+  `useState(project.name)` 初期化のみで stale 化。モーダル内テンプレート
+  適用・undo・リセット後に旧名を表示し、blur で**新名を旧名で上書き**
+- ✅ **F5l (Medium)**: プリセット適用が部分上書き (`if (p.endTime)` 等)。
+  開始時刻のみのプリセット適用で前回の終了時刻・メモが残留した混成
+  フォームになり、意図しない広域自動NGが登録される
+- ✅ **F5m (Medium)**: プリセット編集フォームが「期間なし」を表現できない。
+  期間なしプリセットを改名だけして保存するとプール先頭日の期間が勝手に
+  付与される。プール外ラベルの期間も編集を開くだけで silent 置換
+- ✅ **F5n (Medium)**: 合同グループの**編集**経路 (setField → 即 dispatch) が
+  無検証で、クラス 1 個以下・`dates: []` のグループが恒久化する
+  (新規追加側には classes.length < 2 ガードあり。赤字警告は表示のみ)
+- ✅ **F5o (Low)**: クイックグリッド / SubjectManager の数値入力が負数の直接
+  入力を受け付ける (`parseInt(value) || 0` がそのまま格納)。externalCounts
+  の負数は講師日次合計を過小評価し過負荷警告を見逃す
+- **F5p (Low・要検証)**: 他タブで作った合同グループを編集すると他タブの
+  クラスが未選択表示になり、解除も不能 (タブ混成グループが作れる)。
+  combinedGroups が project 共有ラベル参照なので仕様の可能性あり、要設計判断
+
+#### 系統 D: focus / 入力系
+
+- ✅ **F5q (Medium)**: useFocusTrap は**フォーカスが trap 外にあるときの前方
+  Tab を捕捉しない** (`!root.contains(active)` の救済が Shift+Tab 分岐に
+  しかない)。オーバーレイクリック → Tab でモーダル背後の UI を操作できる
+- ✅ **F5r (Medium)**: useFocusTrap の Escape が `e.isComposing` を見ない。
+  **IME 変換キャンセルの Escape でダイアログごと閉じる** (InputModal では
+  入力消失)。日本語入力前提のアプリなので発生頻度高
+- **F5s (Low・要検証)**: useLongPress のゴースト click (メニューが指の
+  真下に出るため長押し後の click が先頭メニュー項目を誤爆しうる) と、
+  抑止フラグの解除漏れ (ハイブリッド端末で次のマウスクリック 1 回が無視)。
+  実機検証が必要
+
+#### 系統 E: ソルバ / 分析の整合
+
+- ✅ **F5t (Medium)**: 連続コマ制約 (E2c) の `isOccupied` が**自タブの
+  tempSch しか見ない**。H2 (同時限 busy / 日次上限) は他タブを合算するのに
+  連続だけ非考慮で、学年横断では上限超えの連続が生成される
+- ✅ **F5u (Medium)**: SummaryPanel「講師別コマ数 (全タブ合計)」が
+  `teacherDailyCounts[].total` (= 講習セル + external) を合算。予備校等の
+  外部コマが混入し、しかも「その日にセルがある日だけ」混入する不定値。
+  `.current` 合算にすべきと思われる (orphan 講師名の漏れも非対称)
+- ✅ **F5v (Medium)**: v3→v4 migration で「日程 (時限) 0 のタブ」が
+  `oldDateIds.length > 0` 条件により activeDateIds 未設定 = **全日使用**に
+  化ける (正しくは `[]`)
+- ✅ **F5w (Medium)**: ソルバが「空 + ロック済み」セルに科目・講師を
+  書き込んでいた。**仕様決定 (2026-07-02、ユーザ判断): 「空 lock = この枠は
+  空けておく」**。
+  **✅ 実装**: slot 構築で空ロックセルを除外 (totalSlots にも数えない、
+  backtrack の空ロック分岐は到達不能になり削除)。quotaCellMismatch (C3) は
+  「使う日 × 使う時限 − 空ロック」の生成対象セル数で判定するよう変更
+  (クラスごとにロック数が違う場合は不一致クラスのみ item 化、Toolbar
+  ラベルに【クラス】と空ロック数を表示)。科目だけ事前指定 + ロックは
+  従来どおり講師のみ自動で埋める。合同の相手クラスが空ロックの場合は
+  従来から合同不成立 (既存挙動をテストで固定)。USER_GUIDE に明記
+- ✅ **F5x (Low)**: computeDashboard (進捗バー) が非表示の温存セルも filled に
+  数える (E-3 絞り忘れの残党。violation/生成/Excel は絞り済み)。
+  **✅ 修正 (2026-07-02)**: parseKey + 可視 id Set で filter
+- ✅ **F5y (Low)**: 歯抜け時限タブ (activePeriodIds=[1限,3限]) で連続コマ制約が
+  実際は休憩を挟むのに「連続」と誤判定 (過剰に候補を弾く)
+- **F5z (Low・要検証)**: 同一科目で同一クラスを共有する合同グループが
+  重複登録でき、伝播・集計は first-match のみで不整合
+
+#### 系統 F: その他
+
+- ✅ **F5aa (Medium・要実機確認)**: dragstart で `dataTransfer.setData()` を
+  呼ばないため **Firefox では HTML5 drag が開始しない**既知仕様に抵触
+  (ScheduleTable)。`setData('text/plain', k)` の 1 行で解消
+- ✅ **テストの穴** (3 件とも 2026-07-02 対応済み): useLongPress の click 抑止
+  +3 / useFocusTrap の trapStack 解除側・フォーカス復帰・focusable ゼロ +3 /
+  「validate 通過 JSON は migrate と初回利用でクラッシュしない」統合テスト
+  (projectLoadIntegrity.test.js) を新設
+
+#### F.4 + F.5 統合の推奨着手順
+
+1. ~~**系統 A + F2f**~~ ✅ 完了 (2026-07-02) — migrate 正規化 + F2f 退避 +
+   統合テスト + テストの穴 3 件。F5f (v2/v3 混在 dim) のみ残 (要検証・外部データ限定)
+2. ~~**F5j**~~ ✅ 完了 (2026-07-02) — poolDates をカレンダーソートに統一
+3. ~~**小粒即効セット**~~ ✅ 完了 (2026-07-02) — F2c (debounce+flush) /
+   F5aa (setData) / F5q・F5r (focus trap、親アプリ側の同一実装にも適用) /
+   F5g-F5i (Excel シート名)。回帰テスト +9 (autosave 5 / focus trap 3 /
+   Excel 3、既存 2 件は debounce 対応に更新)
+4. ~~**F2g + F5x**~~ ✅ 完了 (2026-07-02) — noTeacherForSlot をクォータ考慮に
+   再設計 (真に構造的に解けないときだけ「致命」)、進捗バーの E-3 絞り込み。
+   テスト: C1 の旧仕様 3 件を新セマンティクスに書換 + 新規 4 件 / dashboard +1
+5. ~~**設定モーダル UI まとめ**~~ ✅ 完了 (2026-07-02) — F5k (名前 draft を
+   project.name に同期) / F5l (プリセット適用は時刻・メモ全置換) / F5m
+   (「期間なし」を第一級化、先頭日への silent snap を廃止) / F5n
+   (合同グループ編集を draft-commit 化 + 対象日 0 日の検証を新規側にも追加) /
+   F5o (負数を reducer で 0 に clamp)。F5p (他タブグループの編集) は
+   仕様判断が必要なため未着手のまま残す。テスト +11
+   (CombinedGroupSettings 新規 5 / AbsenceNgPanel +3 / ConfigModal +1 /
+   reducer +2)
+6. ~~**ソルバ整合 (fingerprint 以外)**~~ ✅ 完了 (2026-07-02) — F5t (連続コマ
+   判定に他タブの busy を合算) / F5y (判定をプール全時限の並びに変更、歯抜け
+   タブの誤隣接を解消) / F5v (v3→v4 で 0 日タブの subset を保存) / F5u
+   (全タブ合計を .current に)。テスト +6。
+   F2n/F2p は generationFingerprint で ✅ 完了 (2026-07-02、F.4 の 5 参照)。
+   F5w は仕様決定のうえ ✅ 完了 (2026-07-02、「空 lock = 空けておく」)
+7. **参照整合 ✅ (2026-07-02、F.4 の 4 参照) / a11y (F2a/F2b) は残**。
+   その他の残: F5p (他タブ合同グループの編集、仕様判断) / F5s (long-press
+   ゴースト click、実機検証) / F2d (no-op 履歴) / F2e (swap stale payload) /
+   F5f (v2/v3 混在 dim、外部データ限定) / F2h 前段 (NG CSV dedupe キー)

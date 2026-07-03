@@ -112,3 +112,32 @@ describe('ConfigModal (E1b tablist キーボード)', () => {
     expect(screen.getByRole('tab', { name: '🏫 クラス優先度' })).toHaveAttribute('aria-selected', 'true');
   });
 });
+
+describe('ConfigModal — プロジェクト名の外部変更への同期 (F5k)', () => {
+  it('project.name が外から変わったら入力欄も追従する (stale 上書き防止)', () => {
+    const onClose = vi.fn();
+    const updateProjectName = vi.fn();
+    const makeValue = (name) => ({
+      project: { name, createdAt: null, updatedAt: null },
+      handleResetAll: vi.fn(),
+      updateProjectName,
+    });
+    const uiValue = { showConfirm: vi.fn().mockResolvedValue(false) };
+    const tree = (name) => (
+      <ProjectContext.Provider value={makeValue(name)}>
+        <UIContext.Provider value={uiValue}>
+          <ConfigModal onClose={onClose} />
+        </UIContext.Provider>
+      </ProjectContext.Provider>
+    );
+    const { rerender } = render(tree('冬期2025'));
+    const input = screen.getByLabelText('プロジェクト名');
+    expect(input).toHaveValue('冬期2025');
+    // モーダルを開いたままテンプレート適用 / undo 等で name が変わる
+    rerender(tree('春期2026'));
+    expect(input).toHaveValue('春期2026');
+    // 旧実装はここで '冬期2025' のままで、blur すると新名を旧名で上書きした
+    fireEvent.blur(input);
+    expect(updateProjectName).not.toHaveBeenCalled();
+  });
+});

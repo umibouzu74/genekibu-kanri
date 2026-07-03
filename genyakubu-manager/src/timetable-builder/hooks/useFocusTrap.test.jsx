@@ -86,4 +86,101 @@ describe('useFocusTrap', () => {
     expect(inner).toHaveBeenCalledTimes(1);
     expect(outer).not.toHaveBeenCalled();
   });
+
+  // ─── trapStack の解除側 (F.5 テストの穴 2) ───
+
+  it('入れ子の内側を閉じた後は外側 trap が Escape に再応答する', () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const { rerender } = render(
+      <>
+        <TrapDialog onClose={outer} />
+        <TrapDialog onClose={inner} />
+      </>,
+    );
+    // 内側 dialog を unmount (= 閉じる) → trapStack から pop される
+    rerender(<TrapDialog onClose={outer} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(inner).not.toHaveBeenCalled();
+    expect(outer).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanup 時に trap を開く前のフォーカス位置へ復帰する', () => {
+    const { getByText, rerender } = render(
+      <>
+        <button>opener</button>
+      </>,
+    );
+    getByText('opener').focus();
+    rerender(
+      <>
+        <button>opener</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    // trap がマウントされ dialog 内へフォーカスが移る
+    expect(document.activeElement).toBe(getByText('first'));
+    rerender(
+      <>
+        <button>opener</button>
+      </>,
+    );
+    // dialog を閉じると opener へ復帰する
+    expect(document.activeElement).toBe(getByText('opener'));
+  });
+
+  it('フォーカスが trap 外にあるとき前方 Tab でも trap 内へ引き戻す (F5q)', () => {
+    const { getByText } = render(
+      <>
+        <button>outside</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    // オーバーレイクリック等でフォーカスが trap 外へ落ちた状況を再現
+    getByText('outside').focus();
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(document.activeElement).toBe(getByText('first'));
+  });
+
+  it('フォーカスが trap 外にあるとき Shift+Tab は末尾へ引き戻す (従来動作の維持)', () => {
+    const { getByText } = render(
+      <>
+        <button>outside</button>
+        <TrapDialog onClose={vi.fn()} />
+      </>,
+    );
+    getByText('outside').focus();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(getByText('last'));
+  });
+
+  it('IME 変換中 (isComposing) の Escape では閉じない (F5r)', () => {
+    const onClose = vi.fn();
+    render(<TrapDialog onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape', isComposing: true });
+    expect(onClose).not.toHaveBeenCalled();
+    // 旧ブラウザ互換: keyCode 229 も変換中扱い
+    fireEvent.keyDown(window, { key: 'Escape', keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    // 変換中でなければ従来どおり閉じる
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('focusable がゼロの dialog では Tab がデフォルト動作ごと抑止される', () => {
+    function EmptyDialog({ onClose }) {
+      const ref = useRef(null);
+      useFocusTrap(ref, { onClose });
+      return <div ref={ref} role="dialog">中身なし</div>;
+    }
+    render(
+      <>
+        <button>outside</button>
+        <EmptyDialog onClose={vi.fn()} />
+      </>,
+    );
+    const prevented = !fireEvent.keyDown(window, { key: 'Tab' });
+    // preventDefault されている (背後の focusable へ抜けようとしない)
+    expect(prevented).toBe(true);
+  });
 });

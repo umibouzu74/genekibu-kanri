@@ -77,4 +77,57 @@ describe('useLongPress', () => {
     vi.advanceTimersByTime(500);
     expect(cb).toHaveBeenCalledTimes(1);
   });
+
+  // ─── onClickCapture (長押し発火直後の click 抑止) ───
+  // 誤操作防止の要なのに未テストだった (F.5 テストの穴 1)。
+  // F5s (ゴースト click のメニュー誤爆 / 抑止フラグ解除漏れ) の回帰検出用。
+
+  it('長押し発火直後の click は 1 回だけ抑止される', () => {
+    const cb = vi.fn();
+    const onClick = vi.fn();
+    const { getByTestId } = render(
+      <div onClick={onClick}><Target onLongPress={cb} /></div>,
+    );
+    const el = getByTestId('t');
+    fireEvent.touchStart(el, touch(10, 20));
+    vi.advanceTimersByTime(500);
+    expect(cb).toHaveBeenCalledTimes(1);
+    // 長押し後にブラウザが dispatch する click は capture で止まり親に届かない
+    fireEvent.click(el);
+    expect(onClick).not.toHaveBeenCalled();
+    // 抑止は 1 回で解除され、次の click は素通しされる
+    fireEvent.click(el);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('長押しが発火していなければ click は抑止しない', () => {
+    const cb = vi.fn();
+    const onClick = vi.fn();
+    const { getByTestId } = render(
+      <div onClick={onClick}><Target onLongPress={cb} /></div>,
+    );
+    const el = getByTestId('t');
+    fireEvent.touchStart(el, touch(10, 20));
+    fireEvent.touchEnd(el); // delay 前に離す → 未発火
+    fireEvent.click(el);
+    expect(cb).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('抑止フラグは次の touchstart で上書きされ残留しない', () => {
+    const cb = vi.fn();
+    const onClick = vi.fn();
+    const { getByTestId } = render(
+      <div onClick={onClick}><Target onLongPress={cb} /></div>,
+    );
+    const el = getByTestId('t');
+    // 長押し発火後、click が来ないままもう一度短くタップ
+    fireEvent.touchStart(el, touch(10, 20));
+    vi.advanceTimersByTime(500);
+    fireEvent.touchStart(el, touch(10, 20));
+    fireEvent.touchEnd(el);
+    // 2 回目のタップ由来の click は抑止されない (touchstart でフラグ再初期化)
+    fireEvent.click(el);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
 });

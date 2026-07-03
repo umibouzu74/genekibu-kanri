@@ -126,8 +126,12 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
             // 現タブの使う日 (currentConfig.dates) ではなく日付プール全体
             // (project.dates) で合算しないと、他タブだけで使う日のコマが
             // 漏れて undercount になる。
+            // F5u: 合算するのは講習セルのコマ数 (.current) のみ。.total は
+            // externalCounts / 他学年セッション (ツール外の負荷) を含み、
+            // しかも「その日にセルがある日だけ」混入するため、「講習コマ数」
+            // でも「総負荷」でもない不定値になっていた。
             (project.dates || []).forEach(d => {
-              total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.total || 0;
+              total += analysis.teacherDailyCounts[makeExternalKey(d.label, t.name)]?.current || 0;
             });
             return { t, total };
           }).filter(x => x.total > 0);

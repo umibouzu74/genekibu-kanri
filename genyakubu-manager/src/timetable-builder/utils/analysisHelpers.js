@@ -183,12 +183,25 @@ export function computeActiveAnalysis(currentConfig, currentSchedule, globalUsag
 
 // ダッシュボード集計 (進捗バー用)。
 //   total: 設定された科目クォータの合計 × クラス数
-//   filled: subject が割り当たっているセルの個数
+//   filled: subject が割り当たっている可視セルの個数
 //   progress: filled / total を百分率 (整数)。total=0 のとき 0。
+// F5x: 「使う日・使う時限」から外れて温存されている非表示セルは filled に
+// 数えない (violation 集計・生成・Excel と同じ E-3 絞り込み)。数えると
+// 埋めた日をタブの使う日から外しても進捗 % が下がらない。
 export function computeDashboard(currentSchedule, currentConfig) {
   const total = Object.values(currentConfig.subjectCounts).reduce((a, b) => a + b, 0) * currentConfig.classes.length;
+  const dateIds = new Set(currentConfig.dates.map(d => d.id));
+  const periodIds = new Set(currentConfig.periods.map(p => p.id));
+  const classIds = new Set(currentConfig.classes.map(c => c.id));
   let filled = 0;
-  Object.values(currentSchedule).forEach(v => { if (v.subject) filled++; });
+  Object.keys(currentSchedule).forEach(k => {
+    if (!currentSchedule[k]?.subject) return;
+    const parsed = parseKey(k);
+    if (!parsed) return;
+    if (dateIds.has(parsed.dateId) && periodIds.has(parsed.periodId) && classIds.has(parsed.classId)) {
+      filled++;
+    }
+  });
   return { progress: total > 0 ? Math.round((filled / total) * 100) : 0, filled, total };
 }
 
@@ -358,36 +371,61 @@ export function computeViolations({
 //       min(maxDailyHours, periods.length) と (subjectCounts[s] ×
 //       classes.length) を比較 (1 日に教えられる上限は時限数を超えない)
 //   - quotaCellMismatch: 1 クラスあたりの科目コマ数の合計が「使う日 × 使う
-//       時限」のセル数と不一致。solver は全セル充填を要求するため、合計が
-//       セル数未満だと完全解が構造的に存在しない (逆に超過ならクォータを
-//       消化しきれない)
+//       時限 − 空ロックセル」の生成対象セル数と不一致。solver は対象セルの
+//       全充填を要求するため、合計がセル数未満だと完全解が構造的に存在しない
+//       (逆に超過ならクォータを消化しきれない)。F5w: 空 + ロック済みセルは
+//       「空けておく」の意思表示で生成対象外のため除外して数える
 //   - subjectQuotaOverDays: 科目コマ数 > 使う日数。同日・同クラスの同一科目
 //       は 1 コマまでなので達成不能
 //
 // 返り値: 各種別 { count, items: [...] }。count = 0 の種別も含めて返す。
-export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [] }) {
+export function computeInfeasibilities({ teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher = null, combinedGroups = [], currentSchedule = {} }) {
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
   // C1: noTeacherForSlot — 手動NG + 自動NG 両方で candidate を絞る。
   // 自動NG (他学年セッションとの時間重複) も含めないと、全候補講師が
   // 予備校に取られているスロットを『不可能』として警告できない。
+  //
+  // F2g: クォータを考慮して false positive を抑える。
+  //  - クォータ 0 の科目は対象外 (置く必要が無いので「致命」ではない。
+  //    担当者ゼロ × クォータ 0 の科目 1 つで dates×periods 件のノイズが
+  //    出ていた)
+  //  - 担当講師が 1 人も居ない科目は C2 (capacity: 需要 > 0) が科目単位の
+  //    1 行で検出するため、C1 では全スロットを列挙しない (重複ノイズ)
+  //  - 同日・同クラスの同一科目は 1 コマまでなので、科目が必要とするのは
+  //    「置ける日」がクォータ日数分あること。個別スロットがふさがっていても
+  //    置ける日数が足りていれば solver は回避できる → 報告しない。
+  //    置ける日数 < クォータのときだけ、完全にふさがった日のスロットを列挙
+  //    する (そこの NG を解消しない限り構造的に解けない)
   const noTeacherItems = [];
-  currentConfig.dates.forEach(d => {
-    currentConfig.periods.forEach(p => {
-      subjects.forEach(subject => {
+  subjects.forEach(subject => {
+    const quota = currentConfig.subjectCounts?.[subject] || 0;
+    if (quota === 0) return;
+    const teaches = reals.filter(t => t.subjects?.includes(subject));
+    if (teaches.length === 0) return; // C2 が科目単位で検出済み
+    const blockedDays = [];
+    let availableDays = 0;
+    currentConfig.dates.forEach(d => {
+      const blockedPeriods = currentConfig.periods.filter(p => {
         const ngKey = makeNgKey(d.label, p.label);
-        const eligible = reals.filter(t => {
-          if (!t.subjects?.includes(subject)) return false;
-          if (t.ngSlots?.includes(ngKey)) return false;
-          if (autoNgByTeacher?.get(t.name)?.has(ngKey)) return false;
-          return true;
-        });
-        if (eligible.length === 0) {
-          noTeacherItems.push({ date: d.label, period: p.label, subject });
-        }
+        return !teaches.some(t =>
+          !t.ngSlots?.includes(ngKey) && !autoNgByTeacher?.get(t.name)?.has(ngKey)
+        );
       });
+      if (currentConfig.periods.length > 0 && blockedPeriods.length === currentConfig.periods.length) {
+        blockedDays.push({ d, blockedPeriods });
+      } else {
+        availableDays++;
+      }
     });
+    if (availableDays < quota) {
+      blockedDays.forEach(({ d, blockedPeriods }) => {
+        blockedPeriods.forEach(p => {
+          noTeacherItems.push({ date: d.label, period: p.label, subject });
+        });
+      });
+    }
   });
 
   // C2: subjectCapacityShortage
@@ -421,12 +459,39 @@ export function computeInfeasibilities({ teachers, commonSubjects, currentConfig
     }
   });
 
-  // C3: quotaCellMismatch — クォータ合計 ≠ セル数 (クラスあたり)
+  // C3: quotaCellMismatch — クォータ合計 ≠ 生成対象セル数 (クラスあたり)。
+  // F5w: 空 + ロック済みセルは生成対象外なので除外。ロック数はクラスごとに
+  // 違い得るためクラス単位で判定し、全クラス同値なら従来どおり 1 item に
+  // 集約する (ロック無しの共通ケースで item がクラス数分並ぶのを防ぐ)。
   const quotaMismatchItems = [];
   const cellsPerClass = currentConfig.dates.length * currentConfig.periods.length;
   const totalQuota = subjects.reduce((sum, s) => sum + (currentConfig.subjectCounts?.[s] || 0), 0);
-  if (cellsPerClass > 0 && totalQuota !== cellsPerClass) {
-    quotaMismatchItems.push({ totalQuota, cells: cellsPerClass });
+  if (cellsPerClass > 0) {
+    const perClass = currentConfig.classes.map(c => {
+      let lockedEmpty = 0;
+      currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => {
+        const e = currentSchedule?.[makeKey(d.id, p.id, c.id)];
+        if (e?.locked && !e.subject) lockedEmpty++;
+      }));
+      return { className: c.label, cells: cellsPerClass - lockedEmpty, lockedEmpty };
+    });
+    const mismatched = perClass.filter(pc => totalQuota !== pc.cells);
+    if (mismatched.length > 0) {
+      const allSame = perClass.every(pc => pc.cells === perClass[0].cells);
+      if (allSame) {
+        const { cells, lockedEmpty } = perClass[0];
+        quotaMismatchItems.push({ totalQuota, cells, ...(lockedEmpty > 0 ? { lockedEmpty } : {}) });
+      } else {
+        mismatched.forEach(pc => {
+          quotaMismatchItems.push({
+            totalQuota,
+            cells: pc.cells,
+            className: pc.className,
+            ...(pc.lockedEmpty > 0 ? { lockedEmpty: pc.lockedEmpty } : {}),
+          });
+        });
+      }
+    }
   }
 
   // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)

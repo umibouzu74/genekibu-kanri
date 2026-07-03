@@ -54,6 +54,11 @@ export function useFocusTrap(containerRef, { onClose, enabled = true, initialFoc
       // 入れ子のとき、最上位の trap のみが応答する
       if (trapStack[trapStack.length - 1] !== trap) return;
       if (e.key === 'Escape') {
+        // IME 変換中の Escape は「変換のキャンセル」であってダイアログを
+        // 閉じる意図ではない (F5r)。isComposing (+ 旧ブラウザの keyCode 229)
+        // を素通しにしないと、日本語入力の変換取り消しでモーダルごと閉じて
+        // 入力が消える。
+        if (e.isComposing || e.keyCode === 229) return;
         e.stopPropagation();
         onCloseRef.current?.();
         return;
@@ -67,10 +72,13 @@ export function useFocusTrap(containerRef, { onClose, enabled = true, initialFoc
       const first = list[0];
       const last = list[list.length - 1];
       const active = document.activeElement;
+      // フォーカスが trap の外にある (オーバーレイクリック等で body に落ちた)
+      // 場合は方向に関わらず trap 内へ引き戻す (F5q)。この救済が Shift+Tab
+      // 側にしか無いと、前方 Tab でモーダル背後の UI へ抜けられてしまう。
       if (e.shiftKey && (active === first || !root.contains(active))) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && active === last) {
+      } else if (!e.shiftKey && (active === last || !root.contains(active))) {
         e.preventDefault();
         first.focus();
       }

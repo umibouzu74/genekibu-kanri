@@ -4,6 +4,20 @@ import {
   propagateAssignment,
   propagateTeacherChange,
 } from '../utils/combinedPropagation';
+import {
+  renameNgDate,
+  renameNgPeriod,
+  renameExternalTeacher,
+  renameExternalDate,
+  dropExternalForTeacher,
+  makeDateKeyDropMatcher,
+  makePeriodKeyDropMatcher,
+  renameClassInTeachers,
+  cleanClassRefsInTeachers,
+  cleanCombinedGroupsForLabelChange,
+  cleanCombinedGroupsForSubjectRemoval,
+  renameCombinedGroupsLabel,
+} from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 
 // プロジェクト状態の遷移を一元化する pure reducer。
@@ -78,57 +92,9 @@ function pushToHistory(state, newProject) {
 
 // ─── cascade cleanup ヘルパー ────────────────────────────────────
 // combinedGroups と externalCounts はラベルベースで cross-tab 参照されるため、
-// クラス/日付/科目/講師の編集に応じて孤児を防ぐ。
-
-// 残るラベル集合に合うよう combinedGroups から消えたものを filter。
-// dimension: 'classes' | 'dates'
-function cleanCombinedGroupsForLabelChange(groups, dimension, validLabelSet) {
-  return groups
-    .map(g => {
-      if (dimension === 'classes') {
-        const newClasses = g.classes.filter(c => validLabelSet.has(c));
-        return { ...g, classes: newClasses };
-      }
-      // dimension === 'dates' (null は全日扱いで不変)
-      if (g.dates === null) return g;
-      const newDates = g.dates.filter(d => validLabelSet.has(d));
-      return { ...g, dates: newDates };
-    })
-    .filter(g => {
-      if (dimension === 'classes') return g.classes.length >= 2; // 1 クラスでは合同にならない
-      // dates の全消失は「全日無し」= 対象が無いので drop。null (全日) は残す。
-      return g.dates === null || g.dates.length > 0;
-    });
-}
-
-// 科目削除に伴う combinedGroups の cleanup。subject 一致グループを drop。
-function cleanCombinedGroupsForSubjectRemoval(groups, removedSubject) {
-  return groups.filter(g => g.subject !== removedSubject);
-}
-
-// クラス/日付ラベルのリネームに伴う combinedGroups の label 書き換え。
-function renameCombinedGroupsLabel(groups, dimension, oldLabel, newLabel) {
-  return groups.map(g => {
-    if (dimension === 'classes') {
-      return { ...g, classes: g.classes.map(c => c === oldLabel ? newLabel : c) };
-    }
-    // dimension === 'dates'
-    if (g.dates === null) return g;
-    return { ...g, dates: g.dates.map(d => d === oldLabel ? newLabel : d) };
-  });
-}
-
-// 講師削除に伴う externalCounts の cleanup。`{date}-{teacherName}` 形式のキーを
-// 末尾一致で drop する。
-function cleanExternalCountsForTeacher(externalCounts, teacherName) {
-  if (!externalCounts) return externalCounts;
-  const suffix = `-${teacherName}`;
-  const out = {};
-  Object.keys(externalCounts).forEach(k => {
-    if (!k.endsWith(suffix)) out[k] = externalCounts[k];
-  });
-  return out;
-}
+// クラス/日付/科目/講師の編集に応じて孤児を防ぐ。ラベルキーのパース知識を
+// 伴うヘルパーは utils/labelRefs.js に一元化した (F2k)。ここに残るのは
+// フィールド参照だけの externalSessions 系のみ。
 
 // 講師削除に伴う externalSessions の cleanup。teacherName が一致する
 // 詳細セッションを drop する。残しておくと「孤児セッション」として UI に
@@ -144,22 +110,6 @@ function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
   return externalSessions.map(s =>
     s.teacherName === oldName ? { ...s, teacherName: newName } : s
   );
-}
-
-// 日付ラベルのリネームに伴う externalCounts キーの書き換え。
-// キー形式は `{dateLabel}-{teacherName}` で、dateLabel が先頭一致するものを更新。
-function renameExternalCountsDateLabel(externalCounts, oldLabel, newLabel) {
-  if (!externalCounts) return externalCounts;
-  const prefix = `${oldLabel}-`;
-  const out = {};
-  Object.keys(externalCounts).forEach(k => {
-    if (k.startsWith(prefix)) {
-      out[`${newLabel}-${k.substring(prefix.length)}`] = externalCounts[k];
-    } else {
-      out[k] = externalCounts[k];
-    }
-  });
-  return out;
 }
 
 // v4: dates / periods は project 共通。tab.config (classes / subjectCounts) に
@@ -279,15 +229,7 @@ function applyAction(project, action) {
         const newLabelSet = new Set(newLabels);
         const removedLabels = oldArr.map(e => e.label).filter(l => !newLabelSet.has(l));
         if (removedLabels.length > 0) {
-          const allOldLabels = oldArr.map(e => e.label);
-          const removedSet = new Set(removedLabels);
-          const shouldDrop = (ngKey) => {
-            let longest = null;
-            allOldLabels.forEach(l => {
-              if (ngKey.endsWith(`-${l}`) && (longest === null || l.length > longest.length)) longest = l;
-            });
-            return longest !== null && removedSet.has(longest);
-          };
+          const shouldDrop = makePeriodKeyDropMatcher(oldArr.map(e => e.label), removedLabels);
           const newTeachers = (baseProject.teachers || []).map(t => {
             const ngSlots = t.ngSlots || [];
             const filtered = ngSlots.filter(k2 => !shouldDrop(k2));
@@ -320,6 +262,14 @@ function applyAction(project, action) {
           key === 'classes' ? 'classes' : 'dates',
           validLabels
         );
+        // H5: クラス削除に teacher.ngClasses / priorityClasses も追従させる
+        // (combinedGroups と同じ validLabels = 他タブの同名ラベルは温存)。
+        if (key === 'classes') {
+          const cleanedTeachers = cleanClassRefsInTeachers(cascadedTabsProject.teachers || [], validLabels);
+          if (cleanedTeachers !== cascadedTabsProject.teachers) {
+            cascadedTabsProject = { ...cascadedTabsProject, teachers: cleanedTeachers };
+          }
+        }
       }
       // cleanSchedule で消えた entity を参照する schedule キーを掃除する
       // (dates/periods は project 共通なので全タブの schedule が対象)。
@@ -332,7 +282,9 @@ function applyAction(project, action) {
       const targetId = tabId ?? project.activeTabId;
       const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
       if (!target) return project;
-      const newCounts = { ...target.config.subjectCounts, [subject]: parseInt(value) || 0 };
+      // F5o: 負数の直接入力 (input の min はスピナーにしか効かない) を 0 に
+      // clamp。負のコマ数は分析の合計を狂わせる。
+      const newCounts = { ...target.config.subjectCounts, [subject]: Math.max(0, parseInt(value) || 0) };
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
       );
@@ -431,14 +383,7 @@ function applyAction(project, action) {
       // 照合は prefix 一致だが、「8/1」と「8/1-補講」のように一方が他方の
       // prefix になるラベル (renameHeader は自由入力) の巻き添えを避けるため、
       // プール全ラベルの中で最長一致したものが削除対象のときだけ消す。
-      const poolLabels = pool.map(d => d.label);
-      const shouldDropDateKey = (k) => {
-        let longest = null;
-        poolLabels.forEach(l => {
-          if (k.startsWith(`${l}-`) && (longest === null || l.length > longest.length)) longest = l;
-        });
-        return longest === target.label;
-      };
+      const shouldDropDateKey = makeDateKeyDropMatcher(pool.map(d => d.label), [target.label]);
       const newTeachers = (project.teachers || []).map(t => {
         const ngSlots = t.ngSlots || [];
         const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
@@ -634,7 +579,7 @@ function applyAction(project, action) {
       // 削除された講師の externalCounts キーと externalSessions も drop
       // (孤児化防止)。残すと UI には表示されるのに自動NG派生の対象から
       // 外れて状態が乖離する。
-      const newExternal = cleanExternalCountsForTeacher(project.externalCounts, targetName);
+      const newExternal = dropExternalForTeacher(project.externalCounts, targetName);
       const newSessions = cleanExternalSessionsForTeacher(project.externalSessions, targetName);
       return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal, externalSessions: newSessions };
     }
@@ -656,13 +601,9 @@ function applyAction(project, action) {
         });
         return { ...tab, schedule: newSch };
       });
-      const newExternal = {};
-      if (project.externalCounts) {
-        Object.keys(project.externalCounts).forEach(k => {
-          const newKey = k.endsWith(`-${oldName}`) ? k.replace(`-${oldName}`, `-${newName}`) : k;
-          newExternal[newKey] = project.externalCounts[k];
-        });
-      }
+      // F2o: suffix を slice で置換する (replace の最初の一致置換は、日付
+      // ラベルが `-旧名` を含むケースで日付側を書き換えてしまう)。
+      const newExternal = renameExternalTeacher(project.externalCounts, oldName, newName) || {};
       // externalSessions の teacherName も追従させる (孤児化防止)。
       const newSessions = renameExternalSessionsTeacher(project.externalSessions, oldName, newName);
       return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal, externalSessions: newSessions };
@@ -765,9 +706,11 @@ function applyAction(project, action) {
     }
     case 'teacher/setExternalCount': {
       const { date, teacherName, value } = action.payload;
+      // F5o: 負数は 0 に clamp (負の外部コマ数は講師の日次合計を過小評価し、
+      // 過負荷警告を見逃す)。
       const counts = {
         ...(project.externalCounts || {}),
-        [makeExternalKey(date, teacherName)]: parseInt(value) || 0,
+        [makeExternalKey(date, teacherName)]: Math.max(0, parseInt(value) || 0),
       };
       return { ...project, externalCounts: counts };
     }
@@ -993,6 +936,14 @@ function applyAction(project, action) {
       const { type, oldVal, newVal } = action.payload;
       if (!newVal || newVal === oldVal) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      // H3: リネーム先が同じ次元の既存ラベルと重複する場合は reject する。
+      // 許すと 2 entity が同ラベルになり、NG キー / externalCounts キーが
+      // 衝突して片方が silent に消える (Object キーの上書き) など、ラベル
+      // 参照が混線する。UI 側 (ContextMenu) でも同じ判定で toast を出す。
+      const dupIn = (arr) => (arr || []).some(e => e.label === newVal);
+      if (type === 'date' && dupIn(project.dates)) return project;
+      if (type === 'period' && dupIn(project.periods)) return project;
+      if (type === 'class' && dupIn(activeTab.config.classes)) return project;
       const renameLabel = (arr) => (arr || []).map(e => e.label === oldVal ? { ...e, label: newVal } : e);
       // v4: date / period は project 共通、class は active タブ単位。
       let newTabs = project.tabs;
@@ -1012,24 +963,18 @@ function applyAction(project, action) {
       let newPresets = project.externalSessionPresets;
 
       if (type === 'date' || type === 'period') {
-        // NG slot のキーを書き換え
+        // NG slot のキーを書き換え (パースの詳細は labelRefs.js に一元化)
         newTeachers = project.teachers.map(t => {
           if (!t.ngSlots || t.ngSlots.length === 0) return t;
-          const newNgSlots = t.ngSlots.map(slot => {
-            if (type === 'date' && slot.startsWith(`${oldVal}-`)) {
-              return slot.replace(`${oldVal}-`, `${newVal}-`);
-            }
-            if (type === 'period' && slot.endsWith(`-${oldVal}`)) {
-              return slot.substring(0, slot.lastIndexOf(`-${oldVal}`)) + `-${newVal}`;
-            }
-            return slot;
-          });
+          const newNgSlots = type === 'date'
+            ? renameNgDate(t.ngSlots, oldVal, newVal)
+            : renameNgPeriod(t.ngSlots, oldVal, newVal);
           return { ...t, ngSlots: newNgSlots };
         });
       }
 
       if (type === 'date') {
-        newExternal = renameExternalCountsDateLabel(project.externalCounts, oldVal, newVal);
+        newExternal = renameExternalDate(project.externalCounts, oldVal, newVal);
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'dates', oldVal, newVal);
         // externalSessions の date と externalSessionPresets の
         // startDateLabel / endDateLabel もラベル基準なので追従させる。
@@ -1044,6 +989,9 @@ function applyAction(project, action) {
         });
       } else if (type === 'class') {
         newCombined = renameCombinedGroupsLabel(project.combinedGroups || [], 'classes', oldVal, newVal);
+        // H5: クラス優先度 / NG クラス (teacher.priorityClasses / ngClasses)
+        // もラベル参照なので追従させる。
+        newTeachers = renameClassInTeachers(project.teachers, oldVal, newVal);
       }
 
       return {

@@ -157,6 +157,13 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
   // H2: 他タブの確定割当 (同時限 busy + 日次コマ数)
   const otherTabs = collectOtherTabsUsage(project, activeTab.id, combinedGroups, DAILY_LIMIT_EXEMPT_TEACHER);
 
+  // E2c 連続コマ判定用 (F5t/F5y)。判定はプール全時限の並びで行う
+  // (タブの使う時限だけだと歯抜け [1限,3限] が隣接扱いになり、実際は休憩を
+  // 挟むのに連続と誤判定する)。自タブの占有は使う時限のセルのみ
+  // (非表示時限の温存セルは実勢ではない)、他タブの確定割当は busy から見る。
+  const poolPeriods = project.periods || [];
+  const activePeriodIdSet = new Set(currentConfig.periods.map(p => p.id));
+
   const slots = [];
   const currentCounts = {};
   currentConfig.classes.forEach((c, cIdx) => {
@@ -227,9 +234,14 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
 
   // 未充填スロットを構築
   // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
+  // F5w: 空 + ロック済みセルは「この枠は空けておく」の意思表示なので生成
+  // 対象にしない (UI は locked への変更を全経路で拒否しており、solver だけが
+  // 書き込めるのは lock の意味論と矛盾していた)。totalSlots にも数えない。
+  // 「科目だけ事前指定 + ロック」(fixedSubject) は従来どおり講師を埋める。
   currentConfig.dates.forEach((d) => currentConfig.periods.forEach((p) => currentConfig.classes.forEach((c, cIdx) => {
     const k = makeKey(d.id, p.id, c.id);
     const entry = currentSchedule[k];
+    if (entry?.locked && !entry.subject) return;
     if (!entry || !entry.subject || !entry.teacher) {
       slots.push({ cIdx, d, p, c, k, fixedSubject: entry?.subject });
     }
@@ -440,12 +452,18 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           })) continue;
 
           // 連続コマ数上限チェック (E2c)。"未定" は対象外。
+          // F5y: プール全時限の並びで判定 (歯抜けタブの誤隣接を防ぐ)。
+          // F5t: 他タブ (他学年) の確定割当も連続ランに含める (busy /
+          // 日次上限は他タブを合算するのに連続だけ見ないと学年横断で
+          // 上限超えの連続が生成される)。
           if (isRealTeacher && wouldExceedConsecutive({
-            periodsOrder: currentConfig.periods,
+            periodsOrder: poolPeriods,
             periodId: p.id,
-            isOccupied: (pid) => currentConfig.classes.some(
-              cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
-            ),
+            isOccupied: (pid) =>
+              (activePeriodIdSet.has(pid) && currentConfig.classes.some(
+                cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
+              ))
+              || otherTabs.busy.has(`${d.id}|${pid}|${tName}`),
             maxConsecutive,
           })) continue;
 
@@ -472,13 +490,11 @@ export function generateSinglePattern({ project, activeTabId, seed = 0, onProgre
           solve(idx + 1, tempSch, tempCnt, tempDaily);
           if (runSolution !== null) return;
 
-          // バックトラック: プライマリスロット (locked 保持)
+          // バックトラック: プライマリスロット (locked 保持)。
+          // 「空 + locked」は F5w で slot 化されなくなったため、locked が
+          // 立つのは fixedSubject (科目固定) のケースのみ。
           if (fixedSubject) {
             tempSch[k] = { subject: fixedSubject, teacher: "", ...(primaryLocked ? { locked: true } : {}) };
-          } else if (primaryLocked) {
-            // 元が空 + locked のセル: 空に戻すが lock は保持
-            tempSch[k] = { locked: true };
-            tempCnt[cIdx][s]--;
           } else {
             delete tempSch[k];
             tempCnt[cIdx][s]--;

@@ -6,6 +6,7 @@ import {
   DEFAULT_SUBJECTS,
   DEFAULT_SUBJECT_COLORS,
   STORAGE_KEY_PROJECT,
+  STORAGE_KEY_PROJECT_BACKUP,
   STORAGE_KEY_USER_DEFAULTS,
   LEGACY_STORAGE_KEYS,
   CURRENT_PROJECT_VERSION,
@@ -32,10 +33,14 @@ export function detectTeacherDiffs(currentTeachers, loadedTeachers) {
   loadedTeachers.forEach(lt => {
     const ct = currentTeachers.find(t => t.name === lt.name);
     if (ct) {
-      const currentSubjects = [...ct.subjects].sort().join(',');
-      const loadedSubjects = [...(lt.subjects || [])].sort().join(',');
+      // subjects 欠落の外部 JSON でも throw しないよう両側ともガードする
+      // (F5b: ここが throw すると構造は valid なのに読込全体が失敗する)。
+      const ctSubjects = Array.isArray(ct.subjects) ? ct.subjects : [];
+      const ltSubjects = Array.isArray(lt.subjects) ? lt.subjects : [];
+      const currentSubjects = [...ctSubjects].sort().join(',');
+      const loadedSubjects = [...ltSubjects].sort().join(',');
       if (currentSubjects !== loadedSubjects) {
-        diffs.push(`【科目変更】${lt.name}: ${ct.subjects.join('/')} → ${lt.subjects.join('/')}`);
+        diffs.push(`【科目変更】${lt.name}: ${ctSubjects.join('/')} → ${ltSubjects.join('/')}`);
       }
     }
   });
@@ -83,8 +88,10 @@ export function createNewProject(tabs, teachers, subjectColors, subjects, dates,
 //   - loadError: 読み込み失敗時の説明文 (成功時 null)
 export function loadInitialProject() {
   let loadError = null;
+  // catch 節で退避できるよう try の外で保持する (F2f)
+  let savedProject = null;
   try {
-    let savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
+    savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
 
     if (!savedProject) {
       for (const legacyKey of LEGACY_STORAGE_KEYS) {
@@ -139,6 +146,18 @@ export function loadInitialProject() {
   } catch (e) {
     console.error("Load failed", e);
     loadError = e?.message || String(e);
+    // F2f: デフォルトへフォールバックすると、最初の編集の autosave が
+    // STORAGE_KEY_PROJECT を上書きして元データが復旧不能になる。壊れていても
+    // 原本を別キーへ退避しておけば手動復旧 (JSON 手直し → 読込) の余地が残る。
+    if (savedProject) {
+      try {
+        localStorage.setItem(STORAGE_KEY_PROJECT_BACKUP, savedProject);
+        loadError += `。元のデータは localStorage の「${STORAGE_KEY_PROJECT_BACKUP}」キーに退避しました`;
+      } catch (backupError) {
+        // 容量超過等で退避に失敗しても起動は続行する (原本は autosave までは残る)
+        console.error("Backup of corrupt project failed", backupError);
+      }
+    }
   }
 
   return {

@@ -312,6 +312,25 @@ describe('computeDashboard', () => {
     };
     expect(computeDashboard(schedule, config)).toEqual({ progress: 0, filled: 0, total: 1 });
   });
+
+  it('「使う日・使う時限」外の温存セルは filled に数えない (F5x)', () => {
+    // config は日 id=1・時限 id=1 のみ可視。id=9 の日 / 時限に温存された
+    // 非表示セルが filled に混入すると、埋めた日をタブの使う日から外しても
+    // 進捗 % が下がらない。
+    const config = makeConfig({
+      dates: [{ id: 1, label: '12/25' }],
+      periods: [{ id: 1, label: '1限' }],
+      subjectCounts: { '英語': 1 },
+      classes: [{ id: 1, label: 'A' }],
+    });
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 可視
+      [makeKey(9, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 非表示の日
+      [makeKey(1, 9, 1)]: { subject: '英語', teacher: '堀上' }, // 非表示の時限
+      'broken-key': { subject: '英語' }, // 不正キーも無視
+    };
+    expect(computeDashboard(schedule, config)).toEqual({ progress: 100, filled: 1, total: 1 });
+  });
 });
 
 // ─── computeTabViolationCounts (D1c + M3) ────────────────────────
@@ -565,21 +584,26 @@ describe('computeInfeasibilities', () => {
     expect(r.subjectCapacityShortage.count).toBe(0);
   });
 
-  it('"未定" のみの状態は全 (date,period,subject) で noTeacherForSlot として検出', () => {
+  it('"未定" のみの状態は C2 (capacity) が科目単位で検出し、C1 はスロットを列挙しない (F2g)', () => {
     const r = computeInfeasibilities({
       teachers: [{ name: '未定', subjects: ['英語', '数学'], ngSlots: [] }],
       commonSubjects: ['英語', '数学'],
       currentConfig: baseConfig(),
       maxDailyHours: 6,
     });
-    // 2 dates × 2 periods × 2 subjects = 8
-    expect(r.noTeacherForSlot.count).toBe(8);
+    // 旧仕様は 2 dates × 2 periods × 2 subjects = 8 件のスロットを列挙して
+    // いたが、担当者ゼロは C2 が「科目単位の 1 行 + 講師を増やす提案」で
+    // 検出するため C1 では重複ノイズを出さない。
+    expect(r.noTeacherForSlot.count).toBe(0);
+    expect(r.subjectCapacityShortage.count).toBe(2);
+    expect(r.subjectCapacityShortage.items.map(i => i.subject).sort()).toEqual(['数学', '英語']);
   });
 
-  it('該当時限が NG の場合 noTeacherForSlot に出る', () => {
+  it('個別スロットの NG は置ける日数が足りていれば報告しない (F2g: 旧 false positive)', () => {
     const r = computeInfeasibilities({
       teachers: [
-        // 堀上が 12/25 1限 のみ NG、他の人は居ない
+        // 堀上が 12/25 1限 のみ NG。12/25 は 2限 が空いており、置ける日は
+        // 2 日 >= クォータ 2 なので solver は回避できる → 致命ではない。
         { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25', '1限')] },
         { name: '田中', subjects: ['数学'], ngSlots: [] },
       ],
@@ -587,15 +611,65 @@ describe('computeInfeasibilities', () => {
       currentConfig: baseConfig(),
       maxDailyHours: 6,
     });
-    expect(r.noTeacherForSlot.count).toBe(1);
-    expect(r.noTeacherForSlot.items[0]).toEqual({ date: '12/25', period: '1限', subject: '英語' });
+    expect(r.noTeacherForSlot.count).toBe(0);
   });
 
-  it('autoNgByTeacher で塞がれた時限も noTeacherForSlot に入る', () => {
-    // 堀上は手動NG なし、田中は数学担当 → 英語の担当は堀上のみ。
-    // 自動NG (12/25 1限) で堀上が塞がれているため英語が誰も担当できない。
+  it('丸一日ふさがって置ける日数 < クォータになると、その日のスロットを列挙する', () => {
+    const r = computeInfeasibilities({
+      teachers: [
+        // 堀上 (英語の唯一の担当) が 12/25 の全時限 NG → 英語が置けるのは
+        // 12/26 の 1 日のみ < クォータ 2 → 構造的に解けない
+        { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25', '1限'), makeNgKey('12/25', '2限')] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: baseConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.noTeacherForSlot.count).toBe(2);
+    expect(r.noTeacherForSlot.items).toEqual([
+      { date: '12/25', period: '1限', subject: '英語' },
+      { date: '12/25', period: '2限', subject: '英語' },
+    ]);
+  });
+
+  it('丸一日ふさがっても置ける日数がクォータ以上なら報告しない', () => {
+    const config = { ...baseConfig(), subjectCounts: { '英語': 1, '数学': 2 } };
+    const r = computeInfeasibilities({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [makeNgKey('12/25', '1限'), makeNgKey('12/25', '2限')] },
+        { name: '田中', subjects: ['数学'], ngSlots: [] },
+      ],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    // 英語のクォータ 1 <= 置ける日 1 (12/26) → 致命ではない
+    expect(r.noTeacherForSlot.count).toBe(0);
+  });
+
+  it('クォータ 0 の科目は担当者ゼロでもスロットを列挙しない (F2g 増幅ケース)', () => {
+    const config = { ...baseConfig(), subjectCounts: { '英語': 4, '理科': 0 } };
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語', '理科'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    // 旧仕様は理科 (担当者ゼロ × クォータ 0) だけで dates×periods = 4 件の
+    // 「致命」ノイズが出ていた
+    expect(r.noTeacherForSlot.count).toBe(0);
+    expect(r.subjectCapacityShortage.items.every(i => i.subject !== '理科')).toBe(true);
+  });
+
+  it('autoNgByTeacher で丸一日ふさがれたケースも検出する', () => {
+    // 英語の担当は堀上のみ。自動NG (12/25 の全時限) で置ける日が 1 日 <
+    // クォータ 2 になる。
     const autoNgByTeacher = new Map([
-      ['堀上', new Map([[makeNgKey('12/25', '1限'), { sessions: [] }]])],
+      ['堀上', new Map([
+        [makeNgKey('12/25', '1限'), { sessions: [] }],
+        [makeNgKey('12/25', '2限'), { sessions: [] }],
+      ])],
     ]);
     const r = computeInfeasibilities({
       teachers: [
@@ -607,7 +681,7 @@ describe('computeInfeasibilities', () => {
       maxDailyHours: 6,
       autoNgByTeacher,
     });
-    expect(r.noTeacherForSlot.count).toBe(1);
+    expect(r.noTeacherForSlot.count).toBe(2);
     expect(r.noTeacherForSlot.items[0]).toEqual({ date: '12/25', period: '1限', subject: '英語' });
   });
 
@@ -794,5 +868,59 @@ describe('computeInfeasibilities — 合同グループの capacity 割引 (校�
       combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: ['12/26'] }],
     });
     expect(r.subjectCapacityShortage.count).toBe(1);
+  });
+});
+
+describe('computeInfeasibilities — quotaCellMismatch と空ロックセル (F5w)', () => {
+  const config = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    subjectCounts: { '英語': 2, '数学': 1 }, // 合計 3
+  });
+  const teachers = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [] },
+    { name: '田中', subjects: ['数学'], ngSlots: [] },
+  ];
+
+  it('空ロックセルは生成対象セル数から除外される (全クラス同数なら 1 item)', () => {
+    // 4 セル/クラス − 空ロック 1 = 3 = クォータ合計 3 → 不一致なし
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: {
+        [makeKey(1, 1, 1)]: { locked: true },
+        [makeKey(1, 1, 2)]: { locked: true },
+      },
+    });
+    expect(r.quotaCellMismatch.count).toBe(0);
+  });
+
+  it('クラスごとにロック数が違う場合は不一致のクラスだけ item にする', () => {
+    // A は空ロック 1 (3 セル = クォータ 3 で一致)、B はロック無し (4 セル ≠ 3)
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: { [makeKey(1, 1, 1)]: { locked: true } },
+    });
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4, className: 'B' });
+  });
+
+  it('科目入りのロックセルは除外しない (生成対象: 講師を埋める)', () => {
+    const r = computeInfeasibilities({
+      teachers,
+      commonSubjects: ['英語', '数学'],
+      currentConfig: config(),
+      maxDailyHours: 6,
+      currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', locked: true } },
+    });
+    // 4 セル ≠ 3 の従来判定のまま (全クラス同数 → 1 item・旧形状)
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4 });
   });
 });

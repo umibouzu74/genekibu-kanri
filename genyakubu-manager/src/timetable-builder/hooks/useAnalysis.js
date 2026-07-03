@@ -88,10 +88,12 @@ export function useAnalysis(project, currentSchedule, currentConfig) {
         maxDailyHours,
         autoNgByTeacher,
         combinedGroups: project.combinedGroups || [],
+        // F5w: 空ロックセルを生成対象セル数から除外するため schedule も渡す
+        currentSchedule,
       }),
       { currentConfig, teachers: project.teachers, maxDailyHours, autoNgByTeacher },
     ),
-    [project.teachers, commonSubjects, currentConfig, maxDailyHours, autoNgByTeacher, project.combinedGroups],
+    [project.teachers, commonSubjects, currentConfig, currentSchedule, maxDailyHours, autoNgByTeacher, project.combinedGroups],
   );
 
   const analysis = useMemo(

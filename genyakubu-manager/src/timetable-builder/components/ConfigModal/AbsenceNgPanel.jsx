@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
+import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import NgCsvImport from './NgCsvImport';
 
@@ -47,7 +48,14 @@ export default function AbsenceNgPanel() {
   // 時限も同じ理由で E-3 (タブ別 activePeriodIds 絞り込み) の対象外とし、
   // currentConfig.periods ではなく『プール全時限』(project.periods) を使う
   // (例: 中３の昼タブから中1・2専用の夜の時限にも NG を設定できる必要がある)。
-  const poolDates = useMemo(() => project.dates || [], [project.dates]);
+  // プールはカレンダー順に並べ替えて使う (F5j)。project.dates は挿入順
+  // (tabDates/setByLabels が新ラベルを末尾 push) なので、後からタブに前倒しの
+  // 日付を足すとカレンダー順と乖離する。このパネルの期間指定
+  // (dateLabelsInRange) は配列位置の slice で範囲を作るため、生順のままだと
+  // 「7/15〜7/25」指定が別の日群に化けて一括 NG / セッションが誤登録される。
+  // 表示 (NG マトリクス列・クイックグリッド・select) も BasicSettings の
+  // sortPoolDatesByCalendar 表示と揃う。パース不能ラベルは末尾 (安定順)。
+  const poolDates = useMemo(() => sortPoolDatesByCalendar(project.dates || []), [project.dates]);
   const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
 
   // ── 折りたたみ state ───────────────────────
@@ -365,9 +373,12 @@ export default function AbsenceNgPanel() {
     if (!presetId) return;
     const p = presets.find(x => x.id === Number(presetId));
     if (!p) return;
-    if (p.startTime) setFormStartTime(p.startTime);
-    if (p.endTime) setFormEndTime(p.endTime);
-    if (p.memo) setFormMemo(p.memo);
+    // F5l: 時刻・メモはプリセットの値で全置換する。フィールドを持たない
+    // プリセットは空にする (部分上書きだと直前に適用したプリセットの
+    // 終了時刻やメモが残留し、意図しない混成セッションが登録される)。
+    setFormStartTime(p.startTime || '');
+    setFormEndTime(p.endTime || '');
+    setFormMemo(p.memo || '');
     const startD = p.startDateLabel ? poolDates.find(x => x.label === p.startDateLabel) : null;
     const endD = p.endDateLabel ? poolDates.find(x => x.label === p.endDateLabel) : null;
     if (p.startDateLabel && p.endDateLabel) {
@@ -982,10 +993,13 @@ function DateSection({
 function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) {
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  // F5m: 期間は「なし (null)」を第一級で扱う。旧実装は blankDraft / 編集
+  // fallback がプール先頭日に snap していたため、期間なしプリセットを
+  // 改名だけして保存すると先頭日の期間が勝手に付与された。
   const blankDraft = () => ({
     name: '', startTime: '', endTime: '',
-    startDateId: dates[0]?.id ?? null,
-    endDateId: dates[0]?.id ?? null,
+    startDateId: null,
+    endDateId: null,
     memo: '',
   });
   // lazy init (毎レンダーで blankDraft() を呼ばないため — code-review P3)
@@ -994,13 +1008,16 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
   useEffect(() => {
     const ids = dates.map(d => d.id);
     setDraft(d => {
-      const startOk = ids.includes(d.startDateId);
-      const endOk = ids.includes(d.endDateId);
+      // null は「期間なし」として常に valid (F5m)
+      const startOk = d.startDateId == null || ids.includes(d.startDateId);
+      const endOk = d.endDateId == null || ids.includes(d.endDateId);
       if (startOk && endOk) return d;
+      // プールから消えた id は「期間なし」へ倒す (先頭日への silent snap を
+      // やめ、意図しない期間の付与を防ぐ)
       return {
         ...d,
-        startDateId: startOk ? d.startDateId : (ids[0] ?? null),
-        endDateId: endOk ? d.endDateId : (ids[0] ?? null),
+        startDateId: startOk ? d.startDateId : null,
+        endDateId: endOk ? d.endDateId : null,
       };
     });
   }, [dates]);
@@ -1011,8 +1028,10 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
       name: p.name,
       startTime: p.startTime || '',
       endTime: p.endTime || '',
-      startDateId: dates.find(d => d.label === p.startDateLabel)?.id ?? (dates[0]?.id ?? null),
-      endDateId: dates.find(d => d.label === p.endDateLabel)?.id ?? (dates[0]?.id ?? null),
+      // 期間なし / プール外ラベルは null (期間なし) として編集する。
+      // 先頭日への fallback は「編集を開いただけで期間が化ける」原因 (F5m)。
+      startDateId: dates.find(d => d.label === p.startDateLabel)?.id ?? null,
+      endDateId: dates.find(d => d.label === p.endDateLabel)?.id ?? null,
       memo: p.memo || '',
     });
     setExpanded(true);
@@ -1147,16 +1166,23 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                 <span className="text-builder-ink-muted">期間 (任意)</span>
                 <div className="flex items-center gap-1">
                   <select value={draft.startDateId ?? ''}
-                    onChange={(e) => setDraft(d => ({ ...d, startDateId: Number(e.target.value) }))}
+                    onChange={(e) => setDraft(d => {
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      // 開始なし → 終了もなし (orphan endDate を作らない)
+                      return { ...d, startDateId: v, endDateId: v === null ? null : d.endDateId };
+                    })}
                     className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                     aria-label="プリセット開始日">
+                    <option value="">期間なし</option>
                     {dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
                   </select>
                   <span className="text-builder-ink-muted shrink-0">〜</span>
                   <select value={draft.endDateId ?? ''}
-                    onChange={(e) => setDraft(d => ({ ...d, endDateId: Number(e.target.value) }))}
+                    disabled={draft.startDateId == null}
+                    onChange={(e) => setDraft(d => ({ ...d, endDateId: e.target.value === '' ? null : Number(e.target.value) }))}
                     className="flex-1 min-w-0 border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
                     aria-label="プリセット終了日">
+                    <option value="">終了日なし (単日)</option>
                     {dates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
                   </select>
                 </div>

@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 
+// 合同授業グループの設定タブ。
+//
+// F5n: 新規・編集とも draft-commit 方式。旧実装は編集時に setField が即
+// dispatch していたため、新規側の「2 クラス以上」ガードを素通りして
+// 単クラス・対象日 0 日のグループが恒久化できた。編集もローカル draft に
+// 溜めて「保存」時に検証 + 一括 commit する (Undo も 1 ステップに揃う)。
 export default function CombinedGroupSettings() {
   const {
     project,
@@ -12,30 +18,48 @@ export default function CombinedGroupSettings() {
   } = useProjectContext();
 
   const combinedGroups = project.combinedGroups || [];
-  const [editingId, setEditingId] = useState(null);
-  const [newGroup, setNewGroup] = useState(null);
+  // draft: { id: number|null, subject, classes, dates } — id === null は新規。
+  const [draft, setDraft] = useState(null);
 
   const allClasses = currentConfig.classes;
   const allDates = currentConfig.dates;
 
   const startNewGroup = () => {
-    setNewGroup({ subject: commonSubjects[0] || "", classes: [], dates: null });
-    setEditingId(null);
+    setDraft({ id: null, subject: commonSubjects[0] || "", classes: [], dates: null });
   };
 
-  const handleSaveNew = () => {
-    if (!newGroup || !newGroup.subject || newGroup.classes.length < 2) return;
-    addCombinedGroup(newGroup);
-    setNewGroup(null);
+  const startEdit = (group) => {
+    setDraft({
+      id: group.id,
+      subject: group.subject,
+      classes: [...group.classes],
+      dates: group.dates === null ? null : [...group.dates],
+    });
   };
 
-  const handleUpdate = (id, updates) => {
-    updateCombinedGroup(id, updates);
+  // 検証: 科目必須 / クラス 2 以上 / 「全日程」でないなら対象日 1 日以上。
+  const draftError = (d) => {
+    if (!d) return null;
+    if (!d.subject) return '科目を選択してください';
+    if (d.classes.length < 2) return '2つ以上のクラスを選択してください';
+    if (d.dates !== null && d.dates.length === 0) return '対象日程を選択するか「全日程」にしてください';
+    return null;
+  };
+
+  const handleSave = () => {
+    if (!draft || draftError(draft)) return;
+    const payload = { subject: draft.subject, classes: draft.classes, dates: draft.dates };
+    if (draft.id === null) {
+      addCombinedGroup(payload);
+    } else {
+      updateCombinedGroup(draft.id, payload);
+    }
+    setDraft(null);
   };
 
   const handleRemove = (id) => {
     removeCombinedGroup(id);
-    if (editingId === id) setEditingId(null);
+    if (draft?.id === id) setDraft(null);
   };
 
   const toggleClass = (classes, cls) => {
@@ -51,19 +75,13 @@ export default function CombinedGroupSettings() {
     return [...dates, date];
   };
 
-  const renderGroupEditor = (group, isNew) => {
-    const subject = isNew ? newGroup.subject : group.subject;
-    const classes = isNew ? newGroup.classes : group.classes;
-    const dates = isNew ? newGroup.dates : group.dates;
+  const renderGroupEditor = () => {
+    const { subject, classes, dates } = draft;
+    const isNew = draft.id === null;
     const isAllDates = dates === null;
+    const error = draftError(draft);
 
-    const setField = (field, value) => {
-      if (isNew) {
-        setNewGroup({ ...newGroup, [field]: value });
-      } else {
-        handleUpdate(group.id, { [field]: value });
-      }
-    };
+    const setField = (field, value) => setDraft({ ...draft, [field]: value });
 
     return (
       <div className="border border-builder-info-border rounded-lg p-4 bg-builder-info-soft space-y-3">
@@ -104,9 +122,6 @@ export default function CombinedGroupSettings() {
               );
             })}
           </div>
-          {classes.length > 0 && classes.length < 2 && (
-            <p className="text-xs text-builder-red mt-1">2つ以上のクラスを選択してください</p>
-          )}
         </div>
 
         {/* 日程選択 */}
@@ -145,32 +160,22 @@ export default function CombinedGroupSettings() {
           )}
         </div>
 
-        {/* 操作ボタン */}
+        {/* 検証メッセージ + 操作ボタン */}
+        {error && <p className="text-xs text-builder-red">{error}</p>}
         <div className="flex gap-2 pt-2 border-t border-builder-border">
-          {isNew ? (
-            <>
-              <button
-                onClick={handleSaveNew}
-                disabled={!newGroup.subject || newGroup.classes.length < 2}
-                className="px-4 py-1.5 bg-builder-blue text-white rounded text-sm font-bold hover:bg-builder-blue-hover disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                追加
-              </button>
-              <button
-                onClick={() => setNewGroup(null)}
-                className="px-4 py-1.5 bg-builder-border text-builder-ink-muted rounded text-sm hover:bg-builder-ink-ghost"
-              >
-                キャンセル
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setEditingId(null)}
-              className="px-4 py-1.5 bg-builder-border text-builder-ink-muted rounded text-sm hover:bg-builder-ink-ghost"
-            >
-              閉じる
-            </button>
-          )}
+          <button
+            onClick={handleSave}
+            disabled={!!error}
+            className="px-4 py-1.5 bg-builder-blue text-white rounded text-sm font-bold hover:bg-builder-blue-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isNew ? '追加' : '保存'}
+          </button>
+          <button
+            onClick={() => setDraft(null)}
+            className="px-4 py-1.5 bg-builder-border text-builder-ink-muted rounded text-sm hover:bg-builder-ink-ghost"
+          >
+            キャンセル
+          </button>
         </div>
       </div>
     );
@@ -189,8 +194,8 @@ export default function CombinedGroupSettings() {
         <div className="space-y-3 mb-4">
           {combinedGroups.map(group => (
             <div key={group.id}>
-              {editingId === group.id ? (
-                renderGroupEditor(group, false)
+              {draft?.id === group.id ? (
+                renderGroupEditor()
               ) : (
                 <div className="border border-builder-border rounded-lg p-3 bg-builder-surface flex items-center justify-between hover:shadow-sm transition-shadow">
                   <div className="flex items-center gap-3 flex-wrap">
@@ -210,7 +215,7 @@ export default function CombinedGroupSettings() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button
-                      onClick={() => setEditingId(group.id)}
+                      onClick={() => startEdit(group)}
                       className="text-xs text-builder-blue hover:underline"
                     >
                       編集
@@ -234,8 +239,8 @@ export default function CombinedGroupSettings() {
       )}
 
       {/* 新規追加 */}
-      {newGroup ? (
-        renderGroupEditor(null, true)
+      {draft && draft.id === null ? (
+        renderGroupEditor()
       ) : (
         <button
           onClick={startNewGroup}
