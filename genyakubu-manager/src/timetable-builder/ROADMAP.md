@@ -1508,11 +1508,9 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 - **H1b. EventCalendarView への表示**: 現状イベント (休講/テスト期間/
   特別イベント) 専用。追加授業をバーとして出すなら visibility トグル
   (EventVisibilityToggles) の種別追加も必要。規模: 小〜中
-- **H1c. 回数カウント (第N回) への通算**: 「プレップ夏期講習の 4 回分も
-  通常回数に数えたい」場合、ExtraLesson に slotId (既存コマへの紐付け) を
-  追加し、sessionCount.js の走査 (`effectiveSubjectOnDay` /
-  `activeSlotsOnDay`) に「date を持つコマはその日だけ active」という
-  ゲートを入れる必要がある。設計スケッチは実装時の調査メモ参照。規模: 中〜大
+- ~~**H1c. 回数カウント (第N回) への通算**~~ **却下 (2026-07-03、
+  ユーザ判断: 不要)**。追加授業は回数に数えない仕様で確定。
+  再提案しないこと (リポジトリ CLAUDE.md の却下リストにも記載)
 - **H1d. 追加授業への代行対応**: substitutions は slotId (週次 Slot) 前提。
   追加授業の担当者が休む場合は現状「編集で担当を書き換える」運用。規模: 中
 - **H1e. 印刷対応の確認**: Dashboard 日別のカードは既存の印刷系統
