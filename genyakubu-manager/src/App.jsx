@@ -886,7 +886,11 @@ export default function App() {
               {selected ? selected : VIEW_TITLES[view] || ""}
             </h1>
           </div>
-          <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+          {/* 操作ボタン群は紙面に不要 (window.print() 系の印刷で写り込んでいた) */}
+          <div
+            className="no-print"
+            style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}
+          >
             {selected && (
               <>
                 <button onClick={() => setView(VIEWS.WEEK)} style={S.btn(view === VIEWS.WEEK)}>
