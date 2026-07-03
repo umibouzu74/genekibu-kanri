@@ -1963,9 +1963,12 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   useSlotsCrud の cascade でも String 正規化 (schema の toSlotIdKey と
   同一視ルールを統一)。文字列 slotId の関連データが cascade されない /
   生存スロットが孤立と誤検出される問題を解消。テスト +2
-- **K2g (data・小・要検証)**: parseLocalDate が範囲検証せず
+- **K2g (data・記録のみと判断 2026-07-03)**: parseLocalDate が範囲検証せず
   "2026-02-30" → 3/2 に silent ロールオーバー (dateHelpers.js:46)。
-  マネージャ入力は isValidDateStr で守られており、保存/取込データ経由のみ
+  **対応見送りの理由**: null を返す契約変更は既存呼び出し側 (biweekly /
+  eachDateStrInRange) の null 未対応を壊すリスクの方が大きい。入力境界は
+  isValidDateStr で防御済みで、保存/取込データの根本対策は K2i (schema の
+  日付検証統一) 側でやるのが筋
 - **K2h (builder・小・要検証)**: 分析キーが `${date}-${period}-${teacher}`
   の素朴結合で、ヘッダラベルに "-" を含めると衝突しうる
   (analysisHelpers.ts:84,160 / makeExternalKey)。labelRefs は cascade 側のみ対応済み
