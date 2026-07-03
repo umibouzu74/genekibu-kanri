@@ -2575,3 +2575,197 @@ describe('projectReducer — K2b/K2c cascade', () => {
     expect(b).toEqual(state.project.externalSessionPresets[1]);
   });
 });
+
+describe('projectReducer — コマ数の一括操作 (L4a)', () => {
+  const twoTabs = () => makeState({
+    tabs: [
+      {
+        id: 1, name: '中3',
+        config: {
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 3, '数学': 2 },
+        },
+        schedule: {},
+      },
+      {
+        id: 2, name: '中2',
+        config: { classes: [{ id: 1, label: '２S' }], subjectCounts: { '英語': 0, '数学': 0 } },
+        schedule: {},
+      },
+    ],
+  });
+
+  it('config/fillSubjectCounts: タブの全科目を同じコマ数にする', () => {
+    const state = twoTabs();
+    const next = projectReducer(state, {
+      type: 'config/fillSubjectCounts', payload: { tabId: 2, value: 4 },
+    });
+    expect(next.project.tabs[1].config.subjectCounts).toEqual({ '英語': 4, '数学': 4 });
+    // 他タブは不変 (同一参照)
+    expect(next.project.tabs[0]).toBe(state.project.tabs[0]);
+  });
+
+  it('config/fillSubjectCounts: 全科目が既に同値なら no-op、負数は 0 に clamp', () => {
+    const state = twoTabs();
+    expect(projectReducer(state, {
+      type: 'config/fillSubjectCounts', payload: { tabId: 2, value: 0 },
+    })).toBe(state);
+    const next = projectReducer(state, {
+      type: 'config/fillSubjectCounts', payload: { tabId: 1, value: -5 },
+    });
+    expect(next.project.tabs[0].config.subjectCounts).toEqual({ '英語': 0, '数学': 0 });
+  });
+
+  it('config/copySubjectCountsToOthers: コマ数を他の全タブへコピー', () => {
+    const next = projectReducer(twoTabs(), {
+      type: 'config/copySubjectCountsToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(next.project.tabs[1].config.subjectCounts).toEqual({ '英語': 3, '数学': 2 });
+    expect(next.project.tabs[0].config.subjectCounts).toEqual({ '英語': 3, '数学': 2 });
+  });
+
+  it('config/copySubjectCountsToOthers: 全タブ同値 / 単一タブは no-op', () => {
+    let state = twoTabs();
+    state = projectReducer(state, {
+      type: 'config/copySubjectCountsToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(projectReducer(state, {
+      type: 'config/copySubjectCountsToOthers', payload: { sourceTabId: 1 },
+    })).toBe(state);
+    const single = makeState();
+    expect(projectReducer(single, {
+      type: 'config/copySubjectCountsToOthers', payload: { sourceTabId: 1 },
+    })).toBe(single);
+  });
+});
+
+describe('projectReducer — subject/addMany (L4d/L4c)', () => {
+  it('複数科目を一括追加し、全タブの subjectCounts に 0 で登録する', () => {
+    const next = projectReducer(makeState(), {
+      type: 'subject/addMany', payload: { names: ['情報', '小論文'] },
+    });
+    expect(next.project.subjects).toEqual(['英語', '数学', '情報', '小論文']);
+    expect(next.project.tabs[0].config.subjectCounts['情報']).toBe(0);
+    expect(next.project.tabs[0].config.subjectCounts['小論文']).toBe(0);
+  });
+
+  it('既存と重複する名前・空文字・入力内重複は除外し、追加ゼロなら no-op', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'subject/addMany', payload: { names: ['英語', '情報', ' ', '情報'] },
+    });
+    expect(next.project.subjects).toEqual(['英語', '数学', '情報']);
+    expect(projectReducer(state, {
+      type: 'subject/addMany', payload: { names: ['英語', '数学'] },
+    })).toBe(state);
+  });
+});
+
+describe('projectReducer — dates/removeUnusedFromPool (L4b)', () => {
+  const poolState = () => makeState({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }, { id: 3, label: '12/27' }],
+    tabs: [
+      {
+        id: 1, name: '中3',
+        config: {
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+          activeDateIds: [1],
+        },
+        schedule: {},
+      },
+      {
+        id: 2, name: '中2',
+        config: { classes: [{ id: 1, label: '２S' }], subjectCounts: { '英語': 1 }, activeDateIds: [2] },
+        schedule: {},
+      },
+    ],
+  });
+
+  it('どのタブも使っていない日だけをプールから削除する', () => {
+    const next = projectReducer(poolState(), { type: 'dates/removeUnusedFromPool' });
+    expect(next.project.dates.map(d => d.id)).toEqual([1, 2]);
+  });
+
+  it('未使用日の NG・外部コマ数も cascade で消える (removeFromPool と同じ)', () => {
+    const state = poolState();
+    state.project.teachers = [
+      { name: '堀上', subjects: ['英語'], ngSlots: ['12/27-1限', '12/25-1限'], ngClasses: [], priorityClasses: [] },
+    ];
+    state.project.externalCounts = { '12/27-堀上': 2, '12/25-堀上': 1 };
+    const next = projectReducer(state, { type: 'dates/removeUnusedFromPool' });
+    expect(next.project.teachers[0].ngSlots).toEqual(['12/25-1限']);
+    expect(next.project.externalCounts).toEqual({ '12/25-堀上': 1 });
+  });
+
+  it('activeDateIds 未指定 (全日使う) のタブがあれば no-op', () => {
+    const state = poolState();
+    delete state.project.tabs[1].config.activeDateIds;
+    expect(projectReducer(state, { type: 'dates/removeUnusedFromPool' })).toBe(state);
+  });
+
+  it('未使用日が無ければ no-op', () => {
+    const state = poolState();
+    state.project.tabs[1].config.activeDateIds = [2, 3];
+    expect(projectReducer(state, { type: 'dates/removeUnusedFromPool' })).toBe(state);
+  });
+});
+
+describe('projectReducer — 使う日/時限選択の他タブコピー (L4g)', () => {
+  const selState = () => makeState({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    tabs: [
+      {
+        id: 1, name: '中3',
+        config: {
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 1 },
+          activeDateIds: [1],
+          activePeriodIds: [2],
+        },
+        schedule: {},
+      },
+      {
+        id: 2, name: '中2',
+        config: { classes: [{ id: 1, label: '２S' }], subjectCounts: { '英語': 1 } },
+        schedule: {},
+      },
+    ],
+  });
+
+  it('tabDates/copyActiveToOthers: 使う日の選択を他タブへコピー (配列は複製)', () => {
+    const next = projectReducer(selState(), {
+      type: 'tabDates/copyActiveToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(next.project.tabs[1].config.activeDateIds).toEqual([1]);
+    expect(next.project.tabs[1].config.activeDateIds).not.toBe(next.project.tabs[0].config.activeDateIds);
+  });
+
+  it('tabPeriods/copyActiveToOthers: 使う時限の選択を他タブへコピー', () => {
+    const next = projectReducer(selState(), {
+      type: 'tabPeriods/copyActiveToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(next.project.tabs[1].config.activePeriodIds).toEqual([2]);
+  });
+
+  it('コピー元が「全部使う」(falsy) なら他タブも null (全部使う) になる', () => {
+    const next = projectReducer(selState(), {
+      type: 'tabDates/copyActiveToOthers', payload: { sourceTabId: 2 },
+    });
+    expect(next.project.tabs[0].config.activeDateIds).toBeNull();
+  });
+
+  it('全タブ同値なら no-op (同一参照)', () => {
+    let state = selState();
+    state = projectReducer(state, {
+      type: 'tabDates/copyActiveToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(projectReducer(state, {
+      type: 'tabDates/copyActiveToOthers', payload: { sourceTabId: 1 },
+    })).toBe(state);
+  });
+});

@@ -47,10 +47,16 @@ export type ProjectAction =
   | { type: 'tab/rename'; payload: { id: number; name: string } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
+  | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
+  | { type: 'subject/addMany'; payload: { names: string[] } }
+  | { type: 'config/copySubjectCountsToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabDates/setByLabels'; payload: { tabId?: number; labels: string[] } }
   | { type: 'tabDates/toggle'; payload: { tabId?: number; dateId: number } }
   | { type: 'tabDates/setAllActive'; payload: { tabId?: number; active: boolean } }
   | { type: 'dates/removeFromPool'; payload: { dateId: number } }
+  | { type: 'dates/removeUnusedFromPool' }
+  | { type: 'tabDates/copyActiveToOthers'; payload: { sourceTabId: number } }
+  | { type: 'tabPeriods/copyActiveToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabPeriods/toggle'; payload: { tabId?: number; periodId: number } }
   | { type: 'tabPeriods/setAllActive'; payload: { tabId?: number; active: boolean } }
   | { type: 'subject/add'; payload: { name: string } }
@@ -116,6 +122,70 @@ export type ProjectAction =
 // applyAction が同じ project 参照を返した場合は no-op として扱い、履歴も更新しない。
 
 export const MAX_HISTORY = 50;
+
+// 日付プールから複数日をまとめて削除する共通処理 (dates/removeFromPool と
+// L4b の dates/removeUnusedFromPool が共用)。ラベルベース参照の cascade
+// cleanup を怠ると、同じラベルの日付を後で再追加したときに古い NG・外部
+// コマ数・他学年セッションが silent に復活する (UI の確認文言も「講師不在
+// /NG から消えます」と約束している)。NG キーは makeNgKey(date, period) =
+// `${date}-${period}`、externalCounts キーは makeExternalKey(date, teacher)。
+// 照合は prefix 一致だが、「8/1」と「8/1-補講」のように一方が他方の prefix
+// になるラベルの巻き添えを避けるため、プール全ラベルの中で最長一致した
+// ものが削除対象のときだけ消す (makeDateKeyDropMatcher)。
+function removeDatesFromPool(project: Project, dateIds: number[]): Project {
+  const pool = project.dates || [];
+  const idSet = new Set(dateIds);
+  const targets = pool.filter(d => idSet.has(d.id));
+  if (targets.length === 0) return project;
+  const targetLabels = targets.map(d => d.label);
+  const targetLabelSet = new Set(targetLabels);
+  const newPool = pool.filter(d => !idSet.has(d.id));
+  const newTabs = project.tabs.map(t => {
+    const ids = t.config.activeDateIds;
+    if (!ids || !ids.some(id => idSet.has(id))) return t;
+    return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => !idSet.has(id)) } };
+  });
+  const newCombined = cleanCombinedGroupsForLabelChange(
+    project.combinedGroups || [],
+    'dates',
+    new Set(newPool.map(d => d.label)),
+  );
+  const shouldDropDateKey = makeDateKeyDropMatcher(pool.map(d => d.label), targetLabels);
+  const newTeachers = (project.teachers || []).map(t => {
+    const ngSlots = t.ngSlots || [];
+    const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
+    return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+  });
+  const newExternal: Record<string, number> = {};
+  Object.keys(project.externalCounts || {}).forEach(k => {
+    if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
+  });
+  const newSessions = (project.externalSessions || []).filter(s => !targetLabelSet.has(s.date));
+  // K2c: externalSessionPresets の日付範囲参照も掃除する (renameHeader は
+  // 追従させているのに削除だけ放置だと、同名ラベルを後で再追加したとき
+  // 古いプリセットが別の日を指す)。該当フィールドだけ未指定に戻す。
+  const presets = project.externalSessionPresets || [];
+  const newPresets = presets.map(p => {
+    const dropStart = p.startDateLabel !== undefined && targetLabelSet.has(p.startDateLabel);
+    const dropEnd = p.endDateLabel !== undefined && targetLabelSet.has(p.endDateLabel);
+    if (!dropStart && !dropEnd) return p;
+    const next = { ...p };
+    if (dropStart) delete next.startDateLabel;
+    if (dropEnd) delete next.endDateLabel;
+    return next;
+  });
+  const presetsChanged = newPresets.some((p, i) => p !== presets[i]);
+  return cleanSchedule({
+    ...project,
+    dates: newPool,
+    tabs: newTabs,
+    combinedGroups: newCombined,
+    teachers: newTeachers,
+    externalCounts: newExternal,
+    externalSessions: newSessions,
+    ...(presetsChanged ? { externalSessionPresets: newPresets } : {}),
+  });
+}
 
 export function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
   switch (action.type) {
@@ -377,6 +447,46 @@ function applyAction(project: Project, action: ProjectAction): Project {
       );
       return { ...project, tabs: newTabs };
     }
+    case 'config/fillSubjectCounts': {
+      // L4a: あるタブの全科目のコマ数を一括で同じ値にする (18 マス手入力の
+      // 解消)。atomic で Undo 1 ステップ。全科目が既に同値なら no-op (F2d)。
+      const { tabId, value } = action.payload;
+      const target = project.tabs.find(t => t.id === tabId);
+      if (!target) return project;
+      const clamped = Math.max(0, parseInt(String(value)) || 0);
+      const subjects = project.subjects || [];
+      if (subjects.length === 0) return project;
+      if (subjects.every(s => (target.config.subjectCounts[s] || 0) === clamped)) return project;
+      const newCounts = { ...target.config.subjectCounts };
+      subjects.forEach(s => { newCounts[s] = clamped; });
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+    case 'config/copySubjectCountsToOthers': {
+      // L4a: あるタブの科目コマ数を他の全タブへコピー (「中3 の値を
+      // 中1・2 にも」)。変更の無いタブは同一参照を維持し、全タブ同値なら
+      // no-op (F2d)。
+      const { sourceTabId } = action.payload;
+      const source = project.tabs.find(t => t.id === sourceTabId);
+      if (!source || project.tabs.length < 2) return project;
+      const subjects = project.subjects || [];
+      if (subjects.length === 0) return project;
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id === sourceTabId) return t;
+        const tabChanged = subjects.some(
+          s => (t.config.subjectCounts[s] || 0) !== (source.config.subjectCounts[s] || 0));
+        if (!tabChanged) return t;
+        changed = true;
+        const newCounts = { ...t.config.subjectCounts };
+        subjects.forEach(s => { newCounts[s] = source.config.subjectCounts[s] || 0; });
+        return { ...t, config: { ...t.config, subjectCounts: newCounts } };
+      });
+      if (!changed) return project;
+      return { ...project, tabs: newTabs };
+    }
 
     // ─── タブ別『使う日』(activeDateIds) + 共通日付プール ─────
     // v4(Y): project.dates は全タブの和集合プール (NG はこの全日に設定可)。
@@ -446,63 +556,23 @@ function applyAction(project: Project, action: ProjectAction): Project {
 
     // 日付をプールから完全削除 (全タブ・NG から消える)。cascade で schedule /
     // combinedGroups を掃除し、全タブの activeDateIds からも除去する。
+    // 実体は removeDatesFromPool (L4b の一括削除と共通)。
     case 'dates/removeFromPool': {
-      const { dateId } = action.payload;
+      return removeDatesFromPool(project, [action.payload.dateId]);
+    }
+
+    // L4b: どのタブも使っていない日をまとめてプールから削除する。プールは
+    // 「増える一方」(tabDates/setByLabels は追加のみ) なので、生成をやり直す
+    // たびに溜まるゴミ日付の掃除経路。activeDateIds 未指定のタブは「全日
+    // 使う」の意味なので、その場合は何も削除しない。
+    case 'dates/removeUnusedFromPool': {
       const pool = project.dates || [];
-      const target = pool.find(d => d.id === dateId);
-      if (!target) return project;
-      const newPool = pool.filter(d => d.id !== dateId);
-      const newTabs = project.tabs.map(t => {
-        const ids = t.config.activeDateIds;
-        if (!ids || !ids.includes(dateId)) return t;
-        return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => id !== dateId) } };
-      });
-      const newCombined = cleanCombinedGroupsForLabelChange(
-        project.combinedGroups || [],
-        'dates',
-        new Set(newPool.map(d => d.label)),
-      );
-      // ラベルベース参照の cascade cleanup。これを怠ると、同じラベルの日付を
-      // 後で再追加したときに古い NG・外部コマ数・他学年セッションが silent に
-      // 復活する (UI の確認文言も「講師不在/NG から消えます」と約束している)。
-      // NG キーは makeNgKey(date, period) = `${date}-${period}`、externalCounts
-      // キーは makeExternalKey(date, teacher) = `${date}-${teacher}`。
-      // 照合は prefix 一致だが、「8/1」と「8/1-補講」のように一方が他方の
-      // prefix になるラベル (renameHeader は自由入力) の巻き添えを避けるため、
-      // プール全ラベルの中で最長一致したものが削除対象のときだけ消す。
-      const shouldDropDateKey = makeDateKeyDropMatcher(pool.map(d => d.label), [target.label]);
-      const newTeachers = (project.teachers || []).map(t => {
-        const ngSlots = t.ngSlots || [];
-        const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
-        return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
-      });
-      const newExternal = {};
-      Object.keys(project.externalCounts || {}).forEach(k => {
-        if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
-      });
-      const newSessions = (project.externalSessions || []).filter(s => s.date !== target.label);
-      // K2c: externalSessionPresets の日付範囲参照も掃除する (renameHeader は
-      // 追従させているのに削除だけ放置だと、同名ラベルを後で再追加したとき
-      // 古いプリセットが別の日を指す)。該当フィールドだけ未指定に戻す。
-      const presets = project.externalSessionPresets || [];
-      const newPresets = presets.map(p => {
-        if (p.startDateLabel !== target.label && p.endDateLabel !== target.label) return p;
-        const next = { ...p };
-        if (next.startDateLabel === target.label) delete next.startDateLabel;
-        if (next.endDateLabel === target.label) delete next.endDateLabel;
-        return next;
-      });
-      const presetsChanged = newPresets.some((p, i) => p !== presets[i]);
-      return cleanSchedule({
-        ...project,
-        dates: newPool,
-        tabs: newTabs,
-        combinedGroups: newCombined,
-        teachers: newTeachers,
-        externalCounts: newExternal,
-        externalSessions: newSessions,
-        ...(presetsChanged ? { externalSessionPresets: newPresets } : {}),
-      });
+      if (project.tabs.some(t => !t.config.activeDateIds)) return project;
+      const unused = pool
+        .filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)))
+        .map(d => d.id);
+      if (unused.length === 0) return project;
+      return removeDatesFromPool(project, unused);
     }
 
     // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は
@@ -537,6 +607,32 @@ function applyAction(project: Project, action: ProjectAction): Project {
       return { ...project, tabs: newTabs };
     }
 
+    // L4g: あるタブの「使う日 / 使う時限」の選択を他の全タブへコピーする
+    // (「中3 と同じ日程に合わせる」を手作業のチェックし直し無しで)。
+    // falsy (null/undefined) は「全部使う」の意味なので null に正規化して
+    // コピーする (setAllActive の慣習と同じ)。全タブ同値なら no-op (F2d)。
+    case 'tabDates/copyActiveToOthers':
+    case 'tabPeriods/copyActiveToOthers': {
+      const { sourceTabId } = action.payload;
+      const key = action.type === 'tabDates/copyActiveToOthers' ? 'activeDateIds' : 'activePeriodIds';
+      const source = project.tabs.find(t => t.id === sourceTabId);
+      if (!source || project.tabs.length < 2) return project;
+      const src = source.config[key];
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id === sourceTabId) return t;
+        const curr = t.config[key];
+        const same = (!src && !curr) ||
+          (Array.isArray(src) && Array.isArray(curr) &&
+            src.length === curr.length && src.every(id => curr.includes(id)));
+        if (same) return t;
+        changed = true;
+        return { ...t, config: { ...t.config, [key]: Array.isArray(src) ? [...src] : null } };
+      });
+      if (!changed) return project;
+      return { ...project, tabs: newTabs };
+    }
+
     // ─── 科目マスタ ──────────────────────
     case 'subject/add': {
       const { name } = action.payload;
@@ -551,6 +647,30 @@ function applyAction(project: Project, action: ProjectAction): Project {
           subjectCounts: { ...tab.config.subjectCounts, [name]: tab.config.subjectCounts[name] || 0 },
         },
       }));
+      return { ...project, subjects: newSubjects, tabs: newTabs };
+    }
+    case 'subject/addMany': {
+      // L4d/L4c: 複数科目の一括追加 (カンマ区切り入力・CSV 未登録科目の
+      // 一括登録)。既存と重複する名前・空文字は除外し、atomic で
+      // Undo 1 ステップ。追加対象が無ければ no-op。
+      const names = (action.payload.names || [])
+        .map(n => (typeof n === 'string' ? n.trim() : ''))
+        .filter(Boolean);
+      const subjects = project.subjects || [];
+      const seen = new Set(subjects);
+      const fresh: string[] = [];
+      names.forEach(n => {
+        if (seen.has(n)) return;
+        seen.add(n);
+        fresh.push(n);
+      });
+      if (fresh.length === 0) return project;
+      const newSubjects = [...subjects, ...fresh];
+      const newTabs = project.tabs.map(tab => {
+        const newCounts = { ...tab.config.subjectCounts };
+        fresh.forEach(n => { newCounts[n] = newCounts[n] || 0; });
+        return { ...tab, config: { ...tab.config, subjectCounts: newCounts } };
+      });
       return { ...project, subjects: newSubjects, tabs: newTabs };
     }
     case 'subject/remove': {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import BasicSettings from './BasicSettings';
 import { ProjectContext } from '../../contexts/projectContextValue';
 import { UIContext } from '../../contexts/uiContextValue';
@@ -30,7 +30,7 @@ function makeProject(overrides = {}) {
   };
 }
 
-function renderSettings({ project = makeProject(), activeTabId = 1, overrides = {} } = {}) {
+function renderSettings({ project = makeProject(), activeTabId = 1, overrides = {}, ui = {} } = {}) {
   const activeTab = project.tabs.find(t => t.id === activeTabId);
   const handleSetTabDatesByLabels = vi.fn();
   const handleToggleTabDate = vi.fn();
@@ -39,6 +39,9 @@ function renderSettings({ project = makeProject(), activeTabId = 1, overrides = 
   const handleListConfigChange = vi.fn();
   const handleToggleTabPeriod = vi.fn();
   const handleSetAllTabPeriods = vi.fn();
+  const handleRemoveUnusedDatesFromPool = vi.fn();
+  const handleCopyTabDatesToOthers = vi.fn();
+  const handleCopyTabPeriodsToOthers = vi.fn();
   const projectValue = {
     project,
     activeTab,
@@ -51,9 +54,12 @@ function renderSettings({ project = makeProject(), activeTabId = 1, overrides = 
     handleRemoveDateFromPool,
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
+    handleRemoveUnusedDatesFromPool,
+    handleCopyTabDatesToOthers,
+    handleCopyTabPeriodsToOthers,
     ...overrides,
   };
-  const uiValue = { showConfirm: vi.fn().mockResolvedValue(false), showToast: vi.fn() };
+  const uiValue = { showConfirm: vi.fn().mockResolvedValue(false), showToast: vi.fn(), ...ui };
   render(
     <ProjectContext.Provider value={projectValue}>
       <UIContext.Provider value={uiValue}>
@@ -64,6 +70,7 @@ function renderSettings({ project = makeProject(), activeTabId = 1, overrides = 
   return {
     handleSetTabDatesByLabels, handleToggleTabDate, handleSetAllTabDates, handleRemoveDateFromPool,
     handleListConfigChange, handleToggleTabPeriod, handleSetAllTabPeriods, uiValue,
+    handleRemoveUnusedDatesFromPool, handleCopyTabDatesToOthers, handleCopyTabPeriodsToOthers,
   };
 }
 
@@ -219,5 +226,94 @@ describe('BasicSettings — 時限の全タブまとめて表示', () => {
     fireEvent.click(screen.getByRole('button', { name: '🗂 時限を全タブまとめて表示' }));
     fireEvent.click(screen.getByTitle('「中１・２」を全選択'));
     expect(handleSetAllTabPeriods).toHaveBeenCalledWith(true, 2);
+  });
+});
+
+describe('BasicSettings — 未使用の日の一括削除 (L4b)', () => {
+  const projectWithUnused = () => makeProject({
+    dates: [
+      { id: 1, label: '8/1(土)' },
+      { id: 2, label: '7/24(金)' },
+      { id: 3, label: '7/31(金)' },
+      { id: 4, label: '8/10(月)' }, // どのタブも使わない
+    ],
+  });
+
+  it('未使用日があればボタンが件数付きで出て、confirm 承認で一括削除する', async () => {
+    const { handleRemoveUnusedDatesFromPool, uiValue } = renderSettings({
+      project: projectWithUnused(),
+      ui: { showConfirm: vi.fn().mockResolvedValue(true) },
+    });
+    const btn = screen.getByText(/未使用の日を一括削除 \(1\)/);
+    fireEvent.click(btn);
+    await waitFor(() => expect(handleRemoveUnusedDatesFromPool).toHaveBeenCalled());
+    expect(uiValue.showConfirm).toHaveBeenCalledWith(
+      expect.stringContaining('8/10(月)'),
+      expect.objectContaining({ danger: true }),
+    );
+  });
+
+  it('未使用日が無ければボタンを出さない (fixture は全日使用)', () => {
+    renderSettings();
+    expect(screen.queryByText(/未使用の日を一括削除/)).toBeNull();
+  });
+
+  it('activeDateIds 未指定 (全日使う) のタブがあればボタンを出さない', () => {
+    const project = projectWithUnused();
+    delete project.tabs[1].config.activeDateIds;
+    renderSettings({ project });
+    expect(screen.queryByText(/未使用の日を一括削除/)).toBeNull();
+  });
+});
+
+describe('BasicSettings — 日付自動生成のプレビュー (L4e)', () => {
+  it('開始・終了を入れるとプレビューに生成予定の日付と件数が出る', () => {
+    renderSettings();
+    fireEvent.change(screen.getByLabelText('生成 開始日'), { target: { value: '2026-07-20' } });
+    fireEvent.change(screen.getByLabelText('生成 終了日'), { target: { value: '2026-07-22' } });
+    const preview = screen.getByLabelText('生成される日付のプレビュー');
+    expect(preview).toHaveTextContent('3 日');
+    expect(preview).toHaveTextContent('7/20(月)');
+  });
+
+  it('条件が 0 件ならその旨を警告する', () => {
+    renderSettings();
+    fireEvent.change(screen.getByLabelText('生成 開始日'), { target: { value: '2026-07-22' } });
+    fireEvent.change(screen.getByLabelText('生成 終了日'), { target: { value: '2026-07-20' } });
+    expect(screen.getByLabelText('生成される日付のプレビュー'))
+      .toHaveTextContent('生成されません');
+  });
+
+  it('開始・終了が揃うまでプレビューを出さない', () => {
+    renderSettings();
+    expect(screen.queryByLabelText('生成される日付のプレビュー')).toBeNull();
+  });
+});
+
+describe('BasicSettings — 使う日/時限選択の他タブコピー (L4g)', () => {
+  it('全タブまとめて表示の列ヘッダ ⧉他へ で選択をコピーする (日付)', async () => {
+    const { handleCopyTabDatesToOthers } = renderSettings({
+      ui: { showConfirm: vi.fn().mockResolvedValue(true) },
+    });
+    fireEvent.click(screen.getByText('🗂 日付を全タブまとめて表示'));
+    fireEvent.click(screen.getByLabelText('「中３」の使う日の選択を他の全タブへコピー'));
+    await waitFor(() => expect(handleCopyTabDatesToOthers).toHaveBeenCalledWith(1));
+  });
+
+  it('時限側も同様にコピーできる', async () => {
+    const { handleCopyTabPeriodsToOthers } = renderSettings({
+      ui: { showConfirm: vi.fn().mockResolvedValue(true) },
+    });
+    fireEvent.click(screen.getByText('🗂 時限を全タブまとめて表示'));
+    fireEvent.click(screen.getByLabelText('「中１・２」の使う時限の選択を他の全タブへコピー'));
+    await waitFor(() => expect(handleCopyTabPeriodsToOthers).toHaveBeenCalledWith(2));
+  });
+
+  it('confirm キャンセルでコピーしない', async () => {
+    const { handleCopyTabDatesToOthers, uiValue } = renderSettings();
+    fireEvent.click(screen.getByText('🗂 日付を全タブまとめて表示'));
+    fireEvent.click(screen.getByLabelText('「中３」の使う日の選択を他の全タブへコピー'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(handleCopyTabDatesToOthers).not.toHaveBeenCalled();
   });
 });

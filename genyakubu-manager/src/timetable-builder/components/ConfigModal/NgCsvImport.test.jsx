@@ -81,3 +81,11 @@ describe('NgCsvImport (E2a)', () => {
     expect(screen.getByText(/未登録の時限ラベル/)).toBeInTheDocument();
   });
 });
+
+describe('NgCsvImport — 雛形 CSV ダウンロード (L4f)', () => {
+  it('雛形CSV ボタンがパネル内に表示される', () => {
+    renderPanel();
+    fireEvent.click(screen.getByText(/NG 日時を CSV で一括登録/));
+    expect(screen.getByText('⬇ 雛形CSV')).toBeInTheDocument();
+  });
+});

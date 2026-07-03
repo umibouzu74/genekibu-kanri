@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import { parseTeachersCsv } from '../../utils/csvImport';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { readParentTeachers } from '../../utils/parentTeachers';
+import { buildTeachersCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
 import DraftNumberInput from './DraftNumberInput';
 
 const CSV_PLACEHOLDER = `name,subjects
@@ -67,6 +68,7 @@ export default function TeacherManager() {
     renameTeacher,
     toggleTeacherSubject,
     setTeacherLimit,
+    addSubjects,
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
@@ -216,6 +218,13 @@ export default function TeacherManager() {
             <div className="text-xs text-builder-ink-muted">
               ヘッダ行は <code>name,subjects</code>。subjects は <code>|</code> 区切り (例: <code>英語|数学</code>)。
             </div>
+            {/* L4f: 事務スタッフに配る雛形 (現在の科目マスタ入り) */}
+            <button
+              type="button"
+              onClick={() => downloadCsvFile('講師マスタ雛形.csv', buildTeachersCsvTemplate(commonSubjects))}
+              className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt whitespace-nowrap"
+              title="現在の科目名を埋めたヘッダ付きの雛形 CSV をダウンロードします"
+            >⬇ 雛形CSV</button>
             <label className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface cursor-pointer whitespace-nowrap">
               📂 ファイルを選択
               <input
@@ -245,7 +254,19 @@ export default function TeacherManager() {
                   <> / <span className="font-bold text-builder-red">{csvParsed.errors.length} 件</span> エラー</>
                 )}
                 {csvParsed.unknownSubjects.length > 0 && (
-                  <> / 未登録科目: <span className="text-builder-red">{csvParsed.unknownSubjects.join(', ')}</span></>
+                  <>
+                    {' / '}未登録科目: <span className="text-builder-red">{csvParsed.unknownSubjects.join(', ')}</span>
+                    {/* L4c: 未登録のまま取り込むと担当設定が UI に出ない
+                        「見えない割当」になる。その場でマスタへ登録できる導線 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addSubjects(csvParsed.unknownSubjects);
+                        showToast(`${csvParsed.unknownSubjects.length} 科目をマスタへ追加しました`, 'success', 3000);
+                      }}
+                      className="ml-2 px-1.5 py-0.5 border border-builder-blue rounded text-builder-blue hover:bg-builder-info-soft"
+                    >＋ マスタへ一括追加</button>
+                  </>
                 )}
               </div>
               {csvParsed.errors.length > 0 && (

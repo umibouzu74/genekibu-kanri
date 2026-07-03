@@ -15,6 +15,7 @@ function renderManager({ project: projectOverride = {}, ui = {} } = {}) {
     renameTeacher: vi.fn(),
     toggleTeacherSubject: vi.fn(),
     setTeacherLimit: vi.fn(),
+    addSubjects: vi.fn(),
   };
   const projectValue = {
     project: { teachers: [], subjects: ['英語', '数学', '国語', '理科', '社会'], ...projectOverride },
@@ -382,5 +383,35 @@ describe('TeacherManager — 親アプリからの取込 (L5a)', () => {
     fireEvent.click(screen.getByText('🔗 親アプリから取込'));
     await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
     expect(fns.importTeachers).not.toHaveBeenCalled();
+  });
+});
+
+describe('TeacherManager — 未登録科目のマスタ一括追加 (L4c)', () => {
+  it('プレビューの「＋ マスタへ一括追加」で addSubjects が呼ばれる', () => {
+    const { fns, uiValue } = renderManager();
+    openPanel();
+    fireEvent.change(screen.getByLabelText('講師マスタ CSV テキスト'), {
+      target: { value: 'name,subjects\n佐藤,プログラミング|情報' },
+    });
+    fireEvent.click(screen.getByText('＋ マスタへ一括追加'));
+    expect(fns.addSubjects).toHaveBeenCalledWith(['プログラミング', '情報']);
+    expect(uiValue.showToast).toHaveBeenCalledWith('2 科目をマスタへ追加しました', 'success', 3000);
+  });
+
+  it('未登録科目が無ければ追加ボタンを出さない', () => {
+    renderManager();
+    openPanel();
+    fireEvent.change(screen.getByLabelText('講師マスタ CSV テキスト'), {
+      target: { value: 'name,subjects\n佐藤,英語' },
+    });
+    expect(screen.queryByText('＋ マスタへ一括追加')).toBeNull();
+  });
+});
+
+describe('TeacherManager — 雛形 CSV ダウンロード (L4f)', () => {
+  it('雛形CSV ボタンが CSV パネル内に表示される', () => {
+    renderManager();
+    openPanel();
+    expect(screen.getByText('⬇ 雛形CSV')).toBeInTheDocument();
   });
 });

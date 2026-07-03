@@ -57,6 +57,10 @@ export default function Header() {
       if (type === 'all') {
         await mod.downloadScheduleExcel(project);
         showToast('全体Excelをダウンロードしました');
+      } else if (type === 'clean') {
+        // L5c: 稼働カウント・⚠NG 抜きの配布用 (生徒掲示・保護者向け)
+        await mod.downloadScheduleExcel(project, { clean: true });
+        showToast('配布用Excelをダウンロードしました');
       } else {
         await mod.downloadTeacherExcel(project);
         showToast('個人別Excelをダウンロードしました');
@@ -119,6 +123,12 @@ export default function Header() {
                 className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
                 title="全タブのスケジュールをExcel出力"
               >📊 全体スケジュール</button>
+              <button
+                role="menuitem"
+                onClick={() => handleExport('clean')}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
+                title="稼働カウントやNGマークを省いた、生徒掲示・保護者配布向けのExcel出力"
+              >🎒 配布用 (注記なし)</button>
               <button
                 role="menuitem"
                 onClick={() => handleExport('teacher')}

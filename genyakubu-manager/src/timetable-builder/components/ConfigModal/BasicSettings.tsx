@@ -50,6 +50,9 @@ export default function BasicSettings() {
     handleToggleTabDate,
     handleSetAllTabDates,
     handleRemoveDateFromPool,
+    handleRemoveUnusedDatesFromPool,
+    handleCopyTabDatesToOthers,
+    handleCopyTabPeriodsToOthers,
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
   } = useProjectContext();
@@ -100,6 +103,18 @@ export default function BasicSettings() {
     });
   };
 
+  // L4e: 生成条件のライブプレビュー。開始・終了が揃うまでは null (非表示)。
+  // runGenerate と同じ入力で generateDateLabels を呼ぶだけなので結果は一致する。
+  const genPreview = useMemo(() => {
+    if (!genStart || !genEnd) return null;
+    return generateDateLabels({
+      startYmd: genStart,
+      endYmd: genEnd,
+      weekdays: [...genWeekdays],
+      excludeYmd: genExclude.split(',').map(s => s.trim()).filter(Boolean),
+    });
+  }, [genStart, genEnd, genWeekdays, genExclude]);
+
   const runGenerate = (mode) => {
     const labels = generateDateLabels({
       startYmd: genStart,
@@ -146,6 +161,46 @@ export default function BasicSettings() {
       handleRemoveDateFromPool(d.id);
       showToast(`「${d.label}」を削除しました`, 'success', 2000);
     }
+  };
+
+  // L4b: どのタブも使っていない日 (プールのゴミ)。activeDateIds 未指定の
+  // タブは「全日使う」なので、1 つでもあれば未使用日は存在しない。
+  const unusedPoolDates = useMemo(() => {
+    if ((project.tabs || []).some(t => !t.config.activeDateIds)) return [];
+    return poolDates.filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)));
+  }, [poolDates, project.tabs]);
+
+  const removeUnusedFromPool = async () => {
+    const labels = unusedPoolDates.map(d => d.label);
+    const preview = labels.slice(0, 10).join(', ') + (labels.length > 10 ? ` 他 ${labels.length - 10} 件` : '');
+    const ok = await showConfirm(
+      `どのタブも使っていない ${labels.length} 日をプールから完全に削除します。\n(${preview})\n講師不在/NG からも消えます。よろしいですか?`,
+      { title: '未使用の日の一括削除', danger: true, confirmLabel: '一括削除する' },
+    );
+    if (ok) {
+      handleRemoveUnusedDatesFromPool();
+      showToast(`未使用の ${labels.length} 日を削除しました`, 'success', 2500);
+    }
+  };
+
+  // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
+  const copyDatesSelection = async (tab) => {
+    const ok = await showConfirm(
+      `「${tab.name}」の使う日の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      { title: '使う日の選択をコピー', confirmLabel: 'コピーする' },
+    );
+    if (!ok) return;
+    handleCopyTabDatesToOthers(tab.id);
+    showToast(`「${tab.name}」の使う日の選択を他のタブへコピーしました`, 'success', 2500);
+  };
+  const copyPeriodsSelection = async (tab) => {
+    const ok = await showConfirm(
+      `「${tab.name}」の使う時限の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      { title: '使う時限の選択をコピー', confirmLabel: 'コピーする' },
+    );
+    if (!ok) return;
+    handleCopyTabPeriodsToOthers(tab.id);
+    showToast(`「${tab.name}」の使う時限の選択を他のタブへコピーしました`, 'success', 2500);
   };
 
   // 時限 / クラス用 (カンマ区切りテキスト)
@@ -228,6 +283,21 @@ export default function BasicSettings() {
             <span className="text-builder-ink-muted">除外日 (任意・YYYY-MM-DD をカンマ区切り。授業が無い日)</span>
             <input type="text" value={genExclude} onChange={(e) => setGenExclude(e.target.value)} placeholder="2026-07-29, 2026-08-13" className={inputCls} />
           </label>
+          {/* L4e: 確定前のプレビュー。曜日の押し忘れ・除外日の書き間違いに
+              「設定」してから気づく事故を防ぐ */}
+          {genPreview !== null && (
+            <div className="text-xs text-builder-ink-muted bg-builder-surface border border-builder-border rounded px-2 py-1" aria-label="生成される日付のプレビュー">
+              {genPreview.length === 0 ? (
+                <span className="text-builder-red">この条件では日付が生成されません (期間・曜日・除外日を確認)</span>
+              ) : (
+                <>
+                  生成される日付 <span className="font-bold text-builder-ink">{genPreview.length} 日</span>:{' '}
+                  {genPreview.slice(0, 12).join(', ')}
+                  {genPreview.length > 12 && ` 他 ${genPreview.length - 12} 件`}
+                </>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => runGenerate('replace')} className="px-3 py-1 bg-builder-primary text-white rounded text-xs font-bold hover:opacity-90">
               この内容でこのタブに設定
@@ -252,6 +322,15 @@ export default function BasicSettings() {
               <button type="button" onClick={() => setShowAllTabs(v => !v)} aria-pressed={showAllTabs} className={`text-xs px-2 py-0.5 border rounded font-bold ${showAllTabs ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border bg-builder-surface hover:bg-builder-bg text-builder-ink'}`}>
                 {showAllTabs ? '📋 日付の通常表示に戻す' : '🗂 日付を全タブまとめて表示'}
               </button>
+              {/* L4b: プールに溜まった未使用日の一括掃除 */}
+              {unusedPoolDates.length > 0 && (
+                <button
+                  type="button"
+                  onClick={removeUnusedFromPool}
+                  title="どのタブも使っていない日をプールからまとめて削除します (講師不在/NG からも消えます)"
+                  className="text-xs px-2 py-0.5 border border-builder-danger-border rounded bg-builder-danger-soft hover:bg-builder-danger-border text-builder-red font-bold"
+                >🗑 未使用の日を一括削除 ({unusedPoolDates.length})</button>
+              )}
             </div>
           </div>
           {poolDates.length === 0 ? (
@@ -268,6 +347,10 @@ export default function BasicSettings() {
                         <div className="flex justify-center gap-1 mt-1 font-normal">
                           <button type="button" onClick={() => handleSetAllTabDates(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全選</button>
                           <button type="button" onClick={() => handleSetAllTabDates(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全解</button>
+                          {/* L4g: 「中3 と同じ日程に」を手作業無しで */}
+                          {project.tabs.length > 1 && (
+                            <button type="button" onClick={() => copyDatesSelection(tab)} aria-label={`「${tab.name}」の使う日の選択を他の全タブへコピー`} title={`「${tab.name}」の選択を他の全タブへコピー`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-info-soft text-builder-blue">⧉他へ</button>
+                          )}
                         </div>
                       </th>
                     ))}
@@ -372,6 +455,10 @@ export default function BasicSettings() {
                         <div className="flex justify-center gap-1 mt-1 font-normal">
                           <button type="button" onClick={() => handleSetAllTabPeriods(true, tab.id)} title={`「${tab.name}」を全選択`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全選</button>
                           <button type="button" onClick={() => handleSetAllTabPeriods(false, tab.id)} title={`「${tab.name}」を全解除`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-bg">全解</button>
+                          {/* L4g: 時限版 */}
+                          {project.tabs.length > 1 && (
+                            <button type="button" onClick={() => copyPeriodsSelection(tab)} aria-label={`「${tab.name}」の使う時限の選択を他の全タブへコピー`} title={`「${tab.name}」の選択を他の全タブへコピー`} className="text-[10px] px-1 border border-builder-border rounded bg-builder-surface hover:bg-builder-info-soft text-builder-blue">⧉他へ</button>
+                          )}
                         </div>
                       </th>
                     ))}

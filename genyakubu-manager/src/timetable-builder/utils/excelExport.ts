@@ -127,7 +127,12 @@ async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
 
 // ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
 // project から ExcelJS.Workbook を構築して返す。副作用無し。
-export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
+// options.clean (L5c): 生徒掲示・保護者配布用の「配布用」モード。
+// 「(中学N:計M)」の稼働カウントと「⚠NG」マークは負荷調整のための作成者向け
+// 注記なので省き、科目 + 講師名だけの紙面にする ('未定' は配布時の見栄えの
+// ため科目のみ)。既定 (false) は従来どおりの作業用出力。
+export function buildScheduleWorkbook(project: Project, options: { clean?: boolean } = {}): ExcelJS.Workbook {
+  const { clean = false } = options;
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
@@ -178,6 +183,8 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
             return `${e.subject}\n(合同)`;
           }
           if (e.teacher && e.teacher !== '未定') {
+            // L5c: 配布用は科目 + 講師名のみ (作成者向け注記を省く)
+            if (clean) return `${e.subject}\n${e.teacher}`;
             const daily = teacherDailyCounts[makeExternalKey(d.label, e.teacher)];
             const current = daily?.current ?? 0;
             const total = daily?.total ?? 0;
@@ -188,6 +195,7 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
             const ngMark = (isManualNg || isAutoNg) ? '\n⚠NG' : '';
             return `${e.subject}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
           }
+          if (clean && e.teacher === '未定') return e.subject;
           return `${e.subject}\n${e.teacher || ''}`;
         })];
         ws.addRow(cells);
@@ -459,9 +467,9 @@ export function buildExcelFilename(project: Pick<Project, 'name'>, suffix: strin
 }
 
 // ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
-export async function downloadScheduleExcel(project: Project) {
-  const workbook = buildScheduleWorkbook(project);
-  await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
+export async function downloadScheduleExcel(project: Project, options: { clean?: boolean } = {}) {
+  const workbook = buildScheduleWorkbook(project, options);
+  await downloadWorkbook(workbook, buildExcelFilename(project, options.clean ? '配布用' : '全体'));
 }
 
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
