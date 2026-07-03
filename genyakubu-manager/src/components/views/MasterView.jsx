@@ -72,8 +72,10 @@ export function MasterView({
       (s) =>
         (!filterDay || s.day === filterDay) &&
         (!filterGrade || s.grade === filterGrade) &&
-        (!filterTeacher || s.teacher.includes(filterTeacher)) &&
-        (!filterSubj || s.subj.includes(filterSubj)) &&
+        // teacher/subj は Firebase 別クライアント書込等で欠落しうるので
+        // null ガード (extraLessons 側の防御と同じ理由。無いと view ごと落ちる)
+        (!filterTeacher || (s.teacher ?? "").includes(filterTeacher)) &&
+        (!filterSubj || (s.subj ?? "").includes(filterSubj)) &&
         (!timetables ||
           timetables.length <= 1 ||
           (s.timetableId ?? 1) === (activeTimetableId || 1))

@@ -3,7 +3,9 @@ import { fmtDate, SUB_STATUS, WEEKDAYS } from "../../../data";
 
 // ─── 代行サマリーカード ─────────────────────────────────────────────
 // 今日・明日の代行予定と全体の依頼中件数を一目で把握できるウィジェット。
-export function SubSummaryCards({ subs, slots, todayStr }) {
+// onJumpToRequestedSubs を渡すと「依頼中」カードがクリックで代行一覧
+// (依頼中フィルタ) へ遷移する (EventSummaryCards のクリック遷移と同型)。
+export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }) {
   const summary = useMemo(() => {
     if (!subs || subs.length === 0) return null;
 
@@ -51,8 +53,24 @@ export function SubSummaryCards({ subs, slots, todayStr }) {
     return null;
   }
 
-  const Card = ({ label, count, color, bg, detail, children }) => (
+  // onActivate 付きのカードはクリック / Enter / Space で遷移できる
+  // (EventSummaryCards の Card と同型)
+  const Card = ({ label, count, color, bg, detail, children, onActivate, activateTitle }) => (
     <div
+      role={onActivate ? "button" : undefined}
+      tabIndex={onActivate ? 0 : undefined}
+      onClick={onActivate}
+      onKeyDown={
+        onActivate
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onActivate();
+              }
+            }
+          : undefined
+      }
+      title={onActivate ? activateTitle : undefined}
       style={{
         background: bg,
         borderRadius: 10,
@@ -60,6 +78,7 @@ export function SubSummaryCards({ subs, slots, todayStr }) {
         border: `1px solid ${color}30`,
         minWidth: 130,
         flex: "1 1 130px",
+        cursor: onActivate ? "pointer" : "default",
       }}
     >
       <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 4 }}>
@@ -163,6 +182,8 @@ export function SubSummaryCards({ subs, slots, todayStr }) {
           color="#c03030"
           bg="#fde8e8"
           detail={`今後7日間の代行: ${weekSubs.length}件`}
+          onActivate={onJumpToRequestedSubs}
+          activateTitle="クリックで代行一覧 (依頼中) を開く"
         />
       )}
     </div>

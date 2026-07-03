@@ -36,8 +36,11 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
   );
 
   const filteredSubs = useMemo(() => {
+    // from/to は空 (クリア) を「その側は無制限」として扱う
     return showPast
-      ? confirmedSubs.filter((s) => s.date >= fromDate && s.date <= toDate)
+      ? confirmedSubs.filter(
+          (s) => (!fromDate || s.date >= fromDate) && (!toDate || s.date <= toDate)
+        )
       : confirmedSubs.filter((s) => s.date >= todayStr);
   }, [confirmedSubs, showPast, fromDate, toDate, todayStr]);
 
@@ -85,7 +88,7 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
     }
   }, [filteredSubs, slots, sharing, toasts]);
 
-  const rangeInvalid = showPast && fromDate > toDate;
+  const rangeInvalid = showPast && !!fromDate && !!toDate && fromDate > toDate;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -130,14 +133,14 @@ export function ConfirmedSubsView({ slots, holidays, subs, timetables, displayCu
             <input
               type="date"
               value={fromDate}
-              onChange={(e) => e.target.value && setFromDate(e.target.value)}
+              onChange={(e) => setFromDate(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
             <span style={{ fontSize: 12, color: "#666" }}>〜</span>
             <input
               type="date"
               value={toDate}
-              onChange={(e) => e.target.value && setToDate(e.target.value)}
+              onChange={(e) => setToDate(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
           </div>

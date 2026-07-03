@@ -81,6 +81,18 @@ export function AllView({ slots, onSelectTeacher }) {
             <tr key={t.name} style={{ background: rowBg }}>
               <td
                 onClick={() => onSelectTeacher && onSelectTeacher(t.name)}
+                role={onSelectTeacher ? "button" : undefined}
+                tabIndex={onSelectTeacher ? 0 : undefined}
+                onKeyDown={
+                  onSelectTeacher
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectTeacher(t.name);
+                        }
+                      }
+                    : undefined
+                }
                 style={{
                   padding: "8px 14px",
                   fontWeight: 800,

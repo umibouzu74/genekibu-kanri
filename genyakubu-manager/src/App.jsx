@@ -451,6 +451,7 @@ export default function App() {
     teacherSubjects,
     specialEvents,
     extraLessons,
+    activeTimetableId,
     saveSlots,
     saveHolidays,
     saveBiweeklyBase,
@@ -1028,6 +1029,10 @@ export default function App() {
               extraLessons={extraLessons}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
+              onJumpToRequestedSubs={() => {
+                setSubsInitFilter({ status: "requested" });
+                selectView(VIEWS.SUBS);
+              }}
             />
           )}
           {view === VIEWS.ALL && !selected && (

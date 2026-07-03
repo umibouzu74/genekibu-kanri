@@ -26,10 +26,16 @@ export function DashboardListView({
   sessionCtx,
   adjustments = [],
   onJumpToEventCalendar,
+  onJumpToRequestedSubs,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <SubSummaryCards subs={subs} slots={slots} todayStr={todayStr} />
+      <SubSummaryCards
+        subs={subs}
+        slots={slots}
+        todayStr={todayStr}
+        onJumpToRequestedSubs={onJumpToRequestedSubs}
+      />
       <EventSummaryCards
         todayStr={todayStr}
         holidays={holidays}

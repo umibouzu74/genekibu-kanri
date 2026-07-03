@@ -40,6 +40,7 @@ export function useDataIO({
   teacherSubjects,
   specialEvents,
   extraLessons,
+  activeTimetableId,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -93,6 +94,9 @@ export function useDataIO({
           teacherSubjects,
           specialEvents,
           extraLessons,
+          // インポート先で timetables に対する選択が宙吊りにならないよう
+          // アクティブな時間割 ID も持ち出す
+          activeTimetableId,
         },
         null,
         2
@@ -162,7 +166,10 @@ export function useDataIO({
           if (Array.isArray(d.subjectCategories)) saveSubjectCategories(d.subjectCategories);
           if (Array.isArray(d.subjects)) saveSubjects(d.subjects);
           if (Array.isArray(d.timetables)) saveTimetables(d.timetables);
-          if (d.displayCutoff && d.displayCutoff.groups) saveDisplayCutoff(d.displayCutoff);
+          // migrate を通す (cohorts 等の後付けフィールド補完)。他リソースは
+          // import 時に migrate 済みなのに displayCutoff だけ素通しだった
+          if (d.displayCutoff && d.displayCutoff.groups)
+            saveDisplayCutoff(migrateDisplayCutoff(d.displayCutoff));
           if (Array.isArray(d.examPeriods)) saveExamPeriods(migrateExamPeriods(d.examPeriods));
           if (Array.isArray(d.examPrepSchedules) && saveExamPrepSchedules)
             saveExamPrepSchedules(migrateExamPrepSchedules(d.examPrepSchedules));
@@ -176,6 +183,16 @@ export function useDataIO({
           }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
+          }
+          // 取り込んだ timetables に存在する ID のときだけ復元する
+          // (無い/不正なら現状維持 — 旧バックアップには含まれない)
+          if (
+            setActiveTimetableId &&
+            typeof d.activeTimetableId === "number" &&
+            Array.isArray(d.timetables) &&
+            d.timetables.some((t) => t?.id === d.activeTimetableId)
+          ) {
+            setActiveTimetableId(d.activeTimetableId);
           }
           toasts.success("データをインポートしました");
 
@@ -265,6 +282,10 @@ export function useDataIO({
     saveSessionOverrides([]);
     if (saveSpecialEvents) saveSpecialEvents([]);
     if (saveExtraLessons) saveExtraLessons([]);
+    // localStorage キーの removeItem だけでは React state と Firebase 側が
+    // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
+    // (export / import には含まれるのに reset だけ漏れていた)
+    saveTeacherSubjects({});
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
