@@ -922,9 +922,12 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
     仕事なので入力に型を貼らない)
   - tsconfig は既存 (strict: false / allowJs) のまま。テスト 1814 件 +
     E2E 2 件 + build で挙動不変を確認
-- **残り (Phase 2)**: utils 残り (tabUsage / analysisHelpers /
-  combinedPropagation / labelRefs / excelExport / csvImport / templates 等)
-  と logic (autoGenerator / runGenerator / constraints) の `.ts` 化
+- **✅ Phase 2a (reducer の cascade 依存)**: `utils/combinedPropagation.ts` /
+  `utils/labelRefs.ts` / `utils/tabUsage.ts` も `.ts` 化 (同日)。reducer が
+  import する層は全て型付きになり、データモデル核が閉じた
+- **残り (Phase 2b)**: utils 残り (analysisHelpers / excelExport / csvImport /
+  templates / autoNg / fixSuggestions / scheduleDiff 等) と
+  logic (autoGenerator / runGenerator / constraints) の `.ts` 化
 - **残り (Phase 3)**: hooks (useProject 系) と components の `.tsx` 化。
   E5b (完全 ID 化) をやるならこの段階で抱き合わせ
 - **規模**: 大 / **価値**: 中〜高

@@ -1,4 +1,17 @@
 import { parseKey, findCombinedGroup, effectiveConfigForTab } from './scheduleKey';
+import type { ParsedKey } from './scheduleKey';
+import type { CombinedGroup, Entity, ScheduleEntry, Tab } from '../types';
+
+export interface CountedAssignment {
+  key: string;
+  entry: ScheduleEntry;
+  parsed: ParsedKey;
+  dateEnt: Entity;
+  periodEnt: Entity;
+  classEnt: Entity;
+  group: CombinedGroup | null;
+  isCombinedDuplicate: boolean;
+}
 
 // F2j: 「タブの schedule のどのセルを講師 1 コマと数えるか」の規則を
 // 単一実装に統合する走査ヘルパー。ソルバの collectOtherTabsUsage
@@ -21,12 +34,18 @@ import { parseKey, findCombinedGroup, effectiveConfigForTab } from './scheduleKe
 //     丸ごと欠落し、teacherOverDaily を見逃す。
 //
 // visit({ key, entry, parsed, dateEnt, periodEnt, classEnt, group, isCombinedDuplicate })
-export function forEachCountedAssignment({ dates, periods }, tab, combinedGroups, exemptTeacher, visit) {
+export function forEachCountedAssignment(
+  { dates, periods }: { dates: Entity[]; periods: Entity[] },
+  tab: Tab,
+  combinedGroups: CombinedGroup[] | null | undefined,
+  exemptTeacher: string,
+  visit: (assignment: CountedAssignment) => void,
+) {
   const eff = effectiveConfigForTab({ dates, periods }, tab);
   const dateById = new Map(eff.dates.map(d => [d.id, d]));
   const periodById = new Map(eff.periods.map(p => [p.id, p]));
   const classById = new Map((tab.config?.classes || []).map(c => [c.id, c]));
-  const seenCombined = new Set();
+  const seenCombined = new Set<string>();
 
   Object.entries(tab.schedule || {}).forEach(([key, entry]) => {
     if (!entry?.teacher || entry.teacher === exemptTeacher) return;

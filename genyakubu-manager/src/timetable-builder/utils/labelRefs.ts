@@ -17,19 +17,20 @@
 //     「最初の一致」置換は、日付ラベルが `-旧講師名` を含むケースで
 //     日付側を壊す — F2o)
 //
-// このモジュールは import を持たない (scheduleKey / constants から独立)。
+// このモジュールの import は型のみ (scheduleKey / constants の値から独立)。
+import type { CombinedGroup, Teacher } from '../types';
 
 // ─── NG キー (`${date}-${period}`) ───────────────────────────────
 
 // 日付ラベルのリネームに追従して ngSlots キーの prefix を書き換える。
-export function renameNgDate(ngSlots, oldVal, newVal) {
+export function renameNgDate(ngSlots: string[] | undefined, oldVal: string, newVal: string): string[] {
   return (ngSlots || []).map(slot =>
     slot.startsWith(`${oldVal}-`) ? `${newVal}-${slot.substring(oldVal.length + 1)}` : slot
   );
 }
 
 // 時限ラベルのリネームに追従して ngSlots キーの suffix を書き換える。
-export function renameNgPeriod(ngSlots, oldVal, newVal) {
+export function renameNgPeriod(ngSlots: string[] | undefined, oldVal: string, newVal: string): string[] {
   return (ngSlots || []).map(slot =>
     slot.endsWith(`-${oldVal}`) ? `${slot.substring(0, slot.length - oldVal.length - 1)}-${newVal}` : slot
   );
@@ -41,10 +42,14 @@ export function renameNgPeriod(ngSlots, oldVal, newVal) {
 // suffix を slice で置換する。String.replace('-旧名', ...) は最初の一致を
 // 置換するため、日付ラベルが `-旧名` を含むと日付側が壊れていた
 // (例: 日付「8/1-田中」×講師「田中」)。
-export function renameExternalTeacher(externalCounts, oldName, newName) {
+export function renameExternalTeacher(
+  externalCounts: Record<string, number> | undefined,
+  oldName: string,
+  newName: string,
+): Record<string, number> | undefined {
   if (!externalCounts) return externalCounts;
   const suffix = `-${oldName}`;
-  const out = {};
+  const out: Record<string, number> = {};
   Object.keys(externalCounts).forEach(k => {
     const newKey = k.endsWith(suffix)
       ? `${k.substring(0, k.length - oldName.length - 1)}-${newName}`
@@ -55,10 +60,14 @@ export function renameExternalTeacher(externalCounts, oldName, newName) {
 }
 
 // 日付ラベルのリネームに追従して externalCounts キーの prefix を書き換える。
-export function renameExternalDate(externalCounts, oldLabel, newLabel) {
+export function renameExternalDate(
+  externalCounts: Record<string, number> | undefined,
+  oldLabel: string,
+  newLabel: string,
+): Record<string, number> | undefined {
   if (!externalCounts) return externalCounts;
   const prefix = `${oldLabel}-`;
-  const out = {};
+  const out: Record<string, number> = {};
   Object.keys(externalCounts).forEach(k => {
     if (k.startsWith(prefix)) {
       out[`${newLabel}-${k.substring(prefix.length)}`] = externalCounts[k];
@@ -70,10 +79,13 @@ export function renameExternalDate(externalCounts, oldLabel, newLabel) {
 }
 
 // 講師削除に追従して externalCounts キーを drop する (末尾一致)。
-export function dropExternalForTeacher(externalCounts, teacherName) {
+export function dropExternalForTeacher(
+  externalCounts: Record<string, number> | undefined,
+  teacherName: string,
+): Record<string, number> | undefined {
   if (!externalCounts) return externalCounts;
   const suffix = `-${teacherName}`;
-  const out = {};
+  const out: Record<string, number> = {};
   Object.keys(externalCounts).forEach(k => {
     if (!k.endsWith(suffix)) out[k] = externalCounts[k];
   });
@@ -85,10 +97,13 @@ export function dropExternalForTeacher(externalCounts, teacherName) {
 // 日付ラベル削除用: キー先頭の日付部分が「既知ラベル中の最長一致」で
 // removed に該当するときだけ true を返す matcher を作る。
 // NG キー / external キーの両方に使える (どちらも `${date}-...`)。
-export function makeDateKeyDropMatcher(allDateLabels, removedLabels) {
+export function makeDateKeyDropMatcher(
+  allDateLabels: string[] | undefined,
+  removedLabels: string[] | Set<string>,
+): (key: string) => boolean {
   const removedSet = removedLabels instanceof Set ? removedLabels : new Set(removedLabels);
-  return (key) => {
-    let longest = null;
+  return (key: string) => {
+    let longest: string | null = null;
     (allDateLabels || []).forEach(l => {
       if (key.startsWith(`${l}-`) && (longest === null || l.length > longest.length)) longest = l;
     });
@@ -98,10 +113,13 @@ export function makeDateKeyDropMatcher(allDateLabels, removedLabels) {
 
 // 時限ラベル削除用: キー末尾の時限部分が「既知ラベル中の最長一致」で
 // removed に該当するときだけ true を返す matcher を作る (NG キー用)。
-export function makePeriodKeyDropMatcher(allPeriodLabels, removedLabels) {
+export function makePeriodKeyDropMatcher(
+  allPeriodLabels: string[] | undefined,
+  removedLabels: string[] | Set<string>,
+): (key: string) => boolean {
   const removedSet = removedLabels instanceof Set ? removedLabels : new Set(removedLabels);
-  return (key) => {
-    let longest = null;
+  return (key: string) => {
+    let longest: string | null = null;
     (allPeriodLabels || []).forEach(l => {
       if (key.endsWith(`-${l}`) && (longest === null || l.length > longest.length)) longest = l;
     });
@@ -113,10 +131,10 @@ export function makePeriodKeyDropMatcher(allPeriodLabels, removedLabels) {
 
 // クラスラベルのリネームに追従する。リネーム先が既にリスト内に居る場合は
 // 重複させない (dedupe)。変更が無ければ元の参照を返す。
-export function renameClassInTeachers(teachers, oldVal, newVal) {
+export function renameClassInTeachers(teachers: Teacher[], oldVal: string, newVal: string): Teacher[] {
   if (!Array.isArray(teachers)) return teachers;
   let changed = false;
-  const renameList = (list) => {
+  const renameList = (list: string[] | undefined) => {
     if (!list || !list.includes(oldVal)) return list;
     changed = true;
     const next = list.map(c => (c === oldVal ? newVal : c));
@@ -135,10 +153,10 @@ export function renameClassInTeachers(teachers, oldVal, newVal) {
 // validLabelSet は「編集後のタブの新ラベル + 他タブの既存ラベル」の和集合を
 // 渡す (combinedGroups の cascade と同じ考え方 — 他タブが使うラベルの
 // 参照は巻き添えにしない)。変更が無ければ元の参照を返す。
-export function cleanClassRefsInTeachers(teachers, validLabelSet) {
+export function cleanClassRefsInTeachers(teachers: Teacher[], validLabelSet: Set<string>): Teacher[] {
   if (!Array.isArray(teachers)) return teachers;
   let changed = false;
-  const cleanList = (list) => {
+  const cleanList = (list: string[] | undefined) => {
     if (!list) return list;
     const next = list.filter(c => validLabelSet.has(c));
     if (next.length === list.length) return list;
@@ -158,7 +176,11 @@ export function cleanClassRefsInTeachers(teachers, validLabelSet) {
 
 // 残るラベル集合に合うよう combinedGroups から消えたものを filter。
 // dimension: 'classes' | 'dates'
-export function cleanCombinedGroupsForLabelChange(groups, dimension, validLabelSet) {
+export function cleanCombinedGroupsForLabelChange(
+  groups: CombinedGroup[] | null | undefined,
+  dimension: 'classes' | 'dates',
+  validLabelSet: Set<string>,
+): CombinedGroup[] {
   return (groups || [])
     .map(g => {
       if (dimension === 'classes') {
@@ -178,12 +200,20 @@ export function cleanCombinedGroupsForLabelChange(groups, dimension, validLabelS
 }
 
 // 科目削除に伴う combinedGroups の cleanup。subject 一致グループを drop。
-export function cleanCombinedGroupsForSubjectRemoval(groups, removedSubject) {
+export function cleanCombinedGroupsForSubjectRemoval(
+  groups: CombinedGroup[] | null | undefined,
+  removedSubject: string,
+): CombinedGroup[] {
   return (groups || []).filter(g => g.subject !== removedSubject);
 }
 
 // クラス/日付ラベルのリネームに伴う combinedGroups の label 書き換え。
-export function renameCombinedGroupsLabel(groups, dimension, oldLabel, newLabel) {
+export function renameCombinedGroupsLabel(
+  groups: CombinedGroup[] | null | undefined,
+  dimension: 'classes' | 'dates',
+  oldLabel: string,
+  newLabel: string,
+): CombinedGroup[] {
   return (groups || []).map(g => {
     if (dimension === 'classes') {
       return { ...g, classes: g.classes.map(c => c === oldLabel ? newLabel : c) };

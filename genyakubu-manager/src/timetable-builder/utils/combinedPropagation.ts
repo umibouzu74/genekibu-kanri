@@ -1,4 +1,11 @@
 import { makeKey, findCombinedGroup, findEntityById } from './scheduleKey';
+import type { CombinedGroup, Entity, Schedule, ScheduleEntry } from '../types';
+
+// cascade が参照する config の断面 (effectiveConfigForTab の dates / classes)
+interface PropagationConfig {
+  dates: Entity[];
+  classes: Entity[];
+}
 
 // 合同グループのセカンダリ伝播・クリーンアップを担う純粋関数群。
 //
@@ -14,7 +21,15 @@ import { makeKey, findCombinedGroup, findEntityById } from './scheduleKey';
 // (dateId, periodId, classId) に対応するセルが属する合同グループの secondary
 // セルのうち、旧 subject を持ち locked でないものを削除した新スケジュールを
 // 返す。該当する合同グループが無ければ schedule をそのまま返す。
-export function cleanupOldCombined(schedule, config, combinedGroups, dateId, periodId, classId, oldSubject) {
+export function cleanupOldCombined(
+  schedule: Schedule,
+  config: PropagationConfig,
+  combinedGroups: CombinedGroup[] | null | undefined,
+  dateId: number,
+  periodId: number,
+  classId: number,
+  oldSubject: string | undefined,
+): Schedule {
   if (!oldSubject) return schedule;
   const dateEnt = findEntityById(config.dates, dateId);
   const classEnt = findEntityById(config.classes, classId);
@@ -45,7 +60,15 @@ export function cleanupOldCombined(schedule, config, combinedGroups, dateId, per
 // 注意: subject 変更 / paste / swap など「セルを丸ごと書き換える」操作で使う。
 // 講師だけを変える場合は propagateTeacherChange を使うこと (ユーザが手動で
 // 切り離した secondary の subject を勝手に再接続しない挙動が必要)。
-export function propagateAssignment(schedule, config, combinedGroups, dateId, periodId, classId, entry) {
+export function propagateAssignment(
+  schedule: Schedule,
+  config: PropagationConfig,
+  combinedGroups: CombinedGroup[] | null | undefined,
+  dateId: number,
+  periodId: number,
+  classId: number,
+  entry: ScheduleEntry | undefined,
+): Schedule {
   if (!entry?.subject) return schedule;
   const dateEnt = findEntityById(config.dates, dateId);
   const classEnt = findEntityById(config.classes, classId);
@@ -74,7 +97,16 @@ export function propagateAssignment(schedule, config, combinedGroups, dateId, pe
 // 一致し locked でないものだけ teacher を更新する。subject は触らない。
 // secondary の subject が一致しない (ユーザが手動で切り離した) ケースは
 // 触らないことで、broken combined link を不用意に再接続しない。
-export function propagateTeacherChange(schedule, config, combinedGroups, dateId, periodId, classId, subject, teacher) {
+export function propagateTeacherChange(
+  schedule: Schedule,
+  config: PropagationConfig,
+  combinedGroups: CombinedGroup[] | null | undefined,
+  dateId: number,
+  periodId: number,
+  classId: number,
+  subject: string | undefined,
+  teacher: string,
+): Schedule {
   if (!subject) return schedule;
   const dateEnt = findEntityById(config.dates, dateId);
   const classEnt = findEntityById(config.classes, classId);
