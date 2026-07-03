@@ -17,6 +17,7 @@ import {
   nextId,
   activeDatesForTab,
   activePeriodsForTab,
+  effectiveConfigForTab,
 } from './scheduleKey';
 
 describe('activeDatesForTab', () => {
@@ -54,6 +55,38 @@ describe('activePeriodsForTab', () => {
   });
   it('pool が空/未定義でも安全', () => {
     expect(activePeriodsForTab(undefined, { config: { activePeriodIds: [1] } })).toEqual([]);
+  });
+});
+
+describe('effectiveConfigForTab (F2i)', () => {
+  const project = {
+    dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+  };
+  it('tab.config を保ちつつ dates / periods を絞った実効 config を返す', () => {
+    const tab = {
+      config: {
+        classes: [{ id: 1, label: 'A' }],
+        subjectCounts: { 英語: 2 },
+        activeDateIds: [2],
+        activePeriodIds: [1],
+      },
+    };
+    const eff = effectiveConfigForTab(project, tab);
+    expect(eff.classes).toEqual([{ id: 1, label: 'A' }]);
+    expect(eff.subjectCounts).toEqual({ 英語: 2 });
+    expect(eff.dates).toEqual([{ id: 2, label: '7/2' }]);
+    expect(eff.periods).toEqual([{ id: 1, label: '1限' }]);
+  });
+  it('activeDateIds / activePeriodIds 未指定はプール全体を使う', () => {
+    const eff = effectiveConfigForTab(project, { config: { classes: [] } });
+    expect(eff.dates).toBe(project.dates);
+    expect(eff.periods).toBe(project.periods);
+  });
+  it('project / tab が欠けていても安全 (dates / periods は空配列)', () => {
+    const eff = effectiveConfigForTab(undefined, undefined);
+    expect(eff.dates).toEqual([]);
+    expect(eff.periods).toEqual([]);
   });
 });
 

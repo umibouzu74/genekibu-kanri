@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { validateProjectShape } from './projectSchema';
-import { migrateProject, findCombinedGroup, countTeacherHoursWithCombined, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
+import { migrateProject, findCombinedGroup, countTeacherHoursWithCombined, effectiveConfigForTab } from './scheduleKey';
 import { cleanSchedule } from './constants';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
@@ -60,11 +60,7 @@ function expectLoadableOrRejected(raw) {
   );
   computeAutoNgByTeacher(project.teachers, project.externalSessions, project.periods || []);
   project.tabs.forEach(tab => {
-    const effective = {
-      ...tab.config,
-      dates: activeDatesForTab(project.dates, tab),
-      periods: activePeriodsForTab(project.periods, tab),
-    };
+    const effective = effectiveConfigForTab(project, tab);
     countTeacherHoursWithCombined(tab.schedule, effective, project.combinedGroups);
   });
 

@@ -68,6 +68,19 @@ export function activePeriodsForTab(poolPeriods, tab) {
   return (poolPeriods || []).filter(p => set.has(p.id));
 }
 
+// F2i: タブの実効 config = tab.config (classes / subjectCounts) + 『このタブが
+// 使う日・使う時限』に絞った dates / periods。この合成の唯一の入口。
+// activeDatesForTab / activePeriodsForTab を個別に並べると片方を絞り忘れる
+// 事故 (E-3 型) が再発するため、dates と periods を対で使う consumer は
+// 必ずこの関数を通すこと。project は { dates, periods } だけ読む。
+export function effectiveConfigForTab(project, tab) {
+  return {
+    ...tab?.config,
+    dates: activeDatesForTab(project?.dates, tab),
+    periods: activePeriodsForTab(project?.periods, tab),
+  };
+}
+
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // (config 変更時にインデックスがずれる問題を避けるため)

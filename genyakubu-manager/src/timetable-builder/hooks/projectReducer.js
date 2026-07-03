@@ -1,4 +1,4 @@
-import { makeKey, parseKey, makeNgKey, makeExternalKey, activeDatesForTab, activePeriodsForTab, nextId } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab, nextId } from '../utils/scheduleKey';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -112,23 +112,15 @@ function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
   );
 }
 
-// v4: dates / periods は project 共通。tab.config (classes / subjectCounts) に
-// project の dates / periods をマージした『実効 config』を返す。schedule の
-// cascade ロジック (combinedPropagation 等) は config.dates / .periods を読むため、
-// reducer 内でもこの実効 config を渡す必要がある。
-function effectiveConfig(project, tab) {
-  // dates / periods とも『このタブが使う分』に絞る (useProject の currentConfig
-  // と同じ)。periods をプール全体にすると schedule/bulkAction の一括操作が
-  // 非表示時限まで走査し、「使わない時限のセルは温存」の不変条件
-  // (schedule/clearUnlocked, tabPeriods/toggle) を破ったり {locked:true} の
-  // ゴミセルを非表示時限に生成したりする。cell/* 系の対象セルは可視セル
-  // (= active な時限) なので絞っても影響しない。
-  return {
-    ...tab.config,
-    dates: activeDatesForTab(project.dates, tab),
-    periods: activePeriodsForTab(project.periods, tab),
-  };
-}
+// v4: dates / periods は project 共通。schedule の cascade ロジック
+// (combinedPropagation 等) は config.dates / .periods を読むため、reducer 内でも
+// 実効 config (F2i: effectiveConfigForTab) を渡す必要がある。periods を
+// プール全体にすると schedule/bulkAction の一括操作が非表示時限まで走査し、
+// 「使わない時限のセルは温存」の不変条件 (schedule/clearUnlocked,
+// tabPeriods/toggle) を破ったり {locked:true} のゴミセルを非表示時限に
+// 生成したりする。cell/* 系の対象セルは可視セル (= active な時限) なので
+// 絞っても影響しない。
+const effectiveConfig = effectiveConfigForTab;
 
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
@@ -1033,8 +1025,9 @@ function applyAction(project, action) {
       // 「使う日・使う時限」から外れて非表示のまま温存されているセルは
       // クリア対象外 (tabDates/toggle の「off にしてもセルは保持、再 on で
       // 復活」という不変条件を守る)。画面に見えているセルだけを消す。
-      const visibleDateIds = new Set(activeDatesForTab(project.dates, activeTab).map(d => d.id));
-      const visiblePeriodIds = new Set(activePeriodsForTab(project.periods, activeTab).map(p => p.id));
+      const visibleCfg = effectiveConfigForTab(project, activeTab);
+      const visibleDateIds = new Set(visibleCfg.dates.map(d => d.id));
+      const visiblePeriodIds = new Set(visibleCfg.periods.map(p => p.id));
       const ns = {};
       Object.keys(activeTab.schedule).forEach(k => {
         const entry = activeTab.schedule[k];
