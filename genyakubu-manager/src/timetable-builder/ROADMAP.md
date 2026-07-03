@@ -905,10 +905,29 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: SubjectSelect / TeacherSelect / CellLockButton 分離 + `useCellNavigation` hook。
 - **規模**: 中 / **価値**: 中 (E3e の UI テスト容易性 UP)
 
-#### E5e. 🟡 TypeScript 化 (旧 D7a)
-- **現状**: Builder 配下は JS。Project / Tab / Config / ScheduleEntry / CombinedGroup の型定義が無いため、reducer や analysisHelpers のリファクタが reflective に進めにくい。
-- **改善**: `.jsx` → `.tsx`、型定義を `types/` に。E5b と同時実施で「型と structure を一発で固める」のがベスト。
-- **規模**: 大 / **価値**: 中〜高 / **「壊す」候補**
+#### E5e. 🟡 TypeScript 化 (旧 D7a / **Phase 1 完了 2026-07-03**)
+- **✅ Phase 1 (データモデル核)**: `types.ts` を新設し、ドメインモデル
+  (Project / Tab / TabConfig / Entity / ScheduleEntry / Teacher /
+  CombinedGroup / ExternalSession / Preset / TabSnapshot /
+  GenerationParams / ProjectState) を単一の正として定義。以下 6 ファイルを
+  `.ts` 化 (拡張子リネーム + 型注釈、挙動不変):
+  - `utils/generationParams.ts` / `utils/projectSchema.ts` /
+    `utils/scheduleKey.ts` / `utils/constants.ts` /
+    `hooks/projectFactory.ts` / `hooks/projectReducer.ts`
+  - **projectReducer は全 55 アクションの discriminated union
+    (`ProjectAction`)** を定義。payload 形状はこの型が単一の正 —
+    新アクションはまず union に足してから case を書くこと
+  - migrate 系 (v1〜v3 の旧形状 / 外部 JSON を受ける関数) は入力を
+    `any` で受けて出力を v4 型に揃える方針 (untrusted 入力の正規化が
+    仕事なので入力に型を貼らない)
+  - tsconfig は既存 (strict: false / allowJs) のまま。テスト 1814 件 +
+    E2E 2 件 + build で挙動不変を確認
+- **残り (Phase 2)**: utils 残り (tabUsage / analysisHelpers /
+  combinedPropagation / labelRefs / excelExport / csvImport / templates 等)
+  と logic (autoGenerator / runGenerator / constraints) の `.ts` 化
+- **残り (Phase 3)**: hooks (useProject 系) と components の `.tsx` 化。
+  E5b (完全 ID 化) をやるならこの段階で抱き合わせ
+- **規模**: 大 / **価値**: 中〜高
 
 #### E5f. ⚪ state management ライブラリ検討 (新規)
 - **現状**: useReducer + Context + 手書き useMemo (CLAUDE.md にも記載) で re-render を抑えている。
@@ -1554,7 +1573,9 @@ F2h前段 / F2j / F2m も同時に解消)。
 3. コードの軽い一手なら **E3c** (印刷スナップショット — Playwright 基盤は
    E3a で導入済み) か **E4b** (ソルバ計測)
    (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ / ~~E3b~~ ✅ 2026-07-03 完了)
-4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
+4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり) —
+   **Phase 1 (types.ts + データモデル核 6 ファイル) は 2026-07-03 完了**。
+   次は Phase 2 (utils / logic の残り) → Phase 3 (hooks / components tsx 化)
 
 ---
 

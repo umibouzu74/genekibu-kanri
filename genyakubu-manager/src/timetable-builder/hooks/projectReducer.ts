@@ -21,6 +21,78 @@ import {
   renameCombinedGroupsLabel,
 } from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
+import type {
+  CombinedGroup,
+  ExternalSession,
+  ExternalSessionPreset,
+  GenerationParamKey,
+  Project,
+  ProjectState,
+  Schedule,
+  TabSnapshot,
+  Teacher,
+} from '../types';
+
+// ─── アクション型 (E5e) ──────────────────────────────────────────
+// dispatch できる全アクションの discriminated union。各 case の payload 形状は
+// ここが単一の正 (アクションフックはこの型の薄いラッパ)。新しいアクションを
+// 足すときはここに 1 エントリ追加してから reducer に case を書くこと。
+export type ProjectAction =
+  | { type: 'history/undo' }
+  | { type: 'history/redo' }
+  | { type: 'project/setActive'; payload: Project }
+  | { type: 'project/reset'; payload: Project }
+  | { type: 'tab/switch'; payload: { id: number } }
+  | { type: 'tab/add'; payload: { name: string } }
+  | { type: 'tab/delete'; payload: { id: number } }
+  | { type: 'tab/rename'; payload: { id: number; name: string } }
+  | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
+  | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
+  | { type: 'tabDates/setByLabels'; payload: { tabId?: number; labels: string[] } }
+  | { type: 'tabDates/toggle'; payload: { tabId?: number; dateId: number } }
+  | { type: 'tabDates/setAllActive'; payload: { tabId?: number; active: boolean } }
+  | { type: 'dates/removeFromPool'; payload: { dateId: number } }
+  | { type: 'tabPeriods/toggle'; payload: { tabId?: number; periodId: number } }
+  | { type: 'tabPeriods/setAllActive'; payload: { tabId?: number; active: boolean } }
+  | { type: 'subject/add'; payload: { name: string } }
+  | { type: 'subject/remove'; payload: { name: string } }
+  | { type: 'subject/reorder'; payload: { fromIdx: number; toIdx: number } }
+  | { type: 'subject/setColor'; payload: { subject: string; color: string } }
+  | { type: 'teacher/add'; payload: { name: string } }
+  | { type: 'teacher/import'; payload: { teachers: Array<{ name: string; subjects?: string[] }>; mode?: 'append' | 'replace' } }
+  | { type: 'teacher/remove'; payload: { idx: number } }
+  | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
+  | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
+  | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
+  | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
+  | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
+  | { type: 'teacher/toggleClassPriority'; payload: { idx: number; className: string } }
+  | { type: 'teacher/setExternalCount'; payload: { date: string; teacherName: string; value: unknown } }
+  | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
+  | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
+  | { type: 'teacher/removeExternalSession'; payload: { id: number } }
+  | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string } }
+  | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
+  | { type: 'preset/remove'; payload: { id: number } }
+  | { type: 'cell/assign'; payload: { dateId: number; periodId: number; classId: number; type: 'subject' | 'teacher'; val: string } }
+  | { type: 'cell/toggleLock'; payload: { dateId: number; periodId: number; classId: number } }
+  | { type: 'cell/clear'; payload: { dateId: number; periodId: number; classId: number } }
+  | { type: 'cell/paste'; payload: { dateId: number; periodId: number; classId: number; clipboard: { subject?: string; teacher?: string } | null } }
+  | { type: 'cell/swap'; payload: { sourceKey: string; targetKey: string } }
+  | { type: 'schedule/renameHeader'; payload: { type: 'date' | 'period' | 'class'; oldVal: string; newVal: string } }
+  | { type: 'schedule/bulkAction'; payload: { action: 'lock-all' | 'unlock-all' | 'clear-all'; type: 'date' | 'period' | 'class'; val: string } }
+  | { type: 'schedule/clearUnlocked' }
+  | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
+  | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
+  | { type: 'snapshot/apply'; payload: { id: number } }
+  | { type: 'snapshot/rename'; payload: { id: number; name: string } }
+  | { type: 'snapshot/remove'; payload: { id: number } }
+  | { type: 'combinedGroup/add'; payload: { group: Omit<CombinedGroup, 'id'> } }
+  | { type: 'combinedGroup/update'; payload: { id: number; updates: Partial<Omit<CombinedGroup, 'id'>> } }
+  | { type: 'combinedGroup/remove'; payload: { id: number } }
+  | { type: 'project/updateName'; payload: { name: string } }
+  | { type: 'project/setGenerationParams'; payload: Partial<Record<GenerationParamKey, unknown>> }
+  | { type: 'project/replace'; payload: { project: Project } };
 
 // プロジェクト状態の遷移を一元化する pure reducer。
 //
@@ -42,7 +114,7 @@ import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 
 export const MAX_HISTORY = 50;
 
-export function projectReducer(state, action) {
+export function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
   switch (action.type) {
     case 'history/undo': {
       if (state.historyIndex <= 0) return state;
@@ -79,7 +151,7 @@ export function projectReducer(state, action) {
 }
 
 // 履歴に新 project を積む (updatedAt 自動付与、MAX_HISTORY 超は古い順に切る)
-function pushToHistory(state, newProject) {
+function pushToHistory(state: ProjectState, newProject: Project): ProjectState {
   const updated = { ...newProject, updatedAt: new Date().toISOString() };
   const newHistory = state.history.slice(0, state.historyIndex + 1);
   newHistory.push(updated);
@@ -101,13 +173,20 @@ function pushToHistory(state, newProject) {
 // 講師削除に伴う externalSessions の cleanup。teacherName が一致する
 // 詳細セッションを drop する。残しておくと「孤児セッション」として UI に
 // 表示されるが自動NGの対象から外れ、状態が乖離する。
-function cleanExternalSessionsForTeacher(externalSessions, teacherName) {
+function cleanExternalSessionsForTeacher(
+  externalSessions: ExternalSession[] | undefined,
+  teacherName: string,
+): ExternalSession[] | undefined {
   if (!externalSessions) return externalSessions;
   return externalSessions.filter(s => s.teacherName !== teacherName);
 }
 
 // 講師リネームに伴う externalSessions の teacherName 書き換え。
-function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
+function renameExternalSessionsTeacher(
+  externalSessions: ExternalSession[] | undefined,
+  oldName: string,
+  newName: string,
+): ExternalSession[] | undefined {
   if (!externalSessions) return externalSessions;
   return externalSessions.map(s =>
     s.teacherName === oldName ? { ...s, teacherName: newName } : s
@@ -125,7 +204,7 @@ function renameExternalSessionsTeacher(externalSessions, oldName, newName) {
 
 // 履歴に積む系のアクションを処理する純粋関数。
 // 変化が無い (no-op) 場合は引数の project をそのまま返す。
-function applyAction(project, action) {
+function applyAction(project: Project, action: ProjectAction): Project {
   switch (action.type) {
     // ─── タブ管理 ─────────────────────────
     case 'tab/add': {
@@ -176,7 +255,7 @@ function applyAction(project, action) {
       const newLabels = [...new Set(rawLabels)]; // 重複除去 (順序は保つ)
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const oldArr = isShared ? (project[key] || []) : (activeTab.config[key] || []);
-      const oldByLabel = new Map(oldArr.map(e => [e.label, e]));
+      const oldByLabel = new Map(oldArr.map(e => [e.label, e] as const));
       const resultArr = [];
       newLabels.forEach(label => {
         const existing = oldByLabel.get(label);
@@ -280,7 +359,7 @@ function applyAction(project, action) {
       if (!target) return project;
       // F5o: 負数の直接入力 (input の min はスピナーにしか効かない) を 0 に
       // clamp。負のコマ数は分析の合計を狂わせる。
-      const clamped = Math.max(0, parseInt(value) || 0);
+      const clamped = Math.max(0, parseInt(String(value)) || 0);
       // F2d: 同値なら no-op (blur 等での再 commit が履歴を汚さない)
       if (target.config.subjectCounts[subject] === clamped) return project;
       const newCounts = { ...target.config.subjectCounts, [subject]: clamped };
@@ -304,7 +383,7 @@ function applyAction(project, action) {
       if (!target) return project;
       const cleanLabels = [...new Set((labels || []).map(s => String(s).trim()).filter(Boolean))];
       const pool = project.dates || [];
-      const poolByLabel = new Map(pool.map(d => [d.label, d]));
+      const poolByLabel = new Map(pool.map(d => [d.label, d] as const));
       let nextIdNum = nextId(pool);
       const newPool = [...pool];
       const activeIds = [];
@@ -553,12 +632,12 @@ function applyAction(project, action) {
           externalCounts: newExternalCounts,
         };
       }
-      const map = new Map(project.teachers.map(t => [t.name, t]));
+      const map = new Map(project.teachers.map(t => [t.name, t] as const));
       incoming.forEach(t => {
         const subjects = Array.isArray(t.subjects) ? t.subjects : [];
         const existing = map.get(t.name);
         if (existing) {
-          map.set(t.name, { ...existing, subjects });
+          map.set(t.name, { ...existing, subjects } as Teacher);
         } else {
           map.set(t.name, { name: t.name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
         }
@@ -668,7 +747,7 @@ function applyAction(project, action) {
       const { entries } = action.payload;
       if (!Array.isArray(entries) || entries.length === 0) return project;
       // name → 追加すべき ngKey の集合
-      const addByName = new Map();
+      const addByName = new Map<string, Set<string>>();
       for (const e of entries) {
         if (!e || !e.name || !e.date || !e.period) continue;
         const k = makeNgKey(e.date, e.period);
@@ -710,7 +789,7 @@ function applyAction(project, action) {
       // F5o: 負数は 0 に clamp (負の外部コマ数は講師の日次合計を過小評価し、
       // 過負荷警告を見逃す)。
       const key = makeExternalKey(date, teacherName);
-      const clamped = Math.max(0, parseInt(value) || 0);
+      const clamped = Math.max(0, parseInt(String(value)) || 0);
       // F2d: 同値なら no-op (履歴を汚さない)
       if ((project.externalCounts || {})[key] === clamped) return project;
       const counts = { ...(project.externalCounts || {}), [key]: clamped };
@@ -727,7 +806,7 @@ function applyAction(project, action) {
       if (!date || !teacherName) return project;
       const sessions = project.externalSessions || [];
       const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
-      const newSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
+      const newSession: ExternalSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
       if (startTime) {
         newSession.startTime = startTime;
         if (endTime) newSession.endTime = endTime;
@@ -745,10 +824,10 @@ function applyAction(project, action) {
       if (!Array.isArray(items) || items.length === 0) return project;
       const sessions = project.externalSessions || [];
       let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
-      const newOnes = [];
+      const newOnes: ExternalSession[] = [];
       for (const it of items) {
         if (!it?.date || !it?.teacherName) continue;
-        const ns = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const ns: ExternalSession = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
         if (it.startTime) {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
@@ -775,7 +854,7 @@ function applyAction(project, action) {
       if (!name) return project;
       const presets = project.externalSessionPresets || [];
       const newId = presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
-      const newPreset = { id: newId, name };
+      const newPreset: ExternalSessionPreset = { id: newId, name };
       if (startTime) newPreset.startTime = startTime;
       if (startTime && endTime) newPreset.endTime = endTime;
       if (startDateLabel) newPreset.startDateLabel = startDateLabel;
@@ -790,8 +869,11 @@ function applyAction(project, action) {
       if (!target) return project;
       // updates のフィールドは空文字なら削除、値があれば上書き。
       // startTime が落ちる場合は endTime も落とす (orphan endTime 防止)。
-      const merged = { ...target };
-      const writeOrDelete = (key, val) => {
+      const merged: ExternalSessionPreset = { ...target };
+      const writeOrDelete = (
+        key: 'startTime' | 'endTime' | 'startDateLabel' | 'endDateLabel' | 'memo',
+        val: string | null | undefined,
+      ) => {
         if (val == null || val === '') delete merged[key];
         else merged[key] = val;
       };
@@ -1158,7 +1240,8 @@ function applyAction(project, action) {
       const updates = action.payload || {};
       const next = { ...project };
       let changed = false;
-      for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods']) {
+      const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods'];
+      for (const key of paramKeys) {
         if (updates[key] === undefined) continue;
         const clamped = clampGenerationParam(key, updates[key]);
         if (next[key] !== clamped) {

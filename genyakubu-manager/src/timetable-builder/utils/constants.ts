@@ -1,7 +1,8 @@
 import { parseKey } from './scheduleKey';
+import type { Entity, Project, Teacher } from '../types';
 
 // --- デフォルト講師データ ---
-export const DEFAULT_INITIAL_TEACHERS = [
+export const DEFAULT_INITIAL_TEACHERS: Teacher[] = [
   { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
   { name: "石原", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
   { name: "高松", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
@@ -23,12 +24,12 @@ export const DEFAULT_INITIAL_TEACHERS = [
 ];
 
 // --- デフォルト科目マスタ ---
-export const DEFAULT_SUBJECTS = ["英語", "数学", "国語", "理科", "社会"];
+export const DEFAULT_SUBJECTS: string[] = ["英語", "数学", "国語", "理科", "社会"];
 
 // --- デフォルト日付 / 時限 (v4: プロジェクト共通) ---
 // v4 で dates / periods は tab 単位から project 単位へ昇格した (全タブ共通の
 // 講習カレンダー)。ID は project-global な 1 始まり incremental。
-export const DEFAULT_PROJECT_DATES = [
+export const DEFAULT_PROJECT_DATES: Entity[] = [
   { id: 1, label: "12/25(木)" },
   { id: 2, label: "12/26(金)" },
   { id: 3, label: "12/27(土)" },
@@ -36,7 +37,7 @@ export const DEFAULT_PROJECT_DATES = [
   { id: 5, label: "1/6(火)" },
   { id: 6, label: "1/7(水)" },
 ];
-export const DEFAULT_PROJECT_PERIODS = [
+export const DEFAULT_PROJECT_PERIODS: Entity[] = [
   { id: 1, label: "1限 (13:00~)" },
   { id: 2, label: "2限 (14:10~)" },
   { id: 3, label: "3限 (15:20~)" },
@@ -85,7 +86,7 @@ export const LEGACY_STORAGE_KEYS = [
 ];
 
 // --- 科目カラー ---
-export const DEFAULT_SUBJECT_COLORS = {
+export const DEFAULT_SUBJECT_COLORS: Record<string, string> = {
   "英語": "#DBEAFE",  // 青系
   "数学": "#FEE2E2",  // 赤系
   "国語": "#FEF3C7",  // 黄系
@@ -111,7 +112,10 @@ export const SUBJECT_COLOR_PALETTE = [
 // (Tailwind の builder-danger-soft は淡すぎて科目カラーと区別しづらい)。
 export const CONFLICT_CELL_BG = '#FECACA';
 
-export const getSubjectColor = (subject, subjectColors) => {
+export const getSubjectColor = (
+  subject: string | null | undefined,
+  subjectColors?: Record<string, string> | null,
+): string | null => {
   if (!subject) return null;
   if (subjectColors && subjectColors[subject]) return subjectColors[subject];
   if (DEFAULT_SUBJECT_COLORS[subject]) return DEFAULT_SUBJECT_COLORS[subject];
@@ -123,7 +127,7 @@ export const getSubjectColor = (subject, subjectColors) => {
 };
 
 // --- 丸数字変換 ---
-export const toCircleNum = (num) => {
+export const toCircleNum = (num: number): string => {
   const circles = ["0", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯", "⑰", "⑱", "⑲", "⑳"];
   return circles[num] || `(${num})`;
 };
@@ -154,13 +158,13 @@ export const CURRENT_PROJECT_VERSION = 4;
 // 作っていた (O(D×P×C + K))。既存 schedule キーを走査して entity の存在を
 // 直接判定する方式に反転し O(D+P+C + K) に。挙動は等価 (有効キー =
 // date/period/class が全て config に存在)。
-export const cleanSchedule = (proj) => {
+export const cleanSchedule = (proj: Project): Project => {
   // v4: dates / periods は project 共通。classes のみ tab 単位。
   const dateIds = new Set((proj.dates || []).map(d => d.id));
   const periodIds = new Set((proj.periods || []).map(p => p.id));
   const newTabs = proj.tabs.map(tab => {
     const classIds = new Set(tab.config.classes.map(c => c.id));
-    const newSch = {};
+    const newSch: typeof tab.schedule = {};
     Object.keys(tab.schedule).forEach(k => {
       const p = parseKey(k);
       if (p && dateIds.has(p.dateId) && periodIds.has(p.periodId) && classIds.has(p.classId)) {

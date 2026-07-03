@@ -6,7 +6,8 @@
 // (任意フィールドの欠落は migrateProject 側が default で補うのでここでは見ない。)
 //
 // 返り値: { valid: boolean, error: string|null }
-export function validateProjectShape(obj) {
+// 入力は untrusted JSON なので any で受け、構造を絞り込みながら検証する。
+export function validateProjectShape(obj: any): { valid: boolean; error: string | null } {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
     return { valid: false, error: 'プロジェクトがオブジェクトではありません' };
   }

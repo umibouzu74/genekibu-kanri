@@ -21,12 +21,32 @@
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams.js) のみ。
 import { clampGenerationParam } from './generationParams';
+import type {
+  CombinedGroup,
+  EffectiveConfig,
+  Entity,
+  GenerationParamKey,
+  Project,
+  Schedule,
+  Tab,
+  Teacher,
+} from '../types';
+
+// migrate 系の入力は v1〜v3 の旧形状 / 外部 JSON なので any で受ける
+// (untrusted 入力の正規化がこのモジュールの仕事)。出力は v4 の型に揃える。
+
+export interface ParsedKey {
+  dateId: number;
+  periodId: number;
+  classId: number;
+}
 
 // --- キー生成・パース ---
 
-export const makeKey = (dateId, periodId, classId) => `d${dateId}-p${periodId}-c${classId}`;
+export const makeKey = (dateId: number, periodId: number, classId: number): string =>
+  `d${dateId}-p${periodId}-c${classId}`;
 
-export const parseKey = (key) => {
+export const parseKey = (key: string): ParsedKey | null => {
   const m = key.match(/^d(\d+)-p(\d+)-c(\d+)$/);
   if (!m) return null;
   return { dateId: parseInt(m[1]), periodId: parseInt(m[2]), classId: parseInt(m[3]) };
@@ -36,12 +56,12 @@ export const parseKey = (key) => {
 
 // dates/periods/classes 配列 (entity 配列) から id 一致するものを返す。
 // 見つからなければ undefined。
-export function findEntityById(entities, id) {
+export function findEntityById(entities: Entity[] | undefined, id: number): Entity | undefined {
   return entities?.find(e => e.id === id);
 }
 
 // 次に使うべき ID を計算 (max + 1、空なら 1)
-export function nextId(entities) {
+export function nextId(entities: Entity[] | undefined): number {
   if (!entities || entities.length === 0) return 1;
   return Math.max(...entities.map(e => e.id)) + 1;
 }
@@ -50,7 +70,7 @@ export function nextId(entities) {
 // 「この学年が実際に使う日」を選ぶ。未指定 (undefined/null) は『全日使う』の
 // 意味 (後方互換: 既存タブはプール全体をそのまま表示)。
 // 戻り値はプールの並び順を保った subset。
-export function activeDatesForTab(poolDates, tab) {
+export function activeDatesForTab(poolDates: Entity[] | undefined, tab: Tab | undefined): Entity[] {
   const ids = tab?.config?.activeDateIds;
   if (!ids) return poolDates || [];
   const set = new Set(ids);
@@ -61,7 +81,7 @@ export function activeDatesForTab(poolDates, tab) {
 // (未指定=全時限使う) で「このタブが実際に使う時限」を選ぶ。
 // 講師不在・NG はラベルベースでプール全時限を対象にするため、そちらは
 // このフィルタを通さず project.periods を直接参照する (AbsenceNgPanel)。
-export function activePeriodsForTab(poolPeriods, tab) {
+export function activePeriodsForTab(poolPeriods: Entity[] | undefined, tab: Tab | undefined): Entity[] {
   const ids = tab?.config?.activePeriodIds;
   if (!ids) return poolPeriods || [];
   const set = new Set(ids);
@@ -73,28 +93,36 @@ export function activePeriodsForTab(poolPeriods, tab) {
 // activeDatesForTab / activePeriodsForTab を個別に並べると片方を絞り忘れる
 // 事故 (E-3 型) が再発するため、dates と periods を対で使う consumer は
 // 必ずこの関数を通すこと。project は { dates, periods } だけ読む。
-export function effectiveConfigForTab(project, tab) {
+export function effectiveConfigForTab(
+  project: Pick<Project, 'dates' | 'periods'> | undefined,
+  tab: Tab | undefined,
+): EffectiveConfig {
   return {
     ...tab?.config,
     dates: activeDatesForTab(project?.dates, tab),
     periods: activePeriodsForTab(project?.periods, tab),
-  };
+  } as EffectiveConfig;
 }
 
 // --- NG スロットキー ---
 // NG はタブ横断で使うため、日付名・時限名ベースのまま維持
 // (config 変更時にインデックスがずれる問題を避けるため)
-export const makeNgKey = (date, period) => `${date}-${period}`;
+export const makeNgKey = (date: string, period: string): string => `${date}-${period}`;
 
 // --- 外部カウントキー ---
 // 講師の日別外部コマ数: "日付名-講師名"
-export const makeExternalKey = (date, teacherName) => `${date}-${teacherName}`;
+export const makeExternalKey = (date: string, teacherName: string): string => `${date}-${teacherName}`;
 
 // --- 合同グループヘルパー ---
 
 // 指定の科目・クラス・日付に該当する合同グループを検索
 // className と date は **ラベル** (合同グループ自体はラベルで指定するため)
-export function findCombinedGroup(combinedGroups, subject, className, date) {
+export function findCombinedGroup(
+  combinedGroups: CombinedGroup[] | null | undefined,
+  subject: string | undefined,
+  className: string,
+  date: string,
+): CombinedGroup | null {
   if (!combinedGroups || !subject) return null;
   return combinedGroups.find(g =>
     g.subject === subject &&
@@ -108,11 +136,16 @@ export function findCombinedGroup(combinedGroups, subject, className, date) {
 // なので、重なるグループが 2 つ登録されると伝播・集計が片方しか見ず
 // 不整合になる。登録前 (CombinedGroupSettings の draft 検証) にこれで弾く。
 // dates は null = 全日程 (何とでも重なる)。excludeId は編集中の自分自身。
-export function findConflictingCombinedGroup(combinedGroups, candidate, excludeId = null) {
+export function findConflictingCombinedGroup(
+  combinedGroups: CombinedGroup[] | null | undefined,
+  candidate: { subject?: string; classes?: string[]; dates?: string[] | null },
+  excludeId: number | null = null,
+): CombinedGroup | null {
   if (!combinedGroups || !candidate?.subject) return null;
   const candClasses = candidate.classes || [];
   const candDates = candidate.dates ?? null;
-  const datesOverlap = (a, b) => a === null || b === null || a.some(d => b.includes(d));
+  const datesOverlap = (a: string[] | null, b: string[] | null) =>
+    a === null || b === null || a.some(d => b.includes(d));
   return combinedGroups.find(g =>
     g.id !== excludeId &&
     g.subject === candidate.subject &&
@@ -122,14 +155,18 @@ export function findConflictingCombinedGroup(combinedGroups, candidate, excludeI
 }
 
 // クラスが合同グループの代表（先頭）クラスかどうか
-export function isPrimaryCombinedClass(group, className) {
-  return group && group.classes[0] === className;
+export function isPrimaryCombinedClass(group: CombinedGroup | null | undefined, className: string): boolean {
+  return !!group && group.classes[0] === className;
 }
 
 // 合同グループを考慮した講師コマ数カウント
-export function countTeacherHoursWithCombined(schedule, config, combinedGroups) {
-  const totals = {};
-  const counted = new Set();
+export function countTeacherHoursWithCombined(
+  schedule: Schedule,
+  config: { dates: Entity[]; periods?: Entity[]; classes: Entity[] },
+  combinedGroups: CombinedGroup[] | null | undefined,
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  const counted = new Set<string>();
 
   Object.keys(schedule).forEach(key => {
     const entry = schedule[key];
@@ -160,14 +197,14 @@ export function countTeacherHoursWithCombined(schedule, config, combinedGroups) 
 }
 
 // --- 旧形式の検出 ---
-export const isLegacyKey = (key) => {
+export const isLegacyKey = (key: string): boolean => {
   // 新形式は "d数字-p数字-c数字" のパターン
   return !(/^d\d+-p\d+-c\d+$/.test(key));
 };
 
 // --- v1 → v2 マイグレーション (旧 string 結合形式 → インデックスベース) ---
 
-export function migrateScheduleKeys(schedule, config) {
+export function migrateScheduleKeys(schedule: Record<string, any>, config: any): Record<string, any> {
   const hasLegacy = Object.keys(schedule).some(isLegacyKey);
   if (!hasLegacy) return schedule;
 
@@ -178,7 +215,7 @@ export function migrateScheduleKeys(schedule, config) {
   const periods = Array.isArray(config.periods) ? config.periods : [];
   const classes = Array.isArray(config.classes) ? config.classes : [];
 
-  const newSchedule = {};
+  const newSchedule: Record<string, any> = {};
   Object.keys(schedule).forEach(oldKey => {
     if (!isLegacyKey(oldKey)) {
       newSchedule[oldKey] = schedule[oldKey];
@@ -227,9 +264,9 @@ export function migrateScheduleKeys(schedule, config) {
 // 注意: 各次元を独立に判定する (v3 と v2 が混在しても各次元で正しく処理)。
 // 空配列は v3 互換とみなす (v3 schema は length 0 を許容する)。これにより
 // 「片方の次元だけ空で他は v3」というケースで残りの次元を破壊しない。
-export function migrateTabV2toV3(tab) {
+export function migrateTabV2toV3(tab: any): any {
   // entity 配列の形を判定: 空配列は v3 互換、内部が { id, label } object なら v3
-  const isV3Shape = (arr) =>
+  const isV3Shape = (arr: unknown): boolean =>
     Array.isArray(arr) && (arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]));
 
   // 全 dimension が v3 形式 (空含む) ならそのまま返す
@@ -247,7 +284,7 @@ export function migrateTabV2toV3(tab) {
   //   - v3 ({id,label}[]) の次元: 数値は「既に ID」 → 存在確認だけして素通し。
   //     インデックスと解釈すると、ID が位置とずれた配列 (削除で歯抜けの
   //     [{id:1},{id:3}] 等) でセルが隣へシフト / 消失する
-  const normalize = (raw) => {
+  const normalize = (raw: unknown): { arr: Entity[]; resolve: (n: number) => number | null } => {
     const arr = Array.isArray(raw) ? raw : [];
     if (isV3Shape(arr)) {
       const ids = new Set(arr.map(e => e.id));
@@ -264,7 +301,7 @@ export function migrateTabV2toV3(tab) {
 
   // schedule キーを次元ごとの resolve で新 ID キーに書き換える。
   // 解決できない (範囲外 / 存在しない ID の) キーは drop (cleanSchedule 相当)。
-  const newSchedule = {};
+  const newSchedule: Record<string, any> = {};
   Object.keys(tab.schedule).forEach(oldKey => {
     const m = oldKey.match(/^d(\d+)-p(\d+)-c(\d+)$/);
     if (!m) return; // 不正キー
@@ -291,18 +328,18 @@ export function migrateTabV2toV3(tab) {
 // 共通ケース (全タブが同一の dates / periods) では union = 元の配列で、ID も
 // 元の並び順どおりなので remap は実質 identity になる。タブごとに日程が違う
 // 場合も、union により全タブの日付が残るので schedule は失われない。
-export function migrateProjectV3toV4(project) {
+export function migrateProjectV3toV4(project: any): any {
   const tabs = project.tabs || [];
 
-  const dateLabels = [];
-  const periodLabels = [];
-  const seenDate = new Set();
-  const seenPeriod = new Set();
-  tabs.forEach(t => {
-    (t.config?.dates || []).forEach(d => {
+  const dateLabels: string[] = [];
+  const periodLabels: string[] = [];
+  const seenDate = new Set<string>();
+  const seenPeriod = new Set<string>();
+  tabs.forEach((t: any) => {
+    (t.config?.dates || []).forEach((d: Entity) => {
       if (!seenDate.has(d.label)) { seenDate.add(d.label); dateLabels.push(d.label); }
     });
-    (t.config?.periods || []).forEach(p => {
+    (t.config?.periods || []).forEach((p: Entity) => {
       if (!seenPeriod.has(p.label)) { seenPeriod.add(p.label); periodLabels.push(p.label); }
     });
   });
@@ -312,10 +349,14 @@ export function migrateProjectV3toV4(project) {
   const periodIdByLabel = new Map(projPeriods.map(p => [p.label, p.id]));
 
   // 旧 tab-local の dates / periods (id→label) を使い schedule キーを remap する。
-  const remapSchedule = (schedule, oldDates, oldPeriods) => {
+  const remapSchedule = (
+    schedule: Record<string, any>,
+    oldDates: Entity[] | undefined,
+    oldPeriods: Entity[] | undefined,
+  ): Record<string, any> => {
     const oldDateLabelById = new Map((oldDates || []).map(d => [d.id, d.label]));
     const oldPeriodLabelById = new Map((oldPeriods || []).map(p => [p.id, p.label]));
-    const out = {};
+    const out: Record<string, any> = {};
     Object.keys(schedule || {}).forEach(key => {
       const m = key.match(/^d(\d+)-p(\d+)-c(\d+)$/);
       if (!m) return;
@@ -330,7 +371,7 @@ export function migrateProjectV3toV4(project) {
     return out;
   };
 
-  const newTabs = tabs.map(t => {
+  const newTabs = tabs.map((t: any) => {
     const cfg = t.config || {};
     const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
     // 旧タブが union プールの一部しか持っていなかった場合、そのタブの
@@ -339,11 +380,11 @@ export function migrateProjectV3toV4(project) {
     // なり、自動生成が他学年の日にもコマを埋めてしまう。プール全体と一致
     // するタブは undefined のまま (= 全日・全時限、従来表現)。
     const oldDateIds = (cfg.dates || [])
-      .map(d => dateIdByLabel.get(d.label))
-      .filter(id => id != null);
+      .map((d: Entity) => dateIdByLabel.get(d.label))
+      .filter((id: number | undefined) => id != null);
     const oldPeriodIds = (cfg.periods || [])
-      .map(p => periodIdByLabel.get(p.label))
-      .filter(id => id != null);
+      .map((p: Entity) => periodIdByLabel.get(p.label))
+      .filter((id: number | undefined) => id != null);
     // F5v: 空 (0 日 / 0 時限) のタブも subset として保存する。
     // `length > 0` を条件に含めると空配列が「絞り込みなし = union 全日」に
     // 化け、0 日だったタブが migration 後に全学年の日付を表示し、自動生成が
@@ -361,9 +402,9 @@ export function migrateProjectV3toV4(project) {
   // dates / periods で remap する。元タブが消えている snapshot はそのまま残す。
   // snapshots が配列でない外部 JSON ({} 等、F5a) は truthy なので `|| []` では
   // 防げず .map で throw する。Array.isArray で正規化する。
-  const oldConfigByTabId = new Map(tabs.map(t => [t.id, t.config || {}]));
-  const newSnapshots = (Array.isArray(project.snapshots) ? project.snapshots : []).map(s => {
-    const cfg = oldConfigByTabId.get(s.tabId);
+  const oldConfigByTabId = new Map(tabs.map((t: any) => [t.id, t.config || {}]));
+  const newSnapshots = (Array.isArray(project.snapshots) ? project.snapshots : []).map((s: any) => {
+    const cfg: any = oldConfigByTabId.get(s.tabId);
     if (!cfg) return s;
     return { ...s, schedule: remapSchedule(s.schedule, cfg.dates, cfg.periods) };
   });
@@ -379,14 +420,14 @@ export function migrateProjectV3toV4(project) {
 }
 
 // プロジェクト全体のマイグレーション
-export function migrateProject(project) {
+export function migrateProject(project: any): Project {
   if (!project) return project;
 
   let result = project;
 
   // v1 → v2: 旧 string 結合キーをインデックスベースに変換
   if (!project.version || project.version < 2) {
-    const migratedTabs = project.tabs.map(tab => ({
+    const migratedTabs = project.tabs.map((tab: any) => ({
       ...tab,
       schedule: migrateScheduleKeys(tab.schedule, tab.config),
     }));
@@ -477,9 +518,10 @@ export function migrateProject(project) {
   // 全講師除外」のような UI と実挙動の乖離が起きる。reducer 編集時は
   // clamp 済みなので、外部 JSON / 旧データだけがここに該当する。
   {
-    const clampedParams = {};
+    const clampedParams: Record<string, number> = {};
     let paramsChanged = false;
-    for (const key of ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods']) {
+    const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods'];
+    for (const key of paramKeys) {
       if (result[key] === undefined) continue;
       const clamped = clampGenerationParam(key, result[key]);
       if (clamped !== result[key]) {
@@ -518,7 +560,7 @@ export function migrateProject(project) {
   // dangling のまま残すと「読み取りは tabs[0] へフォールバック・書き込みは
   // silent no-op」という乖離が起きる (編集しても何も保存されない)。
   if (Array.isArray(result.tabs) && result.tabs.length > 0
-    && !result.tabs.some(t => t.id === result.activeTabId)) {
+    && !result.tabs.some((t: any) => t.id === result.activeTabId)) {
     result = { ...result, activeTabId: result.tabs[0].id };
   }
 
@@ -539,11 +581,11 @@ export function migrateProject(project) {
 // teacher 要素の配列フィールド (subjects/ngSlots/ngClasses/priorityClasses) を
 // 補完する純粋関数 (F5b)。object でない要素・name の無い要素は drop。
 // 変更が無ければ元の配列をそのまま返す (no-op 判定用)。
-export function normalizeTeacherFields(teachers) {
+export function normalizeTeacherFields(teachers: any): Teacher[] | any {
   if (!Array.isArray(teachers)) return teachers;
   let changed = false;
-  const result = [];
-  teachers.forEach(t => {
+  const result: any[] = [];
+  teachers.forEach((t: any) => {
     if (!t || typeof t !== 'object' || typeof t.name !== 'string' || !t.name) {
       changed = true; // drop
       return;
@@ -567,11 +609,11 @@ export function normalizeTeacherFields(teachers) {
 // - dates は null (全日) か配列のみ許容。欠落 (undefined) や型崩れは null に
 //   倒す (`g.dates.includes` の throw 防止。全日扱いは保存時の既定と同じ)
 // 変更が無ければ元の配列をそのまま返す (no-op 判定用)。
-export function normalizeCombinedGroups(groups) {
+export function normalizeCombinedGroups(groups: any): CombinedGroup[] | any {
   if (!Array.isArray(groups)) return groups;
   let changed = false;
-  const result = [];
-  groups.forEach(g => {
+  const result: any[] = [];
+  groups.forEach((g: any) => {
     if (!g || typeof g !== 'object' || typeof g.subject !== 'string' || !Array.isArray(g.classes)) {
       changed = true; // drop
       return;
@@ -588,11 +630,11 @@ export function normalizeCombinedGroups(groups) {
 
 // 配列内の同名講師に suffix を振って衝突を解消する純粋関数。
 // 戻り値が === で元と等しいなら変更無し (no-op)。
-export function dedupeTeacherNames(teachers) {
+export function dedupeTeacherNames(teachers: any): Teacher[] | any {
   if (!Array.isArray(teachers)) return teachers;
-  const seen = new Set();
+  const seen = new Set<string>();
   let changed = false;
-  const result = teachers.map(t => {
+  const result = teachers.map((t: any) => {
     if (!t?.name) return t;
     if (!seen.has(t.name)) {
       seen.add(t.name);
@@ -601,7 +643,7 @@ export function dedupeTeacherNames(teachers) {
     // 2 件目以降は " (2)" / " (3)" の suffix を試して空きを探す
     changed = true;
     let suffix = 2;
-    let newName;
+    let newName: string;
     do {
       newName = `${t.name} (${suffix})`;
       suffix++;

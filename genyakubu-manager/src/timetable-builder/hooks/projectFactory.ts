@@ -13,10 +13,11 @@ import {
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
+import type { Entity, Project, Teacher } from '../types';
 
 // 講師マスタの差分を検出する。JSON 読み込み時の確認ダイアログ用。
-export function detectTeacherDiffs(currentTeachers, loadedTeachers) {
-  const diffs = [];
+export function detectTeacherDiffs(currentTeachers: Teacher[], loadedTeachers: Teacher[]): string[] {
+  const diffs: string[] = [];
   const currentNames = new Set(currentTeachers.map(t => t.name));
   const loadedNames = new Set(loadedTeachers.map(t => t.name));
 
@@ -48,12 +49,20 @@ export function detectTeacherDiffs(currentTeachers, loadedTeachers) {
   return diffs;
 }
 
-export function createNewProject(tabs, teachers, subjectColors, subjects, dates, periods) {
+// tabs は「schedule 空 + v3 互換 config」の生成用シードなので緩く受ける
+export function createNewProject(
+  tabs: any[],
+  teachers?: Teacher[] | null,
+  subjectColors?: Record<string, string> | null,
+  subjects?: string[] | null,
+  dates?: Entity[] | null,
+  periods?: Entity[] | null,
+): Project {
   // v4: dates / periods は project 共通。明示引数 > tabs[0].config > 既定 の順で
   // 解決し、各 tab.config からは strip して二重持ちを防ぐ (project が単一の正)。
   const srcDates = dates || tabs[0]?.config?.dates || DEFAULT_PROJECT_DATES;
   const srcPeriods = periods || tabs[0]?.config?.periods || DEFAULT_PROJECT_PERIODS;
-  const strippedTabs = tabs.map(t => {
+  const strippedTabs = tabs.map((t: any) => {
     const cfg = t.config || {};
     const { dates: _omitDates, periods: _omitPeriods, ...restConfig } = cfg;
     return { ...t, config: restConfig };
@@ -86,10 +95,10 @@ export function createNewProject(tabs, teachers, subjectColors, subjects, dates,
 // 戻り値: { project, loadError } の tuple
 //   - project: 復元 or デフォルトの project
 //   - loadError: 読み込み失敗時の説明文 (成功時 null)
-export function loadInitialProject() {
-  let loadError = null;
+export function loadInitialProject(): { project: Project; loadError: string | null } {
+  let loadError: string | null = null;
   // catch 節で退避できるよう try の外で保持する (F2f)
-  let savedProject = null;
+  let savedProject: string | null = null;
   try {
     savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
 
@@ -127,8 +136,8 @@ export function loadInitialProject() {
       const rawConfig = defaults.config || DEFAULT_TAB_CONFIG_BASE;
       // v2 形式 (string 配列) で保存された user defaults を v3 形式 ({id, label})
       // に正規化する。既に v3 形式 (object 配列) なら素通し。
-      const isV3Shape = (arr) => Array.isArray(arr) && (arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]));
-      const wrap = (arr) => isV3Shape(arr) ? arr : arr.map((label, i) => ({ id: i + 1, label }));
+      const isV3Shape = (arr: unknown) => Array.isArray(arr) && (arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]));
+      const wrap = (arr: any[]) => isV3Shape(arr) ? arr : arr.map((label: string, i: number) => ({ id: i + 1, label }));
       const normalizedConfig = {
         ...rawConfig,
         dates: wrap(rawConfig.dates || []),
@@ -145,7 +154,7 @@ export function loadInitialProject() {
     }
   } catch (e) {
     console.error("Load failed", e);
-    loadError = e?.message || String(e);
+    loadError = (e as Error | null)?.message || String(e);
     // F2f: デフォルトへフォールバックすると、最初の編集の autosave が
     // STORAGE_KEY_PROJECT を上書きして元データが復旧不能になる。壊れていても
     // 原本を別キーへ退避しておけば手動復旧 (JSON 手直し → 読込) の余地が残る。
