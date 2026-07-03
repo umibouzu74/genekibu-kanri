@@ -1,18 +1,9 @@
 # 講習時間割作成 (timetable-builder) 今後のロードマップ
 
-最終更新: 2026-07-02 (F.5: 並列レビュー第 2 波 — 未カバー領域から F5a-F5aa 発見、統合推奨順を再編) / 2026-07-02 (F.4: 再チェック — ベースライン検証 + F.2 全項目の現存確認 + F2o/F2p 新規追加) / 2026-07-02 (F: フレッシュアイズレビュー + 一括修正 + F.3 校正レビュー対応、PR 化) / 2026-06-29 / A1-A8 + B1-B4 + C1-C4 + D-Quick wins (D4f/D4g/D7b)
-+ D-Test foundation (D2a + D2b + D4e) + E2e (生成パラメータ UI) + E2f-cancel
-+ E2h (生成案の負荷偏り表示) + E1c (名前付きスナップショット)
-+ E1d (スケジュール差分ビュー) + E2a-file (CSV ファイル取り込み)
-+ E1g (エラー時の修正提案) + E2c (講師の連続コマ数制約)
-+ E2b-MVP (修正提案のワンクリック適用) + E2d (テンプレート機能)
-+ E3d (JSON schema バリデーション) + E4a (cleanSchedule O(K) 化)
-+ E1b (キーボード操作完成度: focus trap + tablist 矢印ナビ)
-+ E6c (LocalStorage 容量監視) + E6d (複数タブ競合検出)
-+ E2a-NG (NG 日時 CSV 取り込み) + E2f-stats (生成の探索回数/経過時間/詰まりセル)
-+ E1e (コントラスト WCAG AA 準拠) + E1a-toolbar (狭画面でボタン折返し)
-+ E1f-longpress (タッチ長押しでコンテキストメニュー)
-+ E8a (ユーザーマニュアル) + E8b (アーキテクチャ図) 完了
+最終更新: **2026-07-03** — F.4/F.5 レビューで発見した課題の改善サイクル完了
+(PR #141、10 バッチ / テスト 1573 → 1695 件)。**現在の残課題は §G に一本化**。
+それ以前の履歴: 2026-07-02 F 系レビュー (F.1-F.5) / 2026-06-29 E 系 UX 仕上げ /
+A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 
 このドキュメントは「次のセッション (新しい Claude Code セッション or 別の開発者) が
 迷わず作業を引き継げる」ことを目的にしている。完了項目は ✅ で短くまとめ、
@@ -40,10 +31,11 @@
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
+| F (レビュー起点の修正) | F.1/F.3 一括修正 (2026-07-02) / F.4-F.5 の改善 10 バッチ (2026-07-02〜03、PR #141): 読込クラッシュループ根絶 F5a-F5e+F2f / 期間カレンダー順 F5j / autosave debounce F2c / focus trap F5q-F5r / Excel シート名 F5g-F5i / infeasibility 再設計 F2g+F5x / モーダル UI F5k-F5o / ソルバ整合 F5t-F5y / 空ロック仕様 F5w / fingerprint 失効 F2n-F2p / 参照整合 F2k+H3/H5/F2o / a11y F2a-F2b |
 
-**主な未着手**: E1a/E1f 残り (Header dropdown は完了・ScheduleTable 幅 / 44px / ピンチ抑止が残) ·
-E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e テスト深化 · E4b ソルバ計測 ·
-E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
+**残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統: E1a/E1f 残り ·
+E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e/E3f/E3g テスト深化 ·
+E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
 ---
 
@@ -71,33 +63,30 @@ E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
 | Undo/Redo | 🟢 max 50 スナップショット |
 | 印刷 | 🟢 Toolbar に 🖨️ ボタン + 既存 CSS (A6) |
 | エラー通知 | 🟢 load 失敗を toast 通知 (B4) |
-| 合同グループ | 🟡 機能・UI ともにあるが実運用検証が浅い |
-| オンボーディング | 🔴 初見ユーザ向けガイダンス無し |
-| モバイル対応 | 🔴 大画面前提のレイアウト |
+| JSON 読込の堅牢性 | 🟢 schema 検証 + migrate の要素正規化 + 壊れデータ退避 (F.5 系統 A)。クラッシュループは根絶 |
+| 生成結果の鮮度 | 🟢 config fingerprint で stale な案を自動破棄 (F2n/F2p) |
+| キーボード操作 / a11y | 🟢 focus trap・全操作のキーボード代替・ARIA 対応済 (E1b + F2a/F2b)。スクリーンリーダーでの実機検証は未実施 |
+| 合同グループ | 🟡 機能・UI・検証は揃ったが実運用検証が浅い。他タブグループの編集挙動は仕様判断待ち (F5p) |
+| オンボーディング | 🟢 初回 5 ステップガイド + ❓ ヘルプから再表示 (D1a) |
+| モバイル対応 | 🟡 Toolbar 折返し・長押しメニュー済。ScheduleTable 幅 / 44px / ピンチ抑止が残 (E1a/E1f) |
 | TypeScript 化 | 🔴 未対応 (親アプリは部分的に TS) |
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **934 件** (timetable-builder 配下は約 257 件、他は親アプリ)
-主なファイル:
-- `utils/scheduleKey.test.js` (35)
-- `utils/combinedPropagation.test.js` (19)
-- `utils/excelExport.test.js` (18)
-- `logic/autoGenerator.test.js` (23)
-- `logic/runGenerator.test.js` (4)
-- `logic/constraints/teacherConstraints.test.js` (19)
-- `logic/constraints/scheduleConstraints.test.js` (13)
-- `hooks/useHistoryStack.test.jsx` (13)
-- `hooks/useProject.test.jsx` (36)
-- `hooks/projectFactory.test.js` (20)
-- `hooks/projectReducer.test.js` (57)
+合計 **1695 件 / 83 ファイル** (2026-07-03 時点。timetable-builder 配下 +
+親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の出力を正とする。
 
-カバー: マイグレーション (v1→v2→v3、混在空配列、範囲外キー drop)・
-キー round-trip・MRV 制約・seed 決定性・部分解・合同伝播・cell ops cascade・
-LocalStorage 保存・undo/redo・load error 通知・30+ action types の reducer
-純粋関数テスト・cascade cleanup (combinedGroups / externalCounts)・
-Excel workbook 構築 (hexToArgb / merge / fill / 合同備考)。
-**未カバー**: useAnalysis 詳細・UI コンポーネント。
+カバー範囲: マイグレーションチェーン (v1→v4、型崩れ正規化、混在配列)・
+「validate 通過 JSON は初回利用でクラッシュしない」統合性質
+(projectLoadIntegrity)・キー round-trip・ソルバ (MRV 制約・seed 決定性・
+部分解・合同・他タブ考慮・連続コマ・空ロック)・reducer 全 action・
+cascade cleanup / labelRefs・autosave debounce+flush・分析 (violations /
+infeasibilities / dashboard)・CSV / Excel / テンプレート / スナップショット・
+主要 UI コンポーネント (Toolbar / Header / ScheduleCell / TabBar /
+ContextMenu / ConfigModal 各タブ / SnapshotMenu / SummaryPanel)・
+focus trap / long-press / タブ競合検出。
+**未カバー**: 実 Worker 経路 (E3a)・実 xlsx の見栄え (E3b)・印刷出力 (E3c)・
+視覚回帰 (E3f)・クロスブラウザ (E3g)。
 
 ---
 
@@ -275,14 +264,9 @@ npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
 
 ### 4.4 推奨着手順
-ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出てきたら適切な
-セクション (A/B/C) に追加して、優先度に応じて着手する。
-
-未着手の改善候補 (1.2 表の 🔴 項目):
-- オンボーディング: 初見ユーザ向けガイダンス無し
-- モバイル対応: 大画面前提のレイアウト
-- TypeScript 化: Builder 配下は未対応 (親アプリは部分的に TS)
-- Firebase 同期: 意図的に未対応
+A/B/C/D 系と F 系 (レビュー起点の修正) はすべて完了。**現在の残課題と
+推奨順は §G (2026-07-03 一本化) を参照**。新たな課題が見つかったら §G に
+追記し、規模が大きいものは E 系の適切なサブセクションへ昇格させる。
 
 ### 4.5 やる前に必ず読むべきファイル
 - このファイル (ROADMAP.md)
@@ -295,6 +279,8 @@ ROADMAP の A 系・B 系・C 系すべて完了。新たな改善項目が出�
 - 削除 UX で `confirmedRemove` が必要なところに `removeWithUndo` を使う
 
 ### 4.7 既存 PR / 関連リンク
+- PR #141: F.4/F.5 チェック + 改善 10 バッチ (2026-07-02〜03、読込堅牢化 /
+  誤登録修正 / ソルバ整合 / fingerprint / 参照整合 / a11y ほか)
 - PR #116: Phase 1 + Step 2-6 + 校正 J1-J5（ROADMAP 作成前の全作業）
 - PR #117: review-jikanwarikun (PR #116 直後のレビュー対応)
 - A1-A8 + B1-B4 + C1-C4 は `claude/roadmap-design-progress-InQ1R` ブランチで実装
@@ -1012,6 +998,12 @@ PR 化済み (このセクションの F.1 / F.3 が本 PR の内容、F.2 が�
 
 F.3 の校正レビュー後も残っているもの (F.3 で部分対応した項目は注記)。
 
+**【2026-07-03 追記】このリストの大半は F.4/F.5 起点の改善サイクルで解消済み**:
+F2a/F2b (a11y) ✅ / F2c (autosave) ✅ / F2f (退避) ✅ / F2g (infeasibility) ✅ /
+F2k (labelRefs) ✅ / F2n・F2o・F2p ✅ / F2h のうち H3・H5 ✅。
+**未解消は F2d / F2e / F2h 前段 (NG CSV dedupe) / F2i / F2j / F2l 残り /
+F2m のみ — 現在の一覧は §G を参照**。以下は発見時の記録として保持。
+
 - ✅ **F2a (a11y, 中)**: キーボード到達不能な操作群 — NG マトリクスの
   `<td onClick>` (AbsenceNgPanel)、クラス優先度セル (ClassPriority)、
   タブ削除 `<span onClick>`・改名 dblclick のみ (TabBar)、ContextMenu の
@@ -1356,3 +1348,81 @@ solver 内 clamp はテストの maxIterations=1 のような意図的な範囲�
    仕様判断) / F5s (long-press ゴースト click、実機検証) / F2d (no-op 履歴
    の一般化) / F2e (swap stale payload) / F5f (v2/v3 混在 dim、外部データ
    限定) / F2h 前段 (NG CSV dedupe キー) / A7 (Shift+? 実機検証、既存)
+
+---
+
+## G. 現在の残課題 (2026-07-03 一本化)
+
+F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集約する。
+新しい課題はここに追記し、着手したら ✅ を付けて出典セクションも更新する。
+
+### G.1 判断待ち (実装前にユーザ/PM の決定が必要)
+
+- **F5p**: 他タブで作った合同グループを現タブで「編集」すると、他タブの
+  クラスが未選択表示になり解除も不能 (タブ混成グループが作れる)。
+  combinedGroups が project 共有・ラベル参照である以上、仕様の可能性もある。
+  選択肢: (a) 編集は全タブのクラスを表示 (b) 他タブ由来のグループは
+  現タブから読み取り専用 (c) 現状維持を仕様と明記
+- **E5 系の着手判断** (壊す系): E5e TypeScript 化 → E5b 完全 ID 化 →
+  E5c style 統一 の順が推奨 (E 系末尾の表参照)。着手は要相談
+
+### G.2 実機・実環境での検証 (コード変更なし or 検証後に判断)
+
+- **R1**: 本番 (GitHub Pages) ブラウザでの Worker 動作確認。CSP で blob が
+  塞がれる環境では sync fallback (cancel 不能・UI ブロック) に落ちる
+- **F5s**: useLongPress のゴースト click (メニューが指の真下に出るため
+  長押し後の click が先頭項目を誤爆しうる) / 抑止フラグの解除漏れ。
+  iOS Safari 等での実機検証が必要
+- **C4 残**: exceljs 出力の見栄え (科目カラー / 結合 / 罫線 / 列幅) の目視確認
+- **A7** (CLAUDE.md 既存): Shift+? の US/JP キーレイアウト実機検証
+- **スクリーンリーダー実機検証**: F2a で操作は可能になったが NVDA/VoiceOver
+  での通し確認は未実施
+
+### G.3 小粒の未修正バグ (実害小・優先度低)
+
+- **F2d**: no-op アクションの履歴汚染の一般化 (個別ガードは主要 action に
+  実装済み。reducer wrap 層での deep-equal 検出が残)
+- **F2e**: cell/swap が dragstart 時点の payload を信頼 (狭い競合窓で
+  stale 書き込み・lock 剥がし)
+- **F2h 前段**: NG CSV の dedupe キーが空白結合 (`name date period`) で、
+  名前に空白を含む講師と理論上衝突 (実害は重複行の skip 漏れのみ)
+- **F5f**: v2/v3 混在 dim + ID キーの schedule が migrateTabV2toV3 の
+  インデックス解釈でシフト/消失 (壊れた外部データ限定)
+- **F5z**: 同一科目・同一クラスを共有する合同グループの重複登録が可能で、
+  伝播・集計は first-match のみ (登録時の重複チェック追加を検討)
+
+### G.4 構造改善の提案 (F.3 起源、未実施)
+
+- **F2i**: `effectiveConfigForTab(project, tab)` を共通化し、同型の 3 行合成
+  7 箇所 (useProject / autoGenerator / analysisHelpers ×2 / excelExport ×3 /
+  SummaryPanel / projectReducer) を集約 — E-3 型「絞り忘れ」の構造的再発防止
+- **F2j**: collectOtherTabsUsage (autoGenerator) と computeGlobalUsage
+  (analysisHelpers) の集計規則統合
+- **F2l 残り**: draft-commit 入力と dismissable-popover の共有フック化
+  (CombinedGroupSettings の draft 化は F5n で実施済み。共有フック化と
+  SubjectManager / AbsenceNgPanel の数値入力 draft 化が残)
+- **F2m**: infeasibility 種別の label/suggest レジストリ化 (Toolbar と
+  fixSuggestions の同型 4 連ブロック解消)
+
+### G.5 機能・テストの未着手 (E 系、規模順)
+
+小〜中: E1h 印刷微調整 · E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
+E5g v5 migration path 設計 · E4d useAnalysis プロファイル ·
+E1a/E1f 残 (ScheduleTable 幅 / 44px / ピンチ抑止 / ヘッダ長押し) ·
+D7c テスト共通基盤
+
+中: E3a Worker E2E · E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
+E3e ConfigModal sub-tests 拡充 · E3g クロスブラウザ · E4b ソルバ計測 ·
+E2a Excel 取込 (要 mapping UI)
+
+大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
+E5 系 (TS / ID / style / state lib / Worker 分析) · E6a Firebase ·
+E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
+
+### G.6 推奨する次の一手
+
+1. **PR #141 のレビュー・マージ** (このサイクルの成果)
+2. マージ後の軽い一手: **G.4 の F2i** (絞り忘れの構造的再発防止、中規模) か
+   **G.3 の F5z** (重複合同グループの登録ガード、小規模)
+3. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
+4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
