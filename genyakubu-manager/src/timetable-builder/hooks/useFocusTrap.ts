@@ -5,7 +5,14 @@ const FOCUSABLE =
 
 // アクティブなトラップを LIFO で積む。Modal の上に別 dialog (ConfigModal の上に
 // OnboardingOverlay 等) が開いたとき、一番上のトラップだけが Escape / Tab を処理する。
-const trapStack = [];
+const trapStack: symbol[] = [];
+
+interface FocusTrapOptions {
+  onClose?: () => void;
+  enabled?: boolean;
+  /** マウント時にフォーカスする要素 (省略時は最初の focusable) */
+  initialFocusRef?: { current: HTMLElement | null } | null;
+}
 
 /**
  * dialog 内に Tab フォーカスを閉じ込め、Escape で onClose を呼ぶ簡易 focus trap。
@@ -24,7 +31,10 @@ const trapStack = [];
  *   confirm ダイアログの OK ボタンのように「最初の focusable ではない要素」へ
  *   初期フォーカスしたい場合に使う。
  */
-export function useFocusTrap(containerRef, { onClose, enabled = true, initialFocusRef = null } = {}) {
+export function useFocusTrap(
+  containerRef: { current: HTMLElement | null },
+  { onClose, enabled = true, initialFocusRef = null }: FocusTrapOptions = {},
+) {
   // onClose は ref 経由で参照し、effect の deps から外す。deps に入れると
   // 呼び出し側がインライン関数を渡した場合に再レンダーごとに trap が
   // 再初期化され、そのたび「最初の focusable へ focus()」が走って
@@ -41,8 +51,8 @@ export function useFocusTrap(containerRef, { onClose, enabled = true, initialFoc
     if (!root) return undefined;
     const prevActive = document.activeElement;
 
-    const focusables = () =>
-      Array.from(root.querySelectorAll(FOCUSABLE)).filter((el) => !el.hasAttribute('disabled'));
+    const focusables = (): HTMLElement[] =>
+      Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.hasAttribute('disabled'));
 
     const initial = initialFocusRef?.current || focusables()[0] || root;
     initial.focus?.();
@@ -50,7 +60,7 @@ export function useFocusTrap(containerRef, { onClose, enabled = true, initialFoc
     const trap = Symbol('builderFocusTrap');
     trapStack.push(trap);
 
-    const handleKey = (e) => {
+    const handleKey = (e: KeyboardEvent) => {
       // 入れ子のとき、最上位の trap のみが応答する
       if (trapStack[trapStack.length - 1] !== trap) return;
       if (e.key === 'Escape') {
@@ -91,7 +101,7 @@ export function useFocusTrap(containerRef, { onClose, enabled = true, initialFoc
       window.removeEventListener('keydown', handleKey);
       const idx = trapStack.indexOf(trap);
       if (idx !== -1) trapStack.splice(idx, 1);
-      if (prevActive && 'focus' in prevActive) prevActive.focus?.();
+      if (prevActive && 'focus' in prevActive) (prevActive as HTMLElement).focus?.();
     };
     // containerRef / onCloseRef は ref (識別子安定) なので依存に入れない
     // eslint-disable-next-line react-hooks/exhaustive-deps

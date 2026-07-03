@@ -11,10 +11,15 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
  *     `{ dontShowAgain: false }` → ✕ / Escape / 背景クリックで閉じた時。当該セッションのみ閉じる
  *   (F1 修正: 初回ユーザが反射的に Escape を押して永久消失するのを防ぐ)
  */
-export default function OnboardingOverlay({ open, onClose }) {
+interface OnboardingOverlayProps {
+  open: boolean;
+  onClose: (opts?: { dontShowAgain?: boolean }) => void;
+}
+
+export default function OnboardingOverlay({ open, onClose }: OnboardingOverlayProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const titleId = 'builder-onboarding-title';
-  const dialogRef = useRef(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // 開く度に最初のステップへ戻す
   useEffect(() => {

@@ -29,7 +29,6 @@ import type {
   Project,
   ProjectState,
   Schedule,
-  TabSnapshot,
   Teacher,
 } from '../types';
 

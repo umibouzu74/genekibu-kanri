@@ -1,5 +1,12 @@
 import { useMemo } from 'react';
+import type { Dispatch } from 'react';
 import { makeKey } from '../utils/scheduleKey';
+import type { ProjectAction } from './projectReducer';
+import type { Schedule } from '../types';
+
+type CellField = 'subject' | 'teacher';
+type HeaderType = 'date' | 'period' | 'class';
+type BulkActionKind = 'lock-all' | 'unlock-all' | 'clear-all';
 
 // セル操作アクションを dispatch でラップする。
 //
@@ -18,26 +25,26 @@ import { makeKey } from '../utils/scheduleKey';
 //     の re-render 回避には繋がらない。よって 1 つの memo に束ねている。
 //   - 仮に handleCellCopy 不要になれば deps を [dispatch] のみにして本当に
 //     stable にできる。
-export function useScheduleActions(dispatch, currentSchedule) {
+export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSchedule: Schedule) {
   return useMemo(() => ({
-    handleAssign: (dateId, periodId, classId, type, val) =>
+    handleAssign: (dateId: number, periodId: number, classId: number, type: CellField, val: string) =>
       dispatch({ type: 'cell/assign', payload: { dateId, periodId, classId, type, val } }),
-    toggleLock: (dateId, periodId, classId) =>
+    toggleLock: (dateId: number, periodId: number, classId: number) =>
       dispatch({ type: 'cell/toggleLock', payload: { dateId, periodId, classId } }),
-    handleRenameHeader: (type, oldVal, newVal) =>
+    handleRenameHeader: (type: HeaderType, oldVal: string, newVal: string) =>
       dispatch({ type: 'schedule/renameHeader', payload: { type, oldVal, newVal } }),
-    handleBulkAction: (action, type, val) =>
+    handleBulkAction: (action: BulkActionKind, type: HeaderType, val: string) =>
       dispatch({ type: 'schedule/bulkAction', payload: { action, type, val } }),
-    handleCellCopy: (dateId, periodId, classId) => {
+    handleCellCopy: (dateId: number, periodId: number, classId: number): { subject: string; teacher?: string } | null => {
       // 読み取り専用。dispatch しない。
       const k = makeKey(dateId, periodId, classId);
       const curr = currentSchedule[k] || {};
       if (curr.subject) return { subject: curr.subject, teacher: curr.teacher };
       return null;
     },
-    handleCellPaste: (dateId, periodId, classId, clipboard) =>
+    handleCellPaste: (dateId: number, periodId: number, classId: number, clipboard: { subject?: string; teacher?: string } | null) =>
       dispatch({ type: 'cell/paste', payload: { dateId, periodId, classId, clipboard } }),
-    handleCellClear: (dateId, periodId, classId) =>
+    handleCellClear: (dateId: number, periodId: number, classId: number) =>
       dispatch({ type: 'cell/clear', payload: { dateId, periodId, classId } }),
     // handleSetNg は useProject.js の composer 側で teacher/toggleNg のラッパとして
     // 定義する (cell 位置 → 講師名・date.label・period.label の解決が必要なため)。
@@ -45,11 +52,11 @@ export function useScheduleActions(dispatch, currentSchedule) {
       dispatch({ type: 'schedule/clearUnlocked' }),
     // F2e: セル内容は渡さない。reducer が dispatch 時点の schedule から読む
     // (dragstart 時点の stale なデータで上書きしないため)。
-    handleSwapCells: (sourceKey, targetKey) =>
+    handleSwapCells: (sourceKey: string, targetKey: string) =>
       dispatch({ type: 'cell/swap', payload: { sourceKey, targetKey } }),
     // tabId = 生成元タブ (省略時はアクティブタブ)。結果パネルはタブ切替後も
     // 残るため、必ず生成時に記録したタブへ適用する。
-    applyPattern: (pat, tabId) =>
+    applyPattern: (pat: Schedule, tabId?: number) =>
       dispatch({ type: 'schedule/applyPattern', payload: { pat, tabId } }),
   }), [dispatch, currentSchedule]);
 }

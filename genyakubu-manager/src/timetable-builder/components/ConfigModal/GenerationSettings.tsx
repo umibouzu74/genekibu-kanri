@@ -45,7 +45,7 @@ function ParamRow({ row, bounds, value, onCommit }) {
             aria-label={row.label}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
             className="w-28 border border-builder-border rounded px-2 py-1 text-sm text-right focus:outline-none focus:border-builder-blue"
           />
           <span className="text-xs text-builder-ink-muted w-8">{row.unit}</span>

@@ -3,8 +3,33 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
 
-export default function ContextMenu({ contextMenu, clipboard, onClose }) {
-  const menuRef = useRef(null);
+// BuilderApp が useState で持つ「開いているメニュー」の状態。
+// type=null はセルメニュー、'date'|'period'|'class' はヘッダメニュー (val=ラベル)。
+export interface BuilderContextMenuState {
+  x: number;
+  y: number;
+  dateId: number | null;
+  periodId: number | null;
+  classId: number | null;
+  type: 'date' | 'period' | 'class' | null;
+  val: string | null;
+}
+
+/** セルのコピー内容 (コピー → 貼付で受け渡す) */
+export interface CellClipboard {
+  subject: string;
+  teacher?: string;
+}
+
+interface ContextMenuProps {
+  contextMenu: BuilderContextMenuState | null;
+  clipboard: CellClipboard | null;
+  /** copiedData を渡すと BuilderApp が clipboard に保存する */
+  onClose: (copiedData?: CellClipboard | null) => void;
+}
+
+export default function ContextMenu({ contextMenu, clipboard, onClose }: ContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // スクロール時にメニューを閉じる
   useEffect(() => {
@@ -19,7 +44,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
   useEffect(() => {
     if (!contextMenu) return undefined;
     menuRef.current?.querySelector('button')?.focus();
-    const handleKey = (e) => {
+    const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
@@ -29,7 +54,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
       e.preventDefault();
       const items = Array.from(menuRef.current?.querySelectorAll('button') || []);
       if (items.length === 0) return;
-      const i = items.indexOf(document.activeElement);
+      const i = items.indexOf(document.activeElement as HTMLButtonElement);
       const next = e.key === 'ArrowDown'
         ? (i + 1) % items.length
         : (i - 1 + items.length) % items.length;

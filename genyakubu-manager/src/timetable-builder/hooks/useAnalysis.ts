@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { EffectiveConfig, Project, Schedule } from '../types';
 import {
   computeGlobalUsage,
   computeActiveAnalysis,
@@ -20,7 +21,7 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 //                 teacherDailyCounts, tabErrorCounts, violations,
 //                 infeasibilities }
 //   - dashboard: { progress, filled, total }
-export function useAnalysis(project, currentSchedule, currentConfig) {
+export function useAnalysis(project: Project, currentSchedule: Schedule, currentConfig: EffectiveConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
     () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods),
     [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods],

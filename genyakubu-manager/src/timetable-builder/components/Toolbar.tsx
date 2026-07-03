@@ -4,6 +4,22 @@ import { parseKey, makeNgKey } from '../utils/scheduleKey';
 import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import SnapshotMenu from './SnapshotMenu';
+import type { Dispatch, SetStateAction } from 'react';
+
+interface ToolbarProps {
+  isCompact: boolean;
+  setIsCompact: Dispatch<SetStateAction<boolean>>;
+  showSummary: boolean;
+  setShowSummary: Dispatch<SetStateAction<boolean>>;
+  setShowConfig: Dispatch<SetStateAction<boolean>>;
+  isGenerating: boolean;
+  generateProgress: { current: number; total: number };
+  generateElapsedMs: number;
+  generateLive: { index: number; iterations: number; filledCount: number; totalSlots: number } | null;
+  onGenerate: () => void;
+  onCancelGenerate: () => void;
+  onShowHelp: () => void;
+}
 
 export default function Toolbar({
   isCompact,
@@ -18,7 +34,7 @@ export default function Toolbar({
   onGenerate,
   onCancelGenerate,
   onShowHelp,
-}) {
+}: ToolbarProps) {
   const {
     analysis,
     dashboard,

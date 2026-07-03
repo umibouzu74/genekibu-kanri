@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState, useCallback } from 'react';
+import type { Project, ProjectState } from '../types';
 import { STORAGE_KEY_PROJECT } from '../utils/constants';
 import { loadInitialProject } from './projectFactory';
 import { projectReducer } from './projectReducer';
@@ -17,7 +18,7 @@ const SAVE_DEBOUNCE_MS = 800;
 //   (旧 pushHistory / setProject は撤去。dispatch を直接使うか、ラッパとして
 //    useProject / アクションフックが提供する。)
 export function useHistoryStack() {
-  const [state, dispatch] = useReducer(projectReducer, null, () => {
+  const [state, dispatch] = useReducer(projectReducer, null, (): ProjectState => {
     const { project, loadError } = loadInitialProject();
     return {
       project,
@@ -28,9 +29,9 @@ export function useHistoryStack() {
   });
 
   const [saveStatus, setSaveStatus] = useState("✅ 保存済");
-  const saveTimerRef = useRef(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // debounce 中の未保存 project。null = 未保存分なし。
-  const pendingProjectRef = useRef(null);
+  const pendingProjectRef = useRef<Project | null>(null);
   const isInitialMount = useRef(true);
 
   // 未保存分を即時書き込みする。debounce タイマー発火・アンマウント・

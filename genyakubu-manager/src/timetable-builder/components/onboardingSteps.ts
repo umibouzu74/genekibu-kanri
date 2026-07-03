@@ -3,7 +3,12 @@
 // 別ファイル化の理由は React Fast Refresh の制約 (jsx ファイルから
 // コンポーネント以外を export すると refresh が効かない)。
 
-export const ONBOARDING_STEPS = [
+export interface OnboardingStep {
+  title: string;
+  body: string;
+}
+
+export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     title: '時間割作成くんへようこそ',
     body: 'スケジュール表の上で右クリック / 自動生成の 2 系統で日々の組み立てができます。所要 30 秒で主要操作を案内します。',

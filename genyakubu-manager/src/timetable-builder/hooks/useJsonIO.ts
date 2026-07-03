@@ -1,4 +1,10 @@
 import { useRef, useCallback } from 'react';
+import type { ChangeEvent, Dispatch } from 'react';
+import type { ProjectAction } from './projectReducer';
+import type { Project, Tab } from '../types';
+
+type NotifyFn = (message: string, type?: string) => void;
+type ConfirmFn = (message: string, options?: { title?: string; confirmLabel?: string }) => Promise<boolean>;
 import {
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
@@ -12,8 +18,16 @@ import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
 // load 系は dispatch({ type: 'project/replace' }) で reducer に流す。
-export function useJsonIO({ project, activeTab, dispatch }) {
-  const fileInputRef = useRef(null);
+export function useJsonIO({
+  project,
+  activeTab,
+  dispatch,
+}: {
+  project: Project;
+  activeTab: Tab;
+  dispatch: Dispatch<ProjectAction>;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveAsDefault = useCallback(() => {
     // v4: dates / periods は project 共通。config に混ぜて保存しておくと
@@ -34,13 +48,14 @@ export function useJsonIO({ project, activeTab, dispatch }) {
     dispatch({ type: 'project/reset', payload: freshProject });
   }, [dispatch]);
 
-  const handleLoadJson = useCallback((e, onNotify, onConfirm) => {
-    const f = e.target.files[0];
+  const handleLoadJson = useCallback((e: ChangeEvent<HTMLInputElement>, onNotify?: NotifyFn, onConfirm?: ConfirmFn) => {
+    const f = e.target.files?.[0];
     if (!f) return;
     const r = new FileReader();
     r.onload = async (ev) => {
       try {
-        const data = JSON.parse(ev.target.result);
+        // readAsText 経由なので result は常に string
+        const data = JSON.parse(ev.target?.result as string);
         // 構造を検証してから migrate / 適用 (E3d)。不正なら適用せず通知。
         const { valid, error } = validateProjectShape(data);
         if (!valid) {

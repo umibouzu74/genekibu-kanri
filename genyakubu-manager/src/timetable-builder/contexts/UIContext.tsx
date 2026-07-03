@@ -1,5 +1,28 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UIContext } from './uiContextValue';
+import type { ToastType } from './uiContextValue';
+import type { ReactNode } from 'react';
+
+interface ToastItem {
+  id: number;
+  message: string;
+  type: ToastType;
+}
+
+interface ConfirmConfig {
+  message: string;
+  title?: string;
+  danger?: boolean;
+  confirmLabel?: string;
+}
+
+interface InputConfig {
+  message: string;
+  title?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  confirmLabel?: string;
+}
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // --- Toast ---
@@ -118,16 +141,16 @@ function InputModalComponent({ config, onResult }) {
 }
 
 // --- UIProvider ---
-export function UIProvider({ children }) {
-  const [toasts, setToasts] = useState([]);
-  const [confirmConfig, setConfirmConfig] = useState(null);
-  const [inputConfig, setInputConfig] = useState(null);
-  const confirmResolveRef = useRef(null);
-  const inputResolveRef = useRef(null);
+export function UIProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig | null>(null);
+  const [inputConfig, setInputConfig] = useState<InputConfig | null>(null);
+  const confirmResolveRef = useRef<((result: boolean) => void) | null>(null);
+  const inputResolveRef = useRef<((result: string | null) => void) | null>(null);
   const toastIdRef = useRef(0);
 
   const MAX_TOASTS = 5;
-  const showToast = useCallback((message, type = 'success', duration = 3000) => {
+  const showToast = useCallback((message: string, type: ToastType = 'success', duration = 3000) => {
     const id = ++toastIdRef.current;
     setToasts(prev => {
       const next = [...prev, { id, message, type }];
@@ -138,12 +161,12 @@ export function UIProvider({ children }) {
     }, duration);
   }, []);
 
-  const removeToast = useCallback((id) => {
+  const removeToast = useCallback((id: number) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const showConfirm = useCallback((message, options = {}) => {
-    return new Promise((resolve) => {
+  const showConfirm = useCallback((message: string, options: Omit<ConfirmConfig, 'message'> = {}) => {
+    return new Promise<boolean>((resolve) => {
       // 先行の confirm が未解決のまま resolver を上書きすると、先行の
       // await が永久に pending になり呼び出し元のフローが停止する。
       // 後勝ちで、先行はキャンセル扱い (false) にして解決しておく。
@@ -153,7 +176,7 @@ export function UIProvider({ children }) {
     });
   }, []);
 
-  const handleConfirmResult = useCallback((result) => {
+  const handleConfirmResult = useCallback((result: boolean) => {
     if (confirmResolveRef.current) {
       confirmResolveRef.current(result);
       confirmResolveRef.current = null;
@@ -161,8 +184,8 @@ export function UIProvider({ children }) {
     setConfirmConfig(null);
   }, []);
 
-  const showInput = useCallback((message, options = {}) => {
-    return new Promise((resolve) => {
+  const showInput = useCallback((message: string, options: Omit<InputConfig, 'message'> = {}) => {
+    return new Promise<string | null>((resolve) => {
       // showConfirm と同じ理由で先行分をキャンセル扱いで解決する
       if (inputResolveRef.current) inputResolveRef.current(null);
       inputResolveRef.current = resolve;
@@ -170,7 +193,7 @@ export function UIProvider({ children }) {
     });
   }, []);
 
-  const handleInputResult = useCallback((result) => {
+  const handleInputResult = useCallback((result: string | null) => {
     if (inputResolveRef.current) {
       inputResolveRef.current(result);
       inputResolveRef.current = null;

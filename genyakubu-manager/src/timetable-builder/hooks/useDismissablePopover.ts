@@ -13,16 +13,17 @@ import { useEffect, useRef, useState } from 'react';
 //   内にテキスト入力を置いた場合に変換キャンセルで閉じない)。
 //
 // 返り値: { open, setOpen, ref }
-export function useDismissablePopover() {
+// T は ref を付けるルート要素の型 (省略時は div)。
+export function useDismissablePopover<T extends HTMLElement = HTMLDivElement>() {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<T>(null);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onMouseDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    const onMouseDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.isComposing) setOpen(false);
     };
     window.addEventListener('mousedown', onMouseDown);

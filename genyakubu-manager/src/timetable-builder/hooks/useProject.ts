@@ -6,6 +6,7 @@ import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
 import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
+import type { CombinedGroup, GenerationParamKey, Project } from '../types';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -67,7 +68,7 @@ export function useProject() {
   // cell/setNg case に同じロジックが書かれていたが、teacher/toggleNg と重複
   // していたため統合 (D4g)。teacher が未定/未割当のときは no-op。
   const { toggleTeacherNg } = teacherActions;
-  const handleSetNg = useCallback((dateId, periodId, classId) => {
+  const handleSetNg = useCallback((dateId: number, periodId: number, classId: number) => {
     const k = makeKey(dateId, periodId, classId);
     const curr = currentSchedule[k] || {};
     if (!curr.teacher || curr.teacher === '未定') return;
@@ -81,119 +82,119 @@ export function useProject() {
 
   // setProject 互換 (switchTab 以外で project 全体を差し替える稀なケース用)。
   // 履歴に積まない project/setActive を直接呼ぶ。
-  const setProject = useCallback((newProject) => {
+  const setProject = useCallback((newProject: Project) => {
     dispatch({ type: 'project/setActive', payload: newProject });
   }, [dispatch]);
 
   // pushHistory 互換: 旧 API を保つために残す。新規コードは dispatch を使うこと。
-  const pushHistory = useCallback((newProject) => {
+  const pushHistory = useCallback((newProject: Project) => {
     dispatch({ type: 'project/replace', payload: { project: newProject } });
   }, [dispatch]);
 
   // --- タブ管理 ---
-  const handleAddTab = useCallback((name) => {
+  const handleAddTab = useCallback((name: string) => {
     dispatch({ type: 'tab/add', payload: { name } });
   }, [dispatch]);
 
-  const handleDeleteTab = useCallback((id) => {
+  const handleDeleteTab = useCallback((id: number) => {
     dispatch({ type: 'tab/delete', payload: { id } });
   }, [dispatch]);
 
-  const handleRenameTab = useCallback((id, newName) => {
+  const handleRenameTab = useCallback((id: number, newName: string) => {
     dispatch({ type: 'tab/rename', payload: { id, name: newName } });
   }, [dispatch]);
 
-  const switchTab = useCallback((id) => {
+  const switchTab = useCallback((id: number) => {
     dispatch({ type: 'tab/switch', payload: { id } });
   }, [dispatch]);
 
   // --- タブ別 config (dates/periods/classes/subjectCounts) ---
-  const handleListConfigChange = useCallback((key, value) => {
+  const handleListConfigChange = useCallback((key: 'dates' | 'periods' | 'classes', value: string) => {
     dispatch({ type: 'config/setList', payload: { key, value } });
   }, [dispatch]);
 
   // tabId 省略時はアクティブタブを更新 (従来挙動)。タブ別に編集する画面は
   // 対象タブの id を明示で渡す。
-  const handleSubjectCountChange = useCallback((subject, value, tabId) => {
+  const handleSubjectCountChange = useCallback((subject: string, value: unknown, tabId?: number) => {
     dispatch({ type: 'config/setSubjectCount', payload: { subject, value, tabId } });
   }, [dispatch]);
 
   // --- タブ別『使う日』(activeDateIds) + 共通日付プール (v4 Y) ---
   // ラベル配列でタブの使う日を設定 (新規ラベルはプールへ merge)。手動入力 / 自動生成共通。
-  const handleSetTabDatesByLabels = useCallback((labels, tabId) => {
+  const handleSetTabDatesByLabels = useCallback((labels: string[], tabId?: number) => {
     dispatch({ type: 'tabDates/setByLabels', payload: { labels, tabId } });
   }, [dispatch]);
   // チェックリストの単一トグル
-  const handleToggleTabDate = useCallback((dateId, tabId) => {
+  const handleToggleTabDate = useCallback((dateId: number, tabId?: number) => {
     dispatch({ type: 'tabDates/toggle', payload: { dateId, tabId } });
   }, [dispatch]);
   // 全選択 (active=true) / 全解除 (active=false)
-  const handleSetAllTabDates = useCallback((active, tabId) => {
+  const handleSetAllTabDates = useCallback((active: boolean, tabId?: number) => {
     dispatch({ type: 'tabDates/setAllActive', payload: { active, tabId } });
   }, [dispatch]);
   // 日付をプールから完全削除 (全タブ・NG から消える)
-  const handleRemoveDateFromPool = useCallback((dateId) => {
+  const handleRemoveDateFromPool = useCallback((dateId: number) => {
     dispatch({ type: 'dates/removeFromPool', payload: { dateId } });
   }, [dispatch]);
 
   // --- タブ別『使う時限』(activePeriodIds、E-3) ---
   // チェックリストの単一トグル
-  const handleToggleTabPeriod = useCallback((periodId, tabId) => {
+  const handleToggleTabPeriod = useCallback((periodId: number, tabId?: number) => {
     dispatch({ type: 'tabPeriods/toggle', payload: { periodId, tabId } });
   }, [dispatch]);
   // 全選択 (active=true) / 全解除 (active=false)
-  const handleSetAllTabPeriods = useCallback((active, tabId) => {
+  const handleSetAllTabPeriods = useCallback((active: boolean, tabId?: number) => {
     dispatch({ type: 'tabPeriods/setAllActive', payload: { active, tabId } });
   }, [dispatch]);
 
   // --- メタデータ ---
-  const updateProjectName = useCallback((name) => {
+  const updateProjectName = useCallback((name: string) => {
     dispatch({ type: 'project/updateName', payload: { name } });
   }, [dispatch]);
 
   // --- 自動生成パラメータ (E2e) ---
   // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
-  const updateGenerationParams = useCallback((updates) => {
+  const updateGenerationParams = useCallback((updates: Partial<Record<GenerationParamKey, unknown>>) => {
     dispatch({ type: 'project/setGenerationParams', payload: updates });
   }, [dispatch]);
 
   // --- スナップショット (E1c) ---
   // createdAt は表示用なので副作用 (時刻取得) は reducer の外で行い、純粋性を保つ。
-  const saveSnapshot = useCallback((name) => {
+  const saveSnapshot = useCallback((name: string) => {
     dispatch({ type: 'snapshot/save', payload: { name, createdAt: new Date().toISOString() } });
   }, [dispatch]);
 
-  const applySnapshot = useCallback((id) => {
+  const applySnapshot = useCallback((id: number) => {
     dispatch({ type: 'snapshot/apply', payload: { id } });
   }, [dispatch]);
 
-  const renameSnapshot = useCallback((id, name) => {
+  const renameSnapshot = useCallback((id: number, name: string) => {
     dispatch({ type: 'snapshot/rename', payload: { id, name } });
   }, [dispatch]);
 
-  const removeSnapshot = useCallback((id) => {
+  const removeSnapshot = useCallback((id: number) => {
     dispatch({ type: 'snapshot/remove', payload: { id } });
   }, [dispatch]);
 
   // --- テンプレート適用 (E2d) ---
   // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
   // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
-  const applyTemplateFull = useCallback((payload) => {
+  const applyTemplateFull = useCallback((payload: unknown) => {
     if (!payload) return;
     const migrated = migrateProject(payload);
     dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
   }, [dispatch]);
 
   // --- 合同グループ管理 ---
-  const addCombinedGroup = useCallback((group) => {
+  const addCombinedGroup = useCallback((group: Omit<CombinedGroup, 'id'>) => {
     dispatch({ type: 'combinedGroup/add', payload: { group } });
   }, [dispatch]);
 
-  const updateCombinedGroup = useCallback((id, updates) => {
+  const updateCombinedGroup = useCallback((id: number, updates: Partial<Omit<CombinedGroup, 'id'>>) => {
     dispatch({ type: 'combinedGroup/update', payload: { id, updates } });
   }, [dispatch]);
 
-  const removeCombinedGroup = useCallback((id) => {
+  const removeCombinedGroup = useCallback((id: number) => {
     dispatch({ type: 'combinedGroup/remove', payload: { id } });
   }, [dispatch]);
 

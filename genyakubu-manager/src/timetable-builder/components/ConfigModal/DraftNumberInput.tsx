@@ -1,4 +1,13 @@
 import { useState } from 'react';
+import type { InputHTMLAttributes } from 'react';
+
+interface DraftNumberInputProps
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> {
+  /** 表示値。externalCounts は未入力 '' と明示的 0 を区別するため string も来る */
+  value: string | number;
+  /** blur / Enter 時に 1 回だけ呼ばれる。値の解釈 (parse / clamp) は呼び出し側の責務 */
+  onCommit: (raw: string) => void;
+}
 
 // F2l: 即時 commit だった数値入力の draft 化。フォーカス中はローカル draft を
 // 表示し、blur / Enter のときだけ onCommit(rawString) を 1 回呼ぶ。
@@ -14,8 +23,8 @@ import { useState } from 'react';
 //   モーダルごと閉じないよう stopPropagation (DraftListTextarea と同じ)
 // - value は number でも文字列でも良い (externalCounts は未入力 '' と
 //   明示的 0 を区別するため文字列 '' が来る)
-export default function DraftNumberInput({ value, onCommit, ...inputProps }) {
-  const [draft, setDraft] = useState(null); // null = 非編集 (外部 value を表示)
+export default function DraftNumberInput({ value, onCommit, ...inputProps }: DraftNumberInputProps) {
+  const [draft, setDraft] = useState<string | null>(null); // null = 非編集 (外部 value を表示)
 
   const commit = () => {
     if (draft != null && draft !== String(value)) onCommit(draft);
@@ -31,7 +40,7 @@ export default function DraftNumberInput({ value, onCommit, ...inputProps }) {
       onFocus={() => setDraft((d) => d ?? String(value))}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') e.target.blur();
+        if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') {
           if (e.nativeEvent?.isComposing) return;
           e.stopPropagation();

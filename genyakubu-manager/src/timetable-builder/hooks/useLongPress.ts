@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
 
 // 長押し (タッチ) を検出してコールバックを呼ぶ (E1f タッチ操作対応)。
 //
@@ -13,8 +14,11 @@ import { useCallback, useEffect, useRef } from 'react';
 //
 // 注意: HTML5 のネイティブ drag-and-drop はタッチでは発火しないため、
 // draggable な要素に併用しても競合しない。
-export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {}) {
-  const timerRef = useRef(null);
+export function useLongPress(
+  callback: ((pos: { clientX: number; clientY: number }) => void) | null | undefined,
+  { delay = 500, moveThreshold = 10 }: { delay?: number; moveThreshold?: number } = {},
+) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startRef = useRef({ x: 0, y: 0 });
   const firedRef = useRef(false);
 
@@ -25,7 +29,7 @@ export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {})
     }
   }, []);
 
-  const onTouchStart = useCallback((e) => {
+  const onTouchStart = useCallback((e: ReactTouchEvent) => {
     if (!e.touches || e.touches.length !== 1) return; // マルチタッチ (ピンチ等) は無視
     const t = e.touches[0];
     startRef.current = { x: t.clientX, y: t.clientY };
@@ -37,7 +41,7 @@ export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {})
     }, delay);
   }, [callback, delay, clear]);
 
-  const onTouchMove = useCallback((e) => {
+  const onTouchMove = useCallback((e: ReactTouchEvent) => {
     if (!timerRef.current || !e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     const dx = Math.abs(t.clientX - startRef.current.x);
@@ -54,7 +58,7 @@ export function useLongPress(callback, { delay = 500, moveThreshold = 10 } = {})
   useEffect(() => clear, [clear]);
 
   // 長押し発火直後の click を抑止 (select 等の誤操作防止)
-  const onClickCapture = useCallback((e) => {
+  const onClickCapture = useCallback((e: ReactMouseEvent) => {
     if (firedRef.current) {
       e.preventDefault();
       e.stopPropagation();

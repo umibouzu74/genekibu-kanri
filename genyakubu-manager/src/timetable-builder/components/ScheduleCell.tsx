@@ -152,7 +152,8 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       const pId = periods[pos.p]?.id;
       const cId = classes[pos.c]?.id;
       if (dId == null || pId == null || cId == null) return;
-      const el = document.getElementById(`select-${dId}-${pId}-${cId}-${pos.t}`);
+      // 対象はセル内の select / focusable 要素 (disabled 判定のため cast)
+      const el = document.getElementById(`select-${dId}-${pId}-${cId}-${pos.t}`) as HTMLSelectElement | null;
       if (el && !el.disabled) {
         el.focus();
         return;

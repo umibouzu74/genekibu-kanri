@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { useProject } from '../hooks/useProject';
 import { useAnalysis } from '../hooks/useAnalysis';
 import { ProjectContext } from './projectContextValue';
+import type { ReactNode } from 'react';
 
-export function ProjectProvider({ children }) {
+export function ProjectProvider({ children }: { children: ReactNode }) {
   const projectState = useProject();
   const { analysis, dashboard } = useAnalysis(
     projectState.project,

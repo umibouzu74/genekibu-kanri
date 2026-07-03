@@ -4,6 +4,27 @@ import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad } from '../utils/patternLoad';
+import type { Dispatch, SetStateAction } from 'react';
+import type { Schedule } from '../types';
+
+// BuilderApp が生成結果 (GenerationResult) を UI 用に整形したもの。
+export interface GeneratedPattern {
+  schedule: Schedule;
+  isPartial: boolean;
+  filledCount: number;
+  totalSlots: number;
+  iterations?: number;
+  hitLimit?: boolean;
+  stuckSlot?: { date: string; period: string; class: string } | null;
+}
+
+interface SummaryPanelProps {
+  showSummary: boolean;
+  generatedPatterns: GeneratedPattern[];
+  setGeneratedPatterns: Dispatch<SetStateAction<GeneratedPattern[]>>;
+  generatedElapsedMs: number;
+  generatedForTab: { id: number; name: string } | null;
+}
 
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
@@ -87,7 +108,7 @@ function PatternStats({ pat }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }) {
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }: SummaryPanelProps) {
   const {
     project,
     analysis,

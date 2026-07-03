@@ -17,6 +17,10 @@ import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/co
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, formatBytes } from './utils/storageHealth';
 import { useTabPresence } from './hooks/useTabPresence';
+import type { GeneratorHandle } from './logic/runGenerator';
+import type { GenerationResult } from './logic/autoGenerator';
+import type { GeneratedPattern } from './components/SummaryPanel';
+import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
 
 function ScheduleApp() {
   const { project, undo, redo, loadError } = useProjectContext();
@@ -102,22 +106,22 @@ function ScheduleApp() {
 
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
-  const [generatedPatterns, setGeneratedPatterns] = useState([]);
+  const [generatedPatterns, setGeneratedPatterns] = useState<GeneratedPattern[]>([]);
   // 生成元タブ ({id, name})。結果パネルはタブ切替後も表示されたままなので、
   // 「この案を採用」はアクティブタブではなく必ずこのタブへ適用する。
-  const [generatedForTab, setGeneratedForTab] = useState(null);
+  const [generatedForTab, setGeneratedForTab] = useState<{ id: number; name: string } | null>(null);
   // 生成開始時点の config fingerprint (F2n/F2p)。project 変化のたびに
   // 再計算して一致しなくなったら生成結果を破棄する (下の effect)。
-  const [generatedFingerprint, setGeneratedFingerprint] = useState(null);
+  const [generatedFingerprint, setGeneratedFingerprint] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   // E2f: 生成の経過時間。生成中は interval で更新し、完了時に総時間を確定する。
   const [generateElapsedMs, setGenerateElapsedMs] = useState(0);
   const genStartRef = useRef(0);
   // E2f live: 探索の途中経過 (案番号 / 充填数 / 探索回数)。null = 未通知。
-  const [generateLive, setGenerateLive] = useState(null);
-  const [contextMenu, setContextMenu] = useState(null);
-  const [clipboard, setClipboard] = useState(null);
+  const [generateLive, setGenerateLive] = useState<{ index: number; iterations: number; filledCount: number; totalSlots: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
+  const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
   const [isCompact, setIsCompact] = useState(false);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -132,7 +136,7 @@ function ScheduleApp() {
   // よう stable callback にする (useFocusTrap 側の ref 化と二重の防御)。
   const handleCloseConfig = useCallback(() => setShowConfig(false), []);
 
-  const handleCloseOnboarding = useCallback(({ dontShowAgain } = {}) => {
+  const handleCloseOnboarding = useCallback(({ dontShowAgain }: { dontShowAgain?: boolean } = {}) => {
     setShowOnboarding(false);
     if (dontShowAgain) {
       try {
@@ -143,7 +147,7 @@ function ScheduleApp() {
     }
   }, []);
   // 起動中の worker handle を ref で保持 (アンマウント時にキャンセル)
-  const generationRef = useRef(null);
+  const generationRef = useRef<GeneratorHandle | null>(null);
 
   // JSON 読込・全リセットで project が丸ごと入れ替わったら生成結果を破棄する。
   // ScheduleApp は unmount されないため、放置すると旧プロジェクト由来の案を
@@ -194,7 +198,7 @@ function ScheduleApp() {
     setGenerateElapsedMs(0);
     setGenerateLive(null);
 
-    const results = [];
+    const results: GenerationResult[] = [];
     // onError と done.then が両方走った時に「生成エラー」+「条件を見直してください」
     // の二重 toast が出ないよう、エラー発生フラグで done 側の文言を抑制する
     let errored = false;
@@ -239,7 +243,7 @@ function ScheduleApp() {
         .filter(r => r.schedule !== null)
         // 完全解を先頭に、部分解は充填数の多い順 (P2)。生成順のままだと
         // 完全解が 3 列目に埋もれて部分解を採用してしまいやすい。
-        .sort((a, b) => (a.isPartial - b.isPartial) || (b.filledCount - a.filledCount));
+        .sort((a, b) => (Number(a.isPartial) - Number(b.isPartial)) || (b.filledCount - a.filledCount));
 
       // 生成にかかった総時間を確定 (E2f)
       setGenerateElapsedMs(genStartRef.current ? Date.now() - genStartRef.current : 0);
@@ -292,14 +296,21 @@ function ScheduleApp() {
     return () => clearInterval(id);
   }, [isGenerating]);
 
-  const handleContextMenu = (e, dateId, periodId, classId, type = null, val = null) => {
+  const handleContextMenu = (
+    e: { preventDefault: () => void; clientX: number; clientY: number },
+    dateId: number | null,
+    periodId: number | null,
+    classId: number | null,
+    type: BuilderContextMenuState['type'] = null,
+    val: string | null = null,
+  ) => {
     e.preventDefault();
     // ContextMenu は position:fixed (viewport 基準) なので clientX/Y を使う。
     // pageX/Y だとページがスクロールしている分だけメニューが下にずれる。
     setContextMenu({ x: e.clientX, y: e.clientY, dateId, periodId, classId, type, val });
   };
 
-  const handleContextMenuClose = (copiedData) => {
+  const handleContextMenuClose = (copiedData?: CellClipboard | null) => {
     if (copiedData && copiedData.subject) {
       setClipboard(copiedData);
     }

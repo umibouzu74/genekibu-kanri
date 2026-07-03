@@ -11,7 +11,7 @@ import { TAB_PRESENCE_CHANNEL, interpretPresenceMessage } from '../utils/tabPres
  *
  * @param {() => void} onConflict 競合検出時に一度だけ呼ばれる
  */
-export function useTabPresence(onConflict) {
+export function useTabPresence(onConflict: () => void) {
   // onConflict を ref に逃がし、再生成されても effect を貼り直さない
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
@@ -23,14 +23,14 @@ export function useTabPresence(onConflict) {
     // 一意なタブ ID。app runtime では Date.now / Math.random が使える。
     const selfId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let warned = false;
-    let channel;
+    let channel: BroadcastChannel;
     try {
       channel = new window.BroadcastChannel(TAB_PRESENCE_CHANNEL);
     } catch {
       return undefined;
     }
 
-    const post = (type) => {
+    const post = (type: string) => {
       try {
         channel.postMessage({ type, id: selfId });
       } catch {

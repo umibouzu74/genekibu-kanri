@@ -76,9 +76,9 @@ export default function AbsenceNgPanel() {
   // selectedTeacherIdxs は『現在の project.teachers』から動的に解決する
   // (旧 NgSettings の ALL_TEACHERS sentinel と等価)。個別チェックで manual に
   // 切替わり、formTeacherNames で明示管理される (code-review P1)。
-  const [formTeachers, setFormTeachers] = useState(() => ({ allMode: false, names: new Set() }));
+  const [formTeachers, setFormTeachers] = useState(() => ({ allMode: false, names: new Set<string>() }));
   // periodIds も同様に『動的全選択』モードを持つ (code-review P2)。
-  const [formPeriods, setFormPeriods] = useState(() => ({ allMode: true, ids: new Set() }));
+  const [formPeriods, setFormPeriods] = useState(() => ({ allMode: true, ids: new Set<number>() }));
   const [formMemo, setFormMemo] = useState('');
   // 他学年モード用 (時刻)
   const [formStartTime, setFormStartTime] = useState('');
@@ -251,7 +251,7 @@ export default function AbsenceNgPanel() {
     if (mode !== 'external' || timeValidation.error) return 0;
     if (!formStartTime || dateLabelsInRange.length === 0) return 0;
     const fakeSessions = dateLabelsInRange.map((dl, idx) => ({
-      id: idx, date: dl, teacherName: '*',
+      id: idx, date: dl, teacherName: '*', label: '', memo: '',
       startTime: formStartTime, endTime: formEndTime || undefined,
     }));
     return computeAutoNgEntries('*', fakeSessions, poolPeriods).size;

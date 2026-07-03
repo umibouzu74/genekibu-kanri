@@ -26,7 +26,7 @@ const TABS = [
   ['templates', '🗂 テンプレート'],
 ];
 
-export default function ConfigModal({ onClose }) {
+export default function ConfigModal({ onClose }: { onClose: () => void }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName } = useProjectContext();
   const { showConfirm } = useUI();
@@ -146,7 +146,7 @@ export default function ConfigModal({ onClose }) {
                   value={projectNameInput}
                   onChange={(e) => setProjectNameInput(e.target.value)}
                   onBlur={handleProjectNameBlur}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                   placeholder="例: 2026年度 冬期講習"
                 />
                 {project.createdAt && (

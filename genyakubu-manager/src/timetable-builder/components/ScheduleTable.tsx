@@ -3,10 +3,27 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { makeKey } from '../utils/scheduleKey';
 import { useLongPress } from '../hooks/useLongPress';
 import ScheduleCell from './ScheduleCell';
+import type { ReactNode, ThHTMLAttributes } from 'react';
+import type { ScheduleEntry } from '../types';
+import type { BuilderContextMenuState } from './ContextMenu';
+
+type HeaderContextMenuHandler = (
+  e: { preventDefault: () => void; clientX: number; clientY: number },
+  dateId: number | null,
+  periodId: number | null,
+  classId: number | null,
+  type?: BuilderContextMenuState['type'],
+  val?: string | null,
+) => void;
+
+interface LongPressThProps extends ThHTMLAttributes<HTMLTableCellElement> {
+  onLongPressOpen: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
+  children: ReactNode;
+}
 
 // 右クリック (onContextMenu) に加えてタッチ長押しでも同じメニューを開ける <th>。
 // ヘッダ (日付/時限/クラス) の追加・名称変更・削除をタッチ端末から行うため (E1f)。
-function LongPressTh({ onLongPressOpen, children, ...props }) {
+function LongPressTh({ onLongPressOpen, children, ...props }: LongPressThProps) {
   const lp = useLongPress(({ clientX, clientY }) =>
     onLongPressOpen({ preventDefault: () => {}, clientX, clientY }),
   );
@@ -19,10 +36,15 @@ const COL_WIDTHS = {
   normal:  { dateCol: '5rem',   periodCol: '8rem' },
 };
 
-export default function ScheduleTable({ isCompact, onContextMenu }) {
+interface ScheduleTableProps {
+  isCompact: boolean;
+  onContextMenu: HeaderContextMenuHandler;
+}
+
+export default function ScheduleTable({ isCompact, onContextMenu }: ScheduleTableProps) {
   const { currentConfig, handleSwapCells } = useProjectContext();
-  const [dragSource, setDragSource] = useState(null);
-  const [dragOverKey, setDragOverKey] = useState(null);
+  const [dragSource, setDragSource] = useState<{ key: string; data: ScheduleEntry } | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const handleDragStart = (e, k, d) => {
     if (d.locked || !d.subject) { e.preventDefault(); return; }

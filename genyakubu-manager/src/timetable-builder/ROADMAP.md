@@ -8,6 +8,8 @@
 親アプリ側の小粒 2 件 (H2c 深夜 0 時跨ぎ / H2d id 採番統一) / F5p (案 b で
 読み取り専用化) / E1a・E1f のタッチ CSS / E3a (Playwright E2E ×2) /
 E3b (xlsx round-trip) を完了** (vitest 1766 → 1814 件 + E2E 2 件)。
+さらに **E5e (TypeScript 化) を全 Phase 完了** — builder の非テスト source
+は 100% TS (types.ts + 49 ファイル変換、@types/react 導入、eslint TS 対応)。
 **builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
 校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
@@ -79,7 +81,7 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | 合同グループ | 🟡 機能・UI・検証は揃ったが実運用検証が浅い。他タブグループの編集挙動は仕様判断待ち (F5p) |
 | オンボーディング | 🟢 初回 5 ステップガイド + ❓ ヘルプから再表示 (D1a) |
 | モバイル対応 | 🟢 コード側は完了 (Toolbar 折返し / Excel dropdown / 長押し / 44px / ダブルタップズーム抑止)。実機確認のみ残 (G.2) |
-| TypeScript 化 | 🔴 未対応 (親アプリは部分的に TS) |
+| TypeScript 化 | 🟢 builder 本体 100% TS 化済み (E5e、2026-07-03)。テストファイルと親アプリは JS のまま |
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
@@ -942,9 +944,28 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
     `?worker` import を解決
   - 検証: vitest 1814 + lint + build + **Playwright E2E (実 Worker 経路) 2 件**
     全パス
-- **残り (Phase 3)**: hooks / contexts の `.js` 14 ファイルと components の
-  `.jsx` 24 ファイル (→ `.tsx`)。E5b (完全 ID 化) をやるならこの段階で
-  抱き合わせ
+- **✅ Phase 3 (React 層、同日) — これで E5e は完了**:
+  - hooks 12 + contexts (value 2 + Provider 2) + onboardingSteps を `.ts` 化、
+    components 22 + BuilderApp を `.tsx` 化。**builder の非テスト source は
+    100% TypeScript** になった
+  - `ProjectContextValue` は `ReturnType<typeof useProject> &
+    ReturnType<typeof useAnalysis>` で導出 (useProject の公開 API 変更に
+    自動追従)。`UIContextValue` (showToast / showConfirm / showInput) は
+    明示 interface
+  - 全アクションフックの dispatch が `Dispatch<ProjectAction>` になり、
+    payload 形状ミスがコンパイルエラーになる
+  - 主要コンポーネントに Props interface (Toolbar / SummaryPanel
+    (`GeneratedPattern` を公開) / ContextMenu (`BuilderContextMenuState` /
+    `CellClipboard`) / ScheduleTable / ScheduleCell / OnboardingOverlay /
+    DraftNumberInput / ConfigModal)
+  - **@types/react / @types/react-dom を導入** (従来は react が型無しで
+    全て any だった)。eslint は @typescript-eslint/parser + plugin を追加し、
+    ts/tsx でも react-hooks ルールを維持 (no-undef と素の no-unused-vars は
+    TS 構文へ誤反応するため tsc 側に委譲)
+  - `e.target.blur()` → `e.currentTarget.blur()` の 3 箇所は等価な型安全化
+    (input 自身のハンドラなので target === currentTarget)
+- **残り (任意)**: テストファイル 54 件は `.js`/`.jsx` のまま (vitest 実行には
+  支障なし)。`strict: true` の段階導入は別課題
 - **規模**: 大 / **価値**: 中〜高
 
 #### E5f. ⚪ state management ライブラリ検討 (新規)
@@ -1053,14 +1074,14 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | **テスト深化** | E3a (Worker E2E) / E3e (Config sub-tests) / E3b (Excel 検証) | 中 | 触っても壊れない基盤 |
 | **機能拡張** | E2a (CSV 拡張) / E2e (生成 param UI) / E2b (修復 wizard) | 中〜大 | 新規ユーザ獲得 + 上級者対応 |
 | **モバイル対応** | E1a (狭画面) / E1f (タッチ) | 中 | 移動先確認の体験 |
-| **Major refactor (要決断)** | E5e (TS) → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
+| **Major refactor (要決断)** | ~~E5e (TS)~~ ✅ → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
 | **新領域 (要 PM 判断)** | E6a (Firebase) / E7a (NL 制約) / E7b (緩和提案) | 大 | プロダクト方向性の選択 |
 
 ### E 系の「一旦壊した方が良い」候補
 
 | # | 項目 | 推奨アプローチ | リスク |
 |---|---|---|---|
-| **E5e** | TypeScript 化 | Builder 配下を `.tsx` 化、型定義を `types/` に集約。E5b と抱き合わせ | Vite/Vitest 設定追加、外部型のインストール |
+| ~~**E5e**~~ ✅ | TypeScript 化 | 完了 (2026-07-03)。types.ts + 全 source の TS/TSX 化 | — |
 | **E5b** | combinedGroups / externalCounts 完全 ID 化 | E5e と一緒に。reducer の cascade cleanup を撤廃 | JSON 出力が人間可読でなくなる、タブ間自動共有が失われる |
 | **E5c** | Tailwind / inline-style 統一 | 親アプリの paradigm に合わせ Builder を inline 化 | Builder UI 全面書き直し |
 | **E6a** | Firebase 同期 | LocalStorage は cache レイヤとして残し sync は subscribe 型 | 認証 / コンフリクト / コスト |
@@ -1068,7 +1089,7 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | **E5f** | state management ライブラリ | Zustand へ部分置換から | 動いているものを置き換えるコスト |
 
 優先度判断の目安:
-- **必ずやる**: E5e (TS) → 残りすべての refactor の前提
+- ~~**必ずやる**: E5e (TS)~~ ✅ 完了 → 残りの refactor (E5b 等) の前提が整った
 - **やる価値が高い**: E5b (ID 化) → reducer 簡略化、E5c (style 統一) → 長期 maintenance
 - **要件次第**: E6a (Firebase) → 共有ニーズが顕在化したら
 - **慎重に判断**: E5f / E5h → 動作優先で見送りもアリ
@@ -1591,9 +1612,9 @@ F2h前段 / F2j / F2m も同時に解消)。
 3. コードの軽い一手なら **E3c** (印刷スナップショット — Playwright 基盤は
    E3a で導入済み) か **E4b** (ソルバ計測)
    (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ / ~~E3b~~ ✅ 2026-07-03 完了)
-4. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり) —
-   **Phase 1 (types.ts + データモデル核 6 ファイル) は 2026-07-03 完了**。
-   Phase 2 (utils / logic 全 20 ファイル) も同日完了。次は Phase 3 (hooks / components の tsx 化)
+4. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
+   (2026-07-03)** — builder の非テスト source は 100% TypeScript。
+   次の大物は **E5b (完全 ID 化)** か **E5c (style 統一)** (着手は要相談)
 
 ---
 
