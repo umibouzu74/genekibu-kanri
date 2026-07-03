@@ -138,7 +138,10 @@ export function parseNgCsv(text, { teacherNames, knownDates, knownPeriods } = {}
       continue;
     }
 
-    const dedupeKey = `${name} ${date} ${period}`;
+    // F2h: 空白結合だと空白を含む講師名で別の 3 つ組と同一キーに化けて
+    // 重複扱いされうる (例: name「田中 太郎」/date「7/1」と name「田中」/
+    // date「太郎 7/1」)。JSON 配列なら区切りが復元可能なので衝突しない。
+    const dedupeKey = JSON.stringify([name, date, period]);
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
