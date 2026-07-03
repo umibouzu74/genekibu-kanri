@@ -400,6 +400,45 @@ describe('migrateTabV2toV3', () => {
     expect(result.config.classes).toEqual([{ id: 1, label: '３S' }]);
   });
 
+  it('混在: v3 次元の schedule キー成分は ID として解釈する (F5f: シフト/消失しない)', () => {
+    // dates は v3 で ID が歯抜け ([1, 3])、periods / classes は v2 string。
+    // 旧実装は v3 次元もインデックス解釈したため、d1 (ID 1) を「位置 1」と
+    // 読んで ID 3 へシフト、d3 (ID 3) は「位置 3 = 範囲外」で消失した。
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: [{ id: 1, label: '12/25' }, { id: 3, label: '12/27' }], // v3 (歯抜け ID)
+        periods: ['1限'],   // v2 → index 0 = id 1
+        classes: ['３S'],   // v2 → index 0 = id 1
+        subjectCounts: {},
+      },
+      schedule: {
+        'd1-p0-c0': { subject: '英語', teacher: '堀上' }, // dateId=1 (ID として)
+        'd3-p0-c0': { subject: '数学', teacher: '田中' }, // dateId=3 (ID として)
+      },
+    };
+    const result = migrateTabV2toV3(tab);
+    expect(result.schedule['d1-p1-c1']).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(result.schedule['d3-p1-c1']).toEqual({ subject: '数学', teacher: '田中' });
+    expect(Object.keys(result.schedule)).toHaveLength(2);
+  });
+
+  it('混在: v3 次元に存在しない ID のキーは drop される (F5f)', () => {
+    const tab = {
+      id: 1, name: 'main',
+      config: {
+        dates: [{ id: 1, label: '12/25' }],
+        periods: ['1限'],
+        classes: ['３S'],
+        subjectCounts: {},
+      },
+      schedule: {
+        'd9-p0-c0': { subject: '英語', teacher: '堀上' }, // ID 9 は存在しない
+      },
+    };
+    expect(migrateTabV2toV3(tab).schedule).toEqual({});
+  });
+
   it('範囲外の v2 schedule キーは drop される', () => {
     const tab = {
       id: 1, name: 'main',
