@@ -1682,7 +1682,9 @@ F2h前段 / F2j / F2m も同時に解消)。
    H1b・H1e・H2f も同セッションで解消)。~~次は E4d か D7c~~ ✅ E4d 計測完了
    (最適化不要)、D7c は見送り推奨 (G.5 の判断メモ)。
    **追加授業まわり (H1a〜H1h) はコード側全て完了** — 残る H1d (代行対応)
-   は実運用で困ってから (H.1 の設計メモ参照)
+   は実運用で困ってから (H.1 の設計メモ参照)。
+   **新規の修正・改善候補は §K (2026-07-03 棚卸し) に集約** — 次の一手は
+   K2a (builder の (計N) 外部コマ取りこぼし) が最優先
 4. 親アプリ側の設計判断待ち: **H1d** (追加授業への代行) /
    **H2a·H2b** (プレップのデータ化・koshu type) — いずれも方針決定が先
 5. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
@@ -1905,3 +1907,120 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   のみ顕在化) — 修正済みだが実害は無し
 - Playwright の port 5173 固定は vite デフォルトとの整合前提 (strictPort は
   dev の UX を落とすため導入しない)
+
+---
+
+## K. 2026-07-03 棚卸しレビュー (3 方面並列調査) の結果
+
+親アプリ UI / builder / データ層・横断の 3 方面を並列調査し、既出
+(§E〜§J、CLAUDE.md 却下リスト) を除いた新規の発見 35 件を整理した。
+確定した小粒バグ 7 件は即日修正済み (K.1)。
+
+### K.1 修正済み (2026-07-03)
+
+- ✅ **K1a**: Dashboard「依頼中（未確定）」カードがクリック不能だった →
+  代行一覧 (依頼中フィルタ) へ遷移可能に (EventSummaryCards と同型の
+  role/tabIndex/Enter·Space 付き)
+- ✅ **K1b**: AllView の講師名セル (講師別スケジュールへの主要導線) が
+  キーボード到達不能 → role/tabIndex/onKeyDown を追加
+- ✅ **K1c**: MasterView の講師・科目フィルタが `s.teacher.includes(...)`
+  の生参照で、teacher 欠落レコード (Firebase 別クライアント書込等) で
+  ビューごとクラッシュしうる → null ガード
+- ✅ **K1d**: ConfirmedSubsView の期間フィルタが日付クリアを握り潰し、
+  入力表示 (空) と内部 state (旧値) が乖離 → 空 = その側は無制限として受理
+- ✅ **K1e**: データ初期化が teacherSubjects を残す (localStorage の
+  removeItem だけでは React state と Firebase が残り、リロード / 他端末
+  同期で復活) → `saveTeacherSubjects({})` を追加
+- ✅ **K1f**: インポート時に displayCutoff だけ migrate 未適用
+  (cohorts 等の後付けフィールドが補完されない) → migrateDisplayCutoff を適用
+- ✅ **K1g**: activeTimetableId が export/import 対象外で、取込後に時間割
+  選択が宙吊りになりうる → export に追加 + import は取込 timetables に
+  存在する ID のときだけ復元
+
+### K.2 修正候補 (バグ疑い、価値順)
+
+- **K2a (builder・小〜中・確実)**: 講師ドロップダウンの「(計N)」が、
+  その日に自タブのセルがまだ無い講師の externalCounts/externalSessions 分を
+  取りこぼして (計0) 表示。solver は外部負荷を必ず加算するので「solver は
+  弾くのに UI は選べそうに見える」非対称 (analysisHelpers.ts:88 /
+  ScheduleCell.tsx:226,240)。過負荷回避 UI の主目的に関わるので最優先
+- **K2b (builder・小・要検証)**: subject/remove が当該科目の locked セルを
+  「空 + locked = 空けておく」に黙って変換し、solver 生成対象から除外して
+  しまう (projectReducer.ts:540 / F5w 仕様との相互作用)。削除時に locked も
+  落とすのが自然か要判断
+- **K2c (builder・小・要検証)**: dates/removeFromPool が
+  externalSessionPresets の日付ラベルを掃除しない (renameHeader は追従
+  させており非対称。projectReducer.ts:439-483 vs :1076)
+- **K2d (builder・中・要検証)**: computeInfeasibilities C2 が「未定のみが
+  担当する科目」を capacity 0 と数え、solver は解けるのに「設定の問題」を
+  点灯する不整合 (analysisHelpers.ts:434,506)
+- **K2e (app・小〜中・要検証)**: MonthView の cutoff/休講ガードがカード
+  種別で不揃い — 主スロット・追加授業は未確定日非表示だが、他人コマ代行
+  カードと特訓シフトカードはガード無しで描画 (MonthView.jsx:345,365 vs
+  674,869)
+- **K2f (data・小・要検証)**: slotId の型不一致 — schema FK 検証は
+  string/number を正規化するが、runtime の cascade (useSlotsCrud) と
+  detectOrphans は厳格 `===` (文字列 slotId は掃除されず誤検出されうる)
+- **K2g (data・小・要検証)**: parseLocalDate が範囲検証せず
+  "2026-02-30" → 3/2 に silent ロールオーバー (dateHelpers.js:46)。
+  マネージャ入力は isValidDateStr で守られており、保存/取込データ経由のみ
+- **K2h (builder・小・要検証)**: 分析キーが `${date}-${period}-${teacher}`
+  の素朴結合で、ヘッダラベルに "-" を含めると衝突しうる
+  (analysisHelpers.ts:84,160 / makeExternalKey)。labelRefs は cascade 側のみ対応済み
+- **K2i (data・中・確実だが要設計)**: schema の日付フィールド検証が
+  extraLessons/anchor だけ isIsoDate で他は isString の非対称。非 ISO
+  文字列が validation を通過し dateToDay / overlapsRange を破壊しうる。
+  既存データの互換 (どの形式が実在するか) を確認してから揃えること
+
+### K.3 改良・一貫性 (UX)
+
+- **K3a (中)**: 確定代行一覧の日別表示に「第N回」バッジと追加授業バナーが
+  出ない — 同じ DashDayRow を使う Dashboard 日別との情報密度差
+  (ConfirmedSubsView.jsx:198 に sessionCtx / extraLessonsForDate を配線)
+- **K3b (中)**: クリック可能なテーブルコントロールのキーボード対応の横展開 —
+  ソート列ヘッダ (AdjustmentListTab / OverrideListTab)、月次集計の展開行
+  (SubTallyTab、aria-expanded も無し)、MonthView の編集用コマカード
+- **K3c (小)**: AbsenceWorkflowView の自前ドロップダウンに
+  aria-expanded/aria-haspopup 無し、Escape で閉じない
+- **K3d (小)**: リスト系の空状態に CTA が無い (MasterListTab / SubListTab /
+  Adjustment/OverrideListTab)。EventCalendarView の空状態 (アイコン + 案内 +
+  クイック追加) が手本
+- **K3e (小)**: 「第N回」バッジの見た目がビュー間で不揃い (Dashboard /
+  MonthView は青地白文字、AbsenceSlotCard は背景無し青文字)
+- **K3f (小)**: 月次集計タブがステータスバッジ経由 (fMonth="") だと無言で
+  空になる — 当月フォールバックか案内が欲しい (SubstituteView.jsx:60 /
+  SubTallyTab.jsx:38)
+- **K3g (小)**: builder ContextMenu の「🚫 この時間をNG登録」が既に NG の
+  セルでも同一文言 (実体はトグルなのに解除であることが伝わらない)
+- **K3h (小)**: builder のロックセルへの drop 拒否が赤リングのみで toast
+  無し / 貼り付けメニューが clipboard 空でも押せて no-op
+- **K3i (小)**: builder のタブ名重複ガードが無い (teacher/subject には
+  あるのにタブだけ無い非対称)
+
+### K.4 追加機能・便利機能
+
+- **K4a (中・便利)**: builder タブ間のスケジュール複製 — 「1 年生タブの
+  割当を 2 年生タブへ流用して手直し」の正規ルートが無い。
+  schedule/applyPattern の再利用で安く作れる (projectReducer.ts:1142)
+- **K4b (中・要ベンチ)**: 自動生成の numPatterns 案を複数 Worker で並列化 —
+  現状単一 worker 直列で 3 案 ~10 秒 → 理論 ~3 秒。案は独立 (シード違い)
+  なので分割は素直
+- **K4c (app・中)**: MonthView / WeekView の追加授業表示にもクリック編集
+  ジャンプを付ける (EventCalendarView は H1b で対応済み。既存の
+  eventEditRequest 経路をそのまま使える)
+
+### K.5 アーキテクチャ級 (要相談、着手前に方針決定)
+
+- **K5a (大)**: Firebase 同期がキー単位の last-writer-wins — 2 端末が同一
+  リソースの別レコードを並行編集すると後着が先着を丸ごと上書き
+  (useSyncedStorage.js:178)。レコード単位マージ or 楽観ロックの設計が必要
+- **K5b (小だが同系)**: Firebase 初回 seed が migrate 前の raw を書き込む
+  (useSyncedStorage.js:110)。K5a に着手するなら同時に直す
+- **K5c (中)**: FK 検証の対象外リレーション (partTimeStaff.subjectIds /
+  teacherSubjects / adjustments.targetSlotId / examPrepSchedules.examPeriodId)
+  — runtime cascade はあるが手編集バンドルが検証をすり抜ける
+- **K5d (設計トレードオフ)**: isSlotForTeacher の note 部分一致は
+  隔週パートナー検出のための意図的設計だが、短い講師名の過剰マッチが理論上
+  ありうる (biweekly.js:193)。実害が出たらトークン化を検討
+- **K5e (中・要ベンチ)**: ソルバの講師選択に LCV / 動的 MRV を導入する
+  改善余地 (科目側は slack 順化済み)。bench:solver で効果測定してから
