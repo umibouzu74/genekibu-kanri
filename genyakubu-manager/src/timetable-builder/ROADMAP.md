@@ -882,10 +882,23 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **実装**: date/period/class の ID Set を作り (O(D+P+C))、既存 schedule キーを `parseKey` で分解して存在判定する方向に反転 (O(D+P+C + K))。挙動は等価 (不正キーは破棄、消滅 entity 参照は破棄)。constants.js が `scheduleKey.parseKey` を import (scheduleKey 側は無 import で循環なし)。
 - **テスト**: constants.test.js に cleanSchedule の 4 ケース追加 (有効キー保持 / 消滅 entity 破棄 / 不正形式破棄 / 複数タブ独立)。
 
-#### E4b. 🟡 solver スケーリング計測 (旧 D3b)
-- **現状**: `MAX_ITERATIONS = 500_000`。何コマまでなら数秒以内に解けるか未計測。
-- **改善**: ベンチマーク (大規模 fixture を作って autoGenerator を走らせ ms 計測) + 必要に応じ部分解戦略の改善。
-- **規模**: 中 / **価値**: 中
+#### E4b. 🟡 solver スケーリング計測 (計測完了 2026-07-03)
+- **✅ 完了分**: `logic/solverScaling.test.js` + `npm run bench:solver`
+  (BENCH=1 ガード付き。通常の `npm test` では skip)。D×P×C と科目クォータの
+  均等性を変えて generateSinglePattern を実測する
+- **実測結果 (2026-07-03、コンテナ環境、seed 2 種)**:
+  - 実行時間は maxIterations (500k) で頭打ち。**最悪でも 1 案 1.6 秒
+    (168 コマ) 〜 3.2 秒 (1008 コマ)** で返る。1 iteration ~3µs → 大規模で
+    ~6µs (コマ数にほぼ線形)
+  - **難易度はコマ数ではなくクォータの均等性に支配される**:
+    500 コマでも `D*P % 科目数 == 0` (均等) なら数百 iteration で完全解。
+    168 コマでも不均等 (24 = 5+5+5+5+4) だと 500k を使い切り部分解
+    (159/168 前後) に落ちる
+  - 既定 500k は「待ち時間の上限を数秒に抑える」妥当な既定と判断
+    (3 案生成でも 10 秒以内 + Worker 化済みで UI は塞がない)
+- **残り (改善候補)**: 不均等クォータで刺さる原因は科目選択順が単純
+  shuffle なこと。**残クォータの逼迫度順 (LCV 風) に科目を試す**改良で
+  部分解率が下がる見込み。ソルバ本体の変更なので着手は要相談
 
 #### E4c. ⚪ excelExport バンドル削減 (旧 D3c)
 - **現状**: 944 kB (gzip 273 kB)。dynamic import で起動には影響無いが、初回 Excel 出力に数百 ms 遅延。

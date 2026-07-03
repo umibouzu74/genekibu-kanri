@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench:solver": "BENCH=1 vitest run src/timetable-builder/logic/solverScaling.test.js",
     "format": "prettier --write .",
     "test:e2e": "playwright test"
   },
