@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { splitTeacherField } from "../../utils/biweekly";
 import { S } from "../../styles/common";
 import { compareJa, sortJa } from "../../utils/sortJa";
 import { StaffListTab } from "./staff/StaffListTab";
@@ -56,9 +57,7 @@ export function StaffManagerView({
   const allTeachers = useMemo(() => {
     const set = new Set(partTimeStaff.map((s) => s.name));
     slots.forEach((s) => {
-      if (!s.teacher) return;
-      const names = s.teacher.includes("·") ? s.teacher.split("·") : [s.teacher];
-      names.forEach((n) => set.add(n));
+      splitTeacherField(s.teacher).forEach((n) => set.add(n));
     });
     return sortJa([...set]);
   }, [slots, partTimeStaff]);
@@ -71,9 +70,7 @@ export function StaffManagerView({
   const fulltimeTeachers = useMemo(() => {
     const set = new Set();
     slots.forEach((s) => {
-      if (!s.teacher) return;
-      const names = s.teacher.includes("·") ? s.teacher.split("·") : [s.teacher];
-      names.forEach((n) => {
+      splitTeacherField(s.teacher).forEach((n) => {
         if (!staffNameSet.has(n)) set.add(n);
       });
     });

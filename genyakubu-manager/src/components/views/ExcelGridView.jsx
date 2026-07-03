@@ -12,6 +12,7 @@ import { getSlotTeachers } from "../../utils/biweekly";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
+import { useToday } from "../../hooks/useToday";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
@@ -233,20 +234,22 @@ export function ExcelGridView({
   //   1. 代行モードの subDate
   //   2. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
   //   3. selectedDay の直近発生日 (今日以前) — フォールバック
-  // 注: `new Date()` は useMemo deps に含めていないため、タブを開いた
-  // まま深夜0時を跨ぐと値が更新されない。再計算にはリロードが必要。
+  // 「今日」は useToday で state 化してあり、タブを開いたまま深夜0時を
+  // 跨いでも翌 0 時に再計算される (H2c)。
+  const today = useToday();
   const sessionTargetDate = useMemo(() => {
     if (subMode.subDate) return subMode.subDate;
     if (viewDate && dateToDay(viewDate) === selectedDay) return viewDate;
     if (!selectedDay) return null;
-    const d = new Date();
+    const [ty, tm, td] = today.split("-").map(Number);
+    const d = new Date(ty, tm - 1, td);
     for (let i = 0; i < 14; i++) {
       const dateStr = fmtDate(d);
       if (dateToDay(dateStr) === selectedDay) return dateStr;
       d.setDate(d.getDate() - 1);
     }
     return null;
-  }, [subMode.subDate, viewDate, selectedDay]);
+  }, [subMode.subDate, viewDate, selectedDay, today]);
 
   const { sessionCtx, isOffForGrade, holidaysFor } = useSessionCtx({
     classSets,

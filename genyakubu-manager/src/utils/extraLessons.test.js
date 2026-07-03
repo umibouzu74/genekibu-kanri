@@ -22,6 +22,9 @@ const lessons = [
   L(2, "2026-07-25", "17:00-18:00", "香川·福江·川井", { subj: "プレップ", label: "夏期講習" }),
   L(3, "2026-07-28", "19:00-20:00", "堀上"),
   L(4, "2026-08-01", "10:00-11:00", "田中", { grade: "中1" }),
+  // IME の全角中点で手入力された複数講師 (プレップの実例)。正規化前の
+  // 既存データでも講師スケジュールに出ることを固定する。
+  L(5, "2026-07-28", "17:00-18:00", "香川・福江", { subj: "プレップ", label: "夏期講習" }),
 ];
 
 describe("extraLessonsOnDate", () => {
@@ -38,6 +41,12 @@ describe("extraLessonsOnDate", () => {
 });
 
 describe("extraLessonsForTeacherOnDate", () => {
+  it("全角中点 (・) 区切りの複数講師も各講師のスケジュールに出る", () => {
+    expect(extraLessonsForTeacherOnDate(lessons, "香川", "2026-07-28").map((l) => l.id)).toEqual([5]);
+    expect(extraLessonsForTeacherOnDate(lessons, "福江", "2026-07-28").map((l) => l.id)).toEqual([5]);
+    expect(indexExtraLessonsByDate(lessons, "福江").get("2026-07-28").map((l) => l.id)).toEqual([5]);
+  });
+
   it("担当講師の分だけ返す (完全一致)", () => {
     const out = extraLessonsForTeacherOnDate(lessons, "堀上", "2026-07-25");
     expect(out.map((l) => l.id)).toEqual([1]);
@@ -86,7 +95,7 @@ describe("upcomingExtraLessons", () => {
       winStartStr: "2026-07-25",
       winEndStr: "2026-07-31",
     });
-    expect(out.map((l) => l.id)).toEqual([2, 1, 3]);
+    expect(out.map((l) => l.id)).toEqual([2, 1, 5, 3]);
   });
 
   it("teacher 指定でその講師の分に絞る", () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AbsenceNgPanel from './AbsenceNgPanel';
 import { ProjectContext } from '../../contexts/projectContextValue';
 import { UIContext } from '../../contexts/uiContextValue';
@@ -11,7 +11,7 @@ vi.mock('./NgCsvImport', () => ({ default: () => null }));
 
 afterEach(cleanup);
 
-function renderPanel({ presets = [], overrides = {} } = {}) {
+function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
   const addExternalSessionPreset = vi.fn();
   const projectValue = {
     project: {
@@ -36,7 +36,7 @@ function renderPanel({ presets = [], overrides = {} } = {}) {
     analysis: { autoNgByTeacher: new Map() },
     ...overrides,
   };
-  const uiValue = { showConfirm: vi.fn().mockResolvedValue(false), showToast: vi.fn() };
+  const uiValue = { showConfirm: vi.fn().mockResolvedValue(false), showToast: vi.fn(), ...ui };
   const utils = render(
     <ProjectContext.Provider value={projectValue}>
       <UIContext.Provider value={uiValue}>
@@ -44,7 +44,7 @@ function renderPanel({ presets = [], overrides = {} } = {}) {
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
-  return { ...utils, addExternalSessionPreset };
+  return { ...utils, addExternalSessionPreset, uiValue };
 }
 
 const SAMPLE_PRESET = {
@@ -223,6 +223,251 @@ describe('AbsenceNgPanel — プリセットの「期間なし」(F5m)', () => {
     const [, payload] = updateExternalSessionPreset.mock.calls[0];
     expect(payload.startDateLabel).toBe('');
     expect(payload.endDateLabel).toBe('');
+  });
+});
+
+// ── E3e 拡充: 一括登録 / 解除確認 / 時刻検証 / セッション削除 / クイックグリッド ──
+// 2 講師 × 2 日 × 2 時限のフル project (教科グループ: 英語=堀上 / 数学=山田)
+function makeFullProject(overrides = {}) {
+  return {
+    teachers: [
+      { name: '堀上', subjects: ['英語'] },
+      { name: '山田', subjects: ['数学'] },
+    ],
+    subjects: ['英語', '数学'],
+    externalSessions: [],
+    externalSessionPresets: [],
+    externalCounts: {},
+    dates: [{ id: 1, label: '7/24(金)' }, { id: 2, label: '7/25(土)' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    ...overrides,
+  };
+}
+
+const checkTeacher = (name) =>
+  fireEvent.click(screen.getByLabelText(`${name} を対象に含める`));
+
+describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () => {
+  it('選択講師 × 期間の直積で addExternalSessions を呼び、時刻・メモをクリアする', () => {
+    const addExternalSessions = vi.fn();
+    renderPanel({ overrides: { project: makeFullProject(), addExternalSessions } });
+    checkTeacher('堀上');
+    checkTeacher('山田');
+    // 期間を 7/24〜7/25 に (開始 default は dates[0])
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '10:00' } });
+    fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '11:00' } });
+    const memoInput = screen.getByPlaceholderText('予備校 / 高2 英語 等');
+    fireEvent.change(memoInput, { target: { value: '予備校' } });
+
+    fireEvent.click(screen.getByText('他学年セッションとして追加'));
+    expect(addExternalSessions).toHaveBeenCalledTimes(1);
+    const items = addExternalSessions.mock.calls[0][0];
+    expect(items).toHaveLength(4); // 2 講師 × 2 日
+    expect(items).toContainEqual({
+      date: '7/24(金)', teacherName: '堀上', label: '10:00-11:00',
+      memo: '予備校', startTime: '10:00', endTime: '11:00',
+    });
+    expect(items).toContainEqual(
+      expect.objectContaining({ date: '7/25(土)', teacherName: '山田' }),
+    );
+    // 連打による重複登録を防ぐため時刻・メモはクリア (講師・期間は残す)
+    expect(screen.getByLabelText('開始時刻')).toHaveValue('');
+    expect(screen.getByLabelText('終了時刻')).toHaveValue('');
+    expect(memoInput).toHaveValue('');
+    expect(screen.getByLabelText('堀上 を対象に含める')).toBeChecked();
+  });
+
+  it('講師未選択では追加ボタンが disabled', () => {
+    const addExternalSessions = vi.fn();
+    renderPanel({ overrides: { project: makeFullProject(), addExternalSessions } });
+    const btn = screen.getByText('他学年セッションとして追加');
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(addExternalSessions).not.toHaveBeenCalled();
+  });
+
+  it('時刻なしでも登録できる (label は空、start/end は undefined)', () => {
+    const addExternalSessions = vi.fn();
+    renderPanel({ overrides: { project: makeFullProject(), addExternalSessions } });
+    checkTeacher('堀上');
+    fireEvent.click(screen.getByText('他学年セッションとして追加'));
+    expect(addExternalSessions).toHaveBeenCalledWith([
+      { date: '7/24(金)', teacherName: '堀上', label: '', memo: '', startTime: undefined, endTime: undefined },
+    ]);
+  });
+});
+
+describe('AbsenceNgPanel — 時刻バリデーション (E3e)', () => {
+  it('終了時刻のみ入力はエラーで追加不可', () => {
+    renderPanel({ overrides: { project: makeFullProject() } });
+    checkTeacher('堀上');
+    fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '11:00' } });
+    expect(screen.getByText(/終了時刻だけでなく開始時刻も入力してください/)).toBeInTheDocument();
+    expect(screen.getByText('他学年セッションとして追加')).toBeDisabled();
+  });
+
+  it('開始時刻 >= 終了時刻はエラーで追加不可', () => {
+    renderPanel({ overrides: { project: makeFullProject() } });
+    checkTeacher('堀上');
+    fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '12:00' } });
+    fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '12:00' } });
+    expect(screen.getByText(/開始時刻は終了時刻より前にしてください/)).toBeInTheDocument();
+    expect(screen.getByText('他学年セッションとして追加')).toBeDisabled();
+  });
+});
+
+describe('AbsenceNgPanel — まとめてNG / OK解除 (E3e)', () => {
+  const switchToNgMode = (container) =>
+    fireEvent.click(container.querySelector('input[name="absence-ng-mode"][value="ng"]'));
+
+  it('「まとめてOKに解除」は confirm 承認後に setNgBatch(..., false) を呼ぶ', async () => {
+    const setNgBatch = vi.fn();
+    const { container } = renderPanel({
+      overrides: { project: makeFullProject(), setNgBatch },
+      ui: { showConfirm: vi.fn().mockResolvedValue(true) },
+    });
+    switchToNgMode(container);
+    checkTeacher('堀上');
+    fireEvent.click(screen.getByText('まとめてOKに解除'));
+    await waitFor(() => expect(setNgBatch).toHaveBeenCalledTimes(1));
+    // 全時限 (動的 allMode) が default なので periods は 2 つとも入る
+    expect(setNgBatch).toHaveBeenCalledWith([0], ['7/24(金)'], ['1限', '2限'], false);
+  });
+
+  it('解除は destructive なので confirm を挟み、拒否なら解除しない', async () => {
+    const setNgBatch = vi.fn();
+    // renderPanel の showConfirm default は false 解決
+    const { container, uiValue } = renderPanel({
+      overrides: { project: makeFullProject(), setNgBatch },
+    });
+    switchToNgMode(container);
+    checkTeacher('堀上');
+    fireEvent.click(screen.getByText('まとめてOKに解除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalledTimes(1));
+    expect(uiValue.showConfirm).toHaveBeenCalledWith(
+      expect.stringContaining('NG を解除します'),
+      expect.objectContaining({ danger: true }),
+    );
+    expect(setNgBatch).not.toHaveBeenCalled();
+    expect(uiValue.showToast).not.toHaveBeenCalled();
+  });
+
+  it('時限を全解除すると NG ボタンが disabled', () => {
+    const { container } = renderPanel({ overrides: { project: makeFullProject() } });
+    switchToNgMode(container);
+    checkTeacher('堀上');
+    // 「全解除」ボタンは講師用とNG時限用の 2 つ — 後者をクリック
+    fireEvent.click(screen.getAllByText('全解除')[1]);
+    expect(screen.getByText('まとめてNGにする')).toBeDisabled();
+  });
+
+  it('NG モードに切り替えると external 用の時刻・メモがクリアされる (stale submit 防止)', () => {
+    const { container } = renderPanel({ overrides: { project: makeFullProject() } });
+    fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '10:00' } });
+    fireEvent.change(screen.getByPlaceholderText('予備校 / 高2 英語 等'), { target: { value: 'メモ' } });
+    switchToNgMode(container);
+    // external に戻ると時刻・メモは空
+    fireEvent.click(container.querySelector('input[name="absence-ng-mode"][value="external"]'));
+    expect(screen.getByLabelText('開始時刻')).toHaveValue('');
+    expect(screen.getByPlaceholderText('予備校 / 高2 英語 等')).toHaveValue('');
+  });
+});
+
+describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)', () => {
+  it('登録済みセッションを表示し × で removeExternalSession(id) を呼ぶ', () => {
+    const removeExternalSession = vi.fn();
+    renderPanel({
+      overrides: {
+        project: makeFullProject({
+          externalSessions: [
+            { id: 7, date: '7/24(金)', teacherName: '堀上', startTime: '10:00', endTime: '11:00', memo: '予備校' },
+          ],
+        }),
+        removeExternalSession,
+      },
+    });
+    // 日付ヘッダのバッジと一覧の内容
+    expect(screen.getByText('他学年 1件')).toBeInTheDocument();
+    expect(screen.getByText('10:00〜11:00')).toBeInTheDocument();
+    expect(screen.getByText('予備校')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('7/24(金) 堀上 のセッションを削除'));
+    expect(removeExternalSession).toHaveBeenCalledWith(7);
+  });
+
+  it('自動NG セルは「自」表示 + aria-label に自動NGあり + セッション由来ツールチップ', () => {
+    const autoKey = '7/24(金)-1限';
+    const autoNgByTeacher = new Map([
+      ['堀上', new Map([[autoKey, {
+        sessions: [{ startTime: '10:00', endTime: '11:00', memo: '予備校' }],
+      }]])],
+    ]);
+    renderPanel({
+      overrides: { project: makeFullProject(), analysis: { autoNgByTeacher } },
+    });
+    const cell = screen.getByLabelText('堀上 7/24(金) 1限 の手動NG (自動NGあり)');
+    expect(cell).toHaveTextContent('自');
+    expect(cell).toHaveAttribute('title', expect.stringContaining('予備校 (10:00〜11:00)'));
+    // 手動 NG ではないので aria-pressed=false のまま
+    expect(cell).toHaveAttribute('aria-pressed', 'false');
+    // 日付ヘッダの NG 件数バッジにも自動NG が数えられる
+    expect(screen.getByText('NG 1件')).toBeInTheDocument();
+  });
+
+  it('「すべて折りたたむ」でマトリクスが隠れ、日付ヘッダから再展開できる', () => {
+    renderPanel({ overrides: { project: makeFullProject() } });
+    expect(screen.queryByLabelText('堀上 7/24(金) 1限 の手動NG')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('すべて折りたたむ'));
+    expect(screen.queryByLabelText('堀上 7/24(金) 1限 の手動NG')).toBeNull();
+    // 7/24(金) のヘッダ (ボタン) をクリックで個別展開
+    fireEvent.click(screen.getByRole('button', { name: /7\/24\(金\)/ }));
+    expect(screen.getByLabelText('堀上 7/24(金) 1限 の手動NG')).toBeInTheDocument();
+  });
+});
+
+describe('AbsenceNgPanel — クイック数値入力グリッド (E3e)', () => {
+  const openQuickGrid = () => fireEvent.click(screen.getByText(/クイック数値入力/));
+
+  it('blur 時に handleExternalCountChange(日付, 講師, 値) を呼ぶ (draft-commit)', () => {
+    const handleExternalCountChange = vi.fn();
+    renderPanel({ overrides: { project: makeFullProject(), handleExternalCountChange } });
+    openQuickGrid();
+    const input = screen.getByLabelText('7/24(金) の 堀上 の外部コマ数');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(handleExternalCountChange).not.toHaveBeenCalled(); // フォーカス中は commit しない
+    fireEvent.blur(input);
+    expect(handleExternalCountChange).toHaveBeenCalledWith('7/24(金)', '堀上', '3');
+  });
+
+  it('詳細セッションがあるセルは件数表示になり入力できない', () => {
+    renderPanel({
+      overrides: {
+        project: makeFullProject({
+          externalSessions: [
+            { id: 1, date: '7/24(金)', teacherName: '堀上', startTime: '10:00' },
+            { id: 2, date: '7/24(金)', teacherName: '堀上', startTime: '13:00' },
+          ],
+        }),
+      },
+    });
+    openQuickGrid();
+    expect(screen.queryByLabelText('7/24(金) の 堀上 の外部コマ数')).toBeNull();
+    // 件数セル (2) が表示される
+    expect(screen.getByTitle('詳細セッション登録あり (上の日付別セクションで編集)')).toHaveTextContent('2');
+    // セッションの無い隣のセルは通常の入力のまま
+    expect(screen.getByLabelText('7/25(土) の 堀上 の外部コマ数')).toBeInTheDocument();
+  });
+
+  it('明示的に 0 を保存したセルは 0、未入力セルは空で表示する', () => {
+    renderPanel({
+      overrides: {
+        project: makeFullProject({ externalCounts: { '7/24(金)-堀上': 0 } }),
+      },
+    });
+    openQuickGrid();
+    expect(screen.getByLabelText('7/24(金) の 堀上 の外部コマ数')).toHaveValue(0);
+    expect(screen.getByLabelText('7/25(土) の 堀上 の外部コマ数')).not.toHaveValue();
   });
 });
 

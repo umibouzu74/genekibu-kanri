@@ -558,3 +558,71 @@ describe('シート名の防御 (F5g/F5h/F5i)', () => {
     expect(names).toContain('全講師リスト');
   });
 });
+
+// ── E3b: 実バイナリの round-trip 検証 ─────────────────────────────
+// これまでの構造テストは「workbook オブジェクトに何を積んだか」しか見て
+// おらず、xlsx への serialize / deserialize 層 (exceljs writer) の regression
+// は素通りだった。ここでは writeBuffer で実際に xlsx バイナリへ書き出し、
+// 同じ exceljs で読み戻して、値・結合・塗り色・罫線・列幅が実ファイルに
+// 残っていることを固定する。
+// (import は ESM の hoisting で先頭 import 群と同時に解決される)
+import ExcelJS from 'exceljs';
+
+async function roundTrip(wb) {
+  const buffer = await wb.xlsx.writeBuffer();
+  const loaded = new ExcelJS.Workbook();
+  await loaded.xlsx.load(buffer);
+  return loaded;
+}
+
+describe('xlsx round-trip (E3b)', () => {
+  it('スケジュール出力: シート・値・結合・塗り・罫線・列幅がバイナリに残る', async () => {
+    const wb2 = await roundTrip(buildScheduleWorkbook(makeProject()));
+
+    // シート構成 (タブ + 科目別)
+    const names = wb2.worksheets.map((ws) => ws.name);
+    expect(names).toContain('メイン');
+    expect(names).toContain('科目別_英語');
+
+    const ws = wb2.getWorksheet('メイン');
+    // 値 (ヘッダ + データセルの改行表記)
+    expect(ws.getCell(1, 1).value).toBe('日付');
+    expect(ws.getCell(1, 3).value).toBe('３S');
+    expect(ws.getCell(2, 1).value).toBe('12/25(木)');
+    expect(ws.getCell(2, 3).value).toBe('英語\n堀上(中学2:計2)');
+
+    // 日付セルの縦結合 (2 時限分): A2 が master、A3 は merged
+    expect(ws.getCell('A3').isMerged).toBe(true);
+    expect(ws.getCell('A3').master.address).toBe('A2');
+
+    // 科目カラーの塗り (英語 #DBEAFE → FFDBEAFE)
+    const fill = ws.getCell(2, 3).fill;
+    expect(fill?.type).toBe('pattern');
+    expect(fill?.fgColor?.argb).toBe('FFDBEAFE');
+
+    // 罫線 (THIN_BORDER) と wrapText
+    expect(ws.getCell(2, 3).border?.top?.style).toBe('thin');
+    expect(ws.getCell(2, 3).alignment?.wrapText).toBe(true);
+
+    // 列幅 (日付/時限 14、クラス列 16)
+    expect(ws.getColumn(1).width).toBe(14);
+    expect(ws.getColumn(3).width).toBe(16);
+
+    // ヘッダの塗りと白文字 (4472C4 / FFFFFF)
+    expect(ws.getCell(1, 1).fill?.fgColor?.argb).toBe('FF4472C4');
+    expect(ws.getCell(1, 1).font?.color?.argb).toBe('FFFFFFFF');
+  });
+
+  it('講師別出力もバイナリ round-trip で壊れない', async () => {
+    const wb2 = await roundTrip(buildTeacherWorkbook(makeProject()));
+    const names = wb2.worksheets.map((ws) => ws.name);
+    // 集約シート + 講師 1 名分
+    expect(names.length).toBeGreaterThanOrEqual(2);
+    expect(names).toContain('堀上');
+    // 個人シートに担当コマの値が残っている
+    const ws = wb2.getWorksheet('堀上');
+    const texts = [];
+    ws.eachRow((row) => row.eachCell((cell) => texts.push(String(cell.value ?? ''))));
+    expect(texts.join('\n')).toContain('英語');
+  });
+});

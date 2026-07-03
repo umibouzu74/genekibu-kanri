@@ -3,6 +3,7 @@ import { ALL_GRADES, isValidDateStr, fmtDateWeekday } from "../data";
 import { EXTRA_LESSON_COLOR } from "../constants/colors";
 import { nextNumericId } from "../utils/schema";
 import { describeExtraLesson } from "../utils/extraLessons";
+import { splitTeacherField } from "../utils/biweekly";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { S } from "../styles/common";
@@ -91,7 +92,11 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
       cls: cls.trim(),
       room: room.trim(),
       subj: subj.trim(),
-      teacher: teacher.trim(),
+      // 複数講師の区切りを正史の "·" に正規化して保存する。IME の素の入力は
+      // "・" (全角中点) になりがちで、そのまま保存すると "·" しか見ない
+      // 消費側 (代行ピッカー等) で複数講師と認識されない。マッチング側
+      // (isSlotForTeacher) も両方受けるが、保存データは 1 種類に揃える。
+      teacher: splitTeacherField(teacher).join("·"),
       label: label.trim(),
       note: note.trim(),
     };
@@ -129,6 +134,25 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
     setNote(l.note || "");
     setEditId(l.id);
     setError("");
+  };
+
+  // 一覧の内容をフォームへ複製して「新規登録」状態にする (次の講習期を作る
+  // ときの入力の手間を減らす)。実施日は新しい回のものを選ぶはずなので
+  // 引き継がない (前回の日付のまま誤登録する事故を防ぐ)。
+  const handleCopy = (l) => {
+    setDates([]);
+    setDateInput("");
+    setTime(l.time);
+    setGrade(l.grade);
+    setCls(l.cls || "");
+    setRoom(l.room || "");
+    setSubj(l.subj);
+    setTeacher(l.teacher || "");
+    setLabel(l.label || "");
+    setNote(l.note || "");
+    setEditId(null);
+    setError("");
+    toasts.success("内容をフォームにコピーしました。実施日を追加して登録してください");
   };
 
   const handleDel = (l) => {
@@ -304,7 +328,7 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
             <input
               value={teacher}
               onChange={(e) => setTeacher(e.target.value)}
-              placeholder="堀上 / 香川·福江 など"
+              placeholder="堀上 / 香川・福江 など（複数可）"
               aria-label="担当講師"
               style={{ ...S.input, width: 160 }}
             />
@@ -453,6 +477,21 @@ export function ExtraLessonManager({ extraLessons, onSave, isAdmin }) {
               </div>
               {isAdmin && (
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(l)}
+                    aria-label={`${l.date} ${describeExtraLesson(l)} をコピー`}
+                    title="内容をフォームに複製 (実施日は選び直し)"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      padding: 2,
+                    }}
+                  >
+                    📋
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleEdit(l)}

@@ -153,3 +153,101 @@ describe('CombinedGroupSettings — 重複グループの登録ガード (F5z)',
     expect(updateCombinedGroup).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CombinedGroupSettings — 削除経路 (E3e)', () => {
+  // 合同グループの削除は cascade 無しの draft/list 操作なので confirm を
+  // 挟まない (Undo 可能な単発 dispatch)。CLAUDE.md の削除 UX ルールの対象は
+  // 親アプリの永続リソースで、こちらは reducer 経由の即時削除 + Undo。
+  it('削除ボタンで removeCombinedGroup(id) を呼ぶ', () => {
+    const { removeCombinedGroup } = renderSettings();
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(1);
+  });
+
+  it('編集中に別グループを削除しても編集中の draft は維持される', () => {
+    const other = { id: 2, subject: '数学', classes: ['A', 'C'], dates: null };
+    const { removeCombinedGroup } = renderSettings({ combinedGroups: [GROUP, other] });
+    // group 1 を編集開始 (この行の削除ボタンは editor に置き換わる)
+    fireEvent.click(screen.getAllByText('編集')[0]);
+    expect(screen.getByText('保存')).toBeInTheDocument();
+    // 残っている削除ボタンは group 2 のもの
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(2);
+    // group 1 の編集 draft は開いたまま
+    expect(screen.getByText('保存')).toBeInTheDocument();
+  });
+});
+
+describe('CombinedGroupSettings — 他タブ由来グループは読み取り専用 (F5p)', () => {
+  // combinedGroups は project 共有・ラベル参照。現タブに無いクラス / 日程を
+  // 含むグループを編集すると、その要素が editor に表示されず解除も不能な
+  // まま保存できてしまう (タブ混成グループ)。編集は全要素が揃うタブでのみ
+  // 許可し、削除は孤立グループの掃除のため全タブで許可する。
+  it('現タブに無いクラスを含むグループは編集 disabled + 案内表示', () => {
+    // currentConfig.classes は A/B/C のみ — 「中1A」は他タブのクラス
+    const crossTab = { id: 9, subject: '英語', classes: ['A', '中1A'], dates: null };
+    const { updateCombinedGroup } = renderSettings({ combinedGroups: [crossTab] });
+    const edit = screen.getByText('編集');
+    expect(edit).toBeDisabled();
+    fireEvent.click(edit);
+    expect(updateCombinedGroup).not.toHaveBeenCalled();
+    expect(screen.queryByText('保存')).toBeNull();
+    expect(screen.getByText(/現在のタブに無いクラス・日程 \(中1A\) を含むため/)).toBeInTheDocument();
+  });
+
+  it('現タブに無い日程を含むグループも編集 disabled', () => {
+    // currentConfig.dates は 7/1, 7/2 のみ — 8/1 は他タブの日程
+    const crossDate = { id: 10, subject: '英語', classes: ['A', 'B'], dates: ['7/1', '8/1'] };
+    renderSettings({ combinedGroups: [crossDate] });
+    expect(screen.getByText('編集')).toBeDisabled();
+    expect(screen.getByText(/\(8\/1\) を含むため/)).toBeInTheDocument();
+  });
+
+  it('全日程 (dates=null) は日程チェックの対象外 (クラスが揃えば編集可)', () => {
+    renderSettings(); // GROUP: 英語 A・B 全日程
+    expect(screen.getByText('編集')).toBeEnabled();
+  });
+
+  it('読み取り専用でも削除 (孤立グループの掃除) はできる', () => {
+    const crossTab = { id: 9, subject: '英語', classes: ['A', '中1A'], dates: null };
+    const { removeCombinedGroup } = renderSettings({ combinedGroups: [crossTab] });
+    fireEvent.click(screen.getByText('削除'));
+    expect(removeCombinedGroup).toHaveBeenCalledWith(9);
+  });
+
+  it('編集中に project が変わって draft が現タブに無いラベルを抱えたら保存を弾く (F5p 補強)', () => {
+    // 編集ボタンの disabled は render 時のゲートでしかない。編集を開いた後に
+    // Undo 等で currentConfig からクラスが消えると、draft は見えないラベルを
+    // 持ったままになる — 保存時の再検証で混成グループの保存を防ぐ。
+    const updateCombinedGroup = vi.fn();
+    const makeValue = (classes) => ({
+      project: { combinedGroups: [GROUP] },
+      currentConfig: {
+        classes,
+        dates: [{ id: 1, label: '7/1' }, { id: 2, label: '7/2' }],
+      },
+      commonSubjects: ['英語', '数学'],
+      addCombinedGroup: vi.fn(),
+      updateCombinedGroup,
+      removeCombinedGroup: vi.fn(),
+    });
+    const full = [{ id: 1, label: 'A' }, { id: 2, label: 'B' }, { id: 3, label: 'C' }];
+    const { rerender } = render(
+      <ProjectContext.Provider value={makeValue(full)}>
+        <CombinedGroupSettings />
+      </ProjectContext.Provider>,
+    );
+    fireEvent.click(screen.getByText('編集')); // GROUP (A・B) を編集開始
+    // 編集中に B が現タブから消える (Undo / 基本設定の変更を模擬)
+    rerender(
+      <ProjectContext.Provider value={makeValue([{ id: 1, label: 'A' }, { id: 3, label: 'C' }])}>
+        <CombinedGroupSettings />
+      </ProjectContext.Provider>,
+    );
+    expect(screen.getByText(/現在のタブに無いクラス・日程 \(B\) が含まれています/)).toBeInTheDocument();
+    const save = screen.getByText('保存');
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(updateCombinedGroup).not.toHaveBeenCalled();
+  });
+});

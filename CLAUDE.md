@@ -44,6 +44,19 @@ Claude Code セッション間で共有したい規約や「やらないこと�
 
 判断に迷う場合は cascade ありとして `confirmedRemove` を使うこと。
 
+## 複数講師の区切り文字 (重要)
+
+Slot / ExtraLesson の `teacher` フィールドで複数講師を表す区切りは
+**"·" (U+00B7) が正史**。ただし日本語 IME の素の入力は "・" (U+30FB) に
+なるため、以下を必ず守ること (2026-07-03 の H1f バグの再発防止):
+
+- **分解 (読み取り) は必ず `utils/biweekly.splitTeacherField` を使う**。
+  `teacher.split("·")` の手書きは禁止 ("・"/"･" 入力を取りこぼす)
+- **teacher を保存する入力フォームは、保存時に
+  `splitTeacherField(value).join("·")` で正規化する**
+  (SlotForm / ExtraLessonManager が実装例)
+- 講師名そのものに中黒は使わない (区切りと区別できないため)
+
 ## 印刷システムの二系統 (重要)
 
 印刷機構は意図的に 2 系統あり、統合しない。**新しい印刷導線を増やす際は

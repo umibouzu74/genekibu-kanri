@@ -4,7 +4,14 @@
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
 (schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
-(テスト 1695 → 1766 件)。
+(テスト 1695 → 1766 件)。マージ後、**E3e (ConfigModal sub-tests 拡充) /
+親アプリ側の小粒 2 件 (H2c 深夜 0 時跨ぎ / H2d id 採番統一) / F5p (案 b で
+読み取り専用化) / E1a・E1f のタッチ CSS / E3a (Playwright E2E ×2) /
+E3b (xlsx round-trip) を完了** (vitest 1766 → 1821 件 + E2E 2 件)。
+さらに **E5e (TypeScript 化) を全 Phase 完了** — builder の非テスト source
+は 100% TS (types.ts + 67 ファイル変換、@types/react 導入、eslint TS 対応)。
+同日、**本ブランチ全体の校正レビュー (§J、4 観点 × 個別検証) で
+コード 9 件 + ドキュメント 12 件を修正** (テスト 1821 → 1824)。
 **builder の残課題は §G、親アプリ (原学部管理) 側の課題は §H、
 校正レビューの記録は §I**。
 それ以前の履歴: 2026-07-03 F.4/F.5 改善サイクル (PR #141) /
@@ -31,18 +38,19 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | B (中規模リファクタ) | B1-B4 すべて完了 |
 | C (破壊的再設計) | C1 ID 化 / C2 reducer 化 / C3 デザイン統合 / C4 Excel ライブラリ置換 |
 | D (Quick wins / Test) | D1a / D1c / D2a / D2b / D4e / D4f / D4g / D5a / D6a-MVP / D7b |
-| E1 (UX 完成度) | E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1g 修正提案 / E1a-toolbar(残あり) / E1f-longpress(残あり) |
+| E1 (UX 完成度) | E1a モバイル / E1b キーボード / E1c スナップショット / E1d 差分 / E1e コントラスト / E1f タッチ / E1g 修正提案 (E1a/E1f は実機確認のみ残 → G.2) |
 | E2 (機能拡張) | E2a-NG / E2b-MVP / E2c 連続コマ / E2d テンプレート / E2e 生成param UI / E2f cancel+統計+live / E2h 負荷偏り |
-| E3 (テスト/信頼性) | E3d schema 検証 |
+| E3 (テスト/信頼性) | E3a Worker E2E (Playwright) / E3b xlsx round-trip / E3d schema 検証 / E3e ConfigModal sub-tests |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
+| E5 (再設計) | E5e TypeScript 化 (全 Phase) / E5g migration ルール文書化 |
 | E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
 | F (レビュー起点の修正) | F.1/F.3 一括修正 (2026-07-02) / F.4-F.5 の改善 10 バッチ (2026-07-02〜03、PR #141): 読込クラッシュループ根絶 F5a-F5e+F2f / 期間カレンダー順 F5j / autosave debounce F2c / focus trap F5q-F5r / Excel シート名 F5g-F5i / infeasibility 再設計 F2g+F5x / モーダル UI F5k-F5o / ソルバ整合 F5t-F5y / 空ロック仕様 F5w / fingerprint 失効 F2n-F2p / 参照整合 F2k+H3/H5/F2o / a11y F2a-F2b |
 | G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
-**残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統: E1a/E1f 残り ·
-E2a Excel 取込 · E2b wizard 本体 · E3a/E3b/E3c/E3e/E3f/E3g テスト深化 ·
-E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase · E7 系 (AI 活用)。
+**残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統:
+E2a Excel 取込 · E2b wizard 本体 · E3c/E3f/E3g テスト深化 ·
+E4b ソルバ計測 · E5 系残り (E5b ID 化 / E5c style 統一) · E6a Firebase · E7 系 (AI 活用)。
 
 ---
 
@@ -75,12 +83,12 @@ E4b ソルバ計測 · E5 系 (TS 化 / ID 化 / style 統一) · E6a Firebase �
 | キーボード操作 / a11y | 🟢 focus trap・全操作のキーボード代替・ARIA 対応済 (E1b + F2a/F2b)。スクリーンリーダーでの実機検証は未実施 |
 | 合同グループ | 🟡 機能・UI・検証は揃ったが実運用検証が浅い。他タブグループの編集挙動は仕様判断待ち (F5p) |
 | オンボーディング | 🟢 初回 5 ステップガイド + ❓ ヘルプから再表示 (D1a) |
-| モバイル対応 | 🟡 Toolbar 折返し・長押しメニュー済。ScheduleTable 幅 / 44px / ピンチ抑止が残 (E1a/E1f) |
-| TypeScript 化 | 🔴 未対応 (親アプリは部分的に TS) |
+| モバイル対応 | 🟢 コード側は完了 (Toolbar 折返し / Excel dropdown / 長押し / 44px / ダブルタップズーム抑止)。実機確認のみ残 (G.2) |
+| TypeScript 化 | 🟢 builder 本体 100% TS 化済み (E5e、2026-07-03)。テストファイルと親アプリは JS のまま |
 | Firebase 同期 | 🔴 意図的に未対応 |
 
 ### 1.3 既存のテスト
-合計 **1766 件 / 88 ファイル** (2026-07-03 校正レビュー後。timetable-builder
+合計 **1824 件 / 89 ファイル** (2026-07-03 校正レビュー §J 後。timetable-builder
 配下 + 親アプリ)。ファイル別件数は変動が速いので列挙しない — `npm test` の
 出力を正とする。
 
@@ -93,8 +101,10 @@ infeasibilities / dashboard)・CSV / Excel / テンプレート / スナップ�
 主要 UI コンポーネント (Toolbar / Header / ScheduleCell / TabBar /
 ContextMenu / ConfigModal 各タブ / SnapshotMenu / SummaryPanel)・
 focus trap / long-press / タブ競合検出。
-**未カバー**: 実 Worker 経路 (E3a)・実 xlsx の見栄え (E3b)・印刷出力 (E3c)・
-視覚回帰 (E3f)・クロスブラウザ (E3g)。
+加えて Playwright E2E ×2 (実 Worker 経由の生成・中止 — E3a、
+`npm run test:e2e` で別実行) と xlsx バイナリ round-trip (E3b)。
+**未カバー**: worker 内エラープロトコル (E3a 残)・Excel の見栄え目視 (C4 残)・
+印刷出力 (E3c)・視覚回帰 (E3f)・クロスブラウザ (E3g)。
 
 ---
 
@@ -266,7 +276,8 @@ npm run dev   # http://localhost:5173/genekibu-kanri/ で起動
 ### 4.3 検証の標準セット
 ```bash
 npm run lint        # 0 errors / 0 warnings
-npm test            # 88 files / 1766 tests (2026-07-03 校正レビュー後)
+npm test            # 89 files / 1824 tests (2026-07-03 校正レビュー §J 後)
+npm run test:e2e    # Playwright 2 tests (実 Worker 経路、dev server 自動起動)
 npm run typecheck   # tsc --noEmit
 npm run build       # 警告は excelExport chunk size のみ (期待動作)
 ```
@@ -596,11 +607,14 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E1. UX 完成度の残り
 
-#### E1a. 🟠 モバイル / 狭画面対応 (旧 D1b / Toolbar 折返し 完了)
-- **現状**: Toolbar のボタン群は狭画面で折り返すように修正済 (2026-06-29)。Header の Excel ボタン dropdown 化と ScheduleTable の max-w 制御は残。
-- **✅ 完了分**: Toolbar 右側のボタンクラスタを `flex` → `flex flex-wrap justify-end` に。768px 以下でボタンが画面外へはみ出さず段組みで折り返す。
-- **残り**: Header の Excel ボタン dropdown 化、ScheduleTable の max-w を CSS variable で制御。
-- **規模**: 中 / **価値**: 中 (主用途は PC だが移動先確認のニーズあり)
+#### E1a. ✅ モバイル / 狭画面対応 (旧 D1b / 2026-07-03 コード側完了)
+- **✅ Toolbar 折返し** (2026-06-29): ボタンクラスタを `flex flex-wrap justify-end` に。
+- **✅ Header Excel dropdown** (2026-06-29, commit 62f8639): 出力 2 ボタンを
+  「📊 Excel出力 ▾」dropdown (role=menu) に集約。
+- **✅ ScheduleTable 幅** (2026-07-03 クローズ判断): テーブルは
+  `overflow-auto` コンテナ内で横スクロールし、親 (app-main) の幅を
+  はみ出さない現行構造で解消済み。CSS variable 化は不要と判断。
+- **残り**: 実機 (タブレット/スマホ) での通し確認のみ (G.2)。
 
 #### E1b. ✅ キーボード操作完成度 (2026-06-29 完了 / 旧 D5b + D5a 延期分 / ScheduleCell 端動作のみ残)
 - **旧現状**: D5a で ConfigModal に `role="dialog"` を入れたが focus trap 未実装で Tab が背景まで抜けた。タブ群も矢印キー非対応。
@@ -647,7 +661,20 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
   - **ScheduleCell**: `{...useLongPress(...)}` を `<td>` に付与し、長押しで `onContextMenu` を発火 (右クリックと同じメニュー)。HTML5 DnD はタッチで発火しないので drag と競合しない。hooks-rules を守るため早期 return 前で呼ぶ。
   - **オンボーディング**: 「右クリック (タッチ端末では長押し)」と案内追記。
   - **テスト**: useLongPress.test.jsx 新規 6。
-- **残り**: ピンチズーム抑止、ボタンの最低タップ領域 44px の徹底、ヘッダ (日付/時限/クラス) セルへの長押し適用。
+- **✅ 完了分 (ヘッダ長押し / 2026-06-29, commit 62f8639)**: ScheduleTable の
+  ヘッダ (日付/時限/クラス) に LongPressTh を導入し、長押しで追加・名称変更・
+  削除メニューを開けるように。
+- **✅ 完了分 (タッチ CSS / 2026-07-03)**: tailwind.css の `.builder-root`
+  スコープに追加。
+  - `touch-action: manipulation` を操作要素 (button / select / input /
+    role=button / th) に常時適用 — ダブルタップズームの誤爆を防止。
+    ピンチズーム自体は a11y (拡大表示) のため殺さない (「ピンチ抑止」は
+    manipulation で足りると判断)。
+  - `@media (pointer: coarse)` (タッチ主体端末のみ): button / select の
+    min-height 44px (WCAG 2.5.5)、長押し対象 (th / td[role=button] /
+    [data-longpress]) の長押し中テキスト選択・コールアウト抑止。
+    デスクトップのレイアウトは不変。
+- **残り**: 実機 (iOS Safari / Android Chrome) での操作感確認のみ (G.2)。
 - **規模**: 中 / **価値**: 中
 
 #### E1g. ✅ エラー時の修正提案 (2026-06-29 完了 / D1c-C の延長)
@@ -745,15 +772,39 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E3. テスト / 信頼性
 
-#### E3a. 🟡 実 Worker 経路の E2E (旧 D2c)
-- **現状**: `runGenerator.test.js` は jsdom で sync fallback のみ。本番 (`new Worker()`) は untested。cancel・terminate・message protocol が silent regression し得る。
-- **改善**: Playwright で実 Chromium に load → 「自動生成」クリック → 結果アサート。または vitest browser mode。
-- **規模**: 中 / **価値**: 中
+#### E3a. ✅ 実 Worker 経路の E2E (旧 D2c / 2026-07-03 完了)
+- **旧現状**: `runGenerator.test.js` は jsdom で sync fallback のみ。本番
+  (`new Worker()`) の生成・cancel メッセージプロトコルが untested だった。
+- **実装 (Playwright)**:
+  - **playwright.config.js**: `npm run dev` を webServer として自動起動。
+    リモート実行環境のプリインストール Chromium (`/opt/pw-browsers/chromium`)
+    があれば executablePath で直接使い、無ければ通常のブラウザ解決
+    (ローカルは `npx playwright install chromium` が必要)。
+  - **e2e/builder-worker.spec.js** (2 件):
+    1. Worker コンストラクタ spy で「実 Worker が構築された = sync fallback
+       ではない」ことを確認しつつ、デフォルト project で自動作成 → 結果
+       パネル → 案 1 採用 → スケジュール反映まで通し検証
+    2. 探索が長引く重い project (8 クラス × 10 日 × 6 限のほぼ満杯 +
+       講師 4 名 + maxIterations 500 万) を localStorage にシードし、
+       生成中の「✕ 中止」→ warning toast + 生成ボタン復帰 + 結果パネル
+       無しを検証
+  - **実行**: `npm run test:e2e` (vitest の `npm test` とは別立て。
+    include が `src/**/*.test.*` なので相互に干渉しない)。3 連続実行で
+    安定を確認済み
+- **残り**: worker 内エラー (`type: 'error'`) プロトコルの E2E は未
+  (レアパスを強制注入する仕組みが必要)。クロスブラウザは E3g。
 
-#### E3b. 🟡 Excel 出力のバイナリ検証 (旧 D2d)
-- **現状**: 構造テスト 18 件 (C4) はあるが、実 xlsx を開いた時の見栄え (色・罫線・列幅) は手動確認。
-- **改善**: exceljs 書き出し → 再読込 round-trip 比較、または Playwright で download → 解凍 → OOXML XML 検証。
-- **規模**: 中 / **価値**: 中
+#### E3b. ✅ Excel 出力のバイナリ検証 (旧 D2d / 2026-07-03 完了)
+- **旧現状**: 構造テスト (workbook オブジェクト検査) のみで、xlsx への
+  serialize / deserialize 層 (exceljs writer) の regression は素通りだった。
+- **実装**: excelExport.test.js に round-trip テスト 2 件を追加。
+  `wb.xlsx.writeBuffer()` → 実バイナリ → `new Workbook().xlsx.load()` で
+  読み戻し、シート構成・セル値 (改行表記含む)・日付セルの縦結合
+  (isMerged/master)・科目カラー塗り (FFDBEAFE)・罫線 (thin)・wrapText・
+  列幅 (14/16)・ヘッダの塗りと白文字が実ファイルに残ることを固定。
+  講師別出力も同様に round-trip で検証。
+- **残り**: 「Excel で開いた時の見栄え」の最終目視は引き続き C4 残
+  (G.2 の実機確認項目)。バイナリ上のスタイル存在はここで自動検証済み。
 
 #### E3c. 🟡 印刷出力スナップショット (新規)
 - **現状**: 印刷 2 系統 (CLAUDE.md) を維持しているが、実出力は手動確認のみ。CSS や DOM 変更で気付かず崩れる。
@@ -769,10 +820,28 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **テスト**: projectSchema.test.js (新規 10) / projectFactory.test.js (+2 fallback)。
 - **判断**: 手書きバリデータで十分 (構造チェックのみ)。値レベルの厳密検証 (例: id の一意性) は過剰なので入れない。
 
-#### E3e. 🟡 ConfigModal sub-components のテスト (新規, D2b 除外分)
-- **現状**: D2b で「ConfigModal 内タブは useProject 経由のテスト + BiweeklyTab で間接カバー済み」として除外。
-- **改善**: TeacherManager (CSV import 含む) / BasicSettings / AbsenceNgPanel (旧 NgSettings + ExternalCounts を統合した 1000 行コンポーネント) / CombinedGroupSettings に直接の UI テストを追加。D5a で a11y 属性追加分の回帰もここで捕捉。
-- **規模**: 中 / **価値**: 中
+#### E3e. ✅ ConfigModal sub-components のテスト拡充 (2026-07-03 完了)
+- **旧現状**: 各 sub-component のテストは回帰シナリオ中心で薄かった
+  (TeacherManager 3 件 / AbsenceNgPanel 11 件 (1254 行) / SubjectManager 3 件)。
+- **実装 (+38 件、いずれも既存ファイルへ追記)**:
+  - **TeacherManager (3→18)**: 追加 (showInput→addTeacher) / 削除 (confirm ゲート) /
+    InlineNameEdit (Enter・blur commit / Escape 破棄 / 同値・空白 no-op) /
+    担当科目トグル / CSV import 実行 (append は confirm なし・replace は confirm、
+    0 行 disabled、未登録科目 warning、キャンセル)。教科グループ表示で並びが
+    変わっても「元の teachers index」で dispatch されることを固定。
+  - **AbsenceNgPanel (11→26)**: 他学年セッション一括登録 (講師×期間の直積、
+    登録後の時刻・メモ clear と講師・期間の保持) / 時刻バリデーション 2 種 /
+    まとめてNG・OK解除 (解除のみ confirm、拒否で no-op、全時限 allMode の解決) /
+    モード切替での external フィールド clear / 日付セクション (セッション一覧・
+    削除、自動NG セルの「自」+ tooltip + NG 件数バッジ、折りたたみ・再展開) /
+    クイック数値グリッド (draft-commit、セッション有セルは件数表示、
+    明示 0 と未入力の区別)。
+  - **SubjectManager (3→9)**: 科目の追加 / 削除 (cascade 警告 confirm) /
+    並び替え (▲▼ と端の disabled)。
+  - **CombinedGroupSettings (9→11)**: 削除経路 (confirm なしの即時 dispatch) /
+    編集中に別グループを削除しても draft が維持されること。
+- **対象外**: BasicSettings (17 件) / ClassPriority / GenerationSettings /
+  NgCsvImport / TemplateManager / DraftNumberInput は既に十分な直接テストあり。
 
 #### E3f. ⚪ 視覚回帰テスト (新規)
 - **現状**: 無し。
@@ -841,10 +910,66 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 - **改善**: SubjectSelect / TeacherSelect / CellLockButton 分離 + `useCellNavigation` hook。
 - **規模**: 中 / **価値**: 中 (E3e の UI テスト容易性 UP)
 
-#### E5e. 🟡 TypeScript 化 (旧 D7a)
-- **現状**: Builder 配下は JS。Project / Tab / Config / ScheduleEntry / CombinedGroup の型定義が無いため、reducer や analysisHelpers のリファクタが reflective に進めにくい。
-- **改善**: `.jsx` → `.tsx`、型定義を `types/` に。E5b と同時実施で「型と structure を一発で固める」のがベスト。
-- **規模**: 大 / **価値**: 中〜高 / **「壊す」候補**
+#### E5e. ✅ TypeScript 化 (旧 D7a / **全 Phase 完了 2026-07-03**)
+- **✅ Phase 1 (データモデル核)**: `types.ts` を新設し、ドメインモデル
+  (Project / Tab / TabConfig / Entity / ScheduleEntry / Teacher /
+  CombinedGroup / ExternalSession / Preset / TabSnapshot /
+  GenerationParams / ProjectState) を単一の正として定義。以下 6 ファイルを
+  `.ts` 化 (拡張子リネーム + 型注釈、挙動不変):
+  - `utils/generationParams.ts` / `utils/projectSchema.ts` /
+    `utils/scheduleKey.ts` / `utils/constants.ts` /
+    `hooks/projectFactory.ts` / `hooks/projectReducer.ts`
+  - **projectReducer は全 55 アクションの discriminated union
+    (`ProjectAction`)** を定義。payload 形状はこの型が単一の正 —
+    新アクションはまず union に足してから case を書くこと
+  - migrate 系 (v1〜v3 の旧形状 / 外部 JSON を受ける関数) は入力を
+    `any` で受けて出力を v4 型に揃える方針 (untrusted 入力の正規化が
+    仕事なので入力に型を貼らない)
+  - tsconfig は既存 (strict: false / allowJs) のまま。テスト 1814 件 +
+    E2E 2 件 + build で挙動不変を確認
+- **✅ Phase 2a (reducer の cascade 依存)**: `utils/combinedPropagation.ts` /
+  `utils/labelRefs.ts` / `utils/tabUsage.ts` も `.ts` 化 (同日)。reducer が
+  import する層は全て型付きになり、データモデル核が閉じた
+- **✅ Phase 2b (utils 残り + logic 全部、同日)**: **utils と logic は全ファイル
+  TS 化完了** (計 20 ファイル)。
+  - utils: patternLoad / tabPresence / generationFingerprint / templates /
+    scheduleDiff / storageHealth / autoNg / contrast / timeRange /
+    dateGenerate / groupTeachersBySubject / fixSuggestions / csvImport /
+    analysisHelpers / excelExport
+  - logic: constraints ×2 / autoGenerator / runGenerator /
+    autoGenerator.worker
+  - 公開した主な型: `GenerationResult` / `GenerationProgress` /
+    `GeneratorHandle` (ソルバ) / `GlobalUsage` / `TeacherDailyCount` (分析) /
+    `AutoNgEntries` / `FixSuggestion` / `TimeRange` / `ScheduleDiff` /
+    `TeacherGroup` / `ProjectTemplate` など
+  - worker (.ts) は tsconfig が DOM lib のため `self` をローカル型で cast
+    (実行時挙動は不変)。runGenerator は `vite/client` の型参照で
+    `?worker` import を解決
+  - 検証: vitest 1814 + lint + build + **Playwright E2E (実 Worker 経路) 2 件**
+    全パス
+- **✅ Phase 3 (React 層、同日) — これで E5e は完了**:
+  - hooks 11 + contexts (value 2 + Provider 2) + onboardingSteps を `.ts` 化、
+    components 21 + BuilderApp を `.tsx` 化。**builder の非テスト source は
+    100% TypeScript** になった
+  - `ProjectContextValue` は `ReturnType<typeof useProject> &
+    ReturnType<typeof useAnalysis>` で導出 (useProject の公開 API 変更に
+    自動追従)。`UIContextValue` (showToast / showConfirm / showInput) は
+    明示 interface
+  - 全アクションフックの dispatch が `Dispatch<ProjectAction>` になり、
+    payload 形状ミスがコンパイルエラーになる
+  - 主要コンポーネントに Props interface (Toolbar / SummaryPanel
+    (`GeneratedPattern` を公開) / ContextMenu (`BuilderContextMenuState` /
+    `CellClipboard`) / ScheduleTable / ScheduleCell / OnboardingOverlay /
+    DraftNumberInput / ConfigModal)
+  - **@types/react / @types/react-dom を導入** (従来は react が型無しで
+    全て any だった)。eslint は @typescript-eslint/parser + plugin を追加し、
+    ts/tsx でも react-hooks ルールを維持 (no-undef と素の no-unused-vars は
+    TS 構文へ誤反応するため tsc 側に委譲)
+  - `e.target.blur()` → `e.currentTarget.blur()` の 3 箇所は等価な型安全化
+    (input 自身のハンドラなので target === currentTarget)
+- **残り (任意)**: テストファイル 54 件は `.js`/`.jsx` のまま (vitest 実行には
+  支障なし)。`strict: true` の段階導入は別課題
+- **規模**: 大 / **価値**: 中〜高
 
 #### E5f. ⚪ state management ライブラリ検討 (新規)
 - **現状**: useReducer + Context + 手書き useMemo (CLAUDE.md にも記載) で re-render を抑えている。
@@ -952,14 +1077,14 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | **テスト深化** | E3a (Worker E2E) / E3e (Config sub-tests) / E3b (Excel 検証) | 中 | 触っても壊れない基盤 |
 | **機能拡張** | E2a (CSV 拡張) / E2e (生成 param UI) / E2b (修復 wizard) | 中〜大 | 新規ユーザ獲得 + 上級者対応 |
 | **モバイル対応** | E1a (狭画面) / E1f (タッチ) | 中 | 移動先確認の体験 |
-| **Major refactor (要決断)** | E5e (TS) → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
+| **Major refactor (要決断)** | ~~E5e (TS)~~ ✅ → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
 | **新領域 (要 PM 判断)** | E6a (Firebase) / E7a (NL 制約) / E7b (緩和提案) | 大 | プロダクト方向性の選択 |
 
 ### E 系の「一旦壊した方が良い」候補
 
 | # | 項目 | 推奨アプローチ | リスク |
 |---|---|---|---|
-| **E5e** | TypeScript 化 | Builder 配下を `.tsx` 化、型定義を `types/` に集約。E5b と抱き合わせ | Vite/Vitest 設定追加、外部型のインストール |
+| ~~**E5e**~~ ✅ | TypeScript 化 | 完了 (2026-07-03)。types.ts + 全 source の TS/TSX 化 | — |
 | **E5b** | combinedGroups / externalCounts 完全 ID 化 | E5e と一緒に。reducer の cascade cleanup を撤廃 | JSON 出力が人間可読でなくなる、タブ間自動共有が失われる |
 | **E5c** | Tailwind / inline-style 統一 | 親アプリの paradigm に合わせ Builder を inline 化 | Builder UI 全面書き直し |
 | **E6a** | Firebase 同期 | LocalStorage は cache レイヤとして残し sync は subscribe 型 | 認証 / コンフリクト / コスト |
@@ -967,7 +1092,7 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | **E5f** | state management ライブラリ | Zustand へ部分置換から | 動いているものを置き換えるコスト |
 
 優先度判断の目安:
-- **必ずやる**: E5e (TS) → 残りすべての refactor の前提
+- ~~**必ずやる**: E5e (TS)~~ ✅ 完了 → 残りの refactor (E5b 等) の前提が整った
 - **やる価値が高い**: E5b (ID 化) → reducer 簡略化、E5c (style 統一) → 長期 maintenance
 - **要件次第**: E6a (Firebase) → 共有ニーズが顕在化したら
 - **慎重に判断**: E5f / E5h → 動作優先で見送りもアリ
@@ -1379,13 +1504,14 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 
 ### G.1 判断待ち (実装前にユーザ/PM の決定が必要)
 
-- **F5p**: 他タブで作った合同グループを現タブで「編集」すると、他タブの
-  クラスが未選択表示になり解除も不能 (タブ混成グループが作れる)。
-  combinedGroups が project 共有・ラベル参照である以上、仕様の可能性もある。
-  選択肢: (a) 編集は全タブのクラスを表示 (b) 他タブ由来のグループは
-  現タブから読み取り専用 (c) 現状維持を仕様と明記
-- **E5 系の着手判断** (壊す系): E5e TypeScript 化 → E5b 完全 ID 化 →
-  E5c style 統一 の順が推奨 (E 系末尾の表参照)。着手は要相談
+- ✅ **F5p** (2026-07-03 案 (b) で実装): 他タブ由来 (= 現タブに無いクラス /
+  日程ラベルを含む) 合同グループは現タブから**読み取り専用**。編集ボタンを
+  disabled にし「🔒 他タブのクラス・日程 (...) を含むため、このタブでは
+  編集できません」を表示。削除は孤立グループ (作成元タブが消えた等) の
+  掃除経路として全タブで許可。テスト 4 件 (CombinedGroupSettings.test.jsx)
+- **E5 系の着手判断** (壊す系): ~~E5e TypeScript 化~~ ✅ 完了 (2026-07-03)。
+  残る壊す系は E5b 完全 ID 化 → E5c style 統一 の順が推奨
+  (E 系末尾の表参照)。着手は要相談
 
 ### G.2 実機・実環境での検証 (コード変更なし or 検証後に判断)
 
@@ -1394,6 +1520,9 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 - **F5s**: useLongPress のゴースト click (メニューが指の真下に出るため
   長押し後の click が先頭項目を誤爆しうる) / 抑止フラグの解除漏れ。
   iOS Safari 等での実機検証が必要
+- **E1a/E1f 残**: タッチ CSS (44px min-height / ダブルタップズーム抑止 /
+  長押し中の選択抑止) とモバイルレイアウト全般の実機確認
+  (コード側は 2026-07-03 完了)
 - **C4 残**: exceljs 出力の見栄え (科目カラー / 結合 / 罫線 / 列幅) の目視確認
 - **A7** (CLAUDE.md 既存): Shift+? の US/JP キーレイアウト実機検証
 - **スクリーンリーダー実機検証**: F2a で操作は可能になったが NVDA/VoiceOver
@@ -1455,16 +1584,16 @@ F.2/F.4/F.5 に散在していた残課題と E 系未着手を 1 箇所に集�
 ### G.5 機能・テストの未着手 (E 系、規模順)
 
 小〜中: E1h 印刷微調整 · E8c GIF · E8d 残 (D 系の折りたたみ整形) ·
-E4d useAnalysis プロファイル ·
-E1a/E1f 残 (ScheduleTable 幅 / 44px / ピンチ抑止 / ヘッダ長押し) ·
-D7c テスト共通基盤
+E4d useAnalysis プロファイル · D7c テスト共通基盤
+(~~E1a/E1f 残~~ ✅ 2026-07-03 コード側完了、実機確認は G.2)
 
-中: E3a Worker E2E · E3b Excel バイナリ検証 · E3c 印刷スナップショット ·
-E3e ConfigModal sub-tests 拡充 · E3g クロスブラウザ · E4b ソルバ計測 ·
+中: E3c 印刷スナップショット · E3g クロスブラウザ · E4b ソルバ計測 ·
 E2a Excel 取込 (要 mapping UI)
+(~~E3e ConfigModal sub-tests 拡充~~ ✅ +38 件 / ~~E3a Worker E2E~~ ✅
+Playwright ×2 / ~~E3b xlsx round-trip~~ ✅ — いずれも 2026-07-03 完了)
 
 大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
-E5 系 (TS / ID / style / state lib / Worker 分析) · E6a Firebase ·
+E5 系残り (ID / style / state lib / Worker 分析 — ~~TS~~ ✅ 完了) · E6a Firebase ·
 E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
 
 ### G.6 推奨する次の一手 (§H の親アプリ側課題も参照)
@@ -1477,16 +1606,19 @@ F2h前段 / F2j / F2m も同時に解消)。
 **G.3 / G.4 のコード側課題はこれで全て完了** — 残るのは判断待ち (G.1)、
 実機検証 (G.2)、E 系の未着手 (G.5) のみ。
 
+~~3. コードの軽い一手なら E3e~~ ✅ E3e 完了 (2026-07-03、+38 件で 1804 に)。
+
 現在の推奨順:
 
-1. **2 バッチ分の PR レビュー・マージ**
-   (claude/roadmap-improvements-7hmnva ブランチ)
+1. ~~2 バッチ分の PR レビュー・マージ~~ ✅ PR #143 マージ済み (2026-07-03)
 2. 実運用前に **G.2 の R1** (本番 Worker) と **C4 残** (Excel 見栄え) を確認
    — コード変更なしの検証項目で、ユーザの実環境が必要
-3. コードの軽い一手なら **E3e** (ConfigModal sub-tests 拡充) →
-   **E3a** (Worker E2E) のテスト深化、あるいは **E1a/E1f 残** (モバイル)
-4. 仕様判断が要るもの: **F5p** (他タブ合同グループの編集挙動、G.1 参照)
-5. 大きい投資は **E5e TypeScript 化** から (E 系の推奨順どおり)
+3. コードの軽い一手なら **E3c** (印刷スナップショット — Playwright 基盤は
+   E3a で導入済み) か **E4b** (ソルバ計測)
+   (~~E1a/E1f 残~~ ✅ / ~~F5p~~ ✅ / ~~E3a~~ ✅ / ~~E3b~~ ✅ 2026-07-03 完了)
+4. ~~大きい投資は E5e TypeScript 化 から~~ ✅ **E5e は全 Phase 完了
+   (2026-07-03)** — builder の非テスト source は 100% TypeScript。
+   次の大物は **E5b (完全 ID 化)** か **E5c (style 統一)** (着手は要相談)
 
 ---
 
@@ -1517,6 +1649,17 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
   追加授業の担当者が休む場合は現状「編集で担当を書き換える」運用。規模: 中
 - **H1e. 印刷対応の確認**: Dashboard 日別のカードは既存の印刷系統
   (PrintButton) に乗るはずだが、紙面での見え方は未確認 (実機確認項目)
+- ✅ **H1f (2026-07-03 ユーザ報告で発覚・修正)**: 複数講師の追加授業が
+  講師のスケジュールに出ないバグ。原因は区切り文字の不一致 —
+  isSlotForTeacher / getSlotTeachers は "·" (U+00B7) しか複数講師区切りと
+  認識しないが、IME の素の入力は "・" (U+30FB) になる。修正:
+  ①マッチングを 3 種の中点 [·・･] + 前後空白 trim に拡張
+  (`splitTeacherField` を biweekly.js に新設 — 既存の保存済みデータも
+  表示されるようになる)、②ExtraLessonManager の保存時に正史の "·" へ
+  正規化 ("·" しか見ない他の消費側との整合)。テスト +5
+- ✅ **H1g (2026-07-03)**: 追加授業の 📋 コピーボタン。一覧の内容を
+  フォームへ複製して新規登録状態にする (実施日は誤登録防止のため
+  引き継がず選び直し)。次の講習期の一括登録が楽になる。テスト +2
 
 ### H.2 調査で見つかった既存コードの改善候補 (2026-07-03)
 
@@ -1528,12 +1671,14 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
   (types.d.ts / schema.ts)。「講習」の表現が builder / koshu timetable /
   extraLessons の 3 概念に割れないよう、koshu type を正式実装するか
   廃止するかの設計判断が要る
-- **H2c. ExcelGridView の回数計算が深夜 0 時跨ぎで更新されない**
-  (`new Date()` が useMemo deps 外、コード内コメントで既知)。実害は
-  日付を跨いで開きっぱなしのタブのみ。規模: 小
-- **H2d. id 採番の手書き重複**: `useSessionOverridesCrud.upsert` と
-  `useAdjustmentsCrud.replace` が `Math.max(...)+1` を手書きしており
-  `nextNumericId` (schema.ts) を使っていない。統一余地。規模: 小
+- ✅ **H2c** (2026-07-03): ExcelGridView の回数計算が深夜 0 時跨ぎで
+  更新されない問題を修正。`hooks/useToday.js` を新設 (「今日」の
+  "YYYY-MM-DD" を state 化し、翌 0 時 +1 秒に setTimeout で更新・再アーム)
+  し、`sessionTargetDate` の useMemo が `today` を deps に取る形に。
+  テスト 4 件 (useToday.test.jsx、fake timers で日跨ぎ・再アーム・cleanup)
+- ✅ **H2d** (2026-07-03): `useSessionOverridesCrud.upsert` と
+  `useAdjustmentsCrud.replace` の手書き `Math.max(...)+1` を
+  `nextNumericId` (schema.ts) に統一。挙動等価 (非数値 id の防御は向上)
 - **H2e. 孤立データ検出 (`detectOrphans`) が import 時のみ**: slot 削除の
   cascade は useSlotsCrud にあるが、adjustments / sessionOverrides を直接
   削除しても classSets の slotIds 参照は掃除されない (FK 検証は import 時
@@ -1548,7 +1693,7 @@ WeekView 直近バナーへの表示 / Export・Import・Reset 配線。
 
 - 追加授業の削除は cascade 無しの単純削除なので `removeWithUndo`
   (リポジトリ CLAUDE.md の削除 UX ルールどおり)。参照 (FK) を持たせる
-  拡張 (H1c/H1d) をする場合は `confirmedRemove` への切替を検討すること
+  拡張 (H1d。H1c は却下済み) をする場合は `confirmedRemove` への切替を検討すること
 - 追加授業は「その日にやる」と明示登録した単発コマなので、休講日でも
   巻き添えにせず表示する仕様 (Dashboard / MonthView とも)。終講日
   cutoff (未確定期間) では他と同様に非表示
@@ -1602,3 +1747,68 @@ DraftNumberInput の Escape 飲み込み (DraftListTextarea 等と同じ確立�
 DashboardListView の走査非対称 (holidaysFor 等も同方式) /
 no-op ガードの一般化 (F2d で不採用と記録済み) /
 ParamRow と DraftNumberInput の統合 (F2l で見送りと記録済み)
+
+
+---
+
+## J. 2026-07-03 校正レビュー (claude/improvement-work-1jpkrp、4 観点 × 個別検証)
+
+PR #144 の全変更 (11 コミット: E3e / H2c / H2d / F5p / E1a・E1f / E3a / E3b /
+E5e ×4 / H1f・H1g) を 4 観点 (①TS 変換の挙動等価性 ②親アプリ変更の正確性
+③builder UX 変更と CLAUDE.md 規約準拠 ④ドキュメント整合) で並列レビューし、
+候補を個別検証。**コード 9 件 + ドキュメント 12 件を同日修正** (テスト
+1821 → 1824)。TS 変換の式レベル変更 22 件は 21 件が等価確認、1 件のみ
+非等価 (下記 J.1-2) だった。
+
+### J.1 修正済み (コード)
+
+1. **週次スロットの複数講師 split-brain 防止**: H1f のマッチング拡張
+   ([·・･] 受理) 後、SlotForm (週次) だけ入力正規化が無く、"·" しか
+   split しない読み手 7 箇所と食い違う余地があった → SlotForm 保存時にも
+   "·" へ正規化し、tokenize 箇所 (StaffManagerView ×2 / subjectMatch /
+   ChainSubstitutionPanel ×2 / SubstitutePickerPopover /
+   ReschedulePickerPopover ×2) を splitTeacherField に統一
+2. **fixSuggestions の `maxDailyHours = 0` デフォルト撤去**: TS 化で足した
+   デフォルト値が旧挙動と非等価 (未指定時に「0 → N に上げる」という嘘の
+   setMaxDaily 提案を生成)。production 経路 (useAnalysis) は常に数値を
+   渡すため実害は無かったが、旧挙動へ復元
+3. **types.ts の実形状乖離 ×2**: ExternalSession.label / memo を optional 化
+   (migrate は補完しない)。Project.externalCounts は migrate 側で欠落 → {}
+   補完に変更 (必須宣言との整合、テスト +1)
+4. **F5p の案内文言**: 「他タブのクラス・日程」→「現在のタブに無い
+   クラス・日程」(自タブの使う日から外した場合も read-only になるため
+   「他タブ」は事実誤認になり得た)
+5. **F5p の保存時再検証**: 編集ボタンの disabled は render 時のゲートのみで、
+   編集中に Undo (Ctrl+Z は ConfigModal 表示中も window で発火する) 等で
+   project が変わると draft が現タブに無いラベルを抱えたまま保存できた →
+   draftError に foreign ref 検証を追加 (テスト +1)
+6. **タッチ 44px のスケジュール表除外**: セル内に select が縦 2 つ並ぶため
+   44px 適用で行高が ~2.5 倍になり compact モードが無効化していた →
+   `.print-container` 内の button / select を除外 (セルは td 全体がタップ
+   対象なので実効領域は既に広い)
+7. **playwright.config の reuseExistingServer**: `true` 固定 → `!process.env.CI`
+   (CI で 5173 の別プロセスを誤対象にしない慣習)
+8. **eslint**: ルート設定ファイル (*.config.js) に node globals を追加
+   (playwright.config の process 参照が no-undef になっていた)
+9. **SlotForm 正規化のテスト** (+1) を含む上記のテスト追加一式
+
+### J.2 修正済み (ドキュメント)
+
+ROADMAP: テスト総数 (1814 → 実数) ×2 / 「49 ファイル」→ 67 /
+Phase 3 の「hooks 12 / components 22」→ 11・21 / E5e 見出しの 🟡 残存 →
+✅ / §0 未着手系統・§G.1・§G.5 の「E5 系 (TS…)」残存 → E5b/E5c のみに /
+§0 表に E5 行を追加 / §H.3 の H1c 参照 (却下済み) を H1d のみに。
+types.d.ts: ExtraLesson の doc コメント 2 件 (H1c 却下の反映 /
+teacher 区切りは splitTeacherField 経由と明記)。
+CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力は [·・･] 受理 /
+分解は splitTeacherField)。
+
+### J.3 記録のみ (対応不要と判断)
+
+- **講師名自体に中黒を含むケース** (カタカナ外国名等) は splitTeacherField が
+  2 名に分割する。現行の講師は日本姓のみで該当なし。**講師名に中黒は
+  使わない運用とする** (複数講師の区切り専用)
+- fixSuggestions の非等価は production 到達不能だった (テスト・直接呼び出し
+  のみ顕在化) — 修正済みだが実害は無し
+- Playwright の port 5173 固定は vite デフォルトとの整合前提 (strictPort は
+  dev の UX を落とすため導入しない)

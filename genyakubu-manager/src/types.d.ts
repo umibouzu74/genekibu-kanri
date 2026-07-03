@@ -173,8 +173,8 @@ export interface SpecialEvent {
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
 // 通常授業と同様にスケジュール表示 (Dashboard 日別 / MonthView /
-// WeekView バナー) へ反映する。回数カウント (sessionCount) には現状
-// 含めない (既存コマへの紐付けと通算は将来拡張、ROADMAP 参照)。
+// WeekView バナー) へ反映する。回数カウント (sessionCount) には
+// **含めない仕様で確定** (H1c は 2026-07-03 に却下、CLAUDE.md 参照)。
 export interface ExtraLesson {
   id: number;
   date: string; // "YYYY-MM-DD" 実施日
@@ -183,7 +183,8 @@ export interface ExtraLesson {
   cls?: string; // クラス (任意)
   room?: string; // 教室 (任意)
   subj: string; // 科目・講座名
-  teacher: string; // 担当講師 ("·" 区切りの複数名も可、Slot と同じ)
+  teacher: string; // 担当講師。複数名は "·" 区切りが正史 (分解は必ず
+  // utils/biweekly.splitTeacherField を使う — "・"/"･" の IME 入力も受理する)
   label?: string; // 種別ラベル (例: "夏期講習", "テスト対策")
   note?: string; // メモ (任意)
 }

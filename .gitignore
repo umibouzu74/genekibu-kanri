@@ -40,3 +40,7 @@ Thumbs.db
 ################
 node_modules/
 dist/
+
+# Playwright (E2E) artifacts
+test-results/
+playwright-report/

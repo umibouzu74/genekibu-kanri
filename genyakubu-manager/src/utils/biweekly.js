@@ -169,23 +169,36 @@ export function weightedSlotCount(slots) {
   return total;
 }
 
+// 複数講師の区切り文字。正史 (既存データ・表示) は "·" (U+00B7) だが、
+// 日本語 IME で普通に入力すると "・" (U+30FB 全角中点) や "･" (U+FF65
+// 半角中点) になる。手入力フィールド (追加授業の担当など) で別種の中点が
+// 入ると、その講師のスケジュールに一切表示されない silent 欠落になるため、
+// マッチングは 3 種すべてを区切りとして扱う。
+const TEACHER_SEPARATOR = /[·・･]/;
+
+// teacher フィールドを講師名の配列に分解する ("·"/"・"/"･" 区切り +
+// 各名前の前後空白を除去)。空フィールド・undefined は []。
+export function splitTeacherField(field) {
+  return String(field ?? "")
+    .split(TEACHER_SEPARATOR)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 // Check whether a slot belongs to the given teacher.
 // Matches on: direct teacher field, biweekly partner in note, or
-// multi-teacher field separated by "·".
+// multi-teacher field (区切りの扱いは splitTeacherField を参照)。
 export function isSlotForTeacher(slot, teacher) {
   if (slot.teacher === teacher) return true;
   if (slot.note?.includes(teacher)) return true;
-  if (slot.teacher.includes("·") && slot.teacher.split("·").includes(teacher)) return true;
-  return false;
+  return splitTeacherField(slot.teacher).includes(teacher);
 }
 
 // Extract individual teacher names from a slot's teacher field.
 // "香川·福江·川井" → ["香川", "福江", "川井"]
 // "堀上" → ["堀上"]
 export function getSlotTeachers(slot) {
-  if (!slot.teacher) return [];
-  if (slot.teacher.includes("·")) return slot.teacher.split("·");
-  return [slot.teacher];
+  return splitTeacherField(slot.teacher);
 }
 
 // Format a weighted count for display.

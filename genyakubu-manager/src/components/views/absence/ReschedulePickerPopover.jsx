@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { splitTeacherField } from "../../../utils/biweekly";
 import { dateToDay, DAY_COLOR as DC, fmtDate, WEEKDAYS } from "../../../data";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
@@ -110,10 +111,7 @@ export function ReschedulePickerPopover({
   const teacherOptions = useMemo(() => {
     const names = new Set(allTeachers || []);
     if (slot?.teacher) {
-      for (const t of String(slot.teacher).split("·")) {
-        const name = t.trim();
-        if (name) names.add(name);
-      }
+      for (const name of splitTeacherField(slot.teacher)) names.add(name);
     }
     return sortJa([...names]);
   }, [allTeachers, slot]);
@@ -147,12 +145,7 @@ export function ReschedulePickerPopover({
         (s) =>
           s.day === dow &&
           s.time === targetTime &&
-          (teacher
-            ? String(s.teacher || "")
-                .split("·")
-                .map((x) => x.trim())
-                .includes(teacher)
-            : false)
+          (teacher ? splitTeacherField(s.teacher).includes(teacher) : false)
       );
       if (conflict) {
         list.push(
