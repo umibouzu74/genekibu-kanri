@@ -183,13 +183,23 @@ export default function TeacherManager() {
     }
     const newCount = entries.filter(p => !existingNames.has(p.name)).length;
     const updCount = entries.length - newCount;
+    // §M: builder の科目マスタに無い担当科目は、そのまま取り込むと UI に
+    // 出ない「見えない割当」になる (CSV 経路の L4c と同じ問題)。マスタへ
+    // 併せて追加することを confirm に明示した上で addSubjects する。
+    const knownSubjects = new Set(project.subjects || []);
+    const unknownSubjects = [...new Set(entries.flatMap(p => p.subjects))]
+      .filter(sub => !knownSubjects.has(sub));
     const ok = await showConfirm(
       `親アプリの講師 ${entries.length} 名を取り込みますか？\n` +
         `(新規 ${newCount} 名 / 担当科目の更新 ${updCount} 名。` +
-        `NG・優先クラスなどの既存設定は維持されます)`,
+        `NG・優先クラスなどの既存設定は維持されます)` +
+        (unknownSubjects.length > 0
+          ? `\n\n未登録の科目 ${unknownSubjects.length} 件 (${unknownSubjects.join('・')}) を科目マスタへ追加します。`
+          : ''),
       { title: '親アプリから講師を取り込む', confirmLabel: '取り込む' },
     );
     if (!ok) return;
+    if (unknownSubjects.length > 0) addSubjects(unknownSubjects);
     importTeachers(entries, 'append');
     showToast(`親アプリから ${entries.length} 名を取り込みました`, 'success', 4000);
   };

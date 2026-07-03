@@ -50,3 +50,20 @@ describe('summarizeUnfilled (L3e)', () => {
     expect(summarizeUnfilled({}, null)).toEqual({ cells: [], shortages: [] });
   });
 });
+
+describe('summarizeUnfilled — クラス別の不足集計 (§M)', () => {
+  it('あるクラスの超過が別クラスの不足を相殺しない', () => {
+    const config2 = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1限' }],
+      classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+      subjectCounts: { '数学': 1 },
+    };
+    // A は数学 2 (超過 subjectOver 状態)、B は数学 0 → B の 1 コマ不足は表示すべき
+    const { shortages } = summarizeUnfilled({
+      [makeKey(1, 1, 1)]: { subject: '数学', teacher: '田中' },
+      [makeKey(2, 1, 1)]: { subject: '数学', teacher: '田中' },
+    }, config2);
+    expect(shortages).toEqual([{ subject: '数学', missing: 1 }]);
+  });
+});

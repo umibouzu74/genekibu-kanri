@@ -36,6 +36,17 @@ export const clampGenerationParam = (key: GenerationParamKey, value: unknown): n
   return Math.max(b.min, Math.min(b.max, n));
 };
 
+// §M: 生成に使う baseSeed を決める。generationSeed (非 0) はそのまま、
+// 0 (= 毎回ランダム) は now を bounds 内 [1, max] に折り畳む。Date.now() を
+// そのまま使うと結果パネルに表示される seed (13 桁) が入力上限 (9 桁) を
+// 超え、⚙️ に入力しても clamp されて「再現できます」の約束が破れる
+// (校正レビューで発覚)。mulberry32 は `seed | 0` の 32bit 演算なので
+// 下位桁だけでも乱数品質・案の多様性は変わらない。
+export const resolveBaseSeed = (generationSeed: number, now: number): number => {
+  if (generationSeed > 0) return generationSeed;
+  return (Math.abs(Math.floor(now)) % GENERATION_PARAM_BOUNDS.generationSeed.max) + 1;
+};
+
 // project から有効な生成パラメータを取り出す (未設定はデフォルト + clamp)。
 export const resolveGenerationParams = (project?: Partial<Project> | null): GenerationParams => ({
   numPatterns: clampGenerationParam('numPatterns', project?.numPatterns ?? DEFAULT_NUM_PATTERNS),

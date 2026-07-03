@@ -20,16 +20,29 @@ export default function SubjectManager() {
 
   // L4d: カンマ区切りで複数科目を一括追加できる (クラスの一括 textarea と
   // 同じ思想。8 科目 8 回モーダルの解消)。単一名は従来の subject/add。
+  // §M: 全角カンマ「，」(IME 設定で頻出) も区切りに含める。重複スキップは
+  // reducer 側で silent なので、件数の内訳を toast で伝える。
   const handleAddClick = async () => {
     const name = await showInput(
       "科目名を入力してください (カンマ区切りで複数追加できます)",
       { title: "科目の追加", placeholder: "例: 情報, 小論文" },
     );
     if (!name) return;
-    const names = name.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const names = [...new Set(name.split(/[,、，]/).map(s => s.trim()).filter(Boolean))];
     if (names.length === 0) return;
-    if (names.length === 1) addSubject(names[0]);
-    else addSubjects(names);
+    if (names.length === 1) {
+      addSubject(names[0]);
+      return;
+    }
+    const existing = new Set(commonSubjects);
+    const freshCount = names.filter(n => !existing.has(n)).length;
+    addSubjects(names);
+    showToast(
+      freshCount === names.length
+        ? `${freshCount} 科目を追加しました`
+        : `${freshCount} 科目を追加しました (登録済み ${names.length - freshCount} 件はスキップ)`,
+      'success', 3000,
+    );
   };
 
   // L4a: 列 (タブ) 単位の一括入力。「英語も数学も 4 コマ」を 1 回で。
@@ -44,8 +57,11 @@ export default function SubjectManager() {
       showToast('0 以上の数値を入力してください', 'error', 3000);
       return;
     }
-    fillSubjectCounts(tab.id, n);
-    showToast(`「${tab.name}」の全科目を ${Math.max(0, Math.round(n))} コマにしました`, 'success', 3000);
+    // §M: 丸めは UI 側で確定してから渡す (toast の表示値と reducer の
+    // 格納値がズレないように)
+    const rounded = Math.round(n);
+    fillSubjectCounts(tab.id, rounded);
+    showToast(`「${tab.name}」の全科目を ${rounded} コマにしました`, 'success', 3000);
   };
 
   // L4a: 列 (タブ) の値を他の全タブへコピー。「中3 の値を中1・2 にも」。

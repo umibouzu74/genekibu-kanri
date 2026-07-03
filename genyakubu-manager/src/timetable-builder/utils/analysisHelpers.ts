@@ -535,9 +535,23 @@ export function computeInfeasibilities({
   // 「実講師がまだ居ない」事実自体は実運用までに解消すべき有益な情報なので
   // 握りつぶさず、⚠ バッジに数えない informational 種別で出す
   const placeholderOnlyItems: Array<{ subject: string; demand: number }> = [];
-  const perDayCap = currentConfig.periods.length > 0
-    ? Math.min(maxDailyHours, currentConfig.periods.length)
-    : maxDailyHours;
+  // §M (L3a/L3b): capacity は講師ごとに個別上限を反映して合算する。
+  //   - 1 日あたり = min(講師の実効 1 日上限, 時限数)
+  //   - 通算 = maxTotalHours があればさらにキャップ (科目横断の配分は
+  //     保守的に「この科目単独で使い切れる」前提 = 供給を過大評価しない
+  //     方向には倒れないが、過小評価で誤警告もしない)
+  // 全体値一律だと個別上限で静的に解けない設定でも警告が沈黙する。
+  const teacherCapacity = (t: Teacher): number => {
+    const perDay = currentConfig.periods.length > 0
+      ? Math.min(resolveTeacherDailyLimit(t, maxDailyHours), currentConfig.periods.length)
+      : resolveTeacherDailyLimit(t, maxDailyHours);
+    let cap = perDay * currentConfig.dates.length;
+    const total = t.maxTotalHours;
+    if (typeof total === 'number' && Number.isFinite(total) && total > 0) {
+      cap = Math.min(cap, total);
+    }
+    return cap;
+  };
   const classLabels = new Set(currentConfig.classes.map(c => c.label));
   subjects.forEach(subject => {
     // 合同グループ (全日: dates === null) は 1 講師スロットで複数クラスの
@@ -555,7 +569,7 @@ export function computeInfeasibilities({
     const demand = (currentConfig.subjectCounts?.[subject] || 0) * effectiveClasses;
     if (demand === 0) return;
     const eligible = reals.filter(t => t.subjects?.includes(subject));
-    const capacity = eligible.length * currentConfig.dates.length * perDayCap;
+    const capacity = eligible.reduce((sum, t) => sum + teacherCapacity(t), 0);
     if (demand > capacity) {
       const placeholderTeaches = (teachers || []).some(
         t => t?.name === '未定' && t.subjects?.includes(subject)

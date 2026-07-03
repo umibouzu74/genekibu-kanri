@@ -178,3 +178,40 @@ describe('useJsonIO — テンプレートの同梱 (L1d)', () => {
     expect(onNotify).toHaveBeenCalledWith('読込完了', 'success');
   });
 });
+
+describe('useJsonIO — 読込エラー経路 (§M)', () => {
+  it('壊れた JSON は「読み込みエラー」を通知し dispatch しない', async () => {
+    const { result, dispatch } = setup();
+    const onNotify = vi.fn();
+    const file = new File(['{broken json'], 'p.json', { type: 'application/json' });
+    result.current.handleLoadJson({ target: { files: [file], value: '' } }, onNotify, vi.fn().mockResolvedValue(true));
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith('読み込みエラー', 'error'));
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('構造不正の JSON は理由付きで通知し dispatch しない', async () => {
+    const { result, dispatch } = setup();
+    const onNotify = vi.fn();
+    const file = new File([JSON.stringify({ tabs: [] })], 'p.json', { type: 'application/json' });
+    result.current.handleLoadJson({ target: { files: [file], value: '' } }, onNotify, vi.fn().mockResolvedValue(true));
+    await waitFor(() => expect(onNotify).toHaveBeenCalled());
+    expect(onNotify.mock.calls[0][0]).toContain('JSON の構造が不正です');
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('FileReader の onerror でも「読み込みエラー」を通知する', async () => {
+    const { result } = setup();
+    const onNotify = vi.fn();
+    const readSpy = vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function mockRead() {
+      // 読取失敗をシミュレート: onload ではなく onerror を発火
+      setTimeout(() => this.onerror?.(new Event('error')), 0);
+    });
+    try {
+      const file = new File(['x'], 'p.json', { type: 'application/json' });
+      result.current.handleLoadJson({ target: { files: [file], value: '' } }, onNotify, vi.fn());
+      await waitFor(() => expect(onNotify).toHaveBeenCalledWith('読み込みエラー', 'error'));
+    } finally {
+      readSpy.mockRestore();
+    }
+  });
+});

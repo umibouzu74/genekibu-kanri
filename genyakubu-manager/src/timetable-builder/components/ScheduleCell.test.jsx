@@ -282,3 +282,28 @@ describe('ScheduleCell — 講師ハイライト (L2a)', () => {
     expect(td.className).not.toContain('opacity-40');
   });
 });
+
+describe('ScheduleCell — ハイライトとドラッグの競合 (§M)', () => {
+  it('isDragOver 中はハイライト ring より drag ring を優先する', () => {
+    const { container } = render(
+      <ProjectContext.Provider value={defaultContext({ currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } } })}>
+        <table><tbody><tr>
+          <ScheduleCell
+            dateId={1} periodId={1} classId={1}
+            isCompact={false}
+            onContextMenu={vi.fn()} onDragStart={vi.fn()} onDragOver={vi.fn()}
+            onDragLeave={vi.fn()} onDrop={vi.fn()} onDragEnd={vi.fn()}
+            isDragOver={true}
+            isDragSource={false}
+            highlightTeacher="堀上"
+          />
+        </tr></tbody></table>
+      </ProjectContext.Provider>,
+    );
+    const td = container.querySelector('td');
+    // drag ring (bg-builder-info-soft 付き) が出て、ハイライト専用 ring 分岐は抑止される
+    expect(td.className).toContain('bg-builder-info-soft');
+    // data 属性 (一致マーカー) は維持
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(true);
+  });
+});

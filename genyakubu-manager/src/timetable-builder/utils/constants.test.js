@@ -9,6 +9,7 @@ import {
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
   DEFAULT_GENERATION_SEED,
+  resolveBaseSeed,
 } from './constants';
 
 describe('clampGenerationParam', () => {
@@ -130,5 +131,23 @@ describe('cleanSchedule (E4a)', () => {
     const out = cleanSchedule(p);
     expect(Object.keys(out.tabs[0].schedule)).toEqual(['d1-p1-c1']);
     expect(Object.keys(out.tabs[1].schedule)).toEqual(['d1-p1-c1']);
+  });
+});
+
+describe('resolveBaseSeed (§M)', () => {
+  it('generationSeed が非 0 ならそのまま使う', () => {
+    expect(resolveBaseSeed(12345, 1751500000000)).toBe(12345);
+  });
+
+  it('0 (毎回ランダム) は now を [1, max] に折り畳む — 表示 seed が入力上限を超えない', () => {
+    const seed = resolveBaseSeed(0, Date.now());
+    expect(seed).toBeGreaterThanOrEqual(1);
+    expect(seed).toBeLessThanOrEqual(GENERATION_PARAM_BOUNDS.generationSeed.max);
+    // 折り畳んだ値を ⚙️ に入力しても clamp で変わらない (再現可能)
+    expect(clampGenerationParam('generationSeed', seed)).toBe(seed);
+  });
+
+  it('同じ now からは同じ seed (決定的)', () => {
+    expect(resolveBaseSeed(0, 1751500000000)).toBe(resolveBaseSeed(0, 1751500000000));
   });
 });

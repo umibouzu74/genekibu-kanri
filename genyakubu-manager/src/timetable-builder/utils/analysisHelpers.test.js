@@ -1060,3 +1060,52 @@ describe('computeInfeasibilities — quotaCellMismatch と空ロックセル (F5
     expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 3, cells: 4 });
   });
 });
+
+describe('computeInfeasibilities — 講師個別上限の反映 (§M)', () => {
+  const twoDayConfig = () => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }],
+    subjectCounts: { '英語': 2 },
+  });
+
+  it('通算上限 (maxTotalHours) の合計 < 需要なら capacity 警告が出る (L3b)', () => {
+    // 需要 2、講師 1 名 (通算上限 1) → 静的に不可能
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], maxTotalHours: 1 }],
+      commonSubjects: ['英語'],
+      currentConfig: twoDayConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ subject: '英語', demand: 2, capacity: 1 });
+  });
+
+  it('個別の 1 日上限 (maxDailyHours) も capacity に反映される (L3a)', () => {
+    // 需要 4 (2コマ×2クラス相当を 1 クラス設定で再現: quota 2 × 2 日構成)。
+    // 個人上限 1 コマ/日 × 2 日 = capacity 2 < 需要 4 → 警告
+    const config = {
+      ...twoDayConfig(),
+      classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    };
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], maxDailyHours: 1 }],
+      commonSubjects: ['英語'],
+      currentConfig: config,
+      maxDailyHours: 6,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ demand: 4, capacity: 2 });
+  });
+
+  it('個別上限が無ければ従来どおり全体値で計算 (回帰確認)', () => {
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: twoDayConfig(),
+      maxDailyHours: 6,
+    });
+    // capacity = min(6, 2時限) × 2日 = 4 ≥ 需要 2 → 警告なし
+    expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+});

@@ -2769,3 +2769,85 @@ describe('projectReducer — 使う日/時限選択の他タブコピー (L4g)',
     })).toBe(state);
   });
 });
+
+describe('projectReducer — L2c と合同グループの相互作用 (§M)', () => {
+  // 合同 { 英語, [３S, ３A] } を持つ 2 日構成
+  const combinedState = (schedule) => makeState({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+    teachers: [
+      { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ],
+    tabs: [{
+      id: 1, name: 'メイン',
+      config: {
+        dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+        subjectCounts: { '英語': 1, '数学': 1 },
+      },
+      schedule,
+    }],
+  });
+
+  it('copyDateColumn: 混在列 (合同主セル + 切り離した secondary) を複製しても複製元と一致する', () => {
+    // 複製元 12/25: ３S=英語/堀上 (合同主)、３A=数学/田中 (手動で切り離し)。
+    // per-cell paste 意味論だと ３A の複製時の cleanup が直前に複製した
+    // ３S=英語 を巻き添えで消す (§M レビューで発覚)。verbatim copy なら一致。
+    const state = combinedState({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 2 },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toEqual({ subject: '数学', teacher: '田中' });
+    // 複製元は不変
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('copyDateColumn: 複製先の合同ペア (両クラス英語) を上書きしても残骸が残らない', () => {
+    // 複製先 12/26 は合同英語ペア。複製元 12/25 は ３S=数学 のみ。
+    const state = combinedState({
+      [makeKey(1, 1, 1)]: { subject: '数学', teacher: '田中' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 2)]: { subject: '英語', teacher: '堀上' },
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/copyDateColumn', payload: { sourceDateId: 1, targetDateId: 2 },
+    });
+    // 複製元と一致: ３S=数学、３A=空
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '数学', teacher: '田中' });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toBeUndefined();
+  });
+
+  it('applyToAllDates: 合同主セルの適用は各日の secondary へも伝播する', () => {
+    const state = combinedState({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/applyToAllDates', payload: { dateId: 1, periodId: 1, classId: 1 },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    // 合同伝播で ３A にも入る
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]).toMatchObject({ subject: '英語', teacher: '堀上' });
+  });
+
+  it('applyToAllDates: 適用先の旧科目の合同 secondary は cleanup される', () => {
+    // 12/26 に旧・合同英語ペアが居る状態で、12/25 の数学を全日に適用
+    const state = combinedState({
+      [makeKey(1, 1, 1)]: { subject: '数学', teacher: '田中' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 2)]: { subject: '英語', teacher: '堀上' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/applyToAllDates', payload: { dateId: 1, periodId: 1, classId: 1 },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 1)]).toEqual({ subject: '数学', teacher: '田中' });
+    // 旧英語合同の secondary (３A) は残骸にならない (cleanup で空へ)
+    expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]?.subject).not.toBe('英語');
+  });
+});

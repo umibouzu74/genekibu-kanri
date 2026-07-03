@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
+import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 
@@ -240,7 +241,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const shouldDisable = isNg && entry.teacher !== t.name;
                 // 上限到達済み (これ以上選ぶと超過) の講師を警告色にする。
                 // 閾値は設定可能な maxDailyHours に追従 (旧: 4 固定)。
-                const nearLimit = daily.total >= maxDailyHours;
+                // §M: L3a の講師個別上限があればそちらを優先 (分析・solver と
+                // 同じ判定にしないと、警告なしで選べて直後に違反表示になる)。
+                const nearLimit = daily.total >= resolveTeacherDailyLimit(t, maxDailyHours);
                 return <option key={t.name} value={t.name} className={isNg ? "bg-builder-border text-builder-ink-ghost" : (nearLimit ? "bg-builder-warning-soft" : "")} disabled={shouldDisable}>{label}</option>;
               })}
             </optgroup>

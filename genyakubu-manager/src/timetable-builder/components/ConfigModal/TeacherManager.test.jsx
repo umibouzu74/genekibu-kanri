@@ -415,3 +415,31 @@ describe('TeacherManager — 雛形 CSV ダウンロード (L4f)', () => {
     expect(screen.getByText('⬇ 雛形CSV')).toBeInTheDocument();
   });
 });
+
+describe('TeacherManager — 親取込の未登録科目 (§M)', () => {
+  const LS_PART_TIME2 = 'genyakubu-part-time-staff';
+  const LS_SUBJECTS2 = 'genyakubu-subjects';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('builder に無い科目は confirm に明示され、addSubjects で併せて登録される', async () => {
+    localStorage.setItem(LS_PART_TIME2, JSON.stringify([{ name: '高橋', subjectIds: [9] }]));
+    localStorage.setItem(LS_SUBJECTS2, JSON.stringify([{ id: 9, name: '情報' }]));
+    const { fns, uiValue } = renderManager(); // builder 側は 英数国理社 のみ
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('未登録の科目 1 件 (情報)');
+    expect(fns.addSubjects).toHaveBeenCalledWith(['情報']);
+  });
+
+  it('全て登録済みの科目なら addSubjects を呼ばない', async () => {
+    localStorage.setItem(LS_PART_TIME2, JSON.stringify([{ name: '高橋', subjectIds: [1] }]));
+    localStorage.setItem(LS_SUBJECTS2, JSON.stringify([{ id: 1, name: '英語' }]));
+    const { fns } = renderManager();
+    fireEvent.click(screen.getByText('🔗 親アプリから取込'));
+    await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
+    expect(fns.addSubjects).not.toHaveBeenCalled();
+  });
+});

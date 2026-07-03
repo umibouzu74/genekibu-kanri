@@ -918,14 +918,19 @@ export default function App() {
               activeTimetableId={activeTimetableId}
               onChange={changeActiveTimetable}
             />
-            <button
-              type="button"
-              onClick={handlePrint}
-              aria-label="現在のビューを印刷"
-              style={{ ...S.btn(false), border: "1px solid #ccc" }}
-            >
-              🖨 印刷
-            </button>
+            {/* §M: 講習時間割作成 (BUILDER) はツールバー自前の 🖨️
+                (window.print() 系統) を持つ。popup 系のこのボタンは builder の
+                Tailwind CSS が popup に注入されず無スタイルで刷られるため隠す。 */}
+            {view !== VIEWS.BUILDER && (
+              <button
+                type="button"
+                onClick={handlePrint}
+                aria-label="現在のビューを印刷"
+                style={{ ...S.btn(false), border: "1px solid #ccc" }}
+              >
+                🖨 印刷
+              </button>
+            )}
             {view === VIEWS.MONTH && (
               <button
                 type="button"

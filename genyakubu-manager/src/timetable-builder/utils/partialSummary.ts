@@ -30,13 +30,19 @@ export function summarizeUnfilled(
 ): { cells: UnfilledCell[]; shortages: SubjectShortage[] } {
   if (!schedule || !config) return { cells: [], shortages: [] };
   const cells: UnfilledCell[] = [];
-  const placed: Record<string, number> = {};
+  // §M: 配置数はクラス別に持つ。全クラス合算だと「A クラスの超過」が
+  // 「B クラスの不足」を相殺して不足が表示から消える (subjectOver 違反が
+  // 併存する手動編集状態で発生)。
+  const placedByClass: Record<number, Record<string, number>> = {};
   (config.dates || []).forEach(d => {
     (config.periods || []).forEach(p => {
       (config.classes || []).forEach(c => {
         const key = makeKey(d.id, p.id, c.id);
         const entry = schedule[key];
-        if (entry?.subject) placed[entry.subject] = (placed[entry.subject] || 0) + 1;
+        if (entry?.subject) {
+          const byClass = placedByClass[c.id] || (placedByClass[c.id] = {});
+          byClass[entry.subject] = (byClass[entry.subject] || 0) + 1;
+        }
         if (entry?.locked && !entry.subject) return; // 空ロック (F5w)
         if (!entry || !entry.subject || !entry.teacher) {
           cells.push({ key, date: d.label, period: p.label, className: c.label });
@@ -44,13 +50,14 @@ export function summarizeUnfilled(
       });
     });
   });
-  // 科目別の不足 = クォータ (クラスごと) × クラス数 − 配置済み。
+  // 科目別の不足 = Σ_クラス max(0, クォータ − そのクラスの配置数)。
   // 講師未定でも科目が入っていれば「配置済み」に数える (不足は科目枠の話)。
-  const classCount = (config.classes || []).length;
   const shortages = Object.entries(config.subjectCounts || {})
     .map(([subject, quota]) => ({
       subject,
-      missing: (Number(quota) || 0) * classCount - (placed[subject] || 0),
+      missing: (config.classes || []).reduce(
+        (sum, c) => sum + Math.max(0, (Number(quota) || 0) - (placedByClass[c.id]?.[subject] || 0)),
+        0),
     }))
     .filter(s => s.missing > 0);
   return { cells, shortages };

@@ -145,6 +145,7 @@ export {
   GENERATION_PARAM_BOUNDS,
   clampGenerationParam,
   resolveGenerationParams,
+  resolveBaseSeed,
 } from './generationParams';
 
 // --- プロジェクトバージョン ---

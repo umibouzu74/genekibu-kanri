@@ -124,9 +124,10 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
       onClose();
       const src = cellKey ? currentSchedule[cellKey] : null;
       if (!src?.subject) return;
-      const dateCount = (currentConfig.dates || []).length;
+      // §M: 起点日はスキップされるので「他の N 日」と表現する (実変更数と一致)
+      const otherCount = (currentConfig.dates || []).length - 1;
       const ok = await showConfirm(
-        `「${src.subject}${src.teacher ? ` / ${src.teacher}` : ''}」を、使う全ての日 (${dateCount} 日) の同じ時限・クラスへ適用しますか？\n` +
+        `「${src.subject}${src.teacher ? ` / ${src.teacher}` : ''}」を、他の ${otherCount} 日の同じ時限・クラスへ適用しますか？\n` +
           `既存の割当は上書きされます (ロック済みセルは変更されません。Undo で戻せます)。`,
         { title: '全日に適用', confirmLabel: '適用する' },
       );

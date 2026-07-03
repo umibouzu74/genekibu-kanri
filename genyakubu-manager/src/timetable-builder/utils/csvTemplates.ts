@@ -36,9 +36,10 @@ export function buildNgCsvTemplate(
 }
 
 // テキストを CSV ファイルとしてダウンロードさせる。Excel が UTF-8 を正しく
-// 開けるよう BOM を付ける。
+// 開けるよう BOM を付ける (§M: 不可視文字の直置きは formatter で無音消失
+// しうるためエスケープ表記にする)。
 export function downloadCsvFile(filename: string, text: string): void {
-  const blob = new Blob(['﻿' + text], { type: 'text/csv' });
+  const blob = new Blob(['\uFEFF' + text], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

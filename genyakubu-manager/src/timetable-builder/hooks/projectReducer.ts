@@ -622,9 +622,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newTabs = project.tabs.map(t => {
         if (t.id === sourceTabId) return t;
         const curr = t.config[key];
+        // §M: 同値判定は Set 比較 (length + includes だと外部 JSON 由来の
+        // 重複 id 入り配列を multiset として誤同一視しうる)
+        const srcSet = Array.isArray(src) ? new Set(src) : null;
+        const currSet = Array.isArray(curr) ? new Set(curr) : null;
         const same = (!src && !curr) ||
-          (Array.isArray(src) && Array.isArray(curr) &&
-            src.length === curr.length && src.every(id => curr.includes(id)));
+          (srcSet !== null && currSet !== null &&
+            srcSet.size === currSet.size && [...srcSet].every(id => currSet.has(id)));
         if (same) return t;
         changed = true;
         return { ...t, config: { ...t.config, [key]: Array.isArray(src) ? [...src] : null } };
@@ -1229,38 +1233,39 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // L2c: 1 日分の列 (全時限 × 全クラス) を別の日へ複製する。「8/1 を
       // 8/2 にコピーして微修正」の頻出操作。ロック済みの複製先はスキップ、
       // 複製元が空のセルは複製先も空にする (複製の意味論)。Undo 1 ステップ。
+      //
+      // §M: 実装は verbatim copy (cleanup / 伝播を呼ばない)。per-cell の
+      // paste 意味論を列内で積み重ねると、後続クラスの cleanupOldCombined が
+      // 直前に複製したばかりの合同セルを巻き添えで消す (合同グループは同一
+      // (日付, 時限) 内で閉じるため)。複製元の列は編集時点で既に伝播済みの
+      // 整合状態なので、そのまま写すのが「複製」の約束に一致し、列全体を
+      // 写す限り dangling な合同参照も生じない。ロック済み複製先だけは
+      // 温存され、その場合の列内整合はユーザのロック判断に従う。
       const { sourceDateId, targetDateId } = action.payload;
       if (sourceDateId === targetDateId) return project;
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const currentConfig = effectiveConfig(project, activeTab);
       const activeIds = new Set(currentConfig.dates.map(d => d.id));
       if (!activeIds.has(sourceDateId) || !activeIds.has(targetDateId)) return project;
-      const groups = project.combinedGroups;
-      let ns = { ...activeTab.schedule };
+      const ns = { ...activeTab.schedule };
       let changed = false;
       currentConfig.periods.forEach(p => {
         currentConfig.classes.forEach(c => {
-          const srcK = makeKey(sourceDateId, p.id, c.id);
+          const src = ns[makeKey(sourceDateId, p.id, c.id)];
           const tgtK = makeKey(targetDateId, p.id, c.id);
-          const src = ns[srcK];
           const curr = ns[tgtK] || {};
           if (curr.locked) return;
           const srcSubject = src?.subject || '';
           const srcTeacher = src?.teacher || '';
           if ((curr.subject || '') === srcSubject && (curr.teacher || '') === srcTeacher) return;
-          if (curr.subject && curr.subject !== srcSubject) {
-            ns = cleanupOldCombined(ns, currentConfig, groups, targetDateId, p.id, c.id, curr.subject);
-          }
           if (!srcSubject) {
-            if (ns[tgtK] && !ns[tgtK].locked) {
-              delete ns[tgtK]; // ns はこの case 内で毎回複製済みなので直接消してよい
+            if (ns[tgtK]) {
+              delete ns[tgtK]; // ns はこの case 冒頭で複製済みなので直接消してよい
               changed = true;
             }
             return;
           }
-          const newEntry = { ...(ns[tgtK] || {}), subject: srcSubject, teacher: srcTeacher };
-          ns[tgtK] = newEntry;
-          ns = propagateAssignment(ns, currentConfig, groups, targetDateId, p.id, c.id, newEntry);
+          ns[tgtK] = { ...curr, subject: srcSubject, teacher: srcTeacher };
           changed = true;
         });
       });

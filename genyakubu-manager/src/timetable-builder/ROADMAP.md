@@ -4,8 +4,10 @@
 を新設**し、3 バッチで実装: 第 1 弾 L1 (小粒 8 件、テスト 1879)、第 2 弾
 L3a/L3b (講師別上限) / L5a (親マスタ取込) / L3e (部分解内訳) / L2a (講師
 ハイライト) / L2c (全日適用・日列コピー) (テスト 1936)、第 3 弾 **L4 系
-入力バッチ 7 件 + L5c 配布用 Excel** (テスト 1975)。残る未着手候補は §L
-参照。それ以前 (同日): §G.6 推奨順の小粒バッチ ×2 完了
+入力バッチ 7 件 + L5c 配布用 Excel** (テスト 1975)。続けて **§L 全体の
+校正レビュー (§M、4 観点 × 個別検証) で Critical 1 / High 2 を含む 19 件を
+修正** (テスト 1993)。残る未着手候補は §L、校正の記録は §M 参照。
+それ以前 (同日): §G.6 推奨順の小粒バッチ ×2 完了
 (第 1 弾: F2i / F5z / F2e / F2h前段 / F2d / F2j / F2m、
 第 2 弾: F2l / F5f / E5g)。同日、**親アプリに追加授業機能を実装**
 (schema v15) し、**ブランチ全体の校正レビュー (§I) で確定指摘 7 件を修正**
@@ -2118,15 +2120,15 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   BuilderApp state → Toolbar / ScheduleTable → ScheduleCell の props 渡し
   (自動学習なし・明示操作のみ)。テスト +5
 - **L2b (中)**: 違反の巡回ナビ — popover の「→」が各種別の firstKey のみ。
-  「次/前の違反へ」で全件を順に潰せるように (Toolbar.tsx:108-139)
+  「次/前の違反へ」で全件を順に潰せるように (Toolbar の popoverRows 構築部)
 - ✅ **L2c (2026-07-03)**: 割当の反復・日列コピー —
   (1) セル右クリック「📅 この割当を全日に適用」(cell/applyToAllDates:
   同時限・同クラスの全日へ、ロック済みスキップ・合同伝播込み・confirm +
   Undo 可)、(2) 日付ヘッダ右クリック「⧉ この日の割当をコピー →」で
   複製先を選択 (schedule/copyDateColumn: 複製元が空のセルは複製先も空に、
   ロック済み複製先は温存)。テスト reducer +5 / ContextMenu +5
-- **L2d (中)**: セルの Ctrl+C/V/Delete (BuilderApp.tsx:86 が SELECT
-  フォーカスで早期 return するため現状メニュー専用)
+- **L2d (中)**: セルの Ctrl+C/V/Delete (BuilderApp のグローバル keydown が
+  SELECT フォーカスで早期 return するため現状メニュー専用)
 - **L2e (中)**: swap のキーボード/メニュー代替 (「切り取り → ここへ移動」)。
   現状は D&D 専用で F2a のキーボード代替方針から取り残されている
 - **L2f (小)**: 貼り付けの内容プレビュー (「📋 貼り付け (英語/田中)」) /
@@ -2166,12 +2168,12 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 - ✅ **L4a (2026-07-03)**: コマ数マトリクスの一括入力 — SubjectManager の
   列 (タブ) ヘッダに ⚡ (全科目を同じコマ数に、`config/fillSubjectCounts`)
   と ⧉ (この列の値を他の全タブへ、`config/copySubjectCountsToOthers`)。
-  いずれも atomic で Undo 1 ステップ + F2d 同値ガード。テスト +9
+  いずれも atomic で Undo 1 ステップ + F2d 同値ガード。テスト +7
 - ✅ **L4b (2026-07-03)**: 日付プールの一括削除 — 「🗑 未使用の日を一括削除
   (N)」ボタン (`dates/removeUnusedFromPool`)。removeFromPool の cascade
   (NG・外部コマ・セッション・プリセット・合同) を `removeDatesFromPool`
   ヘルパーに共通化して単一削除と完全に同じ掃除を実施。activeDateIds
-  未指定 (全日使う) のタブがあれば安全側で no-op。テスト +4
+  未指定 (全日使う) のタブがあれば安全側で no-op。テスト +7
 - ✅ **L4c (2026-07-03)**: CSV 未登録科目の「＋ マスタへ一括追加」ボタン —
   `subject/addMany` で atomic 追加。プレビューは commonSubjects 依存の
   useMemo なので追加と同時に警告が消える。テスト +4
@@ -2197,7 +2199,8 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   再利用) から name + subjectIds→科目名を解決し、既存の teacher/import
   (append) へ流す。**同名かつ親側の担当が空の講師は除外** (append の
   subjects 上書きで builder 側の担当設定が消えるのを防ぐ)。confirm に
-  新規/更新の内訳を表示。テスト +9
+  新規/更新の内訳を表示。builder に無い担当科目は confirm に明示して
+  科目マスタへ併せて追加する (§M で追補)。テスト +9
 - **L5b (中)**: 全学年一括印刷 — 現状はアクティブタブ 1 枚のみ
   (Excel「全体」は全タブ入りで非対称)。印刷時のみ全タブを隠しレンダリング
   or「この学年/全学年」トグル
@@ -2219,3 +2222,107 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   という非対称 (ScheduleCell.tsx の isAlreadyUsed)。「1・2 限連続で数学」を
   手動で組みたいなら disabled をやめ warning に統一 / 意図的仕様なら現状維持
   を明記して closed に
+
+---
+
+## M. 2026-07-03 校正レビュー (§L 3 コミット、4 観点 × 個別検証) の結果
+
+§L の実装 3 コミット (L1 小粒 / 第 2 弾 / 第 3 弾、58 ファイル +3009 行) を
+「状態管理・データ整合 / ソルバ・分析 / UI・UX・規約 / テスト・ドキュメント」
+の 4 観点で並列レビューし、各指摘を個別検証した。確定した指摘は即日修正。
+
+### M.1 修正済み (コード)
+
+- ✅ **M1 [Critical]**: useJsonIO.ts の L1d dedupe キーに生の NUL バイト
+  (U+0000) が 2 箇所埋まり、git がファイルを binary 扱い (diff/blame 不能)
+  になっていた → dedupe キーを F2h と同じ `JSON.stringify([name, createdAt])`
+  方式に置換してテキストへ復帰
+- ✅ **M2 [High]**: schedule/copyDateColumn が per-cell の paste 意味論
+  (cleanup → 伝播) を列内で積み重ねるため、合同グループの主セルを複製した
+  直後に別クラスの cleanupOldCombined が巻き添えで消し、複製結果が複製元と
+  一致しなかった (vitest で再現確認) → **verbatim copy 方式に変更**
+  (複製元の列は既に伝播済みの整合状態なので、そのまま写すのが「複製」の
+  約束に一致。合同は同一 (日付, 時限) 内で閉じるため dangling も生じない)。
+  再現テスト + 合同込みテスト 4 件を追加
+- ✅ **M3 [High]**: seed 再現の約束が既定運用で必ず壊れていた —
+  ランダム時の表示 seed (Date.now()、13 桁) が ⚙️ 入力上限 (999999999) を
+  超え、入力しても silent に clamp されて別 seed になる (3 観点が独立に指摘)
+  → `resolveBaseSeed(generationSeed, now)` (generationParams) で表示 seed を
+  必ず [1, max] に折り畳む (mulberry32 は 32bit なので乱数品質は不変)。
+  「表示 → 入力 → clamp 不変」のテスト追加
+- ✅ **M4 [Medium]**: L5a 親取込に未登録科目ガードが無く、L4c で潰した
+  「見えない割当」がこの導線で再発していた → 未登録科目を confirm に明示し
+  addSubjects で併せて登録
+- ✅ **M5 [Medium]**: 講師プルダウンの上限警告色 (nearLimit) が全体値のみ
+  参照し、L3a の講師個別上限を見ていなかった → resolveTeacherDailyLimit に統一
+- ✅ **M6 [Medium]**: ハイライト中の講師をリネーム / 削除すると全セル薄表示の
+  「幽霊状態」になった → 講師が実在しなくなったらハイライトを自動解除
+- ✅ **M7 [Medium]**: useJsonIO に FileReader の onerror が無く、読取失敗が
+  完全に silent だった → onerror で「読み込みエラー」を通知 + エラー経路の
+  テスト 3 件 (壊れた JSON / 構造不正 / onerror) を追加
+- ✅ **M8 [High/テスト]**: L2c と合同グループの相互作用が未テストだった →
+  M2 の再現テスト含む 4 件を追加 (applyToAllDates の伝播 / 旧科目 cleanup、
+  copyDateColumn の混在列 / 上書き)
+- ✅ **M9 [Medium/テスト]**: L2a ハイライトの isDragOver 優先が検証不能な
+  テスト構造だった → isDragOver=true でハイライト ring が譲るテストを追加
+- ✅ **M10 [Low]**: 配布用 Excel 出力中にボタンが「⏳ 出力中...」に
+  ならなかった → exportingType の null 判定に単純化
+- ✅ **M11 [Low]**: L4d の科目一括追加が全角カンマ「，」を区切りにせず、
+  重複スキップも silent だった → 区切りに「，」を追加 + 追加/スキップ件数を
+  toast で通知
+- ✅ **M12 [Low]**: 「全日に適用」の confirm 件数が起点日込みで実変更数と
+  ズレていた → 「他の N 日へ適用しますか？」に変更
+- ✅ **M13 [Low]**: fillSubjectCounts の toast (Math.round) と reducer
+  (parseInt) の丸めが不一致 → UI 側で丸めを確定してから dispatch
+- ✅ **M14 [Low]**: CSV 雛形の BOM が不可視文字リテラルでソース直置きだった
+  → `'﻿'` エスケープに変更 + バイト列でのテストを追加
+- ✅ **M15 [Low]**: teacher.maxDailyHours / maxTotalHours が migrate で
+  正規化されず、外部 JSON の文字列 "3" 等が「表示は効いて見えるのに実動作は
+  未設定」の乖離を生んだ → normalizeTeacherFields で正の有限数以外を削除
+- ✅ **M16 [Low]**: copyActiveToOthers の同値判定が重複 id 入り配列
+  (外部 JSON 由来) を multiset として誤同一視し得た → Set 比較に変更
+- ✅ **M17 [Low]**: partialSummary の科目別不足が全クラス合算で、あるクラスの
+  超過が別クラスの不足を相殺し得た → クラス別に max(0, quota−placed) を合算
+- ✅ **M18 [Low]**: computeInfeasibilities (C2 capacity) が L3a/L3b の講師
+  個別上限を見ず、静的に不可能な設定でも警告・L1h confirm が沈黙した →
+  capacity を講師ごとに min(個別 1 日上限, 時限数)×日数、通算上限でキャップ
+  して合算する方式へ。テスト 3 件追加
+- ✅ **M24 [Low]**: 親アプリのトップバー 🖨 (popup 系) が BUILDER ビューでも
+  表示され、Tailwind CSS が注入されない popup で builder が無スタイル印刷
+  された (既存問題、L1f の印刷ヘッダで露出増) → BUILDER ビューでは非表示
+  (builder は Toolbar 自前の 🖨️ = window.print() 系統を使う)
+
+### M.2 修正済み (ドキュメント)
+
+- ✅ **M21**: USER_GUIDE が実在しない confirm 文言「部分解を生成しますか？」を
+  鉤括弧引用していた → 実 UI (タイトル「解けない設定の検出」) に合わせて修正。
+  その他の UI 引用 11 箇所は実 UI と一致することを確認済み
+- ✅ **M22**: §L の個別テスト件数を実カウントへ訂正 (L4a +9→+7、L4b +4→+7)
+- ✅ **M23**: 行番号参照が同ブランチ内の編集で既にズレていた 2 箇所
+  (L2b / L2d) を識別子参照に書き換え
+
+### M.3 記録のみ / 仕様判断待ち
+
+- **M19 (判断待ち → L6b)**: quotaCellMismatch (クォータ合計 ≠ セル数) は
+  「完全解が構造的に不可能」だが informational のため L1h の生成前 confirm
+  対象外。⚠ バッジに数えない設計 (意図的にセル数未満で手動運用があり得る)
+  は維持しつつ、**confirm 側だけ数えるかは仕様判断** — L6b として起票
+- **M20 (記録のみ)**: NG 雛形 CSV が実在講師・実在日付で生成される (講師
+  マスタ雛形はダミー名という思想の非対称)。プレビュー + 取込ボタンを挟む
+  ので実害は限定的。「ラベル一致のお手本」という目的には実データの方が
+  分かりやすい面もあり、現状維持
+- **M25 (記録のみ)**: L2c の 2 機能はコンテキストメニュー限定で、メニューを
+  開く操作自体のキーボード代替が無いのは既存 copy/paste と同じ既存ギャップの
+  踏襲 (新規回帰ではない)。L2d/L2e (キーボード編集系) 着手時にまとめて解消
+- **検証済みで問題なし**: removeDatesFromPool の cascade 等価性 (旧単一削除と
+  逐条比較)・L1d templates の state 非汚染・L1a 講師保持と合同伝播の整合・
+  solver tempTotal の increment/decrement 対称性と合同二重計上なし・
+  teacherOverDaily の従来挙動維持・summarizeUnfilled と solver スロット構築の
+  一致・async handleGenerate の二重起動安全性・L4b の削除 UX 規約準拠
+  (cascade あり + danger confirm)・印刷二系統の系統選択 (L1f)・Tailwind
+  content グロブ (E5e 回帰なし)・e2e L1h confirm の両方向の安定性
+
+### L6 追記
+
+- **L6b (仕様判断待ち、M19 起源)**: quotaCellMismatch を L1h の生成前
+  confirm に数えるか。数える場合も ⚠ バッジ側は現状維持 (informational)

@@ -13,7 +13,7 @@ import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams } from './utils/constants';
+import { STORAGE_KEY_ONBOARDING_SEEN, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { formatPrintDateJa } from './utils/printHeader';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
@@ -131,6 +131,15 @@ function ScheduleApp() {
   // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
   // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
   const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
+
+  // §M: ハイライト中の講師がリネーム / 削除されると、全セルが薄表示のまま
+  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。講師が
+  // 実在しなくなったらハイライトを解除する。
+  useEffect(() => {
+    if (highlightTeacher && !project.teachers.some(t => t.name === highlightTeacher)) {
+      setHighlightTeacher(null);
+    }
+  }, [project.teachers, highlightTeacher]);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -221,9 +230,10 @@ function ScheduleApp() {
     setGenerateElapsedMs(0);
     setGenerateLive(null);
 
-    // L1e: seed 設定 (非 0) があればそれを使い、0 (既定) は従来どおり
-    // 実行ごとにランダム。使った値は結果パネルに表示して再現可能にする。
-    const baseSeed = GENERATION_SEED || Date.now();
+    // L1e: seed 設定 (非 0) があればそれを使い、0 (既定) は実行ごとに
+    // ランダム。使った値は結果パネルに表示して再現可能にする。
+    // §M: 表示 seed は必ず ⚙️ の入力上限内に収める (resolveBaseSeed 参照)。
+    const baseSeed = resolveBaseSeed(GENERATION_SEED, Date.now());
     setGeneratedSeed(baseSeed);
 
     const results: GenerationResult[] = [];
