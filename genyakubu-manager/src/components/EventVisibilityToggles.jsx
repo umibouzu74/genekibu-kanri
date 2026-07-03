@@ -81,7 +81,13 @@ export function EventVisibilityToggles({
   };
 
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+    // no-print: 操作チップは紙面に不要 (印刷時のフィルタ状態は月次 popup 側が
+    // describeMonthVisibility でテキスト表示し、window.print() 系は表示結果
+    // そのものが紙面に出る)
+    <div
+      className="no-print"
+      style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}
+    >
       <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
       {toggleDefs.map((t) => {
         const on = isEventKindVisible(visibility, t.key);

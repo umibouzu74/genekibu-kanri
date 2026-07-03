@@ -82,6 +82,10 @@ test("イベントカレンダー: print で追加授業バッジが紙面に残
   await expect(
     page.getByText(/18:30 中3A プレップ個別指導/).first()
   ).toBeVisible();
+  // 月送りボタンは消えるが、年月の見出しは紙面に残る
+  await expect(
+    page.getByText(`${now.getFullYear()}年${now.getMonth() + 1}月`, { exact: true })
+  ).toBeVisible();
 });
 
 test("講師の週間予定: print で操作 UI が消える", async ({ page }) => {

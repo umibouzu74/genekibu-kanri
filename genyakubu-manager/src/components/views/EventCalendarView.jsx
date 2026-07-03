@@ -237,8 +237,10 @@ export function EventCalendarView({
         }}
       >
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* 年月表示は紙面に必要なので残し、操作ボタンだけ no-print にする */}
           <button
             type="button"
+            className="no-print"
             onClick={() => setMonthOff((o) => o - 1)}
             style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
           >
@@ -249,6 +251,7 @@ export function EventCalendarView({
           </span>
           <button
             type="button"
+            className="no-print"
             onClick={() => setMonthOff((o) => o + 1)}
             style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
           >
@@ -256,6 +259,7 @@ export function EventCalendarView({
           </button>
           <button
             type="button"
+            className="no-print"
             onClick={() => setMonthOff(0)}
             style={{ ...S.btn(false), fontSize: 11 }}
           >
@@ -267,9 +271,11 @@ export function EventCalendarView({
           <>
             <div
               aria-hidden="true"
+              className="no-print"
               style={{ width: 1, height: 22, background: "#e0e0e0" }}
             />
             <div
+              className="no-print"
               style={{
                 display: "flex",
                 gap: 6,
@@ -286,6 +292,7 @@ export function EventCalendarView({
         )}
         <div
           aria-hidden="true"
+          className="no-print"
           style={{ width: 1, height: 22, background: "#e0e0e0" }}
         />
         <EventVisibilityToggles
