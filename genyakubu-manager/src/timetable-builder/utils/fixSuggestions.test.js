@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { suggestForNoTeacher, suggestForCapacity, buildFixSuggestions, INFEASIBILITY_KINDS } from './fixSuggestions';
+import { suggestForNoTeacher, suggestForCapacity, buildFixSuggestions, countFatalInfeasibilities, INFEASIBILITY_KINDS } from './fixSuggestions';
 
 const teacher = (name, subjects, ngSlots = []) => ({ name, subjects, ngSlots });
 const config = {
@@ -189,5 +189,31 @@ describe('INFEASIBILITY_KINDS (F2m レジストリ)', () => {
     INFEASIBILITY_KINDS.forEach(({ key }) => {
       expect(out[key].items[0].suggestions.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('countFatalInfeasibilities (L1h)', () => {
+  it('informational でない種別だけを合算する', () => {
+    const n = countFatalInfeasibilities({
+      noTeacherForSlot: { count: 2, items: [] },
+      subjectCapacityShortage: { count: 1, items: [] },
+      subjectQuotaOverDays: { count: 1, items: [] },
+      // informational な種別は数えない
+      subjectPlaceholderOnly: { count: 5, items: [] },
+      quotaCellMismatch: { count: 3, items: [] },
+    });
+    expect(n).toBe(4);
+  });
+
+  it('致命種別が無ければ 0', () => {
+    expect(countFatalInfeasibilities({
+      subjectPlaceholderOnly: { count: 2, items: [] },
+    })).toBe(0);
+  });
+
+  it('null / undefined / 欠落フィールドに対して安全', () => {
+    expect(countFatalInfeasibilities(null)).toBe(0);
+    expect(countFatalInfeasibilities(undefined)).toBe(0);
+    expect(countFatalInfeasibilities({})).toBe(0);
   });
 });

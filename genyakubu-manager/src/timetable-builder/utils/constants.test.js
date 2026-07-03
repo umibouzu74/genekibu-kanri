@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
+  DEFAULT_GENERATION_SEED,
 } from './constants';
 
 describe('clampGenerationParam', () => {
@@ -48,6 +49,13 @@ describe('clampGenerationParam', () => {
     expect(clampGenerationParam('maxConsecutivePeriods', -3)).toBe(0);
     expect(clampGenerationParam('maxConsecutivePeriods', 99)).toBe(GENERATION_PARAM_BOUNDS.maxConsecutivePeriods.max);
   });
+
+  it('generationSeed は 0 (毎回ランダム) を許容し、負値は 0 に丸める (L1e)', () => {
+    expect(clampGenerationParam('generationSeed', 0)).toBe(0);
+    expect(clampGenerationParam('generationSeed', -1)).toBe(0);
+    expect(clampGenerationParam('generationSeed', 12345)).toBe(12345);
+    expect(clampGenerationParam('generationSeed', 9e15)).toBe(GENERATION_PARAM_BOUNDS.generationSeed.max);
+  });
 });
 
 describe('resolveGenerationParams', () => {
@@ -58,6 +66,7 @@ describe('resolveGenerationParams', () => {
       maxDailyHours: DEFAULT_MAX_DAILY_HOURS,
       maxIterations: DEFAULT_MAX_ITERATIONS,
       maxConsecutivePeriods: DEFAULT_MAX_CONSECUTIVE_PERIODS,
+      generationSeed: DEFAULT_GENERATION_SEED,
     });
   });
 
@@ -67,8 +76,8 @@ describe('resolveGenerationParams', () => {
   });
 
   it('設定済みの値を反映する', () => {
-    const r = resolveGenerationParams({ numPatterns: 5, maxDailyHours: 8, maxIterations: 100000, maxConsecutivePeriods: 3 });
-    expect(r).toEqual({ numPatterns: 5, maxDailyHours: 8, maxIterations: 100000, maxConsecutivePeriods: 3 });
+    const r = resolveGenerationParams({ numPatterns: 5, maxDailyHours: 8, maxIterations: 100000, maxConsecutivePeriods: 3, generationSeed: 42 });
+    expect(r).toEqual({ numPatterns: 5, maxDailyHours: 8, maxIterations: 100000, maxConsecutivePeriods: 3, generationSeed: 42 });
   });
 
   it('保存済みの範囲外値も clamp して返す (壊れたデータへの保険)', () => {

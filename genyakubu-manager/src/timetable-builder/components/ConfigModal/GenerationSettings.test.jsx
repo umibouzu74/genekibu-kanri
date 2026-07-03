@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_DAILY_HOURS,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_MAX_CONSECUTIVE_PERIODS,
+  DEFAULT_GENERATION_SEED,
 } from '../../utils/constants';
 
 afterEach(cleanup);
@@ -82,7 +83,7 @@ describe('GenerationSettings', () => {
     expect(input).toHaveValue(500000);
   });
 
-  it('「既定値に戻す」で 3 パラメータをデフォルトへ', () => {
+  it('「既定値に戻す」で全パラメータをデフォルトへ', () => {
     const { updateGenerationParams } = renderPanel({ numPatterns: 6, maxDailyHours: 12 });
     fireEvent.click(screen.getByText('↺ 既定値に戻す'));
     expect(updateGenerationParams).toHaveBeenCalledWith({
@@ -90,6 +91,21 @@ describe('GenerationSettings', () => {
       maxDailyHours: DEFAULT_MAX_DAILY_HOURS,
       maxIterations: DEFAULT_MAX_ITERATIONS,
       maxConsecutivePeriods: DEFAULT_MAX_CONSECUTIVE_PERIODS,
+      generationSeed: DEFAULT_GENERATION_SEED,
     });
+  });
+
+  it('乱数 seed の入力 (L1e) は blur で確定する', () => {
+    const { updateGenerationParams } = renderPanel({});
+    const input = screen.getByLabelText('乱数 seed (0 = 毎回ランダム)');
+    expect(input).toHaveValue(DEFAULT_GENERATION_SEED);
+    fireEvent.change(input, { target: { value: '12345' } });
+    fireEvent.blur(input);
+    expect(updateGenerationParams).toHaveBeenCalledWith({ generationSeed: 12345 });
+  });
+
+  it('乱数 seed にはスライダーを出さない (L1e)', () => {
+    renderPanel({});
+    expect(screen.queryByLabelText('乱数 seed (0 = 毎回ランダム) (スライダー)')).toBeNull();
   });
 });

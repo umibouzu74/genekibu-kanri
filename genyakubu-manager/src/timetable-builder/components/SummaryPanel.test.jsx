@@ -14,7 +14,7 @@ const CONFIG = {
   subjectCounts: { 英語: 1 },
 };
 
-function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
+function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, generatedSeed = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
   const applyPattern = vi.fn();
   const projectValue = {
     project: {
@@ -36,6 +36,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
           setGeneratedPatterns={vi.fn()}
           generatedElapsedMs={generatedElapsedMs}
           generatedForTab={generatedForTab}
+          generatedSeed={generatedSeed}
         />
       </UIContext.Provider>
     </ProjectContext.Provider>,
@@ -81,6 +82,16 @@ describe('SummaryPanel (E2f 生成統計)', () => {
   it('iterations が無い案では統計行を出さない (後方互換)', () => {
     renderPanel({ generatedPatterns: [{ schedule: {}, isPartial: false, filledCount: 1, totalSlots: 1 }] });
     expect(screen.queryByText(/探索/)).not.toBeInTheDocument();
+  });
+
+  it('使用 seed を結果ヘッダに表示する (L1e)', () => {
+    renderPanel({ generatedPatterns: [fullPattern], generatedSeed: 42 });
+    expect(screen.getByLabelText('生成に使った乱数 seed')).toHaveTextContent('seed 42');
+  });
+
+  it('generatedSeed が null なら seed 表示を出さない (後方互換)', () => {
+    renderPanel({ generatedPatterns: [fullPattern] });
+    expect(screen.queryByLabelText('生成に使った乱数 seed')).toBeNull();
   });
 });
 

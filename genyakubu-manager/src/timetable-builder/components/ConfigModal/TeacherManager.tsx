@@ -132,6 +132,12 @@ export default function TeacherManager() {
     () => groupTeachersBySubject(project.teachers, project.subjects),
     [project.teachers, project.subjects],
   );
+  // L1g: 担当科目が空の講師 (どこにも割り当てられない)。'未定' は
+  // placeholder なので対象外。
+  const noSubjectTeachers = useMemo(
+    () => project.teachers.filter(t => t.name !== '未定' && (t.subjects || []).length === 0),
+    [project.teachers],
+  );
 
   const handleCsvImport = async (mode) => {
     if (!csvParsed || csvParsed.rows.length === 0) return;
@@ -233,6 +239,18 @@ export default function TeacherManager() {
         </div>
       )}
       <div className="text-xs text-builder-ink-muted bg-builder-surface-alt p-2 rounded border border-builder-border">氏名をクリックすると名前を変更できます。スケジュールの講師名も自動更新されます。</div>
+      {/* L1g: 担当科目が空の講師は自動生成でどこにも割り当てられないのに
+          「その他」グループへ静かに沈むだけで気づけない。ここで明示する。 */}
+      {noSubjectTeachers.length > 0 && (
+        <div
+          className="text-xs p-2 rounded border bg-builder-warning-soft border-builder-warning-border text-builder-ink"
+          role="alert"
+        >
+          ⚠️ 担当科目が未設定の講師が {noSubjectTeachers.length} 名います
+          ({noSubjectTeachers.map(t => t.name).join('・')})。
+          担当科目を選ぶまで自動生成・講師候補に登場しません。
+        </div>
+      )}
       <div className="overflow-y-auto max-h-[400px] border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>

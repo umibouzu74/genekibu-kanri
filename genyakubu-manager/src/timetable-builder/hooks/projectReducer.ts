@@ -939,7 +939,14 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (currentSchedule[k]?.locked) return project;
 
       const e = { ...(currentSchedule[k] || {}) };
-      if (type === 'subject') { e.subject = val; e.teacher = ''; } else { e[type] = val; }
+      if (type === 'subject') {
+        // 講師が新しい科目も担当できる場合は保持する (判定はドロップダウン
+        // 候補と同じ subjects.includes)。担当不可・科目クリア時のみ空へ。
+        const keepTeacher = !!val && !!e.teacher &&
+          project.teachers.some(t => t.name === e.teacher && t.subjects.includes(val));
+        e.subject = val;
+        if (!keepTeacher) e.teacher = '';
+      } else { e[type] = val; }
 
       let newSchedule = { ...currentSchedule, [k]: e };
       const groups = project.combinedGroups;
@@ -1305,7 +1312,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const updates = action.payload || {};
       const next = { ...project };
       let changed = false;
-      const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods'];
+      const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods', 'generationSeed'];
       for (const key of paramKeys) {
         if (updates[key] === undefined) continue;
         const clamped = clampGenerationParam(key, updates[key]);

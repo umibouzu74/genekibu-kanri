@@ -185,8 +185,9 @@ export default function BasicSettings() {
       <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">
         <div className="font-bold text-builder-ink text-sm">
           🗓 「{activeTab.name}」で使う日
-          <span className="ml-2 text-xs font-normal text-builder-ink-muted">
+          <span className={`ml-2 text-xs ${activeCount === 0 ? "font-bold text-builder-orange" : "font-normal text-builder-ink-muted"}`}>
             選択 {activeCount} / プール {poolDates.length} 日
+            {activeCount === 0 && " — ⚠️ 0 件のためこのタブの時間割は空になります"}
           </span>
         </div>
 
@@ -326,8 +327,9 @@ export default function BasicSettings() {
       <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">
         <div className="font-bold text-builder-ink text-sm">
           ⏰ 時限
-          <span className="ml-2 text-xs font-normal text-builder-ink-muted">
+          <span className={`ml-2 text-xs ${activePeriodCount === 0 ? "font-bold text-builder-orange" : "font-normal text-builder-ink-muted"}`}>
             選択 {activePeriodCount} / プール {poolPeriods.length} コマ
+            {activePeriodCount === 0 && " — ⚠️ 0 件のためこのタブの時間割は空になります"}
           </span>
         </div>
 

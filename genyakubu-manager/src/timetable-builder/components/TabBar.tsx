@@ -1,5 +1,6 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
+import { effectiveConfigForTab } from '../utils/scheduleKey';
 
 export default function TabBar() {
   const {
@@ -99,6 +100,11 @@ export default function TabBar() {
       {project.tabs.map(tab => {
         const errorCount = tabErrorCounts[tab.id] || 0;
         const selected = project.activeTabId === tab.id;
+        // L1b: 使う日・時限・クラスのいずれかが 0 のタブはセルが 1 つも
+        // 無い。「違反 0 = ✨」だと設定ミスの空タブが正常に見えるので、
+        // ✨ ではなく「空」バッジで気づけるようにする。
+        const cfg = effectiveConfigForTab(project, tab);
+        const isEmptyTab = cfg.dates.length === 0 || cfg.periods.length === 0 || (cfg.classes || []).length === 0;
         return (
           <div
             key={tab.id}
@@ -118,6 +124,12 @@ export default function TabBar() {
                 title={`このタブに違反が ${errorCount} 件あります (講師重複・科目重複・クォータ超過)`}
                 aria-label={`違反 ${errorCount} 件`}
               >⚠️{errorCount}</span>
+            ) : isEmptyTab ? (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-warning-soft text-builder-orange border border-builder-warning-border"
+                title="使う日・時限・クラスのいずれかが 0 件のため、このタブに時間割マスがありません (⚙️設定 > 基本設定で選択)"
+                aria-label="時間割マスなし"
+              >空</span>
             ) : (
               <span
                 className="text-[10px] font-bold text-builder-green"

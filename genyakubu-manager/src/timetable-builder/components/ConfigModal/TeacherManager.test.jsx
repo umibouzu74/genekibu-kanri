@@ -257,3 +257,43 @@ describe('TeacherManager — CSV インポート実行 (E3e)', () => {
     expect(screen.queryByLabelText('講師マスタ CSV テキスト')).toBeNull();
   });
 });
+
+describe('TeacherManager — 担当科目未設定の警告 (L1g)', () => {
+  it('担当科目が空の講師が居れば人数と名前を警告表示する', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '新人A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '新人B', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('担当科目が未設定の講師が 2 名います');
+    expect(alert).toHaveTextContent('新人A・新人B');
+  });
+
+  it("placeholder の '未定' は担当が空でも警告対象にしない", () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '未定', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] },
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('全員に担当科目があれば警告を出さない', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        ],
+      },
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});

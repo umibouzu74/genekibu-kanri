@@ -24,6 +24,8 @@ interface SummaryPanelProps {
   setGeneratedPatterns: Dispatch<SetStateAction<GeneratedPattern[]>>;
   generatedElapsedMs: number;
   generatedForTab: { id: number; name: string } | null;
+  /** この結果を生成した baseSeed (L1e)。null = 未生成 */
+  generatedSeed?: number | null;
 }
 
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
@@ -108,7 +110,7 @@ function PatternStats({ pat }) {
   );
 }
 
-export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab }: SummaryPanelProps) {
+export default function SummaryPanel({ showSummary, generatedPatterns, setGeneratedPatterns, generatedElapsedMs, generatedForTab, generatedSeed = null }: SummaryPanelProps) {
   const {
     project,
     analysis,
@@ -196,6 +198,15 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
               {generatedElapsedMs > 0 && (
                 <span className="ml-2 text-xs font-normal text-builder-ink-muted" aria-label="生成にかかった時間">
                   ⏱ {(generatedElapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
+              {generatedSeed != null && (
+                <span
+                  className="ml-2 text-xs font-normal text-builder-ink-muted"
+                  aria-label="生成に使った乱数 seed"
+                  title="⚙️ 設定 > ⚡ 自動生成 の「乱数 seed」にこの値を入力すると、同じ設定で同じ結果を再現できます。"
+                >
+                  seed {generatedSeed}
                 </span>
               )}
             </h3>

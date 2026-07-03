@@ -521,7 +521,7 @@ export function migrateProject(project: any): Project {
   {
     const clampedParams: Record<string, number> = {};
     let paramsChanged = false;
-    const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods'];
+    const paramKeys: GenerationParamKey[] = ['numPatterns', 'maxDailyHours', 'maxIterations', 'maxConsecutivePeriods', 'generationSeed'];
     for (const key of paramKeys) {
       if (result[key] === undefined) continue;
       const clamped = clampGenerationParam(key, result[key]);

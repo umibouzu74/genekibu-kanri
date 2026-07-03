@@ -117,6 +117,8 @@ export interface GenerationParams {
   maxDailyHours: number;
   maxIterations: number;
   maxConsecutivePeriods: number;
+  /** 乱数 seed。0 = 実行ごとにランダム、非 0 で固定 (再現可能) */
+  generationSeed: number;
 }
 
 export type GenerationParamKey = keyof GenerationParams;
@@ -146,6 +148,7 @@ export interface Project {
   maxDailyHours?: number;
   maxIterations?: number;
   maxConsecutivePeriods?: number;
+  generationSeed?: number;
 }
 
 /** useHistoryStack (useReducer) が持つ state */

@@ -937,6 +937,65 @@ describe('projectReducer — セル操作', () => {
     expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
   });
 
+  it('cell/assign: 科目変更でも講師が新科目を担当可能なら保持 (L1a)', () => {
+    let state = makeState({
+      teachers: [
+        { name: '兼任', subjects: ['英語', '数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'teacher', val: '兼任' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '数学' },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '数学', teacher: '兼任' });
+  });
+
+  it('cell/assign: 科目変更で講師が担当不可なら空に (L1a)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'teacher', val: '堀上' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '数学' },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '数学', teacher: '' });
+  });
+
+  it('cell/assign: 科目クリアで講師も空に (L1a)', () => {
+    let state = makeState({
+      teachers: [
+        { name: '兼任', subjects: ['英語', '数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'teacher', val: '兼任' },
+    });
+    const next = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '' },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '', teacher: '' });
+  });
+
   it('cell/assign: locked セルは no-op', () => {
     const state = makeState({
       tabs: [{
@@ -1270,6 +1329,20 @@ describe('projectReducer — project 全体操作', () => {
       payload: { maxConsecutivePeriods: 0 },
     });
     expect(next.project.maxConsecutivePeriods).toBe(0);
+  });
+
+  it('project/setGenerationParams: generationSeed を更新でき、0 (毎回ランダム) に戻せる (L1e)', () => {
+    const state = makeState();
+    const next = projectReducer(state, {
+      type: 'project/setGenerationParams',
+      payload: { generationSeed: 12345 },
+    });
+    expect(next.project.generationSeed).toBe(12345);
+    const reset = projectReducer(next, {
+      type: 'project/setGenerationParams',
+      payload: { generationSeed: 0 },
+    });
+    expect(reset.project.generationSeed).toBe(0);
   });
 
   it('project/setGenerationParams: 範囲外の値は clamp される', () => {
