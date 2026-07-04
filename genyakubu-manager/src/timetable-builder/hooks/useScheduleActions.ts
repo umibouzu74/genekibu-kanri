@@ -46,6 +46,11 @@ export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSch
       dispatch({ type: 'cell/paste', payload: { dateId, periodId, classId, clipboard } }),
     handleCellClear: (dateId: number, periodId: number, classId: number) =>
       dispatch({ type: 'cell/clear', payload: { dateId, periodId, classId } }),
+    // N2a: 複数選択セルへの一括操作 (atomic = Undo 1 回)
+    bulkClearCells: (keys: string[]) =>
+      dispatch({ type: 'cell/bulkClear', payload: { keys } }),
+    bulkSetLockCells: (keys: string[], locked: boolean) =>
+      dispatch({ type: 'cell/bulkSetLock', payload: { keys, locked } }),
     // handleSetNg は useProject.js の composer 側で teacher/toggleNg のラッパとして
     // 定義する (cell 位置 → 講師名・date.label・period.label の解決が必要なため)。
     handleClearUnlocked: () =>

@@ -20,6 +20,8 @@ import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, checkOriginStorageHealth, formatBytes } from './utils/storageHealth';
 import { dedupePatterns } from './utils/patternDedupe';
 import { usePersistedToggle } from './hooks/usePersistedToggle';
+import { useUndoRedoFeedback } from './hooks/useUndoRedoFeedback';
+import { computeRectKeys } from './utils/cellSelection';
 import { useTabPresence } from './hooks/useTabPresence';
 import type { GeneratorHandle } from './logic/runGenerator';
 import type { GenerationResult } from './logic/autoGenerator';
@@ -27,8 +29,10 @@ import type { GeneratedPattern } from './components/SummaryPanel';
 import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
 
 function ScheduleApp() {
-  const { project, undo, redo, loadError, analysis } = useProjectContext();
+  const { project, currentConfig, bulkClearCells, bulkSetLockCells, loadError, analysis } = useProjectContext();
   const { showToast, showConfirm } = useUI();
+  // N2f: undo/redo は「何が戻ったか」の toast + 該当セルスクロール付きで使う
+  const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
 
   // 自動生成の案の数はユーザ設定 (project.numPatterns) を尊重 (E2e)。
   const { numPatterns: NUM_PATTERNS, generationSeed: GENERATION_SEED } = resolveGenerationParams(project);
@@ -92,6 +96,47 @@ function ScheduleApp() {
     }, [showToast]),
   );
 
+  // N2a: セルの複数選択。Ctrl(⌘)+クリックでトグル、Shift+クリックで
+  // アンカーからの矩形選択。選択中は一括操作バーを表示する。
+  // キーはタブ内ローカルなので、タブ切替で必ずクリアする (下の effect)。
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const selectionAnchorRef = useRef<string | null>(null);
+  const clearSelection = useCallback(() => {
+    selectionAnchorRef.current = null;
+    setSelectedKeys(prev => (prev.size > 0 ? new Set<string>() : prev));
+  }, []);
+  useEffect(() => {
+    clearSelection();
+  }, [project.activeTabId, clearSelection]);
+  const handleCellSelect = useCallback((e: { shiftKey: boolean }, key: string) => {
+    if (e.shiftKey && selectionAnchorRef.current) {
+      const rect = computeRectKeys(currentConfig, selectionAnchorRef.current, key);
+      setSelectedKeys(new Set(rect));
+    } else {
+      selectionAnchorRef.current = key;
+      setSelectedKeys(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+  }, [currentConfig]);
+  const handleBulkClear = useCallback(async () => {
+    const keys = [...selectedKeys];
+    const ok = await showConfirm(
+      `選択中の ${keys.length} セルの割当をクリアしますか？\n(ロック中のセルは温存されます。Undo で戻せます)`,
+      { title: '選択セルの一括クリア', danger: true, confirmLabel: 'クリア' },
+    );
+    if (!ok) return;
+    bulkClearCells(keys);
+    showToast(`${keys.length} セルを対象にクリアしました (ロック中は温存)`, 'success', 3000);
+  }, [selectedKeys, showConfirm, bulkClearCells, showToast]);
+  const handleBulkLock = useCallback((locked: boolean) => {
+    bulkSetLockCells([...selectedKeys], locked);
+    showToast(locked ? `${selectedKeys.size} セルをロックしました` : `${selectedKeys.size} セルのロックを解除しました`, 'success', 2500);
+  }, [selectedKeys, bulkSetLockCells, showToast]);
+
   // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -114,11 +159,14 @@ function ScheduleApp() {
       } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault();
         redo();
+      } else if (e.key === 'Escape' && !e.isComposing) {
+        // N2a: セル選択の解除 (popover/modal の Escape と共存して問題ない)
+        clearSelection();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, clearSelection]);
 
   const [showConfig, setShowConfig] = useState(false);
   // N2h: 表示トグルはリロード後も維持する (明示操作の永続化)
@@ -427,7 +475,50 @@ function ScheduleApp() {
           <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
         </div>
 
-        <ScheduleTable isCompact={isCompact} onContextMenu={handleContextMenu} highlightTeacher={highlightTeacher} />
+        {/* N2a: 複数選択中の一括操作バー */}
+        {selectedKeys.size > 0 && (
+          <div
+            role="toolbar"
+            aria-label="選択セルの一括操作"
+            className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-info-soft border border-builder-info-border rounded no-print text-sm"
+          >
+            <span className="font-bold text-builder-ink">☑️ {selectedKeys.size} セル選択中</span>
+            <button
+              type="button"
+              onClick={handleBulkClear}
+              className="px-2 py-1 bg-builder-surface border border-builder-danger-border text-builder-red rounded hover:bg-builder-danger-soft text-xs font-bold"
+              title="選択セルの割当をクリア (ロック中は温存、Undo 可)"
+            >🧹 クリア</button>
+            <button
+              type="button"
+              onClick={() => handleBulkLock(true)}
+              className="px-2 py-1 bg-builder-surface border border-builder-border text-builder-ink rounded hover:bg-builder-surface-alt text-xs font-bold"
+              title="選択セルをロック (空セルは「空けておく」の指定になります)"
+            >🔒 ロック</button>
+            <button
+              type="button"
+              onClick={() => handleBulkLock(false)}
+              className="px-2 py-1 bg-builder-surface border border-builder-border text-builder-ink rounded hover:bg-builder-surface-alt text-xs font-bold"
+              title="選択セルのロックを解除"
+            >🔓 解除</button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="px-2 py-1 text-builder-ink-muted hover:text-builder-ink text-xs underline"
+            >✕ 選択解除 (Esc)</button>
+            <span className="text-[11px] text-builder-ink-muted">
+              Ctrl(⌘)+クリックで追加/除外・Shift+クリックで範囲選択
+            </span>
+          </div>
+        )}
+
+        <ScheduleTable
+          isCompact={isCompact}
+          onContextMenu={handleContextMenu}
+          highlightTeacher={highlightTeacher}
+          selectedKeys={selectedKeys}
+          onCellSelect={handleCellSelect}
+        />
       </div>
 
       <ContextMenu

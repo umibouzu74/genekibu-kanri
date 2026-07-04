@@ -42,9 +42,13 @@ interface ScheduleTableProps {
   onContextMenu: HeaderContextMenuHandler;
   /** L2a: 強調表示する講師名 (null = なし) */
   highlightTeacher?: string | null;
+  /** N2a: 複数選択中のセル key 集合 */
+  selectedKeys?: Set<string>;
+  /** N2a: Ctrl/Shift+クリックでの選択操作 */
+  onCellSelect?: (e: { shiftKey: boolean }, key: string) => void;
 }
 
-export default function ScheduleTable({ isCompact, onContextMenu, highlightTeacher = null }: ScheduleTableProps) {
+export default function ScheduleTable({ isCompact, onContextMenu, highlightTeacher = null, selectedKeys, onCellSelect }: ScheduleTableProps) {
   const { currentConfig, handleSwapCells } = useProjectContext();
   const { showToast } = useUI();
   const [dragSource, setDragSource] = useState<{ key: string; data: ScheduleEntry } | null>(null);
@@ -179,6 +183,8 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
                         isDragOver={dragOverKey === cellKey}
                         isDragSource={dragSource !== null && dragSource.key === cellKey}
                         highlightTeacher={highlightTeacher}
+                        isSelected={!!selectedKeys?.has(cellKey)}
+                        onCellSelect={onCellSelect}
                       />
                     );
                   })}

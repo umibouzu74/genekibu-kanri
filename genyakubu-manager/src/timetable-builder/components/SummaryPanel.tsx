@@ -5,7 +5,7 @@ import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab }
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { summarizePatternLoad, summarizeSingleSlotDays } from '../utils/patternLoad';
 import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
-import { summarizeUnfilled } from '../utils/partialSummary';
+import { summarizeUnfilled, diagnoseUnfilledCells, formatDiagnosis } from '../utils/partialSummary';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Schedule } from '../types';
 
@@ -141,9 +141,13 @@ function PatternStats({ pat }) {
 // L3e: 部分解の未充填内訳。どのセルが埋まらなかったか + 科目別の不足を
 // 案カード内に出す。従来は「N/M コマ充填」と最初の詰まり 1 セルだけで、
 // 残りはグリッドを目視で探すしかなかった。
-function UnfilledBreakdown({ schedule, config }: { schedule: Schedule; config: any }) {
+// N3b: セルごとに「なぜ埋まらないか」(候補なし/NG/上限/探索切れ) を添え、
+// 「設定を直すか・もう一度回すか」を判断できるようにする。
+function UnfilledBreakdown({ schedule, config, project }: { schedule: Schedule; config: any; project: any }) {
   const { cells, shortages } = summarizeUnfilled(schedule, config);
   if (cells.length === 0) return null;
+  const diagnoses = diagnoseUnfilledCells(schedule, config, project);
+  const hasSearchExhausted = cells.some(c => diagnoses.get(c.key)?.kind === 'searchExhausted');
   const MAX_CELLS = 10;
   return (
     <div className="mt-1 mb-2 p-2 bg-builder-warning-soft border border-builder-warning-border rounded text-xs text-builder-ink" aria-label="未充填の内訳">
@@ -155,13 +159,21 @@ function UnfilledBreakdown({ schedule, config }: { schedule: Schedule; config: a
       )}
       <ul className="space-y-0.5 text-builder-ink-muted">
         {cells.slice(0, MAX_CELLS).map(c => (
-          <li key={c.key}>{c.date} {c.period} {c.className}</li>
+          <li key={c.key}>
+            {c.date} {c.period} {c.className}
+            <span className="text-builder-ink-ghost"> — {formatDiagnosis(diagnoses.get(c.key))}</span>
+          </li>
         ))}
         {cells.length > MAX_CELLS && <li className="italic">他 {cells.length - MAX_CELLS} 件</li>}
       </ul>
       <div className="mt-1 text-builder-ink-muted">
         💡 採用後にもう一度 🧙‍♂️ 自動作成すると、埋まったセルは保持して残りだけを再探索します。
       </div>
+      {hasSearchExhausted && (
+        <div className="mt-0.5 text-builder-ink-muted">
+          💡 「探索切れの可能性」のセルは、⚙️ ⚡自動生成 の探索回数を増やすか seed を変えて再生成すると埋まることがあります。
+        </div>
+      )}
     </div>
   );
 }
@@ -353,7 +365,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   )}
                 </div>
                 <PatternStats pat={pat} />
-                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} />}
+                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} project={project} />}
                 <SummaryTable
                   target={pat.schedule}
                   config={patternConfig}

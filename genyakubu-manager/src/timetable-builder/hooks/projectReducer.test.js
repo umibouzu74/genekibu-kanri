@@ -1161,6 +1161,79 @@ describe('projectReducer — セル操作', () => {
     expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
   });
 
+  it('cell/bulkClear: 選択キーを一括削除、ロック済み・空 entry はスキップ (N2a)', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 2 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中', locked: true },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/bulkClear',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1), 'garbage-key'] },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    // ロック済みは温存
+    expect(next.project.tabs[0].schedule[makeKey(1, 2, 1)]).toEqual({ subject: '数学', teacher: '田中', locked: true });
+    // 履歴 push は 1 回 (atomic)
+    expect(next.history).toHaveLength(2);
+  });
+
+  it('cell/bulkClear: 全件スキップ (空 / ロック) なら no-op、合同 secondary も掃除 (N2a)', () => {
+    const state = makeState({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+    });
+    // 空キーのみ → no-op (同参照)
+    expect(projectReducer(state, {
+      type: 'cell/bulkClear', payload: { keys: [makeKey(1, 1, 1)] },
+    })).toBe(state);
+    // 合同 primary を割当ててから bulkClear → secondary も消える
+    let assigned = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    assigned = projectReducer(assigned, {
+      type: 'cell/bulkClear', payload: { keys: [makeKey(1, 1, 1)] },
+    });
+    expect(assigned.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(assigned.project.tabs[0].schedule[makeKey(1, 1, 2)]).toBeUndefined();
+  });
+
+  it('cell/bulkSetLock: 一括ロック/解除、空セルもロック可、同値のみなら no-op (N2a)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    // 割当済み + 空セルをまとめてロック (空ロック = 「空けておく」 F5w)
+    state = projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1)], locked: true },
+    });
+    expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(true);
+    expect(state.project.tabs[0].schedule[makeKey(1, 2, 1)].locked).toBe(true);
+    // 既に同値なら no-op (同参照)
+    expect(projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1)], locked: true },
+    })).toBe(state);
+    // 解除
+    const unlocked = projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1)], locked: false },
+    });
+    expect(unlocked.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(false);
+  });
+
   it('cell/paste: clipboard 無し / locked は no-op', () => {
     const state = makeState();
     expect(projectReducer(state, {

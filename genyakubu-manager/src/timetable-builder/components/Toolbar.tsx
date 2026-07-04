@@ -4,6 +4,7 @@ import { makeNgKey } from '../utils/scheduleKey';
 import { scrollToCellByKey } from '../utils/scrollToCell';
 import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
+import { useUndoRedoFeedback } from '../hooks/useUndoRedoFeedback';
 import SnapshotMenu from './SnapshotMenu';
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
@@ -47,14 +48,14 @@ export default function Toolbar({
     dashboard,
     historyIndex,
     history,
-    undo,
-    redo,
     handleClearUnlocked,
     project,
     toggleTeacherNg,
     updateGenerationParams,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
+  // N2f: undo/redo は内容 toast + 該当セルスクロール付きで使う
+  const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
 
   // E2b: 修正提案のワンクリック適用。action 種別ごとに対応する dispatch を呼ぶ。
   const applyFix = (action) => {

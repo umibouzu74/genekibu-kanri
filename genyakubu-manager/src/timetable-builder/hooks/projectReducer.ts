@@ -84,6 +84,8 @@ export type ProjectAction =
   | { type: 'cell/assign'; payload: { dateId: number; periodId: number; classId: number; type: 'subject' | 'teacher'; val: string } }
   | { type: 'cell/toggleLock'; payload: { dateId: number; periodId: number; classId: number } }
   | { type: 'cell/clear'; payload: { dateId: number; periodId: number; classId: number } }
+  | { type: 'cell/bulkClear'; payload: { keys: string[] } }
+  | { type: 'cell/bulkSetLock'; payload: { keys: string[]; locked: boolean } }
   | { type: 'cell/paste'; payload: { dateId: number; periodId: number; classId: number; clipboard: { subject?: string; teacher?: string } | null } }
   | { type: 'cell/swap'; payload: { sourceKey: string; targetKey: string } }
   | { type: 'cell/applyToAllDates'; payload: { dateId: number; periodId: number; classId: number } }
@@ -1168,6 +1170,47 @@ function applyAction(project: Project, action: ProjectAction): Project {
       delete ns[k];
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
+    }
+    case 'cell/bulkClear': {
+      // N2a: 選択セルの一括クリア。単一 clear と同じ意味論 (locked はスキップ・
+      // 合同 secondary の cleanup 込み) を選択集合へ atomic に適用 (Undo 1 回)。
+      const { keys } = action.payload;
+      if (!Array.isArray(keys) || keys.length === 0) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const currentConfig = effectiveConfig(project, activeTab);
+      let ns = activeTab.schedule;
+      let changed = false;
+      for (const k of keys) {
+        const parsed = parseKey(k);
+        if (!parsed) continue;
+        const curr = ns[k];
+        if (!curr || curr.locked) continue;
+        if (!curr.subject && !curr.teacher) continue; // 空 entry は変化なし
+        ns = cleanupOldCombined(ns, currentConfig, project.combinedGroups, parsed.dateId, parsed.periodId, parsed.classId, curr.subject);
+        ns = { ...ns };
+        delete ns[k];
+        changed = true;
+      }
+      if (!changed) return project;
+      return { ...project, tabs: project.tabs.map(t => t.id === activeTab.id ? { ...t, schedule: ns } : t) };
+    }
+    case 'cell/bulkSetLock': {
+      // N2a: 選択セルの一括ロック/解除。空セルのロックは「空けておく」(F5w)
+      // の意思表示として許可 (単一 toggleLock と同じ)。同値はスキップし、
+      // 全て同値なら no-op (F2d)。
+      const { keys, locked } = action.payload;
+      if (!Array.isArray(keys) || keys.length === 0) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      let ns: typeof activeTab.schedule | null = null;
+      for (const k of keys) {
+        if (!parseKey(k)) continue;
+        const curr = activeTab.schedule[k] || {};
+        if (!!curr.locked === !!locked) continue;
+        if (ns === null) ns = { ...activeTab.schedule };
+        ns[k] = { ...curr, locked: !!locked };
+      }
+      if (ns === null) return project;
+      return { ...project, tabs: project.tabs.map(t => t.id === activeTab.id ? { ...t, schedule: ns } : t) };
     }
     case 'cell/paste': {
       const { dateId, periodId, classId, clipboard } = action.payload;
