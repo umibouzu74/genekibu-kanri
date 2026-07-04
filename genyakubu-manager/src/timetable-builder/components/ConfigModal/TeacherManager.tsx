@@ -72,6 +72,9 @@ export default function TeacherManager() {
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
+  // N4f: 講師名の絞り込み。講師が数十名規模になると目的の行まで
+  // スクロール必須だった。明示入力のフィルタのみ (A18 非該当)。
+  const [teacherFilter, setTeacherFilter] = useState('');
   const [csvText, setCsvText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
@@ -344,6 +347,25 @@ export default function TeacherManager() {
           担当科目を選ぶまで自動生成・講師候補に登場しません。
         </div>
       )}
+      {/* N4f: 講師名フィルタ (部分一致)。グループ見出しは維持し、一致者の
+          いないグループごと隠す */}
+      <div className="flex items-center gap-2">
+        <input
+          type="search"
+          value={teacherFilter}
+          onChange={(e) => setTeacherFilter(e.target.value)}
+          placeholder="🔍 講師名で絞り込み"
+          aria-label="講師名で絞り込み"
+          className="border border-builder-border rounded px-2 py-1 text-xs bg-builder-surface text-builder-ink w-48"
+        />
+        {teacherFilter.trim() && (
+          <button
+            type="button"
+            onClick={() => setTeacherFilter('')}
+            className="text-xs text-builder-ink-muted hover:text-builder-ink underline"
+          >クリア</button>
+        )}
+      </div>
       <div className="overflow-y-auto max-h-[400px] border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>
@@ -358,11 +380,20 @@ export default function TeacherManager() {
             </tr>
           </thead>
           <tbody>
-            {teacherGroups.map(group => (
+            {teacherGroups
+              .map(group => {
+                const filter = teacherFilter.trim();
+                const visibleTeachers = filter
+                  ? group.teachers.filter(t => t.name.includes(filter))
+                  : group.teachers;
+                return { ...group, teachers: visibleTeachers, totalCount: group.teachers.length };
+              })
+              .filter(group => group.teachers.length > 0)
+              .map(group => (
               <Fragment key={group.key}>
                 <tr className="bg-builder-bg">
                   <td colSpan={4} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
-                    ━━ {group.label} ({group.teachers.length})
+                    ━━ {group.label} ({teacherFilter.trim() && group.teachers.length !== group.totalCount ? `${group.teachers.length}/${group.totalCount}` : group.totalCount})
                   </td>
                 </tr>
                 {group.teachers.map(t => {

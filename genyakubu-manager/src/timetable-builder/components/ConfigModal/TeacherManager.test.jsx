@@ -457,3 +457,28 @@ describe('TeacherManager — 親取込の未登録科目 (§M)', () => {
     expect(fns.addSubjects).not.toHaveBeenCalled();
   });
 });
+
+describe('TeacherManager — 講師名フィルタ (N4f)', () => {
+  const manyTeachers = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '田村', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  ];
+
+  it('部分一致で行を絞り込み、一致者ゼロのグループは見出しごと隠す', () => {
+    renderManager({ project: { teachers: manyTeachers } });
+    fireEvent.change(screen.getByLabelText('講師名で絞り込み'), { target: { value: '田' } });
+    expect(screen.getByText('田中')).toBeInTheDocument();
+    expect(screen.getByText('田村')).toBeInTheDocument();
+    expect(screen.queryByText('堀上')).toBeNull();
+    // 英語グループは一致者ゼロなので見出しも出ない
+    expect(screen.queryByText(/━━ 英語/)).toBeNull();
+  });
+
+  it('クリアで全員に戻る', () => {
+    renderManager({ project: { teachers: manyTeachers } });
+    fireEvent.change(screen.getByLabelText('講師名で絞り込み'), { target: { value: '田中' } });
+    fireEvent.click(screen.getByText('クリア'));
+    expect(screen.getByText('堀上')).toBeInTheDocument();
+  });
+});

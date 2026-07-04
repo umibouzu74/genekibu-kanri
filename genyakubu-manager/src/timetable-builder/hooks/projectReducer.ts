@@ -78,7 +78,7 @@ export type ProjectAction =
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
   | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
-  | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string } }
+  | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
   | { type: 'preset/remove'; payload: { id: number } }
   | { type: 'cell/assign'; payload: { dateId: number; periodId: number; classId: number; type: 'subject' | 'teacher'; val: string } }
@@ -1048,7 +1048,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
     // 詳細セッション登録フォームから 1 クリックで呼び出せるようにする。
     // payload で受け取る fields は全て optional (id/name 以外)。空文字は省く。
     case 'preset/add': {
-      const { name, startTime, endTime, startDateLabel, endDateLabel, memo } = action.payload;
+      const { name, startTime, endTime, startDateLabel, endDateLabel, memo, teachers } = action.payload;
       if (!name) return project;
       const presets = project.externalSessionPresets || [];
       const newId = presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
@@ -1058,6 +1058,8 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (startDateLabel) newPreset.startDateLabel = startDateLabel;
       if (endDateLabel) newPreset.endDateLabel = endDateLabel;
       if (memo) newPreset.memo = memo;
+      // N4c: 対象講師 (任意)。空配列は「講師なし」としてフィールドごと省く
+      if (Array.isArray(teachers) && teachers.length > 0) newPreset.teachers = [...teachers];
       return { ...project, externalSessionPresets: [...presets, newPreset] };
     }
     case 'preset/update': {
@@ -1084,6 +1086,12 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if ('startDateLabel' in updates) writeOrDelete('startDateLabel', updates.startDateLabel);
       if ('endDateLabel' in updates) writeOrDelete('endDateLabel', updates.endDateLabel);
       if ('memo' in updates) writeOrDelete('memo', updates.memo);
+      // N4c: teachers は空配列で削除、非空配列で上書き (文字列フィールドの
+      // 「空文字なら削除」と同じ意味論)
+      if ('teachers' in updates) {
+        if (Array.isArray(updates.teachers) && updates.teachers.length > 0) merged.teachers = [...updates.teachers];
+        else delete merged.teachers;
+      }
       if (!merged.startTime) delete merged.endTime;
       return {
         ...project,

@@ -38,7 +38,7 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
     removeExternalSession: (id: number) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
     // 他学年セッション登録プリセット (時刻 / 期間 / メモ の頻出パターン)
-    addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string }) =>
+    addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] }) =>
       dispatch({ type: 'preset/add', payload: preset }),
     updateExternalSessionPreset: (id: number, updates: Partial<Omit<ExternalSessionPreset, 'id'>>) =>
       dispatch({ type: 'preset/update', payload: { id, updates } }),

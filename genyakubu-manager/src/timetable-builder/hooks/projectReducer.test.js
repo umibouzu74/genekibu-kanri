@@ -843,6 +843,39 @@ describe('projectReducer — externalSessionPresets', () => {
     expect(p).toEqual({ id: 1, name: 'X' });
   });
 
+  it('preset/add: teachers は非空配列のみ保存 (N4c)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '予備校', teachers: ['堀上', '田中'] },
+    });
+    expect(state.project.externalSessionPresets[0].teachers).toEqual(['堀上', '田中']);
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '講師なし', teachers: [] },
+    });
+    expect(state.project.externalSessionPresets[1]).not.toHaveProperty('teachers');
+  });
+
+  it('preset/update: teachers は空配列で削除・非空で上書き (N4c)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '予備校', teachers: ['堀上'] },
+    });
+    const id = state.project.externalSessionPresets[0].id;
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id, updates: { teachers: ['田中', '佐藤'] } },
+    });
+    expect(state.project.externalSessionPresets[0].teachers).toEqual(['田中', '佐藤']);
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id, updates: { teachers: [] } },
+    });
+    expect(state.project.externalSessionPresets[0]).not.toHaveProperty('teachers');
+  });
+
   it('preset/add: startTime が無ければ endTime も保存しない (orphan 防止)', () => {
     let state = makeState();
     state = projectReducer(state, {

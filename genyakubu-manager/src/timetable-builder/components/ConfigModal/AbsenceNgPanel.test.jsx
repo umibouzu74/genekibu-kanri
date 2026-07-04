@@ -71,6 +71,7 @@ describe('AbsenceNgPanel — プリセット複製', () => {
       startDateLabel: '7/24(金)',
       endDateLabel: '7/31(金)',
       memo: '予備校 / 高2 英語',
+      teachers: [],
     });
   });
 
@@ -87,7 +88,46 @@ describe('AbsenceNgPanel — プリセット複製', () => {
       startDateLabel: '',
       endDateLabel: '',
       memo: '',
+      teachers: [],
     });
+  });
+
+  it('対象講師付きプリセットは teachers も引き継いで複製する (N4c)', () => {
+    const { addExternalSessionPreset } = renderPanel({
+      presets: [{ id: 7, name: '予備校', teachers: ['堀上'] }],
+    });
+    fireEvent.click(screen.getByText(/プリセット管理/));
+    fireEvent.click(screen.getByLabelText('予備校 を複製'));
+    expect(addExternalSessionPreset).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '予備校 (コピー)', teachers: ['堀上'] }),
+    );
+  });
+});
+
+describe('AbsenceNgPanel — プリセットの講師展開 (N4c)', () => {
+  it('teachers 付きプリセットの適用で講師選択が展開され、不明講師は警告される', () => {
+    const { uiValue } = renderPanel({
+      presets: [{ id: 1, name: '予備校', teachers: ['堀上', '消えた先生'] }],
+    });
+    fireEvent.change(
+      screen.getByLabelText('プリセットを選んで時刻・期間・メモをフォームに展開'),
+      { target: { value: '1' } },
+    );
+    // 実在する堀上のみ選択される
+    expect(screen.getByText(/選択 1 名/)).toBeInTheDocument();
+    expect(uiValue.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('消えた先生'), 'warning', 4000,
+    );
+  });
+
+  it('teachers なしプリセットは講師選択を変えない', () => {
+    const { uiValue } = renderPanel({ presets: [{ id: 1, name: '朝練' }] });
+    fireEvent.change(
+      screen.getByLabelText('プリセットを選んで時刻・期間・メモをフォームに展開'),
+      { target: { value: '1' } },
+    );
+    expect(screen.getByText(/選択 0 名/)).toBeInTheDocument();
+    expect(uiValue.showToast).not.toHaveBeenCalled();
   });
 });
 

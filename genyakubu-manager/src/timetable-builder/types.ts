@@ -106,6 +106,8 @@ export interface ExternalSessionPreset {
   startDateLabel?: string;
   endDateLabel?: string;
   memo?: string;
+  /** N4c: 適用時に選択状態へ展開する対象講師名 (任意)。無指定 = 講師は触らない */
+  teachers?: string[];
 }
 
 /** 名前付きスナップショット (E1c)。タブ単位で schedule を保存 */
