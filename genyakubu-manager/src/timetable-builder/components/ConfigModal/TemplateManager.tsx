@@ -6,6 +6,7 @@ import {
   persistTemplates,
   addTemplate,
   removeTemplate,
+  updateTemplate,
 } from '../../utils/templates';
 import { validateProjectShape } from '../../utils/projectSchema';
 
@@ -30,8 +31,32 @@ export default function TemplateManager() {
       confirmLabel: '保存',
     });
     if (!name) return;
+    // N4a: 同名テンプレートがあれば「上書き / 新規」を選ばせる。従来は常に
+    // 新規追加で、年度ベースを微修正するたび同名が重複蓄積していた。
+    const existing = templates.find(t => t.name === name);
+    if (existing) {
+      const overwrite = await showConfirm(
+        `テンプレート「${name}」は既にあります (${fmt(existing.createdAt) || '日付不明'} 保存)。\n現在の内容で上書きしますか？\n(「キャンセル」で別名の新規保存はやり直せます)`,
+        { title: '同名のテンプレート', confirmLabel: '上書き' },
+      );
+      if (!overwrite) return;
+      update(updateTemplate(templates, { id: existing.id, project, createdAt: new Date().toISOString() }));
+      showToast(`テンプレート「${name}」を上書きしました`);
+      return;
+    }
     update(addTemplate(templates, { name, project, createdAt: new Date().toISOString() }));
     showToast(`テンプレート「${name}」を保存しました`);
+  };
+
+  // N4a: 行内からの「現在の内容で更新」(名前は据え置き)
+  const handleUpdate = async (tpl) => {
+    const ok = await showConfirm(
+      `テンプレート「${tpl.name}」を現在のプロジェクトの内容で更新しますか？\n(保存されている内容は置き換わります)`,
+      { title: 'テンプレートの更新', confirmLabel: '更新' },
+    );
+    if (!ok) return;
+    update(updateTemplate(templates, { id: tpl.id, project, createdAt: new Date().toISOString() }));
+    showToast(`「${tpl.name}」を現在の内容で更新しました`);
   };
 
   const handleApplyFull = async (tpl) => {
@@ -121,6 +146,13 @@ export default function TemplateManager() {
                 className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded hover:bg-builder-surface-alt whitespace-nowrap"
                 title="講師マスタだけを引き継ぐ"
               >講師のみ</button>
+              <button
+                type="button"
+                onClick={() => handleUpdate(tpl)}
+                className="text-xs px-1.5 py-1 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                title="このテンプレートを現在のプロジェクトの内容で更新"
+                aria-label={`${tpl.name} を現在の内容で更新`}
+              >💾</button>
               <button
                 type="button"
                 onClick={() => handleDelete(tpl)}

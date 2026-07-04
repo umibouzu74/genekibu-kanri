@@ -243,3 +243,80 @@ describe('TabBar — タブ間複製 (K4a)', () => {
     expect(copyScheduleFromTab).not.toHaveBeenCalled();
   });
 });
+
+describe('TabBar — タブの並べ替え (N2d)', () => {
+  it('Ctrl+ArrowRight でアクティブタブを右へ移動する', () => {
+    const reorderTabs = vi.fn();
+    renderTabBar({ projectOverrides: { reorderTabs } });
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight', ctrlKey: true });
+    expect(reorderTabs).toHaveBeenCalledWith(0, 1);
+  });
+
+  it('端では Ctrl+ArrowLeft は no-op (先頭タブ)', () => {
+    const reorderTabs = vi.fn();
+    renderTabBar({ projectOverrides: { reorderTabs } });
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowLeft', ctrlKey: true });
+    expect(reorderTabs).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl なしの ArrowRight は従来どおりタブ切替 (並べ替えない)', () => {
+    const reorderTabs = vi.fn();
+    const switchTab = vi.fn();
+    renderTabBar({ projectOverrides: { reorderTabs, switchTab } });
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' });
+    expect(reorderTabs).not.toHaveBeenCalled();
+    expect(switchTab).toHaveBeenCalledWith(2);
+  });
+
+  it('タブへの drop で reorderTabs が呼ばれる', () => {
+    const reorderTabs = vi.fn();
+    renderTabBar({ projectOverrides: { reorderTabs } });
+    const [tab1, tab2] = screen.getAllByRole('tab');
+    const dataTransfer = {
+      data: {},
+      setData(type, v) { this.data[type] = v; },
+      getData(type) { return this.data[type] ?? ''; },
+      get types() { return Object.keys(this.data); },
+      effectAllowed: '',
+    };
+    fireEvent.dragStart(tab1, { dataTransfer });
+    fireEvent.dragOver(tab2, { dataTransfer });
+    fireEvent.drop(tab2, { dataTransfer });
+    expect(reorderTabs).toHaveBeenCalledWith(0, 1);
+  });
+});
+
+describe('TabBar — タブ削除 confirm の割当件数 (N2e)', () => {
+  it('割当のあるタブの削除 confirm には件数を出す (空 entry は数えない)', async () => {
+    const { uiValue } = renderTabBar({
+      projectOverrides: {
+        project: {
+          activeTabId: 1,
+          dates: [{ id: 1, label: '12/25' }],
+          periods: [{ id: 1, label: '1限' }],
+          tabs: [
+            {
+              id: 1, name: '高3', config: { classes: [{ id: 1, label: 'A' }] },
+              schedule: {
+                '1-1-1': { subject: '英語', teacher: '堀上' },
+                '1-1-2': { subject: '数学', teacher: '' },
+                '1-1-3': {},                              // 空 entry は数えない
+              },
+            },
+            { id: 2, name: '高2', config: { classes: [{ id: 1, label: 'A' }] } },
+          ],
+        },
+      },
+    });
+    fireEvent.click(screen.getByLabelText('高3 タブを削除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('2 コマの割当');
+  });
+
+  it('割当のないタブは従来の汎用文言のまま', async () => {
+    const { uiValue } = renderTabBar();
+    fireEvent.click(screen.getByLabelText('高3 タブを削除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toBe('このタブを削除しますか？');
+  });
+});

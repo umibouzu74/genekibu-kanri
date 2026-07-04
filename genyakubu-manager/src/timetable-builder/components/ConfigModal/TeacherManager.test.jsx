@@ -199,7 +199,8 @@ describe('TeacherManager — CSV インポート実行 (E3e)', () => {
       'append',
     );
     expect(uiValue.showToast).toHaveBeenCalledWith(
-      expect.stringContaining('追加 / 更新'), 'success', 4000,
+      // N4b: 新規 / 既存更新の内訳付き toast
+      expect.stringMatching(/新規 \d+ 名を追加 \/ 既存 \d+ 名を更新/), 'success', 4000,
     );
     // パネルは閉じ、textarea は破棄される
     expect(screen.queryByLabelText('講師マスタ CSV テキスト')).toBeNull();
@@ -328,6 +329,19 @@ describe('TeacherManager — 講師個別の上限入力 (L3a/L3b)', () => {
     expect(screen.queryByLabelText('未定 の 1 日コマ数上限 (空欄 = 全体設定)')).toBeNull();
     expect(screen.queryByLabelText('未定 の通算コマ数上限 (空欄 = 無制限)')).toBeNull();
   });
+
+  it('1 日上限 > 通算上限 の矛盾に注意アイコンを出す (N4d)', () => {
+    renderManager({
+      project: {
+        teachers: [
+          { name: '矛盾', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 8, maxTotalHours: 3 },
+          { name: '正常', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 2, maxTotalHours: 10 },
+        ],
+      },
+    });
+    expect(screen.getByLabelText('矛盾 の上限設定に矛盾があります')).toBeInTheDocument();
+    expect(screen.queryByLabelText('正常 の上限設定に矛盾があります')).toBeNull();
+  });
 });
 
 describe('TeacherManager — 親アプリからの取込 (L5a)', () => {
@@ -441,5 +455,30 @@ describe('TeacherManager — 親取込の未登録科目 (§M)', () => {
     fireEvent.click(screen.getByText('🔗 親アプリから取込'));
     await waitFor(() => expect(fns.importTeachers).toHaveBeenCalled());
     expect(fns.addSubjects).not.toHaveBeenCalled();
+  });
+});
+
+describe('TeacherManager — 講師名フィルタ (N4f)', () => {
+  const manyTeachers = [
+    { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '田村', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  ];
+
+  it('部分一致で行を絞り込み、一致者ゼロのグループは見出しごと隠す', () => {
+    renderManager({ project: { teachers: manyTeachers } });
+    fireEvent.change(screen.getByLabelText('講師名で絞り込み'), { target: { value: '田' } });
+    expect(screen.getByText('田中')).toBeInTheDocument();
+    expect(screen.getByText('田村')).toBeInTheDocument();
+    expect(screen.queryByText('堀上')).toBeNull();
+    // 英語グループは一致者ゼロなので見出しも出ない
+    expect(screen.queryByText(/━━ 英語/)).toBeNull();
+  });
+
+  it('クリアで全員に戻る', () => {
+    renderManager({ project: { teachers: manyTeachers } });
+    fireEvent.change(screen.getByLabelText('講師名で絞り込み'), { target: { value: '田中' } });
+    fireEvent.click(screen.getByText('クリア'));
+    expect(screen.getByText('堀上')).toBeInTheDocument();
   });
 });

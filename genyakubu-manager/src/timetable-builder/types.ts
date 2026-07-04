@@ -31,6 +31,8 @@ export interface Teacher {
   maxDailyHours?: number;
   /** L3b: 講師個別の通算コマ数上限 (全タブ + 外部コマ)。未設定/0 = 無制限 */
   maxTotalHours?: number;
+  /** N3a: 講師個別の連続コマ数上限。未設定/0 = project 全体値を使う */
+  maxConsecutivePeriods?: number;
 }
 
 export interface ScheduleEntry {
@@ -104,6 +106,8 @@ export interface ExternalSessionPreset {
   startDateLabel?: string;
   endDateLabel?: string;
   memo?: string;
+  /** N4c: 適用時に選択状態へ展開する対象講師名 (任意)。無指定 = 講師は触らない */
+  teachers?: string[];
 }
 
 /** 名前付きスナップショット (E1c)。タブ単位で schedule を保存 */

@@ -46,7 +46,7 @@ function defaultContext(overrides = {}) {
 
 // ScheduleCell は <td> なので、テストでは <table><tbody><tr> でラップして
 // render する必要がある (jsdom でも valid な DOM 構造を保つため)。
-function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, contextOverrides = {} } = {}) {
+function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, isSelected = false, onCellSelect, contextOverrides = {} } = {}) {
   const ctx = defaultContext(contextOverrides);
   const utils = render(
     <ProjectContext.Provider value={ctx}>
@@ -65,6 +65,8 @@ function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, 
           isDragOver={false}
           isDragSource={false}
           highlightTeacher={highlightTeacher}
+          isSelected={isSelected}
+          onCellSelect={onCellSelect}
         />
       </tr></tbody></table>
     </ProjectContext.Provider>,
@@ -305,5 +307,44 @@ describe('ScheduleCell — ハイライトとドラッグの競合 (§M)', () =>
     expect(td.className).toContain('bg-builder-info-soft');
     // data 属性 (一致マーカー) は維持
     expect(td.hasAttribute('data-teacher-highlight')).toBe(true);
+  });
+});
+
+describe('ScheduleCell — 複数選択 (N2a)', () => {
+  it('Ctrl+クリックで onCellSelect が呼ばれ、通常クリックでは呼ばれない', () => {
+    const onCellSelect = vi.fn();
+    renderCell({ onCellSelect });
+    const td = document.getElementById('select-1-1-1-cell');
+    fireEvent.click(td, { ctrlKey: true });
+    expect(onCellSelect).toHaveBeenCalledWith(expect.anything(), makeKey(1, 1, 1));
+    onCellSelect.mockClear();
+    fireEvent.click(td);
+    expect(onCellSelect).not.toHaveBeenCalled();
+  });
+
+  it('Shift+クリックでも onCellSelect が呼ばれる', () => {
+    const onCellSelect = vi.fn();
+    renderCell({ onCellSelect });
+    fireEvent.click(document.getElementById('select-1-1-1-cell'), { shiftKey: true });
+    expect(onCellSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('選択中は selection ring (ring-builder-primary) と data-selected が付く', () => {
+    renderCell({ isSelected: true });
+    const td = document.getElementById('select-1-1-1-cell');
+    expect(td.className).toContain('ring-builder-primary');
+    expect(td).toHaveAttribute('data-selected');
+  });
+
+  it('選択中はハイライトの薄表示 (opacity-40) より優先される', () => {
+    renderCell({
+      isSelected: true,
+      highlightTeacher: '堀上',
+      contextOverrides: {
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '田中' } },
+      },
+    });
+    const td = document.getElementById('select-1-1-1-cell');
+    expect(td.className).not.toContain('opacity-40');
   });
 });

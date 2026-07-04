@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useJsonIO } from './useJsonIO';
-import { STORAGE_KEY_TEMPLATES } from '../utils/constants';
+import { STORAGE_KEY_TEMPLATES, STORAGE_KEY_USER_DEFAULTS } from '../utils/constants';
 
 afterEach(cleanup);
 
@@ -213,5 +213,24 @@ describe('useJsonIO — 読込エラー経路 (§M)', () => {
     } finally {
       readSpy.mockRestore();
     }
+  });
+});
+
+describe('useJsonIO — 初期値の保存 (N1e)', () => {
+  it('科目マスタ・科目カラー・生成パラメータも defaults に含める', () => {
+    const { result } = setup({
+      subjects: ['情報', '小論文'],
+      subjectColors: { '情報': '#123456' },
+      numPatterns: 5,
+      generationSeed: 42,
+    });
+    result.current.handleSaveAsDefault();
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_USER_DEFAULTS));
+    expect(saved.subjects).toEqual(['情報', '小論文']);
+    expect(saved.subjectColors).toEqual({ '情報': '#123456' });
+    expect(saved.generationParams).toEqual({ numPatterns: 5, generationSeed: 42 });
+    // 従来分も引き続き保存される
+    expect(saved.teachers).toEqual([]);
+    expect(saved.config.dates).toEqual([{ id: 1, label: '12/25(木)' }]);
   });
 });

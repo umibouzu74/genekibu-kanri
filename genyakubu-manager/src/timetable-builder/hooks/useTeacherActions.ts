@@ -16,7 +16,7 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
       dispatch({ type: 'teacher/rename', payload: { idx, newName } }),
     toggleTeacherSubject: (idx: number, subject: string) =>
       dispatch({ type: 'teacher/toggleSubject', payload: { idx, subject } }),
-    setTeacherLimit: (idx: number, key: 'maxDailyHours' | 'maxTotalHours', value: unknown) =>
+    setTeacherLimit: (idx: number, key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods', value: unknown) =>
       dispatch({ type: 'teacher/setLimit', payload: { idx, key, value } }),
     toggleTeacherNg: (idx: number, date: string, period: string) =>
       dispatch({ type: 'teacher/toggleNg', payload: { idx, date, period } }),
@@ -38,7 +38,7 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
     removeExternalSession: (id: number) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
     // 他学年セッション登録プリセット (時刻 / 期間 / メモ の頻出パターン)
-    addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string }) =>
+    addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] }) =>
       dispatch({ type: 'preset/add', payload: preset }),
     updateExternalSessionPreset: (id: number, updates: Partial<Omit<ExternalSessionPreset, 'id'>>) =>
       dispatch({ type: 'preset/update', payload: { id, updates } }),

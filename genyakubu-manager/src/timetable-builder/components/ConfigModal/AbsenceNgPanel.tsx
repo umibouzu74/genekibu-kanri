@@ -333,8 +333,31 @@ export default function AbsenceNgPanel() {
         });
       }
     }
+    // N1i: reducer は内容が完全一致する既存セッションをスキップするので、
+    // toast も実際の登録件数と重複スキップ件数を分けて出す (キーは reducer と同形)。
+    const contentKey = (s) =>
+      JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+    const seen = new Set((project.externalSessions || []).map(contentKey));
+    let added = 0;
+    for (const it of items) {
+      const key = contentKey(it);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added++;
+    }
+    const skipped = items.length - added;
     addExternalSessions(items);
-    showToast(`他学年セッション ${items.length} 件を登録しました`, 'success', 3000);
+    if (added === 0) {
+      showToast(`すべて登録済みの内容だったため追加しませんでした (${skipped} 件)`, 'warning', 3000);
+    } else {
+      showToast(
+        skipped > 0
+          ? `他学年セッション ${added} 件を登録しました (登録済み ${skipped} 件はスキップ)`
+          : `他学年セッション ${added} 件を登録しました`,
+        'success',
+        3000,
+      );
+    }
     // 時刻・メモは clear (連打による重複登録を視覚的に防ぐ — code-review P2)。
     // 講師 / date range は連続追加用に残す。
     setFormStartTime('');
@@ -398,6 +421,21 @@ export default function AbsenceNgPanel() {
       setFormStartDateId(startD.id);
       setFormEndDateId(startD.id);
     }
+    // N4c: 対象講師を持つプリセットは講師選択も展開する (「予備校 = 毎回
+    // 同じ講師群」の選び直しをなくす)。講師なしプリセットは選択を触らない。
+    // マスタから消えた講師は無視して警告。
+    if (Array.isArray(p.teachers) && p.teachers.length > 0) {
+      const known = new Set(project.teachers.map(t => t.name));
+      const found = p.teachers.filter(n => known.has(n));
+      const missing = p.teachers.filter(n => !known.has(n));
+      setFormTeachers({ allMode: false, names: new Set(found) });
+      if (missing.length > 0) {
+        showToast(
+          `プリセットの講師のうち ${missing.join('・')} は講師マスタに存在しないため選択しませんでした`,
+          'warning', 4000,
+        );
+      }
+    }
   };
 
   // mode 切替時の state クリア。external モード固有の時刻 / メモが ng モード
@@ -454,6 +492,7 @@ export default function AbsenceNgPanel() {
         addPreset={addExternalSessionPreset}
         updatePreset={updateExternalSessionPreset}
         removePreset={removeExternalSessionPreset}
+        selectedTeacherNames={selectedTeacherNames}
       />
 
       {/* 統合一括登録フォーム */}
@@ -1005,17 +1044,19 @@ function DateSection({
 
 // ── プリセット管理 (折りたたみ式) ─────────────────
 // 旧 ExternalCounts.jsx 内の PresetPanel をそのまま流用。
-function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) {
+function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, selectedTeacherNames = [] }) {
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
   // F5m: 期間は「なし (null)」を第一級で扱う。旧実装は blankDraft / 編集
   // fallback がプール先頭日に snap していたため、期間なしプリセットを
   // 改名だけして保存すると先頭日の期間が勝手に付与された。
+  // N4c: teachers は空配列 = 「講師なし (適用時に講師選択を触らない)」。
   const blankDraft = () => ({
     name: '', startTime: '', endTime: '',
     startDateId: null,
     endDateId: null,
     memo: '',
+    teachers: [],
   });
   // lazy init (毎レンダーで blankDraft() を呼ばないため — code-review P3)
   const [draft, setDraft] = useState(() => blankDraft());
@@ -1048,6 +1089,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
       startDateId: dates.find(d => d.label === p.startDateLabel)?.id ?? null,
       endDateId: dates.find(d => d.label === p.endDateLabel)?.id ?? null,
       memo: p.memo || '',
+      teachers: Array.isArray(p.teachers) ? [...p.teachers] : [],
     });
     setExpanded(true);
   };
@@ -1064,6 +1106,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
       startDateLabel: p.startDateLabel || '',
       endDateLabel: p.endDateLabel || '',
       memo: p.memo || '',
+      teachers: Array.isArray(p.teachers) ? [...p.teachers] : [],
     });
   };
 
@@ -1089,6 +1132,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
       startDateLabel: startDateLabel || '',
       endDateLabel: endDateLabel || '',
       memo: draft.memo.trim(),
+      teachers: draft.teachers,
     };
     if (editingId == null) addPreset(payload);
     else updatePreset(editingId, payload);
@@ -1125,6 +1169,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">期間</th>
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
+                    <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">講師</th>
                     <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-28"></th>
                   </tr>
                 </thead>
@@ -1139,6 +1184,12 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                         {p.startDateLabel ? (p.endDateLabel && p.endDateLabel !== p.startDateLabel ? `${p.startDateLabel}〜${p.endDateLabel}` : p.startDateLabel) : '-'}
                       </td>
                       <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{p.memo || '-'}</td>
+                      <td
+                        className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink"
+                        title={Array.isArray(p.teachers) && p.teachers.length > 0 ? p.teachers.join('・') : undefined}
+                      >
+                        {Array.isArray(p.teachers) && p.teachers.length > 0 ? `${p.teachers.length}名` : '-'}
+                      </td>
                       <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center whitespace-nowrap">
                         <button type="button" onClick={() => startEdit(p)}
                           className="text-builder-blue hover:underline text-[11px] mr-2"
@@ -1217,6 +1268,30 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset }) 
                 </div>
               </div>
             </div>
+            {/* N4c: 対象講師 (任意)。「予備校 = 毎回同じ講師群」の適用時に
+                講師を選び直す手間をなくす。上の講師チェックの選択状態から取り込む */}
+            <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+              <span className="text-builder-ink-muted">対象講師 (任意):</span>
+              {draft.teachers.length > 0 ? (
+                <>
+                  <span className="text-builder-ink" title={draft.teachers.join('・')}>
+                    {draft.teachers.slice(0, 4).join('・')}{draft.teachers.length > 4 ? ` 他${draft.teachers.length - 4}名` : ''} ({draft.teachers.length}名)
+                  </span>
+                  <button type="button"
+                    onClick={() => setDraft(d => ({ ...d, teachers: [] }))}
+                    className="text-builder-red hover:underline"
+                    aria-label="プリセットの対象講師をクリア">✕ クリア</button>
+                </>
+              ) : (
+                <span className="text-builder-ink-ghost">なし (適用時に講師選択を変えません)</span>
+              )}
+              <button type="button"
+                disabled={selectedTeacherNames.length === 0}
+                onClick={() => setDraft(d => ({ ...d, teachers: [...selectedTeacherNames] }))}
+                className="px-2 py-0.5 border border-builder-ink-ghost rounded text-builder-ink hover:bg-builder-bg disabled:opacity-40 disabled:cursor-not-allowed"
+                title="上の「講師 (複数選択可)」で選択中の講師をこのプリセットの対象にします"
+              >⬆ 選択中の講師をセット ({selectedTeacherNames.length}名)</button>
+            </div>
             <div className="flex flex-wrap gap-2 items-center">
               <button type="button" onClick={saveDraft}
                 disabled={draftValidation != null}
@@ -1250,5 +1325,7 @@ function formatPresetSummary(p) {
         : p.startDateLabel,
     );
   }
+  // N4c: 対象講師付きプリセットは適用ドロップダウンでも分かるようにする
+  if (Array.isArray(p.teachers) && p.teachers.length > 0) parts.push(`講師${p.teachers.length}名`);
   return parts.join(' / ');
 }

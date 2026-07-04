@@ -1,9 +1,12 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { parseKey, makeNgKey } from '../utils/scheduleKey';
+import { makeNgKey } from '../utils/scheduleKey';
+import { scrollToCellByKey } from '../utils/scrollToCell';
 import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
+import { useUndoRedoFeedback } from '../hooks/useUndoRedoFeedback';
 import SnapshotMenu from './SnapshotMenu';
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 interface ToolbarProps {
@@ -45,14 +48,14 @@ export default function Toolbar({
     dashboard,
     historyIndex,
     history,
-    undo,
-    redo,
     handleClearUnlocked,
     project,
     toggleTeacherNg,
     updateGenerationParams,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
+  // N2f: undo/redo は内容 toast + 該当セルスクロール付きで使う
+  const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
 
   // E2b: 修正提案のワンクリック適用。action 種別ごとに対応する dispatch を呼ぶ。
   const applyFix = (action) => {
@@ -91,6 +94,15 @@ export default function Toolbar({
   // popover の開閉と外側クリック検知 (F2l: 共有フック)
   const { open: popoverOpen, setOpen: setPopoverOpen, ref: popoverRef } = useDismissablePopover();
 
+  // N3e: 切り詰めリスト (講師日上限超 / 通算上限超 / 設定の問題) の展開状態。
+  // 従来は「他 N 件」がプレーンテキストで、隠れた違反の中身を確認できなかった。
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) =>
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  useEffect(() => {
+    if (!popoverOpen) setExpandedSections({});
+  }, [popoverOpen]);
+
   const handleClearClick = async () => {
     const ok = await showConfirm(
       "表示中のロックされていないセルを全てクリアしますか？\n(「使う日・使う時限」から外して非表示になっているコマは温存されます)",
@@ -99,14 +111,8 @@ export default function Toolbar({
     if (ok) handleClearUnlocked();
   };
 
-  const scrollToKey = (key) => {
-    if (!key) return;
-    const parsed = parseKey(key);
-    if (!parsed) return;
-    const targetId = `select-${parsed.dateId}-${parsed.periodId}-${parsed.classId}-cell`;
-    const el = document.getElementById(targetId);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
+  // 該当セルへのスクロールは SnapshotMenu の差分ジャンプと共有 (N2g)
+  const scrollToKey = scrollToCellByKey;
 
   // popover に表示すべき violation 種別 (count > 0 のみ)
   const popoverRows = [];
@@ -200,7 +206,7 @@ export default function Toolbar({
               <div
                 role="dialog"
                 aria-label="違反の内訳"
-                className="absolute z-50 top-full left-0 mt-1 w-72 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+                className="absolute z-50 top-full left-0 mt-1 w-72 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
               >
                 <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
                 <ul className="space-y-1.5 text-xs">
@@ -222,7 +228,7 @@ export default function Toolbar({
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1">講師日上限超 ({teacherOverItems.length}件)</div>
                       <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
-                        {teacherOverItems.slice(0, 5).map((it) => (
+                        {(expandedSections.overDaily ? teacherOverItems : teacherOverItems.slice(0, 5)).map((it) => (
                           <li key={`${it.date}-${it.teacher}`} className="flex items-center justify-between gap-2">
                             <span className="flex-1 min-w-0 truncate">
                               {it.teacher} {it.date}: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
@@ -238,7 +244,16 @@ export default function Toolbar({
                           </li>
                         ))}
                         {teacherOverItems.length > 5 && (
-                          <li className="italic">他 {teacherOverItems.length - 5} 件</li>
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => toggleSection('overDaily')}
+                              aria-expanded={!!expandedSections.overDaily}
+                              className="italic underline text-builder-blue hover:text-builder-blue-hover"
+                            >
+                              {expandedSections.overDaily ? '▲ 折りたたむ' : `▼ 他 ${teacherOverItems.length - 5} 件を表示`}
+                            </button>
+                          </li>
                         )}
                       </ul>
                     </li>
@@ -247,7 +262,7 @@ export default function Toolbar({
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1">講師通算上限超 ({teacherOverTotalItems.length}件)</div>
                       <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
-                        {teacherOverTotalItems.slice(0, 5).map((it) => (
+                        {(expandedSections.overTotal ? teacherOverTotalItems : teacherOverTotalItems.slice(0, 5)).map((it) => (
                           <li key={`total-${it.teacher}`} className="flex items-center justify-between gap-2">
                             <span className="flex-1 min-w-0 truncate">
                               {it.teacher} 通算: <span className="font-bold text-builder-red">{it.total}/{it.max}</span>
@@ -263,7 +278,16 @@ export default function Toolbar({
                           </li>
                         ))}
                         {teacherOverTotalItems.length > 5 && (
-                          <li className="italic">他 {teacherOverTotalItems.length - 5} 件</li>
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => toggleSection('overTotal')}
+                              aria-expanded={!!expandedSections.overTotal}
+                              className="italic underline text-builder-blue hover:text-builder-blue-hover"
+                            >
+                              {expandedSections.overTotal ? '▲ 折りたたむ' : `▼ 他 ${teacherOverTotalItems.length - 5} 件を表示`}
+                            </button>
+                          </li>
                         )}
                       </ul>
                     </li>
@@ -272,7 +296,7 @@ export default function Toolbar({
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1 text-builder-red">設定の問題 ({infeasItems.length}件)</div>
                       <ul className="space-y-1 pl-2 text-builder-ink-muted">
-                        {infeasItems.slice(0, 8).map((it, i) => (
+                        {(expandedSections.infeas ? infeasItems : infeasItems.slice(0, 8)).map((it, i) => (
                           <li key={`infeas-${i}`} className="text-[11px]">
                             <div>{it.label}</div>
                             {it.suggestions.length > 0 && (
@@ -296,7 +320,16 @@ export default function Toolbar({
                           </li>
                         ))}
                         {infeasItems.length > 8 && (
-                          <li className="italic">他 {infeasItems.length - 8} 件</li>
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => toggleSection('infeas')}
+                              aria-expanded={!!expandedSections.infeas}
+                              className="italic underline text-builder-blue hover:text-builder-blue-hover"
+                            >
+                              {expandedSections.infeas ? '▲ 折りたたむ' : `▼ 他 ${infeasItems.length - 8} 件を表示`}
+                            </button>
+                          </li>
                         )}
                       </ul>
                     </li>

@@ -124,6 +124,33 @@ describe('SnapshotMenu', () => {
     expect(screen.getByText(/12\/25\(木\) 1限 ３S: 英語\/堀上 → （空）/)).toBeInTheDocument();
   });
 
+  it('差分行の「→」で該当セルへスクロールする (N2g)', () => {
+    // jsdom は scrollIntoView 未実装なので spy を生やす
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      const snapWithCell = { id: 1, name: 'A', tabId: 1, createdAt: null, schedule: { 'd1-p1-c1': { subject: '英語', teacher: '堀上' } } };
+      renderMenu({
+        projectOverrides: {
+          project: { snapshots: [snapWithCell] },
+          currentSchedule: {},
+        },
+      });
+      // 対象セル相当の要素 (ScheduleCell が振る id) を用意
+      const cell = document.createElement('div');
+      cell.id = 'select-1-1-1-cell';
+      document.body.appendChild(cell);
+      fireEvent.click(screen.getByTitle('現在の状態を名前を付けて保存・復元'));
+      fireEvent.click(screen.getByLabelText('A と現在の状態を比較'));
+      fireEvent.click(screen.getByTitle('該当セルへスクロール'));
+      expect(scrollSpy).toHaveBeenCalled();
+      cell.remove();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('差分が無ければ「変更なし」', () => {
     const sameCell = { subject: '英語', teacher: '堀上' };
     renderMenu({

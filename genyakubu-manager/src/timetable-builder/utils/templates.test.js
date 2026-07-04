@@ -6,6 +6,7 @@ import {
   removeTemplate,
   loadTemplates,
   persistTemplates,
+  updateTemplate,
 } from './templates';
 import { STORAGE_KEY_TEMPLATES } from './constants';
 
@@ -72,5 +73,25 @@ describe('loadTemplates / persistTemplates', () => {
   it('配列でない値は空配列にフォールバック', () => {
     localStorage.setItem(STORAGE_KEY_TEMPLATES, '{"a":1}');
     expect(loadTemplates()).toEqual([]);
+  });
+});
+
+describe('updateTemplate (N4a)', () => {
+  const proj = (name) => ({ name, teachers: [], tabs: [], snapshots: [{ id: 1 }] });
+
+  it('id 一致のテンプレートの payload と createdAt を差し替える (name は維持)', () => {
+    let list = addTemplate([], { name: 'ベース', project: proj('v1'), createdAt: '2026-01-01T00:00:00Z' });
+    list = updateTemplate(list, { id: list[0].id, project: proj('v2'), createdAt: '2026-07-03T00:00:00Z' });
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('ベース');
+    expect(list[0].payload.name).toBe('v2');
+    expect(list[0].createdAt).toBe('2026-07-03T00:00:00Z');
+    // snapshots は payload に含めない (buildTemplatePayload 準拠)
+    expect(list[0].payload).not.toHaveProperty('snapshots');
+  });
+
+  it('対象 id が無ければ元の配列をそのまま返す', () => {
+    const list = addTemplate([], { name: 'A', project: proj('v1') });
+    expect(updateTemplate(list, { id: 999, project: proj('v2') })).toBe(list);
   });
 });

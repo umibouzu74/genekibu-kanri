@@ -28,6 +28,23 @@ export interface CsvError {
   message: string;
 }
 
+// N1j: CSV ファイルのバイト列をデコードする。日本語版 Excel の
+// 「CSV (コンマ区切り)」既定保存は Shift-JIS (CP932) になることが多く、
+// UTF-8 固定 (file.text()) で読むと講師名・ラベルが U+FFFD だらけになり、
+// 全行が「未登録の講師/日付」warning に化けて原因に気づけない。
+// 置換文字を検出したら shift_jis で再デコードを試す。
+export function decodeCsvBytes(buffer: ArrayBuffer): { text: string; encoding: 'utf-8' | 'shift_jis' } {
+  const utf8 = new TextDecoder('utf-8').decode(buffer);
+  if (!utf8.includes('�')) return { text: utf8, encoding: 'utf-8' };
+  try {
+    const sjis = new TextDecoder('shift_jis').decode(buffer);
+    if (!sjis.includes('�')) return { text: sjis, encoding: 'shift_jis' };
+  } catch {
+    // shift_jis 非対応の環境 (稀) では UTF-8 の結果をそのまま使う
+  }
+  return { text: utf8, encoding: 'utf-8' };
+}
+
 const REQUIRED_HEADERS = ['name', 'subjects'];
 
 function parseLine(line: string): string[] {

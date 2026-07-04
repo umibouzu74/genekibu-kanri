@@ -78,6 +78,10 @@ export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
 // 年度間コピー用のテンプレート保存先 (E2d)。ユーザが明示的に保存した
 // プロジェクトのスナップショット配列。自動学習・自動変形ではない。
 export const STORAGE_KEY_TEMPLATES = 'builder.templates';
+// 表示トグルの永続化 (N2h)。明示トグルの 1 bit 保存のみで、利用統計からの
+// UI 自動変形 (A18 で却下) とは別物。
+export const STORAGE_KEY_VIEW_COMPACT = 'builder.view_compact';
+export const STORAGE_KEY_VIEW_SUMMARY = 'builder.view_summary';
 
 // 旧キー（互換性のため読み込み時に参照）
 export const LEGACY_STORAGE_KEYS = [

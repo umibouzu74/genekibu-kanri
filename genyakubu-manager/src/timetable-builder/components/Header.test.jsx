@@ -142,3 +142,43 @@ describe('Header — 配布用 Excel 出力 (L5c)', () => {
       expect(mod.downloadScheduleExcel).toHaveBeenCalledWith(expect.anything(), { clean: true }));
   });
 });
+
+describe('Header — 保存ステータスの可視化 (N1b)', () => {
+  it('保存済は成功色バッジ + role=status', () => {
+    renderHeader();
+    const badge = screen.getByRole('status');
+    expect(badge).toHaveTextContent('✅ 保存済');
+    expect(badge.className).toContain('text-builder-green');
+  });
+
+  it('保存失敗は danger 色になり error toast を出す', () => {
+    const { uiValue } = renderHeader({ projectOverrides: { saveStatus: '⚠️ 保存失敗' } });
+    const badge = screen.getByRole('status');
+    expect(badge.className).toContain('text-builder-red');
+    expect(badge.className).not.toContain('text-builder-green');
+    expect(uiValue.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('自動保存に失敗'),
+      'error',
+      expect.any(Number),
+    );
+  });
+
+  it('保存中は中立色で toast は出さない', () => {
+    const { uiValue } = renderHeader({ projectOverrides: { saveStatus: '💾 保存中...' } });
+    const badge = screen.getByRole('status');
+    expect(badge.className).not.toContain('text-builder-green');
+    expect(badge.className).not.toContain('text-builder-red');
+    expect(uiValue.showToast).not.toHaveBeenCalled();
+  });
+
+  it('保存領域の使用量を常時表示する (N5c)', () => {
+    localStorage.setItem('builder.test_dummy', 'x'.repeat(2048));
+    try {
+      renderHeader();
+      // jsdom の localStorage に入れた 2KB+ が概算表示に出る (単位付き)
+      expect(screen.getByTitle(/保存領域の使用量/)).toHaveTextContent(/(KB|MB|B)/);
+    } finally {
+      localStorage.removeItem('builder.test_dummy');
+    }
+  });
+});

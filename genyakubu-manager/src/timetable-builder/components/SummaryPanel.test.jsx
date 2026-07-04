@@ -16,6 +16,7 @@ const CONFIG = {
 
 function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generatedForTab = null, generatedSeed = null, project = {}, analysis = { teacherDailyCounts: {} }, showSummary = false } = {}) {
   const applyPattern = vi.fn();
+  const updateGenerationParams = vi.fn();
   const projectValue = {
     project: {
       teachers: [{ name: '堀上', subjects: ['英語'] }],
@@ -26,6 +27,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
     analysis,
     currentConfig: CONFIG,
     applyPattern,
+    updateGenerationParams,
   };
   const utils = render(
     <ProjectContext.Provider value={projectValue}>
@@ -41,7 +43,7 @@ function renderPanel({ generatedPatterns = [], generatedElapsedMs = 0, generated
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
-  return { ...utils, applyPattern };
+  return { ...utils, applyPattern, updateGenerationParams };
 }
 
 const fullPattern = {
@@ -92,6 +94,38 @@ describe('SummaryPanel (E2f 生成統計)', () => {
   it('generatedSeed が null なら seed 表示を出さない (後方互換)', () => {
     renderPanel({ generatedPatterns: [fullPattern] });
     expect(screen.queryByLabelText('生成に使った乱数 seed')).toBeNull();
+  });
+});
+
+describe('SummaryPanel — seed のワンクリック固定 (N3c)', () => {
+  it('「🔒 固定」で generationSeed に表示 seed をセットする', () => {
+    const { updateGenerationParams } = renderPanel({ generatedPatterns: [fullPattern], generatedSeed: 42 });
+    fireEvent.click(screen.getByRole('button', { name: '🔒 固定' }));
+    expect(updateGenerationParams).toHaveBeenCalledWith({ generationSeed: 42 });
+  });
+
+  it('固定中 (project.generationSeed が一致) は「固定中」表示になり、クリックで解除 (0)', () => {
+    const { updateGenerationParams } = renderPanel({
+      generatedPatterns: [fullPattern],
+      generatedSeed: 42,
+      project: { generationSeed: 42 },
+    });
+    const btn = screen.getByRole('button', { name: '🔒 固定中' });
+    expect(btn).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(btn);
+    expect(updateGenerationParams).toHaveBeenCalledWith({ generationSeed: 0 });
+  });
+});
+
+describe('SummaryPanel — 同一案の集約表示 (N1h)', () => {
+  it('duplicateCount > 1 の案には「同一案 ×k」を表示する', () => {
+    renderPanel({ generatedPatterns: [{ ...fullPattern, duplicateCount: 3 }] });
+    expect(screen.getByText('(同一案 ×3)')).toBeInTheDocument();
+  });
+
+  it('duplicateCount 未設定/1 の案には表示しない', () => {
+    renderPanel({ generatedPatterns: [fullPattern, { ...fullPattern, duplicateCount: 1 }] });
+    expect(screen.queryByText(/同一案/)).toBeNull();
   });
 });
 

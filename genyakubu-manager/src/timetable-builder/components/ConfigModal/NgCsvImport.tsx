@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { parseNgCsv } from '../../utils/csvImport';
+import { parseNgCsv, decodeCsvBytes } from '../../utils/csvImport';
 import { buildNgCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
 
 const NG_CSV_PLACEHOLDER = `name,date,period
@@ -49,9 +49,17 @@ export default function NgCsvImport() {
       return;
     }
     try {
-      const text = await file.text();
+      // N1j: UTF-8 固定 (file.text()) だと日本語 Excel 既定の Shift-JIS CSV が
+      // 文字化けして全行「未登録」warning になる。バイト列から判定して読む。
+      const { text, encoding } = decodeCsvBytes(await file.arrayBuffer());
       setCsvText(text);
-      showToast(`「${name || 'ファイル'}」を読み込みました`, 'success', 2000);
+      showToast(
+        encoding === 'shift_jis'
+          ? `「${name || 'ファイル'}」を読み込みました (Shift-JIS として解釈)`
+          : `「${name || 'ファイル'}」を読み込みました`,
+        'success',
+        2000,
+      );
     } catch {
       showToast('ファイルの読み込みに失敗しました', 'error', 3000);
     }

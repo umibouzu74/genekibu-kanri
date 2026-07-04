@@ -766,6 +766,16 @@ describe('normalizeTeacherFields', () => {
     const teachers = [{ name: 'A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] }];
     expect(normalizeTeacherFields(teachers)).toBe(teachers);
   });
+
+  it('個別上限 3 種は正の有限数以外を落とす (M15 + N3a)', () => {
+    const result = normalizeTeacherFields([{
+      name: 'A', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [],
+      maxDailyHours: '3', maxTotalHours: 8, maxConsecutivePeriods: -1,
+    }]);
+    expect(result[0]).not.toHaveProperty('maxDailyHours');
+    expect(result[0].maxTotalHours).toBe(8);
+    expect(result[0]).not.toHaveProperty('maxConsecutivePeriods');
+  });
 });
 
 describe('normalizeCombinedGroups', () => {

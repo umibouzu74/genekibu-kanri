@@ -3,8 +3,9 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined, effectiveConfigForTab } from '../utils/scheduleKey';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
-import { summarizePatternLoad } from '../utils/patternLoad';
-import { summarizeUnfilled } from '../utils/partialSummary';
+import { summarizePatternLoad, summarizeSingleSlotDays } from '../utils/patternLoad';
+import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
+import { summarizeUnfilled, diagnoseUnfilledCells, formatDiagnosis } from '../utils/partialSummary';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Schedule } from '../types';
 
@@ -17,6 +18,8 @@ export interface GeneratedPattern {
   iterations?: number;
   hitLimit?: boolean;
   stuckSlot?: { date: string; period: string; class: string } | null;
+  /** 同一内容だった案の件数 (自身含む、N1h)。未設定 = 1 */
+  duplicateCount?: number;
 }
 
 interface SummaryPanelProps {
@@ -32,6 +35,27 @@ interface SummaryPanelProps {
 function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
   const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
   delete totals["未定"];
+  // N3g: 通算上限 (L3b) を持つ講師は「使用/上限」で表示し、この案だけで
+  // 上限に達する講師を色で警告する (他タブ・他学年コマを含まないタブ内の
+  // 数字なので、実際の残りはさらに少ない = 到達表示は保守的に正しい)。
+  const limitOf = new Map((teachers || []).map(t => [t.name, t.maxTotalHours]));
+  const badgeFor = (name) => {
+    const total = totals[name] || 0;
+    const limit = limitOf.get(name);
+    const hasLimit = typeof limit === 'number' && limit > 0;
+    const atLimit = hasLimit && total >= limit;
+    return {
+      text: hasLimit ? `${name}:${total}/${limit}` : `${name}:${total}`,
+      cls: atLimit
+        ? 'bg-builder-warning-soft text-builder-orange border border-builder-warning-border font-bold'
+        : 'bg-builder-info-soft text-builder-ink',
+      title: atLimit
+        ? `この案だけで通算上限 (${limit}) に達しています。他タブ・他学年のコマを含めるとさらに超過するため、手直しの余地がありません`
+        : hasLimit
+          ? `通算上限 ${limit} コマ (この数字はこの案のタブ内のみ。他タブ・他学年コマは含みません)`
+          : undefined,
+    };
+  };
   // 教科ごとにグループ化して表示。teachers/subjects は project から渡される。
   // totals に存在しない (= 0 コマ) 講師は省く。
   const teachersWithCount = (teachers || []).filter(t => t.name !== '未定' && (totals[t.name] || 0) > 0);
@@ -66,11 +90,14 @@ function SummaryTable({ target, config, combinedGroups, teachers, subjects }) {
             <div className="flex flex-wrap gap-1.5 mb-1">
               {[...group.teachers]
                 .sort((a, b) => (totals[b.name] || 0) - (totals[a.name] || 0))
-                .map(t => (
-                  <span key={t.name} className="bg-builder-info-soft text-builder-ink px-2 rounded text-sm">
-                    {t.name}:{totals[t.name]}
-                  </span>
-                ))}
+                .map(t => {
+                  const badge = badgeFor(t.name);
+                  return (
+                    <span key={t.name} className={`px-2 rounded text-sm ${badge.cls}`} title={badge.title}>
+                      {badge.text}
+                    </span>
+                  );
+                })}
             </div>
           </Fragment>
         ))}
@@ -114,9 +141,13 @@ function PatternStats({ pat }) {
 // L3e: 部分解の未充填内訳。どのセルが埋まらなかったか + 科目別の不足を
 // 案カード内に出す。従来は「N/M コマ充填」と最初の詰まり 1 セルだけで、
 // 残りはグリッドを目視で探すしかなかった。
-function UnfilledBreakdown({ schedule, config }: { schedule: Schedule; config: any }) {
+// N3b: セルごとに「なぜ埋まらないか」(候補なし/NG/上限/探索切れ) を添え、
+// 「設定を直すか・もう一度回すか」を判断できるようにする。
+function UnfilledBreakdown({ schedule, config, project }: { schedule: Schedule; config: any; project: any }) {
   const { cells, shortages } = summarizeUnfilled(schedule, config);
   if (cells.length === 0) return null;
+  const diagnoses = diagnoseUnfilledCells(schedule, config, project);
+  const hasSearchExhausted = cells.some(c => diagnoses.get(c.key)?.kind === 'searchExhausted');
   const MAX_CELLS = 10;
   return (
     <div className="mt-1 mb-2 p-2 bg-builder-warning-soft border border-builder-warning-border rounded text-xs text-builder-ink" aria-label="未充填の内訳">
@@ -128,13 +159,21 @@ function UnfilledBreakdown({ schedule, config }: { schedule: Schedule; config: a
       )}
       <ul className="space-y-0.5 text-builder-ink-muted">
         {cells.slice(0, MAX_CELLS).map(c => (
-          <li key={c.key}>{c.date} {c.period} {c.className}</li>
+          <li key={c.key}>
+            {c.date} {c.period} {c.className}
+            <span className="text-builder-ink-ghost"> — {formatDiagnosis(diagnoses.get(c.key))}</span>
+          </li>
         ))}
         {cells.length > MAX_CELLS && <li className="italic">他 {cells.length - MAX_CELLS} 件</li>}
       </ul>
       <div className="mt-1 text-builder-ink-muted">
         💡 採用後にもう一度 🧙‍♂️ 自動作成すると、埋まったセルは保持して残りだけを再探索します。
       </div>
+      {hasSearchExhausted && (
+        <div className="mt-0.5 text-builder-ink-muted">
+          💡 「探索切れの可能性」のセルは、⚙️ ⚡自動生成 の探索回数を増やすか seed を変えて再生成すると埋まることがあります。
+        </div>
+      )}
     </div>
   );
 }
@@ -145,8 +184,23 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
     analysis,
     currentConfig,
     applyPattern,
+    updateGenerationParams,
   } = useProjectContext();
   const { showToast } = useUI();
+
+  // N3c: 表示 seed をワンクリックで生成パラメータに固定/解除する。
+  // 従来は表示を読んで ⚙️ → ⚡自動生成 → 数値入力の 4 手が必要だった。
+  const isSeedPinned = generatedSeed != null && project.generationSeed === generatedSeed;
+  const handleToggleSeedPin = () => {
+    if (generatedSeed == null || !updateGenerationParams) return;
+    if (isSeedPinned) {
+      updateGenerationParams({ generationSeed: 0 });
+      showToast('seed の固定を解除しました (次回から毎回ランダム)', 'success', 3000);
+    } else {
+      updateGenerationParams({ generationSeed: generatedSeed });
+      showToast(`seed ${generatedSeed} を固定しました。同じ設定なら次回も同じ結果になります`, 'success', 4000);
+    }
+  };
 
   // 生成結果はタブ切替後もパネルに残るため、集計・採用は「今のタブ」ではなく
   // 生成元タブを基準にする。生成元タブが分からない (古い state) 場合は従来
@@ -198,12 +252,28 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                     <Fragment key={group.key}>
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
                       <div className="flex flex-wrap gap-2">
-                        {entries.map(({ t, total }) => (
-                          <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
-                            <span className="font-bold text-builder-ink">{t.name}</span>
-                            <span className="bg-builder-info-soft text-builder-ink px-1 rounded">{total}</span>
-                          </div>
-                        ))}
+                        {entries.map(({ t, total }) => {
+                          // N3g: 通算上限 (L3b) 持ちは「使用/上限」で表示。
+                          // この数字は講習セルのみ (F5u) で、上限判定には
+                          // 他学年コマも含まれるため到達表示は保守的に正しい。
+                          const limit = typeof t.maxTotalHours === 'number' && t.maxTotalHours > 0 ? t.maxTotalHours : null;
+                          const atLimit = limit != null && total >= limit;
+                          return (
+                            <div key={t.name} className="bg-builder-surface px-2 py-1 rounded border border-builder-border shadow-sm text-sm flex items-center gap-2">
+                              <span className="font-bold text-builder-ink">{t.name}</span>
+                              <span
+                                className={`px-1 rounded ${atLimit ? 'bg-builder-warning-soft text-builder-orange border border-builder-warning-border font-bold' : 'bg-builder-info-soft text-builder-ink'}`}
+                                title={limit != null
+                                  ? (atLimit
+                                    ? `通算上限 (${limit}) に達しています (他学年のコマを含めるとさらに超過)`
+                                    : `通算上限 ${limit} コマ (この数字は講習セルのみ。他学年のコマは含みません)`)
+                                  : undefined}
+                              >
+                                {limit != null ? `${total}/${limit}` : total}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </Fragment>
                   );
@@ -236,6 +306,16 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   title="⚙️ 設定 > ⚡ 自動生成 の「乱数 seed」にこの値を入力すると、同じ設定で同じ結果を再現できます。"
                 >
                   seed {generatedSeed}
+                  {/* N3c: ⚙️ を開かずにその場で固定/解除 */}
+                  <button
+                    type="button"
+                    onClick={handleToggleSeedPin}
+                    aria-pressed={isSeedPinned}
+                    className={`ml-1 px-1.5 py-0.5 rounded border text-[11px] ${isSeedPinned ? 'bg-builder-blue text-white border-builder-blue' : 'border-builder-border text-builder-ink-muted hover:bg-builder-surface-alt'}`}
+                    title={isSeedPinned ? 'クリックで固定を解除 (次回から毎回ランダム)' : 'この seed を生成パラメータに固定し、同じ結果を再現できるようにする'}
+                  >
+                    {isSeedPinned ? '🔒 固定中' : '🔒 固定'}
+                  </button>
                 </span>
               )}
             </h3>
@@ -275,9 +355,17 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                       完全解
                     </span>
                   )}
+                  {(pat.duplicateCount ?? 1) > 1 && (
+                    <span
+                      className="ml-2 text-xs font-normal text-builder-ink-muted"
+                      title="複数の生成案が同じ内容に収束したため 1 枚にまとめて表示しています"
+                    >
+                      (同一案 ×{pat.duplicateCount})
+                    </span>
+                  )}
                 </div>
                 <PatternStats pat={pat} />
-                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} />}
+                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} project={project} />}
                 <SummaryTable
                   target={pat.schedule}
                   config={patternConfig}
@@ -285,6 +373,41 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   teachers={project.teachers}
                   subjects={project.subjects}
                 />
+                {(() => {
+                  // N3d: 採用が現在の (生成元タブの) 時間割を何コマ変えるかを
+                  // 事前に示す。従来は無確認即実行で、部分解の反復運用では
+                  // 既存編集が上書きされるか不安だった。
+                  const diffCounts = forTab
+                    ? summarizeDiff(diffSchedules(forTab.schedule || {}, pat.schedule))
+                    : { added: 0, removed: 0, changed: 0, total: 0 };
+                  // N3f: 「その日 1 コマだけ出勤」の講師 (稼働効率の判断材料)
+                  const singleDays = summarizeSingleSlotDays(pat.schedule, patternConfig, project.combinedGroups || []);
+                  const MAX_NAMES = 3;
+                  return (
+                    <div className="text-[11px] text-builder-ink-muted text-center mt-1 space-y-0.5">
+                      {diffCounts.total > 0 && (
+                        <div
+                          aria-label={`案 ${i + 1} を採用した場合の変更`}
+                          title="この案を採用したとき、現在の時間割から変わるコマ数 (＋追加 / ≠変更 / −削除)"
+                        >
+                          採用すると:
+                          {diffCounts.added > 0 && <span className="text-builder-green font-bold ml-1">＋{diffCounts.added}</span>}
+                          {diffCounts.changed > 0 && <span className="text-builder-orange font-bold ml-1">≠{diffCounts.changed}</span>}
+                          {diffCounts.removed > 0 && <span className="text-builder-red font-bold ml-1">−{diffCounts.removed}</span>}
+                        </div>
+                      )}
+                      {singleDays.length > 0 && (
+                        <div
+                          aria-label={`案 ${i + 1} の 1 コマ出勤日`}
+                          title={`その日 1 コマだけのために出勤する日がある講師: ${singleDays.map(s => `${s.teacher} (${s.days.join(', ')})`).join(' / ')}`}
+                        >
+                          🚶 1コマ出勤日あり: {singleDays.slice(0, MAX_NAMES).map(s => s.teacher).join('・')}
+                          {singleDays.length > MAX_NAMES && ` 他${singleDays.length - MAX_NAMES}名`}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <button
                   disabled={forTabDeleted}
                   onClick={() => {

@@ -6,7 +6,7 @@ import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraint
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 
-export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null }) {
+export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null, isSelected = false, onCellSelect }) {
   const {
     project,
     currentSchedule,
@@ -50,6 +50,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const longPress = useLongPress(({ clientX, clientY }) =>
     onContextMenu({ preventDefault: () => {}, clientX, clientY }, dateId, periodId, classId),
   );
+  // N2a: 長押しの onClickCapture (ゴースト click 抑止) と選択クリックを
+  // 1 つの onClickCapture に合成する ({...spread} の上書き事故を防ぐため分離)
+  const { onClickCapture: longPressClickCapture, ...longPressHandlers } = longPress;
 
   if (!dateEnt || !periodEnt || !classEnt) return null;
   const dLabel = dateEnt.label;
@@ -169,7 +172,27 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       // L2a: 講師ハイライト。ドラッグ中の ring 表示と衝突しないよう、
       // isDragOver 中はハイライトを一時的に譲る
       data-teacher-highlight={!!highlightTeacher && entry.teacher === highlightTeacher ? '' : undefined}
-      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
+      // N2c: 掴めるセルには cursor-move の手がかりを出す (従来は視覚手がかり
+      // ゼロで D&D が発見不能だった)
+      // N2a: 選択中は太い primary ring (ドラッグ ring より優先度低・ハイライトより高)
+      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${!isLocked && entry.subject ? "cursor-move" : ""} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && isSelected ? "ring-2 ring-builder-primary ring-inset bg-builder-info-soft" : ""} ${!isDragOver && !isSelected && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!isSelected && !!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
+      data-selected={isSelected ? '' : undefined}
+      // N2a: Ctrl(⌘)/Shift+クリックで選択。mousedown を capture で止めないと
+      // <select> のドロップダウンが開いてしまう
+      onMouseDownCapture={(e) => {
+        if (onCellSelect && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
+      onClickCapture={(e) => {
+        longPressClickCapture(e);
+        if (onCellSelect && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCellSelect(e, key);
+        }
+      }}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
@@ -180,11 +203,21 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       // タッチ端末で長押しメニューを開く際のテキスト選択抑止セレクタ
       // (tailwind.css の @media (pointer: coarse) ブロック) の対象マーカー
       data-longpress=""
-      {...longPress}
+      {...longPressHandlers}
     >
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>
         <div className={`flex justify-between items-center ${isCompact ? "gap-0.5" : "gap-1"}`}>
           <div className="flex-1 min-w-0 flex items-center gap-0.5">
+            {/* N2c: ドラッグハンドル。セルの大半は <select> で mousedown を
+                奪うため (特にコンパクト表示は padding 1px で余白がほぼ無い)、
+                確実に掴める非 select 領域を常設する */}
+            {!isLocked && !!entry.subject && (
+              <span
+                aria-hidden="true"
+                title="ドラッグで別のセルと入れ替え"
+                className={`shrink-0 select-none cursor-move text-builder-ink-ghost leading-none ${isCompact ? "text-[9px]" : "text-xs"}`}
+              >⠿</span>
+            )}
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
               aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}

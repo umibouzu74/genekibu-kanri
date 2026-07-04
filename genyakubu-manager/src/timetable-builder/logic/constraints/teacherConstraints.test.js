@@ -8,6 +8,7 @@ import {
   wouldExceedConsecutive,
   isTeacherCandidateFor,
   resolveTeacherDailyLimit,
+  resolveTeacherConsecutive,
 } from './teacherConstraints';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 
@@ -198,6 +199,19 @@ describe('resolveTeacherDailyLimit (L3a)', () => {
     expect(resolveTeacherDailyLimit(t({ maxDailyHours: NaN }), 6)).toBe(6);
     expect(resolveTeacherDailyLimit(null, 6)).toBe(6);
     expect(resolveTeacherDailyLimit(undefined, 6)).toBe(6);
+  });
+});
+
+describe('resolveTeacherConsecutive (N3a)', () => {
+  it('講師個別値 (正の有限数) があればそれを返す', () => {
+    expect(resolveTeacherConsecutive(t({ maxConsecutivePeriods: 2 }), 4)).toBe(2);
+  });
+
+  it('未設定 / 0 / 不正値は project 全体値へフォールバック (0 = 制約なし も維持)', () => {
+    expect(resolveTeacherConsecutive(t(), 4)).toBe(4);
+    expect(resolveTeacherConsecutive(t({ maxConsecutivePeriods: 0 }), 4)).toBe(4);
+    expect(resolveTeacherConsecutive(t({ maxConsecutivePeriods: -1 }), 0)).toBe(0);
+    expect(resolveTeacherConsecutive(null, 0)).toBe(0);
   });
 });
 

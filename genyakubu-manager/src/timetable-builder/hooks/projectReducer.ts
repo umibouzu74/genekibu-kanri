@@ -45,6 +45,7 @@ export type ProjectAction =
   | { type: 'tab/add'; payload: { name: string } }
   | { type: 'tab/delete'; payload: { id: number } }
   | { type: 'tab/rename'; payload: { id: number; name: string } }
+  | { type: 'tab/reorder'; payload: { fromIdx: number; toIdx: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -68,7 +69,7 @@ export type ProjectAction =
   | { type: 'teacher/remove'; payload: { idx: number } }
   | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
   | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
-  | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours'; value: unknown } }
+  | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods'; value: unknown } }
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
@@ -77,12 +78,14 @@ export type ProjectAction =
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
   | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
-  | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string } }
+  | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
   | { type: 'preset/remove'; payload: { id: number } }
   | { type: 'cell/assign'; payload: { dateId: number; periodId: number; classId: number; type: 'subject' | 'teacher'; val: string } }
   | { type: 'cell/toggleLock'; payload: { dateId: number; periodId: number; classId: number } }
   | { type: 'cell/clear'; payload: { dateId: number; periodId: number; classId: number } }
+  | { type: 'cell/bulkClear'; payload: { keys: string[] } }
+  | { type: 'cell/bulkSetLock'; payload: { keys: string[]; locked: boolean } }
   | { type: 'cell/paste'; payload: { dateId: number; periodId: number; classId: number; clipboard: { subject?: string; teacher?: string } | null } }
   | { type: 'cell/swap'; payload: { sourceKey: string; targetKey: string } }
   | { type: 'cell/applyToAllDates'; payload: { dateId: number; periodId: number; classId: number } }
@@ -317,6 +320,18 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // reject するが、直接 dispatch 経路も守る)
       if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
+    }
+
+    case 'tab/reorder': {
+      // N2d: 学年タブの並べ替え (subject/reorder と同型)。作成順を後から
+      // 直せるようにする。印刷・Excel の学年順 (tabs の並び) にも効く。
+      const { fromIdx, toIdx } = action.payload;
+      const tabs = [...project.tabs];
+      if (fromIdx < 0 || fromIdx >= tabs.length || toIdx < 0 || toIdx >= tabs.length) return project;
+      if (fromIdx === toIdx) return project;
+      const [moved] = tabs.splice(fromIdx, 1);
+      tabs.splice(toIdx, 0, moved);
+      return { ...project, tabs };
     }
 
     // ─── タブ別 config ───────────────────
@@ -791,7 +806,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
         const subjects = Array.isArray(t.subjects) ? t.subjects : [];
         const existing = map.get(t.name);
         if (existing) {
-          map.set(t.name, { ...existing, subjects } as Teacher);
+          // N1c: 取込行の担当科目が空なら既存の担当を維持する (L5a 親取込の
+          // 「同名かつ担当空は除外」ガードと同思想)。雛形 CSV の科目列を
+          // 空欄のまま取り込んで既存講師の担当が全消去される事故を防ぐ。
+          const nextSubjects = subjects.length > 0 ? subjects : (existing.subjects || []);
+          map.set(t.name, { ...existing, subjects: nextSubjects } as Teacher);
         } else {
           map.set(t.name, { name: t.name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
         }
@@ -853,11 +872,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
       return { ...project, teachers: newTeachers };
     }
     case 'teacher/setLimit': {
-      // L3a/L3b: 講師個別のコマ数上限 (1 日 / 通算)。value が正の有限数で
-      // なければ「未設定」としてフィールドごと落とす。同値は no-op (F2d)。
+      // L3a/L3b/N3a: 講師個別のコマ数上限 (1 日 / 通算 / 連続)。value が正の
+      // 有限数でなければ「未設定」としてフィールドごと落とす。同値は no-op (F2d)。
       const { idx, key, value } = action.payload;
       if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
-      if (key !== 'maxDailyHours' && key !== 'maxTotalHours') return project;
+      if (key !== 'maxDailyHours' && key !== 'maxTotalHours' && key !== 'maxConsecutivePeriods') return project;
       const num = Math.round(Number(value));
       const v = Number.isFinite(num) && num > 0 ? num : undefined;
       const curr = project.teachers[idx][key];
@@ -994,15 +1013,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const { items } = action.payload;
       if (!Array.isArray(items) || items.length === 0) return project;
       const sessions = project.externalSessions || [];
+      // N1i: 内容が完全一致する既存セッションはスキップする (NG CSV の
+      // dedupe = F2h と同思想)。同条件の再登録で一覧に二重に溜まるのを防ぐ。
+      // バッチ内の重複も同じキーで弾く。
+      const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
+        JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+      const seen = new Set(sessions.map(contentKey));
       let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newOnes: ExternalSession[] = [];
       for (const it of items) {
         if (!it?.date || !it?.teacherName) continue;
-        const ns: ExternalSession = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const ns: ExternalSession = { id: nextId, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
         if (it.startTime) {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
         }
+        const key = contentKey(ns);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nextId++;
         newOnes.push(ns);
       }
       if (newOnes.length === 0) return project;
@@ -1021,7 +1050,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
     // 詳細セッション登録フォームから 1 クリックで呼び出せるようにする。
     // payload で受け取る fields は全て optional (id/name 以外)。空文字は省く。
     case 'preset/add': {
-      const { name, startTime, endTime, startDateLabel, endDateLabel, memo } = action.payload;
+      const { name, startTime, endTime, startDateLabel, endDateLabel, memo, teachers } = action.payload;
       if (!name) return project;
       const presets = project.externalSessionPresets || [];
       const newId = presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
@@ -1031,6 +1060,8 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (startDateLabel) newPreset.startDateLabel = startDateLabel;
       if (endDateLabel) newPreset.endDateLabel = endDateLabel;
       if (memo) newPreset.memo = memo;
+      // N4c: 対象講師 (任意)。空配列は「講師なし」としてフィールドごと省く
+      if (Array.isArray(teachers) && teachers.length > 0) newPreset.teachers = [...teachers];
       return { ...project, externalSessionPresets: [...presets, newPreset] };
     }
     case 'preset/update': {
@@ -1057,6 +1088,12 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if ('startDateLabel' in updates) writeOrDelete('startDateLabel', updates.startDateLabel);
       if ('endDateLabel' in updates) writeOrDelete('endDateLabel', updates.endDateLabel);
       if ('memo' in updates) writeOrDelete('memo', updates.memo);
+      // N4c: teachers は空配列で削除、非空配列で上書き (文字列フィールドの
+      // 「空文字なら削除」と同じ意味論)
+      if ('teachers' in updates) {
+        if (Array.isArray(updates.teachers) && updates.teachers.length > 0) merged.teachers = [...updates.teachers];
+        else delete merged.teachers;
+      }
       if (!merged.startTime) delete merged.endTime;
       return {
         ...project,
@@ -1133,6 +1170,47 @@ function applyAction(project: Project, action: ProjectAction): Project {
       delete ns[k];
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       return { ...project, tabs: newTabs };
+    }
+    case 'cell/bulkClear': {
+      // N2a: 選択セルの一括クリア。単一 clear と同じ意味論 (locked はスキップ・
+      // 合同 secondary の cleanup 込み) を選択集合へ atomic に適用 (Undo 1 回)。
+      const { keys } = action.payload;
+      if (!Array.isArray(keys) || keys.length === 0) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      const currentConfig = effectiveConfig(project, activeTab);
+      let ns = activeTab.schedule;
+      let changed = false;
+      for (const k of keys) {
+        const parsed = parseKey(k);
+        if (!parsed) continue;
+        const curr = ns[k];
+        if (!curr || curr.locked) continue;
+        if (!curr.subject && !curr.teacher) continue; // 空 entry は変化なし
+        ns = cleanupOldCombined(ns, currentConfig, project.combinedGroups, parsed.dateId, parsed.periodId, parsed.classId, curr.subject);
+        ns = { ...ns };
+        delete ns[k];
+        changed = true;
+      }
+      if (!changed) return project;
+      return { ...project, tabs: project.tabs.map(t => t.id === activeTab.id ? { ...t, schedule: ns } : t) };
+    }
+    case 'cell/bulkSetLock': {
+      // N2a: 選択セルの一括ロック/解除。空セルのロックは「空けておく」(F5w)
+      // の意思表示として許可 (単一 toggleLock と同じ)。同値はスキップし、
+      // 全て同値なら no-op (F2d)。
+      const { keys, locked } = action.payload;
+      if (!Array.isArray(keys) || keys.length === 0) return project;
+      const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+      let ns: typeof activeTab.schedule | null = null;
+      for (const k of keys) {
+        if (!parseKey(k)) continue;
+        const curr = activeTab.schedule[k] || {};
+        if (!!curr.locked === !!locked) continue;
+        if (ns === null) ns = { ...activeTab.schedule };
+        ns[k] = { ...curr, locked: !!locked };
+      }
+      if (ns === null) return project;
+      return { ...project, tabs: project.tabs.map(t => t.id === activeTab.id ? { ...t, schedule: ns } : t) };
     }
     case 'cell/paste': {
       const { dateId, periodId, classId, clipboard } = action.payload;

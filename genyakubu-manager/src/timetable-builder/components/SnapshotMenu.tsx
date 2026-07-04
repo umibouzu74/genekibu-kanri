@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
+import { scrollToCellByKey } from '../utils/scrollToCell';
 import { diffSchedules, summarizeDiff } from '../utils/scheduleDiff';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
 
@@ -220,6 +221,14 @@ export default function SnapshotMenu() {
                               <span className="text-builder-ink-muted">
                                 {keyLabel(d.key)}: {entryText(d.before)} → {entryText(d.after)}
                               </span>
+                              {/* N2g: 違反 popover の「→」と同じ該当セルジャンプ */}
+                              <button
+                                type="button"
+                                onClick={() => scrollToCellByKey(d.key)}
+                                className="ml-auto shrink-0 px-1 rounded text-builder-blue hover:bg-builder-info-soft font-bold"
+                                title="該当セルへスクロール"
+                                aria-label={`${keyLabel(d.key)} のセルへ移動`}
+                              >→</button>
                             </li>
                           ))}
                           {diffs.length > 30 && (

@@ -165,6 +165,36 @@ describe('loadInitialProject — branches', () => {
     expect(loaded.dates).toEqual([{ id: 1, label: '1/1' }]);
   });
 
+  it('user defaults の subjects / subjectColors / generationParams を復元する (N1e)', () => {
+    const defaults = {
+      config: { dates: ['1/1'], periods: ['1限'], classes: ['A'], subjectCounts: { '情報': 1 } },
+      teachers: [{ name: 'X', subjects: ['情報'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
+      subjects: ['情報', '小論文'],
+      subjectColors: { '情報': '#123456' },
+      generationParams: { numPatterns: 5, generationSeed: 42, bogusKey: 9, maxDailyHours: 'x' },
+    };
+    localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
+    const { project: loaded } = loadInitialProject();
+    expect(loaded.subjects).toEqual(['情報', '小論文']);
+    expect(loaded.subjectColors).toEqual({ '情報': '#123456' });
+    expect(loaded.numPatterns).toBe(5);
+    expect(loaded.generationSeed).toBe(42);
+    // ホワイトリスト外のキー・数値以外は復元しない
+    expect(loaded).not.toHaveProperty('bogusKey');
+    expect(loaded.maxDailyHours).toBeUndefined();
+  });
+
+  it('旧形式の user defaults (subjects 等なし) は既定の科目マスタへフォールバック (N1e)', () => {
+    const defaults = {
+      config: { dates: ['1/1'], periods: ['1限'], classes: ['A'], subjectCounts: {} },
+      teachers: [{ name: 'X', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
+    };
+    localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
+    const { project: loaded } = loadInitialProject();
+    expect(Array.isArray(loaded.subjects)).toBe(true);
+    expect(loaded.subjects.length).toBeGreaterThan(0);
+  });
+
   it('legacy schedule_user_defaults があれば user defaults として読み込む', () => {
     const defaults = {
       config: { dates: ['1/1'], periods: ['1限'], classes: ['L'], subjectCounts: { '英語': 1 } },

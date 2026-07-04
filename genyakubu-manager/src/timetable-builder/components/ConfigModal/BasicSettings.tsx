@@ -218,7 +218,7 @@ export default function BasicSettings() {
   };
 
   const handleSaveDefaultClick = async () => {
-    const ok = await showConfirm('現在の「講師設定」と「カレンダー構成」を初期値として保存しますか？\n次回リセット時にこの設定が読み込まれます。', { title: '初期値の保存', confirmLabel: '保存' });
+    const ok = await showConfirm('現在の「講師設定」「カレンダー構成」「科目マスタ・科目カラー」「自動生成パラメータ」を初期値として保存しますか？\n次回リセット時にこの設定が読み込まれます。', { title: '初期値の保存', confirmLabel: '保存' });
     if (ok) {
       handleSaveAsDefault();
       showToast('保存しました。次回からこの設定が初期値になります。');

@@ -1,7 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
+import { measureLocalStorageBytes, formatBytes, STORAGE_LIMIT_BYTES, STORAGE_WARN_RATIO } from '../utils/storageHealth';
+
+// N1b: 保存ステータスバッジの状態別スタイル。以前は成功色 (緑) 固定で、
+// 「⚠️ 保存失敗」まで緑地に描画され失敗が成功に見えていた。
+const SAVE_STATUS_CLASSES: Record<string, string> = {
+  '⚠️ 保存失敗': 'text-builder-red bg-builder-danger-soft border-builder-danger-border font-bold',
+  '💾 保存中...': 'text-builder-ink-muted bg-builder-bg border-builder-border',
+};
+const SAVE_STATUS_DEFAULT_CLASSES = 'text-builder-green bg-builder-success-soft border-builder-success-border';
 
 // exceljs はバンドルが大きい (gzip 後 ~270kB) ので、Excel 出力ボタンを
 // 押した時にだけロードする。初回クリックの体感は数百ms 遅れるが、起動時には
@@ -26,6 +35,28 @@ export default function Header() {
   // Excel 出力ドロップダウン (E1a: 狭画面でヘッダのボタンを減らす)
   // 開閉と外側クリック / Escape での dismiss は共有フック (F2l)。
   const { open: excelMenuOpen, setOpen: setExcelMenuOpen, ref: excelMenuRef } = useDismissablePopover();
+
+  // N5c: 保存データ量の常時可視化。従来は起動時 1 回の警告 toast のみで、
+  // 閉じたら容量の手がかりがゼロだった。保存が走る (saveStatus が変わる)
+  // たびに再計測する。origin 全体 (親アプリ含む) の実測 (N1g と同じ物差し)。
+  // saveStatus は再計測のトリガとして意図的に deps に入れている
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const storageBytes = useMemo(() => measureLocalStorageBytes(), [saveStatus]);
+  const storageWarn = storageBytes != null && storageBytes / STORAGE_LIMIT_BYTES >= STORAGE_WARN_RATIO;
+
+  // N1b: autosave 失敗 (QuotaExceeded / private mode 等) はデータ喪失に直結
+  // するのに、以前はバッジの文言が変わるだけで最も静かに失敗する経路だった。
+  // 失敗への遷移時に error toast で明示する (容量警告 E6c と同格の扱い)。
+  const isSaveError = saveStatus === '⚠️ 保存失敗';
+  useEffect(() => {
+    if (isSaveError) {
+      showToast(
+        '自動保存に失敗しました。ブラウザの保存領域が不足している可能性があります。変更を失わないよう、💾 プロジェクト保存 (JSON) でバックアップしてください。',
+        'error',
+        10000,
+      );
+    }
+  }, [isSaveError, showToast]);
 
   const handleNameSubmit = () => {
     // 変更が無ければ dispatch しない (無駄な Undo 履歴 + autosave を防ぐ)
@@ -98,7 +129,19 @@ export default function Header() {
             {displayName}
           </h1>
         )}
-        <span className="text-xs text-builder-green bg-builder-success-soft px-2 py-1 rounded border border-builder-success-border">{saveStatus}</span>
+        <span
+          role="status"
+          aria-live="polite"
+          className={`text-xs px-2 py-1 rounded border ${SAVE_STATUS_CLASSES[saveStatus] || SAVE_STATUS_DEFAULT_CLASSES}`}
+        >{saveStatus}</span>
+        {storageBytes != null && (
+          <span
+            className={`text-[10px] ${storageWarn ? 'text-builder-orange font-bold' : 'text-builder-ink-ghost'}`}
+            title={`このブラウザの保存領域の使用量 (概算、時間割以外のデータ含む)。上限は約 ${formatBytes(STORAGE_LIMIT_BYTES)} で、超えると自動保存が失敗します。`}
+          >
+            {storageWarn ? '⚠ ' : ''}{formatBytes(storageBytes)}
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>

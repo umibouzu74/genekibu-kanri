@@ -103,3 +103,42 @@ describe('TemplateManager (E2d)', () => {
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES))).toEqual([]);
   });
 });
+
+describe('TemplateManager — 上書き更新 (N4a)', () => {
+  it('同名テンプレートがあれば confirm 後に上書きし、重複を作らない', async () => {
+    seed([tpl(1, 'ベース')]);
+    const { uiValue } = renderManager({
+      ui: { showInput: vi.fn().mockResolvedValue('ベース'), showConfirm: vi.fn().mockResolvedValue(true) },
+    });
+    fireEvent.click(screen.getByText('＋ 現在のプロジェクトを保存'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('既にあります');
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES));
+      expect(saved).toHaveLength(1);
+      expect(saved[0].name).toBe('ベース');
+      expect(saved[0].payload.name).toBe('いまのP'); // 現在の内容で更新済み
+    });
+  });
+
+  it('同名上書きの confirm をキャンセルすると何も変えない', async () => {
+    seed([tpl(1, 'ベース')]);
+    const { uiValue } = renderManager({
+      ui: { showInput: vi.fn().mockResolvedValue('ベース'), showConfirm: vi.fn().mockResolvedValue(false) },
+    });
+    fireEvent.click(screen.getByText('＋ 現在のプロジェクトを保存'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES));
+    expect(saved[0].payload.name).toBeUndefined(); // 元の payload のまま
+  });
+
+  it('行内の 💾 で confirm → 現在の内容に更新する', async () => {
+    seed([tpl(1, 'ベース')]);
+    renderManager();
+    fireEvent.click(screen.getByLabelText('ベース を現在の内容で更新'));
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES));
+      expect(saved[0].payload.name).toBe('いまのP');
+    });
+  });
+});

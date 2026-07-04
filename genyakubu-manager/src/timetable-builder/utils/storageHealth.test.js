@@ -1,11 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   STORAGE_LIMIT_BYTES,
   STORAGE_WARN_RATIO,
   estimateStorageBytes,
   checkStorageHealth,
+  checkOriginStorageHealth,
+  measureLocalStorageBytes,
   formatBytes,
 } from './storageHealth';
+
+// node 環境には localStorage が無いので、length/key/getItem を持つ最小の
+// フェイクを差し込む (measureLocalStorageBytes が使う API のみ)。
+function stubLocalStorage(entries) {
+  const keys = Object.keys(entries);
+  vi.stubGlobal('localStorage', {
+    get length() { return keys.length; },
+    key: (i) => keys[i] ?? null,
+    getItem: (k) => (k in entries ? entries[k] : null),
+  });
+}
 
 describe('estimateStorageBytes', () => {
   it('null / undefined は 0', () => {
@@ -60,6 +73,40 @@ describe('checkStorageHealth', () => {
 
   it('デフォルト上限は 5MB', () => {
     expect(STORAGE_LIMIT_BYTES).toBe(5 * 1024 * 1024);
+  });
+});
+
+describe('measureLocalStorageBytes / checkOriginStorageHealth (N1g)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('全キーの key + value を UTF-16 換算で合算する', () => {
+    stubLocalStorage({ ab: 'cd', e: 'fgh' });
+    // (2+2)*2 + (1+3)*2 = 16
+    expect(measureLocalStorageBytes()).toBe(16);
+  });
+
+  it('builder 以外のキー (親アプリ等) も計上される', () => {
+    stubLocalStorage({ 'builder.project': 'x', 'parent-app-data': 'yy' });
+    expect(measureLocalStorageBytes()).toBe((15 + 1) * 2 + (15 + 2) * 2);
+  });
+
+  it('localStorage にアクセスできない環境では null', () => {
+    vi.stubGlobal('localStorage', {
+      get length() { throw new Error('denied'); },
+      key: () => null,
+      getItem: () => null,
+    });
+    expect(measureLocalStorageBytes()).toBeNull();
+    expect(checkOriginStorageHealth()).toBeNull();
+  });
+
+  it('checkOriginStorageHealth は実測合計でしきい値判定する', () => {
+    stubLocalStorage({ big: 'x'.repeat(100) });
+    const health = checkOriginStorageHealth({ limitBytes: 200, warnRatio: 0.5 });
+    expect(health.bytes).toBe((3 + 100) * 2);
+    expect(health.warn).toBe(true);
+    const ok = checkOriginStorageHealth({ limitBytes: 10000, warnRatio: 0.5 });
+    expect(ok.warn).toBe(false);
   });
 });
 

@@ -193,6 +193,27 @@ describe('projectReducer — タブ管理', () => {
     const state = makeState();
     expect(projectReducer(state, { type: 'tab/rename', payload: { id: 1, name: 'メイン' } })).toBe(state);
   });
+
+  it('tab/reorder: タブを並べ替える (N2d)', () => {
+    const state = makeState({
+      tabs: [
+        { id: 1, name: '中1', config: { classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 2, name: '中3', config: { classes: [], subjectCounts: {} }, schedule: {} },
+        { id: 3, name: '中2', config: { classes: [], subjectCounts: {} }, schedule: {} },
+      ],
+    });
+    const next = projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 2, toIdx: 1 } });
+    expect(next.project.tabs.map(t => t.name)).toEqual(['中1', '中2', '中3']);
+    // 履歴 push は 1 回 (Undo 可)
+    expect(next.history).toHaveLength(2);
+  });
+
+  it('tab/reorder: 範囲外 idx・同一 idx は no-op (N2d)', () => {
+    const state = makeState();
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 0, toIdx: 0 } })).toBe(state);
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: -1, toIdx: 0 } })).toBe(state);
+    expect(projectReducer(state, { type: 'tab/reorder', payload: { fromIdx: 0, toIdx: 99 } })).toBe(state);
+  });
 });
 
 // ─── F2d: 同値 commit の no-op ガード ────────────────────────
@@ -359,6 +380,27 @@ describe('projectReducer — 講師管理', () => {
       subjects: ['理科'],
       ngSlots: [], ngClasses: [], priorityClasses: [],
     });
+  });
+
+  it('teacher/import (append): 取込行の subjects が空なら既存の担当科目を維持する (N1c)', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語', '数学'], ngSlots: ['ng1'], ngClasses: [], priorityClasses: [] },
+      ],
+    });
+    // 雛形 CSV の科目列を空欄のまま取り込んだケース
+    const next = projectReducer(state, {
+      type: 'teacher/import',
+      payload: {
+        teachers: [
+          { name: '堀上', subjects: [] },        // 既存 → 担当維持
+          { name: '山田', subjects: [] },        // 新規 → 空のまま追加 (L1g 警告対象)
+        ],
+        mode: 'append',
+      },
+    });
+    expect(next.project.teachers[0].subjects).toEqual(['英語', '数学']);
+    expect(next.project.teachers[1].subjects).toEqual([]);
   });
 
   it('teacher/import (replace): 既存を破棄して payload に置き換え、ng/priority も全クリア', () => {
@@ -678,6 +720,50 @@ describe('projectReducer — 講師管理', () => {
     expect(state.project.externalSessions.map(s => s.date)).toEqual(['7/29(水)', '7/31(金)']);
   });
 
+  it('teacher/addExternalSessions: 内容が完全一致する既存セッションはスキップ (N1i)', () => {
+    let state = makeState();
+    const items = [
+      { date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+      { date: '7/30(木)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+    ];
+    state = projectReducer(state, { type: 'teacher/addExternalSessions', payload: { items } });
+    expect(state.project.externalSessions).toHaveLength(2);
+    // 同じ内容を再登録 → 全て skip で no-op (同参照 = 履歴も汚さない)
+    const again = projectReducer(state, { type: 'teacher/addExternalSessions', payload: { items } });
+    expect(again).toBe(state);
+    // 一部だけ新規なら新規分のみ追加
+    const mixed = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          ...items,
+          { date: '7/31(金)', teacherName: '堀上', label: '', memo: '予備校', startTime: '12:25', endTime: '13:35' },
+        ],
+      },
+    });
+    expect(mixed.project.externalSessions).toHaveLength(3);
+    // メモや時刻が違えば別内容として追加される
+    const differentMemo = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: { items: [{ ...items[0], memo: '別件' }] },
+    });
+    expect(differentMemo.project.externalSessions).toHaveLength(3);
+  });
+
+  it('teacher/addExternalSessions: バッチ内の重複も 1 件に dedupe (N1i)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'teacher/addExternalSessions',
+      payload: {
+        items: [
+          { date: '7/29(水)', teacherName: '堀上', label: '', memo: '' },
+          { date: '7/29(水)', teacherName: '堀上', label: '', memo: '' },
+        ],
+      },
+    });
+    expect(state.project.externalSessions).toHaveLength(1);
+  });
+
   it('teacher/addExternalSession: date/teacherName が空なら no-op', () => {
     const state = makeState();
     const next = projectReducer(state, {
@@ -755,6 +841,39 @@ describe('projectReducer — externalSessionPresets', () => {
     });
     const p = state.project.externalSessionPresets[0];
     expect(p).toEqual({ id: 1, name: 'X' });
+  });
+
+  it('preset/add: teachers は非空配列のみ保存 (N4c)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '予備校', teachers: ['堀上', '田中'] },
+    });
+    expect(state.project.externalSessionPresets[0].teachers).toEqual(['堀上', '田中']);
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '講師なし', teachers: [] },
+    });
+    expect(state.project.externalSessionPresets[1]).not.toHaveProperty('teachers');
+  });
+
+  it('preset/update: teachers は空配列で削除・非空で上書き (N4c)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'preset/add',
+      payload: { name: '予備校', teachers: ['堀上'] },
+    });
+    const id = state.project.externalSessionPresets[0].id;
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id, updates: { teachers: ['田中', '佐藤'] } },
+    });
+    expect(state.project.externalSessionPresets[0].teachers).toEqual(['田中', '佐藤']);
+    state = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id, updates: { teachers: [] } },
+    });
+    expect(state.project.externalSessionPresets[0]).not.toHaveProperty('teachers');
   });
 
   it('preset/add: startTime が無ければ endTime も保存しない (orphan 防止)', () => {
@@ -1040,6 +1159,79 @@ describe('projectReducer — セル操作', () => {
       payload: { dateId: 1, periodId: 1, classId: 1 },
     });
     expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+  });
+
+  it('cell/bulkClear: 選択キーを一括削除、ロック済み・空 entry はスキップ (N2a)', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 2 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中', locked: true },
+        },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'cell/bulkClear',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1), 'garbage-key'] },
+    });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    // ロック済みは温存
+    expect(next.project.tabs[0].schedule[makeKey(1, 2, 1)]).toEqual({ subject: '数学', teacher: '田中', locked: true });
+    // 履歴 push は 1 回 (atomic)
+    expect(next.history).toHaveLength(2);
+  });
+
+  it('cell/bulkClear: 全件スキップ (空 / ロック) なら no-op、合同 secondary も掃除 (N2a)', () => {
+    const state = makeState({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+    });
+    // 空キーのみ → no-op (同参照)
+    expect(projectReducer(state, {
+      type: 'cell/bulkClear', payload: { keys: [makeKey(1, 1, 1)] },
+    })).toBe(state);
+    // 合同 primary を割当ててから bulkClear → secondary も消える
+    let assigned = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    assigned = projectReducer(assigned, {
+      type: 'cell/bulkClear', payload: { keys: [makeKey(1, 1, 1)] },
+    });
+    expect(assigned.project.tabs[0].schedule[makeKey(1, 1, 1)]).toBeUndefined();
+    expect(assigned.project.tabs[0].schedule[makeKey(1, 1, 2)]).toBeUndefined();
+  });
+
+  it('cell/bulkSetLock: 一括ロック/解除、空セルもロック可、同値のみなら no-op (N2a)', () => {
+    let state = makeState();
+    state = projectReducer(state, {
+      type: 'cell/assign',
+      payload: { dateId: 1, periodId: 1, classId: 1, type: 'subject', val: '英語' },
+    });
+    // 割当済み + 空セルをまとめてロック (空ロック = 「空けておく」 F5w)
+    state = projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1)], locked: true },
+    });
+    expect(state.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(true);
+    expect(state.project.tabs[0].schedule[makeKey(1, 2, 1)].locked).toBe(true);
+    // 既に同値なら no-op (同参照)
+    expect(projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1)], locked: true },
+    })).toBe(state);
+    // 解除
+    const unlocked = projectReducer(state, {
+      type: 'cell/bulkSetLock',
+      payload: { keys: [makeKey(1, 1, 1), makeKey(1, 2, 1)], locked: false },
+    });
+    expect(unlocked.project.tabs[0].schedule[makeKey(1, 1, 1)].locked).toBe(false);
   });
 
   it('cell/paste: clipboard 無し / locked は no-op', () => {
@@ -1447,6 +1639,11 @@ describe('projectReducer — project 全体操作', () => {
       type: 'teacher/setLimit', payload: { idx: 0, key: 'maxTotalHours', value: '8' },
     });
     expect(next.project.teachers[0].maxTotalHours).toBe(8);
+    // N3a: 連続コマ上限も同じ action で設定できる
+    next = projectReducer(next, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxConsecutivePeriods', value: 3 },
+    });
+    expect(next.project.teachers[0].maxConsecutivePeriods).toBe(3);
   });
 
   it('teacher/setLimit: 0 以下・非数はフィールドを落とす (未設定に戻す)', () => {

@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { parseTeachersCsv } from '../../utils/csvImport';
+import { parseTeachersCsv, decodeCsvBytes } from '../../utils/csvImport';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { readParentTeachers } from '../../utils/parentTeachers';
 import { buildTeachersCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
@@ -72,6 +72,9 @@ export default function TeacherManager() {
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
+  // N4f: 講師名の絞り込み。講師が数十名規模になると目的の行まで
+  // スクロール必須だった。明示入力のフィルタのみ (A18 非該当)。
+  const [teacherFilter, setTeacherFilter] = useState('');
   const [csvText, setCsvText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
@@ -87,9 +90,17 @@ export default function TeacherManager() {
       return;
     }
     try {
-      const text = await file.text();
+      // N1j: UTF-8 固定 (file.text()) だと日本語 Excel 既定の Shift-JIS CSV が
+      // 文字化けして全行「未登録」warning になる。バイト列から判定して読む。
+      const { text, encoding } = decodeCsvBytes(await file.arrayBuffer());
       setCsvText(text);
-      showToast(`「${name || 'ファイル'}」を読み込みました`, 'success', 2000);
+      showToast(
+        encoding === 'shift_jis'
+          ? `「${name || 'ファイル'}」を読み込みました (Shift-JIS として解釈)`
+          : `「${name || 'ファイル'}」を読み込みました`,
+        'success',
+        2000,
+      );
     } catch {
       showToast('ファイルの読み込みに失敗しました', 'error', 3000);
     }
@@ -154,12 +165,22 @@ export default function TeacherManager() {
       if (!ok) return;
     }
     importTeachers(csvParsed.rows, mode);
-    showToast(
-      mode === 'replace'
-        ? `${csvParsed.rows.length} 件の講師で置換しました`
-        : `${csvParsed.rows.length} 件を追加 / 更新しました`,
-      'success', 4000,
-    );
+    if (mode === 'replace') {
+      showToast(`${csvParsed.rows.length} 件の講師で置換しました`, 'success', 4000);
+    } else {
+      // N4b: 何名が新規で何名が既存更新かを親取込 (L5a) と同様に明示する。
+      // 既存かつ CSV 行の subjects が空の行は担当維持 (N1c) なので
+      // 「担当科目の変更なし」として数える。
+      const existingNames = new Set(project.teachers.map(t => t.name));
+      const newCount = csvParsed.rows.filter(r => !existingNames.has(r.name)).length;
+      const updCount = csvParsed.rows.length - newCount;
+      const keptCount = csvParsed.rows.filter(r => existingNames.has(r.name) && (r.subjects || []).length === 0).length;
+      showToast(
+        `新規 ${newCount} 名を追加 / 既存 ${updCount} 名を更新しました` +
+          (keptCount > 0 ? ` (うち ${keptCount} 名は科目列が空のため担当科目を維持)` : ''),
+        'success', 4000,
+      );
+    }
     setCsvPanelOpen(false);
     setCsvText('');
   };
@@ -260,6 +281,12 @@ export default function TeacherManager() {
             <div className="text-xs space-y-1">
               <div>
                 <span className="font-bold text-builder-green">{csvParsed.rows.length} 件</span> parse 成功
+                {/* N4b: 何名が新規で何名が既存更新かを取込前に見せる (親取込 L5a と同じ UX) */}
+                {csvParsed.rows.length > 0 && (() => {
+                  const existingNames = new Set(project.teachers.map(t => t.name));
+                  const newCount = csvParsed.rows.filter(r => !existingNames.has(r.name)).length;
+                  return <span className="text-builder-ink-muted"> (新規 {newCount} / 既存の更新 {csvParsed.rows.length - newCount})</span>;
+                })()}
                 {csvParsed.errors.length > 0 && (
                   <> / <span className="font-bold text-builder-red">{csvParsed.errors.length} 件</span> エラー</>
                 )}
@@ -320,6 +347,25 @@ export default function TeacherManager() {
           担当科目を選ぶまで自動生成・講師候補に登場しません。
         </div>
       )}
+      {/* N4f: 講師名フィルタ (部分一致)。グループ見出しは維持し、一致者の
+          いないグループごと隠す */}
+      <div className="flex items-center gap-2">
+        <input
+          type="search"
+          value={teacherFilter}
+          onChange={(e) => setTeacherFilter(e.target.value)}
+          placeholder="🔍 講師名で絞り込み"
+          aria-label="講師名で絞り込み"
+          className="border border-builder-border rounded px-2 py-1 text-xs bg-builder-surface text-builder-ink w-48"
+        />
+        {teacherFilter.trim() && (
+          <button
+            type="button"
+            onClick={() => setTeacherFilter('')}
+            className="text-xs text-builder-ink-muted hover:text-builder-ink underline"
+          >クリア</button>
+        )}
+      </div>
       <div className="overflow-y-auto max-h-[400px] border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>
@@ -328,17 +374,26 @@ export default function TeacherManager() {
               <th className="text-left p-1 text-builder-ink-muted">担当科目</th>
               <th
                 className="text-left p-1 text-builder-ink-muted whitespace-nowrap"
-                title="この講師だけの上限。1日 = 空欄なら ⚡自動生成 の全体設定を使う / 通算 = 講習全体 (全タブ + 他学年コマ) の合計上限、空欄なら無制限"
-              >上限 (1日/通算)</th>
+                title="この講師だけの上限。1日 = 空欄なら ⚡自動生成 の全体設定 / 通算 = 講習全体 (全タブ + 他学年コマ) の合計上限、空欄なら無制限 / 連続 = 連続コマ数の上限、空欄なら全体設定"
+              >上限 (1日/通算/連続)</th>
               <th className="w-8"></th>
             </tr>
           </thead>
           <tbody>
-            {teacherGroups.map(group => (
+            {teacherGroups
+              .map(group => {
+                const filter = teacherFilter.trim();
+                const visibleTeachers = filter
+                  ? group.teachers.filter(t => t.name.includes(filter))
+                  : group.teachers;
+                return { ...group, teachers: visibleTeachers, totalCount: group.teachers.length };
+              })
+              .filter(group => group.teachers.length > 0)
+              .map(group => (
               <Fragment key={group.key}>
                 <tr className="bg-builder-bg">
                   <td colSpan={4} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
-                    ━━ {group.label} ({group.teachers.length})
+                    ━━ {group.label} ({teacherFilter.trim() && group.teachers.length !== group.totalCount ? `${group.teachers.length}/${group.totalCount}` : group.totalCount})
                   </td>
                 </tr>
                 {group.teachers.map(t => {
@@ -382,6 +437,25 @@ export default function TeacherManager() {
                               aria-label={`${t.name} の通算コマ数上限 (空欄 = 無制限)`}
                               className="w-14 border border-builder-border rounded px-1 py-0.5 text-xs text-right bg-builder-surface"
                             />
+                            /
+                            <DraftNumberInput
+                              value={t.maxConsecutivePeriods ?? ''}
+                              onCommit={(raw) => setTeacherLimit(i, 'maxConsecutivePeriods', raw)}
+                              min={1}
+                              placeholder="全体"
+                              aria-label={`${t.name} の連続コマ数上限 (空欄 = 全体設定)`}
+                              className="w-14 border border-builder-border rounded px-1 py-0.5 text-xs text-right bg-builder-surface"
+                            />
+                            {/* N4d: 1日 > 通算 は矛盾 (実質は通算が効く)。ハード検証は
+                                せず、気づける注意アイコンだけ出す */}
+                            {typeof t.maxDailyHours === 'number' && typeof t.maxTotalHours === 'number' && t.maxDailyHours > t.maxTotalHours && (
+                              <span
+                                role="img"
+                                aria-label={`${t.name} の上限設定に矛盾があります`}
+                                title={`1 日上限 (${t.maxDailyHours}) が通算上限 (${t.maxTotalHours}) を上回っています。実際には通算 ${t.maxTotalHours} コマまでしか割当できません。`}
+                                className="text-builder-orange cursor-help"
+                              >⚠️</span>
+                            )}
                           </span>
                         )}
                       </td>
