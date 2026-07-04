@@ -352,8 +352,8 @@ export default function TeacherManager() {
               <th className="text-left p-1 text-builder-ink-muted">担当科目</th>
               <th
                 className="text-left p-1 text-builder-ink-muted whitespace-nowrap"
-                title="この講師だけの上限。1日 = 空欄なら ⚡自動生成 の全体設定を使う / 通算 = 講習全体 (全タブ + 他学年コマ) の合計上限、空欄なら無制限"
-              >上限 (1日/通算)</th>
+                title="この講師だけの上限。1日 = 空欄なら ⚡自動生成 の全体設定 / 通算 = 講習全体 (全タブ + 他学年コマ) の合計上限、空欄なら無制限 / 連続 = 連続コマ数の上限、空欄なら全体設定"
+              >上限 (1日/通算/連続)</th>
               <th className="w-8"></th>
             </tr>
           </thead>
@@ -404,6 +404,15 @@ export default function TeacherManager() {
                               min={1}
                               placeholder="∞"
                               aria-label={`${t.name} の通算コマ数上限 (空欄 = 無制限)`}
+                              className="w-14 border border-builder-border rounded px-1 py-0.5 text-xs text-right bg-builder-surface"
+                            />
+                            /
+                            <DraftNumberInput
+                              value={t.maxConsecutivePeriods ?? ''}
+                              onCommit={(raw) => setTeacherLimit(i, 'maxConsecutivePeriods', raw)}
+                              min={1}
+                              placeholder="全体"
+                              aria-label={`${t.name} の連続コマ数上限 (空欄 = 全体設定)`}
                               className="w-14 border border-builder-border rounded px-1 py-0.5 text-xs text-right bg-builder-surface"
                             />
                             {/* N4d: 1日 > 通算 は矛盾 (実質は通算が効く)。ハード検証は

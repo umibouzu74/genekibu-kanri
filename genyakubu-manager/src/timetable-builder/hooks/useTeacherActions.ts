@@ -16,7 +16,7 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
       dispatch({ type: 'teacher/rename', payload: { idx, newName } }),
     toggleTeacherSubject: (idx: number, subject: string) =>
       dispatch({ type: 'teacher/toggleSubject', payload: { idx, subject } }),
-    setTeacherLimit: (idx: number, key: 'maxDailyHours' | 'maxTotalHours', value: unknown) =>
+    setTeacherLimit: (idx: number, key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods', value: unknown) =>
       dispatch({ type: 'teacher/setLimit', payload: { idx, key, value } }),
     toggleTeacherNg: (idx: number, date: string, period: string) =>
       dispatch({ type: 'teacher/toggleNg', payload: { idx, date, period } }),

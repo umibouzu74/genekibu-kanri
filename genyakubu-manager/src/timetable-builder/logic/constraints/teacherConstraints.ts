@@ -62,6 +62,17 @@ export function resolveTeacherDailyLimit(
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : projectMaxDailyHours;
 }
 
+// N3a: 講師の実効連続コマ上限 (resolveTeacherDailyLimit と同型)。
+// teacher.maxConsecutivePeriods (正の有限値) があればそれを、無ければ
+// project 全体値 (0 = 制約なし) を使う。
+export function resolveTeacherConsecutive(
+  teacher: Teacher | null | undefined,
+  projectMaxConsecutive: number,
+): number {
+  const v = teacher?.maxConsecutivePeriods;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : projectMaxConsecutive;
+}
+
 // L3b: 講師にこのコマを足すと通算 (全タブ + 外部コマ) 上限を超えるか。
 // maxTotalHours が未設定 / 0 以下なら制約なし。tempTotal は
 // { teacherName: count } (合同を 1 とカウント済み)。

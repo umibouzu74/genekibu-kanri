@@ -31,6 +31,8 @@ export interface Teacher {
   maxDailyHours?: number;
   /** L3b: 講師個別の通算コマ数上限 (全タブ + 外部コマ)。未設定/0 = 無制限 */
   maxTotalHours?: number;
+  /** N3a: 講師個別の連続コマ数上限。未設定/0 = project 全体値を使う */
+  maxConsecutivePeriods?: number;
 }
 
 export interface ScheduleEntry {

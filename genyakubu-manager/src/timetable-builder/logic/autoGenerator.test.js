@@ -449,6 +449,30 @@ describe('generateSinglePattern — project.maxConsecutivePeriods', () => {
     expect(r.solution).not.toBeNull();
     expect(Object.keys(r.solution)).toHaveLength(3);
   });
+
+  it('講師個別の maxConsecutivePeriods が全体値より優先される (N3a)', () => {
+    // 全体は制限なし (0) だが堀上の個人上限は 2 → 3 連続が作れず部分解
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学', '国語'], { maxConsecutivePeriods: 2 })],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1, '数学': 1, '国語': 1 },
+      maxConsecutivePeriods: 0,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).toBeNull();
+    expect(r.filledCount).toBeLessThanOrEqual(2);
+  });
+
+  it('個別上限が全体値より緩ければ個別値が勝つ (N3a: 全体 1 でも個別 3 で完全解)', () => {
+    const project = makeProject({
+      teachers: [teacher('堀上', ['英語', '数学', '国語'], { maxConsecutivePeriods: 3 })],
+      periods: ['1限', '2限', '3限'],
+      subjectCounts: { '英語': 1, '数学': 1, '国語': 1 },
+      maxConsecutivePeriods: 1,
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+  });
 });
 
 // ─── 制約のテスト ──────────────────────────────────────────────────

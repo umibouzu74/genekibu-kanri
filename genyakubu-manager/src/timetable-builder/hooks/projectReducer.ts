@@ -69,7 +69,7 @@ export type ProjectAction =
   | { type: 'teacher/remove'; payload: { idx: number } }
   | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
   | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
-  | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours'; value: unknown } }
+  | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods'; value: unknown } }
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
@@ -870,11 +870,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
       return { ...project, teachers: newTeachers };
     }
     case 'teacher/setLimit': {
-      // L3a/L3b: 講師個別のコマ数上限 (1 日 / 通算)。value が正の有限数で
-      // なければ「未設定」としてフィールドごと落とす。同値は no-op (F2d)。
+      // L3a/L3b/N3a: 講師個別のコマ数上限 (1 日 / 通算 / 連続)。value が正の
+      // 有限数でなければ「未設定」としてフィールドごと落とす。同値は no-op (F2d)。
       const { idx, key, value } = action.payload;
       if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
-      if (key !== 'maxDailyHours' && key !== 'maxTotalHours') return project;
+      if (key !== 'maxDailyHours' && key !== 'maxTotalHours' && key !== 'maxConsecutivePeriods') return project;
       const num = Math.round(Number(value));
       const v = Number.isFinite(num) && num > 0 ? num : undefined;
       const curr = project.teachers[idx][key];

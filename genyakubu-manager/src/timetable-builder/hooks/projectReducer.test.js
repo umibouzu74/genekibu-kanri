@@ -1533,6 +1533,11 @@ describe('projectReducer — project 全体操作', () => {
       type: 'teacher/setLimit', payload: { idx: 0, key: 'maxTotalHours', value: '8' },
     });
     expect(next.project.teachers[0].maxTotalHours).toBe(8);
+    // N3a: 連続コマ上限も同じ action で設定できる
+    next = projectReducer(next, {
+      type: 'teacher/setLimit', payload: { idx: 0, key: 'maxConsecutivePeriods', value: 3 },
+    });
+    expect(next.project.teachers[0].maxConsecutivePeriods).toBe(3);
   });
 
   it('teacher/setLimit: 0 以下・非数はフィールドを落とす (未設定に戻す)', () => {

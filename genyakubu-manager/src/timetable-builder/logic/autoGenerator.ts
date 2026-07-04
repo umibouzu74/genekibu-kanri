@@ -16,6 +16,7 @@ import {
   wouldExceedTotalLimit,
   wouldExceedConsecutive,
   resolveTeacherDailyLimit,
+  resolveTeacherConsecutive,
 } from './constraints/teacherConstraints';
 import {
   hasSubjectInSameDayClass,
@@ -604,7 +605,8 @@ export function generateSinglePattern({
                 cc => tempSch[makeKey(d.id, pid, cc.id)]?.teacher === tName,
               ))
               || otherTabs.busy.has(`${d.id}|${pid}|${tName}`),
-            maxConsecutive,
+            // N3a: 講師個別の連続上限があれば優先 (L3a/L3b と同じ規則)
+            maxConsecutive: resolveTeacherConsecutive(tObj, maxConsecutive),
           })) continue;
 
           // プライマリスロットを割り当て (locked フラグは既存の値を保持する。

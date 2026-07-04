@@ -2433,7 +2433,7 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
 
 ### N3. 生成・分析
 
-- **N3a (中)**: 講師別の連続コマ上限 — 連続だけ project 全体値
+- ✅ **N3a (2026-07-03 実装)**: 講師別の連続コマ上限 — 連続だけ project 全体値
   (maxConsecutivePeriods) のみで、L3a (1日)・L3b (通算) の講師個別化から
   取り残されている (Teacher 型にフィールド無し)。resolveTeacherDailyLimit と
   同型の resolve + TeacherManager 上限列の拡張 + fingerprint 追随で、
