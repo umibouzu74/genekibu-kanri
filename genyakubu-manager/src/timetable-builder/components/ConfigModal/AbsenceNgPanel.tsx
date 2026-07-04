@@ -23,10 +23,11 @@ const TIME_STEP_SEC = 300;
 //      - 共通フィールド: 講師 (複数チェック) / 期間 (start-end date) / メモ
 //      - mode='external': 時刻 (start-end)、追加で自動NG派生もまとめて発火
 //      - mode='ng': 時限チェックボックス、「まとめてNG / 解除」2 アクション
-//   3. 日付ごとの折りたたみセクション (日付ヘッダを共有)
+//   3. 一括解除 (全手動NG / 全NG設定 — どちらも確認ダイアログ付き)
+//   4. 日付ごとの折りたたみセクション (日付ヘッダを共有)
 //      - その日の他学年セッション一覧 (× で削除)
 //      - その日の NG マトリクス (講師×時限、教科グループ付き、自動NG は『自』)
-//   4. クイック数値入力グリッド (折りたたみ、最下部)
+//   5. クイック数値入力グリッド (折りたたみ、最下部)
 export default function AbsenceNgPanel() {
   const {
     project,
@@ -38,6 +39,8 @@ export default function AbsenceNgPanel() {
     removeExternalSessionPreset,
     toggleTeacherNg,
     setNgBatch,
+    clearAllManualNg,
+    clearAllNg,
     analysis,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
@@ -386,6 +389,43 @@ export default function AbsenceNgPanel() {
         ? `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 を NG にしました`
         : `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 の NG を解除しました`,
       value ? 'warning' : 'success',
+      3000,
+    );
+  };
+
+  // ── 一括解除 (パネル全体) ────────────────────
+  // 全講師の手動NG 総件数。0 のときはボタンを disabled にする。
+  const manualNgTotal = useMemo(
+    () => project.teachers.reduce((sum, t) => sum + (t.ngSlots?.length || 0), 0),
+    [project.teachers],
+  );
+
+  // 手動NGのみ全解除 (自動NG = 他学年セッション由来は残る)。
+  // 破壊的な全消し操作なので必ず showConfirm (danger) を挟む。
+  const handleClearAllManualNg = async () => {
+    if (manualNgTotal === 0) return;
+    const ok = await showConfirm(
+      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n他学年セッション由来の自動NGは残ります。\nよろしいですか?`,
+      { title: '手動NGの全解除', danger: true, confirmLabel: '全解除する' },
+    );
+    if (!ok) return;
+    clearAllManualNg();
+    showToast(`手動NG ${manualNgTotal} 件をすべて解除しました`, 'success', 3000);
+  };
+
+  // NG設定を全解除 (手動NG + 他学年セッション)。自動NGはセッションから
+  // 導出されるため、消すには派生元のセッション自体の削除が必要になる。
+  const handleClearAllNg = async () => {
+    if (manualNgTotal === 0 && sessions.length === 0) return;
+    const ok = await showConfirm(
+      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\nよろしいですか?`,
+      { title: 'NG設定の全解除', danger: true, confirmLabel: 'すべて解除する' },
+    );
+    if (!ok) return;
+    clearAllNg();
+    showToast(
+      `手動NG ${manualNgTotal} 件と他学年セッション ${sessions.length} 件をすべて解除しました`,
+      'success',
       3000,
     );
   };
@@ -763,6 +803,33 @@ export default function AbsenceNgPanel() {
             {' '}(「1限 (13:00~13:45)」のように時刻を入れると自動NG対象に)
           </div>
         )}
+      </div>
+
+      {/* 一括解除 (パネル全体) — どちらも確認ダイアログ付きの破壊的操作 */}
+      <div className="border border-builder-ink-ghost rounded p-3 bg-builder-surface-alt mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-builder-ink shrink-0">🧹 一括解除:</span>
+          <button
+            type="button"
+            onClick={handleClearAllManualNg}
+            disabled={manualNgTotal === 0}
+            className="px-3 py-1 bg-builder-surface border border-builder-red text-builder-red rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-builder-danger-soft"
+          >
+            すべての手動NGを解除 ({manualNgTotal}件)
+          </button>
+          <button
+            type="button"
+            onClick={handleClearAllNg}
+            disabled={manualNgTotal === 0 && sessions.length === 0}
+            className="px-3 py-1 bg-builder-red text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+          >
+            すべてのNG設定を解除 (手動NG {manualNgTotal}件 + 他学年 {sessions.length}件)
+          </button>
+        </div>
+        <div className="text-[11px] text-builder-ink-muted mt-1">
+          自動NGは他学年セッションから導出されるため、NG設定の全解除では他学年セッションも削除されます
+          (プリセットと数値入力の記録は残ります)
+        </div>
       </div>
 
       {/* 日付ごとの折りたたみセクション */}

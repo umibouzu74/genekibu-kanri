@@ -24,6 +24,8 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
       dispatch({ type: 'teacher/setNgBatch', payload: { idxs, dateLabels, periodLabels, value } }),
     importNgSlots: (entries: Array<{ name: string; date: string; period: string }>) =>
       dispatch({ type: 'teacher/importNg', payload: { entries } }),
+    clearAllManualNg: () => dispatch({ type: 'teacher/clearAllManualNg' }),
+    clearAllNg: () => dispatch({ type: 'teacher/clearAllNg' }),
     toggleTeacherClassPriority: (idx: number, className: string) =>
       dispatch({ type: 'teacher/toggleClassPriority', payload: { idx, className } }),
     handleExternalCountChange: (date: string, teacherName: string, value: unknown) =>

@@ -13,6 +13,8 @@ afterEach(cleanup);
 
 function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
   const addExternalSessionPreset = vi.fn();
+  const clearAllManualNg = vi.fn();
+  const clearAllNg = vi.fn();
   const projectValue = {
     project: {
       teachers: [{ name: '堀上', subjects: ['英語'] }],
@@ -33,6 +35,8 @@ function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
     removeExternalSessionPreset: vi.fn(),
     toggleTeacherNg: vi.fn(),
     setNgBatch: vi.fn(),
+    clearAllManualNg,
+    clearAllNg,
     analysis: { autoNgByTeacher: new Map() },
     ...overrides,
   };
@@ -44,7 +48,7 @@ function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
-  return { ...utils, addExternalSessionPreset, uiValue };
+  return { ...utils, addExternalSessionPreset, clearAllManualNg, clearAllNg, uiValue };
 }
 
 const SAMPLE_PRESET = {
@@ -541,5 +545,93 @@ describe('AbsenceNgPanel — NG マトリクスのキーボード操作 (F2a)', 
     };
     renderPanel({ overrides: { project: withNg } });
     expect(screen.getByLabelText('堀上 7/20(月) 1限 の手動NG')).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('AbsenceNgPanel — 一括解除', () => {
+  // 手動NG 2件 + 他学年セッション 1件 を持つプロジェクト
+  const seededProject = {
+    teachers: [
+      { name: '堀上', subjects: ['英語'], ngSlots: ['7/20(月)-1限', '7/21(火)-1限'] },
+      { name: '田中', subjects: ['英語'], ngSlots: [] },
+    ],
+    subjects: ['英語'],
+    externalSessions: [
+      { id: 1, date: '7/20(月)', teacherName: '堀上', label: '', memo: '', startTime: '10:00', endTime: '11:00' },
+    ],
+    externalSessionPresets: [],
+    externalCounts: {},
+    dates: [{ id: 1, label: '7/20(月)' }, { id: 2, label: '7/21(火)' }],
+    periods: [{ id: 1, label: '1限' }],
+  };
+
+  it('「すべての手動NGを解除」: 確認 OK で clearAllManualNg を呼び、件数を toast する', async () => {
+    const showConfirm = vi.fn().mockResolvedValue(true);
+    const { clearAllManualNg, uiValue } = renderPanel({
+      overrides: { project: seededProject },
+      ui: { showConfirm },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /すべての手動NGを解除/ }));
+    await waitFor(() => expect(clearAllManualNg).toHaveBeenCalledTimes(1));
+    expect(showConfirm).toHaveBeenCalledWith(
+      expect.stringContaining('手動NG 2 件'),
+      expect.objectContaining({ danger: true }),
+    );
+    expect(uiValue.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('2 件'), 'success', 3000,
+    );
+  });
+
+  it('「すべての手動NGを解除」: 確認キャンセルで何もしない', async () => {
+    const showConfirm = vi.fn().mockResolvedValue(false);
+    const { clearAllManualNg, uiValue } = renderPanel({
+      overrides: { project: seededProject },
+      ui: { showConfirm },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /すべての手動NGを解除/ }));
+    await waitFor(() => expect(showConfirm).toHaveBeenCalled());
+    expect(clearAllManualNg).not.toHaveBeenCalled();
+    expect(uiValue.showToast).not.toHaveBeenCalled();
+  });
+
+  it('「すべてのNG設定を解除」: 確認 OK で clearAllNg を呼び、確認文に手動NG/セッション件数を含む', async () => {
+    const showConfirm = vi.fn().mockResolvedValue(true);
+    const { clearAllNg } = renderPanel({
+      overrides: { project: seededProject },
+      ui: { showConfirm },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /すべてのNG設定を解除/ }));
+    await waitFor(() => expect(clearAllNg).toHaveBeenCalledTimes(1));
+    const message = showConfirm.mock.calls[0][0];
+    expect(message).toContain('手動NG 2 件');
+    expect(message).toContain('他学年セッション 1 件');
+    expect(showConfirm.mock.calls[0][1]).toMatchObject({ danger: true });
+  });
+
+  it('「すべてのNG設定を解除」: 確認キャンセルで何もしない', async () => {
+    const showConfirm = vi.fn().mockResolvedValue(false);
+    const { clearAllNg } = renderPanel({
+      overrides: { project: seededProject },
+      ui: { showConfirm },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /すべてのNG設定を解除/ }));
+    await waitFor(() => expect(showConfirm).toHaveBeenCalled());
+    expect(clearAllNg).not.toHaveBeenCalled();
+  });
+
+  it('手動NGもセッションも無いときは両ボタンとも disabled', () => {
+    renderPanel();
+    expect(screen.getByRole('button', { name: /すべての手動NGを解除/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /すべてのNG設定を解除/ })).toBeDisabled();
+  });
+
+  it('セッションのみ存在する場合、手動NG解除は disabled / NG設定全解除は enabled', () => {
+    const sessionOnly = {
+      ...seededProject,
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+    };
+    renderPanel({ overrides: { project: sessionOnly } });
+    expect(screen.getByRole('button', { name: /すべての手動NGを解除/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /すべてのNG設定を解除/ })).not.toBeDisabled();
   });
 });

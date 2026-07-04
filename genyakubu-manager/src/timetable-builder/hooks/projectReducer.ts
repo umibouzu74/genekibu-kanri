@@ -73,6 +73,8 @@ export type ProjectAction =
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
+  | { type: 'teacher/clearAllManualNg' }
+  | { type: 'teacher/clearAllNg' }
   | { type: 'teacher/toggleClassPriority'; payload: { idx: number; className: string } }
   | { type: 'teacher/setExternalCount'; payload: { date: string; teacherName: string; value: unknown } }
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
@@ -958,6 +960,37 @@ function applyAction(project: Project, action: ProjectAction): Project {
       });
       if (!changed) return project;
       return { ...project, teachers: newTeachers };
+    }
+    case 'teacher/clearAllManualNg': {
+      // 全講師の手動NG (ngSlots) を一括解除する。他学年セッション由来の
+      // 自動NGは externalSessions から導出されるため影響を受けない。
+      let changed = false;
+      const newTeachers = project.teachers.map(t => {
+        if (!t.ngSlots || t.ngSlots.length === 0) return t;
+        changed = true;
+        return { ...t, ngSlots: [] };
+      });
+      if (!changed) return project;
+      return { ...project, teachers: newTeachers };
+    }
+    case 'teacher/clearAllNg': {
+      // 全NG設定の一括解除 = 手動NG (ngSlots) + 他学年セッション
+      // (externalSessions)。自動NGはセッションから導出されるので、消すには
+      // 派生元のセッション自体を削除するしかない。プリセットと
+      // externalCounts (クイック数値入力) はNGを生まないため残す。
+      let teachersChanged = false;
+      const newTeachers = project.teachers.map(t => {
+        if (!t.ngSlots || t.ngSlots.length === 0) return t;
+        teachersChanged = true;
+        return { ...t, ngSlots: [] };
+      });
+      const sessionsChanged = (project.externalSessions || []).length > 0;
+      if (!teachersChanged && !sessionsChanged) return project;
+      return {
+        ...project,
+        ...(teachersChanged ? { teachers: newTeachers } : {}),
+        ...(sessionsChanged ? { externalSessions: [] } : {}),
+      };
     }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
