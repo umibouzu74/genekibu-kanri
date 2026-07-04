@@ -623,6 +623,62 @@ describe('projectReducer — 講師管理', () => {
     expect(noChange.project).toBe(seeded);
   });
 
+  it('teacher/clearAllManualNg: 全講師の手動NGを解除し、externalSessions は残す', () => {
+    const seeded = makeProject();
+    seeded.teachers[0].ngSlots = [makeNgKey('12/25', '1限'), makeNgKey('12/26', '2限')];
+    seeded.teachers[1].ngSlots = [makeNgKey('12/25', '1限')];
+    seeded.externalSessions = [
+      { id: 1, date: '12/25', teacherName: '堀上', label: '', memo: '', startTime: '10:00', endTime: '11:00' },
+    ];
+    const state = { project: seeded, history: [seeded], historyIndex: 0, loadError: null };
+    const next = projectReducer(state, { type: 'teacher/clearAllManualNg' });
+    expect(next.project.teachers[0].ngSlots).toEqual([]);
+    expect(next.project.teachers[1].ngSlots).toEqual([]);
+    expect(next.project.externalSessions).toHaveLength(1);
+  });
+
+  it('teacher/clearAllManualNg: 手動NGが無ければ no-op (同参照)', () => {
+    const state = makeState();
+    const next = projectReducer(state, { type: 'teacher/clearAllManualNg' });
+    expect(next.project).toBe(state.project);
+  });
+
+  it('teacher/clearAllNg: 手動NGと externalSessions を両方解除する', () => {
+    const seeded = makeProject();
+    seeded.teachers[0].ngSlots = [makeNgKey('12/25', '1限')];
+    seeded.externalSessions = [
+      { id: 1, date: '12/25', teacherName: '堀上', label: '', memo: '', startTime: '10:00', endTime: '11:00' },
+      { id: 2, date: '12/26', teacherName: '田中', label: '', memo: '' },
+    ];
+    seeded.externalSessionPresets = [{ id: 1, name: '予備校' }];
+    seeded.externalCounts = { '12/25_堀上': 2 };
+    const state = { project: seeded, history: [seeded], historyIndex: 0, loadError: null };
+    const next = projectReducer(state, { type: 'teacher/clearAllNg' });
+    expect(next.project.teachers[0].ngSlots).toEqual([]);
+    expect(next.project.externalSessions).toEqual([]);
+    // NG を生まないプリセット / externalCounts は残す
+    expect(next.project.externalSessionPresets).toHaveLength(1);
+    expect(next.project.externalCounts).toEqual({ '12/25_堀上': 2 });
+  });
+
+  it('teacher/clearAllNg: 手動NGのみ / セッションのみでも解除できる', () => {
+    const ngOnly = makeProject();
+    ngOnly.teachers[0].ngSlots = [makeNgKey('12/25', '1限')];
+    const s1 = { project: ngOnly, history: [ngOnly], historyIndex: 0, loadError: null };
+    expect(projectReducer(s1, { type: 'teacher/clearAllNg' }).project.teachers[0].ngSlots).toEqual([]);
+
+    const sessionOnly = makeProject();
+    sessionOnly.externalSessions = [{ id: 1, date: '12/25', teacherName: '堀上', label: '', memo: '' }];
+    const s2 = { project: sessionOnly, history: [sessionOnly], historyIndex: 0, loadError: null };
+    expect(projectReducer(s2, { type: 'teacher/clearAllNg' }).project.externalSessions).toEqual([]);
+  });
+
+  it('teacher/clearAllNg: 何も無ければ no-op (同参照)', () => {
+    const state = makeState();
+    const next = projectReducer(state, { type: 'teacher/clearAllNg' });
+    expect(next.project).toBe(state.project);
+  });
+
   it('teacher/addExternalSession: 詳細セッションを追加し ID を採番', () => {
     let state = makeState();
     state = projectReducer(state, {
