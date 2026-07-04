@@ -19,8 +19,10 @@
 
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
-// 無依存モジュール (generationParams.js) のみ。
+// 無依存モジュール (generationParams.js / dateLabelUnify.js — 後者の依存も
+// dateGenerate / labelRefs の無依存モジュールのみ) だけ。
 import { clampGenerationParam } from './generationParams';
+import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -575,6 +577,12 @@ export function migrateProject(project: any): Project {
       result = { ...result, teachers: deduped };
     }
   }
+
+  // 日付ラベルの表記ゆれ統一: date picker 化 (L4 系) 以前の手入力で残った
+  // 「8/6」を現行形式「8/6(木)」へ寄せる。「8/6」と「8/6(木)」が別 entity と
+  // して共存しているプールはマージし、参照 (schedule / NG / externalCounts /
+  // 合同 / セッション) も付け替える。idempotent (詳細は dateLabelUnify.js)。
+  result = unifyDateLabelWeekdays(result);
 
   return result;
 }
