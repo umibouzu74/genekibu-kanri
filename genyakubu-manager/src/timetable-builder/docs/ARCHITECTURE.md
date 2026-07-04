@@ -133,6 +133,10 @@ Project {
     選ぶ（学年で期間や時間帯がズレても・歯抜けがあってもOK。例: 中３=昼の時限のみ、
     中１・２=夜の時限のみ、を同じ時限プールから選ぶ）。`activeDatesForTab(pool, tab)` /
     `activePeriodsForTab(pool, tab)` が subset を返す（`scheduleKey.js`、E-3 で periods 版を追加）。
+    dates の subset は `sortPoolDatesByCalendar` で**カレンダー順に整列して返す**
+    （プールの保存順=挿入順は不変。タブ別に後から追加した日はプール末尾に push
+    されるため、そのまま返すと時間割の行順・回数連番が日付順にならない）。
+    periods はプール順のまま（手打ちの並びを尊重）。
   - 読み取り側は `useProject` の `currentConfig`（= `tab.config` に**そのタブの使う日・使う時限**
     をマージした派生ビュー）経由で無改修。時間割 / 自動生成 / 分析 / Excel は各タブの使う日・
     時限だけを対象にする。**NG パネルだけはプール全日・全時限**（`project.dates` /
@@ -153,6 +157,7 @@ Project {
     「1限(昼)」「1限(夜)」のようにラベル自体を分けて運用する）。
   - `BasicSettings` の日付チェックリストは `sortPoolDatesByCalendar`（`dateGenerate.js`、
     表示専用の純粋関数）で常に実日付順に並べ替えて表示する（保存順序=挿入順は変更しない）。
+    時間割本体・Excel・回数連番も `activeDatesForTab` 経由で同じカレンダー順になる。
     時限チェックリストはプール順表示（時限は手打ちの短いリストで自動生成が無いため、
     日付のような並べ替えは行わない）。日付・時限とも「🗂 全タブまとめて表示」トグルで、
     行=プールの日付/時限・列=各タブのマトリクス表示に切り替え、他タブの分も

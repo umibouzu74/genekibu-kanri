@@ -38,6 +38,31 @@ describe('activeDatesForTab', () => {
   it('pool が空/未定義でも安全', () => {
     expect(activeDatesForTab(undefined, { config: { activeDateIds: [1] } })).toEqual([]);
   });
+  it('挿入順のプールをカレンダー順に並べ替えて返す (時間割の行順)', () => {
+    // tabDates/setByLabels は新規日付を末尾 push するため、タブ別に後から
+    // 追加した日はプール上でカレンダー順とずれる (F5j と同根)。
+    const shuffled = [
+      { id: 1, label: '7/29(水)' }, { id: 2, label: '8/4(火)' }, { id: 3, label: '7/24(金)' },
+    ];
+    expect(activeDatesForTab(shuffled, { config: {} }).map(d => d.label)).toEqual([
+      '7/24(金)', '7/29(水)', '8/4(火)',
+    ]);
+    expect(activeDatesForTab(shuffled, { config: { activeDateIds: [2, 3] } }).map(d => d.label)).toEqual([
+      '7/24(金)', '8/4(火)',
+    ]);
+  });
+  it('既にカレンダー順のプールは参照をそのまま返す (identity 保持)', () => {
+    const sortedPool = [{ id: 1, label: '7/24(金)' }, { id: 2, label: '7/29(水)' }];
+    expect(activeDatesForTab(sortedPool, { config: {} })).toBe(sortedPool);
+  });
+  it('M/D として解釈できないラベルは末尾 (安定順)', () => {
+    const mixed = [
+      { id: 1, label: '予備日' }, { id: 2, label: '7/29(水)' }, { id: 3, label: '7/24(金)' },
+    ];
+    expect(activeDatesForTab(mixed, { config: {} }).map(d => d.label)).toEqual([
+      '7/24(金)', '7/29(水)', '予備日',
+    ]);
+  });
 });
 
 describe('activePeriodsForTab', () => {
@@ -88,6 +113,16 @@ describe('effectiveConfigForTab (F2i)', () => {
     const eff = effectiveConfigForTab(undefined, undefined);
     expect(eff.dates).toEqual([]);
     expect(eff.periods).toEqual([]);
+  });
+  it('日付プールが挿入順でも実効 config の dates はカレンダー順', () => {
+    const proj = {
+      dates: [{ id: 1, label: '7/29(水)' }, { id: 2, label: '7/24(金)' }],
+      periods: [{ id: 1, label: '1限' }],
+    };
+    const eff = effectiveConfigForTab(proj, { config: {} });
+    expect(eff.dates.map(d => d.label)).toEqual(['7/24(金)', '7/29(水)']);
+    // periods は手打ちの並び (プール順) を維持する
+    expect(eff.periods).toBe(proj.periods);
   });
 });
 
