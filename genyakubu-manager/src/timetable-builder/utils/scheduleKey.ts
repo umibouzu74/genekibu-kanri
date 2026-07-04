@@ -19,9 +19,10 @@
 
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
-// 無依存モジュール (generationParams.js / dateLabelUnify.js — 後者の依存も
-// dateGenerate / labelRefs の無依存モジュールのみ) だけ。
+// 無依存モジュール (generationParams.js / dateGenerate.js / dateLabelUnify.js —
+// 最後者の依存も dateGenerate / labelRefs の無依存モジュールのみ) だけ。
 import { clampGenerationParam } from './generationParams';
+import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import type {
   CombinedGroup,
@@ -71,12 +72,22 @@ export function nextId(entities: Entity[] | undefined): number {
 // v4(Y): project.dates は全タブの和集合プール。各タブは config.activeDateIds で
 // 「この学年が実際に使う日」を選ぶ。未指定 (undefined/null) は『全日使う』の
 // 意味 (後方互換: 既存タブはプール全体をそのまま表示)。
-// 戻り値はプールの並び順を保った subset。
+// 戻り値は subset を **カレンダー順** (sortPoolDatesByCalendar) に並べたもの。
+// プール自体は挿入順 (タブ別の後から追加は末尾 push) のままなので、そのまま
+// 返すと時間割の行順・科目の回数連番 (第N回) が日付順にならない (F5j と同根)。
+// M/D として解釈できないラベルは末尾 (安定順)。既に日付順のときは入力の参照を
+// そのまま返す (既存の identity 前提の memo / no-op 判定を保つ)。
 export function activeDatesForTab(poolDates: Entity[] | undefined, tab: Tab | undefined): Entity[] {
   const ids = tab?.config?.activeDateIds;
-  if (!ids) return poolDates || [];
-  const set = new Set(ids);
-  return (poolDates || []).filter(d => set.has(d.id));
+  let subset: Entity[];
+  if (!ids) {
+    subset = poolDates || [];
+  } else {
+    const set = new Set(ids);
+    subset = (poolDates || []).filter(d => set.has(d.id));
+  }
+  const sorted = sortPoolDatesByCalendar(subset);
+  return sorted.every((d, i) => d === subset[i]) ? subset : sorted;
 }
 
 // dates と同じ仕組みを periods にも適用 (E-3)。config.activePeriodIds
@@ -92,6 +103,8 @@ export function activePeriodsForTab(poolPeriods: Entity[] | undefined, tab: Tab 
 
 // F2i: タブの実効 config = tab.config (classes / subjectCounts) + 『このタブが
 // 使う日・使う時限』に絞った dates / periods。この合成の唯一の入口。
+// dates はカレンダー順に整列済み (activeDatesForTab)。時間割表示・回数連番・
+// Excel 出力・自動生成の全 consumer がここを通るため日付順が揃う。
 // activeDatesForTab / activePeriodsForTab を個別に並べると片方を絞り忘れる
 // 事故 (E-3 型) が再発するため、dates と periods を対で使う consumer は
 // 必ずこの関数を通すこと。project は { dates, periods } だけ読む。
