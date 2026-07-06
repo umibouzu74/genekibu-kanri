@@ -720,13 +720,27 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     const ws = wb.getWorksheet('堀上');
     // header + 12/25: 予備校(10:00) → 1限(13:00) / 12/26: 2限(14:00) → 外部(18:00)
     expect(ws.rowCount).toBe(5);
+    // 外部授業は科目欄=空欄、学年(タブ) 列=種別 (メモ＝プリセット名)
     expect([ws.getCell(2, 1).value, ws.getCell(2, 2).value, ws.getCell(2, 4).value, ws.getCell(2, 5).value])
-      .toEqual(['12/25(木)', '10:00〜11:00', '予備校（早朝）', '外部']);
+      .toEqual(['12/25(木)', '10:00〜11:00', '', '予備校（早朝）']);
     expect([ws.getCell(3, 1).value, ws.getCell(3, 2).value]).toEqual(['12/25(木)', '1限 (13:00~13:45)']);
     expect([ws.getCell(4, 1).value, ws.getCell(4, 2).value]).toEqual(['12/26(金)', '2限 (14:00~14:45)']);
-    // メモ無しの外部授業は科目欄 '外部授業' でフォールバック
-    expect([ws.getCell(5, 1).value, ws.getCell(5, 2).value, ws.getCell(5, 4).value])
-      .toEqual(['12/26(金)', '18:00〜19:00', '外部授業']);
+    // メモも一致プリセットも無い外部授業は学年(タブ) 列 '外部' でフォールバック
+    expect([ws.getCell(5, 1).value, ws.getCell(5, 2).value, ws.getCell(5, 4).value, ws.getCell(5, 5).value])
+      .toEqual(['12/26(金)', '18:00〜19:00', '', '外部']);
+  });
+
+  it('メモ未設定でも時刻がプリセットに一致すれば学年(タブ) 列にプリセット名を表示する', () => {
+    const project = makeProjectWithSessions();
+    project.externalSessionPresets = [
+      { id: 1, name: '高校', startTime: '18:00', endTime: '19:00' },
+    ];
+    const wb = buildTeacherWorkbook(project);
+    const ws = wb.getWorksheet('堀上');
+    // 12/26 18:00 のメモ無しセッション (行 5) が「高校」と表示される
+    // (表示のみ — project.externalSessions のメモ自体は書き換えない)
+    expect(ws.getCell(5, 5).value).toBe('高校');
+    expect(project.externalSessions.find(s => s.id === 2).memo).toBe('');
   });
 
   it('講習コマ 0 でセッションだけの講師はシートも全講師リストにも載せない', () => {
@@ -738,12 +752,12 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     expect(teacherCol).not.toContain('田中');
   });
 
-  it('全講師リストにも外部授業行が同じ並びで入る (クラス列は "-"、学年(タブ) 列は 外部)', () => {
+  it('全講師リストにも外部授業行が同じ並びで入る (クラス列は "-"、学年(タブ) 列は種別)', () => {
     const wb = buildTeacherWorkbook(makeProjectWithSessions());
     const wsAll = wb.getWorksheet('全講師リスト');
     expect(wsAll.rowCount).toBe(5); // header + 堀上 4 行
     expect([wsAll.getCell(2, 1).value, wsAll.getCell(2, 3).value, wsAll.getCell(2, 4).value, wsAll.getCell(2, 6).value])
-      .toEqual(['堀上', '10:00〜11:00', '-', '外部']);
+      .toEqual(['堀上', '10:00〜11:00', '-', '予備校（早朝）']);
   });
 
   it('時刻の取れない時限のコマは日の先頭・時刻の取れない外部授業は日の末尾', () => {
@@ -759,7 +773,7 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     expect(ws.rowCount).toBe(4); // header + 1限 + 2限 + 外部
     expect(ws.getCell(2, 2).value).toBe('1限');
     expect(ws.getCell(3, 2).value).toBe('2限');
-    // 時刻もラベルも無いセッションの時限欄は '-'
-    expect([ws.getCell(4, 2).value, ws.getCell(4, 4).value]).toEqual(['-', '予備校']);
+    // 時刻もラベルも無いセッションの時限欄は '-'。種別 (メモ) は学年(タブ) 列
+    expect([ws.getCell(4, 2).value, ws.getCell(4, 5).value]).toEqual(['-', '予備校']);
   });
 });
