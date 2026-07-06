@@ -33,5 +33,17 @@ export default defineConfig({
     // (5173 に別物が居ても誤対象でテストしないための慣習)。
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
+    // e2e を実 Firebase から隔離する。.env.local のある開発機で dev server
+    // を自前起動した場合でも local-only モードで走らせる (プロセス環境変数は
+    // .env ファイルより優先される)。注意: reuseExistingServer で「既に起動
+    // 済みの (Firebase 設定入り) dev server」に相乗りした場合はこの env は
+    // 効かない — e2e 前にその dev server を止めること。
+    env: {
+      ...process.env,
+      VITE_FIREBASE_API_KEY: "",
+      VITE_FIREBASE_AUTH_DOMAIN: "",
+      VITE_FIREBASE_DATABASE_URL: "",
+      VITE_FIREBASE_PROJECT_ID: "",
+    },
   },
 });

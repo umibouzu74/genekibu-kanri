@@ -52,14 +52,15 @@ A1-A8 + B1-B4 + C1-C4 + D 系 (詳細は §0 と各セクション)
 | E3 (テスト/信頼性) | E3a Worker E2E (Playwright) / E3b xlsx round-trip / E3d schema 検証 / E3e ConfigModal sub-tests |
 | E4 (パフォーマンス) | E4a cleanSchedule O(K) |
 | E5 (再設計) | E5e TypeScript 化 (全 Phase) / E5g migration ルール文書化 |
-| E6 (データ管理) | E6c 容量監視 / E6d 複数タブ検出 |
+| E6 (データ管理) | E6a Firebase 同期 (2026-07-06) / E6c 容量監視 / E6d 複数タブ検出 |
 | E8 (ドキュメント) | E8a ユーザーマニュアル / E8b アーキテクチャ図 / E8d 完了インデックス(残あり) |
 | F (レビュー起点の修正) | F.1/F.3 一括修正 (2026-07-02) / F.4-F.5 の改善 10 バッチ (2026-07-02〜03、PR #141): 読込クラッシュループ根絶 F5a-F5e+F2f / 期間カレンダー順 F5j / autosave debounce F2c / focus trap F5q-F5r / Excel シート名 F5g-F5i / infeasibility 再設計 F2g+F5x / モーダル UI F5k-F5o / ソルバ整合 F5t-F5y / 空ロック仕様 F5w / fingerprint 失効 F2n-F2p / 参照整合 F2k+H3/H5/F2o / a11y F2a-F2b |
 | G (残課題の一本化後) | 2026-07-03 小粒バッチ ×2: F2i effectiveConfigForTab 集約 / F2j 集計規則統合 (tabUsage.js) / F2m infeasibility レジストリ / F2d 同値 no-op ガード / F2e swap stale payload / F2h前段 NG CSV dedupe / F5z 重複合同グループガード / F2l popover+数値入力の共有化 / F5f 混在 dim migrate / E5g migration ルール文書化 |
 
 **残課題は §G (2026-07-03 一本化) を参照。**主な未着手系統:
 E2a Excel 取込 · E2b wizard 本体 · E3c/E3f/E3g テスト深化 ·
-E4b ソルバ計測 · E5 系残り (E5b ID 化 / E5c style 統一) · E6a Firebase · E7 系 (AI 活用)。
+E4b ソルバ計測 · E5 系残り (E5b ID 化 / E5c style 統一) ·
+~~E6a Firebase~~ ✅ (2026-07-06) · E7 系 (AI 活用)。
 
 ---
 
@@ -70,7 +71,9 @@ E4b ソルバ計測 · E5 系残り (E5b ID 化 / E5c style 統一) · E6a Fireb
 - 現行: `genyakubu-manager/src/timetable-builder/` に同居
 - 親アプリのサイドバー「時間割管理 > 🧩 講習時間割作成」から開く（chord `g b`）
 - データは LocalStorage (`builder.schedule_project` / `builder.schedule_user_defaults`)
-- Firebase 同期は **意図的に未対応**（年数回の利用想定では過剰投資）
+- project は親アプリの Firebase RTDB にも同期される (E6a、2026-07-06 完了。
+  タブレット等の別端末から編集する要望を受けて着手。詳細は
+  `docs/ARCHITECTURE.md` §5)
 
 ### 1.2 完成度の体感
 | 領域 | 状態 |
@@ -94,7 +97,7 @@ E4b ソルバ計測 · E5 系残り (E5b ID 化 / E5c style 統一) · E6a Fireb
 | オンボーディング | 🟢 初回 5 ステップガイド + ❓ ヘルプから再表示 (D1a) |
 | モバイル対応 | 🟢 コード側は完了 (Toolbar 折返し / Excel dropdown / 長押し / 44px / ダブルタップズーム抑止)。実機確認のみ残 (G.2) |
 | TypeScript 化 | 🟢 builder 本体 100% TS 化済み (E5e、2026-07-03)。テストファイルと親アプリは JS のまま |
-| Firebase 同期 | 🔴 意図的に未対応 |
+| Firebase 同期 | 🟢 project を RTDB 同期 (E6a、2026-07-06)。テンプレート・user defaults はローカルのまま |
 
 ### 1.3 既存のテスト
 合計 **1824 件 / 89 ファイル** (2026-07-03 校正レビュー §J 後。timetable-builder
@@ -1059,10 +1062,52 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
 
 ### E6. データ管理 / コラボ
 
-#### E6a. ⚪ Firebase 同期 (旧 D6e, 「壊す」候補)
-- **現状**: LocalStorage 単独 (R2)。
-- **改善**: Firestore / Supabase 同期で複数デバイス + R2 解決。
-- **規模**: 大 / **価値**: 高 (組織内共有が要件化した時) / **「壊す」候補**
+#### E6a. ✅ Firebase 同期 (旧 D6e / 2026-07-06 完了)
+- **旧現状**: LocalStorage 単独 (R2)。「共有ニーズが顕在化したら着手」としていたが、
+  タブレット等の別端末から編集したいという要望が出たため実装。
+- **実装** (詳細は `docs/ARCHITECTURE.md` §5):
+  - 親アプリの Firebase RTDB 基盤 (`src/firebase/config.js` / 匿名 read +
+    管理者 write / SyncStatus インジケータ) をそのまま再利用。新規の認証・
+    コスト要素なし。
+  - **useHistoryStack**: debounce 済み flushSave が LocalStorage と同一の
+    JSON 文字列を `appData/builder/schedule_project` へ送信 (SyncStatus の
+    pending カウンタには `trackSyncActivity` で計上)。onValue 受信は
+    `decideRemoteProject` で判定し、採用なら `project/reset` (履歴ごと初期化)
+    + toast。サーバ空なら現 project を seed (migrate 済みの形 — K5b)。
+  - **utils/projectSync.ts** (純粋関数): apply / identical / reject (壊れた
+    blob はローカル正で自己修復) / stale-client (サーバの version がこの
+    クライアントより新しければ送信停止 — GitHub Pages キャッシュ対策) を判定。
+  - **文字列保存の理由**: RTDB のオブジェクト保存は空配列・空オブジェクトを
+    刈り取り (`schedule: {}` が消える)、キー順も不定になるため。文字列なら
+    LocalStorage と同一バイト列が往復し echo 判定が正確。
+  - **競合**: project 単位の last-writer-wins (K5a のユーザ判断に整合。
+    マージ・楽観ロックは作らない)。同期対象は project のみで、テンプレート・
+    user defaults は端末ローカルのまま (JSON 書き出しで移行可)。
+- **テスト**: projectSync.test.ts (新規 10) + useHistoryStack.sync.test.jsx
+  (新規 10)。database.rules.json に `.validate: isString` を追加。
+- **校正レビュー反映 (同日)**: 8 角度並列レビュー + 反証検証で 10 件を修正。
+  主なもの — (1) 単体テスト・e2e・dev(StrictMode) が .env.local のある環境で
+  実 RTDB に接続し得た → `test.env` / `webServer.env` で VITE_FIREBASE_* を
+  空にして隔離。(2) 初回スナップショット受信前の送信が stale-client ガードを
+  素通り → 初回送信前に `get()` で version を一回確認 (失敗時は送信優先 =
+  オフライン耐久性維持)。(3) activeTabId (ビュー状態) が同一性比較に含まれ、
+  タブ切替が他端末の履歴リセットを誘発 → 比較から除外 + 適用時ローカル温存
+  (updatedAt も除外)。(4) 受信 payload の templates 未 strip (L1d 欠落) →
+  strip 追加。(5) ノード削除後の再 seed が echo 抑制に食われる → seed 前に
+  合意値を無効化。(6) 空サーバへの seed 失敗が閲覧ユーザに認証警告 toast →
+  seed は沈黙 (親と同方針)。(7) エラー通知ラッチが成功後も解除されず
+  「回復 → 再失敗」が無通知 → 成功時に解除。(8) version だけ大きいゴミ blob
+  が stale-client 化して自己修復不能 → 非空 tabs を要求 (§4.1 ルール 8 に
+  スキーマ側の約束を明文化)、文字列 version も数値化。(9) 比較の cleanSchedule
+  非対称で旧データが起動時に擬似 apply → ローカル側も clean。(10)
+  stableStringify の 2 コピー → `src/utils/stableStringify.js` に一本化。
+  ほか: LS 先読みで起動時のフル比較スキップ、JSON 読込にも新 version ガード、
+  連続 remote-apply の toast 間引き、toast 文言を「後勝ちで消え得る」と正直化。
+  テスト 20 → 36 件。
+- **既知の限界 (意図的)**: 初回 get() は version のみ確認し内容の新旧は見ない
+  (K5a: LWW)。「古いローカルを持つ端末で起動直後 800ms 以内に編集して閉じる」
+  と新しいサーバ内容を上書きし得るが、頻度・実害とも小さく、防ぐには
+  読み待ちゲートが必要でオフライン編集の耐久性を壊すため作らない。
 
 #### E6b. ⚪ 複数ユーザー同時編集 (新規)
 - **現状**: 想定外。
@@ -1142,7 +1187,7 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | **機能拡張** | E2a (CSV 拡張) / E2e (生成 param UI) / E2b (修復 wizard) | 中〜大 | 新規ユーザ獲得 + 上級者対応 |
 | **モバイル対応** | E1a (狭画面) / E1f (タッチ) | 中 | 移動先確認の体験 |
 | **Major refactor (要決断)** | ~~E5e (TS)~~ ✅ → E5b (ID 化) → E5c (style 統一) | 大 | 長期負債解消、5 年後の自分 |
-| **新領域 (要 PM 判断)** | E6a (Firebase) / E7a (NL 制約) / E7b (緩和提案) | 大 | プロダクト方向性の選択 |
+| **新領域 (要 PM 判断)** | ~~E6a (Firebase)~~ ✅ / E7a (NL 制約) / E7b (緩和提案) | 大 | プロダクト方向性の選択 |
 
 ### E 系の「一旦壊した方が良い」候補
 
@@ -1151,14 +1196,14 @@ CLAUDE.md の **A18 系 (使用頻度ベース自動変形禁止)** に抵触し
 | ~~**E5e**~~ ✅ | TypeScript 化 | 完了 (2026-07-03)。types.ts + 全 source の TS/TSX 化 | — |
 | **E5b** | combinedGroups / externalCounts 完全 ID 化 | E5e と一緒に。reducer の cascade cleanup を撤廃 | JSON 出力が人間可読でなくなる、タブ間自動共有が失われる |
 | **E5c** | Tailwind / inline-style 統一 | 親アプリの paradigm に合わせ Builder を inline 化 | Builder UI 全面書き直し |
-| **E6a** | Firebase 同期 | LocalStorage は cache レイヤとして残し sync は subscribe 型 | 認証 / コンフリクト / コスト |
+| ~~**E6a**~~ ✅ | Firebase 同期 | 完了 (2026-07-06)。LocalStorage を cache レイヤとして残し onValue subscribe 型で実装。親アプリの RTDB 基盤再利用で認証・コストの新規要素なし | — |
 | **E5h** | analysis の Worker 化 | postMessage で結果を返す。autoGenerator と共通基盤 | UI 60fps を割っていないなら effort 過剰 |
 | **E5f** | state management ライブラリ | Zustand へ部分置換から | 動いているものを置き換えるコスト |
 
 優先度判断の目安:
 - ~~**必ずやる**: E5e (TS)~~ ✅ 完了 → 残りの refactor (E5b 等) の前提が整った
 - **やる価値が高い**: E5b (ID 化) → reducer 簡略化、E5c (style 統一) → 長期 maintenance
-- **要件次第**: E6a (Firebase) → 共有ニーズが顕在化したら
+- ~~**要件次第**: E6a (Firebase) → 共有ニーズが顕在化したら~~ ✅ タブレット編集の要望が出たため実装 (2026-07-06)
 - **慎重に判断**: E5f / E5h → 動作優先で見送りもアリ
 
 ---
@@ -1667,8 +1712,8 @@ Playwright ×2 / ~~E3b xlsx round-trip~~ ✅ / ~~E3c 印刷スモーク第 1 弾
 e2e 4 件 / ~~E4b ソルバ計測~~ ✅ bench:solver — いずれも 2026-07-03 完了)
 
 大 (要決断): E2b wizard 本体 · E2g 履歴ブランチング · E4c/E4e/E4f パフォ系 ·
-E5 系残り (ID / style / state lib / Worker 分析 — ~~TS~~ ✅ 完了) · E6a Firebase ·
-E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
+E5 系残り (ID / style / state lib / Worker 分析 — ~~TS~~ ✅ 完了) ·
+~~E6a Firebase~~ ✅ (2026-07-06) · E6b 同時編集 · E7 系 (AI 活用) · D5c i18n
 
 ### G.6 推奨する次の一手 (§H の親アプリ側課題も参照)
 

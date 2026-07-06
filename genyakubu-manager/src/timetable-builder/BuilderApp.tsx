@@ -29,7 +29,7 @@ import type { GeneratedPattern } from './components/SummaryPanel';
 import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
 
 function ScheduleApp() {
-  const { project, currentConfig, bulkClearCells, bulkSetLockCells, loadError, analysis } = useProjectContext();
+  const { project, currentConfig, bulkClearCells, bulkSetLockCells, loadError, analysis, syncEvent } = useProjectContext();
   const { showToast, showConfirm } = useUI();
   // N2f: undo/redo は「何が戻ったか」の toast + 該当セルスクロール付きで使う
   const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
@@ -84,6 +84,27 @@ function ScheduleApp() {
     // 起動時 1 回のみ。project の逐次変化では再警告しない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Firebase 同期イベントの通知 (E6a)。エラー系は useHistoryStack 側で
+  // 失敗エピソードごとに 1 回へ絞られている。remote-apply は発生ごとに
+  // 届くため、他端末が連続編集している間に toast が積み上がらないよう
+  // ここで間引く (適用自体は毎回行われる — 間引くのは通知だけ)。
+  const lastRemoteApplyToastAtRef = useRef(0);
+  useEffect(() => {
+    if (!syncEvent) return;
+    if (syncEvent.kind === 'remote-apply') {
+      const now = Date.now();
+      if (now - lastRemoteApplyToastAtRef.current < 8000) return;
+      lastRemoteApplyToastAtRef.current = now;
+      showToast('☁️ 他の端末で保存された時間割を反映しました (この端末の未保存の編集と Undo 履歴は破棄されます)', 'success', 5000);
+    } else if (syncEvent.kind === 'sync-auth') {
+      showToast('クラウドへの書込が拒否されました。管理者ログインが必要です (編集はこの端末に保存されていますが、他の端末でクラウドが更新されると失われることがあります)。', 'warning', 8000);
+    } else if (syncEvent.kind === 'sync-stale') {
+      showToast('クラウド上の時間割データがこのアプリより新しい形式のため、同期を一時停止しました。ページを再読み込みして最新版に更新してください。', 'warning', 8000);
+    } else {
+      showToast('クラウド同期に失敗しました (編集はこの端末に保存されています)。', 'warning', 6000);
+    }
+  }, [syncEvent, showToast]);
 
   // 同一ブラウザで複数タブ開いた時に一度だけ警告 (E6d)。autosave の相互上書き予防。
   useTabPresence(

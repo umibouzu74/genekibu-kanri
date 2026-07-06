@@ -40,6 +40,17 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.{js,ts,jsx,tsx}"],
     setupFiles: ["src/test-setup.js"],
+    // 単体テストを実 Firebase から隔離する。Vitest は dev 機の .env /
+    // .env.local も読むため、これが無いと firebase を mock しないテスト
+    // (useHistoryStack 経由の全テスト) が実 RTDB へ接続し、本番データの
+    // 受信でフィクスチャが置き換わる / 書込試行が走る。firebase の挙動を
+    // 検証するテストは module mock (vi.mock) で isConfigured を立てる。
+    env: {
+      VITE_FIREBASE_API_KEY: "",
+      VITE_FIREBASE_AUTH_DOMAIN: "",
+      VITE_FIREBASE_DATABASE_URL: "",
+      VITE_FIREBASE_PROJECT_ID: "",
+    },
   },
 });
 

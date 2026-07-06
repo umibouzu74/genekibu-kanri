@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added (講習時間割作成: Firebase 同期 — E6a)
+- プロジェクトを親アプリと同じ Firebase RTDB (`appData/builder/schedule_project`)
+  へ自動同期。タブレット等の別端末からも同じ時間割を開いて編集できる
+  (書込は親アプリの管理者ログインが必要。未ログイン・Firebase 未設定環境では
+  従来どおりローカル保存のみ)。
+  - 保存は既存の debounce autosave に相乗りし、LocalStorage と同一の JSON
+    **文字列**を送信 (RTDB のオブジェクト保存は空配列・空オブジェクトを刈り取る
+    ため)。サイドバーの同期インジケータにも書込中として反映される。
+  - 受信は `decideRemoteProject` (純粋関数) で判定: 他端末の保存は
+    toast 通知つきで全置換 (Undo 履歴はリセット)、同一内容はスキップ、壊れた
+    blob はローカル正で自己修復、サーバ側がより新しいスキーマ version の場合は
+    上書き破壊を防ぐため同期を停止してリロードを案内。
+  - 競合はプロジェクト単位の last-writer-wins (K5a のユーザ判断に整合。
+    2 端末同時編集は運用上想定しない)。テンプレート・「デフォルトとして保存」は
+    端末ローカルのまま。
+  - テスト +36 件 (projectSync.test.ts / useHistoryStack.sync.test.jsx)。
+    database.rules.json に文字列 validate を追加。
+  - 校正レビュー (8 角度 + 反証検証) の反映: 単体テスト・e2e・dev を実
+    Firebase から隔離 (`test.env` / `webServer.env`)、初回送信前の version
+    確認 (`get()`) で書込前の stale 上書きを防止、activeTabId / updatedAt を
+    同一性比較から除外 (タブ切替が他端末の Undo 履歴を消さない)、受信
+    payload の templates strip、ノード削除後の再 seed 修正、seed 失敗の
+    toast 沈黙化、エラー通知を「失敗エピソードごとに 1 回」へ、ゴミ blob の
+    stale-client 誤判定防止、比較の cleanSchedule 対称化、stableStringify の
+    共有 util 化 (`src/utils/stableStringify.js`)、JSON 読込の新 version
+    ガード、連続反映 toast の間引き。
+
 ### Fixed (講習時間割作成: 日付ラベルの表記ゆれ「8/6」と「8/6(木)」を読込時に統一)
 - date picker 化以前の手入力で残った曜日サフィックス無しの日付「8/6」が、
   現行形式「8/6(木)」と別の日付として日付プールに共存し、講師不在・NG

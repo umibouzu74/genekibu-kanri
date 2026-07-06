@@ -8,7 +8,8 @@
 ## 1. 全体像
 
 親アプリ (`genyakubu-manager`) のサイドバーから lazy import される独立モジュール。
-状態は `useReducer` ＋ Context、自動生成は Web Worker、永続化は LocalStorage。
+状態は `useReducer` ＋ Context、自動生成は Web Worker、永続化は LocalStorage
+＋ Firebase RTDB 同期 (E6a、§5)。
 
 ```mermaid
 flowchart TD
@@ -35,6 +36,7 @@ flowchart TD
     end
   end
   useHistoryStack <-->|autosave / load| LS[(LocalStorage)]
+  useHistoryStack <-->|sync (E6a)| FB[(Firebase RTDB)]
 ```
 
 ### データフロー（編集 1 操作）
@@ -65,7 +67,7 @@ sequenceDiagram
 | `BuilderApp.jsx` | ルート。Provider 構成、自動生成の起動/キャンセル、容量監視・複数タブ検出 |
 | `contexts/` | `ProjectContext` / `UIContext`（value は memo 化して再描画を抑制） |
 | `hooks/projectReducer.js` | 純粋 reducer。30+ action types を 1 箇所に集約 |
-| `hooks/useHistoryStack.js` | reducer ＋ Undo/Redo（最大 50）＋ debounce autosave |
+| `hooks/useHistoryStack.js` | reducer ＋ Undo/Redo（最大 50）＋ debounce autosave ＋ Firebase 同期（§5） |
 | `hooks/useProject.js` | composer。各アクションフックと派生 callback を束ねる |
 | `hooks/use*Actions.js` | dispatch ラッパ（schedule / teacher / subject） |
 | `hooks/useAnalysis.js` | 進捗・違反・infeasibility・修正提案を 5 段 useMemo で算出 |
@@ -211,10 +213,90 @@ v1→v4 の migration 実装で確立したパターンを、次に version を�
    `migrateProject` の到達 version、`validateProjectShape` の許容形を
    同じ PR で揃える。JSON 出力はそのとき時点の version をそのまま持つので、
    エクスポート専用の変換は作らない。
+8. **旧クライアントの stale-client 検出を壊さない**（E6a）。デプロイ済みの
+   旧クライアント（GitHub Pages のキャッシュ残り）は、クラウド上の新スキーマ
+   project を「トップレベルに数値 `version` + 非空 `tabs` 配列がある」ことで
+   検出して同期を停止する（`utils/projectSync.ts`）。将来の version でも
+   この 2 点は必ず維持すること — 崩すと旧クライアントが新データを reject
+   （壊れた blob）と誤判定し、autosave で上書き破壊する。
 
 ---
 
-## 5. 守るべき設計上の約束
+## 5. Firebase 同期（E6a）
+
+親アプリと同じ Firebase RTDB（`src/firebase/config.js`、匿名認証 + 管理者は
+email/password）へ project を同期し、タブレット等の別端末からも編集できる。
+実装は `useHistoryStack`（副作用）と `utils/projectSync.ts`（受信判定の純粋関数）。
+
+```mermaid
+sequenceDiagram
+  participant A as 端末A useHistoryStack
+  participant FB as RTDB appData/builder/schedule_project
+  participant B as 端末B useHistoryStack
+  A->>A: dispatch → debounce (800ms)
+  A->>A: flushSave: localStorage.setItem(json)
+  A->>FB: set(json)  ※JSON 文字列のまま
+  FB-->>B: onValue(json)
+  B->>B: decideRemoteProject(json, local)
+  B->>B: apply なら project/reset (履歴もリセット) + toast
+```
+
+- **保存形式は JSON 文字列**（オブジェクトではなく）。RTDB はオブジェクト保存だと
+  空配列・空オブジェクト（`schedule: {}` / `ngSlots: []` 等）を刈り取り、キー順も
+  保存順と変わるため、echo 判定と `validateProjectShape` が壊れる。文字列なら
+  LocalStorage と完全に同一のバイト列が往復する。パスに `.` が使えないため
+  `appData/builder/schedule_project`（`constants.FIREBASE_PROJECT_PATH`）。
+- **権限は親アプリと同一**（database.rules.json）: 読みは認証済（匿名含む）、
+  書きは管理者（password provider）のみ。未ログイン端末の編集はローカルに残り、
+  失敗エピソードごとに 1 度だけ toast で知らせる（`sync-auth`。書込が一度
+  成功するとラッチは解除され「回復 → 再失敗」を再通知できる）。サーバ空
+  ノードへの seed はユーザ操作のない書込なので、失敗しても toast は出さない
+  （親 useSyncedStorage の seed が console.warn のみで沈黙するのと同じ方針）。
+- **受信判定は `decideRemoteProject`**（純粋関数、テストあり）:
+  `apply`（templates を strip → validate → migrate → cleanSchedule して採用。
+  templates 同梱 blob を strip しないと state/LS/RTDB を恒久的に往復して肥大する）/
+  `identical`（起動時の正常系。適用扱いにすると開くたび履歴リセット + toast になる。
+  比較は **ローカル側にも cleanSchedule をかけて対称に**し、`activeTabId`
+  （ビュー状態）と `updatedAt`（ブックキーピング）は除外する — タブ切替や
+  タイムスタンプ差だけで apply にしない）/
+  `reject`（壊れた blob。ローカル正のまま次の autosave で自己修復）/
+  `stale-client`（サーバの version がこのクライアントより新しい。GitHub Pages の
+  キャッシュで旧アプリが残る典型。上書き破壊を防ぐためセッションの送信を停止。
+  version が大きくても **非空 `tabs` が無ければゴミ blob とみなして reject**
+  — stale-client は恒久停止なので、ゴミに適用すると自己修復が永遠に届かない）。
+- **適用は `project/reset`**（履歴ごと初期化）。他端末の編集をローカル履歴に混ぜると
+  Undo がサーバ状態を巻き戻す書込になるため。適用時は toast で通知する
+  （連続反映時の toast は UI 側で間引く）。`activeTabId` はローカルの選択を温存する
+  （リモートがそのタブを削除した場合のみリモート側に従う）。
+- **初回送信前の version チェック**: サーバ状態を一度も見ていないうちに送信する
+  ケース（起動直後の編集が初回 onValue より先に flush される）は、`get()` で
+  version だけ確認してから送る。確認するのは stale-client のみで、内容の新旧は
+  判定しない（K5a: LWW）。`get()` が失敗（オフライン等）したら送信を優先する —
+  SDK の書込キューがオフライン編集の耐久性を担っているため、ハードゲートにしない。
+- **echo 抑制の起動時最適化**: subscribe 時に LocalStorage の生文字列を
+  `lastCloudJsonRef` へ先読みする。単一端末運用では初回スナップショットが
+  これと byte 一致するため、フル比較（parse + migrate + stableStringify）を
+  スキップできる。StrictMode（dev）の二重 effect が起動直後に未編集 project を
+  push するのも同時に抑止される。サーバ空（`raw == null`）の seed 時は
+  この合意値を必ず無効化してから push する（一致すると seed 自体が echo 扱いで
+  スキップされ、ノード削除後の再 seed が効かなくなる）。
+- **競合は project 単位の last-writer-wins**。K5a（親 CLAUDE.md / ROADMAP）の
+  ユーザ判断どおり、2 端末同時編集は運用上発生しない前提でマージ・楽観ロックは
+  作らない。既知の限界: 編集後 800ms（debounce）以内にタブを閉じる / オフラインの
+  まま閉じると、その編集はクラウドに乗らず、次回起動時にサーバ側で上書きされ得る
+  （親アプリの useSyncedStorage と同じ意味論）。
+- **同期対象は project のみ**。`builder.templates`（テンプレート）と
+  `builder.schedule_user_defaults`（デフォルト保存）は端末ローカルのまま
+  （JSON 書き出しにテンプレートが同梱されるので移行はそちらで可能）。
+- **テストの隔離**: 開発機の `.env.local` は Vitest / Playwright にも読まれる
+  ため、`vite.config.js` の `test.env` と `playwright.config.js` の
+  `webServer.env` で VITE_FIREBASE_* を空にし、単体テスト・e2e は常に
+  local-only モードで走る。firebase の挙動を検証するテストは module mock
+  （`vi.mock`）で `isConfigured` を立てる。
+
+---
+
+## 6. 守るべき設計上の約束
 
 - **状態統計で UI を自動変形しない**（リポジトリ CLAUDE.md の禁止規約）。
 - **印刷は 2 系統**（親 CLAUDE.md）。Builder は `window.print()` 方式。
@@ -223,7 +305,7 @@ v1→v4 の migration 実装で確立したパターンを、次に version を�
 
 ---
 
-## 6. 検証
+## 7. 検証
 
 ```bash
 npm run lint        # 0 errors / 0 warnings

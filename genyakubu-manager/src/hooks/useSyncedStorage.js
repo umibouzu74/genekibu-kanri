@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
 import { ref, onValue, set, off } from "firebase/database";
+import { stableStringify } from "../utils/stableStringify";
 
 // ─── Pending sync activity counter ──────────────────────────────────
 // Each in-flight Firebase write increments this counter. SyncStatus
@@ -16,6 +17,19 @@ export function subscribeSyncActivity(fn) {
   return () => activityListeners.delete(fn);
 }
 
+// Firebase 書込 promise を pending カウンタに計上する。SyncStatus の
+// 「保存中…」パルスは subscribeSyncActivity 経由でこのカウンタを見ているので、
+// useSyncedStorage 以外の書込元 (timetable-builder の project 同期など) も
+// これを通すとインジケータに反映される。rejection は握らず呼び出し側へ返す。
+export function trackSyncActivity(promise) {
+  pendingWrites++;
+  notifyActivity();
+  return promise.finally(() => {
+    pendingWrites = Math.max(0, pendingWrites - 1);
+    notifyActivity();
+  });
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 const isQuotaError = (err) =>
@@ -25,7 +39,7 @@ const isQuotaError = (err) =>
     err.code === 22 ||
     err.code === 1014);
 
-const isPermissionError = (err) =>
+export const isPermissionError = (err) =>
   err &&
   (err.code === "PERMISSION_DENIED" ||
     err.code === "permission-denied" ||
@@ -33,22 +47,6 @@ const isPermissionError = (err) =>
 
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
-
-/** Key-order-independent JSON stringification.
- *  Firebase RTDB may return object keys in a different order than
- *  what was written, so a naive JSON.stringify comparison can fail
- *  to detect echoes. This replacer sorts object keys at every level. */
-const stableStringify = (val) =>
-  JSON.stringify(val, (_, v) =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.keys(v)
-          .sort()
-          .reduce((o, k) => {
-            o[k] = v[k];
-            return o;
-          }, {})
-      : v
-  );
 
 // ─── useSyncedStorage ───────────────────────────────────────────────
 // Drop-in replacement for useLocalStorage that additionally syncs data
@@ -176,17 +174,10 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
         // Write to Firebase
         if (isConfigured && db) {
           const dbRef = ref(db, fbPath(key));
-          pendingWrites++;
-          notifyActivity();
-          set(dbRef, resolved)
-            .catch((err) => {
-              console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
-              onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-            })
-            .finally(() => {
-              pendingWrites = Math.max(0, pendingWrites - 1);
-              notifyActivity();
-            });
+          trackSyncActivity(set(dbRef, resolved)).catch((err) => {
+            console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
+            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+          });
         }
 
         return resolved;
@@ -284,17 +275,10 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
 
       if (isConfigured && db) {
         const dbRef = ref(db, fbPath(key));
-        pendingWrites++;
-        notifyActivity();
-        set(dbRef, next)
-          .catch((err) => {
-            console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
-            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-          })
-          .finally(() => {
-            pendingWrites = Math.max(0, pendingWrites - 1);
-            notifyActivity();
-          });
+        trackSyncActivity(set(dbRef, next)).catch((err) => {
+          console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
+          onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+        });
       }
     },
     [key, onError]
