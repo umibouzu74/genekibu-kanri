@@ -18,6 +18,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // な fields だけを deps にする:
   //   - projectState.project: project state 本体
   //   - projectState.saveStatus: project 変化なしで debounce 経由でも変わる独立 state
+  //   - projectState.syncEvent: Firebase 同期イベント (E6a)。project 変化なしで
+  //     発生しうる (sync-auth / sync-error) ため独立 dep が必要
   //   - history / historyIndex / activeTab 等: project と相関するため省略可
   //   - callbacks (handleAssign 等): C2 以降 dispatch のみに依存し re-render で
   //     identity が変わらないため省略可
@@ -26,7 +28,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({ ...projectState, analysis, dashboard }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectState.project, projectState.saveStatus, analysis, dashboard],
+    [projectState.project, projectState.saveStatus, projectState.syncEvent, analysis, dashboard],
   );
 
   return (

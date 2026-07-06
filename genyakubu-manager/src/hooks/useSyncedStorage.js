@@ -16,6 +16,19 @@ export function subscribeSyncActivity(fn) {
   return () => activityListeners.delete(fn);
 }
 
+// Firebase 書込 promise を pending カウンタに計上する。SyncStatus の
+// 「保存中…」パルスは subscribeSyncActivity 経由でこのカウンタを見ているので、
+// useSyncedStorage 以外の書込元 (timetable-builder の project 同期など) も
+// これを通すとインジケータに反映される。rejection は握らず呼び出し側へ返す。
+export function trackSyncActivity(promise) {
+  pendingWrites++;
+  notifyActivity();
+  return promise.finally(() => {
+    pendingWrites = Math.max(0, pendingWrites - 1);
+    notifyActivity();
+  });
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 const isQuotaError = (err) =>
@@ -25,7 +38,7 @@ const isQuotaError = (err) =>
     err.code === 22 ||
     err.code === 1014);
 
-const isPermissionError = (err) =>
+export const isPermissionError = (err) =>
   err &&
   (err.code === "PERMISSION_DENIED" ||
     err.code === "permission-denied" ||
@@ -176,17 +189,10 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
         // Write to Firebase
         if (isConfigured && db) {
           const dbRef = ref(db, fbPath(key));
-          pendingWrites++;
-          notifyActivity();
-          set(dbRef, resolved)
-            .catch((err) => {
-              console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
-              onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-            })
-            .finally(() => {
-              pendingWrites = Math.max(0, pendingWrites - 1);
-              notifyActivity();
-            });
+          trackSyncActivity(set(dbRef, resolved)).catch((err) => {
+            console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
+            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+          });
         }
 
         return resolved;
@@ -284,17 +290,10 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
 
       if (isConfigured && db) {
         const dbRef = ref(db, fbPath(key));
-        pendingWrites++;
-        notifyActivity();
-        set(dbRef, next)
-          .catch((err) => {
-            console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
-            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
-          })
-          .finally(() => {
-            pendingWrites = Math.max(0, pendingWrites - 1);
-            notifyActivity();
-          });
+        trackSyncActivity(set(dbRef, next)).catch((err) => {
+          console.warn(`[useSyncedStorageRaw] firebase set failed "${key}":`, err);
+          onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+        });
       }
     },
     [key, onError]

@@ -89,6 +89,16 @@ export const LEGACY_STORAGE_KEYS = [
   'winter_schedule_project_v45',
 ];
 
+// --- Firebase 同期先パス (E6a) ---
+// RTDB のキーに '.' は使えないため STORAGE_KEY_PROJECT
+// ('builder.schedule_project') をそのまま流用せず階層パスに読み替える。
+// 親アプリの appData/* と同じツリーに置き、既存の RTDB ルール
+// (.read: auth != null / .write: password provider) をそのまま継承する。
+// 値は project の JSON **文字列**として保存する (オブジェクトのまま置くと
+// RTDB が空配列・空オブジェクトを刈り取り、schedule: {} や ngSlots: [] が
+// 読み戻し時に消えて echo 判定・validate を壊すため)。
+export const FIREBASE_PROJECT_PATH = 'appData/builder/schedule_project';
+
 // --- 科目カラー ---
 export const DEFAULT_SUBJECT_COLORS: Record<string, string> = {
   "英語": "#DBEAFE",  // 青系
