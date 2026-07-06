@@ -5,7 +5,7 @@ import { makeKey } from '../utils/scheduleKey';
 import { useLongPress } from '../hooks/useLongPress';
 import ScheduleCell from './ScheduleCell';
 import type { ReactNode, ThHTMLAttributes } from 'react';
-import type { ScheduleEntry } from '../types';
+import type { DayStatus, ScheduleEntry } from '../types';
 import type { BuilderContextMenuState } from './ContextMenu';
 
 type HeaderContextMenuHandler = (
@@ -29,6 +29,66 @@ function LongPressTh({ onLongPressOpen, children, ...props }: LongPressThProps) 
     onLongPressOpen({ preventDefault: () => {}, clientX, clientY }),
   );
   return <th {...props} {...lp}>{children}</th>;
+}
+
+// 日付ごとのステータスチェック (OK / 要確認 / 不備あり)。日付セル内・ラベル直下。
+//
+// - 不備あり: schedule からの自動判定 (読み取り専用)。その日の全セルに
+//   科目+講師 (未定以外) が入ると自動で外れる。
+// - OK / 要確認: 手動・互いに排他 (どちらかを付けるともう片方は外れる)。
+//   再クリックで解除。タブ (学年) × 日付ごとに project へ保存され、
+//   同期・Undo・JSON 書き出しに乗る。
+// - 不備あり中は OK を選べない (矛盾するため無効化)。保存済みの OK は
+//   不備あり中は表示から抑制するだけで消さない — セルを埋め直すと復元される。
+//   要確認は不備あり中でも付けられる (講師調整中のメモ用途)。
+function DayStatusChecks({ dateId, dateLabel, isCompact }: { dateId: number; dateLabel: string; isCompact: boolean }) {
+  const { activeTab, setDayStatus, analysis } = useProjectContext();
+  const isIncomplete = !!analysis?.incompleteDateIds?.has(dateId);
+  const stored: DayStatus | null = activeTab?.dayStatuses?.[String(dateId)] ?? null;
+  const okChecked = !isIncomplete && stored === 'ok';
+  const checkChecked = stored === 'check';
+  const toggle = (value: DayStatus) => setDayStatus(dateId, stored === value ? null : value);
+  const rowClass = 'flex items-center gap-1 font-normal whitespace-nowrap';
+  return (
+    <div className={`mt-1 flex flex-col gap-0.5 ${isCompact ? 'text-[9px]' : 'text-[11px]'}`}>
+      <label
+        className={`${rowClass} ${isIncomplete
+          ? 'cursor-not-allowed opacity-60 text-builder-ink-muted'
+          : okChecked ? 'cursor-pointer text-builder-green font-bold' : 'cursor-pointer text-builder-ink-muted'}`}
+        title={isIncomplete ? '全コマ (科目+講師) が埋まると選べます' : undefined}
+      >
+        <input
+          type="checkbox"
+          checked={okChecked}
+          disabled={isIncomplete}
+          onChange={() => toggle('ok')}
+          aria-label={`${dateLabel} を OK にする`}
+        />
+        OK
+      </label>
+      <label className={`${rowClass} cursor-pointer ${checkChecked ? 'text-builder-orange font-bold' : 'text-builder-ink-muted'}`}>
+        <input
+          type="checkbox"
+          checked={checkChecked}
+          onChange={() => toggle('check')}
+          aria-label={`${dateLabel} を要確認にする`}
+        />
+        要確認
+      </label>
+      <label
+        className={`${rowClass} cursor-default ${isIncomplete ? 'text-builder-red font-bold' : 'text-builder-ink-muted'}`}
+        title="自動判定: 全セルに科目と講師が入ると自動で外れます"
+      >
+        <input
+          type="checkbox"
+          checked={isIncomplete}
+          disabled
+          aria-label={`${dateLabel} の不備あり (自動判定)`}
+        />
+        不備あり
+      </label>
+    </div>
+  );
 }
 
 // スティッキー列の幅定義（CSS変数として使用）
@@ -159,6 +219,7 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
                       onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}
                       onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
                       {d.label}
+                      <DayStatusChecks dateId={d.id} dateLabel={d.label} isCompact={isCompact} />
                     </LongPressTh>
                   )}
                   <LongPressTh scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}

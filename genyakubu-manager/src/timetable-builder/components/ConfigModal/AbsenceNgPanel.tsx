@@ -440,9 +440,12 @@ export default function AbsenceNgPanel() {
     // F5l: 時刻・メモはプリセットの値で全置換する。フィールドを持たない
     // プリセットは空にする (部分上書きだと直前に適用したプリセットの
     // 終了時刻やメモが残留し、意図しない混成セッションが登録される)。
+    // メモ未設定のプリセットはプリセット名をメモに使う — セッション一覧・
+    // NG ツールチップ・講師別 Excel で「予備校か高校か」を判別できるように
+    // する (メモ無しだと時刻しか情報が残らない)。
     setFormStartTime(p.startTime || '');
     setFormEndTime(p.endTime || '');
-    setFormMemo(p.memo || '');
+    setFormMemo(p.memo || p.name || '');
     const startD = p.startDateLabel ? poolDates.find(x => x.label === p.startDateLabel) : null;
     const endD = p.endDateLabel ? poolDates.find(x => x.label === p.endDateLabel) : null;
     if (p.startDateLabel && p.endDateLabel) {

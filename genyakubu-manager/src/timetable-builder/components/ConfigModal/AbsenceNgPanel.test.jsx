@@ -221,6 +221,24 @@ describe('AbsenceNgPanel — プリセット適用は全置換 (F5l)', () => {
   });
 });
 
+describe('AbsenceNgPanel — プリセット適用のメモ既定値 (プリセット名)', () => {
+  const applySelect = () =>
+    screen.getByLabelText('プリセットを選んで時刻・期間・メモをフォームに展開');
+  const memoInput = () => screen.getByPlaceholderText('予備校 / 高2 英語 等');
+
+  it('メモ未設定のプリセットはプリセット名がメモに入る (予備校/高校を判別可能に)', () => {
+    renderPanel({ presets: [{ id: 2, name: '予備校（早朝）', startTime: '08:00' }] });
+    fireEvent.change(applySelect(), { target: { value: '2' } });
+    expect(memoInput()).toHaveValue('予備校（早朝）');
+  });
+
+  it('メモ付きプリセットはメモの値が優先される', () => {
+    renderPanel({ presets: [SAMPLE_PRESET] });
+    fireEvent.change(applySelect(), { target: { value: '1' } });
+    expect(memoInput()).toHaveValue('予備校 / 高2 英語');
+  });
+});
+
 describe('AbsenceNgPanel — プリセットの「期間なし」(F5m)', () => {
   it('期間なしプリセットを編集して保存しても期間が付与されない', () => {
     const updateExternalSessionPreset = vi.fn();

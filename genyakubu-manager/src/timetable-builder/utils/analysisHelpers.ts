@@ -233,6 +233,30 @@ export function computeDashboard(currentSchedule: Schedule, currentConfig: Effec
   return { progress: total > 0 ? Math.round((filled / total) * 100) : 0, filled, total };
 }
 
+// 「不備あり」の日付集合を計算する。ScheduleTable の日付ステータス表示用。
+//
+// その日の全セル (使う時限 × クラス) に科目と講師の両方が入って初めて
+// 「不備なし」。空セル・科目のみ・講師「未定」はいずれも不備とみなす
+// (ユーザ確認 2026-07-06: 判定基準は「科目+講師まで必須」)。
+// 時限またはクラスが 0 件の日はセル自体が無いので不備には数えない。
+export function computeIncompleteDateIds(
+  currentSchedule: Schedule,
+  currentConfig: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes'>,
+): Set<number> {
+  const incomplete = new Set<number>();
+  const periods = currentConfig.periods || [];
+  const classes = currentConfig.classes || [];
+  if (periods.length === 0 || classes.length === 0) return incomplete;
+  (currentConfig.dates || []).forEach(d => {
+    const filled = periods.every(p => classes.every(c => {
+      const e = currentSchedule[makeKey(d.id, p.id, c.id)];
+      return !!(e && e.subject && e.teacher && e.teacher !== '未定');
+    }));
+    if (!filled) incomplete.add(d.id);
+  });
+  return incomplete;
+}
+
 // 各タブの違反件数 (現タブ内 3 種別合計) を計算する。TabBar の各タブ badge 表示用。
 // teacherConflict だけだと popover との整合性が取れないので、subjectDup /
 // subjectOver も含めた合計を返す (M3)。

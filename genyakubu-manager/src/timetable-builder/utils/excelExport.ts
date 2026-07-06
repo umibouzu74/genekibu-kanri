@@ -16,6 +16,8 @@ import type { Project } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
+import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
+import { sortPoolDatesByCalendar } from './dateGenerate';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -84,6 +86,15 @@ const EMPTY_CELL_STYLE: CellStyleSpec = {
 
 const BODY_CELL_STYLE: CellStyleSpec = {
   font: { size: 10 },
+  alignment: { horizontal: 'center', vertical: 'middle' },
+  border: THIN_BORDER,
+};
+
+// 講師別シートの外部授業 (予備校・高校等の他学年セッション) 行。
+// 講習のコマと一目で見分けられるよう全セルを薄いグレーで塗る。
+const EXTERNAL_ROW_STYLE: CellStyleSpec = {
+  font: { size: 10 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_F2F2F2 } },
   alignment: { horizontal: 'center', vertical: 'middle' },
   border: THIN_BORDER,
 };
@@ -504,44 +515,103 @@ export async function downloadScheduleExcel(project: Project, options: { clean?:
   await downloadWorkbook(workbook, buildExcelFilename(project, options.clean ? '配布用' : '全体'));
 }
 
+// ─── 講師別 Excel: 行の組み立て (純粋関数、テスト用に export) ─────
+// 1 講師分の行を「講習のコマ + 外部授業 (予備校・高校等の他学年セッション)」
+// を合わせて日付 (カレンダー順) → 時刻順で返す。
+//
+// - 講習コマが 1 つも無い講師は空配列 (シートを作らない従来挙動を維持)。
+//   外部授業だけの講師は講習に出勤しないので紙面に載せない。
+// - 時刻の取れないコマ (時限ラベルに時刻表記なし) は sortMin=-1 でその日の
+//   先頭に時限順のまま並び、時刻の取れない外部授業は Infinity で末尾に沈む。
+//   sort は stable なので同キー内は従来の生成順 (タブ → 時限) を保つ。
+export interface TeacherRow {
+  /** [日付, 時限(または時刻), クラス, 科目(外部はメモ), 学年(タブ), 備考] */
+  cells: string[];
+  /** 科目カラー適用用 (外部授業は undefined) */
+  subject?: string;
+  /** 外部授業 (他学年セッション) 由来の行 */
+  isExternal: boolean;
+}
+
+export function buildTeacherRows(project: Project, teacherName: string): TeacherRow[] {
+  const combinedGroups = project.combinedGroups || [];
+  // 日付の並びはプールのカレンダー順 (時間割・NG パネルの表示順と同じ)。
+  // プールに無いラベル (通常は無い) は末尾へ。
+  const dateOrder = new Map(
+    sortPoolDatesByCalendar(project.dates || []).map((d, i) => [d.label, i] as const),
+  );
+  const dateIdx = (label: string) => dateOrder.get(label) ?? Number.POSITIVE_INFINITY;
+
+  const rows: Array<TeacherRow & { dateIdx: number; sortMin: number }> = [];
+
+  project.tabs.forEach(tab => {
+    // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
+    const { dates, periods } = effectiveConfigForTab(project, tab);
+    dates.forEach((d) => {
+      periods.forEach((p) => {
+        tab.config.classes.forEach((c) => {
+          const k = makeKey(d.id, p.id, c.id);
+          const entry = tab.schedule[k];
+          if (entry && entry.teacher === teacherName) {
+            const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
+            const note = group ? `合同(${group.classes.join(',')})` : '';
+            rows.push({
+              cells: [d.label, p.label, c.label, entry.subject || '', tab.name, note],
+              subject: entry.subject,
+              isExternal: false,
+              dateIdx: dateIdx(d.label),
+              sortMin: getPeriodTimeRange(p)?.startMin ?? -1,
+            });
+          }
+        });
+      });
+    });
+  });
+
+  // 講習コマ 0 の講師はシート自体を作らない (外部授業のみでも載せない)
+  if (rows.length === 0) return [];
+
+  (project.externalSessions || []).forEach(s => {
+    if (s.teacherName !== teacherName) return;
+    const timeText = s.startTime
+      ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
+      : (s.label || '-');
+    rows.push({
+      // メモ (プリセット適用時はプリセット名が入る) を科目欄に出して
+      // 予備校 / 高校のどちらの授業かを紙面で判別できるようにする
+      cells: [s.date, timeText, '-', s.memo || '外部授業', '外部', ''],
+      isExternal: true,
+      dateIdx: dateIdx(s.date),
+      sortMin: getSessionTimeRange(s)?.startMin ?? Number.POSITIVE_INFINITY,
+    });
+  });
+
+  rows.sort((a, b) => {
+    if (a.dateIdx !== b.dateIdx) return a.dateIdx - b.dateIdx;
+    if (a.sortMin !== b.sortMin) return a.sortMin - b.sortMin;
+    return 0; // stable sort: 同キーは生成順を維持
+  });
+
+  return rows.map(({ cells, subject, isExternal }) => ({ cells, subject, isExternal }));
+}
+
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
 export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
-  const combinedGroups = project.combinedGroups || [];
 
   // 「全講師リスト」シート用の集約
-  const allRows: string[][] = [];
-  const allRowSubjects: Array<string | undefined> = [];
+  const allRows: TeacherRow[] = [];
+  const allRowTeachers: string[] = [];
 
   project.teachers.forEach(t => {
-    // この講師の出勤コマを集める
-    const personalRows: string[][] = [];
-    const personalSubjects: Array<string | undefined> = [];
-
-    project.tabs.forEach(tab => {
-      // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
-      const { dates, periods } = effectiveConfigForTab(project, tab);
-      dates.forEach((d) => {
-        periods.forEach((p) => {
-          tab.config.classes.forEach((c) => {
-            const k = makeKey(d.id, p.id, c.id);
-            const entry = tab.schedule[k];
-            if (entry && entry.teacher === t.name) {
-              const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
-              const note = group ? `合同(${group.classes.join(',')})` : '';
-              const row = [d.label, p.label, c.label, entry.subject, tab.name, note];
-              personalRows.push(row);
-              personalSubjects.push(entry.subject);
-              allRows.push([t.name, ...row]);
-              allRowSubjects.push(entry.subject);
-            }
-          });
-        });
-      });
-    });
-
+    // 講習コマ + 外部授業を日付 → 時刻順に統合した行 (コマ 0 の講師は空)
+    const personalRows = buildTeacherRows(project, t.name);
     if (personalRows.length === 0) return;
+    personalRows.forEach(row => {
+      allRows.push(row);
+      allRowTeachers.push(t.name);
+    });
 
     // 禁則文字を strip した結果の空文字・重複 (例: 「田中/A」と「田中A」) で
     // throw しないよう sanitize + unique を通す
@@ -555,19 +625,20 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
 
     // データ行
     personalRows.forEach((row, ri) => {
-      ws.addRow(row);
-      const subject = personalSubjects[ri];
-      row.forEach((_, ci) => {
+      ws.addRow(row.cells);
+      row.cells.forEach((_, ci) => {
         const cell = ws.getCell(ri + 2, ci + 1);
-        if (ci === 3 && subject) {
-          applyCellStyle(cell, makeSubjectCellStyle(subject, subjectColors));
+        if (row.isExternal) {
+          applyCellStyle(cell, EXTERNAL_ROW_STYLE);
+        } else if (ci === 3 && row.subject) {
+          applyCellStyle(cell, makeSubjectCellStyle(row.subject, subjectColors));
         } else {
           applyCellStyle(cell, BODY_CELL_STYLE);
         }
       });
     });
 
-    [14, 14, 10, 10, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
+    [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
   });
 
   // 全講師リストシート
@@ -579,19 +650,20 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     allHeader.forEach((_, ci) => applyCellStyle(wsAll.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
 
     allRows.forEach((row, ri) => {
-      wsAll.addRow(row);
-      const subject = allRowSubjects[ri];
-      row.forEach((_, ci) => {
+      wsAll.addRow([allRowTeachers[ri], ...row.cells]);
+      for (let ci = 0; ci < row.cells.length + 1; ci++) {
         const cell = wsAll.getCell(ri + 2, ci + 1);
-        if (ci === 4 && subject) {
-          applyCellStyle(cell, makeSubjectCellStyle(subject, subjectColors));
+        if (row.isExternal) {
+          applyCellStyle(cell, EXTERNAL_ROW_STYLE);
+        } else if (ci === 4 && row.subject) {
+          applyCellStyle(cell, makeSubjectCellStyle(row.subject, subjectColors));
         } else {
           applyCellStyle(cell, BODY_CELL_STYLE);
         }
-      });
+      }
     });
 
-    [10, 14, 14, 10, 10, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
+    [10, 14, 14, 10, 12, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
   } else {
     // 該当なしでも空シートを作って一貫性を保つ
     workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト'));

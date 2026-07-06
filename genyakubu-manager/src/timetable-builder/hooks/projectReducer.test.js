@@ -3104,3 +3104,111 @@ describe('projectReducer — L2c と合同グループの相互作用 (§M)', ()
     expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]?.subject).not.toBe('英語');
   });
 });
+
+// ─── 日付ごとの手動チェック (tab/setDayStatus) ────────────────
+
+describe('projectReducer — tab/setDayStatus', () => {
+  const twoDates = {
+    tabs: [{
+      id: 1,
+      name: 'メイン',
+      config: {
+        dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }],
+        subjectCounts: { '英語': 1 },
+      },
+      schedule: {},
+    }],
+  };
+
+  it('status を設定し、再設定 (別値) で置換、null で解除する', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'ok' });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'check' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'check' });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: null },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({});
+  });
+
+  it('日付ごとに独立して保持される', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: 'check' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'ok', 2: 'check' });
+  });
+
+  it('同値 no-op (F2d): 同じ status の再設定は履歴を汚さない', () => {
+    const state = makeState(twoDates);
+    const withOk = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    const next = projectReducer(withOk, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    expect(next).toBe(withOk);
+    // 未設定に対する null 解除も no-op
+    const nullNoop = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: null },
+    });
+    expect(nullNoop).toBe(state);
+  });
+
+  it('プールに無い dateId・存在しない tabId は no-op', () => {
+    const state = makeState(twoDates);
+    expect(projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 99, status: 'ok' },
+    })).toBe(state);
+    expect(projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok', tabId: 99 },
+    })).toBe(state);
+  });
+
+  it('tabId 指定で非アクティブタブにも設定できる', () => {
+    const state = makeState({
+      activeTabId: 1,
+      tabs: [
+        {
+          id: 1, name: 'A',
+          config: { dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }], subjectCounts: {} },
+          schedule: {},
+        },
+        {
+          id: 2, name: 'B',
+          config: { classes: [{ id: 1, label: '２S' }], subjectCounts: {} },
+          schedule: {},
+        },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'check', tabId: 2 },
+    });
+    expect(next.project.tabs[0].dayStatuses).toBeUndefined();
+    expect(next.project.tabs[1].dayStatuses).toEqual({ 1: 'check' });
+  });
+
+  it('dates/removeFromPool は削除日の dayStatuses も掃除する', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: 'check' },
+    });
+    next = projectReducer(next, {
+      type: 'dates/removeFromPool', payload: { dateId: 1 },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 2: 'check' });
+  });
+});

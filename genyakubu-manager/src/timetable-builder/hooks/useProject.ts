@@ -6,7 +6,7 @@ import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
 import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
-import type { CombinedGroup, GenerationParamKey, Project } from '../types';
+import type { CombinedGroup, DayStatus, GenerationParamKey, Project } from '../types';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -112,6 +112,11 @@ export function useProject() {
 
   const switchTab = useCallback((id: number) => {
     dispatch({ type: 'tab/switch', payload: { id } });
+  }, [dispatch]);
+
+  // 日付ごとの手動チェック (OK / 要確認)。null で解除。tabId 省略時はアクティブタブ。
+  const setDayStatus = useCallback((dateId: number, status: DayStatus | null, tabId?: number) => {
+    dispatch({ type: 'tab/setDayStatus', payload: { dateId, status, tabId } });
   }, [dispatch]);
 
   // --- タブ別 config (dates/periods/classes/subjectCounts) ---
@@ -238,6 +243,7 @@ export function useProject() {
     handleRenameTab,
     reorderTabs,
     switchTab,
+    setDayStatus,
     // タブ別 config
     handleListConfigChange,
     handleSubjectCountChange,

@@ -23,6 +23,7 @@ import {
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 import type {
   CombinedGroup,
+  DayStatus,
   ExternalSession,
   ExternalSessionPreset,
   GenerationParamKey,
@@ -46,6 +47,7 @@ export type ProjectAction =
   | { type: 'tab/delete'; payload: { id: number } }
   | { type: 'tab/rename'; payload: { id: number; name: string } }
   | { type: 'tab/reorder'; payload: { fromIdx: number; toIdx: number } }
+  | { type: 'tab/setDayStatus'; payload: { dateId: number; status: DayStatus | null; tabId?: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -147,8 +149,23 @@ function removeDatesFromPool(project: Project, dateIds: number[]): Project {
   const newPool = pool.filter(d => !idSet.has(d.id));
   const newTabs = project.tabs.map(t => {
     const ids = t.config.activeDateIds;
-    if (!ids || !ids.some(id => idSet.has(id))) return t;
-    return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => !idSet.has(id)) } };
+    // 日付ごとの手動チェック (dayStatuses) も削除日の分を掃除する
+    const statuses = t.dayStatuses;
+    const staleStatusKeys = statuses
+      ? Object.keys(statuses).filter(k => idSet.has(Number(k)))
+      : [];
+    const idsChanged = !!ids && ids.some(id => idSet.has(id));
+    if (!idsChanged && staleStatusKeys.length === 0) return t;
+    const next = { ...t };
+    if (idsChanged && ids) {
+      next.config = { ...t.config, activeDateIds: ids.filter(id => !idSet.has(id)) };
+    }
+    if (staleStatusKeys.length > 0 && statuses) {
+      const cleaned = { ...statuses };
+      staleStatusKeys.forEach(k => { delete cleaned[k]; });
+      next.dayStatuses = cleaned;
+    }
+    return next;
   });
   const newCombined = cleanCombinedGroupsForLabelChange(
     project.combinedGroups || [],
@@ -322,6 +339,29 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // reject するが、直接 dispatch 経路も守る)
       if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
+    }
+
+    // 日付ごとの手動チェック (OK / 要確認)。status=null でチェック解除。
+    // 「不備あり」は schedule から導出する表示専用の状態なので、この case は
+    // 手動 2 値 ('ok' | 'check') の保存だけを担う。キーは dateId の文字列化
+    // (schedule と同じ ID 参照 — 日付ラベルの rename に追従し、プール削除は
+    // removeDatesFromPool が掃除する)。
+    case 'tab/setDayStatus': {
+      const { dateId, status, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId);
+      if (!target) return project;
+      if (!(project.dates || []).some(d => d.id === dateId)) return project;
+      const key = String(dateId);
+      const current = target.dayStatuses || {};
+      if ((current[key] ?? null) === status) return project; // 同値 no-op (F2d)
+      const next = { ...current };
+      if (status == null) delete next[key];
+      else next[key] = status;
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, dayStatuses: next } : t
+      );
+      return { ...project, tabs: newTabs };
     }
 
     case 'tab/reorder': {
