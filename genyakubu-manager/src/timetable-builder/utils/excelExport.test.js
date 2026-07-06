@@ -684,3 +684,82 @@ describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
     expect(wb2.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(true);
   });
 });
+
+describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の統合', () => {
+  // 時刻付き時限ラベル 2 日構成 + 予備校/高校セッション
+  function makeProjectWithSessions() {
+    return makeProject({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        // コマ 0・セッションのみの講師 (シートを作らない従来挙動の確認用)
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      tabs: [{
+        id: 1, name: '中3',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+          periods: [{ id: 1, label: '1限 (13:00~13:45)' }, { id: 2, label: '2限 (14:00~14:45)' }],
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 2 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 12/25 13:00
+          [makeKey(2, 2, 1)]: { subject: '英語', teacher: '堀上' }, // 12/26 14:00
+        },
+      }],
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '10:00-11:00', memo: '予備校（早朝）', startTime: '10:00', endTime: '11:00' },
+        { id: 2, date: '12/26(金)', teacherName: '堀上', label: '18:00-19:00', memo: '', startTime: '18:00', endTime: '19:00' },
+        { id: 3, date: '12/25(木)', teacherName: '田中', label: '', memo: '高校', startTime: '09:00' },
+      ],
+    });
+  }
+
+  it('個人シートに外部授業が日付 → 時刻順で講習コマと混在する', () => {
+    const wb = buildTeacherWorkbook(makeProjectWithSessions());
+    const ws = wb.getWorksheet('堀上');
+    // header + 12/25: 予備校(10:00) → 1限(13:00) / 12/26: 2限(14:00) → 外部(18:00)
+    expect(ws.rowCount).toBe(5);
+    expect([ws.getCell(2, 1).value, ws.getCell(2, 2).value, ws.getCell(2, 4).value, ws.getCell(2, 5).value])
+      .toEqual(['12/25(木)', '10:00〜11:00', '予備校（早朝）', '外部']);
+    expect([ws.getCell(3, 1).value, ws.getCell(3, 2).value]).toEqual(['12/25(木)', '1限 (13:00~13:45)']);
+    expect([ws.getCell(4, 1).value, ws.getCell(4, 2).value]).toEqual(['12/26(金)', '2限 (14:00~14:45)']);
+    // メモ無しの外部授業は科目欄 '外部授業' でフォールバック
+    expect([ws.getCell(5, 1).value, ws.getCell(5, 2).value, ws.getCell(5, 4).value])
+      .toEqual(['12/26(金)', '18:00〜19:00', '外部授業']);
+  });
+
+  it('講習コマ 0 でセッションだけの講師はシートも全講師リストにも載せない', () => {
+    const wb = buildTeacherWorkbook(makeProjectWithSessions());
+    expect(wb.worksheets.map(w => w.name)).not.toContain('田中');
+    const wsAll = wb.getWorksheet('全講師リスト');
+    const teacherCol = [];
+    for (let r = 2; r <= wsAll.rowCount; r++) teacherCol.push(wsAll.getCell(r, 1).value);
+    expect(teacherCol).not.toContain('田中');
+  });
+
+  it('全講師リストにも外部授業行が同じ並びで入る (クラス列は "-"、学年(タブ) 列は 外部)', () => {
+    const wb = buildTeacherWorkbook(makeProjectWithSessions());
+    const wsAll = wb.getWorksheet('全講師リスト');
+    expect(wsAll.rowCount).toBe(5); // header + 堀上 4 行
+    expect([wsAll.getCell(2, 1).value, wsAll.getCell(2, 3).value, wsAll.getCell(2, 4).value, wsAll.getCell(2, 6).value])
+      .toEqual(['堀上', '10:00〜11:00', '-', '外部']);
+  });
+
+  it('時刻の取れない時限のコマは日の先頭・時刻の取れない外部授業は日の末尾', () => {
+    // 既定 fixture の periods ('1限'/'2限') は時刻表記なし → コマは sortMin=-1
+    // で時限順のまま先頭、時刻なしセッションは Infinity で末尾。
+    const project = makeProject({
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校' },
+      ],
+    });
+    const wb = buildTeacherWorkbook(project);
+    const ws = wb.getWorksheet('堀上');
+    expect(ws.rowCount).toBe(4); // header + 1限 + 2限 + 外部
+    expect(ws.getCell(2, 2).value).toBe('1限');
+    expect(ws.getCell(3, 2).value).toBe('2限');
+    // 時刻もラベルも無いセッションの時限欄は '-'
+    expect([ws.getCell(4, 2).value, ws.getCell(4, 4).value]).toEqual(['-', '予備校']);
+  });
+});

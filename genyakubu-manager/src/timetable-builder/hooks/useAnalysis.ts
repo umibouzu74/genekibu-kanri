@@ -4,6 +4,7 @@ import {
   computeGlobalUsage,
   computeActiveAnalysis,
   computeDashboard,
+  computeIncompleteDateIds,
   computeTabViolationCounts,
   computeViolations,
   computeInfeasibilities,
@@ -19,7 +20,7 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 // 公開 API:
 //   - analysis: { conflictMap, subjectOrders, dailySubjectMap, errorKeys,
 //                 teacherDailyCounts, tabErrorCounts, violations,
-//                 infeasibilities }
+//                 infeasibilities, incompleteDateIds }
 //   - dashboard: { progress, filled, total }
 export function useAnalysis(project: Project, currentSchedule: Schedule, currentConfig: EffectiveConfig) {
   const { teacherDailyCounts, globalUsage } = useMemo(
@@ -97,9 +98,16 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
     [project.teachers, commonSubjects, currentConfig, currentSchedule, maxDailyHours, autoNgByTeacher, project.combinedGroups],
   );
 
+  // 「不備あり」の自動判定 (ScheduleTable の日付ステータス表示用)。
+  // 手動チェック (OK/要確認) は tab.dayStatuses、不備ありはこの導出のみ。
+  const incompleteDateIds = useMemo(
+    () => computeIncompleteDateIds(currentSchedule, currentConfig),
+    [currentSchedule, currentConfig],
+  );
+
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds],
   );
 
   const dashboard = useMemo(

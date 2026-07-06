@@ -935,6 +935,25 @@ describe('migrateProject — 型崩れ JSON の正規化 (F5a-F5e)', () => {
     const q = migrateProject(v4base());
     expect(q.maxDailyHours).toBeUndefined();
   });
+
+  it('tab.dayStatuses: 非オブジェクトはフィールドごと削除、未知の値のエントリは drop される', () => {
+    // 文字列 (truthy な非オブジェクト) → フィールドごと削除
+    const broken = migrateProject(v4base({
+      tabs: [{ ...baseTab(), dayStatuses: 'ok' }],
+    }));
+    expect(broken.tabs[0].dayStatuses).toBeUndefined();
+    // 値レベル: 'ok' | 'check' 以外は drop、正常エントリは残る
+    const mixed = migrateProject(v4base({
+      tabs: [{ ...baseTab(), dayStatuses: { 1: 'ok', 2: 'bogus', 3: 'check' } }],
+    }));
+    expect(mixed.tabs[0].dayStatuses).toEqual({ 1: 'ok', 3: 'check' });
+    // 正常な dayStatuses・未設定のタブは不変
+    const clean = migrateProject(v4base({
+      tabs: [{ ...baseTab(), dayStatuses: { 1: 'check' } }],
+    }));
+    expect(clean.tabs[0].dayStatuses).toEqual({ 1: 'check' });
+    expect(migrateProject(v4base()).tabs[0].dayStatuses).toBeUndefined();
+  });
 });
 
 describe('migrateProjectV3toV4 — 空タブの subset 保存 (F5v)', () => {

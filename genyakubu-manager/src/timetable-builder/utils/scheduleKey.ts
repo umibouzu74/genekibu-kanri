@@ -572,6 +572,16 @@ export function migrateProject(project: any): Project {
     }
   }
 
+  // tab.dayStatuses (日付ごとの手動チェック、後発フィールド) の型崩れを正規化
+  // する。オブジェクトでない値は落とし、値が 'ok' | 'check' 以外のエントリは
+  // drop する (render の Object.entries / 表示分岐で未知値が漏れないように)。
+  if (Array.isArray(result.tabs)) {
+    const normalizedTabs = normalizeTabDayStatuses(result.tabs);
+    if (normalizedTabs !== result.tabs) {
+      result = { ...result, tabs: normalizedTabs };
+    }
+  }
+
   // activeTabId がどのタブとも一致しない場合は先頭タブに正規化する。
   // dangling のまま残すと「読み取りは tabs[0] へフォールバック・書き込みは
   // silent no-op」という乖離が起きる (編集しても何も保存されない)。
@@ -635,6 +645,31 @@ export function normalizeTeacherFields(teachers: any): Teacher[] | any {
     result.push(nt);
   });
   return changed ? result : teachers;
+}
+
+// tab.dayStatuses (日付ごとの手動チェック) を正規化する純粋関数。
+// - オブジェクトでない値 (文字列・配列等の外部 JSON) はフィールドごと削除
+// - 値が 'ok' | 'check' 以外のエントリは drop
+// 変更が無ければ元の配列をそのまま返す (no-op 判定用)。
+export function normalizeTabDayStatuses(tabs: any): Tab[] | any {
+  if (!Array.isArray(tabs)) return tabs;
+  let changed = false;
+  const result = tabs.map((t: any) => {
+    if (!t || typeof t !== 'object' || t.dayStatuses === undefined) return t;
+    const ds = t.dayStatuses;
+    if (ds === null || typeof ds !== 'object' || Array.isArray(ds)) {
+      changed = true;
+      const { dayStatuses: _dropped, ...rest } = t;
+      return rest;
+    }
+    const badKeys = Object.keys(ds).filter(k => ds[k] !== 'ok' && ds[k] !== 'check');
+    if (badKeys.length === 0) return t;
+    changed = true;
+    const cleaned = { ...ds };
+    badKeys.forEach(k => { delete cleaned[k]; });
+    return { ...t, dayStatuses: cleaned };
+  });
+  return changed ? result : tabs;
 }
 
 // combinedGroups 要素を正規化する純粋関数 (F5c)。

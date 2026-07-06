@@ -3104,3 +3104,150 @@ describe('projectReducer — L2c と合同グループの相互作用 (§M)', ()
     expect(next.project.tabs[0].schedule[makeKey(2, 1, 2)]?.subject).not.toBe('英語');
   });
 });
+
+// ─── 日付ごとの手動チェック (tab/setDayStatus) ────────────────
+
+describe('projectReducer — tab/setDayStatus', () => {
+  const twoDates = {
+    tabs: [{
+      id: 1,
+      name: 'メイン',
+      config: {
+        dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+        periods: [{ id: 1, label: '1限' }],
+        classes: [{ id: 1, label: '３S' }],
+        subjectCounts: { '英語': 1 },
+      },
+      schedule: {},
+    }],
+  };
+
+  it('status を設定し、再設定 (別値) で置換、null で解除する', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'ok' });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'check' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'check' });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: null },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({});
+  });
+
+  it('日付ごとに独立して保持される', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: 'check' },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 1: 'ok', 2: 'check' });
+  });
+
+  it('同値 no-op (F2d): 同じ status の再設定は履歴を汚さない', () => {
+    const state = makeState(twoDates);
+    const withOk = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    const next = projectReducer(withOk, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    expect(next).toBe(withOk);
+    // 未設定に対する null 解除も no-op
+    const nullNoop = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: null },
+    });
+    expect(nullNoop).toBe(state);
+  });
+
+  it('プールに無い dateId・存在しない tabId は no-op', () => {
+    const state = makeState(twoDates);
+    expect(projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 99, status: 'ok' },
+    })).toBe(state);
+    expect(projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok', tabId: 99 },
+    })).toBe(state);
+  });
+
+  it('tabId 指定で非アクティブタブにも設定できる', () => {
+    const state = makeState({
+      activeTabId: 1,
+      tabs: [
+        {
+          id: 1, name: 'A',
+          config: { dates: [{ id: 1, label: '12/25(木)' }], periods: [{ id: 1, label: '1限' }], classes: [{ id: 1, label: '３S' }], subjectCounts: {} },
+          schedule: {},
+        },
+        {
+          id: 2, name: 'B',
+          config: { classes: [{ id: 1, label: '２S' }], subjectCounts: {} },
+          schedule: {},
+        },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'check', tabId: 2 },
+    });
+    expect(next.project.tabs[0].dayStatuses).toBeUndefined();
+    expect(next.project.tabs[1].dayStatuses).toEqual({ 1: 'check' });
+  });
+
+  it('dates/removeFromPool は削除日の dayStatuses も掃除する', () => {
+    const state = makeState(twoDates);
+    let next = projectReducer(state, {
+      type: 'tab/setDayStatus', payload: { dateId: 1, status: 'ok' },
+    });
+    next = projectReducer(next, {
+      type: 'tab/setDayStatus', payload: { dateId: 2, status: 'check' },
+    });
+    next = projectReducer(next, {
+      type: 'dates/removeFromPool', payload: { dateId: 1 },
+    });
+    expect(next.project.tabs[0].dayStatuses).toEqual({ 2: 'check' });
+  });
+});
+
+// ─── プリセット名のメモ後付け (teacher/applyPresetMemos) ─────────
+
+describe('projectReducer — teacher/applyPresetMemos', () => {
+  const seeded = () => makeState({
+    externalSessionPresets: [
+      { id: 1, name: '予備校（昼）', startTime: '12:25', endTime: '13:35' },
+      { id: 2, name: '高校', startTime: '18:00', endTime: '19:00' },
+    ],
+    externalSessions: [
+      // メモ未設定・時刻一致 → 適用対象
+      { id: 1, date: '12/25(木)', teacherName: '堀上', label: '12:25-13:35', memo: '', startTime: '12:25', endTime: '13:35' },
+      // メモ済み → 上書きしない
+      { id: 2, date: '12/25(木)', teacherName: '田中', label: '18:00-19:00', memo: '手入力', startTime: '18:00', endTime: '19:00' },
+      // 一致プリセットなし → そのまま
+      { id: 3, date: '12/25(木)', teacherName: '田中', label: '09:00-10:00', memo: '', startTime: '09:00', endTime: '10:00' },
+    ],
+  });
+
+  it('時刻一致のメモ未設定セッションだけにプリセット名を適用する', () => {
+    const next = projectReducer(seeded(), { type: 'teacher/applyPresetMemos' });
+    const byId = Object.fromEntries(next.project.externalSessions.map(s => [s.id, s.memo]));
+    expect(byId[1]).toBe('予備校（昼）');
+    expect(byId[2]).toBe('手入力');
+    expect(byId[3]).toBe('');
+    // 1 dispatch = 履歴 1 段 (Undo 1 回で戻せる)
+    expect(next.historyIndex).toBe(1);
+  });
+
+  it('適用対象が無ければ no-op (履歴を汚さない)', () => {
+    const state = makeState({
+      externalSessionPresets: [{ id: 1, name: '予備校', startTime: '12:25', endTime: '13:35' }],
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '済', startTime: '12:25', endTime: '13:35' },
+      ],
+    });
+    expect(projectReducer(state, { type: 'teacher/applyPresetMemos' })).toBe(state);
+  });
+});

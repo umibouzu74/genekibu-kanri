@@ -115,8 +115,10 @@ Project {
   activeTabId
   dates[], periods[]          // v4: 全タブ共通の講習カレンダー (project レベル)
                               //   dates/periods は全学年の和集合「プール」(NG はこの全日・全時限に設定可)
-  tabs: [{ id, name, config: { classes[], subjectCounts, activeDateIds?, activePeriodIds? }, schedule }]
-                              //   activeDateIds/activePeriodIds: そのタブが使う日・時限 (未指定=全て)
+  tabs: [{ id, name, config: { classes[], subjectCounts, activeDateIds?, activePeriodIds? }, schedule,
+           dayStatuses? }]    //   activeDateIds/activePeriodIds: そのタブが使う日・時限 (未指定=全て)
+                              //   dayStatuses: 日付ごとの手動チェック { [dateId]: 'ok'|'check' }。
+                              //   「不備あり」は保存せず schedule から導出 (computeIncompleteDateIds)
   teachers: [{ name, subjects[], ngSlots[], ngClasses[], priorityClasses[] }]
   combinedGroups[]            // 合同授業（ラベル参照）
   externalCounts / externalSessions   // 他学年セッション

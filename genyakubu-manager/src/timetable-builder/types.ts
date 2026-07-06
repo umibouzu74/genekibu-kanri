@@ -62,11 +62,20 @@ export interface TabConfig {
   periods?: Entity[];
 }
 
+/**
+ * 日付ごとの手動チェック状態。'ok' = OK / 'check' = 要確認。
+ * 「不備あり」は schedule から常に導出する (computeIncompleteDateIds) ため
+ * 保存しない — 埋まれば自動で消える仕様を state の食い違いなしで満たす。
+ */
+export type DayStatus = 'ok' | 'check';
+
 export interface Tab {
   id: number;
   name: string;
   config: TabConfig;
   schedule: Schedule;
+  /** 日付ごとの手動チェック (キーは project.dates の id を文字列化したもの) */
+  dayStatuses?: Record<string, DayStatus>;
 }
 
 /** effectiveConfigForTab の戻り値: tab.config + タブで絞った dates / periods */

@@ -21,8 +21,10 @@ import {
   renameCombinedGroupsLabel,
 } from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
+import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import type {
   CombinedGroup,
+  DayStatus,
   ExternalSession,
   ExternalSessionPreset,
   GenerationParamKey,
@@ -46,6 +48,7 @@ export type ProjectAction =
   | { type: 'tab/delete'; payload: { id: number } }
   | { type: 'tab/rename'; payload: { id: number; name: string } }
   | { type: 'tab/reorder'; payload: { fromIdx: number; toIdx: number } }
+  | { type: 'tab/setDayStatus'; payload: { dateId: number; status: DayStatus | null; tabId?: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -80,6 +83,7 @@ export type ProjectAction =
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
   | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
+  | { type: 'teacher/applyPresetMemos' }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
   | { type: 'preset/remove'; payload: { id: number } }
@@ -147,8 +151,23 @@ function removeDatesFromPool(project: Project, dateIds: number[]): Project {
   const newPool = pool.filter(d => !idSet.has(d.id));
   const newTabs = project.tabs.map(t => {
     const ids = t.config.activeDateIds;
-    if (!ids || !ids.some(id => idSet.has(id))) return t;
-    return { ...t, config: { ...t.config, activeDateIds: ids.filter(id => !idSet.has(id)) } };
+    // 日付ごとの手動チェック (dayStatuses) も削除日の分を掃除する
+    const statuses = t.dayStatuses;
+    const staleStatusKeys = statuses
+      ? Object.keys(statuses).filter(k => idSet.has(Number(k)))
+      : [];
+    const idsChanged = !!ids && ids.some(id => idSet.has(id));
+    if (!idsChanged && staleStatusKeys.length === 0) return t;
+    const next = { ...t };
+    if (idsChanged && ids) {
+      next.config = { ...t.config, activeDateIds: ids.filter(id => !idSet.has(id)) };
+    }
+    if (staleStatusKeys.length > 0 && statuses) {
+      const cleaned = { ...statuses };
+      staleStatusKeys.forEach(k => { delete cleaned[k]; });
+      next.dayStatuses = cleaned;
+    }
+    return next;
   });
   const newCombined = cleanCombinedGroupsForLabelChange(
     project.combinedGroups || [],
@@ -322,6 +341,29 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // reject するが、直接 dispatch 経路も守る)
       if (project.tabs.some(t => t.name === name && t.id !== id)) return project;
       return { ...project, tabs: project.tabs.map(t => t.id === id ? { ...t, name } : t) };
+    }
+
+    // 日付ごとの手動チェック (OK / 要確認)。status=null でチェック解除。
+    // 「不備あり」は schedule から導出する表示専用の状態なので、この case は
+    // 手動 2 値 ('ok' | 'check') の保存だけを担う。キーは dateId の文字列化
+    // (schedule と同じ ID 参照 — 日付ラベルの rename に追従し、プール削除は
+    // removeDatesFromPool が掃除する)。
+    case 'tab/setDayStatus': {
+      const { dateId, status, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId);
+      if (!target) return project;
+      if (!(project.dates || []).some(d => d.id === dateId)) return project;
+      const key = String(dateId);
+      const current = target.dayStatuses || {};
+      if ((current[key] ?? null) === status) return project; // 同値 no-op (F2d)
+      const next = { ...current };
+      if (status == null) delete next[key];
+      else next[key] = status;
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, dayStatuses: next } : t
+      );
+      return { ...project, tabs: newTabs };
     }
 
     case 'tab/reorder': {
@@ -1076,6 +1118,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const filtered = sessions.filter(s => s.id !== id);
       if (filtered.length === sessions.length) return project;
       return { ...project, externalSessions: filtered };
+    }
+
+    // メモ未設定のセッションへ、時刻が一致するプリセットの名前を一括適用する
+    // (プリセット名メモ対応以前に登録された既存データの後付け用)。突き合わせは
+    // computePresetMemoBackfill (純粋関数) — 既存メモは上書きせず、複数
+    // プリセットに一致して判別できないセッションは触らない。Undo 1 回で戻せる。
+    case 'teacher/applyPresetMemos': {
+      const sessions = project.externalSessions || [];
+      const { assignments } = computePresetMemoBackfill(
+        sessions,
+        project.externalSessionPresets || [],
+        project.dates || [],
+      );
+      if (assignments.length === 0) return project;
+      const memoById = new Map(assignments.map(a => [a.sessionId, a.memo]));
+      const newSessions = sessions.map(s =>
+        memoById.has(s.id) ? { ...s, memo: memoById.get(s.id) } : s
+      );
+      return { ...project, externalSessions: newSessions };
     }
 
     // ─── 他学年セッションプリセット ─────────

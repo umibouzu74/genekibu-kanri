@@ -3,6 +3,7 @@ import {
   computeGlobalUsage as _computeGlobalUsage,
   computeActiveAnalysis,
   computeDashboard,
+  computeIncompleteDateIds,
   computeTabViolationCounts as _computeTabViolationCounts,
   computeViolations,
   computeInfeasibilities,
@@ -1107,5 +1108,54 @@ describe('computeInfeasibilities — 講師個別上限の反映 (§M)', () => {
     });
     // capacity = min(6, 2時限) × 2日 = 4 ≥ 需要 2 → 警告なし
     expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+});
+
+// ─── computeIncompleteDateIds (日付ステータスの「不備あり」自動判定) ──
+
+describe('computeIncompleteDateIds', () => {
+  const config = {
+    dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: '３S' }],
+  };
+  // 12/25 の全セル (2 時限 × 1 クラス) が科目+講師で埋まった schedule
+  const filledDay1 = {
+    [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    [makeKey(1, 2, 1)]: { subject: '数学', teacher: '田中' },
+  };
+
+  it('全セルに科目+講師が入った日は不備なし、空の日は不備あり', () => {
+    const result = computeIncompleteDateIds(filledDay1, config);
+    expect(result.has(1)).toBe(false);
+    expect(result.has(2)).toBe(true); // 12/26 は全セル空
+  });
+
+  it('科目のみ (講師なし) のセルがある日は不備あり', () => {
+    const schedule = {
+      ...filledDay1,
+      [makeKey(1, 2, 1)]: { subject: '数学' },
+    };
+    expect(computeIncompleteDateIds(schedule, config).has(1)).toBe(true);
+  });
+
+  it('講師「未定」のセルがある日は不備あり (判定基準: 科目+講師まで必須)', () => {
+    const schedule = {
+      ...filledDay1,
+      [makeKey(1, 2, 1)]: { subject: '数学', teacher: '未定' },
+    };
+    expect(computeIncompleteDateIds(schedule, config).has(1)).toBe(true);
+  });
+
+  it('時限またはクラスが 0 件ならセル自体が無いので不備には数えない', () => {
+    expect(computeIncompleteDateIds({}, { ...config, periods: [] }).size).toBe(0);
+    expect(computeIncompleteDateIds({}, { ...config, classes: [] }).size).toBe(0);
+  });
+
+  it('対象は currentConfig.dates のみ (使わない日は判定しない)', () => {
+    const onlyDay1 = { ...config, dates: [{ id: 1, label: '12/25(木)' }] };
+    const result = computeIncompleteDateIds({}, onlyDay1);
+    expect(result.has(1)).toBe(true);
+    expect(result.has(2)).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
+import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
@@ -37,6 +38,7 @@ export default function AbsenceNgPanel() {
     addExternalSessionPreset,
     updateExternalSessionPreset,
     removeExternalSessionPreset,
+    applyPresetMemosToSessions,
     toggleTeacherNg,
     setNgBatch,
     clearAllManualNg,
@@ -440,9 +442,12 @@ export default function AbsenceNgPanel() {
     // F5l: 時刻・メモはプリセットの値で全置換する。フィールドを持たない
     // プリセットは空にする (部分上書きだと直前に適用したプリセットの
     // 終了時刻やメモが残留し、意図しない混成セッションが登録される)。
+    // メモ未設定のプリセットはプリセット名をメモに使う — セッション一覧・
+    // NG ツールチップ・講師別 Excel で「予備校か高校か」を判別できるように
+    // する (メモ無しだと時刻しか情報が残らない)。
     setFormStartTime(p.startTime || '');
     setFormEndTime(p.endTime || '');
-    setFormMemo(p.memo || '');
+    setFormMemo(p.memo || p.name || '');
     const startD = p.startDateLabel ? poolDates.find(x => x.label === p.startDateLabel) : null;
     const endD = p.endDateLabel ? poolDates.find(x => x.label === p.endDateLabel) : null;
     if (p.startDateLabel && p.endDateLabel) {
@@ -509,6 +514,26 @@ export default function AbsenceNgPanel() {
   const periodHasTime = (p) => getPeriodTimeRange(p) != null;
   const periodsMissingTime = poolPeriods.filter(p => !periodHasTime(p));
 
+  // ── プリセット名のメモ後付け (既存セッション向け) ──
+  // メモ未設定のセッションを時刻でプリセットと突き合わせる。プリセット名メモ
+  // 対応以前の登録分に「予備校 / 高校」の判別を後から与えるための一括操作。
+  const memoBackfill = useMemo(
+    () => computePresetMemoBackfill(sessions, presets, project.dates || []),
+    [sessions, presets, project.dates],
+  );
+  const handleApplyPresetMemos = () => {
+    const n = memoBackfill.assignments.length;
+    if (n === 0) return;
+    applyPresetMemosToSessions();
+    showToast(
+      memoBackfill.ambiguousCount > 0
+        ? `${n} 件のセッションにプリセット名をメモとして適用しました (複数プリセットに一致した ${memoBackfill.ambiguousCount} 件はスキップ)`
+        : `${n} 件のセッションにプリセット名をメモとして適用しました`,
+      'success',
+      4000,
+    );
+  };
+
   // ── render ────────────────────────────────
   return (
     <div>
@@ -534,6 +559,32 @@ export default function AbsenceNgPanel() {
         removePreset={removeExternalSessionPreset}
         selectedTeacherNames={selectedTeacherNames}
       />
+
+      {/* プリセット名のメモ後付け (メモ未設定の既存セッションがあるときだけ表示) */}
+      {(memoBackfill.assignments.length > 0 || memoBackfill.ambiguousCount > 0) && (
+        <div className="border border-builder-info-border bg-builder-info-soft rounded p-3 mb-4 text-xs text-builder-ink">
+          <div className="mb-2">
+            🏷 メモ未設定の他学年セッションのうち <strong>{memoBackfill.assignments.length} 件</strong> は、
+            時刻がプリセットと一致するためプリセット名をメモとして後付けできます
+            (予備校 / 高校の判別用。既存のメモは上書きしません。元に戻すには Undo)。
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleApplyPresetMemos}
+              disabled={memoBackfill.assignments.length === 0}
+              className="px-3 py-1 bg-builder-blue text-white rounded text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+            >
+              プリセット名をメモに一括適用 ({memoBackfill.assignments.length}件)
+            </button>
+            {memoBackfill.ambiguousCount > 0 && (
+              <span className="text-builder-orange">
+                ⚠ {memoBackfill.ambiguousCount} 件は同時刻のプリセットが複数あり判別できないため対象外です
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 統合一括登録フォーム */}
       <div className="border border-builder-ink-ghost rounded p-3 bg-builder-surface-alt mb-4">
