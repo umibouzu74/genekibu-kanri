@@ -18,6 +18,7 @@ import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
+import { computePresetMemoBackfill } from './presetMemoBackfill';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -525,7 +526,11 @@ export async function downloadScheduleExcel(project: Project, options: { clean?:
 //   先頭に時限順のまま並び、時刻の取れない外部授業は Infinity で末尾に沈む。
 //   sort は stable なので同キー内は従来の生成順 (タブ → 時限) を保つ。
 export interface TeacherRow {
-  /** [日付, 時限(または時刻), クラス, 科目(外部はメモ), 学年(タブ), 備考] */
+  /**
+   * [日付, 時限(または時刻), クラス, 科目, 学年(タブ), 備考]。
+   * 外部授業の行は 科目=空欄、学年(タブ)=種別 (メモ＝プリセット名。メモ未設定
+   * でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
+   */
   cells: string[];
   /** 科目カラー適用用 (外部授業は undefined) */
   subject?: string;
@@ -571,15 +576,27 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
   // 講習コマ 0 の講師はシート自体を作らない (外部授業のみでも載せない)
   if (rows.length === 0) return [];
 
-  (project.externalSessions || []).forEach(s => {
+  // 学年(タブ) 列に出す種別ラベル: メモ (プリセット適用時はプリセット名) を
+  // 優先し、メモ未設定でも時刻がプリセットに一致するならその名前を**表示に
+  // だけ**使う (プロジェクトのデータは書き換えない)。どちらも無ければ '外部'。
+  const sessions = project.externalSessions || [];
+  const { assignments } = computePresetMemoBackfill(
+    sessions,
+    project.externalSessionPresets || [],
+    project.dates || [],
+  );
+  const presetMemoBySessionId = new Map(assignments.map(a => [a.sessionId, a.memo]));
+
+  sessions.forEach(s => {
     if (s.teacherName !== teacherName) return;
     const timeText = s.startTime
       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
       : (s.label || '-');
+    const kind = s.memo || presetMemoBySessionId.get(s.id) || '外部';
     rows.push({
-      // メモ (プリセット適用時はプリセット名が入る) を科目欄に出して
-      // 予備校 / 高校のどちらの授業かを紙面で判別できるようにする
-      cells: [s.date, timeText, '-', s.memo || '外部授業', '外部', ''],
+      // 科目欄は空欄 (講習の科目ではないため)。予備校 / 高校の判別は
+      // 学年(タブ) 列の種別ラベルで行う。
+      cells: [s.date, timeText, '-', '', kind, ''],
       isExternal: true,
       dateIdx: dateIdx(s.date),
       sortMin: getSessionTimeRange(s)?.startMin ?? Number.POSITIVE_INFINITY,
