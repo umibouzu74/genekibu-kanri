@@ -1,6 +1,6 @@
 // decideRemoteProject (E6a: Firebase 受信ペイロードの適用判定) のテスト。
 import { describe, expect, it } from 'vitest';
-import { decideRemoteProject, stableStringify } from './projectSync';
+import { decideRemoteProject, newerSchemaVersion, stableStringify } from './projectSync';
 import { createNewProject } from '../hooks/projectFactory';
 import { CURRENT_PROJECT_VERSION, DEFAULT_TAB_CONFIG_BASE } from './constants';
 import type { Project } from '../types';
@@ -55,6 +55,35 @@ describe('decideRemoteProject — stale-client (相手の方が新しいスキ�
     const decision = decideRemoteProject(JSON.stringify(newer), local);
     expect(decision).toEqual({ action: 'stale-client', version: CURRENT_PROJECT_VERSION + 1 });
   });
+
+  it('文字列 version ("5" 等) も数値化して判定する', () => {
+    const local = makeLocal();
+    const newer = { ...local, version: String(CURRENT_PROJECT_VERSION + 1) };
+    const decision = decideRemoteProject(JSON.stringify(newer), local);
+    expect(decision).toEqual({ action: 'stale-client', version: CURRENT_PROJECT_VERSION + 1 });
+  });
+
+  it('version だけ大きいゴミ blob (tabs 無し) は stale-client ではなく reject (自己修復可能に)', () => {
+    // stale-client は同期の恒久停止なので、'{"version":99}' のような壊れた
+    // blob まで巻き込むと autosave 上書きによる自己修復が永遠に届かない。
+    const decision = decideRemoteProject('{"version":99}', makeLocal());
+    expect(decision.action).toBe('reject');
+  });
+});
+
+describe('newerSchemaVersion (初回送信前の get() チェック用)', () => {
+  it('新しいスキーマの project 文字列なら version を返す', () => {
+    const newer = { ...makeLocal(), version: CURRENT_PROJECT_VERSION + 1 };
+    expect(newerSchemaVersion(JSON.stringify(newer))).toBe(CURRENT_PROJECT_VERSION + 1);
+  });
+
+  it('null / 非文字列 / 壊れた JSON / 現行以下の version / tabs 無しは null', () => {
+    expect(newerSchemaVersion(null)).toBeNull();
+    expect(newerSchemaVersion(123)).toBeNull();
+    expect(newerSchemaVersion('{broken')).toBeNull();
+    expect(newerSchemaVersion(JSON.stringify(makeLocal()))).toBeNull();
+    expect(newerSchemaVersion('{"version":99}')).toBeNull();
+  });
 });
 
 describe('decideRemoteProject — identical / apply', () => {
@@ -64,6 +93,40 @@ describe('decideRemoteProject — identical / apply', () => {
     const parsed = JSON.parse(JSON.stringify(local));
     const reversed = Object.fromEntries(Object.entries(parsed).reverse());
     expect(decideRemoteProject(JSON.stringify(reversed), local).action).toBe('identical');
+  });
+
+  it('activeTabId (ビュー状態) だけの差は identical (タブ切替を編集として伝播させない)', () => {
+    const local = makeLocal();
+    const remote = { ...JSON.parse(JSON.stringify(local)), activeTabId: 999 };
+    expect(decideRemoteProject(JSON.stringify(remote), local).action).toBe('identical');
+  });
+
+  it('updatedAt (ブックキーピング) だけの差は identical', () => {
+    const local = makeLocal();
+    const remote = { ...JSON.parse(JSON.stringify(local)), updatedAt: '2099-01-01T00:00:00.000Z' };
+    expect(decideRemoteProject(JSON.stringify(remote), local).action).toBe('identical');
+  });
+
+  it('ローカル側に stale な schedule キーがあっても byte 一致のサーバ copy は identical (比較の対称性)', () => {
+    // loadInitialProject は cleanSchedule を通さないため、比較でローカル側も
+    // clean しないと「他端末なし」で起動時に擬似 apply (履歴リセット + toast)
+    // が起きる。
+    const local = makeLocal();
+    local.tabs[0].schedule['d999-p999-c999'] = { subject: '英語', teacher: '堀上' };
+    expect(decideRemoteProject(JSON.stringify(local), local).action).toBe('identical');
+  });
+
+  it('同梱 templates は strip され、apply される project に混入しない (L1d と同じ扱い)', () => {
+    const local = makeLocal();
+    const remote = JSON.parse(JSON.stringify(local));
+    remote.name = 'テンプレ同梱';
+    remote.templates = [{ id: 1, name: '2025冬', payload: JSON.parse(JSON.stringify(local)) }];
+    const decision = decideRemoteProject(JSON.stringify(remote), local);
+    expect(decision.action).toBe('apply');
+    if (decision.action === 'apply') {
+      expect(decision.project.name).toBe('テンプレ同梱');
+      expect('templates' in decision.project).toBe(false);
+    }
   });
 
   it('内容が違えば apply され、migrate + cleanSchedule 済みの project を返す', () => {

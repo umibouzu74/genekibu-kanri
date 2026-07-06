@@ -9,6 +9,7 @@ import {
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
   LEGACY_STORAGE_KEYS,
+  CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
@@ -73,6 +74,15 @@ export function useJsonIO({
       try {
         // readAsText 経由なので result は常に string
         const data = JSON.parse(ev.target?.result as string);
+        // このアプリより新しいスキーマ version の JSON は解釈できない
+        // (migrate は素通しになり、以降の挙動が未定義)。クラウド同期の
+        // stale-client ガード (projectSync) と同様に読込前に弾く。
+        if (typeof data?.version === 'number' && data.version > CURRENT_PROJECT_VERSION) {
+          if (onNotify) onNotify(
+            `このファイルはアプリより新しい形式 (v${data.version}) です。ページを再読み込みして最新版のアプリで読み込んでください`,
+            'error');
+          return;
+        }
         // 構造を検証してから migrate / 適用 (E3d)。不正なら適用せず通知。
         const { valid, error } = validateProjectShape(data);
         if (!valid) {

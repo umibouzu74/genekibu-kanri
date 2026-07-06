@@ -17,8 +17,17 @@
   - 競合はプロジェクト単位の last-writer-wins (K5a のユーザ判断に整合。
     2 端末同時編集は運用上想定しない)。テンプレート・「デフォルトとして保存」は
     端末ローカルのまま。
-  - テスト +20 件 (projectSync.test.ts / useHistoryStack.sync.test.jsx)。
+  - テスト +36 件 (projectSync.test.ts / useHistoryStack.sync.test.jsx)。
     database.rules.json に文字列 validate を追加。
+  - 校正レビュー (8 角度 + 反証検証) の反映: 単体テスト・e2e・dev を実
+    Firebase から隔離 (`test.env` / `webServer.env`)、初回送信前の version
+    確認 (`get()`) で書込前の stale 上書きを防止、activeTabId / updatedAt を
+    同一性比較から除外 (タブ切替が他端末の Undo 履歴を消さない)、受信
+    payload の templates strip、ノード削除後の再 seed 修正、seed 失敗の
+    toast 沈黙化、エラー通知を「失敗エピソードごとに 1 回」へ、ゴミ blob の
+    stale-client 誤判定防止、比較の cleanSchedule 対称化、stableStringify の
+    共有 util 化 (`src/utils/stableStringify.js`)、JSON 読込の新 version
+    ガード、連続反映 toast の間引き。
 
 ### Fixed (講習時間割作成: 日付ラベルの表記ゆれ「8/6」と「8/6(木)」を読込時に統一)
 - date picker 化以前の手入力で残った曜日サフィックス無しの日付「8/6」が、

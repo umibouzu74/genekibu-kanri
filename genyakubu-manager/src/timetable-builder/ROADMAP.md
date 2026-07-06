@@ -1085,6 +1085,29 @@ D 系の UX phase (D1a / D1c / D5a / D6a-MVP) 完了をベースに、**「時�
     user defaults は端末ローカルのまま (JSON 書き出しで移行可)。
 - **テスト**: projectSync.test.ts (新規 10) + useHistoryStack.sync.test.jsx
   (新規 10)。database.rules.json に `.validate: isString` を追加。
+- **校正レビュー反映 (同日)**: 8 角度並列レビュー + 反証検証で 10 件を修正。
+  主なもの — (1) 単体テスト・e2e・dev(StrictMode) が .env.local のある環境で
+  実 RTDB に接続し得た → `test.env` / `webServer.env` で VITE_FIREBASE_* を
+  空にして隔離。(2) 初回スナップショット受信前の送信が stale-client ガードを
+  素通り → 初回送信前に `get()` で version を一回確認 (失敗時は送信優先 =
+  オフライン耐久性維持)。(3) activeTabId (ビュー状態) が同一性比較に含まれ、
+  タブ切替が他端末の履歴リセットを誘発 → 比較から除外 + 適用時ローカル温存
+  (updatedAt も除外)。(4) 受信 payload の templates 未 strip (L1d 欠落) →
+  strip 追加。(5) ノード削除後の再 seed が echo 抑制に食われる → seed 前に
+  合意値を無効化。(6) 空サーバへの seed 失敗が閲覧ユーザに認証警告 toast →
+  seed は沈黙 (親と同方針)。(7) エラー通知ラッチが成功後も解除されず
+  「回復 → 再失敗」が無通知 → 成功時に解除。(8) version だけ大きいゴミ blob
+  が stale-client 化して自己修復不能 → 非空 tabs を要求 (§4.1 ルール 8 に
+  スキーマ側の約束を明文化)、文字列 version も数値化。(9) 比較の cleanSchedule
+  非対称で旧データが起動時に擬似 apply → ローカル側も clean。(10)
+  stableStringify の 2 コピー → `src/utils/stableStringify.js` に一本化。
+  ほか: LS 先読みで起動時のフル比較スキップ、JSON 読込にも新 version ガード、
+  連続 remote-apply の toast 間引き、toast 文言を「後勝ちで消え得る」と正直化。
+  テスト 20 → 36 件。
+- **既知の限界 (意図的)**: 初回 get() は version のみ確認し内容の新旧は見ない
+  (K5a: LWW)。「古いローカルを持つ端末で起動直後 800ms 以内に編集して閉じる」
+  と新しいサーバ内容を上書きし得るが、頻度・実害とも小さく、防ぐには
+  読み待ちゲートが必要でオフライン編集の耐久性を壊すため作らない。
 
 #### E6b. ⚪ 複数ユーザー同時編集 (新規)
 - **現状**: 想定外。

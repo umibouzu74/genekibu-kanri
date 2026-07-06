@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
 import { ref, onValue, set, off } from "firebase/database";
+import { stableStringify } from "../utils/stableStringify";
 
 // ─── Pending sync activity counter ──────────────────────────────────
 // Each in-flight Firebase write increments this counter. SyncStatus
@@ -46,22 +47,6 @@ export const isPermissionError = (err) =>
 
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
-
-/** Key-order-independent JSON stringification.
- *  Firebase RTDB may return object keys in a different order than
- *  what was written, so a naive JSON.stringify comparison can fail
- *  to detect echoes. This replacer sorts object keys at every level. */
-const stableStringify = (val) =>
-  JSON.stringify(val, (_, v) =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.keys(v)
-          .sort()
-          .reduce((o, k) => {
-            o[k] = v[k];
-            return o;
-          }, {})
-      : v
-  );
 
 // ─── useSyncedStorage ───────────────────────────────────────────────
 // Drop-in replacement for useLocalStorage that additionally syncs data
