@@ -760,6 +760,25 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
       .toEqual(['堀上', '10:00〜11:00', '-', '予備校（早朝）']);
   });
 
+  it('日付が変わる行の上辺と最終行の下辺が太線になる (日付区切り)', () => {
+    const wb = buildTeacherWorkbook(makeProjectWithSessions());
+    const ws = wb.getWorksheet('堀上');
+    // 行 2 (先頭) と行 4 (12/25 → 12/26 の切り替わり) の上辺が medium、
+    // 同日続きの行 3 は thin のまま
+    expect(ws.getCell(2, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(3, 1).border.top.style).toBe('thin');
+    expect(ws.getCell(4, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(4, 6).border.top.style).toBe('medium'); // 全列に引く
+    // 最終行の下辺も太線で閉じる
+    expect(ws.getCell(5, 1).border.bottom.style).toBe('medium');
+    // 太線の上書きで外部授業行のグレー塗りは消えない
+    expect(ws.getCell(2, 1).fill?.fgColor?.argb).toBe('FFF2F2F2');
+    // 全講師リストにも同じ区切りが入る
+    const wsAll = wb.getWorksheet('全講師リスト');
+    expect(wsAll.getCell(4, 1).border.top.style).toBe('medium');
+    expect(wsAll.getCell(3, 1).border.top.style).toBe('thin');
+  });
+
   it('時刻の取れない時限のコマは日の先頭・時刻の取れない外部授業は日の末尾', () => {
     // 既定 fixture の periods ('1限'/'2限') は時刻表記なし → コマは sortMin=-1
     // で時限順のまま先頭、時刻なしセッションは Infinity で末尾。
