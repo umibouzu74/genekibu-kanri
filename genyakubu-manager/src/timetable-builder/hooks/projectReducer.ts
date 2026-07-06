@@ -21,6 +21,7 @@ import {
   renameCombinedGroupsLabel,
 } from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
+import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import type {
   CombinedGroup,
   DayStatus,
@@ -82,6 +83,7 @@ export type ProjectAction =
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
   | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
+  | { type: 'teacher/applyPresetMemos' }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
   | { type: 'preset/remove'; payload: { id: number } }
@@ -1116,6 +1118,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const filtered = sessions.filter(s => s.id !== id);
       if (filtered.length === sessions.length) return project;
       return { ...project, externalSessions: filtered };
+    }
+
+    // メモ未設定のセッションへ、時刻が一致するプリセットの名前を一括適用する
+    // (プリセット名メモ対応以前に登録された既存データの後付け用)。突き合わせは
+    // computePresetMemoBackfill (純粋関数) — 既存メモは上書きせず、複数
+    // プリセットに一致して判別できないセッションは触らない。Undo 1 回で戻せる。
+    case 'teacher/applyPresetMemos': {
+      const sessions = project.externalSessions || [];
+      const { assignments } = computePresetMemoBackfill(
+        sessions,
+        project.externalSessionPresets || [],
+        project.dates || [],
+      );
+      if (assignments.length === 0) return project;
+      const memoById = new Map(assignments.map(a => [a.sessionId, a.memo]));
+      const newSessions = sessions.map(s =>
+        memoById.has(s.id) ? { ...s, memo: memoById.get(s.id) } : s
+      );
+      return { ...project, externalSessions: newSessions };
     }
 
     // ─── 他学年セッションプリセット ─────────

@@ -22,9 +22,13 @@
   作らない。
 - プリセット適用時、メモ未設定のプリセットは**プリセット名をメモの既定値**
   として展開する。セッション一覧・自動NG ツールチップ・Excel で
-  「予備校か高校か」を判別できるようにする (既存の登録済みセッションには
-  遡及しないため、区別したい場合は削除して再登録)。
-- テスト +6 件 (excelExport / AbsenceNgPanel)。
+  「予備校か高校か」を判別できるようにする。
+- 登録済みのメモ無しセッションには、講師不在・NG パネルの
+  「🏷 プリセット名をメモに一括適用」で**時刻の一致から後付け**できる
+  (`computePresetMemoBackfill`)。同時刻プリセットが複数のときは
+  期間・対象講師で絞り込み、判別できない分はスキップ。既存メモは
+  上書きせず、Undo 1 回で戻せる。
+- テスト +19 件 (excelExport / AbsenceNgPanel / presetMemoBackfill / reducer)。
 
 ### Added (講習時間割作成: Firebase 同期 — E6a)
 - プロジェクトを親アプリと同じ Firebase RTDB (`appData/builder/schedule_project`)

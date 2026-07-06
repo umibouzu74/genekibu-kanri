@@ -3212,3 +3212,42 @@ describe('projectReducer — tab/setDayStatus', () => {
     expect(next.project.tabs[0].dayStatuses).toEqual({ 2: 'check' });
   });
 });
+
+// ─── プリセット名のメモ後付け (teacher/applyPresetMemos) ─────────
+
+describe('projectReducer — teacher/applyPresetMemos', () => {
+  const seeded = () => makeState({
+    externalSessionPresets: [
+      { id: 1, name: '予備校（昼）', startTime: '12:25', endTime: '13:35' },
+      { id: 2, name: '高校', startTime: '18:00', endTime: '19:00' },
+    ],
+    externalSessions: [
+      // メモ未設定・時刻一致 → 適用対象
+      { id: 1, date: '12/25(木)', teacherName: '堀上', label: '12:25-13:35', memo: '', startTime: '12:25', endTime: '13:35' },
+      // メモ済み → 上書きしない
+      { id: 2, date: '12/25(木)', teacherName: '田中', label: '18:00-19:00', memo: '手入力', startTime: '18:00', endTime: '19:00' },
+      // 一致プリセットなし → そのまま
+      { id: 3, date: '12/25(木)', teacherName: '田中', label: '09:00-10:00', memo: '', startTime: '09:00', endTime: '10:00' },
+    ],
+  });
+
+  it('時刻一致のメモ未設定セッションだけにプリセット名を適用する', () => {
+    const next = projectReducer(seeded(), { type: 'teacher/applyPresetMemos' });
+    const byId = Object.fromEntries(next.project.externalSessions.map(s => [s.id, s.memo]));
+    expect(byId[1]).toBe('予備校（昼）');
+    expect(byId[2]).toBe('手入力');
+    expect(byId[3]).toBe('');
+    // 1 dispatch = 履歴 1 段 (Undo 1 回で戻せる)
+    expect(next.historyIndex).toBe(1);
+  });
+
+  it('適用対象が無ければ no-op (履歴を汚さない)', () => {
+    const state = makeState({
+      externalSessionPresets: [{ id: 1, name: '予備校', startTime: '12:25', endTime: '13:35' }],
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '済', startTime: '12:25', endTime: '13:35' },
+      ],
+    });
+    expect(projectReducer(state, { type: 'teacher/applyPresetMemos' })).toBe(state);
+  });
+});

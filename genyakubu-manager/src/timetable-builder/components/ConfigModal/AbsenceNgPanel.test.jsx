@@ -15,6 +15,7 @@ function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
   const addExternalSessionPreset = vi.fn();
   const clearAllManualNg = vi.fn();
   const clearAllNg = vi.fn();
+  const applyPresetMemosToSessions = vi.fn();
   const projectValue = {
     project: {
       teachers: [{ name: '堀上', subjects: ['英語'] }],
@@ -37,6 +38,7 @@ function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
     setNgBatch: vi.fn(),
     clearAllManualNg,
     clearAllNg,
+    applyPresetMemosToSessions,
     analysis: { autoNgByTeacher: new Map() },
     ...overrides,
   };
@@ -48,7 +50,7 @@ function renderPanel({ presets = [], overrides = {}, ui = {} } = {}) {
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
-  return { ...utils, addExternalSessionPreset, clearAllManualNg, clearAllNg, uiValue };
+  return { ...utils, addExternalSessionPreset, clearAllManualNg, clearAllNg, applyPresetMemosToSessions, uiValue };
 }
 
 const SAMPLE_PRESET = {
@@ -236,6 +238,69 @@ describe('AbsenceNgPanel — プリセット適用のメモ既定値 (プリセ�
     renderPanel({ presets: [SAMPLE_PRESET] });
     fireEvent.change(applySelect(), { target: { value: '1' } });
     expect(memoInput()).toHaveValue('予備校 / 高2 英語');
+  });
+});
+
+describe('AbsenceNgPanel — プリセット名のメモ一括後付け', () => {
+  const presets = [
+    { id: 1, name: '予備校（昼）', startTime: '12:25', endTime: '13:35' },
+  ];
+  const sessionNoMemo = {
+    id: 1, date: '7/24(金)', teacherName: '堀上',
+    label: '12:25-13:35', memo: '', startTime: '12:25', endTime: '13:35',
+  };
+
+  it('時刻一致のメモ未設定セッションがあると案内が出て、ボタンで一括適用 + toast', () => {
+    const { applyPresetMemosToSessions, uiValue } = renderPanel({
+      presets,
+      overrides: {
+        project: makeFullProject({
+          externalSessionPresets: presets,
+          externalSessions: [sessionNoMemo],
+        }),
+      },
+    });
+    const btn = screen.getByRole('button', { name: /プリセット名をメモに一括適用 \(1件\)/ });
+    fireEvent.click(btn);
+    expect(applyPresetMemosToSessions).toHaveBeenCalledTimes(1);
+    expect(uiValue.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('1 件のセッションにプリセット名をメモとして適用'),
+      'success', 4000,
+    );
+  });
+
+  it('判別不能 (同時刻プリセット複数) のみの場合はボタン disabled + 警告表示', () => {
+    const dupPresets = [
+      { id: 1, name: '予備校', startTime: '12:25', endTime: '13:35' },
+      { id: 2, name: '高校', startTime: '12:25', endTime: '13:35' },
+    ];
+    const { applyPresetMemosToSessions } = renderPanel({
+      presets: dupPresets,
+      overrides: {
+        project: makeFullProject({
+          externalSessionPresets: dupPresets,
+          externalSessions: [sessionNoMemo],
+        }),
+      },
+    });
+    const btn = screen.getByRole('button', { name: /プリセット名をメモに一括適用 \(0件\)/ });
+    expect(btn).toBeDisabled();
+    expect(screen.getByText(/1 件は同時刻のプリセットが複数あり判別できない/)).toBeInTheDocument();
+    fireEvent.click(btn);
+    expect(applyPresetMemosToSessions).not.toHaveBeenCalled();
+  });
+
+  it('対象が無ければ案内ブロック自体を表示しない', () => {
+    renderPanel({
+      presets,
+      overrides: {
+        project: makeFullProject({
+          externalSessionPresets: presets,
+          externalSessions: [{ ...sessionNoMemo, memo: '予備校（昼）' }], // メモ済み
+        }),
+      },
+    });
+    expect(screen.queryByRole('button', { name: /プリセット名をメモに一括適用/ })).toBeNull();
   });
 });
 
