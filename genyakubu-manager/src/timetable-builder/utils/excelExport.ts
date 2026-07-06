@@ -100,6 +100,20 @@ const EXTERNAL_ROW_STYLE: CellStyleSpec = {
   border: THIN_BORDER,
 };
 
+// 講師別シートの日付区切り線。日付が変わる行の上辺を太線 (medium) にして
+// 1 日のまとまりを紙面で追いやすくする。
+const DATE_EDGE_BORDER: ExcelJS.Border = { style: 'medium', color: { argb: 'FF333333' } };
+
+// 行の上辺 / 下辺を太線に上書きする。applyCellStyle は共有 style オブジェクト
+// (THIN_BORDER) をそのまま cell に渡すため、直接 mutate せず新しい border を
+// 組んで差し替える (mutate すると全セルの罫線が巻き添えで変わる)。
+function applyRowEdge(ws: ExcelJS.Worksheet, rowIdx: number, columnCount: number, edge: 'top' | 'bottom') {
+  for (let ci = 1; ci <= columnCount; ci++) {
+    const cell = ws.getCell(rowIdx, ci);
+    cell.border = { ...(cell.border || THIN_BORDER), [edge]: DATE_EDGE_BORDER };
+  }
+}
+
 // HEX カラー (#RRGGBB) を ARGB (FFRRGGBB) に変換
 export function hexToArgb(hex: string): string {
   return 'FF' + hex.replace('#', '').toUpperCase();
@@ -655,6 +669,14 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
       });
     });
 
+    // 日付の区切り: 日付が変わる行 (先頭行含む) の上辺 + 最終行の下辺を太線に
+    personalRows.forEach((row, ri) => {
+      if (ri === 0 || personalRows[ri - 1].cells[0] !== row.cells[0]) {
+        applyRowEdge(ws, ri + 2, header.length, 'top');
+      }
+    });
+    applyRowEdge(ws, personalRows.length + 1, header.length, 'bottom');
+
     [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
   });
 
@@ -679,6 +701,15 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
         }
       }
     });
+
+    // 区切り: 講師または日付が変わる行 (先頭行含む) の上辺 + 最終行の下辺を太線に
+    allRows.forEach((row, ri) => {
+      const boundary = ri === 0
+        || allRowTeachers[ri - 1] !== allRowTeachers[ri]
+        || allRows[ri - 1].cells[0] !== row.cells[0];
+      if (boundary) applyRowEdge(wsAll, ri + 2, allHeader.length, 'top');
+    });
+    applyRowEdge(wsAll, allRows.length + 1, allHeader.length, 'bottom');
 
     [10, 14, 14, 10, 12, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
   } else {
