@@ -15,6 +15,7 @@ import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import { STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { formatPrintDateJa } from './utils/printHeader';
+import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
 import { checkStorageHealth, checkOriginStorageHealth, formatBytes } from './utils/storageHealth';
@@ -441,8 +442,9 @@ function ScheduleApp() {
     setContextMenu(null);
   };
 
-  // 親アプリ側でも .no-print を扱っているため、ここでは @page のみ。
-  const printStyle = `@media print { @page { size: landscape; } .print-container { max-height: none !important; border: none !important; overflow: visible !important; } }`;
+  // 印刷スタイルは utils/builderPrintStyle.ts に集約 (A3縦・全列収め・
+  // 日付単位の改ページ制御)。no-print の除去は親アプリのグローバル
+  // @media print が担う。
 
   // L1f: 印刷見出し用。生成結果パネル等と違い「今表示しているタブ」を刷る。
   const activeTabForPrint = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
@@ -451,7 +453,7 @@ function ScheduleApp() {
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
     <div className="font-sans builder-root" onClick={() => setContextMenu(null)}>
-      <style>{printStyle}</style>
+      <style>{BUILDER_PRINT_STYLE}</style>
 
       <Header />
       <TabBar />

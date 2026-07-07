@@ -11,7 +11,7 @@ afterEach(cleanup);
 // 日付ステータスチェック (OK / 要確認 / 不備あり) に焦点を当てたテスト。
 // ScheduleCell も一緒に mount されるので、その必要フィールドも context に持たせる
 // (ScheduleCell.test.jsx の defaultContext と同じ形)。
-function makeCtx({ incompleteDateIds = new Set(), dayStatuses = {}, setDayStatus = vi.fn(), currentSchedule = {} } = {}) {
+function makeCtx({ incompleteDateIds = new Set(), dayStatuses = {}, setDayStatus = vi.fn(), currentSchedule = {}, dates = [{ id: 1, label: '12/25(木)' }], periods = [{ id: 1, label: '1限' }] } = {}) {
   return {
     project: {
       teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
@@ -21,8 +21,8 @@ function makeCtx({ incompleteDateIds = new Set(), dayStatuses = {}, setDayStatus
     activeTab: { id: 1, name: 'メイン', dayStatuses },
     currentSchedule,
     currentConfig: {
-      dates: [{ id: 1, label: '12/25(木)' }],
-      periods: [{ id: 1, label: '1限' }],
+      dates,
+      periods,
       classes: [{ id: 1, label: '３S' }],
       subjectCounts: { 英語: 1 },
     },
@@ -53,6 +53,30 @@ function renderTable(ctxOpts = {}) {
   );
   return { ...utils, ctx };
 }
+
+describe('ScheduleTable — 印刷用の日付単位 tbody 構造', () => {
+  // 印刷時に builderPrintStyle が tbody 単位で break-inside:avoid を掛け、
+  // 1 日分がページ境界で途中分割されないようにする前提 (BUILDER_PRINT_STYLE)。
+  // その改ページ制御が効くためには「日付ごとに tbody が 1 つ」である必要が
+  // あるので、構造を固定する。
+  it('日付ごとに builder-day-group な tbody を 1 つ描画する', () => {
+    const { container } = renderTable({
+      dates: [
+        { id: 1, label: '12/25(木)' },
+        { id: 2, label: '12/26(金)' },
+        { id: 3, label: '12/27(土)' },
+      ],
+      periods: [
+        { id: 1, label: '1限' },
+        { id: 2, label: '2限' },
+      ],
+    });
+    const bodies = container.querySelectorAll('tbody.builder-day-group');
+    expect(bodies).toHaveLength(3);
+    // 各 tbody は当該日の全時限行 (+ 最終日以外は区切り行) を内包する
+    expect(bodies[0].querySelectorAll('tr').length).toBeGreaterThanOrEqual(2);
+  });
+});
 
 describe('ScheduleTable — 日付ステータスチェック', () => {
   it('不備あり (自動判定) はチェック付き・操作不可で、OK も選べない', () => {
