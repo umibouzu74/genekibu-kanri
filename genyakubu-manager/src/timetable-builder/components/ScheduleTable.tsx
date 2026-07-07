@@ -254,7 +254,7 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
               </tr>
             ))}
             {dIdx < currentConfig.dates.length - 1 && (
-              <tr aria-hidden="true" className="bg-builder-ink">
+              <tr aria-hidden="true" className="builder-day-separator bg-builder-ink">
                 <td className="sticky z-20 bg-builder-ink p-0" style={{ ...dateColStyle, height: '6px' }}></td>
                 <td className="sticky z-10 bg-builder-ink p-0" style={{ ...periodColStyle, height: '6px' }}></td>
                 <td colSpan={currentConfig.classes.length} className="bg-builder-ink p-0" style={{ height: '6px' }}></td>

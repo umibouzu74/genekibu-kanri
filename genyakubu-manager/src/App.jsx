@@ -813,6 +813,7 @@ export default function App() {
   // ─── Render ─────────────────────────────────────────────────────
   return (
     <div
+      className="app-shell"
       style={{
         fontFamily: font.stack,
         display: "flex",
@@ -1522,6 +1523,13 @@ export default function App() {
         /* print ルールは mobile ルールの後に置き、印刷時にスマホ用の
            font-size: 16px が勝たないようにする (source order で優先) */
         @media print {
+          /* アプリシェルは通常 height:100vh のフレックス + .app-main が
+             overflow:auto のスクロールペイン。そのまま window.print() すると
+             1 ページ分 (ビューポート高) でクリップされ、以降のページが
+             印刷されない。印刷時はスクロールを解除して全内容を紙面へ流す
+             (直接 window.print() する全ビュー = builder / dashboard 等に効く)。 */
+          .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
+          .app-main { overflow: visible !important; height: auto !important; }
           .sidebar, .sidebar-spacer, .hamburger { display: none !important; }
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
