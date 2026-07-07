@@ -131,29 +131,48 @@ test("タイムテーブル: popup 印刷に中学/高校のセクションヘ�
   await expect(popup.locator(".excel-print-meta").first()).toContainText("印刷");
 });
 
-test("講習時間割作成: print で全列収め (table-layout:fixed) と日付単位の改ページが効く", async ({
+test("講習時間割作成: print で全列収め (横溢れなし) と日付単位の改ページが効く", async ({
   page,
 }) => {
+  // 「全クラス列が紙面幅に収まる」を実挙動で検証するため、列数の多いタブ
+  // (中１・２ = 7クラス) を、その min-width 合計より狭い viewport で開く。
+  // table-layout:fixed が無ければ横溢れする状況を作り、収まることを assert する。
+  await page.setViewportSize({ width: 1000, height: 900 });
+
   await page.goto("/genekibu-kanri/");
   // サイドバーから講習時間割作成ビューへ (builder-worker.spec と同経路)
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({
     timeout: 30_000,
   });
+  // 列数の多いタブ (7クラス) へ切り替え
+  await page.getByRole("tab", { name: /中１・２/ }).click();
   // スケジュール表 (.print-container) が出るまで待つ
   await expect(page.locator(".print-container table")).toBeVisible();
 
   await page.emulateMedia({ media: "print" });
   await expectPrintChromeHidden(page);
 
-  // 全クラス列を紙面幅に収めるため table-layout: fixed が印刷時に効く
+  // (要件2) 全クラス列が紙面幅に収まる = コンテナ内で横溢れ (overflow) しない。
+  // table-layout:fixed + width:100% + min-width:0 が外れると scrollWidth が
+  // clientWidth を超える (=列が切れて 2 ページ目送りになる) ので、その回帰を捕捉。
+  const fit = await page.locator(".print-container").evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(fit.scrollWidth).toBeLessThanOrEqual(fit.clientWidth + 1);
+
+  // 収める手段として table-layout: fixed が印刷時に効いていることも確認
   const tableLayout = await page
     .locator(".print-container table")
     .evaluate((el) => getComputedStyle(el).tableLayout);
   expect(tableLayout).toBe("fixed");
 
-  // 1 日分 (tbody) はページ境界で分断しない (break-inside: avoid)。
+  // (要件3) 1 日分 (tbody) はページ境界で分断しない (break-inside: avoid)。
   // 日付ごとに tbody.builder-day-group が分かれている前提。
+  // 注: emulateMedia('print') では実ページボックスを観測できないため、ここは
+  // CSS が当たっていることの検証まで。実際のページ分割が日境界に一致するかは
+  // Chromium の table break-inside 対応に依存し、A3 縦 PDF の目視で担保する。
   const dayBodies = page.locator(".print-container tbody.builder-day-group");
   expect(await dayBodies.count()).toBeGreaterThan(0);
   const breakInside = await dayBodies

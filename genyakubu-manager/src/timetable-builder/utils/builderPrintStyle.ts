@@ -17,6 +17,13 @@
 //    ScheduleTable は日付ごとに <tbody> を分けており、その日が 1 ページに
 //    収まらない場合のみ従来どおり分割される (= 出来る限り日の途中で切らない)。
 //    リポジトリ慣習に合わせ page-break-inside も併記 (printStyles.js と同様)。
+//
+// 注意 (改ページの検証限界): 実際に「日境界でページが分かれる」挙動は
+// Chromium の table-row-group への break-inside 対応に依存する。
+// print.spec.js は CSS が当たっていることまでしか検証できない
+// (emulateMedia('print') では実ページボックスを観測できない) ため、
+// エンジン更新時は A3 縦 PDF を出力してページ境界が日境界に一致するかを
+// 目視再確認すること (ROADMAP G.2 の実機確認項目と同性質)。
 export const BUILDER_PRINT_STYLE = `
 @media print {
   @page { size: A3 portrait; margin: 8mm; }
