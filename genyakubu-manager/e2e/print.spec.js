@@ -168,6 +168,14 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
     .evaluate((el) => getComputedStyle(el).tableLayout);
   expect(tableLayout).toBe("fixed");
 
+  // 列見出しを各ページ先頭に繰り返させるため、印刷では thead の sticky を
+  // 静的化している (sticky のままだと Chromium の thead 自動繰り返しが阻害され、
+  // A3縦で複数ページに跨ると 2 ページ目以降が見出し無しになる)。
+  const theadPosition = await page
+    .locator(".print-container thead")
+    .evaluate((el) => getComputedStyle(el).position);
+  expect(theadPosition).toBe("static");
+
   // (要件3) 1 日分 (tbody) はページ境界で分断しない (break-inside: avoid)。
   // 日付ごとに tbody.builder-day-group が分かれている前提。
   // 注: emulateMedia('print') では実ページボックスを観測できないため、ここは

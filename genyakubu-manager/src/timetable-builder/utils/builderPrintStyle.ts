@@ -17,6 +17,14 @@
 //    ScheduleTable は日付ごとに <tbody> を分けており、その日が 1 ページに
 //    収まらない場合のみ従来どおり分割される (= 出来る限り日の途中で切らない)。
 //    リポジトリ慣習に合わせ page-break-inside も併記 (printStyles.js と同様)。
+//  - **列見出しを各ページ先頭に繰り返す**: <thead> は画面用に position:sticky
+//    だが、sticky のままだと Chromium の thead 自動繰り返し
+//    (display:table-header-group) が阻害され、A3縦で複数ページに跨ると
+//    2 ページ目以降が見出し無しになる。印刷では position:static に戻す
+//    (日付/時限列の sticky も同時に静的化。印刷に横スクロールは無い)。
+//  - **日の区切り**: 画面の黒バー (builder-day-separator) は tbody 末尾に
+//    あり、ページ末尾に単独で残ると『帯』に見える。印刷では非表示にし、
+//    代わりに各日の先頭へ上罫線を引く (ページ跨ぎで宙ぶらりんにならない)。
 //
 // 注意 (改ページの検証限界): 実際に「日境界でページが分かれる」挙動は
 // Chromium の table-row-group への break-inside 対応に依存する。
@@ -59,6 +67,19 @@ export const BUILDER_PRINT_STYLE = `
   .print-container tr {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+  /* sticky を解除して thead をページごとに繰り返させる (日付/時限列も静的化) */
+  .print-container thead,
+  .print-container th,
+  .print-container td {
+    position: static !important;
+  }
+  /* 日の区切り: 黒バーは隠し、各日 (先頭日を除く) の先頭行に上罫線 */
+  .print-container .builder-day-separator {
+    display: none !important;
+  }
+  .print-container tbody.builder-day-group:not(:first-of-type) > tr:first-child > * {
+    border-top: 2px solid #1f2430 !important;
   }
 }
 `.trim();

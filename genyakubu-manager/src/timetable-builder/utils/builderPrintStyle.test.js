@@ -29,6 +29,15 @@ describe('BUILDER_PRINT_STYLE', () => {
     expect(BUILDER_PRINT_STYLE).toMatch(/\.print-container select\s*\{[^}]*appearance:\s*none/);
   });
 
+  it('列見出しをページごとに繰り返すため sticky を静的化する (thead position:static)', () => {
+    expect(BUILDER_PRINT_STYLE).toMatch(/thead[^{]*\{[^}]*position:\s*static/);
+  });
+
+  it('日の区切り黒バーは印刷で隠し、日ごとに上罫線で仕切る', () => {
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-day-separator\s*\{[^}]*display:\s*none/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/builder-day-group:not\(:first-of-type\)[^{]*\{[^}]*border-top/);
+  });
+
   it('.print-container のスクロール制限を印刷時に解除する', () => {
     expect(BUILDER_PRINT_STYLE).toContain('.print-container');
     expect(BUILDER_PRINT_STYLE).toMatch(/max-height:\s*none/);
