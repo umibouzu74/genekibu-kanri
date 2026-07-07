@@ -131,6 +131,37 @@ test("タイムテーブル: popup 印刷に中学/高校のセクションヘ�
   await expect(popup.locator(".excel-print-meta").first()).toContainText("印刷");
 });
 
+test("講習時間割作成: print で全列収め (table-layout:fixed) と日付単位の改ページが効く", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  // サイドバーから講習時間割作成ビューへ (builder-worker.spec と同経路)
+  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
+  await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({
+    timeout: 30_000,
+  });
+  // スケジュール表 (.print-container) が出るまで待つ
+  await expect(page.locator(".print-container table")).toBeVisible();
+
+  await page.emulateMedia({ media: "print" });
+  await expectPrintChromeHidden(page);
+
+  // 全クラス列を紙面幅に収めるため table-layout: fixed が印刷時に効く
+  const tableLayout = await page
+    .locator(".print-container table")
+    .evaluate((el) => getComputedStyle(el).tableLayout);
+  expect(tableLayout).toBe("fixed");
+
+  // 1 日分 (tbody) はページ境界で分断しない (break-inside: avoid)。
+  // 日付ごとに tbody.builder-day-group が分かれている前提。
+  const dayBodies = page.locator(".print-container tbody.builder-day-group");
+  expect(await dayBodies.count()).toBeGreaterThan(0);
+  const breakInside = await dayBodies
+    .first()
+    .evaluate((el) => getComputedStyle(el).breakInside);
+  expect(breakInside).toBe("avoid");
+});
+
 test("月次カレンダー: popup 印刷にタイトル・印刷日・凡例が注入される", async ({
   page,
   context,

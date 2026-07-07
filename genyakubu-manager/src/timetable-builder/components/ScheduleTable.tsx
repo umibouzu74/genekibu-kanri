@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
@@ -207,60 +207,61 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
             ))}
           </tr>
         </thead>
-        <tbody>
-          {currentConfig.dates.map((d, dIdx) => (
-            <Fragment key={d.id}>
-              {currentConfig.periods.map((p, pIdx) => (
-                <tr key={p.id} className="bg-builder-surface border-b border-builder-border hover:bg-builder-bg">
-                  {pIdx === 0 && (
-                    <LongPressTh scope="rowgroup" rowSpan={currentConfig.periods.length}
-                      className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
-                      style={dateColStyle}
-                      onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}
-                      onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
-                      {d.label}
-                      <DayStatusChecks dateId={d.id} dateLabel={d.label} isCompact={isCompact} />
-                    </LongPressTh>
-                  )}
-                  <LongPressTh scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}
-                    style={periodColStyle}
-                    onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}
-                    onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
-                    {p.label}
+        {/* 日付ごとに <tbody> を分ける。印刷時に builderPrintStyle が
+            tbody 単位で break-inside:avoid を掛け、1 日分がページ境界で
+            途中分割されないようにするため (画面表示は単一 tbody と不変)。 */}
+        {currentConfig.dates.map((d, dIdx) => (
+          <tbody key={d.id} className="builder-day-group">
+            {currentConfig.periods.map((p, pIdx) => (
+              <tr key={p.id} className="bg-builder-surface border-b border-builder-border hover:bg-builder-bg">
+                {pIdx === 0 && (
+                  <LongPressTh scope="rowgroup" rowSpan={currentConfig.periods.length}
+                    className={`font-bold align-top bg-builder-bg border-r border-builder-border sticky z-20 cursor-context-menu hover:bg-builder-surface-alt ${isCompact ? "p-1" : "p-3"}`}
+                    style={dateColStyle}
+                    onContextMenu={(e) => onContextMenu(e, null, null, null, 'date', d.label)}
+                    onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'date', d.label)}>
+                    {d.label}
+                    <DayStatusChecks dateId={d.id} dateLabel={d.label} isCompact={isCompact} />
                   </LongPressTh>
-                  {currentConfig.classes.map((c) => {
-                    const cellKey = makeKey(d.id, p.id, c.id);
-                    return (
-                      <ScheduleCell
-                        key={c.id}
-                        dateId={d.id} periodId={p.id} classId={c.id}
-                        isCompact={isCompact}
-                        onContextMenu={onContextMenu}
-                        onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onDragEnd={handleDragEnd}
-                        isDragOver={dragOverKey === cellKey}
-                        isDragSource={dragSource !== null && dragSource.key === cellKey}
-                        highlightTeacher={highlightTeacher}
-                        isSelected={!!selectedKeys?.has(cellKey)}
-                        onCellSelect={onCellSelect}
-                      />
-                    );
-                  })}
-                </tr>
-              ))}
-              {dIdx < currentConfig.dates.length - 1 && (
-                <tr aria-hidden="true" className="bg-builder-ink">
-                  <td className="sticky z-20 bg-builder-ink p-0" style={{ ...dateColStyle, height: '6px' }}></td>
-                  <td className="sticky z-10 bg-builder-ink p-0" style={{ ...periodColStyle, height: '6px' }}></td>
-                  <td colSpan={currentConfig.classes.length} className="bg-builder-ink p-0" style={{ height: '6px' }}></td>
-                </tr>
-              )}
-            </Fragment>
-          ))}
-        </tbody>
+                )}
+                <LongPressTh scope="row" className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 ${isCompact ? "p-1" : "p-3"}`}
+                  style={periodColStyle}
+                  onContextMenu={(e) => onContextMenu(e, null, null, null, 'period', p.label)}
+                  onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'period', p.label)}>
+                  {p.label}
+                </LongPressTh>
+                {currentConfig.classes.map((c) => {
+                  const cellKey = makeKey(d.id, p.id, c.id);
+                  return (
+                    <ScheduleCell
+                      key={c.id}
+                      dateId={d.id} periodId={p.id} classId={c.id}
+                      isCompact={isCompact}
+                      onContextMenu={onContextMenu}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      isDragOver={dragOverKey === cellKey}
+                      isDragSource={dragSource !== null && dragSource.key === cellKey}
+                      highlightTeacher={highlightTeacher}
+                      isSelected={!!selectedKeys?.has(cellKey)}
+                      onCellSelect={onCellSelect}
+                    />
+                  );
+                })}
+              </tr>
+            ))}
+            {dIdx < currentConfig.dates.length - 1 && (
+              <tr aria-hidden="true" className="bg-builder-ink">
+                <td className="sticky z-20 bg-builder-ink p-0" style={{ ...dateColStyle, height: '6px' }}></td>
+                <td className="sticky z-10 bg-builder-ink p-0" style={{ ...periodColStyle, height: '6px' }}></td>
+                <td colSpan={currentConfig.classes.length} className="bg-builder-ink p-0" style={{ height: '6px' }}></td>
+              </tr>
+            )}
+          </tbody>
+        ))}
       </table>
     </div>
   );
