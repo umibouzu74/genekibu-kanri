@@ -162,6 +162,17 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
   }));
   expect(fit.scrollWidth).toBeLessThanOrEqual(fit.clientWidth + 1);
 
+  // 全日程が印刷される = アプリシェル (.app-main) のスクロールペインが
+  // 印刷時に解除され、1 ページ (ビューポート高) でクリップされない。
+  // 以前は .app-main{overflow:auto;height:100vh} が全内容を最初の1ページに
+  // 切り落としていた (縦に長い時間割の 2 日目以降が印刷されない不具合)。
+  const vscroll = await page.locator(".app-main").evaluate((el) => ({
+    overflow: getComputedStyle(el).overflow,
+    clips: el.scrollHeight > el.offsetHeight + 2,
+  }));
+  expect(vscroll.overflow).toBe("visible");
+  expect(vscroll.clips).toBe(false);
+
   // 収める手段として table-layout: fixed が印刷時に効いていることも確認
   const tableLayout = await page
     .locator(".print-container table")
