@@ -886,6 +886,31 @@ describe('migrateProject — 型崩れ JSON の正規化 (F5a-F5e)', () => {
     expect(p.combinedGroups[0].dates).toBeNull();
   });
 
+  it('classSubjectCounts: 非オブジェクトはフィールドごと削除される (§N)', () => {
+    const tab = baseTab();
+    tab.config.classSubjectCounts = 'x';
+    const p = migrateProject(v4base({ tabs: [tab] }));
+    expect('classSubjectCounts' in p.tabs[0].config).toBe(false);
+  });
+
+  it('classSubjectCounts: 存在しないクラス id・数値でない値は drop、小数は丸める (§N)', () => {
+    const tab = baseTab(); // classes = [{ id: 1 }]
+    tab.config.classSubjectCounts = {
+      '1': { '英語': 2.4, '数学': 'x', '国語': -1 },
+      '9': { '英語': 5 },      // 存在しないクラス id
+      '2': 'broken',           // 非オブジェクト
+    };
+    const p = migrateProject(v4base({ tabs: [tab] }));
+    expect(p.tabs[0].config.classSubjectCounts).toEqual({ '1': { '英語': 2 } });
+  });
+
+  it('classSubjectCounts: 正常なデータは同一参照のまま (no-op)', () => {
+    const tab = baseTab();
+    tab.config.classSubjectCounts = { '1': { '英語': 2 } };
+    const p = migrateProject(v4base({ tabs: [tab] }));
+    expect(p.tabs[0].config.classSubjectCounts).toEqual({ '1': { '英語': 2 } });
+  });
+
   it('snapshots: {} を含む v3 データでも migrateProjectV3toV4 が throw しない', () => {
     const v3 = {
       version: 3,

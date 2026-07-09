@@ -17,6 +17,7 @@ function makeProject({
   periods = ['1限'],
   classes = ['３S'],
   subjectCounts = { '英語': 1 },
+  classSubjectCounts,
   combinedGroups = [],
   schedule = {},
   externalCounts = {},
@@ -41,6 +42,7 @@ function makeProject({
       config: {
         classes: wrapEntities(classes),
         subjectCounts,
+        ...(classSubjectCounts !== undefined ? { classSubjectCounts } : {}),
         ...(activeDateIds !== undefined ? { activeDateIds } : {}),
         ...(activePeriodIds !== undefined ? { activePeriodIds } : {}),
       },
@@ -108,6 +110,40 @@ describe('generateSinglePattern — 基本動作', () => {
     const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
     expect(r.solution).toBeNull();
     expect(r.totalSlots).toBe(1);
+  });
+});
+
+// ─── §N: クラス別コマ数 (classSubjectCounts) の尊重 ─────────────────
+
+describe('generateSinglePattern — クラス別コマ数 (§N)', () => {
+  it('クラス別の上書きクォータどおりに各クラスへ配分して完全解になる', () => {
+    // 2 日 × 2 時限 × 2 クラス = 8 セル。
+    //   A (id=1, 共通値):   英2 数2 国0 = 4
+    //   B (id=2, 上書き):   英1 数2 国1 = 4
+    // 一律クォータではどちらかのクラスでセル数と合わず完全解が出ない構成。
+    const project = makeProject({
+      teachers: [
+        teacher('堀上', ['英語', '数学', '国語']),
+        teacher('田中', ['英語', '数学', '国語']),
+      ],
+      dates: ['12/25(木)', '12/26(金)'],
+      periods: ['1限', '2限'],
+      classes: ['１S', '２S'],
+      subjectCounts: { '英語': 2, '数学': 2, '国語': 0 },
+      classSubjectCounts: { '2': { '英語': 1, '国語': 1 } },
+    });
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(r.solution).not.toBeNull();
+    expect(r.totalSlots).toBe(8);
+
+    // クラス × 科目のコマ数を集計して上書きクォータと一致することを確認
+    const counts = { 1: {}, 2: {} };
+    Object.entries(r.solution).forEach(([k, e]) => {
+      const m = k.match(/^d\d+-p\d+-c(\d+)$/);
+      counts[m[1]][e.subject] = (counts[m[1]][e.subject] || 0) + 1;
+    });
+    expect(counts[1]).toEqual({ '英語': 2, '数学': 2 });
+    expect(counts[2]).toEqual({ '英語': 1, '数学': 2, '国語': 1 });
   });
 });
 

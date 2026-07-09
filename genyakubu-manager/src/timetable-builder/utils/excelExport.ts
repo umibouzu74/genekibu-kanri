@@ -14,6 +14,7 @@ import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
 import type { Project } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
+import { quotaForClass } from './subjectQuota';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
@@ -331,7 +332,7 @@ function collectAllSubjects(project: Project): string[] {
 
 // 1 科目分の集計を計算する純粋関数 (テスト用に export)。
 // 返り値:
-//   - tabStats: [{ tabName, needed, filled }]  必要 = subjectCounts*classes
+//   - tabStats: [{ tabName, needed, filled }]  必要 = Σ_クラス quotaForClass
 //   - teacherStats: { [teacherName]: { [tabName]: count } }
 //       (合同非 primary は除外、未定は "(未定)" キーで集計)
 //   - teachersFound: Set<string>  teacherStats に登場した講師
@@ -355,7 +356,9 @@ export function computeSubjectStats(project: Project, subject: string) {
   );
 
   (project.tabs || []).forEach(tab => {
-    const needed = (tab.config?.subjectCounts?.[subject] || 0) * (tab.config?.classes?.length || 0);
+    // §N: 必要コマ数はクラス別上書きを考慮してクラスごとに解決して合算
+    const needed = (tab.config?.classes || []).reduce(
+      (sum, c) => sum + quotaForClass(tab.config, c.id, subject), 0);
     let filled = 0;
     // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする。
     const { dates, periods } = effectiveConfigForTab(project, tab);

@@ -2894,6 +2894,139 @@ describe('projectReducer — コマ数の一括操作 (L4a)', () => {
   });
 });
 
+describe('projectReducer — クラス別コマ数 (§N classSubjectCounts)', () => {
+  // makeState 既定: classes = [３S(id1), ３A(id2)]、subjectCounts = { 英語:1, 数学:1 }
+  const withMode = () => projectReducer(makeState(), {
+    type: 'config/setClassSubjectCountsMode', payload: { tabId: 1, enabled: true },
+  });
+
+  it('setClassSubjectCountsMode: ON で空マップ、OFF でフィールドごと削除', () => {
+    const on = withMode();
+    expect(on.project.tabs[0].config.classSubjectCounts).toEqual({});
+    // 同状態への再設定は no-op
+    expect(projectReducer(on, {
+      type: 'config/setClassSubjectCountsMode', payload: { tabId: 1, enabled: true },
+    })).toBe(on);
+    const off = projectReducer(on, {
+      type: 'config/setClassSubjectCountsMode', payload: { tabId: 1, enabled: false },
+    });
+    expect('classSubjectCounts' in off.project.tabs[0].config).toBe(false);
+  });
+
+  it('setClassSubjectCount: クラス別の上書きを設定し、他クラスは共通値のまま', () => {
+    const state = withMode();
+    const next = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: '3', tabId: 1 },
+    });
+    expect(next.project.tabs[0].config.classSubjectCounts).toEqual({ '2': { '英語': 3 } });
+    // 共通値は不変
+    expect(next.project.tabs[0].config.subjectCounts['英語']).toBe(1);
+  });
+
+  it('setClassSubjectCount: 実効値と同値は no-op、負数は 0 に clamp', () => {
+    const state = withMode();
+    // 上書き無し + 共通値 1 と同じ値 → no-op (空エントリも作らない)
+    expect(projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 1, value: 1, tabId: 1 },
+    })).toBe(state);
+    const next = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 1, value: -4, tabId: 1 },
+    });
+    expect(next.project.tabs[0].config.classSubjectCounts['1']['英語']).toBe(0);
+  });
+
+  it('setClassSubjectCount: 共通値と同じ値へ戻すと上書きエントリを消す', () => {
+    let state = withMode();
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: 3, tabId: 1 },
+    });
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: 1, tabId: 1 },
+    });
+    expect(state.project.tabs[0].config.classSubjectCounts['2']).toEqual({});
+  });
+
+  it('setClassSubjectCount: クラス別モード OFF でも上書きを設定できる (マップを新設)', () => {
+    const next = projectReducer(makeState(), {
+      type: 'config/setClassSubjectCount', payload: { subject: '数学', classId: 1, value: 5, tabId: 1 },
+    });
+    expect(next.project.tabs[0].config.classSubjectCounts).toEqual({ '1': { '数学': 5 } });
+  });
+
+  it('fillSubjectCounts: クラス別の上書きをクリアして全クラス共通の一括値にする', () => {
+    let state = withMode();
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: 3, tabId: 1 },
+    });
+    const next = projectReducer(state, {
+      type: 'config/fillSubjectCounts', payload: { tabId: 1, value: 3 },
+    });
+    expect(next.project.tabs[0].config.subjectCounts).toEqual({ '英語': 3, '数学': 3 });
+    // モードは維持しつつ上書きは空へ
+    expect(next.project.tabs[0].config.classSubjectCounts).toEqual({});
+  });
+
+  it('copySubjectCountsToOthers: コピー先のクラス別上書きもクリアする', () => {
+    let state = makeState({
+      tabs: [
+        {
+          id: 1, name: '中3',
+          config: {
+            dates: [{ id: 1, label: '12/25' }],
+            periods: [{ id: 1, label: '1限' }],
+            classes: [{ id: 1, label: '３S' }],
+            subjectCounts: { '英語': 3, '数学': 2 },
+          },
+          schedule: {},
+        },
+        {
+          id: 2, name: '中1・中2',
+          config: {
+            classes: [{ id: 1, label: '１S' }, { id: 2, label: '２S' }],
+            subjectCounts: { '英語': 3, '数学': 2 },
+            classSubjectCounts: { '2': { '英語': 9 } },
+          },
+          schedule: {},
+        },
+      ],
+    });
+    // 共通値は全タブ同値だが、上書きが残っている限り「上書きされます」を実行する
+    const next = projectReducer(state, {
+      type: 'config/copySubjectCountsToOthers', payload: { sourceTabId: 1 },
+    });
+    expect(next).not.toBe(state);
+    expect(next.project.tabs[1].config.subjectCounts).toEqual({ '英語': 3, '数学': 2 });
+    expect(next.project.tabs[1].config.classSubjectCounts).toEqual({});
+  });
+
+  it('subject/remove: クラス別上書きからも該当科目を落とす', () => {
+    let state = withMode();
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: 3, tabId: 1 },
+    });
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '数学', classId: 2, value: 4, tabId: 1 },
+    });
+    const next = projectReducer(state, { type: 'subject/remove', payload: { name: '英語' } });
+    expect(next.project.tabs[0].config.classSubjectCounts).toEqual({ '2': { '数学': 4 } });
+  });
+
+  it('config/setList (classes): 消えたクラス id の上書きを掃除する (id 再利用対策)', () => {
+    let state = withMode();
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 1, value: 3, tabId: 1 },
+    });
+    state = projectReducer(state, {
+      type: 'config/setClassSubjectCount', payload: { subject: '英語', classId: 2, value: 4, tabId: 1 },
+    });
+    // ３S (id=1) を削除 → id=1 の上書きが落ち、３A (id=2) は残る
+    const next = projectReducer(state, {
+      type: 'config/setList', payload: { key: 'classes', value: '３A' },
+    });
+    expect(next.project.tabs[0].config.classSubjectCounts).toEqual({ '2': { '英語': 4 } });
+  });
+});
+
 describe('projectReducer — subject/addMany (L4d/L4c)', () => {
   it('複数科目を一括追加し、全タブの subjectCounts に 0 で登録する', () => {
     const next = projectReducer(makeState(), {

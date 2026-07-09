@@ -433,6 +433,14 @@ describe('computeSubjectStats', () => {
     ]);
   });
 
+  it('クラス別コマ数の上書き (§N) は必要コマ数に反映される', () => {
+    const project = makeMultiTabProject();
+    // 中3: 3A (id=2) だけ英語 1 に上書き → 必要 = 2 + 1 = 3
+    project.tabs[0].config.classSubjectCounts = { '2': { '英語': 1 } };
+    const stats = computeSubjectStats(project, '英語');
+    expect(stats.tabStats[0]).toEqual({ tabName: '中3', needed: 3, filled: 3 });
+  });
+
   it('講師別集計はタブごとに分かれる', () => {
     const stats = computeSubjectStats(makeMultiTabProject(), '英語');
     expect(stats.teacherStats['堀上']).toEqual({ '中3': 2 });

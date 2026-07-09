@@ -191,6 +191,101 @@ describe('SubjectManager — 科目の一括追加 (L4d)', () => {
   });
 });
 
+describe('SubjectManager — クラス別コマ数 (§N)', () => {
+  // 中１・２ タブ (id=2) に 2 クラス。クラス別モード ON + １Sは共通値、
+  // ２S (id=2) は英語を 9 → 8 に…ではなく fixture では 英語 2 → 5 に上書き。
+  const perClassProject = (classSubjectCounts = { '2': { 英語: 5 } }) => ({
+    dates: [{ id: 1, label: '1/1' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    tabs: [
+      { id: 1, name: '中３', config: { classes: [{ id: 1, label: '３S' }], subjectCounts: { 英語: 4, 数学: 5 } }, schedule: {} },
+      {
+        id: 2, name: '中１・２',
+        config: {
+          classes: [{ id: 1, label: '１S' }, { id: 2, label: '２S' }],
+          subjectCounts: { 英語: 2, 数学: 3 },
+          classSubjectCounts,
+        },
+        schedule: {},
+      },
+    ],
+  });
+
+  it('▦ はクラスが 2 つ以上のタブにだけ出て、クリックでモード ON を dispatch する', () => {
+    const setClassSubjectCountsMode = vi.fn();
+    const project = perClassProject();
+    delete project.tabs[1].config.classSubjectCounts; // モード OFF から開始
+    renderManager({ project, setClassSubjectCountsMode });
+    // 中３ は 1 クラスなので出ない
+    expect(screen.queryByLabelText('中３ のコマ数をクラス別に設定')).toBeNull();
+    fireEvent.click(screen.getByLabelText('中１・２ のコマ数をクラス別に設定'));
+    expect(setClassSubjectCountsMode).toHaveBeenCalledWith(2, true);
+  });
+
+  it('モード ON のタブはクラスごとの入力になり、実効値 (上書き ?? 共通値) を表示する', () => {
+    renderManager({ project: perClassProject() });
+    // １S は共通値 2、２S は上書き 5
+    expect(screen.getByLabelText('中１・２ １S の 英語 コマ数')).toHaveValue(2);
+    expect(screen.getByLabelText('中１・２ ２S の 英語 コマ数')).toHaveValue(5);
+    // タブ単位の入力は消える
+    expect(screen.queryByLabelText('中１・２ の 英語 コマ数')).toBeNull();
+    // モード OFF のタブは従来どおり
+    expect(screen.getByLabelText('中３ の 英語 コマ数')).toHaveValue(4);
+  });
+
+  it('クラス別入力の blur は handleClassSubjectCountChange(科目, classId, 値, tabId) を呼ぶ', () => {
+    const handleClassSubjectCountChange = vi.fn();
+    renderManager({ project: perClassProject(), handleClassSubjectCountChange });
+    const input = screen.getByLabelText('中１・２ ２S の 数学 コマ数');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '7' } });
+    fireEvent.blur(input);
+    expect(handleClassSubjectCountChange).toHaveBeenCalledWith('数学', 2, '7', 2);
+  });
+
+  it('モード解除は上書きが残っていれば confirm を挟み、承認で OFF を dispatch する', async () => {
+    const setClassSubjectCountsMode = vi.fn();
+    const { uiValue } = renderManager({ project: perClassProject(), setClassSubjectCountsMode });
+    fireEvent.click(screen.getByLabelText('中１・２ のクラス別コマ数を解除'));
+    await waitFor(() => expect(setClassSubjectCountsMode).toHaveBeenCalledWith(2, false));
+    expect(uiValue.showConfirm).toHaveBeenCalledWith(
+      expect.stringContaining('クラス別のコマ数設定を破棄'),
+      expect.anything(),
+    );
+  });
+
+  it('モード解除の confirm を拒否したら dispatch しない', async () => {
+    const setClassSubjectCountsMode = vi.fn();
+    const { uiValue } = renderManager(
+      { project: perClassProject(), setClassSubjectCountsMode },
+      { showConfirm: vi.fn().mockResolvedValue(false) },
+    );
+    fireEvent.click(screen.getByLabelText('中１・２ のクラス別コマ数を解除'));
+    await waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalledTimes(1));
+    expect(setClassSubjectCountsMode).not.toHaveBeenCalled();
+  });
+
+  it('上書きが無ければモード解除は confirm なしで OFF を dispatch する', () => {
+    const setClassSubjectCountsMode = vi.fn();
+    const { uiValue } = renderManager({
+      project: perClassProject({}), // モード ON・上書きなし
+      setClassSubjectCountsMode,
+    });
+    fireEvent.click(screen.getByLabelText('中１・２ のクラス別コマ数を解除'));
+    expect(uiValue.showConfirm).not.toHaveBeenCalled();
+    expect(setClassSubjectCountsMode).toHaveBeenCalledWith(2, false);
+  });
+
+  it('合計 / 収容枠はクラスごとに実効値で計算する', () => {
+    renderManager({ project: perClassProject() });
+    // 収容枠 = 1 日 × 2 時限 = 2 (クラスあたり)
+    // １S: 2+3=5 > 2 → 超過 / ２S: 5+3=8 > 2 → 超過 / 中３: 4+5=9 > 2 → 超過
+    expect(screen.getByLabelText('中１・２ １S のコマ数合計 5、収容枠 2 (超過)')).toBeInTheDocument();
+    expect(screen.getByLabelText('中１・２ ２S のコマ数合計 8、収容枠 2 (超過)')).toBeInTheDocument();
+    expect(screen.getByLabelText('中３ のコマ数合計 9、収容枠 2 (超過)')).toBeInTheDocument();
+  });
+});
+
 describe('SubjectManager — 列合計と収容枠 (N4e)', () => {
   const projectWithCapacity = {
     dates: [{ id: 1, label: '1/1' }, { id: 2, label: '1/2' }],

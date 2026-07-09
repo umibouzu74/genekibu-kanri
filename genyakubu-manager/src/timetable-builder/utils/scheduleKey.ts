@@ -528,6 +528,49 @@ export function migrateProject(project: any): Project {
     result = { ...result, externalCounts: {} };
   }
 
+  // §N: classSubjectCounts (クラス別コマ数上書き、任意フィールド) の正規化。
+  // 外部 JSON の型崩れ (非オブジェクト・数値でない値・存在しないクラス id)
+  // を落とす。放置すると quotaForClass のフォールバックは効くものの、
+  // 存在しない id のエントリが classes 再編集時の id 再利用で無関係な
+  // 新クラスに付く。
+  {
+    let tabsChanged = false;
+    const normalizedTabs = result.tabs.map((tab: any) => {
+      const raw = tab?.config?.classSubjectCounts;
+      if (raw === undefined) return tab;
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+        tabsChanged = true;
+        const { classSubjectCounts: _omit, ...restConfig } = tab.config;
+        return { ...tab, config: restConfig };
+      }
+      const validIds = new Set((tab.config.classes || []).map((c: Entity) => String(c.id)));
+      let entryChanged = false;
+      const next: Record<string, Record<string, number>> = {};
+      Object.entries(raw).forEach(([cid, byClass]) => {
+        if (!validIds.has(cid) || !byClass || typeof byClass !== 'object' || Array.isArray(byClass)) {
+          entryChanged = true;
+          return;
+        }
+        const cleanByClass: Record<string, number> = {};
+        Object.entries(byClass as Record<string, unknown>).forEach(([subject, n]) => {
+          if (typeof n === 'number' && Number.isFinite(n) && n >= 0) {
+            cleanByClass[subject] = Math.round(n);
+            if (cleanByClass[subject] !== n) entryChanged = true;
+          } else {
+            entryChanged = true;
+          }
+        });
+        next[cid] = cleanByClass;
+      });
+      if (!entryChanged) return tab;
+      tabsChanged = true;
+      return { ...tab, config: { ...tab.config, classSubjectCounts: next } };
+    });
+    if (tabsChanged) {
+      result = { ...result, tabs: normalizedTabs };
+    }
+  }
+
   // 自動生成パラメータ (numPatterns 等) が保存値として範囲外の場合は clamp
   // する (F5d)。UI は resolveGenerationParams で clamp 表示する一方、solver は
   // 保存値をそのまま読むため、ここで正規化しないと「表示は 1・実動作は 0 で

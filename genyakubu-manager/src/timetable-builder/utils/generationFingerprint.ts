@@ -31,6 +31,10 @@ export function computeGenerationFingerprint(project: Project | null | undefined
     config: {
       classes: tab.config?.classes || [],
       subjectCounts: tab.config?.subjectCounts || {},
+      // §N: クラス別上書きの変更も案を失効させる (クォータ的に誤った案の
+      // 採用を防ぐ)。モードの ON/OFF ({} ↔ null) 自体は実効クォータを
+      // 変えないが、保守的に含める。
+      classSubjectCounts: tab.config?.classSubjectCounts ?? null,
       activeDateIds: tab.config?.activeDateIds ?? null,
       activePeriodIds: tab.config?.activePeriodIds ?? null,
     },

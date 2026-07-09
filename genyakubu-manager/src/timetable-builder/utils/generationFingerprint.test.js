@@ -37,6 +37,8 @@ describe('computeGenerationFingerprint (F2n/F2p)', () => {
     const base = computeGenerationFingerprint(makeProject(), 1);
     // クォータ変更
     expect(computeGenerationFingerprint(makeProject({}, { subjectCounts: { '英語': 3 } }), 1)).not.toBe(base);
+    // クラス別コマ数の上書き変更 (§N)
+    expect(computeGenerationFingerprint(makeProject({}, { classSubjectCounts: { '1': { '英語': 1 } } }), 1)).not.toBe(base);
     // クラス変更 (rename も含む)
     expect(computeGenerationFingerprint(makeProject({}, { classes: [{ id: 1, label: 'B' }] }), 1)).not.toBe(base);
     // 使う日 off
