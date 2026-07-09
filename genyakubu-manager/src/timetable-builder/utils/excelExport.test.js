@@ -242,6 +242,27 @@ describe('buildScheduleWorkbook', () => {
     expect(joined).toMatch(/A5:A6/);
   });
 
+  it('日付が変わる行の上辺と最終行の下辺が太線になる (日付区切り)', () => {
+    const wb = buildScheduleWorkbook(makeProject());
+    const ws = wb.getWorksheet('メイン');
+    // 2 日 × 2 限 → データは行 3〜6。行 3 (初日) と行 5 (12/25 → 12/26 の
+    // 切り替わり) の上辺が medium、全列に引かれる
+    expect(ws.getCell(3, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(5, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(5, 4).border.top.style).toBe('medium');
+    // 最終行 (行 6) の下辺も太線で閉じる (列 1 は merge の slave セルだが、
+    // 範囲内で style を共有するため結合セルの下辺として描画される)
+    expect(ws.getCell(6, 1).border.bottom.style).toBe('medium');
+    expect(ws.getCell(6, 4).border.bottom.style).toBe('medium');
+    // 同一日付内の行 (行 4 = 12/25 の 2限) の上辺は thin のまま
+    expect(ws.getCell(4, 2).border.top.style).toBe('thin');
+    expect(ws.getCell(4, 3).border.top.style).toBe('thin');
+    // 太線の上書きで科目カラーの fill は消えない
+    expect(ws.getCell(3, 3).fill).toEqual(expect.objectContaining({
+      fgColor: { argb: 'FFDBEAFE' },
+    }));
+  });
+
   it('科目カラーが指定されていれば fill が設定される (ARGB)', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
@@ -626,9 +647,15 @@ describe('xlsx round-trip (E3b)', () => {
     expect(fill?.type).toBe('pattern');
     expect(fill?.fgColor?.argb).toBe('FFDBEAFE');
 
-    // 罫線 (THIN_BORDER) と wrapText
-    expect(ws.getCell(3, 3).border?.top?.style).toBe('thin');
+    // 罫線と wrapText: 行 3 は日付区切りなので上辺 medium、左辺は thin のまま。
+    // 同一日付内の行 4 の上辺は thin。
+    expect(ws.getCell(3, 3).border?.top?.style).toBe('medium');
+    expect(ws.getCell(3, 3).border?.left?.style).toBe('thin');
+    expect(ws.getCell(4, 3).border?.top?.style).toBe('thin');
     expect(ws.getCell(3, 3).alignment?.wrapText).toBe(true);
+    // 最終データ行の下辺太線も round-trip で残る (列 1 は結合セルの slave)
+    expect(ws.getCell(6, 1).border?.bottom?.style).toBe('medium');
+    expect(ws.getCell(6, 4).border?.bottom?.style).toBe('medium');
 
     // 列幅 (日付/時限 14、クラス列 16)
     expect(ws.getColumn(1).width).toBe(14);
