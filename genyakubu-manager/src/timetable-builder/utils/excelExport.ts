@@ -677,6 +677,16 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     });
     applyRowEdge(ws, personalRows.length + 1, header.length, 'bottom');
 
+    // オートフィルタ: 学年(タブ) 列で「中3 だけ」「中1+中2」のように任意の
+    // 組み合わせに絞って確認・印刷できるようにする (タブ別にシートや
+    // セクションを分けるとシート・紙面が爆発するため、絞り込みは Excel の
+    // フィルタに任せる)。外部授業行は同列の種別 (予備校・高校等) で同様に
+    // 絞れる。
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: header.length },
+    };
+
     [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
   });
 
@@ -710,6 +720,13 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
       if (boundary) applyRowEdge(wsAll, ri + 2, allHeader.length, 'top');
     });
     applyRowEdge(wsAll, allRows.length + 1, allHeader.length, 'bottom');
+
+    // オートフィルタ: 個人シートと同様。講師名 × 学年(タブ) の組み合わせでも
+    // 絞れる (例: 中3 の全講師分だけを一覧・印刷)。
+    wsAll.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: allHeader.length },
+    };
 
     [10, 14, 14, 10, 12, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
   } else {

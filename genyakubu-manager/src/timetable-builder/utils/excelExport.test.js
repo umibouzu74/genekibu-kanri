@@ -796,3 +796,31 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     expect([ws.getCell(4, 2).value, ws.getCell(4, 5).value]).toEqual(['-', '予備校']);
   });
 });
+
+describe('buildTeacherWorkbook — オートフィルタ (学年(タブ) 列での絞り込み)', () => {
+  it('個人シートのヘッダ行全列にオートフィルタが付く', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    const ws = wb.getWorksheet('堀上');
+    // ヘッダは 6 列 (日付〜備考)。学年(タブ) 列で「中3 だけ」「中1+中2」の
+    // ような任意の組み合わせに絞れる。
+    expect(ws.autoFilter).toEqual({
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 6 },
+    });
+  });
+
+  it('全講師リストシートのヘッダ行全列にもオートフィルタが付く', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    const wsAll = wb.getWorksheet('全講師リスト');
+    // 講師名列を含む 7 列。講師名 × 学年(タブ) の組み合わせでも絞れる。
+    expect(wsAll.autoFilter).toEqual({
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 7 },
+    });
+  });
+
+  it('個人シートはヘッダ + データ行のみ (タブ別セクション等の付加行は無い)', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    expect(wb.getWorksheet('堀上').rowCount).toBe(3); // header + 2 行
+  });
+});
