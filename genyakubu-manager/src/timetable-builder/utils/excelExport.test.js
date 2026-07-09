@@ -797,104 +797,30 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
   });
 });
 
-describe('buildTeacherWorkbook — 個人シートのタブ別セクション', () => {
-  // 中3 / 中2 の 2 タブで同じ講師が担当を持つ fixture。
-  // dates / periods はプール共通 (hoist シムが tabs[0].config を持ち上げる)。
-  function makeMultiTabProject(overrides = {}) {
-    const config = (classes) => ({
-      dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
-      periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
-      classes,
-      subjectCounts: { '英語': 1 },
-    });
-    return makeProject({
-      tabs: [
-        {
-          id: 1, name: '中3', config: config([{ id: 1, label: '３S' }]),
-          schedule: {
-            [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
-            [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
-          },
-        },
-        {
-          id: 2, name: '中2', config: config([{ id: 1, label: '２S' }]),
-          schedule: {
-            [makeKey(1, 2, 1)]: { subject: '英語', teacher: '堀上' },
-          },
-        },
-      ],
-      ...overrides,
-    });
-  }
-
-  // シート全体のセル値を平坦な文字列 list にする (位置に依らない存在確認用)
-  function sheetTexts(ws) {
-    const texts = [];
-    ws.eachRow((row) => row.eachCell((cell) => texts.push(String(cell.value ?? ''))));
-    return texts;
-  }
-
-  it('タブが 2 つ以上なら統合表の下に空行 + タブ別セクションをタブ順に積む', () => {
-    const wb = buildTeacherWorkbook(makeMultiTabProject());
-    const ws = wb.getWorksheet('堀上');
-    // 統合表: header (行1) + 3 行 (12/25 1限 中3, 12/25 2限 中2, 12/26 1限 中3)
-    expect(ws.getCell(2, 5).value).toBe('中3');
-    expect(ws.getCell(3, 5).value).toBe('中2');
-    expect(ws.getCell(4, 5).value).toBe('中3');
-    // 行 5 = 空行、行 6 = セクション見出し、行 7 = 5 列ヘッダ (学年(タブ) 列なし)
-    expect(ws.getCell(5, 1).value ?? null).toBeNull();
-    expect(ws.getCell(6, 1).value).toBe('【中3】');
-    expect([ws.getCell(7, 1).value, ws.getCell(7, 4).value, ws.getCell(7, 5).value])
-      .toEqual(['日付', '科目', '備考']);
-    // 中3 セクションには中3 の 2 コマだけが日付順で入る
-    expect([ws.getCell(8, 1).value, ws.getCell(8, 2).value, ws.getCell(8, 3).value, ws.getCell(8, 4).value])
-      .toEqual(['12/25(木)', '1限', '３S', '英語']);
-    expect([ws.getCell(9, 1).value, ws.getCell(9, 2).value]).toEqual(['12/26(金)', '1限']);
-    // 科目カラーもセクション側の科目セルに乗る
-    expect(ws.getCell(8, 4).fill?.fgColor?.argb).toBe('FFDBEAFE');
-    // 日付区切り: 先頭行と日付が変わる行の上辺 + 最終行の下辺が太線
-    expect(ws.getCell(8, 1).border.top.style).toBe('medium');
-    expect(ws.getCell(9, 1).border.top.style).toBe('medium');
-    expect(ws.getCell(9, 1).border.bottom.style).toBe('medium');
-    // 行 10 = 空行、行 11 から中2 セクション (中2 の 1 コマのみ)
-    expect(ws.getCell(11, 1).value).toBe('【中2】');
-    expect([ws.getCell(13, 1).value, ws.getCell(13, 2).value, ws.getCell(13, 3).value])
-      .toEqual(['12/25(木)', '2限', '２S']);
-    expect(ws.rowCount).toBe(13);
-  });
-
-  it('タブが 1 つのプロジェクトはセクションを出さない (統合表と同一内容のため)', () => {
+describe('buildTeacherWorkbook — オートフィルタ (学年(タブ) 列での絞り込み)', () => {
+  it('個人シートのヘッダ行全列にオートフィルタが付く', () => {
     const wb = buildTeacherWorkbook(makeProject());
     const ws = wb.getWorksheet('堀上');
-    expect(ws.rowCount).toBe(3); // header + 2 行のみ (従来どおり)
-    expect(sheetTexts(ws)).not.toContain('【メイン】');
-  });
-
-  it('担当コマの無いタブのセクションは省く', () => {
-    const project = makeMultiTabProject();
-    project.tabs[1].schedule = {}; // 中2 の担当なし
-    const wb = buildTeacherWorkbook(project);
-    const texts = sheetTexts(wb.getWorksheet('堀上'));
-    expect(texts).toContain('【中3】');
-    expect(texts).not.toContain('【中2】');
-  });
-
-  it('外部授業は統合表のみでタブ別セクションには載らない', () => {
-    const project = makeMultiTabProject({
-      externalSessions: [
-        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校' },
-      ],
+    // ヘッダは 6 列 (日付〜備考)。学年(タブ) 列で「中3 だけ」「中1+中2」の
+    // ような任意の組み合わせに絞れる。
+    expect(ws.autoFilter).toEqual({
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 6 },
     });
-    const wb = buildTeacherWorkbook(project);
-    const texts = sheetTexts(wb.getWorksheet('堀上'));
-    // 統合表の 1 回だけ登場する (セクション側に重複して出ない)
-    expect(texts.filter(t => t === '予備校')).toHaveLength(1);
   });
 
-  it('全講師リストシートはタブ別セクションの影響を受けない', () => {
-    const wb = buildTeacherWorkbook(makeMultiTabProject());
+  it('全講師リストシートのヘッダ行全列にもオートフィルタが付く', () => {
+    const wb = buildTeacherWorkbook(makeProject());
     const wsAll = wb.getWorksheet('全講師リスト');
-    expect(wsAll.rowCount).toBe(4); // header + 統合 3 行のみ
-    expect(sheetTexts(wsAll)).not.toContain('【中3】');
+    // 講師名列を含む 7 列。講師名 × 学年(タブ) の組み合わせでも絞れる。
+    expect(wsAll.autoFilter).toEqual({
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 7 },
+    });
+  });
+
+  it('個人シートはヘッダ + データ行のみ (タブ別セクション等の付加行は無い)', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    expect(wb.getWorksheet('堀上').rowCount).toBe(3); // header + 2 行
   });
 });

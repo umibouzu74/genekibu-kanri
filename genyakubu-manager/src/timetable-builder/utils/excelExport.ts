@@ -550,8 +550,6 @@ export interface TeacherRow {
   subject?: string;
   /** 外部授業 (他学年セッション) 由来の行 */
   isExternal: boolean;
-  /** 由来タブの id (外部授業行は undefined)。個人シートのタブ別セクション抽出用 */
-  tabId?: number;
 }
 
 export function buildTeacherRows(project: Project, teacherName: string): TeacherRow[] {
@@ -580,7 +578,6 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
               cells: [d.label, p.label, c.label, entry.subject || '', tab.name, note],
               subject: entry.subject,
               isExternal: false,
-              tabId: tab.id,
               dateIdx: dateIdx(d.label),
               sortMin: getPeriodTimeRange(p)?.startMin ?? -1,
             });
@@ -626,7 +623,7 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
     return 0; // stable sort: 同キーは生成順を維持
   });
 
-  return rows.map(({ cells, subject, isExternal, tabId }) => ({ cells, subject, isExternal, tabId }));
+  return rows.map(({ cells, subject, isExternal }) => ({ cells, subject, isExternal }));
 }
 
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
@@ -680,56 +677,15 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     });
     applyRowEdge(ws, personalRows.length + 1, header.length, 'bottom');
 
-    // タブ別セクション: 統合テーブルの下に「そのタブのコマだけ」を抜き出した
-    // ミニ表をタブ順に積む (講師 × タブでシートを分けるとシート数が爆発する
-    // ため、同一シート内の縦積みにする)。
-    // - タブが 1 つのプロジェクトは統合表と同一内容になるので出さない
-    // - その講師の担当が無いタブのセクションは省く
-    // - 外部授業はどのタブにも属さないため統合表にのみ載せる
-    // - 学年(タブ) 列はセクション見出しで自明なので省き 5 列にする
-    if (project.tabs.length >= 2) {
-      const sectionHeader = ['日付', '時限', 'クラス', '科目', '備考'];
-      // 統合表は 行 1 (ヘッダ) 〜 行 personalRows.length + 1 を占める
-      let rowIdx = personalRows.length + 2;
-      project.tabs.forEach(tab => {
-        const tabRows = personalRows.filter(r => r.tabId === tab.id);
-        if (tabRows.length === 0) return;
-
-        rowIdx++; // 直前の表との間に空行を 1 つ挟む
-        const titleCell = ws.getCell(rowIdx, 1);
-        titleCell.value = `【${tab.name}】`;
-        applyCellStyle(titleCell, TITLE_ROW_STYLE);
-        rowIdx++;
-
-        sectionHeader.forEach((h, ci) => {
-          const cell = ws.getCell(rowIdx, ci + 1);
-          cell.value = h;
-          applyCellStyle(cell, TEACHER_HEADER_STYLE);
-        });
-        rowIdx++;
-
-        tabRows.forEach((row, ri) => {
-          // 統合表の [日付, 時限, クラス, 科目, 学年(タブ), 備考] から
-          // 学年(タブ) 列を除いた 5 列
-          const cells = [row.cells[0], row.cells[1], row.cells[2], row.cells[3], row.cells[5]];
-          cells.forEach((v, ci) => {
-            const cell = ws.getCell(rowIdx, ci + 1);
-            cell.value = v;
-            if (ci === 3 && row.subject) {
-              applyCellStyle(cell, makeSubjectCellStyle(row.subject, subjectColors));
-            } else {
-              applyCellStyle(cell, BODY_CELL_STYLE);
-            }
-          });
-          // 日付の区切りも統合表と同じ太線ルールで引く
-          if (ri === 0 || tabRows[ri - 1].cells[0] !== row.cells[0]) {
-            applyRowEdge(ws, rowIdx, sectionHeader.length, 'top');
-          }
-          rowIdx++;
-        });
-        applyRowEdge(ws, rowIdx - 1, sectionHeader.length, 'bottom');
-      });
-    }
+    // オートフィルタ: 学年(タブ) 列で「中3 だけ」「中1+中2」のように任意の
+    // 組み合わせに絞って確認・印刷できるようにする (タブ別にシートや
+    // セクションを分けるとシート・紙面が爆発するため、絞り込みは Excel の
+    // フィルタに任せる)。外部授業行は同列の種別 (予備校・高校等) で同様に
+    // 絞れる。
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: header.length },
+    };
 
     [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
   });
@@ -764,6 +720,13 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
       if (boundary) applyRowEdge(wsAll, ri + 2, allHeader.length, 'top');
     });
     applyRowEdge(wsAll, allRows.length + 1, allHeader.length, 'bottom');
+
+    // オートフィルタ: 個人シートと同様。講師名 × 学年(タブ) の組み合わせでも
+    // 絞れる (例: 中3 の全講師分だけを一覧・印刷)。
+    wsAll.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: allHeader.length },
+    };
 
     [10, 14, 14, 10, 12, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
   } else {
