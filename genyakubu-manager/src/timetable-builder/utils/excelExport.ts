@@ -100,8 +100,8 @@ const EXTERNAL_ROW_STYLE: CellStyleSpec = {
   border: THIN_BORDER,
 };
 
-// 講師別シートの日付区切り線。日付が変わる行の上辺を太線 (medium) にして
-// 1 日のまとまりを紙面で追いやすくする。
+// 日付区切り線 (全体の学年グリッドシート・講師別シート共通)。日付が変わる
+// 行の上辺を太線 (medium) にして 1 日のまとまりを紙面で追いやすくする。
 const DATE_EDGE_BORDER: ExcelJS.Border = { style: 'medium', color: { argb: 'FF333333' } };
 
 // 行の上辺 / 下辺を太線に上書きする。applyCellStyle は共有 style オブジェクト
@@ -286,6 +286,20 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
       }
       mergeStart += periods.length;
     });
+
+    // 日付の区切り: 日付が変わる行 (先頭日含む) の上辺 + 最終データ行の下辺を
+    // 太線にして 1 日のまとまりを追いやすくする (講師別シートと同じ見せ方)。
+    // 結合した日付セルは範囲内で style オブジェクトを共有する (exceljs の
+    // merge が slave.style = master.style を代入する) ため、必ず merge の後に
+    // 適用する — 先に塗ると列 1 の最終行に引いた下辺太線が merge で消える。
+    if (dates.length > 0 && periods.length > 0) {
+      let edgeRow = 3;
+      dates.forEach(() => {
+        applyRowEdge(ws, edgeRow, columnCount, 'top');
+        edgeRow += periods.length;
+      });
+      applyRowEdge(ws, edgeRow - 1, columnCount, 'bottom');
+    }
   });
 
   // 科目別集計シート (英語・数学… ごとに 1 枚)。
