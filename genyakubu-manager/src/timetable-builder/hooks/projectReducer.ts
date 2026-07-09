@@ -51,6 +51,8 @@ export type ProjectAction =
   | { type: 'tab/setDayStatus'; payload: { dateId: number; status: DayStatus | null; tabId?: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
+  | { type: 'config/setClassSubjectCount'; payload: { subject: string; classId: number; value: unknown; tabId?: number } }
+  | { type: 'config/setClassSubjectCountsMode'; payload: { tabId: number; enabled: boolean } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
   | { type: 'subject/addMany'; payload: { names: string[] } }
   | { type: 'config/copySubjectCountsToOthers'; payload: { sourceTabId: number } }
@@ -427,9 +429,29 @@ function applyAction(project: Project, action: ProjectAction): Project {
           }
         : {
             ...project,
-            tabs: project.tabs.map(t =>
-              t.id === project.activeTabId ? { ...t, config: { ...t.config, [key]: resultArr } } : t
-            ),
+            tabs: project.tabs.map(t => {
+              if (t.id !== project.activeTabId) return t;
+              // §N: classes 編集で消えたクラス id のクラス別コマ数上書きも
+              // 落とす。setList は空いた id を再利用するため、残すと後で
+              // 追加された無関係な新クラスに旧上書きが silent に付く。
+              let classCounts = t.config.classSubjectCounts;
+              if (key === 'classes' && classCounts) {
+                const stale = Object.keys(classCounts).filter(cid => !resultIds.has(Number(cid)));
+                if (stale.length > 0) {
+                  const next = { ...classCounts };
+                  stale.forEach(cid => { delete next[cid]; });
+                  classCounts = next;
+                }
+              }
+              return {
+                ...t,
+                config: {
+                  ...t.config,
+                  [key]: resultArr,
+                  ...(classCounts !== t.config.classSubjectCounts ? { classSubjectCounts: classCounts } : {}),
+                },
+              };
+            }),
           };
       // key='periods' のプール削除では NG キー (`${date}-${period}`) も掃除する
       // (dates/removeFromPool と同じ理由: 残すと同ラベル再追加で古い NG が
@@ -506,6 +528,50 @@ function applyAction(project: Project, action: ProjectAction): Project {
       );
       return { ...project, tabs: newTabs };
     }
+    case 'config/setClassSubjectCount': {
+      // §N: クラス別コマ数の上書き。共通値 (subjectCounts) と同じ値になったら
+      // 上書きエントリを消して共通値追従へ戻す (データを最小に保つ。クラス別
+      // モード中は共通値の変更経路が一括入力しか無いので挙動差は出ない)。
+      const { subject, classId, value, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const target = project.tabs.find(t => t.id === targetId);
+      if (!target) return project;
+      const clamped = Math.max(0, parseInt(String(value)) || 0);
+      const key = String(classId);
+      const overrides = target.config.classSubjectCounts || {};
+      const current = overrides[key]?.[subject];
+      const base = target.config.subjectCounts[subject] || 0;
+      const effective = (typeof current === 'number' && Number.isFinite(current)) ? current : base;
+      if (effective === clamped) return project; // F2d: 同値 no-op
+      const newByClass = { ...(overrides[key] || {}) };
+      if (clamped === base) {
+        delete newByClass[subject];
+      } else {
+        newByClass[subject] = clamped;
+      }
+      const newOverrides = { ...overrides, [key]: newByClass };
+      const newTabs = project.tabs.map(t =>
+        t.id === target.id ? { ...t, config: { ...t.config, classSubjectCounts: newOverrides } } : t
+      );
+      return { ...project, tabs: newTabs };
+    }
+    case 'config/setClassSubjectCountsMode': {
+      // §N: クラス別モードの ON/OFF。ON は空マップ {} を置く (上書きは個別
+      // 編集で積む)。OFF はフィールドごと落とし、全クラス共通値へ戻す
+      // (上書きの破棄は UI 側で確認済み。Undo で復元可能)。
+      const { tabId, enabled } = action.payload;
+      const target = project.tabs.find(t => t.id === tabId);
+      if (!target) return project;
+      const isOn = !!target.config.classSubjectCounts;
+      if (enabled === isOn) return project; // F2d: 同状態 no-op
+      const newTabs = project.tabs.map(t => {
+        if (t.id !== target.id) return t;
+        if (enabled) return { ...t, config: { ...t.config, classSubjectCounts: {} } };
+        const { classSubjectCounts: _omit, ...restConfig } = t.config;
+        return { ...t, config: restConfig };
+      });
+      return { ...project, tabs: newTabs };
+    }
     case 'config/fillSubjectCounts': {
       // L4a: あるタブの全科目のコマ数を一括で同じ値にする (18 マス手入力の
       // 解消)。atomic で Undo 1 ステップ。全科目が既に同値なら no-op (F2d)。
@@ -515,11 +581,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const clamped = Math.max(0, parseInt(String(value)) || 0);
       const subjects = project.subjects || [];
       if (subjects.length === 0) return project;
-      if (subjects.every(s => (target.config.subjectCounts[s] || 0) === clamped)) return project;
+      // §N: クラス別上書きが残っていれば「全科目を N コマに」の意図に合わせて
+      // クリアする (残すと表示値が N にならないクラスが出る)。
+      const hasOverrides = Object.values(target.config.classSubjectCounts || {})
+        .some(byClass => byClass && Object.keys(byClass).length > 0);
+      if (!hasOverrides && subjects.every(s => (target.config.subjectCounts[s] || 0) === clamped)) return project;
       const newCounts = { ...target.config.subjectCounts };
       subjects.forEach(s => { newCounts[s] = clamped; });
       const newTabs = project.tabs.map(t =>
-        t.id === target.id ? { ...t, config: { ...t.config, subjectCounts: newCounts } } : t
+        t.id === target.id
+          ? {
+              ...t,
+              config: {
+                ...t.config,
+                subjectCounts: newCounts,
+                // クラス別モード自体は維持し、上書きだけ空にする
+                ...(t.config.classSubjectCounts ? { classSubjectCounts: {} } : {}),
+              },
+            }
+          : t
       );
       return { ...project, tabs: newTabs };
     }
@@ -535,13 +615,25 @@ function applyAction(project: Project, action: ProjectAction): Project {
       let changed = false;
       const newTabs = project.tabs.map(t => {
         if (t.id === sourceTabId) return t;
-        const tabChanged = subjects.some(
+        // §N: コピー先にクラス別上書きが残っていると「上書きされます」の
+        // 約束に反して実効値がソースと一致しないため、上書きもクリアする
+        // (クラスはタブ固有なのでソースの上書き自体はコピーしない)。
+        const hasOverrides = Object.values(t.config.classSubjectCounts || {})
+          .some(byClass => byClass && Object.keys(byClass).length > 0);
+        const tabChanged = hasOverrides || subjects.some(
           s => (t.config.subjectCounts[s] || 0) !== (source.config.subjectCounts[s] || 0));
         if (!tabChanged) return t;
         changed = true;
         const newCounts = { ...t.config.subjectCounts };
         subjects.forEach(s => { newCounts[s] = source.config.subjectCounts[s] || 0; });
-        return { ...t, config: { ...t.config, subjectCounts: newCounts } };
+        return {
+          ...t,
+          config: {
+            ...t.config,
+            subjectCounts: newCounts,
+            ...(t.config.classSubjectCounts ? { classSubjectCounts: {} } : {}),
+          },
+        };
       });
       if (!changed) return project;
       return { ...project, tabs: newTabs };
@@ -742,6 +834,23 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newTabs = project.tabs.map(tab => {
         const newCounts = { ...tab.config.subjectCounts };
         delete newCounts[name];
+        // §N: クラス別上書きからも該当科目を落とす (残すと同名科目の再追加で
+        // 古い上書きが silent に復活する)
+        let newClassCounts = tab.config.classSubjectCounts;
+        if (newClassCounts) {
+          let touched = false;
+          const next: Record<string, Record<string, number>> = {};
+          Object.entries(newClassCounts).forEach(([cid, byClass]) => {
+            if (byClass && name in byClass) {
+              const { [name]: _omit, ...rest } = byClass;
+              next[cid] = rest;
+              touched = true;
+            } else {
+              next[cid] = byClass;
+            }
+          });
+          if (touched) newClassCounts = next;
+        }
         const newSch = {};
         Object.keys(tab.schedule).forEach(k => {
           const e = tab.schedule[k];
@@ -755,7 +864,15 @@ function applyAction(project: Project, action: ProjectAction): Project {
             newSch[k] = e;
           }
         });
-        return { ...tab, config: { ...tab.config, subjectCounts: newCounts }, schedule: newSch };
+        return {
+          ...tab,
+          config: {
+            ...tab.config,
+            subjectCounts: newCounts,
+            ...(newClassCounts !== tab.config.classSubjectCounts ? { classSubjectCounts: newClassCounts } : {}),
+          },
+          schedule: newSch,
+        };
       });
       const newTeachers = project.teachers.map(t => ({
         ...t,

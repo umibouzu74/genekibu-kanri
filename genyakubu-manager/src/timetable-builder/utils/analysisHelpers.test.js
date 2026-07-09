@@ -972,6 +972,104 @@ describe('computeInfeasibilities — M8 追加分', () => {
   });
 });
 
+// ─── §N: クラス別コマ数 (classSubjectCounts) ─────────────────────────
+
+describe('クラス別コマ数 (§N classSubjectCounts)', () => {
+  // 2 日 × 2 時限、クラス A (id=1) は共通値、B (id=2) は上書きを持つ
+  const overrideConfig = (overrides = {}) => ({
+    dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+    periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+    classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+    subjectCounts: { '英語': 2, '数学': 2 },
+    classSubjectCounts: { '2': { '英語': 1, '数学': 1 } },
+    ...overrides,
+  });
+
+  it('computeDashboard: total はクラス別に解決したクォータの合算', () => {
+    // A: 2+2=4、B: 1+1=2 → total 6 (一律なら 8)
+    expect(computeDashboard({}, overrideConfig()).total).toBe(6);
+  });
+
+  it('computeViolations subjectOver: クォータはセルのクラスで解決する', () => {
+    // 英語: A は共通値 1、B は上書き 2。両クラスに英語 2 コマ (別日) を置くと
+    // A の 2 コマ目だけが超過になる。
+    const config = overrideConfig({
+      subjectCounts: { '英語': 1 },
+      classSubjectCounts: { '2': { '英語': 2 } },
+    });
+    const schedule = {
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '高松' },
+      [makeKey(2, 1, 2)]: { subject: '英語', teacher: '高松' },
+    };
+    const a = computeActiveAnalysis(config, schedule, {});
+    const v = computeViolations({
+      currentConfig: config,
+      currentSchedule: schedule,
+      errorKeys: a.errorKeys,
+      dailySubjectMap: a.dailySubjectMap,
+      subjectOrders: a.subjectOrders,
+      teacherDailyCounts: {},
+      maxDailyHours: 6,
+    });
+    expect(v.subjectOver.count).toBe(1);
+    expect(v.subjectOver.firstKey).toBe(makeKey(2, 1, 1)); // A の 2 コマ目
+  });
+
+  it('computeInfeasibilities capacity: demand はクラス別クォータの合算', () => {
+    // 英語 demand = A(2) + B(1) = 3。capacity = 1 講師 × 2 日 × min(1, 2 時限) = 2 → 不足
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: overrideConfig(),
+      maxDailyHours: 1,
+    });
+    expect(r.subjectCapacityShortage.count).toBe(1);
+    expect(r.subjectCapacityShortage.items[0]).toMatchObject({ subject: '英語', demand: 3, capacity: 2 });
+  });
+
+  it('computeInfeasibilities quotaCellMismatch: クォータ合計をクラス別に比較', () => {
+    // セルは各クラス 4。A の合計 4 = 一致、B の合計 2 ≠ 4 → B だけ item 化
+    const r = computeInfeasibilities({
+      teachers: [],
+      commonSubjects: ['英語', '数学'],
+      currentConfig: overrideConfig(),
+      maxDailyHours: 6,
+    });
+    expect(r.quotaCellMismatch.count).toBe(1);
+    expect(r.quotaCellMismatch.items[0]).toEqual({ totalQuota: 2, cells: 4, className: 'B' });
+  });
+
+  it('computeInfeasibilities subjectQuotaOverDays: 最大クォータのクラスで判定', () => {
+    // 共通値 2 ≤ 2 日だが、B の上書き 3 > 2 日 → 検出 (quota は最大値)
+    const r = computeInfeasibilities({
+      teachers: [],
+      commonSubjects: ['英語'],
+      currentConfig: overrideConfig({
+        subjectCounts: { '英語': 2 },
+        classSubjectCounts: { '2': { '英語': 3 } },
+      }),
+      maxDailyHours: 6,
+    });
+    expect(r.subjectQuotaOverDays.count).toBe(1);
+    expect(r.subjectQuotaOverDays.items[0]).toEqual({ subject: '英語', quota: 3, days: 2 });
+  });
+
+  it('computeInfeasibilities capacity: 常時合同の割引はグループ内最大クォータを残す', () => {
+    // A(2) + B(1) が常時合同 → demand = max(2, 1) = 2 (合同で同時消化 + A の残り 1 は単独)
+    const r = computeInfeasibilities({
+      teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: [] }],
+      commonSubjects: ['英語'],
+      currentConfig: overrideConfig(),
+      maxDailyHours: 1,
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['A', 'B'], dates: null }],
+    });
+    // demand 2 ≤ capacity 2 → 不足なし (割引が効いている)
+    expect(r.subjectCapacityShortage.count).toBe(0);
+  });
+});
+
 describe('computeInfeasibilities — 合同グループの capacity 割引 (校正レビュー対応)', () => {
   it('常時合同 (dates:null) のクラス群は 1 クラス相当に割り引いて false positive を出さない', () => {
     // 2 クラス常時合同・講師 1 名・1 日 1 時限・クォータ 1:

@@ -12,6 +12,7 @@
 import { makeKey, makeExternalKey, findCombinedGroup } from './scheduleKey';
 import { canTeachSubject, isNgSlot, isNgClass, resolveTeacherDailyLimit, resolveTeacherConsecutive } from '../logic/constraints/teacherConstraints';
 import { computeAutoNgByTeacher } from './autoNg';
+import { quotaForClass, quotasForClass } from './subjectQuota';
 import { resolveGenerationParams } from './generationParams';
 import type { EffectiveConfig, Project, Schedule } from '../types';
 
@@ -29,7 +30,7 @@ export interface SubjectShortage {
 
 export function summarizeUnfilled(
   schedule: Schedule | null | undefined,
-  config: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes' | 'subjectCounts'> | null | undefined,
+  config: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes' | 'subjectCounts' | 'classSubjectCounts'> | null | undefined,
 ): { cells: UnfilledCell[]; shortages: SubjectShortage[] } {
   if (!schedule || !config) return { cells: [], shortages: [] };
   const cells: UnfilledCell[] = [];
@@ -55,11 +56,12 @@ export function summarizeUnfilled(
   });
   // 科目別の不足 = Σ_クラス max(0, クォータ − そのクラスの配置数)。
   // 講師未定でも科目が入っていれば「配置済み」に数える (不足は科目枠の話)。
-  const shortages = Object.entries(config.subjectCounts || {})
-    .map(([subject, quota]) => ({
+  // §N: クォータはクラス別上書きを考慮してクラスごとに解決する。
+  const shortages = Object.keys(config.subjectCounts || {})
+    .map(subject => ({
       subject,
       missing: (config.classes || []).reduce(
-        (sum, c) => sum + Math.max(0, (Number(quota) || 0) - (placedByClass[c.id]?.[subject] || 0)),
+        (sum, c) => sum + Math.max(0, quotaForClass(config, c.id, subject) - (placedByClass[c.id]?.[subject] || 0)),
         0),
     }))
     .filter(s => s.missing > 0);
@@ -89,7 +91,7 @@ export interface UnfilledCellDiagnosis {
 
 export function diagnoseUnfilledCells(
   schedule: Schedule | null | undefined,
-  config: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes' | 'subjectCounts'> | null | undefined,
+  config: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes' | 'subjectCounts' | 'classSubjectCounts'> | null | undefined,
   project: Pick<Project, 'teachers' | 'combinedGroups' | 'externalCounts' | 'externalSessions' | 'maxDailyHours' | 'maxConsecutivePeriods'> | null | undefined,
 ): Map<string, UnfilledCellDiagnosis> {
   const result = new Map<string, UnfilledCellDiagnosis>();
@@ -141,6 +143,10 @@ export function diagnoseUnfilledCells(
 
   const periodsOrder = (config.periods || []).map(p => p.id);
 
+  // §N: クラス別クォータをクラスごとに 1 回だけ解決 (セルごとの再計算を避ける)
+  const quotasByClassId = new Map(
+    (config.classes || []).map(c => [c.id, quotasForClass(config, c.id)] as const));
+
   (config.dates || []).forEach(d => {
     (config.periods || []).forEach(p => {
       (config.classes || []).forEach(c => {
@@ -151,8 +157,8 @@ export function diagnoseUnfilledCells(
         // このセルに置くべき科目: 科目固定セルはその科目、空セルはクォータ残のある科目
         const deficitSubjects = entry?.subject
           ? [entry.subject]
-          : Object.entries(config.subjectCounts || {})
-              .filter(([s, quota]) => (Number(quota) || 0) - (placedByClass[c.id]?.[s] || 0) > 0)
+          : Object.entries(quotasByClassId.get(c.id) || {})
+              .filter(([s, quota]) => quota - (placedByClass[c.id]?.[s] || 0) > 0)
               .map(([s]) => s);
         if (deficitSubjects.length === 0) {
           result.set(key, { kind: 'noQuotaLeft', candidateCount: 0, reasons: { ng: 0, busy: 0, overDaily: 0, overTotal: 0, overConsecutive: 0 } });

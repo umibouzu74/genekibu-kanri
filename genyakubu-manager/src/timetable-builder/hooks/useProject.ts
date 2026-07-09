@@ -130,6 +130,17 @@ export function useProject() {
     dispatch({ type: 'config/setSubjectCount', payload: { subject, value, tabId } });
   }, [dispatch]);
 
+  // §N: クラス別コマ数の上書き (同一タブ内で学年混在などクラスごとに
+  // 必要コマ数が違うケース)。読み取りは utils/subjectQuota を使う。
+  const handleClassSubjectCountChange = useCallback((subject: string, classId: number, value: unknown, tabId?: number) => {
+    dispatch({ type: 'config/setClassSubjectCount', payload: { subject, classId, value, tabId } });
+  }, [dispatch]);
+
+  // §N: クラス別コマ数モードの ON/OFF (OFF で上書きを破棄して共通値へ戻す)
+  const setClassSubjectCountsMode = useCallback((tabId: number, enabled: boolean) => {
+    dispatch({ type: 'config/setClassSubjectCountsMode', payload: { tabId, enabled } });
+  }, [dispatch]);
+
   // --- タブ別『使う日』(activeDateIds) + 共通日付プール (v4 Y) ---
   // ラベル配列でタブの使う日を設定 (新規ラベルはプールへ merge)。手動入力 / 自動生成共通。
   const handleSetTabDatesByLabels = useCallback((labels: string[], tabId?: number) => {
@@ -247,6 +258,8 @@ export function useProject() {
     // タブ別 config
     handleListConfigChange,
     handleSubjectCountChange,
+    handleClassSubjectCountChange,
+    setClassSubjectCountsMode,
     // タブ別『使う日』+ 共通日付プール (v4 Y)
     handleSetTabDatesByLabels,
     handleToggleTabDate,

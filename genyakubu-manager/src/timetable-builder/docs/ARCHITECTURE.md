@@ -115,8 +115,11 @@ Project {
   activeTabId
   dates[], periods[]          // v4: 全タブ共通の講習カレンダー (project レベル)
                               //   dates/periods は全学年の和集合「プール」(NG はこの全日・全時限に設定可)
-  tabs: [{ id, name, config: { classes[], subjectCounts, activeDateIds?, activePeriodIds? }, schedule,
-           dayStatuses? }]    //   activeDateIds/activePeriodIds: そのタブが使う日・時限 (未指定=全て)
+  tabs: [{ id, name, config: { classes[], subjectCounts, classSubjectCounts?, activeDateIds?, activePeriodIds? },
+           schedule, dayStatuses? }]
+                              //   activeDateIds/activePeriodIds: そのタブが使う日・時限 (未指定=全て)
+                              //   classSubjectCounts: クラス別コマ数の上書き { [String(classId)]: { [科目]: n } }
+                              //     (§N: 学年混在タブ用。読み取りは utils/subjectQuota.quotaForClass 経由)
                               //   dayStatuses: 日付ごとの手動チェック { [dateId]: 'ok'|'check' }。
                               //   「不備あり」は保存せず schedule から導出 (computeIncompleteDateIds)
   teachers: [{ name, subjects[], ngSlots[], ngClasses[], priorityClasses[] }]
@@ -132,6 +135,10 @@ Project {
 - **v4: `dates` / `periods` は project 共通**（全タブが同じ講習カレンダーを参照）。
   `classes` / `subjectCounts` は引き続きタブ（学年）ごと。これにより講師不在・NG
   （`teacher.ngSlots`、ラベルベースでもともと全タブ共通）が全タブで噛み合う。
+  - **§N: `subjectCounts` は「1 クラスあたり」の共通値**。同一タブにコマ数の違う
+    クラス（学年混在など）を置く場合は `classSubjectCounts` で上書きする。
+    クォータを読む側は `subjectCounts` を直接引かず `utils/subjectQuota`
+    （`quotaForClass` / `quotasForClass`）を経由すること。
   - **`dates` / `periods` は全学年の和集合「プール」**。各タブは `config.activeDateIds` /
     `config.activePeriodIds`（未指定=全日・全時限）で「この学年が実際に使う日・時限」を
     選ぶ（学年で期間や時間帯がズレても・歯抜けがあってもOK。例: 中３=昼の時限のみ、

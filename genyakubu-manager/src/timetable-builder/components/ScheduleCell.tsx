@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
+import { quotaForClass } from '../utils/subjectQuota';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
@@ -62,7 +63,8 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isLocked = entry.locked;
   const isConflict = analysis.conflictMap[`${dLabel}-${pLabel}-${entry.teacher}`];
   const order = analysis.subjectOrders[key] || 0;
-  const maxCnt = currentConfig.subjectCounts[entry.subject] || 0;
+  // §N: クォータはこのセルのクラスで解決 (クラス別上書き対応)
+  const maxCnt = entry.subject ? quotaForClass(currentConfig, classId, entry.subject) : 0;
   const isOver = maxCnt > 0 && order > maxCnt;
 
   const subjDupKey = `c${classId}-d${dateId}-${entry.subject}`;

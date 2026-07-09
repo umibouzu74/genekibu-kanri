@@ -7,6 +7,7 @@
 import { makeKey, makeExternalKey, findCombinedGroup, effectiveConfigForTab } from '../utils/scheduleKey';
 import { forEachCountedAssignment } from '../utils/tabUsage';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
+import { quotasForClass } from '../utils/subjectQuota';
 import {
   canTeachSubject,
   isNgSlot,
@@ -226,6 +227,9 @@ export function generateSinglePattern({
   // 構造的に不可能になる (上限まで探索して部分解 + 不可視セルへのゴミ書込)。
   const currentConfig = effectiveConfigForTab(project, activeTab);
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
+  // §N: 科目クォータはクラス別上書きがあり得るので、クラスごとに解決した
+  // マップを classes 配列と同じ index (cIdx) で引けるよう pre-compute する。
+  const quotasByCIdx = currentConfig.classes.map(c => quotasForClass(currentConfig, c.id));
   const combinedGroups = project.combinedGroups || [];
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
   const maxIterations = project.maxIterations ?? MAX_ITERATIONS;
@@ -437,12 +441,12 @@ export function generateSinglePattern({
             periods: currentConfig.periods,
             classId: c.id,
             placedCounts: tempCnt[cIdx],
-            quotas: currentConfig.subjectCounts,
+            quotas: quotasByCIdx[cIdx],
             rng,
           });
 
       for (const s of subjectsToTry) {
-        if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, currentConfig.subjectCounts)) continue;
+        if (!fixedSubject && !hasSubjectQuotaRemaining(tempCnt, cIdx, s, quotasByCIdx[cIdx])) continue;
         // 同日・同クラスに同じ科目があるかチェック
         if (!fixedSubject && hasSubjectInSameDayClass(tempSch, currentConfig.periods, d.id, c.id, s)) continue;
 
@@ -489,7 +493,7 @@ export function generateSinglePattern({
               groupTeacher = otherEntry.teacher;
             }
             // 科目枠が残っていない場合は不可
-            if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, currentConfig.subjectCounts)) {
+            if (!otherEntry?.subject && !hasSubjectQuotaRemaining(tempCnt, otherCIdx, s, quotasByCIdx[otherCIdx])) {
               canUseCombined = false;
               break;
             }

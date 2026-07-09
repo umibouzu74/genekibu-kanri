@@ -47,8 +47,17 @@ export type Schedule = Record<string, ScheduleEntry>;
 export interface TabConfig {
   /** クラスは tab-local (タブ間で同 id が別クラスを指し得る) */
   classes: Entity[];
-  /** 科目 → このタブでのコマ数上限 */
+  /** 科目 → このタブでのコマ数上限 (1 クラスあたり) */
   subjectCounts: Record<string, number>;
+  /**
+   * クラス別のコマ数上書き (§N: 同一タブ内で学年混在などクラスごとに
+   * 必要コマ数が違うケース用)。外側キーは String(classId)、内側は
+   * 科目 → コマ数。エントリの無いクラス / 科目は subjectCounts の共通値へ
+   * フォールバックする。undefined = クラス別モードオフ (全クラス共通)、
+   * {} = モードオンだが上書きなし。読み取りは必ず
+   * utils/subjectQuota.quotaForClass / quotasForClass を経由すること。
+   */
+  classSubjectCounts?: Record<string, Record<string, number>> | null;
   /**
    * このタブが使う日 (project.dates プールの id サブセット)。
    * undefined / null = 全日使う (後方互換の既定)。[] = 0 日。

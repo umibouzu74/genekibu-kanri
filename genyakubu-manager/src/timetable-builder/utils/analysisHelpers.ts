@@ -4,6 +4,7 @@
 
 import { makeKey, makeExternalKey, makeNgKey, parseKey, effectiveConfigForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
+import { quotaForClass, quotasForClass } from './subjectQuota';
 import { forEachCountedAssignment } from './tabUsage';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import type { AutoNgEntries } from './autoNg';
@@ -217,7 +218,10 @@ export function computeActiveAnalysis(
 // 数えない (violation 集計・生成・Excel と同じ E-3 絞り込み)。数えると
 // 埋めた日をタブの使う日から外しても進捗 % が下がらない。
 export function computeDashboard(currentSchedule: Schedule, currentConfig: EffectiveConfig) {
-  const total = Object.values(currentConfig.subjectCounts).reduce((a, b) => a + b, 0) * currentConfig.classes.length;
+  // §N: クォータはクラス別上書きがあり得るのでクラスごとに解決して合算する
+  const total = currentConfig.classes.reduce(
+    (sum, c) => sum + Object.values(quotasForClass(currentConfig, c.id)).reduce((a, b) => a + b, 0),
+    0);
   const dateIds = new Set(currentConfig.dates.map(d => d.id));
   const periodIds = new Set(currentConfig.periods.map(p => p.id));
   const classIds = new Set(currentConfig.classes.map(c => c.id));
@@ -297,7 +301,9 @@ export function computeTabViolationCounts({
     Object.entries(tabAnalysis.subjectOrders).forEach(([key, order]) => {
       const subject = tab.schedule[key]?.subject;
       if (!subject) return;
-      const maxCnt = tab.config.subjectCounts[subject] || 0;
+      // §N: クォータはセルの属するクラスで解決 (クラス別上書き対応)
+      const classId = parseKey(key)?.classId;
+      const maxCnt = classId != null ? quotaForClass(tab.config, classId, subject) : 0;
       if (maxCnt > 0 && order > maxCnt) subjectOverCount++;
     });
     result[tab.id] = tabAnalysis.errorKeys.length + subjectDupCount + subjectOverCount + tabAnalysis.ngViolationKeys.length;
@@ -385,7 +391,9 @@ export function computeViolations({
     const entry = currentSchedule[key];
     const subject = entry?.subject;
     if (!subject) return;
-    const maxCnt = currentConfig.subjectCounts[subject] || 0;
+    // §N: クォータはセルの属するクラスで解決 (クラス別上書き対応)
+    const classId = parseKey(key)?.classId;
+    const maxCnt = classId != null ? quotaForClass(currentConfig, classId, subject) : 0;
     if (maxCnt > 0 && order > maxCnt) {
       subjectOverCount++;
       if (!subjectOverFirstKey) subjectOverFirstKey = key;
@@ -504,6 +512,14 @@ export function computeInfeasibilities({
   const reals = (teachers || []).filter(t => t && t.name && t.name !== '未定');
   const subjects = commonSubjects || [];
 
+  // §N: クラス別上書きを考慮した科目クォータの最大値。C1 (置ける日数) と
+  // C4 (日数超過) は「最も要求の大きいクラス」が構造的に満たせるかを見る。
+  // クラス 0 件のタブは従来どおり共通値で判定する。
+  const maxQuotaOf = (subject: string): number =>
+    currentConfig.classes.length > 0
+      ? currentConfig.classes.reduce((m, c) => Math.max(m, quotaForClass(currentConfig, c.id, subject)), 0)
+      : (currentConfig.subjectCounts?.[subject] || 0);
+
   // C1: noTeacherForSlot — 手動NG + 自動NG 両方で candidate を絞る。
   // 自動NG (他学年セッションとの時間重複) も含めないと、全候補講師が
   // 予備校に取られているスロットを『不可能』として警告できない。
@@ -521,7 +537,7 @@ export function computeInfeasibilities({
   //    する (そこの NG を解消しない限り構造的に解けない)
   const noTeacherItems: Array<{ date: string; period: string; subject: string }> = [];
   subjects.forEach(subject => {
-    const quota = currentConfig.subjectCounts?.[subject] || 0;
+    const quota = maxQuotaOf(subject);
     if (quota === 0) return;
     const teaches = reals.filter(t => t.subjects?.includes(subject));
     if (teaches.length === 0) return; // C2 が科目単位で検出済み
@@ -576,21 +592,33 @@ export function computeInfeasibilities({
     }
     return cap;
   };
-  const classLabels = new Set(currentConfig.classes.map(c => c.label));
   subjects.forEach(subject => {
     // 合同グループ (全日: dates === null) は 1 講師スロットで複数クラスの
     // demand を同時に消化できるため、常時合同のクラス群は 1 クラス相当に
     // 割り引いて数える。これをしないと「常時 2 クラス合同 + 講師 1 名」の
     // 正常な構成が『致命』と誤警告される。日付限定の合同 (dates 指定あり)
     // は保守的に割引しない (警告が出るのは供給不足側に倒れる)。
-    let discount = 0;
+    // §N: demand はクラス別クォータの合算。合同の割引は「グループ内で
+    // 最大のクォータだけ残す」(合同で一緒に消化できるのは共通部分で、
+    // 一番多いクラスの残りは単独コマが要る) に一般化する。全クラス共通値
+    // なら従来の (クラス数 − (overlap−1)) × quota と一致する。
+    const quotaByLabel = new Map(
+      currentConfig.classes.map(c => [c.label, quotaForClass(currentConfig, c.id, subject)] as const));
+    let demand = 0;
+    quotaByLabel.forEach(q => { demand += q; });
     (combinedGroups || []).forEach(g => {
       if (g.subject !== subject || g.dates !== null) return;
-      const overlap = (g.classes || []).filter(label => classLabels.has(label));
-      if (overlap.length >= 2) discount += overlap.length - 1;
+      const overlapQuotas = (g.classes || [])
+        .filter(label => quotaByLabel.has(label))
+        .map(label => quotaByLabel.get(label) || 0);
+      if (overlapQuotas.length >= 2) {
+        demand -= overlapQuotas.reduce((a, b) => a + b, 0) - Math.max(...overlapQuotas);
+      }
     });
-    const effectiveClasses = Math.max(1, currentConfig.classes.length - discount);
-    const demand = (currentConfig.subjectCounts?.[subject] || 0) * effectiveClasses;
+    // 従来の Math.max(1, effectiveClasses) 相当の床: 多重合同で割引し過ぎても
+    // 最低 1 クラス分 (最大クォータ) の需要は残す。クラス 0 件のタブも
+    // 従来どおり共通値 1 クラス分で判定する (maxQuotaOf がフォールバック)。
+    demand = Math.max(demand, maxQuotaOf(subject));
     if (demand === 0) return;
     const eligible = reals.filter(t => t.subjects?.includes(subject));
     const capacity = eligible.reduce((sum, t) => sum + teacherCapacity(t), 0);
@@ -612,26 +640,30 @@ export function computeInfeasibilities({
   // 集約する (ロック無しの共通ケースで item がクラス数分並ぶのを防ぐ)。
   const quotaMismatchItems: Array<{ totalQuota: number; cells: number; className?: string; lockedEmpty?: number }> = [];
   const cellsPerClass = currentConfig.dates.length * currentConfig.periods.length;
-  const totalQuota = subjects.reduce((sum, s) => sum + (currentConfig.subjectCounts?.[s] || 0), 0);
   if (cellsPerClass > 0) {
+    // §N: クォータ合計もクラス別に計算する (クラス別上書きで合計が
+    // クラスごとに違い得る)。全クラスで (合計, セル数) が同値なら従来どおり
+    // 1 item に集約し、違うクラスがあれば不一致クラスだけ列挙する。
     const perClass = currentConfig.classes.map(c => {
       let lockedEmpty = 0;
       currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => {
         const e = currentSchedule?.[makeKey(d.id, p.id, c.id)];
         if (e?.locked && !e.subject) lockedEmpty++;
       }));
-      return { className: c.label, cells: cellsPerClass - lockedEmpty, lockedEmpty };
+      const totalQuota = subjects.reduce((sum, s) => sum + quotaForClass(currentConfig, c.id, s), 0);
+      return { className: c.label, totalQuota, cells: cellsPerClass - lockedEmpty, lockedEmpty };
     });
-    const mismatched = perClass.filter(pc => totalQuota !== pc.cells);
+    const mismatched = perClass.filter(pc => pc.totalQuota !== pc.cells);
     if (mismatched.length > 0) {
-      const allSame = perClass.every(pc => pc.cells === perClass[0].cells);
+      const allSame = perClass.every(pc =>
+        pc.cells === perClass[0].cells && pc.totalQuota === perClass[0].totalQuota);
       if (allSame) {
-        const { cells, lockedEmpty } = perClass[0];
+        const { totalQuota, cells, lockedEmpty } = perClass[0];
         quotaMismatchItems.push({ totalQuota, cells, ...(lockedEmpty > 0 ? { lockedEmpty } : {}) });
       } else {
         mismatched.forEach(pc => {
           quotaMismatchItems.push({
-            totalQuota,
+            totalQuota: pc.totalQuota,
             cells: pc.cells,
             className: pc.className,
             ...(pc.lockedEmpty > 0 ? { lockedEmpty: pc.lockedEmpty } : {}),
@@ -641,10 +673,12 @@ export function computeInfeasibilities({
     }
   }
 
-  // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)
+  // C4: subjectQuotaOverDays — コマ数 > 日数 (同日重複禁止で達成不能)。
+  // §N: クラス別上書きがあるときは最大クォータのクラスで判定する
+  // (どれか 1 クラスでも超えていれば構造的に解けない)。
   const quotaOverDaysItems: Array<{ subject: string; quota: number; days: number }> = [];
   subjects.forEach(subject => {
-    const quota = currentConfig.subjectCounts?.[subject] || 0;
+    const quota = maxQuotaOf(subject);
     if (quota > currentConfig.dates.length) {
       quotaOverDaysItems.push({ subject, quota, days: currentConfig.dates.length });
     }

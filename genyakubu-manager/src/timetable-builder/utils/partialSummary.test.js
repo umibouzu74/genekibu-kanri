@@ -68,6 +68,24 @@ describe('summarizeUnfilled — クラス別の不足集計 (§M)', () => {
   });
 });
 
+describe('summarizeUnfilled — クラス別コマ数の上書き (§N)', () => {
+  it('不足はクラス別の実効クォータで数える', () => {
+    const config2 = {
+      dates: [{ id: 1, label: '12/25' }, { id: 2, label: '12/26' }],
+      periods: [{ id: 1, label: '1限' }],
+      classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+      subjectCounts: { '英語': 2 },
+      classSubjectCounts: { '2': { '英語': 1 } },
+    };
+    // A は英語 1/2 (不足 1)、B は英語 1/1 (充足)。一律 2 なら不足 2 になる構成。
+    const { shortages } = summarizeUnfilled({
+      [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+      [makeKey(1, 1, 2)]: { subject: '英語', teacher: '田中' },
+    }, config2);
+    expect(shortages).toEqual([{ subject: '英語', missing: 1 }]);
+  });
+});
+
 describe('diagnoseUnfilledCells (N3b)', () => {
   const teacher = (name, subjects, extra = {}) =>
     ({ name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [], ...extra });
@@ -151,6 +169,18 @@ describe('diagnoseUnfilledCells (N3b)', () => {
     };
     const d = diagnoseUnfilledCells(schedule2, config3, baseProject([teacher('田中', ['数学'])])).get(makeKey(1, 3, 1));
     expect(d.kind).toBe('noQuotaLeft');
+  });
+
+  it('クラス別の上書きクォータで noQuotaLeft を判定する (§N)', () => {
+    // 数学の共通値 2 だが、B (id=2) は上書き 0 → B の空セルは「置く科目なし」
+    const config3 = {
+      ...diagConfig,
+      classes: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }],
+      classSubjectCounts: { '2': { '数学': 0 } },
+    };
+    const diag = diagnoseUnfilledCells({}, config3, baseProject([teacher('田中', ['数学'])]));
+    expect(diag.get(makeKey(1, 1, 1)).kind).toBe('searchExhausted'); // A は従来どおり
+    expect(diag.get(makeKey(1, 1, 2)).kind).toBe('noQuotaLeft');    // B は枠なし
   });
 
   it("'未定' が担当科目を持てば常に候補になる (solver の placeholder 規則)", () => {
