@@ -86,6 +86,18 @@ print-only DOM (`@media screen { display:none }` / `@media print { display:block
 popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 `toasts.error` 表示まで実装済みなので運用コストは小さい。
 
+## Excel 出力の印刷デフォルト (講習時間割作成の講師別 Excel)
+
+- 講師別 Excel は **B4 縦 + 先頭行 (タイトル/ヘッダ) のページ繰り返し**を
+  pageSetup に埋め込み済み (`timetable-builder/utils/excelExport.ts` の
+  `applyTeacherPrintDefaults`、P1)。各講師シートの先頭行は
+  「講師名 — プロジェクト名 / 期間 / 出力日」のタイトル。
+- **両面 (長辺綴じ) は xlsx に保存できない** — OOXML の pageSetup に duplex
+  属性が無く、プリンタドライバ固有の DEVMODE バイナリ
+  (`xl/printerSettings/*.bin`) にしか載らないため。exceljs 非対応かつ、
+  埋め込んでも開く端末・プリンタが変わると効かない。両面はプリンタ側の
+  既定設定で運用する。**DEVMODE バイナリを後付け注入する案は再提案しない。**
+
 ## 参考: 今後の候補として残っている未実装アイデア
 
 ブラッシュアップ作業のメモ。優先度は都度相談。
