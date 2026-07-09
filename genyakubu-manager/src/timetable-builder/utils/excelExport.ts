@@ -54,7 +54,8 @@ const HEADER_STYLE: CellStyleSpec = {
   border: THIN_BORDER,
 };
 
-// 学年グリッドシート先頭のタイトル行 (N5a)。塗りなしの太字テキストのみ。
+// シート先頭のタイトル行 (N5a: 学年グリッド / P1: 講師別個人シート)。
+// 塗りなしの太字テキストのみ。
 const TITLE_ROW_STYLE: CellStyleSpec = {
   font: { bold: true, size: 12 },
   alignment: { horizontal: 'left', vertical: 'middle' },
@@ -643,6 +644,26 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
   return rows.map(({ cells, subject, isExternal }) => ({ cells, subject, isExternal }));
 }
 
+// ─── 講師別 Excel: 印刷デフォルト (P1) ─────────────────────────────
+// B4 縦をシートの pageSetup に埋め込み、Excel で開いてそのまま印刷すれば
+// B4 縦になるようにする。先頭 repeatRows 行 (タイトル/ヘッダ) は 2 ページ目
+// 以降にも繰り返し印刷する。
+//
+// 両面 (長辺綴じ) はここでは設定**できない** — OOXML の pageSetup に duplex
+// 属性は存在せず、プリンタドライバ固有の DEVMODE バイナリ
+// (xl/printerSettings/*.bin) にしか載らないため、exceljs 非対応かつ
+// 埋め込んでも開く端末・プリンタが変わると効かない。両面・綴じ方向は
+// プリンタ側の既定設定で運用する (ファイル埋め込み案は再検討しない)。
+// ECMA-376 ST_PaperSize: 12 = B4。exceljs の PaperSize enum は主要サイズしか
+// 定義しておらず B4 が無いが、runtime は数値をそのまま書き出すので cast で通す。
+const PAPER_SIZE_B4 = 12 as ExcelJS.PaperSize;
+
+function applyTeacherPrintDefaults(ws: ExcelJS.Worksheet, repeatRows: number) {
+  ws.pageSetup.paperSize = PAPER_SIZE_B4;
+  ws.pageSetup.orientation = 'portrait';
+  ws.pageSetup.printTitlesRow = `1:${repeatRows}`;
+}
+
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
 export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
@@ -665,17 +686,34 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     // throw しないよう sanitize + unique を通す
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(t.name)));
 
-    // ヘッダ
-    // N5d: 全講師リストと同じ「学年(タブ)」に統一 (旧「場所(タブ)」/「タブ名」)
     const header = ['日付', '時限', 'クラス', '科目', '学年(タブ)', '備考'];
-    ws.addRow(header);
-    header.forEach((_, ci) => applyCellStyle(ws.getCell(1, ci + 1), TEACHER_HEADER_STYLE));
 
-    // データ行
+    // P1: タイトル行。印刷した紙の一番上に「誰の・何の・いつの」スケジュール
+    // かが必ず載るようにする (学年グリッドの N5a と対)。期間はその講師自身の
+    // 初日〜最終日 (personalRows は日付順ソート済み)。
+    const firstDate = personalRows[0].cells[0];
+    const lastDate = personalRows[personalRows.length - 1].cells[0];
+    const d0 = new Date();
+    const titleText = [
+      `${t.name} — ${project.name || '講習時間割'}`,
+      firstDate === lastDate ? `期間 ${firstDate}` : `期間 ${firstDate}〜${lastDate}`,
+      `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`,
+    ].join(' / ');
+    ws.addRow([titleText]);
+    ws.mergeCells(1, 1, 1, header.length);
+    applyCellStyle(ws.getCell(1, 1), TITLE_ROW_STYLE);
+    ws.getRow(1).height = 20;
+
+    // ヘッダ (行 2)
+    // N5d: 全講師リストと同じ「学年(タブ)」に統一 (旧「場所(タブ)」/「タブ名」)
+    ws.addRow(header);
+    header.forEach((_, ci) => applyCellStyle(ws.getCell(2, ci + 1), TEACHER_HEADER_STYLE));
+
+    // データ行 (行 1 = タイトル、行 2 = ヘッダなのでデータは行 3 から)
     personalRows.forEach((row, ri) => {
       ws.addRow(row.cells);
       row.cells.forEach((_, ci) => {
-        const cell = ws.getCell(ri + 2, ci + 1);
+        const cell = ws.getCell(ri + 3, ci + 1);
         if (row.isExternal) {
           applyCellStyle(cell, EXTERNAL_ROW_STYLE);
         } else if (ci === 3 && row.subject) {
@@ -689,10 +727,10 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     // 日付の区切り: 日付が変わる行 (先頭行含む) の上辺 + 最終行の下辺を太線に
     personalRows.forEach((row, ri) => {
       if (ri === 0 || personalRows[ri - 1].cells[0] !== row.cells[0]) {
-        applyRowEdge(ws, ri + 2, header.length, 'top');
+        applyRowEdge(ws, ri + 3, header.length, 'top');
       }
     });
-    applyRowEdge(ws, personalRows.length + 1, header.length, 'bottom');
+    applyRowEdge(ws, personalRows.length + 2, header.length, 'bottom');
 
     // オートフィルタ: 学年(タブ) 列で「中3 だけ」「中1+中2」のように任意の
     // 組み合わせに絞って確認・印刷できるようにする (タブ別にシートや
@@ -700,11 +738,14 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     // フィルタに任せる)。外部授業行は同列の種別 (予備校・高校等) で同様に
     // 絞れる。
     ws.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: 1, column: header.length },
+      from: { row: 2, column: 1 },
+      to: { row: 2, column: header.length },
     };
 
     [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
+
+    // P1: B4 縦 + タイトル/ヘッダ行 (1〜2 行目) の全ページ繰り返し
+    applyTeacherPrintDefaults(ws, 2);
   });
 
   // 全講師リストシート
@@ -746,9 +787,12 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     };
 
     [10, 14, 14, 10, 12, 15, 18].forEach((w, ci) => { wsAll.getColumn(ci + 1).width = w; });
+
+    // P1: B4 縦 + ヘッダ行 (1 行目) の全ページ繰り返し
+    applyTeacherPrintDefaults(wsAll, 1);
   } else {
     // 該当なしでも空シートを作って一貫性を保つ
-    workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト'));
+    applyTeacherPrintDefaults(workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト')), 1);
   }
 
   return workbook;
