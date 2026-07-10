@@ -621,6 +621,8 @@ describe('シート名の防御 (F5g/F5h/F5i)', () => {
 // 残っていることを固定する。
 // (import は ESM の hoisting で先頭 import 群と同時に解決される)
 import ExcelJS from 'exceljs';
+// zip 内の XML 検証用 (P2)。exceljs の依存なので追加インストール不要。
+import JSZip from 'jszip';
 
 async function roundTrip(wb) {
   const buffer = await wb.xlsx.writeBuffer();
@@ -924,5 +926,63 @@ describe('buildTeacherWorkbook — タイトル行と印刷デフォルト (P1)'
     const wsAll = wb.getWorksheet('全講師リスト');
     expect(wsAll.pageSetup.paperSize).toBe(12);
     expect(wsAll.pageSetup.orientation).toBe('portrait');
+  });
+});
+
+describe('buildTeacherWorkbook — 全講師リストの講師別改ページ (P2)', () => {
+  // 堀上 = 12/25 + 12/26 の 2 行 (同一講師内の日付切り替わりを含む)、
+  // 松川 = 12/25 の 1 行。全講師リストは header(行1) + 堀上(行2-3) + 松川(行4)。
+  function makeTwoTeacherProject() {
+    return makeProject({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '松川', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 12/25 1限
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 12/26 1限
+          [makeKey(1, 2, 2)]: { subject: '数学', teacher: '松川' }, // 12/25 2限
+        },
+      }],
+    });
+  }
+
+  it('講師が切り替わる直前の行 (前講師の最終行) に改ページが入る', () => {
+    const wb = buildTeacherWorkbook(makeTwoTeacherProject());
+    const wsAll = wb.getWorksheet('全講師リスト');
+    // 堀上 → 松川 の切り替わり = 行 3 の後の 1 箇所だけ。
+    // 同一講師内の日付切り替わり (行 2 → 3) では改ページしない。
+    expect(wsAll.rowBreaks.map(b => b.id)).toEqual([3]);
+    expect(wsAll.rowBreaks[0].man).toBe(1);
+  });
+
+  it('講師 1 人だけなら改ページは入らない', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    expect(wb.getWorksheet('全講師リスト').rowBreaks).toEqual([]);
+  });
+
+  it('印刷範囲は表の列 A〜G に固定される', () => {
+    const wb = buildTeacherWorkbook(makeTwoTeacherProject());
+    expect(wb.getWorksheet('全講師リスト').pageSetup.printArea).toBe('A:G');
+  });
+
+  it('改ページと印刷範囲が xlsx バイナリに残る (E3b と同じ writer 層の固定)', async () => {
+    // rowBreaks は exceljs の読み戻し (set model) で復元されないため、
+    // 書き出した zip 内の XML を直接検証する。
+    const wb = buildTeacherWorkbook(makeTwoTeacherProject());
+    const buffer = await wb.xlsx.writeBuffer();
+    const zip = await JSZip.loadAsync(buffer);
+    // 全講師リストは最後に addWorksheet される = 最後の sheetN.xml
+    const sheetXml = await zip.file(`xl/worksheets/sheet${wb.worksheets.length}.xml`).async('string');
+    expect(sheetXml).toContain('<rowBreaks count="1" manualBreakCount="1">');
+    expect(sheetXml).toMatch(/<brk id="3"[^>]*man="1"/);
+    // Print_Area は workbook.xml の definedNames に載る (' は &apos; に
+    // エスケープされる)
+    const wbXml = await zip.file('xl/workbook.xml').async('string');
+    expect(wbXml).toContain('_xlnm.Print_Area');
+    expect(wbXml).toContain('&apos;全講師リスト&apos;!$A:$G');
   });
 });
