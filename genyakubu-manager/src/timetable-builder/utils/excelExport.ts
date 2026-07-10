@@ -790,6 +790,21 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
 
     // P1: B4 縦 + ヘッダ行 (1 行目) の全ページ繰り返し
     applyTeacherPrintDefaults(wsAll, 1);
+
+    // P2: 講師の切り替わりで改ページ。通しで印刷しても講師ごとに新しい
+    // ページから始まり、そのまま切り分けて個人へ渡せる (ヘッダ行は
+    // Print_Titles で毎ページ載る)。同一講師内の日付切り替わりでは改めない。
+    // addPageBreak() は「その行の後」に改ページを入れるので、前講師の
+    // 最終行 (= データ行 ri-1、ヘッダが行 1 なのでシート行 ri+1) に付ける。
+    allRowTeachers.forEach((tName, ri) => {
+      if (ri > 0 && allRowTeachers[ri - 1] !== tName) {
+        wsAll.getRow(ri + 1).addPageBreak();
+      }
+    });
+
+    // P2: 印刷範囲を表の列 (A〜G) に固定。writer が Print_Area
+    // (全講師リスト!$A:$G) として workbook に埋め込む。
+    wsAll.pageSetup.printArea = `A:${wsAll.getColumn(allHeader.length).letter}`;
   } else {
     // 該当なしでも空シートを作って一貫性を保つ
     applyTeacherPrintDefaults(workbook.addWorksheet(uniqueSheetName(workbook, '全講師リスト')), 1);
