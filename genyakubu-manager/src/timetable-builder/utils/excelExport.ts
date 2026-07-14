@@ -11,11 +11,11 @@
 //
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
-import { cleanSchedule, getSubjectColor } from './constants';
-import type { Project } from '../types';
+import { cleanSchedule, getSubjectColor, toCircleNum } from './constants';
+import type { EffectiveConfig, Project, Schedule } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
 import { quotaForClass } from './subjectQuota';
-import { computeGlobalUsage } from './analysisHelpers';
+import { computeActiveAnalysis, computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
@@ -144,6 +144,30 @@ function applyCellStyle(cell: ExcelJS.Cell, style: CellStyleSpec) {
   if (style.border) cell.border = style.border;
 }
 
+// ─── 回数連番 (第N回) の丸数字 (Q1) ────────────────────────────────
+// 画面のセル表示 (ScheduleCell) は科目の横に「その科目が同一クラス内で
+// 何回目の授業か」を丸数字 (①②…) で出す。Excel の科目名にも同じ番号を
+// 添えるため、キー → 付加文字列 (例 '②') の lookup を作って返す。
+// 数え方は UI と同じ computeActiveAnalysis の subjectOrders (クラス内を
+// 日付 → 時限順に走査した 1-based 連番) をそのまま使い、画面と番号が
+// 食い違わないようにする。UI と同様、同一クラス×同日に同じ科目が重複して
+// いる間 (subjectDup 違反) は番号が意味を成さないので付けない。
+// overMark: クォータ超過の回に '!' を添える (UI の赤字 '!' に対応する
+// 作成者向け注記)。配布用 (clean) と講師別ではオフ。
+function makeSubjectOrderMarker(
+  effective: EffectiveConfig,
+  schedule: Schedule,
+  { overMark = false }: { overMark?: boolean } = {},
+) {
+  const { subjectOrders, dailySubjectMap } = computeActiveAnalysis(effective, schedule, {});
+  return (key: string, subject: string, classId: number, dateId: number): string => {
+    const order = subjectOrders[key] || 0;
+    if (!order || dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1) return '';
+    const maxCnt = overMark ? quotaForClass(effective, classId, subject) : 0;
+    return toCircleNum(order) + (maxCnt > 0 && order > maxCnt ? '!' : '');
+  };
+}
+
 // ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
 // 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。
 async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
@@ -187,8 +211,13 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
   cleaned.tabs.forEach(tab => {
     // v4(Y)+E-3: そのタブが使う日・使う時限だけをシートに出す
     // (使わない時限の空行や stale セルを紙面に出さない)。
-    const { dates, periods } = effectiveConfigForTab(cleaned, tab);
+    const effective = effectiveConfigForTab(cleaned, tab);
+    const { dates, periods } = effective;
     const { classes } = tab.config;
+
+    // Q1: 回数連番 (①②…)。学年・期間と同じくスケジュール自体の情報なので
+    // 配布用 (clean) でも出す。超過 '!' だけは作成者向け注記なので省く。
+    const orderMark = makeSubjectOrderMarker(effective, tab.schedule, { overMark: !clean });
     // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
 
@@ -227,15 +256,18 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     dates.forEach((d) => {
       periods.forEach((p) => {
         const cells = [d.label, p.label, ...classes.map((c) => {
-          const e = tab.schedule[makeKey(d.id, p.id, c.id)];
+          const key = makeKey(d.id, p.id, c.id);
+          const e = tab.schedule[key];
           if (!e || !e.subject) return '';
+          // Q1: 科目名に回数連番 (①②…) を添える
+          const subjText = e.subject + orderMark(key, e.subject, c.id, d.id);
           const group = findCombinedGroup(combinedGroups, e.subject, c.label, d.label);
           if (group && !isPrimaryCombinedClass(group, c.label)) {
-            return `${e.subject}\n(合同)`;
+            return `${subjText}\n(合同)`;
           }
           if (e.teacher && e.teacher !== '未定') {
             // L5c: 配布用は科目 + 講師名のみ (作成者向け注記を省く)
-            if (clean) return `${e.subject}\n${e.teacher}`;
+            if (clean) return `${subjText}\n${e.teacher}`;
             const daily = teacherDailyCounts[makeExternalKey(d.label, e.teacher)];
             const current = daily?.current ?? 0;
             const total = daily?.total ?? 0;
@@ -244,10 +276,10 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
             const isManualNg = !!teacherEnt?.ngSlots?.includes(ngKey);
             const isAutoNg = !!autoNgByTeacher.get(e.teacher)?.has(ngKey);
             const ngMark = (isManualNg || isAutoNg) ? '\n⚠NG' : '';
-            return `${e.subject}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
+            return `${subjText}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
           }
-          if (clean && e.teacher === '未定') return e.subject;
-          return `${e.subject}\n${e.teacher || ''}`;
+          if (clean && e.teacher === '未定') return subjText;
+          return `${subjText}\n${e.teacher || ''}`;
         })];
         ws.addRow(cells);
 
@@ -560,6 +592,8 @@ export async function downloadScheduleExcel(project: Project, options: { clean?:
 export interface TeacherRow {
   /**
    * [日付, 時限(または時刻), クラス, 科目, 学年(タブ), 備考]。
+   * 科目には回数連番 (①②…、そのクラスで何回目の授業か = 画面表示と同じ
+   * 番号) が付く (Q1)。
    * 外部授業の行は 科目=空欄、学年(タブ)=種別 (メモ＝プリセット名。メモ未設定
    * でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
    */
@@ -583,7 +617,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
 
   project.tabs.forEach(tab => {
     // v4(Y)+E-3: タブごとに『使う日・使う時限』で絞る
-    const { dates, periods } = effectiveConfigForTab(project, tab);
+    const effective = effectiveConfigForTab(project, tab);
+    const { dates, periods } = effective;
+    // Q1: 科目列に回数連番 (①②…) を付ける。数えるのはタブ内の全講師分
+    // (連番は「そのクラスの何回目か」であって「この講師の何回目か」ではない)
+    const orderMark = makeSubjectOrderMarker(effective, tab.schedule);
     dates.forEach((d) => {
       periods.forEach((p) => {
         tab.config.classes.forEach((c) => {
@@ -592,8 +630,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
           if (entry && entry.teacher === teacherName) {
             const group = findCombinedGroup(combinedGroups, entry.subject, c.label, d.label);
             const note = group ? `合同(${group.classes.join(',')})` : '';
+            const subjText = entry.subject
+              ? entry.subject + orderMark(k, entry.subject, c.id, d.id)
+              : '';
             rows.push({
-              cells: [d.label, p.label, c.label, entry.subject || '', tab.name, note],
+              cells: [d.label, p.label, c.label, subjText, tab.name, note],
               subject: entry.subject,
               isExternal: false,
               dateIdx: dateIdx(d.label),

@@ -215,9 +215,10 @@ describe('buildScheduleWorkbook', () => {
     });
     const wb = buildScheduleWorkbook(project);
     const ws = wb.getWorksheet('メイン');
-    // 合同コマは 1 コマ扱い (computeGlobalUsage 側で重複除外)
-    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学1:計1)');
-    expect(ws.getCell(3, 4).value).toBe('英語\n(合同)');
+    // 合同コマは 1 コマ扱い (computeGlobalUsage 側で重複除外)。
+    // 回数連番 (Q1) はクラスごとに数えるので両クラスとも ① が付く。
+    expect(ws.getCell(3, 3).value).toBe('英語①\n堀上(中学1:計1)');
+    expect(ws.getCell(3, 4).value).toBe('英語①\n(合同)');
   });
 
   it('未充填セルは空文字', () => {
@@ -728,6 +729,86 @@ describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
     // 作業用 (既定) は従来どおり科目別シートあり
     const wb2 = _buildScheduleWorkbook(hoist(project));
     expect(wb2.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(true);
+  });
+});
+
+describe('回数連番 (第N回) の丸数字 (Q1)', () => {
+  // 日をまたいで同一クラスに同じ科目が並ぶ fixture (同日重複なし)。
+  // 12/25 1限 → ①、12/26 1限 → ② になる。
+  function makeSequenceProject(overrides = {}) {
+    return makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }, { id: 2, label: '12/26(金)' }],
+          periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 2 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+        },
+      }],
+      ...overrides,
+    });
+  }
+
+  it('全体 Excel: クラス内を日付 → 時限順に数えた丸数字が科目名に付く (画面表示と同じ)', () => {
+    const wb = buildScheduleWorkbook(makeSequenceProject());
+    const ws = wb.getWorksheet('メイン');
+    // 行 3 = 12/25 1限、行 5 = 12/26 1限
+    expect(ws.getCell(3, 3).value).toBe('英語①\n堀上(中学1:計1)');
+    expect(ws.getCell(5, 3).value).toBe('英語②\n堀上(中学1:計1)');
+  });
+
+  it('連番はクラスごとに独立して数える', () => {
+    const project = makeSequenceProject();
+    // ３A (id=2) の初回英語 → ３S の既存 2 コマとは独立に ①
+    project.tabs[0].schedule[makeKey(2, 2, 2)] = { subject: '英語', teacher: '未定' };
+    const wb = buildScheduleWorkbook(project);
+    const ws = wb.getWorksheet('メイン');
+    expect(ws.getCell(6, 4).value).toBe('英語①\n未定');
+  });
+
+  it('同一クラス×同日に同じ科目が重複している間は番号を付けない (UI の subjectDup 時と同じ)', () => {
+    // 既定 fixture は 12/25 の 1限+2限 に英語×2 (同日重複)
+    const wb = buildScheduleWorkbook(makeProject());
+    const ws = wb.getWorksheet('メイン');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
+    expect(ws.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)');
+  });
+
+  it("クォータ超過の回は作業用のみ '!' を添える (UI の赤字 '!' に対応)", () => {
+    const project = makeSequenceProject();
+    project.tabs[0].config.subjectCounts = { '英語': 1 }; // 2 回目以降は超過
+    const wb = buildScheduleWorkbook(project);
+    expect(wb.getWorksheet('メイン').getCell(5, 3).value).toBe('英語②!\n堀上(中学1:計1)');
+    // 配布用では '!' を出さない (丸数字は出す)
+    const wbClean = _buildScheduleWorkbook(hoist(project), { clean: true });
+    expect(wbClean.getWorksheet(1).getCell(5, 3).value).toBe('英語②\n堀上');
+  });
+
+  it('配布用 (clean) でも丸数字は付く (スケジュール自体の情報のため)', () => {
+    const wb = _buildScheduleWorkbook(hoist(makeSequenceProject()), { clean: true });
+    expect(wb.getWorksheet(1).getCell(3, 3).value).toBe('英語①\n堀上');
+  });
+
+  it('講師別 Excel の科目列にも丸数字が付く (個人シート + 全講師リスト)', () => {
+    const wb = buildTeacherWorkbook(makeSequenceProject());
+    const ws = wb.getWorksheet('堀上');
+    // 行 1 = タイトル、行 2 = ヘッダ。科目は 4 列目
+    expect(ws.getCell(3, 4).value).toBe('英語①');
+    expect(ws.getCell(4, 4).value).toBe('英語②');
+    const wsAll = wb.getWorksheet('全講師リスト');
+    expect(wsAll.getCell(2, 5).value).toBe('英語①');
+  });
+
+  it("講師別 Excel にはクォータ超過の '!' を付けない (講師へ渡す紙面のため)", () => {
+    const project = makeSequenceProject();
+    project.tabs[0].config.subjectCounts = { '英語': 1 };
+    const wb = buildTeacherWorkbook(project);
+    expect(wb.getWorksheet('堀上').getCell(4, 4).value).toBe('英語②');
   });
 });
 
