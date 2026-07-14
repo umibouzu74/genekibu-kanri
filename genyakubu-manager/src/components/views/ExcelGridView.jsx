@@ -19,7 +19,12 @@ import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
 import { buildSessionCountMap } from "../../utils/sessionCount";
-import { filterSlotsByActiveTimetable } from "../../utils/timetable";
+import {
+  filterSlotsByActiveTimetable,
+  filterSlotsForDate,
+  isEntireDayBeyondCutoff,
+  isSlotBeyondCutoff,
+} from "../../utils/timetable";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { ExcelSection } from "./excelGrid/ExcelSection";
 
@@ -204,23 +209,6 @@ export function ExcelGridView({
     return filteredSlots.find((s) => s.id === popoverTarget.slotId) || null;
   }, [popoverTarget, filteredSlots]);
 
-  // Use dateFilteredSlots in sub mode, otherwise timetable-filtered slots
-  const rawDisplaySlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
-
-  // 同一コホートで担任だけ異なる並列スロット (例: 中3 火 確認テスト 藤田 + 大屋敷)
-  // を 1 コマにまとめる。groupTeacherMap は代表スロットに「藤田・大屋敷」を割当。
-  const grouped = useMemo(
-    () => groupParallelSlots(rawDisplaySlots),
-    [rawDisplaySlots]
-  );
-  // 集約は閲覧用途限定。管理モード (スロット編集) および代行モード (個別
-  // スロットに対する欠席/代行割当) では個別スロット情報を保つ必要があるため
-  // 元配列をそのまま使う。セッション回数のカウントは sessionCount 内部で
-  // 並列スロットを重複除去するため、どちらのパスでも正しく集計される。
-  const shouldGroup = !isAdmin && !subMode.isSubMode;
-  const displaySlots = shouldGroup ? grouped.representativeSlots : rawDisplaySlots;
-  const groupTeacherMap = shouldGroup ? grouped.groupTeacherMap : null;
-
   // viewDate を含む週の月〜土の日付を曜日→"YYYY-MM-DD" で保持。
   const weekDates = useMemo(() => computeWeekDates(viewDate), [viewDate]);
 
@@ -232,8 +220,8 @@ export function ExcelGridView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewDate]);
 
-  // ─── Session count (第 N 回) 計算 ──────────────────────────────
-  // 対象日の決定優先順位:
+  // ─── 表示対象日の決定 ──────────────────────────────────────────
+  // 優先順位:
   //   1. 代行モードの subDate
   //   2. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
   //   3. selectedDay の直近発生日 (今日以前) — フォールバック
@@ -254,9 +242,64 @@ export function ExcelGridView({
     return null;
   }, [subMode.subDate, viewDate, selectedDay, today]);
 
+  // 表示中の日付。代行モード中は subDate、そうでなければ選択曜日に対応する
+  // 実日付 (sessionTargetDate を流用)。第N回計算・隔週 weekType 計算・
+  // ダッシュボードの代行表示/表示期間フィルタで使う。
+  const displayDate = subMode.subDate || sessionTargetDate;
+
+  // ─── ダッシュボード表示モードの表示期間フィルタ ─────────────────
+  // 表示日を基準に、日別リスト (DashboardListView) と同じ判定で
+  // 表示期間外のコマを除外する:
+  //   - 時間割の適用期間 (startDate/endDate) 外 → filterSlotsForDate
+  //   - displayCutoff の開始日前 / 終講日後 (コホート別終講日を含む)
+  //     → isSlotBeyondCutoff
+  // 全学年グループが期間外の日は isEntireDayBeyondCutoff で判定し、
+  // グリッドの代わりに「未確定」バナーを出す (render 側で分岐)。
+  const dashboardEntireDayCutoff =
+    dashboardMode &&
+    !!displayDate &&
+    isEntireDayBeyondCutoff(displayDate, displayCutoff);
+  const dashboardVisibleSlots = useMemo(() => {
+    if (!dashboardMode || !displayDate) return filteredSlots;
+    if (dashboardEntireDayCutoff) return [];
+    return filterSlotsForDate(filteredSlots, displayDate, timetables).filter(
+      (s) => !isSlotBeyondCutoff(displayDate, s, displayCutoff)
+    );
+  }, [
+    dashboardMode,
+    displayDate,
+    dashboardEntireDayCutoff,
+    filteredSlots,
+    timetables,
+    displayCutoff,
+  ]);
+
+  // Sub mode > dashboard (date-filtered) > timetable-filtered slots
+  const rawDisplaySlots = subMode.isSubMode
+    ? subMode.dateFilteredSlots
+    : dashboardVisibleSlots;
+
+  // 同一コホートで担任だけ異なる並列スロット (例: 中3 火 確認テスト 藤田 + 大屋敷)
+  // を 1 コマにまとめる。groupTeacherMap は代表スロットに「藤田・大屋敷」を割当。
+  const grouped = useMemo(
+    () => groupParallelSlots(rawDisplaySlots),
+    [rawDisplaySlots]
+  );
+  // 集約は閲覧用途限定。管理モード (スロット編集) および代行モード (個別
+  // スロットに対する欠席/代行割当) では個別スロット情報を保つ必要があるため
+  // 元配列をそのまま使う。セッション回数のカウントは sessionCount 内部で
+  // 並列スロットを重複除去するため、どちらのパスでも正しく集計される。
+  const shouldGroup = !isAdmin && !subMode.isSubMode;
+  const displaySlots = shouldGroup ? grouped.representativeSlots : rawDisplaySlots;
+  const groupTeacherMap = shouldGroup ? grouped.groupTeacherMap : null;
+
   const { sessionCtx, isOffForGrade, holidaysFor } = useSessionCtx({
     classSets,
     slots: displaySlots,
+    // ダッシュボードの表示期間フィルタはあくまで「表示」の絞り込み。
+    // 第N回計算のセット兄弟コマ解決の母集合はフィルタ前の filteredSlots を
+    // 使い、カウントが日付フィルタで変わらないようにする。
+    allSlots: dashboardMode ? filteredSlots : undefined,
     displayCutoff,
     holidays,
     examPeriods,
@@ -269,11 +312,6 @@ export function ExcelGridView({
     const daySlots = displaySlots.filter((s) => s.day === selectedDay);
     return buildSessionCountMap(daySlots, sessionTargetDate, sessionCtx);
   }, [sessionTargetDate, selectedDay, displaySlots, sessionCtx]);
-
-  // 表示中の日付。代行モード中は subDate、そうでなければ選択曜日に対応する
-  // 実日付 (sessionTargetDate を流用)。隔週 weekType 計算とダッシュボードの
-  // 代行表示の両方で使う。
-  const displayDate = subMode.subDate || sessionTargetDate;
 
   // ダッシュボード表示用: 表示中日付の代行を slotId → Substitute でマップ化。
   // 代行モード中は subMode.existingSubMap を優先する (下で分岐)。
@@ -335,11 +373,24 @@ export function ExcelGridView({
   // 表示日の追加授業 (H1a)。グリッドの列は曜日ベースで特定日付の単発コマを
   // 埋め込めないため、Dashboard 日別と同じバナーとしてグリッド上部に出す。
   // displayDate の意味論 (代行日 > viewDate > 選択曜日の直近日) は
-  // 第N回表示と同じ。休講日でも巻き添えにせず表示する。
+  // 第N回表示と同じ。休講日でも巻き添えにせず表示するが、全日カットオフ
+  // (未確定日) は日別リストと同様に出さない。
   const extraLessonsForDisplayDate = useMemo(
-    () => extraLessonsOnDate(extraLessons, displayDate),
-    [extraLessons, displayDate]
+    () =>
+      dashboardEntireDayCutoff
+        ? []
+        : extraLessonsOnDate(extraLessons, displayDate),
+    [extraLessons, displayDate, dashboardEntireDayCutoff]
   );
+
+  // ダッシュボード表示モードで、表示期間フィルタの結果この曜日のコマが
+  // 1 つも残らなかった (時間割期間外・全コホート終講後など)。空のグリッド
+  // 枠を並べる代わりに案内メッセージを出す。
+  const dashboardDayFilteredOut =
+    dashboardMode &&
+    !dashboardEntireDayCutoff &&
+    daysWithSlots.has(selectedDay) &&
+    !displaySlots.some((s) => s.day === selectedDay);
 
   return (
     <div>
@@ -551,7 +602,37 @@ export function ExcelGridView({
         {/* Sections */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
-          {!daysWithSlots.has(selectedDay) ? (
+          {dashboardEntireDayCutoff ? (
+            <div
+              style={{
+                background: "#fff8e0",
+                border: "1px solid #e0d080",
+                borderRadius: 8,
+                padding: "40px 20px",
+                textAlign: "center",
+                color: "#8a7020",
+                fontSize: 16,
+                fontWeight: 800,
+              }}
+            >
+              この日以降の予定は未確定です
+            </div>
+          ) : dashboardDayFilteredOut ? (
+            <div
+              style={{
+                background: "#f8f8f8",
+                border: "1px solid #e0e0e0",
+                borderRadius: 8,
+                padding: "40px 20px",
+                textAlign: "center",
+                color: "#888",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              表示期間外のため、この日に表示するコマはありません
+            </div>
+          ) : !daysWithSlots.has(selectedDay) ? (
             <div
               style={{
                 textAlign: "center",
