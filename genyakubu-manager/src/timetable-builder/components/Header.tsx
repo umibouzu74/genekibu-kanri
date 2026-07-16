@@ -14,8 +14,10 @@ const SAVE_STATUS_DEFAULT_CLASSES = 'text-builder-green bg-builder-success-soft 
 
 // exceljs はバンドルが大きい (gzip 後 ~270kB) ので、Excel 出力ボタンを
 // 押した時にだけロードする。初回クリックの体感は数百ms 遅れるが、起動時には
-// ロードしない方が大きい。
+// ロードしない方が大きい。配布用 (完成版レイアウト) は別モジュールだが
+// exceljs チャンクは共有される。
 const loadExcelExport = () => import('../utils/excelExport');
+const loadDistributionExport = () => import('../utils/distributionExport');
 
 export default function Header() {
   const {
@@ -77,7 +79,7 @@ export default function Header() {
     setExportingType(type);
     let mod;
     try {
-      mod = await loadExcelExport();
+      mod = await (type === 'distribution' ? loadDistributionExport() : loadExcelExport());
     } catch (err) {
       console.error('Excel module load failed', err);
       showToast('Excel出力ライブラリの読み込みに失敗しました', 'error');
@@ -88,9 +90,9 @@ export default function Header() {
       if (type === 'all') {
         await mod.downloadScheduleExcel(project);
         showToast('全体Excelをダウンロードしました');
-      } else if (type === 'clean') {
-        // L5c: 稼働カウント・⚠NG 抜きの配布用 (生徒掲示・保護者向け)
-        await mod.downloadScheduleExcel(project, { clean: true });
+      } else if (type === 'distribution') {
+        // 掲示・配布用の完成版レイアウト (例年の紙面を再現、注記なし)
+        await mod.downloadDistributionExcel(project);
         showToast('配布用Excelをダウンロードしました');
       } else {
         await mod.downloadTeacherExcel(project);
@@ -168,10 +170,10 @@ export default function Header() {
               >📊 全体スケジュール</button>
               <button
                 role="menuitem"
-                onClick={() => handleExport('clean')}
+                onClick={() => handleExport('distribution')}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
-                title="稼働カウントやNGマークを省いた、生徒掲示・保護者配布向けのExcel出力"
-              >🎒 配布用 (注記なし)</button>
+                title="掲示・配布用の完成版レイアウト (クラス×日ブロックの2段組、A4縦1枚) でExcel出力"
+              >🎒 配布用 (完成版)</button>
               <button
                 role="menuitem"
                 onClick={() => handleExport('teacher')}
