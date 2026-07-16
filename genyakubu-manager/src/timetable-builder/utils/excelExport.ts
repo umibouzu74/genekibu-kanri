@@ -153,8 +153,9 @@ function applyCellStyle(cell: ExcelJS.Cell, style: CellStyleSpec) {
 // 食い違わないようにする。UI と同様、同一クラス×同日に同じ科目が重複して
 // いる間 (subjectDup 違反) は番号が意味を成さないので付けない。
 // overMark: クォータ超過の回に '!' を添える (UI の赤字 '!' に対応する
-// 作成者向け注記)。配布用 (clean) と講師別ではオフ。
-function makeSubjectOrderMarker(
+// 作成者向け注記)。配布用 (distributionExport) と講師別ではオフ。
+// distributionExport.ts からも使うため export。
+export function makeSubjectOrderMarker(
   effective: EffectiveConfig,
   schedule: Schedule,
   { overMark = false }: { overMark?: boolean } = {},
@@ -170,7 +171,8 @@ function makeSubjectOrderMarker(
 
 // ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
 // 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。
-async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
+// distributionExport.ts からも使うため export。
+export async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer as unknown as BlobPart], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -185,12 +187,11 @@ async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
 
 // ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
 // project から ExcelJS.Workbook を構築して返す。副作用無し。
-// options.clean (L5c): 生徒掲示・保護者配布用の「配布用」モード。
-// 「(中学N:計M)」の稼働カウントと「⚠NG」マークは負荷調整のための作成者向け
-// 注記なので省き、科目 + 講師名だけの紙面にする ('未定' は配布時の見栄えの
-// ため科目のみ)。既定 (false) は従来どおりの作業用出力。
-export function buildScheduleWorkbook(project: Project, options: { clean?: boolean } = {}): ExcelJS.Workbook {
-  const { clean = false } = options;
+// 稼働カウント・⚠NG・超過 '!' 入りの作成者向け出力。生徒掲示・保護者配布用は
+// 完成版レイアウトの distributionExport.buildDistributionWorkbook を使う
+// (旧 L5c の clean オプション = 注記なし学年グリッドは 2026-07-16 に
+// 完成版レイアウトへ置き換えて廃止)。
+export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
@@ -215,9 +216,8 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     const { dates, periods } = effective;
     const { classes } = tab.config;
 
-    // Q1: 回数連番 (①②…)。学年・期間と同じくスケジュール自体の情報なので
-    // 配布用 (clean) でも出す。超過 '!' だけは作成者向け注記なので省く。
-    const orderMark = makeSubjectOrderMarker(effective, tab.schedule, { overMark: !clean });
+    // Q1: 回数連番 (①②…) + クォータ超過の '!' (作成者向け注記)
+    const orderMark = makeSubjectOrderMarker(effective, tab.schedule, { overMark: true });
     // タブ名は自由入力なので禁則文字・重複をそのまま渡すと throw する
     const ws = workbook.addWorksheet(uniqueSheetName(workbook, sanitizeSheetName(tab.name)));
 
@@ -230,8 +230,7 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     );
 
     // N5a: タイトル行。シートを単体で印刷・配布しても「何の・いつの時間割か」
-    // が紙面に残るようにする (印刷経路の見出し L1f と対になる)。学年・期間は
-    // 配布用 (clean) でも必要な情報なので常に出す。
+    // が紙面に残るようにする (印刷経路の見出し L1f と対になる)。
     const columnCount = 2 + classes.length;
     const rangeText = dates.length > 0 ? `期間 ${dates[0].label}〜${dates[dates.length - 1].label}` : '';
     const d0 = new Date();
@@ -266,8 +265,6 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
             return `${subjText}\n(合同)`;
           }
           if (e.teacher && e.teacher !== '未定') {
-            // L5c: 配布用は科目 + 講師名のみ (作成者向け注記を省く)
-            if (clean) return `${subjText}\n${e.teacher}`;
             const daily = teacherDailyCounts[makeExternalKey(d.label, e.teacher)];
             const current = daily?.current ?? 0;
             const total = daily?.total ?? 0;
@@ -278,7 +275,6 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
             const ngMark = (isManualNg || isAutoNg) ? '\n⚠NG' : '';
             return `${subjText}\n${e.teacher}(中学${current}:計${total})${ngMark}`;
           }
-          if (clean && e.teacher === '未定') return subjText;
           return `${subjText}\n${e.teacher || ''}`;
         })];
         ws.addRow(cells);
@@ -336,14 +332,12 @@ export function buildScheduleWorkbook(project: Project, options: { clean?: boole
     }
   });
 
-  // 科目別集計シート (英語・数学… ごとに 1 枚)。
-  // N1a: 配布用 (clean) では出さない — 講師別集計・⚠NG・必要/不足コマは
-  // 作成者向けの分析情報で、生徒・保護者向け配布物に載せてはいけない。
-  if (!clean) {
-    collectAllSubjects(cleaned).forEach(subject => {
-      buildOneSubjectSheet(workbook, cleaned, subject);
-    });
-  }
+  // 科目別集計シート (英語・数学… ごとに 1 枚)。講師別集計・⚠NG・
+  // 必要/不足コマは作成者向けの分析情報 (配布物には載せない → 配布用は
+  // distributionExport 側で科目別シートを作らないことで担保)。
+  collectAllSubjects(cleaned).forEach(subject => {
+    buildOneSubjectSheet(workbook, cleaned, subject);
+  });
 
   return workbook;
 }
@@ -443,8 +437,8 @@ export function computeSubjectStats(project: Project, subject: string) {
 
 // exceljs の addWorksheet は禁則文字 (\\ / : ? * [ ])・空文字・予約名
 // 'History'・重複名で throw する。ユーザ入力 (タブ名・講師名) を
-// シート名にする前に必ずこれを通すこと。
-function sanitizeSheetName(name: unknown): string {
+// シート名にする前に必ずこれを通すこと。distributionExport.ts からも使う。
+export function sanitizeSheetName(name: unknown): string {
   // 先頭/末尾のシングルクォートも exceljs が reject する (F5h)。内側の
   // クォートは合法なので端だけ落とす (空白と交互に現れても残らないよう
   // 文字クラスでまとめて strip)。
@@ -459,7 +453,8 @@ function sanitizeSheetName(name: unknown): string {
 // 重複判定は case-insensitive (F5g)。exceljs の addWorksheet は
 // toLowerCase 比較で重複を reject するため、getWorksheet (完全一致) で
 // 判定すると "classA"/"CLASSA" のような大小文字違いの名前で throw する。
-function uniqueSheetName(workbook: ExcelJS.Workbook, baseName: string): string {
+// distributionExport.ts からも使う。
+export function uniqueSheetName(workbook: ExcelJS.Workbook, baseName: string): string {
   const taken = new Set(workbook.worksheets.map(ws => ws.name.toLowerCase()));
   let name = baseName.substring(0, 31);
   if (!taken.has(name.toLowerCase())) return name;
@@ -575,9 +570,9 @@ export function buildExcelFilename(project: Pick<Project, 'name'>, suffix: strin
 }
 
 // ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
-export async function downloadScheduleExcel(project: Project, options: { clean?: boolean } = {}) {
-  const workbook = buildScheduleWorkbook(project, options);
-  await downloadWorkbook(workbook, buildExcelFilename(project, options.clean ? '配布用' : '全体'));
+export async function downloadScheduleExcel(project: Project) {
+  const workbook = buildScheduleWorkbook(project);
+  await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
 }
 
 // ─── 講師別 Excel: 行の組み立て (純粋関数、テスト用に export) ─────

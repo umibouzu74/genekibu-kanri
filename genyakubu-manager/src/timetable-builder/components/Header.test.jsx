@@ -18,6 +18,9 @@ vi.mock('../utils/excelExport', () => ({
   downloadScheduleExcel: vi.fn().mockResolvedValue(undefined),
   downloadTeacherExcel: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../utils/distributionExport', () => ({
+  downloadDistributionExcel: vi.fn().mockResolvedValue(undefined),
+}));
 
 function renderHeader({ projectOverrides = {}, uiOverrides = {} } = {}) {
   const fileInputRef = createRef();
@@ -132,14 +135,17 @@ describe('Header', () => {
   });
 });
 
-describe('Header — 配布用 Excel 出力 (L5c)', () => {
-  it('「🎒 配布用 (注記なし)」で clean オプション付きの downloadScheduleExcel を呼ぶ', async () => {
+describe('Header — 配布用 Excel 出力 (完成版レイアウト)', () => {
+  it('「🎒 配布用 (完成版)」で downloadDistributionExcel を呼ぶ', async () => {
+    const dist = await import('../utils/distributionExport');
     const mod = await import('../utils/excelExport');
     renderHeader();
     fireEvent.click(screen.getByText(/Excel出力/).closest('button'));
     fireEvent.click(screen.getByRole('menuitem', { name: /配布用/ }));
     await vi.waitFor(() =>
-      expect(mod.downloadScheduleExcel).toHaveBeenCalledWith(expect.anything(), { clean: true }));
+      expect(dist.downloadDistributionExcel).toHaveBeenCalledWith(expect.anything()));
+    // 旧 clean モード (downloadScheduleExcel 側) は呼ばれない
+    expect(mod.downloadScheduleExcel).not.toHaveBeenCalled();
   });
 });
 

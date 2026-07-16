@@ -700,35 +700,23 @@ describe('xlsx round-trip (E3b)', () => {
   });
 });
 
-describe('buildScheduleWorkbook — 配布用 clean モード (L5c)', () => {
-  it('clean=true は稼働カウントと ⚠NG を省き、科目 + 講師名のみになる', () => {
+// 旧「配布用 clean モード (L5c)」のテストは、配布用出力が完成版レイアウト
+// (distributionExport.ts) に置き換わったため削除。配布用の挙動 (注記なし・
+// 科目別シートなし 等) は distributionExport.test.js が引き継いでいる。
+describe('buildScheduleWorkbook — 全体 (作成用) 出力', () => {
+  it('稼働カウントと ⚠NG の注記入りで出力する', () => {
     const project = makeProject({
       teachers: [
         { name: '堀上', subjects: ['英語'], ngSlots: ['12/25(木)-1限'], ngClasses: [], priorityClasses: [] },
       ],
     });
-    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
-    const ws = wb.getWorksheet(1);
-    expect(ws.getCell(3, 3).value).toBe('英語\n堀上');
-    // 作業用 (既定) は従来どおり注記入り
-    const wb2 = _buildScheduleWorkbook(hoist(project));
-    expect(wb2.getWorksheet(1).getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+    const wb = _buildScheduleWorkbook(hoist(project));
+    expect(wb.getWorksheet(1).getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
   });
 
-  it("clean=true では '未定' の講師名を出さず科目のみ", () => {
-    const project = makeProject();
-    project.tabs[0].schedule['d1-p1-c1'] = { subject: '英語', teacher: '未定' };
-    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
-    expect(wb.getWorksheet(1).getCell(3, 3).value).toBe('英語');
-  });
-
-  it('clean=true は科目別集計シートを出さない (N1a: 講師別集計・⚠NG の配布物への露出防止)', () => {
-    const project = makeProject();
-    const wb = _buildScheduleWorkbook(hoist(project), { clean: true });
-    expect(wb.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(false);
-    // 作業用 (既定) は従来どおり科目別シートあり
-    const wb2 = _buildScheduleWorkbook(hoist(project));
-    expect(wb2.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(true);
+  it('科目別集計シートを出す', () => {
+    const wb = _buildScheduleWorkbook(hoist(makeProject()));
+    expect(wb.worksheets.map(w => w.name).some(n => n.startsWith('科目別_'))).toBe(true);
   });
 });
 
@@ -779,19 +767,11 @@ describe('回数連番 (第N回) の丸数字 (Q1)', () => {
     expect(ws.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)');
   });
 
-  it("クォータ超過の回は作業用のみ '!' を添える (UI の赤字 '!' に対応)", () => {
+  it("クォータ超過の回は '!' を添える (UI の赤字 '!' に対応する作成者向け注記)", () => {
     const project = makeSequenceProject();
     project.tabs[0].config.subjectCounts = { '英語': 1 }; // 2 回目以降は超過
     const wb = buildScheduleWorkbook(project);
     expect(wb.getWorksheet('メイン').getCell(5, 3).value).toBe('英語②!\n堀上(中学1:計1)');
-    // 配布用では '!' を出さない (丸数字は出す)
-    const wbClean = _buildScheduleWorkbook(hoist(project), { clean: true });
-    expect(wbClean.getWorksheet(1).getCell(5, 3).value).toBe('英語②\n堀上');
-  });
-
-  it('配布用 (clean) でも丸数字は付く (スケジュール自体の情報のため)', () => {
-    const wb = _buildScheduleWorkbook(hoist(makeSequenceProject()), { clean: true });
-    expect(wb.getWorksheet(1).getCell(3, 3).value).toBe('英語①\n堀上');
   });
 
   it('講師別 Excel の科目列にも丸数字が付く (個人シート + 全講師リスト)', () => {

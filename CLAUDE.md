@@ -92,6 +92,17 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   pageSetup に埋め込み済み (`timetable-builder/utils/excelExport.ts` の
   `applyTeacherPrintDefaults`、P1)。各講師シートの先頭行は
   「講師名 — プロジェクト名 / 期間 / 出力日」のタイトル。
+
+## 配布用 Excel は「完成版レイアウト」(2026-07-16 確定)
+
+- 講習時間割の「🎒 配布用」出力は例年の掲示紙面 (2025 年夏期の完成版 xls)
+  を再現する専用ビルダー `timetable-builder/utils/distributionExport.ts`
+  (詳細は ROADMAP §R1)。**旧 L5c の「注記なし学年グリッド」形式
+  (buildScheduleWorkbook の clean オプション) は廃止済み — 再導入しない。**
+- モデルに無い情報 (教室番号・確認テストの出題範囲・イベント日の説明文・
+  欄外のお知らせ) は空欄 / 結合済み空セルとして紙面に確保し、出力後に
+  Excel 上で手書きする運用。これらのデータ管理機能を勝手に足さないこと
+  (必要になったら要件定義から)。
 - **両面 (長辺綴じ) は xlsx に保存できない** — OOXML の pageSetup に duplex
   属性が無く、プリンタドライバ固有の DEVMODE バイナリ
   (`xl/printerSettings/*.bin`) にしか載らないため。exceljs 非対応かつ、

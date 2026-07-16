@@ -79,7 +79,8 @@ sequenceDiagram
 | `utils/combinedPropagation.js` | 合同グループのセル伝播・cascade cleanup |
 | `utils/analysisHelpers.js` / `fixSuggestions.js` / `patternLoad.js` | 集計・修正提案・負荷偏りの純粋関数 |
 | `utils/csvImport.js` / `templates.js` / `projectSchema.js` / `scheduleDiff.js` / `storageHealth.js` / `tabPresence.js` / `contrast.js` | 各機能の純粋ロジック |
-| `utils/excelExport.js` | exceljs で xlsx 出力（動的 import） |
+| `utils/excelExport.js` | exceljs で xlsx 出力（動的 import）: 全体（作成用）＋ 講師別 |
+| `utils/distributionExport.js` | 配布用（完成版レイアウト）の xlsx 出力。例年の掲示紙面を再現（動的 import、共有ヘルパは excelExport から） |
 
 ---
 
