@@ -2652,7 +2652,7 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   - Header の「🎒 配布用」はこの出力に差し替え (`downloadDistributionExcel`、
     ファイル名 suffix は従来どおり「配布用」)。L5c の clean オプションは
     廃止し buildScheduleWorkbook は全体 (作成用) 専用に戻した。
-    テスト +34 (distributionExport.test.js 新設)
+    テスト +35 (distributionExport.test.js 新設、xlsx round-trip 含む)
   **モデル外の情報 (教室番号・確認テストの出題範囲・イベント日の説明文・
   欄外のお知らせ) は空欄 / 結合済み空セルとして紙面に確保し、Excel 上で
   手書きして完成させる運用。**これらをツールで管理する案は必要になったら

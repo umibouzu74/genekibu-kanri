@@ -404,6 +404,49 @@ describe('buildDistributionWorkbook — 日ブロック', () => {
   });
 });
 
+// ── 実バイナリの round-trip 検証 (E3b と同じ趣旨) ──────────────────
+// 構造テストは「workbook オブジェクトに何を積んだか」しか見ないため、
+// serialize / deserialize 層の regression を拾えない。writeBuffer で実際に
+// xlsx バイナリへ書き出し、読み戻して値・結合・塗り・罫線・ページ設定が
+// 実ファイルに残ることを固定する。
+import ExcelJS from 'exceljs';
+
+describe('xlsx round-trip', () => {
+  it('値・結合・塗り・罫線・ページ設定がバイナリに残る', async () => {
+    const wb = buildDistributionWorkbook(makeProject());
+    const buffer = await wb.xlsx.writeBuffer();
+    const loaded = new ExcelJS.Workbook();
+    await loaded.xlsx.load(buffer);
+
+    expect(loaded.worksheets.map(w => w.name)).toEqual(['中1中2時間割', '中3時間割']);
+    const ws = loaded.getWorksheet('中1中2時間割');
+
+    // 値 (日付 2 行組・時限ラベル・科目 + 連番・講師)
+    expect(ws.getCell(MULTI.blocks, L.date).value).toBe('7/29\n(火)');
+    expect(ws.getCell(MULTI.blocks, L.label).value).toBe('夜1');
+    expect(ws.getCell(MULTI.blocks + 1, L.label).value).toBe('18:30～19:15');
+    expect(ws.getCell(MULTI.blocks, L.cls).value).toBe('英語①');
+    expect(ws.getCell(MULTI.blocks + 1, L.cls).value).toBe('堀上');
+
+    // 結合 (日付セルのブロック全高) と塗り (アクセント色)
+    expect(ws.getCell(MULTI.blocks + 3, L.date).isMerged).toBe(true);
+    expect(ws.getCell(MULTI.blocks + 3, L.date).master.address)
+      .toBe(ws.getCell(MULTI.blocks, L.date).address);
+    expect(ws.getCell(MULTI.blocks, L.date).fill?.fgColor?.argb).toBe('FFCCFFCC');
+
+    // 罫線 (ブロック外周 thin / 時限ペア間 hair)
+    expect(ws.getCell(MULTI.blocks, L.cls).border?.top?.style).toBe('thin');
+    expect(ws.getCell(MULTI.blocks + 2, L.cls).border?.top?.style).toBe('hair');
+
+    // ページ設定 (A4 縦 1×1 フィット)
+    expect(ws.pageSetup.paperSize).toBe(9);
+    expect(ws.pageSetup.orientation).toBe('portrait');
+    expect(ws.pageSetup.fitToPage).toBe(true);
+    expect(ws.pageSetup.fitToWidth).toBe(1);
+    expect(ws.pageSetup.fitToHeight).toBe(1);
+  });
+});
+
 describe('buildDistributionWorkbook — 書式・ページ設定', () => {
   it('A4 縦・1×1 ページの fit-to-page を埋め込む (元紙面の印刷設定)', () => {
     const wb = buildDistributionWorkbook(makeProject());

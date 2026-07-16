@@ -48,8 +48,10 @@ const WIDTH_LABEL_COL = 9.5;
 const WIDTH_CLASS_COL = 5.75;
 const WIDTH_GAP_COL = 2.88; // 左右段組の間
 
-// 行高 (pt)。元紙面は全行 12.75pt (Excel 既定) で 4 校時 × 13 日でも
-// A4 縦 1 枚に収まる密度にしている。
+// 行高 (pt)。元紙面のうち密度の高い T3 シート (4 校時 × 13 日) が全行
+// 12.75pt (Excel 既定) で A4 縦 1 枚に収まっているので、それを全シート共通の
+// 基準にする (T1T2 相当のシートは 17.25pt だったが、行数が少ないぶん
+// fit-to-page の縮小率が上がるだけで紙面の見え方は変わらない)。
 const ROW_HEIGHT = 12.75;
 const TITLE_ROW_HEIGHT = 18;
 
@@ -572,7 +574,8 @@ function buildDistributionSheet(
     ws.getRow(r).height = r === 2 ? TITLE_ROW_HEIGHT : ROW_HEIGHT;
   }
 
-  // A4 縦・1×1 ページに収める (元紙面の設定そのまま)。用紙 9 = A4。
+  // A4 縦・1×1 ページに収める fit-to-page (元紙面と同じ)。用紙 9 = A4。
+  // 余白は元紙面の 2 シートの実測値 (T3/T1T2 で微差) を丸めた共通値。
   ws.pageSetup.paperSize = 9 as ExcelJS.PaperSize;
   ws.pageSetup.orientation = 'portrait';
   ws.pageSetup.fitToPage = true;
