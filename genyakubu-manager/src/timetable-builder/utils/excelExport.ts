@@ -11,11 +11,11 @@
 //
 // バンドルは Excel 出力ボタン押下時にだけ dynamic import される (Header.jsx)。
 import ExcelJS from 'exceljs';
-import { cleanSchedule, getSubjectColor, toCircleNum } from './constants';
-import type { EffectiveConfig, Project, Schedule } from '../types';
+import { cleanSchedule, getSubjectColor } from './constants';
+import type { Project } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
 import { quotaForClass } from './subjectQuota';
-import { computeActiveAnalysis, computeGlobalUsage } from './analysisHelpers';
+import { computeGlobalUsage, makeSubjectOrderMarker } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
@@ -144,30 +144,8 @@ function applyCellStyle(cell: ExcelJS.Cell, style: CellStyleSpec) {
   if (style.border) cell.border = style.border;
 }
 
-// ─── 回数連番 (第N回) の丸数字 (Q1) ────────────────────────────────
-// 画面のセル表示 (ScheduleCell) は科目の横に「その科目が同一クラス内で
-// 何回目の授業か」を丸数字 (①②…) で出す。Excel の科目名にも同じ番号を
-// 添えるため、キー → 付加文字列 (例 '②') の lookup を作って返す。
-// 数え方は UI と同じ computeActiveAnalysis の subjectOrders (クラス内を
-// 日付 → 時限順に走査した 1-based 連番) をそのまま使い、画面と番号が
-// 食い違わないようにする。UI と同様、同一クラス×同日に同じ科目が重複して
-// いる間 (subjectDup 違反) は番号が意味を成さないので付けない。
-// overMark: クォータ超過の回に '!' を添える (UI の赤字 '!' に対応する
-// 作成者向け注記)。配布用 (distributionExport) と講師別ではオフ。
-// distributionExport.ts からも使うため export。
-export function makeSubjectOrderMarker(
-  effective: EffectiveConfig,
-  schedule: Schedule,
-  { overMark = false }: { overMark?: boolean } = {},
-) {
-  const { subjectOrders, dailySubjectMap } = computeActiveAnalysis(effective, schedule, {});
-  return (key: string, subject: string, classId: number, dateId: number): string => {
-    const order = subjectOrders[key] || 0;
-    if (!order || dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1) return '';
-    const maxCnt = overMark ? quotaForClass(effective, classId, subject) : 0;
-    return toCircleNum(order) + (maxCnt > 0 && order > maxCnt ? '!' : '');
-  };
-}
+// 回数連番 (第N回) の丸数字 (Q1) は analysisHelpers.makeSubjectOrderMarker
+// に移動 (exceljs 非依存の builderLessons からも使うため)。
 
 // ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
 // 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。

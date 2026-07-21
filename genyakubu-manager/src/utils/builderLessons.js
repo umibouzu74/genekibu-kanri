@@ -26,6 +26,7 @@ import {
   parseKey,
 } from "../timetable-builder/utils/scheduleKey";
 import { cleanSchedule } from "../timetable-builder/utils/constants";
+import { makeSubjectOrderMarker } from "../timetable-builder/utils/analysisHelpers";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import {
   formatHHmm,
@@ -137,6 +138,11 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   const lessons = [];
   project.tabs.forEach((tab, tabIndex) => {
     const cfg = effectiveConfigForTab(project, tab);
+    // 回数連番 (①②… = そのクラスでその科目が何回目か)。builder の画面
+    // (ScheduleCell) / 講師別 Excel / 配布用と同じ makeSubjectOrderMarker を
+    // 使い、番号が紙面間で食い違わないようにする。同一クラス×同日の科目
+    // 重複中 (subjectDup 違反) は空文字が返る。
+    const orderMark = makeSubjectOrderMarker(cfg, tab.schedule || {});
 
     const dateById = new Map();
     for (const d of cfg.dates || []) {
@@ -187,11 +193,23 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
           classes: [],
         });
       }
-      grouped.get(gKey).classes.push(cls);
+      grouped.get(gKey).classes.push({
+        ...cls,
+        // classById の共有オブジェクトを直接使い回すとコマ間で mark が
+        // 衝突するため、セルごとに複製して回数連番を持たせる
+        mark: subj ? orderMark(key, subj, parsed.classId, parsed.dateId) : "",
+      });
     }
 
     for (const g of grouped.values()) {
       g.classes.sort((a, b) => a.index - b.index);
+      // 合同 (複数クラス 1 コマ) の回数はクラスごとに進み方が違いうる。
+      // 全クラス同じ番号ならその 1 つ、違えば cls の並び順で "/" 連結する
+      // (subjectDup 違反で番号が付かないクラスは "?" — builder 側の警告対象)。
+      const marks = g.classes.map((c) => c.mark);
+      const countText = marks.every((m) => m === marks[0])
+        ? marks[0]
+        : marks.map((m) => m || "?").join("/");
       lessons.push({
         kind: "koshu",
         key: g.key,
@@ -201,6 +219,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
         periodLabel: g.period.short,
         teacher: g.teacher,
         subj: g.subj,
+        countText,
         grade: tab.name || "",
         cls: g.classes.map((c) => c.label).join("/"),
         tabName: tab.name || "",
@@ -250,6 +269,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       periodLabel: s.label || "",
       teacher,
       subj: s.memo || presetMemoBySessionId.get(s.id) || "外部",
+      countText: "",
       grade: "",
       cls: "",
       tabName: "",

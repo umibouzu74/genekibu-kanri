@@ -4,6 +4,7 @@
 
 import { makeKey, makeExternalKey, makeNgKey, parseKey, effectiveConfigForTab } from './scheduleKey';
 import { computeAutoNgByTeacher } from './autoNg';
+import { toCircleNum } from './constants';
 import { quotaForClass, quotasForClass } from './subjectQuota';
 import { forEachCountedAssignment } from './tabUsage';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
@@ -208,6 +209,34 @@ export function computeActiveAnalysis(
   });
 
   return { conflictMap, errorKeys, dailySubjectMap, subjectOrders, ngViolationKeys };
+}
+
+// ─── 回数連番 (第N回) の丸数字 (Q1) ────────────────────────────────
+// 画面のセル表示 (ScheduleCell) は科目の横に「その科目が同一クラス内で
+// 何回目の授業か」を丸数字 (①②…) で出す。Excel の科目名や個人月間
+// スケジュール (builderLessons) にも同じ番号を添えるため、キー →
+// 付加文字列 (例 '②') の lookup を作って返す。
+// 数え方は UI と同じ computeActiveAnalysis の subjectOrders (クラス内を
+// 日付 → 時限順に走査した 1-based 連番) をそのまま使い、画面と番号が
+// 食い違わないようにする。UI と同様、同一クラス×同日に同じ科目が重複して
+// いる間 (subjectDup 違反) は番号が意味を成さないので付けない。
+// overMark: クォータ超過の回に '!' を添える (UI の赤字 '!' に対応する
+// 作成者向け注記)。配布用 (distributionExport)・講師別・個人スケジュール
+// ではオフ。
+// 元は excelExport.ts に居たが、exceljs 非依存の消費者 (builderLessons →
+// メインバンドル) からも使うためこちらへ移動 (excelExport は import で参照)。
+export function makeSubjectOrderMarker(
+  effective: EffectiveConfig,
+  schedule: Schedule,
+  { overMark = false }: { overMark?: boolean } = {},
+) {
+  const { subjectOrders, dailySubjectMap } = computeActiveAnalysis(effective, schedule, {});
+  return (key: string, subject: string, classId: number, dateId: number): string => {
+    const order = subjectOrders[key] || 0;
+    if (!order || dailySubjectMap[`c${classId}-d${dateId}-${subject}`] > 1) return '';
+    const maxCnt = overMark ? quotaForClass(effective, classId, subject) : 0;
+    return toCircleNum(order) + (maxCnt > 0 && order > maxCnt ? '!' : '');
+  };
 }
 
 // ダッシュボード集計 (進捗バー用)。

@@ -931,13 +931,16 @@ export function MonthView({
                 const startText = lesson.time
                   ? lesson.time.split("-")[0]
                   : lesson.periodLabel;
+                // 回数連番 (①②… = そのクラスでその科目が何回目か)。
+                // 講習時間割作成の画面・配布用 Excel と同じ番号。
+                const subjText = `${lesson.subj}${lesson.countText || ""}`;
                 const title = external
                   ? `[講習期間の外部授業] ${lesson.subj}${
                       lesson.time ? ` (${lesson.time})` : ""
                     }\n講習時間割作成の「講師不在・NG」で登録されたコマ`
                   : `[講習${
                       lesson.projectName ? `: ${lesson.projectName}` : ""
-                    }] ${lesson.tabName} ${lesson.cls} ${lesson.subj} (${
+                    }] ${lesson.tabName} ${lesson.cls} ${subjText} (${
                       lesson.periodLabel
                     }${lesson.time ? ` ${lesson.time}` : ""})\n編集は「講習時間割作成」で行います`;
                 return (
@@ -986,7 +989,7 @@ export function MonthView({
                         {lesson.cls || lesson.grade}
                       </span>
                     )}
-                    {startText && <b>{startText}</b>} {lesson.subj}
+                    {startText && <b>{startText}</b>} {subjText}
                   </div>
                 );
               })}

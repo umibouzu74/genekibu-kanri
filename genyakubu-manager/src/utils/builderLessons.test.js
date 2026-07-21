@@ -186,6 +186,62 @@ describe("buildKoshuLessons", () => {
     expect(buildKoshuLessons(project)).toHaveLength(2);
   });
 
+  it("回数連番: クラス内で科目ごとに日付→時限順の ①②… を countText に付ける", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "英語", teacher: "堀上" },
+      "d1-p2-c1": { subject: "数学", teacher: "半田" },
+      "d2-p1-c1": { subject: "英語", teacher: "堀上" },
+    };
+    const lessons = buildKoshuLessons(project);
+    const byKey = (subj, date) =>
+      lessons.find((l) => l.subj === subj && l.date === date);
+    expect(byKey("英語", "2026-07-24").countText).toBe("①");
+    expect(byKey("数学", "2026-07-24").countText).toBe("①");
+    expect(byKey("英語", "2026-07-25").countText).toBe("②");
+  });
+
+  it("回数連番は「そのクラスの何回目」— 前の回の担当講師が違っても通算する", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "英語", teacher: "石原" },
+      "d2-p1-c1": { subject: "英語", teacher: "堀上" },
+    };
+    const lessons = buildKoshuLessons(project);
+    expect(lessons.find((l) => l.teacher === "堀上").countText).toBe("②");
+  });
+
+  it("合同で全クラス同じ番号なら丸数字 1 つ、違えば cls 順の '/' 連結", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      // c2 だけ先に 1 回目の社会がある → d2 の合同は c1=①, c2=②
+      "d1-p1-c2": { subject: "社会", teacher: "西岡" },
+      "d2-p1-c1": { subject: "社会", teacher: "井上" },
+      "d2-p1-c2": { subject: "社会", teacher: "井上" },
+    };
+    const lessons = buildKoshuLessons(project);
+    const combined = lessons.find((l) => l.date === "2026-07-25");
+    expect(combined.cls).toBe("３S/３A");
+    expect(combined.countText).toBe("①/②");
+    // 全クラス同じ番号のケース
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "社会", teacher: "井上" },
+      "d1-p1-c2": { subject: "社会", teacher: "井上" },
+    };
+    expect(buildKoshuLessons(project)[0].countText).toBe("①");
+  });
+
+  it("同一クラス×同日に同じ科目が重複している間は番号を付けない (builder と同じ)", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "英語", teacher: "堀上" },
+      "d1-p2-c1": { subject: "英語", teacher: "堀上" },
+    };
+    const lessons = buildKoshuLessons(project);
+    expect(lessons).toHaveLength(2);
+    expect(lessons.every((l) => l.countText === "")).toBe(true);
+  });
+
   it("タブの activeDateIds / activePeriodIds で絞った範囲外のセルは載せない", () => {
     const project = baseProject();
     project.tabs[0].config.activeDateIds = [1];
