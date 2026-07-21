@@ -73,6 +73,18 @@ describe("resolveDateLabelYmd", () => {
     expect(resolveDateLabelYmd("3/25(水)", "2026-12-10")).toBe("2027-03-25");
   });
 
+  it("半年近く先に組んで以後未編集でも前年に誤解決しない (6月編集の冬期)", () => {
+    // 素の距離最小だと 12/25 は前年 12 月 (172 日前 < 193 日後) に化ける。
+    // 過去方向×2 の重み付けで先の 12 月へ倒す。
+    expect(resolveDateLabelYmd("12/25(金)", "2026-06-15")).toBe("2026-12-25");
+    expect(resolveDateLabelYmd("1/7(木)", "2026-06-15")).toBe("2027-01-07");
+  });
+
+  it("シーズン終了直後の編集 (過去方向 1〜2 ヶ月) は当年のまま", () => {
+    // 夏期 (7/20 開講) を 8/31 に最終編集 → 過去 42 日は重み付け後も当年が最近
+    expect(resolveDateLabelYmd("7/20(月)", "2026-08-31")).toBe("2026-07-20");
+  });
+
   it("解釈できないラベル・実在しない日付は null", () => {
     expect(resolveDateLabelYmd("初日", "2026-07-10")).toBeNull();
     expect(resolveDateLabelYmd("2/30(月)", "2026-02-01")).toBeNull();

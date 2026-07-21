@@ -17,6 +17,11 @@ import { parseBuilderProject } from "../utils/builderLessons";
 // - 解釈できないペイロード (壊れた JSON / 構造不正 / このクライアントより
 //   新しいスキーマ) は無視して直前の値を保持する。表示専用なので、壊れた
 //   受信で講習コマが画面から消えるより古い表示が残る方が安全
+//
+// 既知の限界: Firebase 未設定 (isConfigured=false の開発環境) では購読が
+// 無いため、同一セッション中の builder 編集はリロードするまで反映されない
+// (LocalStorage の storage イベントは同一タブでは発火しない)。設定済み環境
+// ならオフラインでも SDK のローカルエコーで即時反映される。
 export function useBuilderProject() {
   const [project, setProject] = useState(null);
 

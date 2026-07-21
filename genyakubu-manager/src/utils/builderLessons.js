@@ -11,8 +11,8 @@
 // - indexKoshuLessonsByDate:  MonthView 用の日付索引 (extraLessons と同型)
 //
 // 対象は各タブの講習コマ (schedule) のみ。externalSessions (予備校・高校等の
-// 他学年セッション) は親アプリ側に通常コマとして既に存在する予定の重複登録
-// なので反映しない。
+// 他学年セッション) は反映しない — 親アプリ側に通常コマとして既に存在する
+// はずで、載せると二重表示になるため。
 
 import { newerSchemaVersion } from "../timetable-builder/utils/projectSync";
 import { validateProjectShape } from "../timetable-builder/utils/projectSchema";
@@ -58,6 +58,12 @@ export function parseBuilderProject(raw) {
 // (project.updatedAt など) に最も近い年を前年・当年・翌年の 3 候補から選ぶ。
 // 冬期講習の年跨ぎ (12月・1月の混在) も基準日との距離で自然に解決する
 // (11月編集の "12/25" → 当年、"1/7" → 翌年。1月に編集しても "12/25" は前年)。
+//
+// 距離は過去方向を 2 倍に重み付けする。講習日程は「最終編集の少し前
+// (シーズン中の調整、高々 1〜2 ヶ月) 〜 数ヶ月先 (シーズン前の作成)」に
+// 分布し、素の距離だと『半年近く先に組んで以後未編集の project』(例: 6 月に
+// 作った冬期の "12/25") が前年 12 月へ誤解決するため。重み付け後の境界は
+// 過去 ≈122 日で、実運用の過去方向 (シーズン長 ≦ 2 ヶ月弱) には影響しない。
 // M/D として解釈できない / 実在しない日付 (2/30 等) は null。
 export function resolveDateLabelYmd(label, baseYmd) {
   const m = String(label ?? "").match(/^(\d{1,2})\/(\d{1,2})/);
@@ -75,7 +81,8 @@ export function resolveDateLabelYmd(label, baseYmd) {
     const dt = new Date(year, month - 1, day, 12);
     // 桁あふれ (2/30、平年の 2/29 等) はその年の候補から除外
     if (dt.getMonth() !== month - 1 || dt.getDate() !== day) continue;
-    const dist = Math.abs(dt.getTime() - base.getTime());
+    const diffMs = dt.getTime() - base.getTime();
+    const dist = diffMs < 0 ? -diffMs * 2 : diffMs;
     if (!best || dist < best.dist) best = { dt, dist };
   }
   if (!best) return null;
