@@ -14,6 +14,7 @@ import {
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
+import { useBuilderProject } from "./hooks/useBuilderProject";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { useToasts } from "./hooks/useToasts";
@@ -41,13 +42,14 @@ import {
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
+import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
-import { dateToDay } from "./utils/dateHelpers";
+import { dateToDay, fmtDate } from "./utils/dateHelpers";
 import {
   buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
@@ -95,7 +97,10 @@ const AbsenceWorkflowView = lazy(() =>
 );
 // 旧 jikanwarikun を timetable-builder/ として取り込み。
 // 講習 (夏・冬・春) 用の時間割を MRV+バックトラッキングで自動生成する。
-// 親アプリの Slot/Sub データには触れず、独自に LocalStorage で永続化。
+// 親アプリの Slot/Sub データには触れず、独自に LocalStorage + RTDB
+// (appData/builder) で永続化。親アプリ側は useBuilderProject でこれを
+// 読み取り専用購読し、個人月間スケジュールへ講習コマとして反映する
+// (utils/builderLessons — 書き戻しは無く、正は常に builder 側)。
 const BuilderApp = lazy(() => import("./timetable-builder/BuilderApp"));
 
 // Lazy-loaded modals (only rendered on demand).
@@ -283,6 +288,16 @@ export default function App() {
     LS.eventVisibility,
     DEFAULT_EVENT_VISIBILITY,
     { onError: onStorageError }
+  );
+
+  // 講習時間割作成 (builder) の project を読み取り専用で購読し、個人月間
+  // スケジュール (MonthView) に載せる講習コマへ変換する。編集は builder 側。
+  // 日付ラベルの年は project.updatedAt を基準に推定するため todayYmd は
+  // updatedAt/createdAt を持たない外部 JSON 由来データの保険にすぎない。
+  const builderProject = useBuilderProject();
+  const koshuLessons = useMemo(
+    () => buildKoshuLessons(builderProject, { todayYmd: fmtDate(new Date()) }),
+    [builderProject]
   );
 
   // タグ別フィルタ用の候補一覧。テスト期間 + 特別イベント の両方から
@@ -1307,6 +1322,7 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              koshuLessons={koshuLessons}
               onEditExtraLesson={(id) => {
                 setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
                 selectView(VIEWS.HOLIDAYS);

@@ -54,6 +54,19 @@ export const EXTRA_LESSON_COLOR = {
   chipBg: "#ddefe3",
 };
 
+// 講習コマ (講習時間割作成からの読み取り専用反映、utils/builderLessons) の
+// バッジ / カードに使う共通色。既存系統と紙面でも見分けがつくよう、未使用の
+// マゼンタ系を割当て (合同の青紫 #7a4aa0 / 代行依頼中の赤 #c03030 とは
+// 色相を離してある)。
+export const KOSHU_LESSON_COLOR = {
+  color: "#a8388a",
+  deep: "#7d2966",
+  bg: "#f8e8f3",
+  bannerBg: "#fbf0f8",
+  bannerBorder: "#dfa8cf",
+  chipBg: "#f3ddeb",
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };

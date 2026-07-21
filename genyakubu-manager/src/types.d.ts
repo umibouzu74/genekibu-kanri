@@ -189,6 +189,26 @@ export interface ExtraLesson {
   note?: string; // メモ (任意)
 }
 
+// ─── Koshu lesson (講習コマ、派生表示) ───────────────────────────
+// 講習時間割作成 (timetable-builder) の project から
+// utils/builderLessons.buildKoshuLessons が導出する読み取り専用の表示モデル。
+// 親アプリはこれを永続化しない (正は builder の project — RTDB
+// appData/builder/schedule_project)。編集は builder 側で行う。
+export interface KoshuLesson {
+  key: string; // React key 用の安定キー (tabId:dateId:periodId:teacher:subj)
+  date: string; // "YYYY-MM-DD"。ラベル "M/D(曜)" を基準日近傍の年で解決したもの
+  dateLabel: string; // builder 側の元ラベル ("7/24(金)")
+  time: string | null; // "13:00-13:45" / "13:00" (時限ラベルから解析)。読めなければ null
+  periodLabel: string; // 時限の短表示 ("1限" — 時刻注記の括弧を除いたもの)
+  teacher: string; // 担当講師。builder セルは単一講師名で、照合は完全一致
+  // ("·" 連結や note 内併記の慣習は無いので splitTeacherField の対象外)
+  subj: string;
+  grade: string; // タブ名 ("中3" 等)。gradeColor の色分けに使う
+  cls: string; // クラスラベル ("３S"。合同まとめは "３S/３A")
+  tabName: string;
+  projectName: string;
+}
+
 // ─── Class set (授業セット) ──────────────────────────────────────
 // 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
 // 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると

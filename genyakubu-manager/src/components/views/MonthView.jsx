@@ -8,8 +8,9 @@ import {
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
-import { EXTRA_LESSON_COLOR } from "../../constants/colors";
+import { EXTRA_LESSON_COLOR, KOSHU_LESSON_COLOR } from "../../constants/colors";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
+import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
 import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import {
   biweeklyDisplaySubject,
@@ -52,6 +53,7 @@ export function MonthView({
   examPrepSchedules = [],
   specialEvents = [],
   extraLessons = [],
+  koshuLessons = [],
   onEditExtraLesson,
   classSets,
   biweeklyAnchors,
@@ -94,6 +96,11 @@ export function MonthView({
   const extraByDate = useMemo(
     () => indexExtraLessonsByDate(extraLessons, teacher),
     [extraLessons, teacher]
+  );
+  // 日付 → この講師の講習コマ (講習時間割作成からの読み取り専用反映)。
+  const koshuByDate = useMemo(
+    () => indexKoshuLessonsByDate(koshuLessons, teacher),
+    [koshuLessons, teacher]
   );
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
@@ -364,6 +371,11 @@ export function MonthView({
           // 休講日でも表示する (通常授業と違い「その日にやる」と明示的に
           // 登録した単発コマなので、休講の巻き添えで消さない)。
           const extraForDay = dayCutoff ? [] : extraByDate.get(ds) || [];
+          // 講習コマ (講習時間割作成からの読み取り専用反映)。講習期間は
+          // 通常時間割の表示範囲 (displayCutoff) の外になるのが常なので、
+          // 追加授業と違いカットオフでも消さない。休講の巻き添えでも
+          // 消さないのは追加授業と同じ (日付を明示して組んだコマのため)。
+          const koshuForDay = koshuByDate.get(ds) || [];
           // この teacher が他人のコマを代行する行で使う slot も session count
           // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
           const externalSubSlots =
@@ -505,11 +517,15 @@ export function MonthView({
                 </div>
               )}
               {dayCutoff ? (
-                <div
-                  style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}
-                >
-                  未確定
-                </div>
+                // 講習コマがある日は「通常時間割は未確定」の注記より講習の
+                // 予定そのもの (下の講カード) を紙面に出す。
+                koshuForDay.length > 0 ? null : (
+                  <div
+                    style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}
+                  >
+                    未確定
+                  </div>
+                )
               ) : isFullOff ? (
                 <div
                   style={{ fontSize: 10, color: "#caa", textAlign: "center", marginTop: 8 }}
@@ -897,6 +913,63 @@ export function MonthView({
                       {lesson.cls && lesson.cls !== "-" ? lesson.cls : ""}
                     </span>
                     <b>{lesson.time.split("-")[0]}</b> {lesson.subj}
+                  </div>
+                );
+              })}
+              {/* 講習コマ (講習時間割作成からの読み取り専用反映)。編集は
+                  講習時間割作成側で行うため、クリック導線は付けない */}
+              {koshuForDay.map((lesson) => {
+                const gc = GC(lesson.grade);
+                return (
+                  <div
+                    key={`koshu-${lesson.key}`}
+                    className="month-print-card"
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      padding: "2px 3px",
+                      margin: "1px 0",
+                      borderRadius: 3,
+                      background: KOSHU_LESSON_COLOR.bg,
+                      borderLeft: `2px solid ${KOSHU_LESSON_COLOR.color}`,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={`[講習${
+                      lesson.projectName ? `: ${lesson.projectName}` : ""
+                    }] ${lesson.tabName} ${lesson.cls} ${lesson.subj} (${
+                      lesson.periodLabel
+                    }${lesson.time ? ` ${lesson.time}` : ""})\n編集は「講習時間割作成」で行います`}
+                  >
+                    <span
+                      style={{
+                        background: KOSHU_LESSON_COLOR.color,
+                        color: "#fff",
+                        fontSize: 8,
+                        fontWeight: 800,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
+                      }}
+                    >
+                      講
+                    </span>
+                    <span
+                      style={{
+                        background: gc.b,
+                        color: gc.f,
+                        fontSize: 8,
+                        fontWeight: 700,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
+                      }}
+                    >
+                      {lesson.cls || lesson.grade}
+                    </span>
+                    <b>{lesson.time ? lesson.time.split("-")[0] : lesson.periodLabel}</b>{" "}
+                    {lesson.subj}
                   </div>
                 );
               })}
