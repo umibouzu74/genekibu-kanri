@@ -319,7 +319,20 @@ export function Sidebar({
             </button>
           )}
         </div>
-        <div style={{ borderBottom: "1px solid #2a2a4e" }}>
+        {/* メニュー + 講師一覧。デスクトップはメニュー固定・講師一覧のみ
+            スクロール。モバイル (App.jsx の @media で上書き) はラッパー全体を
+            1 つのスクロール領域にする — 画面が低いと講師一覧の flex 高さが
+            0 になり、スクロールもできず講師に辿り着けなくなるため。 */}
+        <div
+          className="sidebar-scroll"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+        <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
           {MENU_CONFIG.map((item) => {
             const hasChildren = !!item.children;
             const isExpanded = hasChildren && effectiveExpanded.has(item.key);
@@ -473,7 +486,10 @@ export function Sidebar({
             );
           })}
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
+        <div
+          className="sidebar-teachers"
+          style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 0" }}
+        >
           {totalTeachers === 0 && (
             <div
               style={{
@@ -571,6 +587,7 @@ export function Sidebar({
               </div>
             );
           })}
+        </div>
         </div>
         <SyncStatus isAdmin={isAdmin} />
         <LoginForm isAdmin={isAdmin} onSignIn={onSignIn} onSignOut={onSignOut} />
