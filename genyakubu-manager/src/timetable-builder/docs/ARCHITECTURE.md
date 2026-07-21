@@ -299,8 +299,9 @@ sequenceDiagram
   `builder.schedule_user_defaults`（デフォルト保存）は端末ローカルのまま
   （JSON 書き出しにテンプレートが同梱されるので移行はそちらで可能）。
 - **読み取り専用の消費者（親アプリ）**: 親アプリも同じノードを
-  `src/hooks/useBuilderProject` で onValue 購読し、講習コマを個人月間
-  スケジュール（MonthView）へ「講」カードとして反映する
+  `src/hooks/useBuilderProject` で onValue 購読し、講習コマと外部授業
+  （externalSessions）を個人月間スケジュール（MonthView）へ「講」/「外」
+  カードとして反映する
   （`src/utils/builderLessons` が純関数で変換。書き戻しは一切無い）。
   受信判定は `decideRemoteProject` の縮退版 `parseBuilderProject` —
   identical / apply の区別が要らないため「解釈できたら採用・できなければ

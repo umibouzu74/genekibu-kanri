@@ -239,6 +239,69 @@ describe("buildKoshuLessons", () => {
     expect(buildKoshuLessons(null)).toEqual([]);
     expect(buildKoshuLessons({})).toEqual([]);
   });
+
+  it("外部授業 (externalSessions) を kind=external で同じ配列に混ぜる", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "英語", teacher: "堀上" },
+    };
+    project.externalSessions = [
+      {
+        id: 10,
+        date: "7/24(金)",
+        teacherName: "堀上",
+        memo: "予備校",
+        startTime: "9:00",
+        endTime: "10:30",
+      },
+    ];
+    const lessons = buildKoshuLessons(project);
+    expect(lessons).toHaveLength(2);
+    // 9:00 開始の外部授業が 13:00 の講習コマより先に並ぶ
+    expect(lessons[0]).toMatchObject({
+      kind: "external",
+      key: "ext:10",
+      date: "2026-07-24",
+      time: "09:00-10:30",
+      teacher: "堀上",
+      subj: "予備校",
+      grade: "",
+      cls: "",
+    });
+    expect(lessons[1].kind).toBe("koshu");
+  });
+
+  it("外部授業の種別: メモ未設定は時刻一致のプリセット名、判別不能は「外部」", () => {
+    const project = baseProject();
+    project.externalSessionPresets = [
+      { id: 1, name: "高松高校", startTime: "15:00", endTime: "16:30" },
+    ];
+    project.externalSessions = [
+      { id: 1, date: "7/24(金)", teacherName: "堀上", startTime: "15:00", endTime: "16:30" },
+      { id: 2, date: "7/25(土)", teacherName: "堀上", startTime: "18:00" },
+    ];
+    const lessons = buildKoshuLessons(project);
+    expect(lessons.map((l) => l.subj)).toEqual(["高松高校", "外部"]);
+  });
+
+  it("外部授業: 講師名なしは除外、時刻の読めないものは同日の末尾", () => {
+    const project = baseProject();
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "英語", teacher: "堀上" },
+    };
+    project.externalSessions = [
+      { id: 1, date: "7/24(金)", teacherName: "", memo: "予備校" },
+      { id: 2, date: "7/24(金)", teacherName: "堀上", memo: "終日不在", label: "午後" },
+    ];
+    const lessons = buildKoshuLessons(project);
+    expect(lessons).toHaveLength(2);
+    expect(lessons[1]).toMatchObject({
+      kind: "external",
+      subj: "終日不在",
+      time: null,
+      periodLabel: "午後",
+    });
+  });
 });
 
 describe("indexKoshuLessonsByDate", () => {

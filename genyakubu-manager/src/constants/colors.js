@@ -67,6 +67,18 @@ export const KOSHU_LESSON_COLOR = {
   chipBg: "#f3ddeb",
 };
 
+// 講習期間の外部授業 (予備校・高校等の他学年セッション、kind="external") 用。
+// 講師別 Excel のグレー行に合わせた無彩色系で、講習コマ本体 (マゼンタ) と
+// 対で使う。
+export const KOSHU_EXTERNAL_COLOR = {
+  color: "#787878",
+  deep: "#555555",
+  bg: "#f1f1f1",
+  bannerBg: "#f7f7f7",
+  bannerBorder: "#c8c8c8",
+  chipBg: "#e8e8e8",
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };
