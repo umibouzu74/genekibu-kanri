@@ -229,7 +229,7 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("バッジ凡例 (代/合/振/移/特訓/追) を含む", () => {
+  it("バッジ凡例 (代/合/振/移/特訓/追/講) を含む", () => {
     const html = buildMonthHeaderHtml({
       teacher: "山田",
       year: 2026,
@@ -243,6 +243,7 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("移</b>時間変更");
     expect(html).toContain("特訓</b>テスト直前特訓");
     expect(html).toContain("追</b>追加授業");
+    expect(html).toContain("講</b>講習");
   });
 });
 

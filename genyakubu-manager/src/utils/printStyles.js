@@ -99,7 +99,7 @@ export function buildMonthHeaderHtml({
   const meta = filterDesc
     ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
     : `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span></div>`;
-  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span><span><b>追</b>追加授業</span></div>`;
+  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span><span><b>追</b>追加授業</span><span><b>講</b>講習</span></div>`;
   return `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
 }
 
