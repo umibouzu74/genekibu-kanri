@@ -42,6 +42,7 @@ import {
 import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
 import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
+import { deriveTagFiltersForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS } from "./constants/storageKeys";
@@ -494,12 +495,36 @@ export default function App() {
     defaultView: VIEWS.DASH,
   });
 
+  // Slots filtered by active timetable (for aggregate views that show
+  // the "current" timetable rather than a specific date).
+  // selectTeacher のタグ導出でも参照するため Navigation より前に置く。
+  const ttFilteredSlots = useMemo(
+    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
+    [slots, timetables, activeTimetableId]
+  );
+
   // ─── Navigation / teacher selection ─────────────────────────────
-  const selectTeacher = useCallback((t) => {
-    setSelected(t);
-    setView(VIEWS.WEEK);
-    setSidebarOpen(false);
-  }, []);
+  // 講師の個人スケジュールを開くときの既定ビューは月間 (MONTH)。
+  // あわせてタグフィルタ (eventVisibility.tagFilters) を担当コマから導出した
+  // 初期値にリセットする: 学校系タグは本人の担当コマに関係するものだけ ON、
+  // 授業データから判定できない自由タグは既定 ON のまま (utils/teacherTags)。
+  // 手動トグルは次に講師を選択するまで有効。
+  const selectTeacher = useCallback(
+    (t) => {
+      setSelected(t);
+      setView(VIEWS.MONTH);
+      setSidebarOpen(false);
+      saveEventVisibility((p) => ({
+        ...(p || {}),
+        tagFilters: deriveTagFiltersForTeacher({
+          teacher: t,
+          slots: ttFilteredSlots,
+          tags: availableTags,
+        }),
+      }));
+    },
+    [ttFilteredSlots, availableTags, saveEventVisibility]
+  );
 
   const selectView = useCallback((v) => {
     setSelected(null);
@@ -618,13 +643,6 @@ export default function App() {
   const vd = new Date(now.getFullYear(), now.getMonth() + monthOff, 1);
   const vy = vd.getFullYear();
   const vm = vd.getMonth() + 1;
-
-  // Slots filtered by active timetable (for aggregate views that show
-  // the "current" timetable rather than a specific date).
-  const ttFilteredSlots = useMemo(
-    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
-    [slots, timetables, activeTimetableId]
-  );
 
   const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
 
@@ -1512,6 +1530,16 @@ export default function App() {
           .sidebar { width: min(85vw, 280px) !important; }
           /* 閉状態の left をモバイル幅に同期 (インライン left: -220 を上書き) */
           .sidebar.is-closed { left: calc(-1 * min(85vw, 280px) - 8px) !important; }
+          /* サイドバーのメニュー + 講師一覧を 1 つのスクロール領域に統合する。
+             デスクトップの「メニュー固定・講師のみスクロール」分割のままだと
+             低い画面では講師一覧の高さが 0 になり講師に辿り着けない。 */
+          .sidebar-scroll {
+            display: block !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+          }
+          .sidebar-teachers { overflow-y: visible !important; }
           .app-main { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
           .app-h1 { font-size: 16px !important; }
         }

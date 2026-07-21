@@ -88,7 +88,7 @@ test("イベントカレンダー: print で追加授業バッジが紙面に残
   ).toBeVisible();
 });
 
-test("講師の週間予定: print で操作 UI が消える", async ({ page }) => {
+test("講師の個人予定 (既定は月間): print で操作 UI が消える", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
   // サイドバーの講師リストから講師を選ぶ (奥村はデモデータの既定講師)
   await page.locator(".sidebar button").filter({ hasText: /^奥村/ }).first().click();
