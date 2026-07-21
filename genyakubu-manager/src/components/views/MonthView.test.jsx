@@ -17,6 +17,7 @@ const KOSHU_LESSON = {
   periodLabel: "1限",
   teacher: "堀上",
   subj: "英語",
+  countText: "②",
   grade: "中3",
   cls: "３S/３A",
   tabName: "中3",
@@ -59,12 +60,13 @@ const baseProps = {
 };
 
 describe("MonthView 講習コマ", () => {
-  it("担当講師のセルに「講」バッジ付きカードを表示する", () => {
+  it("担当講師のセルに「講」バッジ付きカードを表示する (回数連番の丸数字付き)", () => {
     render(<MonthView {...baseProps} koshuLessons={[KOSHU_LESSON]} />);
     expect(screen.getByText("講")).toBeInTheDocument();
     expect(screen.getByText("３S/３A")).toBeInTheDocument();
     expect(screen.getByText("13:00")).toBeInTheDocument();
-    expect(screen.getByText(/英語/)).toBeInTheDocument();
+    // 科目名の直後に「そのクラスで何回目か」(builder / 配布用 Excel と同じ番号)
+    expect(screen.getByText(/英語②/)).toBeInTheDocument();
   });
 
   it("講習期間の外部授業 (予備校・高校等) は「外」バッジで表示する", () => {

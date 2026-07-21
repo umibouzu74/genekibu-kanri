@@ -208,6 +208,11 @@ export interface KoshuLesson {
   teacher: string; // 担当講師。builder セルは単一講師名で、照合は完全一致
   // ("·" 連結や note 内併記の慣習は無いので splitTeacherField の対象外)
   subj: string;
+  // 回数連番の丸数字 ("②" = そのクラスでその科目が 2 回目)。builder 画面・
+  // 講師別 Excel・配布用と同じ makeSubjectOrderMarker で導出。合同でクラス
+  // ごとに番号が違う場合は cls の並び順の "/" 連結 ("②/③")。external と
+  // 番号の付かないコマ (subjectDup 違反中など) は空文字
+  countText: string;
   grade: string; // タブ名 ("中3" 等)。gradeColor の色分けに使う
   cls: string; // クラスラベル ("３S"。合同まとめは "３S/３A")
   tabName: string;

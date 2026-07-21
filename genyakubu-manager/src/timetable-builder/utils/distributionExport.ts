@@ -27,10 +27,10 @@ import { sortPoolDatesByCalendar } from './dateGenerate';
 import {
   buildExcelFilename,
   downloadWorkbook,
-  makeSubjectOrderMarker,
   sanitizeSheetName,
   uniqueSheetName,
 } from './excelExport';
+import { makeSubjectOrderMarker } from './analysisHelpers';
 
 // ─── 紙面の実測定数 (2025 年版 xls 由来) ──────────────────────────
 
