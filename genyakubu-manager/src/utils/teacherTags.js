@@ -5,33 +5,61 @@
 // ユーザ行動の履歴・統計は一切使わない。
 //
 // マッチ規則 (slotMatchesTag):
-//   1. slot.subj がタグ文字列を含む   (例: "高松桜井 数学" × タグ "桜井")
+//   1. 学校名タグ: slot.subj の先頭トークン (= 学校。cohorts.firstSubjToken)
+//      と照合する。素の部分文字列だと "高松" が 高松桜井/高松西/高松一 にも
+//      当たるため、schoolCore で正規化した「核」同士で比較する
+//      (例: タグ "高松" は 高松高 のみ、タグ "第一" は 高松一 のみ)
 //   2. slot.grade がタグ文字列を含む  (例: "附中1" × タグ "附中")
 //   3. 部単位のタグ: gradeToDept の結果 ("中学部"/"高校部") がタグを含む
 //      → "中学" / "中学部" は中学の全コマ、"高校" / "高校部" は高校の全コマ
-//   4. 表記ゆらぎ: SCHOOL_TAG_ALIASES で subj トークン表記 ⇔ タグ表記を対応
 
 import { gradeToDept } from "./scheduleHelpers";
 import { isSlotForTeacher } from "./biweekly";
+import { firstSubjToken } from "./cohorts";
 
-// subj 側の学校トークン表記 (キー) に対して、タグとして使われうる別表記
-// (値) の対応表。単純な部分文字列では拾えないゆらぎだけをここに足す。
-// 例: 高松第一高校はコマの subj では "高松一" だが、タグでは "第一" と
-// 書かれる (types.d.ts の ExamPeriod.tags の例示より)。
+// 正規化 (schoolCore) では拾えない略称の対応表。subj 側の学校トークン表記
+// (キー) に対して、タグとして使われうる別表記 (値) を列挙する。
 export const SCHOOL_TAG_ALIASES = Object.freeze({
-  高松一: Object.freeze(["第一", "一高"]),
+  高松高: Object.freeze(["高高"]),
 });
 
-// タグが slot (の科目・学年・部) に関係するか。
+// 学校名の「核」を取り出す正規化。先頭の "高松" / "第"、末尾の "高校" /
+// "高" を落とす:
+//   "高松桜井" → "桜井"   "高松一" → "一"   "第一" → "一"   "一高" → "一"
+//   "西高" → "西"         "桜井高校" → "桜井"
+//   "高松高" / "高松" / "高松高校" / "高松第一高校" → "" / "" / "" / "一"
+// 空核 = 「素の高松高校」を指す表記。
+export function schoolCore(s) {
+  let t = String(s ?? "").trim();
+  if (t.startsWith("高松")) t = t.slice(2);
+  if (t.startsWith("第")) t = t.slice(1);
+  if (t.endsWith("高校")) t = t.slice(0, -2);
+  else if (t.endsWith("高")) t = t.slice(0, -1);
+  return t;
+}
+
+// 学校トークン (subj 先頭トークン) がタグに該当するか。
+export function schoolTokenMatchesTag(token, tag) {
+  if (!token || !tag) return false;
+  if (token === tag) return true;
+  if (SCHOOL_TAG_ALIASES[token]?.includes(tag)) return true;
+  const tokenCore = schoolCore(token);
+  const tagCore = schoolCore(tag);
+  // 空核 (高松/高松高/高松高校) は空核同士でのみマッチさせる。素の包含で
+  // 判定すると "高松" が 高松桜井/高松西/高松一 の全部に当たってしまう。
+  if (tagCore === "") return tokenCore === "";
+  // 核ベースの包含 (例: タグ "桜井" × トークン "高松桜井"、
+  // タグ "東大" × トークン "東大京大医進")
+  return tokenCore.includes(tagCore);
+}
+
+// タグが slot (の学校・学年・部) に関係するか。
 export function slotMatchesTag(slot, tag) {
   if (!tag || !slot) return false;
-  if (slot.subj && slot.subj.includes(tag)) return true;
+  if (schoolTokenMatchesTag(firstSubjToken(slot.subj), tag)) return true;
   if (slot.grade && slot.grade.includes(tag)) return true;
   const dept = slot.grade ? gradeToDept(slot.grade) : null;
   if (dept && dept.includes(tag)) return true;
-  for (const [token, aliases] of Object.entries(SCHOOL_TAG_ALIASES)) {
-    if (aliases.includes(tag) && slot.subj?.includes(token)) return true;
-  }
   return false;
 }
 

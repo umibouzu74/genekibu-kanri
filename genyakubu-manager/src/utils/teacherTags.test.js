@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveTagFiltersForTeacher,
+  schoolCore,
+  schoolTokenMatchesTag,
   slotMatchesTag,
 } from "./teacherTags";
 
@@ -17,10 +19,51 @@ const slot = (over = {}) => ({
   ...over,
 });
 
+describe("schoolCore", () => {
+  it("先頭の 高松/第、末尾の 高校/高 を落として核を取り出す", () => {
+    expect(schoolCore("高松桜井")).toBe("桜井");
+    expect(schoolCore("桜井高校")).toBe("桜井");
+    expect(schoolCore("高松一")).toBe("一");
+    expect(schoolCore("第一")).toBe("一");
+    expect(schoolCore("一高")).toBe("一");
+    expect(schoolCore("高松第一高校")).toBe("一");
+    expect(schoolCore("西高")).toBe("西");
+    // 空核 = 素の高松高校を指す表記
+    expect(schoolCore("高松高")).toBe("");
+    expect(schoolCore("高松")).toBe("");
+    expect(schoolCore("高松高校")).toBe("");
+    // 学校でないトークンはそのまま
+    expect(schoolCore("東大京大医進")).toBe("東大京大医進");
+  });
+});
+
+describe("schoolTokenMatchesTag", () => {
+  it("タグ '高松' は 高松高 のみにマッチし、他の高松◯◯には当たらない", () => {
+    expect(schoolTokenMatchesTag("高松高", "高松")).toBe(true);
+    expect(schoolTokenMatchesTag("高松高", "高松高校")).toBe(true);
+    expect(schoolTokenMatchesTag("高松桜井", "高松")).toBe(false);
+    expect(schoolTokenMatchesTag("高松西", "高松")).toBe(false);
+    expect(schoolTokenMatchesTag("高松一", "高松")).toBe(false);
+  });
+
+  it("略称エイリアス: '高高' は 高松高 にマッチする", () => {
+    expect(schoolTokenMatchesTag("高松高", "高高")).toBe(true);
+    expect(schoolTokenMatchesTag("高松西", "高高")).toBe(false);
+  });
+});
+
 describe("slotMatchesTag", () => {
-  it("subj に含まれる学校名タグにマッチする", () => {
+  it("subj の学校トークンに対応するタグにマッチする", () => {
     expect(slotMatchesTag(slot({ subj: "高松桜井 数学" }), "桜井")).toBe(true);
     expect(slotMatchesTag(slot({ subj: "高松西 英語" }), "桜井")).toBe(false);
+  });
+
+  it("タグ '高松' は 高松高 のコマのみにマッチする", () => {
+    expect(slotMatchesTag(slot({ subj: "高松高 化学" }), "高松")).toBe(true);
+    expect(slotMatchesTag(slot({ subj: "高松桜井 数学" }), "高松")).toBe(false);
+    expect(slotMatchesTag(slot({ subj: "高松西 英語" }), "高松")).toBe(false);
+    expect(slotMatchesTag(slot({ subj: "高松一 英語" }), "高松")).toBe(false);
+    expect(slotMatchesTag(slot({ grade: "中2", subj: "国語" }), "高松")).toBe(false);
   });
 
   it("grade に含まれるタグにマッチする (附中・学年)", () => {
@@ -54,7 +97,23 @@ describe("deriveTagFiltersForTeacher", () => {
     slot({ id: 2, subj: "高松一 英語", teacher: "石原" }),
     slot({ id: 3, grade: "中2", subj: "理科", teacher: "小見山" }),
     slot({ id: 4, grade: "中3", subj: "英/数", teacher: "南條", note: "隔週(江本)" }),
+    slot({ id: 5, grade: "高2", subj: "高松高 化学", teacher: "武下" }),
   ];
+
+  it("タグ '高松' は 高松高 の担当講師のみ ON になる", () => {
+    // 武下 (高松高 化学) → ON
+    expect(
+      deriveTagFiltersForTeacher({ teacher: "武下", slots, tags: ["高松"] })
+    ).toEqual({});
+    // 石原 (高松一 英語のみ) → OFF
+    expect(
+      deriveTagFiltersForTeacher({ teacher: "石原", slots, tags: ["高松"] })
+    ).toEqual({ 高松: false });
+    // 小見山 (高松桜井 数学 + 中2) → OFF
+    expect(
+      deriveTagFiltersForTeacher({ teacher: "小見山", slots, tags: ["高松"] })
+    ).toEqual({ 高松: false });
+  });
 
   it("担当コマに関係するタグは ON (キー無し)、無関係は OFF (false)", () => {
     const filters = deriveTagFiltersForTeacher({
