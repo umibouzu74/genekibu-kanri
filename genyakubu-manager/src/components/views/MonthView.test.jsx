@@ -9,6 +9,7 @@ import { MonthView } from "./MonthView";
 afterEach(cleanup);
 
 const KOSHU_LESSON = {
+  kind: "koshu",
   key: "1:1:1:堀上:英語",
   date: "2026-07-24",
   dateLabel: "7/24(金)",
@@ -19,6 +20,21 @@ const KOSHU_LESSON = {
   grade: "中3",
   cls: "３S/３A",
   tabName: "中3",
+  projectName: "2026夏期",
+};
+
+const EXTERNAL_LESSON = {
+  kind: "external",
+  key: "ext:10",
+  date: "2026-07-24",
+  dateLabel: "7/24(金)",
+  time: "09:00-10:30",
+  periodLabel: "",
+  teacher: "堀上",
+  subj: "予備校",
+  grade: "",
+  cls: "",
+  tabName: "",
   projectName: "2026夏期",
 };
 
@@ -49,6 +65,20 @@ describe("MonthView 講習コマ", () => {
     expect(screen.getByText("３S/３A")).toBeInTheDocument();
     expect(screen.getByText("13:00")).toBeInTheDocument();
     expect(screen.getByText(/英語/)).toBeInTheDocument();
+  });
+
+  it("講習期間の外部授業 (予備校・高校等) は「外」バッジで表示する", () => {
+    render(
+      <MonthView
+        {...baseProps}
+        koshuLessons={[KOSHU_LESSON, EXTERNAL_LESSON]}
+      />
+    );
+    expect(screen.getByText("外")).toBeInTheDocument();
+    expect(screen.getByText("09:00")).toBeInTheDocument();
+    expect(screen.getByText(/予備校/)).toBeInTheDocument();
+    // 講習コマ本体も同じセルに共存する
+    expect(screen.getByText("講")).toBeInTheDocument();
   });
 
   it("他講師の講習コマは表示しない", () => {

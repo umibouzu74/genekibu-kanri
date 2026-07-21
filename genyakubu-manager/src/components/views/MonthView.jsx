@@ -8,7 +8,11 @@ import {
   SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
-import { EXTRA_LESSON_COLOR, KOSHU_LESSON_COLOR } from "../../constants/colors";
+import {
+  EXTRA_LESSON_COLOR,
+  KOSHU_EXTERNAL_COLOR,
+  KOSHU_LESSON_COLOR,
+} from "../../constants/colors";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
 import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
@@ -916,10 +920,26 @@ export function MonthView({
                   </div>
                 );
               })}
-              {/* 講習コマ (講習時間割作成からの読み取り専用反映)。編集は
-                  講習時間割作成側で行うため、クリック導線は付けない */}
+              {/* 講習コマ + 講習期間の外部授業 (講習時間割作成からの読み取り
+                  専用反映)。編集は講習時間割作成側で行うため、クリック導線は
+                  付けない。外部授業 (kind="external") は講師別 Excel の
+                  グレー行と同じ扱いで、種別ラベルを科目欄に出す */}
               {koshuForDay.map((lesson) => {
+                const external = lesson.kind === "external";
+                const col = external ? KOSHU_EXTERNAL_COLOR : KOSHU_LESSON_COLOR;
                 const gc = GC(lesson.grade);
+                const startText = lesson.time
+                  ? lesson.time.split("-")[0]
+                  : lesson.periodLabel;
+                const title = external
+                  ? `[講習期間の外部授業] ${lesson.subj}${
+                      lesson.time ? ` (${lesson.time})` : ""
+                    }\n講習時間割作成の「講師不在・NG」で登録されたコマ`
+                  : `[講習${
+                      lesson.projectName ? `: ${lesson.projectName}` : ""
+                    }] ${lesson.tabName} ${lesson.cls} ${lesson.subj} (${
+                      lesson.periodLabel
+                    }${lesson.time ? ` ${lesson.time}` : ""})\n編集は「講習時間割作成」で行います`;
                 return (
                   <div
                     key={`koshu-${lesson.key}`}
@@ -930,21 +950,17 @@ export function MonthView({
                       padding: "2px 3px",
                       margin: "1px 0",
                       borderRadius: 3,
-                      background: KOSHU_LESSON_COLOR.bg,
-                      borderLeft: `2px solid ${KOSHU_LESSON_COLOR.color}`,
+                      background: col.bg,
+                      borderLeft: `2px solid ${col.color}`,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                     }}
-                    title={`[講習${
-                      lesson.projectName ? `: ${lesson.projectName}` : ""
-                    }] ${lesson.tabName} ${lesson.cls} ${lesson.subj} (${
-                      lesson.periodLabel
-                    }${lesson.time ? ` ${lesson.time}` : ""})\n編集は「講習時間割作成」で行います`}
+                    title={title}
                   >
                     <span
                       style={{
-                        background: KOSHU_LESSON_COLOR.color,
+                        background: col.color,
                         color: "#fff",
                         fontSize: 8,
                         fontWeight: 800,
@@ -953,23 +969,24 @@ export function MonthView({
                         marginRight: 2,
                       }}
                     >
-                      講
+                      {external ? "外" : "講"}
                     </span>
-                    <span
-                      style={{
-                        background: gc.b,
-                        color: gc.f,
-                        fontSize: 8,
-                        fontWeight: 700,
-                        padding: "0 3px",
-                        borderRadius: 2,
-                        marginRight: 2,
-                      }}
-                    >
-                      {lesson.cls || lesson.grade}
-                    </span>
-                    <b>{lesson.time ? lesson.time.split("-")[0] : lesson.periodLabel}</b>{" "}
-                    {lesson.subj}
+                    {!external && (
+                      <span
+                        style={{
+                          background: gc.b,
+                          color: gc.f,
+                          fontSize: 8,
+                          fontWeight: 700,
+                          padding: "0 3px",
+                          borderRadius: 2,
+                          marginRight: 2,
+                        }}
+                      >
+                        {lesson.cls || lesson.grade}
+                      </span>
+                    )}
+                    {startText && <b>{startText}</b>} {lesson.subj}
                   </div>
                 );
               })}

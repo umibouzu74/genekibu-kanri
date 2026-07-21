@@ -194,11 +194,16 @@ export interface ExtraLesson {
 // utils/builderLessons.buildKoshuLessons が導出する読み取り専用の表示モデル。
 // 親アプリはこれを永続化しない (正は builder の project — RTDB
 // appData/builder/schedule_project)。編集は builder 側で行う。
+// kind="external" は externalSessions (予備校・高校等の他学年セッション)
+// 由来で、subj に種別ラベル (メモ→プリセット名→「外部」) が入り、
+// grade / cls / tabName は空。periodLabel は時刻の読めないセッションの
+// 自由記述 label のフォールバック表示に使う。
 export interface KoshuLesson {
-  key: string; // React key 用の安定キー (tabId:dateId:periodId:teacher:subj)
+  kind: "koshu" | "external";
+  key: string; // React key 用の安定キー (koshu: tabId:dateId:periodId:teacher:subj / external: ext:sessionId)
   date: string; // "YYYY-MM-DD"。ラベル "M/D(曜)" を基準日近傍の年で解決したもの
   dateLabel: string; // builder 側の元ラベル ("7/24(金)")
-  time: string | null; // "13:00-13:45" / "13:00" (時限ラベルから解析)。読めなければ null
+  time: string | null; // "13:00-13:45" / "13:00" (時限ラベル等から解析)。読めなければ null
   periodLabel: string; // 時限の短表示 ("1限" — 時刻注記の括弧を除いたもの)
   teacher: string; // 担当講師。builder セルは単一講師名で、照合は完全一致
   // ("·" 連結や note 内併記の慣習は無いので splitTeacherField の対象外)

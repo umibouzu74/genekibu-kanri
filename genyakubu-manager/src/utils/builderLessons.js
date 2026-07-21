@@ -10,9 +10,13 @@
 // - buildKoshuLessons:        Project → KoshuLesson[] (実日付・講師名に展開)
 // - indexKoshuLessonsByDate:  MonthView 用の日付索引 (extraLessons と同型)
 //
-// 対象は各タブの講習コマ (schedule) のみ。externalSessions (予備校・高校等の
-// 他学年セッション) は反映しない — 親アプリ側に通常コマとして既に存在する
-// はずで、載せると二重表示になるため。
+// 対象は各タブの講習コマ (schedule、kind="koshu") と、externalSessions
+// (予備校・高校等の他学年セッション、kind="external")。後者は講習期間中の
+// 講師の他部門出勤で、通常時間割 (Slot) には無い日付指定の予定のため、
+// 講師別 Excel (excelExport のグレー行) と同様に個人スケジュールへ載せる。
+// 種別ラベルも Excel と同じ規則: メモ (プリセット適用時はプリセット名) を
+// 優先し、メモ未設定でも時刻がプリセットに一致すればその名前を表示にだけ
+// 使う (computePresetMemoBackfill)。どちらも無ければ「外部」。
 
 import { newerSchemaVersion } from "../timetable-builder/utils/projectSync";
 import { validateProjectShape } from "../timetable-builder/utils/projectSchema";
@@ -22,9 +26,11 @@ import {
   parseKey,
 } from "../timetable-builder/utils/scheduleKey";
 import { cleanSchedule } from "../timetable-builder/utils/constants";
+import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import {
   formatHHmm,
   getPeriodTimeRange,
+  getSessionTimeRange,
 } from "../timetable-builder/utils/timeRange";
 
 // RTDB / LocalStorage の生値 (project の JSON 文字列) を Project に解釈する。
@@ -114,12 +120,15 @@ function periodShortLabel(label) {
   return short || s;
 }
 
-// project → KoshuLesson[] (日付昇順 → 時限の開始時刻順)。
+// project → KoshuLesson[] (日付昇順 → 開始時刻順)。
 // - タブの実効 config (activeDateIds / activePeriodIds で絞った日・時限) の
 //   範囲だけを対象にする (タブが使わない次元に温存された非表示セルを除外)
 // - teacher が空 / "未定" のセルは除外 (個人スケジュールに載せる先が無い)
 // - 同じ日・時限・講師・科目の複数クラス (合同) は 1 コマにまとめ、
 //   cls をクラス登録順の "/" 連結にする
+// - externalSessions は kind="external" として同じ配列に混ぜる (subj = 種別
+//   ラベル、grade/cls/tabName は空)。時刻の読めないものは Excel の講師別
+//   シートと同じく同日の末尾に沈める
 export function buildKoshuLessons(project, { todayYmd } = {}) {
   if (!project || !Array.isArray(project.tabs)) return [];
   const baseYmd = projectBaseYmd(project, todayYmd);
@@ -184,6 +193,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
     for (const g of grouped.values()) {
       g.classes.sort((a, b) => a.index - b.index);
       lessons.push({
+        kind: "koshu",
         key: g.key,
         date: g.date.ymd,
         dateLabel: g.date.label,
@@ -201,6 +211,54 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       });
     }
   });
+
+  // 外部授業 (予備校・高校等の他学年セッション)。種別ラベルは講師別 Excel
+  // (excelExport) と同じ規則で解決する。日付ラベルはプールと同じ表記なので
+  // resolveDateLabelYmd をそのまま使う (プールから消えた孤児ラベルも、
+  // M/D として読めれば載せる — Excel 出力と同じ寛容さ)。
+  const sessions = Array.isArray(project.externalSessions)
+    ? project.externalSessions
+    : [];
+  const { assignments } = computePresetMemoBackfill(
+    sessions,
+    project.externalSessionPresets || [],
+    project.dates || []
+  );
+  const presetMemoBySessionId = new Map(
+    assignments.map((a) => [a.sessionId, a.memo])
+  );
+  for (const s of sessions) {
+    const teacher =
+      typeof s?.teacherName === "string" ? s.teacherName.trim() : "";
+    if (!teacher || teacher === "未定") continue;
+    const ymd = resolveDateLabelYmd(s.date, baseYmd);
+    if (!ymd) continue;
+    const range = getSessionTimeRange(s);
+    const time = range
+      ? range.endMin != null
+        ? `${formatHHmm(range.startMin)}-${formatHHmm(range.endMin)}`
+        : formatHHmm(range.startMin)
+      : null;
+    lessons.push({
+      kind: "external",
+      key: `ext:${s.id}`,
+      date: ymd,
+      dateLabel: s.date,
+      time,
+      // 時刻が読めないセッションは自由記述 label が時刻代わりの表示になる
+      // (Excel の timeText フォールバックと同じ)
+      periodLabel: s.label || "",
+      teacher,
+      subj: s.memo || presetMemoBySessionId.get(s.id) || "外部",
+      grade: "",
+      cls: "",
+      tabName: "",
+      projectName: project.name || "",
+      _sortMin: range ? range.startMin : Number.POSITIVE_INFINITY,
+      _sortPeriod: Number.POSITIVE_INFINITY,
+      _sortTab: Number.POSITIVE_INFINITY,
+    });
+  }
 
   lessons.sort(
     (a, b) =>
