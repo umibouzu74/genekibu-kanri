@@ -229,8 +229,38 @@ export function groupStaffBySubject({ partTimeStaff = [], subjects = [] }) {
     .filter((g) => g.staff.length > 0);
 }
 
+// 一括印刷ダイアログの「対象月」候補。基準月 (現在表示中の月) の前 before
+// か月〜後 after か月を年跨ぎ込みで列挙する。既定の前 1・後 4 は、夏期講習の
+// 7-8 月連続印刷や冬期の 12-1 月 (年跨ぎ) をカバーする窓。
+// key は "YYYY-MM" (選択状態の Set キー)、label は表示用。
+export function buildBatchMonthOptions({ year, month, before = 1, after = 4 }) {
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return [];
+  const options = [];
+  for (let off = -before; off <= after; off++) {
+    const d = new Date(year, month - 1 + off, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    options.push({
+      year: y,
+      month: m,
+      key: `${y}-${String(m).padStart(2, "0")}`,
+      label: `${y}年${m}月`,
+    });
+  }
+  return options;
+}
+
+// 一括印刷ジョブ名 (popup の document.title)。months は {year, month} の
+// 配列で、複数月選択時は「・」で連結する。
+export function buildBatchDocTitle({ nameCount, months }) {
+  const monthsLabel = (months || [])
+    .map((m) => `${m.year}年${String(m.month).padStart(2, "0")}月`)
+    .join("・");
+  return `月次予定 一括印刷 (${nameCount}名・${monthsLabel})`;
+}
+
 // 一括印刷の <body> HTML。各 slide を <section.batch-print-page> で
-// 包み、CSS の page-break-after で講師 1 人ずつ別ページに分ける。
+// 包み、CSS の page-break-after で講師 1 人 (×月) ずつ別ページに分ける。
 // slide は { headerHtml, monthRootHtml } の形。
 export function buildBatchPrintBodyHtml({ slides }) {
   if (!Array.isArray(slides) || slides.length === 0) return "";

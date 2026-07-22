@@ -17,6 +17,7 @@ import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage"
 import { useBuilderProject } from "./hooks/useBuilderProject";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
+import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
 import { useChordNavigation } from "./hooks/useChordNavigation";
@@ -52,6 +53,7 @@ import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { escapeHtml } from "./utils/escape";
 import { dateToDay, fmtDate } from "./utils/dateHelpers";
 import {
+  buildBatchDocTitle,
   buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
@@ -335,7 +337,7 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  // バイト一括印刷ダイアログ。busy 中は閉じられないようロックする。
+  // 講師一括印刷ダイアログ。busy 中は閉じられないようロックする。
   // progress は { current, total, name } を持ち、ダイアログで <progress>
   // 要素として描画する。abortRef は中断ボタンから for ループへの伝達役。
   const [batchPrintOpen, setBatchPrintOpen] = useState(false);
@@ -646,6 +648,20 @@ export default function App() {
 
   const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
 
+  // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ。
+  // サイドバーの teacherGroups は検索文字列でフィルタされるため、search を
+  // 空にした全量から「バイト」グループだけ除いたものを渡す。
+  const allTeacherGroups = useTeacherGroups({
+    slots: ttFilteredSlots,
+    partTimeStaff,
+    subjects,
+    search: "",
+  });
+  const fulltimeGroups = useMemo(
+    () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
+    [allTeacherGroups]
+  );
+
   const selDayCounts = useMemo(() => {
     if (!selected) return { total: 0, byDay: {} };
     const byDay = {};
@@ -741,11 +757,13 @@ export default function App() {
   };
 
   // ─── Batch Print ────────────────────────────────────────────────
-  // バイトを複数選択して各人の月次予定を 1 ジョブにまとめて印刷する。
-  // selected (現在の MonthView 表示講師) を順次差し替えて React に再描画
-  // させ、各回の .month-print-root の outerHTML をスナップショット。
-  // 全員ぶん集まったら popup window に流し込んで window.print() する。
-  // 終了後は元の selected / view に戻す。
+  // 講師 (バイト + 常勤) を複数選択して各人の月次予定を 1 ジョブに
+  // まとめて印刷する。months ({year, month}[] 昇順) を複数選ぶと
+  // 講師ごとに各月 1 枚ずつ連続で出す (配布時に人単位で束ねやすい順)。
+  // selected / monthOff (現在の MonthView 表示講師・表示月) を順次
+  // 差し替えて React に再描画させ、各回の .month-print-root の outerHTML
+  // をスナップショット。全員ぶん集まったら popup window に流し込んで
+  // window.print() する。終了後は元の selected / view / monthOff に戻す。
   //
   // popup は user gesture (ボタンクリック) 直下で開かないと Safari/Firefox
   // でブロックされやすい。await を挟む前に先に window.open しておく。
@@ -757,8 +775,13 @@ export default function App() {
   }, []);
 
   const handleBatchPrint = useCallback(
-    async (teachers) => {
+    async (teachers, months) => {
       if (!Array.isArray(teachers) || teachers.length === 0) return;
+      // months 未指定 (旧呼び出し互換) は現在表示中の月のみ。
+      const monthList =
+        Array.isArray(months) && months.length > 0
+          ? months
+          : [{ year: vy, month: vm }];
       const w = window.open("", "_blank");
       if (!w) {
         toasts.error(
@@ -770,21 +793,35 @@ export default function App() {
       batchPrintAbortRef.current = ac;
       const savedSelected = selected;
       const savedView = view;
+      const savedMonthOff = monthOff;
+      // monthOff は「今日の月」からのオフセット。対象年月 → monthOff の
+      // 変換基準も同じく今日にする。
+      const base = new Date();
+      const offsetOf = (y, m) =>
+        (y - base.getFullYear()) * 12 + (m - 1 - base.getMonth());
+      // 講師ごとに各月を連続で出す (人単位で束ねて配布できる紙順)。
+      const jobs = [];
+      for (const t of teachers) {
+        for (const mo of monthList) {
+          jobs.push({ teacher: t, year: mo.year, month: mo.month });
+        }
+      }
       setBatchPrintBusy(true);
-      setBatchPrintProgress({ current: 0, total: teachers.length, name: "" });
+      setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
       try {
         const slides = [];
-        for (let i = 0; i < teachers.length; i++) {
+        for (let i = 0; i < jobs.length; i++) {
           if (ac.signal.aborted) break;
-          const t = teachers[i];
+          const { teacher: t, year: jy, month: jm } = jobs[i];
           setBatchPrintProgress({
             current: i + 1,
-            total: teachers.length,
-            name: t,
+            total: jobs.length,
+            name: monthList.length > 1 ? `${t}・${jm}月` : t,
           });
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);
+            setMonthOff(offsetOf(jy, jm));
             setView(VIEWS.MONTH);
           });
           // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
@@ -796,10 +833,11 @@ export default function App() {
           const root = document.querySelector(".month-print-root");
           if (!root) continue;
           slides.push({
+            teacher: t,
             headerHtml: buildMonthHeaderHtml({
               teacher: t,
-              year: vy,
-              month: vm,
+              year: jy,
+              month: jm,
               visibility: eventVisibility,
             }),
             monthRootHtml: root.outerHTML,
@@ -823,7 +861,8 @@ export default function App() {
           hasMonthView: true,
         });
         const bodyHtml = buildBatchPrintBodyHtml({ slides });
-        const docTitle = `月次予定 一括印刷 (${slides.length}名・${vy}年${String(vm).padStart(2, "0")}月)`;
+        const nameCount = new Set(slides.map((s) => s.teacher)).size;
+        const docTitle = buildBatchDocTitle({ nameCount, months: monthList });
         w.document.write(
           `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
         );
@@ -831,16 +870,17 @@ export default function App() {
         w.onafterprint = () => w.close();
         setTimeout(() => w.print(), 300);
       } finally {
-        // 元の選択状態 / view に戻す。null だった場合も含めそのまま代入。
+        // 元の選択状態 / view / 表示月に戻す。null だった場合も含めそのまま代入。
         batchPrintAbortRef.current = null;
         setSelected(savedSelected);
         setView(savedView);
+        setMonthOff(savedMonthOff);
         setBatchPrintBusy(false);
         setBatchPrintProgress({ current: 0, total: 0, name: "" });
         setBatchPrintOpen(false);
       }
     },
-    [selected, view, vy, vm, eventVisibility, toasts]
+    [selected, view, monthOff, vy, vm, eventVisibility, toasts]
   );
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -969,7 +1009,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setBatchPrintOpen(true)}
-                aria-label="バイトを選んでまとめて印刷"
+                aria-label="講師を選んでまとめて印刷"
                 style={{ ...S.btn(false), border: "1px solid #ccc" }}
               >
                 📋 まとめて印刷
@@ -1462,12 +1502,15 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* バイト一括印刷ダイアログ — lazy-loaded */}
+      {/* 講師一括印刷ダイアログ — lazy-loaded */}
       {batchPrintOpen && (
         <Suspense fallback={null}>
           <BatchPrintDialog
             partTimeStaff={partTimeStaff}
+            fulltimeGroups={fulltimeGroups}
             subjects={subjects}
+            year={vy}
+            month={vm}
             onClose={() => setBatchPrintOpen(false)}
             onPrint={handleBatchPrint}
             onAbort={handleBatchPrintAbort}

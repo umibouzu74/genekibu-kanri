@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildBatchDocTitle,
+  buildBatchMonthOptions,
   buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
   buildMonthLabel,
@@ -336,6 +338,79 @@ describe("groupStaffBySubject", () => {
     // にそれぞれ独立して入る。staff が消えないことを担保する。
     const allStaff = result.flatMap((g) => g.staff);
     expect(allStaff.sort()).toEqual(["A", "B"]);
+  });
+});
+
+describe("buildBatchMonthOptions", () => {
+  it("基準月の前 1 か月〜後 4 か月を昇順で列挙する (既定)", () => {
+    const opts = buildBatchMonthOptions({ year: 2026, month: 7 });
+    expect(opts.map((o) => o.key)).toEqual([
+      "2026-06",
+      "2026-07",
+      "2026-08",
+      "2026-09",
+      "2026-10",
+      "2026-11",
+    ]);
+    expect(opts[1]).toEqual({
+      year: 2026,
+      month: 7,
+      key: "2026-07",
+      label: "2026年7月",
+    });
+  });
+
+  it("年跨ぎ (12 月基準) は翌年へ正しく繰り上がる", () => {
+    const opts = buildBatchMonthOptions({ year: 2026, month: 12 });
+    expect(opts.map((o) => o.key)).toEqual([
+      "2026-11",
+      "2026-12",
+      "2027-01",
+      "2027-02",
+      "2027-03",
+      "2027-04",
+    ]);
+    expect(opts[2].label).toBe("2027年1月");
+  });
+
+  it("1 月基準では前月が前年 12 月になる", () => {
+    const opts = buildBatchMonthOptions({ year: 2027, month: 1 });
+    expect(opts[0]).toMatchObject({ year: 2026, month: 12, key: "2026-12" });
+  });
+
+  it("before/after を指定して窓を変えられる", () => {
+    const opts = buildBatchMonthOptions({
+      year: 2026,
+      month: 7,
+      before: 0,
+      after: 1,
+    });
+    expect(opts.map((o) => o.key)).toEqual(["2026-07", "2026-08"]);
+  });
+
+  it("year/month が数値でなければ空配列 (安全側)", () => {
+    expect(buildBatchMonthOptions({ year: undefined, month: 7 })).toEqual([]);
+    expect(buildBatchMonthOptions({ year: 2026, month: NaN })).toEqual([]);
+  });
+});
+
+describe("buildBatchDocTitle", () => {
+  it("複数月は 2 桁パディングして中黒で連結する", () => {
+    expect(
+      buildBatchDocTitle({
+        nameCount: 3,
+        months: [
+          { year: 2026, month: 7 },
+          { year: 2026, month: 8 },
+        ],
+      })
+    ).toBe("月次予定 一括印刷 (3名・2026年07月・2026年08月)");
+  });
+
+  it("単月は従来どおりの形式", () => {
+    expect(
+      buildBatchDocTitle({ nameCount: 5, months: [{ year: 2026, month: 7 }] })
+    ).toBe("月次予定 一括印刷 (5名・2026年07月)");
   });
 });
 
