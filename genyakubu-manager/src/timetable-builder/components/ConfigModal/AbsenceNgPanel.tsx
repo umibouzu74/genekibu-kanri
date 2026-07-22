@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { computeAutoNgEntries } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
+import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
@@ -554,10 +555,12 @@ export default function AbsenceNgPanel() {
       <PresetPanel
         presets={presets}
         dates={poolDates}
+        sessions={sessions}
         addPreset={addExternalSessionPreset}
         updatePreset={updateExternalSessionPreset}
         removePreset={removeExternalSessionPreset}
         selectedTeacherNames={selectedTeacherNames}
+        showToast={showToast}
       />
 
       {/* プリセット名のメモ後付け (メモ未設定の既存セッションがあるときだけ表示) */}
@@ -1162,9 +1165,12 @@ function DateSection({
 
 // ── プリセット管理 (折りたたみ式) ─────────────────
 // 旧 ExternalCounts.jsx 内の PresetPanel をそのまま流用。
-function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, selectedTeacherNames = [] }) {
+function PresetPanel({ presets, dates, sessions = [], addPreset, updatePreset, removePreset, selectedTeacherNames = [], showToast }) {
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  // 編集で名称/メモが変わるとき、登録済みセッションのメモも同期するか
+  // (対象があるときだけチェックボックスを表示。既定 ON)
+  const [syncMemos, setSyncMemos] = useState(true);
   // F5m: 期間は「なし (null)」を第一級で扱う。旧実装は blankDraft / 編集
   // fallback がプール先頭日に snap していたため、期間なしプリセットを
   // 改名だけして保存すると先頭日の期間が勝手に付与された。
@@ -1198,6 +1204,7 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, se
 
   const startEdit = (p) => {
     setEditingId(p.id);
+    setSyncMemos(true);
     setDraft({
       name: p.name,
       startTime: p.startTime || '',
@@ -1228,6 +1235,21 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, se
     });
   };
 
+  // 編集中の名称/メモ変更が登録済みセッションへ同期できるかの判定。
+  // 対象は「変更前ラベル + 時刻が一致 = そのプリセット由来」のセッションのみ
+  // (computePresetRenameSyncIds)。時刻も同時に編集していても、セッションが
+  // 持つのは変更前の時刻なので突き合わせは編集前のプリセット値で行う。
+  const editingPreset = editingId != null ? presets.find(p => p.id === editingId) : null;
+  const renameSync = useMemo(() => {
+    if (!editingPreset) return null;
+    const oldLabel = presetSessionLabel(editingPreset);
+    const newLabel = draft.memo.trim() || draft.name.trim();
+    if (!oldLabel || !newLabel || oldLabel === newLabel) return null;
+    const ids = computePresetRenameSyncIds(sessions, editingPreset);
+    if (ids.length === 0) return null;
+    return { oldLabel, newLabel, count: ids.length };
+  }, [editingPreset, draft.name, draft.memo, sessions]);
+
   const draftValidation = useMemo(() => {
     if (!draft.name.trim()) return '名前を入力してください';
     const sMin = draft.startTime ? parseHHmm(draft.startTime) : null;
@@ -1252,8 +1274,18 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, se
       memo: draft.memo.trim(),
       teachers: draft.teachers,
     };
-    if (editingId == null) addPreset(payload);
-    else updatePreset(editingId, payload);
+    if (editingId == null) {
+      addPreset(payload);
+    } else {
+      const doSync = Boolean(renameSync && syncMemos);
+      updatePreset(editingId, payload, doSync);
+      if (doSync && showToast) {
+        showToast(
+          `登録済みセッション ${renameSync.count} 件のメモを「${renameSync.newLabel}」に更新しました (Undo で戻せます)`,
+          'success', 3500,
+        );
+      }
+    }
     cancelEdit();
   };
 
@@ -1410,6 +1442,19 @@ function PresetPanel({ presets, dates, addPreset, updatePreset, removePreset, se
                 title="上の「講師 (複数選択可)」で選択中の講師をこのプリセットの対象にします"
               >⬆ 選択中の講師をセット ({selectedTeacherNames.length}名)</button>
             </div>
+            {/* 名称/メモの変更が登録済みセッションに同期できる場合のみ表示 */}
+            {renameSync && (
+              <label className="flex items-start gap-1.5 mb-2 text-xs text-builder-ink cursor-pointer">
+                <input type="checkbox" checked={syncMemos}
+                  onChange={(e) => setSyncMemos(e.target.checked)}
+                  className="mt-0.5" />
+                <span>
+                  このプリセット由来の登録済みセッション <strong>{renameSync.count} 件</strong> のメモも
+                  「{renameSync.oldLabel}」→「{renameSync.newLabel}」に更新する
+                  <span className="text-builder-ink-muted"> (時刻が一致するもののみ。講師のNG判定は時刻ベースなので変わりません)</span>
+                </span>
+              </label>
+            )}
             <div className="flex flex-wrap gap-2 items-center">
               <button type="button" onClick={saveDraft}
                 disabled={draftValidation != null}

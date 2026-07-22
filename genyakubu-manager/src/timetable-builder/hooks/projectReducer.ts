@@ -22,6 +22,7 @@ import {
 } from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
+import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
 import type {
   CombinedGroup,
   DayStatus,
@@ -87,7 +88,7 @@ export type ProjectAction =
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
   | { type: 'teacher/applyPresetMemos' }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
-  | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>> } }
+  | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>>; syncSessionMemos?: boolean } }
   | { type: 'preset/remove'; payload: { id: number } }
   | { type: 'cell/assign'; payload: { dateId: number; periodId: number; classId: number; type: 'subject' | 'teacher'; val: string } }
   | { type: 'cell/toggleLock'; payload: { dateId: number; periodId: number; classId: number } }
@@ -1276,7 +1277,7 @@ function applyAction(project: Project, action: ProjectAction): Project {
       return { ...project, externalSessionPresets: [...presets, newPreset] };
     }
     case 'preset/update': {
-      const { id, updates } = action.payload;
+      const { id, updates, syncSessionMemos } = action.payload;
       const presets = project.externalSessionPresets || [];
       const target = presets.find(p => p.id === id);
       if (!target) return project;
@@ -1306,9 +1307,28 @@ function applyAction(project: Project, action: ProjectAction): Project {
         else delete merged.teachers;
       }
       if (!merged.startTime) delete merged.endTime;
+      // syncSessionMemos: 名称 / メモの変更を登録済みセッションへ同期する
+      // (プリセット名の間違いを後から直すケース)。突き合わせは
+      // computePresetRenameSyncIds (純粋関数) — 変更前のラベル + 時刻が
+      // 一致するセッションのみ。preset とセッションを同一 action で更新
+      // するので Undo 1 回で両方戻せる。
+      let newSessions = project.externalSessions;
+      if (syncSessionMemos) {
+        const oldLabel = presetSessionLabel(target);
+        const newLabel = presetSessionLabel(merged);
+        if (oldLabel && newLabel && oldLabel !== newLabel) {
+          const ids = new Set(computePresetRenameSyncIds(project.externalSessions, target));
+          if (ids.size > 0) {
+            newSessions = (project.externalSessions || []).map(s =>
+              ids.has(s.id) ? { ...s, memo: newLabel } : s,
+            );
+          }
+        }
+      }
       return {
         ...project,
         externalSessionPresets: presets.map(p => p.id === id ? merged : p),
+        ...(newSessions !== project.externalSessions ? { externalSessions: newSessions } : {}),
       };
     }
     case 'preset/remove': {

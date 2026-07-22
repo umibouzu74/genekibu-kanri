@@ -718,3 +718,85 @@ describe('AbsenceNgPanel — 一括解除', () => {
     expect(screen.getByRole('button', { name: /すべてのNG設定を解除/ })).not.toBeDisabled();
   });
 });
+
+describe('AbsenceNgPanel — プリセット改名の登録済みセッション同期', () => {
+  // 予備校1限 (09:00-10:10) のプリセットと、それ由来のセッション 2 件 +
+  // 時刻違い (別プリセット由来相当) 1 件
+  const projectWithSessions = {
+    teachers: [{ name: '堀上', subjects: ['英語'] }],
+    subjects: ['英語'],
+    externalSessions: [
+      { id: 1, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
+      { id: 2, date: '7/25(土)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
+      { id: 3, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '10:20', endTime: '11:30' },
+    ],
+    externalSessionPresets: [
+      { id: 1, name: '予備校1限', startTime: '09:00', endTime: '10:10' },
+    ],
+    externalCounts: {},
+    dates: [{ id: 1, label: '7/24(金)' }, { id: 2, label: '7/25(土)' }],
+    periods: [{ id: 1, label: '1限' }],
+  };
+
+  const startRename = (newName) => {
+    fireEvent.click(screen.getByText(/プリセット管理/));
+    fireEvent.click(screen.getByLabelText('予備校1限 を編集'));
+    fireEvent.change(screen.getByLabelText(/名前 \*/), { target: { value: newName } });
+  };
+
+  it('名称変更で同期チェックボックスが対象件数 (時刻一致のみ) 付きで表示され、既定 ON で保存に渡る', () => {
+    const updateExternalSessionPreset = vi.fn();
+    const { uiValue } = renderPanel({
+      overrides: { project: projectWithSessions, updateExternalSessionPreset },
+    });
+    startRename('予備校2限');
+    // 時刻一致の 2 件のみ (id:3 の 10:20 開始は対象外)
+    const checkbox = screen.getByRole('checkbox', { name: /登録済みセッション/ });
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText(/2 件/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('変更を保存'));
+    expect(updateExternalSessionPreset).toHaveBeenCalledWith(
+      1, expect.objectContaining({ name: '予備校2限' }), true,
+    );
+    expect(uiValue.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('2 件'), 'success', 3500,
+    );
+  });
+
+  it('チェックを外すと同期せずに保存する (toast なし)', () => {
+    const updateExternalSessionPreset = vi.fn();
+    const { uiValue } = renderPanel({
+      overrides: { project: projectWithSessions, updateExternalSessionPreset },
+    });
+    startRename('予備校2限');
+    fireEvent.click(screen.getByRole('checkbox', { name: /登録済みセッション/ }));
+    fireEvent.click(screen.getByText('変更を保存'));
+    expect(updateExternalSessionPreset).toHaveBeenCalledWith(
+      1, expect.objectContaining({ name: '予備校2限' }), false,
+    );
+    expect(uiValue.showToast).not.toHaveBeenCalled();
+  });
+
+  it('名称を変えていない編集ではチェックボックスを出さない', () => {
+    renderPanel({ overrides: { project: projectWithSessions } });
+    fireEvent.click(screen.getByText(/プリセット管理/));
+    fireEvent.click(screen.getByLabelText('予備校1限 を編集'));
+    expect(screen.queryByRole('checkbox', { name: /登録済みセッション/ })).toBeNull();
+  });
+
+  it('対象セッションが無い改名ではチェックボックスを出さず、同期フラグ false で保存する', () => {
+    const updateExternalSessionPreset = vi.fn();
+    renderPanel({
+      overrides: {
+        project: { ...projectWithSessions, externalSessions: [] },
+        updateExternalSessionPreset,
+      },
+    });
+    startRename('予備校2限');
+    expect(screen.queryByRole('checkbox', { name: /登録済みセッション/ })).toBeNull();
+    fireEvent.click(screen.getByText('変更を保存'));
+    expect(updateExternalSessionPreset).toHaveBeenCalledWith(
+      1, expect.objectContaining({ name: '予備校2限' }), false,
+    );
+  });
+});
