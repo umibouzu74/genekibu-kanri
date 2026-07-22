@@ -45,8 +45,10 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
     // 他学年セッション登録プリセット (時刻 / 期間 / メモ の頻出パターン)
     addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] }) =>
       dispatch({ type: 'preset/add', payload: preset }),
-    updateExternalSessionPreset: (id: number, updates: Partial<Omit<ExternalSessionPreset, 'id'>>) =>
-      dispatch({ type: 'preset/update', payload: { id, updates } }),
+    // syncSessionMemos=true で、名称/メモの変更を「そのプリセット由来
+    // (変更前ラベル + 時刻一致)」の登録済みセッションのメモへも同期する
+    updateExternalSessionPreset: (id: number, updates: Partial<Omit<ExternalSessionPreset, 'id'>>, syncSessionMemos = false) =>
+      dispatch({ type: 'preset/update', payload: { id, updates, syncSessionMemos } }),
     removeExternalSessionPreset: (id: number) =>
       dispatch({ type: 'preset/remove', payload: { id } }),
   }), [dispatch]);

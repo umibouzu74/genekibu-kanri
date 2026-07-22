@@ -991,6 +991,88 @@ describe('projectReducer — externalSessionPresets', () => {
     expect(state).toBe(before);
   });
 
+  it('preset/update + syncSessionMemos: 旧ラベル + 時刻一致のセッションメモを新ラベルへ同期', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
+        // 時刻違い (別プリセット由来) は同名メモでも触らない
+        { id: 2, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '10:20', endTime: '11:30' },
+        // 手書きメモは触らない
+        { id: 3, date: '12/25(木)', teacherName: '田中', label: '', memo: '予備校1限 (振替)', startTime: '09:00', endTime: '10:10' },
+      ],
+      externalSessionPresets: [
+        { id: 1, name: '予備校1限', startTime: '09:00', endTime: '10:10' },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { name: '予備校2限' }, syncSessionMemos: true },
+    });
+    expect(next.project.externalSessionPresets[0].name).toBe('予備校2限');
+    expect(next.project.externalSessions.map(s => s.memo)).toEqual([
+      '予備校2限', '予備校1限', '予備校1限 (振替)',
+    ]);
+  });
+
+  it('preset/update + syncSessionMemos: memo 付きプリセットは展開ラベル (memo 優先) で突き合わせる', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校 / 高2', startTime: '09:00', endTime: '10:10' },
+      ],
+      externalSessionPresets: [
+        { id: 1, name: '予備校1限', memo: '予備校 / 高2', startTime: '09:00', endTime: '10:10' },
+      ],
+    });
+    const next = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { memo: '予備校 / 高3' }, syncSessionMemos: true },
+    });
+    expect(next.project.externalSessions[0].memo).toBe('予備校 / 高3');
+  });
+
+  it('preset/update + syncSessionMemos: ラベルが変わらない更新や対象なしでは externalSessions は同参照', () => {
+    const sessions = [
+      { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
+    ];
+    const state = makeState({
+      externalSessions: sessions,
+      externalSessionPresets: [{ id: 1, name: '予備校1限', startTime: '09:00', endTime: '10:10' }],
+    });
+    // 時刻だけの変更 (ラベル不変)
+    const t = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { startTime: '09:05' }, syncSessionMemos: true },
+    });
+    expect(t.project.externalSessions).toBe(state.project.externalSessions);
+    // flag なしの改名は従来どおり同期しない
+    const noFlag = projectReducer(state, {
+      type: 'preset/update',
+      payload: { id: 1, updates: { name: '予備校2限' } },
+    });
+    expect(noFlag.project.externalSessions).toBe(state.project.externalSessions);
+  });
+
+  it('preset/update + syncSessionMemos: 時刻も同時に変えても突き合わせは変更前の時刻で行う', () => {
+    const state = makeState({
+      externalSessions: [
+        { id: 1, date: '12/25(木)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
+      ],
+      externalSessionPresets: [{ id: 1, name: '予備校1限', startTime: '09:00', endTime: '10:10' }],
+    });
+    const next = projectReducer(state, {
+      type: 'preset/update',
+      payload: {
+        id: 1,
+        updates: { name: '予備校2限', startTime: '10:20', endTime: '11:30' },
+        syncSessionMemos: true,
+      },
+    });
+    // セッションは変更前の時刻 (09:00-10:10) を持つのでマッチする
+    expect(next.project.externalSessions[0].memo).toBe('予備校2限');
+    // セッションの時刻自体は変えない (時刻の付け替えはこの機能の対象外)
+    expect(next.project.externalSessions[0].startTime).toBe('09:00');
+  });
+
   it('preset/remove: 指定 id を drop', () => {
     let state = makeState();
     state = projectReducer(state, { type: 'preset/add', payload: { name: 'A' } });
