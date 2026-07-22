@@ -1,37 +1,82 @@
 import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
-import { groupStaffBySubject } from "../utils/printStyles";
+import { buildBatchMonthOptions, groupStaffBySubject } from "../utils/printStyles";
 import { S } from "../styles/common";
 
-// 月次カレンダーをバイト複数人ぶん「まとめて印刷」する選択ダイアログ。
-// 教科ごとにバイトをグループ化して表示し、教科横断でチェックボックス選択する。
-// 同一バイトが複数教科を担当する場合は両方のグループに出すが、選択状態は名前
-// 単位で共有する (重複印刷は呼び出し側で起きない)。
+// 月次カレンダーを講師複数人ぶん「まとめて印刷」する選択ダイアログ。
+// 対象は 2 セクション:
+//   - バイト: partTimeStaff を教科 (subjectIds) ごとにグループ化
+//   - バイト以外の講師: 常勤講師 (時間割のコマに登場するがバイト一覧に
+//     無い講師) を教科別にグループ化した fulltimeGroups をそのまま表示
+// 同一講師が複数グループに出る場合も、選択状態は名前単位で共有する
+// (重複印刷は呼び出し側で起きない)。
 //
-// onPrint には選択された名前配列が渡る。busy true のあいだは選択 UI を
-// fieldset disabled でロックし、フッタの「中断」ボタンだけ反応するようにする。
-// onAbort は中断ボタン押下時のコールバック (省略可、未指定時は中断ボタンを
-// 出さない)。progress は { current, total, name } を期待する。
+// 対象月は year/month (現在表示中の月) を基準に前 1 か月〜後 4 か月を
+// チェックボックスで複数選択できる (夏期の 7-8 月連続印刷など)。
+//
+// onPrint には (選択された名前配列, 選択月 {year, month}[] 昇順) が渡る。
+// busy true のあいだは選択 UI を fieldset disabled でロックし、フッタの
+// 「中断」ボタンだけ反応するようにする。onAbort は中断ボタン押下時の
+// コールバック (省略可、未指定時は中断ボタンを出さない)。progress は
+// { current, total, name } を期待する。
 export function BatchPrintDialog({
   partTimeStaff = [],
+  fulltimeGroups = [],
   subjects = [],
+  year,
+  month,
   onClose,
   onPrint,
   onAbort,
   busy = false,
   progress = { current: 0, total: 0, name: "" },
 }) {
-  const groups = useMemo(
-    () => groupStaffBySubject({ partTimeStaff, subjects }),
-    [partTimeStaff, subjects]
-  );
+  // バイト / バイト以外を { subjectName, staff } の同一形式に揃えて
+  // セクション単位でレンダリングする。
+  const sections = useMemo(() => {
+    const list = [];
+    const staffGroups = groupStaffBySubject({ partTimeStaff, subjects });
+    if (staffGroups.length > 0) {
+      list.push({ title: "バイト", groups: staffGroups });
+    }
+    const ft = (fulltimeGroups || [])
+      .filter((g) => Array.isArray(g?.teachers) && g.teachers.length > 0)
+      .map((g) => ({ subjectName: g.label, staff: g.teachers }));
+    if (ft.length > 0) {
+      list.push({ title: "バイト以外の講師", groups: ft });
+    }
+    return list;
+  }, [partTimeStaff, subjects, fulltimeGroups]);
+
   const allNames = useMemo(() => {
     const s = new Set();
-    for (const g of groups) for (const n of g.staff) s.add(n);
+    for (const sec of sections)
+      for (const g of sec.groups) for (const n of g.staff) s.add(n);
     return s;
-  }, [groups]);
+  }, [sections]);
 
   const [selected, setSelected] = useState(() => new Set());
+
+  // 対象月: 既定は現在表示中の月のみ選択。
+  const monthOptions = useMemo(
+    () => buildBatchMonthOptions({ year, month }),
+    [year, month]
+  );
+  const [selectedMonthKeys, setSelectedMonthKeys] = useState(() => {
+    const defaultKey = monthOptions.find(
+      (o) => o.year === year && o.month === month
+    )?.key;
+    return new Set(defaultKey ? [defaultKey] : []);
+  });
+
+  const toggleMonth = (key) => {
+    setSelectedMonthKeys((p) => {
+      const next = new Set(p);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const toggleOne = (name) => {
     setSelected((p) => {
@@ -57,13 +102,25 @@ export function BatchPrintDialog({
     });
   };
 
+  // monthOptions は昇順生成なので、filter だけで選択月も昇順になる。
+  const selectedMonths = useMemo(
+    () =>
+      monthOptions
+        .filter((o) => selectedMonthKeys.has(o.key))
+        .map(({ year: y, month: m }) => ({ year: y, month: m })),
+    [monthOptions, selectedMonthKeys]
+  );
+
   const handlePrint = () => {
     const list = [...selected];
-    if (list.length > 0) onPrint(list);
+    if (list.length > 0 && selectedMonths.length > 0) {
+      onPrint(list, selectedMonths);
+    }
   };
 
   const total = allNames.size;
   const count = selected.size;
+  const monthCount = selectedMonths.length;
 
   return (
     <Modal
@@ -84,6 +141,59 @@ export function BatchPrintDialog({
           opacity: busy ? 0.6 : 1,
         }}
       >
+        {/* 対象月 (複数選択可)。選択ゼロだと印刷ボタンが無効になる。 */}
+        <fieldset
+          style={{
+            margin: "0 0 12px",
+            padding: "6px 10px 10px",
+            border: "1px solid #ddd",
+            borderRadius: 8,
+          }}
+        >
+          <legend
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "0 6px",
+              color: "#444",
+            }}
+          >
+            対象月 ({monthCount} か月選択中)
+          </legend>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {monthOptions.map((o) => {
+              const on = selectedMonthKeys.has(o.key);
+              return (
+                <label
+                  key={o.key}
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                    fontSize: 13,
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    background: on ? "#eef" : "transparent",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggleMonth(o.key)}
+                  />
+                  {o.label}
+                </label>
+              );
+            })}
+          </div>
+          {monthCount === 0 && (
+            <div style={{ fontSize: 11, color: "#a02020", marginTop: 6 }}>
+              少なくとも 1 か月選択してください。
+            </div>
+          )}
+        </fieldset>
+
         <div
           style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
         >
@@ -118,96 +228,110 @@ export function BatchPrintDialog({
             padding: 8,
           }}
         >
-          {groups.length === 0 ? (
+          {sections.length === 0 ? (
             <div style={{ fontSize: 13, color: "#888", padding: "16px 8px" }}>
-              登録されたバイトがありません。
+              登録された講師がいません。
             </div>
           ) : (
-            groups.map((g) => {
-              const selectedInGroup = g.staff.filter((n) =>
-                selected.has(n)
-              ).length;
-              const allSelected =
-                g.staff.length > 0 && selectedInGroup === g.staff.length;
-              return (
-                <fieldset
-                  key={g.subjectName}
+            sections.map((sec) => (
+              <div key={sec.title}>
+                <div
                   style={{
-                    margin: "0 0 10px",
-                    padding: "6px 10px 10px",
-                    border: "1px solid #ddd",
-                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#333",
+                    margin: "4px 0 6px",
                   }}
                 >
-                  <legend
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      padding: "0 6px",
-                      color: "#444",
-                    }}
-                  >
-                    {g.subjectName} ({selectedInGroup} / {g.staff.length})
-                  </legend>
-                  {/* グループ単位の全選択/解除トグルは legend semantics を壊さないよう
-                      legend の外に出す */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      marginBottom: 6,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setGroup(g, !allSelected)}
+                  {sec.title}
+                </div>
+                {sec.groups.map((g) => {
+                  const selectedInGroup = g.staff.filter((n) =>
+                    selected.has(n)
+                  ).length;
+                  const allSelected =
+                    g.staff.length > 0 && selectedInGroup === g.staff.length;
+                  return (
+                    <fieldset
+                      key={`${sec.title}:${g.subjectName}`}
                       style={{
-                        fontSize: 11,
-                        padding: "2px 10px",
-                        border: "1px solid #ccc",
-                        borderRadius: 4,
-                        background: "#fff",
+                        margin: "0 0 10px",
+                        padding: "6px 10px 10px",
+                        border: "1px solid #ddd",
+                        borderRadius: 8,
                       }}
                     >
-                      {allSelected ? "グループ解除" : "グループ選択"}
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fill, minmax(120px, 1fr))",
-                      gap: 4,
-                    }}
-                  >
-                    {g.staff.map((name) => {
-                      const on = selected.has(name);
-                      return (
-                        <label
-                          key={name}
+                      <legend
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          padding: "0 6px",
+                          color: "#444",
+                        }}
+                      >
+                        {g.subjectName} ({selectedInGroup} / {g.staff.length})
+                      </legend>
+                      {/* グループ単位の全選択/解除トグルは legend semantics を壊さないよう
+                          legend の外に出す */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setGroup(g, !allSelected)}
                           style={{
-                            display: "flex",
-                            gap: 6,
-                            alignItems: "center",
-                            fontSize: 13,
-                            padding: "4px 6px",
+                            fontSize: 11,
+                            padding: "2px 10px",
+                            border: "1px solid #ccc",
                             borderRadius: 4,
-                            background: on ? "#eef" : "transparent",
+                            background: "#fff",
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={on}
-                            onChange={() => toggleOne(name)}
-                          />
-                          {name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              );
-            })
+                          {allSelected ? "グループ解除" : "グループ選択"}
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fill, minmax(120px, 1fr))",
+                          gap: 4,
+                        }}
+                      >
+                        {g.staff.map((name) => {
+                          const on = selected.has(name);
+                          return (
+                            <label
+                              key={name}
+                              style={{
+                                display: "flex",
+                                gap: 6,
+                                alignItems: "center",
+                                fontSize: 13,
+                                padding: "4px 6px",
+                                borderRadius: 4,
+                                background: on ? "#eef" : "transparent",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => toggleOne(name)}
+                              />
+                              {name}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  );
+                })}
+              </div>
+            ))
           )}
         </div>
 
@@ -226,9 +350,13 @@ export function BatchPrintDialog({
             type="button"
             onClick={handlePrint}
             style={S.btn(true)}
-            disabled={count === 0}
+            disabled={count === 0 || monthCount === 0}
           >
-            {busy ? "準備中…" : `${count} 名分を印刷`}
+            {busy
+              ? "準備中…"
+              : monthCount > 1
+                ? `${count} 名 × ${monthCount} か月分を印刷`
+                : `${count} 名分を印刷`}
           </button>
         </div>
       </fieldset>
@@ -260,7 +388,7 @@ export function BatchPrintDialog({
             }}
           >
             <span>
-              {progress.current} / {progress.total} 名分を生成中…
+              {progress.current} / {progress.total} 枚を生成中…
               {progress.name ? `（${progress.name}）` : ""}
             </span>
             {onAbort && (
