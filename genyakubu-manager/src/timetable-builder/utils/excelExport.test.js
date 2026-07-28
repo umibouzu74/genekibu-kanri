@@ -392,10 +392,48 @@ describe('computeTeacherClassCounts (S1)', () => {
       { tabName: 'メイン', className: '３A' },
     ]);
     expect(stats.tabSpans).toEqual([{ tabName: 'メイン', count: 2 }]);
-    // 堀上は ３S に 2 回 (12/25 の 1・2 限)、３A は 0 回
-    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [2, 0], total: 2 }]);
+    // 堀上は ３S に 2 回 (12/25 の 1・2 限)、うち 2 限は最終コマ = 確認テスト付き
+    expect(stats.rows).toEqual([
+      { teacher: '堀上', counts: [2, 0], testCounts: [1, 0], total: 2, testTotal: 1 },
+    ]);
     expect(stats.columnTotals).toEqual([2, 0]);
+    expect(stats.columnTestTotals).toEqual([1, 0]);
     expect(stats.grandTotal).toBe(2);
+    expect(stats.grandTestTotal).toBe(1);
+  });
+
+  it('確認テスト = 各日の最終コマだけを testCounts に数える (S2)', () => {
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' }, // 1限 → テスト無し
+          [makeKey(1, 2, 1)]: { subject: '数学', teacher: '堀上' }, // 最終コマ → テスト
+          [makeKey(2, 2, 2)]: { subject: '英語', teacher: '堀上' }, // 別日の最終コマ → テスト
+        },
+      }],
+    });
+    const stats = computeTeacherClassCounts(project);
+    expect(stats.rows).toEqual([
+      { teacher: '堀上', counts: [2, 1], testCounts: [1, 1], total: 3, testTotal: 2 },
+    ]);
+    expect(stats.columnTestTotals).toEqual([1, 1]);
+    expect(stats.grandTestTotal).toBe(2);
+  });
+
+  it('最終コマはタブが使う時限 (activePeriodIds) に絞った上での末尾 (E-3)', () => {
+    const base = makeProject().tabs[0].config;
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: { ...base, activePeriodIds: [1] }, // 2限は使わない → 最終コマ = 1限
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+      }],
+    });
+    const stats = computeTeacherClassCounts(project);
+    expect(stats.rows[0].testCounts).toEqual([1, 0]);
+    expect(stats.grandTestTotal).toBe(1);
   });
 
   it('行順は project.teachers の並び → 登録外 → (未定) 末尾', () => {
@@ -421,8 +459,11 @@ describe('computeTeacherClassCounts (S1)', () => {
     expect(stats.rows.map(r => r.teacher)).toEqual(['堀上', '松川', '飛び入り', '(未定)']);
     // 未定 ('未定' と空文字) は (未定) 行にまとまり、列計 = クラスの総コマ数
     expect(stats.rows[3].counts).toEqual([1, 1]);
+    expect(stats.rows[3].testCounts).toEqual([0, 0]);
     expect(stats.columnTotals).toEqual([3, 2]);
+    expect(stats.columnTestTotals).toEqual([1, 1]); // 飛び入り(３S 2限) + 堀上(３A 2限)
     expect(stats.grandTotal).toBe(5);
+    expect(stats.grandTestTotal).toBe(2);
   });
 
   it('合同は代表クラスの列に 1 回だけ数える (科目別シートと同じ規約)', () => {
@@ -438,7 +479,9 @@ describe('computeTeacherClassCounts (S1)', () => {
       }],
     });
     const stats = computeTeacherClassCounts(project);
-    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [1, 0], total: 1 }]);
+    expect(stats.rows).toEqual([
+      { teacher: '堀上', counts: [1, 0], testCounts: [0, 0], total: 1, testTotal: 0 },
+    ]);
     expect(stats.grandTotal).toBe(1);
   });
 
@@ -463,7 +506,9 @@ describe('computeTeacherClassCounts (S1)', () => {
       { tabName: '中3', count: 2 },
       { tabName: '中3', count: 1 },
     ]);
-    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [1, 0, 1], total: 2 }]);
+    expect(stats.rows).toEqual([
+      { teacher: '堀上', counts: [1, 0, 1], testCounts: [0, 0, 0], total: 2, testTotal: 0 },
+    ]);
   });
 });
 
@@ -479,16 +524,32 @@ describe('buildTeacherWorkbook — クラス別回数まとめシート (S1)', (
     expect(ws.getCell(2, 4).value).toBe('計');
     expect(ws.getCell(3, 2).value).toBe('３S');
     expect(ws.getCell(3, 3).value).toBe('３A');
-    // データ行 (行 4): 0 回は空欄
+    // データ行 (行 4): 0 回は空欄。うち確認テスト (最終コマ) は "(テN)" 併記 (S2)
     expect(ws.getCell(4, 1).value).toBe('堀上');
-    expect(ws.getCell(4, 2).value).toBe(2);
+    expect(ws.getCell(4, 2).value).toBe('2(テ1)');
     expect(ws.getCell(4, 3).value || '').toBe('');
-    expect(ws.getCell(4, 4).value).toBe(2);
+    expect(ws.getCell(4, 4).value).toBe('2(テ1)');
     // 合計行 (行 5) は 0 も数値で出す (クラスの総コマ数の突き合わせ用)
     expect(ws.getCell(5, 1).value).toBe('計');
-    expect(ws.getCell(5, 2).value).toBe(2);
+    expect(ws.getCell(5, 2).value).toBe('2(テ1)');
     expect(ws.getCell(5, 3).value).toBe(0);
-    expect(ws.getCell(5, 4).value).toBe(2);
+    expect(ws.getCell(5, 4).value).toBe('2(テ1)');
+    // 凡例 (行 7 = 合計行 + 空行の次) に (テN) の説明
+    expect(String(ws.getCell(7, 1).value)).toContain('(テN) はうち確認テスト付き');
+  });
+
+  it('確認テストの無いセルは数値のまま出す', () => {
+    // 1 限のみ (最終コマは 2 限で未使用) → テ表記なしの素の数値
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+      }],
+    });
+    const ws = buildTeacherWorkbook(project).getWorksheet('クラス別回数');
+    expect(ws.getCell(4, 2).value).toBe(1);
+    expect(ws.getCell(4, 4).value).toBe(1);
   });
 
   it('B4 縦 + タイトル/ヘッダ 3 行繰り返しの印刷既定 (P1 と同じ)', () => {
@@ -862,7 +923,7 @@ describe('xlsx round-trip (E3b)', () => {
     const wsSum = wb2.getWorksheet('クラス別回数');
     expect(wsSum.getCell(2, 1).value).toBe('講師');
     expect(wsSum.getCell(4, 1).value).toBe('堀上');
-    expect(wsSum.getCell(4, 2).value).toBe(2);
+    expect(wsSum.getCell(4, 2).value).toBe('2(テ1)');
     // タブ名の横結合 (B2:C2) と 講師 の縦結合 (A2:A3)
     expect(wsSum.getCell('C2').isMerged).toBe(true);
     expect(wsSum.getCell('C2').master.address).toBe('B2');
