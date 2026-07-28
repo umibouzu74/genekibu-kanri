@@ -61,6 +61,13 @@ const TITLE_ROW_STYLE: CellStyleSpec = {
   alignment: { horizontal: 'left', vertical: 'middle' },
 };
 
+// P1 タイトル行の直下に置く個人シートの 1 行まとめ (S3)。タイトルより
+// 一段小さい通常ウェイト。
+const SUMMARY_LINE_STYLE: CellStyleSpec = {
+  font: { size: 10 },
+  alignment: { horizontal: 'left', vertical: 'middle' },
+};
+
 const TEACHER_HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 11, color: { argb: ARGB_FF } },
   fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB_548235 } },
@@ -785,12 +792,47 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
   return { columns, tabSpans, rows, columnTotals, columnTestTotals, grandTotal, grandTestTotal };
 }
 
+// 回数の表記 (S2): 授業回数に、うち確認テスト付き (最終コマ) があれば
+// "(テN)" を添える。まとめシートのセルと個人シートの 1 行まとめ (S3) で共用。
+function fmtLessonWithTest(lesson: number, test: number): string | number {
+  return test > 0 ? `${lesson}(テ${test})` : lesson;
+}
+
+// S3: 個人シート冒頭 (タイトル直下) に載せる 1 行まとめのテキストを組む
+// 純粋関数 (テスト用に export)。まとめシート (S1/S2) と同じ集計値から
+// その講師の分だけを「クラス 回数(テN)」の並びにする。印刷して個人に
+// 渡った紙 1 枚で、座席表・確認テストの必要枚数が分かるようにする。
+// タブが複数あるときはクラス名の前にタブ名を付けて同名クラスを区別する。
+export function buildTeacherCountLineText(stats: TeacherClassCounts, teacherName: string): string {
+  const row = stats.rows.find(r => r.teacher === teacherName);
+  const multiTab = new Set(stats.columns.map(c => c.tabName)).size > 1;
+  const parts: string[] = [];
+  if (row) {
+    row.counts.forEach((n, i) => {
+      if (n === 0) return;
+      const col = stats.columns[i];
+      const label = multiTab ? `${col.tabName} ${col.className}` : col.className;
+      parts.push(`${label} ${fmtLessonWithTest(n, row.testCounts[i])}`);
+    });
+  }
+  // 講習コマがあっても集計 0 になる端ケース (合同の secondary 側にだけ
+  // 講師が残っている等) は '—' で埋める (行の欠落で以降の行番号が
+  // ずれるより、常に 1 行ある方が扱いやすい)
+  if (!row || parts.length === 0) return 'クラス別回数: —';
+  const note = row.testTotal > 0 ? ' ※(テN)=うち確認テスト付き(最終コマ)' : '';
+  return `クラス別回数: ${parts.join('、')} ／ 計 ${fmtLessonWithTest(row.total, row.testTotal)}${note}`;
+}
+
 // クラス別回数まとめシートを workbook の先頭に積む (buildTeacherWorkbook の
 // 冒頭で最初に呼ぶことで 1 枚目にする)。
-function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Project) {
+function buildClassCountSummarySheet(
+  workbook: ExcelJS.Workbook,
+  project: Project,
+  stats: TeacherClassCounts,
+) {
   const {
     columns, tabSpans, rows, columnTotals, columnTestTotals, grandTotal, grandTestTotal,
-  } = computeTeacherClassCounts(project);
+  } = stats;
   // 講師名が「クラス別回数」でも throw しないよう固定名も uniq を通す (F5i)
   const ws = workbook.addWorksheet(uniqueSheetName(workbook, 'クラス別回数'));
 
@@ -831,13 +873,11 @@ function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Projec
   }
   columns.forEach((_, i) => applyCellStyle(ws.getCell(3, 2 + i), DATE_HEADER_STYLE));
 
-  // セル表記 (S2): 授業回数に、うち確認テスト付き (最終コマ) があれば
-  // "(テN)" を添える。0 回のセルは空欄にして行列を見やすくする。
-  // 合計行は突き合わせ用に 0 も数値で出す。
+  // セル表記 (S2): fmtLessonWithTest ("N(テM)")。0 回のセルは空欄にして
+  // 行列を見やすくする。合計行は突き合わせ用に 0 も数値で出す。
   const fmtCell = (lesson: number, test: number): string | number =>
-    lesson === 0 ? '' : (test > 0 ? `${lesson}(テ${test})` : lesson);
-  const fmtTotal = (lesson: number, test: number): string | number =>
-    test > 0 ? `${lesson}(テ${test})` : lesson;
+    lesson === 0 ? '' : fmtLessonWithTest(lesson, test);
+  const fmtTotal = fmtLessonWithTest;
 
   // データ行 (行 4〜)
   rows.forEach((r, ri) => {
@@ -889,7 +929,9 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   const subjectColors = project.subjectColors || {};
 
   // S1: クラス別回数まとめ (座席表の事前印刷用)。最初に積んで 1 枚目にする。
-  buildClassCountSummarySheet(workbook, project);
+  // 集計は個人シート冒頭の 1 行まとめ (S3) と共用するため 1 回だけ計算する。
+  const classCounts = computeTeacherClassCounts(project);
+  buildClassCountSummarySheet(workbook, project, classCounts);
 
   // 「全講師リスト」シート用の集約
   const allRows: TeacherRow[] = [];
@@ -926,16 +968,22 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     applyCellStyle(ws.getCell(1, 1), TITLE_ROW_STYLE);
     ws.getRow(1).height = 20;
 
-    // ヘッダ (行 2)
+    // S3: 自分のクラス別回数の 1 行まとめ (行 2)。まとめシート (S1/S2) と
+    // 同じ集計値。Print_Titles に含まれるので 2 ページ目以降にも載る。
+    ws.addRow([buildTeacherCountLineText(classCounts, t.name)]);
+    ws.mergeCells(2, 1, 2, header.length);
+    applyCellStyle(ws.getCell(2, 1), SUMMARY_LINE_STYLE);
+
+    // ヘッダ (行 3)
     // N5d: 全講師リストと同じ「学年(タブ)」に統一 (旧「場所(タブ)」/「タブ名」)
     ws.addRow(header);
-    header.forEach((_, ci) => applyCellStyle(ws.getCell(2, ci + 1), TEACHER_HEADER_STYLE));
+    header.forEach((_, ci) => applyCellStyle(ws.getCell(3, ci + 1), TEACHER_HEADER_STYLE));
 
-    // データ行 (行 1 = タイトル、行 2 = ヘッダなのでデータは行 3 から)
+    // データ行 (行 1 = タイトル、行 2 = S3 まとめ、行 3 = ヘッダなので行 4 から)
     personalRows.forEach((row, ri) => {
       ws.addRow(row.cells);
       row.cells.forEach((_, ci) => {
-        const cell = ws.getCell(ri + 3, ci + 1);
+        const cell = ws.getCell(ri + 4, ci + 1);
         if (row.isExternal) {
           applyCellStyle(cell, EXTERNAL_ROW_STYLE);
         } else if (ci === 3 && row.subject) {
@@ -949,10 +997,10 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     // 日付の区切り: 日付が変わる行 (先頭行含む) の上辺 + 最終行の下辺を太線に
     personalRows.forEach((row, ri) => {
       if (ri === 0 || personalRows[ri - 1].cells[0] !== row.cells[0]) {
-        applyRowEdge(ws, ri + 3, header.length, 'top');
+        applyRowEdge(ws, ri + 4, header.length, 'top');
       }
     });
-    applyRowEdge(ws, personalRows.length + 2, header.length, 'bottom');
+    applyRowEdge(ws, personalRows.length + 3, header.length, 'bottom');
 
     // オートフィルタ: 学年(タブ) 列で「中3 だけ」「中1+中2」のように任意の
     // 組み合わせに絞って確認・印刷できるようにする (タブ別にシートや
@@ -960,14 +1008,14 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
     // フィルタに任せる)。外部授業行は同列の種別 (予備校・高校等) で同様に
     // 絞れる。
     ws.autoFilter = {
-      from: { row: 2, column: 1 },
-      to: { row: 2, column: header.length },
+      from: { row: 3, column: 1 },
+      to: { row: 3, column: header.length },
     };
 
     [14, 14, 10, 12, 15, 18].forEach((w, ci) => { ws.getColumn(ci + 1).width = w; });
 
-    // P1: B4 縦 + タイトル/ヘッダ行 (1〜2 行目) の全ページ繰り返し
-    applyTeacherPrintDefaults(ws, 2);
+    // P1: B4 縦 + タイトル/S3 まとめ/ヘッダ行 (1〜3 行目) の全ページ繰り返し
+    applyTeacherPrintDefaults(ws, 3);
   });
 
   // 全講師リストシート
