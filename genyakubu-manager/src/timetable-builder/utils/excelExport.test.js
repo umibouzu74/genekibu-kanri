@@ -339,8 +339,8 @@ describe('buildTeacherWorkbook', () => {
 
   it('タブ列の見出しは個人シート・全講師リストとも「学年(タブ)」に統一 (N5d)', () => {
     const wb = buildTeacherWorkbook(makeProject());
-    // 個人シートは行 1 = タイトル (P1)、行 2 = S3 まとめなのでヘッダは行 3
-    expect(wb.getWorksheet('堀上').getCell(3, 5).value).toBe('学年(タブ)');
+    // 個人シートは行 1 がタイトル (P1) なのでヘッダは行 2
+    expect(wb.getWorksheet('堀上').getCell(2, 5).value).toBe('学年(タブ)');
     expect(wb.getWorksheet('全講師リスト').getCell(1, 6).value).toBe('学年(タブ)');
   });
 
@@ -377,9 +377,8 @@ describe('buildTeacherWorkbook', () => {
     });
     const wb = buildTeacherWorkbook(project);
     const ws = wb.getWorksheet('堀上');
-    // 1 行目=タイトル、2 行目=S3 まとめ、3 行目=header、4 行目=１つめ。
-    // 備考欄 (6 列目) に合同表記
-    expect(ws.getCell(4, 6).value).toMatch(/^合同\(/);
+    // 1 行目=タイトル、2 行目=header、3 行目=１つめ。備考欄 (6 列目) に合同表記
+    expect(ws.getCell(3, 6).value).toMatch(/^合同\(/);
   });
 });
 
@@ -583,32 +582,29 @@ describe('buildTeacherWorkbook — クラス別回数まとめシート (S1)', (
     expect(textsNone.join('\n')).not.toContain('(未定)');
   });
 
-  it('個人シートのタイトル直下 (行 2) に自分のクラス別回数 + 計が入る (S3)', () => {
+  it('個人シートのリスト下に自分のクラス別回数ブロック + 計が入る (S3)', () => {
     const ws = buildTeacherWorkbook(makeProject()).getWorksheet('堀上');
-    expect(ws.getCell(2, 1).value).toBe(
-      'クラス別回数: ３S 2(テ1) ／ 計 2(テ1) ※(テN)=うち確認テスト付き(最終コマ)',
-    );
-    // まとめ行は全 6 列に結合される
+    // タイトル1 + header2 + データ 3〜4 + 空行 5〜6 → ブロックは行 7〜9
+    expect(ws.getCell(7, 1).value).toBe('メイン');
+    expect(ws.getCell(8, 1).value).toBe('３S');
+    expect(ws.getCell(9, 1).value).toBe('2(テ1)');
+    // 右端に「計」(タブ名行〜クラス行の縦結合) + 自分の総回数
+    expect(ws.getCell(7, 2).value).toBe('計');
     const mergeKeys = Array.isArray(ws.model.merges)
       ? ws.model.merges
       : Object.keys(ws._merges || {});
-    expect(mergeKeys).toContain('A2:F2');
+    expect(mergeKeys).toContain('B7:B8');
+    expect(ws.getCell(9, 2).value).toBe('2(テ1)');
   });
 
-  it('確認テスト付きコマが無ければ個人まとめ行に (テN) 表記も凡例も付かない (S3)', () => {
-    const project = makeProject({
-      tabs: [{
-        id: 1, name: 'メイン',
-        config: makeProject().tabs[0].config,
-        // 1 限のみ (最終コマの 2 限は未使用) → テ表記なし
-        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
-      }],
-    });
-    const ws = buildTeacherWorkbook(project).getWorksheet('堀上');
-    expect(ws.getCell(2, 1).value).toBe('クラス別回数: ３S 1 ／ 計 1');
+  it('S3 ブロックには行かないクラス (0 回) の列を出さない', () => {
+    // makeProject の堀上は ３S のみ担当 → ３A 列は出ず、計が 2 列目に来る
+    const ws = buildTeacherWorkbook(makeProject()).getWorksheet('堀上');
+    expect(ws.getCell(8, 1).value).toBe('３S');
+    expect(ws.getCell(8, 2).value).toBe('計'); // 縦結合 slave は master の値を返す
   });
 
-  it('複数タブでは個人まとめ行のクラス名にタブ名を前置して区別する (S3)', () => {
+  it('複数タブは S3 ブロックを空行区切りで縦に積み、計は最後のブロックだけに付く', () => {
     const base = makeProject().tabs[0].config;
     const project = makeProject({
       tabs: [
@@ -623,7 +619,41 @@ describe('buildTeacherWorkbook — クラス別回数まとめシート (S1)', (
       ],
     });
     const ws = buildTeacherWorkbook(project).getWorksheet('堀上');
-    expect(ws.getCell(2, 1).value).toBe('クラス別回数: 中3 ３S 1、中1 １A 1 ／ 計 2');
+    // タイトル1 + header2 + データ 3〜4 + 空行 5〜6 + 中3 ブロック 7〜9 +
+    // 空行 10 + 中1 ブロック 11〜13
+    expect(ws.getCell(7, 1).value).toBe('中3');
+    expect(ws.getCell(8, 1).value).toBe('３S');
+    expect(ws.getCell(9, 1).value).toBe(1); // 1 限のみ → テ表記なしの素の数値
+    expect(ws.getCell(7, 2).value ?? '').not.toBe('計'); // 計は最後のブロックのみ
+    expect(ws.getCell(11, 1).value).toBe('中1');
+    expect(ws.getCell(12, 1).value).toBe('１A');
+    expect(ws.getCell(13, 1).value).toBe(1);
+    expect(ws.getCell(11, 2).value).toBe('計');
+    expect(ws.getCell(13, 2).value).toBe(2); // 総回数 (全タブ合算)
+  });
+
+  it('S3 ブロックのタブ名ヘッダはクラス列ぶんを横結合する', () => {
+    // ３S と ３A の両方に行く講師 → ブロックは 2 列 + 計
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 2, 2)]: { subject: '英語', teacher: '堀上' }, // ３A 最終コマ
+        },
+      }],
+    });
+    const ws = buildTeacherWorkbook(project).getWorksheet('堀上');
+    expect(ws.getCell(7, 1).value).toBe('メイン');
+    const mergeKeys = Array.isArray(ws.model.merges)
+      ? ws.model.merges
+      : Object.keys(ws._merges || {});
+    expect(mergeKeys).toContain('A7:B7'); // タブ名の横結合
+    expect([ws.getCell(8, 1).value, ws.getCell(8, 2).value, ws.getCell(8, 3).value])
+      .toEqual(['３S', '３A', '計']);
+    expect([ws.getCell(9, 1).value, ws.getCell(9, 2).value, ws.getCell(9, 3).value])
+      .toEqual([1, '1(テ1)', '2(テ1)']);
   });
 
   it('講師名が「クラス別回数」でも throw しない (F5i と同じ防御)', () => {
@@ -957,11 +987,17 @@ describe('xlsx round-trip (E3b)', () => {
     expect(texts.join('\n')).toContain('英語');
     // P1: タイトル行 (講師名) と B4 縦 + 先頭行繰り返しの印刷設定がバイナリに残る
     expect(String(ws.getCell(1, 1).value)).toMatch(/^堀上 — test-proj \//);
-    // S3: 行 2 の個人まとめもバイナリに残る
-    expect(String(ws.getCell(2, 1).value)).toContain('クラス別回数:');
+    // S3: リスト下の個人ブロック (タブ名結合 + 計の縦結合) もバイナリに残る
+    expect(ws.getCell(7, 1).value).toBe('メイン');
+    expect(ws.getCell(8, 1).value).toBe('３S');
+    expect(ws.getCell(9, 1).value).toBe('2(テ1)');
+    expect(ws.getCell(7, 2).value).toBe('計');
+    expect(ws.getCell('B8').isMerged).toBe(true);
+    expect(ws.getCell('B8').master.address).toBe('B7');
+    expect(ws.getCell(9, 2).value).toBe('2(テ1)');
     expect(ws.pageSetup.paperSize).toBe(12);
     expect(ws.pageSetup.orientation).toBe('portrait');
-    expect(ws.pageSetup.printTitlesRow).toBe('1:3');
+    expect(ws.pageSetup.printTitlesRow).toBe('1:2');
     const wsAll = wb2.getWorksheet('全講師リスト');
     expect(wsAll.pageSetup.paperSize).toBe(12);
     expect(wsAll.pageSetup.printTitlesRow).toBe('1:1');
@@ -1054,9 +1090,9 @@ describe('回数連番 (第N回) の丸数字 (Q1)', () => {
   it('講師別 Excel の科目列にも丸数字が付く (個人シート + 全講師リスト)', () => {
     const wb = buildTeacherWorkbook(makeSequenceProject());
     const ws = wb.getWorksheet('堀上');
-    // 行 1 = タイトル、行 2 = S3 まとめ、行 3 = ヘッダ。科目は 4 列目
-    expect(ws.getCell(4, 4).value).toBe('英語①');
-    expect(ws.getCell(5, 4).value).toBe('英語②');
+    // 行 1 = タイトル、行 2 = ヘッダ。科目は 4 列目
+    expect(ws.getCell(3, 4).value).toBe('英語①');
+    expect(ws.getCell(4, 4).value).toBe('英語②');
     const wsAll = wb.getWorksheet('全講師リスト');
     expect(wsAll.getCell(2, 5).value).toBe('英語①');
   });
@@ -1065,7 +1101,7 @@ describe('回数連番 (第N回) の丸数字 (Q1)', () => {
     const project = makeSequenceProject();
     project.tabs[0].config.subjectCounts = { '英語': 1 };
     const wb = buildTeacherWorkbook(project);
-    expect(wb.getWorksheet('堀上').getCell(5, 4).value).toBe('英語②');
+    expect(wb.getWorksheet('堀上').getCell(4, 4).value).toBe('英語②');
   });
 });
 
@@ -1102,17 +1138,21 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
   it('個人シートに外部授業が日付 → 時刻順で講習コマと混在する', () => {
     const wb = buildTeacherWorkbook(makeProjectWithSessions());
     const ws = wb.getWorksheet('堀上');
-    // タイトル + S3 まとめ + header + 12/25: 予備校(10:00) → 1限(13:00) /
-    // 12/26: 2限(14:00) → 外部(18:00)
-    expect(ws.rowCount).toBe(7);
+    // タイトル + header + 12/25: 予備校(10:00) → 1限(13:00) / 12/26: 2限(14:00) → 外部(18:00)
+    // + 空行 2 + S3 ブロック 3 行 (中3 / ３S / 2(テ1))
+    expect(ws.rowCount).toBe(11);
     // 外部授業は科目欄=空欄、学年(タブ) 列=種別 (メモ＝プリセット名)
-    expect([ws.getCell(4, 1).value, ws.getCell(4, 2).value, ws.getCell(4, 4).value, ws.getCell(4, 5).value])
+    expect([ws.getCell(3, 1).value, ws.getCell(3, 2).value, ws.getCell(3, 4).value, ws.getCell(3, 5).value])
       .toEqual(['12/25(木)', '10:00〜11:00', '', '予備校（早朝）']);
-    expect([ws.getCell(5, 1).value, ws.getCell(5, 2).value]).toEqual(['12/25(木)', '1限 (13:00~13:45)']);
-    expect([ws.getCell(6, 1).value, ws.getCell(6, 2).value]).toEqual(['12/26(金)', '2限 (14:00~14:45)']);
+    expect([ws.getCell(4, 1).value, ws.getCell(4, 2).value]).toEqual(['12/25(木)', '1限 (13:00~13:45)']);
+    expect([ws.getCell(5, 1).value, ws.getCell(5, 2).value]).toEqual(['12/26(金)', '2限 (14:00~14:45)']);
     // メモも一致プリセットも無い外部授業は学年(タブ) 列 '外部' でフォールバック
-    expect([ws.getCell(7, 1).value, ws.getCell(7, 2).value, ws.getCell(7, 4).value, ws.getCell(7, 5).value])
+    expect([ws.getCell(6, 1).value, ws.getCell(6, 2).value, ws.getCell(6, 4).value, ws.getCell(6, 5).value])
       .toEqual(['12/26(金)', '18:00〜19:00', '', '外部']);
+    // S3 ブロックに外部授業は入らない (講習のクラス別回数のみ)
+    expect(ws.getCell(9, 1).value).toBe('中3');
+    expect(ws.getCell(10, 1).value).toBe('３S');
+    expect(ws.getCell(11, 1).value).toBe('2(テ1)');
   });
 
   it('メモ未設定でも時刻がプリセットに一致すれば学年(タブ) 列にプリセット名を表示する', () => {
@@ -1122,9 +1162,9 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     ];
     const wb = buildTeacherWorkbook(project);
     const ws = wb.getWorksheet('堀上');
-    // 12/26 18:00 のメモ無しセッション (行 7) が「高校」と表示される
+    // 12/26 18:00 のメモ無しセッション (行 6) が「高校」と表示される
     // (表示のみ — project.externalSessions のメモ自体は書き換えない)
-    expect(ws.getCell(7, 5).value).toBe('高校');
+    expect(ws.getCell(6, 5).value).toBe('高校');
     expect(project.externalSessions.find(s => s.id === 2).memo).toBe('');
   });
 
@@ -1148,17 +1188,16 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
   it('日付が変わる行の上辺と最終行の下辺が太線になる (日付区切り)', () => {
     const wb = buildTeacherWorkbook(makeProjectWithSessions());
     const ws = wb.getWorksheet('堀上');
-    // 行 4 (データ先頭) と行 6 (12/25 → 12/26 の切り替わり) の上辺が medium、
-    // 同日続きの行 5 は thin のまま (行 1 = タイトル、行 2 = S3 まとめ、
-    // 行 3 = ヘッダ)
-    expect(ws.getCell(4, 1).border.top.style).toBe('medium');
-    expect(ws.getCell(5, 1).border.top.style).toBe('thin');
-    expect(ws.getCell(6, 1).border.top.style).toBe('medium');
-    expect(ws.getCell(6, 6).border.top.style).toBe('medium'); // 全列に引く
+    // 行 3 (データ先頭) と行 5 (12/25 → 12/26 の切り替わり) の上辺が medium、
+    // 同日続きの行 4 は thin のまま (行 1 = タイトル、行 2 = ヘッダ)
+    expect(ws.getCell(3, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(4, 1).border.top.style).toBe('thin');
+    expect(ws.getCell(5, 1).border.top.style).toBe('medium');
+    expect(ws.getCell(5, 6).border.top.style).toBe('medium'); // 全列に引く
     // 最終行の下辺も太線で閉じる
-    expect(ws.getCell(7, 1).border.bottom.style).toBe('medium');
+    expect(ws.getCell(6, 1).border.bottom.style).toBe('medium');
     // 太線の上書きで外部授業行のグレー塗りは消えない
-    expect(ws.getCell(4, 1).fill?.fgColor?.argb).toBe('FFF2F2F2');
+    expect(ws.getCell(3, 1).fill?.fgColor?.argb).toBe('FFF2F2F2');
     // 全講師リストにも同じ区切りが入る (こちらはタイトル行なし)
     const wsAll = wb.getWorksheet('全講師リスト');
     expect(wsAll.getCell(4, 1).border.top.style).toBe('medium');
@@ -1175,24 +1214,24 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     });
     const wb = buildTeacherWorkbook(project);
     const ws = wb.getWorksheet('堀上');
-    expect(ws.rowCount).toBe(6); // タイトル + S3 まとめ + header + 1限 + 2限 + 外部
-    expect(ws.getCell(4, 2).value).toBe('1限');
-    expect(ws.getCell(5, 2).value).toBe('2限');
+    // タイトル + header + 1限 + 2限 + 外部 + 空行 2 + S3 ブロック 3 行
+    expect(ws.rowCount).toBe(10);
+    expect(ws.getCell(3, 2).value).toBe('1限');
+    expect(ws.getCell(4, 2).value).toBe('2限');
     // 時刻もラベルも無いセッションの時限欄は '-'。種別 (メモ) は学年(タブ) 列
-    expect([ws.getCell(6, 2).value, ws.getCell(6, 5).value]).toEqual(['-', '予備校']);
+    expect([ws.getCell(5, 2).value, ws.getCell(5, 5).value]).toEqual(['-', '予備校']);
   });
 });
 
 describe('buildTeacherWorkbook — オートフィルタ (学年(タブ) 列での絞り込み)', () => {
-  it('個人シートのヘッダ行 (行 3) 全列にオートフィルタが付く', () => {
+  it('個人シートのヘッダ行 (行 2) 全列にオートフィルタが付く', () => {
     const wb = buildTeacherWorkbook(makeProject());
     const ws = wb.getWorksheet('堀上');
     // ヘッダは 6 列 (日付〜備考)。学年(タブ) 列で「中3 だけ」「中1+中2」の
-    // ような任意の組み合わせに絞れる。行 1 = タイトル (P1)、行 2 = S3 まとめ
-    // なのでヘッダは行 3。
+    // ような任意の組み合わせに絞れる。行 1 はタイトル (P1) なのでヘッダは行 2。
     expect(ws.autoFilter).toEqual({
-      from: { row: 3, column: 1 },
-      to: { row: 3, column: 6 },
+      from: { row: 2, column: 1 },
+      to: { row: 2, column: 6 },
     });
   });
 
@@ -1206,9 +1245,14 @@ describe('buildTeacherWorkbook — オートフィルタ (学年(タブ) 列で�
     });
   });
 
-  it('個人シートはタイトル + S3 まとめ + ヘッダ + データ行のみ (タブ別セクション等の付加行は無い)', () => {
+  it('個人シートの本体はタイトル + ヘッダ + データ行のみで、S3 ブロックは空行 2 つ挟んで下に付く', () => {
     const wb = buildTeacherWorkbook(makeProject());
-    expect(wb.getWorksheet('堀上').rowCount).toBe(5); // タイトル + S3 まとめ + header + 2 行
+    const ws = wb.getWorksheet('堀上');
+    // タイトル + header + 2 行 + 空行 2 + S3 ブロック 3 行。空行がフィルタの
+    // 連続データ領域を切るので、絞り込んでもブロックは巻き込まれない。
+    expect(ws.rowCount).toBe(9);
+    expect(ws.getCell(5, 1).value ?? '').toBe('');
+    expect(ws.getCell(6, 1).value ?? '').toBe('');
   });
 });
 
@@ -1249,8 +1293,8 @@ describe('buildTeacherWorkbook — タイトル行と印刷デフォルト (P1)'
     const ws = wb.getWorksheet('堀上');
     expect(ws.pageSetup.paperSize).toBe(12); // ECMA-376 ST_PaperSize: 12 = B4
     expect(ws.pageSetup.orientation).toBe('portrait');
-    // 2 ページ目以降にも講師名 (タイトル)・S3 まとめ・ヘッダが載る
-    expect(ws.pageSetup.printTitlesRow).toBe('1:3');
+    // 2 ページ目以降にも講師名 (タイトル) とヘッダが載る
+    expect(ws.pageSetup.printTitlesRow).toBe('1:2');
   });
 
   it('全講師リストシートにも B4 縦 + ヘッダ行繰り返しの印刷設定が付く', () => {
