@@ -689,6 +689,10 @@ function applyTeacherPrintDefaults(ws: ExcelJS.Worksheet, repeatRows: number) {
 //   - 講師未割当 (未定 / 空) のコマは '(未定)' 行に集計する。これにより
 //     列の計 = そのクラスの総コマ数となり、割当が未完了なことも紙面で分かる
 //   - 外部授業 (他学年セッション) は講習のクラスに行くものではないので対象外
+//   - S2: その日の最終コマ (タブの実効時限リスト末尾) は授業時間 + 休憩
+//     (中3 は 5 分、他は 10 分) + 確認テスト 15 分を含む長さで設計されて
+//     おり、担当講師がそのまま確認テストを監督する。確認テストにも座席
+//     管理があるため、最終コマの担当回数を「うち確認テスト」として併記する
 const UNASSIGNED_TEACHER_KEY = '(未定)';
 
 export interface TeacherClassCounts {
@@ -696,10 +700,16 @@ export interface TeacherClassCounts {
   columns: Array<{ tabName: string; className: string }>;
   /** ヘッダのタブ名結合用: タブごとの連続列数 (クラス 0 のタブは出ない) */
   tabSpans: Array<{ tabName: string; count: number }>;
-  /** 行 = 講師 (project.teachers 順 → 未知名 → '(未定)' 末尾)。counts は columns と同順 */
-  rows: Array<{ teacher: string; counts: number[]; total: number }>;
+  /**
+   * 行 = 講師 (project.teachers 順 → 未知名 → '(未定)' 末尾)。counts /
+   * testCounts は columns と同順。testCounts は counts のうち最終コマ
+   * (= 確認テスト監督) のもの (S2、常に counts 以下)。
+   */
+  rows: Array<{ teacher: string; counts: number[]; testCounts: number[]; total: number; testTotal: number }>;
   columnTotals: number[];
+  columnTestTotals: number[];
   grandTotal: number;
+  grandTestTotal: number;
 }
 
 export function computeTeacherClassCounts(project: Project): TeacherClassCounts {
@@ -707,7 +717,7 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
 
   const columns: TeacherClassCounts['columns'] = [];
   const tabSpans: TeacherClassCounts['tabSpans'] = [];
-  const countsByTeacher = new Map<string, number[]>();
+  const countsByTeacher = new Map<string, { lesson: number[]; test: number[] }>();
 
   (project.tabs || []).forEach(tab => {
     const classes = tab.config?.classes || [];
@@ -720,6 +730,9 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
 
     // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする
     const { dates, periods } = effectiveConfigForTab(project, tab);
+    // S2: 確認テストが含まれるのは各日の最終コマ = 実効時限リストの末尾。
+    // 時限は日をまたいで共通なので、末尾の時限 ID との一致で判定できる。
+    const lastPeriodId = periods.length > 0 ? periods[periods.length - 1].id : null;
     dates.forEach(d => {
       periods.forEach(p => {
         classes.forEach((c, cIdx) => {
@@ -728,12 +741,15 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
           const group = findCombinedGroup(combinedGroups, e.subject, c.label, d.label);
           if (group && !isPrimaryCombinedClass(group, c.label)) return;
           const tKey = (e.teacher && e.teacher !== '未定') ? e.teacher : UNASSIGNED_TEACHER_KEY;
-          let counts = countsByTeacher.get(tKey);
-          if (!counts) {
-            counts = [];
-            countsByTeacher.set(tKey, counts);
+          let rec = countsByTeacher.get(tKey);
+          if (!rec) {
+            rec = { lesson: [], test: [] };
+            countsByTeacher.set(tKey, rec);
           }
-          counts[colBase + cIdx] = (counts[colBase + cIdx] || 0) + 1;
+          rec.lesson[colBase + cIdx] = (rec.lesson[colBase + cIdx] || 0) + 1;
+          if (p.id === lastPeriodId) {
+            rec.test[colBase + cIdx] = (rec.test[colBase + cIdx] || 0) + 1;
+          }
         });
       });
     });
@@ -749,24 +765,32 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
   ];
 
   const columnTotals = new Array(columns.length).fill(0);
+  const columnTestTotals = new Array(columns.length).fill(0);
   let grandTotal = 0;
+  let grandTestTotal = 0;
   const rows = orderedTeachers.map(teacher => {
-    const sparse = countsByTeacher.get(teacher) || [];
+    const rec = countsByTeacher.get(teacher) || { lesson: [], test: [] };
     // 後続タブの列ぶんが歯抜けの sparse 配列なので、列数まで 0 詰めする
-    const counts = columns.map((_, i) => sparse[i] || 0);
+    const counts = columns.map((_, i) => rec.lesson[i] || 0);
+    const testCounts = columns.map((_, i) => rec.test[i] || 0);
     const total = counts.reduce((a, b) => a + b, 0);
+    const testTotal = testCounts.reduce((a, b) => a + b, 0);
     counts.forEach((n, i) => { columnTotals[i] += n; });
+    testCounts.forEach((n, i) => { columnTestTotals[i] += n; });
     grandTotal += total;
-    return { teacher, counts, total };
+    grandTestTotal += testTotal;
+    return { teacher, counts, testCounts, total, testTotal };
   });
 
-  return { columns, tabSpans, rows, columnTotals, grandTotal };
+  return { columns, tabSpans, rows, columnTotals, columnTestTotals, grandTotal, grandTestTotal };
 }
 
 // クラス別回数まとめシートを workbook の先頭に積む (buildTeacherWorkbook の
 // 冒頭で最初に呼ぶことで 1 枚目にする)。
 function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Project) {
-  const { columns, tabSpans, rows, columnTotals, grandTotal } = computeTeacherClassCounts(project);
+  const {
+    columns, tabSpans, rows, columnTotals, columnTestTotals, grandTotal, grandTestTotal,
+  } = computeTeacherClassCounts(project);
   // 講師名が「クラス別回数」でも throw しないよう固定名も uniq を通す (F5i)
   const ws = workbook.addWorksheet(uniqueSheetName(workbook, 'クラス別回数'));
 
@@ -807,9 +831,21 @@ function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Projec
   }
   columns.forEach((_, i) => applyCellStyle(ws.getCell(3, 2 + i), DATE_HEADER_STYLE));
 
-  // データ行 (行 4〜)。0 回は空欄にして行列を見やすくする。
+  // セル表記 (S2): 授業回数に、うち確認テスト付き (最終コマ) があれば
+  // "(テN)" を添える。0 回のセルは空欄にして行列を見やすくする。
+  // 合計行は突き合わせ用に 0 も数値で出す。
+  const fmtCell = (lesson: number, test: number): string | number =>
+    lesson === 0 ? '' : (test > 0 ? `${lesson}(テ${test})` : lesson);
+  const fmtTotal = (lesson: number, test: number): string | number =>
+    test > 0 ? `${lesson}(テ${test})` : lesson;
+
+  // データ行 (行 4〜)
   rows.forEach((r, ri) => {
-    ws.addRow([r.teacher, ...r.counts.map(n => n || ''), r.total]);
+    ws.addRow([
+      r.teacher,
+      ...r.counts.map((n, i) => fmtCell(n, r.testCounts[i])),
+      fmtTotal(r.total, r.testTotal),
+    ]);
     const style = r.teacher === UNASSIGNED_TEACHER_KEY ? EXTERNAL_ROW_STYLE : BODY_CELL_STYLE;
     for (let ci = 1; ci <= columnCount; ci++) {
       applyCellStyle(ws.getCell(4 + ri, ci), style);
@@ -818,7 +854,11 @@ function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Projec
 
   // 合計行 (列計 = クラスの総コマ数)
   if (rows.length > 0) {
-    ws.addRow(['計', ...columnTotals, grandTotal]);
+    ws.addRow([
+      '計',
+      ...columnTotals.map((n, i) => fmtTotal(n, columnTestTotals[i])),
+      fmtTotal(grandTotal, grandTestTotal),
+    ]);
     for (let ci = 1; ci <= columnCount; ci++) {
       applyCellStyle(ws.getCell(4 + rows.length, ci), DATE_HEADER_STYLE);
     }
@@ -826,6 +866,7 @@ function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Projec
 
   // 凡例 (該当がある場合のみ)。空行を 1 つ挟んで小さめの文字で。
   const notes: string[] = [];
+  if (grandTestTotal > 0) notes.push('(テN) はうち確認テスト付き (その日の最終コマ) の回数');
   if ((project.combinedGroups || []).length > 0) notes.push('合同授業は代表クラスの列に 1 回で集計');
   if (rows.some(r => r.teacher === UNASSIGNED_TEACHER_KEY)) notes.push('(未定) は講師未割当のコマ');
   if (rows.length > 0 && notes.length > 0) {
@@ -835,8 +876,8 @@ function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Projec
   }
 
   ws.getColumn(1).width = 14;
-  columns.forEach((_, i) => { ws.getColumn(2 + i).width = 9; });
-  ws.getColumn(columnCount).width = 9;
+  columns.forEach((_, i) => { ws.getColumn(2 + i).width = 10; });
+  ws.getColumn(columnCount).width = 10;
 
   // P1: B4 縦 + タイトル/ヘッダ行 (1〜3 行目) の全ページ繰り返し
   applyTeacherPrintDefaults(ws, 3);
