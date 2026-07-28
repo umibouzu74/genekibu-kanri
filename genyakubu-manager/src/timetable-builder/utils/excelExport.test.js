@@ -5,6 +5,7 @@ import {
   buildTeacherWorkbook as _buildTeacherWorkbook,
   buildExcelFilename,
   computeSubjectStats as _computeSubjectStats,
+  computeTeacherClassCounts as _computeTeacherClassCounts,
 } from './excelExport';
 import { makeKey, makeNgKey, makeExternalKey } from './scheduleKey';
 
@@ -20,6 +21,7 @@ const hoist = (project) => ({
 const buildScheduleWorkbook = (project) => _buildScheduleWorkbook(hoist(project));
 const buildTeacherWorkbook = (project) => _buildTeacherWorkbook(hoist(project));
 const computeSubjectStats = (project, subject) => _computeSubjectStats(hoist(project), subject);
+const computeTeacherClassCounts = (project) => _computeTeacherClassCounts(hoist(project));
 
 // 共通の v3 project ファクトリ (テスト局所)
 function makeProject(overrides = {}) {
@@ -380,6 +382,164 @@ describe('buildTeacherWorkbook', () => {
   });
 });
 
+// ─── S1: クラス別回数まとめ (座席表の事前印刷用) ─────────────────────
+
+describe('computeTeacherClassCounts (S1)', () => {
+  it('タブ順 × クラス順の列に講師ごとの回数を集計する', () => {
+    const stats = computeTeacherClassCounts(makeProject());
+    expect(stats.columns).toEqual([
+      { tabName: 'メイン', className: '３S' },
+      { tabName: 'メイン', className: '３A' },
+    ]);
+    expect(stats.tabSpans).toEqual([{ tabName: 'メイン', count: 2 }]);
+    // 堀上は ３S に 2 回 (12/25 の 1・2 限)、３A は 0 回
+    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [2, 0], total: 2 }]);
+    expect(stats.columnTotals).toEqual([2, 0]);
+    expect(stats.grandTotal).toBe(2);
+  });
+
+  it('行順は project.teachers の並び → 登録外 → (未定) 末尾', () => {
+    const project = makeProject({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '松川', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          // schedule 上の出現順は 松川 → 未定 → 登録外 → 堀上
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '松川' },
+          [makeKey(1, 1, 2)]: { subject: '英語', teacher: '未定' },
+          [makeKey(1, 2, 1)]: { subject: '英語', teacher: '飛び入り' },
+          [makeKey(1, 2, 2)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '' },
+        },
+      }],
+    });
+    const stats = computeTeacherClassCounts(project);
+    expect(stats.rows.map(r => r.teacher)).toEqual(['堀上', '松川', '飛び入り', '(未定)']);
+    // 未定 ('未定' と空文字) は (未定) 行にまとまり、列計 = クラスの総コマ数
+    expect(stats.rows[3].counts).toEqual([1, 1]);
+    expect(stats.columnTotals).toEqual([3, 2]);
+    expect(stats.grandTotal).toBe(5);
+  });
+
+  it('合同は代表クラスの列に 1 回だけ数える (科目別シートと同じ規約)', () => {
+    const project = makeProject({
+      combinedGroups: [{ id: 1, subject: '英語', classes: ['３S', '３A'], dates: null }],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '英語', teacher: '堀上' }, // secondary (伝播分)
+        },
+      }],
+    });
+    const stats = computeTeacherClassCounts(project);
+    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [1, 0], total: 1 }]);
+    expect(stats.grandTotal).toBe(1);
+  });
+
+  it('複数タブは各タブのクラス列が並び、同名タブでも span は分かれる', () => {
+    const baseConfig = makeProject().tabs[0].config;
+    const project = makeProject({
+      tabs: [
+        {
+          id: 1, name: '中3', config: baseConfig,
+          schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+        },
+        {
+          id: 2, name: '中3',
+          config: { ...baseConfig, classes: [{ id: 1, label: '３B' }] },
+          schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+        },
+      ],
+    });
+    const stats = computeTeacherClassCounts(project);
+    expect(stats.columns.map(c => c.className)).toEqual(['３S', '３A', '３B']);
+    expect(stats.tabSpans).toEqual([
+      { tabName: '中3', count: 2 },
+      { tabName: '中3', count: 1 },
+    ]);
+    expect(stats.rows).toEqual([{ teacher: '堀上', counts: [1, 0, 1], total: 2 }]);
+  });
+});
+
+describe('buildTeacherWorkbook — クラス別回数まとめシート (S1)', () => {
+  it('1 枚目のシートとして 講師 × クラス の行列 + 計を出す', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    const ws = wb.worksheets[0];
+    expect(ws.name).toBe('クラス別回数');
+    // 行 1 = タイトル、行 2 = 学年(タブ)、行 3 = クラス
+    expect(String(ws.getCell(1, 1).value)).toContain('クラス別回数まとめ — test-proj');
+    expect(ws.getCell(2, 1).value).toBe('講師');
+    expect(ws.getCell(2, 2).value).toBe('メイン');
+    expect(ws.getCell(2, 4).value).toBe('計');
+    expect(ws.getCell(3, 2).value).toBe('３S');
+    expect(ws.getCell(3, 3).value).toBe('３A');
+    // データ行 (行 4): 0 回は空欄
+    expect(ws.getCell(4, 1).value).toBe('堀上');
+    expect(ws.getCell(4, 2).value).toBe(2);
+    expect(ws.getCell(4, 3).value || '').toBe('');
+    expect(ws.getCell(4, 4).value).toBe(2);
+    // 合計行 (行 5) は 0 も数値で出す (クラスの総コマ数の突き合わせ用)
+    expect(ws.getCell(5, 1).value).toBe('計');
+    expect(ws.getCell(5, 2).value).toBe(2);
+    expect(ws.getCell(5, 3).value).toBe(0);
+    expect(ws.getCell(5, 4).value).toBe(2);
+  });
+
+  it('B4 縦 + タイトル/ヘッダ 3 行繰り返しの印刷既定 (P1 と同じ)', () => {
+    const wb = buildTeacherWorkbook(makeProject());
+    const ws = wb.getWorksheet('クラス別回数');
+    expect(ws.pageSetup.paperSize).toBe(12);
+    expect(ws.pageSetup.orientation).toBe('portrait');
+    expect(ws.pageSetup.printTitlesRow).toBe('1:3');
+  });
+
+  it('(未定) 行がある場合のみ凡例に注記が出る', () => {
+    const project = makeProject({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(1, 1, 2)]: { subject: '英語', teacher: '' },
+        },
+      }],
+    });
+    const ws = buildTeacherWorkbook(project).getWorksheet('クラス別回数');
+    const texts = [];
+    ws.eachRow((row) => row.eachCell((cell) => texts.push(String(cell.value ?? ''))));
+    expect(texts.join('\n')).toContain('(未定) は講師未割当のコマ');
+
+    const wsNone = buildTeacherWorkbook(makeProject()).getWorksheet('クラス別回数');
+    const textsNone = [];
+    wsNone.eachRow((row) => row.eachCell((cell) => textsNone.push(String(cell.value ?? ''))));
+    expect(textsNone.join('\n')).not.toContain('(未定)');
+  });
+
+  it('講師名が「クラス別回数」でも throw しない (F5i と同じ防御)', () => {
+    const project = makeProject({
+      teachers: [
+        { name: 'クラス別回数', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: makeProject().tabs[0].config,
+        schedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: 'クラス別回数' } },
+      }],
+    });
+    const wb = buildTeacherWorkbook(project);
+    const names = wb.worksheets.map(ws => ws.name);
+    // まとめシートが固定名を先取りし、個人シートは suffix 付きで共存する
+    expect(new Set(names.map(n => n.toLowerCase())).size).toBe(names.length);
+    expect(names).toContain('クラス別回数');
+  });
+});
+
 describe('computeSubjectStats', () => {
   // 中3 + 中1中2 の 2 タブ構成。各タブで英語コマがある状態。
   function makeMultiTabProject(overrides = {}) {
@@ -608,8 +768,9 @@ describe('シート名の防御 (F5g/F5h/F5i)', () => {
     const wb = buildTeacherWorkbook(p);
     const names = wb.worksheets.map(ws => ws.name);
     // 個人シートが固定名を先取りしても、集約シートは suffix 付きで共存する
-    expect(names).toHaveLength(2);
-    expect(new Set(names.map(n => n.toLowerCase())).size).toBe(2);
+    // (S1 のクラス別回数まとめを含めて 3 枚)
+    expect(names).toHaveLength(3);
+    expect(new Set(names.map(n => n.toLowerCase())).size).toBe(3);
     expect(names).toContain('全講師リスト');
   });
 });
@@ -697,6 +858,15 @@ describe('xlsx round-trip (E3b)', () => {
     const wsAll = wb2.getWorksheet('全講師リスト');
     expect(wsAll.pageSetup.paperSize).toBe(12);
     expect(wsAll.pageSetup.printTitlesRow).toBe('1:1');
+    // S1: クラス別回数まとめの値・ヘッダ結合もバイナリに残る
+    const wsSum = wb2.getWorksheet('クラス別回数');
+    expect(wsSum.getCell(2, 1).value).toBe('講師');
+    expect(wsSum.getCell(4, 1).value).toBe('堀上');
+    expect(wsSum.getCell(4, 2).value).toBe(2);
+    // タブ名の横結合 (B2:C2) と 講師 の縦結合 (A2:A3)
+    expect(wsSum.getCell('C2').isMerged).toBe(true);
+    expect(wsSum.getCell('C2').master.address).toBe('B2');
+    expect(wsSum.getCell('A3').master.address).toBe('A2');
   });
 });
 
