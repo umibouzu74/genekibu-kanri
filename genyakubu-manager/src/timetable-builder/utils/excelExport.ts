@@ -678,10 +678,177 @@ function applyTeacherPrintDefaults(ws: ExcelJS.Worksheet, repeatRows: number) {
   ws.pageSetup.printTitlesRow = `1:${repeatRows}`;
 }
 
+// ─── 講師別 Excel: クラス別回数まとめ (S1) ─────────────────────────
+// 「どの講師がどのクラスに結局何回行くか」の行列。座席表を毎回提出する
+// 運用で、講師×クラスの回数が最初のシートで分かれば必要枚数をあらかじめ
+// 印刷しておける、が動機。
+//
+// 集計規約:
+//   - 合同 (複数クラス 1 コマ) は代表クラスの列に 1 回だけ数える
+//     (科目別シートの「合同は 1 コマ扱い」と同じ。行の計 = 実際に行く回数)
+//   - 講師未割当 (未定 / 空) のコマは '(未定)' 行に集計する。これにより
+//     列の計 = そのクラスの総コマ数となり、割当が未完了なことも紙面で分かる
+//   - 外部授業 (他学年セッション) は講習のクラスに行くものではないので対象外
+const UNASSIGNED_TEACHER_KEY = '(未定)';
+
+export interface TeacherClassCounts {
+  /** 列 = タブ順 × クラス順 (コマ 0 のクラスも含む) */
+  columns: Array<{ tabName: string; className: string }>;
+  /** ヘッダのタブ名結合用: タブごとの連続列数 (クラス 0 のタブは出ない) */
+  tabSpans: Array<{ tabName: string; count: number }>;
+  /** 行 = 講師 (project.teachers 順 → 未知名 → '(未定)' 末尾)。counts は columns と同順 */
+  rows: Array<{ teacher: string; counts: number[]; total: number }>;
+  columnTotals: number[];
+  grandTotal: number;
+}
+
+export function computeTeacherClassCounts(project: Project): TeacherClassCounts {
+  const combinedGroups = project.combinedGroups || [];
+
+  const columns: TeacherClassCounts['columns'] = [];
+  const tabSpans: TeacherClassCounts['tabSpans'] = [];
+  const countsByTeacher = new Map<string, number[]>();
+
+  (project.tabs || []).forEach(tab => {
+    const classes = tab.config?.classes || [];
+    if (classes.length === 0) return;
+    // 同名タブが並んでも別の span になるようタブ単位で積む (ヘッダ結合が
+    // 別タブのクラスを巻き込まない)
+    tabSpans.push({ tabName: tab.name, count: classes.length });
+    const colBase = columns.length;
+    classes.forEach(c => columns.push({ tabName: tab.name, className: c.label }));
+
+    // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする
+    const { dates, periods } = effectiveConfigForTab(project, tab);
+    dates.forEach(d => {
+      periods.forEach(p => {
+        classes.forEach((c, cIdx) => {
+          const e = tab.schedule?.[makeKey(d.id, p.id, c.id)];
+          if (!e || !e.subject) return;
+          const group = findCombinedGroup(combinedGroups, e.subject, c.label, d.label);
+          if (group && !isPrimaryCombinedClass(group, c.label)) return;
+          const tKey = (e.teacher && e.teacher !== '未定') ? e.teacher : UNASSIGNED_TEACHER_KEY;
+          let counts = countsByTeacher.get(tKey);
+          if (!counts) {
+            counts = [];
+            countsByTeacher.set(tKey, counts);
+          }
+          counts[colBase + cIdx] = (counts[colBase + cIdx] || 0) + 1;
+        });
+      });
+    });
+  });
+
+  // 行順: project.teachers の並び → 登録外の名前 (出現順) → '(未定)' は末尾
+  const projectTeacherNames = (project.teachers || []).map(t => t.name);
+  const foundNames = [...countsByTeacher.keys()];
+  const orderedTeachers = [
+    ...projectTeacherNames.filter(n => countsByTeacher.has(n)),
+    ...foundNames.filter(n => n !== UNASSIGNED_TEACHER_KEY && !projectTeacherNames.includes(n)),
+    ...(countsByTeacher.has(UNASSIGNED_TEACHER_KEY) ? [UNASSIGNED_TEACHER_KEY] : []),
+  ];
+
+  const columnTotals = new Array(columns.length).fill(0);
+  let grandTotal = 0;
+  const rows = orderedTeachers.map(teacher => {
+    const sparse = countsByTeacher.get(teacher) || [];
+    // 後続タブの列ぶんが歯抜けの sparse 配列なので、列数まで 0 詰めする
+    const counts = columns.map((_, i) => sparse[i] || 0);
+    const total = counts.reduce((a, b) => a + b, 0);
+    counts.forEach((n, i) => { columnTotals[i] += n; });
+    grandTotal += total;
+    return { teacher, counts, total };
+  });
+
+  return { columns, tabSpans, rows, columnTotals, grandTotal };
+}
+
+// クラス別回数まとめシートを workbook の先頭に積む (buildTeacherWorkbook の
+// 冒頭で最初に呼ぶことで 1 枚目にする)。
+function buildClassCountSummarySheet(workbook: ExcelJS.Workbook, project: Project) {
+  const { columns, tabSpans, rows, columnTotals, grandTotal } = computeTeacherClassCounts(project);
+  // 講師名が「クラス別回数」でも throw しないよう固定名も uniq を通す (F5i)
+  const ws = workbook.addWorksheet(uniqueSheetName(workbook, 'クラス別回数'));
+
+  // 列構成: 講師 | クラス列 × N | 計
+  const columnCount = 2 + columns.length;
+
+  // タイトル (N5a / P1 と同じ「何の・いつの・いつ出したか」)。期間は
+  // プール全日程のカレンダー順の初日〜最終日。
+  const poolDates = sortPoolDatesByCalendar(project.dates || []);
+  const rangeText = poolDates.length > 0
+    ? `期間 ${poolDates[0].label}〜${poolDates[poolDates.length - 1].label}`
+    : '';
+  const d0 = new Date();
+  const titleText = [
+    `クラス別回数まとめ — ${project.name || '講習時間割'}`,
+    rangeText,
+    `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`,
+  ].filter(Boolean).join(' / ');
+  ws.addRow([titleText]);
+  if (columnCount > 1) ws.mergeCells(1, 1, 1, columnCount);
+  applyCellStyle(ws.getCell(1, 1), TITLE_ROW_STYLE);
+  ws.getRow(1).height = 20;
+
+  // ヘッダ 2 段: 行 2 = 学年(タブ) (クラス列ぶんを横結合)、行 3 = クラス。
+  // 講師 / 計 は 2 行縦結合。style は merge が slave.style = master.style を
+  // 代入するため必ず merge の後に塗る (buildScheduleWorkbook の日付結合と同じ)。
+  ws.addRow(['講師', ...columns.map(c => c.tabName), '計']);
+  ws.addRow(['', ...columns.map(c => c.className), '']);
+  ws.mergeCells(2, 1, 3, 1);
+  ws.mergeCells(2, columnCount, 3, columnCount);
+  let spanStart = 2; // クラス列の先頭 (1-based)
+  tabSpans.forEach(span => {
+    if (span.count > 1) ws.mergeCells(2, spanStart, 2, spanStart + span.count - 1);
+    spanStart += span.count;
+  });
+  for (let ci = 1; ci <= columnCount; ci++) {
+    applyCellStyle(ws.getCell(2, ci), TEACHER_HEADER_STYLE);
+  }
+  columns.forEach((_, i) => applyCellStyle(ws.getCell(3, 2 + i), DATE_HEADER_STYLE));
+
+  // データ行 (行 4〜)。0 回は空欄にして行列を見やすくする。
+  rows.forEach((r, ri) => {
+    ws.addRow([r.teacher, ...r.counts.map(n => n || ''), r.total]);
+    const style = r.teacher === UNASSIGNED_TEACHER_KEY ? EXTERNAL_ROW_STYLE : BODY_CELL_STYLE;
+    for (let ci = 1; ci <= columnCount; ci++) {
+      applyCellStyle(ws.getCell(4 + ri, ci), style);
+    }
+  });
+
+  // 合計行 (列計 = クラスの総コマ数)
+  if (rows.length > 0) {
+    ws.addRow(['計', ...columnTotals, grandTotal]);
+    for (let ci = 1; ci <= columnCount; ci++) {
+      applyCellStyle(ws.getCell(4 + rows.length, ci), DATE_HEADER_STYLE);
+    }
+  }
+
+  // 凡例 (該当がある場合のみ)。空行を 1 つ挟んで小さめの文字で。
+  const notes: string[] = [];
+  if ((project.combinedGroups || []).length > 0) notes.push('合同授業は代表クラスの列に 1 回で集計');
+  if (rows.some(r => r.teacher === UNASSIGNED_TEACHER_KEY)) notes.push('(未定) は講師未割当のコマ');
+  if (rows.length > 0 && notes.length > 0) {
+    ws.addRow([]);
+    ws.addRow([`※ ${notes.join(' / ')}`]);
+    ws.getCell(ws.rowCount, 1).font = { size: 9 };
+  }
+
+  ws.getColumn(1).width = 14;
+  columns.forEach((_, i) => { ws.getColumn(2 + i).width = 9; });
+  ws.getColumn(columnCount).width = 9;
+
+  // P1: B4 縦 + タイトル/ヘッダ行 (1〜3 行目) の全ページ繰り返し
+  applyTeacherPrintDefaults(ws, 3);
+}
+
 // ─── 講師別 Excel: workbook 構築 ───────────────────────────────────
 export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
+
+  // S1: クラス別回数まとめ (座席表の事前印刷用)。最初に積んで 1 枚目にする。
+  buildClassCountSummarySheet(workbook, project);
 
   // 「全講師リスト」シート用の集約
   const allRows: TeacherRow[] = [];
