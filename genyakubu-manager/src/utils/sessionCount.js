@@ -5,6 +5,10 @@
 // としてそれぞれ独立にカウントする。
 // 休講日 / テスト期間 / 単独教科隔週の B 週はカウントしない。
 // 対象日で対象スロットがその教科を実施していない場合は 0 を返す。
+// 所属時間割の有効期間外の日もカウントしない (前期/後期のように期を
+// またいで同種のコマが並存しても二重カウントしない)。カウント起点は
+// 学年グループ開始日と所属時間割 startDate の遅い方 (getSlotCountStartDate)
+// なので、期の切替では「第N回」が 1 から数え直しになる。
 //
 // SessionOverride (回数手動補正) の扱い:
 //   - mode:"set"  → そのコマの回数を value に強制し、以降の同バケット
@@ -22,6 +26,7 @@ import { timeStartToMin as timeToMinutes } from "./dateHelpers";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
+import { isTimetableActiveForDate } from "./timetable";
 
 // "YYYY-MM-DD" → Date (ローカル)
 function parseDate(s) {
@@ -46,6 +51,30 @@ export function getGradeStartDate(grade, displayCutoff) {
     }
   }
   return null;
+}
+
+// slot の所属時間割がその日に有効か。ctx.timetables 未指定 (単一時間割
+// 運用) は常に有効扱い。時間割が見つからないコマは表示系
+// (filterSlotsForDate) と同様に無効へ倒す。
+function isSlotTimetableActive(slot, dateStr, ctx) {
+  const tts = ctx.timetables;
+  if (!Array.isArray(tts) || tts.length === 0) return true;
+  const tt = tts.find((t) => t.id === (slot.timetableId ?? 1));
+  return isTimetableActiveForDate(tt, dateStr, slot.grade);
+}
+
+// slot の回数カウント起点。学年グループの開始日 (表示期間設定) と
+// 所属時間割の startDate の遅い方。後期など期を切り替えた時間割では
+// 時間割の開始日が起点になり、「第N回」は期ごとに 1 から数え直しになる。
+export function getSlotCountStartDate(slot, ctx) {
+  const gradeStart = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  let ttStart = null;
+  if (Array.isArray(ctx.timetables)) {
+    const tt = ctx.timetables.find((t) => t.id === (slot.timetableId ?? 1));
+    ttStart = (tt && tt.startDate) || null;
+  }
+  if (gradeStart && ttStart) return ttStart > gradeStart ? ttStart : gradeStart;
+  return ttStart || gradeStart;
 }
 
 // スロットが属するセット (slotIds 配列) を返す。
@@ -105,6 +134,7 @@ function findPoolFirstDate(pool, startDate, ctx) {
     if (days.has(dayKey)) {
       for (const s of pool) {
         if (s.day !== dayKey) continue;
+        if (!isSlotTimetableActive(s, dStr, ctx)) continue;
         if (ctx.isOffForGrade && ctx.isOffForGrade(dStr, s.grade, s.subj)) continue;
         return dStr;
       }
@@ -149,6 +179,8 @@ function isOrientationSlot(slot, dateStr, ctx) {
   let earliestMin = Infinity;
   for (const s of pool) {
     if (s.day !== dayKey) continue;
+    // 別の期のコマ (例: 後期の 18:00 開始) が開講日の 1 限判定を奪わないように
+    if (!isSlotTimetableActive(s, dateStr, ctx)) continue;
     const m = timeToMinutes(s.time);
     if (m < earliestMin) earliestMin = m;
   }
@@ -165,6 +197,9 @@ function isOrientationSlot(slot, dateStr, ctx) {
 function effectiveSubjectOnDay(slot, dateStr, ctx) {
   const dt = parseDate(dateStr);
   if (WEEKDAYS[dt.getDay()] !== slot.day) return null;
+
+  // 所属時間割の有効期間外は実施なし (期をまたぐ二重カウント防止)。
+  if (!isSlotTimetableActive(slot, dateStr, ctx)) return null;
 
   // 休講 / テスト期間 (exam) 判定は生の slot.subj で評価 (既存挙動維持)。
   if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
@@ -303,7 +338,7 @@ function computeBucketCounts(
  *
  * @param {object} slot 対象スロット
  * @param {string} targetDateStr "YYYY-MM-DD"
- * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides?}
+ * @param {object} ctx {classSets, allSlots, displayCutoff, timetables?, isOffForGrade, biweeklyAnchors, sessionOverrides?}
  * @returns {number} 回数 または 0
  */
 export function computeSessionNumber(slot, targetDateStr, ctx) {
@@ -312,7 +347,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
     ctx = { ...ctx, _cohortIndex: buildSlotCohortIndex(ctx.allSlots) };
   }
 
-  const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  const startDate = getSlotCountStartDate(slot, ctx);
   if (!startDate) return 0;
   if (targetDateStr < startDate) return 0;
 
@@ -346,7 +381,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
  *
  * @param {Array} slots 計算対象のスロット群 (表示中の日のものだけで良い)
  * @param {string} targetDateStr "YYYY-MM-DD"
- * @param {object} ctx {classSets, allSlots, displayCutoff, isOffForGrade, biweeklyAnchors, sessionOverrides?}
+ * @param {object} ctx {classSets, allSlots, displayCutoff, timetables?, isOffForGrade, biweeklyAnchors, sessionOverrides?}
  * @returns {Map<number, number>}
  */
 export function buildSessionCountMap(slots, targetDateStr, ctx) {
@@ -365,7 +400,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
   for (const s of ctx.allSlots || []) slotById.set(s.id, s);
 
   for (const slot of slots) {
-    const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
+    const startDate = getSlotCountStartDate(slot, ctx);
     if (!startDate || targetDateStr < startDate) {
       out.set(slot.id, 0);
       continue;

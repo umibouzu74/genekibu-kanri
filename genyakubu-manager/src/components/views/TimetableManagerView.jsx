@@ -3,6 +3,7 @@ import { S } from "../../styles/common";
 import { formatCount, slotWeight } from "../../utils/biweekly";
 import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
+import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -309,6 +310,14 @@ export function TimetableManagerView({
           </div>
         </div>
       )}
+
+      {/* 時刻一括変換 (期切替支援) */}
+      <TimeBulkEditPanel
+        timetables={timetables}
+        slots={slots}
+        ttCrud={ttCrud}
+        isAdmin={isAdmin}
+      />
 
       {/* 表示期限設定 */}
       <div

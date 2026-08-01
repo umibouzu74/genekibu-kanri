@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useToasts } from "./useToasts";
 import { useCrudResource } from "./useCrudResource";
 import { nextNumericId } from "../utils/schema";
+import { applyTimeBulkEdit } from "../utils/timeBulkEdit";
 
 /**
  * Timetable CRUD hook.
@@ -10,6 +11,8 @@ import { nextNumericId } from "../utils/schema";
  *   saveTimetables: (v: import("../types").Timetable[]) => void,
  *   slots: import("../types").Slot[],
  *   saveSlots: (v: import("../types").Slot[]) => void,
+ *   classSets?: import("../types").ClassSet[],
+ *   saveClassSets?: (v: import("../types").ClassSet[]) => void,
  * }} deps
  */
 export function useTimetablesCrud({
@@ -17,6 +20,8 @@ export function useTimetablesCrud({
   saveTimetables,
   slots,
   saveSlots,
+  classSets,
+  saveClassSets,
   onRemoveActive,
 }) {
   const toasts = useToasts();
@@ -83,21 +88,59 @@ export function useTimetablesCrud({
         (s) => (s.timetableId ?? 1) === sourceId
       );
       let nextSlotId = nextNumericId(slots);
-      const newSlots = sourceSlots.map((s) => ({
-        ...s,
-        id: nextSlotId++,
-        timetableId: newTtId,
-      }));
+      const idMap = new Map(); // 旧スロット id → 新スロット id
+      const newSlots = sourceSlots.map((s) => {
+        const newId = nextSlotId++;
+        idMap.set(s.id, newId);
+        return { ...s, id: newId, timetableId: newTtId };
+      });
+
+      // 授業セット (回数カウントの束ね) も新スロット id に読み替えて複製する。
+      // これが無いと複製先の期でセット単位の第N回が引き継がれない。
+      // 2 コマ以上写像できたセットのみ (1 コマのセットは束ねる意味がない)。
+      const newSets = [];
+      if (Array.isArray(classSets) && saveClassSets) {
+        let nextSetId = nextNumericId(classSets);
+        for (const cs of classSets) {
+          const mapped = (cs.slotIds || [])
+            .map((id) => idMap.get(id))
+            .filter((id) => id != null);
+          if (mapped.length < 2) continue;
+          newSets.push({ id: nextSetId++, label: cs.label, slotIds: mapped });
+        }
+        if (newSets.length) saveClassSets([...classSets, ...newSets]);
+      }
 
       saveTimetables([...timetables, newTimetable]);
       saveSlots([...slots, ...newSlots]);
       toasts.success(
-        `「${source.name}」を複製しました（${newSlots.length} コマ）`
+        `「${source.name}」を複製しました（${newSlots.length} コマ` +
+          (newSets.length ? `、授業セット ${newSets.length} 件` : "") +
+          `）`
       );
       return newTtId;
     },
-    [timetables, saveTimetables, slots, saveSlots, toasts]
+    [timetables, saveTimetables, slots, saveSlots, classSets, saveClassSets, toasts]
   );
 
-  return { add, update, remove, duplicate };
+  // 時刻一括変換 (期切替支援)。プレビュー・確認は呼び出し側 (ビュー) の責務。
+  const bulkRetime = useCallback(
+    (filter, mappings) => {
+      const { slots: updated, changedCount } = applyTimeBulkEdit(
+        slots,
+        filter,
+        mappings
+      );
+      if (changedCount === 0) {
+        toasts.error("変換対象のコマがありません");
+        return 0;
+      }
+      saveSlots(updated);
+      toasts.success(`${changedCount} 件のコマの時刻を変換しました`);
+      return changedCount;
+    },
+    [slots, saveSlots, toasts]
+  );
+
+  return { add, update, remove, duplicate, bulkRetime };
 }

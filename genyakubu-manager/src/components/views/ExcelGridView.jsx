@@ -301,6 +301,7 @@ export function ExcelGridView({
     // 使い、カウントが日付フィルタで変わらないようにする。
     allSlots: dashboardMode ? filteredSlots : undefined,
     displayCutoff,
+    timetables,
     holidays,
     examPeriods,
     biweeklyAnchors,

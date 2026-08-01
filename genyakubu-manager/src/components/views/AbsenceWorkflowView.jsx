@@ -218,13 +218,14 @@ export function AbsenceWorkflowView({
       classSets: classSets || [],
       allSlots: slots,
       displayCutoff,
+      timetables: timetables || [],
       isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
       adjustments: [...filteredAdjustments, ...draftAdjustments],
       sessionOverrides: [...(sessionOverrides || []), ...draftOverridesLocal],
       orientationOnFirstDay: true,
     });
-  }, [daySlots, slots, date, classSets, displayCutoff, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);
+  }, [daySlots, slots, date, classSets, displayCutoff, timetables, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);
 
   const toggleTeacher = useCallback(
     (name) => {

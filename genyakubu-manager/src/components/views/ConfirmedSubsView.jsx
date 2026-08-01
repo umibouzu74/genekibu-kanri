@@ -47,6 +47,7 @@ export function ConfirmedSubsView({
       classSets,
       slots,
       displayCutoff,
+      timetables,
       holidays,
       examPeriods,
       biweeklyAnchors,
