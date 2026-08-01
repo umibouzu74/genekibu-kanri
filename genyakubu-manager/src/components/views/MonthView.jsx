@@ -205,6 +205,7 @@ export function MonthView({
     classSets,
     slots,
     displayCutoff,
+    timetables,
     holidays,
     examPeriods,
     specialEvents,

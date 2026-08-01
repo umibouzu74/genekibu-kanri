@@ -4,6 +4,7 @@ import {
   computeSessionNumber,
   formatSessionNumber,
   getGradeStartDate,
+  getSlotCountStartDate,
   resolveSetSlotIds,
 } from "./sessionCount";
 
@@ -897,5 +898,111 @@ describe("buildSessionCountMap - sessionOverrides", () => {
       isOffForGrade: NEVER_OFF,
     };
     expect(computeSessionNumber(tue, "2026-04-14", ctx)).toBe(2);
+  });
+});
+
+describe("computeSessionNumber - 期切替 (前期/後期) の時間割ゲート", () => {
+  // 2026-09-01 は火曜日 (4/7 のちょうど 21 週後)
+  const TIMETABLES = [
+    { id: 1, name: "2026 前期", type: "regular", startDate: null, endDate: "2026-08-31", grades: [] },
+    { id: 2, name: "2026 後期", type: "regular", startDate: "2026-09-01", endDate: null, grades: [] },
+  ];
+  // 前期: 中3 火 1 限 / 後期: 同じ授業が 18:00 開始へ前倒し
+  const zenki = makeSlot(1, "火", "18:55-19:40", "中3", { timetableId: 1 });
+  const kouki = makeSlot(101, "火", "18:00-18:45", "中3", { timetableId: 2 });
+  const ctx = {
+    classSets: [],
+    allSlots: [zenki, kouki],
+    displayCutoff: DISPLAY_CUTOFF, // 中3 startDate=2026-04-07
+    timetables: TIMETABLES,
+    isOffForGrade: NEVER_OFF,
+  };
+
+  it("後期スロットは時間割開始日から ① で数え直し", () => {
+    expect(computeSessionNumber(kouki, "2026-09-01", ctx)).toBe(1);
+    expect(computeSessionNumber(kouki, "2026-09-08", ctx)).toBe(2);
+  });
+
+  it("後期開始日より前の日付では 0", () => {
+    expect(computeSessionNumber(kouki, "2026-08-25", ctx)).toBe(0);
+  });
+
+  it("前期スロットのカウントは従来通り (学年開始日起点)", () => {
+    expect(computeSessionNumber(zenki, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(zenki, "2026-04-14", ctx)).toBe(2);
+  });
+
+  it("前期・後期を同一授業セットに入れても後期は二重カウントしない", () => {
+    const setCtx = {
+      ...ctx,
+      classSets: [{ id: 10, label: "中3 数学", slotIds: [1, 101] }],
+    };
+    // 後期 2 週目: 前期スロットは期間外なので後期分の 2 回のみ
+    const map = buildSessionCountMap([kouki], "2026-09-08", setCtx);
+    expect(map.get(101)).toBe(2);
+    // 前期最終盤のカウントに後期スロットは混ざらない (8/25 は前期最後の火曜)
+    expect(computeSessionNumber(zenki, "2026-08-25", setCtx)).toBe(21);
+  });
+
+  it("表示期間設定が無くても時間割開始日だけでカウントできる", () => {
+    expect(
+      computeSessionNumber(kouki, "2026-09-01", { ...ctx, displayCutoff: null })
+    ).toBe(1);
+  });
+
+  it("ctx.timetables 未指定なら従来挙動 (ゲート無し)", () => {
+    const legacy = { ...ctx, timetables: undefined };
+    expect(computeSessionNumber(kouki, "2026-04-07", legacy)).toBe(1);
+  });
+
+  it("開講日オリエンの 1 限判定を後期の 18:00 コマが奪わない", () => {
+    // 前期 1 限 18:55 と 2 限 19:50、後期 18:00 が同学年に並存。
+    // ゲートが無いと開講日 (4/7) の最早時刻が後期の 18:00 になり
+    // 前期 1 限がオリエン扱いされなくなる。
+    const zenki2 = makeSlot(2, "火", "19:50-20:35", "中3", {
+      timetableId: 1,
+      subj: "英語",
+    });
+    const oriCtx = {
+      ...ctx,
+      allSlots: [zenki, zenki2, kouki],
+      orientationOnFirstDay: true,
+    };
+    expect(computeSessionNumber(zenki, "2026-04-07", oriCtx)).toBe(0); // オリエン
+    expect(computeSessionNumber(zenki2, "2026-04-07", oriCtx)).toBe(1);
+  });
+});
+
+describe("getSlotCountStartDate", () => {
+  const TIMETABLES = [
+    { id: 1, name: "前期", type: "regular", startDate: null, endDate: "2026-08-31", grades: [] },
+    { id: 2, name: "後期", type: "regular", startDate: "2026-09-01", endDate: null, grades: [] },
+  ];
+
+  it("学年開始日と時間割開始日の遅い方を返す", () => {
+    const slot = makeSlot(1, "火", "18:00-18:45", "中3", { timetableId: 2 });
+    expect(
+      getSlotCountStartDate(slot, { displayCutoff: DISPLAY_CUTOFF, timetables: TIMETABLES })
+    ).toBe("2026-09-01");
+  });
+
+  it("時間割に開始日が無ければ学年開始日", () => {
+    const slot = makeSlot(1, "火", "18:55-19:40", "中3", { timetableId: 1 });
+    expect(
+      getSlotCountStartDate(slot, { displayCutoff: DISPLAY_CUTOFF, timetables: TIMETABLES })
+    ).toBe("2026-04-07");
+  });
+
+  it("学年開始日が無ければ時間割開始日", () => {
+    const slot = makeSlot(1, "火", "18:00-18:45", "中3", { timetableId: 2 });
+    expect(
+      getSlotCountStartDate(slot, { displayCutoff: null, timetables: TIMETABLES })
+    ).toBe("2026-09-01");
+  });
+
+  it("どちらも無ければ null", () => {
+    const slot = makeSlot(1, "火", "18:55-19:40", "中1", { timetableId: 1 });
+    expect(getSlotCountStartDate(slot, { displayCutoff: null, timetables: TIMETABLES })).toBe(null);
+    expect(getSlotCountStartDate(slot, { displayCutoff: DISPLAY_CUTOFF })).toBe(null);
   });
 });

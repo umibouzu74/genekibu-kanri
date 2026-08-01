@@ -423,6 +423,7 @@ export default function App() {
   const subsCrud = useSubsCrud({ subs, saveSubs });
   const ttCrud = useTimetablesCrud({
     timetables, saveTimetables, slots, saveSlots,
+    classSets, saveClassSets,
     onRemoveActive: useCallback((deletedId) => {
       if (activeTimetableId === deletedId) changeActiveTimetable(1);
     }, [activeTimetableId, changeActiveTimetable]),
@@ -1357,6 +1358,7 @@ export default function App() {
                 selectView(VIEWS.HOLIDAYS);
               }}
               displayCutoff={displayCutoff}
+              timetables={timetables}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
               availableTags={availableTags}

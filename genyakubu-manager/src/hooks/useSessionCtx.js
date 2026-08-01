@@ -12,6 +12,7 @@ export function useSessionCtx({
   slots,
   allSlots,
   displayCutoff,
+  timetables,
   holidays,
   examPeriods,
   specialEvents,
@@ -29,6 +30,8 @@ export function useSessionCtx({
       classSets: classSets || [],
       allSlots: allSlots || slots || [],
       displayCutoff,
+      // 期またぎ (前期/後期) の二重カウント防止と、期ごとの回数リセットに使う。
+      timetables: timetables || [],
       isOffForGrade: helpers.isOffForGrade,
       biweeklyAnchors: biweeklyAnchors || [],
       // 隔週ローテーションを「実施されなかった週ぶんスキップする」補正に使う。
@@ -40,7 +43,7 @@ export function useSessionCtx({
       // 中学部の開講日 1 限目をオリエン扱いとして第1回を 2 限目に繰下げる。
       orientationOnFirstDay: true,
     }),
-    [classSets, allSlots, slots, displayCutoff, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides]
+    [classSets, allSlots, slots, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides]
   );
   return { sessionCtx, ...helpers };
 }

@@ -95,6 +95,7 @@ export function Dashboard({
     classSets,
     slots,
     displayCutoff,
+    timetables,
     holidays,
     examPeriods,
     specialEvents,
