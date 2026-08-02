@@ -1,13 +1,11 @@
-import { S } from "../styles/common";
 import { ALL_GRADES } from "../constants/schools";
 import { REGULAR_DAYS } from "./model";
 import { nextNumericId } from "../utils/schema";
+import { UI } from "./ui";
 
 // ─── タブ設定 (名前 / 学年 / 曜日 / 使う時限 / クラス) ──────────────
 // grade は反映時に slot.grade へそのまま入る。クラスの label は slot.cls、
 // room はそのクラスの既定教室 (セル側で上書き可)。
-
-const smallBtn = { ...S.btn(false), fontSize: 11, padding: "3px 8px" };
 
 function move(list, idx, delta) {
   const next = [...list];
@@ -41,28 +39,18 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
     }));
 
   return (
-    <div
-      style={{
-        background: "#f8fafe",
-        border: "1px solid #d8e0f0",
-        borderRadius: 10,
-        padding: 14,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <label style={{ fontSize: 12, fontWeight: 600 }}>
+    <div className="bg-builder-surface border border-builder-info-border rounded-lg p-3.5 flex flex-col gap-2.5">
+      <div className="flex gap-3 flex-wrap">
+        <label className="text-xs font-bold text-builder-ink">
           タブ名
           <input
             type="text"
             value={tab.name}
             onChange={(e) => updateTab(tab.id, (t) => ({ ...t, name: e.target.value }))}
-            style={{ ...S.input, marginTop: 2, display: "block", width: 140 }}
+            className={`${UI.input} mt-0.5 block w-36 font-normal`}
           />
         </label>
-        <label style={{ fontSize: 12, fontWeight: 600 }}>
+        <label className="text-xs font-bold text-builder-ink">
           学年（反映先コマの学年になります）
           <input
             type="text"
@@ -70,7 +58,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
             onChange={(e) => updateTab(tab.id, (t) => ({ ...t, grade: e.target.value }))}
             placeholder="例: 中3"
             list="regb-grades"
-            style={{ ...S.input, marginTop: 2, display: "block", width: 140 }}
+            className={`${UI.input} mt-0.5 block w-36 font-normal`}
           />
         </label>
         <datalist id="regb-grades">
@@ -80,24 +68,24 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
         </datalist>
       </div>
 
-      <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, marginRight: 4 }}>曜日</span>
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs font-bold text-builder-ink mr-1">曜日</span>
         {REGULAR_DAYS.map((d) => (
           <button
             key={d}
             type="button"
             onClick={() => toggleDay(d)}
-            style={{ ...S.btn(tab.days.includes(d)), fontSize: 11, padding: "4px 9px" }}
+            className={UI.btnToggle(tab.days.includes(d))}
           >
             {d}
           </button>
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, marginRight: 4 }}>使う時限</span>
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs font-bold text-builder-ink mr-1">使う時限</span>
         {project.periods.length === 0 && (
-          <span style={{ fontSize: 11, color: "#888" }}>
+          <span className="text-[11px] text-builder-ink-subtle">
             先に「⚙ 全体設定」で時限を登録してください
           </span>
         )}
@@ -107,7 +95,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
             type="button"
             onClick={() => togglePeriod(per.id)}
             title={per.time}
-            style={{ ...S.btn(tab.periodIds.includes(per.id)), fontSize: 11, padding: "4px 9px" }}
+            className={UI.btnToggle(tab.periodIds.includes(per.id))}
           >
             {per.label}
             {per.time ? ` ${per.time}` : ""}
@@ -115,29 +103,41 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>クラス（列）と既定教室</span>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-bold text-builder-ink">クラス（列）と既定教室</span>
         {tab.classes.map((c, idx) => (
-          <div key={c.id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div key={c.id} className="flex items-center gap-1.5">
             <input
               type="text"
               value={c.label}
               onChange={(e) => updateClass(c.id, { label: e.target.value })}
               placeholder="クラス名 (例: S, S/AB, 一般)"
-              style={{ ...S.input, width: 150 }}
+              className={`${UI.input} w-40`}
             />
             <input
               type="text"
               value={c.room}
               onChange={(e) => updateClass(c.id, { room: e.target.value })}
               placeholder="教室 (例: 501)"
-              style={{ ...S.input, width: 110 }}
+              className={`${UI.input} w-28`}
             />
-            <button type="button" style={smallBtn} onClick={() => updateTab(tab.id, (t) => ({ ...t, classes: move(t.classes, idx, -1) }))}>↑</button>
-            <button type="button" style={smallBtn} onClick={() => updateTab(tab.id, (t) => ({ ...t, classes: move(t.classes, idx, 1) }))}>↓</button>
             <button
               type="button"
-              style={{ ...smallBtn, background: "#fde8e8", color: "#c03030" }}
+              className={UI.btn}
+              onClick={() => updateTab(tab.id, (t) => ({ ...t, classes: move(t.classes, idx, -1) }))}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className={UI.btn}
+              onClick={() => updateTab(tab.id, (t) => ({ ...t, classes: move(t.classes, idx, 1) }))}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className={UI.btnDanger}
               onClick={() =>
                 updateTab(tab.id, (t) => ({ ...t, classes: t.classes.filter((x) => x.id !== c.id) }))
               }
@@ -149,7 +149,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
         <div>
           <button
             type="button"
-            style={smallBtn}
+            className={UI.btn}
             onClick={() =>
               updateTab(tab.id, (t) => ({
                 ...t,
@@ -162,12 +162,8 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button
-          type="button"
-          style={{ ...smallBtn, background: "#fde8e8", color: "#c03030" }}
-          onClick={onRemoveTab}
-        >
+      <div className="flex justify-end">
+        <button type="button" className={UI.btnDanger} onClick={onRemoveTab}>
           このタブを削除
         </button>
       </div>

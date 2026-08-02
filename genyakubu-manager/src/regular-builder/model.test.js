@@ -8,6 +8,7 @@ import {
   resolveTabEntries,
   sanitizeProject,
   sanitizeWorkspace,
+  swapScheduleCells,
   tabPeriods,
 } from "./model";
 import { makeProject } from "./testUtils";
@@ -17,6 +18,29 @@ describe("makeCellKey / parseCellKey", () => {
     const key = makeCellKey("月", 3, 12);
     expect(key).toBe("月|3|12");
     expect(parseCellKey(key)).toEqual({ day: "月", periodId: 3, classId: 12 });
+  });
+});
+
+describe("swapScheduleCells", () => {
+  const a = { subj: "数学", teacher: "半田" };
+  const b = { subj: "英語", teacher: "堀上", room: "501" };
+
+  it("2 セルの中身を入れ替える (元のマップは不変)", () => {
+    const schedule = { "月|1|1": a, "火|2|1": b };
+    const next = swapScheduleCells(schedule, "月|1|1", "火|2|1");
+    expect(next).toEqual({ "月|1|1": b, "火|2|1": a });
+    expect(schedule).toEqual({ "月|1|1": a, "火|2|1": b });
+  });
+
+  it("空セルへの入替は移動になり、空いた側のキーは残らない", () => {
+    const next = swapScheduleCells({ "月|1|1": a }, "月|1|1", "水|3|2");
+    expect(next).toEqual({ "水|3|2": a });
+    expect("月|1|1" in next).toBe(false);
+  });
+
+  it("同一キーは no-op で同じ参照を返す", () => {
+    const schedule = { "月|1|1": a };
+    expect(swapScheduleCells(schedule, "月|1|1", "月|1|1")).toBe(schedule);
   });
 });
 

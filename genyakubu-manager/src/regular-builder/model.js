@@ -59,6 +59,24 @@ export function parseCellKey(key) {
   return { day, periodId: Number(periodId), classId: Number(classId) };
 }
 
+// ─── セル入替 (D&D スワップ) ────────────────────────────────────────
+
+/**
+ * schedule マップの 2 セルの中身を入れ替えた新しいマップを返す (純関数)。
+ * 片側が空セル (キーなし) なら実質「移動」になり、空いた側のキーは残さない。
+ */
+export function swapScheduleCells(schedule, keyA, keyB) {
+  if (keyA === keyB) return schedule;
+  const next = { ...schedule };
+  const a = schedule[keyA];
+  const b = schedule[keyB];
+  if (b) next[keyA] = b;
+  else delete next[keyA];
+  if (a) next[keyB] = a;
+  else delete next[keyB];
+  return next;
+}
+
 // ─── サニタイズ (useSyncedStorage の migrate 用) ────────────────────
 // 同期で壊れたペイロードが来ても UI が落ちないよう、最低限の形に整える。
 // 解釈不能なら null を返し、呼び出し側で「直前の値を保持」に倒す。
