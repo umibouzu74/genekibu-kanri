@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { makeCellKey, tabPeriods } from "./model";
 import { splitTeacherField } from "../utils/biweekly";
 import { RegularCell } from "./RegularCell";
@@ -29,6 +29,17 @@ export function RegularGrid({
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
+
+  // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
+  // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
+  // (rows / dragSource など) を参照する。
+  const implRef = useRef(null);
+  const onNavigate = useCallback((...a) => implRef.current.navigate(...a), []);
+  const onDragStart = useCallback((...a) => implRef.current.dragStart(...a), []);
+  const onDragOver = useCallback((...a) => implRef.current.dragOver(...a), []);
+  const onDragLeave = useCallback((...a) => implRef.current.dragLeave(...a), []);
+  const onDrop = useCallback((...a) => implRef.current.drop(...a), []);
+  const onDragEnd = useCallback((...a) => implRef.current.dragEnd(...a), []);
 
   const allPeriods = tabPeriods(project, tab);
   let days = tab.days || [];
@@ -163,8 +174,18 @@ export function RegularGrid({
         el.focus();
         return;
       }
-      // disabled (科目未選択の講師 select) はスキップして続行
+      // 要素が無い / disabled ならスキップして次の候補へ (保険)
     }
+  };
+
+  // 最新のクロージャを stable ハンドラから参照できるようにする
+  implRef.current = {
+    navigate: handleNavigate,
+    dragStart: handleDragStart,
+    dragOver: handleDragOver,
+    dragLeave: handleDragLeave,
+    drop: handleDrop,
+    dragEnd: handleDragEnd,
   };
 
   const widths = isCompact ? COL_WIDTHS.compact : COL_WIDTHS.normal;
@@ -257,7 +278,10 @@ export function RegularGrid({
                       splitTeacherField(cell?.teacher).includes(highlightTeacher);
                     return (
                       <RegularCell
-                        key={key}
+                        // タブ / プロジェクトをまたいで同じ cellKey が再利用
+                        // されるため、ローカル state (直接入力モード) が別
+                        // タブのセルへ残留しないよう id を key に含める
+                        key={`${project.id}:${tab.id}:${key}`}
                         cellKey={key}
                         cell={cell}
                         subjects={project.subjects}
@@ -269,12 +293,12 @@ export function RegularGrid({
                         ariaBase={`${day} ${per.label || per.time} ${cls.label}`}
                         isCompact={isCompact}
                         onCellChange={onCellChange}
-                        onNavigate={handleNavigate}
-                        onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onDragEnd={handleDragEnd}
+                        onNavigate={onNavigate}
+                        onDragStart={onDragStart}
+                        onDragOver={onDragOver}
+                        onDragLeave={onDragLeave}
+                        onDrop={onDrop}
+                        onDragEnd={onDragEnd}
                         isDragOver={dragOverKey === key}
                         isDragSource={dragSource === key}
                       />

@@ -289,10 +289,14 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
+  // activeTab オブジェクトは編集のたびに新しくなるため、依存は id だけに
+  // する (オブジェクト依存だと毎編集でハンドラが再生成され、RegularCell の
+  // memo が効かなくなる)
+  const activeTabIdForEdit = activeTab?.id ?? null;
   const onCellChange = useCallback(
     (key, field, value) => {
-      if (!activeTab) return;
-      updateTab(activeTab.id, (t) => {
+      if (activeTabIdForEdit == null) return;
+      updateTab(activeTabIdForEdit, (t) => {
         const prev = t.schedule[key] || {};
         const next = { ...prev, [field]: value };
         // 全フィールド空になったらセルごと削除して下書きを軽く保つ
@@ -305,19 +309,19 @@ export default function RegularBuilderApp({
         return { ...t, schedule };
       });
     },
-    [activeTab, updateTab]
+    [activeTabIdForEdit, updateTab]
   );
 
   // D&D でのセル入替 (講習ビルダーの handleSwapCells 相当)
   const onSwapCells = useCallback(
     (keyA, keyB) => {
-      if (!activeTab) return;
-      updateTab(activeTab.id, (t) => ({
+      if (activeTabIdForEdit == null) return;
+      updateTab(activeTabIdForEdit, (t) => ({
         ...t,
         schedule: swapScheduleCells(t.schedule, keyA, keyB),
       }));
     },
-    [activeTab, updateTab]
+    [activeTabIdForEdit, updateTab]
   );
 
   const addTab = useCallback(() => {

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { splitTeacherField } from "../utils/biweekly";
 import {
   getSubjectColor,
@@ -6,9 +6,10 @@ import {
 } from "../timetable-builder/utils/constants";
 
 // ─── セル (講習ビルダーの ScheduleCell 相当) ────────────────────────
-// 科目カラー背景 + 科目/講師のプルダウン入力。教室・備考は科目が入って
-// いる (または値がある) ときだけ下段に小さく出す。衝突セルは赤背景 +
-// ⚠️バッジ、講師ハイライトは一致セルにリング・非一致セルを減光。
+// 科目カラー背景 + 科目/講師のプルダウン入力。教室・備考は何か値がある
+// セルにだけ下段に小さく出す。講師は教科なしでも入力できる (下書き用途 —
+// 反映時は教科なしセルとしてスキップされ件数報告される)。衝突セルは
+// 赤背景 + ⚠️バッジ、講師ハイライトは一致セルにリング・非一致セルを減光。
 //
 // 講師は基本プルダウン (マスタから選択)。「·」区切りの複数講師や
 // マスタ外の名前は「✎ 直接入力」で従来のテキスト入力に切り替えて
@@ -40,6 +41,10 @@ export const RegularCell = memo(function RegularCell({
 }) {
   const c = cell || {};
   const [teacherFreeEdit, setTeacherFreeEdit] = useState(false);
+  // 直接入力の取消 (Escape) 用: 編集開始時の値と取消フラグ。blur は
+  // Escape 経由でも発火するため、フラグで確定/取消を振り分ける。
+  const freeOriginalRef = useRef("");
+  const freeCancelRef = useRef(false);
 
   const hasContent = !!(c.subj || c.teacher || c.room || c.note);
   const bgColor = conflictText ? CONFLICT_CELL_BG : getSubjectColor(c.subj);
@@ -48,8 +53,14 @@ export const RegularCell = memo(function RegularCell({
     : "border border-builder-border";
 
   const commitTeacherFree = (value) => {
-    const normalized = splitTeacherField(value).join("·");
-    if (normalized !== (c.teacher || "")) onCellChange(cellKey, "teacher", normalized);
+    if (freeCancelRef.current) {
+      freeCancelRef.current = false;
+      if ((c.teacher || "") !== freeOriginalRef.current)
+        onCellChange(cellKey, "teacher", freeOriginalRef.current);
+    } else {
+      const normalized = splitTeacherField(value).join("·");
+      if (normalized !== (c.teacher || "")) onCellChange(cellKey, "teacher", normalized);
+    }
     setTeacherFreeEdit(false);
   };
 
@@ -122,7 +133,11 @@ export const RegularCell = memo(function RegularCell({
             onChange={(e) => onCellChange(cellKey, "teacher", e.target.value)}
             onBlur={(e) => commitTeacherFree(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === "Escape") e.target.blur();
+              if (e.key === "Enter") e.target.blur();
+              else if (e.key === "Escape") {
+                freeCancelRef.current = true; // blur 側で編集開始時の値に戻す
+                e.target.blur();
+              }
             }}
           />
         ) : (
@@ -131,10 +146,11 @@ export const RegularCell = memo(function RegularCell({
             aria-label={`${ariaBase} の講師`}
             className={`w-full rounded cursor-pointer ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-xs py-0.5"} ${!c.subj && !c.teacher ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
             value={c.teacher || ""}
-            disabled={!c.subj && !c.teacher}
             onChange={(e) => {
-              if (e.target.value === FREE_EDIT) setTeacherFreeEdit(true);
-              else onCellChange(cellKey, "teacher", e.target.value);
+              if (e.target.value === FREE_EDIT) {
+                freeOriginalRef.current = c.teacher || "";
+                setTeacherFreeEdit(true);
+              } else onCellChange(cellKey, "teacher", e.target.value);
             }}
             onKeyDown={(e) => onNavigate(e, cellKey, "teacher")}
           >
@@ -155,7 +171,7 @@ export const RegularCell = memo(function RegularCell({
                 {[c.room, c.note].filter(Boolean).join(" ")}
               </div>
             )
-          : (c.subj || c.room || c.note) && (
+          : hasContent && (
               <div className="flex gap-1">
                 <input
                   type="text"
