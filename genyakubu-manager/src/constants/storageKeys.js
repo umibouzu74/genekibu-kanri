@@ -24,4 +24,5 @@ export const LS = {
   specialEvents: "genyakubu-special-events",
   extraLessons: "genyakubu-extra-lessons",
   eventVisibility: "genyakubu-event-visibility",
+  regularBuilderProject: "genyakubu-regular-builder-project",
 };
