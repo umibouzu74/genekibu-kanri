@@ -25,4 +25,8 @@ export const LS = {
   extraLessons: "genyakubu-extra-lessons",
   eventVisibility: "genyakubu-event-visibility",
   regularBuilderProject: "genyakubu-regular-builder-project",
+  // 通常時間割作成の表示トグル (1 bit)。明示トグルの保存であり、利用統計から
+  // UI を自動変形する類 (A18 で却下) とは別物 (講習の usePersistedToggle と同型)。
+  regularBuilderHideEmpty: "genyakubu-regular-builder-hide-empty",
+  regularBuilderCompact: "genyakubu-regular-builder-compact",
 };

@@ -6,6 +6,8 @@ import { LS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
+import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggle";
+import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { nextNumericId } from "../utils/schema";
 import {
   createDefaultProject,
@@ -20,6 +22,7 @@ import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
+import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { UI } from "./ui";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
@@ -60,8 +63,13 @@ export default function RegularBuilderApp({
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
-  const [hideEmptyRows, setHideEmptyRows] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
+  // 表示トグルはリロード後も保持 (講習の 📏 と同じ。明示トグルの保存であり
+  // 自動学習系ではない)
+  const [hideEmptyRows, setHideEmptyRows] = usePersistedToggle(
+    LS.regularBuilderHideEmpty,
+    false
+  );
+  const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
 
   const project =
@@ -82,14 +90,16 @@ export default function RegularBuilderApp({
   const lastCommitAtRef = useRef(0);
   const [histVersion, setHistVersion] = useState(0);
 
+  // atomic: true の編集 (D&D 入替・セルクリア等の単発操作) は、直前の
+  // タイピングと束ねず必ず独立した取り消し単位にする (直後の編集も別単位)
   const commitWorkspace = useCallback(
-    (next) => {
+    (next, { atomic = false } = {}) => {
       const now = Date.now();
-      if (now - lastCommitAtRef.current > 800) {
+      if (atomic || now - lastCommitAtRef.current > 800) {
         undoStackRef.current = [...undoStackRef.current.slice(-99), wsRef.current];
       }
       redoStackRef.current = [];
-      lastCommitAtRef.current = now;
+      lastCommitAtRef.current = atomic ? 0 : now;
       saveWorkspace(next);
       setHistVersion((v) => v + 1);
     },
@@ -143,21 +153,24 @@ export default function RegularBuilderApp({
   // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
   // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
   const saveProject = useCallback(
-    (next) =>
-      commitWorkspace((w) => {
-        const activeId =
-          w.projects.some((p) => p.id === w.activeProjectId)
-            ? w.activeProjectId
-            : w.projects[0]?.id;
-        return {
-          ...w,
-          projects: w.projects.map((p) =>
-            p.id === activeId
-              ? { ...p, ...(typeof next === "function" ? next(p) : next) }
-              : p
-          ),
-        };
-      }),
+    (next, opts) =>
+      commitWorkspace(
+        (w) => {
+          const activeId =
+            w.projects.some((p) => p.id === w.activeProjectId)
+              ? w.activeProjectId
+              : w.projects[0]?.id;
+          return {
+            ...w,
+            projects: w.projects.map((p) =>
+              p.id === activeId
+                ? { ...p, ...(typeof next === "function" ? next(p) : next) }
+                : p
+            ),
+          };
+        },
+        opts
+      ),
     [commitWorkspace]
   );
 
@@ -281,11 +294,14 @@ export default function RegularBuilderApp({
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
-    (tabId, fn) =>
-      saveProject((p) => ({
-        ...p,
-        tabs: p.tabs.map((t) => (t.id === tabId ? fn(t) : t)),
-      })),
+    (tabId, fn, opts) =>
+      saveProject(
+        (p) => ({
+          ...p,
+          tabs: p.tabs.map((t) => (t.id === tabId ? fn(t) : t)),
+        }),
+        opts
+      ),
     [saveProject]
   );
 
@@ -312,14 +328,37 @@ export default function RegularBuilderApp({
     [activeTabIdForEdit, updateTab]
   );
 
-  // D&D でのセル入替 (講習ビルダーの handleSwapCells 相当)
+  // D&D でのセル入替 (講習ビルダーの handleSwapCells 相当)。
+  // 単発操作なので直前のタイピングと束ねず独立した Undo 単位にする
   const onSwapCells = useCallback(
     (keyA, keyB) => {
       if (activeTabIdForEdit == null) return;
-      updateTab(activeTabIdForEdit, (t) => ({
-        ...t,
-        schedule: swapScheduleCells(t.schedule, keyA, keyB),
-      }));
+      updateTab(
+        activeTabIdForEdit,
+        (t) => ({
+          ...t,
+          schedule: swapScheduleCells(t.schedule, keyA, keyB),
+        }),
+        { atomic: true }
+      );
+    },
+    [activeTabIdForEdit, updateTab]
+  );
+
+  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
+  const onClearCell = useCallback(
+    (key) => {
+      if (activeTabIdForEdit == null) return;
+      updateTab(
+        activeTabIdForEdit,
+        (t) => {
+          if (!(key in t.schedule)) return t;
+          const schedule = { ...t.schedule };
+          delete schedule[key];
+          return { ...t, schedule };
+        },
+        { atomic: true }
+      );
     },
     [activeTabIdForEdit, updateTab]
   );
@@ -370,15 +409,21 @@ export default function RegularBuilderApp({
 
   return (
     <div className="builder-root font-sans flex flex-col gap-3">
-      {/* 入力候補 (セルの講師「直接入力」から参照するグローバル datalist) */}
+      <style>{REGULAR_PRINT_STYLE}</style>
+      {/* 入力候補 (セルの「✎ 直接入力」から参照するグローバル datalist) */}
       <datalist id="regb-teachers">
         {project.teachers.map((t) => (
           <option key={t.name} value={t.name} />
         ))}
       </datalist>
+      <datalist id="regb-subjects">
+        {project.subjects.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
 
       {/* ツールバー (講習ビルダーの Toolbar と同じ質感) */}
-      <div className="flex flex-wrap items-center gap-2 bg-builder-surface-alt border border-builder-border rounded-lg p-2">
+      <div className="no-print flex flex-wrap items-center gap-2 bg-builder-surface-alt border border-builder-border rounded-lg p-2">
         <span className="font-extrabold text-sm text-builder-ink px-1">🏗 通常時間割作成</span>
         {workspace.projects.length > 1 && (
           <select
@@ -511,7 +556,7 @@ export default function RegularBuilderApp({
 
       {/* 重複の一覧・承認パネル */}
       {showConflicts && (
-        <div className={`${UI.panel} text-xs`}>
+        <div className={`no-print ${UI.panel} text-xs`}>
           <div className={UI.panelHead}>講師・教室の重複</div>
           {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
             <div className="text-builder-ink-subtle">重複はありません。</div>
@@ -554,7 +599,7 @@ export default function RegularBuilderApp({
       )}
 
       {/* タブバー (講習ビルダーの TabBar と同じ見た目) */}
-      <div role="tablist" aria-label="学年タブ" className="flex items-end gap-1 px-2 overflow-x-auto">
+      <div role="tablist" aria-label="学年タブ" className="no-print flex items-end gap-1 px-2 overflow-x-auto">
         {project.tabs.map((t) => {
           const selected = activeTab?.id === t.id;
           const errCount = tabConflictCounts[t.id] || 0;
@@ -642,13 +687,21 @@ export default function RegularBuilderApp({
             >
               🗜 コンパクト
             </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              title="表示中のタブを印刷 (A4 縦・曜日単位で改ページ)"
+              className={UI.btn}
+            >
+              🖨 印刷
+            </button>
           </div>
         )}
       </div>
 
       {/* 空状態ガイド */}
       {project.tabs.length === 0 && (
-        <div className="bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
+        <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
           <div className="font-extrabold text-[13px] mb-1">はじめかた</div>
           <div className="mb-1.5">
             <b>今の時間割から始める（おすすめ）</b>:
@@ -676,11 +729,29 @@ export default function RegularBuilderApp({
         />
       )}
 
+      {/* 印刷専用の見出し。ツールバー・タブバーは no-print のため、これが
+          無いと紙面が無記名になりどのプロジェクト・学年か分からない
+          (講習ビルダー L1f と同じ) */}
+      {activeTab && (
+        <div className="hidden print:block" aria-hidden="true">
+          <div className="text-lg font-bold text-builder-ink">
+            {project.name || "通常時間割"} — {activeTab.name}
+            {activeTab.grade && activeTab.grade !== activeTab.name
+              ? ` (${activeTab.grade})`
+              : ""}
+          </div>
+          <div className="text-xs text-builder-ink-muted">
+            印刷日: {formatPrintDateJa(new Date())}
+          </div>
+        </div>
+      )}
+
       {activeTab && (
         <RegularGrid
           project={project}
           tab={activeTab}
           onCellChange={onCellChange}
+          onClearCell={onClearCell}
           onSwapCells={onSwapCells}
           conflictsByRef={conflictView.byRef}
           highlightTeacher={highlightTeacher}

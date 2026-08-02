@@ -39,7 +39,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
     }));
 
   return (
-    <div className="bg-builder-surface border border-builder-info-border rounded-lg p-3.5 flex flex-col gap-2.5">
+    <div className="no-print bg-builder-surface border border-builder-info-border rounded-lg p-3.5 flex flex-col gap-2.5">
       <div className="flex gap-3 flex-wrap">
         <label className="text-xs font-bold text-builder-ink">
           タブ名

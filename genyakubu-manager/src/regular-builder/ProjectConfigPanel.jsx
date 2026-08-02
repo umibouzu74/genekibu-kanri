@@ -83,7 +83,7 @@ export function ProjectConfigPanel({ project, saveProject, slots }) {
     "border-0 bg-transparent cursor-pointer text-[10px] text-builder-ink-subtle hover:text-builder-red p-0";
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="no-print flex flex-col gap-3">
       {/* 時限プール */}
       <div className={UI.panel}>
         <div className={UI.panelHead}>時限（全タブ共通）</div>
@@ -140,7 +140,9 @@ export function ProjectConfigPanel({ project, saveProject, slots }) {
       {/* 科目マスタ */}
       <div className={UI.panel}>
         <div className={UI.panelHead}>科目</div>
-        <div className={UI.hint}>セルの教科プルダウンの選択肢になります。</div>
+        <div className={UI.hint}>
+          セルの教科プルダウンの選択肢になります。マスタ外の単発教科はセル側の「✎ 直接入力」でも入力できます。
+        </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {project.subjects.map((s) => (
             <span

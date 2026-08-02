@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { makeCellKey, tabPeriods } from "./model";
+import { computeBusyTeachers } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { RegularCell } from "./RegularCell";
 
@@ -20,6 +21,7 @@ export function RegularGrid({
   project,
   tab,
   onCellChange,
+  onClearCell,
   onSwapCells,
   conflictsByRef,
   highlightTeacher,
@@ -188,6 +190,9 @@ export function RegularGrid({
     dragEnd: handleDragEnd,
   };
 
+  // 講師プルダウンの「(重複)」予告用: セルごとの同時間帯・割当済み講師
+  const busyMap = computeBusyTeachers(project, tab);
+
   const widths = isCompact ? COL_WIDTHS.compact : COL_WIDTHS.normal;
   const dayColStyle = { left: 0, width: widths.dayCol, minWidth: widths.dayCol };
   const periodColStyle = {
@@ -236,7 +241,9 @@ export function RegularGrid({
         {days.map((day, dIdx) => {
           const periods = periodsByDay.get(day);
           return (
-            <tbody key={day}>
+            // builder-day-group は印刷スタイル (printStyle.js) の
+            // 「1 曜日をページ境界で分断しない」制御の対象マーカー
+            <tbody key={day} className="builder-day-group">
               {periods.map((per, pIdx) => (
                 <tr
                   key={per.id}
@@ -287,12 +294,16 @@ export function RegularGrid({
                         subjects={project.subjects}
                         teachers={project.teachers}
                         conflictText={reasons ? reasons.join("\n") : ""}
+                        // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照
+                        // になり memo が効かない。値が同じなら文字列は等価)
+                        busyTeachers={(busyMap.get(key) || []).join("·")}
                         highlighted={highlighted}
                         dimmed={!!highlightTeacher && !highlighted}
                         roomPlaceholder={cls.room}
                         ariaBase={`${day} ${per.label || per.time} ${cls.label}`}
                         isCompact={isCompact}
                         onCellChange={onCellChange}
+                        onClearCell={onClearCell}
                         onNavigate={onNavigate}
                         onDragStart={onDragStart}
                         onDragOver={onDragOver}
@@ -307,7 +318,7 @@ export function RegularGrid({
                 </tr>
               ))}
               {dIdx < days.length - 1 && (
-                <tr aria-hidden="true" className="bg-builder-ink">
+                <tr aria-hidden="true" className="builder-day-separator bg-builder-ink">
                   <td
                     className="sticky z-20 bg-builder-ink p-0"
                     style={{ ...dayColStyle, height: "6px" }}
