@@ -101,6 +101,10 @@ export function sanitizeProject(raw) {
         .map((t) => ({ name: str(t?.name) }))
         .filter((t) => t.name)
     : [];
+  // 承認済みの重なり (conflicts.conflictKey の配列)。任意フィールド
+  if (Array.isArray(raw.approvedConflicts)) {
+    p.approvedConflicts = raw.approvedConflicts.map((s) => str(s)).filter(Boolean);
+  }
   p.tabs = Array.isArray(raw.tabs)
     ? raw.tabs
         .filter((x) => x && typeof x === "object")

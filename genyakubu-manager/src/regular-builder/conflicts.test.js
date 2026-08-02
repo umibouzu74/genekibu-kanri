@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeConflicts, entryRef } from "./conflicts";
+import {
+  buildConflictView,
+  computeConflicts,
+  conflictKey,
+  entryRef,
+} from "./conflicts";
 import { makeCellKey } from "./model";
 import { makeProject } from "./testUtils";
 
@@ -40,9 +45,10 @@ describe("computeConflicts - 講師重複", () => {
     const p = twoTabProject();
     p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "英語", teacher: "堀上" };
     p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上" };
-    const { list, byRef } = computeConflicts(p);
+    const { list } = computeConflicts(p);
     expect(list).toHaveLength(1);
     expect(list[0].type).toBe("teacher");
+    const { byRef } = buildConflictView(list, []);
     expect(byRef.size).toBe(2);
     expect([...byRef.values()][0][0]).toContain("堀上");
   });
@@ -118,5 +124,50 @@ describe("entryRef", () => {
     expect(
       entryRef({ tab: p.tabs[0], key: makeCellKey("月", 1, 1) })
     ).toBe("1:月|1|1");
+  });
+});
+
+describe("conflictKey / buildConflictView (承認)", () => {
+  function conflictedProject() {
+    const p = twoTabProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "英語", teacher: "堀上" };
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上" };
+    return p;
+  }
+
+  it("conflictKey は refs の順序に依存しない", () => {
+    const { list } = computeConflicts(conflictedProject());
+    const c = list[0];
+    const swapped = { ...c, refs: [c.refs[1], c.refs[0]] };
+    expect(conflictKey(swapped)).toBe(conflictKey(c));
+  });
+
+  it("承認済みの衝突はバッジ (active) と赤枠 (byRef) から外れる", () => {
+    const { list } = computeConflicts(conflictedProject());
+    const key = conflictKey(list[0]);
+    const view = buildConflictView(list, [key]);
+    expect(view.active).toHaveLength(0);
+    expect(view.approved).toHaveLength(1);
+    expect(view.byRef.size).toBe(0);
+  });
+
+  it("承認リストに無い衝突は active のまま", () => {
+    const { list } = computeConflicts(conflictedProject());
+    const view = buildConflictView(list, ["別のキー"]);
+    expect(view.active).toHaveLength(1);
+    expect(view.approved).toHaveLength(0);
+    expect(view.byRef.size).toBe(2);
+  });
+
+  it("セルが動くと承認は無効になる (キー不一致で active に戻る)", () => {
+    const p = conflictedProject();
+    const key = conflictKey(computeConflicts(p).list[0]);
+    // 衝突セルを別クラス列 (id 2) に移すと refs が変わる
+    p.tabs[1].classes.push({ id: 2, label: "S2", room: "603" });
+    const cell = p.tabs[1].schedule[makeCellKey("月", 11, 1)];
+    delete p.tabs[1].schedule[makeCellKey("月", 11, 1)];
+    p.tabs[1].schedule[makeCellKey("月", 11, 2)] = cell;
+    const view = buildConflictView(computeConflicts(p).list, [key]);
+    expect(view.active).toHaveLength(1);
   });
 });

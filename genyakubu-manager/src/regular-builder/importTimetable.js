@@ -20,13 +20,18 @@ import { timeStartToMin } from "../utils/dateHelpers";
 import { splitTeacherField } from "../utils/biweekly";
 import { createDefaultProject, makeCellKey, parseCellKey, REGULAR_DAYS } from "./model";
 
+const WEEKEND_DAYS = new Set(["土", "日"]);
+
 /**
  * @param {string} name プロジェクト名
  * @param {import("../types").Slot[]} allSlots 本体の全コマ
  * @param {number} timetableId 取込元の時間割 id
+ * @param {{splitWeekend?: boolean}} [opts] splitWeekend: 平日と土日の両方に
+ *   コマがある学年を「中3」「中3 (土)」の 2 タブに分ける (時刻体系が曜日で
+ *   違う学年のグリッドが締まる)
  * @returns {{project: object, stats: {slotCount: number, tabCount: number, parallelColumns: number}}}
  */
-export function buildProjectFromSlots(name, allSlots, timetableId) {
+export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
   const slots = (allSlots || []).filter(
     (s) => (s.timetableId ?? 1) === timetableId
   );
@@ -49,16 +54,31 @@ export function buildProjectFromSlots(name, allSlots, timetableId) {
   project.teachers = [...teacherNames].sort().map((n) => ({ name: n }));
   project.subjects = [...subjects];
 
-  // 学年 → タブ (ALL_GRADES 順 → その他は出現順)
+  // 学年 → タブ (ALL_GRADES 順 → その他は出現順)。splitWeekend 時は
+  // 平日と土日の両方がある学年を 2 タブに分ける
   const gradesInData = [...new Set(slots.map((s) => s.grade))];
   const ordered = [
     ...ALL_GRADES.filter((g) => gradesInData.includes(g)),
     ...gradesInData.filter((g) => !ALL_GRADES.includes(g)),
   ];
+  const tabSpecs = []; // {name, grade, slots}
+  for (const grade of ordered) {
+    const gradeSlots = slots.filter((s) => s.grade === grade);
+    if (opts.splitWeekend) {
+      const weekday = gradeSlots.filter((s) => !WEEKEND_DAYS.has(s.day));
+      const weekend = gradeSlots.filter((s) => WEEKEND_DAYS.has(s.day));
+      if (weekday.length && weekend.length) {
+        const suffix = weekend.some((s) => s.day === "日") ? " (土日)" : " (土)";
+        tabSpecs.push({ name: grade, grade, slots: weekday });
+        tabSpecs.push({ name: `${grade}${suffix}`, grade, slots: weekend });
+        continue;
+      }
+    }
+    tabSpecs.push({ name: grade, grade, slots: gradeSlots });
+  }
 
   let parallelColumns = 0;
-  project.tabs = ordered.map((grade, tabIdx) => {
-    const gs = slots.filter((s) => s.grade === grade);
+  project.tabs = tabSpecs.map(({ name: tabName, grade, slots: gs }, tabIdx) => {
     const days = REGULAR_DAYS.filter((d) => gs.some((s) => s.day === d));
     const periodIds = project.periods
       .filter((p) => gs.some((s) => (s.time || "").trim() === p.time))
@@ -122,7 +142,7 @@ export function buildProjectFromSlots(name, allSlots, timetableId) {
 
     return {
       id: tabIdx + 1,
-      name: grade,
+      name: tabName,
       grade,
       classes: classes.map(({ id, label, room }) => ({ id, label, room })),
       days,
@@ -177,6 +197,12 @@ export function applyChu3SecondTermShift(source) {
   const chu3Tabs = project.tabs.filter((t) => t.grade === "中3");
   if (chu3Tabs.length === 0) return { project, moved: 0, morningAdded: false };
 
+  // 内申対策の午前枠は土曜を持つ中3 タブへ (取込の「平日/土曜で分ける」
+  // オプションで「中3 (土)」に分かれている場合はそちらだけに追加する)。
+  // 土曜を持つタブが無い場合は全中3 タブに追加し、曜日 土 も足す
+  const satTabs = chu3Tabs.filter((t) => (t.days || []).includes("土"));
+  const morningTargets = new Set(satTabs.length ? satTabs : chu3Tabs);
+
   const moves = CHU3_MOVES.map(({ from, to }) => ({
     fromId: project.periods.find((p) => p.time === from)?.id ?? null,
     toId: null, // 使う時があれば ensure する (不要な時限を増やさない)
@@ -201,7 +227,7 @@ export function applyChu3SecondTermShift(source) {
     }
     tab.schedule = schedule;
 
-    // 使う時限を更新: 移動先 + 内申対策の午前枠を追加し、
+    // 使う時限を更新: 移動先 (+ 対象タブには内申対策の午前枠) を追加し、
     // どのセルからも使われなくなった時限を外す
     const usedIds = new Set(
       Object.keys(schedule).map((k) => parseCellKey(k).periodId)
@@ -209,15 +235,17 @@ export function applyChu3SecondTermShift(source) {
     for (const mv of moves) {
       if (mv.toId != null) usedIds.add(mv.toId);
     }
-    for (const time of SAT_MORNING_TIMES) {
-      usedIds.add(ensurePeriod(project, time));
+    if (morningTargets.has(tab)) {
+      for (const time of SAT_MORNING_TIMES) {
+        usedIds.add(ensurePeriod(project, time));
+      }
+      if (!tab.days.includes("土")) {
+        tab.days = REGULAR_DAYS.filter((d) => tab.days.includes(d) || d === "土");
+      }
     }
     tab.periodIds = tab.periodIds.filter((id) => usedIds.has(id));
     for (const id of usedIds) {
       if (!tab.periodIds.includes(id)) tab.periodIds.push(id);
-    }
-    if (!tab.days.includes("土")) {
-      tab.days = REGULAR_DAYS.filter((d) => tab.days.includes(d) || d === "土");
     }
   }
 

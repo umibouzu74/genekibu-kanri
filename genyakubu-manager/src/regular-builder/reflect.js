@@ -10,7 +10,8 @@
 import { nextNumericId } from "../utils/schema";
 import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
-import { resolveAllEntries, effectiveRoom } from "./model";
+import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
+import { timeStartToMin } from "../utils/dateHelpers";
 
 /**
  * @param {object} project RegularProject
@@ -152,5 +153,138 @@ export function applyReflection(plan, opts, { timetables, slots }) {
     timetableId,
     addedCount: newSlots.length,
     removedCount,
+  };
+}
+
+// ─── 差分プレビュー (置き換え反映用) ────────────────────────────────
+// 下書き (plan.drafts) と既存時間割のコマを突き合わせ、
+// 変わらず / 変更 / 追加 / 削除 に分類する。マッチングは 2 段階:
+//   1. 全フィールド一致 → 変わらず (多重集合で消し込み)
+//   2. 残りを (曜日 × 時刻 × 学年 × クラス) で突き合わせ → 変更、
+//      余った下書き → 追加、余った既存 → 削除
+
+// 区切りは非可視文字 (US)。ユーザー入力に通常含まれない文字で衝突を防ぐ
+const SEP = "\u001f";
+
+function normalizeRecord(s) {
+  return {
+    day: s.day,
+    time: (s.time || "").trim(),
+    grade: (s.grade || "").trim(),
+    cls: (s.cls || "").trim(),
+    room: (s.room || "").trim(),
+    subj: (s.subj || "").trim(),
+    teacher: splitTeacherField(s.teacher).join("·"),
+    note: (s.note || "").trim(),
+  };
+}
+
+const fullKey = (r) =>
+  [r.day, r.time, r.grade, r.cls, r.room, r.subj, r.teacher, r.note].join(SEP);
+const positionKey = (r) => [r.day, r.time, r.grade, r.cls].join(SEP);
+
+function sortRecords(list, pick = (x) => x) {
+  return [...list].sort((a, b) => {
+    const ra = pick(a);
+    const rb = pick(b);
+    return (
+      REGULAR_DAYS.indexOf(ra.day) - REGULAR_DAYS.indexOf(rb.day) ||
+      timeStartToMin(ra.time) - timeStartToMin(rb.time) ||
+      ra.grade.localeCompare(rb.grade) ||
+      ra.cls.localeCompare(rb.cls) ||
+      ra.subj.localeCompare(rb.subj)
+    );
+  });
+}
+
+/** 差分行の表示用の位置ラベル */
+export function describeDiffRecord(r) {
+  return `${r.day} ${r.time} ${r.grade} ${r.cls || "-"}`;
+}
+
+/** 変更行の「何が変わったか」を短くまとめる */
+export function describeDiffChange(before, after) {
+  const parts = [];
+  if (before.subj !== after.subj) parts.push(`${before.subj || "-"} → ${after.subj || "-"}`);
+  if (before.teacher !== after.teacher)
+    parts.push(`講師 ${before.teacher || "-"} → ${after.teacher || "-"}`);
+  if (before.room !== after.room) parts.push(`教室 ${before.room || "-"} → ${after.room || "-"}`);
+  if (before.note !== after.note) parts.push(`備考 ${before.note || "-"} → ${after.note || "-"}`);
+  return parts.join("、");
+}
+
+/**
+ * @param {object[]} drafts buildReflectionPlan の drafts
+ * @param {import("../types").Slot[]} slots 本体の全コマ
+ * @param {number} timetableId 置き換え先の時間割 id
+ * @returns {{unchanged: number,
+ *   changed: {before: object, after: object}[],
+ *   added: object[], removed: object[]}}
+ */
+export function diffReflection(drafts, slots, timetableId) {
+  const before = slots
+    .filter((s) => (s.timetableId ?? 1) === timetableId)
+    .map(normalizeRecord);
+  const after = drafts.map(normalizeRecord);
+
+  // 1. 全フィールド一致の消し込み
+  const counts = new Map();
+  for (const b of before) {
+    const k = fullKey(b);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  let unchanged = 0;
+  const afterRest = [];
+  for (const a of after) {
+    const k = fullKey(a);
+    const c = counts.get(k) || 0;
+    if (c > 0) {
+      counts.set(k, c - 1);
+      unchanged++;
+    } else {
+      afterRest.push(a);
+    }
+  }
+  const beforeRest = [];
+  for (const b of before) {
+    const k = fullKey(b);
+    const c = counts.get(k) || 0;
+    if (c > 0) {
+      counts.set(k, c - 1);
+      beforeRest.push(b);
+    }
+  }
+
+  // 2. 位置 (曜日×時刻×学年×クラス) でペアリング
+  const group = (list) => {
+    const m = new Map();
+    for (const r of list) {
+      const k = positionKey(r);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(r);
+    }
+    return m;
+  };
+  const afterByPos = group(afterRest);
+  const beforeByPos = group(beforeRest);
+
+  const changed = [];
+  const added = [];
+  const removed = [];
+  for (const [k, afters] of afterByPos) {
+    const befores = beforeByPos.get(k) || [];
+    const n = Math.min(afters.length, befores.length);
+    for (let i = 0; i < n; i++) changed.push({ before: befores[i], after: afters[i] });
+    for (let i = n; i < afters.length; i++) added.push(afters[i]);
+    for (let i = n; i < befores.length; i++) removed.push(befores[i]);
+    beforeByPos.delete(k);
+  }
+  for (const rest of beforeByPos.values()) removed.push(...rest);
+
+  return {
+    unchanged,
+    changed: sortRecords(changed, (c) => c.after),
+    added: sortRecords(added),
+    removed: sortRecords(removed),
   };
 }

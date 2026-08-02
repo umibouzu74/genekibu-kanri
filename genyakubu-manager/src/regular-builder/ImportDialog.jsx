@@ -12,6 +12,7 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
   const [sourceId, setSourceId] = useState(timetables[0]?.id ?? 1);
   const [name, setName] = useState(timetables[0]?.name ?? "");
   const [applyShift, setApplyShift] = useState(false);
+  const [splitWeekend, setSplitWeekend] = useState(true);
 
   const count = useMemo(
     () => slots.filter((s) => (s.timetableId ?? 1) === Number(sourceId)).length,
@@ -63,6 +64,22 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
         <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
           <input
             type="checkbox"
+            checked={splitWeekend}
+            onChange={(e) => setSplitWeekend(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            平日と土曜で学年タブを分ける
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+              平日と土日の両方にコマがある学年を「中3」「中3 (土)」のように 2 タブに分けます。
+              曜日で時刻体系が違う学年のマス目が見やすくなります。
+            </div>
+          </span>
+        </label>
+
+        <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+          <input
+            type="checkbox"
             checked={applyShift}
             onChange={(e) => setApplyShift(e.target.checked)}
             style={{ marginTop: 2 }}
@@ -82,7 +99,14 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
           </button>
           <button
             type="button"
-            onClick={() => onImport({ sourceId: Number(sourceId), name: name.trim(), applyShift })}
+            onClick={() =>
+              onImport({
+                sourceId: Number(sourceId),
+                name: name.trim(),
+                applyShift,
+                splitWeekend,
+              })
+            }
             disabled={!name.trim() || count === 0}
             style={{
               ...S.btn(true),

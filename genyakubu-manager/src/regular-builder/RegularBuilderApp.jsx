@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { S } from "../styles/common";
 import { LS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
@@ -10,7 +10,7 @@ import {
   createDefaultWorkspace,
   sanitizeWorkspace,
 } from "./model";
-import { computeConflicts } from "./conflicts";
+import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
@@ -54,17 +54,91 @@ export default function RegularBuilderApp({
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showConflicts, setShowConflicts] = useState(false);
+  const [hideEmptyRows, setHideEmptyRows] = useState(false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
 
   const project =
     workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
     workspace.projects[0];
 
+  // ── Undo/Redo ───────────────────────────────────────────────────
+  // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
+  // 直近 800ms 以内の連続編集 (セルへのタイピング等) は 1 つの取り消し
+  // 単位に束ねる。リモート同期で入った変更は履歴に乗らない (単独編集
+  // 前提の割り切り — undo するとその間の同期変更ごと戻る)。
+  const wsRef = useRef(workspace);
+  useEffect(() => {
+    wsRef.current = workspace;
+  }, [workspace]);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const lastCommitAtRef = useRef(0);
+  const [histVersion, setHistVersion] = useState(0);
+
+  const commitWorkspace = useCallback(
+    (next) => {
+      const now = Date.now();
+      if (now - lastCommitAtRef.current > 800) {
+        undoStackRef.current = [...undoStackRef.current.slice(-99), wsRef.current];
+      }
+      redoStackRef.current = [];
+      lastCommitAtRef.current = now;
+      saveWorkspace(next);
+      setHistVersion((v) => v + 1);
+    },
+    [saveWorkspace]
+  );
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const prev = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, wsRef.current];
+    lastCommitAtRef.current = 0; // 次の編集は新しい取り消し単位
+    saveWorkspace(prev);
+    setHistVersion((v) => v + 1);
+  }, [saveWorkspace]);
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    redoStackRef.current = stack.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current, wsRef.current];
+    lastCommitAtRef.current = 0;
+    saveWorkspace(next);
+    setHistVersion((v) => v + 1);
+  }, [saveWorkspace]);
+
+  const canUndo = histVersion >= 0 && undoStackRef.current.length > 0;
+  const canRedo = histVersion >= 0 && redoStackRef.current.length > 0;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      // テキスト入力中はブラウザ標準の undo を優先する
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
   // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
   // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
   const saveProject = useCallback(
     (next) =>
-      saveWorkspace((w) => {
+      commitWorkspace((w) => {
         const activeId =
           w.projects.some((p) => p.id === w.activeProjectId)
             ? w.activeProjectId
@@ -78,7 +152,7 @@ export default function RegularBuilderApp({
           ),
         };
       }),
-    [saveWorkspace]
+    [commitWorkspace]
   );
 
   const switchProject = useCallback(
@@ -91,7 +165,7 @@ export default function RegularBuilderApp({
 
   const addProject = useCallback(
     (projectFields, { successMsg } = {}) => {
-      saveWorkspace((w) => {
+      commitWorkspace((w) => {
         const id = nextNumericId(w.projects);
         return {
           ...w,
@@ -102,7 +176,7 @@ export default function RegularBuilderApp({
       setActiveTabId(null);
       if (successMsg) toasts.success(successMsg);
     },
-    [saveWorkspace, toasts]
+    [commitWorkspace, toasts]
   );
 
   const removeProject = useCallback(async () => {
@@ -119,13 +193,13 @@ export default function RegularBuilderApp({
       tone: "danger",
     });
     if (!ok) return;
-    saveWorkspace((w) => {
+    commitWorkspace((w) => {
       const rest = w.projects.filter((p) => p.id !== project.id);
       if (rest.length === 0) return createDefaultWorkspace();
       return { ...w, activeProjectId: rest[0].id, projects: rest };
     });
     setActiveTabId(null);
-  }, [project, confirm, saveWorkspace]);
+  }, [project, confirm, commitWorkspace]);
 
   const duplicateProject = useCallback(() => {
     const copy = JSON.parse(JSON.stringify(project));
@@ -137,11 +211,12 @@ export default function RegularBuilderApp({
   }, [project, addProject]);
 
   const importProject = useCallback(
-    ({ sourceId, name, applyShift }) => {
+    ({ sourceId, name, applyShift, splitWeekend }) => {
       const { project: imported, stats } = buildProjectFromSlots(
         name,
         slots,
-        sourceId
+        sourceId,
+        { splitWeekend }
       );
       let final = imported;
       let shiftMsg = "";
@@ -161,7 +236,30 @@ export default function RegularBuilderApp({
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
-  const conflicts = useMemo(() => computeConflicts(project), [project]);
+  const conflictList = useMemo(() => computeConflicts(project).list, [project]);
+  const conflictView = useMemo(
+    () => buildConflictView(conflictList, project.approvedConflicts),
+    [conflictList, project.approvedConflicts]
+  );
+
+  const approveConflict = useCallback(
+    (c) =>
+      saveProject((p) => ({
+        ...p,
+        approvedConflicts: [...(p.approvedConflicts || []), conflictKey(c)],
+      })),
+    [saveProject]
+  );
+  const unapproveConflict = useCallback(
+    (c) =>
+      saveProject((p) => ({
+        ...p,
+        approvedConflicts: (p.approvedConflicts || []).filter(
+          (k) => k !== conflictKey(c)
+        ),
+      })),
+    [saveProject]
+  );
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
@@ -321,19 +419,51 @@ export default function RegularBuilderApp({
             🗑
           </button>
         </div>
-        <span
+        <div style={{ display: "flex", gap: 3 }}>
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            title="元に戻す (Ctrl+Z)"
+            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canUndo ? 1 : 0.4 }}
+          >
+            ↩
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title="やり直す (Ctrl+Y / Ctrl+Shift+Z)"
+            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canRedo ? 1 : 0.4 }}
+          >
+            ↪
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowConflicts((v) => !v)}
           style={{
             fontSize: 11,
             fontWeight: 700,
             padding: "3px 10px",
             borderRadius: 10,
-            background: conflicts.list.length ? "#fde8e8" : "#e8f5e8",
-            color: conflicts.list.length ? "#c03030" : "#2a7a2a",
+            border: "none",
+            cursor: "pointer",
+            background: conflictView.active.length ? "#fde8e8" : "#e8f5e8",
+            color: conflictView.active.length ? "#c03030" : "#2a7a2a",
           }}
-          title={conflicts.list.map((c) => c.label).join("\n")}
+          title={
+            (conflictView.active.map((c) => c.label).join("\n") ||
+              "クリックで重複の一覧・承認を開閉") +
+            (conflictView.approved.length
+              ? `\n(承認済み ${conflictView.approved.length} 件)`
+              : "")
+          }
         >
-          {conflicts.list.length ? `⚠ 重複 ${conflicts.list.length} 件` : "✓ 重複なし"}
-        </span>
+          {conflictView.active.length
+            ? `⚠ 重複 ${conflictView.active.length} 件`
+            : "✓ 重複なし"}
+        </button>
         <select
           value={highlightTeacher}
           onChange={(e) => setHighlightTeacher(e.target.value)}
@@ -366,6 +496,57 @@ export default function RegularBuilderApp({
         </button>
       </div>
 
+      {/* 重複の一覧・承認パネル */}
+      {showConflicts && (
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e0e0e0",
+            borderRadius: 10,
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 13 }}>講師・教室の重複</div>
+          {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
+            <div style={{ color: "#888" }}>重複はありません。</div>
+          )}
+          {conflictView.active.map((c) => (
+            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ flex: 1, color: "#c03030" }}>⚠ {c.label}</span>
+              <button
+                type="button"
+                onClick={() => approveConflict(c)}
+                title="意図した重なりとして承認し、件数と赤枠から除外する"
+                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+              >
+                承認
+              </button>
+            </div>
+          ))}
+          {conflictView.approved.length > 0 && (
+            <div style={{ fontWeight: 700, fontSize: 11, color: "#888", marginTop: 4 }}>
+              承認済み（意図した重なり）
+            </div>
+          )}
+          {conflictView.approved.map((c) => (
+            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ flex: 1, color: "#888" }}>{c.label}</span>
+              <button
+                type="button"
+                onClick={() => unapproveConflict(c)}
+                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+              >
+                解除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {showProjectConfig && (
         <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
       )}
@@ -392,6 +573,16 @@ export default function RegularBuilderApp({
             style={{ ...S.btn(showTabConfig), fontSize: 12 }}
           >
             ⚙ タブ設定
+          </button>
+        )}
+        {activeTab && (
+          <button
+            type="button"
+            onClick={() => setHideEmptyRows((v) => !v)}
+            title="セルが 1 つも無い時限行 (と空の曜日) を表示から隠す。データは変わりません"
+            style={{ ...S.btn(hideEmptyRows), fontSize: 12 }}
+          >
+            ▤ 空行を隠す
           </button>
         )}
       </div>
@@ -437,8 +628,9 @@ export default function RegularBuilderApp({
           project={project}
           tab={activeTab}
           onCellChange={onCellChange}
-          conflictsByRef={conflicts.byRef}
+          conflictsByRef={conflictView.byRef}
           highlightTeacher={highlightTeacher}
+          hideEmptyRows={hideEmptyRows}
         />
       )}
 

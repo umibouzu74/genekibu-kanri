@@ -240,3 +240,54 @@ describe("makeCellKey / resolveAllEntries と取込の整合", () => {
     expect(makeCellKey(parsed.day, parsed.periodId, parsed.classId)).toBe(anyKey);
   });
 });
+
+describe("buildProjectFromSlots - splitWeekend (平日/土曜のタブ分割)", () => {
+  const mix = [
+    S({ id: 1, day: "火" }),
+    S({ id: 2, day: "土", time: "15:30-16:30", cls: "一般", room: "401", subj: "理科A", teacher: "滝澤", note: "内申対策" }),
+    S({ id: 3, grade: "中2", cls: "S", room: "602" }), // 平日のみの学年
+  ];
+
+  it("平日と土日の両方がある学年だけ 2 タブに分かれる", () => {
+    const { project } = buildProjectFromSlots("x", mix, 1, { splitWeekend: true });
+    expect(project.tabs.map((t) => t.name)).toEqual(["中2", "中3", "中3 (土)"]);
+    const chu3 = project.tabs.find((t) => t.name === "中3");
+    const chu3Sat = project.tabs.find((t) => t.name === "中3 (土)");
+    expect(chu3.grade).toBe("中3");
+    expect(chu3Sat.grade).toBe("中3"); // 反映時の学年は同じ
+    expect(chu3.days).toEqual(["火"]);
+    expect(chu3Sat.days).toEqual(["土"]);
+  });
+
+  it("オプション無しでは従来通り 1 学年 1 タブ", () => {
+    const { project } = buildProjectFromSlots("x", mix, 1);
+    expect(project.tabs.map((t) => t.name)).toEqual(["中2", "中3"]);
+  });
+
+  it("分割取込 + 中3 変換: 午前枠は土タブだけに入り、平日タブには入らない", () => {
+    const slots = [
+      S({ id: 1, day: "月", time: "20:45-21:30", subj: "国語", teacher: "松川" }),
+      S({ id: 2, day: "土", time: "15:30-16:30", cls: "一般", room: "401", subj: "理科A", teacher: "滝澤" }),
+    ];
+    const src = buildProjectFromSlots("x", slots, 1, { splitWeekend: true }).project;
+    const { project, moved } = applyChu3SecondTermShift(src);
+    expect(moved).toBe(1);
+    const weekday = project.tabs.find((t) => t.name === "中3");
+    const sat = project.tabs.find((t) => t.name === "中3 (土)");
+    const timesOf = (tab) =>
+      tab.periodIds.map((id) => project.periods.find((p) => p.id === id).time);
+    expect(timesOf(weekday)).toContain("18:00-18:45");
+    expect(timesOf(weekday)).not.toContain("10:00-11:00");
+    expect(weekday.days).not.toContain("土");
+    expect(timesOf(sat)).toContain("10:00-11:00");
+    expect(timesOf(sat)).toContain("14:00-15:00");
+  });
+
+  it("分割取込でも INIT_SLOTS の round-trip は欠落・変質ゼロ", () => {
+    const { project, stats } = buildProjectFromSlots("x", INIT_SLOTS, 1, { splitWeekend: true });
+    expect(stats.slotCount).toBe(INIT_SLOTS.length);
+    const plan = buildReflectionPlan(project, { mode: "new", name: "x" });
+    expect(plan.ok).toBe(true);
+    expect(plan.drafts).toHaveLength(INIT_SLOTS.length);
+  });
+});

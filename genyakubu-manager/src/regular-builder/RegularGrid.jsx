@@ -78,14 +78,41 @@ const CellEditor = memo(function CellEditor({
   );
 });
 
-export function RegularGrid({ project, tab, onCellChange, conflictsByRef, highlightTeacher }) {
-  const periods = tabPeriods(project, tab);
-  const days = tab.days || [];
+export function RegularGrid({
+  project,
+  tab,
+  onCellChange,
+  conflictsByRef,
+  highlightTeacher,
+  hideEmptyRows = false,
+}) {
+  const allPeriods = tabPeriods(project, tab);
+  let days = tab.days || [];
 
-  if (days.length === 0 || periods.length === 0 || tab.classes.length === 0) {
+  if (days.length === 0 || allPeriods.length === 0 || tab.classes.length === 0) {
     return (
       <div style={{ fontSize: 12, color: "#888", padding: "18px 6px" }}>
         「⚙ タブ設定」で曜日・使う時限・クラスを設定するとマス目が表示されます。
+      </div>
+    );
+  }
+
+  // 「空行を隠す」: 曜日ごとに、セルが 1 つも無い時限行を除く。
+  // 全行が空の曜日はセクションごと省く (表示のみ、データは不変)。
+  const periodsByDay = new Map();
+  for (const day of days) {
+    const periods = hideEmptyRows
+      ? allPeriods.filter((per) =>
+          tab.classes.some((cls) => tab.schedule[makeCellKey(day, per.id, cls.id)])
+        )
+      : allPeriods;
+    periodsByDay.set(day, periods);
+  }
+  if (hideEmptyRows) days = days.filter((d) => periodsByDay.get(d).length > 0);
+  if (days.length === 0) {
+    return (
+      <div style={{ fontSize: 12, color: "#888", padding: "18px 6px" }}>
+        入力済みのセルがありません（「▤ 空行を隠す」を解除すると全マス目が表示されます）。
       </div>
     );
   }
@@ -131,7 +158,7 @@ export function RegularGrid({ project, tab, onCellChange, conflictsByRef, highli
               </tr>
             </thead>
             <tbody>
-              {periods.map((per) => (
+              {periodsByDay.get(day).map((per) => (
                 <tr key={per.id}>
                   <th
                     style={{
