@@ -105,6 +105,10 @@ const AbsenceWorkflowView = lazy(() =>
 // 読み取り専用購読し、個人月間スケジュールへ講習コマとして反映する
 // (utils/builderLessons — 書き戻しは無く、正は常に builder 側)。
 const BuilderApp = lazy(() => import("./timetable-builder/BuilderApp"));
+// 通常時間割 (曜日ベース) を講習ビルダーの操作感で設計する専用ビュー。
+// 下書きは appData/genyakubu-regular-builder-project に独立保存し、
+// 「本体へ反映」で Timetable + Slot に書き出す (regular-builder/reflect)。
+const RegularBuilderApp = lazy(() => import("./regular-builder/RegularBuilderApp"));
 
 // Lazy-loaded modals (only rendered on demand).
 const SubstituteForm = lazy(() =>
@@ -166,6 +170,7 @@ const VIEW_TITLES = {
   [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
   [VIEWS.STAFF]: "バイト管理",
   [VIEWS.BUILDER]: "講習時間割作成",
+  [VIEWS.REGULAR_BUILDER]: "通常時間割作成",
 };
 
 export default function App() {
@@ -995,8 +1000,10 @@ export default function App() {
             />
             {/* §M: 講習時間割作成 (BUILDER) はツールバー自前の 🖨️
                 (window.print() 系統) を持つ。popup 系のこのボタンは builder の
-                Tailwind CSS が popup に注入されず無スタイルで刷られるため隠す。 */}
-            {view !== VIEWS.BUILDER && (
+                Tailwind CSS が popup に注入されず無スタイルで刷られるため隠す。
+                通常時間割作成 (REGULAR_BUILDER) も入力フィールド主体で popup
+                印刷に耐えない (input の値は innerHTML に載らない) ため隠す。 */}
+            {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && (
               <button
                 type="button"
                 onClick={handlePrint}
@@ -1246,6 +1253,15 @@ export default function App() {
             />
           )}
           {view === VIEWS.BUILDER && !selected && <BuilderApp />}
+          {view === VIEWS.REGULAR_BUILDER && !selected && (
+            <RegularBuilderApp
+              slots={slots}
+              saveSlots={saveSlots}
+              timetables={timetables}
+              saveTimetables={saveTimetables}
+              isAdmin={isAdmin}
+            />
+          )}
           {view === VIEWS.SUBS && !selected && (
             <SubstituteView
               subs={subs}
