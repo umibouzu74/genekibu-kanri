@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyReflection, buildReflectionPlan } from "./reflect";
 import { makeCellKey } from "./model";
-import { makeProject } from "./model.test";
+import { makeProject } from "./testUtils";
 
 const EXISTING_TIMETABLES = [
   { id: 1, name: "デフォルト", type: "regular", startDate: null, endDate: null, grades: [] },

@@ -5,20 +5,27 @@ import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { nextNumericId } from "../utils/schema";
-import { createDefaultProject, sanitizeProject } from "./model";
+import {
+  createDefaultProject,
+  createDefaultWorkspace,
+  sanitizeWorkspace,
+} from "./model";
 import { computeConflicts } from "./conflicts";
+import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { ReflectDialog } from "./ReflectDialog";
+import { ImportDialog } from "./ImportDialog";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
 // 講習時間割作成の操作感で通常時間割 (曜日ベース) を設計する専用ビュー。
-// 下書きは LS.regularBuilderProject に保存され、Firebase 設定済み環境では
-// 他の appData と同様にクラウド同期される (書込には管理者ログインが必要)。
-// 完成したら「⤴ 本体へ反映」で Timetable + Slot に書き出す。
+// 「2026 1学期」「2026 2学期」のような複数プロジェクトを切り替えて編集
+// できる。下書きは LS.regularBuilderProject に保存され、Firebase 設定済み
+// 環境では他の appData と同様にクラウド同期される (書込には管理者ログイン
+// が必要)。完成したら「⤴ 本体へ反映」で Timetable + Slot に書き出す。
 
-const migrate = (raw) => sanitizeProject(raw) || createDefaultProject();
+const migrate = (raw) => sanitizeWorkspace(raw) || createDefaultWorkspace();
 
 export default function RegularBuilderApp({
   slots,
@@ -36,9 +43,9 @@ export default function RegularBuilderApp({
     },
     [toasts]
   );
-  const [project, saveProject] = useSyncedStorage(
+  const [workspace, saveWorkspace] = useSyncedStorage(
     LS.regularBuilderProject,
-    createDefaultProject(),
+    createDefaultWorkspace(),
     { migrate, onError: onStorageError }
   );
 
@@ -46,7 +53,110 @@ export default function RegularBuilderApp({
   const [showProjectConfig, setShowProjectConfig] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
+
+  const project =
+    workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
+    workspace.projects[0];
+
+  // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
+  // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
+  const saveProject = useCallback(
+    (next) =>
+      saveWorkspace((w) => {
+        const activeId =
+          w.projects.some((p) => p.id === w.activeProjectId)
+            ? w.activeProjectId
+            : w.projects[0]?.id;
+        return {
+          ...w,
+          projects: w.projects.map((p) =>
+            p.id === activeId
+              ? { ...p, ...(typeof next === "function" ? next(p) : next) }
+              : p
+          ),
+        };
+      }),
+    [saveWorkspace]
+  );
+
+  const switchProject = useCallback(
+    (id) => {
+      saveWorkspace((w) => ({ ...w, activeProjectId: id }));
+      setActiveTabId(null);
+    },
+    [saveWorkspace]
+  );
+
+  const addProject = useCallback(
+    (projectFields, { successMsg } = {}) => {
+      saveWorkspace((w) => {
+        const id = nextNumericId(w.projects);
+        return {
+          ...w,
+          activeProjectId: id,
+          projects: [...w.projects, { id, ...projectFields }],
+        };
+      });
+      setActiveTabId(null);
+      if (successMsg) toasts.success(successMsg);
+    },
+    [saveWorkspace, toasts]
+  );
+
+  const removeProject = useCallback(async () => {
+    const cellCount = project.tabs.reduce(
+      (n, t) => n + Object.keys(t.schedule).length,
+      0
+    );
+    // プロジェクト削除は中身 (タブ・セル) を巻き込むため確認ダイアログ
+    // (CLAUDE.md 削除 UX ルールの cascade あり相当)
+    const ok = await confirm({
+      title: "プロジェクトの削除",
+      message: `プロジェクト「${project.name}」を削除しますか？\nタブ ${project.tabs.length} 件・入力済みセル ${cellCount} 件も削除されます。`,
+      okLabel: "削除する",
+      tone: "danger",
+    });
+    if (!ok) return;
+    saveWorkspace((w) => {
+      const rest = w.projects.filter((p) => p.id !== project.id);
+      if (rest.length === 0) return createDefaultWorkspace();
+      return { ...w, activeProjectId: rest[0].id, projects: rest };
+    });
+    setActiveTabId(null);
+  }, [project, confirm, saveWorkspace]);
+
+  const duplicateProject = useCallback(() => {
+    const copy = JSON.parse(JSON.stringify(project));
+    delete copy.id;
+    addProject(
+      { ...copy, name: `${project.name}（コピー）` },
+      { successMsg: `「${project.name}」を複製しました` }
+    );
+  }, [project, addProject]);
+
+  const importProject = useCallback(
+    ({ sourceId, name, applyShift }) => {
+      const { project: imported, stats } = buildProjectFromSlots(
+        name,
+        slots,
+        sourceId
+      );
+      let final = imported;
+      let shiftMsg = "";
+      if (applyShift) {
+        const { project: shifted, moved } = applyChu3SecondTermShift(imported);
+        final = shifted;
+        shiftMsg = `、中3 2学期変更を適用（${moved} コマ移動）`;
+      }
+      addProject(final, {
+        successMsg: `「${name}」を取り込みました（${stats.slotCount} コマ・タブ ${stats.tabCount} 件${shiftMsg}）`,
+      });
+      setShowImport(false);
+    },
+    [slots, addProject]
+  );
 
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
@@ -154,13 +264,63 @@ export default function RegularBuilderApp({
         }}
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>🏗 通常時間割作成</span>
+        {workspace.projects.length > 1 && (
+          <select
+            value={project.id}
+            onChange={(e) => switchProject(Number(e.target.value))}
+            style={{ ...S.input, width: "auto", minWidth: 150, fontWeight: 700 }}
+            title="編集するプロジェクトを切替"
+          >
+            {workspace.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="text"
           value={project.name}
           onChange={(e) => saveProject((p) => ({ ...p, name: e.target.value }))}
-          placeholder="プロジェクト名 (例: 2026 後期)"
-          style={{ ...S.input, width: 200 }}
+          placeholder="プロジェクト名 (例: 2026 2学期)"
+          style={{ ...S.input, width: 180 }}
         />
+        <div style={{ display: "flex", gap: 3 }}>
+          <button
+            type="button"
+            onClick={() =>
+              addProject(createDefaultProject(), { successMsg: "プロジェクトを作成しました" })
+            }
+            title="空のプロジェクトを新規作成"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+          >
+            ＋新規
+          </button>
+          <button
+            type="button"
+            onClick={duplicateProject}
+            title="このプロジェクトを複製"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+          >
+            ⧉複製
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            title="本体の時間割をプロジェクトとして取り込む"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#e8eef8", color: "#2a4a8e" }}
+          >
+            ⬇ 本体から取込
+          </button>
+          <button
+            type="button"
+            onClick={removeProject}
+            title="このプロジェクトを削除"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#fde8e8", color: "#c03030" }}
+          >
+            🗑
+          </button>
+        </div>
         <span
           style={{
             fontSize: 11,
@@ -250,6 +410,12 @@ export default function RegularBuilderApp({
           }}
         >
           <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>はじめかた</div>
+          <div style={{ marginBottom: 6 }}>
+            <b>今の時間割から始める（おすすめ）</b>:
+            「⬇ 本体から取込」で現行の時間割をプロジェクトに変換できます。
+            「中3 の 2学期変更を適用する」にチェックを入れると、平日前倒し + 土曜内申の午前枠を反映した 2学期のたたき台が一発でできます。
+          </div>
+          <b>ゼロから組む場合:</b><br />
           1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）<br />
           2. 「+ タブ追加」で学年タブを作り、曜日・使う時限・クラス（既定教室付き）を設定します<br />
           3. マス目に教科・講師を入力します（講師・教室の重複は自動チェック）<br />
@@ -284,6 +450,15 @@ export default function RegularBuilderApp({
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
           onClose={() => setShowReflect(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportDialog
+          timetables={timetables}
+          slots={slots}
+          onImport={importProject}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>

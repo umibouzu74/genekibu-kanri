@@ -143,8 +143,17 @@ export function RegularGrid({ project, tab, onCellChange, conflictsByRef, highli
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {per.label}
-                    <div style={{ fontWeight: 400, color: "#888", fontSize: 10 }}>{per.time}</div>
+                    {/* ラベル未設定 (取込直後など) は時刻だけを見出しにする */}
+                    {per.label ? (
+                      <>
+                        {per.label}
+                        <div style={{ fontWeight: 400, color: "#888", fontSize: 10 }}>
+                          {per.time}
+                        </div>
+                      </>
+                    ) : (
+                      per.time
+                    )}
                   </th>
                   {tab.classes.map((cls) => {
                     const key = makeCellKey(day, per.id, cls.id);

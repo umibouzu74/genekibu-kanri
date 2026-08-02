@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeConflicts, entryRef } from "./conflicts";
 import { makeCellKey } from "./model";
-import { makeProject } from "./model.test";
+import { makeProject } from "./testUtils";
 
 // 2 タブ構成: 中3 (18:00 開始) と 中1・中2 (18:55 開始) で時限 id は別だが
 // 時間帯が重なるケースを再現する。

@@ -34,6 +34,19 @@ export function createDefaultProject() {
   };
 }
 
+// ─── ワークスペース (複数プロジェクト) ──────────────────────────────
+// 「2026 1学期」「2026 2学期」のように複数の時間割案を並行して持てる
+// ように、保存単位はプロジェクト配列 + アクティブ id のワークスペース。
+// RegularWorkspace = { version: 2, activeProjectId, projects: [{id, ...RegularProject}] }
+
+export function createDefaultWorkspace() {
+  return {
+    version: 2,
+    activeProjectId: 1,
+    projects: [{ id: 1, ...createDefaultProject() }],
+  };
+}
+
 // ─── セルキー ───────────────────────────────────────────────────────
 // 区切りに "|" を使う (曜日は 1 文字、id は数値なので衝突しない)。
 
@@ -123,6 +136,32 @@ export function sanitizeProject(raw) {
         })
     : [];
   return p;
+}
+
+/**
+ * ワークスペースのサニタイズ (useSyncedStorage の migrate 用)。
+ * v1 の単一プロジェクト形状 (top-level に tabs がある) は 1 プロジェクトの
+ * ワークスペースに包んで引き継ぐ。解釈不能なら null。
+ */
+export function sanitizeWorkspace(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (Array.isArray(raw.tabs)) {
+    const p = sanitizeProject(raw);
+    if (!p) return null;
+    return { version: 2, activeProjectId: 1, projects: [{ id: 1, ...p }] };
+  }
+  if (!Array.isArray(raw.projects)) return null;
+  const projects = raw.projects
+    .map((x, i) => {
+      const p = sanitizeProject(x);
+      return p ? { id: numOr(x?.id, i + 1), ...p } : null;
+    })
+    .filter(Boolean);
+  if (projects.length === 0) return null;
+  const activeProjectId = projects.some((p) => p.id === raw.activeProjectId)
+    ? raw.activeProjectId
+    : projects[0].id;
+  return { version: 2, activeProjectId, projects };
 }
 
 // ─── 参照ヘルパ ─────────────────────────────────────────────────────
