@@ -3,7 +3,34 @@ import { Modal } from "../components/Modal";
 import { S } from "../styles/common";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
-import { applyReflection, buildReflectionPlan } from "./reflect";
+import {
+  applyReflection,
+  buildReflectionPlan,
+  describeDiffChange,
+  describeDiffRecord,
+  diffReflection,
+} from "./reflect";
+
+// 差分リストの最大表示行数 (超過分は「…他 n 件」)
+const DIFF_LINE_LIMIT = 12;
+
+function DiffLines({ mark, color, records, describe }) {
+  const shown = records.slice(0, DIFF_LINE_LIMIT);
+  return (
+    <>
+      {shown.map((r, i) => (
+        <div key={i} style={{ color, fontSize: 11 }}>
+          {mark} {describe(r)}
+        </div>
+      ))}
+      {records.length > shown.length && (
+        <div style={{ color: "#888", fontSize: 10 }}>
+          …他 {records.length - shown.length} 件
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─── 反映ダイアログ ─────────────────────────────────────────────────
 // 下書きを本体の時間割 + コマに書き出す。新規作成 (時間割を作る) と
@@ -47,6 +74,14 @@ export function ReflectDialog({
         ? slots.filter((s) => (s.timetableId ?? 1) === Number(targetId)).length
         : 0,
     [mode, slots, targetId]
+  );
+  // 置き換え時の差分プレビュー (変わらず / 変更 / 追加 / 削除)
+  const diff = useMemo(
+    () =>
+      mode === "replace" && plan.drafts.length > 0
+        ? diffReflection(plan.drafts, slots, Number(targetId))
+        : null,
+    [mode, plan.drafts, slots, targetId]
   );
 
   const execute = async () => {
@@ -159,6 +194,42 @@ export function ReflectDialog({
             </div>
           ))}
         </div>
+
+        {/* 置き換え時の差分プレビュー */}
+        {diff && (
+          <div style={{ background: "#fbfbf6", border: "1px solid #e8e4d0", borderRadius: 8, padding: 10, maxHeight: 220, overflowY: "auto" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              置き換えによる差分:
+              <span style={{ marginLeft: 8, color: "#888" }}>変わらず {diff.unchanged}</span>
+              <span style={{ marginLeft: 8, color: "#9a6b00" }}>変更 {diff.changed.length}</span>
+              <span style={{ marginLeft: 8, color: "#2a7a2a" }}>追加 {diff.added.length}</span>
+              <span style={{ marginLeft: 8, color: "#c03030" }}>削除 {diff.removed.length}</span>
+            </div>
+            <DiffLines
+              mark="✎"
+              color="#9a6b00"
+              records={diff.changed}
+              describe={(c) =>
+                `${describeDiffRecord(c.after)}: ${describeDiffChange(c.before, c.after) || "内容変更"}`
+              }
+            />
+            <DiffLines
+              mark="＋"
+              color="#2a7a2a"
+              records={diff.added}
+              describe={(r) => `${describeDiffRecord(r)} ${r.subj}`}
+            />
+            <DiffLines
+              mark="－"
+              color="#c03030"
+              records={diff.removed}
+              describe={(r) => `${describeDiffRecord(r)} ${r.subj}`}
+            />
+            {diff.changed.length === 0 && diff.added.length === 0 && diff.removed.length === 0 && (
+              <div style={{ color: "#888", fontSize: 11 }}>内容の変化はありません。</div>
+            )}
+          </div>
+        )}
         {plan.warnings.map((w) => (
           <div key={w} style={{ color: "#9a6b00", fontSize: 11 }}>⚠ {w}</div>
         ))}

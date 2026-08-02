@@ -5,6 +5,10 @@
 //
 // 同一セル内の複数講師 ("藤田·大屋敷" の並列監督など) は 1 セルなので
 // 衝突にならない。講師名の分解は splitTeacherField (CLAUDE.md の規約)。
+//
+// 現行データに元からある意図的な重なり (亀73 同室の個別指導など) は
+// project.approvedConflicts に conflictKey を入れて「承認」でき、
+// buildConflictView がバッジ件数・赤枠から除外する。
 
 import { splitTeacherField } from "../utils/biweekly";
 import { timeOverlaps } from "../utils/chainSubstitution";
@@ -17,25 +21,25 @@ export function entryRef(entry) {
   return `${entry.tab.id}:${entry.key}`;
 }
 
+/** 承認リストに保存する衝突の識別子。セルが動くと無効になる (保守的)。 */
+export function conflictKey(c) {
+  return `${c.type}|${c.day}|${[...c.refs].sort().join("~")}`;
+}
+
 function describeEntry(entry) {
-  return `${entry.tab.name} ${entry.cls.label} ${entry.period.label} ${entry.cell.subj || ""}`.trim();
+  return `${entry.tab.name} ${entry.cls.label} ${entry.period.label || entry.period.time} ${entry.cell.subj || ""}`.trim();
 }
 
 /**
- * プロジェクト全体の衝突を検出する。
- * @returns {{
- *   list: {type: "teacher"|"room", day: string, label: string, refs: string[]}[],
- *   byRef: Map<string, string[]>,  // entryRef → 人が読める理由の配列
- * }}
+ * プロジェクト全体の衝突を検出する (承認は考慮しない生の一覧)。
+ * @returns {{list: {
+ *   type: "teacher"|"room", day: string, label: string,
+ *   refs: [string, string],      // 両セルの entryRef
+ *   reasons: [string, string],   // refs と同順の、セル側に出す理由文
+ * }[]}}
  */
 export function computeConflicts(project) {
   const list = [];
-  const byRef = new Map();
-  const addReason = (ref, reason) => {
-    const arr = byRef.get(ref) || [];
-    arr.push(reason);
-    byRef.set(ref, arr);
-  };
 
   // 時刻が判定可能なエントリのみ対象 (時刻未設定の時限は反映側で弾く)
   const entries = resolveAllEntries(project).filter((e) =>
@@ -61,24 +65,64 @@ export function computeConflicts(project) {
         const tb = new Set(splitTeacherField(b.cell.teacher || ""));
         const shared = ta.filter((t) => tb.has(t));
         for (const t of shared) {
-          const label = `${day} ${t}: ${describeEntry(a)} ↔ ${describeEntry(b)}`;
-          list.push({ type: "teacher", day, label, refs: [entryRef(a), entryRef(b)] });
-          addReason(entryRef(a), `講師 ${t} が重複: ${describeEntry(b)}`);
-          addReason(entryRef(b), `講師 ${t} が重複: ${describeEntry(a)}`);
+          list.push({
+            type: "teacher",
+            day,
+            label: `${day} 講師 ${t}: ${describeEntry(a)} ↔ ${describeEntry(b)}`,
+            refs: [entryRef(a), entryRef(b)],
+            reasons: [
+              `講師 ${t} が重複: ${describeEntry(b)}`,
+              `講師 ${t} が重複: ${describeEntry(a)}`,
+            ],
+          });
         }
 
         // 教室重複 (実効教室が両方あり一致する場合)
         const ra = effectiveRoom(a);
         const rb = effectiveRoom(b);
         if (ra && ra === rb) {
-          const label = `${day} 教室${ra}: ${describeEntry(a)} ↔ ${describeEntry(b)}`;
-          list.push({ type: "room", day, label, refs: [entryRef(a), entryRef(b)] });
-          addReason(entryRef(a), `教室 ${ra} が重複: ${describeEntry(b)}`);
-          addReason(entryRef(b), `教室 ${ra} が重複: ${describeEntry(a)}`);
+          list.push({
+            type: "room",
+            day,
+            label: `${day} 教室 ${ra}: ${describeEntry(a)} ↔ ${describeEntry(b)}`,
+            refs: [entryRef(a), entryRef(b)],
+            reasons: [
+              `教室 ${ra} が重複: ${describeEntry(b)}`,
+              `教室 ${ra} が重複: ${describeEntry(a)}`,
+            ],
+          });
         }
       }
     }
   }
 
-  return { list, byRef };
+  return { list };
+}
+
+/**
+ * 承認済みを除外した表示用ビューを組み立てる。
+ * @param {ReturnType<typeof computeConflicts>["list"]} list
+ * @param {string[] | undefined} approvedKeys project.approvedConflicts
+ * @returns {{
+ *   active: object[],            // 未承認 (バッジ件数・赤枠の対象)
+ *   approved: object[],          // 承認済み
+ *   byRef: Map<string, string[]> // 未承認のみ: entryRef → 理由文
+ * }}
+ */
+export function buildConflictView(list, approvedKeys) {
+  const approvedSet = new Set(approvedKeys || []);
+  const active = [];
+  const approved = [];
+  for (const c of list) {
+    (approvedSet.has(conflictKey(c)) ? approved : active).push(c);
+  }
+  const byRef = new Map();
+  for (const c of active) {
+    c.refs.forEach((ref, i) => {
+      const arr = byRef.get(ref) || [];
+      arr.push(c.reasons[i]);
+      byRef.set(ref, arr);
+    });
+  }
+  return { active, approved, byRef };
 }

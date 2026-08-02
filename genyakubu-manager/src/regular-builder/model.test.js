@@ -1,45 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDefaultProject,
+  createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
   parseCellKey,
   resolveAllEntries,
   resolveTabEntries,
   sanitizeProject,
+  sanitizeWorkspace,
   tabPeriods,
 } from "./model";
-
-export function makeProject(over = {}) {
-  return {
-    ...createDefaultProject(),
-    name: "2026 後期",
-    periods: [
-      { id: 1, label: "1限", time: "18:00-18:45" },
-      { id: 2, label: "2限", time: "18:55-19:40" },
-      { id: 3, label: "確認テスト", time: "20:40-20:55" },
-    ],
-    teachers: [{ name: "堀上" }, { name: "半田" }],
-    tabs: [
-      {
-        id: 1,
-        name: "中3",
-        grade: "中3",
-        classes: [
-          { id: 1, label: "S", room: "501" },
-          { id: 2, label: "A", room: "502" },
-        ],
-        days: ["月", "火"],
-        periodIds: [1, 2],
-        schedule: {
-          [makeCellKey("月", 1, 1)]: { subj: "数学", teacher: "半田" },
-          [makeCellKey("月", 2, 2)]: { subj: "英語", teacher: "堀上", room: "601", note: "合同" },
-        },
-      },
-    ],
-    ...over,
-  };
-}
+import { makeProject } from "./testUtils";
 
 describe("makeCellKey / parseCellKey", () => {
   it("round-trip する", () => {
@@ -114,5 +85,51 @@ describe("effectiveRoom", () => {
     const a = entries.find((x) => x.cls.label === "A");
     expect(effectiveRoom(s)).toBe("501"); // クラス既定
     expect(effectiveRoom(a)).toBe("601"); // セル上書き
+  });
+});
+
+describe("createDefaultWorkspace / sanitizeWorkspace", () => {
+  it("既定ワークスペースは空プロジェクト 1 つ", () => {
+    const ws = createDefaultWorkspace();
+    expect(ws.version).toBe(2);
+    expect(ws.projects).toHaveLength(1);
+    expect(ws.activeProjectId).toBe(ws.projects[0].id);
+  });
+
+  it("v2 形状はそのまま通る", () => {
+    const ws = sanitizeWorkspace({
+      version: 2,
+      activeProjectId: 5,
+      projects: [
+        { id: 5, ...makeProject() },
+        { id: 6, ...makeProject({ name: "2026 2学期" }) },
+      ],
+    });
+    expect(ws.projects.map((p) => p.id)).toEqual([5, 6]);
+    expect(ws.activeProjectId).toBe(5);
+    expect(ws.projects[1].name).toBe("2026 2学期");
+  });
+
+  it("旧 (単一プロジェクト) 形状は 1 プロジェクトの workspace に包む", () => {
+    const ws = sanitizeWorkspace(makeProject());
+    expect(ws.version).toBe(2);
+    expect(ws.projects).toHaveLength(1);
+    expect(ws.projects[0].name).toBe("2026 後期");
+    expect(ws.activeProjectId).toBe(1);
+  });
+
+  it("activeProjectId が存在しなければ先頭へフォールバック", () => {
+    const ws = sanitizeWorkspace({
+      version: 2,
+      activeProjectId: 99,
+      projects: [{ id: 3, ...makeProject() }],
+    });
+    expect(ws.activeProjectId).toBe(3);
+  });
+
+  it("解釈不能な入力は null", () => {
+    expect(sanitizeWorkspace(null)).toBe(null);
+    expect(sanitizeWorkspace({ projects: "x" })).toBe(null);
+    expect(sanitizeWorkspace({ version: 2, projects: [] })).toBe(null);
   });
 });

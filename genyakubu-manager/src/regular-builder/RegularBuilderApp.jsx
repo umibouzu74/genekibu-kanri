@@ -1,24 +1,31 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { S } from "../styles/common";
 import { LS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { nextNumericId } from "../utils/schema";
-import { createDefaultProject, sanitizeProject } from "./model";
-import { computeConflicts } from "./conflicts";
+import {
+  createDefaultProject,
+  createDefaultWorkspace,
+  sanitizeWorkspace,
+} from "./model";
+import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
+import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { ReflectDialog } from "./ReflectDialog";
+import { ImportDialog } from "./ImportDialog";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
 // 講習時間割作成の操作感で通常時間割 (曜日ベース) を設計する専用ビュー。
-// 下書きは LS.regularBuilderProject に保存され、Firebase 設定済み環境では
-// 他の appData と同様にクラウド同期される (書込には管理者ログインが必要)。
-// 完成したら「⤴ 本体へ反映」で Timetable + Slot に書き出す。
+// 「2026 1学期」「2026 2学期」のような複数プロジェクトを切り替えて編集
+// できる。下書きは LS.regularBuilderProject に保存され、Firebase 設定済み
+// 環境では他の appData と同様にクラウド同期される (書込には管理者ログイン
+// が必要)。完成したら「⤴ 本体へ反映」で Timetable + Slot に書き出す。
 
-const migrate = (raw) => sanitizeProject(raw) || createDefaultProject();
+const migrate = (raw) => sanitizeWorkspace(raw) || createDefaultWorkspace();
 
 export default function RegularBuilderApp({
   slots,
@@ -36,9 +43,9 @@ export default function RegularBuilderApp({
     },
     [toasts]
   );
-  const [project, saveProject] = useSyncedStorage(
+  const [workspace, saveWorkspace] = useSyncedStorage(
     LS.regularBuilderProject,
-    createDefaultProject(),
+    createDefaultWorkspace(),
     { migrate, onError: onStorageError }
   );
 
@@ -46,12 +53,213 @@ export default function RegularBuilderApp({
   const [showProjectConfig, setShowProjectConfig] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showConflicts, setShowConflicts] = useState(false);
+  const [hideEmptyRows, setHideEmptyRows] = useState(false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
+
+  const project =
+    workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
+    workspace.projects[0];
+
+  // ── Undo/Redo ───────────────────────────────────────────────────
+  // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
+  // 直近 800ms 以内の連続編集 (セルへのタイピング等) は 1 つの取り消し
+  // 単位に束ねる。リモート同期で入った変更は履歴に乗らない (単独編集
+  // 前提の割り切り — undo するとその間の同期変更ごと戻る)。
+  const wsRef = useRef(workspace);
+  useEffect(() => {
+    wsRef.current = workspace;
+  }, [workspace]);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const lastCommitAtRef = useRef(0);
+  const [histVersion, setHistVersion] = useState(0);
+
+  const commitWorkspace = useCallback(
+    (next) => {
+      const now = Date.now();
+      if (now - lastCommitAtRef.current > 800) {
+        undoStackRef.current = [...undoStackRef.current.slice(-99), wsRef.current];
+      }
+      redoStackRef.current = [];
+      lastCommitAtRef.current = now;
+      saveWorkspace(next);
+      setHistVersion((v) => v + 1);
+    },
+    [saveWorkspace]
+  );
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const prev = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, wsRef.current];
+    lastCommitAtRef.current = 0; // 次の編集は新しい取り消し単位
+    saveWorkspace(prev);
+    setHistVersion((v) => v + 1);
+  }, [saveWorkspace]);
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    redoStackRef.current = stack.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current, wsRef.current];
+    lastCommitAtRef.current = 0;
+    saveWorkspace(next);
+    setHistVersion((v) => v + 1);
+  }, [saveWorkspace]);
+
+  const canUndo = histVersion >= 0 && undoStackRef.current.length > 0;
+  const canRedo = histVersion >= 0 && redoStackRef.current.length > 0;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      // テキスト入力中はブラウザ標準の undo を優先する
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
+  // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
+  // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
+  const saveProject = useCallback(
+    (next) =>
+      commitWorkspace((w) => {
+        const activeId =
+          w.projects.some((p) => p.id === w.activeProjectId)
+            ? w.activeProjectId
+            : w.projects[0]?.id;
+        return {
+          ...w,
+          projects: w.projects.map((p) =>
+            p.id === activeId
+              ? { ...p, ...(typeof next === "function" ? next(p) : next) }
+              : p
+          ),
+        };
+      }),
+    [commitWorkspace]
+  );
+
+  const switchProject = useCallback(
+    (id) => {
+      saveWorkspace((w) => ({ ...w, activeProjectId: id }));
+      setActiveTabId(null);
+    },
+    [saveWorkspace]
+  );
+
+  const addProject = useCallback(
+    (projectFields, { successMsg } = {}) => {
+      commitWorkspace((w) => {
+        const id = nextNumericId(w.projects);
+        return {
+          ...w,
+          activeProjectId: id,
+          projects: [...w.projects, { id, ...projectFields }],
+        };
+      });
+      setActiveTabId(null);
+      if (successMsg) toasts.success(successMsg);
+    },
+    [commitWorkspace, toasts]
+  );
+
+  const removeProject = useCallback(async () => {
+    const cellCount = project.tabs.reduce(
+      (n, t) => n + Object.keys(t.schedule).length,
+      0
+    );
+    // プロジェクト削除は中身 (タブ・セル) を巻き込むため確認ダイアログ
+    // (CLAUDE.md 削除 UX ルールの cascade あり相当)
+    const ok = await confirm({
+      title: "プロジェクトの削除",
+      message: `プロジェクト「${project.name}」を削除しますか？\nタブ ${project.tabs.length} 件・入力済みセル ${cellCount} 件も削除されます。`,
+      okLabel: "削除する",
+      tone: "danger",
+    });
+    if (!ok) return;
+    commitWorkspace((w) => {
+      const rest = w.projects.filter((p) => p.id !== project.id);
+      if (rest.length === 0) return createDefaultWorkspace();
+      return { ...w, activeProjectId: rest[0].id, projects: rest };
+    });
+    setActiveTabId(null);
+  }, [project, confirm, commitWorkspace]);
+
+  const duplicateProject = useCallback(() => {
+    const copy = JSON.parse(JSON.stringify(project));
+    delete copy.id;
+    addProject(
+      { ...copy, name: `${project.name}（コピー）` },
+      { successMsg: `「${project.name}」を複製しました` }
+    );
+  }, [project, addProject]);
+
+  const importProject = useCallback(
+    ({ sourceId, name, applyShift, splitWeekend }) => {
+      const { project: imported, stats } = buildProjectFromSlots(
+        name,
+        slots,
+        sourceId,
+        { splitWeekend }
+      );
+      let final = imported;
+      let shiftMsg = "";
+      if (applyShift) {
+        const { project: shifted, moved } = applyChu3SecondTermShift(imported);
+        final = shifted;
+        shiftMsg = `、中3 2学期変更を適用（${moved} コマ移動）`;
+      }
+      addProject(final, {
+        successMsg: `「${name}」を取り込みました（${stats.slotCount} コマ・タブ ${stats.tabCount} 件${shiftMsg}）`,
+      });
+      setShowImport(false);
+    },
+    [slots, addProject]
+  );
 
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
-  const conflicts = useMemo(() => computeConflicts(project), [project]);
+  const conflictList = useMemo(() => computeConflicts(project).list, [project]);
+  const conflictView = useMemo(
+    () => buildConflictView(conflictList, project.approvedConflicts),
+    [conflictList, project.approvedConflicts]
+  );
+
+  const approveConflict = useCallback(
+    (c) =>
+      saveProject((p) => ({
+        ...p,
+        approvedConflicts: [...(p.approvedConflicts || []), conflictKey(c)],
+      })),
+    [saveProject]
+  );
+  const unapproveConflict = useCallback(
+    (c) =>
+      saveProject((p) => ({
+        ...p,
+        approvedConflicts: (p.approvedConflicts || []).filter(
+          (k) => k !== conflictKey(c)
+        ),
+      })),
+    [saveProject]
+  );
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
@@ -154,26 +362,108 @@ export default function RegularBuilderApp({
         }}
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>🏗 通常時間割作成</span>
+        {workspace.projects.length > 1 && (
+          <select
+            value={project.id}
+            onChange={(e) => switchProject(Number(e.target.value))}
+            style={{ ...S.input, width: "auto", minWidth: 150, fontWeight: 700 }}
+            title="編集するプロジェクトを切替"
+          >
+            {workspace.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="text"
           value={project.name}
           onChange={(e) => saveProject((p) => ({ ...p, name: e.target.value }))}
-          placeholder="プロジェクト名 (例: 2026 後期)"
-          style={{ ...S.input, width: 200 }}
+          placeholder="プロジェクト名 (例: 2026 2学期)"
+          style={{ ...S.input, width: 180 }}
         />
-        <span
+        <div style={{ display: "flex", gap: 3 }}>
+          <button
+            type="button"
+            onClick={() =>
+              addProject(createDefaultProject(), { successMsg: "プロジェクトを作成しました" })
+            }
+            title="空のプロジェクトを新規作成"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+          >
+            ＋新規
+          </button>
+          <button
+            type="button"
+            onClick={duplicateProject}
+            title="このプロジェクトを複製"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+          >
+            ⧉複製
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            title="本体の時間割をプロジェクトとして取り込む"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#e8eef8", color: "#2a4a8e" }}
+          >
+            ⬇ 本体から取込
+          </button>
+          <button
+            type="button"
+            onClick={removeProject}
+            title="このプロジェクトを削除"
+            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#fde8e8", color: "#c03030" }}
+          >
+            🗑
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 3 }}>
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            title="元に戻す (Ctrl+Z)"
+            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canUndo ? 1 : 0.4 }}
+          >
+            ↩
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title="やり直す (Ctrl+Y / Ctrl+Shift+Z)"
+            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canRedo ? 1 : 0.4 }}
+          >
+            ↪
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowConflicts((v) => !v)}
           style={{
             fontSize: 11,
             fontWeight: 700,
             padding: "3px 10px",
             borderRadius: 10,
-            background: conflicts.list.length ? "#fde8e8" : "#e8f5e8",
-            color: conflicts.list.length ? "#c03030" : "#2a7a2a",
+            border: "none",
+            cursor: "pointer",
+            background: conflictView.active.length ? "#fde8e8" : "#e8f5e8",
+            color: conflictView.active.length ? "#c03030" : "#2a7a2a",
           }}
-          title={conflicts.list.map((c) => c.label).join("\n")}
+          title={
+            (conflictView.active.map((c) => c.label).join("\n") ||
+              "クリックで重複の一覧・承認を開閉") +
+            (conflictView.approved.length
+              ? `\n(承認済み ${conflictView.approved.length} 件)`
+              : "")
+          }
         >
-          {conflicts.list.length ? `⚠ 重複 ${conflicts.list.length} 件` : "✓ 重複なし"}
-        </span>
+          {conflictView.active.length
+            ? `⚠ 重複 ${conflictView.active.length} 件`
+            : "✓ 重複なし"}
+        </button>
         <select
           value={highlightTeacher}
           onChange={(e) => setHighlightTeacher(e.target.value)}
@@ -206,6 +496,57 @@ export default function RegularBuilderApp({
         </button>
       </div>
 
+      {/* 重複の一覧・承認パネル */}
+      {showConflicts && (
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e0e0e0",
+            borderRadius: 10,
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 13 }}>講師・教室の重複</div>
+          {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
+            <div style={{ color: "#888" }}>重複はありません。</div>
+          )}
+          {conflictView.active.map((c) => (
+            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ flex: 1, color: "#c03030" }}>⚠ {c.label}</span>
+              <button
+                type="button"
+                onClick={() => approveConflict(c)}
+                title="意図した重なりとして承認し、件数と赤枠から除外する"
+                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+              >
+                承認
+              </button>
+            </div>
+          ))}
+          {conflictView.approved.length > 0 && (
+            <div style={{ fontWeight: 700, fontSize: 11, color: "#888", marginTop: 4 }}>
+              承認済み（意図した重なり）
+            </div>
+          )}
+          {conflictView.approved.map((c) => (
+            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ flex: 1, color: "#888" }}>{c.label}</span>
+              <button
+                type="button"
+                onClick={() => unapproveConflict(c)}
+                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+              >
+                解除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {showProjectConfig && (
         <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
       )}
@@ -234,6 +575,16 @@ export default function RegularBuilderApp({
             ⚙ タブ設定
           </button>
         )}
+        {activeTab && (
+          <button
+            type="button"
+            onClick={() => setHideEmptyRows((v) => !v)}
+            title="セルが 1 つも無い時限行 (と空の曜日) を表示から隠す。データは変わりません"
+            style={{ ...S.btn(hideEmptyRows), fontSize: 12 }}
+          >
+            ▤ 空行を隠す
+          </button>
+        )}
       </div>
 
       {/* 空状態ガイド */}
@@ -250,6 +601,12 @@ export default function RegularBuilderApp({
           }}
         >
           <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>はじめかた</div>
+          <div style={{ marginBottom: 6 }}>
+            <b>今の時間割から始める（おすすめ）</b>:
+            「⬇ 本体から取込」で現行の時間割をプロジェクトに変換できます。
+            「中3 の 2学期変更を適用する」にチェックを入れると、平日前倒し + 土曜内申の午前枠を反映した 2学期のたたき台が一発でできます。
+          </div>
+          <b>ゼロから組む場合:</b><br />
           1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）<br />
           2. 「+ タブ追加」で学年タブを作り、曜日・使う時限・クラス（既定教室付き）を設定します<br />
           3. マス目に教科・講師を入力します（講師・教室の重複は自動チェック）<br />
@@ -271,8 +628,9 @@ export default function RegularBuilderApp({
           project={project}
           tab={activeTab}
           onCellChange={onCellChange}
-          conflictsByRef={conflicts.byRef}
+          conflictsByRef={conflictView.byRef}
           highlightTeacher={highlightTeacher}
+          hideEmptyRows={hideEmptyRows}
         />
       )}
 
@@ -284,6 +642,15 @@ export default function RegularBuilderApp({
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
           onClose={() => setShowReflect(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportDialog
+          timetables={timetables}
+          slots={slots}
+          onImport={importProject}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>

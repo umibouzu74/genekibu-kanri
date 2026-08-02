@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyReflection, buildReflectionPlan } from "./reflect";
+import {
+  applyReflection,
+  buildReflectionPlan,
+  describeDiffChange,
+  diffReflection,
+} from "./reflect";
 import { makeCellKey } from "./model";
-import { makeProject } from "./model.test";
+import { makeProject } from "./testUtils";
 
 const EXISTING_TIMETABLES = [
   { id: 1, name: "デフォルト", type: "regular", startDate: null, endDate: null, grades: [] },
@@ -147,5 +152,55 @@ describe("applyReflection - 置き換え", () => {
       { timetables, slots }
     );
     expect(result.error).toContain("見つかりません");
+  });
+});
+
+describe("diffReflection (置き換えの差分プレビュー)", () => {
+  const base = { day: "火", time: "18:55-19:40", grade: "中3", cls: "S", room: "501", subj: "数学", teacher: "半田", note: "", timetableId: 2 };
+  const D = (over) => ({ day: base.day, time: base.time, grade: base.grade, cls: base.cls, room: base.room, subj: base.subj, teacher: base.teacher, note: base.note, ...over });
+
+  it("完全一致は変わらず、同位置の内容違いは変更", () => {
+    const slots = [ { id: 1, ...base }, { id: 2, ...base, cls: "A", room: "502", subj: "国語", teacher: "松川" } ];
+    const drafts = [ D({}), D({ cls: "A", room: "502", subj: "国語", teacher: "河野" }) ];
+    const diff = diffReflection(drafts, slots, 2);
+    expect(diff.unchanged).toBe(1);
+    expect(diff.changed).toHaveLength(1);
+    expect(diff.changed[0].before.teacher).toBe("松川");
+    expect(diff.changed[0].after.teacher).toBe("河野");
+    expect(diff.added).toHaveLength(0);
+    expect(diff.removed).toHaveLength(0);
+  });
+
+  it("位置ごと違えば追加と削除に分かれる", () => {
+    const slots = [{ id: 1, ...base, time: "20:45-21:30" }];
+    const drafts = [D({ time: "18:00-18:45" })];
+    const diff = diffReflection(drafts, slots, 2);
+    expect(diff.unchanged).toBe(0);
+    expect(diff.changed).toHaveLength(0);
+    expect(diff.added.map((r) => r.time)).toEqual(["18:00-18:45"]);
+    expect(diff.removed.map((r) => r.time)).toEqual(["20:45-21:30"]);
+  });
+
+  it("講師表記の中点ゆれは正規化して比較する (全角中点でも変わらず扱い)", () => {
+    const slots = [{ id: 1, ...base, teacher: "香川・福江" }];
+    const drafts = [D({ teacher: "香川·福江" })];
+    const diff = diffReflection(drafts, slots, 2);
+    expect(diff.unchanged).toBe(1);
+  });
+
+  it("対象時間割のコマだけ比較する", () => {
+    const slots = [ { id: 1, ...base }, { id: 2, ...base, timetableId: 1, subj: "別物" } ];
+    const diff = diffReflection([D({})], slots, 2);
+    expect(diff.unchanged).toBe(1);
+    expect(diff.removed).toHaveLength(0);
+  });
+
+  it("describeDiffChange は変わったフィールドだけ並べる", () => {
+    const before = { subj: "数学", teacher: "半田", room: "501", note: "" };
+    const after = { subj: "数学", teacher: "河野", room: "502", note: "" };
+    const text = describeDiffChange(before, after);
+    expect(text).toContain("講師 半田 → 河野");
+    expect(text).toContain("教室 501 → 502");
+    expect(text).not.toContain("数学 →");
   });
 });
