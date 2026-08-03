@@ -89,7 +89,8 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
             教室の建物（亀井町）で学年タブを分ける
             <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
               教室が「亀◯◯」のコマとそれ以外の両方がある学年を「高2」「高2 (亀)」のように分けます。
-              曜日ビューで本校と亀井町が別の表に分かれ、ダッシュボードと同じ構図になります。
+              各学年にはグループ名（中学部 / 附属 / 高校部・本校 / 高校部・亀井町）が自動で付き、
+              曜日ビューでダッシュボードと同じセクション構成になります（学年設定で変更可）。
             </div>
           </span>
         </label>

@@ -223,15 +223,24 @@ describe("computeSections", () => {
     expect(sections[0].tabs.map((t) => t.id)).toEqual([1, 2]);
   });
 
-  it("推移的にまとまる (A∩B, B∩C 共有なら A,B,C 同居)", () => {
+  it("包含関係 (⊆) で推移的にまとまる (大きいセットが橋渡しする)", () => {
     const p = proj([
-      tab(1, "A", { periodIds: [1, 2] }),
-      tab(2, "C", { periodIds: [3, 4] }),
-      tab(3, "B", { periodIds: [2, 3] }), // A とも C とも共有
+      tab(1, "中1", { periodIds: [1, 2] }),
+      tab(2, "中2", { periodIds: [3] }),
+      tab(3, "中3", { periodIds: [1, 2, 3] }), // 中1 も 中2 も包含
     ]);
     const sections = computeSections(p, "月");
     expect(sections).toHaveLength(1);
-    expect(sections[0].tabs.map((t) => t.name)).toEqual(["A", "C", "B"]);
+    expect(sections[0].tabs.map((t) => t.name)).toEqual(["中1", "中2", "中3"]);
+  });
+
+  it("時限が一部重なるだけ (どちらも包含でない) の学年は併合しない", () => {
+    const p = proj([
+      tab(1, "高1", { periodIds: [11, 12, 13] }),
+      tab(2, "高1 (亀)", { periodIds: [12, 31] }), // 19:40 だけ偶然共有
+    ]);
+    const sections = computeSections(p, "月");
+    expect(sections.map((s) => s.name)).toEqual(["高1", "高1 (亀)"]);
   });
 
   it("group (手動グループ名) が最優先で、名前ごとにまとまる", () => {

@@ -241,8 +241,11 @@ export function sanitizeWorkspace(raw) {
 // ダッシュボードの時間割ビューと同じく、曜日ビューは「時間軸を共有する
 // 学年のまとまり」ごとに別テーブルにする。
 // - tab.group (手動のグループ名) があればその名前でまとめる
-// - 未設定の学年は「使う時限を 1 つでも共有する学年」を推移的に自動で
-//   同じセクションへ (中1・中2・中3 は同居、時刻体系の違う高校部は別)
+// - 未設定の学年は「時限セットが包含関係 (⊆) にある学年」を推移的に
+//   自動で同じセクションへ。中1 ⊆ 中3 のような「同じ時間割系で一部の
+//   時限だけ使う」関係はまとまり、高校の講座のように時刻がばらつく中で
+//   たまたま 1 コマ重なるだけの学年 (本校と亀井町など) は併合しない
+//   (「1 つでも共有で併合」は実データで無関係な学年を巻き込んだ)
 // 並びはタブの定義順 (各セクションの先頭タブの位置)。
 
 /**
@@ -268,10 +271,15 @@ export function computeSections(project, day) {
     }
   }
 
-  // 時限を共有する学年を推移的にまとめる (小規模なので単純マージで十分)
+  // 時限セットが包含関係の学年を推移的にまとめる (小規模なので単純マージで
+  // 十分)。大きいセットの学年が複数クラスタを橋渡しすることもある
+  const isSubset = (a, b) => [...a].every((id) => b.has(id));
   const clusters = []; // {ids: Set<periodId>, tabs: []}
   for (const t of autoTabs) {
-    const hit = clusters.filter((c) => (t.periodIds || []).some((id) => c.ids.has(id)));
+    const mine = new Set(t.periodIds || []);
+    const hit = clusters.filter(
+      (c) => isSubset(mine, c.ids) || isSubset(c.ids, mine)
+    );
     if (hit.length === 0) {
       clusters.push({ ids: new Set(t.periodIds), tabs: [t] });
     } else {

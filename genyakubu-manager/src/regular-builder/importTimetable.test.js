@@ -341,3 +341,41 @@ describe("buildProjectFromSlots - splitBuilding (本校/亀井町のタブ分割
     expect(resolveAllEntries(project)).toHaveLength(mixed.length);
   });
 });
+
+describe("buildProjectFromSlots - グループ名の自動設定", () => {
+  it("中学部 / 附属 / 高校部・本校 / 高校部・亀井町 を自動設定する", () => {
+    const slots = [
+      S({ id: 1, grade: "中3" }),
+      S({ id: 2, grade: "附中1", room: "402", time: "16:25-17:25" }),
+      S({ id: 3, grade: "高2", cls: "", room: "404", time: "18:30-19:30" }),
+      S({ id: 4, grade: "高2", cls: "", room: "亀62", time: "19:00-20:20" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1, { splitBuilding: true });
+    const byName = Object.fromEntries(project.tabs.map((t) => [t.name, t.group]));
+    expect(byName["中3"]).toBe("中学部");
+    expect(byName["附中1"]).toBe("附属");
+    expect(byName["高2"]).toBe("高校部・本校");
+    expect(byName["高2 (亀)"]).toBe("高校部・亀井町");
+  });
+
+  it("単一学年でない特設タブ (中1-3 / 高1高2) はグループを付けない", () => {
+    const slots = [
+      S({ id: 1, grade: "中1-3", time: "17:50-18:50" }),
+      S({ id: 2, grade: "高1高2", time: "19:00-20:00" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1, { splitBuilding: true });
+    expect(project.tabs.map((t) => t.group)).toEqual(["", ""]);
+  });
+
+  it("平日/土曜分割でも同じグループ名を引き継ぐ", () => {
+    const slots = [
+      S({ id: 1, grade: "中3", day: "月" }),
+      S({ id: 2, grade: "中3", day: "土", time: "10:00-11:00" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1, { splitWeekend: true });
+    expect(project.tabs.map((t) => [t.name, t.group])).toEqual([
+      ["中3", "中学部"],
+      ["中3 (土)", "中学部"],
+    ]);
+  });
+});
