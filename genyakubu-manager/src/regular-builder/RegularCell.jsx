@@ -278,6 +278,25 @@ export const RegularCell = memo(function RegularCell({
               ⚠️重複
             </span>
           )}
+          {/* 編集中は ✕ を常設 (表示モードの ✕ はホバー表示のため、
+              タッチ端末ではこちらが唯一のクリア導線になる)。クリア後は
+              ボタンごと消えてフォーカスが宙に浮くため、明示的に編集を
+              終了して表示セルへフォーカスを戻す */}
+          {hasContent && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => {
+                onClearCell(cellRef);
+                onEndEdit(cellRef, true);
+              }}
+              aria-label={`${ariaBase} をクリア`}
+              title="このセルをクリア (Ctrl+Z で戻せます)"
+              className={`no-print shrink-0 border-0 bg-transparent cursor-pointer p-0 leading-none text-builder-ink-ghost hover:text-builder-red ${isCompact ? "text-[9px]" : "text-xs"}`}
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {teacherFreeEdit ? (

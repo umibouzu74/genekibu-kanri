@@ -6,7 +6,7 @@ import {
   parseCellKey,
   parseCellRef,
 } from "./model";
-import { computeBusyTeachers } from "./conflicts";
+import { computeBusyTeachersForTabs } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
 import { RegularCell } from "./RegularCell";
@@ -85,6 +85,20 @@ export function RegularGrid({
     pendingFocusRef.current = null;
   }, [project.id, day]);
 
+  // セクションの折りたたみ (見出しバーのクリックで開閉)。表示のみで
+  // データは不変。印刷時は畳んでいても展開して刷る
+  const [collapsedKeys, setCollapsedKeys] = useState(() => new Set());
+  useEffect(() => {
+    setCollapsedKeys(new Set());
+  }, [project.id]);
+  const toggleCollapse = (key) =>
+    setCollapsedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
   // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
   // (sections / dragSource など) を参照する。
@@ -153,8 +167,10 @@ export function RegularGrid({
   const available = (per, col) => col.tab.periodIds.includes(per.id);
 
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
-  const busyByTab = new Map(
-    sections.flatMap((s) => s.tabs).map((t) => [t.id, computeBusyTeachers(project, t)])
+  // (全セルの解決は 1 回で済む一括版を使う)
+  const busyByTab = computeBusyTeachersForTabs(
+    project,
+    sections.flatMap((s) => s.tabs)
   );
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
@@ -208,10 +224,15 @@ export function RegularGrid({
       scroller.scrollLeft += step(rect.right - e.clientX);
   };
 
-  // ── 矢印キーでセル間を移動 (セクション内で完結) ──────────────────
-  // 行 = セクションの時限、列 = 学年×クラス。↑↓ は行移動、←→ は
-  // 教科 ⇄ 講師 ⇄ 隣クラス (行内は端で wrap)。使わない時限のマスは
-  // スキップ。編集中は移動先セルが自動で編集モードに入る。
+  // ── 矢印キーでセル間を移動 ──────────────────────────────────────
+  // ↑↓ は同じセクション内の行移動 (時間軸が違うため縦は跨がない)。
+  // ←→ は 教科 ⇄ 講師 ⇄ 隣クラスの連続移動で、セクションの端まで来たら
+  // 次/前のセクションへ跨ぐ (行位置は移動先の時間軸に丸める)。使わない
+  // 時限のマス・折りたたみ中のセクションはスキップ。編集中は移動先セルが
+  // 自動で編集モードに入る。
+  const allCols = []; // 全セクションの列の通し並び {sec, col}
+  for (const sec of sections) for (const col of sec.cols) allCols.push({ sec, col });
+
   const handleNavigate = (e, cellRef, field) => {
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
     // 修飾キー付きは select のネイティブ操作 (Alt+↓ など) なので乗っ取らない
@@ -219,52 +240,65 @@ export function RegularGrid({
     e.preventDefault();
     const { tabId, key } = parseCellRef(cellRef);
     const { periodId, classId } = parseCellKey(key);
-    const sec = sections.find((s) =>
-      s.cols.some((x) => x.tab.id === tabId && x.cls.id === classId)
+    let ci = allCols.findIndex(
+      (x) => x.col.tab.id === tabId && x.col.cls.id === classId
     );
-    if (!sec) return;
-    const rows = sec.periods;
-    const cols = sec.cols;
-    let r = rows.findIndex((p) => p.id === periodId);
-    let c = cols.findIndex((x) => x.tab.id === tabId && x.cls.id === classId);
+    if (ci < 0) return;
+    let sec = allCols[ci].sec;
+    let r = sec.periods.findIndex((p) => p.id === periodId);
     let f = field;
-    if (r < 0 || c < 0) return;
+    if (r < 0) return;
 
     const step = () => {
       if (e.key === "ArrowUp") {
         if (r > 0) r--;
         else return false; // 上端
       } else if (e.key === "ArrowDown") {
-        if (r < rows.length - 1) r++;
+        if (r < allCols[ci].sec.periods.length - 1) r++;
         else return false; // 下端
       } else if (e.key === "ArrowLeft") {
         if (f === "teacher") f = "subj";
         else {
-          c = c > 0 ? c - 1 : cols.length - 1; // 行頭 → 行末へ wrap
+          ci = ci > 0 ? ci - 1 : allCols.length - 1; // 全体の端で wrap
           if (f === "subj") f = "teacher";
         }
       } else if (e.key === "ArrowRight") {
         if (f === "subj") f = "teacher";
         else {
-          c = c < cols.length - 1 ? c + 1 : 0; // 行末 → 行頭へ wrap
+          ci = ci < allCols.length - 1 ? ci + 1 : 0; // 全体の端で wrap
           if (f === "teacher") f = "subj";
         }
+      }
+      // セクションを跨いだら行位置を移動先の時間軸に丸める
+      const ns = allCols[ci].sec;
+      if (ns !== sec) {
+        sec = ns;
+        r = Math.min(r, sec.periods.length - 1);
       }
       return true;
     };
 
-    const start = `${r}|${c}|${f}`;
-    const maxSteps = rows.length * cols.length * 2 + 2;
+    const start = `${ci}|${r}|${f}`;
+    const maxRows = Math.max(...sections.map((s) => s.periods.length));
+    const maxSteps = allCols.length * maxRows * 2 + 2;
     for (let i = 0; i < maxSteps; i++) {
       if (!step()) return;
-      if (`${r}|${c}|${f}` === start) return; // 一周した
-      const per = rows[r];
-      const col = cols[c];
-      if (!per || !col) return;
-      if (!available(per, col)) continue; // 使えないマスはスキップ
-      const targetRef = makeCellRef(col.tab.id, makeCellKey(day, per.id, col.cls.id));
+      if (`${ci}|${r}|${f}` === start) return; // 一周した
+      const entry = allCols[ci];
+      const per = entry.sec.periods[r];
+      if (!per) return;
+      if (collapsedKeys.has(entry.sec.key)) continue; // 折りたたみ中は飛ばす
+      if (!available(per, entry.col)) continue; // 使えないマスはスキップ
+      const targetRef = makeCellRef(
+        entry.col.tab.id,
+        makeCellKey(day, per.id, entry.col.cls.id)
+      );
       if (f === "cell") {
         document.getElementById(`regb-${targetRef}-cell`)?.focus();
+      } else if (targetRef === editRef) {
+        // 同じセル内の 教科 ⇄ 講師 移動: editRef が変わらず再レンダーが
+        // 走らないため、既に DOM にある select を直接フォーカスする
+        document.getElementById(`regb-${targetRef}-${f}`)?.focus();
       } else {
         // 編集対象を移す (表示セルの select はまだ DOM に無いため、編集開始
         // → レンダー後に pendingFocusRef が該当 select へフォーカスする)
@@ -290,22 +324,31 @@ export function RegularGrid({
       onDragOver={handleContainerDragOver}
       className={`flex flex-wrap items-start gap-3 print-container ${isCompact ? "text-xs" : "text-sm"}`}
     >
-      {sections.map((s) => (
+      {sections.map((s) => {
+        const collapsed = collapsedKeys.has(s.key);
+        return (
         <section
           key={s.key}
           className="regb-section max-w-full bg-builder-surface border border-builder-border rounded-lg shadow overflow-hidden"
         >
-          {/* セクション見出し (ダッシュボードの部バーに相当) */}
-          <div
-            className={`flex items-center justify-between gap-3 text-white font-bold ${isCompact ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-[13px]"}`}
+          {/* セクション見出し (ダッシュボードの部バーに相当)。クリックで開閉 */}
+          <button
+            type="button"
+            onClick={() => toggleCollapse(s.key)}
+            aria-expanded={!collapsed}
+            title={collapsed ? "クリックで展開" : "クリックで折りたたむ (印刷時は展開して刷られます)"}
+            className={`w-full border-0 cursor-pointer flex items-center justify-between gap-3 text-white font-bold text-left ${isCompact ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-[13px]"}`}
             style={{ background: s.tone.accent }}
           >
-            <span className="truncate">{s.name}</span>
+            <span className="truncate">
+              <span className="no-print inline-block w-3">{collapsed ? "▸" : "▾"}</span>
+              {s.name}
+            </span>
             <span className="text-[10px] font-normal opacity-90 shrink-0">
               {s.cellCount}コマ
             </span>
-          </div>
-          <div className="overflow-x-auto">
+          </button>
+          <div className={`overflow-x-auto ${collapsed ? "hidden print:block" : ""}`}>
             <table className="border-collapse text-left" aria-label={`${s.name} の時間割`}>
               <thead>
                 <tr>
@@ -431,7 +474,8 @@ export function RegularGrid({
             </table>
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

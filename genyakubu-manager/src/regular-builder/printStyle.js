@@ -23,6 +23,23 @@ export const REGULAR_PRINT_STYLE = `
     border: none !important;
     overflow: visible !important;
   }
+  /* ブラウザは既定で背景色を刷らないため、セクション見出し (色背景 +
+     白文字) が紙面で白文字だけになり読めなくなる。背景・文字色を
+     そのまま刷らせる (学年色・科目カラーも残る) */
+  .print-container,
+  .print-container * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* 全曜日印刷: 曜日ブロックごとに改ページ (先頭は除く) */
+  .regb-print-day {
+    break-before: page;
+    page-break-before: always;
+  }
+  .regb-print-day:first-child {
+    break-before: auto;
+    page-break-before: auto;
+  }
   /* セクションは縦積みで全幅・途中で改ページしない */
   .print-container .regb-section {
     break-inside: avoid;

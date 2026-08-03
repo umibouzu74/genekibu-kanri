@@ -25,6 +25,18 @@ const WEEKEND_DAYS = new Set(["土", "日"]);
 // 亀井町校舎の教室は「亀◯◯」。建物分割 (splitBuilding) の判定に使う
 const isAnnexRoom = (room) => /^亀/.test((room || "").trim());
 
+// 取込時のグループ名 (曜日ビューのセクション) 自動設定。単一学年
+// (ALL_GRADES) のみ対象 — 「中1-3」「高1高2」のような特設タブは空のまま
+// (時限セットの包含関係による自動同居に任せる)。学年設定でいつでも変更可。
+const autoGroup = (grade, suffixes) => {
+  if (!ALL_GRADES.includes(grade)) return "";
+  if (grade.startsWith("附")) return "附属";
+  if (grade.startsWith("中")) return "中学部";
+  if (grade.startsWith("高"))
+    return suffixes.includes("亀") ? "高校部・亀井町" : "高校部・本校";
+  return "";
+};
+
 /**
  * @param {string} name プロジェクト名
  * @param {import("../types").Slot[]} allSlots 本体の全コマ
@@ -100,13 +112,14 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
       tabSpecs.push({
         name: b.suffixes.length ? `${grade} (${b.suffixes.join("・")})` : grade,
         grade,
+        group: autoGroup(grade, b.suffixes),
         slots: b.slots,
       });
     }
   }
 
   let parallelColumns = 0;
-  project.tabs = tabSpecs.map(({ name: tabName, grade, slots: gs }, tabIdx) => {
+  project.tabs = tabSpecs.map(({ name: tabName, grade, group, slots: gs }, tabIdx) => {
     const days = REGULAR_DAYS.filter((d) => gs.some((s) => s.day === d));
     const periodIds = project.periods
       .filter((p) => gs.some((s) => (s.time || "").trim() === p.time))
@@ -172,6 +185,7 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
       id: tabIdx + 1,
       name: tabName,
       grade,
+      group,
       classes: classes.map(({ id, label, room }) => ({ id, label, room })),
       days,
       periodIds,
