@@ -1,19 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { makeCellKey, makeCellRef, parseCellKey, parseCellRef } from "./model";
+import {
+  computeSections,
+  makeCellKey,
+  makeCellRef,
+  parseCellKey,
+  parseCellRef,
+} from "./model";
 import { computeBusyTeachers } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
-import { gradeColor } from "../constants/colors";
+import { DEPT_COLOR, gradeColor } from "../constants/colors";
 import { RegularCell } from "./RegularCell";
 
-// ─── スケジュール表 (選択曜日 × 全学年一覧) ─────────────────────────
-// ダッシュボードの時間割ビューと同じレイアウト: 1 つの曜日について、
-// 行 = 時限 (時刻順)、列 = 学年グループ (gradeColor のヘッダ) × クラス。
-// すべての学年を横に並べるので、学年横断の講師のやりくりを見ながら組める。
+// ─── スケジュール表 (選択曜日 × セクション別テーブル) ────────────────
+// ダッシュボードの時間割ビューと同じ構図: 1 つの曜日について、時間軸を
+// 共有する学年のまとまり (セクション = computeSections) ごとに小さな
+// テーブルを作り、2 カラムに流し込む。各セクションは自分の時限だけを
+// 行に持つので、時刻体系の違う学年同士で空行が乱立しない。
 //
-// - その学年が使わない時限のマスはグレーで塞ぐ (設定は学年チップから)
-// - セルは display-first (テキスト表示、クリックで編集)。D&D は学年を
-//   またいだ入替もできる (swapCellsAcrossTabs)
-// - 「空行を隠す」はセルが 1 つも無い時限行を表示から省く (データ不変)
+// - セクション見出しは部の色 (DEPT_COLOR)、学年グループは gradeColor
+// - セルは display-first (テキスト表示、クリックで編集)。D&D は
+//   セクション・学年をまたいだ入替もできる (swapCellsAcrossTabs)
+// - 矢印キーの移動はセクション内で完結 (行 = 時限、列 = 学年×クラス)
+// - 「空行を隠す」はセルが 1 つも無い時限行を省き、空になった
+//   セクションごと隠す (データ不変)
 
 // 時刻 "HH:MM-..." の開始分。パース不能 (時刻未設定) は末尾送り
 const startMin = (time) => {
@@ -23,6 +32,16 @@ const startMin = (time) => {
 
 // 学年グループの境目に引く縦の区切り罫
 const GROUP_BOUNDARY = "border-l-2 border-l-builder-ink-muted";
+
+// セクション見出しの配色: 全学年が高校系なら高校部、全て中学系なら
+// 中学部 (附属含む)、混在は中立色
+const sectionTone = (tabs) => {
+  const grades = tabs.map((t) => t.grade || t.name);
+  const isHigh = (g) => g.includes("高");
+  if (grades.every(isHigh)) return DEPT_COLOR["高校部"];
+  if (grades.every((g) => !isHigh(g))) return DEPT_COLOR["中学部"];
+  return { b: "#e8e8e8", f: "#444444", accent: "#607080" };
+};
 
 export function RegularGrid({
   project,
@@ -68,7 +87,7 @@ export function RegularGrid({
 
   // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
   // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
-  // (periods / cols / dragSource など) を参照する。
+  // (sections / dragSource など) を参照する。
   const implRef = useRef(null);
   const onNavigate = useCallback((...a) => implRef.current.navigate(...a), []);
   const onDragStart = useCallback((...a) => implRef.current.dragStart(...a), []);
@@ -77,14 +96,9 @@ export function RegularGrid({
   const onDrop = useCallback((...a) => implRef.current.drop(...a), []);
   const onDragEnd = useCallback((...a) => implRef.current.dragEnd(...a), []);
 
-  // この曜日を使う学年 (クラス・時限が設定済みのもの)
-  const dayTabs = (project.tabs || []).filter(
-    (t) =>
-      (t.days || []).includes(day) &&
-      (t.classes || []).length > 0 &&
-      (t.periodIds || []).length > 0
-  );
-  if (dayTabs.length === 0) {
+  // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
+  const rawSections = computeSections(project, day);
+  if (rawSections.length === 0) {
     return (
       <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
         {day}曜日を使う学年がありません。学年チップから曜日・使う時限・クラスを設定してください。
@@ -92,41 +106,58 @@ export function RegularGrid({
     );
   }
 
-  // 行 = この曜日で使われる時限の合併 (時刻順、時刻なしは末尾にプール順)
-  const usedIds = new Set(dayTabs.flatMap((t) => t.periodIds));
-  let periods = project.periods
-    .filter((p) => usedIds.has(p.id))
-    .map((p, i) => ({ p, i }))
-    .sort((x, y) => startMin(x.p.time) - startMin(y.p.time) || x.i - y.i)
-    .map((x) => x.p);
-
-  if (hideEmptyRows) {
-    periods = periods.filter((per) =>
-      dayTabs.some(
-        (t) =>
-          t.periodIds.includes(per.id) &&
-          t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
-      )
-    );
-    if (periods.length === 0) {
-      return (
-        <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
-          入力済みのセルがありません（「▤ 空行を隠す」を解除すると全マス目が表示されます）。
-        </div>
+  const sections = rawSections
+    .map((s) => {
+      const usedIds = new Set(s.tabs.flatMap((t) => t.periodIds));
+      let periods = project.periods
+        .filter((p) => usedIds.has(p.id))
+        .map((p, i) => ({ p, i }))
+        .sort((x, y) => startMin(x.p.time) - startMin(y.p.time) || x.i - y.i)
+        .map((x) => x.p);
+      if (hideEmptyRows) {
+        periods = periods.filter((per) =>
+          s.tabs.some(
+            (t) =>
+              t.periodIds.includes(per.id) &&
+              t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
+          )
+        );
+      }
+      const cols = s.tabs.flatMap((t) =>
+        t.classes.map((cls, ci) => ({ tab: t, cls, groupStart: ci === 0 }))
       );
-    }
+      const cellCount = s.tabs.reduce(
+        (n, t) =>
+          n +
+          Object.keys(t.schedule).filter((k) => {
+            const pos = parseCellKey(k);
+            return (
+              pos.day === day &&
+              t.periodIds.includes(pos.periodId) &&
+              t.classes.some((c) => c.id === pos.classId)
+            );
+          }).length,
+        0
+      );
+      return { ...s, periods, cols, cellCount, tone: sectionTone(s.tabs) };
+    })
+    .filter((s) => s.periods.length > 0);
+  if (sections.length === 0) {
+    return (
+      <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+        入力済みのセルがありません（「▤ 空行を隠す」を解除すると全マス目が表示されます）。
+      </div>
+    );
   }
 
-  // 列 = 学年ごとのクラスを平坦化 (groupStart = 学年グループの先頭列)
-  const cols = dayTabs.flatMap((t) =>
-    t.classes.map((cls, ci) => ({ tab: t, cls, groupStart: ci === 0 }))
-  );
   const available = (per, col) => col.tab.periodIds.includes(per.id);
 
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
-  const busyByTab = new Map(dayTabs.map((t) => [t.id, computeBusyTeachers(project, t)]));
+  const busyByTab = new Map(
+    sections.flatMap((s) => s.tabs).map((t) => [t.id, computeBusyTeachers(project, t)])
+  );
 
-  // ── D&D 入替 (学年をまたいだ入替も可) ───────────────────────────
+  // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
   const handleDragStart = (e, ref, cell) => {
     if (!cell.subj) {
       e.preventDefault();
@@ -156,26 +187,31 @@ export function RegularGrid({
     setDragOverRef(null);
   };
 
-  // ドラッグ中のオートスクロール (講習 N2b と同じ)。掴んだ元と落とし先が
-  // 同時に画面内に無くても、コンテナ端に寄せると少しずつスクロールする。
+  // ドラッグ中のオートスクロール。セクション表示ではページ側
+  // (.app-main) がスクロールペインなので、そちらを端寄せで動かす
   const handleContainerDragOver = (e) => {
-    const el = containerRef.current;
-    if (!el || !dragSource) return;
+    if (!dragSource) return;
+    const scroller =
+      containerRef.current?.closest(".app-main") || document.scrollingElement;
+    if (!scroller) return;
+    const isDoc = scroller === document.scrollingElement;
+    const rect = isDoc
+      ? { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }
+      : scroller.getBoundingClientRect();
     const EDGE = 56;
-    const rect = el.getBoundingClientRect();
     const step = (dist) => Math.ceil((EDGE - dist) / 3);
-    if (e.clientY - rect.top < EDGE) el.scrollTop -= step(e.clientY - rect.top);
-    else if (rect.bottom - e.clientY < EDGE) el.scrollTop += step(rect.bottom - e.clientY);
-    if (e.clientX - rect.left < EDGE) el.scrollLeft -= step(e.clientX - rect.left);
-    else if (rect.right - e.clientX < EDGE) el.scrollLeft += step(rect.right - e.clientX);
+    if (e.clientY - rect.top < EDGE) scroller.scrollTop -= step(e.clientY - rect.top);
+    else if (rect.bottom - e.clientY < EDGE)
+      scroller.scrollTop += step(rect.bottom - e.clientY);
+    if (e.clientX - rect.left < EDGE) scroller.scrollLeft -= step(e.clientX - rect.left);
+    else if (rect.right - e.clientX < EDGE)
+      scroller.scrollLeft += step(rect.right - e.clientX);
   };
 
-  // ── 矢印キーでセル間を移動 ──────────────────────────────────────
-  // 行 = 時限、列 = 全学年のクラスを平坦化した並び。↑↓ は行移動、←→ は
-  // 教科 ⇄ 講師 ⇄ 隣クラス (学年をまたいで連続、行内は端で wrap)。
-  // その学年が使わない時限のマス (グレー) はスキップして同方向へ進む。
-  // 編集中は移動先セルが自動で編集モードに入る。表示セル (field="cell")
-  // では td のフォーカス移動になる。
+  // ── 矢印キーでセル間を移動 (セクション内で完結) ──────────────────
+  // 行 = セクションの時限、列 = 学年×クラス。↑↓ は行移動、←→ は
+  // 教科 ⇄ 講師 ⇄ 隣クラス (行内は端で wrap)。使わない時限のマスは
+  // スキップ。編集中は移動先セルが自動で編集モードに入る。
   const handleNavigate = (e, cellRef, field) => {
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
     // 修飾キー付きは select のネイティブ操作 (Alt+↓ など) なので乗っ取らない
@@ -183,7 +219,13 @@ export function RegularGrid({
     e.preventDefault();
     const { tabId, key } = parseCellRef(cellRef);
     const { periodId, classId } = parseCellKey(key);
-    let r = periods.findIndex((p) => p.id === periodId);
+    const sec = sections.find((s) =>
+      s.cols.some((x) => x.tab.id === tabId && x.cls.id === classId)
+    );
+    if (!sec) return;
+    const rows = sec.periods;
+    const cols = sec.cols;
+    let r = rows.findIndex((p) => p.id === periodId);
     let c = cols.findIndex((x) => x.tab.id === tabId && x.cls.id === classId);
     let f = field;
     if (r < 0 || c < 0) return;
@@ -193,7 +235,7 @@ export function RegularGrid({
         if (r > 0) r--;
         else return false; // 上端
       } else if (e.key === "ArrowDown") {
-        if (r < periods.length - 1) r++;
+        if (r < rows.length - 1) r++;
         else return false; // 下端
       } else if (e.key === "ArrowLeft") {
         if (f === "teacher") f = "subj";
@@ -212,11 +254,11 @@ export function RegularGrid({
     };
 
     const start = `${r}|${c}|${f}`;
-    const maxSteps = periods.length * cols.length * 2 + 2;
+    const maxSteps = rows.length * cols.length * 2 + 2;
     for (let i = 0; i < maxSteps; i++) {
       if (!step()) return;
       if (`${r}|${c}|${f}` === start) return; // 一周した
-      const per = periods[r];
+      const per = rows[r];
       const col = cols[c];
       if (!per || !col) return;
       if (!available(per, col)) continue; // 使えないマスはスキップ
@@ -242,138 +284,154 @@ export function RegularGrid({
     dragEnd: handleDragEnd,
   };
 
-  const periodColW = isCompact ? "5rem" : "7rem";
-  const periodColStyle = { left: 0, width: periodColW, minWidth: periodColW };
-
   return (
     <div
       ref={containerRef}
       onDragOver={handleContainerDragOver}
-      className={`overflow-auto shadow border border-builder-border max-h-[75vh] bg-builder-bg print-container ${isCompact ? "text-xs" : "text-sm"}`}
+      className={`flex flex-wrap items-start gap-3 print-container ${isCompact ? "text-xs" : "text-sm"}`}
     >
-      <table className="w-full border-collapse text-left relative" aria-label="通常時間割表">
-        <thead className="sticky top-0 z-30 shadow-md">
-          <tr>
-            <th
-              scope="col"
-              rowSpan={2}
-              className={`bg-builder-primary text-white sticky z-40 border-r border-builder-primary-hover align-middle ${isCompact ? "p-1" : "p-2"}`}
-              style={periodColStyle}
-            >
-              時限
-            </th>
-            {dayTabs.map((t, ti) => {
-              const gc = gradeColor(t.grade || t.name);
-              return (
-                <th
-                  key={t.id}
-                  scope="colgroup"
-                  colSpan={t.classes.length}
-                  className={`border-r border-builder-border text-center font-extrabold ${isCompact ? "p-0.5 text-[11px]" : "p-1.5 text-sm"} ${ti > 0 ? GROUP_BOUNDARY : ""}`}
-                  style={{ background: gc.b, color: gc.f }}
-                >
-                  {t.name}
-                </th>
-              );
-            })}
-          </tr>
-          <tr>
-            {cols.map((col, i) => (
-              <th
-                key={`${col.tab.id}-${col.cls.id}`}
-                scope="col"
-                className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[130px]"} ${col.groupStart && i > 0 ? GROUP_BOUNDARY : ""}`}
-              >
-                {col.cls.label || "(クラス名未設定)"}
-                {/* クラス名がそのまま教室名の列 (亀21 等) は二重表示しない */}
-                {col.cls.room && col.cls.room !== col.cls.label && (
-                  <span className="font-normal text-builder-ink-subtle ml-1">
-                    {col.cls.room}
-                  </span>
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        {/* builder-day-group は印刷スタイル (printStyle.js) の改ページ制御対象 */}
-        <tbody className="builder-day-group">
-          {periods.map((per) => (
-            <tr key={per.id} className="bg-builder-surface border-b border-builder-border">
-              <th
-                scope="row"
-                className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink sticky z-10 whitespace-nowrap align-top ${isCompact ? "p-1" : "p-2"}`}
-                style={periodColStyle}
-              >
-                {/* ラベル未設定 (取込直後など) は時刻だけを見出しにする */}
-                {per.label ? (
-                  <>
-                    <span className="font-bold">{per.label}</span>
-                    {per.time && (
-                      <div className="text-builder-ink-subtle text-[10px]">{per.time}</div>
-                    )}
-                  </>
-                ) : (
-                  per.time
-                )}
-              </th>
-              {cols.map((col, i) => {
-                const boundary = col.groupStart && i > 0 ? GROUP_BOUNDARY : "";
-                if (!available(per, col)) {
-                  // この学年が使わない時限 (時刻体系の違い) はグレーで塞ぐ
-                  return (
-                    <td
+      {sections.map((s) => (
+        <section
+          key={s.key}
+          className="regb-section max-w-full bg-builder-surface border border-builder-border rounded-lg shadow overflow-hidden"
+        >
+          {/* セクション見出し (ダッシュボードの部バーに相当) */}
+          <div
+            className={`flex items-center justify-between gap-3 text-white font-bold ${isCompact ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-[13px]"}`}
+            style={{ background: s.tone.accent }}
+          >
+            <span className="truncate">{s.name}</span>
+            <span className="text-[10px] font-normal opacity-90 shrink-0">
+              {s.cellCount}コマ
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="border-collapse text-left" aria-label={`${s.name} の時間割`}>
+              <thead>
+                <tr>
+                  <th
+                    scope="col"
+                    rowSpan={2}
+                    className={`bg-builder-surface-alt text-builder-ink-muted text-center align-middle border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[3.5rem]" : "p-1 text-xs min-w-[4.5rem]"}`}
+                  >
+                    時間
+                  </th>
+                  {s.tabs.map((t, ti) => {
+                    const gc = gradeColor(t.grade || t.name);
+                    return (
+                      <th
+                        key={t.id}
+                        scope="colgroup"
+                        colSpan={t.classes.length}
+                        className={`border-r border-builder-border text-center font-extrabold ${isCompact ? "p-0.5 text-[11px]" : "p-1 text-[13px]"} ${ti > 0 ? GROUP_BOUNDARY : ""}`}
+                        style={{ background: gc.b, color: gc.f }}
+                      >
+                        {t.name}
+                      </th>
+                    );
+                  })}
+                </tr>
+                <tr>
+                  {s.cols.map((col, i) => (
+                    <th
                       key={`${col.tab.id}-${col.cls.id}`}
-                      aria-hidden="true"
-                      className={`border-r border-builder-border last:border-r-0 bg-builder-bg ${boundary}`}
-                    />
-                  );
-                }
-                const key = makeCellKey(day, per.id, col.cls.id);
-                const ref = makeCellRef(col.tab.id, key);
-                const cell = col.tab.schedule[key];
-                const reasons = conflictsByRef.get(ref);
-                const highlighted =
-                  !!highlightTeacher &&
-                  splitTeacherField(cell?.teacher).includes(highlightTeacher);
-                return (
-                  <RegularCell
-                    // プロジェクトをまたいで同じ ref が再利用されないよう
-                    // key に project.id も含める (直接入力モードの残留防止)
-                    key={`${project.id}:${ref}`}
-                    cellRef={ref}
-                    cell={cell}
-                    subjects={project.subjects}
-                    teachers={project.teachers}
-                    conflictText={reasons ? reasons.join("\n") : ""}
-                    // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
-                    // なり memo が効かない。値が同じなら文字列は等価)
-                    busyTeachers={(busyByTab.get(col.tab.id)?.get(key) || []).join("·")}
-                    highlighted={highlighted}
-                    dimmed={!!highlightTeacher && !highlighted}
-                    roomPlaceholder={col.cls.room}
-                    ariaBase={`${day} ${per.label || per.time} ${col.tab.name} ${col.cls.label}`}
-                    tdExtra={boundary}
-                    isCompact={isCompact}
-                    isEditing={editRef === ref}
-                    onStartEdit={onStartEdit}
-                    onEndEdit={onEndEdit}
-                    onCellChange={onCellChange}
-                    onClearCell={onClearCell}
-                    onNavigate={onNavigate}
-                    onDragStart={onDragStart}
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
-                    onDrop={onDrop}
-                    onDragEnd={onDragEnd}
-                    isDragOver={dragOverRef === ref}
-                    isDragSource={dragSource === ref}
-                  />
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                      scope="col"
+                      className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${col.groupStart && i > 0 ? GROUP_BOUNDARY : ""}`}
+                    >
+                      {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
+                      {col.cls.label || col.cls.room || "－"}
+                      {col.cls.label && col.cls.room && col.cls.room !== col.cls.label && (
+                        <span className="font-normal text-builder-ink-subtle ml-1">
+                          {col.cls.room}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              {/* builder-day-group は印刷スタイル (printStyle.js) の改ページ制御対象 */}
+              <tbody className="builder-day-group">
+                {s.periods.map((per) => (
+                  <tr key={per.id} className="bg-builder-surface border-b border-builder-border">
+                    <th
+                      scope="row"
+                      className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink whitespace-nowrap align-top ${isCompact ? "p-1" : "p-1.5"}`}
+                    >
+                      {/* ラベル未設定 (取込直後など) は時刻だけを見出しにする */}
+                      {per.label ? (
+                        <>
+                          <span className="font-bold">{per.label}</span>
+                          {per.time && (
+                            <div className="text-builder-ink-subtle text-[10px]">
+                              {per.time}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        per.time
+                      )}
+                    </th>
+                    {s.cols.map((col, i) => {
+                      const boundary = col.groupStart && i > 0 ? GROUP_BOUNDARY : "";
+                      if (!available(per, col)) {
+                        // この学年が使わない時限 (時刻体系の違い) はグレーで塞ぐ
+                        return (
+                          <td
+                            key={`${col.tab.id}-${col.cls.id}`}
+                            aria-hidden="true"
+                            className={`border-r border-builder-border last:border-r-0 bg-builder-bg ${boundary}`}
+                          />
+                        );
+                      }
+                      const key = makeCellKey(day, per.id, col.cls.id);
+                      const ref = makeCellRef(col.tab.id, key);
+                      const cell = col.tab.schedule[key];
+                      const reasons = conflictsByRef.get(ref);
+                      const highlighted =
+                        !!highlightTeacher &&
+                        splitTeacherField(cell?.teacher).includes(highlightTeacher);
+                      return (
+                        <RegularCell
+                          // プロジェクトをまたいで同じ ref が再利用されないよう
+                          // key に project.id も含める (直接入力モードの残留防止)
+                          key={`${project.id}:${ref}`}
+                          cellRef={ref}
+                          cell={cell}
+                          subjects={project.subjects}
+                          teachers={project.teachers}
+                          conflictText={reasons ? reasons.join("\n") : ""}
+                          // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
+                          // なり memo が効かない。値が同じなら文字列は等価)
+                          busyTeachers={(busyByTab.get(col.tab.id)?.get(key) || []).join("·")}
+                          highlighted={highlighted}
+                          dimmed={!!highlightTeacher && !highlighted}
+                          roomPlaceholder={col.cls.room}
+                          ariaBase={`${day} ${per.label || per.time} ${col.tab.name} ${col.cls.label || col.cls.room}`}
+                          tdExtra={boundary}
+                          isCompact={isCompact}
+                          isEditing={editRef === ref}
+                          onStartEdit={onStartEdit}
+                          onEndEdit={onEndEdit}
+                          onCellChange={onCellChange}
+                          onClearCell={onClearCell}
+                          onNavigate={onNavigate}
+                          onDragStart={onDragStart}
+                          onDragOver={onDragOver}
+                          onDragLeave={onDragLeave}
+                          onDrop={onDrop}
+                          onDragEnd={onDragEnd}
+                          isDragOver={dragOverRef === ref}
+                          isDragSource={dragSource === ref}
+                        />
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

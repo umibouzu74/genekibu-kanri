@@ -11,6 +11,7 @@
 //   teachers: [{ name }],                      // 講師マスタ
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
+//     group,                                   // セクション名の手動上書き (空 = 自動)
 //     classes: [{ id, label, room }],          // room はクラス既定教室 (セルで上書き可)
 //     days: string[],                          // 使う曜日 ("月".."日")
 //     periodIds: number[],                     // 使う時限 (periods プールの id)
@@ -180,6 +181,7 @@ export function sanitizeProject(raw) {
             id: numOr(x.id, i + 1),
             name: str(x.name, `タブ${i + 1}`),
             grade: str(x.grade),
+            group: str(x.group),
             classes: Array.isArray(x.classes)
               ? x.classes
                   .filter((c) => c && typeof c === "object")
@@ -233,6 +235,78 @@ export function sanitizeWorkspace(raw) {
     ? raw.activeProjectId
     : projects[0].id;
   return { version: 2, activeProjectId, projects };
+}
+
+// ─── セクション分け (曜日ビューの表の単位) ──────────────────────────
+// ダッシュボードの時間割ビューと同じく、曜日ビューは「時間軸を共有する
+// 学年のまとまり」ごとに別テーブルにする。
+// - tab.group (手動のグループ名) があればその名前でまとめる
+// - 未設定の学年は「使う時限を 1 つでも共有する学年」を推移的に自動で
+//   同じセクションへ (中1・中2・中3 は同居、時刻体系の違う高校部は別)
+// 並びはタブの定義順 (各セクションの先頭タブの位置)。
+
+/**
+ * @returns {{key: string, name: string, auto: boolean, tabs: object[]}[]}
+ */
+export function computeSections(project, day) {
+  const dayTabs = (project.tabs || []).filter(
+    (t) =>
+      (t.days || []).includes(day) &&
+      (t.classes || []).length > 0 &&
+      (t.periodIds || []).length > 0
+  );
+
+  const manual = new Map(); // グループ名 → tabs
+  const autoTabs = [];
+  for (const t of dayTabs) {
+    const g = (t.group || "").trim();
+    if (g) {
+      if (!manual.has(g)) manual.set(g, []);
+      manual.get(g).push(t);
+    } else {
+      autoTabs.push(t);
+    }
+  }
+
+  // 時限を共有する学年を推移的にまとめる (小規模なので単純マージで十分)
+  const clusters = []; // {ids: Set<periodId>, tabs: []}
+  for (const t of autoTabs) {
+    const hit = clusters.filter((c) => (t.periodIds || []).some((id) => c.ids.has(id)));
+    if (hit.length === 0) {
+      clusters.push({ ids: new Set(t.periodIds), tabs: [t] });
+    } else {
+      const base = hit[0];
+      base.tabs.push(t);
+      for (const id of t.periodIds) base.ids.add(id);
+      for (const c of hit.slice(1)) {
+        base.tabs.push(...c.tabs);
+        for (const id of c.ids) base.ids.add(id);
+        clusters.splice(clusters.indexOf(c), 1);
+      }
+    }
+  }
+
+  const order = new Map((project.tabs || []).map((t, i) => [t.id, i]));
+  const sections = [
+    ...[...manual.entries()].map(([name, tabs]) => ({
+      key: `g:${name}`,
+      name,
+      auto: false,
+      tabs,
+    })),
+    ...clusters.map((c) => ({
+      key: `a:${c.tabs.map((t) => t.id).sort((x, y) => x - y).join("-")}`,
+      name: "",
+      auto: true,
+      tabs: c.tabs,
+    })),
+  ];
+  for (const s of sections) {
+    s.tabs.sort((a, b) => order.get(a.id) - order.get(b.id));
+    if (s.auto) s.name = s.tabs.map((t) => t.name).join("・");
+  }
+  sections.sort((a, b) => order.get(a.tabs[0].id) - order.get(b.tabs[0].id));
+  return sections;
 }
 
 // ─── 参照ヘルパ ─────────────────────────────────────────────────────

@@ -247,12 +247,12 @@ export default function RegularBuilderApp({
   }, [project, addProject]);
 
   const importProject = useCallback(
-    ({ sourceId, name, applyShift, splitWeekend }) => {
+    ({ sourceId, name, applyShift, splitWeekend, splitBuilding }) => {
       const { project: imported, stats } = buildProjectFromSlots(
         name,
         slots,
         sourceId,
-        { splitWeekend }
+        { splitWeekend, splitBuilding }
       );
       let final = imported;
       let shiftMsg = "";

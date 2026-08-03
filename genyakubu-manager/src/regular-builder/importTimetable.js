@@ -22,13 +22,19 @@ import { createDefaultProject, makeCellKey, parseCellKey, REGULAR_DAYS } from ".
 
 const WEEKEND_DAYS = new Set(["土", "日"]);
 
+// 亀井町校舎の教室は「亀◯◯」。建物分割 (splitBuilding) の判定に使う
+const isAnnexRoom = (room) => /^亀/.test((room || "").trim());
+
 /**
  * @param {string} name プロジェクト名
  * @param {import("../types").Slot[]} allSlots 本体の全コマ
  * @param {number} timetableId 取込元の時間割 id
- * @param {{splitWeekend?: boolean}} [opts] splitWeekend: 平日と土日の両方に
- *   コマがある学年を「中3」「中3 (土)」の 2 タブに分ける (時刻体系が曜日で
- *   違う学年のグリッドが締まる)
+ * @param {{splitWeekend?: boolean, splitBuilding?: boolean}} [opts]
+ *   splitWeekend: 平日と土日の両方にコマがある学年を「中3」「中3 (土)」の
+ *   2 タブに分ける (時刻体系が曜日で違う学年のグリッドが締まる)。
+ *   splitBuilding: 教室が「亀◯◯」(亀井町) のコマとそれ以外の両方がある
+ *   学年を「高2」「高2 (亀)」に分ける (曜日ビューで本校と亀井町が別
+ *   セクションに分かれ、ダッシュボードと同じ構図になる)
  * @returns {{project: object, stats: {slotCount: number, tabCount: number, parallelColumns: number}}}
  */
 export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
@@ -64,17 +70,39 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
   const tabSpecs = []; // {name, grade, slots}
   for (const grade of ordered) {
     const gradeSlots = slots.filter((s) => s.grade === grade);
-    if (opts.splitWeekend) {
-      const weekday = gradeSlots.filter((s) => !WEEKEND_DAYS.has(s.day));
-      const weekend = gradeSlots.filter((s) => WEEKEND_DAYS.has(s.day));
-      if (weekday.length && weekend.length) {
-        const suffix = weekend.some((s) => s.day === "日") ? " (土日)" : " (土)";
-        tabSpecs.push({ name: grade, grade, slots: weekday });
-        tabSpecs.push({ name: `${grade}${suffix}`, grade, slots: weekend });
-        continue;
-      }
+    // 建物 (亀井町) → 平日/土日 の順に分割し、両方に該当すれば
+    // 「高2 (亀・土)」のようにサフィックスを連結する
+    let buckets = [{ suffixes: [], slots: gradeSlots }];
+    if (opts.splitBuilding) {
+      buckets = buckets.flatMap((b) => {
+        const main = b.slots.filter((s) => !isAnnexRoom(s.room));
+        const annex = b.slots.filter((s) => isAnnexRoom(s.room));
+        if (!main.length || !annex.length) return [b];
+        return [
+          { suffixes: [...b.suffixes], slots: main },
+          { suffixes: [...b.suffixes, "亀"], slots: annex },
+        ];
+      });
     }
-    tabSpecs.push({ name: grade, grade, slots: gradeSlots });
+    if (opts.splitWeekend) {
+      buckets = buckets.flatMap((b) => {
+        const weekday = b.slots.filter((s) => !WEEKEND_DAYS.has(s.day));
+        const weekend = b.slots.filter((s) => WEEKEND_DAYS.has(s.day));
+        if (!weekday.length || !weekend.length) return [b];
+        const wk = weekend.some((s) => s.day === "日") ? "土日" : "土";
+        return [
+          { suffixes: [...b.suffixes], slots: weekday },
+          { suffixes: [...b.suffixes, wk], slots: weekend },
+        ];
+      });
+    }
+    for (const b of buckets) {
+      tabSpecs.push({
+        name: b.suffixes.length ? `${grade} (${b.suffixes.join("・")})` : grade,
+        grade,
+        slots: b.slots,
+      });
+    }
   }
 
   let parallelColumns = 0;

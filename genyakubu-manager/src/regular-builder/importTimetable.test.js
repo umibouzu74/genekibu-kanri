@@ -291,3 +291,53 @@ describe("buildProjectFromSlots - splitWeekend (平日/土曜のタブ分割)", 
     expect(plan.drafts).toHaveLength(INIT_SLOTS.length);
   });
 });
+
+describe("buildProjectFromSlots - splitBuilding (本校/亀井町のタブ分割)", () => {
+  const mixed = [
+    S({ id: 1, grade: "高2", cls: "", room: "404", time: "18:30-19:30", subj: "英語", teacher: "今津" }),
+    S({ id: 2, grade: "高2", cls: "", room: "亀62", time: "19:00-20:20", subj: "数学", teacher: "福武" }),
+    S({ id: 3, grade: "高1", cls: "", room: "401", time: "18:30-19:30", subj: "数学", teacher: "石原" }),
+  ];
+
+  it("亀◯◯教室のコマとそれ以外がある学年を「高2」「高2 (亀)」に分ける", () => {
+    const { project } = buildProjectFromSlots("x", mixed, 1, { splitBuilding: true });
+    expect(project.tabs.map((t) => t.name)).toEqual(["高1", "高2", "高2 (亀)"]);
+    // 両タブとも grade は反映用に「高2」のまま
+    expect(project.tabs.filter((t) => t.grade === "高2")).toHaveLength(2);
+    const annex = project.tabs.find((t) => t.name === "高2 (亀)");
+    expect(annex.classes.map((c) => c.room)).toEqual(["亀62"]);
+    expect(annex.periodIds).toHaveLength(1);
+  });
+
+  it("片方の建物しか無い学年は分割しない", () => {
+    const { project } = buildProjectFromSlots("x", mixed, 1, { splitBuilding: true });
+    expect(project.tabs.filter((t) => t.grade === "高1")).toHaveLength(1);
+  });
+
+  it("オプション無しでは従来どおり 1 学年 1 タブ", () => {
+    const { project } = buildProjectFromSlots("x", mixed, 1);
+    expect(project.tabs.map((t) => t.name)).toEqual(["高1", "高2"]);
+  });
+
+  it("splitWeekend と併用すると「高2 (亀・土)」のように連結される", () => {
+    const slots = [
+      ...mixed,
+      S({ id: 4, grade: "高2", cls: "", room: "亀62", time: "19:00-20:20", day: "土" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1, {
+      splitBuilding: true,
+      splitWeekend: true,
+    });
+    expect(project.tabs.map((t) => t.name)).toEqual([
+      "高1",
+      "高2",
+      "高2 (亀)",
+      "高2 (亀・土)",
+    ]);
+  });
+
+  it("分割しても取込コマの総数は変わらない (round-trip 保証の前提)", () => {
+    const { project } = buildProjectFromSlots("x", mixed, 1, { splitBuilding: true });
+    expect(resolveAllEntries(project)).toHaveLength(mixed.length);
+  });
+});

@@ -13,6 +13,7 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
   const [name, setName] = useState(timetables[0]?.name ?? "");
   const [applyShift, setApplyShift] = useState(false);
   const [splitWeekend, setSplitWeekend] = useState(true);
+  const [splitBuilding, setSplitBuilding] = useState(true);
 
   const count = useMemo(
     () => slots.filter((s) => (s.timetableId ?? 1) === Number(sourceId)).length,
@@ -80,6 +81,22 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
         <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
           <input
             type="checkbox"
+            checked={splitBuilding}
+            onChange={(e) => setSplitBuilding(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            教室の建物（亀井町）で学年タブを分ける
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+              教室が「亀◯◯」のコマとそれ以外の両方がある学年を「高2」「高2 (亀)」のように分けます。
+              曜日ビューで本校と亀井町が別の表に分かれ、ダッシュボードと同じ構図になります。
+            </div>
+          </span>
+        </label>
+
+        <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+          <input
+            type="checkbox"
             checked={applyShift}
             onChange={(e) => setApplyShift(e.target.checked)}
             style={{ marginTop: 2 }}
@@ -105,6 +122,7 @@ export function ImportDialog({ timetables, slots, onImport, onClose }) {
                 name: name.trim(),
                 applyShift,
                 splitWeekend,
+                splitBuilding,
               })
             }
             disabled={!name.trim() || count === 0}
