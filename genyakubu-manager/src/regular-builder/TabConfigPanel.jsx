@@ -61,10 +61,31 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
             className={`${UI.input} mt-0.5 block w-36 font-normal`}
           />
         </label>
+        <label className="text-xs font-bold text-builder-ink">
+          グループ（表のまとまり・任意）
+          <input
+            type="text"
+            value={tab.group || ""}
+            onChange={(e) => updateTab(tab.id, (t) => ({ ...t, group: e.target.value }))}
+            placeholder="例: 高校部・本校"
+            list="regb-groups"
+            className={`${UI.input} mt-0.5 block w-40 font-normal`}
+          />
+          <span className="block text-[10px] font-normal text-builder-ink-subtle leading-relaxed mt-0.5">
+            同じグループ名の学年が 1 つの表にまとまります。空欄なら「時限が重なる学年」と自動で同居します。
+          </span>
+        </label>
         <datalist id="regb-grades">
           {ALL_GRADES.map((g) => (
             <option key={g} value={g} />
           ))}
+        </datalist>
+        <datalist id="regb-groups">
+          {[...new Set(project.tabs.map((t) => (t.group || "").trim()).filter(Boolean))].map(
+            (g) => (
+              <option key={g} value={g} />
+            )
+          )}
         </datalist>
       </div>
 

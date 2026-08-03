@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeSections,
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
@@ -198,5 +199,71 @@ describe("makeCellRef / parseCellRef / swapCellsAcrossTabs", () => {
   it("存在しないタブ参照は no-op", () => {
     const ts = tabs();
     expect(swapCellsAcrossTabs(ts, "1:月|1|1", "9:月|1|1")).toBe(ts);
+  });
+});
+
+describe("computeSections", () => {
+  const tab = (id, name, over = {}) => ({
+    id,
+    name,
+    grade: name,
+    group: "",
+    classes: [{ id: 1, label: "S", room: "" }],
+    days: ["月"],
+    periodIds: [1, 2],
+    schedule: {},
+    ...over,
+  });
+  const proj = (tabs) => ({ periods: [], tabs });
+
+  it("時限を共有する学年は自動で同じセクションにまとまる", () => {
+    const p = proj([tab(1, "中1"), tab(2, "中2"), tab(3, "高1", { periodIds: [11, 12] })]);
+    const sections = computeSections(p, "月");
+    expect(sections.map((s) => s.name)).toEqual(["中1・中2", "高1"]);
+    expect(sections[0].tabs.map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  it("推移的にまとまる (A∩B, B∩C 共有なら A,B,C 同居)", () => {
+    const p = proj([
+      tab(1, "A", { periodIds: [1, 2] }),
+      tab(2, "C", { periodIds: [3, 4] }),
+      tab(3, "B", { periodIds: [2, 3] }), // A とも C とも共有
+    ]);
+    const sections = computeSections(p, "月");
+    expect(sections).toHaveLength(1);
+    expect(sections[0].tabs.map((t) => t.name)).toEqual(["A", "C", "B"]);
+  });
+
+  it("group (手動グループ名) が最優先で、名前ごとにまとまる", () => {
+    const p = proj([
+      tab(1, "高1", { group: "本校" }),
+      tab(2, "高2 (亀)", { group: "亀井町", periodIds: [21] }),
+      tab(3, "高2", { group: "本校" }),
+    ]);
+    const sections = computeSections(p, "月");
+    expect(sections.map((s) => s.name)).toEqual(["本校", "亀井町"]);
+    expect(sections[0].tabs.map((t) => t.id)).toEqual([1, 3]);
+    expect(sections[0].auto).toBe(false);
+  });
+
+  it("その曜日を使わない学年・未設定タブは出ない", () => {
+    const p = proj([
+      tab(1, "中1"),
+      tab(2, "中3 (土)", { days: ["土"] }),
+      tab(3, "空タブ", { classes: [] }),
+    ]);
+    const sections = computeSections(p, "月");
+    expect(sections).toHaveLength(1);
+    expect(sections[0].tabs.map((t) => t.name)).toEqual(["中1"]);
+  });
+
+  it("セクションの並びはタブ定義順 (先頭タブの位置)", () => {
+    const p = proj([
+      tab(1, "高1", { periodIds: [11] }),
+      tab(2, "中1", { periodIds: [1] }),
+      tab(3, "高2", { periodIds: [11] }),
+    ]);
+    const sections = computeSections(p, "月");
+    expect(sections.map((s) => s.name)).toEqual(["高1・高2", "中1"]);
   });
 });
