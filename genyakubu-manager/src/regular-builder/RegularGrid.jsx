@@ -6,7 +6,7 @@ import {
   parseCellKey,
   parseCellRef,
 } from "./model";
-import { computeBusyTeachers } from "./conflicts";
+import { computeBusyTeachersForTabs } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
 import { RegularCell } from "./RegularCell";
@@ -153,8 +153,10 @@ export function RegularGrid({
   const available = (per, col) => col.tab.periodIds.includes(per.id);
 
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
-  const busyByTab = new Map(
-    sections.flatMap((s) => s.tabs).map((t) => [t.id, computeBusyTeachers(project, t)])
+  // (全セルの解決は 1 回で済む一括版を使う)
+  const busyByTab = computeBusyTeachersForTabs(
+    project,
+    sections.flatMap((s) => s.tabs)
   );
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────

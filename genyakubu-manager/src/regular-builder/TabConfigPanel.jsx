@@ -42,7 +42,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
     <div className="no-print bg-builder-surface border border-builder-info-border rounded-lg p-3.5 flex flex-col gap-2.5">
       <div className="flex gap-3 flex-wrap">
         <label className="text-xs font-bold text-builder-ink">
-          タブ名
+          表示名（チップ・表の見出しに出ます）
           <input
             type="text"
             value={tab.name}
@@ -185,7 +185,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
 
       <div className="flex justify-end">
         <button type="button" className={UI.btnDanger} onClick={onRemoveTab}>
-          このタブを削除
+          この学年を削除
         </button>
       </div>
     </div>

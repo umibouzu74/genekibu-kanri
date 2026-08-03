@@ -100,15 +100,12 @@ export function computeConflicts(project) {
 }
 
 /**
- * 表示中タブの各マス (空セル含む) について、「その曜日 × 時間帯」に他の
- * セル (タブ横断) で既に割り当てられている講師名を返す。セルの講師
- * プルダウンで選択前に「(重複)」を予告するための索引。
- * 自セルに入っている分は数えない (自分自身との重複は成立しないため)。
- * 時刻未設定・不正な時限は判定不能なので予告なし (conflicts と同基準)。
- * @returns {Map<string, string[]>} cellKey → 講師名 (ソート済み)
+ * 複数タブ分の「(重複) 予告」索引を一括計算する。全セルの解決
+ * (resolveAllEntries) は 1 回で済ませ、タブごとのループでは日別索引を
+ * 参照するだけにする (曜日ビューは全タブ分を毎レンダー参照するため)。
+ * @returns {Map<number, Map<string, string[]>>} tabId → (cellKey → 講師名)
  */
-export function computeBusyTeachers(project, tab) {
-  const result = new Map();
+export function computeBusyTeachersForTabs(project, tabs) {
   const entries = resolveAllEntries(project).filter((e) =>
     TIME_RE.test((e.period.time || "").trim())
   );
@@ -117,32 +114,50 @@ export function computeBusyTeachers(project, tab) {
     if (!byDay.has(e.day)) byDay.set(e.day, []);
     byDay.get(e.day).push(e);
   }
-  const periods = tabPeriods(project, tab);
-  for (const day of tab.days || []) {
-    const dayEntries = byDay.get(day) || [];
-    for (const per of periods) {
-      const time = (per.time || "").trim();
-      if (!TIME_RE.test(time)) continue;
-      // 時間帯の重なり判定は (曜日, 時限) につき 1 回で済ませ、
-      // クラスごとには自セルの除外だけを行う
-      const overlapping = dayEntries.filter((e) =>
-        timeOverlaps(time, e.period.time.trim())
-      );
-      if (overlapping.length === 0) continue;
-      for (const cls of tab.classes || []) {
-        const selfRef = `${tab.id}:${makeCellKey(day, per.id, cls.id)}`;
-        const names = new Set();
-        for (const e of overlapping) {
-          if (entryRef(e) === selfRef) continue;
-          for (const n of splitTeacherField(e.cell.teacher || "")) names.add(n);
-        }
-        if (names.size) {
-          result.set(makeCellKey(day, per.id, cls.id), [...names].sort());
+
+  const results = new Map();
+  for (const tab of tabs) {
+    const result = new Map();
+    const periods = tabPeriods(project, tab);
+    for (const day of tab.days || []) {
+      const dayEntries = byDay.get(day) || [];
+      for (const per of periods) {
+        const time = (per.time || "").trim();
+        if (!TIME_RE.test(time)) continue;
+        // 時間帯の重なり判定は (曜日, 時限) につき 1 回で済ませ、
+        // クラスごとには自セルの除外だけを行う
+        const overlapping = dayEntries.filter((e) =>
+          timeOverlaps(time, e.period.time.trim())
+        );
+        if (overlapping.length === 0) continue;
+        for (const cls of tab.classes || []) {
+          const selfRef = `${tab.id}:${makeCellKey(day, per.id, cls.id)}`;
+          const names = new Set();
+          for (const e of overlapping) {
+            if (entryRef(e) === selfRef) continue;
+            for (const n of splitTeacherField(e.cell.teacher || "")) names.add(n);
+          }
+          if (names.size) {
+            result.set(makeCellKey(day, per.id, cls.id), [...names].sort());
+          }
         }
       }
     }
+    results.set(tab.id, result);
   }
-  return result;
+  return results;
+}
+
+/**
+ * 単一タブの各マス (空セル含む) について、「その曜日 × 時間帯」に他の
+ * セル (タブ横断) で既に割り当てられている講師名を返す。セルの講師
+ * プルダウンで選択前に「(重複)」を予告するための索引。
+ * 自セルに入っている分は数えない (自分自身との重複は成立しないため)。
+ * 時刻未設定・不正な時限は判定不能なので予告なし (conflicts と同基準)。
+ * @returns {Map<string, string[]>} cellKey → 講師名 (ソート済み)
+ */
+export function computeBusyTeachers(project, tab) {
+  return computeBusyTeachersForTabs(project, [tab]).get(tab.id) || new Map();
 }
 
 /**

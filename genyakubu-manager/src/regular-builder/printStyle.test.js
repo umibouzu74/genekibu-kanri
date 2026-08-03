@@ -43,4 +43,8 @@ describe("REGULAR_PRINT_STYLE", () => {
   it("列見出しをページごとに繰り返すため sticky を静的化する", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/thead[^{]*\{[^}]*position:\s*static/);
   });
+
+  it("背景色を刷らせる (白文字のセクション見出しが紙面で消えないように)", () => {
+    expect(REGULAR_PRINT_STYLE).toMatch(/print-color-adjust:\s*exact/);
+  });
 });

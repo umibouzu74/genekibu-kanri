@@ -404,8 +404,8 @@ export default function RegularBuilderApp({
     if (!activeTab) return;
     const cellCount = Object.keys(activeTab.schedule).length;
     const ok = await confirm({
-      title: "タブの削除",
-      message: `タブ「${activeTab.name}」を削除しますか？\n入力済みのセル ${cellCount} 件も削除されます。`,
+      title: "学年の削除",
+      message: `学年「${activeTab.name}」を削除しますか？\n入力済みのセル ${cellCount} 件も削除されます。`,
       okLabel: "削除する",
       tone: "danger",
     });
