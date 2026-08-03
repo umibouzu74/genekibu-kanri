@@ -68,7 +68,7 @@ function FreeTextInput({
 }
 
 export const RegularCell = memo(function RegularCell({
-  cellKey,
+  cellRef,
   cell,
   subjects,
   teachers,
@@ -79,6 +79,8 @@ export const RegularCell = memo(function RegularCell({
   dimmed,
   roomPlaceholder,
   ariaBase,
+  /** td へ追加するクラス (学年グループ境界の罫線など) */
+  tdExtra = "",
   isCompact,
   isEditing,
   onStartEdit,
@@ -120,31 +122,31 @@ export const RegularCell = memo(function RegularCell({
   const subjKnown = !c.subj || subjects.includes(c.subj);
   const busySet = new Set(splitTeacherField(busyTeachers));
 
-  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`;
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`;
 
   // ── 表示モード (ダッシュボード風テキスト) ────────────────────────
   if (!isEditing) {
     return (
       <td
-        id={`regb-${cellKey}-cell`}
+        id={`regb-${cellRef}-cell`}
         tabIndex={0}
         role="button"
         aria-label={`${ariaBase} を編集`}
         title={conflictText || "クリックで編集 / ドラッグで入替"}
         className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
         draggable={!!c.subj}
-        onDragStart={(e) => onDragStart(e, cellKey, c)}
-        onDragOver={(e) => onDragOver(e, cellKey)}
+        onDragStart={(e) => onDragStart(e, cellRef, c)}
+        onDragOver={(e) => onDragOver(e, cellRef)}
         onDragLeave={onDragLeave}
-        onDrop={(e) => onDrop(e, cellKey)}
+        onDrop={(e) => onDrop(e, cellRef)}
         onDragEnd={onDragEnd}
-        onClick={() => onStartEdit(cellKey, "subj")}
+        onClick={() => onStartEdit(cellRef, "subj")}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onStartEdit(cellKey, "subj");
+            onStartEdit(cellRef, "subj");
           } else {
-            onNavigate(e, cellKey, "cell");
+            onNavigate(e, cellRef, "cell");
           }
         }}
       >
@@ -171,7 +173,7 @@ export const RegularCell = memo(function RegularCell({
                 tabIndex={-1}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onClearCell(cellKey);
+                  onClearCell(cellRef);
                 }}
                 aria-label={`${ariaBase} をクリア`}
                 title="このセルをクリア (Ctrl+Z で戻せます)"
@@ -204,11 +206,11 @@ export const RegularCell = memo(function RegularCell({
   const closeEdit = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onEndEdit(cellKey, true); // Enter/Escape はセルへフォーカスを戻す
+    onEndEdit(cellRef, true); // Enter/Escape はセルへフォーカスを戻す
   };
   const editorKeys = (field) => (e) => {
     if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
-    else onNavigate(e, cellKey, field);
+    else onNavigate(e, cellRef, field);
   };
 
   return (
@@ -217,7 +219,7 @@ export const RegularCell = memo(function RegularCell({
       title={conflictText || undefined}
       // フォーカスがセルの外へ出たら表示モードへ戻る
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onEndEdit(cellKey, false);
+        if (!e.currentTarget.contains(e.relatedTarget)) onEndEdit(cellRef, false);
       }}
     >
       <div
@@ -227,27 +229,27 @@ export const RegularCell = memo(function RegularCell({
         <div className={`flex items-center min-w-0 ${isCompact ? "gap-0.5" : "gap-1"}`}>
           {subjFreeEdit ? (
             <FreeTextInput
-              id={`regb-${cellKey}-subj`}
+              id={`regb-${cellRef}-subj`}
               ariaLabel={`${ariaBase} の教科 (直接入力)`}
               value={c.subj || ""}
               list="regb-subjects"
               placeholder="教科"
               className={`flex-1 min-w-0 rounded border-0 bg-white/70 font-bold text-builder-ink focus:outline-none ${isCompact ? "text-[11px] leading-tight py-0" : "text-[13px]"}`}
-              onChange={(v) => onCellChange(cellKey, "subj", v)}
+              onChange={(v) => onCellChange(cellRef, "subj", v)}
               onCommit={(v) => {
                 const trimmed = v.trim();
-                if (trimmed !== (c.subj || "")) onCellChange(cellKey, "subj", trimmed);
+                if (trimmed !== (c.subj || "")) onCellChange(cellRef, "subj", trimmed);
                 setSubjFreeEdit(false);
               }}
               onCancel={() => {
                 if ((c.subj || "") !== subjOriginalRef.current)
-                  onCellChange(cellKey, "subj", subjOriginalRef.current);
+                  onCellChange(cellRef, "subj", subjOriginalRef.current);
                 setSubjFreeEdit(false);
               }}
             />
           ) : (
             <select
-              id={`regb-${cellKey}-subj`}
+              id={`regb-${cellRef}-subj`}
               aria-label={`${ariaBase} の教科`}
               className={`flex-1 min-w-0 bg-transparent font-bold cursor-pointer text-builder-ink focus:outline-none ${isCompact ? "text-[11px] leading-tight py-0" : "text-[13px]"}`}
               value={c.subj || ""}
@@ -255,7 +257,7 @@ export const RegularCell = memo(function RegularCell({
                 if (e.target.value === FREE_EDIT) {
                   subjOriginalRef.current = c.subj || "";
                   setSubjFreeEdit(true);
-                } else onCellChange(cellKey, "subj", e.target.value);
+                } else onCellChange(cellRef, "subj", e.target.value);
               }}
               onKeyDown={editorKeys("subj")}
             >
@@ -280,28 +282,28 @@ export const RegularCell = memo(function RegularCell({
 
         {teacherFreeEdit ? (
           <FreeTextInput
-            id={`regb-${cellKey}-teacher`}
+            id={`regb-${cellRef}-teacher`}
             ariaLabel={`${ariaBase} の講師 (直接入力)`}
             value={c.teacher || ""}
             list="regb-teachers"
             placeholder="講師 (·区切りで複数)"
             className={`w-full rounded border-0 bg-white/70 text-builder-blue focus:outline-none ${isCompact ? "text-[10px] py-0 px-0.5" : "text-xs py-0.5 px-1"}`}
-            onChange={(v) => onCellChange(cellKey, "teacher", v)}
+            onChange={(v) => onCellChange(cellRef, "teacher", v)}
             onCommit={(v) => {
               const normalized = splitTeacherField(v).join("·");
               if (normalized !== (c.teacher || ""))
-                onCellChange(cellKey, "teacher", normalized);
+                onCellChange(cellRef, "teacher", normalized);
               setTeacherFreeEdit(false);
             }}
             onCancel={() => {
               if ((c.teacher || "") !== teacherOriginalRef.current)
-                onCellChange(cellKey, "teacher", teacherOriginalRef.current);
+                onCellChange(cellRef, "teacher", teacherOriginalRef.current);
               setTeacherFreeEdit(false);
             }}
           />
         ) : (
           <select
-            id={`regb-${cellKey}-teacher`}
+            id={`regb-${cellRef}-teacher`}
             aria-label={`${ariaBase} の講師`}
             className={`w-full rounded cursor-pointer ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-xs py-0.5"} ${!c.subj && !c.teacher ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
             value={c.teacher || ""}
@@ -309,7 +311,7 @@ export const RegularCell = memo(function RegularCell({
               if (e.target.value === FREE_EDIT) {
                 teacherOriginalRef.current = c.teacher || "";
                 setTeacherFreeEdit(true);
-              } else onCellChange(cellKey, "teacher", e.target.value);
+              } else onCellChange(cellRef, "teacher", e.target.value);
             }}
             onKeyDown={editorKeys("teacher")}
           >
@@ -337,7 +339,7 @@ export const RegularCell = memo(function RegularCell({
             type="text"
             aria-label={`${ariaBase} の教室`}
             value={c.room || ""}
-            onChange={(e) => onCellChange(cellKey, "room", e.target.value)}
+            onChange={(e) => onCellChange(cellRef, "room", e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
             }}
@@ -348,7 +350,7 @@ export const RegularCell = memo(function RegularCell({
             type="text"
             aria-label={`${ariaBase} の備考`}
             value={c.note || ""}
-            onChange={(e) => onCellChange(cellKey, "note", e.target.value)}
+            onChange={(e) => onCellChange(cellRef, "note", e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
             }}

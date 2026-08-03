@@ -12,9 +12,12 @@ import { nextNumericId } from "../utils/schema";
 import {
   createDefaultProject,
   createDefaultWorkspace,
+  parseCellRef,
   sanitizeWorkspace,
-  swapScheduleCells,
+  swapCellsAcrossTabs,
+  REGULAR_DAYS,
 } from "./model";
+import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
@@ -71,10 +74,24 @@ export default function RegularBuilderApp({
   );
   const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
+  const [selectedDay, setSelectedDay] = useState(null);
 
   const project =
     workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
     workspace.projects[0];
+
+  // いずれかの学年が使っている曜日 (曜日チップの活性判定)
+  const usedDays = useMemo(
+    () =>
+      REGULAR_DAYS.filter((d) =>
+        (project.tabs || []).some((t) => (t.days || []).includes(d))
+      ),
+    [project.tabs]
+  );
+  useEffect(() => {
+    if (selectedDay && usedDays.includes(selectedDay)) return;
+    setSelectedDay(usedDays[0] ?? null);
+  }, [usedDays, selectedDay]);
 
   // ── Undo/Redo ───────────────────────────────────────────────────
   // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
@@ -305,14 +322,13 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
-  // activeTab オブジェクトは編集のたびに新しくなるため、依存は id だけに
-  // する (オブジェクト依存だと毎編集でハンドラが再生成され、RegularCell の
-  // memo が効かなくなる)
-  const activeTabIdForEdit = activeTab?.id ?? null;
+  // セル編集は ref (`tabId:cellKey`) で対象タブを指す — 曜日ビューは
+  // 全学年のセルを同じ表に並べるため。updateTab のみ依存なので、編集の
+  // たびにハンドラが再生成されず RegularCell の memo が効く
   const onCellChange = useCallback(
-    (key, field, value) => {
-      if (activeTabIdForEdit == null) return;
-      updateTab(activeTabIdForEdit, (t) => {
+    (ref, field, value) => {
+      const { tabId, key } = parseCellRef(ref);
+      updateTab(tabId, (t) => {
         const prev = t.schedule[key] || {};
         const next = { ...prev, [field]: value };
         // 全フィールド空になったらセルごと削除して下書きを軽く保つ
@@ -325,32 +341,26 @@ export default function RegularBuilderApp({
         return { ...t, schedule };
       });
     },
-    [activeTabIdForEdit, updateTab]
+    [updateTab]
   );
 
-  // D&D でのセル入替 (講習ビルダーの handleSwapCells 相当)。
+  // D&D でのセル入替 (学年をまたぐ入替も可)。
   // 単発操作なので直前のタイピングと束ねず独立した Undo 単位にする
   const onSwapCells = useCallback(
-    (keyA, keyB) => {
-      if (activeTabIdForEdit == null) return;
-      updateTab(
-        activeTabIdForEdit,
-        (t) => ({
-          ...t,
-          schedule: swapScheduleCells(t.schedule, keyA, keyB),
-        }),
+    (refA, refB) =>
+      saveProject(
+        (p) => ({ ...p, tabs: swapCellsAcrossTabs(p.tabs, refA, refB) }),
         { atomic: true }
-      );
-    },
-    [activeTabIdForEdit, updateTab]
+      ),
+    [saveProject]
   );
 
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
   const onClearCell = useCallback(
-    (key) => {
-      if (activeTabIdForEdit == null) return;
+    (ref) => {
+      const { tabId, key } = parseCellRef(ref);
       updateTab(
-        activeTabIdForEdit,
+        tabId,
         (t) => {
           if (!(key in t.schedule)) return t;
           const schedule = { ...t.schedule };
@@ -360,13 +370,15 @@ export default function RegularBuilderApp({
         { atomic: true }
       );
     },
-    [activeTabIdForEdit, updateTab]
+    [updateTab]
   );
 
   const addTab = useCallback(() => {
+    // id は現在の描画時点で確定させ、追加後にその学年の設定を開く
+    // (単独編集前提 — 同時編集での id 衝突は考慮しない)
+    const id = nextNumericId(project.tabs);
     saveProject((p) => {
-      const id = nextNumericId(p.tabs);
-      // 直前のタブから曜日・時限の選択を引き継ぐ (講習版の「他へコピー」相当)
+      // 直前の学年から曜日・時限の選択を引き継ぐ (講習版の「他へコピー」相当)
       const last = p.tabs[p.tabs.length - 1];
       return {
         ...p,
@@ -374,7 +386,7 @@ export default function RegularBuilderApp({
           ...p.tabs,
           {
             id,
-            name: `タブ${id}`,
+            name: `学年${id}`,
             grade: "",
             classes: [],
             days: last ? [...last.days] : ["月", "火", "水", "木", "金"],
@@ -384,8 +396,9 @@ export default function RegularBuilderApp({
         ],
       };
     });
+    setActiveTabId(id);
     setShowTabConfig(true);
-  }, [saveProject]);
+  }, [project.tabs, saveProject]);
 
   const removeTab = useCallback(async () => {
     if (!activeTab) return;
@@ -598,10 +611,75 @@ export default function RegularBuilderApp({
         <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
       )}
 
-      {/* タブバー (講習ビルダーの TabBar と同じ見た目) */}
-      <div role="tablist" aria-label="学年タブ" className="no-print flex items-end gap-1 px-2 overflow-x-auto">
+      {/* 曜日切替 + 表示トグル (ダッシュボードの時間割ビューと同じ曜日基準) */}
+      <div className="no-print flex flex-wrap items-center gap-2 px-1">
+        <div className="flex items-center gap-1" role="tablist" aria-label="曜日">
+          {REGULAR_DAYS.map((d) => {
+            const used = usedDays.includes(d);
+            const selected = selectedDay === d;
+            const fg = DAY_COLOR[d] || "#555555";
+            const bg = DAY_BG[d] || "#ececec";
+            return (
+              <button
+                key={d}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                disabled={!used}
+                onClick={() => setSelectedDay(d)}
+                title={
+                  used
+                    ? `${d}曜日を表示`
+                    : `${d}曜日を使う学年がありません (学年チップの設定で追加)`
+                }
+                className="w-11 py-1.5 rounded-lg border-2 text-sm font-extrabold cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                style={
+                  selected
+                    ? { background: fg, color: "#fff", borderColor: fg }
+                    : { background: bg, color: fg, borderColor: "transparent" }
+                }
+              >
+                {d}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex gap-1 ml-auto">
+          <button
+            type="button"
+            onClick={() => setHideEmptyRows((v) => !v)}
+            title="セルが 1 つも無い時限行を表示から隠す。データは変わりません"
+            className={UI.btnToggle(hideEmptyRows)}
+          >
+            ▤ 空行を隠す
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCompact((v) => !v)}
+            title="セルを小さくして全体を見渡す"
+            className={UI.btnToggle(isCompact)}
+          >
+            🗜 コンパクト
+          </button>
+          {selectedDay && (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              title="表示中の曜日を印刷 (A4 縦)"
+              className={UI.btn}
+            >
+              🖨 印刷
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 学年チップ: クリックでその学年の設定 (名前・曜日・時限・クラス) を開閉 */}
+      <div className="no-print flex flex-wrap items-center gap-1.5 px-1">
+        <span className="text-xs font-bold text-builder-ink-muted">学年:</span>
         {project.tabs.map((t) => {
-          const selected = activeTab?.id === t.id;
+          const gc = gradeColor(t.grade || t.name);
+          const selected = showTabConfig && activeTab?.id === t.id;
           const errCount = tabConflictCounts[t.id] || 0;
           const isEmptyTab =
             (t.days || []).length === 0 ||
@@ -611,43 +689,38 @@ export default function RegularBuilderApp({
             <button
               key={t.id}
               type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setActiveTabId(t.id)}
-              onDoubleClick={() => {
-                setActiveTabId(t.id);
-                setShowTabConfig(true);
+              aria-expanded={selected}
+              onClick={() => {
+                if (selected) {
+                  setShowTabConfig(false);
+                } else {
+                  setActiveTabId(t.id);
+                  setShowTabConfig(true);
+                }
               }}
-              title="クリックで切替 / ダブルクリックでタブ設定を開く"
-              className={`px-4 py-2 rounded-t-lg border-0 cursor-pointer flex items-center gap-2 select-none transition-all whitespace-nowrap ${
-                selected
-                  ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3"
-                  : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"
-              }`}
+              title="クリックでこの学年の設定 (名前・学年・曜日・時限・クラス) を開閉"
+              className={`px-3 py-1 rounded-full border-0 cursor-pointer text-xs font-bold inline-flex items-center gap-1.5 transition-all ${selected ? "ring-2 ring-builder-blue" : ""}`}
+              style={{ background: gc.b, color: gc.f }}
             >
               {t.name}
               {errCount > 0 ? (
                 <span
-                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"
-                  title={`このタブに未承認の重複が ${errCount} 件あります`}
+                  className="text-[10px] font-bold px-1 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"
+                  title={`この学年に未承認の重複が ${errCount} 件あります`}
                   aria-label={`重複 ${errCount} 件`}
                 >
                   ⚠️{errCount}
                 </span>
               ) : isEmptyTab ? (
                 <span
-                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-warning-soft text-builder-orange border border-builder-warning-border"
-                  title="曜日・使う時限・クラスのいずれかが未設定のため、このタブにマス目がありません (⚙ タブ設定で選択)"
+                  className="text-[10px] font-bold px-1 py-0.5 rounded bg-builder-warning-soft text-builder-orange border border-builder-warning-border"
+                  title="曜日・使う時限・クラスのいずれかが未設定のため、この学年のマス目がありません"
                   aria-label="時間割マスなし"
                 >
                   空
                 </span>
               ) : (
-                <span
-                  className="text-[10px] font-bold text-builder-green"
-                  title="このタブに未承認の重複はありません"
-                  aria-label="重複なし"
-                >
+                <span title="この学年に未承認の重複はありません" aria-label="重複なし">
                   ✨
                 </span>
               )}
@@ -657,46 +730,11 @@ export default function RegularBuilderApp({
         <button
           type="button"
           onClick={addTab}
-          className="px-3 py-2 border-0 bg-transparent cursor-pointer text-builder-ink-muted hover:text-builder-blue font-bold text-sm whitespace-nowrap"
-          title="新しい学年タブを追加"
+          className="px-2.5 py-1 border-0 bg-transparent cursor-pointer text-builder-ink-muted hover:text-builder-blue font-bold text-xs whitespace-nowrap"
+          title="学年を追加"
         >
-          + タブ追加
+          + 学年追加
         </button>
-        {activeTab && (
-          <div className="flex gap-1 ml-auto pb-1">
-            <button
-              type="button"
-              onClick={() => setShowTabConfig((v) => !v)}
-              className={UI.btnToggle(showTabConfig)}
-            >
-              ⚙ タブ設定
-            </button>
-            <button
-              type="button"
-              onClick={() => setHideEmptyRows((v) => !v)}
-              title="セルが 1 つも無い時限行 (と空の曜日) を表示から隠す。データは変わりません"
-              className={UI.btnToggle(hideEmptyRows)}
-            >
-              ▤ 空行を隠す
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsCompact((v) => !v)}
-              title="セルを小さくして全体を見渡す (講習ビルダーのコンパクト表示と同じ)"
-              className={UI.btnToggle(isCompact)}
-            >
-              🗜 コンパクト
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              title="表示中のタブを印刷 (A4 縦・曜日単位で改ページ)"
-              className={UI.btn}
-            >
-              🖨 印刷
-            </button>
-          </div>
-        )}
       </div>
 
       {/* 空状態ガイド */}
@@ -712,9 +750,9 @@ export default function RegularBuilderApp({
           <br />
           1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）
           <br />
-          2. 「+ タブ追加」で学年タブを作り、曜日・使う時限・クラス（既定教室付き）を設定します
+          2. 「+ 学年追加」で学年を作り、曜日・使う時限・クラス（既定教室付き）を設定します
           <br />
-          3. マス目のプルダウンで教科・講師を選びます（講師・教室の重複は自動チェック、セルはドラッグで入替できます）
+          3. 曜日を選ぶと全学年が横に並びます。マス目をクリックして教科・講師を選びます（講師・教室の重複は自動チェック、セルはドラッグで入替できます）
           <br />
           4. 「⤴ 本体へ反映」で時間割 + コマとして書き出します（期間を設定すればヘッダのプルダウンや第N回カウントに自動で乗ります）
         </div>
@@ -729,16 +767,13 @@ export default function RegularBuilderApp({
         />
       )}
 
-      {/* 印刷専用の見出し。ツールバー・タブバーは no-print のため、これが
-          無いと紙面が無記名になりどのプロジェクト・学年か分からない
+      {/* 印刷専用の見出し。ツールバー・曜日チップは no-print のため、これが
+          無いと紙面が無記名になりどのプロジェクト・曜日か分からない
           (講習ビルダー L1f と同じ) */}
-      {activeTab && (
+      {selectedDay && (
         <div className="hidden print:block" aria-hidden="true">
           <div className="text-lg font-bold text-builder-ink">
-            {project.name || "通常時間割"} — {activeTab.name}
-            {activeTab.grade && activeTab.grade !== activeTab.name
-              ? ` (${activeTab.grade})`
-              : ""}
+            {project.name || "通常時間割"} — {selectedDay}曜日
           </div>
           <div className="text-xs text-builder-ink-muted">
             印刷日: {formatPrintDateJa(new Date())}
@@ -746,10 +781,10 @@ export default function RegularBuilderApp({
         </div>
       )}
 
-      {activeTab && (
+      {selectedDay ? (
         <RegularGrid
           project={project}
-          tab={activeTab}
+          day={selectedDay}
           onCellChange={onCellChange}
           onClearCell={onClearCell}
           onSwapCells={onSwapCells}
@@ -758,6 +793,12 @@ export default function RegularBuilderApp({
           hideEmptyRows={hideEmptyRows}
           isCompact={isCompact}
         />
+      ) : (
+        project.tabs.length > 0 && (
+          <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+            表示できる曜日がありません。学年チップからどの曜日を使うか設定してください。
+          </div>
+        )
       )}
 
       {showReflect && (
