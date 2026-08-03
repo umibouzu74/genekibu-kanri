@@ -31,6 +31,15 @@ export const REGULAR_PRINT_STYLE = `
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /* 全曜日印刷: 曜日ブロックごとに改ページ (先頭は除く) */
+  .regb-print-day {
+    break-before: page;
+    page-break-before: always;
+  }
+  .regb-print-day:first-child {
+    break-before: auto;
+    page-break-before: auto;
+  }
   /* セクションは縦積みで全幅・途中で改ページしない */
   .print-container .regb-section {
     break-inside: avoid;

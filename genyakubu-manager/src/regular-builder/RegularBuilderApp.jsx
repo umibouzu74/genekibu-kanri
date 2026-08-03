@@ -12,6 +12,7 @@ import { nextNumericId } from "../utils/schema";
 import {
   createDefaultProject,
   createDefaultWorkspace,
+  parseCellKey,
   parseCellRef,
   sanitizeWorkspace,
   swapCellsAcrossTabs,
@@ -92,6 +93,38 @@ export default function RegularBuilderApp({
     if (selectedDay && usedDays.includes(selectedDay)) return;
     setSelectedDay(usedDays[0] ?? null);
   }, [usedDays, selectedDay]);
+
+  // 曜日ごとの入力済みコマ数 (曜日チップの小バッジ)。設定変更で無効に
+  // なった残骸セルは数えない (resolveTabEntries と同じ判定)
+  const dayCellCounts = useMemo(() => {
+    const counts = {};
+    for (const t of project.tabs || []) {
+      const dset = new Set(t.days || []);
+      const pset = new Set(t.periodIds || []);
+      const cset = new Set((t.classes || []).map((c) => c.id));
+      for (const k of Object.keys(t.schedule || {})) {
+        const pos = parseCellKey(k);
+        if (dset.has(pos.day) && pset.has(pos.periodId) && cset.has(pos.classId)) {
+          counts[pos.day] = (counts[pos.day] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [project.tabs]);
+
+  // 全曜日まとめて印刷: true の間だけ print 専用の全曜日 DOM を描画して
+  // window.print() し、ダイアログが閉じたら (afterprint) 元に戻す
+  const [printAllDays, setPrintAllDays] = useState(false);
+  useEffect(() => {
+    if (!printAllDays) return;
+    const done = () => setPrintAllDays(false);
+    window.addEventListener("afterprint", done);
+    const t = setTimeout(() => window.print(), 50); // 描画が反映されてから
+    return () => {
+      window.removeEventListener("afterprint", done);
+      clearTimeout(t);
+    };
+  }, [printAllDays]);
 
   // ── Undo/Redo ───────────────────────────────────────────────────
   // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
@@ -400,6 +433,29 @@ export default function RegularBuilderApp({
     setShowTabConfig(true);
   }, [project.tabs, saveProject]);
 
+  // 学年チップの並べ替え (セクションの並びはタブ定義順に追従する)
+  const reorderTabs = useCallback(
+    (fromIdx, toIdx) =>
+      saveProject(
+        (p) => {
+          if (
+            fromIdx === toIdx ||
+            fromIdx < 0 ||
+            toIdx < 0 ||
+            fromIdx >= p.tabs.length ||
+            toIdx >= p.tabs.length
+          )
+            return p;
+          const tabs = [...p.tabs];
+          const [moved] = tabs.splice(fromIdx, 1);
+          tabs.splice(toIdx, 0, moved);
+          return { ...p, tabs };
+        },
+        { atomic: true }
+      ),
+    [saveProject]
+  );
+
   const removeTab = useCallback(async () => {
     if (!activeTab) return;
     const cellCount = Object.keys(activeTab.schedule).length;
@@ -632,14 +688,20 @@ export default function RegularBuilderApp({
                     ? `${d}曜日を表示`
                     : `${d}曜日を使う学年がありません (学年チップの設定で追加)`
                 }
-                className="w-11 py-1.5 rounded-lg border-2 text-sm font-extrabold cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-11 py-1 rounded-lg border-2 text-sm font-extrabold cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                 style={
                   selected
                     ? { background: fg, color: "#fff", borderColor: fg }
                     : { background: bg, color: fg, borderColor: "transparent" }
                 }
               >
-                {d}
+                <div className="leading-tight">{d}</div>
+                {/* 入力済みコマ数 (埋まりの薄い曜日に気付ける) */}
+                {used && (
+                  <div className="text-[9px] font-normal leading-tight opacity-80">
+                    {dayCellCounts[d] || 0}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -671,13 +733,23 @@ export default function RegularBuilderApp({
               🖨 印刷
             </button>
           )}
+          {usedDays.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setPrintAllDays(true)}
+              title="全曜日をまとめて印刷 (曜日ごとに改ページ)"
+              className={UI.btn}
+            >
+              🖨 全曜日
+            </button>
+          )}
         </div>
       </div>
 
       {/* 学年チップ: クリックでその学年の設定 (名前・曜日・時限・クラス) を開閉 */}
       <div className="no-print flex flex-wrap items-center gap-1.5 px-1">
         <span className="text-xs font-bold text-builder-ink-muted">学年:</span>
-        {project.tabs.map((t) => {
+        {project.tabs.map((t, idx) => {
           const gc = gradeColor(t.grade || t.name);
           const selected = showTabConfig && activeTab?.id === t.id;
           const errCount = tabConflictCounts[t.id] || 0;
@@ -698,7 +770,33 @@ export default function RegularBuilderApp({
                   setShowTabConfig(true);
                 }
               }}
-              title="クリックでこの学年の設定 (名前・学年・曜日・時限・クラス) を開閉"
+              // ドラッグ (または Ctrl+←→) で並べ替え。セクションの並びも追従
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/x-regb-tab-index", String(idx));
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("text/x-regb-tab-index"))
+                  e.preventDefault();
+              }}
+              onDrop={(e) => {
+                const raw = e.dataTransfer.getData("text/x-regb-tab-index");
+                if (raw === "") return;
+                e.preventDefault();
+                const from = Number(raw);
+                if (Number.isInteger(from) && from !== idx) reorderTabs(from, idx);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  (e.ctrlKey || e.metaKey) &&
+                  (e.key === "ArrowLeft" || e.key === "ArrowRight")
+                ) {
+                  e.preventDefault();
+                  reorderTabs(idx, e.key === "ArrowLeft" ? idx - 1 : idx + 1);
+                }
+              }}
+              title="クリックで設定を開閉 / ドラッグ or Ctrl+←→ で並べ替え (表の並びに反映)"
               className={`px-3 py-1 rounded-full border-0 cursor-pointer text-xs font-bold inline-flex items-center gap-1.5 transition-all ${selected ? "ring-2 ring-builder-blue" : ""}`}
               style={{ background: gc.b, color: gc.f }}
             >
@@ -769,36 +867,65 @@ export default function RegularBuilderApp({
 
       {/* 印刷専用の見出し。ツールバー・曜日チップは no-print のため、これが
           無いと紙面が無記名になりどのプロジェクト・曜日か分からない
-          (講習ビルダー L1f と同じ) */}
-      {selectedDay && (
-        <div className="hidden print:block" aria-hidden="true">
-          <div className="text-lg font-bold text-builder-ink">
-            {project.name || "通常時間割"} — {selectedDay}曜日
+          (講習ビルダー L1f と同じ)。全曜日印刷中は単曜日側を紙面から外す */}
+      <div className={printAllDays ? "print:hidden" : ""}>
+        {selectedDay && (
+          <div className="hidden print:block" aria-hidden="true">
+            <div className="text-lg font-bold text-builder-ink">
+              {project.name || "通常時間割"} — {selectedDay}曜日
+            </div>
+            <div className="text-xs text-builder-ink-muted">
+              印刷日: {formatPrintDateJa(new Date())}
+            </div>
           </div>
-          <div className="text-xs text-builder-ink-muted">
-            印刷日: {formatPrintDateJa(new Date())}
-          </div>
-        </div>
-      )}
+        )}
 
-      {selectedDay ? (
-        <RegularGrid
-          project={project}
-          day={selectedDay}
-          onCellChange={onCellChange}
-          onClearCell={onClearCell}
-          onSwapCells={onSwapCells}
-          conflictsByRef={conflictView.byRef}
-          highlightTeacher={highlightTeacher}
-          hideEmptyRows={hideEmptyRows}
-          isCompact={isCompact}
-        />
-      ) : (
-        project.tabs.length > 0 && (
-          <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
-            表示できる曜日がありません。学年チップからどの曜日を使うか設定してください。
-          </div>
-        )
+        {selectedDay ? (
+          <RegularGrid
+            project={project}
+            day={selectedDay}
+            onCellChange={onCellChange}
+            onClearCell={onClearCell}
+            onSwapCells={onSwapCells}
+            conflictsByRef={conflictView.byRef}
+            highlightTeacher={highlightTeacher}
+            hideEmptyRows={hideEmptyRows}
+            isCompact={isCompact}
+          />
+        ) : (
+          project.tabs.length > 0 && (
+            <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+              表示できる曜日がありません。学年チップからどの曜日を使うか設定してください。
+            </div>
+          )
+        )}
+      </div>
+
+      {/* 全曜日印刷用: 印刷中だけ描画される print 専用 DOM (曜日ごとに改ページ) */}
+      {printAllDays && (
+        <div className="hidden print:block" aria-hidden="true">
+          {usedDays.map((d) => (
+            <div key={d} className="regb-print-day">
+              <div className="text-lg font-bold text-builder-ink">
+                {project.name || "通常時間割"} — {d}曜日
+              </div>
+              <div className="text-xs text-builder-ink-muted mb-1">
+                印刷日: {formatPrintDateJa(new Date())}
+              </div>
+              <RegularGrid
+                project={project}
+                day={d}
+                onCellChange={onCellChange}
+                onClearCell={onClearCell}
+                onSwapCells={onSwapCells}
+                conflictsByRef={conflictView.byRef}
+                highlightTeacher=""
+                hideEmptyRows={hideEmptyRows}
+                isCompact={isCompact}
+              />
+            </div>
+          ))}
+        </div>
       )}
 
       {showReflect && (
