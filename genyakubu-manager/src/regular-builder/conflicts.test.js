@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildConflictView,
+  computeBusyTeachers,
   computeConflicts,
   conflictKey,
   entryRef,
@@ -169,5 +170,39 @@ describe("conflictKey / buildConflictView (承認)", () => {
     p.tabs[1].schedule[makeCellKey("月", 11, 2)] = cell;
     const view = buildConflictView(computeConflicts(p).list, [key]);
     expect(view.active).toHaveLength(1);
+  });
+});
+
+describe("computeBusyTeachers - 講師プルダウンの重複予告", () => {
+  it("タブをまたぐ同時間帯に入っている講師を空セルにも予告する", () => {
+    const p = twoTabProject();
+    // 中2 タブ 月 18:55-19:40 に堀上が入っている
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上" };
+    const busy = computeBusyTeachers(p, p.tabs[0]);
+    // 中3 の 2限 (18:55-19:40) は重なるので予告あり、1限 (18:00-18:45) はなし
+    expect(busy.get(makeCellKey("月", 2, 1))).toEqual(["堀上"]);
+    expect(busy.get(makeCellKey("月", 1, 1))).toBeUndefined();
+  });
+
+  it("自セルに入っている講師は予告しない (自分自身とは重複しない)", () => {
+    const p = twoTabProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "数学", teacher: "半田" };
+    const busy = computeBusyTeachers(p, p.tabs[0]);
+    expect(busy.get(makeCellKey("月", 2, 1))).toBeUndefined();
+  });
+
+  it("複数講師セル (·区切り) は各講師に展開して予告する", () => {
+    const p = twoTabProject();
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上·半田" };
+    const busy = computeBusyTeachers(p, p.tabs[0]);
+    expect(busy.get(makeCellKey("月", 2, 1))).toEqual(["半田", "堀上"].sort());
+  });
+
+  it("時刻未設定の時限は判定不能なので予告しない", () => {
+    const p = twoTabProject();
+    p.periods[1].time = "";
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上" };
+    const busy = computeBusyTeachers(p, p.tabs[0]);
+    expect(busy.get(makeCellKey("月", 2, 1))).toBeUndefined();
   });
 });

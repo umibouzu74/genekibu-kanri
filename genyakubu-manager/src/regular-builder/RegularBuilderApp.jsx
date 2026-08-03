@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { S } from "../styles/common";
+// 講習ビルダーと同じ Tailwind エントリ (builder-* トークン / focus ring /
+// タッチ CSS)。tailwind.config.js の content に regular-builder も含まれる。
+import "../timetable-builder/tailwind.css";
 import { LS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
+import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggle";
+import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { nextNumericId } from "../utils/schema";
 import {
   createDefaultProject,
   createDefaultWorkspace,
   sanitizeWorkspace,
+  swapScheduleCells,
 } from "./model";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
@@ -17,6 +22,8 @@ import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
+import { REGULAR_PRINT_STYLE } from "./printStyle";
+import { UI } from "./ui";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
 // 講習時間割作成の操作感で通常時間割 (曜日ベース) を設計する専用ビュー。
@@ -24,6 +31,7 @@ import { ImportDialog } from "./ImportDialog";
 // できる。下書きは LS.regularBuilderProject に保存され、Firebase 設定済み
 // 環境では他の appData と同様にクラウド同期される (書込には管理者ログイン
 // が必要)。完成したら「⤴ 本体へ反映」で Timetable + Slot に書き出す。
+// UI は講習ビルダーと同じ builder-* デザイントークン (Tailwind)。
 
 const migrate = (raw) => sanitizeWorkspace(raw) || createDefaultWorkspace();
 
@@ -55,7 +63,13 @@ export default function RegularBuilderApp({
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
-  const [hideEmptyRows, setHideEmptyRows] = useState(false);
+  // 表示トグルはリロード後も保持 (講習の 📏 と同じ。明示トグルの保存であり
+  // 自動学習系ではない)
+  const [hideEmptyRows, setHideEmptyRows] = usePersistedToggle(
+    LS.regularBuilderHideEmpty,
+    false
+  );
+  const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
   const [highlightTeacher, setHighlightTeacher] = useState("");
 
   const project =
@@ -76,14 +90,16 @@ export default function RegularBuilderApp({
   const lastCommitAtRef = useRef(0);
   const [histVersion, setHistVersion] = useState(0);
 
+  // atomic: true の編集 (D&D 入替・セルクリア等の単発操作) は、直前の
+  // タイピングと束ねず必ず独立した取り消し単位にする (直後の編集も別単位)
   const commitWorkspace = useCallback(
-    (next) => {
+    (next, { atomic = false } = {}) => {
       const now = Date.now();
-      if (now - lastCommitAtRef.current > 800) {
+      if (atomic || now - lastCommitAtRef.current > 800) {
         undoStackRef.current = [...undoStackRef.current.slice(-99), wsRef.current];
       }
       redoStackRef.current = [];
-      lastCommitAtRef.current = now;
+      lastCommitAtRef.current = atomic ? 0 : now;
       saveWorkspace(next);
       setHistVersion((v) => v + 1);
     },
@@ -137,21 +153,24 @@ export default function RegularBuilderApp({
   // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
   // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
   const saveProject = useCallback(
-    (next) =>
-      commitWorkspace((w) => {
-        const activeId =
-          w.projects.some((p) => p.id === w.activeProjectId)
-            ? w.activeProjectId
-            : w.projects[0]?.id;
-        return {
-          ...w,
-          projects: w.projects.map((p) =>
-            p.id === activeId
-              ? { ...p, ...(typeof next === "function" ? next(p) : next) }
-              : p
-          ),
-        };
-      }),
+    (next, opts) =>
+      commitWorkspace(
+        (w) => {
+          const activeId =
+            w.projects.some((p) => p.id === w.activeProjectId)
+              ? w.activeProjectId
+              : w.projects[0]?.id;
+          return {
+            ...w,
+            projects: w.projects.map((p) =>
+              p.id === activeId
+                ? { ...p, ...(typeof next === "function" ? next(p) : next) }
+                : p
+            ),
+          };
+        },
+        opts
+      ),
     [commitWorkspace]
   );
 
@@ -242,6 +261,18 @@ export default function RegularBuilderApp({
     [conflictList, project.approvedConflicts]
   );
 
+  // タブ別の未承認衝突件数 (タブバーの ⚠ バッジ用)。1 つの衝突が同一タブ
+  // 内の 2 セルの場合も 1 件と数える。
+  const tabConflictCounts = useMemo(() => {
+    const counts = {};
+    for (const c of conflictView.active) {
+      for (const tabId of new Set(c.refs.map((r) => Number(r.split(":")[0])))) {
+        counts[tabId] = (counts[tabId] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [conflictView]);
+
   const approveConflict = useCallback(
     (c) =>
       saveProject((p) => ({
@@ -263,18 +294,25 @@ export default function RegularBuilderApp({
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
-    (tabId, fn) =>
-      saveProject((p) => ({
-        ...p,
-        tabs: p.tabs.map((t) => (t.id === tabId ? fn(t) : t)),
-      })),
+    (tabId, fn, opts) =>
+      saveProject(
+        (p) => ({
+          ...p,
+          tabs: p.tabs.map((t) => (t.id === tabId ? fn(t) : t)),
+        }),
+        opts
+      ),
     [saveProject]
   );
 
+  // activeTab オブジェクトは編集のたびに新しくなるため、依存は id だけに
+  // する (オブジェクト依存だと毎編集でハンドラが再生成され、RegularCell の
+  // memo が効かなくなる)
+  const activeTabIdForEdit = activeTab?.id ?? null;
   const onCellChange = useCallback(
     (key, field, value) => {
-      if (!activeTab) return;
-      updateTab(activeTab.id, (t) => {
+      if (activeTabIdForEdit == null) return;
+      updateTab(activeTabIdForEdit, (t) => {
         const prev = t.schedule[key] || {};
         const next = { ...prev, [field]: value };
         // 全フィールド空になったらセルごと削除して下書きを軽く保つ
@@ -287,7 +325,42 @@ export default function RegularBuilderApp({
         return { ...t, schedule };
       });
     },
-    [activeTab, updateTab]
+    [activeTabIdForEdit, updateTab]
+  );
+
+  // D&D でのセル入替 (講習ビルダーの handleSwapCells 相当)。
+  // 単発操作なので直前のタイピングと束ねず独立した Undo 単位にする
+  const onSwapCells = useCallback(
+    (keyA, keyB) => {
+      if (activeTabIdForEdit == null) return;
+      updateTab(
+        activeTabIdForEdit,
+        (t) => ({
+          ...t,
+          schedule: swapScheduleCells(t.schedule, keyA, keyB),
+        }),
+        { atomic: true }
+      );
+    },
+    [activeTabIdForEdit, updateTab]
+  );
+
+  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
+  const onClearCell = useCallback(
+    (key) => {
+      if (activeTabIdForEdit == null) return;
+      updateTab(
+        activeTabIdForEdit,
+        (t) => {
+          if (!(key in t.schedule)) return t;
+          const schedule = { ...t.schedule };
+          delete schedule[key];
+          return { ...t, schedule };
+        },
+        { atomic: true }
+      );
+    },
+    [activeTabIdForEdit, updateTab]
   );
 
   const addTab = useCallback(() => {
@@ -335,38 +408,28 @@ export default function RegularBuilderApp({
   }, [project.teachers]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* 入力候補 (グリッドのセルから参照するグローバル datalist) */}
-      <datalist id="regb-subjects">
-        {project.subjects.map((s) => (
-          <option key={s} value={s} />
-        ))}
-      </datalist>
+    <div className="builder-root font-sans flex flex-col gap-3">
+      <style>{REGULAR_PRINT_STYLE}</style>
+      {/* 入力候補 (セルの「✎ 直接入力」から参照するグローバル datalist) */}
       <datalist id="regb-teachers">
         {project.teachers.map((t) => (
           <option key={t.name} value={t.name} />
         ))}
       </datalist>
+      <datalist id="regb-subjects">
+        {project.subjects.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
 
-      {/* ツールバー */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-          background: "#fff",
-          border: "1px solid #e0e0e0",
-          borderRadius: 10,
-          padding: "10px 14px",
-        }}
-      >
-        <span style={{ fontWeight: 800, fontSize: 14 }}>🏗 通常時間割作成</span>
+      {/* ツールバー (講習ビルダーの Toolbar と同じ質感) */}
+      <div className="no-print flex flex-wrap items-center gap-2 bg-builder-surface-alt border border-builder-border rounded-lg p-2">
+        <span className="font-extrabold text-sm text-builder-ink px-1">🏗 通常時間割作成</span>
         {workspace.projects.length > 1 && (
           <select
             value={project.id}
             onChange={(e) => switchProject(Number(e.target.value))}
-            style={{ ...S.input, width: "auto", minWidth: 150, fontWeight: 700 }}
+            className={`${UI.input} font-bold min-w-[150px]`}
             title="編集するプロジェクトを切替"
           >
             {workspace.projects.map((p) => (
@@ -381,16 +444,16 @@ export default function RegularBuilderApp({
           value={project.name}
           onChange={(e) => saveProject((p) => ({ ...p, name: e.target.value }))}
           placeholder="プロジェクト名 (例: 2026 2学期)"
-          style={{ ...S.input, width: 180 }}
+          className={`${UI.input} w-44`}
         />
-        <div style={{ display: "flex", gap: 3 }}>
+        <div className="flex gap-1">
           <button
             type="button"
             onClick={() =>
               addProject(createDefaultProject(), { successMsg: "プロジェクトを作成しました" })
             }
             title="空のプロジェクトを新規作成"
-            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+            className={UI.btn}
           >
             ＋新規
           </button>
@@ -398,7 +461,7 @@ export default function RegularBuilderApp({
             type="button"
             onClick={duplicateProject}
             title="このプロジェクトを複製"
-            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px" }}
+            className={UI.btn}
           >
             ⧉複製
           </button>
@@ -406,7 +469,7 @@ export default function RegularBuilderApp({
             type="button"
             onClick={() => setShowImport(true)}
             title="本体の時間割をプロジェクトとして取り込む"
-            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#e8eef8", color: "#2a4a8e" }}
+            className={UI.btnBlue}
           >
             ⬇ 本体から取込
           </button>
@@ -414,18 +477,18 @@ export default function RegularBuilderApp({
             type="button"
             onClick={removeProject}
             title="このプロジェクトを削除"
-            style={{ ...S.btn(false), fontSize: 11, padding: "4px 8px", background: "#fde8e8", color: "#c03030" }}
+            className={UI.btnDanger}
           >
             🗑
           </button>
         </div>
-        <div style={{ display: "flex", gap: 3 }}>
+        <div className="flex gap-1">
           <button
             type="button"
             onClick={undo}
             disabled={!canUndo}
             title="元に戻す (Ctrl+Z)"
-            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canUndo ? 1 : 0.4 }}
+            className={UI.btn}
           >
             ↩
           </button>
@@ -434,7 +497,7 @@ export default function RegularBuilderApp({
             onClick={redo}
             disabled={!canRedo}
             title="やり直す (Ctrl+Y / Ctrl+Shift+Z)"
-            style={{ ...S.btn(false), fontSize: 12, padding: "4px 9px", opacity: canRedo ? 1 : 0.4 }}
+            className={UI.btn}
           >
             ↪
           </button>
@@ -442,16 +505,11 @@ export default function RegularBuilderApp({
         <button
           type="button"
           onClick={() => setShowConflicts((v) => !v)}
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            padding: "3px 10px",
-            borderRadius: 10,
-            border: "none",
-            cursor: "pointer",
-            background: conflictView.active.length ? "#fde8e8" : "#e8f5e8",
-            color: conflictView.active.length ? "#c03030" : "#2a7a2a",
-          }}
+          className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer border transition-colors ${
+            conflictView.active.length
+              ? "bg-builder-danger-soft text-builder-red border-builder-danger-border hover:bg-builder-danger-border"
+              : "bg-builder-success-soft text-builder-green border-builder-success-border hover:bg-builder-success-border"
+          }`}
           title={
             (conflictView.active.map((c) => c.label).join("\n") ||
               "クリックで重複の一覧・承認を開閉") +
@@ -467,7 +525,7 @@ export default function RegularBuilderApp({
         <select
           value={highlightTeacher}
           onChange={(e) => setHighlightTeacher(e.target.value)}
-          style={{ ...S.input, width: "auto", minWidth: 130 }}
+          className={`${UI.input} min-w-[130px]`}
           title="選んだ講師のセルを強調表示"
         >
           <option value="">👁 講師で探す</option>
@@ -477,11 +535,11 @@ export default function RegularBuilderApp({
             </option>
           ))}
         </select>
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         <button
           type="button"
           onClick={() => setShowProjectConfig((v) => !v)}
-          style={{ ...S.btn(showProjectConfig), fontSize: 12 }}
+          className={UI.btnToggle(showProjectConfig)}
         >
           ⚙ 全体設定
         </button>
@@ -490,7 +548,7 @@ export default function RegularBuilderApp({
           onClick={() => setShowReflect(true)}
           disabled={!isAdmin}
           title={isAdmin ? "下書きを本体の時間割 + コマに書き出す" : "反映には管理者ログインが必要です"}
-          style={{ ...S.btn(true), background: "#2a4a8e", fontSize: 12, opacity: isAdmin ? 1 : 0.5 }}
+          className={UI.btnPrimary}
         >
           ⤴ 本体へ反映
         </button>
@@ -498,47 +556,36 @@ export default function RegularBuilderApp({
 
       {/* 重複の一覧・承認パネル */}
       {showConflicts && (
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e0e0e0",
-            borderRadius: 10,
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            fontSize: 12,
-          }}
-        >
-          <div style={{ fontWeight: 800, fontSize: 13 }}>講師・教室の重複</div>
+        <div className={`no-print ${UI.panel} text-xs`}>
+          <div className={UI.panelHead}>講師・教室の重複</div>
           {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
-            <div style={{ color: "#888" }}>重複はありません。</div>
+            <div className="text-builder-ink-subtle">重複はありません。</div>
           )}
           {conflictView.active.map((c) => (
-            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ flex: 1, color: "#c03030" }}>⚠ {c.label}</span>
+            <div key={conflictKey(c)} className="flex items-center gap-2">
+              <span className="flex-1 text-builder-red">⚠ {c.label}</span>
               <button
                 type="button"
                 onClick={() => approveConflict(c)}
                 title="意図した重なりとして承認し、件数と赤枠から除外する"
-                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+                className={UI.btn}
               >
                 承認
               </button>
             </div>
           ))}
           {conflictView.approved.length > 0 && (
-            <div style={{ fontWeight: 700, fontSize: 11, color: "#888", marginTop: 4 }}>
+            <div className="font-bold text-[11px] text-builder-ink-subtle mt-1">
               承認済み（意図した重なり）
             </div>
           )}
           {conflictView.approved.map((c) => (
-            <div key={conflictKey(c)} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ flex: 1, color: "#888" }}>{c.label}</span>
+            <div key={conflictKey(c)} className="flex items-center gap-2">
+              <span className="flex-1 text-builder-ink-subtle">{c.label}</span>
               <button
                 type="button"
                 onClick={() => unapproveConflict(c)}
-                style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+                className={UI.btn}
               >
                 解除
               </button>
@@ -551,65 +598,124 @@ export default function RegularBuilderApp({
         <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
       )}
 
-      {/* タブバー */}
-      <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-        {project.tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActiveTabId(t.id)}
-            style={{ ...S.btn(activeTab?.id === t.id), fontSize: 12 }}
-          >
-            {t.name}
-          </button>
-        ))}
-        <button type="button" onClick={addTab} style={{ ...S.btn(false), fontSize: 12 }}>
+      {/* タブバー (講習ビルダーの TabBar と同じ見た目) */}
+      <div role="tablist" aria-label="学年タブ" className="no-print flex items-end gap-1 px-2 overflow-x-auto">
+        {project.tabs.map((t) => {
+          const selected = activeTab?.id === t.id;
+          const errCount = tabConflictCounts[t.id] || 0;
+          const isEmptyTab =
+            (t.days || []).length === 0 ||
+            (t.periodIds || []).length === 0 ||
+            (t.classes || []).length === 0;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveTabId(t.id)}
+              onDoubleClick={() => {
+                setActiveTabId(t.id);
+                setShowTabConfig(true);
+              }}
+              title="クリックで切替 / ダブルクリックでタブ設定を開く"
+              className={`px-4 py-2 rounded-t-lg border-0 cursor-pointer flex items-center gap-2 select-none transition-all whitespace-nowrap ${
+                selected
+                  ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3"
+                  : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"
+              }`}
+            >
+              {t.name}
+              {errCount > 0 ? (
+                <span
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"
+                  title={`このタブに未承認の重複が ${errCount} 件あります`}
+                  aria-label={`重複 ${errCount} 件`}
+                >
+                  ⚠️{errCount}
+                </span>
+              ) : isEmptyTab ? (
+                <span
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-warning-soft text-builder-orange border border-builder-warning-border"
+                  title="曜日・使う時限・クラスのいずれかが未設定のため、このタブにマス目がありません (⚙ タブ設定で選択)"
+                  aria-label="時間割マスなし"
+                >
+                  空
+                </span>
+              ) : (
+                <span
+                  className="text-[10px] font-bold text-builder-green"
+                  title="このタブに未承認の重複はありません"
+                  aria-label="重複なし"
+                >
+                  ✨
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={addTab}
+          className="px-3 py-2 border-0 bg-transparent cursor-pointer text-builder-ink-muted hover:text-builder-blue font-bold text-sm whitespace-nowrap"
+          title="新しい学年タブを追加"
+        >
           + タブ追加
         </button>
         {activeTab && (
-          <button
-            type="button"
-            onClick={() => setShowTabConfig((v) => !v)}
-            style={{ ...S.btn(showTabConfig), fontSize: 12 }}
-          >
-            ⚙ タブ設定
-          </button>
-        )}
-        {activeTab && (
-          <button
-            type="button"
-            onClick={() => setHideEmptyRows((v) => !v)}
-            title="セルが 1 つも無い時限行 (と空の曜日) を表示から隠す。データは変わりません"
-            style={{ ...S.btn(hideEmptyRows), fontSize: 12 }}
-          >
-            ▤ 空行を隠す
-          </button>
+          <div className="flex gap-1 ml-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setShowTabConfig((v) => !v)}
+              className={UI.btnToggle(showTabConfig)}
+            >
+              ⚙ タブ設定
+            </button>
+            <button
+              type="button"
+              onClick={() => setHideEmptyRows((v) => !v)}
+              title="セルが 1 つも無い時限行 (と空の曜日) を表示から隠す。データは変わりません"
+              className={UI.btnToggle(hideEmptyRows)}
+            >
+              ▤ 空行を隠す
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCompact((v) => !v)}
+              title="セルを小さくして全体を見渡す (講習ビルダーのコンパクト表示と同じ)"
+              className={UI.btnToggle(isCompact)}
+            >
+              🗜 コンパクト
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              title="表示中のタブを印刷 (A4 縦・曜日単位で改ページ)"
+              className={UI.btn}
+            >
+              🖨 印刷
+            </button>
+          </div>
         )}
       </div>
 
       {/* 空状態ガイド */}
       {project.tabs.length === 0 && (
-        <div
-          style={{
-            background: "#f6f8fc",
-            border: "1px dashed #b8c4dc",
-            borderRadius: 10,
-            padding: 20,
-            fontSize: 12,
-            color: "#555",
-            lineHeight: 1.9,
-          }}
-        >
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>はじめかた</div>
-          <div style={{ marginBottom: 6 }}>
+        <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
+          <div className="font-extrabold text-[13px] mb-1">はじめかた</div>
+          <div className="mb-1.5">
             <b>今の時間割から始める（おすすめ）</b>:
             「⬇ 本体から取込」で現行の時間割をプロジェクトに変換できます。
             「中3 の 2学期変更を適用する」にチェックを入れると、平日前倒し + 土曜内申の午前枠を反映した 2学期のたたき台が一発でできます。
           </div>
-          <b>ゼロから組む場合:</b><br />
-          1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）<br />
-          2. 「+ タブ追加」で学年タブを作り、曜日・使う時限・クラス（既定教室付き）を設定します<br />
-          3. マス目に教科・講師を入力します（講師・教室の重複は自動チェック）<br />
+          <b>ゼロから組む場合:</b>
+          <br />
+          1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）
+          <br />
+          2. 「+ タブ追加」で学年タブを作り、曜日・使う時限・クラス（既定教室付き）を設定します
+          <br />
+          3. マス目のプルダウンで教科・講師を選びます（講師・教室の重複は自動チェック、セルはドラッグで入替できます）
+          <br />
           4. 「⤴ 本体へ反映」で時間割 + コマとして書き出します（期間を設定すればヘッダのプルダウンや第N回カウントに自動で乗ります）
         </div>
       )}
@@ -623,14 +729,34 @@ export default function RegularBuilderApp({
         />
       )}
 
+      {/* 印刷専用の見出し。ツールバー・タブバーは no-print のため、これが
+          無いと紙面が無記名になりどのプロジェクト・学年か分からない
+          (講習ビルダー L1f と同じ) */}
+      {activeTab && (
+        <div className="hidden print:block" aria-hidden="true">
+          <div className="text-lg font-bold text-builder-ink">
+            {project.name || "通常時間割"} — {activeTab.name}
+            {activeTab.grade && activeTab.grade !== activeTab.name
+              ? ` (${activeTab.grade})`
+              : ""}
+          </div>
+          <div className="text-xs text-builder-ink-muted">
+            印刷日: {formatPrintDateJa(new Date())}
+          </div>
+        </div>
+      )}
+
       {activeTab && (
         <RegularGrid
           project={project}
           tab={activeTab}
           onCellChange={onCellChange}
+          onClearCell={onClearCell}
+          onSwapCells={onSwapCells}
           conflictsByRef={conflictView.byRef}
           highlightTeacher={highlightTeacher}
           hideEmptyRows={hideEmptyRows}
+          isCompact={isCompact}
         />
       )}
 
