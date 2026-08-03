@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { makeCellKey, tabPeriods } from "./model";
 import { computeBusyTeachers } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
@@ -31,6 +31,34 @@ export function RegularGrid({
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
+
+  // display-first 編集: 編集中セルは常に 1 つ (null = 全セル表示モード)。
+  // フォーカスは「編集開始 → 編集セルの select」「Enter/Escape で終了 →
+  // 表示セル (td)」へ、レンダー後に pendingFocusRef 経由で移す。
+  const [editKey, setEditKey] = useState(null);
+  const pendingFocusRef = useRef(null);
+  useEffect(() => {
+    const p = pendingFocusRef.current;
+    if (!p) return;
+    pendingFocusRef.current = null;
+    document.getElementById(`regb-${p.key}-${p.field}`)?.focus();
+  });
+
+  const onStartEdit = useCallback((key, field = "subj") => {
+    pendingFocusRef.current = { key, field };
+    setEditKey(key);
+  }, []);
+  const onEndEdit = useCallback((key, refocus) => {
+    if (refocus && key) pendingFocusRef.current = { key, field: "cell" };
+    setEditKey(null);
+  }, []);
+
+  // タブ / プロジェクトを切り替えたら編集状態は持ち越さない
+  // (cellKey は位置ベースで、別タブの同位置セルと同じ値になるため)
+  useEffect(() => {
+    setEditKey(null);
+    pendingFocusRef.current = null;
+  }, [project.id, tab.id]);
 
   // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
   // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
@@ -119,9 +147,11 @@ export function RegularGrid({
   };
 
   // ── 矢印キーでセル間を移動 (講習 E1b の簡易版) ──────────────────
-  // 行 = 表示中の (曜日, 時限) を平坦化した並び。↑↓ は行移動、←→ は
-  // 教科 ⇄ 講師 ⇄ 隣クラスへ連続移動 (行内は端で wrap)。disabled な
-  // 講師 select はスキップして次のフォーカス可能な要素を探す。
+  // 行 = 表示中の (曜日, 時限) を平坦化した並び。↑↓ は行移動。
+  // - 編集中 (field = subj/teacher): ←→ は 教科 ⇄ 講師 ⇄ 隣クラスへ連続
+  //   移動 (行内は端で wrap)。移動先セルは自動で編集モードに入る
+  //   (display-first でも矢印だけで連続入力できる)
+  // - 表示セル (field = "cell"): ←→ は隣クラスの表示セルへフォーカス移動
   const rows = [];
   for (const day of days) {
     for (const per of periodsByDay.get(day)) rows.push({ day, periodId: per.id });
@@ -133,50 +163,43 @@ export function RegularGrid({
     e.preventDefault();
     const classes = tab.classes;
     const [day, periodIdStr, classIdStr] = cellKey.split("|");
-    let pos = {
+    let { r, c, f } = {
       r: rows.findIndex((x) => x.day === day && x.periodId === Number(periodIdStr)),
       c: classes.findIndex((x) => x.id === Number(classIdStr)),
       f: field,
     };
-    if (pos.r < 0 || pos.c < 0) return;
+    if (r < 0 || c < 0) return;
 
-    const step = (p) => {
-      let { r, c, f } = p;
-      if (e.key === "ArrowUp") {
-        if (r > 0) r--;
-        else return null;
-      } else if (e.key === "ArrowDown") {
-        if (r < rows.length - 1) r++;
-        else return null;
-      } else if (e.key === "ArrowLeft") {
-        if (f === "teacher") f = "subj";
-        else if (c > 0) { c--; f = "teacher"; }
-        else { c = classes.length - 1; f = "teacher"; } // 行頭 → 行末へ wrap
-      } else if (e.key === "ArrowRight") {
+    if (e.key === "ArrowUp") {
+      if (r > 0) r--;
+      else return; // 上端
+    } else if (e.key === "ArrowDown") {
+      if (r < rows.length - 1) r++;
+      else return; // 下端
+    } else if (e.key === "ArrowLeft") {
+      if (f === "teacher") f = "subj";
+      else {
+        c = c > 0 ? c - 1 : classes.length - 1; // 行頭 → 行末へ wrap
         if (f === "subj") f = "teacher";
-        else if (c < classes.length - 1) { c++; f = "subj"; }
-        else { c = 0; f = "subj"; } // 行末 → 行頭へ wrap
       }
-      return { r, c, f };
-    };
+    } else if (e.key === "ArrowRight") {
+      if (f === "subj") f = "teacher";
+      else {
+        c = c < classes.length - 1 ? c + 1 : 0; // 行末 → 行頭へ wrap
+        if (f === "teacher") f = "subj";
+      }
+    }
 
-    const startKey = `${pos.r}|${pos.c}|${pos.f}`;
-    const maxSteps = rows.length * classes.length * 2 + 2;
-    for (let i = 0; i < maxSteps; i++) {
-      pos = step(pos);
-      if (!pos) return; // 端で移動不能 (vertical)
-      if (`${pos.r}|${pos.c}|${pos.f}` === startKey) return; // 一周した
-      const row = rows[pos.r];
-      const cls = tab.classes[pos.c];
-      if (!row || !cls) return;
-      const el = document.getElementById(
-        `regb-${makeCellKey(row.day, row.periodId, cls.id)}-${pos.f}`
-      );
-      if (el && !el.disabled) {
-        el.focus();
-        return;
-      }
-      // 要素が無い / disabled ならスキップして次の候補へ (保険)
+    const row = rows[r];
+    const cls = classes[c];
+    if (!row || !cls) return;
+    const targetKey = makeCellKey(row.day, row.periodId, cls.id);
+    if (f === "cell") {
+      document.getElementById(`regb-${targetKey}-cell`)?.focus();
+    } else {
+      // 編集対象を移す (表示セルの select はまだ DOM に無いため、編集開始
+      // → レンダー後に pendingFocusRef が該当 select へフォーカスする)
+      onStartEdit(targetKey, f);
     }
   };
 
@@ -302,6 +325,9 @@ export function RegularGrid({
                         roomPlaceholder={cls.room}
                         ariaBase={`${day} ${per.label || per.time} ${cls.label}`}
                         isCompact={isCompact}
+                        isEditing={editKey === key}
+                        onStartEdit={onStartEdit}
+                        onEndEdit={onEndEdit}
                         onCellChange={onCellChange}
                         onClearCell={onClearCell}
                         onNavigate={onNavigate}

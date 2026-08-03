@@ -1,24 +1,23 @@
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { splitTeacherField } from "../utils/biweekly";
 import {
   getSubjectColor,
   CONFLICT_CELL_BG,
 } from "../timetable-builder/utils/constants";
 
-// ─── セル (講習ビルダーの ScheduleCell 相当) ────────────────────────
-// 科目カラー背景 + 科目/講師のプルダウン入力。教室・備考は何か値がある
-// セルにだけ下段に小さく出す。講師は教科なしでも入力できる (下書き用途 —
-// 反映時は教科なしセルとしてスキップされ件数報告される)。衝突セルは
-// 赤背景 + ⚠️バッジ、講師ハイライトは一致セルにリング・非一致セルを減光。
+// ─── セル (ダッシュボードの時間割ビュー風 display-first) ─────────────
+// 普段はダッシュボードと同じ「テキスト中心」の表示 (科目 + 講師 + 教室/
+// 備考)。クリック (または Enter/Space) したセルだけがその場で入力
+// (教科/講師のプルダウン + 教室/備考の小入力) に切り替わり、セルの外へ
+// フォーカスが移る / Enter / Escape で表示に戻る。
 //
-// 講師プルダウンには busyTeachers (同曜日・同時間帯に他セルで割当済みの
-// 講師) に載っている候補へ「(重複)」を予告する。選択は妨げない
-// (意図した重なりは承認フローで消せるため)。
-//
-// 教科・講師とも「✎ 直接入力」でテキスト入力に切り替えられる (マスタ外の
-// 単発科目や「·」区切りの複数講師用)。Enter/フォーカスアウトで確定、
-// Escape で取消。講師は確定時に splitTeacherField で正規化する
-// (CLAUDE.md の複数講師区切り規約)。
+// - 表示セルはフォーム部品が無いのでセル全体を掴んでドラッグ入替できる
+// - 科目カラー背景・衝突の赤背景 + ⚠️バッジ・講師ハイライトは両モード共通
+// - 講師プルダウンには busyTeachers (同曜日・同時間帯に他セルで割当済みの
+//   講師) へ「(重複)」を予告する。選択は妨げない (承認フローで消せるため)
+// - 教科・講師とも「✎ 直接入力」でテキスト入力に切り替え可能 (マスタ外の
+//   単発教科や「·」区切りの複数講師用)。講師は確定時に splitTeacherField
+//   で正規化する (CLAUDE.md の複数講師区切り規約)
 
 const FREE_EDIT = "__free__";
 
@@ -61,6 +60,8 @@ function FreeTextInput({
           cancelRef.current = true;
           e.target.blur();
         }
+        // Escape がセルの編集終了 (td 側) まで波及しないように
+        e.stopPropagation();
       }}
     />
   );
@@ -79,6 +80,9 @@ export const RegularCell = memo(function RegularCell({
   roomPlaceholder,
   ariaBase,
   isCompact,
+  isEditing,
+  onStartEdit,
+  onEndEdit,
   onCellChange,
   onClearCell,
   onNavigate,
@@ -97,6 +101,14 @@ export const RegularCell = memo(function RegularCell({
   const teacherOriginalRef = useRef("");
   const subjOriginalRef = useRef("");
 
+  // 編集を離れたら直接入力モードは持ち越さない
+  useEffect(() => {
+    if (!isEditing) {
+      setTeacherFreeEdit(false);
+      setSubjFreeEdit(false);
+    }
+  }, [isEditing]);
+
   const hasContent = !!(c.subj || c.teacher || c.room || c.note);
   const bgColor = conflictText ? CONFLICT_CELL_BG : getSubjectColor(c.subj);
   const innerBorder = conflictText
@@ -108,33 +120,111 @@ export const RegularCell = memo(function RegularCell({
   const subjKnown = !c.subj || subjects.includes(c.subj);
   const busySet = new Set(splitTeacherField(busyTeachers));
 
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`;
+
+  // ── 表示モード (ダッシュボード風テキスト) ────────────────────────
+  if (!isEditing) {
+    return (
+      <td
+        id={`regb-${cellKey}-cell`}
+        tabIndex={0}
+        role="button"
+        aria-label={`${ariaBase} を編集`}
+        title={conflictText || "クリックで編集 / ドラッグで入替"}
+        className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
+        draggable={!!c.subj}
+        onDragStart={(e) => onDragStart(e, cellKey, c)}
+        onDragOver={(e) => onDragOver(e, cellKey)}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => onDrop(e, cellKey)}
+        onDragEnd={onDragEnd}
+        onClick={() => onStartEdit(cellKey, "subj")}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onStartEdit(cellKey, "subj");
+          } else {
+            onNavigate(e, cellKey, "cell");
+          }
+        }}
+      >
+        <div
+          className={`flex flex-col rounded h-full ${innerBorder} ${isCompact ? "gap-0 p-0.5 min-h-[1.6rem]" : "gap-0.5 p-1 min-h-[2.9rem]"} ${!bgColor && !hasContent ? "bg-builder-surface-alt/50" : ""}`}
+          style={bgColor ? { backgroundColor: bgColor } : undefined}
+        >
+          <div className={`flex items-center min-w-0 ${isCompact ? "gap-0.5" : "gap-1"}`}>
+            <span
+              className={`flex-1 min-w-0 truncate font-bold text-builder-ink ${isCompact ? "text-[11px] leading-tight" : "text-[13px]"}`}
+            >
+              {c.subj || ""}
+            </span>
+            {conflictText && (
+              <span
+                className={`bg-builder-red text-white rounded shrink-0 animate-pulse ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}
+              >
+                ⚠️重複
+              </span>
+            )}
+            {hasContent && (
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClearCell(cellKey);
+                }}
+                aria-label={`${ariaBase} をクリア`}
+                title="このセルをクリア (Ctrl+Z で戻せます)"
+                className={`no-print shrink-0 border-0 bg-transparent cursor-pointer p-0 leading-none text-builder-ink-ghost hover:text-builder-red opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${isCompact ? "text-[9px]" : "text-xs"}`}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {c.teacher && (
+            <div
+              className={`truncate ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] leading-tight" : "text-xs"}`}
+            >
+              {c.teacher}
+            </div>
+          )}
+          {(c.room || c.note) && (
+            <div
+              className={`text-builder-ink-muted truncate leading-tight ${isCompact ? "text-[9px]" : "text-[10px]"}`}
+            >
+              {[c.room, c.note].filter(Boolean).join(" ")}
+            </div>
+          )}
+        </div>
+      </td>
+    );
+  }
+
+  // ── 編集モード (プルダウン入力) ──────────────────────────────────
+  const closeEdit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onEndEdit(cellKey, true); // Enter/Escape はセルへフォーカスを戻す
+  };
+  const editorKeys = (field) => (e) => {
+    if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
+    else onNavigate(e, cellKey, field);
+  };
+
   return (
     <td
-      className={`group border-r border-builder-border last:border-r-0 align-top ${isCompact ? "p-px" : "p-1.5"} ${c.subj ? "cursor-move" : ""} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`}
+      className={tdBase}
       title={conflictText || undefined}
-      draggable={!!c.subj}
-      onDragStart={(e) => onDragStart(e, cellKey, c)}
-      onDragOver={(e) => onDragOver(e, cellKey)}
-      onDragLeave={onDragLeave}
-      onDrop={(e) => onDrop(e, cellKey)}
-      onDragEnd={onDragEnd}
+      // フォーカスがセルの外へ出たら表示モードへ戻る
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) onEndEdit(cellKey, false);
+      }}
     >
       <div
         className={`flex flex-col rounded h-full ${innerBorder} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1"} ${!bgColor && !hasContent ? "bg-builder-surface-alt/50" : ""}`}
         style={bgColor ? { backgroundColor: bgColor } : undefined}
       >
         <div className={`flex items-center min-w-0 ${isCompact ? "gap-0.5" : "gap-1"}`}>
-          {/* ドラッグハンドル: セルの大半は select が mousedown を奪うため、
-              確実に掴める非 select 領域を常設する (講習ビルダー N2c と同じ) */}
-          {!!c.subj && (
-            <span
-              aria-hidden="true"
-              title="ドラッグで別のセルと入れ替え"
-              className={`no-print shrink-0 select-none cursor-move text-builder-ink-ghost leading-none ${isCompact ? "text-[9px]" : "text-xs"}`}
-            >
-              ⠿
-            </span>
-          )}
           {subjFreeEdit ? (
             <FreeTextInput
               id={`regb-${cellKey}-subj`}
@@ -167,7 +257,7 @@ export const RegularCell = memo(function RegularCell({
                   setSubjFreeEdit(true);
                 } else onCellChange(cellKey, "subj", e.target.value);
               }}
-              onKeyDown={(e) => onNavigate(e, cellKey, "subj")}
+              onKeyDown={editorKeys("subj")}
             >
               <option value="">-</option>
               {subjects.map((s) => (
@@ -185,17 +275,6 @@ export const RegularCell = memo(function RegularCell({
             >
               ⚠️重複
             </span>
-          )}
-          {hasContent && (
-            <button
-              type="button"
-              onClick={() => onClearCell(cellKey)}
-              aria-label={`${ariaBase} をクリア`}
-              title="このセルをクリア (Ctrl+Z で戻せます)"
-              className={`no-print shrink-0 border-0 bg-transparent cursor-pointer p-0 leading-none text-builder-ink-ghost hover:text-builder-red opacity-0 group-hover:opacity-100 focus:opacity-100 group-focus-within:opacity-100 ${isCompact ? "text-[9px]" : "text-xs"}`}
-            >
-              ✕
-            </button>
           )}
         </div>
 
@@ -232,7 +311,7 @@ export const RegularCell = memo(function RegularCell({
                 setTeacherFreeEdit(true);
               } else onCellChange(cellKey, "teacher", e.target.value);
             }}
-            onKeyDown={(e) => onNavigate(e, cellKey, "teacher")}
+            onKeyDown={editorKeys("teacher")}
           >
             <option value="">-</option>
             {teachers.map((t) => {
@@ -253,32 +332,30 @@ export const RegularCell = memo(function RegularCell({
           </select>
         )}
 
-        {isCompact
-          ? (c.room || c.note) && (
-              <div className="text-[9px] text-builder-ink-muted truncate leading-tight">
-                {[c.room, c.note].filter(Boolean).join(" ")}
-              </div>
-            )
-          : hasContent && (
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  aria-label={`${ariaBase} の教室`}
-                  value={c.room || ""}
-                  onChange={(e) => onCellChange(cellKey, "room", e.target.value)}
-                  placeholder={roomPlaceholder || "教室"}
-                  className="w-14 rounded border-0 bg-white/40 px-1 text-[10px] text-builder-ink-muted focus:outline-none placeholder:text-builder-ink-ghost"
-                />
-                <input
-                  type="text"
-                  aria-label={`${ariaBase} の備考`}
-                  value={c.note || ""}
-                  onChange={(e) => onCellChange(cellKey, "note", e.target.value)}
-                  placeholder="備考"
-                  className="flex-1 min-w-0 rounded border-0 bg-white/40 px-1 text-[10px] text-builder-ink-muted focus:outline-none placeholder:text-builder-ink-ghost"
-                />
-              </div>
-            )}
+        <div className="flex gap-1">
+          <input
+            type="text"
+            aria-label={`${ariaBase} の教室`}
+            value={c.room || ""}
+            onChange={(e) => onCellChange(cellKey, "room", e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
+            }}
+            placeholder={roomPlaceholder || "教室"}
+            className="w-14 rounded border-0 bg-white/40 px-1 text-[10px] text-builder-ink-muted focus:outline-none placeholder:text-builder-ink-ghost"
+          />
+          <input
+            type="text"
+            aria-label={`${ariaBase} の備考`}
+            value={c.note || ""}
+            onChange={(e) => onCellChange(cellKey, "note", e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" || e.key === "Enter") closeEdit(e);
+            }}
+            placeholder="備考"
+            className="flex-1 min-w-0 rounded border-0 bg-white/40 px-1 text-[10px] text-builder-ink-muted focus:outline-none placeholder:text-builder-ink-ghost"
+          />
+        </div>
       </div>
     </td>
   );
