@@ -3,11 +3,14 @@ import {
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
+  makeCellRef,
   parseCellKey,
+  parseCellRef,
   resolveAllEntries,
   resolveTabEntries,
   sanitizeProject,
   sanitizeWorkspace,
+  swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
 } from "./model";
@@ -155,5 +158,45 @@ describe("createDefaultWorkspace / sanitizeWorkspace", () => {
     expect(sanitizeWorkspace(null)).toBe(null);
     expect(sanitizeWorkspace({ projects: "x" })).toBe(null);
     expect(sanitizeWorkspace({ version: 2, projects: [] })).toBe(null);
+  });
+});
+
+describe("makeCellRef / parseCellRef / swapCellsAcrossTabs", () => {
+  const a = { subj: "数学", teacher: "半田" };
+  const b = { subj: "英語", teacher: "堀上" };
+  const tabs = () => [
+    { id: 1, schedule: { "月|1|1": a } },
+    { id: 2, schedule: { "月|11|1": b } },
+  ];
+
+  it("makeCellRef / parseCellRef が round-trip する (cellKey 内の '|' も保持)", () => {
+    const ref = makeCellRef(2, makeCellKey("月", 11, 1));
+    expect(ref).toBe("2:月|11|1");
+    expect(parseCellRef(ref)).toEqual({ tabId: 2, key: "月|11|1" });
+  });
+
+  it("同一タブ内の入替は swapScheduleCells と同じ結果", () => {
+    const ts = [{ id: 1, schedule: { "月|1|1": a, "火|2|1": b } }];
+    const next = swapCellsAcrossTabs(ts, "1:月|1|1", "1:火|2|1");
+    expect(next[0].schedule).toEqual({ "月|1|1": b, "火|2|1": a });
+    expect(ts[0].schedule["月|1|1"]).toBe(a); // 元は不変
+  });
+
+  it("タブをまたいで入れ替えられる", () => {
+    const next = swapCellsAcrossTabs(tabs(), "1:月|1|1", "2:月|11|1");
+    expect(next[0].schedule["月|1|1"]).toBe(b);
+    expect(next[1].schedule["月|11|1"]).toBe(a);
+  });
+
+  it("タブをまたいで空セルへ動かすと移動になる", () => {
+    const next = swapCellsAcrossTabs(tabs(), "1:月|1|1", "2:月|11|2");
+    expect("月|1|1" in next[0].schedule).toBe(false);
+    expect(next[1].schedule["月|11|2"]).toBe(a);
+    expect(next[1].schedule["月|11|1"]).toBe(b); // 既存セルは無関係
+  });
+
+  it("存在しないタブ参照は no-op", () => {
+    const ts = tabs();
+    expect(swapCellsAcrossTabs(ts, "1:月|1|1", "9:月|1|1")).toBe(ts);
   });
 });

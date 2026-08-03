@@ -59,6 +59,20 @@ export function parseCellKey(key) {
   return { day, periodId: Number(periodId), classId: Number(classId) };
 }
 
+// ─── セル参照 (タブ横断) ────────────────────────────────────────────
+// 曜日ビューは複数タブ (学年) のセルを 1 つの表に並べるため、タブ id を
+// 含む `${tabId}:${cellKey}` を一意参照に使う (conflicts.entryRef と同形)。
+
+export function makeCellRef(tabId, cellKey) {
+  return `${tabId}:${cellKey}`;
+}
+
+export function parseCellRef(ref) {
+  const s = String(ref);
+  const i = s.indexOf(":");
+  return { tabId: Number(s.slice(0, i)), key: s.slice(i + 1) };
+}
+
 // ─── セル入替 (D&D スワップ) ────────────────────────────────────────
 
 /**
@@ -75,6 +89,41 @@ export function swapScheduleCells(schedule, keyA, keyB) {
   if (a) next[keyB] = a;
   else delete next[keyB];
   return next;
+}
+
+/**
+ * ref (`tabId:cellKey`) で指した 2 セルの中身を入れ替えた新しい tabs 配列を
+ * 返す (純関数)。同一タブ内は swapScheduleCells に委譲。タブをまたぐ場合も
+ * 片側が空セルなら移動になり、空いた側のキーは残さない。
+ * 参照先のタブが見つからなければ元の配列をそのまま返す。
+ */
+export function swapCellsAcrossTabs(tabs, refA, refB) {
+  if (refA === refB) return tabs;
+  const a = parseCellRef(refA);
+  const b = parseCellRef(refB);
+  if (a.tabId === b.tabId) {
+    return tabs.map((t) =>
+      t.id === a.tabId
+        ? { ...t, schedule: swapScheduleCells(t.schedule, a.key, b.key) }
+        : t
+    );
+  }
+  const tabA = tabs.find((t) => t.id === a.tabId);
+  const tabB = tabs.find((t) => t.id === b.tabId);
+  if (!tabA || !tabB) return tabs;
+  const cellA = tabA.schedule[a.key];
+  const cellB = tabB.schedule[b.key];
+  const put = (schedule, key, cell) => {
+    const next = { ...schedule };
+    if (cell) next[key] = cell;
+    else delete next[key];
+    return next;
+  };
+  return tabs.map((t) => {
+    if (t.id === a.tabId) return { ...t, schedule: put(t.schedule, a.key, cellB) };
+    if (t.id === b.tabId) return { ...t, schedule: put(t.schedule, b.key, cellA) };
+    return t;
+  });
 }
 
 // ─── サニタイズ (useSyncedStorage の migrate 用) ────────────────────
