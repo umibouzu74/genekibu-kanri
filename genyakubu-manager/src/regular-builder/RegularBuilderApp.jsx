@@ -248,9 +248,11 @@ export default function RegularBuilderApp({
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
-      // テキスト入力中はブラウザ標準の undo を優先する
+      // テキスト入力中はブラウザ標準の undo を優先する。select は標準 undo が
+      // 無いので対象に含める (講習 N1d と同じ — プルダウンで教科・講師を
+      // 変えた直後の Ctrl+Z が無反応にならない)
       const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       const k = e.key.toLowerCase();
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();

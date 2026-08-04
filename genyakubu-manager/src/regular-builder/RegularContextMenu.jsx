@@ -95,6 +95,7 @@ export function RegularContextMenu({
         <>
           <button
             type="button"
+            role="menuitem"
             onClick={() => onAction("copy")}
             disabled={!cell}
             title={!cell ? "空のセルはコピーできません" : undefined}
@@ -104,6 +105,7 @@ export function RegularContextMenu({
           </button>
           <button
             type="button"
+            role="menuitem"
             onClick={() => onAction("paste")}
             disabled={!clipboard}
             title={!clipboard ? "先にセルをコピーしてください" : undefined}
@@ -115,6 +117,7 @@ export function RegularContextMenu({
           {conflictCount > 0 && (
             <button
               type="button"
+              role="menuitem"
               onClick={() => onAction("approve")}
               title="意図した重なりとして承認し、件数と赤枠から除外する"
               className={`${ITEM_BASE} hover:bg-builder-success-soft text-builder-green`}
@@ -124,6 +127,7 @@ export function RegularContextMenu({
           )}
           <button
             type="button"
+            role="menuitem"
             onClick={() => onAction("clear")}
             disabled={!cell}
             className={`${ITEM_BASE} ${!cell ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-danger-soft text-builder-red"}`}
@@ -138,6 +142,7 @@ export function RegularContextMenu({
           </div>
           <button
             type="button"
+            role="menuitem"
             onClick={() => onAction("clear-bulk")}
             disabled={filledCount === 0}
             title={filledCount === 0 ? "クリアできるコマがありません" : undefined}

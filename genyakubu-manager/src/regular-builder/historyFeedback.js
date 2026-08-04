@@ -58,6 +58,11 @@ export function diffWorkspaces(before, after) {
     diffProject(bp, ap, id, cellChanges, addOther);
   }
 
+  // schedule のキー順 (不定) に依存しないよう曜日順に整える。toast の
+  // 「表示」ジャンプは先頭要素へ飛ぶため、順序は挙動の一部
+  cellChanges.sort(
+    (a, b) => REGULAR_DAYS.indexOf(a.day) - REGULAR_DAYS.indexOf(b.day)
+  );
   return { cellChanges, otherChanges };
 }
 

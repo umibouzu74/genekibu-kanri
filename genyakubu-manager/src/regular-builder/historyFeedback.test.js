@@ -131,9 +131,10 @@ describe("describeHistoryChange / formatCellShort", () => {
     p = withCell(p, "月|1|1", { subj: "数学" });
     const base = baseProject();
     base.tabs[0].days = ["月", "火", "土"];
-    expect(describeHistoryChange(diffWorkspaces(ws(base), ws(p)))).toBe(
-      "2 コマの変更 (月・土)"
-    );
+    const diff = diffWorkspaces(ws(base), ws(p));
+    expect(describeHistoryChange(diff)).toBe("2 コマの変更 (月・土)");
+    // 土曜のセルを先に足しても cellChanges は曜日順 (「表示」ジャンプの先頭)
+    expect(diff.cellChanges.map((c) => c.day)).toEqual(["月", "土"]);
   });
 
   it("セル + その他の混在は読点でつなぐ / 差分なしは空文字", () => {

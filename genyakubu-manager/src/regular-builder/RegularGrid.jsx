@@ -97,46 +97,6 @@ export function RegularGrid({
   const [dragSource, setDragSource] = useState(null);
   const [dragOverRef, setDragOverRef] = useState(null);
 
-  // ── 重複ジャンプ / Undo フィードバックのフラッシュ表示 ──────────
-  // jumpTarget が来たら対象セルを含む折りたたみ中セクションを展開し、
-  // レンダー後に先頭セルへスクロール、両セルを一時ハイライトする。
-  // セクションの所属はレンダー中に sectionKeyByColRef へ記録しておく
-  // (implRef と同じ「最新クロージャ参照」パターン)。
-  const [flashRefs, setFlashRefs] = useState([]);
-  const sectionKeyByColRef = useRef(new Map());
-  useEffect(() => {
-    if (!jumpTarget || jumpTarget.day !== day) return undefined;
-    const refs = jumpTarget.refs || [];
-    if (refs.length === 0) return undefined;
-    setCollapsedKeys((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Set(prev);
-      let changed = false;
-      for (const r of refs) {
-        const { tabId, key } = parseCellRef(r);
-        const { classId } = parseCellKey(key);
-        const sk = sectionKeyByColRef.current.get(`${tabId}:${classId}`);
-        if (sk && next.has(sk)) {
-          next.delete(sk);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-    setFlashRefs(refs);
-    // 展開・曜日切替のレンダーが反映されてからスクロール
-    const t1 = setTimeout(() => {
-      document
-        .getElementById(`regb-${refs[0]}-cell`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-    }, 80);
-    const t2 = setTimeout(() => setFlashRefs([]), 2400);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [jumpTarget, day]);
-
   // display-first 編集: 編集中セルは常に 1 つ (null = 全セル表示モード)。
   // フォーカスは「編集開始 → 編集セルの select」「Enter/Escape で終了 →
   // 表示セル (td)」へ、レンダー後に pendingFocusRef 経由で移す。
@@ -177,6 +137,47 @@ export function RegularGrid({
       else next.add(key);
       return next;
     });
+
+  // ── 重複ジャンプ / Undo フィードバックのフラッシュ表示 ──────────
+  // jumpTarget が来たら対象セルを含む折りたたみ中セクションを展開し、
+  // レンダー後に先頭セルへスクロール、対象セルを一時ハイライトする。
+  // 列 → セクションの対応はレンダー中に sectionKeyByColRef へ記録しておく
+  // (implRef と同じ「最新クロージャ参照」パターン)。ref は曜日を含むため、
+  // 曜日切替後に残ったフラッシュが別曜日のセルに当たることはない。
+  const [flashRefs, setFlashRefs] = useState([]);
+  const sectionKeyByColRef = useRef(new Map());
+  useEffect(() => {
+    if (!jumpTarget || jumpTarget.day !== day) return undefined;
+    const refs = jumpTarget.refs || [];
+    if (refs.length === 0) return undefined;
+    setCollapsedKeys((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      for (const r of refs) {
+        const { tabId, key } = parseCellRef(r);
+        const { classId } = parseCellKey(key);
+        const sk = sectionKeyByColRef.current.get(`${tabId}:${classId}`);
+        if (sk && next.has(sk)) {
+          next.delete(sk);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setFlashRefs(refs);
+    // 展開・曜日切替のレンダーが反映されてからスクロール
+    const t1 = setTimeout(() => {
+      document
+        .getElementById(`regb-${refs[0]}-cell`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }, 80);
+    const t2 = setTimeout(() => setFlashRefs([]), 2400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [jumpTarget, day]);
 
   // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
   // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
@@ -298,9 +299,11 @@ export function RegularGrid({
   };
   const openColMenu = (pos, t, cls2) => {
     if (!onOpenHeaderMenu) return;
+    // クラス名の無い列 (取込した高校の講座列など) は列見出しと同じく教室名で呼ぶ
+    const colName = [t.name, cls2.label || cls2.room].filter(Boolean).join(" ");
     onOpenHeaderMenu(pos, {
       kind: "bulk",
-      label: `${t.name} ${cls2.label || cls2.room || ""}（${day}曜）`.trim(),
+      label: `${colName}（${day}曜）`,
       refs: (t.periodIds || []).map((pid) =>
         makeCellRef(t.id, makeCellKey(day, pid, cls2.id))
       ),
