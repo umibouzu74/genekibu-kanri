@@ -256,3 +256,38 @@ test("Ctrl+C/V/Delete のキーボード操作と 📌 スナップショット 
   await expect(cellS1).toContainText("数学");
   await expect(cellS2).not.toContainText("数学");
 });
+
+test("複数選択 (Ctrl/Shift+クリック) → 一括クリア → Undo が動く", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  const cellS1 = page.getByRole("button", { name: "月 1限 中3 S を編集" });
+  await expect(cellS1).toBeVisible({ timeout: 30_000 });
+  const cellA2 = page.getByRole("button", { name: "月 2限 中3 A を編集" });
+
+  // Ctrl+クリックでトグル → Shift+クリックで矩形 (1限 S 〜 2限 A の 4 マス)
+  await cellS1.click({ modifiers: ["Control"] });
+  await expect(page.getByText("1 セル選択中")).toBeVisible();
+  await cellA2.click({ modifiers: ["Shift"] });
+  await expect(page.getByText("4 セル選択中")).toBeVisible();
+
+  // 一括クリア: 中身のある 2 コマ (1限 S/A) だけが対象になる
+  await page.getByRole("button", { name: "🧹 クリア" }).click();
+  await expect(
+    page.getByText(/選択中のセル の 2 コマをクリアしますか/)
+  ).toBeVisible();
+  await page.getByRole("button", { name: "クリアする" }).click();
+  await expect(page.getByText("2 コマをクリアしました")).toBeVisible();
+  await expect(cellS1).not.toContainText("数学");
+  await expect(page.getByText("セル選択中")).toHaveCount(0);
+
+  // Ctrl+Z で 2 コマまとめて戻る
+  await page.keyboard.press("Control+z");
+  await expect(cellS1).toContainText("数学");
+
+  // Esc で選択解除
+  await cellS1.click({ modifiers: ["Control"] });
+  await expect(page.getByText("1 セル選択中")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("セル選択中")).toHaveCount(0);
+});

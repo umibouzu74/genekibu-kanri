@@ -104,6 +104,11 @@ export function RegularGrid({
   onPasteCell = null,
   /** Ctrl+ドラッグでのコピー配置 (refA の内容を refB へ複製) */
   onCopyCellTo = null,
+  /** 複数選択: 選択中の ref 集合と操作 (Ctrl+クリック / Shift+矩形) */
+  selectedRefs = null,
+  selectionAnchor = null,
+  onToggleSelect = null,
+  onRectSelect = null,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -204,6 +209,7 @@ export function RegularGrid({
   const onOpenMenu = useCallback((...a) => implRef.current.openMenu(...a), []);
   const onCopyCellH = useCallback((...a) => implRef.current.copyCell(...a), []);
   const onPasteCellH = useCallback((...a) => implRef.current.pasteCell(...a), []);
+  const onSelectCellH = useCallback((...a) => implRef.current.selectCell(...a), []);
 
   // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
   const rawSections = computeSections(project, day, { splitCampus });
@@ -487,6 +493,44 @@ export function RegularGrid({
     }
   };
 
+  // ── 複数選択 (Ctrl+クリック / Shift+矩形) ────────────────────────
+  // 矩形は同じセクション (= 同じ表・同じ時間軸) 内でのみ成立する。
+  // アンカーが別セクション・別曜日ならただのトグルに落とす
+  const findCellPos = (ref) => {
+    const { tabId, key } = parseCellRef(ref);
+    const { day: refDay, periodId, classId } = parseCellKey(key);
+    if (refDay !== day) return null;
+    const ci = allCols.findIndex(
+      (x) => x.col.tab.id === tabId && x.col.cls.id === classId
+    );
+    if (ci < 0) return null;
+    const sec = allCols[ci].sec;
+    const ri = sec.periods.findIndex((p) => p.id === periodId);
+    if (ri < 0) return null;
+    return { ci, ri, sec };
+  };
+  const handleSelectCell = (e, ref) => {
+    if (!onToggleSelect) return;
+    if (e.shiftKey && selectionAnchor && onRectSelect) {
+      const a = findCellPos(selectionAnchor);
+      const b = findCellPos(ref);
+      if (a && b && a.sec === b.sec) {
+        const refs = [];
+        for (let ci = Math.min(a.ci, b.ci); ci <= Math.max(a.ci, b.ci); ci++) {
+          const { col } = allCols[ci];
+          for (let ri = Math.min(a.ri, b.ri); ri <= Math.max(a.ri, b.ri); ri++) {
+            const per = a.sec.periods[ri];
+            if (!available(per, col.tab)) continue;
+            refs.push(makeCellRef(col.tab.id, makeCellKey(day, per.id, col.cls.id)));
+          }
+        }
+        onRectSelect(refs);
+        return;
+      }
+    }
+    onToggleSelect(ref);
+  };
+
   // 最新のクロージャを stable ハンドラから参照できるようにする
   implRef.current = {
     navigate: handleNavigate,
@@ -498,6 +542,7 @@ export function RegularGrid({
     openMenu: (pos, ref) => onOpenCellMenu?.(pos, ref),
     copyCell: (ref) => onCopyCell?.(ref),
     pasteCell: (ref) => onPasteCell?.(ref),
+    selectCell: handleSelectCell,
   };
 
   return (
@@ -676,6 +721,8 @@ export function RegularGrid({
                             onOpenMenu={onOpenCellMenu ? onOpenMenu : null}
                             onCopyCell={onCopyCell ? onCopyCellH : null}
                             onPasteCell={onPasteCell ? onPasteCellH : null}
+                            isSelected={!!selectedRefs?.has(ref)}
+                            onSelectCell={onToggleSelect ? onSelectCellH : null}
                             onDragStart={onDragStart}
                             onDragOver={onDragOver}
                             onDragLeave={onDragLeave}

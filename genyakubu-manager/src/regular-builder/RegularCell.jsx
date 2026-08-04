@@ -106,6 +106,9 @@ export const RegularCell = memo(function RegularCell({
   /** Ctrl+C / Ctrl+V (表示セルにフォーカスがある時のキーボード操作) */
   onCopyCell,
   onPasteCell,
+  /** 複数選択: 選択中フラグと Ctrl/Shift+クリックのハンドラ (e, cellRef) */
+  isSelected = false,
+  onSelectCell,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -145,7 +148,7 @@ export const RegularCell = memo(function RegularCell({
   const busySet = new Set(splitTeacherField(busyTeachers));
   const ngSet = new Set(splitTeacherField(ngTeachers));
 
-  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isSelected ? "ring-2 ring-builder-green ring-inset bg-builder-success-soft" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
 
   const starters = mergeStarters
     ? mergeStarters.split("\n").map((s) => {
@@ -183,7 +186,18 @@ export const RegularCell = memo(function RegularCell({
               }
             : undefined
         }
-        onClick={() => onStartEdit(cellRef, "subj")}
+        onMouseDown={(e) => {
+          // Shift+クリックの範囲選択でテキスト選択が走らないように
+          if (e.shiftKey && onSelectCell) e.preventDefault();
+        }}
+        onClick={(e) => {
+          if (onSelectCell && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+            e.preventDefault();
+            onSelectCell(e, cellRef);
+          } else {
+            onStartEdit(cellRef, "subj");
+          }
+        }}
         onKeyDown={(e) => {
           const k = e.key.toLowerCase();
           if (e.key === "Enter" || e.key === " ") {

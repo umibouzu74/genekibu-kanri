@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { computeTeacherWeek } from "./teacherLoad";
+import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { DAY_COLOR } from "../constants/colors";
 import { UI } from "./ui";
 
@@ -9,7 +10,7 @@ import { UI } from "./ui";
 // 週全体のやりくりはここで見る。各エントリはクリックで該当セルへ
 // ジャンプ (曜日切替 + スクロール + 一時ハイライト)。
 
-export function RegularTeacherWeek({ project, teacher, onJump }) {
+export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
   const week = useMemo(
     () => computeTeacherWeek(project, teacher),
     [project, teacher]
@@ -17,8 +18,20 @@ export function RegularTeacherWeek({ project, teacher, onJump }) {
 
   return (
     <div className={`no-print ${UI.panel} text-xs`}>
-      <div className={UI.panelHead}>
-        👁 {teacher} の週間（計 {week.total} コマ）
+      <div className="flex items-center gap-2">
+        <div className={`${UI.panelHead} flex-1`}>
+          👁 {teacher} の週間（計 {week.total} コマ）
+        </div>
+        {onPrint && week.total > 0 && (
+          <button
+            type="button"
+            className={UI.btn}
+            onClick={onPrint}
+            title="この講師の週間時間割を印刷 (A4 縦)"
+          >
+            🖨 印刷
+          </button>
+        )}
       </div>
       {week.total === 0 ? (
         <div className="text-builder-ink-subtle">担当コマがありません。</div>
@@ -59,6 +72,57 @@ export function RegularTeacherWeek({ project, teacher, onJump }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── 印刷専用シート (講師の週間時間割) ──────────────────────────────
+// 印刷中だけ描画される print 専用 DOM (画面のミニビューは no-print)。
+// 曜日ごとの担当コマを表で並べる。A4 縦 1 枚想定。
+
+export function RegularTeacherWeekPrintSheet({ project, teacher }) {
+  const week = useMemo(
+    () => computeTeacherWeek(project, teacher),
+    [project, teacher]
+  );
+  return (
+    <div className="hidden print:block" aria-hidden="true">
+      <div className="text-lg font-bold text-builder-ink">
+        {teacher} の週間時間割 — {project.name || "通常時間割"}
+      </div>
+      <div className="text-xs text-builder-ink-muted mb-2">
+        計 {week.total} コマ / 印刷日: {formatPrintDateJa(new Date())}
+      </div>
+      {week.days.map((d) => {
+        const entries = week.byDay[d] || [];
+        if (entries.length === 0) return null;
+        return (
+          <div key={d} className="mb-2" style={{ breakInside: "avoid" }}>
+            <div
+              className="text-sm font-extrabold"
+              style={{ color: DAY_COLOR[d] || undefined }}
+            >
+              {d}曜日
+            </div>
+            <table className="border-collapse text-xs w-full">
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.ref} className="border-b border-builder-border">
+                    <td className="py-0.5 pr-3 whitespace-nowrap tabular-nums w-32">
+                      {e.time || e.periodLabel}
+                    </td>
+                    <td className="py-0.5 pr-3 whitespace-nowrap">
+                      {e.tabName} {e.clsLabel}
+                    </td>
+                    <td className="py-0.5 pr-3 font-bold">{e.subj}</td>
+                    <td className="py-0.5 text-builder-ink-muted">{e.room}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }

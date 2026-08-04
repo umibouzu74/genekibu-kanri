@@ -33,7 +33,10 @@ import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
 import { RegularSummaryPanel } from "./RegularSummaryPanel";
 import { RegularSnapshotPanel } from "./RegularSnapshotPanel";
-import { RegularTeacherWeek } from "./RegularTeacherWeek";
+import {
+  RegularTeacherWeek,
+  RegularTeacherWeekPrintSheet,
+} from "./RegularTeacherWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
@@ -184,6 +187,19 @@ export default function RegularBuilderApp({
       clearTimeout(t);
     };
   }, [printAllDays]);
+
+  // 講師の週間時間割の印刷 (週間ミニビューの 🖨)。仕組みは全曜日印刷と同じ
+  const [printTeacherWeek, setPrintTeacherWeek] = useState(false);
+  useEffect(() => {
+    if (!printTeacherWeek) return;
+    const done = () => setPrintTeacherWeek(false);
+    window.addEventListener("afterprint", done);
+    const t = setTimeout(() => window.print(), 50);
+    return () => {
+      window.removeEventListener("afterprint", done);
+      clearTimeout(t);
+    };
+  }, [printTeacherWeek]);
 
   // ── Undo/Redo ───────────────────────────────────────────────────
   // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
@@ -484,6 +500,42 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
+  // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
+  // 講習 N2a と同じ操作感。選択はセル ref の集合で持ち、矩形の計算は
+  // セクション構造を知る RegularGrid 側が行う (onRectSelect に結果が届く)
+  const [selectedRefs, setSelectedRefs] = useState(() => new Set());
+  const selAnchorRef = useRef(null);
+  const toggleSelect = useCallback((ref) => {
+    selAnchorRef.current = ref;
+    setSelectedRefs((prev) => {
+      const next = new Set(prev);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
+  }, []);
+  const rectSelect = useCallback((refs) => {
+    if (refs.length) setSelectedRefs(new Set(refs));
+  }, []);
+  const clearSelection = useCallback(() => {
+    selAnchorRef.current = null;
+    setSelectedRefs((prev) => (prev.size ? new Set() : prev));
+  }, []);
+  // 曜日・プロジェクト・表示モードが変わったら選択は持ち越さない
+  // (見えないセルへの一括操作を防ぐ)
+  useEffect(() => {
+    clearSelection();
+  }, [selectedDay, project.id, weekView, clearSelection]);
+  // Escape で選択解除 (編集中・メニュー内の Escape は stopPropagation 済み)
+  useEffect(() => {
+    if (selectedRefs.size === 0) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !e.isComposing) clearSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedRefs.size, clearSelection]);
+
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
   const onClearCell = useCallback(
     (ref) => {
@@ -559,17 +611,18 @@ export default function RegularBuilderApp({
     toasts.success(`${targets.length} 件の問題を承認しました`);
   };
 
-  // 時限行・クラス列の一括クリア (確認あり・Undo 1 回で戻る)
+  // 時限行・クラス列・複数選択の一括クリア (確認あり・Undo 1 回で戻る)。
+  // 実行したら true (選択解除などの後処理は呼び出し側)
   const clearCellsBulk = async (refs, label) => {
     const filled = refs.filter((r) => getCellByRef(r));
-    if (filled.length === 0) return;
+    if (filled.length === 0) return false;
     const ok = await confirm({
       title: "一括クリア",
       message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,
       okLabel: "クリアする",
       tone: "danger",
     });
-    if (!ok) return;
+    if (!ok) return false;
     const keysByTab = new Map();
     for (const r of filled) {
       const { tabId, key } = parseCellRef(r);
@@ -590,6 +643,12 @@ export default function RegularBuilderApp({
       { atomic: true }
     );
     toasts.success(`${filled.length} コマをクリアしました`);
+    return true;
+  };
+
+  const clearSelectedCells = async () => {
+    const ok = await clearCellsBulk([...selectedRefs], "選択中のセル");
+    if (ok) clearSelection();
   };
 
   const onCtxAction = (action) => {
@@ -943,7 +1002,12 @@ export default function RegularBuilderApp({
           project={project}
           teacher={highlightTeacher}
           onJump={jumpToCells}
+          onPrint={() => setPrintTeacherWeek(true)}
         />
+      )}
+      {/* 講師週間の印刷中だけ描画される print 専用シート */}
+      {printTeacherWeek && highlightTeacher && (
+        <RegularTeacherWeekPrintSheet project={project} teacher={highlightTeacher} />
       )}
 
       {showSnapshots && (
@@ -1158,6 +1222,28 @@ export default function RegularBuilderApp({
         </button>
       </div>
 
+      {/* 複数選択の一括操作バー */}
+      {selectedRefs.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="選択中のセルの一括操作"
+          className="no-print flex items-center gap-2 flex-wrap bg-builder-info-soft border border-builder-info-border rounded-lg px-3 py-1.5 text-xs"
+        >
+          <span className="font-bold text-builder-ink">
+            ☑️ {selectedRefs.size} セル選択中
+          </span>
+          <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
+            🧹 クリア
+          </button>
+          <button type="button" className={UI.btn} onClick={clearSelection}>
+            ✕ 選択解除 (Esc)
+          </button>
+          <span className="text-builder-ink-subtle">
+            Ctrl(⌘)+クリックで追加/除外・Shift+クリックで同じ表内の範囲選択
+          </span>
+        </div>
+      )}
+
       {/* 空状態ガイド */}
       {project.tabs.length === 0 && (
         <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
@@ -1196,7 +1282,9 @@ export default function RegularBuilderApp({
            スクロール先 (regb-day-*) で、印刷時は曜日ごとに改ページされる
            (regb-print-day)。見出しは画面にも出し、紙面には印刷日を足す */
         usedDays.length > 0 ? (
-          <div className="flex flex-col gap-4">
+          <div
+            className={`flex flex-col gap-4 ${printTeacherWeek ? "print:hidden" : ""}`}
+          >
             {usedDays.map((d) => (
               <div
                 key={d}
@@ -1237,6 +1325,10 @@ export default function RegularBuilderApp({
                   onCopyCell={copyCell}
                   onPasteCell={pasteCell}
                   onCopyCellTo={onCopyCellTo}
+                  selectedRefs={selectedRefs}
+                  selectionAnchor={selAnchorRef.current}
+                  onToggleSelect={toggleSelect}
+                  onRectSelect={rectSelect}
                 />
               </div>
             ))}
@@ -1249,7 +1341,7 @@ export default function RegularBuilderApp({
           )
         )
       ) : (
-        <div className={printAllDays ? "print:hidden" : ""}>
+        <div className={printAllDays || printTeacherWeek ? "print:hidden" : ""}>
           {selectedDay && (
             <div className="hidden print:block" aria-hidden="true">
               <div className="text-lg font-bold text-builder-ink">
@@ -1281,6 +1373,10 @@ export default function RegularBuilderApp({
               onCopyCell={copyCell}
               onPasteCell={pasteCell}
               onCopyCellTo={onCopyCellTo}
+              selectedRefs={selectedRefs}
+              selectionAnchor={selAnchorRef.current}
+              onToggleSelect={toggleSelect}
+              onRectSelect={rectSelect}
             />
           ) : (
             project.tabs.length > 0 && (
