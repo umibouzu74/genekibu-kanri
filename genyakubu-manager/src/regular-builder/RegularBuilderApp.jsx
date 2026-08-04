@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // 講習ビルダーと同じ Tailwind エントリ (builder-* トークン / focus ring /
 // タッチ CSS)。tailwind.config.js の content に regular-builder も含まれる。
 import "../timetable-builder/tailwind.css";
-import { LS } from "../constants/storageKeys";
+import { LS, SS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
@@ -81,7 +81,24 @@ export default function RegularBuilderApp({
     true
   );
   const [highlightTeacher, setHighlightTeacher] = useState("");
-  const [selectedDay, setSelectedDay] = useState(null);
+  // 選択曜日はリロード後も維持する (App のビュー復元と同じ sessionStorage
+  // ベース。使わない曜日を復元した場合は下の usedDays 効果が先頭に倒す)
+  const [selectedDay, setSelectedDay] = useState(() => {
+    try {
+      const d = sessionStorage.getItem(SS.regularBuilderDay);
+      return REGULAR_DAYS.includes(d) ? d : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    if (!selectedDay) return;
+    try {
+      sessionStorage.setItem(SS.regularBuilderDay, selectedDay);
+    } catch {
+      /* quota / private mode — 表示は妨げない */
+    }
+  }, [selectedDay]);
 
   const project =
     workspace.projects.find((p) => p.id === workspace.activeProjectId) ||

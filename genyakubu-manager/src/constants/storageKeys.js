@@ -39,4 +39,5 @@ export const LS = {
 export const SS = {
   view: "genyakubu-session-view",
   teacher: "genyakubu-session-teacher",
+  regularBuilderDay: "genyakubu-session-regb-day",
 };
