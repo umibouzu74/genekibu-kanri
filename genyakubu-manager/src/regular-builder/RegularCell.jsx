@@ -78,9 +78,15 @@ export const RegularCell = memo(function RegularCell({
   highlighted,
   dimmed,
   roomPlaceholder,
+  /** 合同 (結合) セル用: セル既定教室を表示モードでも出す (列見出しが無いため) */
+  displayRoomFallback = "",
   ariaBase,
   /** td へ追加するクラス (学年グループ境界の罫線など) */
   tdExtra = "",
+  /** 合同 (結合) セルの横断幅。1 = 通常セル */
+  colSpan = 1,
+  /** この列から始まる未入力の合同枠: "ref\tラベル" を改行区切りで。⊞ で編集開始 */
+  mergeStarters = "",
   isCompact,
   isEditing,
   onStartEdit,
@@ -124,11 +130,19 @@ export const RegularCell = memo(function RegularCell({
 
   const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`;
 
+  const starters = mergeStarters
+    ? mergeStarters.split("\n").map((s) => {
+        const i = s.indexOf("\t");
+        return { ref: s.slice(0, i), label: s.slice(i + 1) };
+      })
+    : [];
+
   // ── 表示モード (ダッシュボード風テキスト) ────────────────────────
   if (!isEditing) {
     return (
       <td
         id={`regb-${cellRef}-cell`}
+        colSpan={colSpan > 1 ? colSpan : undefined}
         tabIndex={0}
         role="button"
         aria-label={`${ariaBase} を編集`}
@@ -167,6 +181,23 @@ export const RegularCell = memo(function RegularCell({
                 ⚠️重複
               </span>
             )}
+            {/* ⊞: この列から始まる合同枠 (S〜B 等) に新しくコマを入れる */}
+            {starters.map((st) => (
+              <button
+                key={st.ref}
+                type="button"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartEdit(st.ref, "subj");
+                }}
+                aria-label={`合同コマ「${st.label}」を追加`}
+                title={`合同コマ「${st.label}」をこの行に追加 (${st.label} の幅に結合表示されます)`}
+                className={`no-print shrink-0 border-0 bg-transparent cursor-pointer p-0 leading-none text-builder-ink-ghost hover:text-builder-blue opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${isCompact ? "text-[9px]" : "text-xs"}`}
+              >
+                ⊞
+              </button>
+            ))}
             {hasContent && (
               <button
                 type="button"
@@ -190,11 +221,12 @@ export const RegularCell = memo(function RegularCell({
               {c.teacher}
             </div>
           )}
-          {(c.room || c.note) && (
+          {(c.room || displayRoomFallback || c.note) && (
             <div
               className={`text-builder-ink-muted truncate leading-tight ${isCompact ? "text-[9px]" : "text-[10px]"}`}
             >
-              {[c.room, c.note].filter(Boolean).join(" ")}
+              {/* 合同セルは列見出しが無いので既定教室もここに出す */}
+              {[c.room || displayRoomFallback, c.note].filter(Boolean).join(" ")}
             </div>
           )}
         </div>
@@ -216,6 +248,7 @@ export const RegularCell = memo(function RegularCell({
   return (
     <td
       className={tdBase}
+      colSpan={colSpan > 1 ? colSpan : undefined}
       title={conflictText || undefined}
       // フォーカスがセルの外へ出たら表示モードへ戻る
       onBlur={(e) => {
