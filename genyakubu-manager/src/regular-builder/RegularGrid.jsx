@@ -12,7 +12,10 @@ import {
   splitSpan,
   visibleClassesForDay,
 } from "./mergedColumns";
-import { computeBusyTeachersForTabs } from "./conflicts";
+import {
+  computeBusyTeachersForTabs,
+  computeNgTeachersForTabs,
+} from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
@@ -82,6 +85,8 @@ export function RegularGrid({
   onClearCell,
   onSwapCells,
   conflictsByRef,
+  /** 未承認の問題が NG のみのセル (バッジを ⚠️NG にする) */
+  ngOnlyRefs = null,
   highlightTeacher,
   hideEmpty = false,
   splitCampus = false,
@@ -316,10 +321,10 @@ export function RegularGrid({
   // (busyByTab は tab.id キー — 分割で同じ id が 2 回現れると上書きされ、
   // 片方の建物のセルから重複予告が消えてしまう)
   const sectionTabIds = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
-  const busyByTab = computeBusyTeachersForTabs(
-    project,
-    (project.tabs || []).filter((t) => sectionTabIds.has(t.id))
-  );
+  const origTabs = (project.tabs || []).filter((t) => sectionTabIds.has(t.id));
+  const busyByTab = computeBusyTeachersForTabs(project, origTabs);
+  // 講師プルダウンの「(NG)」予告 (busy と同じく元タブで計算)
+  const ngByTab = computeNgTeachersForTabs(project, origTabs);
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
   const handleDragStart = (e, ref, cell) => {
@@ -615,9 +620,11 @@ export function RegularGrid({
                             subjects={project.subjects}
                             teachers={project.teachers}
                             conflictText={reasons ? reasons.join("\n") : ""}
+                            conflictBadge={ngOnlyRefs?.has(ref) ? "NG" : "重複"}
                             // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
                             // なり memo が効かない。値が同じなら文字列は等価)
                             busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}
+                            ngTeachers={(ngByTab.get(t.id)?.get(key) || []).join("·")}
                             highlighted={highlighted}
                             dimmed={!!highlightTeacher && !highlighted}
                             roomPlaceholder={cls2.room}

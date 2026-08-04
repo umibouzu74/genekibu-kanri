@@ -8,7 +8,11 @@
 //   name: string,                 // 例 "2026 後期"
 //   periods:  [{ id, label, time }],          // 時限プール (時刻付き, 全タブ共通)
 //   subjects: string[],                        // 科目マスタ
-//   teachers: [{ name }],                      // 講師マスタ
+//   teachers: [{                               // 講師マスタ
+//     name,
+//     ngSlots?: [{ day, time? }],              // NG (不在)。time 無し = 終日
+//     maxPerDay?, maxPerWeek?,                 // コマ数上限 (無し = 無制限)
+//   }],
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
 //     group,                                   // セクション名の手動上書き (空 = 自動)
@@ -211,7 +215,28 @@ export function sanitizeProject(raw) {
     : [...DEFAULT_SUBJECTS];
   p.teachers = Array.isArray(raw.teachers)
     ? raw.teachers
-        .map((t) => ({ name: str(t?.name) }))
+        .map((t) => {
+          const teacher = { name: str(t?.name) };
+          // NG (不在): day は既知の曜日のみ、time は文字列のみ受け入れる
+          if (Array.isArray(t?.ngSlots)) {
+            const slots = t.ngSlots
+              .filter(
+                (s) => s && typeof s === "object" && REGULAR_DAYS.includes(s.day)
+              )
+              .map((s) => {
+                const slot = { day: s.day };
+                if (str(s.time)) slot.time = str(s.time);
+                return slot;
+              });
+            if (slots.length) teacher.ngSlots = slots;
+          }
+          // 上限: 正の数のみ (0 や負値は「未設定」に倒す)
+          const perDay = Number(t?.maxPerDay);
+          if (Number.isFinite(perDay) && perDay > 0) teacher.maxPerDay = perDay;
+          const perWeek = Number(t?.maxPerWeek);
+          if (Number.isFinite(perWeek) && perWeek > 0) teacher.maxPerWeek = perWeek;
+          return teacher;
+        })
         .filter((t) => t.name)
     : [];
   // 承認済みの重なり (conflicts.conflictKey の配列)。任意フィールド

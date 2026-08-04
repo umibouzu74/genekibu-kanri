@@ -74,8 +74,12 @@ export const RegularCell = memo(function RegularCell({
   subjects,
   teachers,
   conflictText,
+  /** 衝突バッジの文言 ("重複" | "NG")。conflictText がある時のみ使う */
+  conflictBadge = "重複",
   /** "·" 区切りの講師名リスト: この曜日・時間帯に他セルで割当済み (予告用) */
   busyTeachers = "",
+  /** "·" 区切りの講師名リスト: この曜日・時間帯が NG (不在) の講師 (予告用) */
+  ngTeachers = "",
   highlighted,
   dimmed,
   roomPlaceholder,
@@ -136,6 +140,7 @@ export const RegularCell = memo(function RegularCell({
     !c.teacher || teachers.some((t) => t.name === c.teacher);
   const subjKnown = !c.subj || subjects.includes(c.subj);
   const busySet = new Set(splitTeacherField(busyTeachers));
+  const ngSet = new Set(splitTeacherField(ngTeachers));
 
   const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
 
@@ -196,7 +201,7 @@ export const RegularCell = memo(function RegularCell({
               <span
                 className={`bg-builder-red text-white rounded shrink-0 animate-pulse ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}
               >
-                ⚠️重複
+                ⚠️{conflictBadge}
               </span>
             )}
             {/* ⊞: この列から始まる合同枠 (S〜B 等) に新しくコマを入れる */}
@@ -326,7 +331,7 @@ export const RegularCell = memo(function RegularCell({
             <span
               className={`bg-builder-red text-white rounded shrink-0 animate-pulse ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}
             >
-              ⚠️重複
+              ⚠️{conflictBadge}
             </span>
           )}
           {/* 編集中は ✕ を常設 (表示モードの ✕ はホバー表示のため、
@@ -388,13 +393,21 @@ export const RegularCell = memo(function RegularCell({
             <option value="">-</option>
             {teachers.map((t) => {
               const busy = busySet.has(t.name);
+              const ng = ngSet.has(t.name);
               return (
                 <option
                   key={t.name}
                   value={t.name}
-                  className={busy ? "bg-builder-warning-soft" : ""}
+                  className={
+                    ng
+                      ? "bg-builder-danger-soft"
+                      : busy
+                        ? "bg-builder-warning-soft"
+                        : ""
+                  }
                 >
                   {t.name}
+                  {ng ? " (NG)" : ""}
                   {busy ? " (重複)" : ""}
                 </option>
               );

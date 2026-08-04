@@ -75,6 +75,34 @@ describe("sanitizeProject", () => {
     expect(p.tabs[0].days).toEqual(["月"]); // 不正曜日は除外
     expect(p.tabs[0].schedule).toEqual({}); // 空セルは落とす
   });
+
+  it("講師の NG (不在)・上限を保持し、不正値は落とす", () => {
+    const p = sanitizeProject({
+      name: "x",
+      teachers: [
+        {
+          name: "堀上",
+          ngSlots: [
+            { day: "月" },
+            { day: "火", time: "18:00-19:00" },
+            { day: "?" }, // 不正曜日
+            "x", // 不正要素
+          ],
+          maxPerDay: 3,
+          maxPerWeek: 12,
+        },
+        { name: "半田", maxPerDay: 0, maxPerWeek: -1, ngSlots: [] },
+      ],
+    });
+    expect(p.teachers[0]).toEqual({
+      name: "堀上",
+      ngSlots: [{ day: "月" }, { day: "火", time: "18:00-19:00" }],
+      maxPerDay: 3,
+      maxPerWeek: 12,
+    });
+    // 0 / 負値の上限・空の ngSlots は「未設定」に倒す
+    expect(p.teachers[1]).toEqual({ name: "半田" });
+  });
 });
 
 describe("tabPeriods", () => {

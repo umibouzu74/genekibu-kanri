@@ -65,7 +65,7 @@ test("コンテキストメニュー・重複ジャンプ・Undo toast・講師�
   await expect(page).toHaveTitle(/E2E 通常/);
 
   // ── 重複一覧 → セルへジャンプ (フラッシュ表示) ──
-  await page.getByRole("button", { name: "⚠ 重複 1 件", exact: true }).click();
+  await page.getByRole("button", { name: "⚠ 問題 1 件", exact: true }).click();
   await page.getByRole("button", { name: "→ 表示" }).first().click();
   // 両セルが一時ハイライトされる
   await expect(page.locator("td.animate-pulse")).toHaveCount(2);
@@ -115,8 +115,63 @@ test("コンテキストメニュー・重複ジャンプ・Undo toast・講師�
   await page.getByRole("button", { name: "クリアする" }).click();
   await expect(page.getByText("2 コマをクリアしました")).toBeVisible();
   await expect(cellS1).not.toContainText("数学");
-  // 重複セルが消えたのでバッジは「重複なし」に戻る
+  // 重複セルが消えたのでバッジは「問題なし」に戻る
   await expect(
-    page.getByRole("button", { name: "✓ 重複なし", exact: true })
+    page.getByRole("button", { name: "✓ 問題なし", exact: true })
   ).toBeVisible();
+});
+
+test("講師NG の登録 → 検出 → 承認と、上限付き集計パネルが動く", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  await expect(page.getByRole("button", { name: "⚙ 全体設定" })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // ── 全体設定で 山田 の 火曜終日 NG と 田中 の週上限 1 を登録 ──
+  await page.getByRole("button", { name: "⚙ 全体設定" }).click();
+  await page.getByLabel("NG を設定する講師").selectOption("山田");
+  await page.getByLabel("NG の曜日").selectOption("火");
+  await page.getByRole("button", { name: "+ NG 追加" }).click();
+  await expect(page.getByText("🚫 山田: 火・終日")).toBeVisible();
+
+  await page.getByLabel("上限を設定する講師").selectOption("田中");
+  await page.getByLabel("週の上限コマ数").fill("1");
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await expect(page.getByText("📏 田中: 週1")).toBeVisible();
+
+  // ── NG 違反が検出される: 火1限 S = 国語/山田 (既存の重複 1 + NG 1) ──
+  await page.getByRole("button", { name: "⚠ 問題 2 件", exact: true }).click();
+  await expect(page.getByText(/山田 NG \(火 終日\)/)).toBeVisible();
+
+  // NG セルへジャンプ → 火曜へ切り替わり ⚠️NG バッジのセルが光る
+  await page
+    .locator("div", { hasText: /^⚠ 火 講師 山田 NG/ })
+    .getByRole("button", { name: "→ 表示" })
+    .click();
+  const ngCell = page.getByRole("button", { name: "火 1限 中3 S を編集" });
+  await expect(ngCell).toContainText("⚠️NG");
+  // フラッシュ終了 (= smooth スクロール完了後) を待ってから右クリックする
+  // (スクロール中に開いたメニューはスクロールイベントで閉じるため)
+  await expect(page.locator("td.animate-pulse")).toHaveCount(0, {
+    timeout: 5_000,
+  });
+
+  // 右クリックメニューから承認 → バッジが 1 件に減る
+  await ngCell.click({ button: "right" });
+  await page.getByRole("menu").getByText("✅ この問題を承認 (1 件)").click();
+  await expect(page.getByText("1 件の問題を承認しました")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "⚠ 問題 1 件", exact: true })
+  ).toBeVisible();
+
+  // ── 📊 集計パネル: 田中は月2コマで週上限 1 を超過 (2/1 赤字) ──
+  await page.getByRole("button", { name: "📊 集計" }).click();
+  const summary = page.locator("table", { hasText: "週計" });
+  const tanakaRow = summary.locator("tr", { hasText: "田中" });
+  await expect(tanakaRow).toContainText("2/1");
+  await expect(tanakaRow.locator("td[title*='週上限 1 コマを超過']")).toBeVisible();
+  const yamadaRow = summary.locator("tr", { hasText: "山田" });
+  await expect(yamadaRow).toContainText("1");
 });

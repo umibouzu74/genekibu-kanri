@@ -119,10 +119,10 @@ export function RegularContextMenu({
               type="button"
               role="menuitem"
               onClick={() => onAction("approve")}
-              title="意図した重なりとして承認し、件数と赤枠から除外する"
+              title="意図した重なり・NG 割当として承認し、件数と赤枠から除外する"
               className={`${ITEM_BASE} hover:bg-builder-success-soft text-builder-green`}
             >
-              ✅ この重なりを承認 ({conflictCount} 件)
+              ✅ この問題を承認 ({conflictCount} 件)
             </button>
           )}
           <button

@@ -30,6 +30,7 @@ import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
+import { RegularSummaryPanel } from "./RegularSummaryPanel";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
@@ -80,6 +81,11 @@ export default function RegularBuilderApp({
     false
   );
   const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
+  // 📊 集計パネル (講師×曜日のコマ数)。開閉はリロード後も保持
+  const [showSummary, setShowSummary] = usePersistedToggle(
+    LS.regularBuilderSummary,
+    false
+  );
   // 本校 / 亀井町 (教室「亀◯◯」) を別セクションに分けて表示する。
   // 時刻体系が建物で違うため既定 ON (混在すると空きマスが乱立する)
   const [splitCampus, setSplitCampus] = usePersistedToggle(
@@ -526,7 +532,7 @@ export default function RegularBuilderApp({
       }),
       { atomic: true }
     );
-    toasts.success(`${targets.length} 件の重なりを承認しました`);
+    toasts.success(`${targets.length} 件の問題を承認しました`);
   };
 
   // 時限行・クラス列の一括クリア (確認あり・Undo 1 回で戻る)
@@ -767,15 +773,23 @@ export default function RegularBuilderApp({
           }`}
           title={
             (conflictView.active.map((c) => c.label).join("\n") ||
-              "クリックで重複の一覧・承認を開閉") +
+              "クリックで問題 (重複・NG) の一覧・承認を開閉") +
             (conflictView.approved.length
               ? `\n(承認済み ${conflictView.approved.length} 件)`
               : "")
           }
         >
           {conflictView.active.length
-            ? `⚠ 重複 ${conflictView.active.length} 件`
-            : "✓ 重複なし"}
+            ? `⚠ 問題 ${conflictView.active.length} 件`
+            : "✓ 問題なし"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowSummary((v) => !v)}
+          title="講師×曜日のコマ数と週計を一覧 (上限超過は赤字)"
+          className={UI.btnToggle(showSummary)}
+        >
+          📊 集計
         </button>
         <select
           value={highlightTeacher}
@@ -809,12 +823,12 @@ export default function RegularBuilderApp({
         </button>
       </div>
 
-      {/* 重複の一覧・承認パネル */}
+      {/* 問題 (重複・NG) の一覧・承認パネル */}
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
-          <div className={UI.panelHead}>講師・教室の重複</div>
+          <div className={UI.panelHead}>講師・教室の重複と講師NG</div>
           {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
-            <div className="text-builder-ink-subtle">重複はありません。</div>
+            <div className="text-builder-ink-subtle">問題はありません。</div>
           )}
           {conflictView.active.map((c) => (
             <div key={conflictKey(c)} className="flex items-center gap-2">
@@ -839,7 +853,7 @@ export default function RegularBuilderApp({
           ))}
           {conflictView.approved.length > 0 && (
             <div className="font-bold text-[11px] text-builder-ink-subtle mt-1">
-              承認済み（意図した重なり）
+              承認済み（意図した重なり・NG 割当）
             </div>
           )}
           {conflictView.approved.map((c) => (
@@ -864,6 +878,8 @@ export default function RegularBuilderApp({
           ))}
         </div>
       )}
+
+      {showSummary && <RegularSummaryPanel project={project} />}
 
       {showProjectConfig && (
         <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
@@ -1014,8 +1030,8 @@ export default function RegularBuilderApp({
               {errCount > 0 ? (
                 <span
                   className="text-[10px] font-bold px-1 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"
-                  title={`この学年に未承認の重複が ${errCount} 件あります`}
-                  aria-label={`重複 ${errCount} 件`}
+                  title={`この学年に未承認の問題 (重複・NG) が ${errCount} 件あります`}
+                  aria-label={`問題 ${errCount} 件`}
                 >
                   ⚠️{errCount}
                 </span>
@@ -1028,7 +1044,7 @@ export default function RegularBuilderApp({
                   空
                 </span>
               ) : (
-                <span title="この学年に未承認の重複はありません" aria-label="重複なし">
+                <span title="この学年に未承認の問題はありません" aria-label="問題なし">
                   ✨
                 </span>
               )}
@@ -1098,6 +1114,7 @@ export default function RegularBuilderApp({
             onClearCell={onClearCell}
             onSwapCells={onSwapCells}
             conflictsByRef={conflictView.byRef}
+            ngOnlyRefs={conflictView.ngOnlyRefs}
             highlightTeacher={highlightTeacher}
             hideEmpty={hideEmpty}
             splitCampus={splitCampus}
@@ -1133,6 +1150,7 @@ export default function RegularBuilderApp({
                 onClearCell={onClearCell}
                 onSwapCells={onSwapCells}
                 conflictsByRef={conflictView.byRef}
+                ngOnlyRefs={conflictView.ngOnlyRefs}
                 highlightTeacher=""
                 hideEmpty={hideEmpty}
                 splitCampus={splitCampus}
