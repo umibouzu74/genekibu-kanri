@@ -3,6 +3,7 @@ import {
   buildConflictView,
   computeBusyTeachers,
   computeConflicts,
+  computeNgTeachersForTabs,
   conflictKey,
   entryRef,
 } from "./conflicts";
@@ -204,5 +205,115 @@ describe("computeBusyTeachers - 講師プルダウンの重複予告", () => {
     p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "英語", teacher: "堀上" };
     const busy = computeBusyTeachers(p, p.tabs[0]);
     expect(busy.get(makeCellKey("月", 2, 1))).toBeUndefined();
+  });
+});
+
+describe("computeConflicts - 講師 NG (不在) への割当", () => {
+  const ngProject = (ngSlots) => {
+    const p = makeProject();
+    // makeProject: 月1限(18:00-18:45) S=数学/半田, 月2限(18:55-19:40) A=英語/堀上
+    p.teachers = [{ name: "堀上", ngSlots }, { name: "半田" }];
+    return p;
+  };
+
+  it("終日 NG の曜日への割当を refs 1 件の ng として検出する", () => {
+    const { list } = computeConflicts(ngProject([{ day: "月" }]));
+    const ng = list.filter((c) => c.type === "ng");
+    expect(ng).toHaveLength(1);
+    expect(ng[0].refs).toEqual([`1:${makeCellKey("月", 2, 2)}`]);
+    expect(ng[0].label).toContain("堀上");
+    expect(ng[0].label).toContain("終日");
+    expect(ng[0].reasons[0]).toContain("NG 時間帯");
+  });
+
+  it("時刻範囲付き NG は重なる時限だけ検出する", () => {
+    const { list } = computeConflicts(
+      ngProject([{ day: "月", time: "19:00-21:00" }])
+    );
+    const ng = list.filter((c) => c.type === "ng");
+    expect(ng).toHaveLength(1); // 2限 18:55-19:40 のみ重なる
+    const none = computeConflicts(
+      ngProject([{ day: "月", time: "20:00-21:00" }])
+    ).list.filter((c) => c.type === "ng");
+    expect(none).toHaveLength(0);
+  });
+
+  it("別曜日の NG は検出しない・承認で消せる (conflictKey 互換)", () => {
+    expect(
+      computeConflicts(ngProject([{ day: "火" }])).list.filter(
+        (c) => c.type === "ng"
+      )
+    ).toHaveLength(0);
+    const { list } = computeConflicts(ngProject([{ day: "月" }]));
+    const ng = list.find((c) => c.type === "ng");
+    const view = buildConflictView(list, [conflictKey(ng)]);
+    expect(view.active.some((c) => c.type === "ng")).toBe(false);
+    expect(view.approved.some((c) => c.type === "ng")).toBe(true);
+  });
+
+  it("同じセルに複数の NG が重なっても 1 件にまとめる", () => {
+    const { list } = computeConflicts(
+      ngProject([
+        { day: "月", time: "18:30-19:10" },
+        { day: "月", time: "19:20-20:00" },
+      ])
+    );
+    expect(list.filter((c) => c.type === "ng")).toHaveLength(1);
+  });
+
+  it("複数講師セル (·区切り) は該当講師だけを検出する", () => {
+    const p = ngProject([{ day: "月" }]);
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = {
+      subj: "英語",
+      teacher: "堀上·半田",
+    };
+    const ng = computeConflicts(p).list.filter((c) => c.type === "ng");
+    expect(ng).toHaveLength(1);
+    expect(ng[0].label).toContain("堀上");
+  });
+});
+
+describe("computeNgTeachersForTabs - 講師プルダウンの (NG) 予告", () => {
+  it("NG に当たるマスの全クラス列に講師名を予告する", () => {
+    const p = makeProject();
+    p.teachers = [{ name: "堀上", ngSlots: [{ day: "月", time: "18:00-18:30" }] }];
+    const ng = computeNgTeachersForTabs(p, p.tabs).get(1);
+    // 1限 18:00-18:45 は重なる (S/A 両列)、2限 18:55-19:40 は重ならない
+    expect(ng.get(makeCellKey("月", 1, 1))).toEqual(["堀上"]);
+    expect(ng.get(makeCellKey("月", 1, 2))).toEqual(["堀上"]);
+    expect(ng.get(makeCellKey("月", 2, 1))).toBeUndefined();
+    // 火曜はタブが使うが NG は月曜のみ
+    expect(ng.get(makeCellKey("火", 1, 1))).toBeUndefined();
+  });
+
+  it("終日 NG は時刻未設定の時限にも予告する", () => {
+    const p = makeProject();
+    p.periods[0].time = "";
+    p.teachers = [{ name: "堀上", ngSlots: [{ day: "月" }] }];
+    const ng = computeNgTeachersForTabs(p, p.tabs).get(1);
+    expect(ng.get(makeCellKey("月", 1, 1))).toEqual(["堀上"]);
+  });
+
+  it("時刻範囲 NG は時刻未設定の時限には予告しない (判定不能)", () => {
+    const p = makeProject();
+    p.periods[0].time = "";
+    p.teachers = [{ name: "堀上", ngSlots: [{ day: "月", time: "18:00-19:00" }] }];
+    const ng = computeNgTeachersForTabs(p, p.tabs).get(1);
+    expect(ng.get(makeCellKey("月", 1, 1))).toBeUndefined();
+  });
+});
+
+describe("buildConflictView - ngOnlyRefs", () => {
+  it("未承認が NG のみのセルだけを ngOnlyRefs に入れる", () => {
+    const p = makeProject();
+    // 月2限 A=英語/堀上 に終日 NG。さらに同時間帯の講師重複も作る
+    p.teachers = [{ name: "堀上", ngSlots: [{ day: "月" }] }, { name: "半田" }];
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "国語", teacher: "半田" };
+    p.tabs[0].schedule[makeCellKey("月", 1, 2)] = { subj: "理科", teacher: "半田" };
+    const view = buildConflictView(computeConflicts(p).list, []);
+    const ngRef = `1:${makeCellKey("月", 2, 2)}`; // NG のみ
+    const pairRef = `1:${makeCellKey("月", 1, 1)}`; // 講師重複のみ
+    expect(view.ngOnlyRefs.has(ngRef)).toBe(true);
+    expect(view.ngOnlyRefs.has(pairRef)).toBe(false);
   });
 });

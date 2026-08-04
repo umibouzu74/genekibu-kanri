@@ -30,6 +30,7 @@ export const LS = {
   regularBuilderHideEmpty: "genyakubu-regular-builder-hide-empty",
   regularBuilderCompact: "genyakubu-regular-builder-compact",
   regularBuilderSplitCampus: "genyakubu-regular-builder-split-campus",
+  regularBuilderSummary: "genyakubu-regular-builder-summary",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────

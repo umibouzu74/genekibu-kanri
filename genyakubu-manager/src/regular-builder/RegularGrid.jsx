@@ -12,8 +12,12 @@ import {
   splitSpan,
   visibleClassesForDay,
 } from "./mergedColumns";
-import { computeBusyTeachersForTabs } from "./conflicts";
+import {
+  computeBusyTeachersForTabs,
+  computeNgTeachersForTabs,
+} from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
+import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
 import { RegularCell } from "./RegularCell";
 
@@ -42,6 +46,28 @@ const startMin = (time) => {
 // 学年グループの境目に引く縦の区切り罫
 const GROUP_BOUNDARY = "border-l-2 border-l-builder-ink-muted";
 
+// 右クリック / 長押しでヘッダの一括操作メニューを開ける th。
+// useLongPress は hook なのでループ内の th には直接使えず、小さな
+// コンポーネントに切り出す (講習はヘッダをコンポーネント化して対応)
+function MenuTh({ onOpenMenu, title, className, children, ...rest }) {
+  const longPress = useLongPress(onOpenMenu || null);
+  const extra = onOpenMenu
+    ? {
+        ...longPress,
+        onContextMenu: (e) => {
+          e.preventDefault();
+          onOpenMenu({ clientX: e.clientX, clientY: e.clientY });
+        },
+        title: title ? `${title}\n右クリックで一括操作` : "右クリックで一括操作",
+      }
+    : { title };
+  return (
+    <th {...rest} {...extra} className={className}>
+      {children}
+    </th>
+  );
+}
+
 // セクション見出しの配色: 全学年が高校系なら高校部、全て中学系なら
 // 中学部 (附属含む)、混在は中立色
 const sectionTone = (tabs) => {
@@ -59,10 +85,18 @@ export function RegularGrid({
   onClearCell,
   onSwapCells,
   conflictsByRef,
+  /** 未承認の問題が NG のみのセル (バッジを ⚠️NG にする) */
+  ngOnlyRefs = null,
   highlightTeacher,
   hideEmpty = false,
   splitCampus = false,
   isCompact = false,
+  /** {day, refs, nonce}: 該当セルへスクロールして一時ハイライトする要求 */
+  jumpTarget = null,
+  /** セルのコンテキストメニューを開く (pos, ref) */
+  onOpenCellMenu = null,
+  /** ヘッダ (時限行・クラス列) の一括操作メニューを開く (pos, payload) */
+  onOpenHeaderMenu = null,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -109,6 +143,47 @@ export function RegularGrid({
       return next;
     });
 
+  // ── 重複ジャンプ / Undo フィードバックのフラッシュ表示 ──────────
+  // jumpTarget が来たら対象セルを含む折りたたみ中セクションを展開し、
+  // レンダー後に先頭セルへスクロール、対象セルを一時ハイライトする。
+  // 列 → セクションの対応はレンダー中に sectionKeyByColRef へ記録しておく
+  // (implRef と同じ「最新クロージャ参照」パターン)。ref は曜日を含むため、
+  // 曜日切替後に残ったフラッシュが別曜日のセルに当たることはない。
+  const [flashRefs, setFlashRefs] = useState([]);
+  const sectionKeyByColRef = useRef(new Map());
+  useEffect(() => {
+    if (!jumpTarget || jumpTarget.day !== day) return undefined;
+    const refs = jumpTarget.refs || [];
+    if (refs.length === 0) return undefined;
+    setCollapsedKeys((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      for (const r of refs) {
+        const { tabId, key } = parseCellRef(r);
+        const { classId } = parseCellKey(key);
+        const sk = sectionKeyByColRef.current.get(`${tabId}:${classId}`);
+        if (sk && next.has(sk)) {
+          next.delete(sk);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setFlashRefs(refs);
+    // 展開・曜日切替のレンダーが反映されてからスクロール
+    const t1 = setTimeout(() => {
+      document
+        .getElementById(`regb-${refs[0]}-cell`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }, 80);
+    const t2 = setTimeout(() => setFlashRefs([]), 2400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [jumpTarget, day]);
+
   // セルへ渡すハンドラは恒久的に同一参照にする (RegularCell の memo を
   // 効かせるため)。実体は毎レンダー implRef に差し替え、最新のクロージャ
   // (sections / dragSource など) を参照する。
@@ -119,6 +194,7 @@ export function RegularGrid({
   const onDragLeave = useCallback((...a) => implRef.current.dragLeave(...a), []);
   const onDrop = useCallback((...a) => implRef.current.drop(...a), []);
   const onDragEnd = useCallback((...a) => implRef.current.dragEnd(...a), []);
+  const onOpenMenu = useCallback((...a) => implRef.current.openMenu(...a), []);
 
   // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
   const rawSections = computeSections(project, day, { splitCampus });
@@ -198,16 +274,57 @@ export function RegularGrid({
 
   const available = (per, tab) => tab.periodIds.includes(per.id);
 
+  // ジャンプ効果が「どのセクションを展開すべきか」を引けるように、
+  // 列 (tabId:classId) → セクション key をレンダーのたびに記録する
+  sectionKeyByColRef.current = new Map();
+  for (const s of sections) {
+    for (const t of s.tabs) {
+      for (const c of t.classes) {
+        sectionKeyByColRef.current.set(`${t.id}:${c.id}`, s.key);
+      }
+    }
+  }
+
+  // ── ヘッダの一括操作メニュー (時限行 / クラス列) ─────────────────
+  // refs は「そのヘッダ配下の全マス」。中身の有無は App 側で絞る
+  const openRowMenu = (pos, s, per) => {
+    if (!onOpenHeaderMenu) return;
+    const refs = [];
+    for (const t of s.tabs) {
+      if (!available(per, t)) continue;
+      for (const cls of t.classes) {
+        refs.push(makeCellRef(t.id, makeCellKey(day, per.id, cls.id)));
+      }
+    }
+    onOpenHeaderMenu(pos, {
+      kind: "bulk",
+      label: `${day}曜 ${per.label || per.time}（${s.name}）`,
+      refs,
+    });
+  };
+  const openColMenu = (pos, t, cls2) => {
+    if (!onOpenHeaderMenu) return;
+    // クラス名の無い列 (取込した高校の講座列など) は列見出しと同じく教室名で呼ぶ
+    const colName = [t.name, cls2.label || cls2.room].filter(Boolean).join(" ");
+    onOpenHeaderMenu(pos, {
+      kind: "bulk",
+      label: `${colName}（${day}曜）`,
+      refs: (t.periodIds || []).map((pid) =>
+        makeCellRef(t.id, makeCellKey(day, pid, cls2.id))
+      ),
+    });
+  };
+
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
   // (全セルの解決は 1 回で済む一括版を使う)。セクションの tabs は
   // 建物分割・空列非表示で加工した仮想タブなので、元のタブで計算する
   // (busyByTab は tab.id キー — 分割で同じ id が 2 回現れると上書きされ、
   // 片方の建物のセルから重複予告が消えてしまう)
   const sectionTabIds = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
-  const busyByTab = computeBusyTeachersForTabs(
-    project,
-    (project.tabs || []).filter((t) => sectionTabIds.has(t.id))
-  );
+  const origTabs = (project.tabs || []).filter((t) => sectionTabIds.has(t.id));
+  const busyByTab = computeBusyTeachersForTabs(project, origTabs);
+  // 講師プルダウンの「(NG)」予告 (busy と同じく元タブで計算)
+  const ngByTab = computeNgTeachersForTabs(project, origTabs);
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
   const handleDragStart = (e, ref, cell) => {
@@ -357,6 +474,7 @@ export function RegularGrid({
     dragLeave: handleDragLeave,
     drop: handleDrop,
     dragEnd: handleDragEnd,
+    openMenu: (pos, ref) => onOpenCellMenu?.(pos, ref),
   };
 
   return (
@@ -424,9 +542,12 @@ export function RegularGrid({
                     const lay = s.tabLayouts.get(t.id);
                     const headCols = lay.fallback ? t.classes : lay.visible;
                     return headCols.map((cls2, ci) => (
-                      <th
+                      <MenuTh
                         key={`${t.id}-${cls2.id}`}
                         scope="col"
+                        onOpenMenu={
+                          onOpenHeaderMenu ? (pos) => openColMenu(pos, t, cls2) : null
+                        }
                         className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
                       >
                         {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
@@ -436,7 +557,7 @@ export function RegularGrid({
                             {cls2.room}
                           </span>
                         )}
-                      </th>
+                      </MenuTh>
                     ));
                   })}
                 </tr>
@@ -445,8 +566,11 @@ export function RegularGrid({
               <tbody className="builder-day-group">
                 {s.periods.map((per) => (
                   <tr key={per.id} className="bg-builder-surface border-b border-builder-border">
-                    <th
+                    <MenuTh
                       scope="row"
+                      onOpenMenu={
+                        onOpenHeaderMenu ? (pos) => openRowMenu(pos, s, per) : null
+                      }
                       className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink whitespace-nowrap align-top ${isCompact ? "p-1" : "p-1.5"}`}
                     >
                       {/* ラベル未設定 (取込直後など) は時刻だけを見出しにする */}
@@ -462,7 +586,7 @@ export function RegularGrid({
                       ) : (
                         per.time
                       )}
-                    </th>
+                    </MenuTh>
                     {s.tabs.flatMap((t, ti) => {
                       const lay = s.tabLayouts.get(t.id);
                       const boundary = ti > 0 ? GROUP_BOUNDARY : "";
@@ -496,9 +620,11 @@ export function RegularGrid({
                             subjects={project.subjects}
                             teachers={project.teachers}
                             conflictText={reasons ? reasons.join("\n") : ""}
+                            conflictBadge={ngOnlyRefs?.has(ref) ? "NG" : "重複"}
                             // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
                             // なり memo が効かない。値が同じなら文字列は等価)
                             busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}
+                            ngTeachers={(ngByTab.get(t.id)?.get(key) || []).join("·")}
                             highlighted={highlighted}
                             dimmed={!!highlightTeacher && !highlighted}
                             roomPlaceholder={cls2.room}
@@ -509,11 +635,13 @@ export function RegularGrid({
                             mergeStarters={extra.mergeStarters || ""}
                             isCompact={isCompact}
                             isEditing={editRef === ref}
+                            isFlashing={flashRefs.includes(ref)}
                             onStartEdit={onStartEdit}
                             onEndEdit={onEndEdit}
                             onCellChange={onCellChange}
                             onClearCell={onClearCell}
                             onNavigate={onNavigate}
+                            onOpenMenu={onOpenCellMenu ? onOpenMenu : null}
                             onDragStart={onDragStart}
                             onDragOver={onDragOver}
                             onDragLeave={onDragLeave}

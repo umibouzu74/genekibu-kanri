@@ -8,7 +8,11 @@
 //   name: string,                 // 例 "2026 後期"
 //   periods:  [{ id, label, time }],          // 時限プール (時刻付き, 全タブ共通)
 //   subjects: string[],                        // 科目マスタ
-//   teachers: [{ name }],                      // 講師マスタ
+//   teachers: [{                               // 講師マスタ
+//     name,
+//     ngSlots?: [{ day, time? }],              // NG (不在)。time 無し = 終日
+//     maxPerDay?, maxPerWeek?,                 // コマ数上限 (無し = 無制限)
+//   }],
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
 //     group,                                   // セクション名の手動上書き (空 = 自動)
@@ -19,6 +23,8 @@
 //   }],
 // }
 // Cell = { subj?, teacher?, room?, note? }     // teacher は "·" 区切りで複数可
+
+import { splitTeacherField } from "../utils/biweekly";
 
 export const REGULAR_DAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
@@ -127,6 +133,49 @@ export function swapCellsAcrossTabs(tabs, refA, refB) {
   });
 }
 
+// ─── 講師のリネーム (マスタ + 割当セルの追従) ───────────────────────
+
+/**
+ * 講師マスタの名前を変更し、全タブの割当セル (teacher フィールド) も
+ * 追従させた新しいプロジェクトを返す (純関数)。
+ * - 複数講師 ("·" 区切り) は該当名だけを置換し、置換で同名が並んだ場合は
+ *   重複を除いて詰める ("田中·山田" の 田中→山田 は "山田")
+ * - 前後空白は除去。空名・同名へのリネームは何もしない (changedCells 0)
+ * - 重複チェック (既存マスタ名への衝突) は呼び出し側の責務
+ * @returns {{project: object, changedCells: number}}
+ */
+export function renameTeacherInProject(project, oldName, newName) {
+  const from = (oldName || "").trim();
+  const to = (newName || "").trim();
+  if (!from || !to || from === to) return { project, changedCells: 0 };
+
+  let changedCells = 0;
+  const teachers = (project.teachers || []).map((t) =>
+    t.name === from ? { ...t, name: to } : t
+  );
+  const tabs = (project.tabs || []).map((tab) => {
+    let touched = false;
+    const schedule = {};
+    for (const [key, cell] of Object.entries(tab.schedule || {})) {
+      const names = splitTeacherField(cell.teacher);
+      if (names.includes(from)) {
+        const next = [];
+        for (const n of names) {
+          const nn = n === from ? to : n;
+          if (!next.includes(nn)) next.push(nn);
+        }
+        schedule[key] = { ...cell, teacher: next.join("·") };
+        changedCells++;
+        touched = true;
+      } else {
+        schedule[key] = cell;
+      }
+    }
+    return touched ? { ...tab, schedule } : tab;
+  });
+  return { project: { ...project, teachers, tabs }, changedCells };
+}
+
 // ─── サニタイズ (useSyncedStorage の migrate 用) ────────────────────
 // 同期で壊れたペイロードが来ても UI が落ちないよう、最低限の形に整える。
 // 解釈不能なら null を返し、呼び出し側で「直前の値を保持」に倒す。
@@ -166,7 +215,28 @@ export function sanitizeProject(raw) {
     : [...DEFAULT_SUBJECTS];
   p.teachers = Array.isArray(raw.teachers)
     ? raw.teachers
-        .map((t) => ({ name: str(t?.name) }))
+        .map((t) => {
+          const teacher = { name: str(t?.name) };
+          // NG (不在): day は既知の曜日のみ、time は文字列のみ受け入れる
+          if (Array.isArray(t?.ngSlots)) {
+            const slots = t.ngSlots
+              .filter(
+                (s) => s && typeof s === "object" && REGULAR_DAYS.includes(s.day)
+              )
+              .map((s) => {
+                const slot = { day: s.day };
+                if (str(s.time)) slot.time = str(s.time);
+                return slot;
+              });
+            if (slots.length) teacher.ngSlots = slots;
+          }
+          // 上限: 正の数のみ (0 や負値は「未設定」に倒す)
+          const perDay = Number(t?.maxPerDay);
+          if (Number.isFinite(perDay) && perDay > 0) teacher.maxPerDay = perDay;
+          const perWeek = Number(t?.maxPerWeek);
+          if (Number.isFinite(perWeek) && perWeek > 0) teacher.maxPerWeek = perWeek;
+          return teacher;
+        })
         .filter((t) => t.name)
     : [];
   // 承認済みの重なり (conflicts.conflictKey の配列)。任意フィールド

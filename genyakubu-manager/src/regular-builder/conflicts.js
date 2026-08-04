@@ -32,10 +32,12 @@ function describeEntry(entry) {
 
 /**
  * プロジェクト全体の衝突を検出する (承認は考慮しない生の一覧)。
+ * teacher/room は 2 セルの重複 (refs 2 件)、ng は講師マスタの NG (不在)
+ * 時間帯への割当 (refs 1 件)。いずれも承認フローで消せる。
  * @returns {{list: {
- *   type: "teacher"|"room", day: string, label: string,
- *   refs: [string, string],      // 両セルの entryRef
- *   reasons: [string, string],   // refs と同順の、セル側に出す理由文
+ *   type: "teacher"|"room"|"ng", day: string, label: string,
+ *   refs: string[],              // 該当セルの entryRef (teacher/room は 2 件)
+ *   reasons: string[],           // refs と同順の、セル側に出す理由文
  * }[]}}
  */
 export function computeConflicts(project) {
@@ -96,7 +98,79 @@ export function computeConflicts(project) {
     }
   }
 
+  // ── 講師 NG (不在) への割当 ──────────────────────────────────────
+  // NG は「曜日 (+ 任意の時刻範囲)」。time 無しは終日 NG。同じ講師の複数
+  // NG が同じセルに重なっても 1 件と数える (承認を 1 回で済ませるため)。
+  const ngTeachers = (project.teachers || []).filter(
+    (t) => (t.ngSlots || []).length > 0
+  );
+  if (ngTeachers.length > 0) {
+    const byName = new Map(ngTeachers.map((t) => [t.name, t]));
+    for (const e of entries) {
+      for (const name of splitTeacherField(e.cell.teacher || "")) {
+        const master = byName.get(name);
+        if (!master) continue;
+        const hit = master.ngSlots.find(
+          (s) =>
+            s.day === e.day &&
+            (!s.time || timeOverlaps(s.time, e.period.time.trim()))
+        );
+        if (!hit) continue;
+        const when = hit.time ? ` ${hit.time}` : " 終日";
+        list.push({
+          type: "ng",
+          day: e.day,
+          label: `${e.day} 講師 ${name} NG (${e.day}${when}): ${describeEntry(e)}`,
+          refs: [entryRef(e)],
+          reasons: [`講師 ${name} の NG 時間帯 (${e.day}${when}) です`],
+        });
+      }
+    }
+  }
+
   return { list };
+}
+
+/**
+ * 複数タブ分の「(NG) 予告」索引を一括計算する。各マス (曜日 × 時限) に
+ * ついて、NG (不在) に当たる講師名を返す — 講師プルダウンで選択前に
+ * 警告するための索引で、選択は妨げない (割当済みは computeConflicts が
+ * ng として検出し、承認フローで消せる)。
+ * 終日 NG は時刻未設定の時限にも当たる (時刻に依存しないため)。
+ * @returns {Map<number, Map<string, string[]>>} tabId → (cellKey → 講師名)
+ */
+export function computeNgTeachersForTabs(project, tabs) {
+  const ngTeachers = (project.teachers || []).filter(
+    (t) => (t.ngSlots || []).length > 0
+  );
+  const results = new Map();
+  for (const tab of tabs) {
+    const result = new Map();
+    if (ngTeachers.length > 0) {
+      const periods = tabPeriods(project, tab);
+      for (const day of tab.days || []) {
+        for (const per of periods) {
+          const time = (per.time || "").trim();
+          const names = ngTeachers
+            .filter((t) =>
+              t.ngSlots.some(
+                (s) =>
+                  s.day === day &&
+                  (!s.time || (TIME_RE.test(time) && timeOverlaps(s.time, time)))
+              )
+            )
+            .map((t) => t.name)
+            .sort();
+          if (names.length === 0) continue;
+          for (const cls of tab.classes || []) {
+            result.set(makeCellKey(day, per.id, cls.id), names);
+          }
+        }
+      }
+    }
+    results.set(tab.id, result);
+  }
+  return results;
 }
 
 /**
@@ -165,9 +239,10 @@ export function computeBusyTeachers(project, tab) {
  * @param {ReturnType<typeof computeConflicts>["list"]} list
  * @param {string[] | undefined} approvedKeys project.approvedConflicts
  * @returns {{
- *   active: object[],            // 未承認 (バッジ件数・赤枠の対象)
- *   approved: object[],          // 承認済み
- *   byRef: Map<string, string[]> // 未承認のみ: entryRef → 理由文
+ *   active: object[],             // 未承認 (バッジ件数・赤枠の対象)
+ *   approved: object[],           // 承認済み
+ *   byRef: Map<string, string[]>, // 未承認のみ: entryRef → 理由文
+ *   ngOnlyRefs: Set<string>,      // 未承認が NG のみのセル (バッジを ⚠️NG に)
  * }}
  */
 export function buildConflictView(list, approvedKeys) {
@@ -178,12 +253,21 @@ export function buildConflictView(list, approvedKeys) {
     (approvedSet.has(conflictKey(c)) ? approved : active).push(c);
   }
   const byRef = new Map();
+  const typesByRef = new Map();
   for (const c of active) {
     c.refs.forEach((ref, i) => {
       const arr = byRef.get(ref) || [];
       arr.push(c.reasons[i]);
       byRef.set(ref, arr);
+      const types = typesByRef.get(ref) || new Set();
+      types.add(c.type);
+      typesByRef.set(ref, types);
     });
   }
-  return { active, approved, byRef };
+  const ngOnlyRefs = new Set(
+    [...typesByRef]
+      .filter(([, types]) => types.size === 1 && types.has("ng"))
+      .map(([ref]) => ref)
+  );
+  return { active, approved, byRef, ngOnlyRefs };
 }
