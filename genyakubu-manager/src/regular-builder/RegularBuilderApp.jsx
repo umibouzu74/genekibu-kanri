@@ -615,7 +615,12 @@ export default function RegularBuilderApp({
   // 実行したら true (選択解除などの後処理は呼び出し側)
   const clearCellsBulk = async (refs, label) => {
     const filled = refs.filter((r) => getCellByRef(r));
-    if (filled.length === 0) return false;
+    if (filled.length === 0) {
+      // silent no-op にしない (講習 H3 と同じ思想)。ヘッダメニュー経由は
+      // 項目自体が disabled のため、ここに来るのは選択バー経由のみ
+      toasts.info("クリアできるコマがありません（選択セルはすべて空です）");
+      return false;
+    }
     const ok = await confirm({
       title: "一括クリア",
       message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,

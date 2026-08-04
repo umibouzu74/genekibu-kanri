@@ -93,5 +93,10 @@ export const REGULAR_PRINT_STYLE = `
   .print-container td {
     position: static !important;
   }
+  /* 複数選択の装飾 (緑リング = box-shadow + 薄緑背景) は紙面に載せない */
+  .print-container td.regb-selected {
+    box-shadow: none !important;
+    background-color: transparent !important;
+  }
 }
 `.trim();

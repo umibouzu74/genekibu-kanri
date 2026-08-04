@@ -104,7 +104,8 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
       <div className={UI.panelHead}>📌 スナップショット</div>
       <div className={UI.hint}>
         別案を試す前に現在の状態を保存しておくと、差分を見ながらいつでも戻せます。
-        保存・復元・削除は Ctrl+Z で取り消せます。
+        保存・復元・削除は Ctrl+Z で取り消せます
+        （スナップショットは保存容量を使うため、不要になったら削除してください）。
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <input

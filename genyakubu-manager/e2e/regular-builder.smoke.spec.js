@@ -143,7 +143,7 @@ test("講師NG の登録 → 検出 → 承認と、上限付き集計パネル�
 
   // ── NG 違反が検出される: 火1限 S = 国語/山田 (既存の重複 1 + NG 1) ──
   await page.getByRole("button", { name: "⚠ 問題 2 件", exact: true }).click();
-  await expect(page.getByText(/山田 NG \(火 終日\)/)).toBeVisible();
+  await expect(page.getByText(/山田 NG \(終日\)/)).toBeVisible();
 
   // NG セルへジャンプ → 火曜へ切り替わり ⚠️NG バッジのセルが光る
   await page

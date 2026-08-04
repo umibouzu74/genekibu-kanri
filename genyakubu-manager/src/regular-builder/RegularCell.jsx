@@ -148,7 +148,9 @@ export const RegularCell = memo(function RegularCell({
   const busySet = new Set(splitTeacherField(busyTeachers));
   const ngSet = new Set(splitTeacherField(ngTeachers));
 
-  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isSelected ? "ring-2 ring-builder-green ring-inset bg-builder-success-soft" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
+  // regb-selected は印刷スタイル (printStyle.js) が紙面から選択装飾を
+  // 除くためのマーカー
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isSelected ? "regb-selected ring-2 ring-builder-green ring-inset bg-builder-success-soft" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
 
   const starters = mergeStarters
     ? mergeStarters.split("\n").map((s) => {
@@ -168,7 +170,7 @@ export const RegularCell = memo(function RegularCell({
         aria-label={`${ariaBase} を編集`}
         title={
           conflictText ||
-          "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+C・Ctrl+V・Delete"
+          "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+クリックで複数選択 / Ctrl+C・Ctrl+V・Delete"
         }
         className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
         draggable={!!c.subj}
