@@ -276,3 +276,125 @@ describe("computeSections", () => {
     expect(sections.map((s) => s.name)).toEqual(["高1・高2", "中1"]);
   });
 });
+
+describe("computeSections — splitCampus (本校/亀井町の表示分割)", () => {
+  // 本校 (401, 402) + 亀井町 (亀21) が混在する取込タブを模す。
+  // 本校のセルは時限 1・2、亀井町のセルは時限 3・4 だけを使う。
+  const mixedTab = (id, name, over = {}) => ({
+    id,
+    name,
+    grade: name,
+    group: "",
+    classes: [
+      { id: 1, label: "", room: "401" },
+      { id: 2, label: "", room: "402" },
+      { id: 3, label: "", room: "亀21" },
+    ],
+    days: ["月"],
+    periodIds: [1, 2, 3, 4],
+    schedule: {
+      [makeCellKey("月", 1, 1)]: { subj: "英語" },
+      [makeCellKey("月", 2, 2)]: { subj: "数学" },
+      [makeCellKey("月", 3, 3)]: { subj: "国語" },
+      [makeCellKey("月", 4, 3)]: { subj: "理科" },
+    },
+    ...over,
+  });
+  const proj = (tabs) => ({ periods: [], tabs });
+
+  it("混在タブは本校と亀井町の 2 セクションに分かれ、時限も建物ごとに絞られる", () => {
+    const sections = computeSections(proj([mixedTab(1, "高1")]), "月", {
+      splitCampus: true,
+    });
+    expect(sections.map((s) => s.name)).toEqual(["高1（本校）", "高1（亀井町）"]);
+    expect(sections[0].tabs[0].classes.map((c) => c.room)).toEqual(["401", "402"]);
+    expect(sections[0].tabs[0].periodIds).toEqual([1, 2]);
+    expect(sections[1].tabs[0].classes.map((c) => c.room)).toEqual(["亀21"]);
+    expect(sections[1].tabs[0].periodIds).toEqual([3, 4]);
+    // 分割してもタブ id は元のまま (セル参照 `tabId:cellKey` を壊さない)
+    expect(sections.flatMap((s) => s.tabs.map((t) => t.id))).toEqual([1, 1]);
+    // key は建物で区別される (React key・折りたたみ状態の衝突防止)
+    expect(new Set(sections.map((s) => s.key)).size).toBe(2);
+  });
+
+  it("splitCampus なしでは従来どおり 1 セクションのまま", () => {
+    const sections = computeSections(proj([mixedTab(1, "高1")]), "月");
+    expect(sections.map((s) => s.name)).toEqual(["高1"]);
+    expect(sections[0].tabs[0].periodIds).toEqual([1, 2, 3, 4]);
+  });
+
+  it("亀井町の時限が本校を包含していても建物を跨いで併合しない", () => {
+    // 亀井町セルが時限 1〜4 全部、 本校セルは 1・2 のみ → 包含関係
+    const t = mixedTab(1, "高1", {
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "英語" },
+        [makeCellKey("月", 2, 2)]: { subj: "数学" },
+        [makeCellKey("月", 1, 3)]: { subj: "国語" },
+        [makeCellKey("月", 2, 3)]: { subj: "理科" },
+        [makeCellKey("月", 3, 3)]: { subj: "社会" },
+        [makeCellKey("月", 4, 3)]: { subj: "英語" },
+      },
+    });
+    const sections = computeSections(proj([t]), "月", { splitCampus: true });
+    expect(sections.map((s) => s.name)).toEqual(["高1（本校）", "高1（亀井町）"]);
+  });
+
+  it("同じ建物どうしの学年は今までどおり時限の包含関係でまとまる", () => {
+    const sections = computeSections(
+      proj([mixedTab(1, "高1"), mixedTab(2, "高2")]),
+      "月",
+      { splitCampus: true }
+    );
+    expect(sections.map((s) => s.name)).toEqual([
+      "高1・高2（本校）",
+      "高1・高2（亀井町）",
+    ]);
+  });
+
+  it("列の既定教室が本校でも、セルの実効教室の多数決で亀井町側に入る", () => {
+    // 列 401 のコマが実際にはすべて亀21 で行われる (セル上書き)
+    const t = mixedTab(1, "高1", {
+      schedule: {
+        [makeCellKey("月", 3, 1)]: { subj: "数学", room: "亀21" },
+        [makeCellKey("月", 4, 1)]: { subj: "英語", room: "亀21" },
+        [makeCellKey("月", 1, 2)]: { subj: "国語" },
+        [makeCellKey("月", 3, 3)]: { subj: "理科" },
+      },
+    });
+    const sections = computeSections(proj([t]), "月", { splitCampus: true });
+    const annex = sections.find((s) => s.name.includes("亀井町"));
+    expect(annex.tabs[0].classes.map((c) => c.room)).toEqual(["401", "亀21"]);
+  });
+
+  it("片方の建物しか無いプロジェクトでは名前も構成も変わらない", () => {
+    const t = mixedTab(1, "中1", {
+      classes: [
+        { id: 1, label: "S", room: "501" },
+        { id: 2, label: "A", room: "502" },
+      ],
+      schedule: { [makeCellKey("月", 1, 1)]: { subj: "英語" } },
+    });
+    const sections = computeSections(proj([t]), "月", { splitCampus: true });
+    expect(sections.map((s) => s.name)).toEqual(["中1"]);
+    expect(sections[0].tabs[0].periodIds).toEqual([1, 2, 3, 4]);
+  });
+
+  it("手動グループの混在タブは亀井町側だけ別グループ名になる", () => {
+    const t = mixedTab(1, "高1", { group: "高校" });
+    const sections = computeSections(proj([t]), "月", { splitCampus: true });
+    expect(sections.map((s) => s.name).sort()).toEqual(["高校", "高校（亀井町）"]);
+  });
+
+  it("セルが 1 つも無い建物側は全時限のまま残る (入力の受け皿)", () => {
+    // 亀井町の列はあるがセル未入力
+    const t = mixedTab(1, "高1", {
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "英語" },
+        [makeCellKey("月", 2, 2)]: { subj: "数学" },
+      },
+    });
+    const sections = computeSections(proj([t]), "月", { splitCampus: true });
+    const annex = sections.find((s) => s.name.includes("亀井町"));
+    expect(annex.tabs[0].periodIds).toEqual([1, 2, 3, 4]);
+  });
+});

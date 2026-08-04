@@ -69,11 +69,17 @@ export default function RegularBuilderApp({
   const [showConflicts, setShowConflicts] = useState(false);
   // 表示トグルはリロード後も保持 (講習の 📏 と同じ。明示トグルの保存であり
   // 自動学習系ではない)
-  const [hideEmptyRows, setHideEmptyRows] = usePersistedToggle(
+  const [hideEmpty, setHideEmpty] = usePersistedToggle(
     LS.regularBuilderHideEmpty,
     false
   );
   const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
+  // 本校 / 亀井町 (教室「亀◯◯」) を別セクションに分けて表示する。
+  // 時刻体系が建物で違うため既定 ON (混在すると空きマスが乱立する)
+  const [splitCampus, setSplitCampus] = usePersistedToggle(
+    LS.regularBuilderSplitCampus,
+    true
+  );
   const [highlightTeacher, setHighlightTeacher] = useState("");
   const [selectedDay, setSelectedDay] = useState(null);
 
@@ -709,11 +715,19 @@ export default function RegularBuilderApp({
         <div className="flex gap-1 ml-auto">
           <button
             type="button"
-            onClick={() => setHideEmptyRows((v) => !v)}
-            title="セルが 1 つも無い時限行を表示から隠す。データは変わりません"
-            className={UI.btnToggle(hideEmptyRows)}
+            onClick={() => setSplitCampus((v) => !v)}
+            title="教室が「亀◯◯」(亀井町) のクラス列を本校と別のセクションに分けて表示する。時刻体系の違う建物同士で空きマスが混ざらなくなります。データは変わりません"
+            className={UI.btnToggle(splitCampus)}
           >
-            ▤ 空行を隠す
+            🏫 亀井町を分ける
+          </button>
+          <button
+            type="button"
+            onClick={() => setHideEmpty((v) => !v)}
+            title="セルが 1 つも無い時限行とクラス列を表示から隠す。データは変わりません"
+            className={UI.btnToggle(hideEmpty)}
+          >
+            ▤ 空行・空列を隠す
           </button>
           <button
             type="button"
@@ -889,7 +903,8 @@ export default function RegularBuilderApp({
             onSwapCells={onSwapCells}
             conflictsByRef={conflictView.byRef}
             highlightTeacher={highlightTeacher}
-            hideEmptyRows={hideEmptyRows}
+            hideEmpty={hideEmpty}
+            splitCampus={splitCampus}
             isCompact={isCompact}
           />
         ) : (
@@ -920,7 +935,8 @@ export default function RegularBuilderApp({
                 onSwapCells={onSwapCells}
                 conflictsByRef={conflictView.byRef}
                 highlightTeacher=""
-                hideEmptyRows={hideEmptyRows}
+                hideEmpty={hideEmpty}
+                splitCampus={splitCampus}
                 isCompact={isCompact}
               />
             </div>

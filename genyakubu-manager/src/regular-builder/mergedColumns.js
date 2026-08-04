@@ -129,6 +129,33 @@ export function mergeFallback(tab, day, periods, layout) {
 }
 
 /**
+ * 「空列を隠す」用: その曜日にセルが 1 つも無いクラス列を除いた表示列を
+ * 返す (データ不変・表示専用)。中身のある合同列 (範囲・列挙) は、その
+ * スパンの構成クラスが個別には空でも colSpan の下敷きとして必要なので
+ * 残す。時限は tab.periodIds のものだけ数える (設定変更で無効になった
+ * 残骸セルでは列を残さない)。
+ */
+export function visibleClassesForDay(tab, day) {
+  const layout = computeMergeLayout(tab);
+  const periodIds = tab.periodIds || [];
+  const schedule = tab.schedule || {};
+  const hasCell = (clsId) =>
+    periodIds.some((pid) => schedule[makeCellKey(day, pid, clsId)]);
+  const keep = new Set();
+  for (const c of tab.classes || []) {
+    if (hasCell(c.id)) keep.add(c.id);
+  }
+  for (const r of layout.ranges) {
+    if (!keep.has(r.cls.id)) continue;
+    for (let i = r.startIdx; i <= r.endIdx; i++) {
+      const member = layout.visible[i];
+      if (member) keep.add(member.id);
+    }
+  }
+  return (tab.classes || []).filter((c) => keep.has(c.id));
+}
+
+/**
  * 並列合同 (同一スパンに k 個の範囲セル) の colSpan 配分。
  * スパン幅を k 分割し、余りは先頭から 1 ずつ足す (5 を 2 分割 → 3, 2)。
  */

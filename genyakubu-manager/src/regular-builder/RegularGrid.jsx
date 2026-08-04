@@ -6,7 +6,12 @@ import {
   parseCellKey,
   parseCellRef,
 } from "./model";
-import { computeMergeLayout, mergeFallback, splitSpan } from "./mergedColumns";
+import {
+  computeMergeLayout,
+  mergeFallback,
+  splitSpan,
+  visibleClassesForDay,
+} from "./mergedColumns";
 import { computeBusyTeachersForTabs } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
@@ -22,8 +27,11 @@ import { RegularCell } from "./RegularCell";
 // - セルは display-first (テキスト表示、クリックで編集)。D&D は
 //   セクション・学年をまたいだ入替もできる (swapCellsAcrossTabs)
 // - 矢印キーの移動はセクション内で完結 (行 = 時限、列 = 学年×クラス)
-// - 「空行を隠す」はセルが 1 つも無い時限行を省き、空になった
-//   セクションごと隠す (データ不変)
+// - 「空行・空列を隠す」(hideEmpty) はセルが 1 つも無い時限行と
+//   クラス列を省き、空になった学年・セクションごと隠す (データ不変)
+// - 「亀井町を分ける」(splitCampus) は本校と亀井町 (教室「亀◯◯」) の
+//   クラス列を別セクションに分け、時限もそれぞれの建物が使うものに絞る
+//   (computeSections の splitCampus オプション。データ不変)
 
 // 時刻 "HH:MM-..." の開始分。パース不能 (時刻未設定) は末尾送り
 const startMin = (time) => {
@@ -52,7 +60,8 @@ export function RegularGrid({
   onSwapCells,
   conflictsByRef,
   highlightTeacher,
-  hideEmptyRows = false,
+  hideEmpty = false,
+  splitCampus = false,
   isCompact = false,
 }) {
   const containerRef = useRef(null);
@@ -112,7 +121,7 @@ export function RegularGrid({
   const onDragEnd = useCallback((...a) => implRef.current.dragEnd(...a), []);
 
   // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
-  const rawSections = computeSections(project, day);
+  const rawSections = computeSections(project, day, { splitCampus });
   if (rawSections.length === 0) {
     return (
       <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
@@ -123,15 +132,22 @@ export function RegularGrid({
 
   const sections = rawSections
     .map((s) => {
-      const usedIds = new Set(s.tabs.flatMap((t) => t.periodIds));
+      // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
+      // 構成クラスは残す)。列が全部消えた学年はこの曜日の表から外す
+      const tabs = hideEmpty
+        ? s.tabs
+            .map((t) => ({ ...t, classes: visibleClassesForDay(t, day) }))
+            .filter((t) => t.classes.length > 0)
+        : s.tabs;
+      const usedIds = new Set(tabs.flatMap((t) => t.periodIds));
       let periods = project.periods
         .filter((p) => usedIds.has(p.id))
         .map((p, i) => ({ p, i }))
         .sort((x, y) => startMin(x.p.time) - startMin(y.p.time) || x.i - y.i)
         .map((x) => x.p);
-      if (hideEmptyRows) {
+      if (hideEmpty) {
         periods = periods.filter((per) =>
-          s.tabs.some(
+          tabs.some(
             (t) =>
               t.periodIds.includes(per.id) &&
               t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
@@ -141,7 +157,7 @@ export function RegularGrid({
       // 合同列 (S〜B 等) のセル結合レイアウト。結合表示できないデータの
       // 学年は fallback = true (従来の独立列表示)
       const tabLayouts = new Map();
-      for (const t of s.tabs) {
+      for (const t of tabs) {
         const layout = computeMergeLayout(t);
         tabLayouts.set(t.id, {
           ...layout,
@@ -149,14 +165,14 @@ export function RegularGrid({
         });
       }
       // 矢印ナビ用の列の通し並び (範囲列も含む — 結合セルへ移動できるように)
-      const cols = s.tabs.flatMap((t) => {
+      const cols = tabs.flatMap((t) => {
         const lay = tabLayouts.get(t.id);
         const rangeIds = lay.fallback
           ? new Set()
           : new Set(lay.ranges.map((r) => r.cls.id));
         return t.classes.map((cls) => ({ tab: t, cls, isRange: rangeIds.has(cls.id) }));
       });
-      const cellCount = s.tabs.reduce(
+      const cellCount = tabs.reduce(
         (n, t) =>
           n +
           Object.keys(t.schedule).filter((k) => {
@@ -169,13 +185,13 @@ export function RegularGrid({
           }).length,
         0
       );
-      return { ...s, periods, cols, tabLayouts, cellCount, tone: sectionTone(s.tabs) };
+      return { ...s, tabs, periods, cols, tabLayouts, cellCount, tone: sectionTone(tabs) };
     })
-    .filter((s) => s.periods.length > 0);
+    .filter((s) => s.tabs.length > 0 && s.periods.length > 0);
   if (sections.length === 0) {
     return (
       <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
-        入力済みのセルがありません（「▤ 空行を隠す」を解除すると全マス目が表示されます）。
+        入力済みのセルがありません（「▤ 空行・空列を隠す」を解除すると全マス目が表示されます）。
       </div>
     );
   }
@@ -183,10 +199,14 @@ export function RegularGrid({
   const available = (per, tab) => tab.periodIds.includes(per.id);
 
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
-  // (全セルの解決は 1 回で済む一括版を使う)
+  // (全セルの解決は 1 回で済む一括版を使う)。セクションの tabs は
+  // 建物分割・空列非表示で加工した仮想タブなので、元のタブで計算する
+  // (busyByTab は tab.id キー — 分割で同じ id が 2 回現れると上書きされ、
+  // 片方の建物のセルから重複予告が消えてしまう)
+  const sectionTabIds = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
   const busyByTab = computeBusyTeachersForTabs(
     project,
-    sections.flatMap((s) => s.tabs)
+    (project.tabs || []).filter((t) => sectionTabIds.has(t.id))
   );
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────

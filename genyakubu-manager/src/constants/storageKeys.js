@@ -29,4 +29,14 @@ export const LS = {
   // UI を自動変形する類 (A18 で却下) とは別物 (講習の usePersistedToggle と同型)。
   regularBuilderHideEmpty: "genyakubu-regular-builder-hide-empty",
   regularBuilderCompact: "genyakubu-regular-builder-compact",
+  regularBuilderSplitCampus: "genyakubu-regular-builder-split-campus",
+};
+
+// ─── sessionStorage keys ────────────────────────────────────────────
+// タブ単位の一時 UI 状態。リロードでは消えず、新しいタブ・ウィンドウでは
+// まっさらから始まる (ビューの復元に localStorage を使うと、別タブで
+// 開いた瞬間に前回の深い画面へ飛ばされてしまう)。
+export const SS = {
+  view: "genyakubu-session-view",
+  teacher: "genyakubu-session-teacher",
 };
