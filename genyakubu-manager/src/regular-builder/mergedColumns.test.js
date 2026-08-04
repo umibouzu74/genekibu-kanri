@@ -104,6 +104,29 @@ describe("mergeFallback", () => {
     expect(mergeFallback(tab, "水", periods, layout)).toBe(false);
   });
 
+  it("並列数がスパン幅を超えるとフォールバック (幅 0 セルの無言非表示を防ぐ)", () => {
+    // S〜B (幅 3) に 4 並列を詰めたデータ
+    const tab = baseTab({
+      classes: [
+        cls(1, "S"),
+        cls(2, "A"),
+        cls(3, "B"),
+        cls(11, "S〜B"),
+        cls(12, "S〜B"),
+        cls(13, "S〜B"),
+        cls(14, "S〜B"),
+      ],
+      schedule: {
+        [makeCellKey("水", 1, 11)]: { subj: "確認テスト" },
+        [makeCellKey("水", 1, 12)]: { subj: "確認テスト" },
+        [makeCellKey("水", 1, 13)]: { subj: "確認テスト" },
+        [makeCellKey("水", 1, 14)]: { subj: "確認テスト" },
+      },
+    });
+    const layout = computeMergeLayout(tab);
+    expect(mergeFallback(tab, "水", periods, layout)).toBe(true);
+  });
+
   it("表示されない時限 (タブが使わない行) は判定に含めない", () => {
     const tab = baseTab({
       periodIds: [1],

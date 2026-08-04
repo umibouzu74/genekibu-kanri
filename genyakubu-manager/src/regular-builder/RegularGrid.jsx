@@ -541,11 +541,13 @@ export function RegularGrid({
                             g.items.length
                           );
                           g.items.forEach((p, gi) => {
-                            if (widths[gi] <= 0) return; // スパンより多い並列は表示不能 (稀)
+                            // 幅 0 は mergeFallback が事前に弾くため通常来ない (保険)
+                            if (widths[gi] <= 0) return;
                             out.push(
                               renderCell(p.r.cls, {
                                 colSpan: widths[gi],
-                                tdExtra: i === 0 ? boundary : "",
+                                // 学年境界の太罫は並列の先頭セルだけに引く
+                                tdExtra: i === 0 && gi === 0 ? boundary : "",
                                 displayRoomFallback: p.r.cls.room,
                               })
                             );
@@ -553,12 +555,23 @@ export function RegularGrid({
                           i = g.endIdx + 1;
                         } else {
                           const cls2 = lay.visible[i];
-                          // この列から始まる未入力の範囲: ⊞ で合同コマを追加できる
+                          // この列から始まる未入力の範囲: ⊞ で合同コマを追加できる。
+                          // スパン内に個別コマがある行には出さない (入力すると
+                          // クラスの二重在籍になり、確定と同時にフォールバック
+                          // 表示へ切り替わって驚かせるため)
                           const starters = lay.ranges
                             .filter(
                               (r) =>
                                 r.startIdx === i && !present.some((p) => p.r === r)
                             )
+                            .filter((r) => {
+                              for (let k2 = r.startIdx; k2 <= r.endIdx; k2++) {
+                                const vc = lay.visible[k2];
+                                if (vc && t.schedule[makeCellKey(day, per.id, vc.id)])
+                                  return false;
+                              }
+                              return true;
+                            })
                             .map(
                               (r) =>
                                 `${makeCellRef(t.id, makeCellKey(day, per.id, r.cls.id))}\t${r.cls.label}`

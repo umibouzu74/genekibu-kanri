@@ -106,6 +106,17 @@ export function mergeFallback(tab, day, periods, layout) {
         if (!same && overlap) return true;
       }
     }
+    // 並列数がスパン幅を超える (幅 0 のセルが出て非表示になる) 場合も
+    // 結合表示できない
+    const spanCounts = new Map();
+    for (const r of present) {
+      const k = `${r.startIdx}-${r.endIdx}`;
+      spanCounts.set(k, (spanCounts.get(k) || 0) + 1);
+    }
+    for (const [k, n] of spanCounts) {
+      const [s, e] = k.split("-").map(Number);
+      if (n > e - s + 1) return true;
+    }
   }
   return false;
 }
