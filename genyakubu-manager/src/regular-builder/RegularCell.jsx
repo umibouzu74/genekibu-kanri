@@ -103,6 +103,9 @@ export const RegularCell = memo(function RegularCell({
   onNavigate,
   /** 右クリック / 長押しでコンテキストメニューを開く (pos, cellRef) */
   onOpenMenu,
+  /** Ctrl+C / Ctrl+V (表示セルにフォーカスがある時のキーボード操作) */
+  onCopyCell,
+  onPasteCell,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -160,7 +163,10 @@ export const RegularCell = memo(function RegularCell({
         tabIndex={0}
         role="button"
         aria-label={`${ariaBase} を編集`}
-        title={conflictText || "クリックで編集 / ドラッグで入替"}
+        title={
+          conflictText ||
+          "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+C・Ctrl+V・Delete"
+        }
         className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
         draggable={!!c.subj}
         onDragStart={(e) => onDragStart(e, cellRef, c)}
@@ -179,9 +185,19 @@ export const RegularCell = memo(function RegularCell({
         }
         onClick={() => onStartEdit(cellRef, "subj")}
         onKeyDown={(e) => {
+          const k = e.key.toLowerCase();
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onStartEdit(cellRef, "subj");
+          } else if ((e.ctrlKey || e.metaKey) && k === "c" && onCopyCell) {
+            e.preventDefault();
+            onCopyCell(cellRef);
+          } else if ((e.ctrlKey || e.metaKey) && k === "v" && onPasteCell) {
+            e.preventDefault();
+            onPasteCell(cellRef);
+          } else if ((e.key === "Delete" || e.key === "Backspace") && hasContent) {
+            e.preventDefault();
+            onClearCell(cellRef);
           } else {
             onNavigate(e, cellRef, "cell");
           }

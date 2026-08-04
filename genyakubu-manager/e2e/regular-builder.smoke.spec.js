@@ -210,3 +210,49 @@ test("強調表示 (講師/教室)・週間ミニビュー・📅 週表示が�
     page.getByRole("button", { name: "火 1限 中3 S を編集" })
   ).toBeVisible();
 });
+
+test("Ctrl+C/V/Delete のキーボード操作と 📌 スナップショット (保存 → 差分 → 復元)", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  const cellS1 = page.getByRole("button", { name: "月 1限 中3 S を編集" });
+  await expect(cellS1).toBeVisible({ timeout: 30_000 });
+
+  // ── 先にスナップショットを保存 ──
+  await page.getByRole("button", { name: /^📌 案/ }).click();
+  await page.getByRole("button", { name: "＋ 現在の状態を保存" }).click();
+  await expect(
+    page.getByText("スナップショット「案 1」を保存しました")
+  ).toBeVisible();
+
+  // ── キーボード: Ctrl+C → ↓ → Ctrl+V → ↑ → Delete ──
+  await cellS1.click(); // 編集モード
+  await page.keyboard.press("Escape"); // 表示セルへフォーカス復帰
+  await page.keyboard.press("Control+c");
+  await expect(page.getByText("「数学/田中」をコピーしました")).toBeVisible();
+  await page.keyboard.press("ArrowDown"); // 月 2限 S へ
+  await page.keyboard.press("Control+v");
+  const cellS2 = page.getByRole("button", { name: "月 2限 中3 S を編集" });
+  await expect(cellS2).toContainText("数学");
+  await page.keyboard.press("ArrowUp"); // 月 1限 S へ戻る
+  await page.keyboard.press("Delete");
+  await expect(cellS1).not.toContainText("数学");
+
+  // ── 差分: 保存時 → 現在 が ＋1 (2限に追加) / －1 (1限を削除) ──
+  await page.getByRole("button", { name: "🔍 差分" }).click();
+  await expect(page.getByText("＋1")).toBeVisible();
+  await expect(page.getByText("－1")).toBeVisible();
+  await expect(
+    page.getByText(/－ 月 1限 中3 S: 数学\/田中 → 空/)
+  ).toBeVisible();
+  await expect(
+    page.getByText(/＋ 月 2限 中3 S: 空 → 数学\/田中/)
+  ).toBeVisible();
+
+  // ── 復元: 保存時の状態に戻る ──
+  await page.getByRole("button", { name: "復元", exact: true }).click();
+  await page.getByRole("button", { name: "復元する" }).click();
+  await expect(page.getByText("「案 1」を復元しました")).toBeVisible();
+  await expect(cellS1).toContainText("数学");
+  await expect(cellS2).not.toContainText("数学");
+});

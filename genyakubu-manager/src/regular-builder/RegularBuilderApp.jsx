@@ -10,6 +10,7 @@ import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggl
 import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { nextNumericId } from "../utils/schema";
 import {
+  copyCellAcrossTabs,
   createDefaultProject,
   createDefaultWorkspace,
   parseCellKey,
@@ -31,6 +32,7 @@ import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
 import { RegularSummaryPanel } from "./RegularSummaryPanel";
+import { RegularSnapshotPanel } from "./RegularSnapshotPanel";
 import { RegularTeacherWeek } from "./RegularTeacherWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
@@ -71,6 +73,7 @@ export default function RegularBuilderApp({
 
   const [activeTabId, setActiveTabId] = useState(null);
   const [showProjectConfig, setShowProjectConfig] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -471,6 +474,16 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
+  // Ctrl+ドラッグでのコピー配置 (入替でなく複製)
+  const onCopyCellTo = useCallback(
+    (refA, refB) =>
+      saveProject(
+        (p) => ({ ...p, tabs: copyCellAcrossTabs(p.tabs, refA, refB) }),
+        { atomic: true }
+      ),
+    [saveProject]
+  );
+
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
   const onClearCell = useCallback(
     (ref) => {
@@ -819,6 +832,14 @@ export default function RegularBuilderApp({
         >
           📊 集計
         </button>
+        <button
+          type="button"
+          onClick={() => setShowSnapshots((v) => !v)}
+          title="現在の状態を名前付きで保存し、差分を見ながら復元できる"
+          className={UI.btnToggle(showSnapshots)}
+        >
+          📌 {(project.snapshots || []).length > 0 ? `案 (${project.snapshots.length})` : "案"}
+        </button>
         <select
           value={highlightKey}
           onChange={(e) => setHighlightKey(e.target.value)}
@@ -921,6 +942,14 @@ export default function RegularBuilderApp({
         <RegularTeacherWeek
           project={project}
           teacher={highlightTeacher}
+          onJump={jumpToCells}
+        />
+      )}
+
+      {showSnapshots && (
+        <RegularSnapshotPanel
+          project={project}
+          saveProject={saveProject}
           onJump={jumpToCells}
         />
       )}
@@ -1205,6 +1234,9 @@ export default function RegularBuilderApp({
                   jumpTarget={jumpTarget}
                   onOpenCellMenu={openCellMenu}
                   onOpenHeaderMenu={openHeaderMenu}
+                  onCopyCell={copyCell}
+                  onPasteCell={pasteCell}
+                  onCopyCellTo={onCopyCellTo}
                 />
               </div>
             ))}
@@ -1246,6 +1278,9 @@ export default function RegularBuilderApp({
               jumpTarget={jumpTarget}
               onOpenCellMenu={openCellMenu}
               onOpenHeaderMenu={openHeaderMenu}
+              onCopyCell={copyCell}
+              onPasteCell={pasteCell}
+              onCopyCellTo={onCopyCellTo}
             />
           ) : (
             project.tabs.length > 0 && (
