@@ -7,6 +7,7 @@ import {
   makeCellRef,
   parseCellKey,
   parseCellRef,
+  renameTeacherInProject,
   resolveAllEntries,
   resolveTabEntries,
   sanitizeProject,
@@ -396,5 +397,71 @@ describe("computeSections — splitCampus (本校/亀井町の表示分割)", ()
     const sections = computeSections(proj([t]), "月", { splitCampus: true });
     const annex = sections.find((s) => s.name.includes("亀井町"));
     expect(annex.tabs[0].periodIds).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("renameTeacherInProject", () => {
+  it("マスタと割当セルの両方を追従させ、他は変えない", () => {
+    const p = makeProject();
+    const { project: next, changedCells } = renameTeacherInProject(p, "半田", "半田B");
+    expect(changedCells).toBe(1);
+    expect(next.teachers).toEqual([{ name: "堀上" }, { name: "半田B" }]);
+    expect(next.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田B",
+    });
+    // 対象外のセルは同一参照のまま
+    expect(next.tabs[0].schedule[makeCellKey("月", 2, 2)]).toBe(
+      p.tabs[0].schedule[makeCellKey("月", 2, 2)]
+    );
+    // 元プロジェクトは不変
+    expect(p.teachers[1].name).toBe("半田");
+  });
+
+  it("複数講師 (·区切り) は該当名だけを置換する", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = {
+      subj: "理科",
+      teacher: "半田·堀上",
+    };
+    const { project: next, changedCells } = renameTeacherInProject(p, "堀上", "堀上A");
+    expect(changedCells).toBe(2); // 月2限 + 火1限
+    expect(next.tabs[0].schedule[makeCellKey("火", 1, 1)].teacher).toBe("半田·堀上A");
+  });
+
+  it("置換で同名が並ぶ場合は重複を除いて詰める", () => {
+    const p = makeProject({
+      tabs: [
+        {
+          id: 1,
+          name: "中3",
+          grade: "中3",
+          classes: [{ id: 1, label: "S", room: "501" }],
+          days: ["月"],
+          periodIds: [1],
+          schedule: {
+            [makeCellKey("月", 1, 1)]: { subj: "理科", teacher: "半田·堀上" },
+          },
+        },
+      ],
+    });
+    const { project: next } = renameTeacherInProject(p, "半田", "堀上");
+    expect(next.tabs[0].schedule[makeCellKey("月", 1, 1)].teacher).toBe("堀上");
+  });
+
+  it("空名・同名・前後空白のみの変更は何もしない", () => {
+    const p = makeProject();
+    expect(renameTeacherInProject(p, "半田", "").project).toBe(p);
+    expect(renameTeacherInProject(p, "半田", "  半田  ").project).toBe(p);
+    expect(renameTeacherInProject(p, "", "誰か").project).toBe(p);
+  });
+
+  it("マスタに無い名前でもセル側は追従する (取込データの手直し用)", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 2, 1)] = { subj: "社会", teacher: "臨時" };
+    const { project: next, changedCells } = renameTeacherInProject(p, "臨時", "臨時A");
+    expect(changedCells).toBe(1);
+    expect(next.tabs[0].schedule[makeCellKey("火", 2, 1)].teacher).toBe("臨時A");
+    expect(next.teachers).toEqual(p.teachers);
   });
 });

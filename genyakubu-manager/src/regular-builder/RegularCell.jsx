@@ -4,6 +4,7 @@ import {
   getSubjectColor,
   CONFLICT_CELL_BG,
 } from "../timetable-builder/utils/constants";
+import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 
 // ─── セル (ダッシュボードの時間割ビュー風 display-first) ─────────────
 // 普段はダッシュボードと同じ「テキスト中心」の表示 (科目 + 講師 + 教室/
@@ -89,11 +90,15 @@ export const RegularCell = memo(function RegularCell({
   mergeStarters = "",
   isCompact,
   isEditing,
+  /** 重複ジャンプ・Undo フィードバックの一時ハイライト */
+  isFlashing = false,
   onStartEdit,
   onEndEdit,
   onCellChange,
   onClearCell,
   onNavigate,
+  /** 右クリック / 長押しでコンテキストメニューを開く (pos, cellRef) */
+  onOpenMenu,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -103,6 +108,10 @@ export const RegularCell = memo(function RegularCell({
   isDragSource,
 }) {
   const c = cell || {};
+  // タッチの長押しでもコンテキストメニューを開く (講習 E1f と同じ hook)
+  const longPress = useLongPress(
+    onOpenMenu ? (pos) => onOpenMenu(pos, cellRef) : null
+  );
   const [teacherFreeEdit, setTeacherFreeEdit] = useState(false);
   const [subjFreeEdit, setSubjFreeEdit] = useState(false);
   // 直接入力の取消 (Escape) 用: 編集開始時の値
@@ -128,7 +137,7 @@ export const RegularCell = memo(function RegularCell({
   const subjKnown = !c.subj || subjects.includes(c.subj);
   const busySet = new Set(splitTeacherField(busyTeachers));
 
-  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""}`;
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
 
   const starters = mergeStarters
     ? mergeStarters.split("\n").map((s) => {
@@ -154,6 +163,15 @@ export const RegularCell = memo(function RegularCell({
         onDragLeave={onDragLeave}
         onDrop={(e) => onDrop(e, cellRef)}
         onDragEnd={onDragEnd}
+        {...longPress}
+        onContextMenu={
+          onOpenMenu
+            ? (e) => {
+                e.preventDefault();
+                onOpenMenu({ clientX: e.clientX, clientY: e.clientY }, cellRef);
+              }
+            : undefined
+        }
         onClick={() => onStartEdit(cellRef, "subj")}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

@@ -20,6 +20,8 @@
 // }
 // Cell = { subj?, teacher?, room?, note? }     // teacher は "·" 区切りで複数可
 
+import { splitTeacherField } from "../utils/biweekly";
+
 export const REGULAR_DAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
 export const DEFAULT_SUBJECTS = ["英語", "数学", "国語", "理科", "社会"];
@@ -125,6 +127,49 @@ export function swapCellsAcrossTabs(tabs, refA, refB) {
     if (t.id === b.tabId) return { ...t, schedule: put(t.schedule, b.key, cellA) };
     return t;
   });
+}
+
+// ─── 講師のリネーム (マスタ + 割当セルの追従) ───────────────────────
+
+/**
+ * 講師マスタの名前を変更し、全タブの割当セル (teacher フィールド) も
+ * 追従させた新しいプロジェクトを返す (純関数)。
+ * - 複数講師 ("·" 区切り) は該当名だけを置換し、置換で同名が並んだ場合は
+ *   重複を除いて詰める ("田中·山田" の 田中→山田 は "山田")
+ * - 前後空白は除去。空名・同名へのリネームは何もしない (changedCells 0)
+ * - 重複チェック (既存マスタ名への衝突) は呼び出し側の責務
+ * @returns {{project: object, changedCells: number}}
+ */
+export function renameTeacherInProject(project, oldName, newName) {
+  const from = (oldName || "").trim();
+  const to = (newName || "").trim();
+  if (!from || !to || from === to) return { project, changedCells: 0 };
+
+  let changedCells = 0;
+  const teachers = (project.teachers || []).map((t) =>
+    t.name === from ? { ...t, name: to } : t
+  );
+  const tabs = (project.tabs || []).map((tab) => {
+    let touched = false;
+    const schedule = {};
+    for (const [key, cell] of Object.entries(tab.schedule || {})) {
+      const names = splitTeacherField(cell.teacher);
+      if (names.includes(from)) {
+        const next = [];
+        for (const n of names) {
+          const nn = n === from ? to : n;
+          if (!next.includes(nn)) next.push(nn);
+        }
+        schedule[key] = { ...cell, teacher: next.join("·") };
+        changedCells++;
+        touched = true;
+      } else {
+        schedule[key] = cell;
+      }
+    }
+    return touched ? { ...tab, schedule } : tab;
+  });
+  return { project: { ...project, teachers, tabs }, changedCells };
 }
 
 // ─── サニタイズ (useSyncedStorage の migrate 用) ────────────────────

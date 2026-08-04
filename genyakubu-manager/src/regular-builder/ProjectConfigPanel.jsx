@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { nextNumericId } from "../utils/schema";
+import { useToasts } from "../hooks/useToasts";
+import { renameTeacherInProject } from "./model";
 import { UI } from "./ui";
 
 // ─── プロジェクト設定 (時限プール / 科目 / 講師マスタ) ──────────────
@@ -17,8 +19,41 @@ function move(list, idx, delta) {
 }
 
 export function ProjectConfigPanel({ project, saveProject, slots }) {
+  const toasts = useToasts();
   const [newSubject, setNewSubject] = useState("");
   const [newTeacher, setNewTeacher] = useState("");
+
+  // 講師のリネーム (クリックでインライン編集)。Enter/blur = 確定、
+  // Escape = 取消 (blur はどちらでも発火するためフラグで振り分ける —
+  // RegularCell の FreeTextInput と同じパターン)
+  const [editingTeacher, setEditingTeacher] = useState(null); // { name, value }
+  const cancelRenameRef = useRef(false);
+
+  const commitRename = () => {
+    if (!editingTeacher) return;
+    const from = editingTeacher.name;
+    const to = editingTeacher.value.trim();
+    setEditingTeacher(null);
+    if (!to || to === from) return;
+    if (project.teachers.some((t) => t.name === to)) {
+      toasts.error(`「${to}」は既に登録されています`);
+      return;
+    }
+    if (splitTeacherField(to).join("") !== to) {
+      // 講師名そのものに区切り文字は使えない (CLAUDE.md の複数講師規約)。
+      // 末尾の「·」だけ等の残骸も join 比較で弾く
+      toasts.error("講師名に「·」（中黒）は使えません");
+      return;
+    }
+    // 件数は表示用に現時点の project で数え、保存は saveProject の最新値で行う
+    const { changedCells } = renameTeacherInProject(project, from, to);
+    saveProject((p) => renameTeacherInProject(p, from, to).project);
+    toasts.success(
+      changedCells > 0
+        ? `「${from}」→「${to}」に変更しました（割当セル ${changedCells} 件も更新）`
+        : `「${from}」→「${to}」に変更しました`
+    );
+  };
 
   const updatePeriod = (id, patch) =>
     saveProject((p) => ({
@@ -183,6 +218,7 @@ export function ProjectConfigPanel({ project, saveProject, slots }) {
         <div className={UI.panelHead}>講師</div>
         <div className={UI.hint}>
           セルの講師プルダウンの選択肢になります。複数講師は「✎ 直接入力」で「·」区切り（全角中点でも可）。
+          名前をクリックすると変更でき、割当済みのセルも追従します。
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {project.teachers.map((t) => (
@@ -190,7 +226,42 @@ export function ProjectConfigPanel({ project, saveProject, slots }) {
               key={t.name}
               className="text-[11px] bg-builder-bg border border-builder-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
             >
-              {t.name}
+              {editingTeacher?.name === t.name ? (
+                <input
+                  type="text"
+                  autoFocus
+                  value={editingTeacher.value}
+                  aria-label={`${t.name} の新しい名前`}
+                  onChange={(e) =>
+                    setEditingTeacher({ name: t.name, value: e.target.value })
+                  }
+                  onBlur={() => {
+                    if (cancelRenameRef.current) {
+                      cancelRenameRef.current = false;
+                      setEditingTeacher(null);
+                    } else {
+                      commitRename();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.target.blur();
+                    else if (e.key === "Escape") {
+                      cancelRenameRef.current = true;
+                      e.target.blur();
+                    }
+                  }}
+                  className="w-24 text-[11px] rounded border border-builder-info-border bg-builder-surface px-1 py-0 focus:outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingTeacher({ name: t.name, value: t.name })}
+                  title="クリックで名前を変更（割当済みのセルも追従します）"
+                  className="border-0 bg-transparent cursor-pointer p-0 text-inherit hover:text-builder-blue hover:underline decoration-dotted"
+                >
+                  {t.name}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() =>

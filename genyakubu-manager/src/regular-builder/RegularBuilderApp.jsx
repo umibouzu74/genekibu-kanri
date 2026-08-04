@@ -20,10 +20,16 @@ import {
 } from "./model";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
+import {
+  describeHistoryChange,
+  diffWorkspaces,
+  formatCellShort,
+} from "./historyFeedback";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
+import { RegularContextMenu } from "./RegularContextMenu";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
@@ -99,6 +105,16 @@ export default function RegularBuilderApp({
       /* quota / private mode — 表示は妨げない */
     }
   }, [selectedDay]);
+
+  // ── セルへのジャンプ (重複一覧の「表示」・Undo toast の「表示」) ──
+  // 曜日を切り替えてから RegularGrid 側でスクロール + 一時ハイライト。
+  // nonce で同じセルへの連続ジャンプも発火させる
+  const jumpSeqRef = useRef(0);
+  const [jumpTarget, setJumpTarget] = useState(null); // {day, refs, nonce}
+  const jumpToCells = useCallback((refs, day) => {
+    setSelectedDay(day);
+    setJumpTarget({ day, refs, nonce: ++jumpSeqRef.current });
+  }, []);
 
   const project =
     workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
@@ -179,27 +195,52 @@ export default function RegularBuilderApp({
     [saveWorkspace]
   );
 
+  // undo/redo は「何が戻ったか」を toast で知らせる (講習 N2f と同趣旨)。
+  // 表示していない曜日のセルが戻っても気付けるよう、セル変更ならその場所
+  // (と before → after) を要約し、「表示」ボタンで該当セルへ飛べるようにする
+  const notifyHistory = useCallback(
+    (kind, fromWs, toWs) => {
+      const diff = diffWorkspaces(fromWs, toWs);
+      const text = describeHistoryChange(diff) || "変更なし";
+      const activeId = toWs.projects.some((p) => p.id === toWs.activeProjectId)
+        ? toWs.activeProjectId
+        : toWs.projects[0]?.id;
+      const target = diff.cellChanges.find((c) => c.projectId === activeId);
+      toasts.info(`${kind === "undo" ? "↩️ 元に戻す" : "↪️ やり直し"}: ${text}`, {
+        duration: 3500,
+        action: target
+          ? { label: "表示", onClick: () => jumpToCells([target.ref], target.day) }
+          : undefined,
+      });
+    },
+    [toasts, jumpToCells]
+  );
+
   const undo = useCallback(() => {
     const stack = undoStackRef.current;
     if (stack.length === 0) return;
     const prev = stack[stack.length - 1];
+    const cur = wsRef.current;
     undoStackRef.current = stack.slice(0, -1);
-    redoStackRef.current = [...redoStackRef.current, wsRef.current];
+    redoStackRef.current = [...redoStackRef.current, cur];
     lastCommitAtRef.current = 0; // 次の編集は新しい取り消し単位
     saveWorkspace(prev);
     setHistVersion((v) => v + 1);
-  }, [saveWorkspace]);
+    notifyHistory("undo", cur, prev);
+  }, [saveWorkspace, notifyHistory]);
 
   const redo = useCallback(() => {
     const stack = redoStackRef.current;
     if (stack.length === 0) return;
     const next = stack[stack.length - 1];
+    const cur = wsRef.current;
     redoStackRef.current = stack.slice(0, -1);
-    undoStackRef.current = [...undoStackRef.current, wsRef.current];
+    undoStackRef.current = [...undoStackRef.current, cur];
     lastCommitAtRef.current = 0;
     saveWorkspace(next);
     setHistVersion((v) => v + 1);
-  }, [saveWorkspace]);
+    notifyHistory("redo", cur, next);
+  }, [saveWorkspace, notifyHistory]);
 
   const canUndo = histVersion >= 0 && undoStackRef.current.length > 0;
   const canRedo = histVersion >= 0 && redoStackRef.current.length > 0;
@@ -429,6 +470,107 @@ export default function RegularBuilderApp({
     [updateTab]
   );
 
+  // ── コンテキストメニュー (セル右クリック / 長押し・ヘッダの一括操作) ──
+  const [ctxMenu, setCtxMenu] = useState(null);
+  const [cellClipboard, setCellClipboard] = useState(null);
+
+  const getCellByRef = useCallback(
+    (ref) => {
+      const { tabId, key } = parseCellRef(ref);
+      return project.tabs.find((t) => t.id === tabId)?.schedule?.[key] || null;
+    },
+    [project]
+  );
+
+  const openCellMenu = useCallback((pos, ref) => {
+    setCtxMenu({ kind: "cell", x: pos.clientX, y: pos.clientY, ref });
+  }, []);
+  const openHeaderMenu = useCallback((pos, payload) => {
+    setCtxMenu({ x: pos.clientX, y: pos.clientY, ...payload });
+  }, []);
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  const copyCell = (ref) => {
+    const cell = getCellByRef(ref);
+    if (!cell) return;
+    setCellClipboard({ ...cell });
+    toasts.success(`「${formatCellShort(cell)}」をコピーしました`, {
+      duration: 1500,
+    });
+  };
+
+  // 貼り付けはセル全体 (教科・講師・教室・備考) を置き換える。Undo 1 回で戻る
+  const pasteCell = (ref) => {
+    if (!cellClipboard) return;
+    const { tabId, key } = parseCellRef(ref);
+    updateTab(
+      tabId,
+      (t) => ({ ...t, schedule: { ...t.schedule, [key]: { ...cellClipboard } } }),
+      { atomic: true }
+    );
+  };
+
+  // このセルが関わる未承認の重なりをまとめて承認する
+  const approveCellConflicts = (ref) => {
+    const targets = conflictView.active.filter((c) => c.refs.includes(ref));
+    if (targets.length === 0) return;
+    saveProject(
+      (p) => ({
+        ...p,
+        approvedConflicts: [
+          ...(p.approvedConflicts || []),
+          ...targets.map(conflictKey),
+        ],
+      }),
+      { atomic: true }
+    );
+    toasts.success(`${targets.length} 件の重なりを承認しました`);
+  };
+
+  // 時限行・クラス列の一括クリア (確認あり・Undo 1 回で戻る)
+  const clearCellsBulk = async (refs, label) => {
+    const filled = refs.filter((r) => getCellByRef(r));
+    if (filled.length === 0) return;
+    const ok = await confirm({
+      title: "一括クリア",
+      message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,
+      okLabel: "クリアする",
+      tone: "danger",
+    });
+    if (!ok) return;
+    const keysByTab = new Map();
+    for (const r of filled) {
+      const { tabId, key } = parseCellRef(r);
+      if (!keysByTab.has(tabId)) keysByTab.set(tabId, []);
+      keysByTab.get(tabId).push(key);
+    }
+    saveProject(
+      (p) => ({
+        ...p,
+        tabs: p.tabs.map((t) => {
+          const keys = keysByTab.get(t.id);
+          if (!keys) return t;
+          const schedule = { ...t.schedule };
+          for (const k of keys) delete schedule[k];
+          return { ...t, schedule };
+        }),
+      }),
+      { atomic: true }
+    );
+    toasts.success(`${filled.length} コマをクリアしました`);
+  };
+
+  const onCtxAction = (action) => {
+    const m = ctxMenu;
+    setCtxMenu(null);
+    if (!m) return;
+    if (action === "copy") copyCell(m.ref);
+    else if (action === "paste") pasteCell(m.ref);
+    else if (action === "clear") onClearCell(m.ref);
+    else if (action === "approve") approveCellConflicts(m.ref);
+    else if (action === "clear-bulk") clearCellsBulk(m.refs, m.label);
+  };
+
   const addTab = useCallback(() => {
     // id は現在の描画時点で確定させ、追加後にその学年の設定を開く
     // (単独編集前提 — 同時編集での id 衝突は考慮しない)
@@ -498,6 +640,25 @@ export default function RegularBuilderApp({
     const names = new Set(project.teachers.map((t) => t.name));
     return [...names].sort();
   }, [project.teachers]);
+
+  // 選択中の講師がリネーム / 削除で消えたらハイライトを自動解除する
+  // (講習 L2a と同じ。残すと「誰も光らないフィルタ」が掛かり続ける)
+  useEffect(() => {
+    if (highlightTeacher && !teacherOptions.includes(highlightTeacher)) {
+      setHighlightTeacher("");
+    }
+  }, [teacherOptions, highlightTeacher]);
+
+  // ブラウザタブのタイトルにプロジェクト名を出す (講習ビルダーと同じ。
+  // アンマウント時は親アプリのタイトルへ戻す)
+  useEffect(() => {
+    const base = "通常時間割作成";
+    const previousTitle = document.title;
+    document.title = project.name ? `${project.name} - ${base}` : base;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [project.name]);
 
   return (
     <div className="builder-root font-sans flex flex-col gap-3">
@@ -658,6 +819,14 @@ export default function RegularBuilderApp({
               <span className="flex-1 text-builder-red">⚠ {c.label}</span>
               <button
                 type="button"
+                onClick={() => jumpToCells(c.refs, c.day)}
+                title="該当セルへジャンプ (曜日を切り替えて両セルを点滅表示)"
+                className={UI.btn}
+              >
+                → 表示
+              </button>
+              <button
+                type="button"
                 onClick={() => approveConflict(c)}
                 title="意図した重なりとして承認し、件数と赤枠から除外する"
                 className={UI.btn}
@@ -674,6 +843,14 @@ export default function RegularBuilderApp({
           {conflictView.approved.map((c) => (
             <div key={conflictKey(c)} className="flex items-center gap-2">
               <span className="flex-1 text-builder-ink-subtle">{c.label}</span>
+              <button
+                type="button"
+                onClick={() => jumpToCells(c.refs, c.day)}
+                title="該当セルへジャンプ (曜日を切り替えて両セルを点滅表示)"
+                className={UI.btn}
+              >
+                → 表示
+              </button>
               <button
                 type="button"
                 onClick={() => unapproveConflict(c)}
@@ -923,6 +1100,9 @@ export default function RegularBuilderApp({
             hideEmpty={hideEmpty}
             splitCampus={splitCampus}
             isCompact={isCompact}
+            jumpTarget={jumpTarget}
+            onOpenCellMenu={openCellMenu}
+            onOpenHeaderMenu={openHeaderMenu}
           />
         ) : (
           project.tabs.length > 0 && (
@@ -960,6 +1140,24 @@ export default function RegularBuilderApp({
           ))}
         </div>
       )}
+
+      <RegularContextMenu
+        menu={ctxMenu}
+        cell={ctxMenu?.kind === "cell" ? getCellByRef(ctxMenu.ref) : null}
+        clipboard={cellClipboard}
+        conflictCount={
+          ctxMenu?.kind === "cell"
+            ? conflictView.active.filter((c) => c.refs.includes(ctxMenu.ref)).length
+            : 0
+        }
+        filledCount={
+          ctxMenu?.kind === "bulk"
+            ? ctxMenu.refs.filter((r) => getCellByRef(r)).length
+            : 0
+        }
+        onAction={onCtxAction}
+        onClose={closeCtxMenu}
+      />
 
       {showReflect && (
         <ReflectDialog
