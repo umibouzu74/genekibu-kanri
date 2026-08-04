@@ -88,6 +88,8 @@ export function RegularGrid({
   /** 未承認の問題が NG のみのセル (バッジを ⚠️NG にする) */
   ngOnlyRefs = null,
   highlightTeacher,
+  /** 実効教室 (セル上書き → クラス既定) がこの値のセルを強調表示 */
+  highlightRoom = "",
   hideEmpty = false,
   splitCampus = false,
   isCompact = false,
@@ -607,9 +609,16 @@ export function RegularGrid({
                         const ref = makeCellRef(t.id, key);
                         const cell = t.schedule[key];
                         const reasons = conflictsByRef.get(ref);
+                        // 教室の強調は中身のあるセルのみ (空マスまで光らせると
+                        // 「その教室のクラス列」全体が光ってノイズになる)
+                        const effRoom =
+                          (cell?.room || "").trim() || (cls2.room || "").trim();
                         const highlighted =
-                          !!highlightTeacher &&
-                          splitTeacherField(cell?.teacher).includes(highlightTeacher);
+                          (!!highlightTeacher &&
+                            splitTeacherField(cell?.teacher).includes(
+                              highlightTeacher
+                            )) ||
+                          (!!highlightRoom && !!cell && effRoom === highlightRoom);
                         return (
                           <RegularCell
                             // プロジェクトをまたいで同じ ref が再利用されないよう
@@ -626,7 +635,9 @@ export function RegularGrid({
                             busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}
                             ngTeachers={(ngByTab.get(t.id)?.get(key) || []).join("·")}
                             highlighted={highlighted}
-                            dimmed={!!highlightTeacher && !highlighted}
+                            dimmed={
+                              (!!highlightTeacher || !!highlightRoom) && !highlighted
+                            }
                             roomPlaceholder={cls2.room}
                             displayRoomFallback={extra.displayRoomFallback || ""}
                             ariaBase={`${day} ${per.label || per.time} ${t.name} ${cls2.label || cls2.room}`}

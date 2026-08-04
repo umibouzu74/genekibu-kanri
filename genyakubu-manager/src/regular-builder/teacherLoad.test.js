@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTeacherLoad } from "./teacherLoad";
+import { computeTeacherLoad, computeTeacherWeek } from "./teacherLoad";
 import { makeCellKey } from "./model";
 import { makeProject } from "./testUtils";
 
@@ -57,5 +57,39 @@ describe("computeTeacherLoad", () => {
     const { days, rows } = computeTeacherLoad(p);
     expect(days).toEqual(["火"]);
     expect(rows.map((r) => r.total)).toEqual([0, 0]);
+  });
+});
+
+describe("computeTeacherWeek", () => {
+  it("担当コマを曜日ごとに開始時刻順で列挙し、ref でジャンプできる", () => {
+    const p = makeProject();
+    // 半田: 月1限 (18:00) に加えて 月2限 (18:55) と 火1限 を追加
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "国語", teacher: "半田" };
+    p.tabs[0].schedule[makeCellKey("火", 1, 2)] = {
+      subj: "理科",
+      teacher: "半田·堀上",
+      room: "601",
+    };
+    const week = computeTeacherWeek(p, "半田");
+    expect(week.days).toEqual(["月", "火"]);
+    expect(week.total).toBe(3);
+    expect(week.byDay["月"].map((e) => e.subj)).toEqual(["数学", "国語"]);
+    expect(week.byDay["月"][0]).toMatchObject({
+      ref: `1:${makeCellKey("月", 1, 1)}`,
+      time: "18:00-18:45",
+      periodLabel: "1限",
+      tabName: "中3",
+      clsLabel: "S",
+      room: "501",
+    });
+    // 複数講師セルも本人の分として載る (セル上書き教室が効く)
+    expect(week.byDay["火"][0]).toMatchObject({ subj: "理科", room: "601" });
+  });
+
+  it("担当が無い講師は全曜日が空で total 0", () => {
+    const week = computeTeacherWeek(makeProject(), "居ない人");
+    expect(week.total).toBe(0);
+    expect(week.byDay["月"]).toEqual([]);
+    expect(week.byDay["火"]).toEqual([]);
   });
 });

@@ -7,8 +7,10 @@
 // - 設定変更で無効になった残骸セルは数えない (resolveAllEntries 基準)
 // - マスタに無い講師 (取込データの直接入力など) も inMaster: false で列挙
 
-import { REGULAR_DAYS, resolveAllEntries } from "./model";
+import { REGULAR_DAYS, effectiveRoom, resolveAllEntries } from "./model";
+import { entryRef } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
+import { timeStartToMin } from "../utils/dateHelpers";
 
 /**
  * @returns {{
@@ -67,4 +69,45 @@ export function computeTeacherLoad(project) {
     rows.push(finish(name, null));
   }
   return { days, rows };
+}
+
+// ─── 講師 1 人の週間一覧 (👁 週間ミニビュー用) ──────────────────────
+
+/**
+ * 指定講師の担当コマを曜日ごとに開始時刻順で列挙する。ref はセルへの
+ * ジャンプ (`jumpToCells`) に使える entryRef。
+ * @returns {{
+ *   days: string[],                 // いずれかの学年が使う曜日
+ *   byDay: Record<string, {
+ *     ref: string, time: string, periodLabel: string,
+ *     tabName: string, clsLabel: string, subj: string, room: string,
+ *   }[]>,
+ *   total: number,
+ * }}
+ */
+export function computeTeacherWeek(project, teacherName) {
+  const days = REGULAR_DAYS.filter((d) =>
+    (project.tabs || []).some((t) => (t.days || []).includes(d))
+  );
+  const byDay = {};
+  for (const d of days) byDay[d] = [];
+  let total = 0;
+  for (const e of resolveAllEntries(project)) {
+    if (!splitTeacherField(e.cell.teacher || "").includes(teacherName)) continue;
+    if (!byDay[e.day]) continue;
+    byDay[e.day].push({
+      ref: entryRef(e),
+      time: (e.period.time || "").trim(),
+      periodLabel: e.period.label || "",
+      tabName: e.tab.name,
+      clsLabel: e.cls.label || e.cls.room || "",
+      subj: e.cell.subj || "",
+      room: effectiveRoom(e),
+    });
+    total++;
+  }
+  for (const d of days) {
+    byDay[d].sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time));
+  }
+  return { days, byDay, total };
 }

@@ -175,3 +175,38 @@ test("講師NG の登録 → 検出 → 承認と、上限付き集計パネル�
   const yamadaRow = summary.locator("tr", { hasText: "山田" });
   await expect(yamadaRow).toContainText("1");
 });
+
+test("強調表示 (講師/教室)・週間ミニビュー・📅 週表示が動く", async ({ page }) => {
+  await page.goto("/genekibu-kanri/");
+  const highlight = page.getByTitle(
+    "選んだ講師・教室のセルを強調表示 (講師は週間ミニビューも開く)"
+  );
+  await expect(highlight).toBeVisible({ timeout: 30_000 });
+
+  // ── 講師で強調 → 週間ミニビューが開き、エントリでセルへジャンプ ──
+  await highlight.selectOption("t:田中");
+  await expect(page.getByText("👁 田中 の週間（計 2 コマ）")).toBeVisible();
+  await page.getByRole("button", { name: /18:00-18:45 中3 S 数学/ }).click();
+  await expect(page.locator("td.animate-pulse")).toHaveCount(1);
+  await expect(page.locator("td.animate-pulse")).toHaveCount(0, {
+    timeout: 5_000,
+  });
+
+  // ── 教室で強調: 501 (S の既定教室) のコマだけ光り、他は減光 ──
+  await highlight.selectOption("r:501");
+  await expect(page.getByText("👁 田中 の週間", { exact: false })).toHaveCount(0);
+  const cellS1 = page.getByRole("button", { name: "月 1限 中3 S を編集" });
+  const cellA2 = page.getByRole("button", { name: "月 2限 中3 A を編集" });
+  await expect(cellS1).toHaveClass(/ring-2/);
+  await expect(cellA2).toHaveClass(/opacity-40/);
+  await highlight.selectOption("");
+
+  // ── 📅 週表示: 全曜日が縦に並び、月・火のセルが同時に見える ──
+  await page.getByRole("button", { name: "📅 週表示" }).click();
+  await expect(page.getByText("月曜日", { exact: true })).toBeVisible();
+  await expect(page.getByText("火曜日", { exact: true })).toBeVisible();
+  await expect(cellS1).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "火 1限 中3 S を編集" })
+  ).toBeVisible();
+});
