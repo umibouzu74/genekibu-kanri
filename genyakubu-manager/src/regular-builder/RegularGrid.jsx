@@ -6,6 +6,7 @@ import {
   parseCellKey,
   parseCellRef,
 } from "./model";
+import { computeMergeLayout, mergeFallback, splitSpan } from "./mergedColumns";
 import { computeBusyTeachersForTabs } from "./conflicts";
 import { splitTeacherField } from "../utils/biweekly";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
@@ -137,9 +138,24 @@ export function RegularGrid({
           )
         );
       }
-      const cols = s.tabs.flatMap((t) =>
-        t.classes.map((cls, ci) => ({ tab: t, cls, groupStart: ci === 0 }))
-      );
+      // 合同列 (S〜B 等) のセル結合レイアウト。結合表示できないデータの
+      // 学年は fallback = true (従来の独立列表示)
+      const tabLayouts = new Map();
+      for (const t of s.tabs) {
+        const layout = computeMergeLayout(t);
+        tabLayouts.set(t.id, {
+          ...layout,
+          fallback: mergeFallback(t, day, periods, layout),
+        });
+      }
+      // 矢印ナビ用の列の通し並び (範囲列も含む — 結合セルへ移動できるように)
+      const cols = s.tabs.flatMap((t) => {
+        const lay = tabLayouts.get(t.id);
+        const rangeIds = lay.fallback
+          ? new Set()
+          : new Set(lay.ranges.map((r) => r.cls.id));
+        return t.classes.map((cls) => ({ tab: t, cls, isRange: rangeIds.has(cls.id) }));
+      });
       const cellCount = s.tabs.reduce(
         (n, t) =>
           n +
@@ -153,7 +169,7 @@ export function RegularGrid({
           }).length,
         0
       );
-      return { ...s, periods, cols, cellCount, tone: sectionTone(s.tabs) };
+      return { ...s, periods, cols, tabLayouts, cellCount, tone: sectionTone(s.tabs) };
     })
     .filter((s) => s.periods.length > 0);
   if (sections.length === 0) {
@@ -164,7 +180,7 @@ export function RegularGrid({
     );
   }
 
-  const available = (per, col) => col.tab.periodIds.includes(per.id);
+  const available = (per, tab) => tab.periodIds.includes(per.id);
 
   // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
   // (全セルの解決は 1 回で済む一括版を使う)
@@ -288,11 +304,16 @@ export function RegularGrid({
       const per = entry.sec.periods[r];
       if (!per) return;
       if (collapsedKeys.has(entry.sec.key)) continue; // 折りたたみ中は飛ばす
-      if (!available(per, entry.col)) continue; // 使えないマスはスキップ
-      const targetRef = makeCellRef(
-        entry.col.tab.id,
-        makeCellKey(day, per.id, entry.col.cls.id)
-      );
+      if (!available(per, entry.col.tab)) continue; // 使えないマスはスキップ
+      const targetKey = makeCellKey(day, per.id, entry.col.cls.id);
+      const targetRef = makeCellRef(entry.col.tab.id, targetKey);
+      // 範囲列 (合同) は中身がある行にしか描画されない — 空の結合位置は飛ばす
+      if (
+        entry.col.isRange &&
+        !entry.col.tab.schedule[targetKey] &&
+        targetRef !== editRef
+      )
+        continue;
       if (f === "cell") {
         document.getElementById(`regb-${targetRef}-cell`)?.focus();
       } else if (targetRef === editRef) {
@@ -361,11 +382,13 @@ export function RegularGrid({
                   </th>
                   {s.tabs.map((t, ti) => {
                     const gc = gradeColor(t.grade || t.name);
+                    const lay = s.tabLayouts.get(t.id);
+                    const headCols = lay.fallback ? t.classes : lay.visible;
                     return (
                       <th
                         key={t.id}
                         scope="colgroup"
-                        colSpan={t.classes.length}
+                        colSpan={headCols.length}
                         className={`border-r border-builder-border text-center font-extrabold ${isCompact ? "p-0.5 text-[11px]" : "p-1 text-[13px]"} ${ti > 0 ? GROUP_BOUNDARY : ""}`}
                         style={{ background: gc.b, color: gc.f }}
                       >
@@ -375,21 +398,27 @@ export function RegularGrid({
                   })}
                 </tr>
                 <tr>
-                  {s.cols.map((col, i) => (
-                    <th
-                      key={`${col.tab.id}-${col.cls.id}`}
-                      scope="col"
-                      className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${col.groupStart && i > 0 ? GROUP_BOUNDARY : ""}`}
-                    >
-                      {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
-                      {col.cls.label || col.cls.room || "－"}
-                      {col.cls.label && col.cls.room && col.cls.room !== col.cls.label && (
-                        <span className="font-normal text-builder-ink-subtle ml-1">
-                          {col.cls.room}
-                        </span>
-                      )}
-                    </th>
-                  ))}
+                  {/* 列見出しは範囲列 (S〜B 等) を除いた表示列のみ。範囲の
+                      セルは行内で構成クラスに結合表示される */}
+                  {s.tabs.flatMap((t, ti) => {
+                    const lay = s.tabLayouts.get(t.id);
+                    const headCols = lay.fallback ? t.classes : lay.visible;
+                    return headCols.map((cls2, ci) => (
+                      <th
+                        key={`${t.id}-${cls2.id}`}
+                        scope="col"
+                        className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
+                      >
+                        {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
+                        {cls2.label || cls2.room || "－"}
+                        {cls2.label && cls2.room && cls2.room !== cls2.label && (
+                          <span className="font-normal text-builder-ink-subtle ml-1">
+                            {cls2.room}
+                          </span>
+                        )}
+                      </th>
+                    ));
+                  })}
                 </tr>
               </thead>
               {/* builder-day-group は印刷スタイル (printStyle.js) の改ページ制御対象 */}
@@ -414,59 +443,150 @@ export function RegularGrid({
                         per.time
                       )}
                     </th>
-                    {s.cols.map((col, i) => {
-                      const boundary = col.groupStart && i > 0 ? GROUP_BOUNDARY : "";
-                      if (!available(per, col)) {
+                    {s.tabs.flatMap((t, ti) => {
+                      const lay = s.tabLayouts.get(t.id);
+                      const boundary = ti > 0 ? GROUP_BOUNDARY : "";
+                      const headCols = lay.fallback ? t.classes : lay.visible;
+                      if (!available(per, t)) {
                         // この学年が使わない時限 (時刻体系の違い) はグレーで塞ぐ
                         return (
                           <td
-                            key={`${col.tab.id}-${col.cls.id}`}
+                            key={`blocked-${t.id}`}
                             aria-hidden="true"
+                            colSpan={headCols.length}
                             className={`border-r border-builder-border last:border-r-0 bg-builder-bg ${boundary}`}
                           />
                         );
                       }
-                      const key = makeCellKey(day, per.id, col.cls.id);
-                      const ref = makeCellRef(col.tab.id, key);
-                      const cell = col.tab.schedule[key];
-                      const reasons = conflictsByRef.get(ref);
-                      const highlighted =
-                        !!highlightTeacher &&
-                        splitTeacherField(cell?.teacher).includes(highlightTeacher);
-                      return (
-                        <RegularCell
-                          // プロジェクトをまたいで同じ ref が再利用されないよう
-                          // key に project.id も含める (直接入力モードの残留防止)
-                          key={`${project.id}:${ref}`}
-                          cellRef={ref}
-                          cell={cell}
-                          subjects={project.subjects}
-                          teachers={project.teachers}
-                          conflictText={reasons ? reasons.join("\n") : ""}
-                          // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
-                          // なり memo が効かない。値が同じなら文字列は等価)
-                          busyTeachers={(busyByTab.get(col.tab.id)?.get(key) || []).join("·")}
-                          highlighted={highlighted}
-                          dimmed={!!highlightTeacher && !highlighted}
-                          roomPlaceholder={col.cls.room}
-                          ariaBase={`${day} ${per.label || per.time} ${col.tab.name} ${col.cls.label || col.cls.room}`}
-                          tdExtra={boundary}
-                          isCompact={isCompact}
-                          isEditing={editRef === ref}
-                          onStartEdit={onStartEdit}
-                          onEndEdit={onEndEdit}
-                          onCellChange={onCellChange}
-                          onClearCell={onClearCell}
-                          onNavigate={onNavigate}
-                          onDragStart={onDragStart}
-                          onDragOver={onDragOver}
-                          onDragLeave={onDragLeave}
-                          onDrop={onDrop}
-                          onDragEnd={onDragEnd}
-                          isDragOver={dragOverRef === ref}
-                          isDragSource={dragSource === ref}
-                        />
-                      );
+                      const renderCell = (cls2, extra = {}) => {
+                        const key = makeCellKey(day, per.id, cls2.id);
+                        const ref = makeCellRef(t.id, key);
+                        const cell = t.schedule[key];
+                        const reasons = conflictsByRef.get(ref);
+                        const highlighted =
+                          !!highlightTeacher &&
+                          splitTeacherField(cell?.teacher).includes(highlightTeacher);
+                        return (
+                          <RegularCell
+                            // プロジェクトをまたいで同じ ref が再利用されないよう
+                            // key に project.id も含める (直接入力モードの残留防止)
+                            key={`${project.id}:${ref}`}
+                            cellRef={ref}
+                            cell={cell}
+                            subjects={project.subjects}
+                            teachers={project.teachers}
+                            conflictText={reasons ? reasons.join("\n") : ""}
+                            // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
+                            // なり memo が効かない。値が同じなら文字列は等価)
+                            busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}
+                            highlighted={highlighted}
+                            dimmed={!!highlightTeacher && !highlighted}
+                            roomPlaceholder={cls2.room}
+                            displayRoomFallback={extra.displayRoomFallback || ""}
+                            ariaBase={`${day} ${per.label || per.time} ${t.name} ${cls2.label || cls2.room}`}
+                            tdExtra={extra.tdExtra || ""}
+                            colSpan={extra.colSpan || 1}
+                            mergeStarters={extra.mergeStarters || ""}
+                            isCompact={isCompact}
+                            isEditing={editRef === ref}
+                            onStartEdit={onStartEdit}
+                            onEndEdit={onEndEdit}
+                            onCellChange={onCellChange}
+                            onClearCell={onClearCell}
+                            onNavigate={onNavigate}
+                            onDragStart={onDragStart}
+                            onDragOver={onDragOver}
+                            onDragLeave={onDragLeave}
+                            onDrop={onDrop}
+                            onDragEnd={onDragEnd}
+                            isDragOver={dragOverRef === ref}
+                            isDragSource={dragSource === ref}
+                          />
+                        );
+                      };
+                      if (lay.fallback) {
+                        // 結合表示できないデータの学年は従来の独立列表示
+                        return t.classes.map((cls2, ci) =>
+                          renderCell(cls2, { tdExtra: ci === 0 ? boundary : "" })
+                        );
+                      }
+                      // ── 合同セルの結合表示 ──
+                      // この行に中身がある (または編集中の) 範囲セルを集め、
+                      // 同一スパンごとにまとめて colSpan で構成クラスに被せる
+                      const present = lay.ranges
+                        .map((r) => {
+                          const key = makeCellKey(day, per.id, r.cls.id);
+                          const ref = makeCellRef(t.id, key);
+                          return { r, ref, cell: t.schedule[key] };
+                        })
+                        .filter((x) => x.cell || editRef === x.ref);
+                      const bySpan = new Map();
+                      for (const p of present) {
+                        const k = `${p.r.startIdx}-${p.r.endIdx}`;
+                        if (!bySpan.has(k))
+                          bySpan.set(k, {
+                            startIdx: p.r.startIdx,
+                            endIdx: p.r.endIdx,
+                            items: [],
+                          });
+                        bySpan.get(k).items.push(p);
+                      }
+                      const out = [];
+                      let i = 0;
+                      while (i < lay.visible.length) {
+                        const g = [...bySpan.values()].find((x) => x.startIdx === i);
+                        if (g) {
+                          const widths = splitSpan(
+                            g.endIdx - g.startIdx + 1,
+                            g.items.length
+                          );
+                          g.items.forEach((p, gi) => {
+                            // 幅 0 は mergeFallback が事前に弾くため通常来ない (保険)
+                            if (widths[gi] <= 0) return;
+                            out.push(
+                              renderCell(p.r.cls, {
+                                colSpan: widths[gi],
+                                // 学年境界の太罫は並列の先頭セルだけに引く
+                                tdExtra: i === 0 && gi === 0 ? boundary : "",
+                                displayRoomFallback: p.r.cls.room,
+                              })
+                            );
+                          });
+                          i = g.endIdx + 1;
+                        } else {
+                          const cls2 = lay.visible[i];
+                          // この列から始まる未入力の範囲: ⊞ で合同コマを追加できる。
+                          // スパン内に個別コマがある行には出さない (入力すると
+                          // クラスの二重在籍になり、確定と同時にフォールバック
+                          // 表示へ切り替わって驚かせるため)
+                          const starters = lay.ranges
+                            .filter(
+                              (r) =>
+                                r.startIdx === i && !present.some((p) => p.r === r)
+                            )
+                            .filter((r) => {
+                              for (let k2 = r.startIdx; k2 <= r.endIdx; k2++) {
+                                const vc = lay.visible[k2];
+                                if (vc && t.schedule[makeCellKey(day, per.id, vc.id)])
+                                  return false;
+                              }
+                              return true;
+                            })
+                            .map(
+                              (r) =>
+                                `${makeCellRef(t.id, makeCellKey(day, per.id, r.cls.id))}\t${r.cls.label}`
+                            )
+                            .join("\n");
+                          out.push(
+                            renderCell(cls2, {
+                              tdExtra: i === 0 ? boundary : "",
+                              mergeStarters: starters,
+                            })
+                          );
+                          i++;
+                        }
+                      }
+                      return out;
                     })}
                   </tr>
                 ))}
