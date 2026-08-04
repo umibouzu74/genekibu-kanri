@@ -46,7 +46,7 @@ import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { deriveTagFiltersForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
-import { LS } from "./constants/storageKeys";
+import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
@@ -322,8 +322,41 @@ export default function App() {
   }, [examPeriods, specialEvents]);
 
   // ─── UI state ─────────────────────────────────────────────────────
-  const [selected, setSelected] = useState(null);
-  const [view, setView] = useState(VIEWS.DASH);
+  // view / selected はリロードしても直前の画面を維持する (sessionStorage
+  // なのでタブ単位 — 新しいタブで開いたときは従来どおりダッシュボード)。
+  const [selected, setSelected] = useState(() => {
+    try {
+      return sessionStorage.getItem(SS.teacher) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [view, setView] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(SS.view);
+      if (!Object.values(VIEWS).includes(saved)) return VIEWS.DASH;
+      // WEEK / MONTH は講師選択中専用ビュー。講師なしで復元すると
+      // 空画面になるため、その場合はダッシュボードに倒す。
+      if (
+        (saved === VIEWS.WEEK || saved === VIEWS.MONTH) &&
+        !sessionStorage.getItem(SS.teacher)
+      ) {
+        return VIEWS.DASH;
+      }
+      return saved;
+    } catch {
+      return VIEWS.DASH;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS.view, view);
+      if (selected) sessionStorage.setItem(SS.teacher, selected);
+      else sessionStorage.removeItem(SS.teacher);
+    } catch {
+      /* private mode 等で保存できなくても画面遷移自体は妨げない */
+    }
+  }, [view, selected]);
   const [monthOff, setMonthOff] = useState(0);
   const [search, setSearch] = useState("");
   const [editSlot, setEditSlot] = useState(null);

@@ -1,5 +1,5 @@
 import { Component } from "react";
-import { LS } from "../constants/storageKeys";
+import { LS, SS } from "../constants/storageKeys";
 import { colors } from "../styles/tokens";
 
 // ─── ErrorBoundary ─────────────────────────────────────────────────
@@ -18,6 +18,14 @@ export class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary] render crashed:", error, info);
+    // ビュー復元 (sessionStorage) が原因のクラッシュを再読込のたびに
+    // 繰り返さないよう、復元情報だけは即座に捨てる。次のリロードは
+    // ダッシュボードから始まる (localStorage のデータは消さない)。
+    try {
+      Object.values(SS).forEach((k) => sessionStorage.removeItem(k));
+    } catch {
+      // ignore
+    }
   }
 
   handleReload = () => {
@@ -30,6 +38,7 @@ export class ErrorBoundary extends Component {
     if (!confirm("localStorage を初期化してリロードします。よろしいですか？")) return;
     try {
       Object.values(LS).forEach((k) => localStorage.removeItem(k));
+      Object.values(SS).forEach((k) => sessionStorage.removeItem(k));
     } catch {
       // ignore
     }

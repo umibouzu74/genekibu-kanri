@@ -18,12 +18,15 @@
 import { ALL_GRADES } from "../constants/schools";
 import { timeStartToMin } from "../utils/dateHelpers";
 import { splitTeacherField } from "../utils/biweekly";
-import { createDefaultProject, makeCellKey, parseCellKey, REGULAR_DAYS } from "./model";
+import {
+  createDefaultProject,
+  isAnnexRoom,
+  makeCellKey,
+  parseCellKey,
+  REGULAR_DAYS,
+} from "./model";
 
 const WEEKEND_DAYS = new Set(["土", "日"]);
-
-// 亀井町校舎の教室は「亀◯◯」。建物分割 (splitBuilding) の判定に使う
-const isAnnexRoom = (room) => /^亀/.test((room || "").trim());
 
 // 取込時のグループ名 (曜日ビューのセクション) 自動設定。単一学年
 // (ALL_GRADES) のみ対象 — 「中1-3」「高1高2」のような特設タブは空のまま

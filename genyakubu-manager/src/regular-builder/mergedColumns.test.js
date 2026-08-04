@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeMergeLayout, mergeFallback, splitSpan } from "./mergedColumns";
+import { computeMergeLayout, mergeFallback, splitSpan, visibleClassesForDay } from "./mergedColumns";
 import { makeCellKey } from "./model";
 
 // 中3 の取込結果を模したフィクスチャ: 通常 5 クラス + 合同 3 列
@@ -180,5 +180,45 @@ describe("splitSpan", () => {
     expect(splitSpan(3, 1)).toEqual([3]);
     expect(splitSpan(4, 4)).toEqual([1, 1, 1, 1]);
     expect(splitSpan(2, 3)).toEqual([1, 1, 0]); // 列数超過は 0 幅 (呼び出し側で除外)
+  });
+});
+
+describe("visibleClassesForDay (空列を隠す)", () => {
+  it("その曜日にセルの無いクラス列を落とし、ある列だけ残す", () => {
+    const tab = baseTab({
+      classes: [cls(1, "SS", "505"), cls(2, "S", "501"), cls(3, "A", "502")],
+      schedule: {
+        [makeCellKey("水", 1, 1)]: { subj: "英語" },
+        [makeCellKey("水", 2, 3)]: { subj: "数学" },
+        [makeCellKey("木", 1, 2)]: { subj: "国語" }, // 他曜日のセルでは残さない
+      },
+    });
+    expect(visibleClassesForDay(tab, "水").map((c) => c.label)).toEqual(["SS", "A"]);
+  });
+
+  it("中身のある合同列は、スパンの構成クラスが空でも下敷きとして残す", () => {
+    const tab = baseTab({
+      schedule: {
+        [makeCellKey("水", 1, 8)]: { subj: "確認テスト" }, // S〜B (S・A・B を覆う)
+      },
+    });
+    // SS・C はどのセルにも使われないので消えるが、S・A・B は S〜B の
+    // 結合表示に必要なので残る。中身の無い合同列 (SS〜C ×2) は消える
+    expect(visibleClassesForDay(tab, "水").map((c) => c.label)).toEqual([
+      "S",
+      "A",
+      "B",
+      "S〜B",
+    ]);
+  });
+
+  it("タブが使わない時限の残骸セルでは列を残さない", () => {
+    const tab = baseTab({
+      periodIds: [1],
+      schedule: {
+        [makeCellKey("水", 2, 1)]: { subj: "英語" }, // 時限 2 は periodIds 外
+      },
+    });
+    expect(visibleClassesForDay(tab, "水")).toEqual([]);
   });
 });

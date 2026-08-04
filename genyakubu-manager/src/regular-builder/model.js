@@ -237,6 +237,79 @@ export function sanitizeWorkspace(raw) {
   return { version: 2, activeProjectId, projects };
 }
 
+// ─── 本校 / 亀井町 の表示分割 ───────────────────────────────────────
+// 亀井町校舎の教室は「亀◯◯」。取込 (importTimetable) と曜日ビューの
+// 表示分割の両方で使う建物判定。
+
+export const isAnnexRoom = (room) => /^亀/.test((room || "").trim());
+
+/**
+ * クラス列の建物判定。セルの実効教室 (cell.room || cls.room) の多数決で
+ * 決め、セルが無い (または教室不明の) 列は既定教室で判定する。同数も
+ * 既定教室に倒す。実データには列の既定教室と実コマの教室 (セル上書き) が
+ * 食い違う列があるため、既定教室だけでは判定しない。
+ * @returns {"main" | "annex"}
+ */
+export function classCampus(tab, cls) {
+  let annex = 0;
+  let main = 0;
+  for (const [key, cell] of Object.entries(tab.schedule || {})) {
+    if (parseCellKey(key).classId !== cls.id) continue;
+    const room = (cell.room || "").trim() || (cls.room || "").trim();
+    if (!room) continue;
+    if (isAnnexRoom(room)) annex++;
+    else main++;
+  }
+  if (annex !== main) return annex > main ? "annex" : "main";
+  return isAnnexRoom(cls.room) ? "annex" : "main";
+}
+
+// タブの時限を「渡したクラス列のセルが実際に使っている時限」に絞る。
+// 1 つも無い場合 (セル未入力の建物側など) は全時限のまま返す。
+function usedPeriodIds(tab, classes) {
+  const clsIds = new Set(classes.map((c) => c.id));
+  const used = new Set();
+  for (const key of Object.keys(tab.schedule || {})) {
+    const { periodId, classId } = parseCellKey(key);
+    if (clsIds.has(classId)) used.add(periodId);
+  }
+  const ids = (tab.periodIds || []).filter((id) => used.has(id));
+  return ids.length ? ids : tab.periodIds || [];
+}
+
+/**
+ * 表示用にタブを本校 / 亀井町のクラス列で分割する。両方の建物のクラス列を
+ * 持つタブだけ 2 つの仮想タブになり、時限もそれぞれの建物のセルが使う
+ * ものに絞られる (時刻体系の違う建物同士で空行・空きマスが乱立しない)。
+ * tab.id / classId / schedule は元のまま — セル編集・D&D 入替・重複
+ * チェックの参照 (`tabId:cellKey`) はそのまま機能する表示専用の変形。
+ * 全タブに campus ("main" | "annex") を注釈する。
+ */
+export function splitTabsByCampus(tabs) {
+  return tabs.flatMap((t) => {
+    const main = [];
+    const annex = [];
+    for (const c of t.classes || []) {
+      (classCampus(t, c) === "annex" ? annex : main).push(c);
+    }
+    if (main.length === 0 || annex.length === 0) {
+      return [{ ...t, campus: annex.length ? "annex" : "main" }];
+    }
+    return [
+      { ...t, campus: "main", classes: main, periodIds: usedPeriodIds(t, main) },
+      {
+        ...t,
+        campus: "annex",
+        classes: annex,
+        periodIds: usedPeriodIds(t, annex),
+        // 手動グループも建物で分ける (同名のままだと同じセクションに
+        // 戻ってしまい分割の意味がなくなる)
+        group: t.group ? `${t.group}（亀井町）` : "",
+      },
+    ];
+  });
+}
+
 // ─── セクション分け (曜日ビューの表の単位) ──────────────────────────
 // ダッシュボードの時間割ビューと同じく、曜日ビューは「時間軸を共有する
 // 学年のまとまり」ごとに別テーブルにする。
@@ -249,15 +322,26 @@ export function sanitizeWorkspace(raw) {
 // 並びはタブの定義順 (各セクションの先頭タブの位置)。
 
 /**
+ * @param {{splitCampus?: boolean}} [opts]
+ *   splitCampus: 本校と亀井町 (教室「亀◯◯」) のクラス列を別セクションに
+ *   分けて表示する (splitTabsByCampus)。自動クラスタリングも建物を跨いで
+ *   併合しない。
  * @returns {{key: string, name: string, auto: boolean, tabs: object[]}[]}
  */
-export function computeSections(project, day) {
-  const dayTabs = (project.tabs || []).filter(
+export function computeSections(project, day, { splitCampus = false } = {}) {
+  let dayTabs = (project.tabs || []).filter(
     (t) =>
       (t.days || []).includes(day) &&
       (t.classes || []).length > 0 &&
       (t.periodIds || []).length > 0
   );
+  if (splitCampus) dayTabs = splitTabsByCampus(dayTabs);
+  // 両建物が存在する日だけ自動セクション名に（本校）/（亀井町）を付ける
+  // (亀井町の無いプロジェクトで「（本校）」だけが並ぶのはノイズ)
+  const labelCampus =
+    splitCampus &&
+    dayTabs.some((t) => t.campus === "annex") &&
+    dayTabs.some((t) => t.campus === "main");
 
   const manual = new Map(); // グループ名 → tabs
   const autoTabs = [];
@@ -274,14 +358,18 @@ export function computeSections(project, day) {
   // 時限セットが包含関係の学年を推移的にまとめる (小規模なので単純マージで
   // 十分)。大きいセットの学年が複数クラスタを橋渡しすることもある
   const isSubset = (a, b) => [...a].every((id) => b.has(id));
-  const clusters = []; // {ids: Set<periodId>, tabs: []}
+  const clusters = []; // {ids: Set<periodId>, tabs: [], campus}
   for (const t of autoTabs) {
     const mine = new Set(t.periodIds || []);
+    // splitCampus 時は建物を跨いで併合しない (亀井町の時限セットが本校を
+    // 包含していても別セクションのまま)。splitCampus off では campus は
+    // 全タブ undefined なので従来どおり
     const hit = clusters.filter(
-      (c) => isSubset(mine, c.ids) || isSubset(c.ids, mine)
+      (c) =>
+        c.campus === t.campus && (isSubset(mine, c.ids) || isSubset(c.ids, mine))
     );
     if (hit.length === 0) {
-      clusters.push({ ids: new Set(t.periodIds), tabs: [t] });
+      clusters.push({ ids: new Set(t.periodIds), tabs: [t], campus: t.campus });
     } else {
       const base = hit[0];
       base.tabs.push(t);
@@ -303,15 +391,25 @@ export function computeSections(project, day) {
       tabs,
     })),
     ...clusters.map((c) => ({
-      key: `a:${c.tabs.map((t) => t.id).sort((x, y) => x - y).join("-")}`,
+      // 分割された本校側と亀井町側はタブ id が同じになるため、key に建物を
+      // 含めて衝突を避ける (React key・折りたたみ状態のキーに使われる)
+      key: `a:${c.tabs.map((t) => t.id).sort((x, y) => x - y).join("-")}${
+        c.campus === "annex" ? ":亀" : ""
+      }`,
       name: "",
       auto: true,
+      campus: c.campus,
       tabs: c.tabs,
     })),
   ];
   for (const s of sections) {
     s.tabs.sort((a, b) => order.get(a.id) - order.get(b.id));
-    if (s.auto) s.name = s.tabs.map((t) => t.name).join("・");
+    if (s.auto) {
+      s.name = s.tabs.map((t) => t.name).join("・");
+      if (labelCampus) {
+        s.name += s.campus === "annex" ? "（亀井町）" : "（本校）";
+      }
+    }
   }
   sections.sort((a, b) => order.get(a.tabs[0].id) - order.get(b.tabs[0].id));
   return sections;
