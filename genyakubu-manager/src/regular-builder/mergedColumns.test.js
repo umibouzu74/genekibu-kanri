@@ -49,6 +49,40 @@ describe("computeMergeLayout", () => {
     expect(layout.visible.map((c) => c.label)).toEqual(["S", "B", "X〜Y", "B〜S"]);
     expect(layout.ranges).toHaveLength(0);
   });
+
+  it("スラッシュ列挙 (S/AB) も合同列として結合する — 合同列が先頭にあってもよい", () => {
+    // 中1 の取込結果: S/AB 列が先頭に来る
+    const tab = baseTab({
+      classes: [cls(1, "S/AB", "601"), cls(2, "S", "602"), cls(3, "AB", "601")],
+    });
+    const layout = computeMergeLayout(tab);
+    expect(layout.visible.map((c) => c.label)).toEqual(["S", "AB"]);
+    expect(layout.ranges.map((r) => [r.cls.label, r.startIdx, r.endIdx])).toEqual([
+      ["S/AB", 0, 1],
+    ]);
+  });
+
+  it("3 クラスの列挙 (S/AB/C) も結合する", () => {
+    const tab = baseTab({
+      classes: [cls(1, "S"), cls(2, "AB"), cls(3, "C"), cls(4, "S/AB/C"), cls(5, "AB/C")],
+    });
+    const layout = computeMergeLayout(tab);
+    expect(layout.visible.map((c) => c.label)).toEqual(["S", "AB", "C"]);
+    expect(layout.ranges.map((r) => [r.cls.label, r.startIdx, r.endIdx])).toEqual([
+      ["S/AB/C", 0, 2],
+      ["AB/C", 1, 2],
+    ]);
+  });
+
+  it("隙間を挟む列挙 (S/C) や未知クラスの列挙は通常の列のまま", () => {
+    const tab = baseTab({
+      classes: [cls(1, "S"), cls(2, "A"), cls(3, "C"), cls(4, "S/C"), cls(5, "S/X")],
+    });
+    const layout = computeMergeLayout(tab);
+    // S/C は間に A を挟む (colSpan が A も合同に見えるため結合しない)
+    expect(layout.visible.map((c) => c.label)).toEqual(["S", "A", "C", "S/C", "S/X"]);
+    expect(layout.ranges).toHaveLength(0);
+  });
 });
 
 describe("mergeFallback", () => {

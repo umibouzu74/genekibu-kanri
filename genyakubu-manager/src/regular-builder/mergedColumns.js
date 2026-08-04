@@ -1,77 +1,84 @@
-// ─── 合同列 (範囲ラベル) のセル結合表示 ─────────────────────────────
-// 「S〜B」「SS〜C」のようなラベルのクラス列 (合同コマ用に取込が作る列)
-// を、独立した列としてではなく、構成クラス (S・A・B …) の上に Excel の
-// セル結合のように colSpan で表示するためのレイアウト計算。
+// ─── 合同列 (範囲・列挙ラベル) のセル結合表示 ───────────────────────
+// 「S〜B」「SS〜C」(範囲) や「S/AB」「S/AB/C」(列挙) のようなラベルの
+// クラス列 (合同コマ用に取込が作る列) を、独立した列としてではなく、
+// 構成クラス (S・A・B …) の上に Excel のセル結合のように colSpan で
+// 表示するためのレイアウト計算。
 //
 // - 範囲ラベル: `始点(〜|～|~)終点`。始点・終点が同じ学年の通常クラスの
-//   ラベルに一致し、始点が終点より左にある場合のみ範囲列として扱う
-//   (解釈できないラベルは通常の列のまま)
-// - データモデルは不変: 範囲列はクラス列として存在し続け、セルも
-//   (day, periodId, 範囲列の classId) のまま。反映の round-trip も不変。
-// - 同じ範囲ラベルが複数列ある並列合同 (確認テストの複数監督など) は、
+//   ラベルに一致し、始点が終点より左にある場合のみ合同列として扱う
+// - 列挙ラベル: `A/B/C`。構成クラスがすべて存在し、かつ表示順で隙間なく
+//   隣接している場合のみ (「S/C」の間に A を挟む等は、跨いだ colSpan が
+//   A も合同に見えて誤解を招くため通常の列のまま)
+// - 解釈できないラベルは通常の列のまま
+// - データモデルは不変: 合同列はクラス列として存在し続け、セルも
+//   (day, periodId, 合同列の classId) のまま。反映の round-trip も不変。
+// - 同じスパンの合同列が複数ある並列合同 (確認テストの複数監督など) は、
 //   スパンを列数で分割して横に並べる (5 列を 2 セルなら 3+2)
-// - 「同じ行に範囲セルと構成クラスの個別セルが両方ある」「範囲同士が
-//   部分的に交差する」データは結合表示できないため、その学年は従来の
-//   独立列表示にフォールバックする (mergeFallback)
+// - 「同じ行に合同セルと構成クラスの個別セルが両方ある」「スパン同士が
+//   部分的に交差する」「並列数がスパン幅を超える」データは結合表示
+//   できないため、その学年は従来の独立列表示にフォールバックする
+//   (mergeFallback)
 
 import { makeCellKey } from "./model";
 
 const RANGE_RE = /^(.+?)[〜～~](.+)$/;
 
+const isCandidateLabel = (label) =>
+  RANGE_RE.test(label || "") || (label || "").includes("/");
+
+// ラベルを visible 上のスパン [startIdx, endIdx] に解決する (不能なら null)
+function parseSpan(label, idxByLabel) {
+  const m = RANGE_RE.exec(label || "");
+  if (m) {
+    const startIdx = idxByLabel.get(m[1]);
+    const endIdx = idxByLabel.get(m[2]);
+    if (startIdx == null || endIdx == null || startIdx > endIdx) return null;
+    return [startIdx, endIdx];
+  }
+  if ((label || "").includes("/")) {
+    const parts = label.split("/").map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const idxs = parts.map((p) => idxByLabel.get(p));
+    if (idxs.some((x) => x == null)) return null;
+    const min = Math.min(...idxs);
+    const max = Math.max(...idxs);
+    // 列挙が隙間なく連続している場合のみ (重複列挙もここで弾かれる)
+    if (new Set(idxs).size !== max - min + 1) return null;
+    return [min, max];
+  }
+  return null;
+}
+
 /**
- * タブのクラス列を「表示列 (通常クラス)」と「範囲列」に分ける。
+ * タブのクラス列を「表示列 (通常クラス)」と「合同列 (スパン付き)」に分ける。
  * @returns {{visible: object[], ranges: {cls: object, startIdx: number, endIdx: number}[]}}
  *   startIdx / endIdx は visible 配列上の添字 (両端含む)
  */
 export function computeMergeLayout(tab) {
   const classes = tab.classes || [];
-  const candidates = new Map(); // cls.id → [start, end] (ラベル文字列)
-  for (const cls of classes) {
-    const m = RANGE_RE.exec(cls.label || "");
-    if (m) candidates.set(cls.id, [m[1], m[2]]);
-  }
-  const visible = classes.filter((c) => !candidates.has(c.id));
-  const idxByLabel = new Map();
-  visible.forEach((c, i) => {
-    if (!idxByLabel.has(c.label)) idxByLabel.set(c.label, i);
-  });
-
-  const ranges = [];
-  const invalid = new Set();
-  for (const cls of classes) {
-    const cand = candidates.get(cls.id);
-    if (!cand) continue;
-    const startIdx = idxByLabel.get(cand[0]);
-    const endIdx = idxByLabel.get(cand[1]);
-    if (startIdx == null || endIdx == null || startIdx > endIdx) {
-      invalid.add(cls.id); // 解釈不能 → 通常の列に戻す
-      continue;
+  // まず構文上の候補 (〜 か / を含むラベル) を除いた表示列で検証し、
+  // 解釈できない候補は表示列へ戻して繰り返す (戻すと添字が変わるため
+  // 固定点まで回す。候補は単調に減るので必ず停止する)
+  const excluded = new Set(
+    classes.filter((c) => isCandidateLabel(c.label)).map((c) => c.id)
+  );
+  for (;;) {
+    const visible = classes.filter((c) => !excluded.has(c.id));
+    const idxByLabel = new Map();
+    visible.forEach((c, i) => {
+      if (!idxByLabel.has(c.label)) idxByLabel.set(c.label, i);
+    });
+    const ranges = [];
+    const invalid = [];
+    for (const c of classes) {
+      if (!excluded.has(c.id)) continue;
+      const span = parseSpan(c.label, idxByLabel);
+      if (span) ranges.push({ cls: c, startIdx: span[0], endIdx: span[1] });
+      else invalid.push(c.id);
     }
-    ranges.push({ cls, startIdx, endIdx });
+    if (invalid.length === 0) return { visible, ranges };
+    for (const id of invalid) excluded.delete(id);
   }
-  if (invalid.size) {
-    // 通常列へ戻す (元の並び順を保つ)
-    const vis = classes.filter((c) => !candidates.has(c.id) || invalid.has(c.id));
-    return computeMergeLayoutWithVisible(vis, ranges);
-  }
-  return { visible, ranges };
-}
-
-// invalid 混在時の再構築: visible が変わると添字がずれるため引き直す
-function computeMergeLayoutWithVisible(visible, prevRanges) {
-  const idxByLabel = new Map();
-  visible.forEach((c, i) => {
-    if (!idxByLabel.has(c.label)) idxByLabel.set(c.label, i);
-  });
-  const ranges = [];
-  for (const r of prevRanges) {
-    const m = RANGE_RE.exec(r.cls.label || "");
-    const startIdx = idxByLabel.get(m[1]);
-    const endIdx = idxByLabel.get(m[2]);
-    if (startIdx == null || endIdx == null || startIdx > endIdx) continue;
-    ranges.push({ cls: r.cls, startIdx, endIdx });
-  }
-  return { visible, ranges };
 }
 
 /**
