@@ -107,6 +107,49 @@ describe("computeConflicts - 教室重複", () => {
   });
 });
 
+describe("computeConflicts - クラス (生徒) の時間重複", () => {
+  // makeProject: 月1限 S=数学/半田 (18:00-18:45)。2限の時刻をタイポで
+  // 1限と重ねた上で、同じ S 列に講師・教室の重複を作らないセルを足す
+  // (class 単独で検出されることを確かめるため)
+  const typoProject = () => {
+    const p = makeProject();
+    p.periods[1].time = "18:40-19:25";
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "英語", room: "602" };
+    return p;
+  };
+
+  it("同じクラス列に時間帯の重なるコマが 2 つあると class として検出する", () => {
+    const { list } = computeConflicts(typoProject());
+    expect(list).toHaveLength(1);
+    expect(list[0].type).toBe("class");
+    expect(list[0].label).toContain("中3 S");
+    expect([...list[0].refs].sort()).toEqual([
+      `1:${makeCellKey("月", 1, 1)}`,
+      `1:${makeCellKey("月", 2, 1)}`,
+    ]);
+    expect(list[0].reasons[0]).toContain("時間帯が重複");
+  });
+
+  it("別クラス列の並列コマは class 衝突にしない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 2)] = { subj: "理科" };
+    expect(computeConflicts(p).list).toHaveLength(0);
+  });
+
+  it("時間帯が重ならない同一クラスのコマは検出しない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "英語", room: "602" };
+    expect(computeConflicts(p).list).toHaveLength(0);
+  });
+
+  it("他の重複と同じく承認で消せる", () => {
+    const { list } = computeConflicts(typoProject());
+    const view = buildConflictView(list, [conflictKey(list[0])]);
+    expect(view.active).toHaveLength(0);
+    expect(view.approved).toHaveLength(1);
+  });
+});
+
 describe("computeConflicts - 時刻未設定", () => {
   it("時刻の無い時限のセルは判定対象外 (落ちない)", () => {
     const p = twoTabProject();

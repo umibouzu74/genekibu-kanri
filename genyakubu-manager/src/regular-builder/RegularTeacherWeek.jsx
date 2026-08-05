@@ -15,6 +15,8 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
     () => computeTeacherWeek(project, teacher),
     [project, teacher]
   );
+  // NG (不在) だけの講師でも週間は出す (割り当てる前に不在が見えるのが目的)
+  const hasNg = week.days.some((d) => (week.ngByDay[d] || []).length > 0);
 
   return (
     <div className={`no-print ${UI.panel} text-xs`}>
@@ -33,12 +35,13 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
           </button>
         )}
       </div>
-      {week.total === 0 ? (
+      {week.total === 0 && !hasNg ? (
         <div className="text-builder-ink-subtle">担当コマがありません。</div>
       ) : (
         <div className="flex gap-4 flex-wrap items-start">
           {week.days.map((d) => {
             const entries = week.byDay[d] || [];
+            const ngs = week.ngByDay[d] || [];
             return (
               <div key={d} className="min-w-[11rem]">
                 <div
@@ -50,6 +53,16 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
                     {entries.length ? `${entries.length} コマ` : "－"}
                   </span>
                 </div>
+                {/* NG (不在) を先頭に出す — この曜日に入れられない時間帯の予告 */}
+                {ngs.map((s, i) => (
+                  <div
+                    key={`ng-${i}`}
+                    className="px-1 py-0.5 text-builder-red whitespace-nowrap"
+                    title="講師マスタの NG（不在）設定です（⚙ 全体設定で変更できます）"
+                  >
+                    🚫 <span className="tabular-nums">{s.time || "終日"}</span> NG
+                  </div>
+                ))}
                 {entries.map((e) => (
                   <button
                     key={e.ref}
@@ -95,7 +108,8 @@ export function RegularTeacherWeekPrintSheet({ project, teacher }) {
       </div>
       {week.days.map((d) => {
         const entries = week.byDay[d] || [];
-        if (entries.length === 0) return null;
+        const ngs = week.ngByDay[d] || [];
+        if (entries.length === 0 && ngs.length === 0) return null;
         return (
           <div key={d} className="mb-2" style={{ breakInside: "avoid" }}>
             <div
@@ -104,6 +118,11 @@ export function RegularTeacherWeekPrintSheet({ project, teacher }) {
             >
               {d}曜日
             </div>
+            {ngs.length > 0 && (
+              <div className="text-xs text-builder-red">
+                🚫 NG: {ngs.map((s) => s.time || "終日").join("、")}
+              </div>
+            )}
             <table className="border-collapse text-xs w-full">
               <tbody>
                 {entries.map((e) => (

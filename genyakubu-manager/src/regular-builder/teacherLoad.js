@@ -75,13 +75,16 @@ export function computeTeacherLoad(project) {
 
 /**
  * 指定講師の担当コマを曜日ごとに開始時刻順で列挙する。ref はセルへの
- * ジャンプ (`jumpToCells`) に使える entryRef。
+ * ジャンプ (`jumpToCells`) に使える entryRef。講師マスタの NG (不在) も
+ * ngByDay で返す — 割り当てる前に「入れられない時間帯」が週間で見える
+ * ように (割当後の警告は conflicts 側)。
  * @returns {{
  *   days: string[],                 // いずれかの学年が使う曜日
  *   byDay: Record<string, {
  *     ref: string, time: string, periodLabel: string,
  *     tabName: string, clsLabel: string, subj: string, room: string,
  *   }[]>,
+ *   ngByDay: Record<string, {time: string}[]>, // NG (不在)。time "" = 終日
  *   total: number,
  * }}
  */
@@ -109,5 +112,17 @@ export function computeTeacherWeek(project, teacherName) {
   for (const d of days) {
     byDay[d].sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time));
   }
-  return { days, byDay, total };
+
+  // NG (不在): 使う曜日のものだけを 終日 → 時刻順 で並べる (使わない曜日の
+  // NG はこのプロジェクトでは効かないため載せない)
+  const master = (project.teachers || []).find((t) => t.name === teacherName);
+  const ngByDay = {};
+  for (const d of days) ngByDay[d] = [];
+  for (const s of master?.ngSlots || []) {
+    if (ngByDay[s.day]) ngByDay[s.day].push({ time: s.time || "" });
+  }
+  const ngOrder = (s) => (s.time ? timeStartToMin(s.time) : -1);
+  for (const d of days) ngByDay[d].sort((a, b) => ngOrder(a) - ngOrder(b));
+
+  return { days, byDay, ngByDay, total };
 }

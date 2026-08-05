@@ -30,13 +30,18 @@ function describeEntry(entry) {
   return `${entry.tab.name} ${entry.cls.label} ${entry.period.label || entry.period.time} ${entry.cell.subj || ""}`.trim();
 }
 
+// クラス重複用の短い説明 (クラス名は label 側に出すため時限 + 教科だけ)
+function describePeriodCell(entry) {
+  return `${entry.period.label || entry.period.time} ${entry.cell.subj || ""}`.trim();
+}
+
 /**
  * プロジェクト全体の衝突を検出する (承認は考慮しない生の一覧)。
- * teacher/room は 2 セルの重複 (refs 2 件)、ng は講師マスタの NG (不在)
- * 時間帯への割当 (refs 1 件)。いずれも承認フローで消せる。
+ * teacher/room/class は 2 セルの重複 (refs 2 件)、ng は講師マスタの NG
+ * (不在) 時間帯への割当 (refs 1 件)。いずれも承認フローで消せる。
  * @returns {{list: {
- *   type: "teacher"|"room"|"ng", day: string, label: string,
- *   refs: string[],              // 該当セルの entryRef (teacher/room は 2 件)
+ *   type: "teacher"|"room"|"class"|"ng", day: string, label: string,
+ *   refs: string[],              // 該当セルの entryRef (teacher/room/class は 2 件)
  *   reasons: string[],           // refs と同順の、セル側に出す理由文
  * }[]}}
  */
@@ -91,6 +96,25 @@ export function computeConflicts(project) {
             reasons: [
               `教室 ${ra} が重複: ${describeEntry(b)}`,
               `教室 ${ra} が重複: ${describeEntry(a)}`,
+            ],
+          });
+        }
+
+        // クラス (生徒) の時間重複 — 同じ学年・同じクラス列に時間帯の重なる
+        // コマが 2 つある状態。通常は時限時刻のタイポで起きる (講師・教室
+        // だけ見ていると生徒の二重在籍に気付けない)。意図した分割授業など
+        // は他の重複と同じく承認フローで消せる
+        if (a.tab.id === b.tab.id && a.cls.id === b.cls.id) {
+          const clsName =
+            `${a.tab.name} ${a.cls.label || a.cls.room || ""}`.trim();
+          list.push({
+            type: "class",
+            day,
+            label: `${day} クラス ${clsName}: ${describePeriodCell(a)} ↔ ${describePeriodCell(b)}`,
+            refs: [entryRef(a), entryRef(b)],
+            reasons: [
+              `クラス ${clsName} の時間帯が重複: ${describePeriodCell(b)}`,
+              `クラス ${clsName} の時間帯が重複: ${describePeriodCell(a)}`,
             ],
           });
         }

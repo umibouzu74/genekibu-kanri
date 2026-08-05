@@ -140,6 +140,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
               value={c.room}
               onChange={(e) => updateClass(c.id, { room: e.target.value })}
               placeholder="教室 (例: 501)"
+              list="regb-rooms"
               className={`${UI.input} w-28`}
             />
             <button

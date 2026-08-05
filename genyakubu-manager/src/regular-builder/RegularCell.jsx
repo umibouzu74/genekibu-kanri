@@ -454,6 +454,7 @@ export const RegularCell = memo(function RegularCell({
             type="text"
             aria-label={`${ariaBase} の教室`}
             value={c.room || ""}
+            list="regb-rooms"
             onChange={(e) => onCellChange(cellRef, "room", e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape" || e.key === "Enter") closeEdit(e);

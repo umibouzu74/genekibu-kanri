@@ -787,6 +787,13 @@ export default function RegularBuilderApp({
           <option key={s} value={s} />
         ))}
       </datalist>
+      {/* 教室はセルの教室入力から参照。教室重複チェックと亀井町判定は
+          文字列一致なので、候補補完で表記ゆれ (全角/半角など) を防ぐ */}
+      <datalist id="regb-rooms">
+        {roomOptions.map((r) => (
+          <option key={r} value={r} />
+        ))}
+      </datalist>
 
       {/* ツールバー (講習ビルダーの Toolbar と同じ質感) */}
       <div className="no-print flex flex-wrap items-center gap-2 bg-builder-surface-alt border border-builder-border rounded-lg p-2">
@@ -948,7 +955,7 @@ export default function RegularBuilderApp({
       {/* 問題 (重複・NG) の一覧・承認パネル */}
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
-          <div className={UI.panelHead}>講師・教室の重複と講師NG</div>
+          <div className={UI.panelHead}>講師・教室・クラスの重複と講師NG</div>
           {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
             <div className="text-builder-ink-subtle">問題はありません。</div>
           )}

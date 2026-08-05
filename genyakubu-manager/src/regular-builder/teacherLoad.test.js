@@ -93,3 +93,26 @@ describe("computeTeacherWeek", () => {
     expect(week.byDay["火"]).toEqual([]);
   });
 });
+
+describe("computeTeacherWeek - NG (不在)", () => {
+  it("ngByDay に使う曜日の NG を 終日 → 時刻順 で返す", () => {
+    const p = makeProject();
+    p.teachers = [
+      {
+        name: "堀上",
+        ngSlots: [{ day: "月", time: "19:00-20:00" }, { day: "月" }, { day: "水" }],
+      },
+      { name: "半田" },
+    ];
+    const week = computeTeacherWeek(p, "堀上");
+    expect(week.ngByDay["月"]).toEqual([{ time: "" }, { time: "19:00-20:00" }]);
+    expect(week.ngByDay["火"]).toEqual([]);
+    // 使わない曜日 (水) の NG はこのプロジェクトでは効かないため載らない
+    expect(week.ngByDay["水"]).toBeUndefined();
+  });
+
+  it("NG の無い講師・マスタ外の講師は全曜日空", () => {
+    expect(computeTeacherWeek(makeProject(), "半田").ngByDay["月"]).toEqual([]);
+    expect(computeTeacherWeek(makeProject(), "マスタ外").ngByDay["月"]).toEqual([]);
+  });
+});
