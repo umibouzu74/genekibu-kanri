@@ -1006,3 +1006,51 @@ describe("getSlotCountStartDate", () => {
     expect(getSlotCountStartDate(slot, { displayCutoff: DISPLAY_CUTOFF })).toBe(null);
   });
 });
+
+describe("computeSessionNumber - 特別時程 (daySchedules) の部分休講", () => {
+  // 附中1 水曜 1限。2026-04-08 / 04-15 / 04-22 は水曜日
+  const CUTOFF = {
+    groups: [
+      { label: "中1・2", grades: ["附中1"], startDate: "2026-04-08", date: null },
+    ],
+  };
+  const slot = makeSlot(1, "水", "16:25-17:25", "附中1");
+  const cutFirst = {
+    id: 1,
+    date: "2026-04-15",
+    label: "附属 1限カット",
+    targetGrades: ["附中1"],
+    timeMap: [],
+    cancelTimes: ["16:25-17:25"],
+    memo: "",
+  };
+  const ctx = (daySchedules) => ({
+    classSets: [],
+    allSlots: [slot],
+    displayCutoff: CUTOFF,
+    isOffForGrade: NEVER_OFF,
+    daySchedules,
+  });
+
+  it("cancelTimes の日は 0 (実施なし) でカウンタも進まない", () => {
+    expect(computeSessionNumber(slot, "2026-04-08", ctx([cutFirst]))).toBe(1);
+    expect(computeSessionNumber(slot, "2026-04-15", ctx([cutFirst]))).toBe(0);
+    // 翌週は第2回 (カットした週をカウントしない)
+    expect(computeSessionNumber(slot, "2026-04-22", ctx([cutFirst]))).toBe(2);
+  });
+
+  it("timeMap (時刻読み替えのみ) はカウントに影響しない", () => {
+    const compress = {
+      ...cutFirst,
+      timeMap: [{ from: "16:25-17:25", to: "17:00-17:50" }],
+      cancelTimes: [],
+    };
+    expect(computeSessionNumber(slot, "2026-04-15", ctx([compress]))).toBe(2);
+    expect(computeSessionNumber(slot, "2026-04-22", ctx([compress]))).toBe(3);
+  });
+
+  it("対象外学年・別日には影響しない", () => {
+    const other = { ...cutFirst, targetGrades: ["中3"] };
+    expect(computeSessionNumber(slot, "2026-04-15", ctx([other]))).toBe(2);
+  });
+});

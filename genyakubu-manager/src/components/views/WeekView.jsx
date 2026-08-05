@@ -25,7 +25,8 @@ import { EXTRA_LESSON_COLOR } from "../../constants/colors";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
-import { overlapsRange, formatDateRange } from "../../utils/dateHelpers";
+import { overlapsRange, formatDateRange, dateToDay } from "../../utils/dateHelpers";
+import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
@@ -136,6 +137,7 @@ export function WeekView({
   examPrepSchedules = [],
   specialEvents = [],
   extraLessons = [],
+  daySchedules = [],
   onEditExtraLesson,
   displayCutoff,
   timetables = [],
@@ -193,6 +195,7 @@ export function WeekView({
     examPeriods,
     biweeklyAnchors,
     sessionOverrides,
+    daySchedules,
   });
   const sessionMapByDay = useMemo(() => {
     const today = new Date();
@@ -373,6 +376,27 @@ export function WeekView({
       })
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, teacher, winStart, winEnd]);
+
+  // 今日から+14日間の特別時程のうち、この teacher のコマに効くもの。
+  // 各件について「どのコマがどう変わるか」(時刻読み替え / 休講) を添える。
+  const upcomingDaySchedules = useMemo(() => {
+    if (!daySchedules?.length) return [];
+    const out = [];
+    for (const d of daySchedules) {
+      if (!isWithinWindow(d.date, winStart, winEnd)) continue;
+      const dow = dateToDay(d.date);
+      if (!dow) continue;
+      const items = [];
+      for (const slot of ts) {
+        if (slot.day !== dow) continue;
+        const r = resolveSlotDaySchedule(slot, d.date, [d]);
+        if (!r) continue;
+        items.push({ slot, cancelled: !!r.cancelled, to: r.time });
+      }
+      if (items.length > 0) out.push({ schedule: d, items });
+    }
+    return out.sort((a, b) => a.schedule.date.localeCompare(b.schedule.date));
+  }, [daySchedules, ts, winStart, winEnd]);
 
   // 直近 14 日に重なるイベント (休講以外) を一覧に出す。休講は曜日マスに
   // 既に休バッジが立っているので除外。
@@ -602,6 +626,56 @@ export function WeekView({
               </UpcomingRow>
             );
           })}
+        </UpcomingBanner>
+      )}
+      {upcomingDaySchedules.length > 0 && (
+        <UpcomingBanner
+          bg="#efeafa"
+          borderColor="#a898d8"
+          titleColor="#4a3a8e"
+          title={`⏰ 直近2週間の特別時程 (${upcomingDaySchedules.length}件)`}
+        >
+          {upcomingDaySchedules.map(({ schedule, items }) => (
+            <UpcomingRow key={`dsch-${schedule.id}`}>
+              <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                {fmtDateWeekday(schedule.date)}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#4a3a8e" }}>
+                {schedule.label || "特別時程"}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "#555",
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {items.map(({ slot, cancelled, to }) => (
+                  <span key={slot.id}>
+                    {slot.grade}
+                    {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}{" "}
+                    {cancelled ? (
+                      <span style={{ color: "#b03030", fontWeight: 700 }}>
+                        休講
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ textDecoration: "line-through" }}>
+                          {slot.time}
+                        </span>
+                        <span style={{ margin: "0 3px" }}>→</span>
+                        <span style={{ fontWeight: 700, color: "#4a3a8e" }}>
+                          {to}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                ))}
+              </span>
+            </UpcomingRow>
+          ))}
         </UpcomingBanner>
       )}
       {upcomingReschedules.length > 0 && (

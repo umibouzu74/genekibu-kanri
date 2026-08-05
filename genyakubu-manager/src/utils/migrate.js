@@ -74,6 +74,26 @@ export const migrateSpecialEvents = (arr) =>
     : arr;
 
 /**
+ * Restore array/string fields dropped by Firebase RTDB for 特別時程.
+ * RTDB discards empty arrays on write (targetGrades / timeMap /
+ * cancelTimes が空のまま保存され得る) ので、読み込み時に必ず配列へ
+ * 戻す。id / date / label / memo も型を揃える。
+ */
+export const migrateDaySchedules = (arr) =>
+  Array.isArray(arr)
+    ? arr.map((d, i) => ({
+        ...d,
+        id: typeof d?.id === "number" ? d.id : i + 1,
+        date: typeof d?.date === "string" ? d.date : "",
+        label: typeof d?.label === "string" ? d.label : "",
+        targetGrades: Array.isArray(d?.targetGrades) ? d.targetGrades : [],
+        timeMap: Array.isArray(d?.timeMap) ? d.timeMap : [],
+        cancelTimes: Array.isArray(d?.cancelTimes) ? d.cancelTimes : [],
+        memo: typeof d?.memo === "string" ? d.memo : "",
+      }))
+    : arr;
+
+/**
  * Ensure displayCutoff carries a `cohorts` array. Firebase RTDB discards
  * empty arrays on write, and data saved before v14 predates the field, so
  * displayCutoff comes back with `cohorts` missing. Backfill `[]` so the

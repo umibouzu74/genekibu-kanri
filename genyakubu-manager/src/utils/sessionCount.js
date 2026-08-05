@@ -23,6 +23,7 @@ import { gradeToDept, WEEKDAYS } from "../data";
 // time 文字列 ("19:00-20:20") → 開始時刻の分数 (ソートキー)。
 // 実装は dateHelpers.timeStartToMin に一元化し、このファイル内の従来名で使う。
 import { timeStartToMin as timeToMinutes } from "./dateHelpers";
+import { isSlotCancelledByDaySchedule } from "./daySchedules";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
@@ -136,6 +137,7 @@ function findPoolFirstDate(pool, startDate, ctx) {
         if (s.day !== dayKey) continue;
         if (!isSlotTimetableActive(s, dStr, ctx)) continue;
         if (ctx.isOffForGrade && ctx.isOffForGrade(dStr, s.grade, s.subj)) continue;
+        if (isSlotCancelledByDaySchedule(s, dStr, ctx.daySchedules)) continue;
         return dStr;
       }
     }
@@ -203,6 +205,12 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
 
   // 休講 / テスト期間 (exam) 判定は生の slot.subj で評価 (既存挙動維持)。
   if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
+    return null;
+  }
+
+  // 特別時程の部分休講 (例: 附属の 1 限カット)。その日は実施なしとして
+  // カウントを進めない。時刻読み替え (timeMap) は同日実施なので影響しない。
+  if (isSlotCancelledByDaySchedule(slot, dateStr, ctx.daySchedules)) {
     return null;
   }
 

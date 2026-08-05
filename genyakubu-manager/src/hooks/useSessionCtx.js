@@ -18,6 +18,7 @@ export function useSessionCtx({
   specialEvents,
   biweeklyAnchors,
   sessionOverrides,
+  daySchedules,
 }) {
   // holidays/examPeriods/specialEvents は makeEventHelpers 内で filter/some を呼ぶので
   // undefined 防御として空配列フォールバック。
@@ -40,10 +41,12 @@ export function useSessionCtx({
       holidays: holidays || [],
       examPeriods: examPeriods || [],
       sessionOverrides: sessionOverrides || [],
+      // 特別時程の部分休講 (1 限カット等) をカウント対象外にする。
+      daySchedules: daySchedules || [],
       // 中学部の開講日 1 限目をオリエン扱いとして第1回を 2 限目に繰下げる。
       orientationOnFirstDay: true,
     }),
-    [classSets, allSlots, slots, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides]
+    [classSets, allSlots, slots, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules]
   );
   return { sessionCtx, ...helpers };
 }

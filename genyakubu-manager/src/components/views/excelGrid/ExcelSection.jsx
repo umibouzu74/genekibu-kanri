@@ -46,11 +46,12 @@ export function ExcelSection({
   dashboardMode = false,
   adjustments = [],
   closureLabels = [],
+  daySchedules = [],
 }) {
-  // 当日の保存済み合同/移動を索引化
+  // 当日の保存済み合同/移動 + 特別時程の時刻読み替えを索引化
   const adjIndex = useMemo(
-    () => buildAdjustmentIndex(adjustments, subDate),
-    [adjustments, subDate]
+    () => buildAdjustmentIndex(adjustments, subDate, { slots, daySchedules }),
+    [adjustments, subDate, slots, daySchedules]
   );
   const slotById = useMemo(() => {
     const m = new Map();
@@ -271,6 +272,7 @@ export function ExcelSection({
     const isCombineHost = !!hostedSlots;
     const moveTarget = adjIndex.moveBySlot.get(slot.id) || null;
     const moveOriginalTime = originalTimeBySlot.get(slot.id) || null;
+    const dayScheduleForMove = adjIndex.dayScheduleMoveBySlot.get(slot.id) || null;
     const rescheduleOut = adjIndex.rescheduleOutBySlot.get(slot.id) || null;
     return {
       isUnavailable: isUnavail && !isOff,
@@ -286,6 +288,9 @@ export function ExcelSection({
       hostedSlots,
       moveTarget,
       moveOriginalTime,
+      moveDayScheduleLabel: dayScheduleForMove
+        ? dayScheduleForMove.label || "特別時程"
+        : null,
       rescheduleOut,
       onCellClick: onCellClick
         ? (s, rect, el) => {

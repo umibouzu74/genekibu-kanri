@@ -3,6 +3,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   isBiweeklyAnchor,
   isCutoffGroup,
+  isDaySchedule,
   isExamPeriod,
   isExamPrepSchedule,
   isExtraLesson,
@@ -921,6 +922,80 @@ describe("v14 → v15 migration: extraLessons 初期化", () => {
     });
     expect(v.ok).toBe(false);
     expect(v.error).toContain("extraLessons[0]");
+  });
+});
+
+describe("isDaySchedule (特別時程)", () => {
+  const good = {
+    id: 1,
+    date: "2026-10-07",
+    label: "附属 50分授業 (17:00開始)",
+    targetGrades: ["附中1", "附中2", "附中3", "附中"],
+    timeMap: [{ from: "16:25-17:25", to: "17:00-17:50" }],
+    cancelTimes: [],
+    memo: "",
+  };
+
+  it("必須フィールドが揃っていれば true (配列フィールドは省略可 — RTDB drop)", () => {
+    expect(isDaySchedule(good)).toBe(true);
+    expect(
+      isDaySchedule({ id: 1, date: "2026-10-07", label: "1限カット" })
+    ).toBe(true);
+  });
+
+  it("必須欠落 / 型不正 / 非 ISO 日付は false", () => {
+    expect(isDaySchedule({ ...good, id: "1" })).toBe(false);
+    expect(isDaySchedule({ ...good, date: "10/7" })).toBe(false);
+    expect(isDaySchedule({ ...good, label: 5 })).toBe(false);
+    expect(isDaySchedule({ ...good, targetGrades: [1] })).toBe(false);
+    expect(isDaySchedule({ ...good, timeMap: [{ from: "16:25" }] })).toBe(false);
+    expect(isDaySchedule({ ...good, cancelTimes: "16:25-17:25" })).toBe(false);
+    expect(isDaySchedule(null)).toBe(false);
+  });
+});
+
+describe("v15 → v16 migration: daySchedules 初期化", () => {
+  it("adds empty daySchedules when missing", () => {
+    const out = migrateExportBundle({
+      schemaVersion: 15,
+      slots: [],
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.daySchedules).toEqual([]);
+  });
+
+  it("preserves existing daySchedules", () => {
+    const existing = [
+      {
+        id: 1,
+        date: "2026-10-07",
+        label: "附属 1限カット",
+        targetGrades: ["附中1"],
+        timeMap: [],
+        cancelTimes: ["16:25-17:25"],
+        memo: "",
+      },
+    ];
+    const out = migrateExportBundle({
+      schemaVersion: 15,
+      daySchedules: existing,
+    }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out.daySchedules).toEqual(existing);
+  });
+
+  it("v15 migrated bundle passes validation", () => {
+    const out = migrateExportBundle({ schemaVersion: 15, slots: [] });
+    const v = validateExportBundle(out);
+    expect(v.ok).toBe(true);
+  });
+
+  it("validateExportBundle rejects malformed daySchedules", () => {
+    const v = validateExportBundle({
+      daySchedules: [{ id: 1, date: "bad", label: "x" }],
+    });
+    expect(v.ok).toBe(false);
+    expect(v.error).toContain("daySchedules[0]");
   });
 });
 

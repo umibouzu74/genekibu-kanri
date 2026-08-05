@@ -14,6 +14,7 @@ import {
   KOSHU_LESSON_COLOR,
 } from "../../constants/colors";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
+import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
 import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
 import {
@@ -58,6 +59,7 @@ export function MonthView({
   specialEvents = [],
   extraLessons = [],
   koshuLessons = [],
+  daySchedules = [],
   onEditExtraLesson,
   classSets,
   biweeklyAnchors,
@@ -211,6 +213,7 @@ export function MonthView({
     specialEvents,
     biweeklyAnchors,
     sessionOverrides,
+    daySchedules,
   });
 
   // Returns exam period names active on a given date (for label display)
@@ -249,6 +252,8 @@ export function MonthView({
   const isTeacherAttending = useCallback(
     (slot, ds) => {
       if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
+      // 特別時程の部分休講 (1限カット等) は休講同様このビューから外す
+      if (resolveSlotDaySchedule(slot, ds, daySchedules)?.cancelled) return false;
       if (
         timetables &&
         timetables.length > 0 &&
@@ -270,7 +275,7 @@ export function MonthView({
       }
       return true;
     },
-    [isOffForGrade, timetables, displayCutoff, teacher, biweeklyAnchors, holidays, examPeriods]
+    [isOffForGrade, timetables, displayCutoff, teacher, biweeklyAnchors, holidays, examPeriods, daySchedules]
   );
 
   const first = new Date(year, month - 1, 1);
@@ -548,7 +553,13 @@ export function MonthView({
                   const hostSlot = absorbed ? slotById.get(hostSlotId) : null;
                   const hostedIds = absorbedByHostKey.get(`${ds}|${s.id}`);
                   const isHost = !absorbed && !!hostedIds;
-                  const moveTarget = moveByKey.get(`${ds}|${s.id}`);
+                  // 特別時程の時刻読み替え (個別 move 優先)。cancelled は
+                  // isTeacherAttending で除外済みなのでここには来ない。
+                  const dayScheduleMove = moveByKey.has(`${ds}|${s.id}`)
+                    ? null
+                    : resolveSlotDaySchedule(s, ds, daySchedules);
+                  const moveTarget =
+                    moveByKey.get(`${ds}|${s.id}`) || dayScheduleMove?.time;
                   const rescheduledOut = rescheduleOutByKey.get(`${ds}|${s.id}`);
                   // 「自分が不在」: 代行で別人が入る or 合同で吸収された or 振替で他日へ
                   const away =
@@ -586,7 +597,13 @@ export function MonthView({
                   const titleParts = [
                     `${s.time} ${s.grade} ${s.subj} ${s.room || ""}`,
                   ];
-                  if (moveTarget) titleParts.push(`[移動] ${s.time} → ${moveTarget}`);
+                  if (moveTarget) {
+                    titleParts.push(
+                      dayScheduleMove?.time
+                        ? `[特別時程${dayScheduleMove.schedule?.label ? `: ${dayScheduleMove.schedule.label}` : ""}] ${s.time} → ${moveTarget}`
+                        : `[移動] ${s.time} → ${moveTarget}`
+                    );
+                  }
                   if (rescheduledOut) {
                     const tgt = [rescheduledOut.targetDate];
                     if (rescheduledOut.targetTime) tgt.push(rescheduledOut.targetTime);

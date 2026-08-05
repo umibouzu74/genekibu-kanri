@@ -169,6 +169,29 @@ export interface SpecialEvent {
   tags?: string[];
 }
 
+// ─── Day schedule (特別時程) ─────────────────────────────────────
+// 学校行事の都合で特定日だけ時程が変わるコース (主に附属) のための
+// 「日付 × 対象学年 × 時刻読み替え + 部分休講」。Slot 本体は変更せず、
+// 表示・回数カウント・衝突プレビューが日単位で読み替える。
+// 例①: 50 分授業への圧縮 (timeMap で 4 コマを 17:00 開始へ写像、テは据え置き)
+// 例②: 1 限カット (cancelTimes に最初の時間帯 — 回数カウントも進めない)
+// slot.id を参照しない (時間帯文字列で照合) ため、コマの入れ替えに強い。
+export interface DayScheduleTimeMapEntry {
+  from: string; // 元の時間帯 ("16:25-17:25")。slot.time と完全一致で照合
+  to: string; // 読み替え後の時間帯 ("17:00-17:50")
+}
+
+export interface DaySchedule {
+  id: number;
+  date: string; // "YYYY-MM-DD"
+  label: string; // "附属 50分授業 (17:00開始)" 等
+  targetGrades: string[]; // slot.grade 完全一致。空配列 = どのコマにも効かない
+  timeMap: DayScheduleTimeMapEntry[];
+  cancelTimes: string[]; // この時間帯のコマはその日休講扱い
+  memo: string;
+  createdAt?: string;
+}
+
 // ─── Extra lesson (追加授業) ─────────────────────────────────────
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
@@ -289,6 +312,7 @@ export interface ExportBundle {
   examPrepSchedules?: ExamPrepSchedule[];
   specialEvents?: SpecialEvent[];
   extraLessons?: ExtraLesson[];
+  daySchedules?: DaySchedule[];
 }
 
 export interface ValidationResult<T> {

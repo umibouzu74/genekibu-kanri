@@ -66,6 +66,7 @@ export const ExcelCell = memo(function ExcelCell({
   hostedSlots = null,
   moveTarget = null,
   moveOriginalTime = null,
+  moveDayScheduleLabel = null,
   rescheduleOut = null, // { targetDate, targetTime?, targetTeacher? }
 }) {
   if (!slot) {
@@ -219,7 +220,9 @@ export const ExcelCell = memo(function ExcelCell({
           ADJ_COLOR.move.color,
           "移",
           "move",
-          `時間変更\n${origTime} → ${moveTarget}`
+          moveDayScheduleLabel
+            ? `特別時程 (${moveDayScheduleLabel})\n${origTime} → ${moveTarget}`
+            : `時間変更\n${origTime} → ${moveTarget}`
         )
       );
     }

@@ -13,6 +13,9 @@ export const EVENT_KIND = Object.freeze({
   // 追加授業 (単発コマ)。イベントカレンダーでの表示用 (H1b)。
   // データ実体は ExtraLesson (schema v15) で、イベント系とは別リソース。
   EXTRA_LESSON: "extraLesson",
+  // 特別時程 (日単位の時刻読み替え + 部分休講)。データ実体は DaySchedule
+  // (schema v16)。休講と同様に常時表示 (visibility トグル対象外)。
+  DAY_SCHEDULE: "daySchedule",
 });
 
 export const EVENT_KIND_LABELS = Object.freeze({
@@ -20,6 +23,7 @@ export const EVENT_KIND_LABELS = Object.freeze({
   [EVENT_KIND.EXAM]: "テスト期間",
   [EVENT_KIND.SPECIAL]: "特別イベント",
   [EVENT_KIND.EXTRA_LESSON]: "追加授業",
+  [EVENT_KIND.DAY_SCHEDULE]: "特別時程",
 });
 
 // チップ・バッジで使う色 (背景・前景・アクセント)。特別イベントの
@@ -50,4 +54,13 @@ export const EXTRA_LESSON_META = Object.freeze({
   bg: EXTRA_LESSON_COLOR.bg,
   fg: EXTRA_LESSON_COLOR.deep,
   accent: EXTRA_LESSON_COLOR.color,
+});
+
+// 特別時程のバッジ色 (紫系)。Dashboard / ExcelGrid / WeekView の
+// 特別時程バナー・チップと同系色で統一する。
+export const DAY_SCHEDULE_META = Object.freeze({
+  bg: "#efeafa",
+  fg: "#4a3a8e",
+  accent: "#8a78c8",
+  icon: "⏰",
 });

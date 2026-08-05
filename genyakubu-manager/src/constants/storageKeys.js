@@ -23,6 +23,7 @@ export const LS = {
   examPrepSchedules: "genyakubu-exam-prep-schedules",
   specialEvents: "genyakubu-special-events",
   extraLessons: "genyakubu-extra-lessons",
+  daySchedules: "genyakubu-day-schedules",
   eventVisibility: "genyakubu-event-visibility",
   regularBuilderProject: "genyakubu-regular-builder-project",
   // 通常時間割作成の表示トグル (1 bit)。明示トグルの保存であり、利用統計から

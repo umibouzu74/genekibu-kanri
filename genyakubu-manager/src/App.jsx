@@ -32,6 +32,7 @@ import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import {
   useDataIO,
+  migrateDaySchedules,
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
@@ -125,6 +126,9 @@ const SpecialEventManager = lazy(() =>
 );
 const ExtraLessonManager = lazy(() =>
   import("./components/ExtraLessonManager").then((m) => ({ default: m.ExtraLessonManager }))
+);
+const DayScheduleManager = lazy(() =>
+  import("./components/DayScheduleManager").then((m) => ({ default: m.DayScheduleManager }))
 );
 const EventCalendarView = lazy(() =>
   import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
@@ -289,6 +293,11 @@ export default function App() {
     LS.extraLessons,
     [],
     { onError: onStorageError }
+  );
+  const [daySchedules, saveDaySchedules] = useSyncedStorage(
+    LS.daySchedules,
+    [],
+    { migrate: migrateDaySchedules, onError: onStorageError }
   );
   // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
   // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
@@ -508,6 +517,7 @@ export default function App() {
     teacherSubjects,
     specialEvents,
     extraLessons,
+    daySchedules,
     activeTimetableId,
     saveSlots,
     saveHolidays,
@@ -527,6 +537,7 @@ export default function App() {
     saveTeacherSubjects,
     saveSpecialEvents,
     saveExtraLessons,
+    saveDaySchedules,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
@@ -1147,6 +1158,7 @@ export default function App() {
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
               extraLessons={extraLessons}
+              daySchedules={daySchedules}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
               onJumpToRequestedSubs={() => {
@@ -1262,6 +1274,25 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              <DayScheduleManager
+                daySchedules={daySchedules}
+                onSave={saveDaySchedules}
+                slots={slots}
+                timetables={timetables}
+                isAdmin={isAdmin}
+                editTargetId={
+                  eventEditRequest?.kind === EVENT_KIND.DAY_SCHEDULE
+                    ? eventEditRequest.id
+                    : null
+                }
+                onConsumeEditTarget={() => setEventEditRequest(null)}
+                newEntryToken={
+                  eventNewRequest?.kind === EVENT_KIND.DAY_SCHEDULE
+                    ? eventNewRequest.token
+                    : null
+                }
+                onConsumeNewEntry={() => setEventNewRequest(null)}
+              />
             </>
           )}
           {view === VIEWS.EVENTS && !selected && (
@@ -1270,6 +1301,7 @@ export default function App() {
               examPeriods={examPeriods}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              daySchedules={daySchedules}
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
@@ -1340,6 +1372,7 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               adjustments={adjustments}
               extraLessons={extraLessons}
+              daySchedules={daySchedules}
             />
           )}
           {view === VIEWS.ABSENCE_FLOW && !selected && (
@@ -1402,6 +1435,7 @@ export default function App() {
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               extraLessons={extraLessons}
+              daySchedules={daySchedules}
               onEditExtraLesson={(id) => {
                 setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1432,6 +1466,7 @@ export default function App() {
               specialEvents={specialEvents}
               extraLessons={extraLessons}
               koshuLessons={koshuLessons}
+              daySchedules={daySchedules}
               onEditExtraLesson={(id) => {
                 setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
                 selectView(VIEWS.HOLIDAYS);

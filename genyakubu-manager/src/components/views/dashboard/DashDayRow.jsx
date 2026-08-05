@@ -16,6 +16,7 @@ export function DashDayRow({
   examPeriodsForDate = [],
   specialEventsForDate = [],
   extraLessonsForDate = [],
+  daySchedulesForDate = [],
   sessionCtx,
 }) {
   const sessionCountMap = useMemo(() => {
@@ -126,6 +127,26 @@ export function DashDayRow({
             {examLabel}
           </span>
         )}
+        {!fullOff && daySchedulesForDate.length > 0 && (
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+            {daySchedulesForDate.map((d) => (
+              <span
+                key={d.id}
+                title={`特別時程: ${(d.targetGrades || []).join("・")}${d.memo ? "\n" + d.memo : ""}`}
+                style={{
+                  fontSize: 10,
+                  background: "#5a4a9e",
+                  color: "#fff",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  fontWeight: 700,
+                }}
+              >
+                ⏰ {d.label || "特別時程"}
+              </span>
+            ))}
+          </div>
+        )}
         {specialEventsForDate.length > 0 && (
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
             {specialEventsForDate.map((ev) => {
@@ -194,6 +215,7 @@ export function DashDayRow({
                 allSlots={sessionCtx?.allSlots || slots}
                 date={date}
                 sessionCountMap={sessionCountMap}
+                daySchedules={daySchedulesForDate}
               />
             );
           })}
