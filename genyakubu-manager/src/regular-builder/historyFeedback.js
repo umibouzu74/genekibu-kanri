@@ -73,6 +73,8 @@ function diffProject(bp, ap, projectId, cellChanges, addOther) {
   if (!jsonEq(bp.teachers, ap.teachers)) addOther("講師マスタ");
   if (!jsonEq(bp.approvedConflicts || [], ap.approvedConflicts || []))
     addOther("重なりの承認");
+  if (!jsonEq(bp.snapshots || [], ap.snapshots || []))
+    addOther("スナップショット");
 
   const bTabs = new Map((bp.tabs || []).map((t) => [t.id, t]));
   const aTabs = new Map((ap.tabs || []).map((t) => [t.id, t]));
@@ -120,6 +122,19 @@ function diffProject(bp, ap, projectId, cellChanges, addOther) {
       });
     }
   }
+}
+
+/**
+ * 単一プロジェクト同士の差分 (スナップショットの差分ビュー用)。
+ * diffWorkspaces を 1 プロジェクトのワークスペースに包んで流用する。
+ * snapshots フィールド自体は比較対象から外す (差分ビューでは常にノイズ)。
+ */
+export function diffProjects(before, after) {
+  const strip = (p) => {
+    const { snapshots: _s, ...rest } = p || {};
+    return { projects: [{ ...rest, id: 1 }] };
+  };
+  return diffWorkspaces(strip(before), strip(after));
 }
 
 /** セル内容の短い表記 (科目/講師。どちらも無ければ教室・備考、空セルは「空」) */

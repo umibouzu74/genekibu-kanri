@@ -10,6 +10,7 @@ import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggl
 import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { nextNumericId } from "../utils/schema";
 import {
+  copyCellAcrossTabs,
   createDefaultProject,
   createDefaultWorkspace,
   parseCellKey,
@@ -31,6 +32,11 @@ import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
 import { RegularSummaryPanel } from "./RegularSummaryPanel";
+import { RegularSnapshotPanel } from "./RegularSnapshotPanel";
+import {
+  RegularTeacherWeek,
+  RegularTeacherWeekPrintSheet,
+} from "./RegularTeacherWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
@@ -70,6 +76,7 @@ export default function RegularBuilderApp({
 
   const [activeTabId, setActiveTabId] = useState(null);
   const [showProjectConfig, setShowProjectConfig] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -92,7 +99,17 @@ export default function RegularBuilderApp({
     LS.regularBuilderSplitCampus,
     true
   );
-  const [highlightTeacher, setHighlightTeacher] = useState("");
+  // 強調表示: "" | `t:講師名` | `r:教室名` (講師と教室で 1 つのセレクトを共用)
+  const [highlightKey, setHighlightKey] = useState("");
+  const highlightTeacher = highlightKey.startsWith("t:")
+    ? highlightKey.slice(2)
+    : "";
+  const highlightRoom = highlightKey.startsWith("r:") ? highlightKey.slice(2) : "";
+  // 📅 週表示 (全曜日を縦に並べて俯瞰)。リロード後も保持
+  const [weekView, setWeekView] = usePersistedToggle(
+    LS.regularBuilderWeekView,
+    false
+  );
   // 選択曜日はリロード後も維持する (App のビュー復元と同じ sessionStorage
   // ベース。使わない曜日を復元した場合は下の usedDays 効果が先頭に倒す)
   const [selectedDay, setSelectedDay] = useState(() => {
@@ -170,6 +187,19 @@ export default function RegularBuilderApp({
       clearTimeout(t);
     };
   }, [printAllDays]);
+
+  // 講師の週間時間割の印刷 (週間ミニビューの 🖨)。仕組みは全曜日印刷と同じ
+  const [printTeacherWeek, setPrintTeacherWeek] = useState(false);
+  useEffect(() => {
+    if (!printTeacherWeek) return;
+    const done = () => setPrintTeacherWeek(false);
+    window.addEventListener("afterprint", done);
+    const t = setTimeout(() => window.print(), 50);
+    return () => {
+      window.removeEventListener("afterprint", done);
+      clearTimeout(t);
+    };
+  }, [printTeacherWeek]);
 
   // ── Undo/Redo ───────────────────────────────────────────────────
   // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
@@ -460,6 +490,52 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
+  // Ctrl+ドラッグでのコピー配置 (入替でなく複製)
+  const onCopyCellTo = useCallback(
+    (refA, refB) =>
+      saveProject(
+        (p) => ({ ...p, tabs: copyCellAcrossTabs(p.tabs, refA, refB) }),
+        { atomic: true }
+      ),
+    [saveProject]
+  );
+
+  // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
+  // 講習 N2a と同じ操作感。選択はセル ref の集合で持ち、矩形の計算は
+  // セクション構造を知る RegularGrid 側が行う (onRectSelect に結果が届く)
+  const [selectedRefs, setSelectedRefs] = useState(() => new Set());
+  const selAnchorRef = useRef(null);
+  const toggleSelect = useCallback((ref) => {
+    selAnchorRef.current = ref;
+    setSelectedRefs((prev) => {
+      const next = new Set(prev);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
+  }, []);
+  const rectSelect = useCallback((refs) => {
+    if (refs.length) setSelectedRefs(new Set(refs));
+  }, []);
+  const clearSelection = useCallback(() => {
+    selAnchorRef.current = null;
+    setSelectedRefs((prev) => (prev.size ? new Set() : prev));
+  }, []);
+  // 曜日・プロジェクト・表示モードが変わったら選択は持ち越さない
+  // (見えないセルへの一括操作を防ぐ)
+  useEffect(() => {
+    clearSelection();
+  }, [selectedDay, project.id, weekView, clearSelection]);
+  // Escape で選択解除 (編集中・メニュー内の Escape は stopPropagation 済み)
+  useEffect(() => {
+    if (selectedRefs.size === 0) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !e.isComposing) clearSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedRefs.size, clearSelection]);
+
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
   const onClearCell = useCallback(
     (ref) => {
@@ -535,17 +611,23 @@ export default function RegularBuilderApp({
     toasts.success(`${targets.length} 件の問題を承認しました`);
   };
 
-  // 時限行・クラス列の一括クリア (確認あり・Undo 1 回で戻る)
+  // 時限行・クラス列・複数選択の一括クリア (確認あり・Undo 1 回で戻る)。
+  // 実行したら true (選択解除などの後処理は呼び出し側)
   const clearCellsBulk = async (refs, label) => {
     const filled = refs.filter((r) => getCellByRef(r));
-    if (filled.length === 0) return;
+    if (filled.length === 0) {
+      // silent no-op にしない (講習 H3 と同じ思想)。ヘッダメニュー経由は
+      // 項目自体が disabled のため、ここに来るのは選択バー経由のみ
+      toasts.info("クリアできるコマがありません（選択セルはすべて空です）");
+      return false;
+    }
     const ok = await confirm({
       title: "一括クリア",
       message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,
       okLabel: "クリアする",
       tone: "danger",
     });
-    if (!ok) return;
+    if (!ok) return false;
     const keysByTab = new Map();
     for (const r of filled) {
       const { tabId, key } = parseCellRef(r);
@@ -566,6 +648,12 @@ export default function RegularBuilderApp({
       { atomic: true }
     );
     toasts.success(`${filled.length} コマをクリアしました`);
+    return true;
+  };
+
+  const clearSelectedCells = async () => {
+    const ok = await clearCellsBulk([...selectedRefs], "選択中のセル");
+    if (ok) clearSelection();
   };
 
   const onCtxAction = (action) => {
@@ -649,13 +737,30 @@ export default function RegularBuilderApp({
     return [...names].sort();
   }, [project.teachers]);
 
-  // 選択中の講師がリネーム / 削除で消えたらハイライトを自動解除する
-  // (講習 L2a と同じ。残すと「誰も光らないフィルタ」が掛かり続ける)
-  useEffect(() => {
-    if (highlightTeacher && !teacherOptions.includes(highlightTeacher)) {
-      setHighlightTeacher("");
+  // 教室フィルタ候補 (クラス既定教室 + セル上書き教室)
+  const roomOptions = useMemo(() => {
+    const rooms = new Set();
+    for (const t of project.tabs || []) {
+      for (const c of t.classes || []) {
+        if ((c.room || "").trim()) rooms.add(c.room.trim());
+      }
+      for (const cell of Object.values(t.schedule || {})) {
+        if ((cell.room || "").trim()) rooms.add(cell.room.trim());
+      }
     }
-  }, [teacherOptions, highlightTeacher]);
+    return [...rooms].sort();
+  }, [project.tabs]);
+
+  // 選択中の講師・教室がリネーム / 削除で消えたらハイライトを自動解除する
+  // (講習 L2a と同じ。残すと「何も光らないフィルタ」が掛かり続ける)
+  useEffect(() => {
+    if (
+      (highlightTeacher && !teacherOptions.includes(highlightTeacher)) ||
+      (highlightRoom && !roomOptions.includes(highlightRoom))
+    ) {
+      setHighlightKey("");
+    }
+  }, [teacherOptions, roomOptions, highlightTeacher, highlightRoom]);
 
   // ブラウザタブのタイトルにプロジェクト名を出す (講習ビルダーと同じ。
   // アンマウント時は親アプリのタイトルへ戻す)
@@ -791,18 +896,35 @@ export default function RegularBuilderApp({
         >
           📊 集計
         </button>
-        <select
-          value={highlightTeacher}
-          onChange={(e) => setHighlightTeacher(e.target.value)}
-          className={`${UI.input} min-w-[130px]`}
-          title="選んだ講師のセルを強調表示"
+        <button
+          type="button"
+          onClick={() => setShowSnapshots((v) => !v)}
+          title="現在の状態を名前付きで保存し、差分を見ながら復元できる"
+          className={UI.btnToggle(showSnapshots)}
         >
-          <option value="">👁 講師で探す</option>
-          {teacherOptions.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
+          📌 {(project.snapshots || []).length > 0 ? `案 (${project.snapshots.length})` : "案"}
+        </button>
+        <select
+          value={highlightKey}
+          onChange={(e) => setHighlightKey(e.target.value)}
+          className={`${UI.input} min-w-[130px]`}
+          title="選んだ講師・教室のセルを強調表示 (講師は週間ミニビューも開く)"
+        >
+          <option value="">👁 強調表示</option>
+          <optgroup label="講師">
+            {teacherOptions.map((n) => (
+              <option key={n} value={`t:${n}`}>
+                {n}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="教室">
+            {roomOptions.map((r) => (
+              <option key={r} value={`r:${r}`}>
+                {r}
+              </option>
+            ))}
+          </optgroup>
         </select>
         <div className="flex-1" />
         <button
@@ -879,6 +1001,28 @@ export default function RegularBuilderApp({
         </div>
       )}
 
+      {/* 👁 講師を選んでいる間はその講師の週間ミニビューを出す */}
+      {highlightTeacher && (
+        <RegularTeacherWeek
+          project={project}
+          teacher={highlightTeacher}
+          onJump={jumpToCells}
+          onPrint={() => setPrintTeacherWeek(true)}
+        />
+      )}
+      {/* 講師週間の印刷中だけ描画される print 専用シート */}
+      {printTeacherWeek && highlightTeacher && (
+        <RegularTeacherWeekPrintSheet project={project} teacher={highlightTeacher} />
+      )}
+
+      {showSnapshots && (
+        <RegularSnapshotPanel
+          project={project}
+          saveProject={saveProject}
+          onJump={jumpToCells}
+        />
+      )}
+
       {showSummary && <RegularSummaryPanel project={project} />}
 
       {showProjectConfig && (
@@ -900,10 +1044,20 @@ export default function RegularBuilderApp({
                 role="tab"
                 aria-selected={selected}
                 disabled={!used}
-                onClick={() => setSelectedDay(d)}
+                onClick={() => {
+                  setSelectedDay(d);
+                  // 週表示中は該当曜日のブロックへスクロール (アンカー動作)
+                  if (weekView) {
+                    document
+                      .getElementById(`regb-day-${d}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
                 title={
                   used
-                    ? `${d}曜日を表示`
+                    ? weekView
+                      ? `${d}曜日へスクロール`
+                      : `${d}曜日を表示`
                     : `${d}曜日を使う学年がありません (学年チップの設定で追加)`
                 }
                 className="w-11 py-1 rounded-lg border-2 text-sm font-extrabold cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
@@ -925,6 +1079,14 @@ export default function RegularBuilderApp({
           })}
         </div>
         <div className="flex gap-1 ml-auto">
+          <button
+            type="button"
+            onClick={() => setWeekView((v) => !v)}
+            title="全曜日を縦に並べて俯瞰する (曜日チップは該当ブロックへのスクロールになります)"
+            className={UI.btnToggle(weekView)}
+          >
+            📅 週表示
+          </button>
           <button
             type="button"
             onClick={() => setSplitCampus((v) => !v)}
@@ -953,13 +1115,17 @@ export default function RegularBuilderApp({
             <button
               type="button"
               onClick={() => window.print()}
-              title="表示中の曜日を印刷 (A4 縦)"
+              title={
+                weekView
+                  ? "表示中の全曜日を印刷 (曜日ごとに改ページ)"
+                  : "表示中の曜日を印刷 (A4 縦)"
+              }
               className={UI.btn}
             >
               🖨 印刷
             </button>
           )}
-          {usedDays.length > 1 && (
+          {!weekView && usedDays.length > 1 && (
             <button
               type="button"
               onClick={() => setPrintAllDays(true)}
@@ -1061,6 +1227,28 @@ export default function RegularBuilderApp({
         </button>
       </div>
 
+      {/* 複数選択の一括操作バー */}
+      {selectedRefs.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="選択中のセルの一括操作"
+          className="no-print flex items-center gap-2 flex-wrap bg-builder-info-soft border border-builder-info-border rounded-lg px-3 py-1.5 text-xs"
+        >
+          <span className="font-bold text-builder-ink">
+            ☑️ {selectedRefs.size} セル選択中
+          </span>
+          <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
+            🧹 クリア
+          </button>
+          <button type="button" className={UI.btn} onClick={clearSelection}>
+            ✕ 選択解除 (Esc)
+          </button>
+          <span className="text-builder-ink-subtle">
+            Ctrl(⌘)+クリックで追加/除外・Shift+クリックで同じ表内の範囲選択
+          </span>
+        </div>
+      )}
+
       {/* 空状態ガイド */}
       {project.tabs.length === 0 && (
         <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
@@ -1094,46 +1282,120 @@ export default function RegularBuilderApp({
       {/* 印刷専用の見出し。ツールバー・曜日チップは no-print のため、これが
           無いと紙面が無記名になりどのプロジェクト・曜日か分からない
           (講習ビルダー L1f と同じ)。全曜日印刷中は単曜日側を紙面から外す */}
-      <div className={printAllDays ? "print:hidden" : ""}>
-        {selectedDay && (
-          <div className="hidden print:block" aria-hidden="true">
-            <div className="text-lg font-bold text-builder-ink">
-              {project.name || "通常時間割"} — {selectedDay}曜日
-            </div>
-            <div className="text-xs text-builder-ink-muted">
-              印刷日: {formatPrintDateJa(new Date())}
-            </div>
+      {weekView ? (
+        /* 📅 週表示: 全曜日を縦に並べて俯瞰。各ブロックは曜日チップからの
+           スクロール先 (regb-day-*) で、印刷時は曜日ごとに改ページされる
+           (regb-print-day)。見出しは画面にも出し、紙面には印刷日を足す */
+        usedDays.length > 0 ? (
+          <div
+            className={`flex flex-col gap-4 ${printTeacherWeek ? "print:hidden" : ""}`}
+          >
+            {usedDays.map((d) => (
+              <div
+                key={d}
+                id={`regb-day-${d}`}
+                className="regb-print-day flex flex-col gap-1"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span
+                    className="text-sm font-extrabold px-2.5 py-0.5 rounded-lg"
+                    style={{
+                      background: DAY_BG[d] || "#ececec",
+                      color: DAY_COLOR[d] || "#555555",
+                    }}
+                  >
+                    {d}曜日
+                  </span>
+                  <span className="hidden print:inline text-xs text-builder-ink-muted">
+                    {project.name || "通常時間割"} — 印刷日:{" "}
+                    {formatPrintDateJa(new Date())}
+                  </span>
+                </div>
+                <RegularGrid
+                  project={project}
+                  day={d}
+                  onCellChange={onCellChange}
+                  onClearCell={onClearCell}
+                  onSwapCells={onSwapCells}
+                  conflictsByRef={conflictView.byRef}
+                  ngOnlyRefs={conflictView.ngOnlyRefs}
+                  highlightTeacher={highlightTeacher}
+                  highlightRoom={highlightRoom}
+                  hideEmpty={hideEmpty}
+                  splitCampus={splitCampus}
+                  isCompact={isCompact}
+                  jumpTarget={jumpTarget}
+                  onOpenCellMenu={openCellMenu}
+                  onOpenHeaderMenu={openHeaderMenu}
+                  onCopyCell={copyCell}
+                  onPasteCell={pasteCell}
+                  onCopyCellTo={onCopyCellTo}
+                  selectedRefs={selectedRefs}
+                  selectionAnchor={selAnchorRef.current}
+                  onToggleSelect={toggleSelect}
+                  onRectSelect={rectSelect}
+                />
+              </div>
+            ))}
           </div>
-        )}
-
-        {selectedDay ? (
-          <RegularGrid
-            project={project}
-            day={selectedDay}
-            onCellChange={onCellChange}
-            onClearCell={onClearCell}
-            onSwapCells={onSwapCells}
-            conflictsByRef={conflictView.byRef}
-            ngOnlyRefs={conflictView.ngOnlyRefs}
-            highlightTeacher={highlightTeacher}
-            hideEmpty={hideEmpty}
-            splitCampus={splitCampus}
-            isCompact={isCompact}
-            jumpTarget={jumpTarget}
-            onOpenCellMenu={openCellMenu}
-            onOpenHeaderMenu={openHeaderMenu}
-          />
         ) : (
           project.tabs.length > 0 && (
             <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
               表示できる曜日がありません。学年チップからどの曜日を使うか設定してください。
             </div>
           )
-        )}
-      </div>
+        )
+      ) : (
+        <div className={printAllDays || printTeacherWeek ? "print:hidden" : ""}>
+          {selectedDay && (
+            <div className="hidden print:block" aria-hidden="true">
+              <div className="text-lg font-bold text-builder-ink">
+                {project.name || "通常時間割"} — {selectedDay}曜日
+              </div>
+              <div className="text-xs text-builder-ink-muted">
+                印刷日: {formatPrintDateJa(new Date())}
+              </div>
+            </div>
+          )}
 
-      {/* 全曜日印刷用: 印刷中だけ描画される print 専用 DOM (曜日ごとに改ページ) */}
-      {printAllDays && (
+          {selectedDay ? (
+            <RegularGrid
+              project={project}
+              day={selectedDay}
+              onCellChange={onCellChange}
+              onClearCell={onClearCell}
+              onSwapCells={onSwapCells}
+              conflictsByRef={conflictView.byRef}
+              ngOnlyRefs={conflictView.ngOnlyRefs}
+              highlightTeacher={highlightTeacher}
+              highlightRoom={highlightRoom}
+              hideEmpty={hideEmpty}
+              splitCampus={splitCampus}
+              isCompact={isCompact}
+              jumpTarget={jumpTarget}
+              onOpenCellMenu={openCellMenu}
+              onOpenHeaderMenu={openHeaderMenu}
+              onCopyCell={copyCell}
+              onPasteCell={pasteCell}
+              onCopyCellTo={onCopyCellTo}
+              selectedRefs={selectedRefs}
+              selectionAnchor={selAnchorRef.current}
+              onToggleSelect={toggleSelect}
+              onRectSelect={rectSelect}
+            />
+          ) : (
+            project.tabs.length > 0 && (
+              <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+                表示できる曜日がありません。学年チップからどの曜日を使うか設定してください。
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* 全曜日印刷用: 印刷中だけ描画される print 専用 DOM (曜日ごとに改ページ)。
+          週表示中は画面 DOM がそのまま全曜日なので使わない */}
+      {!weekView && printAllDays && (
         <div className="hidden print:block" aria-hidden="true">
           {usedDays.map((d) => (
             <div key={d} className="regb-print-day">

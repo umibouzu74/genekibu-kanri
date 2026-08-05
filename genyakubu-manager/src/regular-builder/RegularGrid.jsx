@@ -88,6 +88,8 @@ export function RegularGrid({
   /** 未承認の問題が NG のみのセル (バッジを ⚠️NG にする) */
   ngOnlyRefs = null,
   highlightTeacher,
+  /** 実効教室 (セル上書き → クラス既定) がこの値のセルを強調表示 */
+  highlightRoom = "",
   hideEmpty = false,
   splitCampus = false,
   isCompact = false,
@@ -97,6 +99,16 @@ export function RegularGrid({
   onOpenCellMenu = null,
   /** ヘッダ (時限行・クラス列) の一括操作メニューを開く (pos, payload) */
   onOpenHeaderMenu = null,
+  /** Ctrl+C / Ctrl+V のキーボード操作 (App のコピー/貼り付けと同じ実体) */
+  onCopyCell = null,
+  onPasteCell = null,
+  /** Ctrl+ドラッグでのコピー配置 (refA の内容を refB へ複製) */
+  onCopyCellTo = null,
+  /** 複数選択: 選択中の ref 集合と操作 (Ctrl+クリック / Shift+矩形) */
+  selectedRefs = null,
+  selectionAnchor = null,
+  onToggleSelect = null,
+  onRectSelect = null,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -195,6 +207,9 @@ export function RegularGrid({
   const onDrop = useCallback((...a) => implRef.current.drop(...a), []);
   const onDragEnd = useCallback((...a) => implRef.current.dragEnd(...a), []);
   const onOpenMenu = useCallback((...a) => implRef.current.openMenu(...a), []);
+  const onCopyCellH = useCallback((...a) => implRef.current.copyCell(...a), []);
+  const onPasteCellH = useCallback((...a) => implRef.current.pasteCell(...a), []);
+  const onSelectCellH = useCallback((...a) => implRef.current.selectCell(...a), []);
 
   // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
   const rawSections = computeSections(project, day, { splitCampus });
@@ -327,6 +342,9 @@ export function RegularGrid({
   const ngByTab = computeNgTeachersForTabs(project, origTabs);
 
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
+  // Ctrl (または Alt) を押しながらドロップすると入替でなくコピー配置に
+  // なる (同じコマを複数曜日・複数クラスへ繰り返し置く用)。カーソルも
+  // copy / move で切り替わる
   const handleDragStart = (e, ref, cell) => {
     if (!cell.subj) {
       e.preventDefault();
@@ -335,12 +353,17 @@ export function RegularGrid({
     setDragSource(ref);
     // Firefox はデータ項目をセットしないと HTML5 drag を開始しない
     e.dataTransfer.setData("text/plain", ref);
-    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.effectAllowed = onCopyCellTo ? "copyMove" : "move";
   };
   const handleDragOver = (e, targetRef) => {
     e.preventDefault();
+    const isCopy = onCopyCellTo && (e.ctrlKey || e.altKey);
     e.dataTransfer.dropEffect =
-      !dragSource || dragSource === targetRef ? "none" : "move";
+      !dragSource || dragSource === targetRef
+        ? "none"
+        : isCopy
+          ? "copy"
+          : "move";
     setDragOverRef(targetRef);
   };
   const handleDragLeave = () => setDragOverRef(null);
@@ -348,7 +371,11 @@ export function RegularGrid({
     e.preventDefault();
     setDragOverRef(null);
     if (!dragSource || dragSource === targetRef) return;
-    onSwapCells(dragSource, targetRef);
+    if (onCopyCellTo && (e.ctrlKey || e.altKey)) {
+      onCopyCellTo(dragSource, targetRef);
+    } else {
+      onSwapCells(dragSource, targetRef);
+    }
     setDragSource(null);
   };
   const handleDragEnd = () => {
@@ -466,6 +493,44 @@ export function RegularGrid({
     }
   };
 
+  // ── 複数選択 (Ctrl+クリック / Shift+矩形) ────────────────────────
+  // 矩形は同じセクション (= 同じ表・同じ時間軸) 内でのみ成立する。
+  // アンカーが別セクション・別曜日ならただのトグルに落とす
+  const findCellPos = (ref) => {
+    const { tabId, key } = parseCellRef(ref);
+    const { day: refDay, periodId, classId } = parseCellKey(key);
+    if (refDay !== day) return null;
+    const ci = allCols.findIndex(
+      (x) => x.col.tab.id === tabId && x.col.cls.id === classId
+    );
+    if (ci < 0) return null;
+    const sec = allCols[ci].sec;
+    const ri = sec.periods.findIndex((p) => p.id === periodId);
+    if (ri < 0) return null;
+    return { ci, ri, sec };
+  };
+  const handleSelectCell = (e, ref) => {
+    if (!onToggleSelect) return;
+    if (e.shiftKey && selectionAnchor && onRectSelect) {
+      const a = findCellPos(selectionAnchor);
+      const b = findCellPos(ref);
+      if (a && b && a.sec === b.sec) {
+        const refs = [];
+        for (let ci = Math.min(a.ci, b.ci); ci <= Math.max(a.ci, b.ci); ci++) {
+          const { col } = allCols[ci];
+          for (let ri = Math.min(a.ri, b.ri); ri <= Math.max(a.ri, b.ri); ri++) {
+            const per = a.sec.periods[ri];
+            if (!available(per, col.tab)) continue;
+            refs.push(makeCellRef(col.tab.id, makeCellKey(day, per.id, col.cls.id)));
+          }
+        }
+        onRectSelect(refs);
+        return;
+      }
+    }
+    onToggleSelect(ref);
+  };
+
   // 最新のクロージャを stable ハンドラから参照できるようにする
   implRef.current = {
     navigate: handleNavigate,
@@ -475,6 +540,9 @@ export function RegularGrid({
     drop: handleDrop,
     dragEnd: handleDragEnd,
     openMenu: (pos, ref) => onOpenCellMenu?.(pos, ref),
+    copyCell: (ref) => onCopyCell?.(ref),
+    pasteCell: (ref) => onPasteCell?.(ref),
+    selectCell: handleSelectCell,
   };
 
   return (
@@ -607,9 +675,16 @@ export function RegularGrid({
                         const ref = makeCellRef(t.id, key);
                         const cell = t.schedule[key];
                         const reasons = conflictsByRef.get(ref);
+                        // 教室の強調は中身のあるセルのみ (空マスまで光らせると
+                        // 「その教室のクラス列」全体が光ってノイズになる)
+                        const effRoom =
+                          (cell?.room || "").trim() || (cls2.room || "").trim();
                         const highlighted =
-                          !!highlightTeacher &&
-                          splitTeacherField(cell?.teacher).includes(highlightTeacher);
+                          (!!highlightTeacher &&
+                            splitTeacherField(cell?.teacher).includes(
+                              highlightTeacher
+                            )) ||
+                          (!!highlightRoom && !!cell && effRoom === highlightRoom);
                         return (
                           <RegularCell
                             // プロジェクトをまたいで同じ ref が再利用されないよう
@@ -626,7 +701,9 @@ export function RegularGrid({
                             busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}
                             ngTeachers={(ngByTab.get(t.id)?.get(key) || []).join("·")}
                             highlighted={highlighted}
-                            dimmed={!!highlightTeacher && !highlighted}
+                            dimmed={
+                              (!!highlightTeacher || !!highlightRoom) && !highlighted
+                            }
                             roomPlaceholder={cls2.room}
                             displayRoomFallback={extra.displayRoomFallback || ""}
                             ariaBase={`${day} ${per.label || per.time} ${t.name} ${cls2.label || cls2.room}`}
@@ -642,6 +719,10 @@ export function RegularGrid({
                             onClearCell={onClearCell}
                             onNavigate={onNavigate}
                             onOpenMenu={onOpenCellMenu ? onOpenMenu : null}
+                            onCopyCell={onCopyCell ? onCopyCellH : null}
+                            onPasteCell={onPasteCell ? onPasteCellH : null}
+                            isSelected={!!selectedRefs?.has(ref)}
+                            onSelectCell={onToggleSelect ? onSelectCellH : null}
                             onDragStart={onDragStart}
                             onDragOver={onDragOver}
                             onDragLeave={onDragLeave}

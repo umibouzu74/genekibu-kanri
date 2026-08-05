@@ -25,6 +25,7 @@
 // Cell = { subj?, teacher?, room?, note? }     // teacher は "·" 区切りで複数可
 
 import { splitTeacherField } from "../utils/biweekly";
+import { nextNumericId } from "../utils/schema";
 
 export const REGULAR_DAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
@@ -131,6 +132,63 @@ export function swapCellsAcrossTabs(tabs, refA, refB) {
     if (t.id === b.tabId) return { ...t, schedule: put(t.schedule, b.key, cellA) };
     return t;
   });
+}
+
+// ─── セルのコピー配置 (Ctrl+ドラッグ / 貼り付け) ────────────────────
+
+/**
+ * refA のセル内容を refB へコピーした新しい tabs 配列を返す (純関数)。
+ * 入替 (swapCellsAcrossTabs) と違い、コピー元は残り、コピー先は上書き。
+ * コピー元が空・参照先タブ無しは何もしない。
+ */
+export function copyCellAcrossTabs(tabs, refA, refB) {
+  if (refA === refB) return tabs;
+  const a = parseCellRef(refA);
+  const b = parseCellRef(refB);
+  const tabA = tabs.find((t) => t.id === a.tabId);
+  const tabB = tabs.find((t) => t.id === b.tabId);
+  if (!tabA || !tabB) return tabs;
+  const cell = tabA.schedule[a.key];
+  if (!cell) return tabs;
+  return tabs.map((t) =>
+    t.id === b.tabId
+      ? { ...t, schedule: { ...t.schedule, [b.key]: { ...cell } } }
+      : t
+  );
+}
+
+// ─── スナップショット (プロジェクトの名前付き保存) ──────────────────
+// 講習ビルダーのスナップショットに相当。別案を試す前に現在の状態を残し、
+// いつでも差分を見て復元できる。snapshot.data はプロジェクト本体のコピー
+// (snapshots 自身と id は含めない — 入れ子と参照の混線を防ぐ)。
+
+/**
+ * 現在の状態をスナップショットとして追加した新しいプロジェクトを返す。
+ * @param {number} now 保存時刻 (Date.now())。テストから固定値を渡せる
+ */
+export function addSnapshot(project, name, now) {
+  const { snapshots = [], id: _id, ...data } = project;
+  return {
+    ...project,
+    snapshots: [
+      ...snapshots,
+      { id: nextNumericId(snapshots), name, createdAt: now, data },
+    ],
+  };
+}
+
+/**
+ * スナップショットの保存時の状態に戻した新しいプロジェクトを返す。
+ * snapshots 一覧と id は現在のまま維持する。approvedConflicts のような
+ * 任意フィールドは、保存時に無ければ復元後も持たない (残すと保存時に
+ * 存在しなかった承認が生き返る)。見つからなければ元のまま。
+ */
+export function restoreSnapshot(project, snapshotId) {
+  const snap = (project.snapshots || []).find((s) => s.id === snapshotId);
+  if (!snap) return project;
+  const restored = { ...project, ...snap.data, snapshots: project.snapshots };
+  if (!("approvedConflicts" in snap.data)) delete restored.approvedConflicts;
+  return restored;
 }
 
 // ─── 講師のリネーム (マスタ + 割当セルの追従) ───────────────────────
@@ -242,6 +300,26 @@ export function sanitizeProject(raw) {
   // 承認済みの重なり (conflicts.conflictKey の配列)。任意フィールド
   if (Array.isArray(raw.approvedConflicts)) {
     p.approvedConflicts = raw.approvedConflicts.map((s) => str(s)).filter(Boolean);
+  }
+  // スナップショット (任意)。data は snapshots を除いて再帰サニタイズする
+  // (入れ子を剥がすことで悪意ある深いネストでも再帰は 2 段で止まる)
+  if (Array.isArray(raw.snapshots)) {
+    const snaps = raw.snapshots
+      .filter((s) => s && typeof s === "object" && s.data && typeof s.data === "object")
+      .map((s, i) => {
+        const dataRaw = { ...s.data };
+        delete dataRaw.snapshots;
+        const data = sanitizeProject(dataRaw);
+        if (!data) return null;
+        return {
+          id: numOr(s.id, i + 1),
+          name: str(s.name, `案 ${i + 1}`),
+          createdAt: numOr(s.createdAt, 0),
+          data,
+        };
+      })
+      .filter(Boolean);
+    if (snaps.length) p.snapshots = snaps;
   }
   p.tabs = Array.isArray(raw.tabs)
     ? raw.tabs

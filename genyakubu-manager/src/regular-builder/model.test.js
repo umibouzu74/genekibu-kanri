@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  addSnapshot,
   computeSections,
+  copyCellAcrossTabs,
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
@@ -9,6 +11,7 @@ import {
   parseCellRef,
   renameTeacherInProject,
   resolveAllEntries,
+  restoreSnapshot,
   resolveTabEntries,
   sanitizeProject,
   sanitizeWorkspace,
@@ -491,5 +494,89 @@ describe("renameTeacherInProject", () => {
     expect(changedCells).toBe(1);
     expect(next.tabs[0].schedule[makeCellKey("火", 2, 1)].teacher).toBe("臨時A");
     expect(next.teachers).toEqual(p.teachers);
+  });
+});
+
+describe("copyCellAcrossTabs", () => {
+  it("コピー元は残し、コピー先を上書きする (タブ横断可)", () => {
+    const p = makeProject();
+    const tabs = copyCellAcrossTabs(
+      p.tabs,
+      `1:${makeCellKey("月", 1, 1)}`,
+      `1:${makeCellKey("火", 2, 2)}`
+    );
+    expect(tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
+    expect(tabs[0].schedule[makeCellKey("火", 2, 2)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
+    // コピーは新しいオブジェクト (後の編集で共有されない)
+    expect(tabs[0].schedule[makeCellKey("火", 2, 2)]).not.toBe(
+      tabs[0].schedule[makeCellKey("月", 1, 1)]
+    );
+  });
+
+  it("コピー元が空・同一 ref・不明タブは何もしない", () => {
+    const p = makeProject();
+    expect(
+      copyCellAcrossTabs(p.tabs, `1:${makeCellKey("火", 1, 1)}`, `1:${makeCellKey("火", 2, 1)}`)
+    ).toBe(p.tabs);
+    const ref = `1:${makeCellKey("月", 1, 1)}`;
+    expect(copyCellAcrossTabs(p.tabs, ref, ref)).toBe(p.tabs);
+    expect(copyCellAcrossTabs(p.tabs, `9:${makeCellKey("月", 1, 1)}`, ref)).toBe(p.tabs);
+  });
+});
+
+describe("addSnapshot / restoreSnapshot", () => {
+  it("保存 → 編集 → 復元で保存時の状態に戻る (snapshots と id は維持)", () => {
+    const p = { id: 7, ...makeProject(), approvedConflicts: ["k1"] };
+    const saved = addSnapshot(p, "たたき台", 1000);
+    expect(saved.snapshots).toHaveLength(1);
+    expect(saved.snapshots[0]).toMatchObject({ id: 1, name: "たたき台", createdAt: 1000 });
+    expect(saved.snapshots[0].data.snapshots).toBeUndefined();
+    expect(saved.snapshots[0].data.id).toBeUndefined();
+
+    // 編集: セルを消して承認も消す
+    const edited = {
+      ...saved,
+      tabs: [{ ...saved.tabs[0], schedule: {} }],
+    };
+    delete edited.approvedConflicts;
+    const restored = restoreSnapshot(edited, 1);
+    expect(restored.id).toBe(7);
+    expect(restored.snapshots).toBe(edited.snapshots);
+    expect(restored.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
+    expect(restored.approvedConflicts).toEqual(["k1"]);
+  });
+
+  it("保存時に無かった任意フィールドは復元後も持たない / 不明 id は何もしない", () => {
+    const p = makeProject(); // approvedConflicts なし
+    const saved = addSnapshot(p, "案", 0);
+    const edited = { ...saved, approvedConflicts: ["後から承認"] };
+    const restored = restoreSnapshot(edited, 1);
+    expect(restored.approvedConflicts).toBeUndefined();
+    expect(restoreSnapshot(edited, 99)).toBe(edited);
+  });
+
+  it("sanitizeProject は snapshots を保持し、入れ子と不正要素を落とす", () => {
+    const p = makeProject();
+    const saved = addSnapshot(p, "案 1", 123);
+    // 入れ子 (data.snapshots) と不正な要素を混ぜる
+    saved.snapshots[0].data.snapshots = [{ data: {} }];
+    saved.snapshots.push({ name: "data なし" }, "x");
+    const clean = sanitizeProject(saved);
+    expect(clean.snapshots).toHaveLength(1);
+    expect(clean.snapshots[0]).toMatchObject({ id: 1, name: "案 1", createdAt: 123 });
+    expect(clean.snapshots[0].data.snapshots).toBeUndefined();
+    expect(clean.snapshots[0].data.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
   });
 });

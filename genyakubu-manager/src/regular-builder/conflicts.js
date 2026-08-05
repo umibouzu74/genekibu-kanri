@@ -116,13 +116,14 @@ export function computeConflicts(project) {
             (!s.time || timeOverlaps(s.time, e.period.time.trim()))
         );
         if (!hit) continue;
-        const when = hit.time ? ` ${hit.time}` : " 終日";
+        // ラベルは曜日で始まるため、括弧内は時間帯だけにする (重複表記防止)
+        const when = hit.time || "終日";
         list.push({
           type: "ng",
           day: e.day,
-          label: `${e.day} 講師 ${name} NG (${e.day}${when}): ${describeEntry(e)}`,
+          label: `${e.day} 講師 ${name} NG (${when}): ${describeEntry(e)}`,
           refs: [entryRef(e)],
-          reasons: [`講師 ${name} の NG 時間帯 (${e.day}${when}) です`],
+          reasons: [`講師 ${name} の NG 時間帯 (${e.day} ${when}) です`],
         });
       }
     }

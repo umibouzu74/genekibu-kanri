@@ -103,6 +103,12 @@ export const RegularCell = memo(function RegularCell({
   onNavigate,
   /** 右クリック / 長押しでコンテキストメニューを開く (pos, cellRef) */
   onOpenMenu,
+  /** Ctrl+C / Ctrl+V (表示セルにフォーカスがある時のキーボード操作) */
+  onCopyCell,
+  onPasteCell,
+  /** 複数選択: 選択中フラグと Ctrl/Shift+クリックのハンドラ (e, cellRef) */
+  isSelected = false,
+  onSelectCell,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -142,7 +148,9 @@ export const RegularCell = memo(function RegularCell({
   const busySet = new Set(splitTeacherField(busyTeachers));
   const ngSet = new Set(splitTeacherField(ngTeachers));
 
-  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
+  // regb-selected は印刷スタイル (printStyle.js) が紙面から選択装飾を
+  // 除くためのマーカー
+  const tdBase = `group border-r border-builder-border last:border-r-0 align-top ${tdExtra} ${isCompact ? "p-px" : "p-1.5"} ${isDragOver ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && highlighted ? "ring-2 ring-builder-blue ring-inset" : ""} ${dimmed ? "opacity-40" : ""} ${isSelected ? "regb-selected ring-2 ring-builder-green ring-inset bg-builder-success-soft" : ""} ${isFlashing ? "animate-pulse ring-4 ring-builder-blue ring-inset" : ""}`;
 
   const starters = mergeStarters
     ? mergeStarters.split("\n").map((s) => {
@@ -160,7 +168,10 @@ export const RegularCell = memo(function RegularCell({
         tabIndex={0}
         role="button"
         aria-label={`${ariaBase} を編集`}
-        title={conflictText || "クリックで編集 / ドラッグで入替"}
+        title={
+          conflictText ||
+          "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+クリックで複数選択 / Ctrl+C・Ctrl+V・Delete"
+        }
         className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
         draggable={!!c.subj}
         onDragStart={(e) => onDragStart(e, cellRef, c)}
@@ -177,11 +188,32 @@ export const RegularCell = memo(function RegularCell({
               }
             : undefined
         }
-        onClick={() => onStartEdit(cellRef, "subj")}
+        onMouseDown={(e) => {
+          // Shift+クリックの範囲選択でテキスト選択が走らないように
+          if (e.shiftKey && onSelectCell) e.preventDefault();
+        }}
+        onClick={(e) => {
+          if (onSelectCell && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+            e.preventDefault();
+            onSelectCell(e, cellRef);
+          } else {
+            onStartEdit(cellRef, "subj");
+          }
+        }}
         onKeyDown={(e) => {
+          const k = e.key.toLowerCase();
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onStartEdit(cellRef, "subj");
+          } else if ((e.ctrlKey || e.metaKey) && k === "c" && onCopyCell) {
+            e.preventDefault();
+            onCopyCell(cellRef);
+          } else if ((e.ctrlKey || e.metaKey) && k === "v" && onPasteCell) {
+            e.preventDefault();
+            onPasteCell(cellRef);
+          } else if ((e.key === "Delete" || e.key === "Backspace") && hasContent) {
+            e.preventDefault();
+            onClearCell(cellRef);
           } else {
             onNavigate(e, cellRef, "cell");
           }
