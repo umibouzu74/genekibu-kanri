@@ -3,6 +3,7 @@ import {
   addSnapshot,
   computeSections,
   copyCellAcrossTabs,
+  countTeacherAssignments,
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
@@ -578,5 +579,25 @@ describe("addSnapshot / restoreSnapshot", () => {
       subj: "数学",
       teacher: "半田",
     });
+  });
+});
+
+describe("countTeacherAssignments", () => {
+  // makeProject: 月1限 S=数学/半田, 月2限 A=英語/堀上
+  it("全タブのセルから割当数を数える (複数講師・IME の全角中点も含む)", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = {
+      subj: "理科",
+      teacher: "半田・堀上",
+    };
+    expect(countTeacherAssignments(p, "半田")).toBe(2);
+    expect(countTeacherAssignments(p, "堀上")).toBe(2);
+    expect(countTeacherAssignments(p, "居ない人")).toBe(0);
+  });
+
+  it("残骸セル (使わない曜日など) も生の schedule 基準で数える", () => {
+    const p = makeProject();
+    p.tabs[0].days = ["火"]; // 月のセルが残骸になる
+    expect(countTeacherAssignments(p, "半田")).toBe(1);
   });
 });

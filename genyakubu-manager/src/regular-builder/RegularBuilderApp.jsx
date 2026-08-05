@@ -1455,6 +1455,7 @@ export default function RegularBuilderApp({
           slots={slots}
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
+          saveProject={saveProject}
           onClose={() => setShowReflect(false)}
         />
       )}

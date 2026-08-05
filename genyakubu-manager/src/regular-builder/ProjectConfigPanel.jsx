@@ -3,7 +3,12 @@ import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
-import { REGULAR_DAYS, renameTeacherInProject } from "./model";
+import { useConfirm } from "../hooks/useConfirm";
+import {
+  REGULAR_DAYS,
+  countTeacherAssignments,
+  renameTeacherInProject,
+} from "./model";
 import { UI } from "./ui";
 
 // ─── プロジェクト設定 (時限プール / 科目 / 講師マスタ) ──────────────
@@ -20,8 +25,45 @@ function move(list, idx, delta) {
 
 export function ProjectConfigPanel({ project, saveProject, slots }) {
   const toasts = useToasts();
+  const confirm = useConfirm();
   const [newSubject, setNewSubject] = useState("");
   const [newTeacher, setNewTeacher] = useState("");
+
+  // 講師の削除。割当セルや NG・上限設定のある講師だけ確認を挟む
+  // (リネームが件数まで知らせるのと対称に、失うものを知らせてから消す)。
+  // セルの講師名は残る (マスタ外扱いになる) ため cascade は無い — 確認後の
+  // 即削除で Ctrl+Z でも戻せる
+  const removeTeacher = async (t) => {
+    const cells = countTeacherAssignments(project, t.name);
+    const hasNg = (t.ngSlots || []).length > 0;
+    const hasLimits = t.maxPerDay != null || t.maxPerWeek != null;
+    if (cells > 0 || hasNg || hasLimits) {
+      const lines = [];
+      if (cells > 0)
+        lines.push(
+          `割当済みのセル ${cells} 件はそのまま残ります（プルダウンの選択肢からは消えます）。`
+        );
+      if (hasNg || hasLimits)
+        lines.push(
+          `${[hasNg ? "NG（不在）" : null, hasLimits ? "コマ数上限" : null]
+            .filter(Boolean)
+            .join("・")}の設定は削除されます。`
+        );
+      const ok = await confirm({
+        title: "講師の削除",
+        message: `講師「${t.name}」をマスタから削除しますか？\n${lines.join(
+          "\n"
+        )}\n（Ctrl+Z で戻せます）`,
+        okLabel: "削除する",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    saveProject((p) => ({
+      ...p,
+      teachers: p.teachers.filter((x) => x.name !== t.name),
+    }));
+  };
 
   // 講師のリネーム (クリックでインライン編集)。Enter/blur = 確定、
   // Escape = 取消 (blur はどちらでも発火するためフラグで振り分ける —
@@ -331,9 +373,7 @@ export function ProjectConfigPanel({ project, saveProject, slots }) {
               )}
               <button
                 type="button"
-                onClick={() =>
-                  saveProject((p) => ({ ...p, teachers: p.teachers.filter((x) => x.name !== t.name) }))
-                }
+                onClick={() => removeTeacher(t)}
                 className={chipDeleteBtn}
                 aria-label={`${t.name} を削除`}
               >

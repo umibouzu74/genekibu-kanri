@@ -234,6 +234,21 @@ export function renameTeacherInProject(project, oldName, newName) {
   return { project: { ...project, teachers, tabs }, changedCells };
 }
 
+/**
+ * 講師が割り当てられているセル数を数える (全タブ・全曜日。"·" 区切りの
+ * 複数講師も含む)。マスタからの削除前に「割当済みか」を知らせる用。
+ * renameTeacherInProject と同じく残骸セルも含む生の schedule 基準。
+ */
+export function countTeacherAssignments(project, name) {
+  let count = 0;
+  for (const tab of project.tabs || []) {
+    for (const cell of Object.values(tab.schedule || {})) {
+      if (splitTeacherField(cell.teacher).includes(name)) count++;
+    }
+  }
+  return count;
+}
+
 // ─── サニタイズ (useSyncedStorage の migrate 用) ────────────────────
 // 同期で壊れたペイロードが来ても UI が落ちないよう、最低限の形に整える。
 // 解釈不能なら null を返し、呼び出し側で「直前の値を保持」に倒す。
