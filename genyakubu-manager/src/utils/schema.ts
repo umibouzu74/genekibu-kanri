@@ -20,6 +20,7 @@ import type {
   ClassSet,
   CohortCutoff,
   CutoffGroup,
+  DaySchedule,
   DisplayCutoff,
   ExamPeriod,
   ExamPrepSchedule,
@@ -38,7 +39,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -231,6 +232,30 @@ export function isExtraLesson(x: unknown): x is ExtraLesson {
   for (const k of ["cls", "room", "label", "note"] as const) {
     if (x[k] !== undefined && !isString(x[k])) return false;
   }
+  return true;
+}
+
+export function isDaySchedule(x: unknown): x is DaySchedule {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isIsoDate(x.date)) return false;
+  if (!isString(x.label)) return false;
+  // Firebase RTDB drops empty arrays on write — missing は空配列扱い
+  // (migrateDaySchedules が読み込み時に補う)。
+  for (const k of ["targetGrades", "cancelTimes"] as const) {
+    if (x[k] !== undefined) {
+      if (!Array.isArray(x[k])) return false;
+      if (!(x[k] as unknown[]).every((v) => isString(v))) return false;
+    }
+  }
+  if (x.timeMap !== undefined) {
+    if (!Array.isArray(x.timeMap)) return false;
+    for (const m of x.timeMap as unknown[]) {
+      if (!isObject(m)) return false;
+      if (!isString(m.from) || !isString(m.to)) return false;
+    }
+  }
+  if (x.memo !== undefined && !isString(x.memo)) return false;
   return true;
 }
 
@@ -465,6 +490,18 @@ export function validateExportBundle(
         ok: false,
         error: `extraLessons[${bad}] の形式が不正です`,
         path: `extraLessons[${bad}]`,
+      };
+  }
+
+  if (raw.daySchedules != null) {
+    if (!Array.isArray(raw.daySchedules))
+      return { ok: false, error: "daySchedules が配列ではありません" };
+    const bad = raw.daySchedules.findIndex((d: unknown) => !isDaySchedule(d));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `daySchedules[${bad}] の形式が不正です`,
+        path: `daySchedules[${bad}]`,
       };
   }
 
@@ -790,6 +827,14 @@ export function migrateExportBundle(raw: unknown): unknown {
   if (version < 15) {
     if (!Array.isArray(bundle.extraLessons)) {
       bundle.extraLessons = [];
+    }
+  }
+
+  // v15 → v16: daySchedules (特別時程: 日単位の時刻読み替え + 部分休講) を
+  //             追加。既存データは空配列で初期化。
+  if (version < 16) {
+    if (!Array.isArray(bundle.daySchedules)) {
+      bundle.daySchedules = [];
     }
   }
 

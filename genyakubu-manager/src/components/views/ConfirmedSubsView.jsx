@@ -3,6 +3,10 @@ import { dateToDay, fmtDate } from "../../data";
 import { S } from "../../styles/common";
 import { encodeShareData } from "../../utils/shareCodec";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
+import {
+  getDaySchedulesForDate,
+  isSlotCancelledByDaySchedule,
+} from "../../utils/daySchedules";
 import { useToasts } from "../../hooks/useToasts";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { DashDayRow } from "./Dashboard";
@@ -34,6 +38,7 @@ export function ConfirmedSubsView({
   sessionOverrides = [],
   adjustments = [],
   extraLessons = [],
+  daySchedules = [],
 }) {
   const todayStr = fmtDate(new Date());
   const [showPast, setShowPast] = useState(false);
@@ -52,6 +57,7 @@ export function ConfirmedSubsView({
       examPeriods,
       biweeklyAnchors,
       sessionOverrides,
+      daySchedules,
     });
 
   const confirmedSubs = useMemo(
@@ -212,6 +218,7 @@ export function ConfirmedSubsView({
             (s) =>
               s.day === dow &&
               !isOffForGrade(dateStr, s.grade, s.subj) &&
+              !isSlotCancelledByDaySchedule(s, dateStr, daySchedules) &&
               (!timetables ||
                 timetables.length === 0 ||
                 isTimetableActiveForDate(
@@ -232,6 +239,7 @@ export function ConfirmedSubsView({
               adjustments={adjustments}
               examPeriodsForDate={examPeriodsFor(dateStr)}
               extraLessonsForDate={extraLessonsOnDate(extraLessons, dateStr)}
+              daySchedulesForDate={getDaySchedulesForDate(daySchedules, dateStr)}
               sessionCtx={sessionCtx}
             />
           );

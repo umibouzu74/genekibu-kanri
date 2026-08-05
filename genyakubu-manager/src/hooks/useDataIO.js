@@ -10,6 +10,7 @@ import {
   validateExportBundle,
 } from "../utils/schema";
 import {
+  migrateDaySchedules,
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
@@ -40,6 +41,7 @@ export function useDataIO({
   teacherSubjects,
   specialEvents,
   extraLessons,
+  daySchedules,
   activeTimetableId,
   saveSlots,
   saveHolidays,
@@ -59,6 +61,7 @@ export function useDataIO({
   saveTeacherSubjects,
   saveSpecialEvents,
   saveExtraLessons,
+  saveDaySchedules,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -94,6 +97,7 @@ export function useDataIO({
           teacherSubjects,
           specialEvents,
           extraLessons,
+          daySchedules,
           // インポート先で timetables に対する選択が宙吊りにならないよう
           // アクティブな時間割 ID も持ち出す
           activeTimetableId,
@@ -113,7 +117,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, daySchedules, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -180,6 +184,9 @@ export function useDataIO({
           }
           if (Array.isArray(d.extraLessons) && saveExtraLessons) {
             saveExtraLessons(d.extraLessons);
+          }
+          if (Array.isArray(d.daySchedules) && saveDaySchedules) {
+            saveDaySchedules(migrateDaySchedules(d.daySchedules));
           }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
@@ -251,6 +258,7 @@ export function useDataIO({
       saveTeacherSubjects,
       saveSpecialEvents,
       saveExtraLessons,
+      saveDaySchedules,
       setActiveTimetableId,
       setImporting,
       setShowDataMgr,
@@ -283,6 +291,7 @@ export function useDataIO({
     saveSessionOverrides([]);
     if (saveSpecialEvents) saveSpecialEvents([]);
     if (saveExtraLessons) saveExtraLessons([]);
+    if (saveDaySchedules) saveDaySchedules([]);
     // localStorage キーの removeItem だけでは React state と Firebase 側が
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
     // (export / import には含まれるのに reset だけ漏れていた)
@@ -314,6 +323,7 @@ export function useDataIO({
     saveTeacherSubjects,
     saveSpecialEvents,
     saveExtraLessons,
+    saveDaySchedules,
     setActiveTimetableId,
     setSelected,
     setView,
@@ -326,6 +336,7 @@ export function useDataIO({
 
 // Re-export migrate functions for convenience
 export {
+  migrateDaySchedules,
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,

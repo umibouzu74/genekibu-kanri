@@ -26,11 +26,12 @@ export function SectionColumn({
   allSlots = [],
   date,
   sessionCountMap,
+  daySchedules = [],
 }) {
-  // この日の合同・移動情報を索引化 (共通ヘルパを使用)
-  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot } = useMemo(
-    () => buildAdjustmentIndex(adjustments, date),
-    [adjustments, date]
+  // この日の合同・移動・特別時程情報を索引化 (共通ヘルパを使用)
+  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot, dayScheduleMoveBySlot } = useMemo(
+    () => buildAdjustmentIndex(adjustments, date, { slots: sl, daySchedules }),
+    [adjustments, date, sl, daySchedules]
   );
 
   // 移動が適用された後の「実効時間」で slot をグループ化。
@@ -230,7 +231,11 @@ export function SectionColumn({
                             {moveTarget && (
                               <span
                                 style={badgeStyle(ADJ_COLOR.move.color)}
-                                title={`時間変更\n${s.time} → ${moveTarget}`}
+                                title={
+                                  dayScheduleMoveBySlot.has(s.id)
+                                    ? `特別時程${dayScheduleMoveBySlot.get(s.id)?.label ? ` (${dayScheduleMoveBySlot.get(s.id).label})` : ""}\n${s.time} → ${moveTarget}`
+                                    : `時間変更\n${s.time} → ${moveTarget}`
+                                }
                               >
                                 移
                               </span>

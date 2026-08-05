@@ -4,31 +4,76 @@ import { buildAdjustmentIndex, describeSlot } from "./adjustmentDisplay";
 describe("buildAdjustmentIndex", () => {
   const base = "2026-04-20";
 
+  const EMPTY_INDEX = {
+    combineAbsorbedBySlot: new Map(),
+    combineHostBySlot: new Map(),
+    moveBySlot: new Map(),
+    rescheduleOutBySlot: new Map(),
+    rescheduleInBySlot: new Map(),
+    dayScheduleMoveBySlot: new Map(),
+  };
+
   it("returns empty maps when adjustments is empty/null", () => {
-    expect(buildAdjustmentIndex(null, base)).toEqual({
-      combineAbsorbedBySlot: new Map(),
-      combineHostBySlot: new Map(),
-      moveBySlot: new Map(),
-      rescheduleOutBySlot: new Map(),
-      rescheduleInBySlot: new Map(),
-    });
-    expect(buildAdjustmentIndex([], base)).toEqual({
-      combineAbsorbedBySlot: new Map(),
-      combineHostBySlot: new Map(),
-      moveBySlot: new Map(),
-      rescheduleOutBySlot: new Map(),
-      rescheduleInBySlot: new Map(),
-    });
+    expect(buildAdjustmentIndex(null, base)).toEqual(EMPTY_INDEX);
+    expect(buildAdjustmentIndex([], base)).toEqual(EMPTY_INDEX);
   });
 
   it("returns empty maps when date is falsy", () => {
     const adjustments = [{ id: 1, date: base, type: "move", slotId: 10, targetTime: "20:00-21:00" }];
-    expect(buildAdjustmentIndex(adjustments, "")).toEqual({
-      combineAbsorbedBySlot: new Map(),
-      combineHostBySlot: new Map(),
-      moveBySlot: new Map(),
-      rescheduleOutBySlot: new Map(),
-      rescheduleInBySlot: new Map(),
+    expect(buildAdjustmentIndex(adjustments, "")).toEqual(EMPTY_INDEX);
+  });
+
+  // ─── 特別時程 (daySchedules) の合流 ───────────────────────────────
+  describe("daySchedules merge", () => {
+    // 2026-10-07 は水曜日
+    const wed = "2026-10-07";
+    const slots = [
+      { id: 1, day: "水", time: "16:25-17:25", grade: "附中1", teacher: "武下" },
+      { id: 2, day: "水", time: "21:00-21:30", grade: "附中", teacher: "松川" },
+      { id: 3, day: "水", time: "16:25-17:25", grade: "中1", teacher: "他" },
+      { id: 4, day: "金", time: "16:25-17:25", grade: "附中1", teacher: "武下" },
+    ];
+    const daySchedules = [
+      {
+        id: 1,
+        date: wed,
+        label: "附属 50分授業",
+        targetGrades: ["附中1", "附中2", "附中3", "附中"],
+        timeMap: [{ from: "16:25-17:25", to: "17:00-17:50" }],
+        cancelTimes: [],
+        memo: "",
+      },
+    ];
+
+    it("対象学年・当日曜日のコマだけ moveBySlot に読み替えが載る", () => {
+      const r = buildAdjustmentIndex([], wed, { slots, daySchedules });
+      expect(r.moveBySlot.get(1)).toBe("17:00-17:50");
+      expect(r.dayScheduleMoveBySlot.get(1)?.label).toBe("附属 50分授業");
+      expect(r.moveBySlot.has(2)).toBe(false); // timeMap 外は据え置き
+      expect(r.moveBySlot.has(3)).toBe(false); // 対象外学年
+      expect(r.moveBySlot.has(4)).toBe(false); // 曜日不一致 (金)
+    });
+
+    it("個別の move 調整が同じコマにあればそちらが優先", () => {
+      const adjustments = [
+        { id: 9, date: wed, type: "move", slotId: 1, targetTime: "19:00-19:50" },
+      ];
+      const r = buildAdjustmentIndex(adjustments, wed, { slots, daySchedules });
+      expect(r.moveBySlot.get(1)).toBe("19:00-19:50");
+      expect(r.dayScheduleMoveBySlot.has(1)).toBe(false);
+    });
+
+    it("cancelTimes のコマには読み替えを作らない", () => {
+      const cut = [
+        { ...daySchedules[0], timeMap: [], cancelTimes: ["16:25-17:25"] },
+      ];
+      const r = buildAdjustmentIndex([], wed, { slots, daySchedules: cut });
+      expect(r.moveBySlot.has(1)).toBe(false);
+    });
+
+    it("別日には効かない", () => {
+      const r = buildAdjustmentIndex([], "2026-10-14", { slots, daySchedules });
+      expect(r.moveBySlot.size).toBe(0);
     });
   });
 

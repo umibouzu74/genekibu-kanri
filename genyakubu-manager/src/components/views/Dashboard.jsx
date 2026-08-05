@@ -58,6 +58,7 @@ export function Dashboard({
   subjectCategories,
   teacherSubjects,
   extraLessons = [],
+  daySchedules = [],
   saveSubs,
   onJumpToEventCalendar,
   onJumpToRequestedSubs,
@@ -101,6 +102,7 @@ export function Dashboard({
     specialEvents,
     biweeklyAnchors,
     sessionOverrides,
+    daySchedules,
   });
 
   return (
@@ -185,6 +187,7 @@ export function Dashboard({
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
           extraLessons={extraLessons}
+          daySchedules={daySchedules}
           dashboardMode
         />
       ) : (
@@ -198,6 +201,7 @@ export function Dashboard({
           examPeriods={examPeriods}
           specialEvents={specialEvents}
           extraLessons={extraLessons}
+          daySchedules={daySchedules}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
           specialEventsFor={specialEventsFor}

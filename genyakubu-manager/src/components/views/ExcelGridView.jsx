@@ -10,6 +10,10 @@ import {
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
+import {
+  getDaySchedulesForDate,
+  isSlotCancelledByDaySchedule,
+} from "../../utils/daySchedules";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
@@ -82,6 +86,7 @@ export function ExcelGridView({
   adjustments = [],
   sessionOverrides = [],
   extraLessons = [],
+  daySchedules = [],
   dashboardMode = false,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
@@ -306,6 +311,7 @@ export function ExcelGridView({
     examPeriods,
     biweeklyAnchors,
     sessionOverrides,
+    daySchedules,
   });
 
   const sessionCountMap = useMemo(() => {
@@ -337,10 +343,15 @@ export function ExcelGridView({
     const offSet = new Set();
     for (const s of displaySlots) {
       if (s.day !== selectedDay) continue;
-      if (isOffForGrade(displayDate, s.grade, s.subj)) offSet.add(s.id);
+      if (
+        isOffForGrade(displayDate, s.grade, s.subj) ||
+        // 特別時程の部分休講 (1限カット等) も休講ハイライトに含める
+        isSlotCancelledByDaySchedule(s, displayDate, daySchedules)
+      )
+        offSet.add(s.id);
     }
     return offSet;
-  }, [dashboardMode, displayDate, displaySlots, selectedDay, isOffForGrade]);
+  }, [dashboardMode, displayDate, displaySlots, selectedDay, isOffForGrade, daySchedules]);
 
   const effectiveHolidayOffSlots = subMode.isSubMode
     ? subMode.holidayOffSlots
@@ -369,6 +380,15 @@ export function ExcelGridView({
   const dashboardHolidayLabels = useMemo(
     () => dashboardHolidaysForDay.map((h) => h.label).filter(Boolean),
     [dashboardHolidaysForDay]
+  );
+
+  // 表示日に該当する特別時程 (ヘッダバナー表示用)。
+  const dashboardDaySchedules = useMemo(
+    () =>
+      dashboardMode && displayDate
+        ? getDaySchedulesForDate(daySchedules, displayDate)
+        : [],
+    [dashboardMode, displayDate, daySchedules]
   );
 
   // 表示日の追加授業 (H1a)。グリッドの列は曜日ベースで特定日付の単発コマを
@@ -571,6 +591,45 @@ export function ExcelGridView({
         </div>
       )}
 
+      {/* Day schedule banner (dashboard mode): 表示日の特別時程を表示 */}
+      {dashboardMode && dashboardDaySchedules.length > 0 && (
+        <div
+          style={{
+            padding: "8px 12px",
+            marginBottom: 10,
+            background: "#efeafa",
+            border: "1px solid #a898d8",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#4a3a8e" }}>
+            ⏰ 特別時程
+          </span>
+          {dashboardDaySchedules.map((d) => (
+            <span
+              key={d.id}
+              title={d.memo || undefined}
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                background: "#fff",
+                color: "#4a3a8e",
+                border: "1px solid #a898d8",
+                padding: "2px 8px",
+                borderRadius: 10,
+              }}
+            >
+              {(d.targetGrades || []).join("・")}
+              {d.label ? ` (${d.label})` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Combine mode banner */}
       {combineMode && (
         <div
@@ -736,6 +795,7 @@ export function ExcelGridView({
                     dashboardMode={dashboardMode}
                     closureLabels={dashboardHolidayLabels}
                     adjustments={dashboardMode || subMode.isSubMode ? adjustments : []}
+                    daySchedules={dashboardMode || subMode.isSubMode ? daySchedules : []}
                   />
                 );
               };

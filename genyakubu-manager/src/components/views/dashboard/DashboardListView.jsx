@@ -4,6 +4,10 @@ import {
   isTimetableActiveForDate,
 } from "../../../utils/timetable";
 import { extraLessonsOnDate } from "../../../utils/extraLessons";
+import {
+  getDaySchedulesForDate,
+  isSlotCancelledByDaySchedule,
+} from "../../../utils/daySchedules";
 import { DashDayRow } from "./DashDayRow";
 import { EventSummaryCards } from "./EventSummaryCards";
 import { SubSummaryCards } from "./SubSummaryCards";
@@ -19,6 +23,7 @@ export function DashboardListView({
   examPeriods = [],
   specialEvents = [],
   extraLessons = [],
+  daySchedules = [],
   holidaysFor,
   examPeriodsFor,
   specialEventsFor,
@@ -52,6 +57,8 @@ export function DashboardListView({
               (s) =>
                 s.day === dow &&
                 !isOffForGrade(dateStr, s.grade, s.subj) &&
+                // 特別時程の部分休講 (1限カット等) は休講と同じ扱いで外す
+                !isSlotCancelledByDaySchedule(s, dateStr, daySchedules) &&
                 (!timetables ||
                   timetables.length === 0 ||
                   isTimetableActiveForDate(
@@ -94,6 +101,7 @@ export function DashboardListView({
               extraLessonsForDate={
                 entireDayCutoff ? [] : extraLessonsOnDate(extraLessons, dateStr)
               }
+              daySchedulesForDate={getDaySchedulesForDate(daySchedules, dateStr)}
               sessionCtx={sessionCtx}
             />
           </div>

@@ -3,6 +3,7 @@ import { fmtDate, WEEKDAYS } from "../../data";
 import { eachDateStrInRange, formatDateRange, overlapsRange } from "../../utils/dateHelpers";
 import { S } from "../../styles/common";
 import {
+  DAY_SCHEDULE_META,
   EVENT_KIND,
   EVENT_KIND_LABELS,
   EXAM_META,
@@ -39,6 +40,7 @@ const ADD_BUTTONS = Object.freeze([
   { key: EVENT_KIND.EXAM, label: "テスト期間", color: EXAM_META.accent },
   { key: EVENT_KIND.SPECIAL, label: "特別イベント", color: "#8a5ec4" },
   { key: EVENT_KIND.EXTRA_LESSON, label: "追加授業", color: EXTRA_LESSON_META.accent },
+  { key: EVENT_KIND.DAY_SCHEDULE, label: "特別時程", color: DAY_SCHEDULE_META.accent },
 ]);
 
 // 連続バーの border-radius を、左右の継続フラグから決定する。
@@ -54,6 +56,7 @@ export function EventCalendarView({
   examPeriods = [],
   specialEvents = [],
   extraLessons = [],
+  daySchedules = [],
   onEventClick,
   onAddNewEvent,
   isAdmin = false,
@@ -104,6 +107,31 @@ export function EventCalendarView({
         endDate: h.date,
         meta: HOLIDAY_META,
         source: h,
+      });
+    }
+    // 特別時程 (時刻読み替え / 部分休講)。休講と同様に常時表示。
+    for (const d of daySchedules) {
+      if (!overlapsRange(d.date, d.date, monthStart, monthEnd)) continue;
+      all.push({
+        kind: EVENT_KIND.DAY_SCHEDULE,
+        id: `d-${d.id}`,
+        name: `${DAY_SCHEDULE_META.icon} ${d.label || "特別時程"}`,
+        startDate: d.date,
+        endDate: d.date,
+        meta: DAY_SCHEDULE_META,
+        detail: [
+          (d.targetGrades || []).join("・"),
+          (d.timeMap || [])
+            .map((m) => `${m.from}→${m.to}`)
+            .join(" / "),
+          (d.cancelTimes || []).length
+            ? `休講: ${(d.cancelTimes || []).join(" / ")}`
+            : "",
+          d.memo,
+        ]
+          .filter(Boolean)
+          .join(" / "),
+        source: d,
       });
     }
     if (showExam) {
@@ -169,7 +197,7 @@ export function EventCalendarView({
         a.startDate.localeCompare(b.startDate) ||
         a.endDate.localeCompare(b.endDate)
     );
-  }, [holidays, examPeriods, specialEvents, extraLessons, showExam, showSpecial, showExtra, visibility, monthStart, monthEnd]);
+  }, [holidays, examPeriods, specialEvents, extraLessons, daySchedules, showExam, showSpecial, showExtra, visibility, monthStart, monthEnd]);
 
   // 日付 → イベント[] の索引 (グリッド表示用)
   const eventsByDate = useMemo(() => {
