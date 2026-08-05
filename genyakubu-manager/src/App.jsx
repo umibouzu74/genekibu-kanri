@@ -1404,6 +1404,8 @@ export default function App() {
               subjectCategories={subjectCategories}
               subjects={subjects}
               slots={slots}
+              timetables={timetables}
+              activeTimetableId={activeTimetableId}
               subs={subs}
               holidays={holidays}
               examPeriods={examPeriods}
