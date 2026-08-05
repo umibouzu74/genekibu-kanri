@@ -16,6 +16,8 @@ export function StaffManagerView({
   subjectCategories,
   subjects,
   slots,
+  timetables,
+  activeTimetableId,
   subs,
   holidays,
   examPeriods,
@@ -119,6 +121,8 @@ export function StaffManagerView({
           subjectCategories={subjectCategories}
           subjectsByCat={subjectsByCat}
           slots={slots}
+          timetables={timetables}
+          activeTimetableId={activeTimetableId}
           subs={subs}
           holidays={holidays}
           examPeriods={examPeriods}

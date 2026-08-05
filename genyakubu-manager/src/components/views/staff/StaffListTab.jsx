@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   fmtDateWeekday,
   staffMonthlyAbsenceDates,
@@ -7,6 +8,7 @@ import {
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { isSlotForTeacher } from "../../../utils/biweekly";
+import { useToasts } from "../../../hooks/useToasts";
 
 // バイト一覧タブ : 新規追加フォーム + 各バイトの担当教科 + 今月の出勤状況。
 export function StaffListTab({
@@ -16,6 +18,8 @@ export function StaffListTab({
   subjectCategories,
   subjectsByCat,
   slots,
+  timetables,
+  activeTimetableId,
   subs,
   holidays,
   examPeriods,
@@ -28,8 +32,54 @@ export function StaffListTab({
   onToggleStaffSubject,
   isAdmin,
 }) {
+  const toasts = useToasts();
+  const [exporting, setExporting] = useState(false);
+
+  // 出勤可能時間調査 Excel。exceljs をメインバンドルから外すため、
+  // ボタン押下時に dynamic import する (講習ビルダーの Excel 出力と同じ)。
+  const handleExportSurvey = async () => {
+    setExporting(true);
+    try {
+      const { downloadStaffSurveyExcel } = await import("../../../utils/staffSurveyExport");
+      await downloadStaffSurveyExcel({
+        staffNames: sortedPartTimeStaff.map((s) => s.name),
+        slots,
+        timetables,
+        activeTimetableId,
+      });
+      toasts.success(`出勤可能時間調査の Excel を出力しました (${sortedPartTimeStaff.length} 名分)`);
+    } catch (e) {
+      console.error(e);
+      toasts.error("Excel の生成に失敗しました");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 10,
+        }}
+      >
+        <span style={{ fontSize: 11, color: "#888" }}>
+          現在の時間割の担当コマ入りの記入用紙 (1 人 1 シート)
+        </span>
+        <button
+          type="button"
+          onClick={handleExportSurvey}
+          disabled={exporting || partTimeStaff.length === 0}
+          title="現在の時間割で入っているコマを網掛け表示し、出勤できる時間帯を記入してもらう調査票を Excel で出力します"
+          style={S.btn(false)}
+        >
+          {exporting ? "生成中…" : "📥 出勤可能時間調査 (Excel)"}
+        </button>
+      </div>
       <div
         style={{
           background: "#fff",
