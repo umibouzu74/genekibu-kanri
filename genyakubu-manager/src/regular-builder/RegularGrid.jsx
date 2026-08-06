@@ -99,6 +99,8 @@ export function RegularGrid({
   onOpenCellMenu = null,
   /** ヘッダ (時限行・クラス列) の一括操作メニューを開く (pos, payload) */
   onOpenHeaderMenu = null,
+  /** 列見出しの教室クリックで列の既定教室を変更する (tabId, classId, room) */
+  onSetClassRoom = null,
   /** Ctrl+C / Ctrl+V のキーボード操作 (App のコピー/貼り付けと同じ実体) */
   onCopyCell = null,
   onPasteCell = null,
@@ -135,10 +137,19 @@ export function RegularGrid({
     setEditRef(null);
   }, []);
 
+  // 列見出しの教室の編集中の列 (`${tabId}:${classId}`、null = 非編集)。
+  // 編集確定は onSetClassRoom へ委譲 (列のセルとの連動は model.setClassRoom)
+  const [roomEditCol, setRoomEditCol] = useState(null);
+  const commitRoomEdit = (tabId, classId, value) => {
+    setRoomEditCol(null);
+    onSetClassRoom?.(tabId, classId, value);
+  };
+
   // プロジェクト / 曜日を切り替えたら編集状態は持ち越さない
   useEffect(() => {
     setEditRef(null);
     pendingFocusRef.current = null;
+    setRoomEditCol(null);
   }, [project.id, day]);
 
   // セクションの折りたたみ (見出しバーのクリックで開閉)。表示のみで
@@ -631,24 +642,72 @@ export function RegularGrid({
                   {s.tabs.flatMap((t, ti) => {
                     const lay = s.tabLayouts.get(t.id);
                     const headCols = lay.fallback ? t.classes : lay.visible;
-                    return headCols.map((cls2, ci) => (
-                      <MenuTh
-                        key={`${t.id}-${cls2.id}`}
-                        scope="col"
-                        onOpenMenu={
-                          onOpenHeaderMenu ? (pos) => openColMenu(pos, t, cls2) : null
-                        }
-                        className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
-                      >
-                        {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
-                        {cls2.label || cls2.room || "－"}
-                        {cls2.label && cls2.room && cls2.room !== cls2.label && (
-                          <span className="font-normal text-builder-ink-subtle ml-1">
-                            {cls2.room}
-                          </span>
-                        )}
-                      </MenuTh>
-                    ));
+                    return headCols.map((cls2, ci) => {
+                      const colId = `${t.id}:${cls2.id}`;
+                      // 教室部分は display-first (クリックで入力に切替)。
+                      // 確定すると列の既定教室が変わり、教室上書きの無い
+                      // コマの実効教室がまとめて連動する (model.setClassRoom)
+                      const roomEditor = roomEditCol === colId && (
+                        <input
+                          autoFocus
+                          type="text"
+                          defaultValue={cls2.room || ""}
+                          list="regb-rooms"
+                          aria-label={`${t.name} ${cls2.label || cls2.room || "列"} の既定教室`}
+                          className={`rounded border border-builder-border bg-builder-surface px-1 py-0 font-normal text-builder-ink focus:outline-none ${isCompact ? "w-12 text-[10px]" : "w-16 text-xs"}`}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitRoomEdit(t.id, cls2.id, e.currentTarget.value);
+                            } else if (e.key === "Escape") {
+                              e.stopPropagation(); // 複数選択の解除に化けさせない
+                              setRoomEditCol(null);
+                            }
+                          }}
+                          onBlur={(e) => commitRoomEdit(t.id, cls2.id, e.currentTarget.value)}
+                        />
+                      );
+                      const roomButton = (text, extraClass) =>
+                        onSetClassRoom ? (
+                          <button
+                            type="button"
+                            onClick={() => setRoomEditCol(colId)}
+                            title="クリックで列の既定教室を変更（教室上書きの無いコマの教室がまとめて変わります）"
+                            className={`cursor-pointer rounded border-0 bg-transparent p-0 px-0.5 underline decoration-dotted underline-offset-2 hover:text-builder-blue ${isCompact ? "text-[10px]" : "text-xs"} ${extraClass}`}
+                          >
+                            {text}
+                          </button>
+                        ) : (
+                          <span className={extraClass}>{text}</span>
+                        );
+                      return (
+                        <MenuTh
+                          key={`${t.id}-${cls2.id}`}
+                          scope="col"
+                          onOpenMenu={
+                            onOpenHeaderMenu ? (pos) => openColMenu(pos, t, cls2) : null
+                          }
+                          className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
+                        >
+                          {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
+                          {cls2.label ? (
+                            <>
+                              {cls2.label}
+                              {roomEditor ||
+                                (cls2.room &&
+                                  cls2.room !== cls2.label &&
+                                  roomButton(
+                                    cls2.room,
+                                    "font-normal text-builder-ink-subtle ml-1"
+                                  ))}
+                            </>
+                          ) : (
+                            roomEditor ||
+                            roomButton(cls2.room || "－", "font-bold text-builder-ink")
+                          )}
+                        </MenuTh>
+                      );
+                    });
                   })}
                 </tr>
               </thead>

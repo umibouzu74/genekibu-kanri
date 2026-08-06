@@ -17,6 +17,7 @@ import {
   parseCellRef,
   sanitizeWorkspace,
   setCellsLocked,
+  setClassRoom,
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
@@ -559,6 +560,32 @@ export default function RegularBuilderApp({
         { atomic: true }
       ),
     [saveProject]
+  );
+
+  // 列見出しの教室クリック → 列の既定教室を変更。上書きの無いセルは実効
+  // 教室が自動で追従し、新既定と同じ上書きは既定追従へ正規化される
+  // (連動の詳細は model.setClassRoom)。件数は表示用に現時点の project で
+  // 数え、保存は saveProject の最新値で行う (toggleLockRefs と同じパターン)
+  const onSetClassRoom = useCallback(
+    (tabId, classId, room) => {
+      const res = setClassRoom(project.tabs, tabId, classId, room);
+      if (!res.changed) return;
+      saveProject(
+        (p) => ({ ...p, tabs: setClassRoom(p.tabs, tabId, classId, room).tabs }),
+        { atomic: true }
+      );
+      const parts = [
+        `列の既定教室を「${res.oldRoom || "未設定"}」→「${res.newRoom || "未設定"}」に変更しました`,
+      ];
+      if (res.normalized > 0)
+        parts.push(`同じ教室を指定していた ${res.normalized} コマは既定追従に統合`);
+      if (res.kept > 0)
+        parts.push(`別教室の個別指定 ${res.kept} コマはそのまま`);
+      toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, {
+        duration: 4500,
+      });
+    },
+    [project, saveProject, toasts]
   );
 
   // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
@@ -1488,6 +1515,7 @@ export default function RegularBuilderApp({
                   jumpTarget={jumpTarget}
                   onOpenCellMenu={openCellMenu}
                   onOpenHeaderMenu={openHeaderMenu}
+                  onSetClassRoom={onSetClassRoom}
                   onCopyCell={copyCell}
                   onPasteCell={pasteCell}
                   onCopyCellTo={onCopyCellTo}
@@ -1536,6 +1564,7 @@ export default function RegularBuilderApp({
               jumpTarget={jumpTarget}
               onOpenCellMenu={openCellMenu}
               onOpenHeaderMenu={openHeaderMenu}
+              onSetClassRoom={onSetClassRoom}
               onCopyCell={copyCell}
               onPasteCell={pasteCell}
               onCopyCellTo={onCopyCellTo}

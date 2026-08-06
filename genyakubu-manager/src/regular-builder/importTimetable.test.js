@@ -73,6 +73,61 @@ describe("buildProjectFromSlots", () => {
     expect(teachers).toEqual(["大屋敷", "藤田"]);
   });
 
+  it("クラス名の無いコマは教室ごとに列を分け、教室番号順に並べる", () => {
+    const H = (over) => S({ grade: "高3", cls: "", time: "18:30-19:30", ...over });
+    const slots = [
+      // 月 18:30 に 3 講座が並列 (703 → 701 → 704 の順で出現)
+      H({ id: 1, room: "703", subj: "関関同立英語", teacher: "道久" }),
+      H({ id: 2, room: "701", subj: "共テ英語", teacher: "伊藤" }),
+      H({ id: 3, room: "704", subj: "共テ生物", teacher: "福江" }),
+      // 木 18:30 は出現順が違っても教室で同じ列に集まる
+      H({ id: 4, day: "木", room: "701", subj: "共テ物理", teacher: "白川" }),
+      H({ id: 5, day: "木", room: "703", subj: "関関同立現古", teacher: "仙波" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1);
+    const tab = project.tabs[0];
+    // 列見出し (既定教室) は教室番号の昇順で、重複しない
+    expect(tab.classes.map((c) => c.room)).toEqual(["701", "703", "704"]);
+    const entries = resolveAllEntries(project);
+    // 各コマは自分の教室の列に入るので、既定と同値の上書きは残らない
+    for (const e of entries) expect(e.cell.room).toBeUndefined();
+    const colOf = (subj) => entries.find((e) => e.cell.subj === subj).cls.room;
+    expect(colOf("共テ英語")).toBe("701");
+    expect(colOf("共テ物理")).toBe("701");
+    expect(colOf("関関同立英語")).toBe("703");
+    expect(colOf("関関同立現古")).toBe("703");
+  });
+
+  it("クラス名の無い同時刻・同室の並列コマは同室の列を増やして保持する", () => {
+    const slots = [
+      S({ id: 1, grade: "高3", cls: "", room: "701", time: "18:30-19:30", teacher: "伊藤" }),
+      S({ id: 2, grade: "高3", cls: "", room: "701", time: "18:30-19:30", teacher: "白川" }),
+    ];
+    const { project, stats } = buildProjectFromSlots("x", slots, 1);
+    expect(project.tabs[0].classes.map((c) => c.room)).toEqual(["701", "701"]);
+    expect(stats.parallelColumns).toBe(1);
+    expect(resolveAllEntries(project)).toHaveLength(2);
+  });
+
+  it("クラス名の無い教室未設定のコマは専用の列にまとまり末尾に並ぶ", () => {
+    const slots = [
+      S({ id: 1, grade: "高3", cls: "", room: "", subj: "自習", time: "18:30-19:30" }),
+      S({ id: 2, grade: "高3", cls: "", room: "704", time: "19:40-20:40" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1);
+    expect(project.tabs[0].classes.map((c) => c.room)).toEqual(["704", ""]);
+    expect(resolveAllEntries(project)).toHaveLength(2);
+  });
+
+  it("クラス名のある列は従来どおりラベル単位 (教室が違っても 1 列)", () => {
+    const slots = [
+      S({ id: 1, day: "月", room: "501" }),
+      S({ id: 2, day: "火", room: "601" }),
+    ];
+    const { project } = buildProjectFromSlots("x", slots, 1);
+    expect(project.tabs[0].classes).toHaveLength(1);
+  });
+
   it("講師マスタは分解して収集し、科目マスタは出現順", () => {
     const slots = [
       S({ id: 1, teacher: "香川·福江", subj: "英語" }),

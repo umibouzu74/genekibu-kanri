@@ -201,6 +201,63 @@ export function setCellsLocked(tabs, refs, locked) {
   return { tabs: next, changed };
 }
 
+// ─── クラス列の既定教室の変更 (列のコマと連動) ──────────────────────
+
+/**
+ * クラス列の既定教室を変更した新しい tabs 配列を返す (純関数)。
+ * セルの実効教室は「セル上書き → クラス既定」(effectiveRoom) なので、
+ * 上書きの無いセルは自動で新しい既定教室に追従する。上書きが新既定と
+ * 同じセルは上書きを外して既定追従へ正規化する (取込が「既定と同じ
+ * 上書き」を作らないのと同じ状態に揃える)。別教室の上書き (個別指定)
+ * とロック中のセルには触れない。
+ * @returns {{tabs: object[], changed: boolean, oldRoom: string, newRoom: string,
+ *            normalized: number, kept: number}}
+ *   normalized = 上書きを外して既定追従に戻したセル数、
+ *   kept = 別教室の個別指定のまま残ったセル数
+ */
+export function setClassRoom(tabs, tabId, classId, room) {
+  const newRoom = (room || "").trim();
+  const tab = tabs.find((t) => t.id === tabId);
+  const cls = tab?.classes?.find((c) => c.id === classId);
+  const oldRoom = (cls?.room || "").trim();
+  if (!cls || oldRoom === newRoom) {
+    return { tabs, changed: false, oldRoom, newRoom, normalized: 0, kept: 0 };
+  }
+  let normalized = 0;
+  let kept = 0;
+  const schedule = {};
+  for (const [key, cell] of Object.entries(tab.schedule || {})) {
+    if (parseCellKey(key).classId !== classId) {
+      schedule[key] = cell;
+      continue;
+    }
+    const override = (cell.room || "").trim();
+    if (override && override === newRoom && !cell.locked) {
+      const { room: _r, ...rest } = cell;
+      // 教室だけのセルは中身が無くなるので削除 (onCellChange と同じ扱い)
+      if (["subj", "teacher", "note"].some((f) => (rest[f] || "").trim())) {
+        schedule[key] = rest;
+      }
+      normalized++;
+    } else {
+      if (override && override !== newRoom) kept++;
+      schedule[key] = cell;
+    }
+  }
+  const next = tabs.map((t) =>
+    t.id === tabId
+      ? {
+          ...t,
+          classes: t.classes.map((c) =>
+            c.id === classId ? { ...c, room: newRoom } : c
+          ),
+          schedule,
+        }
+      : t
+  );
+  return { tabs: next, changed: true, oldRoom, newRoom, normalized, kept };
+}
+
 // ─── スナップショット (プロジェクトの名前付き保存) ──────────────────
 // 講習ビルダーのスナップショットに相当。別案を試す前に現在の状態を残し、
 // いつでも差分を見て復元できる。snapshot.data はプロジェクト本体のコピー
