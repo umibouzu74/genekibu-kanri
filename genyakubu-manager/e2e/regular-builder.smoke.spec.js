@@ -92,8 +92,10 @@ test("コンテキストメニュー・重複ジャンプ・Undo toast・講師�
   ).toBeVisible();
   await expect(cellA2).not.toContainText("数学");
 
-  // ── 講師リネーム: マスタ + 割当セルが追従する ──
+  // ── 講師リネーム: マスタ + 割当セルが追従する (全体設定モーダルの
+  // 👤 講師 タブ) ──
   await page.getByRole("button", { name: "⚙ 全体設定" }).click();
+  await page.getByRole("tab", { name: "👤 講師" }).click();
   await page
     .locator('button[title^="クリックで名前を変更"]')
     .filter({ hasText: "田中" })
@@ -103,8 +105,8 @@ test("コンテキストメニュー・重複ジャンプ・Undo toast・講師�
   await expect(
     page.getByText("「田中」→「田仲」に変更しました（割当セル 2 件も更新）")
   ).toBeVisible();
+  await page.getByRole("button", { name: "全体設定を閉じる" }).click();
   await expect(cellS1).toContainText("田仲");
-  await page.getByRole("button", { name: "⚙ 全体設定" }).click(); // パネルを閉じる
 
   // ── 時限行ヘッダの一括クリア (確認ダイアログ付き・Undo 可) ──
   await page
@@ -129,8 +131,10 @@ test("講師NG の登録 → 検出 → 承認と、上限付き集計パネル�
     timeout: 30_000,
   });
 
-  // ── 全体設定で 山田 の 火曜終日 NG と 田中 の週上限 1 を登録 ──
+  // ── 全体設定 (🚫 NG・上限 タブ) で 山田 の 火曜終日 NG と
+  // 田中 の週上限 1 を登録 ──
   await page.getByRole("button", { name: "⚙ 全体設定" }).click();
+  await page.getByRole("tab", { name: "🚫 NG・上限" }).click();
   await page.getByLabel("NG を設定する講師").selectOption("山田");
   await page.getByLabel("NG の曜日").selectOption("火");
   await page.getByRole("button", { name: "+ NG 追加" }).click();
@@ -140,6 +144,7 @@ test("講師NG の登録 → 検出 → 承認と、上限付き集計パネル�
   await page.getByLabel("週の上限コマ数").fill("1");
   await page.getByRole("button", { name: "設定", exact: true }).click();
   await expect(page.getByText("📏 田中: 週1")).toBeVisible();
+  await page.getByRole("button", { name: "全体設定を閉じる" }).click();
 
   // ── NG 違反が検出される: 火1限 S = 国語/山田 (既存の重複 1 + NG 1) ──
   await page.getByRole("button", { name: "⚠ 問題 2 件", exact: true }).click();

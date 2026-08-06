@@ -29,7 +29,7 @@ import {
 } from "./historyFeedback";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { parseProjectJson, projectFileName, serializeProject } from "./projectJson";
-import { ProjectConfigPanel } from "./ProjectConfigPanel";
+import { ProjectConfigModal } from "./ProjectConfigModal";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
@@ -78,6 +78,10 @@ export default function RegularBuilderApp({
 
   const [activeTabId, setActiveTabId] = useState(null);
   const [showProjectConfig, setShowProjectConfig] = useState(false);
+  // モーダルの onClose は恒久的に同一参照にする — useFocusTrap が onClose を
+  // 依存に持つため、inline 関数だと設定編集 (saveProject) のたびにトラップが
+  // 再初期化されてフォーカスが先頭 (✕ ボタン) へ飛んでしまう
+  const closeProjectConfig = useCallback(() => setShowProjectConfig(false), []);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
@@ -1044,8 +1048,9 @@ export default function RegularBuilderApp({
         <div className="flex-1" />
         <button
           type="button"
-          onClick={() => setShowProjectConfig((v) => !v)}
-          className={UI.btnToggle(showProjectConfig)}
+          onClick={() => setShowProjectConfig(true)}
+          title="時限・科目・講師・NG・上限の設定 (モーダル)"
+          className={UI.btn}
         >
           ⚙ 全体設定
         </button>
@@ -1139,10 +1144,6 @@ export default function RegularBuilderApp({
       )}
 
       {showSummary && <RegularSummaryPanel project={project} />}
-
-      {showProjectConfig && (
-        <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
-      )}
 
       {/* 曜日切替 + 表示トグル (ダッシュボードの時間割ビューと同じ曜日基準) */}
       <div className="no-print flex flex-wrap items-center gap-2 px-1">
@@ -1580,6 +1581,15 @@ export default function RegularBuilderApp({
         onAction={onCtxAction}
         onClose={closeCtxMenu}
       />
+
+      {showProjectConfig && (
+        <ProjectConfigModal
+          project={project}
+          saveProject={saveProject}
+          slots={slots}
+          onClose={closeProjectConfig}
+        />
+      )}
 
       {showReflect && (
         <ReflectDialog
