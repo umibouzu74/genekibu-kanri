@@ -17,6 +17,7 @@ import {
   sanitizeProject,
   sanitizeWorkspace,
   setCellsLocked,
+  setClassRoom,
   swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
@@ -666,5 +667,90 @@ describe("セルのロック (locked)", () => {
     expect(clean.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual(lockedCell);
     expect(makeCellKey("火", 1, 1) in clean.tabs[0].schedule).toBe(false);
     expect(clean.tabs[0].schedule[makeCellKey("火", 2, 1)]).toEqual({ subj: "英語" });
+  });
+});
+
+describe("setClassRoom (列の既定教室の変更と連動)", () => {
+  // 高校の講座列を模したタブ: 列1 (404) に 上書きなし / 407 上書き / 301 上書き、
+  // 列2 (405) に 407 上書き (他列は変更対象外の確認用)
+  const tabs = () => [
+    {
+      id: 1,
+      name: "高2",
+      grade: "高2",
+      classes: [
+        { id: 1, label: "", room: "404" },
+        { id: 2, label: "", room: "405" },
+      ],
+      days: ["月"],
+      periodIds: [1, 2, 3],
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "文系数学", teacher: "半田" },
+        [makeCellKey("月", 2, 1)]: { subj: "英語選抜", teacher: "伊藤", room: "407" },
+        [makeCellKey("月", 3, 1)]: { subj: "物理", teacher: "白川", room: "301" },
+        [makeCellKey("月", 1, 2)]: { subj: "英語", teacher: "今津", room: "407" },
+      },
+    },
+  ];
+
+  it("既定教室を変え、新既定と同じ上書きだけを既定追従へ正規化する", () => {
+    const res = setClassRoom(tabs(), 1, 1, "407");
+    expect(res.changed).toBe(true);
+    expect(res.oldRoom).toBe("404");
+    expect(res.newRoom).toBe("407");
+    expect(res.normalized).toBe(1);
+    expect(res.kept).toBe(1);
+    const tab = res.tabs[0];
+    expect(tab.classes[0].room).toBe("407");
+    // 407 上書きは外れて既定追従 (実効教室は 407 のまま)
+    expect(tab.schedule[makeCellKey("月", 2, 1)]).toEqual({
+      subj: "英語選抜",
+      teacher: "伊藤",
+    });
+    // 別教室の個別指定と他列は不変
+    expect(tab.schedule[makeCellKey("月", 3, 1)].room).toBe("301");
+    expect(tab.schedule[makeCellKey("月", 1, 2)].room).toBe("407");
+    expect(tab.classes[1].room).toBe("405");
+  });
+
+  it("同じ教室への変更 (前後空白は無視) は no-op", () => {
+    const src = tabs();
+    const res = setClassRoom(src, 1, 1, " 404 ");
+    expect(res.changed).toBe(false);
+    expect(res.tabs).toBe(src);
+  });
+
+  it("保存する教室は trim される", () => {
+    const res = setClassRoom(tabs(), 1, 1, " 407 ");
+    expect(res.newRoom).toBe("407");
+    expect(res.tabs[0].classes[0].room).toBe("407");
+  });
+
+  it("ロック中のセルの上書きは正規化しない (触らない)", () => {
+    const src = tabs();
+    src[0].schedule[makeCellKey("月", 2, 1)].locked = true;
+    const res = setClassRoom(src, 1, 1, "407");
+    expect(res.normalized).toBe(0);
+    expect(res.tabs[0].schedule[makeCellKey("月", 2, 1)].room).toBe("407");
+  });
+
+  it("教室だけのセルは正規化で中身が無くなるため削除する", () => {
+    const src = tabs();
+    src[0].schedule[makeCellKey("月", 2, 1)] = { room: "407" };
+    const res = setClassRoom(src, 1, 1, "407");
+    expect(makeCellKey("月", 2, 1) in res.tabs[0].schedule).toBe(false);
+  });
+
+  it("存在しない列・タブは no-op", () => {
+    const src = tabs();
+    expect(setClassRoom(src, 1, 99, "407").changed).toBe(false);
+    expect(setClassRoom(src, 99, 1, "407").changed).toBe(false);
+  });
+
+  it("元の tabs は不変 (純関数)", () => {
+    const src = tabs();
+    const before = JSON.stringify(src);
+    setClassRoom(src, 1, 1, "407");
+    expect(JSON.stringify(src)).toBe(before);
   });
 });

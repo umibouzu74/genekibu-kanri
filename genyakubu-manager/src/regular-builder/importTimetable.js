@@ -10,8 +10,12 @@
 //   出現順
 // - クラス列: 学年内の cls (distinct) を出現順に。同じ (曜日 × 時限 ×
 //   cls) に複数コマがある場合 (確認テストの並列監督や高3 の選択講座) は
-//   同じラベルの列を追加して振り分ける — 結合せず、反映で元通りの複数
+//   同じキーの列を追加して振り分ける — 結合せず、反映で元通りの複数
 //   コマに戻る
+// - クラス名の無いコマ (高校の講座など) は教室が列の唯一の同一性なので、
+//   教室ごとに列を分け、列は教室番号順に並べる。先着順の振り分けだと
+//   「404 列に 407 のコマ」「既定教室 405 の列が 2 本」のような取込結果
+//   になっていた (2026-08-06)
 // - 列の既定教室 = その列のセルで最頻の教室。セルには既定と違う場合のみ
 //   教室を書く
 
@@ -128,28 +132,34 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
       .filter((p) => gs.some((s) => (s.time || "").trim() === p.time))
       .map((p) => p.id);
 
-    // クラス列: 出現順。衝突時は同ラベルの列を直後に追加して振り分ける
-    const classes = []; // {id, label, room(後で決定), _cells: Map<posKey, cell>}
+    // クラス列: 出現順。衝突時は同キーの列を直後に追加して振り分ける。
+    // クラス名の無いコマは教室が列の同一性なので、キーに教室を使う —
+    // ラベルだけで振り分けると別教室の講座が同じ列に混ざり、列見出し
+    // (既定教室) と中身が食い違う
+    const classes = []; // {id, label, room(後で決定), _key, _cells: Map<posKey, cell>}
     let nextClassId = 1;
     const posKey = (day, periodId) => `${day}|${periodId}`;
+    const columnKey = (s) =>
+      s.cls ? `L:${s.cls}` : `R:${(s.room || "").trim()}`;
 
     for (const s of gs) {
       const periodId = periodIdByTime.get((s.time || "").trim());
       if (!periodId) continue;
       const label = s.cls || "";
+      const key = columnKey(s);
       const cell = {};
       if ((s.subj || "").trim()) cell.subj = s.subj.trim();
       if ((s.teacher || "").trim()) cell.teacher = s.teacher.trim();
       if ((s.room || "").trim()) cell.room = s.room.trim();
       if ((s.note || "").trim()) cell.note = s.note.trim();
 
-      // 同ラベルで空いている列を探す
+      // 同キーで空いている列を探す
       let target = classes.find(
-        (c) => c.label === label && !c._cells.has(posKey(s.day, periodId))
+        (c) => c._key === key && !c._cells.has(posKey(s.day, periodId))
       );
       if (!target) {
-        target = { id: nextClassId++, label, room: "", _cells: new Map() };
-        const lastSame = classes.map((c) => c.label).lastIndexOf(label);
+        target = { id: nextClassId++, label, room: "", _key: key, _cells: new Map() };
+        const lastSame = classes.map((c) => c._key).lastIndexOf(key);
         if (lastSame >= 0) {
           classes.splice(lastSame + 1, 0, target);
           parallelColumns++;
@@ -158,6 +168,17 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
         }
       }
       target._cells.set(posKey(s.day, periodId), cell);
+    }
+
+    // クラス名の無い列だけのタブ (高校の講座タブ) は列見出しが教室番号に
+    // なるため、教室番号順に整列する (教室なしは末尾、同室の並列列は作成順)
+    if (classes.length > 1 && classes.every((c) => !c.label)) {
+      classes.sort((a, b) => {
+        const ra = a._key.slice(2);
+        const rb = b._key.slice(2);
+        if (!ra !== !rb) return ra ? -1 : 1;
+        return ra.localeCompare(rb, "ja", { numeric: true }) || a.id - b.id;
+      });
     }
 
     // 列の既定教室 = 最頻の教室。セル側は既定と同じなら省略
