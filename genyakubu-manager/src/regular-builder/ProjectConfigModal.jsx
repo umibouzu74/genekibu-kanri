@@ -33,10 +33,17 @@ function move(list, idx, delta) {
   return next;
 }
 
-export function ProjectConfigModal({ project, saveProject, slots, onClose }) {
+export function ProjectConfigModal({
+  project,
+  saveProject,
+  slots,
+  onClose,
+  /** 開いたとき最初に表示するタブ (オンボーディングの導線用) */
+  initialTab = "periods",
+}) {
   const toasts = useToasts();
   const confirm = useConfirm();
-  const [tab, setTab] = useState("periods");
+  const [tab, setTab] = useState(initialTab);
   const dialogRef = useRef(null);
   const tablistRef = useRef(null);
   const [newSubject, setNewSubject] = useState("");

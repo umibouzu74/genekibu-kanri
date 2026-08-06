@@ -78,6 +78,19 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
                     {e.room && (
                       <span className="text-builder-ink-subtle"> {e.room}</span>
                     )}
+                    {/* 隔週コマ: B はパートナーとして担当する側 */}
+                    {e.biweekly && (
+                      <span
+                        className="ml-1 text-[10px] text-builder-orange font-bold"
+                        title={
+                          e.biweekly === "B"
+                            ? "隔週コマ (このセルの note のパートナーとして担当)"
+                            : "隔週コマ (主担当)"
+                        }
+                      >
+                        隔週{e.biweekly}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -133,7 +146,10 @@ export function RegularTeacherWeekPrintSheet({ project, teacher }) {
                     <td className="py-0.5 pr-3 whitespace-nowrap">
                       {e.tabName} {e.clsLabel}
                     </td>
-                    <td className="py-0.5 pr-3 font-bold">{e.subj}</td>
+                    <td className="py-0.5 pr-3 font-bold">
+                      {e.subj}
+                      {e.biweekly ? ` (隔週${e.biweekly})` : ""}
+                    </td>
                     <td className="py-0.5 text-builder-ink-muted">{e.room}</td>
                   </tr>
                 ))}

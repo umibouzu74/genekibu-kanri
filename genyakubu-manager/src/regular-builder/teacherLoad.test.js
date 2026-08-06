@@ -116,3 +116,39 @@ describe("computeTeacherWeek - NG (不在)", () => {
     expect(computeTeacherWeek(makeProject(), "マスタ外").ngByDay["月"]).toEqual([]);
   });
 });
+
+describe("隔週コマ (note「隔週(パートナー)」) の扱い", () => {
+  const biweeklyProject = () => {
+    const p = makeProject();
+    // 月2限 A: 堀上 が主担当、河野 が隔週パートナー
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = {
+      subj: "英語",
+      teacher: "堀上",
+      note: "隔週(河野)",
+    };
+    return p;
+  };
+
+  it("computeTeacherLoad は主担当・パートナーとも 0.5 で数える", () => {
+    const { rows } = computeTeacherLoad(biweeklyProject());
+    const horigami = rows.find((r) => r.name === "堀上");
+    expect(horigami.byDay["月"]).toBe(0.5);
+    expect(horigami.total).toBe(0.5);
+    // パートナーはマスタ外として列挙される
+    const kono = rows.find((r) => r.name === "河野");
+    expect(kono).toMatchObject({ inMaster: false, total: 0.5 });
+  });
+
+  it("computeTeacherWeek は主担当に A、パートナーに B のエントリを載せる", () => {
+    const p = biweeklyProject();
+    const main = computeTeacherWeek(p, "堀上");
+    expect(main.byDay["月"]).toHaveLength(1);
+    expect(main.byDay["月"][0].biweekly).toBe("A");
+    const partner = computeTeacherWeek(p, "河野");
+    expect(partner.total).toBe(1);
+    expect(partner.byDay["月"][0].biweekly).toBe("B");
+    // 非隔週コマには biweekly フィールドが付かない
+    const handa = computeTeacherWeek(p, "半田");
+    expect(handa.byDay["月"][0].biweekly).toBeUndefined();
+  });
+});

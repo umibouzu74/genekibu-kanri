@@ -4,12 +4,18 @@
 // (講習の「上限到達で warning 色」と同じ思想)。
 //
 // - 複数講師 ("·" 区切り) のセルは各講師に 1 コマずつ数える
+// - 隔週コマ (note に「隔週」) は本体の slotWeight と同じ 0.5 で数え、
+//   note「隔週(パートナー)」のパートナー講師にも 0.5 を計上する
 // - 設定変更で無効になった残骸セルは数えない (resolveAllEntries 基準)
 // - マスタに無い講師 (取込データの直接入力など) も inMaster: false で列挙
 
 import { REGULAR_DAYS, effectiveRoom, resolveAllEntries } from "./model";
 import { entryRef } from "./conflicts";
-import { splitTeacherField } from "../utils/biweekly";
+import {
+  biweeklyPartner,
+  isBiweekly,
+  splitTeacherField,
+} from "../utils/biweekly";
 import { timeStartToMin } from "../utils/dateHelpers";
 
 /**
@@ -33,13 +39,21 @@ export function computeTeacherLoad(project) {
   );
 
   const counted = new Map(); // name → {byDay, total}
+  const add = (name, day, weight) => {
+    if (!counted.has(name)) counted.set(name, { byDay: {}, total: 0 });
+    const r = counted.get(name);
+    r.byDay[day] = (r.byDay[day] || 0) + weight;
+    r.total += weight;
+  };
   for (const e of resolveAllEntries(project)) {
+    const biweekly = isBiweekly(e.cell.note);
+    const weight = biweekly ? 0.5 : 1;
     for (const name of splitTeacherField(e.cell.teacher || "")) {
-      if (!counted.has(name)) counted.set(name, { byDay: {}, total: 0 });
-      const r = counted.get(name);
-      r.byDay[e.day] = (r.byDay[e.day] || 0) + 1;
-      r.total++;
+      add(name, e.day, weight);
     }
+    // 隔週パートナー (B 週担当) にも 0.5 を計上する
+    const partner = biweekly ? biweeklyPartner(e.cell.note) : null;
+    if (partner) add(partner, e.day, 0.5);
   }
 
   const finish = (name, master) => {
@@ -78,11 +92,14 @@ export function computeTeacherLoad(project) {
  * ジャンプ (`jumpToCells`) に使える entryRef。講師マスタの NG (不在) も
  * ngByDay で返す — 割り当てる前に「入れられない時間帯」が週間で見える
  * ように (割当後の警告は conflicts 側)。
+ * 隔週コマは主担当に biweekly: "A"、note「隔週(パートナー)」の
+ * パートナー側にも biweekly: "B" のエントリとして載せる。
  * @returns {{
  *   days: string[],                 // いずれかの学年が使う曜日
  *   byDay: Record<string, {
  *     ref: string, time: string, periodLabel: string,
  *     tabName: string, clsLabel: string, subj: string, room: string,
+ *     biweekly?: "A"|"B",           // 隔週コマのみ (A=主担当 / B=パートナー)
  *   }[]>,
  *   ngByDay: Record<string, {time: string}[]>, // NG (不在)。time "" = 終日
  *   total: number,
@@ -96,9 +113,13 @@ export function computeTeacherWeek(project, teacherName) {
   for (const d of days) byDay[d] = [];
   let total = 0;
   for (const e of resolveAllEntries(project)) {
-    if (!splitTeacherField(e.cell.teacher || "").includes(teacherName)) continue;
     if (!byDay[e.day]) continue;
-    byDay[e.day].push({
+    const biweekly = isBiweekly(e.cell.note);
+    const isMain = splitTeacherField(e.cell.teacher || "").includes(teacherName);
+    const isPartner =
+      biweekly && biweeklyPartner(e.cell.note) === teacherName && !isMain;
+    if (!isMain && !isPartner) continue;
+    const entry = {
       ref: entryRef(e),
       time: (e.period.time || "").trim(),
       periodLabel: e.period.label || "",
@@ -106,7 +127,9 @@ export function computeTeacherWeek(project, teacherName) {
       clsLabel: e.cls.label || e.cls.room || "",
       subj: e.cell.subj || "",
       room: effectiveRoom(e),
-    });
+    };
+    if (biweekly) entry.biweekly = isPartner ? "B" : "A";
+    byDay[e.day].push(entry);
     total++;
   }
   for (const d of days) {

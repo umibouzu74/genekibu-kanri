@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { computeTeacherLoad } from "./teacherLoad";
 import { computeClassSubjectLoad } from "./classLoad";
+import { formatCount } from "../utils/biweekly";
 import { DAY_COLOR, gradeColor } from "../constants/colors";
 import { UI } from "./ui";
 
@@ -69,7 +70,8 @@ export function RegularSummaryPanel({ project }) {
                         className={`${CELL} ${over ? "text-builder-red font-extrabold bg-builder-danger-soft" : ""}`}
                         title={over ? `1日上限 ${r.maxPerDay} コマを超過` : undefined}
                       >
-                        {n || ""}
+                        {/* 隔週 (0.5 重み) で端数が出るため formatCount */}
+                        {n ? formatCount(n) : ""}
                         {over ? "!" : ""}
                       </td>
                     );
@@ -78,7 +80,9 @@ export function RegularSummaryPanel({ project }) {
                     className={`${CELL} font-bold ${r.overWeek ? "text-builder-red bg-builder-danger-soft" : ""}`}
                     title={r.overWeek ? `週上限 ${r.maxPerWeek} コマを超過` : undefined}
                   >
-                    {r.maxPerWeek != null ? `${r.total}/${r.maxPerWeek}` : r.total}
+                    {r.maxPerWeek != null
+                      ? `${formatCount(r.total)}/${r.maxPerWeek}`
+                      : formatCount(r.total)}
                   </td>
                 </tr>
               ))}

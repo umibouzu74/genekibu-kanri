@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   biweeklyActiveTeacher,
   biweeklyDisplaySubject,
+  biweeklyPartner,
   formatBiweeklyNote,
   formatBiweeklyTeacher,
   formatCount,
@@ -707,5 +708,19 @@ describe("formatCount", () => {
   it("formats fractional values with one decimal", () => {
     expect(formatCount(7.5)).toBe("7.5");
     expect(formatCount(3.0)).toBe("3");
+  });
+});
+
+describe("biweeklyPartner", () => {
+  it("note の「隔週(パートナー)」からパートナー名を取り出す", () => {
+    expect(biweeklyPartner("隔週(河野)")).toBe("河野");
+    expect(biweeklyPartner("特訓 隔週(河野) メモ")).toBe("河野");
+  });
+
+  it("マーカーが無い・空の note は null", () => {
+    expect(biweeklyPartner("隔週")).toBe(null);
+    expect(biweeklyPartner("補足メモ")).toBe(null);
+    expect(biweeklyPartner("")).toBe(null);
+    expect(biweeklyPartner(undefined)).toBe(null);
   });
 });

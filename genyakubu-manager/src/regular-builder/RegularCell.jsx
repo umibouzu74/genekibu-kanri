@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { splitTeacherField } from "../utils/biweekly";
+import { formatBiweeklyTeacher, splitTeacherField } from "../utils/biweekly";
 import {
   getSubjectColor,
   CONFLICT_CELL_BG,
@@ -289,7 +289,9 @@ export const RegularCell = memo(function RegularCell({
             <div
               className={`truncate ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] leading-tight" : "text-xs"}`}
             >
-              {c.teacher}
+              {/* 隔週コマは note のパートナーも「主担当 / パートナー」で見せる
+                  (ダッシュボードの表示と同じ) */}
+              {formatBiweeklyTeacher(c.teacher, c.note)}
             </div>
           )}
           {(c.room || displayRoomFallback || c.note) && (

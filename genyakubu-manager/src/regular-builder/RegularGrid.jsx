@@ -16,7 +16,7 @@ import {
   computeBusyTeachersForTabs,
   computeNgTeachersForTabs,
 } from "./conflicts";
-import { splitTeacherField } from "../utils/biweekly";
+import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 import { DEPT_COLOR, gradeColor } from "../constants/colors";
 import { RegularCell } from "./RegularCell";
@@ -703,9 +703,11 @@ export function RegularGrid({
                           (cell?.room || "").trim() || (cls2.room || "").trim();
                         const highlighted =
                           (!!highlightTeacher &&
-                            splitTeacherField(cell?.teacher).includes(
+                            (splitTeacherField(cell?.teacher).includes(
                               highlightTeacher
-                            )) ||
+                            ) ||
+                              // 隔週パートナー (note の「隔週(◯◯)」) も光らせる
+                              biweeklyPartner(cell?.note) === highlightTeacher)) ||
                           (!!highlightRoom && !!cell && effRoom === highlightRoom);
                         return (
                           <RegularCell

@@ -30,6 +30,7 @@ import {
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
 import { parseProjectJson, projectFileName, serializeProject } from "./projectJson";
 import { ProjectConfigModal } from "./ProjectConfigModal";
+import { RegularOnboarding } from "./RegularOnboarding";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
@@ -82,6 +83,13 @@ export default function RegularBuilderApp({
   // 依存に持つため、inline 関数だと設定編集 (saveProject) のたびにトラップが
   // 再初期化されてフォーカスが先頭 (✕ ボタン) へ飛んでしまう
   const closeProjectConfig = useCallback(() => setShowProjectConfig(false), []);
+  // オンボーディングから「時限」「講師」タブを直接開けるように、開くとき
+  // の初期タブを指定できるようにする
+  const [configInitialTab, setConfigInitialTab] = useState("periods");
+  const openProjectConfig = useCallback((tab = "periods") => {
+    setConfigInitialTab(tab);
+    setShowProjectConfig(true);
+  }, []);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
@@ -443,6 +451,18 @@ export default function RegularBuilderApp({
     },
     [toasts, addProject]
   );
+
+  // ── Excel 出力 (RB22)。exceljs をメインバンドルから外すため、
+  // モジュールごとボタン押下時に dynamic import する (講習・調査票と同じ)
+  const exportExcel = useCallback(async () => {
+    try {
+      const { downloadRegularExcel } = await import("./excelExport");
+      await downloadRegularExcel({ project, days: usedDays, splitCampus });
+      toasts.success("Excel を書き出しました（曜日ごとにシート・A4 横）");
+    } catch (e) {
+      toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);
+    }
+  }, [project, usedDays, splitCampus, toasts]);
 
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
@@ -1048,7 +1068,7 @@ export default function RegularBuilderApp({
         <div className="flex-1" />
         <button
           type="button"
-          onClick={() => setShowProjectConfig(true)}
+          onClick={() => openProjectConfig()}
           title="時限・科目・講師・NG・上限の設定 (モーダル)"
           className={UI.btn}
         >
@@ -1251,6 +1271,16 @@ export default function RegularBuilderApp({
               🖨 全曜日
             </button>
           )}
+          {usedDays.length > 0 && (
+            <button
+              type="button"
+              onClick={exportExcel}
+              title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。「🏫 亀井町を分ける」の状態に従います"
+              className={UI.btn}
+            >
+              📥 Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -1381,25 +1411,14 @@ export default function RegularBuilderApp({
         </div>
       )}
 
-      {/* 空状態ガイド */}
-      {project.tabs.length === 0 && (
-        <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
-          <div className="font-extrabold text-[13px] mb-1">はじめかた</div>
-          <div className="mb-1.5">
-            <b>今の時間割から始める（おすすめ）</b>:
-            「⬇ 本体から取込」で現行の時間割をプロジェクトに変換できます。
-            「中3 の 2学期変更を適用する」にチェックを入れると、平日前倒し + 土曜内申の午前枠を反映した 2学期のたたき台が一発でできます。
-          </div>
-          <b>ゼロから組む場合:</b>
-          <br />
-          1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）
-          <br />
-          2. 「+ 学年追加」で学年を作り、曜日・使う時限・クラス（既定教室付き）を設定します
-          <br />
-          3. 曜日を選ぶと全学年が横に並びます。マス目をクリックして教科・講師を選びます（講師・教室の重複は自動チェック、セルはドラッグで入替できます）
-          <br />
-          4. 「⤴ 本体へ反映」で時間割 + コマとして書き出します（期間を設定すればヘッダのプルダウンや第N回カウントに自動で乗ります）
-        </div>
+      {/* はじめかたガイド (RB23): 最初のコマが入るまで状態連動で表示 */}
+      {Object.keys(dayCellCounts).length === 0 && (
+        <RegularOnboarding
+          project={project}
+          onOpenConfig={openProjectConfig}
+          onAddTab={addTab}
+          onOpenImport={() => setShowImport(true)}
+        />
       )}
 
       {activeTab && showTabConfig && (
@@ -1587,6 +1606,7 @@ export default function RegularBuilderApp({
           project={project}
           saveProject={saveProject}
           slots={slots}
+          initialTab={configInitialTab}
           onClose={closeProjectConfig}
         />
       )}
