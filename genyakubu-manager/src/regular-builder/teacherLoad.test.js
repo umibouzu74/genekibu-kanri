@@ -73,6 +73,7 @@ describe("computeTeacherWeek", () => {
     const week = computeTeacherWeek(p, "半田");
     expect(week.days).toEqual(["月", "火"]);
     expect(week.total).toBe(3);
+    expect(week.weightedTotal).toBe(3); // 非隔週は件数と一致
     expect(week.byDay["月"].map((e) => e.subj)).toEqual(["数学", "国語"]);
     expect(week.byDay["月"][0]).toMatchObject({
       ref: `1:${makeCellKey("月", 1, 1)}`,
@@ -91,5 +92,65 @@ describe("computeTeacherWeek", () => {
     expect(week.total).toBe(0);
     expect(week.byDay["月"]).toEqual([]);
     expect(week.byDay["火"]).toEqual([]);
+  });
+});
+
+describe("computeTeacherWeek - NG (不在)", () => {
+  it("ngByDay に使う曜日の NG を 終日 → 時刻順 で返す", () => {
+    const p = makeProject();
+    p.teachers = [
+      {
+        name: "堀上",
+        ngSlots: [{ day: "月", time: "19:00-20:00" }, { day: "月" }, { day: "水" }],
+      },
+      { name: "半田" },
+    ];
+    const week = computeTeacherWeek(p, "堀上");
+    expect(week.ngByDay["月"]).toEqual([{ time: "" }, { time: "19:00-20:00" }]);
+    expect(week.ngByDay["火"]).toEqual([]);
+    // 使わない曜日 (水) の NG はこのプロジェクトでは効かないため載らない
+    expect(week.ngByDay["水"]).toBeUndefined();
+  });
+
+  it("NG の無い講師・マスタ外の講師は全曜日空", () => {
+    expect(computeTeacherWeek(makeProject(), "半田").ngByDay["月"]).toEqual([]);
+    expect(computeTeacherWeek(makeProject(), "マスタ外").ngByDay["月"]).toEqual([]);
+  });
+});
+
+describe("隔週コマ (note「隔週(パートナー)」) の扱い", () => {
+  const biweeklyProject = () => {
+    const p = makeProject();
+    // 月2限 A: 堀上 が主担当、河野 が隔週パートナー
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = {
+      subj: "英語",
+      teacher: "堀上",
+      note: "隔週(河野)",
+    };
+    return p;
+  };
+
+  it("computeTeacherLoad は主担当・パートナーとも 0.5 で数える", () => {
+    const { rows } = computeTeacherLoad(biweeklyProject());
+    const horigami = rows.find((r) => r.name === "堀上");
+    expect(horigami.byDay["月"]).toBe(0.5);
+    expect(horigami.total).toBe(0.5);
+    // パートナーはマスタ外として列挙される
+    const kono = rows.find((r) => r.name === "河野");
+    expect(kono).toMatchObject({ inMaster: false, total: 0.5 });
+  });
+
+  it("computeTeacherWeek は主担当に A、パートナーに B のエントリを載せる", () => {
+    const p = biweeklyProject();
+    const main = computeTeacherWeek(p, "堀上");
+    expect(main.byDay["月"]).toHaveLength(1);
+    expect(main.byDay["月"][0].biweekly).toBe("A");
+    const partner = computeTeacherWeek(p, "河野");
+    expect(partner.total).toBe(1);
+    expect(partner.weightedTotal).toBe(0.5); // 計は 📊 集計と同じ 0.5 重み
+    expect(partner.byDay["月"][0].biweekly).toBe("B");
+    // 非隔週コマには biweekly フィールドが付かない
+    const handa = computeTeacherWeek(p, "半田");
+    expect(handa.byDay["月"][0].biweekly).toBeUndefined();
   });
 });

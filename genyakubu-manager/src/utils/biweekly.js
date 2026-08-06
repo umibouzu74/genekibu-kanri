@@ -80,6 +80,14 @@ export function isBiweekly(note) {
   return !!note && note.includes("隔週");
 }
 
+// note の「隔週(パートナー)」マーカーからパートナー講師名を取り出す。
+// マーカーが無ければ null。formatBiweeklyTeacher 等と同じ正規表現の
+// 単独エクスポート版 (通常時間割作成の集計・強調表示から使う)。
+export function biweeklyPartner(note) {
+  const m = note && note.match(/隔週\(([^)]+)\)/);
+  return m ? m[1] : null;
+}
+
 // anchor 以降・target 未満の範囲で、slot.day に当たる日付のうち
 // 休講 (holidays) または stopsClasses≠false のテスト期間 (examPeriods) で
 // 実施されなかった回数を数える。

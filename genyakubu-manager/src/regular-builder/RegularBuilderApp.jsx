@@ -16,9 +16,11 @@ import {
   parseCellKey,
   parseCellRef,
   sanitizeWorkspace,
+  setCellsLocked,
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
+import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
 import {
@@ -27,7 +29,9 @@ import {
   formatCellShort,
 } from "./historyFeedback";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
-import { ProjectConfigPanel } from "./ProjectConfigPanel";
+import { parseProjectJson, projectFileName, serializeProject } from "./projectJson";
+import { ProjectConfigModal } from "./ProjectConfigModal";
+import { RegularOnboarding } from "./RegularOnboarding";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
 import { RegularContextMenu } from "./RegularContextMenu";
@@ -76,6 +80,17 @@ export default function RegularBuilderApp({
 
   const [activeTabId, setActiveTabId] = useState(null);
   const [showProjectConfig, setShowProjectConfig] = useState(false);
+  // モーダルの onClose は恒久的に同一参照にする — useFocusTrap が onClose を
+  // 依存に持つため、inline 関数だと設定編集 (saveProject) のたびにトラップが
+  // 再初期化されてフォーカスが先頭 (✕ ボタン) へ飛んでしまう
+  const closeProjectConfig = useCallback(() => setShowProjectConfig(false), []);
+  // オンボーディングから「時限」「講師」タブを直接開けるように、開くとき
+  // の初期タブを指定できるようにする
+  const [configInitialTab, setConfigInitialTab] = useState("periods");
+  const openProjectConfig = useCallback((tab = "periods") => {
+    setConfigInitialTab(tab);
+    setShowProjectConfig(true);
+  }, []);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
@@ -404,6 +419,52 @@ export default function RegularBuilderApp({
     [slots, addProject]
   );
 
+  // ── JSON 書き出し / 読み込み (RB20: バックアップ・別環境への移行) ──
+  // 書き出しはアクティブなプロジェクト単位 (スナップショット込み)、
+  // 読み込みは新しいプロジェクトとして追加する (既存を上書きしない)
+  const exportProjectJson = useCallback(() => {
+    const text = serializeProject(project, new Date().toISOString());
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json" })
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = projectFileName(project.name, new Date());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toasts.success(`「${project.name || "無題"}」を JSON に書き出しました`);
+  }, [project, toasts]);
+
+  const importFileRef = useRef(null);
+  const importProjectJson = useCallback(
+    async (file) => {
+      if (!file) return;
+      const result = parseProjectJson(await file.text());
+      if (result.error) {
+        toasts.error(result.error);
+        return;
+      }
+      addProject(result.project, {
+        successMsg: `「${result.project.name}」を JSON から読み込みました`,
+      });
+    },
+    [toasts, addProject]
+  );
+
+  // ── Excel 出力 (RB22)。exceljs をメインバンドルから外すため、
+  // モジュールごとボタン押下時に dynamic import する (講習・調査票と同じ)
+  const exportExcel = useCallback(async () => {
+    try {
+      const { downloadRegularExcel } = await import("./excelExport");
+      await downloadRegularExcel({ project, days: usedDays, splitCampus });
+      toasts.success("Excel を書き出しました（曜日ごとにシート・A4 横）");
+    } catch (e) {
+      toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);
+    }
+  }, [project, usedDays, splitCampus, toasts]);
+
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
@@ -536,14 +597,15 @@ export default function RegularBuilderApp({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedRefs.size, clearSelection]);
 
-  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
+  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)。
+  // ロック中は変更しない (UI 側も ✕ を隠し Delete を無効化している)
   const onClearCell = useCallback(
     (ref) => {
       const { tabId, key } = parseCellRef(ref);
       updateTab(
         tabId,
         (t) => {
-          if (!(key in t.schedule)) return t;
+          if (!(key in t.schedule) || t.schedule[key].locked) return t;
           const schedule = { ...t.schedule };
           delete schedule[key];
           return { ...t, schedule };
@@ -574,23 +636,54 @@ export default function RegularBuilderApp({
   }, []);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  // コピーはロックを引き継がない (貼り付け先は編集できる状態で置く)
   const copyCell = (ref) => {
     const cell = getCellByRef(ref);
     if (!cell) return;
-    setCellClipboard({ ...cell });
-    toasts.success(`「${formatCellShort(cell)}」をコピーしました`, {
+    const { locked: _locked, ...content } = cell;
+    setCellClipboard(content);
+    toasts.success(`「${formatCellShort(content)}」をコピーしました`, {
       duration: 1500,
     });
   };
 
-  // 貼り付けはセル全体 (教科・講師・教室・備考) を置き換える。Undo 1 回で戻る
+  // 貼り付けはセル全体 (教科・講師・教室・備考) を置き換える。Undo 1 回で
+  // 戻る。ロック中のセルへは貼り付けない
   const pasteCell = (ref) => {
     if (!cellClipboard) return;
+    if (getCellByRef(ref)?.locked) {
+      toasts.info("ロック中のセルには貼り付けできません（右クリック → 🔓 ロック解除）");
+      return;
+    }
     const { tabId, key } = parseCellRef(ref);
     updateTab(
       tabId,
       (t) => ({ ...t, schedule: { ...t.schedule, [key]: { ...cellClipboard } } }),
       { atomic: true }
+    );
+  };
+
+  // ── セルのロック (固定) の付け外し ──────────────────────────────
+  // 件数は表示用に現時点の project で数え、保存は saveProject の最新値で
+  // 行う (講師リネームと同じパターン)。中身のあるセルだけが対象
+  const toggleLockRefs = (refs, locked) => {
+    const { changed } = setCellsLocked(project.tabs, refs, locked);
+    if (changed === 0) {
+      toasts.info(
+        locked
+          ? "ロックできるコマがありません（空セルはロックできません）"
+          : "ロック中のコマがありません"
+      );
+      return;
+    }
+    saveProject(
+      (p) => ({ ...p, tabs: setCellsLocked(p.tabs, refs, locked).tabs }),
+      { atomic: true }
+    );
+    toasts.success(
+      locked
+        ? `${changed} コマをロックしました（編集・入替・クリアを防ぎます）`
+        : `${changed} コマのロックを解除しました`
     );
   };
 
@@ -612,18 +705,27 @@ export default function RegularBuilderApp({
   };
 
   // 時限行・クラス列・複数選択の一括クリア (確認あり・Undo 1 回で戻る)。
-  // 実行したら true (選択解除などの後処理は呼び出し側)
+  // ロック中のセルは対象外。実行したら true (選択解除などの後処理は呼び出し側)
   const clearCellsBulk = async (refs, label) => {
-    const filled = refs.filter((r) => getCellByRef(r));
+    const withContent = refs.filter((r) => getCellByRef(r));
+    const filled = withContent.filter((r) => !getCellByRef(r).locked);
+    const lockedCount = withContent.length - filled.length;
     if (filled.length === 0) {
       // silent no-op にしない (講習 H3 と同じ思想)。ヘッダメニュー経由は
       // 項目自体が disabled のため、ここに来るのは選択バー経由のみ
-      toasts.info("クリアできるコマがありません（選択セルはすべて空です）");
+      toasts.info(
+        lockedCount > 0
+          ? "クリアできるコマがありません（ロック中のセルは対象外です）"
+          : "クリアできるコマがありません（選択セルはすべて空です）"
+      );
       return false;
     }
     const ok = await confirm({
       title: "一括クリア",
-      message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,
+      message:
+        `${label} の ${filled.length} コマをクリアしますか？` +
+        (lockedCount > 0 ? `\n（ロック中の ${lockedCount} コマは対象外）` : "") +
+        `\n（Ctrl+Z で戻せます）`,
       okLabel: "クリアする",
       tone: "danger",
     });
@@ -664,7 +766,11 @@ export default function RegularBuilderApp({
     else if (action === "paste") pasteCell(m.ref);
     else if (action === "clear") onClearCell(m.ref);
     else if (action === "approve") approveCellConflicts(m.ref);
+    else if (action === "lock") toggleLockRefs([m.ref], true);
+    else if (action === "unlock") toggleLockRefs([m.ref], false);
     else if (action === "clear-bulk") clearCellsBulk(m.refs, m.label);
+    else if (action === "lock-bulk") toggleLockRefs(m.refs, true);
+    else if (action === "unlock-bulk") toggleLockRefs(m.refs, false);
   };
 
   const addTab = useCallback(() => {
@@ -731,11 +837,20 @@ export default function RegularBuilderApp({
     setActiveTabId(null);
   }, [activeTab, confirm, saveProject]);
 
-  // 講師フィルタ候補 (マスタ + セルに現れる講師名)
+  // 講師フィルタ候補 (マスタ + セルに現れる講師名 + 隔週パートナー)。
+  // マスタ未整備の取込直後や、note にしか現れないパートナー講師も
+  // 👁 強調表示・週間ミニビューの対象にできるようにする
   const teacherOptions = useMemo(() => {
     const names = new Set(project.teachers.map((t) => t.name));
+    for (const t of project.tabs || []) {
+      for (const cell of Object.values(t.schedule || {})) {
+        for (const n of splitTeacherField(cell.teacher)) names.add(n);
+        const partner = biweeklyPartner(cell.note);
+        if (partner) names.add(partner);
+      }
+    }
     return [...names].sort();
-  }, [project.teachers]);
+  }, [project.teachers, project.tabs]);
 
   // 教室フィルタ候補 (クラス既定教室 + セル上書き教室)
   const roomOptions = useMemo(() => {
@@ -785,6 +900,13 @@ export default function RegularBuilderApp({
       <datalist id="regb-subjects">
         {project.subjects.map((s) => (
           <option key={s} value={s} />
+        ))}
+      </datalist>
+      {/* 教室はセルの教室入力から参照。教室重複チェックと亀井町判定は
+          文字列一致なので、候補補完で表記ゆれ (全角/半角など) を防ぐ */}
+      <datalist id="regb-rooms">
+        {roomOptions.map((r) => (
+          <option key={r} value={r} />
         ))}
       </datalist>
 
@@ -839,6 +961,33 @@ export default function RegularBuilderApp({
           >
             ⬇ 本体から取込
           </button>
+          <button
+            type="button"
+            onClick={exportProjectJson}
+            title="このプロジェクトを JSON ファイルに書き出す（バックアップ・別環境への移行用。スナップショット込み）"
+            className={UI.btn}
+          >
+            💾
+          </button>
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            title="JSON ファイルを新しいプロジェクトとして読み込む（既存のプロジェクトは変更しません）"
+            className={UI.btn}
+          >
+            📂
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            aria-label="プロジェクト JSON ファイルを選択"
+            onChange={(e) => {
+              importProjectJson(e.target.files?.[0]);
+              e.target.value = ""; // 同じファイルの再選択でも change を発火させる
+            }}
+          />
           <button
             type="button"
             onClick={removeProject}
@@ -929,8 +1078,9 @@ export default function RegularBuilderApp({
         <div className="flex-1" />
         <button
           type="button"
-          onClick={() => setShowProjectConfig((v) => !v)}
-          className={UI.btnToggle(showProjectConfig)}
+          onClick={() => openProjectConfig()}
+          title="時限・科目・講師・NG・上限の設定 (モーダル)"
+          className={UI.btn}
         >
           ⚙ 全体設定
         </button>
@@ -948,7 +1098,7 @@ export default function RegularBuilderApp({
       {/* 問題 (重複・NG) の一覧・承認パネル */}
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
-          <div className={UI.panelHead}>講師・教室の重複と講師NG</div>
+          <div className={UI.panelHead}>講師・教室・クラスの重複と講師NG</div>
           {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
             <div className="text-builder-ink-subtle">問題はありません。</div>
           )}
@@ -1024,10 +1174,6 @@ export default function RegularBuilderApp({
       )}
 
       {showSummary && <RegularSummaryPanel project={project} />}
-
-      {showProjectConfig && (
-        <ProjectConfigPanel project={project} saveProject={saveProject} slots={slots} />
-      )}
 
       {/* 曜日切替 + 表示トグル (ダッシュボードの時間割ビューと同じ曜日基準) */}
       <div className="no-print flex flex-wrap items-center gap-2 px-1">
@@ -1135,6 +1281,16 @@ export default function RegularBuilderApp({
               🖨 全曜日
             </button>
           )}
+          {usedDays.length > 0 && (
+            <button
+              type="button"
+              onClick={exportExcel}
+              title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。「🏫 亀井町を分ける」の状態に従います"
+              className={UI.btn}
+            >
+              📥 Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -1240,6 +1396,22 @@ export default function RegularBuilderApp({
           <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
             🧹 クリア
           </button>
+          <button
+            type="button"
+            className={UI.btn}
+            onClick={() => toggleLockRefs([...selectedRefs], true)}
+            title="選択中のセルをロックする（編集・入替・クリアを防ぐ。中身のあるセルのみ）"
+          >
+            🔒 ロック
+          </button>
+          <button
+            type="button"
+            className={UI.btn}
+            onClick={() => toggleLockRefs([...selectedRefs], false)}
+            title="選択中のセルのロックを解除する"
+          >
+            🔓 解除
+          </button>
           <button type="button" className={UI.btn} onClick={clearSelection}>
             ✕ 選択解除 (Esc)
           </button>
@@ -1249,25 +1421,14 @@ export default function RegularBuilderApp({
         </div>
       )}
 
-      {/* 空状態ガイド */}
-      {project.tabs.length === 0 && (
-        <div className="no-print bg-builder-info-soft border border-dashed border-builder-info-border rounded-lg p-5 text-xs text-builder-ink leading-7">
-          <div className="font-extrabold text-[13px] mb-1">はじめかた</div>
-          <div className="mb-1.5">
-            <b>今の時間割から始める（おすすめ）</b>:
-            「⬇ 本体から取込」で現行の時間割をプロジェクトに変換できます。
-            「中3 の 2学期変更を適用する」にチェックを入れると、平日前倒し + 土曜内申の午前枠を反映した 2学期のたたき台が一発でできます。
-          </div>
-          <b>ゼロから組む場合:</b>
-          <br />
-          1. 「⚙ 全体設定」で時限（時刻付き）と講師を登録します（講師は本体のコマから取込できます）
-          <br />
-          2. 「+ 学年追加」で学年を作り、曜日・使う時限・クラス（既定教室付き）を設定します
-          <br />
-          3. 曜日を選ぶと全学年が横に並びます。マス目をクリックして教科・講師を選びます（講師・教室の重複は自動チェック、セルはドラッグで入替できます）
-          <br />
-          4. 「⤴ 本体へ反映」で時間割 + コマとして書き出します（期間を設定すればヘッダのプルダウンや第N回カウントに自動で乗ります）
-        </div>
+      {/* はじめかたガイド (RB23): 最初のコマが入るまで状態連動で表示 */}
+      {Object.keys(dayCellCounts).length === 0 && (
+        <RegularOnboarding
+          project={project}
+          onOpenConfig={openProjectConfig}
+          onAddTab={addTab}
+          onOpenImport={() => setShowImport(true)}
+        />
       )}
 
       {activeTab && showTabConfig && (
@@ -1433,13 +1594,32 @@ export default function RegularBuilderApp({
             : 0
         }
         filledCount={
+          // 一括クリア・一括ロックの対象 (中身がありロックされていないセル)
           ctxMenu?.kind === "bulk"
-            ? ctxMenu.refs.filter((r) => getCellByRef(r)).length
+            ? ctxMenu.refs.filter((r) => {
+                const c = getCellByRef(r);
+                return c && !c.locked;
+              }).length
+            : 0
+        }
+        lockedCount={
+          ctxMenu?.kind === "bulk"
+            ? ctxMenu.refs.filter((r) => getCellByRef(r)?.locked).length
             : 0
         }
         onAction={onCtxAction}
         onClose={closeCtxMenu}
       />
+
+      {showProjectConfig && (
+        <ProjectConfigModal
+          project={project}
+          saveProject={saveProject}
+          slots={slots}
+          initialTab={configInitialTab}
+          onClose={closeProjectConfig}
+        />
+      )}
 
       {showReflect && (
         <ReflectDialog
@@ -1448,6 +1628,7 @@ export default function RegularBuilderApp({
           slots={slots}
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
+          saveProject={saveProject}
           onClose={() => setShowReflect(false)}
         />
       )}

@@ -137,13 +137,15 @@ export function diffProjects(before, after) {
   return diffWorkspaces(strip(before), strip(after));
 }
 
-/** セル内容の短い表記 (科目/講師。どちらも無ければ教室・備考、空セルは「空」) */
+/** セル内容の短い表記 (科目/講師。どちらも無ければ教室・備考、空セルは「空」)。
+ * ロック中は 🔒 を前置する (ロックの付け外しだけの undo でも変化が見える) */
 export function formatCellShort(cell) {
   if (!cell) return "空";
+  const lock = cell.locked ? "🔒" : "";
   const main = [cell.subj, cell.teacher].filter(Boolean).join("/");
-  if (main) return main;
+  if (main) return lock + main;
   const sub = [cell.room, cell.note].filter(Boolean).join(" ");
-  return sub || "空";
+  return lock + (sub || "空");
 }
 
 /**

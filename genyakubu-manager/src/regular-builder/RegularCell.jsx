@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { splitTeacherField } from "../utils/biweekly";
+import { formatBiweeklyTeacher, splitTeacherField } from "../utils/biweekly";
 import {
   getSubjectColor,
   CONFLICT_CELL_BG,
@@ -137,6 +137,9 @@ export const RegularCell = memo(function RegularCell({
   }, [isEditing]);
 
   const hasContent = !!(c.subj || c.teacher || c.room || c.note);
+  // 🔒 ロック中: 編集・クリア・ドラッグを受け付けない (解除は右クリック
+  // メニュー / 選択バー)。コピー (Ctrl+C) と選択は許可する
+  const locked = !!c.locked;
   const bgColor = conflictText ? CONFLICT_CELL_BG : getSubjectColor(c.subj);
   const innerBorder = conflictText
     ? "border-2 border-builder-red"
@@ -167,13 +170,16 @@ export const RegularCell = memo(function RegularCell({
         colSpan={colSpan > 1 ? colSpan : undefined}
         tabIndex={0}
         role="button"
-        aria-label={`${ariaBase} を編集`}
+        aria-label={locked ? `${ariaBase}（ロック中）` : `${ariaBase} を編集`}
         title={
-          conflictText ||
-          "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+クリックで複数選択 / Ctrl+C・Ctrl+V・Delete"
+          locked
+            ? (conflictText ? `${conflictText}\n` : "") +
+              "🔒 ロック中: 右クリック（長押し）→ 🔓 ロック解除で編集できます"
+            : conflictText ||
+              "クリックで編集 / ドラッグで入替 (Ctrl+ドラッグでコピー) / Ctrl+クリックで複数選択 / Ctrl+C・Ctrl+V・Delete"
         }
-        className={`${tdBase} cursor-pointer hover:bg-builder-info-soft`}
-        draggable={!!c.subj}
+        className={`${tdBase} ${locked ? "" : "cursor-pointer hover:bg-builder-info-soft"}`}
+        draggable={!!c.subj && !locked}
         onDragStart={(e) => onDragStart(e, cellRef, c)}
         onDragOver={(e) => onDragOver(e, cellRef)}
         onDragLeave={onDragLeave}
@@ -196,7 +202,7 @@ export const RegularCell = memo(function RegularCell({
           if (onSelectCell && (e.ctrlKey || e.metaKey || e.shiftKey)) {
             e.preventDefault();
             onSelectCell(e, cellRef);
-          } else {
+          } else if (!locked) {
             onStartEdit(cellRef, "subj");
           }
         }}
@@ -204,16 +210,17 @@ export const RegularCell = memo(function RegularCell({
           const k = e.key.toLowerCase();
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onStartEdit(cellRef, "subj");
+            if (!locked) onStartEdit(cellRef, "subj");
           } else if ((e.ctrlKey || e.metaKey) && k === "c" && onCopyCell) {
             e.preventDefault();
             onCopyCell(cellRef);
           } else if ((e.ctrlKey || e.metaKey) && k === "v" && onPasteCell) {
+            // ロック中は App 側が toast で理由を出す
             e.preventDefault();
             onPasteCell(cellRef);
-          } else if ((e.key === "Delete" || e.key === "Backspace") && hasContent) {
+          } else if (e.key === "Delete" || e.key === "Backspace") {
             e.preventDefault();
-            onClearCell(cellRef);
+            if (hasContent && !locked) onClearCell(cellRef);
           } else {
             onNavigate(e, cellRef, "cell");
           }
@@ -236,6 +243,15 @@ export const RegularCell = memo(function RegularCell({
                 ⚠️{conflictBadge}
               </span>
             )}
+            {/* 🔒: ロック中の常時マーカー (紙面には載せない) */}
+            {locked && (
+              <span
+                className={`no-print shrink-0 leading-none opacity-70 ${isCompact ? "text-[9px]" : "text-xs"}`}
+                aria-label="ロック中"
+              >
+                🔒
+              </span>
+            )}
             {/* ⊞: この列から始まる合同枠 (S〜B 等) に新しくコマを入れる */}
             {starters.map((st) => (
               <button
@@ -253,7 +269,7 @@ export const RegularCell = memo(function RegularCell({
                 ⊞
               </button>
             ))}
-            {hasContent && (
+            {hasContent && !locked && (
               <button
                 type="button"
                 tabIndex={-1}
@@ -273,7 +289,9 @@ export const RegularCell = memo(function RegularCell({
             <div
               className={`truncate ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] leading-tight" : "text-xs"}`}
             >
-              {c.teacher}
+              {/* 隔週コマは note のパートナーも「主担当 / パートナー」で見せる
+                  (ダッシュボードの表示と同じ) */}
+              {formatBiweeklyTeacher(c.teacher, c.note)}
             </div>
           )}
           {(c.room || displayRoomFallback || c.note) && (
@@ -454,6 +472,7 @@ export const RegularCell = memo(function RegularCell({
             type="text"
             aria-label={`${ariaBase} の教室`}
             value={c.room || ""}
+            list="regb-rooms"
             onChange={(e) => onCellChange(cellRef, "room", e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape" || e.key === "Enter") closeEdit(e);

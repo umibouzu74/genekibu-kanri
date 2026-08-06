@@ -3,6 +3,7 @@ import { Modal } from "../components/Modal";
 import { S } from "../styles/common";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
+import { addSnapshot } from "./model";
 import {
   applyReflection,
   buildReflectionPlan,
@@ -44,6 +45,7 @@ export function ReflectDialog({
   slots,
   saveTimetables,
   saveSlots,
+  saveProject,
   onClose,
 }) {
   const toasts = useToasts();
@@ -106,10 +108,22 @@ export function ReflectDialog({
     }
     saveTimetables(result.timetables);
     saveSlots(result.slots);
+    // 反映した時点の状態を自動スナップショットで残す (「本体に出したのは
+    // どの状態か」に後から必ず戻れる安全網)。他のスナップショット操作と
+    // 同じく Ctrl+Z で取り消せる
+    const reflectedName =
+      (opts.name || "").trim() ||
+      timetables.find((t) => t.id === result.timetableId)?.name ||
+      "";
+    saveProject?.(
+      (p) => addSnapshot(p, `⤴ 反映: ${reflectedName || "本体"}`, Date.now()),
+      { atomic: true }
+    );
     toasts.success(
-      mode === "replace"
+      (mode === "replace"
         ? `置き換えました（削除 ${result.removedCount} / 追加 ${result.addedCount} コマ）`
-        : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`
+        : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`) +
+        "／📌 反映時点の案を保存しました"
     );
     onClose();
   };

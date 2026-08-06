@@ -1674,6 +1674,19 @@ export default function App() {
           .app-main { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
           .app-h1 { font-size: 16px !important; }
         }
+        /* 低い画面 (ノート PC・縮小ウィンドウ等) はデスクトップ幅でも
+           モバイルと同じ統合スクロールにする。「メニュー固定・講師のみ
+           スクロール」分割のままだと、講師一覧の flex 高さが数 px に潰れて
+           ログインフォームの裏に隠れ、講師を選べなくなるため。 */
+        @media (max-height: 860px) {
+          .sidebar-scroll {
+            display: block !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+          }
+          .sidebar-teachers { overflow-y: visible !important; }
+        }
         @media (max-width: 480px) {
           body { font-size: 14px; }
           /* iOS Safari prevents auto-zoom only when input font-size >= 16px。
