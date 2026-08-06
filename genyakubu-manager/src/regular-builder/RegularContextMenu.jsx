@@ -20,8 +20,10 @@ export function RegularContextMenu({
   clipboard,
   /** kind:"cell" のとき: このセルが関わる未承認の重複件数 */
   conflictCount = 0,
-  /** kind:"bulk" のとき: refs のうち中身のあるセル数 */
+  /** kind:"bulk" のとき: refs のうち中身がありロックされていないセル数 */
   filledCount = 0,
+  /** kind:"bulk" のとき: refs のうちロック中のセル数 */
+  lockedCount = 0,
   onAction,
   onClose,
 }) {
@@ -107,12 +109,34 @@ export function RegularContextMenu({
             type="button"
             role="menuitem"
             onClick={() => onAction("paste")}
-            disabled={!clipboard}
-            title={!clipboard ? "先にセルをコピーしてください" : undefined}
-            className={`${ITEM_BASE} ${!clipboard ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+            disabled={!clipboard || cell?.locked}
+            title={
+              !clipboard
+                ? "先にセルをコピーしてください"
+                : cell?.locked
+                  ? "ロック中のセルには貼り付けできません"
+                  : undefined
+            }
+            className={`${ITEM_BASE} ${!clipboard || cell?.locked ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
           >
             📋 貼り付け
             {clipboard ? ` (${formatCellShort(clipboard)})` : ""}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAction(cell?.locked ? "unlock" : "lock")}
+            disabled={!cell}
+            title={
+              !cell
+                ? "空のセルはロックできません"
+                : cell.locked
+                  ? "ロックを外して編集できるようにする"
+                  : "編集・入替・クリア・貼り付けを防ぐ (確定済みコマの誤操作防止)"
+            }
+            className={`${ITEM_BASE} ${!cell ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+          >
+            {cell?.locked ? "🔓 ロック解除" : "🔒 ロック"}
           </button>
           {conflictCount > 0 && (
             <button
@@ -129,8 +153,9 @@ export function RegularContextMenu({
             type="button"
             role="menuitem"
             onClick={() => onAction("clear")}
-            disabled={!cell}
-            className={`${ITEM_BASE} ${!cell ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-danger-soft text-builder-red"}`}
+            disabled={!cell || cell.locked}
+            title={cell?.locked ? "ロック中のセルはクリアできません" : undefined}
+            className={`${ITEM_BASE} ${!cell || cell.locked ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-danger-soft text-builder-red"}`}
           >
             🗑️ クリア
           </button>
@@ -145,10 +170,40 @@ export function RegularContextMenu({
             role="menuitem"
             onClick={() => onAction("clear-bulk")}
             disabled={filledCount === 0}
-            title={filledCount === 0 ? "クリアできるコマがありません" : undefined}
+            title={
+              filledCount === 0
+                ? lockedCount > 0
+                  ? "ロック中のセルのみのためクリアできません"
+                  : "クリアできるコマがありません"
+                : undefined
+            }
             className={`${ITEM_BASE} ${filledCount === 0 ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-danger-soft text-builder-red"}`}
           >
             🗑️ 一括クリア{filledCount > 0 ? ` (${filledCount} コマ)` : ""}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAction("lock-bulk")}
+            disabled={filledCount === 0}
+            title={
+              filledCount === 0
+                ? "ロックできるコマがありません"
+                : "編集・入替・クリア・貼り付けを防ぐ (確定済みコマの誤操作防止)"
+            }
+            className={`${ITEM_BASE} ${filledCount === 0 ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+          >
+            🔒 一括ロック{filledCount > 0 ? ` (${filledCount} コマ)` : ""}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAction("unlock-bulk")}
+            disabled={lockedCount === 0}
+            title={lockedCount === 0 ? "ロック中のコマがありません" : undefined}
+            className={`${ITEM_BASE} ${lockedCount === 0 ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+          >
+            🔓 一括ロック解除{lockedCount > 0 ? ` (${lockedCount} コマ)` : ""}
           </button>
         </>
       )}

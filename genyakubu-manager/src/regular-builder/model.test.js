@@ -16,6 +16,7 @@ import {
   resolveTabEntries,
   sanitizeProject,
   sanitizeWorkspace,
+  setCellsLocked,
   swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
@@ -599,5 +600,71 @@ describe("countTeacherAssignments", () => {
     const p = makeProject();
     p.tabs[0].days = ["火"]; // 月のセルが残骸になる
     expect(countTeacherAssignments(p, "半田")).toBe(1);
+  });
+});
+
+describe("セルのロック (locked)", () => {
+  const lockedCell = { subj: "数学", teacher: "半田", locked: true };
+
+  it("setCellsLocked は中身のあるセルだけにロックを付け外しする", () => {
+    const p = makeProject();
+    const refs = [
+      `1:${makeCellKey("月", 1, 1)}`, // 数学/半田
+      `1:${makeCellKey("月", 1, 2)}`, // 空セル (対象外)
+    ];
+    const { tabs, changed } = setCellsLocked(p.tabs, refs, true);
+    expect(changed).toBe(1);
+    expect(tabs[0].schedule[makeCellKey("月", 1, 1)].locked).toBe(true);
+    expect(makeCellKey("月", 1, 2) in tabs[0].schedule).toBe(false);
+    // 解除するとフィールドごと消える (locked: false は残さない)
+    const undone = setCellsLocked(tabs, [refs[0]], false);
+    expect(undone.changed).toBe(1);
+    expect(undone.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
+    // 既に同じ状態なら changed 0 で参照も変えない
+    expect(setCellsLocked(undone.tabs, [refs[0]], false).changed).toBe(0);
+  });
+
+  it("swapCellsAcrossTabs はロック中のセルを動かさない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = lockedCell;
+    const before = p.tabs;
+    expect(
+      swapCellsAcrossTabs(before, `1:${makeCellKey("月", 1, 1)}`, `1:${makeCellKey("月", 2, 1)}`)
+    ).toBe(before);
+    // ロック中への移動 (逆向き) も no-op
+    expect(
+      swapCellsAcrossTabs(before, `1:${makeCellKey("月", 2, 2)}`, `1:${makeCellKey("月", 1, 1)}`)
+    ).toBe(before);
+  });
+
+  it("copyCellAcrossTabs はロックを引き継がず、ロック中への上書きはしない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = lockedCell;
+    const copied = copyCellAcrossTabs(
+      p.tabs,
+      `1:${makeCellKey("月", 1, 1)}`,
+      `1:${makeCellKey("火", 1, 1)}`
+    );
+    expect(copied[0].schedule[makeCellKey("火", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "半田",
+    });
+    expect(
+      copyCellAcrossTabs(p.tabs, `1:${makeCellKey("月", 2, 2)}`, `1:${makeCellKey("月", 1, 1)}`)
+    ).toBe(p.tabs);
+  });
+
+  it("sanitizeProject は locked: true を保持し、空セルや不正値は落とす", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = lockedCell;
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = { locked: true }; // 中身なし
+    p.tabs[0].schedule[makeCellKey("火", 2, 1)] = { subj: "英語", locked: "yes" };
+    const clean = sanitizeProject(p);
+    expect(clean.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual(lockedCell);
+    expect(makeCellKey("火", 1, 1) in clean.tabs[0].schedule).toBe(false);
+    expect(clean.tabs[0].schedule[makeCellKey("火", 2, 1)]).toEqual({ subj: "英語" });
   });
 });

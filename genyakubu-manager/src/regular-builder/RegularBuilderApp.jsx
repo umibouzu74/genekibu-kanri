@@ -16,6 +16,7 @@ import {
   parseCellKey,
   parseCellRef,
   sanitizeWorkspace,
+  setCellsLocked,
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
@@ -27,6 +28,7 @@ import {
   formatCellShort,
 } from "./historyFeedback";
 import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
+import { parseProjectJson, projectFileName, serializeProject } from "./projectJson";
 import { ProjectConfigPanel } from "./ProjectConfigPanel";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
@@ -404,6 +406,40 @@ export default function RegularBuilderApp({
     [slots, addProject]
   );
 
+  // ── JSON 書き出し / 読み込み (RB20: バックアップ・別環境への移行) ──
+  // 書き出しはアクティブなプロジェクト単位 (スナップショット込み)、
+  // 読み込みは新しいプロジェクトとして追加する (既存を上書きしない)
+  const exportProjectJson = useCallback(() => {
+    const text = serializeProject(project, new Date().toISOString());
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json" })
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = projectFileName(project.name, new Date());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toasts.success(`「${project.name}」を JSON に書き出しました`);
+  }, [project, toasts]);
+
+  const importFileRef = useRef(null);
+  const importProjectJson = useCallback(
+    async (file) => {
+      if (!file) return;
+      const result = parseProjectJson(await file.text());
+      if (result.error) {
+        toasts.error(result.error);
+        return;
+      }
+      addProject(result.project, {
+        successMsg: `「${result.project.name}」を JSON から読み込みました`,
+      });
+    },
+    [toasts, addProject]
+  );
+
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
@@ -536,14 +572,15 @@ export default function RegularBuilderApp({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedRefs.size, clearSelection]);
 
-  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)
+  // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)。
+  // ロック中は変更しない (UI 側も ✕ を隠し Delete を無効化している)
   const onClearCell = useCallback(
     (ref) => {
       const { tabId, key } = parseCellRef(ref);
       updateTab(
         tabId,
         (t) => {
-          if (!(key in t.schedule)) return t;
+          if (!(key in t.schedule) || t.schedule[key].locked) return t;
           const schedule = { ...t.schedule };
           delete schedule[key];
           return { ...t, schedule };
@@ -574,23 +611,54 @@ export default function RegularBuilderApp({
   }, []);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  // コピーはロックを引き継がない (貼り付け先は編集できる状態で置く)
   const copyCell = (ref) => {
     const cell = getCellByRef(ref);
     if (!cell) return;
-    setCellClipboard({ ...cell });
-    toasts.success(`「${formatCellShort(cell)}」をコピーしました`, {
+    const { locked: _locked, ...content } = cell;
+    setCellClipboard(content);
+    toasts.success(`「${formatCellShort(content)}」をコピーしました`, {
       duration: 1500,
     });
   };
 
-  // 貼り付けはセル全体 (教科・講師・教室・備考) を置き換える。Undo 1 回で戻る
+  // 貼り付けはセル全体 (教科・講師・教室・備考) を置き換える。Undo 1 回で
+  // 戻る。ロック中のセルへは貼り付けない
   const pasteCell = (ref) => {
     if (!cellClipboard) return;
+    if (getCellByRef(ref)?.locked) {
+      toasts.info("ロック中のセルには貼り付けできません（右クリック → 🔓 ロック解除）");
+      return;
+    }
     const { tabId, key } = parseCellRef(ref);
     updateTab(
       tabId,
       (t) => ({ ...t, schedule: { ...t.schedule, [key]: { ...cellClipboard } } }),
       { atomic: true }
+    );
+  };
+
+  // ── セルのロック (固定) の付け外し ──────────────────────────────
+  // 件数は表示用に現時点の project で数え、保存は saveProject の最新値で
+  // 行う (講師リネームと同じパターン)。中身のあるセルだけが対象
+  const toggleLockRefs = (refs, locked) => {
+    const { changed } = setCellsLocked(project.tabs, refs, locked);
+    if (changed === 0) {
+      toasts.info(
+        locked
+          ? "ロックできるコマがありません（空セルはロックできません）"
+          : "ロック中のコマがありません"
+      );
+      return;
+    }
+    saveProject(
+      (p) => ({ ...p, tabs: setCellsLocked(p.tabs, refs, locked).tabs }),
+      { atomic: true }
+    );
+    toasts.success(
+      locked
+        ? `${changed} コマをロックしました（編集・入替・クリアを防ぎます）`
+        : `${changed} コマのロックを解除しました`
     );
   };
 
@@ -612,18 +680,27 @@ export default function RegularBuilderApp({
   };
 
   // 時限行・クラス列・複数選択の一括クリア (確認あり・Undo 1 回で戻る)。
-  // 実行したら true (選択解除などの後処理は呼び出し側)
+  // ロック中のセルは対象外。実行したら true (選択解除などの後処理は呼び出し側)
   const clearCellsBulk = async (refs, label) => {
-    const filled = refs.filter((r) => getCellByRef(r));
+    const withContent = refs.filter((r) => getCellByRef(r));
+    const filled = withContent.filter((r) => !getCellByRef(r).locked);
+    const lockedCount = withContent.length - filled.length;
     if (filled.length === 0) {
       // silent no-op にしない (講習 H3 と同じ思想)。ヘッダメニュー経由は
       // 項目自体が disabled のため、ここに来るのは選択バー経由のみ
-      toasts.info("クリアできるコマがありません（選択セルはすべて空です）");
+      toasts.info(
+        lockedCount > 0
+          ? "クリアできるコマがありません（ロック中のセルは対象外です）"
+          : "クリアできるコマがありません（選択セルはすべて空です）"
+      );
       return false;
     }
     const ok = await confirm({
       title: "一括クリア",
-      message: `${label} の ${filled.length} コマをクリアしますか？\n（Ctrl+Z で戻せます）`,
+      message:
+        `${label} の ${filled.length} コマをクリアしますか？` +
+        (lockedCount > 0 ? `\n（ロック中の ${lockedCount} コマは対象外）` : "") +
+        `\n（Ctrl+Z で戻せます）`,
       okLabel: "クリアする",
       tone: "danger",
     });
@@ -664,7 +741,11 @@ export default function RegularBuilderApp({
     else if (action === "paste") pasteCell(m.ref);
     else if (action === "clear") onClearCell(m.ref);
     else if (action === "approve") approveCellConflicts(m.ref);
+    else if (action === "lock") toggleLockRefs([m.ref], true);
+    else if (action === "unlock") toggleLockRefs([m.ref], false);
     else if (action === "clear-bulk") clearCellsBulk(m.refs, m.label);
+    else if (action === "lock-bulk") toggleLockRefs(m.refs, true);
+    else if (action === "unlock-bulk") toggleLockRefs(m.refs, false);
   };
 
   const addTab = useCallback(() => {
@@ -846,6 +927,33 @@ export default function RegularBuilderApp({
           >
             ⬇ 本体から取込
           </button>
+          <button
+            type="button"
+            onClick={exportProjectJson}
+            title="このプロジェクトを JSON ファイルに書き出す（バックアップ・別環境への移行用。スナップショット込み）"
+            className={UI.btn}
+          >
+            💾
+          </button>
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            title="JSON ファイルを新しいプロジェクトとして読み込む（既存のプロジェクトは変更しません）"
+            className={UI.btn}
+          >
+            📂
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            aria-label="プロジェクト JSON ファイルを選択"
+            onChange={(e) => {
+              importProjectJson(e.target.files?.[0]);
+              e.target.value = ""; // 同じファイルの再選択でも change を発火させる
+            }}
+          />
           <button
             type="button"
             onClick={removeProject}
@@ -1247,6 +1355,22 @@ export default function RegularBuilderApp({
           <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
             🧹 クリア
           </button>
+          <button
+            type="button"
+            className={UI.btn}
+            onClick={() => toggleLockRefs([...selectedRefs], true)}
+            title="選択中のセルをロックする（編集・入替・クリアを防ぐ。中身のあるセルのみ）"
+          >
+            🔒 ロック
+          </button>
+          <button
+            type="button"
+            className={UI.btn}
+            onClick={() => toggleLockRefs([...selectedRefs], false)}
+            title="選択中のセルのロックを解除する"
+          >
+            🔓 解除
+          </button>
           <button type="button" className={UI.btn} onClick={clearSelection}>
             ✕ 選択解除 (Esc)
           </button>
@@ -1440,8 +1564,17 @@ export default function RegularBuilderApp({
             : 0
         }
         filledCount={
+          // 一括クリア・一括ロックの対象 (中身がありロックされていないセル)
           ctxMenu?.kind === "bulk"
-            ? ctxMenu.refs.filter((r) => getCellByRef(r)).length
+            ? ctxMenu.refs.filter((r) => {
+                const c = getCellByRef(r);
+                return c && !c.locked;
+              }).length
+            : 0
+        }
+        lockedCount={
+          ctxMenu?.kind === "bulk"
+            ? ctxMenu.refs.filter((r) => getCellByRef(r)?.locked).length
             : 0
         }
         onAction={onCtxAction}

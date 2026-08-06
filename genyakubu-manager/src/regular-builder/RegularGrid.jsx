@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeSections,
   makeCellKey,
@@ -212,16 +212,15 @@ export function RegularGrid({
   const onSelectCellH = useCallback((...a) => implRef.current.selectCell(...a), []);
 
   // ── セクション構築 (時限・列・コマ数を確定) ─────────────────────
-  const rawSections = computeSections(project, day, { splitCampus });
-  if (rawSections.length === 0) {
-    return (
-      <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
-        {day}曜日を使う学年がありません。学年チップから曜日・使う時限・クラスを設定してください。
-      </div>
-    );
-  }
+  // project / 曜日 / 表示オプションが変わった時だけ再計算する (ドラッグ中
+  // の状態変化や編集セルの切替などの表示だけの再レンダーで、セクション
+  // 分割・結合レイアウト・重複/NG 索引を繰り返し計算しない)
+  const rawSections = useMemo(
+    () => computeSections(project, day, { splitCampus }),
+    [project, day, splitCampus]
+  );
 
-  const sections = rawSections
+  const sections = useMemo(() => rawSections
     .map((s) => {
       // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
       // 構成クラスは残す)。列が全部消えた学年はこの曜日の表から外す
@@ -278,7 +277,30 @@ export function RegularGrid({
       );
       return { ...s, tabs, periods, cols, tabLayouts, cellCount, tone: sectionTone(tabs) };
     })
-    .filter((s) => s.tabs.length > 0 && s.periods.length > 0);
+    .filter((s) => s.tabs.length > 0 && s.periods.length > 0),
+    [rawSections, project, day, hideEmpty]
+  );
+
+  // 講師プルダウンの「(重複)」「(NG)」予告の索引 (全セルの解決は 1 回で
+  // 済む一括版)。セクションの tabs は建物分割・空列非表示で加工した仮想
+  // タブなので、元のタブで計算する (busyByTab は tab.id キー — 分割で同じ
+  // id が 2 回現れると上書きされ、片方の建物のセルから予告が消えてしまう)
+  const { busyByTab, ngByTab } = useMemo(() => {
+    const ids = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
+    const origTabs = (project.tabs || []).filter((t) => ids.has(t.id));
+    return {
+      busyByTab: computeBusyTeachersForTabs(project, origTabs),
+      ngByTab: computeNgTeachersForTabs(project, origTabs),
+    };
+  }, [project, sections]);
+
+  if (rawSections.length === 0) {
+    return (
+      <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+        {day}曜日を使う学年がありません。学年チップから曜日・使う時限・クラスを設定してください。
+      </div>
+    );
+  }
   if (sections.length === 0) {
     return (
       <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
@@ -330,21 +352,15 @@ export function RegularGrid({
     });
   };
 
-  // 講師プルダウンの「(重複)」予告用: 学年ごとの同時間帯・割当済み講師
-  // (全セルの解決は 1 回で済む一括版を使う)。セクションの tabs は
-  // 建物分割・空列非表示で加工した仮想タブなので、元のタブで計算する
-  // (busyByTab は tab.id キー — 分割で同じ id が 2 回現れると上書きされ、
-  // 片方の建物のセルから重複予告が消えてしまう)
-  const sectionTabIds = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
-  const origTabs = (project.tabs || []).filter((t) => sectionTabIds.has(t.id));
-  const busyByTab = computeBusyTeachersForTabs(project, origTabs);
-  // 講師プルダウンの「(NG)」予告 (busy と同じく元タブで計算)
-  const ngByTab = computeNgTeachersForTabs(project, origTabs);
-
   // ── D&D 入替 (セクション・学年をまたいだ入替も可) ────────────────
   // Ctrl (または Alt) を押しながらドロップすると入替でなくコピー配置に
   // なる (同じコマを複数曜日・複数クラスへ繰り返し置く用)。カーソルも
-  // copy / move で切り替わる
+  // copy / move で切り替わる。ロック中のセルには落とせない (掴む方は
+  // draggable=false で防いでいる)
+  const cellAt = (ref) => {
+    const { tabId, key } = parseCellRef(ref);
+    return (project.tabs || []).find((t) => t.id === tabId)?.schedule?.[key];
+  };
   const handleDragStart = (e, ref, cell) => {
     if (!cell.subj) {
       e.preventDefault();
@@ -358,19 +374,22 @@ export function RegularGrid({
   const handleDragOver = (e, targetRef) => {
     e.preventDefault();
     const isCopy = onCopyCellTo && (e.ctrlKey || e.altKey);
-    e.dataTransfer.dropEffect =
-      !dragSource || dragSource === targetRef
-        ? "none"
-        : isCopy
-          ? "copy"
-          : "move";
-    setDragOverRef(targetRef);
+    const blocked =
+      !dragSource || dragSource === targetRef || cellAt(targetRef)?.locked;
+    e.dataTransfer.dropEffect = blocked ? "none" : isCopy ? "copy" : "move";
+    setDragOverRef(blocked ? null : targetRef);
   };
   const handleDragLeave = () => setDragOverRef(null);
   const handleDrop = (e, targetRef) => {
     e.preventDefault();
     setDragOverRef(null);
     if (!dragSource || dragSource === targetRef) return;
+    if (cellAt(targetRef)?.locked) {
+      // モデル側 (swap/copyCellAcrossTabs) も no-op だが、無駄な保存と
+      // Undo 履歴を作らないようここで止める
+      setDragSource(null);
+      return;
+    }
     if (onCopyCellTo && (e.ctrlKey || e.altKey)) {
       onCopyCellTo(dragSource, targetRef);
     } else {
@@ -484,6 +503,9 @@ export function RegularGrid({
         // 同じセル内の 教科 ⇄ 講師 移動: editRef が変わらず再レンダーが
         // 走らないため、既に DOM にある select を直接フォーカスする
         document.getElementById(`regb-${targetRef}-${f}`)?.focus();
+      } else if (entry.col.tab.schedule[targetKey]?.locked) {
+        // ロック中のセルは編集モードに入らない — 表示セルへフォーカスを移す
+        document.getElementById(`regb-${targetRef}-cell`)?.focus();
       } else {
         // 編集対象を移す (表示セルの select はまだ DOM に無いため、編集開始
         // → レンダー後に pendingFocusRef が該当 select へフォーカスする)

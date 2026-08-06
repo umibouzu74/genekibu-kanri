@@ -22,7 +22,9 @@
 //     schedule: { [cellKey]: Cell },           // cellKey = `${day}|${periodId}|${classId}`
 //   }],
 // }
-// Cell = { subj?, teacher?, room?, note? }     // teacher は "·" 区切りで複数可
+// Cell = { subj?, teacher?, room?, note?, locked? }
+//   teacher は "·" 区切りで複数可。locked: true は編集・クリア・入替・
+//   貼り付けを防ぐ「固定」フラグ (確定済みコマの誤操作防止。反映には無関係)
 
 import { splitTeacherField } from "../utils/biweekly";
 import { nextNumericId } from "../utils/schema";
@@ -103,12 +105,15 @@ export function swapScheduleCells(schedule, keyA, keyB) {
  * ref (`tabId:cellKey`) で指した 2 セルの中身を入れ替えた新しい tabs 配列を
  * 返す (純関数)。同一タブ内は swapScheduleCells に委譲。タブをまたぐ場合も
  * 片側が空セルなら移動になり、空いた側のキーは残さない。
- * 参照先のタブが見つからなければ元の配列をそのまま返す。
+ * 参照先のタブが見つからない・どちらかがロック中 (locked) なら元の配列を
+ * そのまま返す (ロックは固定 — D&D でも動かさない)。
  */
 export function swapCellsAcrossTabs(tabs, refA, refB) {
   if (refA === refB) return tabs;
   const a = parseCellRef(refA);
   const b = parseCellRef(refB);
+  const cellOf = (r) => tabs.find((t) => t.id === r.tabId)?.schedule?.[r.key];
+  if (cellOf(a)?.locked || cellOf(b)?.locked) return tabs;
   if (a.tabId === b.tabId) {
     return tabs.map((t) =>
       t.id === a.tabId
@@ -139,7 +144,8 @@ export function swapCellsAcrossTabs(tabs, refA, refB) {
 /**
  * refA のセル内容を refB へコピーした新しい tabs 配列を返す (純関数)。
  * 入替 (swapCellsAcrossTabs) と違い、コピー元は残り、コピー先は上書き。
- * コピー元が空・参照先タブ無しは何もしない。
+ * コピー元が空・参照先タブ無し・コピー先がロック中は何もしない。
+ * ロックはコピーに引き継がない (複製は編集できる状態で置く)。
  */
 export function copyCellAcrossTabs(tabs, refA, refB) {
   if (refA === refB) return tabs;
@@ -150,11 +156,49 @@ export function copyCellAcrossTabs(tabs, refA, refB) {
   if (!tabA || !tabB) return tabs;
   const cell = tabA.schedule[a.key];
   if (!cell) return tabs;
+  if (tabB.schedule[b.key]?.locked) return tabs;
+  const { locked: _locked, ...content } = cell;
   return tabs.map((t) =>
     t.id === b.tabId
-      ? { ...t, schedule: { ...t.schedule, [b.key]: { ...cell } } }
+      ? { ...t, schedule: { ...t.schedule, [b.key]: content } }
       : t
   );
+}
+
+// ─── セルのロック (固定) ────────────────────────────────────────────
+
+/**
+ * refs で指したセルの locked フラグを付け外しした新しい tabs 配列を返す
+ * (純関数)。中身のあるセルだけが対象 (空セルのロックは意味を持たない)。
+ * @returns {{tabs: object[], changed: number}} changed = 変化したセル数
+ */
+export function setCellsLocked(tabs, refs, locked) {
+  const keysByTab = new Map();
+  for (const ref of refs) {
+    const { tabId, key } = parseCellRef(ref);
+    if (!keysByTab.has(tabId)) keysByTab.set(tabId, []);
+    keysByTab.get(tabId).push(key);
+  }
+  let changed = 0;
+  const next = tabs.map((t) => {
+    const keys = keysByTab.get(t.id);
+    if (!keys) return t;
+    let touched = false;
+    const schedule = { ...t.schedule };
+    for (const key of keys) {
+      const cell = schedule[key];
+      if (!cell || !!cell.locked === locked) continue;
+      if (locked) schedule[key] = { ...cell, locked: true };
+      else {
+        const { locked: _l, ...rest } = cell;
+        schedule[key] = rest;
+      }
+      touched = true;
+      changed++;
+    }
+    return touched ? { ...t, schedule } : t;
+  });
+  return { tabs: next, changed };
 }
 
 // ─── スナップショット (プロジェクトの名前付き保存) ──────────────────
@@ -263,7 +307,9 @@ function sanitizeCell(raw) {
   if (str(raw.teacher)) cell.teacher = str(raw.teacher);
   if (str(raw.room)) cell.room = str(raw.room);
   if (str(raw.note)) cell.note = str(raw.note);
-  return Object.keys(cell).length ? cell : null;
+  if (Object.keys(cell).length === 0) return null; // locked だけの空セルも落とす
+  if (raw.locked === true) cell.locked = true;
+  return cell;
 }
 
 export function sanitizeProject(raw) {
