@@ -102,7 +102,8 @@ export function computeTeacherLoad(project) {
  *     biweekly?: "A"|"B",           // 隔週コマのみ (A=主担当 / B=パートナー)
  *   }[]>,
  *   ngByDay: Record<string, {time: string}[]>, // NG (不在)。time "" = 終日
- *   total: number,
+ *   total: number,          // エントリ件数 (隔週も 1 と数える)
+ *   weightedTotal: number,  // 重み付き週計 (隔週 0.5 — 📊 集計と同じ)
  * }}
  */
 export function computeTeacherWeek(project, teacherName) {
@@ -112,6 +113,7 @@ export function computeTeacherWeek(project, teacherName) {
   const byDay = {};
   for (const d of days) byDay[d] = [];
   let total = 0;
+  let weightedTotal = 0;
   for (const e of resolveAllEntries(project)) {
     if (!byDay[e.day]) continue;
     const biweekly = isBiweekly(e.cell.note);
@@ -131,6 +133,7 @@ export function computeTeacherWeek(project, teacherName) {
     if (biweekly) entry.biweekly = isPartner ? "B" : "A";
     byDay[e.day].push(entry);
     total++;
+    weightedTotal += biweekly ? 0.5 : 1;
   }
   for (const d of days) {
     byDay[d].sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time));
@@ -147,5 +150,5 @@ export function computeTeacherWeek(project, teacherName) {
   const ngOrder = (s) => (s.time ? timeStartToMin(s.time) : -1);
   for (const d of days) ngByDay[d].sort((a, b) => ngOrder(a) - ngOrder(b));
 
-  return { days, byDay, ngByDay, total };
+  return { days, byDay, ngByDay, total, weightedTotal };
 }

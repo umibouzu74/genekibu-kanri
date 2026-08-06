@@ -20,6 +20,7 @@ import {
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
+import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
 import {
@@ -433,7 +434,7 @@ export default function RegularBuilderApp({
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toasts.success(`「${project.name}」を JSON に書き出しました`);
+    toasts.success(`「${project.name || "無題"}」を JSON に書き出しました`);
   }, [project, toasts]);
 
   const importFileRef = useRef(null);
@@ -836,11 +837,20 @@ export default function RegularBuilderApp({
     setActiveTabId(null);
   }, [activeTab, confirm, saveProject]);
 
-  // 講師フィルタ候補 (マスタ + セルに現れる講師名)
+  // 講師フィルタ候補 (マスタ + セルに現れる講師名 + 隔週パートナー)。
+  // マスタ未整備の取込直後や、note にしか現れないパートナー講師も
+  // 👁 強調表示・週間ミニビューの対象にできるようにする
   const teacherOptions = useMemo(() => {
     const names = new Set(project.teachers.map((t) => t.name));
+    for (const t of project.tabs || []) {
+      for (const cell of Object.values(t.schedule || {})) {
+        for (const n of splitTeacherField(cell.teacher)) names.add(n);
+        const partner = biweeklyPartner(cell.note);
+        if (partner) names.add(partner);
+      }
+    }
     return [...names].sort();
-  }, [project.teachers]);
+  }, [project.teachers, project.tabs]);
 
   // 教室フィルタ候補 (クラス既定教室 + セル上書き教室)
   const roomOptions = useMemo(() => {

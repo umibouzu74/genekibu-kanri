@@ -73,6 +73,7 @@ describe("computeTeacherWeek", () => {
     const week = computeTeacherWeek(p, "半田");
     expect(week.days).toEqual(["月", "火"]);
     expect(week.total).toBe(3);
+    expect(week.weightedTotal).toBe(3); // 非隔週は件数と一致
     expect(week.byDay["月"].map((e) => e.subj)).toEqual(["数学", "国語"]);
     expect(week.byDay["月"][0]).toMatchObject({
       ref: `1:${makeCellKey("月", 1, 1)}`,
@@ -146,6 +147,7 @@ describe("隔週コマ (note「隔週(パートナー)」) の扱い", () => {
     expect(main.byDay["月"][0].biweekly).toBe("A");
     const partner = computeTeacherWeek(p, "河野");
     expect(partner.total).toBe(1);
+    expect(partner.weightedTotal).toBe(0.5); // 計は 📊 集計と同じ 0.5 重み
     expect(partner.byDay["月"][0].biweekly).toBe("B");
     // 非隔週コマには biweekly フィールドが付かない
     const handa = computeTeacherWeek(p, "半田");
