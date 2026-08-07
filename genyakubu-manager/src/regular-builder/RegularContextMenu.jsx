@@ -20,6 +20,8 @@ export function RegularContextMenu({
   clipboard,
   /** kind:"cell" のとき: このセルが関わる未承認の重複件数 */
   conflictCount = 0,
+  /** kind:"cell" のとき: ⊞ 合同項目 (null = 非表示)。{isJoint, disabled, title} */
+  jointItem = null,
   /** kind:"bulk" のとき: refs のうち中身がありロックされていないセル数 */
   filledCount = 0,
   /** kind:"bulk" のとき: refs のうちロック中のセル数 */
@@ -138,6 +140,18 @@ export function RegularContextMenu({
           >
             {cell?.locked ? "🔓 ロック解除" : "🔒 ロック"}
           </button>
+          {jointItem && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onAction("joint")}
+              disabled={jointItem.disabled}
+              title={jointItem.title}
+              className={`${ITEM_BASE} ${jointItem.disabled ? "text-builder-ink-ghost cursor-not-allowed" : "hover:bg-builder-bg text-builder-ink"}`}
+            >
+              ⊞ {jointItem.isJoint ? "合同の変更…" : "合同にする…"}
+            </button>
+          )}
           {conflictCount > 0 && (
             <button
               type="button"
