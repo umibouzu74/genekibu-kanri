@@ -13,6 +13,7 @@ import {
   copyCellAcrossTabs,
   createDefaultProject,
   createDefaultWorkspace,
+  makeCellRef,
   parseCellKey,
   parseCellRef,
   sanitizeWorkspace,
@@ -21,6 +22,8 @@ import {
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
+import { computeMergeLayout } from "./mergedColumns";
+import { changeJoint } from "./jointEdit";
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
@@ -44,6 +47,7 @@ import {
 } from "./RegularTeacherWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
+import { JointDialog } from "./JointDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { UI } from "./ui";
 
@@ -646,6 +650,8 @@ export default function RegularBuilderApp({
   // ── コンテキストメニュー (セル右クリック / 長押し・ヘッダの一括操作) ──
   const [ctxMenu, setCtxMenu] = useState(null);
   const [cellClipboard, setCellClipboard] = useState(null);
+  // ⊞ 合同ダイアログの対象セル ref (null = 非表示)
+  const [jointTarget, setJointTarget] = useState(null);
 
   const getCellByRef = useCallback(
     (ref) => {
@@ -713,6 +719,72 @@ export default function RegularBuilderApp({
         : `${changed} コマのロックを解除しました`
     );
   };
+
+  // ── ⊞ 合同 (結合コマ) の作成・変更 ──────────────────────────────
+  // メニュー項目の表示状態 (合同を組めるクラスが 2 つ以上あるタブのみ)
+  const jointItem = useMemo(() => {
+    if (ctxMenu?.kind !== "cell") return null;
+    const { tabId, key } = parseCellRef(ctxMenu.ref);
+    const tab = project.tabs.find((t) => t.id === tabId);
+    if (!tab) return null;
+    const layout = computeMergeLayout(tab);
+    if (layout.visible.length < 2) return null;
+    const { classId } = parseCellKey(key);
+    const isJoint = layout.ranges.some((r) => r.cls.id === classId);
+    const cell = tab.schedule[key];
+    return {
+      isJoint,
+      disabled: !cell || !!cell.locked,
+      title: !cell
+        ? "空のセルは合同にできません (コマを入力してから設定します。既存の合同枠へは ⊞ ボタンで追加できます)"
+        : cell.locked
+          ? "ロック中のセルは変更できません"
+          : isJoint
+            ? "この合同コマの対象クラスを変える・通常コマに戻す"
+            : "このコマを複数クラスの合同 (結合表示) にする",
+    };
+  }, [ctxMenu, project]);
+
+  // ダイアログの「変更する」。表示用の計算はダイアログ側 (changeJoint) と
+  // 同じ引数で行い、保存は saveProject の最新値で再計算する (setClassRoom
+  // と同じパターン)
+  const applyJointChange = useCallback(
+    ({ tabId, keys, memberIds, day }) => {
+      const tab = project.tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      const res = changeJoint(tab, keys, memberIds, { periods: project.periods });
+      if (!res.ok) {
+        toasts.error(res.errors[0] || "合同を変更できませんでした");
+        return;
+      }
+      updateTab(
+        tabId,
+        (t) => {
+          const r = changeJoint(t, keys, memberIds);
+          return r.ok ? r.tab : t;
+        },
+        { atomic: true }
+      );
+      const parts = [
+        res.toPlain
+          ? `「${res.fromLabel}」の ${res.moves.length} コマを通常コマ「${res.toLabel}」に戻しました`
+          : `「${res.fromLabel}」の ${res.moves.length} コマを合同「${res.toLabel}」に変更しました`,
+      ];
+      if (res.created.length > 0)
+        parts.push(`合同列「${res.created.join("」「")}」を作成`);
+      if (res.removedSource)
+        parts.push(`空になった合同列「${res.removedSource}」は削除`);
+      toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, {
+        duration: 4500,
+      });
+      const dayRefs = res.moves
+        .filter((m) => parseCellKey(m.toKey).day === day)
+        .map((m) => makeCellRef(tabId, m.toKey));
+      if (dayRefs.length > 0) jumpToCells(dayRefs, day);
+      setJointTarget(null);
+    },
+    [project, updateTab, toasts, jumpToCells]
+  );
 
   // このセルが関わる未承認の重なりをまとめて承認する
   const approveCellConflicts = (ref) => {
@@ -795,6 +867,7 @@ export default function RegularBuilderApp({
     else if (action === "approve") approveCellConflicts(m.ref);
     else if (action === "lock") toggleLockRefs([m.ref], true);
     else if (action === "unlock") toggleLockRefs([m.ref], false);
+    else if (action === "joint") setJointTarget(m.ref);
     else if (action === "clear-bulk") clearCellsBulk(m.refs, m.label);
     else if (action === "lock-bulk") toggleLockRefs(m.refs, true);
     else if (action === "unlock-bulk") toggleLockRefs(m.refs, false);
@@ -1617,6 +1690,7 @@ export default function RegularBuilderApp({
         menu={ctxMenu}
         cell={ctxMenu?.kind === "cell" ? getCellByRef(ctxMenu.ref) : null}
         clipboard={cellClipboard}
+        jointItem={jointItem}
         conflictCount={
           ctxMenu?.kind === "cell"
             ? conflictView.active.filter((c) => c.refs.includes(ctxMenu.ref)).length
@@ -1639,6 +1713,22 @@ export default function RegularBuilderApp({
         onAction={onCtxAction}
         onClose={closeCtxMenu}
       />
+
+      {jointTarget &&
+        (() => {
+          const tab = project.tabs.find(
+            (t) => t.id === parseCellRef(jointTarget).tabId
+          );
+          return tab ? (
+            <JointDialog
+              project={project}
+              tab={tab}
+              cellRef={jointTarget}
+              onApply={applyJointChange}
+              onClose={() => setJointTarget(null)}
+            />
+          ) : null;
+        })()}
 
       {showProjectConfig && (
         <ProjectConfigModal
