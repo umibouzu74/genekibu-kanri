@@ -68,7 +68,10 @@ export function CourseSetView({
       </div>
 
       {activeSet && filtered && (
-        <div className="flex flex-wrap items-start gap-4">
+        /* 画面は曜日を横並び (flex)。紙面は縦積み (print:block) — 改ページ
+           (regb-print-day の break-before) はフレックスアイテムに効かない
+           ため、印刷時はコンテナごと block に戻す */
+        <div className="flex flex-wrap items-start gap-4 print:block">
           {activeSet.days.map((d) => (
             <div
               key={d}
