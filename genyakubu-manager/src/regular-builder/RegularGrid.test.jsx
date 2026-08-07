@@ -97,3 +97,44 @@ describe("RegularGrid - 列見出しの教室編集", () => {
     expect(screen.getByText("404")).toBeDefined();
   });
 });
+
+describe("RegularGrid - グリッド横断 D&D (週表示・セット編集の別曜日)", () => {
+  // 別グリッド発のドラッグは dragSource (ローカル state) が null のまま
+  // dataTransfer のカスタム型 (text/x-regb-cell-<projectId>) だけで届く
+  const external = (ref, projectId = 1) => ({
+    dataTransfer: {
+      types: [`text/x-regb-cell-${projectId}`],
+      getData: (t) => (t === `text/x-regb-cell-${projectId}` ? ref : ""),
+      setData: () => {},
+    },
+  });
+
+  it("別グリッドからのドロップで onSwapCells が呼ばれる", () => {
+    const onSwapCells = vi.fn();
+    renderGrid({ ...makeProject(), id: 1 }, { onSwapCells });
+    const target = document.getElementById(`regb-1:${makeCellKey("月", 1, 2)}-cell`);
+    fireEvent.drop(target, external(`1:${makeCellKey("火", 1, 1)}`));
+    expect(onSwapCells).toHaveBeenCalledWith(
+      `1:${makeCellKey("火", 1, 1)}`,
+      `1:${makeCellKey("月", 1, 2)}`
+    );
+  });
+
+  it("別プロジェクトの型 (別ウィンドウ) やロック中セルへのドロップは無視する", () => {
+    const onSwapCells = vi.fn();
+    const p = { ...makeProject(), id: 1 };
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "理科", locked: true };
+    renderGrid(p, { onSwapCells });
+    // 型のプロジェクト id が違う → 受け付けない
+    fireEvent.drop(
+      document.getElementById(`regb-1:${makeCellKey("月", 1, 2)}-cell`),
+      external(`1:${makeCellKey("火", 1, 1)}`, 99)
+    );
+    // ロック中のセルへは落とせない
+    fireEvent.drop(
+      document.getElementById(`regb-1:${makeCellKey("月", 2, 1)}-cell`),
+      external(`1:${makeCellKey("火", 1, 1)}`)
+    );
+    expect(onSwapCells).not.toHaveBeenCalled();
+  });
+});

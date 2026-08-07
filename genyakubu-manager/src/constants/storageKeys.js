@@ -33,6 +33,7 @@ export const LS = {
   regularBuilderSplitCampus: "genyakubu-regular-builder-split-campus",
   regularBuilderSummary: "genyakubu-regular-builder-summary",
   regularBuilderWeekView: "genyakubu-regular-builder-week-view",
+  regularBuilderSetView: "genyakubu-regular-builder-set-view",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────
@@ -43,4 +44,5 @@ export const SS = {
   view: "genyakubu-session-view",
   teacher: "genyakubu-session-teacher",
   regularBuilderDay: "genyakubu-session-regb-day",
+  regularBuilderSet: "genyakubu-session-regb-set",
 };
