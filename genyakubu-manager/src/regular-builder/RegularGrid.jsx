@@ -111,6 +111,9 @@ export function RegularGrid({
   selectionAnchor = null,
   onToggleSelect = null,
   onRectSelect = null,
+  /** project が表示用に絞り込まれている場合 (🧩 セット編集) の、講師の
+      「(重複)」「(NG)」予告の計算元。省略時は project 自身 */
+  fullProject = null,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -297,13 +300,17 @@ export function RegularGrid({
   // タブなので、元のタブで計算する (busyByTab は tab.id キー — 分割で同じ
   // id が 2 回現れると上書きされ、片方の建物のセルから予告が消えてしまう)
   const { busyByTab, ngByTab } = useMemo(() => {
+    // セット編集ビューは project をセットのクラス列だけに絞って渡すため、
+    // 予告の計算は全体 (fullProject) で行う — 絞り込みの外のセルとの
+    // 重複・NG も選択前に予告できるように
+    const src = fullProject || project;
     const ids = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
-    const origTabs = (project.tabs || []).filter((t) => ids.has(t.id));
+    const origTabs = (src.tabs || []).filter((t) => ids.has(t.id));
     return {
-      busyByTab: computeBusyTeachersForTabs(project, origTabs),
-      ngByTab: computeNgTeachersForTabs(project, origTabs),
+      busyByTab: computeBusyTeachersForTabs(src, origTabs),
+      ngByTab: computeNgTeachersForTabs(src, origTabs),
     };
-  }, [project, sections]);
+  }, [project, fullProject, sections]);
 
   if (rawSections.length === 0) {
     return (
@@ -368,6 +375,13 @@ export function RegularGrid({
   // なる (同じコマを複数曜日・複数クラスへ繰り返し置く用)。カーソルも
   // copy / move で切り替わる。ロック中のセルには落とせない (掴む方は
   // draggable=false で防いでいる)
+  //
+  // 別の RegularGrid (📅 週表示・🧩 セット編集の別曜日) からのドラッグは
+  // dataTransfer のカスタム型で受ける — dragSource は各グリッドのローカル
+  // state なので他グリッド発では null になる。型名にプロジェクト id を
+  // 含め、別プロジェクトを開いた別ウィンドウからの誤ドロップは弾く
+  // (中身の ref は仕様上 drop まで読めないため、dragover では型だけ見る)
+  const crossGridType = `text/x-regb-cell-${project.id}`;
   const cellAt = (ref) => {
     const { tabId, key } = parseCellRef(ref);
     return (project.tabs || []).find((t) => t.id === tabId)?.schedule?.[key];
@@ -380,13 +394,17 @@ export function RegularGrid({
     setDragSource(ref);
     // Firefox はデータ項目をセットしないと HTML5 drag を開始しない
     e.dataTransfer.setData("text/plain", ref);
+    e.dataTransfer.setData(crossGridType, ref);
     e.dataTransfer.effectAllowed = onCopyCellTo ? "copyMove" : "move";
   };
   const handleDragOver = (e, targetRef) => {
     e.preventDefault();
     const isCopy = onCopyCellTo && (e.ctrlKey || e.altKey);
+    const external = !dragSource && e.dataTransfer.types.includes(crossGridType);
     const blocked =
-      !dragSource || dragSource === targetRef || cellAt(targetRef)?.locked;
+      (!dragSource && !external) ||
+      dragSource === targetRef ||
+      cellAt(targetRef)?.locked;
     e.dataTransfer.dropEffect = blocked ? "none" : isCopy ? "copy" : "move";
     setDragOverRef(blocked ? null : targetRef);
   };
@@ -394,7 +412,8 @@ export function RegularGrid({
   const handleDrop = (e, targetRef) => {
     e.preventDefault();
     setDragOverRef(null);
-    if (!dragSource || dragSource === targetRef) return;
+    const source = dragSource || e.dataTransfer.getData(crossGridType) || null;
+    if (!source || source === targetRef) return;
     if (cellAt(targetRef)?.locked) {
       // モデル側 (swap/copyCellAcrossTabs) も no-op だが、無駄な保存と
       // Undo 履歴を作らないようここで止める
@@ -402,9 +421,9 @@ export function RegularGrid({
       return;
     }
     if (onCopyCellTo && (e.ctrlKey || e.altKey)) {
-      onCopyCellTo(dragSource, targetRef);
+      onCopyCellTo(source, targetRef);
     } else {
-      onSwapCells(dragSource, targetRef);
+      onSwapCells(source, targetRef);
     }
     setDragSource(null);
   };
@@ -416,7 +435,7 @@ export function RegularGrid({
   // ドラッグ中のオートスクロール。セクション表示ではページ側
   // (.app-main) がスクロールペインなので、そちらを端寄せで動かす
   const handleContainerDragOver = (e) => {
-    if (!dragSource) return;
+    if (!dragSource && !e.dataTransfer?.types?.includes(crossGridType)) return;
     const scroller =
       containerRef.current?.closest(".app-main") || document.scrollingElement;
     if (!scroller) return;
