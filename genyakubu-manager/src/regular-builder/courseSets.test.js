@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { makeCellKey, makeCellRef } from "./model";
-import {
-  computeCourseSets,
-  filterProjectForSet,
-  setContainsRefs,
-} from "./courseSets";
+import { makeCellKey } from "./model";
+import { computeCourseSets } from "./courseSets";
 import { makeProject } from "./testUtils";
 
 // 中3: S/A が火木、B/C が水金 の 2 セット構成
@@ -135,42 +131,5 @@ describe("computeCourseSets", () => {
     const labels = computeCourseSets(p).map((s) => s.label);
     expect(labels.indexOf("中3（火・木）")).toBeLessThan(labels.indexOf("中3（水・金）"));
     expect(labels.at(-1)).toBe("中1（月）");
-  });
-});
-
-describe("filterProjectForSet", () => {
-  it("セットの学年 × クラス列だけに絞る (id・schedule は元のまま)", () => {
-    const p = twoSetProject();
-    const sets = computeCourseSets(p);
-    const filtered = filterProjectForSet(p, sets[0]);
-    expect(filtered.tabs).toHaveLength(1);
-    expect(filtered.tabs[0].id).toBe(1);
-    expect(filtered.tabs[0].classes.map((c) => c.id)).toEqual([1, 2]);
-    // schedule は共有 (表示専用の変形)
-    expect(filtered.tabs[0].schedule).toBe(p.tabs[0].schedule);
-    // 元プロジェクトは不変
-    expect(p.tabs[0].classes).toHaveLength(4);
-  });
-
-  it("タブが消えていたら空タブ (UI 側で空表示に倒す)", () => {
-    const p = twoSetProject();
-    const sets = computeCourseSets(p);
-    p.tabs = [];
-    expect(filterProjectForSet(p, sets[0]).tabs).toEqual([]);
-  });
-});
-
-describe("setContainsRefs", () => {
-  it("セットの学年・クラス・曜日に収まる参照のみ true", () => {
-    const p = twoSetProject();
-    const [tueThu] = computeCourseSets(p);
-    const inRef = makeCellRef(1, makeCellKey("火", 1, 1));
-    const otherClass = makeCellRef(1, makeCellKey("火", 1, 3));
-    const otherDay = makeCellRef(1, makeCellKey("水", 1, 1));
-    const otherTab = makeCellRef(9, makeCellKey("火", 1, 1));
-    expect(setContainsRefs(tueThu, [inRef])).toBe(true);
-    expect(setContainsRefs(tueThu, [inRef, otherClass])).toBe(false);
-    expect(setContainsRefs(tueThu, [otherDay])).toBe(false);
-    expect(setContainsRefs(tueThu, [otherTab])).toBe(false);
   });
 });

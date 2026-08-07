@@ -111,9 +111,6 @@ export function RegularGrid({
   selectionAnchor = null,
   onToggleSelect = null,
   onRectSelect = null,
-  /** project が表示用に絞り込まれている場合 (🧩 セット編集) の、講師の
-      「(重複)」「(NG)」予告の計算元。省略時は project 自身 */
-  fullProject = null,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -300,17 +297,13 @@ export function RegularGrid({
   // タブなので、元のタブで計算する (busyByTab は tab.id キー — 分割で同じ
   // id が 2 回現れると上書きされ、片方の建物のセルから予告が消えてしまう)
   const { busyByTab, ngByTab } = useMemo(() => {
-    // セット編集ビューは project をセットのクラス列だけに絞って渡すため、
-    // 予告の計算は全体 (fullProject) で行う — 絞り込みの外のセルとの
-    // 重複・NG も選択前に予告できるように
-    const src = fullProject || project;
     const ids = new Set(sections.flatMap((s) => s.tabs.map((t) => t.id)));
-    const origTabs = (src.tabs || []).filter((t) => ids.has(t.id));
+    const origTabs = (project.tabs || []).filter((t) => ids.has(t.id));
     return {
-      busyByTab: computeBusyTeachersForTabs(src, origTabs),
-      ngByTab: computeNgTeachersForTabs(src, origTabs),
+      busyByTab: computeBusyTeachersForTabs(project, origTabs),
+      ngByTab: computeNgTeachersForTabs(project, origTabs),
     };
-  }, [project, fullProject, sections]);
+  }, [project, sections]);
 
   if (rawSections.length === 0) {
     return (

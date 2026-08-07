@@ -1,8 +1,10 @@
 // ─── コースセット (曜日の組で通うクラスのまとまり) の検出 ───────────
 // 「中3 は火・木で 1 セット、水・金でもう 1 セット」「中1 のセット1/
 // セット2」のように、通常授業は同じクラス列が決まった曜日の組で回る。
-// 🧩 セット編集ビューはこの「学年 × 曜日の組」を 1 単位として、組の
-// 曜日を横に並べて一画面で編集できるようにする。
+// ◫ 曜日を並べるビューはこの「学年 × 曜日の組」をショートカットチップに
+// して、「中3（火・木）」のクリックでその組の曜日の同時表示へ一発で
+// 切り替えられるようにする (表示自体は曜日のフル表示 — 同じ曜日の
+// 他学年・他コースとの兼ね合いを見ながら編集するため、クラスは絞らない)。
 //
 // セットはデータに保存せず、毎回スケジュールから導出する (取込直後でも
 // 設定なしで使え、コマを動かせば自動で追従する):
@@ -12,10 +14,10 @@
 //   にも数える (合同コマの日もそのクラスの生徒は来るため)。合同列自身は
 //   構成クラスが全員同じセットに入ればそのセットへ合流する
 // - セルが 1 つも無いクラス列は tab.days (学年の使う全曜日) 扱い
-//   (作りかけの学年もセット編集から入力を始められるように)
+//   (作りかけの学年のセットもチップに出るように)
 // 同じ曜日の組になったクラス列同士が 1 つのセットになる。
 
-import { REGULAR_DAYS, parseCellKey, parseCellRef } from "./model";
+import { REGULAR_DAYS, parseCellKey } from "./model";
 import { computeMergeLayout } from "./mergedColumns";
 
 const dayIndex = (d) => REGULAR_DAYS.indexOf(d);
@@ -136,34 +138,4 @@ export function computeCourseSets(project) {
     sets.push(...tabSets);
   }
   return sets;
-}
-
-/**
- * セット編集ビューの表示用にプロジェクトをセットの学年 × クラス列へ
- * 絞り込む (表示専用の変形 — splitTabsByCampus と同じく tab.id / classId /
- * schedule は元のままなので、セル参照 `tabId:cellKey` 経由の編集・入替・
- * 重複表示はそのまま機能する)。
- */
-export function filterProjectForSet(project, set) {
-  const tab = (project.tabs || []).find((t) => t.id === set.tabId);
-  if (!tab) return { ...project, tabs: [] };
-  const ids = new Set(set.classIds);
-  return {
-    ...project,
-    tabs: [{ ...tab, classes: (tab.classes || []).filter((c) => ids.has(c.id)) }],
-  };
-}
-
-/**
- * セル参照の集合がすべてこのセットの画面内 (セットの学年・クラス・曜日)
- * に収まるか。重複一覧・Undo toast の「表示」ジャンプ先が今のセット編集
- * 画面で見えるかの判定に使う。
- */
-export function setContainsRefs(set, refs) {
-  return (refs || []).every((ref) => {
-    const { tabId, key } = parseCellRef(ref);
-    if (tabId !== set.tabId) return false;
-    const { day, classId } = parseCellKey(key);
-    return set.days.includes(day) && set.classIds.includes(classId);
-  });
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { CourseSetView } from "./CourseSetView";
+import { MultiDayView } from "./MultiDayView";
 import { computeCourseSets } from "./courseSets";
 import { makeCellKey } from "./model";
 import { makeProject } from "./testUtils";
@@ -46,8 +46,8 @@ function renderView(project, over = {}) {
   const props = {
     project,
     sets,
-    activeSet: sets[0] || null,
-    onSelectSet: noop,
+    days: ["火", "木"],
+    onSelectDays: noop,
     gridProps: {
       onCellChange: noop,
       onClearCell: noop,
@@ -56,36 +56,44 @@ function renderView(project, over = {}) {
     },
     ...over,
   };
-  return { sets, ...render(<CourseSetView {...props} />) };
+  return { sets, ...render(<MultiDayView {...props} />) };
 }
 
-describe("CourseSetView", () => {
-  it("セットの曜日が横並びの見出しで表示され、セットのクラス列だけに絞られる", () => {
+describe("MultiDayView", () => {
+  it("選んだ曜日が横並びの見出しで表示され、各曜日は全クラスのフル表示になる", () => {
     renderView(twoSetProject());
-    // 火木セットが選択中: 火・木の 2 グリッド
     expect(screen.getByText("火曜日")).toBeDefined();
     expect(screen.getByText("木曜日")).toBeDefined();
     expect(screen.queryByText("水曜日")).toBeNull();
-    // クラス列は S / A のみ (水金組の B は出ない)。列見出しは曜日ごとに 1 回
-    expect(screen.getAllByRole("columnheader", { name: /^S/ })).toHaveLength(2);
-    expect(screen.queryByRole("columnheader", { name: /^B/ })).toBeNull();
+    // クラスは絞らない: 水金組の B 列も両曜日の表に出る (兼ね合い確認用)
+    expect(screen.getAllByRole("columnheader", { name: /^B/ })).toHaveLength(2);
   });
 
-  it("チップにセットが列挙され、クリックで onSelectSet が呼ばれる", () => {
-    const onSelectSet = vi.fn();
-    const { sets } = renderView(twoSetProject(), { onSelectSet });
-    expect(sets.map((s) => s.label)).toEqual(["中3（火・木）", "中3（水・金）"]);
-    const chip = screen.getByRole("button", { name: /中3（水・金）/ });
-    expect(chip.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(chip);
-    expect(onSelectSet).toHaveBeenCalledWith(sets[1].key);
+  it("セットチップのクリックで onSelectDays にその組の曜日が渡る", () => {
+    const onSelectDays = vi.fn();
+    renderView(twoSetProject(), { onSelectDays });
+    fireEvent.click(screen.getByRole("button", { name: /中3（水・金）/ }));
+    expect(onSelectDays).toHaveBeenCalledWith(["水", "金"]);
   });
 
-  it("セットが無ければ案内文を出す", () => {
-    const p = { ...makeProject({ tabs: [] }), id: 1 };
-    renderView(p);
+  it("表示中の曜日と一致するセットチップだけが押下状態になる", () => {
+    renderView(twoSetProject());
     expect(
-      screen.getByText(/表示できるセットがありません/)
-    ).toBeDefined();
+      screen
+        .getByRole("button", { name: /中3（火・木）/ })
+        .getAttribute("aria-pressed")
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: /中3（水・金）/ })
+        .getAttribute("aria-pressed")
+    ).toBe("false");
+  });
+
+  it("セットが無くても曜日の表は表示される", () => {
+    const p = { ...makeProject({ tabs: [] }), id: 1 };
+    renderView(p, { days: ["月"] });
+    expect(screen.queryByText("セット:")).toBeNull();
+    expect(screen.getByText("月曜日")).toBeDefined();
   });
 });
