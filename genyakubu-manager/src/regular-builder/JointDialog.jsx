@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal } from "../components/Modal";
 import { computeMergeLayout } from "./mergedColumns";
-import { parseCellKey, parseCellRef } from "./model";
+import { makeCellKey, parseCellKey, parseCellRef } from "./model";
 import { changeJoint, columnCells } from "./jointEdit";
 import { formatCellShort } from "./historyFeedback";
 import { UI } from "./ui";
@@ -10,7 +10,9 @@ import { UI } from "./ui";
 // セル右クリック → 「⊞ 合同にする / 合同の変更」で開く。対象クラスを
 // チップで選ぶと changeJoint (jointEdit.js) がライブで検証し、実行内容
 // (列の新設・再利用・元列の削除) か、できない理由をプレビューに出す。
-// 適用は App 側 (applyJointChange) が同じ引数で再計算してコミットする。
+// 同じ枠に並列コマ (確認テストの監督 2 人など) がある場合は「相方を
+// 残りの範囲に変更する」で担当分けを 1 回の操作で行える。
+// 適用は App 側 (applyJointChange) が同じ ops で再計算してコミットする。
 
 export function JointDialog({ project, tab, cellRef, onApply, onClose }) {
   const { key } = parseCellRef(cellRef);
@@ -62,9 +64,79 @@ export function JointDialog({ project, tab, cellRef, onApply, onClose }) {
     () => layout.visible.filter((c) => selected.has(c.id)).map((c) => c.id),
     [layout, selected]
   );
+
+  // ── 並列の相方 (同スパンの他列で、変更対象の行にコマがあるもの) ──
+  const partnerInfo = useMemo(() => {
+    if (!srcRange) return null;
+    const partnerCols = layout.ranges.filter(
+      (r) =>
+        r.cls.id !== classId &&
+        r.startIdx === srcRange.startIdx &&
+        r.endIdx === srcRange.endIdx
+    );
+    if (partnerCols.length === 0) return null;
+    const rows = keys.map((k) => parseCellKey(k));
+    const byCol = [];
+    let locked = 0;
+    for (const r of partnerCols) {
+      const colKeys = [];
+      for (const row of rows) {
+        const k = makeCellKey(row.day, row.periodId, r.cls.id);
+        const c = tab.schedule?.[k];
+        if (!c) continue;
+        if (c.locked) locked++;
+        else colKeys.push(k);
+      }
+      if (colKeys.length > 0) byCol.push({ keys: colKeys });
+    }
+    if (byCol.length === 0 && locked === 0) return null;
+    return {
+      byCol,
+      locked,
+      count: byCol.reduce((n, x) => n + x.keys.length, 0),
+    };
+  }, [srcRange, layout, classId, keys, tab]);
+
+  // 相方の移動先 = 元スパンから選択分を除いた「残りの範囲」。
+  // 連続しない残り方 (真ん中だけ選んだ等) は自動変更できない
+  const complement = useMemo(() => {
+    if (!srcRange) return null;
+    const selIdx = new Set(
+      memberIds.map((id) => layout.visible.findIndex((c) => c.id === id))
+    );
+    const rest = [];
+    for (let i = srcRange.startIdx; i <= srcRange.endIdx; i++) {
+      if (!selIdx.has(i)) rest.push(i);
+    }
+    if (rest.length === 0) return null;
+    for (let j = 1; j < rest.length; j++) {
+      if (rest[j] !== rest[j - 1] + 1) return null;
+    }
+    return {
+      ids: rest.map((i) => layout.visible[i].id),
+      label:
+        rest.length === 1
+          ? layout.visible[rest[0]].label
+          : `${layout.visible[rest[0]].label}〜${layout.visible[rest[rest.length - 1]].label}`,
+    };
+  }, [srcRange, memberIds, layout]);
+
+  const canMovePartners = !!(partnerInfo?.byCol.length && complement);
+  const [movePartners, setMovePartners] = useState(true);
+
+  const ops = useMemo(() => {
+    const list = [{ keys, memberIds }];
+    if (canMovePartners && movePartners) {
+      for (const g of partnerInfo.byCol) {
+        list.push({ keys: g.keys, memberIds: complement.ids });
+      }
+    }
+    return list;
+  }, [keys, memberIds, canMovePartners, movePartners, partnerInfo, complement]);
+
   const result = useMemo(
-    () => changeJoint(tab, keys, memberIds, { periods: project.periods }),
-    [tab, keys, memberIds, project.periods]
+    () => changeJoint(tab, ops, { periods: project.periods }),
+    [tab, ops, project.periods]
   );
 
   if (!cell) return null; // 開いている間に消えた (Undo 等) — 何も出さない
@@ -122,23 +194,49 @@ export function JointDialog({ project, tab, cellRef, onApply, onClose }) {
           </label>
         )}
 
+        {canMovePartners && (
+          <label className="flex items-start gap-1.5">
+            <input
+              type="checkbox"
+              checked={movePartners}
+              onChange={(e) => setMovePartners(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              並列の相方 {partnerInfo.count} コマを残りの範囲「{complement.label}
+              」に変更する
+              <span className="block text-[10px] text-builder-ink-subtle">
+                同じ枠に横並びのコマ (確認テストの監督 2 人など) を残りのクラスの担当に付け替え、担当分けを 1 回で行います
+              </span>
+              {partnerInfo.locked > 0 && (
+                <span className="block text-[10px] text-builder-ink-subtle">
+                  ロック中の {partnerInfo.locked} 件は対象外です
+                </span>
+              )}
+            </span>
+          </label>
+        )}
+
         {/* 実行内容 / できない理由のライブプレビュー */}
         {result.ok ? (
           <div className="rounded border border-builder-success-border bg-builder-success-soft px-2.5 py-2 flex flex-col gap-0.5">
-            <span>
-              「{result.fromLabel}」の {result.moves.length} コマを
-              {result.toPlain
-                ? `通常コマ「${result.toLabel}」に戻します`
-                : `合同「${result.toLabel}」に変更します`}
-            </span>
+            {result.parts.map((p, i) => (
+              <span key={i}>
+                {i > 0 && "並列の相方: "}「{p.fromLabel}」の {p.moved} コマを
+                {p.toPlain
+                  ? `通常コマ「${p.toLabel}」に戻します`
+                  : `合同「${p.toLabel}」に変更します`}
+              </span>
+            ))}
             {result.created.length > 0 && (
               <span className="text-[11px]">
                 ・合同列「{result.created.join("」「")}」を新しく作ります
               </span>
             )}
-            {result.removedSource && (
+            {result.removedSources.length > 0 && (
               <span className="text-[11px]">
-                ・空になる合同列「{result.removedSource}」は削除されます
+                ・空になる合同列「{result.removedSources.join("」「")}
+                」は削除されます
               </span>
             )}
           </div>
@@ -158,7 +256,7 @@ export function JointDialog({ project, tab, cellRef, onApply, onClose }) {
             type="button"
             className={UI.btnPrimary}
             disabled={!result.ok}
-            onClick={() => onApply({ tabId: tab.id, keys, memberIds, day })}
+            onClick={() => onApply({ tabId: tab.id, ops, day })}
           >
             変更する
           </button>
