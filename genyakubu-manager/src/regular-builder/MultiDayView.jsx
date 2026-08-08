@@ -62,12 +62,20 @@ export function MultiDayView({
         </div>
       )}
 
-      {/* 画面は曜日を横並び (flex)。紙面は縦積み (print:block) — 改ページ
-          (regb-print-day の break-before) はフレックスアイテムに効かない
-          ため、印刷時はコンテナごと block に戻す */}
-      <div className="flex flex-wrap items-start gap-4 print:block">
+      {/* 画面は曜日を折り返し禁止の等幅カラム (flex-nowrap + flex-1) で
+          横並びに固定する。セル編集でプルダウン分だけ表が広がっても、
+          カラム幅は変わらずセクション内の横スクロールで吸収されるので、
+          編集のたびに右の曜日が下へ落ちて縦一列に崩れない (最小幅
+          320px を切る狭い画面ではページ側が横スクロールになる)。
+          紙面は縦積み (print:block) — 改ページ (regb-print-day の
+          break-before) はフレックスアイテムに効かないため、印刷時は
+          コンテナごと block に戻す */}
+      <div className="flex flex-nowrap items-start gap-4 print:block">
         {days.map((d) => (
-          <div key={d} className="regb-print-day flex flex-col gap-1 max-w-full">
+          <div
+            key={d}
+            className="regb-print-day flex-1 min-w-[320px] flex flex-col gap-1"
+          >
             <div className="flex items-baseline gap-2">
               <span
                 className="text-sm font-extrabold px-2.5 py-0.5 rounded-lg"
