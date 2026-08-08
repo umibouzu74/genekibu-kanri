@@ -25,6 +25,7 @@ const periods = [
 ];
 
 const labels = (tab) => tab.classes.map((c) => c.label);
+const one = (keys, memberIds) => [{ keys, memberIds }];
 
 describe("jointMembersOf", () => {
   it("合同列は構成クラスの id を表示順で返す", () => {
@@ -69,12 +70,14 @@ describe("changeJoint: 合同の範囲変更 (SS〜A → SS〜S)", () => {
   });
 
   it("新しい合同列を作成してセルを移し、区切りは既存ラベルに合わせる", () => {
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2], { periods });
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]), {
+      periods,
+    });
     expect(res.ok).toBe(true);
     expect(res.created).toEqual(["SS〜S"]);
-    expect(res.toLabel).toBe("SS〜S");
-    expect(res.fromLabel).toBe("SS〜A");
-    expect(res.toPlain).toBe(false);
+    expect(res.parts).toEqual([
+      { fromLabel: "SS〜A", toLabel: "SS〜S", toPlain: false, moved: 1 },
+    ]);
     // 新しい列は構成クラス (SS・S) の直後に入る
     expect(labels(res.tab)).toEqual(["SS", "S", "SS〜S", "A", "B", "C", "SS〜A"]);
     const newId = res.tab.classes[2].id;
@@ -83,20 +86,19 @@ describe("changeJoint: 合同の範囲変更 (SS〜A → SS〜S)", () => {
     });
     expect(res.tab.schedule[makeCellKey("火", 2, 6)]).toBeUndefined();
     // 木曜のセルが残っているので SS〜A 列は削除されない
-    expect(res.removedSource).toBeNull();
+    expect(res.removedSources).toEqual([]);
     expect(res.tab.schedule[makeCellKey("木", 2, 6)]).toBeDefined();
   });
 
   it("複数コマの一括変更は 1 つの新設列に収まり、空になった元列は削除される", () => {
     const res = changeJoint(
       tab,
-      [makeCellKey("火", 2, 6), makeCellKey("木", 2, 6)],
-      [1, 2]
+      one([makeCellKey("火", 2, 6), makeCellKey("木", 2, 6)], [1, 2])
     );
     expect(res.ok).toBe(true);
     expect(res.created).toEqual(["SS〜S"]);
     expect(res.moves).toHaveLength(2);
-    expect(res.removedSource).toBe("SS〜A");
+    expect(res.removedSources).toEqual(["SS〜A"]);
     expect(labels(res.tab)).toEqual(["SS", "S", "SS〜S", "A", "B", "C"]);
   });
 
@@ -105,7 +107,7 @@ describe("changeJoint: 合同の範囲変更 (SS〜A → SS〜S)", () => {
       classes: [cls(1, "SS"), cls(2, "S"), cls(3, "A"), cls(6, "SS～A")],
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ" } },
     });
-    const res = changeJoint(t, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(t, one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(res.ok).toBe(true);
     expect(res.created).toEqual(["SS～S"]);
   });
@@ -115,7 +117,7 @@ describe("changeJoint: 合同の範囲変更 (SS〜A → SS〜S)", () => {
       classes: [...baseTab().classes, cls(7, "SS〜S", "501")],
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ" } },
     });
-    const res = changeJoint(t, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(t, one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(res.ok).toBe(true);
     expect(res.created).toEqual([]);
     expect(res.tab.schedule[makeCellKey("火", 2, 7)]).toBeDefined();
@@ -127,10 +129,10 @@ describe("changeJoint: 通常コマ ⇄ 合同", () => {
     const tab = baseTab({
       schedule: { [makeCellKey("火", 1, 3)]: { subj: "数学", teacher: "半田" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 1, 3)], [3, 4, 5]);
+    const res = changeJoint(tab, one([makeCellKey("火", 1, 3)], [3, 4, 5]));
     expect(res.ok).toBe(true);
     expect(res.created).toEqual(["A〜C"]);
-    expect(res.fromLabel).toBe("A");
+    expect(res.parts[0].fromLabel).toBe("A");
     // 通常クラス列 A は削除されない
     expect(labels(res.tab)).toContain("A");
   });
@@ -139,12 +141,12 @@ describe("changeJoint: 通常コマ ⇄ 合同", () => {
     const tab = baseTab({
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [2]));
     expect(res.ok).toBe(true);
-    expect(res.toPlain).toBe(true);
-    expect(res.toLabel).toBe("S");
+    expect(res.parts[0].toPlain).toBe(true);
+    expect(res.parts[0].toLabel).toBe("S");
     expect(res.tab.schedule[makeCellKey("火", 2, 2)]).toBeDefined();
-    expect(res.removedSource).toBe("SS〜A");
+    expect(res.removedSources).toEqual(["SS〜A"]);
   });
 
   it("戻し先の通常クラスに既にコマがあるとエラー", () => {
@@ -154,10 +156,95 @@ describe("changeJoint: 通常コマ ⇄ 合同", () => {
         [makeCellKey("火", 2, 2)]: { subj: "国語" },
       },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [2], { periods });
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [2]), {
+      periods,
+    });
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("既にコマがあります");
     expect(res.errors[0]).toContain("火曜 確認テスト");
+  });
+});
+
+describe("changeJoint: 並列の分け合い (複数 op のトランザクション)", () => {
+  // 実データの構図: 確認テストが SS〜C ×2 (監督 2 人) で火・木にある
+  const splitTab = () =>
+    baseTab({
+      classes: [
+        cls(1, "SS", "505"),
+        cls(2, "S", "501"),
+        cls(3, "A", "502"),
+        cls(4, "B", "503"),
+        cls(5, "C", "504"),
+        cls(6, "SS〜C", "501"),
+        cls(7, "SS〜C", "502"),
+      ],
+      schedule: {
+        [makeCellKey("火", 2, 6)]: { subj: "確テ", teacher: "藤田" },
+        [makeCellKey("木", 2, 6)]: { subj: "確テ", teacher: "藤田" },
+        [makeCellKey("火", 2, 7)]: { subj: "確テ", teacher: "松川" },
+        [makeCellKey("木", 2, 7)]: { subj: "確テ", teacher: "松川" },
+      },
+    });
+
+  it("本体 → SS〜S・相方 → A〜C を 1 回で分け合える", () => {
+    const res = changeJoint(splitTab(), [
+      {
+        keys: [makeCellKey("火", 2, 6), makeCellKey("木", 2, 6)],
+        memberIds: [1, 2],
+      },
+      {
+        keys: [makeCellKey("火", 2, 7), makeCellKey("木", 2, 7)],
+        memberIds: [3, 4, 5],
+      },
+    ]);
+    expect(res.ok).toBe(true);
+    expect(res.created).toEqual(["SS〜S", "A〜C"]);
+    expect(res.removedSources).toEqual(["SS〜C", "SS〜C"]);
+    expect(res.moves).toHaveLength(4);
+    expect(res.parts.map((p) => p.toLabel)).toEqual(["SS〜S", "A〜C"]);
+    const sss = res.tab.classes.find((c) => c.label === "SS〜S");
+    const ac = res.tab.classes.find((c) => c.label === "A〜C");
+    expect(res.tab.schedule[makeCellKey("火", 2, sss.id)].teacher).toBe("藤田");
+    expect(res.tab.schedule[makeCellKey("木", 2, ac.id)].teacher).toBe("松川");
+    // 元の SS〜C ×2 は消えている
+    expect(labels(res.tab)).toEqual(["SS", "S", "SS〜S", "A", "B", "C", "A〜C"]);
+  });
+
+  it("相方 → 残りが 1 クラスなら通常コマに戻る", () => {
+    // SS〜A ×2 の並列を SS〜S と A (通常) に分ける
+    const tab = baseTab({
+      classes: [...baseTab().classes, cls(7, "SS〜A", "502")],
+      schedule: {
+        [makeCellKey("火", 2, 6)]: { subj: "確テ", teacher: "藤田" },
+        [makeCellKey("火", 2, 7)]: { subj: "確テ", teacher: "松川" },
+      },
+    });
+    const res = changeJoint(tab, [
+      { keys: [makeCellKey("火", 2, 6)], memberIds: [1, 2] },
+      { keys: [makeCellKey("火", 2, 7)], memberIds: [3] },
+    ]);
+    expect(res.ok).toBe(true);
+    expect(res.parts[1].toPlain).toBe(true);
+    expect(res.tab.schedule[makeCellKey("火", 2, 3)].teacher).toBe("松川");
+    expect(res.removedSources).toEqual(["SS〜A", "SS〜A"]);
+  });
+
+  it("分け合いの結果が交差する ops はエラー", () => {
+    // 本体 → SS〜S、相方 → S〜B は S で交差する
+    const res = changeJoint(splitTab(), [
+      { keys: [makeCellKey("火", 2, 6)], memberIds: [1, 2] },
+      { keys: [makeCellKey("火", 2, 7)], memberIds: [2, 3, 4] },
+    ]);
+    expect(res.ok).toBe(false);
+    expect(res.errors[0]).toContain("範囲が重なる");
+  });
+
+  it("同じコマを複数 op に入れるとエラー", () => {
+    const res = changeJoint(splitTab(), [
+      { keys: [makeCellKey("火", 2, 6)], memberIds: [1, 2] },
+      { keys: [makeCellKey("火", 2, 6)], memberIds: [3, 4, 5] },
+    ]);
+    expect(res.ok).toBe(false);
   });
 });
 
@@ -168,7 +255,7 @@ describe("changeJoint: 教室の引き継ぎ", () => {
     const tab = baseTab({
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]));
     const newCol = res.tab.classes.find((c) => c.label === "SS〜S");
     expect(newCol.room).toBe("501");
     expect(res.tab.schedule[makeCellKey("火", 2, newCol.id)].room).toBeUndefined();
@@ -179,7 +266,7 @@ describe("changeJoint: 教室の引き継ぎ", () => {
     const tab = baseTab({
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ", room: "601" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [2]));
     expect(res.tab.schedule[makeCellKey("火", 2, 2)].room).toBe("601");
   });
 
@@ -187,7 +274,7 @@ describe("changeJoint: 教室の引き継ぎ", () => {
     const tab = baseTab({
       schedule: { [makeCellKey("火", 2, 6)]: { subj: "確テ", room: "501" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [2]));
     // S 列の既定 501 と同じなので room は省略
     expect(res.tab.schedule[makeCellKey("火", 2, 2)].room).toBeUndefined();
   });
@@ -198,25 +285,24 @@ describe("changeJoint: 検証とエラー", () => {
 
   it("連続しない選択はエラー", () => {
     const tab = withCell({ [makeCellKey("火", 2, 6)]: { subj: "確テ" } });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 3]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 3]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("連続");
   });
 
   it("現在と同じ構成はエラー (変更なし)", () => {
     const tab = withCell({ [makeCellKey("火", 2, 6)]: { subj: "確テ" } });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2, 3]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2, 3]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("変更がありません");
   });
 
   it("空セル・ロック中のセルはエラー", () => {
-    const empty = changeJoint(baseTab(), [makeCellKey("火", 2, 6)], [1, 2]);
+    const empty = changeJoint(baseTab(), one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(empty.ok).toBe(false);
     const locked = changeJoint(
       withCell({ [makeCellKey("火", 2, 6)]: { subj: "確テ", locked: true } }),
-      [makeCellKey("火", 2, 6)],
-      [1, 2]
+      one([makeCellKey("火", 2, 6)], [1, 2])
     );
     expect(locked.ok).toBe(false);
     expect(locked.errors[0]).toContain("ロック中");
@@ -227,7 +313,9 @@ describe("changeJoint: 検証とエラー", () => {
       [makeCellKey("火", 2, 6)]: { subj: "確テ" },
       [makeCellKey("火", 2, 2)]: { subj: "国語" }, // S に個別コマ
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2], { periods });
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]), {
+      periods,
+    });
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("個別のコマ");
   });
@@ -241,7 +329,7 @@ describe("changeJoint: 検証とエラー", () => {
         [makeCellKey("火", 2, 7)]: { subj: "英語" },
       },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("範囲が重なる");
   });
@@ -256,7 +344,7 @@ describe("changeJoint: 検証とエラー", () => {
         [makeCellKey("火", 2, 8)]: { subj: "確テ" },
       },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("並列");
   });
@@ -268,7 +356,7 @@ describe("changeJoint: 検証とエラー", () => {
       days: ["火"],
       schedule: { [makeCellKey("火", 1, 2)]: { subj: "数学" } },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 1, 2)], [2, 3]);
+    const res = changeJoint(tab, one([makeCellKey("火", 1, 2)], [2, 3]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("ラベル");
   });
@@ -276,6 +364,7 @@ describe("changeJoint: 検証とエラー", () => {
   it("並列の片方だけを狭いスパンへ移すのは交差になりエラー", () => {
     // 同スパン並列 (SS〜A ×2、監督 2 人) の片方だけを SS〜S にすると、
     // 残った SS〜A と同じ行で範囲が交差して結合表示できない
+    // (相方も同時に動かす分け合いは「並列の分け合い」の describe を参照)
     const tab = baseTab({
       classes: [...baseTab().classes, cls(7, "SS〜A")],
       schedule: {
@@ -283,7 +372,7 @@ describe("changeJoint: 検証とエラー", () => {
         [makeCellKey("火", 2, 7)]: { subj: "確テ", teacher: "大屋敷" },
       },
     });
-    const res = changeJoint(tab, [makeCellKey("火", 2, 6)], [1, 2]);
+    const res = changeJoint(tab, one([makeCellKey("火", 2, 6)], [1, 2]));
     expect(res.ok).toBe(false);
     expect(res.errors[0]).toContain("範囲が重なる");
   });
@@ -300,8 +389,7 @@ describe("changeJoint: 検証とエラー", () => {
     });
     const res = changeJoint(
       tab,
-      [makeCellKey("火", 2, 6), makeCellKey("木", 2, 6)],
-      [1, 2]
+      one([makeCellKey("火", 2, 6), makeCellKey("木", 2, 6)], [1, 2])
     );
     expect(res.ok).toBe(true);
     expect(res.created).toEqual(["SS〜S"]);
@@ -310,7 +398,7 @@ describe("changeJoint: 検証とエラー", () => {
     ).id;
     expect(res.tab.schedule[makeCellKey("火", 2, newId)]).toBeDefined();
     expect(res.tab.schedule[makeCellKey("木", 2, 7)]).toBeDefined();
-    expect(res.removedSource).toBe("SS〜A");
+    expect(res.removedSources).toEqual(["SS〜A"]);
   });
 
   it("別の列のキーが混ざるとエラー", () => {
@@ -320,8 +408,7 @@ describe("changeJoint: 検証とエラー", () => {
     });
     const res = changeJoint(
       tab,
-      [makeCellKey("火", 2, 6), makeCellKey("火", 1, 1)],
-      [1, 2]
+      one([makeCellKey("火", 2, 6), makeCellKey("火", 1, 1)], [1, 2])
     );
     expect(res.ok).toBe(false);
   });

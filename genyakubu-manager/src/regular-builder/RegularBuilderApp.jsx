@@ -813,13 +813,13 @@ export default function RegularBuilderApp({
   }, [ctxMenu, project]);
 
   // ダイアログの「変更する」。表示用の計算はダイアログ側 (changeJoint) と
-  // 同じ引数で行い、保存は saveProject の最新値で再計算する (setClassRoom
+  // 同じ ops で行い、保存は saveProject の最新値で再計算する (setClassRoom
   // と同じパターン)
   const applyJointChange = useCallback(
-    ({ tabId, keys, memberIds, day }) => {
+    ({ tabId, ops, day }) => {
       const tab = project.tabs.find((t) => t.id === tabId);
       if (!tab) return;
-      const res = changeJoint(tab, keys, memberIds, { periods: project.periods });
+      const res = changeJoint(tab, ops, { periods: project.periods });
       if (!res.ok) {
         toasts.error(res.errors[0] || "合同を変更できませんでした");
         return;
@@ -827,20 +827,20 @@ export default function RegularBuilderApp({
       updateTab(
         tabId,
         (t) => {
-          const r = changeJoint(t, keys, memberIds);
+          const r = changeJoint(t, ops);
           return r.ok ? r.tab : t;
         },
         { atomic: true }
       );
-      const parts = [
-        res.toPlain
-          ? `「${res.fromLabel}」の ${res.moves.length} コマを通常コマ「${res.toLabel}」に戻しました`
-          : `「${res.fromLabel}」の ${res.moves.length} コマを合同「${res.toLabel}」に変更しました`,
-      ];
+      const parts = res.parts.map((p) =>
+        p.toPlain
+          ? `「${p.fromLabel}」の ${p.moved} コマを通常コマ「${p.toLabel}」に戻しました`
+          : `「${p.fromLabel}」の ${p.moved} コマを合同「${p.toLabel}」に変更しました`
+      );
       if (res.created.length > 0)
         parts.push(`合同列「${res.created.join("」「")}」を作成`);
-      if (res.removedSource)
-        parts.push(`空になった合同列「${res.removedSource}」は削除`);
+      if (res.removedSources.length > 0)
+        parts.push(`空になった合同列「${res.removedSources.join("」「")}」は削除`);
       toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, {
         duration: 4500,
       });
