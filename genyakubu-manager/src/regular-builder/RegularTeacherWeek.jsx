@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { computeTeacherWeek } from "./teacherLoad";
+import { computeTeacherWeek, formatMinutes } from "./teacherLoad";
 import { formatCount } from "../utils/biweekly";
 import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { DAY_COLOR } from "../constants/colors";
@@ -23,8 +23,9 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
     <div className={`no-print ${UI.panel} text-xs`}>
       <div className="flex items-center gap-2">
         <div className={`${UI.panelHead} flex-1`}>
-          {/* 計は 📊 集計と同じ重み付き (隔週 0.5) */}
-          👁 {teacher} の週間（計 {formatCount(week.weightedTotal)} コマ）
+          {/* 計は 📊 集計と同じ重み付き (隔週 0.5)。稼働時間も併記する */}
+          👁 {teacher} の週間（計 {formatCount(week.weightedTotal)} コマ
+          {week.totalMinutes > 0 ? `・${formatMinutes(week.totalMinutes)}` : ""}）
         </div>
         {onPrint && week.total > 0 && (
           <button
@@ -52,7 +53,13 @@ export function RegularTeacherWeek({ project, teacher, onJump, onPrint }) {
                 >
                   {d}曜{" "}
                   <span className="font-normal text-builder-ink-subtle">
-                    {entries.length ? `${entries.length} コマ` : "－"}
+                    {entries.length
+                      ? `${entries.length} コマ${
+                          week.minutesByDay[d] > 0
+                            ? `・${formatMinutes(week.minutesByDay[d])}`
+                            : ""
+                        }`
+                      : "－"}
                   </span>
                 </div>
                 {/* NG (不在) を先頭に出す — この曜日に入れられない時間帯の予告 */}
@@ -119,7 +126,9 @@ export function RegularTeacherWeekPrintSheet({ project, teacher }) {
         {teacher} の週間時間割 — {project.name || "通常時間割"}
       </div>
       <div className="text-xs text-builder-ink-muted mb-2">
-        計 {formatCount(week.weightedTotal)} コマ / 印刷日: {formatPrintDateJa(new Date())}
+        計 {formatCount(week.weightedTotal)} コマ
+        {week.totalMinutes > 0 ? `・稼働 ${formatMinutes(week.totalMinutes)}` : ""} / 印刷日:{" "}
+        {formatPrintDateJa(new Date())}
       </div>
       {week.days.map((d) => {
         const entries = week.byDay[d] || [];

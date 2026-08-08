@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { computeTeacherLoad } from "./teacherLoad";
+import { computeTeacherLoad, formatMinutes } from "./teacherLoad";
 import { computeClassSubjectLoad } from "./classLoad";
 import { formatCount } from "../utils/biweekly";
 import { DAY_COLOR, gradeColor } from "../constants/colors";
@@ -7,8 +7,10 @@ import { UI } from "./ui";
 
 // ─── 📊 集計パネル (講師 × 曜日 / クラス × 科目) ────────────────────
 // 講習ビルダーの集計パネルに相当。通常時間割は講師の週バランスを見ながら
-// 組むため、曜日別 + 週計を一覧する。上限 (講師マスタの maxPerDay /
-// maxPerWeek) の超過は赤字で警告するが、入力は妨げない。
+// 組むため、曜日別 + 週計を一覧する。学年で 1 コマの長さが違う (中学 45 分
+// / 高校 60 分〜) ため、各セルはコマ数の下段に稼働時間 (時:分) を併記する。
+// 上限 (講師マスタの maxPerDay / maxPerWeek) の超過は赤字で警告するが、
+// 入力は妨げない。
 // 下段はカリキュラム側の検算 (「中3 の数学が週 3 コマあるか」) 用の
 // クラス × 科目 の週コマ数 (computeClassSubjectLoad)。
 
@@ -16,13 +18,19 @@ const CELL =
   "border border-builder-border px-2 py-0.5 text-center tabular-nums";
 
 export function RegularSummaryPanel({ project }) {
-  const { days, rows } = useMemo(() => computeTeacherLoad(project), [project]);
+  const { days, rows, untimedCount } = useMemo(
+    () => computeTeacherLoad(project),
+    [project]
+  );
   const classLoad = useMemo(() => computeClassSubjectLoad(project), [project]);
   const hasAny = rows.some((r) => r.total > 0);
+  // 時限に時刻が 1 つも入っていない段階では時間の段を出さない (0:00 の羅列
+  // になるだけ)。入りはじめたら全セルに出し、未設定分は注意書きで知らせる
+  const hasMinutes = rows.some((r) => r.totalMinutes > 0);
 
   return (
     <div className={`no-print ${UI.panel} text-xs`}>
-      <div className={UI.panelHead}>📊 講師別コマ数（曜日 × 週計）</div>
+      <div className={UI.panelHead}>📊 講師別コマ数・稼働時間（曜日 × 週計）</div>
       {rows.length === 0 ? (
         <div className="text-builder-ink-subtle">
           講師がいません。「⚙ 全体設定」で講師を登録するか、セルに講師を割り当ててください。
@@ -73,6 +81,11 @@ export function RegularSummaryPanel({ project }) {
                         {/* 隔週 (0.5 重み) で端数が出るため formatCount */}
                         {n ? formatCount(n) : ""}
                         {over ? "!" : ""}
+                        {n > 0 && hasMinutes && (
+                          <div className="text-[10px] font-normal leading-tight text-builder-ink-muted">
+                            {formatMinutes(r.minutesByDay[d] || 0)}
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -83,11 +96,27 @@ export function RegularSummaryPanel({ project }) {
                     {r.maxPerWeek != null
                       ? `${formatCount(r.total)}/${r.maxPerWeek}`
                       : formatCount(r.total)}
+                    {r.total > 0 && hasMinutes && (
+                      <div className="text-[10px] font-normal leading-tight text-builder-ink-muted">
+                        {formatMinutes(r.totalMinutes)}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {hasMinutes && (
+        <div className={UI.hint}>
+          下段の 時:分 は稼働時間（時限の時刻から算出。隔週コマは 0.5 週分で算入）。
+        </div>
+      )}
+      {hasMinutes && untimedCount > 0 && (
+        <div className="text-[10px] text-builder-orange">
+          ⚠ 時刻未設定の時限の担当コマ {untimedCount} 件は稼働時間に含まれていません（時限の時刻は「⚙
+          全体設定」で設定できます）。
         </div>
       )}
       {rows.length > 0 && !hasAny && (
