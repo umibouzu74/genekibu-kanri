@@ -90,6 +90,14 @@ describe("MultiDayView", () => {
     ).toBe("false");
   });
 
+  it("曜日カラムは折り返さない等幅 (編集で表が広がっても縦一列に崩れない)", () => {
+    const { container } = renderView(twoSetProject());
+    const block = container.querySelector(".regb-print-day");
+    expect(block.parentElement.className).toContain("flex-nowrap");
+    expect(block.className).toContain("flex-1");
+    expect(block.className).toContain("min-w-[320px]");
+  });
+
   it("セットが無くても曜日の表は表示される", () => {
     const p = { ...makeProject({ tabs: [] }), id: 1 };
     renderView(p, { days: ["月"] });
