@@ -542,6 +542,19 @@ export default function RegularBuilderApp({
     }
   }, [project, usedDays, splitCampus, toasts]);
 
+  // ── 講師別 Excel (集計 + 講師ごとの週間シート)
+  const exportTeacherExcel = useCallback(async () => {
+    try {
+      const { downloadRegularTeacherExcel } = await import("./excelExport");
+      await downloadRegularTeacherExcel({ project });
+      toasts.success(
+        "講師別 Excel を書き出しました（集計 + 講師ごとにシート・A4 縦）"
+      );
+    } catch (e) {
+      toasts.error(`講師別 Excel を書き出せませんでした: ${e?.message || e}`);
+    }
+  }, [project, toasts]);
+
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
@@ -1538,14 +1551,24 @@ export default function RegularBuilderApp({
             </button>
           )}
           {usedDays.length > 0 && (
-            <button
-              type="button"
-              onClick={exportExcel}
-              title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。「🏫 亀井町を分ける」の状態に従います"
-              className={UI.btn}
-            >
-              📥 Excel
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={exportExcel}
+                title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
+                className={UI.btn}
+              >
+                📥 Excel
+              </button>
+              <button
+                type="button"
+                onClick={exportTeacherExcel}
+                title="講師別に Excel へ書き出す (1 枚目に講師×曜日のコマ数・稼働時間の集計、続いて講師ごとに週の担当コマ一覧のシート・A4 縦)"
+                className={UI.btn}
+              >
+                📥 講師別
+              </button>
+            </>
           )}
         </div>
       </div>
