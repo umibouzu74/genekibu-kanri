@@ -59,6 +59,12 @@ describe("buildStaffSurveyWorkbook", () => {
     expect(wb.worksheets.map((ws) => ws.name)).toEqual(["川井", "河野"]);
   });
 
+  it("シート名が同名になるバイト (同姓同名・記号除去後の一致) は ~2, ~3 で一意化する", () => {
+    // exceljs は重複シート名で例外を投げ、全員分の出力ごと失敗していた
+    const wb = build(["山田", "山田", "山/田"]);
+    expect(wb.worksheets.map((ws) => ws.name)).toEqual(["山田", "山田~2", "山田~3"]);
+  });
+
   it("シート名に使えない文字は除去する", () => {
     const wb = build(["山/田?[1]"]);
     expect(wb.worksheets[0].name).toBe("山田1");

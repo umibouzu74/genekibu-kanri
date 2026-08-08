@@ -112,6 +112,22 @@ describe("DayScheduleManager", () => {
     expect(saved[0].cancelTimes).toEqual(["16:25-17:25"]);
   });
 
+  it("日付 (曜日) を変えると前の曜日の時間帯の行編集は持ち越さない", () => {
+    const { onSave } = renderManager();
+    setDate("2026-10-07"); // 水
+    fireEvent.click(screen.getByText("① 50分授業 (17:00開始)"));
+    expect(screen.getByText("16:25-17:25")).toBeInTheDocument();
+    // 金曜へ変更 — 金曜にコマは無いので、水曜の読み替え行は消え、
+    // 存在しない時間帯の読み替えを保存できてしまうことも無い
+    setDate("2026-10-09");
+    expect(screen.queryByText("16:25-17:25")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("登録"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("時刻の読み替えか休講を 1 つ以上指定してください")
+    ).toBeInTheDocument();
+  });
+
   it("衝突プレビュー: 読み替えで新たに生じる講師の重なりを警告する", () => {
     renderManager();
     setDate("2026-10-07");

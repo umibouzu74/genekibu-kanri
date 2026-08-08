@@ -84,10 +84,21 @@ export function formatSlotLines(slot) {
   return tail ? `${head}\n${tail}` : head;
 }
 
-// Excel のシート名に使えない文字を除き、31 文字に収める
-function safeSheetName(name, index) {
-  const cleaned = String(name).replace(/[\\/:?*[\]]/g, "").substring(0, 31).trim();
-  return cleaned || `バイト${index + 1}`;
+// Excel のシート名に使えない文字を除き、31 文字に収める。ブック内で
+// 同名になった場合 (同姓同名・記号除去後の一致・先頭 31 文字の一致) は
+// 「~2」「~3」… を付けて一意化する — exceljs の addWorksheet は重複名で
+// 例外を投げ、全員分の出力ごと失敗してしまうため
+function safeSheetName(name, index, used) {
+  const base =
+    String(name).replace(/[\\/:?*[\]]/g, "").substring(0, 31).trim() ||
+    `バイト${index + 1}`;
+  let candidate = base;
+  for (let n = 2; used.has(candidate); n++) {
+    const suffix = `~${n}`;
+    candidate = `${base.substring(0, 31 - suffix.length).trimEnd()}${suffix}`;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 // ─── シート構築 ─────────────────────────────────────────────────────
@@ -96,7 +107,7 @@ const DAY_COL0 = 2; // B 列〜: 月〜土
 const COL_COUNT = 1 + DAYS.length;
 
 function buildOneStaffSheet(workbook, name, index, slots, opts) {
-  const ws = workbook.addWorksheet(safeSheetName(name, index));
+  const ws = workbook.addWorksheet(safeSheetName(name, index, opts.usedSheetNames));
   const grid = collectStaffGrid(slots, name);
 
   // 行 1: タイトル
@@ -249,8 +260,13 @@ function buildOneStaffSheet(workbook, name, index, slots, opts) {
  */
 export function buildStaffSurveyWorkbook({ staffNames, slots, timetableLabel, dateLabel }) {
   const workbook = new ExcelJS.Workbook();
+  const usedSheetNames = new Set();
   staffNames.forEach((name, i) => {
-    buildOneStaffSheet(workbook, name, i, slots, { timetableLabel, dateLabel });
+    buildOneStaffSheet(workbook, name, i, slots, {
+      timetableLabel,
+      dateLabel,
+      usedSheetNames,
+    });
   });
   return workbook;
 }

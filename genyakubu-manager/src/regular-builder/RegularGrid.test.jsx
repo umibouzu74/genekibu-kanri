@@ -55,7 +55,7 @@ describe("RegularGrid - 列見出しの教室編集", () => {
     const input = screen.getByLabelText("高2 404 の既定教室");
     fireEvent.change(input, { target: { value: "407" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onSetClassRoom).toHaveBeenCalledWith(1, 1, "407");
+    expect(onSetClassRoom).toHaveBeenCalledWith(1, 1, "407", "月");
     expect(screen.queryByLabelText("高2 404 の既定教室")).toBeNull();
   });
 
@@ -66,7 +66,7 @@ describe("RegularGrid - 列見出しの教室編集", () => {
     const input = screen.getByLabelText("高2 405 の既定教室");
     fireEvent.change(input, { target: { value: "406" } });
     fireEvent.blur(input);
-    expect(onSetClassRoom).toHaveBeenCalledWith(1, 2, "406");
+    expect(onSetClassRoom).toHaveBeenCalledWith(1, 2, "406", "月");
   });
 
   it("Escape は編集を取り消して何も呼ばない", () => {
@@ -88,13 +88,26 @@ describe("RegularGrid - 列見出しの教室編集", () => {
     const input = screen.getByLabelText("中3 S の既定教室");
     fireEvent.change(input, { target: { value: "503" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onSetClassRoom).toHaveBeenCalledWith(1, 1, "503");
+    expect(onSetClassRoom).toHaveBeenCalledWith(1, 1, "503", "月");
   });
 
   it("onSetClassRoom が無い (印刷用など) 場合はただのテキスト表示", () => {
     renderGrid(kozaProject());
     expect(screen.queryByRole("button", { name: "404" })).toBeNull();
     expect(screen.getByText("404")).toBeDefined();
+  });
+
+  it("曜日別既定 (roomByDay) がある列は、その曜日の教室 + ＊印を見出しに出す", () => {
+    const p = kozaProject();
+    p.tabs[0].classes[0].roomByDay = { 月: "301" };
+    renderGrid(p, { onSetClassRoom: vi.fn() });
+    // 列1 は月曜だけ 301 (＊付き)、列2 は基本の 405 のまま
+    expect(screen.getByRole("button", { name: "301＊" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "404" })).toBeNull();
+    expect(screen.getByRole("button", { name: "405" })).toBeDefined();
+    // 編集を開くと初期値はこの曜日の実効既定
+    fireEvent.click(screen.getByRole("button", { name: "301＊" }));
+    expect(screen.getByLabelText("高2 404 の既定教室").value).toBe("301");
   });
 });
 
@@ -151,6 +164,48 @@ describe("RegularGrid - セクション縦積み (stackSections)", () => {
     expect(screen.getByRole("columnheader", { name: /^S/ }).className).toContain(
       "min-w-[90px]"
     );
+  });
+
+  it("splitCampus で改名された手動グループ（◯◯（亀井町））も元グループのタブ定義順で並ぶ", () => {
+    // 旧実装はセクション名で元グループを引いていたため、splitCampus が
+    // 「高校（亀井町）」に改名した瞬間に対応付けが外れて末尾送りになっていた
+    const project = {
+      ...makeProject(),
+      id: 1,
+      tabs: [
+        {
+          id: 1,
+          name: "高1",
+          grade: "高1",
+          group: "高校",
+          classes: [
+            { id: 1, label: "", room: "402" },
+            { id: 2, label: "", room: "亀21" },
+          ],
+          days: ["月"],
+          periodIds: [1],
+          schedule: {
+            [makeCellKey("月", 1, 1)]: { subj: "英語" },
+            [makeCellKey("月", 1, 2)]: { subj: "数学" },
+          },
+        },
+        {
+          id: 2,
+          name: "高2",
+          grade: "高2",
+          group: "選択",
+          classes: [{ id: 1, label: "", room: "403" }],
+          days: ["月"],
+          periodIds: [1],
+          schedule: { [makeCellKey("月", 1, 1)]: { subj: "国語" } },
+        },
+      ],
+    };
+    const { container } = renderGrid(project, {
+      stackSections: true,
+      splitCampus: true,
+    });
+    expect(sectionNames(container)).toEqual(["高校", "高校（亀井町）", "選択"]);
   });
 
   it("同じ部のセクションは曜日をまたいで同じ並びになる (タブ定義順)", () => {

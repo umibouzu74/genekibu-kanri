@@ -13,7 +13,7 @@
 
 import { nextNumericId } from "../utils/schema";
 import { computeMergeLayout } from "./mergedColumns";
-import { makeCellKey, parseCellKey, REGULAR_DAYS } from "./model";
+import { classRoomForDay, makeCellKey, parseCellKey, REGULAR_DAYS } from "./model";
 
 const RANGE_SEP_RE = /^.+?([〜～~]).+$/;
 
@@ -280,15 +280,16 @@ export function changeJoint(tab, ops, { periods = [] } = {}) {
       }
       spec.toLabel = target.label;
 
-      // 実効教室を保つ: セルに教室が無ければ移動元列の既定教室を引き継ぎ、
-      // 移動先列の既定と同じなら省略に正規化する (setClassRoom と同じ思想)。
-      // 教室しか無いセルは省略すると空セルになり同期サニタイズで消えるため、
-      // その場合だけ既定と同じでも教室を残す
-      const eff = (mv.cell.room || "").trim() || (srcCls.room || "").trim();
+      // 実効教室を保つ: セルに教室が無ければ移動元列のその曜日の既定教室
+      // (曜日別 → 基本) を引き継ぎ、移動先列の同曜日の既定と同じなら省略に
+      // 正規化する (setClassRoom と同じ思想)。教室しか無いセルは省略すると
+      // 空セルになり同期サニタイズで消えるため、その場合だけ既定と同じでも
+      // 教室を残す
+      const eff = (mv.cell.room || "").trim() || classRoomForDay(srcCls, day);
       const { room: _room, ...out } = mv.cell;
       if (
         eff &&
-        (eff !== (target.room || "").trim() || Object.keys(out).length === 0)
+        (eff !== classRoomForDay(target, day) || Object.keys(out).length === 0)
       ) {
         out.room = eff;
       }

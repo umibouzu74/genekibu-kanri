@@ -48,8 +48,11 @@ function describePeriodCell(entry) {
 export function computeConflicts(project) {
   const list = [];
 
-  // 時刻が判定可能なエントリのみ対象 (時刻未設定の時限は反映側で弾く)
-  const entries = resolveAllEntries(project).filter((e) =>
+  // 時間帯の重なり比較 (講師・教室・クラス) は時刻が判定可能なエントリ
+  // のみ対象 (時刻未設定の時限は反映側で弾く)。NG 判定は時刻に依存しない
+  // 終日 NG があるため、全エントリを別途見る (下の allEntries)
+  const allEntries = resolveAllEntries(project);
+  const entries = allEntries.filter((e) =>
     TIME_RE.test((e.period.time || "").trim())
   );
 
@@ -125,19 +128,23 @@ export function computeConflicts(project) {
   // ── 講師 NG (不在) への割当 ──────────────────────────────────────
   // NG は「曜日 (+ 任意の時刻範囲)」。time 無しは終日 NG。同じ講師の複数
   // NG が同じセルに重なっても 1 件と数える (承認を 1 回で済ませるため)。
+  // 終日 NG は時刻未設定の時限にも当てる (時刻に依存しないため。予告の
+  // computeNgTeachersForTabs と同じ判定 — 予告だけ出て検出されないと、
+  // 警告を見て割り当てたのに問題一覧に載らないズレになる)
   const ngTeachers = (project.teachers || []).filter(
     (t) => (t.ngSlots || []).length > 0
   );
   if (ngTeachers.length > 0) {
     const byName = new Map(ngTeachers.map((t) => [t.name, t]));
-    for (const e of entries) {
+    for (const e of allEntries) {
+      const time = (e.period.time || "").trim();
       for (const name of splitTeacherField(e.cell.teacher || "")) {
         const master = byName.get(name);
         if (!master) continue;
         const hit = master.ngSlots.find(
           (s) =>
             s.day === e.day &&
-            (!s.time || timeOverlaps(s.time, e.period.time.trim()))
+            (!s.time || (TIME_RE.test(time) && timeOverlaps(s.time, time)))
         );
         if (!hit) continue;
         // ラベルは曜日で始まるため、括弧内は時間帯だけにする (重複表記防止)

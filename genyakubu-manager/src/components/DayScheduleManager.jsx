@@ -137,6 +137,29 @@ export function DayScheduleManager({
     );
   };
 
+  // 日付 (= 曜日) を変えたら、新しい日付のコマに無い時間帯の行編集は
+  // 持ち越さない。残すと前の曜日の時間帯が extras として行に生き続け、
+  // 存在しない時間帯の読み替え・休講が保存できてしまう (プリセット適用後
+  // に日付を選び直すケース)。編集読込 (handleEdit) はこの経路を通らない
+  // ので、コマ側が変わった既存エントリの残存時間帯はこれまで通り残る
+  const handleDateChange = (value) => {
+    setDate(value);
+    setRowEdits((prev) => {
+      const nd = value && isValidDateStr(value) ? dateToDay(value) : null;
+      if (!nd) return {};
+      const base = collectTargetTimes(
+        filterSlotsForDate(slots, value, timetables).filter((s) => s.day === nd),
+        targetGrades
+      );
+      const keep = {};
+      for (const [from, edit] of Object.entries(prev)) {
+        if (base.includes(from)) keep[from] = edit;
+      }
+      return keep;
+    });
+    if (error) setError("");
+  };
+
   const applyPreset = (key) => {
     const grades = targetGrades.length > 0 ? targetGrades : fuzokuGrades;
     if (targetGrades.length === 0) setTargetGrades(grades);
@@ -333,10 +356,7 @@ export function DayScheduleManager({
             <input
               type="date"
               value={date}
-              onChange={(e) => {
-                setDate(e.target.value);
-                if (error) setError("");
-              }}
+              onChange={(e) => handleDateChange(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
             {date && dow && (

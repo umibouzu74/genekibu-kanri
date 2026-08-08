@@ -204,12 +204,14 @@ export function setCellsLocked(tabs, refs, locked) {
 // ─── クラス列の既定教室の変更 (列のコマと連動) ──────────────────────
 
 /**
- * クラス列の既定教室を変更した新しい tabs 配列を返す (純関数)。
- * セルの実効教室は「セル上書き → クラス既定」(effectiveRoom) なので、
- * 上書きの無いセルは自動で新しい既定教室に追従する。上書きが新既定と
- * 同じセルは上書きを外して既定追従へ正規化する (取込が「既定と同じ
- * 上書き」を作らないのと同じ状態に揃える)。別教室の上書き (個別指定)
- * とロック中のセルには触れない。
+ * クラス列の既定教室 (基本・全曜日) を変更した新しい tabs 配列を返す
+ * (純関数)。セルの実効教室は「セル上書き → 曜日別既定 → クラス既定」
+ * (effectiveRoom) なので、上書きの無いセルは自動で新しい既定教室に
+ * 追従する。上書きがその曜日の新しい実効既定と同じセルは上書きを外して
+ * 既定追従へ正規化する (取込が「既定と同じ上書き」を作らないのと同じ
+ * 状態に揃える)。新既定と同じになった曜日別既定 (roomByDay) も冗長に
+ * なるので外す。別教室の上書き (個別指定)・別教室の曜日別既定・ロック中
+ * のセルには触れない。
  * @returns {{tabs: object[], changed: boolean, oldRoom: string, newRoom: string,
  *            normalized: number, kept: number}}
  *   normalized = 上書きを外して既定追従に戻したセル数、
@@ -223,18 +225,88 @@ export function setClassRoom(tabs, tabId, classId, room) {
   if (!cls || oldRoom === newRoom) {
     return { tabs, changed: false, oldRoom, newRoom, normalized: 0, kept: 0 };
   }
+  const roomByDay = { ...(cls.roomByDay || {}) };
+  for (const [d, r] of Object.entries(roomByDay)) {
+    if (!(r || "").trim() || (r || "").trim() === newRoom) delete roomByDay[d];
+  }
+  const dayRoom = (d) => (roomByDay[d] || "").trim() || newRoom;
   let normalized = 0;
   let kept = 0;
   const schedule = {};
   for (const [key, cell] of Object.entries(tab.schedule || {})) {
-    if (parseCellKey(key).classId !== classId) {
+    const pos = parseCellKey(key);
+    if (pos.classId !== classId) {
+      schedule[key] = cell;
+      continue;
+    }
+    const override = (cell.room || "").trim();
+    if (override && override === dayRoom(pos.day) && !cell.locked) {
+      const { room: _r, ...rest } = cell;
+      // 教室だけのセルは中身が無くなるので削除 (onCellChange と同じ扱い)
+      if (["subj", "teacher", "note"].some((f) => (rest[f] || "").trim())) {
+        schedule[key] = rest;
+      }
+      normalized++;
+    } else {
+      if (override && override !== dayRoom(pos.day)) kept++;
+      schedule[key] = cell;
+    }
+  }
+  const next = tabs.map((t) =>
+    t.id === tabId
+      ? {
+          ...t,
+          classes: t.classes.map((c) => {
+            if (c.id !== classId) return c;
+            const nc = { ...c, room: newRoom };
+            if (Object.keys(roomByDay).length) nc.roomByDay = roomByDay;
+            else delete nc.roomByDay;
+            return nc;
+          }),
+          schedule,
+        }
+      : t
+  );
+  return { tabs: next, changed: true, oldRoom, newRoom, normalized, kept };
+}
+
+/**
+ * クラス列の「この曜日だけ」の既定教室を変更した新しい tabs 配列を返す
+ * (純関数)。基本の既定教室 (cls.room) には触れず、roomByDay[day] を
+ * 設定 / 解除する。空文字・基本と同じ値は「この曜日の指定を外して基本に
+ * 戻す」。その曜日のこの列で、新しい実効既定と同じセル上書きは
+ * setClassRoom と同じく既定追従へ正規化する (別教室・ロック中は保持)。
+ * @returns {{tabs: object[], changed: boolean, oldRoom: string, newRoom: string,
+ *            normalized: number, kept: number}}
+ *   oldRoom / newRoom はその曜日の実効既定 (変更前 / 変更後)
+ */
+export function setClassRoomForDay(tabs, tabId, classId, day, room) {
+  const input = (room || "").trim();
+  const tab = tabs.find((t) => t.id === tabId);
+  const cls = tab?.classes?.find((c) => c.id === classId);
+  if (!cls) {
+    return { tabs, changed: false, oldRoom: "", newRoom: "", normalized: 0, kept: 0 };
+  }
+  const base = (cls.room || "").trim();
+  const before = ((cls.roomByDay || {})[day] || "").trim();
+  const after = input && input !== base ? input : "";
+  const oldRoom = before || base;
+  const newRoom = after || base;
+  if (before === after) {
+    return { tabs, changed: false, oldRoom, newRoom, normalized: 0, kept: 0 };
+  }
+  let normalized = 0;
+  let kept = 0;
+  const schedule = {};
+  for (const [key, cell] of Object.entries(tab.schedule || {})) {
+    const pos = parseCellKey(key);
+    if (pos.classId !== classId || pos.day !== day) {
       schedule[key] = cell;
       continue;
     }
     const override = (cell.room || "").trim();
     if (override && override === newRoom && !cell.locked) {
       const { room: _r, ...rest } = cell;
-      // 教室だけのセルは中身が無くなるので削除 (onCellChange と同じ扱い)
       if (["subj", "teacher", "note"].some((f) => (rest[f] || "").trim())) {
         schedule[key] = rest;
       }
@@ -248,9 +320,16 @@ export function setClassRoom(tabs, tabId, classId, room) {
     t.id === tabId
       ? {
           ...t,
-          classes: t.classes.map((c) =>
-            c.id === classId ? { ...c, room: newRoom } : c
-          ),
+          classes: t.classes.map((c) => {
+            if (c.id !== classId) return c;
+            const roomByDay = { ...(c.roomByDay || {}) };
+            if (after) roomByDay[day] = after;
+            else delete roomByDay[day];
+            const nc = { ...c };
+            if (Object.keys(roomByDay).length) nc.roomByDay = roomByDay;
+            else delete nc.roomByDay;
+            return nc;
+          }),
           schedule,
         }
       : t
@@ -451,11 +530,24 @@ export function sanitizeProject(raw) {
             classes: Array.isArray(x.classes)
               ? x.classes
                   .filter((c) => c && typeof c === "object")
-                  .map((c, j) => ({
-                    id: numOr(c.id, j + 1),
-                    label: str(c.label),
-                    room: str(c.room),
-                  }))
+                  .map((c, j) => {
+                    const out = {
+                      id: numOr(c.id, j + 1),
+                      label: str(c.label),
+                      room: str(c.room),
+                    };
+                    // 曜日別の既定教室 (任意)。既知の曜日 × 空でない文字列のみ
+                    if (c.roomByDay && typeof c.roomByDay === "object") {
+                      const byDay = {};
+                      for (const [d, r] of Object.entries(c.roomByDay)) {
+                        if (REGULAR_DAYS.includes(d) && str(r).trim()) {
+                          byDay[d] = str(r);
+                        }
+                      }
+                      if (Object.keys(byDay).length) out.roomByDay = byDay;
+                    }
+                    return out;
+                  })
               : [],
             days: Array.isArray(x.days)
               ? x.days.filter((d) => REGULAR_DAYS.includes(d))
@@ -510,18 +602,19 @@ export function sanitizeWorkspace(raw) {
 export const isAnnexRoom = (room) => /^亀/.test((room || "").trim());
 
 /**
- * クラス列の建物判定。セルの実効教室 (cell.room || cls.room) の多数決で
- * 決め、セルが無い (または教室不明の) 列は既定教室で判定する。同数も
- * 既定教室に倒す。実データには列の既定教室と実コマの教室 (セル上書き) が
- * 食い違う列があるため、既定教室だけでは判定しない。
+ * クラス列の建物判定。セルの実効教室 (セル上書き → 曜日別既定 → クラス
+ * 既定) の多数決で決め、セルが無い (または教室不明の) 列は既定教室で
+ * 判定する。同数も既定教室に倒す。実データには列の既定教室と実コマの
+ * 教室 (セル上書き) が食い違う列があるため、既定教室だけでは判定しない。
  * @returns {"main" | "annex"}
  */
 export function classCampus(tab, cls) {
   let annex = 0;
   let main = 0;
   for (const [key, cell] of Object.entries(tab.schedule || {})) {
-    if (parseCellKey(key).classId !== cls.id) continue;
-    const room = (cell.room || "").trim() || (cls.room || "").trim();
+    const pos = parseCellKey(key);
+    if (pos.classId !== cls.id) continue;
+    const room = (cell.room || "").trim() || classRoomForDay(cls, pos.day);
     if (!room) continue;
     if (isAnnexRoom(room)) annex++;
     else main++;
@@ -721,7 +814,18 @@ export function resolveAllEntries(project) {
   return (project.tabs || []).flatMap((tab) => resolveTabEntries(project, tab));
 }
 
-/** セルの実効教室 (セル上書き → クラス既定の順) */
+/**
+ * クラス列のその曜日の既定教室 (曜日別 roomByDay[day] → 基本 room の順)。
+ * 「木曜だけ亀63、他は亀21」のような曜日別の教室を表す。roomByDay の
+ * 無い列は従来どおり基本の既定教室 1 つで全曜日をまかなう。
+ */
+export function classRoomForDay(cls, day) {
+  return (
+    (((cls?.roomByDay || {})[day] || "").trim()) || ((cls?.room || "").trim())
+  );
+}
+
+/** セルの実効教室 (セル上書き → 曜日別既定 → クラス既定の順) */
 export function effectiveRoom(entry) {
-  return (entry.cell.room || "").trim() || (entry.cls.room || "").trim();
+  return (entry.cell.room || "").trim() || classRoomForDay(entry.cls, entry.day);
 }
