@@ -70,12 +70,21 @@ function MenuTh({ onOpenMenu, title, className, children, ...rest }) {
 
 // セクション見出しの配色: 全学年が高校系なら高校部、全て中学系なら
 // 中学部 (附属含む)、混在は中立色
+const isHighGrade = (g) => g.includes("高");
 const sectionTone = (tabs) => {
   const grades = tabs.map((t) => t.grade || t.name);
-  const isHigh = (g) => g.includes("高");
-  if (grades.every(isHigh)) return DEPT_COLOR["高校部"];
-  if (grades.every((g) => !isHigh(g))) return DEPT_COLOR["中学部"];
+  if (grades.every(isHighGrade)) return DEPT_COLOR["高校部"];
+  if (grades.every((g) => !isHighGrade(g))) return DEPT_COLOR["中学部"];
   return { b: "#e8e8e8", f: "#444444", accent: "#607080" };
+};
+
+// 縦積み (stackSections) の並び順: 中学部 → 混在 → 高校部。同順位は
+// 従来どおりタブ定義順 (sort は安定ソート)
+const sectionDeptRank = (tabs) => {
+  const grades = tabs.map((t) => t.grade || t.name);
+  if (grades.every((g) => !isHighGrade(g))) return 0;
+  if (grades.every(isHighGrade)) return 2;
+  return 1;
 };
 
 export function RegularGrid({
@@ -111,6 +120,10 @@ export function RegularGrid({
   selectionAnchor = null,
   onToggleSelect = null,
   onRectSelect = null,
+  /** ◫ 曜日を並べる用: セクションを縦 1 列に積み、中学部 → 高校部の順に
+      揃える (曜日を左右に並べたとき同じ部が横に並ぶ)。通常の曜日ビューは
+      従来どおり 2 カラム流し込み・タブ定義順 */
+  stackSections = false,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -288,8 +301,13 @@ export function RegularGrid({
       );
       return { ...s, tabs, periods, cols, tabLayouts, cellCount, tone: sectionTone(tabs) };
     })
-    .filter((s) => s.tabs.length > 0 && s.periods.length > 0),
-    [rawSections, project, day, hideEmpty]
+    .filter((s) => s.tabs.length > 0 && s.periods.length > 0)
+    // 縦積みでは部の順 (中学部 → 高校部) に揃える。同順位はタブ定義順の
+    // まま (sort は安定)。通常表示は従来どおりタブ定義順
+    .sort((a, b) =>
+      stackSections ? sectionDeptRank(a.tabs) - sectionDeptRank(b.tabs) : 0
+    ),
+    [rawSections, project, day, hideEmpty, stackSections]
   );
 
   // 講師プルダウンの「(重複)」「(NG)」予告の索引 (全セルの解決は 1 回で
@@ -594,7 +612,7 @@ export function RegularGrid({
     <div
       ref={containerRef}
       onDragOver={handleContainerDragOver}
-      className={`flex flex-wrap items-start gap-3 print-container ${isCompact ? "text-xs" : "text-sm"}`}
+      className={`flex ${stackSections ? "flex-col" : "flex-wrap"} items-start gap-3 print-container ${isCompact ? "text-xs" : "text-sm"}`}
     >
       {sections.map((s) => {
         const collapsed = collapsedKeys.has(s.key);

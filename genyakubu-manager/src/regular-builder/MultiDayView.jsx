@@ -7,7 +7,9 @@ import { RegularGrid } from "./RegularGrid";
 // 編集する。各曜日は通常の曜日ビューと同一の RegularGrid のフル表示
 // (全学年・全クラス) — 「火木セットのクラスを編集しつつ、同じ曜日の
 // 他学年・他コースとの講師・教室の兼ね合いも見ながら調整する」ため、
-// クラスは絞らない。並べる曜日の選択はツールバーの曜日チップ (複数
+// クラスは絞らない。各曜日の中はセクションを縦 1 列に積み、中学部 →
+// 高校部の順に揃える (stackSections — 左右の曜日で同じ部が横に並ぶ)。
+// 並べる曜日の選択はツールバーの曜日チップ (複数
 // 選択化)。「中3（火・木）」のようなコースセット (courseSets で自動
 // 検出) はチップから曜日の組を一発で切り替えるショートカット。
 // コマは曜日をまたいでドラッグ入替 / Ctrl+ドラッグでコピーできる
@@ -81,7 +83,7 @@ export function MultiDayView({
                 {formatPrintDateJa(new Date())}
               </span>
             </div>
-            <RegularGrid {...gridProps} project={project} day={d} />
+            <RegularGrid {...gridProps} project={project} day={d} stackSections />
           </div>
         ))}
       </div>
