@@ -90,12 +90,20 @@ describe("MultiDayView", () => {
     ).toBe("false");
   });
 
-  it("曜日カラムは折り返さない等幅 (編集で表が広がっても縦一列に崩れない)", () => {
+  it("曜日カラムはコンテンツ幅で詰めて並び、セクション行は曜日をまたいで共有される", () => {
     const { container } = renderView(twoSetProject());
     const block = container.querySelector(".regb-print-day");
-    expect(block.parentElement.className).toContain("flex-nowrap");
-    expect(block.className).toContain("flex-1");
-    expect(block.className).toContain("min-w-[320px]");
+    // 親はコンテンツ幅 (max-content) の列を持つグリッド — 左の曜日が
+    // 終わったすぐ隣 (gap-x-4) から次の曜日が始まる (等幅分割はしない)
+    const grid = block.parentElement;
+    expect(grid.className).toContain("grid");
+    expect(grid.style.gridTemplateColumns).toBe("repeat(2, max-content)");
+    // 曜日ラッパは display:contents — 見出し (行 1) とセクション (行 2〜)
+    // が親グリッドへ直接配置され、同じ行のセクションの縦の始まりが揃う
+    expect(block.className).toContain("contents");
+    const secs = [...container.querySelectorAll(".regb-section")];
+    expect(secs.map((el) => el.style.gridColumn)).toEqual(["1", "2"]);
+    expect(secs.map((el) => el.style.gridRow)).toEqual(["2", "2"]);
   });
 
   it("セットが無くても曜日の表は表示される", () => {

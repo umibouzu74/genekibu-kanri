@@ -133,16 +133,72 @@ describe("RegularGrid - セクション縦積み (stackSections)", () => {
       ...container.querySelectorAll(".regb-section > button > span:first-child"),
     ].map((el) => el.textContent.replace(/[▸▾]/g, "").trim());
 
-  it("stackSections で中学部 → 高校部の順になり、コンテナが縦積みになる", () => {
-    const { container } = renderGrid(mixedDeptProject(), { stackSections: true });
+  it("stackSections で中学部 → 高校部の順になり、親グリッドの行へ直接配置される", () => {
+    const { container } = renderGrid(mixedDeptProject(), {
+      stackSections: true,
+      gridColumn: 2,
+    });
     expect(sectionNames(container)).toEqual(["中3", "高2"]);
+    // コンテナは display:contents — セクションが MultiDayView のグリッドの
+    // アイテムになり、行 (2〜) を並べた曜日どうしで共有する
     expect(container.querySelector(".print-container").className).toContain(
-      "flex-col"
+      "contents"
     );
+    const secs = [...container.querySelectorAll(".regb-section")];
+    expect(secs.map((el) => el.style.gridColumn)).toEqual(["2", "2"]);
+    expect(secs.map((el) => el.style.gridRow)).toEqual(["2", "3"]);
     // 横幅を曜日で分け合うため、クラス列の最小幅の下限も詰まる
     expect(screen.getByRole("columnheader", { name: /^S/ }).className).toContain(
       "min-w-[90px]"
     );
+  });
+
+  it("同じ部のセクションは曜日をまたいで同じ並びになる (タブ定義順)", () => {
+    // 手動グループ「本校」「亀井町」。月曜に居るのは 亀井町の高1亀 と
+    // 本校の高3 だけ — その曜日での検出順は亀井町が先だが、縦積みでは
+    // プロジェクト全体のタブ定義順 (本校の高1 が先頭) で本校を先にする
+    const project = {
+      ...makeProject(),
+      id: 1,
+      tabs: [
+        {
+          id: 1,
+          name: "高1",
+          grade: "高1",
+          group: "本校",
+          classes: [{ id: 1, label: "", room: "408" }],
+          days: ["木"],
+          periodIds: [1],
+          schedule: { [makeCellKey("木", 1, 1)]: { subj: "英語" } },
+        },
+        {
+          id: 2,
+          name: "高1亀",
+          grade: "高1",
+          group: "亀井町",
+          classes: [{ id: 1, label: "", room: "亀42" }],
+          days: ["月", "木"],
+          periodIds: [1],
+          schedule: { [makeCellKey("月", 1, 1)]: { subj: "数学" } },
+        },
+        {
+          id: 3,
+          name: "高3",
+          grade: "高3",
+          group: "本校",
+          classes: [{ id: 1, label: "", room: "701" }],
+          days: ["月"],
+          periodIds: [1],
+          schedule: { [makeCellKey("月", 1, 1)]: { subj: "国語" } },
+        },
+      ],
+    };
+    const { container } = renderGrid(project, { stackSections: true });
+    expect(sectionNames(container)).toEqual(["本校", "亀井町"]);
+    // 通常表示は従来どおりその曜日での検出順 (亀井町の高1亀 が先)
+    cleanup();
+    const { container: plain } = renderGrid(project);
+    expect(sectionNames(plain)).toEqual(["亀井町", "本校"]);
   });
 
   it("通常表示はタブ定義順のまま", () => {

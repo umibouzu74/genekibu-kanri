@@ -78,8 +78,9 @@ const sectionTone = (tabs) => {
   return { b: "#e8e8e8", f: "#444444", accent: "#607080" };
 };
 
-// 縦積み (stackSections) の並び順: 中学部 → 混在 → 高校部。同順位は
-// 従来どおりタブ定義順 (sort は安定ソート)
+// 縦積み (stackSections) の並び順の第 1 キー: 中学部 → 混在 → 高校部。
+// 同順位の並びは sections useMemo 内の stackOrderRank (曜日非依存の
+// タブ定義順) → 本校 → 亀井町で決める
 const sectionDeptRank = (tabs) => {
   const grades = tabs.map((t) => t.grade || t.name);
   if (grades.every((g) => !isHighGrade(g))) return 0;
@@ -120,11 +121,16 @@ export function RegularGrid({
   selectionAnchor = null,
   onToggleSelect = null,
   onRectSelect = null,
-  /** ◫ 曜日を並べる用: セクションを縦 1 列に積み、中学部 → 高校部の順に
-      揃える (曜日を左右に並べたとき同じ部が横に並ぶ)。クラス列の最小幅の
-      下限も詰める (横幅を曜日で分け合うため)。通常の曜日ビューは従来
-      どおり 2 カラム流し込み・タブ定義順・広めの下限 */
+  /** ◫ 曜日を並べる用: コンテナを display:contents にし、各セクションを
+      親 (MultiDayView) の CSS グリッドの行 (行 1 = 曜日見出し、行 2〜 =
+      セクション順) へ直接配置する — 並べた曜日どうしで同じ行の
+      セクションの縦の始まりが揃う。並び順は中学部 → 高校部、同じ部の中は
+      曜日に依存しない基準 (タブ定義順 → 本校 → 亀井町) に揃える。
+      クラス列の最小幅の下限も詰める (横幅を曜日で分け合うため)。通常の
+      曜日ビューは従来どおり 2 カラム流し込み・タブ定義順・広めの下限 */
   stackSections = false,
+  /** stackSections 時に自分の曜日が入る親グリッドの列番号 (1 始まり) */
+  gridColumn = 1,
 }) {
   const containerRef = useRef(null);
   const [dragSource, setDragSource] = useState(null);
@@ -245,71 +251,88 @@ export function RegularGrid({
     [project, day, splitCampus]
   );
 
-  const sections = useMemo(() => rawSections
-    .map((s) => {
-      // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
-      // 構成クラスは残す)。列が全部消えた学年はこの曜日の表から外す
-      const tabs = hideEmpty
+  const sections = useMemo(() => {
+    // 縦積み (◫ 曜日を並べる) の同順位 (同じ部) の並び: タブ定義順 →
+    // 本校 → 亀井町。手動グループはその曜日に居ないタブも含めた
+    // プロジェクト全体の定義順で測る — 「その曜日での検出順」だと
+    // 月曜は亀井町が先・木曜は本校が先のように、並べた曜日の間で
+    // 行の対応がずれるため、曜日に依存しない基準だけで順序を決める
+    const tabOrder = new Map((project.tabs || []).map((t, i) => [t.id, i]));
+    const stackOrderRank = (s) => {
+      const pool = s.auto
         ? s.tabs
-            .map((t) => ({ ...t, classes: visibleClassesForDay(t, day) }))
-            .filter((t) => t.classes.length > 0)
-        : s.tabs;
-      const usedIds = new Set(tabs.flatMap((t) => t.periodIds));
-      let periods = project.periods
-        .filter((p) => usedIds.has(p.id))
-        .map((p, i) => ({ p, i }))
-        .sort((x, y) => startMin(x.p.time) - startMin(y.p.time) || x.i - y.i)
-        .map((x) => x.p);
-      if (hideEmpty) {
-        periods = periods.filter((per) =>
-          tabs.some(
-            (t) =>
-              t.periodIds.includes(per.id) &&
-              t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
-          )
-        );
-      }
-      // 合同列 (S〜B 等) のセル結合レイアウト。結合表示できないデータの
-      // 学年は fallback = true (従来の独立列表示)
-      const tabLayouts = new Map();
-      for (const t of tabs) {
-        const layout = computeMergeLayout(t);
-        tabLayouts.set(t.id, {
-          ...layout,
-          fallback: mergeFallback(t, day, periods, layout),
+        : (project.tabs || []).filter((t) => (t.group || "").trim() === s.name);
+      return Math.min(...pool.map((t) => tabOrder.get(t.id) ?? Infinity));
+    };
+    return rawSections
+      .map((s) => {
+        // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
+        // 構成クラスは残す)。列が全部消えた学年はこの曜日の表から外す
+        const tabs = hideEmpty
+          ? s.tabs
+              .map((t) => ({ ...t, classes: visibleClassesForDay(t, day) }))
+              .filter((t) => t.classes.length > 0)
+          : s.tabs;
+        const usedIds = new Set(tabs.flatMap((t) => t.periodIds));
+        let periods = project.periods
+          .filter((p) => usedIds.has(p.id))
+          .map((p, i) => ({ p, i }))
+          .sort((x, y) => startMin(x.p.time) - startMin(y.p.time) || x.i - y.i)
+          .map((x) => x.p);
+        if (hideEmpty) {
+          periods = periods.filter((per) =>
+            tabs.some(
+              (t) =>
+                t.periodIds.includes(per.id) &&
+                t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
+            )
+          );
+        }
+        // 合同列 (S〜B 等) のセル結合レイアウト。結合表示できないデータの
+        // 学年は fallback = true (従来の独立列表示)
+        const tabLayouts = new Map();
+        for (const t of tabs) {
+          const layout = computeMergeLayout(t);
+          tabLayouts.set(t.id, {
+            ...layout,
+            fallback: mergeFallback(t, day, periods, layout),
+          });
+        }
+        // 矢印ナビ用の列の通し並び (範囲列も含む — 結合セルへ移動できるように)
+        const cols = tabs.flatMap((t) => {
+          const lay = tabLayouts.get(t.id);
+          const rangeIds = lay.fallback
+            ? new Set()
+            : new Set(lay.ranges.map((r) => r.cls.id));
+          return t.classes.map((cls) => ({ tab: t, cls, isRange: rangeIds.has(cls.id) }));
         });
-      }
-      // 矢印ナビ用の列の通し並び (範囲列も含む — 結合セルへ移動できるように)
-      const cols = tabs.flatMap((t) => {
-        const lay = tabLayouts.get(t.id);
-        const rangeIds = lay.fallback
-          ? new Set()
-          : new Set(lay.ranges.map((r) => r.cls.id));
-        return t.classes.map((cls) => ({ tab: t, cls, isRange: rangeIds.has(cls.id) }));
-      });
-      const cellCount = tabs.reduce(
-        (n, t) =>
-          n +
-          Object.keys(t.schedule).filter((k) => {
-            const pos = parseCellKey(k);
-            return (
-              pos.day === day &&
-              t.periodIds.includes(pos.periodId) &&
-              t.classes.some((c) => c.id === pos.classId)
-            );
-          }).length,
-        0
+        const cellCount = tabs.reduce(
+          (n, t) =>
+            n +
+            Object.keys(t.schedule).filter((k) => {
+              const pos = parseCellKey(k);
+              return (
+                pos.day === day &&
+                t.periodIds.includes(pos.periodId) &&
+                t.classes.some((c) => c.id === pos.classId)
+              );
+            }).length,
+          0
+        );
+        return { ...s, tabs, periods, cols, tabLayouts, cellCount, tone: sectionTone(tabs) };
+      })
+      .filter((s) => s.tabs.length > 0 && s.periods.length > 0)
+      // 縦積みでは部の順 (中学部 → 高校部) → 曜日非依存の同順位基準
+      // (stackOrderRank + 本校 → 亀井町) に揃える (sort は安定)。
+      // 通常表示は従来どおりタブ定義順
+      .sort((a, b) =>
+        stackSections
+          ? sectionDeptRank(a.tabs) - sectionDeptRank(b.tabs) ||
+            stackOrderRank(a) - stackOrderRank(b) ||
+            (a.campus === "annex" ? 1 : 0) - (b.campus === "annex" ? 1 : 0)
+          : 0
       );
-      return { ...s, tabs, periods, cols, tabLayouts, cellCount, tone: sectionTone(tabs) };
-    })
-    .filter((s) => s.tabs.length > 0 && s.periods.length > 0)
-    // 縦積みでは部の順 (中学部 → 高校部) に揃える。同順位はタブ定義順の
-    // まま (sort は安定)。通常表示は従来どおりタブ定義順
-    .sort((a, b) =>
-      stackSections ? sectionDeptRank(a.tabs) - sectionDeptRank(b.tabs) : 0
-    ),
-    [rawSections, project, day, hideEmpty, stackSections]
-  );
+  }, [rawSections, project, day, hideEmpty, stackSections]);
 
   // 講師プルダウンの「(重複)」「(NG)」予告の索引 (全セルの解決は 1 回で
   // 済む一括版)。セクションの tabs は建物分割・空列非表示で加工した仮想
@@ -336,16 +359,23 @@ export function RegularGrid({
       ? "min-w-[80px]"
       : "min-w-[125px]";
 
+  // ◫ 曜日を並べるでは空メッセージも親グリッドのセクション行 (行 2) へ
+  // 明示配置する (自動配置に任せると隣の曜日の空きマスへずれ込む)。
+  // max-content の列幅がメッセージの長さまで広がらないよう幅も抑える
+  const emptyStyle = stackSections ? { gridColumn, gridRow: 2 } : undefined;
+  const emptyCls = `text-xs text-builder-ink-subtle px-1.5 py-4 ${
+    stackSections ? "max-w-[320px]" : ""
+  }`;
   if (rawSections.length === 0) {
     return (
-      <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+      <div className={emptyCls} style={emptyStyle}>
         {day}曜日を使う学年がありません。学年チップから曜日・使う時限・クラスを設定してください。
       </div>
     );
   }
   if (sections.length === 0) {
     return (
-      <div className="text-xs text-builder-ink-subtle px-1.5 py-4">
+      <div className={emptyCls} style={emptyStyle}>
         入力済みのセルがありません（「▤ 空行・空列を隠す」を解除すると全マス目が表示されます）。
       </div>
     );
@@ -625,13 +655,16 @@ export function RegularGrid({
     <div
       ref={containerRef}
       onDragOver={handleContainerDragOver}
-      className={`flex ${stackSections ? "flex-col" : "flex-wrap"} items-start gap-3 print-container ${isCompact ? "text-xs" : "text-sm"}`}
+      className={`${stackSections ? "contents" : "flex flex-wrap items-start gap-3"} print-container ${isCompact ? "text-xs" : "text-sm"}`}
     >
-      {sections.map((s) => {
+      {sections.map((s, si) => {
         const collapsed = collapsedKeys.has(s.key);
         return (
         <section
           key={s.key}
+          // 縦積みは親 (MultiDayView) のグリッドへ直接配置 (行 1 は曜日
+          // 見出し)。行の高さは並べた曜日の同じ行のセクションで共有される
+          style={stackSections ? { gridColumn, gridRow: si + 2 } : undefined}
           className="regb-section max-w-full bg-builder-surface border border-builder-border rounded-lg shadow overflow-hidden"
         >
           {/* セクション見出し (ダッシュボードの部バーに相当)。クリックで開閉 */}
