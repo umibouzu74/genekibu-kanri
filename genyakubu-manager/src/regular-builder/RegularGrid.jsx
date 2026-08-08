@@ -121,8 +121,9 @@ export function RegularGrid({
   onToggleSelect = null,
   onRectSelect = null,
   /** ◫ 曜日を並べる用: セクションを縦 1 列に積み、中学部 → 高校部の順に
-      揃える (曜日を左右に並べたとき同じ部が横に並ぶ)。通常の曜日ビューは
-      従来どおり 2 カラム流し込み・タブ定義順 */
+      揃える (曜日を左右に並べたとき同じ部が横に並ぶ)。クラス列の最小幅の
+      下限も詰める (横幅を曜日で分け合うため)。通常の曜日ビューは従来
+      どおり 2 カラム流し込み・タブ定義順・広めの下限 */
   stackSections = false,
 }) {
   const containerRef = useRef(null);
@@ -322,6 +323,18 @@ export function RegularGrid({
       ngByTab: computeNgTeachersForTabs(project, origTabs),
     };
   }, [project, sections]);
+
+  // クラス列の最小幅 (下限)。内容が長いセル (講師 2 名・備考など) は
+  // table の自動レイアウトでこれより広がる。縦積み (◫ 曜日を並べる) は
+  // 曜日カラムを左右で分け合って横幅が貴重なので、下限を詰めて内容の
+  // 短い列をコンパクトにする
+  const colMinW = stackSections
+    ? isCompact
+      ? "min-w-[56px]"
+      : "min-w-[90px]"
+    : isCompact
+      ? "min-w-[80px]"
+      : "min-w-[125px]";
 
   if (rawSections.length === 0) {
     return (
@@ -717,7 +730,7 @@ export function RegularGrid({
                           onOpenMenu={
                             onOpenHeaderMenu ? (pos) => openColMenu(pos, t, cls2) : null
                           }
-                          className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[80px]" : "p-1 text-xs min-w-[125px]"} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
+                          className={`bg-builder-surface-alt text-builder-ink border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px]" : "p-1 text-xs"} ${colMinW} ${ci === 0 && ti > 0 ? GROUP_BOUNDARY : ""}`}
                         >
                           {/* クラス名が無い列 (取込した高校の講座列など) は教室名を見出しに */}
                           {cls2.label ? (

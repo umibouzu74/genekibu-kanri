@@ -139,6 +139,10 @@ describe("RegularGrid - セクション縦積み (stackSections)", () => {
     expect(container.querySelector(".print-container").className).toContain(
       "flex-col"
     );
+    // 横幅を曜日で分け合うため、クラス列の最小幅の下限も詰まる
+    expect(screen.getByRole("columnheader", { name: /^S/ }).className).toContain(
+      "min-w-[90px]"
+    );
   });
 
   it("通常表示はタブ定義順のまま", () => {
@@ -146,6 +150,9 @@ describe("RegularGrid - セクション縦積み (stackSections)", () => {
     expect(sectionNames(container)).toEqual(["高2", "中3"]);
     expect(container.querySelector(".print-container").className).toContain(
       "flex-wrap"
+    );
+    expect(screen.getByRole("columnheader", { name: /^S/ }).className).toContain(
+      "min-w-[125px]"
     );
   });
 });
