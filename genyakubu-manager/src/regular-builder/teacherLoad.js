@@ -1,11 +1,14 @@
-// ─── 講師の担当コマ数の集計 (📊 集計パネル用) ───────────────────────
+// ─── 講師の担当コマ数・稼働時間の集計 (📊 集計パネル用) ─────────────
 // 講師 × 曜日のコマ数と週計を数え、講師マスタの上限 (maxPerDay /
 // maxPerWeek) の超過を注釈する純関数。上限は入力を妨げない warning
 // (講習の「上限到達で warning 色」と同じ思想)。
+// コマ数と並行して稼働時間 (分) も集計する — 学年で 1 コマの長さが違う
+// (中学 45 分 / 高校 60 分〜) ため、講師の負荷はコマ数より時間で見る。
 //
 // - 複数講師 ("·" 区切り) のセルは各講師に 1 コマずつ数える
 // - 隔週コマ (note に「隔週」) は本体の slotWeight と同じ 0.5 で数え、
 //   note「隔週(パートナー)」のパートナー講師にも 0.5 を計上する
+//   (稼働時間も同じ 0.5 週分)
 // - 設定変更で無効になった残骸セルは数えない (resolveAllEntries 基準)
 // - マスタに無い講師 (取込データの直接入力など) も inMaster: false で列挙
 
@@ -18,6 +21,27 @@ import {
 } from "../utils/biweekly";
 import { timeStartToMin } from "../utils/dateHelpers";
 
+// ─── 時限の所要分数 (稼働時間の集計用) ──────────────────────────────
+// 時限時刻はこのサブシステム全体で "HH:MM-HH:MM" が正 (conflicts の
+// TIME_RE と同じ)。書式外・時刻未設定・終了が開始以前 (入力ミス) は
+// 0 分 — コマ数には数え、時間には足さない (untimedCount で注意喚起)。
+
+const TIME_RANGE_RE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
+
+export function periodMinutes(time) {
+  const m = String(time || "").trim().match(TIME_RANGE_RE);
+  if (!m) return 0;
+  const dur =
+    Number(m[3]) * 60 + Number(m[4]) - (Number(m[1]) * 60 + Number(m[2]));
+  return dur > 0 ? dur : 0;
+}
+
+/** 分数を「時:分」表示にする (45 → "0:45")。隔週 0.5 重みの端数は四捨五入 */
+export function formatMinutes(min) {
+  const t = Math.round(min);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}
+
 /**
  * @returns {{
  *   days: string[],           // いずれかの学年が使う曜日 (REGULAR_DAYS 順)
@@ -25,12 +49,15 @@ import { timeStartToMin } from "../utils/dateHelpers";
  *     name: string,
  *     inMaster: boolean,
  *     byDay: Record<string, number>,
+ *     minutesByDay: Record<string, number>, // 稼働時間 (分)。時刻未設定の時限は 0 分
  *     total: number,
+ *     totalMinutes: number,   // 週の稼働時間 (分)
  *     maxPerDay: number|null,
  *     maxPerWeek: number|null,
  *     overDays: string[],     // maxPerDay を超えた曜日
  *     overWeek: boolean,      // total > maxPerWeek
  *   }[],                      // マスタ順 → マスタ外 (名前順)
+ *   untimedCount: number,     // 時刻未設定の時限に載った担当コマ数 (時間に未算入)
  * }}
  */
 export function computeTeacherLoad(project) {
@@ -38,33 +65,48 @@ export function computeTeacherLoad(project) {
     (project.tabs || []).some((t) => (t.days || []).includes(d))
   );
 
-  const counted = new Map(); // name → {byDay, total}
-  const add = (name, day, weight) => {
-    if (!counted.has(name)) counted.set(name, { byDay: {}, total: 0 });
+  const counted = new Map(); // name → {byDay, minutesByDay, total, totalMinutes}
+  const add = (name, day, weight, minutes) => {
+    if (!counted.has(name)) {
+      counted.set(name, { byDay: {}, minutesByDay: {}, total: 0, totalMinutes: 0 });
+    }
     const r = counted.get(name);
     r.byDay[day] = (r.byDay[day] || 0) + weight;
+    r.minutesByDay[day] = (r.minutesByDay[day] || 0) + weight * minutes;
     r.total += weight;
+    r.totalMinutes += weight * minutes;
   };
+  let untimedCount = 0;
   for (const e of resolveAllEntries(project)) {
     const biweekly = isBiweekly(e.cell.note);
     const weight = biweekly ? 0.5 : 1;
-    for (const name of splitTeacherField(e.cell.teacher || "")) {
-      add(name, e.day, weight);
+    const minutes = periodMinutes(e.period.time);
+    const names = splitTeacherField(e.cell.teacher || "");
+    for (const name of names) {
+      add(name, e.day, weight, minutes);
     }
     // 隔週パートナー (B 週担当) にも 0.5 を計上する
     const partner = biweekly ? biweeklyPartner(e.cell.note) : null;
-    if (partner) add(partner, e.day, 0.5);
+    if (partner) add(partner, e.day, 0.5, minutes);
+    if (!minutes && (names.length > 0 || partner)) untimedCount++;
   }
 
   const finish = (name, master) => {
-    const r = counted.get(name) || { byDay: {}, total: 0 };
+    const r = counted.get(name) || {
+      byDay: {},
+      minutesByDay: {},
+      total: 0,
+      totalMinutes: 0,
+    };
     const maxPerDay = master?.maxPerDay ?? null;
     const maxPerWeek = master?.maxPerWeek ?? null;
     return {
       name,
       inMaster: !!master,
       byDay: r.byDay,
+      minutesByDay: r.minutesByDay,
       total: r.total,
+      totalMinutes: r.totalMinutes,
       maxPerDay,
       maxPerWeek,
       overDays: maxPerDay
@@ -82,7 +124,7 @@ export function computeTeacherLoad(project) {
   for (const name of [...counted.keys()].sort()) {
     rows.push(finish(name, null));
   }
-  return { days, rows };
+  return { days, rows, untimedCount };
 }
 
 // ─── 講師 1 人の週間一覧 (👁 週間ミニビュー用) ──────────────────────
@@ -104,6 +146,8 @@ export function computeTeacherLoad(project) {
  *   ngByDay: Record<string, {time: string}[]>, // NG (不在)。time "" = 終日
  *   total: number,          // エントリ件数 (隔週も 1 と数える)
  *   weightedTotal: number,  // 重み付き週計 (隔週 0.5 — 📊 集計と同じ)
+ *   minutesByDay: Record<string, number>, // 曜日別の稼働時間 (分、隔週 0.5)
+ *   totalMinutes: number,   // 週の稼働時間 (分、隔週 0.5 — 📊 集計と同じ)
  * }}
  */
 export function computeTeacherWeek(project, teacherName) {
@@ -111,9 +155,14 @@ export function computeTeacherWeek(project, teacherName) {
     (project.tabs || []).some((t) => (t.days || []).includes(d))
   );
   const byDay = {};
-  for (const d of days) byDay[d] = [];
+  const minutesByDay = {};
+  for (const d of days) {
+    byDay[d] = [];
+    minutesByDay[d] = 0;
+  }
   let total = 0;
   let weightedTotal = 0;
+  let totalMinutes = 0;
   for (const e of resolveAllEntries(project)) {
     if (!byDay[e.day]) continue;
     const biweekly = isBiweekly(e.cell.note);
@@ -133,7 +182,11 @@ export function computeTeacherWeek(project, teacherName) {
     if (biweekly) entry.biweekly = isPartner ? "B" : "A";
     byDay[e.day].push(entry);
     total++;
-    weightedTotal += biweekly ? 0.5 : 1;
+    const weight = biweekly ? 0.5 : 1;
+    weightedTotal += weight;
+    const minutes = weight * periodMinutes(e.period.time);
+    minutesByDay[e.day] += minutes;
+    totalMinutes += minutes;
   }
   for (const d of days) {
     byDay[d].sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time));
@@ -150,5 +203,5 @@ export function computeTeacherWeek(project, teacherName) {
   const ngOrder = (s) => (s.time ? timeStartToMin(s.time) : -1);
   for (const d of days) ngByDay[d].sort((a, b) => ngOrder(a) - ngOrder(b));
 
-  return { days, byDay, ngByDay, total, weightedTotal };
+  return { days, byDay, ngByDay, total, weightedTotal, minutesByDay, totalMinutes };
 }

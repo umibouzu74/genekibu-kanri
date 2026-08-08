@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeTeacherLoad, computeTeacherWeek } from "./teacherLoad";
+import {
+  computeTeacherLoad,
+  computeTeacherWeek,
+  formatMinutes,
+  periodMinutes,
+} from "./teacherLoad";
 import { makeCellKey } from "./model";
 import { makeProject } from "./testUtils";
 
@@ -57,6 +62,86 @@ describe("computeTeacherLoad", () => {
     const { days, rows } = computeTeacherLoad(p);
     expect(days).toEqual(["火"]);
     expect(rows.map((r) => r.total)).toEqual([0, 0]);
+  });
+});
+
+describe("稼働時間 (minutesByDay / totalMinutes)", () => {
+  it("時限の時刻 (HH:MM-HH:MM) から曜日別・週計の分数を集計する", () => {
+    const { rows, untimedCount } = computeTeacherLoad(makeProject());
+    const handa = rows.find((r) => r.name === "半田");
+    expect(handa.minutesByDay).toEqual({ 月: 45 }); // 1限 18:00-18:45
+    expect(handa.totalMinutes).toBe(45);
+    expect(untimedCount).toBe(0);
+  });
+
+  it("1 コマの長さが違う時限は分数で差が出る (高校 60 分など)", () => {
+    const p = makeProject();
+    p.periods.push({ id: 4, label: "高3 1限", time: "19:00-20:00" });
+    p.tabs[0].periodIds.push(4);
+    p.tabs[0].schedule[makeCellKey("火", 4, 1)] = { subj: "数学", teacher: "半田" };
+    const { rows } = computeTeacherLoad(p);
+    const handa = rows.find((r) => r.name === "半田");
+    expect(handa.byDay).toEqual({ 月: 1, 火: 1 }); // コマ数は同じ 1 ずつ
+    expect(handa.minutesByDay).toEqual({ 月: 45, 火: 60 });
+    expect(handa.totalMinutes).toBe(105);
+  });
+
+  it("時刻未設定の時限はコマ数のみ数え、untimedCount で知らせる", () => {
+    const p = makeProject();
+    p.periods.push({ id: 9, label: "特設", time: "" });
+    p.tabs[0].periodIds.push(9);
+    p.tabs[0].schedule[makeCellKey("火", 9, 1)] = { subj: "数学", teacher: "半田" };
+    const { rows, untimedCount } = computeTeacherLoad(p);
+    const handa = rows.find((r) => r.name === "半田");
+    expect(handa.byDay["火"]).toBe(1);
+    expect(handa.minutesByDay["火"]).toBe(0);
+    expect(handa.totalMinutes).toBe(45); // 月1限の分だけ
+    expect(untimedCount).toBe(1);
+  });
+
+  it("隔週コマは主担当・パートナーとも 0.5 週分の時間で算入する", () => {
+    const p = makeProject();
+    // 月2限 S (18:55-19:40 = 45分): 堀上 が主担当、河野 がパートナー
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = {
+      subj: "英語",
+      teacher: "堀上",
+      note: "隔週(河野)",
+    };
+    const { rows } = computeTeacherLoad(p);
+    const horigami = rows.find((r) => r.name === "堀上");
+    expect(horigami.totalMinutes).toBe(67.5); // 月2限A 45 + 隔週 0.5 × 45
+    const kono = rows.find((r) => r.name === "河野");
+    expect(kono.minutesByDay["月"]).toBe(22.5);
+  });
+
+  it("computeTeacherWeek も同じ重みで曜日別・週計を返す", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = { subj: "理科", teacher: "半田" };
+    const week = computeTeacherWeek(p, "半田");
+    expect(week.minutesByDay).toEqual({ 月: 45, 火: 45 });
+    expect(week.totalMinutes).toBe(90);
+  });
+});
+
+describe("periodMinutes / formatMinutes", () => {
+  it("'HH:MM-HH:MM' を所要分数に変換する", () => {
+    expect(periodMinutes("18:00-18:45")).toBe(45);
+    expect(periodMinutes(" 19:00-20:00 ")).toBe(60);
+  });
+
+  it("書式外・未設定・終了が開始以前は 0 分", () => {
+    expect(periodMinutes("")).toBe(0);
+    expect(periodMinutes(undefined)).toBe(0);
+    expect(periodMinutes("18:00")).toBe(0); // 開始のみ
+    expect(periodMinutes("18:00〜18:45")).toBe(0); // 区切りは "-" が正 (conflicts と同じ)
+    expect(periodMinutes("19:00-18:00")).toBe(0); // 入力ミス (終了が開始より前)
+  });
+
+  it("formatMinutes は 時:分 表示 (0.5 重みの端数は四捨五入)", () => {
+    expect(formatMinutes(45)).toBe("0:45");
+    expect(formatMinutes(135)).toBe("2:15");
+    expect(formatMinutes(22.5)).toBe("0:23");
+    expect(formatMinutes(0)).toBe("0:00");
   });
 });
 
