@@ -8,7 +8,8 @@ import { RegularGrid } from "./RegularGrid";
 // (全学年・全クラス) — 「火木セットのクラスを編集しつつ、同じ曜日の
 // 他学年・他コースとの講師・教室の兼ね合いも見ながら調整する」ため、
 // クラスは絞らない。各曜日の中はセクションを縦 1 列に積み、中学部 →
-// 高校部の順に揃える (stackSections — 左右の曜日で同じ部が横に並ぶ)。
+// 高校部の順に揃える (stackSections + gridColumn — セクション行を全曜日で
+// 共有し、左右の曜日で同じ行のセクションの縦の始まりが揃う)。
 // 並べる曜日の選択はツールバーの曜日チップ (複数
 // 選択化)。「中3（火・木）」のようなコースセット (courseSets で自動
 // 検出) はチップから曜日の組を一発で切り替えるショートカット。
@@ -62,21 +63,26 @@ export function MultiDayView({
         </div>
       )}
 
-      {/* 画面は曜日を折り返し禁止の等幅カラム (flex-nowrap + flex-1) で
-          横並びに固定する。セル編集でプルダウン分だけ表が広がっても、
-          カラム幅は変わらずセクション内の横スクロールで吸収されるので、
-          編集のたびに右の曜日が下へ落ちて縦一列に崩れない (最小幅
-          320px を切る狭い画面ではページ側が横スクロールになる)。
+      {/* 画面は曜日をコンテンツ幅 (max-content) の CSS グリッド列で並べる —
+          左の曜日の表が終わったすぐ隣 (gap-x-4) から次の曜日が始まり、
+          画面を半分ずつの等幅では分けない。行も全曜日で共有し (行 1 =
+          曜日見出し、行 2〜 = セクション。RegularGrid が stackSections +
+          gridColumn で親グリッドへ直接配置)、左右の曜日で同じ行の
+          セクションは縦の始まりが揃う。合計幅が画面を超える分・セル編集で
+          プルダウン分だけ表が広がった分はページ側の横スクロールで見る。
           紙面は縦積み (print:block) — 改ページ (regb-print-day の
-          break-before) はフレックスアイテムに効かないため、印刷時は
-          コンテナごと block に戻す */}
-      <div className="flex flex-nowrap items-start gap-4 print:block">
-        {days.map((d) => (
-          <div
-            key={d}
-            className="regb-print-day flex-1 min-w-[320px] flex flex-col gap-1"
-          >
-            <div className="flex items-baseline gap-2">
+          break-before) は display:contents のラッパに効かないため、
+          印刷時はコンテナ・ラッパとも block に戻す */}
+      <div
+        className="grid items-start justify-items-start gap-x-4 gap-y-2 print:block"
+        style={{ gridTemplateColumns: `repeat(${days.length}, max-content)` }}
+      >
+        {days.map((d, i) => (
+          <div key={d} className="regb-print-day contents print:block">
+            <div
+              className="flex items-baseline gap-2"
+              style={{ gridColumn: i + 1, gridRow: 1 }}
+            >
               <span
                 className="text-sm font-extrabold px-2.5 py-0.5 rounded-lg"
                 style={{
@@ -91,7 +97,13 @@ export function MultiDayView({
                 {formatPrintDateJa(new Date())}
               </span>
             </div>
-            <RegularGrid {...gridProps} project={project} day={d} stackSections />
+            <RegularGrid
+              {...gridProps}
+              project={project}
+              day={d}
+              stackSections
+              gridColumn={i + 1}
+            />
           </div>
         ))}
       </div>
