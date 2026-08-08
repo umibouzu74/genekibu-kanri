@@ -98,6 +98,58 @@ describe("RegularGrid - 列見出しの教室編集", () => {
   });
 });
 
+describe("RegularGrid - セクション縦積み (stackSections)", () => {
+  // タブ定義順が 高2 → 中3 でも、縦積みでは 中学部 → 高校部 に揃える。
+  // 時限セットは互いに素にして別セクションのまま保つ
+  function mixedDeptProject() {
+    return {
+      ...makeProject(),
+      id: 1,
+      tabs: [
+        {
+          id: 1,
+          name: "高2",
+          grade: "高2",
+          classes: [{ id: 1, label: "", room: "404" }],
+          days: ["月"],
+          periodIds: [1],
+          schedule: { [makeCellKey("月", 1, 1)]: { subj: "文系数学" } },
+        },
+        {
+          id: 2,
+          name: "中3",
+          grade: "中3",
+          classes: [{ id: 1, label: "S", room: "501" }],
+          days: ["月"],
+          periodIds: [2],
+          schedule: { [makeCellKey("月", 2, 1)]: { subj: "英語" } },
+        },
+      ],
+    };
+  }
+  // 見出しボタンの 1 つ目の span (▸/▾ + セクション名。2 つ目はコマ数)
+  const sectionNames = (container) =>
+    [
+      ...container.querySelectorAll(".regb-section > button > span:first-child"),
+    ].map((el) => el.textContent.replace(/[▸▾]/g, "").trim());
+
+  it("stackSections で中学部 → 高校部の順になり、コンテナが縦積みになる", () => {
+    const { container } = renderGrid(mixedDeptProject(), { stackSections: true });
+    expect(sectionNames(container)).toEqual(["中3", "高2"]);
+    expect(container.querySelector(".print-container").className).toContain(
+      "flex-col"
+    );
+  });
+
+  it("通常表示はタブ定義順のまま", () => {
+    const { container } = renderGrid(mixedDeptProject());
+    expect(sectionNames(container)).toEqual(["高2", "中3"]);
+    expect(container.querySelector(".print-container").className).toContain(
+      "flex-wrap"
+    );
+  });
+});
+
 describe("RegularGrid - グリッド横断 D&D (週表示・セット編集の別曜日)", () => {
   // 別グリッド発のドラッグは dragSource (ローカル state) が null のまま
   // dataTransfer のカスタム型 (text/x-regb-cell-<projectId>) だけで届く
