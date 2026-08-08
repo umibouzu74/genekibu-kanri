@@ -141,6 +141,7 @@ export function computeTeacherLoad(project) {
  *   byDay: Record<string, {
  *     ref: string, time: string, periodLabel: string,
  *     tabName: string, clsLabel: string, subj: string, room: string,
+ *     note: string, teacher: string, // セルの原文 (Excel 出力の備考用)
  *     biweekly?: "A"|"B",           // 隔週コマのみ (A=主担当 / B=パートナー)
  *   }[]>,
  *   ngByDay: Record<string, {time: string}[]>, // NG (不在)。time "" = 終日
@@ -178,6 +179,8 @@ export function computeTeacherWeek(project, teacherName) {
       clsLabel: e.cls.label || e.cls.room || "",
       subj: e.cell.subj || "",
       room: effectiveRoom(e),
+      note: (e.cell.note || "").trim(),
+      teacher: (e.cell.teacher || "").trim(),
     };
     if (biweekly) entry.biweekly = isPartner ? "B" : "A";
     byDay[e.day].push(entry);
