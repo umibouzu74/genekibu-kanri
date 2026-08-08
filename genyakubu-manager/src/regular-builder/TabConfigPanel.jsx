@@ -5,7 +5,8 @@ import { UI } from "./ui";
 
 // ─── タブ設定 (名前 / 学年 / 曜日 / 使う時限 / クラス) ──────────────
 // grade は反映時に slot.grade へそのまま入る。クラスの label は slot.cls、
-// room はそのクラスの既定教室 (セル側で上書き可)。
+// room はそのクラスの既定教室 (曜日別 roomByDay → セル側の順で上書き可)。
+// 「曜日別」の入力列が列 × 曜日の教室一覧を兼ねる (点検・修復用)。
 
 function move(list, idx, delta) {
   const next = [...list];
@@ -37,6 +38,18 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
       ...t,
       classes: t.classes.map((c) => (c.id === cid ? { ...c, ...patch } : c)),
     }));
+
+  // 曜日別の既定教室 (roomByDay)。空欄 = 基本の教室どおり。「木曜だけ
+  // 亀63」のような曜日で違う教室をここで管理する (曜日ビューの列見出し
+  // からも変更でき、その場合は ＊ 印が付く)
+  const setDayRoom = (c, d, value) => {
+    const byDay = { ...(c.roomByDay || {}) };
+    if (value) byDay[d] = value;
+    else delete byDay[d];
+    updateClass(c.id, {
+      roomByDay: Object.keys(byDay).length ? byDay : undefined,
+    });
+  };
 
   return (
     <div className="no-print bg-builder-surface border border-builder-info-border rounded-lg p-3.5 flex flex-col gap-2.5">
@@ -126,8 +139,14 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-bold text-builder-ink">クラス（列）と既定教室</span>
+        {tab.days.length > 0 && (
+          <span className="text-[10px] text-builder-ink-subtle leading-relaxed">
+            「曜日別」は曜日で教室が違うときだけ入力します（空欄 =
+            基本の教室どおり）。ここで曜日ごとの教室を一覧で点検・修正できます。
+          </span>
+        )}
         {tab.classes.map((c, idx) => (
-          <div key={c.id} className="flex items-center gap-1.5">
+          <div key={c.id} className="flex items-center gap-1.5 flex-wrap">
             <input
               type="text"
               value={c.label}
@@ -143,6 +162,25 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
               list="regb-rooms"
               className={`${UI.input} w-28`}
             />
+            {tab.days.length > 0 && (
+              <span className="inline-flex items-center gap-1 flex-wrap text-[10px] text-builder-ink-subtle">
+                曜日別:
+                {tab.days.map((d) => (
+                  <label key={d} className="inline-flex items-center gap-0.5">
+                    {d}
+                    <input
+                      type="text"
+                      value={(c.roomByDay || {})[d] || ""}
+                      onChange={(e) => setDayRoom(c, d, e.target.value)}
+                      placeholder={c.room || "－"}
+                      list="regb-rooms"
+                      aria-label={`${c.label || c.room || "列"} の${d}曜の教室`}
+                      className={`${UI.input} w-16`}
+                    />
+                  </label>
+                ))}
+              </span>
+            )}
             <button
               type="button"
               className={UI.btn}

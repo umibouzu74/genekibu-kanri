@@ -19,7 +19,7 @@
 import ExcelJS from "exceljs";
 import { formatBiweeklyTeacher } from "../utils/biweekly";
 import { getSubjectColor } from "../timetable-builder/utils/constants";
-import { computeSections, makeCellKey } from "./model";
+import { classRoomForDay, computeSections, makeCellKey } from "./model";
 
 const ARGB_GRAY_BORDER = "FFAAAAAA";
 const ARGB_HEADER_BLUE = "FF4472C4";
@@ -73,13 +73,14 @@ export function collectDaySheet(project, day, { splitCampus = true } = {}) {
     .filter((s) => s.periods.length > 0 && s.cols.length > 0);
 }
 
-// セルの表示テキスト (教科 / 講師 / 教室・備考 の最大 3 行)
-function cellText(cell, cls) {
+// セルの表示テキスト (教科 / 講師 / 教室・備考 の最大 3 行)。教室は
+// その曜日の実効教室 (セル上書き → 曜日別既定 → クラス既定)
+function cellText(cell, cls, day) {
   if (!cell) return "";
   const lines = [];
   if (cell.subj) lines.push(cell.subj);
   if (cell.teacher) lines.push(formatBiweeklyTeacher(cell.teacher, cell.note));
-  const sub = [(cell.room || "").trim() || (cls.room || "").trim(), (cell.note || "").trim()]
+  const sub = [(cell.room || "").trim() || classRoomForDay(cls, day), (cell.note || "").trim()]
     .filter(Boolean)
     .join(" ");
   if (sub) lines.push(sub);
@@ -174,7 +175,7 @@ function buildDaySheet(workbook, project, day, sections, dateLabel) {
           return;
         }
         const cell = col.tab.schedule[makeCellKey(day, per.id, col.cls.id)];
-        target.value = cellText(cell, col.cls);
+        target.value = cellText(cell, col.cls, day);
         target.font = { size: 9 };
         target.alignment = { vertical: "top", wrapText: true };
         const argb = cell?.subj ? hexToArgb(getSubjectColor(cell.subj)) : undefined;

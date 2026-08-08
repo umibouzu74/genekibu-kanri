@@ -19,6 +19,7 @@ import {
   sanitizeWorkspace,
   setCellsLocked,
   setClassRoom,
+  setClassRoomForDay,
   swapCellsAcrossTabs,
   REGULAR_DAYS,
 } from "./model";
@@ -637,11 +638,11 @@ export default function RegularBuilderApp({
     [saveProject]
   );
 
-  // 列見出しの教室クリック → 列の既定教室を変更。上書きの無いセルは実効
-  // 教室が自動で追従し、新既定と同じ上書きは既定追従へ正規化される
+  // 列の既定教室を全曜日 (基本) として変更。上書きの無いセルは実効教室が
+  // 自動で追従し、新既定と同じ上書き・曜日別既定は既定追従へ正規化される
   // (連動の詳細は model.setClassRoom)。件数は表示用に現時点の project で
   // 数え、保存は saveProject の最新値で行う (toggleLockRefs と同じパターン)
-  const onSetClassRoom = useCallback(
+  const applyClassRoomAllDays = useCallback(
     (tabId, classId, room) => {
       const res = setClassRoom(project.tabs, tabId, classId, room);
       if (!res.changed) return;
@@ -650,7 +651,7 @@ export default function RegularBuilderApp({
         { atomic: true }
       );
       const parts = [
-        `列の既定教室を「${res.oldRoom || "未設定"}」→「${res.newRoom || "未設定"}」に変更しました`,
+        `列の既定教室 (全曜日) を「${res.oldRoom || "未設定"}」→「${res.newRoom || "未設定"}」に変更しました`,
       ];
       if (res.normalized > 0)
         parts.push(`同じ教室を指定していた ${res.normalized} コマは既定追従に統合`);
@@ -661,6 +662,50 @@ export default function RegularBuilderApp({
       });
     },
     [project, saveProject, toasts]
+  );
+
+  // 列見出しの教室クリック → 表示中の曜日だけの教室変更 (曜日別既定
+  // roomByDay。model.setClassRoomForDay)。他の曜日の教室は変わらない —
+  // 「木曜の教室を直したら火曜まで変わった」を防ぐ。全曜日に広げたい
+  // ときは toast の「全曜日に適用」から基本の既定へ昇格できる。基本の
+  // 既定教室が未設定の列は従来どおり全曜日の既定として設定する
+  const onSetClassRoom = useCallback(
+    (tabId, classId, room, day) => {
+      const cls = project.tabs
+        .find((t) => t.id === tabId)
+        ?.classes?.find((c) => c.id === classId);
+      if (!cls) return;
+      if (!day || !(cls.room || "").trim()) {
+        applyClassRoomAllDays(tabId, classId, room);
+        return;
+      }
+      const res = setClassRoomForDay(project.tabs, tabId, classId, day, room);
+      if (!res.changed) return;
+      saveProject(
+        (p) => ({
+          ...p,
+          tabs: setClassRoomForDay(p.tabs, tabId, classId, day, room).tabs,
+        }),
+        { atomic: true }
+      );
+      const parts = [
+        res.oldRoom === res.newRoom
+          ? `${day}曜の教室の個別指定を解除しました（基本 ${res.newRoom || "未設定"} のまま）`
+          : `${day}曜の教室を「${res.oldRoom || "未設定"}」→「${res.newRoom || "未設定"}」に変更しました（他の曜日はそのまま）`,
+      ];
+      if (res.normalized > 0)
+        parts.push(`同じ教室を指定していた ${res.normalized} コマは既定追従に統合`);
+      if (res.kept > 0)
+        parts.push(`別教室の個別指定 ${res.kept} コマはそのまま`);
+      toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, {
+        duration: 6000,
+        action: {
+          label: "全曜日に適用",
+          onClick: () => applyClassRoomAllDays(tabId, classId, room),
+        },
+      });
+    },
+    [project, saveProject, toasts, applyClassRoomAllDays]
   );
 
   // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
@@ -1034,6 +1079,9 @@ export default function RegularBuilderApp({
     for (const t of project.tabs || []) {
       for (const c of t.classes || []) {
         if ((c.room || "").trim()) rooms.add(c.room.trim());
+        for (const r of Object.values(c.roomByDay || {})) {
+          if ((r || "").trim()) rooms.add(r.trim());
+        }
       }
       for (const cell of Object.values(t.schedule || {})) {
         if ((cell.room || "").trim()) rooms.add(cell.room.trim());

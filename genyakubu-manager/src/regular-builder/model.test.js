@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addSnapshot,
+  classRoomForDay,
   computeSections,
   copyCellAcrossTabs,
   countTeacherAssignments,
@@ -18,6 +19,7 @@ import {
   sanitizeWorkspace,
   setCellsLocked,
   setClassRoom,
+  setClassRoomForDay,
   swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
@@ -751,6 +753,129 @@ describe("setClassRoom (列の既定教室の変更と連動)", () => {
     const src = tabs();
     const before = JSON.stringify(src);
     setClassRoom(src, 1, 1, "407");
+    expect(JSON.stringify(src)).toBe(before);
+  });
+});
+
+describe("classRoomForDay / roomByDay (曜日別の既定教室)", () => {
+  it("roomByDay[曜日] → 基本 room の順で解決する", () => {
+    const cls = { id: 1, label: "", room: "亀21", roomByDay: { 木: "亀63" } };
+    expect(classRoomForDay(cls, "木")).toBe("亀63");
+    expect(classRoomForDay(cls, "火")).toBe("亀21");
+    expect(classRoomForDay({ id: 2, room: "501" }, "月")).toBe("501");
+  });
+
+  it("effectiveRoom はセル上書き → 曜日別既定 → 基本の順", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0].roomByDay = { 月: "801" }; // S 列 (基本 501)
+    const entries = resolveTabEntries(p, p.tabs[0]);
+    const s = entries.find((x) => x.cls.label === "S" && x.day === "月");
+    const a = entries.find((x) => x.cls.label === "A" && x.day === "月");
+    expect(effectiveRoom(s)).toBe("801"); // 曜日別既定
+    expect(effectiveRoom(a)).toBe("601"); // セル上書きは曜日別より強い
+  });
+
+  it("sanitize は既知の曜日 × 空でない値だけ残す", () => {
+    const ws = sanitizeWorkspace({
+      projects: [
+        {
+          id: 1,
+          periods: [],
+          tabs: [
+            {
+              id: 1,
+              classes: [
+                {
+                  id: 1,
+                  label: "S",
+                  room: "501",
+                  roomByDay: { 月: "601", 祝: "999", 火: " " },
+                },
+              ],
+              days: ["月"],
+              periodIds: [1],
+              schedule: {},
+            },
+          ],
+        },
+      ],
+      activeProjectId: 1,
+    });
+    expect(ws.projects[0].tabs[0].classes[0].roomByDay).toEqual({ 月: "601" });
+  });
+});
+
+describe("setClassRoomForDay (この曜日だけの既定教室)", () => {
+  // 亀井町の列: 基本 亀21。木曜の 1 限に 亀63 上書き、2 限に 亀40 上書き
+  const tabs = () => [
+    {
+      id: 1,
+      name: "高2亀",
+      grade: "高2",
+      classes: [{ id: 1, label: "", room: "亀21" }],
+      days: ["月", "木"],
+      periodIds: [1, 2],
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "数学", teacher: "福江" },
+        [makeCellKey("木", 1, 1)]: { subj: "英語", teacher: "藤本", room: "亀63" },
+        [makeCellKey("木", 2, 1)]: { subj: "数学", teacher: "河野", room: "亀40" },
+      },
+    },
+  ];
+
+  it("その曜日だけ変わり、他の曜日と基本の既定は不変", () => {
+    const res = setClassRoomForDay(tabs(), 1, 1, "木", "亀63");
+    expect(res.changed).toBe(true);
+    expect(res.oldRoom).toBe("亀21");
+    expect(res.newRoom).toBe("亀63");
+    expect(res.normalized).toBe(1); // 亀63 上書きは既定追従へ
+    expect(res.kept).toBe(1); // 亀40 は個別指定のまま
+    const cls = res.tabs[0].classes[0];
+    expect(cls.room).toBe("亀21");
+    expect(cls.roomByDay).toEqual({ 木: "亀63" });
+    expect(res.tabs[0].schedule[makeCellKey("木", 1, 1)]).toEqual({
+      subj: "英語",
+      teacher: "藤本",
+    });
+    expect(res.tabs[0].schedule[makeCellKey("木", 2, 1)].room).toBe("亀40");
+    // 月曜のセルには触らない
+    expect(res.tabs[0].schedule[makeCellKey("月", 1, 1)]).toEqual({
+      subj: "数学",
+      teacher: "福江",
+    });
+  });
+
+  it("基本と同じ値・空文字は曜日別指定の解除", () => {
+    const withDay = setClassRoomForDay(tabs(), 1, 1, "木", "亀63").tabs;
+    const cleared = setClassRoomForDay(withDay, 1, 1, "木", "亀21");
+    expect(cleared.changed).toBe(true);
+    expect(cleared.oldRoom).toBe("亀63");
+    expect(cleared.newRoom).toBe("亀21");
+    expect(cleared.tabs[0].classes[0].roomByDay).toBeUndefined();
+    const empty = setClassRoomForDay(withDay, 1, 1, "木", " ");
+    expect(empty.changed).toBe(true);
+    expect(empty.tabs[0].classes[0].roomByDay).toBeUndefined();
+  });
+
+  it("変化が無ければ no-op", () => {
+    const src = tabs();
+    expect(setClassRoomForDay(src, 1, 1, "木", "亀21").changed).toBe(false);
+    expect(setClassRoomForDay(src, 1, 1, "木", "").changed).toBe(false);
+    expect(setClassRoomForDay(src, 99, 1, "木", "亀63").changed).toBe(false);
+    expect(setClassRoomForDay(src, 1, 99, "木", "亀63").changed).toBe(false);
+  });
+
+  it("setClassRoom (全曜日) は新既定と同じになった曜日別指定を外す", () => {
+    const withDay = setClassRoomForDay(tabs(), 1, 1, "木", "亀63").tabs;
+    const res = setClassRoom(withDay, 1, 1, "亀63");
+    expect(res.tabs[0].classes[0].room).toBe("亀63");
+    expect(res.tabs[0].classes[0].roomByDay).toBeUndefined();
+  });
+
+  it("元の tabs は不変 (純関数)", () => {
+    const src = tabs();
+    const before = JSON.stringify(src);
+    setClassRoomForDay(src, 1, 1, "木", "亀63");
     expect(JSON.stringify(src)).toBe(before);
   });
 });

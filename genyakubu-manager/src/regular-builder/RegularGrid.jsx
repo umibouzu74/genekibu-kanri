@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  classRoomForDay,
   computeSections,
   makeCellKey,
   makeCellRef,
@@ -158,11 +159,12 @@ export function RegularGrid({
   }, []);
 
   // 列見出しの教室の編集中の列 (`${tabId}:${classId}`、null = 非編集)。
-  // 編集確定は onSetClassRoom へ委譲 (列のセルとの連動は model.setClassRoom)
+  // 編集確定は onSetClassRoom へ委譲 (表示中の曜日を添える — App 側が
+  // 「この曜日だけ」(setClassRoomForDay) として適用する)
   const [roomEditCol, setRoomEditCol] = useState(null);
   const commitRoomEdit = (tabId, classId, value) => {
     setRoomEditCol(null);
-    onSetClassRoom?.(tabId, classId, value);
+    onSetClassRoom?.(tabId, classId, value, day);
   };
 
   // プロジェクト / 曜日を切り替えたら編集状態は持ち越さない
@@ -737,14 +739,21 @@ export function RegularGrid({
                     const headCols = lay.fallback ? t.classes : lay.visible;
                     return headCols.map((cls2, ci) => {
                       const colId = `${t.id}:${cls2.id}`;
+                      // 見出しの教室は「この曜日の実効既定」(曜日別 roomByDay →
+                      // 基本 room)。曜日別が効いている列は ＊ 印を付ける
+                      const byDay = ((cls2.roomByDay || {})[day] || "").trim();
+                      const baseRoom = (cls2.room || "").trim();
+                      const dayRoom = byDay || baseRoom;
+                      const daySpecific = !!byDay && byDay !== baseRoom;
                       // 教室部分は display-first (クリックで入力に切替)。
-                      // 確定すると列の既定教室が変わり、教室上書きの無い
-                      // コマの実効教室がまとめて連動する (model.setClassRoom)
+                      // 確定するとこの曜日だけの既定教室が変わり、教室上書きの
+                      // 無いコマの実効教室が連動する (model.setClassRoomForDay。
+                      // 基本が未設定の列は全曜日の既定を設定 — App 側で判定)
                       const roomEditor = roomEditCol === colId && (
                         <input
                           autoFocus
                           type="text"
-                          defaultValue={cls2.room || ""}
+                          defaultValue={dayRoom}
                           list="regb-rooms"
                           aria-label={`${t.name} ${cls2.label || cls2.room || "列"} の既定教室`}
                           className={`rounded border border-builder-border bg-builder-surface px-1 py-0 font-normal text-builder-ink focus:outline-none ${isCompact ? "w-12 text-[10px]" : "w-16 text-xs"}`}
@@ -765,14 +774,29 @@ export function RegularGrid({
                           <button
                             type="button"
                             onClick={() => setRoomEditCol(colId)}
-                            title="クリックで列の既定教室を変更（教室上書きの無いコマの教室がまとめて変わります）"
+                            title={
+                              daySpecific
+                                ? `${day}曜だけの教室です（基本: ${baseRoom || "未設定"}）。クリックでこの曜日の教室を変更（基本と同じにすると解除）`
+                                : `クリックでこの曜日 (${day}) の教室を変更（教室上書きの無いコマの教室が連動します。全曜日へは変更後の通知から適用できます）`
+                            }
                             className={`cursor-pointer rounded border-0 bg-transparent p-0 px-0.5 underline decoration-dotted underline-offset-2 hover:text-builder-blue ${isCompact ? "text-[10px]" : "text-xs"} ${extraClass}`}
                           >
                             {text}
                           </button>
                         ) : (
-                          <span className={extraClass}>{text}</span>
+                          <span
+                            className={extraClass}
+                            title={
+                              daySpecific
+                                ? `${day}曜だけの教室（基本: ${baseRoom || "未設定"}）`
+                                : undefined
+                            }
+                          >
+                            {text}
+                          </span>
                         );
+                      const roomText = (roomStr) =>
+                        daySpecific ? `${roomStr}＊` : roomStr;
                       return (
                         <MenuTh
                           key={`${t.id}-${cls2.id}`}
@@ -787,16 +811,19 @@ export function RegularGrid({
                             <>
                               {cls2.label}
                               {roomEditor ||
-                                (cls2.room &&
-                                  cls2.room !== cls2.label &&
+                                (dayRoom &&
+                                  dayRoom !== cls2.label &&
                                   roomButton(
-                                    cls2.room,
+                                    roomText(dayRoom),
                                     "font-normal text-builder-ink-subtle ml-1"
                                   ))}
                             </>
                           ) : (
                             roomEditor ||
-                            roomButton(cls2.room || "－", "font-bold text-builder-ink")
+                            roomButton(
+                              roomText(dayRoom || "－"),
+                              "font-bold text-builder-ink"
+                            )
                           )}
                         </MenuTh>
                       );
@@ -852,7 +879,7 @@ export function RegularGrid({
                         // 教室の強調は中身のあるセルのみ (空マスまで光らせると
                         // 「その教室のクラス列」全体が光ってノイズになる)
                         const effRoom =
-                          (cell?.room || "").trim() || (cls2.room || "").trim();
+                          (cell?.room || "").trim() || classRoomForDay(cls2, day);
                         const highlighted =
                           (!!highlightTeacher &&
                             (splitTeacherField(cell?.teacher).includes(
@@ -880,7 +907,7 @@ export function RegularGrid({
                             dimmed={
                               (!!highlightTeacher || !!highlightRoom) && !highlighted
                             }
-                            roomPlaceholder={cls2.room}
+                            roomPlaceholder={classRoomForDay(cls2, day)}
                             displayRoomFallback={extra.displayRoomFallback || ""}
                             ariaBase={`${day} ${per.label || per.time} ${t.name} ${cls2.label || cls2.room}`}
                             tdExtra={extra.tdExtra || ""}
@@ -953,7 +980,7 @@ export function RegularGrid({
                                 colSpan: widths[gi],
                                 // 学年境界の太罫は並列の先頭セルだけに引く
                                 tdExtra: i === 0 && gi === 0 ? boundary : "",
-                                displayRoomFallback: p.r.cls.room,
+                                displayRoomFallback: classRoomForDay(p.r.cls, day),
                               })
                             );
                           });
