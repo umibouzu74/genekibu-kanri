@@ -284,8 +284,13 @@ function headerCell(cell, value) {
 // 集計シート: 講師 × 曜日 (コマ / 時間の 2 列) + 週計。📊 集計パネルと
 // 同じ computeTeacherLoad が数字の出所 (隔週 0.5 重み・上限超過の赤字も同じ)
 function buildTeacherSummarySheet(workbook, project, load, dateLabel) {
-  const { days, rows, untimedCount } = load;
+  const { rows, untimedCount } = load;
   const active = rows.filter((r) => r.total > 0);
+  // 担当が誰もいない曜日は列ごと省く (空き列は出力しない方針。画面の
+  // 📊 パネルはタブが使う全曜日を出すが、紙面では空きは不要)
+  const days = load.days.filter((d) =>
+    active.some((r) => (r.byDay[d] || 0) > 0)
+  );
   const ncols = 1 + (days.length + 1) * 2;
   const ws = workbook.addWorksheet("集計", {
     pageSetup: {

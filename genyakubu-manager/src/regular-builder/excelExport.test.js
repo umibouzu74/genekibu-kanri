@@ -116,18 +116,29 @@ describe("buildRegularTeacherWorkbook", () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual(["集計", "堀上", "半田"]);
     const sum = wb.getWorksheet("集計");
     expect(sum.getCell(1, 1).value).toContain("講師別コマ数・稼働時間");
-    // 見出し 2 段: 講師 | 月 (コマ/時間) | 火 (コマ/時間) | 週計 (コマ/時間)
+    // 見出し 2 段: 講師 | 月 (コマ/時間) | 週計 (コマ/時間)。
+    // 火はタブが使う曜日だが担当が誰もいないので列ごと省かれる
     expect(sum.getCell(3, 1).value).toBe("講師");
     expect(sum.getCell(3, 2).value).toBe("月");
     expect(sum.getCell(4, 2).value).toBe("コマ");
     expect(sum.getCell(4, 3).value).toBe("時間");
-    expect(sum.getCell(3, 6).value).toBe("週計");
+    expect(sum.getCell(3, 4).value).toBe("週計");
     // 堀上 (1 行目): 月 1 コマ 0:45 (2限 18:55-19:40)、週計も同じ
     expect(sum.getCell(5, 1).value).toBe("堀上");
     expect(sum.getCell(5, 2).value).toBe(1);
     expect(sum.getCell(5, 3).value).toBe("0:45");
-    expect(sum.getCell(5, 6).value).toBe(1);
-    expect(sum.getCell(5, 7).value).toBe("0:45");
+    expect(sum.getCell(5, 4).value).toBe(1);
+    expect(sum.getCell(5, 5).value).toBe("0:45");
+  });
+
+  it("担当のある曜日の列は出る (集計シート)", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = { subj: "理科", teacher: "半田" };
+    const wb = buildRegularTeacherWorkbook(p, { dateLabel: "2026-08-08" });
+    const sum = wb.getWorksheet("集計");
+    expect(sum.getCell(3, 2).value).toBe("月");
+    expect(sum.getCell(3, 4).value).toBe("火");
+    expect(sum.getCell(3, 6).value).toBe("週計");
   });
 
   it("講師シートに担当コマ一覧 (曜日 → 時刻順) と曜日別集計を載せる", () => {
