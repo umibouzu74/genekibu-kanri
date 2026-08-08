@@ -281,6 +281,32 @@ describe("computeConflicts - 講師 NG (不在) への割当", () => {
     expect(none).toHaveLength(0);
   });
 
+  it("終日 NG は時刻未設定の時限にも当てる (予告 computeNgTeachersForTabs と同判定)", () => {
+    const withBlankPeriod = (ngSlots) => {
+      const p = ngProject(ngSlots);
+      p.periods.push({ id: 9, label: "特設", time: "" });
+      p.tabs[0].periodIds = [...p.tabs[0].periodIds, 9];
+      p.tabs[0].schedule[makeCellKey("月", 9, 1)] = {
+        subj: "英語",
+        teacher: "堀上",
+      };
+      return p;
+    };
+    const ng = computeConflicts(withBlankPeriod([{ day: "月" }])).list.filter(
+      (c) => c.type === "ng"
+    );
+    // 2限 (18:55-19:40) + 時刻未設定の特設の 2 件
+    expect(ng).toHaveLength(2);
+    expect(ng.map((c) => c.refs[0])).toContain(`1:${makeCellKey("月", 9, 1)}`);
+    // 時刻範囲付き NG は重なり判定ができないため、時刻未設定の時限には当てない
+    const timed = computeConflicts(
+      withBlankPeriod([{ day: "月", time: "18:00-22:00" }])
+    ).list.filter((c) => c.type === "ng");
+    expect(timed.map((c) => c.refs[0])).not.toContain(
+      `1:${makeCellKey("月", 9, 1)}`
+    );
+  });
+
   it("別曜日の NG は検出しない・承認で消せる (conflictKey 互換)", () => {
     expect(
       computeConflicts(ngProject([{ day: "火" }])).list.filter(

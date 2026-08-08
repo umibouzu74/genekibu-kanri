@@ -233,13 +233,18 @@ export default function RegularBuilderApp({
 
   // ジャンプ (重複一覧・Undo toast の「表示」) が並べていない曜日を指す
   // 場合は通常の曜日表示へ戻して表示する (jumpToCells が selectedDay を
-  // 切替済み。スクロール・点滅は従来どおり RegularGrid が処理する)
+  // 切替済み。スクロール・点滅は従来どおり RegularGrid が処理する)。
+  // nonce は表示モードに関係なく消化する — ◫ off 中のジャンプを未消化の
+  // まま残すと、後で ◫ を on にした瞬間に古いジャンプ先の曜日で判定が
+  // 走り、トグルが 1 回目だけ弾かれてしまう
   const handledJumpNonceRef = useRef(0);
   useEffect(() => {
-    if (!jumpTarget || !multiDayView) return;
+    if (!jumpTarget) return;
     if (handledJumpNonceRef.current === jumpTarget.nonce) return;
     handledJumpNonceRef.current = jumpTarget.nonce;
-    if (!multiDays.includes(jumpTarget.day)) setMultiDayView(false);
+    if (multiDayView && !multiDays.includes(jumpTarget.day)) {
+      setMultiDayView(false);
+    }
   }, [jumpTarget, multiDayView, multiDays, setMultiDayView]);
 
   // 曜日ごとの入力済みコマ数 (曜日チップの小バッジ)。設定変更で無効に
@@ -685,16 +690,6 @@ export default function RegularBuilderApp({
   useEffect(() => {
     clearSelection();
   }, [selectedDay, project.id, weekView, multiDayView, multiDaysKey, clearSelection]);
-  // Escape で選択解除 (編集中・メニュー内の Escape は stopPropagation 済み)
-  useEffect(() => {
-    if (selectedRefs.size === 0) return undefined;
-    const onKey = (e) => {
-      if (e.key === "Escape" && !e.isComposing) clearSelection();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedRefs.size, clearSelection]);
-
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)。
   // ロック中は変更しない (UI 側も ✕ を隠し Delete を無効化している)
   const onClearCell = useCallback(
@@ -735,6 +730,20 @@ export default function RegularBuilderApp({
     setCtxMenu({ x: pos.clientX, y: pos.clientY, ...payload });
   }, []);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  // Escape で選択解除 (編集中セルの Escape は要素側で stopPropagation 済み)。
+  // コンテキストメニューが開いている間は解除しない — メニューの Escape も
+  // window リスナーのため stopPropagation では止まらず (同一ターゲットの
+  // 他リスナーには効かない)、「メニューを閉じるだけ」のつもりの Escape で
+  // 選択まで消えてしまう
+  useEffect(() => {
+    if (selectedRefs.size === 0) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !e.isComposing && !ctxMenu) clearSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedRefs.size, clearSelection, ctxMenu]);
 
   // コピーはロックを引き継がない (貼り付け先は編集できる状態で置く)
   const copyCell = (ref) => {

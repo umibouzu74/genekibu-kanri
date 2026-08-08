@@ -153,6 +153,48 @@ describe("RegularGrid - セクション縦積み (stackSections)", () => {
     );
   });
 
+  it("splitCampus で改名された手動グループ（◯◯（亀井町））も元グループのタブ定義順で並ぶ", () => {
+    // 旧実装はセクション名で元グループを引いていたため、splitCampus が
+    // 「高校（亀井町）」に改名した瞬間に対応付けが外れて末尾送りになっていた
+    const project = {
+      ...makeProject(),
+      id: 1,
+      tabs: [
+        {
+          id: 1,
+          name: "高1",
+          grade: "高1",
+          group: "高校",
+          classes: [
+            { id: 1, label: "", room: "402" },
+            { id: 2, label: "", room: "亀21" },
+          ],
+          days: ["月"],
+          periodIds: [1],
+          schedule: {
+            [makeCellKey("月", 1, 1)]: { subj: "英語" },
+            [makeCellKey("月", 1, 2)]: { subj: "数学" },
+          },
+        },
+        {
+          id: 2,
+          name: "高2",
+          grade: "高2",
+          group: "選択",
+          classes: [{ id: 1, label: "", room: "403" }],
+          days: ["月"],
+          periodIds: [1],
+          schedule: { [makeCellKey("月", 1, 1)]: { subj: "国語" } },
+        },
+      ],
+    };
+    const { container } = renderGrid(project, {
+      stackSections: true,
+      splitCampus: true,
+    });
+    expect(sectionNames(container)).toEqual(["高校", "高校（亀井町）", "選択"]);
+  });
+
   it("同じ部のセクションは曜日をまたいで同じ並びになる (タブ定義順)", () => {
     // 手動グループ「本校」「亀井町」。月曜に居るのは 亀井町の高1亀 と
     // 本校の高3 だけ — その曜日での検出順は亀井町が先だが、縦積みでは

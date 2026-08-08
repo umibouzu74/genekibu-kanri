@@ -256,14 +256,31 @@ export function RegularGrid({
     // 本校 → 亀井町。手動グループはその曜日に居ないタブも含めた
     // プロジェクト全体の定義順で測る — 「その曜日での検出順」だと
     // 月曜は亀井町が先・木曜は本校が先のように、並べた曜日の間で
-    // 行の対応がずれるため、曜日に依存しない基準だけで順序を決める
+    // 行の対応がずれるため、曜日に依存しない基準だけで順序を決める。
+    // 手動グループの対応付けはセクション名でなくメンバーの元タブの
+    // group 名で行う — splitCampus はグループ名を「◯◯（亀井町）」に
+    // 改名するため、名前一致では元グループを引けない
     const tabOrder = new Map((project.tabs || []).map((t, i) => [t.id, i]));
+    const origGroup = new Map(
+      (project.tabs || []).map((t) => [t.id, (t.group || "").trim()])
+    );
     const stackOrderRank = (s) => {
-      const pool = s.auto
-        ? s.tabs
-        : (project.tabs || []).filter((t) => (t.group || "").trim() === s.name);
+      let pool = s.tabs;
+      if (!s.auto) {
+        const names = new Set(s.tabs.map((t) => origGroup.get(t.id)));
+        const groupTabs = (project.tabs || []).filter((t) =>
+          names.has((t.group || "").trim())
+        );
+        if (groupTabs.length > 0) pool = groupTabs;
+      }
       return Math.min(...pool.map((t) => tabOrder.get(t.id) ?? Infinity));
     };
+    // 本校 → 亀井町のタイブレーク。手動グループは s.campus を持たないため
+    // メンバータブの campus 注釈 (splitTabsByCampus) から判定する
+    const campusRank = (s) =>
+      s.campus === "annex" || (!s.campus && s.tabs.every((t) => t.campus === "annex"))
+        ? 1
+        : 0;
     return rawSections
       .map((s) => {
         // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
@@ -329,7 +346,7 @@ export function RegularGrid({
         stackSections
           ? sectionDeptRank(a.tabs) - sectionDeptRank(b.tabs) ||
             stackOrderRank(a) - stackOrderRank(b) ||
-            (a.campus === "annex" ? 1 : 0) - (b.campus === "annex" ? 1 : 0)
+            campusRank(a) - campusRank(b)
           : 0
       );
   }, [rawSections, project, day, hideEmpty, stackSections]);
