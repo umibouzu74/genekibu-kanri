@@ -23,7 +23,7 @@ import {
   REGULAR_DAYS,
 } from "./model";
 import { computeMergeLayout } from "./mergedColumns";
-import { computeCourseSets, setContainsRefs } from "./courseSets";
+import { computeCourseSets } from "./courseSets";
 import { changeJoint } from "./jointEdit";
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
@@ -39,7 +39,7 @@ import { ProjectConfigModal } from "./ProjectConfigModal";
 import { RegularOnboarding } from "./RegularOnboarding";
 import { TabConfigPanel } from "./TabConfigPanel";
 import { RegularGrid } from "./RegularGrid";
-import { CourseSetView } from "./CourseSetView";
+import { MultiDayView } from "./MultiDayView";
 import { RegularContextMenu } from "./RegularContextMenu";
 import { RegularSummaryPanel } from "./RegularSummaryPanel";
 import { RegularSnapshotPanel } from "./RegularSnapshotPanel";
@@ -132,29 +132,29 @@ export default function RegularBuilderApp({
     LS.regularBuilderWeekView,
     false
   );
-  // 🧩 セット編集 (コースセットの曜日を横に並べて編集)。週表示と排他
-  // (トグル時に相互 off。両方 true で復元された場合は週表示を優先)
-  const [setView, setSetView] = usePersistedToggle(
-    LS.regularBuilderSetView,
+  // ◫ 曜日を並べる (選んだ複数曜日を横に並べて同時に表示・編集)。週表示と
+  // 排他 (トグル時に相互 off。両方 true で復元された場合は週表示を優先)
+  const [multiDayView, setMultiDayView] = usePersistedToggle(
+    LS.regularBuilderMultiDay,
     false
   );
-  // 選択中のセット (courseSets のキー)。曜日と同じく sessionStorage で
-  // リロード復元し、検出結果に無いキーは CourseSetView 側で先頭に倒す
-  const [selectedSetKey, setSelectedSetKey] = useState(() => {
+  // 並べる曜日。曜日 1 文字の連結 (例 "火木") で sessionStorage 復元し、
+  // 使わない曜日が混ざった場合は下の multiDays が表示時に落とす
+  const [selectedDays, setSelectedDays] = useState(() => {
     try {
-      return sessionStorage.getItem(SS.regularBuilderSet) || null;
+      const raw = sessionStorage.getItem(SS.regularBuilderDays) || "";
+      return [...raw].filter((d) => REGULAR_DAYS.includes(d));
     } catch {
-      return null;
+      return [];
     }
   });
   useEffect(() => {
-    if (!selectedSetKey) return;
     try {
-      sessionStorage.setItem(SS.regularBuilderSet, selectedSetKey);
+      sessionStorage.setItem(SS.regularBuilderDays, selectedDays.join(""));
     } catch {
       /* quota / private mode — 表示は妨げない */
     }
-  }, [selectedSetKey]);
+  }, [selectedDays]);
   // 選択曜日はリロード後も維持する (App のビュー復元と同じ sessionStorage
   // ベース。使わない曜日を復元した場合は下の usedDays 効果が先頭に倒す)
   const [selectedDay, setSelectedDay] = useState(() => {
@@ -188,27 +188,10 @@ export default function RegularBuilderApp({
     workspace.projects.find((p) => p.id === workspace.activeProjectId) ||
     workspace.projects[0];
 
-  // 🧩 セット編集のコースセット (学年 × 曜日の組)。スケジュールから自動
-  // 検出する (詳細は courseSets.js)。選択キーが検出結果に無ければ先頭へ
+  // ◫ 曜日を並べるのコースセット (学年 × 曜日の組) チップ。スケジュール
+  // から自動検出し、「中3（火・木）」のクリックでその組の曜日の同時表示へ
+  // 一発で切り替えるショートカット (詳細は courseSets.js)
   const courseSets = useMemo(() => computeCourseSets(project), [project]);
-  const activeSet = setView
-    ? courseSets.find((s) => s.key === selectedSetKey) || courseSets[0] || null
-    : null;
-
-  // ジャンプ (重複一覧・Undo toast の「表示」) がセット編集画面の外を指す
-  // 場合の追従: 対象を丸ごと含む別のセットがあればそちらへ切替え、どの
-  // セットにも収まらなければ通常の曜日表示へ戻す (スクロール・点滅は
-  // 従来どおり RegularGrid が jumpTarget で処理する)
-  const handledJumpNonceRef = useRef(0);
-  useEffect(() => {
-    if (!jumpTarget || !setView) return;
-    if (handledJumpNonceRef.current === jumpTarget.nonce) return;
-    handledJumpNonceRef.current = jumpTarget.nonce;
-    if (activeSet && setContainsRefs(activeSet, jumpTarget.refs)) return;
-    const target = courseSets.find((s) => setContainsRefs(s, jumpTarget.refs));
-    if (target) setSelectedSetKey(target.key);
-    else setSetView(false);
-  }, [jumpTarget, setView, activeSet, courseSets, setSetView]);
 
   // いずれかの学年が使っている曜日 (曜日チップの活性判定)
   const usedDays = useMemo(
@@ -222,6 +205,42 @@ export default function RegularBuilderApp({
     if (selectedDay && usedDays.includes(selectedDay)) return;
     setSelectedDay(usedDays[0] ?? null);
   }, [usedDays, selectedDay]);
+
+  // 並べる曜日の表示用の実体: 使わない曜日を落とし、空なら選択中の曜日
+  // (それも無ければ先頭の使用曜日) 1 つに倒す
+  const multiDays = useMemo(() => {
+    const days = selectedDays.filter((d) => usedDays.includes(d));
+    if (days.length) return days;
+    if (selectedDay && usedDays.includes(selectedDay)) return [selectedDay];
+    return usedDays.slice(0, 1);
+  }, [selectedDays, usedDays, selectedDay]);
+
+  // ◫ モード中の曜日チップ: クリックで並べる曜日を足し外しする。
+  // 表示の実体 (multiDays) を起点にトグルする — 復元やフォールバックで
+  // selectedDays と表示がずれていても、見えている状態から素直に増減する
+  const toggleMultiDay = useCallback(
+    (d) => {
+      const next = multiDays.includes(d)
+        ? multiDays.filter((x) => x !== d)
+        : [...multiDays, d].sort(
+            (a, b) => REGULAR_DAYS.indexOf(a) - REGULAR_DAYS.indexOf(b)
+          );
+      if (next.length === 0) return; // 最後の 1 曜日は外せない
+      setSelectedDays(next);
+    },
+    [multiDays]
+  );
+
+  // ジャンプ (重複一覧・Undo toast の「表示」) が並べていない曜日を指す
+  // 場合は通常の曜日表示へ戻して表示する (jumpToCells が selectedDay を
+  // 切替済み。スクロール・点滅は従来どおり RegularGrid が処理する)
+  const handledJumpNonceRef = useRef(0);
+  useEffect(() => {
+    if (!jumpTarget || !multiDayView) return;
+    if (handledJumpNonceRef.current === jumpTarget.nonce) return;
+    handledJumpNonceRef.current = jumpTarget.nonce;
+    if (!multiDays.includes(jumpTarget.day)) setMultiDayView(false);
+  }, [jumpTarget, multiDayView, multiDays, setMultiDayView]);
 
   // 曜日ごとの入力済みコマ数 (曜日チップの小バッジ)。設定変更で無効に
   // なった残骸セルは数えない (resolveTabEntries と同じ判定)
@@ -660,12 +679,12 @@ export default function RegularBuilderApp({
     selAnchorRef.current = null;
     setSelectedRefs((prev) => (prev.size ? new Set() : prev));
   }, []);
-  // 曜日・プロジェクト・表示モード・セットが変わったら選択は持ち越さない
-  // (見えないセルへの一括操作を防ぐ)
-  const activeSetKey = activeSet?.key || null;
+  // 曜日・プロジェクト・表示モード・並べる曜日が変わったら選択は持ち
+  // 越さない (見えないセルへの一括操作を防ぐ)
+  const multiDaysKey = multiDays.join("");
   useEffect(() => {
     clearSelection();
-  }, [selectedDay, project.id, weekView, setView, activeSetKey, clearSelection]);
+  }, [selectedDay, project.id, weekView, multiDayView, multiDaysKey, clearSelection]);
   // Escape で選択解除 (編集中・メニュー内の Escape は stopPropagation 済み)
   useEffect(() => {
     if (selectedRefs.size === 0) return undefined;
@@ -1324,24 +1343,33 @@ export default function RegularBuilderApp({
       {showSummary && <RegularSummaryPanel project={project} />}
 
       {/* 曜日切替 + 表示トグル (ダッシュボードの時間割ビューと同じ曜日基準)。
-          🧩 セット編集中は曜日の切替が無いのでチップは隠す (セットの
-          チップは CourseSetView 側に出る) */}
+          ◫ 曜日を並べるモード中は複数選択のトグルとして働く */}
       <div className="no-print flex flex-wrap items-center gap-2 px-1">
-        {!setView && (
-        <div className="flex items-center gap-1" role="tablist" aria-label="曜日">
+        <div
+          className="flex items-center gap-1"
+          role={multiDayView ? "group" : "tablist"}
+          aria-label="曜日"
+        >
           {REGULAR_DAYS.map((d) => {
             const used = usedDays.includes(d);
-            const selected = selectedDay === d;
+            const selected = multiDayView
+              ? multiDays.includes(d)
+              : selectedDay === d;
             const fg = DAY_COLOR[d] || "#555555";
             const bg = DAY_BG[d] || "#ececec";
             return (
               <button
                 key={d}
                 type="button"
-                role="tab"
-                aria-selected={selected}
+                role={multiDayView ? undefined : "tab"}
+                aria-selected={multiDayView ? undefined : selected}
+                aria-pressed={multiDayView ? selected : undefined}
                 disabled={!used}
                 onClick={() => {
+                  if (multiDayView) {
+                    toggleMultiDay(d);
+                    return;
+                  }
                   setSelectedDay(d);
                   // 週表示中は該当曜日のブロックへスクロール (アンカー動作)
                   if (weekView) {
@@ -1352,9 +1380,13 @@ export default function RegularBuilderApp({
                 }}
                 title={
                   used
-                    ? weekView
-                      ? `${d}曜日へスクロール`
-                      : `${d}曜日を表示`
+                    ? multiDayView
+                      ? selected && multiDays.length === 1
+                        ? "最後の 1 曜日は外せません"
+                        : `${d}曜日を${selected ? "外す" : "並べる"}`
+                      : weekView
+                        ? `${d}曜日へスクロール`
+                        : `${d}曜日を表示`
                     : `${d}曜日を使う学年がありません (学年チップの設定で追加)`
                 }
                 className="w-11 py-1 rounded-lg border-2 text-sm font-extrabold cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
@@ -1375,12 +1407,11 @@ export default function RegularBuilderApp({
             );
           })}
         </div>
-        )}
         <div className="flex gap-1 ml-auto">
           <button
             type="button"
             onClick={() => {
-              if (!weekView) setSetView(false); // セット編集と排他
+              if (!weekView) setMultiDayView(false); // 曜日並列と排他
               setWeekView(!weekView);
             }}
             title="全曜日を縦に並べて俯瞰する (曜日チップは該当ブロックへのスクロールになります)"
@@ -1391,13 +1422,13 @@ export default function RegularBuilderApp({
           <button
             type="button"
             onClick={() => {
-              if (!setView) setWeekView(false); // 週表示と排他
-              setSetView(!setView);
+              if (!multiDayView) setWeekView(false); // 週表示と排他
+              setMultiDayView(!multiDayView);
             }}
-            title="コースセット (中3 の火・木、水・金など同じクラスが通う曜日の組) を横に並べて一画面で編集する。セットはスケジュールから自動検出されます"
-            className={UI.btnToggle(setView)}
+            title="選んだ複数の曜日を横に並べて同時に表示・編集する。曜日チップで並べる曜日を足し外しでき、セットチップ (中3 の火・木など、スケジュールから自動検出) で曜日の組をまとめて切替できます"
+            className={UI.btnToggle(multiDayView)}
           >
-            🧩 セット編集
+            ◫ 曜日を並べる
           </button>
           <button
             type="button"
@@ -1423,15 +1454,15 @@ export default function RegularBuilderApp({
           >
             🗜 コンパクト
           </button>
-          {(setView ? !!activeSet : !!selectedDay) && (
+          {(multiDayView ? multiDays.length > 0 : !!selectedDay) && (
             <button
               type="button"
               onClick={() => window.print()}
               title={
                 weekView
                   ? "表示中の全曜日を印刷 (曜日ごとに改ページ)"
-                  : setView
-                    ? "表示中のセットを印刷 (曜日ごとに改ページ)"
+                  : multiDayView
+                    ? "並べている曜日をまとめて印刷 (曜日ごとに改ページ)"
                     : "表示中の曜日を印刷 (A4 縦)"
               }
               className={UI.btn}
@@ -1439,7 +1470,7 @@ export default function RegularBuilderApp({
               🖨 印刷
             </button>
           )}
-          {!weekView && !setView && usedDays.length > 1 && (
+          {!weekView && !multiDayView && usedDays.length > 1 && (
             <button
               type="button"
               onClick={() => setPrintAllDays(true)}
@@ -1675,16 +1706,17 @@ export default function RegularBuilderApp({
             </div>
           )
         )
-      ) : setView ? (
-        /* 🧩 セット編集: コースセット (学年 × 曜日の組) の曜日を横に並べて
-           一画面で編集。グリッドは通常の曜日ビューと同じ RegularGrid を
-           セットのクラス列に絞って使う (編集・D&D・重複表示は共通) */
+      ) : multiDayView ? (
+        /* ◫ 曜日を並べる: 選んだ曜日の表を横に並べて同時に表示・編集。
+           各曜日は通常の曜日ビューと同じ RegularGrid のフル表示
+           (編集・D&D・重複表示は共通)。セットチップは曜日の組の
+           ショートカット */
         <div className={printTeacherWeek ? "print:hidden" : ""}>
-          <CourseSetView
+          <MultiDayView
             project={project}
             sets={courseSets}
-            activeSet={activeSet}
-            onSelectSet={setSelectedSetKey}
+            days={multiDays}
+            onSelectDays={setSelectedDays}
             gridProps={{
               onCellChange,
               onClearCell,
@@ -1760,8 +1792,8 @@ export default function RegularBuilderApp({
       )}
 
       {/* 全曜日印刷用: 印刷中だけ描画される print 専用 DOM (曜日ごとに改ページ)。
-          週表示・セット編集中は使わない (ボタン自体も出さない) */}
-      {!weekView && !setView && printAllDays && (
+          週表示・曜日並列中は使わない (ボタン自体も出さない) */}
+      {!weekView && !multiDayView && printAllDays && (
         <div className="hidden print:block" aria-hidden="true">
           {usedDays.map((d) => (
             <div key={d} className="regb-print-day">
