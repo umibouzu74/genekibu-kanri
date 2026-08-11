@@ -45,6 +45,16 @@ export function diffWorkspaces(before, after) {
   const beforeById = new Map((before?.projects || []).map((p) => [p.id, p]));
   const afterById = new Map((after?.projects || []).map((p) => [p.id, p]));
 
+  const sameProjectSet =
+    beforeById.size === afterById.size &&
+    [...afterById.keys()].every((id) => beforeById.has(id));
+  // 表示プロジェクトの切替も 1 つの取り消し単位 (これを履歴に載せないと
+  // 「切替 → Ctrl+Z」で前のプロジェクトへ黙って引き戻される)。追加/削除に
+  // 伴う切替は下の「プロジェクトの追加/削除」に含まれるので二重に出さない
+  if (sameProjectSet && before?.activeProjectId !== after?.activeProjectId) {
+    addOther("表示プロジェクトの切替");
+  }
+
   for (const [id] of afterById) {
     if (!beforeById.has(id)) addOther("プロジェクトの追加/削除");
   }
@@ -71,6 +81,9 @@ function diffProject(bp, ap, projectId, cellChanges, addOther) {
   if (!jsonEq(bp.periods, ap.periods)) addOther("時限設定");
   if (!jsonEq(bp.subjects, ap.subjects)) addOther("科目マスタ");
   if (!jsonEq(bp.teachers, ap.teachers)) addOther("講師マスタ");
+  if (!jsonEq(bp.rooms || [], ap.rooms || [])) addOther("教室マスタ");
+  if ((bp.campusTravelMinutes ?? null) !== (ap.campusTravelMinutes ?? null))
+    addOther("校舎間の移動時間");
   if (!jsonEq(bp.approvedConflicts || [], ap.approvedConflicts || []))
     addOther("重なりの承認");
   if (!jsonEq(bp.snapshots || [], ap.snapshots || []))

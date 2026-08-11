@@ -28,12 +28,18 @@ import { timeStartToMin } from "../utils/dateHelpers";
 
 const TIME_RANGE_RE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
 
-export function periodMinutes(time) {
+/** "HH:MM-HH:MM" → {start, end} (分)。書式外・逆転は null */
+export function periodRange(time) {
   const m = String(time || "").trim().match(TIME_RANGE_RE);
-  if (!m) return 0;
-  const dur =
-    Number(m[3]) * 60 + Number(m[4]) - (Number(m[1]) * 60 + Number(m[2]));
-  return dur > 0 ? dur : 0;
+  if (!m) return null;
+  const start = Number(m[1]) * 60 + Number(m[2]);
+  const end = Number(m[3]) * 60 + Number(m[4]);
+  return end > start ? { start, end } : null;
+}
+
+export function periodMinutes(time) {
+  const r = periodRange(time);
+  return r ? r.end - r.start : 0;
 }
 
 /** 分数を「時:分」表示にする (45 → "0:45")。隔週 0.5 重みの端数は四捨五入 */
@@ -43,6 +49,15 @@ export function formatMinutes(min) {
 }
 
 /**
+ * 稼働時間 (minutesByDay) と拘束時間 (spanByDay) の違い:
+ * - 稼働は「担当しているコマの長さの合計」。隔週は 0.5 週分で数える
+ *   (週あたりの平均負荷を見るため)。
+ * - 拘束は「その日の最初のコマの開始から最後のコマの終了まで」。実際に
+ *   校舎に居る時間なので隔週の重み付けはしない (居る週は丸ごと居る)。
+ * - 空き (gap) = 拘束 − その日の実授業時間 (これも重み無し)。コマとコマの
+ *   間の待ち時間で、大きいと講師の負担感が高い。
+ * 時刻未設定の時限は拘束・空きの計算に入れられない (untimedCount で警告)。
+ *
  * @returns {{
  *   days: string[],           // いずれかの学年が使う曜日 (REGULAR_DAYS 順)
  *   rows: {
@@ -50,8 +65,12 @@ export function formatMinutes(min) {
  *     inMaster: boolean,
  *     byDay: Record<string, number>,
  *     minutesByDay: Record<string, number>, // 稼働時間 (分)。時刻未設定の時限は 0 分
+ *     spanByDay: Record<string, number>,    // 拘束時間 (分、重み無し)
+ *     gapByDay: Record<string, number>,     // 空き時間 (分、重み無し)
  *     total: number,
  *     totalMinutes: number,   // 週の稼働時間 (分)
+ *     totalSpan: number,      // 週の拘束時間 (分)
+ *     totalGap: number,       // 週の空き時間 (分)
  *     maxPerDay: number|null,
  *     maxPerWeek: number|null,
  *     overDays: string[],     // maxPerDay を超えた曜日
@@ -65,48 +84,74 @@ export function computeTeacherLoad(project) {
     (project.tabs || []).some((t) => (t.days || []).includes(d))
   );
 
-  const counted = new Map(); // name → {byDay, minutesByDay, total, totalMinutes}
-  const add = (name, day, weight, minutes) => {
-    if (!counted.has(name)) {
-      counted.set(name, { byDay: {}, minutesByDay: {}, total: 0, totalMinutes: 0 });
-    }
+  const counted = new Map();
+  const blank = () => ({
+    byDay: {},
+    minutesByDay: {},
+    total: 0,
+    totalMinutes: 0,
+    // 拘束・空きの素材 (重み無し): day → {start, end, busy}
+    spans: new Map(),
+  });
+  const add = (name, day, weight, minutes, range) => {
+    if (!counted.has(name)) counted.set(name, blank());
     const r = counted.get(name);
     r.byDay[day] = (r.byDay[day] || 0) + weight;
     r.minutesByDay[day] = (r.minutesByDay[day] || 0) + weight * minutes;
     r.total += weight;
     r.totalMinutes += weight * minutes;
+    if (!range) return;
+    const cur = r.spans.get(day);
+    if (!cur) r.spans.set(day, { start: range.start, end: range.end, busy: minutes });
+    else {
+      cur.start = Math.min(cur.start, range.start);
+      cur.end = Math.max(cur.end, range.end);
+      cur.busy += minutes;
+    }
   };
   let untimedCount = 0;
   for (const e of resolveAllEntries(project)) {
     const biweekly = isBiweekly(e.cell.note);
     const weight = biweekly ? 0.5 : 1;
-    const minutes = periodMinutes(e.period.time);
+    const range = periodRange(e.period.time);
+    const minutes = range ? range.end - range.start : 0;
     const names = splitTeacherField(e.cell.teacher || "");
     for (const name of names) {
-      add(name, e.day, weight, minutes);
+      add(name, e.day, weight, minutes, range);
     }
     // 隔週パートナー (B 週担当) にも 0.5 を計上する
     const partner = biweekly ? biweeklyPartner(e.cell.note) : null;
-    if (partner) add(partner, e.day, 0.5, minutes);
+    if (partner) add(partner, e.day, 0.5, minutes, range);
     if (!minutes && (names.length > 0 || partner)) untimedCount++;
   }
 
   const finish = (name, master) => {
-    const r = counted.get(name) || {
-      byDay: {},
-      minutesByDay: {},
-      total: 0,
-      totalMinutes: 0,
-    };
+    const r = counted.get(name) || blank();
     const maxPerDay = master?.maxPerDay ?? null;
     const maxPerWeek = master?.maxPerWeek ?? null;
+    const spanByDay = {};
+    const gapByDay = {};
+    let totalSpan = 0;
+    let totalGap = 0;
+    for (const [day, s] of r.spans) {
+      const span = s.end - s.start;
+      const gap = Math.max(0, span - s.busy);
+      spanByDay[day] = span;
+      gapByDay[day] = gap;
+      totalSpan += span;
+      totalGap += gap;
+    }
     return {
       name,
       inMaster: !!master,
       byDay: r.byDay,
       minutesByDay: r.minutesByDay,
+      spanByDay,
+      gapByDay,
       total: r.total,
       totalMinutes: r.totalMinutes,
+      totalSpan,
+      totalGap,
       maxPerDay,
       maxPerWeek,
       overDays: maxPerDay
@@ -207,4 +252,72 @@ export function computeTeacherWeek(project, teacherName) {
   for (const d of days) ngByDay[d].sort((a, b) => ngOrder(a) - ngOrder(b));
 
   return { days, byDay, ngByDay, total, weightedTotal, minutesByDay, totalMinutes };
+}
+
+// ─── 教室 1 つの週間一覧 (👁 教室の週間ミニビュー用) ────────────────
+// 講師版 (computeTeacherWeek) と対になる教室版。「この教室は木曜の
+// 19 時台が空いている」を週で見るためのもの。教室は講師と違って NG や
+// 隔週の重み付けの概念が無い (隔週コマでもその時間その部屋は塞がる)
+// ので、素直にコマを並べて重なりだけ印を付ける。
+
+/**
+ * 指定教室 (実効教室 = セル上書き → 曜日別既定 → クラス既定) の担当コマを
+ * 曜日ごとに開始時刻順で列挙する。
+ * @returns {{
+ *   days: string[],
+ *   byDay: Record<string, {
+ *     ref: string, time: string, periodLabel: string,
+ *     tabName: string, clsLabel: string, subj: string, teacher: string,
+ *     note: string, overlap: boolean,   // 同じ教室・同じ時間帯に別のコマがある
+ *   }[]>,
+ *   total: number,
+ *   minutesByDay: Record<string, number>, // その教室が塞がっている時間 (分)
+ *   totalMinutes: number,
+ * }}
+ */
+export function computeRoomWeek(project, roomName) {
+  const days = REGULAR_DAYS.filter((d) =>
+    (project.tabs || []).some((t) => (t.days || []).includes(d))
+  );
+  const byDay = {};
+  const minutesByDay = {};
+  for (const d of days) {
+    byDay[d] = [];
+    minutesByDay[d] = 0;
+  }
+  let total = 0;
+  let totalMinutes = 0;
+  for (const e of resolveAllEntries(project)) {
+    if (!byDay[e.day]) continue;
+    if (effectiveRoom(e) !== roomName) continue;
+    byDay[e.day].push({
+      ref: entryRef(e),
+      time: (e.period.time || "").trim(),
+      periodLabel: e.period.label || "",
+      tabName: e.tab.name,
+      clsLabel: e.cls.label || e.cls.room || "",
+      subj: e.cell.subj || "",
+      teacher: (e.cell.teacher || "").trim(),
+      note: (e.cell.note || "").trim(),
+      overlap: false,
+    });
+    total++;
+    const minutes = periodMinutes(e.period.time);
+    minutesByDay[e.day] += minutes;
+    totalMinutes += minutes;
+  }
+  for (const d of days) {
+    byDay[d].sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time));
+    // 同じ教室で時間帯が重なるコマ (= 教室重複) に印を付ける。重なり自体は
+    // 問題一覧 (conflicts) が扱うので、ここでは週間の中で目立たせるだけ
+    const ranges = byDay[d].map((e) => periodRange(e.time));
+    byDay[d].forEach((e, i) => {
+      const a = ranges[i];
+      if (!a) return;
+      e.overlap = ranges.some(
+        (b, j) => j !== i && b && a.start < b.end && b.start < a.end
+      );
+    });
+  }
+  return { days, byDay, total, minutesByDay, totalMinutes };
 }

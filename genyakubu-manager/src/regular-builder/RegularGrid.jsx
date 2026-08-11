@@ -96,8 +96,8 @@ export function RegularGrid({
   onClearCell,
   onSwapCells,
   conflictsByRef,
-  /** 未承認の問題が NG のみのセル (バッジを ⚠️NG にする) */
-  ngOnlyRefs = null,
+  /** セルごとのバッジ文言 (`ref` → "重複" | "NG" | "移動")。未指定は "重複" */
+  badgeByRef = null,
   highlightTeacher,
   /** 実効教室 (セル上書き → クラス既定) がこの値のセルを強調表示 */
   highlightRoom = "",
@@ -898,7 +898,7 @@ export function RegularGrid({
                             subjects={project.subjects}
                             teachers={project.teachers}
                             conflictText={reasons ? reasons.join("\n") : ""}
-                            conflictBadge={ngOnlyRefs?.has(ref) ? "NG" : "重複"}
+                            conflictBadge={badgeByRef?.get(ref) || "重複"}
                             // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
                             // なり memo が効かない。値が同じなら文字列は等価)
                             busyTeachers={(busyByTab.get(t.id)?.get(key) || []).join("·")}

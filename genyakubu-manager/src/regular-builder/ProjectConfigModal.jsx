@@ -1,18 +1,22 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
-import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   REGULAR_DAYS,
+  countCellsForPeriod,
   countTeacherAssignments,
+  collectRoomUsage,
+  nextPeriodId,
+  removePeriodFromProject,
   renameTeacherInProject,
+  shiftPeriodTimes,
 } from "./model";
 import { UI } from "./ui";
 
-// ─── ⚙ 全体設定モーダル (時限 / 科目 / 講師 / NG・上限) ─────────────
+// ─── ⚙ 全体設定モーダル (時限 / 科目 / 講師 / 教室 / NG・上限) ──────
 // 講習ビルダーの「⚙️ 設定メニュー」と同じタブ構成のモーダル (RB19)。
 // 以前はインラインパネル (ProjectConfigPanel) だったが、NG・上限が増えて
 // 縦に長くなったためタブで分類する。編集は従来どおり即時保存
@@ -22,6 +26,7 @@ const TABS = [
   ["periods", "🕐 時限"],
   ["subjects", "📚 科目"],
   ["teachers", "👤 講師"],
+  ["rooms", "🏫 教室"],
   ["limits", "🚫 NG・上限"],
 ];
 
@@ -48,6 +53,32 @@ export function ProjectConfigModal({
   const tablistRef = useRef(null);
   const [newSubject, setNewSubject] = useState("");
   const [newTeacher, setNewTeacher] = useState("");
+  const [newRoom, setNewRoom] = useState("");
+
+  // 教室マスタと、実際に使われている教室の突き合わせ。マスタに無い教室は
+  // 表記ゆれ ("５０1" と "501" など) の可能性がある — 重複チェックも
+  // 亀井町判定も文字列一致なので、揺れていると黙ってすり抜ける
+  const roomUsage = useMemo(() => collectRoomUsage(project), [project]);
+  const roomMaster = project.rooms || [];
+  const unknownRooms = roomUsage.filter((r) => !roomMaster.includes(r.room));
+
+  const addRoom = (value) => {
+    const v = (value ?? newRoom).trim();
+    if (!v) return;
+    saveProject((p) =>
+      (p.rooms || []).includes(v) ? p : { ...p, rooms: [...(p.rooms || []), v] }
+    );
+    if (value === undefined) setNewRoom("");
+  };
+  const importRooms = () => {
+    const names = roomUsage.map((r) => r.room);
+    saveProject((p) => {
+      const known = new Set(p.rooms || []);
+      const added = names.filter((n) => !known.has(n));
+      if (!added.length) return p;
+      return { ...p, rooms: [...(p.rooms || []), ...added] };
+    });
+  };
 
   // Escape で閉じる + Tab フォーカスをモーダル内に閉じ込める
   useFocusTrap(dialogRef, { onClose });
@@ -147,19 +178,61 @@ export function ProjectConfigModal({
       ...p,
       periods: [
         ...p.periods,
-        { id: nextNumericId(p.periods), label: `${p.periods.length + 1}限`, time: "" },
+        { id: nextPeriodId(p), label: `${p.periods.length + 1}限`, time: "" },
       ],
     }));
 
-  const removePeriod = (id) =>
-    saveProject((p) => ({
-      ...p,
-      periods: p.periods.filter((x) => x.id !== id),
-      tabs: p.tabs.map((t) => ({
-        ...t,
-        periodIds: (t.periodIds || []).filter((pid) => pid !== id),
-      })),
-    }));
+  // 時限の削除は全学年のその時限のコマを巻き込む (cascade) ため確認を挟む
+  // (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。件数は表示用に現在の
+  // project で数え、保存は saveProject の最新値で再計算する
+  const removePeriod = async (per) => {
+    const cells = countCellsForPeriod(project, per.id);
+    if (cells > 0) {
+      const ok = await confirm({
+        title: "時限の削除",
+        message:
+          `時限「${per.label || per.time || `id:${per.id}`}」を削除しますか？\n` +
+          `この時限に入力済みのコマ ${cells} 件も削除されます（全学年）。\n` +
+          `（Ctrl+Z で戻せます）`,
+        okLabel: "削除する",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    saveProject((p) => removePeriodFromProject(p, per.id).project, {
+      atomic: true,
+    });
+    if (cells > 0) {
+      toasts.success(`時限を削除しました（コマ ${cells} 件も削除）`);
+    }
+  };
+
+  // 時限の一括時刻シフト (期切替の「全体を 15 分後ろへ」)。件数は表示用に
+  // 現在の project で数え、保存は saveProject の最新値で再計算する
+  const [shiftMinutes, setShiftMinutes] = useState("15");
+  const shiftAllPeriods = (sign) => {
+    const delta = sign * Number(shiftMinutes);
+    if (!Number.isFinite(delta) || delta === 0) {
+      toasts.error("ずらす分数を入力してください");
+      return;
+    }
+    const res = shiftPeriodTimes(project, delta);
+    if (res.shifted === 0) {
+      toasts.info(
+        res.skipped.length > 0
+          ? `ずらせる時限がありません（${res.skipped.join("・")} は時刻が未設定か範囲外です）`
+          : "ずらせる時限がありません（時刻を設定してください）"
+      );
+      return;
+    }
+    saveProject((p) => shiftPeriodTimes(p, delta).project, { atomic: true });
+    const parts = [
+      `${res.shifted} 件の時限を ${Math.abs(delta)} 分${delta > 0 ? "後ろへ" : "前へ"}ずらしました`,
+    ];
+    if (res.skipped.length > 0)
+      parts.push(`${res.skipped.join("・")} は据え置き（時刻が未設定か範囲外）`);
+    toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, { duration: 5000 });
+  };
 
   const addSubject = () => {
     const v = newSubject.trim();
@@ -188,25 +261,48 @@ export function ProjectConfigModal({
       teachers: p.teachers.map((t) => (t.name === name ? fn(t) : t)),
     }));
 
+  // NG (不在) の追加フォーム。曜日は複数選択 (「火・木は不在」を 1 回で)、
+  // 時間帯は時限プールから選ぶ (「18:00-18:45」を毎回手打ちしなくてよい)。
+  // プールに無い時間帯は FREE_TIME で従来どおり直接入力できる
+  const FREE_TIME = "__free__";
   const [ngForm, setNgForm] = useState({
     name: "",
-    day: REGULAR_DAYS[0],
-    time: "",
+    days: [],
+    time: "", // "" = 終日 / 時限の時刻 / FREE_TIME 選択中は customTime を使う
+    customTime: "",
   });
+  const toggleNgDay = (d) =>
+    setNgForm((f) => ({
+      ...f,
+      days: f.days.includes(d)
+        ? f.days.filter((x) => x !== d)
+        : REGULAR_DAYS.filter((x) => f.days.includes(x) || x === d),
+    }));
+
   const addNg = () => {
-    const { name, day } = ngForm;
-    const time = ngForm.time.trim();
+    const { name, days } = ngForm;
     if (!name) return;
+    if (days.length === 0) {
+      toasts.error("NG にする曜日を選んでください");
+      return;
+    }
+    const time =
+      ngForm.time === FREE_TIME ? ngForm.customTime.trim() : ngForm.time;
     if (time && !isWellFormedTimeRange(time)) {
-      toasts.error("時刻は「HH:MM-HH:MM」形式で入力してください（空欄で終日）");
+      toasts.error("時刻は「HH:MM-HH:MM」形式で入力してください（終日は「終日」を選択）");
       return;
     }
     updateTeacher(name, (t) => {
-      const slots2 = t.ngSlots || [];
-      if (slots2.some((s) => s.day === day && (s.time || "") === time)) return t;
-      return { ...t, ngSlots: [...slots2, time ? { day, time } : { day }] };
+      const slots2 = [...(t.ngSlots || [])];
+      for (const day of days) {
+        if (slots2.some((s) => s.day === day && (s.time || "") === time)) continue;
+        slots2.push(time ? { day, time } : { day });
+      }
+      return slots2.length === (t.ngSlots || []).length
+        ? t
+        : { ...t, ngSlots: slots2 };
     });
-    setNgForm((f) => ({ ...f, time: "" }));
+    setNgForm((f) => ({ ...f, days: [] }));
   };
   const removeNg = (name, idx) =>
     updateTeacher(name, (t) => {
@@ -384,17 +480,48 @@ export function ProjectConfigModal({
                     <button
                       type="button"
                       className={UI.btnDanger}
-                      onClick={() => removePeriod(per.id)}
+                      onClick={() => removePeriod(per)}
                     >
                       削除
                     </button>
                   </div>
                 );
               })}
-              <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button type="button" className={UI.btn} onClick={addPeriod}>
                   + 時限を追加
                 </button>
+                {/* 期切替の「全体を 15 分後ろへ」を 1 操作で。時限 id は
+                    変わらないのでセルの中身は動かない */}
+                {project.periods.length > 0 && (
+                  <span className="inline-flex items-center gap-1 ml-2 text-[11px] text-builder-ink">
+                    全時限を
+                    <input
+                      type="number"
+                      value={shiftMinutes}
+                      onChange={(e) => setShiftMinutes(e.target.value)}
+                      aria-label="ずらす分数 (正で後ろへ・負で前へ)"
+                      className={`${UI.input} w-16`}
+                    />
+                    分
+                    <button
+                      type="button"
+                      className={UI.btn}
+                      onClick={() => shiftAllPeriods(-1)}
+                      title="全時限の時刻をこの分数だけ前倒しする（コマの中身は動きません）"
+                    >
+                      ◂ 前へ
+                    </button>
+                    <button
+                      type="button"
+                      className={UI.btn}
+                      onClick={() => shiftAllPeriods(1)}
+                      title="全時限の時刻をこの分数だけ後ろへずらす（コマの中身は動きません）"
+                    >
+                      後ろへ ▸
+                    </button>
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -404,14 +531,40 @@ export function ProjectConfigModal({
             <>
               <div className={UI.hint}>
                 セルの教科プルダウンの選択肢になります。マスタ外の単発教科はセル側の「✎ 直接入力」でも入力できます。
+                並び順はプルダウンと 📊 集計の列順になります（◂ ▸ で入れ替え）。
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                {project.subjects.map((s) => (
+                {project.subjects.map((s, idx) => (
                   <span
                     key={s}
                     className="text-[11px] bg-builder-info-soft border border-builder-info-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
                   >
+                    {/* 並べ替え: プルダウンの並び・集計の列順に効く */}
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, subjects: move(p.subjects, idx, -1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${s} を前へ`}
+                      title="前へ"
+                    >
+                      ◂
+                    </button>
                     {s}
+                    <button
+                      type="button"
+                      disabled={idx === project.subjects.length - 1}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, subjects: move(p.subjects, idx, 1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${s} を後ろへ`}
+                      title="後ろへ"
+                    >
+                      ▸
+                    </button>
                     <button
                       type="button"
                       onClick={() =>
@@ -531,6 +684,125 @@ export function ProjectConfigModal({
             </>
           )}
 
+          {/* ── 🏫 教室マスタ ── */}
+          {tab === "rooms" && (
+            <>
+              <div className={UI.hint}>
+                セル・列見出しの教室入力の候補になります。教室の重複チェックと
+                亀井町（「亀◯◯」）の判定は文字列一致なので、表記ゆれがあると
+                黙って検出をすり抜けます。マスタに揃えておくと下の「マスタに無い教室」で
+                ゆれに気付けます。マスタは空でも構いません（候補が使用中の教室だけになります）。
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {roomMaster.map((r, idx) => (
+                  <span
+                    key={r}
+                    className="text-[11px] bg-builder-info-soft border border-builder-info-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
+                  >
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, rooms: move(p.rooms || [], idx, -1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${r} を前へ`}
+                      title="前へ"
+                    >
+                      ◂
+                    </button>
+                    {r}
+                    <button
+                      type="button"
+                      disabled={idx === roomMaster.length - 1}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, rooms: move(p.rooms || [], idx, 1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${r} を後ろへ`}
+                      title="後ろへ"
+                    >
+                      ▸
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        saveProject((p) => ({
+                          ...p,
+                          rooms: (p.rooms || []).filter((x) => x !== r),
+                        }))
+                      }
+                      className={chipDeleteBtn}
+                      aria-label={`${r} を削除`}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  value={newRoom}
+                  onChange={(e) => setNewRoom(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addRoom();
+                  }}
+                  placeholder="教室を追加 (例: 501)"
+                  className={`${UI.input} w-32`}
+                />
+                <button type="button" className={UI.btn} onClick={() => addRoom()}>
+                  追加
+                </button>
+                <button
+                  type="button"
+                  className={UI.btnBlue}
+                  onClick={importRooms}
+                  disabled={unknownRooms.length === 0}
+                  title="今このプロジェクトで使われている教室をまとめてマスタに入れる"
+                >
+                  🔗 使用中の教室から取込
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-builder-border">
+                <span className={sectionHead}>
+                  マスタに無い教室（使用中）{unknownRooms.length > 0 ? ` ${unknownRooms.length} 件` : ""}
+                </span>
+                {unknownRooms.length === 0 ? (
+                  <div className="text-builder-ink-subtle">
+                    {roomUsage.length === 0
+                      ? "まだ教室が使われていません。"
+                      : "使用中の教室はすべてマスタにあります。"}
+                  </div>
+                ) : (
+                  <>
+                    <div className={UI.hint}>
+                      同じ部屋が違う表記で入っていないか確認してください
+                      （「501」と「５０１」は別の教室として扱われ、重複チェックに掛かりません）。
+                      クリックでマスタに追加できます。
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {unknownRooms.map((r) => (
+                        <button
+                          key={r.room}
+                          type="button"
+                          onClick={() => addRoom(r.room)}
+                          title="クリックでマスタに追加"
+                          className="text-[11px] bg-builder-warning-soft border border-builder-warning-border text-builder-orange rounded-full px-2 py-0.5 cursor-pointer"
+                        >
+                          + {r.room}
+                          <span className="ml-1 font-normal opacity-80">
+                            {r.cells > 0 ? `${r.cells}コマ` : ""}
+                            {r.columns > 0 ? `${r.cells > 0 ? "・" : ""}列${r.columns}` : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
           {/* ── 🚫 NG (不在) とコマ数上限 ── */}
           {tab === "limits" && (
             <>
@@ -538,7 +810,8 @@ export function ProjectConfigModal({
                 <span className={sectionHead}>NG（不在）</span>
                 <div className={UI.hint}>
                   NG の曜日・時間帯への割当は、重複と同じく赤枠 + 一覧で警告されます（意図した割当は「承認」で消せます）。
-                  講師プルダウンにも「(NG)」を予告し、👁 週間ミニビューにも 🚫 で表示されます。時刻を空欄にすると終日 NG です。
+                  講師プルダウンにも「(NG)」を予告し、👁 週間ミニビューにも 🚫 で表示されます。
+                  曜日は複数選べます（「火・木は不在」を 1 回で登録できます）。時間帯は時限から選ぶか「終日」。
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <select
@@ -554,34 +827,62 @@ export function ProjectConfigModal({
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={ngForm.day}
-                    onChange={(e) => setNgForm((f) => ({ ...f, day: e.target.value }))}
-                    aria-label="NG の曜日"
-                    className={UI.input}
+                  {/* 曜日は複数選択 (「火・木は不在」を 1 回で登録する) */}
+                  <span
+                    role="group"
+                    aria-label="NG の曜日 (複数選択)"
+                    className="inline-flex items-center gap-1"
                   >
                     {REGULAR_DAYS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}曜
-                      </option>
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={ngForm.days.includes(d)}
+                        onClick={() => toggleNgDay(d)}
+                        className={UI.btnToggle(ngForm.days.includes(d))}
+                      >
+                        {d}
+                      </button>
                     ))}
-                  </select>
-                  <input
-                    type="text"
+                  </span>
+                  {/* 時間帯は時限プールから選ぶ (手打ちの表記ゆれを防ぐ) */}
+                  <select
                     value={ngForm.time}
                     onChange={(e) => setNgForm((f) => ({ ...f, time: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addNg();
-                    }}
-                    placeholder="18:00-19:00 (空欄で終日)"
-                    aria-label="NG の時刻範囲 (空欄で終日)"
-                    className={`${UI.input} w-44`}
-                  />
+                    aria-label="NG の時間帯"
+                    className={UI.input}
+                  >
+                    <option value="">終日</option>
+                    {project.periods
+                      .filter((p) => isWellFormedTimeRange(p.time))
+                      .map((p) => (
+                        <option key={p.id} value={p.time.trim()}>
+                          {[p.label, p.time].filter(Boolean).join(" ")}
+                        </option>
+                      ))}
+                    <option value={FREE_TIME}>✎ 直接入力…</option>
+                  </select>
+                  {ngForm.time === FREE_TIME && (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={ngForm.customTime}
+                      onChange={(e) =>
+                        setNgForm((f) => ({ ...f, customTime: e.target.value }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addNg();
+                      }}
+                      placeholder="18:00-19:00"
+                      aria-label="NG の時刻範囲 (直接入力)"
+                      className={`${UI.input} w-32`}
+                    />
+                  )}
                   <button
                     type="button"
                     className={UI.btn}
                     onClick={addNg}
-                    disabled={!ngForm.name}
+                    disabled={!ngForm.name || ngForm.days.length === 0}
                   >
                     + NG 追加
                   </button>
@@ -689,6 +990,37 @@ export function ProjectConfigModal({
                       </span>
                     ))}
                 </div>
+              </div>
+
+              {/* 校舎間 (本校 ↔ 亀井町) の移動時間。必要分数は施設ごとの
+                  事情なので既定値は置かず、入れたときだけチェックする */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-builder-border">
+                <span className={sectionHead}>校舎間の移動時間</span>
+                <div className={UI.hint}>
+                  同じ講師が本校と亀井町（教室「亀◯◯」）を続けて担当するとき、
+                  コマの間隔がこの分数に満たないと問題一覧で警告します。空欄 = チェックしません。
+                </div>
+                <label className="text-[11px] text-builder-ink inline-flex items-center gap-1">
+                  移動に必要な時間
+                  <input
+                    type="number"
+                    min="1"
+                    value={project.campusTravelMinutes ?? ""}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      saveProject((p) => {
+                        const next = { ...p };
+                        if (e.target.value !== "" && Number.isFinite(v) && v > 0)
+                          next.campusTravelMinutes = v;
+                        else delete next.campusTravelMinutes;
+                        return next;
+                      });
+                    }}
+                    aria-label="校舎間の移動に必要な分数 (空欄でチェックしない)"
+                    className={`${UI.input} w-16`}
+                  />
+                  分
+                </label>
               </div>
             </>
           )}

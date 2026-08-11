@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   addSnapshot,
   classRoomForDay,
+  collectRoomUsage,
   computeSections,
   copyCellAcrossTabs,
+  countCellsForClass,
+  countCellsForPeriod,
   countTeacherAssignments,
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
   makeCellRef,
+  nextClassId,
+  nextPeriodId,
   parseCellKey,
   parseCellRef,
+  removeClassFromTab,
+  removePeriodFromProject,
   renameTeacherInProject,
   resolveAllEntries,
   restoreSnapshot,
@@ -20,6 +27,7 @@ import {
   setCellsLocked,
   setClassRoom,
   setClassRoomForDay,
+  shiftPeriodTimes,
   swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
@@ -877,5 +885,258 @@ describe("setClassRoomForDay (この曜日だけの既定教室)", () => {
     const before = JSON.stringify(src);
     setClassRoomForDay(src, 1, 1, "木", "亀63");
     expect(JSON.stringify(src)).toBe(before);
+  });
+});
+
+// ─── 時限 / クラスの削除とセルの後始末 ──────────────────────────────
+// 消した時限・クラスのセルを残すと、次の追加で同じ id を受け取った瞬間に
+// 「消したはずのコマ」が新しい行・列に現れる。削除でセルまで落とし、
+// 採番も schedule に現れる id を含めて行うことの回帰テスト。
+
+describe("removePeriodFromProject / countCellsForPeriod", () => {
+  it("時限・periodIds・その時限のセルをまとめて落とす", () => {
+    const p = makeProject();
+    expect(countCellsForPeriod(p, 1)).toBe(1);
+    const { project, removedCells } = removePeriodFromProject(p, 1);
+    expect(removedCells).toBe(1);
+    expect(project.periods.map((x) => x.id)).toEqual([2, 3]);
+    expect(project.tabs[0].periodIds).toEqual([2]);
+    expect(Object.keys(project.tabs[0].schedule)).toEqual([makeCellKey("月", 2, 2)]);
+  });
+
+  it("全タブを横断して数える・落とす", () => {
+    const p = makeProject();
+    p.tabs.push({
+      ...p.tabs[0],
+      id: 2,
+      name: "中2",
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "国語" },
+        [makeCellKey("火", 1, 1)]: { subj: "理科" },
+      },
+    });
+    expect(countCellsForPeriod(p, 1)).toBe(3);
+    expect(removePeriodFromProject(p, 1).removedCells).toBe(3);
+  });
+
+  it("該当セルの無い時限の削除は 0 件・元のプロジェクトは不変", () => {
+    const p = makeProject();
+    const before = JSON.stringify(p);
+    const { removedCells } = removePeriodFromProject(p, 3);
+    expect(removedCells).toBe(0);
+    expect(JSON.stringify(p)).toBe(before);
+  });
+});
+
+describe("removeClassFromTab / countCellsForClass", () => {
+  it("クラス列とその列のセルをまとめて落とす", () => {
+    const tab = makeProject().tabs[0];
+    expect(countCellsForClass(tab, 2)).toBe(1);
+    const { tab: next, removedCells } = removeClassFromTab(tab, 2);
+    expect(removedCells).toBe(1);
+    expect(next.classes.map((c) => c.id)).toEqual([1]);
+    expect(Object.keys(next.schedule)).toEqual([makeCellKey("月", 1, 1)]);
+  });
+
+  it("元のタブは不変 (純関数)", () => {
+    const tab = makeProject().tabs[0];
+    const before = JSON.stringify(tab);
+    removeClassFromTab(tab, 1);
+    expect(JSON.stringify(tab)).toBe(before);
+  });
+});
+
+describe("nextClassId / nextPeriodId", () => {
+  it("定義済みの id の次を返す", () => {
+    const p = makeProject();
+    expect(nextClassId(p.tabs[0])).toBe(3);
+    expect(nextPeriodId(p)).toBe(4);
+  });
+
+  it("孤立セルの id も避ける (消したコマが新しい列・行に復活しない)", () => {
+    const p = makeProject();
+    // クラス 5 / 時限 9 は定義には無いが schedule に残っている状態
+    p.tabs[0].schedule[makeCellKey("月", 9, 5)] = { subj: "残骸" };
+    expect(nextClassId(p.tabs[0])).toBe(6);
+    expect(nextPeriodId(p)).toBe(10);
+  });
+
+  it("periodIds にだけ残った id も避ける", () => {
+    const p = makeProject();
+    p.tabs[0].periodIds = [1, 2, 7];
+    expect(nextPeriodId(p)).toBe(8);
+  });
+
+  it("空のタブ・プロジェクトは 1 から", () => {
+    expect(nextClassId({ classes: [], schedule: {} })).toBe(1);
+    expect(nextPeriodId({ periods: [], tabs: [] })).toBe(1);
+  });
+});
+
+describe("shiftPeriodTimes", () => {
+  it("全時限の時刻を後ろへずらす (ラベルと id は不変)", () => {
+    const p = makeProject();
+    const { project, shifted, skipped } = shiftPeriodTimes(p, 15);
+    expect(shifted).toBe(3);
+    expect(skipped).toEqual([]);
+    expect(project.periods.map((x) => x.time)).toEqual([
+      "18:15-19:00",
+      "19:10-19:55",
+      "20:55-21:10",
+    ]);
+    expect(project.periods.map((x) => x.id)).toEqual([1, 2, 3]);
+    expect(project.periods[0].label).toBe("1限");
+  });
+
+  it("負の分数で前倒しできる", () => {
+    const { project } = shiftPeriodTimes(makeProject(), -45);
+    expect(project.periods[0].time).toBe("17:15-18:00");
+  });
+
+  it("セル (schedule) は動かさない — 時限 id は変わらないため", () => {
+    const p = makeProject();
+    const { project } = shiftPeriodTimes(p, 15);
+    expect(project.tabs[0].schedule).toEqual(p.tabs[0].schedule);
+  });
+
+  it("時刻未設定・書式不正・範囲外の時限は据え置いて名前を返す", () => {
+    const p = makeProject();
+    p.periods = [
+      { id: 1, label: "1限", time: "18:00-18:45" },
+      { id: 2, label: "未定", time: "" }, // 未設定 → skipped に出さない
+      { id: 3, label: "変", time: "ごご" }, // 書式不正
+      { id: 4, label: "深夜", time: "23:50-23:59" }, // +15 分で 24 時超え
+    ];
+    const { project, shifted, skipped } = shiftPeriodTimes(p, 15);
+    expect(shifted).toBe(1);
+    expect(skipped).toEqual(["変", "深夜"]);
+    expect(project.periods[1].time).toBe("");
+    expect(project.periods[3].time).toBe("23:50-23:59");
+  });
+
+  it("periodIds で対象を絞れる", () => {
+    const { project, shifted } = shiftPeriodTimes(makeProject(), 10, {
+      periodIds: [2],
+    });
+    expect(shifted).toBe(1);
+    expect(project.periods[0].time).toBe("18:00-18:45");
+    expect(project.periods[1].time).toBe("19:05-19:50");
+  });
+
+  it("0 分・不正な分数は no-op (同じ参照を返す)", () => {
+    const p = makeProject();
+    expect(shiftPeriodTimes(p, 0).project).toBe(p);
+    expect(shiftPeriodTimes(p, NaN).project).toBe(p);
+  });
+
+  it("1 件もずらせなければ元のプロジェクトをそのまま返す", () => {
+    const p = makeProject();
+    p.periods = [{ id: 1, label: "未定", time: "" }];
+    expect(shiftPeriodTimes(p, 15).project).toBe(p);
+  });
+});
+
+describe("sanitizeProject: campusTravelMinutes", () => {
+  it("正の数だけ受け入れる", () => {
+    expect(sanitizeProject({ name: "x", campusTravelMinutes: 15 }).campusTravelMinutes).toBe(15);
+    expect(sanitizeProject({ name: "x", campusTravelMinutes: "20" }).campusTravelMinutes).toBe(20);
+  });
+
+  it("0・負値・非数は未設定に倒す (= チェックしない)", () => {
+    for (const v of [0, -5, "abc", null, undefined]) {
+      expect(
+        "campusTravelMinutes" in sanitizeProject({ name: "x", campusTravelMinutes: v })
+      ).toBe(false);
+    }
+  });
+});
+
+describe("collectRoomUsage", () => {
+  it("列の既定教室とセルの実効教室を数える", () => {
+    // makeProject: S(501)/A(502)、月1限 S は既定 501、月2限 A はセル上書き 601
+    const usage = collectRoomUsage(makeProject());
+    expect(usage.map((u) => u.room)).toEqual(["501", "502", "601"]);
+    expect(usage.find((u) => u.room === "501")).toEqual({
+      room: "501",
+      cells: 1,
+      columns: 1,
+    });
+    // 502 は列の既定だがその教室のコマは無い (A のコマは 601 に上書き)
+    expect(usage.find((u) => u.room === "502")).toEqual({
+      room: "502",
+      cells: 0,
+      columns: 1,
+    });
+    expect(usage.find((u) => u.room === "601")).toEqual({
+      room: "601",
+      cells: 1,
+      columns: 0,
+    });
+  });
+
+  it("曜日別の既定教室も列として数える", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0].roomByDay = { 月: "亀63" };
+    const usage = collectRoomUsage(p);
+    expect(usage.find((u) => u.room === "亀63")).toEqual({
+      room: "亀63",
+      cells: 1, // 月1限 S の実効教室が 亀63 になる
+      columns: 1,
+    });
+  });
+
+  it("残骸セルは数えない・教室名順に並ぶ", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("水", 1, 1)] = { subj: "国語", room: "999" };
+    const usage = collectRoomUsage(p);
+    expect(usage.some((u) => u.room === "999")).toBe(false);
+    expect(usage.map((u) => u.room)).toEqual([...usage.map((u) => u.room)].sort());
+  });
+
+  it("空のプロジェクトは空配列", () => {
+    expect(collectRoomUsage({ tabs: [] })).toEqual([]);
+    expect(collectRoomUsage(null)).toEqual([]);
+  });
+});
+
+describe("sanitizeProject: rooms (教室マスタ)", () => {
+  it("空文字・重複・非文字列を落とし、前後空白は詰める", () => {
+    expect(
+      sanitizeProject({ name: "x", rooms: ["501", " 502 ", "", "501", 7] }).rooms
+    ).toEqual(["501", "502"]);
+  });
+
+  it("未設定は空配列", () => {
+    expect(sanitizeProject({ name: "x" }).rooms).toEqual([]);
+  });
+});
+
+describe("restoreSnapshot: 任意フィールドの復元", () => {
+  it("保存時に無かった任意フィールドは復元で消える", () => {
+    // 設定を入れる前に保存 → 後から設定 → 復元すると設定前に戻るのが正
+    const base = makeProject();
+    const saved = addSnapshot(base, "設定前", 1000);
+    const later = {
+      ...saved,
+      approvedConflicts: ["teacher|月|a~b"],
+      campusTravelMinutes: 15,
+    };
+    const restored = restoreSnapshot(later, 1);
+    expect("approvedConflicts" in restored).toBe(false);
+    expect("campusTravelMinutes" in restored).toBe(false);
+  });
+
+  it("保存時にあった任意フィールドは復元で戻る", () => {
+    const withSetting = { ...makeProject(), campusTravelMinutes: 20 };
+    const saved = addSnapshot(withSetting, "設定後", 1000);
+    const later = { ...saved, campusTravelMinutes: 5 };
+    expect(restoreSnapshot(later, 1).campusTravelMinutes).toBe(20);
+  });
+
+  it("スナップショット一覧と id は現在のまま維持する", () => {
+    const saved = addSnapshot({ ...makeProject(), id: 7 }, "案", 1000);
+    const restored = restoreSnapshot(saved, 1);
+    expect(restored.id).toBe(7);
+    expect(restored.snapshots).toHaveLength(1);
   });
 });

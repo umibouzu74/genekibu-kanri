@@ -29,13 +29,7 @@ import { changeJoint } from "./jointEdit";
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
 import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
-import {
-  describeHistoryChange,
-  diffWorkspaces,
-  formatCellShort,
-} from "./historyFeedback";
-import { applyChu3SecondTermShift, buildProjectFromSlots } from "./importTimetable";
-import { parseProjectJson, projectFileName, serializeProject } from "./projectJson";
+import { formatCellShort } from "./historyFeedback";
 import { ProjectConfigModal } from "./ProjectConfigModal";
 import { RegularOnboarding } from "./RegularOnboarding";
 import { TabConfigPanel } from "./TabConfigPanel";
@@ -48,10 +42,18 @@ import {
   RegularTeacherWeek,
   RegularTeacherWeekPrintSheet,
 } from "./RegularTeacherWeek";
+import { RegularRoomWeek } from "./RegularRoomWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { JointDialog } from "./JointDialog";
+import { DayCopyDialog } from "./DayCopyDialog";
+import { copyDay, describeDayCopy } from "./dayCopy";
+import { BulkEditDialog } from "./BulkEditDialog";
+import { bulkEditCells, describeBulkEdit, fillCells } from "./bulkEdit";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
+import { useRegularHistory } from "./hooks/useRegularHistory";
+import { useRegularProjects } from "./hooks/useRegularProjects";
+import { useCellSelection } from "./hooks/useCellSelection";
 import { UI } from "./ui";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
@@ -104,6 +106,7 @@ export default function RegularBuilderApp({
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [showDayCopy, setShowDayCopy] = useState(false);
   // 表示トグルはリロード後も保持 (講習の 📏 と同じ。明示トグルの保存であり
   // 自動学習系ではない)
   const [hideEmpty, setHideEmpty] = usePersistedToggle(
@@ -293,106 +296,12 @@ export default function RegularBuilderApp({
     };
   }, [printTeacherWeek]);
 
-  // ── Undo/Redo ───────────────────────────────────────────────────
-  // 自分の編集 (commitWorkspace 経由) だけを履歴に積む軽量スタック。
-  // 直近 800ms 以内の連続編集 (セルへのタイピング等) は 1 つの取り消し
-  // 単位に束ねる。リモート同期で入った変更は履歴に乗らない (単独編集
-  // 前提の割り切り — undo するとその間の同期変更ごと戻る)。
-  const wsRef = useRef(workspace);
-  useEffect(() => {
-    wsRef.current = workspace;
-  }, [workspace]);
-  const undoStackRef = useRef([]);
-  const redoStackRef = useRef([]);
-  const lastCommitAtRef = useRef(0);
-  const [histVersion, setHistVersion] = useState(0);
-
-  // atomic: true の編集 (D&D 入替・セルクリア等の単発操作) は、直前の
-  // タイピングと束ねず必ず独立した取り消し単位にする (直後の編集も別単位)
-  const commitWorkspace = useCallback(
-    (next, { atomic = false } = {}) => {
-      const now = Date.now();
-      if (atomic || now - lastCommitAtRef.current > 800) {
-        undoStackRef.current = [...undoStackRef.current.slice(-99), wsRef.current];
-      }
-      redoStackRef.current = [];
-      lastCommitAtRef.current = atomic ? 0 : now;
-      saveWorkspace(next);
-      setHistVersion((v) => v + 1);
-    },
-    [saveWorkspace]
+  // ── Undo/Redo (実体は useRegularHistory) ────────────────────────
+  const { commitWorkspace, undo, redo, canUndo, canRedo } = useRegularHistory(
+    workspace,
+    saveWorkspace,
+    { toasts, jumpToCells }
   );
-
-  // undo/redo は「何が戻ったか」を toast で知らせる (講習 N2f と同趣旨)。
-  // 表示していない曜日のセルが戻っても気付けるよう、セル変更ならその場所
-  // (と before → after) を要約し、「表示」ボタンで該当セルへ飛べるようにする
-  const notifyHistory = useCallback(
-    (kind, fromWs, toWs) => {
-      const diff = diffWorkspaces(fromWs, toWs);
-      const text = describeHistoryChange(diff) || "変更なし";
-      const activeId = toWs.projects.some((p) => p.id === toWs.activeProjectId)
-        ? toWs.activeProjectId
-        : toWs.projects[0]?.id;
-      const target = diff.cellChanges.find((c) => c.projectId === activeId);
-      toasts.info(`${kind === "undo" ? "↩️ 元に戻す" : "↪️ やり直し"}: ${text}`, {
-        duration: 3500,
-        action: target
-          ? { label: "表示", onClick: () => jumpToCells([target.ref], target.day) }
-          : undefined,
-      });
-    },
-    [toasts, jumpToCells]
-  );
-
-  const undo = useCallback(() => {
-    const stack = undoStackRef.current;
-    if (stack.length === 0) return;
-    const prev = stack[stack.length - 1];
-    const cur = wsRef.current;
-    undoStackRef.current = stack.slice(0, -1);
-    redoStackRef.current = [...redoStackRef.current, cur];
-    lastCommitAtRef.current = 0; // 次の編集は新しい取り消し単位
-    saveWorkspace(prev);
-    setHistVersion((v) => v + 1);
-    notifyHistory("undo", cur, prev);
-  }, [saveWorkspace, notifyHistory]);
-
-  const redo = useCallback(() => {
-    const stack = redoStackRef.current;
-    if (stack.length === 0) return;
-    const next = stack[stack.length - 1];
-    const cur = wsRef.current;
-    redoStackRef.current = stack.slice(0, -1);
-    undoStackRef.current = [...undoStackRef.current, cur];
-    lastCommitAtRef.current = 0;
-    saveWorkspace(next);
-    setHistVersion((v) => v + 1);
-    notifyHistory("redo", cur, next);
-  }, [saveWorkspace, notifyHistory]);
-
-  const canUndo = histVersion >= 0 && undoStackRef.current.length > 0;
-  const canRedo = histVersion >= 0 && redoStackRef.current.length > 0;
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      // テキスト入力中はブラウザ標準の undo を優先する。select は標準 undo が
-      // 無いので対象に含める (講習 N1d と同じ — プルダウンで教科・講師を
-      // 変えた直後の Ctrl+Z が無反応にならない)
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      const k = e.key.toLowerCase();
-      if (k === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if (k === "y" || (k === "z" && e.shiftKey)) {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
 
   // アクティブなプロジェクトだけを更新する (既存の下位コンポーネントは
   // 単一プロジェクトの世界のまま — saveProject(fn) の形を維持)
@@ -418,142 +327,27 @@ export default function RegularBuilderApp({
     [commitWorkspace]
   );
 
-  const switchProject = useCallback(
-    (id) => {
-      saveWorkspace((w) => ({ ...w, activeProjectId: id }));
-      setActiveTabId(null);
-    },
-    [saveWorkspace]
-  );
-
-  const addProject = useCallback(
-    (projectFields, { successMsg } = {}) => {
-      commitWorkspace((w) => {
-        const id = nextNumericId(w.projects);
-        return {
-          ...w,
-          activeProjectId: id,
-          projects: [...w.projects, { id, ...projectFields }],
-        };
-      });
-      setActiveTabId(null);
-      if (successMsg) toasts.success(successMsg);
-    },
-    [commitWorkspace, toasts]
-  );
-
-  const removeProject = useCallback(async () => {
-    const cellCount = project.tabs.reduce(
-      (n, t) => n + Object.keys(t.schedule).length,
-      0
-    );
-    // プロジェクト削除は中身 (タブ・セル) を巻き込むため確認ダイアログ
-    // (CLAUDE.md 削除 UX ルールの cascade あり相当)
-    const ok = await confirm({
-      title: "プロジェクトの削除",
-      message: `プロジェクト「${project.name}」を削除しますか？\nタブ ${project.tabs.length} 件・入力済みセル ${cellCount} 件も削除されます。`,
-      okLabel: "削除する",
-      tone: "danger",
-    });
-    if (!ok) return;
-    commitWorkspace((w) => {
-      const rest = w.projects.filter((p) => p.id !== project.id);
-      if (rest.length === 0) return createDefaultWorkspace();
-      return { ...w, activeProjectId: rest[0].id, projects: rest };
-    });
-    setActiveTabId(null);
-  }, [project, confirm, commitWorkspace]);
-
-  const duplicateProject = useCallback(() => {
-    const copy = JSON.parse(JSON.stringify(project));
-    delete copy.id;
-    addProject(
-      { ...copy, name: `${project.name}（コピー）` },
-      { successMsg: `「${project.name}」を複製しました` }
-    );
-  }, [project, addProject]);
-
-  const importProject = useCallback(
-    ({ sourceId, name, applyShift, splitWeekend, splitBuilding }) => {
-      const { project: imported, stats } = buildProjectFromSlots(
-        name,
-        slots,
-        sourceId,
-        { splitWeekend, splitBuilding }
-      );
-      let final = imported;
-      let shiftMsg = "";
-      if (applyShift) {
-        const { project: shifted, moved } = applyChu3SecondTermShift(imported);
-        final = shifted;
-        shiftMsg = `、中3 2学期変更を適用（${moved} コマ移動）`;
-      }
-      addProject(final, {
-        successMsg: `「${name}」を取り込みました（${stats.slotCount} コマ・タブ ${stats.tabCount} 件${shiftMsg}）`,
-      });
-      setShowImport(false);
-    },
-    [slots, addProject]
-  );
-
-  // ── JSON 書き出し / 読み込み (RB20: バックアップ・別環境への移行) ──
-  // 書き出しはアクティブなプロジェクト単位 (スナップショット込み)、
-  // 読み込みは新しいプロジェクトとして追加する (既存を上書きしない)
-  const exportProjectJson = useCallback(() => {
-    const text = serializeProject(project, new Date().toISOString());
-    const url = URL.createObjectURL(
-      new Blob([text], { type: "application/json" })
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = projectFileName(project.name, new Date());
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toasts.success(`「${project.name || "無題"}」を JSON に書き出しました`);
-  }, [project, toasts]);
-
-  const importFileRef = useRef(null);
-  const importProjectJson = useCallback(
-    async (file) => {
-      if (!file) return;
-      const result = parseProjectJson(await file.text());
-      if (result.error) {
-        toasts.error(result.error);
-        return;
-      }
-      addProject(result.project, {
-        successMsg: `「${result.project.name}」を JSON から読み込みました`,
-      });
-    },
-    [toasts, addProject]
-  );
-
-  // ── Excel 出力 (RB22)。exceljs をメインバンドルから外すため、
-  // モジュールごとボタン押下時に dynamic import する (講習・調査票と同じ)
-  const exportExcel = useCallback(async () => {
-    try {
-      const { downloadRegularExcel } = await import("./excelExport");
-      await downloadRegularExcel({ project, days: usedDays, splitCampus });
-      toasts.success("Excel を書き出しました（曜日ごとにシート・A4 横）");
-    } catch (e) {
-      toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);
-    }
-  }, [project, usedDays, splitCampus, toasts]);
-
-  // ── 講師別 Excel (集計 + 講師ごとの週間シート)
-  const exportTeacherExcel = useCallback(async () => {
-    try {
-      const { downloadRegularTeacherExcel } = await import("./excelExport");
-      await downloadRegularTeacherExcel({ project });
-      toasts.success(
-        "講師別 Excel を書き出しました（集計 + 講師ごとにシート・A4 縦）"
-      );
-    } catch (e) {
-      toasts.error(`講師別 Excel を書き出せませんでした: ${e?.message || e}`);
-    }
-  }, [project, toasts]);
+  // ── プロジェクトの出し入れ (実体は useRegularProjects) ──────────
+  const {
+    switchProject,
+    addProject,
+    removeProject,
+    duplicateProject,
+    importProject,
+    exportProjectJson,
+    importFileRef,
+    importProjectJson,
+    exportExcel,
+    exportTeacherExcel,
+  } = useRegularProjects({
+    project,
+    slots,
+    commitWorkspace,
+    usedDays,
+    splitCampus,
+    onProjectChanged: () => setActiveTabId(null),
+    onImported: () => setShowImport(false),
+  });
 
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
@@ -594,6 +388,26 @@ export default function RegularBuilderApp({
       })),
     [saveProject]
   );
+
+  // 対象の消えた承認の掃除。承認キーはセル参照を含むため、承認したコマを
+  // 動かすと無効になる (意図どおり保守的)。無効キーは画面に出ないまま
+  // 残り続けるので、まとめて捨てられるようにする
+  const purgeStaleApprovals = useCallback(() => {
+    const stale = new Set(conflictView.stale);
+    if (stale.size === 0) return;
+    saveProject(
+      (p) => ({
+        ...p,
+        approvedConflicts: (p.approvedConflicts || []).filter(
+          (k) => !stale.has(k)
+        ),
+      }),
+      { atomic: true }
+    );
+    toasts.success(
+      `対象の無くなった承認 ${stale.size} 件を削除しました（Ctrl+Z で戻せます）`
+    );
+  }, [conflictView.stale, saveProject, toasts]);
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
@@ -721,33 +535,45 @@ export default function RegularBuilderApp({
     [project, saveProject, toasts, applyClassRoomAllDays]
   );
 
-  // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
-  // 講習 N2a と同じ操作感。選択はセル ref の集合で持ち、矩形の計算は
-  // セクション構造を知る RegularGrid 側が行う (onRectSelect に結果が届く)
-  const [selectedRefs, setSelectedRefs] = useState(() => new Set());
-  const selAnchorRef = useRef(null);
-  const toggleSelect = useCallback((ref) => {
-    selAnchorRef.current = ref;
-    setSelectedRefs((prev) => {
-      const next = new Set(prev);
-      if (next.has(ref)) next.delete(ref);
-      else next.add(ref);
-      return next;
-    });
-  }, []);
-  const rectSelect = useCallback((refs) => {
-    if (refs.length) setSelectedRefs(new Set(refs));
-  }, []);
-  const clearSelection = useCallback(() => {
-    selAnchorRef.current = null;
-    setSelectedRefs((prev) => (prev.size ? new Set() : prev));
-  }, []);
+  // ── ⧉ 曜日まるごとコピー (火 → 木 のような曜日の組を作る) ────────
+  // 件数は表示用に現時点の project で数え、保存は saveProject の最新値で
+  // 再計算する (setClassRoom 等と同じパターン)
+  const applyDayCopy = useCallback(
+    ({ from, to, mode, addDay }) => {
+      const res = copyDay(project.tabs, from, to, { mode, addDay });
+      if (res.copied === 0) {
+        toasts.info(describeDayCopy(res, from, to));
+        return;
+      }
+      saveProject(
+        (p) => ({ ...p, tabs: copyDay(p.tabs, from, to, { mode, addDay }).tabs }),
+        { atomic: true }
+      );
+      setShowDayCopy(false);
+      setSelectedDay(to); // コピー結果をすぐ確認できるように移動する
+      toasts.success(`${describeDayCopy(res, from, to)}（Ctrl+Z で戻せます）`, {
+        duration: 6000,
+      });
+    },
+    [project.tabs, saveProject, toasts]
+  );
+
+  // ── コンテキストメニュー (セル右クリック / 長押し・ヘッダの一括操作) ──
+  const [ctxMenu, setCtxMenu] = useState(null);
+  const [cellClipboard, setCellClipboard] = useState(null);
+  // ⊞ 合同ダイアログの対象セル ref (null = 非表示)
+  const [jointTarget, setJointTarget] = useState(null);
+
+  // ── 複数選択 (実体は useCellSelection) ──────────────────────────
   // 曜日・プロジェクト・表示モード・並べる曜日が変わったら選択は持ち
   // 越さない (見えないセルへの一括操作を防ぐ)
   const multiDaysKey = multiDays.join("");
-  useEffect(() => {
-    clearSelection();
-  }, [selectedDay, project.id, weekView, multiDayView, multiDaysKey, clearSelection]);
+  const { selectedRefs, anchorRef: selAnchorRef, toggleSelect, rectSelect, clearSelection } =
+    useCellSelection({
+      resetKey: `${selectedDay}|${project.id}|${weekView}|${multiDayView}|${multiDaysKey}`,
+      ctxMenuOpen: !!ctxMenu,
+    });
+
   // セルの ✕ ボタンで全フィールドをクリア (Undo で戻せる独立単位)。
   // ロック中は変更しない (UI 側も ✕ を隠し Delete を無効化している)
   const onClearCell = useCallback(
@@ -767,12 +593,6 @@ export default function RegularBuilderApp({
     [updateTab]
   );
 
-  // ── コンテキストメニュー (セル右クリック / 長押し・ヘッダの一括操作) ──
-  const [ctxMenu, setCtxMenu] = useState(null);
-  const [cellClipboard, setCellClipboard] = useState(null);
-  // ⊞ 合同ダイアログの対象セル ref (null = 非表示)
-  const [jointTarget, setJointTarget] = useState(null);
-
   const getCellByRef = useCallback(
     (ref) => {
       const { tabId, key } = parseCellRef(ref);
@@ -788,20 +608,6 @@ export default function RegularBuilderApp({
     setCtxMenu({ x: pos.clientX, y: pos.clientY, ...payload });
   }, []);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
-
-  // Escape で選択解除 (編集中セルの Escape は要素側で stopPropagation 済み)。
-  // コンテキストメニューが開いている間は解除しない — メニューの Escape も
-  // window リスナーのため stopPropagation では止まらず (同一ターゲットの
-  // 他リスナーには効かない)、「メニューを閉じるだけ」のつもりの Escape で
-  // 選択まで消えてしまう
-  useEffect(() => {
-    if (selectedRefs.size === 0) return undefined;
-    const onKey = (e) => {
-      if (e.key === "Escape" && !e.isComposing && !ctxMenu) clearSelection();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedRefs.size, clearSelection, ctxMenu]);
 
   // コピーはロックを引き継がない (貼り付け先は編集できる状態で置く)
   const copyCell = (ref) => {
@@ -991,6 +797,56 @@ export default function RegularBuilderApp({
     if (ok) clearSelection();
   };
 
+  // ── ✎ 選択セルの一括変更 (講師・教室の差し替えなど) ────────────────
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const applyBulkEdit = useCallback(
+    (patch) => {
+      const refs = [...selectedRefs];
+      const res = bulkEditCells(project.tabs, refs, patch);
+      if (res.changed === 0) {
+        toasts.info(describeBulkEdit(res, patch));
+        return;
+      }
+      saveProject((p) => ({ ...p, tabs: bulkEditCells(p.tabs, refs, patch).tabs }), {
+        atomic: true,
+      });
+      setShowBulkEdit(false);
+      toasts.success(`${describeBulkEdit(res, patch)}（Ctrl+Z で戻せます）`, {
+        duration: 5000,
+      });
+    },
+    [selectedRefs, project.tabs, saveProject, toasts]
+  );
+  // 選択が消えたらダイアログも閉じる (対象ゼロのダイアログを残さない)
+  useEffect(() => {
+    if (selectedRefs.size === 0) setShowBulkEdit(false);
+  }, [selectedRefs.size]);
+
+  // コピーしたコマを選択範囲へ一気に配る (Ctrl+C → 範囲選択 → 貼り付け)。
+  // 1 セルずつの Ctrl+V を繰り返さずに同じコマを並べられる
+  const pasteIntoSelection = useCallback(() => {
+    if (!cellClipboard) return;
+    const refs = [...selectedRefs];
+    const res = fillCells(project.tabs, refs, cellClipboard);
+    if (res.changed === 0) {
+      toasts.info(
+        res.skippedLocked > 0
+          ? "貼り付けできるコマがありません（選択セルはすべてロック中です）"
+          : "内容は既に同じです"
+      );
+      return;
+    }
+    saveProject((p) => ({ ...p, tabs: fillCells(p.tabs, refs, cellClipboard).tabs }), {
+      atomic: true,
+    });
+    const parts = [
+      `${res.changed} コマに「${formatCellShort(cellClipboard)}」を貼り付けました`,
+    ];
+    if (res.skippedLocked > 0)
+      parts.push(`ロック中の ${res.skippedLocked} コマは対象外`);
+    toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`);
+  }, [cellClipboard, selectedRefs, project.tabs, saveProject, toasts]);
+
   const onCtxAction = (action) => {
     const m = ctxMenu;
     setCtxMenu(null);
@@ -1086,9 +942,10 @@ export default function RegularBuilderApp({
     return [...names].sort();
   }, [project.teachers, project.tabs]);
 
-  // 教室フィルタ候補 (クラス既定教室 + セル上書き教室)
+  // 教室フィルタ候補 (教室マスタ + クラス既定教室 + セル上書き教室)。
+  // マスタを含めることで、まだ使っていない教室も入力候補・👁 の対象になる
   const roomOptions = useMemo(() => {
-    const rooms = new Set();
+    const rooms = new Set(project.rooms || []);
     for (const t of project.tabs || []) {
       for (const c of t.classes || []) {
         if ((c.room || "").trim()) rooms.add(c.room.trim());
@@ -1101,7 +958,7 @@ export default function RegularBuilderApp({
       }
     }
     return [...rooms].sort();
-  }, [project.tabs]);
+  }, [project.rooms, project.tabs]);
 
   // 選択中の講師・教室がリネーム / 削除で消えたらハイライトを自動解除する
   // (講習 L2a と同じ。残すと「何も光らないフィルタ」が掛かり続ける)
@@ -1294,7 +1151,8 @@ export default function RegularBuilderApp({
           value={highlightKey}
           onChange={(e) => setHighlightKey(e.target.value)}
           className={`${UI.input} min-w-[130px]`}
-          title="選んだ講師・教室のセルを強調表示 (講師は週間ミニビューも開く)"
+          aria-label="強調表示する講師・教室"
+          title="選んだ講師・教室のセルを強調表示 (週間ミニビューも開く — 講師は担当と NG、教室は空き状況)"
         >
           <option value="">👁 強調表示</option>
           <optgroup label="講師">
@@ -1335,10 +1193,14 @@ export default function RegularBuilderApp({
       {/* 問題 (重複・NG) の一覧・承認パネル */}
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
-          <div className={UI.panelHead}>講師・教室・クラスの重複と講師NG</div>
-          {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
-            <div className="text-builder-ink-subtle">問題はありません。</div>
-          )}
+          <div className={UI.panelHead}>
+            講師・教室・クラスの重複、講師NG、校舎間の移動
+          </div>
+          {conflictView.active.length === 0 &&
+            conflictView.approved.length === 0 &&
+            conflictView.stale.length === 0 && (
+              <div className="text-builder-ink-subtle">問題はありません。</div>
+            )}
           {conflictView.active.map((c) => (
             <div key={conflictKey(c)} className="flex items-center gap-2">
               <span className="flex-1 text-builder-red">⚠ {c.label}</span>
@@ -1385,6 +1247,22 @@ export default function RegularBuilderApp({
               </button>
             </div>
           ))}
+          {conflictView.stale.length > 0 && (
+            <div className="flex items-center gap-2 pt-1 border-t border-builder-border">
+              <span className="flex-1 text-builder-ink-subtle">
+                対象の無くなった承認が {conflictView.stale.length} 件あります
+                （承認したコマを動かした・消したなどで無効になったもの）。
+              </span>
+              <button
+                type="button"
+                onClick={purgeStaleApprovals}
+                title="無効になった承認を保存から削除する（同じ配置に戻したときに承認が生き返るのを防ぎます）"
+                className={UI.btn}
+              >
+                🧹 掃除
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1397,6 +1275,15 @@ export default function RegularBuilderApp({
           onPrint={() => setPrintTeacherWeek(true)}
         />
       )}
+
+      {/* 👁 教室を選んでいる間は教室の週間 (= 空き状況) を出す */}
+      {highlightRoom && (
+        <RegularRoomWeek
+          project={project}
+          room={highlightRoom}
+          onJump={jumpToCells}
+        />
+      )}
       {/* 講師週間の印刷中だけ描画される print 専用シート */}
       {printTeacherWeek && highlightTeacher && (
         <RegularTeacherWeekPrintSheet project={project} teacher={highlightTeacher} />
@@ -1405,6 +1292,7 @@ export default function RegularBuilderApp({
       {showSnapshots && (
         <RegularSnapshotPanel
           project={project}
+          otherProjects={workspace.projects.filter((p) => p.id !== project.id)}
           saveProject={saveProject}
           onJump={jumpToCells}
         />
@@ -1500,6 +1388,16 @@ export default function RegularBuilderApp({
           >
             ◫ 曜日を並べる
           </button>
+          {usedDays.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDayCopy(true)}
+              title="ある曜日のコマをまるごと別の曜日へ複製する (火・木のように同じ内容で回る曜日の組を作るとき)"
+              className={UI.btn}
+            >
+              ⧉ 曜日コピー
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSplitCampus((v) => !v)}
@@ -1555,7 +1453,7 @@ export default function RegularBuilderApp({
               <button
                 type="button"
                 onClick={exportExcel}
-                title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
+                title="全曜日を Excel に書き出す (曜日ごとに 1 シート・B4 横 1 ページ収め + 末尾に全曜日をまとめた 1 シート。まとめは曜日ごとに改ページ)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
                 className={UI.btn}
               >
                 📥 Excel
@@ -1563,10 +1461,10 @@ export default function RegularBuilderApp({
               <button
                 type="button"
                 onClick={exportTeacherExcel}
-                title="講師別に Excel へ書き出す (1 枚目に講師×曜日のコマ数・稼働時間の集計、続いて講師ごとに週の担当コマ一覧のシート・A4 縦)"
+                title="集計を Excel へ書き出す (講師×曜日のコマ数・稼働時間 → クラス別の科目コマ数 → 講師ごとの週の担当コマ一覧・A4)"
                 className={UI.btn}
               >
-                📥 講師別
+                📥 集計・講師別
               </button>
             </>
           )}
@@ -1672,6 +1570,24 @@ export default function RegularBuilderApp({
           <span className="font-bold text-builder-ink">
             ☑️ {selectedRefs.size} セル選択中
           </span>
+          {cellClipboard && (
+            <button
+              type="button"
+              className={UI.btn}
+              onClick={pasteIntoSelection}
+              title={`コピー中の「${formatCellShort(cellClipboard)}」を選択中のコマすべてに貼り付ける`}
+            >
+              📋 貼り付け
+            </button>
+          )}
+          <button
+            type="button"
+            className={UI.btnBlue}
+            onClick={() => setShowBulkEdit(true)}
+            title="選択中のコマの教科・講師・教室・備考をまとめて同じ値にする（講師や教室の差し替え用）"
+          >
+            ✎ 一括変更
+          </button>
           <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
             🧹 クリア
           </button>
@@ -1758,7 +1674,7 @@ export default function RegularBuilderApp({
                   onClearCell={onClearCell}
                   onSwapCells={onSwapCells}
                   conflictsByRef={conflictView.byRef}
-                  ngOnlyRefs={conflictView.ngOnlyRefs}
+                  badgeByRef={conflictView.badgeByRef}
                   highlightTeacher={highlightTeacher}
                   highlightRoom={highlightRoom}
                   hideEmpty={hideEmpty}
@@ -1802,7 +1718,7 @@ export default function RegularBuilderApp({
               onClearCell,
               onSwapCells,
               conflictsByRef: conflictView.byRef,
-              ngOnlyRefs: conflictView.ngOnlyRefs,
+              badgeByRef: conflictView.badgeByRef,
               highlightTeacher,
               highlightRoom,
               hideEmpty,
@@ -1843,7 +1759,7 @@ export default function RegularBuilderApp({
               onClearCell={onClearCell}
               onSwapCells={onSwapCells}
               conflictsByRef={conflictView.byRef}
-              ngOnlyRefs={conflictView.ngOnlyRefs}
+              badgeByRef={conflictView.badgeByRef}
               highlightTeacher={highlightTeacher}
               highlightRoom={highlightRoom}
               hideEmpty={hideEmpty}
@@ -1890,7 +1806,7 @@ export default function RegularBuilderApp({
                 onClearCell={onClearCell}
                 onSwapCells={onSwapCells}
                 conflictsByRef={conflictView.byRef}
-                ngOnlyRefs={conflictView.ngOnlyRefs}
+                badgeByRef={conflictView.badgeByRef}
                 highlightTeacher=""
                 hideEmpty={hideEmpty}
                 splitCampus={splitCampus}
@@ -1964,6 +1880,25 @@ export default function RegularBuilderApp({
           saveSlots={saveSlots}
           saveProject={saveProject}
           onClose={() => setShowReflect(false)}
+        />
+      )}
+
+      {showBulkEdit && selectedRefs.size > 0 && (
+        <BulkEditDialog
+          tabs={project.tabs}
+          refs={[...selectedRefs]}
+          onApply={applyBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
+        />
+      )}
+
+      {showDayCopy && (
+        <DayCopyDialog
+          project={project}
+          usedDays={usedDays}
+          initialFrom={selectedDay}
+          onApply={applyDayCopy}
+          onClose={() => setShowDayCopy(false)}
         />
       )}
 

@@ -13,6 +13,11 @@
 //     ngSlots?: [{ day, time? }],              // NG (不在)。time 無し = 終日
 //     maxPerDay?, maxPerWeek?,                 // コマ数上限 (無し = 無制限)
 //   }],
+//   rooms: string[],                           // 教室マスタ (入力候補 + 表記ゆれ検出)
+//   campusTravelMinutes?: number,              // 本校 ↔ 亀井町の移動に必要な分数
+//                                              // (未設定 = 校舎移動をチェックしない)
+//   approvedConflicts?: string[],              // 承認済みの重なり (conflicts.conflictKey)
+//   snapshots?: [{ id, name, createdAt, data }],
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
 //     group,                                   // セクション名の手動上書き (空 = 自動)
@@ -40,6 +45,10 @@ export function createDefaultProject() {
     periods: [],
     subjects: [...DEFAULT_SUBJECTS],
     teachers: [],
+    // 教室マスタ (任意)。入力補完の候補と「マスタに無い教室」の検出に使う。
+    // 教室重複チェックと亀井町判定は文字列一致なので、表記ゆれ ("５０1" と
+    // "501" など) があると黙って検出をすり抜ける — それに気付くための土台
+    rooms: [],
     tabs: [],
   };
 }
@@ -201,6 +210,183 @@ export function setCellsLocked(tabs, refs, locked) {
   return { tabs: next, changed };
 }
 
+// ─── 時限の一括時刻シフト ───────────────────────────────────────────
+// 「全体を 15 分後ろへ」のような期切替の時刻変更を、時限を 1 つずつ
+// 打ち直さずに済ませる。本体側の TimeBulkEditPanel (コマの時刻を書き
+// 換える) と違い、こちらは時限プールの定義そのものを動かす — セルは
+// 時限 id で紐づいているので、コマの中身は動かない。
+
+const SHIFT_TIME_RE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
+
+const shiftClock = (h, m, delta) => {
+  const total = h * 60 + m + delta;
+  // 0:00 未満・24:00 以上は丸めずに範囲外として扱う (呼び出し側で弾く)
+  if (total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(
+    total % 60
+  ).padStart(2, "0")}`;
+};
+
+/**
+ * 時限プールの時刻を一括で前後にずらした新しいプロジェクトを返す (純関数)。
+ * 書式外・時刻未設定の時限、ずらすと 0:00〜24:00 の外に出る時限は据え置く。
+ * @param {number} deltaMinutes 正 = 後ろへ、負 = 前へ
+ * @param {{periodIds?: number[]}} [opts] 対象を絞る (省略時は全時限)
+ * @returns {{project: object, shifted: number, skipped: string[]}}
+ *   skipped = ずらせなかった時限のラベル (時刻未設定・書式不正・範囲外)
+ */
+export function shiftPeriodTimes(project, deltaMinutes, { periodIds } = {}) {
+  const delta = Number(deltaMinutes);
+  if (!Number.isFinite(delta) || delta === 0) {
+    return { project, shifted: 0, skipped: [] };
+  }
+  const target = periodIds ? new Set(periodIds) : null;
+  let shifted = 0;
+  const skipped = [];
+  const periods = (project.periods || []).map((p) => {
+    if (target && !target.has(p.id)) return p;
+    const m = String(p.time || "").trim().match(SHIFT_TIME_RE);
+    const label = p.label || p.time || `id:${p.id}`;
+    if (!m) {
+      if ((p.time || "").trim()) skipped.push(label);
+      return p;
+    }
+    const start = shiftClock(Number(m[1]), Number(m[2]), delta);
+    const end = shiftClock(Number(m[3]), Number(m[4]), delta);
+    if (!start || !end) {
+      skipped.push(label);
+      return p;
+    }
+    shifted++;
+    return { ...p, time: `${start}-${end}` };
+  });
+  return {
+    project: shifted > 0 ? { ...project, periods } : project,
+    shifted,
+    skipped,
+  };
+}
+
+// ─── 時限 / クラスの削除 (セルまで含めた後始末) ─────────────────────
+// 時限・クラスを消しても schedule のセルは残る (キーが id 参照のため)。
+// 残すと ① 保存容量を食い続け ② 次に追加した時限・クラスが同じ id を
+// 受け取った瞬間に「消したはずのコマ」が復活する。削除時にセルごと
+// 落とし、追加時の id も schedule に現れる id を含めて採番する。
+
+/** 時限 id を参照するセルの総数 (全タブ) */
+export function countCellsForPeriod(project, periodId) {
+  let n = 0;
+  for (const tab of project.tabs || []) {
+    for (const key of Object.keys(tab.schedule || {})) {
+      if (parseCellKey(key).periodId === periodId) n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * 時限をプールから削除し、各タブの periodIds とその時限のセルも落とした
+ * 新しいプロジェクトを返す (純関数)。
+ * @returns {{project: object, removedCells: number}}
+ */
+export function removePeriodFromProject(project, periodId) {
+  let removedCells = 0;
+  const tabs = (project.tabs || []).map((t) => {
+    const schedule = {};
+    let touched = false;
+    for (const [key, cell] of Object.entries(t.schedule || {})) {
+      if (parseCellKey(key).periodId === periodId) {
+        removedCells++;
+        touched = true;
+        continue;
+      }
+      schedule[key] = cell;
+    }
+    const periodIds = (t.periodIds || []).filter((pid) => pid !== periodId);
+    if (!touched && periodIds.length === (t.periodIds || []).length) return t;
+    return { ...t, periodIds, schedule };
+  });
+  return {
+    project: {
+      ...project,
+      periods: (project.periods || []).filter((p) => p.id !== periodId),
+      tabs,
+    },
+    removedCells,
+  };
+}
+
+/** クラス列を参照するセルの数 (そのタブ内) */
+export function countCellsForClass(tab, classId) {
+  let n = 0;
+  for (const key of Object.keys(tab?.schedule || {})) {
+    if (parseCellKey(key).classId === classId) n++;
+  }
+  return n;
+}
+
+/**
+ * クラス列を削除し、その列のセルも落とした新しいタブを返す (純関数)。
+ * @returns {{tab: object, removedCells: number}}
+ */
+export function removeClassFromTab(tab, classId) {
+  let removedCells = 0;
+  const schedule = {};
+  for (const [key, cell] of Object.entries(tab.schedule || {})) {
+    if (parseCellKey(key).classId === classId) {
+      removedCells++;
+      continue;
+    }
+    schedule[key] = cell;
+  }
+  return {
+    tab: {
+      ...tab,
+      classes: (tab.classes || []).filter((c) => c.id !== classId),
+      schedule,
+    },
+    removedCells,
+  };
+}
+
+/**
+ * 次のクラス id。定義済みのクラスだけでなく **schedule に現れる classId も
+ * 見る** — 取込・JSON 読み込み・過去の削除で残った孤立セルの id を再利用
+ * すると、新しい列にそのセルが現れてしまうため。
+ */
+export function nextClassId(tab) {
+  let max = 0;
+  for (const c of tab?.classes || []) {
+    const v = Number(c?.id);
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  for (const key of Object.keys(tab?.schedule || {})) {
+    const v = parseCellKey(key).classId;
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  return max + 1;
+}
+
+/** 次の時限 id。nextClassId と同じ理由で periodIds と schedule も見る */
+export function nextPeriodId(project) {
+  let max = 0;
+  for (const p of project?.periods || []) {
+    const v = Number(p?.id);
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  for (const tab of project?.tabs || []) {
+    for (const pid of tab.periodIds || []) {
+      const v = Number(pid);
+      if (Number.isFinite(v) && v > max) max = v;
+    }
+    for (const key of Object.keys(tab.schedule || {})) {
+      const v = parseCellKey(key).periodId;
+      if (Number.isFinite(v) && v > max) max = v;
+    }
+  }
+  return max + 1;
+}
+
 // ─── クラス列の既定教室の変更 (列のコマと連動) ──────────────────────
 
 /**
@@ -357,17 +543,24 @@ export function addSnapshot(project, name, now) {
   };
 }
 
+// 「無いこともある」トップレベルのフィールド。復元は spread なので、
+// 保存時に無かったフィールドは現在の値が残ってしまう (保存時に存在
+// しなかった承認・設定が生き返る)。フィールドを増やしたらここに足す。
+const OPTIONAL_PROJECT_FIELDS = ["approvedConflicts", "campusTravelMinutes"];
+
 /**
  * スナップショットの保存時の状態に戻した新しいプロジェクトを返す。
- * snapshots 一覧と id は現在のまま維持する。approvedConflicts のような
- * 任意フィールドは、保存時に無ければ復元後も持たない (残すと保存時に
- * 存在しなかった承認が生き返る)。見つからなければ元のまま。
+ * snapshots 一覧と id は現在のまま維持する。任意フィールド
+ * (OPTIONAL_PROJECT_FIELDS) は保存時に無ければ復元後も持たない。
+ * 見つからなければ元のまま。
  */
 export function restoreSnapshot(project, snapshotId) {
   const snap = (project.snapshots || []).find((s) => s.id === snapshotId);
   if (!snap) return project;
   const restored = { ...project, ...snap.data, snapshots: project.snapshots };
-  if (!("approvedConflicts" in snap.data)) delete restored.approvedConflicts;
+  for (const field of OPTIONAL_PROJECT_FIELDS) {
+    if (!(field in snap.data)) delete restored[field];
+  }
   return restored;
 }
 
@@ -468,6 +661,10 @@ export function sanitizeProject(raw) {
   p.subjects = Array.isArray(raw.subjects)
     ? raw.subjects.map((s) => str(s)).filter(Boolean)
     : [...DEFAULT_SUBJECTS];
+  // 教室マスタ (任意)。空文字・重複は落とす
+  p.rooms = Array.isArray(raw.rooms)
+    ? [...new Set(raw.rooms.map((r) => str(r).trim()).filter(Boolean))]
+    : [];
   p.teachers = Array.isArray(raw.teachers)
     ? raw.teachers
         .map((t) => {
@@ -498,6 +695,10 @@ export function sanitizeProject(raw) {
   if (Array.isArray(raw.approvedConflicts)) {
     p.approvedConflicts = raw.approvedConflicts.map((s) => str(s)).filter(Boolean);
   }
+  // 校舎間 (本校 ↔ 亀井町) の移動に必要な分数。正の数のみ。
+  // 未設定 = 校舎移動のチェックをしない (conflicts.computeConflicts)
+  const travel = Number(raw.campusTravelMinutes);
+  if (Number.isFinite(travel) && travel > 0) p.campusTravelMinutes = travel;
   // スナップショット (任意)。data は snapshots を除いて再帰サニタイズする
   // (入れ子を剥がすことで悪意ある深いネストでも再帰は 2 段で止まる)
   if (Array.isArray(raw.snapshots)) {
@@ -822,6 +1023,33 @@ export function resolveAllEntries(project) {
 export function classRoomForDay(cls, day) {
   return (
     (((cls?.roomByDay || {})[day] || "").trim()) || ((cls?.room || "").trim())
+  );
+}
+
+/**
+ * プロジェクトで実際に使われている教室と、その使用状況を数える。
+ * 「マスタに無い教室」を洗い出して表記ゆれに気付くための集計。
+ * - cells: 実効教室がその教室のコマ数 (resolveAllEntries 基準 = 残骸は除く)
+ * - columns: その教室を既定にしているクラス列の数 (曜日別既定を含む)
+ * @returns {{room: string, cells: number, columns: number}[]} 教室名順
+ */
+export function collectRoomUsage(project) {
+  const usage = new Map();
+  const bump = (room, field) => {
+    const key = (room || "").trim();
+    if (!key) return;
+    if (!usage.has(key)) usage.set(key, { room: key, cells: 0, columns: 0 });
+    usage.get(key)[field]++;
+  };
+  for (const tab of project?.tabs || []) {
+    for (const cls of tab.classes || []) {
+      bump(cls.room, "columns");
+      for (const r of Object.values(cls.roomByDay || {})) bump(r, "columns");
+    }
+  }
+  for (const e of resolveAllEntries(project || {})) bump(effectiveRoom(e), "cells");
+  return [...usage.values()].sort((a, b) =>
+    a.room.localeCompare(b.room, "ja", { numeric: true })
   );
 }
 

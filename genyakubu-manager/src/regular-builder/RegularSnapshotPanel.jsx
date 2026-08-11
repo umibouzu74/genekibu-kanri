@@ -3,6 +3,7 @@ import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { addSnapshot, restoreSnapshot } from "./model";
 import { diffProjects, formatCellShort } from "./historyFeedback";
+import { formatBytes, projectStorageSize } from "./storageSize";
 import { UI } from "./ui";
 
 // ─── 📌 スナップショット (プロジェクトの名前付き保存) ───────────────
@@ -10,23 +11,43 @@ import { UI } from "./ui";
 // しておき、「保存時 → 現在」の差分を見て、いつでも復元できる。
 // 保存・復元・削除・リネームはすべて commitWorkspace を通るため
 // Ctrl+Z で取り消せる。差分のセル行は「表示」で該当セルへジャンプ。
+//
+// 差分ビューは他のプロジェクト (「2026 1学期」など) との比較にも使う —
+// 突き合わせの実体 (diffProjects) は同じで、比較相手が違うだけ。
+// ただし学年 (タブ) とクラスの対応付けは **id 基準** なので、複製・取込で
+// 系譜のつながったプロジェクト同士でないと対応がずれる (無関係な 2 つを
+// 比べると差分がノイズになる)。UI にもその旨を出す。
+// 下書きは 1 キーに全プロジェクトが入るため、保存サイズも併記する
+// (スナップショットを溜めすぎて quota に当たる前に気付けるように)。
 
 const DIFF_LINE_LIMIT = 20;
 
-export function RegularSnapshotPanel({ project, saveProject, onJump }) {
+export function RegularSnapshotPanel({ project, otherProjects = [], saveProject, onJump }) {
   const toasts = useToasts();
   const confirm = useConfirm();
   const [name, setName] = useState("");
-  const [diffForId, setDiffForId] = useState(null);
+  // 差分の相手: {kind: "snapshot"|"project", id} (null = 非表示)
+  const [diffFor, setDiffFor] = useState(null);
   // リネーム: 講師マスタと同じ Enter/blur 確定・Escape 取消パターン
   const [editing, setEditing] = useState(null); // { id, value }
   const cancelEditRef = useRef(false);
 
-  const snapshots = project.snapshots || [];
-  const diffSnap = snapshots.find((s) => s.id === diffForId) || null;
+  const snapshots = useMemo(() => project.snapshots || [], [project.snapshots]);
+  const size = useMemo(() => projectStorageSize(project), [project]);
+
+  // 比較相手の解決 (スナップショット or 他のプロジェクト)
+  const diffSource = useMemo(() => {
+    if (!diffFor) return null;
+    if (diffFor.kind === "snapshot") {
+      const s = snapshots.find((x) => x.id === diffFor.id);
+      return s ? { label: s.name, data: s.data } : null;
+    }
+    const p = otherProjects.find((x) => x.id === diffFor.id);
+    return p ? { label: p.name || "無題", data: p } : null;
+  }, [diffFor, snapshots, otherProjects]);
   const diff = useMemo(
-    () => (diffSnap ? diffProjects(diffSnap.data, project) : null),
-    [diffSnap, project]
+    () => (diffSource ? diffProjects(diffSource.data, project) : null),
+    [diffSource, project]
   );
 
   const save = () => {
@@ -61,7 +82,7 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
       (p) => ({ ...p, snapshots: (p.snapshots || []).filter((x) => x.id !== s.id) }),
       { atomic: true }
     );
-    if (diffForId === s.id) setDiffForId(null);
+    if (diffFor?.kind === "snapshot" && diffFor.id === s.id) setDiffFor(null);
   };
 
   const commitRename = () => {
@@ -104,8 +125,12 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
       <div className={UI.panelHead}>📌 スナップショット</div>
       <div className={UI.hint}>
         別案を試す前に現在の状態を保存しておくと、差分を見ながらいつでも戻せます。
-        保存・復元・削除は Ctrl+Z で取り消せます
-        （スナップショットは保存容量を使うため、不要になったら削除してください）。
+        保存・復元・削除は Ctrl+Z で取り消せます。
+        {" "}このプロジェクトの保存サイズは約 {formatBytes(size.total)}
+        {snapshots.length > 0 && (
+          <>（うちスナップショット {snapshots.length} 件で {formatBytes(size.snapshots)}）</>
+        )}
+        。容量を使うため、不要になったスナップショットは削除してください。
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <input
@@ -122,6 +147,36 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
           ＋ 現在の状態を保存
         </button>
       </div>
+
+      {/* 他のプロジェクトとの比較 (「1学期 と 2学期 で何が違うか」)。
+          突き合わせはスナップショット差分と同じ diffProjects */}
+      {otherProjects.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-builder-ink-muted">他のプロジェクトと比較:</span>
+          <select
+            value={diffFor?.kind === "project" ? diffFor.id : ""}
+            onChange={(e) =>
+              setDiffFor(
+                e.target.value ? { kind: "project", id: Number(e.target.value) } : null
+              )
+            }
+            aria-label="比較するプロジェクト"
+            className={`${UI.input} min-w-[150px]`}
+          >
+            <option value="">選択なし</option>
+            {otherProjects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name || "無題"}
+              </option>
+            ))}
+          </select>
+          <span className="text-builder-ink-subtle">
+            選んだプロジェクト → このプロジェクト の差分を下に出します
+            （複製・取込で枝分かれしたプロジェクト同士で使ってください。
+            無関係なプロジェクトだと学年・クラスの対応がずれます）
+          </span>
+        </div>
+      )}
 
       {snapshots.length === 0 && (
         <div className="text-builder-ink-subtle">
@@ -170,8 +225,16 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
           <div className="flex gap-1 ml-auto">
             <button
               type="button"
-              className={UI.btnToggle(diffForId === s.id)}
-              onClick={() => setDiffForId((v) => (v === s.id ? null : s.id))}
+              className={UI.btnToggle(
+                diffFor?.kind === "snapshot" && diffFor.id === s.id
+              )}
+              onClick={() =>
+                setDiffFor((v) =>
+                  v?.kind === "snapshot" && v.id === s.id
+                    ? null
+                    : { kind: "snapshot", id: s.id }
+                )
+              }
               title="保存時 → 現在 の差分を表示"
             >
               🔍 差分
@@ -196,11 +259,11 @@ export function RegularSnapshotPanel({ project, saveProject, onJump }) {
         </div>
       ))}
 
-      {/* 差分ビュー (保存時 → 現在) */}
-      {diffSnap && diff && (
+      {/* 差分ビュー (比較相手 → 現在) */}
+      {diffSource && diff && (
         <div className="bg-builder-bg border border-builder-border rounded p-2 flex flex-col gap-0.5 max-h-56 overflow-y-auto">
           <div className="font-bold">
-            「{diffSnap.name}」→ 現在:
+            「{diffSource.label}」→ 現在:
             <span className="ml-2 text-builder-green">
               ＋{diffLines.filter((l) => l.mark === "＋").length}
             </span>

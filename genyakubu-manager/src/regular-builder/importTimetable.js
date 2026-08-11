@@ -78,6 +78,10 @@ export function buildProjectFromSlots(name, allSlots, timetableId, opts = {}) {
   }
   project.teachers = [...teacherNames].sort().map((n) => ({ name: n }));
   project.subjects = [...subjects];
+  // 教室マスタ (project.rooms) は空のまま。講師・科目と違い、教室マスタの
+  // 用途は「マスタに無い教室」を出して表記ゆれに気付くことなので、取込元の
+  // 表記をそのまま流し込むと検出対象が最初から空になり意味を失う。
+  // 揃えたくなったら ⚙ 全体設定 → 🏫 教室 の「使用中の教室から取込」で入れる。
 
   // 学年 → タブ (ALL_GRADES 順 → その他は出現順)。splitWeekend 時は
   // 平日と土日の両方がある学年を 2 タブに分ける
