@@ -145,6 +145,91 @@ describe("applyReflection - 置き換え", () => {
     });
   });
 
+  // 位置 (曜日×時刻×学年×クラス) の一致したコマは slot.id を引き継ぐ。
+  // 代行 (sub.slotId) / 調整 / 回数補正 / 授業セット (classSet.slotIds) は
+  // すべて slot.id 参照なので、id を振り直すと「変わらず」のコマまで
+  // 紐付けが切れてしまう
+  describe("id の引き継ぎ", () => {
+    // makeProject の下書き = 月1限 中3 S 数学/半田(501) と 月2限 中3 A 英語/堀上(601)
+    const draftSlot = (over) => ({
+      day: "月", time: "18:00-18:45", grade: "中3", cls: "S", room: "501",
+      subj: "数学", teacher: "半田", note: "", timetableId: 2, ...over,
+    });
+
+    it("完全一致のコマは id をそのまま保つ", () => {
+      const target = [{ id: 20, ...draftSlot() }];
+      const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+      const result = applyReflection(
+        plan,
+        { mode: "replace", targetTimetableId: 2 },
+        { timetables, slots: [...EXISTING_SLOTS, ...target] }
+      );
+      expect(result.keptCount).toBe(1);
+      expect(result.changedCount).toBe(0);
+      expect(result.removedCount).toBe(0);
+      expect(result.addedCount).toBe(1);
+      expect(result.slots.find((s) => s.subj === "数学").id).toBe(20);
+    });
+
+    it("同じ位置で内容が変わったコマも id を保ち、中身だけ更新する", () => {
+      // 講師と備考だけ違う (位置は下書きと同じ)
+      const target = [{ id: 20, ...draftSlot({ teacher: "片岡", note: "旧" }) }];
+      const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+      const result = applyReflection(
+        plan,
+        { mode: "replace", targetTimetableId: 2 },
+        { timetables, slots: [...EXISTING_SLOTS, ...target] }
+      );
+      expect(result.keptCount).toBe(1);
+      expect(result.changedCount).toBe(1);
+      expect(result.removedCount).toBe(0);
+      const kept = result.slots.find((s) => s.id === 20);
+      expect(kept.teacher).toBe("半田");
+      expect(kept.note).toBe("");
+    });
+
+    it("下書きに無いコマだけ削除される (差分プレビューと同じ分類)", () => {
+      const target = [
+        { id: 20, ...draftSlot() },
+        { id: 21, ...draftSlot({ day: "水", cls: "B", subj: "国語" }) },
+      ];
+      const all = [...EXISTING_SLOTS, ...target];
+      const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+      const result = applyReflection(
+        plan,
+        { mode: "replace", targetTimetableId: 2 },
+        { timetables, slots: all }
+      );
+      const diff = diffReflection(plan.drafts, all, 2);
+      expect(result.keptCount).toBe(diff.unchanged + diff.changed.length);
+      expect(result.removedCount).toBe(diff.removed.length);
+      expect(result.addedCount).toBe(diff.added.length);
+      expect(result.slots.some((s) => s.id === 21)).toBe(false);
+    });
+
+    it("新しいコマの id は削除された id を使い回さない", () => {
+      const target = [{ id: 20, ...draftSlot({ day: "水", subj: "国語" }) }];
+      const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+      const result = applyReflection(
+        plan,
+        { mode: "replace", targetTimetableId: 2 },
+        { timetables, slots: [...EXISTING_SLOTS, ...target] }
+      );
+      expect(result.slots.map((s) => s.id).sort((a, b) => a - b)).toEqual([10, 21, 22]);
+    });
+
+    it("下書きが知らないフィールドは既存コマのものを残す", () => {
+      const target = [{ id: 20, ...draftSlot(), customFlag: true }];
+      const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+      const result = applyReflection(
+        plan,
+        { mode: "replace", targetTimetableId: 2 },
+        { timetables, slots: [...EXISTING_SLOTS, ...target] }
+      );
+      expect(result.slots.find((s) => s.id === 20).customFlag).toBe(true);
+    });
+  });
+
   it("差し替え先が見つからなければエラー", () => {
     const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
     const result = applyReflection(

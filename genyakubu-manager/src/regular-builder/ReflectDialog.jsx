@@ -35,9 +35,10 @@ function DiffLines({ mark, color, records, describe }) {
 
 // ─── 反映ダイアログ ─────────────────────────────────────────────────
 // 下書きを本体の時間割 + コマに書き出す。新規作成 (時間割を作る) と
-// 置き換え (既存時間割のコマを差し替え) の 2 モード。置き換えは cascade
-// (旧コマ削除 → 代行・調整の参照切れ) を伴うため確認ダイアログを挟む
-// (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。
+// 置き換え (既存時間割のコマを差し替え) の 2 モード。置き換えは位置の
+// 一致したコマの slot.id を引き継ぐので代行・調整・回数補正・授業セットの
+// 紐付けは保たれるが、下書きに無いコマは削除される (= cascade) ため確認
+// ダイアログを挟む (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。
 
 export function ReflectDialog({
   project,
@@ -90,12 +91,21 @@ export function ReflectDialog({
     if (!plan.ok) return;
     if (mode === "replace") {
       const target = timetables.find((t) => t.id === Number(targetId));
+      // 位置の一致したコマは同じコマとして引き継がれる (applyReflection が
+      // slot.id を保つ)。紐付けが切れるのは実際に消える差分だけなので、
+      // 確認文もその実態に合わせる
+      const kept = diff ? diff.unchanged + diff.changed.length : 0;
+      const lost = diff ? diff.removed.length : replaceTargetCount;
       const ok = await confirm({
         title: "時間割の置き換え",
         message:
-          `「${target?.name ?? "?"}」の既存 ${replaceTargetCount} コマを削除して、` +
-          `下書きの ${total} コマに差し替えます。\n` +
-          `削除されるコマに紐づく代行・調整・回数補正は無効になります。\n\nよろしいですか？`,
+          `「${target?.name ?? "?"}」の ${replaceTargetCount} コマを、下書きの ${total} コマに差し替えます。\n` +
+          `・同じ位置 (曜日・時刻・学年・クラス) の ${kept} コマは同じコマとして引き継ぎます` +
+          `（代行・調整・回数補正・授業セットの紐付けは保たれます）\n` +
+          (lost > 0
+            ? `・下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セットは無効になります\n`
+            : "・削除されるコマはありません\n") +
+          `\nよろしいですか？`,
         okLabel: "置き換える",
         tone: "danger",
       });
@@ -121,7 +131,8 @@ export function ReflectDialog({
     );
     toasts.success(
       (mode === "replace"
-        ? `置き換えました（削除 ${result.removedCount} / 追加 ${result.addedCount} コマ）`
+        ? `置き換えました（引き継ぎ ${result.keptCount}（うち内容変更 ${result.changedCount}）` +
+          ` / 追加 ${result.addedCount} / 削除 ${result.removedCount} コマ）`
         : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`) +
         "／📌 反映時点の案を保存しました"
     );
@@ -163,7 +174,8 @@ export function ReflectDialog({
               ))}
             </select>
             <span style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
-              現在 {replaceTargetCount} コマ。反映時に削除して差し替えます。
+              現在 {replaceTargetCount} コマ。同じ位置 (曜日・時刻・学年・クラス)
+              のコマは同じコマとして引き継ぎ、下書きに無いコマだけ削除します。
             </span>
           </label>
         )}
