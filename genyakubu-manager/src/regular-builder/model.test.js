@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addSnapshot,
   classRoomForDay,
+  collectRoomUsage,
   computeSections,
   copyCellAcrossTabs,
   countCellsForClass,
@@ -1047,5 +1048,65 @@ describe("sanitizeProject: campusTravelMinutes", () => {
         "campusTravelMinutes" in sanitizeProject({ name: "x", campusTravelMinutes: v })
       ).toBe(false);
     }
+  });
+});
+
+describe("collectRoomUsage", () => {
+  it("列の既定教室とセルの実効教室を数える", () => {
+    // makeProject: S(501)/A(502)、月1限 S は既定 501、月2限 A はセル上書き 601
+    const usage = collectRoomUsage(makeProject());
+    expect(usage.map((u) => u.room)).toEqual(["501", "502", "601"]);
+    expect(usage.find((u) => u.room === "501")).toEqual({
+      room: "501",
+      cells: 1,
+      columns: 1,
+    });
+    // 502 は列の既定だがその教室のコマは無い (A のコマは 601 に上書き)
+    expect(usage.find((u) => u.room === "502")).toEqual({
+      room: "502",
+      cells: 0,
+      columns: 1,
+    });
+    expect(usage.find((u) => u.room === "601")).toEqual({
+      room: "601",
+      cells: 1,
+      columns: 0,
+    });
+  });
+
+  it("曜日別の既定教室も列として数える", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0].roomByDay = { 月: "亀63" };
+    const usage = collectRoomUsage(p);
+    expect(usage.find((u) => u.room === "亀63")).toEqual({
+      room: "亀63",
+      cells: 1, // 月1限 S の実効教室が 亀63 になる
+      columns: 1,
+    });
+  });
+
+  it("残骸セルは数えない・教室名順に並ぶ", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("水", 1, 1)] = { subj: "国語", room: "999" };
+    const usage = collectRoomUsage(p);
+    expect(usage.some((u) => u.room === "999")).toBe(false);
+    expect(usage.map((u) => u.room)).toEqual([...usage.map((u) => u.room)].sort());
+  });
+
+  it("空のプロジェクトは空配列", () => {
+    expect(collectRoomUsage({ tabs: [] })).toEqual([]);
+    expect(collectRoomUsage(null)).toEqual([]);
+  });
+});
+
+describe("sanitizeProject: rooms (教室マスタ)", () => {
+  it("空文字・重複・非文字列を落とし、前後空白は詰める", () => {
+    expect(
+      sanitizeProject({ name: "x", rooms: ["501", " 502 ", "", "501", 7] }).rooms
+    ).toEqual(["501", "502"]);
+  });
+
+  it("未設定は空配列", () => {
+    expect(sanitizeProject({ name: "x" }).rooms).toEqual([]);
   });
 });

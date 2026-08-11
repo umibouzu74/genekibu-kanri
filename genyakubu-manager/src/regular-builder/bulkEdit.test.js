@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bulkEditCells, describeBulkEdit } from "./bulkEdit";
+import { bulkEditCells, describeBulkEdit, fillCells } from "./bulkEdit";
 import { makeCellKey, makeCellRef } from "./model";
 import { makeProject } from "./testUtils";
 
@@ -122,5 +122,48 @@ describe("describeBulkEdit", () => {
     const empty = makeCellRef(1, makeCellKey("火", 1, 1));
     expect(run(p, [empty], { teacher: "松川" })).toContain("すべて空");
     expect(run(p, [REF_S], { teacher: "半田" })).toContain("既に同じ");
+  });
+});
+
+describe("fillCells", () => {
+  const content = { subj: "理科", teacher: "松川", room: "701" };
+
+  it("選択したセルを丸ごと同じ内容にする (空マスにも置く)", () => {
+    const p = makeProject();
+    const empty = makeCellRef(1, makeCellKey("火", 1, 1));
+    const res = fillCells(p.tabs, [REF_S, empty], content);
+    expect(res.changed).toBe(2);
+    expect(cellAt(res.tabs, REF_S)).toEqual(content);
+    expect(cellAt(res.tabs, empty)).toEqual(content);
+  });
+
+  it("元の tabs は不変・コピー元の locked は引き継がない", () => {
+    const p = makeProject();
+    const before = JSON.stringify(p.tabs);
+    const res = fillCells(p.tabs, [REF_S], { ...content, locked: true });
+    expect(JSON.stringify(p.tabs)).toBe(before);
+    expect(cellAt(res.tabs, REF_S).locked).toBeUndefined();
+  });
+
+  it("ロック中のセルは触らない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)].locked = true;
+    const res = fillCells(p.tabs, [REF_S, REF_A], content);
+    expect(res.changed).toBe(1);
+    expect(res.skippedLocked).toBe(1);
+    expect(cellAt(res.tabs, REF_S).subj).toBe("数学");
+  });
+
+  it("既に同じ内容のセルは変更に数えない", () => {
+    const p = makeProject();
+    const res = fillCells(p.tabs, [REF_S], { subj: "数学", teacher: "半田" });
+    expect(res.changed).toBe(0);
+    expect(res.tabs).toBe(p.tabs);
+  });
+
+  it("空の内容では何もしない", () => {
+    const p = makeProject();
+    expect(fillCells(p.tabs, [REF_S], {}).tabs).toBe(p.tabs);
+    expect(fillCells(p.tabs, [REF_S], null).changed).toBe(0);
   });
 });

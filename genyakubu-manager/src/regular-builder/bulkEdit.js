@@ -106,6 +106,50 @@ export function bulkEditCells(tabs, refs, patch) {
   return result;
 }
 
+/**
+ * refs で指したセルを content で丸ごと埋める (純関数)。
+ * bulkEditCells が「一部のフィールドを揃える」のに対し、こちらは
+ * セル全体の複製 — Ctrl+C したコマを選択範囲へ一気に配る用。
+ * 空マスも対象 (そこに新しくコマを置くのが目的)。ロック中は触らない。
+ * locked は複製しない (copyCellAcrossTabs / copyDay と同じ)。
+ * @param {object} content コピー元のセル内容
+ * @returns {{tabs: object[], changed: number, skippedLocked: number}}
+ */
+export function fillCells(tabs, refs, content) {
+  const result = { tabs, changed: 0, skippedLocked: 0 };
+  const { locked: _locked, ...body } = content || {};
+  if (isEmpty(body)) return result;
+
+  const keysByTab = new Map();
+  for (const ref of refs || []) {
+    const { tabId, key } = parseCellRef(ref);
+    if (!keysByTab.has(tabId)) keysByTab.set(tabId, []);
+    keysByTab.get(tabId).push(key);
+  }
+
+  const next = tabs.map((t) => {
+    const keys = keysByTab.get(t.id);
+    if (!keys) return t;
+    const schedule = { ...(t.schedule || {}) };
+    let touched = false;
+    for (const key of keys) {
+      const cell = schedule[key];
+      if (cell?.locked) {
+        result.skippedLocked++;
+        continue;
+      }
+      if (cell && sameContent(cell, body)) continue;
+      schedule[key] = { ...body };
+      result.changed++;
+      touched = true;
+    }
+    return touched ? { ...t, schedule } : t;
+  });
+
+  result.tabs = next.some((t, i) => t !== tabs[i]) ? next : tabs;
+  return result;
+}
+
 /** 一括変更の結果を 1 行にまとめる (toast 用の純関数) */
 export function describeBulkEdit(res, patch) {
   const labels = BULK_FIELDS.filter(([f]) => f in patch).map(([f, label]) => {

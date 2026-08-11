@@ -49,7 +49,7 @@ import { JointDialog } from "./JointDialog";
 import { DayCopyDialog } from "./DayCopyDialog";
 import { copyDay, describeDayCopy } from "./dayCopy";
 import { BulkEditDialog } from "./BulkEditDialog";
-import { bulkEditCells, describeBulkEdit } from "./bulkEdit";
+import { bulkEditCells, describeBulkEdit, fillCells } from "./bulkEdit";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { useRegularHistory } from "./hooks/useRegularHistory";
 import { useRegularProjects } from "./hooks/useRegularProjects";
@@ -822,6 +822,31 @@ export default function RegularBuilderApp({
     if (selectedRefs.size === 0) setShowBulkEdit(false);
   }, [selectedRefs.size]);
 
+  // コピーしたコマを選択範囲へ一気に配る (Ctrl+C → 範囲選択 → 貼り付け)。
+  // 1 セルずつの Ctrl+V を繰り返さずに同じコマを並べられる
+  const pasteIntoSelection = useCallback(() => {
+    if (!cellClipboard) return;
+    const refs = [...selectedRefs];
+    const res = fillCells(project.tabs, refs, cellClipboard);
+    if (res.changed === 0) {
+      toasts.info(
+        res.skippedLocked > 0
+          ? "貼り付けできるコマがありません（選択セルはすべてロック中です）"
+          : "内容は既に同じです"
+      );
+      return;
+    }
+    saveProject((p) => ({ ...p, tabs: fillCells(p.tabs, refs, cellClipboard).tabs }), {
+      atomic: true,
+    });
+    const parts = [
+      `${res.changed} コマに「${formatCellShort(cellClipboard)}」を貼り付けました`,
+    ];
+    if (res.skippedLocked > 0)
+      parts.push(`ロック中の ${res.skippedLocked} コマは対象外`);
+    toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`);
+  }, [cellClipboard, selectedRefs, project.tabs, saveProject, toasts]);
+
   const onCtxAction = (action) => {
     const m = ctxMenu;
     setCtxMenu(null);
@@ -917,9 +942,10 @@ export default function RegularBuilderApp({
     return [...names].sort();
   }, [project.teachers, project.tabs]);
 
-  // 教室フィルタ候補 (クラス既定教室 + セル上書き教室)
+  // 教室フィルタ候補 (教室マスタ + クラス既定教室 + セル上書き教室)。
+  // マスタを含めることで、まだ使っていない教室も入力候補・👁 の対象になる
   const roomOptions = useMemo(() => {
-    const rooms = new Set();
+    const rooms = new Set(project.rooms || []);
     for (const t of project.tabs || []) {
       for (const c of t.classes || []) {
         if ((c.room || "").trim()) rooms.add(c.room.trim());
@@ -932,7 +958,7 @@ export default function RegularBuilderApp({
       }
     }
     return [...rooms].sort();
-  }, [project.tabs]);
+  }, [project.rooms, project.tabs]);
 
   // 選択中の講師・教室がリネーム / 削除で消えたらハイライトを自動解除する
   // (講習 L2a と同じ。残すと「何も光らないフィルタ」が掛かり続ける)
@@ -1541,6 +1567,16 @@ export default function RegularBuilderApp({
           <span className="font-bold text-builder-ink">
             ☑️ {selectedRefs.size} セル選択中
           </span>
+          {cellClipboard && (
+            <button
+              type="button"
+              className={UI.btn}
+              onClick={pasteIntoSelection}
+              title={`コピー中の「${formatCellShort(cellClipboard)}」を選択中のコマすべてに貼り付ける`}
+            >
+              📋 貼り付け
+            </button>
+          )}
           <button
             type="button"
             className={UI.btnBlue}

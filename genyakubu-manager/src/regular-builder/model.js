@@ -40,6 +40,10 @@ export function createDefaultProject() {
     periods: [],
     subjects: [...DEFAULT_SUBJECTS],
     teachers: [],
+    // 教室マスタ (任意)。入力補完の候補と「マスタに無い教室」の検出に使う。
+    // 教室重複チェックと亀井町判定は文字列一致なので、表記ゆれ ("５０1" と
+    // "501" など) があると黙って検出をすり抜ける — それに気付くための土台
+    rooms: [],
     tabs: [],
   };
 }
@@ -645,6 +649,10 @@ export function sanitizeProject(raw) {
   p.subjects = Array.isArray(raw.subjects)
     ? raw.subjects.map((s) => str(s)).filter(Boolean)
     : [...DEFAULT_SUBJECTS];
+  // 教室マスタ (任意)。空文字・重複は落とす
+  p.rooms = Array.isArray(raw.rooms)
+    ? [...new Set(raw.rooms.map((r) => str(r).trim()).filter(Boolean))]
+    : [];
   p.teachers = Array.isArray(raw.teachers)
     ? raw.teachers
         .map((t) => {
@@ -1003,6 +1011,33 @@ export function resolveAllEntries(project) {
 export function classRoomForDay(cls, day) {
   return (
     (((cls?.roomByDay || {})[day] || "").trim()) || ((cls?.room || "").trim())
+  );
+}
+
+/**
+ * プロジェクトで実際に使われている教室と、その使用状況を数える。
+ * 「マスタに無い教室」を洗い出して表記ゆれに気付くための集計。
+ * - cells: 実効教室がその教室のコマ数 (resolveAllEntries 基準 = 残骸は除く)
+ * - columns: その教室を既定にしているクラス列の数 (曜日別既定を含む)
+ * @returns {{room: string, cells: number, columns: number}[]} 教室名順
+ */
+export function collectRoomUsage(project) {
+  const usage = new Map();
+  const bump = (room, field) => {
+    const key = (room || "").trim();
+    if (!key) return;
+    if (!usage.has(key)) usage.set(key, { room: key, cells: 0, columns: 0 });
+    usage.get(key)[field]++;
+  };
+  for (const tab of project?.tabs || []) {
+    for (const cls of tab.classes || []) {
+      bump(cls.room, "columns");
+      for (const r of Object.values(cls.roomByDay || {})) bump(r, "columns");
+    }
+  }
+  for (const e of resolveAllEntries(project || {})) bump(effectiveRoom(e), "cells");
+  return [...usage.values()].sort((a, b) =>
+    a.room.localeCompare(b.room, "ja", { numeric: true })
   );
 }
 
