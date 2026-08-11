@@ -32,6 +32,7 @@ export const LS = {
   regularBuilderCompact: "genyakubu-regular-builder-compact",
   regularBuilderSplitCampus: "genyakubu-regular-builder-split-campus",
   regularBuilderSummary: "genyakubu-regular-builder-summary",
+  regularBuilderSummarySpan: "genyakubu-regular-builder-summary-span",
   regularBuilderWeekView: "genyakubu-regular-builder-week-view",
   regularBuilderMultiDay: "genyakubu-regular-builder-multi-day",
 };

@@ -48,6 +48,7 @@ import {
   RegularTeacherWeek,
   RegularTeacherWeekPrintSheet,
 } from "./RegularTeacherWeek";
+import { RegularRoomWeek } from "./RegularRoomWeek";
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { JointDialog } from "./JointDialog";
@@ -1372,7 +1373,7 @@ export default function RegularBuilderApp({
           value={highlightKey}
           onChange={(e) => setHighlightKey(e.target.value)}
           className={`${UI.input} min-w-[130px]`}
-          title="選んだ講師・教室のセルを強調表示 (講師は週間ミニビューも開く)"
+          title="選んだ講師・教室のセルを強調表示 (週間ミニビューも開く — 講師は担当と NG、教室は空き状況)"
         >
           <option value="">👁 強調表示</option>
           <optgroup label="講師">
@@ -1491,6 +1492,15 @@ export default function RegularBuilderApp({
           teacher={highlightTeacher}
           onJump={jumpToCells}
           onPrint={() => setPrintTeacherWeek(true)}
+        />
+      )}
+
+      {/* 👁 教室を選んでいる間は教室の週間 (= 空き状況) を出す */}
+      {highlightRoom && (
+        <RegularRoomWeek
+          project={project}
+          room={highlightRoom}
+          onJump={jumpToCells}
         />
       )}
       {/* 講師週間の印刷中だけ描画される print 専用シート */}

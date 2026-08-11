@@ -3,6 +3,8 @@ import { computeTeacherLoad, formatMinutes } from "./teacherLoad";
 import { computeClassSubjectLoad } from "./classLoad";
 import { formatCount } from "../utils/biweekly";
 import { DAY_COLOR, gradeColor } from "../constants/colors";
+import { LS } from "../constants/storageKeys";
+import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggle";
 import { UI } from "./ui";
 
 // ─── 📊 集計パネル (講師 × 曜日 / クラス × 科目) ────────────────────
@@ -27,10 +29,37 @@ export function RegularSummaryPanel({ project }) {
   // 時限に時刻が 1 つも入っていない段階では時間の段を出さない (0:00 の羅列
   // になるだけ)。入りはじめたら全セルに出し、未設定分は注意書きで知らせる
   const hasMinutes = rows.some((r) => r.totalMinutes > 0);
+  // ⏱ 拘束・空き: 稼働時間の代わりに「拘束 (空き)」を出すモード。
+  // 空きコマの多い講師を探すとき用 (明示トグルの保存で自動学習ではない)
+  const [showSpan, setShowSpan] = usePersistedToggle(
+    LS.regularBuilderSummarySpan,
+    false
+  );
+  const hasGap = rows.some((r) => r.totalGap > 0);
+
+  // 各セルの下段: 稼働時間 or 「拘束 (空き)」
+  const subLine = (minutes, span, gap) =>
+    showSpan
+      ? `${formatMinutes(span || 0)}${gap > 0 ? ` (空${formatMinutes(gap)})` : ""}`
+      : formatMinutes(minutes || 0);
 
   return (
     <div className={`no-print ${UI.panel} text-xs`}>
-      <div className={UI.panelHead}>📊 講師別コマ数・稼働時間（曜日 × 週計）</div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className={UI.panelHead}>
+          📊 講師別コマ数・{showSpan ? "拘束時間" : "稼働時間"}（曜日 × 週計）
+        </div>
+        {hasMinutes && (
+          <button
+            type="button"
+            onClick={() => setShowSpan((v) => !v)}
+            title="下段を「稼働時間 (担当コマの合計)」と「拘束時間 (その日の最初のコマの開始〜最後のコマの終了) + 空き」で切り替える"
+            className={UI.btnToggle(showSpan)}
+          >
+            ⏱ 拘束・空き
+          </button>
+        )}
+      </div>
       {rows.length === 0 ? (
         <div className="text-builder-ink-subtle">
           講師がいません。「⚙ 全体設定」で講師を登録するか、セルに講師を割り当ててください。
@@ -83,7 +112,11 @@ export function RegularSummaryPanel({ project }) {
                         {over ? "!" : ""}
                         {n > 0 && hasMinutes && (
                           <div className="text-[10px] font-normal leading-tight text-builder-ink-muted">
-                            {formatMinutes(r.minutesByDay[d] || 0)}
+                            {subLine(
+                              r.minutesByDay[d],
+                              r.spanByDay[d],
+                              r.gapByDay[d] || 0
+                            )}
                           </div>
                         )}
                       </td>
@@ -98,7 +131,7 @@ export function RegularSummaryPanel({ project }) {
                       : formatCount(r.total)}
                     {r.total > 0 && hasMinutes && (
                       <div className="text-[10px] font-normal leading-tight text-builder-ink-muted">
-                        {formatMinutes(r.totalMinutes)}
+                        {subLine(r.totalMinutes, r.totalSpan, r.totalGap)}
                       </div>
                     )}
                   </td>
@@ -110,7 +143,15 @@ export function RegularSummaryPanel({ project }) {
       )}
       {hasMinutes && (
         <div className={UI.hint}>
-          下段の 時:分 は稼働時間（時限の時刻から算出。隔週コマは 0.5 週分で算入）。
+          {showSpan ? (
+            <>
+              下段の 時:分 は拘束時間（その日の最初のコマの開始 〜 最後のコマの終了）。
+              「空」はコマとコマの間の空き時間です。実際に居る時間なので隔週の重み付けはしません。
+              {!hasGap && "（今は空きコマのある講師はいません）"}
+            </>
+          ) : (
+            <>下段の 時:分 は稼働時間（時限の時刻から算出。隔週コマは 0.5 週分で算入）。</>
+          )}
         </div>
       )}
       {hasMinutes && untimedCount > 0 && (

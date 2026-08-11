@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeRoomWeek,
   computeTeacherLoad,
   computeTeacherWeek,
   formatMinutes,
@@ -237,5 +238,145 @@ describe("隔週コマ (note「隔週(パートナー)」) の扱い", () => {
     // 非隔週コマには biweekly フィールドが付かない
     const handa = computeTeacherWeek(p, "半田");
     expect(handa.byDay["月"][0].biweekly).toBeUndefined();
+  });
+});
+
+// ─── 拘束時間・空きコマ ──────────────────────────────────────────────
+// 稼働 (担当コマの長さの合計・隔週 0.5) と拘束 (その日の最初のコマの開始
+// 〜 最後のコマの終了・重み無し) は別物。空き = 拘束 − 実授業時間。
+
+describe("computeTeacherLoad: 拘束時間・空き", () => {
+  const row = (p, name) =>
+    computeTeacherLoad(p).rows.find((r) => r.name === name);
+
+  it("連続コマなら拘束 = 稼働、空きは 0", () => {
+    const p = makeProject();
+    // 半田: 月1限 (18:00-18:45) のみ
+    const r = row(p, "半田");
+    expect(r.spanByDay["月"]).toBe(45);
+    expect(r.gapByDay["月"]).toBe(0);
+    expect(r.totalSpan).toBe(45);
+    expect(r.totalGap).toBe(0);
+  });
+
+  it("間が空くと拘束が伸び、差が空きになる", () => {
+    const p = makeProject();
+    // 半田に 月 確認テスト (20:40-20:55) を足す → 18:00〜20:55 拘束
+    p.tabs[0].periodIds.push(3);
+    p.tabs[0].schedule[makeCellKey("月", 3, 1)] = { subj: "テスト", teacher: "半田" };
+    const r = row(p, "半田");
+    expect(r.spanByDay["月"]).toBe(175); // 18:00 → 20:55
+    expect(r.minutesByDay["月"]).toBe(60); // 45 + 15
+    expect(r.gapByDay["月"]).toBe(115);
+  });
+
+  it("拘束は隔週でも重み付けしない (居る週は丸ごと居る)", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = {
+      subj: "数学",
+      teacher: "半田",
+      note: "隔週(河野)",
+    };
+    const r = row(p, "半田");
+    expect(r.minutesByDay["月"]).toBe(22.5); // 稼働は 0.5 週分
+    expect(r.spanByDay["月"]).toBe(45); // 拘束は実時間
+    // パートナー側も同じ扱い
+    const partner = row(p, "河野");
+    expect(partner.spanByDay["月"]).toBe(45);
+  });
+
+  it("曜日ごとに独立して数え、週計は合計になる", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = { subj: "理科", teacher: "半田" };
+    const r = row(p, "半田");
+    expect(r.spanByDay).toEqual({ 月: 45, 火: 45 });
+    expect(r.totalSpan).toBe(90);
+  });
+
+  it("時刻未設定の時限は拘束に入らない", () => {
+    const p = makeProject();
+    p.periods.push({ id: 4, label: "未定", time: "" });
+    p.tabs[0].periodIds.push(4);
+    p.tabs[0].schedule[makeCellKey("月", 4, 1)] = { subj: "国語", teacher: "半田" };
+    const r = row(p, "半田");
+    expect(r.spanByDay["月"]).toBe(45);
+    expect(computeTeacherLoad(p).untimedCount).toBe(1);
+  });
+
+  it("担当ゼロの講師は拘束も 0", () => {
+    const p = makeProject();
+    p.teachers.push({ name: "未担当" });
+    const r = row(p, "未担当");
+    expect(r.spanByDay).toEqual({});
+    expect(r.totalSpan).toBe(0);
+    expect(r.totalGap).toBe(0);
+  });
+});
+
+// ─── 教室の週間 (👁 教室の週間ミニビュー) ────────────────────────────
+
+describe("computeRoomWeek", () => {
+  it("実効教室が一致するコマを曜日ごとに時刻順で並べる", () => {
+    const p = makeProject();
+    // 月1限 S はクラス既定 501、月2限 A はセル上書き 601
+    const w = computeRoomWeek(p, "501");
+    expect(w.total).toBe(1);
+    expect(w.byDay["月"]).toHaveLength(1);
+    expect(w.byDay["月"][0]).toMatchObject({
+      time: "18:00-18:45",
+      tabName: "中3",
+      clsLabel: "S",
+      subj: "数学",
+      teacher: "半田",
+      overlap: false,
+    });
+    expect(w.minutesByDay["月"]).toBe(45);
+    expect(w.totalMinutes).toBe(45);
+  });
+
+  it("セルの上書き教室も拾う", () => {
+    const w = computeRoomWeek(makeProject(), "601");
+    expect(w.total).toBe(1);
+    expect(w.byDay["月"][0].subj).toBe("英語");
+  });
+
+  it("曜日別の既定教室 (roomByDay) を尊重する", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0].roomByDay = { 月: "亀63" };
+    expect(computeRoomWeek(p, "501").total).toBe(0);
+    expect(computeRoomWeek(p, "亀63").total).toBe(1);
+  });
+
+  it("同じ教室で時間帯が重なるコマに印を付ける", () => {
+    const p = makeProject();
+    // 月2限 A (18:55-19:40, 601) と同じ時間帯の別クラスを 601 に置く
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = {
+      subj: "国語",
+      teacher: "松川",
+      room: "601",
+    };
+    const w = computeRoomWeek(p, "601");
+    expect(w.total).toBe(2);
+    expect(w.byDay["月"].every((e) => e.overlap)).toBe(true);
+  });
+
+  it("時刻が重ならなければ印は付かない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 1, 2)] = { subj: "国語", room: "601" };
+    const w = computeRoomWeek(p, "601");
+    expect(w.total).toBe(2);
+      expect(w.byDay["月"].filter((e) => e.overlap)).toHaveLength(0);
+  });
+
+  it("該当の無い教室は 0 コマ", () => {
+    const w = computeRoomWeek(makeProject(), "999");
+    expect(w.total).toBe(0);
+    expect(w.byDay["月"]).toEqual([]);
+  });
+
+  it("残骸セルは数えない", () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("水", 1, 1)] = { subj: "国語", room: "501" };
+    expect(computeRoomWeek(p, "501").total).toBe(1);
   });
 });
