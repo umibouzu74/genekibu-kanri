@@ -51,6 +51,10 @@ import {
 import { ReflectDialog } from "./ReflectDialog";
 import { ImportDialog } from "./ImportDialog";
 import { JointDialog } from "./JointDialog";
+import { DayCopyDialog } from "./DayCopyDialog";
+import { copyDay, describeDayCopy } from "./dayCopy";
+import { BulkEditDialog } from "./BulkEditDialog";
+import { bulkEditCells, describeBulkEdit } from "./bulkEdit";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { UI } from "./ui";
 
@@ -104,6 +108,7 @@ export default function RegularBuilderApp({
   const [showReflect, setShowReflect] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [showDayCopy, setShowDayCopy] = useState(false);
   // 表示トグルはリロード後も保持 (講習の 📏 と同じ。明示トグルの保存であり
   // 自動学習系ではない)
   const [hideEmpty, setHideEmpty] = usePersistedToggle(
@@ -746,6 +751,29 @@ export default function RegularBuilderApp({
     [project, saveProject, toasts, applyClassRoomAllDays]
   );
 
+  // ── ⧉ 曜日まるごとコピー (火 → 木 のような曜日の組を作る) ────────
+  // 件数は表示用に現時点の project で数え、保存は saveProject の最新値で
+  // 再計算する (setClassRoom 等と同じパターン)
+  const applyDayCopy = useCallback(
+    ({ from, to, mode, addDay }) => {
+      const res = copyDay(project.tabs, from, to, { mode, addDay });
+      if (res.copied === 0) {
+        toasts.info(describeDayCopy(res, from, to));
+        return;
+      }
+      saveProject(
+        (p) => ({ ...p, tabs: copyDay(p.tabs, from, to, { mode, addDay }).tabs }),
+        { atomic: true }
+      );
+      setShowDayCopy(false);
+      setSelectedDay(to); // コピー結果をすぐ確認できるように移動する
+      toasts.success(`${describeDayCopy(res, from, to)}（Ctrl+Z で戻せます）`, {
+        duration: 6000,
+      });
+    },
+    [project.tabs, saveProject, toasts]
+  );
+
   // ── 複数選択 (Ctrl+クリックでトグル / Shift+クリックで矩形) ──────
   // 講習 N2a と同じ操作感。選択はセル ref の集合で持ち、矩形の計算は
   // セクション構造を知る RegularGrid 側が行う (onRectSelect に結果が届く)
@@ -1015,6 +1043,31 @@ export default function RegularBuilderApp({
     const ok = await clearCellsBulk([...selectedRefs], "選択中のセル");
     if (ok) clearSelection();
   };
+
+  // ── ✎ 選択セルの一括変更 (講師・教室の差し替えなど) ────────────────
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const applyBulkEdit = useCallback(
+    (patch) => {
+      const refs = [...selectedRefs];
+      const res = bulkEditCells(project.tabs, refs, patch);
+      if (res.changed === 0) {
+        toasts.info(describeBulkEdit(res, patch));
+        return;
+      }
+      saveProject((p) => ({ ...p, tabs: bulkEditCells(p.tabs, refs, patch).tabs }), {
+        atomic: true,
+      });
+      setShowBulkEdit(false);
+      toasts.success(`${describeBulkEdit(res, patch)}（Ctrl+Z で戻せます）`, {
+        duration: 5000,
+      });
+    },
+    [selectedRefs, project.tabs, saveProject, toasts]
+  );
+  // 選択が消えたらダイアログも閉じる (対象ゼロのダイアログを残さない)
+  useEffect(() => {
+    if (selectedRefs.size === 0) setShowBulkEdit(false);
+  }, [selectedRefs.size]);
 
   const onCtxAction = (action) => {
     const m = ctxMenu;
@@ -1543,6 +1596,16 @@ export default function RegularBuilderApp({
           >
             ◫ 曜日を並べる
           </button>
+          {usedDays.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDayCopy(true)}
+              title="ある曜日のコマをまるごと別の曜日へ複製する (火・木のように同じ内容で回る曜日の組を作るとき)"
+              className={UI.btn}
+            >
+              ⧉ 曜日コピー
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSplitCampus((v) => !v)}
@@ -1715,6 +1778,14 @@ export default function RegularBuilderApp({
           <span className="font-bold text-builder-ink">
             ☑️ {selectedRefs.size} セル選択中
           </span>
+          <button
+            type="button"
+            className={UI.btnBlue}
+            onClick={() => setShowBulkEdit(true)}
+            title="選択中のコマの教科・講師・教室・備考をまとめて同じ値にする（講師や教室の差し替え用）"
+          >
+            ✎ 一括変更
+          </button>
           <button type="button" className={UI.btnDanger} onClick={clearSelectedCells}>
             🧹 クリア
           </button>
@@ -2007,6 +2078,25 @@ export default function RegularBuilderApp({
           saveSlots={saveSlots}
           saveProject={saveProject}
           onClose={() => setShowReflect(false)}
+        />
+      )}
+
+      {showBulkEdit && selectedRefs.size > 0 && (
+        <BulkEditDialog
+          tabs={project.tabs}
+          refs={[...selectedRefs]}
+          onApply={applyBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
+        />
+      )}
+
+      {showDayCopy && (
+        <DayCopyDialog
+          project={project}
+          usedDays={usedDays}
+          initialFrom={selectedDay}
+          onApply={applyDayCopy}
+          onClose={() => setShowDayCopy(false)}
         />
       )}
 
