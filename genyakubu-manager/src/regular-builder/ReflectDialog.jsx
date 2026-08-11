@@ -10,6 +10,7 @@ import {
   describeDiffChange,
   describeDiffRecord,
   diffReflection,
+  projectGrades,
 } from "./reflect";
 
 // 差分リストの最大表示行数 (超過分は「…他 n 件」)
@@ -56,6 +57,11 @@ export function ReflectDialog({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [targetId, setTargetId] = useState(timetables[timetables.length - 1]?.id ?? 1);
+  // 新規作成時に「この時間割は下書きの学年だけ」と絞るか。既定は従来どおり
+  // 全学年 (timetable.grades 空 = 全学年マッチ)。1 つの時間割で全学年を
+  // まかなう運用が普通なので、絞るのは明示的な選択にする
+  const [limitGrades, setLimitGrades] = useState(false);
+  const grades = useMemo(() => projectGrades(project), [project]);
 
   const opts = useMemo(() => {
     const base = { mode, name, targetTimetableId: Number(targetId) };
@@ -66,9 +72,10 @@ export function ReflectDialog({
     } else {
       base.startDate = startDate || null;
       base.endDate = endDate || null;
+      if (limitGrades && grades.length > 0) base.grades = grades;
     }
     return base;
-  }, [mode, name, startDate, endDate, targetId]);
+  }, [mode, name, startDate, endDate, targetId, limitGrades, grades]);
   const plan = useMemo(() => buildReflectionPlan(project, opts), [project, opts]);
   const total = plan.drafts.length;
   const replaceTargetCount = useMemo(
@@ -210,6 +217,24 @@ export function ReflectDialog({
             />
           </label>
         </div>
+
+        {mode === "new" && grades.length > 0 && (
+          <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={limitGrades}
+              onChange={(e) => setLimitGrades(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              対象学年を下書きの学年に限定する（{grades.join("・")}）
+              <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+                入れないと全学年が対象の時間割になります（既定）。
+                学年ごとに別の時間割を並行して使う場合だけ入れてください。
+              </div>
+            </span>
+          </label>
+        )}
 
         {/* プレビュー */}
         <div style={{ background: "#f6f8fc", borderRadius: 8, padding: 10 }}>

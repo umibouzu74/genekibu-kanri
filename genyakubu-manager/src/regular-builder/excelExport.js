@@ -39,6 +39,7 @@ import {
 } from "../utils/biweekly";
 import { getSubjectColor } from "../timetable-builder/utils/constants";
 import { classRoomForDay, computeSections, makeCellKey } from "./model";
+import { computeClassSubjectLoad } from "./classLoad";
 import { computeTeacherLoad, computeTeacherWeek, formatMinutes } from "./teacherLoad";
 
 const ARGB_GRAY_BORDER = "FFAAAAAA";
@@ -626,9 +627,89 @@ function buildTeacherSheet(workbook, project, name, week, dateLabel) {
   return ws;
 }
 
+// クラス × 科目の週コマ数 (📊 集計パネル下段の Excel 版)。カリキュラム側の
+// 検算 (「中3 の数学が週 3 コマあるか」) を紙で確認するためのシート。
+// 学年ごとの表を縦に積む (学年で科目の顔ぶれが違うため 1 つの表にしない)。
+function buildClassSubjectSheet(workbook, project, classLoad, dateLabel) {
+  const maxCols = Math.max(...classLoad.tabs.map((t) => t.subjects.length)) + 2;
+  const ws = workbook.addWorksheet("クラス別科目", {
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: "portrait",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: PAGE_MARGINS,
+    },
+  });
+  ws.getColumn(1).width = 16;
+  for (let c = 2; c <= maxCols; c++) ws.getColumn(c).width = 7;
+
+  ws.mergeCells(1, 1, 1, maxCols);
+  const title = ws.getCell(1, 1);
+  title.value = `${project.name || "通常時間割"} — クラス別 科目コマ数（週計・出力: ${dateLabel}）`;
+  title.font = { size: 13, bold: true };
+
+  let row = 3;
+  for (const t of classLoad.tabs) {
+    const cols = t.subjects.length + 2; // クラス名 + 科目 + 週計
+    ws.mergeCells(row, 1, row, cols);
+    const head = ws.getCell(row, 1);
+    head.value = t.grade && t.grade !== t.tabName ? `${t.tabName}（${t.grade}）` : t.tabName;
+    head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    head.fill = solidFill(ARGB_HEADER_BLUE);
+    head.border = THIN_BORDER;
+    row++;
+
+    headerCell(ws.getCell(row, 1), "クラス");
+    t.subjects.forEach((s, i) => headerCell(ws.getCell(row, 2 + i), s));
+    headerCell(ws.getCell(row, cols), "週計");
+    row++;
+
+    const putRow = (label, values, total, bold) => {
+      const nameCell = ws.getCell(row, 1);
+      nameCell.value = label;
+      nameCell.font = { size: 9, bold: true };
+      nameCell.border = THIN_BORDER;
+      if (bold) nameCell.fill = solidFill(ARGB_HEAD_GRAY);
+      values.forEach((v, i) => {
+        const cell = ws.getCell(row, 2 + i);
+        cell.value = v || "";
+        cell.font = { size: 9, bold: !!bold };
+        cell.alignment = { horizontal: "center" };
+        cell.border = THIN_BORDER;
+        if (bold) cell.fill = solidFill(ARGB_HEAD_GRAY);
+      });
+      const totalCell = ws.getCell(row, cols);
+      totalCell.value = total || "";
+      totalCell.font = { size: 9, bold: true };
+      totalCell.alignment = { horizontal: "center" };
+      totalCell.border = THIN_BORDER;
+      if (bold) totalCell.fill = solidFill(ARGB_HEAD_GRAY);
+      row++;
+    };
+
+    for (const r of t.rows) {
+      putRow(r.label, t.subjects.map((s) => r.bySubj[s] || 0), r.total, false);
+    }
+    if (t.rows.length > 1) {
+      putRow("計", t.subjects.map((s) => t.subjTotals[s] || 0), t.total, true);
+    }
+    row++; // 学年の間の空行
+  }
+
+  ws.mergeCells(row, 1, row, maxCols);
+  const note = ws.getCell(row, 1);
+  note.value = "教科の入ったセルだけを数えます。合同（結合）コマは合同クラスの行に数えます。";
+  note.font = { size: 9, color: { argb: ARGB_GRAY_TEXT } };
+  return ws;
+}
+
 /**
- * 講師別 workbook (テスト用に export)。担当コマのある講師が 1 人も
- * いなければシート 0 の workbook を返す (呼び出し側でエラーメッセージ)。
+ * 集計 workbook (テスト用に export)。1 枚目に講師 × 曜日の集計、続いて
+ * クラス別の科目コマ数、そのあと講師ごとの週間シート。担当コマのある
+ * 講師が 1 人もいなければシート 0 の workbook を返す (呼び出し側で
+ * エラーメッセージ)。
  * @param {object} project RegularProject
  * @param {{dateLabel: string}} opts
  */
@@ -638,6 +719,10 @@ export function buildRegularTeacherWorkbook(project, { dateLabel }) {
   const active = load.rows.filter((r) => r.total > 0);
   if (active.length === 0) return workbook;
   buildTeacherSummarySheet(workbook, project, load, dateLabel);
+  const classLoad = computeClassSubjectLoad(project);
+  if (classLoad.tabs.length > 0) {
+    buildClassSubjectSheet(workbook, project, classLoad, dateLabel);
+  }
   for (const r of active) {
     buildTeacherSheet(
       workbook,

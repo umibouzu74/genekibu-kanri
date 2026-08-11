@@ -201,6 +201,63 @@ export function setCellsLocked(tabs, refs, locked) {
   return { tabs: next, changed };
 }
 
+// ─── 時限の一括時刻シフト ───────────────────────────────────────────
+// 「全体を 15 分後ろへ」のような期切替の時刻変更を、時限を 1 つずつ
+// 打ち直さずに済ませる。本体側の TimeBulkEditPanel (コマの時刻を書き
+// 換える) と違い、こちらは時限プールの定義そのものを動かす — セルは
+// 時限 id で紐づいているので、コマの中身は動かない。
+
+const SHIFT_TIME_RE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
+
+const shiftClock = (h, m, delta) => {
+  const total = h * 60 + m + delta;
+  // 0:00 未満・24:00 以上は丸めずに範囲外として扱う (呼び出し側で弾く)
+  if (total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(
+    total % 60
+  ).padStart(2, "0")}`;
+};
+
+/**
+ * 時限プールの時刻を一括で前後にずらした新しいプロジェクトを返す (純関数)。
+ * 書式外・時刻未設定の時限、ずらすと 0:00〜24:00 の外に出る時限は据え置く。
+ * @param {number} deltaMinutes 正 = 後ろへ、負 = 前へ
+ * @param {{periodIds?: number[]}} [opts] 対象を絞る (省略時は全時限)
+ * @returns {{project: object, shifted: number, skipped: string[]}}
+ *   skipped = ずらせなかった時限のラベル (時刻未設定・書式不正・範囲外)
+ */
+export function shiftPeriodTimes(project, deltaMinutes, { periodIds } = {}) {
+  const delta = Number(deltaMinutes);
+  if (!Number.isFinite(delta) || delta === 0) {
+    return { project, shifted: 0, skipped: [] };
+  }
+  const target = periodIds ? new Set(periodIds) : null;
+  let shifted = 0;
+  const skipped = [];
+  const periods = (project.periods || []).map((p) => {
+    if (target && !target.has(p.id)) return p;
+    const m = String(p.time || "").trim().match(SHIFT_TIME_RE);
+    const label = p.label || p.time || `id:${p.id}`;
+    if (!m) {
+      if ((p.time || "").trim()) skipped.push(label);
+      return p;
+    }
+    const start = shiftClock(Number(m[1]), Number(m[2]), delta);
+    const end = shiftClock(Number(m[3]), Number(m[4]), delta);
+    if (!start || !end) {
+      skipped.push(label);
+      return p;
+    }
+    shifted++;
+    return { ...p, time: `${start}-${end}` };
+  });
+  return {
+    project: shifted > 0 ? { ...project, periods } : project,
+    shifted,
+    skipped,
+  };
+}
+
 // ─── 時限 / クラスの削除 (セルまで含めた後始末) ─────────────────────
 // 時限・クラスを消しても schedule のセルは残る (キーが id 参照のため)。
 // 残すと ① 保存容量を食い続け ② 次に追加した時限・クラスが同じ id を

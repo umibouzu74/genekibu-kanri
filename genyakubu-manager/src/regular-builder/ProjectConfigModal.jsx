@@ -11,6 +11,7 @@ import {
   nextPeriodId,
   removePeriodFromProject,
   renameTeacherInProject,
+  shiftPeriodTimes,
 } from "./model";
 import { UI } from "./ui";
 
@@ -178,6 +179,33 @@ export function ProjectConfigModal({
     }
   };
 
+  // 時限の一括時刻シフト (期切替の「全体を 15 分後ろへ」)。件数は表示用に
+  // 現在の project で数え、保存は saveProject の最新値で再計算する
+  const [shiftMinutes, setShiftMinutes] = useState("15");
+  const shiftAllPeriods = (sign) => {
+    const delta = sign * Number(shiftMinutes);
+    if (!Number.isFinite(delta) || delta === 0) {
+      toasts.error("ずらす分数を入力してください");
+      return;
+    }
+    const res = shiftPeriodTimes(project, delta);
+    if (res.shifted === 0) {
+      toasts.info(
+        res.skipped.length > 0
+          ? `ずらせる時限がありません（${res.skipped.join("・")} は時刻が未設定か範囲外です）`
+          : "ずらせる時限がありません（時刻を設定してください）"
+      );
+      return;
+    }
+    saveProject((p) => shiftPeriodTimes(p, delta).project, { atomic: true });
+    const parts = [
+      `${res.shifted} 件の時限を ${Math.abs(delta)} 分${delta > 0 ? "後ろへ" : "前へ"}ずらしました`,
+    ];
+    if (res.skipped.length > 0)
+      parts.push(`${res.skipped.join("・")} は据え置き（時刻が未設定か範囲外）`);
+    toasts.success(`${parts.join("。")}（Ctrl+Z で戻せます）`, { duration: 5000 });
+  };
+
   const addSubject = () => {
     const v = newSubject.trim();
     if (!v) return;
@@ -205,25 +233,48 @@ export function ProjectConfigModal({
       teachers: p.teachers.map((t) => (t.name === name ? fn(t) : t)),
     }));
 
+  // NG (不在) の追加フォーム。曜日は複数選択 (「火・木は不在」を 1 回で)、
+  // 時間帯は時限プールから選ぶ (「18:00-18:45」を毎回手打ちしなくてよい)。
+  // プールに無い時間帯は FREE_TIME で従来どおり直接入力できる
+  const FREE_TIME = "__free__";
   const [ngForm, setNgForm] = useState({
     name: "",
-    day: REGULAR_DAYS[0],
-    time: "",
+    days: [],
+    time: "", // "" = 終日 / 時限の時刻 / FREE_TIME 選択中は customTime を使う
+    customTime: "",
   });
+  const toggleNgDay = (d) =>
+    setNgForm((f) => ({
+      ...f,
+      days: f.days.includes(d)
+        ? f.days.filter((x) => x !== d)
+        : REGULAR_DAYS.filter((x) => f.days.includes(x) || x === d),
+    }));
+
   const addNg = () => {
-    const { name, day } = ngForm;
-    const time = ngForm.time.trim();
+    const { name, days } = ngForm;
     if (!name) return;
+    if (days.length === 0) {
+      toasts.error("NG にする曜日を選んでください");
+      return;
+    }
+    const time =
+      ngForm.time === FREE_TIME ? ngForm.customTime.trim() : ngForm.time;
     if (time && !isWellFormedTimeRange(time)) {
-      toasts.error("時刻は「HH:MM-HH:MM」形式で入力してください（空欄で終日）");
+      toasts.error("時刻は「HH:MM-HH:MM」形式で入力してください（終日は「終日」を選択）");
       return;
     }
     updateTeacher(name, (t) => {
-      const slots2 = t.ngSlots || [];
-      if (slots2.some((s) => s.day === day && (s.time || "") === time)) return t;
-      return { ...t, ngSlots: [...slots2, time ? { day, time } : { day }] };
+      const slots2 = [...(t.ngSlots || [])];
+      for (const day of days) {
+        if (slots2.some((s) => s.day === day && (s.time || "") === time)) continue;
+        slots2.push(time ? { day, time } : { day });
+      }
+      return slots2.length === (t.ngSlots || []).length
+        ? t
+        : { ...t, ngSlots: slots2 };
     });
-    setNgForm((f) => ({ ...f, time: "" }));
+    setNgForm((f) => ({ ...f, days: [] }));
   };
   const removeNg = (name, idx) =>
     updateTeacher(name, (t) => {
@@ -408,10 +459,41 @@ export function ProjectConfigModal({
                   </div>
                 );
               })}
-              <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button type="button" className={UI.btn} onClick={addPeriod}>
                   + 時限を追加
                 </button>
+                {/* 期切替の「全体を 15 分後ろへ」を 1 操作で。時限 id は
+                    変わらないのでセルの中身は動かない */}
+                {project.periods.length > 0 && (
+                  <span className="inline-flex items-center gap-1 ml-2 text-[11px] text-builder-ink">
+                    全時限を
+                    <input
+                      type="number"
+                      value={shiftMinutes}
+                      onChange={(e) => setShiftMinutes(e.target.value)}
+                      aria-label="ずらす分数 (正で後ろへ・負で前へ)"
+                      className={`${UI.input} w-16`}
+                    />
+                    分
+                    <button
+                      type="button"
+                      className={UI.btn}
+                      onClick={() => shiftAllPeriods(-1)}
+                      title="全時限の時刻をこの分数だけ前倒しする（コマの中身は動きません）"
+                    >
+                      ◂ 前へ
+                    </button>
+                    <button
+                      type="button"
+                      className={UI.btn}
+                      onClick={() => shiftAllPeriods(1)}
+                      title="全時限の時刻をこの分数だけ後ろへずらす（コマの中身は動きません）"
+                    >
+                      後ろへ ▸
+                    </button>
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -421,14 +503,40 @@ export function ProjectConfigModal({
             <>
               <div className={UI.hint}>
                 セルの教科プルダウンの選択肢になります。マスタ外の単発教科はセル側の「✎ 直接入力」でも入力できます。
+                並び順はプルダウンと 📊 集計の列順になります（◂ ▸ で入れ替え）。
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                {project.subjects.map((s) => (
+                {project.subjects.map((s, idx) => (
                   <span
                     key={s}
                     className="text-[11px] bg-builder-info-soft border border-builder-info-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
                   >
+                    {/* 並べ替え: プルダウンの並び・集計の列順に効く */}
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, subjects: move(p.subjects, idx, -1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${s} を前へ`}
+                      title="前へ"
+                    >
+                      ◂
+                    </button>
                     {s}
+                    <button
+                      type="button"
+                      disabled={idx === project.subjects.length - 1}
+                      onClick={() =>
+                        saveProject((p) => ({ ...p, subjects: move(p.subjects, idx, 1) }))
+                      }
+                      className={`${chipDeleteBtn} disabled:opacity-25`}
+                      aria-label={`${s} を後ろへ`}
+                      title="後ろへ"
+                    >
+                      ▸
+                    </button>
                     <button
                       type="button"
                       onClick={() =>
@@ -555,7 +663,8 @@ export function ProjectConfigModal({
                 <span className={sectionHead}>NG（不在）</span>
                 <div className={UI.hint}>
                   NG の曜日・時間帯への割当は、重複と同じく赤枠 + 一覧で警告されます（意図した割当は「承認」で消せます）。
-                  講師プルダウンにも「(NG)」を予告し、👁 週間ミニビューにも 🚫 で表示されます。時刻を空欄にすると終日 NG です。
+                  講師プルダウンにも「(NG)」を予告し、👁 週間ミニビューにも 🚫 で表示されます。
+                  曜日は複数選べます（「火・木は不在」を 1 回で登録できます）。時間帯は時限から選ぶか「終日」。
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <select
@@ -571,34 +680,62 @@ export function ProjectConfigModal({
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={ngForm.day}
-                    onChange={(e) => setNgForm((f) => ({ ...f, day: e.target.value }))}
-                    aria-label="NG の曜日"
-                    className={UI.input}
+                  {/* 曜日は複数選択 (「火・木は不在」を 1 回で登録する) */}
+                  <span
+                    role="group"
+                    aria-label="NG の曜日 (複数選択)"
+                    className="inline-flex items-center gap-1"
                   >
                     {REGULAR_DAYS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}曜
-                      </option>
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={ngForm.days.includes(d)}
+                        onClick={() => toggleNgDay(d)}
+                        className={UI.btnToggle(ngForm.days.includes(d))}
+                      >
+                        {d}
+                      </button>
                     ))}
-                  </select>
-                  <input
-                    type="text"
+                  </span>
+                  {/* 時間帯は時限プールから選ぶ (手打ちの表記ゆれを防ぐ) */}
+                  <select
                     value={ngForm.time}
                     onChange={(e) => setNgForm((f) => ({ ...f, time: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addNg();
-                    }}
-                    placeholder="18:00-19:00 (空欄で終日)"
-                    aria-label="NG の時刻範囲 (空欄で終日)"
-                    className={`${UI.input} w-44`}
-                  />
+                    aria-label="NG の時間帯"
+                    className={UI.input}
+                  >
+                    <option value="">終日</option>
+                    {project.periods
+                      .filter((p) => isWellFormedTimeRange(p.time))
+                      .map((p) => (
+                        <option key={p.id} value={p.time.trim()}>
+                          {[p.label, p.time].filter(Boolean).join(" ")}
+                        </option>
+                      ))}
+                    <option value={FREE_TIME}>✎ 直接入力…</option>
+                  </select>
+                  {ngForm.time === FREE_TIME && (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={ngForm.customTime}
+                      onChange={(e) =>
+                        setNgForm((f) => ({ ...f, customTime: e.target.value }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addNg();
+                      }}
+                      placeholder="18:00-19:00"
+                      aria-label="NG の時刻範囲 (直接入力)"
+                      className={`${UI.input} w-32`}
+                    />
+                  )}
                   <button
                     type="button"
                     className={UI.btn}
                     onClick={addNg}
-                    disabled={!ngForm.name}
+                    disabled={!ngForm.name || ngForm.days.length === 0}
                   >
                     + NG 追加
                   </button>

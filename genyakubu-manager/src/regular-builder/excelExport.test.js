@@ -220,7 +220,12 @@ describe("buildRegularTeacherWorkbook", () => {
     const wb = buildRegularTeacherWorkbook(makeProject(), {
       dateLabel: "2026-08-08",
     });
-    expect(wb.worksheets.map((w) => w.name)).toEqual(["集計", "堀上", "半田"]);
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      "集計",
+      "クラス別科目",
+      "堀上",
+      "半田",
+    ]);
     const sum = wb.getWorksheet("集計");
     expect(sum.getCell(1, 1).value).toContain("講師別コマ数・稼働時間");
     // 見出し 2 段: 講師 | 月 (コマ/時間) | 週計 (コマ/時間)。
@@ -298,6 +303,7 @@ describe("buildRegularTeacherWorkbook", () => {
     // 河野はマスタ外だが担当コマ (0.5) があるのでシートが出来る
     expect(wb.worksheets.map((w) => w.name)).toEqual([
       "集計",
+      "クラス別科目",
       "堀上",
       "半田",
       "河野",
@@ -329,5 +335,36 @@ describe("teacherEntryNote", () => {
     expect(
       teacherEntryNote({ biweekly: "B", note: "隔週(河野)", teacher: "堀上" })
     ).toBe("隔週B（堀上 と交互）");
+  });
+});
+
+describe("buildRegularTeacherWorkbook: クラス別科目シート", () => {
+  it("学年ごとに クラス × 科目 の週コマ数を載せる", () => {
+    const wb = buildRegularTeacherWorkbook(makeProject(), {
+      dateLabel: "2026-08-08",
+    });
+    const ws = wb.getWorksheet("クラス別科目");
+    expect(ws.getCell(1, 1).value).toContain("クラス別 科目コマ数");
+    // 学年見出し → 列見出し → クラス行 → 計行
+    expect(ws.getCell(3, 1).value).toBe("中3");
+    expect(ws.getCell(4, 1).value).toBe("クラス");
+    // makeProject: S = 数学 1、A = 英語 1 (科目マスタ順で 英語 → 数学)
+    expect(ws.getCell(4, 2).value).toBe("英語");
+    expect(ws.getCell(4, 3).value).toBe("数学");
+    expect(ws.getCell(5, 1).value).toBe("S");
+    expect(ws.getCell(5, 3).value).toBe(1);
+    expect(ws.getCell(6, 1).value).toBe("A");
+    expect(ws.getCell(6, 2).value).toBe(1);
+    expect(ws.getCell(7, 1).value).toBe("計");
+    expect(ws.getCell(7, 4).value).toBe(2); // 週計列
+  });
+
+  it("教科の入ったセルが無ければシートを作らない", () => {
+    const p = makeProject();
+    // 講師だけのセルにする (集計シート・講師シートは出るが科目集計は空)
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = { teacher: "半田" };
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = { teacher: "堀上" };
+    const wb = buildRegularTeacherWorkbook(p, { dateLabel: "2026-08-08" });
+    expect(wb.worksheets.map((w) => w.name)).not.toContain("クラス別科目");
   });
 });

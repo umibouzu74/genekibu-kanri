@@ -23,9 +23,25 @@ const CONFLICT_TYPE_LABELS = [
 ];
 
 /**
+ * 下書きに現れる学年 (タブの grade)。反映で作る時間割の grades に使える。
+ * timetable.grades が空 = 全学年にマッチ (utils/timetable) なので、
+ * 「この時間割は中3 と中2 だけ」と絞りたいときにこの一覧を入れる。
+ * @returns {string[]} タブ定義順・重複なし
+ */
+export function projectGrades(project) {
+  const seen = [];
+  for (const t of project.tabs || []) {
+    const g = (t.grade || "").trim();
+    if (g && !seen.includes(g)) seen.push(g);
+  }
+  return seen;
+}
+
+/**
  * @param {object} project RegularProject
  * @param {{mode: "new"|"replace", name?: string, startDate?: string|null,
- *          endDate?: string|null, targetTimetableId?: number}} opts
+ *          endDate?: string|null, targetTimetableId?: number,
+ *          grades?: string[]}} opts
  * @returns {{
  *   ok: boolean,
  *   errors: string[],        // 反映をブロックする問題
@@ -154,7 +170,9 @@ export function applyReflection(plan, opts, { timetables, slots }) {
           type: "regular",
           startDate: opts.startDate || null,
           endDate: opts.endDate || null,
-          grades: [],
+          // 空 = 全学年にマッチ (utils/timetable.gradeMatchesTimetable)。
+          // 学年を絞りたい場合だけ呼び出し側が渡す
+          grades: opts.grades || [],
         },
       ],
       slots: [

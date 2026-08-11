@@ -559,7 +559,7 @@ export default function RegularBuilderApp({
       const { downloadRegularTeacherExcel } = await import("./excelExport");
       await downloadRegularTeacherExcel({ project });
       toasts.success(
-        "講師別 Excel を書き出しました（集計 + 講師ごとにシート・A4 縦）"
+        "集計 Excel を書き出しました（講師×曜日 + クラス別科目 + 講師ごとにシート）"
       );
     } catch (e) {
       toasts.error(`講師別 Excel を書き出せませんでした: ${e?.message || e}`);
@@ -1679,10 +1679,10 @@ export default function RegularBuilderApp({
               <button
                 type="button"
                 onClick={exportTeacherExcel}
-                title="講師別に Excel へ書き出す (1 枚目に講師×曜日のコマ数・稼働時間の集計、続いて講師ごとに週の担当コマ一覧のシート・A4 縦)"
+                title="集計を Excel へ書き出す (講師×曜日のコマ数・稼働時間 → クラス別の科目コマ数 → 講師ごとの週の担当コマ一覧・A4)"
                 className={UI.btn}
               >
-                📥 講師別
+                📥 集計・講師別
               </button>
             </>
           )}

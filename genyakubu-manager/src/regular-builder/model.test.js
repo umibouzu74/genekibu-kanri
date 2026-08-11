@@ -26,6 +26,7 @@ import {
   setCellsLocked,
   setClassRoom,
   setClassRoomForDay,
+  shiftPeriodTimes,
   swapCellsAcrossTabs,
   swapScheduleCells,
   tabPeriods,
@@ -968,5 +969,68 @@ describe("nextClassId / nextPeriodId", () => {
   it("空のタブ・プロジェクトは 1 から", () => {
     expect(nextClassId({ classes: [], schedule: {} })).toBe(1);
     expect(nextPeriodId({ periods: [], tabs: [] })).toBe(1);
+  });
+});
+
+describe("shiftPeriodTimes", () => {
+  it("全時限の時刻を後ろへずらす (ラベルと id は不変)", () => {
+    const p = makeProject();
+    const { project, shifted, skipped } = shiftPeriodTimes(p, 15);
+    expect(shifted).toBe(3);
+    expect(skipped).toEqual([]);
+    expect(project.periods.map((x) => x.time)).toEqual([
+      "18:15-19:00",
+      "19:10-19:55",
+      "20:55-21:10",
+    ]);
+    expect(project.periods.map((x) => x.id)).toEqual([1, 2, 3]);
+    expect(project.periods[0].label).toBe("1限");
+  });
+
+  it("負の分数で前倒しできる", () => {
+    const { project } = shiftPeriodTimes(makeProject(), -45);
+    expect(project.periods[0].time).toBe("17:15-18:00");
+  });
+
+  it("セル (schedule) は動かさない — 時限 id は変わらないため", () => {
+    const p = makeProject();
+    const { project } = shiftPeriodTimes(p, 15);
+    expect(project.tabs[0].schedule).toEqual(p.tabs[0].schedule);
+  });
+
+  it("時刻未設定・書式不正・範囲外の時限は据え置いて名前を返す", () => {
+    const p = makeProject();
+    p.periods = [
+      { id: 1, label: "1限", time: "18:00-18:45" },
+      { id: 2, label: "未定", time: "" }, // 未設定 → skipped に出さない
+      { id: 3, label: "変", time: "ごご" }, // 書式不正
+      { id: 4, label: "深夜", time: "23:50-23:59" }, // +15 分で 24 時超え
+    ];
+    const { project, shifted, skipped } = shiftPeriodTimes(p, 15);
+    expect(shifted).toBe(1);
+    expect(skipped).toEqual(["変", "深夜"]);
+    expect(project.periods[1].time).toBe("");
+    expect(project.periods[3].time).toBe("23:50-23:59");
+  });
+
+  it("periodIds で対象を絞れる", () => {
+    const { project, shifted } = shiftPeriodTimes(makeProject(), 10, {
+      periodIds: [2],
+    });
+    expect(shifted).toBe(1);
+    expect(project.periods[0].time).toBe("18:00-18:45");
+    expect(project.periods[1].time).toBe("19:05-19:50");
+  });
+
+  it("0 分・不正な分数は no-op (同じ参照を返す)", () => {
+    const p = makeProject();
+    expect(shiftPeriodTimes(p, 0).project).toBe(p);
+    expect(shiftPeriodTimes(p, NaN).project).toBe(p);
+  });
+
+  it("1 件もずらせなければ元のプロジェクトをそのまま返す", () => {
+    const p = makeProject();
+    p.periods = [{ id: 1, label: "未定", time: "" }];
+    expect(shiftPeriodTimes(p, 15).project).toBe(p);
   });
 });
