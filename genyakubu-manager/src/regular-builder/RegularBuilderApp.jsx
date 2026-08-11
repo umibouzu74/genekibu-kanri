@@ -1263,6 +1263,7 @@ export default function RegularBuilderApp({
       {showSnapshots && (
         <RegularSnapshotPanel
           project={project}
+          otherProjects={workspace.projects.filter((p) => p.id !== project.id)}
           saveProject={saveProject}
           onJump={jumpToCells}
         />
