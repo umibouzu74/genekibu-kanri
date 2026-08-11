@@ -73,6 +73,9 @@ const startMin = (time) => {
 // applyTeacherPrintDefaults と同じ扱い)。
 const PAPER_SIZE_B4 = 12;
 
+/** 全曜日をまとめたシートの名前 (呼び出し側の有無判定にも使う) */
+const ALL_DAYS_SHEET_NAME = "全曜日";
+
 const DAY_SHEET_MARGINS = {
   left: 0.4,
   right: 0.4,
@@ -323,7 +326,7 @@ function buildDaySheet(workbook, project, day, sections, dateLabel) {
 // 1 曜日 1 ページで出る。fitToPage は手動改ページを潰すので固定倍率。
 function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
   const maxCols = Math.max(...daySections.map((d) => dayBlockCols(d.sections)));
-  const ws = workbook.addWorksheet("全曜日", {
+  const ws = workbook.addWorksheet(ALL_DAYS_SHEET_NAME, {
     pageSetup: {
       paperSize: PAPER_SIZE_B4,
       orientation: "landscape",
@@ -761,6 +764,9 @@ async function downloadWorkbook(workbook, filename) {
 
 /**
  * @param {{project: object, days: string[], splitCampus?: boolean, now?: Date}} params
+ * @returns {Promise<{daySheets: number, hasAllDaysSheet: boolean}>}
+ *   呼び出し側が結果の通知を実態に合わせられるように内訳を返す
+ *   (まとめシートは 2 曜日以上のときだけ作られる)
  */
 export async function downloadRegularExcel({
   project,
@@ -773,10 +779,15 @@ export async function downloadRegularExcel({
   if (workbook.worksheets.length === 0) {
     throw new Error("出力できる曜日がありません (セルが 1 つもありません)");
   }
+  const hasAllDaysSheet = !!workbook.getWorksheet(ALL_DAYS_SHEET_NAME);
   await downloadWorkbook(
     workbook,
     `通常時間割_${safeProjectName(project)}_${dateLabel}.xlsx`
   );
+  return {
+    daySheets: workbook.worksheets.length - (hasAllDaysSheet ? 1 : 0),
+    hasAllDaysSheet,
+  };
 }
 
 /** @param {{project: object, now?: Date}} params */

@@ -369,7 +369,7 @@ export function computeBusyTeachers(project, tab) {
  *   active: object[],             // 未承認 (バッジ件数・赤枠の対象)
  *   approved: object[],           // 承認済み
  *   byRef: Map<string, string[]>, // 未承認のみ: entryRef → 理由文
- *   ngOnlyRefs: Set<string>,      // 未承認が NG のみのセル (バッジを ⚠️NG に)
+ *   badgeByRef: Map<string, string>, // 未承認のあるセルのバッジ文言
  *   stale: string[],              // 対象の消えた承認キー (掃除の対象)
  * }}
  */
@@ -399,10 +399,17 @@ export function buildConflictView(list, approvedKeys) {
       typesByRef.set(ref, types);
     });
   }
-  const ngOnlyRefs = new Set(
-    [...typesByRef]
-      .filter(([, types]) => types.size === 1 && types.has("ng"))
-      .map(([ref]) => ref)
+  // セルのバッジ文言。問題が 1 種類だけならその種類を名乗る (NG だけの
+  // セルに「重複」、校舎移動だけのセルに「重複」と出るのを防ぐ)。
+  // 複数種類が重なっているセルは総称の「重複」に倒す
+  const badgeByRef = new Map(
+    [...typesByRef].map(([ref, types]) => {
+      if (types.size === 1) {
+        if (types.has("ng")) return [ref, "NG"];
+        if (types.has("travel")) return [ref, "移動"];
+      }
+      return [ref, "重複"];
+    })
   );
-  return { active, approved, byRef, ngOnlyRefs, stale };
+  return { active, approved, byRef, badgeByRef, stale };
 }

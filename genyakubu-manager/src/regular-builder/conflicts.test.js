@@ -372,8 +372,8 @@ describe("computeNgTeachersForTabs - 講師プルダウンの (NG) 予告", () =
   });
 });
 
-describe("buildConflictView - ngOnlyRefs", () => {
-  it("未承認が NG のみのセルだけを ngOnlyRefs に入れる", () => {
+describe("buildConflictView - badgeByRef", () => {
+  it("未承認が NG のみのセルは NG バッジ、他が混ざれば重複バッジ", () => {
     const p = makeProject();
     // 月2限 A=英語/堀上 に終日 NG。さらに同時間帯の講師重複も作る
     p.teachers = [{ name: "堀上", ngSlots: [{ day: "月" }] }, { name: "半田" }];
@@ -382,8 +382,8 @@ describe("buildConflictView - ngOnlyRefs", () => {
     const view = buildConflictView(computeConflicts(p).list, []);
     const ngRef = `1:${makeCellKey("月", 2, 2)}`; // NG のみ
     const pairRef = `1:${makeCellKey("月", 1, 1)}`; // 講師重複のみ
-    expect(view.ngOnlyRefs.has(ngRef)).toBe(true);
-    expect(view.ngOnlyRefs.has(pairRef)).toBe(false);
+    expect(view.badgeByRef.get(ngRef)).toBe("NG");
+    expect(view.badgeByRef.get(pairRef)).toBe("重複");
   });
 });
 
@@ -544,5 +544,41 @@ describe("computeConflicts - 校舎間の移動", () => {
     const p = crossCampus({ campusTravelMinutes: 15 });
     p.tabs[0].classes[0].room = "";
     expect(travel(p)).toHaveLength(0);
+  });
+});
+
+describe("buildConflictView - badgeByRef の種類別", () => {
+  // 校舎移動だけのセルに「重複」と出ていた (問題の種類と食い違う) ため、
+  // 1 種類だけの問題はその種類を名乗る
+  it("校舎移動だけのセルは「移動」バッジ", () => {
+    const p = twoTabProject();
+    p.campusTravelMinutes = 15;
+    p.tabs[0].classes = [
+      { id: 1, label: "S", room: "501" },
+      { id: 2, label: "A", room: "亀21" },
+    ];
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = { subj: "数学", teacher: "堀上" };
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = { subj: "英語", teacher: "堀上" };
+    const list = computeConflicts(p).list;
+    expect(list.every((c) => c.type === "travel")).toBe(true);
+    const view = buildConflictView(list, []);
+    for (const ref of list[0].refs) {
+      expect(view.badgeByRef.get(ref)).toBe("移動");
+    }
+  });
+
+  it("複数の種類が重なるセルは総称の「重複」", () => {
+    const p = twoTabProject();
+    p.campusTravelMinutes = 15;
+    p.teachers = [{ name: "堀上", ngSlots: [{ day: "月" }] }];
+    p.tabs[0].classes = [
+      { id: 1, label: "S", room: "501" },
+      { id: 2, label: "A", room: "亀21" },
+    ];
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = { subj: "数学", teacher: "堀上" };
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = { subj: "英語", teacher: "堀上" };
+    const view = buildConflictView(computeConflicts(p).list, []);
+    // 各セルに NG と 校舎移動 の 2 種類が乗る
+    expect([...view.badgeByRef.values()].every((v) => v === "重複")).toBe(true);
   });
 });

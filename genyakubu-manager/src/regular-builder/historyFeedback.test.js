@@ -182,3 +182,24 @@ describe("diffWorkspaces: 表示プロジェクトの切替", () => {
     expect(diff.otherChanges).toEqual(["プロジェクトの追加/削除"]);
   });
 });
+
+describe("diffWorkspaces: 後から足したマスタ・設定", () => {
+  // 差分に載せ忘れると Undo の toast が「変更なし」になり、何が戻ったか
+  // 分からなくなる (プロジェクト切替と同じ失敗)
+  it("教室マスタの変更を検出する", () => {
+    const before = ws({ ...baseProject(), rooms: ["501"] });
+    const after = ws({ ...baseProject(), rooms: ["501", "502"] });
+    expect(diffWorkspaces(before, after).otherChanges).toContain("教室マスタ");
+  });
+
+  it("校舎間の移動時間の変更を検出する (設定・解除の両方)", () => {
+    const none = ws(baseProject());
+    const set = ws({ ...baseProject(), campusTravelMinutes: 15 });
+    expect(diffWorkspaces(none, set).otherChanges).toContain("校舎間の移動時間");
+    expect(diffWorkspaces(set, none).otherChanges).toContain("校舎間の移動時間");
+    expect(
+      diffWorkspaces(set, ws({ ...baseProject(), campusTravelMinutes: 15 }))
+        .otherChanges
+    ).toEqual([]);
+  });
+});

@@ -158,9 +158,15 @@ export function useRegularProjects({
   const exportExcel = useCallback(async () => {
     try {
       const { downloadRegularExcel } = await import("../excelExport");
-      await downloadRegularExcel({ project, days: usedDays, splitCampus });
+      const { daySheets, hasAllDaysSheet } = await downloadRegularExcel({
+        project,
+        days: usedDays,
+        splitCampus,
+      });
+      // まとめシートは 2 曜日以上のときだけ作られるので、文面も実態に合わせる
       toasts.success(
-        "Excel を書き出しました（曜日ごとにシート + 全曜日まとめ・B4 横）"
+        `Excel を書き出しました（${daySheets} 曜日ぶんのシート` +
+          `${hasAllDaysSheet ? " + 全曜日まとめ" : ""}・B4 横）`
       );
     } catch (e) {
       toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);

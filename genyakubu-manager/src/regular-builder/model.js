@@ -13,6 +13,11 @@
 //     ngSlots?: [{ day, time? }],              // NG (不在)。time 無し = 終日
 //     maxPerDay?, maxPerWeek?,                 // コマ数上限 (無し = 無制限)
 //   }],
+//   rooms: string[],                           // 教室マスタ (入力候補 + 表記ゆれ検出)
+//   campusTravelMinutes?: number,              // 本校 ↔ 亀井町の移動に必要な分数
+//                                              // (未設定 = 校舎移動をチェックしない)
+//   approvedConflicts?: string[],              // 承認済みの重なり (conflicts.conflictKey)
+//   snapshots?: [{ id, name, createdAt, data }],
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
 //     group,                                   // セクション名の手動上書き (空 = 自動)
@@ -538,17 +543,24 @@ export function addSnapshot(project, name, now) {
   };
 }
 
+// 「無いこともある」トップレベルのフィールド。復元は spread なので、
+// 保存時に無かったフィールドは現在の値が残ってしまう (保存時に存在
+// しなかった承認・設定が生き返る)。フィールドを増やしたらここに足す。
+const OPTIONAL_PROJECT_FIELDS = ["approvedConflicts", "campusTravelMinutes"];
+
 /**
  * スナップショットの保存時の状態に戻した新しいプロジェクトを返す。
- * snapshots 一覧と id は現在のまま維持する。approvedConflicts のような
- * 任意フィールドは、保存時に無ければ復元後も持たない (残すと保存時に
- * 存在しなかった承認が生き返る)。見つからなければ元のまま。
+ * snapshots 一覧と id は現在のまま維持する。任意フィールド
+ * (OPTIONAL_PROJECT_FIELDS) は保存時に無ければ復元後も持たない。
+ * 見つからなければ元のまま。
  */
 export function restoreSnapshot(project, snapshotId) {
   const snap = (project.snapshots || []).find((s) => s.id === snapshotId);
   if (!snap) return project;
   const restored = { ...project, ...snap.data, snapshots: project.snapshots };
-  if (!("approvedConflicts" in snap.data)) delete restored.approvedConflicts;
+  for (const field of OPTIONAL_PROJECT_FIELDS) {
+    if (!(field in snap.data)) delete restored[field];
+  }
   return restored;
 }
 

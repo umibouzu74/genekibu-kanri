@@ -81,6 +81,9 @@ function diffProject(bp, ap, projectId, cellChanges, addOther) {
   if (!jsonEq(bp.periods, ap.periods)) addOther("時限設定");
   if (!jsonEq(bp.subjects, ap.subjects)) addOther("科目マスタ");
   if (!jsonEq(bp.teachers, ap.teachers)) addOther("講師マスタ");
+  if (!jsonEq(bp.rooms || [], ap.rooms || [])) addOther("教室マスタ");
+  if ((bp.campusTravelMinutes ?? null) !== (ap.campusTravelMinutes ?? null))
+    addOther("校舎間の移動時間");
   if (!jsonEq(bp.approvedConflicts || [], ap.approvedConflicts || []))
     addOther("重なりの承認");
   if (!jsonEq(bp.snapshots || [], ap.snapshots || []))

@@ -1151,6 +1151,7 @@ export default function RegularBuilderApp({
           value={highlightKey}
           onChange={(e) => setHighlightKey(e.target.value)}
           className={`${UI.input} min-w-[130px]`}
+          aria-label="強調表示する講師・教室"
           title="選んだ講師・教室のセルを強調表示 (週間ミニビューも開く — 講師は担当と NG、教室は空き状況)"
         >
           <option value="">👁 強調表示</option>
@@ -1192,7 +1193,9 @@ export default function RegularBuilderApp({
       {/* 問題 (重複・NG) の一覧・承認パネル */}
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
-          <div className={UI.panelHead}>講師・教室・クラスの重複と講師NG</div>
+          <div className={UI.panelHead}>
+            講師・教室・クラスの重複、講師NG、校舎間の移動
+          </div>
           {conflictView.active.length === 0 &&
             conflictView.approved.length === 0 &&
             conflictView.stale.length === 0 && (
@@ -1671,7 +1674,7 @@ export default function RegularBuilderApp({
                   onClearCell={onClearCell}
                   onSwapCells={onSwapCells}
                   conflictsByRef={conflictView.byRef}
-                  ngOnlyRefs={conflictView.ngOnlyRefs}
+                  badgeByRef={conflictView.badgeByRef}
                   highlightTeacher={highlightTeacher}
                   highlightRoom={highlightRoom}
                   hideEmpty={hideEmpty}
@@ -1715,7 +1718,7 @@ export default function RegularBuilderApp({
               onClearCell,
               onSwapCells,
               conflictsByRef: conflictView.byRef,
-              ngOnlyRefs: conflictView.ngOnlyRefs,
+              badgeByRef: conflictView.badgeByRef,
               highlightTeacher,
               highlightRoom,
               hideEmpty,
@@ -1756,7 +1759,7 @@ export default function RegularBuilderApp({
               onClearCell={onClearCell}
               onSwapCells={onSwapCells}
               conflictsByRef={conflictView.byRef}
-              ngOnlyRefs={conflictView.ngOnlyRefs}
+              badgeByRef={conflictView.badgeByRef}
               highlightTeacher={highlightTeacher}
               highlightRoom={highlightRoom}
               hideEmpty={hideEmpty}
@@ -1803,7 +1806,7 @@ export default function RegularBuilderApp({
                 onClearCell={onClearCell}
                 onSwapCells={onSwapCells}
                 conflictsByRef={conflictView.byRef}
-                ngOnlyRefs={conflictView.ngOnlyRefs}
+                badgeByRef={conflictView.badgeByRef}
                 highlightTeacher=""
                 hideEmpty={hideEmpty}
                 splitCampus={splitCampus}

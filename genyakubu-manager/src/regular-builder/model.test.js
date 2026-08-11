@@ -1110,3 +1110,33 @@ describe("sanitizeProject: rooms (教室マスタ)", () => {
     expect(sanitizeProject({ name: "x" }).rooms).toEqual([]);
   });
 });
+
+describe("restoreSnapshot: 任意フィールドの復元", () => {
+  it("保存時に無かった任意フィールドは復元で消える", () => {
+    // 設定を入れる前に保存 → 後から設定 → 復元すると設定前に戻るのが正
+    const base = makeProject();
+    const saved = addSnapshot(base, "設定前", 1000);
+    const later = {
+      ...saved,
+      approvedConflicts: ["teacher|月|a~b"],
+      campusTravelMinutes: 15,
+    };
+    const restored = restoreSnapshot(later, 1);
+    expect("approvedConflicts" in restored).toBe(false);
+    expect("campusTravelMinutes" in restored).toBe(false);
+  });
+
+  it("保存時にあった任意フィールドは復元で戻る", () => {
+    const withSetting = { ...makeProject(), campusTravelMinutes: 20 };
+    const saved = addSnapshot(withSetting, "設定後", 1000);
+    const later = { ...saved, campusTravelMinutes: 5 };
+    expect(restoreSnapshot(later, 1).campusTravelMinutes).toBe(20);
+  });
+
+  it("スナップショット一覧と id は現在のまま維持する", () => {
+    const saved = addSnapshot({ ...makeProject(), id: 7 }, "案", 1000);
+    const restored = restoreSnapshot(saved, 1);
+    expect(restored.id).toBe(7);
+    expect(restored.snapshots).toHaveLength(1);
+  });
+});
