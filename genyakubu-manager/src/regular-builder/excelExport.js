@@ -30,6 +30,10 @@
 //   **Excel は fitToPage を有効にすると手動改ページを無視する**。そのため
 //   こちらは fitToPage を使わず、estimatePrintScale で見積もった固定
 //   倍率 (scale) を入れる。倍率は全曜日で共通なので紙面の字の大きさも揃う。
+// - 「全曜日」だけ **A3 横** (曜日別は B4 横のまま)。固定倍率なので紙が
+//   大きいほど字が大きく刷れる — 実測で B4 横 77% → A3 横 90% になり、
+//   全曜日を 1 枚ずつ並べて見るときの可読性が上がる。曜日別シートは
+//   fitToPage で Excel が実測して収めるため B4 で十分。
 
 import ExcelJS from "exceljs";
 import {
@@ -72,6 +76,9 @@ const startMin = (time) => {
 // enum に B4 は無いが runtime は数値をそのまま書き出す (講習の
 // applyTeacherPrintDefaults と同じ扱い)。
 const PAPER_SIZE_B4 = 12;
+// 「全曜日」シートだけ A3。fitToPage が使えず固定倍率で収めるため、紙が
+// 大きいほど字が大きく刷れる (B4 横 364×257 → A3 横 420×297 で約 1.15 倍)。
+const PAPER_SIZE_A3 = 8;
 
 /** 全曜日をまとめたシートの名前 (呼び出し側の有無判定にも使う) */
 const ALL_DAYS_SHEET_NAME = "全曜日";
@@ -85,8 +92,9 @@ const DAY_SHEET_MARGINS = {
   footer: 0.2,
 };
 
-// B4 横の用紙寸法 (inch)。scale の見積りに使う
+// 用紙寸法 (inch)。scale の見積りに使う
 const B4_LANDSCAPE_IN = { width: 364 / 25.4, height: 257 / 25.4 };
+const A3_LANDSCAPE_IN = { width: 420 / 25.4, height: 297 / 25.4 };
 
 const COL_WIDTH_TIME = 11; // 「時間」列
 const COL_WIDTH_CLASS = 16; // クラス列
@@ -211,7 +219,15 @@ const dayBlockCols = (sections) =>
  * @returns {{nextRow: number, lastRow: number, heightPt: number}}
  *   lastRow = このブロックの最終行 (「全曜日」の改ページを打つ行)
  */
-function writeDayBlock(ws, project, day, sections, dateLabel, startRow) {
+function writeDayBlock(
+  ws,
+  project,
+  day,
+  sections,
+  dateLabel,
+  startRow,
+  subjectColor = getSubjectColor
+) {
   const maxCols = dayBlockCols(sections);
   // タイトル行 + 空行
   let row = startRow;
@@ -292,7 +308,7 @@ function writeDayBlock(ws, project, day, sections, dateLabel, startRow) {
         target.value = cellText(cell, col.cls, day);
         target.font = { size: 9 };
         target.alignment = { vertical: "top", wrapText: true };
-        const argb = cell?.subj ? hexToArgb(getSubjectColor(cell.subj)) : undefined;
+        const argb = cell?.subj ? hexToArgb(subjectColor(cell.subj)) : undefined;
         if (argb) target.fill = solidFill(argb);
       });
       ws.getRow(row).height = ROW_HEIGHT_PERIOD;
@@ -310,25 +326,28 @@ function setDayColumnWidths(ws, maxCols) {
 }
 
 // 曜日 1 つ = 1 シート (B4 横・1 ページ収め)
-function buildDaySheet(workbook, project, day, sections, dateLabel) {
+function buildDaySheet(workbook, project, day, sections, dateLabel, subjectColor) {
   const maxCols = dayBlockCols(sections);
   const ws = workbook.addWorksheet(`${day}曜`, {
     pageSetup: applyDaySheetPrintDefaults(),
     properties: { defaultRowHeight: ROW_HEIGHT_DEFAULT },
   });
   setDayColumnWidths(ws, maxCols);
-  writeDayBlock(ws, project, day, sections, dateLabel, 1);
+  writeDayBlock(ws, project, day, sections, dateLabel, 1, subjectColor);
   return ws;
 }
 
 // 全曜日を 1 枚にまとめたシート (曜日ごとに改ページ)。配布時に「曜日別を
 // 1 枚ずつ選んで印刷」しなくてよいように、このシートだけ刷れば全曜日が
 // 1 曜日 1 ページで出る。fitToPage は手動改ページを潰すので固定倍率。
-function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
+function buildAllDaysSheet(workbook, project, daySections, dateLabel, subjectColor) {
   const maxCols = Math.max(...daySections.map((d) => dayBlockCols(d.sections)));
   const ws = workbook.addWorksheet(ALL_DAYS_SHEET_NAME, {
     pageSetup: {
-      paperSize: PAPER_SIZE_B4,
+      // 曜日別シート (B4 横 + fitToPage) と違い、こちらは手動改ページを
+      // 生かすため固定倍率。倍率は紙の大きさで決まるので A3 横にする
+      // (実測: 同じ下書きで B4 横 77% → A3 横 90%)。
+      paperSize: PAPER_SIZE_A3,
       orientation: "landscape",
       margins: DAY_SHEET_MARGINS,
     },
@@ -339,7 +358,15 @@ function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
   const heights = [];
   let row = 1;
   daySections.forEach(({ day, sections }, i) => {
-    const block = writeDayBlock(ws, project, day, sections, dateLabel, row);
+    const block = writeDayBlock(
+      ws,
+      project,
+      day,
+      sections,
+      dateLabel,
+      row,
+      subjectColor
+    );
     heights.push(block.heightPt);
     // 最後の曜日の後ろに改ページを入れると空白ページが 1 枚増える
     if (i < daySections.length - 1) ws.getRow(block.lastRow).addPageBreak();
@@ -352,6 +379,7 @@ function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
       ...Array.from({ length: maxCols - 1 }, () => COL_WIDTH_CLASS),
     ],
     blockHeightsPt: heights,
+    paper: A3_LANDSCAPE_IN,
   });
   return ws;
 }
@@ -359,20 +387,26 @@ function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
 // ─── workbook 構築 (純粋関数、テスト用に export) ────────────────────
 /**
  * @param {object} project RegularProject
- * @param {{days: string[], splitCampus?: boolean, dateLabel: string}} opts
+ * @param {{days: string[], splitCampus?: boolean, dateLabel: string,
+ *          subjectColor?: (subj: string) => string | null}} opts
+ *   subjectColor: 画面と同じ「教科で正規化した」科目カラー
+ *   (subjectColor.js)。未指定なら素の getSubjectColor。
  */
-export function buildRegularWorkbook(project, { days, splitCampus = true, dateLabel }) {
+export function buildRegularWorkbook(
+  project,
+  { days, splitCampus = true, dateLabel, subjectColor = getSubjectColor }
+) {
   const workbook = new ExcelJS.Workbook();
   const daySections = [];
   for (const day of days) {
     const sections = collectDaySheet(project, day, { splitCampus });
     if (sections.length === 0) continue;
     daySections.push({ day, sections });
-    buildDaySheet(workbook, project, day, sections, dateLabel);
+    buildDaySheet(workbook, project, day, sections, dateLabel, subjectColor);
   }
   // まとめシートは 2 曜日以上あるときだけ (1 曜日なら曜日別シートと同じ)
   if (daySections.length > 1) {
-    buildAllDaysSheet(workbook, project, daySections, dateLabel);
+    buildAllDaysSheet(workbook, project, daySections, dateLabel, subjectColor);
   }
   return workbook;
 }
@@ -535,7 +569,14 @@ const TEACHER_SHEET_HEADER = [
 ];
 
 // 講師 1 人分のシート: 週の担当コマ一覧 (曜日 → 開始時刻順) + 曜日別集計
-function buildTeacherSheet(workbook, project, name, week, dateLabel) {
+function buildTeacherSheet(
+  workbook,
+  project,
+  name,
+  week,
+  dateLabel,
+  subjectColor = getSubjectColor
+) {
   const ncols = TEACHER_SHEET_HEADER.length;
   const ws = workbook.addWorksheet(
     uniqueSheetName(workbook, sanitizeSheetName(name, "講師")),
@@ -584,7 +625,7 @@ function buildTeacherSheet(workbook, project, name, week, dateLabel) {
         cell.border =
           i === 0 ? { ...THIN_BORDER, top: MEDIUM_EDGE } : THIN_BORDER; // 曜日の区切りは太線
         if (ci === 5 && e.subj) {
-          const argb = hexToArgb(getSubjectColor(e.subj));
+          const argb = hexToArgb(subjectColor(e.subj));
           if (argb) cell.fill = solidFill(argb);
         }
       });
@@ -714,9 +755,14 @@ function buildClassSubjectSheet(workbook, project, classLoad, dateLabel) {
  * 講師が 1 人もいなければシート 0 の workbook を返す (呼び出し側で
  * エラーメッセージ)。
  * @param {object} project RegularProject
- * @param {{dateLabel: string}} opts
+ * @param {{dateLabel: string,
+ *          subjectColor?: (subj: string) => string | null}} opts
+ *   subjectColor: 曜日グリッドと同じ「教科で正規化した」科目カラー
  */
-export function buildRegularTeacherWorkbook(project, { dateLabel }) {
+export function buildRegularTeacherWorkbook(
+  project,
+  { dateLabel, subjectColor = getSubjectColor }
+) {
   const workbook = new ExcelJS.Workbook();
   const load = computeTeacherLoad(project);
   const active = load.rows.filter((r) => r.total > 0);
@@ -732,7 +778,8 @@ export function buildRegularTeacherWorkbook(project, { dateLabel }) {
       project,
       r.name,
       computeTeacherWeek(project, r.name),
-      dateLabel
+      dateLabel,
+      subjectColor
     );
   }
   return workbook;
@@ -763,7 +810,8 @@ async function downloadWorkbook(workbook, filename) {
 }
 
 /**
- * @param {{project: object, days: string[], splitCampus?: boolean, now?: Date}} params
+ * @param {{project: object, days: string[], splitCampus?: boolean, now?: Date,
+ *          subjectColor?: (subj: string) => string | null}} params
  * @returns {Promise<{daySheets: number, hasAllDaysSheet: boolean}>}
  *   呼び出し側が結果の通知を実態に合わせられるように内訳を返す
  *   (まとめシートは 2 曜日以上のときだけ作られる)
@@ -773,9 +821,15 @@ export async function downloadRegularExcel({
   days,
   splitCampus = true,
   now = new Date(),
+  subjectColor,
 }) {
   const dateLabel = fmtDateLabel(now);
-  const workbook = buildRegularWorkbook(project, { days, splitCampus, dateLabel });
+  const workbook = buildRegularWorkbook(project, {
+    days,
+    splitCampus,
+    dateLabel,
+    ...(subjectColor ? { subjectColor } : {}),
+  });
   if (workbook.worksheets.length === 0) {
     throw new Error("出力できる曜日がありません (セルが 1 つもありません)");
   }
@@ -790,10 +844,18 @@ export async function downloadRegularExcel({
   };
 }
 
-/** @param {{project: object, now?: Date}} params */
-export async function downloadRegularTeacherExcel({ project, now = new Date() }) {
+/** @param {{project: object, now?: Date,
+ *           subjectColor?: (subj: string) => string | null}} params */
+export async function downloadRegularTeacherExcel({
+  project,
+  now = new Date(),
+  subjectColor,
+}) {
   const dateLabel = fmtDateLabel(now);
-  const workbook = buildRegularTeacherWorkbook(project, { dateLabel });
+  const workbook = buildRegularTeacherWorkbook(project, {
+    dateLabel,
+    ...(subjectColor ? { subjectColor } : {}),
+  });
   if (workbook.worksheets.length === 0) {
     throw new Error("担当コマのある講師がいません");
   }

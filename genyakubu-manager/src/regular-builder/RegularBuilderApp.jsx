@@ -51,6 +51,7 @@ import { copyDay, describeDayCopy } from "./dayCopy";
 import { BulkEditDialog } from "./BulkEditDialog";
 import { bulkEditCells, describeBulkEdit, fillCells } from "./bulkEdit";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
+import { makeSubjectColorResolver } from "./subjectColor";
 import { useRegularHistory } from "./hooks/useRegularHistory";
 import { useRegularProjects } from "./hooks/useRegularProjects";
 import { useCellSelection } from "./hooks/useCellSelection";
@@ -71,6 +72,8 @@ export default function RegularBuilderApp({
   saveSlots,
   timetables,
   saveTimetables,
+  /** 親アプリの教科マスタ (name + aliases)。科目カラーの正規化に使う */
+  subjects = [],
   isAdmin,
 }) {
   const toasts = useToasts();
@@ -114,6 +117,14 @@ export default function RegularBuilderApp({
     false
   );
   const [isCompact, setIsCompact] = usePersistedToggle(LS.regularBuilderCompact, false);
+  // 🖨 白黒: 紙面から背景色 (科目カラー・学年色・セクション見出し) を落とし、
+  // 罫線と文字だけで刷る。下書きの目視チェックはこれで足りるのでトナーを
+  // 使わない。配布用に刷るときだけ OFF に戻して色付きで出す。画面表示は
+  // 変えない (紙面だけの切替) — 画面の色は編集の手掛かりとして残す
+  const [monoPrint, setMonoPrint] = usePersistedToggle(
+    LS.regularBuilderMonoPrint,
+    false
+  );
   // 📊 集計パネル (講師×曜日のコマ数)。開閉はリロード後も保持
   const [showSummary, setShowSummary] = usePersistedToggle(
     LS.regularBuilderSummary,
@@ -269,6 +280,13 @@ export default function RegularBuilderApp({
     return counts;
   }, [project.tabs]);
 
+  // 科目カラーの解決 (教科マスタで正規化してから色を引く)。参照を固定して
+  // RegularCell の memo を効かせるため useMemo で 1 つだけ作る
+  const subjectColor = useMemo(
+    () => makeSubjectColorResolver(subjects),
+    [subjects]
+  );
+
   // 全曜日まとめて印刷: true の間だけ print 専用の全曜日 DOM を描画して
   // window.print() し、ダイアログが閉じたら (afterprint) 元に戻す
   const [printAllDays, setPrintAllDays] = useState(false);
@@ -345,6 +363,7 @@ export default function RegularBuilderApp({
     commitWorkspace,
     usedDays,
     splitCampus,
+    subjectColor,
     onProjectChanged: () => setActiveTabId(null),
     onImported: () => setShowImport(false),
   });
@@ -983,7 +1002,11 @@ export default function RegularBuilderApp({
   }, [project.name]);
 
   return (
-    <div className="builder-root font-sans flex flex-col gap-3">
+    /* regb-mono: 🖨 白黒トグル。印刷時だけ背景色を落とす目印
+       (画面の見た目は変えない — 実体は printStyle.js の @media print) */
+    <div
+      className={`builder-root font-sans flex flex-col gap-3${monoPrint ? " regb-mono" : ""}`}
+    >
       <style>{REGULAR_PRINT_STYLE}</style>
       {/* 入力候補 (セルの「✎ 直接入力」から参照するグローバル datalist) */}
       <datalist id="regb-teachers">
@@ -1448,6 +1471,17 @@ export default function RegularBuilderApp({
               🖨 全曜日
             </button>
           )}
+          {(weekView || multiDayView ? true : !!selectedDay) && (
+            <button
+              type="button"
+              aria-pressed={monoPrint}
+              onClick={() => setMonoPrint((v) => !v)}
+              title="紙面から背景色を落として罫線と文字だけで刷る (下書きチェック用のトナー節約)。画面の色は変わりません。配布用に色付きで刷るときは OFF に戻してください"
+              className={UI.btnToggle(monoPrint)}
+            >
+              ⬛ 白黒
+            </button>
+          )}
           {usedDays.length > 0 && (
             <>
               <button
@@ -1669,6 +1703,7 @@ export default function RegularBuilderApp({
                 </div>
                 <RegularGrid
                   project={project}
+                  subjectColor={subjectColor}
                   day={d}
                   onCellChange={onCellChange}
                   onClearCell={onClearCell}
@@ -1714,6 +1749,7 @@ export default function RegularBuilderApp({
             days={multiDays}
             onSelectDays={setSelectedDays}
             gridProps={{
+              subjectColor,
               onCellChange,
               onClearCell,
               onSwapCells,
@@ -1754,6 +1790,7 @@ export default function RegularBuilderApp({
           {selectedDay ? (
             <RegularGrid
               project={project}
+              subjectColor={subjectColor}
               day={selectedDay}
               onCellChange={onCellChange}
               onClearCell={onClearCell}
@@ -1801,6 +1838,7 @@ export default function RegularBuilderApp({
               </div>
               <RegularGrid
                 project={project}
+                subjectColor={subjectColor}
                 day={d}
                 onCellChange={onCellChange}
                 onClearCell={onClearCell}

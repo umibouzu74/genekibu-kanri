@@ -35,6 +35,7 @@ export const LS = {
   regularBuilderSummarySpan: "genyakubu-regular-builder-summary-span",
   regularBuilderWeekView: "genyakubu-regular-builder-week-view",
   regularBuilderMultiDay: "genyakubu-regular-builder-multi-day",
+  regularBuilderMonoPrint: "genyakubu-regular-builder-mono-print",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────

@@ -148,7 +148,10 @@ describe("buildRegularWorkbook: 全曜日まとめシート", () => {
       dateLabel: "2026-08-05",
     });
     const ws = wb.getWorksheet("全曜日");
-    expect(ws.pageSetup.paperSize).toBe(12);
+    // A3 (8) 横 — 曜日別シート (B4 = 12) と違い固定倍率なので、紙を
+    // 大きくした分そのまま字が大きく刷れる
+    expect(ws.pageSetup.paperSize).toBe(8);
+    expect(wb.getWorksheet("月曜").pageSetup.paperSize).toBe(12);
     expect(ws.pageSetup.orientation).toBe("landscape");
     expect(ws.pageSetup.fitToPage).toBe(false);
     expect(ws.pageSetup.scale).toBeGreaterThan(0);
@@ -188,6 +191,23 @@ describe("estimatePrintScale", () => {
     });
     expect(wide).toBeLessThan(100);
     expect(wide).toBeGreaterThan(10);
+  });
+
+  it("同じ内容なら A3 横の方が B4 横より大きく刷れる", () => {
+    // 「全曜日」シートを A3 に上げた理由の固定。固定倍率方式なので紙が
+    // 大きいほど字が大きくなる (実データで B4 77% → A3 90%)。
+    const args = {
+      colWidths: [11, ...Array.from({ length: 11 }, () => 16)],
+      blockHeightsPt: [810],
+      margins,
+    };
+    const b4 = estimatePrintScale({ ...args, paper });
+    const a3 = estimatePrintScale({
+      ...args,
+      paper: { width: 420 / 25.4, height: 297 / 25.4 },
+    });
+    expect(b4).toBeLessThan(a3);
+    expect(a3).toBeLessThanOrEqual(100);
   });
 
   it("最も背の高い曜日ブロックに合わせて縮む", () => {

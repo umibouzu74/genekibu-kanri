@@ -26,6 +26,8 @@ export function useRegularProjects({
   commitWorkspace,
   usedDays,
   splitCampus,
+  /** 画面と同じ科目カラー (教科マスタで正規化済み)。Excel にも同じ色を載せる */
+  subjectColor,
   onProjectChanged,
   onImported,
 }) {
@@ -162,29 +164,31 @@ export function useRegularProjects({
         project,
         days: usedDays,
         splitCampus,
+        subjectColor,
       });
       // まとめシートは 2 曜日以上のときだけ作られるので、文面も実態に合わせる
+      // (曜日別は B4 横 / 全曜日まとめだけ A3 横 — 紙が違うので明記する)
       toasts.success(
-        `Excel を書き出しました（${daySheets} 曜日ぶんのシート` +
-          `${hasAllDaysSheet ? " + 全曜日まとめ" : ""}・B4 横）`
+        `Excel を書き出しました（${daySheets} 曜日ぶんのシート・B4 横` +
+          `${hasAllDaysSheet ? " + 全曜日まとめ・A3 横" : ""}）`
       );
     } catch (e) {
       toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);
     }
-  }, [project, usedDays, splitCampus, toasts]);
+  }, [project, usedDays, splitCampus, subjectColor, toasts]);
 
   // ── 講師別 Excel (集計 + 講師ごとの週間シート)
   const exportTeacherExcel = useCallback(async () => {
     try {
       const { downloadRegularTeacherExcel } = await import("../excelExport");
-      await downloadRegularTeacherExcel({ project });
+      await downloadRegularTeacherExcel({ project, subjectColor });
       toasts.success(
         "集計 Excel を書き出しました（講師×曜日 + クラス別科目 + 講師ごとにシート）"
       );
     } catch (e) {
       toasts.error(`講師別 Excel を書き出せませんでした: ${e?.message || e}`);
     }
-  }, [project, toasts]);
+  }, [project, subjectColor, toasts]);
 
   return {
     switchProject,

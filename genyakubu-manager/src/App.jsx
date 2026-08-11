@@ -1324,6 +1324,9 @@ export default function App() {
               saveSlots={saveSlots}
               timetables={timetables}
               saveTimetables={saveTimetables}
+              /* 科目カラーを「教科」単位に揃えるための教科マスタ
+                 (理科A / 理科B が別色になるのを防ぐ) */
+              subjects={subjects}
               isAdmin={isAdmin}
             />
           )}
