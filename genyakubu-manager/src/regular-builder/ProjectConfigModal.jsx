@@ -844,6 +844,37 @@ export function ProjectConfigModal({
                     ))}
                 </div>
               </div>
+
+              {/* 校舎間 (本校 ↔ 亀井町) の移動時間。必要分数は施設ごとの
+                  事情なので既定値は置かず、入れたときだけチェックする */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-builder-border">
+                <span className={sectionHead}>校舎間の移動時間</span>
+                <div className={UI.hint}>
+                  同じ講師が本校と亀井町（教室「亀◯◯」）を続けて担当するとき、
+                  コマの間隔がこの分数に満たないと問題一覧で警告します。空欄 = チェックしません。
+                </div>
+                <label className="text-[11px] text-builder-ink inline-flex items-center gap-1">
+                  移動に必要な時間
+                  <input
+                    type="number"
+                    min="1"
+                    value={project.campusTravelMinutes ?? ""}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      saveProject((p) => {
+                        const next = { ...p };
+                        if (e.target.value !== "" && Number.isFinite(v) && v > 0)
+                          next.campusTravelMinutes = v;
+                        else delete next.campusTravelMinutes;
+                        return next;
+                      });
+                    }}
+                    aria-label="校舎間の移動に必要な分数 (空欄でチェックしない)"
+                    className={`${UI.input} w-16`}
+                  />
+                  分
+                </label>
+              </div>
             </>
           )}
         </div>

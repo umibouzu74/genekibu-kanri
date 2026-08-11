@@ -675,6 +675,10 @@ export function sanitizeProject(raw) {
   if (Array.isArray(raw.approvedConflicts)) {
     p.approvedConflicts = raw.approvedConflicts.map((s) => str(s)).filter(Boolean);
   }
+  // 校舎間 (本校 ↔ 亀井町) の移動に必要な分数。正の数のみ。
+  // 未設定 = 校舎移動のチェックをしない (conflicts.computeConflicts)
+  const travel = Number(raw.campusTravelMinutes);
+  if (Number.isFinite(travel) && travel > 0) p.campusTravelMinutes = travel;
   // スナップショット (任意)。data は snapshots を除いて再帰サニタイズする
   // (入れ子を剥がすことで悪意ある深いネストでも再帰は 2 段で止まる)
   if (Array.isArray(raw.snapshots)) {

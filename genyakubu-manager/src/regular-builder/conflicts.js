@@ -19,9 +19,26 @@
 
 import { biweeklyPartner, isBiweekly, splitTeacherField } from "../utils/biweekly";
 import { timeOverlaps } from "../utils/chainSubstitution";
-import { makeCellKey, resolveAllEntries, effectiveRoom, tabPeriods } from "./model";
+import {
+  isAnnexRoom,
+  makeCellKey,
+  resolveAllEntries,
+  effectiveRoom,
+  tabPeriods,
+} from "./model";
 
 const TIME_RE = /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/;
+
+// 時刻範囲を分 (start/end) に分解する。teacherLoad.periodRange と同じ規則だが、
+// teacherLoad はこのモジュールの entryRef を import しているため、逆向きに
+// import すると循環参照になる。判定に必要なのはこれだけなのでローカルに持つ
+function parseTimeRange(time) {
+  const m = String(time || "").trim().match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const start = Number(m[1]) * 60 + Number(m[2]);
+  const end = Number(m[3]) * 60 + Number(m[4]);
+  return end > start ? { start, end } : null;
+}
 
 /**
  * そのコマに関わる講師名 = teacher フィールド + 隔週パートナー。
@@ -177,6 +194,62 @@ export function computeConflicts(project) {
           label: `${e.day} 講師 ${name} NG (${when}): ${describeEntry(e)}`,
           refs: [entryRef(e)],
           reasons: [`講師 ${name} の NG 時間帯 (${e.day} ${when}) です`],
+        });
+      }
+    }
+  }
+
+  // ── 校舎間の移動 (本校 ↔ 亀井町) ────────────────────────────────
+  // 時間帯が重なっていなくても、本校のコマ直後に亀井町のコマだと物理的に
+  // 間に合わない。必要な移動時間は施設ごとの事情なので
+  // project.campusTravelMinutes に入っているときだけチェックする
+  // (未設定 = チェックしない — もっともらしい既定値を勝手に決めない)。
+  // 時間帯が重なるケースは上の講師重複が既に拾っているので二重に出さない。
+  const travelMinutes = Number(project.campusTravelMinutes);
+  if (Number.isFinite(travelMinutes) && travelMinutes > 0) {
+    // 曜日 × 講師 → その人のコマ (時刻・校舎つき)
+    const byDayTeacher = new Map();
+    for (const e of entries) {
+      const range = parseTimeRange(e.period.time);
+      const room = effectiveRoom(e);
+      if (!range || !room) continue;
+      for (const name of entryTeachers(e.cell)) {
+        const k = `${e.day}|${name}`;
+        if (!byDayTeacher.has(k)) byDayTeacher.set(k, []);
+        byDayTeacher.get(k).push({
+          e,
+          name,
+          range,
+          campus: isAnnexRoom(room) ? "亀井町" : "本校",
+        });
+      }
+    }
+    // 開始時刻順に並べ、隣り合うコマだけを見る (間に別のコマが挟まる
+    // 組み合わせは、その途中のコマとの隣接で必ず判定される)
+    for (const items of byDayTeacher.values()) {
+      if (items.length < 2) continue;
+      // キーを分解せず要素から引く (講師名に区切り文字が入っても崩れない)
+      const day = items[0].e.day;
+      const name = items[0].name;
+      items.sort((a, b) => a.range.start - b.range.start);
+      for (let i = 1; i < items.length; i++) {
+        const prev = items[i - 1];
+        const cur = items[i];
+        if (prev.campus === cur.campus) continue;
+        const gap = cur.range.start - prev.range.end;
+        if (gap < 0) continue; // 重なりは講師重複として既に出ている
+        if (gap >= travelMinutes) continue;
+        list.push({
+          type: "travel",
+          day,
+          label:
+            `${day} 校舎移動 ${name}: ${describeEntry(prev.e)}（${prev.campus}）→ ` +
+            `${describeEntry(cur.e)}（${cur.campus}）は間隔 ${gap} 分（必要 ${travelMinutes} 分）`,
+          refs: [entryRef(prev.e), entryRef(cur.e)],
+          reasons: [
+            `${cur.campus}への移動が間に合いません（次のコマまで ${gap} 分・必要 ${travelMinutes} 分）`,
+            `${prev.campus}からの移動が間に合いません（前のコマから ${gap} 分・必要 ${travelMinutes} 分）`,
+          ],
         });
       }
     }

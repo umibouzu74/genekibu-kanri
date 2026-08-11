@@ -466,3 +466,83 @@ describe("buildConflictView: 対象の消えた承認 (stale)", () => {
     expect(buildConflictView(list, undefined).stale).toEqual([]);
   });
 });
+
+// ─── 校舎間の移動 (本校 ↔ 亀井町) ────────────────────────────────────
+// 時間帯が重なっていなくても物理的に間に合わない移動を拾う。必要分数は
+// 施設ごとの事情なので project.campusTravelMinutes を入れたときだけ動く。
+
+describe("computeConflicts - 校舎間の移動", () => {
+  // 中3 1限 (18:00-18:45) と 中3 2限 (18:55-19:40) → 間隔 10 分
+  const crossCampus = (over = {}) => {
+    const p = twoTabProject();
+    p.tabs[0].classes = [
+      { id: 1, label: "S", room: "501" }, // 本校
+      { id: 2, label: "A", room: "亀21" }, // 亀井町
+    ];
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = { subj: "数学", teacher: "堀上" };
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = { subj: "英語", teacher: "堀上" };
+    return { ...p, ...over };
+  };
+  const travel = (p) => computeConflicts(p).list.filter((c) => c.type === "travel");
+
+  it("未設定なら校舎移動はチェックしない", () => {
+    expect(travel(crossCampus())).toHaveLength(0);
+  });
+
+  it("間隔が必要分数に満たなければ検出する", () => {
+    const list = travel(crossCampus({ campusTravelMinutes: 15 }));
+    expect(list).toHaveLength(1);
+    expect(list[0].label).toContain("校舎移動 堀上");
+    expect(list[0].label).toContain("間隔 10 分");
+    expect(list[0].label).toContain("必要 15 分");
+    expect(list[0].refs).toHaveLength(2);
+  });
+
+  it("間隔が足りていれば検出しない", () => {
+    expect(travel(crossCampus({ campusTravelMinutes: 10 }))).toHaveLength(0);
+    expect(travel(crossCampus({ campusTravelMinutes: 5 }))).toHaveLength(0);
+  });
+
+  it("同じ校舎の連続コマは対象外", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    p.tabs[0].classes[1].room = "502"; // 両方とも本校
+    expect(travel(p)).toHaveLength(0);
+  });
+
+  it("別の講師なら対象外", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)].teacher = "半田";
+    expect(travel(p)).toHaveLength(0);
+  });
+
+  it("時間帯が重なるケースは講師重複が拾うので二重に出さない", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    // 中12 1限 (18:55-19:40) と同じ時間帯の亀井町コマにする
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = { subj: "英語", teacher: "堀上" };
+    p.tabs[1].classes = [{ id: 1, label: "S", room: "亀21" }];
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "国語", teacher: "堀上" };
+    const list = computeConflicts(p).list;
+    // 18:55 の 2 コマ (本校→亀井町の同時刻) は講師重複。移動は
+    // 18:00 本校 → 18:55 亀井町 の 1 件だけ (同校舎の連続は対象外)
+    expect(list.filter((c) => c.type === "teacher")).toHaveLength(1);
+    expect(list.filter((c) => c.type === "travel")).toHaveLength(1);
+  });
+
+  it("隔週パートナーも移動の対象 (関わる講師の定義を揃える)", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = {
+      subj: "数学",
+      teacher: "半田",
+      note: "隔週(堀上)",
+    };
+    const list = travel(p);
+    expect(list).toHaveLength(1);
+    expect(list[0].label).toContain("堀上");
+  });
+
+  it("教室未設定のコマは判定しない", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    p.tabs[0].classes[0].room = "";
+    expect(travel(p)).toHaveLength(0);
+  });
+});

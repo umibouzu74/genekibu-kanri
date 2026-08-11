@@ -1034,3 +1034,18 @@ describe("shiftPeriodTimes", () => {
     expect(shiftPeriodTimes(p, 15).project).toBe(p);
   });
 });
+
+describe("sanitizeProject: campusTravelMinutes", () => {
+  it("正の数だけ受け入れる", () => {
+    expect(sanitizeProject({ name: "x", campusTravelMinutes: 15 }).campusTravelMinutes).toBe(15);
+    expect(sanitizeProject({ name: "x", campusTravelMinutes: "20" }).campusTravelMinutes).toBe(20);
+  });
+
+  it("0・負値・非数は未設定に倒す (= チェックしない)", () => {
+    for (const v of [0, -5, "abc", null, undefined]) {
+      expect(
+        "campusTravelMinutes" in sanitizeProject({ name: "x", campusTravelMinutes: v })
+      ).toBe(false);
+    }
+  });
+});

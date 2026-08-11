@@ -20,6 +20,7 @@ const CONFLICT_TYPE_LABELS = [
   ["room", "教室の重複"],
   ["class", "クラスの重複"],
   ["ng", "講師NG"],
+  ["travel", "校舎間の移動"],
 ];
 
 /**
