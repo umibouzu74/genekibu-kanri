@@ -91,6 +91,9 @@ const sectionDeptRank = (tabs) => {
 
 export function RegularGrid({
   project,
+  /** 科目名 → 背景色。教科マスタで正規化済み (subjectColor.js)。
+      未指定なら RegularCell が素の getSubjectColor に落ちる */
+  subjectColor = null,
   day,
   onCellChange,
   onClearCell,
@@ -674,7 +677,10 @@ export function RegularGrid({
     <div
       ref={containerRef}
       onDragOver={handleContainerDragOver}
-      className={`${stackSections ? "contents" : "flex flex-wrap items-start gap-3"} print-container ${isCompact ? "text-xs" : "text-sm"}`}
+      // regb-compact: 紙面のフォントを 1px 大きくする印刷スタイル
+      // (printStyle.js) をコンパクト表示には当てないための目印。
+      // 詰めて見たいのがコンパクトの目的なので紙面でも詰めたまま刷る
+      className={`${stackSections ? "contents" : "flex flex-wrap items-start gap-3"} print-container ${isCompact ? "regb-compact text-xs" : "text-sm"}`}
     >
       {sections.map((s, si) => {
         const collapsed = collapsedKeys.has(s.key);
@@ -895,6 +901,7 @@ export function RegularGrid({
                             key={`${project.id}:${ref}`}
                             cellRef={ref}
                             cell={cell}
+                            subjectColor={subjectColor}
                             subjects={project.subjects}
                             teachers={project.teachers}
                             conflictText={reasons ? reasons.join("\n") : ""}

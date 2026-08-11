@@ -208,7 +208,12 @@ export function Sidebar({
     <>
       {open && (
         <div
-          className="sidebar-backdrop"
+          /* no-print 必須: 紙面のメディアクエリは「画面幅」ではなく「紙面幅」
+             で評価される (A4 縦 - @page margin 8mm ≒ 733px < 769px) ため、
+             デスクトップ幅で backdrop を消している
+             @media (min-width: 769px) は印刷時には効かない。これが無いと
+             open のまま印刷したとき rgba(0,0,0,.4) が紙面全体に乗る */
+          className="sidebar-backdrop no-print"
           style={{
             position: "fixed",
             inset: 0,

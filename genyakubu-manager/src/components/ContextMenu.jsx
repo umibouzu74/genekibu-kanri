@@ -18,6 +18,8 @@ export function ContextMenu({ x, y, items, onClose }) {
   return (
     <div
       ref={ref}
+      /* 開いたまま印刷すると紙面に浮いたメニューが写り込む */
+      className="no-print"
       style={{
         position: "fixed",
         left: x,

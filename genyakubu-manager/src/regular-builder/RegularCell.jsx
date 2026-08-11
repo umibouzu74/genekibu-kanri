@@ -71,6 +71,9 @@ function FreeTextInput({
 export const RegularCell = memo(function RegularCell({
   cellRef,
   cell,
+  /** 科目名 → 背景色。教科マスタで正規化された解決関数 (subjectColor.js)。
+      未指定なら素の getSubjectColor (文字列そのもの) にフォールバック */
+  subjectColor = null,
   subjects,
   teachers,
   conflictText,
@@ -140,7 +143,9 @@ export const RegularCell = memo(function RegularCell({
   // 🔒 ロック中: 編集・クリア・ドラッグを受け付けない (解除は右クリック
   // メニュー / 選択バー)。コピー (Ctrl+C) と選択は許可する
   const locked = !!c.locked;
-  const bgColor = conflictText ? CONFLICT_CELL_BG : getSubjectColor(c.subj);
+  const bgColor = conflictText
+    ? CONFLICT_CELL_BG
+    : (subjectColor || getSubjectColor)(c.subj);
   const innerBorder = conflictText
     ? "border-2 border-builder-red"
     : "border border-builder-border";
@@ -230,9 +235,15 @@ export const RegularCell = memo(function RegularCell({
           className={`flex flex-col rounded h-full ${innerBorder} ${isCompact ? "gap-0 p-0.5 min-h-[1.6rem]" : "gap-0.5 p-1 min-h-[2.9rem]"} ${!bgColor && !hasContent ? "bg-builder-surface-alt/50" : ""}`}
           style={bgColor ? { backgroundColor: bgColor } : undefined}
         >
-          <div className={`flex items-center min-w-0 ${isCompact ? "gap-0.5" : "gap-1"}`}>
+          {/* regb-cell-head: 印刷スタイル (printStyle.js) が flex を解除する
+              目印。紙面は truncate を外して折り返すが、⚠バッジが同じ行を
+              占めたままだと狭い列で科目名が 1 文字ずつ縦に折り返るため、
+              紙面ではブロック整形にしてバッジを科目名の後ろへ流す */}
+          <div
+            className={`regb-cell-head flex items-center min-w-0 ${isCompact ? "gap-0.5" : "gap-1"}`}
+          >
             <span
-              className={`flex-1 min-w-0 truncate font-bold text-builder-ink ${isCompact ? "text-[11px] leading-tight" : "text-[13px]"}`}
+              className={`regb-cell-subj flex-1 min-w-0 truncate font-bold text-builder-ink ${isCompact ? "text-[11px] leading-tight" : "text-[13px]"}`}
             >
               {c.subj || ""}
             </span>
@@ -287,7 +298,7 @@ export const RegularCell = memo(function RegularCell({
           </div>
           {c.teacher && (
             <div
-              className={`truncate ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] leading-tight" : "text-xs"}`}
+              className={`regb-cell-teacher truncate ${conflictText ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] leading-tight" : "text-xs"}`}
             >
               {/* 隔週コマは note のパートナーも「主担当 / パートナー」で見せる
                   (ダッシュボードの表示と同じ) */}
@@ -296,7 +307,7 @@ export const RegularCell = memo(function RegularCell({
           )}
           {(c.room || displayRoomFallback || c.note) && (
             <div
-              className={`text-builder-ink-muted truncate leading-tight ${isCompact ? "text-[9px]" : "text-[10px]"}`}
+              className={`regb-cell-sub text-builder-ink-muted truncate leading-tight ${isCompact ? "text-[9px]" : "text-[10px]"}`}
             >
               {/* 合同セルは列見出しが無いので既定教室もここに出す */}
               {[c.room || displayRoomFallback, c.note].filter(Boolean).join(" ")}

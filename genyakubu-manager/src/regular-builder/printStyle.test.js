@@ -40,6 +40,82 @@ describe("REGULAR_PRINT_STYLE", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/input:placeholder-shown\s*\{[^}]*visibility:\s*hidden/);
   });
 
+  it("紙面ではセルの truncate (…) を解除して全文を折り返す", () => {
+    // 画面は行高を揃えるため科目・講師・備考を truncate しているが、紙は
+    // クリックして全文を読めないので省略してはいけない。Tailwind の
+    // truncate は 3 プロパティの複合なので 3 つとも戻っていること。
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*overflow:\s*visible/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*text-overflow:\s*clip/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*white-space:\s*normal/
+    );
+  });
+
+  it("紙面ではセル見出し行の flex を解除する (狭い列で 1 文字ずつ折り返さない)", () => {
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.regb-cell-head\s*\{[^}]*display:\s*block/
+    );
+  });
+
+  it("紙面のセルは画面より 1px 大きく刷る (コンパクト表示は据え置き)", () => {
+    // 字を大きくすると折り返しが減り、実測では紙が増えるどころか減った
+    // (週表示 13 → 12 ページ)。コンパクトは「詰めて見る」ためなので対象外
+    for (const [cls, px] of [
+      ["regb-cell-subj", 14],
+      ["regb-cell-teacher", 13],
+      ["regb-cell-sub", 11],
+    ]) {
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        new RegExp(
+          `\\.print-container:not\\(\\.regb-compact\\) \\.${cls}\\s*\\{[^}]*font-size:\\s*${px}px`
+        )
+      );
+    }
+  });
+
+  describe("🖨 白黒 (regb-mono)", () => {
+    it("背景の塗りを全部落として文字を黒に統一する", () => {
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        /\.regb-mono \.print-container \*\s*\{[^}]*background-color:\s*transparent/
+      );
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        /\.regb-mono \.print-container \*\s*\{[^}]*background-image:\s*none/
+      );
+      // 白抜き文字 (セクション見出し・⚠バッジ) が白地で消えないように
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        /\.regb-mono \.print-container \*\s*\{[^}]*color:\s*#000/
+      );
+    });
+
+    it("塗りの代わりに升目の罫線を引く (style/width まで明示)", () => {
+      // Tailwind preflight を読み込んでいないため border-* は幅だけで
+      // border-style が付かず何も描かれない。白黒では自分で引く
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        /\.regb-mono \.print-container td[^{]*\{[^}]*border:\s*1px solid/
+      );
+    });
+
+    it("セクション見出しは下線 + 太字で見出しらしさを残す", () => {
+      expect(REGULAR_PRINT_STYLE).toMatch(
+        /\.regb-mono[^{]*\.regb-section > :first-child\s*\{[^}]*border-bottom:\s*2px solid/
+      );
+    });
+
+    it("白黒指定が無ければ従来どおり色付きで刷る (規則は regb-mono の下だけ)", () => {
+      const mono = REGULAR_PRINT_STYLE.slice(
+        REGULAR_PRINT_STYLE.indexOf("🖨 白黒")
+      );
+      // 白黒ブロックの規則は全て .regb-mono で始まる = 通常印刷に漏れない
+      const selectors = mono.match(/^\s*\.[\w-][^{]*\{/gm) || [];
+      expect(selectors.length).toBeGreaterThan(0);
+      for (const sel of selectors) expect(sel.trim()).toMatch(/^\.regb-mono\b/);
+    });
+  });
+
   it("列見出しをページごとに繰り返すため sticky を静的化する", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/thead[^{]*\{[^}]*position:\s*static/);
   });

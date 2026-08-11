@@ -284,6 +284,9 @@ export function CommandPalette({
 
   return (
     <div
+      /* 開いたまま印刷されると rgba(0,0,0,.5) が紙面全体を覆う
+         (サイドバー backdrop と同じ失敗) */
+      className="no-print"
       style={{
         position: "fixed",
         inset: 0,

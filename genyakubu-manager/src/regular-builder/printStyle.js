@@ -71,6 +71,40 @@ export const REGULAR_PRINT_STYLE = `
     padding-right: 0 !important;
     background-image: none !important;
   }
+  /* 画面のセルは行高を揃えるため科目・講師・備考を truncate (…) している。
+     画面はクリックすれば全文が読めるが、**紙は読めない** ので、紙面では
+     省略をやめて折り返す。RegularCell / RegularGrid の Tailwind
+     truncate が対象 (overflow:hidden + text-overflow:ellipsis +
+     white-space:nowrap の 3 点セットなので 3 つとも戻す)。
+     td 側の overflow-wrap: anywhere と噛み合って長い科目名も収まる。 */
+  .print-container .truncate {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+  /* 科目名と ⚠バッジの行は flex を解除してブロック整形にする。flex の
+     ままだと狭い列 (7 列以上のセクション) でバッジが横幅を取り、科目名が
+     1 文字ずつ縦に折り返ってしまう。ブロックなら科目名が行を使い切り、
+     入らないときだけバッジが次の行へ流れる */
+  .print-container .regb-cell-head {
+    display: block !important;
+  }
+  .print-container .regb-cell-head > span {
+    display: inline;
+  }
+  /* 紙面のセルは画面より 1px 大きく刷る (科目 13→14 / 講師 12→13 /
+     教室・備考 10→11px ≒ 7.5pt→8.3pt)。実測では字を大きくした方が
+     行の折り返しが減り、週表示の紙は 13 → 12 ページに**減った**。
+     コンパクト表示 (regb-compact) は「詰めて見る」のが目的なので据え置く */
+  .print-container:not(.regb-compact) .regb-cell-subj {
+    font-size: 14px !important;
+  }
+  .print-container:not(.regb-compact) .regb-cell-teacher {
+    font-size: 13px !important;
+  }
+  .print-container:not(.regb-compact) .regb-cell-sub {
+    font-size: 11px !important;
+  }
   /* 空欄の教室・備考は紙面に出さない (プレースホルダ文字も入力枠も)。
      visibility なのでレイアウトは崩れない */
   .print-container input::placeholder {
@@ -97,6 +131,39 @@ export const REGULAR_PRINT_STYLE = `
   .print-container td.regb-selected {
     box-shadow: none !important;
     background-color: transparent !important;
+  }
+
+  /* ─── 🖨 白黒 (インク節約) ────────────────────────────────────────
+     下書きの目視チェック用。背景の塗り (科目カラー・学年色・セクション
+     見出し・重複の赤) を全部落として、罫線と文字だけで刷る。
+     色を「刷らない」だけでは白抜き文字 (セクション見出し・⚠バッジ) が
+     白地に白で消えるため、文字色も黒に統一する。塗りが無くなった分の
+     区切りは罫線と太字で補う。**画面は色付きのまま** — 紙面だけの切替。 */
+  .regb-mono .print-container,
+  .regb-mono .print-container * {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  /* 表の骨格を罫線で引き直す。この画面の升目は「セルの塗り分け」で見せて
+     おり罫線は実は描かれていない (Tailwind の preflight を読み込んでいない
+     ため border-* ユーティリティに border-style が付かず、幅だけ指定されて
+     何も出ない)。塗りを落とす白黒では列を追えなくなるので、ここだけ
+     style/width も明示して升目を出す */
+  .regb-mono .print-container td,
+  .regb-mono .print-container th {
+    border: 1px solid #999 !important;
+  }
+  /* セクション見出し (色帯 + 白抜き) は黒の下線と太字で見出しらしさを残す */
+  .regb-mono .print-container .regb-section > :first-child {
+    border-bottom: 2px solid #000 !important;
+    font-weight: 700 !important;
+  }
+  .regb-mono .print-container .regb-cell-head > span:not(:first-child) {
+    border: 1px solid #000 !important;
+    border-radius: 2px;
+    padding: 0 2px;
   }
 }
 `.trim();

@@ -1324,6 +1324,9 @@ export default function App() {
               saveSlots={saveSlots}
               timetables={timetables}
               saveTimetables={saveTimetables}
+              /* 科目カラーを「教科」単位に揃えるための教科マスタ
+                 (理科A / 理科B が別色になるのを防ぐ) */
+              subjects={subjects}
               isAdmin={isAdmin}
             />
           )}
@@ -1647,13 +1650,21 @@ export default function App() {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @media (min-width: 769px) {
+        /* ─── レスポンシブ規則は必ず screen に限定する ───────────────
+           印刷時のメディアクエリは「画面幅」ではなく「紙面幅」で評価される
+           (A4 縦 = 210mm - 余白 ≒ 718〜733px)。screen を付けないと
+           デスクトップで印刷しても紙の上だけモバイル規則が効き、
+           **用紙サイズを変えると紙面レイアウトが黙って変わる**。
+           実際、sidebar-backdrop が紙面全体に乗って出力が暗くなる不具合は
+           これが原因だった。紙面のレイアウトは下の @media print だけで
+           決めること。 */
+        @media screen and (min-width: 769px) {
           .sidebar { left: 0 !important; position: fixed !important; }
           .sidebar-close { display: none !important; }
           .sidebar-backdrop { display: none !important; }
           .hamburger { display: none !important; }
         }
-        @media (max-width: 768px) {
+        @media screen and (max-width: 768px) {
           .sidebar-spacer { display: none !important; }
           .dash-sections { grid-template-columns: 1fr !important; }
           .excel-grid-sections { grid-template-columns: 1fr !important; }
@@ -1678,7 +1689,7 @@ export default function App() {
            モバイルと同じ統合スクロールにする。「メニュー固定・講師のみ
            スクロール」分割のままだと、講師一覧の flex 高さが数 px に潰れて
            ログインフォームの裏に隠れ、講師を選べなくなるため。 */
-        @media (max-height: 860px) {
+        @media screen and (max-height: 860px) {
           .sidebar-scroll {
             display: block !important;
             overflow-y: auto !important;
@@ -1687,7 +1698,7 @@ export default function App() {
           }
           .sidebar-teachers { overflow-y: visible !important; }
         }
-        @media (max-width: 480px) {
+        @media screen and (max-width: 480px) {
           body { font-size: 14px; }
           /* iOS Safari prevents auto-zoom only when input font-size >= 16px。
              checkbox/radio/range/color は見た目が font-size に連動すると困るため除外。 */
@@ -1705,11 +1716,11 @@ export default function App() {
           .slot-form-row > input, .slot-form-row > select { width: 100% !important; min-width: 0 !important; }
           .slot-form-row-error { margin-left: 0 !important; }
         }
-        @media (hover: none) {
+        /* 印刷メディアも hover: none を報告するため screen 限定にする
+           (紙面の見え方は @media print だけで決める方針) */
+        @media screen and (hover: none) {
           .master-slot-actions { opacity: 1 !important; }
         }
-        /* print ルールは mobile ルールの後に置き、印刷時にスマホ用の
-           font-size: 16px が勝たないようにする (source order で優先) */
         @media print {
           /* アプリシェルは通常 height:100vh のフレックス + .app-main が
              overflow:auto のスクロールペイン。そのまま window.print() すると
@@ -1718,8 +1729,18 @@ export default function App() {
              (直接 window.print() する全ビュー = builder / dashboard 等に効く)。 */
           .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
           .app-main { overflow: visible !important; height: auto !important; }
-          .sidebar, .sidebar-spacer, .hamburger { display: none !important; }
+          /* .sidebar-backdrop も必ずここで消す。上の
+             @media screen and (min-width: 769px) は screen 限定なので
+             紙面には効かない。sidebarOpen は初期値 true (view は
+             sessionStorage 復元) なので、リロード直後に印刷すると
+             rgba(0,0,0,.4) が紙面全体を覆って出力が真っ暗になっていた。 */
+          .sidebar, .sidebar-spacer, .hamburger, .sidebar-backdrop { display: none !important; }
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+          /* 中学/高校の 2 カラム (画面) は紙面では縦積みにする。popup 印刷
+             (printStyles.js の timetablePrintCss) と同じ紙面にするための
+             明示指定 — 以前はモバイル規則が紙面に漏れて偶然 1 カラムに
+             なっていたので、用紙サイズを変えると 2 カラムに化けていた。 */
+          .excel-grid-sections { display: block !important; grid-template-columns: none !important; }
           .master-slot-actions { display: none !important; }
           .no-print { display: none !important; }
           /* E1h: 時間グループ / カレンダーセルがページ境界で割れないように */
