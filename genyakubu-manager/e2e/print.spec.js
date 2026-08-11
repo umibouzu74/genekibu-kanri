@@ -21,6 +21,13 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+// 紙面 (A4 縦) の幅 ≒ 210mm - @page margin 8mm×2 = 194mm ≒ 733 CSS px。
+// 印刷時のメディアクエリは「画面幅」ではなく「紙面幅」で評価されるため、
+// デスクトップ幅のまま emulateMedia('print') しただけでは
+// @media (min-width: 769px) 前提の回帰 (下の「紙面が暗くならない」) を
+// 取りこぼす。紙面幅を再現したいテストはこの幅にビューポートを合わせる。
+const PRINT_PAGE_WIDTH = 733;
+
 // print メディアで、印刷に出ないはずの要素が全て消えていることを確認する。
 async function expectPrintChromeHidden(page) {
   await expect(page.locator(".sidebar")).toBeHidden();
@@ -31,6 +38,25 @@ async function expectPrintChromeHidden(page) {
       els.filter((el) => getComputedStyle(el).display !== "none").length
     );
   expect(visibleNoPrint).toBe(0);
+  // 紙面を覆う不透明・半透明のオーバレイが残っていないこと。
+  // サイドバーの backdrop (rgba(0,0,0,.4)) が紙面全体に乗って出力が
+  // 暗くなる不具合の回帰ガード。
+  const overlays = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("body *")) {
+      const cs = getComputedStyle(el);
+      if (cs.position !== "fixed") continue;
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      const bg = cs.backgroundColor;
+      // 透明 (rgba(...,0) / transparent) なら紙面を汚さない
+      if (bg === "transparent" || /,\s*0\)$/.test(bg)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 300 || r.height < 300) continue;
+      out.push(`${el.className || el.tagName}: ${bg}`);
+    }
+    return out;
+  });
+  expect(overlays).toEqual([]);
 }
 
 test("ダッシュボード: print で操作 UI が消え本文が残る", async ({ page }) => {
@@ -40,6 +66,28 @@ test("ダッシュボード: print で操作 UI が消え本文が残る", async
   await page.emulateMedia({ media: "print" });
   await expectPrintChromeHidden(page);
   // 本文 (ビュータイトル) は残る
+  await expect(page.locator(".app-h1")).toBeVisible();
+});
+
+test("印刷: サイドバー未操作 (リロード直後) でも紙面が暗くならない", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".app-h1")).toHaveText("ダッシュボード");
+  // sidebarOpen の初期値は true。view は sessionStorage から復元されるため、
+  // 「サイドバーを一度も操作せずに印刷する」= backdrop が DOM に居る状態は
+  // リロード直後の通常運用そのもの。まずその前提を固定する。
+  await expect(page.locator(".sidebar-backdrop")).toHaveCount(1);
+  // 画面 (デスクトップ幅) では backdrop は見えていない
+  await expect(page.locator(".sidebar-backdrop")).toBeHidden();
+
+  await page.emulateMedia({ media: "print" });
+  await page.setViewportSize({ width: PRINT_PAGE_WIDTH, height: 1040 });
+
+  // 紙面幅では @media (min-width: 769px) が効かない。それでも backdrop は
+  // 紙面に出ない (出ると rgba(0,0,0,.4) が全面に乗って出力が真っ暗になる)
+  await expect(page.locator(".sidebar-backdrop")).toBeHidden();
+  await expectPrintChromeHidden(page);
   await expect(page.locator(".app-h1")).toBeVisible();
 });
 

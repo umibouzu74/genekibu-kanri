@@ -147,6 +147,9 @@ export function ToastContainer({ toasts, onDismiss }) {
     <div
       aria-live="polite"
       aria-atomic="false"
+      /* 表示中に印刷すると紙面右下にトーストが写り込む (削除直後の
+         「元に戻す」など、印刷と同時に出ていることは普通にある) */
+      className="no-print"
       style={{
         position: "fixed",
         bottom: 24,

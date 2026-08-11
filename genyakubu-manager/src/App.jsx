@@ -1718,7 +1718,14 @@ export default function App() {
              (直接 window.print() する全ビュー = builder / dashboard 等に効く)。 */
           .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
           .app-main { overflow: visible !important; height: auto !important; }
-          .sidebar, .sidebar-spacer, .hamburger { display: none !important; }
+          /* .sidebar-backdrop も必ずここで消す。印刷時のメディアクエリは
+             画面幅ではなく紙面幅 (A4 縦 - @page margin 8mm ≒ 733px) で
+             評価されるため、上の @media (min-width: 769px) による
+             backdrop 非表示はデスクトップでも紙面には効かない。
+             sidebarOpen は初期値 true (view は sessionStorage 復元) なので、
+             リロード直後に印刷すると rgba(0,0,0,.4) が紙面全体を覆って
+             出力が真っ暗になっていた。 */
+          .sidebar, .sidebar-spacer, .hamburger, .sidebar-backdrop { display: none !important; }
           .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .master-slot-actions { display: none !important; }
           .no-print { display: none !important; }
