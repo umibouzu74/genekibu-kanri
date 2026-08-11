@@ -28,6 +28,12 @@ test.beforeEach(async ({ page }) => {
 // 取りこぼす。紙面幅を再現したいテストはこの幅にビューポートを合わせる。
 const PRINT_PAGE_WIDTH = 733;
 
+// ダッシュボードの時間割グリッド (.excel-grid-sections) を見るテスト用の
+// 固定日。祝日 (デモデータの holidays) に当たると「本日休講」に切り替わって
+// グリッドが描画されないため、実行日に依存しないよう時計を固定する。
+// 2026-09-17 は木曜で祝日でない。
+const GRID_DAY = new Date("2026-09-17T10:00:00+09:00");
+
 // print メディアで、印刷に出ないはずの要素が全て消えていることを確認する。
 async function expectPrintChromeHidden(page) {
   await expect(page.locator(".sidebar")).toBeHidden();
@@ -89,6 +95,40 @@ test("印刷: サイドバー未操作 (リロード直後) でも紙面が暗�
   await expect(page.locator(".sidebar-backdrop")).toBeHidden();
   await expectPrintChromeHidden(page);
   await expect(page.locator(".app-h1")).toBeVisible();
+});
+
+test("印刷: 用紙サイズを変えても紙面レイアウトが変わらない", async ({ page }) => {
+  // レスポンシブ規則を screen 限定にしたことの回帰ガード。
+  // 印刷のメディアクエリは紙面幅で評価されるので、screen を外すと
+  // 「A4 縦なら 1 カラム / A3 なら 2 カラム」のように用紙で紙面が化ける。
+  await page.clock.setFixedTime(GRID_DAY);
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".excel-grid-sections")).toBeVisible();
+  await page.emulateMedia({ media: "print" });
+
+  const sample = () =>
+    page.evaluate(() => {
+      const pick = (sel, props) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return Object.fromEntries(props.map((p) => [p, cs[p]]));
+      };
+      return {
+        sections: pick(".excel-grid-sections", ["display", "gridTemplateColumns"]),
+        h1: pick(".app-h1", ["fontSize"]),
+        main: pick(".app-main", ["paddingLeft"]),
+      };
+    });
+
+  await page.setViewportSize({ width: PRINT_PAGE_WIDTH, height: 1040 }); // A4 縦
+  const a4 = await sample();
+  await page.setViewportSize({ width: 1062, height: 1500 }); // A3 縦
+  const a3 = await sample();
+
+  expect(a4).toEqual(a3);
+  // 中学/高校は紙面では必ず縦積み (popup 印刷と同じ紙面にする)
+  expect(a4.sections.display).toBe("block");
 });
 
 test("イベントカレンダー: print で追加授業バッジが紙面に残る", async ({ page }) => {
@@ -156,6 +196,7 @@ test("タイムテーブル: popup 印刷に中学/高校のセクションヘ�
     window.print = () => {};
   });
 
+  await page.clock.setFixedTime(GRID_DAY);
   await page.goto("/genekibu-kanri/");
   // Dashboard の既定は時間割モード (ExcelGridView)
   await expect(page.locator(".excel-grid-sections")).toBeVisible();

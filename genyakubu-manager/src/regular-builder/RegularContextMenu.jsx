@@ -92,7 +92,8 @@ export function RegularContextMenu({
       ref={menuRef}
       role="menu"
       aria-label={menu.kind === "cell" ? "セルの操作" : `${menu.label} の一括操作`}
-      className="fixed bg-builder-surface border border-builder-border shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in"
+      /* no-print: 右クリックメニューを開いたまま Ctrl+P する導線が実在する */
+      className="no-print fixed bg-builder-surface border border-builder-border shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in"
       style={{ top: menu.y, left: menu.x }}
     >
       {menu.kind === "cell" ? (

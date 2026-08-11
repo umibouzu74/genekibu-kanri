@@ -138,6 +138,8 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
       ref={ref}
       role="dialog"
       aria-label={`${slot.time} ${slot.grade} ${slot.subj} の代行候補`}
+      /* 開いたまま印刷すると紙面に浮いたポップオーバーが写り込む */
+      className="no-print"
       style={style}
     >
       {/* Header */}

@@ -40,6 +40,21 @@ describe("REGULAR_PRINT_STYLE", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/input:placeholder-shown\s*\{[^}]*visibility:\s*hidden/);
   });
 
+  it("紙面ではセルの truncate (…) を解除して全文を折り返す", () => {
+    // 画面は行高を揃えるため科目・講師・備考を truncate しているが、紙は
+    // クリックして全文を読めないので省略してはいけない。Tailwind の
+    // truncate は 3 プロパティの複合なので 3 つとも戻っていること。
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*overflow:\s*visible/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*text-overflow:\s*clip/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.truncate\s*\{[^}]*white-space:\s*normal/
+    );
+  });
+
   it("列見出しをページごとに繰り返すため sticky を静的化する", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/thead[^{]*\{[^}]*position:\s*static/);
   });

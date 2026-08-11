@@ -71,6 +71,17 @@ export const REGULAR_PRINT_STYLE = `
     padding-right: 0 !important;
     background-image: none !important;
   }
+  /* 画面のセルは行高を揃えるため科目・講師・備考を truncate (…) している。
+     画面はクリックすれば全文が読めるが、**紙は読めない** ので、紙面では
+     省略をやめて折り返す。RegularCell / RegularGrid の Tailwind
+     truncate が対象 (overflow:hidden + text-overflow:ellipsis +
+     white-space:nowrap の 3 点セットなので 3 つとも戻す)。
+     td 側の overflow-wrap: anywhere と噛み合って長い科目名も収まる。 */
+  .print-container .truncate {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
   /* 空欄の教室・備考は紙面に出さない (プレースホルダ文字も入力枠も)。
      visibility なのでレイアウトは崩れない */
   .print-container input::placeholder {
