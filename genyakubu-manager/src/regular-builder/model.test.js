@@ -4,13 +4,19 @@ import {
   classRoomForDay,
   computeSections,
   copyCellAcrossTabs,
+  countCellsForClass,
+  countCellsForPeriod,
   countTeacherAssignments,
   createDefaultWorkspace,
   effectiveRoom,
   makeCellKey,
   makeCellRef,
+  nextClassId,
+  nextPeriodId,
   parseCellKey,
   parseCellRef,
+  removeClassFromTab,
+  removePeriodFromProject,
   renameTeacherInProject,
   resolveAllEntries,
   restoreSnapshot,
@@ -877,5 +883,90 @@ describe("setClassRoomForDay (この曜日だけの既定教室)", () => {
     const before = JSON.stringify(src);
     setClassRoomForDay(src, 1, 1, "木", "亀63");
     expect(JSON.stringify(src)).toBe(before);
+  });
+});
+
+// ─── 時限 / クラスの削除とセルの後始末 ──────────────────────────────
+// 消した時限・クラスのセルを残すと、次の追加で同じ id を受け取った瞬間に
+// 「消したはずのコマ」が新しい行・列に現れる。削除でセルまで落とし、
+// 採番も schedule に現れる id を含めて行うことの回帰テスト。
+
+describe("removePeriodFromProject / countCellsForPeriod", () => {
+  it("時限・periodIds・その時限のセルをまとめて落とす", () => {
+    const p = makeProject();
+    expect(countCellsForPeriod(p, 1)).toBe(1);
+    const { project, removedCells } = removePeriodFromProject(p, 1);
+    expect(removedCells).toBe(1);
+    expect(project.periods.map((x) => x.id)).toEqual([2, 3]);
+    expect(project.tabs[0].periodIds).toEqual([2]);
+    expect(Object.keys(project.tabs[0].schedule)).toEqual([makeCellKey("月", 2, 2)]);
+  });
+
+  it("全タブを横断して数える・落とす", () => {
+    const p = makeProject();
+    p.tabs.push({
+      ...p.tabs[0],
+      id: 2,
+      name: "中2",
+      schedule: {
+        [makeCellKey("月", 1, 1)]: { subj: "国語" },
+        [makeCellKey("火", 1, 1)]: { subj: "理科" },
+      },
+    });
+    expect(countCellsForPeriod(p, 1)).toBe(3);
+    expect(removePeriodFromProject(p, 1).removedCells).toBe(3);
+  });
+
+  it("該当セルの無い時限の削除は 0 件・元のプロジェクトは不変", () => {
+    const p = makeProject();
+    const before = JSON.stringify(p);
+    const { removedCells } = removePeriodFromProject(p, 3);
+    expect(removedCells).toBe(0);
+    expect(JSON.stringify(p)).toBe(before);
+  });
+});
+
+describe("removeClassFromTab / countCellsForClass", () => {
+  it("クラス列とその列のセルをまとめて落とす", () => {
+    const tab = makeProject().tabs[0];
+    expect(countCellsForClass(tab, 2)).toBe(1);
+    const { tab: next, removedCells } = removeClassFromTab(tab, 2);
+    expect(removedCells).toBe(1);
+    expect(next.classes.map((c) => c.id)).toEqual([1]);
+    expect(Object.keys(next.schedule)).toEqual([makeCellKey("月", 1, 1)]);
+  });
+
+  it("元のタブは不変 (純関数)", () => {
+    const tab = makeProject().tabs[0];
+    const before = JSON.stringify(tab);
+    removeClassFromTab(tab, 1);
+    expect(JSON.stringify(tab)).toBe(before);
+  });
+});
+
+describe("nextClassId / nextPeriodId", () => {
+  it("定義済みの id の次を返す", () => {
+    const p = makeProject();
+    expect(nextClassId(p.tabs[0])).toBe(3);
+    expect(nextPeriodId(p)).toBe(4);
+  });
+
+  it("孤立セルの id も避ける (消したコマが新しい列・行に復活しない)", () => {
+    const p = makeProject();
+    // クラス 5 / 時限 9 は定義には無いが schedule に残っている状態
+    p.tabs[0].schedule[makeCellKey("月", 9, 5)] = { subj: "残骸" };
+    expect(nextClassId(p.tabs[0])).toBe(6);
+    expect(nextPeriodId(p)).toBe(10);
+  });
+
+  it("periodIds にだけ残った id も避ける", () => {
+    const p = makeProject();
+    p.tabs[0].periodIds = [1, 2, 7];
+    expect(nextPeriodId(p)).toBe(8);
+  });
+
+  it("空のタブ・プロジェクトは 1 から", () => {
+    expect(nextClassId({ classes: [], schedule: {} })).toBe(1);
+    expect(nextPeriodId({ periods: [], tabs: [] })).toBe(1);
   });
 });

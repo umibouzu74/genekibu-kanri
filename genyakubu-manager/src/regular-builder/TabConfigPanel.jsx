@@ -1,6 +1,12 @@
 import { ALL_GRADES } from "../constants/schools";
-import { REGULAR_DAYS } from "./model";
-import { nextNumericId } from "../utils/schema";
+import {
+  REGULAR_DAYS,
+  countCellsForClass,
+  nextClassId,
+  removeClassFromTab,
+} from "./model";
+import { useConfirm } from "../hooks/useConfirm";
+import { useToasts } from "../hooks/useToasts";
 import { UI } from "./ui";
 
 // ─── タブ設定 (名前 / 学年 / 曜日 / 使う時限 / クラス) ──────────────
@@ -17,6 +23,31 @@ function move(list, idx, delta) {
 }
 
 export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
+  const confirm = useConfirm();
+  const toasts = useToasts();
+
+  // クラス列の削除はその列のコマを巻き込む (cascade) ため確認を挟む
+  // (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。列だけ消してセルを
+  // 残すと、次に追加した列が同じ id を受け取ったときに復活してしまう
+  const removeClass = async (c) => {
+    const cells = countCellsForClass(tab, c.id);
+    if (cells > 0) {
+      const ok = await confirm({
+        title: "クラス列の削除",
+        message:
+          `「${tab.name}」のクラス「${c.label || c.room || "無題"}」を削除しますか？\n` +
+          `この列に入力済みのコマ ${cells} 件も削除されます。\n（Ctrl+Z で戻せます）`,
+        okLabel: "削除する",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    updateTab(tab.id, (t) => removeClassFromTab(t, c.id).tab, { atomic: true });
+    if (cells > 0) {
+      toasts.success(`クラス列を削除しました（コマ ${cells} 件も削除）`);
+    }
+  };
+
   const toggleDay = (d) =>
     updateTab(tab.id, (t) => ({
       ...t,
@@ -198,9 +229,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
             <button
               type="button"
               className={UI.btnDanger}
-              onClick={() =>
-                updateTab(tab.id, (t) => ({ ...t, classes: t.classes.filter((x) => x.id !== c.id) }))
-              }
+              onClick={() => removeClass(c)}
             >
               削除
             </button>
@@ -213,7 +242,7 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
             onClick={() =>
               updateTab(tab.id, (t) => ({
                 ...t,
-                classes: [...t.classes, { id: nextNumericId(t.classes), label: "", room: "" }],
+                classes: [...t.classes, { id: nextClassId(t), label: "", room: "" }],
               }))
             }
           >

@@ -156,3 +156,29 @@ describe("describeHistoryChange / formatCellShort", () => {
     expect(formatCellShort({ room: "501", note: "自習" })).toBe("501 自習");
   });
 });
+
+describe("diffWorkspaces: 表示プロジェクトの切替", () => {
+  const twoProjectWs = (activeProjectId) => ({
+    version: 2,
+    activeProjectId,
+    projects: [
+      baseProject(),
+      { ...baseProject(), id: 2, name: "P2" },
+    ],
+  });
+
+  it("切替を otherChanges に載せる (無言で戻らないように)", () => {
+    const diff = diffWorkspaces(twoProjectWs(1), twoProjectWs(2));
+    expect(diff.otherChanges).toContain("表示プロジェクトの切替");
+    expect(describeHistoryChange(diff)).toContain("表示プロジェクトの切替");
+  });
+
+  it("同じプロジェクトを見ているだけなら載せない", () => {
+    expect(diffWorkspaces(twoProjectWs(1), twoProjectWs(1)).otherChanges).toEqual([]);
+  });
+
+  it("プロジェクトの追加/削除に伴う切替は二重に出さない", () => {
+    const diff = diffWorkspaces(ws(baseProject()), twoProjectWs(2));
+    expect(diff.otherChanges).toEqual(["プロジェクトの追加/削除"]);
+  });
+});

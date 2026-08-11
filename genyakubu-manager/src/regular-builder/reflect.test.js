@@ -5,6 +5,7 @@ import {
   describeDiffChange,
   diffReflection,
 } from "./reflect";
+import { computeConflicts, conflictKey } from "./conflicts";
 import { makeCellKey } from "./model";
 import { makeProject } from "./testUtils";
 
@@ -202,5 +203,40 @@ describe("diffReflection (置き換えの差分プレビュー)", () => {
     expect(text).toContain("講師 半田 → 河野");
     expect(text).toContain("教室 501 → 502");
     expect(text).not.toContain("数学 →");
+  });
+});
+
+// ─── 未承認の重なり・NG の警告 ──────────────────────────────────────
+// ⚠ 問題バッジを見ないまま反映すると、本体側にも重複がそのまま載る。
+// 反映はブロックしない (意図した重なりもある) が必ず警告する。
+
+describe("buildReflectionPlan: 未承認の問題の警告", () => {
+  // 月2限 A に、同じ時間帯・同じ講師のコマを足して講師重複を作る
+  const withConflict = () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "国語", teacher: "堀上" };
+    return p;
+  };
+
+  it("未承認の問題があれば warnings に件数と内訳を出す (反映はブロックしない)", () => {
+    const plan = buildReflectionPlan(withConflict(), { mode: "new", name: "後期" });
+    const warn = plan.warnings.find((w) => w.includes("未承認の問題"));
+    expect(warn).toBeTruthy();
+    expect(warn).toContain("1 件");
+    expect(warn).toContain("講師の重複 1");
+    expect(plan.ok).toBe(true);
+  });
+
+  it("承認済みの重なりは警告に数えない", () => {
+    const p = withConflict();
+    const c = computeConflicts(p).list.find((x) => x.type === "teacher");
+    p.approvedConflicts = [conflictKey(c)];
+    const plan = buildReflectionPlan(p, { mode: "new", name: "後期" });
+    expect(plan.warnings.some((w) => w.includes("未承認の問題"))).toBe(false);
+  });
+
+  it("問題が無ければ警告も出ない", () => {
+    const plan = buildReflectionPlan(makeProject(), { mode: "new", name: "後期" });
+    expect(plan.warnings.some((w) => w.includes("未承認の問題"))).toBe(false);
   });
 });

@@ -11,7 +11,16 @@ import { nextNumericId } from "../utils/schema";
 import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
+import { buildConflictView, computeConflicts } from "./conflicts";
 import { timeStartToMin } from "../utils/dateHelpers";
+
+// 警告文で使う問題の種類名 (表示順も兼ねる)
+const CONFLICT_TYPE_LABELS = [
+  ["teacher", "講師の重複"],
+  ["room", "教室の重複"],
+  ["class", "クラスの重複"],
+  ["ng", "講師NG"],
+];
 
 /**
  * @param {object} project RegularProject
@@ -80,6 +89,25 @@ export function buildReflectionPlan(project, opts) {
   }
   if (drafts.length === 0) {
     errors.push("反映できるコマがありません (教科の入ったセルが必要です)");
+  }
+
+  // 未承認の重なり・NG。反映はブロックしない (意図した重なりもあるため) が、
+  // 承認せずに出すと本体側にもそのまま重複が載る。⚠ 問題バッジを見ないまま
+  // 反映できてしまう導線をここで塞ぐ
+  const { active } = buildConflictView(
+    computeConflicts(project).list,
+    project.approvedConflicts
+  );
+  if (active.length > 0) {
+    const counts = new Map();
+    for (const c of active) counts.set(c.type, (counts.get(c.type) || 0) + 1);
+    const detail = CONFLICT_TYPE_LABELS.filter(([type]) => counts.has(type))
+      .map(([type, label]) => `${label} ${counts.get(type)}`)
+      .join("・");
+    warnings.push(
+      `未承認の問題が ${active.length} 件あります（${detail}）。` +
+        `このまま反映すると本体側でも重なったままになります（意図した重なりは「⚠ 問題」から承認できます）`
+    );
   }
 
   return {

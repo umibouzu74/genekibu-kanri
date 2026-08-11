@@ -201,6 +201,126 @@ export function setCellsLocked(tabs, refs, locked) {
   return { tabs: next, changed };
 }
 
+// ─── 時限 / クラスの削除 (セルまで含めた後始末) ─────────────────────
+// 時限・クラスを消しても schedule のセルは残る (キーが id 参照のため)。
+// 残すと ① 保存容量を食い続け ② 次に追加した時限・クラスが同じ id を
+// 受け取った瞬間に「消したはずのコマ」が復活する。削除時にセルごと
+// 落とし、追加時の id も schedule に現れる id を含めて採番する。
+
+/** 時限 id を参照するセルの総数 (全タブ) */
+export function countCellsForPeriod(project, periodId) {
+  let n = 0;
+  for (const tab of project.tabs || []) {
+    for (const key of Object.keys(tab.schedule || {})) {
+      if (parseCellKey(key).periodId === periodId) n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * 時限をプールから削除し、各タブの periodIds とその時限のセルも落とした
+ * 新しいプロジェクトを返す (純関数)。
+ * @returns {{project: object, removedCells: number}}
+ */
+export function removePeriodFromProject(project, periodId) {
+  let removedCells = 0;
+  const tabs = (project.tabs || []).map((t) => {
+    const schedule = {};
+    let touched = false;
+    for (const [key, cell] of Object.entries(t.schedule || {})) {
+      if (parseCellKey(key).periodId === periodId) {
+        removedCells++;
+        touched = true;
+        continue;
+      }
+      schedule[key] = cell;
+    }
+    const periodIds = (t.periodIds || []).filter((pid) => pid !== periodId);
+    if (!touched && periodIds.length === (t.periodIds || []).length) return t;
+    return { ...t, periodIds, schedule };
+  });
+  return {
+    project: {
+      ...project,
+      periods: (project.periods || []).filter((p) => p.id !== periodId),
+      tabs,
+    },
+    removedCells,
+  };
+}
+
+/** クラス列を参照するセルの数 (そのタブ内) */
+export function countCellsForClass(tab, classId) {
+  let n = 0;
+  for (const key of Object.keys(tab?.schedule || {})) {
+    if (parseCellKey(key).classId === classId) n++;
+  }
+  return n;
+}
+
+/**
+ * クラス列を削除し、その列のセルも落とした新しいタブを返す (純関数)。
+ * @returns {{tab: object, removedCells: number}}
+ */
+export function removeClassFromTab(tab, classId) {
+  let removedCells = 0;
+  const schedule = {};
+  for (const [key, cell] of Object.entries(tab.schedule || {})) {
+    if (parseCellKey(key).classId === classId) {
+      removedCells++;
+      continue;
+    }
+    schedule[key] = cell;
+  }
+  return {
+    tab: {
+      ...tab,
+      classes: (tab.classes || []).filter((c) => c.id !== classId),
+      schedule,
+    },
+    removedCells,
+  };
+}
+
+/**
+ * 次のクラス id。定義済みのクラスだけでなく **schedule に現れる classId も
+ * 見る** — 取込・JSON 読み込み・過去の削除で残った孤立セルの id を再利用
+ * すると、新しい列にそのセルが現れてしまうため。
+ */
+export function nextClassId(tab) {
+  let max = 0;
+  for (const c of tab?.classes || []) {
+    const v = Number(c?.id);
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  for (const key of Object.keys(tab?.schedule || {})) {
+    const v = parseCellKey(key).classId;
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  return max + 1;
+}
+
+/** 次の時限 id。nextClassId と同じ理由で periodIds と schedule も見る */
+export function nextPeriodId(project) {
+  let max = 0;
+  for (const p of project?.periods || []) {
+    const v = Number(p?.id);
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  for (const tab of project?.tabs || []) {
+    for (const pid of tab.periodIds || []) {
+      const v = Number(pid);
+      if (Number.isFinite(v) && v > max) max = v;
+    }
+    for (const key of Object.keys(tab.schedule || {})) {
+      const v = parseCellKey(key).periodId;
+      if (Number.isFinite(v) && v > max) max = v;
+    }
+  }
+  return max + 1;
+}
+
 // ─── クラス列の既定教室の変更 (列のコマと連動) ──────────────────────
 
 /**

@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
 import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
-import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   REGULAR_DAYS,
+  countCellsForPeriod,
   countTeacherAssignments,
+  nextPeriodId,
+  removePeriodFromProject,
   renameTeacherInProject,
 } from "./model";
 import { UI } from "./ui";
@@ -147,19 +149,34 @@ export function ProjectConfigModal({
       ...p,
       periods: [
         ...p.periods,
-        { id: nextNumericId(p.periods), label: `${p.periods.length + 1}限`, time: "" },
+        { id: nextPeriodId(p), label: `${p.periods.length + 1}限`, time: "" },
       ],
     }));
 
-  const removePeriod = (id) =>
-    saveProject((p) => ({
-      ...p,
-      periods: p.periods.filter((x) => x.id !== id),
-      tabs: p.tabs.map((t) => ({
-        ...t,
-        periodIds: (t.periodIds || []).filter((pid) => pid !== id),
-      })),
-    }));
+  // 時限の削除は全学年のその時限のコマを巻き込む (cascade) ため確認を挟む
+  // (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。件数は表示用に現在の
+  // project で数え、保存は saveProject の最新値で再計算する
+  const removePeriod = async (per) => {
+    const cells = countCellsForPeriod(project, per.id);
+    if (cells > 0) {
+      const ok = await confirm({
+        title: "時限の削除",
+        message:
+          `時限「${per.label || per.time || `id:${per.id}`}」を削除しますか？\n` +
+          `この時限に入力済みのコマ ${cells} 件も削除されます（全学年）。\n` +
+          `（Ctrl+Z で戻せます）`,
+        okLabel: "削除する",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    saveProject((p) => removePeriodFromProject(p, per.id).project, {
+      atomic: true,
+    });
+    if (cells > 0) {
+      toasts.success(`時限を削除しました（コマ ${cells} 件も削除）`);
+    }
+  };
 
   const addSubject = () => {
     const v = newSubject.trim();
@@ -384,7 +401,7 @@ export function ProjectConfigModal({
                     <button
                       type="button"
                       className={UI.btnDanger}
-                      onClick={() => removePeriod(per.id)}
+                      onClick={() => removePeriod(per)}
                     >
                       削除
                     </button>

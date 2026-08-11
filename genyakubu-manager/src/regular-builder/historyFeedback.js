@@ -45,6 +45,16 @@ export function diffWorkspaces(before, after) {
   const beforeById = new Map((before?.projects || []).map((p) => [p.id, p]));
   const afterById = new Map((after?.projects || []).map((p) => [p.id, p]));
 
+  const sameProjectSet =
+    beforeById.size === afterById.size &&
+    [...afterById.keys()].every((id) => beforeById.has(id));
+  // 表示プロジェクトの切替も 1 つの取り消し単位 (これを履歴に載せないと
+  // 「切替 → Ctrl+Z」で前のプロジェクトへ黙って引き戻される)。追加/削除に
+  // 伴う切替は下の「プロジェクトの追加/削除」に含まれるので二重に出さない
+  if (sameProjectSet && before?.activeProjectId !== after?.activeProjectId) {
+    addOther("表示プロジェクトの切替");
+  }
+
   for (const [id] of afterById) {
     if (!beforeById.has(id)) addOther("プロジェクトの追加/削除");
   }

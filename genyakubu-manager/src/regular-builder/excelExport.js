@@ -1,7 +1,8 @@
 // ─── 通常時間割の Excel 出力 (RB22) ─────────────────────────────────
 // 2 種類の workbook を作る:
 // - 曜日グリッド (buildRegularWorkbook): 画面の曜日ビュー (セクション別
-//   テーブル) を再現。曜日 1 つ = 1 シート (A4 横・横 1 ページ収め)。
+//   テーブル) を再現。曜日 1 つ = 1 シート (B4 横・1 ページ収め) + 末尾に
+//   全曜日を 1 枚にまとめた「全曜日」シート (曜日ごとに改ページ)。
 //   セクションごとに「時間 × 学年・クラス」の表を縦に並べ、セルには
 //   教科 / 講師 / 教室・備考 を 3 行で載せる。科目カラーの背景も画面と同じ。
 // - 講師別 (buildRegularTeacherWorkbook): 先頭に「集計」シート (講師 ×
@@ -21,6 +22,14 @@
 // - 合同 (結合) 列は結合せず独立列として出力する。合同の範囲ラベル列に
 //   中身があれば、その構成クラスの空列は出力しない
 // - 隔週コマは講師欄に「主担当 / パートナー」で載せる (画面と同じ)
+//
+// 印刷設定の使い分け (重要):
+// - 曜日別シートは 1 シート = 1 曜日なので Excel の「1 ページに収める」
+//   (fitToPage 1×1) をそのまま使う — 拡大率は Excel が実測で決める。
+// - 「全曜日」シートは曜日ごとの改ページ (手動改ページ) が主役だが、
+//   **Excel は fitToPage を有効にすると手動改ページを無視する**。そのため
+//   こちらは fitToPage を使わず、estimatePrintScale で見積もった固定
+//   倍率 (scale) を入れる。倍率は全曜日で共通なので紙面の字の大きさも揃う。
 
 import ExcelJS from "exceljs";
 import {
@@ -56,6 +65,75 @@ const startMin = (time) => {
   const m = /^(\d{1,2}):(\d{2})/.exec((time || "").trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : Number.POSITIVE_INFINITY;
 };
+
+// ─── 紙面 (B4 横) と行・列の寸法 ────────────────────────────────────
+// ECMA-376 ST_PaperSize: 12 = B4 (JIS, 257 × 364 mm)。exceljs の PaperSize
+// enum に B4 は無いが runtime は数値をそのまま書き出す (講習の
+// applyTeacherPrintDefaults と同じ扱い)。
+const PAPER_SIZE_B4 = 12;
+
+const DAY_SHEET_MARGINS = {
+  left: 0.4,
+  right: 0.4,
+  top: 0.5,
+  bottom: 0.5,
+  header: 0.2,
+  footer: 0.2,
+};
+
+// B4 横の用紙寸法 (inch)。scale の見積りに使う
+const B4_LANDSCAPE_IN = { width: 364 / 25.4, height: 257 / 25.4 };
+
+const COL_WIDTH_TIME = 11; // 「時間」列
+const COL_WIDTH_CLASS = 16; // クラス列
+const ROW_HEIGHT_DEFAULT = 15; // タイトル・見出し・空行 (pt)
+const ROW_HEIGHT_PERIOD = 34; // 時限行 (pt)
+
+// 曜日別シート: B4 横に丸ごと 1 ページで収める (Excel 側の実測スケール)
+function applyDaySheetPrintDefaults(pageSetup) {
+  return {
+    paperSize: PAPER_SIZE_B4,
+    orientation: "landscape",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 1,
+    margins: DAY_SHEET_MARGINS,
+    ...pageSetup,
+  };
+}
+
+/**
+ * 「全曜日」シートの印刷倍率 (%) を見積もる純関数。
+ * fitToPage は手動改ページを無効にしてしまうため、こちらは固定倍率で
+ * 収める。列幅 (Excel の文字数単位) は px ≈ width * 7 + 5、行高は pt。
+ * 幅は全曜日共通の列構成、高さは「最も背の高い曜日ブロック」で測り、
+ * 小さい方の比率を採る。拡大はしない (上限 100%)。
+ * @param {{colWidths: number[], blockHeightsPt: number[],
+ *          paper?: {width: number, height: number},
+ *          margins?: {left: number, right: number, top: number, bottom: number}}} args
+ * @returns {number} 10〜100 の整数
+ */
+export function estimatePrintScale({
+  colWidths,
+  blockHeightsPt,
+  paper = B4_LANDSCAPE_IN,
+  margins = DAY_SHEET_MARGINS,
+}) {
+  // 見積りと Excel の実レンダリングのズレ (フォントメトリクス・罫線) を
+  // 吸収する余裕。これを入れないと端の 1 列が次ページへこぼれる
+  const SAFETY = 0.95;
+  const availWidth = paper.width - margins.left - margins.right;
+  const availHeight = paper.height - margins.top - margins.bottom;
+  const neededWidth =
+    (colWidths || []).reduce((n, w) => n + w * 7 + 5, 0) / 96; // px → inch
+  const neededHeight = Math.max(0, ...(blockHeightsPt || [0])) / 72; // pt → inch
+  const ratios = [];
+  if (neededWidth > 0) ratios.push(availWidth / neededWidth);
+  if (neededHeight > 0) ratios.push(availHeight / neededHeight);
+  if (ratios.length === 0) return 100;
+  const scale = Math.floor(Math.min(...ratios) * SAFETY * 100);
+  return Math.max(10, Math.min(100, scale));
+}
 
 // ─── シートデータの収集 (純粋関数、テスト用に export) ───────────────
 /**
@@ -119,24 +197,21 @@ function cellText(cell, cls, day) {
   return lines.join("\n");
 }
 
-function buildDaySheet(workbook, project, day, sections, dateLabel) {
-  const maxCols = Math.max(...sections.map((s) => s.cols.length)) + 1;
-  const ws = workbook.addWorksheet(`${day}曜`, {
-    pageSetup: {
-      paperSize: 9, // A4
-      orientation: "landscape",
-      fitToPage: true,
-      fitToWidth: 1,
-      fitToHeight: 0,
-      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
-    },
-    properties: { defaultRowHeight: 15 },
-  });
-  ws.getColumn(1).width = 11;
-  for (let c = 2; c <= maxCols; c++) ws.getColumn(c).width = 16;
+/** 曜日ブロックの列数 (時間列 + 最大クラス列) */
+const dayBlockCols = (sections) =>
+  Math.max(...sections.map((s) => s.cols.length)) + 1;
 
-  // タイトル行
-  let row = 1;
+/**
+ * 曜日 1 つ分の表 (タイトル + セクション群) を ws の startRow から書き込む。
+ * 曜日別シートと「全曜日」シートで共用する。
+ * @returns {{nextRow: number, lastRow: number, heightPt: number}}
+ *   lastRow = このブロックの最終行 (「全曜日」の改ページを打つ行)
+ */
+function writeDayBlock(ws, project, day, sections, dateLabel, startRow) {
+  const maxCols = dayBlockCols(sections);
+  // タイトル行 + 空行
+  let row = startRow;
+  let heightPt = ROW_HEIGHT_DEFAULT * 2;
   ws.mergeCells(row, 1, row, maxCols);
   const title = ws.getCell(row, 1);
   title.value = `${project.name || "通常時間割"} — ${day}曜日（出力: ${dateLabel}）`;
@@ -144,6 +219,9 @@ function buildDaySheet(workbook, project, day, sections, dateLabel) {
   row += 2;
 
   for (const s of sections) {
+    // セクション見出し + 列見出し 2 段 + 時限行 + 区切りの空行
+    heightPt +=
+      ROW_HEIGHT_DEFAULT * 4 + ROW_HEIGHT_PERIOD * s.periods.length;
     // セクション見出し
     ws.mergeCells(row, 1, row, s.cols.length + 1);
     const head = ws.getCell(row, 1);
@@ -213,11 +291,64 @@ function buildDaySheet(workbook, project, day, sections, dateLabel) {
         const argb = cell?.subj ? hexToArgb(getSubjectColor(cell.subj)) : undefined;
         if (argb) target.fill = solidFill(argb);
       });
-      ws.getRow(row).height = 34;
+      ws.getRow(row).height = ROW_HEIGHT_PERIOD;
       row++;
     }
     row++; // セクション間の空行
   }
+  return { nextRow: row, lastRow: row - 1, heightPt };
+}
+
+/** 曜日ブロック用に列幅を設定する (時間列 + クラス列) */
+function setDayColumnWidths(ws, maxCols) {
+  ws.getColumn(1).width = COL_WIDTH_TIME;
+  for (let c = 2; c <= maxCols; c++) ws.getColumn(c).width = COL_WIDTH_CLASS;
+}
+
+// 曜日 1 つ = 1 シート (B4 横・1 ページ収め)
+function buildDaySheet(workbook, project, day, sections, dateLabel) {
+  const maxCols = dayBlockCols(sections);
+  const ws = workbook.addWorksheet(`${day}曜`, {
+    pageSetup: applyDaySheetPrintDefaults(),
+    properties: { defaultRowHeight: ROW_HEIGHT_DEFAULT },
+  });
+  setDayColumnWidths(ws, maxCols);
+  writeDayBlock(ws, project, day, sections, dateLabel, 1);
+  return ws;
+}
+
+// 全曜日を 1 枚にまとめたシート (曜日ごとに改ページ)。配布時に「曜日別を
+// 1 枚ずつ選んで印刷」しなくてよいように、このシートだけ刷れば全曜日が
+// 1 曜日 1 ページで出る。fitToPage は手動改ページを潰すので固定倍率。
+function buildAllDaysSheet(workbook, project, daySections, dateLabel) {
+  const maxCols = Math.max(...daySections.map((d) => dayBlockCols(d.sections)));
+  const ws = workbook.addWorksheet("全曜日", {
+    pageSetup: {
+      paperSize: PAPER_SIZE_B4,
+      orientation: "landscape",
+      margins: DAY_SHEET_MARGINS,
+    },
+    properties: { defaultRowHeight: ROW_HEIGHT_DEFAULT },
+  });
+  setDayColumnWidths(ws, maxCols);
+
+  const heights = [];
+  let row = 1;
+  daySections.forEach(({ day, sections }, i) => {
+    const block = writeDayBlock(ws, project, day, sections, dateLabel, row);
+    heights.push(block.heightPt);
+    // 最後の曜日の後ろに改ページを入れると空白ページが 1 枚増える
+    if (i < daySections.length - 1) ws.getRow(block.lastRow).addPageBreak();
+    row = block.nextRow;
+  });
+
+  ws.pageSetup.scale = estimatePrintScale({
+    colWidths: [
+      COL_WIDTH_TIME,
+      ...Array.from({ length: maxCols - 1 }, () => COL_WIDTH_CLASS),
+    ],
+    blockHeightsPt: heights,
+  });
   return ws;
 }
 
@@ -228,10 +359,16 @@ function buildDaySheet(workbook, project, day, sections, dateLabel) {
  */
 export function buildRegularWorkbook(project, { days, splitCampus = true, dateLabel }) {
   const workbook = new ExcelJS.Workbook();
+  const daySections = [];
   for (const day of days) {
     const sections = collectDaySheet(project, day, { splitCampus });
     if (sections.length === 0) continue;
+    daySections.push({ day, sections });
     buildDaySheet(workbook, project, day, sections, dateLabel);
+  }
+  // まとめシートは 2 曜日以上あるときだけ (1 曜日なら曜日別シートと同じ)
+  if (daySections.length > 1) {
+    buildAllDaysSheet(workbook, project, daySections, dateLabel);
   }
   return workbook;
 }

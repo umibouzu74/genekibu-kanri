@@ -418,12 +418,15 @@ export default function RegularBuilderApp({
     [commitWorkspace]
   );
 
+  // 切替も履歴に積む (atomic)。積まないと「切替 → Ctrl+Z」で切替前の
+  // ワークスペース (= 前のプロジェクト + そこでの直前の編集) へ黙って
+  // 引き戻され、見ていない側のプロジェクトの編集が取り消されてしまう
   const switchProject = useCallback(
     (id) => {
-      saveWorkspace((w) => ({ ...w, activeProjectId: id }));
+      commitWorkspace((w) => ({ ...w, activeProjectId: id }), { atomic: true });
       setActiveTabId(null);
     },
-    [saveWorkspace]
+    [commitWorkspace]
   );
 
   const addProject = useCallback(
@@ -536,7 +539,9 @@ export default function RegularBuilderApp({
     try {
       const { downloadRegularExcel } = await import("./excelExport");
       await downloadRegularExcel({ project, days: usedDays, splitCampus });
-      toasts.success("Excel を書き出しました（曜日ごとにシート・A4 横）");
+      toasts.success(
+        "Excel を書き出しました（曜日ごとにシート + 全曜日まとめ・B4 横）"
+      );
     } catch (e) {
       toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);
     }
@@ -594,6 +599,26 @@ export default function RegularBuilderApp({
       })),
     [saveProject]
   );
+
+  // 対象の消えた承認の掃除。承認キーはセル参照を含むため、承認したコマを
+  // 動かすと無効になる (意図どおり保守的)。無効キーは画面に出ないまま
+  // 残り続けるので、まとめて捨てられるようにする
+  const purgeStaleApprovals = useCallback(() => {
+    const stale = new Set(conflictView.stale);
+    if (stale.size === 0) return;
+    saveProject(
+      (p) => ({
+        ...p,
+        approvedConflicts: (p.approvedConflicts || []).filter(
+          (k) => !stale.has(k)
+        ),
+      }),
+      { atomic: true }
+    );
+    toasts.success(
+      `対象の無くなった承認 ${stale.size} 件を削除しました（Ctrl+Z で戻せます）`
+    );
+  }, [conflictView.stale, saveProject, toasts]);
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
@@ -1336,9 +1361,11 @@ export default function RegularBuilderApp({
       {showConflicts && (
         <div className={`no-print ${UI.panel} text-xs`}>
           <div className={UI.panelHead}>講師・教室・クラスの重複と講師NG</div>
-          {conflictView.active.length === 0 && conflictView.approved.length === 0 && (
-            <div className="text-builder-ink-subtle">問題はありません。</div>
-          )}
+          {conflictView.active.length === 0 &&
+            conflictView.approved.length === 0 &&
+            conflictView.stale.length === 0 && (
+              <div className="text-builder-ink-subtle">問題はありません。</div>
+            )}
           {conflictView.active.map((c) => (
             <div key={conflictKey(c)} className="flex items-center gap-2">
               <span className="flex-1 text-builder-red">⚠ {c.label}</span>
@@ -1385,6 +1412,22 @@ export default function RegularBuilderApp({
               </button>
             </div>
           ))}
+          {conflictView.stale.length > 0 && (
+            <div className="flex items-center gap-2 pt-1 border-t border-builder-border">
+              <span className="flex-1 text-builder-ink-subtle">
+                対象の無くなった承認が {conflictView.stale.length} 件あります
+                （承認したコマを動かした・消したなどで無効になったもの）。
+              </span>
+              <button
+                type="button"
+                onClick={purgeStaleApprovals}
+                title="無効になった承認を保存から削除する（同じ配置に戻したときに承認が生き返るのを防ぎます）"
+                className={UI.btn}
+              >
+                🧹 掃除
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1555,7 +1598,7 @@ export default function RegularBuilderApp({
               <button
                 type="button"
                 onClick={exportExcel}
-                title="全曜日を Excel に書き出す (曜日ごとにシート・A4 横 1 ページ収め)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
+                title="全曜日を Excel に書き出す (曜日ごとに 1 シート・B4 横 1 ページ収め + 末尾に全曜日をまとめた 1 シート。まとめは曜日ごとに改ページ)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
                 className={UI.btn}
               >
                 📥 Excel

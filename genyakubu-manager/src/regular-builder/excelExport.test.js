@@ -3,6 +3,7 @@ import {
   buildRegularTeacherWorkbook,
   buildRegularWorkbook,
   collectDaySheet,
+  estimatePrintScale,
   teacherEntryNote,
 } from "./excelExport";
 import { makeCellKey } from "./model";
@@ -58,11 +59,13 @@ describe("buildRegularWorkbook", () => {
     expect(ws.getCell(6, 2).value).toBe("数学\n半田\n501");
     // 2限 A = 英語/堀上 (セル上書き教室 601 + note)
     expect(ws.getCell(7, 3).value).toBe("英語\n堀上\n601 合同");
-    // 印刷設定: A4 横・横 1 ページ収め
+    // 印刷設定: B4 横・1 ページに丸ごと収める
     expect(ws.pageSetup).toMatchObject({
-      paperSize: 9,
+      paperSize: 12,
       orientation: "landscape",
+      fitToPage: true,
       fitToWidth: 1,
+      fitToHeight: 1,
     });
   });
 
@@ -105,6 +108,110 @@ describe("buildRegularWorkbook", () => {
       dateLabel: "2026-08-05",
     });
     expect(wb.worksheets).toHaveLength(0);
+  });
+});
+
+describe("buildRegularWorkbook: 全曜日まとめシート", () => {
+  // 火にもセルを足して 2 曜日分にする (1 曜日ではまとめを作らない)
+  const twoDayProject = () => {
+    const p = makeProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = { subj: "理科", teacher: "半田" };
+    return p;
+  };
+
+  it("曜日別シートの後ろに「全曜日」シートを作る", () => {
+    const wb = buildRegularWorkbook(twoDayProject(), {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    });
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["月曜", "火曜", "全曜日"]);
+  });
+
+  it("曜日ごとにタイトルを置き、曜日の切れ目に改ページを入れる", () => {
+    const wb = buildRegularWorkbook(twoDayProject(), {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    });
+    const ws = wb.getWorksheet("全曜日");
+    expect(ws.getCell(1, 1).value).toContain("月曜日");
+    // 月ブロック (タイトル + 空行 + セクション見出し + 見出し 2 段 + 2 時限
+    // + 空行 = 8 行) の直後に改ページ → 9 行目から火曜ブロック
+    expect(ws.rowBreaks.map((b) => b.id)).toEqual([8]);
+    expect(ws.getCell(9, 1).value).toContain("火曜日");
+    // 最後の曜日の後ろには改ページを入れない (空白ページを増やさない)
+    expect(ws.rowBreaks).toHaveLength(1);
+  });
+
+  it("fitToPage は使わず固定倍率 (手動改ページを潰さないため)", () => {
+    const wb = buildRegularWorkbook(twoDayProject(), {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    });
+    const ws = wb.getWorksheet("全曜日");
+    expect(ws.pageSetup.paperSize).toBe(12);
+    expect(ws.pageSetup.orientation).toBe("landscape");
+    expect(ws.pageSetup.fitToPage).toBe(false);
+    expect(ws.pageSetup.scale).toBeGreaterThan(0);
+    expect(ws.pageSetup.scale).toBeLessThanOrEqual(100);
+  });
+
+  it("1 曜日しか無いプロジェクトではまとめシートを作らない", () => {
+    const wb = buildRegularWorkbook(makeProject(), {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    });
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["月曜"]);
+  });
+});
+
+describe("estimatePrintScale", () => {
+  const paper = { width: 364 / 25.4, height: 257 / 25.4 }; // B4 横
+  const margins = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5 };
+
+  it("余裕をもって収まる紙面は等倍 (拡大はしない)", () => {
+    expect(
+      estimatePrintScale({
+        colWidths: [11, 16, 16],
+        blockHeightsPt: [200],
+        paper,
+        margins,
+      })
+    ).toBe(100);
+  });
+
+  it("列が増えると幅に合わせて縮む", () => {
+    const wide = estimatePrintScale({
+      colWidths: [11, ...Array.from({ length: 20 }, () => 16)],
+      blockHeightsPt: [200],
+      paper,
+      margins,
+    });
+    expect(wide).toBeLessThan(100);
+    expect(wide).toBeGreaterThan(10);
+  });
+
+  it("最も背の高い曜日ブロックに合わせて縮む", () => {
+    const tall = estimatePrintScale({
+      colWidths: [11, 16],
+      blockHeightsPt: [200, 1600],
+      paper,
+      margins,
+    });
+    expect(tall).toBeLessThan(100);
+  });
+
+  it("極端な内容でも 10% を下回らない / 空でも 100%", () => {
+    expect(
+      estimatePrintScale({
+        colWidths: [11],
+        blockHeightsPt: [100000],
+        paper,
+        margins,
+      })
+    ).toBe(10);
+    expect(
+      estimatePrintScale({ colWidths: [], blockHeightsPt: [], paper, margins })
+    ).toBe(100);
   });
 });
 

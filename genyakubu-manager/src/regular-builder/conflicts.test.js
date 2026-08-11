@@ -386,3 +386,83 @@ describe("buildConflictView - ngOnlyRefs", () => {
     expect(view.ngOnlyRefs.has(pairRef)).toBe(false);
   });
 });
+
+// ─── 隔週パートナー (note の「隔週(◯◯)」) ──────────────────────────
+// 📊 集計・👁 強調・週間ミニビューはパートナーを本人の担当として扱うので、
+// 重複・NG チェックと「(重複)」予告も同じ「関わる人」の定義で揃える。
+
+describe("隔週パートナーのチェック", () => {
+  // 中3 2限 (18:55-19:40) と 中12 1限 (18:55-19:40) が重なる 2 タブ構成
+  const withPartner = () => {
+    const p = twoTabProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = {
+      subj: "英語",
+      teacher: "堀上",
+      note: "隔週(河野)",
+    };
+    return p;
+  };
+
+  it("パートナーが別コマの担当と重なれば検出する", () => {
+    const p = withPartner();
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "数学", teacher: "河野" };
+    const teacher = computeConflicts(p).list.filter((c) => c.type === "teacher");
+    expect(teacher).toHaveLength(1);
+    expect(teacher[0].label).toContain("河野");
+    // 隔週が絡む重なりは承認で消せることを添える
+    expect(teacher[0].label).toContain("隔週コマを含む");
+  });
+
+  it("パートナーの NG (不在) も検出する", () => {
+    const p = withPartner();
+    p.teachers.push({ name: "河野", ngSlots: [{ day: "月" }] });
+    const ng = computeConflicts(p).list.filter((c) => c.type === "ng");
+    expect(ng).toHaveLength(1);
+    expect(ng[0].label).toContain("河野");
+  });
+
+  it("「(重複)」予告にもパートナーが出る", () => {
+    const p = withPartner();
+    const busy = computeBusyTeachers(p, p.tabs[1]);
+    expect(busy.get(makeCellKey("月", 11, 1))).toContain("河野");
+  });
+
+  it("パートナーが他コマと重ならなければ問題なし", () => {
+    const conflicts = computeConflicts(withPartner()).list;
+    expect(conflicts.filter((c) => c.type === "teacher")).toHaveLength(0);
+  });
+
+  it("承認キーは講師名でなく型・曜日・セル参照なので既存の承認が壊れない", () => {
+    const p = withPartner();
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "数学", teacher: "河野" };
+    const c = computeConflicts(p).list.find((x) => x.type === "teacher");
+    expect(conflictKey(c)).toBe(
+      `teacher|月|${["1:月|2|1", "2:月|11|1"].sort().join("~")}`
+    );
+  });
+});
+
+describe("buildConflictView: 対象の消えた承認 (stale)", () => {
+  // 中3 2限 と 中12 1限 (どちらも 18:55-19:40) に同じ講師 → 講師重複 1 件
+  const conflicting = () => {
+    const p = twoTabProject();
+    p.tabs[0].schedule[makeCellKey("月", 2, 1)] = { subj: "英語", teacher: "堀上" };
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "数学", teacher: "堀上" };
+    return computeConflicts(p).list;
+  };
+
+  it("現存しない承認キーを stale に集める", () => {
+    const list = conflicting();
+    const dead = "teacher|月|1:月|9|9~2:月|9|9";
+    const view = buildConflictView(list, [conflictKey(list[0]), dead]);
+    expect(view.approved).toHaveLength(1);
+    expect(view.active).toHaveLength(0);
+    expect(view.stale).toEqual([dead]);
+  });
+
+  it("すべて現存していれば stale は空", () => {
+    const list = conflicting();
+    expect(buildConflictView(list, [conflictKey(list[0])]).stale).toEqual([]);
+    expect(buildConflictView(list, undefined).stale).toEqual([]);
+  });
+});

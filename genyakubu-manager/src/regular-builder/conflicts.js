@@ -6,15 +6,35 @@
 // 同一セル内の複数講師 ("藤田·大屋敷" の並列監督など) は 1 セルなので
 // 衝突にならない。講師名の分解は splitTeacherField (CLAUDE.md の規約)。
 //
+// 隔週コマ (note の「隔週(◯◯)」) の **パートナー講師もチェック対象**。
+// 📊 集計は 0.5 コマとして計上し、👁 強調もパートナーを光らせるので、
+// チェックだけ対象外だと「集計には出るのに重複は検出されない」非対称に
+// なる。ただしビルダーには週 (A/B) の基準日が無く、別のコマの隔週と
+// 同じ週に当たるかは判定できないため、隔週が絡む重なりはラベルに
+// 「隔週コマを含む」と添えて承認で消せるようにする (検出は保守的に広く)。
+//
 // 現行データに元からある意図的な重なり (亀73 同室の個別指導など) は
 // project.approvedConflicts に conflictKey を入れて「承認」でき、
 // buildConflictView がバッジ件数・赤枠から除外する。
 
-import { splitTeacherField } from "../utils/biweekly";
+import { biweeklyPartner, isBiweekly, splitTeacherField } from "../utils/biweekly";
 import { timeOverlaps } from "../utils/chainSubstitution";
 import { makeCellKey, resolveAllEntries, effectiveRoom, tabPeriods } from "./model";
 
 const TIME_RE = /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/;
+
+/**
+ * そのコマに関わる講師名 = teacher フィールド + 隔週パートナー。
+ * teacherLoad / RegularTeacherWeek / 👁 強調と同じ「関わる人」の定義。
+ */
+export function entryTeachers(cell) {
+  const names = splitTeacherField(cell?.teacher || "");
+  const partner = isBiweekly(cell?.note) ? biweeklyPartner(cell?.note) : null;
+  return partner && !names.includes(partner) ? [...names, partner] : names;
+}
+
+/** 隔週が絡む重なりの注記 (A/B 週が別なら承認して消せる、の案内) */
+const BIWEEKLY_HINT = "（隔週コマを含む — A/B 週が別なら承認で消せます）";
 
 /** entry の一意参照 (UI のハイライト用): `${tabId}:${cellKey}` */
 export function entryRef(entry) {
@@ -70,19 +90,21 @@ export function computeConflicts(project) {
         const b = dayEntries[j];
         if (!timeOverlaps(a.period.time.trim(), b.period.time.trim())) continue;
 
-        // 講師重複
-        const ta = splitTeacherField(a.cell.teacher || "");
-        const tb = new Set(splitTeacherField(b.cell.teacher || ""));
+        // 講師重複 (隔週パートナーも「関わる講師」に含める)
+        const ta = entryTeachers(a.cell);
+        const tb = new Set(entryTeachers(b.cell));
         const shared = ta.filter((t) => tb.has(t));
+        const biweekly = isBiweekly(a.cell.note) || isBiweekly(b.cell.note);
+        const suffix = biweekly ? BIWEEKLY_HINT : "";
         for (const t of shared) {
           list.push({
             type: "teacher",
             day,
-            label: `${day} 講師 ${t}: ${describeEntry(a)} ↔ ${describeEntry(b)}`,
+            label: `${day} 講師 ${t}: ${describeEntry(a)} ↔ ${describeEntry(b)}${suffix}`,
             refs: [entryRef(a), entryRef(b)],
             reasons: [
-              `講師 ${t} が重複: ${describeEntry(b)}`,
-              `講師 ${t} が重複: ${describeEntry(a)}`,
+              `講師 ${t} が重複: ${describeEntry(b)}${suffix}`,
+              `講師 ${t} が重複: ${describeEntry(a)}${suffix}`,
             ],
           });
         }
@@ -138,7 +160,7 @@ export function computeConflicts(project) {
     const byName = new Map(ngTeachers.map((t) => [t.name, t]));
     for (const e of allEntries) {
       const time = (e.period.time || "").trim();
-      for (const name of splitTeacherField(e.cell.teacher || "")) {
+      for (const name of entryTeachers(e.cell)) {
         const master = byName.get(name);
         if (!master) continue;
         const hit = master.ngSlots.find(
@@ -241,7 +263,7 @@ export function computeBusyTeachersForTabs(project, tabs) {
           const names = new Set();
           for (const e of overlapping) {
             if (entryRef(e) === selfRef) continue;
-            for (const n of splitTeacherField(e.cell.teacher || "")) names.add(n);
+            for (const n of entryTeachers(e.cell)) names.add(n);
           }
           if (names.size) {
             result.set(makeCellKey(day, per.id, cls.id), [...names].sort());
@@ -275,15 +297,23 @@ export function computeBusyTeachers(project, tab) {
  *   approved: object[],           // 承認済み
  *   byRef: Map<string, string[]>, // 未承認のみ: entryRef → 理由文
  *   ngOnlyRefs: Set<string>,      // 未承認が NG のみのセル (バッジを ⚠️NG に)
+ *   stale: string[],              // 対象の消えた承認キー (掃除の対象)
  * }}
  */
 export function buildConflictView(list, approvedKeys) {
   const approvedSet = new Set(approvedKeys || []);
   const active = [];
   const approved = [];
+  const liveKeys = new Set();
   for (const c of list) {
-    (approvedSet.has(conflictKey(c)) ? approved : active).push(c);
+    const key = conflictKey(c);
+    liveKeys.add(key);
+    (approvedSet.has(key) ? approved : active).push(c);
   }
+  // conflictKey はセル参照を含むため、承認したコマを動かすと承認は無効に
+  // なる (保守的で意図どおり)。無効キーは画面には出ないまま保存に残り続け、
+  // たまたま同じ配置に戻ると承認が生き返るので、掃除できるように数える
+  const stale = [...approvedSet].filter((k) => !liveKeys.has(k));
   const byRef = new Map();
   const typesByRef = new Map();
   for (const c of active) {
@@ -301,5 +331,5 @@ export function buildConflictView(list, approvedKeys) {
       .filter(([, types]) => types.size === 1 && types.has("ng"))
       .map(([ref]) => ref)
   );
-  return { active, approved, byRef, ngOnlyRefs };
+  return { active, approved, byRef, ngOnlyRefs, stale };
 }
