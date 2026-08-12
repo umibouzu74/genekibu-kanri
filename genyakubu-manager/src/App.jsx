@@ -51,7 +51,6 @@ import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
-import { escapeHtml } from "./utils/escape";
 import { dateToDay, fmtDate } from "./utils/dateHelpers";
 import {
   buildBatchDocTitle,
@@ -59,9 +58,10 @@ import {
   buildMonthHeaderHtml,
   buildMonthLabel,
   buildPrintStyles,
-  buildTimetableHeaderHtml,
   formatPrintDate,
+  injectTimetableHeaders,
 } from "./utils/printStyles";
+import { openPrintWindow, writePrintDocument } from "./utils/printWindow";
 import { sortJa } from "./utils/sortJa";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
@@ -735,7 +735,7 @@ export default function App() {
   const handlePrint = () => {
     const el = document.getElementById("main-content");
     if (!el) return;
-    const w = window.open("", "_blank");
+    const w = openPrintWindow();
     if (!w) {
       toasts.error(
         "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
@@ -765,24 +765,8 @@ export default function App() {
     if (hasTimetableGrid) {
       // 中学/高校で別々のヘッダを注入する (印刷時は別ページ)。各ヘッダには
       // セクション名・日付・印刷日・講師名 (選択中のみ) を載せる。
-      const msHeader = buildTimetableHeaderHtml({
-        section: "中学",
-        dateText,
-        selected,
-      });
-      const hsHeader = buildTimetableHeaderHtml({
-        section: "高校",
-        dateText,
-        selected,
-      });
-      bodyHtml = bodyHtml.replace(
-        /(<div[^>]*class="[^"]*\bexcel-print-col-ms\b[^"]*"[^>]*>)/,
-        `${msHeader}$1`
-      );
-      bodyHtml = bodyHtml.replace(
-        /(<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>)/,
-        `${hsHeader}$1`
-      );
+      // 全曜日まとめ印刷 (ExcelGridView) も同じ関数で曜日ブロック単位に注入する。
+      bodyHtml = injectTimetableHeaders(bodyHtml, { dateText, selected });
     }
     if (hasMonthView) {
       const header = buildMonthHeaderHtml({
@@ -797,13 +781,8 @@ export default function App() {
       );
     }
 
-    w.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
-    );
-    w.document.close();
     // 印刷ダイアログが閉じたらポップアップも自動で閉じる (取り消した場合含む)。
-    w.onafterprint = () => w.close();
-    setTimeout(() => w.print(), 300);
+    writePrintDocument(w, { title: docTitle, styles: printStyles, bodyHtml });
   };
 
   // ─── Batch Print ────────────────────────────────────────────────
@@ -832,7 +811,7 @@ export default function App() {
         Array.isArray(months) && months.length > 0
           ? months
           : [{ year: vy, month: vm }];
-      const w = window.open("", "_blank");
+      const w = openPrintWindow();
       if (!w) {
         toasts.error(
           "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
@@ -913,12 +892,11 @@ export default function App() {
         const bodyHtml = buildBatchPrintBodyHtml({ slides });
         const nameCount = new Set(slides.map((s) => s.teacher)).size;
         const docTitle = buildBatchDocTitle({ nameCount, months: monthList });
-        w.document.write(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)}</title><style>${printStyles}</style></head><body>${bodyHtml}</body></html>`
-        );
-        w.document.close();
-        w.onafterprint = () => w.close();
-        setTimeout(() => w.print(), 300);
+        writePrintDocument(w, {
+          title: docTitle,
+          styles: printStyles,
+          bodyHtml,
+        });
       } finally {
         // 元の選択状態 / view / 表示月に戻す。null だった場合も含めそのまま代入。
         batchPrintAbortRef.current = null;

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildAllDaysBodyHtml,
+  buildAllDaysDocTitle,
   buildBatchDocTitle,
   buildBatchMonthOptions,
   buildBatchPrintBodyHtml,
@@ -11,6 +13,7 @@ import {
   describeMonthVisibility,
   formatPrintDate,
   groupStaffBySubject,
+  injectTimetableHeaders,
 } from "./printStyles";
 
 describe("formatPrintDate", () => {
@@ -534,5 +537,117 @@ describe("buildTimetableHeaderHtml", () => {
     });
     expect(html).not.toContain("<script>alert");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("buildTimetableHeaderHtml (曜日)", () => {
+  const fixedNow = new Date(2026, 4, 6); // 2026-05-06
+
+  it("日付が無い時は曜日をタイトルに出す (全曜日印刷でどの紙か判るように)", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      day: "水",
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割 — 水曜日");
+  });
+
+  it("日付がある時は曜日を出さない (dateText に（水）が入っていて冗長)", () => {
+    const html = buildTimetableHeaderHtml({
+      section: "中学",
+      dateText: "2026年05月06日（水）",
+      day: "水",
+      now: fixedNow,
+    });
+    expect(html).toContain("中学の時間割 — 2026年05月06日（水）");
+    expect(html).not.toContain("水曜日");
+  });
+});
+
+describe("injectTimetableHeaders", () => {
+  const fixedNow = new Date(2026, 4, 6); // 2026-05-06
+  const body =
+    '<div class="excel-grid-sections">' +
+    '<div class="excel-print-col-ms" style="min-width:0">MS</div>' +
+    '<div class="excel-print-col-hs" style="min-width:0">HS</div>' +
+    "</div>";
+
+  it("中学/高校カラムの直前にそれぞれのヘッダを差し込む", () => {
+    const out = injectTimetableHeaders(body, {
+      dateText: "2026年05月06日（水）",
+      now: fixedNow,
+    });
+    expect(out).toContain("中学の時間割 — 2026年05月06日（水）");
+    expect(out).toContain("高校の時間割 — 2026年05月06日（水）");
+    // ヘッダはカラムの「前」(カラム内に入っていない)
+    expect(out.indexOf("中学の時間割")).toBeLessThan(
+      out.indexOf('class="excel-print-col-ms"')
+    );
+    expect(out.indexOf("高校の時間割")).toBeLessThan(
+      out.indexOf('class="excel-print-col-hs"')
+    );
+    // 元の中身は保たれる
+    expect(out).toContain(">MS</div>");
+    expect(out).toContain(">HS</div>");
+  });
+
+  it("カラムが無い HTML はそのまま返す", () => {
+    expect(injectTimetableHeaders("<div>なにもなし</div>", {})).toBe(
+      "<div>なにもなし</div>"
+    );
+  });
+
+  it("講師名に $& が含まれても置換文字列として解釈されない", () => {
+    const out = injectTimetableHeaders(body, {
+      selected: "$&山田",
+      now: fixedNow,
+    });
+    expect(out).toContain("担当: $&amp;山田");
+    expect(out).toContain('class="excel-print-col-ms"');
+  });
+
+  it("各クラス最初の 1 つだけに差し込む (曜日ブロック単位で呼ぶ前提)", () => {
+    const twice = body + body;
+    const out = injectTimetableHeaders(twice, { day: "水", now: fixedNow });
+    expect(out.match(/中学の時間割/g)).toHaveLength(1);
+    expect(out.match(/高校の時間割/g)).toHaveLength(1);
+  });
+});
+
+describe("buildAllDaysBodyHtml", () => {
+  it("曜日ブロックを section.excel-print-day で包んで連結する", () => {
+    const html = buildAllDaysBodyHtml({
+      blocks: [{ html: "<p>月</p>" }, { html: "<p>火</p>" }],
+    });
+    expect(html).toBe(
+      '<section class="excel-print-day"><p>月</p></section>' +
+        '<section class="excel-print-day"><p>火</p></section>'
+    );
+  });
+
+  it("空・未指定は空文字", () => {
+    expect(buildAllDaysBodyHtml({ blocks: [] })).toBe("");
+    expect(buildAllDaysBodyHtml({})).toBe("");
+  });
+});
+
+describe("buildAllDaysDocTitle", () => {
+  it("曜日を中黒で並べる", () => {
+    expect(buildAllDaysDocTitle({ days: ["月", "火", "土"] })).toBe(
+      "時間割 全曜日 (月・火・土)"
+    );
+  });
+
+  it("曜日が無い場合は括弧を出さない", () => {
+    expect(buildAllDaysDocTitle({ days: [] })).toBe("時間割 全曜日");
+    expect(buildAllDaysDocTitle({})).toBe("時間割 全曜日");
+  });
+});
+
+describe("buildPrintStyles (全曜日ブロック)", () => {
+  it("タイムテーブル印刷 CSS に曜日ブロックの改ページが含まれる", () => {
+    const css = buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false });
+    expect(css).toContain(".excel-print-day{break-before:page");
+    expect(css).toContain(".excel-print-day:first-child{break-before:auto");
   });
 });

@@ -71,3 +71,10 @@ export function useToasts() {
   if (!ctx) throw new Error("useToasts must be used within a ToastProvider");
   return ctx;
 }
+
+// Provider の外でも動く版 (無ければ null)。toast が「あれば出す」程度の
+// 補助的な通知でしかないコンポーネントが、Provider 無しの単体テストで
+// 描画できるようにするためのもの。通常は useToasts を使うこと。
+export function useOptionalToasts() {
+  return useContext(ToastContext);
+}

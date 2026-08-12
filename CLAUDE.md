@@ -105,7 +105,24 @@ Slot / ExtraLesson の `teacher` フィールドで複数講師を表す区切�
   - 「ページタイトル h2」「印刷日」「フィルタ状態」「凡例」など、
     DOM に常設しづらい要素を紙面に載せる必要がある場合はこちら
   - CSS / HTML ビルダは `src/utils/printStyles.js` に切り出し、
-    `printStyles.test.js` で純粋関数としてテストしている
+    `printStyles.test.js` で純粋関数としてテストしている。popup の開閉
+    (`openPrintWindow` / `writePrintDocument`) は `src/utils/printWindow.js`
+
+  この popup 系統には、単発の `handlePrint` の他に**「対象を差し替えながら
+  DOM をスナップショットして 1 ジョブに連結する」派生**が 2 つある。どちらも
+  `flushSync` で描画を確定 → `requestAnimationFrame` 2 回待ち → `outerHTML`
+  を取る、という同じ手順:
+  - **月次の 📋 まとめて印刷** (`handleBatchPrint`): 講師 × 月を差し替え
+  - **タイムテーブルの 🖨 全曜日** (`ExcelGridView` の `handlePrintAllDays`):
+    曜日 (月〜土) を差し替え、`.excel-print-day` ブロックに包んで曜日ごとに
+    改ページ。ボタンが App.jsx ではなく曜日タブの隣にあるのは、グリッドを
+    出しているか / どの曜日かが ExcelGridView の内部状態だから。代行モード中
+    (表示が代行日の 1 日に固定される) は無効化する
+
+  紙面の中身は**画面に出るものをそのまま写す**のが原則 (曜日ごとの描画
+  ロジックを別に書き起こさない)。スナップショットの単位はセクション欄
+  (`.excel-print-day-body`) + 日付固有のバナー (`.excel-print-day-note`) で、
+  講師パネルや曜日タブは紙面に載せない。
 
 **両者を統合する案 (E-2: 全部 window.print() 方式に寄せる) は
 2026-05-05 に検討の上で却下。** 月次の印刷ヘッダ (タイトル・印刷日・
