@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   DAY_COLOR as DC,
   DAY_BG as DB,
@@ -18,6 +19,15 @@ import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
 import { useToday } from "../../hooks/useToday";
+import { useOptionalToasts } from "../../hooks/useToasts";
+import {
+  buildAllDaysBodyHtml,
+  buildAllDaysDocTitle,
+  buildPrintStyles,
+  formatPrintDate,
+  injectTimetableHeaders,
+} from "../../utils/printStyles";
+import { openPrintWindow, writePrintDocument } from "../../utils/printWindow";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
@@ -39,6 +49,14 @@ import { ExcelSection } from "./excelGrid/ExcelSection";
 // `.excel-print-col-hs` クラスを付けておくと、handlePrint が直前に
 // セクションヘッダを差し込んでくる。
 // PrintButton (window.print() 直接) は使わない。
+//
+// 「🖨 全曜日」ボタン (曜日タブの右) は同じ popup 系統の別入口。トップバーの
+// 🖨 が「表示中の曜日」を刷るのに対し、こちらは月〜土を 1 ジョブにまとめる。
+// トップバー側から出せないのは、グリッドを出しているか (コースマスター管理の
+// 時間割タブ / ダッシュボードの時間割モード / 授業管理の時間割タブ) と選択中の
+// 曜日が、いずれもこのコンポーネントの内部状態だから。popup の生成は
+// utils/printWindow、CSS/HTML の組み立ては utils/printStyles を App.jsx の
+// handlePrint と共有している。
 
 // DAYS = ["月","火","水","木","金","土"]。viewDate を含む週の月曜日を起点に
 // 各曜日の日付 (YYYY-MM-DD) を算出して返す。viewDate 未指定時は空 Map。
@@ -93,6 +111,14 @@ export function ExcelGridView({
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
   const [unavailableTeachers, setUnavailableTeachers] = useState(new Set());
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // 全曜日まとめ印刷: 紙面用に曜日を差し替えている間だけ "月".."土"。
+  // 画面の選択 (selectedDay) は動かさず、グリッドの描画対象だけを切り替える。
+  const [printDay, setPrintDay] = useState(null);
+  const [printBusy, setPrintBusy] = useState(false);
+  const rootRef = useRef(null);
+  const toasts = useOptionalToasts();
+  // 描画対象の曜日。全曜日印刷中のみ printDay が勝つ。
+  const activeDay = printDay || selectedDay;
 
   // Filter by active timetable
   const filteredSlots = useMemo(
@@ -228,24 +254,31 @@ export function ExcelGridView({
   // ─── 表示対象日の決定 ──────────────────────────────────────────
   // 優先順位:
   //   1. 代行モードの subDate
-  //   2. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
-  //   3. selectedDay の直近発生日 (今日以前) — フォールバック
+  //   2. 全曜日印刷中は「表示中の週」の同曜日 (weekDates)
+  //   3. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
+  //   4. activeDay の直近発生日 (今日以前) — フォールバック
   // 「今日」は useToday で state 化してあり、タブを開いたまま深夜0時を
   // 跨いでも翌 0 時に再計算される (H2c)。
   const today = useToday();
   const sessionTargetDate = useMemo(() => {
     if (subMode.subDate) return subMode.subDate;
-    if (viewDate && dateToDay(viewDate) === selectedDay) return viewDate;
-    if (!selectedDay) return null;
+    if (printDay) {
+      // 週の日付が判るのは viewDate がある時だけ (ダッシュボード)。無ければ
+      // 下のフォールバック (直近発生日) に落ちる。
+      const wd = weekDates.get(printDay);
+      if (wd) return wd;
+    }
+    if (viewDate && dateToDay(viewDate) === activeDay) return viewDate;
+    if (!activeDay) return null;
     const [ty, tm, td] = today.split("-").map(Number);
     const d = new Date(ty, tm - 1, td);
     for (let i = 0; i < 14; i++) {
       const dateStr = fmtDate(d);
-      if (dateToDay(dateStr) === selectedDay) return dateStr;
+      if (dateToDay(dateStr) === activeDay) return dateStr;
       d.setDate(d.getDate() - 1);
     }
     return null;
-  }, [subMode.subDate, viewDate, selectedDay, today]);
+  }, [subMode.subDate, viewDate, activeDay, printDay, weekDates, today]);
 
   // 表示中の日付。代行モード中は subDate、そうでなければ選択曜日に対応する
   // 実日付 (sessionTargetDate を流用)。第N回計算・隔週 weekType 計算・
@@ -316,9 +349,9 @@ export function ExcelGridView({
 
   const sessionCountMap = useMemo(() => {
     if (!sessionTargetDate || !sessionCtx.displayCutoff) return new Map();
-    const daySlots = displaySlots.filter((s) => s.day === selectedDay);
+    const daySlots = displaySlots.filter((s) => s.day === activeDay);
     return buildSessionCountMap(daySlots, sessionTargetDate, sessionCtx);
-  }, [sessionTargetDate, selectedDay, displaySlots, sessionCtx]);
+  }, [sessionTargetDate, activeDay, displaySlots, sessionCtx]);
 
   // ダッシュボード表示用: 表示中日付の代行を slotId → Substitute でマップ化。
   // 代行モード中は subMode.existingSubMap を優先する (下で分岐)。
@@ -342,7 +375,7 @@ export function ExcelGridView({
     if (!dashboardMode || !displayDate || !isOffForGrade) return new Set();
     const offSet = new Set();
     for (const s of displaySlots) {
-      if (s.day !== selectedDay) continue;
+      if (s.day !== activeDay) continue;
       if (
         isOffForGrade(displayDate, s.grade, s.subj) ||
         // 特別時程の部分休講 (1限カット等) も休講ハイライトに含める
@@ -351,7 +384,7 @@ export function ExcelGridView({
         offSet.add(s.id);
     }
     return offSet;
-  }, [dashboardMode, displayDate, displaySlots, selectedDay, isOffForGrade, daySchedules]);
+  }, [dashboardMode, displayDate, displaySlots, activeDay, isOffForGrade, daySchedules]);
 
   const effectiveHolidayOffSlots = subMode.isSubMode
     ? subMode.holidayOffSlots
@@ -410,11 +443,86 @@ export function ExcelGridView({
   const dashboardDayFilteredOut =
     dashboardMode &&
     !dashboardEntireDayCutoff &&
-    daysWithSlots.has(selectedDay) &&
-    !displaySlots.some((s) => s.day === selectedDay);
+    daysWithSlots.has(activeDay) &&
+    !displaySlots.some((s) => s.day === activeDay);
+
+  // ─── 全曜日まとめ印刷 ──────────────────────────────────────────
+  // コマのある曜日を順に printDay へ差し替え、そのつど描画後の DOM
+  // (日付固有のバナー + セクション欄) をスナップショットして 1 つの popup に
+  // 連結する。月次の一括印刷 (App.jsx の handleBatchPrint) と同じ要領で、
+  // 「実際に画面へ出るもの」をそのまま紙にするので描画ロジックが二重化しない。
+  //
+  // 代行モード中は表示コマが subDate の 1 日に固定されるため無効
+  // (他の曜日を刷っても空になる)。
+  const printableDays = useMemo(
+    () => DAYS.filter((d) => daysWithSlots.has(d)),
+    [daysWithSlots]
+  );
+  const canPrintAllDays =
+    !subMode.isSubMode && !printBusy && printableDays.length > 0;
+
+  const handlePrintAllDays = useCallback(async () => {
+    if (printableDays.length === 0) return;
+    // popup はクリック直下で開く (await を挟むとブロックされやすい)。
+    const w = openPrintWindow();
+    if (!w) {
+      toasts?.error(
+        "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
+      );
+      return;
+    }
+    setPrintBusy(true);
+    const blocks = [];
+    try {
+      for (const d of printableDays) {
+        // 印刷準備中に popup を閉じられたら中断 (書き込み先が無い)
+        if (w.closed) break;
+        // flushSync で同期コミット → 2 フレーム待って DOM 反映を確実にする
+        // (handleBatchPrint と同じ待ち方)。
+        flushSync(() => setPrintDay(d));
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r))
+        );
+        const root = rootRef.current;
+        const body = root?.querySelector(".excel-print-day-body");
+        if (!body) continue;
+        // 日付固有のバナー (休講 / 特別時程) はグリッドの外にあるので拾う。
+        const notes = Array.from(
+          root.querySelectorAll(".excel-print-day-note")
+        )
+          .map((el) => el.outerHTML)
+          .join("");
+        const dateStr = weekDates.get(d) || "";
+        blocks.push({
+          html: injectTimetableHeaders(`${notes}${body.outerHTML}`, {
+            day: d,
+            dateText: dateStr ? formatPrintDate(dateStr, d) : "",
+          }),
+        });
+      }
+    } catch (e) {
+      // スナップショット中に落ちても空 popup を残さない
+      console.error("全曜日印刷に失敗:", e);
+    } finally {
+      // 画面を元の曜日に戻す (途中で抜けても差し替えが残らないように)
+      flushSync(() => setPrintDay(null));
+      setPrintBusy(false);
+    }
+    if (w.closed) return;
+    if (blocks.length === 0) {
+      toasts?.error("印刷データを生成できませんでした。");
+      w.close();
+      return;
+    }
+    writePrintDocument(w, {
+      title: buildAllDaysDocTitle({ days: printableDays }),
+      styles: buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false }),
+      bodyHtml: buildAllDaysBodyHtml({ blocks }),
+    });
+  }, [printableDays, weekDates, toasts]);
 
   return (
-    <div>
+    <div ref={rootRef}>
       {/* Date selector for substitution mode (only when enabled) */}
       {enableSubMode && (
         <div
@@ -476,6 +584,7 @@ export function ExcelGridView({
           gap: 4,
           marginBottom: 14,
           flexWrap: "wrap",
+          alignItems: "center",
         }}
       >
         {DAYS.map((d) => {
@@ -533,6 +642,31 @@ export function ExcelGridView({
             </button>
           );
         })}
+
+        {/* 全曜日まとめ印刷。トップバーの 🖨 (表示中の曜日のみ) の隣ではなく
+            曜日タブの並びに置く — 「どの曜日を刷るか」の話だから */}
+        <button
+          type="button"
+          onClick={handlePrintAllDays}
+          disabled={!canPrintAllDays}
+          aria-label="全曜日をまとめて印刷"
+          title={
+            subMode.isSubMode
+              ? "代行モード中は使えません (表示が代行日の 1 日に固定されるため)"
+              : printableDays.length === 0
+                ? "印刷できる曜日がありません"
+                : `コマのある全曜日 (${printableDays.join("・")}) を 1 回の印刷にまとめます (曜日ごとに改ページ)`
+          }
+          style={{
+            ...S.btn(false),
+            marginLeft: "auto",
+            border: "1px solid #ccc",
+            opacity: canPrintAllDays ? 1 : 0.45,
+            cursor: canPrintAllDays ? "pointer" : "not-allowed",
+          }}
+        >
+          {printBusy ? "🖨 準備中…" : "🖨 全曜日"}
+        </button>
       </div>
 
       {/* Guide */}
@@ -544,9 +678,11 @@ export function ExcelGridView({
             : "時間割の閲覧モード"}
       </div>
 
-      {/* Holiday banner (dashboard mode): 表示日に該当する休講をまとめて表示 */}
+      {/* Holiday banner (dashboard mode): 表示日に該当する休講をまとめて表示。
+          excel-print-day-note は全曜日印刷が曜日ブロックに含めるための目印 */}
       {dashboardMode && dashboardHolidaysForDay.length > 0 && (
         <div
+          className="excel-print-day-note"
           style={{
             padding: "8px 12px",
             marginBottom: 10,
@@ -594,6 +730,7 @@ export function ExcelGridView({
       {/* Day schedule banner (dashboard mode): 表示日の特別時程を表示 */}
       {dashboardMode && dashboardDaySchedules.length > 0 && (
         <div
+          className="excel-print-day-note"
           style={{
             padding: "8px 12px",
             marginBottom: 10,
@@ -659,8 +796,9 @@ export function ExcelGridView({
 
       {/* Grid + Panel layout */}
       <div className="mobile-stack" style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-        {/* Sections */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Sections。excel-print-day-body は全曜日印刷のスナップショット単位
+            (右の講師パネルは紙面に要らないので含めない) */}
+        <div className="excel-print-day-body" style={{ flex: 1, minWidth: 0 }}>
           <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
           {dashboardEntireDayCutoff ? (
             <div
@@ -692,7 +830,7 @@ export function ExcelGridView({
             >
               表示期間外のため、この日に表示するコマはありません
             </div>
-          ) : !daysWithSlots.has(selectedDay) ? (
+          ) : !daysWithSlots.has(activeDay) ? (
             <div
               style={{
                 textAlign: "center",
@@ -708,7 +846,7 @@ export function ExcelGridView({
                 📭
               </div>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-                {selectedDay}曜日のコマがありません
+                {activeDay}曜日のコマがありません
               </div>
               {daysWithSlots.size > 0 ? (
                 <div
@@ -752,7 +890,7 @@ export function ExcelGridView({
             </div>
           ) : (
             (() => {
-              const sections = getDashSections(selectedDay);
+              const sections = getDashSections(activeDay);
               const leftCol = [];
               const rightCol = [];
               const otherCol = [];
@@ -770,7 +908,7 @@ export function ExcelGridView({
                     label={sec.label}
                     headerColor={color.accent}
                     slots={displaySlots}
-                    day={selectedDay}
+                    day={activeDay}
                     sectionFilterFn={sec.filterFn}
                     isAdmin={isAdmin}
                     biweeklyAnchors={biweeklyAnchors}

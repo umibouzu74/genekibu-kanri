@@ -6,7 +6,7 @@
 // ファイル内のセクション順:
 //   1. 共通レイアウト (page rule / printStyles 全体)
 //   2. 月次カレンダー (label / header / visibility / CSS)
-//   3. タイムテーブル (header / CSS)
+//   3. タイムテーブル (header / 全曜日まとめ / CSS)
 //   4. 一括印刷 (グルーピング / body 連結)
 
 import { EVENT_KIND } from "../constants/eventKinds";
@@ -155,16 +155,23 @@ function monthPrintCss() {
 // MS/HS の各ページ先頭に挿入される。section は "中学" / "高校" を期待し、
 // 未指定なら「時間割」のみを出す。selected が指定されている場合は副題に
 // 講師名を併記する。`now` を引数で受けるのは決定的にテストするため。
+//
+// day ("月".."土") は全曜日まとめ印刷で使う。日付が判っている場合 (dateText
+// が「YYYY年MM月DD日（月）」の形で曜日を含む) は冗長なので出さず、日付を
+// 持たないビュー (コースマスター管理・授業管理の時間割タブ) でどの曜日の
+// 紙面かを示すためだけに使う。
 export function buildTimetableHeaderHtml({
   section,
   dateText,
   selected,
+  day,
   now = new Date(),
 }) {
   const titleParts = [];
   if (section) titleParts.push(`${section}の時間割`);
   else titleParts.push("時間割");
   if (dateText) titleParts.push(dateText);
+  else if (day) titleParts.push(`${day}曜日`);
   const title = titleParts.join(" — ");
   const printedAt = formatPrintedAt(now);
   const metaParts = [`<span>${escapeHtml(printedAt)}</span>`];
@@ -172,8 +179,50 @@ export function buildTimetableHeaderHtml({
   return `<h2 class="excel-print-page-title">${escapeHtml(title)}</h2><div class="excel-print-meta">${metaParts.join("")}</div>`;
 }
 
+// 中学 (.excel-print-col-ms) / 高校 (.excel-print-col-hs) の各カラム直前に
+// セクションヘッダを差し込む。単日印刷 (App.jsx の handlePrint) と全曜日
+// まとめ印刷 (ExcelGridView) の双方が使う。
+//
+// 置換は各クラス最初の 1 つだけ (単日 = 1 ページぶん、全曜日 = 曜日ブロック
+// 単位で呼ぶため)。置換文字列ではなく関数を渡すのは、講師名などに "$&" が
+// 含まれても壊れないようにするため。
+export function injectTimetableHeaders(
+  bodyHtml,
+  { dateText = "", selected = "", day = "", now = new Date() } = {}
+) {
+  const header = (section) =>
+    buildTimetableHeaderHtml({ section, dateText, selected, day, now });
+  let out = bodyHtml;
+  out = out.replace(
+    /<div[^>]*class="[^"]*\bexcel-print-col-ms\b[^"]*"[^>]*>/,
+    (m) => `${header("中学")}${m}`
+  );
+  out = out.replace(
+    /<div[^>]*class="[^"]*\bexcel-print-col-hs\b[^"]*"[^>]*>/,
+    (m) => `${header("高校")}${m}`
+  );
+  return out;
+}
+
+// 全曜日まとめ印刷の <body> HTML。曜日ブロックを <section.excel-print-day>
+// で包み、CSS の break-before で曜日ごとに改ページする (ブロック内は従来
+// どおり中学 → 改ページ → 高校)。blocks は { html } の配列。
+export function buildAllDaysBodyHtml({ blocks }) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return "";
+  return blocks
+    .map(({ html = "" }) => `<section class="excel-print-day">${html}</section>`)
+    .join("");
+}
+
+// 全曜日まとめ印刷のジョブ名 (popup の document.title)。
+export function buildAllDaysDocTitle({ days }) {
+  const list = (days || []).join("・");
+  return list ? `時間割 全曜日 (${list})` : "時間割 全曜日";
+}
+
 // タイムテーブル (中学/高校 2 段) 印刷専用 CSS。中高間で改ページ。
 // excel-print-meta はセクション別ヘッダのサブ行 (印刷日 / 講師名) を整える。
+// .excel-print-day は全曜日まとめ印刷の曜日ブロック (単日印刷では現れない)。
 function timetablePrintCss() {
   return `
     .excel-print-meta{font-size:9pt;color:#555;display:flex;gap:12px;flex-wrap:wrap;margin:0 0 6px}
@@ -181,6 +230,8 @@ function timetablePrintCss() {
     .excel-grid-sections{display:block !important;grid-template-columns:none !important}
     .excel-print-col-ms{break-after:page;page-break-after:always}
     .excel-print-col-ms,.excel-print-col-hs{break-inside:avoid;page-break-inside:avoid}
+    .excel-print-day{break-before:page;page-break-before:always}
+    .excel-print-day:first-child{break-before:auto;page-break-before:auto}
   `;
 }
 

@@ -316,3 +316,50 @@ test("月次カレンダー: popup 印刷にタイトル・印刷日・凡例が
   // 本文 (カレンダー) もコピーされている
   await expect(popup.locator(".month-print-root")).toHaveCount(1);
 });
+
+test("タイムテーブル: 全曜日まとめ印刷が曜日ごとの紙面を 1 つの popup に出す", async ({
+  page,
+  context,
+}) => {
+  // popup 側の window.print() を止めて onafterprint → close を防ぐ
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.clock.setFixedTime(GRID_DAY);
+  await page.goto("/genekibu-kanri/");
+  // Dashboard の既定は時間割モード (ExcelGridView)
+  await expect(page.locator(".excel-grid-sections")).toBeVisible();
+
+  // 画面に出ている曜日 (木) を控えておく。印刷後に戻ることを確かめる。
+  const activeDayBefore = await page
+    .locator(".excel-print-day-body")
+    .textContent();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.getByRole("button", { name: "全曜日をまとめて印刷" }).click(),
+  ]);
+
+  // 曜日ブロックが複数枚 (デモデータは月〜土にコマがある)
+  const days = popup.locator(".excel-print-day");
+  await expect(days.first()).toBeAttached();
+  expect(await days.count()).toBeGreaterThan(1);
+  // 各ブロックに中学/高校のセクションヘッダが付く
+  await expect(
+    days.first().locator(".excel-print-page-title").first()
+  ).toContainText("中学の時間割");
+  // 曜日ごとに改ページ (先頭ブロックだけ auto)。改ページ規則は @media print
+  // の中なので popup を print メディアにしてから読む。
+  await popup.emulateMedia({ media: "print" });
+  const breaks = await days.evaluateAll((els) =>
+    els.map((el) => getComputedStyle(el).breakBefore)
+  );
+  expect(breaks[0]).toBe("auto");
+  expect(breaks.slice(1).every((b) => b === "page")).toBe(true);
+
+  // 画面側は元の曜日に戻っている (印刷用の差し替えが残らない)
+  await expect(page.locator(".excel-print-day-body")).toHaveText(
+    activeDayBefore
+  );
+});

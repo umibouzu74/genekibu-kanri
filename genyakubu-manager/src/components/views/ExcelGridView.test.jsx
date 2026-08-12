@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 // ダッシュボード時間割モードの表示期間フィルタ: 終講日後・時間割適用期間外の
 // コマを表示しないこと (日別リストと同じ判定) を固定する。
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { ExcelGridView } from "./ExcelGridView";
 
 afterEach(cleanup);
@@ -133,5 +140,88 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
     expect(
       screen.queryByText("この日以降の予定は未確定です")
     ).not.toBeInTheDocument();
+  });
+});
+
+// ─── 全曜日まとめ印刷 ────────────────────────────────────────────────
+// 曜日タブ右の「🖨 全曜日」。コマのある曜日を順に描画してスナップショット
+// した HTML を popup へ書き出す (popup 生成は utils/printWindow)。
+describe("ExcelGridView (全曜日まとめ印刷)", () => {
+  // popup の代わり。document.write された HTML を溜めて検証する。
+  function fakeWindow() {
+    const chunks = [];
+    return {
+      html: () => chunks.join(""),
+      document: {
+        write: (s) => chunks.push(s),
+        close: () => {},
+      },
+      print: vi.fn(),
+      close: vi.fn(),
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("コマのある全曜日を曜日ブロックに分けて popup へ書き出す", async () => {
+    const w = fakeWindow();
+    vi.spyOn(window, "open").mockReturnValue(w);
+    renderGrid({
+      slots: [
+        slot({ id: 1, day: "月", teacher: "田中" }),
+        slot({ id: 2, day: "水", teacher: "佐藤" }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText("全曜日をまとめて印刷"));
+    // 曜日ごとに requestAnimationFrame 2 回ぶん待ってから DOM を拾うので、
+    // popup への書き出しが済むまで待つ。
+    await waitFor(() => expect(w.html()).not.toBe(""));
+    const html = w.html();
+    // 月・水の 2 ブロック (火はコマが無いので出さない)
+    expect(html.match(/<section class="excel-print-day">/g)).toHaveLength(2);
+    // MONDAY = 2026-07-13 の週なので、月 = 07/13・水 = 07/15
+    expect(html).toContain("2026年07月13日（月）");
+    expect(html).toContain("2026年07月15日（水）");
+    expect(html).not.toContain("2026年07月14日（火）");
+    // 各曜日の担当がその曜日のブロックに入っている
+    expect(html.indexOf("田中")).toBeLessThan(html.indexOf("佐藤"));
+    // 中学/高校のセクションヘッダ + 曜日ごとの改ページ CSS
+    expect(html).toContain("中学の時間割");
+    expect(html).toContain(".excel-print-day{break-before:page");
+  });
+
+  it("印刷後は画面の表示曜日が元に戻る", async () => {
+    const w = fakeWindow();
+    vi.spyOn(window, "open").mockReturnValue(w);
+    renderGrid({
+      slots: [
+        slot({ id: 1, day: "月", teacher: "田中" }),
+        slot({ id: 2, day: "水", teacher: "佐藤" }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText("全曜日をまとめて印刷"));
+    // 全曜日ぶんの差し替えが終わる (= popup へ書き出す) まで待つ
+    await waitFor(() => expect(w.html()).not.toBe(""));
+    // viewDate (月曜) のグリッドに戻っている
+    expect(screen.getByText("田中")).toBeInTheDocument();
+    expect(screen.queryByText("佐藤")).not.toBeInTheDocument();
+  });
+
+  it("コマが 1 つも無ければ押せない", () => {
+    renderGrid({ slots: [] });
+    expect(screen.getByLabelText("全曜日をまとめて印刷")).toBeDisabled();
+  });
+
+  it("ポップアップがブロックされたら印刷せず終わる", async () => {
+    vi.spyOn(window, "open").mockReturnValue(null);
+    renderGrid({ slots: [slot({ id: 1, day: "月", teacher: "田中" })] });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("全曜日をまとめて印刷"));
+    });
+    // 画面は元のまま (曜日の差し替えが残らない)
+    expect(screen.getByText("田中")).toBeInTheDocument();
   });
 });
