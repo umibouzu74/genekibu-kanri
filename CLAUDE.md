@@ -154,7 +154,10 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   - セクションの配色は `regular-builder/sectionTone.js` (画面と共有)
   - **既定の教室はセルに出さない** (クラス見出しに出ているため)。セルに
     出るのはセル上書きの教室と、列見出しを持たない合同セルだけ
-  - 行の高さは中身から見積もる (`estimateRowHeight`)
+  - 行の高さは中身から見積もる (`estimateRowHeight` /
+    `estimateClassHeadHeight`)。**見出し列 (時限・クラス) も見積りに
+    入れること** — wrapText + 固定行高は溢れた行を表示しないため、
+    本文セルだけで高さを決めると長いラベルの行で時刻や教室が切れる
 - **Excel は fitToPage を有効にすると手動改ページを無視する**ため、
   「全曜日」シートだけは fitToPage を使わず `estimatePrintScale` で
   見積もった固定倍率を入れる。倍率は全曜日共通 (紙面の字の大きさが揃う)。

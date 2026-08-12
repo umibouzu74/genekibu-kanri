@@ -140,12 +140,29 @@ const ARGB_TEACHER = "FF2E6A9E"; // builder-blue (講師)
 const ARGB_SUB = "FF666666"; // builder-ink-muted (教室・備考)
 
 const LINE_FONT = {
+  // セル (科目 / 講師 / 教室・備考)
   subj: { size: 10, bold: true, color: { argb: ARGB_INK } },
   teacher: { size: 9, color: { argb: ARGB_TEACHER } },
   sub: { size: 8, color: { argb: ARGB_SUB } },
+  // 見出し。行高の見積りをセルと同じ関数で回すため同じ表に置く
+  periodLabel: { size: 9, bold: true, color: { argb: ARGB_INK } },
+  periodTime: { size: 8, color: { argb: ARGB_SUB } },
+  // 時限ラベル未設定 (取込直後など) で時刻だけを見出しにするとき
+  periodTimeOnly: { size: 9, color: { argb: ARGB_INK } },
+  clsLabel: { size: 10, bold: true, color: { argb: ARGB_INK } },
+  clsRoom: { size: 8, color: { argb: ARGB_SUB } },
 };
 // 各行が占める高さ (pt)。フォントサイズ + 行間
-const LINE_HEIGHT = { subj: 12.5, teacher: 11, sub: 10 };
+const LINE_HEIGHT = {
+  subj: 12.5,
+  teacher: 11,
+  sub: 10,
+  periodLabel: 11,
+  periodTime: 10,
+  periodTimeOnly: 11,
+  clsLabel: 12.5,
+  clsRoom: 10,
+};
 const CELL_PADDING_PT = 3;
 
 const MEDIUM_EDGE = { style: "medium", color: { argb: "FF666666" } };
@@ -179,12 +196,35 @@ export function estimateCellHeight(lines, width) {
 
 /**
  * 時限行の高さ (pt)。行に並ぶセルの中で最も背の高いものに合わせる。
+ * **時間見出しの列も渡すこと** — 長い時限ラベル (「第1回 確認テスト」など)
+ * が折り返す行で本文だけを見て高さを決めると、時刻の行が紙面で切れる。
  * @param {{lines: {kind: string, text: string}[], width: number}[]} cells
  */
 export function estimateRowHeight(cells) {
   return Math.max(
     ROW_HEIGHT_PERIOD_MIN,
     ...(cells || []).map((c) => estimateCellHeight(c.lines, c.width))
+  );
+}
+
+/**
+ * クラス見出し行の高さ (pt)。ラベルと教室は 1 行に並ぶので幅は合算で数える
+ * (取込した高校の講座列など、長いラベルが折り返しても切れないように)。
+ * @param {{label?: string, room?: string}[]} heads
+ */
+export function estimateClassHeadHeight(heads) {
+  const capacity = Math.max(
+    1,
+    Math.floor((COL_WIDTH_CLASS * 11) / LINE_FONT.clsLabel.size)
+  );
+  return Math.max(
+    ROW_HEIGHT_CLASS,
+    ...(heads || []).map((h) => {
+      const width =
+        displayWidth(h.label) + (h.room ? displayWidth(h.room) + 1 : 0);
+      const rows = Math.max(1, Math.ceil(width / capacity));
+      return CELL_PADDING_PT + rows * LINE_HEIGHT.clsLabel;
+    })
   );
 }
 
@@ -370,7 +410,8 @@ function writeSectionBar(ws, s, row, lastCol) {
   ws.getRow(row).height = ROW_HEIGHT_BAR;
 }
 
-// 列見出し 2 段 (学年 = 学年色 / クラス = ラベル + 教室の小文字)
+// 列見出し 2 段 (学年 = 学年色 / クラス = ラベル + 教室の小文字)。
+// @returns {number} 2 段ぶんの高さ (pt)
 function writeSectionHead(ws, s, day, tabRow) {
   const clsRow = tabRow + 1;
   const corner = ws.getCell(tabRow, 1);
@@ -382,6 +423,7 @@ function writeSectionHead(ws, s, day, tabRow) {
   corner.border = { ...THIN_BORDER, bottom: MEDIUM_EDGE };
 
   let c = 2;
+  const heads = [];
   s.groups.forEach((g, gi) => {
     const span = g.classes.length;
     const edge = gi > 0 ? GROUP_LEFT_BORDER : THIN_BORDER;
@@ -398,10 +440,10 @@ function writeSectionHead(ws, s, day, tabRow) {
       // クラス名の無い列 (取込した高校の講座列など) は教室名を見出しに
       const room = classRoomForDay(cls, day);
       const label = cls.label || room || "－";
-      const parts = [{ font: { size: 10, bold: true, color: { argb: ARGB_INK } }, text: label }];
-      if (cls.label && room && room !== cls.label) {
-        parts.push({ font: { size: 8, color: { argb: ARGB_SUB } }, text: ` ${room}` });
-      }
+      const subRoom = cls.label && room && room !== cls.label ? room : "";
+      heads.push({ label, room: subRoom });
+      const parts = [{ font: LINE_FONT.clsLabel, text: label }];
+      if (subRoom) parts.push({ font: LINE_FONT.clsRoom, text: ` ${subRoom}` });
       cell.value = { richText: parts };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
       cell.fill = solidFill(ARGB_HEAD_GRAY);
@@ -412,30 +454,31 @@ function writeSectionHead(ws, s, day, tabRow) {
     });
     c += span;
   });
+  const clsHeight = estimateClassHeadHeight(heads);
   ws.getRow(tabRow).height = ROW_HEIGHT_TAB;
-  ws.getRow(clsRow).height = ROW_HEIGHT_CLASS;
+  ws.getRow(clsRow).height = clsHeight;
+  return ROW_HEIGHT_TAB + clsHeight;
 }
 
 // 時限 1 行 (時間見出し + 各学年のセル)。行の高さは中身から見積もる
 function writePeriodRow(ws, s, day, per, row, subjectColor) {
   const timeCell = ws.getCell(row, 1);
   // ラベル未設定 (取込直後など) は時刻だけを見出しにする (画面と同じ)
-  const timeParts = per.label
+  const timeLines = per.label
     ? [
-        { font: { size: 9, bold: true, color: { argb: ARGB_INK } }, text: per.label },
-        ...(per.time
-          ? [{ font: { size: 8, color: { argb: ARGB_SUB } }, text: `\n${per.time}` }]
-          : []),
+        { kind: "periodLabel", text: per.label },
+        ...(per.time ? [{ kind: "periodTime", text: per.time }] : []),
       ]
     : per.time
-      ? [{ font: { size: 9, color: { argb: ARGB_INK } }, text: per.time }]
+      ? [{ kind: "periodTimeOnly", text: per.time }]
       : [];
-  timeCell.value = timeParts.length > 0 ? { richText: timeParts } : "";
+  timeCell.value = toRichText(timeLines);
   timeCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   timeCell.fill = solidFill(ARGB_HEAD_GRAY);
   timeCell.border = THIN_BORDER;
 
-  const measured = [];
+  // 行高の見積りには時間見出しも入れる (長いラベルで時刻が切れないように)
+  const measured = [{ lines: timeLines, width: COL_WIDTH_TIME }];
   let c = 2;
   s.groups.forEach((g, gi) => {
     const edge = gi > 0 ? GROUP_LEFT_BORDER : THIN_BORDER;
@@ -495,12 +538,11 @@ function writeDayBlock(
   row += 2;
 
   for (const s of sections) {
-    // セクション見出しバー + 列見出し 2 段 + 区切りの空行
-    heightPt +=
-      ROW_HEIGHT_BAR + ROW_HEIGHT_TAB + ROW_HEIGHT_CLASS + ROW_HEIGHT_DEFAULT;
+    // セクション見出しバー + 区切りの空行 (列見出し 2 段は実測を足す)
+    heightPt += ROW_HEIGHT_BAR + ROW_HEIGHT_DEFAULT;
     writeSectionBar(ws, s, row, s.cols.length + 1);
     row++;
-    writeSectionHead(ws, s, day, row);
+    heightPt += writeSectionHead(ws, s, day, row);
     row += 2;
     for (const per of s.periods) {
       heightPt += writePeriodRow(ws, s, day, per, row, subjectColor);

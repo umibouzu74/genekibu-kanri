@@ -189,6 +189,70 @@ describe("buildRegularWorkbook", () => {
     expect(ws.getCell(7, 4).fill?.fgColor?.argb).toBe("FFF0F1F3");
   });
 
+  it("結合表示できない学年 (合同と個別が同じ行) は独立列で出す", () => {
+    const p = makeProject();
+    p.tabs[0].classes.push({ id: 9, label: "S〜A", room: "501" });
+    // 1限に合同 + S の個別コマ → mergeFallback
+    p.tabs[0].schedule[makeCellKey("月", 1, 9)] = { subj: "確認テスト" };
+    const wb = buildRegularWorkbook(p, { days: ["月"], dateLabel: "2026-08-05" });
+    const ws = wb.getWorksheet("月曜");
+    // 合同列が 3 列目として並び、セルもその列に入る (列がずれない)
+    expect(textOf(ws.getCell(5, 4))).toBe("S〜A 501");
+    expect(textOf(ws.getCell(6, 4))).toContain("確認テスト");
+    expect(textOf(ws.getCell(6, 2))).toContain("数学");
+  });
+
+  it("クラスが 1 列だけのセクションでも見出しバーが壊れない", () => {
+    const p = makeProject();
+    p.tabs[0].classes = [{ id: 1, label: "S", room: "501" }];
+    p.tabs[0].schedule = { [makeCellKey("月", 1, 1)]: { subj: "数学" } };
+    const ws = buildRegularWorkbook(p, {
+      days: ["月"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("月曜");
+    expect(ws.getCell(3, 1).value).toBe("中3");
+    expect(ws.getCell(3, 2).value).toBe("1コマ");
+  });
+
+  it("曜日別の既定教室 (roomByDay) がクラス見出しに出る", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0] = {
+      id: 1,
+      label: "S",
+      room: "501",
+      roomByDay: { 月: "601" },
+    };
+    const ws = buildRegularWorkbook(p, {
+      days: ["月"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("月曜");
+    expect(textOf(ws.getCell(5, 2))).toBe("S 601");
+  });
+
+  it("長い時限ラベルの行は時刻が切れない高さになる", () => {
+    // 本文セルだけで高さを決めると、折り返したラベルに押されて時刻が
+    // 紙面から切れる (wrapText + 固定行高は溢れた行を表示しない)
+    const p = makeProject();
+    p.periods[0] = { id: 1, label: "第1回 確認テスト", time: "18:00-18:45" };
+    const ws = buildRegularWorkbook(p, {
+      days: ["月"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("月曜");
+    expect(textOf(ws.getCell(6, 1))).toBe("第1回 確認テスト\n18:00-18:45");
+    // ラベル 2 行 + 時刻 1 行が入る高さ (下限の 30 では足りない)
+    expect(ws.getRow(6).height).toBeGreaterThan(30);
+  });
+
+  it("長いクラス名の見出し行は折り返しぶん高くなる", () => {
+    const p = makeProject();
+    p.tabs[0].classes[0] = { id: 1, label: "高松桜井 理系選択", room: "501" };
+    const ws = buildRegularWorkbook(p, {
+      days: ["月"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("月曜");
+    expect(ws.getRow(5).height).toBeGreaterThan(16);
+  });
+
   it("セクションの無い曜日はシートを作らない", () => {
     const wb = buildRegularWorkbook(makeProject(), {
       days: ["水"],
@@ -285,6 +349,24 @@ describe("buildRegularWorkbook: 全曜日まとめシート", () => {
       dateLabel: "2026-08-05",
     });
     expect(wb.worksheets.map((w) => w.name)).toEqual(["月曜", "火曜", "全曜日"]);
+  });
+
+  it("曜日をまたいでも合同コマの結合が壊れない", () => {
+    const p = twoDayProject();
+    p.tabs[0].classes.push({ id: 9, label: "S〜A", room: "501" });
+    delete p.tabs[0].schedule[makeCellKey("月", 1, 1)];
+    delete p.tabs[0].schedule[makeCellKey("火", 1, 1)];
+    p.tabs[0].schedule[makeCellKey("月", 1, 9)] = { subj: "確認テスト" };
+    p.tabs[0].schedule[makeCellKey("火", 1, 9)] = { subj: "確認テスト" };
+    const ws = buildRegularWorkbook(p, {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("全曜日");
+    // 月ブロックの 1限 (6 行目) と火ブロックの 1限 (14 行目) の両方で
+    // 合同セルが 2 列に結合されている
+    expect(ws.getCell(6, 3).master.address).toBe("B6");
+    expect(ws.getCell(14, 3).master.address).toBe("B14");
+    expect(ws.getCell(14, 2).text).toContain("確認テスト");
   });
 
   it("曜日ごとにタイトルを置き、曜日の切れ目に改ページを入れる", () => {
