@@ -164,3 +164,83 @@ export function splitSpan(spanLen, k) {
   const rem = spanLen % k;
   return Array.from({ length: k }, (_, i) => base + (i < rem ? 1 : 0));
 }
+
+/**
+ * 1 行 (時限 × 学年) 分のセル配置を左から順に返す。中身のある合同セルは
+ * 構成クラスの上に colSpan で被せ、同一スパンの並列はスパンを分割する。
+ * **画面 (RegularGrid) と紙面 (Excel) で同じ配置を使うための共有関数** —
+ * どちらか一方だけを書き換えると紙が画面と食い違うので、配置の変更は
+ * 必ずここで行うこと。
+ *
+ * 結合表示できないデータ (mergeFallback) の学年はこの関数を通さず、
+ * tab.classes をそのまま独立列として並べる (呼び出し側の責務)。
+ *
+ * @param {object} tab 学年タブ (schedule を持つ)
+ * @param {string} day 曜日
+ * @param {number} periodId 時限 id
+ * @param {{visible: object[], ranges: object[]}} layout computeMergeLayout の結果
+ * @param {(cls: object) => boolean} [isExtraPresent] 中身が無くても合同セル
+ *   として出す条件 (画面の「編集中の空セル」)。省略時は中身のあるものだけ
+ * @returns {{cls: object, colSpan: number, isRange: boolean, first: boolean,
+ *            starters: object[]}[]}
+ *   first = 学年の左端に置かれるセル (学年の境界罫を引く対象)
+ *   starters = この列から始まる未入力の合同枠 (⊞ で追加できるもの)
+ */
+export function computeRowCells(
+  tab,
+  day,
+  periodId,
+  layout,
+  isExtraPresent = null
+) {
+  const schedule = tab.schedule || {};
+  const cellOf = (cls) => schedule[makeCellKey(day, periodId, cls.id)];
+  const present = layout.ranges.filter(
+    (r) => cellOf(r.cls) || (isExtraPresent ? isExtraPresent(r.cls) : false)
+  );
+  // 同一スパンごとにまとめる (並列合同はスパンを分け合う)
+  const bySpan = new Map();
+  for (const r of present) {
+    const k = `${r.startIdx}-${r.endIdx}`;
+    if (!bySpan.has(k))
+      bySpan.set(k, { startIdx: r.startIdx, endIdx: r.endIdx, items: [] });
+    bySpan.get(k).items.push(r);
+  }
+  const out = [];
+  let i = 0;
+  while (i < layout.visible.length) {
+    const g = [...bySpan.values()].find((x) => x.startIdx === i);
+    if (g) {
+      const widths = splitSpan(g.endIdx - g.startIdx + 1, g.items.length);
+      g.items.forEach((r, gi) => {
+        // 幅 0 は mergeFallback が事前に弾くため通常来ない (保険)
+        if (widths[gi] <= 0) return;
+        out.push({
+          cls: r.cls,
+          colSpan: widths[gi],
+          isRange: true,
+          first: i === 0 && out.length === 0,
+          starters: [],
+        });
+      });
+      i = g.endIdx + 1;
+    } else {
+      const cls = layout.visible[i];
+      // この列から始まる未入力の合同枠。スパン内に個別コマがある行には
+      // 出さない (入力するとクラスの二重在籍になるため)
+      const starters = layout.ranges
+        .filter((r) => r.startIdx === i && !present.includes(r))
+        .filter((r) => {
+          for (let k = r.startIdx; k <= r.endIdx; k++) {
+            const vc = layout.visible[k];
+            if (vc && cellOf(vc)) return false;
+          }
+          return true;
+        })
+        .map((r) => r.cls);
+      out.push({ cls, colSpan: 1, isRange: false, first: i === 0, starters });
+      i++;
+    }
+  }
+  return out;
+}

@@ -15,13 +15,26 @@
 // - このモジュール自体はボタン押下時に dynamic import して
 //   exceljs をメインバンドルから外す
 //
+// 紙面は「画面をそのまま Excel に写す」のが要件 (2026-08-12)。画面の
+// 曜日ビューと同じものを同じ見え方で出す:
+// - セクション見出しは部の色 (sectionTone の accent) + 右肩にコマ数
+// - 学年の見出しは学年色 (gradeColor)、クラス見出しは「ラベル + 教室(小)」
+// - 時限見出しは「ラベル(太) + 時刻(小・グレー)」の 2 段
+// - セルは科目カラーの背景 + 「科目(太) / 講師(青) / 教室・備考(小灰)」の
+//   3 段 (exceljs の richText で 1 セル内に字づかいを混在させる)
+// - 合同 (範囲・列挙ラベル) のコマは画面と同じく構成クラスの上に
+//   セル結合で被せる (配置は mergedColumns.computeRowCells を画面と共有)
+// - 学年の境目には太い縦罫 (画面の border-l-2 に相当)
+//
 // 割り切り (紙面要件):
 // - 「🏫 亀井町を分ける」は画面のトグル状態に従う (見たまま)
 // - セルが 1 つも無い時限行・クラス列・曜日シートは常に出力しない
 //   (画面の「▤ 空行・空列を隠す」トグルとは独立に、紙面では常に省く)
-// - 合同 (結合) 列は結合せず独立列として出力する。合同の範囲ラベル列に
-//   中身があれば、その構成クラスの空列は出力しない
 // - 隔週コマは講師欄に「主担当 / パートナー」で載せる (画面と同じ)
+// - 教室はセルに上書きがあるときと合同セルのときだけセルに出す (画面と
+//   同じ。既定の教室はクラス見出しに出ているのでセルには繰り返さない)
+// - 行の高さは中身から見積もる (estimateRowHeight)。折り返しの回数は
+//   列幅とフォントサイズから概算する
 //
 // 印刷設定の使い分け (重要):
 // - 曜日別シートは 1 シート = 1 曜日なので Excel の「1 ページに収める」
@@ -42,14 +55,28 @@ import {
   splitTeacherField,
 } from "../utils/biweekly";
 import { getSubjectColor } from "../timetable-builder/utils/constants";
-import { classRoomForDay, computeSections, makeCellKey } from "./model";
+import { gradeColor } from "../constants/colors";
+import {
+  classRoomForDay,
+  computeSections,
+  makeCellKey,
+  parseCellKey,
+} from "./model";
+import {
+  computeMergeLayout,
+  computeRowCells,
+  mergeFallback,
+  visibleClassesForDay,
+} from "./mergedColumns";
+import { sectionTone } from "./sectionTone";
 import { computeClassSubjectLoad } from "./classLoad";
 import { computeTeacherLoad, computeTeacherWeek, formatMinutes } from "./teacherLoad";
 
 const ARGB_GRAY_BORDER = "FFAAAAAA";
 const ARGB_HEADER_BLUE = "FF4472C4";
 const ARGB_HEAD_GRAY = "FFF2F2F2";
-const ARGB_BLOCKED_GRAY = "FFE7E6E6";
+// 画面 (bg-builder-bg) と同じ、学年が使わない時限の塞ぎ色
+const ARGB_BLOCKED_GRAY = "FFF0F1F3";
 
 const THIN_BORDER = {
   top: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
@@ -96,10 +123,70 @@ const DAY_SHEET_MARGINS = {
 const B4_LANDSCAPE_IN = { width: 364 / 25.4, height: 257 / 25.4 };
 const A3_LANDSCAPE_IN = { width: 420 / 25.4, height: 297 / 25.4 };
 
-const COL_WIDTH_TIME = 11; // 「時間」列
-const COL_WIDTH_CLASS = 16; // クラス列
-const ROW_HEIGHT_DEFAULT = 15; // タイトル・見出し・空行 (pt)
-const ROW_HEIGHT_PERIOD = 34; // 時限行 (pt)
+const COL_WIDTH_TIME = 12; // 「時間」列
+const COL_WIDTH_CLASS = 15; // クラス列
+const ROW_HEIGHT_DEFAULT = 15; // タイトル・空行 (pt)
+const ROW_HEIGHT_BAR = 17; // セクション見出しバー (pt)
+const ROW_HEIGHT_TAB = 17; // 学年見出し (pt)
+const ROW_HEIGHT_CLASS = 16; // クラス見出し (pt)
+const ROW_HEIGHT_PERIOD_MIN = 30; // 時限行の下限 (pt)
+
+// ─── 画面 (RegularGrid / RegularCell) と同じ字づかい ────────────────
+// 1 セルの中で「科目 / 講師 / 教室・備考」を書き分けるため、行ごとに
+// フォントを変えられる richText で書く。色は tailwind.config.js の
+// builder-* トークンと同じ値。
+const ARGB_INK = "FF1A1A2E"; // builder-ink (科目)
+const ARGB_TEACHER = "FF2E6A9E"; // builder-blue (講師)
+const ARGB_SUB = "FF666666"; // builder-ink-muted (教室・備考)
+
+const LINE_FONT = {
+  subj: { size: 10, bold: true, color: { argb: ARGB_INK } },
+  teacher: { size: 9, color: { argb: ARGB_TEACHER } },
+  sub: { size: 8, color: { argb: ARGB_SUB } },
+};
+// 各行が占める高さ (pt)。フォントサイズ + 行間
+const LINE_HEIGHT = { subj: 12.5, teacher: 11, sub: 10 };
+const CELL_PADDING_PT = 3;
+
+const MEDIUM_EDGE = { style: "medium", color: { argb: "FF666666" } };
+// 学年グループの境目に引く縦罫 (画面の border-l-2 に相当)
+const GROUP_LEFT_BORDER = { ...THIN_BORDER, left: MEDIUM_EDGE };
+
+// 全角は半角 2 文字ぶんの幅として数える (折り返し回数の見積り用)
+const displayWidth = (s) =>
+  [...String(s || "")].reduce(
+    (n, ch) => n + (ch.charCodeAt(0) > 0xff ? 2 : 1),
+    0
+  );
+
+/**
+ * セル 1 つ分の高さ (pt) を中身から見積もる純関数。
+ * Excel の列幅は既定フォント (11pt) の半角文字数なので、小さい字の行は
+ * その比だけ多く入る。改行 (richText の "\n") は行数に加算する。
+ * @param {{kind: string, text: string}[]} lines cellLines の結果
+ * @param {number} width 列幅 (結合セルは合算した幅)
+ */
+export function estimateCellHeight(lines, width) {
+  let h = CELL_PADDING_PT;
+  for (const ln of lines) {
+    const font = LINE_FONT[ln.kind];
+    const capacity = Math.max(1, Math.floor((width * 11) / font.size));
+    const rows = Math.max(1, Math.ceil(displayWidth(ln.text) / capacity));
+    h += rows * LINE_HEIGHT[ln.kind];
+  }
+  return h;
+}
+
+/**
+ * 時限行の高さ (pt)。行に並ぶセルの中で最も背の高いものに合わせる。
+ * @param {{lines: {kind: string, text: string}[], width: number}[]} cells
+ */
+export function estimateRowHeight(cells) {
+  return Math.max(
+    ROW_HEIGHT_PERIOD_MIN,
+    ...(cells || []).map((c) => estimateCellHeight(c.lines, c.width))
+  );
+}
 
 // 曜日別シート: B4 横に丸ごと 1 ページで収める (Excel 側の実測スケール)
 function applyDaySheetPrintDefaults(pageSetup) {
@@ -150,29 +237,25 @@ export function estimatePrintScale({
 // ─── シートデータの収集 (純粋関数、テスト用に export) ───────────────
 /**
  * 曜日 1 つ分のセクション構造を出力用に解決する。
- * セクション分割・列の並びは画面 (computeSections) と同一。
- * その曜日にセルが 1 つも無いクラス列・時限行は落とす (紙面に空きマスの
- * 列や行を出さない)。Excel は合同列を結合しないため、画面の空列非表示
- * (visibleClassesForDay) と違い、合同の構成クラスも自身のセルが無ければ
- * 落とす (範囲ラベル列に中身が載るので情報は欠けない)。
+ * セクション分割・列の並び・合同列の結合レイアウトは画面 (RegularGrid の
+ * sections useMemo) と同一。その曜日にセルが 1 つも無いクラス列・時限行は
+ * 落とす (画面の「空行・空列を隠す」を紙面では常に効かせる)。
  * @returns {{
  *   name: string,
+ *   tone: {b: string, f: string, accent: string},
+ *   cellCount: number,
  *   periods: {id, label, time}[],
+ *   groups: {tab, layout, classes: object[]}[],
  *   cols: {tab, cls}[],
  * }[]}
+ *   groups = 学年ごとの列のまとまり (classes = 見出しに出る列。合同列は
+ *   結合表示するので見出しには出ない。fallback の学年だけ全列が並ぶ)
  */
 export function collectDaySheet(project, day, { splitCampus = true } = {}) {
   return computeSections(project, day, { splitCampus })
     .map((s) => {
       const tabs = s.tabs
-        .map((t) => ({
-          ...t,
-          classes: (t.classes || []).filter((cls) =>
-            (t.periodIds || []).some(
-              (pid) => t.schedule[makeCellKey(day, pid, cls.id)]
-            )
-          ),
-        }))
+        .map((t) => ({ ...t, classes: visibleClassesForDay(t, day) }))
         .filter((t) => t.classes.length > 0);
       const usedIds = new Set(tabs.flatMap((t) => t.periodIds || []));
       const periods = (project.periods || [])
@@ -187,31 +270,204 @@ export function collectDaySheet(project, day, { splitCampus = true } = {}) {
               t.classes.some((cls) => t.schedule[makeCellKey(day, per.id, cls.id)])
           )
         );
-      const cols = tabs.flatMap((t) =>
-        (t.classes || []).map((cls) => ({ tab: t, cls }))
+      const groups = tabs.map((t) => {
+        const layout = computeMergeLayout(t);
+        const fallback = mergeFallback(t, day, periods, layout);
+        return {
+          tab: t,
+          layout: { ...layout, fallback },
+          // 結合表示できないデータの学年は従来どおり全列を独立で並べる
+          classes: fallback ? t.classes : layout.visible,
+        };
+      });
+      const cols = groups.flatMap((g) =>
+        g.classes.map((cls) => ({ tab: g.tab, cls }))
       );
-      return { name: s.name, periods, cols };
+      const cellCount = tabs.reduce(
+        (n, t) =>
+          n +
+          Object.keys(t.schedule || {}).filter((k) => {
+            const pos = parseCellKey(k);
+            return (
+              pos.day === day &&
+              (t.periodIds || []).includes(pos.periodId) &&
+              t.classes.some((c) => c.id === pos.classId)
+            );
+          }).length,
+        0
+      );
+      return { name: s.name, tone: sectionTone(tabs), cellCount, periods, groups, cols };
     })
     .filter((s) => s.periods.length > 0 && s.cols.length > 0);
 }
 
-// セルの表示テキスト (教科 / 講師 / 教室・備考 の最大 3 行)。教室は
-// その曜日の実効教室 (セル上書き → 曜日別既定 → クラス既定)
-function cellText(cell, cls, day) {
-  if (!cell) return "";
+/**
+ * セルの表示内容を行に分ける (画面の RegularCell と同じ組み立て)。
+ * 教室はセル上書きがあるときだけ出す — 既定の教室はクラス見出しに
+ * 出ているため。合同セルだけは列見出しを持たないので、呼び出し側が
+ * roomFallback にその曜日の実効教室を渡して補う。
+ * @returns {{kind: "subj"|"teacher"|"sub", text: string}[]}
+ */
+export function cellLines(cell, roomFallback = "") {
+  if (!cell) return [];
   const lines = [];
-  if (cell.subj) lines.push(cell.subj);
-  if (cell.teacher) lines.push(formatBiweeklyTeacher(cell.teacher, cell.note));
-  const sub = [(cell.room || "").trim() || classRoomForDay(cls, day), (cell.note || "").trim()]
+  if (cell.subj) lines.push({ kind: "subj", text: cell.subj });
+  if (cell.teacher)
+    lines.push({
+      kind: "teacher",
+      text: formatBiweeklyTeacher(cell.teacher, cell.note),
+    });
+  const sub = [(cell.room || "").trim() || roomFallback, (cell.note || "").trim()]
     .filter(Boolean)
     .join(" ");
-  if (sub) lines.push(sub);
-  return lines.join("\n");
+  if (sub) lines.push({ kind: "sub", text: sub });
+  return lines;
+}
+
+/** cellLines を exceljs の richText に変換する (空なら null) */
+function toRichText(lines) {
+  if (lines.length === 0) return null;
+  return {
+    richText: lines.map((ln, i) => ({
+      font: LINE_FONT[ln.kind],
+      text: (i === 0 ? "" : "\n") + ln.text,
+    })),
+  };
 }
 
 /** 曜日ブロックの列数 (時間列 + 最大クラス列) */
 const dayBlockCols = (sections) =>
   Math.max(...sections.map((s) => s.cols.length)) + 1;
+
+// 列方向に結合したセルを作って master を返す (colSpan が 1 なら普通のセル)。
+// **exceljs の結合セルは範囲全体で 1 つの style を共有する** (覆われた
+// 側に border を書くと master の分まで上書きされる) ので、罫線は master に
+// 1 回だけ入れる。Excel は結合の内側に罫線を描かないため、これで範囲の
+// 外周だけが引かれる (左端 = 太罫、右端 = 細罫、といった指定がそのまま出る)。
+// border に null を渡すと罫線なし (セクション見出しバー用)。
+function mergedCell(ws, row, col, colSpan, border) {
+  if (colSpan > 1) ws.mergeCells(row, col, row, col + colSpan - 1);
+  const cell = ws.getCell(row, col);
+  if (border) cell.border = border;
+  return cell;
+}
+
+// セクション見出しバー (画面の部バー): 部の色 + 右肩にコマ数。
+// 罫線は引かない — 名前とコマ数は別セルなので、罫線を引くとバーが
+// 途中で切れて見える (画面のバーは 1 本の帯)
+function writeSectionBar(ws, s, row, lastCol) {
+  const fill = solidFill(hexToArgb(s.tone.accent) || ARGB_HEADER_BLUE);
+  const head = mergedCell(ws, row, 1, Math.max(1, lastCol - 1), null);
+  head.value = s.name;
+  head.font = { size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+  head.alignment = { vertical: "middle" };
+  head.fill = fill;
+  const count = ws.getCell(row, lastCol);
+  count.value = `${s.cellCount}コマ`;
+  count.font = { size: 8, color: { argb: "FFFFFFFF" } };
+  count.alignment = { vertical: "middle", horizontal: "right" };
+  count.fill = fill;
+  ws.getRow(row).height = ROW_HEIGHT_BAR;
+}
+
+// 列見出し 2 段 (学年 = 学年色 / クラス = ラベル + 教室の小文字)
+function writeSectionHead(ws, s, day, tabRow) {
+  const clsRow = tabRow + 1;
+  const corner = ws.getCell(tabRow, 1);
+  corner.value = "時間";
+  corner.font = { size: 9, bold: true, color: { argb: ARGB_SUB } };
+  corner.alignment = { vertical: "middle", horizontal: "center" };
+  corner.fill = solidFill(ARGB_HEAD_GRAY);
+  ws.mergeCells(tabRow, 1, clsRow, 1);
+  corner.border = { ...THIN_BORDER, bottom: MEDIUM_EDGE };
+
+  let c = 2;
+  s.groups.forEach((g, gi) => {
+    const span = g.classes.length;
+    const edge = gi > 0 ? GROUP_LEFT_BORDER : THIN_BORDER;
+    const gc = gradeColor(g.tab.grade || g.tab.name);
+    const th = mergedCell(ws, tabRow, c, span, edge);
+    th.value = g.tab.name;
+    th.font = { size: 11, bold: true, color: { argb: hexToArgb(gc.f) || ARGB_INK } };
+    th.alignment = { vertical: "middle", horizontal: "center" };
+    const bg = hexToArgb(gc.b);
+    if (bg) th.fill = solidFill(bg);
+
+    g.classes.forEach((cls, ci) => {
+      const cell = ws.getCell(clsRow, c + ci);
+      // クラス名の無い列 (取込した高校の講座列など) は教室名を見出しに
+      const room = classRoomForDay(cls, day);
+      const label = cls.label || room || "－";
+      const parts = [{ font: { size: 10, bold: true, color: { argb: ARGB_INK } }, text: label }];
+      if (cls.label && room && room !== cls.label) {
+        parts.push({ font: { size: 8, color: { argb: ARGB_SUB } }, text: ` ${room}` });
+      }
+      cell.value = { richText: parts };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      cell.fill = solidFill(ARGB_HEAD_GRAY);
+      cell.border = {
+        ...(ci === 0 ? edge : THIN_BORDER),
+        bottom: MEDIUM_EDGE, // 見出しと本体の境 (画面の border-b)
+      };
+    });
+    c += span;
+  });
+  ws.getRow(tabRow).height = ROW_HEIGHT_TAB;
+  ws.getRow(clsRow).height = ROW_HEIGHT_CLASS;
+}
+
+// 時限 1 行 (時間見出し + 各学年のセル)。行の高さは中身から見積もる
+function writePeriodRow(ws, s, day, per, row, subjectColor) {
+  const timeCell = ws.getCell(row, 1);
+  // ラベル未設定 (取込直後など) は時刻だけを見出しにする (画面と同じ)
+  const timeParts = per.label
+    ? [
+        { font: { size: 9, bold: true, color: { argb: ARGB_INK } }, text: per.label },
+        ...(per.time
+          ? [{ font: { size: 8, color: { argb: ARGB_SUB } }, text: `\n${per.time}` }]
+          : []),
+      ]
+    : per.time
+      ? [{ font: { size: 9, color: { argb: ARGB_INK } }, text: per.time }]
+      : [];
+  timeCell.value = timeParts.length > 0 ? { richText: timeParts } : "";
+  timeCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  timeCell.fill = solidFill(ARGB_HEAD_GRAY);
+  timeCell.border = THIN_BORDER;
+
+  const measured = [];
+  let c = 2;
+  s.groups.forEach((g, gi) => {
+    const edge = gi > 0 ? GROUP_LEFT_BORDER : THIN_BORDER;
+    const span = g.classes.length;
+    if (!(g.tab.periodIds || []).includes(per.id)) {
+      // この学年が使わない時限 (時刻体系の違い) は画面と同じくグレーで塞ぐ
+      mergedCell(ws, row, c, span, edge).fill = solidFill(ARGB_BLOCKED_GRAY);
+      c += span;
+      return;
+    }
+    // 合同コマの結合配置は画面と共有 (computeRowCells)
+    const rowCells = g.layout.fallback
+      ? g.classes.map((cls, i) => ({ cls, colSpan: 1, isRange: false, first: i === 0 }))
+      : computeRowCells(g.tab, day, per.id, g.layout);
+    for (const rc of rowCells) {
+      const cell = g.tab.schedule[makeCellKey(day, per.id, rc.cls.id)];
+      // 合同セルは列見出しを持たないので既定教室を自分で出す (画面と同じ)
+      const lines = cellLines(cell, rc.isRange ? classRoomForDay(rc.cls, day) : "");
+      const width = COL_WIDTH_CLASS * rc.colSpan;
+      const target = mergedCell(ws, row, c, rc.colSpan, rc.first ? edge : THIN_BORDER);
+      target.value = toRichText(lines);
+      target.alignment = { vertical: "top", wrapText: true };
+      const argb = cell?.subj ? hexToArgb(subjectColor(cell.subj)) : undefined;
+      if (argb) target.fill = solidFill(argb);
+      measured.push({ lines, width });
+      c += rc.colSpan;
+    }
+  });
+  const height = estimateRowHeight(measured);
+  ws.getRow(row).height = height;
+  return height;
+}
 
 /**
  * 曜日 1 つ分の表 (タイトル + セクション群) を ws の startRow から書き込む。
@@ -239,79 +495,15 @@ function writeDayBlock(
   row += 2;
 
   for (const s of sections) {
-    // セクション見出し + 列見出し 2 段 + 時限行 + 区切りの空行
+    // セクション見出しバー + 列見出し 2 段 + 区切りの空行
     heightPt +=
-      ROW_HEIGHT_DEFAULT * 4 + ROW_HEIGHT_PERIOD * s.periods.length;
-    // セクション見出し
-    ws.mergeCells(row, 1, row, s.cols.length + 1);
-    const head = ws.getCell(row, 1);
-    head.value = s.name;
-    head.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    head.fill = solidFill(ARGB_HEADER_BLUE);
-    head.border = THIN_BORDER;
+      ROW_HEIGHT_BAR + ROW_HEIGHT_TAB + ROW_HEIGHT_CLASS + ROW_HEIGHT_DEFAULT;
+    writeSectionBar(ws, s, row, s.cols.length + 1);
     row++;
-
-    // 列見出し: 学年 (colSpan) + クラス (2 段)
-    const tabRow = row;
-    const clsRow = row + 1;
-    const corner = ws.getCell(tabRow, 1);
-    corner.value = "時間";
-    corner.alignment = { vertical: "middle", horizontal: "center" };
-    corner.fill = solidFill(ARGB_HEAD_GRAY);
-    corner.border = THIN_BORDER;
-    ws.mergeCells(tabRow, 1, clsRow, 1);
-    let c = 2;
-    for (const t of new Set(s.cols.map((x) => x.tab))) {
-      const span = s.cols.filter((x) => x.tab === t).length;
-      ws.mergeCells(tabRow, c, tabRow, c + span - 1);
-      const th = ws.getCell(tabRow, c);
-      th.value = t.name;
-      th.font = { bold: true };
-      th.alignment = { horizontal: "center" };
-      th.fill = solidFill(ARGB_HEAD_GRAY);
-      th.border = THIN_BORDER;
-      // merge 後も右端まで罫線を引く
-      for (let i = 0; i < span; i++) ws.getCell(tabRow, c + i).border = THIN_BORDER;
-      c += span;
-    }
-    s.cols.forEach((col, i) => {
-      const th = ws.getCell(clsRow, 2 + i);
-      const label = col.cls.label || col.cls.room || "－";
-      th.value =
-        col.cls.label && col.cls.room && col.cls.room !== col.cls.label
-          ? `${label} (${col.cls.room})`
-          : label;
-      th.font = { bold: true, size: 9 };
-      th.alignment = { horizontal: "center", wrapText: true };
-      th.fill = solidFill(ARGB_HEAD_GRAY);
-      th.border = THIN_BORDER;
-    });
-    row = clsRow + 1;
-
-    // 時限行
+    writeSectionHead(ws, s, day, row);
+    row += 2;
     for (const per of s.periods) {
-      const timeCell = ws.getCell(row, 1);
-      timeCell.value = [per.label, per.time].filter(Boolean).join("\n");
-      timeCell.font = { size: 9 };
-      timeCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-      timeCell.fill = solidFill(ARGB_HEAD_GRAY);
-      timeCell.border = THIN_BORDER;
-      s.cols.forEach((col, i) => {
-        const target = ws.getCell(row, 2 + i);
-        target.border = THIN_BORDER;
-        if (!(col.tab.periodIds || []).includes(per.id)) {
-          // この学年が使わない時限 (時刻体系の違い) は画面と同じくグレーで塞ぐ
-          target.fill = solidFill(ARGB_BLOCKED_GRAY);
-          return;
-        }
-        const cell = col.tab.schedule[makeCellKey(day, per.id, col.cls.id)];
-        target.value = cellText(cell, col.cls, day);
-        target.font = { size: 9 };
-        target.alignment = { vertical: "top", wrapText: true };
-        const argb = cell?.subj ? hexToArgb(subjectColor(cell.subj)) : undefined;
-        if (argb) target.fill = solidFill(argb);
-      });
-      ws.getRow(row).height = ROW_HEIGHT_PERIOD;
+      heightPt += writePeriodRow(ws, s, day, per, row, subjectColor);
       row++;
     }
     row++; // セクション間の空行
@@ -419,7 +611,6 @@ export function buildRegularWorkbook(
 
 const ARGB_GRAY_TEXT = "FF808080";
 const ARGB_RED_TEXT = "FFCC0000";
-const MEDIUM_EDGE = { style: "medium", color: { argb: "FF666666" } };
 
 // Excel のシート名の禁則文字 (\ / ? * [ ] :) を除いて 31 文字に収める
 function sanitizeSheetName(name, fallback) {

@@ -9,8 +9,8 @@ import {
 } from "./model";
 import {
   computeMergeLayout,
+  computeRowCells,
   mergeFallback,
-  splitSpan,
   visibleClassesForDay,
 } from "./mergedColumns";
 import {
@@ -19,7 +19,8 @@ import {
 } from "./conflicts";
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
-import { DEPT_COLOR, gradeColor } from "../constants/colors";
+import { gradeColor } from "../constants/colors";
+import { sectionDeptRank, sectionTone } from "./sectionTone";
 import { RegularCell } from "./RegularCell";
 
 // ─── スケジュール表 (選択曜日 × セクション別テーブル) ────────────────
@@ -69,25 +70,10 @@ function MenuTh({ onOpenMenu, title, className, children, ...rest }) {
   );
 }
 
-// セクション見出しの配色: 全学年が高校系なら高校部、全て中学系なら
-// 中学部 (附属含む)、混在は中立色
-const isHighGrade = (g) => g.includes("高");
-const sectionTone = (tabs) => {
-  const grades = tabs.map((t) => t.grade || t.name);
-  if (grades.every(isHighGrade)) return DEPT_COLOR["高校部"];
-  if (grades.every((g) => !isHighGrade(g))) return DEPT_COLOR["中学部"];
-  return { b: "#e8e8e8", f: "#444444", accent: "#607080" };
-};
-
-// 縦積み (stackSections) の並び順の第 1 キー: 中学部 → 混在 → 高校部。
-// 同順位の並びは sections useMemo 内の stackOrderRank (曜日非依存の
-// タブ定義順) → 本校 → 亀井町で決める
-const sectionDeptRank = (tabs) => {
-  const grades = tabs.map((t) => t.grade || t.name);
-  if (grades.every((g) => !isHighGrade(g))) return 0;
-  if (grades.every(isHighGrade)) return 2;
-  return 1;
-};
+// セクション見出しの配色 (sectionTone) と縦積みの並び順キー
+// (sectionDeptRank: 中学部 → 混在 → 高校部) は Excel 出力と共有するため
+// ./sectionTone に切り出してある。同順位の並びは sections useMemo 内の
+// stackOrderRank (曜日非依存のタブ定義順) → 本校 → 亀井町で決める
 
 export function RegularGrid({
   project,
@@ -950,82 +936,29 @@ export function RegularGrid({
                         );
                       }
                       // ── 合同セルの結合表示 ──
-                      // この行に中身がある (または編集中の) 範囲セルを集め、
-                      // 同一スパンごとにまとめて colSpan で構成クラスに被せる
-                      const present = lay.ranges
-                        .map((r) => {
-                          const key = makeCellKey(day, per.id, r.cls.id);
-                          const ref = makeCellRef(t.id, key);
-                          return { r, ref, cell: t.schedule[key] };
-                        })
-                        .filter((x) => x.cell || editRef === x.ref);
-                      const bySpan = new Map();
-                      for (const p of present) {
-                        const k = `${p.r.startIdx}-${p.r.endIdx}`;
-                        if (!bySpan.has(k))
-                          bySpan.set(k, {
-                            startIdx: p.r.startIdx,
-                            endIdx: p.r.endIdx,
-                            items: [],
-                          });
-                        bySpan.get(k).items.push(p);
-                      }
-                      const out = [];
-                      let i = 0;
-                      while (i < lay.visible.length) {
-                        const g = [...bySpan.values()].find((x) => x.startIdx === i);
-                        if (g) {
-                          const widths = splitSpan(
-                            g.endIdx - g.startIdx + 1,
-                            g.items.length
-                          );
-                          g.items.forEach((p, gi) => {
-                            // 幅 0 は mergeFallback が事前に弾くため通常来ない (保険)
-                            if (widths[gi] <= 0) return;
-                            out.push(
-                              renderCell(p.r.cls, {
-                                colSpan: widths[gi],
-                                // 学年境界の太罫は並列の先頭セルだけに引く
-                                tdExtra: i === 0 && gi === 0 ? boundary : "",
-                                displayRoomFallback: classRoomForDay(p.r.cls, day),
-                              })
-                            );
-                          });
-                          i = g.endIdx + 1;
-                        } else {
-                          const cls2 = lay.visible[i];
-                          // この列から始まる未入力の範囲: ⊞ で合同コマを追加できる。
-                          // スパン内に個別コマがある行には出さない (入力すると
-                          // クラスの二重在籍になり、確定と同時にフォールバック
-                          // 表示へ切り替わって驚かせるため)
-                          const starters = lay.ranges
-                            .filter(
-                              (r) =>
-                                r.startIdx === i && !present.some((p) => p.r === r)
-                            )
-                            .filter((r) => {
-                              for (let k2 = r.startIdx; k2 <= r.endIdx; k2++) {
-                                const vc = lay.visible[k2];
-                                if (vc && t.schedule[makeCellKey(day, per.id, vc.id)])
-                                  return false;
-                              }
-                              return true;
-                            })
+                      // 配置 (どのセルをどの幅で並べるか) は Excel 出力と
+                      // 共有の computeRowCells。編集中の空セルも結合表示の
+                      // 対象に含める (入力し終えるまで幅が変わらないように)
+                      return computeRowCells(t, day, per.id, lay, (cls2) =>
+                        editRef === makeCellRef(t.id, makeCellKey(day, per.id, cls2.id))
+                      ).map((rc) =>
+                        renderCell(rc.cls, {
+                          colSpan: rc.colSpan,
+                          // 学年境界の太罫は左端のセルだけに引く
+                          tdExtra: rc.first ? boundary : "",
+                          // 合同セルは列見出しが無いので既定教室を自分で出す
+                          ...(rc.isRange
+                            ? { displayRoomFallback: classRoomForDay(rc.cls, day) }
+                            : {}),
+                          // この列から始まる未入力の合同枠: ⊞ で追加できる
+                          mergeStarters: rc.starters
                             .map(
-                              (r) =>
-                                `${makeCellRef(t.id, makeCellKey(day, per.id, r.cls.id))}\t${r.cls.label}`
+                              (c2) =>
+                                `${makeCellRef(t.id, makeCellKey(day, per.id, c2.id))}\t${c2.label}`
                             )
-                            .join("\n");
-                          out.push(
-                            renderCell(cls2, {
-                              tdExtra: i === 0 ? boundary : "",
-                              mergeStarters: starters,
-                            })
-                          );
-                          i++;
-                        }
-                      }
-                      return out;
+                            .join("\n"),
+                        })
+                      );
                     })}
                   </tr>
                 ))}

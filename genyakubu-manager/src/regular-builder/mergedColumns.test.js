@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeMergeLayout, mergeFallback, splitSpan, visibleClassesForDay } from "./mergedColumns";
+import {
+  computeMergeLayout,
+  computeRowCells,
+  mergeFallback,
+  splitSpan,
+  visibleClassesForDay,
+} from "./mergedColumns";
 import { makeCellKey } from "./model";
 
 // 中3 の取込結果を模したフィクスチャ: 通常 5 クラス + 合同 3 列
@@ -220,5 +226,90 @@ describe("visibleClassesForDay (空列を隠す)", () => {
       },
     });
     expect(visibleClassesForDay(tab, "水")).toEqual([]);
+  });
+});
+
+describe("computeRowCells (画面と Excel で共有する行の配置)", () => {
+  const layoutOf = (tab) => computeMergeLayout(tab);
+  const shape = (cells) =>
+    cells.map((c) => [c.cls.label, c.colSpan, c.isRange, c.first]);
+
+  it("合同セルの無い行は表示列がそのまま 1 列ずつ並ぶ", () => {
+    const tab = baseTab({
+      schedule: { [makeCellKey("水", 1, 1)]: { subj: "英語" } },
+    });
+    expect(shape(computeRowCells(tab, "水", 1, layoutOf(tab)))).toEqual([
+      ["SS", 1, false, true],
+      ["S", 1, false, false],
+      ["A", 1, false, false],
+      ["B", 1, false, false],
+      ["C", 1, false, false],
+    ]);
+  });
+
+  it("中身のある合同セルを構成クラスの上に colSpan で被せる", () => {
+    const tab = baseTab({
+      schedule: { [makeCellKey("水", 1, 8)]: { subj: "確認テスト" } }, // S〜B
+    });
+    expect(shape(computeRowCells(tab, "水", 1, layoutOf(tab)))).toEqual([
+      ["SS", 1, false, true],
+      ["S〜B", 3, true, false],
+      ["C", 1, false, false],
+    ]);
+  });
+
+  it("同一スパンの並列合同はスパンを分け合う (5 列を 2 セルなら 3+2)", () => {
+    const tab = baseTab({
+      schedule: {
+        [makeCellKey("水", 1, 6)]: { subj: "確認テスト", teacher: "藤田" },
+        [makeCellKey("水", 1, 7)]: { subj: "確認テスト", teacher: "大屋敷" },
+      },
+    });
+    expect(shape(computeRowCells(tab, "水", 1, layoutOf(tab)))).toEqual([
+      ["SS〜C", 3, true, true],
+      ["SS〜C", 2, true, false],
+    ]);
+  });
+
+  it("行が違えば配置も変わる (時限ごとに解決する)", () => {
+    const tab = baseTab({
+      schedule: { [makeCellKey("水", 1, 8)]: { subj: "確認テスト" } },
+    });
+    // 時限 2 には合同セルが無いので通常の 5 列
+    expect(computeRowCells(tab, "水", 2, layoutOf(tab))).toHaveLength(5);
+  });
+
+  it("未入力の合同枠は starters として先頭の構成クラスに付く", () => {
+    const tab = baseTab({ classes: [cls(1, "S"), cls(2, "B"), cls(3, "S〜B")] });
+    const cells = computeRowCells(tab, "水", 1, layoutOf(tab));
+    expect(cells.map((c) => c.starters.map((s) => s.label))).toEqual([
+      ["S〜B"],
+      [],
+    ]);
+  });
+
+  it("スパン内に個別コマがある行には starters を出さない", () => {
+    const tab = baseTab({
+      classes: [cls(1, "S"), cls(2, "B"), cls(3, "S〜B")],
+      schedule: { [makeCellKey("水", 1, 2)]: { subj: "英語" } },
+    });
+    const cells = computeRowCells(tab, "水", 1, layoutOf(tab));
+    expect(cells.flatMap((c) => c.starters)).toEqual([]);
+  });
+
+  it("中身が無くても isExtraPresent (編集中セル) は結合表示に含める", () => {
+    const tab = baseTab();
+    const cells = computeRowCells(
+      tab,
+      "水",
+      1,
+      layoutOf(tab),
+      (c) => c.label === "S〜B"
+    );
+    expect(shape(cells)).toEqual([
+      ["SS", 1, false, true],
+      ["S〜B", 3, true, false],
+      ["C", 1, false, false],
+    ]);
   });
 });
