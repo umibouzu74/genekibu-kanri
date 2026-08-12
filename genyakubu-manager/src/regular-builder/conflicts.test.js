@@ -409,8 +409,16 @@ describe("隔週パートナーのチェック", () => {
     const teacher = computeConflicts(p).list.filter((c) => c.type === "teacher");
     expect(teacher).toHaveLength(1);
     expect(teacher[0].label).toContain("河野");
-    // 隔週が絡む重なりは承認で消せることを添える
-    expect(teacher[0].label).toContain("隔週コマを含む");
+    // 通常コマは毎週なので、パートナーの週 (B) で必ず当たる
+    expect(teacher[0].label).toContain("隔週 B 週");
+  });
+
+  it("主担当が通常コマと重なれば A 週として検出する", () => {
+    const p = withPartner();
+    p.tabs[1].schedule[makeCellKey("月", 11, 1)] = { subj: "数学", teacher: "堀上" };
+    const teacher = computeConflicts(p).list.filter((c) => c.type === "teacher");
+    expect(teacher).toHaveLength(1);
+    expect(teacher[0].label).toContain("隔週 A 週");
   });
 
   it("パートナーの NG (不在) も検出する", () => {
@@ -439,6 +447,93 @@ describe("隔週パートナーのチェック", () => {
     expect(conflictKey(c)).toBe(
       `teacher|月|${["1:月|2|1", "2:月|11|1"].sort().join("~")}`
     );
+  });
+});
+
+// ─── 隔週の担当週 (A = 講師欄の主担当 / B = 備考のパートナー) ──────────
+// 主担当とパートナーが左右で入れ替わる組は、どの週も同じ人が 2 か所に
+// 居ることにならないので重複ではない。隔週と通常コマの重なりは警告する。
+
+describe("隔週コマの担当週で重複を絞る", () => {
+  // 同じ時間帯に S / AB / C が並ぶ 1 タブ構成。AB と C は主担当と
+  // パートナーが入れ替わる隔週コマ (画面の 中2 19:50-20:35 と同じ形)
+  const swapped = () => {
+    const p = makeProject();
+    p.periods = [{ id: 11, label: "2限", time: "19:50-20:35" }];
+    p.tabs = [
+      {
+        id: 1,
+        name: "中2",
+        grade: "中2",
+        classes: [
+          { id: 1, label: "S", room: "602" },
+          { id: 2, label: "AB", room: "601" },
+          { id: 3, label: "C", room: "603" },
+        ],
+        days: ["月"],
+        periodIds: [11],
+        schedule: {
+          [makeCellKey("月", 11, 2)]: {
+            subj: "英/数",
+            teacher: "堀上",
+            note: "隔週(河野)",
+          },
+          [makeCellKey("月", 11, 3)]: {
+            subj: "数/英",
+            teacher: "河野",
+            note: "隔週(堀上)",
+          },
+        },
+      },
+    ];
+    return p;
+  };
+  const teacherConflicts = (p) =>
+    computeConflicts(p).list.filter((c) => c.type === "teacher");
+
+  it("担当が左右で入れ替わる隔週コマ同士は重複にしない", () => {
+    expect(teacherConflicts(swapped())).toHaveLength(0);
+  });
+
+  it("隔週と通常コマが重なれば A/B どちらの週でも警告する", () => {
+    const p = swapped();
+    // 毎週の通常コマ → 隔週の A 週 (AB の堀上) とも B 週 (C の堀上) とも当たる
+    p.tabs[0].schedule[makeCellKey("月", 11, 1)] = { subj: "国語", teacher: "堀上" };
+    const list = teacherConflicts(p);
+    expect(list).toHaveLength(2);
+    expect(list.every((c) => c.label.includes("堀上"))).toBe(true);
+    expect(list.map((c) => c.label).join("\n")).toContain("隔週 A 週");
+    expect(list.map((c) => c.label).join("\n")).toContain("隔週 B 週");
+  });
+
+  it("どちらも主担当 (A 週) の隔週コマ同士は重複", () => {
+    const p = swapped();
+    p.tabs[0].schedule[makeCellKey("月", 11, 3)] = {
+      subj: "数学",
+      teacher: "堀上",
+      note: "隔週(半田)",
+    };
+    const list = teacherConflicts(p);
+    expect(list).toHaveLength(1);
+    expect(list[0].label).toContain("講師 堀上");
+    expect(list[0].label).toContain("隔週 A 週");
+  });
+
+  it("パートナーを読めない「隔週」だけの備考は週を絞らず検出する", () => {
+    const p = swapped();
+    p.tabs[0].schedule[makeCellKey("月", 11, 2)] = { subj: "英語", teacher: "堀上", note: "隔週" };
+    p.tabs[0].schedule[makeCellKey("月", 11, 3)] = { subj: "数学", teacher: "堀上", note: "隔週" };
+    const list = teacherConflicts(p);
+    expect(list).toHaveLength(1);
+    expect(list[0].label).toContain("隔週コマを含む");
+  });
+
+  it("「(重複)」予告も担当週で絞る (プルダウンが決めるのは主担当 = A 週)", () => {
+    const busy = computeBusyTeachers(swapped(), swapped().tabs[0]);
+    // C 列は隔週なので、選ぶ主担当は A 週。AB 列で A 週に居るのは堀上だけ
+    expect(busy.get(makeCellKey("月", 11, 3))).toEqual(["堀上"]);
+    // 空の S 列は毎週のコマになりうるので両方の週の担当を予告する
+    expect(busy.get(makeCellKey("月", 11, 1))).toEqual(["堀上", "河野"].sort());
   });
 });
 
@@ -538,6 +633,26 @@ describe("computeConflicts - 校舎間の移動", () => {
     const list = travel(p);
     expect(list).toHaveLength(1);
     expect(list[0].label).toContain("堀上");
+  });
+
+  it("隔週で担当週が違えば同じ日に並ばないので移動は起きない", () => {
+    const p = crossCampus({ campusTravelMinutes: 15 });
+    // 堀上 は 1 限が A 週 / 2 限が B 週 → どちらの週も片方にしか居ない
+    p.tabs[0].schedule[makeCellKey("月", 1, 1)] = {
+      subj: "数学",
+      teacher: "堀上",
+      note: "隔週(半田)",
+    };
+    p.tabs[0].schedule[makeCellKey("月", 2, 2)] = {
+      subj: "英語",
+      teacher: "半田",
+      note: "隔週(堀上)",
+    };
+    expect(travel(p)).toHaveLength(0);
+  });
+
+  it("両方の週で当たる組み合わせも 1 件にまとめる", () => {
+    expect(travel(crossCampus({ campusTravelMinutes: 15 }))).toHaveLength(1);
   });
 
   it("教室未設定のコマは判定しない", () => {
