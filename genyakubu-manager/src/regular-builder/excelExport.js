@@ -126,9 +126,9 @@ const A3_LANDSCAPE_IN = { width: 420 / 25.4, height: 297 / 25.4 };
 const COL_WIDTH_TIME = 12; // 「時間」列
 const COL_WIDTH_CLASS = 15; // クラス列
 const ROW_HEIGHT_DEFAULT = 15; // タイトル・空行 (pt)
-const ROW_HEIGHT_BAR = 17; // セクション見出しバー (pt)
-const ROW_HEIGHT_TAB = 17; // 学年見出し (pt)
-const ROW_HEIGHT_CLASS = 16; // クラス見出し (pt)
+const ROW_HEIGHT_BAR = 20; // セクション見出しバー (pt, 11pt の 1 行ぶん)
+const ROW_HEIGHT_TAB = 22; // 学年見出し (pt, 11pt の 1 行ぶん)
+const ROW_HEIGHT_CLASS = 16; // クラス見出しの下限 (pt。実際は中身から算出)
 const ROW_HEIGHT_PERIOD_MIN = 30; // 時限行の下限 (pt)
 
 // ─── 画面 (RegularGrid / RegularCell) と同じ字づかい ────────────────
@@ -152,44 +152,54 @@ const LINE_FONT = {
   clsLabel: { size: 10, bold: true, color: { argb: ARGB_INK } },
   clsRoom: { size: 8, color: { argb: ARGB_SUB } },
 };
-// 各行が占める高さ (pt)。フォントサイズ + 行間
-const LINE_HEIGHT = {
-  subj: 12.5,
-  teacher: 11,
-  sub: 10,
-  periodLabel: 11,
-  periodTime: 10,
-  periodTimeOnly: 11,
-  clsLabel: 12.5,
-  clsRoom: 10,
-};
+/**
+ * 1 行が占める高さ (pt) = フォントサイズ × この係数。
+ *
+ * **Excel の行送りはフォントで決まる**。日本語環境の既定である游ゴシックは
+ * 標準の行の高さが 11pt → 18.75pt (= 1.7 倍) と広く、MS P ゴシックのような
+ * 古いフォントは 1.25 倍程度しかない。行高が足りないと **wrapText の溢れた
+ * 行は紙面から消える** (省略記号も出ない) ので、広い側 (游ゴシック) に
+ * 合わせておく。行間の詰まったフォントでは行が少し余るだけで済む。
+ * 「行が間延びする」場合はこの係数を下げて調整する。
+ */
+const LINE_HEIGHT_RATIO = 1.7;
 const CELL_PADDING_PT = 3;
+
+const lineHeightPt = (kind) => LINE_FONT[kind].size * LINE_HEIGHT_RATIO;
 
 const MEDIUM_EDGE = { style: "medium", color: { argb: "FF666666" } };
 // 学年グループの境目に引く縦罫 (画面の border-l-2 に相当)
 const GROUP_LEFT_BORDER = { ...THIN_BORDER, left: MEDIUM_EDGE };
 
-// 全角は半角 2 文字ぶんの幅として数える (折り返し回数の見積り用)
-const displayWidth = (s) =>
-  [...String(s || "")].reduce(
-    (n, ch) => n + (ch.charCodeAt(0) > 0xff ? 2 : 1),
+// 文字列の表示幅 (px, 96dpi)。全角 = フォントサイズぶん (1em)、半角 = 半分
+const textWidthPx = (text, size) =>
+  ([...String(text || "")].reduce(
+    (n, ch) => n + (ch.charCodeAt(0) > 0xff ? size : size / 2),
     0
-  );
+  ) *
+    96) /
+  72;
+
+// 列の中で文字が使える幅 (px)。Excel の列幅 w は既定フォントの半角文字数
+// で、列の実寸は w*7+5 px。左右の余白ぶん (5px) は文字に使えない
+const usableWidthPx = (width) => Math.max(1, width * 7);
 
 /**
  * セル 1 つ分の高さ (pt) を中身から見積もる純関数。
- * Excel の列幅は既定フォント (11pt) の半角文字数なので、小さい字の行は
- * その比だけ多く入る。改行 (richText の "\n") は行数に加算する。
+ * 各行が列幅に何回折り返すかを文字幅から数え、行送り (LINE_HEIGHT_RATIO)
+ * を掛けて積み上げる。
  * @param {{kind: string, text: string}[]} lines cellLines の結果
  * @param {number} width 列幅 (結合セルは合算した幅)
  */
 export function estimateCellHeight(lines, width) {
+  const avail = usableWidthPx(width);
   let h = CELL_PADDING_PT;
   for (const ln of lines) {
-    const font = LINE_FONT[ln.kind];
-    const capacity = Math.max(1, Math.floor((width * 11) / font.size));
-    const rows = Math.max(1, Math.ceil(displayWidth(ln.text) / capacity));
-    h += rows * LINE_HEIGHT[ln.kind];
+    const rows = Math.max(
+      1,
+      Math.ceil(textWidthPx(ln.text, LINE_FONT[ln.kind].size) / avail)
+    );
+    h += rows * lineHeightPt(ln.kind);
   }
   return h;
 }
@@ -213,17 +223,15 @@ export function estimateRowHeight(cells) {
  * @param {{label?: string, room?: string}[]} heads
  */
 export function estimateClassHeadHeight(heads) {
-  const capacity = Math.max(
-    1,
-    Math.floor((COL_WIDTH_CLASS * 11) / LINE_FONT.clsLabel.size)
-  );
+  const avail = usableWidthPx(COL_WIDTH_CLASS);
   return Math.max(
     ROW_HEIGHT_CLASS,
     ...(heads || []).map((h) => {
-      const width =
-        displayWidth(h.label) + (h.room ? displayWidth(h.room) + 1 : 0);
-      const rows = Math.max(1, Math.ceil(width / capacity));
-      return CELL_PADDING_PT + rows * LINE_HEIGHT.clsLabel;
+      const px =
+        textWidthPx(h.label, LINE_FONT.clsLabel.size) +
+        (h.room ? textWidthPx(` ${h.room}`, LINE_FONT.clsRoom.size) : 0);
+      const rows = Math.max(1, Math.ceil(px / avail));
+      return CELL_PADDING_PT + rows * lineHeightPt("clsLabel");
     })
   );
 }
