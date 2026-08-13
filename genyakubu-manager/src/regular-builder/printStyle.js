@@ -49,6 +49,22 @@ export const REGULAR_PRINT_STYLE = `
     margin-bottom: 6mm;
     box-shadow: none !important;
   }
+  /* 1 ページに収まらない背の高いセクション (時限が多い = RegularGrid の
+     TALL_SECTION_ROWS 超え) だけは分断を許す。収まらない表に avoid を
+     効かせたままだと、Chromium は表の前に空きページを作った末に結局
+     分断する (実測 A4 縦・20 時限: 「タイトルだけの紙」+「セクション
+     見出しだけの紙」+ 表 2 枚 = 4 ページ → 素直に分断させて 2 ページ)。
+     分断しても列見出し (thead) はページごとに繰り返される */
+  .print-container .regb-section-tall,
+  .print-container .regb-section-tall tbody {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  /* セクション見出し (色帯) だけがページ末尾に取り残されないように */
+  .print-container .regb-section > button {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
   .print-container .regb-section > div {
     overflow: visible !important;
   }
@@ -61,6 +77,26 @@ export const REGULAR_PRINT_STYLE = `
     min-width: 0 !important;
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+  /* 時間列 (行見出し) は紙面では実寸で固定する。
+     table-layout: fixed は「幅指定の無い列を等分する」ため、放っておくと
+     時間列の幅がセクションの列数で変わる — 実測 A4 縦で中学部 (3 列) は
+     171px、高校部 (8 列) は 76px。同じ紙の中でも左端が揃わず、曜日に
+     よって列数が変わる (空列非表示・その日いない学年) と曜日ごとの紙でも
+     幅が変わっていた。さらに狭いほうでは時刻 (「18:30-19:30」で約 92px
+     必要) が入りきらず、nowrap のまま隣のクラス列へはみ出していた。
+     固定してしまえば全セクション・全曜日で時間列の幅が揃い、残りの幅は
+     クラス列が等分する (列数の少ないセクションほどセルが広くなる)。
+     幅は実測 (「18:00-18:45」= 12px で約 86px + 左右の余白 12px) に 1 割の
+     余裕を足した値。コンパクト表示は文字が 10px・余白が狭いぶん詰める。 */
+  .print-container .regb-timecol {
+    width: 28mm;
+    /* それでも入らない環境 (幅の広いフォント・長い時限ラベル) では
+       隣の列を侵さずに折り返す */
+    white-space: normal !important;
+  }
+  .print-container.regb-compact .regb-timecol {
+    width: 23mm;
   }
   .print-container select {
     max-width: 100%;

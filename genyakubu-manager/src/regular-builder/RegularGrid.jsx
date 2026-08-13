@@ -48,6 +48,15 @@ const startMin = (time) => {
 // 学年グループの境目に引く縦の区切り罫
 const GROUP_BOUNDARY = "border-l-2 border-l-builder-ink-muted";
 
+// 紙面で「1 セクションを分断しない」(printStyle.js の break-inside: avoid) を
+// 諦める時限数の目安。A4 縦の本文高 ≒ 1062px に対し、折り返しの多いセルでも
+// 1 行 ≒ 90px なので 10 行 (+ 見出し) までは必ず 1 ページに収まる。これを
+// 超える背の高いセクションで avoid を効かせたままにすると、Chromium は
+// 収まらない表の前に空きページを作った末に結局分断する (実測: 20 時限で
+// 「タイトルだけの紙」+「セクション見出しだけの紙」+ 表 2 枚 = 4 ページ)。
+// 越えたセクションには regb-section-tall を付け、素直に分断させる。
+const TALL_SECTION_ROWS = 10;
+
 // 右クリック / 長押しでヘッダの一括操作メニューを開ける th。
 // useLongPress は hook なのでループ内の th には直接使えず、小さな
 // コンポーネントに切り出す (講習はヘッダをコンポーネント化して対応)
@@ -676,7 +685,9 @@ export function RegularGrid({
           // 縦積みは親 (MultiDayView) のグリッドへ直接配置 (行 1 は曜日
           // 見出し)。行の高さは並べた曜日の同じ行のセクションで共有される
           style={stackSections ? { gridColumn, gridRow: si + 2 } : undefined}
-          className="regb-section max-w-full bg-builder-surface border border-builder-border rounded-lg shadow overflow-hidden"
+          className={`regb-section max-w-full bg-builder-surface border border-builder-border rounded-lg shadow overflow-hidden${
+            s.periods.length > TALL_SECTION_ROWS ? " regb-section-tall" : ""
+          }`}
         >
           {/* セクション見出し (ダッシュボードの部バーに相当)。クリックで開閉 */}
           <button
@@ -702,7 +713,11 @@ export function RegularGrid({
                   <th
                     scope="col"
                     rowSpan={2}
-                    className={`bg-builder-surface-alt text-builder-ink-muted text-center align-middle border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[3.5rem]" : "p-1 text-xs min-w-[4.5rem]"}`}
+                    // regb-timecol: 紙面で時間列の幅を実寸に固定するための
+                    // 目印 (printStyle.js)。table-layout:fixed は幅指定の
+                    // 無い列を等分するため、印を付けないとセクションの
+                    // 列数で時間列の幅が変わってしまう
+                    className={`regb-timecol bg-builder-surface-alt text-builder-ink-muted text-center align-middle border-r border-b border-builder-border font-bold ${isCompact ? "p-0.5 text-[10px] min-w-[3.5rem]" : "p-1 text-xs min-w-[4.5rem]"}`}
                   >
                     時間
                   </th>
@@ -832,7 +847,7 @@ export function RegularGrid({
                       onOpenMenu={
                         onOpenHeaderMenu ? (pos) => openRowMenu(pos, s, per) : null
                       }
-                      className={`font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink whitespace-nowrap align-top ${isCompact ? "p-1" : "p-1.5"}`}
+                      className={`regb-timecol font-normal border-r border-builder-border bg-builder-surface-alt text-builder-ink whitespace-nowrap align-top ${isCompact ? "p-1" : "p-1.5"}`}
                     >
                       {/* ラベル未設定 (取込直後など) は時刻だけを見出しにする */}
                       {per.label ? (
