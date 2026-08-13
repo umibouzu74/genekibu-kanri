@@ -333,6 +333,34 @@ describe("estimateCellHeight", () => {
     const line = [{ kind: "subj", text: "高松桜井高校 理系数学演習" }];
     expect(estimateCellHeight(line, 45)).toBeLessThan(estimateCellHeight(line, 15));
   });
+
+  it("科目 + 講師の 2 行は下限の 30pt より高くなる", () => {
+    // 日本語の既定フォント (游ゴシック) は行送りが広く、10pt + 9pt の
+    // 2 行は 30pt に収まらない。足りないと講師名が紙面から消える
+    expect(
+      estimateCellHeight(
+        [
+          { kind: "subj", text: "数学" },
+          { kind: "teacher", text: "半田" },
+        ],
+        15
+      )
+    ).toBeGreaterThan(30);
+  });
+
+  it("列幅で折り返す科目名は、収まる科目名より高くなる", () => {
+    const teacher = { kind: "teacher", text: "長尾" };
+    // クラス列 (幅 15) に「東大京大医進 英語」は入らず 2 行になる
+    const wrapped = estimateCellHeight(
+      [{ kind: "subj", text: "東大京大医進 英語" }, teacher],
+      15
+    );
+    const fits = estimateCellHeight(
+      [{ kind: "subj", text: "高松高 文系数学" }, teacher],
+      15
+    );
+    expect(wrapped).toBeGreaterThan(fits);
+  });
 });
 
 describe("buildRegularWorkbook: 全曜日まとめシート", () => {
