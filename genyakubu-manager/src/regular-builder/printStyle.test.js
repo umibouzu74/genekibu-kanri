@@ -31,6 +31,39 @@ describe("REGULAR_PRINT_STYLE", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/tbody\s*\{[^}]*page-break-inside:\s*avoid/);
   });
 
+  it("1 ページに収まらない背の高いセクション (regb-section-tall) だけは分断を許す", () => {
+    // 収まらない表に avoid を効かせたままだと、Chromium は表の前に
+    // 空きページを作った末に結局分断する (実測 A4 縦・20 時限で
+    // 「タイトルだけの紙」+「見出しだけの紙」+ 表 2 枚 = 4 ページ)。
+    // セクションと tbody の両方を auto に戻して 2 ページに収める
+    const rule = /\.regb-section-tall,?[^{]*\{[^}]*break-inside:\s*auto/;
+    expect(REGULAR_PRINT_STYLE).toMatch(rule);
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.regb-section-tall tbody\s*\{[^}]*break-inside:\s*auto/
+    );
+  });
+
+  it("セクション見出し (色帯) がページ末尾に取り残されない", () => {
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.regb-section > button\s*\{[^}]*break-after:\s*avoid/
+    );
+  });
+
+  it("時間列 (regb-timecol) は実寸で固定し、入らないときは折り返す", () => {
+    // table-layout: fixed は幅指定の無い列を等分するため、固定しないと
+    // 時間列の幅がセクションの列数で変わる (実測 A4 縦: 1 列のセクションで
+    // 343px / 8 列で 76px)。狭いほうでは時刻が隣の列へはみ出していた
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.regb-timecol\s*\{[^}]*width:\s*28mm/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container\.regb-compact \.regb-timecol\s*\{[^}]*width:\s*23mm/
+    );
+    expect(REGULAR_PRINT_STYLE).toMatch(
+      /\.print-container \.regb-timecol\s*\{[^}]*white-space:\s*normal/
+    );
+  });
+
   it("紙面の select は矢印を消して教科名の横幅を確保する (appearance:none)", () => {
     expect(REGULAR_PRINT_STYLE).toMatch(/\.print-container select\s*\{[^}]*appearance:\s*none/);
   });

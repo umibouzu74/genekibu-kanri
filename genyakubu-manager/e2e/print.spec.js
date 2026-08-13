@@ -289,6 +289,133 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
   expect(breakInside).toBe("avoid");
 });
 
+// 通常時間割作成の紙面を、列数の違うセクション (中学部 3 列 / 高校部 8 列)
+// が同居する形で検証する。時間列の幅は `table-layout: fixed` の等分に任せると
+// **セクションの列数で変わる** (実測 A4 縦: 3 列で 171px / 8 列で 76px / 1 列で
+// 343px) ため、曜日ごとに刷った紙で左端が揃わず、狭いほうでは時刻
+// (「18:30-19:30」= 約 86px) が隣のクラス列へはみ出していた。CSS 文字列の
+// 単体テスト (printStyle.test.js) では拾えない実挙動なのでここで測る。
+test("通常時間割作成: 紙面の時間列が全セクションで同じ幅・時刻がはみ出さない", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("genyakubu-session-view", "regular-builder");
+    const cell = { subj: "高松一文系数学", teacher: "堀上" };
+    const fill = (periodIds, classIds) => {
+      const out = {};
+      for (const p of periodIds)
+        for (const c of classIds) out[`水|${p}|${c}`] = { ...cell };
+      return out;
+    };
+    localStorage.setItem(
+      "genyakubu-regular-builder-project",
+      JSON.stringify({
+        version: 2,
+        activeProjectId: 1,
+        projects: [
+          {
+            id: 1,
+            version: 1,
+            name: "E2E 紙面",
+            periods: [
+              { id: 1, label: "", time: "18:00-18:45" },
+              { id: 2, label: "", time: "18:55-19:40" },
+              { id: 3, label: "", time: "18:30-19:30" },
+              { id: 4, label: "", time: "19:40-20:40" },
+            ],
+            subjects: ["数学"],
+            teachers: [{ name: "堀上" }],
+            tabs: [
+              {
+                id: 1,
+                name: "中3",
+                grade: "中3",
+                group: "中学部",
+                classes: [1, 2, 3].map((id) => ({
+                  id,
+                  label: "SAB"[id - 1],
+                  room: `50${id}`,
+                })),
+                days: ["水"],
+                periodIds: [1, 2],
+                schedule: fill([1, 2], [1, 2, 3]),
+              },
+              // 8 列 = 時間列が最も狭くなるセクション (高2 4 列 + 高3 4 列)
+              ...[2, 3].map((tabId) => ({
+                id: tabId,
+                name: tabId === 2 ? "高2" : "高3",
+                grade: tabId === 2 ? "高2" : "高3",
+                group: "高校部・本校",
+                classes: [1, 2, 3, 4].map((id) => ({
+                  id,
+                  label: "",
+                  room: `${tabId === 2 ? 40 : 70}${id}`,
+                })),
+                days: ["水"],
+                periodIds: [3, 4],
+                schedule: fill([3, 4], [1, 2, 3, 4]),
+              })),
+            ],
+          },
+        ],
+      })
+    );
+  });
+
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".regb-section")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+
+  await page.emulateMedia({ media: "print" });
+  await page.setViewportSize({ width: PRINT_PAGE_WIDTH, height: 1040 });
+
+  const measure = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".regb-section")].map((sec) => {
+        const th = sec.querySelector("tbody .regb-timecol");
+        const range = document.createRange();
+        range.selectNodeContents(th);
+        const rects = [...range.getClientRects()];
+        return {
+          cols: sec.querySelectorAll("thead tr")[1].children.length,
+          // 見出し行の時間列 = 実際に列幅を決めているセル
+          width: Math.round(
+            sec
+              .querySelector("thead .regb-timecol")
+              .getBoundingClientRect().width
+          ),
+          // 時刻が 2 行に折り返していないか (= 幅が足りているか)
+          lines: rects.length,
+          textWidth: Math.round(Math.max(...rects.map((r) => r.width))),
+          cellWidth: Math.round(th.getBoundingClientRect().width),
+        };
+      })
+    );
+
+  for (const compact of [false, true]) {
+    if (compact) {
+      // コンパクト表示は文字が小さいぶん時間列も詰める (別の固定幅)。
+      // ツールバーを押すのは画面幅を戻してから (紙面幅ではモバイル扱いに
+      // なり、サイドバーの backdrop がクリックを吸う)
+      await page.emulateMedia({ media: "screen" });
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await page.getByRole("button", { name: /コンパクト/ }).click();
+      await page.emulateMedia({ media: "print" });
+      await page.setViewportSize({ width: PRINT_PAGE_WIDTH, height: 1040 });
+    }
+    const rows = await measure();
+    expect(rows.map((r) => r.cols)).toEqual([3, 8]);
+    // 列数が違っても時間列の幅は同じ (曜日をまたいでも同じ実寸になる)
+    expect(new Set(rows.map((r) => r.width)).size).toBe(1);
+    for (const r of rows) {
+      // 時刻が隣のクラス列へはみ出さない (収まらなければ折り返す)
+      expect(r.lines).toBe(1);
+      expect(r.textWidth).toBeLessThan(r.cellWidth);
+    }
+  }
+});
+
 test("月次カレンダー: popup 印刷にタイトル・印刷日・凡例が注入される", async ({
   page,
   context,

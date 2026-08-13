@@ -308,3 +308,52 @@ describe("RegularGrid - グリッド横断 D&D (週表示・セット編集の�
     expect(onSwapCells).not.toHaveBeenCalled();
   });
 });
+
+describe("RegularGrid - 紙面レイアウトの目印", () => {
+  it("時間列 (見出し・行見出し) に regb-timecol が付く", () => {
+    // 紙面では table-layout:fixed が幅指定の無い列を等分するため、この印を
+    // 頼りに時間列だけ実寸で固定する (printStyle.js)。印が落ちると時間列の
+    // 幅がセクションの列数で変わり、時刻が隣の列へはみ出す
+    const { container } = renderGrid({ ...makeProject(), id: 1 });
+    expect(
+      container.querySelector("thead .regb-timecol")?.textContent
+    ).toBe("時間");
+    expect(container.querySelector("tbody .regb-timecol")?.textContent).toContain(
+      "1限"
+    );
+  });
+
+  it("時限が多い (11 行以上) セクションだけ regb-section-tall が付く", () => {
+    // 1 ページに収まらない表で break-inside: avoid を効かせたままだと
+    // Chromium が空きページを作った末に結局分断するため、背の高い
+    // セクションは素直に分断させる (printStyle.js)
+    const short = renderGrid({ ...makeProject(), id: 1 });
+    expect(short.container.querySelector(".regb-section-tall")).toBeNull();
+    cleanup();
+
+    const periods = [];
+    const schedule = {};
+    for (let i = 1; i <= 11; i++) {
+      periods.push({ id: i, label: `${i}限`, time: `${7 + i}:00-${7 + i}:45` });
+      schedule[makeCellKey("月", i, 1)] = { subj: "数学" };
+    }
+    const project = {
+      ...makeProject(),
+      id: 1,
+      periods,
+      tabs: [
+        {
+          id: 1,
+          name: "中3",
+          grade: "中3",
+          classes: [{ id: 1, label: "S", room: "501" }],
+          days: ["月"],
+          periodIds: periods.map((p) => p.id),
+          schedule,
+        },
+      ],
+    };
+    const tall = renderGrid(project);
+    expect(tall.container.querySelector(".regb-section-tall")).not.toBeNull();
+  });
+});
