@@ -357,3 +357,66 @@ describe("RegularGrid - 紙面レイアウトの目印", () => {
     expect(tall.container.querySelector(".regb-section-tall")).not.toBeNull();
   });
 });
+
+describe("RegularGrid - 講師プルダウンの並び", () => {
+  // 講師マスタ: よみと担当科目つき (登録順はアイウエオ順ではない)
+  function project() {
+    return {
+      ...makeProject(),
+      id: 1,
+      subjects: ["英語", "数学", "国語"],
+      teachers: [
+        { name: "堀上", kana: "ほりかみ", subjects: ["英語", "数学"] },
+        { name: "半田", kana: "はんだ", subjects: ["数学"] },
+        { name: "香川", kana: "かがわ", subjects: ["数学"] },
+        { name: "西岡" },
+      ],
+    };
+  }
+
+  const openTeacherSelect = (proj) => {
+    renderGrid(proj);
+    fireEvent.click(screen.getByRole("button", { name: "月 1限 中3 S を編集" }));
+    return screen.getByLabelText("月 1限 中3 S の講師");
+  };
+
+  it("担当科目ごとの optgroup (科目マスタ順) + グループ内はアイウエオ順", () => {
+    const select = openTeacherSelect(project());
+    expect([...select.querySelectorAll("optgroup")].map((g) => g.label)).toEqual([
+      "英語",
+      "数学",
+      "その他",
+    ]);
+    expect(
+      [
+        ...select.querySelector('optgroup[label="数学"]').querySelectorAll("option"),
+      ].map((o) => o.value)
+    ).toEqual(["香川", "半田", "堀上"]);
+    // 担当科目 未設定の講師は「その他」へ
+    expect(
+      [
+        ...select.querySelector('optgroup[label="その他"]').querySelectorAll("option"),
+      ].map((o) => o.value)
+    ).toEqual(["西岡"]);
+  });
+
+  it("担当科目が誰も未設定なら optgroup を作らず、よみ順の平らな一覧", () => {
+    const select = openTeacherSelect({
+      ...project(),
+      teachers: [
+        { name: "堀上", kana: "ほりかみ" },
+        { name: "香川", kana: "かがわ" },
+      ],
+    });
+    expect(select.querySelectorAll("optgroup")).toHaveLength(0);
+    // 先頭の "-" (未割当) と末尾の「✎ 直接入力…」の間が講師。「半田」は
+    // マスタに無いがセルに入っている講師 (従来どおり選択肢に残す)
+    expect([...select.querySelectorAll("option")].map((o) => o.value)).toEqual([
+      "",
+      "香川",
+      "堀上",
+      "半田",
+      "__free__",
+    ]);
+  });
+});

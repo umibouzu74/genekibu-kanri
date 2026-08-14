@@ -10,6 +10,8 @@
 //   subjects: string[],                        // 科目マスタ
 //   teachers: [{                               // 講師マスタ
 //     name,
+//     kana?,                                   // よみ (プルダウンのアイウエオ順)
+//     subjects?: string[],                     // 担当科目 (subjects の語彙)
 //     ngSlots?: [{ day, time? }],              // NG (不在)。time 無し = 終日
 //     maxPerDay?, maxPerWeek?,                 // コマ数上限 (無し = 無制限)
 //   }],
@@ -669,6 +671,16 @@ export function sanitizeProject(raw) {
     ? raw.teachers
         .map((t) => {
           const teacher = { name: str(t?.name) };
+          // よみ (アイウエオ順の並べ替えキー) と担当科目 (プルダウンの
+          // 科目別グループ)。どちらも任意 — 未設定でも従来どおり動く
+          const kana = str(t?.kana).trim();
+          if (kana) teacher.kana = kana;
+          if (Array.isArray(t?.subjects)) {
+            const subs = [
+              ...new Set(t.subjects.map((s) => str(s).trim()).filter(Boolean)),
+            ];
+            if (subs.length) teacher.subjects = subs;
+          }
           // NG (不在): day は既知の曜日のみ、time は文字列のみ受け入れる
           if (Array.isArray(t?.ngSlots)) {
             const slots = t.ngSlots

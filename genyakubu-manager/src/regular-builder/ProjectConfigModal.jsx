@@ -14,6 +14,8 @@ import {
   renameTeacherInProject,
   shiftPeriodTimes,
 } from "./model";
+import { sortTeachersByKana } from "./teacherOrder";
+import { applyInferredSubjects } from "./teacherSubjectInfer";
 import { UI } from "./ui";
 
 // ─── ⚙ 全体設定モーダル (時限 / 科目 / 講師 / 教室 / NG・上限) ──────
@@ -42,6 +44,9 @@ export function ProjectConfigModal({
   project,
   saveProject,
   slots,
+  /** 親アプリの教科マスタ (name + aliases)。担当科目の推定で
+      「英/数」→ 英語 のような読み替えに使う */
+  masterSubjects = [],
   onClose,
   /** 開いたとき最初に表示するタブ (オンボーディングの導線用) */
   initialTab = "periods",
@@ -59,6 +64,14 @@ export function ProjectConfigModal({
   // 表記ゆれ ("５０1" と "501" など) の可能性がある — 重複チェックも
   // 亀井町判定も文字列一致なので、揺れていると黙ってすり抜ける
   const roomUsage = useMemo(() => collectRoomUsage(project), [project]);
+
+  // 講師を選ぶ / 一覧するところはセルのプルダウンと同じアイウエオ順にする
+  // (👤 講師マスタのタブだけはマスタ順のまま — よみを打つそばから行が
+  // 動くと編集しづらいため)
+  const sortedTeachers = useMemo(
+    () => sortTeachersByKana(project.teachers),
+    [project.teachers]
+  );
   const roomMaster = project.rooms || [];
   const unknownRooms = roomUsage.filter((r) => !roomMaster.includes(r.room));
 
@@ -139,15 +152,21 @@ export function ProjectConfigModal({
     const cells = countTeacherAssignments(project, t.name);
     const hasNg = (t.ngSlots || []).length > 0;
     const hasLimits = t.maxPerDay != null || t.maxPerWeek != null;
+    const hasProfile = !!(t.kana || (t.subjects || []).length);
     if (cells > 0 || hasNg || hasLimits) {
       const lines = [];
       if (cells > 0)
         lines.push(
           `割当済みのセル ${cells} 件はそのまま残ります（プルダウンの選択肢からは消えます）。`
         );
-      if (hasNg || hasLimits)
+      // 消える設定は漏れなく挙げる (よみ・担当科目もこの講師に紐づく)
+      if (hasNg || hasLimits || hasProfile)
         lines.push(
-          `${[hasNg ? "NG（不在）" : null, hasLimits ? "コマ数上限" : null]
+          `${[
+            hasNg ? "NG（不在）" : null,
+            hasLimits ? "コマ数上限" : null,
+            hasProfile ? "よみ・担当科目" : null,
+          ]
             .filter(Boolean)
             .join("・")}の設定は削除されます。`
         );
@@ -260,6 +279,57 @@ export function ProjectConfigModal({
       ...p,
       teachers: p.teachers.map((t) => (t.name === name ? fn(t) : t)),
     }));
+
+  // ── よみ (アイウエオ順の並べ替えキー) と担当科目 (科目別グループ) ──
+  // どちらも講師プルダウンの並びにしか使わない任意フィールド。空にすると
+  // フィールドごと落とす (未設定 = 従来どおりの並び)
+  const setTeacherKana = (name, value) =>
+    updateTeacher(name, (t) => {
+      const next = { ...t };
+      if (value.trim()) next.kana = value;
+      else delete next.kana;
+      return next;
+    });
+
+  const toggleTeacherSubject = (name, subject) =>
+    updateTeacher(name, (t) => {
+      const current = t.subjects || [];
+      const next = { ...t };
+      const subs = current.includes(subject)
+        ? current.filter((s) => s !== subject)
+        : [...current, subject];
+      // 並びは科目マスタ順 (押した順に散らからないように)。マスタ外は後ろ
+      const rank = (s) => {
+        const i = (project.subjects || []).indexOf(s);
+        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+      };
+      subs.sort((a, b) => rank(a) - rank(b));
+      if (subs.length) next.subjects = subs;
+      else delete next.subjects;
+      return next;
+    });
+
+  // 担当科目を「いま組んである割当」から推定して埋める入力補助。既に
+  // 入っている担当科目は残す (手で入れたものを上書きしない)。件数は表示用に
+  // 現在の project で数え、保存は saveProject の最新値で再計算する
+  const inferSubjects = () => {
+    const res = applyInferredSubjects(project, masterSubjects);
+    if (!res.filled) {
+      toasts.info(
+        "割当から推定できる担当科目がありませんでした（コマの科目が科目マスタのどれにも当たらない場合は推定できません）"
+      );
+      return;
+    }
+    saveProject((p) => ({
+      ...p,
+      teachers: applyInferredSubjects(p, masterSubjects).teachers,
+    }));
+    toasts.success(
+      `${res.filled} 名の担当科目を推定しました（科目 ${res.added} 件を追加。Ctrl+Z で戻せます）`
+    );
+  };
+
+  const kanaMissing = project.teachers.filter((t) => !(t.kana || "").trim()).length;
 
   // NG (不在) の追加フォーム。曜日は複数選択 (「火・木は不在」を 1 回で)、
   // 時間帯は時限プールから選ぶ (「18:00-18:45」を毎回手打ちしなくてよい)。
@@ -604,66 +674,140 @@ export function ProjectConfigModal({
                 セルの講師プルダウンの選択肢になります。複数講師は「✎ 直接入力」で「·」区切り（全角中点でも可）。
                 名前をクリックすると変更でき、割当済みのセルも追従します。NG（不在）とコマ数上限は「🚫 NG・上限」タブで設定します。
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {project.teachers.map((t) => (
-                  <span
-                    key={t.name}
-                    className="text-[11px] bg-builder-bg border border-builder-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
-                  >
-                    {editingTeacher?.name === t.name ? (
+              <div className={UI.hint}>
+                プルダウンは<b>担当科目ごとのグループ + よみのアイウエオ順</b>
+                で出します。漢字の名前は読み順に並べられないので、並べたい講師には
+                「よみ」を入れてください（未設定の講師はマスタ順のまま末尾に並びます）。
+                担当科目が誰も未設定のときは、これまでどおり見出しの無い一覧になります。
+              </div>
+              {/* 1 人 1 行なので人数が増えると縦に伸びる。リストだけを
+                  スクロールさせ、下の「追加」「📚 担当科目を推定」を
+                  スクロールせずに押せるようにする (実運用は 50 名規模) */}
+              <div className="flex flex-col gap-1 max-h-[45vh] overflow-y-auto">
+                {project.teachers.map((t) => {
+                  const assigned = t.subjects || [];
+                  const pickable = (project.subjects || []).filter(
+                    (s) => !assigned.includes(s)
+                  );
+                  return (
+                    <div
+                      key={t.name}
+                      className="flex items-center gap-1.5 flex-wrap text-[11px] border-b border-builder-border pb-1"
+                    >
+                      {editingTeacher?.name === t.name ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editingTeacher.value}
+                          aria-label={`${t.name} の新しい名前`}
+                          onChange={(e) =>
+                            setEditingTeacher({ name: t.name, value: e.target.value })
+                          }
+                          onBlur={() => {
+                            if (cancelRenameRef.current) {
+                              cancelRenameRef.current = false;
+                              setEditingTeacher(null);
+                            } else {
+                              commitRename();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              // 既定動作 (フォーカス移動先ボタンの activation 等)
+                              // を確実に殺してから確定する
+                              e.preventDefault();
+                              e.target.blur();
+                            } else if (e.key === "Escape") {
+                              // モーダルの Escape (閉じる) まで波及させない
+                              e.stopPropagation();
+                              cancelRenameRef.current = true;
+                              e.target.blur();
+                            }
+                          }}
+                          className="w-20 text-[11px] rounded border border-builder-info-border bg-builder-surface px-1 py-0.5 focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingTeacher({ name: t.name, value: t.name })
+                          }
+                          title="クリックで名前を変更（割当済みのセルも追従します）"
+                          /* 短い名前は列を揃え、長い名前は隣の「よみ」に
+                             かぶらないよう幅を伸ばす (min-w) */
+                          className="min-w-[5rem] text-left shrink-0 border-0 bg-transparent cursor-pointer p-0 font-bold text-builder-ink hover:text-builder-blue hover:underline decoration-dotted"
+                        >
+                          {t.name}
+                        </button>
+                      )}
                       <input
                         type="text"
-                        autoFocus
-                        value={editingTeacher.value}
-                        aria-label={`${t.name} の新しい名前`}
-                        onChange={(e) =>
-                          setEditingTeacher({ name: t.name, value: e.target.value })
-                        }
-                        onBlur={() => {
-                          if (cancelRenameRef.current) {
-                            cancelRenameRef.current = false;
-                            setEditingTeacher(null);
-                          } else {
-                            commitRename();
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            // 既定動作 (フォーカス移動先ボタンの activation 等)
-                            // を確実に殺してから確定する
-                            e.preventDefault();
-                            e.target.blur();
-                          } else if (e.key === "Escape") {
-                            // モーダルの Escape (閉じる) まで波及させない
-                            e.stopPropagation();
-                            cancelRenameRef.current = true;
-                            e.target.blur();
-                          }
-                        }}
-                        className="w-24 text-[11px] rounded border border-builder-info-border bg-builder-surface px-1 py-0 focus:outline-none"
+                        value={t.kana || ""}
+                        aria-label={`${t.name} のよみ`}
+                        placeholder="よみ"
+                        onChange={(e) => setTeacherKana(t.name, e.target.value)}
+                        className="w-24 shrink-0 text-[11px] rounded border border-builder-border bg-builder-surface px-1 py-0.5 focus:outline-none placeholder:text-builder-ink-ghost"
                       />
-                    ) : (
+                      {/* 科目マスタが空で担当科目も無いときは「担当」の
+                          見出しだけが浮くので出さない */}
+                      {(assigned.length > 0 || pickable.length > 0) && (
+                        <span className="text-builder-ink-subtle shrink-0">担当</span>
+                      )}
+                      {assigned.map((s) => (
+                        <span
+                          key={s}
+                          className="bg-builder-bg border border-builder-border text-builder-ink rounded-full px-2 py-0.5 inline-flex items-center gap-1"
+                        >
+                          {s}
+                          {!(project.subjects || []).includes(s) && (
+                            <span
+                              title="科目マスタに無い科目です"
+                              className="text-builder-ink-ghost"
+                            >
+                              ?
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleTeacherSubject(t.name, s)}
+                            className={chipDeleteBtn}
+                            aria-label={`${t.name} の担当科目から ${s} を外す`}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                      {pickable.length > 0 && (
+                        <select
+                          value=""
+                          aria-label={`${t.name} の担当科目を追加`}
+                          onChange={(e) => {
+                            if (e.target.value)
+                              toggleTeacherSubject(t.name, e.target.value);
+                          }}
+                          className="text-[11px] rounded border border-builder-border bg-builder-surface px-1 py-0.5 cursor-pointer focus:outline-none"
+                        >
+                          <option value="">＋</option>
+                          {pickable.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
-                        onClick={() =>
-                          setEditingTeacher({ name: t.name, value: t.name })
-                        }
-                        title="クリックで名前を変更（割当済みのセルも追従します）"
-                        className="border-0 bg-transparent cursor-pointer p-0 text-inherit hover:text-builder-blue hover:underline decoration-dotted"
+                        onClick={() => removeTeacher(t)}
+                        className={`${chipDeleteBtn} ml-auto`}
+                        aria-label={`${t.name} を削除`}
                       >
-                        {t.name}
+                        ✕
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeTeacher(t)}
-                      className={chipDeleteBtn}
-                      aria-label={`${t.name} を削除`}
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <input
                   type="text"
                   value={newTeacher}
@@ -680,6 +824,19 @@ export function ProjectConfigModal({
                 <button type="button" className={UI.btnBlue} onClick={importTeachers}>
                   🔗 本体のコマから取込
                 </button>
+                <button
+                  type="button"
+                  className={UI.btnBlue}
+                  onClick={inferSubjects}
+                  title="いま組んである割当から、各講師の担当科目を推定して埋めます（既に入っている科目はそのまま）"
+                >
+                  📚 担当科目を推定
+                </button>
+                {kanaMissing > 0 && (
+                  <span className={UI.hint}>
+                    よみ未設定 {kanaMissing} 名（プルダウンの末尾に並びます）
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -821,7 +978,7 @@ export function ProjectConfigModal({
                     className={UI.input}
                   >
                     <option value="">講師を選択</option>
-                    {project.teachers.map((t) => (
+                    {sortedTeachers.map((t) => (
                       <option key={t.name} value={t.name}>
                         {t.name}
                       </option>
@@ -888,7 +1045,7 @@ export function ProjectConfigModal({
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {project.teachers.flatMap((t) =>
+                  {sortedTeachers.flatMap((t) =>
                     (t.ngSlots || []).map((s, i) => (
                       <span
                         key={`${t.name}-${i}`}
@@ -923,7 +1080,7 @@ export function ProjectConfigModal({
                     className={UI.input}
                   >
                     <option value="">講師を選択</option>
-                    {project.teachers.map((t) => (
+                    {sortedTeachers.map((t) => (
                       <option key={t.name} value={t.name}>
                         {t.name}
                       </option>
@@ -965,7 +1122,7 @@ export function ProjectConfigModal({
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {project.teachers
+                  {sortedTeachers
                     .filter((t) => t.maxPerDay != null || t.maxPerWeek != null)
                     .map((t) => (
                       <span

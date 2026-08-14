@@ -34,7 +34,8 @@ export function RegularOnboarding({
     {
       done: hasTeachers,
       label: "講師を登録する",
-      detail: "本体のコマからの一括取込が早いです（マスタ外はセルの直接入力でも入ります）",
+      detail:
+        "本体のコマからの一括取込が早いです（マスタ外はセルの直接入力でも入ります）。よみ・担当科目を入れると、セルのプルダウンが科目別 + アイウエオ順になります",
       action: () => onOpenConfig("teachers"),
       actionLabel: "⚙ 講師を開く",
     },

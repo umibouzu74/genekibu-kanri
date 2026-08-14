@@ -21,6 +21,7 @@ import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 import { gradeColor } from "../constants/colors";
 import { sectionDeptRank, sectionTone } from "./sectionTone";
+import { groupTeachersBySubject } from "./teacherOrder";
 import { RegularCell } from "./RegularCell";
 
 // ─── スケジュール表 (選択曜日 × セクション別テーブル) ────────────────
@@ -363,6 +364,14 @@ export function RegularGrid({
       ngByTab: computeNgTeachersForTabs(project, origTabs),
     };
   }, [project, sections]);
+
+  // 講師プルダウンの並び (担当科目ごとの optgroup + よみのアイウエオ順)。
+  // セルごとに組むと人数 × セル数になるので、グリッドで 1 回だけ組んで
+  // 同じ配列を全セルへ渡す (参照が変わらないので memo も効く)
+  const teacherGroups = useMemo(
+    () => groupTeachersBySubject(project.teachers, project.subjects),
+    [project.teachers, project.subjects]
+  );
 
   // クラス列の最小幅 (下限)。内容が長いセル (講師 2 名・備考など) は
   // table の自動レイアウトでこれより広がる。縦積み (◫ 曜日を並べる) は
@@ -905,6 +914,7 @@ export function RegularGrid({
                             subjectColor={subjectColor}
                             subjects={project.subjects}
                             teachers={project.teachers}
+                            teacherGroups={teacherGroups}
                             conflictText={reasons ? reasons.join("\n") : ""}
                             conflictBadge={badgeByRef?.get(ref) || "重複"}
                             // "·" 区切りの文字列で渡す (配列だと毎レンダー新参照に
