@@ -36,17 +36,28 @@
 // - 行の高さは中身から見積もる (estimateRowHeight)。折り返しの回数は
 //   列幅とフォントサイズから概算する
 //
+// 「全曜日」シートの詰め方 (2026-08-14):
+// - 曜日を **横に 3 つ並べた帯** を 2 段 (月火水 / 木金土) にして刷る。
+//   帯の切れ目で改ページするので A3 横 2 枚に週が収まる (曜日を縦に
+//   積んで 1 曜日 1 ページだった頃は 6 枚)。
+// - 並べ方は画面の **◫ 曜日を並べるビューと同じ**: 曜日ごとにセクションを
+//   縦に積み、セクションの開始行を曜日間でそろえる (行は Excel でも全曜日
+//   共有なので、そろえないと隣の曜日の背の高い行に引きずられる)。並び順は
+//   曜日に依存しない sectionOrder のキー (画面と共有)。
+// - 曜日ブロックの間は空き列 1 本。列幅は「時間列 12 + クラス列 15」を
+//   曜日ごとに敷き直す (帯によって同じ列の役割が変わるので広い方を採る)。
+//
 // 印刷設定の使い分け (重要):
 // - 曜日別シートは 1 シート = 1 曜日なので Excel の「1 ページに収める」
 //   (fitToPage 1×1) をそのまま使う — 拡大率は Excel が実測で決める。
-// - 「全曜日」シートは曜日ごとの改ページ (手動改ページ) が主役だが、
+// - 「全曜日」シートは帯ごとの改ページ (手動改ページ) が主役だが、
 //   **Excel は fitToPage を有効にすると手動改ページを無視する**。そのため
 //   こちらは fitToPage を使わず、estimatePrintScale で見積もった固定
-//   倍率 (scale) を入れる。倍率は全曜日で共通なので紙面の字の大きさも揃う。
+//   倍率 (scale) を入れる。倍率は全帯で共通なので紙面の字の大きさも揃う。
 // - 「全曜日」だけ **A3 横** (曜日別は B4 横のまま)。固定倍率なので紙が
-//   大きいほど字が大きく刷れる — 実測で B4 横 77% → A3 横 90% になり、
-//   全曜日を 1 枚ずつ並べて見るときの可読性が上がる。曜日別シートは
-//   fitToPage で Excel が実測して収めるため B4 で十分。
+//   大きいほど字が大きく刷れる。3 曜日を横に並べると縛るのは幅の方に
+//   移る (実測: 曜日 1 つ 10in に対し 3 つで約 29in) ので、紙は大きいほど
+//   良い。曜日別シートは fitToPage で Excel が実測して収めるため B4 で十分。
 
 import ExcelJS from "exceljs";
 import {
@@ -68,6 +79,7 @@ import {
   mergeFallback,
   visibleClassesForDay,
 } from "./mergedColumns";
+import { compareStackKey, makeStackOrderKey } from "./sectionOrder";
 import { sectionTone } from "./sectionTone";
 import { computeClassSubjectLoad } from "./classLoad";
 import { computeTeacherLoad, computeTeacherWeek, formatMinutes } from "./teacherLoad";
@@ -110,6 +122,12 @@ const PAPER_SIZE_A3 = 8;
 /** 全曜日をまとめたシートの名前 (呼び出し側の有無判定にも使う) */
 const ALL_DAYS_SHEET_NAME = "全曜日";
 
+/**
+ * 「全曜日」シートで横に並べる曜日の数。3 = 月火水 / 木金土 の 2 段組で
+ * A3 横 2 枚。増やすと枚数は減るが印刷倍率がそのぶん下がる (幅が縛る)。
+ */
+const ALL_DAYS_PER_BAND = 3;
+
 const DAY_SHEET_MARGINS = {
   left: 0.4,
   right: 0.4,
@@ -125,6 +143,7 @@ const A3_LANDSCAPE_IN = { width: 420 / 25.4, height: 297 / 25.4 };
 
 const COL_WIDTH_TIME = 12; // 「時間」列
 const COL_WIDTH_CLASS = 15; // クラス列
+const COL_WIDTH_GAP = 2; // 「全曜日」で曜日ブロックの間に挟む空き列
 const ROW_HEIGHT_DEFAULT = 15; // タイトル・空行 (pt)
 const ROW_HEIGHT_BAR = 20; // セクション見出しバー (pt, 11pt の 1 行ぶん)
 const ROW_HEIGHT_TAB = 22; // 学年見出し (pt, 11pt の 1 行ぶん)
@@ -236,6 +255,31 @@ export function estimateClassHeadHeight(heads) {
   );
 }
 
+/**
+ * 行の高さを「その行に載る全ブロックの最大」で確定するための蓄積器。
+ * **Excel の行の高さはシート全体で共有**なので、「全曜日」シートのように
+ * 曜日を横に並べると 1 行に複数の曜日の中身が乗る。書き込みのたびに
+ * ws.getRow().height を上書きすると後から書いた曜日の高さで潰れて、先に
+ * 書いた曜日の折り返した行が紙面から消える。最後にまとめて ws へ流す。
+ */
+function makeRowHeights() {
+  const map = new Map();
+  return {
+    add(row, height) {
+      map.set(row, Math.max(map.get(row) || 0, height));
+    },
+    /** 行 from〜to の高さの合計 (pt)。未登録の行は既定の行高で数える */
+    sum(from, to) {
+      let total = 0;
+      for (let r = from; r <= to; r++) total += map.get(r) || ROW_HEIGHT_DEFAULT;
+      return total;
+    },
+    apply(ws) {
+      for (const [row, height] of map) ws.getRow(row).height = height;
+    },
+  };
+}
+
 // 曜日別シート: B4 横に丸ごと 1 ページで収める (Excel 側の実測スケール)
 function applyDaySheetPrintDefaults(pageSetup) {
   return {
@@ -298,8 +342,11 @@ export function estimatePrintScale({
  * }[]}
  *   groups = 学年ごとの列のまとまり (classes = 見出しに出る列。合同列は
  *   結合表示するので見出しには出ない。fallback の学年だけ全列が並ぶ)
+ *   stackKey = 「全曜日」で曜日をまたいで行をそろえるための並び順キー
+ *   (曜日非依存。画面の ◫ 曜日を並べるビューと共有 — sectionOrder.js)
  */
 export function collectDaySheet(project, day, { splitCampus = true } = {}) {
+  const stackKey = makeStackOrderKey(project);
   return computeSections(project, day, { splitCampus })
     .map((s) => {
       const tabs = s.tabs
@@ -344,7 +391,15 @@ export function collectDaySheet(project, day, { splitCampus = true } = {}) {
           }).length,
         0
       );
-      return { name: s.name, tone: sectionTone(tabs), cellCount, periods, groups, cols };
+      return {
+        name: s.name,
+        tone: sectionTone(tabs),
+        stackKey: stackKey({ tabs, auto: s.auto, campus: s.campus }),
+        cellCount,
+        periods,
+        groups,
+        cols,
+      };
     })
     .filter((s) => s.periods.length > 0 && s.cols.length > 0);
 }
@@ -403,9 +458,10 @@ function mergedCell(ws, row, col, colSpan, border) {
 // セクション見出しバー (画面の部バー): 部の色 + 右肩にコマ数。
 // 罫線は引かない — 名前とコマ数は別セルなので、罫線を引くとバーが
 // 途中で切れて見える (画面のバーは 1 本の帯)
-function writeSectionBar(ws, s, row, lastCol) {
+function writeSectionBar(ws, s, row, col0, rowHeights) {
   const fill = solidFill(hexToArgb(s.tone.accent) || ARGB_HEADER_BLUE);
-  const head = mergedCell(ws, row, 1, Math.max(1, lastCol - 1), null);
+  const lastCol = col0 + s.cols.length; // 時間列 + クラス列
+  const head = mergedCell(ws, row, col0, Math.max(1, lastCol - col0), null);
   head.value = s.name;
   head.font = { size: 11, bold: true, color: { argb: "FFFFFFFF" } };
   head.alignment = { vertical: "middle" };
@@ -415,22 +471,21 @@ function writeSectionBar(ws, s, row, lastCol) {
   count.font = { size: 8, color: { argb: "FFFFFFFF" } };
   count.alignment = { vertical: "middle", horizontal: "right" };
   count.fill = fill;
-  ws.getRow(row).height = ROW_HEIGHT_BAR;
+  rowHeights.add(row, ROW_HEIGHT_BAR);
 }
 
-// 列見出し 2 段 (学年 = 学年色 / クラス = ラベル + 教室の小文字)。
-// @returns {number} 2 段ぶんの高さ (pt)
-function writeSectionHead(ws, s, day, tabRow) {
+// 列見出し 2 段 (学年 = 学年色 / クラス = ラベル + 教室の小文字)
+function writeSectionHead(ws, s, day, tabRow, col0, rowHeights) {
   const clsRow = tabRow + 1;
-  const corner = ws.getCell(tabRow, 1);
+  const corner = ws.getCell(tabRow, col0);
   corner.value = "時間";
   corner.font = { size: 9, bold: true, color: { argb: ARGB_SUB } };
   corner.alignment = { vertical: "middle", horizontal: "center" };
   corner.fill = solidFill(ARGB_HEAD_GRAY);
-  ws.mergeCells(tabRow, 1, clsRow, 1);
+  ws.mergeCells(tabRow, col0, clsRow, col0);
   corner.border = { ...THIN_BORDER, bottom: MEDIUM_EDGE };
 
-  let c = 2;
+  let c = col0 + 1;
   const heads = [];
   s.groups.forEach((g, gi) => {
     const span = g.classes.length;
@@ -462,15 +517,13 @@ function writeSectionHead(ws, s, day, tabRow) {
     });
     c += span;
   });
-  const clsHeight = estimateClassHeadHeight(heads);
-  ws.getRow(tabRow).height = ROW_HEIGHT_TAB;
-  ws.getRow(clsRow).height = clsHeight;
-  return ROW_HEIGHT_TAB + clsHeight;
+  rowHeights.add(tabRow, ROW_HEIGHT_TAB);
+  rowHeights.add(clsRow, estimateClassHeadHeight(heads));
 }
 
 // 時限 1 行 (時間見出し + 各学年のセル)。行の高さは中身から見積もる
-function writePeriodRow(ws, s, day, per, row, subjectColor) {
-  const timeCell = ws.getCell(row, 1);
+function writePeriodRow(ws, s, day, per, row, col0, subjectColor, rowHeights) {
+  const timeCell = ws.getCell(row, col0);
   // ラベル未設定 (取込直後など) は時刻だけを見出しにする (画面と同じ)
   const timeLines = per.label
     ? [
@@ -487,7 +540,7 @@ function writePeriodRow(ws, s, day, per, row, subjectColor) {
 
   // 行高の見積りには時間見出しも入れる (長いラベルで時刻が切れないように)
   const measured = [{ lines: timeLines, width: COL_WIDTH_TIME }];
-  let c = 2;
+  let c = col0 + 1;
   s.groups.forEach((g, gi) => {
     const edge = gi > 0 ? GROUP_LEFT_BORDER : THIN_BORDER;
     const span = g.classes.length;
@@ -515,56 +568,48 @@ function writePeriodRow(ws, s, day, per, row, subjectColor) {
       c += rc.colSpan;
     }
   });
-  const height = estimateRowHeight(measured);
-  ws.getRow(row).height = height;
-  return height;
+  rowHeights.add(row, estimateRowHeight(measured));
 }
 
 /**
- * 曜日 1 つ分の表 (タイトル + セクション群) を ws の startRow から書き込む。
- * 曜日別シートと「全曜日」シートで共用する。
- * @returns {{nextRow: number, lastRow: number, heightPt: number}}
- *   lastRow = このブロックの最終行 (「全曜日」の改ページを打つ行)
+ * 曜日 1 つ分の表 (タイトル + セクション群) を ws の startRow・startCol から
+ * 書き込む。曜日別シートと「全曜日」シートで共用する。
+ * @param {{startRow?: number, startCol?: number, rowHeights: object,
+ *          sectionStarts?: number[] | null,
+ *          subjectColor?: (subj: string) => string | null}} opts
+ *   sectionStarts: 「全曜日」で曜日をまたいでセクションの開始行をそろえる
+ *   ための相対行 (stackSectionStarts の結果)。省略時は上から詰める
+ * @returns {{lastRow: number}} このブロックの最終行
  */
-function writeDayBlock(
-  ws,
-  project,
-  day,
-  sections,
-  dateLabel,
-  startRow,
-  subjectColor = getSubjectColor
-) {
+function writeDayBlock(ws, project, day, sections, dateLabel, opts) {
+  const {
+    startRow = 1,
+    startCol = 1,
+    rowHeights,
+    sectionStarts = null,
+    subjectColor = getSubjectColor,
+  } = opts;
   const maxCols = dayBlockCols(sections);
-  // タイトル行 + 空行
-  let row = startRow;
-  let heightPt = ROW_HEIGHT_DEFAULT * 2;
-  ws.mergeCells(row, 1, row, maxCols);
-  const title = ws.getCell(row, 1);
+  ws.mergeCells(startRow, startCol, startRow, startCol + maxCols - 1);
+  const title = ws.getCell(startRow, startCol);
   title.value = `${project.name || "通常時間割"} — ${day}曜日（出力: ${dateLabel}）`;
   title.font = { size: 13, bold: true };
-  row += 2;
 
-  for (const s of sections) {
-    // セクション見出しバー + 区切りの空行 (列見出し 2 段は実測を足す)
-    heightPt += ROW_HEIGHT_BAR + ROW_HEIGHT_DEFAULT;
-    writeSectionBar(ws, s, row, s.cols.length + 1);
-    row++;
-    heightPt += writeSectionHead(ws, s, day, row);
-    row += 2;
+  let row = startRow + 2; // タイトル行 + 空行
+  let lastRow = row;
+  sections.forEach((s, si) => {
+    const top = sectionStarts ? startRow + sectionStarts[si] : row;
+    writeSectionBar(ws, s, top, startCol, rowHeights);
+    writeSectionHead(ws, s, day, top + 1, startCol, rowHeights);
+    row = top + 3; // バー + 列見出し 2 段
     for (const per of s.periods) {
-      heightPt += writePeriodRow(ws, s, day, per, row, subjectColor);
+      writePeriodRow(ws, s, day, per, row, startCol, subjectColor, rowHeights);
       row++;
     }
+    lastRow = Math.max(lastRow, row - 1);
     row++; // セクション間の空行
-  }
-  return { nextRow: row, lastRow: row - 1, heightPt };
-}
-
-/** 曜日ブロック用に列幅を設定する (時間列 + クラス列) */
-function setDayColumnWidths(ws, maxCols) {
-  ws.getColumn(1).width = COL_WIDTH_TIME;
-  for (let c = 2; c <= maxCols; c++) ws.getColumn(c).width = COL_WIDTH_CLASS;
+  });
+  return { lastRow };
 }
 
 // 曜日 1 つ = 1 シート (B4 横・1 ページ収め)
@@ -574,53 +619,118 @@ function buildDaySheet(workbook, project, day, sections, dateLabel, subjectColor
     pageSetup: applyDaySheetPrintDefaults(),
     properties: { defaultRowHeight: ROW_HEIGHT_DEFAULT },
   });
-  setDayColumnWidths(ws, maxCols);
-  writeDayBlock(ws, project, day, sections, dateLabel, 1, subjectColor);
+  ws.getColumn(1).width = COL_WIDTH_TIME;
+  for (let c = 2; c <= maxCols; c++) ws.getColumn(c).width = COL_WIDTH_CLASS;
+  const rowHeights = makeRowHeights();
+  writeDayBlock(ws, project, day, sections, dateLabel, {
+    rowHeights,
+    subjectColor,
+  });
+  rowHeights.apply(ws);
   return ws;
 }
 
-// 全曜日を 1 枚にまとめたシート (曜日ごとに改ページ)。配布時に「曜日別を
-// 1 枚ずつ選んで印刷」しなくてよいように、このシートだけ刷れば全曜日が
-// 1 曜日 1 ページで出る。fitToPage は手動改ページを潰すので固定倍率。
+/**
+ * 帯 (横に並べる曜日のまとまり) の中で、セクションの開始行を曜日間で
+ * そろえる純関数。k 番目のセクションは帯で最も時限数の多い曜日に合わせた
+ * 行数を取り、足りない曜日はその下が空くだけ (画面の ◫ 曜日を並べる
+ * ビューが行を共有するのと同じ)。
+ * @param {{sections: {periods: object[]}[]}[]} band
+ * @returns {number[]} ブロック先頭 (タイトル行) からの相対行
+ */
+export function stackSectionStarts(band) {
+  const count = Math.max(0, ...band.map((d) => d.sections.length));
+  const starts = [];
+  let row = 2; // タイトル行 + 空行
+  for (let k = 0; k < count; k++) {
+    starts.push(row);
+    const periods = Math.max(
+      0,
+      ...band.map((d) => d.sections[k]?.periods.length || 0)
+    );
+    // バー + 列見出し 2 段 + 時限行 + セクション間の空行
+    row += 3 + periods + 1;
+  }
+  return starts;
+}
+
+/**
+ * 帯に分けた曜日を返す純関数。曜日の並びは受け取った順のまま
+ * (月火水 / 木金土)。
+ * @returns {{day: string, sections: object[]}[][]}
+ */
+export function splitDayBands(daySections, perBand = ALL_DAYS_PER_BAND) {
+  const bands = [];
+  for (let i = 0; i < daySections.length; i += perBand) {
+    bands.push(daySections.slice(i, i + perBand));
+  }
+  return bands;
+}
+
+// 全曜日を 1 枚にまとめたシート。曜日を横に ALL_DAYS_PER_BAND 個並べた帯を
+// 縦に積み、帯の切れ目で改ページする (A3 横 2 枚に週が収まる)。配布時に
+// 「曜日別を 1 枚ずつ選んで印刷」しなくてよいように、このシートだけ刷れば
+// 週ぶんが出る。fitToPage は手動改ページを潰すので固定倍率。
 function buildAllDaysSheet(workbook, project, daySections, dateLabel, subjectColor) {
-  const maxCols = Math.max(...daySections.map((d) => dayBlockCols(d.sections)));
   const ws = workbook.addWorksheet(ALL_DAYS_SHEET_NAME, {
     pageSetup: {
       // 曜日別シート (B4 横 + fitToPage) と違い、こちらは手動改ページを
-      // 生かすため固定倍率。倍率は紙の大きさで決まるので A3 横にする
-      // (実測: 同じ下書きで B4 横 77% → A3 横 90%)。
+      // 生かすため固定倍率。3 曜日を横に並べるぶん幅が要るので A3 横。
       paperSize: PAPER_SIZE_A3,
       orientation: "landscape",
       margins: DAY_SHEET_MARGINS,
     },
     properties: { defaultRowHeight: ROW_HEIGHT_DEFAULT },
   });
-  setDayColumnWidths(ws, maxCols);
+  const rowHeights = makeRowHeights();
+  // 同じ列が帯によって時間列にもクラス列にもなる。列幅はシート共有なので
+  // 広い方を採る (時間列が少し広くなるだけで害はない)
+  const colWidths = [];
+  const setWidth = (col, width) => {
+    colWidths[col - 1] = Math.max(colWidths[col - 1] || 0, width);
+  };
 
-  const heights = [];
+  const bands = splitDayBands(daySections);
+  const bandRanges = [];
   let row = 1;
-  daySections.forEach(({ day, sections }, i) => {
-    const block = writeDayBlock(
-      ws,
-      project,
-      day,
-      sections,
-      dateLabel,
-      row,
-      subjectColor
-    );
-    heights.push(block.heightPt);
-    // 最後の曜日の後ろに改ページを入れると空白ページが 1 枚増える
-    if (i < daySections.length - 1) ws.getRow(block.lastRow).addPageBreak();
-    row = block.nextRow;
+  for (const band of bands) {
+    const sectionStarts = stackSectionStarts(band);
+    let col = 1;
+    let bottom = row;
+    band.forEach(({ day, sections }, i) => {
+      const width = dayBlockCols(sections);
+      setWidth(col, COL_WIDTH_TIME);
+      for (let k = 1; k < width; k++) setWidth(col + k, COL_WIDTH_CLASS);
+      const block = writeDayBlock(ws, project, day, sections, dateLabel, {
+        startRow: row,
+        startCol: col,
+        rowHeights,
+        sectionStarts,
+        subjectColor,
+      });
+      bottom = Math.max(bottom, block.lastRow);
+      col += width;
+      if (i < band.length - 1) {
+        setWidth(col, COL_WIDTH_GAP); // 曜日ブロックの間の空き列
+        col++;
+      }
+    });
+    bandRanges.push([row, bottom]);
+    row = bottom + 2; // 帯の間の空行
+  }
+
+  colWidths.forEach((width, i) => {
+    ws.getColumn(i + 1).width = width;
   });
+  rowHeights.apply(ws);
+  // 帯の末尾で改ページ (最後の帯の後ろに入れると空白ページが 1 枚増える)
+  for (const [, bottom] of bandRanges.slice(0, -1)) {
+    ws.getRow(bottom).addPageBreak();
+  }
 
   ws.pageSetup.scale = estimatePrintScale({
-    colWidths: [
-      COL_WIDTH_TIME,
-      ...Array.from({ length: maxCols - 1 }, () => COL_WIDTH_CLASS),
-    ],
-    blockHeightsPt: heights,
+    colWidths,
+    blockHeightsPt: bandRanges.map(([top, bottom]) => rowHeights.sum(top, bottom)),
     paper: A3_LANDSCAPE_IN,
   });
   return ws;
@@ -646,9 +756,17 @@ export function buildRegularWorkbook(
     daySections.push({ day, sections });
     buildDaySheet(workbook, project, day, sections, dateLabel, subjectColor);
   }
-  // まとめシートは 2 曜日以上あるときだけ (1 曜日なら曜日別シートと同じ)
+  // まとめシートは 2 曜日以上あるときだけ (1 曜日なら曜日別シートと同じ)。
+  // 曜日を横に並べる帯ではセクションの行を曜日間でそろえるので、並び順を
+  // 曜日非依存の基準 (画面の ◫ ビューと同じ) に揃え直してから渡す
   if (daySections.length > 1) {
-    buildAllDaysSheet(workbook, project, daySections, dateLabel, subjectColor);
+    const stacked = daySections.map(({ day, sections }) => ({
+      day,
+      sections: [...sections].sort((a, b) =>
+        compareStackKey(a.stackKey, b.stackKey)
+      ),
+    }));
+    buildAllDaysSheet(workbook, project, stacked, dateLabel, subjectColor);
   }
   return workbook;
 }

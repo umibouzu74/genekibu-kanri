@@ -7,6 +7,8 @@ import {
   estimateCellHeight,
   estimatePrintScale,
   estimateRowHeight,
+  splitDayBands,
+  stackSectionStarts,
   teacherEntryNote,
 } from "./excelExport";
 import { makeCellKey } from "./model";
@@ -390,26 +392,99 @@ describe("buildRegularWorkbook: 全曜日まとめシート", () => {
       days: ["月", "火"],
       dateLabel: "2026-08-05",
     }).getWorksheet("全曜日");
-    // 月ブロックの 1限 (6 行目) と火ブロックの 1限 (14 行目) の両方で
+    // 月ブロック (A〜C) と火ブロック (E〜G) の 1限 (6 行目) の両方で
     // 合同セルが 2 列に結合されている
     expect(ws.getCell(6, 3).master.address).toBe("B6");
-    expect(ws.getCell(14, 3).master.address).toBe("B14");
-    expect(ws.getCell(14, 2).text).toContain("確認テスト");
+    expect(ws.getCell(6, 7).master.address).toBe("F6");
+    expect(ws.getCell(6, 6).text).toContain("確認テスト");
   });
 
-  it("曜日ごとにタイトルを置き、曜日の切れ目に改ページを入れる", () => {
+  it("曜日を横に並べ、タイトルも同じ行に置く", () => {
     const wb = buildRegularWorkbook(twoDayProject(), {
       days: ["月", "火"],
       dateLabel: "2026-08-05",
     });
     const ws = wb.getWorksheet("全曜日");
+    // 月 = A〜C (時間 + S + A)、空き列 D、火 = E〜G
     expect(ws.getCell(1, 1).value).toContain("月曜日");
-    // 月ブロック (タイトル + 空行 + セクション見出し + 見出し 2 段 + 2 時限
-    // + 空行 = 8 行) の直後に改ページ → 9 行目から火曜ブロック
-    expect(ws.rowBreaks.map((b) => b.id)).toEqual([8]);
-    expect(ws.getCell(9, 1).value).toContain("火曜日");
-    // 最後の曜日の後ろには改ページを入れない (空白ページを増やさない)
-    expect(ws.rowBreaks).toHaveLength(1);
+    expect(ws.getCell(1, 5).value).toContain("火曜日");
+    expect(ws.getColumn(1).width).toBe(12); // 時間列
+    expect(ws.getColumn(2).width).toBe(15); // クラス列
+    expect(ws.getColumn(4).width).toBe(2); // 曜日ブロックの間の空き列
+    expect(ws.getColumn(5).width).toBe(12); // 火曜の時間列
+    // 3 曜日までは 1 段に収まるので改ページ無し
+    expect(ws.rowBreaks).toHaveLength(0);
+  });
+
+  it("横に並べた曜日でセクションの開始行がそろう", () => {
+    const p = twoDayProject();
+    // 火だけ時限を 1 つ増やす (月 = 2 時限 / 火 = 3 時限)
+    p.tabs[0].periodIds.push(3);
+    p.tabs[0].schedule[makeCellKey("火", 2, 2)] = { subj: "社会", teacher: "半田" };
+    p.tabs[0].schedule[makeCellKey("火", 3, 1)] = { subj: "確認テスト" };
+    // 2 つ目のセクション (高校部) を両曜日に足す。時限を中3 と別体系に
+    // しないと computeSections が 1 つのセクションにまとめてしまう
+    p.periods.push({ id: 4, label: "高1限", time: "19:00-20:00" });
+    p.tabs.push({
+      id: 2,
+      name: "高3",
+      grade: "高3",
+      classes: [{ id: 1, label: "α", room: "701" }],
+      days: ["月", "火"],
+      periodIds: [4],
+      schedule: {
+        [makeCellKey("月", 4, 1)]: { subj: "英語", teacher: "堀上" },
+        [makeCellKey("火", 4, 1)]: { subj: "英語", teacher: "堀上" },
+      },
+    });
+    const ws = buildRegularWorkbook(p, {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("全曜日");
+    // 1 つ目のセクションのバーはどちらも 3 行目
+    expect(ws.getCell(3, 1).value).toBe("中3");
+    expect(ws.getCell(3, 5).value).toBe("中3");
+    // 2 つ目のセクションのバーは「時限の多い火曜」に合わせた行でそろう
+    // (月は 2 時限なので下に 1 行空く)
+    expect(ws.getCell(10, 1).value).toBe("高3");
+    expect(ws.getCell(10, 5).value).toBe("高3");
+  });
+
+  it("横に並べた曜日の行の高さは背の高い方に合わせる", () => {
+    // Excel の行の高さはシート共有。後から書いた曜日で上書きすると、
+    // 先に書いた曜日の折り返した行が紙面から消える
+    const p = twoDayProject();
+    p.tabs[0].schedule[makeCellKey("火", 1, 1)] = {
+      subj: "確認テスト",
+      teacher: "半田",
+      note: "範囲は教科書 p.120〜p.160 と配布プリント一式",
+    };
+    const wb = buildRegularWorkbook(p, {
+      days: ["月", "火"],
+      dateLabel: "2026-08-05",
+    });
+    const all = wb.getWorksheet("全曜日").getRow(6).height;
+    // 月だけの曜日別シート (同じ 1限の行) より高くなっている
+    expect(all).toBeGreaterThan(wb.getWorksheet("月曜").getRow(6).height);
+    // 火の見積りは曜日別シートと同じ
+    expect(all).toBe(wb.getWorksheet("火曜").getRow(6).height);
+  });
+
+  it("4 曜日以上は 3 曜日ずつの帯に分け、帯の切れ目で改ページする", () => {
+    const p = twoDayProject();
+    for (const d of ["水", "木"]) {
+      p.tabs[0].days.push(d);
+      p.tabs[0].schedule[makeCellKey(d, 1, 1)] = { subj: "国語", teacher: "半田" };
+    }
+    const ws = buildRegularWorkbook(p, {
+      days: ["月", "火", "水", "木"],
+      dateLabel: "2026-08-05",
+    }).getWorksheet("全曜日");
+    // 1 段目 = 月火水 (タイトル + 空行 + バー + 見出し 2 段 + 2 時限 = 7 行)
+    expect(ws.getCell(1, 9).value).toContain("水曜日");
+    expect(ws.rowBreaks.map((b) => b.id)).toEqual([7]);
+    // 2 段目は帯の間に空行を 1 行はさんで始まる
+    expect(ws.getCell(9, 1).value).toContain("木曜日");
   });
 
   it("fitToPage は使わず固定倍率 (手動改ページを潰さないため)", () => {
@@ -434,6 +509,33 @@ describe("buildRegularWorkbook: 全曜日まとめシート", () => {
       dateLabel: "2026-08-05",
     });
     expect(wb.worksheets.map((w) => w.name)).toEqual(["月曜"]);
+  });
+});
+
+describe("stackSectionStarts / splitDayBands", () => {
+  const band = (...counts) => ({
+    sections: counts.map((n) => ({ periods: Array.from({ length: n }) })),
+  });
+
+  it("セクションの開始行は帯で最も時限の多い曜日に合わせる", () => {
+    // 1 つ目: 月 2 時限 / 火 4 時限 → 4 時限ぶんの高さを取る
+    // (バー + 見出し 2 段 + 時限 + 区切りの空行)
+    const starts = stackSectionStarts([band(2, 1), band(4, 3)]);
+    expect(starts).toEqual([2, 2 + 3 + 4 + 1]);
+  });
+
+  it("セクション数の違う曜日が混ざっても数の多い方に合わせる", () => {
+    const starts = stackSectionStarts([band(2), band(2, 2, 2)]);
+    expect(starts).toHaveLength(3);
+  });
+
+  it("曜日は 3 つずつの帯に分ける (並びはそのまま)", () => {
+    const days = ["月", "火", "水", "木", "金", "土"].map((day) => ({ day }));
+    expect(splitDayBands(days).map((b) => b.map((d) => d.day))).toEqual([
+      ["月", "火", "水"],
+      ["木", "金", "土"],
+    ]);
+    expect(splitDayBands(days.slice(0, 4)).map((b) => b.length)).toEqual([3, 1]);
   });
 });
 
