@@ -52,6 +52,7 @@ import { BulkEditDialog } from "./BulkEditDialog";
 import { bulkEditCells, describeBulkEdit, fillCells } from "./bulkEdit";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { makeSubjectColorResolver } from "./subjectColor";
+import { sortTeacherNamesByKana, sortTeachersByKana } from "./teacherOrder";
 import { useRegularHistory } from "./hooks/useRegularHistory";
 import { useRegularProjects } from "./hooks/useRegularProjects";
 import { useCellSelection } from "./hooks/useCellSelection";
@@ -946,6 +947,12 @@ export default function RegularBuilderApp({
     setActiveTabId(null);
   }, [activeTab, confirm, saveProject]);
 
+  // 講師マスタのアイウエオ順 (よみ)。入力候補の datalist 用
+  const sortedTeachers = useMemo(
+    () => sortTeachersByKana(project.teachers),
+    [project.teachers]
+  );
+
   // 講師フィルタ候補 (マスタ + セルに現れる講師名 + 隔週パートナー)。
   // マスタ未整備の取込直後や、note にしか現れないパートナー講師も
   // 👁 強調表示・週間ミニビューの対象にできるようにする
@@ -958,7 +965,8 @@ export default function RegularBuilderApp({
         if (partner) names.add(partner);
       }
     }
-    return [...names].sort();
+    // 並びはセルのプルダウンと同じアイウエオ順 (よみのある講師が先)
+    return sortTeacherNamesByKana([...names], project.teachers);
   }, [project.teachers, project.tabs]);
 
   // 教室フィルタ候補 (教室マスタ + クラス既定教室 + セル上書き教室)。
@@ -1008,9 +1016,11 @@ export default function RegularBuilderApp({
       className={`builder-root font-sans flex flex-col gap-3${monoPrint ? " regb-mono" : ""}`}
     >
       <style>{REGULAR_PRINT_STYLE}</style>
-      {/* 入力候補 (セルの「✎ 直接入力」から参照するグローバル datalist) */}
+      {/* 入力候補 (セルの「✎ 直接入力」から参照するグローバル datalist)。
+          datalist は optgroup を持てないので科目別にはできないが、並びだけは
+          プルダウンと同じアイウエオ順に揃える */}
       <datalist id="regb-teachers">
-        {project.teachers.map((t) => (
+        {sortedTeachers.map((t) => (
           <option key={t.name} value={t.name} />
         ))}
       </datalist>
@@ -1904,6 +1914,7 @@ export default function RegularBuilderApp({
           project={project}
           saveProject={saveProject}
           slots={slots}
+          masterSubjects={subjects}
           initialTab={configInitialTab}
           onClose={closeProjectConfig}
         />

@@ -5,6 +5,7 @@ import {
   CONFLICT_CELL_BG,
 } from "../timetable-builder/utils/constants";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
+import { ungroupedLabel } from "./teacherOrder";
 
 // ─── セル (ダッシュボードの時間割ビュー風 display-first) ─────────────
 // 普段はダッシュボードと同じ「テキスト中心」の表示 (科目 + 講師 + 教室/
@@ -16,11 +17,37 @@ import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 // - 科目カラー背景・衝突の赤背景 + ⚠️バッジ・講師ハイライトは両モード共通
 // - 講師プルダウンには busyTeachers (同曜日・同時間帯に他セルで割当済みの
 //   講師) へ「(重複)」を予告する。選択は妨げない (承認フローで消せるため)
+// - 講師プルダウンは担当科目ごとの optgroup + よみのアイウエオ順
+//   (並べ替えは teacherOrder.js / teacherGroups prop で受け取る)
 // - 教科・講師とも「✎ 直接入力」でテキスト入力に切り替え可能 (マスタ外の
 //   単発教科や「·」区切りの複数講師用)。講師は確定時に splitTeacherField
 //   で正規化する (CLAUDE.md の複数講師区切り規約)
 
 const FREE_EDIT = "__free__";
+
+// 講師プルダウンの選択肢。並べ替え (科目別 + アイウエオ順) は
+// teacherOrder.js 側で済んでいるので、ここは渡された順に出すだけ。
+// 複数科目を担当する講師は複数のグループに現れるため、React の key は
+// グループ名込みで作る (value は同じ名前でよい — select は最初の一致を選ぶ)
+function renderTeacherOptions(teachers, busySet, ngSet, groupKey) {
+  return teachers.map((t) => {
+    const busy = busySet.has(t.name);
+    const ng = ngSet.has(t.name);
+    return (
+      <option
+        key={`${groupKey}:${t.name}`}
+        value={t.name}
+        className={
+          ng ? "bg-builder-danger-soft" : busy ? "bg-builder-warning-soft" : ""
+        }
+      >
+        {t.name}
+        {ng ? " (NG)" : ""}
+        {busy ? " (重複)" : ""}
+      </option>
+    );
+  });
+}
 
 // 直接入力用の小さなテキスト入力。Enter = 確定 / Escape = 取消 (blur は
 // どちらでも発火するため、フラグで確定・取消を振り分ける)。
@@ -76,6 +103,9 @@ export const RegularCell = memo(function RegularCell({
   subjectColor = null,
   subjects,
   teachers,
+  /** 講師プルダウンの並び: [{subject, teachers}] (teacherOrder.js)。
+      subject: "" = 担当科目 未設定。未指定なら teachers をマスタ順で出す */
+  teacherGroups = null,
   conflictText,
   /** 衝突バッジの文言 ("重複" | "NG")。conflictText がある時のみ使う */
   conflictBadge = "重複",
@@ -155,6 +185,10 @@ export const RegularCell = memo(function RegularCell({
   const subjKnown = !c.subj || subjects.includes(c.subj);
   const busySet = new Set(splitTeacherField(busyTeachers));
   const ngSet = new Set(splitTeacherField(ngTeachers));
+  // 科目別グループが渡っていて、実際に科目で分かれているときだけ optgroup
+  // にする (担当科目が誰も未設定なら見出しの無い一覧のまま)
+  const teacherGroupList = teacherGroups?.length ? teacherGroups : null;
+  const showTeacherGroups = !!teacherGroupList?.some((g) => g.subject);
 
   // regb-selected は印刷スタイル (printStyle.js) が紙面から選択装飾を
   // 除くためのマーカー
@@ -452,27 +486,22 @@ export const RegularCell = memo(function RegularCell({
             onKeyDown={editorKeys("teacher")}
           >
             <option value="">-</option>
-            {teachers.map((t) => {
-              const busy = busySet.has(t.name);
-              const ng = ngSet.has(t.name);
-              return (
-                <option
-                  key={t.name}
-                  value={t.name}
-                  className={
-                    ng
-                      ? "bg-builder-danger-soft"
-                      : busy
-                        ? "bg-builder-warning-soft"
-                        : ""
-                  }
-                >
-                  {t.name}
-                  {ng ? " (NG)" : ""}
-                  {busy ? " (重複)" : ""}
-                </option>
-              );
-            })}
+            {teacherGroupList
+              ? teacherGroupList.map((g) =>
+                  showTeacherGroups ? (
+                    <optgroup
+                      key={g.subject || "__rest"}
+                      label={g.subject || ungroupedLabel(subjects)}
+                    >
+                      {renderTeacherOptions(g.teachers, busySet, ngSet, g.subject)}
+                    </optgroup>
+                  ) : (
+                    // 誰も担当科目を持たない = グループ分けする材料が無い。
+                    // 見出しの無い平らな一覧 (よみ順) に落とす
+                    renderTeacherOptions(g.teachers, busySet, ngSet, "")
+                  )
+                )
+              : renderTeacherOptions(teachers, busySet, ngSet, "")}
             {!teacherKnown && <option value={c.teacher}>{c.teacher}</option>}
             <option value={FREE_EDIT}>✎ 直接入力…</option>
           </select>

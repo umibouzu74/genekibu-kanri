@@ -119,6 +119,23 @@ describe("sanitizeProject", () => {
     // 0 / 負値の上限・空の ngSlots は「未設定」に倒す
     expect(p.teachers[1]).toEqual({ name: "半田" });
   });
+
+  it("講師のよみ・担当科目を保持し、空の値は落とす", () => {
+    const p = sanitizeProject({
+      name: "x",
+      teachers: [
+        { name: "堀上", kana: " ほりかみ ", subjects: ["英語", "数学", "英語", " "] },
+        { name: "半田", kana: "   ", subjects: [] },
+      ],
+    });
+    expect(p.teachers[0]).toEqual({
+      name: "堀上",
+      kana: "ほりかみ",
+      subjects: ["英語", "数学"], // 重複・空文字は落とす
+    });
+    // 空のよみ・担当科目はフィールドごと落とす (未設定 = 従来の並び)
+    expect(p.teachers[1]).toEqual({ name: "半田" });
+  });
 });
 
 describe("tabPeriods", () => {
