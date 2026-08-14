@@ -170,7 +170,7 @@ export function useRegularProjects({
       // (曜日別は B4 横 / 全曜日まとめだけ A3 横 — 紙が違うので明記する)
       toasts.success(
         `Excel を書き出しました（${daySheets} 曜日ぶんのシート・B4 横` +
-          `${hasAllDaysSheet ? " + 全曜日まとめ・A3 横" : ""}）`
+          `${hasAllDaysSheet ? " + 全曜日まとめ・A3 横 3 曜日並べ" : ""}）`
       );
     } catch (e) {
       toasts.error(`Excel を書き出せませんでした: ${e?.message || e}`);

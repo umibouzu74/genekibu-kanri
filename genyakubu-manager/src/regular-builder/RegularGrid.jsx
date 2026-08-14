@@ -20,7 +20,8 @@ import {
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { useLongPress } from "../timetable-builder/hooks/useLongPress";
 import { gradeColor } from "../constants/colors";
-import { sectionDeptRank, sectionTone } from "./sectionTone";
+import { compareStackKey, makeStackOrderKey } from "./sectionOrder";
+import { sectionTone } from "./sectionTone";
 import { groupTeachersBySubject } from "./teacherOrder";
 import { RegularCell } from "./RegularCell";
 
@@ -80,10 +81,9 @@ function MenuTh({ onOpenMenu, title, className, children, ...rest }) {
   );
 }
 
-// セクション見出しの配色 (sectionTone) と縦積みの並び順キー
-// (sectionDeptRank: 中学部 → 混在 → 高校部) は Excel 出力と共有するため
-// ./sectionTone に切り出してある。同順位の並びは sections useMemo 内の
-// stackOrderRank (曜日非依存のタブ定義順) → 本校 → 亀井町で決める
+// セクション見出しの配色 (sectionTone) と縦積みの並び順
+// (sectionOrder: 中学部 → 高校部 / タブ定義順 / 本校 → 亀井町) は Excel
+// 出力と共有するため ./sectionTone・./sectionOrder に切り出してある
 
 export function RegularGrid({
   project,
@@ -253,35 +253,10 @@ export function RegularGrid({
   );
 
   const sections = useMemo(() => {
-    // 縦積み (◫ 曜日を並べる) の同順位 (同じ部) の並び: タブ定義順 →
-    // 本校 → 亀井町。手動グループはその曜日に居ないタブも含めた
-    // プロジェクト全体の定義順で測る — 「その曜日での検出順」だと
-    // 月曜は亀井町が先・木曜は本校が先のように、並べた曜日の間で
-    // 行の対応がずれるため、曜日に依存しない基準だけで順序を決める。
-    // 手動グループの対応付けはセクション名でなくメンバーの元タブの
-    // group 名で行う — splitCampus はグループ名を「◯◯（亀井町）」に
-    // 改名するため、名前一致では元グループを引けない
-    const tabOrder = new Map((project.tabs || []).map((t, i) => [t.id, i]));
-    const origGroup = new Map(
-      (project.tabs || []).map((t) => [t.id, (t.group || "").trim()])
-    );
-    const stackOrderRank = (s) => {
-      let pool = s.tabs;
-      if (!s.auto) {
-        const names = new Set(s.tabs.map((t) => origGroup.get(t.id)));
-        const groupTabs = (project.tabs || []).filter((t) =>
-          names.has((t.group || "").trim())
-        );
-        if (groupTabs.length > 0) pool = groupTabs;
-      }
-      return Math.min(...pool.map((t) => tabOrder.get(t.id) ?? Infinity));
-    };
-    // 本校 → 亀井町のタイブレーク。手動グループは s.campus を持たないため
-    // メンバータブの campus 注釈 (splitTabsByCampus) から判定する
-    const campusRank = (s) =>
-      s.campus === "annex" || (!s.campus && s.tabs.every((t) => t.campus === "annex"))
-        ? 1
-        : 0;
+    // 縦積み (◫ 曜日を並べる) の並び順は Excel の「全曜日」シートと共有
+    // (sectionOrder.js)。曜日に依存しない基準だけで決めるので、並べた
+    // 曜日の間でセクションの行の対応がずれない
+    const stackKey = makeStackOrderKey(project);
     return rawSections
       .map((s) => {
         // 空列を隠す: この曜日にセルが 1 つも無いクラス列を落とす (合同列の
@@ -341,14 +316,10 @@ export function RegularGrid({
       })
       .filter((s) => s.tabs.length > 0 && s.periods.length > 0)
       // 縦積みでは部の順 (中学部 → 高校部) → 曜日非依存の同順位基準
-      // (stackOrderRank + 本校 → 亀井町) に揃える (sort は安定)。
+      // (タブ定義順 + 本校 → 亀井町) に揃える (sort は安定)。
       // 通常表示は従来どおりタブ定義順
       .sort((a, b) =>
-        stackSections
-          ? sectionDeptRank(a.tabs) - sectionDeptRank(b.tabs) ||
-            stackOrderRank(a) - stackOrderRank(b) ||
-            campusRank(a) - campusRank(b)
-          : 0
+        stackSections ? compareStackKey(stackKey(a), stackKey(b)) : 0
       );
   }, [rawSections, project, day, hideEmpty, stackSections]);
 

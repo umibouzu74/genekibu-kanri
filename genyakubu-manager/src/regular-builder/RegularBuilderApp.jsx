@@ -1497,7 +1497,7 @@ export default function RegularBuilderApp({
               <button
                 type="button"
                 onClick={exportExcel}
-                title="全曜日を Excel に書き出す (曜日ごとに 1 シート・B4 横 1 ページ収め + 末尾に全曜日をまとめた 1 シート。まとめは曜日ごとに改ページ)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
+                title="全曜日を Excel に書き出す (曜日ごとに 1 シート・B4 横 1 ページ収め + 末尾に全曜日をまとめた 1 シート。まとめは A3 横に 3 曜日ずつ横並べで 2 段組)。セルの無い時限行・クラス列は出力しません。「🏫 亀井町を分ける」の状態に従います"
                 className={UI.btn}
               >
                 📥 Excel
