@@ -77,6 +77,18 @@ describe("sanitizeProject", () => {
     });
   });
 
+  it("タブのコース名 (掲示用 Excel のコース行) を保持する。未設定は空文字", () => {
+    const p = sanitizeProject({
+      name: "x",
+      tabs: [
+        { name: "中3", grade: "中3", course: "本科（火・木）" },
+        { name: "中2", grade: "中2" },
+      ],
+    });
+    expect(p.tabs[0].course).toBe("本科（火・木）");
+    expect(p.tabs[1].course).toBe("");
+  });
+
   it("オブジェクトでない入力は null", () => {
     expect(sanitizeProject(null)).toBe(null);
     expect(sanitizeProject("x")).toBe(null);

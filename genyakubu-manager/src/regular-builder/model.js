@@ -23,6 +23,8 @@
 //   tabs: [{
 //     id, name, grade,                         // grade は反映時の slot.grade
 //     group,                                   // セクション名の手動上書き (空 = 自動)
+//     course,                                  // コース名 (掲示用 Excel の
+//                                              // 「コース」行。空 = タブ名)
 //     classes: [{ id, label, room }],          // room はクラス既定教室 (セルで上書き可)
 //     days: string[],                          // 使う曜日 ("月".."日")
 //     periodIds: number[],                     // 使う時限 (periods プールの id)
@@ -740,6 +742,9 @@ export function sanitizeProject(raw) {
             name: str(x.name, `タブ${i + 1}`),
             grade: str(x.grade),
             group: str(x.group),
+            // コース名 (任意)。掲示用 Excel の「コース」行に出す。空欄なら
+            // タブ名を使う (posterLayout.courseLabel)
+            course: str(x.course),
             classes: Array.isArray(x.classes)
               ? x.classes
                   .filter((c) => c && typeof c === "object")

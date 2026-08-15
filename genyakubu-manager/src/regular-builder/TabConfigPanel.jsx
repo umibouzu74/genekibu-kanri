@@ -106,6 +106,20 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
           />
         </label>
         <label className="text-xs font-bold text-builder-ink">
+          コース（掲示用 Excel の「コース」行・任意）
+          <input
+            type="text"
+            value={tab.course || ""}
+            onChange={(e) => updateTab(tab.id, (t) => ({ ...t, course: e.target.value }))}
+            placeholder="例: 本科（火・木）"
+            list="regb-courses"
+            className={`${UI.input} mt-0.5 block w-40 font-normal`}
+          />
+          <span className="block text-[10px] font-normal text-builder-ink-subtle leading-relaxed mt-0.5">
+            空欄なら表示名がそのまま出ます（学年と重なる部分は自動で外します）。
+          </span>
+        </label>
+        <label className="text-xs font-bold text-builder-ink">
           グループ（表のまとまり・任意）
           <input
             type="text"
@@ -128,6 +142,13 @@ export function TabConfigPanel({ project, tab, updateTab, onRemoveTab }) {
           {[...new Set(project.tabs.map((t) => (t.group || "").trim()).filter(Boolean))].map(
             (g) => (
               <option key={g} value={g} />
+            )
+          )}
+        </datalist>
+        <datalist id="regb-courses">
+          {[...new Set(project.tabs.map((t) => (t.course || "").trim()).filter(Boolean))].map(
+            (c) => (
+              <option key={c} value={c} />
             )
           )}
         </datalist>

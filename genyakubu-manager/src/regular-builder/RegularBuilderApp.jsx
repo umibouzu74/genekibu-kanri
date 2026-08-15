@@ -358,6 +358,9 @@ export default function RegularBuilderApp({
     importProjectJson,
     exportExcel,
     exportTeacherExcel,
+    exportPosterExcel,
+    posterFileRef,
+    importPosterProject,
   } = useRegularProjects({
     project,
     slots,
@@ -1117,6 +1120,25 @@ export default function RegularBuilderApp({
           />
           <button
             type="button"
+            onClick={() => posterFileRef.current?.click()}
+            title="掲示用「中学生コース時間割」の Excel を新しいプロジェクトとして読み込む（例年の手組みの紙面も読めます。.xls は Excel で .xlsx に保存し直してください）"
+            className={UI.btn}
+          >
+            🎒📂
+          </button>
+          <input
+            ref={posterFileRef}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            aria-label="掲示用 Excel ファイルを選択"
+            onChange={(e) => {
+              importPosterProject(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
             onClick={removeProject}
             title="このプロジェクトを削除"
             className={UI.btnDanger}
@@ -1509,6 +1531,14 @@ export default function RegularBuilderApp({
                 className={UI.btn}
               >
                 📥 集計・講師別
+              </button>
+              <button
+                type="button"
+                onClick={exportPosterExcel}
+                title="掲示用の「中学生コース時間割」を Excel に書き出す (例年の掲示紙面のレイアウトを再現・A3 横 1 枚)。対象は中学の学年だけで、学年に「高」を含むタブは出力しません。コース行は学年設定の「コース」欄 (空ならタブ名) が出ます"
+                className={UI.btn}
+              >
+                🎒 中学生 掲示用
               </button>
             </>
           )}

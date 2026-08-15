@@ -190,6 +190,44 @@ export function useRegularProjects({
     }
   }, [project, subjectColor, toasts]);
 
+  // ── 掲示用「中学生コース時間割」Excel (例年の掲示紙面の再現)。
+  // 曜日ビューを写す exportExcel とは別系統 (posterExport.js 冒頭を参照)
+  const exportPosterExcel = useCallback(async () => {
+    try {
+      const { downloadPosterExcel } = await import("../posterExport");
+      const { tables, dayCount } = await downloadPosterExcel({
+        project,
+        days: usedDays,
+      });
+      toasts.success(
+        `掲示用 Excel を書き出しました（${dayCount} 曜日・表 ${tables} 個・A3 横 1 枚）`
+      );
+    } catch (e) {
+      toasts.error(`掲示用 Excel を書き出せませんでした: ${e?.message || e}`);
+    }
+  }, [project, usedDays, toasts]);
+
+  // ── 掲示用 Excel の取込 (出力の逆方向)。読めたものは新しい
+  // プロジェクトとして足す — 既存のプロジェクトには触らない
+  const posterFileRef = useRef(null);
+  const importPosterProject = useCallback(
+    async (file) => {
+      if (!file) return;
+      try {
+        const { importPosterExcel } = await import("../posterImport");
+        const { project: imported, stats } = await importPosterExcel(file);
+        addProject(imported, {
+          successMsg:
+            `掲示用 Excel から取り込みました` +
+            `（${stats.dayCount} 曜日・学年 ${stats.tabCount} 個・コマ ${stats.cellCount} 件）`,
+        });
+      } catch (e) {
+        toasts.error(`掲示用 Excel を読み込めませんでした: ${e?.message || e}`);
+      }
+    },
+    [addProject, toasts]
+  );
+
   return {
     switchProject,
     addProject,
@@ -201,5 +239,8 @@ export function useRegularProjects({
     importProjectJson,
     exportExcel,
     exportTeacherExcel,
+    exportPosterExcel,
+    posterFileRef,
+    importPosterProject,
   };
 }
