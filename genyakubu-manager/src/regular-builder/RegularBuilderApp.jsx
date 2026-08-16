@@ -75,6 +75,9 @@ export default function RegularBuilderApp({
   saveTimetables,
   /** 親アプリの教科マスタ (name + aliases)。科目カラーの正規化に使う */
   subjects = [],
+  /** ヘッダの時間割セレクタ。期切替の反映後にここを新しい時間割へ向ける */
+  activeTimetableId,
+  onActivateTimetable,
   isAdmin,
 }) {
   const toasts = useToasts();
@@ -1928,6 +1931,8 @@ export default function RegularBuilderApp({
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
           saveProject={saveProject}
+          activeTimetableId={activeTimetableId}
+          onActivateTimetable={onActivateTimetable}
           onClose={() => setShowReflect(false)}
         />
       )}

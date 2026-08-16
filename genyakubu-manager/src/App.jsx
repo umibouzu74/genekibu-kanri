@@ -1305,6 +1305,9 @@ export default function App() {
               /* 科目カラーを「教科」単位に揃えるための教科マスタ
                  (理科A / 理科B が別色になるのを防ぐ) */
               subjects={subjects}
+              /* 期切替の反映後にヘッダの時間割セレクタを新しい方へ向ける */
+              activeTimetableId={activeTimetableId}
+              onActivateTimetable={changeActiveTimetable}
               isAdmin={isAdmin}
             />
           )}
