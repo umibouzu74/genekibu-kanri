@@ -13,6 +13,7 @@ import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
 import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
+import { gradeMatchesTimetable } from "../utils/timetable";
 
 // 警告文で使う問題の種類名 (表示順も兼ねる)
 const CONFLICT_TYPE_LABELS = [
@@ -150,21 +151,44 @@ export function previousDateStr(dateStr) {
   return fmtDate(d);
 }
 
+/** 2 つの対象学年リストが重なるか (空 = 全学年なので必ず重なる) */
+function gradeListsOverlap(a, b) {
+  if (!a || a.length === 0 || !b || b.length === 0) return true;
+  return (
+    a.some((g) => gradeMatchesTimetable(g, b)) ||
+    b.some((g) => gradeMatchesTimetable(g, a))
+  );
+}
+
 /**
  * 期切替の計画 (プレビュー + 検証)。
  * @param {{timetables: import("../types").Timetable[],
  *          slots: import("../types").Slot[],
- *          startDate: string, closeTimetableId: number}} params
+ *          startDate: string, closeTimetableId: number,
+ *          grades?: string[],
+ *          displayCutoff?: import("../types").DisplayCutoff|null,
+ *          classSets?: import("../types").ClassSet[]}} params
+ *   grades は新しく作る時間割の対象学年 (空 = 全学年)。重なりの警告を
+ *   学年の交わるものだけに絞るために使う。
  * @returns {{
  *   ok: boolean,
  *   endDate: string|null,      // 旧時間割に設定する終了日 (切替日の前日)
  *   target: object|null,       // 終了させる時間割
+ *   changesEndDate: boolean,   // 実際に終了日を書き換えるか
  *   slotCount: number,         // 旧時間割のコマ数 (表示用)
  *   errors: string[],
  *   warnings: string[],
  * }}
  */
-export function buildSwitchPlan({ timetables, slots, startDate, closeTimetableId }) {
+export function buildSwitchPlan({
+  timetables,
+  slots,
+  startDate,
+  closeTimetableId,
+  grades,
+  displayCutoff,
+  classSets,
+}) {
   const errors = [];
   const warnings = [];
   const target =
@@ -175,25 +199,40 @@ export function buildSwitchPlan({ timetables, slots, startDate, closeTimetableId
   else if (!endDate) errors.push("切替日の形式が正しくありません");
   if (!target) errors.push("終了させる時間割が見つかりません");
 
+  // 既に切替日より前で終わっている時間割は触らない。夏期講習などで意図的に
+  // 早い終了日を入れてある場合に、期切替が黙って期間を伸ばしてしまわないため
+  // (重なりを防ぐのが目的なので、重なっていなければやることは無い)
+  const changesEndDate =
+    !!target && !!endDate && (!target.endDate || target.endDate > endDate);
+
   if (target && endDate) {
     if (target.startDate && endDate < target.startDate) {
       errors.push(
         `「${target.name}」の開始日 (${target.startDate}) より前に終了日 (${endDate}) を置くことはできません`
       );
     }
-    if (target.endDate && target.endDate !== endDate) {
+    if (changesEndDate && target.endDate) {
       warnings.push(
-        `「${target.name}」の終了日 ${target.endDate} を ${endDate} に上書きします`
+        `「${target.name}」の終了日 ${target.endDate} を ${endDate} に前倒しします`
+      );
+    }
+    if (!changesEndDate) {
+      warnings.push(
+        `「${target.name}」は既に ${target.endDate} で終了しているため、終了日は変更しません` +
+          `（切替日より前に終わっているので重なりません）`
       );
     }
   }
 
   // 切替日以降も有効なまま残る他の時間割 (旧 = target と、これから作る新しい
-  // 時間割は除く)。残っていると日付ベースの表示で新旧のコマが重なる
+  // 時間割は除く)。残っていると日付ベースの表示で新旧のコマが重なる。
+  // 対象学年が交わらない時間割 (附属コース等) は重ならないので挙げない
   if (endDate) {
     const stillActive = (timetables || []).filter(
       (t) =>
-        t.id !== target?.id && (!t.endDate || t.endDate > endDate)
+        t.id !== target?.id &&
+        (!t.endDate || t.endDate > endDate) &&
+        gradeListsOverlap(t.grades, grades)
     );
     if (stillActive.length > 0) {
       warnings.push(
@@ -204,11 +243,65 @@ export function buildSwitchPlan({ timetables, slots, startDate, closeTimetableId
     }
   }
 
+  // 表示期間設定 (displayCutoff) の終了日が切替日より前だと、時間割を
+  // 切り替えても新しい期のコマがダッシュボード等に出ない。時間割の有効期間
+  // とは別のフィルタなので、期切替のたびに伸ばす必要がある
+  if (startDate) {
+    const endedGroups = (displayCutoff?.groups || []).filter(
+      (g) => g.date && g.date < startDate
+    );
+    if (endedGroups.length > 0) {
+      warnings.push(
+        `表示期間設定の終了日が切替日より前の学年グループがあります（${endedGroups
+          .map((g) => `${g.label} 〜${g.date}`)
+          .join("・")}）。このままだと新しい期のコマがダッシュボード等に出ません` +
+          `（時間割管理 → 表示期間設定で伸ばしてください）`
+      );
+    }
+    const endedCohorts = (displayCutoff?.cohorts || []).filter(
+      (c) => c.date && c.date < startDate
+    );
+    if (endedCohorts.length > 0) {
+      warnings.push(
+        `コース別終講日も ${endedCohorts.length} 件が切替日より前です` +
+          `（時間割管理 → コース別 終講日設定）`
+      );
+    }
+  }
+
+  // 授業セット (第N回を通しで数えるコマの組) は slot.id 参照。新しい期の
+  // コマは別 id なので引き継がれない
+  if (target) {
+    const targetSlotIds = new Set(
+      (slots || [])
+        .filter((s) => (s.timetableId ?? 1) === target.id)
+        .map((s) => s.id)
+    );
+    const affectedSets = (classSets || []).filter((cs) =>
+      (cs.slotIds || []).some((id) => targetSlotIds.has(id))
+    );
+    if (affectedSets.length > 0) {
+      warnings.push(
+        `授業セット ${affectedSets.length} 件は「${target.name}」のコマに紐づいています。` +
+          `新しい期のコマは別のコマ扱いなので、第N回をまとめて数えるには` +
+          `時間割管理の授業セットで作り直してください`
+      );
+    }
+  }
+
   const slotCount = target
     ? (slots || []).filter((s) => (s.timetableId ?? 1) === target.id).length
     : 0;
 
-  return { ok: errors.length === 0, endDate, target, slotCount, errors, warnings };
+  return {
+    ok: errors.length === 0,
+    endDate,
+    target,
+    changesEndDate,
+    slotCount,
+    errors,
+    warnings,
+  };
 }
 
 /**
@@ -254,14 +347,17 @@ export function applyReflection(plan, opts, { timetables, slots }) {
         closeTimetableId: opts.closeTimetableId,
       });
       if (!switchPlan.ok) return { error: switchPlan.errors[0] };
-      closed = {
-        id: switchPlan.target.id,
-        name: switchPlan.target.name,
-        endDate: switchPlan.endDate,
-      };
-      baseTimetables = timetables.map((t) =>
-        t.id === closed.id ? { ...t, endDate: closed.endDate } : t
-      );
+      // 既に切替日より前で終わっている時間割は触らない (期間を伸ばさない)
+      if (switchPlan.changesEndDate) {
+        closed = {
+          id: switchPlan.target.id,
+          name: switchPlan.target.name,
+          endDate: switchPlan.endDate,
+        };
+        baseTimetables = timetables.map((t) =>
+          t.id === closed.id ? { ...t, endDate: closed.endDate } : t
+        );
+      }
     }
     return {
       timetables: [

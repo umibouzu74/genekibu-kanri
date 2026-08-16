@@ -58,6 +58,9 @@ export function ReflectDialog({
   saveTimetables,
   saveSlots,
   saveProject,
+  /** 期切替の点検に使う本体データ (表示期間設定・授業セット) */
+  displayCutoff,
+  classSets,
   /** ヘッダの時間割セレクタの現在値 (期切替の既定の「前の時間割」) */
   activeTimetableId,
   /** 反映後に表示中の時間割を切り替える (App.jsx の changeActiveTimetable) */
@@ -113,9 +116,12 @@ export function ReflectDialog({
             slots,
             startDate,
             closeTimetableId: Number(closeId),
+            grades: opts.grades,
+            displayCutoff,
+            classSets,
           })
         : null,
-    [useSwitch, timetables, slots, startDate, closeId]
+    [useSwitch, timetables, slots, startDate, closeId, opts.grades, displayCutoff, classSets]
   );
   const canExecute = plan.ok && (!switchPlan || switchPlan.ok);
   const total = plan.drafts.length;
@@ -144,13 +150,15 @@ export function ReflectDialog({
         title: "期切替として反映",
         message:
           `・新しい時間割「${(opts.name || "").trim()}」を ${startDate} から開始します（${total} コマ）\n` +
-          `・「${switchPlan.target?.name ?? "?"}」の終了日を ${switchPlan.endDate} に設定します` +
-          `（コマ・代行・調整はそのまま残り、${switchPlan.endDate} までの表示に使われます）\n` +
+          (switchPlan.changesEndDate
+            ? `・「${switchPlan.target?.name ?? "?"}」の終了日を ${switchPlan.endDate} に設定します` +
+              `（コマは消しません。切替日より前の日付では従来どおり表示され、代行・調整の紐付けも残ります）\n`
+            : `・「${switchPlan.target?.name ?? "?"}」は既に ${switchPlan.target?.endDate} で終了しているため変更しません\n`) +
           (activateAfter
             ? `・表示中の時間割を新しい方に切り替えます（週表示・月間などの「現在の時間割」）\n`
             : "") +
           `\nよろしいですか？`,
-        okLabel: "切り替える",
+        okLabel: "期切替を実行",
       });
       if (!ok) return;
     }
@@ -311,9 +319,9 @@ export function ReflectDialog({
               <span>
                 期切替として反映する（1学期 → 2学期）
                 <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
-                  切替日の前日で前の時間割を終了させます。入れないと切替日以降
-                  どちらの時間割も有効なままで、ダッシュボード等に新旧のコマが
-                  重なって出ます。
+                  前の時間割を切替日の前日で終了させ、2 つの期を隙間なく
+                  つなぎます。オフのままだと切替日以降どちらの時間割も有効な
+                  ままで、ダッシュボード等に新旧のコマが重なって出ます。
                 </div>
               </span>
             </label>
@@ -333,30 +341,16 @@ export function ReflectDialog({
                   ))}
                 </select>
                 <span style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
-                  {switchPlan?.endDate
-                    ? `終了日を ${switchPlan.endDate} に設定します（${switchPlan.slotCount} コマ・代行・調整はそのまま残ります）`
-                    : "切替日を入れると終了日 (切替日の前日) が決まります"}
+                  {!switchPlan?.endDate
+                    ? "切替日 (上の開始日) を入れると終了日 = その前日が決まります"
+                    : switchPlan.changesEndDate
+                      ? `終了日を ${switchPlan.endDate} に設定します。` +
+                        `${switchPlan.slotCount} コマは消さずに残るので、` +
+                        `代行・調整・回数補正・授業セットの紐付けも切れません`
+                      : "既に切替日より前で終わっているため、終了日は変更しません"}
                 </span>
               </label>
             )}
-
-            <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
-              <input
-                type="checkbox"
-                checked={activateAfter}
-                onChange={(e) => setActivateAfter(e.target.checked)}
-                style={{ marginTop: 2 }}
-              />
-              <span>
-                反映後、表示中の時間割をこれに切り替える
-                <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
-                  週表示・月間・一覧など「現在の時間割」を見るビュー
-                  (ヘッダの時間割セレクタ) が新しい時間割になります。
-                  日付で表示するビュー (ダッシュボード等) は切替日から自動で
-                  切り替わります。
-                </div>
-              </span>
-            </label>
 
             {switchPlan?.warnings.map((w) => (
               <div key={w} style={{ color: "#9a6b00", fontSize: 11 }}>⚠ {w}</div>
@@ -384,6 +378,26 @@ export function ReflectDialog({
             </span>
           </label>
         )}
+
+        {/* 表示の追従 (集計ベースのビュー)。反映の 2 モードどちらでも使う */}
+        <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={activateAfter}
+            onChange={(e) => setActivateAfter(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            反映後、表示中の時間割を
+            {mode === "replace" ? "反映先の時間割" : "新しい時間割"}に切り替える
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+              週表示・月間・一覧など「現在の時間割」を見るビュー
+              (ヘッダの時間割セレクタ) の対象になります。日付で表示するビュー
+              (ダッシュボード等) は時間割の開始日・終了日で自動的に切り替わる
+              ので、この設定とは関係ありません。
+            </div>
+          </span>
+        </label>
 
         {/* プレビュー */}
         <div style={{ background: "#f6f8fc", borderRadius: 8, padding: 10 }}>
