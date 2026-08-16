@@ -1305,6 +1305,12 @@ export default function App() {
               /* 科目カラーを「教科」単位に揃えるための教科マスタ
                  (理科A / 理科B が別色になるのを防ぐ) */
               subjects={subjects}
+              /* 期切替の点検 (表示期間設定・授業セット) と、反映後に
+                 ヘッダの時間割セレクタを新しい方へ向けるための配線 */
+              displayCutoff={displayCutoff}
+              classSets={classSets}
+              activeTimetableId={activeTimetableId}
+              onActivateTimetable={changeActiveTimetable}
               isAdmin={isAdmin}
             />
           )}

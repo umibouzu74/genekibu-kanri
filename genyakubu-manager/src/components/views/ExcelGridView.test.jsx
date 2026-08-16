@@ -127,6 +127,26 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
     expect(screen.getByText("田中")).toBeInTheDocument();
   });
 
+  // 期切替 (1学期 → 2学期) の直後は、表示中の時間割 (activeTimetableId) が
+  // 新しい期を指したまま切替日より前の日を開くことがある。ダッシュボードは
+  // 日付でどの時間割が有効かを決めるので、セレクタでは絞らない。
+  it("ダッシュボードでは表示日に有効な時間割のコマを出す (表示中の時間割で絞らない)", () => {
+    renderGrid({
+      slots: [
+        slot({ id: 1, grade: "中3", teacher: "田中", timetableId: 1 }),
+        slot({ id: 2, grade: "中3", cls: "A", teacher: "鈴木", timetableId: 2 }),
+      ],
+      timetables: [
+        { id: 1, name: "2026 1学期", startDate: "2026-04-01", endDate: "2026-08-31", grades: [] },
+        { id: 2, name: "2026 2学期", startDate: "2026-09-01", endDate: null, grades: [] },
+      ],
+      // セレクタは新しい期を指しているが、表示日 (7/13) は 1学期の範囲
+      activeTimetableId: 2,
+    });
+    expect(screen.getByText("田中")).toBeInTheDocument();
+    expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
+  });
+
   it("非ダッシュボードモード (マスター表示) では終講日後もフィルタしない", () => {
     renderGrid({
       slots: [slot({ id: 1, grade: "中3", teacher: "田中" })],

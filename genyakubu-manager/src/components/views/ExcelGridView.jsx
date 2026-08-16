@@ -120,10 +120,20 @@ export function ExcelGridView({
   // 描画対象の曜日。全曜日印刷中のみ printDay が勝つ。
   const activeDay = printDay || selectedDay;
 
-  // Filter by active timetable
+  // 表示するコマの母集合。
+  // 単体のタイムテーブルビューは日付を持たない「現在の時間割」の表示なので
+  // ヘッダの時間割セレクタ (activeTimetableId) で絞る。
+  // ダッシュボード表示は表示日が決まっており、どの時間割が有効かは日付が
+  // 決める (下の filterSlotsForDate)。ここでセレクタでも絞ると、期切替
+  // (1学期 → 2学期) の直後に切替日より前の日を開いたとき、その日のコマが
+  // まるごと消えてしまう。日別リスト (DashboardListView) は日付だけで
+  // 判定しているので、そちらに合わせる。
   const filteredSlots = useMemo(
-    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
-    [slots, timetables, activeTimetableId]
+    () =>
+      dashboardMode
+        ? slots
+        : filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
+    [dashboardMode, slots, timetables, activeTimetableId]
   );
 
   // Check which days have slots

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyReflection,
   buildReflectionPlan,
+  buildSwitchPlan,
   describeDiffChange,
   diffReflection,
+  previousDateStr,
 } from "./reflect";
 import { computeConflicts, conflictKey } from "./conflicts";
 import { makeCellKey } from "./model";
@@ -101,6 +103,197 @@ describe("applyReflection - 新規作成", () => {
     const added = result.slots.slice(1);
     expect(added.map((s) => s.id)).toEqual([11, 12]);
     expect(added.every((s) => s.timetableId === 2)).toBe(true);
+  });
+});
+
+describe("previousDateStr", () => {
+  it("前日を返す (月またぎ・年またぎ・うるう年)", () => {
+    expect(previousDateStr("2026-09-01")).toBe("2026-08-31");
+    expect(previousDateStr("2026-01-01")).toBe("2025-12-31");
+    expect(previousDateStr("2028-03-01")).toBe("2028-02-29");
+  });
+
+  it("無効な日付には null", () => {
+    expect(previousDateStr("")).toBe(null);
+    expect(previousDateStr("2026-09")).toBe(null);
+  });
+});
+
+describe("buildSwitchPlan", () => {
+  const timetables = [
+    { id: 1, name: "2026 1学期", type: "regular", startDate: "2026-04-06", endDate: null, grades: [] },
+  ];
+
+  it("切替日の前日を旧時間割の終了日にする", () => {
+    const p = buildSwitchPlan({
+      timetables,
+      slots: EXISTING_SLOTS,
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+    });
+    expect(p.ok).toBe(true);
+    expect(p.endDate).toBe("2026-08-31");
+    expect(p.target.id).toBe(1);
+    expect(p.slotCount).toBe(1);
+    expect(p.warnings).toEqual([]);
+  });
+
+  it("切替日が無い / 対象が無いときはエラー", () => {
+    expect(
+      buildSwitchPlan({ timetables, slots: [], startDate: "", closeTimetableId: 1 }).ok
+    ).toBe(false);
+    expect(
+      buildSwitchPlan({ timetables, slots: [], startDate: "2026-09-01", closeTimetableId: 99 }).ok
+    ).toBe(false);
+  });
+
+  it("旧時間割の開始日より前の切替日はエラー", () => {
+    const p = buildSwitchPlan({
+      timetables,
+      slots: [],
+      startDate: "2026-04-01",
+      closeTimetableId: 1,
+    });
+    expect(p.ok).toBe(false);
+    expect(p.errors[0]).toContain("開始日");
+  });
+
+  it("終了日の上書きと、切替日以降も有効な他の時間割を警告する", () => {
+    const p = buildSwitchPlan({
+      timetables: [
+        { ...timetables[0], endDate: "2026-12-31" },
+        { id: 2, name: "附属コース", type: "regular", startDate: null, endDate: null, grades: ["附中3"] },
+        { id: 3, name: "2025 後期", type: "regular", startDate: null, endDate: "2026-03-31", grades: [] },
+      ],
+      slots: [],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+    });
+    expect(p.ok).toBe(true);
+    expect(p.changesEndDate).toBe(true);
+    expect(p.warnings[0]).toContain("2026-12-31");
+    // 終了済みの「2025 後期」は重ならないので挙げない
+    expect(p.warnings[1]).toContain("附属コース");
+    expect(p.warnings[1]).not.toContain("2025 後期");
+  });
+
+  it("既に切替日より前で終わっている時間割は期間を伸ばさない", () => {
+    // 夏期講習で 7/31 に止めてある 1学期を、9/1 の期切替が黙って
+    // 8/31 まで伸ばしてしまわないこと
+    const closed = [{ ...timetables[0], endDate: "2026-07-31" }];
+    const p = buildSwitchPlan({
+      timetables: closed,
+      slots: [],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+    });
+    expect(p.ok).toBe(true);
+    expect(p.changesEndDate).toBe(false);
+    expect(p.warnings[0]).toContain("終了日は変更しません");
+
+    const plan = buildReflectionPlan(makeProject(), { mode: "new", name: "2026 2学期" });
+    const result = applyReflection(
+      plan,
+      { mode: "new", name: "2026 2学期", startDate: "2026-09-01", endDate: null, closeTimetableId: 1 },
+      { timetables: closed, slots: EXISTING_SLOTS }
+    );
+    expect(result.timetables[0]).toBe(closed[0]);
+    expect(result.closed).toBe(null);
+  });
+
+  it("対象学年が交わらない時間割は重なりに挙げない", () => {
+    const p = buildSwitchPlan({
+      timetables: [
+        timetables[0],
+        { id: 2, name: "附属コース", type: "regular", startDate: null, endDate: null, grades: ["附中3"] },
+      ],
+      slots: [],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+      grades: ["中1", "中2", "中3"], // 新しい時間割は中学部だけ
+    });
+    expect(p.warnings).toEqual([]);
+  });
+
+  it("表示期間設定の終了日が切替日より前なら警告する (新しい期が画面に出ない)", () => {
+    const p = buildSwitchPlan({
+      timetables,
+      slots: [],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+      displayCutoff: {
+        groups: [
+          { label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" },
+          { label: "高校部", grades: ["高3"], startDate: "2026-04-01", date: "2027-03-31" },
+        ],
+        cohorts: [{ label: "中3 火金", date: "2026-08-20" }],
+      },
+    });
+    expect(p.ok).toBe(true);
+    expect(p.warnings[0]).toContain("中学部 〜2026-08-31");
+    expect(p.warnings[0]).not.toContain("高校部");
+    expect(p.warnings[1]).toContain("コース別終講日");
+  });
+
+  it("旧時間割のコマに紐づく授業セットを警告する", () => {
+    const p = buildSwitchPlan({
+      timetables,
+      slots: [
+        { id: 10, timetableId: 1, day: "火", grade: "中3" },
+        { id: 11, timetableId: 1, day: "金", grade: "中3" },
+      ],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+      classSets: [
+        { id: 1, label: "中3 数学 (火・金)", slotIds: [10, 11] },
+        { id: 2, label: "無関係", slotIds: [99] },
+      ],
+    });
+    expect(p.warnings[0]).toContain("授業セット 1 件");
+  });
+});
+
+describe("applyReflection - 期切替", () => {
+  const timetables = [
+    { id: 1, name: "2026 1学期", type: "regular", startDate: "2026-04-06", endDate: null, grades: [] },
+  ];
+
+  it("新時間割を作りつつ旧時間割を切替日の前日で終了させる (コマは触らない)", () => {
+    const plan = buildReflectionPlan(makeProject(), { mode: "new", name: "2026 2学期" });
+    const result = applyReflection(
+      plan,
+      { mode: "new", name: "2026 2学期", startDate: "2026-09-01", endDate: null, closeTimetableId: 1 },
+      { timetables, slots: EXISTING_SLOTS }
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.timetables[0]).toMatchObject({ id: 1, endDate: "2026-08-31" });
+    expect(result.timetables[1]).toMatchObject({ id: 2, startDate: "2026-09-01", endDate: null });
+    expect(result.closed).toEqual({ id: 1, name: "2026 1学期", endDate: "2026-08-31" });
+    // 旧期のコマは残す (代行・調整・回数補正の紐付けを切らない)
+    expect(result.slots[0]).toBe(EXISTING_SLOTS[0]);
+    expect(result.addedCount).toBe(2);
+  });
+
+  it("期切替が成立しないときは反映しない", () => {
+    const plan = buildReflectionPlan(makeProject(), { mode: "new", name: "2026 2学期" });
+    const result = applyReflection(
+      plan,
+      { mode: "new", name: "2026 2学期", startDate: null, endDate: null, closeTimetableId: 1 },
+      { timetables, slots: EXISTING_SLOTS }
+    );
+    expect(result.error).toBeTruthy();
+    expect(result.timetables).toBeUndefined();
+  });
+
+  it("closeTimetableId が無ければ従来どおり旧時間割に触らない", () => {
+    const plan = buildReflectionPlan(makeProject(), { mode: "new", name: "2026 2学期" });
+    const result = applyReflection(
+      plan,
+      { mode: "new", name: "2026 2学期", startDate: "2026-09-01", endDate: null },
+      { timetables, slots: EXISTING_SLOTS }
+    );
+    expect(result.timetables[0]).toBe(timetables[0]);
+    expect(result.closed).toBe(null);
   });
 });
 

@@ -7,6 +7,7 @@ import { addSnapshot } from "./model";
 import {
   applyReflection,
   buildReflectionPlan,
+  buildSwitchPlan,
   describeDiffChange,
   describeDiffRecord,
   diffReflection,
@@ -40,6 +41,15 @@ function DiffLines({ mark, color, records, describe }) {
 // 一致したコマの slot.id を引き継ぐので代行・調整・回数補正・授業セットの
 // 紐付けは保たれるが、下書きに無いコマは削除される (= cascade) ため確認
 // ダイアログを挟む (CLAUDE.md 削除 UX ルールの confirmedRemove 相当)。
+//
+// 新規作成には「期切替」(1学期 → 2学期) の支援がある。本体の表示は 2 経路
+// あり、どちらも面倒を見ないと切り替わったように見えない:
+//   - 日付ベース (ダッシュボード / タイムテーブル / 代行など)
+//     → 時間割の startDate/endDate。旧時間割を切替日の前日で終了させないと
+//       新旧のコマが重なって出る
+//   - 集計ベース (週表示・月間・一覧など「現在の時間割」)
+//     → ヘッダの時間割セレクタ (activeTimetableId)
+// 期切替をオンにすると前者を自動で、後者も反映後の自動切替で面倒を見る。
 
 export function ReflectDialog({
   project,
@@ -48,6 +58,13 @@ export function ReflectDialog({
   saveTimetables,
   saveSlots,
   saveProject,
+  /** 期切替の点検に使う本体データ (表示期間設定・授業セット) */
+  displayCutoff,
+  classSets,
+  /** ヘッダの時間割セレクタの現在値 (期切替の既定の「前の時間割」) */
+  activeTimetableId,
+  /** 反映後に表示中の時間割を切り替える (App.jsx の changeActiveTimetable) */
+  onActivateTimetable,
   onClose,
 }) {
   const toasts = useToasts();
@@ -57,11 +74,23 @@ export function ReflectDialog({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [targetId, setTargetId] = useState(timetables[timetables.length - 1]?.id ?? 1);
+  // 期切替 (新規作成のみ)。開始日 = 切替日として、前の時間割をその前日で
+  // 終了させる
+  const [switchTerm, setSwitchTerm] = useState(false);
+  const [closeId, setCloseId] = useState(() =>
+    timetables.some((t) => t.id === activeTimetableId)
+      ? activeTimetableId
+      : timetables[timetables.length - 1]?.id ?? 1
+  );
+  // 反映後にヘッダの時間割セレクタを新しい時間割へ向ける
+  const [activateAfter, setActivateAfter] = useState(false);
   // 新規作成時に「この時間割は下書きの学年だけ」と絞るか。既定は従来どおり
   // 全学年 (timetable.grades 空 = 全学年マッチ)。1 つの時間割で全学年を
   // まかなう運用が普通なので、絞るのは明示的な選択にする
   const [limitGrades, setLimitGrades] = useState(false);
   const grades = useMemo(() => projectGrades(project), [project]);
+
+  const useSwitch = mode === "new" && switchTerm;
 
   const opts = useMemo(() => {
     const base = { mode, name, targetTimetableId: Number(targetId) };
@@ -73,10 +102,28 @@ export function ReflectDialog({
       base.startDate = startDate || null;
       base.endDate = endDate || null;
       if (limitGrades && grades.length > 0) base.grades = grades;
+      if (switchTerm) base.closeTimetableId = Number(closeId);
     }
     return base;
-  }, [mode, name, startDate, endDate, targetId, limitGrades, grades]);
+  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId]);
   const plan = useMemo(() => buildReflectionPlan(project, opts), [project, opts]);
+  // 期切替の計画 (旧時間割に入れる終了日と、その検証)
+  const switchPlan = useMemo(
+    () =>
+      useSwitch
+        ? buildSwitchPlan({
+            timetables,
+            slots,
+            startDate,
+            closeTimetableId: Number(closeId),
+            grades: opts.grades,
+            displayCutoff,
+            classSets,
+          })
+        : null,
+    [useSwitch, timetables, slots, startDate, closeId, opts.grades, displayCutoff, classSets]
+  );
+  const canExecute = plan.ok && (!switchPlan || switchPlan.ok);
   const total = plan.drafts.length;
   const replaceTargetCount = useMemo(
     () =>
@@ -95,7 +142,26 @@ export function ReflectDialog({
   );
 
   const execute = async () => {
-    if (!plan.ok) return;
+    if (!canExecute) return;
+    if (useSwitch) {
+      // 旧時間割の終了日を書き換える = このダイアログで編集していない
+      // 既存データに触る操作なので、実行前に何が起きるかを見せて確認する
+      const ok = await confirm({
+        title: "期切替として反映",
+        message:
+          `・新しい時間割「${(opts.name || "").trim()}」を ${startDate} から開始します（${total} コマ）\n` +
+          (switchPlan.changesEndDate
+            ? `・「${switchPlan.target?.name ?? "?"}」の終了日を ${switchPlan.endDate} に設定します` +
+              `（コマは消しません。切替日より前の日付では従来どおり表示され、代行・調整の紐付けも残ります）\n`
+            : `・「${switchPlan.target?.name ?? "?"}」は既に ${switchPlan.target?.endDate} で終了しているため変更しません\n`) +
+          (activateAfter
+            ? `・表示中の時間割を新しい方に切り替えます（週表示・月間などの「現在の時間割」）\n`
+            : "") +
+          `\nよろしいですか？`,
+        okLabel: "期切替を実行",
+      });
+      if (!ok) return;
+    }
     if (mode === "replace") {
       const target = timetables.find((t) => t.id === Number(targetId));
       // 位置の一致したコマは同じコマとして引き継がれる (applyReflection が
@@ -125,6 +191,9 @@ export function ReflectDialog({
     }
     saveTimetables(result.timetables);
     saveSlots(result.slots);
+    // 「現在の時間割」を見る集計ビュー (週表示・月間・一覧) は
+    // activeTimetableId で絞るため、反映しただけでは切り替わらない
+    if (activateAfter) onActivateTimetable?.(result.timetableId);
     // 反映した時点の状態を自動スナップショットで残す (「本体に出したのは
     // どの状態か」に後から必ず戻れる安全網)。他のスナップショット操作と
     // 同じく Ctrl+Z で取り消せる
@@ -141,6 +210,10 @@ export function ReflectDialog({
         ? `置き換えました（引き継ぎ ${result.keptCount}（うち内容変更 ${result.changedCount}）` +
           ` / 追加 ${result.addedCount} / 削除 ${result.removedCount} コマ）`
         : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`) +
+        (result.closed
+          ? `／「${result.closed.name}」は ${result.closed.endDate} で終了`
+          : "") +
+        (activateAfter ? "／表示中の時間割を切り替えました" : "") +
         "／📌 反映時点の案を保存しました"
     );
     onClose();
@@ -199,7 +272,8 @@ export function ReflectDialog({
         </label>
         <div style={{ display: "flex", gap: 8 }}>
           <label style={{ flex: 1, fontWeight: 600 }}>
-            開始日{mode === "replace" ? "（空欄で据え置き）" : ""}
+            {useSwitch ? "切替日（開始日）" : "開始日"}
+            {mode === "replace" ? "（空欄で据え置き）" : ""}
             <input
               type="date"
               value={startDate}
@@ -218,6 +292,75 @@ export function ReflectDialog({
           </label>
         </div>
 
+        {/* 期切替 (1学期 → 2学期) */}
+        {mode === "new" && (
+          <div
+            style={{
+              background: "#f4f8f4",
+              border: "1px solid #d8e6d8",
+              borderRadius: 8,
+              padding: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 700 }}>
+              <input
+                type="checkbox"
+                checked={switchTerm}
+                onChange={(e) => {
+                  setSwitchTerm(e.target.checked);
+                  // 期の切替なら表示中の時間割も新しい方に向けるのが既定
+                  if (e.target.checked) setActivateAfter(true);
+                }}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                期切替として反映する（1学期 → 2学期）
+                <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+                  前の時間割を切替日の前日で終了させ、2 つの期を隙間なく
+                  つなぎます。オフのままだと切替日以降どちらの時間割も有効な
+                  ままで、ダッシュボード等に新旧のコマが重なって出ます。
+                </div>
+              </span>
+            </label>
+
+            {switchTerm && (
+              <label style={{ fontWeight: 600 }}>
+                前の時間割（終了させる）
+                <select
+                  value={closeId}
+                  onChange={(e) => setCloseId(Number(e.target.value))}
+                  style={{ ...S.input, marginTop: 2, display: "block", minWidth: 200 }}
+                >
+                  {timetables.map((tt) => (
+                    <option key={tt.id} value={tt.id}>
+                      {tt.name}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
+                  {!switchPlan?.endDate
+                    ? "切替日 (上の開始日) を入れると終了日 = その前日が決まります"
+                    : switchPlan.changesEndDate
+                      ? `終了日を ${switchPlan.endDate} に設定します。` +
+                        `${switchPlan.slotCount} コマは消さずに残るので、` +
+                        `代行・調整・回数補正・授業セットの紐付けも切れません`
+                      : "既に切替日より前で終わっているため、終了日は変更しません"}
+                </span>
+              </label>
+            )}
+
+            {switchPlan?.warnings.map((w) => (
+              <div key={w} style={{ color: "#9a6b00", fontSize: 11 }}>⚠ {w}</div>
+            ))}
+            {switchPlan?.errors.map((e) => (
+              <div key={e} style={{ color: "#c03030", fontSize: 11 }}>✕ {e}</div>
+            ))}
+          </div>
+        )}
+
         {mode === "new" && grades.length > 0 && (
           <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
             <input
@@ -235,6 +378,26 @@ export function ReflectDialog({
             </span>
           </label>
         )}
+
+        {/* 表示の追従 (集計ベースのビュー)。反映の 2 モードどちらでも使う */}
+        <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={activateAfter}
+            onChange={(e) => setActivateAfter(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            反映後、表示中の時間割を
+            {mode === "replace" ? "反映先の時間割" : "新しい時間割"}に切り替える
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 400, lineHeight: 1.7 }}>
+              週表示・月間・一覧など「現在の時間割」を見るビュー
+              (ヘッダの時間割セレクタ) の対象になります。日付で表示するビュー
+              (ダッシュボード等) は時間割の開始日・終了日で自動的に切り替わる
+              ので、この設定とは関係ありません。
+            </div>
+          </span>
+        </label>
 
         {/* プレビュー */}
         <div style={{ background: "#f6f8fc", borderRadius: 8, padding: 10 }}>
@@ -295,10 +458,10 @@ export function ReflectDialog({
           <button
             type="button"
             onClick={execute}
-            disabled={!plan.ok}
-            style={{ ...S.btn(true), background: "#2a4a8e", opacity: plan.ok ? 1 : 0.5 }}
+            disabled={!canExecute}
+            style={{ ...S.btn(true), background: "#2a4a8e", opacity: canExecute ? 1 : 0.5 }}
           >
-            反映する
+            {useSwitch ? "切り替える" : "反映する"}
           </button>
         </div>
       </div>

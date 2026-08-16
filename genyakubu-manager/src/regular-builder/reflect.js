@@ -12,7 +12,8 @@ import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
-import { timeStartToMin } from "../utils/dateHelpers";
+import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
+import { gradeMatchesTimetable } from "../utils/timetable";
 
 // 警告文で使う問題の種類名 (表示順も兼ねる)
 const CONFLICT_TYPE_LABELS = [
@@ -136,6 +137,173 @@ export function buildReflectionPlan(project, opts) {
   };
 }
 
+// ─── 期切替 (1学期 → 2学期) ────────────────────────────────────────
+// 新しい時間割を「切替日」から始めるとき、前の期の時間割を切替日の前日で
+// 終了させないと、日付ベースの表示 (utils/timetable.filterSlotsForDate) で
+// 新旧どちらのコマも有効になり、ダッシュボード等に二重に出る。切替日の
+// 入力ひとつから「新: 開始日」「旧: 終了日」を対にして扱うための計画。
+
+/** "YYYY-MM-DD" の前日。無効な日付には null */
+export function previousDateStr(dateStr) {
+  const d = parseLocalDate(dateStr);
+  if (!d) return null;
+  d.setDate(d.getDate() - 1);
+  return fmtDate(d);
+}
+
+/** 2 つの対象学年リストが重なるか (空 = 全学年なので必ず重なる) */
+function gradeListsOverlap(a, b) {
+  if (!a || a.length === 0 || !b || b.length === 0) return true;
+  return (
+    a.some((g) => gradeMatchesTimetable(g, b)) ||
+    b.some((g) => gradeMatchesTimetable(g, a))
+  );
+}
+
+/**
+ * 期切替の計画 (プレビュー + 検証)。
+ * @param {{timetables: import("../types").Timetable[],
+ *          slots: import("../types").Slot[],
+ *          startDate: string, closeTimetableId: number,
+ *          grades?: string[],
+ *          displayCutoff?: import("../types").DisplayCutoff|null,
+ *          classSets?: import("../types").ClassSet[]}} params
+ *   grades は新しく作る時間割の対象学年 (空 = 全学年)。重なりの警告を
+ *   学年の交わるものだけに絞るために使う。
+ * @returns {{
+ *   ok: boolean,
+ *   endDate: string|null,      // 旧時間割に設定する終了日 (切替日の前日)
+ *   target: object|null,       // 終了させる時間割
+ *   changesEndDate: boolean,   // 実際に終了日を書き換えるか
+ *   slotCount: number,         // 旧時間割のコマ数 (表示用)
+ *   errors: string[],
+ *   warnings: string[],
+ * }}
+ */
+export function buildSwitchPlan({
+  timetables,
+  slots,
+  startDate,
+  closeTimetableId,
+  grades,
+  displayCutoff,
+  classSets,
+}) {
+  const errors = [];
+  const warnings = [];
+  const target =
+    (timetables || []).find((t) => t.id === Number(closeTimetableId)) || null;
+  const endDate = previousDateStr(startDate);
+
+  if (!startDate) errors.push("期切替には切替日 (新しい時間割の開始日) が必要です");
+  else if (!endDate) errors.push("切替日の形式が正しくありません");
+  if (!target) errors.push("終了させる時間割が見つかりません");
+
+  // 既に切替日より前で終わっている時間割は触らない。夏期講習などで意図的に
+  // 早い終了日を入れてある場合に、期切替が黙って期間を伸ばしてしまわないため
+  // (重なりを防ぐのが目的なので、重なっていなければやることは無い)
+  const changesEndDate =
+    !!target && !!endDate && (!target.endDate || target.endDate > endDate);
+
+  if (target && endDate) {
+    if (target.startDate && endDate < target.startDate) {
+      errors.push(
+        `「${target.name}」の開始日 (${target.startDate}) より前に終了日 (${endDate}) を置くことはできません`
+      );
+    }
+    if (changesEndDate && target.endDate) {
+      warnings.push(
+        `「${target.name}」の終了日 ${target.endDate} を ${endDate} に前倒しします`
+      );
+    }
+    if (!changesEndDate) {
+      warnings.push(
+        `「${target.name}」は既に ${target.endDate} で終了しているため、終了日は変更しません` +
+          `（切替日より前に終わっているので重なりません）`
+      );
+    }
+  }
+
+  // 切替日以降も有効なまま残る他の時間割 (旧 = target と、これから作る新しい
+  // 時間割は除く)。残っていると日付ベースの表示で新旧のコマが重なる。
+  // 対象学年が交わらない時間割 (附属コース等) は重ならないので挙げない
+  if (endDate) {
+    const stillActive = (timetables || []).filter(
+      (t) =>
+        t.id !== target?.id &&
+        (!t.endDate || t.endDate > endDate) &&
+        gradeListsOverlap(t.grades, grades)
+    );
+    if (stillActive.length > 0) {
+      warnings.push(
+        `切替日以降も有効な時間割が他にあります（${stillActive
+          .map((t) => t.name)
+          .join("・")}）。コマが重なって見える場合は時間割管理で終了日を入れてください`
+      );
+    }
+  }
+
+  // 表示期間設定 (displayCutoff) の終了日が切替日より前だと、時間割を
+  // 切り替えても新しい期のコマがダッシュボード等に出ない。時間割の有効期間
+  // とは別のフィルタなので、期切替のたびに伸ばす必要がある
+  if (startDate) {
+    const endedGroups = (displayCutoff?.groups || []).filter(
+      (g) => g.date && g.date < startDate
+    );
+    if (endedGroups.length > 0) {
+      warnings.push(
+        `表示期間設定の終了日が切替日より前の学年グループがあります（${endedGroups
+          .map((g) => `${g.label} 〜${g.date}`)
+          .join("・")}）。このままだと新しい期のコマがダッシュボード等に出ません` +
+          `（時間割管理 → 表示期間設定で伸ばしてください）`
+      );
+    }
+    const endedCohorts = (displayCutoff?.cohorts || []).filter(
+      (c) => c.date && c.date < startDate
+    );
+    if (endedCohorts.length > 0) {
+      warnings.push(
+        `コース別終講日も ${endedCohorts.length} 件が切替日より前です` +
+          `（時間割管理 → コース別 終講日設定）`
+      );
+    }
+  }
+
+  // 授業セット (第N回を通しで数えるコマの組) は slot.id 参照。新しい期の
+  // コマは別 id なので引き継がれない
+  if (target) {
+    const targetSlotIds = new Set(
+      (slots || [])
+        .filter((s) => (s.timetableId ?? 1) === target.id)
+        .map((s) => s.id)
+    );
+    const affectedSets = (classSets || []).filter((cs) =>
+      (cs.slotIds || []).some((id) => targetSlotIds.has(id))
+    );
+    if (affectedSets.length > 0) {
+      warnings.push(
+        `授業セット ${affectedSets.length} 件は「${target.name}」のコマに紐づいています。` +
+          `新しい期のコマは別のコマ扱いなので、第N回をまとめて数えるには` +
+          `時間割管理の授業セットで作り直してください`
+      );
+    }
+  }
+
+  const slotCount = target
+    ? (slots || []).filter((s) => (s.timetableId ?? 1) === target.id).length
+    : 0;
+
+  return {
+    ok: errors.length === 0,
+    endDate,
+    target,
+    changesEndDate,
+    slotCount,
+    errors,
+    warnings,
+  };
+}
+
 /**
  * plan を適用した新しい timetables / slots 配列を返す。
  * mode "new":     時間割を新規作成してコマを追加
@@ -152,8 +320,14 @@ export function buildReflectionPlan(project, opts) {
  * 新規コマの id は既存の全コマの最大値から振る — 消えた id を同じ保存
  * 操作内で別のコマに使い回すと、旧コマを指したままの代行・調整が別の
  * コマに化けるため (dangling のまま残す方が安全)。
+ *
+ * mode "new" で opts.closeTimetableId を渡すと期切替として扱い、その
+ * 時間割の終了日を切替日 (opts.startDate) の前日に設定する。コマは触らない
+ * ので旧期の記録 (代行・調整・回数補正) はそのまま残り、日付ベースの表示
+ * だけが切替日で新しい時間割に入れ替わる。
  * @returns {{timetables, slots, timetableId, addedCount, removedCount,
- *            keptCount, changedCount} | {error: string}}
+ *            keptCount, changedCount, closed?: {id, name, endDate}}
+ *          | {error: string}}
  */
 export function applyReflection(plan, opts, { timetables, slots }) {
   if (!plan.ok) return { error: "反映できない問題が残っています" };
@@ -162,9 +336,32 @@ export function applyReflection(plan, opts, { timetables, slots }) {
 
   if (opts.mode !== "replace") {
     const timetableId = nextNumericId(timetables);
+    // 期切替: 旧時間割を切替日の前日で終了させる
+    let closed = null;
+    let baseTimetables = timetables;
+    if (opts.closeTimetableId != null) {
+      const switchPlan = buildSwitchPlan({
+        timetables,
+        slots,
+        startDate: opts.startDate,
+        closeTimetableId: opts.closeTimetableId,
+      });
+      if (!switchPlan.ok) return { error: switchPlan.errors[0] };
+      // 既に切替日より前で終わっている時間割は触らない (期間を伸ばさない)
+      if (switchPlan.changesEndDate) {
+        closed = {
+          id: switchPlan.target.id,
+          name: switchPlan.target.name,
+          endDate: switchPlan.endDate,
+        };
+        baseTimetables = timetables.map((t) =>
+          t.id === closed.id ? { ...t, endDate: closed.endDate } : t
+        );
+      }
+    }
     return {
       timetables: [
-        ...timetables,
+        ...baseTimetables,
         {
           id: timetableId,
           name: (opts.name || "").trim(),
@@ -185,6 +382,7 @@ export function applyReflection(plan, opts, { timetables, slots }) {
       removedCount: 0,
       keptCount: 0,
       changedCount: 0,
+      closed,
     };
   }
 
