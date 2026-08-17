@@ -63,6 +63,7 @@ import {
 } from "./utils/printStyles";
 import { openPrintWindow, writePrintDocument } from "./utils/printWindow";
 import { sortJa } from "./utils/sortJa";
+import { sanitizeKanaMap } from "./utils/teacherKana";
 import { applyOrphanCleanup } from "./utils/orphanCleanup";
 
 import { Modal } from "./components/Modal";
@@ -284,6 +285,11 @@ export default function App() {
     {},
     { onError: onStorageError }
   );
+  const [teacherKana, saveTeacherKana] = useSyncedStorage(
+    LS.teacherKana,
+    {},
+    { migrate: sanitizeKanaMap, onError: onStorageError }
+  );
   const [specialEvents, saveSpecialEvents] = useSyncedStorage(
     LS.specialEvents,
     [],
@@ -462,6 +468,7 @@ export default function App() {
     saveSubs,
     subjects,
     partTimeStaff,
+    teacherKana,
     adjustments,
     saveAdjustments,
     sessionOverrides,
@@ -495,6 +502,8 @@ export default function App() {
     saveSubjectCategories,
     teacherSubjects,
     saveTeacherSubjects,
+    teacherKana,
+    saveTeacherKana,
     examPrepSchedules,
     saveExamPrepSchedules,
   });
@@ -515,6 +524,7 @@ export default function App() {
     classSets,
     sessionOverrides,
     teacherSubjects,
+    teacherKana,
     specialEvents,
     extraLessons,
     daySchedules,
@@ -535,6 +545,7 @@ export default function App() {
     saveClassSets,
     saveSessionOverrides,
     saveTeacherSubjects,
+    saveTeacherKana,
     saveSpecialEvents,
     saveExtraLessons,
     saveDaySchedules,
@@ -696,7 +707,7 @@ export default function App() {
   const vy = vd.getFullYear();
   const vm = vd.getMonth() + 1;
 
-  const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search });
+  const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search, teacherKana });
 
   // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ。
   // サイドバーの teacherGroups は検索文字列でフィルタされるため、search を
@@ -706,6 +717,7 @@ export default function App() {
     partTimeStaff,
     subjects,
     search: "",
+    teacherKana,
   });
   const fulltimeGroups = useMemo(
     () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
@@ -1132,6 +1144,7 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               activeTimetableId={activeTimetableId}
               partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
               subjects={subjects}
               subjectCategories={subjectCategories}
               teacherSubjects={teacherSubjects}
@@ -1149,7 +1162,12 @@ export default function App() {
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
           )}
           {view === VIEWS.COMPARE && !selected && (
-            <CompareView slots={ttFilteredSlots} partTimeStaff={partTimeStaff} subjects={subjects} />
+            <CompareView
+              slots={ttFilteredSlots}
+              partTimeStaff={partTimeStaff}
+              subjects={subjects}
+              teacherKana={teacherKana}
+            />
           )}
           {view === VIEWS.MASTER && !selected && (
             <MasterView
@@ -1164,6 +1182,7 @@ export default function App() {
               activeTimetableId={activeTimetableId}
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
               subjects={subjects}
               holidays={holidays}
               examPeriods={examPeriods}
@@ -1211,6 +1230,7 @@ export default function App() {
                 slots={slots}
                 subjects={subjects}
                 teacherSubjects={teacherSubjects}
+                teacherKana={teacherKana}
                 knownTags={availableTags}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXAM ? eventEditRequest.id : null
@@ -1320,6 +1340,7 @@ export default function App() {
               slots={slots}
               holidays={holidays}
               partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
               onDel={subsCrud.del}
@@ -1374,6 +1395,7 @@ export default function App() {
               classSets={classSets}
               displayCutoff={displayCutoff}
               partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
               subjects={subjects}
               timetables={timetables}
               saveSubs={saveSubs}
@@ -1388,6 +1410,7 @@ export default function App() {
             <StaffManagerView
               partTimeStaff={partTimeStaff}
               teacherSubjects={teacherSubjects}
+              teacherKana={teacherKana}
               subjectCategories={subjectCategories}
               subjects={subjects}
               slots={slots}
@@ -1399,6 +1422,8 @@ export default function App() {
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}
+              onSetStaffKana={staffCrud.setStaffKana}
+              onImportKana={staffCrud.importKanaFromRegularBuilder}
               onSaveCategory={staffCrud.saveCategory}
               onDelCategory={staffCrud.delCategory}
               onSaveSubject={staffCrud.saveSubject}
@@ -1502,6 +1527,7 @@ export default function App() {
               subs={subs}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
+              teacherKana={teacherKana}
               onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
               onCancel={() => setEditSub(null)}
             />

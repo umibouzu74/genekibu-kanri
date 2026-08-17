@@ -47,6 +47,7 @@ export function MasterView({
   activeTimetableId,
   saveSlots,
   partTimeStaff,
+  teacherKana = {},
   subjects,
   holidays,
   examPeriods,
@@ -190,6 +191,7 @@ export function MasterView({
           timetables={timetables}
           activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
           subjects={subjects}
           holidays={holidays}
           examPeriods={examPeriods}

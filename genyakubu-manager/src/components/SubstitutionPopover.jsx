@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { colors } from "../styles/tokens";
 import { pickSubjectId } from "../utils/subjectMatch";
+import { compareTeacherNames } from "../utils/teacherKana";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
 
 function computePosition(anchorRect) {
@@ -37,6 +38,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   slots,
   pendingSubs,
   partTimeStaff,
+  teacherKana = {},
 }) {
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
@@ -89,6 +91,8 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
 
   // Match slot's subject
   const slotSubjectId = pickSubjectId(slot.subj, subjects);
+  // 候補の並びは「関連度」が主。同点のときだけよみのあいうえお順で割る。
+  const byKana = compareTeacherNames(teacherKana);
 
   // Filter and sort free candidates by relevance
   const freeCandidates = availableTeachers
@@ -122,7 +126,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
       const bMatch = b.subjectIds.includes(slotSubjectId) ? 1 : 0;
       if (bMatch !== aMatch) return bMatch - aMatch;
       if (a.isPartTime !== b.isPartTime) return a.isPartTime ? 1 : -1;
-      return a.name.localeCompare(b.name);
+      return byKana(a.name, b.name);
     });
 
   const candidates = showAll ? [...freeCandidates, ...busyCandidates] : freeCandidates;

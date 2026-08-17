@@ -27,6 +27,7 @@ export function ExamPeriodManager({
   slots = [],
   subjects = [],
   teacherSubjects = {},
+  teacherKana = {},
   knownTags = [],
   editTargetId = null,
   onConsumeEditTarget,
@@ -758,6 +759,7 @@ export function ExamPeriodManager({
           slots={slots}
           subjects={subjects}
           teacherSubjects={teacherSubjects}
+          teacherKana={teacherKana}
           crud={examPrepCrud}
           onClose={() => setScheduleEditingEp(null)}
         />

@@ -7,13 +7,13 @@ import {
   sortSlots as sortS,
 } from "../../data";
 import { S } from "../../styles/common";
-import { sortJa } from "../../utils/sortJa";
+import { sortTeacherNames } from "../../utils/teacherKana";
 import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
 import { groupTeacherNames } from "../../utils/groupTeacherNames";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
-export function CompareView({ slots, partTimeStaff = [], subjects = [] }) {
+export function CompareView({ slots, partTimeStaff = [], subjects = [], teacherKana = {} }) {
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [searchInput, setSearchInput] = useState("");
 
@@ -21,8 +21,8 @@ export function CompareView({ slots, partTimeStaff = [], subjects = [] }) {
   const allTeachers = useMemo(() => {
     const set = new Set();
     for (const s of slots) for (const t of getSlotTeachers(s)) set.add(t);
-    return sortJa([...set]);
-  }, [slots]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, teacherKana]);
 
   // 検索でフィルタ
   const filteredTeachers = useMemo(

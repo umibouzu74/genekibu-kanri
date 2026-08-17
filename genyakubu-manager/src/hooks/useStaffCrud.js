@@ -2,6 +2,12 @@ import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
 import { removeStaffFromSchedules } from "../utils/examPrepHelpers";
+import {
+  kanaEntriesFromRegularBuilder,
+  mergeTeacherKana,
+  setTeacherKana,
+} from "../utils/teacherKana";
+import { LS } from "../constants/storageKeys";
 
 // バイト・教科カテゴリ・教科の CRUD ロジック。
 export function useStaffCrud({
@@ -15,6 +21,8 @@ export function useStaffCrud({
   saveSubjectCategories,
   teacherSubjects,
   saveTeacherSubjects,
+  teacherKana = {},
+  saveTeacherKana,
   examPrepSchedules = [],
   saveExamPrepSchedules,
 }) {
@@ -97,6 +105,43 @@ export function useStaffCrud({
         ? current.filter((id) => id !== subjectId)
         : [...current, subjectId],
     });
+  };
+
+  // よみ (かな) の設定。バイトにも常勤講師にも同じ map で付ける。
+  // 空にすると未設定に戻る (setTeacherKana がキーごと消す)。
+  const setStaffKana = (name, kana) => {
+    if (!saveTeacherKana) return;
+    saveTeacherKana(setTeacherKana(teacherKana, name, kana));
+  };
+
+  // 通常時間割作成の講師マスタに入っているよみを一括で取り込む。
+  // **一度きりの入力補助**で常時同期ではない (正はそれぞれのマスタ)。
+  // 既に入っているよみは上書きしない — 手入力を黙って書き換えないため。
+  const importKanaFromRegularBuilder = () => {
+    if (!saveTeacherKana) return;
+    let workspace = null;
+    try {
+      const raw = localStorage.getItem(LS.regularBuilderProject);
+      workspace = raw ? JSON.parse(raw) : null;
+    } catch {
+      workspace = null;
+    }
+    const entries = kanaEntriesFromRegularBuilder(workspace);
+    if (entries.length === 0) {
+      toasts.error("通常時間割作成の講師マスタによみが登録されていません");
+      return;
+    }
+    const { map, added, skipped } = mergeTeacherKana(teacherKana, entries);
+    if (added === 0) {
+      toasts.success(`新しく取り込めるよみはありませんでした（${skipped} 件は設定済み）`);
+      return;
+    }
+    saveTeacherKana(map);
+    toasts.success(
+      skipped > 0
+        ? `よみを ${added} 件取り込みました（${skipped} 件は設定済みのため据え置き）`
+        : `よみを ${added} 件取り込みました`
+    );
   };
 
   const saveCategory = (cat) => {
@@ -182,6 +227,8 @@ export function useStaffCrud({
     addStaff,
     delStaff,
     toggleStaffSubject,
+    setStaffKana,
+    importKanaFromRegularBuilder,
     saveCategory,
     delCategory,
     saveSubject,

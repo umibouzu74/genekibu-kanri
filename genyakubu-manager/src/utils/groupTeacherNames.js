@@ -1,4 +1,4 @@
-import { compareJa } from "./sortJa";
+import { compareTeacherNames } from "./teacherKana";
 import { getSlotTeachers } from "./biweekly";
 
 // 任意の講師名リストを教科ごとにグループ化する純粋関数。
@@ -17,6 +17,8 @@ import { getSlotTeachers } from "./biweekly";
 //   ctx.slots:    Slot[]    (subj/teacher 推定用)
 //   ctx.partTimeStaff: PartTimeStaffObject[]
 //   ctx.subjects: Subject[]
+//   ctx.teacherKana: Record<name, よみ>  (グループ内をあいうえお順にする。
+//     未設定の講師はグループ内の末尾で従来どおりの文字列順)
 //
 // 戻り値: Array<{ key, label, teachers }>
 //   表示順: バイト → 英数国理社 → それ以外の教科 → その他
@@ -94,7 +96,7 @@ export function buildTeacherPrimarySubjectMap(slots, subjects) {
 //   無指定なら DEFAULT_SUBJECT_ORDER (英→数→国→理→社) を使う。
 //   builder で project.subjects を渡せば、ユーザのリオーダ操作が
 //   本体側 (CompareView 等) の表示順にも反映される (code-review P3)。
-export function groupTeacherNames(names, { slots, partTimeStaff, subjects, subjectOrder }) {
+export function groupTeacherNames(names, { slots, partTimeStaff, subjects, subjectOrder, teacherKana }) {
   const staffNameSet = new Set((partTimeStaff || []).map((s) => s.name));
   const primary = buildTeacherPrimarySubjectMap(slots || [], subjects || []);
   // subject 並び順の決定: 引数 subjectOrder > subjects[].name 配列 >
@@ -126,9 +128,10 @@ export function groupTeacherNames(names, { slots, partTimeStaff, subjects, subje
     }
   }
 
-  staffGroup.sort(compareJa);
-  for (const arr of bySubject.values()) arr.sort(compareJa);
-  other.sort(compareJa);
+  const cmp = compareTeacherNames(teacherKana);
+  staffGroup.sort(cmp);
+  for (const arr of bySubject.values()) arr.sort(cmp);
+  other.sort(cmp);
 
   const groups = [];
   if (staffGroup.length) {

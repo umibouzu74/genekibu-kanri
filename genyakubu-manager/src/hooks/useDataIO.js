@@ -20,6 +20,7 @@ import {
   migrateSubs,
 } from "../utils/migrate";
 import { detectOrphans } from "../utils/orphanCleanup";
+import { sanitizeKanaMap } from "../utils/teacherKana";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -39,6 +40,7 @@ export function useDataIO({
   classSets,
   sessionOverrides,
   teacherSubjects,
+  teacherKana,
   specialEvents,
   extraLessons,
   daySchedules,
@@ -59,6 +61,7 @@ export function useDataIO({
   saveClassSets,
   saveSessionOverrides,
   saveTeacherSubjects,
+  saveTeacherKana,
   saveSpecialEvents,
   saveExtraLessons,
   saveDaySchedules,
@@ -95,6 +98,7 @@ export function useDataIO({
           classSets,
           sessionOverrides,
           teacherSubjects,
+          teacherKana,
           specialEvents,
           extraLessons,
           daySchedules,
@@ -117,7 +121,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, specialEvents, extraLessons, daySchedules, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -191,6 +195,11 @@ export function useDataIO({
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
+          // 旧バックアップには teacherKana が無い (よみ機能より前) ので、
+          // 欠けているときは現状維持 — 空 map で上書きしない
+          if (d.teacherKana && typeof d.teacherKana === "object" && !Array.isArray(d.teacherKana) && saveTeacherKana) {
+            saveTeacherKana(sanitizeKanaMap(d.teacherKana));
+          }
           // 取り込んだ timetables に存在する ID のときだけ復元する
           // (無い/不正なら現状維持 — 旧バックアップには含まれない)
           if (
@@ -256,6 +265,7 @@ export function useDataIO({
       saveClassSets,
       saveSessionOverrides,
       saveTeacherSubjects,
+      saveTeacherKana,
       saveSpecialEvents,
       saveExtraLessons,
       saveDaySchedules,
@@ -296,6 +306,7 @@ export function useDataIO({
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
     // (export / import には含まれるのに reset だけ漏れていた)
     saveTeacherSubjects({});
+    if (saveTeacherKana) saveTeacherKana({});
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -321,6 +332,7 @@ export function useDataIO({
     saveClassSets,
     saveSessionOverrides,
     saveTeacherSubjects,
+    saveTeacherKana,
     saveSpecialEvents,
     saveExtraLessons,
     saveDaySchedules,

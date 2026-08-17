@@ -14,9 +14,14 @@
 // かなの比較だけは Intl.Collator("ja") が正しく効く (かな同士の照合は
 // あいうえお順)。ひらがな / カタカナ / 半角カナ・前後の空白は
 // 表記ゆれとして正規化してから比較する。
+//
+// 正規化とコレータは親アプリ (`utils/teacherKana`) と共有する — 同じ
+// 「よみ」を両方の画面で並べるので、表記ゆれの吸収がずれると片方だけ
+// 順序が変わってしまう。
 
-/** かな比較用のコレータ。base = 濁点・小書きの差を無視 (が = か, ぁ = あ) */
-const KANA_COLLATOR = new Intl.Collator("ja", { sensitivity: "base" });
+import { KANA_COLLATOR, normalizeKana } from "../utils/teacherKana";
+
+export { normalizeKana };
 
 /** 担当科目が未設定の講師を入れるグループの見出し */
 export const UNGROUPED_LABEL = "その他";
@@ -29,23 +34,6 @@ export const UNGROUPED_LABEL = "その他";
  */
 export function ungroupedLabel(subjectMaster) {
   return (subjectMaster || []).includes(UNGROUPED_LABEL) ? "未設定" : UNGROUPED_LABEL;
-}
-
-/**
- * よみを比較用のキーに正規化する。
- * 半角カナ → 全角 (NFKC)、カタカナ → ひらがな、空白 (全角含む) を除去。
- * @param {string} kana
- * @returns {string}
- */
-export function normalizeKana(kana) {
-  if (!kana) return "";
-  return String(kana)
-    .normalize("NFKC")
-    .replace(/[ァ-ヶ]/g, (ch) =>
-      String.fromCharCode(ch.charCodeAt(0) - 0x60)
-    )
-    // JS の \s は全角スペース (U+3000) も含む
-    .replace(/\s/g, "");
 }
 
 /**

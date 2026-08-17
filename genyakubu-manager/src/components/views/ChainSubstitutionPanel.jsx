@@ -3,7 +3,7 @@ import { splitTeacherField } from "../../utils/biweekly";
 import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
-import { sortJa } from "../../utils/sortJa";
+import { sortTeacherNames } from "../../utils/teacherKana";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { filterSlotsForDate } from "../../utils/timetable";
@@ -26,6 +26,7 @@ export function ChainSubstitutionPanel({
   timetables,
   biweeklyAnchors,
   teacherSubjects = {},
+  teacherKana = {},
   saveSubs,
   isAdmin,
 }) {
@@ -51,8 +52,8 @@ export function ChainSubstitutionPanel({
     slots.forEach((s) => {
       splitTeacherField(s.teacher).forEach((n) => set.add(n));
     });
-    return sortJa([...set]);
-  }, [slots, partTimeStaff]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, partTimeStaff, teacherKana]);
 
   // その日の時間帯リスト（手動追加で選ぶ用）
   const dayTimeSlots = useMemo(() => {

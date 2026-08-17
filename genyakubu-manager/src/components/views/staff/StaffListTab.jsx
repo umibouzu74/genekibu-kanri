@@ -9,12 +9,15 @@ import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { isSlotForTeacher } from "../../../utils/biweekly";
 import { useToasts } from "../../../hooks/useToasts";
+import { KanaField } from "./KanaField";
 
 // バイト一覧タブ : 新規追加フォーム + 各バイトの担当教科 + 今月の出勤状況。
 export function StaffListTab({
   partTimeStaff,
   sortedPartTimeStaff,
   allTeachers,
+  teacherKana,
+  onSetStaffKana,
   subjectCategories,
   subjectsByCat,
   slots,
@@ -166,6 +169,13 @@ export function StaffListTab({
                       担当教科: {staff.subjectIds.length}
                     </span>
                   </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <KanaField
+                      name={staff.name}
+                      kana={teacherKana[staff.name] || ""}
+                      onSave={onSetStaffKana}
+                      disabled={!isAdmin}
+                    />
                   {isAdmin && (
                     <button
                       type="button"
@@ -182,6 +192,7 @@ export function StaffListTab({
                       ✕
                     </button>
                   )}
+                  </div>
                 </div>
 
                 {subjectCategories.length === 0 ? (

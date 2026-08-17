@@ -19,6 +19,7 @@ export function SubstituteForm({
   subs = [],
   partTimeStaff,
   subjects = [],
+  teacherKana = {},
   onSave,
   onCancel,
 }) {
@@ -123,6 +124,7 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          teacherKana={teacherKana}
           f={singleF}
           setF={setSingleF}
           showAllCandidates={showAllCandidates}
@@ -138,6 +140,7 @@ export function SubstituteForm({
           subs={subs}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          teacherKana={teacherKana}
           rowState={rowState}
           setRowState={setRowState}
           showAllCandidates={showAllCandidates}

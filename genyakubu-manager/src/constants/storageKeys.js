@@ -18,6 +18,9 @@ export const LS = {
   activeTimetableId: "genyakubu-active-timetable",
   examPeriods: "genyakubu-exam-periods",
   teacherSubjects: "genyakubu-teacher-subjects",
+  // 講師名 → よみ。バイトにも常勤講師にも付けたいので partTimeStaff の
+  // 項目ではなく teacherSubjects と同型の独立マップにしてある。
+  teacherKana: "genyakubu-teacher-kana",
   classSets: "genyakubu-class-sets",
   sessionOverrides: "genyakubu-session-overrides",
   examPrepSchedules: "genyakubu-exam-prep-schedules",

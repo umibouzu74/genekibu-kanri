@@ -32,10 +32,11 @@ export function AbsenceTimetable({
   absentSlotIds, // Set<slotId>
   partTimeStaff,
   subjects,
+  teacherKana = {},
   biweeklyAnchors,
   holidays, // 隔週ローテーションのシフトに使用 (任意)
   examPeriods, // 隔週ローテーションのシフトに使用 (任意)
-  allTeachers, // 振替先担当候補 (全先生名 / sortJa 済み)
+  allTeachers, // 振替先担当候補 (全先生名 / よみ順に整列済み)
   timetables, // 振替先の有効時間割フィルタ用
   isOffForGrade, // 振替先の休講/テスト期間警告用
   isHolidayForSlot, // 「休講」表示用 (休講のみ判定)
@@ -986,6 +987,7 @@ export function AbsenceTimetable({
           examPeriods={examPeriods}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          teacherKana={teacherKana}
           daySlots={slots}
           currentSubstitute={draft[subPicker.slot.id]?.sub?.substitute || ""}
           currentStatus={draft[subPicker.slot.id]?.sub?.status || "confirmed"}
@@ -1022,6 +1024,7 @@ export function AbsenceTimetable({
           sourceDate={date}
           allSlots={allSlots}
           allTeachers={allTeachers}
+          teacherKana={teacherKana}
           timetables={timetables}
           isOffForGrade={isOffForGrade}
           hasAutoSkip={(() => {

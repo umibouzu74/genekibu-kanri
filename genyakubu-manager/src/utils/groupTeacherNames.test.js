@@ -129,20 +129,58 @@ describe("groupTeacherNames", () => {
     expect(groups[0].teachers).toEqual(["堀上"]);
   });
 
-  it("各グループ内は compareJa でソート (五十音順)", () => {
+  // よみ (teacherKana) が無いと**漢字は読み順に並べられない**
+  // (localeCompare("ja") は部首・画数順)。よみを渡したときだけ
+  // あいうえお順になる、というのがこの並びの仕様。
+  const ENGLISH_SLOTS = [
+    { teacher: "堀上", subj: "英語" },
+    { teacher: "石原", subj: "英語" },
+    { teacher: "高松", subj: "英語" },
+  ];
+
+  it("よみが無いグループ内は従来どおりの文字列順 (安定していれば良い)", () => {
     const groups = groupTeacherNames(["堀上", "石原", "高松"], {
-      slots: [
-        { teacher: "堀上", subj: "英語" },
-        { teacher: "石原", subj: "英語" },
-        { teacher: "高松", subj: "英語" },
-      ],
-      partTimeStaff: [], subjects: SUBJECTS,
+      slots: ENGLISH_SLOTS, partTimeStaff: [], subjects: SUBJECTS,
     });
-    // compareJa 順 (ローカル特定の漢字読み判定で安定の順) を維持していれば OK
     const arr = groups.find(g => g.label === "英語").teachers;
-    // 同じ入力に対して同じ順を返すことだけ確認 (元の入力順とは異なる)
+    // 同じ入力に対して同じ順を返すことだけ確認 (読み順にはできない)
     expect(new Set(arr)).toEqual(new Set(["堀上", "石原", "高松"]));
     expect(arr.length).toBe(3);
+  });
+
+  it("teacherKana を渡すとグループ内があいうえお順になる", () => {
+    const groups = groupTeacherNames(["堀上", "石原", "高松"], {
+      slots: ENGLISH_SLOTS, partTimeStaff: [], subjects: SUBJECTS,
+      teacherKana: { 堀上: "ほりかみ", 石原: "いしはら", 高松: "たかまつ" },
+    });
+    expect(groups.find(g => g.label === "英語").teachers).toEqual([
+      "石原", // いしはら
+      "高松", // たかまつ
+      "堀上", // ほりかみ
+    ]);
+  });
+
+  it("よみが一部だけのときは、よみのある講師が先・未設定は末尾", () => {
+    const groups = groupTeacherNames(["堀上", "石原", "高松"], {
+      slots: ENGLISH_SLOTS, partTimeStaff: [], subjects: SUBJECTS,
+      teacherKana: { 高松: "たかまつ", 石原: "いしはら" },
+    });
+    const arr = groups.find(g => g.label === "英語").teachers;
+    expect(arr.slice(0, 2)).toEqual(["石原", "高松"]);
+    expect(arr[2]).toBe("堀上"); // よみ未設定なので末尾
+  });
+
+  it("バイトグループもよみ順になる", () => {
+    const groups = groupTeacherNames(["堀上", "石原"], {
+      slots: ENGLISH_SLOTS,
+      partTimeStaff: [{ name: "堀上", subjectIds: [] }, { name: "石原", subjectIds: [] }],
+      subjects: SUBJECTS,
+      teacherKana: { 堀上: "ほりかみ", 石原: "いしはら" },
+    });
+    expect(groups.find(g => g.label === STAFF_GROUP_LABEL).teachers).toEqual([
+      "石原",
+      "堀上",
+    ]);
   });
 
   it("names 空 / undefined でも壊れない", () => {
