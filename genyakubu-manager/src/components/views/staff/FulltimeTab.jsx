@@ -1,10 +1,13 @@
 import { isSlotForTeacher } from "../../../utils/biweekly";
+import { KanaField } from "./KanaField";
 
 // 常勤講師タブ : 時間割のコマに登場するがバイト一覧に無い講師の教科設定。
 export function FulltimeTab({
   fulltimeTeachers,
   slots,
   teacherSubjects,
+  teacherKana = {},
+  onSetStaffKana,
   subjectCategories,
   subjectsByCat,
   onToggleStaffSubject,
@@ -61,6 +64,12 @@ export function FulltimeTab({
                       担当教科: {sids.length}
                     </span>
                   </div>
+                  <KanaField
+                    name={name}
+                    kana={teacherKana[name] || ""}
+                    onSave={onSetStaffKana}
+                    disabled={!isAdmin}
+                  />
                 </div>
                 {subjectCategories.length === 0 ? (
                   <div style={{ fontSize: 11, color: "#bbb" }}>

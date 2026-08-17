@@ -88,6 +88,7 @@ export function ExcelGridView({
   timetables,
   activeTimetableId,
   partTimeStaff,
+  teacherKana = {},
   subjects,
   subs,
   saveSubs,
@@ -1075,6 +1076,7 @@ export function ExcelGridView({
           slots={displaySlots}
           pendingSubs={subMode.pendingSubs}
           partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
         />
       )}
     </div>

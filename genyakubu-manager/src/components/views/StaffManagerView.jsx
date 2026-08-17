@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import { splitTeacherField } from "../../utils/biweekly";
 import { S } from "../../styles/common";
-import { compareJa, sortJa } from "../../utils/sortJa";
+import {
+  missingKanaNames,
+  sortByTeacherKana,
+  sortTeacherNames,
+} from "../../utils/teacherKana";
+import { KanaStatusBanner } from "./staff/KanaStatusBanner";
 import { StaffListTab } from "./staff/StaffListTab";
 import { FulltimeTab } from "./staff/FulltimeTab";
 import { SubjectsMasterTab } from "./staff/SubjectsMasterTab";
@@ -13,6 +18,7 @@ import { SubjectsMasterTab } from "./staff/SubjectsMasterTab";
 export function StaffManagerView({
   partTimeStaff,
   teacherSubjects = {},
+  teacherKana = {},
   subjectCategories,
   subjects,
   slots,
@@ -24,6 +30,8 @@ export function StaffManagerView({
   onAddStaff,
   onDelStaff,
   onToggleStaffSubject,
+  onSetStaffKana,
+  onImportKana,
   onSaveCategory,
   onDelCategory,
   onSaveSubject,
@@ -52,8 +60,8 @@ export function StaffManagerView({
   }, [subjects, subjectCategories]);
 
   const sortedPartTimeStaff = useMemo(
-    () => [...partTimeStaff].sort((a, b) => compareJa(a.name, b.name)),
-    [partTimeStaff]
+    () => sortByTeacherKana(partTimeStaff, teacherKana),
+    [partTimeStaff, teacherKana]
   );
 
   const allTeachers = useMemo(() => {
@@ -61,8 +69,8 @@ export function StaffManagerView({
     slots.forEach((s) => {
       splitTeacherField(s.teacher).forEach((n) => set.add(n));
     });
-    return sortJa([...set]);
-  }, [slots, partTimeStaff]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, partTimeStaff, teacherKana]);
 
   // 常勤講師 = スロットに出現するがバイト一覧にない講師
   const staffNameSet = useMemo(
@@ -76,8 +84,20 @@ export function StaffManagerView({
         if (!staffNameSet.has(n)) set.add(n);
       });
     });
-    return sortJa([...set]);
-  }, [slots, staffNameSet]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, staffNameSet, teacherKana]);
+
+  // よみ未設定の講師。よみは名前を五十音順に並べる唯一の手掛かりなので、
+  // 「誰が未設定なのか」を画面で見せて埋めてもらう (勝手に別の順序を
+  // 捏造せず、未設定は末尾のまま置く方針の裏返し)。
+  const missingStaffKana = useMemo(
+    () => missingKanaNames(partTimeStaff.map((s) => s.name), teacherKana),
+    [partTimeStaff, teacherKana]
+  );
+  const missingFulltimeKana = useMemo(
+    () => missingKanaNames(fulltimeTeachers, teacherKana),
+    [fulltimeTeachers, teacherKana]
+  );
 
   const handleAddStaff = () => {
     if (onAddStaff(newStaff)) setNewStaff("");
@@ -113,6 +133,15 @@ export function StaffManagerView({
         <TabBtn k="subjects" label="教科マスター" count={subjects.length} />
       </div>
 
+      {(tab === "staff" || tab === "fulltime") && (
+        <KanaStatusBanner
+          missing={tab === "staff" ? missingStaffKana : missingFulltimeKana}
+          total={tab === "staff" ? partTimeStaff.length : fulltimeTeachers.length}
+          onImportKana={onImportKana}
+          isAdmin={isAdmin}
+        />
+      )}
+
       {tab === "staff" && (
         <StaffListTab
           partTimeStaff={partTimeStaff}
@@ -133,6 +162,8 @@ export function StaffManagerView({
           handleAddStaff={handleAddStaff}
           onDelStaff={onDelStaff}
           onToggleStaffSubject={onToggleStaffSubject}
+          teacherKana={teacherKana}
+          onSetStaffKana={onSetStaffKana}
           isAdmin={isAdmin}
         />
       )}
@@ -145,6 +176,8 @@ export function StaffManagerView({
           subjectCategories={subjectCategories}
           subjectsByCat={subjectsByCat}
           onToggleStaffSubject={onToggleStaffSubject}
+          teacherKana={teacherKana}
+          onSetStaffKana={onSetStaffKana}
           isAdmin={isAdmin}
         />
       )}

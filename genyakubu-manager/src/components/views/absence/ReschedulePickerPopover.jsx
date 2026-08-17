@@ -3,7 +3,7 @@ import { splitTeacherField } from "../../../utils/biweekly";
 import { dateToDay, DAY_COLOR as DC, fmtDate, WEEKDAYS } from "../../../data";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
-import { sortJa } from "../../../utils/sortJa";
+import { sortTeacherNames } from "../../../utils/teacherKana";
 import { isTimetableActiveForDate } from "../../../utils/timetable";
 
 // ─── 振替ピッカーポップオーバー ───────────────────────────────
@@ -47,6 +47,7 @@ export function ReschedulePickerPopover({
   sourceDate,
   allSlots,
   allTeachers,
+  teacherKana = {},
   timetables,
   isOffForGrade, // (date, grade, subj) => boolean
   initial,
@@ -113,8 +114,8 @@ export function ReschedulePickerPopover({
     if (slot?.teacher) {
       for (const name of splitTeacherField(slot.teacher)) names.add(name);
     }
-    return sortJa([...names]);
-  }, [allTeachers, slot]);
+    return sortTeacherNames([...names], teacherKana);
+  }, [allTeachers, slot, teacherKana]);
 
   const targetDow = targetDate ? dateToDay(targetDate) : null;
 

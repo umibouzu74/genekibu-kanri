@@ -3,6 +3,7 @@ import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
 import { sortJa } from "../utils/sortJa";
+import { sortTeacherNames } from "../utils/teacherKana";
 import { BEHAVIOR } from "../constants/layout";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
@@ -14,6 +15,7 @@ export function useSlotsCrud({
   saveSubs,
   subjects,
   partTimeStaff,
+  teacherKana = {},
   adjustments = [],
   saveAdjustments,
   sessionOverrides = [],
@@ -45,9 +47,9 @@ export function useSlotsCrud({
       grades: sortJa([...grades]),
       rooms: sortJa([...rooms]),
       subjs: sortJa([...subjs]),
-      teachers: sortJa([...teachers]),
+      teachers: sortTeacherNames([...teachers], teacherKana),
     };
-  }, [slots, subjects, partTimeStaff]);
+  }, [slots, subjects, partTimeStaff, teacherKana]);
 
   const save = async (editSlot, f, setEditSlot) => {
     // Double booking detection

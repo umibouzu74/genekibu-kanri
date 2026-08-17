@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
-import { sortJa } from "../../utils/sortJa";
+import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { ShareLinkButton } from "../ShareLinkButton";
@@ -16,6 +16,7 @@ export function SubstituteView({
   slots,
   holidays,
   partTimeStaff,
+  teacherKana = {},
   onNew,
   onEdit,
   onDel,
@@ -120,6 +121,8 @@ export function SubstituteView({
     [subs, ty, tm]
   );
 
+  const byKana = useMemo(() => compareTeacherNames(teacherKana), [teacherKana]);
+
   const tallyRows = useMemo(() => {
     const names = new Set(staffNameSet);
     Object.keys(tally.covered).forEach((n) => names.add(n));
@@ -132,17 +135,18 @@ export function SubstituteView({
         isPT: staffNameSet.has(name),
       }))
       .sort(
+        // 件数の多い順。同件数 (0 件が大半) はよみのあいうえお順で割る
         (a, b) =>
           b.covered + b.coveredFor - (a.covered + a.coveredFor) ||
-          a.name.localeCompare(b.name)
+          byKana(a.name, b.name)
       );
-  }, [tally, staffNameSet]);
+  }, [tally, staffNameSet, byKana]);
 
   const allTeachers = useMemo(() => {
     const set = new Set(staffNameSet);
     slots.forEach((s) => s.teacher && set.add(s.teacher));
-    return sortJa([...set]);
-  }, [slots, staffNameSet]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, staffNameSet, teacherKana]);
 
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
@@ -284,6 +288,7 @@ export function SubstituteView({
           isAdmin={isAdmin}
           slots={slots}
           partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
           subjects={subjects}
           onEdit={onEdit}
           onDel={onDel}
@@ -298,6 +303,7 @@ export function SubstituteView({
           isAdmin={isAdmin}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          teacherKana={teacherKana}
           onDel={handleDelAdjustment}
           onJumpToDate={onJumpToAbsenceFlow}
         />
@@ -310,6 +316,7 @@ export function SubstituteView({
           isAdmin={isAdmin}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
+          teacherKana={teacherKana}
           onDel={onDelSessionOverride}
           onJumpToDate={onJumpToAbsenceFlow}
         />

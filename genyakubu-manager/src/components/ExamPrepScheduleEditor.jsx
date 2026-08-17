@@ -12,7 +12,7 @@ import {
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
-import { compareJa } from "../utils/sortJa";
+import { compareTeacherNames } from "../utils/teacherKana";
 import { getSlotTeachers } from "../utils/biweekly";
 import { pickSubjectId } from "../utils/subjectMatch";
 
@@ -58,6 +58,7 @@ export function ExamPrepScheduleEditor({
   slots = [],
   subjects = [],
   teacherSubjects = {},
+  teacherKana = {},
   crud,
   onClose,
 }) {
@@ -121,15 +122,17 @@ export function ExamPrepScheduleEditor({
       };
     });
 
+    // 教科でまとめた中はよみのあいうえお順 (漢字は読み順に並べられない)
+    const cmp = compareTeacherNames(teacherKana);
     entries.sort((a, b) => {
       if (a.primarySubjectId !== b.primarySubjectId) {
         return a.primarySubjectId - b.primarySubjectId;
       }
-      return compareJa(a.name, b.name);
+      return cmp(a.name, b.name);
     });
 
     return entries;
-  }, [partTimeStaff, slots, subjects, teacherSubjects]);
+  }, [partTimeStaff, slots, subjects, teacherSubjects, teacherKana]);
 
   const subjectNameById = useMemo(() => {
     const m = new Map();

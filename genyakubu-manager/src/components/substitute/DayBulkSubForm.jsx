@@ -8,7 +8,7 @@ import {
 import { S } from "../../styles/common";
 import { formatBiweeklyNote, getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
-import { sortJa } from "../../utils/sortJa";
+import { sortTeacherNames } from "../../utils/teacherKana";
 import { FieldError } from "../FieldError";
 
 // ─── 1日分まとめて代行フォーム ───────────────────────────────────
@@ -24,6 +24,7 @@ export function DayBulkSubForm({
   subs,
   partTimeStaff,
   subjects,
+  teacherKana = {},
   rowState,
   setRowState,
   showAllCandidates,
@@ -82,7 +83,7 @@ export function DayBulkSubForm({
     if (!subjId || showAllCandidates) {
       slots.forEach((s) => s.teacher && set.add(s.teacher));
     }
-    return sortJa([...set]);
+    return sortTeacherNames([...set], teacherKana);
   };
 
   const handleSave = () => {

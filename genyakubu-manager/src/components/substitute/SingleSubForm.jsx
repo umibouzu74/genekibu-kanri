@@ -4,7 +4,7 @@ import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
-import { sortJa } from "../../utils/sortJa";
+import { sortTeacherNames } from "../../utils/teacherKana";
 import { FieldError } from "../FieldError";
 
 // ─── 単一コマ代行フォーム ──────────────────────────────────────────
@@ -19,6 +19,7 @@ export function SingleSubForm({
   subs,
   partTimeStaff,
   subjects,
+  teacherKana = {},
   f,
   setF,
   showAllCandidates,
@@ -125,8 +126,8 @@ export function SingleSubForm({
     if (!matchedSubjectId || showAllCandidates) {
       slots.forEach((s) => s.teacher && set.add(s.teacher));
     }
-    return sortJa([...set]);
-  }, [slots, filteredPartTimeStaff, matchedSubjectId, showAllCandidates]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, filteredPartTimeStaff, matchedSubjectId, showAllCandidates, teacherKana]);
 
   const handleSave = () => {
     const errs = {};

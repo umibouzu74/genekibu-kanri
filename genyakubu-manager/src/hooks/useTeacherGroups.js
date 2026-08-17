@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import { compareJa } from "../utils/sortJa";
+import { compareTeacherNames } from "../utils/teacherKana";
 import { getSlotTeachers } from "../utils/biweekly";
 
 // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
 // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
 // それ以外の教員は slots.subj を教科マスター (名前 / 別名) と照合し、
 // 最も多く担当している教科を primary として振り分ける。
-export function useTeacherGroups({ slots, partTimeStaff, subjects, search }) {
+export function useTeacherGroups({ slots, partTimeStaff, subjects, search, teacherKana }) {
   return useMemo(() => {
     const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
 
@@ -73,9 +73,12 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search }) {
       }
     }
 
-    staffGroup.sort(compareJa);
-    for (const arr of bySubject.values()) arr.sort(compareJa);
-    other.sort(compareJa);
+    // グループ内はよみのあいうえお順 (漢字は読み順に並べられないため、
+    // よみ未設定の講師はグループ内の末尾で従来どおりの文字列順)。
+    const cmp = compareTeacherNames(teacherKana);
+    staffGroup.sort(cmp);
+    for (const arr of bySubject.values()) arr.sort(cmp);
+    other.sort(cmp);
 
     // 表示順: バイト → 英数国理社 → それ以外の教科 → その他
     const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
@@ -108,5 +111,5 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search }) {
         .filter((g) => g.teachers.length > 0);
     }
     return groups;
-  }, [slots, partTimeStaff, subjects, search]);
+  }, [slots, partTimeStaff, subjects, search, teacherKana]);
 }

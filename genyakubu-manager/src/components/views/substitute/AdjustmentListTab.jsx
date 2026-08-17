@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
-import { sortJa } from "../../../utils/sortJa";
+import { sortTeacherNames } from "../../../utils/teacherKana";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
@@ -118,6 +118,7 @@ export function AdjustmentListTab({
   isAdmin,
   partTimeStaff = [],
   subjects = [],
+  teacherKana = {},
   onDel,
   onJumpToDate,
 }) {
@@ -143,11 +144,11 @@ export function AdjustmentListTab({
     slots.forEach((s) => {
       for (const t of getSlotTeachers(s)) set.add(t);
     });
-    return sortJa([...set]);
-  }, [slots]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, teacherKana]);
   const teacherGroups = useMemo(
-    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
-    [allTeachers, slots, partTimeStaff, subjects],
+    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects, teacherKana }),
+    [allTeachers, slots, partTimeStaff, subjects, teacherKana],
   );
 
   const filtered = useMemo(() => {

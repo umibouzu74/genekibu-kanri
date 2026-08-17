@@ -54,6 +54,7 @@ export function Dashboard({
   sessionOverrides = [],
   activeTimetableId,
   partTimeStaff,
+  teacherKana = {},
   subjects,
   subjectCategories,
   teacherSubjects,
@@ -173,6 +174,7 @@ export function Dashboard({
           timetables={timetables || []}
           activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff || []}
+          teacherKana={teacherKana}
           subjects={subjects || []}
           subs={subs}
           saveSubs={saveSubs || (() => {})}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, dateToDay, sortSlots as sortS, DAY_COLOR as DC } from "../../data";
 import { S } from "../../styles/common";
 import { getSlotTeachers } from "../../utils/biweekly";
-import { sortJa } from "../../utils/sortJa";
+import { sortTeacherNames } from "../../utils/teacherKana";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -30,6 +30,7 @@ export function AbsenceWorkflowView({
   displayCutoff,
   partTimeStaff,
   subjects,
+  teacherKana = {},
   timetables,
   saveSubs,
   saveAdjustments,
@@ -113,8 +114,8 @@ export function AbsenceWorkflowView({
       for (const t of getSlotTeachers(s)) set.add(t);
     }
     for (const p of partTimeStaff || []) set.add(p.name);
-    return sortJa([...set]);
-  }, [slots, partTimeStaff]);
+    return sortTeacherNames([...set], teacherKana);
+  }, [slots, partTimeStaff, teacherKana]);
 
   // 対象日のコマ群
   const daySlots = useMemo(() => {
@@ -458,6 +459,7 @@ export function AbsenceWorkflowView({
         absentSlotIds={absentSlotIds}
         partTimeStaff={partTimeStaff}
         subjects={subjects}
+        teacherKana={teacherKana}
         biweeklyAnchors={biweeklyAnchors}
         holidays={holidays}
         examPeriods={examPeriods}

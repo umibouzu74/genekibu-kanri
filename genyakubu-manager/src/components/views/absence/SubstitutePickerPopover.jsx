@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { splitTeacherField } from "../../../utils/biweekly";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
-import { sortJa } from "../../../utils/sortJa";
+import { sortTeacherNames } from "../../../utils/teacherKana";
 import { pickSubjectId } from "../../../utils/subjectMatch";
 import {
   biweeklyActiveTeacher,
@@ -39,6 +39,7 @@ export function SubstitutePickerPopover({
   examPeriods,
   partTimeStaff,
   subjects,
+  teacherKana = {},
   daySlots,
   currentSubstitute,
   currentStatus,
@@ -101,18 +102,19 @@ export function SubstitutePickerPopover({
   }, [daySlots, slot.teacher]);
 
   const primary = useMemo(
-    () => sortJa(staffSubjectMatch.map((s) => s.name)),
-    [staffSubjectMatch]
+    () => sortTeacherNames(staffSubjectMatch.map((s) => s.name), teacherKana),
+    [staffSubjectMatch, teacherKana]
   );
   const list = useMemo(() => {
     if (!showAll) return primary;
-    const rest = sortJa(
+    const rest = sortTeacherNames(
       [
         ...new Set([...allStaff.map((s) => s.name), ...dayTeachers]),
-      ].filter((n) => !primary.includes(n) && n !== slot.teacher)
+      ].filter((n) => !primary.includes(n) && n !== slot.teacher),
+      teacherKana
     );
     return [...primary, ...rest];
-  }, [showAll, primary, allStaff, dayTeachers, slot.teacher]);
+  }, [showAll, primary, allStaff, dayTeachers, slot.teacher, teacherKana]);
 
   // showAll 切替などで候補が変わったらフォーカスをリセット (範囲外参照防止)。
   useEffect(() => {
