@@ -518,3 +518,215 @@ describe("buildReflectionPlan: 未承認の問題の警告", () => {
     expect(plan.warnings.some((w) => w.includes("未承認の問題"))).toBe(false);
   });
 });
+
+// ─── 部分反映 (学年・曜日を選んだ範囲だけ反映する) ──────────────────
+// 一番の勘所は「**範囲外の既存コマが消えないこと**」。反映の突き合わせは
+// 「下書きに無い既存コマは削除」なので、下書きだけ絞ると範囲外まで消える。
+describe("部分反映 (scope)", () => {
+  // 中3 (月・火) + 中2 (火・土) の 2 学年ぶんの下書き
+  function makeScopeProject() {
+    const p = makeProject();
+    p.tabs[0].days = ["月", "火", "土"];
+    p.tabs[0].schedule[makeCellKey("土", 1, 1)] = { subj: "国語", teacher: "堀上" };
+    p.tabs.push({
+      id: 2,
+      name: "中2",
+      grade: "中2",
+      classes: [{ id: 1, label: "S", room: "601" }],
+      days: ["火", "土"],
+      periodIds: [1, 2],
+      schedule: {
+        [makeCellKey("火", 1, 1)]: { subj: "社会", teacher: "半田" },
+        [makeCellKey("土", 1, 1)]: { subj: "理科", teacher: "半田" },
+      },
+    });
+    return p;
+  }
+
+  it("曜日で絞ると、その曜日の下書きだけが drafts に入る", () => {
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "new",
+      name: "土曜のみ",
+      scope: { days: ["土"] },
+    });
+    expect(plan.ok).toBe(true);
+    expect(plan.drafts.every((d) => d.day === "土")).toBe(true);
+    expect(plan.drafts).toHaveLength(2); // 中3 国語 + 中2 理科
+  });
+
+  it("学年で絞ると、その学年の下書きだけが drafts に入る", () => {
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "new",
+      name: "中2のみ",
+      scope: { grades: ["中2"] },
+    });
+    expect(plan.drafts.every((d) => d.grade === "中2")).toBe(true);
+    expect(plan.drafts).toHaveLength(2);
+  });
+
+  it("学年 × 曜日は AND", () => {
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "new",
+      name: "中2の土曜",
+      scope: { grades: ["中2"], days: ["土"] },
+    });
+    expect(plan.drafts).toHaveLength(1);
+    expect(plan.drafts[0]).toMatchObject({ day: "土", grade: "中2", subj: "理科" });
+  });
+
+  it("範囲に該当するセルが無ければ、範囲を書いたエラーで止める", () => {
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "new",
+      name: "x",
+      scope: { days: ["水"] },
+    });
+    expect(plan.ok).toBe(false);
+    expect(plan.errors.join()).toContain("水曜");
+  });
+
+  it("scope 未指定なら従来どおりプロジェクト全体", () => {
+    const p = makeScopeProject();
+    const all = buildReflectionPlan(p, { mode: "new", name: "x" });
+    const empty = buildReflectionPlan(p, { mode: "new", name: "x", scope: {} });
+    expect(empty.drafts).toEqual(all.drafts);
+    expect(all.drafts).toHaveLength(5);
+  });
+
+  // ── 置き換えモードの安全性 ────────────────────────────────────────
+  const TT = [{ id: 1, name: "現行", type: "regular", startDate: null, endDate: null, grades: [] }];
+  // 置き換え先には「範囲外」の月曜コマと、範囲内の土曜コマが入っている
+  const SLOTS = [
+    { id: 10, day: "月", time: "18:00-18:45", grade: "中3", cls: "S", room: "501", subj: "数学", teacher: "半田", note: "", timetableId: 1 },
+    { id: 11, day: "土", time: "18:00-18:45", grade: "中3", cls: "S", room: "501", subj: "古い科目", teacher: "誰か", note: "", timetableId: 1 },
+    { id: 12, day: "土", time: "18:55-19:40", grade: "中3", cls: "A", room: "502", subj: "消える", teacher: "誰か", note: "", timetableId: 1 },
+    // 下書きに無い月曜のコマ。範囲を絞れば残り、絞らなければ消える
+    { id: 13, day: "月", time: "20:40-20:55", grade: "中3", cls: "S", room: "501", subj: "補習", teacher: "誰か", note: "", timetableId: 1 },
+  ];
+
+  it("置き換えで範囲外の既存コマを消さない (最重要)", () => {
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "replace",
+      name: "現行",
+      scope: { days: ["土"], grades: ["中3"] },
+    });
+    const out = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1, scope: { days: ["土"], grades: ["中3"] } },
+      { timetables: TT, slots: SLOTS }
+    );
+    // 月曜のコマは範囲外なので手つかずで残る — 下書きに無い id 13 も含めて
+    const monday = out.slots.find((s) => s.id === 10);
+    expect(monday).toBeDefined();
+    expect(monday.subj).toBe("数学");
+    const notInDraft = out.slots.find((s) => s.id === 13);
+    expect(notInDraft).toBeDefined();
+    expect(notInDraft.subj).toBe("補習");
+    expect(out.untouchedCount).toBe(2);
+  });
+
+  it("範囲内の既存コマは従来どおり id を保って上書き / 不要分は削除される", () => {
+    const scope = { days: ["土"], grades: ["中3"] };
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "replace",
+      name: "現行",
+      scope,
+    });
+    const out = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1, scope },
+      { timetables: TT, slots: SLOTS }
+    );
+    // 土曜 1限 S は位置が一致するので id 11 を引き継いで中身が入れ替わる
+    const kept = out.slots.find((s) => s.id === 11);
+    expect(kept).toMatchObject({ day: "土", subj: "国語", teacher: "堀上" });
+    // 下書きに無い土曜 2限 A (id 12) は削除される
+    expect(out.slots.some((s) => s.id === 12)).toBe(false);
+    expect(out.removedCount).toBe(1);
+  });
+
+  it("絞らない置き換えは従来どおり (範囲外という概念が無い)", () => {
+    const p = makeScopeProject();
+    const plan = buildReflectionPlan(p, { mode: "replace", name: "現行" });
+    const out = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1 },
+      { timetables: TT, slots: SLOTS }
+    );
+    expect(out.untouchedCount).toBe(0);
+    // 下書きに無い月曜のコマ (id 13) は、絞らなければ従来どおり消える
+    expect(out.slots.some((s) => s.id === 13)).toBe(false);
+    // 下書きと一致する月曜のコマ (id 10) は id を保って残る
+    expect(out.slots.some((s) => s.id === 10)).toBe(true);
+  });
+
+  it("差分プレビューも同じ範囲で絞る (触らないコマを削除として見せない)", () => {
+    const scope = { days: ["土"], grades: ["中3"] };
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "replace",
+      name: "現行",
+      scope,
+    });
+    const diff = diffReflection(plan.drafts, SLOTS, 1, scope);
+    // 月曜の id 10 は削除に出てはいけない
+    expect(diff.removed.some((r) => r.day === "月")).toBe(false);
+    expect(diff.removed).toHaveLength(1); // 土曜 2限 A だけ
+
+    // 範囲を渡し忘れると月曜まで削除として出る (= 渡す必要がある証明)
+    const wrong = diffReflection(plan.drafts, SLOTS, 1);
+    expect(wrong.removed.some((r) => r.day === "月")).toBe(true);
+  });
+
+  it("プレビューの削除件数と実際の削除件数が一致する", () => {
+    const scope = { days: ["土"], grades: ["中3"] };
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "replace",
+      name: "現行",
+      scope,
+    });
+    const diff = diffReflection(plan.drafts, SLOTS, 1, scope);
+    const out = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1, scope },
+      { timetables: TT, slots: SLOTS }
+    );
+    expect(diff.removed.length).toBe(out.removedCount);
+    expect(diff.added.length).toBe(out.addedCount);
+  });
+
+  it("コマの総数が保存される (範囲外 + 残り + 追加)", () => {
+    const scope = { days: ["土"], grades: ["中3"] };
+    const plan = buildReflectionPlan(makeScopeProject(), {
+      mode: "replace",
+      name: "現行",
+      scope,
+    });
+    const out = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1, scope },
+      { timetables: TT, slots: SLOTS }
+    );
+    expect(out.slots).toHaveLength(
+      SLOTS.length - out.removedCount + out.addedCount
+    );
+  });
+
+  it("範囲外だけで起きている未承認の重なりは警告しない", () => {
+    const p = makeScopeProject();
+    // 月曜 1限に同じ講師をもう 1 コマ置いて、月曜だけで重なりを作る
+    p.tabs[0].schedule[makeCellKey("月", 1, 2)] = { subj: "数学", teacher: "半田" };
+    const conflicts = computeConflicts(p).list;
+    expect(conflicts.some((c) => c.day === "月")).toBe(true);
+
+    // 土曜だけ反映するなら、月曜の重なりは持ち込まれない
+    const scoped = buildReflectionPlan(p, {
+      mode: "new",
+      name: "x",
+      scope: { days: ["土"] },
+    });
+    expect(scoped.warnings.join()).not.toContain("未承認の問題");
+
+    // 絞らなければ従来どおり警告する
+    const all = buildReflectionPlan(p, { mode: "new", name: "x" });
+    expect(all.warnings.join()).toContain("未承認の問題");
+  });
+});

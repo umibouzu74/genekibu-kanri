@@ -13,6 +13,13 @@ import {
   diffReflection,
   projectGrades,
 } from "./reflect";
+import {
+  countUntouchedSlots,
+  describeScope,
+  isScopeLimited,
+  normalizeScope,
+} from "./reflectScope";
+import { ReflectScopePicker } from "./ReflectScopePicker";
 
 // 差分リストの最大表示行数 (超過分は「…他 n 件」)
 const DIFF_LINE_LIMIT = 12;
@@ -88,7 +95,23 @@ export function ReflectDialog({
   // 全学年 (timetable.grades 空 = 全学年マッチ)。1 つの時間割で全学年を
   // まかなう運用が普通なので、絞るのは明示的な選択にする
   const [limitGrades, setLimitGrades] = useState(false);
-  const grades = useMemo(() => projectGrades(project), [project]);
+  // 反映する範囲 (学年 × 曜日)。既定は絞らない = プロジェクト全体
+  const [limitScope, setLimitScope] = useState(false);
+  const [rawScope, setRawScope] = useState({ days: [], grades: [] });
+  // タブを消した後に古い選択が残ると「何も反映されない理由が分からない」
+  // 状態になるので、プロジェクトの語彙に正規化してから使う
+  const scope = useMemo(
+    () => (limitScope ? normalizeScope(rawScope, project) : { days: [], grades: [] }),
+    [limitScope, rawScope, project]
+  );
+  const scoped = isScopeLimited(scope);
+  // 「対象学年を限定する」で入れる学年。**範囲を学年で絞ったらそれに従う** —
+  // 中2 だけ反映したのに timetable.grades に中3 が入ると、コマの無い学年を
+  // 担当する時間割になってしまう (日付ベースの表示・期切替の点検が狂う)
+  const grades = useMemo(
+    () => (scope.grades.length > 0 ? scope.grades : projectGrades(project)),
+    [scope.grades, project]
+  );
 
   const useSwitch = mode === "new" && switchTerm;
 
@@ -104,8 +127,9 @@ export function ReflectDialog({
       if (limitGrades && grades.length > 0) base.grades = grades;
       if (switchTerm) base.closeTimetableId = Number(closeId);
     }
+    if (scoped) base.scope = scope;
     return base;
-  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId]);
+  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId, scoped, scope]);
   const plan = useMemo(() => buildReflectionPlan(project, opts), [project, opts]);
   // 期切替の計画 (旧時間割に入れる終了日と、その検証)
   const switchPlan = useMemo(
@@ -132,13 +156,20 @@ export function ReflectDialog({
         : 0,
     [mode, slots, targetId]
   );
+  // 範囲を絞った置き換えで「触らない」既存コマ数。削除件数だけ見せると
+  // 範囲外まで消えるように読めるので、守られる件数を明示する
+  const untouchedCount = useMemo(
+    () =>
+      mode === "replace" ? countUntouchedSlots(slots, Number(targetId), scope) : 0,
+    [mode, slots, targetId, scope]
+  );
   // 置き換え時の差分プレビュー (変わらず / 変更 / 追加 / 削除)
   const diff = useMemo(
     () =>
       mode === "replace" && plan.drafts.length > 0
-        ? diffReflection(plan.drafts, slots, Number(targetId))
+        ? diffReflection(plan.drafts, slots, Number(targetId), scope)
         : null,
-    [mode, plan.drafts, slots, targetId]
+    [mode, plan.drafts, slots, targetId, scope]
   );
 
   const execute = async () => {
@@ -149,7 +180,9 @@ export function ReflectDialog({
       const ok = await confirm({
         title: "期切替として反映",
         message:
-          `・新しい時間割「${(opts.name || "").trim()}」を ${startDate} から開始します（${total} コマ）\n` +
+          `・新しい時間割「${(opts.name || "").trim()}」を ${startDate} から開始します（${total} コマ` +
+          (scoped ? ` / ${describeScope(scope)} のみ` : "") +
+          `）\n` +
           (switchPlan.changesEndDate
             ? `・「${switchPlan.target?.name ?? "?"}」の終了日を ${switchPlan.endDate} に設定します` +
               `（コマは消しません。切替日より前の日付では従来どおり表示され、代行・調整の紐付けも残ります）\n`
@@ -170,13 +203,16 @@ export function ReflectDialog({
       const kept = diff ? diff.unchanged + diff.changed.length : 0;
       const lost = diff ? diff.removed.length : replaceTargetCount;
       const ok = await confirm({
-        title: "時間割の置き換え",
+        title: scoped ? `時間割の置き換え（${describeScope(scope)} のみ）` : "時間割の置き換え",
         message:
-          `「${target?.name ?? "?"}」の ${replaceTargetCount} コマを、下書きの ${total} コマに差し替えます。\n` +
+          (scoped
+            ? `「${target?.name ?? "?"}」の${describeScope(scope)}を、下書きの ${total} コマに差し替えます。\n` +
+              `・範囲外の ${untouchedCount} コマは触りません（削除もされません）\n`
+            : `「${target?.name ?? "?"}」の ${replaceTargetCount} コマを、下書きの ${total} コマに差し替えます。\n`) +
           `・同じ位置 (曜日・時刻・学年・クラス) の ${kept} コマは同じコマとして引き継ぎます` +
           `（代行・調整・回数補正・授業セットの紐付けは保たれます）\n` +
           (lost > 0
-            ? `・下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セットは無効になります\n`
+            ? `・${scoped ? "範囲内で" : ""}下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セットは無効になります\n`
             : "・削除されるコマはありません\n") +
           `\nよろしいですか？`,
         okLabel: "置き換える",
@@ -202,14 +238,22 @@ export function ReflectDialog({
       timetables.find((t) => t.id === result.timetableId)?.name ||
       "";
     saveProject?.(
-      (p) => addSnapshot(p, `⤴ 反映: ${reflectedName || "本体"}`, Date.now()),
+      (p) =>
+        addSnapshot(
+          p,
+          `⤴ 反映: ${reflectedName || "本体"}${scoped ? ` (${describeScope(scope)})` : ""}`,
+          Date.now()
+        ),
       { atomic: true }
     );
     toasts.success(
-      (mode === "replace"
-        ? `置き換えました（引き継ぎ ${result.keptCount}（うち内容変更 ${result.changedCount}）` +
-          ` / 追加 ${result.addedCount} / 削除 ${result.removedCount} コマ）`
-        : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`) +
+      (scoped ? `【${describeScope(scope)} のみ】` : "") +
+        (mode === "replace"
+          ? `置き換えました（引き継ぎ ${result.keptCount}（うち内容変更 ${result.changedCount}）` +
+            ` / 追加 ${result.addedCount} / 削除 ${result.removedCount} コマ` +
+            (result.untouchedCount > 0 ? ` / 範囲外 ${result.untouchedCount} コマは据え置き` : "") +
+            `）`
+          : `時間割「${opts.name}」として ${result.addedCount} コマを反映しました`) +
         (result.closed
           ? `／「${result.closed.name}」は ${result.closed.endDate} で終了`
           : "") +
@@ -378,6 +422,18 @@ export function ReflectDialog({
             </span>
           </label>
         )}
+
+        {/* 反映する範囲 (学年 × 曜日)。2 モードどちらでも使える */}
+        <ReflectScopePicker
+          project={project}
+          scope={rawScope}
+          onChange={setRawScope}
+          effectiveScope={scope}
+          limited={limitScope}
+          onLimitedChange={setLimitScope}
+          inScopeCount={total}
+          untouchedCount={mode === "replace" ? untouchedCount : null}
+        />
 
         {/* 表示の追従 (集計ベースのビュー)。反映の 2 モードどちらでも使う */}
         <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
