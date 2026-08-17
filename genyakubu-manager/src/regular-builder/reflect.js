@@ -14,6 +14,12 @@ import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
 import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
 import { gradeMatchesTimetable } from "../utils/timetable";
+import {
+  describeScope,
+  filterConflictsByScope,
+  isScopeLimited,
+  scopeMatcher,
+} from "./reflectScope";
 
 // 警告文で使う問題の種類名 (表示順も兼ねる)
 const CONFLICT_TYPE_LABELS = [
@@ -43,7 +49,11 @@ export function projectGrades(project) {
  * @param {object} project RegularProject
  * @param {{mode: "new"|"replace", name?: string, startDate?: string|null,
  *          endDate?: string|null, targetTimetableId?: number,
- *          grades?: string[]}} opts
+ *          grades?: string[],
+ *          scope?: {days?: string[], grades?: string[]}}} opts
+ *   scope は反映する範囲 (学年 × 曜日 の AND、空 = 全体)。範囲外のセルは
+ *   drafts に入らない。置き換えでは applyReflection / diffReflection が
+ *   同じ範囲で既存コマ側も絞り、範囲外のコマを削除対象から外す。
  * @returns {{
  *   ok: boolean,
  *   errors: string[],        // 反映をブロックする問題
@@ -62,7 +72,13 @@ export function buildReflectionPlan(project, opts) {
     errors.push("時間割の名前を入力してください");
   }
 
-  const entries = resolveAllEntries(project);
+  const inScope = scopeMatcher(opts.scope);
+  const scoped = isScopeLimited(opts.scope);
+  // 範囲は学年 (タブの grade) × 曜日。既存コマ側にも同じ述語を当てるため、
+  // タブ参照ではなく {day, grade} で判定する
+  const entries = resolveAllEntries(project).filter((e) =>
+    inScope({ day: e.day, grade: (e.tab.grade || "").trim() })
+  );
   const badPeriods = new Set();
   let skippedNoSubj = 0;
 
@@ -106,16 +122,22 @@ export function buildReflectionPlan(project, opts) {
     warnings.push(`教科が未入力のセル ${skippedNoSubj} 件は反映されません`);
   }
   if (drafts.length === 0) {
-    errors.push("反映できるコマがありません (教科の入ったセルが必要です)");
+    errors.push(
+      scoped
+        ? `「${describeScope(opts.scope)}」に反映できるコマがありません (範囲を広げるか、教科の入ったセルを増やしてください)`
+        : "反映できるコマがありません (教科の入ったセルが必要です)"
+    );
   }
 
   // 未承認の重なり・NG。反映はブロックしない (意図した重なりもあるため) が、
   // 承認せずに出すと本体側にもそのまま重複が載る。⚠ 問題バッジを見ないまま
   // 反映できてしまう導線をここで塞ぐ
-  const { active } = buildConflictView(
+  const { active: allActive } = buildConflictView(
     computeConflicts(project).list,
     project.approvedConflicts
   );
+  // 範囲外だけで起きている重なりはこの反映では持ち込まれないので挙げない
+  const active = filterConflictsByScope(allActive, project, opts.scope);
   if (active.length > 0) {
     const counts = new Map();
     for (const c of active) counts.set(c.type, (counts.get(c.type) || 0) + 1);
@@ -382,6 +404,7 @@ export function applyReflection(plan, opts, { timetables, slots }) {
       removedCount: 0,
       keptCount: 0,
       changedCount: 0,
+      untouchedCount: 0,
       closed,
     };
   }
@@ -401,8 +424,14 @@ export function applyReflection(plan, opts, { timetables, slots }) {
       : t
   );
 
-  const baseSlots = slots.filter((s) => (s.timetableId ?? 1) !== timetableId);
-  const existing = slots.filter((s) => (s.timetableId ?? 1) === timetableId);
+  // 範囲を絞った反映では、**下書きを絞るだけでは足りない**。突き合わせは
+  // 「下書きに無い既存コマは削除」なので、範囲外のコマまで削除に分類されて
+  // 消えてしまう。範囲外は突き合わせに掛けず、そのまま持ち越す
+  const inScope = scopeMatcher(opts.scope);
+  const ofTimetable = (s) => (s.timetableId ?? 1) === timetableId;
+  const baseSlots = slots.filter((s) => !ofTimetable(s));
+  const untouched = slots.filter((s) => ofTimetable(s) && !inScope(s));
+  const existing = slots.filter((s) => ofTimetable(s) && inScope(s));
   const match = matchReflection(plan.drafts, existing);
 
   // 位置の一致したコマは id を保ったまま中身だけ下書きで上書きする。
@@ -418,12 +447,14 @@ export function applyReflection(plan, opts, { timetables, slots }) {
 
   return {
     timetables: newTimetables,
-    slots: [...baseSlots, ...keptSlots, ...newSlots],
+    slots: [...baseSlots, ...untouched, ...keptSlots, ...newSlots],
     timetableId,
     addedCount: newSlots.length,
     removedCount: match.removed.length,
     keptCount: keptSlots.length,
     changedCount: match.changed.length,
+    // 範囲外なので突き合わせに掛けなかったコマ (確認ダイアログで見せる)
+    untouchedCount: untouched.length,
   };
 }
 
@@ -572,14 +603,18 @@ export function matchReflection(drafts, existing) {
  * @param {object[]} drafts buildReflectionPlan の drafts
  * @param {import("../types").Slot[]} slots 本体の全コマ
  * @param {number} timetableId 置き換え先の時間割 id
+ * @param {{days?: string[], grades?: string[]}} [scope] 反映する範囲。
+ *   applyReflection と**同じ範囲を渡すこと** — 範囲外のコマを既存側から
+ *   外さないと、実際には触らないコマが「削除」としてプレビューに出る
  * @returns {{unchanged: number,
  *   changed: {before: object, after: object}[],
  *   added: object[], removed: object[]}}
  */
-export function diffReflection(drafts, slots, timetableId) {
+export function diffReflection(drafts, slots, timetableId, scope) {
+  const inScope = scopeMatcher(scope);
   const match = matchReflection(
     drafts,
-    slots.filter((s) => (s.timetableId ?? 1) === timetableId)
+    slots.filter((s) => (s.timetableId ?? 1) === timetableId && inScope(s))
   );
   return {
     unchanged: match.unchanged.length,
