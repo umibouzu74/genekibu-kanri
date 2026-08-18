@@ -1,13 +1,13 @@
 import { DAYS } from "../constants/schools";
-import { expandClassSetSlotIds } from "./classSets";
+import { expandClassSetSlotIds, unitKey } from "./classSets";
 
 // ─── ClassSet ユニット / 提案ロジック ──────────────────────────────
 // ClassSetManager (UI) と単体テストの両方から import される。
 // UI からドメインロジックを剥がし、純粋関数として独立させる目的。
 
-/** クラスユニットのキー: (学年, 曜日). */
+/** クラスユニットのキー: (学年, 曜日). 形式は utils/classSets の unitKey と共通。 */
 export function unitKeyOf(slot) {
-  return `${slot.grade}|${slot.day}`;
+  return unitKey(slot.grade, slot.day);
 }
 
 /**
@@ -77,7 +77,7 @@ export function buildSuggestions(allUnits, classSets, allSlots) {
   const gradeCohortDays = new Map();
   const freeKeys = new Set(freeUnits.map((u) => u.key));
   for (const s of allSlots) {
-    const k = `${s.grade}|${s.day}`;
+    const k = unitKeyOf(s);
     if (!freeKeys.has(k)) continue;
     const cohortId = (s.cls && s.cls.trim()) || s.room || "";
     if (!gradeCohortDays.has(s.grade)) gradeCohortDays.set(s.grade, new Map());

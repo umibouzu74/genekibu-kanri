@@ -18,6 +18,7 @@
 import type {
   BiweeklyAnchor,
   ClassSet,
+  ClassSetUnit,
   CohortCutoff,
   CutoffGroup,
   DaySchedule,
@@ -187,7 +188,7 @@ export function isExamPeriod(x: unknown): x is ExamPeriod {
 
 // 授業セットは units 形式 (学年 × 曜日) と旧 slotIds 形式のどちらでもよい。
 // どちらも無い / 両方空、は「対象が無いセット」なので不正とする。
-export function isClassSetUnit(x: unknown): boolean {
+export function isClassSetUnit(x: unknown): x is ClassSetUnit {
   return isObject(x) && isString(x.grade) && isString(x.day);
 }
 

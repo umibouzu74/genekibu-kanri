@@ -15,6 +15,10 @@
 // 回数カウント (sessionCount) は「その日に有効な時間割のコマ」だけを
 // 数え、起点も所属時間割の開始日で決まるので、旧期のコマはセットに
 // 入っていても新期のカウントには寄与しない。
+// 逆に **同じ日に有効な時間割が 2 つあって、どちらにも同じ (学年, 曜日) の
+// コマがある** 場合は 1 本のカウンタにまとまる。これは期切替の設定漏れ
+// (旧期に終了日が入っていない) と同じ状態で、反映ダイアログが
+// 「切替日以降も有効な時間割が他にあります」と警告する側の問題。
 //
 // 純粋関数のみ。UI (ClassSetManager) / 回数計算 (sessionCount) /
 // 期切替 (regular-builder/reflect) / 時間割複製 (useTimetablesCrud) の
@@ -33,20 +37,6 @@ export function isLegacySet(cs) {
 /** {grade, day} の一意キー。unitKeyOf (classSetSuggestions) と同形式。 */
 export function unitKey(grade, day) {
   return `${grade}|${day}`;
-}
-
-/** units を正規化 (grade/day が揃っているものだけ・重複除去)。 */
-export function normalizeUnits(units) {
-  const out = [];
-  const seen = new Set();
-  for (const u of units || []) {
-    if (!u || !u.grade || !u.day) continue;
-    const k = unitKey(u.grade, u.day);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ grade: u.grade, day: u.day });
-  }
-  return out;
 }
 
 /** slots から units 形式の単位 ({grade, day}) を導出する (旧セットの変換用)。 */

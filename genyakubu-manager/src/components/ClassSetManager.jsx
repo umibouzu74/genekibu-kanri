@@ -3,6 +3,7 @@ import { ALL_GRADES, DAYS, DEPT_COLOR, gradeToDept } from "../data";
 import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
+import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import {
@@ -15,6 +16,7 @@ import {
 import {
   expandClassSetSlotIds,
   isLegacySet,
+  unitKey,
   unitsFromSlotIds,
 } from "../utils/classSets";
 
@@ -49,6 +51,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
 
   const toasts = useToasts();
+  const confirm = useConfirm();
   const removeClassSetWithUndo = useRemoveWithUndo({
     list: classSets,
     save: onSave,
@@ -163,22 +166,22 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
 
   // 選択中のユニットを他セットから剥がす (各コマは 0 or 1 セット)。
   // units 形式は (学年, 曜日) 単位、旧 slotIds 形式はコマ id 単位で外す。
-  const detachUnits = (sets, unitKeys, keepId) =>
-    sets
+  const detachUnits = (sets, unitKeys, keepId) => {
+    const dropIds = new Set(
+      allUnits
+        .filter((u) => unitKeys.includes(u.key))
+        .flatMap((u) => u.slots.map((s) => s.id))
+    );
+    return sets
       .map((cs) => {
         if (cs.id === keepId) return cs;
         if (isLegacySet(cs)) {
-          const dropIds = new Set(
-            allUnits
-              .filter((u) => unitKeys.includes(u.key))
-              .flatMap((u) => u.slots.map((s) => s.id))
-          );
           return { ...cs, slotIds: cs.slotIds.filter((id) => !dropIds.has(id)) };
         }
         return {
           ...cs,
           units: (cs.units || []).filter(
-            (u) => !unitKeys.includes(`${u.grade}|${u.day}`)
+            (u) => !unitKeys.includes(unitKey(u.grade, u.day))
           ),
         };
       })
@@ -187,6 +190,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
           cs.id === keepId ||
           (isLegacySet(cs) ? cs.slotIds.length > 0 : (cs.units || []).length > 0)
       );
+  };
 
   const handleSaveSet = () => {
     if (selectedUnits.length < 1) {
@@ -256,19 +260,45 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     }));
     onSave([...classSets, ...added]);
     toasts.success(
-      `${added.map((cs) => `「${cs.label}」`).join("")} を登録しました`
+      `${added.map((cs) => `「${cs.label}」`).join(" / ")} を登録しました`
     );
   };
 
-  // 旧形式 (コマ id 直参照) を units 形式へ。現在のコマから (学年, 曜日) を
-  // 逆算するだけなので、変換前に一覧でユニットを確認できる。
-  const handleConvertLegacy = (cs) => {
+  // 旧形式 (コマ id 直参照) が指しているコマ数と、(学年, 曜日) へ変換した
+  // あとに含まれるコマ数。旧いセットが「その曜日の一部のクラスだけ」を
+  // 指している場合、変換すると同じ学年・曜日の他クラスまで入って第N回の
+  // 数え方が変わるので、画面と確認ダイアログの両方で件数を出す。
+  const legacyConversion = (cs) => {
     const units = unitsFromSlotIds(cs.slotIds, slots);
+    const idSet = new Set(cs.slotIds);
+    return {
+      units,
+      before: slots.filter((s) => idSet.has(s.id)).length,
+      after: expandClassSetSlotIds({ units }, slots).length,
+    };
+  };
+
+  const handleConvertLegacy = async (cs) => {
+    const { units, before, after } = legacyConversion(cs);
     if (units.length === 0) {
       toasts.error(
         `「${cs.label}」の対象コマが見つかりません（削除済みのコマだけを指しています）`
       );
       return;
+    }
+    if (after > before) {
+      const ok = await confirm({
+        title: "曜日ベースに変換",
+        message:
+          `「${cs.label}」を ${units.map((u) => `${u.grade} ${u.day}`).join("・")} ` +
+          `のセットにします。\n` +
+          `・対象が ${before} コマ → ${after} コマに増えます` +
+          `（同じ学年・曜日の他のクラスも同じセットに入ります）\n` +
+          `・第N回の数え方が変わる場合があります\n\n` +
+          `変換しますか？`,
+        okLabel: "変換する",
+      });
+      if (!ok) return;
     }
     onSave(
       classSets.map((x) =>
@@ -298,19 +328,20 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
         }}
       >
         <span style={{ fontWeight: 800, fontSize: 14 }}>授業セット</span>
-        <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: "#888", marginTop: 2, lineHeight: 1.7 }}>
           「同じ生徒が通う一続きの授業」を <strong>学年 × 曜日</strong> で
-          まとめます (例: 中3 の 火・木)。まとめたコマには共通の授業回数
-          カウンタ (第①回, 第②回…) が振られます。進度は内部で (教科, クラス)
-          別に独立カウントされるため、合同コマや並行する別クラスの同教科は
-          混ざりません。曜日で書くので<strong>期切替 (1学期→2学期) をしても
-          作り直し不要</strong>です。
-          <br />
-          未登録のコマは既定の「コース」（終講日コホートと同じ単位＝高1・2 は
-          学校の英数、<strong>中学は学年の平日ぜんぶで 1 コース</strong>）として
-          自動集計されます。<strong>中3 のように週内で 火木コース / 水金コースへ
-          分かれる学年は、分けてセット登録しないと水曜の第1回が火曜の続き
-          (第2回) として数えられます。</strong>
+          まとめます (例: 中3 の 火・木)。まとめたコマには共通の授業回数カウンタ
+          (第①回, 第②回…) が振られます。進度は内部で (教科, クラス) 別に
+          独立カウントされるので、合同コマや並行する別クラスの同教科は
+          混ざりません。曜日で書くため
+          <strong>期切替 (1学期 → 2学期) をしても作り直し不要</strong>です。
+          <div style={{ marginTop: 4 }}>
+            未登録のコマは既定の「コース」（終講日コホートと同じ単位。高1・2 は
+            学校の英数、中学は<strong>学年の平日ぜんぶで 1 コース</strong>）として
+            自動集計されます。週内で火木コース / 水金コースのように分かれる学年は、
+            分けて登録しないと<strong>水曜の第1回が火曜の続き (第2回) として
+            数えられます</strong>。
+          </div>
         </div>
       </div>
 
@@ -361,9 +392,8 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
             const setSlots = slots.filter((s) => idSet.has(s.id));
             // 表示するユニット: units 形式は定義そのもの (対象コマが 0 でも
             // 「どの学年 × 曜日を指しているか」を出す)、旧形式は現存コマから逆算。
-            const setUnits = legacy
-              ? unitsFromSlotIds(cs.slotIds, slots)
-              : cs.units || [];
+            const conv = legacy ? legacyConversion(cs) : null;
+            const setUnits = legacy ? conv.units : cs.units || [];
             const dept = setUnits[0] ? gradeToDept(setUnits[0].grade) : null;
             const col = dept
               ? DEPT_COLOR[dept]
@@ -417,14 +447,14 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                         }}
                         title="コマ id を直接指しています。期切替で紐付けが切れます"
                       >
-                        旧形式 (コマID固定)
+                        旧形式 (コマ id 固定)
                       </span>
                     )}
                   </div>
                   <div style={{ fontSize: 10, color: "#666", lineHeight: 1.6 }}>
                     {setUnits.map((u) => (
                       <span
-                        key={`${u.grade}|${u.day}`}
+                        key={unitKey(u.grade, u.day)}
                         style={{
                           display: "inline-block",
                           marginRight: 8,
@@ -442,6 +472,12 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                     )}
                     {!legacy && setSlots.length === 0 && (
                       <span style={{ color: colors.danger }}> ※ 対象のコマがありません</span>
+                    )}
+                    {legacy && conv.after > conv.before && (
+                      <div style={{ color: "#8a6d1f", marginTop: 2 }}>
+                        ⚠ 変換すると対象が {conv.before} → {conv.after} コマに増えます
+                        （同じ学年・曜日の他のクラスも入ります）
+                      </div>
                     )}
                   </div>
                 </div>
@@ -509,7 +545,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
             週 4 日ある学年です。既定では<strong>平日ぜんぶで 1 コース</strong>として
             回数を数えるので、火木コース / 水金コースのように分かれている場合は
             ここで分けてください（分けないと水曜の第1回が火曜の続きになります）。
-            全曜日に同じ生徒が通うならこのままで構いません。
+            全曜日に同じ生徒が通う学年なら、分けずにこのままで構いません。
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {splitSuggestions.map((sug) => (
@@ -566,8 +602,16 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
           >
             💡 自動提案 ({suggestions.length}件)
           </div>
-          <div style={{ fontSize: 10, color: "#666", marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
             同じ (学年・クラス) が複数曜日に出現するパターンを検出しました。
+            {splitSuggestions.length > 0 && (
+              <>
+                <br />
+                上の「コース分けの候補」と同じ学年が出ている場合は、
+                <strong>どちらか一方だけ</strong>を登録してください
+                （まとめるか、分けるかの選択です）。
+              </>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {suggestions.slice(0, 30).map((sug) => (

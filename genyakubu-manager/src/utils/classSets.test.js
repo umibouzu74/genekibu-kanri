@@ -4,7 +4,6 @@ import {
   expandClassSetSlotIds,
   isLegacySet,
   isUnitBasedSet,
-  normalizeUnits,
   unitsFromSlotIds,
 } from "./classSets";
 
@@ -44,22 +43,6 @@ describe("形式の判定", () => {
   });
   it("units が空配列なら units 形式ではない", () => {
     expect(isUnitBasedSet({ id: 1, label: "x", units: [] })).toBe(false);
-  });
-});
-
-describe("normalizeUnits", () => {
-  it("grade/day の欠けたものを落とし重複を除く", () => {
-    const out = normalizeUnits([
-      { grade: "中3", day: "火" },
-      { grade: "中3", day: "火" },
-      { grade: "中3" },
-      null,
-      { grade: "中3", day: "木" },
-    ]);
-    expect(out).toEqual([
-      { grade: "中3", day: "火" },
-      { grade: "中3", day: "木" },
-    ]);
   });
 });
 
