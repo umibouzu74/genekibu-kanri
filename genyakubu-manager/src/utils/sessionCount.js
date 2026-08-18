@@ -44,14 +44,14 @@ function fmtDate(dt) {
 
 // slot.grade から、displayCutoff.groups 内の該当 group の startDate を引く。
 // 未設定 or 対象 group 未発見の場合は null。
+// グループの照合は表示フィルタ (isSlotBeyondCutoff) と同じ findGroupForGrade を
+// 使う。完全一致で引くと「中1-3」(土曜プレップ等) のような複合学年が
+// どのグループにも当たらず、表示は中1・2 の期間で効いているのに回数だけ
+// 出ない、という食い違いが起きる (2026-08-18 修正)。
 export function getGradeStartDate(grade, displayCutoff) {
   if (!displayCutoff || !Array.isArray(displayCutoff.groups)) return null;
-  for (const g of displayCutoff.groups) {
-    if (Array.isArray(g.grades) && g.grades.includes(grade)) {
-      return g.startDate || null;
-    }
-  }
-  return null;
+  const group = findGroupForGrade(grade, displayCutoff.groups);
+  return (group && group.startDate) || null;
 }
 
 // 学年グループ (表示期間設定) の「開講日 1 限をオリエン扱いにする」設定を引く。
@@ -251,6 +251,20 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
   }
 
   return parts[0] || slot.subj || null;
+}
+
+/**
+ * 対象日にそのコマが実施されるか (曜日・時間割の有効期間・休講・テスト期間・
+ * 特別時程の部分休講・単独教科隔週の B 週・開講日 1 限のオリエンを考慮)。
+ * 回数の起点 (開始日) には依存しないので、開始日が未設定でも判定できる。
+ * @param {object} slot
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @param {object} ctx computeSessionNumber と同じ ctx
+ * @returns {boolean}
+ */
+export function isSlotHeldOnDate(slot, dateStr, ctx) {
+  if (!slot || !dateStr || !ctx) return false;
+  return effectiveSubjectOnDay(slot, dateStr, ctx) != null;
 }
 
 // セット内スロット群の単一日における「対象教科 × 対象 cohort を実施する」

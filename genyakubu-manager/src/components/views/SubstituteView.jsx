@@ -328,6 +328,9 @@ export function SubstituteView({
           subs={subs}
           slots={slots}
           holidays={holidays}
+          examPeriods={examPeriods || []}
+          timetables={timetables || []}
+          displayCutoff={displayCutoff}
           ty={ty}
           tm={tm}
           fMonth={fMonth}

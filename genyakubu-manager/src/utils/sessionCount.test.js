@@ -401,6 +401,43 @@ describe("computeSessionNumber - 中学部開講日のオリエン (1 限スキ�
   });
 });
 
+describe("getGradeStartDate - 複合学年 (中1-3 など)", () => {
+  // 表示フィルタ (isSlotBeyondCutoff) は findGroupForGrade で「中1-3」を
+  // 中1・2 グループに展開して当てているので、回数の起点も同じ引き方にする。
+  // 完全一致で引いていた頃は、土曜プレップ (中1-3) だけ第N回が出なかった。
+  const dc = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: null },
+      { label: "高3", grades: ["高3"], startDate: "2026-04-10", date: null },
+    ],
+  };
+
+  it("複合学年でもグループ開始日を引ける", () => {
+    expect(getGradeStartDate("中1-3", dc)).toBe("2026-04-07");
+    expect(getGradeStartDate("中1", dc)).toBe("2026-04-07");
+  });
+
+  it("どのグループにも属さない学年は null のまま", () => {
+    expect(getGradeStartDate("附中", dc)).toBeNull();
+    expect(getGradeStartDate("高1高2", dc)).toBeNull();
+  });
+
+  it("複合学年のコマでも第N回が出る", () => {
+    // 2026-04-11 は土曜
+    const prep = makeSlot(90, "土", "18:30-20:00", "中1-3", { subj: "英語" });
+    const ctx = {
+      classSets: [],
+      allSlots: [prep],
+      displayCutoff: dc,
+      timetables: [],
+      isOffForGrade: NEVER_OFF,
+      biweeklyAnchors: [],
+    };
+    expect(computeSessionNumber(prep, "2026-04-11", ctx)).toBe(1);
+    expect(computeSessionNumber(prep, "2026-04-18", ctx)).toBe(2);
+  });
+});
+
 describe("isOrientationEnabledForGrade (学年グループ設定)", () => {
   it("未設定なら従来既定: 中学部 true / 高校部 false", () => {
     expect(isOrientationEnabledForGrade("中3", DISPLAY_CUTOFF)).toBe(true);

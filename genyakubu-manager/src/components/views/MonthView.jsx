@@ -16,7 +16,13 @@ import {
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
-import { isTimetableActiveForDate, isSlotBeyondCutoff, isEntireDayBeyondCutoff } from "../../utils/timetable";
+import {
+  isTimetableActiveForDate,
+  isSlotBeyondCutoff,
+  getCutoffGroupLabelsWithSlots,
+  getDayCutoffKind,
+} from "../../utils/timetable";
+import { cutoffShortText } from "../../constants/cutoffMessages";
 import {
   biweeklyDisplaySubject,
   isBiweekly,
@@ -192,6 +198,13 @@ export function MonthView({
     });
     return m;
   }, [ts]);
+  // 全日判定 (開講前 / 未確定) 用。講師で絞る前の全コマから、実際にコマを
+  // 持っている学年グループだけを対象にする (運用していない学年グループの
+  // 終了日が空だと、他が全部終わってもバナーが出ないため)。
+  const activeGroupLabels = useMemo(
+    () => getCutoffGroupLabelsWithSlots(slots, displayCutoff),
+    [slots, displayCutoff]
+  );
   const holMap = useMemo(() => {
     const m = {};
     holidays.forEach((h) => {
@@ -359,7 +372,8 @@ export function MonthView({
           const evActive = showSpecial ? specialEventsForDate(ds) : [];
           const hasEvent = evActive.length > 0;
           const isT = todayY === year && todayM === month && todayD === d;
-          const dayCutoff = isEntireDayBeyondCutoff(ds, displayCutoff);
+          const cutoffKind = getDayCutoffKind(ds, displayCutoff, { activeGroupLabels });
+          const dayCutoff = cutoffKind != null;
           const sl = isFullOff || dayCutoff
             ? []
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
@@ -533,7 +547,7 @@ export function MonthView({
                   <div
                     style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}
                   >
-                    未確定
+                    {cutoffShortText(cutoffKind)}
                   </div>
                 )
               ) : isFullOff ? (

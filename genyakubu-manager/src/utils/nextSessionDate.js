@@ -1,6 +1,6 @@
 import { fmtDate } from "../data";
 import { buildSessionCountMap } from "./sessionCount";
-import { isEntireDayBeyondCutoff } from "./timetable";
+import { getCutoffGroupLabelsWithSlots, isEntireDayBeyondCutoff } from "./timetable";
 
 // 指定曜日について、today 以降で「回数 > 0 のスロットがある」最初の実施日を
 // 最大 maxWeeks 週まで探し、その日のセッション番号マップを返す。
@@ -14,13 +14,18 @@ export function findNextSessionMap(daySlots, targetDow, today, sessionCtx, maxWe
   if (!sessionCtx || !sessionCtx.displayCutoff) return new Map();
 
   const displayCutoff = sessionCtx.displayCutoff;
+  // コマが 1 つも無い学年グループは全日判定から外す (画面のバナーと同じ基準)。
+  const activeGroupLabels = getCutoffGroupLabelsWithSlots(
+    sessionCtx.allSlots || daySlots,
+    displayCutoff
+  );
   const base = new Date(today);
   const diff = (targetDow - base.getDay() + 7) % 7;
   base.setDate(base.getDate() + diff);
 
   for (let attempt = 0; attempt < maxWeeks; attempt++) {
     const ds = fmtDate(base);
-    if (!isEntireDayBeyondCutoff(ds, displayCutoff)) {
+    if (!isEntireDayBeyondCutoff(ds, displayCutoff, { activeGroupLabels })) {
       const map = buildSessionCountMap(daySlots, ds, sessionCtx);
       for (const v of map.values()) {
         if (v > 0) return map;

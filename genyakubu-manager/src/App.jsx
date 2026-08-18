@@ -1201,6 +1201,12 @@ export default function App() {
               onSaveClassSets={saveClassSets}
               ttCrud={ttCrud}
               onSaveDisplayCutoff={saveDisplayCutoff}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              daySchedules={daySchedules}
               isAdmin={isAdmin}
             />
           )}
@@ -1419,6 +1425,7 @@ export default function App() {
               subs={subs}
               holidays={holidays}
               examPeriods={examPeriods}
+              displayCutoff={displayCutoff}
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}

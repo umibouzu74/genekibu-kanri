@@ -10,6 +10,7 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
+import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
 import {
   getDaySchedulesForDate,
@@ -36,7 +37,8 @@ import { buildSessionCountMap } from "../../utils/sessionCount";
 import {
   filterSlotsByActiveTimetable,
   filterSlotsForDate,
-  isEntireDayBeyondCutoff,
+  getCutoffGroupLabelsWithSlots,
+  getDayCutoffKind,
   isSlotBeyondCutoff,
 } from "../../utils/timetable";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
@@ -302,12 +304,18 @@ export function ExcelGridView({
   //   - 時間割の適用期間 (startDate/endDate) 外 → filterSlotsForDate
   //   - displayCutoff の開始日前 / 終講日後 (コホート別終講日を含む)
   //     → isSlotBeyondCutoff
-  // 全学年グループが期間外の日は isEntireDayBeyondCutoff で判定し、
-  // グリッドの代わりに「未確定」バナーを出す (render 側で分岐)。
-  const dashboardEntireDayCutoff =
-    dashboardMode &&
-    !!displayDate &&
-    isEntireDayBeyondCutoff(displayDate, displayCutoff);
+  // 全学年グループが期間外の日は getDayCutoffKind で判定し、グリッドの
+  // 代わりに「開講前 / 未確定」バナーを出す (render 側で分岐)。
+  // コマが 1 つも無い学年グループは全日判定から外す (DashboardListView と同じ)。
+  const activeGroupLabels = useMemo(
+    () => getCutoffGroupLabelsWithSlots(slots, displayCutoff),
+    [slots, displayCutoff]
+  );
+  const dashboardCutoffKind =
+    dashboardMode && !!displayDate
+      ? getDayCutoffKind(displayDate, displayCutoff, { activeGroupLabels })
+      : null;
+  const dashboardEntireDayCutoff = dashboardCutoffKind != null;
   const dashboardVisibleSlots = useMemo(() => {
     if (!dashboardMode || !displayDate) return filteredSlots;
     if (dashboardEntireDayCutoff) return [];
@@ -824,7 +832,7 @@ export function ExcelGridView({
                 fontWeight: 800,
               }}
             >
-              この日以降の予定は未確定です
+              {cutoffBannerText(dashboardCutoffKind)}
             </div>
           ) : dashboardDayFilteredOut ? (
             <div

@@ -3,6 +3,8 @@ import { S } from "../styles/common";
 import { DAYS } from "../constants/schools";
 import { deriveCohortsFromSlots, firstSubjToken } from "../utils/cohorts";
 import { findGroupForGrade } from "../utils/timetable";
+import { fmtDateWeekday } from "../utils/dateHelpers";
+import { findLastSessionOnOrBefore } from "../utils/lastSessionDate";
 
 // ─── コース別 終講日エディタ ───────────────────────────────────────
 // 学年グループ (中1・2 / 中3 / 高1・2 / 高3) では表現できない、
@@ -11,7 +13,13 @@ import { findGroupForGrade } from "../utils/timetable";
 //
 // 保存先は displayCutoff.cohorts (CohortCutoff[])。終講日 (date) のみ持ち、
 // 開始日は学年グループ (表示期間設定) を流用する。回数計算には影響しない。
-export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
+export function CohortCutoffEditor({
+  slots,
+  displayCutoff,
+  onSave,
+  isAdmin,
+  sessionCtx,
+}) {
   const cohorts = useMemo(() => deriveCohortsFromSlots(slots), [slots]);
 
   const slotById = useMemo(() => {
@@ -114,6 +122,27 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
     [cohorts, savedById]
   );
 
+  // 終講日を入れているコースだけ「実際の最終授業日 (と第N回)」を逆算する。
+  // 全コース分やると重い上に、終講日が無いコースは終わりが無いので出さない。
+  const lastSessions = useMemo(() => {
+    const out = new Map();
+    if (!sessionCtx) return out;
+    for (const c of cohorts) {
+      const date = savedById.get(c.id)?.date;
+      if (!date) continue;
+      const cohortSlots = (c.slotIds || [])
+        .map((id) => slotById.get(id))
+        .filter(Boolean);
+      if (cohortSlots.length === 0) continue;
+      out.set(c.id, findLastSessionOnOrBefore(cohortSlots, date, sessionCtx));
+    }
+    return out;
+  }, [cohorts, savedById, slotById, sessionCtx]);
+
+  // コホート grade からその学年グループの開始日を引く (終講日 < 開始日 の検出)。
+  const groupStartForGrade = (grade) =>
+    findGroupForGrade(grade, displayCutoff?.groups)?.startDate || null;
+
   // コホート grade からその学年グループの終了日を引く。コホート終講日が
   // グループ終了日より後の場合は表示されない (isEntireDayBeyondCutoff が
   // グループ終了日で打ち切るため) ので、行に警告を出す。
@@ -193,7 +222,17 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
                 const saved = savedById.get(cohort.id);
                 const date = saved?.date || "";
                 const groupEnd = groupEndForGrade(cohort.grade);
+                const groupStart = groupStartForGrade(cohort.grade);
                 const exceedsGroup = date && groupEnd && date > groupEnd;
+                const beforeStart = date && groupStart && date < groupStart;
+                const last = lastSessions.get(cohort.id);
+                const warn = exceedsGroup
+                  ? `グループ終了日 (${groupEnd}) より後です。表示するには上の「表示期間設定」でこの学年の終了日も延ばしてください。`
+                  : beforeStart
+                    ? `グループ開始日 (${groupStart}) より前です。このコースのコマはどの日にも表示されません。`
+                    : date && !last
+                      ? "終了日の直前 4 週間にこのコースの授業がありません。日付が早すぎないか確認してください。"
+                      : "";
                 return (
                   <CohortRow
                     key={cohort.id}
@@ -201,12 +240,9 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
                     count={cohort.slotCount}
                     detail={cohortDetail(cohort)}
                     date={date}
+                    lastSession={last}
                     isAdmin={isAdmin}
-                    warn={
-                      exceedsGroup
-                        ? `グループ終了日 (${groupEnd}) より後です。表示するには上の「表示期間設定」でこの学年の終了日も延ばしてください。`
-                        : ""
-                    }
+                    warn={warn}
                     onChange={(v) => setCohortDate(cohort, v)}
                   />
                 );
@@ -292,7 +328,17 @@ export function CohortCutoffEditor({ slots, displayCutoff, onSave, isAdmin }) {
   );
 }
 
-function CohortRow({ label, count, detail, date, isAdmin, stale, warn, onChange }) {
+function CohortRow({
+  label,
+  count,
+  detail,
+  date,
+  lastSession,
+  isAdmin,
+  stale,
+  warn,
+  onChange,
+}) {
   return (
     <div
       style={{
@@ -337,6 +383,12 @@ function CohortRow({ label, count, detail, date, isAdmin, stale, warn, onChange 
           </button>
         )}
       </div>
+      {lastSession && (
+        <div style={{ fontSize: 11, color: "#2a6a3a", fontWeight: 600, marginTop: 3 }}>
+          最終授業日 {fmtDateWeekday(lastSession.date)}
+          {lastSession.sessionNo > 0 ? `（第${lastSession.sessionNo}回）` : ""}
+        </div>
+      )}
       {detail && (detail.days || (detail.subjects && detail.subjects.length > 0)) && (
         <div style={{ fontSize: 10, color: "#999", marginTop: 3 }}>
           {detail.days && <span style={{ fontWeight: 600 }}>{detail.days}</span>}
