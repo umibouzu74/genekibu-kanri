@@ -3,6 +3,7 @@ import { useToasts } from "./useToasts";
 import { useCrudResource } from "./useCrudResource";
 import { nextNumericId } from "../utils/schema";
 import { applyTimeBulkEdit } from "../utils/timeBulkEdit";
+import { isLegacySet } from "../utils/classSets";
 
 /**
  * Timetable CRUD hook.
@@ -95,13 +96,17 @@ export function useTimetablesCrud({
         return { ...s, id: newId, timetableId: newTtId };
       });
 
-      // 授業セット (回数カウントの束ね) も新スロット id に読み替えて複製する。
-      // これが無いと複製先の期でセット単位の第N回が引き継がれない。
+      // 授業セット (回数カウントの束ね) のうち旧 slotIds 形式のものは、
+      // 新スロット id に読み替えて複製する。これが無いと複製先の期で
+      // セット単位の第N回が引き継がれない。
       // 2 コマ以上写像できたセットのみ (1 コマのセットは束ねる意味がない)。
+      // units 形式 (学年 × 曜日) のセットはコマ id を参照しないので、
+      // 複製先のコマにもそのまま効く = 複製しない (増やすと二重定義になる)。
       const newSets = [];
       if (Array.isArray(classSets) && saveClassSets) {
         let nextSetId = nextNumericId(classSets);
         for (const cs of classSets) {
+          if (!isLegacySet(cs)) continue;
           const mapped = (cs.slotIds || [])
             .map((id) => idMap.get(id))
             .filter((id) => id != null);

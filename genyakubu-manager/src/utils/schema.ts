@@ -39,7 +39,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -185,14 +185,24 @@ export function isExamPeriod(x: unknown): x is ExamPeriod {
   );
 }
 
+// 授業セットは units 形式 (学年 × 曜日) と旧 slotIds 形式のどちらでもよい。
+// どちらも無い / 両方空、は「対象が無いセット」なので不正とする。
+export function isClassSetUnit(x: unknown): boolean {
+  return isObject(x) && isString(x.grade) && isString(x.day);
+}
+
 export function isClassSet(x: unknown): x is ClassSet {
-  return (
-    isObject(x) &&
-    isNumber(x.id) &&
-    isString(x.label) &&
-    Array.isArray(x.slotIds) &&
-    (x.slotIds as unknown[]).every((i) => isNumber(i))
-  );
+  if (!isObject(x) || !isNumber(x.id) || !isString(x.label)) return false;
+  const hasUnits = Array.isArray(x.units);
+  const hasSlotIds = Array.isArray(x.slotIds);
+  if (!hasUnits && !hasSlotIds) return false;
+  if (hasUnits && !(x.units as unknown[]).every((u) => isClassSetUnit(u))) {
+    return false;
+  }
+  if (hasSlotIds && !(x.slotIds as unknown[]).every((i) => isNumber(i))) {
+    return false;
+  }
+  return true;
 }
 
 export function isSessionOverride(x: unknown): x is SessionOverride {
@@ -558,6 +568,10 @@ function validateReferentialIntegrity(
     if (Array.isArray(raw.classSets)) {
       const list = raw.classSets as Array<Record<string, unknown>>;
       for (let i = 0; i < list.length; i++) {
+        // units 形式 (学年 × 曜日) はコマ id を参照しないので照合対象外。
+        // 併存している場合も units が主なので slotIds は検証しない。
+        const units = list[i].units;
+        if (Array.isArray(units) && units.length > 0) continue;
         const ids = list[i].slotIds;
         if (!Array.isArray(ids)) continue;
         for (let j = 0; j < ids.length; j++) {
@@ -841,6 +855,12 @@ export function migrateExportBundle(raw: unknown): unknown {
       bundle.daySchedules = [];
     }
   }
+
+  // v16 → v17: ClassSet に units (学年 × 曜日) 形式を追加。
+  //             旧 slotIds 形式はそのまま読めるので変換しない (どの学年 ×
+  //             曜日だったかは slots が無いと決まらないため、変換は画面の
+  //             「曜日ベースに変換」で人が確認しながら行う)。
+  // 既存データは触らない。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

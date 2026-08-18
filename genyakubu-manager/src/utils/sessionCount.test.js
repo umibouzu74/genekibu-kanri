@@ -1188,3 +1188,122 @@ describe("computeSessionNumber - 特別時程 (daySchedules) の部分休講", (
     expect(computeSessionNumber(slot, "2026-04-15", ctx([other]))).toBe(2);
   });
 });
+
+// ─── 中3 の 火木コース / 水金コース (2026-08-18 の症状) ──────────────
+// 中学の既定の束ね (utils/cohorts) は「学年の平日ぜんぶで 1 コース」なので、
+// 週内で 火木 / 水金 の 2 コースに分かれる学年は授業セットを登録しないと
+// 水曜の第1回が火曜の続き (第2回) として数えられてしまう。
+describe("computeSessionNumber - 中3 火水木金 のコース分け", () => {
+  // 同じ cls・同じ教科が 火 と 水 の両方にある (中3 S クラスの社会)
+  const tue = makeSlot(1, "火", "18:00-18:45", "中3", { subj: "社会", cls: "S" });
+  const wed = makeSlot(2, "水", "18:00-18:45", "中3", { subj: "社会", cls: "S" });
+  const thu = makeSlot(3, "木", "18:00-18:45", "中3", { subj: "社会", cls: "S" });
+  const fri = makeSlot(4, "金", "18:00-18:45", "中3", { subj: "社会", cls: "S" });
+  const allSlots = [tue, wed, thu, fri];
+  const base = {
+    allSlots,
+    displayCutoff: DISPLAY_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+  };
+
+  it("セット未登録だと 平日 1 コース扱いで 水曜が ② になる (既定の束ね)", () => {
+    const ctx = { ...base, classSets: [] };
+    expect(computeSessionNumber(tue, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(wed, "2026-04-08", ctx)).toBe(2);
+    expect(computeSessionNumber(thu, "2026-04-09", ctx)).toBe(3);
+    expect(computeSessionNumber(fri, "2026-04-10", ctx)).toBe(4);
+  });
+
+  it("火木 / 水金 の units セットを登録すると コースごとに ①② で数える", () => {
+    const classSets = [
+      {
+        id: 1,
+        label: "中3 (火・木)",
+        units: [
+          { grade: "中3", day: "火" },
+          { grade: "中3", day: "木" },
+        ],
+      },
+      {
+        id: 2,
+        label: "中3 (水・金)",
+        units: [
+          { grade: "中3", day: "水" },
+          { grade: "中3", day: "金" },
+        ],
+      },
+    ];
+    const ctx = { ...base, classSets };
+    expect(computeSessionNumber(tue, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(wed, "2026-04-08", ctx)).toBe(1);
+    expect(computeSessionNumber(thu, "2026-04-09", ctx)).toBe(2);
+    expect(computeSessionNumber(fri, "2026-04-10", ctx)).toBe(2);
+  });
+
+  it("buildSessionCountMap でも同じ結果になる (画面の一括計算)", () => {
+    const classSets = [
+      {
+        id: 1,
+        label: "中3 (火・木)",
+        units: [
+          { grade: "中3", day: "火" },
+          { grade: "中3", day: "木" },
+        ],
+      },
+      {
+        id: 2,
+        label: "中3 (水・金)",
+        units: [
+          { grade: "中3", day: "水" },
+          { grade: "中3", day: "金" },
+        ],
+      },
+    ];
+    const map = buildSessionCountMap([wed], "2026-04-08", { ...base, classSets });
+    expect(map.get(wed.id)).toBe(1);
+  });
+});
+
+// ─── units 形式のセットは期切替をまたいで効く ─────────────────────
+describe("computeSessionNumber - units セットと期切替", () => {
+  const TIMETABLES = [
+    { id: 1, name: "1学期", startDate: "2026-04-07", endDate: "2026-04-15", grades: [] },
+    { id: 2, name: "2学期", startDate: "2026-04-16", endDate: null, grades: [] },
+  ];
+  // 1学期 (火・木) と 2学期 (火・木) で別 id のコマ
+  const t1Tue = makeSlot(1, "火", "18:00-18:45", "中3", { timetableId: 1 });
+  const t1Thu = makeSlot(2, "木", "18:00-18:45", "中3", { timetableId: 1 });
+  const t2Tue = makeSlot(11, "火", "18:00-18:45", "中3", { timetableId: 2 });
+  const t2Thu = makeSlot(12, "木", "18:00-18:45", "中3", { timetableId: 2 });
+  const classSets = [
+    {
+      id: 1,
+      label: "中3 (火・木)",
+      units: [
+        { grade: "中3", day: "火" },
+        { grade: "中3", day: "木" },
+      ],
+    },
+  ];
+  const ctx = {
+    classSets,
+    allSlots: [t1Tue, t1Thu, t2Tue, t2Thu],
+    displayCutoff: DISPLAY_CUTOFF,
+    timetables: TIMETABLES,
+    isOffForGrade: NEVER_OFF,
+  };
+
+  it("新しい期のコマも同じセットで束ねられ、回数は 1 から数え直す", () => {
+    // 1学期: 4/7(火)=① 4/9(木)=② 4/14(火)=③
+    expect(computeSessionNumber(t1Tue, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(t1Thu, "2026-04-09", ctx)).toBe(2);
+    expect(computeSessionNumber(t1Tue, "2026-04-14", ctx)).toBe(3);
+    // 2学期 (4/16 開始): 4/16(木)=① 4/21(火)=② — 旧期のコマは数えない
+    expect(computeSessionNumber(t2Thu, "2026-04-16", ctx)).toBe(1);
+    expect(computeSessionNumber(t2Tue, "2026-04-21", ctx)).toBe(2);
+  });
+
+  it("旧期のコマは切替日以降カウントされない (二重表示の防止)", () => {
+    expect(computeSessionNumber(t1Tue, "2026-04-21", ctx)).toBe(0);
+  });
+});
