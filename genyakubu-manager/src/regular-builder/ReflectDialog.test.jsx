@@ -21,6 +21,7 @@ function renderDialog(props = {}) {
   const saveTimetables = vi.fn();
   const saveSlots = vi.fn();
   const onActivateTimetable = vi.fn();
+  const saveDisplayCutoff = vi.fn();
   const { container } = render(
     <ToastProvider render={() => null}>
       <ConfirmProvider>
@@ -32,6 +33,7 @@ function renderDialog(props = {}) {
           saveSlots={saveSlots}
           saveProject={() => {}}
           activeTimetableId={1}
+          saveDisplayCutoff={saveDisplayCutoff}
           onActivateTimetable={onActivateTimetable}
           onClose={() => {}}
           {...props}
@@ -40,7 +42,7 @@ function renderDialog(props = {}) {
     </ToastProvider>
   );
   const dates = () => [...container.querySelectorAll('input[type="date"]')];
-  return { saveTimetables, saveSlots, onActivateTimetable, dates };
+  return { saveTimetables, saveSlots, onActivateTimetable, saveDisplayCutoff, dates };
 }
 
 const switchCheckbox = () =>
@@ -99,6 +101,70 @@ describe("ReflectDialog (期切替)", () => {
     expect(
       screen.getByText(/表示期間設定の終了日が切替日より前の学年グループがあります/)
     ).toBeInTheDocument();
+  });
+
+  it("「表示期間設定も新しい期に合わせる」で終了日と旧期の終講日を直す", async () => {
+    const displayCutoff = {
+      groups: [
+        { label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" },
+      ],
+      cohorts: [
+        { id: "M|中3|火金", label: "中3 火金", grade: "中3", date: "2026-07-17" },
+      ],
+    };
+    const { dates, saveDisplayCutoff } = renderDialog({ displayCutoff });
+    fireEvent.click(switchCheckbox());
+    fireEvent.change(dates()[0], { target: { value: "2026-09-01" } }); // 切替日
+    fireEvent.change(dates()[1], { target: { value: "2026-12-25" } }); // 新しい期の終了日
+
+    const follow = screen.getByRole("checkbox", { name: /表示期間設定も新しい期に合わせる/ });
+    expect(follow).not.toBeChecked(); // 既定はオフ (自動では触らない)
+    fireEvent.click(follow);
+    fireEvent.click(screen.getByRole("button", { name: "切り替える" }));
+    fireEvent.click(await screen.findByRole("button", { name: "期切替を実行" }));
+
+    await waitFor(() => expect(saveDisplayCutoff).toHaveBeenCalled());
+    const saved = saveDisplayCutoff.mock.calls[0][0];
+    expect(saved.groups[0].date).toBe("2026-12-25");
+    expect(saved.cohorts).toEqual([]);
+  });
+
+  it("「新しい期はオリエンなし」だけを選ぶと日付は触らない", async () => {
+    const displayCutoff = {
+      groups: [
+        { label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" },
+      ],
+      cohorts: [],
+    };
+    const { dates, saveDisplayCutoff } = renderDialog({ displayCutoff });
+    fireEvent.click(switchCheckbox());
+    fireEvent.change(dates()[0], { target: { value: "2026-09-01" } });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /新しい期はオリエンなしにする/ }));
+    fireEvent.click(screen.getByRole("button", { name: "切り替える" }));
+    fireEvent.click(await screen.findByRole("button", { name: "期切替を実行" }));
+
+    await waitFor(() => expect(saveDisplayCutoff).toHaveBeenCalled());
+    const saved = saveDisplayCutoff.mock.calls[0][0];
+    expect(saved.groups[0].orientationFirstDay).toBe(false);
+    expect(saved.groups[0].date).toBe("2026-08-31"); // 日付は据え置き
+  });
+
+  it("何も選ばなければ表示期間設定は触らない", async () => {
+    const displayCutoff = {
+      groups: [
+        { label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" },
+      ],
+      cohorts: [],
+    };
+    const { dates, saveDisplayCutoff } = renderDialog({ displayCutoff });
+    fireEvent.click(switchCheckbox());
+    fireEvent.change(dates()[0], { target: { value: "2026-09-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "切り替える" }));
+    fireEvent.click(await screen.findByRole("button", { name: "期切替を実行" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "期切替を実行" })).toBeNull());
+    expect(saveDisplayCutoff).not.toHaveBeenCalled();
   });
 
   it("期切替を使わなければ旧時間割に触らない", async () => {

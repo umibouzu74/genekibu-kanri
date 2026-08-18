@@ -27,6 +27,8 @@ export function StaffManagerView({
   subs,
   holidays,
   examPeriods,
+  displayCutoff,
+  daySchedules,
   onAddStaff,
   onDelStaff,
   onToggleStaffSubject,
@@ -155,6 +157,8 @@ export function StaffManagerView({
           subs={subs}
           holidays={holidays}
           examPeriods={examPeriods}
+          displayCutoff={displayCutoff}
+          daySchedules={daySchedules}
           nowYear={nowYear}
           nowMonth={nowMonth}
           newStaff={newStaff}

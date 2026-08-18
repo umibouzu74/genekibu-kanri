@@ -77,6 +77,8 @@ export default function RegularBuilderApp({
   subjects = [],
   /** 期切替の点検に使う本体データ (表示期間設定・授業セット) */
   displayCutoff,
+  /** 期切替のオプション「表示期間設定も新しい期に合わせる」で書き戻す */
+  saveDisplayCutoff,
   classSets,
   /** ヘッダの時間割セレクタ。期切替の反映後にここを新しい時間割へ向ける */
   activeTimetableId,
@@ -1935,6 +1937,7 @@ export default function RegularBuilderApp({
           saveSlots={saveSlots}
           saveProject={saveProject}
           displayCutoff={displayCutoff}
+          saveDisplayCutoff={saveDisplayCutoff}
           classSets={classSets}
           activeTimetableId={activeTimetableId}
           onActivateTimetable={onActivateTimetable}

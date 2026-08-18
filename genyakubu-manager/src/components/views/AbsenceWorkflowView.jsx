@@ -224,6 +224,7 @@ export function AbsenceWorkflowView({
       biweeklyAnchors: biweeklyAnchors || [],
       adjustments: [...filteredAdjustments, ...draftAdjustments],
       sessionOverrides: [...(sessionOverrides || []), ...draftOverridesLocal],
+      // 適用可否は学年グループ設定 (表示期間設定の orientationFirstDay) 側で判定。
       orientationOnFirstDay: true,
     });
   }, [daySlots, slots, date, classSets, displayCutoff, timetables, isOffForGrade, biweeklyAnchors, adjustments, sessionOverrides, draft.draft, draft.removedAdjustmentIds]);

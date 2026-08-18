@@ -2,6 +2,7 @@
 // All date strings are "YYYY-MM-DD".
 
 import { findCohortCutoff } from "./cohorts";
+import { DAYS } from "../constants/schools";
 
 /**
  * Check if a slot's grade matches a timetable's grade list.
@@ -178,6 +179,125 @@ export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
 }
 
 /**
+ * 学年グループごとに、そのグループが担当するコマを集計する。
+ * 表示期間設定の画面 (対象コマ数・実際の授業曜日) と、全日判定から
+ * 「コマが 1 つも無いグループ」を外すために使う。
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @returns {Map<string, {slotCount: number, days: string[], slotIds: number[]}>}
+ *   key は group.label
+ */
+export function summarizeCutoffGroups(slots, displayCutoff) {
+  const out = new Map();
+  const groups = displayCutoff?.groups;
+  if (!Array.isArray(groups)) return out;
+  for (const g of groups) {
+    out.set(g.label, { slotCount: 0, days: [], slotIds: [] });
+  }
+  const daySets = new Map();
+  for (const s of slots || []) {
+    if (!s || !s.grade) continue;
+    const group = findGroupForGrade(s.grade, groups);
+    if (!group) continue;
+    const entry = out.get(group.label);
+    if (!entry) continue;
+    entry.slotCount += 1;
+    entry.slotIds.push(s.id);
+    if (s.day) {
+      let set = daySets.get(group.label);
+      if (!set) daySets.set(group.label, (set = new Set()));
+      set.add(s.day);
+    }
+  }
+  for (const [label, set] of daySets) {
+    out.get(label).days = DAYS.filter((d) => set.has(d));
+  }
+  return out;
+}
+
+/**
+ * どの学年グループにも属さない学年を、コマ数付きで返す。
+ * 学年は自由入力なので「附中」「高1高2」のような表記ゆれが生まれる。
+ * これらは表示期間・終講日のフィルタが一切効かず (常に表示される)、
+ * 回数の起点も引けない (第N回が出ない) ため、設定画面で気付けるようにする。
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @returns {{grade: string, slotCount: number}[]} コマ数の多い順
+ */
+export function findUngroupedGrades(slots, displayCutoff) {
+  const groups = displayCutoff?.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return [];
+  const counts = new Map();
+  for (const s of slots || []) {
+    if (!s || !s.grade) continue;
+    if (findGroupForGrade(s.grade, groups)) continue;
+    counts.set(s.grade, (counts.get(s.grade) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([grade, slotCount]) => ({ grade, slotCount }))
+    .sort((a, b) => b.slotCount - a.slotCount || (a.grade < b.grade ? -1 : 1));
+}
+
+/**
+ * 実際にコマを持っている学年グループの label 集合。
+ * getDayCutoffKind / isEntireDayBeyondCutoff の opts.activeGroupLabels に渡す。
+ * @param {import("../types").Slot[]} slots その運用の全コマ (講師で絞らない)
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @returns {Set<string>}
+ */
+export function getCutoffGroupLabelsWithSlots(slots, displayCutoff) {
+  const out = new Set();
+  for (const [label, info] of summarizeCutoffGroups(slots, displayCutoff)) {
+    if (info.slotCount > 0) out.add(label);
+  }
+  return out;
+}
+
+/**
+ * その日が「全学年グループの表示期間外」かを判定し、期間外なら理由を返す。
+ *   - "before" : どのグループもまだ開講していない (開始日より前)
+ *   - "after"  : どのグループも終講済み (終了日より後)
+ *   - "mixed"  : 未開講のグループと終講済みのグループが混在
+ *   - null     : 1 つでも期間内のグループがある
+ * 「未確定 (終講後)」と「開講前」は紙面・画面の文言が逆になるので分けている。
+ *
+ * opts.activeGroupLabels を渡すと、その label に含まれないグループ (=
+ * コマが 1 つも無いグループ) を判定から除く。運用していない学年グループの
+ * 終了日が空のままだと、他が全部終わってもバナーが出ないため。
+ * ただし 1 つも残らないときは絞り込みを無かったことにして全グループで
+ * 判定する (grades を空にした「全学年」1 グループ運用を壊さないため)。
+ * @param {string} dateStr
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @param {{activeGroupLabels?: Set<string>}} [opts]
+ * @returns {"before" | "after" | "mixed" | null}
+ */
+export function getDayCutoffKind(dateStr, displayCutoff, opts = {}) {
+  const groups = displayCutoff?.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+  const active = opts.activeGroupLabels;
+  // コマを持つグループだけに絞る。ただし 1 つも該当しないとき (コマ未登録、
+  // grades を空にした「全学年」1 グループ運用など) は判定材料が無くなるので
+  // 絞り込み自体を無かったことにする。
+  const scoped = active ? groups.filter((g) => active.has(g.label)) : groups;
+  const list = scoped.length > 0 ? scoped : groups;
+  let before = 0;
+  let after = 0;
+  for (const group of list) {
+    if (group.startDate && dateStr < group.startDate) {
+      before += 1;
+      continue;
+    }
+    if (group.date && dateStr > group.date) {
+      after += 1;
+      continue;
+    }
+    return null; // 期間内のグループがある
+  }
+  if (before && after) return "mixed";
+  return before ? "before" : "after";
+}
+
+/**
  * Check whether ALL grades on a given date are outside their display range.
  * Used to show "未確定" banners / blank an entire day.
  *
@@ -191,13 +311,9 @@ export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
  * grade-matching mismatch for combined grades ("中1-3").
  * @param {string} dateStr
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @param {{activeGroupLabels?: Set<string>}} [opts] getDayCutoffKind と同じ
  * @returns {boolean}
  */
-export function isEntireDayBeyondCutoff(dateStr, displayCutoff) {
-  if (!displayCutoff || !displayCutoff.groups || displayCutoff.groups.length === 0) return false;
-  return displayCutoff.groups.every((group) => {
-    if (group.startDate && dateStr < group.startDate) return true;
-    if (group.date && dateStr > group.date) return true;
-    return false;
-  });
+export function isEntireDayBeyondCutoff(dateStr, displayCutoff, opts = {}) {
+  return getDayCutoffKind(dateStr, displayCutoff, opts) != null;
 }

@@ -26,6 +26,8 @@ export function StaffListTab({
   subs,
   holidays,
   examPeriods,
+  displayCutoff,
+  daySchedules,
   nowYear,
   nowMonth,
   newStaff,
@@ -272,7 +274,8 @@ export function StaffListTab({
                     holidays || [],
                     nowYear,
                     nowMonth,
-                    examPeriods || []
+                    examPeriods || [],
+                    { timetables, displayCutoff, daySchedules }
                   );
                   const workDates = staffMonthlyWorkDates(subs, staff.name, nowYear, nowMonth);
                   const absenceDates = staffMonthlyAbsenceDates(subs, staff.name, nowYear, nowMonth);

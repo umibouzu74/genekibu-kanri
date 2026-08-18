@@ -8,6 +8,10 @@ import {
   isBeyondCutoff,
   isSlotBeyondCutoff,
   isEntireDayBeyondCutoff,
+  getDayCutoffKind,
+  summarizeCutoffGroups,
+  findUngroupedGrades,
+  getCutoffGroupLabelsWithSlots,
 } from "./timetable";
 
 describe("expandGradeRange", () => {
@@ -353,5 +357,109 @@ describe("isEntireDayBeyondCutoff with cohorts (group end is the outer bound)", 
       cohorts: [{ id: "H|高3|岡広大", label: "高3 岡広大", grade: "高3", date: "2026-07-10" }],
     };
     expect(isEntireDayBeyondCutoff("2099-12-31", cutoff)).toBe(false);
+  });
+});
+
+describe("getDayCutoffKind (開講前 / 未確定 の出し分け)", () => {
+  const cutoff = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2026-07-18" },
+      { label: "高3", grades: ["高3"], startDate: "2026-04-07", date: "2026-07-18" },
+    ],
+  };
+
+  it("期間内は null", () => {
+    expect(getDayCutoffKind("2026-05-01", cutoff)).toBeNull();
+  });
+
+  it("開始日より前は before (「未確定」ではない)", () => {
+    expect(getDayCutoffKind("2026-04-06", cutoff)).toBe("before");
+  });
+
+  it("終了日より後は after", () => {
+    expect(getDayCutoffKind("2026-07-19", cutoff)).toBe("after");
+  });
+
+  it("未開講と終講済みが混在すると mixed", () => {
+    const mixed = {
+      groups: [
+        { label: "中1・2", grades: ["中1"], startDate: "2026-09-01", date: null },
+        { label: "高3", grades: ["高3"], startDate: null, date: "2026-07-18" },
+      ],
+    };
+    expect(getDayCutoffKind("2026-08-01", mixed)).toBe("mixed");
+  });
+
+  it("groups が無ければ null", () => {
+    expect(getDayCutoffKind("2026-08-01", null)).toBeNull();
+    expect(getDayCutoffKind("2026-08-01", { groups: [] })).toBeNull();
+  });
+
+  it("activeGroupLabels でコマの無いグループを判定から外す", () => {
+    const withIdleGroup = {
+      groups: [
+        { label: "中1・2", grades: ["中1"], startDate: null, date: "2026-07-18" },
+        // 運用していない学年グループ (終了日が空のまま)
+        { label: "高3", grades: ["高3"], startDate: null, date: null },
+      ],
+    };
+    // 従来: 高3 が期間内扱いなのでバナーが出ない
+    expect(getDayCutoffKind("2026-07-19", withIdleGroup)).toBeNull();
+    // コマを持つグループだけで見ると終講済み
+    expect(
+      getDayCutoffKind("2026-07-19", withIdleGroup, {
+        activeGroupLabels: new Set(["中1・2"]),
+      })
+    ).toBe("after");
+  });
+
+  it("どのグループにもコマが無ければ絞り込みを無効化する (全グループで判定)", () => {
+    const cutoffAll = {
+      groups: [{ label: "全", grades: [], startDate: null, date: "2026-06-30" }],
+    };
+    expect(
+      getDayCutoffKind("2026-07-01", cutoffAll, { activeGroupLabels: new Set() })
+    ).toBe("after");
+  });
+});
+
+describe("summarizeCutoffGroups / findUngroupedGrades", () => {
+  const cutoff = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: null, date: null },
+      { label: "高3", grades: ["高3"], startDate: null, date: null },
+    ],
+  };
+  const mk = (id, grade, day) => ({ id, grade, day, time: "18:55-19:40", subj: "数学" });
+  const slots = [
+    mk(1, "中1", "火"),
+    mk(2, "中2", "月"),
+    mk(3, "中1-3", "土"), // 複合学年 → 中1・2 グループに展開して一致
+    mk(4, "附中", "水"), // どのグループにも属さない
+    mk(5, "高1高2", "土"), // どのグループにも属さない
+  ];
+
+  it("グループごとのコマ数と授業曜日を集計する", () => {
+    const sum = summarizeCutoffGroups(slots, cutoff);
+    expect(sum.get("中1・2").slotCount).toBe(3);
+    expect(sum.get("中1・2").days).toEqual(["月", "火", "土"]);
+    expect(sum.get("高3").slotCount).toBe(0);
+    expect(sum.get("高3").days).toEqual([]);
+  });
+
+  it("コマを持つグループの label 集合を返す", () => {
+    expect(getCutoffGroupLabelsWithSlots(slots, cutoff)).toEqual(new Set(["中1・2"]));
+  });
+
+  it("どのグループにも属さない学年をコマ数の多い順に返す", () => {
+    expect(findUngroupedGrades(slots, cutoff)).toEqual([
+      { grade: "附中", slotCount: 1 },
+      { grade: "高1高2", slotCount: 1 },
+    ]);
+  });
+
+  it("groups 未設定なら未所属判定はしない (全部素通し)", () => {
+    expect(findUngroupedGrades(slots, null)).toEqual([]);
+    expect(findUngroupedGrades(slots, { groups: [] })).toEqual([]);
   });
 });

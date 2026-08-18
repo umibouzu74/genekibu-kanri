@@ -1,8 +1,11 @@
+import { useMemo } from "react";
 import {
   isSlotBeyondCutoff,
-  isEntireDayBeyondCutoff,
+  getCutoffGroupLabelsWithSlots,
+  getDayCutoffKind,
   isTimetableActiveForDate,
 } from "../../../utils/timetable";
+import { cutoffBannerText } from "../../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../../utils/extraLessons";
 import {
   getDaySchedulesForDate,
@@ -33,6 +36,12 @@ export function DashboardListView({
   onJumpToEventCalendar,
   onJumpToRequestedSubs,
 }) {
+  // コマが 1 つも無い学年グループ (運用していない学年) は全日判定から外す。
+  // 終了日が空のまま残っていると、他が全部終わってもバナーが出ないため。
+  const activeGroupLabels = useMemo(
+    () => getCutoffGroupLabelsWithSlots(slots, displayCutoff),
+    [slots, displayCutoff]
+  );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <SubSummaryCards
@@ -50,7 +59,8 @@ export function DashboardListView({
       />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
-        const entireDayCutoff = isEntireDayBeyondCutoff(dateStr, displayCutoff);
+        const cutoffKind = getDayCutoffKind(dateStr, displayCutoff, { activeGroupLabels });
+        const entireDayCutoff = cutoffKind != null;
         const daySlots = entireDayCutoff
           ? []
           : slots.filter(
@@ -84,7 +94,7 @@ export function DashboardListView({
                   textAlign: "center",
                 }}
               >
-                この日以降の予定は未確定です
+                {cutoffBannerText(cutoffKind)}
               </div>
             )}
             <DashDayRow

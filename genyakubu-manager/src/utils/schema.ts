@@ -145,7 +145,11 @@ export function isCutoffGroup(x: unknown): x is CutoffGroup {
     isString(x.label) &&
     Array.isArray(x.grades) &&
     (x.date === null || isString(x.date)) &&
-    (x.startDate === undefined || x.startDate === null || isString(x.startDate))
+    (x.startDate === undefined || x.startDate === null || isString(x.startDate)) &&
+    // 開講日 1 限のオリエン扱い (未設定 = 中学部のみ有効の既定)
+    (x.orientationFirstDay === undefined ||
+      x.orientationFirstDay === null ||
+      typeof x.orientationFirstDay === "boolean")
   );
 }
 

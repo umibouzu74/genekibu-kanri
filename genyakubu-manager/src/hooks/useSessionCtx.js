@@ -43,7 +43,9 @@ export function useSessionCtx({
       sessionOverrides: sessionOverrides || [],
       // 特別時程の部分休講 (1 限カット等) をカウント対象外にする。
       daySchedules: daySchedules || [],
-      // 中学部の開講日 1 限目をオリエン扱いとして第1回を 2 限目に繰下げる。
+      // 開講日 1 限目のオリエン扱い (第1回を 2 限目に繰下げる) を有効にする。
+      // 実際に適用するかは学年グループの設定 (表示期間設定の
+      // orientationFirstDay。未設定なら中学部のみ) が決める。
       orientationOnFirstDay: true,
     }),
     [classSets, allSlots, slots, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules]

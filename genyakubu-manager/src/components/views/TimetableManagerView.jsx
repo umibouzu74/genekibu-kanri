@@ -4,6 +4,9 @@ import { formatCount, slotWeight } from "../../utils/biweekly";
 import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
+import { CutoffTimeline } from "../CutoffTimeline";
+import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -15,11 +18,33 @@ export function TimetableManagerView({
   onSaveClassSets,
   ttCrud,
   onSaveDisplayCutoff,
+  holidays = [],
+  examPeriods = [],
+  specialEvents = [],
+  biweeklyAnchors = [],
+  sessionOverrides = [],
+  daySchedules = [],
   isAdmin,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
   const [dupForm, setDupForm] = useState(null);
+
+  // 「終了日を入れると実際の最終授業日はいつになるか」を逆算するための ctx。
+  // 表示系と同じルール (休講・テスト期間・特別時程・隔週・時間割の有効期間) で
+  // 判定したいので、ダッシュボード等と同じ useSessionCtx を使う。
+  const { sessionCtx } = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    timetables,
+    holidays,
+    examPeriods,
+    specialEvents,
+    biweeklyAnchors,
+    sessionOverrides,
+    daySchedules,
+  });
 
   const startEdit = useCallback(
     (tt) => {
@@ -319,99 +344,21 @@ export function TimetableManagerView({
         isAdmin={isAdmin}
       />
 
-      {/* 表示期限設定 */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 10,
-          border: "1px solid #e0e0e0",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid #e0e0e0",
-            background: "#fafafa",
-          }}
-        >
-          <span style={{ fontWeight: 800, fontSize: 14 }}>表示期間設定</span>
-          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-            各学年グループの表示期間（開始日〜終了日）を設定します。
-            この範囲外の予定はダッシュボード等に表示されません。
-          </div>
-        </div>
-        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          {displayCutoff?.groups?.map((group, idx) => (
-            <div
-              key={group.label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span
-                style={{
-                  fontWeight: 700,
-                  fontSize: 13,
-                  minWidth: 80,
-                }}
-              >
-                {group.label}
-              </span>
-              <input
-                type="date"
-                value={group.startDate || ""}
-                onChange={(e) => {
-                  if (!isAdmin) return;
-                  const newGroups = [...displayCutoff.groups];
-                  newGroups[idx] = {
-                    ...newGroups[idx],
-                    startDate: e.target.value || null,
-                  };
-                  onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
-                }}
-                disabled={!isAdmin}
-                style={{ ...S.input, width: "auto", minWidth: 140 }}
-              />
-              <span style={{ fontSize: 12, color: "#888" }}>〜</span>
-              <input
-                type="date"
-                value={group.date || ""}
-                onChange={(e) => {
-                  if (!isAdmin) return;
-                  const newGroups = [...displayCutoff.groups];
-                  newGroups[idx] = {
-                    ...newGroups[idx],
-                    date: e.target.value || null,
-                  };
-                  onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
-                }}
-                disabled={!isAdmin}
-                style={{ ...S.input, width: "auto", minWidth: 140 }}
-              />
-              {(group.startDate || group.date) && isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newGroups = [...displayCutoff.groups];
-                    newGroups[idx] = { ...newGroups[idx], startDate: null, date: null };
-                    onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
-                  }}
-                  style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}
-                >
-                  解除
-                </button>
-              )}
-              <span style={{ fontSize: 10, color: "#aaa" }}>
-                {(group.grades || []).join(", ")}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* 期間の全体像 (時間割 / 学年グループ / コースを同じ物差しで並べる) */}
+      <CutoffTimeline
+        timetables={timetables}
+        slots={slots}
+        displayCutoff={displayCutoff}
+      />
+
+      {/* 表示期限設定 (学年グループの開始日 / 終了日 / オリエン) */}
+      <DisplayCutoffEditor
+        slots={slots}
+        displayCutoff={displayCutoff}
+        onSave={onSaveDisplayCutoff}
+        isAdmin={isAdmin}
+        sessionCtx={sessionCtx}
+      />
 
       {/* コース別 終講日設定 (学校別・曜日別) */}
       <CohortCutoffEditor
@@ -419,6 +366,7 @@ export function TimetableManagerView({
         displayCutoff={displayCutoff}
         onSave={onSaveDisplayCutoff}
         isAdmin={isAdmin}
+        sessionCtx={sessionCtx}
       />
 
       {/* 授業セット管理 */}

@@ -5,6 +5,7 @@ import {
   formatSessionNumber,
   getGradeStartDate,
   getSlotCountStartDate,
+  isOrientationEnabledForGrade,
   resolveSetSlotIds,
 } from "./sessionCount";
 
@@ -397,6 +398,139 @@ describe("computeSessionNumber - 中学部開講日のオリエン (1 限スキ�
     expect(map.get(1)).toBe(0); // 理科 (orient)
     expect(map.get(2)).toBe(1); // 英語
     expect(map.get(3)).toBe(1); // 数学
+  });
+});
+
+describe("getGradeStartDate - 複合学年 (中1-3 など)", () => {
+  // 表示フィルタ (isSlotBeyondCutoff) は findGroupForGrade で「中1-3」を
+  // 中1・2 グループに展開して当てているので、回数の起点も同じ引き方にする。
+  // 完全一致で引いていた頃は、土曜プレップ (中1-3) だけ第N回が出なかった。
+  const dc = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: null },
+      { label: "高3", grades: ["高3"], startDate: "2026-04-10", date: null },
+    ],
+  };
+
+  it("複合学年でもグループ開始日を引ける", () => {
+    expect(getGradeStartDate("中1-3", dc)).toBe("2026-04-07");
+    expect(getGradeStartDate("中1", dc)).toBe("2026-04-07");
+  });
+
+  it("どのグループにも属さない学年は null のまま", () => {
+    expect(getGradeStartDate("附中", dc)).toBeNull();
+    expect(getGradeStartDate("高1高2", dc)).toBeNull();
+  });
+
+  it("複合学年のコマでも第N回が出る", () => {
+    // 2026-04-11 は土曜
+    const prep = makeSlot(90, "土", "18:30-20:00", "中1-3", { subj: "英語" });
+    const ctx = {
+      classSets: [],
+      allSlots: [prep],
+      displayCutoff: dc,
+      timetables: [],
+      isOffForGrade: NEVER_OFF,
+      biweeklyAnchors: [],
+    };
+    expect(computeSessionNumber(prep, "2026-04-11", ctx)).toBe(1);
+    expect(computeSessionNumber(prep, "2026-04-18", ctx)).toBe(2);
+  });
+});
+
+describe("isOrientationEnabledForGrade (学年グループ設定)", () => {
+  it("未設定なら従来既定: 中学部 true / 高校部 false", () => {
+    expect(isOrientationEnabledForGrade("中3", DISPLAY_CUTOFF)).toBe(true);
+    expect(isOrientationEnabledForGrade("高3", DISPLAY_CUTOFF)).toBe(false);
+  });
+  it("グループの orientationFirstDay が明示設定ならそれに従う", () => {
+    const dc = {
+      groups: [
+        { label: "中3", grades: ["中3"], startDate: "2026-09-01", date: null, orientationFirstDay: false },
+        { label: "高3", grades: ["高3"], startDate: "2026-09-01", date: null, orientationFirstDay: true },
+      ],
+    };
+    expect(isOrientationEnabledForGrade("中3", dc)).toBe(false);
+    expect(isOrientationEnabledForGrade("高3", dc)).toBe(true);
+  });
+  it("グループ未定義の学年 / displayCutoff 未設定は既定 (学部で判定)", () => {
+    expect(isOrientationEnabledForGrade("中1", DISPLAY_CUTOFF)).toBe(true);
+    expect(isOrientationEnabledForGrade("高1", undefined)).toBe(false);
+    expect(isOrientationEnabledForGrade("", DISPLAY_CUTOFF)).toBe(false);
+  });
+});
+
+describe("computeSessionNumber - オリエンの学年グループ設定", () => {
+  // 2 学期以降のようにオリエンが入らない期は、表示期間設定の
+  // orientationFirstDay を false にして 1 限から ① で数える。
+  const p1 = makeSlot(1, "火", "18:55-19:40", "中3", { subj: "理科" });
+  const p2 = makeSlot(2, "火", "19:50-20:35", "中3", { subj: "英語" });
+
+  const ctxWith = (orientationFirstDay) => ({
+    classSets: [],
+    allSlots: [p1, p2],
+    displayCutoff: {
+      groups: [
+        {
+          label: "中3",
+          grades: ["中3"],
+          startDate: "2026-04-07",
+          date: null,
+          ...(orientationFirstDay === undefined ? {} : { orientationFirstDay }),
+        },
+      ],
+    },
+    isOffForGrade: NEVER_OFF,
+    orientationOnFirstDay: true,
+  });
+
+  it("orientationFirstDay: false → 開講日 1 限も ① から数える", () => {
+    const ctx = ctxWith(false);
+    expect(computeSessionNumber(p1, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(p2, "2026-04-07", ctx)).toBe(1);
+    // 翌週は ② (開講日をカウント済み)
+    expect(computeSessionNumber(p1, "2026-04-14", ctx)).toBe(2);
+  });
+
+  it("orientationFirstDay: true → 従来どおり 1 限はオリエンで 0", () => {
+    const ctx = ctxWith(true);
+    expect(computeSessionNumber(p1, "2026-04-07", ctx)).toBe(0);
+    expect(computeSessionNumber(p2, "2026-04-07", ctx)).toBe(1);
+  });
+
+  it("未設定 (従来データ) は中学部で有効のまま", () => {
+    const ctx = ctxWith(undefined);
+    expect(computeSessionNumber(p1, "2026-04-07", ctx)).toBe(0);
+  });
+
+  it("高校部でも orientationFirstDay: true なら適用される", () => {
+    const h1 = makeSlot(11, "火", "18:55-19:40", "高3", { subj: "理科" });
+    const h2 = makeSlot(12, "火", "19:50-20:35", "高3", { subj: "英語" });
+    const ctx = {
+      classSets: [],
+      allSlots: [h1, h2],
+      displayCutoff: {
+        groups: [
+          {
+            label: "高3",
+            grades: ["高3"],
+            startDate: "2026-04-07",
+            date: null,
+            orientationFirstDay: true,
+          },
+        ],
+      },
+      isOffForGrade: NEVER_OFF,
+      orientationOnFirstDay: true,
+    };
+    expect(computeSessionNumber(h1, "2026-04-07", ctx)).toBe(0);
+    expect(computeSessionNumber(h2, "2026-04-07", ctx)).toBe(1);
+  });
+
+  it("buildSessionCountMap も設定に追従する", () => {
+    const map = buildSessionCountMap([p1, p2], "2026-04-07", ctxWith(false));
+    expect(map.get(1)).toBe(1);
+    expect(map.get(2)).toBe(1);
   });
 });
 

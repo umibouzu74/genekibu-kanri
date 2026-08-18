@@ -6,6 +6,7 @@ import {
   describeDiffChange,
   diffReflection,
   previousDateStr,
+  buildCutoffFollowUp,
 } from "./reflect";
 import { computeConflicts, conflictKey } from "./conflicts";
 import { makeCellKey } from "./model";
@@ -728,5 +729,93 @@ describe("部分反映 (scope)", () => {
     // 絞らなければ従来どおり警告する
     const all = buildReflectionPlan(p, { mode: "new", name: "x" });
     expect(all.warnings.join()).toContain("未承認の問題");
+  });
+});
+
+describe("buildCutoffFollowUp (期切替に合わせた表示期間設定の追従)", () => {
+  const displayCutoff = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2026-07-18" },
+      { label: "高3", grades: ["高3"], startDate: "2026-04-07", date: null },
+    ],
+    cohorts: [
+      { id: "M|中1|火金", label: "中1 火金", grade: "中1", date: "2026-07-17" },
+      { id: "H|高3|東大京大", label: "高3 東大京大", grade: "高3", date: "2027-01-15" },
+    ],
+  };
+
+  it("切替日より前で終わっているグループの終了日を新しい期に合わせる", () => {
+    const r = buildCutoffFollowUp({
+      displayCutoff,
+      startDate: "2026-09-01",
+      endDate: "2026-12-25",
+    });
+    expect(r.changed).toBe(true);
+    expect(r.groupLabels).toEqual(["中1・2"]);
+    expect(r.next.groups[0].date).toBe("2026-12-25");
+    // 終了日が無いグループは触らない
+    expect(r.next.groups[1].date).toBeNull();
+  });
+
+  it("新しい期の終了日が未入力なら終了日を解除する", () => {
+    const r = buildCutoffFollowUp({ displayCutoff, startDate: "2026-09-01" });
+    expect(r.next.groups[0].date).toBeNull();
+  });
+
+  it("切替日より前のコース別終講日は削除する (旧期の設定なので入れ直す)", () => {
+    const r = buildCutoffFollowUp({ displayCutoff, startDate: "2026-09-01" });
+    expect(r.cohortCount).toBe(1);
+    expect(r.next.cohorts.map((c) => c.id)).toEqual(["H|高3|東大京大"]);
+  });
+
+  it("clearOrientation で有効なグループのオリエンを外す", () => {
+    const r = buildCutoffFollowUp({
+      displayCutoff,
+      startDate: "2026-09-01",
+      clearOrientation: true,
+    });
+    // 中1・2 は既定 (未設定 = 中学部) で有効 → false を書き込む
+    expect(r.orientationLabels).toEqual(["中1・2"]);
+    expect(r.next.groups[0].orientationFirstDay).toBe(false);
+    // 高校部は既定で無効なので触らない
+    expect(r.next.groups[1].orientationFirstDay).toBeUndefined();
+  });
+
+  it("直すところが無ければ changed: false (元のオブジェクトを返す)", () => {
+    const r = buildCutoffFollowUp({ displayCutoff, startDate: "2026-05-01" });
+    expect(r.changed).toBe(false);
+    expect(r.next).toBe(displayCutoff);
+  });
+
+  it("切替日が無ければ何もしない", () => {
+    expect(buildCutoffFollowUp({ displayCutoff, startDate: "" }).changed).toBe(false);
+  });
+
+  it("followDates: false ならオリエンだけ適用し日付は触らない", () => {
+    const r = buildCutoffFollowUp({
+      displayCutoff,
+      startDate: "2026-09-01",
+      endDate: "2026-12-25",
+      followDates: false,
+      clearOrientation: true,
+    });
+    expect(r.changed).toBe(true);
+    expect(r.next.groups[0].orientationFirstDay).toBe(false);
+    // 日付は元のまま
+    expect(r.next.groups[0].date).toBe("2026-07-18");
+    expect(r.next.cohorts).toHaveLength(2);
+    // 「直せるもの」の件数は followDates に関係なく返す (画面の説明用)
+    expect(r.groupLabels).toEqual(["中1・2"]);
+    expect(r.cohortCount).toBe(1);
+  });
+
+  it("followDates: false かつオリエンも外さないなら changed: false", () => {
+    const r = buildCutoffFollowUp({
+      displayCutoff,
+      startDate: "2026-09-01",
+      followDates: false,
+    });
+    expect(r.changed).toBe(false);
+    expect(r.groupLabels).toEqual(["中1・2"]);
   });
 });

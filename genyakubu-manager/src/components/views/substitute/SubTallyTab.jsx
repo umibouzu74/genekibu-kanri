@@ -13,6 +13,10 @@ export function SubTallyTab({
   subs,
   slots,
   holidays,
+  examPeriods = [],
+  timetables = [],
+  displayCutoff,
+  daySchedules = [],
   ty,
   tm,
   fMonth,
@@ -74,7 +78,11 @@ export function SubTallyTab({
                 ? staffMonthlyAbsenceDates(subs, r.name, ty, tm)
                 : [];
               const regularDates = isExpanded
-                ? staffMonthlyRegularDates(slots, r.name, holidays || [], ty, tm)
+                ? staffMonthlyRegularDates(slots, r.name, holidays || [], ty, tm, examPeriods, {
+                    timetables,
+                    displayCutoff,
+                    daySchedules,
+                  })
                 : [];
               return (
                 <Fragment key={r.name}>
