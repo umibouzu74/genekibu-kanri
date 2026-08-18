@@ -7,6 +7,7 @@ import { addSnapshot } from "./model";
 import {
   applyReflection,
   buildReflectionPlan,
+  buildCutoffFollowUp,
   buildSwitchPlan,
   describeDiffChange,
   describeDiffRecord,
@@ -67,6 +68,8 @@ export function ReflectDialog({
   saveProject,
   /** 期切替の点検に使う本体データ (表示期間設定・授業セット) */
   displayCutoff,
+  /** 表示期間設定の追従 (期切替のオプション) を書き戻す */
+  saveDisplayCutoff,
   classSets,
   /** ヘッダの時間割セレクタの現在値 (期切替の既定の「前の時間割」) */
   activeTimetableId,
@@ -91,6 +94,10 @@ export function ReflectDialog({
   );
   // 反映後にヘッダの時間割セレクタを新しい時間割へ向ける
   const [activateAfter, setActivateAfter] = useState(false);
+  // 期切替に合わせて表示期間設定 (旧期で終わっている終了日 / コース別終講日) を
+  // 追従させるか。学年グループは期をまたいで共通なので既定はオフ (人が選ぶ)
+  const [followCutoff, setFollowCutoff] = useState(false);
+  const [clearOrientation, setClearOrientation] = useState(false);
   // 新規作成時に「この時間割は下書きの学年だけ」と絞るか。既定は従来どおり
   // 全学年 (timetable.grades 空 = 全学年マッチ)。1 つの時間割で全学年を
   // まかなう運用が普通なので、絞るのは明示的な選択にする
@@ -147,6 +154,33 @@ export function ReflectDialog({
         : null,
     [useSwitch, timetables, slots, startDate, closeId, opts.grades, displayCutoff, classSets]
   );
+  // 「何が直せるか」の下見 (チェックの有無に関係なく件数を出す)
+  const cutoffFollow = useMemo(
+    () =>
+      useSwitch && startDate
+        ? buildCutoffFollowUp({ displayCutoff, startDate, clearOrientation: true })
+        : null,
+    [useSwitch, displayCutoff, startDate]
+  );
+  // 実際に書き戻すもの (チェックした項目だけを適用する)
+  const cutoffPatch = useMemo(
+    () =>
+      useSwitch && startDate
+        ? buildCutoffFollowUp({
+            displayCutoff,
+            startDate,
+            endDate: endDate || null,
+            followDates: followCutoff,
+            clearOrientation,
+          })
+        : null,
+    [useSwitch, displayCutoff, startDate, endDate, followCutoff, clearOrientation]
+  );
+  const orientationTargets = cutoffFollow?.orientationLabels || [];
+  const canFollowCutoff =
+    !!cutoffFollow &&
+    (cutoffFollow.groupLabels.length > 0 || cutoffFollow.cohortCount > 0);
+
   const canExecute = plan.ok && (!switchPlan || switchPlan.ok);
   const total = plan.drafts.length;
   const replaceTargetCount = useMemo(
@@ -190,6 +224,19 @@ export function ReflectDialog({
           (activateAfter
             ? `・表示中の時間割を新しい方に切り替えます（週表示・月間などの「現在の時間割」）\n`
             : "") +
+          (followCutoff && canFollowCutoff
+            ? `・表示期間設定を新しい期に合わせます` +
+              (cutoffFollow.groupLabels.length > 0
+                ? `（${cutoffFollow.groupLabels.join("・")} の終了日 → ${endDate || "解除"}）`
+                : "") +
+              (cutoffFollow.cohortCount > 0
+                ? `／旧期のコース別終講日 ${cutoffFollow.cohortCount} 件を削除`
+                : "") +
+              `\n`
+            : "") +
+          (clearOrientation && orientationTargets.length > 0
+            ? `・${orientationTargets.join("・")} の「初回1限はオリエン」を外します（初回から回数に数えます）\n`
+            : "") +
           `\nよろしいですか？`,
         okLabel: "期切替を実行",
       });
@@ -230,6 +277,10 @@ export function ReflectDialog({
     // 「現在の時間割」を見る集計ビュー (週表示・月間・一覧) は
     // activeTimetableId で絞るため、反映しただけでは切り替わらない
     if (activateAfter) onActivateTimetable?.(result.timetableId);
+    // 表示期間設定の追従 (チェックしたときだけ)。時間割の有効期間とは
+    // 別のフィルタなので、ここを直さないと新しい期のコマが画面に出ない
+    const followedCutoff = useSwitch && !!cutoffPatch?.changed;
+    if (followedCutoff) saveDisplayCutoff?.(cutoffPatch.next);
     // 反映した時点の状態を自動スナップショットで残す (「本体に出したのは
     // どの状態か」に後から必ず戻れる安全網)。他のスナップショット操作と
     // 同じく Ctrl+Z で取り消せる
@@ -258,6 +309,7 @@ export function ReflectDialog({
           ? `／「${result.closed.name}」は ${result.closed.endDate} で終了`
           : "") +
         (activateAfter ? "／表示中の時間割を切り替えました" : "") +
+        (followedCutoff ? "／表示期間設定を新しい期に合わせました" : "") +
         "／📌 反映時点の案を保存しました"
     );
     onClose();
@@ -392,6 +444,47 @@ export function ReflectDialog({
                         `${switchPlan.slotCount} コマは消さずに残るので、` +
                         `代行・調整・回数補正・授業セットの紐付けも切れません`
                       : "既に切替日より前で終わっているため、終了日は変更しません"}
+                </span>
+              </label>
+            )}
+
+            {switchTerm && canFollowCutoff && (
+              <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={followCutoff}
+                  onChange={(e) => setFollowCutoff(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  表示期間設定も新しい期に合わせる
+                  <span style={{ fontSize: 10, color: "#888", fontWeight: 400, display: "block" }}>
+                    {cutoffFollow.groupLabels.length > 0 &&
+                      `${cutoffFollow.groupLabels.join("・")} の終了日を ` +
+                        `${endDate ? endDate : "「終了日なし」に"}${endDate ? " に" : ""}変更` +
+                        (cutoffFollow.cohortCount > 0 ? " / " : "")}
+                    {cutoffFollow.cohortCount > 0 &&
+                      `旧期のコース別終講日 ${cutoffFollow.cohortCount} 件を削除`}
+                    （このままだと新しい期のコマがダッシュボード等に出ません）
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {switchTerm && orientationTargets.length > 0 && (
+              <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={clearOrientation}
+                  onChange={(e) => setClearOrientation(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  新しい期はオリエンなしにする（初回1限も回数に数える）
+                  <span style={{ fontSize: 10, color: "#888", fontWeight: 400, display: "block" }}>
+                    {orientationTargets.join("・")} の「初回1限はオリエン」を外します
+                    （2学期以降のようにオリエンが入らない期向け）
+                  </span>
                 </span>
               </label>
             )}

@@ -14,6 +14,7 @@ import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
 import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
 import { gradeMatchesTimetable } from "../utils/timetable";
+import { isOrientationEnabledForGrade } from "../utils/sessionCount";
 import {
   describeScope,
   filterConflictsByScope,
@@ -351,6 +352,93 @@ export function buildSwitchPlan({
  *            keptCount, changedCount, closed?: {id, name, endDate}}
  *          | {error: string}}
  */
+/**
+ * 期切替に合わせて表示期間設定 (displayCutoff) を追従させる案を作る。
+ *
+ * 期切替は時間割の有効期間しか動かさないので、表示期間設定が旧期で
+ * 終わっていると新しい期のコマが画面に出ない (buildSwitchPlan が警告する)。
+ * その手当てを反映ダイアログから 1 手でできるようにするための純粋関数。
+ * **自動では適用しない** — 学年グループは期をまたいで共通なので、
+ * どこまで面倒を見るかは人が選ぶ (ダイアログのチェックボックス)。
+ *
+ * 対象:
+ *   - 学年グループの終了日が切替日より前 → 新しい期の終了日 (無ければ解除)
+ *   - コース別終講日が切替日より前 → その設定を削除 (旧期のものなので、
+ *     新しい期の終講日は改めて入れ直す)
+ *   - clearOrientation: 全グループの「初回1限はオリエン」を外す
+ *     (2 学期以降はオリエンが入らない運用のため。既定は触らない)
+ *
+ * followDates を false にすると日付 (終了日・コース別終講日) は触らず、
+ * clearOrientation だけを適用する。ダイアログのチェックボックスが
+ * 独立しているため、対象の件数 (groupLabels / cohortCount) は
+ * followDates に関係なく「直せるもの」を返す。
+ *
+ * @param {{displayCutoff: import("../types").DisplayCutoff|null|undefined,
+ *          startDate: string, endDate?: string|null,
+ *          followDates?: boolean, clearOrientation?: boolean}} params
+ * @returns {{next: import("../types").DisplayCutoff,
+ *            groupLabels: string[], cohortCount: number,
+ *            orientationLabels: string[], changed: boolean}}
+ */
+export function buildCutoffFollowUp({
+  displayCutoff,
+  startDate,
+  endDate,
+  followDates = true,
+  clearOrientation = false,
+}) {
+  const groups = displayCutoff?.groups || [];
+  const cohorts = displayCutoff?.cohorts || [];
+  const empty = {
+    next: displayCutoff || { groups: [], cohorts: [] },
+    groupLabels: [],
+    cohortCount: 0,
+    orientationLabels: [],
+    changed: false,
+  };
+  if (!startDate) return empty;
+
+  const groupLabels = groups
+    .filter((g) => g.date && g.date < startDate)
+    .map((g) => g.label);
+  const staleCohorts = cohorts.filter((c) => c.date && c.date < startDate);
+  // 「オリエンを外す」の対象は、いま有効になっているグループだけ
+  // (未設定 = 中学部のみ有効の既定にも追従する)。
+  const orientationLabels = clearOrientation
+    ? groups
+        .filter((g) =>
+          isOrientationEnabledForGrade((g.grades || [])[0], { groups: [g] })
+        )
+        .map((g) => g.label)
+    : [];
+
+  const dateChanges = followDates && (groupLabels.length > 0 || staleCohorts.length > 0);
+  const changed = dateChanges || orientationLabels.length > 0;
+  if (!changed) {
+    return { ...empty, groupLabels, cohortCount: staleCohorts.length };
+  }
+
+  const staleIds = new Set(staleCohorts.map((c) => c.id));
+  const nextGroups = groups.map((g) => {
+    const patch = {};
+    if (followDates && g.date && g.date < startDate) patch.date = endDate || null;
+    if (orientationLabels.includes(g.label)) patch.orientationFirstDay = false;
+    return Object.keys(patch).length > 0 ? { ...g, ...patch } : g;
+  });
+
+  return {
+    next: {
+      ...(displayCutoff || {}),
+      groups: nextGroups,
+      cohorts: followDates ? cohorts.filter((c) => !staleIds.has(c.id)) : cohorts,
+    },
+    groupLabels,
+    cohortCount: staleCohorts.length,
+    orientationLabels,
+    changed: true,
+  };
+}
+
 export function applyReflection(plan, opts, { timetables, slots }) {
   if (!plan.ok) return { error: "反映できない問題が残っています" };
 
