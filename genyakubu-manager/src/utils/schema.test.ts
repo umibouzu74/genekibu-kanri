@@ -731,6 +731,30 @@ describe("isCutoffGroup with startDate", () => {
   });
 });
 
+describe("isCutoffGroup with orientationFirstDay", () => {
+  it("accepts boolean orientationFirstDay", () => {
+    expect(
+      isCutoffGroup({ label: "中", grades: ["中1"], date: null, orientationFirstDay: false })
+    ).toBe(true);
+    expect(
+      isCutoffGroup({ label: "中", grades: ["中1"], date: null, orientationFirstDay: true })
+    ).toBe(true);
+  });
+
+  it("accepts missing / null orientationFirstDay (従来データ)", () => {
+    expect(isCutoffGroup({ label: "中", grades: ["中1"], date: null })).toBe(true);
+    expect(
+      isCutoffGroup({ label: "中", grades: ["中1"], date: null, orientationFirstDay: null })
+    ).toBe(true);
+  });
+
+  it("rejects non-boolean orientationFirstDay", () => {
+    expect(
+      isCutoffGroup({ label: "中", grades: ["中1"], date: null, orientationFirstDay: "yes" })
+    ).toBe(false);
+  });
+});
+
 describe("v7 → v8 migration: Holiday id, targetGrades, subjKeywords", () => {
   it("adds id, targetGrades, subjKeywords to holidays without them", () => {
     const out = migrateExportBundle({

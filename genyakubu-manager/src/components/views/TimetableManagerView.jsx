@@ -4,6 +4,7 @@ import { formatCount, slotWeight } from "../../utils/biweekly";
 import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
+import { isOrientationEnabledForGrade } from "../../utils/sessionCount";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -340,76 +341,119 @@ export function TimetableManagerView({
             各学年グループの表示期間（開始日〜終了日）を設定します。
             この範囲外の予定はダッシュボード等に表示されません。
           </div>
+          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+            「オリエン」= 開始日以降の初回授業日の1限を
+            オリエンテーション扱いにして授業回数（第N回）に数えません。
+            2学期以降などオリエンが入らない期はオフにします。
+          </div>
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          {displayCutoff?.groups?.map((group, idx) => (
-            <div
-              key={group.label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span
+          {displayCutoff?.groups?.map((group, idx) => {
+            // 未設定 (従来データ) は中学部のみ有効の既定値を解決して表示する。
+            const orientationOn =
+              typeof group.orientationFirstDay === "boolean"
+                ? group.orientationFirstDay
+                : isOrientationEnabledForGrade((group.grades || [])[0], {
+                    groups: [group],
+                  });
+            return (
+              <div
+                key={group.label}
                 style={{
-                  fontWeight: 700,
-                  fontSize: 13,
-                  minWidth: 80,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
                 }}
               >
-                {group.label}
-              </span>
-              <input
-                type="date"
-                value={group.startDate || ""}
-                onChange={(e) => {
-                  if (!isAdmin) return;
-                  const newGroups = [...displayCutoff.groups];
-                  newGroups[idx] = {
-                    ...newGroups[idx],
-                    startDate: e.target.value || null,
-                  };
-                  onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
-                }}
-                disabled={!isAdmin}
-                style={{ ...S.input, width: "auto", minWidth: 140 }}
-              />
-              <span style={{ fontSize: 12, color: "#888" }}>〜</span>
-              <input
-                type="date"
-                value={group.date || ""}
-                onChange={(e) => {
-                  if (!isAdmin) return;
-                  const newGroups = [...displayCutoff.groups];
-                  newGroups[idx] = {
-                    ...newGroups[idx],
-                    date: e.target.value || null,
-                  };
-                  onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
-                }}
-                disabled={!isAdmin}
-                style={{ ...S.input, width: "auto", minWidth: 140 }}
-              />
-              {(group.startDate || group.date) && isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => {
+                <span
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 13,
+                    minWidth: 80,
+                  }}
+                >
+                  {group.label}
+                </span>
+                <input
+                  type="date"
+                  value={group.startDate || ""}
+                  onChange={(e) => {
+                    if (!isAdmin) return;
                     const newGroups = [...displayCutoff.groups];
-                    newGroups[idx] = { ...newGroups[idx], startDate: null, date: null };
+                    newGroups[idx] = {
+                      ...newGroups[idx],
+                      startDate: e.target.value || null,
+                    };
                     onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
                   }}
-                  style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}
+                  disabled={!isAdmin}
+                  style={{ ...S.input, width: "auto", minWidth: 140 }}
+                />
+                <span style={{ fontSize: 12, color: "#888" }}>〜</span>
+                <input
+                  type="date"
+                  value={group.date || ""}
+                  onChange={(e) => {
+                    if (!isAdmin) return;
+                    const newGroups = [...displayCutoff.groups];
+                    newGroups[idx] = {
+                      ...newGroups[idx],
+                      date: e.target.value || null,
+                    };
+                    onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
+                  }}
+                  disabled={!isAdmin}
+                  style={{ ...S.input, width: "auto", minWidth: 140 }}
+                />
+                {(group.startDate || group.date) && isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newGroups = [...displayCutoff.groups];
+                      newGroups[idx] = { ...newGroups[idx], startDate: null, date: null };
+                      onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
+                    }}
+                    style={{ ...S.btn(false), fontSize: 10, padding: "3px 6px" }}
+                  >
+                    解除
+                  </button>
+                )}
+                <label
+                  title="開始日以降の初回授業日の1限をオリエンテーション扱いにし、授業回数に数えません（2学期以降などオリエンが無い期はオフ）"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 11,
+                    color: isAdmin ? "#555" : "#aaa",
+                    cursor: isAdmin ? "pointer" : "default",
+                    whiteSpace: "nowrap",
+                  }}
                 >
-                  解除
-                </button>
-              )}
-              <span style={{ fontSize: 10, color: "#aaa" }}>
-                {(group.grades || []).join(", ")}
-              </span>
-            </div>
-          ))}
+                  <input
+                    type="checkbox"
+                    checked={orientationOn}
+                    onChange={(e) => {
+                      if (!isAdmin) return;
+                      const newGroups = [...displayCutoff.groups];
+                      newGroups[idx] = {
+                        ...newGroups[idx],
+                        orientationFirstDay: e.target.checked,
+                      };
+                      onSaveDisplayCutoff({ ...displayCutoff, groups: newGroups });
+                    }}
+                    disabled={!isAdmin}
+                    style={{ margin: 0 }}
+                  />
+                  初回1限はオリエン（回数に数えない）
+                </label>
+                <span style={{ fontSize: 10, color: "#aaa" }}>
+                  {(group.grades || []).join(", ")}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 

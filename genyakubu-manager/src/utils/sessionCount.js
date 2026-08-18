@@ -27,7 +27,7 @@ import { isSlotCancelledByDaySchedule } from "./daySchedules";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
-import { isTimetableActiveForDate } from "./timetable";
+import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
 
 // "YYYY-MM-DD" → Date (ローカル)
 function parseDate(s) {
@@ -52,6 +52,20 @@ export function getGradeStartDate(grade, displayCutoff) {
     }
   }
   return null;
+}
+
+// 学年グループ (表示期間設定) の「開講日 1 限をオリエン扱いにする」設定を引く。
+// displayCutoff.groups[].orientationFirstDay:
+//   - true / false  → その設定に従う (画面から明示的に切り替えた状態)
+//   - 未設定 (undefined/null) → 従来どおり中学部のみ有効の既定値
+// 2 学期以降のようにオリエンが入らない期は、表示期間設定でオフにする。
+export function isOrientationEnabledForGrade(grade, displayCutoff) {
+  if (!grade) return false;
+  const group = findGroupForGrade(grade, displayCutoff?.groups);
+  if (group && typeof group.orientationFirstDay === "boolean") {
+    return group.orientationFirstDay;
+  }
+  return gradeToDept(grade) === "中学部";
 }
 
 // slot の所属時間割がその日に有効か。ctx.timetables 未指定 (単一時間割
@@ -146,10 +160,12 @@ function findPoolFirstDate(pool, startDate, ctx) {
   return null;
 }
 
-// 中学部の開講日 1 限目はオリエンテーションに置き換わるため、授業として
-// カウントしない。
+// 開講日の 1 限目がオリエンテーションに置き換わる学年グループでは、その
+// コマを授業としてカウントしない。
 //   - ctx.orientationOnFirstDay = true (呼び出し側でオプトイン)
-//   - 中学部
+//   - 学年グループ (表示期間設定) の orientationFirstDay が有効
+//     (未設定なら従来どおり中学部のみ有効。2 学期以降のようにオリエンが
+//      入らない期は画面からオフにする)
 //   - 対象日 == そのスロットが属するセットの「初開講日」
 //        セット未登録のスロットは同学年単位にフォールバック
 //   - 同セット (または同学年) 同曜日のなかで最早時刻
@@ -157,7 +173,7 @@ function findPoolFirstDate(pool, startDate, ctx) {
 //     ので 4/9 (木) が初開講日。その日の同セット内最早時刻が 1 限。
 function isOrientationSlot(slot, dateStr, ctx) {
   if (!ctx.orientationOnFirstDay) return false;
-  if (gradeToDept(slot.grade) !== "中学部") return false;
+  if (!isOrientationEnabledForGrade(slot.grade, ctx.displayCutoff)) return false;
   const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
   if (!startDate) return false;
 
@@ -191,7 +207,7 @@ function isOrientationSlot(slot, dateStr, ctx) {
 }
 
 // 対象日にスロットがどの教科を実施しているかを返す。
-// 実施なし (曜日違い / 休講 / 単独教科隔週の B 週 / 中学部開講日 1 限の
+// 実施なし (曜日違い / 休講 / 単独教科隔週の B 週 / 開講日 1 限の
 // オリエンテーション) の場合は null。
 // 複合教科の隔週スロット ("英/数" + 隔週) は毎週実施され、A 週は先頭教科、
 // B 週は次の教科を返す (それぞれ独立した進度としてカウントされる)。
