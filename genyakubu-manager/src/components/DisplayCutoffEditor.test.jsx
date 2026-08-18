@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // 表示期間設定: 効き目の表示 (対象コマ数・最終授業日) と設定ミスの警告。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DisplayCutoffEditor } from "./DisplayCutoffEditor";
+import { ConfirmProvider } from "../hooks/useConfirm";
 
 afterEach(cleanup);
 
@@ -52,13 +53,15 @@ function renderEditor(displayCutoff = cutoff(), opts = {}) {
     ...(opts.sessionCtx || {}),
   };
   render(
-    <DisplayCutoffEditor
-      slots={SLOTS}
-      displayCutoff={displayCutoff}
-      onSave={onSave}
-      isAdmin
-      sessionCtx={opts.noCtx ? null : sessionCtx}
-    />
+    <ConfirmProvider>
+      <DisplayCutoffEditor
+        slots={SLOTS}
+        displayCutoff={displayCutoff}
+        onSave={onSave}
+        isAdmin
+        sessionCtx={opts.noCtx ? null : sessionCtx}
+      />
+    </ConfirmProvider>
   );
   return { onSave };
 }
@@ -128,6 +131,83 @@ describe("DisplayCutoffEditor", () => {
     });
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0].groups[0].date).toBe("2026-07-20");
+  });
+
+  it("対象学年チップから外せる", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByLabelText("中1・2 から 中2 を外す"));
+    expect(onSave.mock.calls[0][0].groups[0].grades).toEqual(["中1"]);
+  });
+
+  it("未所属の学年をプルダウンでグループに入れられる", () => {
+    const { onSave } = renderEditor();
+    fireEvent.change(screen.getByLabelText("附中 をグループに追加"), {
+      target: { value: "0" },
+    });
+    expect(onSave.mock.calls[0][0].groups[0].grades).toEqual(["中1", "中2", "附中"]);
+  });
+
+  it("学年は 1 つのグループにしか属さない (追加時に他から外す)", () => {
+    const two = {
+      groups: [
+        { label: "中1・2", grades: ["中1", "中2"], startDate: null, date: null },
+        { label: "土曜", grades: [], startDate: null, date: null },
+      ],
+      cohorts: [],
+    };
+    const { onSave } = renderEditor(two);
+    fireEvent.change(screen.getByLabelText("土曜 に学年を追加"), {
+      target: { value: "中2" },
+    });
+    fireEvent.click(screen.getByLabelText("土曜 に入力した学年を追加"));
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.groups[0].grades).toEqual(["中1"]);
+    expect(saved.groups[1].grades).toEqual(["中2"]);
+  });
+
+  it("学年グループを追加できる (同名は不可)", () => {
+    const { onSave } = renderEditor();
+    const input = screen.getByLabelText("新しい学年グループ名");
+    fireEvent.change(input, { target: { value: "土曜プレップ" } });
+    fireEvent.click(screen.getByText("+ グループを追加"));
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.groups).toHaveLength(2);
+    expect(saved.groups[1]).toMatchObject({ label: "土曜プレップ", grades: [] });
+
+    fireEvent.change(input, { target: { value: "中1・2" } });
+    expect(screen.getByText("同じ名前のグループがあります")).toBeInTheDocument();
+    expect(screen.getByText("+ グループを追加")).toBeDisabled();
+  });
+
+  it("一括設定は対象を絞って空欄の項目を触らない", () => {
+    const two = {
+      groups: [
+        { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2026-07-18" },
+        { label: "高3", grades: ["高3"], startDate: "2026-04-07", date: "2026-07-18" },
+      ],
+      cohorts: [],
+    };
+    const { onSave } = renderEditor(two);
+    fireEvent.change(screen.getByLabelText("一括設定の対象"), { target: { value: "中学部" } });
+    fireEvent.change(screen.getByLabelText("一括設定の終了日"), {
+      target: { value: "2026-07-25" },
+    });
+    fireEvent.click(screen.getByText("1 グループに適用"));
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.groups[0]).toMatchObject({ startDate: "2026-04-07", date: "2026-07-25" });
+    expect(saved.groups[1]).toMatchObject({ startDate: "2026-04-07", date: "2026-07-18" });
+  });
+
+  it("グループ削除は確認ダイアログを通す", async () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByLabelText("中1・2 を削除"));
+    // 確認ダイアログが出るまでは保存しない
+    expect(onSave).not.toHaveBeenCalled();
+    const okButton = await screen.findByText("削除する");
+    expect(screen.getByText(/この学年の 2 コマは表示期間・終講日のフィルタが効かなくなり/)).toBeInTheDocument();
+    fireEvent.click(okButton);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].groups).toEqual([]);
   });
 
   it("sessionCtx が無くても落ちない (最終授業日は出さない)", () => {
