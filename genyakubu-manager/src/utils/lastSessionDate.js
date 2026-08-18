@@ -11,7 +11,6 @@
 
 import { fmtDate, WEEKDAYS } from "../data";
 import { buildSessionCountMap, isSlotHeldOnDate } from "./sessionCount";
-import { isSlotBeyondCutoff } from "./timetable";
 
 function parseDate(s) {
   const [y, m, d] = s.split("-").map(Number);
@@ -25,14 +24,15 @@ function parseDate(s) {
  * @param {import("../types").Slot[]} slots 対象コマ (学年グループ / コース)
  * @param {string} endDateStr "YYYY-MM-DD" 終了日 (終講日)
  * @param {object} sessionCtx useSessionCtx が返す ctx
- * @param {{maxLookbackDays?: number, applyCutoff?: boolean}} [opts]
- *   applyCutoff: true なら表示期間 (isSlotBeyondCutoff) も満たす日だけを
- *   対象にする。終講日を入れる前の下見では false (既定) にして、
- *   「その日に授業があるか」だけを見る。
- * @returns {{date: string, sessionNo: number, slotCount: number} | null}
+ * @param {{maxLookbackDays?: number, withSessionNo?: boolean}} [opts]
+ *   withSessionNo: false なら第N回を数えない (sessionNo は 0)。回数の算出は
+ *   開始日からの走査なので、日付だけ要るとき (学年グループの行のように
+ *   複数コースが混ざり「何回目」が一意に決まらないとき) は切っておく。
+ * @returns {{date: string, sessionNo: number} | null}
  */
 export function findLastSessionOnOrBefore(slots, endDateStr, sessionCtx, opts = {}) {
   const maxLookbackDays = opts.maxLookbackDays ?? 28;
+  const withSessionNo = opts.withSessionNo !== false;
   if (!Array.isArray(slots) || slots.length === 0) return null;
   if (!endDateStr || !sessionCtx) return null;
 
@@ -43,16 +43,15 @@ export function findLastSessionOnOrBefore(slots, endDateStr, sessionCtx, opts = 
     const dayKey = WEEKDAYS[cur.getDay()];
     if (days.has(dayKey)) {
       const held = slots.filter(
-        (s) =>
-          s.day === dayKey &&
-          isSlotHeldOnDate(s, ds, sessionCtx) &&
-          (!opts.applyCutoff || !isSlotBeyondCutoff(ds, s, sessionCtx.displayCutoff))
+        (s) => s.day === dayKey && isSlotHeldOnDate(s, ds, sessionCtx)
       );
       if (held.length > 0) {
-        const map = buildSessionCountMap(held, ds, sessionCtx);
         let sessionNo = 0;
-        for (const v of map.values()) if (v > sessionNo) sessionNo = v;
-        return { date: ds, sessionNo, slotCount: held.length };
+        if (withSessionNo) {
+          const map = buildSessionCountMap(held, ds, sessionCtx);
+          for (const v of map.values()) if (v > sessionNo) sessionNo = v;
+        }
+        return { date: ds, sessionNo };
       }
     }
     cur.setDate(cur.getDate() - 1);

@@ -11,6 +11,10 @@ import { useConfirm } from "../hooks/useConfirm";
 // コホートができるので 20 行を超えることがある)。
 const COLLAPSE_LIMIT = 8;
 
+// 一括設定はこの件数以上なら確認を挟む。絞り込まずに押すと全コースの
+// 終講日を黙って上書きしてしまい、元の値は復元できないため。
+const BULK_CONFIRM_LIMIT = 10;
+
 // ─── コース別 終講日エディタ ───────────────────────────────────────
 // 学年グループ (中1・2 / 中3 / 高1・2 / 高3) では表現できない、
 // 学校別 (高校) / 曜日ペア別 (中学 火木・水金) の終講日を、いま入っている
@@ -128,12 +132,44 @@ export function CohortCutoffEditor({
     [filteredByGrade]
   );
 
-  // 表示中 (絞り込み後) のコースへの一括操作。絞り込みと組み合わせて
-  // 「高3 の未設定だけまとめて 1/17」のような入れ方ができる。
-  const applyBulkDate = (date) => {
+  // 折りたたみを考慮した「いま画面に出る行」。最終授業日の逆算は開始日から
+  // 対象日までの走査なので、見えていない行まで数えると設定を触るたびに
+  // 数百 ms 待たされる (実データで 45 コース = 約 120ms)。
+  const shownByGrade = useMemo(
+    () =>
+      filteredByGrade.map(({ grade, items }) => ({
+        grade,
+        items,
+        shown:
+          expandedGrades.has(grade) || items.length <= COLLAPSE_LIMIT
+            ? items
+            : items.slice(0, COLLAPSE_LIMIT),
+      })),
+    [filteredByGrade, expandedGrades]
+  );
+
+  // 絞り込みに該当するコースへの一括操作 (折りたたみで省略している行も
+  // 対象)。絞り込みと組み合わせて「高3 の未設定だけまとめて 1/17」の
+  // ような入れ方ができる。
+  const applyBulkDate = async (date) => {
     if (!isAdmin) return;
     const targets = filteredByGrade.flatMap((g) => g.items);
     if (targets.length === 0) return;
+    if (targets.length >= BULK_CONFIRM_LIMIT) {
+      const ok = await confirm({
+        title: date ? "終講日をまとめて設定" : "終講日をまとめて解除",
+        message: date
+          ? `${targets.length} コースの終講日を ${date} に設定します。\n` +
+            `・既に入っている終講日も上書きされます（元の値には戻せません）\n` +
+            `\n検索や「未設定のみ」で絞ってから実行することもできます。よろしいですか？`
+          : `${targets.length} コースの終講日を解除します。\n` +
+            `・解除したコースは上の「表示期間設定」の終了日に従います\n` +
+            `\nよろしいですか？`,
+        okLabel: date ? "まとめて設定" : "まとめて解除",
+        tone: date ? undefined : "danger",
+      });
+      if (!ok) return;
+    }
     const targetIds = new Set(targets.map((c) => c.id));
     const rest = (displayCutoff?.cohorts || []).filter((c) => !targetIds.has(c.id));
     const next = date
@@ -179,22 +215,24 @@ export function CohortCutoffEditor({
     [cohorts, savedById]
   );
 
-  // 終講日を入れているコースだけ「実際の最終授業日 (と第N回)」を逆算する。
-  // 全コース分やると重い上に、終講日が無いコースは終わりが無いので出さない。
+  // 終講日を入れていて、いま画面に出ているコースだけ「実際の最終授業日
+  // (と第N回)」を逆算する。終講日が無いコースは終わりが無いので出さない。
   const lastSessions = useMemo(() => {
     const out = new Map();
     if (!sessionCtx) return out;
-    for (const c of cohorts) {
-      const date = savedById.get(c.id)?.date;
-      if (!date) continue;
-      const cohortSlots = (c.slotIds || [])
-        .map((id) => slotById.get(id))
-        .filter(Boolean);
-      if (cohortSlots.length === 0) continue;
-      out.set(c.id, findLastSessionOnOrBefore(cohortSlots, date, sessionCtx));
+    for (const { shown } of shownByGrade) {
+      for (const c of shown) {
+        const date = savedById.get(c.id)?.date;
+        if (!date) continue;
+        const cohortSlots = (c.slotIds || [])
+          .map((id) => slotById.get(id))
+          .filter(Boolean);
+        if (cohortSlots.length === 0) continue;
+        out.set(c.id, findLastSessionOnOrBefore(cohortSlots, date, sessionCtx));
+      }
     }
     return out;
-  }, [cohorts, savedById, slotById, sessionCtx]);
+  }, [shownByGrade, savedById, slotById, sessionCtx]);
 
   // 未使用エントリ (対象の授業が無い) の一括削除。1 件ずつ日付を消す導線しか
   // 無かったので、掃除が一手で済むようにする。設定を消すだけで cascade は
@@ -305,13 +343,13 @@ export function CohortCutoffEditor({
             />
             未設定のみ
           </label>
-          <span style={{ color: "#888" }}>{filteredCount} コース表示中</span>
+          <span style={{ color: "#888" }}>該当 {filteredCount} コース</span>
           {isAdmin && (
             <>
               <span style={{ marginLeft: 8, color: "#555", fontWeight: 700 }}>一括</span>
               <input
                 type="date"
-                aria-label="表示中のコースに一括設定する終講日"
+                aria-label="該当するコースに一括設定する終講日"
                 value={bulkDate}
                 onChange={(e) => setBulkDate(e.target.value)}
                 style={{ ...S.input, width: "auto", fontSize: 11, padding: "3px 6px" }}
@@ -327,7 +365,7 @@ export function CohortCutoffEditor({
                   opacity: !bulkDate || filteredCount === 0 ? 0.5 : 1,
                 }}
               >
-                表示中の {filteredCount} コースに設定
+                該当 {filteredCount} コースに設定
               </button>
               <button
                 type="button"
@@ -335,7 +373,7 @@ export function CohortCutoffEditor({
                 disabled={filteredCount === 0}
                 style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
               >
-                表示中を解除
+                該当を解除
               </button>
             </>
           )}
@@ -351,13 +389,12 @@ export function CohortCutoffEditor({
 
         {cohorts.length > 0 && filteredByGrade.length === 0 && (
           <div style={{ fontSize: 12, color: "#888" }}>
-            条件に合うコースがありません（検索・「未設定のみ」を外してください）。
+            条件に合うコースがありません（検索語を消すか「未設定のみ」を外してください）。
           </div>
         )}
 
-        {filteredByGrade.map(({ grade, items }) => {
-          const expanded = expandedGrades.has(grade) || items.length <= COLLAPSE_LIMIT;
-          const shown = expanded ? items : items.slice(0, COLLAPSE_LIMIT);
+        {shownByGrade.map(({ grade, items, shown }) => {
+          const expanded = shown.length === items.length;
           return (
           <div key={grade}>
             <div

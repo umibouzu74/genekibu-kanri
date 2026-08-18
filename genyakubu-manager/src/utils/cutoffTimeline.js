@@ -63,13 +63,12 @@ export function monthTicks(start, end) {
   return out;
 }
 
-// 学年グループの担当学年に一致する時間割のうち、いちばん遅い終了日。
+// 学年グループのコマが属する時間割のうち、いちばん遅い終了日。
 // 「時間割はまだ有効なのに表示期間が先に終わっている」区間 (uncovered) の
-// 検出に使う。終了日なし (無期限) の時間割があれば null を返し、
+// 検出に使う。終了日なし (無期限) の時間割が混じっていれば open を立て、
 // uncovered は帯の右端まで伸ばす。
-function latestTimetableEndForGroup(group, timetables, slots, groupSlotIds) {
+function latestTimetableEndForGroup(timetables, slotById, groupSlotIds) {
   const ids = new Set();
-  const slotById = new Map((slots || []).map((s) => [s.id, s]));
   for (const id of groupSlotIds || []) {
     const s = slotById.get(id);
     if (s) ids.add(s.timetableId ?? 1);
@@ -84,7 +83,7 @@ function latestTimetableEndForGroup(group, timetables, slots, groupSlotIds) {
     }
     if (!latest || tt.endDate > latest) latest = tt.endDate;
   }
-  return { latest, open, count: ids.size };
+  return { latest, open };
 }
 
 /**
@@ -106,6 +105,7 @@ export function buildCutoffTimeline({
   const groups = displayCutoff?.groups || [];
   const cohorts = displayCutoff?.cohorts || [];
   const summary = summarizeCutoffGroups(slots, displayCutoff);
+  const slotById = new Map((slots || []).map((s) => [s.id, s]));
 
   const dates = [];
   for (const tt of timetables) {
@@ -158,7 +158,7 @@ export function buildCutoffTimeline({
   for (const g of groups) {
     const info = summary.get(g.label) || { slotCount: 0, slotIds: [] };
     const invalid = !!(g.startDate && g.date && g.startDate > g.date);
-    const tt = latestTimetableEndForGroup(g, timetables, slots, info.slotIds);
+    const tt = latestTimetableEndForGroup(timetables, slotById, info.slotIds);
     // 時間割はまだ有効なのに表示期間が先に終わっている区間
     let uncovered = null;
     if (g.date && info.slotCount > 0 && (tt.open || (tt.latest && tt.latest > g.date))) {

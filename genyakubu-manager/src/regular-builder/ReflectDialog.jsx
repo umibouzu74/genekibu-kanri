@@ -154,8 +154,9 @@ export function ReflectDialog({
         : null,
     [useSwitch, timetables, slots, startDate, closeId, opts.grades, displayCutoff, classSets]
   );
-  // 「何が直せるか」の下見 (チェックの有無に関係なく件数を出す)
-  const cutoffFollow = useMemo(
+  // 「何が直せるか」の下見。件数 (groupLabels / cohortCount /
+  // orientationLabels) を出すためだけに使い、next は使わない
+  const cutoffPreview = useMemo(
     () =>
       useSwitch && startDate
         ? buildCutoffFollowUp({ displayCutoff, startDate, clearOrientation: true })
@@ -176,10 +177,10 @@ export function ReflectDialog({
         : null,
     [useSwitch, displayCutoff, startDate, endDate, followCutoff, clearOrientation]
   );
-  const orientationTargets = cutoffFollow?.orientationLabels || [];
+  const orientationTargets = cutoffPreview?.orientationLabels || [];
   const canFollowCutoff =
-    !!cutoffFollow &&
-    (cutoffFollow.groupLabels.length > 0 || cutoffFollow.cohortCount > 0);
+    !!cutoffPreview &&
+    (cutoffPreview.groupLabels.length > 0 || cutoffPreview.cohortCount > 0);
 
   const canExecute = plan.ok && (!switchPlan || switchPlan.ok);
   const total = plan.drafts.length;
@@ -226,11 +227,11 @@ export function ReflectDialog({
             : "") +
           (followCutoff && canFollowCutoff
             ? `・表示期間設定を新しい期に合わせます` +
-              (cutoffFollow.groupLabels.length > 0
-                ? `（${cutoffFollow.groupLabels.join("・")} の終了日 → ${endDate || "解除"}）`
+              (cutoffPreview.groupLabels.length > 0
+                ? `（${cutoffPreview.groupLabels.join("・")} の終了日 → ${endDate || "解除"}）`
                 : "") +
-              (cutoffFollow.cohortCount > 0
-                ? `／旧期のコース別終講日 ${cutoffFollow.cohortCount} 件を削除`
+              (cutoffPreview.cohortCount > 0
+                ? `／旧期のコース別終講日 ${cutoffPreview.cohortCount} 件を削除`
                 : "") +
               `\n`
             : "") +
@@ -459,12 +460,16 @@ export function ReflectDialog({
                 <span>
                   表示期間設定も新しい期に合わせる
                   <span style={{ fontSize: 10, color: "#888", fontWeight: 400, display: "block" }}>
-                    {cutoffFollow.groupLabels.length > 0 &&
-                      `${cutoffFollow.groupLabels.join("・")} の終了日を ` +
-                        `${endDate ? endDate : "「終了日なし」に"}${endDate ? " に" : ""}変更` +
-                        (cutoffFollow.cohortCount > 0 ? " / " : "")}
-                    {cutoffFollow.cohortCount > 0 &&
-                      `旧期のコース別終講日 ${cutoffFollow.cohortCount} 件を削除`}
+                    {[
+                      cutoffPreview.groupLabels.length > 0 &&
+                        `${cutoffPreview.groupLabels.join("・")} の終了日を${
+                          endDate ? ` ${endDate} に` : "「なし」に"
+                        }変更`,
+                      cutoffPreview.cohortCount > 0 &&
+                        `旧期のコース別終講日 ${cutoffPreview.cohortCount} 件を削除`,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ")}
                     （このままだと新しい期のコマがダッシュボード等に出ません）
                   </span>
                 </span>

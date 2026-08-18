@@ -128,20 +128,20 @@ describe("CohortCutoffEditor", () => {
     expect(screen.getByText("中1 火金")).toBeInTheDocument();
   });
 
-  it("表示中のコースに終講日を一括設定できる", () => {
+  it("絞り込みに該当するコースへ終講日を一括設定できる", () => {
     const { onSave } = renderEditor(null);
-    fireEvent.change(screen.getByLabelText("表示中のコースに一括設定する終講日"), {
+    fireEvent.change(screen.getByLabelText("該当するコースに一括設定する終講日"), {
       target: { value: "2026-07-17" },
     });
-    fireEvent.click(screen.getByText(/表示中の 1 コースに設定/));
+    fireEvent.click(screen.getByText(/該当 1 コースに設定/));
     expect(onSave.mock.calls[0][0].cohorts).toEqual([
       { id: "M|中1|火金", label: "中1 火金", grade: "中1", date: "2026-07-17" },
     ]);
   });
 
-  it("表示中のコースの終講日をまとめて解除できる", () => {
+  it("絞り込みに該当するコースの終講日をまとめて解除できる", () => {
     const { onSave } = renderEditor("2026-07-17");
-    fireEvent.click(screen.getByText("表示中を解除"));
+    fireEvent.click(screen.getByText("該当を解除"));
     expect(onSave.mock.calls[0][0].cohorts).toEqual([]);
   });
 
@@ -179,5 +179,28 @@ describe("CohortCutoffEditor", () => {
     expect(screen.queryByText("高3 共テ科目9")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("他 2 コースを表示"));
     expect(screen.getByText("高3 共テ科目9")).toBeInTheDocument();
+  });
+
+  it("一括設定は 10 コース以上なら確認を挟む", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: 200 + i,
+      grade: "高3",
+      day: "月",
+      time: "19:00-20:20",
+      cls: "",
+      room: "602",
+      subj: `共テ科目${i} 演習`,
+      teacher: "T",
+      note: "",
+    }));
+    const { onSave } = renderEditor(null, {}, { slots: many });
+    fireEvent.change(screen.getByLabelText("該当するコースに一括設定する終講日"), {
+      target: { value: "2027-01-17" },
+    });
+    fireEvent.click(screen.getByText(/該当 12 コースに設定/));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByText("まとめて設定"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].cohorts).toHaveLength(12);
   });
 });

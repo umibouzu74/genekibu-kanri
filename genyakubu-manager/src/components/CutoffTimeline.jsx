@@ -69,7 +69,7 @@ export function CutoffTimeline({ timetables, slots, displayCutoff }) {
           <span style={{ fontWeight: 800, fontSize: 14 }}>期間の全体像</span>
           <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
             時間割の有効期間・学年グループの表示期間・コース別終講日を同じ物差しで
-            並べます。設定は下の 2 枚のカードで変更します。
+            並べます。設定の変更は下の 2 枚のカードで行います。
           </div>
         </div>
         <label
@@ -262,7 +262,7 @@ export function CutoffTimeline({ timetables, slots, displayCutoff }) {
                   <div>
                     ⚠ {uncoveredCount} つの学年グループで、時間割はまだ有効なのに表示期間が
                     先に終わっています（斜線の区間はコマが画面に出ません）。期を延ばすなら
-                    下の「表示期間設定」で終了日を伸ばしてください。
+                    下の「表示期間設定」で終了日を延ばしてください。
                   </div>
                 )}
                 {invalidCount > 0 && (

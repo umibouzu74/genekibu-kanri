@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { S } from "../styles/common";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 import { gradeToDept } from "../utils/scheduleHelpers";
-import { findUngroupedGrades, summarizeCutoffGroups } from "../utils/timetable";
+import {
+  findGroupForGrade,
+  findUngroupedGrades,
+  summarizeCutoffGroups,
+} from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
 import { findLastSessionOnOrBefore } from "../utils/lastSessionDate";
 import { useConfirm } from "../hooks/useConfirm";
@@ -77,8 +81,28 @@ export function DisplayCutoffEditor({
     [slots, displayCutoff]
   );
 
+  // 同じ学年が複数のグループに一致すると、findGroupForGrade は**先頭の
+  // グループ**を返すので、後ろの行の設定は黙って効かなくなる。とくに複合学年
+  // (「中1-3」は中1 として中1・2 グループにも一致する) で起きやすいので、
+  // 効かない学年を行ごとに拾って警告する。
+  const shadowedByIdx = useMemo(() => {
+    const out = new Map();
+    groups.forEach((g, idx) => {
+      const shadowed = [];
+      for (const grade of g.grades || []) {
+        const owner = findGroupForGrade(grade, groups);
+        if (owner && owner !== g) shadowed.push({ grade, ownerLabel: owner.label });
+      }
+      if (shadowed.length > 0) out.set(idx, shadowed);
+    });
+    return out;
+  }, [groups]);
+
   // 終了日を入れているグループだけ「実際の最終授業日」を逆算する
   // (終了日が無いグループは終わりが無いので出す意味がない)。
+  // 第N回は出さない: 学年グループには複数のコース (曜日ペア・学校) が
+  // 混ざっていて進度カウンタが別々なので「何回目で終わる」が一意に決まらない。
+  // コース単位の第N回はコース別終講日カードに出している。
   const lastSessions = useMemo(() => {
     const out = new Map();
     if (!sessionCtx) return out;
@@ -86,8 +110,14 @@ export function DisplayCutoffEditor({
     for (const g of groups) {
       const info = summary.get(g.label);
       if (!g.date || !info || info.slotCount === 0) continue;
+      // 開始日 > 終了日 の行は期間として成立していないので逆算しない
+      // (警告の隣に最終授業日が出ると矛盾して見える)
+      if (g.startDate && g.startDate > g.date) continue;
       const groupSlots = info.slotIds.map((id) => slotById.get(id)).filter(Boolean);
-      out.set(g.label, findLastSessionOnOrBefore(groupSlots, g.date, sessionCtx));
+      out.set(
+        g.label,
+        findLastSessionOnOrBefore(groupSlots, g.date, sessionCtx, { withSessionNo: false })
+      );
     }
     return out;
   }, [groups, summary, slots, sessionCtx]);
@@ -143,7 +173,7 @@ export function DisplayCutoffEditor({
       message:
         `「${group.label}」(${(group.grades || []).join(", ") || "対象学年なし"}) を削除します。\n` +
         (info && info.slotCount > 0
-          ? `・この学年の ${info.slotCount} コマは表示期間・終講日のフィルタが効かなくなり、「第N回」も出なくなります\n`
+          ? `・この学年の ${info.slotCount} コマは表示期間・終講日のフィルタが効かなくなり、授業回数（第N回）も出なくなります\n`
           : "・対象のコマはありません\n") +
         "\nよろしいですか？",
       okLabel: "削除する",
@@ -195,7 +225,7 @@ export function DisplayCutoffEditor({
         <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
           <b>開始日は「第N回」のカウント起点でもあります</b>
           （期の途中で動かすと回数が数え直しになります）。
-          「オリエン」= 開始日以降の初回授業日の1限をオリエンテーション扱いにして
+          「オリエン」＝ 開始日以降の初回授業日の1限をオリエンテーション扱いにして
           授業回数に数えません。2学期以降などオリエンが入らない期はオフにします。
         </div>
       </div>
@@ -253,7 +283,7 @@ export function DisplayCutoffEditor({
             {bulkTargetCount} グループに適用
           </button>
           <span style={{ color: "#aaa", fontSize: 10 }}>
-            空欄の項目は変更しません（終了日だけ揃える、も可）
+            空欄の項目は変更しません（終了日だけ揃えることもできます）
           </span>
         </div>
       )}
@@ -336,11 +366,12 @@ export function DisplayCutoffEditor({
                     type="button"
                     onClick={() => removeGroup(idx)}
                     aria-label={`${group.label} を削除`}
+                    title="この学年グループを削除します（対象学年のフィルタが効かなくなります）"
                     style={{
                       ...S.btn(false),
                       fontSize: 10,
                       padding: "3px 6px",
-                      color: "#a33",
+                      color: "#888",
                       marginLeft: "auto",
                     }}
                   >
@@ -385,7 +416,7 @@ export function DisplayCutoffEditor({
                 ))}
                 {(group.grades || []).length === 0 && (
                   <span style={{ fontSize: 10, color: "#c88" }}>
-                    未設定（このグループは何にも一致しません）
+                    未設定（このグループはどのコマにも一致しません）
                   </span>
                 )}
                 {isAdmin && (
@@ -425,17 +456,23 @@ export function DisplayCutoffEditor({
                 {info.days.length > 0 && <span>授業曜日 {info.days.join("")}</span>}
                 {group.startDate && <span>開講 {fmtDateWeekday(group.startDate)}</span>}
                 {group.date && <span>終了 {fmtDateWeekday(group.date)}</span>}
-                {last && (
+                {last && last.date !== group.date && (
                   <span style={{ color: "#2a6a3a", fontWeight: 600 }}>
-                    最終授業日 {fmtDateWeekday(last.date)}
-                    {last.sessionNo > 0 ? `（第${last.sessionNo}回）` : ""}
+                    実際の最終授業日 {fmtDateWeekday(last.date)}
                   </span>
                 )}
               </div>
 
+              {shadowedByIdx.has(idx) &&
+                shadowedByIdx.get(idx).map((sh) => (
+                  <div key={sh.grade} style={warnStyle}>
+                    ⚠ {sh.grade} は「{sh.ownerLabel}」が先に一致するため、この行の設定は
+                    効きません（同じ学年は先に並んでいるグループが優先されます）。
+                  </div>
+                ))}
               {invertedRange && (
                 <div style={warnStyle}>
-                  ⚠ 開始日が終了日より後です。この学年のコマはどの日にも表示されません。
+                  ⚠ 開始日が終了日より後です。このグループのコマはどの日にも表示されません。
                 </div>
               )}
               {info.slotCount === 0 && (
@@ -443,7 +480,7 @@ export function DisplayCutoffEditor({
                   この学年グループのコマは登録されていません（設定しても効果はありません）。
                 </div>
               )}
-              {group.date && info.slotCount > 0 && !last && (
+              {group.date && info.slotCount > 0 && !invertedRange && !last && (
                 <div style={warnStyle}>
                   ⚠ 終了日の直前 4 週間にこの学年の授業がありません。終了日が早すぎないか確認してください。
                 </div>
@@ -544,7 +581,7 @@ export function DisplayCutoffEditor({
               ))}
             </div>
             <div style={{ fontSize: 10, color: "#a05a00", marginTop: 6, lineHeight: 1.5 }}>
-              これらのコマは表示期間・終講日のどちらも効かず（常に表示され）、
+              これらのコマは表示期間も終講日も効かず（常に表示され）、
               「第N回」も出ません。上のプルダウンでグループに入れるか、
               コマの学年表記を揃えてください。
             </div>

@@ -278,7 +278,7 @@ export function buildSwitchPlan({
         `表示期間設定の終了日が切替日より前の学年グループがあります（${endedGroups
           .map((g) => `${g.label} 〜${g.date}`)
           .join("・")}）。このままだと新しい期のコマがダッシュボード等に出ません` +
-          `（時間割管理 → 表示期間設定で伸ばしてください）`
+          `（時間割管理 → 表示期間設定で延ばしてください）`
       );
     }
     const endedCohorts = (displayCutoff?.cohorts || []).filter(

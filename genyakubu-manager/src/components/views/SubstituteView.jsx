@@ -35,6 +35,7 @@ export function SubstituteView({
   teacherSubjects,
   classSets,
   displayCutoff,
+  daySchedules = [],
   onAddAdjustment,
   onDelAdjustment,
   onDelSessionOverride,
@@ -331,6 +332,7 @@ export function SubstituteView({
           examPeriods={examPeriods || []}
           timetables={timetables || []}
           displayCutoff={displayCutoff}
+          daySchedules={daySchedules}
           ty={ty}
           tm={tm}
           fMonth={fMonth}

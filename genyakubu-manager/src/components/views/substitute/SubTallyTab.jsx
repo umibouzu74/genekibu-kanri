@@ -16,6 +16,7 @@ export function SubTallyTab({
   examPeriods = [],
   timetables = [],
   displayCutoff,
+  daySchedules = [],
   ty,
   tm,
   fMonth,
@@ -80,6 +81,7 @@ export function SubTallyTab({
                 ? staffMonthlyRegularDates(slots, r.name, holidays || [], ty, tm, examPeriods, {
                     timetables,
                     displayCutoff,
+                    daySchedules,
                   })
                 : [];
               return (

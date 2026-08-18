@@ -271,9 +271,9 @@ export interface CutoffGroup {
   date: string | null; // "YYYY-MM-DD" or null（終了日制限なし）
   // 開講日 (startDate 以降の初回授業日) の 1 限をオリエンテーション扱いに
   // して授業回数に数えないか。true/false は画面で明示設定した状態、
-  // 未設定 (undefined) は従来既定 = 中学部のみ有効。
+  // 未設定 (undefined / null) は従来既定 = 中学部のみ有効。
   // 2 学期以降のようにオリエンが入らない期は false にする。
-  orientationFirstDay?: boolean;
+  orientationFirstDay?: boolean | null;
 }
 
 // ─── Cohort cutoff (コース別 終講日) ─────────────────────────────

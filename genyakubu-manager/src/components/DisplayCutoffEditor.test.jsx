@@ -74,10 +74,23 @@ describe("DisplayCutoffEditor", () => {
     expect(screen.getByText("開講 2026-04-07 (火)")).toBeInTheDocument();
   });
 
-  it("終了日から実際の最終授業日を逆算して出す", () => {
+  it("終了日から実際の最終授業日を逆算して出す (終了日とズレているときだけ)", () => {
     renderEditor();
     // 7/18 は土曜。中1・2 の授業は月火なので最後は 7/14 (火)
-    expect(screen.getByText(/最終授業日 2026-07-14 \(火\)/)).toBeInTheDocument();
+    expect(screen.getByText(/実際の最終授業日 2026-07-14 \(火\)/)).toBeInTheDocument();
+  });
+
+  it("終了日にちょうど授業がある日は最終授業日を出さない (情報が重複するため)", () => {
+    // 7/14 は火曜 = 中1 のコマがある日
+    renderEditor(cutoff({ date: "2026-07-14" }));
+    expect(screen.queryByText(/実際の最終授業日/)).not.toBeInTheDocument();
+  });
+
+  it("開始日 > 終了日 の行では最終授業日も「授業がありません」も出さない", () => {
+    renderEditor(cutoff({ startDate: "2026-09-01", date: "2026-07-18" }));
+    expect(screen.getByText(/開始日が終了日より後です/)).toBeInTheDocument();
+    expect(screen.queryByText(/実際の最終授業日/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/終了日の直前 4 週間/)).not.toBeInTheDocument();
   });
 
   it("開始日が終了日より後なら警告する", () => {
@@ -208,6 +221,26 @@ describe("DisplayCutoffEditor", () => {
     fireEvent.click(okButton);
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave.mock.calls[0][0].groups).toEqual([]);
+  });
+
+  it("先に並ぶグループに食われる学年を警告する (複合学年の落とし穴)", () => {
+    // 「中1-3」は中1 として中1・2 グループにも一致するので、後ろの行に
+    // 入れても findGroupForGrade は中1・2 を返す = 後ろの設定は効かない
+    renderEditor({
+      groups: [
+        { label: "中1・2", grades: ["中1", "中2"], startDate: null, date: null },
+        { label: "土曜プレップ", grades: ["中1-3"], startDate: null, date: null },
+      ],
+      cohorts: [],
+    });
+    expect(
+      screen.getByText(/中1-3 は「中1・2」が先に一致するため、この行の設定は/)
+    ).toBeInTheDocument();
+  });
+
+  it("学年が重複していなければ警告しない", () => {
+    renderEditor();
+    expect(screen.queryByText(/先に一致するため/)).not.toBeInTheDocument();
   });
 
   it("sessionCtx が無くても落ちない (最終授業日は出さない)", () => {

@@ -1365,6 +1365,7 @@ export default function App() {
               teacherSubjects={teacherSubjects}
               classSets={classSets}
               displayCutoff={displayCutoff}
+              daySchedules={daySchedules}
               extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
@@ -1427,6 +1428,7 @@ export default function App() {
               holidays={holidays}
               examPeriods={examPeriods}
               displayCutoff={displayCutoff}
+              daySchedules={daySchedules}
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}

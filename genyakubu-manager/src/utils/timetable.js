@@ -264,7 +264,8 @@ export function getCutoffGroupLabelsWithSlots(slots, displayCutoff) {
  * opts.activeGroupLabels を渡すと、その label に含まれないグループ (=
  * コマが 1 つも無いグループ) を判定から除く。運用していない学年グループの
  * 終了日が空のままだと、他が全部終わってもバナーが出ないため。
- * 全グループが除外されたときは判定材料が無いので null を返す。
+ * ただし 1 つも残らないときは絞り込みを無かったことにして全グループで
+ * 判定する (grades を空にした「全学年」1 グループ運用を壊さないため)。
  * @param {string} dateStr
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
  * @param {{activeGroupLabels?: Set<string>}} [opts]
@@ -281,9 +282,7 @@ export function getDayCutoffKind(dateStr, displayCutoff, opts = {}) {
   const list = scoped.length > 0 ? scoped : groups;
   let before = 0;
   let after = 0;
-  let considered = 0;
   for (const group of list) {
-    considered += 1;
     if (group.startDate && dateStr < group.startDate) {
       before += 1;
       continue;
@@ -294,7 +293,6 @@ export function getDayCutoffKind(dateStr, displayCutoff, opts = {}) {
     }
     return null; // 期間内のグループがある
   }
-  if (considered === 0) return null;
   if (before && after) return "mixed";
   return before ? "before" : "after";
 }
