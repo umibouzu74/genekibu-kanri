@@ -252,6 +252,29 @@ describe("buildSwitchPlan", () => {
     });
     expect(p.warnings[0]).toContain("授業セット 1 件");
   });
+
+  it("units 形式 (学年 × 曜日) の授業セットは警告しない (期切替をまたいで効く)", () => {
+    const p = buildSwitchPlan({
+      timetables,
+      slots: [
+        { id: 10, timetableId: 1, day: "火", grade: "中3" },
+        { id: 11, timetableId: 1, day: "金", grade: "中3" },
+      ],
+      startDate: "2026-09-01",
+      closeTimetableId: 1,
+      classSets: [
+        {
+          id: 1,
+          label: "中3 (火・金)",
+          units: [
+            { grade: "中3", day: "火" },
+            { grade: "中3", day: "金" },
+          ],
+        },
+      ],
+    });
+    expect(p.warnings.some((w) => w.includes("授業セット"))).toBe(false);
+  });
 });
 
 describe("applyReflection - 期切替", () => {

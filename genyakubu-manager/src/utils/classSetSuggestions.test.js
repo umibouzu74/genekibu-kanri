@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildSuggestions } from "../utils/classSetSuggestions";
+import {
+  buildDaySplitSuggestions,
+  buildSuggestions,
+  pairDaysIntoCourses,
+} from "../utils/classSetSuggestions";
 
 // テスト用のスロット生成ヘルパ。授業セット提案ロジックの単体テスト用。
 function makeSlot(id, grade, day, cls, time = "19:00-20:00") {
@@ -150,5 +154,91 @@ describe("buildSuggestions", () => {
     expect(labels).toContain("中2 (月・木)");
     expect(labels).toContain("中3 (火・木)");
     expect(labels).toHaveLength(3);
+  });
+});
+
+describe("pairDaysIntoCourses", () => {
+  it("火水木金 → 火木 / 水金 (間隔 2 日ずつ)", () => {
+    expect(pairDaysIntoCourses(["火", "水", "木", "金"])).toEqual([
+      ["火", "木"],
+      ["水", "金"],
+    ]);
+  });
+  it("月火木金 → 月木 / 火金 (間隔 3 日ずつ)", () => {
+    expect(pairDaysIntoCourses(["月", "火", "木", "金"])).toEqual([
+      ["月", "木"],
+      ["火", "金"],
+    ]);
+  });
+  it("2 日だけなら分割候補にしない (既に 1 コース)", () => {
+    expect(pairDaysIntoCourses(["火", "木"])).toBe(null);
+  });
+  it("奇数日は分けきれないので null", () => {
+    expect(pairDaysIntoCourses(["月", "火", "水"])).toBe(null);
+  });
+  it("月火水木 は 月水 / 火木 (隣接日どうしは組ませない)", () => {
+    expect(pairDaysIntoCourses(["月", "火", "水", "木"])).toEqual([
+      ["月", "水"],
+      ["火", "木"],
+    ]);
+  });
+  it("土曜を含む並びは対象外 (特訓・プレップは別コース)", () => {
+    expect(pairDaysIntoCourses(["火", "水", "木", "土"])).toBe(null);
+  });
+});
+
+describe("buildDaySplitSuggestions", () => {
+  it("中3 が週 4 日 (火水木金) なら 火木 / 水金 の分割を提案する", () => {
+    const slots = [
+      makeSlot(1, "中3", "火", "S"),
+      makeSlot(2, "中3", "水", "S"),
+      makeSlot(3, "中3", "木", "S"),
+      makeSlot(4, "中3", "金", "S"),
+    ];
+    const sugs = buildDaySplitSuggestions(buildUnits(slots), [], slots);
+    expect(sugs).toHaveLength(1);
+    expect(sugs[0].groups.map((g) => g.label)).toEqual([
+      "中3 (火・木)",
+      "中3 (水・金)",
+    ]);
+    expect(sugs[0].slotCount).toBe(4);
+  });
+
+  it("週 2 日の学年は提案しない (既定の 1 コースで正しい)", () => {
+    const slots = [makeSlot(1, "中1", "火", "S"), makeSlot(2, "中1", "金", "S")];
+    expect(buildDaySplitSuggestions(buildUnits(slots), [], slots)).toEqual([]);
+  });
+
+  it("土曜のコマは分割の対象日に含めない", () => {
+    const slots = [
+      makeSlot(1, "中3", "火", "S"),
+      makeSlot(2, "中3", "水", "S"),
+      makeSlot(3, "中3", "木", "S"),
+      makeSlot(4, "中3", "金", "S"),
+      makeSlot(5, "中3", "土", "特訓"),
+    ];
+    const sugs = buildDaySplitSuggestions(buildUnits(slots), [], slots);
+    expect(sugs).toHaveLength(1);
+    expect(sugs[0].slotCount).toBe(4); // 土曜の 1 コマは入らない
+  });
+
+  it("既にセット登録済みの学年は提案しない (units 形式のセットも見る)", () => {
+    const slots = [
+      makeSlot(1, "中3", "火", "S"),
+      makeSlot(2, "中3", "水", "S"),
+      makeSlot(3, "中3", "木", "S"),
+      makeSlot(4, "中3", "金", "S"),
+    ];
+    const classSets = [
+      {
+        id: 1,
+        label: "中3 (火・木)",
+        units: [
+          { grade: "中3", day: "火" },
+          { grade: "中3", day: "木" },
+        ],
+      },
+    ];
+    expect(buildDaySplitSuggestions(buildUnits(slots), classSets, slots)).toEqual([]);
   });
 });

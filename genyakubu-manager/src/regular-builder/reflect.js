@@ -15,6 +15,7 @@ import { buildConflictView, computeConflicts } from "./conflicts";
 import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
 import { gradeMatchesTimetable } from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
+import { isLegacySet } from "../utils/classSets";
 import {
   describeScope,
   filterConflictsByScope,
@@ -292,22 +293,26 @@ export function buildSwitchPlan({
     }
   }
 
-  // 授業セット (第N回を通しで数えるコマの組) は slot.id 参照。新しい期の
-  // コマは別 id なので引き継がれない
+  // 授業セット (第N回を通しで数えるコマの組) のうち、旧 slotIds 形式のものは
+  // コマ id 参照。新しい期のコマは別 id なので引き継がれない。
+  // units 形式 (学年 × 曜日) のセットは id に依存しないので、新しい期のコマにも
+  // そのまま効く (作り直し不要)。
   if (target) {
     const targetSlotIds = new Set(
       (slots || [])
         .filter((s) => (s.timetableId ?? 1) === target.id)
         .map((s) => s.id)
     );
-    const affectedSets = (classSets || []).filter((cs) =>
-      (cs.slotIds || []).some((id) => targetSlotIds.has(id))
+    const affectedSets = (classSets || []).filter(
+      (cs) => isLegacySet(cs) && (cs.slotIds || []).some((id) => targetSlotIds.has(id))
     );
     if (affectedSets.length > 0) {
       warnings.push(
-        `授業セット ${affectedSets.length} 件は「${target.name}」のコマに紐づいています。` +
-          `新しい期のコマは別のコマ扱いなので、第N回をまとめて数えるには` +
-          `時間割管理の授業セットで作り直してください`
+        `旧形式の授業セット ${affectedSets.length} 件が「${target.name}」のコマに` +
+          `コマ id で紐づいています。新しい期のコマは別のコマ扱いなので、` +
+          `このままだと第N回がセット単位で通算されません。` +
+          `時間割管理 → 授業セットの「曜日ベースに変換」で直せます` +
+          `（変換後は期切替のたびに作り直す必要がなくなります）`
       );
     }
   }
@@ -336,9 +341,10 @@ export function buildSwitchPlan({
  * replace は「全消し → 作り直し」ではなく、差分プレビュー
  * (matchReflection) で位置の一致したコマの **slot.id を引き継ぐ**。
  * 代行 (sub.slotId) / 時間割調整 (adjustment.slotId) / 回数補正
- * (override.slotId) / 授業セット (classSet.slotIds) はすべて slot.id 参照
- * なので、id を振り直すとプレビュー上「変わらず」のコマまで紐付けが
- * 切れてしまう。参照が切れるのは実際に消えるコマ (removedCount) だけ。
+ * (override.slotId) / 旧形式の授業セット (classSet.slotIds) はすべて
+ * slot.id 参照なので、id を振り直すとプレビュー上「変わらず」のコマまで
+ * 紐付けが切れてしまう。参照が切れるのは実際に消えるコマ (removedCount)
+ * だけ。units 形式 (学年 × 曜日) の授業セットは id を見ないので無関係。
  *
  * 新規コマの id は既存の全コマの最大値から振る — 消えた id を同じ保存
  * 操作内で別のコマに使い回すと、旧コマを指したままの代行・調整が別の

@@ -246,10 +246,22 @@ export interface KoshuLesson {
 // 同一コースとしてカウントすべき複数スロットを束ねる論理グループ。
 // 例: 中3 数学 (火・木) → slotIds に該当 2 スロットを登録すると
 // ダッシュボードで共通の回数カウンタが振られる。
+// ─── 授業セット (第N回を通しで数えるコマの組) ─────────────────────
+// 定義は 2 形式 (utils/classSets.js が両方を解決する):
+//   - units 形式 (現行): 学年 × 曜日 で書く。コマ id を参照しないので、
+//     期切替 (前期→後期) で作り直したコマにもそのまま効く。
+//   - slotIds 形式 (旧): コマ id を直に並べる。期切替で紐付けが切れるため、
+//     画面から units 形式へ変換できる。読み取りは引き続きサポート。
+export interface ClassSetUnit {
+  grade: string; // "中3"
+  day: string;   // "火"
+}
+
 export interface ClassSet {
   id: number;
-  label: string; // "中3 数学 (火・木)" 等
-  slotIds: number[];
+  label: string; // "中3 (火・木)" 等
+  units?: ClassSetUnit[]; // 現行形式 (学年 × 曜日)
+  slotIds?: number[]; // 旧形式 (コマ id 直参照)
 }
 
 // ─── Timetable / Display cutoff ──────────────────────────────────

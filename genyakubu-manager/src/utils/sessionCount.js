@@ -27,6 +27,7 @@ import { isSlotCancelledByDaySchedule } from "./daySchedules";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
+import { buildClassSetIndex } from "./classSets";
 import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
 
 // "YYYY-MM-DD" → Date (ローカル)
@@ -97,8 +98,15 @@ export function getSlotCountStartDate(slot, ctx) {
 // フォールバック束ね (cohortIndex) → ③ 自身のみ (単体扱い)。
 // ② により、ClassSet 未登録でも 高1・2 英数 (週2) や中学コースの回数が
 // 「コース」単位で通算される (終講日コホートと同じ定義)。
-export function resolveSetSlotIds(slot, classSets, cohortIndex) {
-  if (Array.isArray(classSets)) {
+//
+// classSetIndex (utils/classSets の buildClassSetIndex) を渡すと、
+// units 形式 (学年 × 曜日) のセットも解決できる。省略時は旧 slotIds
+// 形式のみを見る (テスト・単発呼び出し用のフォールバック)。
+export function resolveSetSlotIds(slot, classSets, cohortIndex, classSetIndex) {
+  if (classSetIndex) {
+    const ids = classSetIndex.get(slot.id);
+    if (ids && ids.length) return ids;
+  } else if (Array.isArray(classSets)) {
     for (const cs of classSets) {
       if (cs.slotIds && cs.slotIds.includes(slot.id)) return cs.slotIds;
     }
@@ -110,6 +118,18 @@ export function resolveSetSlotIds(slot, classSets, cohortIndex) {
   return [slot.id];
 }
 
+// ctx に索引 (コホート / 授業セット) を用意する。呼び出しごとに作り直すと
+// 重いので、一度作った ctx を使い回す (computeSessionNumber /
+// buildSessionCountMap の入口で 1 回だけ)。
+function withIndexes(ctx) {
+  if (ctx._cohortIndex && ctx._classSetIndex) return ctx;
+  return {
+    ...ctx,
+    _cohortIndex: ctx._cohortIndex || buildSlotCohortIndex(ctx.allSlots),
+    _classSetIndex:
+      ctx._classSetIndex || buildClassSetIndex(ctx.classSets, ctx.allSlots),
+  };
+}
 
 // 略称を正式名に正規化 (複合教科 "英/数" の分割時に使用)。
 // 組み込み主要教科のみ対応; 未登録の文字列はそのまま返す。
@@ -180,7 +200,9 @@ function isOrientationSlot(slot, dateStr, ctx) {
   // pool: 「1 限目」判定の対象スロット群。
   //   - セット登録済み (size>1) → セット内 slots
   //   - 未登録 → 同学年の全 slots (cohort 推定不能のため学年単位で代替)
-  const setSlotIds = resolveSetSlotIds(slot, ctx.classSets, ctx._cohortIndex);
+  const setSlotIds = resolveSetSlotIds(
+    slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
+  );
   const slotById = new Map();
   for (const s of ctx.allSlots || []) slotById.set(s.id, s);
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
@@ -381,15 +403,15 @@ function computeBucketCounts(
  */
 export function computeSessionNumber(slot, targetDateStr, ctx) {
   if (!slot || !targetDateStr) return 0;
-  if (!ctx._cohortIndex) {
-    ctx = { ...ctx, _cohortIndex: buildSlotCohortIndex(ctx.allSlots) };
-  }
+  ctx = withIndexes(ctx);
 
   const startDate = getSlotCountStartDate(slot, ctx);
   if (!startDate) return 0;
   if (targetDateStr < startDate) return 0;
 
-  const setSlotIds = resolveSetSlotIds(slot, ctx.classSets, ctx._cohortIndex);
+  const setSlotIds = resolveSetSlotIds(
+    slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
+  );
   const slotById = new Map();
   for (const s of ctx.allSlots || []) slotById.set(s.id, s);
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
@@ -425,9 +447,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
 export function buildSessionCountMap(slots, targetDateStr, ctx) {
   const out = new Map();
   if (!slots || slots.length === 0 || !targetDateStr) return out;
-  if (!ctx._cohortIndex) {
-    ctx = { ...ctx, _cohortIndex: buildSlotCohortIndex(ctx.allSlots) };
-  }
+  ctx = withIndexes(ctx);
 
   const overrideIndex = buildOverrideIndex(ctx.sessionOverrides);
 
@@ -452,7 +472,9 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
     }
     const targetCls = slot.cls || "";
 
-    const setSlotIds = resolveSetSlotIds(slot, ctx.classSets, ctx._cohortIndex);
+    const setSlotIds = resolveSetSlotIds(
+      slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
+    );
     // キャッシュキーは (セット × 実施教科 × cohort × 開始日) 単位で分離。
     // 区切りには非可視文字 (US: \u001f) を使い、ユーザー入力 (cls 等) に
     // 通常含まれない文字で衝突を防ぐ。
