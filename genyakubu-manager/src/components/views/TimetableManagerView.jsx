@@ -4,6 +4,7 @@ import { formatCount, slotWeight } from "../../utils/biweekly";
 import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
+import { CutoffTimeline } from "../CutoffTimeline";
 import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 
@@ -341,6 +342,13 @@ export function TimetableManagerView({
         slots={slots}
         ttCrud={ttCrud}
         isAdmin={isAdmin}
+      />
+
+      {/* 期間の全体像 (時間割 / 学年グループ / コースを同じ物差しで並べる) */}
+      <CutoffTimeline
+        timetables={timetables}
+        slots={slots}
+        displayCutoff={displayCutoff}
       />
 
       {/* 表示期限設定 (学年グループの開始日 / 終了日 / オリエン) */}

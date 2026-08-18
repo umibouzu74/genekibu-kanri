@@ -373,6 +373,13 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   時間割の有効期間 (`isTimetableActiveForDate`) と表示期間
   (`isSlotBeyondCutoff`) を必ず併せて見る (月次の「通常出勤日」がこれを
   見ておらず、終講後の曜日を数えていた)
+- **時間割管理の 3 枚は「全体像 → 学年グループ → コース」の順で読む**。
+  期間の全体像 (`components/CutoffTimeline.jsx` + `utils/cutoffTimeline.js`) は
+  **読む専用**で、編集は下の 2 枚のカードに集約する (設定を 2 か所から書ける
+  ようにしない)。帯に出すのは「時間割の有効期間 / 表示期間 / コース終講日」と
+  **その食い違い (斜線 = 時間割は有効なのにコマが出ない区間)** まで。
+  半年〜1 年の物差しに数日の差 (終了日 vs 実際の最終授業日) を描いても
+  バーの端に重なって読めないので、**日付は数字で出す**
 - **「終了日」と「実際の最終授業日」は別物**。設定画面では
   `utils/lastSessionDate.findLastSessionOnOrBefore` で逆算して見せる。
   実施判定は `sessionCount.isSlotHeldOnDate` に委ね、**休講・テスト期間・
