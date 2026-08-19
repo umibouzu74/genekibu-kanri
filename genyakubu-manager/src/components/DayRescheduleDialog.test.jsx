@@ -112,6 +112,13 @@ describe("DayRescheduleDialog", () => {
     expect(saveAdjustments.mock.calls[0][0].map((a) => a.slotId)).toEqual([1]);
   });
 
+  it("開いた直後は赤字のエラーを出さない", () => {
+    renderDialog();
+    expect(screen.queryByText("振替元日を選んでください")).toBeNull();
+    expect(screen.queryByText("振替先日を選んでください")).toBeNull();
+    expect(screen.getByRole("button", { name: "振り替える" }).disabled).toBe(true);
+  });
+
   it("振替先が未入力なら実行できない", () => {
     renderDialog();
     setDates(MON);

@@ -83,15 +83,16 @@ function SlotRow({ slot, checked, conflicts, onToggle, disabled }) {
 export function DayRescheduleDialog({
   slots,
   adjustments,
+  extraLessons = [],
+  subs = [],
   sessionCtx,
-  initialDate,
   saveAdjustments,
   onRemoveAdjustments,
   onClose,
   onSaved,
   isAdmin = true,
 }) {
-  const [sourceDate, setSourceDate] = useState(initialDate || "");
+  const [sourceDate, setSourceDate] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [memo, setMemo] = useState("");
   // null = 全選択 (振替元日を変えたら選び直し)
@@ -106,16 +107,18 @@ export function DayRescheduleDialog({
       buildDayReschedulePlan({
         slots,
         adjustments,
+        extraLessons,
+        subs,
         sourceDate,
         targetDate,
         selectedSlotIds: null,
         ctx: sessionCtx,
       }),
-    [slots, adjustments, sourceDate, targetDate, sessionCtx]
+    [slots, adjustments, extraLessons, subs, sourceDate, targetDate, sessionCtx]
   );
 
-  // 除外を反映した最終プラン。候補の一覧・重なりの表示は除外前の plan を
-  // 使い、実行するのはこちら (チェックを外したコマにも重なりを出すため)。
+  // 除外を反映した最終プラン。実行するのはこちら。候補の一覧は除外前の
+  // plan から出す (チェックを外したコマも行としては残す)。
   const selectedIds = useMemo(
     () => plan.candidates.filter((s) => !excluded.has(s.id)).map((s) => s.id),
     [plan.candidates, excluded]
@@ -125,19 +128,34 @@ export function DayRescheduleDialog({
       buildDayReschedulePlan({
         slots,
         adjustments,
+        extraLessons,
+        subs,
         sourceDate,
         targetDate,
         selectedSlotIds: selectedIds,
         ctx: sessionCtx,
       }),
-    [slots, adjustments, sourceDate, targetDate, selectedIds, sessionCtx]
+    [
+      slots,
+      adjustments,
+      extraLessons,
+      subs,
+      sourceDate,
+      targetDate,
+      selectedIds,
+      sessionCtx,
+    ]
   );
 
+  // 行に出す重なり。選んでいるコマは最終プラン (選んでいないコマは振替先に
+  // 残るので、埋まりとして数えた結果) を、選んでいないコマは全選択時の
+  // プランを使う。
   const conflictsBySlot = useMemo(() => {
     const m = new Map();
     for (const e of plan.entries) m.set(e.slot.id, e.conflicts);
+    for (const e of finalPlan.entries) m.set(e.slot.id, e.conflicts);
     return m;
-  }, [plan.entries]);
+  }, [plan.entries, finalPlan.entries]);
 
   const existing = useMemo(
     () => findDayRescheduleAdjustments(adjustments, sourceDate),
@@ -160,14 +178,15 @@ export function DayRescheduleDialog({
 
   const canApply =
     isAdmin && finalPlan.errors.length === 0 && finalPlan.entries.length > 0;
+  // 開いた直後 (どちらの日付も未入力) は赤字を出さない。ボタンが押せない
+  // ことと空の入力欄で足りるので、開くたびにエラーで迎えない。
+  const showErrors = Boolean(sourceDate || targetDate);
 
   const handleApply = () => {
     if (!canApply) return;
     const { next, added, replaced } = applyDayReschedule({
       adjustments,
       plan: finalPlan,
-      sourceDate,
-      targetDate,
       memo: memo.trim(),
     });
     saveAdjustments(next);
@@ -189,7 +208,8 @@ export function DayRescheduleDialog({
       <div style={{ fontSize: 12, color: "#666", marginBottom: 12, lineHeight: 1.7 }}>
         ある日の授業をまとめて別の日へ振り替えます (例: 12/7 (月) の授業を
         すべて 12/4 (金) に寄せる)。作られるのは 1 コマずつの「別日振替」なので、
-        個別の解除や修正は時間割調整一覧からできます。
+        個別の解除は時間割調整一覧から、1 コマだけの時刻変更や講師の差し替えは
+        欠勤組み換え画面からできます。
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
@@ -206,7 +226,7 @@ export function DayRescheduleDialog({
           />
           {plan.sourceDay && (
             <div style={{ fontSize: 11, color: DC[plan.sourceDay], fontWeight: 700 }}>
-              {plan.sourceDay}曜 / {plan.candidates.length} コマ
+              {plan.sourceDay}曜 / 実施 {plan.candidates.length} コマ
             </div>
           )}
         </div>
@@ -265,12 +285,46 @@ export function DayRescheduleDialog({
             <button
               type="button"
               onClick={handleClearExisting}
+              title="この日から出ている振替をすべて解除します (振替先は問いません)"
               style={{ ...S.btn(false), fontSize: 11, padding: "4px 10px" }}
             >
               まとめて解除
             </button>
           )}
         </div>
+      )}
+
+      {finalPlan.notes.length > 0 && (
+        <ul
+          style={{
+            background: "#fdf5e8",
+            border: "1px solid #e0c080",
+            borderRadius: 6,
+            padding: "8px 8px 8px 26px",
+            fontSize: 11,
+            color: "#7a4a10",
+            margin: "0 0 10px",
+          }}
+        >
+          {finalPlan.notes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ul>
+      )}
+
+      {showErrors && finalPlan.errors.length > 0 && (
+        <ul
+          style={{
+            fontSize: 11,
+            color: "#a02020",
+            margin: "0 0 10px",
+            paddingLeft: 18,
+          }}
+        >
+          {finalPlan.errors.map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
       )}
 
       {plan.candidates.length > 0 && (
@@ -335,63 +389,42 @@ export function DayRescheduleDialog({
         </details>
       )}
 
-      {finalPlan.notes.length > 0 && (
-        <ul
-          style={{
-            background: "#fdf5e8",
-            border: "1px solid #e0c080",
-            borderRadius: 6,
-            padding: "8px 8px 8px 26px",
-            fontSize: 11,
-            color: "#7a4a10",
-            margin: "0 0 10px",
-          }}
+      {/* 対象コマが多いと縦に伸びるので、注記と実行ボタンは下に貼り付ける。
+          脚注ごと sticky にしないと、ボタンの下に説明文が取り残される。 */}
+      <div
+        style={{
+          position: "sticky",
+          bottom: 0,
+          background: S.card.background,
+          borderTop: "1px solid #eee",
+          paddingTop: 8,
+        }}
+      >
+        <div
+          style={{ fontSize: 10, color: "#888", marginBottom: 8, lineHeight: 1.6 }}
         >
-          {finalPlan.notes.map((n, i) => (
-            <li key={i}>{n}</li>
-          ))}
-        </ul>
-      )}
-
-      {finalPlan.errors.length > 0 && (
-        <ul
-          style={{
-            fontSize: 11,
-            color: "#a02020",
-            margin: "0 0 10px",
-            paddingLeft: 18,
-          }}
-        >
-          {finalPlan.errors.map((e, i) => (
-            <li key={i}>{e}</li>
-          ))}
-        </ul>
-      )}
-
-      <div style={{ fontSize: 10, color: "#888", marginBottom: 10, lineHeight: 1.6 }}>
-        時刻は変わりません (まるごと移す操作のため)。1 コマだけ時刻をずらす
-        場合は欠勤組み換え画面から。第N回は振替元の日付で数えたままになります
-        (授業の回数は増減しません)。
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <button type="button" onClick={onClose} style={S.btn(false)}>
-          キャンセル
-        </button>
-        <button
-          type="button"
-          onClick={handleApply}
-          disabled={!canApply}
-          style={{
-            ...S.btn(true),
-            opacity: canApply ? 1 : 0.5,
-            cursor: canApply ? "pointer" : "not-allowed",
-          }}
-        >
-          {finalPlan.entries.length > 0
-            ? `${finalPlan.entries.length} コマを振り替える`
-            : "振り替える"}
-        </button>
+          時刻は変えずに日付だけを移します。第N回は振替元の日付で数えたまま
+          です (授業の回数は増減しません)。
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onClose} style={S.btn(false)}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={!canApply}
+            style={{
+              ...S.btn(true),
+              opacity: canApply ? 1 : 0.5,
+              cursor: canApply ? "pointer" : "not-allowed",
+            }}
+          >
+            {finalPlan.entries.length > 0
+              ? `${finalPlan.entries.length} コマを振り替える`
+              : "振り替える"}
+          </button>
+        </div>
       </div>
     </Modal>
   );

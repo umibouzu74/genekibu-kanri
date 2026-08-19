@@ -49,8 +49,7 @@ function renderRow(props) {
 describe("DashDayRow の振替表示", () => {
   it("他日から振り替えられてくるコマをバナーに出す", () => {
     renderRow();
-    expect(screen.getByText("↻ 他の日から振替 (1件)")).toBeTruthy();
-    expect(screen.getByText(`${MON} (月) から`)).toBeTruthy();
+    expect(screen.getByText(`↻ ${MON} (月) から振替 (1件)`)).toBeTruthy();
     expect(screen.getByText("中3S 数学")).toBeTruthy();
   });
 
@@ -60,7 +59,21 @@ describe("DashDayRow の振替表示", () => {
     });
     // 休講日メッセージと振替バナーが両方出る
     expect(screen.getByText("休講日（創立記念日）")).toBeTruthy();
-    expect(screen.getByText("↻ 他の日から振替 (1件)")).toBeTruthy();
+    expect(screen.getByText(`↻ ${MON} (月) から振替 (1件)`)).toBeTruthy();
+  });
+
+  it("振替元が複数の日にまたがっても日付ごとにまとめる", () => {
+    const other = { ...SLOT, id: 2, day: "水", time: "18:00-19:20", subj: "英語" };
+    renderRow({
+      slots: [],
+      adjustments: [
+        RESCHEDULE,
+        { id: 10, date: "2026-12-02", type: "reschedule", slotId: 2, targetDate: FRI },
+      ],
+      sessionCtx: { allSlots: [SLOT, other] },
+    });
+    expect(screen.getByText("↻ 2026-12-02 (水) から振替 (1件)")).toBeTruthy();
+    expect(screen.getByText(`↻ ${MON} (月) から振替 (1件)`)).toBeTruthy();
   });
 
   it("振替元の日には「振」バッジを出す", () => {
@@ -68,6 +81,6 @@ describe("DashDayRow の振替表示", () => {
     const badge = screen.getByText("振");
     expect(badge.getAttribute("title")).toContain(FRI);
     // 他日から来るコマは無いのでバナーは出ない
-    expect(screen.queryByText(/他の日から振替/)).toBeNull();
+    expect(screen.queryByText(/から振替/)).toBeNull();
   });
 });

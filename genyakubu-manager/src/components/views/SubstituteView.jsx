@@ -5,6 +5,7 @@ import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { fmtDateWeekday } from "../../utils/dateHelpers";
 import { DayRescheduleDialog } from "../DayRescheduleDialog";
 import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
@@ -76,12 +77,13 @@ export function SubstituteView({
         setTab(initFilter.tab);
       }
       // Cmd+K の「日まるごと振替」からはダイアログまで開く
-      if (initFilter.open === "dayReschedule") {
+      // (登録できるのは管理者だけなので、閲覧者はタブを開くところまで)
+      if (initFilter.open === "dayReschedule" && isAdmin && saveAdjustments) {
         setDayRescheduleOpen(true);
       }
       onConsumeInitFilter?.();
     }
-  }, [initFilter, onConsumeInitFilter]);
+  }, [initFilter, onConsumeInitFilter, isAdmin, saveAdjustments]);
 
   // 月次集計タブは対象月が必須 (fMonth 空だと無言で全行 0 になる)。
   // ステータスバッジ経由 (initFilter.status で fMonth を解除) の後に
@@ -400,6 +402,8 @@ export function SubstituteView({
         <DayRescheduleDialog
           slots={slots}
           adjustments={adjustments}
+          extraLessons={extraLessons}
+          subs={subs}
           sessionCtx={sessionCtx}
           isAdmin={isAdmin}
           saveAdjustments={saveAdjustments}
@@ -407,7 +411,8 @@ export function SubstituteView({
           onClose={() => setDayRescheduleOpen(false)}
           onSaved={({ added, replaced, sourceDate, targetDate }) =>
             toasts.success(
-              `${sourceDate} → ${targetDate} に ${added} コマを振り替えました` +
+              `${fmtDateWeekday(sourceDate)} → ${fmtDateWeekday(targetDate)} に ` +
+                `${added} コマを振り替えました` +
                 (replaced > 0 ? ` (${replaced} 件を上書き)` : "")
             )
           }

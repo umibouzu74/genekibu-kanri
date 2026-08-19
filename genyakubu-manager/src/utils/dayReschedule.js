@@ -112,17 +112,32 @@ export function collectDayRescheduleCandidates({ slots, dateStr, ctx }) {
   };
 }
 
+// コマ 1 つぶんの短い表示ラベル ("19:00-20:20 中3S 数学")。
+// 重なりの説明文はここだけで作る (画面ごとに書き起こさない)。
+function occupancyLabel(time, grade, cls, subj, suffix) {
+  const clsPart = cls && cls !== "-" ? cls : "";
+  return `${time} ${grade}${clsPart} ${subj}${suffix ? ` (${suffix})` : ""}`;
+}
+
 /**
  * 指定日に「その時間その先生・その教室が塞がっている」ものを集める。
- * 当日の通常コマ (移動・特別時程の時刻読み替えを反映) と、他日からこの日へ
- * 振り替えられてくるコマの両方を見る。合同で吸収されたコマと、この日から
- * 他日へ出ていくコマは塞がっていない扱い。
+ * 見るのは 3 種類:
+ *   - その日の通常コマ (コマ移動・特別時程の時刻読み替えを反映)
+ *   - 他日からこの日へ振り替えられてくるコマ
+ *   - その日の追加授業 (日付つきの単発コマ)
+ * 合同で吸収されたコマと、この日から他日へ出ていくコマは塞がっていない扱い。
  *
- * @returns {{slot: object, time: string, teachers: string[], room: string,
- *            incoming: boolean, adj: object|null}[]}
- *   incoming = 他日から振り替えられてくるコマ (adj はその振替調整)。
+ * @returns {{key: string, kind: "normal"|"incoming"|"extra", slot: object|null,
+ *            lesson: object|null, adj: object|null, time: string,
+ *            teachers: string[], room: string, label: string}[]}
  */
-export function buildDayOccupancy({ slots, dateStr, adjustments = [], ctx }) {
+export function buildDayOccupancy({
+  slots,
+  dateStr,
+  adjustments = [],
+  extraLessons = [],
+  ctx,
+}) {
   const day = dateToDay(dateStr);
   if (!dateStr) return [];
   const index = buildAdjustmentIndex(adjustments, dateStr, {
@@ -131,16 +146,25 @@ export function buildDayOccupancy({ slots, dateStr, adjustments = [], ctx }) {
   });
   const out = [];
   const seen = new Set();
-  const push = (slot, time, incoming, adj = null) => {
-    if (!slot || seen.has(slot.id)) return;
-    seen.add(slot.id);
-    out.push({
+  const push = (entry) => {
+    if (seen.has(entry.key)) return;
+    seen.add(entry.key);
+    out.push(entry);
+  };
+  const pushSlot = (slot, time, kind, adj = null) => {
+    if (!slot) return;
+    push({
+      key: `slot:${slot.id}`,
+      kind,
       slot,
+      lesson: null,
+      adj,
       time,
       teachers: activeTeachers(slot, dateStr, ctx),
       room: (slot.room || "").trim(),
-      incoming,
-      adj,
+      label: occupancyLabel(
+        time, slot.grade, slot.cls, slot.subj, kind === "incoming" ? "振替" : null
+      ),
     });
   };
   for (const slot of slots || []) {
@@ -149,16 +173,33 @@ export function buildDayOccupancy({ slots, dateStr, adjustments = [], ctx }) {
     if (isSlotBeyondCutoff(dateStr, slot, ctx?.displayCutoff)) continue;
     if (index.combineAbsorbedBySlot.has(slot.id)) continue; // 合同に吸収済み
     if (index.rescheduleOutBySlot.has(slot.id)) continue; // 他日へ出ていく
-    push(slot, index.moveBySlot.get(slot.id) || slot.time, false);
+    pushSlot(slot, index.moveBySlot.get(slot.id) || slot.time, "normal");
   }
   // 他日からこの日へ入ってくる振替コマ (曜日が違うので上のループには出ない)
   const byId = new Map((slots || []).map((s) => [s.id, s]));
   for (const adj of index.rescheduleInBySlot.values()) {
     const slot = byId.get(adj.slotId);
     if (!slot) continue;
-    push(slot, adj.targetTime || slot.time, true, adj);
+    pushSlot(slot, adj.targetTime || slot.time, "incoming", adj);
   }
-  return sortByTime(out, (x) => x.time, (x) => x.slot.id);
+  // 追加授業 (日付つきの単発コマ)。コマ id とは別の名前空間で数える。
+  for (const lesson of extraLessons || []) {
+    if (!lesson || lesson.date !== dateStr) continue;
+    push({
+      key: `extra:${lesson.id}`,
+      kind: "extra",
+      slot: null,
+      lesson,
+      adj: null,
+      time: lesson.time || "",
+      teachers: splitTeacherField(lesson.teacher),
+      room: (lesson.room || "").trim(),
+      label: occupancyLabel(
+        lesson.time, lesson.grade, lesson.cls, lesson.subj, "追加授業"
+      ),
+    });
+  }
+  return sortByTime(out, (x) => x.time, (x) => (x.slot?.id ?? x.lesson?.id ?? 0));
 }
 
 /**
@@ -168,12 +209,15 @@ export function buildDayOccupancy({ slots, dateStr, adjustments = [], ctx }) {
  * @param {object} args
  * @param {Array} args.slots 全スロット
  * @param {Array} [args.adjustments] 既存の時間割調整
+ * @param {Array} [args.extraLessons] 追加授業 (振替先の埋まりに数える)
+ * @param {Array} [args.subs] 代行レコード (振替元日ぶんの注意書きに使う)
  * @param {string} args.sourceDate 振替元日 "YYYY-MM-DD"
  * @param {string} args.targetDate 振替先日 "YYYY-MM-DD"
  * @param {Array<number>|null} [args.selectedSlotIds] 対象を絞る場合の slot id
  *   (null / 未指定 = 候補すべて)
  * @param {object} args.ctx sessionCtx
  * @returns {{
+ *   sourceDate: string, targetDate: string,
  *   sourceDay: string|null, targetDay: string|null,
  *   candidates: Array, skipped: Array,
  *   entries: {slot: object, teachers: string[], existing: object|null,
@@ -184,6 +228,8 @@ export function buildDayOccupancy({ slots, dateStr, adjustments = [], ctx }) {
 export function buildDayReschedulePlan({
   slots,
   adjustments = [],
+  extraLessons = [],
+  subs = [],
   sourceDate,
   targetDate,
   selectedSlotIds = null,
@@ -210,6 +256,8 @@ export function buildDayReschedulePlan({
   const selected = candidates.filter((s) => !idFilter || idFilter.has(s.id));
 
   const empty = {
+    sourceDate,
+    targetDate,
     sourceDay,
     targetDay,
     candidates,
@@ -237,10 +285,15 @@ export function buildDayReschedulePlan({
     slots,
     dateStr: targetDate,
     adjustments,
+    extraLessons,
     ctx,
   }).filter(
     (o) =>
-      !(o.incoming && o.adj?.date === sourceDate && movingIds.has(o.slot.id)),
+      !(
+        o.kind === "incoming" &&
+        o.adj?.date === sourceDate &&
+        movingIds.has(o.slot.id)
+      ),
   );
 
   const existingBySlot = new Map();
@@ -257,9 +310,7 @@ export function buildDayReschedulePlan({
     const conflicts = [];
     for (const o of occupancy) {
       if (!rangesOverlap(range, timeRange(o.time))) continue;
-      const label = `${o.time} ${o.slot.grade}${
-        o.slot.cls && o.slot.cls !== "-" ? o.slot.cls : ""
-      } ${o.slot.subj}${o.incoming ? " (振替)" : ""}`;
+      const label = o.label;
       const dupTeachers = teachers.filter((t) => o.teachers.includes(t));
       for (const t of dupTeachers) {
         conflicts.push({ kind: "teacher", label: `${t} / ${label}` });
@@ -277,24 +328,60 @@ export function buildDayReschedulePlan({
   });
 
   // ── 注意書き (エラーではない。人が見て判断する材料) ──
+  // 並びは「振替先で困る順」: 重なり → 振替先の埋まり → 上書き →
+  // 引き継がれないもの → 期間まわり → 対象外。
+  const conflictCount = entries.filter((e) => e.conflicts.length > 0).length;
+  if (conflictCount > 0) {
+    notes.push(`講師・教室の重なりが ${conflictCount} コマで見つかりました`);
+  }
+  const normalOnTarget = occupancy.filter((o) => o.kind === "normal");
+  if (normalOnTarget.length > 0) {
+    notes.push(
+      `振替先には通常の授業が ${normalOnTarget.length} コマあります (重ならないか確認してください)`,
+    );
+  }
+  const extraOnTarget = occupancy.filter((o) => o.kind === "extra");
+  if (extraOnTarget.length > 0) {
+    notes.push(`振替先には追加授業が ${extraOnTarget.length} コマあります`);
+  }
   const replaced = entries.filter((e) => e.existing);
   if (replaced.length > 0) {
     notes.push(
       `${replaced.length} コマはすでに振替登録済みです (振替先を上書きします)`,
     );
   }
-  const normalOnTarget = occupancy.filter((o) => !o.incoming);
-  if (normalOnTarget.length > 0) {
+  // 合同・コマ移動・代行はどれも (コマ, 日付) に紐づくので、日付が変わると
+  // 付いてこない。「その日だけ組んだ合同」の日をまるごと動かすと外れる。
+  const dayAdjOnSource = (adjustments || []).filter((a) => {
+    if (a?.date !== sourceDate) return false;
+    if (a.type !== "combine" && a.type !== "move") return false;
+    const ids = [a.slotId, ...(a.combineSlotIds || [])];
+    return ids.some((id) => movingIds.has(id));
+  });
+  if (dayAdjOnSource.length > 0) {
     notes.push(
-      `振替先には通常の授業が ${normalOnTarget.length} コマあります (重ならないか確認してください)`,
+      `振替元日には合同・コマ移動が ${dayAdjOnSource.length} 件あります (振替先には引き継がれません)`,
     );
   }
-  const conflictCount = entries.filter((e) => e.conflicts.length > 0).length;
-  if (conflictCount > 0) {
-    notes.push(`講師・教室の重なりが ${conflictCount} コマで見つかりました`);
+  const subsOnSource = (subs || []).filter(
+    (sub) => sub?.date === sourceDate && movingIds.has(sub.slotId),
+  );
+  if (subsOnSource.length > 0) {
+    notes.push(
+      `振替元日には代行が ${subsOnSource.length} 件登録されています (振替先には引き継がれません)`,
+    );
   }
-  if (sourceDate && targetDate && targetDate < sourceDate) {
-    notes.push("振替先は振替元より前の日付です (前倒しの振替)");
+  // 振替先が休講日 (= 授業が無いから寄せられる) なのは想定どおりなので、
+  // 警告ではなく「振替のコマは休講日でも出る」という確認として出す。
+  if (ctx?.isOffForGrade) {
+    const offCount = entries.filter((e) =>
+      ctx.isOffForGrade(targetDate, e.slot.grade, e.slot.subj),
+    ).length;
+    if (offCount > 0) {
+      notes.push(
+        `振替先が休講・テスト期間の学年があります (${offCount} コマ)。振替のコマは休講日でも表示されます`,
+      );
+    }
   }
   const beyond = entries.filter((e) =>
     isSlotBeyondCutoff(targetDate, e.slot, ctx?.displayCutoff),
@@ -304,30 +391,39 @@ export function buildDayReschedulePlan({
       `${beyond.length} コマは振替先が表示期間の外です (表示期間設定を確認してください)`,
     );
   }
+  if (targetDate < sourceDate) {
+    notes.push("振替先は振替元より前の日付です (前倒しの振替)");
+  }
   if (skipped.length > 0) {
     notes.push(`振替元日に実施されないコマ ${skipped.length} 件は対象外です`);
   }
 
-  return { sourceDay, targetDay, candidates, skipped, entries, errors, notes };
+  return {
+    sourceDate,
+    targetDate,
+    sourceDay,
+    targetDay,
+    candidates,
+    skipped,
+    entries,
+    errors,
+    notes,
+  };
 }
 
 /**
  * プランを adjustments 配列へ適用した結果を返す (保存はしない)。
  * 同じコマに対する振替元日つきの既存 reschedule は置き換える。
+ * 日付はプランが持っているものを使う (プレビューと違う日付で保存できない)。
  *
- * @param {{adjustments: Array, plan: object, targetDate: string,
- *          sourceDate: string, memo?: string}} args
+ * @param {{adjustments: Array, plan: object, memo?: string}} args
  * @returns {{next: Array, added: number, replaced: number}}
  */
-export function applyDayReschedule({
-  adjustments = [],
-  plan,
-  sourceDate,
-  targetDate,
-  memo = "",
-}) {
+export function applyDayReschedule({ adjustments = [], plan, memo = "" }) {
   const entries = plan?.entries || [];
-  if (entries.length === 0) {
+  const sourceDate = plan?.sourceDate;
+  const targetDate = plan?.targetDate;
+  if (entries.length === 0 || (plan?.errors || []).length > 0) {
     return { next: adjustments, added: 0, replaced: 0 };
   }
   const replacedIds = new Set(

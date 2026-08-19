@@ -138,9 +138,9 @@ describe("buildDayOccupancy", () => {
       adjustments,
       ctx: makeCtx({ allSlots: slots }),
     });
-    expect(occ.map((o) => [o.slot.id, o.incoming])).toEqual([
-      [1, false],
-      [2, true],
+    expect(occ.map((o) => [o.slot.id, o.kind])).toEqual([
+      [1, "normal"],
+      [2, "incoming"],
     ]);
   });
 
@@ -161,6 +161,37 @@ describe("buildDayOccupancy", () => {
       ctx: makeCtx({ allSlots: slots }),
     });
     expect(occ.map((o) => o.slot.id)).toEqual([1]);
+  });
+
+  it("その日の追加授業も塞がり扱いにする", () => {
+    const slots = [makeSlot(1, "金", "19:00-20:20")];
+    const occ = buildDayOccupancy({
+      slots,
+      dateStr: FRI,
+      extraLessons: [
+        // 同じ日の追加授業 / 別の日の追加授業 (後者は数えない)
+        { id: 1, date: FRI, time: "17:00-18:20", grade: "高3", cls: "", subj: "特訓", teacher: "藤田·香川", room: "701" },
+        { id: 2, date: MON, time: "17:00-18:20", grade: "高3", cls: "", subj: "特訓", teacher: "藤田", room: "701" },
+      ],
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(occ.map((o) => o.kind)).toEqual(["extra", "normal"]);
+    expect(occ[0].teachers).toEqual(["藤田", "香川"]);
+    expect(occ[0].label).toBe("17:00-18:20 高3 特訓 (追加授業)");
+  });
+
+  it("コマ id と追加授業 id が同じでも別物として数える", () => {
+    const slots = [makeSlot(1, "金", "19:00-20:20")];
+    const occ = buildDayOccupancy({
+      slots,
+      dateStr: FRI,
+      extraLessons: [
+        { id: 1, date: FRI, time: "19:00-20:20", grade: "高3", cls: "", subj: "特訓", teacher: "藤田", room: "701" },
+      ],
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(occ).toHaveLength(2);
+    expect(occ.map((o) => o.key)).toEqual(["slot:1", "extra:1"]);
   });
 });
 
@@ -315,6 +346,87 @@ describe("buildDayReschedulePlan", () => {
     expect(plan.entries[0].conflicts.map((c) => c.kind)).toEqual(["teacher"]);
   });
 
+  it("振替先の追加授業とも重なりを見る", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      extraLessons: [
+        {
+          id: 1,
+          date: FRI,
+          time: "19:00-20:20",
+          grade: "高3",
+          cls: "",
+          subj: "特訓",
+          teacher: "堀上",
+          room: "701",
+        },
+      ],
+      sourceDate: MON,
+      targetDate: FRI,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    const first = plan.entries.find((e) => e.slot.id === 1);
+    expect(first.conflicts.map((c) => c.kind)).toEqual(["teacher"]);
+    expect(first.conflicts[0].label).toContain("追加授業");
+    expect(plan.notes.some((n) => n.includes("追加授業が 1 コマ"))).toBe(true);
+  });
+
+  it("振替元日の合同・コマ移動は引き継がれないことを注意書きに出す", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      adjustments: [
+        { id: 1, date: MON, type: "combine", slotId: 1, combineSlotIds: [2] },
+        { id: 2, date: MON, type: "move", slotId: 2, targetTime: "21:00-22:20" },
+        // 別の日 / 対象外コマの調整は数えない
+        { id: 3, date: FRI, type: "move", slotId: 1, targetTime: "21:00-22:20" },
+        { id: 4, date: MON, type: "move", slotId: 99, targetTime: "21:00-22:20" },
+      ],
+      sourceDate: MON,
+      targetDate: FRI,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(
+      plan.notes.some(
+        (n) => n.includes("合同・コマ移動が 2 件") && n.includes("引き継がれません")
+      )
+    ).toBe(true);
+  });
+
+  it("振替元日の代行は引き継がれないことを注意書きに出す", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      subs: [
+        { id: 1, date: MON, slotId: 1, originalTeacher: "堀上", substitute: "藤田" },
+        // 別の日の代行・対象外コマの代行は数えない
+        { id: 2, date: FRI, slotId: 1, originalTeacher: "堀上", substitute: "藤田" },
+        { id: 3, date: MON, slotId: 99, originalTeacher: "香川", substitute: "" },
+      ],
+      sourceDate: MON,
+      targetDate: FRI,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(
+      plan.notes.some((n) => n.includes("代行が 1 件") && n.includes("引き継がれません"))
+    ).toBe(true);
+  });
+
+  it("振替先が休講日でもエラーにせず確認の注意書きにとどめる", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      sourceDate: MON,
+      targetDate: FRI,
+      ctx: makeCtx({
+        allSlots: slots,
+        isOffForGrade: (d) => d === FRI,
+      }),
+    });
+    expect(plan.errors).toEqual([]);
+    expect(plan.entries).toHaveLength(2);
+    expect(
+      plan.notes.some((n) => n.includes("休講") && n.includes("表示されます"))
+    ).toBe(true);
+  });
+
   it("登録済みの振替は上書き対象として拾う", () => {
     const adjustments = [
       { id: 7, date: MON, type: "reschedule", slotId: 1, targetDate: "2026-12-11" },
@@ -332,6 +444,19 @@ describe("buildDayReschedulePlan", () => {
 });
 
 describe("applyDayReschedule", () => {
+  it("エラーのあるプランでは何も書き込まない", () => {
+    const bad = buildDayReschedulePlan({
+      slots: [makeSlot(1, "月", "19:00-20:20")],
+      sourceDate: MON,
+      targetDate: MON,
+      ctx: makeCtx({ allSlots: [makeSlot(1, "月", "19:00-20:20")] }),
+    });
+    const before = [{ id: 1, date: MON, type: "move", slotId: 1, targetTime: "20:00-21:20" }];
+    const { next, added } = applyDayReschedule({ adjustments: before, plan: bad });
+    expect(added).toBe(0);
+    expect(next).toBe(before);
+  });
+
   const slots = [
     makeSlot(1, "月", "19:00-20:20"),
     makeSlot(2, "月", "20:30-21:50", { teacher: "河野" }),
@@ -347,8 +472,6 @@ describe("applyDayReschedule", () => {
     const { next, added, replaced } = applyDayReschedule({
       adjustments: [{ id: 4, date: MON, type: "move", slotId: 9, targetTime: "19:00-20:20" }],
       plan,
-      sourceDate: MON,
-      targetDate: FRI,
       memo: "12/7 → 12/4",
     });
     expect(added).toBe(2);
@@ -375,8 +498,6 @@ describe("applyDayReschedule", () => {
     const { next, added, replaced } = applyDayReschedule({
       adjustments,
       plan,
-      sourceDate: MON,
-      targetDate: FRI,
     });
     expect(added).toBe(2);
     expect(replaced).toBe(1);
