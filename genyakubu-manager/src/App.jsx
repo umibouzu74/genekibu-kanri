@@ -1369,6 +1369,10 @@ export default function App() {
               extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
+              /* 日まるごと振替: まとめて登録 (saveAdjustments) と
+                 まとめて解除 (delMany) */
+              saveAdjustments={saveAdjustments}
+              onDelAdjustments={adjCrud.delMany}
               onDelSessionOverride={overridesCrud.del}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
@@ -1592,8 +1596,8 @@ export default function App() {
               selectView(VIEWS.HOLIDAYS);
               setCmdPaletteOpen(false);
             }}
-            onSelectSubsSubTab={(tabKey) => {
-              setSubsInitFilter({ tab: tabKey });
+            onSelectSubsSubTab={(tabKey, open) => {
+              setSubsInitFilter({ tab: tabKey, open });
               selectView(VIEWS.SUBS);
               setCmdPaletteOpen(false);
             }}
