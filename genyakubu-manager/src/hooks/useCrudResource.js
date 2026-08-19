@@ -48,6 +48,51 @@ export function useRemoveWithUndo({ list, save, idKey = "id" }) {
 }
 
 /**
+ * 複数件をまとめて削除する版の楽観的削除 + Undo toast。
+ * useRemoveWithUndo と同じく cascade を伴う削除には使わないこと。
+ * Undo は「最新 list に無い ID だけ」を戻すので、間に同期で復活していた
+ * レコードを二重に足さない。
+ */
+export function useRemoveManyWithUndo({ list, save, idKey = "id" }) {
+  const toasts = useToasts();
+  const listRef = useRef(list);
+  listRef.current = list;
+  return useCallback(
+    (
+      ids,
+      {
+        successMsg = (n) => `${n} 件削除しました`,
+        undoLabel = "元に戻す",
+        duration = 6000,
+      } = {}
+    ) => {
+      const idSet = new Set(ids || []);
+      const targets = list.filter((x) => idSet.has(x[idKey]));
+      if (targets.length === 0) return 0;
+      save(list.filter((x) => !idSet.has(x[idKey])));
+      const msg =
+        typeof successMsg === "function" ? successMsg(targets.length) : successMsg;
+      toasts.push(msg, {
+        tone: "info",
+        duration,
+        action: {
+          label: undoLabel,
+          onClick: () => {
+            const current = listRef.current;
+            const present = new Set(current.map((x) => x[idKey]));
+            const restore = targets.filter((t) => !present.has(t[idKey]));
+            if (restore.length === 0) return;
+            save([...current, ...restore]);
+          },
+        },
+      });
+      return targets.length;
+    },
+    [list, save, idKey, toasts]
+  );
+}
+
+/**
  * Generic CRUD primitives for list-backed resources stored in
  * useSyncedStorage. Resource-specific hooks (e.g. useSubsCrud) use this
  * to avoid re-implementing add / update / remove / confirmed-delete
@@ -65,6 +110,7 @@ export function useCrudResource({ list, save, idKey = "id" }) {
   const toasts = useToasts();
   const confirm = useConfirm();
   const removeWithUndo = useRemoveWithUndo({ list, save, idKey });
+  const removeManyWithUndo = useRemoveManyWithUndo({ list, save, idKey });
 
   const add = useCallback(
     (
@@ -137,5 +183,12 @@ export function useCrudResource({ list, save, idKey = "id" }) {
     [list, save, idKey, confirm, toasts]
   );
 
-  return { add, update, remove, confirmedRemove, removeWithUndo };
+  return {
+    add,
+    update,
+    remove,
+    confirmedRemove,
+    removeWithUndo,
+    removeManyWithUndo,
+  };
 }

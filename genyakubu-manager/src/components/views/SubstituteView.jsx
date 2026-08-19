@@ -4,6 +4,8 @@ import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
+import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { DayRescheduleDialog } from "../DayRescheduleDialog";
 import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
@@ -38,6 +40,8 @@ export function SubstituteView({
   daySchedules = [],
   onAddAdjustment,
   onDelAdjustment,
+  saveAdjustments,
+  onDelAdjustments,
   onDelSessionOverride,
   onJumpToAbsenceFlow,
   adjustments = [],
@@ -52,6 +56,8 @@ export function SubstituteView({
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
+  // 日まるごと振替ダイアログ (時間割調整一覧タブから開く)
+  const [dayRescheduleOpen, setDayRescheduleOpen] = useState(false);
 
   // 外部から初期フィルタが渡された場合の処理。
   //  - initFilter.status: Sidebar バッジクリック等。月フィルタは解除して
@@ -68,6 +74,10 @@ export function SubstituteView({
       }
       if (initFilter.tab) {
         setTab(initFilter.tab);
+      }
+      // Cmd+K の「日まるごと振替」からはダイアログまで開く
+      if (initFilter.open === "dayReschedule") {
+        setDayRescheduleOpen(true);
       }
       onConsumeInitFilter?.();
     }
@@ -98,6 +108,21 @@ export function SubstituteView({
     });
     return m;
   }, [slots]);
+
+  // 日まるごと振替の対象抽出 (実施されるコマか) に使う ctx。
+  // 休講・テスト期間・時間割の有効期間・表示期間・特別時程・隔週の解釈を
+  // 回数計算と一本化するため、画面独自の判定は書かない。
+  const { sessionCtx } = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    timetables,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+    daySchedules,
+  });
 
   const filtered = useMemo(() => {
     let r = [...subs];
@@ -307,6 +332,9 @@ export function SubstituteView({
           teacherKana={teacherKana}
           onDel={handleDelAdjustment}
           onJumpToDate={onJumpToAbsenceFlow}
+          onOpenDayReschedule={
+            saveAdjustments ? () => setDayRescheduleOpen(true) : null
+          }
         />
       )}
 
@@ -365,6 +393,24 @@ export function SubstituteView({
           sessionOverrides={sessionOverrides}
           extraLessons={extraLessons}
           enableSubMode
+        />
+      )}
+
+      {dayRescheduleOpen && (
+        <DayRescheduleDialog
+          slots={slots}
+          adjustments={adjustments}
+          sessionCtx={sessionCtx}
+          isAdmin={isAdmin}
+          saveAdjustments={saveAdjustments}
+          onRemoveAdjustments={onDelAdjustments}
+          onClose={() => setDayRescheduleOpen(false)}
+          onSaved={({ added, replaced, sourceDate, targetDate }) =>
+            toasts.success(
+              `${sourceDate} → ${targetDate} に ${added} コマを振り替えました` +
+                (replaced > 0 ? ` (${replaced} 件を上書き)` : "")
+            )
+          }
         />
       )}
     </div>

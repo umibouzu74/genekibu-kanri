@@ -52,5 +52,14 @@ export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
     [crud]
   );
 
-  return { add, del, remove, replace };
+  // 日まるごと振替の一括解除など、複数件をまとめて消す用。
+  const delMany = useCallback(
+    (ids) =>
+      crud.removeManyWithUndo(ids, {
+        successMsg: (n) => `時間割調整を ${n} 件削除しました`,
+      }),
+    [crud]
+  );
+
+  return { add, del, delMany, remove, replace };
 }

@@ -121,6 +121,7 @@ export function AdjustmentListTab({
   teacherKana = {},
   onDel,
   onJumpToDate,
+  onOpenDayReschedule,
 }) {
   const now = new Date();
   const [fMonth, setFMonth] = useState(
@@ -277,6 +278,24 @@ export function AdjustmentListTab({
         >
           クリア
         </button>
+        {isAdmin && onOpenDayReschedule && (
+          <button
+            type="button"
+            onClick={onOpenDayReschedule}
+            title="ある日の授業をまとめて別の日へ振り替える"
+            style={{
+              ...S.btn(false),
+              marginLeft: "auto",
+              fontSize: 12,
+              background: "#fff",
+              border: "1px solid #c44040",
+              color: "#a52a2a",
+              fontWeight: 700,
+            }}
+          >
+            📅 日まるごと振替
+          </button>
+        )}
       </div>
 
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
@@ -300,7 +319,9 @@ export function AdjustmentListTab({
               該当する時間割調整はありません
             </div>
             <div style={{ fontSize: 11, color: "#888" }}>
-              合同・移動・振替は「欠勤組み換え」画面のコマ操作から登録されます
+              合同・移動・振替は「欠勤組み換え」画面のコマ操作から登録されます。
+              <br />
+              ある日の授業をまるごと別の日へ移すときは「📅 日まるごと振替」から。
             </div>
           </div>
         ) : (

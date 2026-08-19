@@ -216,15 +216,23 @@ export function CommandPalette({
         { tab: "adjustment", label: "時間割調整一覧" },
         { tab: "override", label: "回数補正一覧" },
         { tab: "tally", label: "月次集計" },
+        // ある日の授業をまるごと別日へ移す操作。時間割調整一覧を開いた上で
+        // ダイアログまで開く (タブの中のボタンなので名前で辿り着けない)。
+        {
+          tab: "adjustment",
+          label: "日まるごと振替",
+          open: "dayReschedule",
+          detail: "ある日の授業をまとめて別の日へ",
+        },
       ];
       for (const t of subTabs) {
         if (t.label.toLowerCase().includes(q)) {
           hits.push({
             type: "view",
             label: t.label,
-            detail: "授業管理のサブタブに移動",
+            detail: t.detail || "授業管理のサブタブに移動",
             action: () => {
-              onSelectSubsSubTab(t.tab);
+              onSelectSubsSubTab(t.tab, t.open);
               onClose();
             },
           });

@@ -29,7 +29,13 @@ export function SectionColumn({
   daySchedules = [],
 }) {
   // この日の合同・移動・特別時程情報を索引化 (共通ヘルパを使用)
-  const { combineAbsorbedBySlot, combineHostBySlot, moveBySlot, dayScheduleMoveBySlot } = useMemo(
+  const {
+    combineAbsorbedBySlot,
+    combineHostBySlot,
+    moveBySlot,
+    dayScheduleMoveBySlot,
+    rescheduleOutBySlot,
+  } = useMemo(
     () => buildAdjustmentIndex(adjustments, date, { slots: sl, daySchedules }),
     [adjustments, date, sl, daySchedules]
   );
@@ -164,6 +170,8 @@ export function SectionColumn({
                     const hostedIds = combineHostBySlot.get(s.id);
                     const isHost = !!hostedIds;
                     const moveTarget = moveBySlot.get(s.id);
+                    // 他日へ振り替えたコマ = この日は実施しない。
+                    const rescheduledOut = rescheduleOutBySlot.get(s.id) || null;
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
@@ -181,7 +189,13 @@ export function SectionColumn({
                       <div
                         key={s.id}
                         style={{
-                          background: absorbed ? ADJ_COLOR.combine.bg : sub ? st.bg : "#fff",
+                          background: absorbed
+                            ? ADJ_COLOR.combine.bg
+                            : rescheduledOut
+                              ? ADJ_COLOR.reschedule.bg
+                              : sub
+                                ? st.bg
+                                : "#fff",
                           padding: "8px 6px",
                           textAlign: "left",
                           display: "flex",
@@ -189,11 +203,11 @@ export function SectionColumn({
                           justifyContent: "space-between",
                           minHeight: 96,
                           position: "relative",
-                          opacity: absorbed ? 0.65 : 1,
+                          opacity: absorbed || rescheduledOut ? 0.65 : 1,
                           ...(newGradeRow ? { gridColumnStart: 1 } : null),
                         }}
                       >
-                        {(sub || absorbed || isHost || moveTarget) && (
+                        {(sub || absorbed || isHost || moveTarget || rescheduledOut) && (
                           <div
                             style={{
                               position: "absolute",
@@ -238,6 +252,22 @@ export function SectionColumn({
                                 }
                               >
                                 移
+                              </span>
+                            )}
+                            {rescheduledOut && (
+                              <span
+                                style={badgeStyle(ADJ_COLOR.reschedule.color)}
+                                title={`別日へ振替\n→ ${rescheduledOut.targetDate}${
+                                  rescheduledOut.targetTime
+                                    ? ` ${rescheduledOut.targetTime}`
+                                    : ""
+                                }${
+                                  rescheduledOut.targetTeacher
+                                    ? ` (${rescheduledOut.targetTeacher})`
+                                    : ""
+                                }${rescheduledOut.memo ? `\n${rescheduledOut.memo}` : ""}`}
+                              >
+                                振
                               </span>
                             )}
                             {sub && (
