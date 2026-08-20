@@ -10,7 +10,9 @@ import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
-import { getAbsentSlotIds } from "../../utils/absenceHelpers";
+import { getAbsenceDaySlots, getAbsentSlotIds } from "../../utils/absenceHelpers";
+import { getCutoffGroupLabelsWithSlots, getDayCutoffKind } from "../../utils/timetable";
+import { cutoffBannerText } from "../../constants/cutoffMessages";
 
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
 // 上部: 対象日 + 欠勤先生選択 / 下部: 時間割グリッド
@@ -117,16 +119,31 @@ export function AbsenceWorkflowView({
     return sortTeacherNames([...set], teacherKana);
   }, [slots, partTimeStaff, teacherKana]);
 
-  // 対象日のコマ群
-  const daySlots = useMemo(() => {
-    if (!dayName) return [];
-    return sortS(slots.filter((s) => s.day === dayName));
-  }, [slots, dayName]);
+  // その日が全学年グループの表示期間外か (開講前 / 終講後)。
+  // コマを持たない学年グループは判定から外す (ダッシュボードと同じ)。
+  const activeGroupLabels = useMemo(
+    () => getCutoffGroupLabelsWithSlots(slots, displayCutoff),
+    [slots, displayCutoff]
+  );
+  const dayCutoffKind = useMemo(
+    () => getDayCutoffKind(date, displayCutoff, { activeGroupLabels }),
+    [date, displayCutoff, activeGroupLabels]
+  );
 
-  // 欠勤先生が担当するコマ集合 (赤枠表示用)
+  // 対象日のコマ群。曜日だけでなく時間割の適用期間・表示期間でも絞る
+  // (旧期の時間割が残っていると同じコマが 2 重・3 重に並ぶため)。
+  const daySlots = useMemo(
+    () =>
+      sortS(
+        getAbsenceDaySlots(slots, date, dayName, { timetables, displayCutoff })
+      ),
+    [slots, date, dayName, timetables, displayCutoff]
+  );
+
+  // 欠勤先生が担当するコマ集合 (赤枠表示用)。対象は画面に出ているコマだけ。
   const absentSlotIds = useMemo(
-    () => getAbsentSlotIds(slots, dayName, selectedTeachers),
-    [slots, dayName, selectedTeachers]
+    () => getAbsentSlotIds(daySlots, dayName, selectedTeachers),
+    [daySlots, dayName, selectedTeachers]
   );
 
   // ドラフト反映済みの回数 map
@@ -445,6 +462,24 @@ export function AbsenceWorkflowView({
           )}
         </div>
       </div>
+
+      {/* 表示期間外の日: 「開講前」と「終講後 (未確定)」は必ず出し分ける */}
+      {dayCutoffKind && (
+        <div
+          style={{
+            background: "#fff8e0",
+            border: "1px solid #e0d080",
+            borderRadius: 8,
+            padding: "10px 14px",
+            marginBottom: 10,
+            color: "#8a7020",
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          {cutoffBannerText(dayCutoffKind)}
+        </div>
+      )}
 
       {/* Timetable grid */}
       <AbsenceTimetable
