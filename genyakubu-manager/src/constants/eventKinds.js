@@ -26,6 +26,24 @@ export const EVENT_KIND_LABELS = Object.freeze({
   [EVENT_KIND.DAY_SCHEDULE]: "特別時程",
 });
 
+// 「休講・テスト期間・イベント」画面に縦に並ぶセクションの並び順と見た目。
+// 画面のアンカー id (App) とサイドバーの子項目 (Sidebar) で共有する。
+// この画面はラベルが「休講・テスト期間・イベント」なので、追加授業や
+// 特別時程は名前からは辿り着けない。サイドバーに名前を出すのが目的。
+export const EVENT_SECTIONS = Object.freeze([
+  { kind: EVENT_KIND.HOLIDAY, icon: "🚫" },
+  { kind: EVENT_KIND.EXAM, icon: "📝" },
+  { kind: EVENT_KIND.SPECIAL, icon: "🎉" },
+  { kind: EVENT_KIND.EXTRA_LESSON, icon: "➕" },
+  { kind: EVENT_KIND.DAY_SCHEDULE, icon: "⏰" },
+]);
+
+// セクションのアンカー id ("hv-holiday" 等)。App が付ける id と
+// サイドバーからのスクロール要求で共有する。
+export function eventSectionAnchorId(kind) {
+  return `hv-${kind}`;
+}
+
 // チップ・バッジで使う色 (背景・前景・アクセント)。特別イベントの
 // 種別ごとの色は specialEventTypeMeta() で別個に取得する。
 export const HOLIDAY_META = Object.freeze({

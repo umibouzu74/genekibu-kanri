@@ -50,7 +50,7 @@ import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
-import { EVENT_KIND } from "./constants/eventKinds";
+import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { dateToDay, fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import {
@@ -381,6 +381,10 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
   const [showDayReschedule, setShowDayReschedule] = useState(false);
+  // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
+  // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
+  // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
+  const [eventSectionRequest, setEventSectionRequest] = useState(null);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
@@ -486,6 +490,28 @@ export default function App() {
     }, [activeTimetableId, changeActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
+
+  useEffect(() => {
+    if (!eventSectionRequest || view !== VIEWS.HOLIDAYS) return undefined;
+    let raf = 0;
+    let tries = 0;
+    const seek = () => {
+      const el = document.getElementById(eventSectionAnchorId(eventSectionRequest));
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setEventSectionRequest(null);
+        return;
+      }
+      // 約 1 秒 (60 フレーム) 探して見つからなければあきらめる
+      if (tries++ > 60) {
+        setEventSectionRequest(null);
+        return;
+      }
+      raf = requestAnimationFrame(seek);
+    };
+    raf = requestAnimationFrame(seek);
+    return () => cancelAnimationFrame(raf);
+  }, [eventSectionRequest, view]);
   const overridesCrud = useSessionOverridesCrud({
     sessionOverrides,
     saveSessionOverrides,
@@ -953,6 +979,10 @@ export default function App() {
           setShowDayReschedule(true);
           setSidebarOpen(false);
         }}
+        onSelectEventSection={(kind) => {
+          selectView(VIEWS.HOLIDAYS);
+          setEventSectionRequest(kind);
+        }}
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
@@ -1219,6 +1249,9 @@ export default function App() {
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
+              {/* 各セクションにアンカーを振る (サイドバーの子項目から
+                  スクロールで飛ぶ。id は eventSectionAnchorId が正) */}
+              <div id={eventSectionAnchorId(EVENT_KIND.HOLIDAY)}>
               <HolidayManager
                 holidays={holidays}
                 slots={slots}
@@ -1233,6 +1266,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.EXAM)}>
               <ExamPeriodManager
                 examPeriods={examPeriods}
                 onSave={saveExamPeriods}
@@ -1254,6 +1289,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.SPECIAL)}>
               <SpecialEventManager
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
@@ -1268,6 +1305,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.EXTRA_LESSON)}>
               <ExtraLessonManager
                 extraLessons={extraLessons}
                 onSave={saveExtraLessons}
@@ -1285,6 +1324,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.DAY_SCHEDULE)}>
               <DayScheduleManager
                 daySchedules={daySchedules}
                 onSave={saveDaySchedules}
@@ -1304,6 +1345,7 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
             </>
           )}
           {view === VIEWS.EVENTS && !selected && (
