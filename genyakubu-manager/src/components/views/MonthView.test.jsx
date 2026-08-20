@@ -174,6 +174,71 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.queryByText("↻ 振替で休み")).not.toBeInTheDocument();
   });
 
+  it("代行に出したコマは取消線 + 代行者名を出し、全部なら「代行で休み」", () => {
+    render(
+      <MonthView
+        {...decProps}
+        subs={[
+          {
+            id: 5,
+            date: "2026-12-07",
+            slotId: 1,
+            originalTeacher: "堀上",
+            substitute: "河野",
+            status: "confirmed",
+          },
+        ]}
+      />
+    );
+    // 誰に渡したかをカードに出す (これまでは tooltip だけだった)
+    expect(screen.getByText("→ 河野")).toBeInTheDocument();
+    expect(screen.getAllByText("代 代行で休み")).toHaveLength(1);
+  });
+
+  it("代行と振替が混ざった日は「担当なし」とまとめる", () => {
+    const stays = { ...SLOT, id: 2, time: "17:30-18:50", subj: "英語" };
+    render(
+      <MonthView
+        {...decProps}
+        slots={[SLOT, stays]}
+        adjustments={[RESCHEDULE]}
+        subs={[
+          {
+            id: 5,
+            date: "2026-12-07",
+            slotId: 2,
+            originalTeacher: "堀上",
+            substitute: "河野",
+            status: "confirmed",
+          },
+        ]}
+      />
+    );
+    expect(screen.getAllByText("この日は担当なし")).toHaveLength(1);
+  });
+
+  it("他人のコマを代行する日は誰の代わりかを出す (休みにはしない)", () => {
+    const other = { ...SLOT, id: 3, teacher: "河野" };
+    render(
+      <MonthView
+        {...decProps}
+        slots={[other]}
+        subs={[
+          {
+            id: 6,
+            date: "2026-12-07",
+            slotId: 3,
+            originalTeacher: "河野",
+            substitute: "堀上",
+            status: "confirmed",
+          },
+        ]}
+      />
+    );
+    expect(screen.getByText("(河野 の代行)")).toBeInTheDocument();
+    expect(screen.queryByText(/休み|担当なし/)).not.toBeInTheDocument();
+  });
+
   it("担当が違う振替は表示しない", () => {
     render(
       <MonthView

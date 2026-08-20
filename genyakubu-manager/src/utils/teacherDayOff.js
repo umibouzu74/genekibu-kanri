@@ -1,0 +1,65 @@
+// ─── 講師個人から見た「その日は担当なし」 ──────────────────────────
+// 講師別の月間カレンダーで使う。**学校全体の画面 (日別ダッシュボード・
+// タイムテーブル) には無い概念** — 代行や合同が付いても授業そのものは
+// 行われるので、休みになるのは担当を外れた本人だけ。
+// (日をまるごと他日へ移す振替だけは学校全体でも休みになるので、そちらは
+//  adjustmentDisplay.isDayEmptiedByReschedule が別に見ている。)
+
+// 手を離れた理由。表示の優先順位もこの順 (代行 → 合同 → 振替)。
+export const AWAY_SUB = "sub";
+export const AWAY_COMBINE = "combine";
+export const AWAY_RESCHEDULE = "reschedule";
+
+/**
+ * そのコマがこの講師の手を離れているか。理由を返す (担当のままなら null)。
+ *
+ * @param {object} args
+ * @param {string} args.teacher 見ている講師
+ * @param {object|null} args.sub 同じ (日付, コマ) の代行レコード
+ * @param {boolean} args.absorbed 合同で他のコマに吸収された
+ * @param {object|null} args.rescheduledOut 他日へ出ていく振替 adjustment
+ * @returns {"sub"|"combine"|"reschedule"|null}
+ */
+export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
+  if (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) {
+    return AWAY_SUB;
+  }
+  if (absorbed) return AWAY_COMBINE;
+  // 振替先の担当が自分なら、日が変わるだけで担当は続いている。
+  if (
+    rescheduledOut &&
+    (!rescheduledOut.targetTeacher || rescheduledOut.targetTeacher !== teacher)
+  ) {
+    return AWAY_RESCHEDULE;
+  }
+  return null;
+}
+
+const LABEL = {
+  [AWAY_SUB]: "代 代行で休み",
+  [AWAY_COMBINE]: "合 合同で休み",
+  [AWAY_RESCHEDULE]: "↻ 振替で休み",
+};
+
+/**
+ * その日のコマが全部この講師の手を離れたか + カレンダーに出す見出し。
+ *
+ * `staying` には**その日に残る仕事**の件数を渡すこと (他人のコマの代行・
+ * 他日から入ってくる振替・追加授業・講習コマ)。1 つでもあれば出勤日なので
+ * 休みとは言わない。
+ *
+ * @param {(string|null)[]} reasons コマごとの teacherAwayReason の結果
+ * @param {number} [staying]
+ * @returns {{off: boolean, reason: string|null, label: string}}
+ */
+export function summarizeTeacherDayOff(reasons, staying = 0) {
+  const none = { off: false, reason: null, label: "" };
+  if (!reasons?.length || staying > 0) return none;
+  if (reasons.some((r) => !r)) return none;
+  const kinds = [...new Set(reasons)];
+  if (kinds.length === 1) {
+    return { off: true, reason: kinds[0], label: LABEL[kinds[0]] };
+  }
+  // 代行と振替が混ざった日など。理由を並べても長いだけなので一括で伝える。
+  return { off: true, reason: "mixed", label: "この日は担当なし" };
+}

@@ -30,10 +30,11 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
+import { describeRescheduleTarget } from "../../utils/adjustmentDisplay";
 import {
-  describeRescheduleTarget,
-  isDayEmptiedByReschedule,
-} from "../../utils/adjustmentDisplay";
+  summarizeTeacherDayOff,
+  teacherAwayReason,
+} from "../../utils/teacherDayOff";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { EVENT_KIND } from "../../constants/eventKinds";
@@ -51,6 +52,20 @@ import {
 // 月内 DOM ルートに `.month-print-root` クラスを付けておくと、handlePrint が
 // その直前にヘッダを差し込んでくる。
 // PrintButton (window.print() 直接) は使わない。
+
+
+// 「この講師にとっては休みの日」のセル色と見出し色。理由ごとに既存の色を
+// 使い回す (代行は依頼中=赤 / 確定=緑 と状態で色が変わるので、日単位では
+// 中立の青にする)。
+const DAY_OFF_TONE = {
+  sub: { bg: "#eaf1f8", fg: "#2a5a8a" },
+  combine: { bg: ADJ_COLOR.combine.bannerBg, fg: ADJ_COLOR.combine.deep },
+  reschedule: {
+    bg: ADJ_COLOR.reschedule.bannerBg,
+    fg: ADJ_COLOR.reschedule.deep,
+  },
+  mixed: { bg: "#eef0f2", fg: "#5a6570" },
+};
 
 export function MonthView({
   teacher,
@@ -424,23 +439,33 @@ export function MonthView({
             displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
               ? buildSessionCountMap([...sl, ...externalSubSlots], ds, sessionCtx)
               : null;
-          // この日のコマが全部よそへ行った = 振替で実質休みの日。
-          // コマごとの「振」バッジだけだと月の一覧で気付けないので、
-          // 休講日と同じ強さで日単位の状態として見せる。
-          const outgoingForDay = sl
-            .map((s) => ({ slot: s, adj: rescheduleOutByKey.get(`${ds}|${s.id}`) }))
-            .filter((o) => o.adj);
-          const offByReschedule =
-            !isFullOff &&
-            !dayCutoff &&
-            isDayEmptiedByReschedule(
-              sl,
-              outgoingForDay,
-              incomingForDay.length +
-                extraForDay.length +
-                koshuForDay.length +
-                externalSubSlots.length
-            );
+          // コマごとに「この講師の手を離れたか」と理由 (代行 / 合同 / 振替)。
+          // カードの取消線と日単位の判定で同じ答えを使う。
+          const awayReasonBySlot = new Map(
+            sl.map((s) => [
+              s.id,
+              teacherAwayReason({
+                teacher,
+                sub: subByDateSlot.get(`${ds}|${s.id}`),
+                absorbed: hostByAbsorbedKey.has(`${ds}|${s.id}`),
+                rescheduledOut: rescheduleOutByKey.get(`${ds}|${s.id}`),
+              }),
+            ])
+          );
+          // その日のコマが全部手を離れた = この講師にとっては休みの日。
+          // カードの薄字だけだと月の一覧で「その日が空いた」ことに気付けない
+          // ので、休講日と同じ強さで日単位の状態として見せる。
+          const dayOff =
+            isFullOff || dayCutoff
+              ? { off: false, reason: null, label: "" }
+              : summarizeTeacherDayOff(
+                  sl.map((s) => awayReasonBySlot.get(s.id)),
+                  incomingForDay.length +
+                    extraForDay.length +
+                    koshuForDay.length +
+                    externalSubSlots.length
+                );
+          const offTone = dayOff.off ? DAY_OFF_TONE[dayOff.reason] : null;
           return (
             <div
               key={ds}
@@ -450,8 +475,8 @@ export function MonthView({
                   ? "#f5f5f0"
                   : isFullOff
                     ? "#f8f0f0"
-                    : offByReschedule
-                      ? ADJ_COLOR.reschedule.bannerBg
+                    : offTone
+                      ? offTone.bg
                       : hasExam && !isT
                       ? "#fdf5e8"
                       : isT
@@ -477,16 +502,12 @@ export function MonthView({
                 }}
               >
                 <span>{d}</span>
-                {offByReschedule && (
+                {dayOff.off && (
                   <span
-                    title={`この日の ${outgoingForDay.length} コマはすべて別日へ振替済み`}
-                    style={{
-                      fontSize: 9,
-                      color: ADJ_COLOR.reschedule.deep,
-                      fontWeight: 800,
-                    }}
+                    title={`この日の ${sl.length} コマはすべて他の担当に移っています`}
+                    style={{ fontSize: 9, color: offTone.fg, fontWeight: 800 }}
                   >
-                    ↻ 振替で休み
+                    {dayOff.label}
                   </span>
                 )}
                 {isFullOff && (
@@ -612,13 +633,26 @@ export function MonthView({
                   const moveTarget =
                     moveByKey.get(`${ds}|${s.id}`) || dayScheduleMove?.time;
                   const rescheduledOut = rescheduleOutByKey.get(`${ds}|${s.id}`);
-                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された or 振替で他日へ
-                  const away =
-                    (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) ||
-                    absorbed ||
-                    (rescheduledOut &&
-                      (!rescheduledOut.targetTeacher ||
-                        rescheduledOut.targetTeacher !== teacher));
+                  // 「自分が不在」: 代行で別人が入る or 合同で吸収された or
+                  // 振替で他日へ。判定は日単位の休み判定と共有する。
+                  const awayReason = awayReasonBySlot.get(s.id);
+                  const away = !!awayReason;
+                  // 誰に / どこへ渡ったかをカードに出す (tooltip だけだと
+                  // 一覧を見ているときに気付けない)。
+                  const awayNote =
+                    awayReason === "sub"
+                      ? `→ ${sub.substitute || "未定"}`
+                      : awayReason === "combine"
+                        ? `→ ${hostSlot?.teacher || "?"} に合同`
+                        : awayReason === "reschedule"
+                          ? `→${describeRescheduleTarget(rescheduledOut, { short: true })}`
+                          : null;
+                  const awayNoteColor =
+                    awayReason === "sub"
+                      ? st?.color || "#2a5a8a"
+                      : awayReason === "combine"
+                        ? ADJ_COLOR.combine.deep
+                        : ADJ_COLOR.reschedule.deep;
                   // カード全体の色: absorbed > rescheduledOut > sub > 曜日色
                   const cardBg = absorbed
                     ? ADJ_COLOR.combine.bg
@@ -702,8 +736,9 @@ export function MonthView({
                         borderLeft: `2px solid ${cardBorder}`,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        // 振替済みは行き先 ("→8/28") を続けて出すので折り返す
-                        whiteSpace: rescheduledOut ? "normal" : "nowrap",
+                        // 手を離れたコマは行き先 ("→8/28" / "→ 福江") を
+                        // 続けて出すので折り返す
+                        whiteSpace: away ? "normal" : "nowrap",
                         cursor: cardEditable ? "pointer" : "default",
                         opacity: away ? 0.55 : 1,
                       }}
@@ -768,8 +803,8 @@ export function MonthView({
                       </span>
                       <span
                         style={{
-                          textDecoration: rescheduledOut ? "line-through" : "none",
-                          color: rescheduledOut ? "#7a7a7a" : "inherit",
+                          textDecoration: away ? "line-through" : "none",
+                          color: away ? "#7a7a7a" : "inherit",
                         }}
                       >
                         <b>{displayTime}</b>{" "}
@@ -777,15 +812,15 @@ export function MonthView({
                           ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors, holidays, examPeriods)}（隔週）`
                           : s.subj}
                       </span>
-                      {rescheduledOut && (
+                      {awayNote && (
                         <span
                           style={{
                             marginLeft: 3,
                             fontWeight: 800,
-                            color: ADJ_COLOR.reschedule.deep,
+                            color: awayNoteColor,
                           }}
                         >
-                          →{describeRescheduleTarget(rescheduledOut, { short: true })}
+                          {awayNote}
                         </span>
                       )}
                     </div>
@@ -823,7 +858,8 @@ export function MonthView({
                           borderLeft: `2px solid ${st.color}`,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          // 「(◯◯ の代行)」を続けて出すので折り返す
+                          whiteSpace: "normal",
                         }}
                         title={`${slot.time} ${slot.grade} ${slot.subj} ${slot.room || ""}\n[代行] ${sub.originalTeacher}の代わりに担当 (${st.label})${sub.memo ? "\n" + sub.memo : ""}`}
                       >
@@ -871,6 +907,15 @@ export function MonthView({
                           {slot.cls && slot.cls !== "-" ? slot.cls : ""}
                         </span>
                         <b>{slot.time.split("-")[0]}</b> {slot.subj}
+                        <span
+                          style={{
+                            marginLeft: 3,
+                            fontWeight: 700,
+                            color: st.color,
+                          }}
+                        >
+                          ({sub.originalTeacher} の代行)
+                        </span>
                       </div>
                     );
                   })}
