@@ -5,8 +5,14 @@ import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
+import { RescheduleOutBanner } from "../../RescheduleOutBanner";
 import { SectionColumn } from "./SectionColumn";
-import { collectIncomingReschedules } from "../../../utils/adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  collectIncomingReschedules,
+  collectOutgoingReschedules,
+  isDayEmptiedByReschedule,
+} from "../../../utils/adjustmentDisplay";
 
 export function DashDayRow({
   date,
@@ -32,6 +38,18 @@ export function DashDayRow({
     () =>
       collectIncomingReschedules(adjustments, date, sessionCtx?.allSlots || slots),
     [adjustments, date, sessionCtx, slots]
+  );
+
+  // この日から他日へ出ていくコマ。全部出ていったらその日は実質休みなので、
+  // コマ側の「振」バッジだけでなく日単位のバナーでも伝える。
+  const outgoingReschedules = useMemo(() => {
+    const { rescheduleOutBySlot } = buildAdjustmentIndex(adjustments, date);
+    return collectOutgoingReschedules(slots, rescheduleOutBySlot);
+  }, [adjustments, date, slots]);
+  const emptiedByReschedule = isDayEmptiedByReschedule(
+    slots,
+    outgoingReschedules,
+    incomingReschedules.length + extraLessonsForDate.length
   );
 
   const fullOff = hols.some((h) => {
@@ -187,6 +205,9 @@ export function DashDayRow({
           コマなので、休講日でも巻き添えにせず表示する。 */}
       <ExtraLessonBanner lessons={extraLessonsForDate} />
       <RescheduleInBanner items={incomingReschedules} />
+      {!fullOff && emptiedByReschedule && (
+        <RescheduleOutBanner items={outgoingReschedules} />
+      )}
       {fullOff ? (
         <div
           style={{

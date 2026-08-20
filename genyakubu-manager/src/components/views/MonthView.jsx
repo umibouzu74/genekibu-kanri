@@ -30,6 +30,10 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
+import {
+  describeRescheduleTarget,
+  isDayEmptiedByReschedule,
+} from "../../utils/adjustmentDisplay";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { EVENT_KIND } from "../../constants/eventKinds";
@@ -420,6 +424,23 @@ export function MonthView({
             displayCutoff && (sl.length > 0 || externalSubSlots.length > 0)
               ? buildSessionCountMap([...sl, ...externalSubSlots], ds, sessionCtx)
               : null;
+          // この日のコマが全部よそへ行った = 振替で実質休みの日。
+          // コマごとの「振」バッジだけだと月の一覧で気付けないので、
+          // 休講日と同じ強さで日単位の状態として見せる。
+          const outgoingForDay = sl
+            .map((s) => ({ slot: s, adj: rescheduleOutByKey.get(`${ds}|${s.id}`) }))
+            .filter((o) => o.adj);
+          const offByReschedule =
+            !isFullOff &&
+            !dayCutoff &&
+            isDayEmptiedByReschedule(
+              sl,
+              outgoingForDay,
+              incomingForDay.length +
+                extraForDay.length +
+                koshuForDay.length +
+                externalSubSlots.length
+            );
           return (
             <div
               key={ds}
@@ -429,7 +450,9 @@ export function MonthView({
                   ? "#f5f5f0"
                   : isFullOff
                     ? "#f8f0f0"
-                    : hasExam && !isT
+                    : offByReschedule
+                      ? ADJ_COLOR.reschedule.bannerBg
+                      : hasExam && !isT
                       ? "#fdf5e8"
                       : isT
                         ? "#fffbe6"
@@ -454,6 +477,18 @@ export function MonthView({
                 }}
               >
                 <span>{d}</span>
+                {offByReschedule && (
+                  <span
+                    title={`この日の ${outgoingForDay.length} コマはすべて別日へ振替済み`}
+                    style={{
+                      fontSize: 9,
+                      color: ADJ_COLOR.reschedule.deep,
+                      fontWeight: 800,
+                    }}
+                  >
+                    ↻ 振替で休み
+                  </span>
+                )}
                 {isFullOff && (
                   <span style={{ fontSize: 9, color: "#c44", fontWeight: 400 }}>
                     {hols[0].label}
@@ -667,7 +702,8 @@ export function MonthView({
                         borderLeft: `2px solid ${cardBorder}`,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        // 振替済みは行き先 ("→8/28") を続けて出すので折り返す
+                        whiteSpace: rescheduledOut ? "normal" : "nowrap",
                         cursor: cardEditable ? "pointer" : "default",
                         opacity: away ? 0.55 : 1,
                       }}
@@ -730,10 +766,28 @@ export function MonthView({
                         {s.grade}
                         {s.cls && s.cls !== "-" ? s.cls : ""}
                       </span>
-                      <b>{displayTime}</b>{" "}
-                      {isBiweekly(s.note)
-                        ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors, holidays, examPeriods)}（隔週）`
-                        : s.subj}
+                      <span
+                        style={{
+                          textDecoration: rescheduledOut ? "line-through" : "none",
+                          color: rescheduledOut ? "#7a7a7a" : "inherit",
+                        }}
+                      >
+                        <b>{displayTime}</b>{" "}
+                        {isBiweekly(s.note)
+                          ? `${biweeklyDisplaySubject(s, ds, biweeklyAnchors, holidays, examPeriods)}（隔週）`
+                          : s.subj}
+                      </span>
+                      {rescheduledOut && (
+                        <span
+                          style={{
+                            marginLeft: 3,
+                            fontWeight: 800,
+                            color: ADJ_COLOR.reschedule.deep,
+                          }}
+                        >
+                          →{describeRescheduleTarget(rescheduledOut, { short: true })}
+                        </span>
+                      )}
                     </div>
                   );
                 })

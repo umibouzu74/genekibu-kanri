@@ -31,7 +31,13 @@ import {
 import { openPrintWindow, writePrintDocument } from "../../utils/printWindow";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { RescheduleInBanner } from "../RescheduleInBanner";
-import { collectIncomingReschedules } from "../../utils/adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  collectIncomingReschedules,
+  collectOutgoingReschedules,
+  isDayEmptiedByReschedule,
+} from "../../utils/adjustmentDisplay";
+import { RescheduleOutBanner } from "../RescheduleOutBanner";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
@@ -486,6 +492,29 @@ export function ExcelGridView({
     ]
   );
 
+  // 表示日から他日へ出ていくコマ。全部出ていったらその日は実質休みなので、
+  // セルの取消線だけでなく日単位のバナーでも伝える (2026-08-20 の指摘)。
+  // 通常の時間割表示 (日付を持たないモード) では振替を見ないので出さない。
+  const outgoingReschedulesForDisplayDate = useMemo(() => {
+    if (!dashboardMode || !displayDate || dashboardEntireDayCutoff) return [];
+    const dayShown = displaySlots.filter((s) => s.day === activeDay);
+    const { rescheduleOutBySlot } = buildAdjustmentIndex(adjustments, displayDate);
+    const outgoing = collectOutgoingReschedules(dayShown, rescheduleOutBySlot);
+    const staying =
+      extraLessonsForDisplayDate.length +
+      collectIncomingReschedules(adjustments, displayDate, slots).length;
+    return isDayEmptiedByReschedule(dayShown, outgoing, staying) ? outgoing : [];
+  }, [
+    dashboardMode,
+    displayDate,
+    dashboardEntireDayCutoff,
+    displaySlots,
+    activeDay,
+    adjustments,
+    slots,
+    extraLessonsForDisplayDate,
+  ]);
+
   // ─── 全曜日まとめ印刷 ──────────────────────────────────────────
   // コマのある曜日を順に printDay へ差し替え、そのつど描画後の DOM
   // (日付固有のバナー + セクション欄) をスナップショットして 1 つの popup に
@@ -841,6 +870,7 @@ export function ExcelGridView({
         <div className="excel-print-day-body" style={{ flex: 1, minWidth: 0 }}>
           <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
           <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
+          <RescheduleOutBanner items={outgoingReschedulesForDisplayDate} />
           {dashboardEntireDayCutoff ? (
             <div
               style={{

@@ -116,6 +116,41 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
     expect(screen.getByText("田中")).toBeInTheDocument();
   });
 
+  it("その日のコマが全部よそへ行ったら「振替で休み」のバナーを出す", () => {
+    // 12/7 (月) の 2 コマをまるごと 12/4 へ振り替えた状態を 12/7 側から見る。
+    renderGrid({
+      viewDate: "2026-12-07",
+      slots: [
+        slot({ id: 1, day: "月", teacher: "田中" }),
+        slot({ id: 2, day: "月", time: "20:30-21:50", room: "302", teacher: "佐藤" }),
+      ],
+      adjustments: [
+        { id: 9, date: "2026-12-07", type: "reschedule", slotId: 1, targetDate: "2026-12-04" },
+        { id: 10, date: "2026-12-07", type: "reschedule", slotId: 2, targetDate: "2026-12-04" },
+      ],
+    });
+    expect(
+      screen.getByText("↻ この日の授業は 2 コマとも 2026-12-04 (金) へ振替済み")
+    ).toBeInTheDocument();
+    // セルにも行き先を出す (バッジの tooltip だけにしない)
+    expect(screen.getAllByText("→ 12/4 へ振替")).toHaveLength(2);
+  });
+
+  it("1 コマでも残る日は「振替で休み」とは言わない", () => {
+    renderGrid({
+      viewDate: "2026-12-07",
+      slots: [
+        slot({ id: 1, day: "月", teacher: "田中" }),
+        slot({ id: 2, day: "月", time: "20:30-21:50", room: "302", teacher: "佐藤" }),
+      ],
+      adjustments: [
+        { id: 9, date: "2026-12-07", type: "reschedule", slotId: 1, targetDate: "2026-12-04" },
+      ],
+    });
+    expect(screen.queryByText(/振替済み/)).not.toBeInTheDocument();
+    expect(screen.getByText("→ 12/4 へ振替")).toBeInTheDocument();
+  });
+
   it("全グループが期間外の日は未確定バナーを出しコマを表示しない", () => {
     renderGrid({
       slots: [slot({ id: 1, grade: "中3", teacher: "田中" })],
