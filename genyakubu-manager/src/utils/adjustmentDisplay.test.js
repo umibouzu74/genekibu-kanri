@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildAdjustmentIndex, describeSlot } from "./adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  collectOutgoingReschedules,
+  describeRescheduleTarget,
+  describeSlot,
+  isDayEmptiedByReschedule,
+  outgoingDayLabel,
+} from "./adjustmentDisplay";
 
 describe("buildAdjustmentIndex", () => {
   const base = "2026-04-20";
@@ -156,5 +163,91 @@ describe("describeSlot", () => {
   it("omits cls when it is '-' or empty", () => {
     expect(describeSlot({ grade: "中2", cls: "-", subj: "英語" })).toBe("中2 英語");
     expect(describeSlot({ grade: "中2", cls: "", subj: "英語" })).toBe("中2 英語");
+  });
+});
+
+// ─── 振替元 (他日へ出ていくコマ) の表示 ─────────────────────────────
+describe("振替元の表示ヘルパ", () => {
+  const MON = "2026-12-07";
+  const FRI = "2026-12-04";
+  const mk = (id, time) => ({
+    id,
+    day: "月",
+    time,
+    grade: "中3",
+    cls: "S",
+    subj: "数学",
+    teacher: "堀上",
+  });
+  const slots = [mk(1, "19:00-20:20"), mk(2, "17:30-18:50"), mk(3, "20:30-21:50")];
+  const adj = (id, slotId, extra = {}) => ({
+    id,
+    date: MON,
+    type: "reschedule",
+    slotId,
+    targetDate: FRI,
+    ...extra,
+  });
+
+  const indexOf = (adjustments) =>
+    buildAdjustmentIndex(adjustments, MON).rescheduleOutBySlot;
+
+  it("出ていくコマを時刻順に集める", () => {
+    const out = collectOutgoingReschedules(
+      slots,
+      indexOf([adj(11, 1), adj(12, 2)])
+    );
+    expect(out.map((o) => o.slot.id)).toEqual([2, 1]);
+  });
+
+  it("振替が無ければ空", () => {
+    expect(collectOutgoingReschedules(slots, indexOf([]))).toEqual([]);
+    expect(collectOutgoingReschedules([], indexOf([adj(11, 1)]))).toEqual([]);
+  });
+
+  it("全部出ていったら「振替で休み」の日", () => {
+    const all = collectOutgoingReschedules(
+      slots,
+      indexOf([adj(11, 1), adj(12, 2), adj(13, 3)])
+    );
+    expect(isDayEmptiedByReschedule(slots, all)).toBe(true);
+  });
+
+  it("一部だけ残るなら休みではない", () => {
+    const some = collectOutgoingReschedules(slots, indexOf([adj(11, 1)]));
+    expect(isDayEmptiedByReschedule(slots, some)).toBe(false);
+  });
+
+  it("その日にやる他のコマ (振替で入る / 追加授業) が 1 つでもあれば休みではない", () => {
+    const all = collectOutgoingReschedules(
+      slots,
+      indexOf([adj(11, 1), adj(12, 2), adj(13, 3)])
+    );
+    expect(isDayEmptiedByReschedule(slots, all, 1)).toBe(false);
+  });
+
+  it("元々コマの無い日は休みと言わない", () => {
+    expect(isDayEmptiedByReschedule([], [])).toBe(false);
+  });
+
+  it("振替先の表記は日付 → 時刻 → 担当の順、short は月日だけ", () => {
+    const a = adj(11, 1, { targetTime: "19:40-21:00", targetTeacher: "福江" });
+    expect(describeRescheduleTarget(a)).toBe("2026-12-04 (金) 19:40-21:00 (福江)");
+    expect(describeRescheduleTarget(a, { short: true })).toBe("12/4 19:40 (福江)");
+    expect(describeRescheduleTarget(adj(12, 2))).toBe("2026-12-04 (金)");
+    expect(describeRescheduleTarget({})).toBe("");
+  });
+
+  it("見出しは行き先が 1 つならその日付、複数なら「他 N 日」", () => {
+    const one = collectOutgoingReschedules(slots, indexOf([adj(11, 1), adj(12, 2)]));
+    expect(outgoingDayLabel(one)).toBe(
+      "この日の授業は 2 コマとも 2026-12-04 (金) へ振替済み"
+    );
+    const two = collectOutgoingReschedules(
+      slots,
+      indexOf([adj(11, 1), adj(12, 2, { targetDate: "2026-12-05" })])
+    );
+    expect(outgoingDayLabel(two)).toContain("他 1 日");
+    expect(outgoingDayLabel([])).toBe("");
   });
 });

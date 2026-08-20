@@ -2,7 +2,7 @@
 // ビュー側で同じロジックを繰り返さないために集約。
 
 import { resolveSlotDaySchedule } from "./daySchedules";
-import { dateToDay, timeStartToMin } from "./dateHelpers";
+import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
 
 /**
  * 指定日の adjustments から、slot id ベースの表示用情報を構築する。
@@ -114,4 +114,75 @@ export function describeSlot(slot, fallback = "(不明コマ)") {
   if (!slot) return fallback;
   const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
   return `${slot.grade}${cls} ${slot.subj}`;
+}
+
+/**
+ * 「この日から他日へ出ていく」振替を、渡したコマの範囲で集める (時刻順)。
+ * rescheduleOutBySlot は buildAdjustmentIndex の戻り値のものをそのまま渡す。
+ *
+ * @param {Array} slots その日に表示しているコマ (ビューごとに絞り込み済み)
+ * @param {Map<number, object>} rescheduleOutBySlot
+ * @returns {{slot: object, adj: object}[]}
+ */
+export function collectOutgoingReschedules(slots, rescheduleOutBySlot) {
+  if (!slots?.length || !rescheduleOutBySlot?.size) return [];
+  const out = [];
+  for (const slot of slots) {
+    const adj = rescheduleOutBySlot.get(slot.id);
+    if (adj) out.push({ slot, adj });
+  }
+  return out.sort(
+    (a, b) => timeStartToMin(a.slot.time) - timeStartToMin(b.slot.time)
+  );
+}
+
+/**
+ * その日が「振替で授業なし」= 実質休みになったか。
+ *
+ * 出ていくコマの数だけでは足りない。**その日にやると明示登録されたもの**
+ * (他日から入ってくる振替・追加授業・講習コマ) が 1 つでも残っていれば
+ * 休みではないので、呼び出し側がその件数を `otherLessons` に渡すこと。
+ *
+ * @param {Array} slots その日に表示しているコマ
+ * @param {{slot: object, adj: object}[]} outgoing collectOutgoingReschedules の結果
+ * @param {number} [otherLessons] その日に残る他のコマ数 (振替で入る / 追加授業 / 講習)
+ * @returns {boolean}
+ */
+export function isDayEmptiedByReschedule(slots, outgoing, otherLessons = 0) {
+  if (!slots?.length) return false;
+  if (otherLessons > 0) return false;
+  return outgoing.length === slots.length;
+}
+
+/**
+ * 振替先の表記。"2026-08-28 (金) 19:40 (福江)" のように、
+ * 日付 → 時刻 → 担当 の順で、入っているものだけを並べる。
+ * short: true で日付を "8/28" に縮める (月間カレンダーのカード内など)。
+ */
+export function describeRescheduleTarget(adj, { short = false } = {}) {
+  if (!adj?.targetDate) return "";
+  const parts = [short ? shortDate(adj.targetDate) : fmtDateWeekday(adj.targetDate)];
+  if (adj.targetTime) parts.push(short ? adj.targetTime.split("-")[0] : adj.targetTime);
+  if (adj.targetTeacher) parts.push(`(${adj.targetTeacher})`);
+  return parts.join(" ");
+}
+
+// "2026-08-28" → "8/28"
+function shortDate(dateStr) {
+  const [, m, d] = (dateStr || "").split("-");
+  return m && d ? `${Number(m)}/${Number(d)}` : dateStr || "";
+}
+
+/**
+ * 「振替で授業なし」バナーの見出し文。行き先が 1 つならその日付まで出す。
+ * @param {{slot: object, adj: object}[]} outgoing
+ */
+export function outgoingDayLabel(outgoing) {
+  if (!outgoing?.length) return "";
+  const targets = [...new Set(outgoing.map((o) => o.adj.targetDate))].sort();
+  const to =
+    targets.length === 1
+      ? fmtDateWeekday(targets[0])
+      : `${fmtDateWeekday(targets[0])} 他 ${targets.length - 1} 日`;
+  return `この日の授業は ${outgoing.length} コマとも ${to} へ振替済み`;
 }

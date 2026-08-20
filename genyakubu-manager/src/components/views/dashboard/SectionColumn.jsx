@@ -12,7 +12,10 @@ import {
   weightedSlotCount,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
-import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  describeRescheduleTarget,
+} from "../../../utils/adjustmentDisplay";
 import { colors } from "../../../styles/tokens";
 
 // Single department / time-grouped slot column rendered inside DashDayRow.
@@ -324,7 +327,16 @@ export function SectionColumn({
                               {s.grade}
                               {s.cls && s.cls !== "-" ? s.cls : ""}
                             </span>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: "#444" }}>
+                            <span
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 600,
+                                color: rescheduledOut ? "#888" : "#444",
+                                textDecoration: rescheduledOut
+                                  ? "line-through"
+                                  : "none",
+                              }}
+                            >
                               {s.subj}
                             </span>
                           </div>
@@ -353,7 +365,7 @@ export function SectionColumn({
                         </div>
                         <div
                           style={{
-                            fontSize: sub || absorbed ? 14 : 22,
+                            fontSize: sub || absorbed || rescheduledOut ? 14 : 22,
                             fontWeight: 800,
                             color: "#1a1a2e",
                             lineHeight: 1.1,
@@ -392,6 +404,27 @@ export function SectionColumn({
                               </span>
                               <span style={{ margin: "0 2px", color: st.color }}>→</span>
                               <span style={{ color: st.color }}>{sub.substitute || "?"}</span>
+                            </span>
+                          ) : rescheduledOut ? (
+                            <span>
+                              <span
+                                style={{
+                                  textDecoration: "line-through",
+                                  color: "#999",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {s.teacher || "?"}
+                              </span>
+                              <span
+                                style={{
+                                  marginLeft: 4,
+                                  fontSize: 12,
+                                  color: ADJ_COLOR.reschedule.deep,
+                                }}
+                              >
+                                → {describeRescheduleTarget(rescheduledOut)} へ振替
+                              </span>
                             </span>
                           ) : s.teacher ? (
                             s.teacher

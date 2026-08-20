@@ -76,11 +76,41 @@ describe("DashDayRow の振替表示", () => {
     expect(screen.getByText(`↻ ${MON} (月) から振替 (1件)`)).toBeTruthy();
   });
 
-  it("振替元の日には「振」バッジを出す", () => {
+  it("振替元の日には「振」バッジと行き先を出す", () => {
     renderRow({ date: MON, dow: "月", slots: [SLOT] });
     const badge = screen.getByText("振");
     expect(badge.getAttribute("title")).toContain(FRI);
+    // どこへ移したかをカード上でも出す (バッジの tooltip だけにしない)
+    expect(screen.getByText(`→ ${FRI} (金) へ振替`)).toBeTruthy();
     // 他日から来るコマは無いのでバナーは出ない
     expect(screen.queryByText(/から振替/)).toBeNull();
+  });
+
+  it("その日のコマが全部出ていったら日単位で「振替で休み」と伝える", () => {
+    const other = { ...SLOT, id: 2, time: "20:30-21:50", subj: "英語" };
+    renderRow({
+      date: MON,
+      dow: "月",
+      slots: [SLOT, other],
+      adjustments: [
+        RESCHEDULE,
+        { id: 10, date: MON, type: "reschedule", slotId: 2, targetDate: FRI },
+      ],
+      sessionCtx: { allSlots: [SLOT, other] },
+    });
+    expect(
+      screen.getByText(`↻ この日の授業は 2 コマとも ${FRI} (金) へ振替済み`)
+    ).toBeTruthy();
+  });
+
+  it("1 コマでも残っていれば「振替で休み」とは言わない", () => {
+    const stays = { ...SLOT, id: 2, time: "20:30-21:50", subj: "英語" };
+    renderRow({
+      date: MON,
+      dow: "月",
+      slots: [SLOT, stays],
+      sessionCtx: { allSlots: [SLOT, stays] },
+    });
+    expect(screen.queryByText(/振替済み/)).toBeNull();
   });
 });

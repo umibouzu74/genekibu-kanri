@@ -7,7 +7,10 @@ import {
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
-import { describeSlot } from "../../../utils/adjustmentDisplay";
+import {
+  describeRescheduleTarget,
+  describeSlot,
+} from "../../../utils/adjustmentDisplay";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // セル内で並べる小さなステータスバッジ。
@@ -120,6 +123,8 @@ export const ExcelCell = memo(function ExcelCell({
   const badges = [];
   let teacherColor = "#1a1a2e";
   let teacherDecor = "none";
+  let subjColor = "#444";
+  let subjDecor = "none";
   let subDisplay = null;
   // 多担任スロット (例: プレップ「香川·福江·川井」) で代行が出た時に、
   // 取消線を「originalTeacher」だけに絞るためのフラグ。
@@ -253,6 +258,24 @@ export const ExcelCell = memo(function ExcelCell({
       bg = ADJ_COLOR.reschedule.bg;
       borderLeft = `3px solid ${ADJ_COLOR.reschedule.color}`;
     }
+    // 「この日はやらない」と一目で分かるよう教科名にも取消線を引き、
+    // 行き先をセル内に出す (バッジの tooltip だけだと気付けない)。
+    subjDecor = "line-through";
+    subjColor = "#8a8a8a";
+    if (!subDisplay) {
+      subDisplay = (
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 800,
+            color: ADJ_COLOR.reschedule.deep,
+            marginTop: 1,
+          }}
+        >
+          → {describeRescheduleTarget(rescheduleOut, { short: true })} へ振替
+        </div>
+      );
+    }
   }
 
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
@@ -301,7 +324,7 @@ export const ExcelCell = memo(function ExcelCell({
           style={{
             fontSize: 12,
             fontWeight: 600,
-            color: "#444",
+            color: subjColor,
             display: "flex",
             alignItems: "center",
             gap: 4,
@@ -329,7 +352,7 @@ export const ExcelCell = memo(function ExcelCell({
               {formatSessionNumber(sessionNumber)}
             </span>
           )}
-          <span>{slot.subj}</span>
+          <span style={{ textDecoration: subjDecor }}>{slot.subj}</span>
           {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
           {badges}
         </div>

@@ -154,6 +154,26 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.getAllByText("振")).toHaveLength(2);
   });
 
+  it("その日のコマが全部よそへ行ったら日付の横に「振替で休み」を出す", () => {
+    render(<MonthView {...decProps} adjustments={[RESCHEDULE]} />);
+    // 12/7 (月) だけが空になる。他の月曜は通常どおりなので 1 日分だけ
+    expect(screen.getAllByText("↻ 振替で休み")).toHaveLength(1);
+    // カードには行き先を出す (取消線だけだとどこへ行ったか分からない)
+    expect(screen.getByText("→12/4")).toBeInTheDocument();
+  });
+
+  it("同じ日に残るコマがあれば「振替で休み」とは言わない", () => {
+    const stays = { ...SLOT, id: 2, time: "17:30-18:50", subj: "英語" };
+    render(
+      <MonthView
+        {...decProps}
+        slots={[SLOT, stays]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.queryByText("↻ 振替で休み")).not.toBeInTheDocument();
+  });
+
   it("担当が違う振替は表示しない", () => {
     render(
       <MonthView
