@@ -30,6 +30,8 @@ import {
 } from "../../utils/printStyles";
 import { openPrintWindow, writePrintDocument } from "../../utils/printWindow";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
+import { RescheduleInBanner } from "../RescheduleInBanner";
+import { collectIncomingReschedules } from "../../utils/adjustmentDisplay";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
@@ -465,6 +467,25 @@ export function ExcelGridView({
     daysWithSlots.has(activeDay) &&
     !displaySlots.some((s) => s.day === activeDay);
 
+  // 全日休講 / コマ無しでセクションを描かない日は、セクション内の
+  // 「振替で入るコマ」バナーも出ない。日まるごと振替の受け先は休講日に
+  // なるのが典型なので、そのときはグリッド上部にまとめて出す
+  // (追加授業バナーと同じ扱い。ここを出さないと画面のどこにも残らない)。
+  const sectionsHidden = dashboardFullOff || dashboardDayFilteredOut;
+  const incomingReschedulesForDisplayDate = useMemo(
+    () =>
+      dashboardEntireDayCutoff || !sectionsHidden
+        ? []
+        : collectIncomingReschedules(adjustments, displayDate, slots),
+    [
+      adjustments,
+      displayDate,
+      slots,
+      sectionsHidden,
+      dashboardEntireDayCutoff,
+    ]
+  );
+
   // ─── 全曜日まとめ印刷 ──────────────────────────────────────────
   // コマのある曜日を順に printDay へ差し替え、そのつど描画後の DOM
   // (日付固有のバナー + セクション欄) をスナップショットして 1 つの popup に
@@ -819,6 +840,7 @@ export function ExcelGridView({
             (右の講師パネルは紙面に要らないので含めない) */}
         <div className="excel-print-day-body" style={{ flex: 1, minWidth: 0 }}>
           <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
+          <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
           {dashboardEntireDayCutoff ? (
             <div
               style={{

@@ -3,6 +3,7 @@ import { Modal } from "./Modal";
 import { S } from "../styles/common";
 import { DAY_COLOR as DC, gradeColor as GC } from "../data";
 import { fmtDateWeekday } from "../utils/dateHelpers";
+import { useSessionCtx } from "../hooks/useSessionCtx";
 import {
   applyDayReschedule,
   buildDayReschedulePlan,
@@ -85,13 +86,37 @@ export function DayRescheduleDialog({
   adjustments,
   extraLessons = [],
   subs = [],
-  sessionCtx,
+  // 実施判定 (休講・テスト期間・時間割の有効期間・表示期間・特別時程・隔週)
+  // に要るデータ。ダイアログを開いたときだけ索引を組みたいので、ctx は
+  // 呼び出し側ではなくここで作る。sessionCtx を直接渡せばそちらを優先する
+  // (テスト用)。
+  holidays = [],
+  examPeriods = [],
+  timetables = [],
+  displayCutoff = null,
+  classSets = [],
+  biweeklyAnchors = [],
+  sessionOverrides = [],
+  daySchedules = [],
+  sessionCtx: sessionCtxProp = null,
   saveAdjustments,
   onRemoveAdjustments,
   onClose,
   onSaved,
   isAdmin = true,
 }) {
+  const { sessionCtx: builtCtx } = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    timetables,
+    holidays,
+    examPeriods,
+    biweeklyAnchors,
+    sessionOverrides,
+    daySchedules,
+  });
+  const sessionCtx = sessionCtxProp || builtCtx;
   const [sourceDate, setSourceDate] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [memo, setMemo] = useState("");

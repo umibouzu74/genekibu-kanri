@@ -26,6 +26,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
+import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -51,7 +52,7 @@ import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
-import { dateToDay, fmtDate } from "./utils/dateHelpers";
+import { dateToDay, fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import {
   buildBatchDocTitle,
   buildBatchPrintBodyHtml,
@@ -378,6 +379,8 @@ export default function App() {
   const [editSub, setEditSub] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showDataMgr, setShowDataMgr] = useState(false);
+  // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
+  const [showDayReschedule, setShowDayReschedule] = useState(false);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
@@ -946,6 +949,10 @@ export default function App() {
           setShowDataMgr(true);
           setSidebarOpen(false);
         }}
+        onOpenDayReschedule={() => {
+          setShowDayReschedule(true);
+          setSidebarOpen(false);
+        }}
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
@@ -1369,10 +1376,11 @@ export default function App() {
               extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
-              /* 日まるごと振替: まとめて登録 (saveAdjustments) と
-                 まとめて解除 (delMany) */
-              saveAdjustments={saveAdjustments}
-              onDelAdjustments={adjCrud.delMany}
+              /* 日まるごと振替はサイドバー / Cmd+K からも開くので
+                 ダイアログ本体は App が持つ。一覧タブにはボタンだけ置く */
+              onOpenDayReschedule={
+                isAdmin ? () => setShowDayReschedule(true) : null
+              }
               onDelSessionOverride={overridesCrud.del}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
@@ -1569,6 +1577,36 @@ export default function App() {
         </Modal>
       )}
 
+      {/* 日まるごと振替 (ある日の授業をまとめて別の日へ)。ダイアログの中で
+          実施判定用の索引を組むので、開いている間だけマウントする */}
+      {showDayReschedule && (
+        <DayRescheduleDialog
+          slots={slots}
+          adjustments={adjustments}
+          extraLessons={extraLessons}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          isAdmin={isAdmin}
+          saveAdjustments={saveAdjustments}
+          onRemoveAdjustments={adjCrud.delMany}
+          onClose={() => setShowDayReschedule(false)}
+          onSaved={({ added, replaced, sourceDate, targetDate }) =>
+            toasts.success(
+              `${fmtDateWeekday(sourceDate)} → ${fmtDateWeekday(targetDate)} に ` +
+                `${added} コマを振り替えました` +
+                (replaced > 0 ? ` (${replaced} 件を上書き)` : "")
+            )
+          }
+        />
+      )}
+
       {/* Command Palette (Cmd+K) — lazy-loaded; only mount when open so
           the initial bundle doesn't pull in search/filter utilities. */}
       {cmdPaletteOpen && (
@@ -1596,8 +1634,12 @@ export default function App() {
               selectView(VIEWS.HOLIDAYS);
               setCmdPaletteOpen(false);
             }}
-            onSelectSubsSubTab={(tabKey, open) => {
-              setSubsInitFilter({ tab: tabKey, open });
+            onOpenDayReschedule={() => {
+              setShowDayReschedule(true);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectSubsSubTab={(tabKey) => {
+              setSubsInitFilter({ tab: tabKey });
               selectView(VIEWS.SUBS);
               setCmdPaletteOpen(false);
             }}

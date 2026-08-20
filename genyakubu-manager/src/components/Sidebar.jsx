@@ -95,11 +95,21 @@ const MENU_CONFIG = [
     ],
   },
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
+  // ビューではなくダイアログを開く項目。日単位の振替は「その日の作業」なので
+  // 欠勤組み換えの隣に置く (機能が一覧のタブの中に埋もれないように)。
+  {
+    key: "day-reschedule",
+    icon: "📅",
+    label: "日まるごと振替",
+    action: "modal",
+    modal: "dayReschedule",
+    adminOnly: true,
+  },
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
-  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal" },
+  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
 ];
 
 // child view key → parent view key のマッピングを事前構築
@@ -120,6 +130,7 @@ export function Sidebar({
   onSelectView,
   onSelectTeacher,
   onOpenDataMgr,
+  onOpenDayReschedule,
   onJumpToRequestedSubs,
   search,
   onSearchChange,
@@ -339,7 +350,7 @@ export function Sidebar({
           }}
         >
         <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
-          {MENU_CONFIG.map((item) => {
+          {MENU_CONFIG.filter((item) => !item.adminOnly || isAdmin).map((item) => {
             const hasChildren = !!item.children;
             const isExpanded = hasChildren && effectiveExpanded.has(item.key);
             const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);
@@ -382,7 +393,9 @@ export function Sidebar({
                 <button
                   onClick={() => {
                     if (isModal) {
-                      onOpenDataMgr();
+                      if (item.modal === "dayReschedule") onOpenDayReschedule?.();
+                      else onOpenDataMgr();
+                      onClose?.();
                     } else {
                       onSelectView(item.key);
                       // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)

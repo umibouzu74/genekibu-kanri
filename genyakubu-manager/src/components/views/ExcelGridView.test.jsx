@@ -88,6 +88,34 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
     expect(screen.getByText("鈴木")).toBeInTheDocument();
   });
 
+  it("全日休講の日でも、他日から振り替えられてくるコマはバナーに出す", () => {
+    // 12/7 (月) の授業を 12/4 (金、全日休講) へ振り替えた状態。
+    // 全日休講ではセクションを描かないので、バナーが無いと画面から消える。
+    renderGrid({
+      viewDate: "2026-12-04",
+      slots: [
+        slot({ id: 1, day: "月", teacher: "田中" }),
+        // 金曜にもコマがある (曜日タブが立つ = 12/4 を表示できる)
+        slot({ id: 2, day: "金", teacher: "佐藤" }),
+      ],
+      adjustments: [
+        {
+          id: 9,
+          date: "2026-12-07",
+          type: "reschedule",
+          slotId: 1,
+          targetDate: "2026-12-04",
+        },
+      ],
+      holidays: [
+        { id: 1, date: "2026-12-04", label: "創立記念日", scope: ["全部"] },
+      ],
+    });
+    expect(screen.getByText("本日休講")).toBeInTheDocument();
+    expect(screen.getByText("↻ 2026-12-07 (月) から振替 (1件)")).toBeInTheDocument();
+    expect(screen.getByText("田中")).toBeInTheDocument();
+  });
+
   it("全グループが期間外の日は未確定バナーを出しコマを表示しない", () => {
     renderGrid({
       slots: [slot({ id: 1, grade: "中3", teacher: "田中" })],
