@@ -414,6 +414,12 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   時間割の有効期間 (`isTimetableActiveForDate`) と表示期間
   (`isSlotBeyondCutoff`) を必ず併せて見る (月次の「通常出勤日」がこれを
   見ておらず、終講後の曜日を数えていた)
+- **日付を選んでその日のコマを並べる画面も同じ**。`slots.filter(s => s.day
+  === 曜日)` だけで絞ると、期切替で残してある旧期のコマまで並び、同じクラスが
+  2 重・3 重に出る (2026-08-20 の欠勤登録)。`filterSlotsForDate` +
+  `isSlotBeyondCutoff` を通すこと (欠勤登録は `absenceHelpers.getAbsenceDaySlots`
+  に集約)。ただし**休講・テスト期間はここで落とさない** — その日の状態を
+  確かめる画面では「休講」カードとして出したままにする
 - **時間割管理の 3 枚は「全体像 → 学年グループ → コース」の順で読む**。
   期間の全体像 (`components/CutoffTimeline.jsx` + `utils/cutoffTimeline.js`) は
   **読む専用**で、編集は下の 2 枚のカードに集約する (設定を 2 か所から書ける

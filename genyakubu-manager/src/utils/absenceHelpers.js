@@ -3,6 +3,24 @@
 
 import { getSlotTeachers } from "./biweekly";
 import { pickSubjectId } from "./subjectMatch";
+import { filterSlotsForDate, isSlotBeyondCutoff } from "./timetable";
+
+// 対象日に欠勤画面へ出すコマを絞る。曜日だけで絞ると、期切替で残してある
+// 旧期の時間割 (終了日入り) のコマまで並び、同じクラスが 2 重・3 重に出る
+// (2026-08-20 の「わけのわからない画面」)。日付ベースのビュー
+// (ダッシュボード / タイムテーブル / 日まるごと振替) と同じ 2 つの窓
+//   ① 時間割の適用期間 (startDate/endDate) → filterSlotsForDate
+//   ② 表示期間設定・コース別終講日        → isSlotBeyondCutoff
+// を必ず併せて見ること。休講 / テスト期間はここでは落とさない —
+// 欠勤画面はその日の状態を確かめる場なので、灰色の「休講」カードとして
+// 出したままにする (AbsenceSlotCard の cancelLabel)。
+export function getAbsenceDaySlots(slots, dateStr, dayName, opts = {}) {
+  if (!dateStr || !dayName) return [];
+  const { timetables, displayCutoff } = opts;
+  return filterSlotsForDate(slots || [], dateStr, timetables).filter(
+    (s) => s.day === dayName && !isSlotBeyondCutoff(dateStr, s, displayCutoff)
+  );
+}
 
 // 指定日 (YYYY-MM-DD) の曜日に、指定先生群が担当するスロット id 集合を返す。
 // 隔週パートナーも `getSlotTeachers` が抽出する。
