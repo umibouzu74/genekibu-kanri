@@ -26,6 +26,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
+import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -49,9 +50,9 @@ import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
-import { EVENT_KIND } from "./constants/eventKinds";
+import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
-import { dateToDay, fmtDate } from "./utils/dateHelpers";
+import { dateToDay, fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import {
   buildBatchDocTitle,
   buildBatchPrintBodyHtml,
@@ -378,6 +379,12 @@ export default function App() {
   const [editSub, setEditSub] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showDataMgr, setShowDataMgr] = useState(false);
+  // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
+  const [showDayReschedule, setShowDayReschedule] = useState(false);
+  // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
+  // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
+  // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
+  const [eventSectionRequest, setEventSectionRequest] = useState(null);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
@@ -483,6 +490,28 @@ export default function App() {
     }, [activeTimetableId, changeActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
+
+  useEffect(() => {
+    if (!eventSectionRequest || view !== VIEWS.HOLIDAYS) return undefined;
+    let raf = 0;
+    let tries = 0;
+    const seek = () => {
+      const el = document.getElementById(eventSectionAnchorId(eventSectionRequest));
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setEventSectionRequest(null);
+        return;
+      }
+      // 約 1 秒 (60 フレーム) 探して見つからなければあきらめる
+      if (tries++ > 60) {
+        setEventSectionRequest(null);
+        return;
+      }
+      raf = requestAnimationFrame(seek);
+    };
+    raf = requestAnimationFrame(seek);
+    return () => cancelAnimationFrame(raf);
+  }, [eventSectionRequest, view]);
   const overridesCrud = useSessionOverridesCrud({
     sessionOverrides,
     saveSessionOverrides,
@@ -946,6 +975,14 @@ export default function App() {
           setShowDataMgr(true);
           setSidebarOpen(false);
         }}
+        onOpenDayReschedule={() => {
+          setShowDayReschedule(true);
+          setSidebarOpen(false);
+        }}
+        onSelectEventSection={(kind) => {
+          selectView(VIEWS.HOLIDAYS);
+          setEventSectionRequest(kind);
+        }}
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
@@ -1212,6 +1249,9 @@ export default function App() {
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
             <>
+              {/* 各セクションにアンカーを振る (サイドバーの子項目から
+                  スクロールで飛ぶ。id は eventSectionAnchorId が正) */}
+              <div id={eventSectionAnchorId(EVENT_KIND.HOLIDAY)}>
               <HolidayManager
                 holidays={holidays}
                 slots={slots}
@@ -1226,6 +1266,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.EXAM)}>
               <ExamPeriodManager
                 examPeriods={examPeriods}
                 onSave={saveExamPeriods}
@@ -1247,6 +1289,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.SPECIAL)}>
               <SpecialEventManager
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
@@ -1261,6 +1305,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.EXTRA_LESSON)}>
               <ExtraLessonManager
                 extraLessons={extraLessons}
                 onSave={saveExtraLessons}
@@ -1278,6 +1324,8 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
+              <div id={eventSectionAnchorId(EVENT_KIND.DAY_SCHEDULE)}>
               <DayScheduleManager
                 daySchedules={daySchedules}
                 onSave={saveDaySchedules}
@@ -1297,6 +1345,7 @@ export default function App() {
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
+              </div>
             </>
           )}
           {view === VIEWS.EVENTS && !selected && (
@@ -1369,10 +1418,11 @@ export default function App() {
               extraLessons={extraLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
-              /* 日まるごと振替: まとめて登録 (saveAdjustments) と
-                 まとめて解除 (delMany) */
-              saveAdjustments={saveAdjustments}
-              onDelAdjustments={adjCrud.delMany}
+              /* 日まるごと振替はサイドバー / Cmd+K からも開くので
+                 ダイアログ本体は App が持つ。一覧タブにはボタンだけ置く */
+              onOpenDayReschedule={
+                isAdmin ? () => setShowDayReschedule(true) : null
+              }
               onDelSessionOverride={overridesCrud.del}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
@@ -1569,6 +1619,36 @@ export default function App() {
         </Modal>
       )}
 
+      {/* 日まるごと振替 (ある日の授業をまとめて別の日へ)。ダイアログの中で
+          実施判定用の索引を組むので、開いている間だけマウントする */}
+      {showDayReschedule && (
+        <DayRescheduleDialog
+          slots={slots}
+          adjustments={adjustments}
+          extraLessons={extraLessons}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          isAdmin={isAdmin}
+          saveAdjustments={saveAdjustments}
+          onRemoveAdjustments={adjCrud.delMany}
+          onClose={() => setShowDayReschedule(false)}
+          onSaved={({ added, replaced, sourceDate, targetDate }) =>
+            toasts.success(
+              `${fmtDateWeekday(sourceDate)} → ${fmtDateWeekday(targetDate)} に ` +
+                `${added} コマを振り替えました` +
+                (replaced > 0 ? ` (${replaced} 件を上書き)` : "")
+            )
+          }
+        />
+      )}
+
       {/* Command Palette (Cmd+K) — lazy-loaded; only mount when open so
           the initial bundle doesn't pull in search/filter utilities. */}
       {cmdPaletteOpen && (
@@ -1596,8 +1676,12 @@ export default function App() {
               selectView(VIEWS.HOLIDAYS);
               setCmdPaletteOpen(false);
             }}
-            onSelectSubsSubTab={(tabKey, open) => {
-              setSubsInitFilter({ tab: tabKey, open });
+            onOpenDayReschedule={() => {
+              setShowDayReschedule(true);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectSubsSubTab={(tabKey) => {
+              setSubsInitFilter({ tab: tabKey });
               selectView(VIEWS.SUBS);
               setCmdPaletteOpen(false);
             }}

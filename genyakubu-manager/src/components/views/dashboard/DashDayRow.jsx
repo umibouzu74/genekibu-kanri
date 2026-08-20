@@ -6,7 +6,7 @@ import { specialEventTypeMeta } from "../../../constants/specialEvents";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { SectionColumn } from "./SectionColumn";
-import { timeStartToMin } from "../../../utils/dateHelpers";
+import { collectIncomingReschedules } from "../../../utils/adjustmentDisplay";
 
 export function DashDayRow({
   date,
@@ -28,22 +28,11 @@ export function DashDayRow({
   // 他日からこの日へ振り替えられてくるコマ。元コマは別の曜日なので
   // slots のループには出てこない。休講日でも表示する (振替先が休みの日、が
   // まさに「日まるごと振替」の典型)。
-  const incomingReschedules = useMemo(() => {
-    if (!adjustments?.length) return [];
-    const pool = sessionCtx?.allSlots || slots;
-    const byId = new Map(pool.map((s) => [s.id, s]));
-    const out = [];
-    for (const adj of adjustments) {
-      if (adj.type !== "reschedule" || adj.targetDate !== date) continue;
-      const slot = byId.get(adj.slotId);
-      if (slot) out.push({ adj, slot });
-    }
-    return out.sort(
-      (a, b) =>
-        timeStartToMin(a.adj.targetTime || a.slot.time) -
-        timeStartToMin(b.adj.targetTime || b.slot.time)
-    );
-  }, [adjustments, date, sessionCtx, slots]);
+  const incomingReschedules = useMemo(
+    () =>
+      collectIncomingReschedules(adjustments, date, sessionCtx?.allSlots || slots),
+    [adjustments, date, sessionCtx, slots]
+  );
 
   const fullOff = hols.some((h) => {
     const sc = h.scope || ["全部"];

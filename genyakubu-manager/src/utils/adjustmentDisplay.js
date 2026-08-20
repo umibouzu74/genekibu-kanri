@@ -2,7 +2,7 @@
 // ビュー側で同じロジックを繰り返さないために集約。
 
 import { resolveSlotDaySchedule } from "./daySchedules";
-import { dateToDay } from "./dateHelpers";
+import { dateToDay, timeStartToMin } from "./dateHelpers";
 
 /**
  * 指定日の adjustments から、slot id ベースの表示用情報を構築する。
@@ -78,6 +78,35 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
     }
   }
   return index;
+}
+
+/**
+ * 他日から「その日へ」振り替えられてくるコマを集める (時刻順)。
+ * 元コマは別の曜日に属するので、日付で絞ったコマ一覧には出てこない。
+ * ダッシュボード日別・タイムテーブルのバナーで共有する。
+ *
+ * **休講・全日休講で除外しないこと。** 「その日にやる」と明示登録された
+ * コマなので、休みの日へ寄せる日まるごと振替の受け先で消えてしまう。
+ *
+ * @param {Array} adjustments
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @param {Array} slots 元コマを引くための一覧 (全コマ)
+ * @returns {{adj: object, slot: object}[]}
+ */
+export function collectIncomingReschedules(adjustments, dateStr, slots) {
+  if (!dateStr || !adjustments?.length) return [];
+  const byId = new Map((slots || []).map((s) => [s.id, s]));
+  const out = [];
+  for (const adj of adjustments) {
+    if (adj?.type !== "reschedule" || adj.targetDate !== dateStr) continue;
+    const slot = byId.get(adj.slotId);
+    if (slot) out.push({ adj, slot });
+  }
+  return out.sort(
+    (a, b) =>
+      timeStartToMin(a.adj.targetTime || a.slot.time) -
+      timeStartToMin(b.adj.targetTime || b.slot.time)
+  );
 }
 
 // スロットの短い表示ラベル "grade(cls) subj" を返す。slot が null の場合は fallback。

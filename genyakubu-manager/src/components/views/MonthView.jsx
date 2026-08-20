@@ -379,10 +379,12 @@ export function MonthView({
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
           // 振替で当日に来る予定のコマ (この teacher が担当する分)。
           // adj.targetTeacher 指定時はその講師、未指定時は元 slot.teacher。
-          const incomingForDay =
-            isFullOff || dayCutoff
-              ? []
-              : (rescheduleInByDate.get(ds) || [])
+          // 休講日でも消さない (追加授業と同じく「その日にやる」と明示登録
+          // したコマ。日まるごと振替の受け先は休講日になるのが典型なので、
+          // ここで巻き添えにすると紙面にも画面にも出なくなる)。
+          const incomingForDay = dayCutoff
+            ? []
+            : (rescheduleInByDate.get(ds) || [])
                   .map((adj) => {
                     const slot = slotById.get(adj.slotId);
                     if (!slot) return null;
@@ -818,64 +820,63 @@ export function MonthView({
                       </div>
                     );
                   })}
-              {/* 振替で当日担当する予定のコマ (元日付は別) */}
-              {!isFullOff &&
-                incomingForDay.map(({ adj, slot }) => {
-                  const gc = GC(slot.grade);
-                  const tgtTime = adj.targetTime || slot.time;
-                  return (
-                    <div
-                      key={`rsch-in-${adj.id}`}
-                      className="month-print-card"
+              {/* 振替で当日担当する予定のコマ (元日付は別)。休講日でも出す */}
+              {incomingForDay.map(({ adj, slot }) => {
+                const gc = GC(slot.grade);
+                const tgtTime = adj.targetTime || slot.time;
+                return (
+                  <div
+                    key={`rsch-in-${adj.id}`}
+                    className="month-print-card"
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      padding: "2px 3px",
+                      margin: "1px 0",
+                      borderRadius: 3,
+                      background: ADJ_COLOR.reschedule.bg,
+                      borderLeft: `2px solid ${ADJ_COLOR.reschedule.color}`,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={`[振替で当日担当] ${slot.grade}${
+                      slot.cls && slot.cls !== "-" ? slot.cls : ""
+                    } ${slot.subj} (${tgtTime})\n元: ${adj.date} ${slot.time}${
+                      adj.memo ? "\n" + adj.memo : ""
+                    }`}
+                  >
+                    <span
                       style={{
-                        fontSize: 11,
-                        lineHeight: 1.4,
-                        padding: "2px 3px",
-                        margin: "1px 0",
-                        borderRadius: 3,
-                        background: ADJ_COLOR.reschedule.bg,
-                        borderLeft: `2px solid ${ADJ_COLOR.reschedule.color}`,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        background: ADJ_COLOR.reschedule.color,
+                        color: "#fff",
+                        fontSize: 8,
+                        fontWeight: 800,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
                       }}
-                      title={`[振替で当日担当] ${slot.grade}${
-                        slot.cls && slot.cls !== "-" ? slot.cls : ""
-                      } ${slot.subj} (${tgtTime})\n元: ${adj.date} ${slot.time}${
-                        adj.memo ? "\n" + adj.memo : ""
-                      }`}
                     >
-                      <span
-                        style={{
-                          background: ADJ_COLOR.reschedule.color,
-                          color: "#fff",
-                          fontSize: 8,
-                          fontWeight: 800,
-                          padding: "0 3px",
-                          borderRadius: 2,
-                          marginRight: 2,
-                        }}
-                      >
-                        振
-                      </span>
-                      <span
-                        style={{
-                          background: gc.b,
-                          color: gc.f,
-                          fontSize: 8,
-                          fontWeight: 700,
-                          padding: "0 3px",
-                          borderRadius: 2,
-                          marginRight: 2,
-                        }}
-                      >
-                        {slot.grade}
-                        {slot.cls && slot.cls !== "-" ? slot.cls : ""}
-                      </span>
-                      <b>{tgtTime.split("-")[0]}</b> {slot.subj}
-                    </div>
-                  );
-                })}
+                      振
+                    </span>
+                    <span
+                      style={{
+                        background: gc.b,
+                        color: gc.f,
+                        fontSize: 8,
+                        fontWeight: 700,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        marginRight: 2,
+                      }}
+                    >
+                      {slot.grade}
+                      {slot.cls && slot.cls !== "-" ? slot.cls : ""}
+                    </span>
+                    <b>{tgtTime.split("-")[0]}</b> {slot.subj}
+                  </div>
+                );
+              })}
               {/* 追加授業 (特定日付の単発コマ)。onEditExtraLesson があれば
                   クリックで管理フォームの編集へジャンプ (K4c、H1b と同経路) */}
               {extraForDay.map((lesson) => {

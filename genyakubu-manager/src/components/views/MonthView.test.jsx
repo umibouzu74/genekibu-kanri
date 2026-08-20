@@ -111,3 +111,57 @@ describe("MonthView 講習コマ", () => {
     expect(screen.getAllByText("未確定")).toHaveLength(30);
   });
 });
+
+// 2026-12-07 は月曜、2026-12-04 は金曜。
+describe("MonthView 振替で入るコマ", () => {
+  const SLOT = {
+    id: 1,
+    day: "月",
+    time: "19:00-20:20",
+    grade: "中3",
+    cls: "S",
+    room: "602",
+    subj: "数学",
+    teacher: "堀上",
+    note: "",
+  };
+  const RESCHEDULE = {
+    id: 9,
+    date: "2026-12-07",
+    type: "reschedule",
+    slotId: 1,
+    targetDate: "2026-12-04",
+  };
+  const decProps = { ...baseProps, year: 2026, month: 12, slots: [SLOT] };
+
+  it("振替先が全日休講でも「振」カードを消さない", () => {
+    const { rerender } = render(
+      <MonthView {...decProps} adjustments={[RESCHEDULE]} />
+    );
+    // 振替元 (12/7 の「振」バッジ) と振替先 (12/4 の振替カード) で 2 枚
+    expect(screen.getAllByText("振")).toHaveLength(2);
+
+    // 振替先を全日休講にしても枚数は変わらない (休講の巻き添えで消さない)
+    rerender(
+      <MonthView
+        {...decProps}
+        adjustments={[RESCHEDULE]}
+        holidays={[
+          { id: 1, date: "2026-12-04", label: "創立記念日", scope: ["全部"] },
+        ]}
+      />
+    );
+    expect(screen.getAllByText("振")).toHaveLength(2);
+  });
+
+  it("担当が違う振替は表示しない", () => {
+    render(
+      <MonthView
+        {...decProps}
+        slots={[{ ...SLOT, teacher: "河野" }]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.queryByText("振")).not.toBeInTheDocument();
+  });
+});

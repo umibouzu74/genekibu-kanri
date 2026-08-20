@@ -1,5 +1,6 @@
-import { memo, useMemo, useState } from "react";
+import { Fragment, memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
+import { EVENT_KIND_LABELS, EVENT_SECTIONS } from "../constants/eventKinds";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
@@ -88,18 +89,35 @@ const MENU_CONFIG = [
   {
     key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理",
     children: [
-      { key: VIEWS.HOLIDAYS, icon: "📅", label: "休講・テスト期間・イベント" },
+      // この 1 画面に 5 種類のマネージャが縦に並ぶ。ラベルからは「追加授業」
+      // 「特別時程」に辿り着けないので、開いている間だけ中身をここに出す。
+      {
+        key: VIEWS.HOLIDAYS,
+        icon: "📅",
+        label: "休講・テスト期間・イベント",
+        sections: EVENT_SECTIONS,
+      },
       { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
       { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成" },
       { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
     ],
   },
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
+  // ビューではなくダイアログを開く項目。日単位の振替は「その日の作業」なので
+  // 欠勤組み換えの隣に置く (機能が一覧のタブの中に埋もれないように)。
+  {
+    key: "day-reschedule",
+    icon: "📅",
+    label: "日まるごと振替",
+    action: "modal",
+    modal: "dayReschedule",
+    adminOnly: true,
+  },
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
-  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal" },
+  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
 ];
 
 // child view key → parent view key のマッピングを事前構築
@@ -120,6 +138,8 @@ export function Sidebar({
   onSelectView,
   onSelectTeacher,
   onOpenDataMgr,
+  onOpenDayReschedule,
+  onSelectEventSection,
   onJumpToRequestedSubs,
   search,
   onSearchChange,
@@ -339,10 +359,18 @@ export function Sidebar({
           }}
         >
         <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
-          {MENU_CONFIG.map((item) => {
+          {MENU_CONFIG.filter((item) => !item.adminOnly || isAdmin).map((item) => {
             const hasChildren = !!item.children;
             const isExpanded = hasChildren && effectiveExpanded.has(item.key);
             const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);
+            // 開いている子が持つセクション数 (子リストの高さ計算に足す)
+            const activeChildSectionCount = hasChildren
+              ? item.children.reduce(
+                  (n, c) =>
+                    !selected && view === c.key && c.sections ? n + c.sections.length : n,
+                  0
+                )
+              : 0;
             const selfActive = !selected && view === item.key;
             const isModal = item.action === "modal";
 
@@ -382,7 +410,9 @@ export function Sidebar({
                 <button
                   onClick={() => {
                     if (isModal) {
-                      onOpenDataMgr();
+                      if (item.modal === "dayReschedule") onOpenDayReschedule?.();
+                      else onOpenDataMgr();
+                      onClose?.();
                     } else {
                       onSelectView(item.key);
                       // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
@@ -448,7 +478,9 @@ export function Sidebar({
                 {hasChildren && (
                   <div
                     style={{
-                      maxHeight: isExpanded ? `${item.children.length * 44}px` : "0px",
+                      maxHeight: isExpanded
+                        ? `${(item.children.length + activeChildSectionCount) * 44}px`
+                        : "0px",
                       overflow: "hidden",
                       transition: "max-height 0.2s ease",
                       background: "#16162e",
@@ -457,8 +489,8 @@ export function Sidebar({
                     {item.children.map((child) => {
                       const childIsActive = !selected && view === child.key;
                       return (
+                        <Fragment key={child.key}>
                         <button
-                          key={child.key}
                           onClick={() => {
                             onSelectView(child.key);
                             if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
@@ -484,6 +516,43 @@ export function Sidebar({
                             <ChordHint viewKey={child.key} dim={!childIsActive} />
                           </span>
                         </button>
+                        {/* 開いているときだけ、その画面の中のセクションを出す。
+                            クリックで該当セクションまでスクロールする */}
+                        {childIsActive &&
+                          child.sections?.map((sec) => (
+                            <button
+                              key={sec.kind}
+                              onClick={() => {
+                                onSelectEventSection?.(sec.kind);
+                                if (
+                                  typeof window !== "undefined" &&
+                                  window.innerWidth <= 768
+                                ) {
+                                  onClose?.();
+                                }
+                              }}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                padding: "6px 14px 6px 42px",
+                                border: "none",
+                                background: "transparent",
+                                color: "#9a9ac0",
+                                textAlign: "left",
+                                cursor: "pointer",
+                                fontSize: 11,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.color = "#fff";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.color = "#9a9ac0";
+                              }}
+                            >
+                              {sec.icon} {EVENT_KIND_LABELS[sec.kind]}
+                            </button>
+                          ))}
+                        </Fragment>
                       );
                     })}
                   </div>
