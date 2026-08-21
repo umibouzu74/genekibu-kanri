@@ -204,7 +204,10 @@ export function SharedSubsView({ data }) {
                           </>
                         )}
                         <span style={{ marginLeft: "auto" }}>
-                          <StatusBadge status={sub.status} />
+                          <StatusBadge
+                            status={sub.status}
+                            substitute={sub.substitute}
+                          />
                         </span>
                       </div>
 

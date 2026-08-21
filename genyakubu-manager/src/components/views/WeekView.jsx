@@ -8,10 +8,10 @@ import {
   fmtDateWeekday,
   parseLocalDate,
   sortSlots as sortS,
-  SUB_STATUS,
 } from "../../data";
 import { SlotCard } from "../SlotCard";
 import { StatusBadge } from "../StatusBadge";
+import { subStateMeta, subTargetLabel } from "../../utils/substituteState";
 import { exportTeacherIcs } from "../../utils/ics";
 import {
   biweeklyDisplaySubject,
@@ -798,10 +798,10 @@ export function WeekView({
                   </span>
                   <span style={{ margin: "0 4px", color: "#888" }}>→</span>
                   <span style={{ color: !isOriginal ? "#2a7a4a" : "#888" }}>
-                    {sub.substitute || "未定"}
+                    {subTargetLabel(sub)}
                   </span>
                 </span>
-                <StatusBadge status={sub.status} />
+                <StatusBadge status={sub.status} substitute={sub.substitute} />
                 {isOriginal ? (
                   <span
                     style={{
@@ -1083,7 +1083,7 @@ export function WeekView({
                             }}
                           >
                             {slotSubs.map((sub) => {
-                              const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
+                              const st = subStateMeta(sub);
                               const isOriginal = sub.originalTeacher === teacher;
                               return (
                                 <div
@@ -1100,7 +1100,7 @@ export function WeekView({
                                     alignItems: "center",
                                     flexWrap: "wrap",
                                   }}
-                                  title={`${sub.date} ${isOriginal ? "代行依頼中" : "代行予定"}\n${sub.originalTeacher} → ${sub.substitute || "未定"}${sub.memo ? "\n" + sub.memo : ""}`}
+                                  title={`${sub.date} ${isOriginal ? st.note : "代行予定"}\n${sub.originalTeacher} → ${subTargetLabel(sub)}${sub.memo ? "\n" + sub.memo : ""}`}
                                 >
                                   <span style={{ fontWeight: 700 }}>
                                     {sub.date.slice(5)}
@@ -1110,7 +1110,7 @@ export function WeekView({
                                   </span>
                                   <span style={{ color: "#666" }}>
                                     {isOriginal
-                                      ? `→${sub.substitute || "代行未定"}`
+                                      ? `→${subTargetLabel(sub)}`
                                       : `←${sub.originalTeacher}`}
                                   </span>
                                 </div>

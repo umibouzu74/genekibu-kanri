@@ -23,6 +23,7 @@ export { timeToMin, fmtDate, fmtDateWeekday, dateToDay, parseLocalDate, isValidD
 export { sortSlots, gradeToDept, isKameiRoom } from "./utils/scheduleHelpers";
 export {
   getSubForSlot,
+  getSubsForSlot,
   monthlyTally,
   staffMonthlyWorkDates,
   staffMonthlyAbsenceDates,

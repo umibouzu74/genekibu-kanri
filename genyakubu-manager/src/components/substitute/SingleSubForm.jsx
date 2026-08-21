@@ -312,7 +312,7 @@ export function SingleSubForm({
           list={datalistId}
           value={f.substitute}
           onChange={(e) => up("substitute", e.target.value)}
-          placeholder="代行者名 (空欄なら依頼中)"
+          placeholder="代行者名 (空欄 = 代行未定の欠勤)"
           style={S.input}
         />
         <datalist id={datalistId}>
@@ -357,9 +357,11 @@ export function SingleSubForm({
             );
           })}
         </div>
-        {!f.substitute && f.status !== "requested" && (
-          <div style={{ fontSize: 10, color: "#c77", marginTop: 4 }}>
-            ※ 代行者が未入力の場合は「依頼中」として保存されます
+        {!f.substitute && (
+          <div style={{ fontSize: 10, color: "#777", marginTop: 4 }}>
+            {f.status === "confirmed"
+              ? "※ 代行者なしで確定 = このコマの残りの担当者で回す (代行を探しません)"
+              : "※ 代行者を空のまま「依頼中」= 欠勤・代行未定 (これから探す)"}
           </div>
         )}
       </div>

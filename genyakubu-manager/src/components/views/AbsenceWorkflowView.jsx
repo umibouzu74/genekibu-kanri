@@ -11,6 +11,7 @@ import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
+import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import {
   collectAbsenceTargets,
   getAbsenceDaySlots,
@@ -52,6 +53,7 @@ export function AbsenceWorkflowView({
   // することで「今日 → 目的日」のチラつきを防ぐ。
   const [date, setDate] = useState(() => initDate || fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
+  const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
@@ -305,32 +307,32 @@ export function AbsenceWorkflowView({
     ]
   );
 
-  const handleMarkAbsent = useCallback(() => {
-    const { targets, skipped } = absenceTargets;
-    if (targets.length === 0) {
-      toasts.error("欠勤にできるコマがありません");
-      return;
-    }
-    for (const t of targets) {
-      draft.updateSub(t.slotId, {
-        substitute: "",
-        status: "requested",
-        originalTeacher: t.teacher,
-      });
-    }
-    const skippedNote = skipped.length ? ` (${skipped.length} コマは対象外)` : "";
-    toasts.success(
-      `${targets.length} コマを欠勤 (代行未定) の下書きにしました${skippedNote}`
-    );
-  }, [absenceTargets, draft, toasts]);
+  // ダイアログで選んだぶんだけ下書きにする。mode は
+  //   pending = これから代行を探す (代行未定)
+  //   nosub   = 代行を立てず残りの担当者で回す (代行なしで確定)
+  const handleRegisterAbsence = useCallback(
+    (selected, mode) => {
+      for (const t of selected) {
+        draft.updateSub(t.slotId, t.teacher, {
+          substitute: "",
+          status: mode === "nosub" ? "confirmed" : "requested",
+        });
+      }
+      setAbsenceDialogOpen(false);
+      const what = mode === "nosub" ? "欠勤 (代行なし)" : "欠勤 (代行未定)";
+      toasts.success(`${selected.length} 件を${what}の下書きにしました`);
+    },
+    [draft, toasts]
+  );
 
   // 下書きの件数カウント (保存ボタン表示用)
   const draftCount = useMemo(() => {
     let c = 0;
     for (const row of Object.values(draft.draft)) {
-      // 代行者が未定の「欠勤だけ」の下書きも 1 件として数える
-      // (数えないと保存ボタンが出ず、登録したつもりが消える)。
-      if (row.sub) c++;
+      // 代行 / 欠勤は講師ごとに 1 件 (多担任コマでは複数)。代行者が未定の
+      // 「欠勤だけ」も数える (数えないと保存ボタンが出ず、登録したつもりが
+      // 消える)。
+      c += Object.keys(row.subs || {}).length;
       if (row.combine?.absorbedSlotIds?.length) c++;
       if (row.move?.targetTime) c++;
       if (row.reschedule?.targetDate) c++;
@@ -389,17 +391,7 @@ export function AbsenceWorkflowView({
       removedAdjustmentIds,
       removedSubIds,
       replacedSubIds,
-    } = draft.toBatchPayload(
-      date,
-      slots,
-      adjustments || [],
-      {
-        anchors: biweeklyAnchors || [],
-        holidays: holidays || [],
-        examPeriods: examPeriods || [],
-      },
-      subs || []
-    );
+    } = draft.toBatchPayload(date, slots, adjustments || [], subs || []);
     if (
       draftSubs.length === 0 &&
       draftAdjustments.length === 0 &&
@@ -447,7 +439,7 @@ export function AbsenceWorkflowView({
       console.error(err);
       toasts.error("保存に失敗しました");
     }
-  }, [draft, date, slots, subs, adjustments, sessionOverrides, biweeklyAnchors, holidays, examPeriods, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
+  }, [draft, date, slots, subs, adjustments, sessionOverrides, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
 
   if (!isAdmin) {
     return (
@@ -553,7 +545,7 @@ export function AbsenceWorkflowView({
         {selectedTeachers.length > 0 && (
           <button
             type="button"
-            onClick={handleMarkAbsent}
+            onClick={() => setAbsenceDialogOpen(true)}
             disabled={absenceTargets.targets.length === 0}
             title={
               absenceTargets.skipped.length > 0
@@ -566,7 +558,7 @@ export function AbsenceWorkflowView({
                         } ${x.slot.subj} — ${x.reason}`
                     )
                     .join("\n")}`
-                : "選択した先生のコマを「代行未定」の欠勤として下書きします"
+                : "選択した先生の休むコマを選んで欠勤にします"
             }
             style={{
               ...S.btn(false),
@@ -578,7 +570,7 @@ export function AbsenceWorkflowView({
               fontWeight: 700,
             }}
           >
-            ❗ 欠勤にする ({absenceTargets.targets.length} コマ)
+            ❗ 欠勤にする ({absenceTargets.targets.length} 件)
           </button>
         )}
       </div>
@@ -629,6 +621,16 @@ export function AbsenceWorkflowView({
         sessionOverrides={sessionOverrides}
         date={date}
       />
+
+      {absenceDialogOpen && (
+        <AbsenceRegisterDialog
+          date={date}
+          targets={absenceTargets.targets}
+          skipped={absenceTargets.skipped}
+          onSubmit={handleRegisterAbsence}
+          onClose={() => setAbsenceDialogOpen(false)}
+        />
+      )}
 
       {/* Floating save button */}
       {draftCount > 0 && (

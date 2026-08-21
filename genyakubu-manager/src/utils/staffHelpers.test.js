@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  monthlyTally,
   staffMonthlyAbsenceDates,
   staffMonthlyPendingAbsenceDates,
   staffMonthlyRegularDates,
@@ -123,5 +124,35 @@ describe("staffMonthlyPendingAbsenceDates", () => {
     expect(staffMonthlyAbsenceDates(subs, "香川", 2026, 7)).toEqual([
       "2026-07-14",
     ]);
+  });
+});
+
+describe("代行なしで確定した欠勤の扱い", () => {
+  // 3 人担当のプレップで 1 人休み、代行は立てず残りで回す = 代行なしで確定。
+  const nosub = {
+    id: 9,
+    date: "2026-07-11",
+    slotId: 5,
+    originalTeacher: "香川",
+    substitute: "",
+    status: "confirmed",
+  };
+
+  it("「代行された日」には数えない (代行者が付いていないため)", () => {
+    expect(staffMonthlyAbsenceDates([nosub], "香川", 2026, 7)).toEqual([]);
+  });
+
+  it("欠勤の日としては出す", () => {
+    expect(staffMonthlyPendingAbsenceDates([nosub], "香川", 2026, 7)).toEqual([
+      "2026-07-11",
+    ]);
+  });
+
+  it("月次の「代行した / された」件数にも入れない", () => {
+    expect(monthlyTally([nosub], 2026, 7)).toEqual({ covered: {}, coveredFor: {} });
+    // 代行者が付いて確定したものだけ数える
+    expect(
+      monthlyTally([{ ...nosub, substitute: "杉原" }], 2026, 7)
+    ).toEqual({ covered: { 杉原: 1 }, coveredFor: { 香川: 1 } });
   });
 });

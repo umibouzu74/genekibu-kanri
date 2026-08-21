@@ -1,3 +1,5 @@
+import { SUB_STATUS_KEYS } from "../constants/schools";
+
 // 先生欠勤ワークフローの一括保存ヘルパ。
 // 代行・合同/移動・回数補正の 3 種の変更を 1 回のまとまりとして保存する。
 // 内部的には各ストレージの save*() を順次呼ぶだけだが、ID採番・タイムスタンプ
@@ -54,7 +56,15 @@ export function saveAbsenceBatch({
   let subId = nextId(subsList);
   const newSubs = draftSubs.map((r) => ({
     ...r,
-    status: r.substitute ? (r.status || "confirmed") : "requested",
+    // status は「対応が確定したか」だけ。代行者が空でも confirmed =
+    // 「代行なしで確定 (他の担当者で回す)」という正規の状態
+    // (utils/substituteState)。**空欄だからと requested に丸めない。**
+    // status 自体が無いときだけ、従来どおり代行者の有無で既定を決める。
+    status: SUB_STATUS_KEYS.includes(r.status)
+      ? r.status
+      : r.substitute
+        ? "confirmed"
+        : "requested",
     id: subId++,
     createdAt: ts,
     updatedAt: ts,

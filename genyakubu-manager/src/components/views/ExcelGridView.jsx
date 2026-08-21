@@ -10,6 +10,7 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
+import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
 import {
@@ -192,7 +193,7 @@ export function ExcelGridView({
   useEffect(() => {
     if (!subModeDate) return;
     const pending = (subs || []).filter(
-      (s) => s.date === subModeDate && !s.substitute && s.originalTeacher
+      (s) => s.date === subModeDate && s.originalTeacher && needsSubstitute(s)
     );
     if (pending.length === 0) return;
     setUnavailableTeachers((prev) => {
@@ -400,13 +401,17 @@ export function ExcelGridView({
     return buildSessionCountMap(daySlots, sessionTargetDate, sessionCtx);
   }, [sessionTargetDate, activeDay, displaySlots, sessionCtx]);
 
-  // ダッシュボード表示用: 表示中日付の代行を slotId → Substitute でマップ化。
+  // ダッシュボード表示用: 表示中日付の代行を slotId → Substitute[] でマップ化。
+  // **配列**なのは、プレップのように 1 コマを複数人で担当するコマが講師ごとに
+  // レコードを持つため (1 件だけ拾うと他の人の欠勤が画面から消える)。
   // 代行モード中は subMode.existingSubMap を優先する (下で分岐)。
   const dashboardSubMap = useMemo(() => {
     if (!dashboardMode || !displayDate) return new Map();
     const m = new Map();
     for (const sub of subs || []) {
-      if (sub.date === displayDate) m.set(sub.slotId, sub);
+      if (sub.date !== displayDate) continue;
+      if (!m.has(sub.slotId)) m.set(sub.slotId, []);
+      m.get(sub.slotId).push(sub);
     }
     return m;
   }, [dashboardMode, displayDate, subs]);

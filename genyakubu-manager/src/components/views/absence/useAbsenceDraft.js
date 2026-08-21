@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { biweeklyActiveTeacher } from "../../../utils/biweekly";
 
 // ─── Teacher Absence workflow: local draft state ──────────────────
 // 代行・合同/移動/振替・回数補正の下書きを slot ごとに保持する。
@@ -10,10 +9,14 @@ import { biweeklyActiveTeacher } from "../../../utils/biweekly";
 // combine で吸収された側 (absorbedBy != null) は表示対象から除外される
 // ため、個別の sub/move/reschedule は持たない。
 //
+// 代行 (欠勤) だけは **1 コマに複数件**持てる。プレップのように 1 コマを
+// 3 人で担当するコマがあり、「香川と福江は休むが川井は出る」を表せないと
+// 欠勤登録そのものが成立しないため、`subs` は元講師をキーにした辞書。
+//
 // draft shape:
 //   {
 //     [slotId]: {
-//       sub?:         { substitute, status, memo },
+//       subs?:        { [originalTeacher]: { substitute, status, memo } },
 //       move?:        { targetTime },
 //       reschedule?:  { targetDate, targetTime, targetTeacher, memo },
 //       combine?:     { absorbedSlotIds },   // この slot が host
@@ -23,7 +26,7 @@ import { biweeklyActiveTeacher } from "../../../utils/biweekly";
 //   }
 
 const emptyRow = () => ({
-  sub: null,
+  subs: null,
   move: null,
   reschedule: null,
   combine: null,
@@ -34,7 +37,7 @@ const emptyRow = () => ({
 // row が "空" (全フィールド null) なら true
 function isEmptyRow(row) {
   return (
-    !row.sub &&
+    !row.subs &&
     !row.move &&
     !row.reschedule &&
     !row.combine &&
@@ -106,23 +109,41 @@ export function useAbsenceDraft() {
     });
   }, []);
 
-  const updateSub = useCallback((slotId, patch) => {
+  // 代行 / 欠勤の下書き。teacher (元講師) ごとに 1 件持つ。
+  // 単一担任のコマでも teacher を渡すこと (誰の欠勤かはレコードの意味その
+  // もので、slot.teacher から後で引き直すと隔週の週で食い違う)。
+  const updateSub = useCallback((slotId, teacher, patch) => {
+    if (!teacher) return;
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
       return patchRow(prev, slotId, {
-        sub: {
-          substitute: "",
-          status: "confirmed",
-          memo: "",
-          ...(cur.sub || {}),
-          ...patch,
+        subs: {
+          ...(cur.subs || {}),
+          [teacher]: {
+            substitute: "",
+            status: "confirmed",
+            memo: "",
+            ...(cur.subs?.[teacher] || {}),
+            ...patch,
+          },
         },
       });
     });
   }, []);
 
-  const clearSub = useCallback((slotId) => {
-    setDraft((prev) => patchRow(prev, slotId, { sub: null }));
+  // teacher 省略時はそのコマの下書きを全部消す (合同・振替に切り替えたとき)。
+  const clearSub = useCallback((slotId, teacher) => {
+    setDraft((prev) => {
+      const cur = prev[slotId];
+      if (!cur?.subs) return prev;
+      if (!teacher) return patchRow(prev, slotId, { subs: null });
+      if (!(teacher in cur.subs)) return prev;
+      const next = { ...cur.subs };
+      delete next[teacher];
+      return patchRow(prev, slotId, {
+        subs: Object.keys(next).length > 0 ? next : null,
+      });
+    });
   }, []);
 
   const updateMove = useCallback((slotId, targetTime) => {
@@ -157,7 +178,7 @@ export function useAbsenceDraft() {
           ...patch,
         },
         move: null,
-        sub: null,
+        subs: null,
       });
     });
   }, []);
@@ -192,7 +213,7 @@ export function useAbsenceDraft() {
       for (const sid of newIds) {
         next = patchRow(next, sid, {
           absorbedBy: hostSlotId,
-          sub: null,
+          subs: null,
           move: null,
           reschedule: null,
         });
@@ -242,11 +263,10 @@ export function useAbsenceDraft() {
   // existingSubs も同じで、同じ (日付, コマ, 元講師) の保存済み代行があれば
   // 解除マークに回す。**これを外すと「代行未定で欠勤登録 → 後から代行を
   // 割り当て」で 2 本のレコードが残り、画面が古い方 (未定) を拾う。**
-  // biweekly ({ anchors, holidays, examPeriods }) を渡すと、隔週スロットの
-  // originalTeacher を対象日の週 (A/B) に合わせて解決する。B 週は note の
-  // partner を、A 週・非隔週は slot.teacher を採用する。
+  // 元講師は下書きのキーそのもの。隔週の A/B 週の解決は登録する側
+  // (欠勤組み換えの画面・一括登録) で済ませてから渡す。
   const toBatchPayload = useCallback(
-    (date, slots, existingAdjustments = [], biweekly = null, existingSubs = []) => {
+    (date, slots, existingAdjustments = [], existingSubs = []) => {
       const draftSubs = [];
       const draftAdjustments = [];
       const draftOverrides = [];
@@ -268,27 +288,15 @@ export function useAbsenceDraft() {
         const slot = slotById.get(slotId);
         if (!slot) continue;
 
-        if (row.sub?.substitute || row.sub?.status) {
-          // 多担任スロットで明示選択された元講師を最優先。なければ隔週の
-          // 週 (A/B) で解決し、それも無ければ slot.teacher 全体。
-          const originalTeacher =
-            row.sub.originalTeacher ||
-            (biweekly
-              ? biweeklyActiveTeacher(
-                  slot,
-                  date,
-                  biweekly.anchors,
-                  biweekly.holidays,
-                  biweekly.examPeriods
-                )
-              : slot.teacher);
+        // 代行 (欠勤) は元講師ごとに 1 件。多担任コマでは複数件出る。
+        for (const [originalTeacher, sub] of Object.entries(row.subs || {})) {
           draftSubs.push({
             date,
             slotId,
             originalTeacher,
-            substitute: row.sub.substitute || "",
-            status: row.sub.status || "requested",
-            memo: row.sub.memo || "",
+            substitute: sub.substitute || "",
+            status: sub.status || "requested",
+            memo: sub.memo || "",
           });
           for (const ex of existingSubs || []) {
             if (ex.date !== date) continue;

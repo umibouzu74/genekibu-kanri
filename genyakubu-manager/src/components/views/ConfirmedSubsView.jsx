@@ -60,8 +60,11 @@ export function ConfirmedSubsView({
       daySchedules,
     });
 
+  // 「代行確定」= 確定 かつ **代行者が入っている**もの。status だけで見ると
+  // 「代行なしで確定 (残りの担当者で回す)」がここに混ざり、代行者が空欄の
+  // 行が並ぶ (utils/substituteState の 4 状態)。
   const confirmedSubs = useMemo(
-    () => subs.filter((s) => s.status === "confirmed"),
+    () => subs.filter((s) => s.status === "confirmed" && s.substitute),
     [subs]
   );
 

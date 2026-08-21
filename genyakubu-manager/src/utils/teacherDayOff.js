@@ -6,10 +6,10 @@
 //  adjustmentDisplay.isDayEmptiedByReschedule が別に見ている。)
 
 // 手を離れた理由。表示の優先順位もこの順 (欠勤 → 代行 → 合同 → 振替)。
-// AWAY_ABSENT は「欠勤だけ登録して代行者がまだ決まっていない」状態
-// (代行者が空の代行レコード)。本人が休むのは代行が付いたときと同じなので
-// away には違いないが、**「代行で休み」と出すと代行が見つかった様に読める**
-// ので理由を分けている。
+// AWAY_ABSENT は「欠勤を登録したが代行者が入っていない」状態 (代行未定 /
+// 代行なしのどちらも)。本人が休むのは代行が付いたときと同じなので away には
+// 違いないが、**「代行で休み」と出すと代行が見つかった様に読める**ので理由を
+// 分けている。代行未定か代行なしかはコマ側のカードに出る。
 export const AWAY_ABSENT = "absent";
 export const AWAY_SUB = "sub";
 export const AWAY_COMBINE = "combine";
@@ -41,7 +41,7 @@ export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
 }
 
 const LABEL = {
-  [AWAY_ABSENT]: "欠 欠勤 (代行未定)",
+  [AWAY_ABSENT]: "欠 欠勤",
   [AWAY_SUB]: "代 代行で休み",
   [AWAY_COMBINE]: "合 合同で休み",
   [AWAY_RESCHEDULE]: "↻ 振替で休み",

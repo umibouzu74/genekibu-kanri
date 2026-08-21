@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { splitTeacherField } from "../../utils/biweekly";
+import { needsSubstitute, subStateMeta } from "../../utils/substituteState";
 import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
@@ -77,19 +78,20 @@ export function ChainSubstitutionPanel({
       const secSlots = sortSlots(daySlots.filter(sec.filterFn));
       const rows = secSlots.map((slot) => {
         const off = isOffForGrade(date, slot.grade, slot.subj);
-        const sub = subsForDate.find((s) => s.slotId === slot.id);
-        return { slot, off, sub };
+        // 元講師ごとに 1 件 (多担任コマは複数件)。
+        const slotSubs = subsForDate.filter((s) => s.slotId === slot.id);
+        return { slot, off, slotSubs };
       });
       return { sec, color, rows };
     }).filter((s) => s.rows.length > 0);
   }, [dayOfDate, date, slots, timetables, subs, holidays, examPeriods]);
 
-  // 代行が必要なコマ（依頼中で代行者未定）
-  const uncoveredSubs = useMemo(() => {
-    return subs.filter(
-      (s) => s.date === date && s.status === "requested" && !s.substitute
-    );
-  }, [subs, date]);
+  // 代行が必要なコマ (代行者を探している欠勤)。
+  // **「代行なしで確定」(残りの担当者で回す) は探していない**ので出さない。
+  const uncoveredSubs = useMemo(
+    () => subs.filter((s) => s.date === date && needsSubstitute(s)),
+    [subs, date]
+  );
 
   // 空き講師の合計（自動＋手動）
   const allAvailable = useMemo(
@@ -273,10 +275,11 @@ export function ChainSubstitutionPanel({
                 {sec.label}
               </div>
               <div style={{ fontSize: 11 }}>
-                {rows.map(({ slot, off, sub }) => {
+                {rows.map(({ slot, off, slotSubs }) => {
                   const teachers = getSlotTeachers(slot);
-                  const hasSub = Boolean(sub);
-                  const needsSub = hasSub && !sub.substitute;
+                  const hasSub = slotSubs.length > 0;
+                  // 1 人でも代行を探している人が居れば「代行必要」。
+                  const needsSub = slotSubs.some((x) => needsSubstitute(x));
                   const bg = off ? "#f5f0e0" : needsSub ? "#fde4e4" : hasSub ? "#e0f2e4" : "#fff";
                   return (
                     <div
@@ -294,10 +297,18 @@ export function ChainSubstitutionPanel({
                       <span style={{ color: "#555", fontSize: 10 }}>{slot.subj}</span>
                       <span style={{ fontWeight: 700, fontSize: 10 }}>{teachers.join("・")}</span>
                       {off && <span style={{ fontSize: 9, color: "#b8860b" }}>休講</span>}
-                      {needsSub && <span style={{ fontSize: 9, color: "#c03030", fontWeight: 700 }}>代行必要</span>}
-                      {hasSub && sub.substitute && (
-                        <span style={{ fontSize: 9, color: "#2a7a4a" }}>← {sub.substitute}</span>
-                      )}
+                      {slotSubs.map((x) => {
+                        const meta = subStateMeta(x);
+                        return (
+                          <span
+                            key={x.id}
+                            style={{ fontSize: 9, color: meta.color, fontWeight: 700 }}
+                          >
+                            {teachers.length > 1 ? `${x.originalTeacher}: ` : ""}
+                            {x.substitute ? `← ${x.substitute}` : meta.label}
+                          </span>
+                        );
+                      })}
                     </div>
                   );
                 })}

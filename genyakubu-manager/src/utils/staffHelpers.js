@@ -4,19 +4,33 @@ import { isSlotOffOnDate } from "./scheduleHelpers";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
 import { isSlotCancelledByDaySchedule } from "./daySchedules";
 
+// 単一の代行レコードを引く。**1 コマに複数件あることがある** (プレップの
+// ように 1 コマを複数人で担当するコマは元講師ごとに 1 件) ので、画面に
+// 出すときは getSubsForSlot を使うこと。ここは「そのコマに何かあるか」
+// を見たいときの先頭 1 件。
 export function getSubForSlot(subs, slotId, date) {
   if (!subs) return null;
   return subs.find((s) => s.slotId === slotId && s.date === date) || null;
 }
 
+// そのコマ・その日の代行 / 欠勤レコードを全部返す (元講師ごとに 1 件)。
+export function getSubsForSlot(subs, slotId, date) {
+  if (!subs) return [];
+  return subs.filter((s) => s.slotId === slotId && s.date === date);
+}
+
+// 月次の「代行した / された」件数。**確定した代行だけ**を数える。
+// 代行者が空のレコード (欠勤・代行未定 / 代行なしで確定) は代行ではないので
+// 数えない — status だけで見ると「代行なしで確定」が代行された件数に混ざる。
 export function monthlyTally(subs, year, month) {
   const covered = {};
   const coveredFor = {};
   const ym = `${year}-${String(month).padStart(2, "0")}`;
   subs.forEach((s) => {
     if (!s.date?.startsWith(ym)) return;
-    if (s.status === "requested") return;
-    if (s.substitute) covered[s.substitute] = (covered[s.substitute] || 0) + 1;
+    if (s.status !== "confirmed") return;
+    if (!s.substitute) return;
+    covered[s.substitute] = (covered[s.substitute] || 0) + 1;
     if (s.originalTeacher)
       coveredFor[s.originalTeacher] = (coveredFor[s.originalTeacher] || 0) + 1;
   });
@@ -45,7 +59,8 @@ export function staffMonthlyWorkDates(subs, staffName, year, month) {
 
 /**
  * Return sorted unique dates a staff member was substituted for in a given month.
- * Only confirmed substitutions are counted.
+ * 代行が**確定して代行者が付いた**日だけ。代行者が空のレコード
+ * (欠勤・代行未定 / 代行なしで確定) は staffMonthlyPendingAbsenceDates の方。
  * @param {import("../types").Substitute[]} subs
  * @param {string} staffName
  * @param {number} year
@@ -57,6 +72,7 @@ export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
   const dates = new Set();
   for (const s of subs) {
     if (s.status !== "confirmed") continue;
+    if (!s.substitute) continue;
     if (!s.date?.startsWith(ym)) continue;
     if (s.originalTeacher === staffName) dates.add(s.date);
   }
@@ -65,11 +81,11 @@ export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
 
 /**
  * Return sorted unique dates a staff member was registered absent in a given
- * month **without a substitute being found yet** (代行者が空の代行レコード)。
+ * month **with no substitute assigned** (代行者が空の代行レコード)。
+ * 代行を探し中 (代行未定) と、探さずに残りの担当者で回す (代行なし) の両方。
  *
- * 「代行された日」(staffMonthlyAbsenceDates) は代行が確定した日だけを数える
- * ので、代行が見つかっていない欠勤はどの行にも出てこない。休んだ事実は
- * 代行の有無と関係ないため、別の行として必ず出すこと。
+ * 「代行された日」(staffMonthlyAbsenceDates) は代行者が付いた日だけなので、
+ * ここに出さないと休んだ事実がどの行にも出てこない。
  * @param {import("../types").Substitute[]} subs
  * @param {string} staffName
  * @param {number} year

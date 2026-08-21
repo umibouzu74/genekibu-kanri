@@ -32,15 +32,21 @@ export interface Holiday {
   subjKeywords: string[]; // 空配列 = 全科目対象。例: ["高松西"]
 }
 
-// 代行レコード。**代行者が空 ("") のものは「欠勤 (代行未定)」**を表す
-// (欠勤専用のモデルは作らない)。代行が決まったら同じレコードに名前が入る。
+// 代行レコード。**代行者が空 ("") のものは欠勤**を表す (欠勤専用のモデルは
+// 作らない)。substitute の有無 = 代行が付いたか / status = 対応が確定したか
+// の 2 軸で 4 状態になる (utils/substituteState.js):
+//   "" + requested … 欠勤・代行を探し中 (代行未定)
+//   "" + confirmed … 欠勤・代行なしで確定 (他の担当者で回す)
+//   名前 + requested / confirmed … 代行 (依頼中 / 確定)
+// **1 コマに複数件立つ** — 1 コマを複数人で担当するコマ (プレップ) は
+// (date, slotId, originalTeacher) が鍵。
 export interface Substitute {
   id: number;
   date: string; // YYYY-MM-DD
   slotId: number;
-  originalTeacher: string;
-  substitute: string; // "" = 代行未定 (欠勤だけ登録した状態)
-  status: SubStatus;
+  originalTeacher: string; // 休む講師 (隔週は対象日の担当者に解決済み)
+  substitute: string; // "" = 代行者なし (欠勤)
+  status: SubStatus; // 対応が確定したか (代行の有無とは独立)
   memo: string;
   createdAt?: string;
   updatedAt?: string;
