@@ -64,7 +64,7 @@ export function RescheduleOutBanner({ items, style }) {
             </span>
             {slot.teacher && <span style={{ color: "#888" }}>{slot.teacher}</span>}
             <span style={{ color: ADJ_COLOR.reschedule.deep, fontWeight: 700 }}>
-              → {describeRescheduleTarget(adj)}
+              → {describeRescheduleTarget(adj, { originalTeacher: slot.teacher })}
             </span>
             {adj.memo && (
               <span style={{ fontSize: 10, color: "#888", fontStyle: "italic" }}>

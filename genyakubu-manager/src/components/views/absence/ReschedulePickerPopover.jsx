@@ -61,8 +61,11 @@ export function ReschedulePickerPopover({
   const [targetTime, setTargetTime] = useState(
     initial?.targetTime || slot?.time || ""
   );
+  // 既定は空 = 「(元担当 ◯◯ のまま)」。**元担当を既定で入れないこと** —
+  // 「担当が変わった振替」として一覧・カード・tooltip に相手の名前が出て
+  // しまう (2026-08-21)。担当を変えるときだけ人が選ぶ。
   const [targetTeacher, setTargetTeacher] = useState(
-    initial?.targetTeacher || slot?.teacher || ""
+    initial?.targetTeacher || ""
   );
   const [memo, setMemo] = useState(initial?.memo || "");
   // 源泉日のコマを「未実施 (skip)」として回数カウントから除外するか。

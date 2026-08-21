@@ -30,13 +30,11 @@ export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
     return sub.substitute ? AWAY_SUB : AWAY_ABSENT;
   }
   if (absorbed) return AWAY_COMBINE;
-  // 振替先の担当が自分なら、日が変わるだけで担当は続いている。
-  if (
-    rescheduledOut &&
-    (!rescheduledOut.targetTeacher || rescheduledOut.targetTeacher !== teacher)
-  ) {
-    return AWAY_RESCHEDULE;
-  }
+  // 振替は**その日からコマが出ていく**操作なので、振替先の担当が誰であれ
+  // 振替元の日は担当なし。**振替先の担当 (targetTeacher) で除外しないこと**
+  // — 振替ピッカーが元担当を既定で書き込むため、ほぼ全部の振替で
+  // 「↻ 振替で休み」も取消線も行き先も消える (2026-08-21 の再発防止)。
+  if (rescheduledOut) return AWAY_RESCHEDULE;
   return null;
 }
 

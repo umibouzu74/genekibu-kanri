@@ -529,7 +529,10 @@ export function MonthView({
                     : awayReason === "combine"
                     ? `→ ${hostSlot?.teacher || "?"} に合同`
                     : awayReason === "reschedule"
-                      ? `→${describeRescheduleTarget(rescheduledOut, { short: true })}`
+                      ? `→${describeRescheduleTarget(rescheduledOut, {
+                          short: true,
+                          originalTeacher: s.teacher,
+                        })}`
                       : null;
               const awayNoteColor =
                 awayReason === "absent" || awayReason === "sub"

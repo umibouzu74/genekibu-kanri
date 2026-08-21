@@ -238,6 +238,16 @@ describe("振替元の表示ヘルパ", () => {
     expect(describeRescheduleTarget({})).toBe("");
   });
 
+  it("担当が変わらない振替では振替先の担当を出さない", () => {
+    const a = adj(11, 1, { targetTime: "19:40-21:00", targetTeacher: "福江" });
+    expect(describeRescheduleTarget(a, { originalTeacher: "福江" })).toBe(
+      "2026-12-04 (金) 19:40-21:00"
+    );
+    expect(describeRescheduleTarget(a, { originalTeacher: "堀上" })).toBe(
+      "2026-12-04 (金) 19:40-21:00 (福江)"
+    );
+  });
+
   it("見出しは行き先が 1 つならその日付、複数なら「他 N 日」", () => {
     const one = collectOutgoingReschedules(slots, indexOf([adj(11, 1), adj(12, 2)]));
     expect(outgoingDayLabel(one)).toBe(

@@ -252,7 +252,11 @@ export const ExcelCell = memo(function ExcelCell({
   if (rescheduleOut) {
     const tgtParts = [rescheduleOut.targetDate];
     if (rescheduleOut.targetTime) tgtParts.push(rescheduleOut.targetTime);
-    if (rescheduleOut.targetTeacher) tgtParts.push(`(${rescheduleOut.targetTeacher})`);
+    // 担当が変わらない振替では担当を出さない (元担当がそのまま入っている
+    // ことがあり、出すと担当が変わったように読める)。
+    if (rescheduleOut.targetTeacher && rescheduleOut.targetTeacher !== slot.teacher) {
+      tgtParts.push(`(${rescheduleOut.targetTeacher})`);
+    }
     badges.push(
       mkBadge(
         ADJ_COLOR.reschedule.color,
@@ -285,7 +289,12 @@ export const ExcelCell = memo(function ExcelCell({
             marginTop: 1,
           }}
         >
-          → {describeRescheduleTarget(rescheduleOut, { short: true })} へ振替
+          →{" "}
+          {describeRescheduleTarget(rescheduleOut, {
+            short: true,
+            originalTeacher: slot.teacher,
+          })}{" "}
+          へ振替
         </div>
       );
     }
