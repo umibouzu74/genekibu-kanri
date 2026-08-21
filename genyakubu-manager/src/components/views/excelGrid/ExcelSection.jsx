@@ -413,7 +413,9 @@ export function ExcelSection({
                 const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
                 const tgtParts = [adj.targetDate];
                 if (adj.targetTime) tgtParts.push(adj.targetTime);
-                if (adj.targetTeacher) tgtParts.push(`(${adj.targetTeacher})`);
+                if (adj.targetTeacher && adj.targetTeacher !== slot.teacher) {
+                  tgtParts.push(`(${adj.targetTeacher})`);
+                }
                 return (
                   <span
                     key={adj.id}

@@ -44,13 +44,15 @@ describe("teacherAwayReason", () => {
     ).toBe("reschedule");
   });
 
-  it("振替先の担当が自分なら日が変わるだけなので手を離れていない", () => {
+  // 振替ピッカーは「振替先の担当」に元担当を既定で書き込む。ここで
+  // targetTeacher を見て除外すると、ほぼ全部の振替で表示が消える。
+  it("振替先の担当が自分でも、その日からは出ていくので手を離れている", () => {
     expect(
       teacherAwayReason({
         teacher,
         rescheduledOut: { targetDate: "2026-12-04", targetTeacher: teacher },
       })
-    ).toBe(null);
+    ).toBe("reschedule");
   });
 
   it("何も無ければ担当のまま", () => {

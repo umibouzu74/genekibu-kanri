@@ -162,6 +162,21 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.getByText("→12/4")).toBeInTheDocument();
   });
 
+  // 振替ピッカーは「振替先の担当」に元担当を既定で書き込んでいた。担当が
+  // 自分のままの振替まで「手を離れていない」と読むと、休みの表示が丸ごと
+  // 消える (2026-08-21 の再発防止)。
+  it("振替先の担当が元担当のままでも「振替で休み」を出す", () => {
+    render(
+      <MonthView
+        {...decProps}
+        adjustments={[{ ...RESCHEDULE, targetTeacher: "堀上" }]}
+      />
+    );
+    expect(screen.getAllByText("↻ 振替で休み")).toHaveLength(1);
+    // 担当は変わっていないので行き先に名前は出さない
+    expect(screen.getByText("→12/4")).toBeInTheDocument();
+  });
+
   it("同じ日に残るコマがあれば「振替で休み」とは言わない", () => {
     const stays = { ...SLOT, id: 2, time: "17:30-18:50", subj: "英語" };
     render(

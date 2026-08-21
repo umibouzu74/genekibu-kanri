@@ -158,12 +158,21 @@ export function isDayEmptiedByReschedule(slots, outgoing, otherLessons = 0) {
  * 振替先の表記。"2026-08-28 (金) 19:40 (福江)" のように、
  * 日付 → 時刻 → 担当 の順で、入っているものだけを並べる。
  * short: true で日付を "8/28" に縮める (月間カレンダーのカード内など)。
+ *
+ * originalTeacher を渡すと、**担当が変わらない振替では担当を出さない**。
+ * 振替の targetTeacher には元担当がそのまま入っていることがあり
+ * (振替ピッカーの既定だった)、そのまま出すと担当が変わったように読める。
  */
-export function describeRescheduleTarget(adj, { short = false } = {}) {
+export function describeRescheduleTarget(
+  adj,
+  { short = false, originalTeacher = "" } = {}
+) {
   if (!adj?.targetDate) return "";
   const parts = [short ? shortDate(adj.targetDate) : fmtDateWeekday(adj.targetDate)];
   if (adj.targetTime) parts.push(short ? adj.targetTime.split("-")[0] : adj.targetTime);
-  if (adj.targetTeacher) parts.push(`(${adj.targetTeacher})`);
+  if (adj.targetTeacher && adj.targetTeacher !== originalTeacher) {
+    parts.push(`(${adj.targetTeacher})`);
+  }
   return parts.join(" ");
 }
 

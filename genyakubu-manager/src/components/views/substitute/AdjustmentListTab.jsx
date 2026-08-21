@@ -101,7 +101,7 @@ function detailFor(adj, slotMap) {
             {adj.targetTime}
           </span>
         )}
-        {adj.targetTeacher && (
+        {adj.targetTeacher && adj.targetTeacher !== slotMap[adj.slotId]?.teacher && (
           <span style={{ marginLeft: 6, color: "#2a7a4a", fontSize: 11 }}>
             → {adj.targetTeacher}
           </span>

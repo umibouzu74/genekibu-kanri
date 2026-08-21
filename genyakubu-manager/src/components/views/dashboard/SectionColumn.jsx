@@ -425,7 +425,11 @@ export function SectionColumn({
                                   color: ADJ_COLOR.reschedule.deep,
                                 }}
                               >
-                                → {describeRescheduleTarget(rescheduledOut)} へ振替
+                                →{" "}
+                                {describeRescheduleTarget(rescheduledOut, {
+                                  originalTeacher: s.teacher,
+                                })}{" "}
+                                へ振替
                               </span>
                             </span>
                           ) : s.teacher ? (
