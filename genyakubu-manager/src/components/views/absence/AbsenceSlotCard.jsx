@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import { ADJ_COLOR, gradeColor as GC } from "../../../data";
 import { colors } from "../../../styles/tokens";
 import {
@@ -8,7 +8,17 @@ import {
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { subState, subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
+
+// 状態 (pending / nosub / requested / confirmed) → 表示メタ。
+// substituteState の 1 か所から引く (色とラベルを画面ごとに書き起こさない)。
+const STATE_META = {
+  pending: subStateMeta({ substitute: "", status: "requested" }),
+  nosub: subStateMeta({ substitute: "", status: "confirmed" }),
+  requested: subStateMeta({ substitute: "x", status: "requested" }),
+  confirmed: subStateMeta({ substitute: "x", status: "confirmed" }),
+};
 
 // ─── 欠勤 UI 用スロットカード ──────────────────────────────────
 // 欠勤バッジ・下書き状態・代行表示・振替表示・回数バッジを統合し、
@@ -27,10 +37,10 @@ export function AbsenceSlotCard({
   absorbedLabel, // host のとき: "+ 中3A 理科"
   isAbsorbed,
   hostLabel, // absorbed のとき: "→ 中3S 理科"
-  substituteName, // 代行済みなら代行者名。未設定なら null
-  substituteStatus, // "confirmed" | "requested"
-  substituteOriginalTeacher, // 多担任スロットで代行対象の元講師 (1 名)。なければ null
-  substitutePending, // 欠勤登録だけ済み (代行者は未定)
+  // このコマの代行 / 欠勤レコード (元講師ごとに 1 件)。
+  //   [{ originalTeacher, substitute, status }, …]
+  // プレップのように 1 コマを 3 人で担当するコマがあるので配列で受ける。
+  subs = [],
 
   overrideLabel, // 補正バッジ文字列 (例: "第4回 補正" / "カウント外")
   sessionCount, // 回数 (override 反映後)
@@ -45,6 +55,22 @@ export function AbsenceSlotCard({
   onClick,
 }) {
   const gc = GC(slot.grade);
+  // 講師欄の並び (香川·福江·川井) に、その講師の代行 / 欠勤を突き合わせる。
+  // 講師欄に出てこない元講師 (隔週 B 週のパートナー) は末尾に足す。
+  const teacherLine = useMemo(() => {
+    const byTeacher = new Map(subs.map((x) => [x.originalTeacher, x]));
+    const line = getSlotTeachers(slot).map((teacher) => ({
+      teacher,
+      sub: byTeacher.get(teacher) || null,
+    }));
+    const listed = new Set(line.map((x) => x.teacher));
+    for (const x of subs) {
+      if (!listed.has(x.originalTeacher)) {
+        line.push({ teacher: x.originalTeacher, sub: x });
+      }
+    }
+    return line;
+  }, [slot, subs]);
   const biweekly = isBiweekly(slot.note);
   const weekType = biweekly && date
     ? getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods)
@@ -158,7 +184,7 @@ export function AbsenceSlotCard({
       }}
     >
       {/* 状態バッジ (右上) */}
-      {(isMoved || isCombineHost || substituteName || substitutePending || isRescheduled) && (
+      {(isMoved || isCombineHost || subs.length > 0 || isRescheduled) && (
         <div
           style={{
             position: "absolute",
@@ -177,20 +203,12 @@ export function AbsenceSlotCard({
           {isCombineHost && (
             <BadgeChip color="#c08020" label="合同" />
           )}
-          {(substituteName || substitutePending) && (
-            <BadgeChip
-              color={substituteStatus === "confirmed" ? colors.success : colors.danger}
-              // 他のチップ (振替/移動/合同/代行/依頼) と同じ 2 文字に揃える。
-              // 「代行未定」はカード本文 (◯◯ ⇒ 代行未定) に出る。
-              label={
-                substitutePending
-                  ? "未定"
-                  : substituteStatus === "confirmed"
-                    ? "代行"
-                    : "依頼"
-              }
-            />
-          )}
+          {/* 状態は講師ごと。同じ状態が並んでも 1 つにまとめる
+              (3 人欠勤で「未定」が 3 つ並ぶと読みづらい)。 */}
+          {[...new Set(subs.map((x) => subState(x)))].map((st) => {
+            const meta = STATE_META[st];
+            return <BadgeChip key={st} color={meta.color} label={meta.badge} />;
+          })}
         </div>
       )}
 
@@ -253,45 +271,29 @@ export function AbsenceSlotCard({
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 800,
-          marginTop: 2,
-          color: substituteName || substitutePending ? colors.danger : "#1a1a2e",
-        }}
-      >
-        {substituteName || substitutePending ? (
-          <>
-            {(() => {
-              // 多担任スロット (プレップ等) で代行対象が 1 名に特定できる場合は、
-              // その講師だけに取消線を付け、他の講師は通常表示のまま残す。
-              const teachers = getSlotTeachers(slot);
-              if (
-                substituteOriginalTeacher &&
-                teachers.length > 1 &&
-                teachers.includes(substituteOriginalTeacher)
-              ) {
-                return teachers.map((t, i) => (
-                  <Fragment key={i}>
-                    {i > 0 && (
-                      <span style={{ color: "#1a1a2e", fontWeight: 600 }}>·</span>
-                    )}
-                    {t === substituteOriginalTeacher ? (
-                      <span style={{ textDecoration: "line-through" }}>{t}</span>
-                    ) : (
-                      <span style={{ color: "#1a1a2e", fontWeight: 600 }}>{t}</span>
-                    )}
-                  </Fragment>
-                ));
-              }
-              return formatBiweeklyTeacher(slot.teacher, slot.note);
-            })()}
-            <span style={{ margin: "0 2px" }}>⇒</span>
-            {substituteName || "代行未定"}
-          </>
-        ) : (
+      <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, color: "#1a1a2e" }}>
+        {subs.length === 0 ? (
           formatBiweeklyTeacher(slot.teacher, slot.note)
+        ) : (
+          <>
+            {/* 講師欄の並びのまま、休む人だけ取消線 + 行き先を出す。
+                出る人はそのまま黒で残す (プレップで 1 人だけ休む日に
+                全員休みに見えないように)。 */}
+            {teacherLine.map(({ teacher, sub }, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span style={{ color: "#1a1a2e", fontWeight: 600 }}>·</span>}
+                {sub ? (
+                  <span style={{ color: STATE_META[subState(sub)].color }}>
+                    <span style={{ textDecoration: "line-through" }}>{teacher}</span>
+                    <span style={{ margin: "0 2px" }}>⇒</span>
+                    {subTargetLabel(sub)}
+                  </span>
+                ) : (
+                  <span style={{ color: "#1a1a2e", fontWeight: 600 }}>{teacher}</span>
+                )}
+              </Fragment>
+            ))}
+          </>
         )}
       </div>
 

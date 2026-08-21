@@ -204,6 +204,9 @@ describe("getAbsenceDaySlots", () => {
   });
 });
 
+// targets は slot オブジェクトも持つので、(コマ id, 講師) だけで比べる。
+const pairs = (targets) => targets.map((t) => [t.slotId, t.teacher]);
+
 describe("collectAbsenceTargets", () => {
   // 2026-09-25 は金曜。
   const DATE = "2026-09-25";
@@ -219,7 +222,7 @@ describe("collectAbsenceTargets", () => {
       date: DATE,
       teachers: ["河野"],
     });
-    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+    expect(pairs(targets)).toEqual([[1, "河野"]]);
   });
 
   it("多担任コマは欠勤する本人を元講師にする", () => {
@@ -228,7 +231,7 @@ describe("collectAbsenceTargets", () => {
       date: DATE,
       teachers: ["福江"],
     });
-    expect(targets).toEqual([{ slotId: 3, teacher: "福江" }]);
+    expect(pairs(targets)).toEqual([[3, "福江"]]);
   });
 
   it("休講・テスト期間のコマは理由つきで外す", () => {
@@ -267,7 +270,7 @@ describe("collectAbsenceTargets", () => {
       ],
       removedSubIds: new Set([9]),
     });
-    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+    expect(pairs(targets)).toEqual([[1, "河野"]]);
   });
 
   it("保存済みの振替・合同で片付いているコマも外す", () => {
@@ -297,20 +300,22 @@ describe("collectAbsenceTargets", () => {
       ],
       removedAdjustmentIds: new Set([1]),
     });
-    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+    expect(pairs(targets)).toEqual([[1, "河野"]]);
   });
 
-  it("多担任コマで 2 人同時に休むときは 1 人ずつと伝える", () => {
+  it("多担任コマで 2 人同時に休むなら 2 件とも対象にする", () => {
     const { targets, skipped } = collectAbsenceTargets({
       slots: daySlots,
       date: DATE,
       teachers: ["香川", "福江"],
     });
-    // 下書きは 1 コマ 1 件しか持てないので登録は先頭の 1 人
-    expect(targets).toEqual([{ slotId: 3, teacher: "香川" }]);
-    expect(skipped.map((x) => x.reason)).toEqual([
-      "1 コマにつき 1 人まで (福江 は個別に登録)",
+    // プレップ (香川·福江·川井) で 2 人が休む = (コマ, 講師) が 2 組。
+    // 出勤する川井のぶんは作らない。
+    expect(pairs(targets)).toEqual([
+      [3, "香川"],
+      [3, "福江"],
     ]);
+    expect(skipped).toEqual([]);
   });
 
   it("下書きで振替・合同にしたコマは外す", () => {
@@ -352,7 +357,7 @@ describe("collectAbsenceTargets", () => {
       teachers: ["河野"],
       ctx: { biweeklyAnchors: anchors },
     });
-    expect(forMain.targets).toEqual([{ slotId: 5, teacher: "河野" }]);
+    expect(pairs(forMain.targets)).toEqual([[5, "河野"]]);
   });
 
   it("先生未選択なら何も返さない", () => {

@@ -105,6 +105,9 @@ export function findCombineCandidates(slot, daySlots, subjects = [], absorbedSlo
 // 対象は「その日にその先生が実際に担当するコマ」だけ。外したコマは理由を
 // 返して画面に出す (黙って減らさない = 日まるごと振替と同じ方針)。
 //
+// 返すのは **(コマ, 講師) の組**。プレップのように 1 コマを 3 人で担当する
+// コマでは、休む人のぶんだけ組が並ぶ (香川と福江は休むが川井は出る)。
+//
 // @param {object} args
 // @param {Array} args.slots          対象日のコマ群 (getAbsenceDaySlots 済み)
 // @param {string} args.date          "YYYY-MM-DD"
@@ -115,8 +118,9 @@ export function findCombineCandidates(slot, daySlots, subjects = [], absorbedSlo
 // @param {Set<number>} [args.removedSubIds] 解除マーク済みの代行 id
 // @param {Array} [args.existingAdjustments] 保存済み調整 (振替・合同の除外用)
 // @param {Set<number>} [args.removedAdjustmentIds] 解除マーク済みの調整 id
-// @returns {{targets: {slotId: number, teacher: string}[],
-//            skipped: {slot: object, reason: string}[]}}
+// @returns {{targets: {slotId: number, slot: object, teacher: string}[],
+//            skipped: {slot: object, teacher?: string, teachers?: string[],
+//                      reason: string}[]}}
 export function collectAbsenceTargets({
   slots,
   date,
@@ -152,8 +156,8 @@ export function collectAbsenceTargets({
 
   for (const slot of slots || []) {
     const active = activeTeachersOnDate(slot, date, ctx);
-    const teacher = active.find((t) => absent.has(t));
-    if (!teacher) {
+    const absentHere = active.filter((t) => absent.has(t));
+    if (absentHere.length === 0) {
       // 隔週で「今週は担当しない側」のときだけ理由を出す。講師欄にも
       // note にも出てこないコマは関わりが無いので静かに飛ばす。
       if (isBiweekly(slot.note) && [...absent].some((t) => isSlotForTeacher(slot, t))) {
@@ -161,52 +165,43 @@ export function collectAbsenceTargets({
       }
       continue;
     }
-    if (isOffForGrade && isOffForGrade(date, slot.grade, slot.subj)) {
-      skipped.push({ slot, reason: "休講・テスト期間" });
-      continue;
-    }
 
+    // コマ単位で外れる理由 (その日そのコマが走らない / 別の手で片付いている)。
     const row = draft[slot.id];
-    if (row?.absorbedBy != null || row?.combine?.absorbedSlotIds?.length) {
-      skipped.push({ slot, reason: "合同で対応済み" });
-      continue;
-    }
-    if (row?.reschedule?.targetDate) {
-      skipped.push({ slot, reason: "振替で対応済み" });
-      continue;
-    }
-    if (adjustedSlots.has(slot.id)) {
-      skipped.push({ slot, reason: `${adjustedSlots.get(slot.id)}で対応済み` });
-      continue;
-    }
-    if (row?.sub) {
-      skipped.push({ slot, reason: "すでに下書きあり" });
-      continue;
-    }
-    const saved = (existingSubs || []).find(
-      (x) =>
-        x.date === date &&
-        x.slotId === slot.id &&
-        x.originalTeacher === teacher &&
-        !removedSubIds?.has(x.id)
-    );
-    if (saved) {
-      skipped.push({ slot, reason: "登録済み" });
+    const slotReason =
+      isOffForGrade && isOffForGrade(date, slot.grade, slot.subj)
+        ? "休講・テスト期間"
+        : row?.absorbedBy != null || row?.combine?.absorbedSlotIds?.length
+          ? "合同で対応済み"
+          : row?.reschedule?.targetDate
+            ? "振替で対応済み"
+            : adjustedSlots.get(slot.id)
+              ? `${adjustedSlots.get(slot.id)}で対応済み`
+              : null;
+    if (slotReason) {
+      skipped.push({ slot, teachers: absentHere, reason: slotReason });
       continue;
     }
 
-    // 下書きは 1 コマにつき代行 1 件しか持てない (draft の row.sub)。
-    // 多担任コマで 2 人以上が同時に休む場合は残りを理由つきで出す
-    // (黙って 1 人ぶんだけ登録すると、残りも登録済みに見える)。
-    const others = active.filter((t) => t !== teacher && absent.has(t));
-    if (others.length > 0) {
-      skipped.push({
-        slot,
-        reason: `1 コマにつき 1 人まで (${others.join("・")} は個別に登録)`,
-      });
+    // ここからは講師ごと。すでに下書き / 登録のある人だけ外す。
+    for (const teacher of absentHere) {
+      if (row?.subs?.[teacher]) {
+        skipped.push({ slot, teacher, reason: "すでに下書きあり" });
+        continue;
+      }
+      const saved = (existingSubs || []).find(
+        (x) =>
+          x.date === date &&
+          x.slotId === slot.id &&
+          x.originalTeacher === teacher &&
+          !removedSubIds?.has(x.id)
+      );
+      if (saved) {
+        skipped.push({ slot, teacher, reason: "登録済み" });
+        continue;
+      }
+      targets.push({ slotId: slot.id, slot, teacher });
     }
-
-    targets.push({ slotId: slot.id, teacher });
   }
   return { targets, skipped };
 }

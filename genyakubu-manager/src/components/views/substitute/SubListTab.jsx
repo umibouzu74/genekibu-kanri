@@ -289,7 +289,7 @@ export function SubListTab({
                       </span>
                     </td>
                     <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                      <StatusBadge status={sub.status} />
+                      <StatusBadge status={sub.status} substitute={sub.substitute} />
                     </td>
                     <td
                       style={{

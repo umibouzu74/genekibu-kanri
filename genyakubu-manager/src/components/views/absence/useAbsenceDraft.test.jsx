@@ -50,16 +50,16 @@ describe("useAbsenceDraft", () => {
     it("clears existing draft sub and move when reschedule is set (排他)", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {
-        result.current.updateSub(10, { substitute: "山田", status: "confirmed" });
+        result.current.updateSub(10, "本多", { substitute: "山田", status: "confirmed" });
         result.current.updateMove(10, "20:30-21:50");
       });
-      expect(result.current.draft[10].sub.substitute).toBe("山田");
+      expect(result.current.draft[10].subs["本多"].substitute).toBe("山田");
       expect(result.current.draft[10].move.targetTime).toBe("20:30-21:50");
 
       act(() => {
         result.current.updateReschedule(10, { targetDate: "2026-05-01" });
       });
-      expect(result.current.draft[10].sub).toBeNull();
+      expect(result.current.draft[10].subs).toBeNull();
       expect(result.current.draft[10].move).toBeNull();
       expect(result.current.draft[10].reschedule.targetDate).toBe("2026-05-01");
     });
@@ -172,7 +172,7 @@ describe("useAbsenceDraft", () => {
     it("代行者が未定 (欠勤だけ) の下書きもレコードとして出す", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {
-        result.current.updateSub(10, { substitute: "", status: "requested" });
+        result.current.updateSub(10, "本多", { substitute: "", status: "requested" });
       });
       const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, []);
       expect(out.draftSubs).toHaveLength(1);
@@ -198,15 +198,9 @@ describe("useAbsenceDraft", () => {
         },
       ];
       act(() => {
-        result.current.updateSub(10, { substitute: "藤田", status: "confirmed" });
+        result.current.updateSub(10, "本多", { substitute: "藤田", status: "confirmed" });
       });
-      const out = result.current.toBatchPayload(
-        DATE,
-        SAMPLE_SLOTS,
-        [],
-        null,
-        existingSubs
-      );
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, [], existingSubs);
       expect(out.draftSubs[0].substitute).toBe("藤田");
       expect(out.removedSubIds).toContain(42);
       // 付け替えであって「解除」ではない (保存メッセージで数えない)
@@ -226,15 +220,9 @@ describe("useAbsenceDraft", () => {
         },
       ];
       act(() => {
-        result.current.updateSub(10, { substitute: "藤田", status: "confirmed" });
+        result.current.updateSub(10, "本多", { substitute: "藤田", status: "confirmed" });
       });
-      const out = result.current.toBatchPayload(
-        DATE,
-        SAMPLE_SLOTS,
-        [],
-        null,
-        existingSubs
-      );
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, [], existingSubs);
       expect(out.removedSubIds).not.toContain(43);
     });
 
@@ -279,15 +267,15 @@ describe("useAbsenceDraft", () => {
     it("records originalTeacher as slot.teacher when no biweekly context", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {
-        result.current.updateSub(10, { substitute: "福江", status: "confirmed" });
+        result.current.updateSub(10, "本多", { substitute: "福江", status: "confirmed" });
       });
       const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, []);
       expect(out.draftSubs[0].originalTeacher).toBe("本多");
     });
 
-    it("resolves originalTeacher to the B週 partner for biweekly slots", () => {
+    it("元講師は下書きのキーをそのまま使う (隔週の A/B は登録側で解決済み)", () => {
       const { result } = renderHook(() => useAbsenceDraft());
-      // 中3S: teacher=堀上, partner=川井。2026-04-13 は anchor(04-06=A) から B 週。
+      // 中3S: teacher=堀上, partner=川井。B 週は登録側が川井を渡してくる。
       const biweeklySlots = [
         {
           id: 20,
@@ -301,30 +289,11 @@ describe("useAbsenceDraft", () => {
           room: "501",
         },
       ];
-      const biweekly = {
-        anchors: [{ date: "2026-04-06", weekType: "A" }],
-        holidays: [],
-        examPeriods: [],
-      };
       act(() => {
-        result.current.updateSub(20, { substitute: "福江", status: "confirmed" });
+        result.current.updateSub(20, "川井", { substitute: "福江", status: "confirmed" });
       });
-      const outB = result.current.toBatchPayload(
-        "2026-04-13",
-        biweeklySlots,
-        [],
-        biweekly
-      );
-      expect(outB.draftSubs[0].originalTeacher).toBe("川井");
-
-      // A 週 (anchor 当日) なら slot.teacher のまま
-      const outA = result.current.toBatchPayload(
-        "2026-04-06",
-        biweeklySlots,
-        [],
-        biweekly
-      );
-      expect(outA.draftSubs[0].originalTeacher).toBe("堀上");
+      const out = result.current.toBatchPayload("2026-04-13", biweeklySlots, []);
+      expect(out.draftSubs[0].originalTeacher).toBe("川井");
     });
 
     it("prefers an explicit per-slot originalTeacher (多担任 prep slot)", () => {
@@ -343,20 +312,44 @@ describe("useAbsenceDraft", () => {
         },
       ];
       act(() => {
-        // 川井 の代行を福武に。originalTeacher を明示。
-        result.current.updateSub(30, {
+        // 川井 の代行を福武に。香川は代行なしで欠勤 (残りの担当者で回す)。
+        result.current.updateSub(30, "川井", {
           substitute: "福武",
           status: "confirmed",
-          originalTeacher: "川井",
+        });
+        result.current.updateSub(30, "香川", {
+          substitute: "",
+          status: "confirmed",
         });
       });
-      const out = result.current.toBatchPayload("2026-07-11", prepSlots, [], {
-        anchors: [],
-        holidays: [],
-        examPeriods: [],
+      const out = result.current.toBatchPayload("2026-07-11", prepSlots, []);
+      // 1 コマに 2 件。slot.teacher 全体 ("香川·福江·川井") には潰さない。
+      expect(out.draftSubs).toHaveLength(2);
+      expect(
+        out.draftSubs.map((r) => [r.originalTeacher, r.substitute, r.status]).sort()
+      ).toEqual([
+        ["川井", "福武", "confirmed"],
+        ["香川", "", "confirmed"],
+      ]);
+      // 出勤する福江のレコードは作らない
+      expect(out.draftSubs.some((r) => r.originalTeacher === "福江")).toBe(false);
+    });
+
+    it("同じコマの別の講師を消しても他の講師の欠勤は残る", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.updateSub(10, "香川", { substitute: "", status: "requested" });
+        result.current.updateSub(10, "福江", { substitute: "", status: "requested" });
       });
-      // slot.teacher 全体 ("香川·福江·川井") ではなく、選んだ川井のみ。
-      expect(out.draftSubs[0].originalTeacher).toBe("川井");
+      act(() => {
+        result.current.clearSub(10, "香川");
+      });
+      expect(Object.keys(result.current.draft[10].subs)).toEqual(["福江"]);
+      // 講師を指定しなければコマごと消える (合同・振替に切り替えたとき)
+      act(() => {
+        result.current.clearSub(10);
+      });
+      expect(result.current.draft[10]).toBeUndefined();
     });
 
     it("returns removedSubIds in payload", () => {

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { dateToDay } from "../data";
 import { getSlotTeachers } from "../utils/biweekly";
+import { needsSubstitute } from "../utils/substituteState";
 import { filterSlotsForDate } from "../utils/timetable";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import {
@@ -60,10 +61,13 @@ export function useSubstitutionMode({
     return subs.filter((s) => s.date === subDate);
   }, [subs, subDate]);
 
-  // Map slotId -> existing sub for quick lookup
+  // Map slotId -> Substitute[] (元講師ごとに 1 件なので、多担任コマは複数)。
   const existingSubMap = useMemo(() => {
     const m = new Map();
-    for (const s of existingSubs) m.set(s.slotId, s);
+    for (const s of existingSubs) {
+      if (!m.has(s.slotId)) m.set(s.slotId, []);
+      m.get(s.slotId).push(s);
+    }
     return m;
   }, [existingSubs]);
 
@@ -124,21 +128,18 @@ export function useSubstitutionMode({
     for (const slot of dateFilteredSlots) {
       if (slot.day !== dayOfDate) continue;
       if (holidayOffSlots.has(slot.id)) continue; // cancelled, no sub needed
-      // 代行者が入っているレコードだけが「対応済み」。代行未定のまま登録した
-      // 欠勤 (substitute: "") はまさに代行を探している状態なので候補に残す。
-      if (existingSubMap.get(slot.id)?.substitute) continue;
       if (pendingSubMap.has(slot.id)) continue; // pending assignment
 
-      const teachers = getSlotTeachers(slot);
-      // For multi-teacher slots, pick the first absent teacher
-      // (one substitute per slot, not per teacher)
-      const absent = teachers.find((t) => unavailableTeachers.has(t));
-      if (absent) {
-        result.push({
-          slotId: slot.id,
-          originalTeacher: absent,
-          date: subDate,
-        });
+      // 代行が要るかは**講師ごと**。代行者が入っているレコードだけが
+      // 「対応済み」で、代行未定 (substitute: "") はまさに探している状態、
+      // 代行なしで確定したものは探さない (残りの担当者で回す)。
+      const forSlot = existingSubMap.get(slot.id) || [];
+      const stateOf = new Map(forSlot.map((x) => [x.originalTeacher, x]));
+      for (const t of getSlotTeachers(slot)) {
+        if (!unavailableTeachers.has(t)) continue;
+        const existing = stateOf.get(t);
+        if (existing && !needsSubstitute(existing)) continue;
+        result.push({ slotId: slot.id, originalTeacher: t, date: subDate });
       }
     }
     return result;

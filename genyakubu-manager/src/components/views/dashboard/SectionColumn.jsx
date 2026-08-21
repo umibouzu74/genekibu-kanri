@@ -1,22 +1,35 @@
 import { useMemo } from "react";
 import {
   ADJ_COLOR,
-  getSubForSlot,
+  getSubsForSlot,
   gradeColor as GC,
-  SUB_STATUS,
   timeToMin,
 } from "../../../data";
 import {
   formatBiweeklyNote,
   formatCount,
+  getSlotTeachers,
   weightedSlotCount,
 } from "../../../utils/biweekly";
+import {
+  subState,
+  subStateMeta,
+  subTargetLabel,
+} from "../../../utils/substituteState";
 import { formatSessionNumber } from "../../../utils/sessionCount";
 import {
   buildAdjustmentIndex,
   describeRescheduleTarget,
 } from "../../../utils/adjustmentDisplay";
 import { colors } from "../../../styles/tokens";
+
+// 状態 (pending / nosub / requested / confirmed) → 表示メタ。
+const SUB_STATE_META = {
+  pending: subStateMeta({ substitute: "", status: "requested" }),
+  nosub: subStateMeta({ substitute: "", status: "confirmed" }),
+  requested: subStateMeta({ substitute: "x", status: "requested" }),
+  confirmed: subStateMeta({ substitute: "x", status: "confirmed" }),
+};
 
 // Single department / time-grouped slot column rendered inside DashDayRow.
 export function SectionColumn({
@@ -164,8 +177,12 @@ export function SectionColumn({
                 >
                   {tSlots.map((s, i) => {
                     const gc = GC(s.grade);
-                    const sub = date ? getSubForSlot(subs, s.id, date) : null;
-                    const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
+                    // 代行 / 欠勤は元講師ごとに 1 件。プレップのように 1 コマを
+                    // 複数人で担当するコマは複数件並ぶ (1 件だけ拾うと他の人の
+                    // 欠勤が画面から消える)。
+                    const slotSubs = date ? getSubsForSlot(subs, s.id, date) : [];
+                    const sub = slotSubs[0] || null;
+                    const st = sub ? SUB_STATE_META[subState(sub)] : null;
                     const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
                     const hostIdForAbsorbed = combineAbsorbedBySlot.get(s.id);
                     const absorbed = hostIdForAbsorbed != null;
@@ -273,14 +290,26 @@ export function SectionColumn({
                                 振
                               </span>
                             )}
-                            {sub && (
-                              <span
-                                style={badgeStyle(st.color)}
-                                title={`${sub.originalTeacher} → ${sub.substitute || "未定"}\n${st.label}${sub.memo ? "\n" + sub.memo : ""}`}
-                              >
-                                代
-                              </span>
-                            )}
+                            {[...new Set(slotSubs.map((x) => subState(x)))].map((state) => {
+                              const meta = SUB_STATE_META[state];
+                              return (
+                                <span
+                                  key={state}
+                                  style={badgeStyle(meta.color)}
+                                  title={slotSubs
+                                    .filter((x) => subState(x) === state)
+                                    .map(
+                                      (x) =>
+                                        `${x.originalTeacher} → ${subTargetLabel(x)}${
+                                          x.memo ? ` (${x.memo})` : ""
+                                        }`
+                                    )
+                                    .join("\n")}
+                                >
+                                  {state === "pending" || state === "nosub" ? "欠" : "代"}
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                         <div style={{ lineHeight: 1.4 }}>
@@ -391,21 +420,45 @@ export function SectionColumn({
                                 {hostSlot?.teacher || "?"}
                               </span>
                             </span>
-                          ) : sub ? (
+                          ) : slotSubs.length > 0 ? (
                             <span>
-                              <span
-                                style={{
-                                  textDecoration: "line-through",
-                                  color: "#999",
-                                  fontSize: 12,
-                                }}
-                              >
-                                {sub.originalTeacher}
-                              </span>
-                              <span style={{ margin: "0 2px", color: st.color }}>→</span>
-                              <span style={{ color: st.color }}>
-                                {sub.substitute || "代行未定"}
-                              </span>
+                              {slotSubs.map((x, xi) => {
+                                const meta = SUB_STATE_META[subState(x)];
+                                return (
+                                  <span key={xi} style={{ display: "block" }}>
+                                    <span
+                                      style={{
+                                        textDecoration: "line-through",
+                                        color: "#999",
+                                        fontSize: 12,
+                                      }}
+                                    >
+                                      {x.originalTeacher}
+                                    </span>
+                                    <span style={{ margin: "0 2px", color: meta.color }}>
+                                      →
+                                    </span>
+                                    <span style={{ color: meta.color }}>
+                                      {subTargetLabel(x)}
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                              {/* 休まない担任が残っていれば併記する */}
+                              {(() => {
+                                const away = new Set(
+                                  slotSubs.map((x) => x.originalTeacher)
+                                );
+                                const staying = getSlotTeachers(s).filter(
+                                  (t) => !away.has(t)
+                                );
+                                if (staying.length === 0) return null;
+                                return (
+                                  <span style={{ fontSize: 12 }}>
+                                    {staying.join("·")}
+                                  </span>
+                                );
+                              })()}
                             </span>
                           ) : rescheduledOut ? (
                             <span>

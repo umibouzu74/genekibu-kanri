@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { fmtDate, SUB_STATUS, WEEKDAYS } from "../../../data";
+import { fmtDate, WEEKDAYS } from "../../../data";
+import { subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 
 // ─── 代行サマリーカード ─────────────────────────────────────────────
 // 今日・明日の代行予定と全体の依頼中件数を一目で把握できるウィジェット。
@@ -111,7 +112,7 @@ export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }
         bg={todaySubs.length > 0 ? "#e8f0fa" : "#f8f8f8"}
         detail={
           todaySubs.length > 0
-            ? `確定: ${todaySubs.filter((s) => s.status === "confirmed").length} / 依頼中: ${todaySubs.filter((s) => s.status === "requested").length}`
+            ? `代行あり: ${todaySubs.filter((s) => s.substitute).length} / 代行なし: ${todaySubs.filter((s) => !s.substitute).length}`
             : null
         }
       >
@@ -119,7 +120,7 @@ export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }
           <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
             {todaySubs.slice(0, 3).map((s) => {
               const slot = slots.find((sl) => sl.id === s.slotId);
-              const st = SUB_STATUS[s.status] || SUB_STATUS.requested;
+              const st = subStateMeta(s);
               return (
                 <div
                   key={s.id}
@@ -141,13 +142,13 @@ export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }
                       fontWeight: 800,
                     }}
                   >
-                    {st.label}
+                    {st.badge}
                   </span>
                   <span style={{ fontWeight: 600 }}>
                     {slot?.time?.split("-")[0] || "?"} {slot?.subj || "?"}
                   </span>
                   <span style={{ color: "#888" }}>
-                    {s.originalTeacher}→{s.substitute || "代行未定"}
+                    {s.originalTeacher}→{subTargetLabel(s)}
                   </span>
                 </div>
               );
@@ -169,7 +170,7 @@ export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }
         bg={tomorrowSubs.length > 0 ? "#f0e8f6" : "#f8f8f8"}
         detail={
           tomorrowSubs.length > 0
-            ? `確定: ${tomorrowSubs.filter((s) => s.status === "confirmed").length} / 依頼中: ${tomorrowSubs.filter((s) => s.status === "requested").length}`
+            ? `代行あり: ${tomorrowSubs.filter((s) => s.substitute).length} / 代行なし: ${tomorrowSubs.filter((s) => !s.substitute).length}`
             : null
         }
       />

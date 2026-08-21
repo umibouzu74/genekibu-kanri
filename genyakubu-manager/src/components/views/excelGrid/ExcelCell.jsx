@@ -7,11 +7,20 @@ import {
   isBiweekly,
 } from "../../../utils/biweekly";
 import { formatSessionNumber } from "../../../utils/sessionCount";
+import { subState, subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 import {
   describeRescheduleTarget,
   describeSlot,
 } from "../../../utils/adjustmentDisplay";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
+
+// 状態 (pending / nosub / requested / confirmed) → 表示メタ。
+const SUB_STATE_META = {
+  pending: subStateMeta({ substitute: "", status: "requested" }),
+  nosub: subStateMeta({ substitute: "", status: "confirmed" }),
+  requested: subStateMeta({ substitute: "x", status: "requested" }),
+  confirmed: subStateMeta({ substitute: "x", status: "confirmed" }),
+};
 
 // セル内で並べる小さなステータスバッジ。
 // 代/仮/休/欠/合/合+/移 を同じ見た目で生成する。
@@ -56,7 +65,8 @@ export const ExcelCell = memo(function ExcelCell({
   isUnavailable,
   isHolidayOff,
   pendingSub,
-  existingSub,
+  // このコマの代行 / 欠勤レコード (元講師ごとに 1 件)。多担任コマは複数件。
+  existingSubs = [],
   isSubMode,
   isCombineTarget,
   onCellClick,
@@ -126,9 +136,9 @@ export const ExcelCell = memo(function ExcelCell({
   let subjColor = "#444";
   let subjDecor = "none";
   let subDisplay = null;
-  // 多担任スロット (例: プレップ「香川·福江·川井」) で代行が出た時に、
-  // 取消線を「originalTeacher」だけに絞るためのフラグ。
-  let partialStrikeOriginal = null;
+  // 多担任スロット (例: プレップ「香川·福江·川井」) で代行・欠勤が出た時に、
+  // 取消線をその講師だけに絞るための名前リスト。
+  let partialStrikeOriginals = [];
 
   // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
   // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
@@ -145,35 +155,46 @@ export const ExcelCell = memo(function ExcelCell({
     badges.push(mkBadge("#2a7a4a", "仮", "pending"));
     teacherColor = "#888";
     teacherDecor = "line-through";
-    partialStrikeOriginal = pendingSub.originalTeacher || null;
+    partialStrikeOriginals = pendingSub.originalTeacher ? [pendingSub.originalTeacher] : [];
     subDisplay = (
       <div style={{ fontSize: 12, fontWeight: 800, color: "#2a7a4a", marginTop: 1 }}>
         ← {pendingSub.substitute}
       </div>
     );
-  } else if (existingSub) {
+  } else if (existingSubs.length > 0) {
     // 代行者が未定のまま登録した欠勤 (substitute: "") も必ず出す。
     // ここで落とすと、代行が見つかるまで時間割上は通常授業に見えてしまう。
-    const pendingAbsence = !existingSub.substitute;
-    const tone = pendingAbsence ? "#c03030" : "#3a6ea5";
-    bg = pendingAbsence ? "#fff0f0" : "#e8f0ff";
+    // 1 コマを複数人で担当するコマ (プレップ) は**講師ごとに 1 件**なので、
+    // 休む人ぶんだけ並べる。
+    const anyCovered = existingSubs.some((x) => x.substitute);
+    const tone = anyCovered ? "#3a6ea5" : "#c03030";
+    bg = anyCovered ? "#e8f0ff" : "#fff0f0";
     borderLeft = `3px solid ${tone}`;
-    badges.push(
-      mkBadge(
-        tone,
-        pendingAbsence ? "欠" : "代",
-        "sub",
-        pendingAbsence
-          ? `${existingSub.originalTeacher} 欠勤 (代行未定)`
-          : `${existingSub.originalTeacher} → ${existingSub.substitute}`
-      )
-    );
+    for (const st of new Set(existingSubs.map((x) => subState(x)))) {
+      const meta = SUB_STATE_META[st];
+      badges.push(
+        mkBadge(
+          meta.color,
+          st === "pending" || st === "nosub" ? "欠" : "代",
+          `sub-${st}`,
+          existingSubs
+            .filter((x) => subState(x) === st)
+            .map((x) => `${x.originalTeacher} → ${subTargetLabel(x)}`)
+            .join("\n")
+        )
+      );
+    }
     teacherColor = "#888";
     teacherDecor = "line-through";
-    partialStrikeOriginal = existingSub.originalTeacher || null;
+    partialStrikeOriginals = existingSubs.map((x) => x.originalTeacher).filter(Boolean);
     subDisplay = (
-      <div style={{ fontSize: 12, fontWeight: 800, color: tone, marginTop: 1 }}>
-        {pendingAbsence ? "代行未定" : `← ${existingSub.substitute}`}
+      <div style={{ fontSize: 12, fontWeight: 800, marginTop: 1, lineHeight: 1.3 }}>
+        {existingSubs.map((x, i) => (
+          <div key={i} style={{ color: SUB_STATE_META[subState(x)].color }}>
+            {existingSubs.length > 1 ? `${x.originalTeacher} ⇒ ` : ""}
+            {x.substitute ? `← ${x.substitute}` : subTargetLabel(x)}
+          </div>
+        ))}
       </div>
     );
   } else if (isUnavailable) {
@@ -188,7 +209,7 @@ export const ExcelCell = memo(function ExcelCell({
   if (!isHolidayOff) {
     if (absorbed) {
       // 合同で吸収された側: 既存の sub 背景がなければ紫で塗って line-through
-      if (!pendingSub && !existingSub) {
+      if (!pendingSub && existingSubs.length === 0) {
         bg = ADJ_COLOR.combine.bg;
         borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
         teacherColor = "#888";
@@ -394,18 +415,16 @@ export const ExcelCell = memo(function ExcelCell({
             // 取消線を originalTeacher の名前のみに絞る。それ以外の担任は
             // 通常の色で見える状態に戻す。
             const teachers = getSlotTeachers(slot);
-            if (
-              partialStrikeOriginal &&
-              teacherDecor === "line-through" &&
-              teachers.length > 1 &&
-              teachers.includes(partialStrikeOriginal)
-            ) {
+            const struck = new Set(
+              partialStrikeOriginals.filter((t) => teachers.includes(t))
+            );
+            if (teacherDecor === "line-through" && teachers.length > 1 && struck.size > 0) {
               return teachers.map((t, i) => (
                 <Fragment key={i}>
                   {i > 0 && (
                     <span style={{ color: "#1a1a2e", textDecoration: "none" }}>·</span>
                   )}
-                  {t === partialStrikeOriginal ? (
+                  {struck.has(t) ? (
                     <span>{t}</span>
                   ) : (
                     <span style={{ color: "#1a1a2e", textDecoration: "none" }}>{t}</span>

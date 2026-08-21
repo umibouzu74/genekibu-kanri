@@ -4,11 +4,11 @@ import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortTeacherNames } from "../../../utils/teacherKana";
 import { pickSubjectId } from "../../../utils/subjectMatch";
+import { SUB_STATE, subState, subStateMeta } from "../../../utils/substituteState";
 import {
   biweeklyActiveTeacher,
   biweeklyDisplaySubject,
   getSlotTeachers,
-  isBiweekly,
 } from "../../../utils/biweekly";
 
 // ─── 代行ピッカーポップオーバー ───────────────────────────────
@@ -46,32 +46,32 @@ export function SubstitutePickerPopover({
   subjects,
   teacherKana = {},
   daySlots,
-  currentSubstitute,
-  currentStatus,
-  currentOriginalTeacher,
-  hasSubEntry, // 代行者が未定でも代行 (欠勤) の下書き / 登録がある
-  onAssign,
-  onClear,
+  teachers = [], // 対象日に実際に担当する講師 (隔週の A/B 解決済み)
+  subsByTeacher = {}, // 元講師 -> { substitute, status } (下書き / 登録済み)
+  onAssign, // (元講師, 代行者名, status)
+  onClear, // (元講師)
   onClose,
 }) {
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
-  const [status, setStatus] = useState(currentStatus || "confirmed");
 
-  // 多担任スロット (例: プレップ "香川·福江·川井") では「どの講師の代行か」を
-  // 明示的に選ぶ。隔週 (note partner 方式) は単一 teacher なので対象外。
+  // 多担任コマ (例: プレップ "香川·福江·川井") は**講師ごとに 1 件**なので、
+  // まず「誰の代行 / 欠勤か」を決める。単一担任ならその 1 人で固定。
   const slotTeachers = useMemo(
-    () => (isBiweekly(slot.note) ? [] : getSlotTeachers(slot)),
-    [slot]
+    () => (teachers.length > 0 ? teachers : getSlotTeachers(slot)),
+    [teachers, slot]
   );
   const isMultiTeacher = slotTeachers.length > 1;
-  const [originalTeacher, setOriginalTeacher] = useState(() =>
-    currentOriginalTeacher && slotTeachers.includes(currentOriginalTeacher)
-      ? currentOriginalTeacher
-      : isMultiTeacher
-        ? slotTeachers[0]
-        : ""
+  const [originalTeacher, setOriginalTeacher] = useState(
+    () => slotTeachers[0] || ""
   );
+  const current = subsByTeacher[originalTeacher] || null;
+  const currentSubstitute = current?.substitute || "";
+  const hasSubEntry = !!current;
+  const [statusOverride, setStatusOverride] = useState(null);
+  // 元講師を切り替えたらその人の現状に追従する (自分で触るまで)。
+  const status = statusOverride ?? current?.status ?? "confirmed";
+  const setStatus = setStatusOverride;
   // 矢印キーで選択中の候補のインデックス。-1 はリスト未フォーカス。
   // 開いた直後は何もハイライトせず、↓ を押した時点で先頭に移る挙動。
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -148,14 +148,14 @@ export function SubstitutePickerPopover({
       } else if (e.key === "Enter") {
         if (focusIdx >= 0 && focusIdx < list.length) {
           e.preventDefault();
-          onAssign(list[focusIdx], status, isMultiTeacher ? originalTeacher : undefined);
+          onAssign(originalTeacher, list[focusIdx], status);
           onClose();
         }
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [list, focusIdx, status, isMultiTeacher, originalTeacher, onAssign, onClose]);
+  }, [list, focusIdx, status, originalTeacher, onAssign, onClose]);
 
   // 矢印キーで focusIdx が画面外へ進んだら、対応する <button role="option">
   // を可視範囲へスクロール。block:"nearest" でリストが上下にバウンドするのを防ぐ。
@@ -241,8 +241,8 @@ export function SubstitutePickerPopover({
         </label>
       </div>
 
-      {/* 多担任スロット: どの講師の代行かを選ぶ (プレップ等で他講師に
-          代行表記が波及しないように originalTeacher を確定させる) */}
+      {/* 多担任コマ (プレップ等): 欠勤・代行は**講師ごとに 1 件**なので、
+          まず誰のぶんかを選ぶ。登録済みの講師にはその状態を付けて出す。 */}
       {isMultiTeacher && (
         <div
           style={{
@@ -254,14 +254,18 @@ export function SubstitutePickerPopover({
             borderBottom: "1px solid #f0f0f0",
           }}
         >
-          <span style={{ color: "#555" }}>元講師:</span>
+          <span style={{ color: "#555" }}>対象の講師:</span>
           {slotTeachers.map((t) => {
             const active = t === originalTeacher;
+            const meta = subStateMeta(subsByTeacher[t]);
             return (
               <button
                 key={t}
                 type="button"
-                onClick={() => setOriginalTeacher(t)}
+                onClick={() => {
+                  setOriginalTeacher(t);
+                  setStatusOverride(null);
+                }}
                 style={{
                   padding: "2px 8px",
                   fontSize: 11,
@@ -274,6 +278,11 @@ export function SubstitutePickerPopover({
                 }}
               >
                 {t}
+                {meta && (
+                  <span style={{ marginLeft: 3, color: meta.color, fontSize: 10 }}>
+                    ({meta.badge})
+                  </span>
+                )}
               </button>
             );
           })}
@@ -281,15 +290,23 @@ export function SubstitutePickerPopover({
       )}
 
       {/* 代行が見つかっていなくても、まず「欠勤」だけ登録できるようにする。
-          後から名前が入るまでの間もスケジュールに「代行未定」として出る。
-          すでに代行未定で登録済みなら押しても何も変わらないので出さない
+          代行を探すか (代行未定)、探さずに残りの担当者で回すか (代行なし)
+          を選ぶ。同じ状態で登録済みなら押しても変わらないので出さない
           (取り消しは下の「欠勤を取り消す」)。 */}
-      {!(hasSubEntry && !currentSubstitute) && (
-        <div style={{ padding: "6px 10px", borderBottom: "1px solid #f0f0f0" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          padding: "6px 10px",
+          borderBottom: "1px solid #f0f0f0",
+        }}
+      >
+        {subState(current) !== SUB_STATE.PENDING && (
           <button
             type="button"
             onClick={() => {
-              onAssign("", "requested", isMultiTeacher ? originalTeacher : undefined);
+              onAssign(originalTeacher, "", "requested");
               onClose();
             }}
             style={{
@@ -305,8 +322,32 @@ export function SubstitutePickerPopover({
           >
             ❗ 代行未定のまま欠勤にする
           </button>
-        </div>
-      )}
+        )}
+        {/* 「残りの担当者で回す」は複数人で担当するコマだけ。1 人担当の
+            コマで代行を立てないなら休講・回数補正の話になる。 */}
+        {isMultiTeacher && subState(current) !== SUB_STATE.NOSUB && (
+          <button
+            type="button"
+            onClick={() => {
+              onAssign(originalTeacher, "", "confirmed");
+              onClose();
+            }}
+            title="代行を立てず、このコマの残りの担当者で回す"
+            style={{
+              ...S.btn(false),
+              width: "100%",
+              fontSize: 11,
+              padding: "5px 8px",
+              color: "#8a6a20",
+              borderColor: "#d8b878",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            欠勤 (代行なし・残りの担当者で回す)
+          </button>
+        )}
+      </div>
 
       <div
         id={listboxId}
@@ -339,7 +380,7 @@ export function SubstitutePickerPopover({
                 aria-selected={isFocused}
                 type="button"
                 onClick={() => {
-                  onAssign(name, status, isMultiTeacher ? originalTeacher : undefined);
+                  onAssign(originalTeacher, name, status);
                   onClose();
                 }}
                 onMouseEnter={() => setFocusIdx(i)}
@@ -377,7 +418,7 @@ export function SubstitutePickerPopover({
           <button
             type="button"
             onClick={() => {
-              onClear();
+              onClear(originalTeacher);
               onClose();
             }}
             style={{

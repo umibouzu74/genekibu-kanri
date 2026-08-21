@@ -5,7 +5,6 @@ import {
   DAY_COLOR as DC,
   DAYS,
   gradeColor as GC,
-  SUB_STATUS,
   WEEKDAYS,
 } from "../../data";
 import {
@@ -32,6 +31,7 @@ import {
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import { describeRescheduleTarget } from "../../utils/adjustmentDisplay";
+import { subStateMeta, subTargetLabel } from "../../utils/substituteState";
 import {
   summarizeTeacherDayOff,
   teacherAwayReason,
@@ -146,15 +146,23 @@ export function MonthView({
     [teacher, slots]
   );
 
-  // 代行レコードを (date, slotId) で索引化。日 × コマのループ内で
+  // 代行レコードを (date, slotId, 元講師) で索引化。日 × コマのループ内で
   // Array.find を回さないように。
-  const subByDateSlot = useMemo(() => {
+  // **元講師まで鍵に入れる。** プレップのように 1 コマを 3 人で担当する
+  // コマは同じ (date, slotId) に複数件立つので、(date, slotId) だけだと
+  // 他人の欠勤を自分の欄に出したり、自分の欠勤を落としたりする。
+  const subByDateSlotTeacher = useMemo(() => {
     const m = new Map();
     for (const s of subs || []) {
-      m.set(`${s.date}|${s.slotId}`, s);
+      m.set(`${s.date}|${s.slotId}|${s.originalTeacher}`, s);
     }
     return m;
   }, [subs]);
+  // この講師のコマに対する、この講師自身の代行 / 欠勤レコード。
+  const subForTeacher = useCallback(
+    (ds, slotId) => subByDateSlotTeacher.get(`${ds}|${slotId}|${teacher}`) || null,
+    [subByDateSlotTeacher, teacher]
+  );
 
   // slotId → slot の逆引き。cells.map ループ内で合同ホスト・吸収先・
   // 代行元・振替元のスロットを引くのに以前は毎回 slots.find していたため、
@@ -451,7 +459,7 @@ export function MonthView({
               s.id,
               teacherAwayReason({
                 teacher,
-                sub: subByDateSlot.get(`${ds}|${s.id}`),
+                sub: subForTeacher(ds, s.id),
                 absorbed: hostByAbsorbedKey.has(`${ds}|${s.id}`),
                 rescheduledOut: rescheduleOutByKey.get(`${ds}|${s.id}`),
               }),
@@ -500,8 +508,8 @@ export function MonthView({
             sl.map((s) => {
               const gc = GC(s.grade);
               const sessionNum = sessionCountMap ? sessionCountMap.get(s.id) || 0 : 0;
-              const sub = subByDateSlot.get(`${ds}|${s.id}`);
-              const st = sub ? SUB_STATUS[sub.status] || SUB_STATUS.requested : null;
+              const sub = subForTeacher(ds, s.id);
+              const st = sub ? subStateMeta(sub) : null;
               const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
               const absorbed = hostSlotId != null;
               const hostSlot = absorbed ? slotById.get(hostSlotId) : null;
@@ -523,7 +531,7 @@ export function MonthView({
               // 一覧を見ているときに気付けない)。
               const awayNote =
                 awayReason === "absent"
-                  ? "代行未定"
+                  ? subTargetLabel(sub)
                   : awayReason === "sub"
                     ? `→ ${sub.substitute}`
                     : awayReason === "combine"
@@ -602,7 +610,7 @@ export function MonthView({
               }
               if (sub) {
                 titleParts.push(
-                  `[代行] ${sub.originalTeacher} → ${sub.substitute || "未定"} (${st.label})${sub.memo ? "\n" + sub.memo : ""}`
+                  `[代行] ${sub.originalTeacher} → ${subTargetLabel(sub)} (${st.label})${sub.memo ? "\n" + sub.memo : ""}`
                 );
               }
               if (isAdmin) titleParts.push("クリックで編集");
@@ -719,7 +727,7 @@ export function MonthView({
             externalSubsForDay.map((sub) => {
               const slot = slotById.get(sub.slotId);
               if (!slot) return null;
-              const st = SUB_STATUS[sub.status] || SUB_STATUS.requested;
+              const st = subStateMeta(sub);
               const gc = GC(slot.grade);
               const sessionNum = sessionCountMap
                 ? sessionCountMap.get(slot.id) || 0

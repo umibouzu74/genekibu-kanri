@@ -278,7 +278,7 @@ export function ExcelSection({
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
       pendingSub: pendingSubMap.get(slot.id) || null,
-      existingSub: existingSubMap.get(slot.id) || null,
+      existingSubs: existingSubMap.get(slot.id) || [],
       isSubMode,
       subDate,
       isCombineTarget: !!isCombineTarget,

@@ -299,7 +299,7 @@ describe("MonthView 欠勤 (代行未定) とカードの並び", () => {
     );
     expect(screen.getByText("代行未定")).toBeInTheDocument();
     // 「代行で休み」だと代行者が見つかったように読めるので出し分ける
-    expect(screen.getAllByText("欠 欠勤 (代行未定)")).toHaveLength(1);
+    expect(screen.getAllByText("欠 欠勤")).toHaveLength(1);
     expect(screen.queryByText("代 代行で休み")).not.toBeInTheDocument();
   });
 
@@ -382,5 +382,60 @@ describe("MonthView 欠勤 (代行未定) とカードの並び", () => {
       (b) => b.textContent
     );
     expect(times).toEqual(["17:30", "19:00", "21:00"]);
+  });
+});
+
+// 1 コマを 3 人で担当するコマ (プレップ)。同じ (日付, コマ) に複数の
+// 代行レコードが立つので、自分のぶんだけを見ないと他人の欠勤が自分の
+// カレンダーに出る / 自分の欠勤が消える (2026-08-21)。
+describe("MonthView 多担任コマの代行", () => {
+  const PREP = {
+    id: 5,
+    day: "月",
+    time: "18:30-20:00",
+    grade: "中1-3",
+    cls: "-",
+    room: "亀73",
+    subj: "英語·数学·理科",
+    teacher: "香川·福江·堀上",
+    note: "",
+  };
+  const decProps = { ...baseProps, year: 2026, month: 12, slots: [PREP] };
+  const KAGAWA_ABSENT = {
+    id: 1,
+    date: "2026-12-07",
+    slotId: 5,
+    originalTeacher: "香川",
+    substitute: "",
+    status: "requested",
+  };
+
+  it("他の講師の欠勤を自分のカレンダーに出さない", () => {
+    render(<MonthView {...decProps} subs={[KAGAWA_ABSENT]} />);
+    // 堀上のカレンダー: 香川が休むだけなので堀上は通常どおり担当
+    expect(screen.queryByText(/代行未定/)).toBeNull();
+    expect(screen.queryByText(/休み|担当なし/)).toBeNull();
+  });
+
+  it("同じコマに 2 件あっても自分のぶんを拾う", () => {
+    render(
+      <MonthView
+        {...decProps}
+        subs={[
+          KAGAWA_ABSENT,
+          {
+            id: 2,
+            date: "2026-12-07",
+            slotId: 5,
+            originalTeacher: "堀上",
+            substitute: "杉原",
+            status: "confirmed",
+          },
+        ]}
+      />
+    );
+    // 堀上のぶん (→ 杉原) が出る。香川のぶんに引きずられない
+    expect(screen.getByText("→ 杉原")).toBeTruthy();
+    expect(screen.getAllByText("代 代行で休み")).toHaveLength(1);
   });
 });

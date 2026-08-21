@@ -3,6 +3,14 @@ import { useToasts } from "./useToasts";
 import { useCrudResource } from "./useCrudResource";
 
 // Substitute (代行) の CRUD ロジック。
+//
+// status は「対応が確定したか」だけを表す。**代行者が空でも confirmed に
+// できる** — それが「代行なしで確定 (他の担当者で回す)」という状態
+// (utils/substituteState の 4 状態)。空欄を requested に丸めてしまうと
+// この状態が作れないので、丸めるのは status 自体が無いときだけ。
+function normalizeSubStatus(r) {
+  return r?.status === "confirmed" ? "confirmed" : "requested";
+}
 export function useSubsCrud({ subs, saveSubs }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: subs, save: saveSubs });
@@ -16,7 +24,7 @@ export function useSubsCrud({ subs, saveSubs }) {
         let next = subs.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
         const newRecords = f.map((r) => ({
           ...r,
-          status: r.substitute ? r.status : "requested",
+          status: normalizeSubStatus(r),
           id: next++,
           createdAt: ts,
           updatedAt: ts,
@@ -27,7 +35,7 @@ export function useSubsCrud({ subs, saveSubs }) {
         return;
       }
 
-      const normalized = { ...f, status: f.substitute ? f.status : "requested" };
+      const normalized = { ...f, status: normalizeSubStatus(f) };
       if (editSub === "new") {
         crud.add(normalized, {
           successMsg: "代行を追加しました",

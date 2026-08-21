@@ -95,13 +95,15 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
     const saveSubs = vi.fn();
     renderView({ saveSubs });
 
-    // 先生を選ぶ → 対象コマ数つきのボタンが出る
+    // 先生を選ぶ → 対象件数つきのボタンが出る
     fireEvent.click(screen.getByText("(クリックして選択)"));
     fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
     const markBtn = screen.getByRole("button", { name: /欠勤にする/ });
-    expect(markBtn.textContent).toContain("1 コマ");
+    expect(markBtn.textContent).toContain("1 件");
 
+    // ダイアログで対象コマを確認して登録
     fireEvent.click(markBtn);
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
     // 下書き 1 件 → 保存ボタンが出る (代行者が空でも件数に数える)
     fireEvent.click(screen.getByRole("button", { name: /保存/ }));
 
@@ -130,8 +132,97 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
         },
       ],
     });
-    // カードは「滝澤 ⇒ 代行未定」の 1 行 (チップは他と同じ 2 文字で「未定」)
+    // カードは「滝澤 ⇒ 代行未定」(チップは他と同じ 2 文字で「未定」)
     expect(screen.getByText("代行未定", { exact: false })).toBeTruthy();
     expect(screen.getByText("未定")).toBeTruthy();
+  });
+});
+
+// プレップのように 1 コマを 3 人で担当するコマ。ここが「1 コマ 1 件」だと
+// 2 人目の欠勤が登録できず、画面上も全員休みに見えていた (2026-08-21)。
+describe("AbsenceWorkflowView の多担任コマ (プレップ)", () => {
+  const PREP = {
+    id: 5,
+    day: "月",
+    time: "18:30-20:00",
+    grade: "中1-3",
+    cls: "-",
+    room: "亀73",
+    subj: "英語·数学·理科",
+    teacher: "香川·福江·川井",
+    note: "",
+    timetableId: 2,
+  };
+
+  function renderPrep(props = {}) {
+    return renderView({ slots: [...SLOTS, PREP], ...props });
+  }
+
+  it("2 人が休むと (コマ, 講師) の 2 件になる", () => {
+    const saveSubs = vi.fn();
+    renderPrep({ saveSubs });
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("香川", { selector: "input" }));
+    fireEvent.click(screen.getByLabelText("福江", { selector: "input" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /2 件を欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    const saved = saveSubs.mock.calls[0][0];
+    expect(
+      saved.map((r) => [r.slotId, r.originalTeacher, r.substitute]).sort()
+    ).toEqual([
+      [5, "福江", ""],
+      [5, "香川", ""],
+    ]);
+    // 出勤する川井のレコードは作らない
+    expect(saved.some((r) => r.originalTeacher === "川井")).toBe(false);
+  });
+
+  it("すでに 1 人ぶん登録済みでも、別の講師の欠勤を足せる", () => {
+    const saveSubs = vi.fn();
+    renderPrep({
+      saveSubs,
+      subs: [
+        {
+          id: 7,
+          date: MON,
+          slotId: 5,
+          originalTeacher: "香川",
+          substitute: "",
+          status: "requested",
+        },
+      ],
+    });
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("福江", { selector: "input" }));
+    // 香川は登録済みなので対象は福江の 1 件だけ
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする \(1 件\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    const saved = saveSubs.mock.calls[0][0];
+    // 既存の香川のレコードは残したまま、福江を足す
+    expect(saved.map((r) => r.originalTeacher).sort()).toEqual(["福江", "香川"]);
+  });
+
+  it("休む人だけ取消線を付け、出勤する講師はそのまま出す", () => {
+    renderPrep({
+      subs: [
+        {
+          id: 7,
+          date: MON,
+          slotId: 5,
+          originalTeacher: "香川",
+          substitute: "",
+          status: "requested",
+        },
+      ],
+    });
+    // 「香川 ⇒ 代行未定 · 福江 · 川井」
+    expect(screen.getByText("香川").style.textDecoration).toBe("line-through");
+    expect(screen.getByText("福江").style.textDecoration).not.toBe("line-through");
+    expect(screen.getByText("川井").style.textDecoration).not.toBe("line-through");
   });
 });

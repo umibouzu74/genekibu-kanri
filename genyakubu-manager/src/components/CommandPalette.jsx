@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SUB_STATUS } from "../data";
+import { subStateMeta, subTargetLabel } from "../utils/substituteState";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
@@ -95,10 +95,10 @@ export function CommandPalette({
         s.substitute?.toLowerCase().includes(q)
     );
     for (const s of matchedSubs.slice(0, 5)) {
-      const st = SUB_STATUS[s.status] || SUB_STATUS.requested;
+      const st = subStateMeta(s);
       hits.push({
         type: "sub",
-        label: `${s.date} ${s.originalTeacher} → ${s.substitute || "代行未定"}`,
+        label: `${s.date} ${s.originalTeacher} → ${subTargetLabel(s)}`,
         detail: `${st.label}${s.memo ? " / " + s.memo : ""}`,
         action: () => {
           onSelectView(views.SUBS);
