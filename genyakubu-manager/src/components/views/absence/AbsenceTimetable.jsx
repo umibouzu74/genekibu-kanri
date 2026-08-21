@@ -8,6 +8,7 @@ import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
+import { biweeklyActiveTeacher, splitTeacherField } from "../../../utils/biweekly";
 
 // ─── 欠勤ワークフロー: 時間割グリッド (直接操作 UI) ────────────
 // レイアウトは Dashboard 時間割 (ExcelGridView) と同じ Excel グリッド。
@@ -24,7 +25,7 @@ export function AbsenceTimetable({
   allSlots, // 全スロット (振替先日付の候補時間帯抽出用)
   draft, // draft.draft (useAbsenceDraft から)
   draftApi, // updateSub, clearSub, updateMove, clearMove, updateReschedule, clearReschedule, setCombine, clearCombine, updateOverride, markAdjustmentRemoved
-  existingSubs, // 既存確定代行 (date フィルタ済み)
+  existingSubs, // 既存の代行レコード (代行未定の欠勤登録も含む)
   existingAdjustments, // 既存調整 (date フィルタ前)
   removedAdjustmentIds, // Set<number> draft 上で解除マークされた adjustment id
   removedSubIds, // Set<number> draft 上で解除マークされた substitute id
@@ -203,6 +204,37 @@ export function AbsenceTimetable({
     return map;
   }, [draft, existingRescheduleBySlot]);
 
+  // draft + 既存 からの実効的な代行状態 (draft 優先)。
+  //   slotId -> { substitute, status, originalTeacher, source, id? }
+  // **代行者が空 (substitute: "") の「代行未定 = 欠勤」も含める。** 代行が
+  // 見つかる前に欠勤だけ登録できるようにしたのがこの状態で、名前が入るまで
+  // ここを見落とすと画面上「何も登録されていない」ように見える。
+  const subBySlot = useMemo(() => {
+    const map = new Map();
+    for (const ex of existingSubs || []) {
+      if (ex.date !== date) continue;
+      if (removedSubIds?.has(ex.id)) continue;
+      if (draft[ex.slotId]?.sub) continue; // draft 優先
+      map.set(ex.slotId, {
+        substitute: ex.substitute || "",
+        status: ex.status || "requested",
+        originalTeacher: ex.originalTeacher || null,
+        source: "saved",
+        id: ex.id,
+      });
+    }
+    for (const [sidStr, row] of Object.entries(draft)) {
+      if (!row.sub) continue;
+      map.set(Number(sidStr), {
+        substitute: row.sub.substitute || "",
+        status: row.sub.substitute ? row.sub.status || "confirmed" : "requested",
+        originalTeacher: row.sub.originalTeacher || null,
+        source: "draft",
+      });
+    }
+    return map;
+  }, [draft, existingSubs, removedSubIds, date]);
+
   // 表示対象 (absorbed は除外、host/移動済みは残す)
   const visibleSlots = useMemo(
     () => effectiveSlots.filter((s) => !absorbedSet.has(s.id)),
@@ -218,7 +250,9 @@ export function AbsenceTimetable({
 
       const isAbsorbed = absorbedSet.has(slot.id);
       const isHost = hostsAbsorbedMap.has(slot.id);
-      const hasSub = !!row?.sub?.substitute;
+      // 代行者が未定の「欠勤だけ登録済み」も代行あり扱い (下書き / 保存済み)。
+      const subInfo = subBySlot.get(slot.id) || null;
+      const hasSub = !!subInfo;
       const hasOverride = !!row?.override;
 
       if (isAbsorbed) {
@@ -248,12 +282,37 @@ export function AbsenceTimetable({
       } else {
         // 代行
         items.push({
-          label: hasSub ? "代行を変更…" : "代行を割り当て…",
+          label: subInfo?.substitute ? "代行を変更…" : "代行を割り当て…",
           onClick: () => {
             const anchorRect = e.target.getBoundingClientRect();
             setSubPicker({ slot, anchorRect });
           },
         });
+
+        // 代行が見つかっていなくても、欠勤だけ先に登録できるようにする
+        // (代行者が空の代行レコード = 「代行未定」)。
+        if (!hasSub) {
+          items.push({
+            label: "❗ 代行未定のまま欠勤にする",
+            onClick: () => {
+              const active = biweeklyActiveTeacher(
+                slot,
+                date,
+                biweeklyAnchors || [],
+                holidays,
+                examPeriods
+              );
+              const teachers = splitTeacherField(active);
+              draftApi.updateSub(slot.id, {
+                substitute: "",
+                status: "requested",
+                // 多担任コマは「誰の欠勤か」を決められないので、先頭を既定に
+                // しておき、必要ならピッカーで選び直してもらう。
+                ...(teachers.length > 1 ? { originalTeacher: teachers[0] } : {}),
+              });
+            },
+          });
+        }
 
         // 合同
         if (isHost) {
@@ -351,9 +410,12 @@ export function AbsenceTimetable({
 
         if (hasSub) {
           items.push({
-            label: "代行を取り消す",
+            label: subInfo.substitute ? "代行を取り消す" : "欠勤を取り消す",
             danger: true,
-            onClick: () => draftApi.clearSub(slot.id),
+            onClick: () => {
+              if (subInfo.source === "saved") draftApi.markSubRemoved(subInfo.id);
+              else draftApi.clearSub(slot.id);
+            },
           });
         }
       }
@@ -373,9 +435,14 @@ export function AbsenceTimetable({
       existingMoveBySlot,
       existingRescheduleBySlot,
       rescheduleBySlot,
+      subBySlot,
       draftApi,
       slots,
       subjects,
+      date,
+      biweeklyAnchors,
+      holidays,
+      examPeriods,
     ]
   );
 
@@ -444,27 +511,13 @@ export function AbsenceTimetable({
         ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
         : null;
 
-      // 代行: draft or 既存確定 (removedSubIds でマーク済みは表示から除外)
-      let substituteName = null;
-      let substituteStatus = null;
-      let substituteOriginalTeacher = null;
-      if (row.sub?.substitute) {
-        substituteName = row.sub.substitute;
-        substituteStatus = row.sub.status || "confirmed";
-        substituteOriginalTeacher = row.sub.originalTeacher || null;
-      } else {
-        const ex = (existingSubs || []).find(
-          (x) =>
-            x.date === date &&
-            x.slotId === s.id &&
-            !removedSubIds?.has(x.id)
-        );
-        if (ex?.substitute) {
-          substituteName = ex.substitute;
-          substituteStatus = ex.status;
-          substituteOriginalTeacher = ex.originalTeacher || null;
-        }
-      }
+      // 代行: draft or 既存 (removedSubIds でマーク済みは表示から除外)。
+      // 代行者が未定 (substitute: "") の欠勤登録もここに乗る。
+      const subInfo = subBySlot.get(s.id) || null;
+      const substituteName = subInfo?.substitute || null;
+      const substituteStatus = subInfo?.status || null;
+      const substituteOriginalTeacher = subInfo?.originalTeacher || null;
+      const substitutePending = !!subInfo && !subInfo.substitute;
 
       // 補正バッジ
       let overrideLabel = null;
@@ -547,6 +600,7 @@ export function AbsenceTimetable({
           substituteName={substituteName}
           substituteStatus={substituteStatus}
           substituteOriginalTeacher={substituteOriginalTeacher}
+          substitutePending={substitutePending}
           overrideLabel={overrideLabel}
           sessionCount={sessionCountMap?.get(s.id) || 0}
           isCombineCandidate={isCombineCandidate}
@@ -570,8 +624,7 @@ export function AbsenceTimetable({
       rescheduleBySlot,
       absentSlotIds,
       slots,
-      existingSubs,
-      removedSubIds,
+      subBySlot,
       date,
       biweeklyAnchors,
       holidays,
@@ -989,9 +1042,12 @@ export function AbsenceTimetable({
           subjects={subjects}
           teacherKana={teacherKana}
           daySlots={slots}
-          currentSubstitute={draft[subPicker.slot.id]?.sub?.substitute || ""}
-          currentStatus={draft[subPicker.slot.id]?.sub?.status || "confirmed"}
-          currentOriginalTeacher={draft[subPicker.slot.id]?.sub?.originalTeacher || ""}
+          currentSubstitute={subBySlot.get(subPicker.slot.id)?.substitute || ""}
+          currentStatus={subBySlot.get(subPicker.slot.id)?.status || "confirmed"}
+          currentOriginalTeacher={
+            subBySlot.get(subPicker.slot.id)?.originalTeacher || ""
+          }
+          hasSubEntry={subBySlot.has(subPicker.slot.id)}
           onAssign={(name, status, originalTeacher) =>
             draftApi.updateSub(subPicker.slot.id, {
               substitute: name,
@@ -999,7 +1055,11 @@ export function AbsenceTimetable({
               ...(originalTeacher ? { originalTeacher } : {}),
             })
           }
-          onClear={() => draftApi.clearSub(subPicker.slot.id)}
+          onClear={() => {
+            const info = subBySlot.get(subPicker.slot.id);
+            if (info?.source === "saved") draftApi.markSubRemoved(info.id);
+            else draftApi.clearSub(subPicker.slot.id);
+          }}
           onClose={() => setSubPicker(null)}
         />
       )}

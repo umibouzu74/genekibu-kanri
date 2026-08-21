@@ -239,15 +239,19 @@ export function useAbsenceDraft() {
   // 1 スロットが sub + move の両方を持つ場合は両方のレコードを出力する。
   // existingAdjustments を渡すと、draft で上書きされる同 slot の既存 combine/move を
   // 自動的に removedAdjustmentIds に追加する (二重保存防止)。
+  // existingSubs も同じで、同じ (日付, コマ, 元講師) の保存済み代行があれば
+  // 解除マークに回す。**これを外すと「代行未定で欠勤登録 → 後から代行を
+  // 割り当て」で 2 本のレコードが残り、画面が古い方 (未定) を拾う。**
   // biweekly ({ anchors, holidays, examPeriods }) を渡すと、隔週スロットの
   // originalTeacher を対象日の週 (A/B) に合わせて解決する。B 週は note の
   // partner を、A 週・非隔週は slot.teacher を採用する。
   const toBatchPayload = useCallback(
-    (date, slots, existingAdjustments = [], biweekly = null) => {
+    (date, slots, existingAdjustments = [], biweekly = null, existingSubs = []) => {
       const draftSubs = [];
       const draftAdjustments = [];
       const draftOverrides = [];
       const autoRemovedIds = new Set();
+      const autoRemovedSubIds = new Set();
 
       const slotById = new Map();
       for (const s of slots) slotById.set(s.id, s);
@@ -286,6 +290,12 @@ export function useAbsenceDraft() {
             status: row.sub.status || "requested",
             memo: row.sub.memo || "",
           });
+          for (const ex of existingSubs || []) {
+            if (ex.date !== date) continue;
+            if (ex.slotId !== slotId) continue;
+            if (ex.originalTeacher !== originalTeacher) continue;
+            autoRemovedSubIds.add(ex.id);
+          }
         }
 
         if (row.combine?.absorbedSlotIds?.length) {
@@ -363,12 +373,13 @@ export function useAbsenceDraft() {
       }
 
       const mergedRemoved = new Set([...removedAdjustmentIds, ...autoRemovedIds]);
+      const mergedRemovedSubs = new Set([...removedSubIds, ...autoRemovedSubIds]);
       return {
         draftSubs,
         draftAdjustments,
         draftOverrides,
         removedAdjustmentIds: [...mergedRemoved],
-        removedSubIds: [...removedSubIds],
+        removedSubIds: [...mergedRemovedSubs],
       };
     },
     [draft, removedAdjustmentIds, removedSubIds]

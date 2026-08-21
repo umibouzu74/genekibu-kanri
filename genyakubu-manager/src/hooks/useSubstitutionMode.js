@@ -124,7 +124,9 @@ export function useSubstitutionMode({
     for (const slot of dateFilteredSlots) {
       if (slot.day !== dayOfDate) continue;
       if (holidayOffSlots.has(slot.id)) continue; // cancelled, no sub needed
-      if (existingSubMap.has(slot.id)) continue; // already has sub
+      // 代行者が入っているレコードだけが「対応済み」。代行未定のまま登録した
+      // 欠勤 (substitute: "") はまさに代行を探している状態なので候補に残す。
+      if (existingSubMap.get(slot.id)?.substitute) continue;
       if (pendingSubMap.has(slot.id)) continue; // pending assignment
 
       const teachers = getSlotTeachers(slot);

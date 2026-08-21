@@ -169,6 +169,73 @@ describe("useAbsenceDraft", () => {
       expect(out.draftAdjustments[0]).not.toHaveProperty("targetTeacher");
     });
 
+    it("代行者が未定 (欠勤だけ) の下書きもレコードとして出す", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.updateSub(10, { substitute: "", status: "requested" });
+      });
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, []);
+      expect(out.draftSubs).toHaveLength(1);
+      expect(out.draftSubs[0]).toMatchObject({
+        date: DATE,
+        slotId: 10,
+        originalTeacher: "本多",
+        substitute: "",
+        status: "requested",
+      });
+    });
+
+    it("同じコマ・同じ元講師の保存済み代行は解除マークに回す (二重登録防止)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      const existingSubs = [
+        {
+          id: 42,
+          date: DATE,
+          slotId: 10,
+          originalTeacher: "本多",
+          substitute: "",
+          status: "requested",
+        },
+      ];
+      act(() => {
+        result.current.updateSub(10, { substitute: "藤田", status: "confirmed" });
+      });
+      const out = result.current.toBatchPayload(
+        DATE,
+        SAMPLE_SLOTS,
+        [],
+        null,
+        existingSubs
+      );
+      expect(out.draftSubs[0].substitute).toBe("藤田");
+      expect(out.removedSubIds).toContain(42);
+    });
+
+    it("別の講師の代行レコードは解除しない (多担任コマ)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      const existingSubs = [
+        {
+          id: 43,
+          date: DATE,
+          slotId: 10,
+          originalTeacher: "香川",
+          substitute: "",
+          status: "requested",
+        },
+      ];
+      act(() => {
+        result.current.updateSub(10, { substitute: "藤田", status: "confirmed" });
+      });
+      const out = result.current.toBatchPayload(
+        DATE,
+        SAMPLE_SLOTS,
+        [],
+        null,
+        existingSubs
+      );
+      expect(out.removedSubIds).not.toContain(43);
+    });
+
     it("auto-marks existing reschedule for the same slot as removed", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       const existing = [

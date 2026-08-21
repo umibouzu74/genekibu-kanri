@@ -183,6 +183,26 @@ export function ExcelGridView({
     setUnavailableTeachers(new Set());
   }, [selectedDay]);
 
+  // 代行モードに入ったら、その日に「代行未定」で登録済みの欠勤を欠勤先生の
+  // 選択に取り込む (欠勤登録 → 代行探しの連動)。代行者の入っているコマは
+  // 対応済みなので触らない。
+  // subs を依存に入れないのは、代行を 1 件保存するたびに再実行され、手で
+  // 外した先生が戻ってしまうため (日付が変わったときだけ取り込む)。
+  const subModeDate = subMode.subDate;
+  useEffect(() => {
+    if (!subModeDate) return;
+    const pending = (subs || []).filter(
+      (s) => s.date === subModeDate && !s.substitute && s.originalTeacher
+    );
+    if (pending.length === 0) return;
+    setUnavailableTeachers((prev) => {
+      const next = new Set(prev);
+      for (const s of pending) next.add(s.originalTeacher);
+      return next.size === prev.size ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 日付が変わったときだけ取り込む
+  }, [subModeDate]);
+
   const toggleTeacher = useCallback((name) => {
     setUnavailableTeachers((prev) => {
       const next = new Set(prev);

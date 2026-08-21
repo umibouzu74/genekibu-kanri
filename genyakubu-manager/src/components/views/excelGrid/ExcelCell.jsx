@@ -151,16 +151,29 @@ export const ExcelCell = memo(function ExcelCell({
         ← {pendingSub.substitute}
       </div>
     );
-  } else if (existingSub && existingSub.substitute) {
-    bg = "#e8f0ff";
-    borderLeft = "3px solid #3a6ea5";
-    badges.push(mkBadge("#3a6ea5", "代", "sub"));
+  } else if (existingSub) {
+    // 代行者が未定のまま登録した欠勤 (substitute: "") も必ず出す。
+    // ここで落とすと、代行が見つかるまで時間割上は通常授業に見えてしまう。
+    const pendingAbsence = !existingSub.substitute;
+    const tone = pendingAbsence ? "#c03030" : "#3a6ea5";
+    bg = pendingAbsence ? "#fff0f0" : "#e8f0ff";
+    borderLeft = `3px solid ${tone}`;
+    badges.push(
+      mkBadge(
+        tone,
+        pendingAbsence ? "欠" : "代",
+        "sub",
+        pendingAbsence
+          ? `${existingSub.originalTeacher} 欠勤 (代行未定)`
+          : `${existingSub.originalTeacher} → ${existingSub.substitute}`
+      )
+    );
     teacherColor = "#888";
     teacherDecor = "line-through";
     partialStrikeOriginal = existingSub.originalTeacher || null;
     subDisplay = (
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#3a6ea5", marginTop: 1 }}>
-        ← {existingSub.substitute}
+      <div style={{ fontSize: 12, fontWeight: 800, color: tone, marginTop: 1 }}>
+        {pendingAbsence ? "代行未定" : `← ${existingSub.substitute}`}
       </div>
     );
   } else if (isUnavailable) {
@@ -175,7 +188,7 @@ export const ExcelCell = memo(function ExcelCell({
   if (!isHolidayOff) {
     if (absorbed) {
       // 合同で吸収された側: 既存の sub 背景がなければ紫で塗って line-through
-      if (!pendingSub && !existingSub?.substitute) {
+      if (!pendingSub && !existingSub) {
         bg = ADJ_COLOR.combine.bg;
         borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
         teacherColor = "#888";

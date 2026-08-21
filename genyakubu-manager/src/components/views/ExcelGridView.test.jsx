@@ -229,6 +229,33 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
 // ─── 全曜日まとめ印刷 ────────────────────────────────────────────────
 // 曜日タブ右の「🖨 全曜日」。コマのある曜日を順に描画してスナップショット
 // した HTML を popup へ書き出す (popup 生成は utils/printWindow)。
+describe("ExcelGridView (欠勤・代行の表示)", () => {
+  const SUB = {
+    id: 1,
+    date: MONDAY,
+    slotId: 1,
+    originalTeacher: "田中",
+    substitute: "",
+    status: "requested",
+  };
+
+  it("代行者が未定の欠勤も「欠」バッジ + 代行未定で出す", () => {
+    renderGrid({ slots: [slot({})], subs: [SUB] });
+    expect(screen.getByText("欠")).toBeTruthy();
+    expect(screen.getByText("代行未定")).toBeTruthy();
+  });
+
+  it("代行者が決まっていれば従来どおり「代」バッジ + 代行者名", () => {
+    renderGrid({
+      slots: [slot({})],
+      subs: [{ ...SUB, substitute: "佐藤", status: "confirmed" }],
+    });
+    expect(screen.getByText("代")).toBeTruthy();
+    expect(screen.getByText("← 佐藤")).toBeTruthy();
+    expect(screen.queryByText("代行未定")).toBeNull();
+  });
+});
+
 describe("ExcelGridView (全曜日まとめ印刷)", () => {
   // popup の代わり。document.write された HTML を溜めて検証する。
   function fakeWindow() {

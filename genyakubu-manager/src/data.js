@@ -26,6 +26,7 @@ export {
   monthlyTally,
   staffMonthlyWorkDates,
   staffMonthlyAbsenceDates,
+  staffMonthlyPendingAbsenceDates,
   staffMonthlyRegularDates,
 } from "./utils/staffHelpers";
 

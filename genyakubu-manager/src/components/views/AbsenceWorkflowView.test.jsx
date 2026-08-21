@@ -3,7 +3,7 @@
 // 曜日だけで絞っていた頃は、期切替で残してある旧期の時間割のコマが重なり、
 // 同じクラスが 2 重・3 重に並んでいた (2026-08-20)。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AbsenceWorkflowView } from "./AbsenceWorkflowView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -87,5 +87,49 @@ describe("AbsenceWorkflowView のコマ絞り込み", () => {
     });
     expect(screen.getByText(/開講前/)).toBeTruthy();
     expect(screen.queryByText("理科")).toBeNull();
+  });
+});
+
+describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
+  it("欠勤する先生を選ぶと「欠勤にする」で代行未定の下書きを作れる", () => {
+    const saveSubs = vi.fn();
+    renderView({ saveSubs });
+
+    // 先生を選ぶ → 対象コマ数つきのボタンが出る
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    const markBtn = screen.getByRole("button", { name: /欠勤にする/ });
+    expect(markBtn.textContent).toContain("1 コマ");
+
+    fireEvent.click(markBtn);
+    // 下書き 1 件 → 保存ボタンが出る (代行者が空でも件数に数える)
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(saveSubs).toHaveBeenCalledTimes(1);
+    const saved = saveSubs.mock.calls[0][0];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      date: MON,
+      slotId: 2,
+      originalTeacher: "滝澤",
+      substitute: "",
+      status: "requested",
+    });
+  });
+
+  it("登録済みの欠勤はグリッドに「代行未定」として出る", () => {
+    renderView({
+      subs: [
+        {
+          id: 3,
+          date: MON,
+          slotId: 2,
+          originalTeacher: "滝澤",
+          substitute: "",
+          status: "requested",
+        },
+      ],
+    });
+    expect(screen.getByText("代行未定")).toBeTruthy();
   });
 });

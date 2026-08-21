@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canCombineSlots,
+  collectAbsenceTargets,
   findCombineCandidates,
   getAbsenceDaySlots,
   getAbsentSlotIds,
@@ -186,5 +187,121 @@ describe("getAbsenceDaySlots", () => {
   it("date / dayName が無ければ空", () => {
     expect(getAbsenceDaySlots(slots, "", "月", {})).toEqual([]);
     expect(getAbsenceDaySlots(slots, "2026-09-21", null, {})).toEqual([]);
+  });
+});
+
+describe("collectAbsenceTargets", () => {
+  // 2026-09-25 は金曜。
+  const DATE = "2026-09-25";
+  const daySlots = [
+    mk(1, { teacher: "河野" }),
+    mk(2, { teacher: "堀上", time: "20:30-21:50" }),
+    mk(3, { teacher: "香川·福江", subj: "英語", time: "17:00-18:20" }),
+  ];
+
+  it("欠勤の先生が担当するコマだけを対象にする", () => {
+    const { targets } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野"],
+    });
+    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+  });
+
+  it("多担任コマは欠勤する本人を元講師にする", () => {
+    const { targets } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["福江"],
+    });
+    expect(targets).toEqual([{ slotId: 3, teacher: "福江" }]);
+  });
+
+  it("休講・テスト期間のコマは理由つきで外す", () => {
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野"],
+      ctx: { isOffForGrade: () => true },
+    });
+    expect(targets).toEqual([]);
+    expect(skipped.map((x) => [x.slot.id, x.reason])).toEqual([
+      [1, "休講・テスト期間"],
+    ]);
+  });
+
+  it("すでに代行・欠勤が登録されているコマは外す", () => {
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野"],
+      existingSubs: [
+        { id: 9, date: DATE, slotId: 1, originalTeacher: "河野", substitute: "" },
+      ],
+    });
+    expect(targets).toEqual([]);
+    expect(skipped.map((x) => x.reason)).toEqual(["登録済み"]);
+  });
+
+  it("解除マーク済みの代行は「未登録」として扱う", () => {
+    const { targets } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野"],
+      existingSubs: [
+        { id: 9, date: DATE, slotId: 1, originalTeacher: "河野", substitute: "" },
+      ],
+      removedSubIds: new Set([9]),
+    });
+    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+  });
+
+  it("下書きで振替・合同にしたコマは外す", () => {
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野", "堀上"],
+      draft: {
+        1: { reschedule: { targetDate: "2026-09-28" } },
+        2: { absorbedBy: 1 },
+      },
+    });
+    expect(targets).toEqual([]);
+    expect(skipped.map((x) => x.reason).sort()).toEqual([
+      "合同で対応済み",
+      "振替で対応済み",
+    ]);
+  });
+
+  it("隔週コマは担当していない週なら対象外", () => {
+    const anchors = [{ date: "2026-09-25", weekType: "A" }];
+    const slots = [
+      mk(5, { teacher: "河野", note: "隔週(堀上)" }),
+    ];
+    // A 週 = 講師欄の河野が担当。堀上は今週いない。
+    const forPartner = collectAbsenceTargets({
+      slots,
+      date: DATE,
+      teachers: ["堀上"],
+      ctx: { biweeklyAnchors: anchors },
+    });
+    expect(forPartner.targets).toEqual([]);
+    expect(forPartner.skipped.map((x) => x.reason)).toEqual([
+      "この週は担当しない (隔週)",
+    ]);
+    const forMain = collectAbsenceTargets({
+      slots,
+      date: DATE,
+      teachers: ["河野"],
+      ctx: { biweeklyAnchors: anchors },
+    });
+    expect(forMain.targets).toEqual([{ slotId: 5, teacher: "河野" }]);
+  });
+
+  it("先生未選択なら何も返さない", () => {
+    expect(collectAbsenceTargets({ slots: daySlots, date: DATE, teachers: [] })).toEqual({
+      targets: [],
+      skipped: [],
+    });
   });
 });

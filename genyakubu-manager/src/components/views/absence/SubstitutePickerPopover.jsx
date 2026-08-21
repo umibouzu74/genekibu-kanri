@@ -14,6 +14,11 @@ import {
 // ─── 代行ピッカーポップオーバー ───────────────────────────────
 // 欠勤組み換え UI 用の簡易ピッカー。
 // 指定コマの教科に担当可能な先生を優先表示し、"全員表示" で常勤含め全員から選べる。
+//
+// 代行者が見つかっていなくても「代行未定のまま欠勤にする」で登録できる。
+// これは代行者が空の代行レコード (status: "requested") になり、
+// スケジュール各画面には「代行未定」として出る。後から名前が入るだけなので、
+// **欠勤のための別モデルは作らない** (utils/absenceHelpers.collectAbsenceTargets)。
 
 function computePosition(anchorRect) {
   const popoverWidth = Math.min(280, window.innerWidth - 16);
@@ -44,6 +49,7 @@ export function SubstitutePickerPopover({
   currentSubstitute,
   currentStatus,
   currentOriginalTeacher,
+  hasSubEntry, // 代行者が未定でも代行 (欠勤) の下書き / 登録がある
   onAssign,
   onClear,
   onClose,
@@ -274,6 +280,30 @@ export function SubstitutePickerPopover({
         </div>
       )}
 
+      {/* 代行が見つかっていなくても、まず「欠勤」だけ登録できるようにする。
+          後から名前が入るまでの間もスケジュールに「代行未定」として出る。 */}
+      <div style={{ padding: "6px 10px", borderBottom: "1px solid #f0f0f0" }}>
+        <button
+          type="button"
+          onClick={() => {
+            onAssign("", "requested", isMultiTeacher ? originalTeacher : undefined);
+            onClose();
+          }}
+          style={{
+            ...S.btn(false),
+            width: "100%",
+            fontSize: 11,
+            padding: "5px 8px",
+            color: colors.danger,
+            borderColor: colors.danger,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          ❗ 代行未定のまま欠勤にする
+        </button>
+      </div>
+
       <div
         id={listboxId}
         role="listbox"
@@ -331,7 +361,7 @@ export function SubstitutePickerPopover({
         )}
       </div>
 
-      {currentSubstitute && onClear && (
+      {(currentSubstitute || hasSubEntry) && onClear && (
         <div
           style={{
             padding: "6px 10px",
@@ -353,7 +383,7 @@ export function SubstitutePickerPopover({
               color: colors.danger,
             }}
           >
-            代行を解除
+            {currentSubstitute ? "代行を解除" : "欠勤を取り消す"}
           </button>
         </div>
       )}

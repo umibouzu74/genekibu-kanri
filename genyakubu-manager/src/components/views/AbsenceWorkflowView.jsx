@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, dateToDay, sortSlots as sortS, DAY_COLOR as DC } from "../../data";
 import { S } from "../../styles/common";
+import { colors } from "../../styles/tokens";
 import { getSlotTeachers } from "../../utils/biweekly";
 import { sortTeacherNames } from "../../utils/teacherKana";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
@@ -10,7 +11,11 @@ import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
-import { getAbsenceDaySlots, getAbsentSlotIds } from "../../utils/absenceHelpers";
+import {
+  collectAbsenceTargets,
+  getAbsenceDaySlots,
+  getAbsentSlotIds,
+} from "../../utils/absenceHelpers";
 import { getCutoffGroupLabelsWithSlots, getDayCutoffKind } from "../../utils/timetable";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 
@@ -258,11 +263,64 @@ export function AbsenceWorkflowView({
     []
   );
 
+  // 「選択した先生を欠勤にする」の対象 (代行者が空の代行レコードを作る)。
+  // 対象から外したコマは理由つきで画面に出す (黙って減らさない)。
+  const absenceTargets = useMemo(
+    () =>
+      collectAbsenceTargets({
+        slots: daySlots,
+        date,
+        teachers: selectedTeachers,
+        ctx: {
+          biweeklyAnchors: biweeklyAnchors || [],
+          holidays: holidays || [],
+          examPeriods: examPeriods || [],
+          isOffForGrade,
+        },
+        draft: draft.draft,
+        existingSubs: subs,
+        removedSubIds: draft.removedSubIds,
+      }),
+    [
+      daySlots,
+      date,
+      selectedTeachers,
+      biweeklyAnchors,
+      holidays,
+      examPeriods,
+      isOffForGrade,
+      draft.draft,
+      draft.removedSubIds,
+      subs,
+    ]
+  );
+
+  const handleMarkAbsent = useCallback(() => {
+    const { targets, skipped } = absenceTargets;
+    if (targets.length === 0) {
+      toasts.error("欠勤にできるコマがありません");
+      return;
+    }
+    for (const t of targets) {
+      draft.updateSub(t.slotId, {
+        substitute: "",
+        status: "requested",
+        originalTeacher: t.teacher,
+      });
+    }
+    const skippedNote = skipped.length ? ` (${skipped.length} コマは対象外)` : "";
+    toasts.success(
+      `${targets.length} コマを欠勤 (代行未定) の下書きにしました${skippedNote}`
+    );
+  }, [absenceTargets, draft, toasts]);
+
   // 下書きの件数カウント (保存ボタン表示用)
   const draftCount = useMemo(() => {
     let c = 0;
     for (const row of Object.values(draft.draft)) {
-      if (row.sub?.substitute) c++;
+      // 代行者が未定の「欠勤だけ」の下書きも 1 件として数える
+      // (数えないと保存ボタンが出ず、登録したつもりが消える)。
+      if (row.sub) c++;
       if (row.combine?.absorbedSlotIds?.length) c++;
       if (row.move?.targetTime) c++;
       if (row.reschedule?.targetDate) c++;
@@ -320,11 +378,17 @@ export function AbsenceWorkflowView({
       draftOverrides,
       removedAdjustmentIds,
       removedSubIds,
-    } = draft.toBatchPayload(date, slots, adjustments || [], {
-      anchors: biweeklyAnchors || [],
-      holidays: holidays || [],
-      examPeriods: examPeriods || [],
-    });
+    } = draft.toBatchPayload(
+      date,
+      slots,
+      adjustments || [],
+      {
+        anchors: biweeklyAnchors || [],
+        holidays: holidays || [],
+        examPeriods: examPeriods || [],
+      },
+      subs || []
+    );
     if (
       draftSubs.length === 0 &&
       draftAdjustments.length === 0 &&
@@ -350,7 +414,13 @@ export function AbsenceWorkflowView({
         saveSessionOverrides,
       });
       const parts = [];
-      if (res.added.subs) parts.push(`代行 ${res.added.subs} 件`);
+      if (res.added.subs) {
+        // 代行者が決まっている分と「代行未定 (欠勤のみ)」を出し分ける。
+        const pending = draftSubs.filter((r) => !r.substitute).length;
+        const assigned = res.added.subs - pending;
+        if (assigned) parts.push(`代行 ${assigned} 件`);
+        if (pending) parts.push(`欠勤 (代行未定) ${pending} 件`);
+      }
       if (res.added.adjustments) parts.push(`調整 ${res.added.adjustments} 件`);
       if (res.added.overrides) parts.push(`回数補正 ${res.added.overrides} 件`);
       if (res.added.removed) parts.push(`調整解除 ${res.added.removed} 件`);
@@ -461,6 +531,39 @@ export function AbsenceWorkflowView({
             </div>
           )}
         </div>
+        {/* 代行が見つかっていなくても、まず欠勤だけ登録しておけるようにする。
+            作られるのは代行者が空の代行レコード (依頼中) なので、代行が
+            決まったら同じコマに名前を入れるだけでよい。 */}
+        {selectedTeachers.length > 0 && (
+          <button
+            type="button"
+            onClick={handleMarkAbsent}
+            disabled={absenceTargets.targets.length === 0}
+            title={
+              absenceTargets.skipped.length > 0
+                ? `対象外: ${absenceTargets.skipped
+                    .map(
+                      (x) =>
+                        `${x.slot.time} ${x.slot.grade}${
+                          x.slot.cls && x.slot.cls !== "-" ? x.slot.cls : ""
+                        } — ${x.reason}`
+                    )
+                    .join("\n")}`
+                : "選択した先生のコマを「代行未定」の欠勤として下書きします"
+            }
+            style={{
+              ...S.btn(false),
+              cursor: absenceTargets.targets.length === 0 ? "not-allowed" : "pointer",
+              color:
+                absenceTargets.targets.length === 0 ? "#aaa" : colors.danger,
+              borderColor:
+                absenceTargets.targets.length === 0 ? "#ddd" : colors.danger,
+              fontWeight: 700,
+            }}
+          >
+            ❗ 欠勤にする ({absenceTargets.targets.length} コマ)
+          </button>
+        )}
       </div>
 
       {/* 表示期間外の日: 「開講前」と「終講後 (未確定)」は必ず出し分ける */}

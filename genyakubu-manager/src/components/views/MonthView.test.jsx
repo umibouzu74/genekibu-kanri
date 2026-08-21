@@ -250,3 +250,80 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.queryByText("振")).not.toBeInTheDocument();
   });
 });
+
+// 2026-12-07 は月曜。
+describe("MonthView 欠勤 (代行未定) とカードの並び", () => {
+  const SLOT = {
+    id: 1,
+    day: "月",
+    time: "19:00-20:20",
+    grade: "中3",
+    cls: "S",
+    room: "602",
+    subj: "数学",
+    teacher: "堀上",
+    note: "",
+  };
+  const decProps = { ...baseProps, year: 2026, month: 12, slots: [SLOT] };
+
+  it("代行者が未定の欠勤も「代行未定」として出す", () => {
+    render(
+      <MonthView
+        {...decProps}
+        subs={[
+          {
+            id: 5,
+            date: "2026-12-07",
+            slotId: 1,
+            originalTeacher: "堀上",
+            substitute: "",
+            status: "requested",
+          },
+        ]}
+      />
+    );
+    expect(screen.getByText("代行未定")).toBeInTheDocument();
+    // 「代行で休み」だと代行者が見つかったように読めるので出し分ける
+    expect(screen.getAllByText("欠 欠勤 (代行未定)")).toHaveLength(1);
+    expect(screen.queryByText("代 代行で休み")).not.toBeInTheDocument();
+  });
+
+  it("1 日のカードは種類をまたいで開始時刻順に並べる", () => {
+    const other = { ...SLOT, id: 3, teacher: "河野", time: "17:30-18:50" };
+    const { container } = render(
+      <MonthView
+        {...decProps}
+        slots={[SLOT, other]}
+        extraLessons={[
+          {
+            id: 7,
+            date: "2026-12-07",
+            time: "21:00-21:45",
+            grade: "中3",
+            cls: "S",
+            subj: "確認テスト",
+            teacher: "堀上",
+          },
+        ]}
+        subs={[
+          {
+            id: 6,
+            date: "2026-12-07",
+            slotId: 3,
+            originalTeacher: "河野",
+            substitute: "堀上",
+            status: "confirmed",
+          },
+        ]}
+      />
+    );
+    // 12/7 のセルに 3 枚 (代行 17:30 / 通常 19:00 / 追加授業 21:00)。
+    // 種類ごとに固めると 17:30 の代行が最後に来てしまう。
+    const cells = [...container.querySelectorAll(".month-print-cell")];
+    const dec7 = cells.find((c) => c.textContent.startsWith("7"));
+    const times = [...dec7.querySelectorAll(".month-print-card b")].map(
+      (b) => b.textContent
+    );
+    expect(times).toEqual(["17:30", "19:00", "21:00"]);
+  });
+});

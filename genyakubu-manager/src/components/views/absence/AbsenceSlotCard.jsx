@@ -30,6 +30,7 @@ export function AbsenceSlotCard({
   substituteName, // 代行済みなら代行者名。未設定なら null
   substituteStatus, // "confirmed" | "requested"
   substituteOriginalTeacher, // 多担任スロットで代行対象の元講師 (1 名)。なければ null
+  substitutePending, // 欠勤登録だけ済み (代行者は未定)
 
   overrideLabel, // 補正バッジ文字列 (例: "第4回 補正" / "カウント外")
   sessionCount, // 回数 (override 反映後)
@@ -157,7 +158,7 @@ export function AbsenceSlotCard({
       }}
     >
       {/* 状態バッジ (右上) */}
-      {(isMoved || isCombineHost || substituteName || isRescheduled) && (
+      {(isMoved || isCombineHost || substituteName || substitutePending || isRescheduled) && (
         <div
           style={{
             position: "absolute",
@@ -176,10 +177,16 @@ export function AbsenceSlotCard({
           {isCombineHost && (
             <BadgeChip color="#c08020" label="合同" />
           )}
-          {substituteName && (
+          {(substituteName || substitutePending) && (
             <BadgeChip
               color={substituteStatus === "confirmed" ? colors.success : colors.danger}
-              label={substituteStatus === "confirmed" ? "代行" : "依頼"}
+              label={
+                substitutePending
+                  ? "代行未定"
+                  : substituteStatus === "confirmed"
+                    ? "代行"
+                    : "依頼"
+              }
             />
           )}
         </div>
@@ -249,10 +256,10 @@ export function AbsenceSlotCard({
           fontSize: 14,
           fontWeight: 800,
           marginTop: 2,
-          color: substituteName ? colors.danger : "#1a1a2e",
+          color: substituteName || substitutePending ? colors.danger : "#1a1a2e",
         }}
       >
-        {substituteName ? (
+        {substituteName || substitutePending ? (
           <>
             {(() => {
               // 多担任スロット (プレップ等) で代行対象が 1 名に特定できる場合は、
@@ -279,7 +286,7 @@ export function AbsenceSlotCard({
               return formatBiweeklyTeacher(slot.teacher, slot.note);
             })()}
             <span style={{ margin: "0 2px" }}>⇒</span>
-            {substituteName}
+            {substituteName || "代行未定"}
           </>
         ) : (
           formatBiweeklyTeacher(slot.teacher, slot.note)
