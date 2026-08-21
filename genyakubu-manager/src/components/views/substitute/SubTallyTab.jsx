@@ -48,7 +48,7 @@ export function SubTallyTab({
           style={{ ...S.input, width: "auto" }}
         />
         <span style={{ fontSize: 11, color: "#888" }}>
-          ※ 依頼中のレコードは集計対象外
+          ※ 件数は確定した代行のみ (依頼中・代行未定は対象外)
         </span>
       </div>
       <div

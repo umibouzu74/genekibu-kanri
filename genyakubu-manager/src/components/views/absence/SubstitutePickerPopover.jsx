@@ -281,28 +281,32 @@ export function SubstitutePickerPopover({
       )}
 
       {/* 代行が見つかっていなくても、まず「欠勤」だけ登録できるようにする。
-          後から名前が入るまでの間もスケジュールに「代行未定」として出る。 */}
-      <div style={{ padding: "6px 10px", borderBottom: "1px solid #f0f0f0" }}>
-        <button
-          type="button"
-          onClick={() => {
-            onAssign("", "requested", isMultiTeacher ? originalTeacher : undefined);
-            onClose();
-          }}
-          style={{
-            ...S.btn(false),
-            width: "100%",
-            fontSize: 11,
-            padding: "5px 8px",
-            color: colors.danger,
-            borderColor: colors.danger,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          ❗ 代行未定のまま欠勤にする
-        </button>
-      </div>
+          後から名前が入るまでの間もスケジュールに「代行未定」として出る。
+          すでに代行未定で登録済みなら押しても何も変わらないので出さない
+          (取り消しは下の「欠勤を取り消す」)。 */}
+      {!(hasSubEntry && !currentSubstitute) && (
+        <div style={{ padding: "6px 10px", borderBottom: "1px solid #f0f0f0" }}>
+          <button
+            type="button"
+            onClick={() => {
+              onAssign("", "requested", isMultiTeacher ? originalTeacher : undefined);
+              onClose();
+            }}
+            style={{
+              ...S.btn(false),
+              width: "100%",
+              fontSize: 11,
+              padding: "5px 8px",
+              color: colors.danger,
+              borderColor: colors.danger,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            ❗ 代行未定のまま欠勤にする
+          </button>
+        </div>
+      )}
 
       <div
         id={listboxId}

@@ -209,6 +209,8 @@ describe("useAbsenceDraft", () => {
       );
       expect(out.draftSubs[0].substitute).toBe("藤田");
       expect(out.removedSubIds).toContain(42);
+      // 付け替えであって「解除」ではない (保存メッセージで数えない)
+      expect(out.replacedSubIds).toEqual([42]);
     });
 
     it("別の講師の代行レコードは解除しない (多担任コマ)", () => {

@@ -130,6 +130,8 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
         },
       ],
     });
-    expect(screen.getByText("代行未定")).toBeTruthy();
+    // カードは「滝澤 ⇒ 代行未定」の 1 行 (チップは他と同じ 2 文字で「未定」)
+    expect(screen.getByText("代行未定", { exact: false })).toBeTruthy();
+    expect(screen.getByText("未定")).toBeTruthy();
   });
 });

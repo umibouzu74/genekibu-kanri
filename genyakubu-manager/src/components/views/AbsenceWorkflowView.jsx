@@ -146,9 +146,15 @@ export function AbsenceWorkflowView({
   );
 
   // 欠勤先生が担当するコマ集合 (赤枠表示用)。対象は画面に出ているコマだけ。
+  // 隔週は担当週 (A/B) を解いてから判定する ("欠勤にする" の対象と同じ判定)。
   const absentSlotIds = useMemo(
-    () => getAbsentSlotIds(daySlots, dayName, selectedTeachers),
-    [daySlots, dayName, selectedTeachers]
+    () =>
+      getAbsentSlotIds(daySlots, date, selectedTeachers, {
+        biweeklyAnchors: biweeklyAnchors || [],
+        holidays: holidays || [],
+        examPeriods: examPeriods || [],
+      }),
+    [daySlots, date, selectedTeachers, biweeklyAnchors, holidays, examPeriods]
   );
 
   // ドラフト反映済みの回数 map
@@ -280,6 +286,8 @@ export function AbsenceWorkflowView({
         draft: draft.draft,
         existingSubs: subs,
         removedSubIds: draft.removedSubIds,
+        existingAdjustments: adjustments,
+        removedAdjustmentIds: draft.removedAdjustmentIds,
       }),
     [
       daySlots,
@@ -291,7 +299,9 @@ export function AbsenceWorkflowView({
       isOffForGrade,
       draft.draft,
       draft.removedSubIds,
+      draft.removedAdjustmentIds,
       subs,
+      adjustments,
     ]
   );
 
@@ -378,6 +388,7 @@ export function AbsenceWorkflowView({
       draftOverrides,
       removedAdjustmentIds,
       removedSubIds,
+      replacedSubIds,
     } = draft.toBatchPayload(
       date,
       slots,
@@ -424,7 +435,12 @@ export function AbsenceWorkflowView({
       if (res.added.adjustments) parts.push(`調整 ${res.added.adjustments} 件`);
       if (res.added.overrides) parts.push(`回数補正 ${res.added.overrides} 件`);
       if (res.added.removed) parts.push(`調整解除 ${res.added.removed} 件`);
-      if (res.added.removedSubs) parts.push(`代行解除 ${res.added.removedSubs} 件`);
+      // 付け替え (欠勤 → 代行) で消えた分は「解除」に数えない。
+      const removedOnly = Math.max(
+        0,
+        res.added.removedSubs - (replacedSubIds?.length || 0)
+      );
+      if (removedOnly) parts.push(`代行解除 ${removedOnly} 件`);
       toasts.success(`保存しました (${parts.join(" / ")})`);
       draft.reset();
     } catch (err) {
@@ -541,12 +557,13 @@ export function AbsenceWorkflowView({
             disabled={absenceTargets.targets.length === 0}
             title={
               absenceTargets.skipped.length > 0
-                ? `対象外: ${absenceTargets.skipped
+                ? // 日まるごと振替の「対象外のコマ」と同じ書き方に揃える
+                  `対象外のコマ:\n${absenceTargets.skipped
                     .map(
                       (x) =>
                         `${x.slot.time} ${x.slot.grade}${
                           x.slot.cls && x.slot.cls !== "-" ? x.slot.cls : ""
-                        } — ${x.reason}`
+                        } ${x.slot.subj} — ${x.reason}`
                     )
                     .join("\n")}`
                 : "選択した先生のコマを「代行未定」の欠勤として下書きします"

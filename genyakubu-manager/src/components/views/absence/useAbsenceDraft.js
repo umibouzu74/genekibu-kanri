@@ -380,6 +380,9 @@ export function useAbsenceDraft() {
         draftOverrides,
         removedAdjustmentIds: [...mergedRemoved],
         removedSubIds: [...mergedRemovedSubs],
+        // 「解除」ではなく draft で置き換わった分 (欠勤 → 代行の付け替え)。
+        // 保存メッセージで解除件数と混ぜないために分けて返す。
+        replacedSubIds: [...autoRemovedSubIds],
       };
     },
     [draft, removedAdjustmentIds, removedSubIds]

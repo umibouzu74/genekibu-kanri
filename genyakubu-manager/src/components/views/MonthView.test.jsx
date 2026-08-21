@@ -288,6 +288,48 @@ describe("MonthView 欠勤 (代行未定) とカードの並び", () => {
     expect(screen.queryByText("代 代行で休み")).not.toBeInTheDocument();
   });
 
+  it("特訓シフトのカードも時系列の中に並ぶ", () => {
+    render(
+      <MonthView
+        {...decProps}
+        examPeriods={[
+          {
+            id: 1,
+            name: "2学期期末",
+            startDate: "2026-12-07",
+            endDate: "2026-12-11",
+            targetGrades: [],
+            // 授業は続く扱い (高校テスト等)。通常コマと特訓の並びを見たい。
+            stopsClasses: false,
+          },
+        ]}
+        examPrepSchedules={[
+          {
+            examPeriodId: 1,
+            days: [
+              {
+                date: "2026-12-07",
+                periods: [
+                  { no: 1, start: "14:00", end: "15:00" },
+                  { no: 2, start: "15:10", end: "16:10" },
+                ],
+                assignments: { 堀上: [1, 2] },
+              },
+            ],
+          },
+        ]}
+      />
+    );
+    expect(screen.getByText("特訓")).toBeTruthy();
+    // 14:00 開始なので 19:00 の通常コマより前
+    const cells = [...document.querySelectorAll(".month-print-cell")];
+    const dec7 = cells.find((c) => c.textContent.startsWith("7"));
+    const times = [...dec7.querySelectorAll(".month-print-card b")].map(
+      (b) => b.textContent
+    );
+    expect(times).toEqual(["14:00", "19:00"]);
+  });
+
   it("1 日のカードは種類をまたいで開始時刻順に並べる", () => {
     const other = { ...SLOT, id: 3, teacher: "河野", time: "17:30-18:50" };
     const { container } = render(

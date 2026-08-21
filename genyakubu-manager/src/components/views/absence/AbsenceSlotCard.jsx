@@ -180,9 +180,11 @@ export function AbsenceSlotCard({
           {(substituteName || substitutePending) && (
             <BadgeChip
               color={substituteStatus === "confirmed" ? colors.success : colors.danger}
+              // 他のチップ (振替/移動/合同/代行/依頼) と同じ 2 文字に揃える。
+              // 「代行未定」はカード本文 (◯◯ ⇒ 代行未定) に出る。
               label={
                 substitutePending
-                  ? "代行未定"
+                  ? "未定"
                   : substituteStatus === "confirmed"
                     ? "代行"
                     : "依頼"

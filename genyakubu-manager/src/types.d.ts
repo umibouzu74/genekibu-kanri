@@ -32,12 +32,14 @@ export interface Holiday {
   subjKeywords: string[]; // 空配列 = 全科目対象。例: ["高松西"]
 }
 
+// 代行レコード。**代行者が空 ("") のものは「欠勤 (代行未定)」**を表す
+// (欠勤専用のモデルは作らない)。代行が決まったら同じレコードに名前が入る。
 export interface Substitute {
   id: number;
   date: string; // YYYY-MM-DD
   slotId: number;
   originalTeacher: string;
-  substitute: string; // "" until assigned
+  substitute: string; // "" = 代行未定 (欠勤だけ登録した状態)
   status: SubStatus;
   memo: string;
   createdAt?: string;

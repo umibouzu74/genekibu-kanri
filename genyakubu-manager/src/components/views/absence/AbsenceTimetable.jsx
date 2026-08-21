@@ -215,6 +215,9 @@ export function AbsenceTimetable({
       if (ex.date !== date) continue;
       if (removedSubIds?.has(ex.id)) continue;
       if (draft[ex.slotId]?.sub) continue; // draft 優先
+      // 多担任コマは講師ごとに代行レコードが立つが、カードに出せるのは
+      // 1 件。先に登録された方を採る (getSubForSlot と同じ「先頭優先」)。
+      if (map.has(ex.slotId)) continue;
       map.set(ex.slotId, {
         substitute: ex.substitute || "",
         status: ex.status || "requested",
@@ -291,7 +294,10 @@ export function AbsenceTimetable({
 
         // 代行が見つかっていなくても、欠勤だけ先に登録できるようにする
         // (代行者が空の代行レコード = 「代行未定」)。
-        if (!hasSub) {
+        // 振替・合同で片付いているコマには出さない (そのコマはこの日
+        // 走らない / 別のコマに統合されている)。一括の「欠勤にする」が
+        // 同じ理由で外すので、判断を揃える。
+        if (!hasSub && !isHost && !rescheduleBySlot.has(slot.id)) {
           items.push({
             label: "❗ 代行未定のまま欠勤にする",
             onClick: () => {

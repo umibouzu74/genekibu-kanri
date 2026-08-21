@@ -114,6 +114,8 @@ describe("findCombineCandidates", () => {
 });
 
 describe("getAbsentSlotIds", () => {
+  // 2026-09-25 は金曜。
+  const FRI = "2026-09-25";
   const slots = [
     mk(1, { day: "金", teacher: "河野" }),
     mk(2, { day: "金", teacher: "奥村" }),
@@ -121,16 +123,28 @@ describe("getAbsentSlotIds", () => {
     mk(4, { day: "月", teacher: "河野" }),
   ];
 
-  it("指定曜日の対象先生のコマだけ返す", () => {
-    const out = getAbsentSlotIds(slots, "金", ["河野", "奥村"]);
+  it("指定日の曜日の対象先生のコマだけ返す", () => {
+    const out = getAbsentSlotIds(slots, FRI, ["河野", "奥村"]);
     expect([...out].sort()).toEqual([1, 2]);
   });
 
-  it("空の先生リストは空集合", () => {
-    expect(getAbsentSlotIds(slots, "金", []).size).toBe(0);
+  it("隔週コマは担当する週だけ赤枠にする (パートナーは note から拾う)", () => {
+    const ctx = { biweeklyAnchors: [{ date: FRI, weekType: "A" }] };
+    const biweekly = [mk(5, { day: "金", teacher: "河野", note: "隔週(堀上)" })];
+    // A 週 = 講師欄の河野が担当
+    expect([...getAbsentSlotIds(biweekly, FRI, ["河野"], ctx)]).toEqual([5]);
+    expect([...getAbsentSlotIds(biweekly, FRI, ["堀上"], ctx)]).toEqual([]);
+    // 翌週 (B 週) は逆
+    const nextFri = "2026-10-02";
+    expect([...getAbsentSlotIds(biweekly, nextFri, ["堀上"], ctx)]).toEqual([5]);
+    expect([...getAbsentSlotIds(biweekly, nextFri, ["河野"], ctx)]).toEqual([]);
   });
 
-  it("day が null なら空集合", () => {
+  it("空の先生リストは空集合", () => {
+    expect(getAbsentSlotIds(slots, FRI, []).size).toBe(0);
+  });
+
+  it("date が null なら空集合", () => {
     expect(getAbsentSlotIds(slots, null, ["河野"]).size).toBe(0);
   });
 });
@@ -254,6 +268,49 @@ describe("collectAbsenceTargets", () => {
       removedSubIds: new Set([9]),
     });
     expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+  });
+
+  it("保存済みの振替・合同で片付いているコマも外す", () => {
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野", "堀上"],
+      existingAdjustments: [
+        { id: 1, date: DATE, type: "reschedule", slotId: 1, targetDate: "2026-09-28" },
+        { id: 2, date: DATE, type: "combine", slotId: 9, combineSlotIds: [2] },
+      ],
+    });
+    expect(targets).toEqual([]);
+    expect(skipped.map((x) => x.reason).sort()).toEqual([
+      "合同で対応済み",
+      "振替で対応済み",
+    ]);
+  });
+
+  it("解除マーク済みの調整は無かったことにする", () => {
+    const { targets } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野"],
+      existingAdjustments: [
+        { id: 1, date: DATE, type: "reschedule", slotId: 1, targetDate: "2026-09-28" },
+      ],
+      removedAdjustmentIds: new Set([1]),
+    });
+    expect(targets).toEqual([{ slotId: 1, teacher: "河野" }]);
+  });
+
+  it("多担任コマで 2 人同時に休むときは 1 人ずつと伝える", () => {
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["香川", "福江"],
+    });
+    // 下書きは 1 コマ 1 件しか持てないので登録は先頭の 1 人
+    expect(targets).toEqual([{ slotId: 3, teacher: "香川" }]);
+    expect(skipped.map((x) => x.reason)).toEqual([
+      "1 コマにつき 1 人まで (福江 は個別に登録)",
+    ]);
   });
 
   it("下書きで振替・合同にしたコマは外す", () => {
