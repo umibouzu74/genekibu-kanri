@@ -98,7 +98,7 @@ export function CommandPalette({
       const st = SUB_STATUS[s.status] || SUB_STATUS.requested;
       hits.push({
         type: "sub",
-        label: `${s.date} ${s.originalTeacher} → ${s.substitute || "?"}`,
+        label: `${s.date} ${s.originalTeacher} → ${s.substitute || "代行未定"}`,
         detail: `${st.label}${s.memo ? " / " + s.memo : ""}`,
         action: () => {
           onSelectView(views.SUBS);

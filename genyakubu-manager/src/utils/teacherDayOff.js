@@ -5,7 +5,12 @@
 // (日をまるごと他日へ移す振替だけは学校全体でも休みになるので、そちらは
 //  adjustmentDisplay.isDayEmptiedByReschedule が別に見ている。)
 
-// 手を離れた理由。表示の優先順位もこの順 (代行 → 合同 → 振替)。
+// 手を離れた理由。表示の優先順位もこの順 (欠勤 → 代行 → 合同 → 振替)。
+// AWAY_ABSENT は「欠勤だけ登録して代行者がまだ決まっていない」状態
+// (代行者が空の代行レコード)。本人が休むのは代行が付いたときと同じなので
+// away には違いないが、**「代行で休み」と出すと代行が見つかった様に読める**
+// ので理由を分けている。
+export const AWAY_ABSENT = "absent";
 export const AWAY_SUB = "sub";
 export const AWAY_COMBINE = "combine";
 export const AWAY_RESCHEDULE = "reschedule";
@@ -18,11 +23,11 @@ export const AWAY_RESCHEDULE = "reschedule";
  * @param {object|null} args.sub 同じ (日付, コマ) の代行レコード
  * @param {boolean} args.absorbed 合同で他のコマに吸収された
  * @param {object|null} args.rescheduledOut 他日へ出ていく振替 adjustment
- * @returns {"sub"|"combine"|"reschedule"|null}
+ * @returns {"absent"|"sub"|"combine"|"reschedule"|null}
  */
 export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
   if (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) {
-    return AWAY_SUB;
+    return sub.substitute ? AWAY_SUB : AWAY_ABSENT;
   }
   if (absorbed) return AWAY_COMBINE;
   // 振替先の担当が自分なら、日が変わるだけで担当は続いている。
@@ -36,6 +41,7 @@ export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
 }
 
 const LABEL = {
+  [AWAY_ABSENT]: "欠 欠勤 (代行未定)",
   [AWAY_SUB]: "代 代行で休み",
   [AWAY_COMBINE]: "合 合同で休み",
   [AWAY_RESCHEDULE]: "↻ 振替で休み",

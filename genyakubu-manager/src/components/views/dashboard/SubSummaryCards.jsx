@@ -147,7 +147,7 @@ export function SubSummaryCards({ subs, slots, todayStr, onJumpToRequestedSubs }
                     {slot?.time?.split("-")[0] || "?"} {slot?.subj || "?"}
                   </span>
                   <span style={{ color: "#888" }}>
-                    {s.originalTeacher}→{s.substitute || "?"}
+                    {s.originalTeacher}→{s.substitute || "代行未定"}
                   </span>
                 </div>
               );

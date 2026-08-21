@@ -16,6 +16,15 @@ describe("teacherAwayReason", () => {
     ).toBe("sub");
   });
 
+  it("代行者が未定の欠勤登録は「欠勤」として手を離れている", () => {
+    expect(
+      teacherAwayReason({
+        teacher,
+        sub: { originalTeacher: teacher, substitute: "", status: "requested" },
+      })
+    ).toBe("absent");
+  });
+
   it("自分が代行に入る側なら手を離れていない", () => {
     expect(
       teacherAwayReason({
@@ -57,6 +66,7 @@ describe("summarizeTeacherDayOff", () => {
       label: "代 代行で休み",
     });
     expect(summarizeTeacherDayOff(["reschedule"]).label).toBe("↻ 振替で休み");
+    expect(summarizeTeacherDayOff(["absent"]).label).toBe("欠 欠勤 (代行未定)");
     expect(summarizeTeacherDayOff(["combine"]).label).toBe("合 合同で休み");
   });
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { staffMonthlyRegularDates } from "./staffHelpers";
+import {
+  staffMonthlyAbsenceDates,
+  staffMonthlyPendingAbsenceDates,
+  staffMonthlyRegularDates,
+} from "./staffHelpers";
 
 // 2026-07: 7 は火曜。中1 火曜のコマを 1 つだけ持つ講師で数える。
 const slot = {
@@ -92,6 +96,31 @@ describe("staffMonthlyRegularDates", () => {
       ],
     };
     expect(staffMonthlyRegularDates(slots, "香川", [], 2026, 7, [], opts)).toEqual([
+      "2026-07-14",
+    ]);
+  });
+});
+
+describe("staffMonthlyPendingAbsenceDates", () => {
+  const subs = [
+    // 代行未定のまま登録した欠勤
+    { id: 1, date: "2026-07-07", slotId: 1, originalTeacher: "香川", substitute: "", status: "requested" },
+    // 代行が確定した欠勤
+    { id: 2, date: "2026-07-14", slotId: 1, originalTeacher: "香川", substitute: "福江", status: "confirmed" },
+    // 別の講師
+    { id: 3, date: "2026-07-21", slotId: 2, originalTeacher: "堀上", substitute: "", status: "requested" },
+    // 別の月
+    { id: 4, date: "2026-08-04", slotId: 1, originalTeacher: "香川", substitute: "", status: "requested" },
+  ];
+
+  it("代行者が未定の日だけを返す", () => {
+    expect(staffMonthlyPendingAbsenceDates(subs, "香川", 2026, 7)).toEqual([
+      "2026-07-07",
+    ]);
+  });
+
+  it("代行が確定した日は「代行された日」の方に出る (二重に数えない)", () => {
+    expect(staffMonthlyAbsenceDates(subs, "香川", 2026, 7)).toEqual([
       "2026-07-14",
     ]);
   });

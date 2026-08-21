@@ -1109,7 +1109,9 @@ export function WeekView({
                                     {st.label}
                                   </span>
                                   <span style={{ color: "#666" }}>
-                                    {isOriginal ? `→${sub.substitute || "?"}` : `←${sub.originalTeacher}`}
+                                    {isOriginal
+                                      ? `→${sub.substitute || "代行未定"}`
+                                      : `←${sub.originalTeacher}`}
                                   </span>
                                 </div>
                               );

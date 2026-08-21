@@ -64,6 +64,30 @@ export function staffMonthlyAbsenceDates(subs, staffName, year, month) {
 }
 
 /**
+ * Return sorted unique dates a staff member was registered absent in a given
+ * month **without a substitute being found yet** (代行者が空の代行レコード)。
+ *
+ * 「代行された日」(staffMonthlyAbsenceDates) は代行が確定した日だけを数える
+ * ので、代行が見つかっていない欠勤はどの行にも出てこない。休んだ事実は
+ * 代行の有無と関係ないため、別の行として必ず出すこと。
+ * @param {import("../types").Substitute[]} subs
+ * @param {string} staffName
+ * @param {number} year
+ * @param {number} month
+ * @returns {string[]}
+ */
+export function staffMonthlyPendingAbsenceDates(subs, staffName, year, month) {
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const dates = new Set();
+  for (const s of subs) {
+    if (s.substitute) continue;
+    if (!s.date?.startsWith(ym)) continue;
+    if (s.originalTeacher === staffName) dates.add(s.date);
+  }
+  return [...dates].sort();
+}
+
+/**
  * Return sorted unique dates a staff member would normally work in a given month
  * based on their slot schedule, excluding holidays / exam periods.
  *

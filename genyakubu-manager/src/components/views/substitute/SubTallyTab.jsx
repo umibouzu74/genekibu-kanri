@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import {
   fmtDateWeekday,
   staffMonthlyAbsenceDates,
+  staffMonthlyPendingAbsenceDates,
   staffMonthlyRegularDates,
   staffMonthlyWorkDates,
 } from "../../../data";
@@ -47,7 +48,7 @@ export function SubTallyTab({
           style={{ ...S.input, width: "auto" }}
         />
         <span style={{ fontSize: 11, color: "#888" }}>
-          ※ 依頼中のレコードは集計対象外
+          ※ 件数は確定した代行のみ (依頼中・代行未定は対象外)
         </span>
       </div>
       <div
@@ -76,6 +77,9 @@ export function SubTallyTab({
                 : [];
               const absenceDates = isExpanded
                 ? staffMonthlyAbsenceDates(subs, r.name, ty, tm)
+                : [];
+              const pendingAbsenceDates = isExpanded
+                ? staffMonthlyPendingAbsenceDates(subs, r.name, ty, tm)
                 : [];
               const regularDates = isExpanded
                 ? staffMonthlyRegularDates(slots, r.name, holidays || [], ty, tm, examPeriods, {
@@ -217,6 +221,20 @@ export function SubTallyTab({
                               "—"
                             )}
                           </div>
+                          {/* 代行が見つかっていない欠勤 (代行未定)。
+                              「代行された日」は代行確定分だけなので、
+                              ここに出さないと休んだ事実が出てこない。 */}
+                          {pendingAbsenceDates.length > 0 && (
+                            <div>
+                              <span style={{ fontWeight: 700, fontSize: 11, color: "#c03030" }}>
+                                欠勤・代行未定（{pendingAbsenceDates.length}日）:
+                              </span>{" "}
+                              {pendingAbsenceDates.map((d) => fmtDateWeekday(d)).join("、")}
+                              <span style={{ marginLeft: 6, fontSize: 10, color: "#999" }}>
+                                ※ 代行者を探し中
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

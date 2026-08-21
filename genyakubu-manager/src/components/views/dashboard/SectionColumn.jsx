@@ -403,7 +403,9 @@ export function SectionColumn({
                                 {sub.originalTeacher}
                               </span>
                               <span style={{ margin: "0 2px", color: st.color }}>→</span>
-                              <span style={{ color: st.color }}>{sub.substitute || "?"}</span>
+                              <span style={{ color: st.color }}>
+                                {sub.substitute || "代行未定"}
+                              </span>
                             </span>
                           ) : rescheduledOut ? (
                             <span>
