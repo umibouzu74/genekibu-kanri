@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subStateMeta, subTargetLabel } from "../utils/substituteState";
 import { EVENT_KIND } from "../constants/eventKinds";
+import { MASTER_TABS } from "../constants/masterTabs";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -22,6 +23,7 @@ export function CommandPalette({
   onSelectView,
   onSelectEvent,
   onSelectSubsSubTab,
+  onSelectMasterTab,
   onOpenDayReschedule,
   views,
   onShowShortcuts,
@@ -233,6 +235,24 @@ export function CommandPalette({
       }
     }
 
+    // コースマスター管理のタブ (隔週管理 / 時間割表) も名前で直接呼び出せる
+    // ようにする。画面名からは辿れないため (サイドバーのタブ項目と同じ狙い)。
+    if (onSelectMasterTab) {
+      for (const t of MASTER_TABS) {
+        if (t.label.toLowerCase().includes(q)) {
+          hits.push({
+            type: "view",
+            label: t.label,
+            detail: "コースマスター管理のタブに移動",
+            action: () => {
+              onSelectMasterTab(t.key);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
     // ダイアログを開く操作 (ビュー移動ではないので別立て)。
     if (onOpenDayReschedule && "日まるごと振替".includes(q)) {
       hits.push({
@@ -260,6 +280,7 @@ export function CommandPalette({
     onSelectView,
     onSelectEvent,
     onSelectSubsSubTab,
+    onSelectMasterTab,
     onOpenDayReschedule,
     onClose,
     views,

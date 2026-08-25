@@ -51,6 +51,7 @@ import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
+import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
 import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
 import { dateToDay, fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import {
@@ -387,6 +388,8 @@ export default function App() {
   const [eventSectionRequest, setEventSectionRequest] = useState(null);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
+  // コースマスター管理のタブ。サイドバー / Cmd+K から直接開けるよう App が持つ。
+  const [masterTab, setMasterTab] = useState(DEFAULT_MASTER_TAB);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
@@ -983,6 +986,11 @@ export default function App() {
           selectView(VIEWS.HOLIDAYS);
           setEventSectionRequest(kind);
         }}
+        masterTab={masterTab}
+        onSelectMasterTab={(tabKey) => {
+          setMasterTab(tabKey);
+          selectView(VIEWS.MASTER);
+        }}
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
@@ -1227,6 +1235,8 @@ export default function App() {
               displayCutoff={displayCutoff}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
+              tab={masterTab}
+              onTabChange={setMasterTab}
             />
           )}
           {view === VIEWS.TIMETABLE && !selected && (
@@ -1683,6 +1693,11 @@ export default function App() {
             onSelectSubsSubTab={(tabKey) => {
               setSubsInitFilter({ tab: tabKey });
               selectView(VIEWS.SUBS);
+              setCmdPaletteOpen(false);
+            }}
+            onSelectMasterTab={(tabKey) => {
+              setMasterTab(tabKey);
+              selectView(VIEWS.MASTER);
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}
