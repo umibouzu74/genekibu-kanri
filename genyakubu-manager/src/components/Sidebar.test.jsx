@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 import { VIEWS } from "../constants/views";
 import { EVENT_KIND } from "../constants/eventKinds";
+import { MASTER_TAB } from "../constants/masterTabs";
 
 afterEach(cleanup);
 
@@ -85,5 +86,26 @@ describe("Sidebar のイベント系セクション", () => {
     renderSidebar({ view: VIEWS.HOLIDAYS, onSelectEventSection });
     fireEvent.click(screen.getByRole("button", { name: /特別時程/ }));
     expect(onSelectEventSection).toHaveBeenCalledWith(EVENT_KIND.DAY_SCHEDULE);
+  });
+});
+
+describe("Sidebar のコースマスター管理のタブ", () => {
+  it("開いている間だけタブ名 (隔週管理) を並べる", () => {
+    renderSidebar();
+    // 別の画面を見ているときは出さない
+    expect(screen.queryByRole("button", { name: /隔週管理/ })).toBeNull();
+
+    cleanup();
+    renderSidebar({ view: VIEWS.MASTER });
+    // 画面名 (コースマスター管理) からは辿れないタブが名前で出る
+    expect(screen.getByRole("button", { name: /隔週管理/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /時間割表/ })).toBeTruthy();
+  });
+
+  it("タブのクリックでタブキーを通知する", () => {
+    const onSelectMasterTab = vi.fn();
+    renderSidebar({ view: VIEWS.MASTER, onSelectMasterTab });
+    fireEvent.click(screen.getByRole("button", { name: /隔週管理/ }));
+    expect(onSelectMasterTab).toHaveBeenCalledWith(MASTER_TAB.BIWEEKLY);
   });
 });

@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { DAYS, fmtDate, sortSlots as sortS, timeToMin } from "../../data";
 import { S } from "../../styles/common";
+import {
+  DEFAULT_MASTER_TAB,
+  MASTER_TAB,
+  MASTER_TABS,
+  normalizeMasterTab,
+} from "../../constants/masterTabs";
 import { getWeekType } from "../../utils/biweekly";
 import { useToasts } from "../../hooks/useToasts";
 import { ExcelGridView } from "./ExcelGridView";
@@ -13,21 +19,19 @@ import { PrintButton } from "../PrintButton";
 // ただし MasterView 内に埋め込まれる ExcelGridView は handlePrint (popup) 系統
 // なので、時間割タブから印刷する場合はトップバー右の 🖨 ボタンを使うこと。
 
+// タブの定義は constants/masterTabs.js が正 (サイドバー / Cmd+K と共有)。
+// ここでラベルを書き起こすと導線側と食い違うので、必ず配列から作る。
 function TabSwitcher({ tab, setTab }) {
   return (
     <div
       className="no-print"
       style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}
     >
-      <button onClick={() => setTab("list")} style={S.btn(tab === "list")}>
-        コマ一覧
-      </button>
-      <button onClick={() => setTab("biweekly")} style={S.btn(tab === "biweekly")}>
-        隔週管理
-      </button>
-      <button onClick={() => setTab("excel")} style={S.btn(tab === "excel")}>
-        時間割表
-      </button>
+      {MASTER_TABS.map((t) => (
+        <button key={t.key} onClick={() => setTab(t.key)} style={S.btn(tab === t.key)}>
+          {t.label}
+        </button>
+      ))}
       <span style={{ marginLeft: "auto" }}>
         <PrintButton />
       </span>
@@ -55,13 +59,19 @@ export function MasterView({
   displayCutoff,
   adjustments = [],
   sessionOverrides = [],
+  tab: tabProp,
+  onTabChange,
 }) {
   const toasts = useToasts();
   const [filterDay, setFilterDay] = useState("");
   const [filterGrade, setFilterGrade] = useState("");
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterSubj, setFilterSubj] = useState("");
-  const [tab, setTab] = useState("list");
+  // タブは App から制御できる (サイドバー / Cmd+K から直接開くため)。
+  // 単体で使うときは内部状態にフォールバックする。
+  const [innerTab, setInnerTab] = useState(DEFAULT_MASTER_TAB);
+  const tab = normalizeMasterTab(tabProp ?? innerTab);
+  const setTab = onTabChange ?? setInnerTab;
 
   const grades = useMemo(
     () => [...new Set(slots.map((s) => s.grade))].sort(),
@@ -178,7 +188,7 @@ export function MasterView({
     });
   };
 
-  if (tab === "excel") {
+  if (tab === MASTER_TAB.EXCEL) {
     return (
       <div style={{ marginTop: 12 }}>
         <TabSwitcher tab={tab} setTab={setTab} />
@@ -204,7 +214,7 @@ export function MasterView({
     );
   }
 
-  if (tab === "biweekly") {
+  if (tab === MASTER_TAB.BIWEEKLY) {
     return (
       <div style={{ marginTop: 12 }}>
         <TabSwitcher tab={tab} setTab={setTab} />

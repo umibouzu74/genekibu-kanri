@@ -1,6 +1,7 @@
 import { Fragment, memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { EVENT_KIND_LABELS, EVENT_SECTIONS } from "../constants/eventKinds";
+import { MASTER_TABS } from "../constants/masterTabs";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
@@ -78,6 +79,50 @@ const SidebarTeacherButton = memo(function SidebarTeacherButton({
   );
 });
 
+// 画面の中のセクション / タブをサイドバーに並べる小さなリスト。
+// 「画面名から辿れない機能」に名前を与えるのが目的なので、その画面を
+// 開いている間だけ出す (常時展開するとビュー一覧が読めなくなる)。
+// sections の要素は { key, icon, label } (EVENT_SECTIONS だけは kind +
+// EVENT_KIND_LABELS 由来のラベル)。
+function SectionLinks({ sections, activeKey, onSelect, onClose }) {
+  return sections.map((sec) => {
+    const key = sec.key ?? sec.kind;
+    const label = sec.label ?? EVENT_KIND_LABELS[sec.kind];
+    const isActive = activeKey != null && activeKey === key;
+    return (
+      <button
+        key={key}
+        onClick={() => {
+          onSelect?.(key);
+          if (typeof window !== "undefined" && window.innerWidth <= 768) {
+            onClose?.();
+          }
+        }}
+        style={{
+          display: "block",
+          width: "100%",
+          padding: "6px 14px 6px 42px",
+          border: "none",
+          background: isActive ? "#2a2a4e" : "transparent",
+          color: isActive ? "#fff" : "#9a9ac0",
+          textAlign: "left",
+          cursor: "pointer",
+          fontSize: 11,
+          fontWeight: isActive ? 700 : 400,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "#fff";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = isActive ? "#fff" : "#9a9ac0";
+        }}
+      >
+        {sec.icon} {label}
+      </button>
+    );
+  });
+}
+
 const MENU_CONFIG = [
   { key: VIEWS.DASH, icon: "📋", label: "ダッシュボード" },
   {
@@ -116,7 +161,9 @@ const MENU_CONFIG = [
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
-  { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理" },
+  // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
+  // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
+  { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理", sections: MASTER_TABS },
   { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
 ];
 
@@ -140,6 +187,8 @@ export function Sidebar({
   onOpenDataMgr,
   onOpenDayReschedule,
   onSelectEventSection,
+  onSelectMasterTab,
+  masterTab,
   onJumpToRequestedSubs,
   search,
   onSearchChange,
@@ -163,6 +212,14 @@ export function Sidebar({
     if (parentOfActive) set.add(parentOfActive);
     return set;
   }, [expandedGroups, view]);
+
+  // セクション (画面の中のタブ / 並んだマネージャ) のクリック先と、
+  // 現在地の強調に使うキー。画面ごとに 1 か所へまとめる。
+  const sectionSelect = {
+    [VIEWS.HOLIDAYS]: onSelectEventSection,
+    [VIEWS.MASTER]: onSelectMasterTab,
+  };
+  const sectionActiveKey = { [VIEWS.MASTER]: masterTab };
 
   const toggleGroup = (key) => {
     setExpandedGroups((prev) => {
@@ -475,6 +532,16 @@ export function Sidebar({
                     </span>
                   )}
                 </button>
+                {/* 子メニューを持たない画面のタブ (コースマスター管理) も、
+                    開いている間だけ中身の名前を出す */}
+                {selfActive && item.sections && (
+                  <SectionLinks
+                    sections={item.sections}
+                    activeKey={sectionActiveKey[item.key]}
+                    onSelect={sectionSelect[item.key]}
+                    onClose={onClose}
+                  />
+                )}
                 {hasChildren && (
                   <div
                     style={{
@@ -518,40 +585,14 @@ export function Sidebar({
                         </button>
                         {/* 開いているときだけ、その画面の中のセクションを出す。
                             クリックで該当セクションまでスクロールする */}
-                        {childIsActive &&
-                          child.sections?.map((sec) => (
-                            <button
-                              key={sec.kind}
-                              onClick={() => {
-                                onSelectEventSection?.(sec.kind);
-                                if (
-                                  typeof window !== "undefined" &&
-                                  window.innerWidth <= 768
-                                ) {
-                                  onClose?.();
-                                }
-                              }}
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "6px 14px 6px 42px",
-                                border: "none",
-                                background: "transparent",
-                                color: "#9a9ac0",
-                                textAlign: "left",
-                                cursor: "pointer",
-                                fontSize: 11,
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.color = "#fff";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.color = "#9a9ac0";
-                              }}
-                            >
-                              {sec.icon} {EVENT_KIND_LABELS[sec.kind]}
-                            </button>
-                          ))}
+                        {childIsActive && child.sections && (
+                          <SectionLinks
+                            sections={child.sections}
+                            activeKey={sectionActiveKey[child.key]}
+                            onSelect={sectionSelect[child.key]}
+                            onClose={onClose}
+                          />
+                        )}
                         </Fragment>
                       );
                     })}
