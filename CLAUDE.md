@@ -658,6 +658,33 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **カードを増やすときは `pushCards` に載せること**。JSX に直接並べると
   その種類だけ時系列から外れる
 
+## テスト期間の授業停止判定 (2026-08-29 実装)
+
+テスト期間 (`examPeriods`) が (日付, 学年) の通常授業を止めるかどうかは
+**`utils/scheduleHelpers.examPeriodStopsClassesOn` の 1 か所**で決める。
+期間・対象学年・`stopsClasses`・例外日をまとめて見るので、**画面ごとに
+`ep.startDate <= d && d <= ep.endDate` を書き起こさないこと。**
+
+- **例外的に授業を行う日 = `ExamPeriod.classExceptions`**
+  (`{ date, grades?, memo? }` の配列)。特訓は始まっているのに授業は
+  休みにしない日 (2026-09-19 土の中3) を表す。`grades` 空 / 未指定 =
+  そのテスト期間の対象学年すべて
+- **専用のモデルを足さない**。テスト期間に埋めてあるので、期間を消せば
+  例外も一緒に消え、エクスポート / インポート / 同期の経路にそのまま乗る
+- 判定の入口は 3 つあり、全部この述語を通す:
+  `dashboardHelpers.makeEventHelpers` の `isInExamPeriodForGrade`
+  (→ `isOffForGrade` 経由でダッシュボード・第N回・欠勤登録・日まるごと
+  振替まで波及)、`scheduleHelpers.isSlotOffOnDate` (バイトの出勤日)、
+  `scheduleHelpers.isSlotCancelledForBiweeklyShift` (隔週の週送り)
+- **例外日は隔週の週送りをしない** (授業を行う週なので「実施されなかった
+  週」ではない)
+- **休講 (Holiday) の方が強い**。例外はテスト期間による休止だけを外す
+- **テスト期間の表示は消さない**。日付帯・イベントカレンダーには期間名を
+  出したまま「📖 ◯◯ 授業あり」を併記する (その日がテスト期間中である
+  ことは変わらない)
+- **特訓シフト (`examPrepSchedules`) とは独立**。例外日でも特訓の出勤は
+  そのまま出る (両方ある日がこの機能の動機)
+
 ## 特別時程 (daySchedules) の設計要点 (2026-08-05 実装)
 
 附属コース等の「行事都合で特定日だけ時程が変わる」対応。要件は

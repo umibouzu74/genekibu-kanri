@@ -3,6 +3,7 @@ import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
+import { examClassExceptionsOnDate } from "../../../utils/scheduleHelpers";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
@@ -78,6 +79,8 @@ export function DashDayRow({
   const holLabel = hols[0]?.label;
   const hasExamPeriod = examPeriodsForDate.length > 0;
   const examLabel = examPeriodsForDate.map((ep) => ep.name).join(", ");
+  // テスト期間中だが例外的に授業を行う日 (特訓は始まっているが休講にしない)。
+  const classExceptions = examClassExceptionsOnDate(examPeriodsForDate, date);
 
   return (
     <div>
@@ -155,6 +158,29 @@ export function DashDayRow({
           >
             {examLabel}
           </span>
+        )}
+        {!fullOff && classExceptions.length > 0 && (
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+            {classExceptions.map(({ ep, exception, grades }) => (
+              <span
+                key={`${ep.id}-${exception.date}`}
+                title={`${ep.name}: この日は${
+                  grades.length > 0 ? grades.join("・") : "全学年"
+                }の通常授業を行います${exception.memo ? `\n${exception.memo}` : ""}`}
+                style={{
+                  fontSize: 10,
+                  background: "#e8f3e8",
+                  color: "#2f6b2f",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  fontWeight: 700,
+                  border: "1px solid #9fc79f",
+                }}
+              >
+                📖 {grades.length > 0 ? grades.join("・") : "全学年"} 授業あり
+              </span>
+            ))}
+          </div>
         )}
         {!fullOff && daySchedulesForDate.length > 0 && (
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
