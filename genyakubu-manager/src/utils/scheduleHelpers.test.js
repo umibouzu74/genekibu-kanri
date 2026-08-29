@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isSlotOffOnDate } from "./scheduleHelpers";
+import {
+  examClassExceptionsOnDate,
+  examPeriodStopsClassesOn,
+  isExamClassExceptionFor,
+  isSlotCancelledForBiweeklyShift,
+  isSlotOffOnDate,
+} from "./scheduleHelpers";
 
 const baseSlot = {
   id: 1,
@@ -175,5 +181,107 @@ describe("isSlotOffOnDate", () => {
         false
       );
     });
+  });
+});
+
+// テスト期間中でも例外的に授業を行う日 (特訓は始まっているが休講にしない日)。
+describe("classExceptions (例外的に授業を行う日)", () => {
+  const ep = {
+    id: 1,
+    name: "2学期中間テスト期間",
+    startDate: "2026-09-14",
+    endDate: "2026-09-25",
+    targetGrades: ["中1", "中2", "中3"],
+    stopsClasses: true,
+    classExceptions: [{ date: "2026-09-19", grades: ["中3"], memo: "土曜のみ実施" }],
+  };
+
+  it("例外日 + 該当学年は授業停止にしない", () => {
+    expect(examPeriodStopsClassesOn(ep, "2026-09-19", "中3")).toBe(false);
+    expect(
+      isSlotOffOnDate({ ...baseSlot, grade: "中3" }, "2026-09-19", [], [ep])
+    ).toBe(false);
+  });
+
+  it("例外日でも grades に無い学年は従来どおり休止", () => {
+    expect(examPeriodStopsClassesOn(ep, "2026-09-19", "中1")).toBe(true);
+    expect(
+      isSlotOffOnDate({ ...baseSlot, grade: "中1" }, "2026-09-19", [], [ep])
+    ).toBe(true);
+  });
+
+  it("例外日以外は該当学年でも休止", () => {
+    expect(examPeriodStopsClassesOn(ep, "2026-09-18", "中3")).toBe(true);
+    expect(
+      isSlotOffOnDate({ ...baseSlot, grade: "中3" }, "2026-09-18", [], [ep])
+    ).toBe(true);
+  });
+
+  it("grades 未指定 / 空 は対象学年すべてで授業あり", () => {
+    const all = {
+      ...ep,
+      classExceptions: [{ date: "2026-09-19" }],
+    };
+    expect(examPeriodStopsClassesOn(all, "2026-09-19", "中1")).toBe(false);
+    expect(examPeriodStopsClassesOn(all, "2026-09-19", "中3")).toBe(false);
+    expect(isExamClassExceptionFor(all, "2026-09-19", "中2")).toBe(true);
+  });
+
+  it("休講 (holiday) は例外日でも休講のまま", () => {
+    const holidays = [{ date: "2026-09-19", scope: ["全部"] }];
+    expect(
+      isSlotOffOnDate({ ...baseSlot, grade: "中3" }, "2026-09-19", holidays, [ep])
+    ).toBe(true);
+  });
+
+  it("例外日は隔週ローテーションを送らない (授業を行う週なので)", () => {
+    const slot = { ...baseSlot, grade: "中3" };
+    expect(isSlotCancelledForBiweeklyShift(slot, "2026-09-19", [], [ep])).toBe(false);
+    expect(isSlotCancelledForBiweeklyShift(slot, "2026-09-18", [], [ep])).toBe(true);
+  });
+
+  it("classExceptions 未設定のテスト期間は従来どおり", () => {
+    const plain = { ...ep, classExceptions: undefined };
+    expect(examPeriodStopsClassesOn(plain, "2026-09-19", "中3")).toBe(true);
+    expect(isExamClassExceptionFor(plain, "2026-09-19", "中3")).toBe(false);
+  });
+
+  it("stopsClasses=false のテスト期間では例外日の有無に関わらず授業継続", () => {
+    const display = { ...ep, stopsClasses: false };
+    expect(examPeriodStopsClassesOn(display, "2026-09-18", "中3")).toBe(false);
+    expect(examClassExceptionsOnDate([display], "2026-09-19")).toEqual([]);
+  });
+});
+
+describe("examClassExceptionsOnDate", () => {
+  const ep = {
+    id: 1,
+    name: "2学期中間テスト期間",
+    startDate: "2026-09-14",
+    endDate: "2026-09-25",
+    targetGrades: ["中1", "中2", "中3"],
+    classExceptions: [{ date: "2026-09-19", grades: ["中3"] }],
+  };
+
+  it("該当日の例外を返す", () => {
+    const got = examClassExceptionsOnDate([ep], "2026-09-19");
+    expect(got).toHaveLength(1);
+    expect(got[0].grades).toEqual(["中3"]);
+    expect(got[0].ep.id).toBe(1);
+  });
+
+  it("grades 空の例外はテスト期間の対象学年に展開する", () => {
+    const all = { ...ep, classExceptions: [{ date: "2026-09-19" }] };
+    expect(examClassExceptionsOnDate([all], "2026-09-19")[0].grades).toEqual([
+      "中1",
+      "中2",
+      "中3",
+    ]);
+  });
+
+  it("該当しない日 / 期間外 / 空入力は空配列", () => {
+    expect(examClassExceptionsOnDate([ep], "2026-09-18")).toEqual([]);
+    expect(examClassExceptionsOnDate([ep], "2026-10-01")).toEqual([]);
+    expect(examClassExceptionsOnDate(undefined, "2026-09-19")).toEqual([]);
   });
 });

@@ -130,6 +130,18 @@ export interface ExamPeriod {
   // tags: 学校名等の任意ラベル ("桜井", "第一" など)。
   // 表示・フィルタの整理用で、slot とのマッチには使わない。
   tags?: string[];
+  // classExceptions: 期間中だが例外的に通常授業を行う日。
+  // 特訓は始まっているのに授業は休みにならない日 (例: 9/19 土の中3) を表す。
+  // stopsClasses=false のテスト期間では意味を持たない (元々授業を止めない)。
+  classExceptions?: ExamClassException[];
+}
+
+// テスト期間中に例外的に通常授業を行う日。
+export interface ExamClassException {
+  date: string; // "YYYY-MM-DD" (テスト期間の startDate〜endDate 内)
+  // grades: 授業を行う学年。空 / 未指定 = そのテスト期間の対象学年すべて。
+  grades?: string[];
+  memo?: string;
 }
 
 // ─── Exam prep (テスト直前特訓) shift schedule ────────────────────

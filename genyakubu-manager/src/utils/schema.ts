@@ -23,6 +23,7 @@ import type {
   CutoffGroup,
   DaySchedule,
   DisplayCutoff,
+  ExamClassException,
   ExamPeriod,
   ExamPrepSchedule,
   ExportBundle,
@@ -175,15 +176,34 @@ export function isDisplayCutoff(x: unknown): x is DisplayCutoff {
   );
 }
 
+export function isExamClassException(x: unknown): x is ExamClassException {
+  if (!isObject(x)) return false;
+  if (!isString(x.date)) return false;
+  if (x.grades !== undefined) {
+    if (!Array.isArray(x.grades)) return false;
+    if (!(x.grades as unknown[]).every((g) => isString(g))) return false;
+  }
+  if (x.memo !== undefined && !isString(x.memo)) return false;
+  return true;
+}
+
 export function isExamPeriod(x: unknown): x is ExamPeriod {
-  return (
-    isObject(x) &&
-    isNumber(x.id) &&
-    isString(x.name) &&
-    isString(x.startDate) &&
-    isString(x.endDate) &&
-    Array.isArray(x.targetGrades)
-  );
+  if (
+    !isObject(x) ||
+    !isNumber(x.id) ||
+    !isString(x.name) ||
+    !isString(x.startDate) ||
+    !isString(x.endDate) ||
+    !Array.isArray(x.targetGrades)
+  ) {
+    return false;
+  }
+  if (x.classExceptions !== undefined) {
+    if (!Array.isArray(x.classExceptions)) return false;
+    if (!(x.classExceptions as unknown[]).every((e) => isExamClassException(e)))
+      return false;
+  }
+  return true;
 }
 
 // 授業セットは units 形式 (学年 × 曜日) と旧 slotIds 形式のどちらでもよい。

@@ -1,4 +1,8 @@
 import { fmtDate, gradeToDept, WEEKDAYS } from "../../data";
+import {
+  examClassExceptionsOnDate,
+  examPeriodStopsClassesOn,
+} from "../../utils/scheduleHelpers";
 
 // Parse a "YYYY-MM-DD" string into a local Date. Avoids timezone drift that
 // `new Date("YYYY-MM-DD")` can introduce (UTC parsing).
@@ -77,13 +81,14 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
   // Check whether (date, grade) falls within any exam period that stops classes.
   // 高校テスト期間など `stopsClasses: false` のものは授業停止扱いにしない。
   // (これらは表示専用で、休講ラベルは出さず通常授業として扱う)
+  // 「例外的に授業を行う日」(classExceptions) も授業停止にしない。
+  // 判定は utils/scheduleHelpers の examPeriodStopsClassesOn に集約。
   const isInExamPeriodForGrade = (d, grade) =>
-    examPeriods.some((ep) => {
-      if (ep.stopsClasses === false) return false;
-      if (d < ep.startDate || d > ep.endDate) return false;
-      if (ep.targetGrades.length === 0) return true; // empty = all grades
-      return ep.targetGrades.includes(grade);
-    });
+    examPeriods.some((ep) => examPeriodStopsClassesOn(ep, d, grade));
+
+  // その日に効いている「例外的に授業を行う日」の一覧 (表示専用)。
+  // テスト期間バッジの脇に「授業あり (中3)」を出すために使う。
+  const examClassExceptionsFor = (d) => examClassExceptionsOnDate(examPeriods, d);
 
   // Check if a specific slot is off on a given date.
   // `subj` is optional for backward compat; when omitted, holidays with
@@ -98,5 +103,6 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
     isOffForGrade,
     isHolidayForSlot,
     isInExamPeriodForGrade,
+    examClassExceptionsFor,
   };
 }

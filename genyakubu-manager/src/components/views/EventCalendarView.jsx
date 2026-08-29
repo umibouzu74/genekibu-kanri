@@ -600,6 +600,34 @@ export function EventCalendarView({
                       表示のみ
                     </span>
                   )}
+                {ev.kind === EVENT_KIND.EXAM &&
+                  ev.source.stopsClasses !== false &&
+                  (ev.source.classExceptions || []).length > 0 && (
+                    <span
+                      title={`例外的に授業を行う日:\n${[...ev.source.classExceptions]
+                        .sort((a, b) => a.date.localeCompare(b.date))
+                        .map(
+                          (ex) =>
+                            `${ex.date} ${
+                              (ex.grades || []).length > 0
+                                ? ex.grades.join("・")
+                                : "対象学年すべて"
+                            }${ex.memo ? ` (${ex.memo})` : ""}`
+                        )
+                        .join("\n")}`}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: "#e8f3e8",
+                        color: "#2f6b2f",
+                        border: "1px solid #9fc79f",
+                      }}
+                    >
+                      📖 授業あり {ev.source.classExceptions.length} 日
+                    </span>
+                  )}
                 {(ev.source.tags || []).map((t) => (
                     <span
                       key={t}
