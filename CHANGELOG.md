@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed (CI と開発環境の整備)
+
+- **E2E (Playwright) を CI で回す** (`ci.yml` の `e2e` ジョブ。build の後、
+  失敗時はレポートを artifact に残す)。印刷 2 系統と Worker 経路は jsdom で
+  検証できないので、これまで壊れても気付けなかった
+- `npm run lint` を `--max-warnings 0` に (警告も CI で止める)。CI に
+  `concurrency` (同じブランチへの連続 push で古い run を止める)
+- `.editorconfig`、`.vscode/settings.json` (ESLint 拡張にサブディレクトリを
+  教える)、PR テンプレート (`.github/PULL_REQUEST_TEMPLATE.md`) を追加
+- GitHub Skills の教材の残骸 (`.github/steps/`) を削除
+- README のディレクトリ構成を実態に合わせ、CONTRIBUTING に E2E・
+  `CLAUDE.md`・CHANGELOG 追記の慣習・`.env.local` を追記
+- 代行確定一覧の「確定 かつ 代行者あり」の判定を `substituteState.subState`
+  に寄せた (画面に条件を書き起こさない。取り違えの再発防止)
+
 ### Fixed (存在しない日付が休講日・テスト期間に保存できていた)
 
 `dateHelpers.isValidDateStr` が `Date.parse` に頼っていたため、V8 では

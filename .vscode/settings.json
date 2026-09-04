@@ -1,0 +1,7 @@
+{
+  // アプリはサブディレクトリにあるので、ESLint 拡張にそこを教える
+  "eslint.workingDirectories": ["genyakubu-manager"],
+  "typescript.tsdk": "genyakubu-manager/node_modules/typescript/lib",
+  "files.eol": "\n",
+  "editor.tabSize": 2
+}

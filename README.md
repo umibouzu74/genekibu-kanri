@@ -67,12 +67,20 @@ localStorage だけで動きます)。手順は `genyakubu-manager/.env.example`
 ```
 genyakubu-manager/
 ├── src/
-│   ├── App.jsx       # アプリ本体
-│   ├── data.js       # 初期データ・定数・ユーティリティ
-│   └── main.jsx
-├── index.html
-├── vite.config.js
-└── package.json
+│   ├── App.jsx                # 本体 (ビュー切替・永続 state・印刷)
+│   ├── main.jsx               # ルート (ErrorBoundary / Toast / Confirm)
+│   ├── components/            # 画面部品 (views/ に各ビュー)
+│   ├── hooks/                 # useSyncedStorage (localStorage + RTDB) / CRUD
+│   ├── utils/                 # 回数計算・隔週・孤立データ・スキーマ検証など
+│   ├── constants/             # 曜日・学年・localStorage キー・サイドバー定義
+│   ├── firebase/              # Firebase 初期化 (env 未設定ならローカルのみ)
+│   ├── regular-builder/       # 通常時間割作成 (曜日 × 時限のグリッド設計)
+│   ├── timetable-builder/     # 講習時間割作成 (日付ベース・自動生成)
+│   └── data.js                # 初期データ (サンプル) と旧バレル
+├── e2e/                       # Playwright (印刷・Worker 経路のスモーク)
+├── database.rules.json        # RTDB のルール (手動デプロイ)
+├── .env.example               # Firebase 設定の手順
+└── vite.config.js
 ```
 
 ## ライセンス
