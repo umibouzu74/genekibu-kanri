@@ -1,18 +1,49 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
+
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+
     "appData": {
       ".read": "auth != null",
-      ".write": "auth.provider === 'password'",
+      ".write": "auth != null && auth.provider === 'password' && root.child('admins').child(auth.uid).val() === true",
+
+      "genyakubu-slots": { ".validate": "newData.hasChildren()" },
+      "genyakubu-holidays": { ".validate": "newData.hasChildren()" },
+      "genyakubu-substitutions": { ".validate": "newData.hasChildren()" },
+      "genyakubu-part-time-staff": { ".validate": "newData.hasChildren()" },
+      "genyakubu-subject-categories": { ".validate": "newData.hasChildren()" },
+      "genyakubu-subjects": { ".validate": "newData.hasChildren()" },
       "genyakubu-biweekly-base": {
         ".validate": "newData.isString() && newData.val().length < 20"
       },
+      "genyakubu-biweekly-anchors": { ".validate": "newData.hasChildren()" },
+      "genyakubu-adjustments": { ".validate": "newData.hasChildren()" },
+      "genyakubu-timetables": { ".validate": "newData.hasChildren()" },
+      "genyakubu-display-cutoff": { ".validate": "newData.hasChildren()" },
+      "genyakubu-exam-periods": { ".validate": "newData.hasChildren()" },
+      "genyakubu-exam-prep-schedules": { ".validate": "newData.hasChildren()" },
+      "genyakubu-class-sets": { ".validate": "newData.hasChildren()" },
+      "genyakubu-session-overrides": { ".validate": "newData.hasChildren()" },
+      "genyakubu-teacher-subjects": { ".validate": "newData.hasChildren()" },
+      "genyakubu-teacher-kana": { ".validate": "newData.hasChildren()" },
+      "genyakubu-special-events": { ".validate": "newData.hasChildren()" },
+      "genyakubu-extra-lessons": { ".validate": "newData.hasChildren()" },
+      "genyakubu-day-schedules": { ".validate": "newData.hasChildren()" },
+      "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
+
       "builder": {
-        "schedule_project": {
-          ".validate": "newData.isString()"
-        }
-      }
-    },
-    ".read": false,
-    ".write": false
+        "schedule_project": { ".validate": "newData.isString()" },
+        "$other": { ".validate": false }
+      },
+
+      "$other": { ".validate": false }
+    }
   }
 }

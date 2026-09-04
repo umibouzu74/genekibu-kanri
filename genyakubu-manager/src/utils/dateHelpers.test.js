@@ -4,6 +4,7 @@ import {
   fmtDate,
   fmtDateWeekday,
   fmtIsoLocal,
+  isValidDateStr,
   formatDateRange,
   overlapsRange,
   parseLocalDate,
@@ -133,5 +134,26 @@ describe("fmtIsoLocal", () => {
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
     expect(fmtIsoLocal(iso)).toBe(`${y}-${m}-${day} ${hh}:${mm}`);
+  });
+});
+
+describe("isValidDateStr は実在する日付だけ通す (2026-09-04)", () => {
+  it("形式が合っていても存在しない日は弾く (Date.parse は 2026-02-31 を通す)", () => {
+    expect(isValidDateStr("2026-02-31")).toBe(false);
+    expect(isValidDateStr("2026-04-31")).toBe(false);
+    expect(isValidDateStr("2026-13-01")).toBe(false);
+    expect(isValidDateStr("2026-00-10")).toBe(false);
+  });
+
+  it("実在する日付と閏日は通す", () => {
+    expect(isValidDateStr("2026-02-28")).toBe(true);
+    expect(isValidDateStr("2028-02-29")).toBe(true);
+    expect(isValidDateStr("2026-12-31")).toBe(true);
+  });
+
+  it("形式違いは従来どおり弾く", () => {
+    expect(isValidDateStr("2026/02/01")).toBe(false);
+    expect(isValidDateStr("2026-2-1")).toBe(false);
+    expect(isValidDateStr("")).toBe(false);
   });
 });

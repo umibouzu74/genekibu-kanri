@@ -541,12 +541,15 @@ export function validateExportBundle(
   }
 
   // ── Cross-entity referential integrity ────────────────────────────
-  // Run only when both sides of a relationship are present in the
-  // bundle; skip when only one side is provided (partial import).
-  const fkError = validateReferentialIntegrity(raw);
-  if (fkError) return fkError;
+  // 参照切れは拒否せず warnings で返す (インポート後に孤立データ掃除で
+  // 整理する)。両側が揃っているときだけ検査する (部分インポート)。
+  const warnings = collectReferentialWarnings(raw);
 
-  return { ok: true, data: raw as unknown as ExportBundle };
+  return {
+    ok: true,
+    data: raw as unknown as ExportBundle,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 function toSlotIdKey(v: unknown): string | null {
@@ -555,34 +558,39 @@ function toSlotIdKey(v: unknown): string | null {
   return null;
 }
 
-function validateReferentialIntegrity(
-  raw: Record<string, unknown>
-): ValidationResult<ExportBundle> | null {
+/**
+ * 参照整合性は「拒否」ではなく「警告」として返す (2026-09-04)。
+ * 通常時間割作成の「置き換え」反映や、cascade 削除が入る前の旧版で消した
+ * コマを参照する代行・調整・回数補正・旧形式 (slotIds) の授業セットが
+ * バックアップに残ることがあり、それを丸ごと拒否するとそのバックアップが
+ * 二度と復元できない。インポート後に「孤立データ掃除」で整理できるので、
+ * ここでは件数と場所を集めて返すだけにする。
+ * 両側が bundle に無いときは検査しない (部分インポート)。
+ */
+function collectReferentialWarnings(raw: Record<string, unknown>): string[] {
+  const warnings: string[] = [];
+
   if (Array.isArray(raw.slots)) {
     const slotIds = new Set<string>();
     for (const s of raw.slots as Array<Record<string, unknown>>) {
       const k = toSlotIdKey(s.id);
       if (k !== null) slotIds.add(k);
     }
+    const missing = (v: unknown): boolean => {
+      const k = toSlotIdKey(v);
+      return k === null || !slotIds.has(k);
+    };
 
     if (Array.isArray(raw.substitutions)) {
-      const bad = (
-        raw.substitutions as Array<Record<string, unknown>>
-      ).findIndex((s) => {
-        const k = toSlotIdKey(s.slotId);
-        return k === null || !slotIds.has(k);
-      });
-      if (bad !== -1) {
-        const missing = (
-          raw.substitutions as Array<Record<string, unknown>>
-        )[bad]?.slotId;
-        return {
-          ok: false,
-          error: `substitutions[${bad}] が参照するコマ (slotId=${String(
-            missing
-          )}) が slots に存在しません`,
-          path: `substitutions[${bad}].slotId`,
-        };
+      const list = raw.substitutions as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        if (missing(list[i]?.slotId)) {
+          warnings.push(
+            `substitutions[${i}] が参照するコマ (slotId=${String(
+              list[i]?.slotId
+            )}) が slots に存在しません`
+          );
+        }
       }
     }
 
@@ -596,15 +604,10 @@ function validateReferentialIntegrity(
         const ids = list[i].slotIds;
         if (!Array.isArray(ids)) continue;
         for (let j = 0; j < ids.length; j++) {
-          const k = toSlotIdKey(ids[j]);
-          if (k === null || !slotIds.has(k)) {
-            return {
-              ok: false,
-              error: `classSets[${i}].slotIds[${j}] (${String(
-                ids[j]
-              )}) が slots に存在しません`,
-              path: `classSets[${i}].slotIds[${j}]`,
-            };
+          if (missing(ids[j])) {
+            warnings.push(
+              `classSets[${i}].slotIds[${j}] (${String(ids[j])}) が slots に存在しません`
+            );
           }
         }
       }
@@ -614,27 +617,20 @@ function validateReferentialIntegrity(
       const list = raw.adjustments as Array<Record<string, unknown>>;
       for (let i = 0; i < list.length; i++) {
         const a = list[i];
-        const k = toSlotIdKey(a.slotId);
-        if (k === null || !slotIds.has(k)) {
-          return {
-            ok: false,
-            error: `adjustments[${i}].slotId (${String(
-              a.slotId
-            )}) が slots に存在しません`,
-            path: `adjustments[${i}].slotId`,
-          };
+        if (missing(a.slotId)) {
+          warnings.push(
+            `adjustments[${i}].slotId (${String(a.slotId)}) が slots に存在しません`
+          );
+          continue;
         }
         if (a.type === "combine" && Array.isArray(a.combineSlotIds)) {
           for (let j = 0; j < a.combineSlotIds.length; j++) {
-            const ck = toSlotIdKey(a.combineSlotIds[j]);
-            if (ck === null || !slotIds.has(ck)) {
-              return {
-                ok: false,
-                error: `adjustments[${i}].combineSlotIds[${j}] (${String(
+            if (missing(a.combineSlotIds[j])) {
+              warnings.push(
+                `adjustments[${i}].combineSlotIds[${j}] (${String(
                   a.combineSlotIds[j]
-                )}) が slots に存在しません`,
-                path: `adjustments[${i}].combineSlotIds[${j}]`,
-              };
+                )}) が slots に存在しません`
+              );
             }
           }
         }
@@ -644,15 +640,12 @@ function validateReferentialIntegrity(
     if (Array.isArray(raw.sessionOverrides)) {
       const list = raw.sessionOverrides as Array<Record<string, unknown>>;
       for (let i = 0; i < list.length; i++) {
-        const k = toSlotIdKey(list[i].slotId);
-        if (k === null || !slotIds.has(k)) {
-          return {
-            ok: false,
-            error: `sessionOverrides[${i}].slotId (${String(
+        if (missing(list[i].slotId)) {
+          warnings.push(
+            `sessionOverrides[${i}].slotId (${String(
               list[i].slotId
-            )}) が slots に存在しません`,
-            path: `sessionOverrides[${i}].slotId`,
-          };
+            )}) が slots に存在しません`
+          );
         }
       }
     }
@@ -666,23 +659,20 @@ function validateReferentialIntegrity(
     for (const c of raw.subjectCategories as Array<Record<string, unknown>>) {
       if (typeof c.id === "number") catIds.add(c.id);
     }
-    const bad = (raw.subjects as Array<Record<string, unknown>>).findIndex(
-      (s) =>
-        typeof s.categoryId !== "number" || !catIds.has(s.categoryId as number)
-    );
-    if (bad !== -1) {
-      const s = (raw.subjects as Array<Record<string, unknown>>)[bad];
-      return {
-        ok: false,
-        error: `subjects[${bad}] の categoryId (${String(
-          s?.categoryId
-        )}) が subjectCategories に存在しません`,
-        path: `subjects[${bad}].categoryId`,
-      };
+    const list = raw.subjects as Array<Record<string, unknown>>;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (typeof s.categoryId !== "number" || !catIds.has(s.categoryId as number)) {
+        warnings.push(
+          `subjects[${i}] の categoryId (${String(
+            s?.categoryId
+          )}) が subjectCategories に存在しません`
+        );
+      }
     }
   }
 
-  return null;
+  return warnings;
 }
 
 // ─── Migration ─────────────────────────────────────────────────────

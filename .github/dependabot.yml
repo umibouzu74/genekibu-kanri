@@ -4,8 +4,23 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      # Actions は互換性の問題がほぼ無いので 1 PR にまとめる
+      github-actions:
+        patterns: ["*"]
+
   - package-ecosystem: "npm"
     directory: "/genyakubu-manager"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    # minor / patch は 1 PR にまとめて CI を通す。major (React 19 / Vite 8 /
+    # ESLint 10 / Tailwind 4 など) は破壊的変更を伴うので Dependabot に
+    # 出させず、個別に判断して手で上げる (2026-09-04)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

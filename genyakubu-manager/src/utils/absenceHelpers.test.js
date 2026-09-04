@@ -367,3 +367,45 @@ describe("collectAbsenceTargets", () => {
     });
   });
 });
+
+// ─── 隔週の A/B を解いた「その日の担当」(2026-09-04) ──────────────────
+import { activeTeachersOnDate } from "./absenceHelpers";
+
+describe("activeTeachersOnDate", () => {
+  // 10/2 (金) を A 週のアンカーにすると 10/9 (金) は B 週
+  const anchors = [{ date: "2026-10-02", weekType: "A" }];
+  const biweekly = mk(1, { teacher: "堀上", note: "隔週(河野)", subj: "英/数" });
+
+  it("A 週は講師欄、B 週は note のパートナー", () => {
+    expect(activeTeachersOnDate(biweekly, "2026-10-02", { biweeklyAnchors: anchors })).toEqual(["堀上"]);
+    expect(activeTeachersOnDate(biweekly, "2026-10-09", { biweeklyAnchors: anchors })).toEqual(["河野"]);
+  });
+
+  it("休講で流れた週は週送りする (9/25 A、10/2 休講 → 10/9 は消化されなかった B)", () => {
+    const anchors925 = [{ date: "2026-09-25", weekType: "A" }];
+    // 休講が無ければ 10/9 は A (主担当)
+    expect(
+      activeTeachersOnDate(biweekly, "2026-10-09", { biweeklyAnchors: anchors925 })
+    ).toEqual(["堀上"]);
+    // 10/2 (B) が休講で流れると B が持ち越されて 10/9 はパートナー
+    const holidays = [
+      { id: 1, date: "2026-10-02", label: "休講", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    expect(
+      activeTeachersOnDate(biweekly, "2026-10-09", { biweeklyAnchors: anchors925, holidays })
+    ).toEqual(["河野"]);
+  });
+
+  it("隔週でないコマは講師欄をそのまま (多担任は全員)", () => {
+    const prep = mk(2, { teacher: "香川·福江·川井", note: "" });
+    expect(activeTeachersOnDate(prep, "2026-10-09", { biweeklyAnchors: anchors })).toEqual([
+      "香川",
+      "福江",
+      "川井",
+    ]);
+  });
+
+  it("アンカー未設定なら講師欄 (安全側)", () => {
+    expect(activeTeachersOnDate(biweekly, "2026-10-09", {})).toEqual(["堀上"]);
+  });
+});

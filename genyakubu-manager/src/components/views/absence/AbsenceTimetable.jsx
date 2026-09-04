@@ -1061,6 +1061,9 @@ export function AbsenceTimetable({
       {/* 代行ピッカー */}
       {subPicker && (
         <SubstitutePickerPopover
+          /* コマが変わったら作り直す。同じインスタンスのままだと前のコマで
+             選んだ元講師 (useState) を持ち越す */
+          key={subPicker.slot.id}
           anchorRect={subPicker.anchorRect}
           slot={subPicker.slot}
           date={date}

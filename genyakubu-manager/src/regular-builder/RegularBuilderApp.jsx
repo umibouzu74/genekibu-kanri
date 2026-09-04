@@ -83,6 +83,8 @@ export default function RegularBuilderApp({
   /** ヘッダの時間割セレクタ。期切替の反映後にここを新しい時間割へ向ける */
   activeTimetableId,
   onActivateTimetable,
+  /** 反映 (置き換え) で消えたコマに紐づく本体データの後始末 (App.jsx) */
+  onSlotsReflected,
   isAdmin,
 }) {
   const toasts = useToasts();
@@ -1941,6 +1943,7 @@ export default function RegularBuilderApp({
           classSets={classSets}
           activeTimetableId={activeTimetableId}
           onActivateTimetable={onActivateTimetable}
+          onSlotsReflected={onSlotsReflected}
           onClose={() => setShowReflect(false)}
         />
       )}

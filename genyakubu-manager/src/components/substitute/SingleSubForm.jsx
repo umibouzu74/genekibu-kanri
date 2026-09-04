@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
+import { activeTeachersOnDate } from "../../utils/absenceHelpers";
 import { SUB_STATUS, SUB_STATUS_KEYS, sortSlots as sortS } from "../../data";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
@@ -20,6 +21,9 @@ export function SingleSubForm({
   partTimeStaff,
   subjects,
   teacherKana = {},
+  biweeklyAnchors = [],
+  holidays = [],
+  examPeriods = [],
   f,
   setF,
   showAllCandidates,
@@ -86,25 +90,31 @@ export function SingleSubForm({
     () => slots.find((s) => s.id === Number(f.slotId)) || null,
     [slots, f.slotId]
   );
+  // 「その日に実際に担当する講師」。隔週は A/B を解く (B 週なら note の
+  // パートナー)。講師欄のままだと B 週のコマに A 週の主担当で代行が付く
   const selectedSlotTeachers = useMemo(
-    () => (selectedSlot ? getSlotTeachers(selectedSlot) : []),
-    [selectedSlot]
+    () =>
+      selectedSlot
+        ? activeTeachersOnDate(selectedSlot, date, { biweeklyAnchors, holidays, examPeriods })
+        : [],
+    [selectedSlot, date, biweeklyAnchors, holidays, examPeriods]
   );
   const isMultiTeacher = selectedSlotTeachers.length > 1;
 
-  // slot 変更時に元講師を自動入力 (単一教師のみ)
+  // slot / 日付が変わったら元講師を自動入力 (単一教師のみ)。日付で A/B が
+  // 変わるので日付にも追従する
   useEffect(() => {
     if (!selectedSlot) return;
-    const teachers = getSlotTeachers(selectedSlot);
-    if (teachers.length === 1 && selectedSlot.teacher !== f.originalTeacher) {
-      setF((p) => ({ ...p, originalTeacher: selectedSlot.teacher }));
+    const teachers = selectedSlotTeachers;
+    if (teachers.length === 1 && teachers[0] !== f.originalTeacher) {
+      setF((p) => ({ ...p, originalTeacher: teachers[0] }));
     } else if (teachers.length > 1) {
       if (!teachers.includes(f.originalTeacher)) {
         setF((p) => ({ ...p, originalTeacher: "" }));
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only on slot change
-  }, [selectedSlot?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only on slot / date change
+  }, [selectedSlot?.id, selectedSlotTeachers]);
 
   const matchedSubjectId = useMemo(
     () => pickSubjectId(selectedSlot?.subj, subjects),

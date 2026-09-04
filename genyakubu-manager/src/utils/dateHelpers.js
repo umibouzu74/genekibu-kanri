@@ -1,9 +1,16 @@
 import { DAYS, WEEKDAYS } from "../constants/schools";
 
-// "YYYY-MM-DD" 形式かつ Date.parse で読める日付文字列か。
+// "YYYY-MM-DD" 形式かつ実在する日付か。
 // HolidayManager / ExamPeriodManager / SpecialEventManager の入力検証で共有。
+// Date.parse は V8 で "2026-02-31" を 3/3 として通してしまう (月の日数を
+// 見ない) ので、ローカル Date に組み立てて年月日が往復一致するかで確かめる
+// (2026-09-04)。通してしまうと文字列一致で照合する休講日・テスト期間に
+// 永久にヒットしない日付が保存される。
 export function isValidDateStr(s) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 export function timeToMin(t) {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { activeTeachersOnDate } from "../../utils/absenceHelpers";
 import {
   getSubForSlot,
   sortSlots as sortS,
@@ -25,6 +26,9 @@ export function DayBulkSubForm({
   partTimeStaff,
   subjects,
   teacherKana = {},
+  biweeklyAnchors = [],
+  holidays = [],
+  examPeriods = [],
   rowState,
   setRowState,
   showAllCandidates,
@@ -92,10 +96,16 @@ export function DayBulkSubForm({
       .filter(([, v]) => v && v.substitute && v.substitute.trim())
       .map(([slotId, v]) => {
         const slot = slots.find((s) => s.id === Number(slotId));
+        // 隔週は A/B を解いた「その日の担当」を元講師にする (B 週なら note の
+        // パートナー)。多担任コマは行で選んだ 1 人 (既定は先頭) — 代行レコードは
+        // コマ × 講師 の単位なので、講師欄を丸ごと入れない
+        const active = slot
+          ? activeTeachersOnDate(slot, date, { biweeklyAnchors, holidays, examPeriods })
+          : [];
         return {
           date,
           slotId: Number(slotId),
-          originalTeacher: slot ? slot.teacher : "",
+          originalTeacher: v.originalTeacher || active[0] || "",
           substitute: v.substitute.trim(),
           status: v.substitute ? v.status || "requested" : "requested",
           memo: "",
@@ -166,6 +176,13 @@ export function DayBulkSubForm({
             const listId = `sub-teacher-list-${slot.id}`;
             const slotLabelId = `sub-row-label-${slot.id}`;
             const teachers = teachersForSlot(slot);
+            // その日に実際に担当する講師 (隔週は A/B を解く)
+            const activeTeachers = activeTeachersOnDate(slot, date, {
+              biweeklyAnchors,
+              holidays,
+              examPeriods,
+            });
+            const originalTeacher = row.originalTeacher || activeTeachers[0] || "";
             return (
               <div
                 key={slot.id}
@@ -185,7 +202,23 @@ export function DayBulkSubForm({
                   {slot.cls && slot.cls !== "-" ? slot.cls : ""} / {slot.subj}
                   {slot.room ? ` (${slot.room})` : ""}
                   <div style={{ fontSize: 10, color: "#777" }}>
-                    元講師: <b style={{ color: "#1a1a2e" }}>{slot.teacher}</b>
+                    元講師:{" "}
+                    {activeTeachers.length > 1 ? (
+                      <select
+                        value={originalTeacher}
+                        onChange={(e) => updateRow(slot.id, { originalTeacher: e.target.value })}
+                        aria-label="元講師"
+                        style={{ ...S.input, padding: "1px 4px", fontSize: 11, width: "auto" }}
+                      >
+                        {activeTeachers.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <b style={{ color: "#1a1a2e" }}>{originalTeacher || slot.teacher}</b>
+                    )}
                     {slot.note && (
                       <span style={{ marginLeft: 6, color: "#e67a00" }}>
                         ({formatBiweeklyNote(slot.teacher, slot.note)})

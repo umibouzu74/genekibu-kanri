@@ -60,12 +60,14 @@ export function isAway(sub) {
 // 画面に出す短いラベルと色。SUB_STATUS (依頼中/確定) と違い、代行者の
 // 有無まで含めた 4 状態ぶん。バッジは他のチップに合わせて 2〜4 文字。
 const META = {
+  // 「未定」(代行者を探す必要がある) と「依頼」(頼んだが未返事) は別の
+  // アクションなので色も分ける。同じ赤だと遠目・白黒印刷で区別できない
   [SUB_STATE.PENDING]: {
     badge: "未定",
     label: "代行未定",
     note: "代行を探し中",
-    color: "#c03030",
-    bg: "#fde4e4",
+    color: "#b34700",
+    bg: "#ffe6cc",
   },
   [SUB_STATE.NOSUB]: {
     badge: "代行なし",

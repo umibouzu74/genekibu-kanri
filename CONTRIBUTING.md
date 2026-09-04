@@ -24,7 +24,26 @@ npm test            # Vitest
 npm run build       # 本番ビルド
 ```
 
-これらは CI (`.github/workflows/ci.yml`) でも実行されます。
+これらは CI (`.github/workflows/ci.yml`) でも実行されます。`npm run lint` は
+警告もエラー扱い (`--max-warnings 0`) です。
+
+画面・印刷・Worker (時間割の自動生成) に触れる変更は、実 Chromium で回す
+E2E も通してください (CI でも `build` の後に走ります)。
+
+```bash
+npx playwright install chromium   # 初回のみ
+npm run test:e2e
+```
+
+## 先に読むもの
+
+- `CLAUDE.md` (リポジトリ直下): 却下済みの提案、削除 UX、講師名の区切り、
+  隔週 A/B、印刷 2 系統、Firebase 同期の空マーカー、孤立データの扱いなど
+  **決めごとの一覧**。これに反する変更は理由を PR に書いてください
+- `CHANGELOG.md`: 変更したら `[Unreleased]` に「何を・なぜ」を追記します
+  (見出しは Added / Changed / Fixed / Security)
+- Firebase を使う開発は `genyakubu-manager/.env.example` の手順で
+  `.env.local` を作ります (追跡しません)
 
 ## コード整形
 

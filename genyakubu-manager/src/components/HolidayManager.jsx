@@ -12,7 +12,7 @@ import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
-import { S } from "../styles/common";
+import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 
 // Extract unique class groups (school/course names) from configured slots.
@@ -379,7 +379,7 @@ export function HolidayManager({
                 type="checkbox"
                 checked={scope.includes(d)}
                 onChange={() => toggleScope(d)}
-                style={{ display: "none" }}
+                style={VISUALLY_HIDDEN}
               />
               {d}
             </label>
@@ -476,7 +476,7 @@ export function HolidayManager({
                       type="checkbox"
                       checked={sel}
                       onChange={() => toggleGrade(g)}
-                      style={{ display: "none" }}
+                      style={VISUALLY_HIDDEN}
                     />
                     {g}
                   </label>
@@ -527,7 +527,7 @@ export function HolidayManager({
                       type="checkbox"
                       checked={sel}
                       onChange={() => toggleKeyword(cls)}
-                      style={{ display: "none" }}
+                      style={VISUALLY_HIDDEN}
                     />
                     {cls}
                   </label>

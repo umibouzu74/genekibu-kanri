@@ -6,6 +6,7 @@ vi.mock("firebase/database", () => ({
   ref: vi.fn((_db, path) => ({ __path: path })),
   onValue: vi.fn(),
   set: vi.fn(() => Promise.resolve()),
+  get: vi.fn(() => Promise.resolve({ val: () => null })),
   off: vi.fn(),
 }));
 vi.mock("../firebase/config", () => ({

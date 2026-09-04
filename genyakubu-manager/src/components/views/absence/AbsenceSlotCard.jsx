@@ -10,6 +10,7 @@ import {
 import { formatSessionNumber } from "../../../utils/sessionCount";
 import { subState, subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
+import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
 
 // 状態 (pending / nosub / requested / confirmed) → 表示メタ。
 // substituteState の 1 か所から引く (色とラベルを画面ごとに書き起こさない)。
@@ -163,12 +164,62 @@ export function AbsenceSlotCard({
         ? "pointer"
         : "default";
 
+  // キーボード操作 (2026-09-04): 欠勤組み換えの主要操作 (代行・合同・移動・
+  // 回数補正) は右クリック → メニュー か D&D にしか無かった。Tab で到達し、
+  // Enter / Space でクリック相当、ContextMenu キー / Shift+F10 で右クリック
+  // 相当 (メニューはカードの左下に出す)。読み上げ用の名前も付ける
+  const interactive = !!(onClick || onContextMenu);
+  const stateWords = [
+    isAbsent ? "欠勤" : null,
+    isRescheduled ? "振替中" : null,
+    isMoved ? "移動" : null,
+    isCombineHost ? "合同" : null,
+    isAbsorbed ? "合同に吸収" : null,
+    ...[...new Set(subs.map((x) => subState(x)))].map((st) => STATE_META[st]?.label),
+  ].filter(Boolean);
+  const ariaLabel = [
+    slot.time,
+    [slot.grade, slot.cls].filter(Boolean).join(" "),
+    slot.subj,
+    // 隔週は担当週で解く (画面の講師表示と同じ)。講師欄だと B 週に A 週の人を読む
+    (date
+      ? activeTeachersOnDate(slot, date, { biweeklyAnchors, holidays, examPeriods })
+      : getSlotTeachers(slot)
+    ).join("・"),
+    stateWords.length ? `（${stateWords.join("、")}）` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      if (!onClick) return;
+      e.preventDefault();
+      onClick(e);
+    } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+      if (!onContextMenu) return;
+      e.preventDefault();
+      const r = e.currentTarget.getBoundingClientRect();
+      onContextMenu({
+        preventDefault() {},
+        stopPropagation() {},
+        clientX: r.left + 8,
+        clientY: r.bottom - 4,
+        currentTarget: e.currentTarget,
+        target: e.currentTarget,
+      });
+    }
+  };
+
   return (
     <div
       draggable={draggable}
       onDragStart={onDragStart}
       onContextMenu={onContextMenu}
       onClick={onClick}
+      tabIndex={interactive ? 0 : undefined}
+      role={interactive ? "button" : undefined}
+      aria-label={interactive ? ariaLabel : undefined}
+      onKeyDown={interactive ? onKeyDown : undefined}
       style={{
         background,
         border: `${isCombineCandidate || isCombineSource || isAbsent ? 2 : 1}px ${

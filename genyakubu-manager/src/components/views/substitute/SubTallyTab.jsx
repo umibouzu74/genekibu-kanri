@@ -62,10 +62,10 @@ export function SubTallyTab({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#1a1a2e", color: "#fff" }}>
-              <th style={{ padding: "10px 14px", textAlign: "left" }}>氏名</th>
-              <th style={{ padding: "10px 14px", textAlign: "center" }}>代行した</th>
-              <th style={{ padding: "10px 14px", textAlign: "center" }}>代行された</th>
-              <th style={{ padding: "10px 14px", textAlign: "center" }}>差引</th>
+              <th scope="col" style={{ padding: "10px 14px", textAlign: "left" }}>氏名</th>
+              <th scope="col" style={{ padding: "10px 14px", textAlign: "center" }}>代行した</th>
+              <th scope="col" style={{ padding: "10px 14px", textAlign: "center" }}>代行された</th>
+              <th scope="col" style={{ padding: "10px 14px", textAlign: "center" }}>差引</th>
             </tr>
           </thead>
           <tbody>

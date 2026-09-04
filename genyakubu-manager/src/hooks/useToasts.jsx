@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- context provider pattern requires co-located exports */
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 
 // ─── Toast context ─────────────────────────────────────────────────
 // 軽量なインメモリ通知。auto-dismiss / hover pause / visibility pause
@@ -50,13 +50,21 @@ export function ToastProvider({ children, render }) {
     [remove]
   );
 
-  const api = {
-    push,
-    success: (m, opts) => push(m, { ...opts, tone: "success" }),
-    error: (m, opts) => push(m, { ...opts, tone: "error", duration: 4500 }),
-    info: (m, opts) => push(m, { ...opts, tone: "info" }),
-    remove,
-  };
+  // context value は安定させる。毎レンダー新しいオブジェクトだと toast が
+  // 出る / 消えるたびに useToasts() の全消費者 (App・各 CRUD フック) が
+  // 再レンダーされ、[toasts] を deps に持つ useCallback も作り直される
+  const api = useMemo(
+    () => ({
+      push,
+      success: (m, opts) => push(m, { ...opts, tone: "success" }),
+      // 要対応のメッセージ (クラウド書込の拒否など) が席を外している間に
+      // 消えないよう、エラーは長めに出す (ホバーで一時停止は ToastContainer)
+      error: (m, opts) => push(m, { duration: 8000, ...opts, tone: "error" }),
+      info: (m, opts) => push(m, { ...opts, tone: "info" }),
+      remove,
+    }),
+    [push, remove]
+  );
 
   return (
     <ToastContext.Provider value={api}>

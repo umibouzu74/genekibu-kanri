@@ -53,6 +53,8 @@ export function LoginForm({ isAdmin, onSignIn, onSignOut }) {
       <input
         type="email"
         placeholder="メールアドレス"
+        aria-label="メールアドレス"
+        autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
@@ -61,12 +63,18 @@ export function LoginForm({ isAdmin, onSignIn, onSignOut }) {
       <input
         type="password"
         placeholder="パスワード"
+        aria-label="パスワード"
+        autoComplete="current-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         required
         style={input}
       />
-      {error && <div style={errStyle}>{error}</div>}
+      {error && (
+        <div style={errStyle} role="alert">
+          {error}
+        </div>
+      )}
       <button
         type="submit"
         disabled={busy}

@@ -30,7 +30,7 @@ export function AllView({ slots, onSelectTeacher }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr>
-            <th
+            <th scope="col"
               style={{
                 textAlign: "left",
                 padding: "10px 14px",
@@ -46,7 +46,7 @@ export function AllView({ slots, onSelectTeacher }) {
               講師名
             </th>
             {DAYS.map((d) => (
-              <th
+              <th scope="col"
                 key={d}
                 style={{
                   padding: "10px 12px",
@@ -60,7 +60,7 @@ export function AllView({ slots, onSelectTeacher }) {
                 {d}
               </th>
             ))}
-            <th
+            <th scope="col"
               style={{
                 padding: "10px 12px",
                 background: "#1a1a2e",

@@ -191,24 +191,24 @@ export function OverrideListTab({
           >
             <thead>
               <tr style={{ background: "#1a1a2e", color: "#fff" }}>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   日付
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   時間
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   学年
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left" }}>科目</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>科目</th>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   講師
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   内容
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
-                <th
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
+                <th scope="col"
                   tabIndex={0}
                   aria-sort={sortBy === "createdAt-desc" ? "descending" : "none"}
                   style={{
@@ -239,7 +239,7 @@ export function OverrideListTab({
                   </span>
                 </th>
                 {isAdmin && (
-                  <th
+                  <th scope="col"
                     className="no-print"
                     style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
                   >

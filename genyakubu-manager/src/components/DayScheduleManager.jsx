@@ -14,7 +14,7 @@ import {
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
-import { S } from "../styles/common";
+import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 
 // ─── 特別時程マネージャ ─────────────────────────────────────────────
@@ -313,7 +313,7 @@ export function DayScheduleManager({
           type="checkbox"
           checked={sel}
           onChange={onClick}
-          style={{ display: "none" }}
+          style={VISUALLY_HIDDEN}
         />
         {g}
       </label>
@@ -454,7 +454,7 @@ export function DayScheduleManager({
                   <thead>
                     <tr>
                       {["元の時刻", "新しい時刻（空欄 = 変更なし）", "休講"].map((h) => (
-                        <th
+                        <th scope="col"
                           key={h}
                           style={{
                             textAlign: "left",

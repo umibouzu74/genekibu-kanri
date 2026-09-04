@@ -9,6 +9,7 @@ import {
 } from "../../utils/daySchedules";
 import { useToasts } from "../../hooks/useToasts";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { SUB_STATE, subState } from "../../utils/substituteState";
 import { DashDayRow } from "./Dashboard";
 import { shiftDate } from "./dashboardHelpers";
 import { isTimetableActiveForDate, isSlotBeyondCutoff } from "../../utils/timetable";
@@ -64,7 +65,7 @@ export function ConfirmedSubsView({
   // 「代行なしで確定 (残りの担当者で回す)」がここに混ざり、代行者が空欄の
   // 行が並ぶ (utils/substituteState の 4 状態)。
   const confirmedSubs = useMemo(
-    () => subs.filter((s) => s.status === "confirmed" && s.substitute),
+    () => subs.filter((s) => subState(s) === SUB_STATE.CONFIRMED),
     [subs]
   );
 

@@ -11,7 +11,7 @@ import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
-import { S } from "../styles/common";
+import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
@@ -488,7 +488,7 @@ export function ExamPeriodManager({
                       type="checkbox"
                       checked={sel}
                       onChange={() => toggleGrade(g)}
-                      style={{ display: "none" }}
+                      style={VISUALLY_HIDDEN}
                     />
                     {g}
                   </label>
@@ -662,7 +662,7 @@ export function ExamPeriodManager({
                             checked={sel}
                             onChange={() => toggleExGrade(g)}
                             aria-label={`${g} は授業を行う`}
-                            style={{ display: "none" }}
+                            style={VISUALLY_HIDDEN}
                           />
                           {g}
                         </label>

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { exportSlotsCsv, exportSubsCsv } from "../utils/csv";
-import { detectOrphans } from "../utils/orphanCleanup";
+import { detectOrphans, listOrphanDetection } from "../utils/orphanCleanup";
 
 export function DataManager({
   slots,
@@ -10,11 +10,14 @@ export function DataManager({
   subs,
   adjustments,
   sessionOverrides,
+  classSets,
   onExport,
   onImport,
   onReset,
   onCleanupOrphans,
   importing,
+  /** 閲覧者には書き換える操作 (インポート / 掃除 / 初期化) を出さない */
+  isAdmin = true,
 }) {
   const slotMap = {};
   if (subs && slots) {
@@ -28,8 +31,9 @@ export function DataManager({
         subs: subs || [],
         adjustments: adjustments || [],
         sessionOverrides: sessionOverrides || [],
+        classSets: classSets || [],
       }),
-    [slots, subs, adjustments, sessionOverrides]
+    [slots, subs, adjustments, sessionOverrides, classSets]
   );
 
   return (
@@ -62,6 +66,14 @@ export function DataManager({
           )}
         </div>
       </div>
+      {!isAdmin && (
+        <div style={{ fontSize: 11, color: "#666", padding: "0 4px" }}>
+          インポート・孤立データ掃除・初期化は管理者ログイン中だけ使えます
+          （クラウドへの書込が拒否され、この端末の表示だけがずれるため）。
+        </div>
+      )}
+      {isAdmin && (
+      <>
       <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
           インポート（復元）
@@ -110,22 +122,11 @@ export function DataManager({
                 lineHeight: 1.7,
               }}
             >
-              {orphanDetection.orphanSubs.length > 0 && (
-                <li>代行記録 {orphanDetection.orphanSubs.length} 件 (削除)</li>
-              )}
-              {orphanDetection.orphanAdjustments.length > 0 && (
-                <li>
-                  時間割調整 {orphanDetection.orphanAdjustments.length} 件 (削除)
+              {listOrphanDetection(orphanDetection).map((r) => (
+                <li key={r.key}>
+                  {r.label} {r.count} 件 ({r.action})
                 </li>
-              )}
-              {orphanDetection.updatedAdjustments.length > 0 && (
-                <li>
-                  合同授業 {orphanDetection.updatedAdjustments.length} 件 (削除済みコマを除外)
-                </li>
-              )}
-              {orphanDetection.orphanOverrides.length > 0 && (
-                <li>回数補正 {orphanDetection.orphanOverrides.length} 件 (削除)</li>
-              )}
+              ))}
             </ul>
             <button
               type="button"
@@ -163,6 +164,8 @@ export function DataManager({
           データを初期化
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -2,6 +2,230 @@
 
 ## [Unreleased]
 
+### Fixed (隔週コマの B 週に A 週の主担当で代行が登録されていた)
+
+2026-10-09 (金) の中3S 英/数 (隔週、B 週) で、代行の元講師が講師欄の主担当
+(A 週の人) になっていた。欠勤組み換え画面の中は `biweeklyActiveTeacher` で
+A/B を解いていたが、**代行レコードを作る他の経路が講師欄 (`getSlotTeachers`
+/ `slot.teacher`) をそのまま元講師にしていた**。
+
+- 元講師の解決は **`absenceHelpers.activeTeachersOnDate`** (隔週の A/B +
+  休講・テスト期間による週送り) に一本化して公開し、次の 4 経路をそれに
+  寄せた:
+  - タイムテーブル代行モードの「代行が要るコマ」と「その日の講師一覧」
+    (`useSubstitutionMode`)。B 週に A 週の主担当を欠勤にしても、そのコマは
+    対象にならない
+  - 代行モードでセルをクリックしたときの元講師 (`ExcelSection`)
+  - 授業管理 → 代行登録の単一コマ (`SingleSubForm`。日付を変えると A/B に
+    追従して元講師を入れ直す) と 1 日分まとめて (`DayBulkSubForm`)
+- 欠勤組み換えの代行ピッカーはコマごとに作り直す (`key={slot.id}`)。同じ
+  インスタンスのままだと前のコマで選んだ元講師を持ち越す余地があった
+- テスト: `activeTeachersOnDate` 4 件、`useSubstitutionMode` 4 件、
+  `SubstituteForm` 2 件
+
+**既に登録済みの誤った代行レコード (元講師が A 週の人になっているもの)
+は自動では直らない**。該当のコマで代行を外して登録し直すこと。
+
+### Changed (App.jsx を分割した。挙動は変えていない)
+
+2,000 行の `App.jsx` から、中身を変えずに 3 つを切り出した (1,558 行に)。
+
+- **`hooks/useAppData.js`**: 永続 state 20 本の `useSyncedStorage` (+ 端末
+  限定の `eventVisibility`) と保存エラーの通知 (`onStorageError`)。
+  新しい永続 state はここに足す (同期するキーは `database.rules.json` にも)
+- **`hooks/usePrintJobs.js`**: popup 系の印刷 (`handlePrint` / 一括印刷
+  `handleBatchPrint` とその state)。印刷 2 系統の設計は従来どおり
+- **`styles/appShell.css`**: 末尾の 175 行の `<style>` 文字列を CSS ファイルに
+  (Vite が index の CSS として出す)
+- **`App.smoke.test.jsx`** を追加。App にはテストが無かったので、サイドバーの
+  全ビューを順に開いてもクラッシュしない / 講師を選んで月間・週間が描ける、
+  を固定してから分割した
+
+### Changed (テーブル見出しの scope、週間 / 月間ビューの遅延読み込み)
+
+- 一覧・グリッド 11 ファイルの `<thead>` 内 `<th>` 60 個に `scope="col"`
+  (結合見出しは `colgroup`) を付けた。時限 × クラスの 2 軸グリッドで、
+  スクリーンリーダーがセルの文脈を読めるようになる
+- 講師別の週間 (`WeekView`) と月間 (`MonthView`) を遅延読み込みに。
+  講師を選ぶまで要らない 2,300 行超を初期バンドルから外した。一括印刷は
+  月間ビューから起動するのでチャンクは読み込み済み
+
+### Changed (コマカードと時間割セルをキーボードで操作できるようにした)
+
+欠勤組み換えのカード (`AbsenceSlotCard`) とタイムテーブルのセル
+(`ExcelCell`) は、右クリック・ダブルクリック・D&D にしか操作が無く、Tab で
+到達できず読み上げもされなかった。
+
+- どちらも操作があるときだけ `tabIndex=0` / `role="button"` になり、
+  「19:50-20:35 中3 S 数学 堀上（欠勤、代行未定）」のように内容と状態を
+  読み上げ名に持つ
+- カード: Enter / Space でクリック相当、**ContextMenu キー / Shift+F10 で
+  右クリック相当** (メニューはカードの左下に出る)
+- セル: 代行モードでは Enter / Space でクリック相当、通常モード (管理者)
+  では編集を開く (ダブルクリック相当)
+- キーボードフォーカスのときだけ枠を出す (`:focus-visible`)
+
+### Changed (CI と開発環境の整備)
+
+- **E2E (Playwright) を CI で回す** (`ci.yml` の `e2e` ジョブ。build の後、
+  失敗時はレポートを artifact に残す)。印刷 2 系統と Worker 経路は jsdom で
+  検証できないので、これまで壊れても気付けなかった
+- `npm run lint` を `--max-warnings 0` に (警告も CI で止める)。CI に
+  `concurrency` (同じブランチへの連続 push で古い run を止める)
+- `.editorconfig`、`.vscode/settings.json` (ESLint 拡張にサブディレクトリを
+  教える)、PR テンプレート (`.github/PULL_REQUEST_TEMPLATE.md`) を追加
+- GitHub Skills の教材の残骸 (`.github/steps/`) を削除
+- README のディレクトリ構成を実態に合わせ、CONTRIBUTING に E2E・
+  `CLAUDE.md`・CHANGELOG 追記の慣習・`.env.local` を追記
+- 代行確定一覧の「確定 かつ 代行者あり」の判定を `substituteState.subState`
+  に寄せた (画面に条件を書き起こさない。取り違えの再発防止)
+
+### Fixed (存在しない日付が休講日・テスト期間に保存できていた)
+
+`dateHelpers.isValidDateStr` が `Date.parse` に頼っていたため、V8 では
+`2026-02-31` (→ 3/3 に丸められる) を通していた。保存された文字列は休講日・
+テスト期間の文字列一致に永久にヒットしない。年月日を組み立てて往復一致で
+確かめるようにした。
+
+### Changed (性能・キーボード・閲覧者まわりの小さな改善)
+
+- **講師検索の打鍵で App 全体が再描画されなくなった**。検索文字列を
+  `Sidebar` のローカル state に降ろし、グループ分けは全量を 1 度だけ作って
+  `filterTeacherGroups` で絞る (`useTeacherGroups` を 2 回呼んでいたのも 1 回に)
+- **月間カレンダーの第N回計算で id → コマの Map を日ごとに作り直さない**
+  (`useSessionCtx` が `_slotById` を 1 度作って渡す。`sessionCount.buildSlotById`)
+- **閲覧者の書込が権限で拒否されたら、サーバの値に巻き戻す**
+  (`useSyncedStorage.rollbackToServer`)。以前はこの端末だけが別のデータを
+  表示し続けていた。ネットワーク断は SDK が再送するので巻き戻さない
+- `prefers-reduced-motion` でアニメーションと transition を止める。
+  「本文へ移動」のスキップリンク (Tab で最初に現れる)。月送りの ◀ ▶ に
+  `aria-label`、年月に `aria-live`
+
+### Changed (UX / アクセシビリティの点検で見つかった小さな穴をまとめて塞いだ)
+
+- **クラウド書込・端末保存の失敗を toast で知らせる** (`App.onStorageError`)。
+  権限エラー以外の失敗はフッタの同期ドットが赤くなるだけで気付けなかった。
+  30 秒に 1 回に抑える。エラー toast は 4.5 秒 → 8 秒
+- **「未定」と「依頼」の色を分けた** (`substituteState`)。代行者を探す必要が
+  ある「未定」は橙、頼んで未返事の「依頼」は赤のまま。同じ赤だと遠目・
+  白黒印刷で区別できなかった
+- **追加授業の担当講師に既存の講師名の候補** (`<datalist>`) を出す。
+  自由入力の表記ゆれ (末尾空白・別表記) で講師別カレンダーから外れるのを防ぐ
+- **スマホでは閉じた状態から始める** (`App` の `sidebarOpen` 初期値を
+  `matchMedia` で決める)。初回表示でサイドバーがダッシュボードを隠していた
+- **データ管理のインポート・孤立データ掃除・初期化を管理者だけに**
+  (`DataManager` の `isAdmin`)。閲覧者が押すとクラウド書込が拒否され、
+  その端末の表示だけがずれていた。エクスポート・CSV は従来どおり誰でも
+- **キーボード / スクリーンリーダー**:
+  - サイドバーの `<button>` の中にあった `role="button"` (依頼中バッジ・
+    展開トグル) を兄弟の `<button>` に分けた (入れ子は不正な DOM)。現在の
+    ビューに `aria-current="page"`、トグルに `aria-expanded`
+  - 休講・テスト期間・特別イベント・特別時程の学年チェックボックス 8 か所を
+    `display:none` から `VISUALLY_HIDDEN` に (Tab で到達でき、読み上げも
+    される)。`label:has(> input:focus-visible)` でフォーカスリングを出す
+  - 本体の `ContextMenu` に `role="menu"` / `menuitem`、開いたら先頭項目へ
+    フォーカス、↑↓ / Home / End で移動、Esc で閉じる、画面端でクランプ
+  - ログインフォームに `aria-label` / `autoComplete`、エラーに `role="alert"`
+- `useToasts` の context value を `useMemo` で安定させた (toast が出る /
+  消えるたびに全消費者が再レンダーされていた)
+
+### Fixed (孤立データを含むバックアップが復元できなかった)
+
+通常時間割作成の「置き換え」反映は slots / timetables しか保存せず、消えた
+コマを参照する代行・調整・回数補正・旧形式 (slotIds) の授業セットが残って
+いた。一方でインポートの参照整合性チェックはそれを**丸ごと拒否**するので、
+反映のあとに取ったバックアップが二度と復元できなかった。
+
+- **インポートの参照整合性は「拒否」から「警告」に変更**
+  (`schema.validateExportBundle` が `warnings` を返す)。参照先の無いレコードは
+  取り込んだうえで件数を toast に出し、同じ画面の「孤立データ掃除」へ案内する
+- **反映 (置き換え) でコマが減ったときは、消えたコマに紐づくデータを
+  その場で掃除する** (`orphanCleanup.cascadeOrphansForSlots`、App の
+  `handleSlotsReflected`)。コマ削除の cascade と同じ対象。確認文を
+  「無効になります」から「一緒に削除されます」に改め、掃除した件数を
+  完了 toast に出す
+- **旧形式 (slotIds) の授業セットも孤立データ掃除の対象に加えた**
+  (`analyzeOrphanClassSets`)。参照先が全部消えたセットは削除、一部なら
+  消えた id を抜く。units 形式は対象外 (コマ id を参照しない)
+
+### Fixed (デプロイ直後の古いタブが「保存データを初期化」に誘導していた)
+
+GitHub Pages に新しい版を配信するとハッシュ付きチャンク名が変わり、開き
+っぱなしのタブで別のビューへ移った瞬間に lazy import が失敗する。それを
+ルートの ErrorBoundary が「画面の描画中にエラー」として受け、第 2 ボタンの
+**localStorage 全消去**を見せていた (単なるキャッシュ切れでデータを消す導線)。
+
+- **チャンク読込失敗を判別** (`ErrorBoundary.isChunkLoadError`) して
+  「アプリが更新されました。再読込してください。保存データは消えません」
+  だけを出す (初期化ボタンは出さない)
+- **ビュー単位の ErrorBoundary** (`scope="view"`) を `#main-content` の
+  Suspense の内側に置いた。1 つのビューの描画バグでサイドバーごと落ちず、
+  「再試行」か別のビューへの移動 (`resetKey`) で復帰する。初期化ボタンは
+  ルート (scope="app") にしか出さない
+
+### Changed (依存関係の更新を回るようにした)
+
+- **Node 22** に統一 (`.nvmrc` / `package.json` の `engines` / CI と deploy の
+  `node-version-file`)。Node 20 は 2026-04-30 で EOL
+- **Dependabot**: npm の minor / patch を 1 PR にまとめ、major (React 19 /
+  Vite 8 / ESLint 10 / Tailwind 4 など) は `ignore` で出さない (個別に判断
+  して手で上げる)。GitHub Actions も 1 PR にまとめる。上限を 10 に
+- `npm audit fix` で修正できる脆弱性 (@grpc/grpc-js / brace-expansion /
+  protobufjs) を lockfile で更新。残るのは exceljs が依存する uuid の
+  moderate 2 件で、直すには exceljs のダウングレードが要るため見送り
+  (使っている v3/v5/v6 の buf 引数の経路は exceljs の用途に無い)
+
+### Fixed (最後の 1 件を消すと他端末から復活していた同期の穴を塞いだ)
+
+Firebase RTDB は `[]` / `{}` を書くとノードごと消し、他端末には `null` が
+届く。`useSyncedStorage` はその `null` を「Firebase 側が未初期化 = 自分の
+localStorage で seed する」と読んでいたので、**代行記録や回数補正を最後の
+1 件まで消す / データ管理の「初期化」をする**と、開いている他端末が古い
+配列を書き戻して削除が復活していた。
+
+- 空の値は **`{__empty: "<JSON>"}` のマーカー**として書き、`null` が届くのは
+  本当に一度も書かれていないときだけにした (`useSyncedStorage.encodeForServer`
+  / `decodeFromServer`)。`[]` と `{groups: [], cohorts: []}` のような形の
+  違いもそのまま戻る
+- `null` からの seed は**セッション中 1 回だけ**。値を受け取った後の `null`
+  (旧版のタブが `[]` を書いた等) は無視して手元の state を保つ
+- **配信後の注意**: マーカーは新しい形式なので、開きっぱなしの**旧版のタブ**
+  は、誰かがリストを最後の 1 件まで空にした瞬間にマーカーを配列として受けて
+  落ちる (その画面のエラー表示になる)。配信したら各端末で一度再読み込み
+  すること。新版はマーカーを読み戻せるので、再読み込み後は問題ない
+- 併せて、配列のキーに RTDB がオブジェクト (`{0: …, 2: …}`。疎な配列や
+  コンソールで 1 件消したとき) を返した場合は配列に直すようにした
+  (そのまま入れると `slots.filter is not a function` で全画面が落ち、
+  localStorage にも書かれてリロードで再現していた)
+
+### Fixed (リロードのたびに管理者ログインが外れていた)
+
+`firebase/config.js` がモジュール読込時に無条件で `signInAnonymously` を
+呼んでいた。SDK は「今のユーザが匿名でなければ新しい匿名ユーザで置き換える」
+ので、永続化された password セッションが毎回捨てられ、匿名ユーザも毎回
+1 つ増えていた。`onAuthStateChanged` の初回でユーザが居ないときだけ匿名
+サインインするようにした。
+
+### Security (RTDB の書込権限を「登録済み管理者」に絞った)
+
+`database.rules.json` の `.write` が「password プロバイダなら誰でも」だった。
+Firebase Auth の Email/Password はクライアントからのアカウント作成が既定で
+有効なので、公開ビルドの API キーで誰でも管理者になれる余地があった。
+
+- 書込は **password ログイン かつ `/admins/<uid>: true`** に登録された
+  uid だけ。**先に `/admins` へ uid を登録してからルールをデプロイする**
+  (手順は `.env.example` / README)
+- `appData` 直下は実際に書くキーだけを列挙し、それ以外は `$other` で拒否。
+  各キーに最低限の型検証 (`hasChildren()` / 文字列) を付けた
+- `.gitignore` に `.env` / `.env.*` を追加 (`.env.example` だけ追跡)
+
+### Changed (GitHub Pages への配信を CI 成功後に限定した)
+
+`deploy.yml` が `push: main` で単独起動していたため、テストが落ちたコミット
+もそのまま配信されていた。`workflow_run` で CI (lint / typecheck / test /
+build) の成功後にだけ走るようにした。手動実行 (`workflow_dispatch`) は
+従来どおり。
+
 ### Added (テスト期間中でも例外的に授業を行う日を設定できるようにした)
 
 イレギュラーで**特訓は始まっているのに授業は休みにならない日**があった

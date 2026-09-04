@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
+import { activeTeachersOnDate } from "../utils/absenceHelpers";
 import { dateToDay } from "../data";
-import { getSlotTeachers } from "../utils/biweekly";
 import { needsSubstitute } from "../utils/substituteState";
 import { filterSlotsForDate } from "../utils/timetable";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
@@ -35,6 +35,13 @@ export function useSubstitutionMode({
 
   const dayOfDate = subDate ? dateToDay(subDate) : null;
   const isSubMode = subDate !== null;
+  // 隔週の A/B (+ 休講・テスト期間による週送り) を解いて「その日に実際に
+  // 担当する講師」を出すための材料。講師欄 (getSlotTeachers) をそのまま
+  // 使うと B 週のコマに A 週の主担当で代行が付く
+  const biweeklyCtx = useMemo(
+    () => ({ biweeklyAnchors, holidays, examPeriods }),
+    [biweeklyAnchors, holidays, examPeriods]
+  );
 
   // Filtered slots for the specific date (timetable-aware)
   const dateFilteredSlots = useMemo(() => {
@@ -99,7 +106,7 @@ export function useSubstitutionMode({
     const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
     for (const slot of dateFilteredSlots) {
       if (slot.day !== dayOfDate) continue;
-      const names = getSlotTeachers(slot);
+      const names = activeTeachersOnDate(slot, subDate, biweeklyCtx);
       for (const n of names) {
         if (!map.has(n)) {
           const isPartTime = staffNameSet.has(n);
@@ -118,7 +125,7 @@ export function useSubstitutionMode({
       }
     }
     return [...map.values()];
-  }, [subDate, dayOfDate, dateFilteredSlots, partTimeStaff, teacherSubjects]);
+  }, [subDate, dayOfDate, dateFilteredSlots, partTimeStaff, teacherSubjects, biweeklyCtx]);
 
   // Build uncovered slots from unavailableTeachers + holidayOff
   // (slots that need substitutes but don't have one yet)
@@ -135,7 +142,8 @@ export function useSubstitutionMode({
       // 代行なしで確定したものは探さない (残りの担当者で回す)。
       const forSlot = existingSubMap.get(slot.id) || [];
       const stateOf = new Map(forSlot.map((x) => [x.originalTeacher, x]));
-      for (const t of getSlotTeachers(slot)) {
+      // 隔週は A/B を解いた「その日の担当」で見る (B 週なら note のパートナー)
+      for (const t of activeTeachersOnDate(slot, subDate, biweeklyCtx)) {
         if (!unavailableTeachers.has(t)) continue;
         const existing = stateOf.get(t);
         if (existing && !needsSubstitute(existing)) continue;
@@ -143,7 +151,7 @@ export function useSubstitutionMode({
       }
     }
     return result;
-  }, [subDate, dayOfDate, dateFilteredSlots, holidayOffSlots, existingSubMap, pendingSubMap, unavailableTeachers]);
+  }, [subDate, dayOfDate, dateFilteredSlots, holidayOffSlots, existingSubMap, pendingSubMap, unavailableTeachers, biweeklyCtx]);
 
   // Chain suggestions
   const chainSuggestions = useMemo(() => {

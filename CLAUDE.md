@@ -596,7 +596,11 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   (合同・振替へ切り替えたとき)
 - **元講師は登録する側で隔週の A/B を解決してから渡す**
   (`absenceHelpers.activeTeachersOnDate`)。下書きのキーがそのまま
-  `originalTeacher` になる
+  `originalTeacher` になる。**代行レコードを作る経路は欠勤組み換えだけでは
+  ない** — タイムテーブル代行モード (`useSubstitutionMode` / `ExcelSection`)
+  と授業管理の代行登録フォーム (`SingleSubForm` / `DayBulkSubForm`) も同じ
+  関数を通す。`getSlotTeachers(slot)` / `slot.teacher` を元講師にすると
+  B 週のコマに A 週の主担当で代行が付く (2026-09-04 修正)
 - カードやセルでは**休む人だけ取消線**を引き、出る人はそのまま残す
   (全員休みに見えない)
 
@@ -705,6 +709,68 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - プリセット (50 分授業 / 1 限カット) は**その日のコマから時間帯を導出**
   して生成する — 時程をコードに固定しない。
 - 削除は cascade 無しなので removeWithUndo (上の削除 UX ルール準拠)。
+
+## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
+
+RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、
+他端末には `null` が届く。`useSyncedStorage` はこれを次のように扱う。
+**このルールを崩す変更をしないこと** (最後の 1 件を消した削除が他端末から
+復活する、の再発防止)。
+
+- **空の値は `{__empty: "<JSON>"}` のマーカーで書く**
+  (`useSyncedStorage.encodeForServer` / `decodeFromServer`)。`null` が届くのは
+  本当に一度も書かれていないキーだけ
+- `null` からの localStorage seed は**セッション中 1 回だけ**。値を受け取った
+  後の `null` は無視して手元を保つ (再 seed すると端末同士で書き戻し合う)
+- **`useSyncedStorage` を通さずに `appData/*` へ `set()` する経路を足さない**。
+  足すなら同じ encode / decode を通す (講習作成の `builder/schedule_project`
+  は JSON 文字列なので対象外)
+- 配列のキーに RTDB がオブジェクト (`{0: …, 2: …}`) を返す場合は decode で
+  配列に直す。`migrate` 側でこれを前提にしない
+
+書込権限 (`database.rules.json`) は **password ログイン かつ
+`/admins/<uid>: true`**。ルールを変えたら手動で
+`npx firebase-tools deploy --only database`。`appData` 直下のキーは列挙制で、
+**同期するキーを増やしたらルールにも足す** (`$other` で拒否される)。
+
+## 孤立データ (消えたコマへの参照) の扱い (2026-09-04 確定)
+
+コマ (Slot) が消える経路は 3 つ: コマ削除 (`useSlotsCrud.del`)・通常時間割
+作成の置き換え反映 (`ReflectDialog` → App の `handleSlotsReflected`)・
+インポート。**消えたコマに紐づくデータは残さない**のが方針で、対象は
+代行・時間割調整 (合同は id を抜く)・回数補正・**旧形式 (slotIds) の授業
+セット**。判定は `utils/orphanCleanup` (`detectOrphans` /
+`cascadeOrphansForSlots`) に集約し、**画面ごとに参照チェックを書き起こさない**。
+
+- **インポートの参照整合性は警告** (`validateExportBundle` の `warnings`)。
+  拒否に戻さないこと — 孤立を含むバックアップが復元できなくなる。掃除は
+  インポート後に「孤立データ掃除」で
+- 新しくコマ id を参照するモデルを足したら、`orphanCleanup` と
+  `schema.collectReferentialWarnings` の両方に足す (片方だけだと、掃除で
+  消えない参照が警告に出続ける)
+
+## App.jsx の構成 (2026-09-04 分割)
+
+- **永続 state は `hooks/useAppData.js`** に集約 (20 本の `useSyncedStorage` +
+  `eventVisibility` + `onStorageError`)。App は分割代入で受ける。
+  **App.jsx に直接 `useSyncedStorage` を書き足さない**
+- **popup 系の印刷は `hooks/usePrintJobs.js`** (`handlePrint` / 一括印刷)。
+  印刷 2 系統の使い分けは上の「印刷システムの二系統」のとおり
+- **App のグローバル CSS は `styles/appShell.css`**。`<style>` 文字列を
+  App.jsx に戻さない
+- App 全体のスモークは `App.smoke.test.jsx` (全ビュー遷移でクラッシュしない)。
+  ビューを足したら `VIEW_LABELS` に名前を足す
+
+## ErrorBoundary の 2 段構え (2026-09-04)
+
+- `main.jsx` のルート (`scope="app"`) が最後の砦。**「保存データを初期化」
+  ボタンはここだけ**
+- `App.jsx` の `#main-content` に `scope="view"` を置き、ビュー 1 つの
+  描画バグでサイドバーごと落とさない。`resetKey` (現在のビュー) が変われば
+  自動復帰
+- **デプロイ後の古いタブ** (lazy import のチャンク取得失敗) は
+  `isChunkLoadError` で判別して「再読込」だけを案内する。ここに初期化を
+  見せると、単なるキャッシュ切れで事務員がデータを消す
 
 ## 参考: 今後の候補として残っている未実装アイデア
 

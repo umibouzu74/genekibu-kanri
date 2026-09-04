@@ -34,8 +34,12 @@ export function getAbsenceDaySlots(slots, dateStr, dayName, opts = {}) {
 // **隔週のパートナーは note にしか出ない**ので、`getSlotTeachers`
 // (講師欄しか見ない) で欠勤対象を探すとパートナーを取りこぼし、逆に
 // 担当しない週のコマまで拾ってしまう。赤枠 (getAbsentSlotIds) と一括登録
-// (collectAbsenceTargets) はこの 1 つの判定を共有すること。
-function activeTeachersOnDate(slot, dateStr, ctx = {}) {
+// (collectAbsenceTargets) だけでなく、**代行レコードの originalTeacher を
+// 決めるすべての経路** (タイムテーブル代行モード・授業管理の代行登録
+// フォーム) がこの 1 つの判定を使うこと (2026-10 の B 週に A 週の主担当で
+// 代行が登録された不具合の再発防止)。ctx は { biweeklyAnchors, holidays,
+// examPeriods } (holidays / examPeriods は隔週ローテーションの週送り用)。
+export function activeTeachersOnDate(slot, dateStr, ctx = {}) {
   return splitTeacherField(
     biweeklyActiveTeacher(
       slot,

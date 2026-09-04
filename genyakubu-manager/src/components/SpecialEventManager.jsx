@@ -12,7 +12,7 @@ import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { formatDateRange } from "../utils/dateHelpers";
-import { S } from "../styles/common";
+import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { TAG_META } from "../constants/eventKinds";
 import {
@@ -276,7 +276,7 @@ export function SpecialEventManager({
                     name="special-event-type"
                     checked={sel}
                     onChange={() => setEventType(t.key)}
-                    style={{ display: "none" }}
+                    style={VISUALLY_HIDDEN}
                   />
                   <span aria-hidden="true">{t.icon}</span> {t.label}
                 </label>
@@ -431,7 +431,7 @@ export function SpecialEventManager({
                       type="checkbox"
                       checked={sel}
                       onChange={() => toggleGrade(g)}
-                      style={{ display: "none" }}
+                      style={VISUALLY_HIDDEN}
                     />
                     {g}
                   </label>

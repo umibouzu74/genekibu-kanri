@@ -306,3 +306,99 @@ describe("slotId の型正規化 (K2f)", () => {
     expect(updated[0].next.combineSlotIds).toEqual(["2"]);
   });
 });
+
+// ─── 旧形式 (slotIds) の授業セット / まとめて後始末 (2026-09-04) ──────────
+import {
+  analyzeOrphanClassSets,
+  cascadeOrphansForSlots,
+  describeOrphanDetection,
+} from "./orphanCleanup";
+
+describe("analyzeOrphanClassSets", () => {
+  const live = [{ id: 1 }, { id: 2 }];
+
+  it("units 形式は対象外", () => {
+    const r = analyzeOrphanClassSets(
+      [{ id: 1, label: "中3 火木", units: [{ grade: "中3", day: "火" }], slotIds: [99] }],
+      live
+    );
+    expect(r.removed).toEqual([]);
+    expect(r.updated).toEqual([]);
+  });
+
+  it("参照先が全部消えたセットは removed", () => {
+    const set = { id: 1, label: "old", slotIds: [98, 99] };
+    const r = analyzeOrphanClassSets([set], live);
+    expect(r.removed).toEqual([set]);
+  });
+
+  it("一部だけ消えたセットは消えた id を抜いて updated", () => {
+    const set = { id: 1, label: "old", slotIds: [1, 99] };
+    const r = analyzeOrphanClassSets([set], live);
+    expect(r.removed).toEqual([]);
+    expect(r.updated).toEqual([{ original: set, next: { ...set, slotIds: [1] } }]);
+  });
+
+  it("文字列 slotId も同一視する", () => {
+    const r = analyzeOrphanClassSets([{ id: 1, slotIds: ["1", "2"] }], live);
+    expect(r.updated).toEqual([]);
+    expect(r.removed).toEqual([]);
+  });
+});
+
+describe("detectOrphans / applyOrphanCleanup with classSets", () => {
+  it("classSets も total に数え、掃除後のリストを返す", () => {
+    const slots = [{ id: 1 }];
+    const classSets = [
+      { id: 1, slotIds: [1] },
+      { id: 2, slotIds: [1, 9] },
+      { id: 3, slotIds: [9] },
+      { id: 4, units: [{ grade: "中3", day: "火" }] },
+    ];
+    const detection = detectOrphans({ slots, subs: [], adjustments: [], sessionOverrides: [], classSets });
+    expect(detection.orphanClassSets.map((s) => s.id)).toEqual([3]);
+    expect(detection.updatedClassSets.map((u) => u.next.id)).toEqual([2]);
+    expect(detection.total).toBe(2);
+    const next = applyOrphanCleanup({ subs: [], adjustments: [], sessionOverrides: [], classSets, detection });
+    expect(next.nextClassSets).toEqual([
+      { id: 1, slotIds: [1] },
+      { id: 2, slotIds: [1] },
+      { id: 4, units: [{ grade: "中3", day: "火" }] },
+    ]);
+  });
+
+  it("classSets を渡さない旧呼び出しでも壊れない", () => {
+    const detection = detectOrphans({ slots: [{ id: 1 }], subs: [], adjustments: [], sessionOverrides: [] });
+    expect(detection.total).toBe(0);
+    const next = applyOrphanCleanup({ subs: [], adjustments: [], sessionOverrides: [], detection });
+    expect(next.nextClassSets).toBeUndefined();
+  });
+});
+
+describe("cascadeOrphansForSlots", () => {
+  it("消えたコマに紐づくデータを一括で掃除し、変わったリストに changed を立てる", () => {
+    const slots = [{ id: 1 }];
+    const r = cascadeOrphansForSlots({
+      slots,
+      subs: [{ id: 1, slotId: 1 }, { id: 2, slotId: 7 }],
+      adjustments: [{ id: 1, slotId: 1, type: "move" }],
+      sessionOverrides: [{ id: 1, slotId: 7 }],
+      classSets: [{ id: 1, slotIds: [7] }],
+    });
+    expect(r.detection.total).toBe(3);
+    expect(r.changed).toEqual({ subs: true, adjustments: false, sessionOverrides: true, classSets: true });
+    expect(r.nextSubs).toEqual([{ id: 1, slotId: 1 }]);
+    expect(r.nextAdjustments).toEqual([{ id: 1, slotId: 1, type: "move" }]);
+    expect(r.nextOverrides).toEqual([]);
+    expect(r.nextClassSets).toEqual([]);
+    expect(describeOrphanDetection(r.detection)).toBe("代行 1 件 / 回数補正 1 件 / 授業セット 1 件");
+  });
+
+  it("孤立が無ければ元のリストをそのまま返す", () => {
+    const subs = [{ id: 1, slotId: 1 }];
+    const r = cascadeOrphansForSlots({ slots: [{ id: 1 }], subs, adjustments: [], sessionOverrides: [], classSets: [] });
+    expect(r.detection.total).toBe(0);
+    expect(r.changed).toEqual({});
+    expect(r.nextSubs).toBe(subs);
+  });
+});
