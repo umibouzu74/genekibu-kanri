@@ -357,6 +357,8 @@ export interface ValidationResult<T> {
   data?: T;
   error?: string;
   path?: string;
+  /** ok のまま通した注意点 (参照先の無いレコード等)。無ければ省略 */
+  warnings?: string[];
 }
 
 // Toast tones.

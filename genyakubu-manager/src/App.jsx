@@ -66,7 +66,12 @@ import {
 import { openPrintWindow, writePrintDocument } from "./utils/printWindow";
 import { sortJa } from "./utils/sortJa";
 import { sanitizeKanaMap } from "./utils/teacherKana";
-import { applyOrphanCleanup } from "./utils/orphanCleanup";
+import {
+  applyOrphanCleanup,
+  cascadeOrphansForSlots,
+  describeOrphanDetection,
+} from "./utils/orphanCleanup";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -653,6 +658,12 @@ export default function App() {
         );
       if (detection.orphanOverrides.length)
         summary.push(`・回数補正: ${detection.orphanOverrides.length} 件 (削除)`);
+      if (detection.orphanClassSets?.length)
+        summary.push(`・授業セット (旧形式): ${detection.orphanClassSets.length} 件 (削除)`);
+      if (detection.updatedClassSets?.length)
+        summary.push(
+          `・授業セット (旧形式): ${detection.updatedClassSets.length} 件 (削除済みコマを除外)`
+        );
       const ok = await confirm({
         title: "孤立データを掃除",
         message: `次の孤立データを掃除します:\n\n${summary.join("\n")}\n\n実行しますか？`,
@@ -660,10 +671,11 @@ export default function App() {
         tone: "danger",
       });
       if (!ok) return;
-      const { nextSubs, nextAdjustments, nextOverrides } = applyOrphanCleanup({
+      const { nextSubs, nextAdjustments, nextOverrides, nextClassSets } = applyOrphanCleanup({
         subs,
         adjustments,
         sessionOverrides,
+        classSets,
         detection,
       });
       if (detection.orphanSubs.length > 0) saveSubs(nextSubs);
@@ -674,26 +686,54 @@ export default function App() {
         saveAdjustments(nextAdjustments);
       }
       if (detection.orphanOverrides.length > 0) saveSessionOverrides(nextOverrides);
-      const parts = [];
-      if (detection.orphanSubs.length)
-        parts.push(`代行 ${detection.orphanSubs.length} 件`);
-      if (detection.orphanAdjustments.length)
-        parts.push(`調整 ${detection.orphanAdjustments.length} 件`);
-      if (detection.updatedAdjustments.length)
-        parts.push(`合同 ${detection.updatedAdjustments.length} 件更新`);
-      if (detection.orphanOverrides.length)
-        parts.push(`回数補正 ${detection.orphanOverrides.length} 件`);
-      toasts.success(`孤立データを掃除しました (${parts.join(" / ")})`);
+      if (detection.orphanClassSets?.length || detection.updatedClassSets?.length) {
+        saveClassSets(nextClassSets);
+      }
+      toasts.success(`孤立データを掃除しました (${describeOrphanDetection(detection)})`);
     },
     [
       confirm,
       subs,
       adjustments,
       sessionOverrides,
+      classSets,
       saveSubs,
       saveAdjustments,
       saveSessionOverrides,
+      saveClassSets,
       toasts,
+    ]
+  );
+
+  // 通常時間割作成の「置き換え」反映で消えたコマの後始末。コマ削除の
+  // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
+  // slots に対して掃除する。ReflectDialog が saveSlots の直後に呼ぶ。
+  // 残すと孤立データになり、そのバックアップのインポートで警告が出続ける
+  // (2026-09-04)。反映ダイアログの確認文で「一緒に削除される」と断っている
+  const handleSlotsReflected = useCallback(
+    (nextSlots) => {
+      const r = cascadeOrphansForSlots({
+        slots: nextSlots,
+        subs,
+        adjustments,
+        sessionOverrides,
+        classSets,
+      });
+      if (r.changed.subs) saveSubs(r.nextSubs);
+      if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
+      if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
+      if (r.changed.classSets) saveClassSets(r.nextClassSets);
+      return r.detection;
+    },
+    [
+      subs,
+      adjustments,
+      sessionOverrides,
+      classSets,
+      saveSubs,
+      saveAdjustments,
+      saveSessionOverrides,
+      saveClassSets,
     ]
   );
 
@@ -1173,6 +1213,9 @@ export default function App() {
         )}
 
         <div id="main-content">
+          {/* ビュー 1 つの描画バグやチャンク読込失敗でサイドバーごと
+              落とさない。別のビューへ移れば自動で復帰する */}
+          <ErrorBoundary scope="view" resetKey={`${view}:${selected || ""}`}>
           <Suspense fallback={<ViewFallback />}>
           {view === VIEWS.DASH && !selected && (
             <Dashboard
@@ -1397,6 +1440,7 @@ export default function App() {
               classSets={classSets}
               activeTimetableId={activeTimetableId}
               onActivateTimetable={changeActiveTimetable}
+              onSlotsReflected={handleSlotsReflected}
               isAdmin={isAdmin}
             />
           )}
@@ -1568,6 +1612,7 @@ export default function App() {
             />
           )}
           </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
 
@@ -1619,6 +1664,7 @@ export default function App() {
               subs={subs}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
+              classSets={classSets}
               onExport={dataIO.handleExport}
               onImport={dataIO.handleImport}
               onReset={dataIO.handleReset}

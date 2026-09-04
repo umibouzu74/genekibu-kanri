@@ -729,6 +729,33 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
 `npx firebase-tools deploy --only database`。`appData` 直下のキーは列挙制で、
 **同期するキーを増やしたらルールにも足す** (`$other` で拒否される)。
 
+## 孤立データ (消えたコマへの参照) の扱い (2026-09-04 確定)
+
+コマ (Slot) が消える経路は 3 つ: コマ削除 (`useSlotsCrud.del`)・通常時間割
+作成の置き換え反映 (`ReflectDialog` → App の `handleSlotsReflected`)・
+インポート。**消えたコマに紐づくデータは残さない**のが方針で、対象は
+代行・時間割調整 (合同は id を抜く)・回数補正・**旧形式 (slotIds) の授業
+セット**。判定は `utils/orphanCleanup` (`detectOrphans` /
+`cascadeOrphansForSlots`) に集約し、**画面ごとに参照チェックを書き起こさない**。
+
+- **インポートの参照整合性は警告** (`validateExportBundle` の `warnings`)。
+  拒否に戻さないこと — 孤立を含むバックアップが復元できなくなる。掃除は
+  インポート後に「孤立データ掃除」で
+- 新しくコマ id を参照するモデルを足したら、`orphanCleanup` と
+  `schema.collectReferentialWarnings` の両方に足す (片方だけだと、掃除で
+  消えない参照が警告に出続ける)
+
+## ErrorBoundary の 2 段構え (2026-09-04)
+
+- `main.jsx` のルート (`scope="app"`) が最後の砦。**「保存データを初期化」
+  ボタンはここだけ**
+- `App.jsx` の `#main-content` に `scope="view"` を置き、ビュー 1 つの
+  描画バグでサイドバーごと落とさない。`resetKey` (現在のビュー) が変われば
+  自動復帰
+- **デプロイ後の古いタブ** (lazy import のチャンク取得失敗) は
+  `isChunkLoadError` で判別して「再読込」だけを案内する。ここに初期化を
+  見せると、単なるキャッシュ切れで事務員がデータを消す
+
 ## 参考: 今後の候補として残っている未実装アイデア
 
 ブラッシュアップ作業のメモ。優先度は都度相談。

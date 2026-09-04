@@ -4,6 +4,7 @@ import { S } from "../styles/common";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { addSnapshot } from "./model";
+import { describeOrphanDetection } from "../utils/orphanCleanup";
 import {
   applyReflection,
   buildReflectionPlan,
@@ -75,6 +76,12 @@ export function ReflectDialog({
   activeTimetableId,
   /** 反映後に表示中の時間割を切り替える (App.jsx の changeActiveTimetable) */
   onActivateTimetable,
+  /**
+   * 反映後の slots を渡すと、消えたコマに紐づく代行・調整・回数補正・旧式の
+   * 授業セットを掃除して検出結果を返す (App.jsx の handleSlotsReflected)。
+   * 置き換えでコマが減ったときだけ呼ぶ
+   */
+  onSlotsReflected,
   onClose,
 }) {
   const toasts = useToasts();
@@ -260,7 +267,7 @@ export function ReflectDialog({
           `・同じ位置 (曜日・時刻・学年・クラス) の ${kept} コマは同じコマとして引き継ぎます` +
           `（代行・調整・回数補正・授業セットの紐付けは保たれます）\n` +
           (lost > 0
-            ? `・${scoped ? "範囲内で" : ""}下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セットは無効になります\n`
+            ? `・${scoped ? "範囲内で" : ""}下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セット (旧形式) も一緒に削除されます（孤立データを残しません）\n`
             : "・削除されるコマはありません\n") +
           `\nよろしいですか？`,
         okLabel: "置き換える",
@@ -275,6 +282,14 @@ export function ReflectDialog({
     }
     saveTimetables(result.timetables);
     saveSlots(result.slots);
+    // 置き換えで消えたコマの後始末 (コマ削除の cascade と同じ)。残すと
+    // 孤立データになり、そのバックアップのインポートで警告が出続ける
+    const cascaded =
+      result.removedCount > 0 ? onSlotsReflected?.(result.slots) : null;
+    const cascadeNote =
+      cascaded && cascaded.total > 0
+        ? `／紐付けの切れたデータを掃除（${describeOrphanDetection(cascaded)}）`
+        : "";
     // 「現在の時間割」を見る集計ビュー (週表示・月間・一覧) は
     // activeTimetableId で絞るため、反映しただけでは切り替わらない
     if (activateAfter) onActivateTimetable?.(result.timetableId);
@@ -309,6 +324,7 @@ export function ReflectDialog({
         (result.closed
           ? `／「${result.closed.name}」は ${result.closed.endDate} で終了`
           : "") +
+        cascadeNote +
         (activateAfter ? "／表示中の時間割を切り替えました" : "") +
         (followedCutoff ? "／表示期間設定を新しい期に合わせました" : "") +
         "／📌 反映時点の案を保存しました"

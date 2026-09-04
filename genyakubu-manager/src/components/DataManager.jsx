@@ -10,6 +10,7 @@ export function DataManager({
   subs,
   adjustments,
   sessionOverrides,
+  classSets,
   onExport,
   onImport,
   onReset,
@@ -28,8 +29,9 @@ export function DataManager({
         subs: subs || [],
         adjustments: adjustments || [],
         sessionOverrides: sessionOverrides || [],
+        classSets: classSets || [],
       }),
-    [slots, subs, adjustments, sessionOverrides]
+    [slots, subs, adjustments, sessionOverrides, classSets]
   );
 
   return (
@@ -125,6 +127,14 @@ export function DataManager({
               )}
               {orphanDetection.orphanOverrides.length > 0 && (
                 <li>回数補正 {orphanDetection.orphanOverrides.length} 件 (削除)</li>
+              )}
+              {orphanDetection.orphanClassSets.length > 0 && (
+                <li>授業セット (旧形式) {orphanDetection.orphanClassSets.length} 件 (削除)</li>
+              )}
+              {orphanDetection.updatedClassSets.length > 0 && (
+                <li>
+                  授業セット (旧形式) {orphanDetection.updatedClassSets.length} 件 (削除済みコマを除外)
+                </li>
               )}
             </ul>
             <button

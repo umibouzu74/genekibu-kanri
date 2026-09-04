@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Fixed (孤立データを含むバックアップが復元できなかった)
+
+通常時間割作成の「置き換え」反映は slots / timetables しか保存せず、消えた
+コマを参照する代行・調整・回数補正・旧形式 (slotIds) の授業セットが残って
+いた。一方でインポートの参照整合性チェックはそれを**丸ごと拒否**するので、
+反映のあとに取ったバックアップが二度と復元できなかった。
+
+- **インポートの参照整合性は「拒否」から「警告」に変更**
+  (`schema.validateExportBundle` が `warnings` を返す)。参照先の無いレコードは
+  取り込んだうえで件数を toast に出し、同じ画面の「孤立データ掃除」へ案内する
+- **反映 (置き換え) でコマが減ったときは、消えたコマに紐づくデータを
+  その場で掃除する** (`orphanCleanup.cascadeOrphansForSlots`、App の
+  `handleSlotsReflected`)。コマ削除の cascade と同じ対象。確認文を
+  「無効になります」から「一緒に削除されます」に改め、掃除した件数を
+  完了 toast に出す
+- **旧形式 (slotIds) の授業セットも孤立データ掃除の対象に加えた**
+  (`analyzeOrphanClassSets`)。参照先が全部消えたセットは削除、一部なら
+  消えた id を抜く。units 形式は対象外 (コマ id を参照しない)
+
+### Fixed (デプロイ直後の古いタブが「保存データを初期化」に誘導していた)
+
+GitHub Pages に新しい版を配信するとハッシュ付きチャンク名が変わり、開き
+っぱなしのタブで別のビューへ移った瞬間に lazy import が失敗する。それを
+ルートの ErrorBoundary が「画面の描画中にエラー」として受け、第 2 ボタンの
+**localStorage 全消去**を見せていた (単なるキャッシュ切れでデータを消す導線)。
+
+- **チャンク読込失敗を判別** (`ErrorBoundary.isChunkLoadError`) して
+  「アプリが更新されました。再読込してください。保存データは消えません」
+  だけを出す (初期化ボタンは出さない)
+- **ビュー単位の ErrorBoundary** (`scope="view"`) を `#main-content` の
+  Suspense の内側に置いた。1 つのビューの描画バグでサイドバーごと落ちず、
+  「再試行」か別のビューへの移動 (`resetKey`) で復帰する。初期化ボタンは
+  ルート (scope="app") にしか出さない
+
+### Changed (依存関係の更新を回るようにした)
+
+- **Node 22** に統一 (`.nvmrc` / `package.json` の `engines` / CI と deploy の
+  `node-version-file`)。Node 20 は 2026-04-30 で EOL
+- **Dependabot**: npm の minor / patch を 1 PR にまとめ、major (React 19 /
+  Vite 8 / ESLint 10 / Tailwind 4 など) は `ignore` で出さない (個別に判断
+  して手で上げる)。GitHub Actions も 1 PR にまとめる。上限を 10 に
+- `npm audit fix` で修正できる脆弱性 (@grpc/grpc-js / brace-expansion /
+  protobufjs) を lockfile で更新。残るのは exceljs が依存する uuid の
+  moderate 2 件で、直すには exceljs のダウングレードが要るため見送り
+  (使っている v3/v5/v6 の buf 引数の経路は exceljs の用途に無い)
+
 ### Fixed (最後の 1 件を消すと他端末から復活していた同期の穴を塞いだ)
 
 Firebase RTDB は `[]` / `{}` を書くとノードごと消し、他端末には `null` が

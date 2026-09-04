@@ -96,33 +96,68 @@ export function analyzeOrphanAdjustments(adjustments, slots) {
 }
 
 /**
- * 全 orphan を一括検出。表示用に件数も返す。
+ * 旧形式 (slotIds) の授業セットの orphan 解析。units 形式 (学年 × 曜日) は
+ * コマ id を参照しないので対象外。
+ * - removed: slotIds の参照先が全部消えた (セットとして意味が無い)
+ * - updated: 一部だけ消えた → 消えた id を抜くだけ
+ * (2026-09-04: 反映の「置き換え」で残る旧式セットが、掃除の対象外だった)
+ *
+ * @returns {{ removed: Array<object>, updated: Array<{ original: object, next: object }> }}
  */
-export function detectOrphans({ slots, subs, adjustments, sessionOverrides }) {
+export function analyzeOrphanClassSets(classSets, slots) {
+  const live = buildLiveSlotIdSet(slots);
+  const removed = [];
+  const updated = [];
+  for (const set of classSets || []) {
+    if (!set) continue;
+    if (Array.isArray(set.units) && set.units.length > 0) continue;
+    if (!Array.isArray(set.slotIds)) continue;
+    const remaining = set.slotIds.filter((id) => live.has(slotIdKey(id)));
+    if (remaining.length === set.slotIds.length) continue;
+    if (remaining.length === 0) {
+      removed.push(set);
+    } else {
+      updated.push({ original: set, next: { ...set, slotIds: remaining } });
+    }
+  }
+  return { removed, updated };
+}
+
+/**
+ * 全 orphan を一括検出。表示用に件数も返す。classSets は省略可 (旧呼び出し)。
+ */
+export function detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets }) {
   const orphanSubs = findOrphanSubs(subs, slots);
   const orphanOverrides = findOrphanOverrides(sessionOverrides, slots);
   const adj = analyzeOrphanAdjustments(adjustments, slots);
+  const sets = analyzeOrphanClassSets(classSets, slots);
   const total =
     orphanSubs.length +
     adj.removed.length +
     adj.updated.length +
-    orphanOverrides.length;
+    orphanOverrides.length +
+    sets.removed.length +
+    sets.updated.length;
   return {
     orphanSubs,
     orphanAdjustments: adj.removed,
     updatedAdjustments: adj.updated,
     orphanOverrides,
+    orphanClassSets: sets.removed,
+    updatedClassSets: sets.updated,
     total,
   };
 }
 
 /**
  * 検出結果を反映するための新しいリストを返す (純粋関数)。
+ * classSets を渡さなければ nextClassSets は undefined。
  */
 export function applyOrphanCleanup({
   subs,
   adjustments,
   sessionOverrides,
+  classSets,
   detection,
 }) {
   const subRemovedIds = new Set(detection.orphanSubs.map((r) => r.id));
@@ -131,6 +166,10 @@ export function applyOrphanCleanup({
     detection.updatedAdjustments.map(({ next }) => [next.id, next])
   );
   const overrideRemovedIds = new Set(detection.orphanOverrides.map((o) => o.id));
+  const setRemovedIds = new Set((detection.orphanClassSets || []).map((s) => s.id));
+  const setUpdatedById = new Map(
+    (detection.updatedClassSets || []).map(({ next }) => [next.id, next])
+  );
 
   const nextSubs = (subs || []).filter((r) => !subRemovedIds.has(r.id));
   const nextAdjustments = [];
@@ -145,5 +184,61 @@ export function applyOrphanCleanup({
   const nextOverrides = (sessionOverrides || []).filter(
     (o) => !overrideRemovedIds.has(o.id)
   );
-  return { nextSubs, nextAdjustments, nextOverrides };
+  let nextClassSets;
+  if (classSets) {
+    nextClassSets = [];
+    for (const s of classSets) {
+      if (setRemovedIds.has(s.id)) continue;
+      nextClassSets.push(setUpdatedById.has(s.id) ? setUpdatedById.get(s.id) : s);
+    }
+  }
+  return { nextSubs, nextAdjustments, nextOverrides, nextClassSets };
+}
+
+/**
+ * 「消えたコマ」の後始末を 1 か所で。反映 (置き換え) や一括削除の後に、
+ * 新しい slots に対して孤立した代行・調整・回数補正・旧式授業セットを
+ * 検出して掃除済みのリストを返す。何も無ければ detection.total === 0。
+ * 呼び出し側は変わったリストだけ保存すればよい (`changed` フラグ)。
+ */
+export function cascadeOrphansForSlots({
+  slots,
+  subs,
+  adjustments,
+  sessionOverrides,
+  classSets,
+}) {
+  const detection = detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets });
+  if (detection.total === 0) {
+    return { detection, changed: {}, nextSubs: subs, nextAdjustments: adjustments, nextOverrides: sessionOverrides, nextClassSets: classSets };
+  }
+  const next = applyOrphanCleanup({ subs, adjustments, sessionOverrides, classSets, detection });
+  return {
+    detection,
+    changed: {
+      subs: detection.orphanSubs.length > 0,
+      adjustments:
+        detection.orphanAdjustments.length > 0 || detection.updatedAdjustments.length > 0,
+      sessionOverrides: detection.orphanOverrides.length > 0,
+      classSets: detection.orphanClassSets.length > 0 || detection.updatedClassSets.length > 0,
+    },
+    ...next,
+  };
+}
+
+/** 検出結果を「代行 N 件 / 調整 N 件 …」の短い文にする (toast・確認文用) */
+export function describeOrphanDetection(detection) {
+  const parts = [];
+  if (detection.orphanSubs.length) parts.push(`代行 ${detection.orphanSubs.length} 件`);
+  if (detection.orphanAdjustments.length)
+    parts.push(`調整 ${detection.orphanAdjustments.length} 件`);
+  if (detection.updatedAdjustments.length)
+    parts.push(`合同 ${detection.updatedAdjustments.length} 件更新`);
+  if (detection.orphanOverrides.length)
+    parts.push(`回数補正 ${detection.orphanOverrides.length} 件`);
+  if (detection.orphanClassSets?.length)
+    parts.push(`授業セット ${detection.orphanClassSets.length} 件`);
+  if (detection.updatedClassSets?.length)
+    parts.push(`授業セット ${detection.updatedClassSets.length} 件更新`);
+  return parts.join(" / ");
 }

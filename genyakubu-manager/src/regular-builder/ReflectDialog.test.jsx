@@ -310,3 +310,42 @@ describe("ReflectDialog (部分反映)", () => {
     expect(screen.getByText(/反映されるコマ: 3 件/)).toBeInTheDocument();
   });
 });
+
+describe("ReflectDialog (置き換えで消えたコマの後始末)", () => {
+  // 下書き (中3 月・火) に無い既存コマ (中3 水) は置き換えで消える
+  const slots = [
+    { id: 30, day: "水", time: "18:00-18:45", grade: "中3", cls: "S", room: "501", subj: "理科", teacher: "誰か", note: "", timetableId: 1 },
+  ];
+
+  it("コマが減ったら onSlotsReflected に反映後の slots を渡し、掃除の件数を知らせる", async () => {
+    const onSlotsReflected = vi.fn(() => ({
+      orphanSubs: [{ id: 1 }],
+      orphanAdjustments: [],
+      updatedAdjustments: [],
+      orphanOverrides: [],
+      orphanClassSets: [],
+      updatedClassSets: [],
+      total: 1,
+    }));
+    const { saveSlots } = renderDialog({ slots, onSlotsReflected });
+    fireEvent.click(screen.getByRole("radio", { name: /既存の時間割を置き換え/ }));
+    fireEvent.click(screen.getByRole("button", { name: "反映する" }));
+    // 確認文で「一緒に削除される」と断っている
+    expect(await screen.findByText(/一緒に削除されます/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "置き換える" }));
+
+    await waitFor(() => expect(saveSlots).toHaveBeenCalled());
+    const saved = saveSlots.mock.calls[0][0];
+    expect(saved.find((s) => s.id === 30)).toBeUndefined();
+    expect(onSlotsReflected).toHaveBeenCalledTimes(1);
+    expect(onSlotsReflected).toHaveBeenCalledWith(saved);
+  });
+
+  it("新規作成 (コマが減らない) では後始末を呼ばない", async () => {
+    const onSlotsReflected = vi.fn();
+    const { saveSlots } = renderDialog({ slots, onSlotsReflected });
+    fireEvent.click(screen.getByRole("button", { name: "反映する" }));
+    await waitFor(() => expect(saveSlots).toHaveBeenCalled());
+    expect(onSlotsReflected).not.toHaveBeenCalled();
+  });
+});

@@ -19,7 +19,7 @@ import {
   migrateSpecialEvents,
   migrateSubs,
 } from "../utils/migrate";
-import { detectOrphans } from "../utils/orphanCleanup";
+import { detectOrphans, describeOrphanDetection } from "../utils/orphanCleanup";
 import { sanitizeKanaMap } from "../utils/teacherKana";
 
 // Export / Import / Reset のロジック。
@@ -163,6 +163,13 @@ export function useDataIO({
             return;
           }
           const d = result.data;
+          // 参照先の無いレコード (古いバックアップの孤立データ) は拒否せず
+          // 取り込み、件数を案内する。掃除は下の detectOrphans → 同じ画面の
+          // 「孤立データ掃除」で (2026-09-04: 以前は丸ごと拒否していて、
+          // 反映で孤立が残ったバックアップが復元できなかった)
+          if (result.warnings?.length) {
+            console.warn("[import] referential warnings:", result.warnings);
+          }
           if (Array.isArray(d.slots)) saveSlots(d.slots);
           if (Array.isArray(d.holidays)) saveHolidays(migrateHolidays(d.holidays));
           if (d.biweeklyBase) saveBiweeklyBase(d.biweeklyBase);
@@ -223,11 +230,18 @@ export function useDataIO({
             sessionOverrides: Array.isArray(d.sessionOverrides)
               ? d.sessionOverrides
               : [],
+            classSets: Array.isArray(d.classSets) ? d.classSets : [],
           });
           if (orphanCounts.total > 0) {
             toasts.info(
-              `参照先が消えた孤立データを ${orphanCounts.total} 件検出しました。同じ画面の「孤立データ掃除」で整理できます。`,
-              { duration: 8000 }
+              `参照先が消えた孤立データを ${orphanCounts.total} 件検出しました (${describeOrphanDetection(orphanCounts)})。同じ画面の「孤立データ掃除」で整理できます。`,
+              { duration: 10000 }
+            );
+          } else if (result.warnings?.length) {
+            // detectOrphans が見ないもの (subjects の categoryId 等)
+            toasts.info(
+              `参照先の無いデータが ${result.warnings.length} 件あります: ${result.warnings[0]}`,
+              { duration: 10000 }
             );
           } else {
             setShowDataMgr(false);

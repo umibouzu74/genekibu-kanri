@@ -1121,34 +1121,37 @@ describe("isBiweeklyAnchor ISO-8601 date check", () => {
 });
 
 describe("validateExportBundle referential integrity", () => {
-  it("rejects substitutions referencing a missing slotId", () => {
+  // 参照切れは拒否ではなく warnings (2026-09-04)。孤立データを含む
+  // バックアップも復元できるようにし、掃除はインポート後に行う。
+  it("warns (does not reject) substitutions referencing a missing slotId", () => {
     const result = validateExportBundle({
       slots: [goodSlot],
       substitutions: [{ ...goodSub, slotId: 999 }],
     });
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/substitutions\[0\]/);
-    expect(result.path).toBe("substitutions[0].slotId");
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings?.[0]).toMatch(/substitutions\[0\]/);
   });
 
-  it("accepts substitutions with a matching slotId", () => {
+  it("accepts substitutions with a matching slotId without warnings", () => {
     const result = validateExportBundle({
       slots: [goodSlot],
       substitutions: [{ ...goodSub, slotId: 1 }],
     });
     expect(result.ok).toBe(true);
+    expect(result.warnings).toBeUndefined();
   });
 
-  it("rejects classSets referencing a missing slotId", () => {
+  it("warns on classSets referencing a missing slotId", () => {
     const result = validateExportBundle({
       slots: [goodSlot],
       classSets: [{ id: 1, label: "grp", slotIds: [1, 42] }],
     });
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/classSets\[0\]\.slotIds\[1\]/);
+    expect(result.ok).toBe(true);
+    expect(result.warnings?.[0]).toMatch(/classSets\[0\]\.slotIds\[1\]/);
   });
 
-  it("rejects adjustments referencing a missing slotId", () => {
+  it("warns on adjustments referencing a missing slotId", () => {
     const result = validateExportBundle({
       slots: [goodSlot],
       adjustments: [
@@ -1161,11 +1164,11 @@ describe("validateExportBundle referential integrity", () => {
         },
       ],
     });
-    expect(result.ok).toBe(false);
-    expect(result.path).toBe("adjustments[0].slotId");
+    expect(result.ok).toBe(true);
+    expect(result.warnings?.[0]).toMatch(/adjustments\[0\]\.slotId/);
   });
 
-  it("rejects combine adjustments with bad combineSlotIds", () => {
+  it("warns on combine adjustments with bad combineSlotIds", () => {
     const result = validateExportBundle({
       slots: [goodSlot],
       adjustments: [
@@ -1179,17 +1182,30 @@ describe("validateExportBundle referential integrity", () => {
         },
       ],
     });
-    expect(result.ok).toBe(false);
-    expect(result.path).toBe("adjustments[0].combineSlotIds[1]");
+    expect(result.ok).toBe(true);
+    expect(result.warnings?.[0]).toMatch(/adjustments\[0\]\.combineSlotIds\[1\]/);
   });
 
-  it("rejects subjects with a missing categoryId", () => {
+  it("warns on subjects with a missing categoryId", () => {
     const result = validateExportBundle({
       subjectCategories: [{ id: 1, name: "文系" }],
       subjects: [{ id: 1, name: "英語", categoryId: 99 }],
     });
-    expect(result.ok).toBe(false);
-    expect(result.path).toBe("subjects[0].categoryId");
+    expect(result.ok).toBe(true);
+    expect(result.warnings?.[0]).toMatch(/subjects\[0\]/);
+  });
+
+  it("collects every dangling reference, not just the first", () => {
+    const result = validateExportBundle({
+      slots: [goodSlot],
+      substitutions: [
+        { ...goodSub, slotId: 999 },
+        { ...goodSub, id: 2, slotId: 998 },
+      ],
+      sessionOverrides: [{ id: 1, slotId: 997, date: "2026-04-10", mode: "skip" }],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.warnings?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("skips FK checks when slots is not provided (partial import)", () => {
@@ -1197,6 +1213,7 @@ describe("validateExportBundle referential integrity", () => {
       substitutions: [{ ...goodSub, slotId: 999 }],
     });
     expect(result.ok).toBe(true);
+    expect(result.warnings).toBeUndefined();
   });
 
   it("does not validate combineSlotIds when adjustment type is not 'combine'", () => {
@@ -1214,6 +1231,7 @@ describe("validateExportBundle referential integrity", () => {
       ],
     });
     expect(result.ok).toBe(true);
+    expect(result.warnings).toBeUndefined();
   });
 
   it("does not validate categoryId FK when subjectCategories is absent", () => {
@@ -1221,6 +1239,7 @@ describe("validateExportBundle referential integrity", () => {
       subjects: [{ id: 1, name: "英語", categoryId: 99 }],
     });
     expect(result.ok).toBe(true);
+    expect(result.warnings).toBeUndefined();
   });
 });
 
