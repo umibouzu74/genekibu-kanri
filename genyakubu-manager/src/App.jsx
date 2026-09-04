@@ -183,7 +183,6 @@ export default function App() {
     subjects,
     saveSubjects,
     biweeklyBase,
-    saveBiweeklyBase,
     biweeklyAnchors,
     saveBiweeklyAnchors,
     adjustments,
