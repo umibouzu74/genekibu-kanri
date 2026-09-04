@@ -2,7 +2,9 @@
 
 中学・高校の現役部（夜間授業部）の授業コマ割り・講師スケジュール・休講日・授業調整（代行／振替／移動／合同授業）を一元化する Web アプリです。
 
-React + Vite で実装されており、GitHub Pages で配信、データは各端末の `localStorage` に保存されます。
+React + Vite で実装されており、GitHub Pages で配信します。データは各端末の
+`localStorage` に保存され、Firebase Realtime Database を設定すると端末間で
+同期されます (下の「Firebase 同期」)。
 
 ## 機能
 
@@ -35,6 +37,24 @@ npm run build
 
 `main` ブランチへの push で GitHub Actions が自動的に GitHub Pages にデプロイします
 （`.github/workflows/deploy.yml`）。
+
+## Firebase 同期 (任意)
+
+`genyakubu-manager/.env.local` に `VITE_FIREBASE_*` を入れると、データを
+Firebase Realtime Database の `appData/*` に同期します (未設定なら
+localStorage だけで動きます)。手順は `genyakubu-manager/.env.example` の
+コメントを参照してください。要点:
+
+- **閲覧は匿名サインイン、書込は管理者だけ**。管理者は Email/Password で
+  ログインしたうえで、RTDB の `/admins/<uid>: true` に登録されている
+  必要があります (`genyakubu-manager/database.rules.json`)
+- Authentication の Email/Password で**「ユーザーがアカウントを作成できる
+  ようにする」を OFF** にしてください (公開ビルドに API キーが埋まるため)
+- ルールを変えたら `npx firebase-tools deploy --only database` で反映
+  (自動デプロイはしていません)。**`/admins` に uid を登録してから**
+  ルールをデプロイしないと管理者も書けなくなります
+- GitHub Pages への配信は CI (lint / typecheck / test / build) が通った
+  後にだけ走ります (`.github/workflows/deploy.yml`)
 
 ## 技術スタック
 

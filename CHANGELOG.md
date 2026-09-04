@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Fixed (最後の 1 件を消すと他端末から復活していた同期の穴を塞いだ)
+
+Firebase RTDB は `[]` / `{}` を書くとノードごと消し、他端末には `null` が
+届く。`useSyncedStorage` はその `null` を「Firebase 側が未初期化 = 自分の
+localStorage で seed する」と読んでいたので、**代行記録や回数補正を最後の
+1 件まで消す / データ管理の「初期化」をする**と、開いている他端末が古い
+配列を書き戻して削除が復活していた。
+
+- 空の値は **`{__empty: "<JSON>"}` のマーカー**として書き、`null` が届くのは
+  本当に一度も書かれていないときだけにした (`useSyncedStorage.encodeForServer`
+  / `decodeFromServer`)。`[]` と `{groups: [], cohorts: []}` のような形の
+  違いもそのまま戻る
+- `null` からの seed は**セッション中 1 回だけ**。値を受け取った後の `null`
+  (旧版のタブが `[]` を書いた等) は無視して手元の state を保つ
+- 併せて、配列のキーに RTDB がオブジェクト (`{0: …, 2: …}`。疎な配列や
+  コンソールで 1 件消したとき) を返した場合は配列に直すようにした
+  (そのまま入れると `slots.filter is not a function` で全画面が落ち、
+  localStorage にも書かれてリロードで再現していた)
+
+### Fixed (リロードのたびに管理者ログインが外れていた)
+
+`firebase/config.js` がモジュール読込時に無条件で `signInAnonymously` を
+呼んでいた。SDK は「今のユーザが匿名でなければ新しい匿名ユーザで置き換える」
+ので、永続化された password セッションが毎回捨てられ、匿名ユーザも毎回
+1 つ増えていた。`onAuthStateChanged` の初回でユーザが居ないときだけ匿名
+サインインするようにした。
+
+### Security (RTDB の書込権限を「登録済み管理者」に絞った)
+
+`database.rules.json` の `.write` が「password プロバイダなら誰でも」だった。
+Firebase Auth の Email/Password はクライアントからのアカウント作成が既定で
+有効なので、公開ビルドの API キーで誰でも管理者になれる余地があった。
+
+- 書込は **password ログイン かつ `/admins/<uid>: true`** に登録された
+  uid だけ。**先に `/admins` へ uid を登録してからルールをデプロイする**
+  (手順は `.env.example` / README)
+- `appData` 直下は実際に書くキーだけを列挙し、それ以外は `$other` で拒否。
+  各キーに最低限の型検証 (`hasChildren()` / 文字列) を付けた
+- `.gitignore` に `.env` / `.env.*` を追加 (`.env.example` だけ追跡)
+
+### Changed (GitHub Pages への配信を CI 成功後に限定した)
+
+`deploy.yml` が `push: main` で単独起動していたため、テストが落ちたコミット
+もそのまま配信されていた。`workflow_run` で CI (lint / typecheck / test /
+build) の成功後にだけ走るようにした。手動実行 (`workflow_dispatch`) は
+従来どおり。
+
 ### Added (テスト期間中でも例外的に授業を行う日を設定できるようにした)
 
 イレギュラーで**特訓は始まっているのに授業は休みにならない日**があった

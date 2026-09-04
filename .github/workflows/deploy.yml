@@ -1,7 +1,12 @@
 name: Deploy to GitHub Pages
 
+# main への push で直接起動せず、CI (lint / typecheck / test / build) が
+# 成功した後にだけ配信する。テストが落ちたコミットがそのまま Pages に
+# 出ないようにするため (2026-09-04)。手動 (workflow_dispatch) は従来どおり。
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -16,6 +21,9 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

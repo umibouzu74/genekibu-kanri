@@ -48,6 +48,63 @@ export const isPermissionError = (err) =>
 /** Firebase path: /appData/<key> */
 const fbPath = (key) => `appData/${key}`;
 
+// ─── 「空」と「未初期化」の区別 ──────────────────────────────────────
+// RTDB は [] / {} (子がすべて空のオブジェクトも含む) を書くとノードごと
+// 消し、他端末の onValue には null が届く。null を「Firebase 側が未初期化 =
+// 自分の localStorage で seed する」と読むと、最後の 1 件を消した直後に
+// 他端末が自分の古い配列を書き戻して削除が復活する (2026-09-04 修正)。
+// そこで空の値は {__empty: "<JSON>"} のマーカーとして書き、null が届くのは
+// 本当に一度も書かれていないときだけにする。マーカーの中身は元の JSON
+// なので、[] と {groups: [], cohorts: []} のような形の違いもそのまま戻る。
+const EMPTY_MARKER_KEY = "__empty";
+
+/** RTDB がノードごと消してしまう値 (null / [] / {} / 子が全部空) か */
+export function isServerEmpty(v) {
+  if (v == null) return true;
+  if (Array.isArray(v)) return v.every(isServerEmpty);
+  if (typeof v === "object") return Object.values(v).every(isServerEmpty);
+  return false;
+}
+
+/** 書込前の変換。空なら削除されないようマーカーで包む */
+export function encodeForServer(v) {
+  return isServerEmpty(v) ? { [EMPTY_MARKER_KEY]: JSON.stringify(v ?? null) } : v;
+}
+
+const isEmptyMarker = (v) =>
+  v != null &&
+  typeof v === "object" &&
+  !Array.isArray(v) &&
+  typeof v[EMPTY_MARKER_KEY] === "string" &&
+  Object.keys(v).length === 1;
+
+/**
+ * 受信後の変換。マーカーは元の空の値に戻す。配列のキーに RTDB が
+ * オブジェクト ({0: …, 1: …}。疎な配列やコンソールで 1 件消したとき) を
+ * 返した場合は配列に直す (そのまま state に入れると slots.filter が落ちて
+ * 全画面クラッシュし、localStorage にも書かれてリロードで再現する)。
+ */
+export function decodeFromServer(serverVal, initialValue) {
+  if (isEmptyMarker(serverVal)) {
+    try {
+      const parsed = JSON.parse(serverVal[EMPTY_MARKER_KEY]);
+      if (parsed != null) return parsed;
+    } catch {
+      // 壊れたマーカーは下の既定の空値へ
+    }
+    return Array.isArray(initialValue) ? [] : {};
+  }
+  if (
+    Array.isArray(initialValue) &&
+    serverVal != null &&
+    typeof serverVal === "object" &&
+    !Array.isArray(serverVal)
+  ) {
+    return Object.values(serverVal);
+  }
+  return serverVal;
+}
+
 // ─── useSyncedStorage ───────────────────────────────────────────────
 // Drop-in replacement for useLocalStorage that additionally syncs data
 // with Firebase Realtime Database.
@@ -68,13 +125,19 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
   // Ref that holds the latest JSON string we wrote locally so we can
   // skip the echo when Firebase fires onValue with our own write.
   const lastLocalJsonRef = useRef(null);
+  // null (未初期化) を受けて localStorage から seed するのはセッション中
+  // 1 回だけ。2 回目以降の null は (旧版のタブが [] を書いた等) 無視する。
+  // 繰り返し seed すると端末同士で書き戻し合いになる。
+  const seededRef = useRef(false);
 
   // ── 1. Load from localStorage (instant, works offline) ──────────
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
       if (raw == null) return;
-      const parsed = JSON.parse(raw);
+      // 旧版のタブが受信したマーカーをそのまま localStorage に書いている
+      // ことがあるので、読み込み時にも decode を通す
+      const parsed = decodeFromServer(JSON.parse(raw), initialValue);
       const migrated = migrate ? migrate(parsed) : parsed;
       setValue(migrated);
       lastLocalJsonRef.current = stableStringify(migrated);
@@ -101,16 +164,24 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
           const serverVal = snapshot.val();
 
           if (serverVal == null) {
-            // Firebase is empty for this key — seed from localStorage
-            // if we have local data. migrate を通してから書き込む (K5b:
-            // raw のまま seed すると旧形式が Firebase に入り、他端末が
-            // 毎回 migrate し直すことになる)
+            // Firebase にこのキーが一度も書かれていない — 手元の
+            // localStorage があれば seed する。migrate を通してから書き込む
+            // (K5b: raw のまま seed すると旧形式が Firebase に入り、他端末が
+            // 毎回 migrate し直すことになる)。空の値もマーカーとして書き、
+            // 以後 null が届かないようにする。
+            if (seededRef.current) {
+              console.warn(
+                `[useSyncedStorage] "${key}" が再び null になりました (再 seed はしません)`
+              );
+              return;
+            }
+            seededRef.current = true;
             const raw = localStorage.getItem(key);
             if (raw != null) {
               try {
-                const parsed = JSON.parse(raw);
+                const parsed = decodeFromServer(JSON.parse(raw), initialValue);
                 const migrated = migrate ? migrate(parsed) : parsed;
-                set(dbRef, migrated).catch((e) =>
+                set(dbRef, encodeForServer(migrated)).catch((e) =>
                   console.warn(`[useSyncedStorage] seed failed for "${key}":`, e)
                 );
               } catch {
@@ -119,14 +190,16 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
             }
             return;
           }
+          seededRef.current = true;
 
-          const serverJson = stableStringify(serverVal);
+          const decoded = decodeFromServer(serverVal, initialValue);
+          const serverJson = stableStringify(decoded);
 
           // Skip if this is our own echo
           if (serverJson === lastLocalJsonRef.current) return;
 
           // Apply migration if needed
-          const migrated = migrate ? migrate(serverVal) : serverVal;
+          const migrated = migrate ? migrate(decoded) : decoded;
           const migratedJson = stableStringify(migrated);
 
           // Update React state + localStorage
@@ -171,10 +244,10 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
           onError?.(err, isQuotaError(err) ? "quota" : "save");
         }
 
-        // Write to Firebase
+        // Write to Firebase (空はマーカーで書く。上の decode と対)
         if (isConfigured && db) {
           const dbRef = ref(db, fbPath(key));
-          trackSyncActivity(set(dbRef, resolved)).catch((err) => {
+          trackSyncActivity(set(dbRef, encodeForServer(resolved))).catch((err) => {
             console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
             onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
           });
@@ -195,6 +268,9 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
 export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
   const [value, setValue] = useState(initialValue);
   const lastLocalRef = useRef(null);
+  // JSON 版と同じく、null からの seed はセッション中 1 回だけ
+  // (文字列は "" でも RTDB に残るので、null は本当に未初期化のときだけ)
+  const seededRef = useRef(false);
 
   // ── Load from localStorage ──────────────────────────────────────
   useEffect(() => {
@@ -227,6 +303,8 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
           const serverVal = snapshot.val();
 
           if (serverVal == null) {
+            if (seededRef.current) return;
+            seededRef.current = true;
             const raw = localStorage.getItem(key);
             if (raw != null) {
               set(dbRef, raw).catch((e) =>
@@ -235,6 +313,7 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
             }
             return;
           }
+          seededRef.current = true;
 
           const str = String(serverVal);
           if (str === lastLocalRef.current) return;

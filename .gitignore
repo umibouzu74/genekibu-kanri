@@ -44,3 +44,8 @@ dist/
 # Playwright (E2E) artifacts
 test-results/
 playwright-report/
+
+# Local environment (Firebase 設定)。.env.example だけ追跡する
+.env
+.env.*
+!.env.example

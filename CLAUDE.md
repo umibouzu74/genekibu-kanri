@@ -706,6 +706,29 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   して生成する — 時程をコードに固定しない。
 - 削除は cascade 無しなので removeWithUndo (上の削除 UX ルール準拠)。
 
+## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
+
+RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、
+他端末には `null` が届く。`useSyncedStorage` はこれを次のように扱う。
+**このルールを崩す変更をしないこと** (最後の 1 件を消した削除が他端末から
+復活する、の再発防止)。
+
+- **空の値は `{__empty: "<JSON>"}` のマーカーで書く**
+  (`useSyncedStorage.encodeForServer` / `decodeFromServer`)。`null` が届くのは
+  本当に一度も書かれていないキーだけ
+- `null` からの localStorage seed は**セッション中 1 回だけ**。値を受け取った
+  後の `null` は無視して手元を保つ (再 seed すると端末同士で書き戻し合う)
+- **`useSyncedStorage` を通さずに `appData/*` へ `set()` する経路を足さない**。
+  足すなら同じ encode / decode を通す (講習作成の `builder/schedule_project`
+  は JSON 文字列なので対象外)
+- 配列のキーに RTDB がオブジェクト (`{0: …, 2: …}`) を返す場合は decode で
+  配列に直す。`migrate` 側でこれを前提にしない
+
+書込権限 (`database.rules.json`) は **password ログイン かつ
+`/admins/<uid>: true`**。ルールを変えたら手動で
+`npx firebase-tools deploy --only database`。`appData` 直下のキーは列挙制で、
+**同期するキーを増やしたらルールにも足す** (`$other` で拒否される)。
+
 ## 参考: 今後の候補として残っている未実装アイデア
 
 ブラッシュアップ作業のメモ。優先度は都度相談。

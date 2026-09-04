@@ -6,7 +6,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
@@ -26,12 +26,42 @@ if (isConfigured) {
   db = getDatabase(app);
   auth = getAuth(app);
 
-  // Sign in anonymously.  The returned promise resolves once the
-  // session is established — callers can await `authReady` before
-  // reading/writing if they need to ensure auth is done.
-  authReady = signInAnonymously(auth).catch((err) => {
-    console.warn("[firebase] anonymous sign-in failed:", err);
-    authFailed = true;
+  // 永続化されたセッション (管理者の password ログイン) の復元を待ち、
+  // 誰もサインインしていないときだけ匿名サインインする。無条件に
+  // signInAnonymously を呼ぶと SDK は「今のユーザが匿名でなければ新しい
+  // 匿名ユーザで置き換える」ので、リロードのたびに管理者ログインが外れ、
+  // 匿名ユーザも毎回 1 つ増えていた (2026-09-04 修正)。
+  // `authReady` はどちらの経路でもセッションが確定した時点で解決する。
+  authReady = new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    let unsubscribe = () => {};
+    unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (settled) return;
+        unsubscribe();
+        if (user) {
+          finish();
+          return;
+        }
+        signInAnonymously(auth)
+          .catch((err) => {
+            console.warn("[firebase] anonymous sign-in failed:", err);
+            authFailed = true;
+          })
+          .finally(finish);
+      },
+      (err) => {
+        console.warn("[firebase] auth state error:", err);
+        authFailed = true;
+        finish();
+      }
+    );
   });
 } else {
   authReady = Promise.resolve();
