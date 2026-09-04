@@ -10,6 +10,7 @@ import {
 import { formatSessionNumber } from "../../../utils/sessionCount";
 import { subState, subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
+import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
 
 // 状態 (pending / nosub / requested / confirmed) → 表示メタ。
 // substituteState の 1 か所から引く (色とラベルを画面ごとに書き起こさない)。
@@ -180,7 +181,11 @@ export function AbsenceSlotCard({
     slot.time,
     [slot.grade, slot.cls].filter(Boolean).join(" "),
     slot.subj,
-    getSlotTeachers(slot).join("・"),
+    // 隔週は担当週で解く (画面の講師表示と同じ)。講師欄だと B 週に A 週の人を読む
+    (date
+      ? activeTeachersOnDate(slot, date, { biweeklyAnchors, holidays, examPeriods })
+      : getSlotTeachers(slot)
+    ).join("・"),
     stateWords.length ? `（${stateWords.join("、")}）` : "",
   ]
     .filter(Boolean)

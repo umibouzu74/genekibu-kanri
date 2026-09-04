@@ -66,6 +66,21 @@ describe("ContextMenu のキーボード操作", () => {
     expect(b).not.toHaveBeenCalled();
   });
 
+  it("閉じると開く前にフォーカスしていた要素へ戻す", () => {
+    const opener = document.createElement("button");
+    opener.textContent = "カード";
+    document.body.appendChild(opener);
+    opener.focus();
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <ContextMenu x={0} y={0} items={[{ label: "A", onClick: () => {} }]} onClose={onClose} />
+    );
+    expect(document.activeElement).not.toBe(opener);
+    unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
   it("メニューの外を mousedown すると閉じる", () => {
     const { onClose } = renderMenu();
     fireEvent.mouseDown(document.body);

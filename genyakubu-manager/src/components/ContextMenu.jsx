@@ -22,7 +22,18 @@ export function ContextMenu({ x, y, items, onClose }) {
     return () => document.removeEventListener("mousedown", h);
   }, [onClose]);
 
-  // 開いたら先頭の有効な項目へフォーカス。画面端のクランプも同時に行う
+  // 開いたら先頭の有効な項目へフォーカス。画面端のクランプも同時に行う。
+  // 閉じたら開く前にフォーカスしていた要素 (カード等) へ戻す — 戻さないと
+  // Shift+F10 で開いたキーボード利用者が <body> に落ち、時間割を Tab で
+  // 辿り直すことになる
+  useEffect(() => {
+    const opener = document.activeElement;
+    return () => {
+      if (opener && typeof opener.focus === "function" && document.contains(opener)) {
+        opener.focus();
+      }
+    };
+  }, []);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

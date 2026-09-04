@@ -25,6 +25,9 @@ const CHUNK_LOAD_PATTERNS = [
   /error loading dynamically imported module/i,
   /Loading chunk [\w-]+ failed/i,
   /Loading CSS chunk/i,
+  // Vite: lazy チャンクが CSS (tailwind 等) を伴うとき、JS より先に
+  // __vitePreload がこのメッセージで落ちる
+  /Unable to preload CSS/i,
 ];
 
 /** lazy import のチャンク取得失敗 (デプロイ後の古いタブ) か */

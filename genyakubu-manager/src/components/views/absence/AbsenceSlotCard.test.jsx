@@ -62,6 +62,17 @@ describe("AbsenceSlotCard のキーボード操作", () => {
     expect(typeof ev.preventDefault).toBe("function");
   });
 
+  it("隔週の B 週は読み上げ名もパートナーになる", () => {
+    renderCard({
+      slot: { ...SLOT, note: "隔週(河野)" },
+      date: "2026-10-09",
+      biweeklyAnchors: [{ date: "2026-10-02", weekType: "A" }],
+    });
+    const label = screen.getByRole("button").getAttribute("aria-label");
+    expect(label).toMatch(/河野/);
+    expect(label).not.toMatch(/堀上/);
+  });
+
   it("休講のカードは操作系が無いので button にしない", () => {
     renderCard({ cancelLabel: "休講", onClick: undefined, onContextMenu: undefined });
     expect(screen.queryByRole("button")).toBeNull();

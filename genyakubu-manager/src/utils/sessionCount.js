@@ -295,8 +295,8 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
  * @returns {boolean}
  */
 export function isSlotHeldOnDate(slot, dateStr, ctx) {
-  ctx = withIndexes(ctx);
   if (!slot || !dateStr || !ctx) return false;
+  ctx = withIndexes(ctx);
   return effectiveSubjectOnDay(slot, dateStr, ctx) != null;
 }
 

@@ -35,6 +35,7 @@ import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
   describeOrphanDetection,
+  listOrphanDetection,
 } from "./utils/orphanCleanup";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppData } from "./hooks/useAppData";
@@ -496,23 +497,10 @@ export default function App() {
   const handleCleanupOrphans = useCallback(
     async (detection) => {
       if (!detection || detection.total === 0) return;
-      const summary = [];
-      if (detection.orphanSubs.length)
-        summary.push(`・代行記録: ${detection.orphanSubs.length} 件 (削除)`);
-      if (detection.orphanAdjustments.length)
-        summary.push(`・時間割調整: ${detection.orphanAdjustments.length} 件 (削除)`);
-      if (detection.updatedAdjustments.length)
-        summary.push(
-          `・合同授業: ${detection.updatedAdjustments.length} 件 (削除済みコマを除外)`
-        );
-      if (detection.orphanOverrides.length)
-        summary.push(`・回数補正: ${detection.orphanOverrides.length} 件 (削除)`);
-      if (detection.orphanClassSets?.length)
-        summary.push(`・授業セット (旧形式): ${detection.orphanClassSets.length} 件 (削除)`);
-      if (detection.updatedClassSets?.length)
-        summary.push(
-          `・授業セット (旧形式): ${detection.updatedClassSets.length} 件 (削除済みコマを除外)`
-        );
+      // 種類と件数は orphanCleanup.listOrphanDetection の 1 か所から
+      const summary = listOrphanDetection(detection).map(
+        (r) => `・${r.label}: ${r.count} 件 (${r.action})`
+      );
       const ok = await confirm({
         title: "孤立データを掃除",
         message: `次の孤立データを掃除します:\n\n${summary.join("\n")}\n\n実行しますか？`,

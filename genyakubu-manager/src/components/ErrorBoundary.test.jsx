@@ -26,6 +26,9 @@ describe("isChunkLoadError", () => {
     ).toBe(true);
     expect(isChunkLoadError(new TypeError("Importing a module script failed."))).toBe(true);
     expect(isChunkLoadError(new TypeError("error loading dynamically imported module"))).toBe(true);
+    expect(
+      isChunkLoadError(new Error("Unable to preload CSS for /genekibu-kanri/assets/tailwind-abc.css"))
+    ).toBe(true);
     const named = new Error("x");
     named.name = "ChunkLoadError";
     expect(isChunkLoadError(named)).toBe(true);

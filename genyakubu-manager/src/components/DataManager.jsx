@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { exportSlotsCsv, exportSubsCsv } from "../utils/csv";
-import { detectOrphans } from "../utils/orphanCleanup";
+import { detectOrphans, listOrphanDetection } from "../utils/orphanCleanup";
 
 export function DataManager({
   slots,
@@ -122,30 +122,11 @@ export function DataManager({
                 lineHeight: 1.7,
               }}
             >
-              {orphanDetection.orphanSubs.length > 0 && (
-                <li>代行記録 {orphanDetection.orphanSubs.length} 件 (削除)</li>
-              )}
-              {orphanDetection.orphanAdjustments.length > 0 && (
-                <li>
-                  時間割調整 {orphanDetection.orphanAdjustments.length} 件 (削除)
+              {listOrphanDetection(orphanDetection).map((r) => (
+                <li key={r.key}>
+                  {r.label} {r.count} 件 ({r.action})
                 </li>
-              )}
-              {orphanDetection.updatedAdjustments.length > 0 && (
-                <li>
-                  合同授業 {orphanDetection.updatedAdjustments.length} 件 (削除済みコマを除外)
-                </li>
-              )}
-              {orphanDetection.orphanOverrides.length > 0 && (
-                <li>回数補正 {orphanDetection.orphanOverrides.length} 件 (削除)</li>
-              )}
-              {orphanDetection.orphanClassSets.length > 0 && (
-                <li>授業セット (旧形式) {orphanDetection.orphanClassSets.length} 件 (削除)</li>
-              )}
-              {orphanDetection.updatedClassSets.length > 0 && (
-                <li>
-                  授業セット (旧形式) {orphanDetection.updatedClassSets.length} 件 (削除済みコマを除外)
-                </li>
-              )}
+              ))}
             </ul>
             <button
               type="button"

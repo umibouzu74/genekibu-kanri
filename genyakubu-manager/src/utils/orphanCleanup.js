@@ -226,19 +226,26 @@ export function cascadeOrphansForSlots({
   };
 }
 
+/**
+ * 検出結果を種類ごとの行にする (件数 0 は省く)。確認ダイアログ・データ管理の
+ * 一覧・toast はすべてここから作る (種類を足したらここだけ直せばよい)。
+ * @returns {{key: string, label: string, short: string, action: string, count: number}[]}
+ */
+export function listOrphanDetection(detection) {
+  const rows = [
+    { key: "subs", label: "代行記録", short: "代行", action: "削除", count: detection.orphanSubs?.length || 0 },
+    { key: "adjustments", label: "時間割調整", short: "調整", action: "削除", count: detection.orphanAdjustments?.length || 0 },
+    { key: "combines", label: "合同授業", short: "合同", action: "削除済みコマを除外", count: detection.updatedAdjustments?.length || 0 },
+    { key: "overrides", label: "回数補正", short: "回数補正", action: "削除", count: detection.orphanOverrides?.length || 0 },
+    { key: "classSets", label: "授業セット (旧形式)", short: "授業セット", action: "削除", count: detection.orphanClassSets?.length || 0 },
+    { key: "classSetsUpdated", label: "授業セット (旧形式)", short: "授業セット", action: "削除済みコマを除外", count: detection.updatedClassSets?.length || 0 },
+  ];
+  return rows.filter((r) => r.count > 0);
+}
+
 /** 検出結果を「代行 N 件 / 調整 N 件 …」の短い文にする (toast・確認文用) */
 export function describeOrphanDetection(detection) {
-  const parts = [];
-  if (detection.orphanSubs.length) parts.push(`代行 ${detection.orphanSubs.length} 件`);
-  if (detection.orphanAdjustments.length)
-    parts.push(`調整 ${detection.orphanAdjustments.length} 件`);
-  if (detection.updatedAdjustments.length)
-    parts.push(`合同 ${detection.updatedAdjustments.length} 件更新`);
-  if (detection.orphanOverrides.length)
-    parts.push(`回数補正 ${detection.orphanOverrides.length} 件`);
-  if (detection.orphanClassSets?.length)
-    parts.push(`授業セット ${detection.orphanClassSets.length} 件`);
-  if (detection.updatedClassSets?.length)
-    parts.push(`授業セット ${detection.updatedClassSets.length} 件更新`);
-  return parts.join(" / ");
+  return listOrphanDetection(detection)
+    .map((r) => `${r.short} ${r.count} 件${r.action === "削除" ? "" : "更新"}`)
+    .join(" / ");
 }

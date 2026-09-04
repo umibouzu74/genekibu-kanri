@@ -6,7 +6,7 @@ import { getSlotTeachers } from "../utils/biweekly";
 // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
 // それ以外の教員は slots.subj を教科マスター (名前 / 別名) と照合し、
 // 最も多く担当している教科を primary として振り分ける。
-export function useTeacherGroups({ slots, partTimeStaff, subjects, search, teacherKana }) {
+export function useTeacherGroups({ slots, partTimeStaff, subjects, teacherKana }) {
   return useMemo(() => {
     const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
 
@@ -101,10 +101,10 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search, teach
       groups.push({ key: "__other__", label: "その他", teachers: other });
     }
 
-    // 検索フィルタ (互換。新しい呼び出しは search を渡さず、表示側で
-    // filterTeacherGroups を使う — App の再描画を検索の打鍵から切り離すため)
-    return filterTeacherGroups(groups, search);
-  }, [slots, partTimeStaff, subjects, search, teacherKana]);
+    // 検索で絞るのは表示側 (Sidebar) が filterTeacherGroups で行う。
+    // ここで受けると検索の打鍵ごとに App が再描画される
+    return groups;
+  }, [slots, partTimeStaff, subjects, teacherKana]);
 }
 
 /** 検索文字列で講師グループを絞る純粋関数。空なら元の配列をそのまま返す */

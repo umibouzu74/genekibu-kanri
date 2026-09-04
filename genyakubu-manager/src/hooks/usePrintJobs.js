@@ -149,8 +149,17 @@ export function usePrintJobs({
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
       try {
         // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
-        // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)
-        await import("../components/views/MonthView");
+        // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)。
+        // デプロイ直後の古いタブでは取得に失敗しうるので、開いた popup を
+        // 閉じて再読込を案内する (finally は元の表示に戻すだけ)
+        try {
+          await import("../components/views/MonthView");
+        } catch (err) {
+          console.warn("[batch-print] MonthView chunk failed:", err);
+          w.close();
+          toasts.error("アプリが更新されています。再読込してからもう一度お試しください。");
+          return;
+        }
         const slides = [];
         for (let i = 0; i < jobs.length; i++) {
           if (ac.signal.aborted) break;
