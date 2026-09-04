@@ -1839,6 +1839,13 @@ export default function App() {
           outline: 2px solid #5b8dee;
           outline-offset: 1px;
         }
+        /* コマカード / 時間割セル (role="button" の div / td) のキーボード
+           フォーカス。マウスのクリックでは出ない (:focus-visible) */
+        div[role="button"]:focus-visible,
+        td[role="button"]:focus-visible {
+          outline: 2px solid #5b8dee;
+          outline-offset: -2px;
+        }
         /* chord 待機バッジのタイムアウト残量バー（A19） */
         /* toast の残量バーでも同じ keyframes を流用する。 */
         /* 動きを減らす設定 (OS / ブラウザ) を尊重する。トーストのスライド・

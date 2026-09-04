@@ -334,6 +334,38 @@ export const ExcelCell = memo(function ExcelCell({
   // In sub mode, cells are draggable for swap-based substitution
   const subModeDraggable = isSubMode && isAdmin && slot.teacher && !isHolidayOff;
 
+  // キーボード操作 (2026-09-04): 代行モードのクリック・通常モードの
+  // ダブルクリック (編集) はマウス専用だった。Tab で到達し Enter / Space で
+  // 同じ操作を行う。読み上げ用の名前にはセルの状態も含める
+  const canEdit = isAdmin && !!onEdit && !isSubMode;
+  const interactive = isClickable || canEdit;
+  const a11yStates = [
+    isHolidayOff ? "休講" : null,
+    pendingSub ? `仮代行 ${pendingSub.substitute}` : null,
+    ...[...new Set(existingSubs.map((x) => subState(x)))].map((st) => SUB_STATE_META[st]?.label),
+    absorbed ? "合同に吸収" : null,
+    isCombineHost ? "合同" : null,
+    moveTarget ? "移動" : null,
+    rescheduleOut ? "振替中" : null,
+  ].filter(Boolean);
+  const ariaLabel = [
+    slot.time,
+    [slot.grade, slot.cls].filter(Boolean).join(" "),
+    slot.subj,
+    teacherOverride || slot.teacher,
+    sessionNumber ? `第${sessionNumber}回` : "",
+    a11yStates.length ? `（${a11yStates.join("、")}）` : "",
+    canEdit ? "を編集" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const handleKeyDown = (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    if (isClickable) handleClick(e);
+    else if (canEdit) onEdit(slot);
+  };
+
   return (
     <td
       colSpan={colSpan}
@@ -343,8 +375,12 @@ export const ExcelCell = memo(function ExcelCell({
       onDragLeave={isAdmin ? onDragLeave : undefined}
       onDrop={isAdmin ? onDrop : undefined}
       onDragEnd={isAdmin ? onDragEnd : undefined}
-      onDoubleClick={isAdmin && onEdit && !isSubMode ? () => onEdit(slot) : undefined}
+      onDoubleClick={canEdit ? () => onEdit(slot) : undefined}
       onClick={handleClick}
+      tabIndex={interactive ? 0 : undefined}
+      role={interactive ? "button" : undefined}
+      aria-label={interactive ? ariaLabel : undefined}
+      onKeyDown={interactive ? handleKeyDown : undefined}
       style={{
         border: "1px solid #ccc",
         padding: "4px 6px",
