@@ -168,6 +168,7 @@ export default function App() {
   // ─── Persisted state (synced with Firebase when configured) ───────
   // 宣言は hooks/useAppData.js に集約 (20 本の useSyncedStorage + 端末限定の
   // eventVisibility + 保存エラーの通知)
+  const appData = useAppData({ toasts, isAdmin });
   const {
     slots,
     saveSlots,
@@ -211,7 +212,7 @@ export default function App() {
     saveDaySchedules,
     eventVisibility,
     saveEventVisibility,
-  } = useAppData({ toasts, isAdmin });
+  } = appData;
 
   // 講習時間割作成 (builder) の project を読み取り専用で購読し、個人月間
   // スケジュール (MonthView) に載せる講習コマへ変換する。編集は builder 側。
@@ -430,48 +431,11 @@ export default function App() {
     examPrepSchedules,
     saveExamPrepSchedules,
   });
+  // 永続 state とその setter は useAppData の返り値と同じ名前なので丸ごと渡す
+  // (以前は 40 個の名前を並べていた)
   const dataIO = useDataIO({
-    slots,
-    holidays,
-    biweeklyBase,
-    biweeklyAnchors,
-    adjustments,
-    subs,
-    partTimeStaff,
-    subjectCategories,
-    subjects,
-    timetables,
-    displayCutoff,
-    examPeriods,
-    examPrepSchedules,
-    classSets,
-    sessionOverrides,
-    teacherSubjects,
-    teacherKana,
-    specialEvents,
-    extraLessons,
-    daySchedules,
+    ...appData,
     activeTimetableId,
-    saveSlots,
-    saveHolidays,
-    saveBiweeklyBase,
-    saveBiweeklyAnchors,
-    saveAdjustments,
-    saveSubs,
-    savePartTimeStaff,
-    saveSubjectCategories,
-    saveSubjects,
-    saveTimetables,
-    saveDisplayCutoff,
-    saveExamPeriods,
-    saveExamPrepSchedules,
-    saveClassSets,
-    saveSessionOverrides,
-    saveTeacherSubjects,
-    saveTeacherKana,
-    saveSpecialEvents,
-    saveExtraLessons,
-    saveDaySchedules,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
