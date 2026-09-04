@@ -1,0 +1,177 @@
+/* App のグローバル CSS (レスポンシブ / 印刷 / フォーカスリング)。
+   App.jsx の <style> 文字列から移した (2026-09-04)。中身は移動前と同じ。 */
+/* 既定で disabled なボタンに not-allowed カーソルを当てる。
+   インライン cursor: pointer (S.btn) を上書きするため !important
+   を使う。視覚的なフェード (opacity) は各コンポーネントで明示する */
+button:disabled, [role="button"][aria-disabled="true"] {
+  cursor: not-allowed !important;
+}
+/* 一覧操作列のアイコンボタン (S.iconBtn 併用)。
+   インラインスタイルで書けない :hover / :focus-visible のフィードバックを
+   グローバル CSS で当てる。disabled の時はホバー演出を消す。 */
+.icon-btn:hover:not(:disabled) {
+  background: #eef0f5 !important;
+}
+.icon-btn:focus-visible {
+  outline: 2px solid #5b8dee;
+  outline-offset: 1px;
+}
+/* VISUALLY_HIDDEN な checkbox を内包する <label>。
+   input 自体は視覚上隠れているので、Tab フォーカス時に label 側に
+   リングを出してキーボード位置を可視化する。 */
+.toggle-label:focus-within {
+  outline: 2px solid #5b8dee;
+  outline-offset: 1px;
+}
+/* TOGGLE_LABEL_CLASS を付け忘れた <label> の保険 (休講・テスト期間・
+   イベント・特別時程の学年チェック)。:has 未対応のブラウザでは
+   単に効かないだけ */
+label:has(> input:focus-visible) {
+  outline: 2px solid #5b8dee;
+  outline-offset: 1px;
+}
+/* コマカード / 時間割セル (role="button" の div / td) のキーボード
+   フォーカス。マウスのクリックでは出ない (:focus-visible) */
+div[role="button"]:focus-visible,
+td[role="button"]:focus-visible {
+  outline: 2px solid #5b8dee;
+  outline-offset: -2px;
+}
+/* chord 待機バッジのタイムアウト残量バー（A19） */
+/* toast の残量バーでも同じ keyframes を流用する。 */
+/* 動きを減らす設定 (OS / ブラウザ) を尊重する。トーストのスライド・
+   chord バッジの残量バー・サイドバーの開閉・同期ドットの点滅を止める */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+/* キーボード利用者がサイドバーの全項目を飛ばして本文へ行くリンク。
+   フォーカスされたときだけ左上に現れる */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 3000;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.skip-link:focus {
+  left: 8px;
+  outline: 2px solid #5b8dee;
+  outline-offset: 2px;
+}
+@keyframes chord-decay {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+/* toast 出現時の fade-in（A22） */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* ─── レスポンシブ規則は必ず screen に限定する ───────────────
+   印刷時のメディアクエリは「画面幅」ではなく「紙面幅」で評価される
+   (A4 縦 = 210mm - 余白 ≒ 718〜733px)。screen を付けないと
+   デスクトップで印刷しても紙の上だけモバイル規則が効き、
+   **用紙サイズを変えると紙面レイアウトが黙って変わる**。
+   実際、sidebar-backdrop が紙面全体に乗って出力が暗くなる不具合は
+   これが原因だった。紙面のレイアウトは下の @media print だけで
+   決めること。 */
+@media screen and (min-width: 769px) {
+  .sidebar { left: 0 !important; position: fixed !important; }
+  .sidebar-close { display: none !important; }
+  .sidebar-backdrop { display: none !important; }
+  .hamburger { display: none !important; }
+}
+@media screen and (max-width: 768px) {
+  .sidebar-spacer { display: none !important; }
+  .dash-sections { grid-template-columns: 1fr !important; }
+  .excel-grid-sections { grid-template-columns: 1fr !important; }
+  .master-slot-actions { opacity: 1 !important; }
+  .sidebar { width: min(85vw, 280px) !important; }
+  /* 閉状態の left をモバイル幅に同期 (インライン left: -220 を上書き) */
+  .sidebar.is-closed { left: calc(-1 * min(85vw, 280px) - 8px) !important; }
+  /* サイドバーのメニュー + 講師一覧を 1 つのスクロール領域に統合する。
+     デスクトップの「メニュー固定・講師のみスクロール」分割のままだと
+     低い画面では講師一覧の高さが 0 になり講師に辿り着けない。 */
+  .sidebar-scroll {
+    display: block !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .sidebar-teachers { overflow-y: visible !important; }
+  .app-main { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
+  .app-h1 { font-size: 16px !important; }
+}
+/* 低い画面 (ノート PC・縮小ウィンドウ等) はデスクトップ幅でも
+   モバイルと同じ統合スクロールにする。「メニュー固定・講師のみ
+   スクロール」分割のままだと、講師一覧の flex 高さが数 px に潰れて
+   ログインフォームの裏に隠れ、講師を選べなくなるため。 */
+@media screen and (max-height: 860px) {
+  .sidebar-scroll {
+    display: block !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .sidebar-teachers { overflow-y: visible !important; }
+}
+@media screen and (max-width: 480px) {
+  body { font-size: 14px; }
+  /* iOS Safari prevents auto-zoom only when input font-size >= 16px。
+     checkbox/radio/range/color は見た目が font-size に連動すると困るため除外。 */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select, textarea { font-size: 16px !important; }
+  button, [role="button"] { min-height: 40px !important; touch-action: manipulation; }
+  .app-main { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
+  .app-h1 { font-size: 15px !important; }
+  .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
+  .mobile-stack > * { width: 100% !important; }
+  .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .mobile-card-pad { padding: 16px !important; }
+  .slot-form-row { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
+  .slot-form-row > label { width: auto !important; text-align: left !important; }
+  .slot-form-row > input, .slot-form-row > select { width: 100% !important; min-width: 0 !important; }
+  .slot-form-row-error { margin-left: 0 !important; }
+}
+/* 印刷メディアも hover: none を報告するため screen 限定にする
+   (紙面の見え方は @media print だけで決める方針) */
+@media screen and (hover: none) {
+  .master-slot-actions { opacity: 1 !important; }
+}
+@media print {
+  /* アプリシェルは通常 height:100vh のフレックス + .app-main が
+     overflow:auto のスクロールペイン。そのまま window.print() すると
+     1 ページ分 (ビューポート高) でクリップされ、以降のページが
+     印刷されない。印刷時はスクロールを解除して全内容を紙面へ流す
+     (直接 window.print() する全ビュー = builder / dashboard 等に効く)。 */
+  .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
+  .app-main { overflow: visible !important; height: auto !important; }
+  /* .sidebar-backdrop も必ずここで消す。上の
+     @media screen and (min-width: 769px) は screen 限定なので
+     紙面には効かない。sidebarOpen は初期値 true (view は
+     sessionStorage 復元) なので、リロード直後に印刷すると
+     rgba(0,0,0,.4) が紙面全体を覆って出力が真っ暗になっていた。 */
+  .sidebar, .sidebar-spacer, .hamburger, .sidebar-backdrop { display: none !important; }
+  .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+  /* 中学/高校の 2 カラム (画面) は紙面では縦積みにする。popup 印刷
+     (printStyles.js の timetablePrintCss) と同じ紙面にするための
+     明示指定 — 以前はモバイル規則が紙面に漏れて偶然 1 カラムに
+     なっていたので、用紙サイズを変えると 2 カラムに化けていた。 */
+  .excel-grid-sections { display: block !important; grid-template-columns: none !important; }
+  .master-slot-actions { display: none !important; }
+  .no-print { display: none !important; }
+  /* E1h: 時間グループ / カレンダーセルがページ境界で割れないように */
+  .dash-time-group, .event-cal-cell { break-inside: avoid; page-break-inside: avoid; }
+  body { font-size: 10px !important; }
+  input, select, textarea { font-size: 10px !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}

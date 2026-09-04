@@ -1,21 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import {
-  DAY_BG as DB,
-  DAY_COLOR as DC,
-  DAYS,
-  INIT_HOLIDAYS,
-  INIT_PART_TIME_STAFF,
-  INIT_SLOTS,
-  INIT_SUBJECTS,
-  INIT_SUBJECT_CATEGORIES,
-} from "./data";
+import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
-import { useSyncedStorage, useSyncedStorageRaw } from "./hooks/useSyncedStorage";
 import { useBuilderProject } from "./hooks/useBuilderProject";
-import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
@@ -31,18 +19,7 @@ import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
-import {
-  useDataIO,
-  migrateDaySchedules,
-  migrateDisplayCutoff,
-  migrateExamPeriods,
-  migrateExamPrepSchedules,
-  migrateHolidays,
-  migratePartTimeStaff,
-  migrateSpecialEvents,
-  migrateSubs,
-} from "./hooks/useDataIO";
-import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "./utils/schema";
+import { useDataIO } from "./hooks/useDataIO";
 import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { deriveTagFiltersForTeacher } from "./utils/teacherTags";
@@ -52,26 +29,17 @@ import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
-import { DEFAULT_EVENT_VISIBILITY } from "./components/EventVisibilityToggles";
-import { dateToDay, fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
-import {
-  buildBatchDocTitle,
-  buildBatchPrintBodyHtml,
-  buildMonthHeaderHtml,
-  buildMonthLabel,
-  buildPrintStyles,
-  formatPrintDate,
-  injectTimetableHeaders,
-} from "./utils/printStyles";
-import { openPrintWindow, writePrintDocument } from "./utils/printWindow";
+import { fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import { sortJa } from "./utils/sortJa";
-import { sanitizeKanaMap } from "./utils/teacherKana";
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
   describeOrphanDetection,
 } from "./utils/orphanCleanup";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useAppData } from "./hooks/useAppData";
+import { usePrintJobs } from "./hooks/usePrintJobs";
+import "./styles/appShell.css";
 
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
@@ -197,149 +165,53 @@ export default function App() {
   const confirm = useConfirm();
   const { isAdmin, signIn, signOutAdmin } = useAuth();
 
-  // Flags to avoid spamming the same toast on every subsequent save.
-  const syncAuthNotifiedRef = useRef(false);
-  // 権限以外のクラウド書込失敗 / 端末保存失敗も同じく 1 回だけ知らせる
-  // (ネットワーク断で連続失敗すると toast が積み上がる)。成功が戻る経路は
-  // 無いので 30 秒で再通知できるようにしておく
-  const syncFailNotifiedAtRef = useRef(0);
-
-  const onStorageError = useCallback(
-    (err, phase) => {
-      if (phase === "quota") {
-        toasts.error(
-          "保存領域の上限に達しました。データ管理からエクスポートして古いデータを整理してください。"
-        );
-      } else if (phase === "load") {
-        toasts.error(
-          `保存データの読み込みに失敗しました: ${err?.message || err}`
-        );
-      } else if (phase === "sync-auth") {
-        if (!syncAuthNotifiedRef.current) {
-          syncAuthNotifiedRef.current = true;
-          toasts.error(
-            "クラウドへの書込が拒否されました。管理者ログインが必要です（端末にはローカル保存されています）。"
-          );
-        }
-      } else if (phase === "sync" || phase === "save") {
-        // 以前はフッタの同期ドットが赤くなるだけで、気付けなかった
-        const now = Date.now();
-        if (now - syncFailNotifiedAtRef.current < 30000) return;
-        syncFailNotifiedAtRef.current = now;
-        toasts.error(
-          phase === "sync"
-            ? "クラウドへの保存に失敗しました（端末には保存済み。接続が戻れば自動で再送されます）"
-            : `端末への保存に失敗しました: ${err?.message || err}`
-        );
-      }
-    },
-    [toasts]
-  );
-
-  useEffect(() => {
-    if (isAdmin) syncAuthNotifiedRef.current = false;
-  }, [isAdmin]);
-
   // ─── Persisted state (synced with Firebase when configured) ───────
-  const [slots, saveSlots] = useSyncedStorage(LS.slots, INIT_SLOTS, {
-    onError: onStorageError,
-  });
-  const [holidays, saveHolidays] = useSyncedStorage(LS.holidays, INIT_HOLIDAYS, {
-    migrate: migrateHolidays,
-    onError: onStorageError,
-  });
-  const [subs, saveSubs] = useSyncedStorage(LS.subs, [], {
-    migrate: migrateSubs,
-    onError: onStorageError,
-  });
-  const [partTimeStaff, savePartTimeStaff] = useSyncedStorage(
-    LS.partTime,
-    INIT_PART_TIME_STAFF,
-    { migrate: migratePartTimeStaff, onError: onStorageError }
-  );
-  const [subjectCategories, saveSubjectCategories] = useSyncedStorage(
-    LS.subjectCategories,
-    INIT_SUBJECT_CATEGORIES,
-    { onError: onStorageError }
-  );
-  const [subjects, saveSubjects] = useSyncedStorage(LS.subjects, INIT_SUBJECTS, {
-    onError: onStorageError,
-  });
-  const [biweeklyBase, saveBiweeklyBase] = useSyncedStorageRaw(LS.biweeklyBase, "", {
-    onError: onStorageError,
-  });
-  const [biweeklyAnchors, saveBiweeklyAnchors] = useSyncedStorage(
-    LS.biweeklyAnchors,
-    [],
-    { onError: onStorageError }
-  );
-  const [adjustments, saveAdjustments] = useSyncedStorage(
-    LS.adjustments,
-    [],
-    { onError: onStorageError }
-  );
-  const [timetables, saveTimetables] = useSyncedStorage(
-    LS.timetables,
-    [DEFAULT_TIMETABLE],
-    { onError: onStorageError }
-  );
-  const [displayCutoff, saveDisplayCutoff] = useSyncedStorage(
-    LS.displayCutoff,
-    DEFAULT_DISPLAY_CUTOFF,
-    { migrate: migrateDisplayCutoff, onError: onStorageError }
-  );
-  const [examPeriods, saveExamPeriods] = useSyncedStorage(
-    LS.examPeriods,
-    [],
-    { migrate: migrateExamPeriods, onError: onStorageError }
-  );
-  const [examPrepSchedules, saveExamPrepSchedules] = useSyncedStorage(
-    LS.examPrepSchedules,
-    [],
-    { migrate: migrateExamPrepSchedules, onError: onStorageError }
-  );
-  const [classSets, saveClassSets] = useSyncedStorage(
-    LS.classSets,
-    [],
-    { onError: onStorageError }
-  );
-  const [sessionOverrides, saveSessionOverrides] = useSyncedStorage(
-    LS.sessionOverrides,
-    [],
-    { onError: onStorageError }
-  );
-  const [teacherSubjects, saveTeacherSubjects] = useSyncedStorage(
-    LS.teacherSubjects,
-    {},
-    { onError: onStorageError }
-  );
-  const [teacherKana, saveTeacherKana] = useSyncedStorage(
-    LS.teacherKana,
-    {},
-    { migrate: sanitizeKanaMap, onError: onStorageError }
-  );
-  const [specialEvents, saveSpecialEvents] = useSyncedStorage(
-    LS.specialEvents,
-    [],
-    { migrate: migrateSpecialEvents, onError: onStorageError }
-  );
-  const [extraLessons, saveExtraLessons] = useSyncedStorage(
-    LS.extraLessons,
-    [],
-    { onError: onStorageError }
-  );
-  const [daySchedules, saveDaySchedules] = useSyncedStorage(
-    LS.daySchedules,
-    [],
-    { migrate: migrateDaySchedules, onError: onStorageError }
-  );
-  // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
-  // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
-  const [eventVisibility, saveEventVisibility] = useLocalStorage(
-    LS.eventVisibility,
-    DEFAULT_EVENT_VISIBILITY,
-    { onError: onStorageError }
-  );
+  // 宣言は hooks/useAppData.js に集約 (20 本の useSyncedStorage + 端末限定の
+  // eventVisibility + 保存エラーの通知)
+  const {
+    slots,
+    saveSlots,
+    holidays,
+    saveHolidays,
+    subs,
+    saveSubs,
+    partTimeStaff,
+    savePartTimeStaff,
+    subjectCategories,
+    saveSubjectCategories,
+    subjects,
+    saveSubjects,
+    biweeklyBase,
+    saveBiweeklyBase,
+    biweeklyAnchors,
+    saveBiweeklyAnchors,
+    adjustments,
+    saveAdjustments,
+    timetables,
+    saveTimetables,
+    displayCutoff,
+    saveDisplayCutoff,
+    examPeriods,
+    saveExamPeriods,
+    examPrepSchedules,
+    saveExamPrepSchedules,
+    classSets,
+    saveClassSets,
+    sessionOverrides,
+    saveSessionOverrides,
+    teacherSubjects,
+    saveTeacherSubjects,
+    teacherKana,
+    saveTeacherKana,
+    specialEvents,
+    saveSpecialEvents,
+    extraLessons,
+    saveExtraLessons,
+    daySchedules,
+    saveDaySchedules,
+    eventVisibility,
+    saveEventVisibility,
+  } = useAppData({ toasts, isAdmin });
 
   // 講習時間割作成 (builder) の project を読み取り専用で購読し、個人月間
   // スケジュール (MonthView) に載せる講習コマへ変換する。編集は builder 側。
@@ -430,17 +302,6 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  // 講師一括印刷ダイアログ。busy 中は閉じられないようロックする。
-  // progress は { current, total, name } を持ち、ダイアログで <progress>
-  // 要素として描画する。abortRef は中断ボタンから for ループへの伝達役。
-  const [batchPrintOpen, setBatchPrintOpen] = useState(false);
-  const [batchPrintBusy, setBatchPrintBusy] = useState(false);
-  const [batchPrintProgress, setBatchPrintProgress] = useState({
-    current: 0,
-    total: 0,
-    name: "",
-  });
-  const batchPrintAbortRef = useRef(null);
   const [activeTimetableId, setActiveTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
@@ -840,187 +701,27 @@ export default function App() {
   // CSS / HTML ビルダは `utils/printStyles` に切り出してテスト可能にしている。
   // (各ビューの PrintButton はメインドキュメント側を直接 window.print() する
   // 別系統。ヘッダや凡例の整った印刷物が必要なビューはこちらを使う。)
-  const handlePrint = () => {
-    const el = document.getElementById("main-content");
-    if (!el) return;
-    const w = openPrintWindow();
-    if (!w) {
-      toasts.error(
-        "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
-      );
-      return;
-    }
-    const dateInput = el.querySelector('input[type="date"]');
-    const printDate = dateInput?.value || "";
-    const printDay = printDate ? dateToDay(printDate) : "";
-    // 紙面ヘッダは和式 (YYYY年MM月DD日（曜）) に統一 (E1h)
-    const dateText = printDate ? formatPrintDate(printDate, printDay) : "";
-    const dateLabel = printDate
-      ? `${printDate}${printDay ? `（${printDay}）` : ""} 授業予定`
-      : "授業予定";
-    const hasTimetableGrid = !!el.querySelector(".excel-print-col-ms");
-    const hasMonthView =
-      view === VIEWS.MONTH && !!el.querySelector(".month-print-root");
-    const docTitle = hasMonthView
-      ? buildMonthLabel({ teacher: selected, year: vy, month: vm })
-      : selected
-        ? `${selected} 授業予定`
-        : dateLabel;
-
-    const printStyles = buildPrintStyles({ hasTimetableGrid, hasMonthView });
-
-    let bodyHtml = el.innerHTML;
-    if (hasTimetableGrid) {
-      // 中学/高校で別々のヘッダを注入する (印刷時は別ページ)。各ヘッダには
-      // セクション名・日付・印刷日・講師名 (選択中のみ) を載せる。
-      // 全曜日まとめ印刷 (ExcelGridView) も同じ関数で曜日ブロック単位に注入する。
-      bodyHtml = injectTimetableHeaders(bodyHtml, { dateText, selected });
-    }
-    if (hasMonthView) {
-      const header = buildMonthHeaderHtml({
-        teacher: selected,
-        year: vy,
-        month: vm,
-        visibility: eventVisibility,
-      });
-      bodyHtml = bodyHtml.replace(
-        /(<div[^>]*class="[^"]*\bmonth-print-root\b[^"]*"[^>]*>)/,
-        `${header}$1`
-      );
-    }
-
-    // 印刷ダイアログが閉じたらポップアップも自動で閉じる (取り消した場合含む)。
-    writePrintDocument(w, { title: docTitle, styles: printStyles, bodyHtml });
-  };
-
-  // ─── Batch Print ────────────────────────────────────────────────
-  // 講師 (バイト + 常勤) を複数選択して各人の月次予定を 1 ジョブに
-  // まとめて印刷する。months ({year, month}[] 昇順) を複数選ぶと
-  // 講師ごとに各月 1 枚ずつ連続で出す (配布時に人単位で束ねやすい順)。
-  // selected / monthOff (現在の MonthView 表示講師・表示月) を順次
-  // 差し替えて React に再描画させ、各回の .month-print-root の outerHTML
-  // をスナップショット。全員ぶん集まったら popup window に流し込んで
-  // window.print() する。終了後は元の selected / view / monthOff に戻す。
-  //
-  // popup は user gesture (ボタンクリック) 直下で開かないと Safari/Firefox
-  // でブロックされやすい。await を挟む前に先に window.open しておく。
-  //
-  // 途中中断は AbortController 経由で handleBatchPrintAbort から signal を
-  // 立てて、ループ先頭で aborted を見て break する。
-  const handleBatchPrintAbort = useCallback(() => {
-    batchPrintAbortRef.current?.abort();
-  }, []);
-
-  const handleBatchPrint = useCallback(
-    async (teachers, months) => {
-      if (!Array.isArray(teachers) || teachers.length === 0) return;
-      // months 未指定 (旧呼び出し互換) は現在表示中の月のみ。
-      const monthList =
-        Array.isArray(months) && months.length > 0
-          ? months
-          : [{ year: vy, month: vm }];
-      const w = openPrintWindow();
-      if (!w) {
-        toasts.error(
-          "ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"
-        );
-        return;
-      }
-      const ac = new AbortController();
-      batchPrintAbortRef.current = ac;
-      const savedSelected = selected;
-      const savedView = view;
-      const savedMonthOff = monthOff;
-      // monthOff は「今日の月」からのオフセット。対象年月 → monthOff の
-      // 変換基準も同じく今日にする。
-      const base = new Date();
-      const offsetOf = (y, m) =>
-        (y - base.getFullYear()) * 12 + (m - 1 - base.getMonth());
-      // 講師ごとに各月を連続で出す (人単位で束ねて配布できる紙順)。
-      const jobs = [];
-      for (const t of teachers) {
-        for (const mo of monthList) {
-          jobs.push({ teacher: t, year: mo.year, month: mo.month });
-        }
-      }
-      setBatchPrintBusy(true);
-      setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
-      try {
-        // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
-        // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)
-        await import("./components/views/MonthView");
-        const slides = [];
-        for (let i = 0; i < jobs.length; i++) {
-          if (ac.signal.aborted) break;
-          const { teacher: t, year: jy, month: jm } = jobs[i];
-          setBatchPrintProgress({
-            current: i + 1,
-            total: jobs.length,
-            name: monthList.length > 1 ? `${t}・${jm}月` : t,
-          });
-          // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
-          flushSync(() => {
-            setSelected(t);
-            setMonthOff(offsetOf(jy, jm));
-            setView(VIEWS.MONTH);
-          });
-          // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
-          // (1 frame だと concurrent rendering で間に合わないケースの保険)。
-          await new Promise((r) =>
-            requestAnimationFrame(() => requestAnimationFrame(r))
-          );
-          if (ac.signal.aborted) break;
-          const root = document.querySelector(".month-print-root");
-          if (!root) continue;
-          slides.push({
-            teacher: t,
-            headerHtml: buildMonthHeaderHtml({
-              teacher: t,
-              year: jy,
-              month: jm,
-              visibility: eventVisibility,
-            }),
-            monthRootHtml: root.outerHTML,
-          });
-        }
-
-        if (ac.signal.aborted) {
-          toasts.info("一括印刷を中断しました");
-          w.close();
-          return;
-        }
-
-        if (slides.length === 0) {
-          toasts.error("印刷データを生成できませんでした。");
-          w.close();
-          return;
-        }
-
-        const printStyles = buildPrintStyles({
-          hasTimetableGrid: false,
-          hasMonthView: true,
-        });
-        const bodyHtml = buildBatchPrintBodyHtml({ slides });
-        const nameCount = new Set(slides.map((s) => s.teacher)).size;
-        const docTitle = buildBatchDocTitle({ nameCount, months: monthList });
-        writePrintDocument(w, {
-          title: docTitle,
-          styles: printStyles,
-          bodyHtml,
-        });
-      } finally {
-        // 元の選択状態 / view / 表示月に戻す。null だった場合も含めそのまま代入。
-        batchPrintAbortRef.current = null;
-        setSelected(savedSelected);
-        setView(savedView);
-        setMonthOff(savedMonthOff);
-        setBatchPrintBusy(false);
-        setBatchPrintProgress({ current: 0, total: 0, name: "" });
-        setBatchPrintOpen(false);
-      }
-    },
-    [selected, view, monthOff, vy, vm, eventVisibility, toasts]
-  );
+  // ─── Print (popup 系。hooks/usePrintJobs.js) ───────────────────
+  const {
+    handlePrint,
+    handleBatchPrint,
+    handleBatchPrintAbort,
+    batchPrintOpen,
+    setBatchPrintOpen,
+    batchPrintBusy,
+    batchPrintProgress,
+  } = usePrintJobs({
+    view,
+    selected,
+    monthOff,
+    vy,
+    vm,
+    eventVisibility,
+    setSelected,
+    setView,
+    setMonthOff,
+    toasts,
+  });
 
   // ─── Render ─────────────────────────────────────────────────────
   return (
@@ -1817,184 +1518,6 @@ export default function App() {
       {/* Chord waiting badge (g を押したあと次のキーを待っている間だけ表示) */}
       <ChordWaitingBadge open={chordWaiting} />
 
-      {/* Responsive CSS */}
-      <style>{`
-        /* 既定で disabled なボタンに not-allowed カーソルを当てる。
-           インライン cursor: pointer (S.btn) を上書きするため !important
-           を使う。視覚的なフェード (opacity) は各コンポーネントで明示する */
-        button:disabled, [role="button"][aria-disabled="true"] {
-          cursor: not-allowed !important;
-        }
-        /* 一覧操作列のアイコンボタン (S.iconBtn 併用)。
-           インラインスタイルで書けない :hover / :focus-visible のフィードバックを
-           グローバル CSS で当てる。disabled の時はホバー演出を消す。 */
-        .icon-btn:hover:not(:disabled) {
-          background: #eef0f5 !important;
-        }
-        .icon-btn:focus-visible {
-          outline: 2px solid #5b8dee;
-          outline-offset: 1px;
-        }
-        /* VISUALLY_HIDDEN な checkbox を内包する <label>。
-           input 自体は視覚上隠れているので、Tab フォーカス時に label 側に
-           リングを出してキーボード位置を可視化する。 */
-        .toggle-label:focus-within {
-          outline: 2px solid #5b8dee;
-          outline-offset: 1px;
-        }
-        /* TOGGLE_LABEL_CLASS を付け忘れた <label> の保険 (休講・テスト期間・
-           イベント・特別時程の学年チェック)。:has 未対応のブラウザでは
-           単に効かないだけ */
-        label:has(> input:focus-visible) {
-          outline: 2px solid #5b8dee;
-          outline-offset: 1px;
-        }
-        /* コマカード / 時間割セル (role="button" の div / td) のキーボード
-           フォーカス。マウスのクリックでは出ない (:focus-visible) */
-        div[role="button"]:focus-visible,
-        td[role="button"]:focus-visible {
-          outline: 2px solid #5b8dee;
-          outline-offset: -2px;
-        }
-        /* chord 待機バッジのタイムアウト残量バー（A19） */
-        /* toast の残量バーでも同じ keyframes を流用する。 */
-        /* 動きを減らす設定 (OS / ブラウザ) を尊重する。トーストのスライド・
-           chord バッジの残量バー・サイドバーの開閉・同期ドットの点滅を止める */
-        @media (prefers-reduced-motion: reduce) {
-          *, *::before, *::after {
-            animation-duration: 0.001ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: 0.001ms !important;
-          }
-        }
-        /* キーボード利用者がサイドバーの全項目を飛ばして本文へ行くリンク。
-           フォーカスされたときだけ左上に現れる */
-        .skip-link {
-          position: absolute;
-          left: -9999px;
-          top: 8px;
-          z-index: 3000;
-          padding: 8px 12px;
-          background: #1a1a2e;
-          color: #fff;
-          border-radius: 6px;
-          font-size: 13px;
-          font-weight: 700;
-        }
-        .skip-link:focus {
-          left: 8px;
-          outline: 2px solid #5b8dee;
-          outline-offset: 2px;
-        }
-        @keyframes chord-decay {
-          from { width: 100%; }
-          to   { width: 0%; }
-        }
-        /* toast 出現時の fade-in（A22） */
-        @keyframes toast-in {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        /* ─── レスポンシブ規則は必ず screen に限定する ───────────────
-           印刷時のメディアクエリは「画面幅」ではなく「紙面幅」で評価される
-           (A4 縦 = 210mm - 余白 ≒ 718〜733px)。screen を付けないと
-           デスクトップで印刷しても紙の上だけモバイル規則が効き、
-           **用紙サイズを変えると紙面レイアウトが黙って変わる**。
-           実際、sidebar-backdrop が紙面全体に乗って出力が暗くなる不具合は
-           これが原因だった。紙面のレイアウトは下の @media print だけで
-           決めること。 */
-        @media screen and (min-width: 769px) {
-          .sidebar { left: 0 !important; position: fixed !important; }
-          .sidebar-close { display: none !important; }
-          .sidebar-backdrop { display: none !important; }
-          .hamburger { display: none !important; }
-        }
-        @media screen and (max-width: 768px) {
-          .sidebar-spacer { display: none !important; }
-          .dash-sections { grid-template-columns: 1fr !important; }
-          .excel-grid-sections { grid-template-columns: 1fr !important; }
-          .master-slot-actions { opacity: 1 !important; }
-          .sidebar { width: min(85vw, 280px) !important; }
-          /* 閉状態の left をモバイル幅に同期 (インライン left: -220 を上書き) */
-          .sidebar.is-closed { left: calc(-1 * min(85vw, 280px) - 8px) !important; }
-          /* サイドバーのメニュー + 講師一覧を 1 つのスクロール領域に統合する。
-             デスクトップの「メニュー固定・講師のみスクロール」分割のままだと
-             低い画面では講師一覧の高さが 0 になり講師に辿り着けない。 */
-          .sidebar-scroll {
-            display: block !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
-          }
-          .sidebar-teachers { overflow-y: visible !important; }
-          .app-main { padding: 12px !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
-          .app-h1 { font-size: 16px !important; }
-        }
-        /* 低い画面 (ノート PC・縮小ウィンドウ等) はデスクトップ幅でも
-           モバイルと同じ統合スクロールにする。「メニュー固定・講師のみ
-           スクロール」分割のままだと、講師一覧の flex 高さが数 px に潰れて
-           ログインフォームの裏に隠れ、講師を選べなくなるため。 */
-        @media screen and (max-height: 860px) {
-          .sidebar-scroll {
-            display: block !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
-          }
-          .sidebar-teachers { overflow-y: visible !important; }
-        }
-        @media screen and (max-width: 480px) {
-          body { font-size: 14px; }
-          /* iOS Safari prevents auto-zoom only when input font-size >= 16px。
-             checkbox/radio/range/color は見た目が font-size に連動すると困るため除外。 */
-          input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-          select, textarea { font-size: 16px !important; }
-          button, [role="button"] { min-height: 40px !important; touch-action: manipulation; }
-          .app-main { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
-          .app-h1 { font-size: 15px !important; }
-          .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
-          .mobile-stack > * { width: 100% !important; }
-          .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
-          .mobile-card-pad { padding: 16px !important; }
-          .slot-form-row { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
-          .slot-form-row > label { width: auto !important; text-align: left !important; }
-          .slot-form-row > input, .slot-form-row > select { width: 100% !important; min-width: 0 !important; }
-          .slot-form-row-error { margin-left: 0 !important; }
-        }
-        /* 印刷メディアも hover: none を報告するため screen 限定にする
-           (紙面の見え方は @media print だけで決める方針) */
-        @media screen and (hover: none) {
-          .master-slot-actions { opacity: 1 !important; }
-        }
-        @media print {
-          /* アプリシェルは通常 height:100vh のフレックス + .app-main が
-             overflow:auto のスクロールペイン。そのまま window.print() すると
-             1 ページ分 (ビューポート高) でクリップされ、以降のページが
-             印刷されない。印刷時はスクロールを解除して全内容を紙面へ流す
-             (直接 window.print() する全ビュー = builder / dashboard 等に効く)。 */
-          .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
-          .app-main { overflow: visible !important; height: auto !important; }
-          /* .sidebar-backdrop も必ずここで消す。上の
-             @media screen and (min-width: 769px) は screen 限定なので
-             紙面には効かない。sidebarOpen は初期値 true (view は
-             sessionStorage 復元) なので、リロード直後に印刷すると
-             rgba(0,0,0,.4) が紙面全体を覆って出力が真っ暗になっていた。 */
-          .sidebar, .sidebar-spacer, .hamburger, .sidebar-backdrop { display: none !important; }
-          .dash-sections { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
-          /* 中学/高校の 2 カラム (画面) は紙面では縦積みにする。popup 印刷
-             (printStyles.js の timetablePrintCss) と同じ紙面にするための
-             明示指定 — 以前はモバイル規則が紙面に漏れて偶然 1 カラムに
-             なっていたので、用紙サイズを変えると 2 カラムに化けていた。 */
-          .excel-grid-sections { display: block !important; grid-template-columns: none !important; }
-          .master-slot-actions { display: none !important; }
-          .no-print { display: none !important; }
-          /* E1h: 時間グループ / カレンダーセルがページ境界で割れないように */
-          .dash-time-group, .event-cal-cell { break-inside: avoid; page-break-inside: avoid; }
-          body { font-size: 10px !important; }
-          input, select, textarea { font-size: 10px !important; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        }
-      `}</style>
     </div>
   );
 }

@@ -745,6 +745,18 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   `schema.collectReferentialWarnings` の両方に足す (片方だけだと、掃除で
   消えない参照が警告に出続ける)
 
+## App.jsx の構成 (2026-09-04 分割)
+
+- **永続 state は `hooks/useAppData.js`** に集約 (20 本の `useSyncedStorage` +
+  `eventVisibility` + `onStorageError`)。App は分割代入で受ける。
+  **App.jsx に直接 `useSyncedStorage` を書き足さない**
+- **popup 系の印刷は `hooks/usePrintJobs.js`** (`handlePrint` / 一括印刷)。
+  印刷 2 系統の使い分けは上の「印刷システムの二系統」のとおり
+- **App のグローバル CSS は `styles/appShell.css`**。`<style>` 文字列を
+  App.jsx に戻さない
+- App 全体のスモークは `App.smoke.test.jsx` (全ビュー遷移でクラッシュしない)。
+  ビューを足したら `VIEW_LABELS` に名前を足す
+
 ## ErrorBoundary の 2 段構え (2026-09-04)
 
 - `main.jsx` のルート (`scope="app"`) が最後の砦。**「保存データを初期化」

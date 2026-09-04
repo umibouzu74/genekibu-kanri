@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed (App.jsx を分割した。挙動は変えていない)
+
+2,000 行の `App.jsx` から、中身を変えずに 3 つを切り出した (1,558 行に)。
+
+- **`hooks/useAppData.js`**: 永続 state 20 本の `useSyncedStorage` (+ 端末
+  限定の `eventVisibility`) と保存エラーの通知 (`onStorageError`)。
+  新しい永続 state はここに足す (同期するキーは `database.rules.json` にも)
+- **`hooks/usePrintJobs.js`**: popup 系の印刷 (`handlePrint` / 一括印刷
+  `handleBatchPrint` とその state)。印刷 2 系統の設計は従来どおり
+- **`styles/appShell.css`**: 末尾の 175 行の `<style>` 文字列を CSS ファイルに
+  (Vite が index の CSS として出す)
+- **`App.smoke.test.jsx`** を追加。App にはテストが無かったので、サイドバーの
+  全ビューを順に開いてもクラッシュしない / 講師を選んで月間・週間が描ける、
+  を固定してから分割した
+
 ### Changed (テーブル見出しの scope、週間 / 月間ビューの遅延読み込み)
 
 - 一覧・グリッド 11 ファイルの `<thead>` 内 `<th>` 60 個に `scope="col"`
