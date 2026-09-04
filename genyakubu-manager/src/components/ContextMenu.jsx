@@ -2,11 +2,18 @@ import { useEffect, useRef } from "react";
 import { colors } from "../styles/tokens";
 
 // ─── 汎用コンテキストメニュー ──────────────────────────────────
-// 右クリックで出す小さなポップオーバー。クリック外で自動クローズ。
+// 右クリックで出す小さなポップオーバー。クリック外・Esc で自動クローズ。
 // items は [{ label, onClick, danger?, disabled? }, ...] の配列。
+//
+// キーボード (2026-09-04): 開いたら先頭項目にフォーカスし、↑↓ / Home / End
+// で移動、Enter / Space で実行、Esc で閉じる。role="menu" / "menuitem" を
+// 付けて支援技術にメニューとして伝える (regular-builder の
+// RegularContextMenu と同じ作法)。画面端では中身がはみ出さないよう位置を
+// クランプする。
 
 export function ContextMenu({ x, y, items, onClose }) {
   const ref = useRef(null);
+
   useEffect(() => {
     const h = (e) => {
       if (ref.current && !ref.current.contains(e.target)) onClose();
@@ -15,11 +22,58 @@ export function ContextMenu({ x, y, items, onClose }) {
     return () => document.removeEventListener("mousedown", h);
   }, [onClose]);
 
+  // 開いたら先頭の有効な項目へフォーカス。画面端のクランプも同時に行う
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pad = 8;
+    const overX = rect.right - (window.innerWidth - pad);
+    const overY = rect.bottom - (window.innerHeight - pad);
+    if (overX > 0) el.style.left = `${Math.max(pad, x - overX)}px`;
+    if (overY > 0) el.style.top = `${Math.max(pad, y - overY)}px`;
+    const first = el.querySelector('[role="menuitem"]:not([disabled])');
+    first?.focus();
+  }, [x, y]);
+
+  const focusables = () =>
+    ref.current
+      ? [...ref.current.querySelectorAll('[role="menuitem"]:not([disabled])')]
+      : [];
+
+  const onKeyDown = (e) => {
+    const list = focusables();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (list.length === 0) return;
+    const idx = list.indexOf(document.activeElement);
+    let next = null;
+    if (e.key === "ArrowDown") next = list[(idx + 1 + list.length) % list.length];
+    else if (e.key === "ArrowUp") next = list[(idx - 1 + list.length) % list.length];
+    else if (e.key === "Home") next = list[0];
+    else if (e.key === "End") next = list[list.length - 1];
+    else if (e.key === "Tab") {
+      // メニューの外へ Tab で抜けたら閉じる (フォーカスが迷子にならない)
+      onClose();
+      return;
+    }
+    if (next) {
+      e.preventDefault();
+      next.focus();
+    }
+  };
+
   return (
     <div
       ref={ref}
+      role="menu"
       /* 開いたまま印刷すると紙面に浮いたメニューが写り込む */
       className="no-print"
+      onKeyDown={onKeyDown}
       style={{
         position: "fixed",
         left: x,
@@ -38,6 +92,7 @@ export function ContextMenu({ x, y, items, onClose }) {
         <button
           key={item.label}
           type="button"
+          role="menuitem"
           disabled={!!item.disabled}
           onClick={() => {
             if (item.disabled) return;
@@ -56,9 +111,13 @@ export function ContextMenu({ x, y, items, onClose }) {
             color: item.disabled ? "#aaa" : item.danger ? colors.danger : "#333",
           }}
           onMouseEnter={(e) => {
-            if (!item.disabled) e.target.style.background = "#f0f0f0";
+            if (!item.disabled) e.currentTarget.style.background = "#f0f0f0";
           }}
-          onMouseLeave={(e) => (e.target.style.background = "none")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+          onFocus={(e) => {
+            if (!item.disabled) e.currentTarget.style.background = "#f0f0f0";
+          }}
+          onBlur={(e) => (e.currentTarget.style.background = "none")}
         >
           {item.label}
         </button>

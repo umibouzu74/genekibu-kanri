@@ -431,24 +431,21 @@ export function Sidebar({
             const selfActive = !selected && view === item.key;
             const isModal = item.action === "modal";
 
+            // 依頼中バッジは親の項目ボタンの「兄弟」として置く。<button> の
+            // 中に role="button" を入れ子にすると HTML として不正で、
+            // スクリーンリーダーが内側を読まない / 二重に読む (2026-09-04)
             const pendingBadge = pending > 0 && (
-              <span
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onJumpToRequestedSubs?.();
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    onJumpToRequestedSubs?.();
-                  }
-                }}
                 title="依頼中のみ表示"
+                aria-label={`依頼中の代行 ${pending} 件を表示`}
                 style={{
                   marginLeft: 6,
+                  border: "none",
                   background: colors.danger,
                   color: "#fff",
                   borderRadius: 10,
@@ -456,70 +453,79 @@ export function Sidebar({
                   fontSize: 9,
                   fontWeight: 800,
                   cursor: "pointer",
+                  flexShrink: 0,
                 }}
               >
                 {pending}
-              </span>
+              </button>
             );
 
             return (
               <div key={item.key}>
-                <button
-                  onClick={() => {
-                    if (isModal) {
-                      if (item.modal === "dayReschedule") onOpenDayReschedule?.();
-                      else onOpenDataMgr();
-                      onClose?.();
-                    } else {
-                      onSelectView(item.key);
-                      // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
-                      if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-                    }
-                  }}
+                {/* 項目本体・依頼中バッジ・展開トグルは兄弟の <button> に分ける
+                    (入れ子の button は不正な DOM)。行の背景色は外側の div が持つ */}
+                <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     width: "100%",
-                    padding: "10px 14px",
-                    border: "none",
                     background: selfActive
                       ? "#3a3a6e"
                       : childActive
                         ? "#2a2a4e"
                         : "transparent",
                     color: selfActive ? "#fff" : childActive ? "#ddd" : "#ccc",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: selfActive ? 700 : childActive ? 600 : 400,
                   }}
                 >
-                  <span style={{ flex: 1, display: "flex", alignItems: "center" }}>
-                    <span>
-                      {item.icon} {item.label}
+                  <button
+                    aria-current={selfActive ? "page" : undefined}
+                    onClick={() => {
+                      if (isModal) {
+                        if (item.modal === "dayReschedule") onOpenDayReschedule?.();
+                        else onOpenDataMgr();
+                        onClose?.();
+                      } else {
+                        onSelectView(item.key);
+                        // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
+                        if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "10px 14px",
+                      border: "none",
+                      background: "transparent",
+                      color: "inherit",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: selfActive ? 700 : childActive ? 600 : 400,
+                    }}
+                  >
+                    <span style={{ flex: 1, display: "flex", alignItems: "center" }}>
+                      <span>
+                        {item.icon} {item.label}
+                      </span>
+                      {!isModal && <ChordHint viewKey={item.key} dim={!selfActive && !childActive} />}
                     </span>
-                    {/* 折りたたみ時は親にバッジ表示 */}
-                    {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
-                    {!isModal && <ChordHint viewKey={item.key} dim={!selfActive && !childActive} />}
-                  </span>
+                  </button>
+                  {/* 折りたたみ時は親にバッジ表示 */}
+                  {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
                   {hasChildren && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleGroup(item.key);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          toggleGroup(item.key);
-                        }
-                      }}
+                    <button
+                      type="button"
+                      aria-label={isExpanded ? `${item.label} を折りたたむ` : `${item.label} を展開する`}
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleGroup(item.key)}
                       style={{
+                        marginRight: 8,
                         padding: "2px 6px",
+                        border: "none",
                         borderRadius: 4,
+                        background: "transparent",
                         fontSize: 10,
                         color: "#888",
                         cursor: "pointer",
@@ -529,9 +535,9 @@ export function Sidebar({
                       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                     >
                       {isExpanded ? "▾" : "▸"}
-                    </span>
+                    </button>
                   )}
-                </button>
+                </div>
                 {/* 子メニューを持たない画面のタブ (コースマスター管理) も、
                     開いている間だけ中身の名前を出す */}
                 {selfActive && item.sections && (
@@ -557,32 +563,47 @@ export function Sidebar({
                       const childIsActive = !selected && view === child.key;
                       return (
                         <Fragment key={child.key}>
-                        <button
-                          onClick={() => {
-                            onSelectView(child.key);
-                            if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-                          }}
+                        <div
                           style={{
-                            display: "block",
+                            display: "flex",
+                            alignItems: "center",
                             width: "100%",
-                            padding: "9px 14px 9px 28px",
-                            border: "none",
                             background: childIsActive ? "#3a3a6e" : "transparent",
                             color: childIsActive ? "#fff" : "#aaa",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            fontSize: 12,
-                            fontWeight: childIsActive ? 700 : 400,
                           }}
                         >
-                          <span style={{ display: "flex", alignItems: "center" }}>
-                            <span style={{ flex: 1 }}>
-                              {child.icon} {child.label}
-                              {child.badge && pendingBadge}
+                          <button
+                            aria-current={childIsActive ? "page" : undefined}
+                            onClick={() => {
+                              onSelectView(child.key);
+                              if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+                            }}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: "block",
+                              padding: "9px 14px 9px 28px",
+                              border: "none",
+                              background: "transparent",
+                              color: "inherit",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: childIsActive ? 700 : 400,
+                            }}
+                          >
+                            <span style={{ display: "flex", alignItems: "center" }}>
+                              <span style={{ flex: 1 }}>
+                                {child.icon} {child.label}
+                              </span>
+                              <ChordHint viewKey={child.key} dim={!childIsActive} />
                             </span>
-                            <ChordHint viewKey={child.key} dim={!childIsActive} />
-                          </span>
-                        </button>
+                          </button>
+                          {/* 依頼中バッジは兄弟の button (入れ子にしない) */}
+                          {child.badge && pendingBadge && (
+                            <span style={{ paddingRight: 10, display: "flex" }}>{pendingBadge}</span>
+                          )}
+                        </div>
                         {/* 開いているときだけ、その画面の中のセクションを出す。
                             クリックで該当セクションまでスクロールする */}
                         {childIsActive && child.sections && (

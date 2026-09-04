@@ -192,6 +192,10 @@ export default function App() {
 
   // Flags to avoid spamming the same toast on every subsequent save.
   const syncAuthNotifiedRef = useRef(false);
+  // 権限以外のクラウド書込失敗 / 端末保存失敗も同じく 1 回だけ知らせる
+  // (ネットワーク断で連続失敗すると toast が積み上がる)。成功が戻る経路は
+  // 無いので 30 秒で再通知できるようにしておく
+  const syncFailNotifiedAtRef = useRef(0);
 
   const onStorageError = useCallback(
     (err, phase) => {
@@ -210,6 +214,16 @@ export default function App() {
             "クラウドへの書込が拒否されました。管理者ログインが必要です（端末にはローカル保存されています）。"
           );
         }
+      } else if (phase === "sync" || phase === "save") {
+        // 以前はフッタの同期ドットが赤くなるだけで、気付けなかった
+        const now = Date.now();
+        if (now - syncFailNotifiedAtRef.current < 30000) return;
+        syncFailNotifiedAtRef.current = now;
+        toasts.error(
+          phase === "sync"
+            ? "クラウドへの保存に失敗しました（端末には保存済み。接続が戻れば自動で再送されます）"
+            : `端末への保存に失敗しました: ${err?.message || err}`
+        );
       }
     },
     [toasts]
@@ -383,7 +397,12 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [editSlot, setEditSlot] = useState(null);
   const [editSub, setEditSub] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // スマホ (768px 以下) では閉じた状態から始める。開いた状態だと初回表示で
+  // backdrop + サイドバーがダッシュボードを隠し、まず ✕ を押す操作が要る
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+    return window.matchMedia("(min-width: 769px)").matches;
+  });
   const [showDataMgr, setShowDataMgr] = useState(false);
   // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
   const [showDayReschedule, setShowDayReschedule] = useState(false);
@@ -1364,6 +1383,7 @@ export default function App() {
                 extraLessons={extraLessons}
                 onSave={saveExtraLessons}
                 isAdmin={isAdmin}
+                teacherSuggestions={slotsCrud.suggestions.teachers}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXTRA_LESSON
                     ? eventEditRequest.id
@@ -1665,6 +1685,7 @@ export default function App() {
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
               classSets={classSets}
+              isAdmin={isAdmin}
               onExport={dataIO.handleExport}
               onImport={dataIO.handleImport}
               onReset={dataIO.handleReset}
@@ -1805,6 +1826,13 @@ export default function App() {
            input 自体は視覚上隠れているので、Tab フォーカス時に label 側に
            リングを出してキーボード位置を可視化する。 */
         .toggle-label:focus-within {
+          outline: 2px solid #5b8dee;
+          outline-offset: 1px;
+        }
+        /* TOGGLE_LABEL_CLASS を付け忘れた <label> の保険 (休講・テスト期間・
+           イベント・特別時程の学年チェック)。:has 未対応のブラウザでは
+           単に効かないだけ */
+        label:has(> input:focus-visible) {
           outline: 2px solid #5b8dee;
           outline-offset: 1px;
         }

@@ -16,6 +16,8 @@ export function DataManager({
   onReset,
   onCleanupOrphans,
   importing,
+  /** 閲覧者には書き換える操作 (インポート / 掃除 / 初期化) を出さない */
+  isAdmin = true,
 }) {
   const slotMap = {};
   if (subs && slots) {
@@ -64,6 +66,14 @@ export function DataManager({
           )}
         </div>
       </div>
+      {!isAdmin && (
+        <div style={{ fontSize: 11, color: "#666", padding: "0 4px" }}>
+          インポート・孤立データ掃除・初期化は管理者ログイン中だけ使えます
+          （クラウドへの書込が拒否され、この端末の表示だけがずれるため）。
+        </div>
+      )}
+      {isAdmin && (
+      <>
       <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
           インポート（復元）
@@ -173,6 +183,8 @@ export function DataManager({
           データを初期化
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

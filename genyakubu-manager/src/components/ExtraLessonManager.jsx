@@ -28,6 +28,8 @@ export function ExtraLessonManager({
   onConsumeEditTarget,
   newEntryToken = null,
   onConsumeNewEntry,
+  /** 担当講師の候補 (useSlotsCrud.suggestions.teachers) */
+  teacherSuggestions = [],
 }) {
   const toasts = useToasts();
   const formRef = useRef(null);
@@ -354,11 +356,22 @@ export function ExtraLessonManager({
               style={{ ...S.input, width: 200 }}
             />
             <span style={fieldLabel}>担当:</span>
+            {/* 講師名は自由入力なので、既存の講師名を候補に出して表記ゆれ
+                (末尾空白・別の名前) を防ぐ。保存時に splitTeacherField で
+                区切りを正規化するのは従来どおり */}
+            {teacherSuggestions.length > 0 && (
+              <datalist id="extra-lesson-teachers">
+                {teacherSuggestions.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+            )}
             <input
               value={teacher}
               onChange={(e) => setTeacher(e.target.value)}
               placeholder="堀上 / 香川・福江 など（複数可）"
               aria-label="担当講師"
+              list={teacherSuggestions.length > 0 ? "extra-lesson-teachers" : undefined}
               style={{ ...S.input, width: 160 }}
             />
           </div>
