@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
-import { ref, onValue, set, off } from "firebase/database";
+import { ref, onValue, set, off, get } from "firebase/database";
 import { stableStringify } from "../utils/stableStringify";
 
 // ─── Pending sync activity counter ──────────────────────────────────
@@ -224,6 +224,31 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
   }, []);
 
+  // 権限エラー後の巻き戻し: サーバの現在値を取り直して state / localStorage
+  // に入れ直す (echo 判定用の ref もサーバ値に合わせる)
+  const rollbackToServer = useCallback(
+    (dbRef) => {
+      get(dbRef)
+        .then((snap) => {
+          const serverVal = snap.val();
+          if (serverVal == null) return;
+          const decoded = decodeFromServer(serverVal, initialValue);
+          const migrated = migrate ? migrate(decoded) : decoded;
+          const json = stableStringify(migrated);
+          lastLocalJsonRef.current = json;
+          setValue(migrated);
+          try {
+            localStorage.setItem(key, json);
+          } catch {
+            // 端末保存の失敗は update 側で通知済み
+          }
+        })
+        .catch((e) => console.warn(`[useSyncedStorage] rollback failed "${key}":`, e));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key/migrate/initialValue は mount 時に固定
+    [key]
+  );
+
   // ── 3. Setter: write to localStorage + Firebase ─────────────────
   const update = useCallback(
     (next) => {
@@ -249,14 +274,19 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
           const dbRef = ref(db, fbPath(key));
           trackSyncActivity(set(dbRef, encodeForServer(resolved))).catch((err) => {
             console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
-            onError?.(err, isPermissionError(err) ? "sync-auth" : "sync");
+            const denied = isPermissionError(err);
+            onError?.(err, denied ? "sync-auth" : "sync");
+            // 権限で拒否された (閲覧者が書き換えた) ときは、この端末だけが
+            // 別のデータを表示し続けないよう、サーバの値に巻き戻す。
+            // ネットワーク断は SDK が再送するので巻き戻さない (2026-09-04)
+            if (denied) rollbackToServer(dbRef);
           });
         }
 
         return resolved;
       });
     },
-    [key, onError]
+    [key, onError, rollbackToServer]
   );
 
   return [value, update];

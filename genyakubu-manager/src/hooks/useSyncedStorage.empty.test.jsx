@@ -9,6 +9,7 @@ vi.mock("firebase/database", () => ({
   ref: vi.fn((_db, path) => ({ __path: path })),
   onValue: vi.fn(),
   set: vi.fn(() => Promise.resolve()),
+  get: vi.fn(() => Promise.resolve({ val: () => null })),
   off: vi.fn(),
 }));
 vi.mock("../firebase/config", () => ({
@@ -23,7 +24,7 @@ import {
   encodeForServer,
   decodeFromServer,
 } from "./useSyncedStorage";
-import { onValue, set } from "firebase/database";
+import { onValue, set, get } from "firebase/database";
 
 let serverCallback = null;
 
@@ -196,5 +197,35 @@ describe("useSyncedStorage: 配列がオブジェクトで届く", () => {
     localStorage.setItem("a2", JSON.stringify({ __empty: "[]" }));
     const { result } = renderHook(() => useSyncedStorage("a2", [{ id: 1 }]));
     expect(result.current[0]).toEqual([]);
+  });
+});
+
+describe("useSyncedStorage: 権限エラー後の巻き戻し (2026-09-04)", () => {
+  it("PERMISSION_DENIED なら get() でサーバ値を取り直して state と localStorage を戻す", async () => {
+    set.mockImplementationOnce(() => Promise.reject({ code: "PERMISSION_DENIED" }));
+    get.mockImplementationOnce(() => Promise.resolve(snap([{ id: 1, subj: "サーバ" }])));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useSyncedStorage("r1", [], { onError }));
+    await flushMicrotasks();
+    await act(async () => {
+      result.current[1]([{ id: 1, subj: "閲覧者が書き換えた" }]);
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "PERMISSION_DENIED" }), "sync-auth");
+    expect(result.current[0]).toEqual([{ id: 1, subj: "サーバ" }]);
+    expect(JSON.parse(localStorage.getItem("r1"))).toEqual([{ id: 1, subj: "サーバ" }]);
+  });
+
+  it("ネットワーク断など権限以外の失敗では巻き戻さない (SDK が再送する)", async () => {
+    set.mockImplementationOnce(() => Promise.reject(new Error("network")));
+    const { result } = renderHook(() => useSyncedStorage("r2", []));
+    await flushMicrotasks();
+    await act(async () => {
+      result.current[1]([{ id: 2 }]);
+    });
+    await flushMicrotasks();
+    expect(get).not.toHaveBeenCalled();
+    expect(result.current[0]).toEqual([{ id: 2 }]);
   });
 });

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { buildClassSetIndex } from "../utils/classSets";
 import { buildSlotCohortIndex } from "../utils/cohorts";
+import { buildSlotById } from "../utils/sessionCount";
 
 // buildSessionCountMap に渡す ctx を組み立てる共通フック。
 // Dashboard と WeekView/MonthView で同じ形を使いたいので重複を避けるために集約。
@@ -39,12 +40,14 @@ export function useSessionCtx({
     () => buildClassSetIndex(classSets || [], slotPool),
     [classSets, slotPool]
   );
+  const slotById = useMemo(() => buildSlotById(slotPool), [slotPool]);
   const sessionCtx = useMemo(
     () => ({
       classSets: classSets || [],
       allSlots: slotPool,
       // sessionCount 側の索引キャッシュ (未指定なら向こうで作られる)。
       _cohortIndex: cohortIndex,
+      _slotById: slotById,
       _classSetIndex: classSetIndex,
       displayCutoff,
       // 期またぎ (前期/後期) の二重カウント防止と、期ごとの回数リセットに使う。
@@ -64,7 +67,7 @@ export function useSessionCtx({
       // orientationFirstDay。未設定なら中学部のみ) が決める。
       orientationOnFirstDay: true,
     }),
-    [classSets, slotPool, cohortIndex, classSetIndex, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules]
+    [classSets, slotPool, cohortIndex, classSetIndex, slotById, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules]
   );
   return { sessionCtx, ...helpers };
 }

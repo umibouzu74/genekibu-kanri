@@ -122,13 +122,23 @@ export function resolveSetSlotIds(slot, classSets, cohortIndex, classSetIndex) {
 // 重いので、一度作った ctx を使い回す (computeSessionNumber /
 // buildSessionCountMap の入口で 1 回だけ)。
 function withIndexes(ctx) {
-  if (ctx._cohortIndex && ctx._classSetIndex) return ctx;
+  if (ctx._cohortIndex && ctx._classSetIndex && ctx._slotById) return ctx;
   return {
     ...ctx,
     _cohortIndex: ctx._cohortIndex || buildSlotCohortIndex(ctx.allSlots),
     _classSetIndex:
       ctx._classSetIndex || buildClassSetIndex(ctx.classSets, ctx.allSlots),
+    // id → slot。月次カレンダーは日数ぶん buildSessionCountMap を呼ぶので、
+    // 呼び出しごとに全コマを走査して Map を作り直さない (useSessionCtx が
+    // 1 度だけ作って渡す。無ければここで作る)
+    _slotById: ctx._slotById || buildSlotById(ctx.allSlots),
   };
+}
+
+export function buildSlotById(slots) {
+  const m = new Map();
+  for (const s of slots || []) m.set(s.id, s);
+  return m;
 }
 
 // 略称を正式名に正規化 (複合教科 "英/数" の分割時に使用)。
@@ -203,8 +213,8 @@ function isOrientationSlot(slot, dateStr, ctx) {
   const setSlotIds = resolveSetSlotIds(
     slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
   );
-  const slotById = new Map();
-  for (const s of ctx.allSlots || []) slotById.set(s.id, s);
+  // isSlotHeldOnDate 経由 (withIndexes を通らない呼び出し) にも耐える
+  const slotById = ctx._slotById || buildSlotById(ctx.allSlots);
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
   const pool =
     setSlots.length > 1
@@ -285,6 +295,7 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
  * @returns {boolean}
  */
 export function isSlotHeldOnDate(slot, dateStr, ctx) {
+  ctx = withIndexes(ctx);
   if (!slot || !dateStr || !ctx) return false;
   return effectiveSubjectOnDay(slot, dateStr, ctx) != null;
 }
@@ -412,8 +423,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   const setSlotIds = resolveSetSlotIds(
     slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
   );
-  const slotById = new Map();
-  for (const s of ctx.allSlots || []) slotById.set(s.id, s);
+  const slotById = ctx._slotById;
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
   if (setSlots.length === 0) return 0;
 
@@ -454,8 +464,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
   // 同じ (セット × 教科 × cohort) に属するスロットは 1 回の走査で済ませる
   const setCache = new Map(); // setKey → Map<`${slotId}|${dateStr}`, count>
 
-  const slotById = new Map();
-  for (const s of ctx.allSlots || []) slotById.set(s.id, s);
+  const slotById = ctx._slotById;
 
   for (const slot of slots) {
     const startDate = getSlotCountStartDate(slot, ctx);

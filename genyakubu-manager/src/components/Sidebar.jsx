@@ -7,6 +7,7 @@ import { colors } from "../styles/tokens";
 import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
+import { filterTeacherGroups } from "../hooks/useTeacherGroups";
 
 // chord ヒント表示用の小さなバッジ。`g d` 等のキー組を薄く出して学習を助ける。
 function ChordHint({ viewKey, dim }) {
@@ -190,9 +191,8 @@ export function Sidebar({
   onSelectMasterTab,
   masterTab,
   onJumpToRequestedSubs,
-  search,
-  onSearchChange,
-  teacherGroups,
+  /** 全講師のグループ (検索前)。検索はこの中で行う */
+  teacherGroups: allTeacherGroups,
   subjectCategories,
   slots,
   subs,
@@ -200,6 +200,13 @@ export function Sidebar({
   onSignIn,
   onSignOut,
 }) {
+  // 講師検索の文字列はサイドバーのローカル state。App に置くと 1 打鍵ごとに
+  // App 全体 (ダッシュボード・月間カレンダー…) が再描画される (2026-09-04)
+  const [search, onSearchChange] = useState("");
+  const teacherGroups = useMemo(
+    () => filterTeacherGroups(allTeacherGroups, search),
+    [allTeacherGroups, search]
+  );
   // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
   const [expandedGroups, setExpandedGroups] = useState(
     () => new Set(MENU_CONFIG.filter((m) => m.children).map((m) => m.key))

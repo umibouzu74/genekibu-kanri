@@ -394,7 +394,6 @@ export default function App() {
     }
   }, [view, selected]);
   const [monthOff, setMonthOff] = useState(0);
-  const [search, setSearch] = useState("");
   const [editSlot, setEditSlot] = useState(null);
   const [editSub, setEditSub] = useState(null);
   // スマホ (768px 以下) では閉じた状態から始める。開いた状態だと初回表示で
@@ -798,18 +797,17 @@ export default function App() {
   const vy = vd.getFullYear();
   const vm = vd.getMonth() + 1;
 
-  const teacherGroups = useTeacherGroups({ slots: ttFilteredSlots, partTimeStaff, subjects, search, teacherKana });
-
-  // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ。
-  // サイドバーの teacherGroups は検索文字列でフィルタされるため、search を
-  // 空にした全量から「バイト」グループだけ除いたものを渡す。
+  // 講師のグループ分け (バイト → 教科別 → その他) は全量を 1 度だけ作る。
+  // サイドバーの検索文字列によるフィルタは Sidebar の中 (ローカル state +
+  // filterTeacherGroups) で行う。以前は search が App の state だったため、
+  // 1 打鍵ごとに App 全体 (ダッシュボード・月間カレンダー…) が再描画されていた
   const allTeacherGroups = useTeacherGroups({
     slots: ttFilteredSlots,
     partTimeStaff,
     subjects,
-    search: "",
     teacherKana,
   });
+  // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ
   const fulltimeGroups = useMemo(
     () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
     [allTeacherGroups]
@@ -1026,6 +1024,9 @@ export default function App() {
         color: colors.ink,
       }}
     >
+      <a href="#main-content" className="skip-link no-print">
+        本文へ移動
+      </a>
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -1056,9 +1057,7 @@ export default function App() {
           setSubsInitFilter({ status: "requested" });
           setSidebarOpen(false);
         }}
-        search={search}
-        onSearchChange={setSearch}
-        teacherGroups={teacherGroups}
+        teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
         slots={slots}
         subs={subs}
@@ -1168,15 +1167,19 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <button
               onClick={() => setMonthOff((o) => o - 1)}
+              aria-label="前の月"
+              title="前の月"
               style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
             >
               ◀
             </button>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>
+            <span style={{ fontSize: 15, fontWeight: 700 }} aria-live="polite">
               {vy}年{vm}月
             </span>
             <button
               onClick={() => setMonthOff((o) => o + 1)}
+              aria-label="次の月"
+              title="次の月"
               style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
             >
               ▶
@@ -1838,6 +1841,34 @@ export default function App() {
         }
         /* chord 待機バッジのタイムアウト残量バー（A19） */
         /* toast の残量バーでも同じ keyframes を流用する。 */
+        /* 動きを減らす設定 (OS / ブラウザ) を尊重する。トーストのスライド・
+           chord バッジの残量バー・サイドバーの開閉・同期ドットの点滅を止める */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+          }
+        }
+        /* キーボード利用者がサイドバーの全項目を飛ばして本文へ行くリンク。
+           フォーカスされたときだけ左上に現れる */
+        .skip-link {
+          position: absolute;
+          left: -9999px;
+          top: 8px;
+          z-index: 3000;
+          padding: 8px 12px;
+          background: #1a1a2e;
+          color: #fff;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .skip-link:focus {
+          left: 8px;
+          outline: 2px solid #5b8dee;
+          outline-offset: 2px;
+        }
         @keyframes chord-decay {
           from { width: 100%; }
           to   { width: 0%; }

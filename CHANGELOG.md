@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Fixed (存在しない日付が休講日・テスト期間に保存できていた)
+
+`dateHelpers.isValidDateStr` が `Date.parse` に頼っていたため、V8 では
+`2026-02-31` (→ 3/3 に丸められる) を通していた。保存された文字列は休講日・
+テスト期間の文字列一致に永久にヒットしない。年月日を組み立てて往復一致で
+確かめるようにした。
+
+### Changed (性能・キーボード・閲覧者まわりの小さな改善)
+
+- **講師検索の打鍵で App 全体が再描画されなくなった**。検索文字列を
+  `Sidebar` のローカル state に降ろし、グループ分けは全量を 1 度だけ作って
+  `filterTeacherGroups` で絞る (`useTeacherGroups` を 2 回呼んでいたのも 1 回に)
+- **月間カレンダーの第N回計算で id → コマの Map を日ごとに作り直さない**
+  (`useSessionCtx` が `_slotById` を 1 度作って渡す。`sessionCount.buildSlotById`)
+- **閲覧者の書込が権限で拒否されたら、サーバの値に巻き戻す**
+  (`useSyncedStorage.rollbackToServer`)。以前はこの端末だけが別のデータを
+  表示し続けていた。ネットワーク断は SDK が再送するので巻き戻さない
+- `prefers-reduced-motion` でアニメーションと transition を止める。
+  「本文へ移動」のスキップリンク (Tab で最初に現れる)。月送りの ◀ ▶ に
+  `aria-label`、年月に `aria-live`
+
 ### Changed (UX / アクセシビリティの点検で見つかった小さな穴をまとめて塞いだ)
 
 - **クラウド書込・端末保存の失敗を toast で知らせる** (`App.onStorageError`)。

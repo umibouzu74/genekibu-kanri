@@ -101,15 +101,19 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, search, teach
       groups.push({ key: "__other__", label: "その他", teachers: other });
     }
 
-    // 検索フィルタ
-    if (search) {
-      return groups
-        .map((g) => ({
-          ...g,
-          teachers: g.teachers.filter((t) => t.includes(search)),
-        }))
-        .filter((g) => g.teachers.length > 0);
-    }
-    return groups;
+    // 検索フィルタ (互換。新しい呼び出しは search を渡さず、表示側で
+    // filterTeacherGroups を使う — App の再描画を検索の打鍵から切り離すため)
+    return filterTeacherGroups(groups, search);
   }, [slots, partTimeStaff, subjects, search, teacherKana]);
+}
+
+/** 検索文字列で講師グループを絞る純粋関数。空なら元の配列をそのまま返す */
+export function filterTeacherGroups(groups, search) {
+  if (!search) return groups;
+  return groups
+    .map((g) => ({
+      ...g,
+      teachers: g.teachers.filter((t) => t.includes(search)),
+    }))
+    .filter((g) => g.teachers.length > 0);
 }
