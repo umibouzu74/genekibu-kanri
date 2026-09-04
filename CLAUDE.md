@@ -596,7 +596,11 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   (合同・振替へ切り替えたとき)
 - **元講師は登録する側で隔週の A/B を解決してから渡す**
   (`absenceHelpers.activeTeachersOnDate`)。下書きのキーがそのまま
-  `originalTeacher` になる
+  `originalTeacher` になる。**代行レコードを作る経路は欠勤組み換えだけでは
+  ない** — タイムテーブル代行モード (`useSubstitutionMode` / `ExcelSection`)
+  と授業管理の代行登録フォーム (`SingleSubForm` / `DayBulkSubForm`) も同じ
+  関数を通す。`getSlotTeachers(slot)` / `slot.teacher` を元講師にすると
+  B 週のコマに A 週の主担当で代行が付く (2026-09-04 修正)
 - カードやセルでは**休む人だけ取消線**を引き、出る人はそのまま残す
   (全員休みに見えない)
 

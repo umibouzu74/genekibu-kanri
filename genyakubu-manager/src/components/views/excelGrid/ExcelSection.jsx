@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
 import { ADJ_COLOR, gradeColor as GC, timeToMin } from "../../../data";
 import {
   formatCount,
@@ -299,8 +300,13 @@ export function ExcelSection({
               onCellClick(s, rect, "", el);
               return;
             }
-            // Find the teacher for this cell: prefer absent teacher, fall back to first
-            const teachers = getSlotTeachers(s);
+            // Find the teacher for this cell: prefer absent teacher, fall back to first.
+            // 隔週は A/B を解いた「その日の担当」(B 週なら note のパートナー)
+            const teachers = activeTeachersOnDate(s, subDate, {
+              biweeklyAnchors,
+              holidays,
+              examPeriods,
+            });
             const absent = teachers.find((t) => unavailableTeachers.has(t));
             const teacher = absent || teachers[0] || "";
             if (teacher) onCellClick(s, rect, teacher, el);

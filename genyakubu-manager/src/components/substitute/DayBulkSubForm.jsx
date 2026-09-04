@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { activeTeachersOnDate } from "../../utils/absenceHelpers";
 import {
   getSubForSlot,
   sortSlots as sortS,
@@ -25,6 +26,9 @@ export function DayBulkSubForm({
   partTimeStaff,
   subjects,
   teacherKana = {},
+  biweeklyAnchors = [],
+  holidays = [],
+  examPeriods = [],
   rowState,
   setRowState,
   showAllCandidates,
@@ -92,10 +96,15 @@ export function DayBulkSubForm({
       .filter(([, v]) => v && v.substitute && v.substitute.trim())
       .map(([slotId, v]) => {
         const slot = slots.find((s) => s.id === Number(slotId));
+        // 隔週は A/B を解いた「その日の担当」を元講師にする (B 週なら note の
+        // パートナー)。多担任コマは従来どおり講師欄をそのまま
+        const active = slot
+          ? activeTeachersOnDate(slot, date, { biweeklyAnchors, holidays, examPeriods })
+          : [];
         return {
           date,
           slotId: Number(slotId),
-          originalTeacher: slot ? slot.teacher : "",
+          originalTeacher: active.length === 1 ? active[0] : slot ? slot.teacher : "",
           substitute: v.substitute.trim(),
           status: v.substitute ? v.status || "requested" : "requested",
           memo: "",

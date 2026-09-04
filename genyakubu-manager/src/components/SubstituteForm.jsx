@@ -20,6 +20,10 @@ export function SubstituteForm({
   partTimeStaff,
   subjects = [],
   teacherKana = {},
+  // 隔週の A/B を解いて元講師を決めるための材料 (無ければ講師欄のまま)
+  biweeklyAnchors = [],
+  holidays = [],
+  examPeriods = [],
   onSave,
   onCancel,
 }) {
@@ -125,6 +129,9 @@ export function SubstituteForm({
           partTimeStaff={partTimeStaff}
           subjects={subjects}
           teacherKana={teacherKana}
+          biweeklyAnchors={biweeklyAnchors}
+          holidays={holidays}
+          examPeriods={examPeriods}
           f={singleF}
           setF={setSingleF}
           showAllCandidates={showAllCandidates}
@@ -138,6 +145,9 @@ export function SubstituteForm({
           dayOfDate={dayOfDate}
           slots={slots}
           subs={subs}
+          biweeklyAnchors={biweeklyAnchors}
+          holidays={holidays}
+          examPeriods={examPeriods}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
           teacherKana={teacherKana}

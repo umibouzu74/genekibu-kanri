@@ -1344,6 +1344,9 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               subjects={subjects}
               teacherKana={teacherKana}
+              biweeklyAnchors={biweeklyAnchors}
+              holidays={holidays}
+              examPeriods={examPeriods}
               onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
               onCancel={() => setEditSub(null)}
             />
