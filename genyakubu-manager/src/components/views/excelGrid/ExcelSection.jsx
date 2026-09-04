@@ -456,7 +456,7 @@ export function ExcelSection({
           <thead>
             {/* Grade header row */}
             <tr>
-              <th
+              <th scope="col"
                 rowSpan={3}
                 style={{
                   background: "#f5f5f5",
@@ -477,7 +477,7 @@ export function ExcelSection({
               {gradeGroups.map((g) => {
                 const gc = GC(g.grade);
                 return (
-                  <th
+                  <th scope="colgroup"
                     key={g.grade}
                     colSpan={g.columns.length}
                     style={{
@@ -498,7 +498,7 @@ export function ExcelSection({
             {/* Class header row */}
             <tr>
               {allColumns.map((col) => (
-                <th
+                <th scope="col"
                   key={col.key}
                   style={{
                     background: "#f0f0f0",
@@ -516,7 +516,7 @@ export function ExcelSection({
             {/* Room header row */}
             <tr>
               {allColumns.map((col) => (
-                <th
+                <th scope="col"
                   key={col.key + "_room"}
                   style={{
                     background: "#fafafa",

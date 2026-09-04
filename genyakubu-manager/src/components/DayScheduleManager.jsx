@@ -454,7 +454,7 @@ export function DayScheduleManager({
                   <thead>
                     <tr>
                       {["元の時刻", "新しい時刻（空欄 = 変更なし）", "休講"].map((h) => (
-                        <th
+                        <th scope="col"
                           key={h}
                           style={{
                             textAlign: "left",

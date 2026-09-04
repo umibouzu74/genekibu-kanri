@@ -184,25 +184,25 @@ export function SubListTab({
           >
             <thead>
               <tr style={{ background: "#1a1a2e", color: "#fff" }}>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   日付
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   時間
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   学年
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left" }}>科目</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>科目</th>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   元 → 代行
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                   状態
                 </th>
-                <th style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
+                <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
                 {isAdmin && (
-                  <th
+                  <th scope="col"
                     className="no-print"
                     style={{ padding: "8px 10px", textAlign: "center", width: 60 }}
                   >

@@ -405,10 +405,10 @@ export function ExamPrepScheduleEditor({
                 >
                   <thead>
                     <tr style={{ background: "#f5f5f5" }}>
-                      <th style={thStyle}>校時</th>
-                      <th style={thStyle}>開始</th>
-                      <th style={thStyle}>終了</th>
-                      <th style={thStyle}></th>
+                      <th scope="col" style={thStyle}>校時</th>
+                      <th scope="col" style={thStyle}>開始</th>
+                      <th scope="col" style={thStyle}>終了</th>
+                      <th scope="col" style={thStyle}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -549,14 +549,14 @@ export function ExamPrepScheduleEditor({
                   >
                     <thead>
                       <tr style={{ background: "#f5f5f5" }}>
-                        <th style={{ ...thStyle, minWidth: 60 }}>教科</th>
-                        <th style={{ ...thStyle, minWidth: 80 }}>講師</th>
+                        <th scope="col" style={{ ...thStyle, minWidth: 60 }}>教科</th>
+                        <th scope="col" style={{ ...thStyle, minWidth: 80 }}>講師</th>
                         {activeDay.periods.map((p) => (
-                          <th key={p.no} style={{ ...thStyle, minWidth: 50 }}>
+                          <th scope="col" key={p.no} style={{ ...thStyle, minWidth: 50 }}>
                             {p.no}
                           </th>
                         ))}
-                        <th style={thStyle}>全て</th>
+                        <th scope="col" style={thStyle}>全て</th>
                       </tr>
                     </thead>
                     <tbody>

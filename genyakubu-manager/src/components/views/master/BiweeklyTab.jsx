@@ -77,10 +77,10 @@ export function BiweeklyTab({
           >
             <thead>
               <tr style={{ borderBottom: "2px solid #eee" }}>
-                <th style={{ textAlign: "left", padding: "4px 6px" }}>基準日</th>
-                <th style={{ textAlign: "left", padding: "4px 6px" }}>種別</th>
+                <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>基準日</th>
+                <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>種別</th>
                 {isAdmin && (
-                  <th style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>
+                  <th scope="col" style={{ textAlign: "center", padding: "4px 6px", width: 40 }}>
                     削除
                   </th>
                 )}
@@ -198,14 +198,14 @@ export function BiweeklyTab({
                 >
                   <thead>
                     <tr style={{ borderBottom: "2px solid #eee" }}>
-                      <th style={{ textAlign: "left", padding: "4px 6px" }}>学年</th>
-                      <th style={{ textAlign: "left", padding: "4px 6px" }}>クラス</th>
-                      <th style={{ textAlign: "left", padding: "4px 6px" }}>科目</th>
-                      <th style={{ textAlign: "left", padding: "4px 6px" }}>担当</th>
-                      <th style={{ textAlign: "center", padding: "4px 6px" }}>今週</th>
-                      <th style={{ textAlign: "left", padding: "4px 6px" }}>基準</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>学年</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>クラス</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>科目</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>担当</th>
+                      <th scope="col" style={{ textAlign: "center", padding: "4px 6px" }}>今週</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 6px" }}>基準</th>
                       {isAdmin && (
-                        <th
+                        <th scope="col"
                           style={{ textAlign: "center", padding: "4px 6px", width: 40 }}
                         >
                           編集

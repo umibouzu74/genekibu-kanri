@@ -79,11 +79,18 @@ import { Sidebar } from "./components/Sidebar";
 import { TimetableSelector } from "./components/TimetableSelector";
 
 import { Dashboard } from "./components/views/Dashboard";
-import { WeekView } from "./components/views/WeekView";
-import { MonthView } from "./components/views/MonthView";
 import { AllView } from "./components/views/AllView";
 
 // Lazy-loaded views (less frequently used or gated by navigation).
+// 講師別の週間 / 月間 (合わせて 2,300 行超) は講師を選んだときにだけ要るので
+// 初期バンドルから外す (2026-09-04)。一括印刷 (handleBatchPrint) は月間
+// ビューを開いた状態から起動するのでチャンクは読み込み済み
+const WeekView = lazy(() =>
+  import("./components/views/WeekView").then((m) => ({ default: m.WeekView }))
+);
+const MonthView = lazy(() =>
+  import("./components/views/MonthView").then((m) => ({ default: m.MonthView }))
+);
 const MasterView = lazy(() =>
   import("./components/views/MasterView").then((m) => ({ default: m.MasterView }))
 );
@@ -939,6 +946,9 @@ export default function App() {
       setBatchPrintBusy(true);
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
       try {
+        // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
+        // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)
+        await import("./components/views/MonthView");
         const slides = [];
         for (let i = 0; i < jobs.length; i++) {
           if (ac.signal.aborted) break;

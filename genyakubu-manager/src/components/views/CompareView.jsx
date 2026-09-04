@@ -212,7 +212,7 @@ export function CompareView({ slots, partTimeStaff = [], subjects = [], teacherK
           >
             <thead>
               <tr>
-                <th
+                <th scope="col"
                   style={{
                     padding: "8px 10px",
                     textAlign: "left",
@@ -225,7 +225,7 @@ export function CompareView({ slots, partTimeStaff = [], subjects = [], teacherK
                   曜日
                 </th>
                 {selectedTeachers.map((t, i) => (
-                  <th
+                  <th scope="col"
                     key={t}
                     style={{
                       padding: "8px 10px",
