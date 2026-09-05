@@ -791,6 +791,18 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   は装飾つき文字列から拾う別物)、コンテキストメニューの見た目 (Tailwind と
   inline style で描画が違う)
 
+## 通常時間割作成の ⚙ 全体設定はタブごとに 1 ファイル (2026-09-05 分割)
+
+`regular-builder/ProjectConfigModal.jsx` はモーダルの枠 (タブ切替・
+フォーカストラップ・←→ ナビ) だけ。タブ本体は
+`regular-builder/config/{Periods,Subjects,Teachers,Rooms,Limits}Tab.jsx` で、
+どれも `project` と `saveProject` (+ 講師タブは `slots` / `masterSubjects`) を
+受けて即時保存する。**タブを足すときは `TABS` と `TAB_COMPONENTS` の両方に
+足す**。共通の小物 (`CHIP_DELETE_BTN` / `SECTION_HEAD` / `move` /
+`updateTeacherIn`) は `config/shared.js`。講師 1 人を書き換える更新は
+`updateTeacherIn(saveProject)` を通す (講師タブと NG・上限タブが同じ更新を
+持つため)。
+
 ## App.jsx の構成 (2026-09-04 分割)
 
 - **永続 state は `hooks/useAppData.js`** に集約 (20 本の `useSyncedStorage` +
