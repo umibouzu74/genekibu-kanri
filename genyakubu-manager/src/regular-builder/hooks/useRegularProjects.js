@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { downloadText } from "../../utils/download";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useToasts } from "../../hooks/useToasts";
 import { nextNumericId } from "../../utils/schema";
@@ -126,16 +127,7 @@ export function useRegularProjects({
   // 読み込みは新しいプロジェクトとして追加する (既存を上書きしない)
   const exportProjectJson = useCallback(() => {
     const text = serializeProject(project, new Date().toISOString());
-    const url = URL.createObjectURL(
-      new Blob([text], { type: "application/json" })
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = projectFileName(project.name, new Date());
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    downloadText(text, projectFileName(project.name, new Date()), "application/json");
     toasts.success(`「${project.name || "無題"}」を JSON に書き出しました`);
   }, [project, toasts]);
 

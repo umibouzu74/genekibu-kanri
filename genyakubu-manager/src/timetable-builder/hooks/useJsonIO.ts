@@ -1,4 +1,5 @@
 import { useRef, useCallback } from 'react';
+import { downloadText } from '../../utils/download';
 import type { ChangeEvent, Dispatch } from 'react';
 import type { ProjectAction } from './projectReducer';
 import type { Project, Tab } from '../types';
@@ -156,16 +157,10 @@ export function useJsonIO({
     // 静かに失われる。空のときはフィールド自体を出さない (従来形を維持)。
     const templates = loadTemplates();
     const out = templates.length > 0 ? { ...cleaned, templates } : cleaned;
-    const b = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
-    const u = URL.createObjectURL(b);
-    const a = document.createElement('a');
-    a.href = u;
     const datePart = new Date().toISOString().slice(0, 10);
     // Windows のファイル名禁則文字を除去。
     const namePart = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
-    a.download = `${namePart}_${datePart}.json`;
-    a.click();
-    URL.revokeObjectURL(u);
+    downloadText(JSON.stringify(out, null, 2), `${namePart}_${datePart}.json`, "application/json");
   }, [project]);
 
   return {

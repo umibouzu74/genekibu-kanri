@@ -18,7 +18,7 @@ import {
   computeNgTeachersForTabs,
 } from "./conflicts";
 import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
-import { useLongPress } from "../timetable-builder/hooks/useLongPress";
+import { useLongPress } from "../hooks/useLongPress";
 import { gradeColor } from "../constants/colors";
 import { compareStackKey, makeStackOrderKey } from "./sectionOrder";
 import { sectionTone } from "./sectionTone";

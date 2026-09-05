@@ -19,25 +19,16 @@ import { DAYS } from "../constants/schools";
 import { timeToMin } from "./dateHelpers";
 import { isSlotForTeacher } from "./biweekly";
 import { filterSlotsByActiveTimetable } from "./timetable";
+import { ARGB, THIN_BORDER, solidFill, downloadWorkbook } from "./excelStyle";
 
-// ─── スタイル定義 (excelExport.ts の配色に合わせる) ─────────────────
-const ARGB_WHITE = "FFFFFFFF";
-const ARGB_GRAY_BORDER = "FFAAAAAA";
-const ARGB_HEADER_BLUE = "FF4472C4";
-const ARGB_SECTION_GREEN = "FFE2EFDA";
+// ─── スタイル定義 (共有の utils/excelStyle に合わせる) ──────────────
+const ARGB_WHITE = ARGB.WHITE;
+const ARGB_HEADER_BLUE = ARGB.HEADER_BLUE;
+const ARGB_SECTION_GREEN = ARGB.SECTION_GREEN;
 const ARGB_ASSIGNED_GRAY = "FFE7E6E6";
-const ARGB_TIME_GRAY = "FFF2F2F2";
+const ARGB_TIME_GRAY = ARGB.HEAD_GRAY;
 // 記入欄 (手書きしてほしいセル) は黄色で塗る
 const ARGB_FILLIN_YELLOW = "FFFFF2CC";
-
-const THIN_BORDER = {
-  top: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  bottom: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  left: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  right: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-};
-
-const solidFill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
 
 function setCell(ws, row, col, value, style) {
   const cell = ws.getCell(row, col);
@@ -304,14 +295,5 @@ export async function downloadStaffSurveyExcel({
     timetableLabel,
     dateLabel,
   });
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `出勤可能時間調査_${dateLabel}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(url);
+  await downloadWorkbook(workbook, `出勤可能時間調査_${dateLabel}.xlsx`);
 }

@@ -4,7 +4,7 @@ import { computeClassSubjectLoad } from "./classLoad";
 import { formatCount } from "../utils/biweekly";
 import { DAY_COLOR, gradeColor } from "../constants/colors";
 import { LS } from "../constants/storageKeys";
-import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggle";
+import { usePersistedToggle } from "../hooks/usePersistedToggle";
 import { UI } from "./ui";
 
 // ─── 📊 集計パネル (講師 × 曜日 / クラス × 科目) ────────────────────

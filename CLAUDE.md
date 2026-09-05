@@ -749,6 +749,26 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   `schema.collectReferentialWarnings` の両方に足す (片方だけだと、掃除で
   消えない参照が警告に出続ける)
 
+## 3 サブシステムの共有層 (2026-09-05 確定)
+
+本体・通常時間割作成 (`regular-builder`)・講習時間割作成 (`timetable-builder`)
+で同じ部品が要るときは **`src/hooks` / `src/utils` に置いて両方から import**
+する。**サブシステム同士で直接 import しない** (通常時間割作成が講習作成の
+内部フックを借りていた形は解消済み)。
+
+- 共有済み: `hooks/useFocusTrap.ts`、`hooks/usePersistedToggle.ts`、
+  `hooks/useLongPress.ts`、`utils/download.js` (ファイル保存)、
+  `utils/excelStyle.ts` (罫線・配色・ワークブック保存)、`utils/timeRange.js`
+  (厳密な "HH:MM-HH:MM")、`dateHelpers.addDays`
+- **Blob → `<a download>` の手順を新しく書かない**。`downloadBlob` /
+  `downloadText` / `downloadWorkbook` を使う
+- 講習作成側の旧パス (`timetable-builder/hooks/useFocusTrap` 等) は再エクスポート
+  だけ。新しいコードは `src/hooks` から import する
+- 統合しないと決めたもの: Excel の**シート名の一意化** (3 者で接尾辞の流儀が
+  違い、出力が変わる)、講習作成の緩い時刻抽出 (`timetable-builder/utils/timeRange.ts`
+  は装飾つき文字列から拾う別物)、コンテキストメニューの見た目 (Tailwind と
+  inline style で描画が違う)
+
 ## App.jsx の構成 (2026-09-04 分割)
 
 - **永続 state は `hooks/useAppData.js`** に集約 (20 本の `useSyncedStorage` +

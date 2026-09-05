@@ -1,3 +1,4 @@
+import { downloadText } from "./download";
 // ─── CSV export utilities ──────────────────────────────────────────
 import { escapeCsv } from "./escape";
 
@@ -11,13 +12,7 @@ function toCsv(headers, rows) {
 }
 
 function downloadCsv(csv, filename) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadText(csv, filename, "text/csv;charset=utf-8");
 }
 
 // コマ一覧 CSV

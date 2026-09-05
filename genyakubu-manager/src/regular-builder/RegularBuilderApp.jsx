@@ -6,7 +6,7 @@ import { LS, SS } from "../constants/storageKeys";
 import { useSyncedStorage } from "../hooks/useSyncedStorage";
 import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
-import { usePersistedToggle } from "../timetable-builder/hooks/usePersistedToggle";
+import { usePersistedToggle } from "../hooks/usePersistedToggle";
 import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
 import { nextNumericId } from "../utils/schema";
 import {

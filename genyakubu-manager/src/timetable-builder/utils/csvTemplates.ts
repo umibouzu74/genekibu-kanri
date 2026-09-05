@@ -1,3 +1,4 @@
+import { downloadText } from '../../utils/download';
 // L4f: CSV 取り込み用の雛形ビルダー。実務では事務スタッフが Excel で CSV を
 // 用意するため、現在の科目・日付・時限ラベルを埋めたヘッダ付き雛形を配れる
 // ようにする (「| 区切り忘れ」「ラベル不一致」の転記ミスを減らす)。
@@ -39,11 +40,5 @@ export function buildNgCsvTemplate(
 // 開けるよう BOM を付ける (§M: 不可視文字の直置きは formatter で無音消失
 // しうるためエスケープ表記にする)。
 export function downloadCsvFile(filename: string, text: string): void {
-  const blob = new Blob(['\uFEFF' + text], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadText('\uFEFF' + text, filename, 'text/csv');
 }

@@ -57,6 +57,16 @@ export function parseLocalDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
+// "YYYY-MM-DD" を days 日ずらした "YYYY-MM-DD"。無効な入力は null。
+// (dashboardHelpers.shiftDate / reflect.previousDateStr / cutoffTimeline の
+// addDays が同じものを別々に持っていたのを 2026-09-05 に集約)
+export function addDays(dateStr, days) {
+  const dt = parseLocalDate(dateStr);
+  if (!dt) return null;
+  dt.setDate(dt.getDate() + days);
+  return fmtDate(dt);
+}
+
 // start / end を含む範囲の "YYYY-MM-DD" 文字列配列を返す。
 // 無効な入力・end < start のときは空配列。
 export function eachDateStrInRange(startDate, endDate) {

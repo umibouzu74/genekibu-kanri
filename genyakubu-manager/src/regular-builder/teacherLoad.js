@@ -20,22 +20,15 @@ import {
   splitTeacherField,
 } from "../utils/biweekly";
 import { timeStartToMin } from "../utils/dateHelpers";
+import { parseStrictTimeRange } from "../utils/timeRange";
 
 // ─── 時限の所要分数 (稼働時間の集計用) ──────────────────────────────
 // 時限時刻はこのサブシステム全体で "HH:MM-HH:MM" が正 (conflicts の
 // TIME_RE と同じ)。書式外・時刻未設定・終了が開始以前 (入力ミス) は
 // 0 分 — コマ数には数え、時間には足さない (untimedCount で注意喚起)。
 
-const TIME_RANGE_RE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
-
-/** "HH:MM-HH:MM" → {start, end} (分)。書式外・逆転は null */
-export function periodRange(time) {
-  const m = String(time || "").trim().match(TIME_RANGE_RE);
-  if (!m) return null;
-  const start = Number(m[1]) * 60 + Number(m[2]);
-  const end = Number(m[3]) * 60 + Number(m[4]);
-  return end > start ? { start, end } : null;
-}
+/** "HH:MM-HH:MM" → {start, end} (分)。書式外・逆転は null (utils/timeRange と共有) */
+export const periodRange = parseStrictTimeRange;
 
 export function periodMinutes(time) {
   const r = periodRange(time);

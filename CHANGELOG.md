@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Changed (3 サブシステムで重複していた部品を共有層に寄せた。挙動は同じ)
+
+本体・通常時間割作成・講習時間割作成がそれぞれ持っていた同じ実装を
+`src/hooks` / `src/utils` に 1 本化した。通常時間割作成が講習作成の内部を
+直接 import していた依存も解消した。
+
+- **フォーカストラップ** `hooks/useFocusTrap.ts` (講習作成版を昇格。
+  `onClose` を ref で持つので、インライン関数を渡しても trap が再初期化されず
+  入力中のフォーカスを奪わない。trap のスタックも 1 本になった)
+- **表示トグルの永続化** `hooks/usePersistedToggle.ts`、**長押し**
+  `hooks/useLongPress.ts` (講習作成側の旧パスは再エクスポート)
+- **ファイル保存** `utils/download.js` (`downloadBlob` / `downloadText`)。
+  JSON バックアップ・CSV・ICS・Excel の 9 か所が同じ手順を書いていた
+- **Excel の罫線・配色・保存** `utils/excelStyle.ts` (`THIN_BORDER` /
+  `ARGB` / `solidFill` / `hexToArgb` / `downloadWorkbook`)。シート名の一意化は
+  接尾辞の流儀が 3 者で違うので各ファイルに残した
+- **時限時刻のパース** `utils/timeRange.js` (`parseStrictTimeRange`)。
+  `conflicts.js` と `teacherLoad.js` が循環 import を避けるため複製していた
+- **日付シフト** `dateHelpers.addDays`。`shiftDate` / `previousDateStr` /
+  期間タイムラインの `addDays` が同じものを持っていた
+- 講習作成の印刷日付 `formatPrintDateJa` は本体の `formatPrintDate` を使う
+
 ### Fixed (隔週コマの B 週に A 週の主担当で代行が登録されていた)
 
 2026-10-09 (金) の中3S 英/数 (隔週、B 週) で、代行の元講師が講師欄の主担当

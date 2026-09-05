@@ -4,13 +4,11 @@
 // 「どの学年の・いつ時点の・何の時間割か」が載らず無記名になっていた。
 // BuilderApp が印刷専用 (hidden print:block) の見出し行を出すのに使う。
 // 形式は親アプリの printStyles.formatPrintDate と同じ和式
-// 「YYYY年MM月DD日（曜）」だが、builder は自己完結の慣習 (useFocusTrap と
-// 同型) のためローカルに持つ。
-const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+// 「YYYY年MM月DD日（曜）」。実装もそちらを使う (2026-09-05 に統合)。
+import { formatPrintDate } from '../../utils/printStyles';
+import { fmtDate } from '../../utils/dateHelpers';
+import { WEEKDAYS } from '../../constants/schools';
 
 export function formatPrintDateJa(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}年${m}月${day}日（${WEEKDAYS_JA[d.getDay()]}）`;
+  return formatPrintDate(fmtDate(d), WEEKDAYS[d.getDay()]);
 }

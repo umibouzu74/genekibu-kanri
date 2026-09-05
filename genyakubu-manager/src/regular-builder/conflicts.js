@@ -29,6 +29,7 @@
 
 import { biweeklyPartner, isBiweekly, splitTeacherField } from "../utils/biweekly";
 import { timeOverlaps } from "../utils/chainSubstitution";
+import { parseStrictTimeRange } from "../utils/timeRange";
 import {
   isAnnexRoom,
   makeCellKey,
@@ -39,16 +40,9 @@ import {
 
 const TIME_RE = /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/;
 
-// 時刻範囲を分 (start/end) に分解する。teacherLoad.periodRange と同じ規則だが、
-// teacherLoad はこのモジュールの entryRef を import しているため、逆向きに
-// import すると循環参照になる。判定に必要なのはこれだけなのでローカルに持つ
-function parseTimeRange(time) {
-  const m = String(time || "").trim().match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  const start = Number(m[1]) * 60 + Number(m[2]);
-  const end = Number(m[3]) * 60 + Number(m[4]);
-  return end > start ? { start, end } : null;
-}
+// 時刻範囲を分 (start/end) に分解する。teacherLoad.periodRange と同じ関数
+// (utils/timeRange。以前は循環 import を避けるためここに複製があった)
+const parseTimeRange = parseStrictTimeRange;
 
 /** 隔週の週。A = 講師欄の主担当 / B = note「隔週(◯◯)」のパートナー */
 const WEEKS = ["A", "B"];

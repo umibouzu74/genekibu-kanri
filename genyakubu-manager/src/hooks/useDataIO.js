@@ -20,6 +20,7 @@ import {
   migrateSubs,
 } from "../utils/migrate";
 import { detectOrphans, describeOrphanDetection } from "../utils/orphanCleanup";
+import { downloadText } from "../utils/download";
 import { sanitizeKanaMap } from "../utils/teacherKana";
 
 // Export / Import / Reset のロジック。
@@ -109,13 +110,7 @@ export function useDataIO({
         null,
         2
       );
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `genyakubu-backup-${fmtDate(new Date())}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadText(data, `genyakubu-backup-${fmtDate(new Date())}.json`, "application/json");
       toasts.success("バックアップをダウンロードしました");
     } catch (err) {
       console.error(err);

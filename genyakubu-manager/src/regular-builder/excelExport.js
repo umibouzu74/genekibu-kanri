@@ -83,25 +83,13 @@ import { compareStackKey, makeStackOrderKey } from "./sectionOrder";
 import { sectionTone } from "./sectionTone";
 import { computeClassSubjectLoad } from "./classLoad";
 import { computeTeacherLoad, computeTeacherWeek, formatMinutes } from "./teacherLoad";
+import { ARGB, THIN_BORDER, solidFill, hexToArgb, downloadWorkbook } from "../utils/excelStyle";
 
-const ARGB_GRAY_BORDER = "FFAAAAAA";
-const ARGB_HEADER_BLUE = "FF4472C4";
-const ARGB_HEAD_GRAY = "FFF2F2F2";
+// 罫線・配色・ダウンロードは utils/excelStyle (講習作成・出勤調査と共有)
+const ARGB_HEADER_BLUE = ARGB.HEADER_BLUE;
+const ARGB_HEAD_GRAY = ARGB.HEAD_GRAY;
 // 画面 (bg-builder-bg) と同じ、学年が使わない時限の塞ぎ色
 const ARGB_BLOCKED_GRAY = "FFF0F1F3";
-
-const THIN_BORDER = {
-  top: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  bottom: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  left: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-  right: { style: "thin", color: { argb: ARGB_GRAY_BORDER } },
-};
-
-const solidFill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
-
-// "#RRGGBB" (getSubjectColor) → ARGB。不正・null は undefined
-const hexToArgb = (hex) =>
-  /^#[0-9a-fA-F]{6}$/.test(hex || "") ? `FF${hex.slice(1).toUpperCase()}` : undefined;
 
 // 時刻 "HH:MM-..." の開始分。パース不能 (時刻未設定) は末尾送り
 // (RegularGrid の行順と同じ規則)
@@ -1155,18 +1143,6 @@ const safeProjectName = (project) =>
   (project.name || "通常時間割").replace(/[\\/:*?"<>|]/g, "_").trim() ||
   "通常時間割";
 
-async function downloadWorkbook(workbook, filename) {
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /**
  * @param {{project: object, days: string[], splitCampus?: boolean, now?: Date,

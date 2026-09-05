@@ -4,7 +4,7 @@ import {
   getSubjectColor,
   CONFLICT_CELL_BG,
 } from "../timetable-builder/utils/constants";
-import { useLongPress } from "../timetable-builder/hooks/useLongPress";
+import { useLongPress } from "../hooks/useLongPress";
 import { ungroupedLabel } from "./teacherOrder";
 
 // ─── セル (ダッシュボードの時間割ビュー風 display-first) ─────────────

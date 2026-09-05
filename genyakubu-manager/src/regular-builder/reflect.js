@@ -12,7 +12,7 @@ import { splitTeacherField } from "../utils/biweekly";
 import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
-import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
+import { addDays, timeStartToMin } from "../utils/dateHelpers";
 import { gradeMatchesTimetable } from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
 import { isLegacySet } from "../utils/classSets";
@@ -169,10 +169,7 @@ export function buildReflectionPlan(project, opts) {
 
 /** "YYYY-MM-DD" の前日。無効な日付には null */
 export function previousDateStr(dateStr) {
-  const d = parseLocalDate(dateStr);
-  if (!d) return null;
-  d.setDate(d.getDate() - 1);
-  return fmtDate(d);
+  return addDays(dateStr, -1);
 }
 
 /** 2 つの対象学年リストが重なるか (空 = 全学年なので必ず重なる) */

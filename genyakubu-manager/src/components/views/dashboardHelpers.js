@@ -1,4 +1,5 @@
 import { fmtDate, gradeToDept, WEEKDAYS } from "../../data";
+import { addDays } from "../../utils/dateHelpers";
 import {
   examClassExceptionsOnDate,
   examPeriodStopsClassesOn,
@@ -24,11 +25,8 @@ export function buildDayRange(startDateStr, count) {
 }
 
 // Shift a "YYYY-MM-DD" string by `days` days and return the new string.
-export function shiftDate(dateStr, days) {
-  const dt = parseDateStr(dateStr);
-  dt.setDate(dt.getDate() + days);
-  return fmtDate(dt);
-}
+// (実装は utils/dateHelpers.addDays。名前は従来の呼び出し側に合わせて残す)
+export const shiftDate = addDays;
 
 // Compute holiday / exam-period utilities shared between Dashboard and
 // ConfirmedSubsView.

@@ -1,6 +1,7 @@
 // ─── iCal/ICS export ───────────────────────────────────────────────
 // 講師の週間スケジュールを iCalendar (.ics) 形式でエクスポートする。
 // Google Calendar にインポートして講師のスケジュールを共有できる。
+import { downloadText } from "./download";
 import {
   biweeklyDisplaySubject,
   getSlotTeachers,
@@ -168,11 +169,5 @@ export function exportTeacherIcs(teacher, slots, biweeklyAnchors = []) {
   const ical = buildTeacherIcsContent(teacher, slots, biweeklyAnchors);
   if (ical == null) return;
 
-  const blob = new Blob([ical], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${teacher}-schedule.ics`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadText(ical, `${teacher}-schedule.ics`, "text/calendar;charset=utf-8");
 }

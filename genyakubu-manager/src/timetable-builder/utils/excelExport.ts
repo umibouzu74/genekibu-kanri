@@ -20,17 +20,18 @@ import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
+import { ARGB, THIN_BORDER, downloadWorkbook } from '../../utils/excelStyle';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
 // SheetJS の `{ rgb: 'RRGGBB' }` 色指定は exceljs では
 // `{ argb: 'FFRRGGBB' }` (アルファ FF = 不透明) となる。
-const ARGB_FF = 'FFFFFFFF';
-const ARGB_AAA = 'FFAAAAAA';
-const ARGB_4472C4 = 'FF4472C4';
-const ARGB_548235 = 'FF548235';
-const ARGB_E2EFDA = 'FFE2EFDA';
-const ARGB_F2F2F2 = 'FFF2F2F2';
+// 値は utils/excelStyle (通常時間割作成・出勤調査と共有) から
+const ARGB_FF = ARGB.WHITE;
+const ARGB_4472C4 = ARGB.HEADER_BLUE;
+const ARGB_548235 = ARGB.ACCENT_GREEN;
+const ARGB_E2EFDA = ARGB.SECTION_GREEN;
+const ARGB_F2F2F2 = ARGB.HEAD_GRAY;
 
 // exceljs の型に合わせた style 断片。applyCellStyle でセルへ適用する。
 interface CellStyleSpec {
@@ -40,12 +41,6 @@ interface CellStyleSpec {
   border?: Partial<ExcelJS.Borders>;
 }
 
-const THIN_BORDER: Partial<ExcelJS.Borders> = {
-  top: { style: 'thin', color: { argb: ARGB_AAA } },
-  bottom: { style: 'thin', color: { argb: ARGB_AAA } },
-  left: { style: 'thin', color: { argb: ARGB_AAA } },
-  right: { style: 'thin', color: { argb: ARGB_AAA } },
-};
 
 const HEADER_STYLE: CellStyleSpec = {
   font: { bold: true, size: 11, color: { argb: ARGB_FF } },
@@ -147,21 +142,9 @@ function applyCellStyle(cell: ExcelJS.Cell, style: CellStyleSpec) {
 // 回数連番 (第N回) の丸数字 (Q1) は analysisHelpers.makeSubjectOrderMarker
 // に移動 (exceljs 非依存の builderLessons からも使うため)。
 
-// ブラウザでファイルダウンロードをトリガする。exceljs は Node API を
-// 持つので、ブラウザでは writeBuffer() → Blob → anchor.click() の手順を踏む。
-// distributionExport.ts からも使うため export。
-export async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer as unknown as BlobPart], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// ブラウザでのダウンロードは utils/excelStyle.downloadWorkbook (共有)。
+// distributionExport.ts からも使うため再エクスポート。
+export { downloadWorkbook };
 
 // ─── 全体 Excel: workbook 構築 (テストしやすいよう DL から分離) ──
 // project から ExcelJS.Workbook を構築して返す。副作用無し。

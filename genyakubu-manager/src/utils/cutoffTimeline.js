@@ -8,6 +8,7 @@
 // openEnd を立てて、描画側で「続いている」ことを示す。
 
 import { findGroupForGrade, summarizeCutoffGroups } from "./timetable";
+import { addDays } from "./dateHelpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -23,11 +24,6 @@ function fmt(dt) {
   return `${y}-${m}-${d}`;
 }
 
-function addDays(dateStr, days) {
-  const dt = parseDate(dateStr);
-  dt.setDate(dt.getDate() + days);
-  return fmt(dt);
-}
 
 /**
  * 日付の帯の中での位置 (0..1)。範囲外は 0 / 1 に丸める。
