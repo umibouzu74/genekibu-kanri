@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed (通常時間割作成の本体をさらにフックへ分け、切り出したフックに単体テストを付けた)
+
+`regular-builder/RegularBuilderApp.jsx` を 1,566 行 → 1,432 行に。重なりの
+検出・承認・無効承認の掃除を `hooks/useConflictApprovals.js`、学年タブの
+追加・並べ替え・削除を `hooks/useTabOps.js`、講師 / 教室の入力候補を
+`hooks/useProjectOptions.js` に移した (挙動は同じ)。
+
+- 前回切り出した `useCellOps` / `useGridEdits` と合わせ、フック 5 本の単体
+  テスト (`hooks/builderHooks.test.jsx`、17 件) を追加。コピー / 貼り付けと
+  ロックの関係・一括クリアの確認・曜日別既定教室の toast「全曜日に適用」・
+  学年追加時の曜日 / 時限の引き継ぎ・無効承認の掃除など、これまで e2e と
+  App スモークだけで見ていた契約を固定した
+
 ### Changed (講師別カレンダーの 1 日ぶんのセルを別ファイルにした。挙動は同じ)
 
 `components/views/MonthView.jsx` (1,210 行) の `cells.map` の中に書かれていた

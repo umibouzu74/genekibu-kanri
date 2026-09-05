@@ -8,7 +8,6 @@ import { useToasts } from "../hooks/useToasts";
 import { useConfirm } from "../hooks/useConfirm";
 import { usePersistedToggle } from "../hooks/usePersistedToggle";
 import { formatPrintDateJa } from "../timetable-builder/utils/printHeader";
-import { nextNumericId } from "../utils/schema";
 import {
   createDefaultProject,
   createDefaultWorkspace,
@@ -18,9 +17,8 @@ import {
   REGULAR_DAYS,
 } from "./model";
 import { computeCourseSets } from "./courseSets";
-import { biweeklyPartner, splitTeacherField } from "../utils/biweekly";
 import { DAY_BG, DAY_COLOR, gradeColor } from "../constants/colors";
-import { buildConflictView, computeConflicts, conflictKey } from "./conflicts";
+import { conflictKey } from "./conflicts";
 import { formatCellShort } from "./historyFeedback";
 import { ProjectConfigModal } from "./ProjectConfigModal";
 import { RegularOnboarding } from "./RegularOnboarding";
@@ -42,12 +40,14 @@ import { DayCopyDialog } from "./DayCopyDialog";
 import { BulkEditDialog } from "./BulkEditDialog";
 import { REGULAR_PRINT_STYLE } from "./printStyle";
 import { makeSubjectColorResolver } from "./subjectColor";
-import { sortTeacherNamesByKana, sortTeachersByKana } from "./teacherOrder";
 import { useRegularHistory } from "./hooks/useRegularHistory";
 import { useRegularProjects } from "./hooks/useRegularProjects";
 import { useCellOps } from "./hooks/useCellOps";
 import { useGridEdits } from "./hooks/useGridEdits";
 import { usePrintOnce } from "./hooks/usePrintOnce";
+import { useConflictApprovals } from "./hooks/useConflictApprovals";
+import { useTabOps } from "./hooks/useTabOps";
+import { useProjectOptions } from "./hooks/useProjectOptions";
 import { UI } from "./ui";
 
 // ─── 通常時間割作成 ─────────────────────────────────────────────────
@@ -353,62 +353,14 @@ export default function RegularBuilderApp({
   const activeTab =
     project.tabs.find((t) => t.id === activeTabId) || project.tabs[0] || null;
 
-  const conflictList = useMemo(() => computeConflicts(project).list, [project]);
-  const conflictView = useMemo(
-    () => buildConflictView(conflictList, project.approvedConflicts),
-    [conflictList, project.approvedConflicts]
-  );
-
-  // タブ別の未承認衝突件数 (タブバーの ⚠ バッジ用)。1 つの衝突が同一タブ
-  // 内の 2 セルの場合も 1 件と数える。
-  const tabConflictCounts = useMemo(() => {
-    const counts = {};
-    for (const c of conflictView.active) {
-      for (const tabId of new Set(c.refs.map((r) => Number(r.split(":")[0])))) {
-        counts[tabId] = (counts[tabId] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [conflictView]);
-
-  const approveConflict = useCallback(
-    (c) =>
-      saveProject((p) => ({
-        ...p,
-        approvedConflicts: [...(p.approvedConflicts || []), conflictKey(c)],
-      })),
-    [saveProject]
-  );
-  const unapproveConflict = useCallback(
-    (c) =>
-      saveProject((p) => ({
-        ...p,
-        approvedConflicts: (p.approvedConflicts || []).filter(
-          (k) => k !== conflictKey(c)
-        ),
-      })),
-    [saveProject]
-  );
-
-  // 対象の消えた承認の掃除。承認キーはセル参照を含むため、承認したコマを
-  // 動かすと無効になる (意図どおり保守的)。無効キーは画面に出ないまま
-  // 残り続けるので、まとめて捨てられるようにする
-  const purgeStaleApprovals = useCallback(() => {
-    const stale = new Set(conflictView.stale);
-    if (stale.size === 0) return;
-    saveProject(
-      (p) => ({
-        ...p,
-        approvedConflicts: (p.approvedConflicts || []).filter(
-          (k) => !stale.has(k)
-        ),
-      }),
-      { atomic: true }
-    );
-    toasts.success(
-      `対象の無くなった承認 ${stale.size} 件を削除しました（Ctrl+Z で戻せます）`
-    );
-  }, [conflictView.stale, saveProject, toasts]);
+  // ── 重なりの検出・承認。実体は hooks/useConflictApprovals ─────────
+  const {
+    conflictView,
+    tabConflictCounts,
+    approveConflict,
+    unapproveConflict,
+    purgeStaleApprovals,
+  } = useConflictApprovals({ project, saveProject, toasts });
 
   // ── 更新ヘルパ ──────────────────────────────────────────────────
   const updateTab = useCallback(
@@ -474,109 +426,24 @@ export default function RegularBuilderApp({
     selectionResetKey: `${selectedDay}|${project.id}|${weekView}|${multiDayView}|${multiDaysKey}`,
   });
 
-  const addTab = useCallback(() => {
-    // id は現在の描画時点で確定させ、追加後にその学年の設定を開く
-    // (単独編集前提 — 同時編集での id 衝突は考慮しない)
-    const id = nextNumericId(project.tabs);
-    saveProject((p) => {
-      // 直前の学年から曜日・時限の選択を引き継ぐ (講習版の「他へコピー」相当)
-      const last = p.tabs[p.tabs.length - 1];
-      return {
-        ...p,
-        tabs: [
-          ...p.tabs,
-          {
-            id,
-            name: `学年${id}`,
-            grade: "",
-            classes: [],
-            days: last ? [...last.days] : ["月", "火", "水", "木", "金"],
-            periodIds: last ? [...last.periodIds] : p.periods.map((x) => x.id),
-            schedule: {},
-          },
-        ],
-      };
-    });
+  // ── 学年タブの追加・並べ替え・削除。実体は hooks/useTabOps ──────
+  const onTabAdded = useCallback((id) => {
     setActiveTabId(id);
     setShowTabConfig(true);
-  }, [project.tabs, saveProject]);
+  }, []);
+  const onTabRemoved = useCallback(() => setActiveTabId(null), []);
+  const { addTab, reorderTabs, removeTab } = useTabOps({
+    project,
+    saveProject,
+    confirm,
+    activeTab,
+    onTabAdded,
+    onTabRemoved,
+  });
 
-  // 学年チップの並べ替え (セクションの並びはタブ定義順に追従する)
-  const reorderTabs = useCallback(
-    (fromIdx, toIdx) =>
-      saveProject(
-        (p) => {
-          if (
-            fromIdx === toIdx ||
-            fromIdx < 0 ||
-            toIdx < 0 ||
-            fromIdx >= p.tabs.length ||
-            toIdx >= p.tabs.length
-          )
-            return p;
-          const tabs = [...p.tabs];
-          const [moved] = tabs.splice(fromIdx, 1);
-          tabs.splice(toIdx, 0, moved);
-          return { ...p, tabs };
-        },
-        { atomic: true }
-      ),
-    [saveProject]
-  );
-
-  const removeTab = useCallback(async () => {
-    if (!activeTab) return;
-    const cellCount = Object.keys(activeTab.schedule).length;
-    const ok = await confirm({
-      title: "学年の削除",
-      message: `学年「${activeTab.name}」を削除しますか？\n入力済みのセル ${cellCount} 件も削除されます。`,
-      okLabel: "削除する",
-      tone: "danger",
-    });
-    if (!ok) return;
-    saveProject((p) => ({ ...p, tabs: p.tabs.filter((t) => t.id !== activeTab.id) }));
-    setActiveTabId(null);
-  }, [activeTab, confirm, saveProject]);
-
-  // 講師マスタのアイウエオ順 (よみ)。入力候補の datalist 用
-  const sortedTeachers = useMemo(
-    () => sortTeachersByKana(project.teachers),
-    [project.teachers]
-  );
-
-  // 講師フィルタ候補 (マスタ + セルに現れる講師名 + 隔週パートナー)。
-  // マスタ未整備の取込直後や、note にしか現れないパートナー講師も
-  // 👁 強調表示・週間ミニビューの対象にできるようにする
-  const teacherOptions = useMemo(() => {
-    const names = new Set(project.teachers.map((t) => t.name));
-    for (const t of project.tabs || []) {
-      for (const cell of Object.values(t.schedule || {})) {
-        for (const n of splitTeacherField(cell.teacher)) names.add(n);
-        const partner = biweeklyPartner(cell.note);
-        if (partner) names.add(partner);
-      }
-    }
-    // 並びはセルのプルダウンと同じアイウエオ順 (よみのある講師が先)
-    return sortTeacherNamesByKana([...names], project.teachers);
-  }, [project.teachers, project.tabs]);
-
-  // 教室フィルタ候補 (教室マスタ + クラス既定教室 + セル上書き教室)。
-  // マスタを含めることで、まだ使っていない教室も入力候補・👁 の対象になる
-  const roomOptions = useMemo(() => {
-    const rooms = new Set(project.rooms || []);
-    for (const t of project.tabs || []) {
-      for (const c of t.classes || []) {
-        if ((c.room || "").trim()) rooms.add(c.room.trim());
-        for (const r of Object.values(c.roomByDay || {})) {
-          if ((r || "").trim()) rooms.add(r.trim());
-        }
-      }
-      for (const cell of Object.values(t.schedule || {})) {
-        if ((cell.room || "").trim()) rooms.add(cell.room.trim());
-      }
-    }
-    return [...rooms].sort();
-  }, [project.rooms, project.tabs]);
+  // ── 入力候補 (講師のよみ順・講師 / 教室のフィルタ候補)。実体は
+  // hooks/useProjectOptions ─────────────────────────────────────────
+  const { sortedTeachers, teacherOptions, roomOptions } = useProjectOptions(project);
 
   // 選択中の講師・教室がリネーム / 削除で消えたらハイライトを自動解除する
   // (講習 L2a と同じ。残すと「何も光らないフィルタ」が掛かり続ける)

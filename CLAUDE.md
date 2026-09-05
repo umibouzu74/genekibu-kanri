@@ -818,8 +818,18 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   選択範囲への貼り付け・重なりの承認
 - `useGridEdits` — セルの直接編集・D&D 入替 / コピー配置・列の既定教室
   (全曜日 / 曜日別)・⧉ 曜日まるごとコピー
+- `useConflictApprovals` — 重なりの検出 (`conflicts.js`) と承認 / 解除 /
+  無効承認の掃除、タブ別の件数
+- `useTabOps` — 学年タブの追加 (直前の学年から曜日・時限を引き継ぐ)・
+  並べ替え・削除 (確認あり)
+- `useProjectOptions` — 講師 (マスタ + セル + 隔週パートナー、よみ順) と
+  教室 (マスタ + クラス既定 + セル上書き) の入力候補
 - `useRegularHistory` (Undo/Redo)・`useRegularProjects` (プロジェクトの
   出し入れ)・`usePrintOnce` (印刷専用 DOM → `window.print()` → afterprint で戻す)
+
+単体テストは `hooks/builderHooks.test.jsx` (project を state に持つ土台
+`renderWithProject` で、toast / confirm をモックして契約を見る)。**フックに
+振る舞いを足したらここに足す** (e2e と App スモークは主要経路しか通らない)。
 
 どのハンドラも「件数は表示用に現時点の `project` で数え、保存は
 `saveProject` の最新値で再計算する」パターンで書く (同時編集ではなく、
