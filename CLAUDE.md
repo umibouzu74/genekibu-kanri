@@ -791,6 +791,25 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   は装飾つき文字列から拾う別物)、コンテキストメニューの見た目 (Tailwind と
   inline style で描画が違う)
 
+## 通常時間割作成の本体 (RegularBuilderApp) の構成 (2026-09-05 切り出し)
+
+`regular-builder/RegularBuilderApp.jsx` は画面の組み立てと表示状態 (曜日・
+表示モード・開いているダイアログ) を持ち、ロジックは `regular-builder/hooks/`
+に置く。**App に新しい編集ハンドラを直接書き足さず、既存のフックへ足す**:
+
+- `useCellOps` — 右クリック / 長押しメニュー・コピー & 貼り付け・ロック・
+  ⊞ 合同・複数選択 (`useCellSelection` を内包) と一括クリア / 一括変更 /
+  選択範囲への貼り付け・重なりの承認
+- `useGridEdits` — セルの直接編集・D&D 入替 / コピー配置・列の既定教室
+  (全曜日 / 曜日別)・⧉ 曜日まるごとコピー
+- `useRegularHistory` (Undo/Redo)・`useRegularProjects` (プロジェクトの
+  出し入れ)・`usePrintOnce` (印刷専用 DOM → `window.print()` → afterprint で戻す)
+
+どのハンドラも「件数は表示用に現時点の `project` で数え、保存は
+`saveProject` の最新値で再計算する」パターンで書く (同時編集ではなく、
+toast の件数と保存結果を一致させるため)。フックが返す名前は App の JSX が
+そのまま使うので、**名前を変えるときは JSX 側も同時に**。
+
 ## 通常時間割作成の ⚙ 全体設定はタブごとに 1 ファイル (2026-09-05 分割)
 
 `regular-builder/ProjectConfigModal.jsx` はモーダルの枠 (タブ切替・

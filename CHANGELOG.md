@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed (通常時間割作成の本体からセル操作・グリッド編集をフックに切り出した。挙動は同じ)
+
+`regular-builder/RegularBuilderApp.jsx` (1,980 行) のうち、右クリック
+メニュー・コピー / 貼り付け・ロック・⊞ 合同・複数選択と一括クリア / 一括変更 /
+選択範囲への貼り付け・重なりの承認を `hooks/useCellOps.js` に、セルの直接
+編集・D&D 入替 / コピー配置・列の既定教室 (全曜日 / 曜日別)・⧉ 曜日まるごと
+コピーを `hooks/useGridEdits.js` に移した (1,566 行に)。
+
+- 「印刷専用 DOM を出して window.print() → afterprint で戻す」を 2 か所で
+  書いていたのを `hooks/usePrintOnce.js` に 1 本化 (テスト付き)
+- 返す名前は切り出し前と同じなので JSX 側は変えていない。右クリックの
+  コピー / 貼り付け / 承認・講師リネームを通す既存の e2e と App スモークで確認
+
 ### Changed (通常時間割作成の ⚙ 全体設定モーダルをタブごとに分割した。挙動は同じ)
 
 1,188 行 1 コンポーネントだった `regular-builder/ProjectConfigModal.jsx` を、
