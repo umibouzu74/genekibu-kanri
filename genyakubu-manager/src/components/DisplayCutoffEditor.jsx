@@ -258,6 +258,7 @@ export function DisplayCutoffEditor({
             type="date"
             aria-label="一括設定の開始日"
             value={bulk.startDate}
+            max={bulk.date || undefined}
             onChange={(e) => setBulk({ ...bulk, startDate: e.target.value })}
             style={{ ...S.input, width: "auto", fontSize: 11, padding: "3px 6px" }}
           />
@@ -266,6 +267,7 @@ export function DisplayCutoffEditor({
             type="date"
             aria-label="一括設定の終了日"
             value={bulk.date}
+            min={bulk.startDate || undefined}
             onChange={(e) => setBulk({ ...bulk, date: e.target.value })}
             style={{ ...S.input, width: "auto", fontSize: 11, padding: "3px 6px" }}
           />
@@ -318,6 +320,7 @@ export function DisplayCutoffEditor({
                   type="date"
                   aria-label={`${group.label} の開始日`}
                   value={group.startDate || ""}
+                  max={group.date || undefined}
                   onChange={(e) => patchGroup(idx, { startDate: e.target.value || null })}
                   disabled={!isAdmin}
                   style={{ ...S.input, width: "auto", minWidth: 140 }}
@@ -327,6 +330,7 @@ export function DisplayCutoffEditor({
                   type="date"
                   aria-label={`${group.label} の終了日`}
                   value={group.date || ""}
+                  min={group.startDate || undefined}
                   onChange={(e) => patchGroup(idx, { date: e.target.value || null })}
                   disabled={!isAdmin}
                   style={{ ...S.input, width: "auto", minWidth: 140 }}

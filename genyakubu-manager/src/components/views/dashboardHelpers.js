@@ -1,22 +1,18 @@
-import { fmtDate, gradeToDept, WEEKDAYS } from "../../data";
-import { addDays } from "../../utils/dateHelpers";
+import { fmtDate, WEEKDAYS } from "../../data";
+import { addDays, parseLocalDate } from "../../utils/dateHelpers";
 import {
   examClassExceptionsOnDate,
   examPeriodStopsClassesOn,
+  holidayAppliesTo,
 } from "../../utils/scheduleHelpers";
-
-// Parse a "YYYY-MM-DD" string into a local Date. Avoids timezone drift that
-// `new Date("YYYY-MM-DD")` can introduce (UTC parsing).
-function parseDateStr(s) {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
 
 // Build an array of `count` consecutive days starting from a "YYYY-MM-DD"
 // string. Each entry contains the formatted date and weekday label used by
 // DashDayRow.
 export function buildDayRange(startDateStr, count) {
-  const base = parseDateStr(startDateStr);
+  // 無効な日付は従来どおり Invalid Date のまま流す (null を Date に渡すと
+  // 1970-01-01 になり、黙って別の日を並べてしまう)。
+  const base = parseLocalDate(startDateStr) ?? new Date(NaN);
   return Array.from({ length: count }, (_, i) => {
     const dt = new Date(base);
     dt.setDate(dt.getDate() + i);
@@ -53,27 +49,12 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
 
   // Check if a specific (date, grade, subj) is cancelled by a holiday entry.
   // 「テスト期間」は含めない (テスト期間中は別途振替が走るためここでは別扱い)。
+  // 適用判定は utils/scheduleHelpers.holidayAppliesTo (バイトの出勤日・隔週の
+  // 週送りと同じ述語)。
   const isHolidayForSlot = (d, grade, subj) => {
     const dayHols = holidaysByDate.get(d);
     if (!dayHols) return false;
-    const dept = gradeToDept(grade);
-    return dayHols.some((h) => {
-      // 1. Department scope check
-      const sc = h.scope || ["全部"];
-      if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-
-      // 2. Grade-level check
-      const tg = h.targetGrades || [];
-      if (tg.length > 0 && !tg.includes(grade)) return false;
-
-      // 3. Subject keyword check
-      const sk = h.subjKeywords || [];
-      if (sk.length > 0) {
-        if (!subj) return false;
-        if (!sk.some((kw) => subj.includes(kw))) return false;
-      }
-      return true;
-    });
+    return dayHols.some((h) => holidayAppliesTo(h, grade, subj));
   };
 
   // Check whether (date, grade) falls within any exam period that stops classes.

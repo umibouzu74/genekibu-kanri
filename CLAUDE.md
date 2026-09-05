@@ -662,6 +662,28 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **カードを増やすときは `pushCards` に載せること**。JSX に直接並べると
   その種類だけ時系列から外れる
 
+## 休講 (Holiday) の適用判定と分類 (2026-09-05 集約)
+
+休講が (学年, 科目) に効くかは **`utils/scheduleHelpers.holidayAppliesTo`**
+(部 `scope` → 学年 `targetGrades` → 教科 `subjKeywords` の順。空の条件は
+絞らない) の 1 か所で決める。日付の索引は呼び出し側 (ダッシュボードの
+`holidaysByDate`、`isSlotCancelledByHoliday` の `h.date === dateStr`) が持つ。
+**画面ごとに `h.scope || ["全部"]` からの判定を書き起こさないこと。**
+
+- その日の休講の分類は `classifyDayHolidays(hols)` → `fullOff` (全日休講:
+  セクションやカードを描かず日全体で 1 回だけ出す) / `offDepts` (部単位) /
+  `granularHols` (学年・教科限定。バッジで出す) / `hasPartial`。日別
+  ダッシュボード (`DashDayRow`)・タイムテーブル (`ExcelGridView`)・月次
+  カレンダー (`MonthView`) が同じ分岐を持つので必ずこれを使う
+- 文言は `describeHolidayTargets` (「中3・高松西」) と `formatHolidayRange`
+  (「中学部 / 中3 / 高松西」。`includeAll` で「全部」も出す)
+- **複合学年 ("中1-3" のプレップ) への当て方は未決**。`targetGrades` は完全
+  一致で、「中3 だけの休講」は中1-3 のコマに当たらない。表示期間設定の
+  `findGroupForGrade` は range 展開で「どれかが含まれれば所属」と読むが、
+  休講で同じ読みをすると中1・中2 の生徒が来る日を休講にしてしまう。
+  要件が出るまで変えない (変えるなら `holidayAppliesTo` と
+  `examPeriodStopsClassesOn` の両方を同じ読みにする)
+
 ## テスト期間の授業停止判定 (2026-08-29 実装)
 
 テスト期間 (`examPeriods`) が (日付, 学年) の通常授業を止めるかどうかは

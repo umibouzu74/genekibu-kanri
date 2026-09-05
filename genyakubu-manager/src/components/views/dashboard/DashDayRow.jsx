@@ -3,7 +3,11 @@ import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
-import { examClassExceptionsOnDate } from "../../../utils/scheduleHelpers";
+import {
+  classifyDayHolidays,
+  describeHolidayTargets,
+  examClassExceptionsOnDate,
+} from "../../../utils/scheduleHelpers";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
@@ -53,29 +57,7 @@ export function DashDayRow({
     incomingReschedules.length + extraLessonsForDate.length
   );
 
-  const fullOff = hols.some((h) => {
-    const sc = h.scope || ["全部"];
-    if (!sc.includes("全部")) return false;
-    if ((h.targetGrades || []).length > 0) return false;
-    if ((h.subjKeywords || []).length > 0) return false;
-    return true;
-  });
-  const offDepts = [
-    ...new Set(
-      hols
-        .filter(
-          (h) =>
-            (h.targetGrades || []).length === 0 &&
-            (h.subjKeywords || []).length === 0
-        )
-        .flatMap((h) => h.scope || ["全部"])
-    ),
-  ].filter((d) => d !== "全部");
-  const granularHols = hols.filter(
-    (h) =>
-      (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
-  );
-  const hasPartial = !fullOff && (offDepts.length > 0 || granularHols.length > 0);
+  const { fullOff, offDepts, granularHols, hasPartial } = classifyDayHolidays(hols);
   const holLabel = hols[0]?.label;
   const hasExamPeriod = examPeriodsForDate.length > 0;
   const examLabel = examPeriodsForDate.map((ep) => ep.name).join(", ");
@@ -125,10 +107,7 @@ export function DashDayRow({
               </span>
             ))}
             {granularHols.map((h) => {
-              const parts = [
-                ...(h.targetGrades || []),
-                ...(h.subjKeywords || []),
-              ];
+              const targets = describeHolidayTargets(h);
               return (
                 <span
                   key={h.id}
@@ -139,7 +118,7 @@ export function DashDayRow({
                     borderRadius: 4,
                   }}
                 >
-                  {parts.join("・")}休{h.label ? `(${h.label})` : ""}
+                  {targets}休{h.label ? `(${h.label})` : ""}
                 </span>
               );
             })}

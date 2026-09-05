@@ -8,6 +8,7 @@ import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
+import { formatHolidayRange } from "../../../utils/scheduleHelpers";
 import {
   biweeklyActiveTeacher,
   getSlotTeachers,
@@ -685,16 +686,6 @@ export function AbsenceTimetable({
       }`;
     }
     return slotLabel;
-  };
-
-  // 休講エントリを「ラベル + 適用範囲 (部・学年・科目)」のテキストに整形。
-  const formatHolidayRange = (h) => {
-    const parts = [];
-    const sc = (h.scope || ["全部"]).filter(Boolean);
-    if (sc.length > 0 && !sc.includes("全部")) parts.push(sc.join("・"));
-    if ((h.targetGrades || []).length > 0) parts.push(h.targetGrades.join("・"));
-    if ((h.subjKeywords || []).length > 0) parts.push(h.subjKeywords.join("・"));
-    return parts.join(" / ");
   };
 
   return (

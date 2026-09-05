@@ -13,6 +13,7 @@ import { getSlotTeachers } from "../../utils/biweekly";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
+import { classifyDayHolidays, formatHolidayRange } from "../../utils/scheduleHelpers";
 import {
   getDaySchedulesForDate,
   isSlotCancelledByDaySchedule,
@@ -451,15 +452,10 @@ export function ExcelGridView({
   // 「scope=全部 かつ 学年/教科キーワード未指定」の休講が 1 件でもあれば
   // 全部門が一律休講なので、各セクションを描画せず日全体で 1 回だけ
   // メッセージを出す (DashDayRow の fullOff 相当)。
-  const dashboardFullOff = useMemo(() => {
-    return dashboardHolidaysForDay.some((h) => {
-      const sc = h.scope || ["全部"];
-      if (!sc.includes("全部")) return false;
-      if ((h.targetGrades || []).length > 0) return false;
-      if ((h.subjKeywords || []).length > 0) return false;
-      return true;
-    });
-  }, [dashboardHolidaysForDay]);
+  const dashboardFullOff = useMemo(
+    () => classifyDayHolidays(dashboardHolidaysForDay).fullOff,
+    [dashboardHolidaysForDay]
+  );
 
   // 表示日の休講ラベル一覧 (各セクションの「本日休講」表示で利用)。
   const dashboardHolidayLabels = useMemo(
@@ -793,13 +789,7 @@ export function ExcelGridView({
             🚫 休講
           </span>
           {dashboardHolidaysForDay.map((h) => {
-            const sc = h.scope || ["全部"];
-            const tg = h.targetGrades || [];
-            const sk = h.subjKeywords || [];
-            const parts = [];
-            if (sc.length > 0) parts.push(sc.join("・"));
-            if (tg.length > 0) parts.push(tg.join("・"));
-            if (sk.length > 0) parts.push(sk.join("・"));
+            const range = formatHolidayRange(h, { includeAll: true });
             return (
               <span
                 key={h.id}
@@ -813,7 +803,7 @@ export function ExcelGridView({
                   borderRadius: 10,
                 }}
               >
-                {parts.join(" / ")}
+                {range}
                 {h.label ? ` (${h.label})` : ""}
               </span>
             );

@@ -78,6 +78,7 @@ export function TimetableManagerView({
 
   const saveEdit = useCallback(() => {
     if (!form || !form.name.trim()) return;
+    if (isInvertedRange(form.startDate, form.endDate)) return;
     const grades = form.grades
       .split(/[,、\s]+/)
       .map((g) => g.trim())
@@ -112,6 +113,7 @@ export function TimetableManagerView({
 
   const executeDuplicate = useCallback(() => {
     if (!dupForm || !dupForm.name.trim()) return;
+    if (isInvertedRange(dupForm.startDate, dupForm.endDate)) return;
     ttCrud.duplicate(dupForm.sourceId, dupForm.name.trim(), {
       startDate: dupForm.startDate || null,
       endDate: dupForm.endDate || null,
@@ -298,6 +300,7 @@ export function TimetableManagerView({
                 <input
                   type="date"
                   value={dupForm.startDate}
+                  max={dupForm.endDate || undefined}
                   onChange={(e) =>
                     setDupForm({ ...dupForm, startDate: e.target.value })
                   }
@@ -309,6 +312,7 @@ export function TimetableManagerView({
                 <input
                   type="date"
                   value={dupForm.endDate}
+                  min={dupForm.startDate || undefined}
                   onChange={(e) =>
                     setDupForm({ ...dupForm, endDate: e.target.value })
                   }
@@ -316,6 +320,7 @@ export function TimetableManagerView({
                 />
               </label>
             </div>
+            <DateRangeError start={dupForm.startDate} end={dupForm.endDate} />
             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
               <button
                 type="button"
@@ -327,7 +332,12 @@ export function TimetableManagerView({
               <button
                 type="button"
                 onClick={executeDuplicate}
-                style={{ ...S.btn(true), background: "#2a4a8e" }}
+                disabled={isInvertedRange(dupForm.startDate, dupForm.endDate)}
+                style={{
+                  ...S.btn(true),
+                  background: "#2a4a8e",
+                  opacity: isInvertedRange(dupForm.startDate, dupForm.endDate) ? 0.5 : 1,
+                }}
               >
                 複製する
               </button>
@@ -380,7 +390,22 @@ export function TimetableManagerView({
   );
 }
 
+// 開始日と終了日が両方入っていて逆転しているか (片方だけなら期間は開いている)。
+function isInvertedRange(start, end) {
+  return Boolean(start && end && end < start);
+}
+
+function DateRangeError({ start, end }) {
+  if (!isInvertedRange(start, end)) return null;
+  return (
+    <div role="alert" style={{ fontSize: 11, color: "#c62828" }}>
+      終了日は開始日以降にしてください
+    </div>
+  );
+}
+
 function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
+  const canSave = Boolean(form.name.trim()) && !isInvertedRange(form.startDate, form.endDate);
   return (
     <div
       style={{
@@ -406,6 +431,7 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
             <input
               type="date"
               value={form.startDate}
+              max={form.endDate || undefined}
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
               style={{ ...S.input, marginTop: 2 }}
             />
@@ -415,11 +441,13 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
             <input
               type="date"
               value={form.endDate}
+              min={form.startDate || undefined}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
               style={{ ...S.input, marginTop: 2 }}
             />
           </label>
         </div>
+        <DateRangeError start={form.startDate} end={form.endDate} />
         <label style={{ fontSize: 12, fontWeight: 600 }}>
           対象学年（カンマ区切り、空欄で全学年）
           <input
@@ -443,10 +471,10 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
           <button
             type="button"
             onClick={onSave}
-            disabled={!form.name.trim()}
+            disabled={!canSave}
             style={{
               ...S.btn(true),
-              opacity: form.name.trim() ? 1 : 0.5,
+              opacity: canSave ? 1 : 0.5,
             }}
           >
             保存

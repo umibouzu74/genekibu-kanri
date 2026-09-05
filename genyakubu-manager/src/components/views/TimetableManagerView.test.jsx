@@ -23,6 +23,7 @@ const CUTOFF = {
 
 function renderView(displayCutoff = CUTOFF) {
   const onSaveDisplayCutoff = vi.fn();
+  const ttCrud = { add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() };
   render(
     <ToastProvider render={() => null}>
       <ConfirmProvider>
@@ -32,14 +33,14 @@ function renderView(displayCutoff = CUTOFF) {
           slots={[]}
           classSets={[]}
           onSaveClassSets={vi.fn()}
-          ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() }}
+          ttCrud={ttCrud}
           onSaveDisplayCutoff={onSaveDisplayCutoff}
           isAdmin
         />
       </ConfirmProvider>
     </ToastProvider>
   );
-  return { onSaveDisplayCutoff };
+  return { onSaveDisplayCutoff, ttCrud };
 }
 
 const orientationBoxes = () =>
@@ -80,5 +81,34 @@ describe("TimetableManagerView 表示期間設定のオリエン設定", () => {
     const [chu3, kou3] = orientationBoxes();
     expect(chu3.checked).toBe(false);
     expect(kou3.checked).toBe(true);
+  });
+});
+
+describe("TimetableManagerView 時間割フォームの期間", () => {
+  it("終了日が開始日より前なら保存できず、理由を出す", () => {
+    const { ttCrud } = renderView();
+    fireEvent.click(screen.getByRole("button", { name: "+ 新規作成" }));
+    fireEvent.change(screen.getByLabelText("名前"), { target: { value: "2学期" } });
+    fireEvent.change(screen.getByLabelText("開始日"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-08-01" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("終了日は開始日以降にしてください");
+    const save = screen.getByRole("button", { name: "保存" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(ttCrud.add).not.toHaveBeenCalled();
+  });
+
+  it("終了日を直せば保存できる", () => {
+    const { ttCrud } = renderView();
+    fireEvent.click(screen.getByRole("button", { name: "+ 新規作成" }));
+    fireEvent.change(screen.getByLabelText("名前"), { target: { value: "2学期" } });
+    fireEvent.change(screen.getByLabelText("開始日"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-12-20" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(ttCrud.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "2学期", startDate: "2026-09-01", endDate: "2026-12-20" })
+    );
   });
 });

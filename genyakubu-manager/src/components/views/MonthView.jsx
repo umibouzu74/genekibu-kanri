@@ -13,6 +13,7 @@ import {
   KOSHU_LESSON_COLOR,
 } from "../../constants/colors";
 import { timeStartToMin } from "../../utils/dateHelpers";
+import { classifyDayHolidays, describeHolidayTargets } from "../../utils/scheduleHelpers";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
@@ -379,23 +380,7 @@ export function MonthView({
           const dow = new Date(year, month - 1, d).getDay();
           const dn = WEEKDAYS[dow];
           const hols = holMap[ds] || [];
-          const isFullOff = hols.some((h) => {
-            const sc = h.scope || ["全部"];
-            if (!sc.includes("全部")) return false;
-            if ((h.targetGrades || []).length > 0) return false;
-            if ((h.subjKeywords || []).length > 0) return false;
-            return true;
-          });
-          const offDepts = [
-            ...new Set(
-              hols
-                .filter((h) => (h.targetGrades || []).length === 0 && (h.subjKeywords || []).length === 0)
-                .flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))
-            ),
-          ];
-          const granularHols = hols.filter(
-            (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
-          );
+          const { fullOff: isFullOff, offDepts, granularHols } = classifyDayHolidays(hols);
           const epActive = showExam ? examPeriodsForDate(ds) : [];
           const hasExam = epActive.length > 0;
           const evActive = showSpecial ? specialEventsForDate(ds) : [];
@@ -1123,9 +1108,7 @@ export function MonthView({
                 )}
                 {!isFullOff && granularHols.length > 0 && (
                   <span style={{ fontSize: 7, color: "#4a7a9a", fontWeight: 400, display: "block" }}>
-                    {granularHols.map((h) =>
-                      [...(h.targetGrades || []), ...(h.subjKeywords || [])].join("・")
-                    ).join(", ") + "休"}
+                    {granularHols.map(describeHolidayTargets).join(", ") + "休"}
                   </span>
                 )}
                 {!isFullOff && hasExam && (

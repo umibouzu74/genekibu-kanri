@@ -28,20 +28,88 @@ export function sortSlots(arr) {
 // 隔週ローテーションのスキップ判定でも共用するため pure 関数として切り出す。
 export function isSlotCancelledByHoliday(slot, dateStr, holidays) {
   if (!holidays || holidays.length === 0) return false;
-  const dept = slot.grade ? gradeToDept(slot.grade) : null;
-  return holidays.some((h) => {
-    if (h.date !== dateStr) return false;
-    const sc = h.scope || ["全部"];
-    if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-    const tg = h.targetGrades || [];
-    if (tg.length > 0 && !tg.includes(slot.grade)) return false;
-    const sk = h.subjKeywords || [];
-    if (sk.length > 0) {
-      if (!slot.subj) return false;
-      if (!sk.some((kw) => slot.subj.includes(kw))) return false;
-    }
-    return true;
-  });
+  return holidays.some(
+    (h) => h.date === dateStr && holidayAppliesTo(h, slot.grade, slot.subj)
+  );
+}
+
+// 休講エントリ 1 件が (学年, 科目) に効くか。日付は見ない (呼び出し側で
+// 日付の索引を引いてから使う)。部 (scope) → 学年 (targetGrades) → 教科
+// キーワード (subjKeywords) の順に絞り、空の条件は「絞らない」。
+// subjKeywords がある休講は subj 未指定のコマには当てない (安全側)。
+//
+// 学年は完全一致。複合学年 ("中1-3" のプレップ) に「中3 だけの休講」を
+// 当てるかは決めていない (表示期間設定の findGroupForGrade は range 展開で
+// 「どれかが含まれれば所属」と読むが、休講で同じ読みをすると中1・中2 の
+// 生徒が来る日を休講にしてしまう)。要件が出るまで完全一致のまま。
+export function holidayAppliesTo(h, grade, subj) {
+  if (!h) return false;
+  const sc = h.scope || ["全部"];
+  if (!sc.includes("全部")) {
+    const dept = grade ? gradeToDept(grade) : null;
+    if (!(dept && sc.includes(dept))) return false;
+  }
+  const tg = h.targetGrades || [];
+  if (tg.length > 0 && !tg.includes(grade)) return false;
+  const sk = h.subjKeywords || [];
+  if (sk.length > 0) {
+    if (!subj) return false;
+    if (!sk.some((kw) => subj.includes(kw))) return false;
+  }
+  return true;
+}
+
+// 学年・教科で絞られていない休講か (= 部単位、または全部門)。
+export function isBroadHoliday(h) {
+  return (h?.targetGrades || []).length === 0 && (h?.subjKeywords || []).length === 0;
+}
+
+// その日の休講エントリ群を「全日休講 / 部単位の休み / 学年・教科限定」に分類
+// する。日別ダッシュボード・タイムテーブル・月次カレンダーが同じ分岐を持つ
+// (fullOff なら日全体で 1 回だけ「休講」を出し、セクションやカードを描かない)。
+// 判定を画面ごとに書き起こさないための集約 (2026-09-05)。
+//   fullOff     … scope=全部 かつ 学年・教科の絞りが無い休講が 1 件でもある
+//   offDepts    … 学年・教科の絞りが無い休講の部 ("中学部" / "高校部"、全部を除く)
+//   granularHols… 学年か教科で絞られた休講 (部分休講としてバッジで出す)
+//   hasPartial  … fullOff ではないが何かしら休みがある
+export function classifyDayHolidays(hols) {
+  const list = Array.isArray(hols) ? hols : [];
+  const fullOff = list.some(
+    (h) => (h.scope || ["全部"]).includes("全部") && isBroadHoliday(h)
+  );
+  const offDepts = [
+    ...new Set(
+      list
+        .filter(isBroadHoliday)
+        .flatMap((h) => (h.scope || ["全部"]).filter((s) => s && s !== "全部"))
+    ),
+  ];
+  const granularHols = list.filter((h) => !isBroadHoliday(h));
+  return {
+    fullOff,
+    offDepts,
+    granularHols,
+    hasPartial: !fullOff && (offDepts.length > 0 || granularHols.length > 0),
+  };
+}
+
+// 学年・教科で絞られた休講の絞り条件を "中3・高松西" のように並べる
+// (部分休講バッジの文言)。
+export function describeHolidayTargets(h) {
+  return [...(h?.targetGrades || []), ...(h?.subjKeywords || [])].join("・");
+}
+
+// 休講エントリの適用範囲を "中学部 / 中3 / 高松西" のように整形する。
+// 既定では「全部」を省く (何も絞られていない休講は空文字)。
+// includeAll: true で「全部」も出す (タイムテーブルの休講バナー)。
+export function formatHolidayRange(h, { includeAll = false } = {}) {
+  const parts = [];
+  const sc = (h?.scope || ["全部"]).filter(Boolean);
+  const depts = includeAll ? sc : sc.filter((s) => s !== "全部");
+  if (depts.length > 0) parts.push(depts.join("・"));
+  if ((h?.targetGrades || []).length > 0) parts.push(h.targetGrades.join("・"));
+  if ((h?.subjKeywords || []).length > 0) parts.push(h.subjKeywords.join("・"));
+  return parts.join(" / ");
 }
 
 // テスト期間の「例外的に授業を行う日」(classExceptions) に (日付, 学年) が

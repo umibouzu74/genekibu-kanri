@@ -376,6 +376,7 @@ export function ExamPeriodManager({
             <input
               type="date"
               value={startDate}
+              max={endDate || undefined}
               onChange={(e) => {
                 setStartDate(e.target.value);
                 if (error) setError("");
@@ -386,6 +387,7 @@ export function ExamPeriodManager({
             <input
               type="date"
               value={endDate}
+              min={startDate || undefined}
               onChange={(e) => {
                 setEndDate(e.target.value);
                 if (error) setError("");
