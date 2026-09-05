@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { ALL_GRADES, DAYS, DEPT_COLOR, gradeToDept } from "../data";
 import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
-import { colors } from "../styles/tokens";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
@@ -19,6 +18,8 @@ import {
   unitKey,
   unitsFromSlotIds,
 } from "../utils/classSets";
+import { ClassSetList } from "./classSet/ClassSetList";
+import { ClassSetSuggestions } from "./classSet/ClassSetSuggestions";
 
 // ─── 授業セット管理 ───────────────────────────────────────────────
 // 複数のスロットを「同一コース」として束ね、ダッシュボードで共通の
@@ -368,294 +369,25 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
       )}
 
       {/* 登録済みセット一覧 */}
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>
-          登録済み ({classSets.length}件)
-        </div>
-        {classSets.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              color: "#bbb",
-              padding: 20,
-              fontSize: 12,
-              background: "#f8f9fa",
-              borderRadius: 6,
-            }}
-          >
-            まだ授業セットが登録されていません
-          </div>
-        ) : (
-          classSets.map((cs) => {
-            const legacy = isLegacySet(cs);
-            const idSet = new Set(expandClassSetSlotIds(cs, slots));
-            const setSlots = slots.filter((s) => idSet.has(s.id));
-            // 表示するユニット: units 形式は定義そのもの (対象コマが 0 でも
-            // 「どの学年 × 曜日を指しているか」を出す)、旧形式は現存コマから逆算。
-            const conv = legacy ? legacyConversion(cs) : null;
-            const setUnits = legacy ? conv.units : cs.units || [];
-            const dept = setUnits[0] ? gradeToDept(setUnits[0].grade) : null;
-            const col = dept
-              ? DEPT_COLOR[dept]
-              : { b: "#eee", f: "#444", accent: "#aaa" };
-            return (
-              <div
-                key={cs.id}
-                style={{
-                  padding: "8px 12px",
-                  background: editId === cs.id ? "#fffbe6" : "#f8f9fa",
-                  border: `1px solid ${editId === cs.id ? "#e0c060" : "#e8e8e8"}`,
-                  borderRadius: 6,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 3,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: col.accent,
-                      }}
-                    />
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>{cs.label}</span>
-                    <span style={{ fontSize: 10, color: "#888" }}>
-                      {setUnits.length} ユニット / {setSlots.length} コマ
-                    </span>
-                    {legacy && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          padding: "1px 5px",
-                          borderRadius: 8,
-                          background: "#fff3d6",
-                          color: "#8a6d1f",
-                          border: "1px solid #e8d08a",
-                        }}
-                        title="コマ id を直接指しています。期切替で紐付けが切れます"
-                      >
-                        旧形式 (コマ id 固定)
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 10, color: "#666", lineHeight: 1.6 }}>
-                    {setUnits.map((u) => (
-                      <span
-                        key={unitKey(u.grade, u.day)}
-                        style={{
-                          display: "inline-block",
-                          marginRight: 8,
-                          padding: "1px 6px",
-                          background: "#fff",
-                          border: "1px solid #e0e0e0",
-                          borderRadius: 10,
-                        }}
-                      >
-                        {unitLabel(u)}
-                      </span>
-                    ))}
-                    {legacy && setSlots.length < cs.slotIds.length && (
-                      <span style={{ color: colors.danger }}> ※ 一部スロット削除済み</span>
-                    )}
-                    {!legacy && setSlots.length === 0 && (
-                      <span style={{ color: colors.danger }}> ※ 対象のコマがありません</span>
-                    )}
-                    {legacy && conv.after > conv.before && (
-                      <div style={{ color: "#8a6d1f", marginTop: 2 }}>
-                        ⚠ 変換すると対象が {conv.before} → {conv.after} コマに増えます
-                        （同じ学年・曜日の他のクラスも入ります）
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {isAdmin && (
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    {legacy && (
-                      <button
-                        type="button"
-                        onClick={() => handleConvertLegacy(cs)}
-                        aria-label={`${cs.label} を曜日ベースに変換`}
-                        style={{
-                          ...S.btn(false),
-                          fontSize: 10,
-                          padding: "3px 8px",
-                          color: "#8a6d1f",
-                        }}
-                      >
-                        曜日ベースに変換
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(cs)}
-                      aria-label={`${cs.label} を編集`}
-                      style={{ ...S.btn(false), fontSize: 10, padding: "3px 8px" }}
-                    >
-                      編集
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(cs)}
-                      aria-label={`${cs.label} を削除`}
-                      style={{
-                        ...S.btn(false),
-                        fontSize: 10,
-                        padding: "3px 8px",
-                        color: colors.danger,
-                      }}
-                    >
-                      削除
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+      <ClassSetList
+        classSets={classSets}
+        slots={slots}
+        editId={editId}
+        isAdmin={isAdmin}
+        legacyConversion={legacyConversion}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onConvertLegacy={handleConvertLegacy}
+      />
 
-      {/* コース分けの候補 (週 4 日ある学年を 火木 / 水金 のように 2 コースへ) */}
-      {isAdmin && splitSuggestions.length > 0 && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderTop: "1px solid #e0e0e0",
-            background: "#fff6f0",
-          }}
-        >
-          <div
-            style={{ fontSize: 12, fontWeight: 700, color: "#9a4a1e", marginBottom: 6 }}
-          >
-            🔀 コース分けの候補 ({splitSuggestions.length}件)
-          </div>
-          <div style={{ fontSize: 10, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
-            週 4 日ある学年です。既定では<strong>平日ぜんぶで 1 コース</strong>として
-            回数を数えるので、火木コース / 水金コースのように分かれている場合は
-            ここで分けてください（分けないと水曜の第1回が火曜の続きになります）。
-            全曜日に同じ生徒が通う学年なら、分けずにこのままで構いません。
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {splitSuggestions.map((sug) => (
-              <div
-                key={sug.key}
-                style={{
-                  padding: "6px 10px",
-                  background: "#fff",
-                  borderRadius: 4,
-                  border: "1px solid #f0d0bc",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <div style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>{sug.label}</div>
-                  <div style={{ fontSize: 9, color: "#888" }}>
-                    {sug.groups
-                      .map((g) => `${g.label} ${g.slotCount}コマ`)
-                      .join("  /  ")}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAcceptSplit(sug)}
-                  style={{
-                    ...S.btn(true),
-                    fontSize: 10,
-                    padding: "3px 10px",
-                    background: "#9a4a1e",
-                  }}
-                >
-                  {sug.groups.length} セットで登録
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 自動提案 */}
-      {isAdmin && suggestions.length > 0 && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderTop: "1px solid #e0e0e0",
-            background: "#f0f7ff",
-          }}
-        >
-          <div
-            style={{ fontSize: 12, fontWeight: 700, color: "#2a4a8e", marginBottom: 6 }}
-          >
-            💡 自動提案 ({suggestions.length}件)
-          </div>
-          <div style={{ fontSize: 10, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
-            同じ (学年・クラス) が複数曜日に出現するパターンを検出しました。
-            {splitSuggestions.length > 0 && (
-              <>
-                <br />
-                上の「コース分けの候補」と同じ学年が出ている場合は、
-                <strong>どちらか一方だけ</strong>を登録してください
-                （まとめるか、分けるかの選択です）。
-              </>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {suggestions.slice(0, 30).map((sug) => (
-              <div
-                key={sug.key}
-                style={{
-                  padding: "6px 10px",
-                  background: "#fff",
-                  borderRadius: 4,
-                  border: "1px solid #d0dff0",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <div style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>{sug.label}</div>
-                  <div style={{ fontSize: 9, color: "#888" }}>
-                    {sug.units.map((u) => unitLabel(u)).join(" + ")}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAcceptSuggestion(sug)}
-                  style={{
-                    ...S.btn(true),
-                    fontSize: 10,
-                    padding: "3px 10px",
-                    background: "#2a4a8e",
-                  }}
-                >
-                  登録
-                </button>
-              </div>
-            ))}
-            {suggestions.length > 30 && (
-              <div style={{ fontSize: 10, color: "#888", textAlign: "center" }}>
-                他 {suggestions.length - 30} 件
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* コース分けの候補 + 自動提案 */}
+      <ClassSetSuggestions
+        isAdmin={isAdmin}
+        splitSuggestions={splitSuggestions}
+        suggestions={suggestions}
+        onAcceptSplit={handleAcceptSplit}
+        onAcceptSuggestion={handleAcceptSuggestion}
+      />
 
       {/* 手動登録・編集フォーム */}
       {isAdmin && (

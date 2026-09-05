@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed (授業セット管理・特別イベント管理の一覧と候補を別ファイルにした。挙動は同じ)
+
+- `components/ClassSetManager.jsx` (918 行 → 651 行): 登録済みセットの一覧を
+  `components/classSet/ClassSetList.jsx`、「🔀 コース分けの候補」と自動提案を
+  `components/classSet/ClassSetSuggestions.jsx` に。フォームと保存・削除・
+  旧形式の変換はマネージャに残した
+- `components/SpecialEventManager.jsx` (745 行 → 566 行): 一覧を
+  `components/specialEvent/SpecialEventList.jsx` に。分割前にスモークテスト
+  (`SpecialEventManager.test.jsx`、6 件: 並び順・追加・検証・編集・削除・
+  閲覧者表示) を足し、切り出し後も同じ保存結果になることを確認
+
 ### Changed (通常時間割作成の本体をさらにフックへ分け、切り出したフックに単体テストを付けた)
 
 `regular-builder/RegularBuilderApp.jsx` を 1,566 行 → 1,432 行に。重なりの

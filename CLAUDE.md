@@ -716,6 +716,22 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **特訓シフト (`examPrepSchedules`) とは独立**。例外日でも特訓の出勤は
   そのまま出る (両方ある日がこの機能の動機)
 
+## マネージャ画面の分け方 (2026-09-05 確定)
+
+休講・テスト期間・特別イベント・授業セットなどの「フォーム + 一覧」型の
+マネージャは、**フォームの state と保存時の検証・削除 (cascade / Undo) を
+マネージャに残し、一覧と候補・下書き欄だけを子コンポーネントに出す**。
+子は表示と自前の下書きだけを持ち、保存は親のハンドラ (`onEdit` / `onDel` /
+`onAccept…`) を呼ぶ。子の中で `onSave` を直接呼ばない (保存の検証と toast
+が 2 か所に散る)。
+
+- 授業セット: `components/classSet/ClassSetList.jsx` (一覧・旧形式の変換
+  ボタン) / `ClassSetSuggestions.jsx` (🔀 コース分けの候補 + 自動提案。
+  候補であって自動適用はしない、の原則はそのまま)
+- 特別イベント: `components/specialEvent/SpecialEventList.jsx`
+- テスト期間: 下の「テスト期間マネージャの構成」
+- 休講 (`HolidayManager`) はまだ 1 ファイル。分けるときは同じ形で
+
 ## テスト期間マネージャの構成 (2026-09-05 分割)
 
 `components/ExamPeriodManager.jsx` はフォームの state と保存時の検証・
