@@ -661,6 +661,11 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - 時刻を持たないカード (時限表記だけの講習コマ) だけ末尾へ
 - **カードを増やすときは `pushCards` に載せること**。JSX に直接並べると
   その種類だけ時系列から外れる
+- 1 日ぶんのセルは `components/views/month/MonthDayCell.jsx` (2026-09-05 に
+  切り出し)。月単位の索引・判定関数 (`slotById` / `subForTeacher` /
+  `isTeacherAttending` など) は MonthView が `dayCtx` にまとめて渡す。
+  **セルの中で月単位の索引を作り直さない** (日数ぶん重複する)。新しい
+  索引が要るときは MonthView 側で作って `dayCtx` に足す
 
 ## 休講 (Holiday) の適用判定と分類 (2026-09-05 集約)
 

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed (講師別カレンダーの 1 日ぶんのセルを別ファイルにした。挙動は同じ)
+
+`components/views/MonthView.jsx` (1,210 行) の `cells.map` の中に書かれていた
+1 日ぶんの計算と描画 (通常コマ / 代行 / 振替 / 追加授業 / 講習 / 特訓の
+カードと、休講・テスト期間・「この講師にとっては休みの日」の判定) を
+`components/views/month/MonthDayCell.jsx` に移した (MonthView は 377 行に)。
+月単位の索引・判定関数は `dayCtx` にまとめて渡す。既存の 17 件のテストで
+表示が変わらないことを確認。
+
 ### Changed (テスト期間マネージャを「フォーム / 例外日の編集欄 / 一覧」に分けた。挙動は同じ)
 
 `components/ExamPeriodManager.jsx` (1,046 行) から、「例外的に授業を行う日」の
