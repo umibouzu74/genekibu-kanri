@@ -711,6 +711,17 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **特訓シフト (`examPrepSchedules`) とは独立**。例外日でも特訓の出勤は
   そのまま出る (両方ある日がこの機能の動機)
 
+## テスト期間マネージャの構成 (2026-09-05 分割)
+
+`components/ExamPeriodManager.jsx` はフォームの state と保存時の検証・
+削除 (特訓シフトの cascade) を持つ。切り出し済みの 2 つは表示と下書きだけ:
+
+- `components/examPeriod/ExamClassExceptionsEditor.jsx` — 例外的に授業を
+  行う日の追加 / 削除。下書きはこの中の state で、親は `key` (フォームの
+  世代 `formEpoch`) を進めて消す。**親側で下書きの state を持ち直さない**
+- `components/examPeriod/ExamPeriodList.jsx` — 一覧。編集 / 削除 / 特訓
+  シフトは親のハンドラ (`onEdit` / `onDel` / `onOpenSchedule`)
+
 ## 特別時程 (daySchedules) の設計要点 (2026-08-05 実装)
 
 附属コース等の「行事都合で特定日だけ時程が変わる」対応。要件は

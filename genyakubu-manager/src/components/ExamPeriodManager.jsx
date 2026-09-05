@@ -14,6 +14,8 @@ import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
+import { ExamClassExceptionsEditor } from "./examPeriod/ExamClassExceptionsEditor";
+import { ExamPeriodList } from "./examPeriod/ExamPeriodList";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
 import { TAG_META } from "../constants/eventKinds";
 
@@ -43,10 +45,9 @@ export function ExamPeriodManager({
   const [stopsClasses, setStopsClasses] = useState(true);
   // 例外的に授業を行う日 ({ date, grades, memo } の配列)。
   const [classExceptions, setClassExceptions] = useState([]);
-  const [exDate, setExDate] = useState("");
-  const [exGrades, setExGrades] = useState([]);
-  const [exMemo, setExMemo] = useState("");
-  const [exError, setExError] = useState("");
+  // 例外日の下書きは ExamClassExceptionsEditor が持つ。フォームのリセット /
+  // 編集開始で key を進めて下書きを消す
+  const [formEpoch, setFormEpoch] = useState(0);
   const [tagsArr, setTagsArr] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
@@ -71,48 +72,6 @@ export function ExamPeriodManager({
     setTagsArr(tagsArr.filter((x) => x !== t));
   };
 
-  // 例外日で選べる学年。テスト期間が全学年対象なら全学年から選ぶ。
-  const exceptionGradeChoices = allGrades ? ALL_GRADES : targetGrades;
-
-  const toggleExGrade = (g) => {
-    setExError("");
-    setExGrades((prev) =>
-      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
-    );
-  };
-
-  const addException = () => {
-    setExError("");
-    if (!exDate || !isValidDateStr(exDate)) {
-      setExError("日付を正しく入力してください");
-      return;
-    }
-    if (startDate && endDate && (exDate < startDate || exDate > endDate)) {
-      setExError(`テスト期間 (${startDate} 〜 ${endDate}) の中の日付にしてください`);
-      return;
-    }
-    if (classExceptions.some((ex) => ex.date === exDate)) {
-      setExError("その日は既に登録されています (先に削除してください)");
-      return;
-    }
-    // 対象学年を全部選んだ / 何も選ばなかった = 対象学年すべて (空配列で保存)
-    const all = exceptionGradeChoices.length > 0
-      && exceptionGradeChoices.every((g) => exGrades.includes(g));
-    const grades = all ? [] : exGrades.filter((g) => exceptionGradeChoices.includes(g));
-    const next = [
-      ...classExceptions,
-      { date: exDate, grades, memo: exMemo.trim() },
-    ].sort((a, b) => a.date.localeCompare(b.date));
-    setClassExceptions(next);
-    setExDate("");
-    setExGrades([]);
-    setExMemo("");
-  };
-
-  const removeException = (date) => {
-    setClassExceptions(classExceptions.filter((ex) => ex.date !== date));
-    setExError("");
-  };
 
   const toggleGrade = (g) => {
     if (allGrades) {
@@ -247,10 +206,7 @@ export function ExamPeriodManager({
         }))
         .sort((a, b) => a.date.localeCompare(b.date))
     );
-    setExDate("");
-    setExGrades([]);
-    setExMemo("");
-    setExError("");
+    setFormEpoch((e) => e + 1);
     setTagsArr([...(ep.tags || [])]);
     setTagInput("");
     setEditId(ep.id);
@@ -265,10 +221,7 @@ export function ExamPeriodManager({
     setAllGrades(true);
     setStopsClasses(true);
     setClassExceptions([]);
-    setExDate("");
-    setExGrades([]);
-    setExMemo("");
-    setExError("");
+    setFormEpoch((e) => e + 1);
     setTagsArr([]);
     setTagInput("");
     setEditId(null);
@@ -527,162 +480,16 @@ export function ExamPeriodManager({
             </div>
           </div>
 
-          {/* 例外的に授業を行う日 */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-              例外的に授業を行う日 (任意)
-            </div>
-            {!stopsClasses ? (
-              <div style={{ fontSize: 10, color: "#888" }}>
-                「授業を休止する」が OFF のテスト期間では設定不要です (元々授業は継続します)。
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: 10, color: "#888", marginBottom: 6 }}>
-                  特訓は始まっているが通常授業は休みにしない日を指定します
-                  (例: 9/19 土の中3)。指定した日は休止扱いにならず、通常どおり
-                  コマ・第N回・出勤日に出ます。
-                </div>
-                {classExceptions.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      marginBottom: 8,
-                    }}
-                  >
-                    {classExceptions.map((ex) => (
-                      <div
-                        key={ex.date}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          flexWrap: "wrap",
-                          fontSize: 11,
-                          background: "#f2f7f2",
-                          border: "1px solid #cfe0cf",
-                          borderRadius: 6,
-                          padding: "3px 8px",
-                        }}
-                      >
-                        <span style={{ fontWeight: 700 }}>{ex.date}</span>
-                        <span style={{ color: "#3a6b3a" }}>
-                          {(ex.grades || []).length === 0
-                            ? "対象学年すべて"
-                            : ex.grades.join("・")}
-                          {" は授業あり"}
-                        </span>
-                        {ex.memo && (
-                          <span style={{ color: "#888" }}>／ {ex.memo}</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeException(ex.date)}
-                          aria-label={`${ex.date} の例外を削除`}
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: "pointer",
-                            fontSize: 12,
-                            marginLeft: "auto",
-                            padding: 0,
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  <input
-                    type="date"
-                    value={exDate}
-                    min={startDate || undefined}
-                    max={endDate || undefined}
-                    onChange={(e) => {
-                      setExDate(e.target.value);
-                      setExError("");
-                    }}
-                    aria-label="例外的に授業を行う日"
-                    style={{ ...S.input, width: "auto" }}
-                  />
-                  <input
-                    value={exMemo}
-                    onChange={(e) => setExMemo(e.target.value)}
-                    placeholder="メモ (任意)"
-                    aria-label="例外日のメモ"
-                    style={{ ...S.input, width: 160, fontSize: 11 }}
-                  />
-                  <button type="button" onClick={addException} style={S.btn(false)}>
-                    ＋ 追加
-                  </button>
-                </div>
-                {exceptionGradeChoices.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 4,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      marginTop: 6,
-                    }}
-                  >
-                    <span style={{ fontSize: 10, color: "#888" }}>
-                      授業を行う学年 (未選択 = 対象学年すべて):
-                    </span>
-                    {exceptionGradeChoices.map((g) => {
-                      const sel = exGrades.includes(g);
-                      const dept = gradeToDept(g);
-                      const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
-                      return (
-                        <label
-                          key={g}
-                          style={{
-                            fontSize: 11,
-                            padding: "2px 8px",
-                            borderRadius: 6,
-                            cursor: "pointer",
-                            background: sel ? col.b : "#f5f5f5",
-                            color: sel ? col.f : "#aaa",
-                            border: `1px solid ${sel ? col.accent || "#ccc" : "#ddd"}`,
-                            fontWeight: sel ? 700 : 400,
-                            userSelect: "none",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={sel}
-                            onChange={() => toggleExGrade(g)}
-                            aria-label={`${g} は授業を行う`}
-                            style={VISUALLY_HIDDEN}
-                          />
-                          {g}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                {exError && (
-                  <div
-                    role="alert"
-                    style={{ fontSize: 11, color: colors.danger, marginTop: 6 }}
-                  >
-                    {exError}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          {/* 例外的に授業を行う日 (下書きは子が持つ。key でリセット) */}
+          <ExamClassExceptionsEditor
+            key={formEpoch}
+            stopsClasses={stopsClasses}
+            classExceptions={classExceptions}
+            onChange={setClassExceptions}
+            startDate={startDate}
+            endDate={endDate}
+            gradeChoices={allGrades ? ALL_GRADES : targetGrades}
+          />
 
           {/* タグ */}
           <div style={{ marginBottom: 12 }}>
@@ -800,225 +607,16 @@ export function ExamPeriodManager({
       )}
 
       {/* 一覧 */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 8,
-          border: "1px solid #e0e0e0",
-          overflow: "hidden",
-        }}
-      >
-        {sorted.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              color: "#888",
-              padding: "32px 20px",
-              fontSize: 13,
-              lineHeight: 1.7,
-            }}
-          >
-            <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📝</div>
-            <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              登録されたテスト期間はありません
-            </div>
-            {isAdmin && (
-              <div style={{ fontSize: 12, color: "#888" }}>
-                上のフォームから開始日・終了日・対象を指定して追加してください
-              </div>
-            )}
-          </div>
-        ) : (
-          sorted.map((ep, i) => (
-            <div
-              key={ep.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "10px 14px",
-                borderBottom:
-                  i < sorted.length - 1 ? "1px solid #eee" : "none",
-                background:
-                  editId === ep.id
-                    ? "#fffbe6"
-                    : i % 2
-                      ? "#f8f9fa"
-                      : "#fff",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <strong style={{ fontSize: 13 }}>{ep.name}</strong>
-                <span style={{ fontSize: 11, color: "#666" }}>
-                  {ep.startDate} 〜 {ep.endDate}
-                </span>
-                {ep.stopsClasses === false && (
-                  <span
-                    title="授業を休止しない (表示のみ)"
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      background: "#fff",
-                      color: "#7a4a10",
-                      border: "1px dashed #e0a030",
-                    }}
-                  >
-                    表示のみ
-                  </span>
-                )}
-                <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                  {ep.targetGrades.length === 0 ? (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: "1px 6px",
-                        borderRadius: 4,
-                        background: "#1a1a2e",
-                        color: "#fff",
-                      }}
-                    >
-                      全学年
-                    </span>
-                  ) : (
-                    ep.targetGrades.map((g) => {
-                      const dept = gradeToDept(g);
-                      const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
-                      return (
-                        <span
-                          key={g}
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "1px 6px",
-                            borderRadius: 4,
-                            background: col.b,
-                            color: col.f,
-                          }}
-                        >
-                          {g}
-                        </span>
-                      );
-                    })
-                  )}
-                </div>
-                {(ep.classExceptions || []).length > 0 &&
-                  ep.stopsClasses !== false && (
-                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                      {[...ep.classExceptions]
-                        .sort((a, b) => a.date.localeCompare(b.date))
-                        .map((ex) => {
-                          const gl =
-                            (ex.grades || []).length === 0
-                              ? "対象学年すべて"
-                              : ex.grades.join("・");
-                          return (
-                            <span
-                              key={ex.date}
-                              title={`${ex.date} は ${gl} の授業を行う${ex.memo ? `\n${ex.memo}` : ""}`}
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: "1px 6px",
-                                borderRadius: 4,
-                                background: "#e8f3e8",
-                                color: "#2f6b2f",
-                                border: "1px solid #9fc79f",
-                              }}
-                            >
-                              📖 {ex.date.slice(5).replace("-", "/")} 授業あり
-                              {(ex.grades || []).length > 0
-                                ? ` (${ex.grades.join("・")})`
-                                : ""}
-                            </span>
-                          );
-                        })}
-                    </div>
-                  )}
-                {(ep.tags || []).length > 0 && (
-                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                    {ep.tags.map((t) => (
-                      <span
-                        key={t}
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "1px 6px",
-                          borderRadius: 4,
-                          background: TAG_META.bg,
-                          color: TAG_META.fg,
-                          border: `1px solid ${TAG_META.accent}`,
-                        }}
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {isAdmin && (
-                <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-                  {examPrepCrud && (
-                    <button
-                      type="button"
-                      onClick={() => setScheduleEditingEp(ep)}
-                      aria-label={`${ep.name} の特訓シフトを設定`}
-                      style={{
-                        ...S.btn(false),
-                        fontSize: 11,
-                        padding: "4px 10px",
-                      }}
-                    >
-                      特訓シフト
-                      {(() => {
-                        const sch = findScheduleByExamPeriodId(examPrepSchedules, ep.id);
-                        const n = (sch?.days || []).length;
-                        return n > 0 ? ` (${n})` : "";
-                      })()}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(ep)}
-                    aria-label={`${ep.name} を編集`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      padding: 2,
-                    }}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDel(ep)}
-                    aria-label={`${ep.name} を削除`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 14,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+      <ExamPeriodList
+        sorted={sorted}
+        editId={editId}
+        isAdmin={isAdmin}
+        examPrepCrud={examPrepCrud}
+        examPrepSchedules={examPrepSchedules}
+        onEdit={handleEdit}
+        onDel={handleDel}
+        onOpenSchedule={setScheduleEditingEp}
+      />
       <div style={{ marginTop: 12, fontSize: 11, color: "#888" }}>
         ※「授業を休止する」が ON のテスト期間は対象学年の通常コマが休止扱いになります (中学テスト等)。
         OFF にすると表示のみで授業は継続します (高校テスト等)。

@@ -95,4 +95,23 @@ describe("ExamPeriodManager の例外的に授業を行う日", () => {
     );
     expect(screen.queryByLabelText("例外的に授業を行う日")).toBeNull();
   });
+
+  it("打ちかけの例外日は、更新で保存したあと・別の期間を開いたときに消える", () => {
+    renderManager();
+    fireEvent.click(screen.getByLabelText("2学期中間テスト期間 を編集"));
+    fireEvent.change(exDateInput(), { target: { value: "2026-09-19" } });
+    fireEvent.change(screen.getByLabelText("例外日のメモ"), {
+      target: { value: "未追加のメモ" },
+    });
+    // 「＋ 追加」せずに更新 → 下書きは保存されず、入力欄も空に戻る
+    fireEvent.click(screen.getByText("更新"));
+    expect(exDateInput().value).toBe("");
+    expect(screen.getByLabelText("例外日のメモ").value).toBe("");
+
+    // もう一度編集を開いても下書きは空のまま
+    fireEvent.click(screen.getByLabelText("2学期中間テスト期間 を編集"));
+    fireEvent.change(exDateInput(), { target: { value: "2026-09-20" } });
+    fireEvent.click(screen.getByLabelText("2学期中間テスト期間 を編集"));
+    expect(exDateInput().value).toBe("");
+  });
 });

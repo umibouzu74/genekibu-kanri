@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed (テスト期間マネージャを「フォーム / 例外日の編集欄 / 一覧」に分けた。挙動は同じ)
+
+`components/ExamPeriodManager.jsx` (1,046 行) から、「例外的に授業を行う日」の
+編集欄を `components/examPeriod/ExamClassExceptionsEditor.jsx` に、一覧を
+`components/examPeriod/ExamPeriodList.jsx` に切り出した (646 行に)。
+
+- 例外日の下書き (日付・学年・メモ・エラー) は編集欄が持ち、登録済みの
+  一覧と保存時の検証は従来どおりマネージャが持つ。フォームのリセット /
+  編集開始で下書きが消える挙動はテストで固定した
+- 一覧は表示だけで、編集 / 削除 / 特訓シフトは親のハンドラを呼ぶ
+
 ### Changed (通常時間割作成の本体からセル操作・グリッド編集をフックに切り出した。挙動は同じ)
 
 `regular-builder/RegularBuilderApp.jsx` (1,980 行) のうち、右クリック
