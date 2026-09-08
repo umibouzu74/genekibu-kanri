@@ -5,6 +5,7 @@ import {
   findCombineCandidates,
   getAbsenceDaySlots,
   getAbsentSlotIds,
+  isSlotShownOnDate,
 } from "./absenceHelpers";
 
 const SUBJECTS = [
@@ -201,6 +202,32 @@ describe("getAbsenceDaySlots", () => {
   it("date / dayName が無ければ空", () => {
     expect(getAbsenceDaySlots(slots, "", "月", {})).toEqual([]);
     expect(getAbsenceDaySlots(slots, "2026-09-21", null, {})).toEqual([]);
+  });
+});
+
+describe("isSlotShownOnDate", () => {
+  const TIMETABLES = [
+    { id: 1, name: "1学期", grades: [], startDate: "", endDate: "2026-09-14" },
+    { id: 2, name: "2学期", grades: [], startDate: "2026-09-15", endDate: "" },
+  ];
+  const spring = mk(1, { day: "月", timetableId: 1 });
+  const fall = mk(2, { day: "月", timetableId: 2 });
+
+  it("時間割の有効期間で判定する (曜日は見ない)", () => {
+    expect(isSlotShownOnDate(spring, "2026-09-21", { timetables: TIMETABLES })).toBe(false);
+    expect(isSlotShownOnDate(fall, "2026-09-21", { timetables: TIMETABLES })).toBe(true);
+    expect(isSlotShownOnDate(spring, "2026-06-01", { timetables: TIMETABLES })).toBe(true);
+  });
+
+  it("表示期間の外も false、時間割が無ければ true", () => {
+    const displayCutoff = {
+      groups: [{ label: "中学部", grades: ["中3"], startDate: "2026-09-15", date: "2027-02-28" }],
+      cohorts: [],
+    };
+    expect(isSlotShownOnDate(fall, "2026-09-14", { timetables: TIMETABLES, displayCutoff })).toBe(false);
+    expect(isSlotShownOnDate(spring, "2026-09-21", {})).toBe(true);
+    expect(isSlotShownOnDate(null, "2026-09-21", {})).toBe(false);
+    expect(isSlotShownOnDate(fall, "", {})).toBe(false);
   });
 });
 

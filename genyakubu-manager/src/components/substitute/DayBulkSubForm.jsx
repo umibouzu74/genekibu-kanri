@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { activeTeachersOnDate } from "../../utils/absenceHelpers";
+import { activeTeachersOnDate, getAbsenceDaySlots } from "../../utils/absenceHelpers";
 import {
   getSubForSlot,
   sortSlots as sortS,
@@ -29,6 +29,9 @@ export function DayBulkSubForm({
   biweeklyAnchors = [],
   holidays = [],
   examPeriods = [],
+  // その日に有効なコマだけを並べるための材料 (時間割の有効期間 / 表示期間)
+  timetables = [],
+  displayCutoff = null,
   rowState,
   setRowState,
   showAllCandidates,
@@ -43,11 +46,13 @@ export function DayBulkSubForm({
     [partTimeStaff]
   );
 
+  // 単一コマと同じく「その日に有効な時間割のコマ」だけ (旧期の同名コマを
+  // 並べない。判定は欠勤登録と共有の getAbsenceDaySlots)
   const fullDayRows = useMemo(() => {
     if (!dayOfDate) return [];
     const filtered = sortS(
-      slots.filter(
-        (s) => s.day === dayOfDate && !getSubForSlot(subs, s.id, date)
+      getAbsenceDaySlots(slots, date, dayOfDate, { timetables, displayCutoff }).filter(
+        (s) => !getSubForSlot(subs, s.id, date)
       )
     );
     const hasPT = (s) => getSlotTeachers(s).some((t) => staffNameSet.has(t));
@@ -55,7 +60,7 @@ export function DayBulkSubForm({
       ...filtered.filter((s) => hasPT(s)),
       ...filtered.filter((s) => !hasPT(s)),
     ];
-  }, [slots, subs, dayOfDate, date, staffNameSet]);
+  }, [slots, subs, dayOfDate, date, staffNameSet, timetables, displayCutoff]);
 
   // 日付変更時に rowState をリセット (対象コマが変わるため)
   useEffect(() => {
@@ -85,7 +90,8 @@ export function DayBulkSubForm({
         : partTimeStaff.filter((s) => s.subjectIds.includes(subjId));
     const set = new Set(filteredStaff.map((s) => s.name));
     if (!subjId || showAllCandidates) {
-      slots.forEach((s) => s.teacher && set.add(s.teacher));
+      // 講師欄は "香川·福江" のように複数名のことがあるので分解して足す
+      slots.forEach((s) => getSlotTeachers(s).forEach((t) => set.add(t)));
     }
     return sortTeacherNames([...set], teacherKana);
   };

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { activeTeachersOnDate } from "../../utils/absenceHelpers";
+import { activeTeachersOnDate, getAbsenceDaySlots } from "../../utils/absenceHelpers";
 import { SUB_STATUS, SUB_STATUS_KEYS, sortSlots as sortS } from "../../data";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
@@ -24,6 +24,9 @@ export function SingleSubForm({
   biweeklyAnchors = [],
   holidays = [],
   examPeriods = [],
+  // その日に有効なコマだけを並べるための材料 (時間割の有効期間 / 表示期間)
+  timetables = [],
+  displayCutoff = null,
   f,
   setF,
   showAllCandidates,
@@ -73,10 +76,28 @@ export function SingleSubForm({
     return teachers.every((t) => taken.has(t));
   };
 
+  // 並べるのは「その日に有効な時間割のコマ」だけ。曜日だけで絞ると、
+  // 期切替で残してある旧期の同名コマ (終了日入り) が並び、そちらに登録した
+  // 代行はスケジュールのどこにも出ない (2026-09-10 の中3C 社会)。
+  // 判定は欠勤登録と同じ getAbsenceDaySlots (時間割の有効期間 + 表示期間)
+  const daySlots = useMemo(
+    () =>
+      getAbsenceDaySlots(slots, date, dayOfDate, { timetables, displayCutoff }),
+    [slots, date, dayOfDate, timetables, displayCutoff]
+  );
+  // 編集中のレコードが期間外のコマを指していたら、その 1 件だけは残して
+  // 選び直せるようにする (無いと select が空になり何を直すのか分からない)
+  const outOfRangeSlotIds = useMemo(() => {
+    if (!sub?.slotId) return new Set();
+    if (daySlots.some((s) => s.id === sub.slotId)) return new Set();
+    const cur = slots.find((s) => s.id === sub.slotId);
+    return cur && cur.day === dayOfDate ? new Set([cur.id]) : new Set();
+  }, [sub?.slotId, daySlots, slots, dayOfDate]);
   const slotOptions = useMemo(() => {
     if (!dayOfDate) return [];
+    const extra = slots.filter((s) => outOfRangeSlotIds.has(s.id));
     const filtered = sortS(
-      slots.filter((s) => s.day === dayOfDate && !isSlotFullyTaken(s))
+      [...daySlots, ...extra].filter((s) => !isSlotFullyTaken(s))
     );
     const hasPT = (s) => getSlotTeachers(s).some((t) => staffNameSet.has(t));
     return [
@@ -84,7 +105,7 @@ export function SingleSubForm({
       ...filtered.filter((s) => !hasPT(s)),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- takenSlotTeachers covered by subs/date/sub
-  }, [slots, dayOfDate, staffNameSet, subs, date, sub]);
+  }, [slots, daySlots, outOfRangeSlotIds, dayOfDate, staffNameSet, subs, date, sub]);
 
   const selectedSlot = useMemo(
     () => slots.find((s) => s.id === Number(f.slotId)) || null,
@@ -134,7 +155,8 @@ export function SingleSubForm({
   const allTeachers = useMemo(() => {
     const set = new Set(filteredPartTimeStaff.map((s) => s.name));
     if (!matchedSubjectId || showAllCandidates) {
-      slots.forEach((s) => s.teacher && set.add(s.teacher));
+      // 講師欄は "香川·福江" のように複数名のことがあるので分解して足す
+      slots.forEach((s) => getSlotTeachers(s).forEach((t) => set.add(t)));
     }
     return sortTeacherNames([...set], teacherKana);
   }, [slots, filteredPartTimeStaff, matchedSubjectId, showAllCandidates, teacherKana]);
@@ -174,6 +196,7 @@ export function SingleSubForm({
                 {s.time} / {s.grade}
                 {s.cls && s.cls !== "-" ? s.cls : ""} / {s.subj} / {s.teacher}
                 {s.room ? ` (${s.room})` : ""}
+                {outOfRangeSlotIds.has(s.id) ? " ⚠ この日は有効期間外" : ""}
               </option>
             );
           })}
@@ -186,6 +209,11 @@ export function SingleSubForm({
         {dayOfDate && slotOptions.length === 0 && (
           <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
             該当コマがありません (代行済みを除く)
+          </div>
+        )}
+        {selectedSlot && outOfRangeSlotIds.has(selectedSlot.id) && (
+          <div style={{ fontSize: 10, color: colors.danger, marginTop: 2 }}>
+            {`⚠ このコマの時間割は ${date} に有効ではないため、スケジュールには出ません。同じ曜日の有効なコマを選び直してください`}
           </div>
         )}
         <FieldError id={slotErrorId}>{errors.slotId}</FieldError>

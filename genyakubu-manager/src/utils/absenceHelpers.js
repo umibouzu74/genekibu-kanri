@@ -22,10 +22,21 @@ import { filterSlotsForDate, isSlotBeyondCutoff } from "./timetable";
 // 出したままにする (AbsenceSlotCard の cancelLabel)。
 export function getAbsenceDaySlots(slots, dateStr, dayName, opts = {}) {
   if (!dateStr || !dayName) return [];
-  const { timetables, displayCutoff } = opts;
-  return filterSlotsForDate(slots || [], dateStr, timetables).filter(
-    (s) => s.day === dayName && !isSlotBeyondCutoff(dateStr, s, displayCutoff)
+  return (slots || []).filter(
+    (s) => s.day === dayName && isSlotShownOnDate(s, dateStr, opts)
   );
+}
+
+// そのコマがその日に画面 (ダッシュボード / タイムテーブル / 欠勤登録) へ
+// 出るか = 上の 2 つの窓の判定を 1 コマ分だけ。曜日は見ない (呼ぶ側で
+// 決める)。代行レコードが「その日に出ないコマ」を指していないかの点検
+// (代行一覧の警告) にも使う — 旧期の同名コマに登録すると、一覧には載る
+// のにスケジュールのどこにも出ない (2026-09-10 の中3C 社会)。
+export function isSlotShownOnDate(slot, dateStr, opts = {}) {
+  if (!slot || !dateStr) return false;
+  const { timetables, displayCutoff } = opts;
+  if (filterSlotsForDate([slot], dateStr, timetables).length === 0) return false;
+  return !isSlotBeyondCutoff(dateStr, slot, displayCutoff);
 }
 
 // 対象日にそのコマを実際に担当する先生名 (隔週の A/B を解決した後)。
