@@ -14,6 +14,10 @@ import {
 // ─── 代行ピッカーポップオーバー ───────────────────────────────
 // 欠勤組み換え UI 用の簡易ピッカー。
 // 指定コマの教科に担当可能な先生を優先表示し、"全員表示" で常勤含め全員から選べる。
+// 「全員」= バイト講師 + 時間割に出てくる全講師 (allTeachers。曜日を問わない)。
+// その日のコマの講師だけだと、木曜にコマの無い常勤 (2026-09-10 の西岡) が
+// どこにも出ず代行にできない。それでも無い名前は下の欄に直接入力できる
+// (授業管理の代行登録フォームと同じ扱い)。
 //
 // 代行者が見つかっていなくても「代行未定のまま欠勤にする」で登録できる。
 // これは代行者が空の代行レコード (status: "requested") になり、
@@ -46,6 +50,7 @@ export function SubstitutePickerPopover({
   subjects,
   teacherKana = {},
   daySlots,
+  allTeachers = [], // 時間割に出てくる全講師 + バイト (曜日を問わない、よみ順)
   teachers = [], // 対象日に実際に担当する講師 (隔週の A/B 解決済み)
   subsByTeacher = {}, // 元講師 -> { substitute, status } (下書き / 登録済み)
   onAssign, // (元講師, 代行者名, status)
@@ -54,6 +59,7 @@ export function SubstitutePickerPopover({
 }) {
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
+  const [freeName, setFreeName] = useState("");
 
   // 多担任コマ (例: プレップ "香川·福江·川井") は**講師ごとに 1 件**なので、
   // まず「誰の代行 / 欠勤か」を決める。単一担任ならその 1 人で固定。
@@ -115,12 +121,25 @@ export function SubstitutePickerPopover({
     if (!showAll) return primary;
     const rest = sortTeacherNames(
       [
-        ...new Set([...allStaff.map((s) => s.name), ...dayTeachers]),
-      ].filter((n) => !primary.includes(n) && n !== slot.teacher),
+        ...new Set([
+          ...allStaff.map((s) => s.name),
+          ...dayTeachers,
+          ...(allTeachers || []),
+        ]),
+      ].filter(
+        (n) => n && !primary.includes(n) && n !== slot.teacher && n !== originalTeacher
+      ),
       teacherKana
     );
     return [...primary, ...rest];
-  }, [showAll, primary, allStaff, dayTeachers, slot.teacher, teacherKana]);
+  }, [showAll, primary, allStaff, dayTeachers, allTeachers, slot.teacher, originalTeacher, teacherKana]);
+
+  const assignFreeName = () => {
+    const name = freeName.trim();
+    if (!name) return;
+    onAssign(originalTeacher, name, status);
+    onClose();
+  };
 
   // showAll 切替などで候補が変わったらフォーカスをリセット (範囲外参照防止)。
   useEffect(() => {
@@ -404,6 +423,47 @@ export function SubstitutePickerPopover({
             );
           })
         )}
+      </div>
+
+      {/* 一覧に無い名前 (時間割にもバイトにも出てこない人) を直接入力する */}
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          padding: "6px 10px",
+          borderTop: "1px solid #f0f0f0",
+          alignItems: "center",
+        }}
+      >
+        <input
+          type="text"
+          value={freeName}
+          onChange={(e) => setFreeName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              assignFreeName();
+            }
+          }}
+          placeholder="一覧に無い名前を入力"
+          aria-label="代行者名を直接入力"
+          style={{ ...S.input, flex: 1, minWidth: 0, padding: "3px 6px", fontSize: 11 }}
+        />
+        <button
+          type="button"
+          onClick={assignFreeName}
+          disabled={!freeName.trim()}
+          style={{
+            ...S.btn(false),
+            fontSize: 11,
+            padding: "3px 8px",
+            whiteSpace: "nowrap",
+            cursor: freeName.trim() ? "pointer" : "default",
+            opacity: freeName.trim() ? 1 : 0.5,
+          }}
+        >
+          割り当て
+        </button>
       </div>
 
       {(currentSubstitute || hasSubEntry) && onClear && (

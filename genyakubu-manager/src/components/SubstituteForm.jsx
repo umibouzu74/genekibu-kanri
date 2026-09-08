@@ -24,6 +24,9 @@ export function SubstituteForm({
   biweeklyAnchors = [],
   holidays = [],
   examPeriods = [],
+  // コマ一覧を「その日に有効なコマ」に絞るための材料。無ければ曜日だけで絞る
+  timetables = [],
+  displayCutoff = null,
   onSave,
   onCancel,
 }) {
@@ -132,6 +135,8 @@ export function SubstituteForm({
           biweeklyAnchors={biweeklyAnchors}
           holidays={holidays}
           examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
           f={singleF}
           setF={setSingleF}
           showAllCandidates={showAllCandidates}
@@ -148,6 +153,8 @@ export function SubstituteForm({
           biweeklyAnchors={biweeklyAnchors}
           holidays={holidays}
           examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
           partTimeStaff={partTimeStaff}
           subjects={subjects}
           teacherKana={teacherKana}

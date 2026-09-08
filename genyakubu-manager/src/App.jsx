@@ -1335,6 +1335,8 @@ export default function App() {
               biweeklyAnchors={biweeklyAnchors}
               holidays={holidays}
               examPeriods={examPeriods}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
               onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
               onCancel={() => setEditSub(null)}
             />

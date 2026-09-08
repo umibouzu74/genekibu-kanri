@@ -293,6 +293,8 @@ export function SubstituteView({
           partTimeStaff={partTimeStaff}
           teacherKana={teacherKana}
           subjects={subjects}
+          timetables={timetables || []}
+          displayCutoff={displayCutoff}
           onEdit={onEdit}
           onDel={onDel}
           onNew={onNew}

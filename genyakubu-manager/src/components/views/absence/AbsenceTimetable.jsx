@@ -1074,6 +1074,7 @@ export function AbsenceTimetable({
           subjects={subjects}
           teacherKana={teacherKana}
           daySlots={slots}
+          allTeachers={allTeachers}
           teachers={activeTeachersFor(subPicker.slot)}
           subsByTeacher={Object.fromEntries(
             subsForSlot(subPicker.slot).map((x) => [x.originalTeacher, x])

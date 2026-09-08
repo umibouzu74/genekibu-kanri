@@ -9,6 +9,7 @@ import {
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { StatusBadge } from "../../StatusBadge";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
+import { isSlotShownOnDate } from "../../../utils/absenceHelpers";
 
 // Sub list tab : フィルタ (月 / 講師 / ステータス) + 代行レコード一覧テーブル。
 export function SubListTab({
@@ -26,6 +27,9 @@ export function SubListTab({
   slots = [],
   partTimeStaff = [],
   subjects = [],
+  // 「その日に有効でないコマ」の点検用 (時間割の有効期間 / 表示期間)
+  timetables = [],
+  displayCutoff = null,
   onEdit,
   onDel,
   onNew,
@@ -34,6 +38,21 @@ export function SubListTab({
     () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
     [allTeachers, slots, partTimeStaff, subjects],
   );
+  // 代行レコードが指すコマが、その日にスケジュールへ出ないもの (期切替で
+  // 残してある旧期の同名コマなど) を点検する。一覧には載るのにダッシュ
+  // ボード・タイムテーブルのどこにも出ない、という食い違いをここで見せる
+  const notShownIds = useMemo(() => {
+    const set = new Set();
+    for (const sub of filtered) {
+      const slot = slotMap[sub.slotId];
+      if (slot && !isSlotShownOnDate(slot, sub.date, { timetables, displayCutoff })) {
+        set.add(sub.id);
+      }
+    }
+    return set;
+  }, [filtered, slotMap, timetables, displayCutoff]);
+  const notShownTitle =
+    "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。✏️ で同じ曜日の有効なコマへ付け替えてください";
   return (
     <div>
       <div
@@ -125,6 +144,22 @@ export function SubListTab({
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
         {filtered.length} / {subs.length} 件表示
       </div>
+      {notShownIds.size > 0 && (
+        <div
+          role="status"
+          style={{
+            fontSize: 11,
+            color: "#8a4a00",
+            background: "#fff6e5",
+            border: "1px solid #f0c070",
+            borderRadius: 6,
+            padding: "6px 10px",
+            marginBottom: 6,
+          }}
+        >
+          {`⚠ ${notShownIds.size} 件は、その日に有効でない時間割のコマ (旧期の同名コマなど) を指しています。スケジュールには出ないので、✏️ で同じ曜日の有効なコマへ付け替えてください`}
+        </div>
+      )}
       <div
         style={{
           background: "#fff",
@@ -274,6 +309,24 @@ export function SubListTab({
                           {slot.room}
                         </span>
                       ) : null}
+                      {notShownIds.has(sub.id) && (
+                        <span
+                          title={notShownTitle}
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "#8a4a00",
+                            background: "#fff6e5",
+                            border: "1px solid #f0c070",
+                            borderRadius: 4,
+                            padding: "0 5px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ⚠ この日は期間外
+                        </span>
+                      )}
                     </td>
                     <td
                       style={{
