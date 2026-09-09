@@ -3,6 +3,7 @@ import { splitTeacherField } from "../../../utils/biweekly";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortTeacherNames } from "../../../utils/teacherKana";
+import { describeBusy, teacherBusyAt } from "../../../utils/teacherConflicts";
 import { pickSubjectId } from "../../../utils/subjectMatch";
 import { SUB_STATE, subState, subStateMeta } from "../../../utils/substituteState";
 import {
@@ -53,6 +54,10 @@ export function SubstitutePickerPopover({
   allTeachers = [], // 時間割に出てくる全講師 + バイト (曜日を問わない、よみ順)
   teachers = [], // 対象日に実際に担当する講師 (隔週の A/B 解決済み)
   subsByTeacher = {}, // 元講師 -> { substitute, status } (下書き / 登録済み)
+  // その日に実際に教える (講師, コマ) の一覧 (utils/teacherConflicts.
+  // collectTeacherAssignments。下書きの代行を含む)。候補ごとに「授業中 /
+  // 代行中」を出すため。無ければ表示しないだけ (選べなくはしない)
+  assignments = [],
   onAssign, // (元講師, 代行者名, status)
   onClear, // (元講師)
   onClose,
@@ -87,6 +92,12 @@ export function SubstitutePickerPopover({
   const pos = anchorRect
     ? computePosition(anchorRect)
     : { top: 100, left: 100 };
+
+  // 候補がこのコマの時間に既に持っている仕事 (通常コマ / 代行)。
+  // 移動済みのコマは移動後の時刻 (_time) で見る。
+  const slotTime = slot._time || slot.time;
+  const busyOf = (name) =>
+    teacherBusyAt(assignments, name, slotTime, { excludeSlotId: slot.id });
 
   // Primary 候補: そのコマの教科を担当できるバイト講師。
   //   subjId が解決できた場合   → subjectIds に該当 id を持つ講師
@@ -386,6 +397,8 @@ export function SubstitutePickerPopover({
             const isCurrent = name === currentSubstitute;
             const isPrimary = primary.includes(name);
             const isFocused = i === focusIdx;
+            const busy = busyOf(name);
+            const busyAsSub = busy.some((a) => a.role === "sub");
             const bg = isFocused
               ? "#dcebff"
               : isCurrent
@@ -416,9 +429,32 @@ export function SubstitutePickerPopover({
                 }}
               >
                 <span style={{ fontWeight: isPrimary ? 700 : 400 }}>{name}</span>
-                {isPrimary && (
-                  <span style={{ color: "#2a6a9e", fontSize: 10 }}>担当可</span>
-                )}
+                <span
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: 1,
+                  }}
+                >
+                  {isPrimary && (
+                    <span style={{ color: "#2a6a9e", fontSize: 10 }}>担当可</span>
+                  )}
+                  {busy.length > 0 && (
+                    <span
+                      title={busy.map((a) => `${describeBusy(a)} ${a.time}`).join("\n")}
+                      style={{
+                        color: busyAsSub ? colors.danger : "#b06000",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ⚠ {describeBusy(busy[0])}
+                      {busy.length > 1 ? ` 他${busy.length - 1}` : ""}
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })

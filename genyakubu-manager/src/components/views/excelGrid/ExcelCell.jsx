@@ -12,6 +12,7 @@ import {
   describeRescheduleTarget,
   describeSlot,
 } from "../../../utils/adjustmentDisplay";
+import { describeTeacherConflict } from "../../../utils/teacherConflicts";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 
 // 状態 (pending / nosub / requested / confirmed) → 表示メタ。
@@ -81,6 +82,9 @@ export const ExcelCell = memo(function ExcelCell({
   moveOriginalTime = null,
   moveDayScheduleLabel = null,
   rescheduleOut = null, // { targetDate, targetTime?, targetTeacher? }
+  // 講師の同時刻の重なり (utils/teacherConflicts)。代行を入れた結果
+  // 同じ人が 2 か所に居るときに出す。警告であって禁止ではない
+  teacherConflicts = null,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -321,6 +325,22 @@ export const ExcelCell = memo(function ExcelCell({
     }
   }
 
+  // 講師の同時刻の重なり: バッジ + セル内の 1 行。tooltip だけにしない
+  // (一覧を眺めているときに気付けない)。休講のコマは呼び出し側で除いてある。
+  const conflictList = teacherConflicts && teacherConflicts.length > 0 ? teacherConflicts : null;
+  if (conflictList) {
+    badges.push(
+      mkBadge(
+        "#c03030",
+        "⚠ 重複",
+        "teacher-conflict",
+        conflictList
+          .map((c) => describeTeacherConflict(c, { withTime: true }))
+          .join("\n")
+      )
+    );
+  }
+
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
   const isClickable = isSubMode && (slot.teacher || pendingSub || isCombineTarget);
 
@@ -347,6 +367,9 @@ export const ExcelCell = memo(function ExcelCell({
     isCombineHost ? "合同" : null,
     moveTarget ? "移動" : null,
     rescheduleOut ? "振替中" : null,
+    conflictList
+      ? `講師重複 ${conflictList.map((c) => describeTeacherConflict(c)).join("、")}`
+      : null,
   ].filter(Boolean);
   const ariaLabel = [
     slot.time,
@@ -472,6 +495,21 @@ export const ExcelCell = memo(function ExcelCell({
           })()}
         </div>
         {subDisplay}
+        {conflictList && (
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#c03030",
+              marginTop: 2,
+              lineHeight: 1.3,
+            }}
+          >
+            {conflictList.map((c, i) => (
+              <div key={i}>⚠ {describeTeacherConflict(c)}</div>
+            ))}
+          </div>
+        )}
         {isCombineHost && hostedSlots && hostedSlots.length > 0 && (
           <div
             style={{

@@ -64,3 +64,28 @@ describe("ExcelCell のキーボード操作", () => {
     expect(screen.getByRole("button").getAttribute("aria-label")).toMatch(/代行未定/);
   });
 });
+
+describe("ExcelCell の講師重複", () => {
+  const conflict = {
+    teacher: "福江",
+    role: "sub",
+    other: { id: 2, grade: "中3", cls: "A", subj: "理科" },
+    otherTime: "19:50-20:35",
+    otherRole: "sub",
+  };
+  it("バッジとセル内の 1 行で出し、読み上げ名にも含める (tooltip だけにしない)", () => {
+    renderCell({
+      isAdmin: true,
+      onEdit: vi.fn(),
+      existingSubs: [{ originalTeacher: "堀上", substitute: "福江", status: "confirmed" }],
+      teacherConflicts: [conflict],
+    });
+    expect(screen.getByText("⚠ 重複")).toBeInTheDocument();
+    expect(screen.getByText("⚠ 福江: 中3A 理科 (代行) と重複")).toBeInTheDocument();
+    expect(screen.getByRole("button").getAttribute("aria-label")).toMatch(/講師重複/);
+  });
+  it("重なりが無ければ何も出さない", () => {
+    renderCell({ isAdmin: false, teacherConflicts: [] });
+    expect(screen.queryByText(/重複/)).toBeNull();
+  });
+});

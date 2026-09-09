@@ -11,6 +11,7 @@ import { formatSessionNumber } from "../../../utils/sessionCount";
 import { subState, subStateMeta, subTargetLabel } from "../../../utils/substituteState";
 import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
+import { describeTeacherConflict } from "../../../utils/teacherConflicts";
 
 // 状態 (pending / nosub / requested / confirmed) → 表示メタ。
 // substituteState の 1 か所から引く (色とラベルを画面ごとに書き起こさない)。
@@ -51,6 +52,9 @@ export function AbsenceSlotCard({
   dimmed, // 合同モード中の非候補: 暗くする
   isRescheduled, // 他日へ振替中
   rescheduleLabel, // 振替情報テキスト (例: "振替 → 2026-05-01 19:00-20:20")
+  // 講師の同時刻の重なり (utils/teacherConflicts)。代行を入れた結果
+  // 同じ人が 2 か所に居るとき。警告であって禁止ではない
+  conflicts = null,
   onContextMenu,
   onDragStart,
   onClick,
@@ -176,6 +180,9 @@ export function AbsenceSlotCard({
     isCombineHost ? "合同" : null,
     isAbsorbed ? "合同に吸収" : null,
     ...[...new Set(subs.map((x) => subState(x)))].map((st) => STATE_META[st]?.label),
+    conflicts && conflicts.length > 0
+      ? `講師重複 ${conflicts.map((c) => describeTeacherConflict(c)).join("、")}`
+      : null,
   ].filter(Boolean);
   const ariaLabel = [
     slot.time,
@@ -253,6 +260,9 @@ export function AbsenceSlotCard({
           )}
           {isCombineHost && (
             <BadgeChip color="#c08020" label="合同" />
+          )}
+          {conflicts && conflicts.length > 0 && (
+            <BadgeChip color={colors.danger} label="⚠ 重複" />
           )}
           {/* 状態は講師ごと。同じ状態が並んでも 1 つにまとめる
               (3 人欠勤で「未定」が 3 つ並ぶと読みづらい)。 */}
@@ -360,6 +370,21 @@ export function AbsenceSlotCard({
       {hostLabel && (
         <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>
           {hostLabel}
+        </div>
+      )}
+      {conflicts && conflicts.length > 0 && (
+        <div
+          style={{
+            fontSize: 10,
+            color: colors.danger,
+            fontWeight: 700,
+            marginTop: 2,
+            lineHeight: 1.3,
+          }}
+        >
+          {conflicts.map((c, i) => (
+            <div key={i}>⚠ {describeTeacherConflict(c, { withTime: true })}</div>
+          ))}
         </div>
       )}
       {rescheduleLabel && (

@@ -9,6 +9,10 @@ import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
 import {
+  collectTeacherAssignments,
+  findTeacherConflicts,
+} from "../../../utils/teacherConflicts";
+import {
   biweeklyActiveTeacher,
   getSlotTeachers,
   splitTeacherField,
@@ -277,6 +281,50 @@ export function AbsenceTimetable({
   const visibleSlots = useMemo(
     () => effectiveSlots.filter((s) => !absorbedSet.has(s.id)),
     [effectiveSlots, absorbedSet]
+  );
+
+  // ─── 講師の同時刻の重なり (下書きを含む) ─────────────────────────
+  // その日に実際に教える人 (元講師 − 欠勤 + 代行者。下書き優先) を集めて、
+  // 時間帯の重なるコマを探す。判定は utils/teacherConflicts に集約
+  // (タイムテーブルと共有)。休講・テスト期間・振替で出るコマ・合同で
+  // 吸収された側は数えない。代行ピッカーは同じ一覧から候補ごとの
+  // 「授業中 / 代行中」を出す。
+  const teacherAssignments = useMemo(() => {
+    const exclude = new Set(absorbedSet);
+    for (const id of rescheduleBySlot.keys()) exclude.add(id);
+    const timeBySlot = new Map();
+    for (const s of effectiveSlots) {
+      if (
+        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) ||
+        (isInExamPeriodForGrade && isInExamPeriodForGrade(date, s.grade))
+      ) {
+        exclude.add(s.id);
+      }
+      if (s._moved && s._time) timeBySlot.set(s.id, s._time);
+    }
+    return collectTeacherAssignments(effectiveSlots, date, {
+      subsBySlot,
+      timeBySlot,
+      excludeSlotIds: exclude,
+      biweeklyAnchors,
+      holidays,
+      examPeriods,
+    });
+  }, [
+    effectiveSlots,
+    date,
+    subsBySlot,
+    absorbedSet,
+    rescheduleBySlot,
+    isHolidayForSlot,
+    isInExamPeriodForGrade,
+    biweeklyAnchors,
+    holidays,
+    examPeriods,
+  ]);
+  const teacherConflicts = useMemo(
+    () => findTeacherConflicts(teacherAssignments),
+    [teacherAssignments]
   );
 
   // 右クリックメニュー
@@ -638,6 +686,7 @@ export function AbsenceTimetable({
           dimmed={dimmed}
           isRescheduled={!!reschedule}
           rescheduleLabel={rescheduleLabel}
+          conflicts={teacherConflicts.get(s.id) || null}
           onContextMenu={isCancelled ? undefined : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
           onClick={isCancelled ? undefined : () => handleSlotClick(s)}
@@ -666,6 +715,7 @@ export function AbsenceTimetable({
       handleSlotClick,
       isHolidayForSlot,
       isInExamPeriodForGrade,
+      teacherConflicts,
     ]
   );
 
@@ -1076,6 +1126,7 @@ export function AbsenceTimetable({
           daySlots={slots}
           allTeachers={allTeachers}
           teachers={activeTeachersFor(subPicker.slot)}
+          assignments={teacherAssignments}
           subsByTeacher={Object.fromEntries(
             subsForSlot(subPicker.slot).map((x) => [x.originalTeacher, x])
           )}

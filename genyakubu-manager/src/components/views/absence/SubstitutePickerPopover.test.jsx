@@ -82,3 +82,28 @@ describe("SubstitutePickerPopover の候補", () => {
     expect(onAssign).toHaveBeenCalledWith("野口", "山田", "requested");
   });
 });
+
+describe("SubstitutePickerPopover の「授業中 / 代行中」", () => {
+  // 候補がこのコマの時間に既に持っている仕事を候補行に出す。
+  // 選べなくはしない (警告であって禁止ではない)。
+  const OTHER = { id: 5, day: "木", time: "19:50-20:35", grade: "中2", cls: "C", subj: "数学", teacher: "奥村" };
+  const assignments = [
+    { teacher: "江本", slot: OTHER, time: OTHER.time, role: "sub", originalTeacher: "奥村" },
+    { teacher: "西岡", slot: { ...OTHER, id: 6, grade: "中1", cls: "S", subj: "社会", teacher: "西岡" }, time: OTHER.time, role: "own" },
+  ];
+  it("代行中 / 授業中 の候補にラベルを出し、それでも選べる", () => {
+    const { onAssign } = renderPicker({ assignments });
+    const ebisu = screen.getByRole("option", { name: /江本/ });
+    expect(ebisu.textContent).toContain("代行中: 中2C 数学");
+    fireEvent.click(screen.getByLabelText("全員表示"));
+    expect(screen.getByRole("option", { name: /西岡/ }).textContent).toContain("授業中: 中1S 社会");
+    fireEvent.click(ebisu);
+    expect(onAssign).toHaveBeenCalledWith("野口", "江本", "confirmed");
+  });
+  it("今入れようとしているコマ自体は「授業中」に数えない", () => {
+    renderPicker({
+      assignments: [{ teacher: "江本", slot: SLOT, time: SLOT.time, role: "own" }],
+    });
+    expect(screen.getByRole("option", { name: /江本/ }).textContent).not.toContain("授業中");
+  });
+});

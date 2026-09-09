@@ -39,6 +39,10 @@ import {
   isDayEmptiedByReschedule,
 } from "../../utils/adjustmentDisplay";
 import { RescheduleOutBanner } from "../RescheduleOutBanner";
+import {
+  collectTeacherAssignments,
+  findTeacherConflicts,
+} from "../../utils/teacherConflicts";
 import { StaffUnavailabilityPanel } from "../StaffUnavailabilityPanel";
 import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
@@ -441,6 +445,68 @@ export function ExcelGridView({
   const effectiveHolidayOffSlots = subMode.isSubMode
     ? subMode.holidayOffSlots
     : dashboardHolidayOffSlots;
+
+  // ─── 講師の同時刻の重なり (表示日) ──────────────────────────────
+  // 作成ツールと違い、本体は代行を入れた後の重なりを誰も見ていなかった
+  // (2026-09-09: 福江が 19:50 に 2 コマの代行)。その日に実際に教える人
+  // (元講師 − 欠勤 + 代行者 + 仮代行) を集めて、時間帯の重なるコマに
+  // 警告を出す。判定は utils/teacherConflicts に集約 (欠勤組み換えと共有)。
+  // セクション横断 (中学部 ↔ 高校部) で当たるので、セクションではなく
+  // ここで 1 回だけ組む。並列コマの集約 (groupParallelSlots) 前の一覧を
+  // 使い、代表に畳まれた講師も落とさない。
+  const teacherConflictMap = useMemo(() => {
+    if (!displayDate) return new Map();
+    const withAdjust = dashboardMode || subMode.isSubMode;
+    const adjIndex = buildAdjustmentIndex(
+      withAdjust ? adjustments : [],
+      displayDate,
+      { slots: rawDisplaySlots, daySchedules: withAdjust ? daySchedules : [] }
+    );
+    const daySlots = rawDisplaySlots.filter((s) => s.day === activeDay);
+    const subsBySlot = new Map();
+    for (const s of daySlots) {
+      const list = [...(effectiveSubMap.get(s.id) || [])];
+      const pending = subMode.pendingSubMap.get(s.id);
+      if (pending) {
+        const rest = list.filter(
+          (x) => x.originalTeacher !== pending.originalTeacher
+        );
+        rest.push(pending);
+        subsBySlot.set(s.id, rest);
+      } else if (list.length > 0) {
+        subsBySlot.set(s.id, list);
+      }
+    }
+    const exclude = new Set([
+      ...effectiveHolidayOffSlots,
+      ...adjIndex.rescheduleOutBySlot.keys(),
+      ...adjIndex.combineAbsorbedBySlot.keys(),
+    ]);
+    return findTeacherConflicts(
+      collectTeacherAssignments(daySlots, displayDate, {
+        subsBySlot,
+        timeBySlot: adjIndex.moveBySlot,
+        excludeSlotIds: exclude,
+        biweeklyAnchors,
+        holidays,
+        examPeriods,
+      })
+    );
+  }, [
+    displayDate,
+    dashboardMode,
+    subMode.isSubMode,
+    subMode.pendingSubMap,
+    adjustments,
+    daySchedules,
+    rawDisplaySlots,
+    activeDay,
+    effectiveSubMap,
+    effectiveHolidayOffSlots,
+    biweeklyAnchors,
+    holidays,
+    examPeriods,
+  ]);
 
   // ダッシュボード表示モードのみ: 表示日に該当する休講をヘッダで一覧表示。
   const dashboardHolidaysForDay = useMemo(() => {
@@ -1028,6 +1094,7 @@ export function ExcelGridView({
                     groupTeacherMap={groupTeacherMap}
                     dashboardMode={dashboardMode}
                     closureLabels={dashboardHolidayLabels}
+                    teacherConflicts={teacherConflictMap}
                     adjustments={dashboardMode || subMode.isSubMode ? adjustments : []}
                     daySchedules={dashboardMode || subMode.isSubMode ? daySchedules : []}
                   />
