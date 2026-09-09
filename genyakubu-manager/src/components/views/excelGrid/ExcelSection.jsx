@@ -48,6 +48,8 @@ export function ExcelSection({
   adjustments = [],
   closureLabels = [],
   daySchedules = [],
+  // slotId → 講師の同時刻の重なり (ExcelGridView で日単位に組んだもの)
+  teacherConflicts = null,
 }) {
   // 当日の保存済み合同/移動 + 特別時程の時刻読み替えを索引化
   const adjIndex = useMemo(
@@ -293,6 +295,7 @@ export function ExcelSection({
         ? dayScheduleForMove.label || "特別時程"
         : null,
       rescheduleOut,
+      teacherConflicts: teacherConflicts?.get(slot.id) || null,
       onCellClick: onCellClick
         ? (s, rect, el) => {
             // In combine mode, any cell can be clicked

@@ -78,3 +78,23 @@ describe("AbsenceSlotCard のキーボード操作", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
+
+describe("AbsenceSlotCard の講師重複", () => {
+  it("同時刻の重なりを行で出し、読み上げ名にも含める", () => {
+    renderCard({
+      subs: [{ originalTeacher: "堀上", substitute: "福江", status: "confirmed" }],
+      conflicts: [
+        {
+          teacher: "福江",
+          role: "sub",
+          other: { id: 2, grade: "中3", cls: "A", subj: "理科" },
+          otherTime: "19:50-20:35",
+          otherRole: "own",
+        },
+      ],
+    });
+    expect(screen.getByText("⚠ 重複")).toBeInTheDocument();
+    expect(screen.getByText("⚠ 福江: 中3A 理科 19:50-20:35 と重複")).toBeInTheDocument();
+    expect(screen.getByRole("button").getAttribute("aria-label")).toMatch(/講師重複 福江: 中3A 理科 と重複/);
+  });
+});

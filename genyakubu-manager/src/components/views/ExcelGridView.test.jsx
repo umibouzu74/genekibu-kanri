@@ -335,3 +335,56 @@ describe("ExcelGridView (全曜日まとめ印刷)", () => {
     expect(screen.getByText("田中")).toBeInTheDocument();
   });
 });
+
+describe("ExcelGridView (講師の同時刻の重なり)", () => {
+  // 2026-09-10 (木): 福江が 19:50 に 中2C 数学 (奥村の代行) と 中3A 理科
+  // (小見山の代行) で二重。作成ツールと違い本体は何も出していなかった。
+  const THU = "2026-09-10";
+  it("同じ代行者が同時刻に 2 コマ入ったら両方のセルに警告を出す", () => {
+    renderGrid({
+      viewDate: THU,
+      slots: [
+        slot({ id: 1, day: "木", time: "19:50-20:35", grade: "中2", cls: "C", room: "603", subj: "数学", teacher: "奥村" }),
+        slot({ id: 2, day: "木", time: "19:50-20:35", grade: "中3", cls: "A", room: "502", subj: "理科", teacher: "小見山" }),
+      ],
+      subs: [
+        { id: 1, date: THU, slotId: 1, originalTeacher: "奥村", substitute: "福江", status: "confirmed" },
+        { id: 2, date: THU, slotId: 2, originalTeacher: "小見山", substitute: "福江", status: "confirmed" },
+      ],
+    });
+    expect(screen.getByText("⚠ 福江: 中3A 理科 (代行) と重複")).toBeInTheDocument();
+    expect(screen.getByText("⚠ 福江: 中2C 数学 (代行) と重複")).toBeInTheDocument();
+  });
+
+  it("代行者が自分のコマを持っている時間に代行を入れても警告する", () => {
+    renderGrid({
+      viewDate: THU,
+      slots: [
+        slot({ id: 1, day: "木", time: "19:50-20:35", grade: "中2", cls: "C", room: "603", subj: "数学", teacher: "奥村" }),
+        slot({ id: 2, day: "木", time: "19:50-20:35", grade: "中3", cls: "SS", room: "505", subj: "理科", teacher: "滝澤" }),
+      ],
+      subs: [
+        { id: 1, date: THU, slotId: 1, originalTeacher: "奥村", substitute: "滝澤", status: "confirmed" },
+      ],
+    });
+    expect(screen.getByText("⚠ 滝澤: 中3SS 理科 と重複")).toBeInTheDocument();
+    expect(screen.getByText("⚠ 滝澤: 中2C 数学 (代行) と重複")).toBeInTheDocument();
+  });
+
+  it("時間帯が重ならない代行・欠勤で手を離れたコマは警告しない", () => {
+    renderGrid({
+      viewDate: THU,
+      slots: [
+        slot({ id: 1, day: "木", time: "19:50-20:35", grade: "中2", cls: "C", room: "603", subj: "数学", teacher: "奥村" }),
+        slot({ id: 2, day: "木", time: "20:45-21:30", grade: "中2", cls: "AB", room: "601", subj: "数学", teacher: "奥村" }),
+        slot({ id: 3, day: "木", time: "19:50-20:35", grade: "中3", cls: "A", room: "502", subj: "理科", teacher: "福江" }),
+      ],
+      subs: [
+        // 福江は 19:50 に自分の理科があるが、そちらを欠勤にしているので空く
+        { id: 1, date: THU, slotId: 1, originalTeacher: "奥村", substitute: "福江", status: "confirmed" },
+        { id: 2, date: THU, slotId: 3, originalTeacher: "福江", substitute: "", status: "requested" },
+      ],
+    });
+    expect(screen.queryByText(/と重複/)).not.toBeInTheDocument();
+  });
+});
