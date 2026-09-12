@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPeriodOrder,
+  arePeriodsSortedByTime,
   copyDay,
   detectOverlaps,
   findDay,
@@ -10,6 +12,7 @@ import {
   removeDay,
   removeSchedulesForPeriod,
   removeStaffFromSchedules,
+  sortDayPeriodsByTime,
   timeStrToMin,
   upsertDay,
 } from "./examPrepHelpers";
@@ -286,5 +289,110 @@ describe("eachDateStrInRange integration", () => {
   it("returns [] for invalid ranges", () => {
     expect(eachDateStrInRange("2026-05-14", "2026-05-08")).toEqual([]);
     expect(eachDateStrInRange("", "2026-05-08")).toEqual([]);
+  });
+});
+
+describe("applyPeriodOrder", () => {
+  it("renumbers periods 1.. in the given order and remaps assignments", () => {
+    const day = {
+      date: "2026-09-19",
+      periods: [
+        { no: 1, start: "19:00", end: "19:50" },
+        { no: 2, start: "20:00", end: "20:50" },
+        { no: 3, start: "17:30", end: "18:30" },
+      ],
+      assignments: { 伊藤: [3, 1], 奥村: [2] },
+    };
+    const next = applyPeriodOrder(day, [day.periods[2], day.periods[0], day.periods[1]]);
+    expect(next.periods).toEqual([
+      { no: 1, start: "17:30", end: "18:30" },
+      { no: 2, start: "19:00", end: "19:50" },
+      { no: 3, start: "20:00", end: "20:50" },
+    ]);
+    // 伊藤 = 旧 3 (17:30) + 旧 1 (19:00) → 新 1, 2。昇順に揃う
+    expect(next.assignments).toEqual({ 伊藤: [1, 2], 奥村: [3] });
+    expect(next.date).toBe("2026-09-19");
+    // 元の day は変更しない
+    expect(day.periods[0].no).toBe(1);
+    expect(day.assignments.伊藤).toEqual([3, 1]);
+  });
+
+  it("drops assignments to periods that are not in the new order (deletion)", () => {
+    const day = {
+      date: "2026-09-19",
+      periods: [
+        { no: 1, start: "18:00", end: "18:50" },
+        { no: 2, start: "19:00", end: "19:50" },
+      ],
+      assignments: { 伊藤: [1], 奥村: [1, 2] },
+    };
+    const next = applyPeriodOrder(day, [day.periods[1]]);
+    expect(next.periods).toEqual([{ no: 1, start: "19:00", end: "19:50" }]);
+    expect(next.assignments).toEqual({ 奥村: [1] });
+  });
+});
+
+describe("arePeriodsSortedByTime / sortDayPeriodsByTime", () => {
+  it("returns the same day object when already in start-time order", () => {
+    expect(arePeriodsSortedByTime(day58.periods)).toBe(true);
+    expect(sortDayPeriodsByTime(day58)).toBe(day58);
+  });
+
+  it("moves a later-added early period to the front and carries assignments", () => {
+    const day = {
+      date: "2026-09-19",
+      periods: [
+        { no: 1, start: "19:00", end: "19:50" },
+        { no: 2, start: "20:00", end: "20:50" },
+        { no: 3, start: "17:30", end: "18:30" },
+      ],
+      assignments: { 伊藤: [3], 奥村: [1, 2] },
+    };
+    expect(arePeriodsSortedByTime(day.periods)).toBe(false);
+    const next = sortDayPeriodsByTime(day);
+    expect(next.periods.map((p) => [p.no, p.start])).toEqual([
+      [1, "17:30"],
+      [2, "19:00"],
+      [3, "20:00"],
+    ]);
+    expect(next.assignments).toEqual({ 伊藤: [1], 奥村: [2, 3] });
+  });
+
+  it("breaks a start-time tie by end time", () => {
+    const day = {
+      date: "2026-09-19",
+      periods: [
+        { no: 1, start: "18:00", end: "19:30" },
+        { no: 2, start: "18:00", end: "18:50" },
+      ],
+      assignments: {},
+    };
+    expect(sortDayPeriodsByTime(day).periods.map((p) => p.end)).toEqual(["18:50", "19:30"]);
+  });
+
+  it("keeps periods with unreadable times at the end in their relative order", () => {
+    const day = {
+      date: "2026-09-19",
+      periods: [
+        { no: 1, start: "", end: "" },
+        { no: 2, start: "20:00", end: "20:50" },
+        { no: 3, start: "", end: "18:50" },
+        { no: 4, start: "18:00", end: "18:50" },
+      ],
+      assignments: { 伊藤: [1, 3] },
+    };
+    const next = sortDayPeriodsByTime(day);
+    expect(next.periods.map((p) => p.start)).toEqual(["18:00", "20:00", "", ""]);
+    expect(next.periods[2]).toMatchObject({ no: 3, end: "" });
+    expect(next.periods[3]).toMatchObject({ no: 4, end: "18:50" });
+    expect(next.assignments).toEqual({ 伊藤: [3, 4] });
+    // 読めない時刻だけが末尾に並んでいる状態は「並び済み」
+    expect(arePeriodsSortedByTime(next.periods)).toBe(true);
+  });
+
+  it("tolerates a day without periods", () => {
+    const day = { date: "2026-09-19", assignments: {} };
+    expect(sortDayPeriodsByTime(day)).toBe(day);
+    expect(arePeriodsSortedByTime(undefined)).toBe(true);
   });
 });

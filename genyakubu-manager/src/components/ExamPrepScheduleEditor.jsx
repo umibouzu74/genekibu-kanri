@@ -4,10 +4,12 @@ import { S, TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
 import {
+  applyPeriodOrder,
   detectOverlaps,
   findDay,
   isTimeRangeValid,
   nextPeriodNo,
+  sortDayPeriodsByTime,
   timeStrToMin,
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
@@ -31,24 +33,6 @@ function blankDay(dateStr) {
     periods: DEFAULT_PERIODS.map((p) => ({ ...p })),
     assignments: {},
   };
-}
-
-function renumberPeriods(periods) {
-  // 常に 1 始まりの連番に振り直す。assignments との整合は呼び出し側で取る。
-  return periods.map((p, i) => ({ ...p, no: i + 1 }));
-}
-
-// assignments を periods の no に合わせて再マップする（校時追加／削除／並び替え対応）。
-// oldNos -> newNos の対応を渡すと、assignments を正しく変換して返す。
-function remapAssignments(assignments, noMap) {
-  const next = {};
-  for (const [name, nos] of Object.entries(assignments || {})) {
-    const mapped = nos
-      .map((n) => noMap.get(n))
-      .filter((n) => typeof n === "number");
-    if (mapped.length > 0) next[name] = mapped;
-  }
-  return next;
 }
 
 export function ExamPrepScheduleEditor({
@@ -200,15 +184,28 @@ export function ExamPrepScheduleEditor({
       crud.deleteDay(examPeriod.id, activeDate);
       return;
     }
-    const renumbered = renumberPeriods(filtered);
-    const noMap = new Map();
-    filtered.forEach((p, i) => noMap.set(p.no, renumbered[i].no));
-    const next = {
-      ...activeDay,
-      periods: renumbered,
-      assignments: remapAssignments(activeDay.assignments, noMap),
-    };
-    crud.upsertDay(examPeriod.id, next, { successMsg: null });
+    // 連番の振り直しと出勤チェックの読み替えは applyPeriodOrder に集約
+    crud.upsertDay(examPeriod.id, applyPeriodOrder(activeDay, filtered), {
+      successMsg: null,
+    });
+  };
+
+  // 校時を開始時刻順に並べ替える (連番も振り直す)。後から足した校時に
+  // 早い時刻 (17:30-18:30 など) を入れても、手で前へ動かす操作は要らない。
+  // 入力中に行が飛ぶと編集しづらいので、時刻の onChange ではなく校時テーブル
+  // からフォーカスが外れたときに揃える (テーブル内の別の入力へ移る間は据え置き)。
+  const handleSortPeriods = () => {
+    if (!activeDay) return;
+    const sorted = sortDayPeriodsByTime(activeDay);
+    if (sorted === activeDay) return;
+    crud.upsertDay(examPeriod.id, sorted, { successMsg: null });
+    toasts.info("校時を開始時刻順に並べ替えました");
+  };
+
+  const handlePeriodTableBlur = (e) => {
+    const next = e.relatedTarget;
+    if (next && e.currentTarget.contains(next)) return;
+    handleSortPeriods();
   };
 
   const handleChangePeriodTime = (periodNo, field, value) => {
@@ -397,6 +394,7 @@ export function ExamPrepScheduleEditor({
                   校時
                 </div>
                 <table
+                  onBlur={handlePeriodTableBlur}
                   style={{
                     width: "100%",
                     borderCollapse: "collapse",
@@ -457,6 +455,11 @@ export function ExamPrepScheduleEditor({
                             <button
                               type="button"
                               onClick={() => handleDeletePeriod(p.no)}
+                              // クリックで時刻入力からフォーカスを奪わない。
+                              // 奪うと onBlur の並べ替えが先に走り、連番が変わった
+                              // 後に古い no で削除してしまう (Safari はボタンに
+                              // フォーカスが移らず relatedTarget が null になる)
+                              onMouseDown={(e) => e.preventDefault()}
                               aria-label={`${p.no} 校時を削除`}
                               style={{
                                 background: "none",
@@ -474,6 +477,10 @@ export function ExamPrepScheduleEditor({
                     })}
                   </tbody>
                 </table>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+                  校時は開始時刻順に自動で並び、番号も振り直します
+                  (出勤のチェックは校時に付いて動きます)
+                </div>
                 {periodWarnings.invalid.length > 0 && (
                   <div style={{ fontSize: 11, color: colors.danger, marginTop: 4 }}>
                     校時 {periodWarnings.invalid.join(", ")} の時刻が不正です（開始 &lt; 終了）
