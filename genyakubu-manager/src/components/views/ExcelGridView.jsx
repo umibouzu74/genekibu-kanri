@@ -29,7 +29,13 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../../utils/printStyles";
-import { openPrintWindow, writePrintDocument, yieldToBrowser } from "../../utils/printWindow";
+import {
+  openPrintWindow,
+  updatePendingProgress,
+  writePendingDocument,
+  writePrintDocument,
+  yieldToBrowser,
+} from "../../utils/printWindow";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { RescheduleInBanner } from "../RescheduleInBanner";
 import {
@@ -633,10 +639,19 @@ export function ExcelGridView({
     }
     setPrintBusy(true);
     const blocks = [];
+    // ユーザーが見ているのは popup のタブなので、進捗はそちらに出す
+    const docTitle = buildAllDaysDocTitle({ days: printableDays });
+    writePendingDocument(w, { title: docTitle, total: printableDays.length });
     try {
-      for (const d of printableDays) {
+      for (let i = 0; i < printableDays.length; i++) {
+        const d = printableDays[i];
         // 印刷準備中に popup を閉じられたら中断 (書き込み先が無い)
         if (w.closed) break;
+        updatePendingProgress(w, {
+          current: i + 1,
+          total: printableDays.length,
+          name: `${d}曜日`,
+        });
         // flushSync で同期コミット (DOM はここで確定) → 1 タスク譲って
         // ブラウザに描画の機会を渡す。rAF で待つと popup にフォーカスを
         // 奪われた元タブでは止まる (utils/printWindow.yieldToBrowser 参照)
@@ -667,14 +682,17 @@ export function ExcelGridView({
       flushSync(() => setPrintDay(null));
       setPrintBusy(false);
     }
-    if (w.closed) return;
+    if (w.closed) {
+      toasts?.info("印刷ウィンドウが閉じられたので、全曜日印刷を中断しました");
+      return;
+    }
     if (blocks.length === 0) {
       toasts?.error("印刷データを生成できませんでした。");
       w.close();
       return;
     }
     writePrintDocument(w, {
-      title: buildAllDaysDocTitle({ days: printableDays }),
+      title: docTitle,
       styles: buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false }),
       bodyHtml: buildAllDaysBodyHtml({ blocks }),
     });

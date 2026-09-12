@@ -14,7 +14,12 @@ import { S } from "../styles/common";
 // 対象月は year/month (現在表示中の月) を基準に前 1 か月〜後 4 か月を
 // チェックボックスで複数選択できる (夏期の 7-8 月連続印刷など)。
 //
-// onPrint には (選択された名前配列, 選択月 {year, month}[] 昇順) が渡る。
+// onPrint には (選択された名前配列, 選択月 {year, month}[] 昇順,
+// { tagMode }) が渡る。名前配列の順は**ダイアログに出ている順** (セクション →
+// 教科グループ → よみ順) で、チェックを入れた順ではない (配布で束ねる順を
+// 予測できるように)。同じ人が複数グループに出ても 1 回だけ。
+// tagMode は "perTeacher" (講師ごとにタグを担当コマから導出。既定) か
+// "current" (今の表示設定をそのまま全員に使う)。
 // busy true のあいだは選択 UI を fieldset disabled でロックし、フッタの
 // 「中断」ボタンだけ反応するようにする。onAbort は中断ボタン押下時の
 // コールバック (省略可、未指定時は中断ボタンを出さない)。progress は
@@ -23,6 +28,7 @@ export function BatchPrintDialog({
   partTimeStaff = [],
   fulltimeGroups = [],
   subjects = [],
+  teacherKana = {},
   year,
   month,
   onClose,
@@ -35,7 +41,7 @@ export function BatchPrintDialog({
   // セクション単位でレンダリングする。
   const sections = useMemo(() => {
     const list = [];
-    const staffGroups = groupStaffBySubject({ partTimeStaff, subjects });
+    const staffGroups = groupStaffBySubject({ partTimeStaff, subjects, teacherKana });
     if (staffGroups.length > 0) {
       list.push({ title: "バイト", groups: staffGroups });
     }
@@ -46,16 +52,25 @@ export function BatchPrintDialog({
       list.push({ title: "バイト以外の講師", groups: ft });
     }
     return list;
-  }, [partTimeStaff, subjects, fulltimeGroups]);
+  }, [partTimeStaff, subjects, fulltimeGroups, teacherKana]);
 
-  const allNames = useMemo(() => {
-    const s = new Set();
+  // ダイアログに出ている順の名前一覧 (重複なし)。印刷順もこれに従う
+  const orderedNames = useMemo(() => {
+    const seen = new Set();
+    const list = [];
     for (const sec of sections)
-      for (const g of sec.groups) for (const n of g.staff) s.add(n);
-    return s;
+      for (const g of sec.groups)
+        for (const n of g.staff) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          list.push(n);
+        }
+    return list;
   }, [sections]);
+  const allNames = useMemo(() => new Set(orderedNames), [orderedNames]);
 
   const [selected, setSelected] = useState(() => new Set());
+  const [tagMode, setTagMode] = useState("perTeacher");
 
   // 対象月: 既定は現在表示中の月のみ選択。
   const monthOptions = useMemo(
@@ -112,9 +127,9 @@ export function BatchPrintDialog({
   );
 
   const handlePrint = () => {
-    const list = [...selected];
+    const list = orderedNames.filter((n) => selected.has(n));
     if (list.length > 0 && selectedMonths.length > 0) {
-      onPrint(list, selectedMonths);
+      onPrint(list, selectedMonths, { tagMode });
     }
   };
 
@@ -194,13 +209,59 @@ export function BatchPrintDialog({
           )}
         </fieldset>
 
-        {/* タグフィルタは講師ごとに導出される (usePrintJobs)。「最初の人の
-            タグで全員が刷られる」と誤解しないよう、紙面の決まりを明示する */}
-        <div style={{ fontSize: 11, color: "#666", margin: "0 0 10px" }}>
-          テスト期間・特別イベントのタグは、サイドバーで講師を選んだときと同じく
-          講師ごとに担当コマから自動で絞ります。テスト期間・特別イベントの
-          表示 ON/OFF は現在の設定を引き継ぎます。
-        </div>
+        {/* タグの扱い。既定は講師ごとの導出 (usePrintJobs の tagMode)。
+            「全員のテスト期間をぜんぶ載せたい」ときだけ今の設定のまま刷る */}
+        <fieldset
+          style={{
+            margin: "0 0 12px",
+            padding: "6px 10px 10px",
+            border: "1px solid #ddd",
+            borderRadius: 8,
+          }}
+        >
+          <legend
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "0 6px",
+              color: "#444",
+            }}
+          >
+            テスト期間・特別イベントのタグ
+          </legend>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {[
+              {
+                value: "perTeacher",
+                label: "講師ごとに担当コマから絞る (サイドバーで講師を選んだときと同じ)",
+              },
+              { value: "current", label: "現在の表示設定のまま全員に使う" },
+            ].map((o) => (
+              <label
+                key={o.value}
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  alignItems: "center",
+                  fontSize: 13,
+                  padding: "2px 4px",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="batch-print-tag-mode"
+                  value={o.value}
+                  checked={tagMode === o.value}
+                  onChange={() => setTagMode(o.value)}
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "#666", marginTop: 6 }}>
+            テスト期間・特別イベントの表示 ON/OFF はどちらでも現在の設定を引き継ぎます。
+          </div>
+        </fieldset>
         <div
           style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
         >

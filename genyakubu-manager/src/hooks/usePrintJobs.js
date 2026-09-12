@@ -11,7 +11,13 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../utils/printStyles";
-import { openPrintWindow, writePrintDocument, yieldToBrowser } from "../utils/printWindow";
+import {
+  openPrintWindow,
+  updatePendingProgress,
+  writePendingDocument,
+  writePrintDocument,
+  yieldToBrowser,
+} from "../utils/printWindow";
 
 // ─── popup 系の印刷 (App のトップバー 🖨 と月次の 📋 まとめて印刷) ──────
 // App.jsx から移した (2026-09-04)。中身は移動前と同じ。CLAUDE.md の
@@ -120,9 +126,14 @@ export function usePrintJobs({
     batchPrintAbortRef.current?.abort();
   }, []);
 
+  // options.tagMode:
+  //   "perTeacher" (既定) = テスト期間・特別イベントのタグを講師ごとに担当
+  //                         コマから導出する (サイドバーで講師を選んだときと同じ)
+  //   "current"           = 今の表示設定 (手動トグル済みのタグ) をそのまま全員に使う
   const handleBatchPrint = useCallback(
-    async (teachers, months) => {
+    async (teachers, months, options = {}) => {
       if (!Array.isArray(teachers) || teachers.length === 0) return;
+      const tagMode = options.tagMode === "current" ? "current" : "perTeacher";
       // months 未指定 (旧呼び出し互換) は現在表示中の月のみ。
       const monthList =
         Array.isArray(months) && months.length > 0
@@ -154,6 +165,14 @@ export function usePrintJobs({
       }
       setBatchPrintBusy(true);
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
+      // ユーザーが見ているのは popup のタブなので、進捗はそちらにも出す
+      const pendingTitle = buildBatchDocTitle({
+        nameCount: teachers.length,
+        months: monthList,
+      });
+      writePendingDocument(w, { title: pendingTitle, total: jobs.length });
+      // popup を閉じられたら中断 (書き込み先が無い)。abort と同じ扱い
+      const cancelled = () => ac.signal.aborted || w.closed;
       try {
         // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
         // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)。
@@ -169,19 +188,23 @@ export function usePrintJobs({
         }
         const slides = [];
         for (let i = 0; i < jobs.length; i++) {
-          if (ac.signal.aborted) break;
+          if (cancelled()) break;
           const { teacher: t, year: jy, month: jm } = jobs[i];
-          setBatchPrintProgress({
+          const progress = {
             current: i + 1,
             total: jobs.length,
             name: monthList.length > 1 ? `${t}・${jm}月` : t,
-          });
+          };
+          setBatchPrintProgress(progress);
+          updatePendingProgress(w, progress);
           // タグフィルタは講師ごとに担当コマから導出する (サイドバーで
           // その講師を選んだときと同じ紙面にする)。setSelected だけ差し替えると
-          // 最初の講師のタグで全員を刷ってしまう
-          const visibility = visibilityForBatchTeacher
-            ? visibilityForBatchTeacher(t)
-            : eventVisibility;
+          // 最初の講師のタグで全員を刷ってしまう。「現在の設定のまま」を
+          // 選んだときだけ今の表示設定を全員に使う
+          const visibility =
+            tagMode === "perTeacher" && visibilityForBatchTeacher
+              ? visibilityForBatchTeacher(t)
+              : eventVisibility;
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);
@@ -193,7 +216,7 @@ export function usePrintJobs({
           // flushSync で確定済み (MonthView は props だけで描く純粋な
           // コンポーネント)。rAF で待ってはいけない理由は yieldToBrowser 参照
           await yieldToBrowser();
-          if (ac.signal.aborted) break;
+          if (cancelled()) break;
           const root = document.querySelector(".month-print-root");
           if (!root) continue;
           slides.push({
@@ -208,6 +231,10 @@ export function usePrintJobs({
           });
         }
 
+        if (w.closed) {
+          toasts.info("印刷ウィンドウが閉じられたので、一括印刷を中断しました");
+          return;
+        }
         if (ac.signal.aborted) {
           toasts.info("一括印刷を中断しました");
           w.close();

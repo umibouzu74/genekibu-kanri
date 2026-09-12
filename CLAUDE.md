@@ -162,11 +162,24 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
   `printWindow.yieldToBrowser` (MessageChannel。setTimeout も background では
   1 秒に 1 回へ絞られる) を使い、DOM の確定は `flushSync` に任せる。
 
-  月次のまとめて印刷は**講師ごとにタグフィルタを導出する**
+  **進捗と中断の導線は popup 側に置く** (同日)。popup を開いた瞬間に
+  ブラウザはそのタブへ切り替わるので、元のタブのダイアログに出す進捗バーや
+  中断ボタンはユーザーの目に入らない。popup を開いたら
+  `printWindow.writePendingDocument` で「準備中」画面を書き、1 枚ごとに
+  `updatePendingProgress`、終わったら `writePrintDocument` で丸ごと置き換える
+  (close 済みドキュメントへの `document.write` は暗黙に open し直して空に
+  なる)。中断は「popup のタブを閉じる」= 毎周期 `w.closed` を見て止める。
+  **新しくスナップショット連結の印刷を足すときもこの 3 段を通すこと。**
+
+  月次のまとめて印刷は**講師ごとにタグフィルタを導出する**のが既定
   (`teacherTags.visibilityForTeacher`。サイドバーで講師を選んだときの
   `App.selectTeacher` と同じ関数)。`setSelected` を差し替えるだけでは
   最初の講師のタグで全員を刷る。印刷中は `usePrintJobs.batchVisibility` を
   MonthView に渡し、localStorage の `eventVisibility` は書き換えない。
+  ダイアログのラジオ「現在の表示設定のまま」(`tagMode: "current"`) を選んだ
+  ときだけ今の設定を全員に使う。講師の並び (バイトの教科グループ) は
+  `sortTeacherNames(teacherKana)`、印刷順はダイアログに出ている順
+  (チェックを入れた順ではない)。
 
   紙面の中身は**画面に出るものをそのまま写す**のが原則 (曜日ごとの描画
   ロジックを別に書き起こさない)。スナップショットの単位はセクション欄

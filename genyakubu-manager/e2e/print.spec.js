@@ -535,8 +535,12 @@ test("月次カレンダー: まとめて印刷が background タブでも完了
   await page.getByRole("button", { name: "講師を選んでまとめて印刷" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel("奥村", { exact: true }).check();
+  // チェックは 杉原 → 奥村 の順だが、印刷順はダイアログに出ている順
+  // (よみ未設定なので名前順: 奥村 → 杉原)
   await dialog.getByLabel("杉原", { exact: true }).check();
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  // タグの扱いの既定は「講師ごとに絞る」
+  await expect(dialog.getByRole("radio", { name: /講師ごとに担当コマから絞る/ })).toBeChecked();
 
   const [popup] = await Promise.all([
     page.waitForEvent("popup"),
@@ -558,4 +562,59 @@ test("月次カレンダー: まとめて印刷が background タブでも完了
   // 元のタブは元の講師 (奥村) の月間ビューに戻っている
   await expect(page.locator(".month-print-root")).toBeVisible();
   await expect(page.locator("h1, h2").filter({ hasText: "奥村" }).first()).toBeVisible();
+});
+
+// 「現在の表示設定のまま」を選ぶと、講師ごとの導出はせず今のタグ設定を
+// 全員に使う (全員のテスト期間をぜんぶ載せて刷りたいとき)
+test("月次カレンダー: まとめて印刷で「現在の表示設定のまま」を選ぶと全員同じタグになる", async ({
+  page,
+  context,
+}) => {
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "genyakubu-exam-periods",
+      JSON.stringify([
+        {
+          id: 1,
+          name: "高松西 中間",
+          startDate: "2026-09-14",
+          endDate: "2026-09-16",
+          targetGrades: [],
+          stopsClasses: false,
+          tags: ["高松西"],
+          classExceptions: [],
+        },
+      ])
+    );
+    // 奥村を選んだときの導出値 (高松西 は除外) が保存されている状態
+    localStorage.setItem(
+      "genyakubu-event-visibility",
+      JSON.stringify({ exam: true, special: false, tagFilters: { 高松西: false } })
+    );
+  });
+
+  await page.goto("/genekibu-kanri/");
+  await page.locator(".sidebar button").filter({ hasText: /^杉原/ }).first().click();
+  await page.getByRole("button", { name: "月間", exact: true }).click();
+  // 杉原 (高松西 担当) を選んだので導出で 高松西 は ON に戻る。ここから
+  // 手動で 高松西 を OFF にした状態を作る
+  await page.getByRole("button", { name: /高松西/ }).first().click();
+
+  await page.getByRole("button", { name: "講師を選んでまとめて印刷" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  await dialog.getByLabel("杉原", { exact: true }).check();
+  await dialog.getByRole("radio", { name: /現在の表示設定のまま/ }).check();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    dialog.getByRole("button", { name: "2 名分を印刷" }).click(),
+  ]);
+  await expect(popup.locator(".batch-print-page")).toHaveCount(2, { timeout: 15_000 });
+  const metas = popup.locator(".month-print-meta");
+  await expect(metas.nth(0)).toContainText("除外タグ: 高松西");
+  await expect(metas.nth(1)).toContainText("除外タグ: 高松西");
 });

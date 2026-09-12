@@ -290,6 +290,21 @@ describe("groupStaffBySubject", () => {
     expect(unassigned.staff).toEqual(["佐藤", "山田"]);
   });
 
+  it("グループ内の並びはよみ順 (teacherKana)。よみ未設定は末尾", () => {
+    const result = groupStaffBySubject({
+      partTimeStaff: [
+        { name: "堀上", subjectIds: [1] },
+        { name: "河野", subjectIds: [1] },
+        { name: "山田", subjectIds: [1] },
+      ],
+      subjects,
+      teacherKana: { 堀上: "ほりかみ", 河野: "こうの" },
+    });
+    // localeCompare("ja") は漢字を部首・画数順に並べる (堀 < 河 にならない)。
+    // よみがあれば こうの < ほりかみ、よみの無い 山田 は末尾
+    expect(result[0].staff).toEqual(["河野", "堀上", "山田"]);
+  });
+
   it("存在しない subjectId のみを持つ staff も 未分類 に逃がす", () => {
     const result = groupStaffBySubject({
       partTimeStaff: [{ name: "山田", subjectIds: [999] }],

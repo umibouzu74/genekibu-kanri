@@ -1473,6 +1473,7 @@ export default function App() {
             partTimeStaff={partTimeStaff}
             fulltimeGroups={fulltimeGroups}
             subjects={subjects}
+            teacherKana={teacherKana}
             year={vy}
             month={vm}
             onClose={() => setBatchPrintOpen(false)}
