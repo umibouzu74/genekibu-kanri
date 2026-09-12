@@ -11,7 +11,13 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../utils/printStyles";
-import { openPrintWindow, writePrintDocument } from "../utils/printWindow";
+import {
+  openPrintWindow,
+  updatePendingProgress,
+  writePendingDocument,
+  writePrintDocument,
+  yieldToBrowser,
+} from "../utils/printWindow";
 
 // ─── popup 系の印刷 (App のトップバー 🖨 と月次の 📋 まとめて印刷) ──────
 // App.jsx から移した (2026-09-04)。中身は移動前と同じ。CLAUDE.md の
@@ -25,6 +31,9 @@ export function usePrintJobs({
   vy,
   vm,
   eventVisibility,
+  // 講師名 → その講師用の表示設定 (タグフィルタを担当コマから導出したもの)。
+  // サイドバーで講師を選んだときと同じ関数 (App.selectTeacher と共有)
+  visibilityForBatchTeacher,
   setSelected,
   setView,
   setMonthOff,
@@ -41,6 +50,10 @@ export function usePrintJobs({
     name: "",
   });
   const batchPrintAbortRef = useRef(null);
+  // 一括印刷中だけ MonthView に渡す表示設定 (講師ごとにタグフィルタを導出
+  // したもの)。null = 通常どおり eventVisibility を使う。localStorage の
+  // eventVisibility 自体は触らない (最後の講師のタグが残らないように)。
+  const [batchVisibility, setBatchVisibility] = useState(null);
 
   const handlePrint = () => {
     const el = document.getElementById("main-content");
@@ -113,9 +126,14 @@ export function usePrintJobs({
     batchPrintAbortRef.current?.abort();
   }, []);
 
+  // options.tagMode:
+  //   "perTeacher" (既定) = テスト期間・特別イベントのタグを講師ごとに担当
+  //                         コマから導出する (サイドバーで講師を選んだときと同じ)
+  //   "current"           = 今の表示設定 (手動トグル済みのタグ) をそのまま全員に使う
   const handleBatchPrint = useCallback(
-    async (teachers, months) => {
+    async (teachers, months, options = {}) => {
       if (!Array.isArray(teachers) || teachers.length === 0) return;
+      const tagMode = options.tagMode === "current" ? "current" : "perTeacher";
       // months 未指定 (旧呼び出し互換) は現在表示中の月のみ。
       const monthList =
         Array.isArray(months) && months.length > 0
@@ -139,15 +157,31 @@ export function usePrintJobs({
       const offsetOf = (y, m) =>
         (y - base.getFullYear()) * 12 + (m - 1 - base.getMonth());
       // 講師ごとに各月を連続で出す (人単位で束ねて配布できる紙順)。
+      // タグフィルタは講師ごとに担当コマから導出する (サイドバーでその講師を
+      // 選んだときと同じ紙面にする)。setSelected だけ差し替えると最初の講師の
+      // タグで全員を刷ってしまう。「現在の設定のまま」を選んだときだけ今の
+      // 表示設定を全員に使う。導出は講師 1 人につき 1 回 (月ごとに同じ)
       const jobs = [];
       for (const t of teachers) {
+        const visibility =
+          tagMode === "perTeacher" && visibilityForBatchTeacher
+            ? visibilityForBatchTeacher(t)
+            : eventVisibility;
         for (const mo of monthList) {
-          jobs.push({ teacher: t, year: mo.year, month: mo.month });
+          jobs.push({ teacher: t, year: mo.year, month: mo.month, visibility });
         }
       }
       setBatchPrintBusy(true);
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
+      // popup を閉じられたら中断 (書き込み先が無い)。abort と同じ扱い
+      const cancelled = () => ac.signal.aborted || w.closed;
       try {
+        // ユーザーが見ているのは popup のタブなので、進捗はそちらにも出す
+        // (try の中: 書き込みに失敗しても finally で busy を戻す)
+        writePendingDocument(w, {
+          title: buildBatchDocTitle({ nameCount: teachers.length, months: monthList }),
+          total: jobs.length,
+        });
         // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
         // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)。
         // デプロイ直後の古いタブでは取得に失敗しうるので、開いた popup を
@@ -162,25 +196,27 @@ export function usePrintJobs({
         }
         const slides = [];
         for (let i = 0; i < jobs.length; i++) {
-          if (ac.signal.aborted) break;
-          const { teacher: t, year: jy, month: jm } = jobs[i];
-          setBatchPrintProgress({
+          if (cancelled()) break;
+          const { teacher: t, year: jy, month: jm, visibility } = jobs[i];
+          const progress = {
             current: i + 1,
             total: jobs.length,
             name: monthList.length > 1 ? `${t}・${jm}月` : t,
-          });
+          };
+          setBatchPrintProgress(progress);
+          updatePendingProgress(w, progress);
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);
             setMonthOff(offsetOf(jy, jm));
             setView(VIEWS.MONTH);
+            setBatchVisibility(visibility);
           });
-          // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
-          // (1 frame だと concurrent rendering で間に合わないケースの保険)。
-          await new Promise((r) =>
-            requestAnimationFrame(() => requestAnimationFrame(r))
-          );
-          if (ac.signal.aborted) break;
+          // 進捗バーの描画と中断ボタンのために 1 タスクだけ譲る。DOM は
+          // flushSync で確定済み (MonthView は props だけで描く純粋な
+          // コンポーネント)。rAF で待ってはいけない理由は yieldToBrowser 参照
+          await yieldToBrowser();
+          if (cancelled()) break;
           const root = document.querySelector(".month-print-root");
           if (!root) continue;
           slides.push({
@@ -189,12 +225,16 @@ export function usePrintJobs({
               teacher: t,
               year: jy,
               month: jm,
-              visibility: eventVisibility,
+              visibility,
             }),
             monthRootHtml: root.outerHTML,
           });
         }
 
+        if (w.closed) {
+          toasts.info("印刷ウィンドウが閉じられたので、一括印刷を中断しました");
+          return;
+        }
         if (ac.signal.aborted) {
           toasts.info("一括印刷を中断しました");
           w.close();
@@ -225,12 +265,25 @@ export function usePrintJobs({
         setSelected(savedSelected);
         setView(savedView);
         setMonthOff(savedMonthOff);
+        setBatchVisibility(null);
         setBatchPrintBusy(false);
         setBatchPrintProgress({ current: 0, total: 0, name: "" });
         setBatchPrintOpen(false);
       }
     },
-    [selected, view, monthOff, vy, vm, eventVisibility, toasts, setSelected, setView, setMonthOff]
+    [
+      selected,
+      view,
+      monthOff,
+      vy,
+      vm,
+      eventVisibility,
+      visibilityForBatchTeacher,
+      toasts,
+      setSelected,
+      setView,
+      setMonthOff,
+    ]
   );
 
   return {
@@ -241,5 +294,6 @@ export function usePrintJobs({
     setBatchPrintOpen,
     batchPrintBusy,
     batchPrintProgress,
+    batchVisibility,
   };
 }

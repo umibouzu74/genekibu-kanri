@@ -11,6 +11,7 @@
 
 import { EVENT_KIND } from "../constants/eventKinds";
 import { escapeHtml } from "./escape";
+import { sortTeacherNames } from "./teacherKana";
 
 // ─── 1. 共通レイアウト ─────────────────────────────────────────────
 
@@ -240,13 +241,14 @@ function timetablePrintCss() {
 // 一括印刷ダイアログ用に、バイト (partTimeStaff) を教科ごとにグループ化する。
 // 各 staff の subjectIds から教科名を引き、所属する教科すべてに重複登録する。
 // subjectIds 未指定の staff は「未分類」グループに入れる。グループ間は
-// subjects の登場順、グループ内の staff は五十音順で並べる。該当者ゼロの
-// グループは結果から省く。
+// subjects の登場順、グループ内の staff はよみ順 (`teacherKana` =
+// 名前 → よみのマップ。CLAUDE.md「講師の並び順は『よみ』だけが頼り」。
+// よみ未設定の人は末尾) で並べる。該当者ゼロのグループは結果から省く。
 //
 // 教科グループは Map で id→{name,staff} を保持し、未分類は専用シンボル
 // キーで持つことで「未分類」という名前の subject が存在しても衝突しない。
 const UNASSIGNED_KEY = Symbol("UNASSIGNED");
-export function groupStaffBySubject({ partTimeStaff = [], subjects = [] }) {
+export function groupStaffBySubject({ partTimeStaff = [], subjects = [], teacherKana = {} }) {
   const subjectIdToName = new Map(subjects.map((s) => [s.id, s.name]));
   const groups = new Map();
   for (const s of subjects) {
@@ -275,7 +277,7 @@ export function groupStaffBySubject({ partTimeStaff = [], subjects = [] }) {
   return Array.from(groups.values())
     .map((g) => ({
       ...g,
-      staff: [...g.staff].sort((a, b) => a.localeCompare(b, "ja")),
+      staff: sortTeacherNames(g.staff, teacherKana),
     }))
     .filter((g) => g.staff.length > 0);
 }

@@ -4,6 +4,7 @@ import {
   schoolCore,
   schoolTokenMatchesTag,
   slotMatchesTag,
+  visibilityForTeacher,
 } from "./teacherTags";
 
 const slot = (over = {}) => ({
@@ -166,5 +167,33 @@ describe("deriveTagFiltersForTeacher", () => {
     expect(deriveTagFiltersForTeacher({ teacher: "", slots, tags: ["桜井"] })).toEqual({});
     expect(deriveTagFiltersForTeacher({ teacher: "小見山", slots: null, tags: ["桜井"] })).toEqual({});
     expect(deriveTagFiltersForTeacher({ teacher: "小見山", slots, tags: null })).toEqual({});
+  });
+});
+
+describe("visibilityForTeacher", () => {
+  const slots = [
+    slot({ id: 1, subj: "高松西 数学", teacher: "杉原" }),
+    slot({ id: 2, subj: "高松桜井 数学", teacher: "奥村" }),
+  ];
+  const tags = ["西", "桜井", "文化祭"];
+
+  it("表示 ON/OFF は引き継ぎ、tagFilters だけを講師の担当コマから導出する", () => {
+    const base = { exam: true, special: false, tagFilters: { 文化祭: false } };
+    expect(visibilityForTeacher({ visibility: base, teacher: "杉原", slots, tags })).toEqual({
+      exam: true,
+      special: false,
+      tagFilters: { 桜井: false },
+    });
+    expect(visibilityForTeacher({ visibility: base, teacher: "奥村", slots, tags })).toEqual({
+      exam: true,
+      special: false,
+      tagFilters: { 西: false },
+    });
+  });
+
+  it("visibility が未設定 (null) でも tagFilters だけのオブジェクトを返す", () => {
+    expect(visibilityForTeacher({ visibility: null, teacher: "杉原", slots, tags })).toEqual({
+      tagFilters: { 桜井: false },
+    });
   });
 });

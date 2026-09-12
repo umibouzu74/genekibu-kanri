@@ -22,7 +22,7 @@ import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
 import { filterSlotsByActiveTimetable } from "./utils/timetable";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
-import { deriveTagFiltersForTeacher } from "./utils/teacherTags";
+import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
@@ -459,21 +459,32 @@ export default function App() {
   // 初期値にリセットする: 学校系タグは本人の担当コマに関係するものだけ ON、
   // 授業データから判定できない自由タグは既定 ON のまま (utils/teacherTags)。
   // 手動トグルは次に講師を選択するまで有効。
+  //
+  // 講師 → その講師用の表示設定の組み立ては visibilityForTeacherName。
+  // 📋 まとめて印刷も講師ごとにこれを通す (usePrintJobs の
+  // visibilityForBatchTeacher)。片方だけ変えない
+  const visibilityForTeacherName = useCallback(
+    (t, base) =>
+      visibilityForTeacher({
+        visibility: base,
+        teacher: t,
+        slots: ttFilteredSlots,
+        tags: availableTags,
+      }),
+    [ttFilteredSlots, availableTags]
+  );
   const selectTeacher = useCallback(
     (t) => {
       setSelected(t);
       setView(VIEWS.MONTH);
       setSidebarOpen(false);
-      saveEventVisibility((p) => ({
-        ...(p || {}),
-        tagFilters: deriveTagFiltersForTeacher({
-          teacher: t,
-          slots: ttFilteredSlots,
-          tags: availableTags,
-        }),
-      }));
+      saveEventVisibility((p) => visibilityForTeacherName(t, p));
     },
-    [ttFilteredSlots, availableTags, saveEventVisibility]
+    [visibilityForTeacherName, saveEventVisibility]
+  );
+  const visibilityForBatchTeacher = useCallback(
+    (t) => visibilityForTeacherName(t, eventVisibility),
+    [visibilityForTeacherName, eventVisibility]
   );
 
   const selectView = useCallback((v) => {
@@ -661,6 +672,7 @@ export default function App() {
     setBatchPrintOpen,
     batchPrintBusy,
     batchPrintProgress,
+    batchVisibility,
   } = usePrintJobs({
     view,
     selected,
@@ -668,6 +680,7 @@ export default function App() {
     vy,
     vm,
     eventVisibility,
+    visibilityForBatchTeacher,
     setSelected,
     setView,
     setMonthOff,
@@ -1291,7 +1304,7 @@ export default function App() {
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
-              visibility={eventVisibility}
+              visibility={batchVisibility ?? eventVisibility}
               onChangeVisibility={saveEventVisibility}
               availableTags={availableTags}
             />
@@ -1460,6 +1473,7 @@ export default function App() {
             partTimeStaff={partTimeStaff}
             fulltimeGroups={fulltimeGroups}
             subjects={subjects}
+            teacherKana={teacherKana}
             year={vy}
             month={vm}
             onClose={() => setBatchPrintOpen(false)}

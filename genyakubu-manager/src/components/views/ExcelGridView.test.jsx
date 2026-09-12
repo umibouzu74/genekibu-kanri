@@ -258,13 +258,27 @@ describe("ExcelGridView (欠勤・代行の表示)", () => {
 
 describe("ExcelGridView (全曜日まとめ印刷)", () => {
   // popup の代わり。document.write された HTML を溜めて検証する。
+  // 実際のブラウザと同じく、close() 済みのドキュメントへの write は
+  // 暗黙に open し直して空にする (準備中画面 → 紙面の置き換え)。
+  // getElementById は準備中画面の進捗更新が呼ぶ (ここでは要素を持たない)
   function fakeWindow() {
-    const chunks = [];
+    let chunks = [];
+    let closedDoc = false;
     return {
       html: () => chunks.join(""),
+      closed: false,
       document: {
-        write: (s) => chunks.push(s),
-        close: () => {},
+        write: (s) => {
+          if (closedDoc) {
+            chunks = [];
+            closedDoc = false;
+          }
+          chunks.push(s);
+        },
+        close: () => {
+          closedDoc = true;
+        },
+        getElementById: () => null,
       },
       print: vi.fn(),
       close: vi.fn(),
@@ -286,10 +300,10 @@ describe("ExcelGridView (全曜日まとめ印刷)", () => {
       ],
     });
     fireEvent.click(screen.getByLabelText("全曜日をまとめて印刷"));
-    // 曜日ごとに requestAnimationFrame 2 回ぶん待ってから DOM を拾うので、
-    // popup への書き出しが済むまで待つ。
-    await waitFor(() => expect(w.html()).not.toBe(""));
+    // 先に準備中画面が書かれるので、紙面 (曜日ブロック) が書き出されるまで待つ
+    await waitFor(() => expect(w.html()).toContain('class="excel-print-day"'));
     const html = w.html();
+    expect(html).not.toContain("準備しています");
     // 月・水の 2 ブロック (火はコマが無いので出さない)
     expect(html.match(/<section class="excel-print-day">/g)).toHaveLength(2);
     // MONDAY = 2026-07-13 の週なので、月 = 07/13・水 = 07/15
@@ -313,8 +327,8 @@ describe("ExcelGridView (全曜日まとめ印刷)", () => {
       ],
     });
     fireEvent.click(screen.getByLabelText("全曜日をまとめて印刷"));
-    // 全曜日ぶんの差し替えが終わる (= popup へ書き出す) まで待つ
-    await waitFor(() => expect(w.html()).not.toBe(""));
+    // 全曜日ぶんの差し替えが終わる (= popup へ紙面を書き出す) まで待つ
+    await waitFor(() => expect(w.html()).toContain('class="excel-print-day"'));
     // viewDate (月曜) のグリッドに戻っている
     expect(screen.getByText("田中")).toBeInTheDocument();
     expect(screen.queryByText("佐藤")).not.toBeInTheDocument();

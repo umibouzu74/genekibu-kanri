@@ -2,6 +2,60 @@
 
 ## [Unreleased]
 
+### Fixed (月次の 📋 まとめて印刷が止まる / タグが最初の講師に固定される)
+
+講師別の月間スケジュールを 📋 まとめて印刷すると、開いた popup が白紙のまま
+印刷ダイアログが出ず、ダイアログの進捗も 1 枚目で止まったままになっていた。
+
+- **原因は rAF 待ち**。popup はクリック直下で先に開く (Safari / Firefox の
+  ポップアップブロック対策) ため、開いた瞬間に新しいタブへフォーカスが移って
+  元のタブが background になる。background のタブでは
+  `requestAnimationFrame` が呼ばれないので、1 枚描くごとの「2 フレーム待ち」が
+  永久に返らなかった。`utils/printWindow.yieldToBrowser` (MessageChannel で
+  1 タスクだけ譲る。setTimeout は background で 1 秒に 1 回へ絞られるので
+  使わない) に置き換えた。同じ待ち方をしていたタイムテーブルの
+  🖨 全曜日印刷 (`ExcelGridView`) も同じ直し
+- **タグは講師ごとに絞る**。まとめて印刷は `setSelected` だけ差し替えていた
+  ので、サイドバーで講師を選んだときのタグ導出 (`deriveTagFiltersForTeacher`)
+  が走らず、最初に開いていた講師のタグフィルタで全員を刷っていた。講師 →
+  表示設定の組み立てを `teacherTags.visibilityForTeacher` に集約し、
+  `App.selectTeacher` と `usePrintJobs` の両方がこれを通す。印刷中だけ
+  MonthView に講師ごとの表示設定 (`batchVisibility`) を渡し、localStorage の
+  `eventVisibility` は書き換えない (最後の講師のタグが残らない)。テスト期間・
+  特別イベントの表示 ON/OFF は現在の設定を引き継ぐ (ダイアログ上の表記は
+  下の Changed のラジオに統合)
+- e2e (`e2e/print.spec.js`) に「rAF を決して呼び返さない stub」でまとめて
+  印刷が完了し、講師ごとに「除外タグ」が違うことを見るテストを追加
+
+### Changed (まとめて印刷の使い勝手: popup に進捗・閉じたら中断・よみ順・タグの切替)
+
+上の不具合を直す途中で気付いた 4 点。
+
+- **進捗は popup 側に出す** (`printWindow.writePendingDocument` /
+  `updatePendingProgress`)。popup はクリック直下で先に開くのでブラウザは
+  即座にそのタブへ切り替わり、元のタブに残るダイアログの進捗バーと中断
+  ボタンはユーザーの目に入らなかった (白紙のタブに見えていた理由の半分)。
+  popup を開いた直後に「◯◯ の紙面を準備しています… 3 / 44 枚 (奥村)」を
+  書き込み、1 枚ごとに更新して、準備が終わったら紙面で丸ごと置き換える。
+  タイムテーブルの 🖨 全曜日印刷も同じ
+- **popup を閉じたら中断**。月次のまとめて印刷は `w.closed` を見ておらず、
+  白紙のタブを閉じても元のタブで生成が続いていた。全曜日印刷と同じく
+  毎周期見て止め、toast で「印刷ウィンドウが閉じられたので中断」と出す
+- **講師の並びはよみ順、印刷順はダイアログの順**。バイトの教科グループ
+  (`printStyles.groupStaffBySubject`) は `localeCompare("ja")` (漢字の部首・
+  画数順) で並べており、CLAUDE.md「講師の並び順は『よみ』だけが頼り」に
+  反していた。`sortTeacherNames(teacherKana)` に置き換え (よみ未設定は
+  末尾)。印刷順もチェックを入れた順ではなくダイアログに出ている順
+  (セクション → 教科グループ → よみ順) にして、配布で束ねる順を予測できる
+  ようにした
+- **タグの扱いを選べる**。既定は「講師ごとに担当コマから絞る」だが、
+  「全員のテスト期間をぜんぶ載せて刷りたい」ときのために「現在の表示設定の
+  まま全員に使う」をダイアログのラジオで選べるようにした
+  (`handleBatchPrint(teachers, months, { tagMode })`)
+- テスト: `hooks/usePrintJobs.test.jsx` (準備中画面 → 進捗 → 紙面の順、
+  閉じたら中断、中断ボタン、tagMode)、`printStyles.test.js` (よみ順)、
+  e2e (印刷順・タグの切替)
+
 ### Changed (特訓シフトの校時は開始時刻順に自動で並ぶ)
 
 特訓シフトの校時テーブルは追加した順に並ぶだけで、後から「17:30-18:30」の
