@@ -3,6 +3,7 @@ import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
+import { exportSubsCsv } from "../../utils/csv";
 import { useToasts } from "../../hooks/useToasts";
 import { useToday } from "../../hooks/useToday";
 import { matchesSubStateFilter } from "../../utils/substituteState";
@@ -265,6 +266,27 @@ export function SubstituteView({
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {tab === "list" && (
+            <button
+              type="button"
+              onClick={() => {
+                if (filtered.length === 0) {
+                  toasts.error("CSV にする代行記録がありません");
+                  return;
+                }
+                exportSubsCsv(filtered, slotMap);
+              }}
+              title="いま絞り込んで表示している代行記録を CSV で保存 (全件はデータ管理から)"
+              style={{
+                ...S.btn(false),
+                fontSize: 11,
+                background: "#fff",
+                border: "1px solid #ccc",
+              }}
+            >
+              📥 表示中を CSV ({filtered.length})
+            </button>
+          )}
           <ShareLinkButton onClick={handleShare} busy={sharing} />
           <button
             type="button"

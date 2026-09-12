@@ -85,6 +85,9 @@ export const ExcelCell = memo(function ExcelCell({
   // 講師の同時刻の重なり (utils/teacherConflicts)。代行を入れた結果
   // 同じ人が 2 か所に居るときに出す。警告であって禁止ではない
   teacherConflicts = null,
+  // 講師名クリックでその人の月間へ (閲覧モードだけ。代行モードはセル全体が
+  // クリック対象なので渡さない)
+  onSelectTeacher,
 }) {
   if (!slot) {
     // Empty droppable cell
@@ -469,7 +472,34 @@ export const ExcelCell = memo(function ExcelCell({
         >
           {(() => {
             if (teacherOverride != null) return teacherOverride;
-            if (activeBiweeklyTeacher) return `${activeBiweeklyTeacher} (隔週)`;
+            const nameBtn = (t, label = t) =>
+              onSelectTeacher && !isSubMode ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectTeacher(t);
+                  }}
+                  title={`${t} の月間スケジュールを開く`}
+                  style={{
+                    border: "none",
+                    background: "none",
+                    padding: 0,
+                    font: "inherit",
+                    color: "inherit",
+                    cursor: "pointer",
+                    textDecoration: "underline dotted",
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  {label}
+                </button>
+              ) : (
+                label
+              );
+            if (activeBiweeklyTeacher) {
+              return <>{nameBtn(activeBiweeklyTeacher)} (隔週)</>;
+            }
             // 多担任 (例: "香川·福江·川井") の slot で代行が発生している場合、
             // 取消線を originalTeacher の名前のみに絞る。それ以外の担任は
             // 通常の色で見える状態に戻す。
@@ -490,6 +520,17 @@ export const ExcelCell = memo(function ExcelCell({
                   )}
                 </Fragment>
               ));
+            }
+            if (onSelectTeacher && !isSubMode && !biweekly && teacherDecor !== "line-through") {
+              const names = getSlotTeachers(slot);
+              if (names.length > 0) {
+                return names.map((t, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && "·"}
+                    {nameBtn(t)}
+                  </Fragment>
+                ));
+              }
             }
             return formatBiweeklyTeacher(slot.teacher, slot.note);
           })()}

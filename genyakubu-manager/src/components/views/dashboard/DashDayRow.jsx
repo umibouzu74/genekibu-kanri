@@ -8,6 +8,11 @@ import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
 import { SectionColumn } from "./SectionColumn";
+import { getSubsForSlot } from "../../../data";
+import {
+  collectTeacherAssignments,
+  findTeacherConflicts,
+} from "../../../utils/teacherConflicts";
 import {
   buildAdjustmentIndex,
   collectIncomingReschedules,
@@ -30,6 +35,8 @@ export function DashDayRow({
   isToday = false,
   // 管理者だけ渡す。日付帯の右端から「この日の欠勤組み換え」を開ける
   onJumpToAbsenceFlow,
+  // 講師名クリックでその人の月間へ (講師別ビュー)
+  onSelectTeacher,
 }) {
   const sessionCountMap = useMemo(() => {
     if (!sessionCtx || !sessionCtx.displayCutoff) return null;
@@ -55,6 +62,36 @@ export function DashDayRow({
     outgoingReschedules,
     incomingReschedules.length + extraLessonsForDate.length
   );
+
+  // 講師の同時刻の重なり (代行を入れた後)。時間割モードと同じ判定
+  // (utils/teacherConflicts) を、セクション横断 (中学部 ↔ 高校部) で日単位に
+  // 1 回だけ組む。slots は休講・表示期間で絞った後の一覧
+  const teacherConflictMap = useMemo(() => {
+    if (!date || !slots || slots.length === 0) return new Map();
+    const adjIndex = buildAdjustmentIndex(adjustments, date, {
+      slots,
+      daySchedules: daySchedulesForDate,
+    });
+    const subsBySlot = new Map();
+    for (const s of slots) {
+      const list = getSubsForSlot(subs || [], s.id, date);
+      if (list.length > 0) subsBySlot.set(s.id, list);
+    }
+    const exclude = new Set([
+      ...adjIndex.rescheduleOutBySlot.keys(),
+      ...adjIndex.combineAbsorbedBySlot.keys(),
+    ]);
+    return findTeacherConflicts(
+      collectTeacherAssignments(slots, date, {
+        subsBySlot,
+        timeBySlot: adjIndex.moveBySlot,
+        excludeSlotIds: exclude,
+        biweeklyAnchors: sessionCtx?.biweeklyAnchors,
+        holidays: sessionCtx?.holidays,
+        examPeriods: sessionCtx?.examPeriods,
+      })
+    );
+  }, [date, slots, subs, adjustments, daySchedulesForDate, sessionCtx]);
 
   const fullOff = hols.some((h) => {
     const sc = h.scope || ["全部"];
@@ -317,6 +354,8 @@ export function DashDayRow({
                 date={date}
                 sessionCountMap={sessionCountMap}
                 daySchedules={daySchedulesForDate}
+                teacherConflicts={teacherConflictMap}
+                onSelectTeacher={onSelectTeacher}
               />
             );
           })}

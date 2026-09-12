@@ -83,6 +83,8 @@ export function Dashboard({
   // Cmd+K の日付ジャンプなど、外から表示日を指定して開くとき
   initDate = null,
   onConsumeInitDate,
+  // 講師名クリックでその人の月間へ
+  onSelectTeacher,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
@@ -280,6 +282,7 @@ export function Dashboard({
           extraLessons={extraLessons}
           daySchedules={daySchedules}
           dashboardMode
+          onSelectTeacher={onSelectTeacher}
         />
       ) : (
         <DashboardListView
@@ -301,6 +304,7 @@ export function Dashboard({
           todayStr={todayStr}
           adjustments={adjustments}
           onJumpToAbsenceFlow={jumpToAbsenceFlow}
+          onSelectTeacher={onSelectTeacher}
         />
       )}
     </div>

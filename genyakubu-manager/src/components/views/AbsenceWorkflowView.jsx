@@ -20,6 +20,12 @@ import {
   getAbsentSlotIds,
 } from "../../utils/absenceHelpers";
 import { getCutoffGroupLabelsWithSlots, getDayCutoffKind } from "../../utils/timetable";
+import {
+  getDaySchedulesForDate,
+  isSlotCancelledByDaySchedule,
+} from "../../utils/daySchedules";
+import { extraLessonsOnDate } from "../../utils/extraLessons";
+import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
@@ -48,6 +54,9 @@ export function AbsenceWorkflowView({
   isAdmin,
   initDate,
   onConsumeInitDate,
+  // 特別時程 (1 限カット等) と追加授業。ダッシュボードと同じ日の姿にする
+  daySchedules = [],
+  extraLessons = [],
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -143,12 +152,24 @@ export function AbsenceWorkflowView({
 
   // 対象日のコマ群。曜日だけでなく時間割の適用期間・表示期間でも絞る
   // (旧期の時間割が残っていると同じコマが 2 重・3 重に並ぶため)。
+  // 特別時程の部分休講 (1 限カット等) はダッシュボードと同じく外す
+  // (欠勤対象として出すと、休講のコマに代行を立ててしまう)
   const daySlots = useMemo(
     () =>
       sortS(
-        getAbsenceDaySlots(slots, date, dayName, { timetables, displayCutoff })
+        getAbsenceDaySlots(slots, date, dayName, { timetables, displayCutoff }).filter(
+          (s) => !isSlotCancelledByDaySchedule(s, date, daySchedules)
+        )
       ),
-    [slots, date, dayName, timetables, displayCutoff]
+    [slots, date, dayName, timetables, displayCutoff, daySchedules]
+  );
+  const daySchedulesToday = useMemo(
+    () => getDaySchedulesForDate(daySchedules, date),
+    [daySchedules, date]
+  );
+  const extraLessonsToday = useMemo(
+    () => extraLessonsOnDate(extraLessons, date),
+    [extraLessons, date]
   );
 
   // 欠勤する先生のプルダウンは「この日に担当がある人」を先頭にまとめる。
@@ -689,6 +710,41 @@ export function AbsenceWorkflowView({
           {cutoffBannerText(dayCutoffKind)}
         </div>
       )}
+
+      {/* 特別時程: 時刻の読み替え・1 限カットがある日は先に知らせる
+          (グリッドの時刻はコマの元の時刻のまま。カットされたコマは出さない) */}
+      {daySchedulesToday.length > 0 && (
+        <div
+          role="status"
+          style={{
+            background: "#efeaf8",
+            border: "1px solid #b8a8e0",
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontSize: 12,
+            color: "#4a3a8e",
+            fontWeight: 700,
+          }}
+        >
+          {daySchedulesToday.map((d) => {
+            const mapSummary = [
+              ...(d.timeMap || []).map((m) => `${m.from}→${m.to}`),
+              ...(d.cancelTimes || []).map((t) => `${t} 休講`),
+            ].join(" / ");
+            return (
+              <div key={d.id}>
+                ⏰ 特別時程 {d.label ? `「${d.label}」` : ""} ({(d.targetGrades || []).join("・")})
+                {mapSummary ? `: ${mapSummary}` : ""}
+                <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                  — 休講のコマは下のグリッドに出しません。時刻は元の時刻で並んでいます
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* 追加授業: この日の担当を確かめる場なので出す (代行はここでは登録しない) */}
+      <ExtraLessonBanner lessons={extraLessonsToday} />
 
       {/* Timetable grid */}
       <AbsenceTimetable

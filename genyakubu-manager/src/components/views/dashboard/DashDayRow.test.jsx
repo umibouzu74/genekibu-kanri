@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // ダッシュボード日別行の振替表示: 他日から来るコマ (休講日でも出す) と
 // 他日へ出ていくコマ (「振」バッジ)。
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DashDayRow } from "./DashDayRow";
 
 afterEach(cleanup);
@@ -112,5 +112,35 @@ describe("DashDayRow の振替表示", () => {
       sessionCtx: { allSlots: [SLOT, stays] },
     });
     expect(screen.queryByText(/振替済み/)).toBeNull();
+  });
+});
+
+// 日別モードでも講師の同時刻の重なりを出す (時間割モードにしか無かった)。
+// 判定は utils/teacherConflicts、索引はセクション横断で日単位に組む
+describe("DashDayRow の講師重複と講師名クリック", () => {
+  const A = { ...SLOT, id: 11, day: "金", time: "19:50-20:35", grade: "中2", cls: "C", subj: "数学", teacher: "奥村" };
+  const B = { ...SLOT, id: 12, day: "金", time: "19:50-20:35", grade: "中3", cls: "A", subj: "理科", teacher: "小見山" };
+  const SUBS = [
+    { id: 1, date: FRI, slotId: 11, originalTeacher: "奥村", substitute: "福江", status: "confirmed" },
+    { id: 2, date: FRI, slotId: 12, originalTeacher: "小見山", substitute: "福江", status: "confirmed" },
+  ];
+
+  it("代行を入れた結果同じ人が 2 か所に居れば ⚠ の行を出す (中学部の 2 コマ)", () => {
+    renderRow({ slots: [A, B], subs: SUBS, adjustments: [], sessionCtx: { allSlots: [A, B] } });
+    expect(screen.getByText("⚠ 福江: 中3A 理科 (代行) と重複")).toBeTruthy();
+    expect(screen.getByText("⚠ 福江: 中2C 数学 (代行) と重複")).toBeTruthy();
+  });
+
+  it("重なりが無ければ何も出さない", () => {
+    renderRow({ slots: [A, B], subs: [SUBS[0]], adjustments: [], sessionCtx: { allSlots: [A, B] } });
+    expect(screen.queryByText(/と重複/)).toBeNull();
+  });
+
+  it("講師名をクリックするとその講師を選べる (複数講師は 1 人ずつ)", () => {
+    const onSelectTeacher = vi.fn();
+    const P = { ...SLOT, id: 13, day: "金", time: "18:30-20:00", grade: "中1-3", cls: "", subj: "プレップ", teacher: "香川·福江" };
+    renderRow({ slots: [P], adjustments: [], sessionCtx: { allSlots: [P] }, onSelectTeacher });
+    fireEvent.click(screen.getByRole("button", { name: "福江" }));
+    expect(onSelectTeacher).toHaveBeenCalledWith("福江");
   });
 });

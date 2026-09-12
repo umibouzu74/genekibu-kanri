@@ -22,6 +22,41 @@ import {
   describeRescheduleTarget,
 } from "../../../utils/adjustmentDisplay";
 import { colors } from "../../../styles/tokens";
+import { describeTeacherConflict } from "../../../utils/teacherConflicts";
+
+// 講師名をクリックできる形で出す (onSelectTeacher があるとき)。"香川·福江" の
+// ような複数講師は 1 人ずつのボタンにする
+function TeacherNames({ names, onSelectTeacher, style }) {
+  const list = (names || []).filter(Boolean);
+  if (list.length === 0) return null;
+  if (!onSelectTeacher) return <span style={style}>{list.join("·")}</span>;
+  return (
+    <span style={style}>
+      {list.map((t, i) => (
+        <span key={`${t}-${i}`}>
+          {i > 0 && "·"}
+          <button
+            type="button"
+            onClick={() => onSelectTeacher(t)}
+            title={`${t} の月間スケジュールを開く`}
+            style={{
+              border: "none",
+              background: "none",
+              padding: 0,
+              font: "inherit",
+              color: "inherit",
+              cursor: "pointer",
+              textDecoration: "underline dotted",
+              textUnderlineOffset: 3,
+            }}
+          >
+            {t}
+          </button>
+        </span>
+      ))}
+    </span>
+  );
+}
 
 // 状態 (pending / nosub / requested / confirmed) → 表示メタ。
 const SUB_STATE_META = {
@@ -43,6 +78,9 @@ export function SectionColumn({
   date,
   sessionCountMap,
   daySchedules = [],
+  // slotId → 講師の同時刻の重なり (DashDayRow で日単位に組んだもの)
+  teacherConflicts = null,
+  onSelectTeacher,
 }) {
   // この日の合同・移動・特別時程情報を索引化 (共通ヘルパを使用)
   const {
@@ -192,6 +230,7 @@ export function SectionColumn({
                     const moveTarget = moveBySlot.get(s.id);
                     // 他日へ振り替えたコマ = この日は実施しない。
                     const rescheduledOut = rescheduleOutBySlot.get(s.id) || null;
+                    const conflicts = teacherConflicts?.get(s.id) || null;
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
@@ -486,13 +525,33 @@ export function SectionColumn({
                               </span>
                             </span>
                           ) : s.teacher ? (
-                            s.teacher
+                            <TeacherNames
+                              names={getSlotTeachers(s)}
+                              onSelectTeacher={onSelectTeacher}
+                            />
                           ) : (
                             <span style={{ color: colors.danger, fontSize: 14, fontStyle: "italic" }}>
                               未割当
                             </span>
                           )}
                         </div>
+                        {/* 講師の同時刻の重なり: 時間割モードと同じ 1 行を出す
+                            (tooltip だけにしない) */}
+                        {conflicts && conflicts.length > 0 && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: "#c03030",
+                              marginTop: 3,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {conflicts.map((c, ci) => (
+                              <div key={ci}>⚠ {describeTeacherConflict(c)}</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

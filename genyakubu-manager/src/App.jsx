@@ -947,10 +947,11 @@ export default function App() {
               isAdmin={isAdmin}
               initDate={dashInitDate}
               onConsumeInitDate={() => setDashInitDate(null)}
+              onSelectTeacher={selectTeacher}
             />
           )}
           {view === VIEWS.ALL && !selected && (
-            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
+            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
           )}
           {view === VIEWS.COMPARE && !selected && (
             <CompareView
@@ -958,6 +959,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               subjects={subjects}
               teacherKana={teacherKana}
+              onSelectTeacher={selectTeacher}
             />
           )}
           {view === VIEWS.MASTER && !selected && (
@@ -1240,6 +1242,8 @@ export default function App() {
               isAdmin={isAdmin}
               initDate={absenceFlowInitDate}
               onConsumeInitDate={() => setAbsenceFlowInitDate(null)}
+              daySchedules={daySchedules}
+              extraLessons={extraLessons}
             />
           )}
           {view === VIEWS.STAFF && !selected && (

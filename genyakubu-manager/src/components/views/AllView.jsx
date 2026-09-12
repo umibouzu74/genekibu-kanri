@@ -2,8 +2,12 @@ import { useMemo } from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "../../data";
 import { colors } from "../../styles/tokens";
 import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
+import { compareTeacherNames } from "../../utils/teacherKana";
 
-export function AllView({ slots, onSelectTeacher }) {
+export function AllView({ slots, onSelectTeacher, teacherKana = {} }) {
+  // 主たる並びはコマ数の多い順。同点だけよみ順で割る (同じ 6 コマの講師が
+  // 登録順に並んで、毎回順番が変わったように見えるのを防ぐ)
+  const byKana = useMemo(() => compareTeacherNames(teacherKana), [teacherKana]);
   const teachers = useMemo(() => {
     const tSet = new Set();
     for (const s of slots) for (const t of getSlotTeachers(s)) tSet.add(t);
@@ -19,8 +23,8 @@ export function AllView({ slots, onSelectTeacher }) {
         });
         return { name: t, byDay, byDayTip, total: weightedSlotCount(sl) };
       })
-      .sort((a, b) => b.total - a.total);
-  }, [slots]);
+      .sort((a, b) => b.total - a.total || byKana(a.name, b.name));
+  }, [slots, byKana]);
 
   return (
     <div
