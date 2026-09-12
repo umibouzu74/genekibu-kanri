@@ -29,7 +29,7 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../../utils/printStyles";
-import { openPrintWindow, writePrintDocument } from "../../utils/printWindow";
+import { openPrintWindow, writePrintDocument, yieldToBrowser } from "../../utils/printWindow";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { RescheduleInBanner } from "../RescheduleInBanner";
 import {
@@ -637,12 +637,11 @@ export function ExcelGridView({
       for (const d of printableDays) {
         // 印刷準備中に popup を閉じられたら中断 (書き込み先が無い)
         if (w.closed) break;
-        // flushSync で同期コミット → 2 フレーム待って DOM 反映を確実にする
-        // (handleBatchPrint と同じ待ち方)。
+        // flushSync で同期コミット (DOM はここで確定) → 1 タスク譲って
+        // ブラウザに描画の機会を渡す。rAF で待つと popup にフォーカスを
+        // 奪われた元タブでは止まる (utils/printWindow.yieldToBrowser 参照)
         flushSync(() => setPrintDay(d));
-        await new Promise((r) =>
-          requestAnimationFrame(() => requestAnimationFrame(r))
-        );
+        await yieldToBrowser();
         const root = rootRef.current;
         const body = root?.querySelector(".excel-print-day-body");
         if (!body) continue;

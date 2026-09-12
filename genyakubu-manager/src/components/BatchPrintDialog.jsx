@@ -194,6 +194,13 @@ export function BatchPrintDialog({
           )}
         </fieldset>
 
+        {/* タグフィルタは講師ごとに導出される (usePrintJobs)。「最初の人の
+            タグで全員が刷られる」と誤解しないよう、紙面の決まりを明示する */}
+        <div style={{ fontSize: 11, color: "#666", margin: "0 0 10px" }}>
+          テスト期間・特別イベントのタグは、サイドバーで講師を選んだときと同じく
+          講師ごとに担当コマから自動で絞ります。テスト期間・特別イベントの
+          表示 ON/OFF は現在の設定を引き継ぎます。
+        </div>
         <div
           style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
         >

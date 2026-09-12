@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed (月次の 📋 まとめて印刷が止まる / タグが最初の講師に固定される)
+
+講師別の月間スケジュールを 📋 まとめて印刷すると、開いた popup が白紙のまま
+印刷ダイアログが出ず、ダイアログの進捗も 1 枚目で止まったままになっていた。
+
+- **原因は rAF 待ち**。popup はクリック直下で先に開く (Safari / Firefox の
+  ポップアップブロック対策) ため、開いた瞬間に新しいタブへフォーカスが移って
+  元のタブが background になる。background のタブでは
+  `requestAnimationFrame` が呼ばれないので、1 枚描くごとの「2 フレーム待ち」が
+  永久に返らなかった。`utils/printWindow.yieldToBrowser` (MessageChannel で
+  1 タスクだけ譲る。setTimeout は background で 1 秒に 1 回へ絞られるので
+  使わない) に置き換えた。同じ待ち方をしていたタイムテーブルの
+  🖨 全曜日印刷 (`ExcelGridView`) も同じ直し
+- **タグは講師ごとに絞る**。まとめて印刷は `setSelected` だけ差し替えていた
+  ので、サイドバーで講師を選んだときのタグ導出 (`deriveTagFiltersForTeacher`)
+  が走らず、最初に開いていた講師のタグフィルタで全員を刷っていた。講師 →
+  表示設定の組み立てを `teacherTags.visibilityForTeacher` に集約し、
+  `App.selectTeacher` と `usePrintJobs` の両方がこれを通す。印刷中だけ
+  MonthView に講師ごとの表示設定 (`batchVisibility`) を渡し、localStorage の
+  `eventVisibility` は書き換えない (最後の講師のタグが残らない)。テスト期間・
+  特別イベントの表示 ON/OFF は現在の設定を引き継ぐ。ダイアログにもこの
+  決まりを 1 行で明示した
+- e2e (`e2e/print.spec.js`) に「rAF を決して呼び返さない stub」でまとめて
+  印刷が完了し、講師ごとに「除外タグ」が違うことを見るテストを追加
+
 ### Changed (特訓シフトの校時は開始時刻順に自動で並ぶ)
 
 特訓シフトの校時テーブルは追加した順に並ぶだけで、後から「17:30-18:30」の

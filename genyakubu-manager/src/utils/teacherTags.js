@@ -79,3 +79,17 @@ export function deriveTagFiltersForTeacher({ teacher, slots, tags }) {
   }
   return filters;
 }
+
+// 講師の個人スケジュールを開くときの表示設定 (eventVisibility) を組み立てる。
+// テスト期間 / 特別イベントの表示 ON/OFF は現在の設定を引き継ぎ、タグ
+// フィルタだけをその講師の担当コマから導出した初期値に置き換える。
+// サイドバーで講師を選んだとき (App.selectTeacher) と、📋 まとめて印刷で
+// 講師を 1 人ずつ差し替えて描くとき (usePrintJobs) の両方がこれを通す —
+// 片方だけ書くと、まとめて印刷が最初の講師のタグで全員を刷る
+// (2026-09-12 の指摘) ように食い違う。
+export function visibilityForTeacher({ visibility, teacher, slots, tags }) {
+  return {
+    ...(visibility || {}),
+    tagFilters: deriveTagFiltersForTeacher({ teacher, slots, tags }),
+  };
+}

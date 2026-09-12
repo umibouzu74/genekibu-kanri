@@ -146,7 +146,7 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
 
   この popup 系統には、単発の `handlePrint` の他に**「対象を差し替えながら
   DOM をスナップショットして 1 ジョブに連結する」派生**が 2 つある。どちらも
-  `flushSync` で描画を確定 → `requestAnimationFrame` 2 回待ち → `outerHTML`
+  `flushSync` で描画を確定 → `yieldToBrowser` で 1 タスク譲る → `outerHTML`
   を取る、という同じ手順:
   - **月次の 📋 まとめて印刷** (`handleBatchPrint`): 講師 × 月を差し替え
   - **タイムテーブルの 🖨 全曜日** (`ExcelGridView` の `handlePrintAllDays`):
@@ -154,6 +154,19 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
     改ページ。ボタンが App.jsx ではなく曜日タブの隣にあるのは、グリッドを
     出しているか / どの曜日かが ExcelGridView の内部状態だから。代行モード中
     (表示が代行日の 1 日に固定される) は無効化する
+
+  **描画の待ちに `requestAnimationFrame` を使ってはいけない** (2026-09-12)。
+  popup をクリック直下で先に開くと新しいタブへフォーカスが移り、元のタブは
+  background になる。background のタブでは rAF が呼ばれないので 1 枚目で
+  永久に止まる (まとめて印刷が白紙のまま出なかった原因)。1 枚ごとの待ちは
+  `printWindow.yieldToBrowser` (MessageChannel。setTimeout も background では
+  1 秒に 1 回へ絞られる) を使い、DOM の確定は `flushSync` に任せる。
+
+  月次のまとめて印刷は**講師ごとにタグフィルタを導出する**
+  (`teacherTags.visibilityForTeacher`。サイドバーで講師を選んだときの
+  `App.selectTeacher` と同じ関数)。`setSelected` を差し替えるだけでは
+  最初の講師のタグで全員を刷る。印刷中は `usePrintJobs.batchVisibility` を
+  MonthView に渡し、localStorage の `eventVisibility` は書き換えない。
 
   紙面の中身は**画面に出るものをそのまま写す**のが原則 (曜日ごとの描画
   ロジックを別に書き起こさない)。スナップショットの単位はセクション欄

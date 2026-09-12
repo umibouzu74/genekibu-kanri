@@ -11,7 +11,7 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../utils/printStyles";
-import { openPrintWindow, writePrintDocument } from "../utils/printWindow";
+import { openPrintWindow, writePrintDocument, yieldToBrowser } from "../utils/printWindow";
 
 // ─── popup 系の印刷 (App のトップバー 🖨 と月次の 📋 まとめて印刷) ──────
 // App.jsx から移した (2026-09-04)。中身は移動前と同じ。CLAUDE.md の
@@ -25,6 +25,9 @@ export function usePrintJobs({
   vy,
   vm,
   eventVisibility,
+  // 講師名 → その講師用の表示設定 (タグフィルタを担当コマから導出したもの)。
+  // サイドバーで講師を選んだときと同じ関数 (App.selectTeacher と共有)
+  visibilityForBatchTeacher,
   setSelected,
   setView,
   setMonthOff,
@@ -41,6 +44,10 @@ export function usePrintJobs({
     name: "",
   });
   const batchPrintAbortRef = useRef(null);
+  // 一括印刷中だけ MonthView に渡す表示設定 (講師ごとにタグフィルタを導出
+  // したもの)。null = 通常どおり eventVisibility を使う。localStorage の
+  // eventVisibility 自体は触らない (最後の講師のタグが残らないように)。
+  const [batchVisibility, setBatchVisibility] = useState(null);
 
   const handlePrint = () => {
     const el = document.getElementById("main-content");
@@ -169,17 +176,23 @@ export function usePrintJobs({
             total: jobs.length,
             name: monthList.length > 1 ? `${t}・${jm}月` : t,
           });
+          // タグフィルタは講師ごとに担当コマから導出する (サイドバーで
+          // その講師を選んだときと同じ紙面にする)。setSelected だけ差し替えると
+          // 最初の講師のタグで全員を刷ってしまう
+          const visibility = visibilityForBatchTeacher
+            ? visibilityForBatchTeacher(t)
+            : eventVisibility;
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);
             setMonthOff(offsetOf(jy, jm));
             setView(VIEWS.MONTH);
+            setBatchVisibility(visibility);
           });
-          // useMemo の再評価が DOM へ反映されるまで 2 フレーム待つ
-          // (1 frame だと concurrent rendering で間に合わないケースの保険)。
-          await new Promise((r) =>
-            requestAnimationFrame(() => requestAnimationFrame(r))
-          );
+          // 進捗バーの描画と中断ボタンのために 1 タスクだけ譲る。DOM は
+          // flushSync で確定済み (MonthView は props だけで描く純粋な
+          // コンポーネント)。rAF で待ってはいけない理由は yieldToBrowser 参照
+          await yieldToBrowser();
           if (ac.signal.aborted) break;
           const root = document.querySelector(".month-print-root");
           if (!root) continue;
@@ -189,7 +202,7 @@ export function usePrintJobs({
               teacher: t,
               year: jy,
               month: jm,
-              visibility: eventVisibility,
+              visibility,
             }),
             monthRootHtml: root.outerHTML,
           });
@@ -225,12 +238,25 @@ export function usePrintJobs({
         setSelected(savedSelected);
         setView(savedView);
         setMonthOff(savedMonthOff);
+        setBatchVisibility(null);
         setBatchPrintBusy(false);
         setBatchPrintProgress({ current: 0, total: 0, name: "" });
         setBatchPrintOpen(false);
       }
     },
-    [selected, view, monthOff, vy, vm, eventVisibility, toasts, setSelected, setView, setMonthOff]
+    [
+      selected,
+      view,
+      monthOff,
+      vy,
+      vm,
+      eventVisibility,
+      visibilityForBatchTeacher,
+      toasts,
+      setSelected,
+      setView,
+      setMonthOff,
+    ]
   );
 
   return {
@@ -241,5 +267,6 @@ export function usePrintJobs({
     setBatchPrintOpen,
     batchPrintBusy,
     batchPrintProgress,
+    batchVisibility,
   };
 }
