@@ -29,13 +29,8 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../../utils/printStyles";
-import {
-  openPrintWindow,
-  updatePendingProgress,
-  writePendingDocument,
-  writePrintDocument,
-  yieldToBrowser,
-} from "../../utils/printWindow";
+import { openPrintWindow } from "../../utils/printWindow";
+import { runSnapshotPrint } from "../../utils/snapshotPrint";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { RescheduleInBanner } from "../RescheduleInBanner";
 import {
@@ -638,66 +633,52 @@ export function ExcelGridView({
       return;
     }
     setPrintBusy(true);
-    const blocks = [];
-    const docTitle = buildAllDaysDocTitle({ days: printableDays });
     try {
-      // ユーザーが見ているのは popup のタブなので、進捗はそちらに出す
-      // (try の中: 書き込みに失敗しても finally で busy を戻す)
-      writePendingDocument(w, { title: docTitle, total: printableDays.length });
-      for (let i = 0; i < printableDays.length; i++) {
-        const d = printableDays[i];
-        // 印刷準備中に popup を閉じられたら中断 (書き込み先が無い)
-        if (w.closed) break;
-        updatePendingProgress(w, {
-          current: i + 1,
-          total: printableDays.length,
-          name: `${d}曜日`,
-        });
-        // flushSync で同期コミット (DOM はここで確定) → 1 タスク譲って
-        // ブラウザに描画の機会を渡す。rAF で待つと popup にフォーカスを
-        // 奪われた元タブでは止まる (utils/printWindow.yieldToBrowser 参照)
-        flushSync(() => setPrintDay(d));
-        await yieldToBrowser();
-        if (w.closed) break;
-        const root = rootRef.current;
-        const body = root?.querySelector(".excel-print-day-body");
-        if (!body) continue;
-        // 日付固有のバナー (休講 / 特別時程) はグリッドの外にあるので拾う。
-        const notes = Array.from(
-          root.querySelectorAll(".excel-print-day-note")
-        )
-          .map((el) => el.outerHTML)
-          .join("");
-        const dateStr = weekDates.get(d) || "";
-        blocks.push({
-          html: injectTimetableHeaders(`${notes}${body.outerHTML}`, {
-            day: d,
-            dateText: dateStr ? formatPrintDate(dateStr, d) : "",
-          }),
-        });
+      // 準備中画面・進捗・中断 (popup を閉じる)・最終書き込みは共通ドライバ。
+      // ここは「曜日を差し替えて描く」と「セクション欄 + 日付固有のバナーを
+      // 撮る」だけ (月次のまとめて印刷と同じ手順)
+      const { status } = await runSnapshotPrint(w, {
+        title: buildAllDaysDocTitle({ days: printableDays }),
+        styles: buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false }),
+        items: printableDays,
+        progressName: (d) => `${d}曜日`,
+        // flushSync で同期コミット (DOM はここで確定)
+        render: (d) => flushSync(() => setPrintDay(d)),
+        capture: (d) => {
+          const root = rootRef.current;
+          const body = root?.querySelector(".excel-print-day-body");
+          if (!body) return null;
+          // 日付固有のバナー (休講 / 特別時程) はグリッドの外にあるので拾う。
+          const notes = Array.from(
+            root.querySelectorAll(".excel-print-day-note")
+          )
+            .map((el) => el.outerHTML)
+            .join("");
+          const dateStr = weekDates.get(d) || "";
+          return {
+            html: injectTimetableHeaders(`${notes}${body.outerHTML}`, {
+              day: d,
+              dateText: dateStr ? formatPrintDate(dateStr, d) : "",
+            }),
+          };
+        },
+        buildBody: (blocks) => buildAllDaysBodyHtml({ blocks }),
+      });
+      if (status === "closed") {
+        toasts?.info("印刷ウィンドウが閉じられたので、全曜日印刷を中断しました");
+      } else if (status === "empty") {
+        toasts?.error("印刷データを生成できませんでした。");
       }
     } catch (e) {
       // スナップショット中に落ちても空 popup を残さない
       console.error("全曜日印刷に失敗:", e);
+      if (!w.closed) w.close();
+      toasts?.error("印刷データを生成できませんでした。");
     } finally {
       // 画面を元の曜日に戻す (途中で抜けても差し替えが残らないように)
       flushSync(() => setPrintDay(null));
       setPrintBusy(false);
     }
-    if (w.closed) {
-      toasts?.info("印刷ウィンドウが閉じられたので、全曜日印刷を中断しました");
-      return;
-    }
-    if (blocks.length === 0) {
-      toasts?.error("印刷データを生成できませんでした。");
-      w.close();
-      return;
-    }
-    writePrintDocument(w, {
-      title: docTitle,
-      styles: buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false }),
-      bodyHtml: buildAllDaysBodyHtml({ blocks }),
-    });
   }, [printableDays, weekDates, toasts]);
 
   return (

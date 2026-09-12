@@ -11,19 +11,15 @@ import {
   formatPrintDate,
   injectTimetableHeaders,
 } from "../utils/printStyles";
-import {
-  openPrintWindow,
-  updatePendingProgress,
-  writePendingDocument,
-  writePrintDocument,
-  yieldToBrowser,
-} from "../utils/printWindow";
+import { openPrintWindow, writePrintDocument } from "../utils/printWindow";
+import { runSnapshotPrint } from "../utils/snapshotPrint";
 
 // ─── popup 系の印刷 (App のトップバー 🖨 と月次の 📋 まとめて印刷) ──────
-// App.jsx から移した (2026-09-04)。中身は移動前と同じ。CLAUDE.md の
-// 「印刷システムの二系統」の popup 側で、#main-content の innerHTML を
-// コピーしてビュー別のヘッダを注入する。一括印刷は selected / monthOff を
-// 差し替えながら flushSync で描画 → outerHTML を集めて 1 ジョブにする。
+// App.jsx から移した (2026-09-04)。CLAUDE.md の「印刷システムの二系統」の
+// popup 側で、#main-content の innerHTML をコピーしてビュー別のヘッダを
+// 注入する。一括印刷は selected / monthOff を差し替えながら flushSync で
+// 描画 → outerHTML を集めて 1 ジョブにする (ループ本体は
+// utils/snapshotPrint.runSnapshotPrint。全曜日印刷と共有)。
 export function usePrintJobs({
   view,
   selected,
@@ -173,15 +169,7 @@ export function usePrintJobs({
       }
       setBatchPrintBusy(true);
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
-      // popup を閉じられたら中断 (書き込み先が無い)。abort と同じ扱い
-      const cancelled = () => ac.signal.aborted || w.closed;
       try {
-        // ユーザーが見ているのは popup のタブなので、進捗はそちらにも出す
-        // (try の中: 書き込みに失敗しても finally で busy を戻す)
-        writePendingDocument(w, {
-          title: buildBatchDocTitle({ nameCount: teachers.length, months: monthList }),
-          total: jobs.length,
-        });
         // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
         // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)。
         // デプロイ直後の古いタブでは取得に失敗しうるので、開いた popup を
@@ -194,71 +182,54 @@ export function usePrintJobs({
           toasts.error("アプリが更新されています。再読込してからもう一度お試しください。");
           return;
         }
-        const slides = [];
-        for (let i = 0; i < jobs.length; i++) {
-          if (cancelled()) break;
-          const { teacher: t, year: jy, month: jm, visibility } = jobs[i];
-          const progress = {
-            current: i + 1,
-            total: jobs.length,
-            name: monthList.length > 1 ? `${t}・${jm}月` : t,
-          };
-          setBatchPrintProgress(progress);
-          updatePendingProgress(w, progress);
+        // 準備中画面・進捗・中断 (popup を閉じる / 中断ボタン)・最終書き込みは
+        // 共通ドライバ。ここは「講師 × 月を描く」と「月次の DOM を撮る」だけ
+        const { status } = await runSnapshotPrint(w, {
+          title: buildBatchDocTitle({ nameCount: teachers.length, months: monthList }),
+          styles: buildPrintStyles({ hasTimetableGrid: false, hasMonthView: true }),
+          items: jobs,
+          progressName: ({ teacher: t, month: jm }) =>
+            monthList.length > 1 ? `${t}・${jm}月` : t,
+          onProgress: setBatchPrintProgress,
+          isAborted: () => ac.signal.aborted,
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
-          flushSync(() => {
-            setSelected(t);
-            setMonthOff(offsetOf(jy, jm));
-            setView(VIEWS.MONTH);
-            setBatchVisibility(visibility);
-          });
-          // 進捗バーの描画と中断ボタンのために 1 タスクだけ譲る。DOM は
-          // flushSync で確定済み (MonthView は props だけで描く純粋な
-          // コンポーネント)。rAF で待ってはいけない理由は yieldToBrowser 参照
-          await yieldToBrowser();
-          if (cancelled()) break;
-          const root = document.querySelector(".month-print-root");
-          if (!root) continue;
-          slides.push({
-            teacher: t,
-            headerHtml: buildMonthHeaderHtml({
+          // MonthView は props だけで描く純粋なコンポーネントなので、これで確定
+          render: ({ teacher: t, year: jy, month: jm, visibility }) => {
+            flushSync(() => {
+              setSelected(t);
+              setMonthOff(offsetOf(jy, jm));
+              setView(VIEWS.MONTH);
+              setBatchVisibility(visibility);
+            });
+          },
+          capture: ({ teacher: t, year: jy, month: jm, visibility }) => {
+            const root = document.querySelector(".month-print-root");
+            if (!root) return null;
+            return {
               teacher: t,
-              year: jy,
-              month: jm,
-              visibility,
+              headerHtml: buildMonthHeaderHtml({
+                teacher: t,
+                year: jy,
+                month: jm,
+                visibility,
+              }),
+              monthRootHtml: root.outerHTML,
+            };
+          },
+          buildBody: (slides) => buildBatchPrintBodyHtml({ slides }),
+          docTitle: (slides) =>
+            buildBatchDocTitle({
+              nameCount: new Set(slides.map((s) => s.teacher)).size,
+              months: monthList,
             }),
-            monthRootHtml: root.outerHTML,
-          });
-        }
-
-        if (w.closed) {
+        });
+        if (status === "closed") {
           toasts.info("印刷ウィンドウが閉じられたので、一括印刷を中断しました");
-          return;
-        }
-        if (ac.signal.aborted) {
+        } else if (status === "aborted") {
           toasts.info("一括印刷を中断しました");
-          w.close();
-          return;
-        }
-
-        if (slides.length === 0) {
+        } else if (status === "empty") {
           toasts.error("印刷データを生成できませんでした。");
-          w.close();
-          return;
         }
-
-        const printStyles = buildPrintStyles({
-          hasTimetableGrid: false,
-          hasMonthView: true,
-        });
-        const bodyHtml = buildBatchPrintBodyHtml({ slides });
-        const nameCount = new Set(slides.map((s) => s.teacher)).size;
-        const docTitle = buildBatchDocTitle({ nameCount, months: monthList });
-        writePrintDocument(w, {
-          title: docTitle,
-          styles: printStyles,
-          bodyHtml,
-        });
       } finally {
         // 元の選択状態 / view / 表示月に戻す。null だった場合も含めそのまま代入。
         batchPrintAbortRef.current = null;

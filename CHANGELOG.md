@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed (スナップショット連結の印刷ループを共通ドライバに集約)
+
+月次の 📋 まとめて印刷 (`usePrintJobs`) とタイムテーブルの 🖨 全曜日
+(`ExcelGridView`) に、準備中画面 → 1 枚ごとの進捗と中断チェック → 最終
+書き込み、という同じ約 40 行のループが複製されていた (PR #233 のレビュー
+指摘)。CLAUDE.md は「この 3 段を通すこと」としていたが、通すべき関数が
+無かった。
+
+- `utils/snapshotPrint.runSnapshotPrint` に集約。呼び出し側は `render`
+  (flushSync で描く) と `capture` (DOM を撮って紙面の断片を返す) と
+  `buildBody` だけを渡し、戻り値の status (printed / closed / aborted /
+  empty) を見て経路ごとの toast を出す
+- 動作は変えない。全曜日印刷だけ、スナップショット中に例外が出たときに
+  途中まで撮れた分を刷っていたのをやめ、popup を閉じてエラー toast を
+  出すようにした (途中までの紙面を黙って出さない)
+- テスト: `utils/snapshotPrint.test.js` (順序・null 飛ばし・閉じたら中断・
+  yield 後の閉じ・中断・空)。既存の `usePrintJobs.test.jsx` /
+  `ExcelGridView.test.jsx` / e2e は変更なしで通る
+
 ### Fixed (月次の 📋 まとめて印刷が止まる / タグが最初の講師に固定される)
 
 講師別の月間スケジュールを 📋 まとめて印刷すると、開いた popup が白紙のまま

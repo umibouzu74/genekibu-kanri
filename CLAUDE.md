@@ -169,7 +169,11 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
   `updatePendingProgress`、終わったら `writePrintDocument` で丸ごと置き換える
   (close 済みドキュメントへの `document.write` は暗黙に open し直して空に
   なる)。中断は「popup のタブを閉じる」= 毎周期 `w.closed` を見て止める。
-  **新しくスナップショット連結の印刷を足すときもこの 3 段を通すこと。**
+  **この 3 段はループごと `utils/snapshotPrint.runSnapshotPrint` に集約して
+  ある** (準備中画面 → 進捗 → `render` → `yieldToBrowser` → 中断チェック →
+  `capture` → 最終書き込み。戻り値の status で呼び出し側が toast を出す)。
+  **新しくスナップショット連結の印刷を足すときはループを書き起こさず、
+  `render` (flushSync で描く) と `capture` (DOM を撮る) だけを渡すこと。**
 
   月次のまとめて印刷は**講師ごとにタグフィルタを導出する**のが既定
   (`teacherTags.visibilityForTeacher`。サイドバーで講師を選んだときの
