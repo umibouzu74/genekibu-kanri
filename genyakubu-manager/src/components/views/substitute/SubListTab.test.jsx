@@ -140,3 +140,25 @@ describe("SubListTab の行内クイック確定", () => {
     expect(screen.getByText(/今日以降 2 件 \/ 過去 1 件/)).toBeTruthy();
   });
 });
+
+// 期間外の代行を、同じ位置で有効なコマへ ↪ で付け替える (2026-09-12)
+describe("SubListTab の期間外コマの付け替え", () => {
+  it("同じ位置の有効なコマが 1 件あれば ↪ で slotId を付け替える", () => {
+    const onQuickUpdate = vi.fn();
+    renderTab({ isAdmin: true, onQuickUpdate });
+    const btn = screen.getByRole("button", { name: "2026-09-10 の代行を有効なコマへ付け替え" });
+    fireEvent.click(btn);
+    expect(onQuickUpdate).toHaveBeenCalledWith(
+      10,
+      { slotId: 2 },
+      expect.objectContaining({ successMsg: expect.stringContaining("2学期") })
+    );
+    // 有効なコマを指す行には出ない
+    expect(screen.getAllByRole("button", { name: /有効なコマへ付け替え/ })).toHaveLength(1);
+  });
+
+  it("閲覧者には出ない", () => {
+    renderTab({ isAdmin: false, onQuickUpdate: vi.fn() });
+    expect(screen.queryByRole("button", { name: /有効なコマへ付け替え/ })).toBeNull();
+  });
+});

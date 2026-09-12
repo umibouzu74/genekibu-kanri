@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added (複数日の欠勤登録 / 期間外の代行の付け替え / 玉突き代行を画面に配線)
+
+- **複数日の欠勤登録** (`components/MultiDayAbsenceDialog` +
+  `utils/absenceRange`)。「インフルで 9/14〜9/18 は休み」を期間 × 先生で
+  一度に登録する。**モデルは足さない** — 作るのは日ごとの代行レコード
+  (代行者が空) なので、一覧・スケジュール・玉突き代行・行内の ✓ 確定に
+  そのまま乗る。対象は「その日に実施されるコマ」だけで、実施判定は日まるごと
+  振替と同じ `dayReschedule.collectDayRescheduleCandidates`、講師ごとの
+  絞り込みと登録済み / 振替・合同で対応済みの除外は
+  `absenceHelpers.collectAbsenceTargets` に委ねる (独自判定を書かない)。
+  外したコマは日ごとに理由つきで畳んで出す。一度に 31 日まで。
+  導線はサイドバーの「🤒 複数日の欠勤登録」(管理者のみ)・欠勤組み換えの
+  ボタン (選んでいる先生と日付を引き継ぐ)・Cmd+K
+- **「⚠ この日は期間外」の代行を ↪ で有効なコマへ付け替え** (`SubListTab`、
+  `absenceHelpers.findReplacementSlots`)。同じ位置 (曜日・時刻・学年・
+  クラス・科目) でその日に有効なコマを探し、1 件ならボタンだけ、複数なら
+  select で選ぶ。これまでは ✏️ で長い select から人が探し直していた
+- **玉突き代行パネルを授業管理の「🔗 玉突き代行」タブに配線**
+  (`ChainSubstitutionPanel`)。実装とテストはあったが、どの画面にも
+  配線されていなかった。欠勤組み換えの「🔗 玉突き代行で探す」でその日の
+  日付つきで開ける。提案であって自動では確定しない (従来どおり)。Cmd+K の
+  サブタブにも追加
+- テスト: `absenceRange.test.js` (新規 5)、`MultiDayAbsenceDialog.test.jsx`
+  (新規 3)、`SubListTab.test.jsx` (+2)、`absenceHelpers.test.js` (+1)、
+  `Sidebar.test.jsx` (+2)
+
+
 ### Added (日別ダッシュボードにも講師重複 / 講師名クリックで月間へ / 欠勤組み換えが特別時程と追加授業を見る)
 
 - **日別ダッシュボードにも講師の同時刻の重なり ⚠ を出す** (`DashDayRow` →

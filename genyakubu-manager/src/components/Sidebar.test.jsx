@@ -137,3 +137,16 @@ describe("Sidebar の未処理バッジ", () => {
     expect(screen.queryByRole("button", { name: /未処理の代行/ })).toBeNull();
   });
 });
+
+describe("Sidebar の複数日の欠勤登録", () => {
+  it("管理者にはボタンを出し、クリックでダイアログを開く", () => {
+    const onOpenMultiDayAbsence = vi.fn();
+    renderSidebar({ onOpenMultiDayAbsence });
+    fireEvent.click(screen.getByRole("button", { name: /複数日の欠勤登録/ }));
+    expect(onOpenMultiDayAbsence).toHaveBeenCalledTimes(1);
+  });
+  it("閲覧者には出さない", () => {
+    renderSidebar({ isAdmin: false });
+    expect(screen.queryByRole("button", { name: /複数日の欠勤登録/ })).toBeNull();
+  });
+});

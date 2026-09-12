@@ -42,6 +42,31 @@ export function isSlotShownOnDate(slot, dateStr, opts = {}) {
 // 対象日にそのコマを実際に担当する先生名 (隔週の A/B を解決した後)。
 //   - 非隔週 → 講師欄をそのまま ("香川·福江" は 2 名)
 //   - A 週   → 講師欄 / B 週 → note「隔週(◯◯)」のパートナー
+/**
+ * 「⚠ この日は期間外」の代行レコードを付け替える先の候補。同じ位置 (曜日・
+ * 時刻・学年・クラス・科目) で、その日に有効なコマ。期切替で旧期のコマに
+ * 付いてしまった代行を、人が長い select から探し直さなくて済むようにする
+ * (2026-09-12)。候補が 1 件ならそのまま付け替え、複数なら選ばせる。
+ * @param {object} slot 現在レコードが指すコマ
+ * @param {string} dateStr
+ * @param {Array} slots 全コマ
+ * @param {{timetables?: Array, displayCutoff?: object}} opts
+ */
+export function findReplacementSlots(slot, dateStr, slots, opts = {}) {
+  if (!slot || !dateStr) return [];
+  const norm = (v) => (v && v !== "-" ? v : "");
+  return (slots || []).filter(
+    (c) =>
+      c.id !== slot.id &&
+      c.day === slot.day &&
+      c.time === slot.time &&
+      c.grade === slot.grade &&
+      norm(c.cls) === norm(slot.cls) &&
+      c.subj === slot.subj &&
+      isSlotShownOnDate(c, dateStr, opts)
+  );
+}
+
 // **隔週のパートナーは note にしか出ない**ので、`getSlotTeachers`
 // (講師欄しか見ない) で欠勤対象を探すとパートナーを取りこぼし、逆に
 // 担当しない週のコマまで拾ってしまう。赤枠 (getAbsentSlotIds) と一括登録

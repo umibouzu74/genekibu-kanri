@@ -30,9 +30,11 @@ export function ChainSubstitutionPanel({
   teacherKana = {},
   saveSubs,
   isAdmin,
+  // 欠勤組み換えから日付つきで開いたとき
+  initDate = null,
 }) {
   const today = fmtDate(new Date());
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(initDate || today);
   const [generated, setGenerated] = useState(false);
   const [autoAvailable, setAutoAvailable] = useState([]);
   const [manualAvailable, setManualAvailable] = useState([]);

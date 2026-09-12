@@ -57,6 +57,9 @@ export function AbsenceWorkflowView({
   // 特別時程 (1 限カット等) と追加授業。ダッシュボードと同じ日の姿にする
   daySchedules = [],
   extraLessons = [],
+  // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
+  onOpenMultiDayAbsence,
+  onOpenChainSubstitution,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -690,6 +693,30 @@ export function AbsenceWorkflowView({
           >
             ❗ 欠勤にする ({absenceTargets.targets.length} 件)
           </button>
+        )}
+        {(onOpenMultiDayAbsence || onOpenChainSubstitution) && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {onOpenMultiDayAbsence && (
+              <button
+                type="button"
+                onClick={() => onOpenMultiDayAbsence({ teachers: selectedTeachers, date })}
+                title="インフル 1 週間など、複数日にまたがる欠勤をまとめて登録する"
+                style={{ ...S.btn(false), fontSize: 12 }}
+              >
+                🤒 複数日の欠勤登録
+              </button>
+            )}
+            {onOpenChainSubstitution && (
+              <button
+                type="button"
+                onClick={() => onOpenChainSubstitution(date)}
+                title="この日の代行未定のコマに、空いている先生を自動で当ててみる (提案。自動では確定しない)"
+                style={{ ...S.btn(false), fontSize: 12 }}
+              >
+                🔗 玉突き代行で探す
+              </button>
+            )}
+          </div>
         )}
       </div>
 

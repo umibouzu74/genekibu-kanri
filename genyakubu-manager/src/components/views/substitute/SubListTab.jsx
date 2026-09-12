@@ -3,7 +3,7 @@ import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { StatusBadge } from "../../StatusBadge";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
-import { isSlotShownOnDate } from "../../../utils/absenceHelpers";
+import { findReplacementSlots, isSlotShownOnDate } from "../../../utils/absenceHelpers";
 import {
   SUB_STATE_FILTERS,
   isUnresolved,
@@ -90,6 +90,61 @@ function QuickResolveCell({ sub, onQuickUpdate, listId }) {
   );
 }
 
+// 期間外の代行を、同じ位置で有効なコマへ付け替える (候補が 1 件ならボタン
+// だけ、複数なら select で選ぶ)。
+function ReplaceSlotControl({ sub, candidates, timetables, onQuickUpdate }) {
+  const [pick, setPick] = useState(candidates[0]?.id ?? "");
+  const ttName = (slot) => {
+    const tt = (timetables || []).find((t) => t.id === (slot.timetableId ?? 1));
+    return tt ? tt.name : `時間割 ${slot.timetableId ?? 1}`;
+  };
+  const target = candidates.find((c) => String(c.id) === String(pick)) || candidates[0];
+  const apply = () => {
+    if (!target) return;
+    onQuickUpdate(sub.id, { slotId: target.id }, {
+      successMsg: `${sub.date} の代行を「${ttName(target)}」のコマへ付け替えました`,
+    });
+  };
+  return (
+    <span
+      className="no-print"
+      style={{ display: "inline-flex", gap: 4, alignItems: "center", marginLeft: 6 }}
+    >
+      {candidates.length > 1 && (
+        <select
+          value={pick}
+          onChange={(e) => setPick(e.target.value)}
+          aria-label={`${sub.date} の付け替え先`}
+          style={{ ...S.input, width: "auto", fontSize: 11, padding: "2px 4px" }}
+        >
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {ttName(c)} (#{c.id})
+            </option>
+          ))}
+        </select>
+      )}
+      <button
+        type="button"
+        onClick={apply}
+        aria-label={`${sub.date} の代行を有効なコマへ付け替え`}
+        title={`この日に有効な同じ位置のコマ (${target ? ttName(target) : ""}) へ付け替えます`}
+        style={{
+          ...S.btn(false),
+          fontSize: 11,
+          padding: "2px 8px",
+          color: "#2a6a9e",
+          borderColor: "#9ec0e0",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        ↪ 有効なコマへ
+      </button>
+    </span>
+  );
+}
+
 // Sub list tab : フィルタ (月 / 講師 / ステータス) + 代行レコード一覧テーブル。
 export function SubListTab({
   filtered,
@@ -142,7 +197,20 @@ export function SubListTab({
   }, [allTeachers]);
   const canQuick = isAdmin && typeof onQuickUpdate === "function";
   const notShownTitle =
-    "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。✏️ で同じ曜日の有効なコマへ付け替えてください";
+    "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。同じ位置の有効なコマがあれば ↪ で付け替え、無ければ ✏️ で選び直してください";
+  // 期間外の行 → 同じ位置 (曜日・時刻・学年・クラス・科目) で有効なコマ
+  const replacementBySub = useMemo(() => {
+    const m = new Map();
+    if (!canQuick) return m;
+    for (const id of notShownIds) {
+      const sub = filtered.find((x) => x.id === id);
+      const slot = sub && slotMap[sub.slotId];
+      if (!slot) continue;
+      const cands = findReplacementSlots(slot, sub.date, slots, { timetables, displayCutoff });
+      if (cands.length > 0) m.set(id, cands);
+    }
+    return m;
+  }, [canQuick, notShownIds, filtered, slotMap, slots, timetables, displayCutoff]);
   return (
     <div>
       <div
@@ -422,6 +490,14 @@ export function SubListTab({
                           {slot.room}
                         </span>
                       ) : null}
+                      {replacementBySub.has(sub.id) && (
+                        <ReplaceSlotControl
+                          sub={sub}
+                          candidates={replacementBySub.get(sub.id)}
+                          timetables={timetables}
+                          onQuickUpdate={onQuickUpdate}
+                        />
+                      )}
                       {notShownIds.has(sub.id) && (
                         <span
                           title={notShownTitle}

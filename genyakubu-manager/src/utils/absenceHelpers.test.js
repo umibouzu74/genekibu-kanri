@@ -436,3 +436,25 @@ describe("activeTeachersOnDate", () => {
     expect(activeTeachersOnDate(biweekly, "2026-10-09", {})).toEqual(["堀上"]);
   });
 });
+
+describe("findReplacementSlots (期間外の代行の付け替え先)", () => {
+  const TT = [
+    { id: 1, name: "1学期", type: "regular", grades: [], startDate: "2026-04-07", endDate: "2026-08-31" },
+    { id: 2, name: "2学期", type: "regular", grades: [], startDate: "2026-09-01", endDate: null },
+  ];
+  const base = { day: "木", time: "19:50-20:35", grade: "中3", cls: "C", subj: "社会", teacher: "野口" };
+  it("同じ位置 (曜日・時刻・学年・クラス・科目) でその日に有効なコマだけを返す", async () => {
+    const { findReplacementSlots } = await import("./absenceHelpers");
+    const slots = [
+      { ...base, id: 1, timetableId: 1 },
+      { ...base, id: 2, timetableId: 2 },
+      { ...base, id: 3, timetableId: 2, cls: "A" },
+      { ...base, id: 4, timetableId: 2, time: "20:45-21:30" },
+    ];
+    const r = findReplacementSlots(slots[0], "2026-09-10", slots, { timetables: TT, displayCutoff: { groups: [], cohorts: [] } });
+    expect(r.map((s) => s.id)).toEqual([2]);
+    // 自分自身は返さない / 日付が無ければ空
+    expect(findReplacementSlots(slots[1], "2026-09-10", slots, { timetables: TT })).toEqual([]);
+    expect(findReplacementSlots(slots[0], "", slots, { timetables: TT })).toEqual([]);
+  });
+});

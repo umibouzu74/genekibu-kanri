@@ -161,6 +161,15 @@ const MENU_CONFIG = [
     modal: "dayReschedule",
     adminOnly: true,
   },
+  // 複数日にまたがる欠勤 (インフル 1 週間など) を期間 × 講師で一度に登録する
+  {
+    key: "multi-day-absence",
+    icon: "🤒",
+    label: "複数日の欠勤登録",
+    action: "modal",
+    modal: "multiDayAbsence",
+    adminOnly: true,
+  },
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
@@ -189,6 +198,7 @@ export function Sidebar({
   onSelectTeacher,
   onOpenDataMgr,
   onOpenDayReschedule,
+  onOpenMultiDayAbsence,
   onSelectEventSection,
   onSelectMasterTab,
   masterTab,
@@ -495,6 +505,7 @@ export function Sidebar({
                     onClick={() => {
                       if (isModal) {
                         if (item.modal === "dayReschedule") onOpenDayReschedule?.();
+                        else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
                         else onOpenDataMgr();
                         onClose?.();
                       } else {

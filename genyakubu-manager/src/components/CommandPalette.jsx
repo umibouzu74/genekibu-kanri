@@ -29,6 +29,7 @@ export function CommandPalette({
   onSelectSubsSubTab,
   onSelectMasterTab,
   onOpenDayReschedule,
+  onOpenMultiDayAbsence,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -285,6 +286,7 @@ export function CommandPalette({
         { tab: "adjustment", label: "時間割調整一覧" },
         { tab: "override", label: "回数補正一覧" },
         { tab: "tally", label: "月次集計" },
+        { tab: "chain", label: "玉突き代行" },
       ];
       for (const t of subTabs) {
         if (matchLabel(t.label)) {
@@ -320,6 +322,17 @@ export function CommandPalette({
     }
 
     // ダイアログを開く操作 (ビュー移動ではないので別立て)。
+    if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
+      hits.push({
+        type: "view",
+        label: "複数日の欠勤登録",
+        detail: "期間 × 先生で欠勤をまとめて登録",
+        action: () => {
+          onOpenMultiDayAbsence();
+          onClose();
+        },
+      });
+    }
     if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
@@ -351,6 +364,7 @@ export function CommandPalette({
     onSelectSubsSubTab,
     onSelectMasterTab,
     onOpenDayReschedule,
+    onOpenMultiDayAbsence,
     onClose,
     views,
   ]);

@@ -13,6 +13,7 @@ import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
 import { AdjustmentListTab } from "./substitute/AdjustmentListTab";
 import { OverrideListTab } from "./substitute/OverrideListTab";
+import { ChainSubstitutionPanel } from "./ChainSubstitutionPanel";
 
 export function SubstituteView({
   subs,
@@ -58,6 +59,8 @@ export function SubstituteView({
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
+  // 玉突き代行タブの初期日付 (欠勤組み換えの「🔗 玉突き代行で探す」から)
+  const [chainInitDate, setChainInitDate] = useState(null);
 
   // 外部から初期フィルタが渡された場合の処理。
   //  - initFilter.status: Sidebar バッジクリック等。月フィルタは解除して
@@ -74,6 +77,7 @@ export function SubstituteView({
       }
       if (initFilter.tab) {
         setTab(initFilter.tab);
+        if (initFilter.tab === "chain" && initFilter.date) setChainInitDate(initFilter.date);
       }
       onConsumeInitFilter?.();
     }
@@ -265,6 +269,7 @@ export function SubstituteView({
         <TabBtn k="override" label="回数補正一覧" count={sessionOverrides.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
+        <TabBtn k="chain" label="🔗 玉突き代行" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           {tab === "list" && (
             <button
@@ -303,6 +308,27 @@ export function SubstituteView({
         </div>
       </div>
 
+      {tab === "chain" && (
+        // 代行未定のコマに空き講師を当てる提案 (自動では確定しない)。実装は
+        // 以前からあったが、どの画面にも配線されていなかった (2026-09-12)
+        <ChainSubstitutionPanel
+          key={chainInitDate || "chain"}
+          initDate={chainInitDate}
+          slots={slots}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          partTimeStaff={partTimeStaff}
+          subjects={subjects}
+          subjectCategories={subjectCategories}
+          timetables={timetables}
+          biweeklyAnchors={biweeklyAnchors}
+          teacherSubjects={teacherSubjects}
+          teacherKana={teacherKana}
+          saveSubs={saveSubs}
+          isAdmin={isAdmin}
+        />
+      )}
       {tab === "list" && (
         <SubListTab
           filtered={filtered}
