@@ -64,6 +64,61 @@ export function nextPeriodNo(periods) {
   return Math.max(...periods.map((p) => p.no || 0)) + 1;
 }
 
+// 校時の並びを orderedPeriods (day.periods の並べ替え / 部分集合) に差し替えて、
+// 1 始まりの連番に振り直した day を返す。assignments は旧 no → 新 no へ
+// 読み替える (orderedPeriods に無い校時のチェックは落ちる)。
+// 校時の追加 / 削除 / 並べ替えは全部ここを通す (連番と出勤チェックの整合を
+// 画面ごとに書き起こさない)。
+export function applyPeriodOrder(day, orderedPeriods) {
+  const noMap = new Map();
+  const periods = orderedPeriods.map((p, i) => {
+    noMap.set(p.no, i + 1);
+    return { ...p, no: i + 1 };
+  });
+  const assignments = {};
+  for (const [name, nos] of Object.entries(day.assignments || {})) {
+    const mapped = (nos || [])
+      .map((n) => noMap.get(n))
+      .filter((n) => typeof n === "number")
+      .sort((a, b) => a - b);
+    if (mapped.length > 0) assignments[name] = mapped;
+  }
+  return { ...day, periods, assignments };
+}
+
+// 校時の時刻順キー。開始時刻 → 終了時刻。開始が読めない校時は (終了を見ずに)
+// 末尾へ、終了だけ読めない校時は同じ開始の中で末尾へ。
+function periodSortKey(p) {
+  const s = timeStrToMin(p.start);
+  if (!Number.isFinite(s)) return [Infinity, Infinity];
+  const e = timeStrToMin(p.end);
+  return [s, Number.isFinite(e) ? e : Infinity];
+}
+
+function comparePeriodsByTime(a, b) {
+  const ka = periodSortKey(a);
+  const kb = periodSortKey(b);
+  return ka[0] - kb[0] || ka[1] - kb[1];
+}
+
+// 校時が開始時刻順に並んでいるか。時刻を読めない校時は末尾なら順序どおり扱い。
+export function arePeriodsSortedByTime(periods) {
+  if (!Array.isArray(periods)) return true;
+  for (let i = 1; i < periods.length; i++) {
+    if (comparePeriodsByTime(periods[i - 1], periods[i]) > 0) return false;
+  }
+  return true;
+}
+
+// 校時を開始時刻順 (同時刻なら終了時刻順) に並べ替えて連番を振り直す。
+// 同じ時刻・読めない時刻の校時は相対順を保つ (Array.prototype.sort は安定)。
+// 並びが変わらなければ同じ day をそのまま返す (呼び出し側で保存を省ける)。
+export function sortDayPeriodsByTime(day) {
+  const periods = day?.periods;
+  if (!Array.isArray(periods) || arePeriodsSortedByTime(periods)) return day;
+  return applyPeriodOrder(day, [...periods].sort(comparePeriodsByTime));
+}
+
 // "HH:MM" を分に変換。不正時は NaN。
 export function timeStrToMin(t) {
   if (typeof t !== "string") return NaN;
