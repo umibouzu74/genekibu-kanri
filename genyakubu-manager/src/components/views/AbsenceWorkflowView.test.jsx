@@ -3,7 +3,7 @@
 // 曜日だけで絞っていた頃は、期切替で残してある旧期の時間割のコマが重なり、
 // 同じクラスが 2 重・3 重に並んでいた (2026-08-20)。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { AbsenceWorkflowView } from "./AbsenceWorkflowView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -224,5 +224,32 @@ describe("AbsenceWorkflowView の多担任コマ (プレップ)", () => {
     expect(screen.getByText("香川").style.textDecoration).toBe("line-through");
     expect(screen.getByText("福江").style.textDecoration).not.toBe("line-through");
     expect(screen.getByText("川井").style.textDecoration).not.toBe("line-through");
+  });
+});
+
+// 日付の前後送りと、欠勤する先生の一覧の「この日に担当あり」グループ
+// (2026-09-12)。
+describe("AbsenceWorkflowView の日付ナビと先生の絞り込み", () => {
+  it("← 前 / 次 → で 1 日ずつ動く", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "次 →" }));
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-09-22");
+    fireEvent.click(screen.getByRole("button", { name: "← 前" }));
+    expect(screen.getByLabelText("対象日:").value).toBe(MON);
+  });
+
+  it("この日に担当のある先生を先頭のグループに出し、名前で絞れる", () => {
+    renderView({ partTimeStaff: [{ name: "河野", subjectIds: [] }] });
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    const onDay = screen.getByRole("group", { name: /この日に担当あり \(1\)/ });
+    expect(within(onDay).getByLabelText("滝澤", { selector: "input" })).toBeTruthy();
+    const others = screen.getByRole("group", { name: /その他 \(1\)/ });
+    expect(within(others).getByLabelText("河野", { selector: "input" })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("欠勤する先生を名前で絞り込み"), {
+      target: { value: "河" },
+    });
+    expect(screen.queryByLabelText("滝澤", { selector: "input" })).toBeNull();
+    expect(screen.getByLabelText("河野", { selector: "input" })).toBeTruthy();
   });
 });

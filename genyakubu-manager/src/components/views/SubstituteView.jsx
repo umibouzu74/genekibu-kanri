@@ -4,6 +4,8 @@ import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
 import { useToasts } from "../../hooks/useToasts";
+import { useToday } from "../../hooks/useToday";
+import { matchesSubStateFilter } from "../../utils/substituteState";
 import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
@@ -20,6 +22,7 @@ export function SubstituteView({
   onNew,
   onEdit,
   onDel,
+  onQuickUpdate,
   onGoToStaffView,
   initFilter,
   onConsumeInitFilter,
@@ -46,6 +49,7 @@ export function SubstituteView({
   extraLessons = [],
 }) {
   const now = new Date();
+  const todayStr = useToday();
   const [tab, setTab] = useState("list");
   const [fMonth, setFMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
@@ -106,7 +110,8 @@ export function SubstituteView({
     if (fMonth) r = r.filter((s) => s.date?.startsWith(fMonth));
     if (fStaff)
       r = r.filter((s) => s.originalTeacher === fStaff || s.substitute === fStaff);
-    if (fStatus) r = r.filter((s) => s.status === fStatus);
+    // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
+    if (fStatus) r = r.filter((s) => matchesSubStateFilter(s, fStatus));
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
 
@@ -297,7 +302,9 @@ export function SubstituteView({
           displayCutoff={displayCutoff}
           onEdit={onEdit}
           onDel={onDel}
+          onQuickUpdate={onQuickUpdate}
           onNew={onNew}
+          todayStr={todayStr}
         />
       )}
 

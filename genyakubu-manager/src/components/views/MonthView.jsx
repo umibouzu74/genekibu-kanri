@@ -37,6 +37,7 @@ import {
   teacherAwayReason,
 } from "../../utils/teacherDayOff";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { useToday } from "../../hooks/useToday";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { EVENT_KIND } from "../../constants/eventKinds";
 import {
@@ -328,10 +329,8 @@ export function MonthView({
   for (let d = 1; d <= dim; d++) cells.push(d);
   while (cells.length % 7) cells.push(null);
 
-  const today = new Date();
-  const todayD = today.getDate();
-  const todayM = today.getMonth() + 1;
-  const todayY = today.getFullYear();
+  // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
+  const [todayY, todayM, todayD] = useToday().split("-").map(Number);
 
   return (
     <div className="month-print-root" style={{ marginTop: 12 }}>

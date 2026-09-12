@@ -25,7 +25,12 @@ import { EXTRA_LESSON_COLOR } from "../../constants/colors";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
-import { overlapsRange, formatDateRange, dateToDay } from "../../utils/dateHelpers";
+import {
+  overlapsRange,
+  formatDateRange,
+  dateToDay,
+} from "../../utils/dateHelpers";
+import { useToday } from "../../hooks/useToday";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
@@ -42,9 +47,8 @@ import {
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 
 // 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
-function getUpcomingWindow() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function getUpcomingWindow(todayStr) {
+  const today = parseLocalDate(todayStr);
   const end = new Date(today);
   end.setDate(end.getDate() + 14);
   return [today, end];
@@ -148,7 +152,8 @@ export function WeekView({
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   // 隔週スロットは「今週の実施側講師」のビューにだけ出す。今日を基準週として扱う。
-  const refDateStr = useMemo(() => fmtDate(new Date()), []);
+  // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
+  const refDateStr = useToday();
   const ts = useMemo(
     () =>
       sortS(
@@ -172,7 +177,7 @@ export function WeekView({
   }, [ts]);
 
   // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
-  const [winStart, winEnd] = useMemo(() => getUpcomingWindow(), []);
+  const [winStart, winEnd] = useMemo(() => getUpcomingWindow(refDateStr), [refDateStr]);
 
   // slotId → slot の逆引き。合同・移動・振替・代行の各 useMemo が
   // それぞれローカルで Map を作っていたため、slots に変化が無くても
@@ -198,15 +203,14 @@ export function WeekView({
     daySchedules,
   });
   const sessionMapByDay = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = parseLocalDate(refDateStr);
     const result = {};
     DAYS.forEach((d, idx) => {
       // DAYS は月〜土。Date#getDay は日=0..土=6 なので月=1..土=6 に変換。
       result[d] = findNextSessionMap(byDay[d], idx + 1, today, sessionCtx);
     });
     return result;
-  }, [byDay, sessionCtx]);
+  }, [byDay, sessionCtx, refDateStr]);
 
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {

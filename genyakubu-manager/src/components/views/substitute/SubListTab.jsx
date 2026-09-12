@@ -1,15 +1,94 @@
-import { useMemo } from "react";
-import {
-  DAY_COLOR as DC,
-  dateToDay,
-  gradeColor as GC,
-  SUB_STATUS,
-  SUB_STATUS_KEYS,
-} from "../../../data";
+import { useMemo, useState } from "react";
+import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { StatusBadge } from "../../StatusBadge";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 import { isSlotShownOnDate } from "../../../utils/absenceHelpers";
+import {
+  SUB_STATE_FILTERS,
+  isUnresolved,
+  subState,
+  SUB_STATE,
+} from "../../../utils/substituteState";
+import { splitTeacherField } from "../../../utils/biweekly";
+
+// 行内の「代行者名 + ✓ 確定」。モーダル (SubstituteForm) を開かずに
+// 未処理の行を片付けるための最小の操作だけを置く。
+//   - 入力欄で Enter → 代行者名だけ保存 (状態は据え置き。未定 → 依頼中 になる)
+//   - ✓ 確定 → 入力欄の名前 (空なら「代行なしで確定」) + confirmed
+// 名前の候補は代行一覧の講師プルダウンと同じ集合 (datalist)。
+// フォーカスを外しただけでは保存しない: blur で保存すると、名前を打って
+// そのまま「✓ 確定」を押したときに mousedown の blur で先に行が更新され、
+// 押したボタンが差し替わってクリックが届かない (2 回押しが要る) ため。
+function QuickResolveCell({ sub, onQuickUpdate, listId }) {
+  const [name, setName] = useState(sub.substitute || "");
+  const dirty = name.trim() !== (sub.substitute || "");
+  const commitName = () => {
+    const v = name.trim();
+    if (v === (sub.substitute || "")) return;
+    onQuickUpdate(sub.id, { substitute: v }, {
+      successMsg: v ? `代行者を ${v} にしました (依頼中)` : "代行者を外しました",
+    });
+  };
+  const confirmNow = () => {
+    const v = name.trim();
+    const patch = { status: "confirmed" };
+    if (v !== (sub.substitute || "")) patch.substitute = v;
+    onQuickUpdate(sub.id, patch, {
+      successMsg: v ? `${v} の代行で確定しました` : "代行なしで確定しました",
+    });
+  };
+  return (
+    <span
+      className="no-print"
+      style={{ display: "inline-flex", gap: 4, alignItems: "center", marginLeft: 6 }}
+    >
+      <input
+        type="text"
+        list={listId}
+        value={name}
+        placeholder="代行者"
+        aria-label={`${sub.date} ${sub.originalTeacher} の代行者`}
+        title={dirty ? "Enter で代行者名を保存 (状態はそのまま) / ✓ 確定 で確定" : "代行者名を入れて Enter"}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.isComposing) {
+            e.preventDefault();
+            commitName();
+          }
+        }}
+        style={{
+          ...S.input,
+          width: 90,
+          padding: "2px 6px",
+          fontSize: 11,
+          borderColor: dirty ? "#2a6a9e" : undefined,
+        }}
+      />
+      <button
+        type="button"
+        onClick={confirmNow}
+        title={
+          name.trim()
+            ? `${name.trim()} の代行で確定にする`
+            : "代行者を空のまま確定にする (代行なしで確定)"
+        }
+        aria-label={`${sub.date} ${sub.originalTeacher} の代行を確定`}
+        style={{
+          ...S.btn(false),
+          fontSize: 11,
+          padding: "2px 8px",
+          color: "#2a7a4a",
+          borderColor: "#a8d8b0",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        ✓ 確定
+      </button>
+    </span>
+  );
+}
 
 // Sub list tab : フィルタ (月 / 講師 / ステータス) + 代行レコード一覧テーブル。
 export function SubListTab({
@@ -32,7 +111,9 @@ export function SubListTab({
   displayCutoff = null,
   onEdit,
   onDel,
+  onQuickUpdate,
   onNew,
+  todayStr = "",
 }) {
   const teacherGroups = useMemo(
     () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
@@ -51,6 +132,15 @@ export function SubListTab({
     }
     return set;
   }, [filtered, slotMap, timetables, displayCutoff]);
+  // 行内の代行者入力の候補。講師欄は "香川·福江" のような複数講師を
+  // 1 人ずつに分解して出す
+  const quickListId = "sub-list-quick-teachers";
+  const quickCandidates = useMemo(() => {
+    const set = new Set();
+    for (const t of allTeachers) for (const x of splitTeacherField(t)) set.add(x);
+    return [...set];
+  }, [allTeachers]);
+  const canQuick = isAdmin && typeof onQuickUpdate === "function";
   const notShownTitle =
     "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。✏️ で同じ曜日の有効なコマへ付け替えてください";
   return (
@@ -122,9 +212,9 @@ export function SubListTab({
             style={{ ...S.input, width: "auto", minWidth: 90 }}
           >
             <option value="">すべて</option>
-            {SUB_STATUS_KEYS.map((k) => (
-              <option key={k} value={k}>
-                {SUB_STATUS[k].label}
+            {SUB_STATE_FILTERS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
               </option>
             ))}
           </select>
@@ -143,7 +233,20 @@ export function SubListTab({
 
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
         {filtered.length} / {subs.length} 件表示
+        {fStatus === "open" && todayStr && (
+          <span style={{ marginLeft: 8 }}>
+            (今日以降 {filtered.filter((s) => !(s.date < todayStr)).length} 件 / 過去{" "}
+            {filtered.filter((s) => s.date < todayStr).length} 件)
+          </span>
+        )}
       </div>
+      {canQuick && (
+        <datalist id={quickListId}>
+          {quickCandidates.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      )}
       {notShownIds.size > 0 && (
         <div
           role="status"
@@ -251,12 +354,22 @@ export function SubListTab({
                 const slot = slotMap[sub.slotId];
                 const gc = slot ? GC(slot.grade) : { b: "#eee", f: "#888" };
                 const dow = dateToDay(sub.date);
+                const isPast = !!todayStr && sub.date < todayStr;
+                const open = isUnresolved(sub);
                 return (
                   <tr
                     key={sub.id}
                     style={{
                       background: i % 2 ? "#f8f9fa" : "#fff",
                       borderTop: "1px solid #eee",
+                      // 未処理の行は左に色を付けて目で拾えるようにする
+                      // (未定 = 橙 / 依頼中 = 赤。substituteState の色)
+                      boxShadow: open
+                        ? `inset 4px 0 0 ${
+                            subState(sub) === SUB_STATE.PENDING ? "#b34700" : "#c03030"
+                          }`
+                        : undefined,
+                      opacity: isPast && fStatus === "open" ? 0.75 : 1,
                     }}
                   >
                     <td
@@ -337,9 +450,18 @@ export function SubListTab({
                     >
                       {sub.originalTeacher}{" "}
                       <span style={{ color: "#888", fontWeight: 400 }}>→</span>{" "}
-                      <span style={{ color: "#2a7a4a" }}>
-                        {sub.substitute || "未定"}
-                      </span>
+                      {canQuick && open ? (
+                        <QuickResolveCell
+                          key={`${sub.id}:${sub.substitute || ""}:${sub.status}`}
+                          sub={sub}
+                          onQuickUpdate={onQuickUpdate}
+                          listId={quickListId}
+                        />
+                      ) : (
+                        <span style={{ color: "#2a7a4a" }}>
+                          {sub.substitute || "未定"}
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: "8px 10px", textAlign: "center" }}>
                       <StatusBadge status={sub.status} substitute={sub.substitute} />

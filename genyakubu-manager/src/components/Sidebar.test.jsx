@@ -109,3 +109,31 @@ describe("Sidebar のコースマスター管理のタブ", () => {
     expect(onSelectMasterTab).toHaveBeenCalledWith(MASTER_TAB.BIWEEKLY);
   });
 });
+
+// 赤バッジは「今日以降の未処理 (代行未定 + 依頼中)」だけ。全期間で数えると
+// 前期の確定し忘れが永久に乗って数字が意味を失う (2026-09-12)。
+describe("Sidebar の未処理バッジ", () => {
+  const far = "2999-01-01";
+  it("今日以降の未処理だけを数え、過去の分と代行なしで確定は数えない", () => {
+    const onJumpToRequestedSubs = vi.fn();
+    renderSidebar({
+      onJumpToRequestedSubs,
+      subs: [
+        { id: 1, date: far, slotId: 1, originalTeacher: "a", substitute: "", status: "requested" },
+        { id: 2, date: far, slotId: 1, originalTeacher: "a", substitute: "b", status: "requested" },
+        { id: 3, date: far, slotId: 1, originalTeacher: "a", substitute: "", status: "confirmed" },
+        { id: 4, date: "2000-01-01", slotId: 1, originalTeacher: "a", substitute: "", status: "requested" },
+      ],
+    });
+    const badge = screen.getByRole("button", { name: /未処理の代行 2 件/ });
+    fireEvent.click(badge);
+    expect(onJumpToRequestedSubs).toHaveBeenCalled();
+  });
+
+  it("未処理が無ければバッジを出さない", () => {
+    renderSidebar({
+      subs: [{ id: 1, date: "2000-01-01", slotId: 1, originalTeacher: "a", substitute: "", status: "requested" }],
+    });
+    expect(screen.queryByRole("button", { name: /未処理の代行/ })).toBeNull();
+  });
+});

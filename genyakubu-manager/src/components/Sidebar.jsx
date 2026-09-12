@@ -8,6 +8,8 @@ import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/b
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 import { filterTeacherGroups } from "../hooks/useTeacherGroups";
+import { useToday } from "../hooks/useToday";
+import { summarizeOpenSubs } from "../utils/substituteState";
 
 // chord ヒント表示用の小さなバッジ。`g d` 等のキー組を薄く出して学習を助ける。
 function ChordHint({ viewKey, dim }) {
@@ -239,9 +241,13 @@ export function Sidebar({
 
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
+  // 赤バッジは「今日以降の未処理 (代行未定 + 依頼中)」だけを数える。
+  // 全期間で数えると前期の確定し忘れが永久に乗って数字が意味を失う。
+  // 過去の未処理は代行一覧の「未処理」フィルタ側で件数を出す
+  const today = useToday();
   const pending = useMemo(
-    () => subs.filter((s) => s.status === "requested").length,
-    [subs]
+    () => summarizeOpenSubs(subs, today).upcoming.length,
+    [subs, today]
   );
   const slotCountByTeacher = useMemo(() => {
     const m = new Map();
@@ -448,8 +454,8 @@ export function Sidebar({
                   e.stopPropagation();
                   onJumpToRequestedSubs?.();
                 }}
-                title="依頼中のみ表示"
-                aria-label={`依頼中の代行 ${pending} 件を表示`}
+                title="今日以降の未処理 (代行未定 + 依頼中) を表示"
+                aria-label={`未処理の代行 ${pending} 件を表示`}
                 style={{
                   marginLeft: 6,
                   border: "none",
@@ -519,7 +525,10 @@ export function Sidebar({
                       {!isModal && <ChordHint viewKey={item.key} dim={!selfActive && !childActive} />}
                     </span>
                   </button>
-                  {/* 折りたたみ時は親にバッジ表示 */}
+                  {/* 未処理バッジ: 項目そのもの (授業管理) と、折りたたみ時の親。
+                      以前はトップレベル項目に描く分岐が無く、赤バッジが
+                      どこにも出ていなかった (2026-09-12) */}
+                  {item.badge && pendingBadge}
                   {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
                   {hasChildren && (
                     <button

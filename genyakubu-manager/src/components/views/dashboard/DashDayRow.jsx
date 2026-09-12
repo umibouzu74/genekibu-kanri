@@ -27,6 +27,9 @@ export function DashDayRow({
   extraLessonsForDate = [],
   daySchedulesForDate = [],
   sessionCtx,
+  isToday = false,
+  // 管理者だけ渡す。日付帯の右端から「この日の欠勤組み換え」を開ける
+  onJumpToAbsenceFlow,
 }) {
   const sessionCountMap = useMemo(() => {
     if (!sessionCtx || !sessionCtx.displayCutoff) return null;
@@ -101,6 +104,22 @@ export function DashDayRow({
       >
         <span>
           {date}（{dow}）
+          {isToday && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 10,
+                background: "rgba(255,255,255,0.9)",
+                color: "#333",
+                padding: "1px 7px",
+                borderRadius: 10,
+                fontWeight: 800,
+                verticalAlign: "middle",
+              }}
+            >
+              今日
+            </span>
+          )}
         </span>
         {fullOff && (
           <span
@@ -225,6 +244,29 @@ export function DashDayRow({
               );
             })}
           </div>
+        )}
+        {onJumpToAbsenceFlow && (
+          <button
+            type="button"
+            className="no-print"
+            onClick={() => onJumpToAbsenceFlow(date)}
+            title={`${date} の欠勤組み換えを開く`}
+            aria-label={`${date} の欠勤組み換えを開く`}
+            style={{
+              marginLeft: "auto",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "3px 10px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.6)",
+              background: "rgba(255,255,255,0.18)",
+              color: "inherit",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            🚑 欠勤組み換え
+          </button>
         )}
       </div>
       {/* 追加授業 (特定日付の単発コマ)。「その日にやる」と明示登録された

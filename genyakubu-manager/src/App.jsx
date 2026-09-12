@@ -729,7 +729,7 @@ export default function App() {
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
-          setSubsInitFilter({ status: "requested" });
+          setSubsInitFilter({ status: "open" });
           setSidebarOpen(false);
         }}
         teacherGroups={allTeacherGroups}
@@ -937,10 +937,12 @@ export default function App() {
               daySchedules={daySchedules}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
-              onJumpToRequestedSubs={() => {
-                setSubsInitFilter({ status: "requested" });
+              onJumpToSubs={(status) => {
+                setSubsInitFilter({ status: status || "open" });
                 selectView(VIEWS.SUBS);
               }}
+              onJumpToAbsenceFlow={jumpToAbsenceFlow}
+              isAdmin={isAdmin}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -1152,6 +1154,7 @@ export default function App() {
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
               onDel={subsCrud.del}
+              onQuickUpdate={subsCrud.quickUpdate}
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
