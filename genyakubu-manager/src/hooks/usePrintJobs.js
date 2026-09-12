@@ -157,23 +157,31 @@ export function usePrintJobs({
       const offsetOf = (y, m) =>
         (y - base.getFullYear()) * 12 + (m - 1 - base.getMonth());
       // 講師ごとに各月を連続で出す (人単位で束ねて配布できる紙順)。
+      // タグフィルタは講師ごとに担当コマから導出する (サイドバーでその講師を
+      // 選んだときと同じ紙面にする)。setSelected だけ差し替えると最初の講師の
+      // タグで全員を刷ってしまう。「現在の設定のまま」を選んだときだけ今の
+      // 表示設定を全員に使う。導出は講師 1 人につき 1 回 (月ごとに同じ)
       const jobs = [];
       for (const t of teachers) {
+        const visibility =
+          tagMode === "perTeacher" && visibilityForBatchTeacher
+            ? visibilityForBatchTeacher(t)
+            : eventVisibility;
         for (const mo of monthList) {
-          jobs.push({ teacher: t, year: mo.year, month: mo.month });
+          jobs.push({ teacher: t, year: mo.year, month: mo.month, visibility });
         }
       }
       setBatchPrintBusy(true);
       setBatchPrintProgress({ current: 0, total: jobs.length, name: "" });
-      // ユーザーが見ているのは popup のタブなので、進捗はそちらにも出す
-      const pendingTitle = buildBatchDocTitle({
-        nameCount: teachers.length,
-        months: monthList,
-      });
-      writePendingDocument(w, { title: pendingTitle, total: jobs.length });
       // popup を閉じられたら中断 (書き込み先が無い)。abort と同じ扱い
       const cancelled = () => ac.signal.aborted || w.closed;
       try {
+        // ユーザーが見ているのは popup のタブなので、進捗はそちらにも出す
+        // (try の中: 書き込みに失敗しても finally で busy を戻す)
+        writePendingDocument(w, {
+          title: buildBatchDocTitle({ nameCount: teachers.length, months: monthList }),
+          total: jobs.length,
+        });
         // MonthView は遅延読み込み。flushSync で同期描画する前にチャンクを
         // 確実に読み込んでおく (通常は月間ビューから起動するので即座に解決)。
         // デプロイ直後の古いタブでは取得に失敗しうるので、開いた popup を
@@ -189,7 +197,7 @@ export function usePrintJobs({
         const slides = [];
         for (let i = 0; i < jobs.length; i++) {
           if (cancelled()) break;
-          const { teacher: t, year: jy, month: jm } = jobs[i];
+          const { teacher: t, year: jy, month: jm, visibility } = jobs[i];
           const progress = {
             current: i + 1,
             total: jobs.length,
@@ -197,14 +205,6 @@ export function usePrintJobs({
           };
           setBatchPrintProgress(progress);
           updatePendingProgress(w, progress);
-          // タグフィルタは講師ごとに担当コマから導出する (サイドバーで
-          // その講師を選んだときと同じ紙面にする)。setSelected だけ差し替えると
-          // 最初の講師のタグで全員を刷ってしまう。「現在の設定のまま」を
-          // 選んだときだけ今の表示設定を全員に使う
-          const visibility =
-            tagMode === "perTeacher" && visibilityForBatchTeacher
-              ? visibilityForBatchTeacher(t)
-              : eventVisibility;
           // flushSync で同期的にコミット → DOM が更新されてから outerHTML を取る。
           flushSync(() => {
             setSelected(t);

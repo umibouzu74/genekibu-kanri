@@ -639,10 +639,11 @@ export function ExcelGridView({
     }
     setPrintBusy(true);
     const blocks = [];
-    // ユーザーが見ているのは popup のタブなので、進捗はそちらに出す
     const docTitle = buildAllDaysDocTitle({ days: printableDays });
-    writePendingDocument(w, { title: docTitle, total: printableDays.length });
     try {
+      // ユーザーが見ているのは popup のタブなので、進捗はそちらに出す
+      // (try の中: 書き込みに失敗しても finally で busy を戻す)
+      writePendingDocument(w, { title: docTitle, total: printableDays.length });
       for (let i = 0; i < printableDays.length; i++) {
         const d = printableDays[i];
         // 印刷準備中に popup を閉じられたら中断 (書き込み先が無い)
@@ -657,6 +658,7 @@ export function ExcelGridView({
         // 奪われた元タブでは止まる (utils/printWindow.yieldToBrowser 参照)
         flushSync(() => setPrintDay(d));
         await yieldToBrowser();
+        if (w.closed) break;
         const root = rootRef.current;
         const body = root?.querySelector(".excel-print-day-body");
         if (!body) continue;

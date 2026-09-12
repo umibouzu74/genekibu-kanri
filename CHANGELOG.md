@@ -22,8 +22,8 @@
   `App.selectTeacher` と `usePrintJobs` の両方がこれを通す。印刷中だけ
   MonthView に講師ごとの表示設定 (`batchVisibility`) を渡し、localStorage の
   `eventVisibility` は書き換えない (最後の講師のタグが残らない)。テスト期間・
-  特別イベントの表示 ON/OFF は現在の設定を引き継ぐ。ダイアログにもこの
-  決まりを 1 行で明示した
+  特別イベントの表示 ON/OFF は現在の設定を引き継ぐ (ダイアログ上の表記は
+  下の Changed のラジオに統合)
 - e2e (`e2e/print.spec.js`) に「rAF を決して呼び返さない stub」でまとめて
   印刷が完了し、講師ごとに「除外タグ」が違うことを見るテストを追加
 
