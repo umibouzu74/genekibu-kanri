@@ -31,6 +31,8 @@ export function StaffListTab({
   daySchedules,
   nowYear,
   nowMonth,
+  staffMonth,
+  setStaffMonth,
   newStaff,
   setNewStaff,
   handleAddStaff,
@@ -73,6 +75,18 @@ export function StaffListTab({
           marginBottom: 10,
         }}
       >
+        {setStaffMonth && (
+          <label style={{ fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginRight: "auto" }}>
+            出勤状況の月:
+            <input
+              type="month"
+              value={staffMonth}
+              onChange={(e) => e.target.value && setStaffMonth(e.target.value)}
+              aria-label="出勤状況の対象月"
+              style={{ ...S.input, width: "auto", fontSize: 12, padding: "3px 6px" }}
+            />
+          </label>
+        )}
         <span style={{ fontSize: 11, color: "#888" }}>
           現在の時間割の担当コマ入りの記入用紙 (1 人 1 シート)
         </span>

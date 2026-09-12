@@ -295,6 +295,8 @@ export default function App() {
   const [masterTab, setMasterTab] = useState(DEFAULT_MASTER_TAB);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
+  // Cmd+K の日付ジャンプでダッシュボードを開くときの表示日 (YYYY-MM-DD)
+  const [dashInitDate, setDashInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
   // EventCalendar からの「新規登録フォームを開く」要求 ({ kind, token })。
@@ -943,6 +945,8 @@ export default function App() {
               }}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               isAdmin={isAdmin}
+              initDate={dashInitDate}
+              onConsumeInitDate={() => setDashInitDate(null)}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -1016,6 +1020,9 @@ export default function App() {
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.HOLIDAY ? eventNewRequest.token : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.HOLIDAY ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1039,6 +1046,9 @@ export default function App() {
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.EXAM ? eventNewRequest.token : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.EXAM ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1054,6 +1064,9 @@ export default function App() {
                 onConsumeEditTarget={() => setEventEditRequest(null)}
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.token : null
+                }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.date : null
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
@@ -1074,6 +1087,9 @@ export default function App() {
                   eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON
                     ? eventNewRequest.token
                     : null
+                }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON ? eventNewRequest.date : null
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
@@ -1096,6 +1112,9 @@ export default function App() {
                     ? eventNewRequest.token
                     : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.DAY_SCHEDULE ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1116,9 +1135,9 @@ export default function App() {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
               }}
-              onAddNewEvent={(kind) => {
+              onAddNewEvent={(kind, date) => {
                 eventNewTokenRef.current += 1;
-                setEventNewRequest({ kind, token: eventNewTokenRef.current });
+                setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
                 selectView(VIEWS.HOLIDAYS);
               }}
             />
@@ -1443,6 +1462,19 @@ export default function App() {
               setShowDayReschedule(true);
               setCmdPaletteOpen(false);
             }}
+            onSelectDate={(date) => {
+              setDashInitDate(date);
+              selectView(VIEWS.DASH);
+              setCmdPaletteOpen(false);
+            }}
+            onJumpToAbsenceFlow={
+              isAdmin
+                ? (date) => {
+                    jumpToAbsenceFlow(date);
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
             onSelectSubsSubTab={(tabKey) => {
               setSubsInitFilter({ tab: tabKey });
               selectView(VIEWS.SUBS);

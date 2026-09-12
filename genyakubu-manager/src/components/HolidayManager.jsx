@@ -14,6 +14,9 @@ import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
+import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
+import { ListPeriodFilter } from "./ListPeriodFilter";
+import { useListPeriod } from "../hooks/useListPeriod";
 
 // Extract unique class groups (school/course names) from configured slots.
 // For high school, the class group is either:
@@ -77,10 +80,16 @@ export function HolidayManager({
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
+  newEntryDate = null,
   onConsumeNewEntry,
 }) {
   const formRef = useRef(null);
-  const [date, setDate] = useState("");
+  // 日付は複数 (年末年始・盆休みを同じ対象設定で一括登録する)。編集中は 1 件。
+  // 追加授業 (ExtraLessonManager) と同じ「チップに足していく」作法 + 期間で
+  // まとめて足す「〜」欄
+  const [dates, setDates] = useState([]);
+  const [dateInput, setDateInput] = useState("");
+  const [dateEndInput, setDateEndInput] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState(["全部"]);
   const [targetGrades, setTargetGrades] = useState([]);
@@ -183,9 +192,29 @@ export function HolidayManager({
     );
   };
 
+  // 入力欄 (単日 or 開始〜終了) をチップに足す
+  const addDates = () => {
+    if (!dateInput || !isValidDateStr(dateInput)) return;
+    const end = dateEndInput && isValidDateStr(dateEndInput) ? dateEndInput : dateInput;
+    const range = eachDateStrInRange(dateInput, end);
+    if (range.length === 0) {
+      setError("終了日は開始日以降にしてください");
+      return;
+    }
+    setDates((prev) => [...new Set([...prev, ...range])].sort());
+    setDateInput("");
+    setDateEndInput("");
+    if (error) setError("");
+  };
+  const removeDate = (d) => setDates((prev) => prev.filter((x) => x !== d));
+
   // ─── Form actions ───
-  const resetForm = () => {
-    setDate("");
+  // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
+  // onClick から呼ばれると event が入るので型で弾く)
+  const resetForm = (presetDate) => {
+    setDates(typeof presetDate === "string" ? [presetDate] : []);
+    setDateInput("");
+    setDateEndInput("");
     setLabel("");
     setScope(["全部"]);
     setTargetGrades([]);
@@ -197,21 +226,29 @@ export function HolidayManager({
 
   const handleAdd = () => {
     setError("");
-    if (!date) {
-      setError("日付を入力してください");
-      return;
+    // 日付欄に入れたまま「＋ 日付を追加」を押し忘れた場合の救済
+    let effectiveDates = dates;
+    if (dates.length === 0 && dateInput) {
+      if (!isValidDateStr(dateInput)) {
+        setError("日付の形式が正しくありません");
+        return;
+      }
+      const end = dateEndInput && isValidDateStr(dateEndInput) ? dateEndInput : dateInput;
+      effectiveDates = eachDateStrInRange(dateInput, end);
+      if (effectiveDates.length === 0) {
+        setError("終了日は開始日以降にしてください");
+        return;
+      }
     }
-    if (!isValidDateStr(date)) {
-      setError("日付の形式が正しくありません");
+    if (effectiveDates.length === 0) {
+      setError("日付を入力してください");
       return;
     }
 
     const grades = allGrades ? [] : [...targetGrades];
     // Clear subjKeywords when scope is 全部 or all grades selected
     const keywords = scope.includes("全部") || allGrades ? [] : [...subjKeywords];
-    const entry = {
-      id: editId != null ? editId : nextNumericId(holidays),
-      date,
+    const base = {
       label: label || "休講",
       scope: [...scope],
       targetGrades: grades,
@@ -219,17 +256,25 @@ export function HolidayManager({
     };
 
     if (editId != null) {
+      const entry = { id: editId, date: effectiveDates[0], ...base };
       onSave(holidays.map((h) => (h.id === editId ? entry : h)));
       toasts.success("休講日を更新しました");
     } else {
-      onSave([...holidays, entry]);
-      toasts.success("休講日を追加しました");
+      // 複数日を 1 回の save で一括登録 (id は連番)
+      let nextId = nextNumericId(holidays);
+      const records = effectiveDates.map((date) => ({ id: nextId++, date, ...base }));
+      onSave([...holidays, ...records]);
+      toasts.success(
+        records.length === 1 ? "休講日を追加しました" : `休講日を ${records.length} 件追加しました`
+      );
     }
     resetForm();
   };
 
   const handleEdit = (h) => {
-    setDate(h.date);
+    setDates([h.date]);
+    setDateInput("");
+    setDateEndInput("");
     setLabel(h.label);
     setScope(h.scope || ["全部"]);
     if ((h.targetGrades || []).length === 0) {
@@ -251,12 +296,15 @@ export function HolidayManager({
   };
 
   const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-  const filtered = filter
+  const byDept = filter
     ? sorted.filter((h) => {
         const s = h.scope || ["全部"];
         return s.includes("全部") || s.includes(filter);
       })
     : sorted;
+  // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
+  const period = useListPeriod();
+  const filtered = period.apply(byDept, (h) => [h.date, h.date]);
 
   // Show grade/keyword selection only when scope is NOT 全部
   const showGradeSelection = !scope.includes("全部");
@@ -272,6 +320,7 @@ export function HolidayManager({
 
   useNewEntryTarget({
     token: newEntryToken,
+    date: newEntryDate,
     onReset: resetForm,
     onConsume: onConsumeNewEntry,
     formRef,
@@ -303,17 +352,89 @@ export function HolidayManager({
             marginBottom: 10,
           }}
         >
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              if (error) setError("");
-            }}
-            aria-invalid={error ? "true" : undefined}
-            aria-describedby={error ? "holiday-date-err" : undefined}
-            style={{ ...S.input, width: "auto", borderColor: error ? colors.danger : "#ccc" }}
-          />
+          {dates.map((d) => (
+            <span
+              key={d}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 4px 2px 8px",
+                borderRadius: 12,
+                background: "#fde4e4",
+                color: "#a03030",
+                border: "1px solid #e0a0a0",
+              }}
+            >
+              {fmtDateWeekday(d)}
+              {editId == null && (
+                <button
+                  type="button"
+                  onClick={() => removeDate(d)}
+                  aria-label={`日付 ${d} を外す`}
+                  style={{
+                    border: "none",
+                    background: "#a03030",
+                    color: "#fff",
+                    borderRadius: "50%",
+                    width: 16,
+                    height: 16,
+                    lineHeight: "14px",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+          {(editId == null || dates.length === 0) && (
+            <>
+              <input
+                type="date"
+                value={dateInput}
+                onChange={(e) => {
+                  setDateInput(e.target.value);
+                  if (error) setError("");
+                }}
+                aria-label={editId != null ? "日付" : "日付 (開始日)"}
+                aria-invalid={error ? "true" : undefined}
+                aria-describedby={error ? "holiday-date-err" : undefined}
+                style={{ ...S.input, width: "auto", borderColor: error ? colors.danger : "#ccc" }}
+              />
+              {editId == null && (
+                <>
+                  <span style={{ fontSize: 12, color: "#888" }}>〜</span>
+                  <input
+                    type="date"
+                    value={dateEndInput}
+                    min={dateInput || undefined}
+                    onChange={(e) => {
+                      setDateEndInput(e.target.value);
+                      if (error) setError("");
+                    }}
+                    aria-label="終了日 (任意。連続する休みをまとめて足す)"
+                    title="連続する休み (年末年始・盆休み) は終了日を入れるとまとめて足せます"
+                    style={{ ...S.input, width: "auto" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addDates}
+                    style={{ ...S.btn(false), fontSize: 11, padding: "4px 10px" }}
+                  >
+                    ＋ 日付を追加
+                  </button>
+                  <span style={{ fontSize: 10, color: "#888" }}>
+                    （複数日は同じ対象設定で一括登録）
+                  </span>
+                </>
+              )}
+            </>
+          )}
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -571,9 +692,7 @@ export function HolidayManager({
         ))}
       </div>
 
-      <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
-        {filtered.length} / {holidays.length} 件表示
-      </div>
+      <ListPeriodFilter period={period} shown={filtered.length} total={byDept.length} noun="休講日" />
       <div
         style={{
           background: "#fff",
@@ -594,7 +713,9 @@ export function HolidayManager({
           >
             <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📅</div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              {filter ? `「${filter}」対象の休講日はありません` : "登録された休講日はありません"}
+              {holidays.length > 0
+                ? "この期間に該当する休講日はありません (期間や部門の絞り込みを変えてください)"
+                : "登録された休講日はありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>

@@ -48,6 +48,9 @@ function renderManager({ extraLessons = [LESSON], isAdmin = true, ...rest } = {}
       </ConfirmProvider>
     </ToastProvider>
   );
+  // 一覧は既定で「今月以降」に絞られる。テストのサンプル日付 (2026-07) は
+  // 過去になるので、一覧を見るテストは「すべて」に切り替えてから始める
+  fireEvent.click(screen.getByRole("button", { name: "すべて" }));
   return { onSave };
 }
 

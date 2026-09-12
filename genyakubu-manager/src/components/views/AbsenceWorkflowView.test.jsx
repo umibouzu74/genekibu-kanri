@@ -253,3 +253,22 @@ describe("AbsenceWorkflowView の日付ナビと先生の絞り込み", () => {
     expect(screen.getByLabelText("河野", { selector: "input" })).toBeTruthy();
   });
 });
+
+describe("AbsenceWorkflowView の欠勤登録の理由メモ", () => {
+  it("ダイアログのメモが下書き → 保存レコードに入る", () => {
+    const saveSubs = vi.fn();
+    renderView({ saveSubs });
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.change(screen.getByLabelText("理由メモ:"), { target: { value: "学校行事" } });
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(saveSubs.mock.calls[0][0][0]).toMatchObject({
+      originalTeacher: "滝澤",
+      substitute: "",
+      status: "requested",
+      memo: "学校行事",
+    });
+  });
+});

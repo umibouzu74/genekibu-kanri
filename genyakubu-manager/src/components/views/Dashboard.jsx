@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { dateToDay } from "../../data";
 import { S } from "../../styles/common";
 import { buildDayRange, shiftDate } from "./dashboardHelpers";
@@ -80,6 +80,9 @@ export function Dashboard({
   onJumpToSubs,
   onJumpToAbsenceFlow,
   isAdmin = false,
+  // Cmd+K の日付ジャンプなど、外から表示日を指定して開くとき
+  initDate = null,
+  onConsumeInitDate,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
@@ -88,6 +91,13 @@ export function Dashboard({
     setStartDateRaw(d);
     try { sessionStorage.setItem(SS_START_DATE_KEY, d); } catch { /* quota */ }
   }, []);
+  useEffect(() => {
+    if (!initDate) return;
+    setStartDate(initDate);
+    onConsumeInitDate?.();
+    // initDate が変わったときだけ (setStartDate は安定、onConsumeInitDate は毎回新しい)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initDate]);
   const [daysInRange, setDaysInRange] = useState(loadDayCount);
   const [viewMode, setViewMode] = useState(loadViewMode);
   // 時間割モードは曜日 (月〜土) の表なので日曜は表せない。日付欄で日曜を

@@ -339,11 +339,12 @@ export function AbsenceWorkflowView({
   //   pending = これから代行を探す (代行未定)
   //   nosub   = 代行を立てず残りの担当者で回す (代行なしで確定)
   const handleRegisterAbsence = useCallback(
-    (selected, mode) => {
+    (selected, mode, memo = "") => {
       for (const t of selected) {
         draft.updateSub(t.slotId, t.teacher, {
           substitute: "",
           status: mode === "nosub" ? "confirmed" : "requested",
+          ...(memo ? { memo } : {}),
         });
       }
       setAbsenceDialogOpen(false);

@@ -46,10 +46,16 @@ export function StaffManagerView({
   const [newCatColor, setNewCatColor] = useState("#888");
   const [newSubjByCat, setNewSubjByCat] = useState({});
 
-  const [nowYear, nowMonth] = useMemo(() => {
+  // 出勤状況の対象月。既定は今月だが、月初に前月ぶんを確かめる用途があるので
+  // 月セレクタで変えられる (月次集計タブと同じ type="month")
+  const [staffMonth, setStaffMonth] = useState(() => {
     const d = new Date();
-    return [d.getFullYear(), d.getMonth() + 1];
-  }, []);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [nowYear, nowMonth] = useMemo(() => {
+    const [y, m] = staffMonth.split("-").map(Number);
+    return [y, m];
+  }, [staffMonth]);
 
   const subjectsByCat = useMemo(() => {
     const m = new Map();
@@ -161,6 +167,8 @@ export function StaffManagerView({
           daySchedules={daySchedules}
           nowYear={nowYear}
           nowMonth={nowMonth}
+          staffMonth={staffMonth}
+          setStaffMonth={setStaffMonth}
           newStaff={newStaff}
           setNewStaff={setNewStaff}
           handleAddStaff={handleAddStaff}

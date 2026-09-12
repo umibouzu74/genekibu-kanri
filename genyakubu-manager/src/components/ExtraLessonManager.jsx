@@ -7,6 +7,8 @@ import { splitTeacherField } from "../utils/biweekly";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import { ListPeriodFilter } from "./ListPeriodFilter";
+import { useListPeriod } from "../hooks/useListPeriod";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
 
@@ -27,6 +29,7 @@ export function ExtraLessonManager({
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
+  newEntryDate = null,
   onConsumeNewEntry,
   /** 担当講師の候補 (useSlotsCrud.suggestions.teachers) */
   teacherSuggestions = [],
@@ -61,8 +64,10 @@ export function ExtraLessonManager({
 
   const removeDate = (d) => setDates(dates.filter((x) => x !== d));
 
-  const resetForm = () => {
-    setDates([]);
+  // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
+  // onClick から呼ばれると event が入るので型で弾く)
+  const resetForm = (presetDate) => {
+    setDates(typeof presetDate === "string" ? [presetDate] : []);
     setDateInput("");
     setTime("");
     setGrade("");
@@ -178,6 +183,9 @@ export function ExtraLessonManager({
   const sorted = [...extraLessons].sort(
     (a, b) => a.date.localeCompare(b.date) || a.id - b.id
   );
+  // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
+  const period = useListPeriod();
+  const shown = period.apply(sorted, (l) => [l.date, l.date]);
 
   useEditTarget({
     editTargetId,
@@ -190,6 +198,7 @@ export function ExtraLessonManager({
 
   useNewEntryTarget({
     token: newEntryToken,
+    date: newEntryDate,
     onReset: resetForm,
     onConsume: onConsumeNewEntry,
     formRef,
@@ -434,6 +443,7 @@ export function ExtraLessonManager({
         </div>
       )}
 
+      <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="追加授業" />
       {/* 一覧 */}
       <div
         style={{
@@ -443,7 +453,7 @@ export function ExtraLessonManager({
           overflow: "hidden",
         }}
       >
-        {sorted.length === 0 ? (
+        {shown.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -457,7 +467,7 @@ export function ExtraLessonManager({
               ➕
             </div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              登録された追加授業はありません
+              {sorted.length > 0 ? "この期間に該当する追加授業はありません (期間の絞り込みを変えてください)" : "登録された追加授業はありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>
@@ -466,7 +476,7 @@ export function ExtraLessonManager({
             )}
           </div>
         ) : (
-          sorted.map((l, i) => (
+          shown.map((l, i) => (
             <div
               key={l.id}
               style={{
@@ -474,7 +484,7 @@ export function ExtraLessonManager({
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "10px 14px",
-                borderBottom: i < sorted.length - 1 ? "1px solid #eee" : "none",
+                borderBottom: i < shown.length - 1 ? "1px solid #eee" : "none",
                 background:
                   editId === l.id ? "#fffbe6" : i % 2 ? "#f8f9fa" : "#fff",
               }}

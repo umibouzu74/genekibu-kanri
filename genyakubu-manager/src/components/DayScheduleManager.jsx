@@ -14,6 +14,8 @@ import {
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import { ListPeriodFilter } from "./ListPeriodFilter";
+import { useListPeriod } from "../hooks/useListPeriod";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 
@@ -44,6 +46,7 @@ export function DayScheduleManager({
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
+  newEntryDate = null,
   onConsumeNewEntry,
 }) {
   const formRef = useRef(null);
@@ -199,8 +202,10 @@ export function DayScheduleManager({
     if (error) setError("");
   };
 
-  const resetForm = () => {
-    setDate("");
+  // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
+  // onClick から呼ばれると event が入るので型で弾く)
+  const resetForm = (presetDate) => {
+    setDate(typeof presetDate === "string" ? presetDate : "");
     setLabel("");
     setMemo("");
     setTargetGrades([]);
@@ -277,6 +282,7 @@ export function DayScheduleManager({
 
   useNewEntryTarget({
     token: newEntryToken,
+    date: newEntryDate,
     onReset: resetForm,
     onConsume: onConsumeNewEntry,
     formRef,
@@ -286,6 +292,9 @@ export function DayScheduleManager({
   const sorted = [...daySchedules].sort(
     (a, b) => a.date.localeCompare(b.date) || a.id - b.id
   );
+  // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
+  const period = useListPeriod();
+  const shown = period.apply(sorted, (d) => [d.date, d.date]);
 
   const gradeChip = (g, sel, onClick) => {
     const dept = gradeToDept(g);
@@ -567,10 +576,8 @@ export function DayScheduleManager({
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
-        {sorted.length} 件登録
-      </div>
-      <div
+<ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="特別時程" />
+            <div
         style={{
           background: "#fff",
           borderRadius: 8,
@@ -578,7 +585,7 @@ export function DayScheduleManager({
           overflow: "hidden",
         }}
       >
-        {sorted.length === 0 ? (
+        {shown.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -590,7 +597,7 @@ export function DayScheduleManager({
           >
             <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>⏰</div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              登録された特別時程はありません
+              {sorted.length > 0 ? "この期間に該当する特別時程はありません (期間の絞り込みを変えてください)" : "登録された特別時程はありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>
@@ -599,7 +606,7 @@ export function DayScheduleManager({
             )}
           </div>
         ) : (
-          sorted.map((d, i) => {
+          shown.map((d, i) => {
             const mapSummary = [
               ...(d.timeMap || []).map((m) => `${m.from}→${m.to}`),
               ...(d.cancelTimes || []).map((t) => `${t} 休講`),
@@ -613,7 +620,7 @@ export function DayScheduleManager({
                   alignItems: "center",
                   gap: 8,
                   padding: "8px 14px",
-                  borderBottom: i < sorted.length - 1 ? "1px solid #eee" : "none",
+                  borderBottom: i < shown.length - 1 ? "1px solid #eee" : "none",
                   background: editId === d.id ? "#fffbe6" : i % 2 ? "#f8f9fa" : "#fff",
                 }}
               >
