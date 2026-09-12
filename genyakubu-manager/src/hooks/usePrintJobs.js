@@ -230,6 +230,12 @@ export function usePrintJobs({
         } else if (status === "empty") {
           toasts.error("印刷データを生成できませんでした。");
         }
+      } catch (err) {
+        // スナップショット中に落ちても、準備中画面のまま popup を残さない
+        // (全曜日印刷 ExcelGridView.handlePrintAllDays と同じ扱い)
+        console.error("[batch-print] failed:", err);
+        if (!w.closed) w.close();
+        toasts.error("印刷データを生成できませんでした。");
       } finally {
         // 元の選択状態 / view / 表示月に戻す。null だった場合も含めそのまま代入。
         batchPrintAbortRef.current = null;

@@ -71,10 +71,12 @@ describe("HolidayManager の複数日登録", () => {
       holidays: [{ id: 7, date: "2999-01-01", label: "旧", scope: ["全部"], targetGrades: [], subjKeywords: [] }],
     });
     fireEvent.click(screen.getByRole("button", { name: "2999-01-01 の休講日を編集" }));
+    // 編集中は日付欄が 1 つ出て、日付そのものも直せる
+    fireEvent.change(screen.getByLabelText("日付"), { target: { value: "2999-01-02" } });
     fireEvent.change(screen.getByPlaceholderText("名称（任意）"), { target: { value: "新" } });
     fireEvent.click(screen.getByRole("button", { name: "更新" }));
     expect(onSave.mock.calls[0][0]).toEqual([
-      { id: 7, date: "2999-01-01", label: "新", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+      { id: 7, date: "2999-01-02", label: "新", scope: ["全部"], targetGrades: [], subjKeywords: [] },
     ]);
   });
 });

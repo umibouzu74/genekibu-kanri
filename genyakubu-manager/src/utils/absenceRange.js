@@ -13,6 +13,7 @@
 import { dateToDay, eachDateStrInRange, isValidDateStr } from "./dateHelpers";
 import { collectDayRescheduleCandidates } from "./dayReschedule";
 import { collectAbsenceTargets } from "./absenceHelpers";
+import { isSlotForTeacher } from "./biweekly";
 import { saveAbsenceBatch } from "./absenceBatch";
 
 /** 一度に扱う最大日数 (誤って 1 年分を作らないための上限)。 */
@@ -86,12 +87,9 @@ export function buildAbsenceRangePlan({
       existingAdjustments: adjustments,
     });
     // 実施されないコマのうち、選んだ先生に関わるものだけ理由を残す
-    const absent = new Set(teachers);
+    // (講師欄の分解と隔週パートナーの判定は biweekly.isSlotForTeacher に委ねる)
     const notHeldMine = notHeld.filter(({ slot }) =>
-      String(slot.teacher || "")
-        .split(/[·・･]/)
-        .some((t) => absent.has(t.trim())) ||
-      [...absent].some((t) => (slot.note || "").includes(`隔週(${t})`))
+      teachers.some((t) => isSlotForTeacher(slot, t))
     );
     days.push({
       date,

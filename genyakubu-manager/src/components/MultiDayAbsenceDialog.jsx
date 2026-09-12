@@ -132,9 +132,10 @@ export function MultiDayAbsenceDialog({
   return (
     <Modal title="🤒 複数日の欠勤登録" onClose={onClose} width="min(760px, 96vw)">
       <div style={{ fontSize: 12, color: "#666", marginBottom: 12, lineHeight: 1.7 }}>
-        期間と先生を選ぶと、その期間に実施されるコマのうちその先生の担当分を
-        日ごとに並べます。作られるのは日ごとの欠勤 (代行者が空の代行レコード) なので、
-        代行が決まったら代行一覧の行内で名前を入れて確定できます。
+        {/* JSX の改行は日本語の途中でも半角スペースになるので 1 文字列にする */}
+        {"期間と先生を選ぶと、その期間に実施されるコマのうちその先生の担当分を日ごとに並べます。" +
+          "作られるのは日ごとの欠勤 (代行者が空の代行レコード) なので、" +
+          "代行が決まったら代行一覧の行内で名前を入れて確定できます。"}
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>

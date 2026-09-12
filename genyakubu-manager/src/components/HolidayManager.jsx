@@ -352,7 +352,23 @@ export function HolidayManager({
             marginBottom: 10,
           }}
         >
-          {dates.map((d) => (
+          {/* 編集中は 1 件だけなので、日付をそのまま直せる欄を出す (チップに
+              固定すると日付を直せず、消して作り直すしかなくなる) */}
+          {editId != null && (
+            <input
+              type="date"
+              value={dates[0] || ""}
+              onChange={(e) => {
+                setDates(e.target.value ? [e.target.value] : []);
+                if (error) setError("");
+              }}
+              aria-label="日付"
+              aria-invalid={error ? "true" : undefined}
+              aria-describedby={error ? "holiday-date-err" : undefined}
+              style={{ ...S.input, width: "auto", borderColor: error ? colors.danger : "#ccc" }}
+            />
+          )}
+          {editId == null && dates.map((d) => (
             <span
               key={d}
               style={{
@@ -392,7 +408,7 @@ export function HolidayManager({
               )}
             </span>
           ))}
-          {(editId == null || dates.length === 0) && (
+          {editId == null && (
             <>
               <input
                 type="date"
@@ -401,12 +417,12 @@ export function HolidayManager({
                   setDateInput(e.target.value);
                   if (error) setError("");
                 }}
-                aria-label={editId != null ? "日付" : "日付 (開始日)"}
+                aria-label="日付 (開始日)"
                 aria-invalid={error ? "true" : undefined}
                 aria-describedby={error ? "holiday-date-err" : undefined}
                 style={{ ...S.input, width: "auto", borderColor: error ? colors.danger : "#ccc" }}
               />
-              {editId == null && (
+              {(
                 <>
                   <span style={{ fontSize: 12, color: "#888" }}>〜</span>
                   <input

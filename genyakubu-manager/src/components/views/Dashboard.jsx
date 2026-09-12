@@ -26,12 +26,23 @@ const LS_DAY_COUNT_KEY = "genyakubu-dash-day-count";
 // 寄って戻ると今日に戻ってしまい、日付を打ち直しになるため。
 // タブを閉じれば今日に戻る (localStorage にすると翌日開いても昨日のまま)
 const SS_START_DATE_KEY = "genyakubu-dash-start-date";
+// 保存した日 (savedOn) も一緒に持ち、別の日に読み直したら今日へ戻す
+// (開きっぱなしのタブを翌朝リロードして昨日の日付から始まらないように)
 function loadStartDate(todayStr) {
   try {
-    const v = sessionStorage.getItem(SS_START_DATE_KEY);
+    const raw = JSON.parse(sessionStorage.getItem(SS_START_DATE_KEY) || "null");
+    const v = raw?.date;
+    if (raw?.savedOn !== todayStr) return todayStr;
     return /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : todayStr;
   } catch {
     return todayStr;
+  }
+}
+function saveStartDate(date, todayStr) {
+  try {
+    sessionStorage.setItem(SS_START_DATE_KEY, JSON.stringify({ date, savedOn: todayStr }));
+  } catch {
+    /* quota */
   }
 }
 
@@ -89,10 +100,13 @@ export function Dashboard({
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
   const [startDate, setStartDateRaw] = useState(() => loadStartDate(todayStr));
-  const setStartDate = useCallback((d) => {
-    setStartDateRaw(d);
-    try { sessionStorage.setItem(SS_START_DATE_KEY, d); } catch { /* quota */ }
-  }, []);
+  const setStartDate = useCallback(
+    (d) => {
+      setStartDateRaw(d);
+      saveStartDate(d, todayStr);
+    },
+    [todayStr]
+  );
   useEffect(() => {
     if (!initDate) return;
     setStartDate(initDate);
