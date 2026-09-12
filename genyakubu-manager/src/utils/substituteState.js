@@ -108,3 +108,60 @@ export function subTargetLabel(sub) {
   if (!sub) return "";
   return sub.substitute || META[subState(sub)].label;
 }
+
+/**
+ * まだ人の対応が要る (= 未処理) か。代行未定 (pending) と依頼中 (requested)
+ * の 2 状態。「代行なしで確定」(nosub) は対応済みなので含めない。
+ * サイドバーの赤バッジ・ダッシュボードの要対応カード・代行一覧の
+ * 「未処理」フィルタはすべてこれを使う (画面ごとに status を見ない)。
+ */
+export function isUnresolved(sub) {
+  const st = subState(sub);
+  return st === SUB_STATE.PENDING || st === SUB_STATE.REQUESTED;
+}
+
+/**
+ * 未処理の代行を「今日以降」と「過去」に分けて数える。
+ * 過去の分は放っておくと永久に赤バッジに乗るので、別枠で出して
+ * 片付けられるようにする (今日以降の件数だけを主表示にする)。
+ * @param {Array} subs
+ * @param {string} todayStr "YYYY-MM-DD"
+ */
+export function summarizeOpenSubs(subs, todayStr) {
+  const res = {
+    upcoming: [],
+    past: [],
+    upcomingPending: 0,
+    upcomingRequested: 0,
+  };
+  for (const s of subs || []) {
+    if (!isUnresolved(s)) continue;
+    if (s.date && todayStr && s.date < todayStr) {
+      res.past.push(s);
+    } else {
+      res.upcoming.push(s);
+      if (subState(s) === SUB_STATE.PENDING) res.upcomingPending++;
+      else res.upcomingRequested++;
+    }
+  }
+  return res;
+}
+
+// 代行一覧のステータス絞り込み。旧 2 値 (requested / confirmed) は
+// status の生の値だったが、4 状態 + 「未処理」でも絞れるようにする。
+// 旧キーも同じ名前で受けるので、外部から initFilter で渡された
+// "requested" はそのまま「依頼中」に当たる。
+export const SUB_STATE_FILTERS = Object.freeze([
+  { key: "open", label: "未処理 (未定 + 依頼中)" },
+  { key: SUB_STATE.PENDING, label: META[SUB_STATE.PENDING].label },
+  { key: SUB_STATE.REQUESTED, label: META[SUB_STATE.REQUESTED].label },
+  { key: SUB_STATE.CONFIRMED, label: META[SUB_STATE.CONFIRMED].label },
+  { key: SUB_STATE.NOSUB, label: META[SUB_STATE.NOSUB].label },
+]);
+
+/** 絞り込みキー (SUB_STATE_FILTERS の key) にレコードが当たるか。 */
+export function matchesSubStateFilter(sub, key) {
+  if (!key) return true;
+  if (key === "open") return isUnresolved(sub);
+  return subState(sub) === key;
+}

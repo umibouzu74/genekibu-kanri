@@ -58,5 +58,17 @@ export function useSubsCrud({ subs, saveSubs }) {
     [crud]
   );
 
-  return { save, del };
+  // 一覧の行内から「✓ 確定」「代行者名を入れる」だけを保存する
+  // (モーダルを開かずに済ませる)。patch は substitute / status など
+  // 部分更新。空欄のまま confirmed にもできる (= 代行なしで確定)。
+  const quickUpdate = useCallback(
+    (id, patch, { successMsg } = {}) =>
+      crud.update(id, patch, {
+        successMsg: successMsg || "代行を更新しました",
+        withTimestamp: true,
+      }),
+    [crud]
+  );
+
+  return { save, del, quickUpdate };
 }

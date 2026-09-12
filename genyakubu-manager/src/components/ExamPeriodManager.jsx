@@ -11,6 +11,8 @@ import { nextNumericId } from "../utils/schema";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import { ListPeriodFilter } from "./ListPeriodFilter";
+import { useListPeriod } from "../hooks/useListPeriod";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
@@ -32,6 +34,7 @@ export function ExamPeriodManager({
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
+  newEntryDate = null,
   onConsumeNewEntry,
 }) {
   const formRef = useRef(null);
@@ -257,10 +260,13 @@ export function ExamPeriodManager({
     setError("");
   };
 
-  const resetForm = () => {
+  // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
+  // onClick から呼ばれると event が入るので型で弾く)
+  const resetForm = (presetDate) => {
+    const d = typeof presetDate === "string" ? presetDate : "";
     setName("");
-    setStartDate("");
-    setEndDate("");
+    setStartDate(d);
+    setEndDate(d);
     setTargetGrades([]);
     setAllGrades(true);
     setStopsClasses(true);
@@ -299,6 +305,9 @@ export function ExamPeriodManager({
   const sorted = [...examPeriods].sort((a, b) =>
     a.startDate.localeCompare(b.startDate)
   );
+  // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
+  const period = useListPeriod();
+  const shown = period.apply(sorted, (ep) => [ep.startDate, ep.endDate]);
 
   useEditTarget({
     editTargetId,
@@ -311,6 +320,7 @@ export function ExamPeriodManager({
 
   useNewEntryTarget({
     token: newEntryToken,
+    date: newEntryDate,
     onReset: resetForm,
     onConsume: onConsumeNewEntry,
     formRef,
@@ -797,6 +807,7 @@ export function ExamPeriodManager({
         </div>
       )}
 
+      <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="テスト期間" />
       {/* 一覧 */}
       <div
         style={{
@@ -806,7 +817,7 @@ export function ExamPeriodManager({
           overflow: "hidden",
         }}
       >
-        {sorted.length === 0 ? (
+        {shown.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -818,7 +829,7 @@ export function ExamPeriodManager({
           >
             <div aria-hidden="true" style={{ fontSize: 28, marginBottom: 6 }}>📝</div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              登録されたテスト期間はありません
+              {sorted.length > 0 ? "この期間に該当するテスト期間はありません (期間の絞り込みを変えてください)" : "登録されたテスト期間はありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>
@@ -827,7 +838,7 @@ export function ExamPeriodManager({
             )}
           </div>
         ) : (
-          sorted.map((ep, i) => (
+          shown.map((ep, i) => (
             <div
               key={ep.id}
               style={{
@@ -836,7 +847,7 @@ export function ExamPeriodManager({
                 alignItems: "center",
                 padding: "10px 14px",
                 borderBottom:
-                  i < sorted.length - 1 ? "1px solid #eee" : "none",
+                  i < shown.length - 1 ? "1px solid #eee" : "none",
                 background:
                   editId === ep.id
                     ? "#fffbe6"

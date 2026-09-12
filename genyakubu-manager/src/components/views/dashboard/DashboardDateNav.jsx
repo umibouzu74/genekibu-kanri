@@ -1,5 +1,16 @@
 import { S } from "../../../styles/common";
+import { dateToDay } from "../../../data";
 import { shiftDate } from "../dashboardHelpers";
+
+// 時間割モードは 1 日ずつ送るが、日曜は表せない (月〜土の表) ので飛ばす。
+// 土曜 → 月曜 / 月曜 → 土曜。日別モードは日数ぶんそのまま送る
+function stepDate(dateStr, step, viewMode) {
+  let next = shiftDate(dateStr, step);
+  if (viewMode === "timetable" && dateToDay(next) == null) {
+    next = shiftDate(next, step > 0 ? 1 : -1);
+  }
+  return next;
+}
 import { DAY_COUNT_OPTIONS, DAY_COUNT_LABEL } from "./constants";
 
 export function DashboardDateNav({
@@ -11,6 +22,7 @@ export function DashboardDateNav({
   isToday,
   days,
   viewMode,
+  onJumpToAbsenceFlow,
 }) {
   const stepDays = viewMode === "timetable" ? 1 : daysInRange;
   const label = viewMode === "timetable" ? "表示日" : "表示開始日";
@@ -36,7 +48,7 @@ export function DashboardDateNav({
       />
       <button
         type="button"
-        onClick={() => setStartDate(shiftDate(startDate, -stepDays))}
+        onClick={() => setStartDate(stepDate(startDate, -stepDays, viewMode))}
         style={S.btn(false)}
       >
         ← 前
@@ -50,7 +62,7 @@ export function DashboardDateNav({
       </button>
       <button
         type="button"
-        onClick={() => setStartDate(shiftDate(startDate, stepDays))}
+        onClick={() => setStartDate(stepDate(startDate, stepDays, viewMode))}
         style={S.btn(false)}
       >
         次 →
@@ -73,6 +85,16 @@ export function DashboardDateNav({
             </button>
           ))}
         </div>
+      )}
+      {onJumpToAbsenceFlow && (
+        <button
+          type="button"
+          onClick={() => onJumpToAbsenceFlow(startDate)}
+          title={`${startDate} の欠勤組み換えを開く`}
+          style={{ ...S.btn(false), fontSize: 12, fontWeight: 700 }}
+        >
+          🚑 この日の欠勤組み換え
+        </button>
       )}
       <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
         {viewMode === "timetable" || daysInRange === 1

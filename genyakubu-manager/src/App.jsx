@@ -15,6 +15,7 @@ import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
 import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
+import { MultiDayAbsenceDialog } from "./components/MultiDayAbsenceDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -285,6 +286,8 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
   const [showDayReschedule, setShowDayReschedule] = useState(false);
+  // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
+  const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
   // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
   // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
@@ -295,6 +298,8 @@ export default function App() {
   const [masterTab, setMasterTab] = useState(DEFAULT_MASTER_TAB);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
+  // Cmd+K の日付ジャンプでダッシュボードを開くときの表示日 (YYYY-MM-DD)
+  const [dashInitDate, setDashInitDate] = useState(null);
   // EventCalendar / CommandPalette などからの編集要求 ({ kind, id })
   const [eventEditRequest, setEventEditRequest] = useState(null);
   // EventCalendar からの「新規登録フォームを開く」要求 ({ kind, token })。
@@ -717,6 +722,10 @@ export default function App() {
           setShowDayReschedule(true);
           setSidebarOpen(false);
         }}
+        onOpenMultiDayAbsence={() => {
+          setMultiDayAbsence({});
+          setSidebarOpen(false);
+        }}
         onSelectEventSection={(kind) => {
           selectView(VIEWS.HOLIDAYS);
           setEventSectionRequest(kind);
@@ -729,7 +738,7 @@ export default function App() {
         onJumpToRequestedSubs={() => {
           setSelected(null);
           setView(VIEWS.SUBS);
-          setSubsInitFilter({ status: "requested" });
+          setSubsInitFilter({ status: "open" });
           setSidebarOpen(false);
         }}
         teacherGroups={allTeacherGroups}
@@ -937,14 +946,19 @@ export default function App() {
               daySchedules={daySchedules}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
-              onJumpToRequestedSubs={() => {
-                setSubsInitFilter({ status: "requested" });
+              onJumpToSubs={(status) => {
+                setSubsInitFilter({ status: status || "open" });
                 selectView(VIEWS.SUBS);
               }}
+              onJumpToAbsenceFlow={jumpToAbsenceFlow}
+              isAdmin={isAdmin}
+              initDate={dashInitDate}
+              onConsumeInitDate={() => setDashInitDate(null)}
+              onSelectTeacher={selectTeacher}
             />
           )}
           {view === VIEWS.ALL && !selected && (
-            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} />
+            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
           )}
           {view === VIEWS.COMPARE && !selected && (
             <CompareView
@@ -952,6 +966,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               subjects={subjects}
               teacherKana={teacherKana}
+              onSelectTeacher={selectTeacher}
             />
           )}
           {view === VIEWS.MASTER && !selected && (
@@ -1014,6 +1029,9 @@ export default function App() {
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.HOLIDAY ? eventNewRequest.token : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.HOLIDAY ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1037,6 +1055,9 @@ export default function App() {
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.EXAM ? eventNewRequest.token : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.EXAM ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1052,6 +1073,9 @@ export default function App() {
                 onConsumeEditTarget={() => setEventEditRequest(null)}
                 newEntryToken={
                   eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.token : null
+                }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.SPECIAL ? eventNewRequest.date : null
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
@@ -1072,6 +1096,9 @@ export default function App() {
                   eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON
                     ? eventNewRequest.token
                     : null
+                }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.EXTRA_LESSON ? eventNewRequest.date : null
                 }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
@@ -1094,6 +1121,9 @@ export default function App() {
                     ? eventNewRequest.token
                     : null
                 }
+                newEntryDate={
+                  eventNewRequest?.kind === EVENT_KIND.DAY_SCHEDULE ? eventNewRequest.date : null
+                }
                 onConsumeNewEntry={() => setEventNewRequest(null)}
               />
               </div>
@@ -1114,9 +1144,9 @@ export default function App() {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
               }}
-              onAddNewEvent={(kind) => {
+              onAddNewEvent={(kind, date) => {
                 eventNewTokenRef.current += 1;
-                setEventNewRequest({ kind, token: eventNewTokenRef.current });
+                setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
                 selectView(VIEWS.HOLIDAYS);
               }}
             />
@@ -1152,6 +1182,7 @@ export default function App() {
               onNew={() => setEditSub("new")}
               onEdit={setEditSub}
               onDel={subsCrud.del}
+              onQuickUpdate={subsCrud.quickUpdate}
               onGoToStaffView={() => setView(VIEWS.STAFF)}
               initFilter={subsInitFilter}
               onConsumeInitFilter={() => setSubsInitFilter(null)}
@@ -1218,6 +1249,13 @@ export default function App() {
               isAdmin={isAdmin}
               initDate={absenceFlowInitDate}
               onConsumeInitDate={() => setAbsenceFlowInitDate(null)}
+              daySchedules={daySchedules}
+              extraLessons={extraLessons}
+              onOpenMultiDayAbsence={(init) => setMultiDayAbsence(init || {})}
+              onOpenChainSubstitution={(date) => {
+                setSubsInitFilter({ tab: "chain", date });
+                selectView(VIEWS.SUBS);
+              }}
             />
           )}
           {view === VIEWS.STAFF && !selected && (
@@ -1381,6 +1419,33 @@ export default function App() {
 
       {/* 日まるごと振替 (ある日の授業をまとめて別の日へ)。ダイアログの中で
           実施判定用の索引を組むので、開いている間だけマウントする */}
+      {multiDayAbsence && (
+        <MultiDayAbsenceDialog
+          slots={slots}
+          subs={subs}
+          adjustments={adjustments}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
+          initial={multiDayAbsence}
+          isAdmin={isAdmin}
+          saveSubs={saveSubs}
+          onClose={() => setMultiDayAbsence(null)}
+          onSaved={({ count, mode, fromDate, toDate, teachers: names }) =>
+            toasts.success(
+              `${names.join("・")} の ${fmtDateWeekday(fromDate)} 〜 ${fmtDateWeekday(toDate)} を` +
+                `${mode === "nosub" ? "欠勤 (代行なし)" : "欠勤 (代行未定)"} ${count} 件として登録しました`
+            )
+          }
+        />
+      )}
       {showDayReschedule && (
         <DayRescheduleDialog
           slots={slots}
@@ -1440,6 +1505,27 @@ export default function App() {
               setShowDayReschedule(true);
               setCmdPaletteOpen(false);
             }}
+            onOpenMultiDayAbsence={
+              isAdmin
+                ? () => {
+                    setMultiDayAbsence({});
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
+            onSelectDate={(date) => {
+              setDashInitDate(date);
+              selectView(VIEWS.DASH);
+              setCmdPaletteOpen(false);
+            }}
+            onJumpToAbsenceFlow={
+              isAdmin
+                ? (date) => {
+                    jumpToAbsenceFlow(date);
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
             onSelectSubsSubTab={(tabKey) => {
               setSubsInitFilter({ tab: tabKey });
               selectView(VIEWS.SUBS);

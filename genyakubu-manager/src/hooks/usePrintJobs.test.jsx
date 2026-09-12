@@ -154,6 +154,24 @@ describe("usePrintJobs.handleBatchPrint", () => {
     expect(toasts.info).toHaveBeenCalledWith("一括印刷を中断しました");
   });
 
+  it("スナップショット中に例外が出たら popup を閉じてエラー toast を出す (準備中画面のまま残さない)", async () => {
+    const h = mount({ visibilityForBatchTeacher: perTeacher });
+    pw.updatePendingProgress.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await act(async () => {
+      await h.jobs().handleBatchPrint(["奥村"], [{ year: 2026, month: 9 }]);
+    });
+    errSpy.mockRestore();
+    expect(pw.writePrintDocument).not.toHaveBeenCalled();
+    expect(w.close).toHaveBeenCalled();
+    expect(toasts.error).toHaveBeenCalledWith(expect.stringContaining("生成できません"));
+    // 元の表示に戻っている
+    expect(screen.getByTestId("selected").textContent).toBe("奥村");
+    expect(h.jobs().batchPrintBusy).toBe(false);
+  });
+
   it("ポップアップがブロックされたらエラー toast だけ出して何もしない", async () => {
     pw.openPrintWindow.mockReturnValue(null);
     const h = mount({ visibilityForBatchTeacher: perTeacher });

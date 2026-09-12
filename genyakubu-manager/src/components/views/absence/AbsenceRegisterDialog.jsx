@@ -24,6 +24,9 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
   const keyOf = (t) => `${t.slotId}|${t.teacher}`;
   const [excluded, setExcluded] = useState(() => new Set());
   const [mode, setMode] = useState("pending"); // pending = 代行を探す / nosub = 代行なし
+  // 理由メモ (体調不良 / 学校行事 など)。選んだ全件に同じ値を入れる。
+  // 保存後に授業管理で 1 件ずつ ✏️ を開き直さなくて済むように
+  const [memo, setMemo] = useState("");
 
   const byTeacher = useMemo(() => {
     const m = new Map();
@@ -219,6 +222,20 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
         </details>
       )}
 
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <label htmlFor="absence-register-memo" style={{ fontSize: 12, fontWeight: 700 }}>
+          理由メモ:
+        </label>
+        <input
+          id="absence-register-memo"
+          type="text"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          placeholder="体調不良 / 学校行事 など (任意。全件に同じメモ)"
+          style={{ ...S.input, flex: 1 }}
+        />
+      </div>
+
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button type="button" onClick={onClose} style={S.btn(false)}>
           キャンセル
@@ -226,7 +243,7 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
         <button
           type="button"
           disabled={selected.length === 0}
-          onClick={() => onSubmit(selected, mode)}
+          onClick={() => onSubmit(selected, mode, memo.trim())}
           style={{
             ...S.btn(true),
             cursor: selected.length === 0 ? "not-allowed" : "pointer",

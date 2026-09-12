@@ -12,8 +12,6 @@ import {
   isSlotCancelledByDaySchedule,
 } from "../../../utils/daySchedules";
 import { DashDayRow } from "./DashDayRow";
-import { EventSummaryCards } from "./EventSummaryCards";
-import { SubSummaryCards } from "./SubSummaryCards";
 
 export function DashboardListView({
   slots,
@@ -22,9 +20,6 @@ export function DashboardListView({
   displayCutoff,
   days,
   todayStr,
-  holidays = [],
-  examPeriods = [],
-  specialEvents = [],
   extraLessons = [],
   daySchedules = [],
   holidaysFor,
@@ -33,8 +28,8 @@ export function DashboardListView({
   isOffForGrade,
   sessionCtx,
   adjustments = [],
-  onJumpToEventCalendar,
-  onJumpToRequestedSubs,
+  onJumpToAbsenceFlow,
+  onSelectTeacher,
 }) {
   // コマが 1 つも無い学年グループ (運用していない学年) は全日判定から外す。
   // 終了日が空のまま残っていると、他が全部終わってもバナーが出ないため。
@@ -44,19 +39,6 @@ export function DashboardListView({
   );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <SubSummaryCards
-        subs={subs}
-        slots={slots}
-        todayStr={todayStr}
-        onJumpToRequestedSubs={onJumpToRequestedSubs}
-      />
-      <EventSummaryCards
-        todayStr={todayStr}
-        holidays={holidays}
-        examPeriods={examPeriods}
-        specialEvents={specialEvents}
-        onJumpToEventCalendar={onJumpToEventCalendar}
-      />
       {days.map(({ dateStr, dow }) => {
         const hols = holidaysFor(dateStr);
         const cutoffKind = getDayCutoffKind(dateStr, displayCutoff, { activeGroupLabels });
@@ -113,6 +95,9 @@ export function DashboardListView({
               }
               daySchedulesForDate={getDaySchedulesForDate(daySchedules, dateStr)}
               sessionCtx={sessionCtx}
+              isToday={dateStr === todayStr}
+              onJumpToAbsenceFlow={onJumpToAbsenceFlow}
+              onSelectTeacher={onSelectTeacher}
             />
           </div>
         );

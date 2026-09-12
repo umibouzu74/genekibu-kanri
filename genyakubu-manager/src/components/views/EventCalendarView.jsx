@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, WEEKDAYS } from "../../data";
 import { eachDateStrInRange, formatDateRange, overlapsRange } from "../../utils/dateHelpers";
 import { S } from "../../styles/common";
@@ -216,6 +216,27 @@ export function EventCalendarView({
 
   const showAdd = isAdmin && !!onAddNewEvent;
 
+  // 日付セルの「＋」→ 種別メニュー。開いているセルの日付を持つ。外側クリック /
+  // Escape で閉じる。「10/13 を休講に」がカレンダーを見て別画面で日付を打ち直す
+  // 往復にならないよう、セルから日付つきで登録フォームを開く
+  const [addMenuDate, setAddMenuDate] = useState(null);
+  const addMenuRef = useRef(null);
+  useEffect(() => {
+    if (!addMenuDate) return undefined;
+    const onDown = (e) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setAddMenuDate(null);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape" && !e.isComposing) setAddMenuDate(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [addMenuDate]);
+
   // 新規登録ボタン (ヘッダ・空状態で再利用)。hover で背景を薄く塗る。
   const renderAddButton = (f) => (
     <button
@@ -399,9 +420,92 @@ export function EventCalendarView({
                   color:
                     dow === 0 ? "#c44" : dow === 6 ? "#44c" : "#333",
                   marginBottom: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 4,
                 }}
               >
-                {d}
+                <span>{d}</span>
+                {showAdd && (
+                  <span
+                    className="no-print"
+                    style={{ position: "relative" }}
+                    ref={addMenuDate === ds ? addMenuRef : undefined}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setAddMenuDate((cur) => (cur === ds ? null : ds))}
+                      aria-label={`${ds} に登録`}
+                      aria-expanded={addMenuDate === ds}
+                      aria-haspopup="menu"
+                      title="この日に休講・テスト期間・イベント・追加授業・特別時程を登録"
+                      className="event-cal-add"
+                      style={{
+                        border: "1px solid #ccc",
+                        background: addMenuDate === ds ? "#1a1a2e" : "#fff",
+                        color: addMenuDate === ds ? "#fff" : "#666",
+                        borderRadius: 4,
+                        width: 18,
+                        height: 18,
+                        lineHeight: "16px",
+                        fontSize: 12,
+                        padding: 0,
+                        cursor: "pointer",
+                      }}
+                    >
+                      +
+                    </button>
+                    {addMenuDate === ds && (
+                      <div
+                        role="menu"
+                        aria-label={`${ds} に登録する種別`}
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          zIndex: 20,
+                          background: "#fff",
+                          border: "1px solid #ccc",
+                          borderRadius: 6,
+                          boxShadow: "0 4px 12px rgba(0,0,0,.15)",
+                          padding: 4,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                          minWidth: 130,
+                          fontWeight: 400,
+                        }}
+                      >
+                        {ADD_BUTTONS.map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setAddMenuDate(null);
+                              onAddNewEvent(f.key, ds);
+                            }}
+                            style={{
+                              textAlign: "left",
+                              fontSize: 12,
+                              padding: "5px 8px",
+                              border: "none",
+                              background: "none",
+                              color: f.color,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              borderRadius: 4,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            + {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </span>
+                )}
               </div>
               {evs.map((ev) => {
                 const isStart = ev.startDate === ds;

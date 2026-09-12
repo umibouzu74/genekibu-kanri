@@ -123,6 +123,8 @@ export function ExcelGridView({
   extraLessons = [],
   daySchedules = [],
   dashboardMode = false,
+  // 講師名クリックでその人の月間へ (ダッシュボード / 閲覧モードだけ)
+  onSelectTeacher,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -1095,6 +1097,7 @@ export function ExcelGridView({
                     dashboardMode={dashboardMode}
                     closureLabels={dashboardHolidayLabels}
                     teacherConflicts={teacherConflictMap}
+                    onSelectTeacher={!subMode.isSubMode ? onSelectTeacher : undefined}
                     adjustments={dashboardMode || subMode.isSubMode ? adjustments : []}
                     daySchedules={dashboardMode || subMode.isSubMode ? daySchedules : []}
                   />

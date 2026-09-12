@@ -37,8 +37,11 @@ export function useEditTarget({
 // 外部からの「新規登録フォームを開く」要求を消化するフック。
 // token が変化したら resetForm + scrollIntoView を行う。トークンは
 // クリック毎に変化させる必要があるため、親側で Date.now() などを設定する。
+// date ("YYYY-MM-DD") を渡すと onReset(date) に渡る (イベントカレンダーの
+// 日付セルから登録するとき、その日をフォームに入れておくため)。
 export function useNewEntryTarget({
   token,
+  date = null,
   onReset,
   onConsume,
   formRef,
@@ -47,7 +50,7 @@ export function useNewEntryTarget({
   useEffect(() => {
     if (token == null) return;
     if (isAdmin) {
-      onReset?.();
+      onReset?.(date || undefined);
       requestAnimationFrame(() => {
         formRef?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // イベントカレンダー: 追加授業の表示 (H1b) と visibility トグルの骨格を固定する。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { EventCalendarView } from "./EventCalendarView";
 import { DEFAULT_EVENT_VISIBILITY } from "../EventVisibilityToggles";
 import { EVENT_KIND } from "../../constants/eventKinds";
@@ -97,5 +97,31 @@ describe("EventCalendarView (追加授業)", () => {
     // ヘッダと空状態の 2 箇所に出る (どちらでも同じ動作)
     fireEvent.click(screen.getAllByTitle("追加授業を新規登録")[0]);
     expect(onAddNewEvent).toHaveBeenCalledWith(EVENT_KIND.EXTRA_LESSON);
+  });
+});
+
+describe("EventCalendarView の日付セルからの登録", () => {
+  it("管理者には各日のセルに ＋ が出て、種別を選ぶと kind と日付を渡す", () => {
+    const onAddNewEvent = vi.fn();
+    render(
+      <EventCalendarView
+        extraLessons={[]}
+        isAdmin
+        onAddNewEvent={onAddNewEvent}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: `${ym}-15 に登録` }));
+    const menu = screen.getByRole("menu", { name: `${ym}-15 に登録する種別` });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "+ 休講" }));
+    expect(onAddNewEvent).toHaveBeenCalledWith(EVENT_KIND.HOLIDAY, `${ym}-15`);
+    // 選んだらメニューは閉じる
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("閲覧者にはセルの ＋ を出さない", () => {
+    renderView({ visibility: DEFAULT_EVENT_VISIBILITY });
+    expect(screen.queryByRole("button", { name: /に登録$/ })).toBeNull();
   });
 });

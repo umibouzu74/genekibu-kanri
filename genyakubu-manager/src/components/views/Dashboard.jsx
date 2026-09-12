@@ -1,12 +1,15 @@
-import { useMemo, useState } from "react";
-import { fmtDate } from "../../data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { dateToDay } from "../../data";
 import { S } from "../../styles/common";
-import { buildDayRange } from "./dashboardHelpers";
+import { buildDayRange, shiftDate } from "./dashboardHelpers";
 import { ExcelGridView } from "./ExcelGridView";
 import { DAY_COUNT_OPTIONS } from "./dashboard/constants";
 import { DashboardDateNav } from "./dashboard/DashboardDateNav";
 import { DashboardListView } from "./dashboard/DashboardListView";
+import { EventSummaryCards } from "./dashboard/EventSummaryCards";
+import { SubSummaryCards } from "./dashboard/SubSummaryCards";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { useToday } from "../../hooks/useToday";
 import { PrintButton } from "../PrintButton";
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
@@ -19,6 +22,29 @@ import { PrintButton } from "../PrintButton";
 export { DashDayRow } from "./dashboard/DashDayRow";
 
 const LS_DAY_COUNT_KEY = "genyakubu-dash-day-count";
+// 表示日はタブ単位 (sessionStorage) で覚える。来週の準備中に別の画面へ
+// 寄って戻ると今日に戻ってしまい、日付を打ち直しになるため。
+// タブを閉じれば今日に戻る (localStorage にすると翌日開いても昨日のまま)
+const SS_START_DATE_KEY = "genyakubu-dash-start-date";
+// 保存した日 (savedOn) も一緒に持ち、別の日に読み直したら今日へ戻す
+// (開きっぱなしのタブを翌朝リロードして昨日の日付から始まらないように)
+function loadStartDate(todayStr) {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(SS_START_DATE_KEY) || "null");
+    const v = raw?.date;
+    if (raw?.savedOn !== todayStr) return todayStr;
+    return /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : todayStr;
+  } catch {
+    return todayStr;
+  }
+}
+function saveStartDate(date, todayStr) {
+  try {
+    sessionStorage.setItem(SS_START_DATE_KEY, JSON.stringify({ date, savedOn: todayStr }));
+  } catch {
+    /* quota */
+  }
+}
 
 function loadDayCount() {
   try {
@@ -62,12 +88,39 @@ export function Dashboard({
   daySchedules = [],
   saveSubs,
   onJumpToEventCalendar,
-  onJumpToRequestedSubs,
+  onJumpToSubs,
+  onJumpToAbsenceFlow,
+  isAdmin = false,
+  // Cmd+K の日付ジャンプなど、外から表示日を指定して開くとき
+  initDate = null,
+  onConsumeInitDate,
+  // 講師名クリックでその人の月間へ
+  onSelectTeacher,
 }) {
-  const todayStr = fmtDate(new Date());
-  const [startDate, setStartDate] = useState(todayStr);
+  // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
+  const todayStr = useToday();
+  const [startDate, setStartDateRaw] = useState(() => loadStartDate(todayStr));
+  const setStartDate = useCallback(
+    (d) => {
+      setStartDateRaw(d);
+      saveStartDate(d, todayStr);
+    },
+    [todayStr]
+  );
+  useEffect(() => {
+    if (!initDate) return;
+    setStartDate(initDate);
+    onConsumeInitDate?.();
+    // initDate が変わったときだけ (setStartDate は安定、onConsumeInitDate は毎回新しい)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initDate]);
   const [daysInRange, setDaysInRange] = useState(loadDayCount);
   const [viewMode, setViewMode] = useState(loadViewMode);
+  // 時間割モードは曜日 (月〜土) の表なので日曜は表せない。日付欄で日曜を
+  // 選んだときは黙って別の日を出さず、前後の日へ送るボタンを出す
+  const isSundayInTimetable = viewMode === "timetable" && dateToDay(startDate) == null;
+  // 管理者だけが欠勤組み換えを開ける (閲覧者には導線を出さない)
+  const jumpToAbsenceFlow = isAdmin && onJumpToAbsenceFlow ? onJumpToAbsenceFlow : null;
 
   const changeDayCount = (n) => {
     setDaysInRange(n);
@@ -162,10 +215,62 @@ export function Dashboard({
           isToday={isToday}
           days={days}
           viewMode={viewMode}
+          onJumpToAbsenceFlow={jumpToAbsenceFlow}
         />
       </div>
 
-      {viewMode === "timetable" ? (
+      {/* 要対応 (代行未定・依頼中・今日明日の代行) と直近 7 日のイベントは
+          表示モードを問わず出す。時間割モードにしか無いと、既定のままの人には
+          「今日なにが要対応か」が一度も見えない */}
+      <SubSummaryCards
+        subs={subs}
+        slots={slots}
+        todayStr={todayStr}
+        onJumpToSubs={onJumpToSubs}
+        onJumpToAbsenceFlow={jumpToAbsenceFlow}
+      />
+      <EventSummaryCards
+        todayStr={todayStr}
+        holidays={holidays}
+        examPeriods={examPeriods}
+        specialEvents={specialEvents}
+        onJumpToEventCalendar={onJumpToEventCalendar}
+      />
+
+      {isSundayInTimetable ? (
+        <div
+          role="status"
+          style={{
+            background: "#fff8e0",
+            border: "1px solid #e0d080",
+            borderRadius: 10,
+            padding: "14px 16px",
+            color: "#8a7020",
+            fontSize: 13,
+            fontWeight: 700,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <span>{startDate} は日曜日です。時間割 (月〜土) はありません。</span>
+          <button
+            type="button"
+            onClick={() => setStartDate(shiftDate(startDate, -1))}
+            style={S.btn(false)}
+          >
+            ← 土曜へ
+          </button>
+          <button
+            type="button"
+            onClick={() => setStartDate(shiftDate(startDate, 1))}
+            style={S.btn(false)}
+          >
+            月曜へ →
+          </button>
+        </div>
+      ) : viewMode === "timetable" ? (
         <ExcelGridView
           slots={slots}
           saveSlots={() => {}}
@@ -191,6 +296,7 @@ export function Dashboard({
           extraLessons={extraLessons}
           daySchedules={daySchedules}
           dashboardMode
+          onSelectTeacher={onSelectTeacher}
         />
       ) : (
         <DashboardListView
@@ -211,8 +317,8 @@ export function Dashboard({
           sessionCtx={sessionCtx}
           todayStr={todayStr}
           adjustments={adjustments}
-          onJumpToEventCalendar={onJumpToEventCalendar}
-          onJumpToRequestedSubs={onJumpToRequestedSubs}
+          onJumpToAbsenceFlow={jumpToAbsenceFlow}
+          onSelectTeacher={onSelectTeacher}
         />
       )}
     </div>

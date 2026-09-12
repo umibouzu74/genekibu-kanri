@@ -8,16 +8,24 @@ import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
 import { buildSessionCountMap } from "../../utils/sessionCount";
-import { makeEventHelpers } from "./dashboardHelpers";
+import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
+import { useToday } from "../../hooks/useToday";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import {
+  activeTeachersOnDate,
   collectAbsenceTargets,
   getAbsenceDaySlots,
   getAbsentSlotIds,
 } from "../../utils/absenceHelpers";
 import { getCutoffGroupLabelsWithSlots, getDayCutoffKind } from "../../utils/timetable";
+import {
+  getDaySchedulesForDate,
+  isSlotCancelledByDaySchedule,
+} from "../../utils/daySchedules";
+import { extraLessonsOnDate } from "../../utils/extraLessons";
+import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
@@ -46,15 +54,23 @@ export function AbsenceWorkflowView({
   isAdmin,
   initDate,
   onConsumeInitDate,
+  // 特別時程 (1 限カット等) と追加授業。ダッシュボードと同じ日の姿にする
+  daySchedules = [],
+  extraLessons = [],
+  // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
+  onOpenMultiDayAbsence,
+  onOpenChainSubstitution,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
   // 一覧画面から特定日付つきで遷移してきた場合は、初期表示からその日付に
   // することで「今日 → 目的日」のチラつきを防ぐ。
+  const todayStr = useToday();
   const [date, setDate] = useState(() => initDate || fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
+  const [teacherQuery, setTeacherQuery] = useState("");
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
 
@@ -139,13 +155,49 @@ export function AbsenceWorkflowView({
 
   // 対象日のコマ群。曜日だけでなく時間割の適用期間・表示期間でも絞る
   // (旧期の時間割が残っていると同じコマが 2 重・3 重に並ぶため)。
+  // 特別時程の部分休講 (1 限カット等) はダッシュボードと同じく外す
+  // (欠勤対象として出すと、休講のコマに代行を立ててしまう)
   const daySlots = useMemo(
     () =>
       sortS(
-        getAbsenceDaySlots(slots, date, dayName, { timetables, displayCutoff })
+        getAbsenceDaySlots(slots, date, dayName, { timetables, displayCutoff }).filter(
+          (s) => !isSlotCancelledByDaySchedule(s, date, daySchedules)
+        )
       ),
-    [slots, date, dayName, timetables, displayCutoff]
+    [slots, date, dayName, timetables, displayCutoff, daySchedules]
   );
+  const daySchedulesToday = useMemo(
+    () => getDaySchedulesForDate(daySchedules, date),
+    [daySchedules, date]
+  );
+  const extraLessonsToday = useMemo(
+    () => extraLessonsOnDate(extraLessons, date),
+    [extraLessons, date]
+  );
+
+  // 欠勤する先生のプルダウンは「この日に担当がある人」を先頭にまとめる。
+  // 全員 (バイト含む) を平坦に並べると長くて探せない。隔週は担当週 (A/B) を
+  // 解いた上で判定する (B 週の主担当は「この日は担当なし」側に落ちる)。
+  // 誰でも選べることは変えない (欠勤する人がその日にコマを持たなくても、
+  // 特訓や追加授業の欠勤を登録したいことはある)
+  const teacherGroups = useMemo(() => {
+    const onDay = new Set();
+    for (const s of daySlots) {
+      for (const t of activeTeachersOnDate(s, date, {
+        biweeklyAnchors: biweeklyAnchors || [],
+        holidays: holidays || [],
+        examPeriods: examPeriods || [],
+      })) {
+        onDay.add(t);
+      }
+    }
+    const q = teacherQuery.trim();
+    const hit = (t) => !q || t.includes(q);
+    return {
+      onDay: allTeachers.filter((t) => onDay.has(t) && hit(t)),
+      others: allTeachers.filter((t) => !onDay.has(t) && hit(t)),
+    };
+  }, [daySlots, date, allTeachers, teacherQuery, biweeklyAnchors, holidays, examPeriods]);
 
   // 欠勤先生が担当するコマ集合 (赤枠表示用)。対象は画面に出ているコマだけ。
   // 隔週は担当週 (A/B) を解いてから判定する ("欠勤にする" の対象と同じ判定)。
@@ -311,11 +363,12 @@ export function AbsenceWorkflowView({
   //   pending = これから代行を探す (代行未定)
   //   nosub   = 代行を立てず残りの担当者で回す (代行なしで確定)
   const handleRegisterAbsence = useCallback(
-    (selected, mode) => {
+    (selected, mode, memo = "") => {
       for (const t of selected) {
         draft.updateSub(t.slotId, t.teacher, {
           substitute: "",
           status: mode === "nosub" ? "confirmed" : "requested",
+          ...(memo ? { memo } : {}),
         });
       }
       setAbsenceDialogOpen(false);
@@ -464,13 +517,39 @@ export function AbsenceWorkflowView({
           alignItems: "center",
         }}
       >
-        <label style={{ fontSize: 12, fontWeight: 700 }}>対象日:</label>
+        <label htmlFor="absence-flow-date" style={{ fontSize: 12, fontWeight: 700 }}>
+          対象日:
+        </label>
         <input
+          id="absence-flow-date"
           type="date"
           value={date}
-          onChange={(e) => handleDateChange(e.target.value)}
+          onChange={(e) => e.target.value && handleDateChange(e.target.value)}
           style={{ ...S.input, width: "auto" }}
         />
+        {/* 翌日分を続けて処理するのに日付ピッカーを開かなくて済むように
+            (ダッシュボードの DashboardDateNav と同じ 3 ボタン) */}
+        <button
+          type="button"
+          onClick={() => handleDateChange(shiftDate(date, -1))}
+          style={{ ...S.btn(false), fontSize: 12 }}
+        >
+          ← 前
+        </button>
+        <button
+          type="button"
+          onClick={() => handleDateChange(todayStr)}
+          style={{ ...S.btn(date === todayStr), fontSize: 12 }}
+        >
+          今日
+        </button>
+        <button
+          type="button"
+          onClick={() => handleDateChange(shiftDate(date, 1))}
+          style={{ ...S.btn(false), fontSize: 12 }}
+        >
+          次 →
+        </button>
         {dayName && (
           <span
             style={{
@@ -517,25 +596,67 @@ export function AbsenceWorkflowView({
                 marginTop: 2,
               }}
             >
-              {allTeachers.map((t) => (
-                <label
-                  key={t}
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    padding: "2px 4px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedTeachers.includes(t)}
-                    onChange={() => toggleTeacher(t)}
-                  />
-                  {t}
-                </label>
-              ))}
+              <input
+                type="search"
+                value={teacherQuery}
+                onChange={(e) => setTeacherQuery(e.target.value)}
+                placeholder="名前で絞り込み"
+                aria-label="欠勤する先生を名前で絞り込み"
+                autoFocus
+                style={{
+                  ...S.input,
+                  width: "100%",
+                  fontSize: 12,
+                  padding: "4px 6px",
+                  marginBottom: 4,
+                  boxSizing: "border-box",
+                }}
+              />
+              {[
+                { key: "onDay", label: `この日に担当あり (${teacherGroups.onDay.length})`, list: teacherGroups.onDay },
+                { key: "others", label: `その他 (${teacherGroups.others.length})`, list: teacherGroups.others },
+              ].map((g) =>
+                g.list.length === 0 ? null : (
+                  <div key={g.key} role="group" aria-label={g.label}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#888",
+                        padding: "4px 4px 2px",
+                        borderTop: g.key === "others" ? "1px solid #eee" : undefined,
+                        marginTop: g.key === "others" ? 4 : 0,
+                      }}
+                    >
+                      {g.label}
+                    </div>
+                    {g.list.map((t) => (
+                      <label
+                        key={t}
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          padding: "2px 4px",
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTeachers.includes(t)}
+                          onChange={() => toggleTeacher(t)}
+                        />
+                        {t}
+                      </label>
+                    ))}
+                  </div>
+                )
+              )}
+              {teacherGroups.onDay.length === 0 && teacherGroups.others.length === 0 && (
+                <div style={{ fontSize: 11, color: "#888", padding: 4 }}>
+                  該当する先生がいません
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -573,6 +694,30 @@ export function AbsenceWorkflowView({
             ❗ 欠勤にする ({absenceTargets.targets.length} 件)
           </button>
         )}
+        {(onOpenMultiDayAbsence || onOpenChainSubstitution) && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {onOpenMultiDayAbsence && (
+              <button
+                type="button"
+                onClick={() => onOpenMultiDayAbsence({ teachers: selectedTeachers, date })}
+                title="インフル 1 週間など、複数日にまたがる欠勤をまとめて登録する"
+                style={{ ...S.btn(false), fontSize: 12 }}
+              >
+                🤒 複数日の欠勤登録
+              </button>
+            )}
+            {onOpenChainSubstitution && (
+              <button
+                type="button"
+                onClick={() => onOpenChainSubstitution(date)}
+                title="この日の代行未定のコマに、空いている先生を自動で当ててみる (提案。自動では確定しない)"
+                style={{ ...S.btn(false), fontSize: 12 }}
+              >
+                🔗 玉突き代行で探す
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 表示期間外の日: 「開講前」と「終講後 (未確定)」は必ず出し分ける */}
@@ -592,6 +737,41 @@ export function AbsenceWorkflowView({
           {cutoffBannerText(dayCutoffKind)}
         </div>
       )}
+
+      {/* 特別時程: 時刻の読み替え・1 限カットがある日は先に知らせる
+          (グリッドの時刻はコマの元の時刻のまま。カットされたコマは出さない) */}
+      {daySchedulesToday.length > 0 && (
+        <div
+          role="status"
+          style={{
+            background: "#efeaf8",
+            border: "1px solid #b8a8e0",
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontSize: 12,
+            color: "#4a3a8e",
+            fontWeight: 700,
+          }}
+        >
+          {daySchedulesToday.map((d) => {
+            const mapSummary = [
+              ...(d.timeMap || []).map((m) => `${m.from}→${m.to}`),
+              ...(d.cancelTimes || []).map((t) => `${t} 休講`),
+            ].join(" / ");
+            return (
+              <div key={d.id}>
+                ⏰ 特別時程 {d.label ? `「${d.label}」` : ""} ({(d.targetGrades || []).join("・")})
+                {mapSummary ? `: ${mapSummary}` : ""}
+                <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                  — 休講のコマは下のグリッドに出しません。時刻は元の時刻で並んでいます
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* 追加授業: この日の担当を確かめる場なので出す (代行はここでは登録しない) */}
+      <ExtraLessonBanner lessons={extraLessonsToday} />
 
       {/* Timetable grid */}
       <AbsenceTimetable

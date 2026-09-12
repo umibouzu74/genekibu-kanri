@@ -13,7 +13,14 @@ import { groupTeacherNames } from "../../utils/groupTeacherNames";
 
 const TEACHER_COLORS = ["#2e6a9e", "#c05030", "#3d7a4a", "#9e6a2e"];
 
-export function CompareView({ slots, partTimeStaff = [], subjects = [], teacherKana = {} }) {
+export function CompareView({
+  slots,
+  partTimeStaff = [],
+  subjects = [],
+  teacherKana = {},
+  // 列見出しの講師名クリックでその人の月間へ
+  onSelectTeacher,
+}) {
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [searchInput, setSearchInput] = useState("");
 
@@ -236,7 +243,27 @@ export function CompareView({ slots, partTimeStaff = [], subjects = [], teacherK
                       fontWeight: 800,
                     }}
                   >
-                    {t}
+                    {onSelectTeacher ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelectTeacher(t)}
+                        title={`${t} の月間スケジュールを開く`}
+                        style={{
+                          border: "none",
+                          background: "none",
+                          padding: 0,
+                          font: "inherit",
+                          color: "inherit",
+                          cursor: "pointer",
+                          textDecoration: "underline dotted",
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        {t}
+                      </button>
+                    ) : (
+                      t
+                    )}
                   </th>
                 ))}
               </tr>

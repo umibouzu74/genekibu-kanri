@@ -50,6 +50,7 @@ export function ExcelSection({
   daySchedules = [],
   // slotId → 講師の同時刻の重なり (ExcelGridView で日単位に組んだもの)
   teacherConflicts = null,
+  onSelectTeacher,
 }) {
   // 当日の保存済み合同/移動 + 特別時程の時刻読み替えを索引化
   const adjIndex = useMemo(
@@ -658,6 +659,7 @@ export function ExcelSection({
                             }
                             teacherOverride={groupTeacherMap?.get(combined.slot.id)}
                             dashboardMode={dashboardMode}
+                            onSelectTeacher={onSelectTeacher}
                             {...subProps}
                           />
                         );
@@ -707,6 +709,7 @@ export function ExcelSection({
                         }
                         teacherOverride={slot ? groupTeacherMap?.get(slot.id) : undefined}
                         dashboardMode={dashboardMode}
+                            onSelectTeacher={onSelectTeacher}
                         {...subProps}
                       />
                     );

@@ -11,6 +11,8 @@ import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
 import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import { ListPeriodFilter } from "./ListPeriodFilter";
+import { useListPeriod } from "../hooks/useListPeriod";
 import { formatDateRange } from "../utils/dateHelpers";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
@@ -30,6 +32,7 @@ export function SpecialEventManager({
   editTargetId = null,
   onConsumeEditTarget,
   newEntryToken = null,
+  newEntryDate = null,
   onConsumeNewEntry,
 }) {
   const formRef = useRef(null);
@@ -98,11 +101,14 @@ export function SpecialEventManager({
 
   const isGradeSelected = (g) => allGrades || targetGrades.includes(g);
 
-  const resetForm = () => {
+  // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
+  // onClick から呼ばれると event が入るので型で弾く)
+  const resetForm = (presetDate) => {
+    const d = typeof presetDate === "string" ? presetDate : "";
     setName("");
     setEventType(DEFAULT_SPECIAL_EVENT_TYPE);
-    setStartDate("");
-    setEndDate("");
+    setStartDate(d);
+    setEndDate(d);
     setMemo("");
     setTargetGrades([]);
     setAllGrades(true);
@@ -191,6 +197,9 @@ export function SpecialEventManager({
   const sorted = [...specialEvents].sort(
     (a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id
   );
+  // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
+  const period = useListPeriod();
+  const shown = period.apply(sorted, (ev) => [ev.startDate, ev.endDate]);
 
   useEditTarget({
     editTargetId,
@@ -203,6 +212,7 @@ export function SpecialEventManager({
 
   useNewEntryTarget({
     token: newEntryToken,
+    date: newEntryDate,
     onReset: resetForm,
     onConsume: onConsumeNewEntry,
     formRef,
@@ -555,6 +565,7 @@ export function SpecialEventManager({
         </div>
       )}
 
+      <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="特別イベント" />
       {/* 一覧 */}
       <div
         style={{
@@ -564,7 +575,7 @@ export function SpecialEventManager({
           overflow: "hidden",
         }}
       >
-        {sorted.length === 0 ? (
+        {shown.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -578,7 +589,7 @@ export function SpecialEventManager({
               📌
             </div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              登録された特別イベントはありません
+              {sorted.length > 0 ? "この期間に該当する特別イベントはありません (期間の絞り込みを変えてください)" : "登録された特別イベントはありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>
@@ -587,7 +598,7 @@ export function SpecialEventManager({
             )}
           </div>
         ) : (
-          sorted.map((ev, i) => {
+          shown.map((ev, i) => {
             const meta = specialEventTypeMeta(ev.eventType);
             return (
               <div
@@ -598,7 +609,7 @@ export function SpecialEventManager({
                   alignItems: "center",
                   padding: "10px 14px",
                   borderBottom:
-                    i < sorted.length - 1 ? "1px solid #eee" : "none",
+                    i < shown.length - 1 ? "1px solid #eee" : "none",
                   background:
                     editId === ev.id
                       ? "#fffbe6"

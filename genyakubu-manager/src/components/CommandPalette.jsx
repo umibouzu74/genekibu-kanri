@@ -6,6 +6,10 @@ import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
+import { parseDateQuery } from "../utils/parseDateQuery";
+import { fmtDateWeekday } from "../utils/dateHelpers";
+import { shiftDate } from "./views/dashboardHelpers";
+import { useToday } from "../hooks/useToday";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -25,9 +29,15 @@ export function CommandPalette({
   onSelectSubsSubTab,
   onSelectMasterTab,
   onOpenDayReschedule,
+  onOpenMultiDayAbsence,
+  // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
+  // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
+  onSelectDate,
+  onJumpToAbsenceFlow,
   views,
   onShowShortcuts,
 }) {
+  const todayStr = useToday();
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
   const [query, setQuery] = useState("");
@@ -46,15 +56,62 @@ export function CommandPalette({
   useFocusTrap(dialogRef, { onClose, enabled: open });
 
   const results = useMemo(() => {
-    if (!query.trim()) return [];
     const q = query.trim().toLowerCase();
     const hits = [];
+    // 空のときは「何ができるか」が分かるように主要なビューと操作を固定の
+    // 一覧で出す (使用頻度や履歴で並べ替えはしない)。データ検索は空では
+    // 走らせない
+    const empty = !q;
+    const matchLabel = (label) => empty || label.toLowerCase().includes(q);
+
+    // 日付ジャンプ: 「9/24」「2026-09-24」でその日のダッシュボード /
+    // 欠勤組み換えを開く。空のときは今日・明日を出す
+    const dateHits = [];
+    if (onSelectDate || onJumpToAbsenceFlow) {
+      const dates = empty
+        ? [
+            { d: todayStr, tag: "今日" },
+            { d: shiftDate(todayStr, 1), tag: "明日" },
+          ]
+        : (() => {
+            const d = parseDateQuery(query, todayStr);
+            return d ? [{ d, tag: null }] : [];
+          })();
+      for (const { d, tag } of dates) {
+        const when = `${tag ? `${tag} ` : ""}${fmtDateWeekday(d)}`;
+        if (onSelectDate) {
+          dateHits.push({
+            type: "date",
+            label: `${when} のダッシュボード`,
+            detail: "その日の授業を開く",
+            action: () => {
+              onSelectDate(d);
+              onClose();
+            },
+          });
+        }
+        if (onJumpToAbsenceFlow) {
+          dateHits.push({
+            type: "date",
+            label: `${when} の欠勤組み換え`,
+            detail: "その日の欠勤・代行・振替を登録する",
+            action: () => {
+              onJumpToAbsenceFlow(d);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+    hits.push(...dateHits);
 
     // 講師検索
     const teacherSet = new Set();
-    for (const s of slots) {
-      for (const t of getSlotTeachers(s)) {
-        if (t.toLowerCase().includes(q)) teacherSet.add(t);
+    if (!empty) {
+      for (const s of slots) {
+        for (const t of getSlotTeachers(s)) {
+          if (t.toLowerCase().includes(q)) teacherSet.add(t);
+        }
       }
     }
     for (const t of teacherSet) {
@@ -67,30 +124,40 @@ export function CommandPalette({
       });
     }
 
-    // コマ検索 (科目・教室・備考)
-    const matchedSlots = slots.filter(
-      (s) =>
-        !teacherSet.has(s.teacher) && // 講師ヒットは除く
-        (s.subj?.toLowerCase().includes(q) ||
-          s.room?.toLowerCase().includes(q) ||
-          s.note?.toLowerCase().includes(q) ||
-          s.grade?.toLowerCase().includes(q))
-    );
-    for (const s of matchedSlots.slice(0, 10)) {
-      hits.push({
-        type: "slot",
-        label: `${s.day} ${s.time} ${s.grade} ${s.subj}`,
-        detail: `${s.teacher} / ${s.room || ""}`,
-        grade: s.grade,
-        action: () => {
-          onSelectTeacher(s.teacher);
-          onClose();
-        },
-      });
+    // コマ検索 (科目・教室・備考)。複数講師のコマ ("香川·福江") は講師ごとに
+    // 1 件ずつ出す (結合文字列をそのまま講師名として選ばないため)
+    const matchedSlots = empty
+      ? []
+      : slots.filter(
+          (s) =>
+            !teacherSet.has(s.teacher) && // 講師ヒットは除く
+            (s.subj?.toLowerCase().includes(q) ||
+              s.room?.toLowerCase().includes(q) ||
+              s.note?.toLowerCase().includes(q) ||
+              s.grade?.toLowerCase().includes(q))
+        );
+    let slotHits = 0;
+    for (const s of matchedSlots) {
+      if (slotHits >= 10) break;
+      const teachers = getSlotTeachers(s);
+      for (const t of teachers.length > 0 ? teachers : [s.teacher]) {
+        if (slotHits >= 10) break;
+        slotHits++;
+        hits.push({
+          type: "slot",
+          label: `${s.day} ${s.time} ${s.grade} ${s.subj}`,
+          detail: `${teachers.length > 1 ? `${t} (${s.teacher})` : s.teacher} / ${s.room || ""}`,
+          grade: s.grade,
+          action: () => {
+            onSelectTeacher(t);
+            onClose();
+          },
+        });
+      }
     }
 
     // 代行検索 (メモ・講師名)
-    const matchedSubs = (subs || []).filter(
+    const matchedSubs = (empty ? [] : subs || []).filter(
       (s) =>
         s.memo?.toLowerCase().includes(q) ||
         s.originalTeacher?.toLowerCase().includes(q) ||
@@ -110,7 +177,7 @@ export function CommandPalette({
     }
 
     // イベント検索 (休講・テスト期間・特別イベント)
-    if (onSelectEvent) {
+    if (onSelectEvent && !empty) {
       const matchedHolidays = holidays.filter((h) =>
         (h.label || "").toLowerCase().includes(q)
       );
@@ -198,7 +265,7 @@ export function CommandPalette({
       );
     }
     for (const v of viewNames) {
-      if (v.label.toLowerCase().includes(q)) {
+      if (matchLabel(v.label)) {
         hits.push({
           type: "view",
           label: v.label,
@@ -219,9 +286,10 @@ export function CommandPalette({
         { tab: "adjustment", label: "時間割調整一覧" },
         { tab: "override", label: "回数補正一覧" },
         { tab: "tally", label: "月次集計" },
+        { tab: "chain", label: "玉突き代行" },
       ];
       for (const t of subTabs) {
-        if (t.label.toLowerCase().includes(q)) {
+        if (matchLabel(t.label)) {
           hits.push({
             type: "view",
             label: t.label,
@@ -239,7 +307,7 @@ export function CommandPalette({
     // ようにする。画面名からは辿れないため (サイドバーのタブ項目と同じ狙い)。
     if (onSelectMasterTab) {
       for (const t of MASTER_TABS) {
-        if (t.label.toLowerCase().includes(q)) {
+        if (matchLabel(t.label)) {
           hits.push({
             type: "view",
             label: t.label,
@@ -254,7 +322,18 @@ export function CommandPalette({
     }
 
     // ダイアログを開く操作 (ビュー移動ではないので別立て)。
-    if (onOpenDayReschedule && "日まるごと振替".includes(q)) {
+    if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
+      hits.push({
+        type: "view",
+        label: "複数日の欠勤登録",
+        detail: "期間 × 先生で欠勤をまとめて登録",
+        action: () => {
+          onOpenMultiDayAbsence();
+          onClose();
+        },
+      });
+    }
+    if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
         label: "日まるごと振替",
@@ -266,9 +345,12 @@ export function CommandPalette({
       });
     }
 
-    return hits.slice(0, 20);
+    return hits.slice(0, empty ? 40 : 20);
   }, [
     query,
+    todayStr,
+    onSelectDate,
+    onJumpToAbsenceFlow,
     slots,
     subs,
     holidays,
@@ -282,6 +364,7 @@ export function CommandPalette({
     onSelectSubsSubTab,
     onSelectMasterTab,
     onOpenDayReschedule,
+    onOpenMultiDayAbsence,
     onClose,
     views,
   ]);
@@ -309,8 +392,8 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋" };
-  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー" };
+  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付" };
   const listboxId = "cmdp-results";
   const optionId = (i) => `cmdp-opt-${i}`;
   const activeOptionId =
@@ -363,7 +446,7 @@ export function CommandPalette({
             aria-autocomplete="list"
             aria-activedescendant={activeOptionId}
             aria-label="検索"
-            placeholder="講師名・科目・教室・メモで検索…"
+            placeholder="講師名・科目・教室・メモ・日付 (9/24) で検索…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}

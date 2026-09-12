@@ -3,13 +3,17 @@ import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
 import { encodeShareData } from "../../utils/shareCodec";
+import { exportSubsCsv } from "../../utils/csv";
 import { useToasts } from "../../hooks/useToasts";
+import { useToday } from "../../hooks/useToday";
+import { matchesSubStateFilter } from "../../utils/substituteState";
 import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
 import { SubTallyTab } from "./substitute/SubTallyTab";
 import { AdjustmentListTab } from "./substitute/AdjustmentListTab";
 import { OverrideListTab } from "./substitute/OverrideListTab";
+import { ChainSubstitutionPanel } from "./ChainSubstitutionPanel";
 
 export function SubstituteView({
   subs,
@@ -20,6 +24,7 @@ export function SubstituteView({
   onNew,
   onEdit,
   onDel,
+  onQuickUpdate,
   onGoToStaffView,
   initFilter,
   onConsumeInitFilter,
@@ -46,6 +51,7 @@ export function SubstituteView({
   extraLessons = [],
 }) {
   const now = new Date();
+  const todayStr = useToday();
   const [tab, setTab] = useState("list");
   const [fMonth, setFMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
@@ -53,6 +59,8 @@ export function SubstituteView({
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [expandedTally, setExpandedTally] = useState(new Set());
+  // 玉突き代行タブの初期日付 (欠勤組み換えの「🔗 玉突き代行で探す」から)
+  const [chainInitDate, setChainInitDate] = useState(null);
 
   // 外部から初期フィルタが渡された場合の処理。
   //  - initFilter.status: Sidebar バッジクリック等。月フィルタは解除して
@@ -69,6 +77,7 @@ export function SubstituteView({
       }
       if (initFilter.tab) {
         setTab(initFilter.tab);
+        if (initFilter.tab === "chain" && initFilter.date) setChainInitDate(initFilter.date);
       }
       onConsumeInitFilter?.();
     }
@@ -106,7 +115,8 @@ export function SubstituteView({
     if (fMonth) r = r.filter((s) => s.date?.startsWith(fMonth));
     if (fStaff)
       r = r.filter((s) => s.originalTeacher === fStaff || s.substitute === fStaff);
-    if (fStatus) r = r.filter((s) => s.status === fStatus);
+    // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
+    if (fStatus) r = r.filter((s) => matchesSubStateFilter(s, fStatus));
     return r.sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, fMonth, fStaff, fStatus]);
 
@@ -259,7 +269,29 @@ export function SubstituteView({
         <TabBtn k="override" label="回数補正一覧" count={sessionOverrides.length} />
         <TabBtn k="tally" label="月次集計" />
         <TabBtn k="timetable" label="時間割表" />
+        <TabBtn k="chain" label="🔗 玉突き代行" />
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {tab === "list" && (
+            <button
+              type="button"
+              onClick={() => {
+                if (filtered.length === 0) {
+                  toasts.error("CSV にする代行記録がありません");
+                  return;
+                }
+                exportSubsCsv(filtered, slotMap);
+              }}
+              title="いま絞り込んで表示している代行記録を CSV で保存 (全件はデータ管理から)"
+              style={{
+                ...S.btn(false),
+                fontSize: 11,
+                background: "#fff",
+                border: "1px solid #ccc",
+              }}
+            >
+              📥 表示中を CSV ({filtered.length})
+            </button>
+          )}
           <ShareLinkButton onClick={handleShare} busy={sharing} />
           <button
             type="button"
@@ -276,6 +308,27 @@ export function SubstituteView({
         </div>
       </div>
 
+      {tab === "chain" && (
+        // 代行未定のコマに空き講師を当てる提案 (自動では確定しない)。実装は
+        // 以前からあったが、どの画面にも配線されていなかった (2026-09-12)
+        <ChainSubstitutionPanel
+          key={chainInitDate || "chain"}
+          initDate={chainInitDate}
+          slots={slots}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          partTimeStaff={partTimeStaff}
+          subjects={subjects}
+          subjectCategories={subjectCategories}
+          timetables={timetables}
+          biweeklyAnchors={biweeklyAnchors}
+          teacherSubjects={teacherSubjects}
+          teacherKana={teacherKana}
+          saveSubs={saveSubs}
+          isAdmin={isAdmin}
+        />
+      )}
       {tab === "list" && (
         <SubListTab
           filtered={filtered}
@@ -297,7 +350,9 @@ export function SubstituteView({
           displayCutoff={displayCutoff}
           onEdit={onEdit}
           onDel={onDel}
+          onQuickUpdate={onQuickUpdate}
           onNew={onNew}
+          todayStr={todayStr}
         />
       )}
 

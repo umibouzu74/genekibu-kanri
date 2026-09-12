@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { dateToDay, fmtDate } from "../../data";
+import { dateToDay } from "../../data";
 import { S } from "../../styles/common";
 import { encodeShareData } from "../../utils/shareCodec";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
@@ -9,6 +9,7 @@ import {
 } from "../../utils/daySchedules";
 import { useToasts } from "../../hooks/useToasts";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { useToday } from "../../hooks/useToday";
 import { SUB_STATE, subState } from "../../utils/substituteState";
 import { DashDayRow } from "./Dashboard";
 import { shiftDate } from "./dashboardHelpers";
@@ -41,7 +42,8 @@ export function ConfirmedSubsView({
   extraLessons = [],
   daySchedules = [],
 }) {
-  const todayStr = fmtDate(new Date());
+  // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
+  const todayStr = useToday();
   const [showPast, setShowPast] = useState(false);
   // Past-mode defaults: last 30 days, up to yesterday (inclusive of both ends).
   const [fromDate, setFromDate] = useState(() => shiftDate(todayStr, -30));
