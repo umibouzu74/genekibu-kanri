@@ -6,7 +6,7 @@ import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
-// 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替) を月 / 講師 / 種別で
+// 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替 / コマ休講) を月 / 講師 / 種別で
 // フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
 // 「📅」ボタンで該当日の欠勤振替画面に遷移する。
 
@@ -14,6 +14,7 @@ const TYPE_META = {
   combine: { label: "合同授業", bg: "#e6f4ea", fg: "#1e6f3a" },
   move: { label: "コマ移動", bg: "#e8eef9", fg: "#2a4a8a" },
   reschedule: { label: "別日振替", bg: "#fdecea", fg: "#a52a2a" },
+  cancel: { label: "コマ休講", bg: "#f5f5f5", fg: "#6a6a6a" },
 };
 
 function SlotChip({ slot, fallback }) {
@@ -58,6 +59,13 @@ function SlotChip({ slot, fallback }) {
 }
 
 function detailFor(adj, slotMap) {
+  if (adj.type === "cancel") {
+    return (
+      <span style={{ color: "#666", fontSize: 11 }}>
+        この日はこのコマだけ休講 (第N回は進めない)
+      </span>
+    );
+  }
   if (adj.type === "combine") {
     const ids = adj.combineSlotIds || [];
     if (ids.length === 0) return <span style={{ color: "#bbb" }}>-</span>;
@@ -266,6 +274,7 @@ export function AdjustmentListTab({
             <option value="combine">合同授業</option>
             <option value="move">コマ移動</option>
             <option value="reschedule">別日振替</option>
+            <option value="cancel">コマ休講</option>
           </select>
         </div>
         <button
@@ -319,7 +328,7 @@ export function AdjustmentListTab({
               該当する時間割調整はありません
             </div>
             <div style={{ fontSize: 11, color: "#888" }}>
-              合同・移動・振替は「欠勤組み換え」画面のコマ操作から登録されます。
+              合同・移動・振替・コマ休講は「欠勤組み換え」画面のコマ操作から登録されます。
               <br />
               ある日の授業をまるごと別の日へ移すときは「📅 日まるごと振替」から。
             </div>

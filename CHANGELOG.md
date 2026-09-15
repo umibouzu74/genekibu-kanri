@@ -64,6 +64,50 @@
   `EventCalendarView.test.jsx` / `ExtraLessonBanner.test.jsx` /
   `chainSubstitution.test.js` (追加)。合計 +68
 
+### Fixed (ダッシュボードの印刷)
+
+- ダッシュボードを印刷すると 1 ページ目が要対応カード (今日/明日の代行・
+  代行未定・過去の未処理・今後 7 日の休講/テスト期間) で埋まり、紙面に
+  要る「日付 + 具体的なコマ」(時間割 / 日別の本文) が 2 ページ目以降へ
+  押し出されていた。`SubSummaryCards` / `EventSummaryCards` は画面で次の
+  操作へ飛ぶ道具なので `no-print` にして紙面から外した (window.print() の
+  日別モードと popup 印刷の時間割モードの両方)
+- popup 印刷 (トップバーの 🖨 / 全曜日まとめ印刷) の「中学の時間割 — 日付」
+  見出しが、表だけ次ページへ送られたときに前ページの末尾へ取り残されていた
+  (`printStyles.injectTimetableHeaders` がカラムの**前**に差し込んでいたため。
+  カラムには break-inside: avoid が付いている)。見出しをカラムの**中**の
+  先頭に入れ、見出しと表が必ず同じページに載るようにした
+  (`.excel-print-header` に h2 + メタ行を束ねる)
+
+### Added (コマ休講: 日付 × コマ 1 つの休講)
+
+- **コマ休講** (`utils/slotCancel` + 欠勤組み換えの `SlotCancelDialog`)。
+  「9/19 (土) は 15:30 より前の授業だけ休講」「このコマだけ今日は休講」を
+  **コマ単位**で登録する。休講 (Holiday) は日付 × 学年 × 科目で時刻の条件を
+  持たず、特別時程の部分休講は学年 × 時間帯を 1 行ずつ選ぶ必要があった。
+  **モデルは足さない** — 時間割調整 (`adjustments`) の新種別 `cancel`
+  (schema v18) なので、時間割調整一覧・孤立データ掃除・削除の Undo に
+  そのまま乗る
+- 導線は欠勤組み換えの「🚫 コマを休講にする…」(時刻を入れて「より前に
+  始まるコマを選ぶ」で一括、または 1 コマずつチェック。理由メモつき) と、
+  コマの右クリック「🚫 このコマを休講にする」。休講のカードは灰色で、
+  右クリック「休講を取り消す」で戻せる。代行・移動・振替とは排他で、同じ
+  コマの保存済み代行 (代行未定を含む) は休講の保存時に解除される
+- 判定は `slotCancel.isSlotCancelledOnDate` の 1 か所 (特別時程の部分休講と
+  コマ休講の両方)。第N回 (`sessionCount`)・バイトの出勤日
+  (`staffHelpers.staffMonthlyRegularDates`)・日まるごと振替の候補
+  (「コマ休講」の理由つき)・複数日の欠勤登録・タイムテーブル代行モードの
+  「代行が要るコマ」・講師の重なり判定がすべてこれを通る
+- 表示: 日別ダッシュボード / タイムテーブルは `SlotCancelBanner` で「この日は
+  このコマだけ休講」を日単位に出し、セルは休講ハイライト。講師別月間は
+  カードに取消線 + 「休」バッジ + 理由 (全部休講なら「休 休講で担当なし」)、
+  週間は「🚫 直近2週間のコマ休講」バナー。時間割調整一覧に「コマ休講」の
+  種別フィルタ
+- テスト: `slotCancel.test.js` (新規 6)、`sessionCount.test.js` (+2)、
+  `useAbsenceDraft.test.jsx` (+4)、`absenceHelpers.test.js` (+1)、
+  `dayReschedule.test.js` (+1)、`teacherDayOff.test.js` (+2)、
+  `AbsenceWorkflowView.test.jsx` (+2)、`schema.test.ts` (更新)
+
 ### Added (複数日の欠勤登録 / 期間外の代行の付け替え / 玉突き代行を画面に配線)
 
 - **複数日の欠勤登録** (`components/MultiDayAbsenceDialog` +

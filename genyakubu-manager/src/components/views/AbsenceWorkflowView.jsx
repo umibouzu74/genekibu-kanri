@@ -13,6 +13,8 @@ import { useToday } from "../../hooks/useToday";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
+import { SlotCancelDialog } from "./absence/SlotCancelDialog";
+import { isCancelAdjustment } from "../../utils/slotCancel";
 import {
   activeTeachersOnDate,
   collectAbsenceTargets,
@@ -69,6 +71,7 @@ export function AbsenceWorkflowView({
   const [date, setDate] = useState(() => initDate || fmtDate(new Date()));
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
   const [teacherQuery, setTeacherQuery] = useState("");
   const teacherDropdownRef = useRef(null);
@@ -222,6 +225,7 @@ export function AbsenceWorkflowView({
       combine: new Set(),
       move: new Set(),
       reschedule: new Set(),
+      cancel: new Set(),
     };
     let idBase = -1000;
     for (const [sidStr, row] of Object.entries(draft.draft)) {
@@ -264,6 +268,17 @@ export function AbsenceWorkflowView({
         draftAdjustments.push(entry);
         draftOverridingSlots.reschedule.add(slotId);
       }
+      if (row.cancel) {
+        // コマ休講の下書き: その日は実施なし (第N回を進めない) を先取りで反映
+        draftAdjustments.push({
+          id: idBase--,
+          date,
+          type: "cancel",
+          slotId,
+          memo: "(draft)",
+        });
+        draftOverridingSlots.cancel.add(slotId);
+      }
       if (row.override) {
         if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
           draftOverridesLocal.push({
@@ -293,6 +308,7 @@ export function AbsenceWorkflowView({
         if (a.type === "reschedule" && draftOverridingSlots.reschedule.has(a.slotId)) {
           return false;
         }
+        if (a.type === "cancel" && draftOverridingSlots.cancel.has(a.slotId)) return false;
       }
       return true;
     });
@@ -378,6 +394,51 @@ export function AbsenceWorkflowView({
     [draft, toasts]
   );
 
+  // コマ休講ダイアログの候補: この日のコマのうち、まだ休講になっていない
+  // (保存済みで解除マークの無いもの / 下書き) かつ合同に関わっていないもの。
+  // 外したコマは理由つきでダイアログに出す (黙って減らさない)
+  const cancelDialogLists = useMemo(() => {
+    const savedCancelled = new Set();
+    const combined = new Set();
+    for (const adj of adjustments || []) {
+      if (adj.date !== date) continue;
+      if (draft.removedAdjustmentIds?.has(adj.id)) continue;
+      if (isCancelAdjustment(adj)) savedCancelled.add(adj.slotId);
+      else if (adj.type === "combine") {
+        combined.add(adj.slotId);
+        for (const id of adj.combineSlotIds || []) combined.add(id);
+      }
+    }
+    const candidates = [];
+    const skipped = [];
+    for (const s of daySlots) {
+      const row = draft.draft[s.id];
+      if (row?.cancel) skipped.push({ slot: s, reason: "すでに休講 (下書き)" });
+      else if (savedCancelled.has(s.id)) skipped.push({ slot: s, reason: "すでに休講" });
+      else if (isOffForGrade(date, s.grade, s.subj)) {
+        skipped.push({ slot: s, reason: "休講・テスト期間" });
+      } else if (
+        row?.absorbedBy != null ||
+        row?.combine?.absorbedSlotIds?.length ||
+        combined.has(s.id)
+      ) {
+        skipped.push({ slot: s, reason: "合同に関わるコマ (先に合同を外す)" });
+      } else candidates.push(s);
+    }
+    return { candidates, skipped };
+  }, [adjustments, date, daySlots, draft.draft, draft.removedAdjustmentIds, isOffForGrade]);
+
+  const handleRegisterCancel = useCallback(
+    (selectedSlots, memo = "") => {
+      for (const s of selectedSlots) {
+        draft.setCancel(s.id, memo ? { memo } : {});
+      }
+      setCancelDialogOpen(false);
+      toasts.success(`${selectedSlots.length} コマを休講の下書きにしました`);
+    },
+    [draft, toasts]
+  );
+
   // 下書きの件数カウント (保存ボタン表示用)
   const draftCount = useMemo(() => {
     let c = 0;
@@ -390,6 +451,7 @@ export function AbsenceWorkflowView({
       if (row.move?.targetTime) c++;
       if (row.reschedule?.targetDate) c++;
       if (row.override) c++;
+      if (row.cancel) c++;
     }
     c += (draft.removedAdjustmentIds?.size || 0);
     c += (draft.removedSubIds?.size || 0);
@@ -477,7 +539,12 @@ export function AbsenceWorkflowView({
         if (assigned) parts.push(`代行 ${assigned} 件`);
         if (pending) parts.push(`欠勤 (代行未定) ${pending} 件`);
       }
-      if (res.added.adjustments) parts.push(`調整 ${res.added.adjustments} 件`);
+      if (res.added.adjustments) {
+        const cancels = draftAdjustments.filter((a) => a.type === "cancel").length;
+        const others = res.added.adjustments - cancels;
+        if (others) parts.push(`調整 ${others} 件`);
+        if (cancels) parts.push(`コマ休講 ${cancels} 件`);
+      }
       if (res.added.overrides) parts.push(`回数補正 ${res.added.overrides} 件`);
       if (res.added.removed) parts.push(`調整解除 ${res.added.removed} 件`);
       // 付け替え (欠勤 → 代行) で消えた分は「解除」に数えない。
@@ -694,6 +761,23 @@ export function AbsenceWorkflowView({
             ❗ 欠勤にする ({absenceTargets.targets.length} 件)
           </button>
         )}
+        {/* コマ単位の休講 (「15:30 より前だけ休講」「このコマだけ休講」)。
+            休講 (Holiday) は日付 × 学年 × 科目で時刻の条件を持たないので、
+            時刻で切れる日はここから (utils/slotCancel) */}
+        <button
+          type="button"
+          onClick={() => setCancelDialogOpen(true)}
+          disabled={cancelDialogLists.candidates.length === 0}
+          title="この日のコマを選んで休講にします (時刻で「◯◯:◯◯ より前」を一括選択できます)"
+          style={{
+            ...S.btn(false),
+            fontSize: 12,
+            cursor: cancelDialogLists.candidates.length === 0 ? "not-allowed" : "pointer",
+            color: cancelDialogLists.candidates.length === 0 ? "#aaa" : undefined,
+          }}
+        >
+          🚫 コマを休講にする…
+        </button>
         {(onOpenMultiDayAbsence || onOpenChainSubstitution) && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
             {onOpenMultiDayAbsence && (
@@ -801,6 +885,16 @@ export function AbsenceWorkflowView({
         sessionOverrides={sessionOverrides}
         date={date}
       />
+
+      {cancelDialogOpen && (
+        <SlotCancelDialog
+          date={date}
+          candidates={cancelDialogLists.candidates}
+          skipped={cancelDialogLists.skipped}
+          onSubmit={handleRegisterCancel}
+          onClose={() => setCancelDialogOpen(false)}
+        />
+      )}
 
       {absenceDialogOpen && (
         <AbsenceRegisterDialog

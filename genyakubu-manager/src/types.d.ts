@@ -75,7 +75,11 @@ export interface BiweeklyAnchor {
   weekType: "A"; // 常にA週（UIシンプル化のため）
 }
 
-export type AdjustmentType = "move" | "combine" | "reschedule";
+// "cancel" = コマ休講 (日付 × コマ 1 つの休講。utils/slotCancel)。休講
+// (Holiday) では表せない「このコマだけ今日は休講」「◯時より前だけ休講」を
+// 表す。合同・移動・振替と同じ (日付, コマ) 参照なので一覧・孤立掃除・
+// Undo の経路にそのまま乗る。
+export type AdjustmentType = "move" | "combine" | "reschedule" | "cancel";
 
 export interface ScheduleAdjustment {
   id: number;
@@ -86,7 +90,7 @@ export interface ScheduleAdjustment {
   combineSlotIds?: number[]; // "combine" 用: 合同にするコマID群
   targetDate?: string; // "reschedule" 用: 振替先の日付 (YYYY-MM-DD)
   targetTeacher?: string; // "reschedule" 用: 振替先担当者 (未指定 = 元担当)
-  memo: string;
+  memo: string; // "cancel" では休講の理由 (任意)
   createdAt?: string;
 }
 

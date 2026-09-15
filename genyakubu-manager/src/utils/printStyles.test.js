@@ -587,23 +587,24 @@ describe("injectTimetableHeaders", () => {
     '<div class="excel-print-col-hs" style="min-width:0">HS</div>' +
     "</div>";
 
-  it("中学/高校カラムの直前にそれぞれのヘッダを差し込む", () => {
+  it("中学/高校カラムの「中」の先頭にそれぞれのヘッダを差し込む", () => {
     const out = injectTimetableHeaders(body, {
       dateText: "2026年05月06日（水）",
       now: fixedNow,
     });
     expect(out).toContain("中学の時間割 — 2026年05月06日（水）");
     expect(out).toContain("高校の時間割 — 2026年05月06日（水）");
-    // ヘッダはカラムの「前」(カラム内に入っていない)
-    expect(out.indexOf("中学の時間割")).toBeLessThan(
-      out.indexOf('class="excel-print-col-ms"')
+    // ヘッダはカラムの開始タグの直後 (break-inside: avoid の中に入り、
+    // 表だけが次ページへ送られて見出しが取り残されない)
+    expect(out).toContain(
+      '<div class="excel-print-col-ms" style="min-width:0"><div class="excel-print-header"><h2 class="excel-print-page-title">中学の時間割'
     );
-    expect(out.indexOf("高校の時間割")).toBeLessThan(
-      out.indexOf('class="excel-print-col-hs"')
+    expect(out).toContain(
+      '<div class="excel-print-col-hs" style="min-width:0"><div class="excel-print-header"><h2 class="excel-print-page-title">高校の時間割'
     );
-    // 元の中身は保たれる
-    expect(out).toContain(">MS</div>");
-    expect(out).toContain(">HS</div>");
+    // 元の中身は保たれる (ヘッダの後ろに続く)
+    expect(out).toContain("</div>MS</div>");
+    expect(out).toContain("</div>HS</div>");
   });
 
   it("カラムが無い HTML はそのまま返す", () => {

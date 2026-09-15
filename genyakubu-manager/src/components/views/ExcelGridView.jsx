@@ -14,10 +14,7 @@ import { activeTeachersOnDate } from "../../utils/absenceHelpers";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
-import {
-  getDaySchedulesForDate,
-  isSlotCancelledByDaySchedule,
-} from "../../utils/daySchedules";
+import { getDaySchedulesForDate } from "../../utils/daySchedules";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
@@ -34,6 +31,8 @@ import {
 import { openPrintWindow } from "../../utils/printWindow";
 import { runSnapshotPrint } from "../../utils/snapshotPrint";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
+import { SlotCancelBanner } from "../SlotCancelBanner";
+import { collectCancelledSlots, isSlotCancelledOnDate } from "../../utils/slotCancel";
 import { RescheduleInBanner } from "../RescheduleInBanner";
 import {
   buildAdjustmentIndex,
@@ -190,7 +189,8 @@ export function ExcelGridView({
     biweeklyAnchors: biweeklyAnchors || [],
     teacherSubjects: teacherSubjects || {},
     unavailableTeachers,
-    daySchedules,
+    daySchedules: daySchedules || [],
+    adjustments: adjustments || [],
   });
 
   // Clear unavailable selection when day changes
@@ -423,6 +423,7 @@ export function ExcelGridView({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
 
   const sessionCountMap = useMemo(() => {
@@ -460,13 +461,27 @@ export function ExcelGridView({
       if (s.day !== activeDay) continue;
       if (
         isOffForGrade(displayDate, s.grade, s.subj) ||
-        // 特別時程の部分休講 (1限カット等) も休講ハイライトに含める
-        isSlotCancelledByDaySchedule(s, displayDate, daySchedules)
+        // 特別時程の部分休講 (1限カット等) とコマ休講も休講ハイライトに含める
+        isSlotCancelledOnDate(s, displayDate, { daySchedules, adjustments })
       )
         offSet.add(s.id);
     }
     return offSet;
-  }, [dashboardMode, displayDate, displaySlots, activeDay, isOffForGrade, daySchedules]);
+  }, [dashboardMode, displayDate, displaySlots, activeDay, isOffForGrade, daySchedules, adjustments]);
+
+  // 表示日のコマ休講 (日単位のバナー。セルの休講ハイライトだけだと理由が
+  // 読めない)。全日休講・未確定日は出さない
+  const cancelledSlotsForDisplayDate = useMemo(
+    () =>
+      !dashboardMode || !displayDate || dashboardEntireDayCutoff
+        ? []
+        : collectCancelledSlots(
+            displaySlots.filter((s) => s.day === activeDay),
+            displayDate,
+            adjustments
+          ),
+    [dashboardMode, displayDate, dashboardEntireDayCutoff, displaySlots, activeDay, adjustments]
+  );
 
   const effectiveHolidayOffSlots = subMode.isSubMode
     ? subMode.holidayOffSlots
@@ -990,6 +1005,7 @@ export function ExcelGridView({
             lessons={extraLessonsForDisplayDate}
             onEditExtraLesson={onEditExtraLesson}
           />
+          <SlotCancelBanner items={cancelledSlotsForDisplayDate} />
           <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
           <RescheduleOutBanner items={outgoingReschedulesForDisplayDate} />
           {dashboardEntireDayCutoff ? (

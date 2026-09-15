@@ -77,6 +77,21 @@ describe("collectDayRescheduleCandidates", () => {
     ]);
   });
 
+  it("コマ休講 (adjustments の cancel) のコマは理由つきで対象外にする", () => {
+    const slots = [makeSlot(1, "月", "19:00-20:20"), makeSlot(2, "月", "20:30-21:50")];
+    const ctx = makeCtx({
+      allSlots: slots,
+      adjustments: [{ id: 1, type: "cancel", date: MON, slotId: 1, memo: "学校行事" }],
+    });
+    const { candidates, skipped } = collectDayRescheduleCandidates({
+      slots,
+      dateStr: MON,
+      ctx,
+    });
+    expect(candidates.map((s) => s.id)).toEqual([2]);
+    expect(skipped.map((x) => [x.slot.id, x.reason])).toEqual([[1, "コマ休講 (学校行事)"]]);
+  });
+
   it("時間割の有効期間外・表示期間外は理由を出し分ける", () => {
     const slots = [
       makeSlot(1, "月", "19:00-20:20", { timetableId: 1 }),

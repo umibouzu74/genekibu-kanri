@@ -115,6 +115,7 @@ export function DayRescheduleDialog({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
   const sessionCtx = sessionCtxProp || builtCtx;
   const [sourceDate, setSourceDate] = useState("");

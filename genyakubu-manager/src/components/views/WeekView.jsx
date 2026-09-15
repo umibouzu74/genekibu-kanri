@@ -34,6 +34,8 @@ import { useToday } from "../../hooks/useToday";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { EVENT_KIND, EXAM_META, HOLIDAY_META } from "../../constants/eventKinds";
 import { makeEventHelpers } from "./dashboardHelpers";
+import { isCancelAdjustment } from "../../utils/slotCancel";
+import { timeStartToMin } from "../../utils/dateHelpers";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 import {
@@ -205,6 +207,7 @@ export function WeekView({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
   const sessionMapByDay = useMemo(() => {
     const today = parseLocalDate(refDateStr);
@@ -384,6 +387,31 @@ export function WeekView({
       })
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [subs, teacher, winStart, winEnd]);
+
+  // 今日から+14日間のコマ休講 (adjustments の cancel) のうち、この teacher の
+  // コマに効くもの。隔週は担当する週だけ。
+  const upcomingCancels = useMemo(() => {
+    if (!adjustments?.length) return [];
+    const out = [];
+    for (const adj of adjustments) {
+      if (!isCancelAdjustment(adj)) continue;
+      if (!isWithinWindow(adj.date, winStart, winEnd)) continue;
+      const slot = slotById.get(adj.slotId);
+      if (!slot || !isSlotForTeacher(slot, teacher)) continue;
+      if (
+        isBiweekly(slot.note) &&
+        !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors, holidays, examPeriods)
+      ) {
+        continue;
+      }
+      out.push({ adj, slot });
+    }
+    return out.sort(
+      (a, b) =>
+        a.adj.date.localeCompare(b.adj.date) ||
+        timeStartToMin(a.slot.time) - timeStartToMin(b.slot.time)
+    );
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors, holidays, examPeriods]);
 
   // 今日から+14日間の特別時程のうち、この teacher のコマに効くもの。
   // 各件について「どのコマがどう変わるか」(時刻読み替え / 休講) を添える。
@@ -733,6 +761,35 @@ export function WeekView({
                   </span>
                 ))}
               </span>
+            </UpcomingRow>
+          ))}
+        </UpcomingBanner>
+      )}
+      {upcomingCancels.length > 0 && (
+        <UpcomingBanner
+          bg="#f4f4f4"
+          borderColor="#cfcfcf"
+          titleColor="#555"
+          title={`🚫 直近2週間のコマ休講 (${upcomingCancels.length}件)`}
+        >
+          {upcomingCancels.map(({ adj, slot }) => (
+            <UpcomingRow key={`cancel-${adj.id}`}>
+              <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
+                {fmtDateWeekday(adj.date)}
+              </span>
+              <span
+                style={{ fontSize: 11, color: "#888", textDecoration: "line-through" }}
+              >
+                {slot.time}
+              </span>
+              <span style={{ fontSize: 11 }}>
+                {slot.grade}
+                {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}
+              </span>
+              <span style={{ fontSize: 11, color: "#b03030", fontWeight: 700 }}>休講</span>
+              {adj.memo && (
+                <span style={{ fontSize: 11, color: "#666" }}>({adj.memo})</span>
+              )}
             </UpcomingRow>
           ))}
         </UpcomingBanner>

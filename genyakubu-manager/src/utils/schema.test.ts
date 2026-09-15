@@ -192,7 +192,10 @@ describe("type guards", () => {
     ).toBe(false);
     expect(
       isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "cancel", slotId: 3 })
-    ).toBe(false); // "cancel" is not a valid type
+    ).toBe(true); // "cancel" = コマ休講 (v18)
+    expect(
+      isScheduleAdjustment({ id: 1, date: "2026-04-10", type: "skip", slotId: 3 })
+    ).toBe(false); // unknown type
     expect(
       isScheduleAdjustment({ date: "2026-04-10", type: "move", slotId: 3 })
     ).toBe(false); // missing id
