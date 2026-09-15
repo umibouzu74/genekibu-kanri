@@ -11,6 +11,7 @@ import {
   SUB_STATE,
 } from "../../../utils/substituteState";
 import { splitTeacherField } from "../../../utils/biweekly";
+import { fmtIsoLocal } from "../../../utils/dateHelpers";
 
 // 行内の「代行者名 + ✓ 確定」。モーダル (SubstituteForm) を開かずに
 // 未処理の行を片付けるための最小の操作だけを置く。
@@ -157,6 +158,10 @@ export function SubListTab({
   setFStaff,
   fStatus,
   setFStatus,
+  // 並び順 (親が filtered をこの順で渡す): "date" 対象日昇順 /
+  // "createdAt-desc" 登録が新しい順。時間割調整一覧と同じ 2 択
+  sortBy = "date",
+  setSortBy,
   isAdmin,
   slots = [],
   partTimeStaff = [],
@@ -168,6 +173,8 @@ export function SubListTab({
   onDel,
   onQuickUpdate,
   onNew,
+  // 「その日の欠勤組み換えへ」(📅)。管理者のみ。時間割調整一覧と同じ導線
+  onJumpToDate,
   todayStr = "",
 }) {
   const teacherGroups = useMemo(
@@ -196,6 +203,11 @@ export function SubListTab({
     return [...set];
   }, [allTeachers]);
   const canQuick = isAdmin && typeof onQuickUpdate === "function";
+  const canSort = typeof setSortBy === "function";
+  const toggleSort = () => {
+    if (!canSort) return;
+    setSortBy(sortBy === "createdAt-desc" ? "date" : "createdAt-desc");
+  };
   const notShownTitle =
     "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。同じ位置の有効なコマがあれば ↪ で付け替え、無ければ ✏️ で選び直してください";
   // 期間外の行 → 同じ位置 (曜日・時刻・学年・クラス・科目) で有効なコマ
@@ -385,7 +397,7 @@ export function SubListTab({
               width: "100%",
               borderCollapse: "collapse",
               fontSize: 12,
-              minWidth: 760,
+              minWidth: 860,
             }}
           >
             <thead>
@@ -407,10 +419,41 @@ export function SubListTab({
                   状態
                 </th>
                 <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
+                <th
+                  scope="col"
+                  tabIndex={canSort ? 0 : undefined}
+                  aria-sort={sortBy === "createdAt-desc" ? "descending" : "none"}
+                  style={{
+                    padding: "8px 10px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                    cursor: canSort ? "pointer" : undefined,
+                    userSelect: "none",
+                  }}
+                  onClick={toggleSort}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toggleSort();
+                    }
+                  }}
+                  title={
+                    canSort
+                      ? "クリックで登録が新しい順 / 対象日昇順 を切り替え"
+                      : undefined
+                  }
+                >
+                  作成日時{" "}
+                  {canSort && (
+                    <span className="no-print" aria-hidden="true">
+                      {sortBy === "createdAt-desc" ? "↓" : "↕"}
+                    </span>
+                  )}
+                </th>
                 {isAdmin && (
                   <th scope="col"
                     className="no-print"
-                    style={{ padding: "8px 10px", textAlign: "center", width: 60 }}
+                    style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
                   >
                     操作
                   </th>
@@ -556,6 +599,16 @@ export function SubListTab({
                     >
                       {sub.memo}
                     </td>
+                    <td
+                      style={{
+                        padding: "8px 10px",
+                        fontSize: 10,
+                        color: "#999",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {fmtIsoLocal(sub.createdAt)}
+                    </td>
                     {isAdmin && (
                       <td
                         className="no-print"
@@ -565,6 +618,18 @@ export function SubListTab({
                           whiteSpace: "nowrap",
                         }}
                       >
+                        {onJumpToDate && sub.date && (
+                          <button
+                            type="button"
+                            onClick={() => onJumpToDate(sub.date)}
+                            aria-label={`${sub.date} の欠勤振替画面を開く`}
+                            title="この日の欠勤振替画面を開く"
+                            className={ICON_BTN_CLASS}
+                            style={{ ...S.iconBtn, marginRight: 2 }}
+                          >
+                            📅
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onEdit(sub)}

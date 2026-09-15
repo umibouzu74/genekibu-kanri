@@ -61,6 +61,10 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // 代行一覧の並び: "date" (対象日昇順) / "createdAt-desc" (登録が新しい順)。
+  // 時間割調整一覧・回数補正一覧と同じ 2 択。並び順を SubListTab ではなく
+  // ここで持つのは、📥 表示中を CSV も同じ順で出すため
+  const [sortBy, setSortBy] = useState("date");
   const [expandedTally, setExpandedTally] = useState(new Set());
   // 玉突き代行タブの初期日付 (欠勤組み換えの「🔗 玉突き代行で探す」から)
   const [chainInitDate, setChainInitDate] = useState(null);
@@ -120,8 +124,18 @@ export function SubstituteView({
       r = r.filter((s) => s.originalTeacher === fStaff || s.substitute === fStaff);
     // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
     if (fStatus) r = r.filter((s) => matchesSubStateFilter(s, fStatus));
-    return r.sort((a, b) => a.date.localeCompare(b.date));
-  }, [subs, fMonth, fStaff, fStatus]);
+    return r.sort((a, b) => {
+      if (sortBy === "createdAt-desc") {
+        // createdAt 新→古。同値時は id 降順 (新しいレコードを上)
+        const c = (b.createdAt || "").localeCompare(a.createdAt || "");
+        if (c !== 0) return c;
+        return (b.id || 0) - (a.id || 0);
+      }
+      const c = (a.date || "").localeCompare(b.date || "");
+      if (c !== 0) return c;
+      return (a.id || 0) - (b.id || 0);
+    });
+  }, [subs, fMonth, fStaff, fStatus, sortBy]);
 
   const adjustmentCount = useMemo(
     () =>
@@ -380,6 +394,8 @@ export function SubstituteView({
           setFStaff={setFStaff}
           fStatus={fStatus}
           setFStatus={setFStatus}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
           isAdmin={isAdmin}
           slots={slots}
           partTimeStaff={partTimeStaff}
@@ -391,6 +407,7 @@ export function SubstituteView({
           onDel={onDel}
           onQuickUpdate={onQuickUpdate}
           onNew={handleNew}
+          onJumpToDate={onJumpToAbsenceFlow}
           todayStr={todayStr}
         />
       )}

@@ -40,6 +40,15 @@ const SHORTCUTS = [
     ],
   },
   {
+    section: "日付の移動",
+    note: "ダッシュボード・月間・イベントカレンダー・週間で",
+    items: [
+      { keys: ["←"], label: "前の日 / 週 / 月" },
+      { keys: ["→"], label: "次の日 / 週 / 月" },
+      { keys: ["t"], label: "今日 / 今週 / 今月" },
+    ],
+  },
+  {
     section: "コマンドパレット内",
     items: [
       { keys: ["↑"], label: "前の候補に移動" },

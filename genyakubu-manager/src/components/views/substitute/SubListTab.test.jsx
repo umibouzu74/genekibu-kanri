@@ -162,3 +162,55 @@ describe("SubListTab の期間外コマの付け替え", () => {
     expect(screen.queryByRole("button", { name: /有効なコマへ付け替え/ })).toBeNull();
   });
 });
+
+// 並び替え (対象日 / 登録が新しい順) と「その日の欠勤組み換えへ」(📅)。
+// 時間割調整一覧・回数補正一覧と同じ導線 (2026-09-15)。並び順の state は
+// 親 (SubstituteView) が持ち、ここでは切り替えの通知と表示だけを見る
+describe("SubListTab の並び替えと日付ジャンプ", () => {
+  it("作成日時の見出しクリックで並び順を切り替える (↕ / ↓)", () => {
+    const setSortBy = vi.fn();
+    renderTab({ sortBy: "date", setSortBy });
+    const th = screen.getByRole("columnheader", { name: /作成日時/ });
+    expect(th.getAttribute("aria-sort")).toBe("none");
+    expect(th.textContent).toContain("↕");
+    fireEvent.click(th);
+    expect(setSortBy).toHaveBeenCalledWith("createdAt-desc");
+    // キーボード (Enter) でも切り替わる
+    fireEvent.keyDown(th, { key: "Enter" });
+    expect(setSortBy).toHaveBeenCalledTimes(2);
+  });
+
+  it("登録が新しい順のときは ↓ と aria-sort=descending、クリックで対象日順に戻す", () => {
+    const setSortBy = vi.fn();
+    renderTab({ sortBy: "createdAt-desc", setSortBy });
+    const th = screen.getByRole("columnheader", { name: /作成日時/ });
+    expect(th.getAttribute("aria-sort")).toBe("descending");
+    expect(th.textContent).toContain("↓");
+    fireEvent.click(th);
+    expect(setSortBy).toHaveBeenCalledWith("date");
+  });
+
+  it("setSortBy が無ければ見出しは操作にならない", () => {
+    renderTab();
+    const th = screen.getByRole("columnheader", { name: /作成日時/ });
+    expect(th.getAttribute("tabindex")).toBeNull();
+    expect(th.textContent).not.toContain("↕");
+  });
+
+  it("管理者には行ごとに 📅 が出て、その日の欠勤組み換えへ飛ぶ", () => {
+    const onJumpToDate = vi.fn();
+    renderTab({ isAdmin: true, onJumpToDate });
+    const btns = screen.getAllByRole("button", { name: /の欠勤振替画面を開く$/ });
+    expect(btns).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "2026-09-10 の欠勤振替画面を開く" }));
+    expect(onJumpToDate).toHaveBeenCalledWith("2026-09-10");
+  });
+
+  it("閲覧者 / 導線未配線のときは 📅 を出さない", () => {
+    renderTab({ isAdmin: false, onJumpToDate: vi.fn() });
+    expect(screen.queryByRole("button", { name: /の欠勤振替画面を開く$/ })).toBeNull();
+    cleanup();
+    renderTab({ isAdmin: true });
+    expect(screen.queryByRole("button", { name: /の欠勤振替画面を開く$/ })).toBeNull();
+  });
+});

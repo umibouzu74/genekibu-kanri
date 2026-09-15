@@ -9,6 +9,7 @@ import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
 import { useChordNavigation } from "./hooks/useChordNavigation";
+import { useDateKeyNav } from "./hooks/useDateKeyNav";
 import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
@@ -144,6 +145,12 @@ function ViewFallback() {
     </div>
   );
 }
+
+// トップバーの 🔍 に添える Cmd+K の表記 (Mac は ⌘、それ以外は Ctrl)
+const IS_MAC =
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+const CMD_K_HINT = IS_MAC ? "⌘K" : "Ctrl+K";
 
 // 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
 const VIEW_TITLES = {
@@ -478,31 +485,75 @@ export default function App() {
       }),
     [ttFilteredSlots, availableTags]
   );
-  const selectTeacher = useCallback(
-    (t) => {
-      setSelected(t);
-      setView(VIEWS.MONTH);
-      setSidebarOpen(false);
-      saveEventVisibility((p) => visibilityForTeacherName(t, p));
+  // ─── 欠勤組み換えの下書きを守るビュー移動ガード ─────────────────
+  // AbsenceWorkflowView は lazy で、ビューを離れるとアンマウントされて
+  // useAbsenceDraft の下書きが消える (beforeunload はタブを閉じるときしか
+  // 守れない)。ビューが onDirtyChange で「未保存の下書きあり」を知らせ、
+  // 別ビューへ移る経路 (サイドバー / chord / Cmd+K / 講師選択 / 各ビューの
+  // ジャンプ) は全部 navigateGuarded を通す。同じビューに留まる移動
+  // (jumpToAbsenceFlow の日付ジャンプ) はビュー側が確認するので止めない。
+  // ref なのは selectView (useCallback) を安定させるため。下書きは画面を
+  // 再描画しなくてよい
+  const absenceDraftDirtyRef = useRef(false);
+  const navigateGuarded = useCallback(
+    async (nextView, go) => {
+      if (absenceDraftDirtyRef.current && nextView !== VIEWS.ABSENCE_FLOW) {
+        const ok = await confirm({
+          title: "下書きがあります",
+          message: "欠勤組み換えの下書きが保存されていません。破棄して移動しますか？",
+          okLabel: "破棄して移動",
+          tone: "danger",
+        });
+        if (!ok) return false;
+        absenceDraftDirtyRef.current = false;
+      }
+      go();
+      return true;
     },
-    [visibilityForTeacherName, saveEventVisibility]
+    [confirm]
+  );
+
+  const selectTeacher = useCallback(
+    (t) =>
+      navigateGuarded(VIEWS.MONTH, () => {
+        setSelected(t);
+        setView(VIEWS.MONTH);
+        setSidebarOpen(false);
+        saveEventVisibility((p) => visibilityForTeacherName(t, p));
+      }),
+    [navigateGuarded, visibilityForTeacherName, saveEventVisibility]
   );
   const visibilityForBatchTeacher = useCallback(
     (t) => visibilityForTeacherName(t, eventVisibility),
     [visibilityForTeacherName, eventVisibility]
   );
 
-  const selectView = useCallback((v) => {
-    setSelected(null);
-    setView(v);
-    setSidebarOpen(false);
-  }, []);
+  // 戻り値は「移動したか」の Promise。呼び出し側が無視してもよい
+  const selectView = useCallback(
+    (v) =>
+      navigateGuarded(v, () => {
+        setSelected(null);
+        setView(v);
+        setSidebarOpen(false);
+      }),
+    [navigateGuarded]
+  );
 
   // 一覧 (合同授業 / 回数補正など) から欠勤振替画面の特定日へ遷移する。
   const jumpToAbsenceFlow = useCallback(
     (date) => {
       setAbsenceFlowInitDate(date || null);
       selectView(VIEWS.ABSENCE_FLOW);
+    },
+    [selectView]
+  );
+
+  // 日付 → その日のダッシュボード (Cmd+K の日付ジャンプ、月間・イベント
+  // カレンダーの日付クリックで共有)
+  const openDashboardAt = useCallback(
+    (date) => {
+      setDashInitDate(date);
+      selectView(VIEWS.DASH);
     },
     [selectView]
   );
@@ -702,6 +753,27 @@ export default function App() {
     toasts,
   });
 
+  // 月間 (講師選択中) の ← / → / t = 前の月 / 次の月 / 今月。まとめて印刷の
+  // ダイアログを開いている間は月を動かさない (印刷対象の月がずれる)。
+  // 日別ダッシュボードは DashboardDateNav、イベントカレンダー・週間は
+  // それぞれのビューが同じ hook を持つ
+  useDateKeyNav({
+    onPrev: () => setMonthOff((o) => o - 1),
+    onNext: () => setMonthOff((o) => o + 1),
+    onToday: () => setMonthOff(0),
+    enabled: !!selected && view === VIEWS.MONTH && !batchPrintOpen,
+  });
+  // <input type="month"> の値 (YYYY-MM) と、選んだ月 → monthOff の換算
+  const monthInputValue = `${vy}-${String(vm).padStart(2, "0")}`;
+  const handleMonthPicked = (value) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(value || "");
+    if (!m) return;
+    const base = new Date();
+    setMonthOff(
+      (Number(m[1]) - base.getFullYear()) * 12 + (Number(m[2]) - 1 - base.getMonth())
+    );
+  };
+
   // ─── Render ─────────────────────────────────────────────────────
   return (
     <div
@@ -745,12 +817,14 @@ export default function App() {
           setMasterTab(tabKey);
           selectView(VIEWS.MASTER);
         }}
-        onJumpToRequestedSubs={() => {
-          setSelected(null);
-          setView(VIEWS.SUBS);
-          setSubsInitFilter({ status: "open" });
-          setSidebarOpen(false);
-        }}
+        onJumpToRequestedSubs={() =>
+          navigateGuarded(VIEWS.SUBS, () => {
+            setSelected(null);
+            setView(VIEWS.SUBS);
+            setSubsInitFilter({ status: "open" });
+            setSidebarOpen(false);
+          })
+        }
         teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
         slots={slots}
@@ -834,6 +908,25 @@ export default function App() {
                 Tailwind CSS が popup に注入されず無スタイルで刷られるため隠す。
                 通常時間割作成 (REGULAR_BUILDER) も入力フィールド主体で popup
                 印刷に耐えない (input の値は innerHTML に載らない) ため隠す。 */}
+            {/* タッチ端末には Cmd+K も ? も無いので、ボタンでも開けるようにする */}
+            <button
+              type="button"
+              onClick={() => setCmdPaletteOpen(true)}
+              aria-label="コマンドパレットを開く"
+              title={`コマンドパレット (${CMD_K_HINT})`}
+              style={{ ...S.btn(false), border: "1px solid #ccc" }}
+            >
+              🔍 検索
+            </button>
+            <button
+              type="button"
+              onClick={() => setShortcutsHelpOpen(true)}
+              aria-label="キーボードショートカット"
+              title="キーボードショートカット (?)"
+              style={{ ...S.btn(false), border: "1px solid #ccc", padding: "8px 11px" }}
+            >
+              ?
+            </button>
             {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && (
               <button
                 type="button"
@@ -862,7 +955,7 @@ export default function App() {
             <button
               onClick={() => setMonthOff((o) => o - 1)}
               aria-label="前の月"
-              title="前の月"
+              title="前の月 (←)"
               style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
             >
               ◀
@@ -873,17 +966,26 @@ export default function App() {
             <button
               onClick={() => setMonthOff((o) => o + 1)}
               aria-label="次の月"
-              title="次の月"
+              title="次の月 (→)"
               style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
             >
               ▶
             </button>
             <button
               onClick={() => setMonthOff(0)}
+              title="今月 (t)"
               style={{ ...S.btn(false), fontSize: 11 }}
             >
               今月
             </button>
+            <input
+              type="month"
+              value={monthInputValue}
+              onChange={(e) => handleMonthPicked(e.target.value)}
+              aria-label="表示する月"
+              title="表示する月を選ぶ"
+              style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
+            />
           </div>
         )}
 
@@ -1152,6 +1254,8 @@ export default function App() {
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
               availableTags={availableTags}
+              onSelectDate={openDashboardAt}
+              onJumpToAbsenceFlow={isAdmin ? jumpToAbsenceFlow : undefined}
               onEventClick={(ev) => {
                 setEventEditRequest({ kind: ev.kind, id: ev.source.id });
                 selectView(VIEWS.HOLIDAYS);
@@ -1269,6 +1373,9 @@ export default function App() {
                 setSubsInitFilter({ tab: "chain", date });
                 selectView(VIEWS.SUBS);
               }}
+              onDirtyChange={(dirty) => {
+                absenceDraftDirtyRef.current = dirty;
+              }}
             />
           )}
           {view === VIEWS.STAFF && !selected && (
@@ -1353,6 +1460,8 @@ export default function App() {
               visibility={batchVisibility ?? eventVisibility}
               onChangeVisibility={saveEventVisibility}
               availableTags={availableTags}
+              onSelectDate={openDashboardAt}
+              onJumpToAbsenceFlow={isAdmin ? jumpToAbsenceFlow : undefined}
             />
           )}
           </Suspense>
@@ -1522,8 +1631,7 @@ export default function App() {
                 : undefined
             }
             onSelectDate={(date) => {
-              setDashInitDate(date);
-              selectView(VIEWS.DASH);
+              openDashboardAt(date);
               setCmdPaletteOpen(false);
             }}
             onJumpToAbsenceFlow={

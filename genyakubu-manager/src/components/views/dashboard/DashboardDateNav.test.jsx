@@ -42,6 +42,29 @@ describe("DashboardDateNav", () => {
     expect(set).toHaveBeenLastCalledWith("2026-09-13");
   });
 
+  it("← / → / t キーでも「← 前」「次 →」「今日」と同じ日付へ動く", () => {
+    const set = renderNav({ viewMode: "list", daysInRange: 7, startDate: "2026-09-14" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-21");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-07");
+    fireEvent.keyDown(window, { key: "t" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-12");
+    // 時間割モードは 1 日ずつ、日曜は飛ばす (ボタンと同じ)
+    cleanup();
+    const set2 = renderNav(); // 土曜、時間割モード
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(set2).toHaveBeenLastCalledWith("2026-09-14");
+  });
+
+  it("日付入力にフォーカスがある間は矢印キーで日付を送らない (入力の操作を妨げない)", () => {
+    const set = renderNav();
+    const input = document.querySelector('input[type="date"]');
+    input.focus();
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it("欠勤組み換えへのジャンプは渡したときだけ出て、表示日を渡す", () => {
     const onJumpToAbsenceFlow = vi.fn();
     renderNav({ onJumpToAbsenceFlow });

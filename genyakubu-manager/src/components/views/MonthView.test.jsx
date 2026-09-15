@@ -2,8 +2,8 @@
 // 月次カレンダーの講習コマ反映 (講習時間割作成からの読み取り専用表示) を固定する。
 // 変換ロジック自体は utils/builderLessons.test.js が担うので、ここでは
 // 「本人の分だけ載る」「カットオフ日の未確定より講習カードが優先」を見る。
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MonthView } from "./MonthView";
 
 afterEach(cleanup);
@@ -437,5 +437,40 @@ describe("MonthView 多担任コマの代行", () => {
     // 堀上のぶん (→ 杉原) が出る。香川のぶんに引きずられない
     expect(screen.getByText("→ 杉原")).toBeTruthy();
     expect(screen.getAllByText("代 代行で休み")).toHaveLength(1);
+  });
+});
+
+// 日付の数字から「その日」へ跳ぶ (ダッシュボード / 欠勤組み換え)。
+// どちらも任意の prop で、渡さなければ数字は素の文字のまま。
+describe("MonthView 日付から跳ぶ", () => {
+  const decProps = { ...baseProps, year: 2026, month: 12 };
+
+  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す", () => {
+    const onSelectDate = vi.fn();
+    render(<MonthView {...decProps} onSelectDate={onSelectDate} />);
+    fireEvent.click(screen.getByRole("button", { name: "12/7 をダッシュボードで見る" }));
+    expect(onSelectDate).toHaveBeenCalledWith("2026-12-07");
+  });
+
+  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)", () => {
+    const onJumpToAbsenceFlow = vi.fn();
+    render(
+      <MonthView {...decProps} isAdmin onJumpToAbsenceFlow={onJumpToAbsenceFlow} />
+    );
+    const btn = screen.getByRole("button", { name: "12/7 の欠勤組み換え" });
+    expect(btn.className).toContain("no-print");
+    fireEvent.click(btn);
+    expect(onJumpToAbsenceFlow).toHaveBeenCalledWith("2026-12-07");
+  });
+
+  it("閲覧者には 🚑 を出さない", () => {
+    render(<MonthView {...decProps} isAdmin={false} onJumpToAbsenceFlow={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /の欠勤組み換え$/ })).toBeNull();
+  });
+
+  it("どちらも渡さなければ日付はボタンにならない", () => {
+    render(<MonthView {...decProps} />);
+    expect(screen.queryByRole("button", { name: /をダッシュボードで見る$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /の欠勤組み換え$/ })).toBeNull();
   });
 });

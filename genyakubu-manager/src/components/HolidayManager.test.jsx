@@ -108,3 +108,56 @@ describe("HolidayManager の期間絞り込み", () => {
     expect(screen.getByText(/この期間に該当する休講日はありません/)).toBeTruthy();
   });
 });
+
+describe("HolidayManager の同じ日の二重登録", () => {
+  const existing = [
+    { id: 7, date: "2026-12-25", label: "クリスマス", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+  ];
+  it("同じ日・同じ対象の既存があると登録を止め、「既存を編集」で編集モードに入る", () => {
+    const { onSave } = renderManager({ holidays: existing });
+    fireEvent.change(screen.getByLabelText("日付 (開始日)"), { target: { value: "2026-12-25" } });
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toMatch(/同じ対象の休講日「クリスマス」が既に登録されています/);
+    fireEvent.click(screen.getByRole("button", { name: "既存を編集" }));
+    // 編集モード: 名称欄に既存の名前が入り、更新ボタンに変わる
+    expect(screen.getByPlaceholderText("名称（任意）").value).toBe("クリスマス");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("複数日のうち一部だけ重複していれば「重複した日付を外す」で残りを登録できる", () => {
+    const { onSave } = renderManager({ holidays: existing });
+    fireEvent.change(screen.getByLabelText("日付 (開始日)"), { target: { value: "2026-12-24" } });
+    fireEvent.change(screen.getByLabelText(/終了日/), { target: { value: "2026-12-26" } });
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /重複した日付を外す \(2 日を残す\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].filter((h) => h.id !== 7).map((h) => h.date)).toEqual([
+      "2026-12-24",
+      "2026-12-26",
+    ]);
+  });
+
+  it("同じ日でも対象が違えば注意だけ出して登録できる", () => {
+    const { onSave } = renderManager({
+      holidays: [
+        { id: 7, date: "2026-12-25", label: "中学休講", scope: ["中学部"], targetGrades: [], subjKeywords: [] },
+      ],
+    });
+    fireEvent.change(screen.getByLabelText("日付 (開始日)"), { target: { value: "2026-12-25" } });
+    expect(screen.getByRole("status").textContent).toMatch(/同じ日に対象の違う休講日があります/);
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("編集中は自分自身を相手にしない", () => {
+    const { onSave } = renderManager({ holidays: existing });
+    fireEvent.click(screen.getByRole("button", { name: /編集/ }));
+    fireEvent.change(screen.getByPlaceholderText("名称（任意）"), { target: { value: "冬休み" } });
+    fireEvent.click(screen.getByRole("button", { name: /更新|保存/ }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0][0].label).toBe("冬休み");
+  });
+});

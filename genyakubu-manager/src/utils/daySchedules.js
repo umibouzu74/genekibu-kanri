@@ -51,6 +51,76 @@ export function isSlotCancelledByDaySchedule(slot, dateStr, daySchedules) {
   return resolveSlotDaySchedule(slot, dateStr, daySchedules)?.cancelled === true;
 }
 
+// ── 同日の二重登録の検出 ────────────────────────────────────────────
+// resolveSlotDaySchedule は「同じ日 × 同じ学年 × 同じ時間帯」に複数件が
+// 当たると登録順の先勝ちなので、後から登録した方はその時間帯で黙って
+// 効かない。登録時に止める / 一覧で ⚠ を出すための純関数。
+
+// その特別時程が実際に効く時間帯 (timeMap.from ∪ cancelTimes)
+export function dayScheduleTimeKeys(d) {
+  const set = new Set();
+  for (const m of d?.timeMap || []) if (m && m.from) set.add(m.from);
+  for (const t of d?.cancelTimes || []) if (t) set.add(t);
+  return [...set];
+}
+
+// 対象学年の交わり。空 (未指定) は「全学年」として扱う (検出は広めに)
+function sharedGrades(a, b) {
+  const ga = a || [];
+  const gb = b || [];
+  if (ga.length === 0) return [...gb];
+  if (gb.length === 0) return [...ga];
+  return ga.filter((g) => gb.includes(g));
+}
+
+/**
+ * 同じ日で対象学年が交わる他の特別時程を列挙する。
+ * @param {{date: string, targetGrades?: string[], timeMap?: object[], cancelTimes?: string[]}} candidate
+ * @param {object[]} daySchedules
+ * @param {{excludeId?: number | null}} [opts] 編集中の自分自身を除く
+ * @returns {{schedule: object, sharedGrades: string[], sharedTimes: string[]}[]}
+ *   sharedTimes が空でない相手とは (学年, 時間帯) が衝突する = どちらか
+ *   (登録順で後の方) がその時間帯で適用されない。空なら時間帯は別なので
+ *   共存できる (ただし 1 件にまとめた方が読みやすい)
+ */
+export function findSameDayDaySchedules(candidate, daySchedules, opts = {}) {
+  if (!candidate || !candidate.date) return [];
+  const excludeId = opts.excludeId ?? null;
+  const myTimes = new Set(dayScheduleTimeKeys(candidate));
+  const out = [];
+  for (const d of getDaySchedulesForDate(daySchedules, candidate.date)) {
+    if (excludeId != null && d.id === excludeId) continue;
+    const grades = sharedGrades(candidate.targetGrades, d.targetGrades);
+    if (grades.length === 0 && (candidate.targetGrades || []).length > 0 && (d.targetGrades || []).length > 0) {
+      continue;
+    }
+    const times = dayScheduleTimeKeys(d).filter((t) => myTimes.has(t));
+    out.push({ schedule: d, sharedGrades: grades, sharedTimes: times });
+  }
+  return out;
+}
+
+/**
+ * 一覧の ⚠ 用: 同じ日に先に登録されたものへ (学年, 時間帯) を取られていて、
+ * その分が適用されない特別時程。
+ * @param {object[]} daySchedules 登録順 (= 配列順) が先勝ちの順
+ * @returns {{id: number, byId: number, grades: string[], times: string[]}[]}
+ *   1 件につき最初に見つかった相手 1 つ
+ */
+export function findShadowedDaySchedules(daySchedules) {
+  const list = Array.isArray(daySchedules) ? daySchedules.filter(Boolean) : [];
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const d = list[i];
+    const earlier = list.slice(0, i);
+    const hits = findSameDayDaySchedules(d, earlier).filter((h) => h.sharedTimes.length > 0);
+    if (hits.length === 0) continue;
+    const h = hits[0];
+    out.push({ id: d.id, byId: h.schedule.id, grades: h.sharedGrades, times: h.sharedTimes });
+  }
+  return out;
+}
+
 // ── プリセット生成 (附属の 2 パターン) ─────────────────────────────
 // 「50 分授業 (17:00 開始)」の読み替え先。テスト (21:00-21:30) は
 // 5 コマ目以降として据え置きになる。

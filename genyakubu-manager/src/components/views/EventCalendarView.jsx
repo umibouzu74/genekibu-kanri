@@ -7,6 +7,7 @@ import {
   parseLocalDate,
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
+import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { S } from "../../styles/common";
 import {
   DAY_SCHEDULE_META,
@@ -49,6 +50,44 @@ const ADD_BUTTONS = Object.freeze([
   { key: EVENT_KIND.DAY_SCHEDULE, label: "特別時程", color: DAY_SCHEDULE_META.accent },
 ]);
 
+// 表示中の月はタブ単位 (sessionStorage) で覚える。休講を入れに別の画面へ
+// 寄って戻ると今月に戻ってしまい、月を送り直しになるため。タブを閉じれば
+// 今月に戻る。値は絶対の "YYYY-MM" (今日からの差 monthOff で持つと、日を
+// 跨いで読み直したときに別の月になる)。Dashboard の SS_START_DATE_KEY と
+// 同じ扱い (try/catch で包み、読めなければ今月)。
+export const SS_MONTH_KEY = "genyakubu:eventCalMonth";
+// 今日から ±12 か月より遠い保存値は無視する (古いタブの置き土産で 1 年先を
+// 開かないように)
+const SS_MONTH_MAX_DIST = 12;
+
+// "YYYY-MM" と今日の (year, month0) の差を月数で返す。形式外は null。
+function monthOffsetFromToday(ym, today) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym || "");
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  if (mo < 1 || mo > 12) return null;
+  return (y - today.getFullYear()) * 12 + (mo - 1 - today.getMonth());
+}
+
+function loadMonthOff(today) {
+  try {
+    const off = monthOffsetFromToday(sessionStorage.getItem(SS_MONTH_KEY), today);
+    if (off == null || Math.abs(off) > SS_MONTH_MAX_DIST) return 0;
+    return off;
+  } catch {
+    return 0;
+  }
+}
+
+function saveMonth(ym) {
+  try {
+    sessionStorage.setItem(SS_MONTH_KEY, ym);
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 // 連続バーの border-radius を、左右の継続フラグから決定する。
 function barBorderRadius(continuesLeft, continuesRight) {
   if (continuesLeft && continuesRight) return 0;
@@ -69,12 +108,19 @@ export function EventCalendarView({
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
   availableTags = [],
+  // 日付の数字から「その日」へ跳ぶ導線 (どちらも任意)。
+  //   onSelectDate(ds)        = その日のダッシュボードを開く
+  //   onJumpToAbsenceFlow(ds) = その日の欠勤組み換えを開く (管理者だけ)
+  onSelectDate,
+  onJumpToAbsenceFlow,
 }) {
   // 「今日」はタブを開いたまま日付を跨いでも翌 0 時に更新される (useToday)。
   // new Date() を 1 回だけ読むと、開きっぱなしのタブで昨日を強調し続ける
   const todayStr = useToday();
   const today = useMemo(() => parseLocalDate(todayStr), [todayStr]);
-  const [monthOff, setMonthOff] = useState(0);
+  const [monthOff, setMonthOff] = useState(() => loadMonthOff(today));
+  const jumpToAbsenceFlow =
+    isAdmin && onJumpToAbsenceFlow ? onJumpToAbsenceFlow : null;
 
   const vd = useMemo(
     () => new Date(today.getFullYear(), today.getMonth() + monthOff, 1),
@@ -82,6 +128,17 @@ export function EventCalendarView({
   );
   const year = vd.getFullYear();
   const month = vd.getMonth() + 1; // 1-indexed
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  useEffect(() => {
+    saveMonth(ym);
+  }, [ym]);
+
+  // ← / → で前後の月、t で今月 (入力中・ダイアログ中は効かない)
+  useDateKeyNav({
+    onPrev: () => setMonthOff((o) => o - 1),
+    onNext: () => setMonthOff((o) => o + 1),
+    onToday: () => setMonthOff(0),
+  });
   const dim = useMemo(
     () => new Date(year, month, 0).getDate(),
     [year, month]
@@ -318,10 +375,22 @@ export function EventCalendarView({
             type="button"
             className="no-print"
             onClick={() => setMonthOff(0)}
-            style={{ ...S.btn(false), fontSize: 11 }}
+            style={{ ...S.btn(monthOff === 0), fontSize: 11 }}
           >
             今月
           </button>
+          <input
+            type="month"
+            className="no-print"
+            aria-label="表示する月"
+            title="表示する月を選ぶ (← / → で前後の月、t で今月)"
+            value={ym}
+            onChange={(e) => {
+              const off = monthOffsetFromToday(e.target.value, today);
+              if (off != null) setMonthOff(off);
+            }}
+            style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
+          />
           <PrintButton style={{ fontSize: 11, marginLeft: 8 }} />
         </div>
         {showAdd && (
@@ -434,10 +503,55 @@ export function EventCalendarView({
                   gap: 4,
                 }}
               >
-                <span>{d}</span>
+                {onSelectDate ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectDate(ds)}
+                    aria-label={`${month}/${d} をダッシュボードで見る`}
+                    title={`${month}/${d} をダッシュボードで見る`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      margin: 0,
+                      font: "inherit",
+                      color: "inherit",
+                      cursor: "pointer",
+                      textDecoration: "underline dotted",
+                      textUnderlineOffset: 2,
+                    }}
+                  >
+                    {d}
+                  </button>
+                ) : (
+                  <span>{d}</span>
+                )}
+                <span
+                  className="no-print"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
+                >
+                {jumpToAbsenceFlow && (
+                  <button
+                    type="button"
+                    onClick={() => jumpToAbsenceFlow(ds)}
+                    aria-label={`${month}/${d} の欠勤組み換え`}
+                    title={`${month}/${d} の欠勤組み換えを開く`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      margin: 0,
+                      fontSize: 11,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                      opacity: 0.7,
+                    }}
+                  >
+                    🚑
+                  </button>
+                )}
                 {showAdd && (
                   <span
-                    className="no-print"
                     style={{ position: "relative" }}
                     ref={addMenuDate === ds ? addMenuRef : undefined}
                   >
@@ -514,6 +628,7 @@ export function EventCalendarView({
                     )}
                   </span>
                 )}
+                </span>
               </div>
               {evs.map((ev) => {
                 const isStart = ev.startDate === ds;

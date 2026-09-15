@@ -15,6 +15,7 @@ import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
+import { findSameDayHolidays } from "../utils/holidayDuplicates";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 
@@ -72,6 +73,14 @@ function extractClassGroups(slots, grades) {
   return [...groups].sort();
 }
 
+// 一覧・注意書きで休講日の対象を短く言う ("全部" / "中学部 中3" / "高校部 高1 共テ")
+function describeHolidayScope(h) {
+  const parts = [...(h.scope?.length ? h.scope : ["全部"])];
+  parts.push(...(h.targetGrades || []));
+  parts.push(...(h.subjKeywords || []));
+  return parts.join(" ");
+}
+
 export function HolidayManager({
   holidays,
   slots = [],
@@ -98,6 +107,8 @@ export function HolidayManager({
   const [filter, setFilter] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
+  // 追加を止めた相手 (同じ日・同じ対象の既存)。「既存を編集」「重複した日付を外す」用
+  const [conflict, setConflict] = useState(null);
   const toasts = useToasts();
   const removeHolidayWithUndo = useRemoveWithUndo({
     list: holidays,
@@ -208,6 +219,28 @@ export function HolidayManager({
   };
   const removeDate = (d) => setDates((prev) => prev.filter((x) => x !== d));
 
+  // 保存形と同じ対象 (scope が全部 / 全学年なら学年・キーワードは空)
+  const criteria = useMemo(
+    () => ({
+      scope: [...scope],
+      targetGrades: allGrades ? [] : [...targetGrades],
+      subjKeywords: scope.includes("全部") || allGrades ? [] : [...subjKeywords],
+    }),
+    [scope, allGrades, targetGrades, subjKeywords]
+  );
+  // 入力中の日付 (チップ、無ければ日付欄) に対する同じ日の既存。対象が違う
+  // ものは併存できるので注意だけ出す (追加は止めない)
+  const previewDates = useMemo(() => {
+    if (dates.length > 0) return dates;
+    if (!dateInput || !isValidDateStr(dateInput)) return [];
+    const end = dateEndInput && isValidDateStr(dateEndInput) ? dateEndInput : dateInput;
+    return eachDateStrInRange(dateInput, end);
+  }, [dates, dateInput, dateEndInput]);
+  const sameDay = useMemo(
+    () => findSameDayHolidays(holidays, previewDates, criteria, { excludeId: editId }),
+    [holidays, previewDates, criteria, editId]
+  );
+
   // ─── Form actions ───
   // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
   // onClick から呼ばれると event が入るので型で弾く)
@@ -222,10 +255,12 @@ export function HolidayManager({
     setSubjKeywords([]);
     setEditId(null);
     setError("");
+    setConflict(null);
   };
 
   const handleAdd = () => {
     setError("");
+    setConflict(null);
     // 日付欄に入れたまま「＋ 日付を追加」を押し忘れた場合の救済
     let effectiveDates = dates;
     if (dates.length === 0 && dateInput) {
@@ -245,14 +280,34 @@ export function HolidayManager({
       return;
     }
 
-    const grades = allGrades ? [] : [...targetGrades];
-    // Clear subjKeywords when scope is 全部 or all grades selected
-    const keywords = scope.includes("全部") || allGrades ? [] : [...subjKeywords];
+    // 同じ日・同じ対象の既存があれば足さない (効き目は変わらないのに一覧に
+    // 2 行並び、片方だけ消して「まだ休講のまま」になる)。対象が違う既存は
+    // 併存できるので止めない
+    const { exact } = findSameDayHolidays(holidays, effectiveDates, criteria, {
+      excludeId: editId,
+    });
+    if (exact.length > 0) {
+      const dupDates = [...new Set(exact.map((x) => x.date))];
+      const first = exact[0];
+      setError(
+        dupDates.length === 1
+          ? `${fmtDateWeekday(first.date)} は同じ対象の休講日「${first.holiday.label || "休講"}」が既に登録されています`
+          : `${dupDates.map(fmtDateWeekday).join("、")} は同じ対象の休講日が既に登録されています (「${first.holiday.label || "休講"}」など ${exact.length} 件)`
+      );
+      setConflict({
+        holiday: first.holiday,
+        dupDates,
+        // 重複した日を外して残りを登録できるとき (複数日の一括登録) だけ
+        remaining: effectiveDates.filter((d) => !dupDates.includes(d)),
+      });
+      return;
+    }
+
     const base = {
       label: label || "休講",
-      scope: [...scope],
-      targetGrades: grades,
-      subjKeywords: keywords,
+      scope: criteria.scope,
+      targetGrades: criteria.targetGrades,
+      subjKeywords: criteria.subjKeywords,
     };
 
     if (editId != null) {
@@ -287,6 +342,18 @@ export function HolidayManager({
     setSubjKeywords([...(h.subjKeywords || [])]);
     setEditId(h.id);
     setError("");
+    setConflict(null);
+  };
+
+  // 「重複した日付を外す」: 既に登録済みの日だけチップから外し、残りを
+  // そのまま登録できる状態にする (日付欄から直接押したときはチップに移す)
+  const dropDuplicateDates = () => {
+    if (!conflict) return;
+    setDates(conflict.remaining);
+    setDateInput("");
+    setDateEndInput("");
+    setError("");
+    setConflict(null);
   };
 
   const handleDel = (h) => {
@@ -462,9 +529,73 @@ export function HolidayManager({
           <div
             id="holiday-date-err"
             role="alert"
-            style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}
+            style={{
+              fontSize: 11,
+              color: colors.danger,
+              marginBottom: 8,
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
           >
-            {error}
+            <span>{error}</span>
+            {conflict && (
+              <button
+                type="button"
+                onClick={() => handleEdit(conflict.holiday)}
+                style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+              >
+                既存を編集
+              </button>
+            )}
+            {conflict && conflict.remaining.length > 0 && (
+              <button
+                type="button"
+                onClick={dropDuplicateDates}
+                title="登録済みの日だけ外して、残りの日を登録できる状態にします"
+                style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+              >
+                重複した日付を外す ({conflict.remaining.length} 日を残す)
+              </button>
+            )}
+          </div>
+        )}
+        {!error && sameDay.others.length > 0 && (
+          <div
+            role="status"
+            style={{
+              fontSize: 11,
+              color: "#8a4a00",
+              background: "#fff6e5",
+              border: "1px solid #f0c070",
+              borderRadius: 6,
+              padding: "6px 10px",
+              marginBottom: 8,
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <span>
+              ⚠ 同じ日に対象の違う休講日があります (併存できます):{" "}
+              {sameDay.others
+                .slice(0, 4)
+                .map(
+                  (x) =>
+                    `${fmtDateWeekday(x.date)} 「${x.holiday.label || "休講"}」(${describeHolidayScope(x.holiday)})`
+                )
+                .join(" / ")}
+              {sameDay.others.length > 4 ? ` … 他 ${sameDay.others.length - 4} 件` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleEdit(sameDay.others[0].holiday)}
+              style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+            >
+              既存を編集
+            </button>
           </div>
         )}
 

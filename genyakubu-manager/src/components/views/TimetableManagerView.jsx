@@ -1,6 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { S } from "../../styles/common";
+import { colors } from "../../styles/tokens";
 import { formatCount, slotWeight } from "../../utils/biweekly";
+import {
+  describeOverlap,
+  findDuplicateNameTimetable,
+  findOverlappingTimetables,
+  parseGradesInput,
+  validateTimetableName,
+  validateTimetablePeriod,
+} from "../../utils/timetableOverlap";
+import { FieldError } from "../FieldError";
 import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
@@ -10,6 +20,31 @@ import { useSessionCtx } from "../../hooks/useSessionCtx";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
+//
+// 作成 / 編集 / 複製のフォームは保存前に次を点検する (utils/timetableOverlap):
+//   - 名前が空 / 開始日 > 終了日 → エラー (保存しない)
+//   - 同じ名前の時間割がある → 警告 (保存はできる)
+//   - 有効期間 × 対象学年が他の時間割と重なる → 警告 + 「重なりを承知で保存」
+//     のチェックを要求する。前の期に終了日を入れ忘れると切替日以降どちらも
+//     有効になりコマが二重に出る (CLAUDE.md「期切替の運用」) ので、その事故を
+//     保存の手前で気付かせる。禁止にはしない (講習中だけ重ねる運用があり得る)
+
+// フォーム 1 つぶんの点検結果。overlapKey は「承知で保存」のチェックを
+// 紐付けるための署名 (重なる相手や区間が変わったらチェックを取り直す)
+function checkTimetableForm(form, timetables, excludeId) {
+  if (!form) return null;
+  const overlaps = findOverlappingTimetables(form, timetables, { excludeId });
+  return {
+    nameError: validateTimetableName(form),
+    periodError: validateTimetablePeriod(form),
+    duplicate: findDuplicateNameTimetable(form.name, timetables, { excludeId }),
+    overlaps,
+    overlapKey: overlaps
+      .map((o) => `${o.timetable.id}:${o.overlapStart || ""}:${o.overlapEnd || ""}:${o.sharedGrades.join("|")}`)
+      .join(";"),
+  };
+}
+
 export function TimetableManagerView({
   timetables,
   displayCutoff,
@@ -30,6 +65,34 @@ export function TimetableManagerView({
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
   const [dupForm, setDupForm] = useState(null);
+  // 保存を押した後だけ「名前を入力してください」を出す (開いた直後に赤くしない)
+  const [formAttempted, setFormAttempted] = useState(false);
+  const [dupAttempted, setDupAttempted] = useState(false);
+  // 「重なりを承知で保存」: チェックした時点の overlapKey を持つ
+  const [formAckKey, setFormAckKey] = useState(null);
+  const [dupAckKey, setDupAckKey] = useState(null);
+
+  const formChecks = useMemo(
+    () => checkTimetableForm(form, timetables, editingId === "new" ? null : editingId),
+    [form, timetables, editingId]
+  );
+  // 複製は新しい時間割なので何も除かない (複製元とも重なれば警告)。
+  // 対象学年は複製元を引き継ぐ (useTimetablesCrud.duplicate は ...source)
+  const dupSource = useMemo(
+    () => (dupForm ? timetables.find((t) => t.id === dupForm.sourceId) : null),
+    [dupForm, timetables]
+  );
+  const dupChecks = useMemo(
+    () =>
+      dupForm
+        ? checkTimetableForm(
+            { ...dupForm, grades: dupSource?.grades || [] },
+            timetables,
+            null
+          )
+        : null,
+    [dupForm, dupSource, timetables]
+  );
 
   // 「終了日を入れると実際の最終授業日はいつになるか」を逆算するための ctx。
   // 表示系と同じルール (休講・テスト期間・特別時程・隔週・時間割の有効期間) で
@@ -51,6 +114,8 @@ export function TimetableManagerView({
   const startEdit = useCallback(
     (tt) => {
       setEditingId(tt.id);
+      setFormAttempted(false);
+      setFormAckKey(null);
       setForm({
         name: tt.name,
         type: tt.type,
@@ -64,6 +129,8 @@ export function TimetableManagerView({
 
   const startNew = useCallback(() => {
     setEditingId("new");
+    setFormAttempted(false);
+    setFormAckKey(null);
     setForm({
       name: "",
       type: "regular",
@@ -76,14 +143,16 @@ export function TimetableManagerView({
   const cancelEdit = useCallback(() => {
     setEditingId(null);
     setForm(null);
+    setFormAttempted(false);
+    setFormAckKey(null);
   }, []);
 
   const saveEdit = useCallback(() => {
-    if (!form || !form.name.trim()) return;
-    const grades = form.grades
-      .split(/[,、\s]+/)
-      .map((g) => g.trim())
-      .filter(Boolean);
+    if (!form || !formChecks) return;
+    setFormAttempted(true);
+    if (formChecks.nameError || formChecks.periodError) return;
+    if (formChecks.overlaps.length > 0 && formAckKey !== formChecks.overlapKey) return;
+    const grades = parseGradesInput(form.grades);
     const data = {
       name: form.name.trim(),
       type: form.type,
@@ -97,10 +166,12 @@ export function TimetableManagerView({
       ttCrud.update(editingId, data);
     }
     cancelEdit();
-  }, [form, editingId, ttCrud, cancelEdit]);
+  }, [form, formChecks, formAckKey, editingId, ttCrud, cancelEdit]);
 
   const startDuplicate = useCallback(
     (tt) => {
+      setDupAttempted(false);
+      setDupAckKey(null);
       setDupForm({
         sourceId: tt.id,
         sourceName: tt.name,
@@ -112,14 +183,23 @@ export function TimetableManagerView({
     []
   );
 
+  const cancelDuplicate = useCallback(() => {
+    setDupForm(null);
+    setDupAttempted(false);
+    setDupAckKey(null);
+  }, []);
+
   const executeDuplicate = useCallback(() => {
-    if (!dupForm || !dupForm.name.trim()) return;
+    if (!dupForm || !dupChecks) return;
+    setDupAttempted(true);
+    if (dupChecks.nameError || dupChecks.periodError) return;
+    if (dupChecks.overlaps.length > 0 && dupAckKey !== dupChecks.overlapKey) return;
     ttCrud.duplicate(dupForm.sourceId, dupForm.name.trim(), {
       startDate: dupForm.startDate || null,
       endDate: dupForm.endDate || null,
     });
-    setDupForm(null);
-  }, [dupForm, ttCrud]);
+    cancelDuplicate();
+  }, [dupForm, dupChecks, dupAckKey, ttCrud, cancelDuplicate]);
 
   const slotCountByTT = {};
   for (const s of slots) {
@@ -167,6 +247,11 @@ export function TimetableManagerView({
             setForm={setForm}
             onSave={saveEdit}
             onCancel={cancelEdit}
+            checks={formChecks}
+            attempted={formAttempted}
+            ackKey={formAckKey}
+            setAckKey={setFormAckKey}
+            slotCountByTT={slotCountByTT}
           />
         )}
 
@@ -179,6 +264,11 @@ export function TimetableManagerView({
                 onSave={saveEdit}
                 onCancel={cancelEdit}
                 isDefault={tt.id === 1}
+                checks={formChecks}
+                attempted={formAttempted}
+                ackKey={formAckKey}
+                setAckKey={setFormAckKey}
+                slotCountByTT={slotCountByTT}
               />
             ) : (
               <div
@@ -291,8 +381,14 @@ export function TimetableManagerView({
                 onChange={(e) =>
                   setDupForm({ ...dupForm, name: e.target.value })
                 }
+                aria-invalid={dupAttempted && dupChecks?.nameError ? "true" : undefined}
+                aria-describedby="tt-dup-name-err"
                 style={{ ...S.input, marginTop: 2 }}
               />
+              <FieldError id="tt-dup-name-err">
+                {dupAttempted ? dupChecks?.nameError : null}
+              </FieldError>
+              <DuplicateNameNote duplicate={dupChecks?.duplicate} />
             </label>
             <div style={{ display: "flex", gap: 8 }}>
               <label style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>
@@ -311,17 +407,28 @@ export function TimetableManagerView({
                 <input
                   type="date"
                   value={dupForm.endDate}
+                  min={dupForm.startDate || undefined}
                   onChange={(e) =>
                     setDupForm({ ...dupForm, endDate: e.target.value })
                   }
+                  aria-invalid={dupChecks?.periodError ? "true" : undefined}
+                  aria-describedby="tt-dup-period-err"
                   style={{ ...S.input, marginTop: 2 }}
                 />
+                <FieldError id="tt-dup-period-err">{dupChecks?.periodError}</FieldError>
               </label>
             </div>
+            <OverlapWarning
+              checks={dupChecks}
+              ackKey={dupAckKey}
+              setAckKey={setDupAckKey}
+              slotCountByTT={slotCountByTT}
+              idPrefix="tt-dup"
+            />
             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
               <button
                 type="button"
-                onClick={() => setDupForm(null)}
+                onClick={cancelDuplicate}
                 style={S.btn(false)}
               >
                 キャンセル
@@ -329,7 +436,12 @@ export function TimetableManagerView({
               <button
                 type="button"
                 onClick={executeDuplicate}
-                style={{ ...S.btn(true), background: "#2a4a8e" }}
+                disabled={!canSave(dupChecks, dupAckKey)}
+                style={{
+                  ...S.btn(true),
+                  background: "#2a4a8e",
+                  opacity: canSave(dupChecks, dupAckKey) ? 1 : 0.5,
+                }}
               >
                 複製する
               </button>
@@ -382,7 +494,98 @@ export function TimetableManagerView({
   );
 }
 
-function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
+// 保存ボタンを押せる条件。名前の空は「押した後に赤く出す」ので押せるまま
+// (押した時点で saveEdit が止める)。開始日 > 終了日 と、未承知の重なりは
+// 押せない (理由は画面に出ている)
+function canSave(checks, ackKey) {
+  if (!checks) return false;
+  if (checks.periodError) return false;
+  if (checks.overlaps.length > 0 && ackKey !== checks.overlapKey) return false;
+  return true;
+}
+
+// 同じ名前の時間割があるときの注意 (保存は妨げない。ヘッダの時間割セレクタで
+// 見分けが付かなくなるだけ)
+function DuplicateNameNote({ duplicate }) {
+  if (!duplicate) return null;
+  return (
+    <div role="status" style={{ fontSize: 11, color: "#8a4a00", marginTop: 2 }}>
+      ⚠ 同じ名前の時間割「{duplicate.name}」があります (時間割の切替で見分けにくくなります)
+    </div>
+  );
+}
+
+// 有効期間 × 対象学年の重なり警告 + 「重なりを承知で保存」
+function OverlapWarning({ checks, ackKey, setAckKey, slotCountByTT, idPrefix }) {
+  const overlaps = checks?.overlaps || [];
+  if (overlaps.length === 0) return null;
+  const acked = ackKey === checks.overlapKey;
+  const boxId = `${idPrefix}-overlap-ack`;
+  return (
+    <div
+      role="alert"
+      style={{
+        fontSize: 11,
+        color: "#8a4a00",
+        background: "#fff6e5",
+        border: "1px solid #f0c070",
+        borderRadius: 6,
+        padding: "8px 10px",
+        lineHeight: 1.7,
+      }}
+    >
+      <div style={{ fontWeight: 800 }}>
+        ⚠ 有効期間が他の時間割と重なります ({overlaps.length} 件)
+      </div>
+      <ul style={{ margin: "2px 0 4px", paddingLeft: 18 }}>
+        {overlaps.map((o) => (
+          <li key={o.timetable.id}>
+            {describeOverlap(o)}
+            <span style={{ color: "#a07040", marginLeft: 4 }}>
+              — {formatCount(slotCountByTT?.[o.timetable.id] || 0)} コマ
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div style={{ color: "#a07040" }}>
+        重なる期間はどちらの時間割のコマも表示されます。
+        前の期の終了日を入れると二重に出ません。
+      </div>
+      <label
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 4,
+          fontWeight: 700,
+          cursor: "pointer",
+        }}
+      >
+        <input
+          id={boxId}
+          type="checkbox"
+          checked={acked}
+          onChange={(e) => setAckKey(e.target.checked ? checks.overlapKey : null)}
+        />
+        重なりを承知で保存
+      </label>
+    </div>
+  );
+}
+
+function TimetableForm({
+  form,
+  setForm,
+  onSave,
+  onCancel,
+  isDefault,
+  checks,
+  attempted,
+  ackKey,
+  setAckKey,
+  slotCountByTT,
+}) {
+  const saveEnabled = canSave(checks, ackKey);
   return (
     <div
       style={{
@@ -399,8 +602,18 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="例: 2026年度 1学期"
-            style={{ ...S.input, marginTop: 2 }}
+            aria-invalid={attempted && checks?.nameError ? "true" : undefined}
+            aria-describedby="tt-form-name-err"
+            style={{
+              ...S.input,
+              marginTop: 2,
+              borderColor: attempted && checks?.nameError ? colors.danger : undefined,
+            }}
           />
+          <FieldError id="tt-form-name-err">
+            {attempted ? checks?.nameError : null}
+          </FieldError>
+          <DuplicateNameNote duplicate={checks?.duplicate} />
         </label>
         <div style={{ display: "flex", gap: 8 }}>
           <label style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>
@@ -417,9 +630,17 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
             <input
               type="date"
               value={form.endDate}
+              min={form.startDate || undefined}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-              style={{ ...S.input, marginTop: 2 }}
+              aria-invalid={checks?.periodError ? "true" : undefined}
+              aria-describedby="tt-form-period-err"
+              style={{
+                ...S.input,
+                marginTop: 2,
+                borderColor: checks?.periodError ? colors.danger : undefined,
+              }}
             />
+            <FieldError id="tt-form-period-err">{checks?.periodError}</FieldError>
           </label>
         </div>
         <label style={{ fontSize: 12, fontWeight: 600 }}>
@@ -438,6 +659,13 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
             </span>
           )}
         </label>
+        <OverlapWarning
+          checks={checks}
+          ackKey={ackKey}
+          setAckKey={setAckKey}
+          slotCountByTT={slotCountByTT}
+          idPrefix="tt-form"
+        />
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
           <button type="button" onClick={onCancel} style={S.btn(false)}>
             キャンセル
@@ -445,10 +673,10 @@ function TimetableForm({ form, setForm, onSave, onCancel, isDefault }) {
           <button
             type="button"
             onClick={onSave}
-            disabled={!form.name.trim()}
+            disabled={!saveEnabled}
             style={{
               ...S.btn(true),
-              opacity: form.name.trim() ? 1 : 0.5,
+              opacity: saveEnabled ? 1 : 0.5,
             }}
           >
             保存

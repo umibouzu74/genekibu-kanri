@@ -3,7 +3,7 @@
 // 曜日だけで絞っていた頃は、期切替で残してある旧期の時間割のコマが重なり、
 // 同じクラスが 2 重・3 重に並んでいた (2026-08-20)。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AbsenceWorkflowView } from "./AbsenceWorkflowView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -135,6 +135,47 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
     // カードは「滝澤 ⇒ 代行未定」(チップは他と同じ 2 文字で「未定」)
     expect(screen.getByText("代行未定", { exact: false })).toBeTruthy();
     expect(screen.getByText("未定")).toBeTruthy();
+  });
+});
+
+describe("AbsenceWorkflowView の下書きの通知 (onDirtyChange)", () => {
+  // 下書きを 1 件作る共通手順 (欠勤する先生を選んで「欠勤にする」)
+  // (保存後は先生が選ばれたままなので、2 回目は選択を飛ばす)
+  function makeDraft() {
+    const placeholder = screen.queryByText("(クリックして選択)");
+    if (placeholder) {
+      fireEvent.click(placeholder);
+      fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+  }
+
+  it("編集で true、破棄で false を親へ知らせる", async () => {
+    const onDirtyChange = vi.fn();
+    renderView({ onDirtyChange });
+    // マウント直後は下書きなし
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    // 破棄 → 確認ダイアログで OK
+    fireEvent.click(screen.getByRole("button", { name: "破棄" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "破棄" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it("保存でも false に戻り、アンマウントでも false を送る", () => {
+    const onDirtyChange = vi.fn();
+    const { unmount } = renderView({ onDirtyChange });
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    unmount();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 });
 

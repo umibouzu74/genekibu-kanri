@@ -194,3 +194,32 @@ describe("SubstituteView の時間割表タブ (代行モード)", () => {
     expect(screen.getByText("移")).toBeInTheDocument();
   });
 });
+
+// 代行一覧の並び替え (対象日 / 登録が新しい順) と 📅 の配線 (2026-09-15)。
+// 並び順の state はこの画面が持つ (CSV も同じ順で出すため)
+describe("SubstituteView の代行一覧の並び替えと日付ジャンプ", () => {
+  const SUBS = [
+    sub({ id: 1, date: `${THIS_MONTH}-05`, createdAt: "2026-09-01T10:00:00.000Z", memo: "A" }),
+    sub({ id: 2, date: `${THIS_MONTH}-20`, createdAt: "2026-09-03T10:00:00.000Z", memo: "B" }),
+    sub({ id: 3, date: `${THIS_MONTH}-12`, createdAt: "2026-09-02T10:00:00.000Z", memo: "C" }),
+  ];
+  it("既定は対象日昇順。見出しクリックで登録が新しい順、もう一度で戻る", () => {
+    renderView({ subs: SUBS });
+    const dates = () =>
+      screen.getAllByRole("row").slice(1).map((r) => r.textContent.slice(0, 10));
+    expect(dates()).toEqual([`${THIS_MONTH}-05`, `${THIS_MONTH}-12`, `${THIS_MONTH}-20`]);
+    fireEvent.click(screen.getByRole("columnheader", { name: /作成日時/ }));
+    expect(dates()).toEqual([`${THIS_MONTH}-20`, `${THIS_MONTH}-12`, `${THIS_MONTH}-05`]);
+    fireEvent.click(screen.getByRole("columnheader", { name: /作成日時/ }));
+    expect(dates()).toEqual([`${THIS_MONTH}-05`, `${THIS_MONTH}-12`, `${THIS_MONTH}-20`]);
+  });
+
+  it("📅 は onJumpToAbsenceFlow に日付を渡す", () => {
+    const onJumpToAbsenceFlow = vi.fn();
+    renderView({ subs: SUBS, onJumpToAbsenceFlow });
+    fireEvent.click(
+      screen.getByRole("button", { name: `${THIS_MONTH}-12 の欠勤振替画面を開く` })
+    );
+    expect(onJumpToAbsenceFlow).toHaveBeenCalledWith(`${THIS_MONTH}-12`);
+  });
+});

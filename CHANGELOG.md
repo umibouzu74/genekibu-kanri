@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### Added (第 2 弾: 日付の移動と一覧の手数を減らす / 無言で失敗する登録を止める)
+
+2026-09-15 の点検 (43 件) から、操作の手数と「黙って失敗する」系を優先して
+実装した。
+
+- **← / → / t キーで日付・週・月を移動** (`hooks/useDateKeyNav`)。日別
+  ダッシュボード (日)、講師別月間 (月)、イベントカレンダー (月)、週間 (週) で
+  共通。入力中・ダイアログ表示中・修飾キー付きは効かない (chord ナビと同じ
+  判定)。ショートカットヘルプに「日付の移動」節を追加
+- **講師別月間とイベントカレンダーに月ピッカー** (`<input type="month">`)。
+  遠い月へ直接飛べる。イベントカレンダーは表示中の月をタブ内 (sessionStorage)
+  で保持し、別画面へ寄って戻っても同じ月から始まる (今日から ±12 か月を
+  超える保存値は無視)
+- **月間・イベントカレンダーの日付の数字をクリックでその日のダッシュボードへ**、
+  管理者は隣の 🚑 でその日の欠勤組み換えへ (`MonthView` / `EventCalendarView`
+  の `onSelectDate` / `onJumpToAbsenceFlow`。App の `openDashboardAt` を
+  Cmd+K の日付ジャンプと共有)。紙面には出さない
+- **週間ビューに基準週の切替** (◀ 前の週 / 今週 / 次の週 ▶ / 日付入力)。曜日
+  見出しに日付 (「月 11/30」) を出し、今日の列を強調。隔週 A/B・お知らせの
+  2 週間窓・第N回は表示中の週で計算する (これまでは常に今日の週で固定で、
+  来週の隔週の担当が週間から読めなかった)。講師を切り替えても週は保つ。
+  日曜に開いたときは翌週を出す
+- **トップバーに「🔍 検索」(コマンドパレット) と「?」(ショートカットヘルプ)**。
+  Cmd+K や ? キーを押せないタッチ端末からも開ける
+- **欠勤組み換えの下書きを別画面へ移るときに守る**。未保存の下書きがある
+  状態でサイドバー・g チョード・Cmd+K・講師選択のどれで移ろうとしても確認
+  ダイアログを出し、キャンセルなら留まる (`App.navigateGuarded`、
+  `AbsenceWorkflowView` の `onDirtyChange`)。これまでは画面を離れた時点で
+  下書きが無言で消えていた (beforeunload はタブを閉じるときしか守れない)
+- **代行一覧に並べ替え (対象日 / 登録が新しい順) と 📅「その日の欠勤組み換えへ」**
+  (`SubListTab`)。時間割調整一覧・回数補正一覧には元からあり、一番使う
+  代行一覧だけ無かった。並びは親 (`SubstituteView`) が持ち、📥 CSV も同じ順
+- **時間割の作成・編集・複製に期間の検証と重なり警告**
+  (`utils/timetableOverlap`)。名前が空 / 開始日 > 終了日 はエラー、同じ名前は
+  注意、**有効期間 × 対象学年が他の時間割と重なるときは「◯◯ と 4/1〜4/10 が
+  重なります (中3)」を出して「重なりを承知で保存」のチェックを要求**する
+  (前の期に終了日を入れ忘れると切替日以降どちらも有効になりコマが二重に出る、
+  の事故を保存の手前で止める。禁止ではない)。相手や区間が変わったら
+  チェックを取り直す
+- **休講日・特別時程の同じ日の二重登録を検出**。休講日は同じ日・同じ対象
+  (部門 / 学年 / 科目キーワード) なら登録を止めて「既存を編集」へ、複数日の
+  一括登録なら「重複した日付を外す」で残りだけ登録できる。対象が違うものは
+  併存できるので注意だけ (`utils/holidayDuplicates`)。特別時程は同じ日・
+  学年・時間帯が重なると後から登録した方が黙って効かない (先勝ち) ので
+  登録を止め、一覧でも先の登録に隠れている件に ⚠ を付ける
+  (`daySchedules.findSameDayDaySchedules` / `findShadowedDaySchedules`)
+- テスト: `useDateKeyNav.test.jsx` (新規)、`App.absenceGuard.test.jsx` (新規)、
+  `timetableOverlap.test.js` (新規)、`holidayDuplicates.test.js` (新規)、
+  `DashboardDateNav.test.jsx` / `ShortcutsHelp.test.jsx` / `App.smoke.test.jsx` /
+  `AbsenceWorkflowView.test.jsx` / `MonthView.test.jsx` /
+  `EventCalendarView.test.jsx` / `WeekView.test.jsx` / `SubListTab.test.jsx` /
+  `SubstituteView.test.jsx` / `TimetableManagerView.test.jsx` /
+  `HolidayManager.test.jsx` / `DayScheduleManager.test.jsx` /
+  `daySchedules.test.js` (追加)。合計 +71
+
 ### Fixed / Added (目に見える不整合の一掃: 代行モード・1日分代行・玉突き代行・日別ダッシュボード・週間・イベントカレンダー・教科マスター)
 
 規約 (CLAUDE.md) や他画面と食い違っていた挙動を、正しい側にそろえた

@@ -5,6 +5,8 @@ import {
   buildCutFirstCancelTimes,
   collectTargetTimes,
   findNewConflicts,
+  findSameDayDaySchedules,
+  findShadowedDaySchedules,
   getDaySchedulesForDate,
   isSlotCancelledByDaySchedule,
   resolveSlotDaySchedule,
@@ -203,5 +205,61 @@ describe("findNewConflicts", () => {
     ];
     const out = findNewConflicts(slots, resolve);
     expect(out.map((c) => c.value)).toEqual(["石原"]);
+  });
+});
+
+// 同日の二重登録の検出 (2026-09-15)。resolveSlotDaySchedule が先勝ちなので、
+// 後から登録した同じ (学年, 時間帯) は黙って効かない
+describe("findSameDayDaySchedules / findShadowedDaySchedules", () => {
+  const cut = (over = {}) => ({
+    id: 1,
+    date: "2026-10-07",
+    label: "1限カット",
+    targetGrades: ["附中1", "附中2"],
+    timeMap: [],
+    cancelTimes: ["16:25-17:25"],
+    ...over,
+  });
+
+  it("同じ日・学年が交わる相手を、時間帯の衝突つきで返す", () => {
+    const existing = [cut(), cut({ id: 2, targetGrades: ["中1"] })];
+    const r = findSameDayDaySchedules(
+      { date: "2026-10-07", targetGrades: ["附中2", "附中3"], timeMap: [{ from: "16:25-17:25", to: "17:00-17:50" }], cancelTimes: [] },
+      existing
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0].schedule.id).toBe(1);
+    expect(r[0].sharedGrades).toEqual(["附中2"]);
+    expect(r[0].sharedTimes).toEqual(["16:25-17:25"]);
+  });
+
+  it("時間帯が別なら sharedTimes は空 (共存できる)。別の日・excludeId は出ない", () => {
+    const r = findSameDayDaySchedules(
+      { date: "2026-10-07", targetGrades: ["附中1"], timeMap: [{ from: "17:35-18:35", to: "18:00-18:50" }] },
+      [cut(), cut({ id: 3, date: "2026-10-08" })]
+    );
+    expect(r.map((x) => x.schedule.id)).toEqual([1]);
+    expect(r[0].sharedTimes).toEqual([]);
+    expect(findSameDayDaySchedules({ date: "2026-10-07", targetGrades: ["附中1"] }, [cut()], { excludeId: 1 })).toEqual([]);
+  });
+
+  it("対象学年が空なら全学年として交わる (検出は広め)", () => {
+    const r = findSameDayDaySchedules({ date: "2026-10-07", targetGrades: [], cancelTimes: ["16:25-17:25"] }, [cut()]);
+    expect(r[0].sharedGrades).toEqual(["附中1", "附中2"]);
+    expect(r[0].sharedTimes).toEqual(["16:25-17:25"]);
+  });
+
+  it("後から登録した同じ (学年, 時間帯) の id を返す。先の方・別時間帯は返さない", () => {
+    const list = [
+      cut(),
+      cut({ id: 2, label: "重複", targetGrades: ["附中2"] }),
+      cut({ id: 3, label: "別時間帯", cancelTimes: [], timeMap: [{ from: "17:35-18:35", to: "18:00-18:50" }] }),
+      cut({ id: 4, label: "別学年", targetGrades: ["中1"] }),
+    ];
+    expect(findShadowedDaySchedules(list)).toEqual([
+      { id: 2, byId: 1, grades: ["附中2"], times: ["16:25-17:25"] },
+    ]);
+    expect(findShadowedDaySchedules([])).toEqual([]);
+    expect(findShadowedDaySchedules(null)).toEqual([]);
   });
 });

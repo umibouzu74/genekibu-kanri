@@ -9,6 +9,8 @@ import {
   buildCutFirstCancelTimes,
   collectTargetTimes,
   findNewConflicts,
+  findSameDayDaySchedules,
+  findShadowedDaySchedules,
   resolveSlotDaySchedule,
 } from "../utils/daySchedules";
 import { useToasts } from "../hooks/useToasts";
@@ -29,6 +31,13 @@ import { colors } from "../styles/tokens";
 // 保存前に、読み替えで新たに生じる講師・教室の重なりをプレビュー表示する
 // (警告のみ、保存は妨げない)。削除は cascade 無しの単純削除なので
 // removeWithUndo (6 秒間の取り消しトースト)。
+//
+// 同じ日の二重登録 (2026-09-15): resolveSlotDaySchedule は同じ (日付, 学年,
+// 時間帯) に複数件が当たると登録順の先勝ちなので、後から登録した方は黙って
+// 効かない。同じ日・学年が交わる既存があれば、時間帯まで重なるときは登録を
+// 止めて「既存を編集」へ誘導し、時間帯が別なら注意だけ出す
+// (utils/daySchedules.findSameDayDaySchedules)。一覧では先に登録したものに
+// 取られている件へ ⚠ を付ける (findShadowedDaySchedules)。
 
 const TIME_RANGE_RE = /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/;
 
@@ -74,6 +83,8 @@ export function DayScheduleManager({
   const [rowEdits, setRowEdits] = useState({});
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
+  // 登録を止めた相手 (同じ日・学年・時間帯の既存)。「既存を編集」の飛び先
+  const [conflictWith, setConflictWith] = useState(null);
 
   const dow = date ? dateToDay(date) : null;
 
@@ -134,6 +145,32 @@ export function DayScheduleManager({
     );
   }, [date, label, targetGrades, draft, activeSlotsForDate]);
 
+  // 同じ日で対象学年が交わる既存の特別時程 (編集中の自分は除く)。学年を
+  // 選ぶ前は見ない (未選択を「全学年」と読むと日付を入れただけで出る)
+  const sameDay = useMemo(
+    () =>
+      date && isValidDateStr(date) && targetGrades.length > 0
+        ? findSameDayDaySchedules(
+            { date, targetGrades, timeMap: draft.timeMap, cancelTimes: draft.cancelTimes },
+            daySchedules,
+            { excludeId: editId }
+          )
+        : [],
+    [date, targetGrades, draft, daySchedules, editId]
+  );
+  const blockedBy = useMemo(() => sameDay.filter((h) => h.sharedTimes.length > 0), [sameDay]);
+
+  // 一覧の ⚠: 先に登録した同日のものに (学年, 時間帯) を取られている件
+  const shadowedById = useMemo(() => {
+    const m = new Map();
+    for (const x of findShadowedDaySchedules(daySchedules)) m.set(x.id, x);
+    return m;
+  }, [daySchedules]);
+  const labelOf = (id) => {
+    const d = daySchedules.find((x) => x.id === id);
+    return d ? d.label || "特別時程" : `#${id}`;
+  };
+
   const toggleGrade = (g) => {
     setTargetGrades((prev) =>
       prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
@@ -161,6 +198,7 @@ export function DayScheduleManager({
       return keep;
     });
     if (error) setError("");
+    setConflictWith(null);
   };
 
   const applyPreset = (key) => {
@@ -212,10 +250,12 @@ export function DayScheduleManager({
     setRowEdits({});
     setEditId(null);
     setError("");
+    setConflictWith(null);
   };
 
   const handleAdd = () => {
     setError("");
+    setConflictWith(null);
     if (!date || !isValidDateStr(date)) {
       setError("日付を入力してください");
       return;
@@ -231,6 +271,16 @@ export function DayScheduleManager({
     const badTime = draft.timeMap.find((m) => !TIME_RANGE_RE.test(m.to));
     if (badTime) {
       setError(`新しい時刻「${badTime.to}」の形式が不正です (例: 17:00-17:50)`);
+      return;
+    }
+    // 同じ日・学年・時間帯の既存があると、後から登録した方はその時間帯で
+    // 適用されない (先勝ち)。黙って効かない登録は作らず、既存の編集へ誘導
+    if (blockedBy.length > 0) {
+      const h = blockedBy[0];
+      setError(
+        `${fmtDateWeekday(date)} には対象学年 (${h.sharedGrades.join("・")}) と時間帯 (${h.sharedTimes.join(" / ")}) が重なる特別時程「${h.schedule.label || "特別時程"}」が既にあります。後から登録した方は適用されないので、既存を編集してまとめてください`
+      );
+      setConflictWith(h.schedule);
       return;
     }
     const entry = {
@@ -263,6 +313,7 @@ export function DayScheduleManager({
     setRowEdits(edits);
     setEditId(d.id);
     setError("");
+    setConflictWith(null);
   };
 
   const handleDel = (d) => {
@@ -545,6 +596,39 @@ export function DayScheduleManager({
             </div>
           )}
 
+          {/* 同じ日・学年の既存 (時間帯が別なら共存できるが、まとめた方が読みやすい) */}
+          {sameDay.length > 0 && blockedBy.length === 0 && !conflictWith && (
+            <div
+              role="status"
+              style={{
+                fontSize: 11,
+                color: "#8a4a00",
+                background: "#fff6e5",
+                border: "1px solid #f0c070",
+                borderRadius: 6,
+                padding: "6px 10px",
+                marginBottom: 10,
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span>
+                ⚠ {fmtDateWeekday(date)} には対象学年が重なる特別時程が既にあります:{" "}
+                {sameDay.map((h) => `「${h.schedule.label || "特別時程"}」(${h.sharedGrades.join("・")})`).join(" / ")}
+                。時間帯は別なので登録できますが、1 件にまとめた方が読みやすくなります
+              </span>
+              <button
+                type="button"
+                onClick={() => handleEdit(sameDay[0].schedule)}
+                style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+              >
+                既存を編集
+              </button>
+            </div>
+          )}
+
           <div style={{ marginBottom: 10 }}>
             <input
               value={memo}
@@ -557,9 +641,26 @@ export function DayScheduleManager({
           {error && (
             <div
               role="alert"
-              style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}
+              style={{
+                fontSize: 11,
+                color: colors.danger,
+                marginBottom: 8,
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
             >
-              {error}
+              <span>{error}</span>
+              {conflictWith && (
+                <button
+                  type="button"
+                  onClick={() => handleEdit(conflictWith)}
+                  style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+                >
+                  既存を編集
+                </button>
+              )}
             </div>
           )}
 
@@ -661,6 +762,23 @@ export function DayScheduleManager({
                     })}
                   </div>
                   <span style={{ fontSize: 11, color: "#666" }}>{mapSummary}</span>
+                  {shadowedById.has(d.id) && (
+                    <span
+                      title={`同じ日に先に登録した「${labelOf(shadowedById.get(d.id).byId)}」が ${shadowedById.get(d.id).grades.join("・")} の ${shadowedById.get(d.id).times.join(" / ")} を先に持っているため、この件のその時間帯は適用されません。どちらかを編集してまとめてください`}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#8a4a00",
+                        background: "#fff6e5",
+                        border: "1px solid #f0c070",
+                        borderRadius: 4,
+                        padding: "0 5px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ⚠ 先の登録に隠れて適用されません
+                    </span>
+                  )}
                   {d.memo && (
                     <span style={{ fontSize: 10, color: "#888", fontStyle: "italic" }}>
                       {d.memo}

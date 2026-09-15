@@ -62,6 +62,9 @@ export function AbsenceWorkflowView({
   // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
   onOpenMultiDayAbsence,
   onOpenChainSubstitution,
+  // 未保存の下書きの有無を親 (App) に知らせる。App はこれを見て、別ビューへ
+  // 移る前に確認を出す (このビューは lazy でアンマウントされると下書きが消える)
+  onDirtyChange,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -470,6 +473,16 @@ export function AbsenceWorkflowView({
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [draftCount]);
+
+  // 下書きの有無 (= 破棄ボタンと同じ draftCount > 0) を親へ。保存・破棄・
+  // 日付変更で reset されれば false になり、アンマウント時も false に戻す。
+  // 親が毎回新しい関数を渡しても効果を張り替えないよう ref 経由で呼ぶ
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(draftCount > 0);
+  }, [draftCount]);
+  useEffect(() => () => onDirtyChangeRef.current?.(false), []);
 
   const handleDiscard = useCallback(async () => {
     const ok = await confirm({

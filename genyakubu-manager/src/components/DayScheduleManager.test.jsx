@@ -163,3 +163,56 @@ describe("DayScheduleManager", () => {
     expect(screen.getByText("附属 1限カット")).toBeInTheDocument();
   });
 });
+
+// 同じ日の二重登録 (2026-09-15)。resolveSlotDaySchedule は先勝ちなので、
+// 後から登録した同じ (学年, 時間帯) は黙って効かない → 登録を止めて既存の
+// 編集へ誘導する。時間帯が別なら注意だけ。一覧では隠れている件に ⚠
+describe("DayScheduleManager の同日二重登録の検出", () => {
+  it("同じ日・学年・時間帯の既存があると登録を止め、「既存を編集」で編集モードに入る", () => {
+    const { onSave } = renderManager({ daySchedules: [SAVED] });
+    setDate("2026-10-07");
+    fireEvent.click(screen.getByText("② 1限カット")); // 16:25-17:25 休講 = SAVED と同じ
+    fireEvent.click(screen.getByText("登録"));
+    expect(onSave).not.toHaveBeenCalled();
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("「附属 1限カット」が既にあります");
+    expect(alert.textContent).toContain("16:25-17:25");
+    fireEvent.click(screen.getByRole("button", { name: "既存を編集" }));
+    expect(screen.getByText("特別時程を編集")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("附属 1限カット")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("時間帯が別なら注意だけ出して登録できる", () => {
+    const { onSave } = renderManager({ daySchedules: [SAVED] });
+    setDate("2026-10-07");
+    fireEvent.click(screen.getByText("附属一括"));
+    // 2 限目だけ読み替える (SAVED は 1 限の休講なので時間帯は別)
+    fireEvent.change(screen.getAllByPlaceholderText("例: 17:00-17:50")[1], {
+      target: { value: "18:00-18:50" },
+    });
+    expect(screen.getByRole("status").textContent).toContain("「附属 1限カット」");
+    expect(screen.getByRole("status").textContent).toContain("1 件にまとめた方が");
+    fireEvent.click(screen.getByText("登録"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it("編集中は自分自身を相手にしない", () => {
+    const { onSave } = renderManager({ daySchedules: [SAVED] });
+    fireEvent.click(screen.getByLabelText("2026-10-07 の特別時程を編集"));
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByText("更新"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("一覧では先の登録に隠れている件に ⚠ を付ける", () => {
+    const dup = { ...SAVED, id: 2, label: "重複した方", targetGrades: ["附中1"] };
+    const other = { ...SAVED, id: 3, label: "別学年", targetGrades: ["中1"] };
+    renderManager({ daySchedules: [SAVED, dup, other] });
+    const badges = screen.getAllByText("⚠ 先の登録に隠れて適用されません");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].title).toContain("「附属 1限カット」");
+    expect(badges[0].closest("div").textContent).toContain("重複した方");
+  });
+});
