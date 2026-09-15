@@ -1009,6 +1009,7 @@ export default function App() {
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
               daySchedules={daySchedules}
+              adjustments={adjustments}
               isAdmin={isAdmin}
             />
           )}
@@ -1273,6 +1274,7 @@ export default function App() {
               examPeriods={examPeriods}
               displayCutoff={displayCutoff}
               daySchedules={daySchedules}
+              adjustments={adjustments}
               onAddStaff={staffCrud.addStaff}
               onDelStaff={staffCrud.delStaff}
               onToggleStaffSubject={staffCrud.toggleStaffSubject}

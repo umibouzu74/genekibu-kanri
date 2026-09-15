@@ -138,6 +138,64 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
   });
 });
 
+describe("AbsenceWorkflowView のコマ休講", () => {
+  it("「コマを休講にする」で時刻より前のコマを選んで cancel 調整を保存できる", () => {
+    const saveAdjustments = vi.fn();
+    const saveSubs = vi.fn();
+    const slots = [
+      { ...base, id: 2, timetableId: 2, time: "13:00-14:20", subj: "数学" },
+      { ...base, id: 3, timetableId: 2, time: "15:30-16:50", subj: "英語" },
+    ];
+    renderView({
+      slots,
+      saveAdjustments,
+      saveSubs,
+      // 同じコマの代行未定は休講と同時に解除される
+      subs: [
+        { id: 9, date: MON, slotId: 2, originalTeacher: "滝澤", substitute: "", status: "requested" },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /コマを休講にする/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("時刻で選ぶ:"), {
+      target: { value: "15:30" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /より前に始まるコマを選ぶ/ }));
+    fireEvent.change(within(dialog).getByLabelText("理由メモ:"), {
+      target: { value: "学校行事" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /1 コマを休講にする/ }));
+
+    // 下書きのカードは「休講 (下書き)」
+    expect(screen.getByText("休講 (下書き)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    const saved = saveAdjustments.mock.calls[0][0];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ date: MON, type: "cancel", slotId: 2, memo: "学校行事" });
+    // 休講にしたコマの代行未定は消える
+    expect(saveSubs).toHaveBeenCalledTimes(1);
+    expect(saveSubs.mock.calls[0][0]).toEqual([]);
+  });
+
+  it("保存済みのコマ休講はグリッドに「休講」として出て、右クリックで取り消せる", () => {
+    const saveAdjustments = vi.fn();
+    renderView({
+      saveAdjustments,
+      adjustments: [{ id: 4, date: MON, type: "cancel", slotId: 2, memo: "台風" }],
+    });
+    const card = screen.getByRole("button", { name: /理科（休講、台風）/ });
+    fireEvent.contextMenu(card);
+    fireEvent.click(screen.getByText("休講を取り消す"));
+    expect(screen.getByText(/解除予定: 1 件/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    expect(saveAdjustments.mock.calls[0][0]).toEqual([]);
+  });
+});
+
 // プレップのように 1 コマを 3 人で担当するコマ。ここが「1 コマ 1 件」だと
 // 2 人目の欠勤が登録できず、画面上も全員休みに見えていた (2026-08-21)。
 describe("AbsenceWorkflowView の多担任コマ (プレップ)", () => {

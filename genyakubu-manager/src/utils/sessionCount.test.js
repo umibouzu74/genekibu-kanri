@@ -6,6 +6,7 @@ import {
   getGradeStartDate,
   getSlotCountStartDate,
   isOrientationEnabledForGrade,
+  isSlotHeldOnDate,
   resolveSetSlotIds,
 } from "./sessionCount";
 
@@ -170,6 +171,35 @@ describe("computeSessionNumber - holiday skips count", () => {
   });
   it("week 3 火 = ② (週2 はカウントされない)", () => {
     expect(computeSessionNumber(slot, "2026-04-21", ctx)).toBe(2);
+  });
+});
+
+describe("computeSessionNumber - コマ休講 (adjustments の cancel) は回数を進めない", () => {
+  const slot = makeSlot(1, "火", "19:00-20:20", "中3");
+  const other = makeSlot(2, "火", "20:30-21:50", "中3", { subj: "英語" });
+  const ctx = {
+    classSets: [],
+    allSlots: [slot, other],
+    displayCutoff: DISPLAY_CUTOFF,
+    isOffForGrade: NEVER_OFF,
+    adjustments: [
+      // 4-14 (week 2) の数学だけ休講。英語は通常どおり
+      { id: 1, type: "cancel", date: "2026-04-14", slotId: 1, memo: "" },
+      // 他の種別は回数計算に関与しない
+      { id: 2, type: "move", date: "2026-04-21", slotId: 1, targetTime: "20:30-21:50", memo: "" },
+    ],
+  };
+
+  it("休講の日は 0 (実施なし)、次の週は ②", () => {
+    expect(computeSessionNumber(slot, "2026-04-07", ctx)).toBe(1);
+    expect(computeSessionNumber(slot, "2026-04-14", ctx)).toBe(0);
+    expect(computeSessionNumber(slot, "2026-04-21", ctx)).toBe(2);
+    expect(isSlotHeldOnDate(slot, "2026-04-14", ctx)).toBe(false);
+    expect(isSlotHeldOnDate(slot, "2026-04-21", ctx)).toBe(true);
+  });
+
+  it("同じ日の別のコマは影響を受けない", () => {
+    expect(isSlotHeldOnDate(other, "2026-04-14", ctx)).toBe(true);
   });
 });
 

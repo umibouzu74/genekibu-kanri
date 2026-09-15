@@ -14,6 +14,10 @@ export const AWAY_ABSENT = "absent";
 export const AWAY_SUB = "sub";
 export const AWAY_COMBINE = "combine";
 export const AWAY_RESCHEDULE = "reschedule";
+// コマ休講 (adjustments の cancel、utils/slotCancel)。授業そのものが無いので
+// 講師の手を離れる操作ではないが、本人の予定としては同じく空く。学校全体の
+// 画面では SlotCancelBanner (日単位) と休講ハイライトで出す。
+export const AWAY_CANCEL = "cancel";
 
 /**
  * そのコマがこの講師の手を離れているか。理由を返す (担当のままなら null)。
@@ -23,9 +27,12 @@ export const AWAY_RESCHEDULE = "reschedule";
  * @param {object|null} args.sub 同じ (日付, コマ) の代行レコード
  * @param {boolean} args.absorbed 合同で他のコマに吸収された
  * @param {object|null} args.rescheduledOut 他日へ出ていく振替 adjustment
- * @returns {"absent"|"sub"|"combine"|"reschedule"|null}
+ * @param {object|null} [args.cancelled] コマ休講の adjustment (cancel)
+ * @returns {"absent"|"sub"|"combine"|"reschedule"|"cancel"|null}
  */
-export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut }) {
+export function teacherAwayReason({ teacher, sub, absorbed, rescheduledOut, cancelled }) {
+  // 休講なら代行も合同も意味を持たない (授業自体が無い) ので最優先。
+  if (cancelled) return AWAY_CANCEL;
   if (sub && sub.originalTeacher === teacher && sub.substitute !== teacher) {
     return sub.substitute ? AWAY_SUB : AWAY_ABSENT;
   }
@@ -43,6 +50,7 @@ const LABEL = {
   [AWAY_SUB]: "代 代行で休み",
   [AWAY_COMBINE]: "合 合同で休み",
   [AWAY_RESCHEDULE]: "↻ 振替で休み",
+  [AWAY_CANCEL]: "休 休講で担当なし",
 };
 
 /**

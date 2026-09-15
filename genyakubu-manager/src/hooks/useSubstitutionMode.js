@@ -3,6 +3,7 @@ import { activeTeachersOnDate } from "../utils/absenceHelpers";
 import { dateToDay } from "../data";
 import { needsSubstitute } from "../utils/substituteState";
 import { filterSlotsForDate } from "../utils/timetable";
+import { isSlotCancelledOnDate } from "../utils/slotCancel";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import {
   computeAvailableTeachers,
@@ -27,6 +28,10 @@ export function useSubstitutionMode({
   biweeklyAnchors,
   teacherSubjects,
   unavailableTeachers,
+  // 特別時程の部分休講とコマ休講 (utils/slotCancel) も「代行の要らない
+  // コマ」に含める
+  daySchedules = [],
+  adjustments = [],
 }) {
   const [subDate, setSubDateRaw] = useState(null);
   const [pendingSubs, setPendingSubs] = useState([]);
@@ -49,18 +54,23 @@ export function useSubstitutionMode({
     return filterSlotsForDate(slots, subDate, timetables);
   }, [slots, subDate, timetables]);
 
-  // Holiday/exam-cancelled slots
+  // Holiday/exam-cancelled slots (+ 特別時程の部分休講・コマ休講)
   const holidayOffSlots = useMemo(() => {
     if (!subDate) return new Set();
     const { isOffForGrade } = makeEventHelpers(holidays, examPeriods);
+    const cancelCtx = { daySchedules, adjustments };
     const offSet = new Set();
     for (const s of dateFilteredSlots) {
-      if (s.day === dayOfDate && isOffForGrade(subDate, s.grade, s.subj)) {
+      if (s.day !== dayOfDate) continue;
+      if (
+        isOffForGrade(subDate, s.grade, s.subj) ||
+        isSlotCancelledOnDate(s, subDate, cancelCtx)
+      ) {
         offSet.add(s.id);
       }
     }
     return offSet;
-  }, [subDate, dayOfDate, dateFilteredSlots, holidays, examPeriods]);
+  }, [subDate, dayOfDate, dateFilteredSlots, holidays, examPeriods, daySchedules, adjustments]);
 
   // Existing saved subs for this date
   const existingSubs = useMemo(() => {

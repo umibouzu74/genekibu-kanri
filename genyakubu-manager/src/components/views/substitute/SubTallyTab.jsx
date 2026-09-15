@@ -18,6 +18,7 @@ export function SubTallyTab({
   timetables = [],
   displayCutoff,
   daySchedules = [],
+  adjustments = [],
   ty,
   tm,
   fMonth,
@@ -86,6 +87,7 @@ export function SubTallyTab({
                     timetables,
                     displayCutoff,
                     daySchedules,
+                    adjustments,
                   })
                 : [];
               return (

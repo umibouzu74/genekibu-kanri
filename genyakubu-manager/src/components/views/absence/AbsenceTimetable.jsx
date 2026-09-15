@@ -8,6 +8,7 @@ import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
+import { isCancelAdjustment } from "../../../utils/slotCancel";
 import {
   collectTeacherAssignments,
   findTeacherConflicts,
@@ -24,7 +25,7 @@ import {
 // 行=時間、列=学年・クラス・教室 の表構造。
 // 編集機能:
 //   1. スロットをドラッグして別時間セルにドロップ → move 下書き (時間のみ更新)
-//   2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 回数補正 / 取消
+//   2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 振替 / コマ休講 / 回数補正 / 取消
 //   3. 合同モード中はヒューリスティック候補のみ破線枠、クリックで合同確定
 // draft は親から渡された callback 経由で更新する (直接 mutate しない)。
 
@@ -32,7 +33,7 @@ export function AbsenceTimetable({
   slots, // 対象日のコマ群 (day フィルタ済み)
   allSlots, // 全スロット (振替先日付の候補時間帯抽出用)
   draft, // draft.draft (useAbsenceDraft から)
-  draftApi, // updateSub, clearSub, updateMove, clearMove, updateReschedule, clearReschedule, setCombine, clearCombine, updateOverride, markAdjustmentRemoved
+  draftApi, // updateSub, clearSub, updateMove, clearMove, updateReschedule, clearReschedule, setCombine, clearCombine, updateOverride, setCancel, clearCancel, markAdjustmentRemoved
   existingSubs, // 既存の代行レコード (代行未定の欠勤登録も含む)
   existingAdjustments, // 既存調整 (date フィルタ前)
   removedAdjustmentIds, // Set<number> draft 上で解除マークされた adjustment id
@@ -81,22 +82,46 @@ export function AbsenceTimetable({
   }, [existingAdjustments, date, removedAdjustmentIds]);
 
   // 既存調整のインデックス: slotId -> adjustment (種別ごと)
-  const { existingCombineBySlot, existingMoveBySlot, existingRescheduleBySlot } =
-    useMemo(() => {
-      const combineMap = new Map(); // hostSlotId -> adjustment
-      const moveMap = new Map(); // slotId -> adjustment
-      const rescheduleMap = new Map(); // slotId -> adjustment
-      for (const adj of activeExistingAdjustments) {
-        if (adj.type === "combine") combineMap.set(adj.slotId, adj);
-        else if (adj.type === "move") moveMap.set(adj.slotId, adj);
-        else if (adj.type === "reschedule") rescheduleMap.set(adj.slotId, adj);
-      }
-      return {
-        existingCombineBySlot: combineMap,
-        existingMoveBySlot: moveMap,
-        existingRescheduleBySlot: rescheduleMap,
-      };
-    }, [activeExistingAdjustments]);
+  const {
+    existingCombineBySlot,
+    existingMoveBySlot,
+    existingRescheduleBySlot,
+    existingCancelBySlot,
+  } = useMemo(() => {
+    const combineMap = new Map(); // hostSlotId -> adjustment
+    const moveMap = new Map(); // slotId -> adjustment
+    const rescheduleMap = new Map(); // slotId -> adjustment
+    const cancelMap = new Map(); // slotId -> adjustment (コマ休講)
+    for (const adj of activeExistingAdjustments) {
+      if (adj.type === "combine") combineMap.set(adj.slotId, adj);
+      else if (adj.type === "move") moveMap.set(adj.slotId, adj);
+      else if (adj.type === "reschedule") rescheduleMap.set(adj.slotId, adj);
+      else if (isCancelAdjustment(adj)) cancelMap.set(adj.slotId, adj);
+    }
+    return {
+      existingCombineBySlot: combineMap,
+      existingMoveBySlot: moveMap,
+      existingRescheduleBySlot: rescheduleMap,
+      existingCancelBySlot: cancelMap,
+    };
+  }, [activeExistingAdjustments]);
+
+  // draft + 既存 からの実効的なコマ休講 (draft 優先)。
+  //   slotId -> { memo, source: "draft" | "saved" }
+  // 休講のコマは代行・合同・移動・振替の対象にならない (カードは灰色の
+  // 「休講」表示になり、右クリックは「休講を取り消す」だけ)。
+  const cancelBySlot = useMemo(() => {
+    const map = new Map();
+    for (const [sid, adj] of existingCancelBySlot) {
+      if (draft[sid]?.cancel) continue;
+      map.set(sid, { memo: adj.memo || "", source: "saved" });
+    }
+    for (const [sidStr, row] of Object.entries(draft)) {
+      if (!row.cancel) continue;
+      map.set(Number(sidStr), { memo: row.cancel.memo || "", source: "draft" });
+    }
+    return map;
+  }, [draft, existingCancelBySlot]);
 
   // 他日から当日へ振替えられてきたコマ (incoming) を集約。
   // 「本多が 4/24 休み → 今日のコマを 5/1 に振替」という adjustment が
@@ -292,6 +317,7 @@ export function AbsenceTimetable({
   const teacherAssignments = useMemo(() => {
     const exclude = new Set(absorbedSet);
     for (const id of rescheduleBySlot.keys()) exclude.add(id);
+    for (const id of cancelBySlot.keys()) exclude.add(id); // 休講のコマは誰も教えない
     const timeBySlot = new Map();
     for (const s of effectiveSlots) {
       if (
@@ -316,12 +342,18 @@ export function AbsenceTimetable({
     subsBySlot,
     absorbedSet,
     rescheduleBySlot,
+    cancelBySlot,
     isHolidayForSlot,
     isInExamPeriodForGrade,
     biweeklyAnchors,
     holidays,
     examPeriods,
   ]);
+  // 合同の相手に選べないコマ (吸収済み + 休講)
+  const combineExcluded = useMemo(
+    () => new Set([...absorbedSet, ...cancelBySlot.keys()]),
+    [absorbedSet, cancelBySlot]
+  );
   const teacherConflicts = useMemo(
     () => findTeacherConflicts(teacherAssignments),
     [teacherAssignments]
@@ -341,6 +373,25 @@ export function AbsenceTimetable({
       const teachers = activeTeachersFor(slot);
       const isMulti = teachers.length > 1;
       const hasOverride = !!row?.override;
+
+      // コマ休講のコマ: 取り消し以外の操作は出さない (授業自体が無い)
+      const cancelInfo = cancelBySlot.get(slot.id);
+      if (cancelInfo) {
+        items.push({
+          label: cancelInfo.source === "draft" ? "休講 (下書き) を取り消す" : "休講を取り消す",
+          danger: true,
+          onClick: () => {
+            if (cancelInfo.source === "saved") {
+              const existing = existingCancelBySlot.get(slot.id);
+              if (existing) draftApi.markAdjustmentRemoved(existing.id);
+            } else {
+              draftApi.clearCancel(slot.id);
+            }
+          },
+        });
+        setCtxMenu({ x: e.clientX, y: e.clientY, items });
+        return;
+      }
 
       if (isAbsorbed) {
         items.push({
@@ -416,7 +467,7 @@ export function AbsenceTimetable({
             },
           });
         } else {
-          const candidates = findCombineCandidates(slot, slots, subjects, absorbedSet);
+          const candidates = findCombineCandidates(slot, slots, subjects, combineExcluded);
           items.push({
             label:
               candidates.length > 0
@@ -473,6 +524,14 @@ export function AbsenceTimetable({
           });
         }
 
+        // コマ休講 (このコマだけその日は休講)。合同 host は先に合同を外す。
+        // 代行・移動・振替の下書きは setCancel が消す (排他)
+        items.push({
+          label: "🚫 このコマを休講にする",
+          disabled: isHost,
+          onClick: isHost ? undefined : () => draftApi.setCancel(slot.id),
+        });
+
         // 回数補正
         items.push({
           label: hasOverride ? "回数補正を変更…" : "回数を補正…",
@@ -520,7 +579,10 @@ export function AbsenceTimetable({
       existingCombineBySlot,
       existingMoveBySlot,
       existingRescheduleBySlot,
+      existingCancelBySlot,
       rescheduleBySlot,
+      cancelBySlot,
+      combineExcluded,
       subsBySlot,
       subsForSlot,
       activeTeachersFor,
@@ -563,12 +625,13 @@ export function AbsenceTimetable({
         return;
       }
       if (!canCombineSlots(combineSource, slot, subjects)) return;
+      if (combineExcluded.has(slot.id)) return;
       const current = hostsAbsorbedMap.get(combineSource.id) || [];
       if (current.includes(slot.id)) return;
       draftApi.setCombine(combineSource.id, [...current, slot.id]);
       setCombineSource(null);
     },
-    [combineSource, subjects, hostsAbsorbedMap, draftApi]
+    [combineSource, subjects, hostsAbsorbedMap, draftApi, combineExcluded]
   );
 
   // 個々のスロットカード描画 (AbsenceExcelSection に渡す関数)
@@ -620,7 +683,7 @@ export function AbsenceTimetable({
       const isCombineCandidate =
         combineSource != null &&
         combineSource.id !== s.id &&
-        !absorbedSet.has(s.id) &&
+        !combineExcluded.has(s.id) &&
         canCombineSlots(combineSource, s, subjects);
 
       // 合同モード中の非候補は暗く
@@ -652,6 +715,7 @@ export function AbsenceTimetable({
       // 休講優先 → テスト期間 の順で判定。両方とも当日のコマは流れないので
       // 操作不能 (drag/contextmenu/click 抑止)。
       let cancelLabel = null;
+      let cancelNote = null;
       if (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) {
         cancelLabel = "休講";
       } else if (
@@ -661,6 +725,13 @@ export function AbsenceTimetable({
         cancelLabel = "テスト期間";
       }
       const isCancelled = cancelLabel != null;
+      // コマ休講 (下書き / 保存済み)。休講日と同じ灰色カードだが、右クリックで
+      // 取り消せるようにメニューは残す
+      const slotCancel = !isCancelled ? cancelBySlot.get(s.id) : null;
+      if (slotCancel) {
+        cancelLabel = slotCancel.source === "draft" ? "休講 (下書き)" : "休講";
+        cancelNote = slotCancel.memo || null;
+      }
 
       return (
         <AbsenceSlotCard
@@ -672,6 +743,7 @@ export function AbsenceTimetable({
           examPeriods={examPeriods}
           isAbsent={isAbsent}
           cancelLabel={cancelLabel}
+          cancelNote={cancelNote}
           isMoved={isMoved}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
@@ -682,14 +754,14 @@ export function AbsenceTimetable({
           sessionCount={sessionCountMap?.get(s.id) || 0}
           isCombineCandidate={isCombineCandidate}
           isCombineSource={isCombineSource}
-          disableDrag={disableDrag || isCancelled}
+          disableDrag={disableDrag || isCancelled || !!slotCancel}
           dimmed={dimmed}
           isRescheduled={!!reschedule}
           rescheduleLabel={rescheduleLabel}
           conflicts={teacherConflicts.get(s.id) || null}
           onContextMenu={isCancelled ? undefined : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
-          onClick={isCancelled ? undefined : () => handleSlotClick(s)}
+          onClick={isCancelled || slotCancel ? undefined : () => handleSlotClick(s)}
         />
       );
     },
@@ -716,6 +788,8 @@ export function AbsenceTimetable({
       isHolidayForSlot,
       isInExamPeriodForGrade,
       teacherConflicts,
+      cancelBySlot,
+      combineExcluded,
     ]
   );
 
@@ -727,6 +801,7 @@ export function AbsenceTimetable({
     const slotLabel = slot
       ? `${slot.time} ${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`
       : `slot#${adj.slotId}`;
+    if (adj.type === "cancel") return `コマ休講: ${slotLabel}`;
     if (adj.type === "combine") return `合同: ${slotLabel}`;
     if (adj.type === "move") return `移動: ${slotLabel} → ${adj.targetTime}`;
     if (adj.type === "reschedule") {

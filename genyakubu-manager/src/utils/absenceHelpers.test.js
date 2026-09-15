@@ -274,6 +274,31 @@ describe("collectAbsenceTargets", () => {
     ]);
   });
 
+  it("コマ休講 (保存済み / 下書き) のコマは理由つきで外す (解除マーク済みは対象に戻す)", () => {
+    const existingAdjustments = [
+      { id: 1, date: DATE, type: "cancel", slotId: 1, memo: "" },
+      { id: 2, date: DATE, type: "cancel", slotId: 2, memo: "" },
+    ];
+    const r1 = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["河野", "堀上"],
+      existingAdjustments,
+      removedAdjustmentIds: new Set([2]),
+    });
+    expect(pairs(r1.targets)).toEqual([[2, "堀上"]]);
+    expect(r1.skipped.map((x) => [x.slot.id, x.reason])).toEqual([[1, "コマ休講で対応済み"]]);
+
+    const r2 = collectAbsenceTargets({
+      slots: daySlots,
+      date: DATE,
+      teachers: ["堀上"],
+      draft: { 2: { cancel: { memo: "" } } },
+    });
+    expect(r2.targets).toEqual([]);
+    expect(r2.skipped.map((x) => x.reason)).toEqual(["コマ休講 (下書き)"]);
+  });
+
   it("すでに代行・欠勤が登録されているコマは外す", () => {
     const { targets, skipped } = collectAbsenceTargets({
       slots: daySlots,

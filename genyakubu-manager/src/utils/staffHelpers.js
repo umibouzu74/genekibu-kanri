@@ -2,7 +2,7 @@ import { WEEKDAYS } from "../constants/schools";
 import { isSlotForTeacher } from "./biweekly";
 import { isSlotOffOnDate } from "./scheduleHelpers";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
-import { isSlotCancelledByDaySchedule } from "./daySchedules";
+import { isSlotCancelledOnDate } from "./slotCancel";
 
 // 単一の代行レコードを引く。**1 コマに複数件あることがある** (プレップの
 // ように 1 コマを複数人で担当するコマは元講師ごとに 1 件) ので、画面に
@@ -119,7 +119,9 @@ export function staffMonthlyPendingAbsenceDates(subs, staffName, year, month) {
  * @param {import("../types").ExamPeriod[]} [examPeriods]
  * @param {{timetables?: import("../types").Timetable[],
  *          displayCutoff?: import("../types").DisplayCutoff | null,
- *          daySchedules?: import("../types").DaySchedule[]}} [opts]
+ *          daySchedules?: import("../types").DaySchedule[],
+ *          adjustments?: import("../types").ScheduleAdjustment[]}} [opts]
+ *   adjustments はコマ休講 (cancel) を出勤日から外すために見る
  * @returns {string[]}
  */
 export function staffMonthlyRegularDates(
@@ -134,7 +136,8 @@ export function staffMonthlyRegularDates(
   const teacherSlots = slots.filter((s) => isSlotForTeacher(s, staffName));
   if (teacherSlots.length === 0) return [];
 
-  const { timetables, displayCutoff, daySchedules } = opts;
+  const { timetables, displayCutoff, daySchedules, adjustments } = opts;
+  const cancelCtx = { daySchedules, adjustments };
   const hasTimetables = Array.isArray(timetables) && timetables.length > 0;
 
   const slotsByDay = new Map();
@@ -144,7 +147,7 @@ export function staffMonthlyRegularDates(
   }
 
   // その日にそのコマが実際に成立するか (休講・時間割の有効期間・表示期間・
-  // 特別時程の部分休講)。1 つでも成立すれば出勤日。
+  // 特別時程の部分休講・コマ休講)。1 つでも成立すれば出勤日。
   const isHeld = (slot, dateStr) => {
     if (isSlotOffOnDate(slot, dateStr, holidays, examPeriods)) return false;
     if (hasTimetables) {
@@ -152,7 +155,7 @@ export function staffMonthlyRegularDates(
       if (!isTimetableActiveForDate(tt, dateStr, slot.grade)) return false;
     }
     if (displayCutoff && isSlotBeyondCutoff(dateStr, slot, displayCutoff)) return false;
-    if (isSlotCancelledByDaySchedule(slot, dateStr, daySchedules)) return false;
+    if (isSlotCancelledOnDate(slot, dateStr, cancelCtx)) return false;
     return true;
   };
 

@@ -135,7 +135,77 @@ describe("useAbsenceDraft", () => {
     });
   });
 
+  describe("setCancel (コマ休講)", () => {
+    it("代行・移動・振替の下書きと排他 (設定したら消える / 設定されたら消える)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.updateSub(10, "本多", { substitute: "山田", status: "confirmed" });
+        result.current.updateMove(10, "20:30-21:50");
+      });
+      act(() => {
+        result.current.setCancel(10, { memo: "学校行事" });
+      });
+      expect(result.current.draft[10].cancel).toEqual({ memo: "学校行事" });
+      expect(result.current.draft[10].subs).toBeNull();
+      expect(result.current.draft[10].move).toBeNull();
+
+      act(() => {
+        result.current.updateSub(10, "本多", { substitute: "", status: "requested" });
+      });
+      expect(result.current.draft[10].cancel).toBeNull();
+      expect(result.current.draft[10].subs["本多"]).toBeTruthy();
+    });
+
+    it("合同に関わるコマには設定しない (no-op)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.setCombine(11, [10]);
+      });
+      act(() => {
+        result.current.setCancel(10);
+        result.current.setCancel(11);
+      });
+      expect(result.current.draft[10].cancel).toBeNull();
+      expect(result.current.draft[11].cancel).toBeNull();
+    });
+
+    it("clearCancel で行が空になれば消える", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.setCancel(10);
+      });
+      act(() => {
+        result.current.clearCancel(10);
+      });
+      expect(result.current.draft[10]).toBeUndefined();
+    });
+  });
+
   describe("toBatchPayload", () => {
+    it("コマ休講は cancel 調整として出し、同じコマの保存済み代行・調整は解除に回す", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      act(() => {
+        result.current.setCancel(10, { memo: "台風" });
+      });
+      const existingAdjustments = [
+        { id: 5, date: DATE, type: "move", slotId: 10, targetTime: "20:30-21:50" },
+        { id: 6, date: DATE, type: "cancel", slotId: 10, memo: "旧" },
+        { id: 7, date: DATE, type: "move", slotId: 11, targetTime: "19:00-20:20" },
+        { id: 8, date: "2026-05-01", type: "cancel", slotId: 10, memo: "別の日" },
+      ];
+      const existingSubs = [
+        { id: 20, date: DATE, slotId: 10, originalTeacher: "本多", substitute: "", status: "requested" },
+        { id: 21, date: DATE, slotId: 11, originalTeacher: "藤田", substitute: "山田", status: "confirmed" },
+      ];
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, existingAdjustments, existingSubs);
+      expect(out.draftAdjustments).toEqual([
+        { date: DATE, type: "cancel", slotId: 10, memo: "台風" },
+      ]);
+      expect(out.draftSubs).toEqual([]);
+      expect([...out.removedAdjustmentIds].sort()).toEqual([5, 6]);
+      expect(out.removedSubIds).toEqual([20]);
+    });
+
     it("emits a reschedule adjustment with optional fields", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {

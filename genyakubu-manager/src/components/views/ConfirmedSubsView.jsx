@@ -3,10 +3,8 @@ import { dateToDay } from "../../data";
 import { S } from "../../styles/common";
 import { encodeShareData } from "../../utils/shareCodec";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
-import {
-  getDaySchedulesForDate,
-  isSlotCancelledByDaySchedule,
-} from "../../utils/daySchedules";
+import { getDaySchedulesForDate } from "../../utils/daySchedules";
+import { isSlotCancelledOnDate } from "../../utils/slotCancel";
 import { useToasts } from "../../hooks/useToasts";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToday } from "../../hooks/useToday";
@@ -66,6 +64,10 @@ export function ConfirmedSubsView({
   // 「代行確定」= 確定 かつ **代行者が入っている**もの。status だけで見ると
   // 「代行なしで確定 (残りの担当者で回す)」がここに混ざり、代行者が空欄の
   // 行が並ぶ (utils/substituteState の 4 状態)。
+  const cancelCtx = useMemo(
+    () => ({ daySchedules, adjustments }),
+    [daySchedules, adjustments]
+  );
   const confirmedSubs = useMemo(
     () => subs.filter((s) => subState(s) === SUB_STATE.CONFIRMED),
     [subs]
@@ -224,7 +226,7 @@ export function ConfirmedSubsView({
             (s) =>
               s.day === dow &&
               !isOffForGrade(dateStr, s.grade, s.subj) &&
-              !isSlotCancelledByDaySchedule(s, dateStr, daySchedules) &&
+              !isSlotCancelledOnDate(s, dateStr, cancelCtx) &&
               (!timetables ||
                 timetables.length === 0 ||
                 isTimetableActiveForDate(

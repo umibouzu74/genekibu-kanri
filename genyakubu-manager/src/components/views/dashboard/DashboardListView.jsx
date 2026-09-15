@@ -7,10 +7,8 @@ import {
 } from "../../../utils/timetable";
 import { cutoffBannerText } from "../../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../../utils/extraLessons";
-import {
-  getDaySchedulesForDate,
-  isSlotCancelledByDaySchedule,
-} from "../../../utils/daySchedules";
+import { getDaySchedulesForDate } from "../../../utils/daySchedules";
+import { isSlotCancelledOnDate } from "../../../utils/slotCancel";
 import { DashDayRow } from "./DashDayRow";
 
 export function DashboardListView({
@@ -37,6 +35,10 @@ export function DashboardListView({
     () => getCutoffGroupLabelsWithSlots(slots, displayCutoff),
     [slots, displayCutoff]
   );
+  const cancelCtx = useMemo(
+    () => ({ daySchedules, adjustments }),
+    [daySchedules, adjustments]
+  );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {days.map(({ dateStr, dow }) => {
@@ -49,8 +51,9 @@ export function DashboardListView({
               (s) =>
                 s.day === dow &&
                 !isOffForGrade(dateStr, s.grade, s.subj) &&
-                // 特別時程の部分休講 (1限カット等) は休講と同じ扱いで外す
-                !isSlotCancelledByDaySchedule(s, dateStr, daySchedules) &&
+                // 特別時程の部分休講 (1限カット等) とコマ休講は休講と同じ
+                // 扱いで外す (コマ休講は DashDayRow がバナーで出す)
+                !isSlotCancelledOnDate(s, dateStr, cancelCtx) &&
                 (!timetables ||
                   timetables.length === 0 ||
                   isTimetableActiveForDate(

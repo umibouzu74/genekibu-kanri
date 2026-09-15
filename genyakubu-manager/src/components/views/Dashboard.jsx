@@ -157,6 +157,7 @@ export function Dashboard({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
 
   return (

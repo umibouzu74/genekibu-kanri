@@ -41,7 +41,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -115,7 +115,10 @@ export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
       isNumber(x.id) &&
       isString(x.date) &&
       isString(x.type) &&
-      (x.type === "move" || x.type === "combine" || x.type === "reschedule") &&
+      (x.type === "move" ||
+        x.type === "combine" ||
+        x.type === "reschedule" ||
+        x.type === "cancel") &&
       isNumber(x.slotId)
     )
   ) {
@@ -871,6 +874,11 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             旧 slotIds 形式はそのまま読めるので変換しない (どの学年 ×
   //             曜日だったかは slots が無いと決まらないため、変換は画面の
   //             「曜日ベースに変換」で人が確認しながら行う)。
+  // 既存データは触らない。
+
+  // v17 → v18: ScheduleAdjustment に "cancel" 種別 (コマ休講) を追加。
+  //             既存 adjustments は move/combine/reschedule のみなので変換
+  //             不要 (v12 と同じく「cancel を理解する schema」の切れ目)。
   // 既存データは触らない。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
