@@ -16,7 +16,7 @@
 
 import { dateToDay, timeStartToMin, timeToMin } from "./dateHelpers";
 import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
-import { isSlotCancelledByDaySchedule } from "./daySchedules";
+import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
 import { buildAdjustmentIndex } from "./adjustmentDisplay";
@@ -70,8 +70,10 @@ function skipReason(slot, dateStr, ctx) {
   if (ctx?.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
     return "休講・テスト期間";
   }
-  if (isSlotCancelledByDaySchedule(slot, dateStr, ctx?.daySchedules)) {
-    return "特別時程で休講";
+  const cancel = slotCancelReason(slot, dateStr, ctx);
+  if (cancel?.kind === "daySchedule") return "特別時程で休講";
+  if (cancel?.kind === "cancel") {
+    return cancel.adj.memo ? `コマ休講 (${cancel.adj.memo})` : "コマ休講";
   }
   return "実施なし (隔週など)";
 }

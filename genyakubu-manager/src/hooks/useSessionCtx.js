@@ -3,6 +3,7 @@ import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { buildClassSetIndex } from "../utils/classSets";
 import { buildSlotCohortIndex } from "../utils/cohorts";
 import { buildSlotById } from "../utils/sessionCount";
+import { buildCancelIndex } from "../utils/slotCancel";
 
 // buildSessionCountMap に渡す ctx を組み立てる共通フック。
 // Dashboard と WeekView/MonthView で同じ形を使いたいので重複を避けるために集約。
@@ -22,6 +23,9 @@ export function useSessionCtx({
   biweeklyAnchors,
   sessionOverrides,
   daySchedules,
+  // コマ休講 (adjustments の cancel) をカウント対象外にする。合同・移動・
+  // 振替は回数計算では見ない (cancel だけ)
+  adjustments,
 }) {
   // holidays/examPeriods/specialEvents は makeEventHelpers 内で filter/some を呼ぶので
   // undefined 防御として空配列フォールバック。
@@ -41,6 +45,7 @@ export function useSessionCtx({
     [classSets, slotPool]
   );
   const slotById = useMemo(() => buildSlotById(slotPool), [slotPool]);
+  const cancelIndex = useMemo(() => buildCancelIndex(adjustments || []), [adjustments]);
   const sessionCtx = useMemo(
     () => ({
       classSets: classSets || [],
@@ -49,6 +54,7 @@ export function useSessionCtx({
       _cohortIndex: cohortIndex,
       _slotById: slotById,
       _classSetIndex: classSetIndex,
+      _cancelIndex: cancelIndex,
       displayCutoff,
       // 期またぎ (前期/後期) の二重カウント防止と、期ごとの回数リセットに使う。
       timetables: timetables || [],
@@ -62,12 +68,14 @@ export function useSessionCtx({
       sessionOverrides: sessionOverrides || [],
       // 特別時程の部分休講 (1 限カット等) をカウント対象外にする。
       daySchedules: daySchedules || [],
+      // コマ休講 (utils/slotCancel)。sessionCount は cancel 種別しか見ない
+      adjustments: adjustments || [],
       // 開講日 1 限目のオリエン扱い (第1回を 2 限目に繰下げる) を有効にする。
       // 実際に適用するかは学年グループの設定 (表示期間設定の
       // orientationFirstDay。未設定なら中学部のみ) が決める。
       orientationOnFirstDay: true,
     }),
-    [classSets, slotPool, cohortIndex, classSetIndex, slotById, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules]
+    [classSets, slotPool, cohortIndex, classSetIndex, slotById, cancelIndex, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules, adjustments]
   );
   return { sessionCtx, ...helpers };
 }

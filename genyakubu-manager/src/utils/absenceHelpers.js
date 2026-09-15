@@ -10,6 +10,7 @@ import {
 import { dateToDay } from "./dateHelpers";
 import { pickSubjectId } from "./subjectMatch";
 import { filterSlotsForDate, isSlotBeyondCutoff } from "./timetable";
+import { isCancelAdjustment } from "./slotCancel";
 
 // 対象日に欠勤画面へ出すコマを絞る。曜日だけで絞ると、期切替で残してある
 // 旧期の時間割 (終了日入り) のコマまで並び、同じクラスが 2 重・3 重に出る
@@ -182,11 +183,13 @@ export function collectAbsenceTargets({
 
   // 保存済みの振替・合同 (解除マーク済みは無かったことにする)。下書きだけを
   // 見ていると、前に振替・合同で片付けたコマにもう一度欠勤を作ってしまう。
-  const adjustedSlots = new Map(); // slotId -> "振替" | "合同"
+  const adjustedSlots = new Map(); // slotId -> "振替" | "合同" | "コマ休講"
   for (const adj of existingAdjustments || []) {
     if (adj.date !== date) continue;
     if (removedAdjustmentIds?.has(adj.id)) continue;
-    if (adj.type === "reschedule" && adj.targetDate) {
+    if (isCancelAdjustment(adj)) {
+      adjustedSlots.set(adj.slotId, "コマ休講");
+    } else if (adj.type === "reschedule" && adj.targetDate) {
       adjustedSlots.set(adj.slotId, "振替");
     } else if (adj.type === "combine") {
       adjustedSlots.set(adj.slotId, "合同");
@@ -211,6 +214,8 @@ export function collectAbsenceTargets({
     const slotReason =
       isOffForGrade && isOffForGrade(date, slot.grade, slot.subj)
         ? "休講・テスト期間"
+        : row?.cancel
+          ? "コマ休講 (下書き)"
         : row?.absorbedBy != null || row?.combine?.absorbedSlotIds?.length
           ? "合同で対応済み"
           : row?.reschedule?.targetDate

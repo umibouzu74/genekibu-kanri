@@ -34,6 +34,7 @@ export function AbsenceSlotCard({
   examPeriods, // 隔週ローテーションのシフトに使う (任意)
   isAbsent,
   cancelLabel, // 当日が「休講」「テスト期間」等で授業が走らない場合のラベル
+  cancelNote, // コマ休講の理由メモ (cancelLabel と併用)
   isMoved,
   isCombineHost,
   absorbedLabel, // host のとき: "+ 中3A 理科"
@@ -82,10 +83,39 @@ export function AbsenceSlotCard({
     : null;
 
   // 休講 / テスト期間: 操作系をすべて無効化し、ラベル + 灰色化で簡素表示。
+  // コマ休講 (utils/slotCancel) だけは onContextMenu を受け取り、右クリック /
+  // ContextMenu キーで「休講を取り消す」を開ける (取り消し導線が無いと
+  // 時間割調整一覧まで行かないと戻せない)。
   if (cancelLabel) {
+    const cancelInteractive = !!onContextMenu;
+    const onCancelKeyDown = (e) => {
+      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        onContextMenu({
+          preventDefault() {},
+          stopPropagation() {},
+          clientX: r.left + 8,
+          clientY: r.bottom - 4,
+          currentTarget: e.currentTarget,
+          target: e.currentTarget,
+        });
+      }
+    };
     return (
       <div
+        onContextMenu={onContextMenu}
+        tabIndex={cancelInteractive ? 0 : undefined}
+        role={cancelInteractive ? "button" : undefined}
+        aria-label={
+          cancelInteractive
+            ? `${slot.time} ${[slot.grade, slot.cls].filter(Boolean).join(" ")} ${slot.subj}（${cancelLabel}${cancelNote ? `、${cancelNote}` : ""}）`
+            : undefined
+        }
+        onKeyDown={cancelInteractive ? onCancelKeyDown : undefined}
+        title={cancelInteractive ? "右クリックで休講を取り消す" : undefined}
         style={{
+          cursor: cancelInteractive ? "context-menu" : undefined,
           background: "#f5f5f5",
           border: "1px dashed #c0c0c0",
           borderRadius: 6,
@@ -126,6 +156,9 @@ export function AbsenceSlotCard({
         >
           {cancelLabel}
         </div>
+        {cancelNote && (
+          <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>{cancelNote}</div>
+        )}
         {slot.teacher && (
           <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>
             {formatBiweeklyTeacher(slot.teacher, slot.note)}

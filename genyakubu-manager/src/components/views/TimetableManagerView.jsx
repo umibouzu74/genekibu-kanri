@@ -24,6 +24,7 @@ export function TimetableManagerView({
   biweeklyAnchors = [],
   sessionOverrides = [],
   daySchedules = [],
+  adjustments = [],
   isAdmin,
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -44,6 +45,7 @@ export function TimetableManagerView({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
 
   const startEdit = useCallback(

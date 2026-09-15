@@ -7,13 +7,14 @@ const ADJ_LABEL = {
   move: "コマ移動",
   combine: "合同授業",
   reschedule: "振替",
+  cancel: "コマ休講",
 };
 
 function adjLabel(type) {
   return ADJ_LABEL[type] || "時間割調整";
 }
 
-// 時間割調整 (move / combine / reschedule) の CRUD ロジック。
+// 時間割調整 (move / combine / reschedule / cancel) の CRUD ロジック。
 export function useAdjustmentsCrud({ adjustments, saveAdjustments }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: adjustments, save: saveAdjustments });

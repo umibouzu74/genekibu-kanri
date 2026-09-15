@@ -15,6 +15,7 @@ import {
 import { timeStartToMin } from "../../utils/dateHelpers";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
+import { isCancelAdjustment } from "../../utils/slotCancel";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
 import {
   isTimetableActiveForDate,
@@ -67,6 +68,7 @@ const DAY_OFF_TONE = {
     bg: ADJ_COLOR.reschedule.bannerBg,
     fg: ADJ_COLOR.reschedule.deep,
   },
+  cancel: { bg: "#f0f0f0", fg: "#6a6a6a" },
   mixed: { bg: "#eef0f2", fg: "#5a6570" },
 };
 
@@ -184,20 +186,26 @@ export function MonthView({
   // 振替の索引
   //   rescheduleOutByKey:  (date|slotId) -> adj  (元日付で他日へ送り出されている)
   //   rescheduleInByDate:  targetDate -> adj[]   (その日に振替で入るコマ)
+  // コマ休講の索引
+  //   cancelByKey:         (date|slotId) -> adj  (その日そのコマだけ休講)
   const {
     hostByAbsorbedKey,
     absorbedByHostKey,
     moveByKey,
     rescheduleOutByKey,
     rescheduleInByDate,
+    cancelByKey,
   } = useMemo(() => {
     const absMap = new Map();
     const hostMap = new Map();
     const moveMap = new Map();
     const rOutMap = new Map();
     const rInMap = new Map();
+    const cancelMap = new Map();
     for (const adj of adjustments) {
-      if (adj.type === "combine") {
+      if (isCancelAdjustment(adj)) {
+        cancelMap.set(`${adj.date}|${adj.slotId}`, adj);
+      } else if (adj.type === "combine") {
         const absorbedIds = adj.combineSlotIds || [];
         if (absorbedIds.length > 0) {
           hostMap.set(`${adj.date}|${adj.slotId}`, [...absorbedIds]);
@@ -219,6 +227,7 @@ export function MonthView({
       moveByKey: moveMap,
       rescheduleOutByKey: rOutMap,
       rescheduleInByDate: rInMap,
+      cancelByKey: cancelMap,
     };
   }, [adjustments]);
   const dayMap = useMemo(() => {
@@ -257,6 +266,7 @@ export function MonthView({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
 
   // Returns exam period names active on a given date (for label display)
@@ -295,7 +305,10 @@ export function MonthView({
   const isTeacherAttending = useCallback(
     (slot, ds) => {
       if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
-      // 特別時程の部分休講 (1限カット等) は休講同様このビューから外す
+      // 特別時程の部分休講 (1限カット等) は休講同様このビューから外す。
+      // コマ休講 (adjustments の cancel) は外さず、カードに取消線 + 「休」で
+      // 出す (この日だけ無いことに気付けるように。teacherDayOff の
+      // AWAY_CANCEL)
       if (resolveSlotDaySchedule(slot, ds, daySchedules)?.cancelled) return false;
       if (
         timetables &&
@@ -461,6 +474,7 @@ export function MonthView({
                 sub: subForTeacher(ds, s.id),
                 absorbed: hostByAbsorbedKey.has(`${ds}|${s.id}`),
                 rescheduledOut: rescheduleOutByKey.get(`${ds}|${s.id}`),
+                cancelled: cancelByKey.get(`${ds}|${s.id}`) || null,
               }),
             ])
           );
@@ -522,14 +536,17 @@ export function MonthView({
               const moveTarget =
                 moveByKey.get(`${ds}|${s.id}`) || dayScheduleMove?.time;
               const rescheduledOut = rescheduleOutByKey.get(`${ds}|${s.id}`);
+              const cancelledAdj = cancelByKey.get(`${ds}|${s.id}`) || null;
               // 「自分が不在」: 代行で別人が入る or 合同で吸収された or
-              // 振替で他日へ。判定は日単位の休み判定と共有する。
+              // 振替で他日へ or コマ休講。判定は日単位の休み判定と共有する。
               const awayReason = awayReasonBySlot.get(s.id);
               const away = !!awayReason;
               // 誰に / どこへ渡ったかをカードに出す (tooltip だけだと
               // 一覧を見ているときに気付けない)。
               const awayNote =
-                awayReason === "absent"
+                awayReason === "cancel"
+                  ? `休講${cancelledAdj?.memo ? ` (${cancelledAdj.memo})` : ""}`
+                  : awayReason === "absent"
                   ? subTargetLabel(sub)
                   : awayReason === "sub"
                     ? `→ ${sub.substitute}`
@@ -542,20 +559,26 @@ export function MonthView({
                         })}`
                       : null;
               const awayNoteColor =
-                awayReason === "absent" || awayReason === "sub"
+                awayReason === "cancel"
+                  ? DAY_OFF_TONE.cancel.fg
+                  : awayReason === "absent" || awayReason === "sub"
                   ? st?.color || "#2a5a8a"
                   : awayReason === "combine"
                     ? ADJ_COLOR.combine.deep
                     : ADJ_COLOR.reschedule.deep;
-              // カード全体の色: absorbed > rescheduledOut > sub > 曜日色
-              const cardBg = absorbed
+              // カード全体の色: cancel > absorbed > rescheduledOut > sub > 曜日色
+              const cardBg = cancelledAdj
+                ? DAY_OFF_TONE.cancel.bg
+                : absorbed
                 ? ADJ_COLOR.combine.bg
                 : rescheduledOut
                   ? ADJ_COLOR.reschedule.bg
                   : sub
                     ? st.bg
                     : DB[s.day];
-              const cardBorder = absorbed
+              const cardBorder = cancelledAdj
+                ? DAY_OFF_TONE.cancel.fg
+                : absorbed
                 ? ADJ_COLOR.combine.color
                 : rescheduledOut
                   ? ADJ_COLOR.reschedule.color
@@ -566,6 +589,7 @@ export function MonthView({
                 ? moveTarget.split("-")[0]
                 : s.time.split("-")[0];
               const badges = [];
+              if (cancelledAdj) badges.push({ label: "休", color: DAY_OFF_TONE.cancel.fg });
               if (absorbed) badges.push({ label: "合", color: ADJ_COLOR.combine.color });
               if (isHost) badges.push({ label: "合+", color: ADJ_COLOR.combine.color });
               if (sub) badges.push({ label: "代", color: st.color });
@@ -576,6 +600,11 @@ export function MonthView({
               const titleParts = [
                 `${s.time} ${s.grade} ${s.subj} ${s.room || ""}`,
               ];
+              if (cancelledAdj) {
+                titleParts.push(
+                  `[コマ休講] この日はこのコマだけ休講${cancelledAdj.memo ? `\n${cancelledAdj.memo}` : ""}`
+                );
+              }
               if (moveTarget) {
                 titleParts.push(
                   dayScheduleMove?.time

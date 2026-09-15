@@ -123,7 +123,11 @@ export function SubstituteView({
   const adjustmentCount = useMemo(
     () =>
       (adjustments || []).filter(
-        (a) => a.type === "combine" || a.type === "move" || a.type === "reschedule"
+        (a) =>
+          a.type === "combine" ||
+          a.type === "move" ||
+          a.type === "reschedule" ||
+          a.type === "cancel"
       ).length,
     [adjustments]
   );
@@ -393,6 +397,7 @@ export function SubstituteView({
           timetables={timetables || []}
           displayCutoff={displayCutoff}
           daySchedules={daySchedules}
+          adjustments={adjustments}
           ty={ty}
           tm={tm}
           fMonth={fMonth}

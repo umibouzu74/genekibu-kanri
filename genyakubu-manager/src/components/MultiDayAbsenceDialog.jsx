@@ -50,6 +50,7 @@ export function MultiDayAbsenceDialog({
     biweeklyAnchors,
     sessionOverrides,
     daySchedules,
+    adjustments,
   });
   const sessionCtx = sessionCtxProp || builtCtx;
 

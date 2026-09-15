@@ -22,8 +22,13 @@ import { useCallback, useState } from "react";
 //       combine?:     { absorbedSlotIds },   // この slot が host
 //       absorbedBy?:  number,                // 逆向き: 他の slot (host) に吸収
 //       override?:    { mode, value?, displayAs?, memo },
+//       cancel?:      { memo },                // コマ休講 (utils/slotCancel)
 //     }
 //   }
+//
+// cancel (コマ休講) は「そのコマがその日に無い」ので、代行・移動・振替とは
+// 排他 (設定したら消す)。合同の host / 吸収された側には設定できない
+// (合同を先に外す)。
 
 const emptyRow = () => ({
   subs: null,
@@ -32,6 +37,7 @@ const emptyRow = () => ({
   combine: null,
   absorbedBy: null,
   override: null,
+  cancel: null,
 });
 
 // row が "空" (全フィールド null) なら true
@@ -42,7 +48,8 @@ function isEmptyRow(row) {
     !row.reschedule &&
     !row.combine &&
     row.absorbedBy == null &&
-    !row.override
+    !row.override &&
+    !row.cancel
   );
 }
 
@@ -117,6 +124,8 @@ export function useAbsenceDraft() {
     setDraft((prev) => {
       const cur = prev[slotId] || emptyRow();
       return patchRow(prev, slotId, {
+        // 休講にしたコマに代行は立たない (排他)
+        cancel: null,
         subs: {
           ...(cur.subs || {}),
           [teacher]: {
@@ -148,9 +157,31 @@ export function useAbsenceDraft() {
 
   const updateMove = useCallback((slotId, targetTime) => {
     setDraft((prev) =>
-      // 同日内の時間移動と他日への振替は排他
-      patchRow(prev, slotId, { move: { targetTime }, reschedule: null })
+      // 同日内の時間移動と他日への振替・休講は排他
+      patchRow(prev, slotId, { move: { targetTime }, reschedule: null, cancel: null })
     );
+  }, []);
+
+  // コマ休講: そのコマをその日だけ休講にする (utils/slotCancel)。
+  // 授業自体が無くなるので代行・移動・振替の下書きは消す。合同に関わる
+  // コマには設定しない (合同を外してから)。
+  const setCancel = useCallback((slotId, patch = {}) => {
+    setDraft((prev) => {
+      const cur = prev[slotId] || emptyRow();
+      if (cur.absorbedBy != null || cur.combine?.absorbedSlotIds?.length) {
+        return prev;
+      }
+      return patchRow(prev, slotId, {
+        cancel: { memo: "", ...(cur.cancel || {}), ...patch },
+        subs: null,
+        move: null,
+        reschedule: null,
+      });
+    });
+  }, []);
+
+  const clearCancel = useCallback((slotId) => {
+    setDraft((prev) => patchRow(prev, slotId, { cancel: null }));
   }, []);
 
   const clearMove = useCallback((slotId) => {
@@ -167,7 +198,7 @@ export function useAbsenceDraft() {
       if (cur.absorbedBy != null || cur.combine?.absorbedSlotIds?.length) {
         return prev;
       }
-      // 振替を設定したら move / sub は解除 (意味的に排他)
+      // 振替を設定したら move / sub / cancel は解除 (意味的に排他)
       return patchRow(prev, slotId, {
         reschedule: {
           targetDate: "",
@@ -179,6 +210,7 @@ export function useAbsenceDraft() {
         },
         move: null,
         subs: null,
+        cancel: null,
       });
     });
   }, []);
@@ -208,6 +240,7 @@ export function useAbsenceDraft() {
 
       next = patchRow(next, hostSlotId, {
         combine: { absorbedSlotIds: newIds },
+        cancel: null,
       });
 
       for (const sid of newIds) {
@@ -216,6 +249,7 @@ export function useAbsenceDraft() {
           subs: null,
           move: null,
           reschedule: null,
+          cancel: null,
         });
       }
       return next;
@@ -355,6 +389,26 @@ export function useAbsenceDraft() {
           }
         }
 
+        // コマ休講。授業自体が無くなるので、同じコマの保存済み代行 / 欠勤と
+        // 同日の移動・振替・合同 (host) は解除マークに回す (残すと代行未定の
+        // 一覧に休講のコマが出続ける)。
+        if (row.cancel) {
+          draftAdjustments.push({
+            date,
+            type: "cancel",
+            slotId,
+            memo: row.cancel.memo || "",
+          });
+          for (const t of ["cancel", "move", "reschedule", "combine"]) {
+            const existingId = existingBySlotType.get(`${slotId}|${t}`);
+            if (existingId != null) autoRemovedIds.add(existingId);
+          }
+          for (const ex of existingSubs || []) {
+            if (ex.date !== date || ex.slotId !== slotId) continue;
+            autoRemovedSubIds.add(ex.id);
+          }
+        }
+
         if (row.override) {
           if (row.override.mode === "set" && Number.isFinite(Number(row.override.value))) {
             draftOverrides.push({
@@ -410,6 +464,8 @@ export function useAbsenceDraft() {
     setCombine,
     clearCombine,
     updateOverride,
+    setCancel,
+    clearCancel,
     markAdjustmentRemoved,
     unmarkAdjustmentRemoved,
     markSubRemoved,

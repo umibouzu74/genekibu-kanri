@@ -78,6 +78,18 @@ describe("summarizeTeacherDayOff", () => {
     expect(summarizeTeacherDayOff(["reschedule"]).label).toBe("↻ 振替で休み");
     expect(summarizeTeacherDayOff(["absent"]).label).toBe("欠 欠勤");
     expect(summarizeTeacherDayOff(["combine"]).label).toBe("合 合同で休み");
+    expect(summarizeTeacherDayOff(["cancel"]).label).toBe("休 休講で担当なし");
+  });
+
+  it("コマ休講は代行より優先で理由になる (授業自体が無い)", () => {
+    expect(
+      teacherAwayReason({
+        teacher: "堀上",
+        sub: { originalTeacher: "堀上", substitute: "河野" },
+        cancelled: { id: 1, type: "cancel" },
+      })
+    ).toBe("cancel");
+    expect(teacherAwayReason({ teacher: "堀上", cancelled: null })).toBeNull();
   });
 
   it("理由が混ざったら一括の見出しにする", () => {

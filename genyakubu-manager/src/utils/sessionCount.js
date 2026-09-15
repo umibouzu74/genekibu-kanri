@@ -23,7 +23,7 @@ import { gradeToDept, WEEKDAYS } from "../data";
 // time 文字列 ("19:00-20:20") → 開始時刻の分数 (ソートキー)。
 // 実装は dateHelpers.timeStartToMin に一元化し、このファイル内の従来名で使う。
 import { timeStartToMin as timeToMinutes } from "./dateHelpers";
-import { isSlotCancelledByDaySchedule } from "./daySchedules";
+import { buildCancelIndex, isSlotCancelledOnDate } from "./slotCancel";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
@@ -122,9 +122,14 @@ export function resolveSetSlotIds(slot, classSets, cohortIndex, classSetIndex) {
 // 重いので、一度作った ctx を使い回す (computeSessionNumber /
 // buildSessionCountMap の入口で 1 回だけ)。
 function withIndexes(ctx) {
-  if (ctx._cohortIndex && ctx._classSetIndex && ctx._slotById) return ctx;
+  if (ctx._cohortIndex && ctx._classSetIndex && ctx._slotById && ctx._cancelIndex) {
+    return ctx;
+  }
   return {
     ...ctx,
+    // (日付, コマ) → コマ休講 (adjustments の cancel)。日付ループの中から
+    // 引くので線形走査にしない
+    _cancelIndex: ctx._cancelIndex || buildCancelIndex(ctx.adjustments),
     _cohortIndex: ctx._cohortIndex || buildSlotCohortIndex(ctx.allSlots),
     _classSetIndex:
       ctx._classSetIndex || buildClassSetIndex(ctx.classSets, ctx.allSlots),
@@ -181,7 +186,7 @@ function findPoolFirstDate(pool, startDate, ctx) {
         if (s.day !== dayKey) continue;
         if (!isSlotTimetableActive(s, dStr, ctx)) continue;
         if (ctx.isOffForGrade && ctx.isOffForGrade(dStr, s.grade, s.subj)) continue;
-        if (isSlotCancelledByDaySchedule(s, dStr, ctx.daySchedules)) continue;
+        if (isSlotCancelledOnDate(s, dStr, ctx)) continue;
         return dStr;
       }
     }
@@ -256,9 +261,10 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
     return null;
   }
 
-  // 特別時程の部分休講 (例: 附属の 1 限カット)。その日は実施なしとして
-  // カウントを進めない。時刻読み替え (timeMap) は同日実施なので影響しない。
-  if (isSlotCancelledByDaySchedule(slot, dateStr, ctx.daySchedules)) {
+  // 特別時程の部分休講 (例: 附属の 1 限カット) とコマ休講 (adjustments の
+  // cancel)。その日は実施なしとしてカウントを進めない。時刻読み替え
+  // (timeMap) は同日実施なので影響しない。判定は utils/slotCancel の 1 か所。
+  if (isSlotCancelledOnDate(slot, dateStr, ctx)) {
     return null;
   }
 

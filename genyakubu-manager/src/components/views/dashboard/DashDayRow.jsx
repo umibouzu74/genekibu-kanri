@@ -7,6 +7,8 @@ import { examClassExceptionsOnDate } from "../../../utils/scheduleHelpers";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
+import { SlotCancelBanner } from "../../SlotCancelBanner";
+import { collectCancelledSlots } from "../../../utils/slotCancel";
 import { SectionColumn } from "./SectionColumn";
 import { getSubsForSlot } from "../../../data";
 import {
@@ -57,6 +59,12 @@ export function DashDayRow({
     const { rescheduleOutBySlot } = buildAdjustmentIndex(adjustments, date);
     return collectOutgoingReschedules(slots, rescheduleOutBySlot);
   }, [adjustments, date, slots]);
+  // コマ休講 (adjustments の cancel)。休講のコマは slots から外れているので
+  // (呼び出し側が isSlotCancelledOnDate で絞る)、全コマから引いてバナーに出す
+  const cancelledSlots = useMemo(
+    () => collectCancelledSlots(sessionCtx?.allSlots || slots, date, adjustments),
+    [adjustments, date, sessionCtx, slots]
+  );
   const emptiedByReschedule = isDayEmptiedByReschedule(
     slots,
     outgoingReschedules,
@@ -309,6 +317,7 @@ export function DashDayRow({
       {/* 追加授業 (特定日付の単発コマ)。「その日にやる」と明示登録された
           コマなので、休講日でも巻き添えにせず表示する。 */}
       <ExtraLessonBanner lessons={extraLessonsForDate} />
+      {!fullOff && <SlotCancelBanner items={cancelledSlots} />}
       <RescheduleInBanner items={incomingReschedules} />
       {!fullOff && emptiedByReschedule && (
         <RescheduleOutBanner items={outgoingReschedules} />
