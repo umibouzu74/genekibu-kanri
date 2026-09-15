@@ -4,8 +4,12 @@ import { EXTRA_LESSON_COLOR } from "../constants/colors";
 // Dashboard 日別 (DashDayRow) と時間割グリッド (ExcelGridView) で共有する。
 // 「その日にやる」と明示登録されたコマなので、休講日でも巻き添えにせず
 // 表示する (呼び出し側も非表示にしないこと)。
-export function ExtraLessonBanner({ lessons, style }) {
+// onEditExtraLesson (id) を渡すと各行がクリック / Enter / Space で編集へ飛ぶ
+// (月次・週間・イベントカレンダーと同じ導線)。渡さなければ従来どおりの
+// 素の行のまま。
+export function ExtraLessonBanner({ lessons, style, onEditExtraLesson }) {
   if (!lessons || lessons.length === 0) return null;
+  const activatable = typeof onEditExtraLesson === "function";
   return (
     <div
       style={{
@@ -23,14 +27,32 @@ export function ExtraLessonBanner({ lessons, style }) {
       {lessons.map((l) => (
         <div
           key={l.id}
+          role={activatable ? "button" : undefined}
+          tabIndex={activatable ? 0 : undefined}
+          onClick={activatable ? () => onEditExtraLesson(l.id) : undefined}
+          onKeyDown={
+            activatable
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onEditExtraLesson(l.id);
+                  }
+                }
+              : undefined
+          }
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
             flexWrap: "wrap",
             fontSize: 12,
+            cursor: activatable ? "pointer" : undefined,
           }}
-          title={l.note || undefined}
+          title={
+            activatable
+              ? `${l.note ? `${l.note}\n` : ""}クリックで追加授業を編集`
+              : l.note || undefined
+          }
         >
           <span
             style={{

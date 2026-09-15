@@ -65,7 +65,8 @@ export const ExcelCell = memo(function ExcelCell({
   subDate,
   isUnavailable,
   isHolidayOff,
-  pendingSub,
+  // 代行モードの仮代行 (元講師ごとに 1 件)。多担任コマは複数件。
+  pendingSubs = [],
   // このコマの代行 / 欠勤レコード (元講師ごとに 1 件)。多担任コマは複数件。
   existingSubs = [],
   isSubMode,
@@ -156,16 +157,34 @@ export const ExcelCell = memo(function ExcelCell({
     borderLeft = "3px solid #b8860b";
     badges.push(mkBadge("#b8860b", "休", "holiday"));
     teacherColor = "#aaa";
-  } else if (pendingSub) {
+  } else if (pendingSubs.length > 0) {
     bg = "#e0f5e0";
     borderLeft = "3px solid #2a7a4a";
     badges.push(mkBadge("#2a7a4a", "仮", "pending"));
     teacherColor = "#888";
     teacherDecor = "line-through";
-    partialStrikeOriginals = pendingSub.originalTeacher ? [pendingSub.originalTeacher] : [];
+    // 仮代行を付けた人と、保存済みの代行 / 欠勤が残っている人の両方に取消線。
+    // 同じ元講師は仮代行の方が勝つ (保存すると置き換わるレコード)
+    const pendingTeachers = new Set(pendingSubs.map((p) => p.originalTeacher));
+    const restSubs = existingSubs.filter((x) => !pendingTeachers.has(x.originalTeacher));
+    partialStrikeOriginals = [
+      ...pendingSubs.map((p) => p.originalTeacher),
+      ...restSubs.map((x) => x.originalTeacher),
+    ].filter(Boolean);
+    const multi = pendingSubs.length + restSubs.length > 1;
     subDisplay = (
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#2a7a4a", marginTop: 1 }}>
-        ← {pendingSub.substitute}
+      <div style={{ fontSize: 12, fontWeight: 800, marginTop: 1, lineHeight: 1.3 }}>
+        {pendingSubs.map((p, i) => (
+          <div key={`p${i}`} style={{ color: "#2a7a4a" }}>
+            {multi ? `${p.originalTeacher} ⇒ ` : ""}← {p.substitute}
+          </div>
+        ))}
+        {restSubs.map((x, i) => (
+          <div key={`e${i}`} style={{ color: SUB_STATE_META[subState(x)].color }}>
+            {multi ? `${x.originalTeacher} ⇒ ` : ""}
+            {x.substitute ? `← ${x.substitute}` : subTargetLabel(x)}
+          </div>
+        ))}
       </div>
     );
   } else if (existingSubs.length > 0) {
@@ -216,7 +235,7 @@ export const ExcelCell = memo(function ExcelCell({
   if (!isHolidayOff) {
     if (absorbed) {
       // 合同で吸収された側: 既存の sub 背景がなければ紫で塗って line-through
-      if (!pendingSub && existingSubs.length === 0) {
+      if (pendingSubs.length === 0 && existingSubs.length === 0) {
         bg = ADJ_COLOR.combine.bg;
         borderLeft = `3px solid ${ADJ_COLOR.combine.color}`;
         teacherColor = "#888";
@@ -345,7 +364,7 @@ export const ExcelCell = memo(function ExcelCell({
   }
 
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
-  const isClickable = isSubMode && (slot.teacher || pendingSub || isCombineTarget);
+  const isClickable = isSubMode && (slot.teacher || pendingSubs.length > 0 || isCombineTarget);
 
   const handleClick = (e) => {
     if (!isClickable || !onCellClick) return;
@@ -364,7 +383,9 @@ export const ExcelCell = memo(function ExcelCell({
   const interactive = isClickable || canEdit;
   const a11yStates = [
     isHolidayOff ? "休講" : null,
-    pendingSub ? `仮代行 ${pendingSub.substitute}` : null,
+    pendingSubs.length > 0
+      ? `仮代行 ${pendingSubs.map((p) => p.substitute).join("、")}`
+      : null,
     ...[...new Set(existingSubs.map((x) => subState(x)))].map((st) => SUB_STATE_META[st]?.label),
     absorbed ? "合同に吸収" : null,
     isCombineHost ? "合同" : null,

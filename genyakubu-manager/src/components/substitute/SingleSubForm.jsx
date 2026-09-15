@@ -7,6 +7,7 @@ import { getSlotTeachers } from "../../utils/biweekly";
 import { pickSubjectId } from "../../utils/subjectMatch";
 import { sortTeacherNames } from "../../utils/teacherKana";
 import { FieldError } from "../FieldError";
+import { buildTakenSlotTeachers, isSlotFullyTaken as slotFullyTaken } from "./slotTaken";
 
 // ─── 単一コマ代行フォーム ──────────────────────────────────────────
 // SubstituteForm の "single" モード相当。
@@ -55,26 +56,14 @@ export function SingleSubForm({
     [partTimeStaff]
   );
 
-  // すでに代行記録がある slotId → 登録済み教師名の Set (同日内)
-  const takenSlotTeachers = useMemo(() => {
-    if (!date) return new Map();
-    const m = new Map();
-    for (const x of subs) {
-      if (x.date !== date) continue;
-      if (sub && x.id === sub.id) continue;
-      if (!m.has(x.slotId)) m.set(x.slotId, new Set());
-      m.get(x.slotId).add(x.originalTeacher);
-    }
-    return m;
-  }, [subs, date, sub]);
+  // すでに代行記録がある slotId → 登録済み教師名の Set (同日内)。
+  // 判定は 1日分まとめて代行と共有 (./slotTaken)
+  const takenSlotTeachers = useMemo(
+    () => buildTakenSlotTeachers(subs, date, { excludeSubId: sub?.id ?? null }),
+    [subs, date, sub]
+  );
 
-  const isSlotFullyTaken = (s) => {
-    const taken = takenSlotTeachers.get(s.id);
-    if (!taken) return false;
-    const teachers = getSlotTeachers(s);
-    if (teachers.length <= 1) return true;
-    return teachers.every((t) => taken.has(t));
-  };
+  const isSlotFullyTaken = (s) => slotFullyTaken(s, takenSlotTeachers);
 
   // 並べるのは「その日に有効な時間割のコマ」だけ。曜日だけで絞ると、
   // 期切替で残してある旧期の同名コマ (終了日入り) が並び、そちらに登録した

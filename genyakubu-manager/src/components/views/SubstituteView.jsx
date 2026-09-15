@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
@@ -164,6 +164,32 @@ export function SubstituteView({
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
 
+  // ＋ 新規代行 で来月の日付を登録すると、保存はされるのに当月の月フィルタで
+  // 一覧から消えて「登録できなかった」ように見える (2026-09-15)。この画面の
+  // 新規登録フォームを開いた後に subs へ新しい id が増えたら、その日付が
+  // 月フィルタの外なら月フィルタをその月へ動かす。「すべて」(fMonth 空) は
+  // そのまま。フォーム本体は App が持つので、完了はレコードの増加で検知する
+  const prevSubIdsRef = useRef(new Set(subs.map((s) => s.id)));
+  const newSubArmedRef = useRef(false);
+  const handleNew = useCallback(() => {
+    newSubArmedRef.current = true;
+    onNew?.();
+  }, [onNew]);
+  useEffect(() => {
+    const prev = prevSubIdsRef.current;
+    const added = subs.filter((s) => !prev.has(s.id));
+    prevSubIdsRef.current = new Set(subs.map((s) => s.id));
+    if (added.length === 0 || !newSubArmedRef.current) return;
+    newSubArmedRef.current = false;
+    setFMonth((cur) => {
+      if (!cur) return cur; // 「すべて」は動かさない
+      const dates = added.map((s) => s.date || "").filter(Boolean).sort();
+      const month = dates[0]?.slice(0, 7);
+      if (!month || dates.some((d) => d.startsWith(cur))) return cur;
+      return month;
+    });
+  }, [subs]);
+
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
   // 孤立しがち。削除直後に件数を info トーストで案内する。
   // 削除コールバックの引数規約は 3 タブ通して id に統一 (sub.id / ov.id / adj.id)。
@@ -238,7 +264,7 @@ export function SubstituteView({
         <div style={{ marginBottom: 12 }}>
           <button
             type="button"
-            onClick={onNew}
+            onClick={handleNew}
             style={{
               padding: "12px 24px",
               borderRadius: 8,
@@ -351,7 +377,7 @@ export function SubstituteView({
           onEdit={onEdit}
           onDel={onDel}
           onQuickUpdate={onQuickUpdate}
-          onNew={onNew}
+          onNew={handleNew}
           todayStr={todayStr}
         />
       )}
@@ -411,6 +437,7 @@ export function SubstituteView({
           timetables={timetables || []}
           activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
           subjects={subjects || []}
           subs={subs}
           saveSubs={saveSubs}
@@ -420,6 +447,7 @@ export function SubstituteView({
           teacherSubjects={teacherSubjects || {}}
           classSets={classSets || []}
           displayCutoff={displayCutoff}
+          daySchedules={daySchedules}
           onAddAdjustment={onAddAdjustment}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}

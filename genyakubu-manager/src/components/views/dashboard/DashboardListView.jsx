@@ -30,6 +30,7 @@ export function DashboardListView({
   adjustments = [],
   onJumpToAbsenceFlow,
   onSelectTeacher,
+  onEditExtraLesson,
 }) {
   // コマが 1 つも無い学年グループ (運用していない学年) は全日判定から外す。
   // 終了日が空のまま残っていると、他が全部終わってもバナーが出ないため。
@@ -98,6 +99,7 @@ export function DashboardListView({
               isToday={dateStr === todayStr}
               onJumpToAbsenceFlow={onJumpToAbsenceFlow}
               onSelectTeacher={onSelectTeacher}
+              onEditExtraLesson={onEditExtraLesson}
             />
           </div>
         );

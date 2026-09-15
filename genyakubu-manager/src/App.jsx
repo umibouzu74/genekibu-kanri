@@ -955,6 +955,10 @@ export default function App() {
               initDate={dashInitDate}
               onConsumeInitDate={() => setDashInitDate(null)}
               onSelectTeacher={selectTeacher}
+              onEditExtraLesson={(id) => {
+                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+                selectView(VIEWS.HOLIDAYS);
+              }}
             />
           )}
           {view === VIEWS.ALL && !selected && (

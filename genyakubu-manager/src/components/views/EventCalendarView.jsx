@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtDate, WEEKDAYS } from "../../data";
-import { eachDateStrInRange, formatDateRange, overlapsRange } from "../../utils/dateHelpers";
+import { WEEKDAYS } from "../../data";
+import {
+  eachDateStrInRange,
+  formatDateRange,
+  overlapsRange,
+  parseLocalDate,
+} from "../../utils/dateHelpers";
+import { useToday } from "../../hooks/useToday";
 import { S } from "../../styles/common";
 import {
   DAY_SCHEDULE_META,
@@ -64,7 +70,10 @@ export function EventCalendarView({
   onChangeVisibility,
   availableTags = [],
 }) {
-  const today = useMemo(() => new Date(), []);
+  // 「今日」はタブを開いたまま日付を跨いでも翌 0 時に更新される (useToday)。
+  // new Date() を 1 回だけ読むと、開きっぱなしのタブで昨日を強調し続ける
+  const todayStr = useToday();
+  const today = useMemo(() => parseLocalDate(todayStr), [todayStr]);
   const [monthOff, setMonthOff] = useState(0);
 
   const vd = useMemo(
@@ -212,7 +221,6 @@ export function EventCalendarView({
     return m;
   }, [eventsInMonth, monthStart, monthEnd]);
 
-  const todayStr = fmtDate(today);
 
   const showAdd = isAdmin && !!onAddNewEvent;
 

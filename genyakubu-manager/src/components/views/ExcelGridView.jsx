@@ -10,6 +10,7 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { getSlotTeachers } from "../../utils/biweekly";
+import { activeTeachersOnDate } from "../../utils/absenceHelpers";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
@@ -22,6 +23,7 @@ import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
 import { useToday } from "../../hooks/useToday";
 import { useOptionalToasts } from "../../hooks/useToasts";
+import { useConfirm } from "../../hooks/useConfirm";
 import {
   buildAllDaysBodyHtml,
   buildAllDaysDocTitle,
@@ -125,6 +127,9 @@ export function ExcelGridView({
   dashboardMode = false,
   // 講師名クリックでその人の月間へ (ダッシュボード / 閲覧モードだけ)
   onSelectTeacher,
+  // 追加授業バナーの行クリックで編集へ (ダッシュボードから渡す。省略時は
+  // クリック不可の素の行)
+  onEditExtraLesson,
 }) {
   const [selectedDay, setSelectedDay] = useState("月");
   const [dragState, setDragState] = useState({ draggingId: null, overCell: null });
@@ -136,6 +141,7 @@ export function ExcelGridView({
   const [printBusy, setPrintBusy] = useState(false);
   const rootRef = useRef(null);
   const toasts = useOptionalToasts();
+  const confirm = useConfirm();
   // 描画対象の曜日。全曜日印刷中のみ printDay が勝つ。
   const activeDay = printDay || selectedDay;
 
@@ -184,6 +190,7 @@ export function ExcelGridView({
     biweeklyAnchors: biweeklyAnchors || [],
     teacherSubjects: teacherSubjects || {},
     unavailableTeachers,
+    daySchedules,
   });
 
   // Clear unavailable selection when day changes
@@ -240,8 +247,13 @@ export function ExcelGridView({
     setSubDate, clearSubMode: clearSub, openPopover,
     combineMode, completeCombine, popoverTarget,
     startCombine, assignSubstitute, removeAssignment, closePopover,
-    saveAll, discardAll,
+    saveAll, discardAll, getPendingSub,
   } = subMode;
+
+  // 破棄の確認は他のビューと同じ useConfirm (window.confirm は使わない)
+  const handleDiscardAll = useCallback(async () => {
+    if (await confirm("仮代行をすべて破棄しますか？")) discardAll();
+  }, [confirm, discardAll]);
 
   // Handle drag-and-drop swap in substitution mode
   const handleSubDrop = useCallback((sourceSlot, targetSlot) => {
@@ -333,6 +345,17 @@ export function ExcelGridView({
   // 実日付 (sessionTargetDate を流用)。第N回計算・隔週 weekType 計算・
   // ダッシュボードの代行表示/表示期間フィルタで使う。
   const displayDate = subMode.subDate || sessionTargetDate;
+
+  // ポップオーバーの「担当」切替に出す欠勤者 (その日の担当のうち欠勤に
+  // チェックの入っている人)。多担任コマで 2 人以上休むときだけ意味を持つ
+  const popoverAbsentTeachers = useMemo(() => {
+    if (!popoverSlot || !displayDate) return [];
+    return activeTeachersOnDate(popoverSlot, displayDate, {
+      biweeklyAnchors,
+      holidays,
+      examPeriods,
+    }).filter((t) => unavailableTeachers.has(t));
+  }, [popoverSlot, displayDate, biweeklyAnchors, holidays, examPeriods, unavailableTeachers]);
 
   // ─── ダッシュボード表示モードの表示期間フィルタ ─────────────────
   // 表示日を基準に、日別リスト (DashboardListView) と同じ判定で
@@ -469,13 +492,12 @@ export function ExcelGridView({
     const subsBySlot = new Map();
     for (const s of daySlots) {
       const list = [...(effectiveSubMap.get(s.id) || [])];
-      const pending = subMode.pendingSubMap.get(s.id);
-      if (pending) {
-        const rest = list.filter(
-          (x) => x.originalTeacher !== pending.originalTeacher
-        );
-        rest.push(pending);
-        subsBySlot.set(s.id, rest);
+      // 仮代行は (コマ, 元講師) ごと。同じ元講師の保存済みレコードを置き換える
+      const pendings = subMode.pendingSubMap.get(s.id) || [];
+      if (pendings.length > 0) {
+        const pendingTeachers = new Set(pendings.map((p) => p.originalTeacher));
+        const rest = list.filter((x) => !pendingTeachers.has(x.originalTeacher));
+        subsBySlot.set(s.id, [...rest, ...pendings]);
       } else if (list.length > 0) {
         subsBySlot.set(s.id, list);
       }
@@ -536,13 +558,16 @@ export function ExcelGridView({
     [dashboardHolidaysForDay]
   );
 
-  // 表示日に該当する特別時程 (ヘッダバナー表示用)。
+  // 表示日に該当する特別時程 (ヘッダバナー表示用)。日付を持つ表示 =
+  // ダッシュボードと代行モードの両方で出す (代行モードのグリッドは 移/休 を
+  // 反映しているのに、その理由のバナーだけ無いと読めない)
+  const showDaySchedules = dashboardMode || subMode.isSubMode;
   const dashboardDaySchedules = useMemo(
     () =>
-      dashboardMode && displayDate
+      showDaySchedules && displayDate
         ? getDaySchedulesForDate(daySchedules, displayDate)
         : [],
-    [dashboardMode, displayDate, daySchedules]
+    [showDaySchedules, displayDate, daySchedules]
   );
 
   // 表示日の追加授業 (H1a)。グリッドの列は曜日ベースで特定日付の単発コマを
@@ -889,8 +914,8 @@ export function ExcelGridView({
         </div>
       )}
 
-      {/* Day schedule banner (dashboard mode): 表示日の特別時程を表示 */}
-      {dashboardMode && dashboardDaySchedules.length > 0 && (
+      {/* Day schedule banner (dashboard / 代行モード): 表示日の特別時程を表示 */}
+      {dashboardDaySchedules.length > 0 && (
         <div
           className="excel-print-day-note"
           style={{
@@ -961,7 +986,10 @@ export function ExcelGridView({
         {/* Sections。excel-print-day-body は全曜日印刷のスナップショット単位
             (右の講師パネルは紙面に要らないので含めない) */}
         <div className="excel-print-day-body" style={{ flex: 1, minWidth: 0 }}>
-          <ExtraLessonBanner lessons={extraLessonsForDisplayDate} />
+          <ExtraLessonBanner
+            lessons={extraLessonsForDisplayDate}
+            onEditExtraLesson={onEditExtraLesson}
+          />
           <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
           <RescheduleOutBanner items={outgoingReschedulesForDisplayDate} />
           {dashboardEntireDayCutoff ? (
@@ -1174,12 +1202,14 @@ export function ExcelGridView({
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 <button
-                  onClick={() => window.confirm("仮代行をすべて破棄しますか？") && discardAll()}
+                  type="button"
+                  onClick={handleDiscardAll}
                   style={S.btn(false)}
                 >
                   破棄
                 </button>
                 <button
+                  type="button"
                   onClick={saveAll}
                   style={{ ...S.btn(true), background: "#2a7a2a" }}
                 >
@@ -1213,11 +1243,15 @@ export function ExcelGridView({
           anchorRect={popoverTarget.rect}
           slot={popoverSlot}
           originalTeacher={popoverTarget.originalTeacher}
+          absentTeachers={popoverAbsentTeachers}
+          onSwitchTeacher={(t) =>
+            openPopover(popoverSlot.id, popoverTarget.rect, t, popoverTarget.anchorEl)
+          }
           availableTeachers={subMode.availableTeachers}
           allTeachersForDay={subMode.allTeachersForDay}
           suggestion={subMode.suggestionMap.get(popoverSlot.id) || null}
           subjects={subjects || []}
-          pendingSub={subMode.pendingSubMap.get(popoverSlot.id) || null}
+          pendingSub={getPendingSub(popoverSlot.id, popoverTarget.originalTeacher)}
           onAssign={(teacher) =>
             assignSubstitute(
               popoverSlot.id,
@@ -1225,7 +1259,9 @@ export function ExcelGridView({
               teacher
             )
           }
-          onRemoveAssignment={() => removeAssignment(popoverSlot.id)}
+          onRemoveAssignment={() =>
+            removeAssignment(popoverSlot.id, popoverTarget.originalTeacher)
+          }
           onCombine={() => startCombine(popoverSlot.id)}
           onClose={closePopover}
           slots={displaySlots}

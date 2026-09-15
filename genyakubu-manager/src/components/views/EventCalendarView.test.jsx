@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // イベントカレンダー: 追加授業の表示 (H1b) と visibility トグルの骨格を固定する。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { EventCalendarView } from "./EventCalendarView";
 import { DEFAULT_EVENT_VISIBILITY } from "../EventVisibilityToggles";
 import { EVENT_KIND } from "../../constants/eventKinds";
@@ -123,5 +123,37 @@ describe("EventCalendarView の日付セルからの登録", () => {
   it("閲覧者にはセルの ＋ を出さない", () => {
     renderView({ visibility: DEFAULT_EVENT_VISIBILITY });
     expect(screen.queryByRole("button", { name: /に登録$/ })).toBeNull();
+  });
+});
+
+// 「今日」の強調は useToday (深夜 0 時に更新)。開きっぱなしのタブが翌日も
+// 昨日を強調し続けないこと
+describe("EventCalendarView の「今日」", () => {
+  function todayCell(container) {
+    // 今日のセルだけ枠線 (#e6a800) が付く。jsdom は rgb() に正規化する
+    return [...container.querySelectorAll(".event-cal-cell")].find((el) =>
+      /e6a800|230, 168, 0/.test(el.style.border || "")
+    );
+  }
+
+  it("深夜 0 時を跨ぐと強調する日付が翌日へ移る", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 6, 3, 23, 59, 0)); // 2026-07-03 23:59
+      const { container } = render(
+        <EventCalendarView
+          extraLessons={[]}
+          visibility={DEFAULT_EVENT_VISIBILITY}
+          onChangeVisibility={() => {}}
+        />
+      );
+      expect(todayCell(container).textContent.startsWith("3")).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(2 * 60 * 1000); // → 7/4 0:01
+      });
+      expect(todayCell(container).textContent.startsWith("4")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

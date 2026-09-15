@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  IDLE_TEACHER_REASON,
   classifySlotForTeacher,
+  collectAllTeacherNames,
   computeAvailableTeachers,
   resolveTeacherSubjectIds,
   scoreSubstituteCandidate,
+  sortAvailableTeachers,
   suggestChainSubstitutions,
   timeOverlaps,
   validateSubstituteChange,
@@ -453,7 +456,129 @@ describe("computeAvailableTeachers", () => {
   });
 });
 
+// ─── その日にコマが無い講師も候補に出す (2026-09-15) ────────────────
+// 候補は「その日のコマの講師」で閉じない — 常勤はその曜日にコマが無くても
+// 代行に入る (2026-09-10 の西岡)。玉突き代行の画面だけがオプトインする。
+describe("computeAvailableTeachers — includeIdleTeachers", () => {
+  // 月曜のコマは 山田 だけ。西岡 は火曜にしかコマが無く、バイト数学 は
+  // どの曜日にも出てこない
+  const slots = [
+    makeSlot({ id: 1, teacher: "山田", subj: "英語" }),
+    makeSlot({ id: 2, day: "火", teacher: "西岡", subj: "数学" }),
+  ];
+  const call = (extra = {}, opts) =>
+    computeAvailableTeachers(
+      MONDAY, slots, extra.holidays || [], [], extra.subs || [],
+      partTimeStaff, subjects, [], ANCHORS, {}, opts
+    );
+
+  it("既定 (opts なし) では従来どおり、その日にコマの無い講師は出ない", () => {
+    expect(call()).toEqual([]);
+  });
+
+  it("includeIdleTeachers でその日に担当の無い講師が「この日は担当なし」で出る", () => {
+    const result = call({}, { includeIdleTeachers: true });
+    const names = result.map((t) => t.name);
+    expect(names).toContain("西岡");
+    expect(names).toContain("バイト数学");
+    // その日にコマがあって休講も無い 山田 は空きではない
+    expect(names).not.toContain("山田");
+    const nishioka = result.find((t) => t.name === "西岡");
+    expect(nishioka).toMatchObject({
+      isFreeAllDay: true,
+      noSlotsToday: true,
+      reason: IDLE_TEACHER_REASON,
+      cancelledSlots: [],
+      isPartTime: false,
+    });
+    // 空き時間帯はその日に存在する時間帯 (手動追加の「全日」と同じ形)
+    expect(nishioka.freeTimeSlots).toEqual(["19:00-20:20"]);
+    // 担当科目は火曜のコマから推定
+    expect(nishioka.subjectIds).toEqual([2]);
+    const bt = result.find((t) => t.name === "バイト数学");
+    expect(bt.isPartTime).toBe(true);
+    expect(bt.subjectIds).toEqual([2]);
+  });
+
+  it("その日に既に代行を引き受けていれば、その時刻は塞がり全日空きではない", () => {
+    const slotsWithTwoTimes = [
+      ...slots,
+      makeSlot({ id: 3, teacher: "山田", time: "20:30-21:50" }),
+    ];
+    const subs = [
+      { id: 1, date: MONDAY, slotId: 1, originalTeacher: "山田", substitute: "西岡", status: "confirmed", memo: "" },
+    ];
+    const result = computeAvailableTeachers(
+      MONDAY, slotsWithTwoTimes, [], [], subs,
+      partTimeStaff, subjects, [], ANCHORS, {}, { includeIdleTeachers: true }
+    );
+    const nishioka = result.find((t) => t.name === "西岡");
+    expect(nishioka.isFreeAllDay).toBe(false);
+    expect(nishioka.freeTimeSlots).toEqual(["20:30-21:50"]);
+  });
+
+  it("休講で空いた講師 (従来の候補) と担当なしの講師は同時に出て、区別できる", () => {
+    const holidays = [{ date: MONDAY, scope: ["全部"] }];
+    const result = call({ holidays }, { includeIdleTeachers: true });
+    const yamada = result.find((t) => t.name === "山田");
+    expect(yamada.noSlotsToday).toBe(false);
+    expect(yamada.reason).toBe("高校部休講");
+    expect(result.find((t) => t.name === "西岡").noSlotsToday).toBe(true);
+  });
+
+  it("隔週コマの note のパートナーも母集団に入る", () => {
+    const names = collectAllTeacherNames(
+      [makeSlot({ id: 1, teacher: "A太郎·C次郎", note: "隔週(B子)" })],
+      [{ name: "バイトX", subjectIds: [] }]
+    );
+    expect([...names].sort()).toEqual(["A太郎", "B子", "C次郎", "バイトX"]);
+  });
+});
+
+describe("sortAvailableTeachers", () => {
+  const kana = { 堀上: "ほりかみ", 石原: "いしはら", 高松: "たかまつ", 西岡: "にしおか" };
+  const mk = (name, extra = {}) => ({
+    name, isFreeAllDay: true, freeTimeSlots: [], cancelledSlots: [],
+    reason: "高校部休講", subjectIds: [], isPartTime: false, noSlotsToday: false,
+    ...extra,
+  });
+  it("休講・隔週で空いた人 → 担当なし → 手動追加 の順、同じ群の中はよみ順", () => {
+    const list = [
+      mk("堀上", { noSlotsToday: true, reason: IDLE_TEACHER_REASON }),
+      mk("高松", { reason: "手動追加" }),
+      mk("石原"),
+      mk("西岡", { noSlotsToday: true, reason: IDLE_TEACHER_REASON }),
+      mk("高松2", { reason: "高校部休講" }),
+    ];
+    const kana2 = { ...kana, 高松2: "たかまつ" };
+    expect(sortAvailableTeachers(list, kana2).map((t) => t.name)).toEqual([
+      "石原", "高松2", "西岡", "堀上", "高松",
+    ]);
+  });
+  it("元の配列は変更しない", () => {
+    const list = [mk("堀上"), mk("石原")];
+    sortAvailableTeachers(list, kana);
+    expect(list.map((t) => t.name)).toEqual(["堀上", "石原"]);
+  });
+});
+
 describe("suggestChainSubstitutions", () => {
+  it("スコア同点の候補はよみのあいうえお順で選ぶ (名前の文字列順ではない)", () => {
+    const slots = [makeSlot({ id: 10, teacher: "山田", subj: "英語" })];
+    const uncoveredSubs = [{ slotId: 10, originalTeacher: "山田", date: MONDAY }];
+    const mk = (name) => ({
+      name, isFreeAllDay: true, freeTimeSlots: ["19:00-20:20"], cancelledSlots: [],
+      reason: "", subjectIds: [1], isPartTime: false,
+    });
+    // 部首・画数順だと 堀上 < 石原 だが、よみは いしはら < ほりかみ
+    const available = [mk("堀上"), mk("石原")];
+    const kana = { 堀上: "ほりかみ", 石原: "いしはら" };
+    const result = suggestChainSubstitutions(
+      uncoveredSubs, available, slots, subjects, subjectCategories, partTimeStaff, kana
+    );
+    expect(result[0].suggestedSubstitute).toBe("石原");
+  });
+
   it("教科完全一致の候補が最高スコアで選ばれる", () => {
     const slots = [
       makeSlot({ id: 10, teacher: "山田", subj: "英語" }),

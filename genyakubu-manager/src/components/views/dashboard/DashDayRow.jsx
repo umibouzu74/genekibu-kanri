@@ -37,6 +37,8 @@ export function DashDayRow({
   onJumpToAbsenceFlow,
   // 講師名クリックでその人の月間へ (講師別ビュー)
   onSelectTeacher,
+  // 追加授業バナーの行クリックで編集へ (省略時はクリック不可の素の行)
+  onEditExtraLesson,
 }) {
   const sessionCountMap = useMemo(() => {
     if (!sessionCtx || !sessionCtx.displayCutoff) return null;
@@ -308,7 +310,10 @@ export function DashDayRow({
       </div>
       {/* 追加授業 (特定日付の単発コマ)。「その日にやる」と明示登録された
           コマなので、休講日でも巻き添えにせず表示する。 */}
-      <ExtraLessonBanner lessons={extraLessonsForDate} />
+      <ExtraLessonBanner
+        lessons={extraLessonsForDate}
+        onEditExtraLesson={onEditExtraLesson}
+      />
       <RescheduleInBanner items={incomingReschedules} />
       {!fullOff && emptiedByReschedule && (
         <RescheduleOutBanner items={outgoingReschedules} />
@@ -355,6 +360,9 @@ export function DashDayRow({
                 sessionCountMap={sessionCountMap}
                 daySchedules={daySchedulesForDate}
                 teacherConflicts={teacherConflictMap}
+                biweeklyAnchors={sessionCtx?.biweeklyAnchors}
+                holidays={sessionCtx?.holidays}
+                examPeriods={sessionCtx?.examPeriods}
                 onSelectTeacher={onSelectTeacher}
               />
             );

@@ -144,3 +144,87 @@ describe("DashDayRow の講師重複と講師名クリック", () => {
     expect(onSelectTeacher).toHaveBeenCalledWith("福江");
   });
 });
+
+// 日別モードでも隔週コマの A/B 週を日付で解決する (時間割モードの ExcelCell と
+// 同じ)。A 週 = 講師欄の主担当、B 週 = note「隔週(◯◯)」のパートナー
+describe("DashDayRow の隔週コマ", () => {
+  const BI = {
+    ...SLOT,
+    id: 21,
+    day: "金",
+    time: "19:00-20:20",
+    grade: "中2",
+    cls: "A",
+    subj: "英/数",
+    teacher: "堀上",
+    note: "隔週(河野)",
+  };
+  const ANCHORS = [{ date: FRI, weekType: "A" }];
+  const ctx = { allSlots: [BI], biweeklyAnchors: ANCHORS, holidays: [], examPeriods: [] };
+
+  it("A 週は主担当と先頭の教科 + A週バッジ", () => {
+    renderRow({ slots: [BI], adjustments: [], sessionCtx: ctx });
+    expect(screen.getByText("A週")).toBeTruthy();
+    expect(screen.getByText("英")).toBeTruthy();
+    expect(screen.getByText("堀上")).toBeTruthy();
+    expect(screen.queryByText("河野")).toBeNull();
+    // パートナーは note の行で分かる
+    expect(screen.getByText("(隔週 : 堀上 / 河野)")).toBeTruthy();
+  });
+
+  it("B 週はパートナーと 2 つ目の教科 + B週バッジ。名前クリックもパートナーで動く", () => {
+    const onSelectTeacher = vi.fn();
+    renderRow({
+      date: "2026-12-11",
+      slots: [BI],
+      adjustments: [],
+      sessionCtx: ctx,
+      onSelectTeacher,
+    });
+    expect(screen.getByText("B週")).toBeTruthy();
+    expect(screen.getByText("数")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "堀上" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "河野" }));
+    expect(onSelectTeacher).toHaveBeenCalledWith("河野");
+  });
+
+  it("アンカー未設定なら従来どおり (バッジ無し・主担当・教科そのまま)", () => {
+    renderRow({ slots: [BI], adjustments: [], sessionCtx: { allSlots: [BI] } });
+    expect(screen.queryByText(/[AB]週/)).toBeNull();
+    expect(screen.getByText("英/数")).toBeTruthy();
+    expect(screen.getByText("堀上")).toBeTruthy();
+  });
+
+  it("隔週でないコマは変わらない", () => {
+    renderRow({ slots: [SLOT], adjustments: [], sessionCtx: ctx });
+    expect(screen.queryByText(/[AB]週/)).toBeNull();
+    expect(screen.getByText("数学")).toBeTruthy();
+    expect(screen.getByText("堀上")).toBeTruthy();
+  });
+});
+
+// 追加授業バナーの行クリックで編集へ (月次・週間・イベントカレンダーと同じ導線)
+describe("DashDayRow の追加授業バナー", () => {
+  const LESSON = {
+    id: 7,
+    date: FRI,
+    time: "18:30-20:00",
+    grade: "中3",
+    cls: "A",
+    subj: "プレップ個別指導",
+    teacher: "香川",
+  };
+
+  it("onEditExtraLesson があれば行をクリックして id を渡す", () => {
+    const onEditExtraLesson = vi.fn();
+    renderRow({ extraLessonsForDate: [LESSON], adjustments: [], onEditExtraLesson });
+    fireEvent.click(screen.getByRole("button", { name: /プレップ個別指導/ }));
+    expect(onEditExtraLesson).toHaveBeenCalledWith(7);
+  });
+
+  it("onEditExtraLesson が無ければ素の行 (ボタンにしない)", () => {
+    renderRow({ extraLessonsForDate: [LESSON], adjustments: [] });
+    expect(screen.getByText(/プレップ個別指導/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /プレップ個別指導/ })).toBeNull();
+  });
+});

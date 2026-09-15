@@ -32,7 +32,8 @@ import {
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
-import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
+import { EVENT_KIND, EXAM_META, HOLIDAY_META } from "../../constants/eventKinds";
+import { makeEventHelpers } from "./dashboardHelpers";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 import {
@@ -53,6 +54,9 @@ function getUpcomingWindow(todayStr) {
   end.setDate(end.getDate() + 14);
   return [today, end];
 }
+
+// 休講チップの配色。EVENT_SECTIONS と同じ 🚫 を頭に付ける
+const HOLIDAY_META_WITH_ICON = { ...HOLIDAY_META, icon: "🚫" };
 
 function isWithinWindow(dateStr, start, end) {
   const dt = parseLocalDate(dateStr);
@@ -402,12 +406,53 @@ export function WeekView({
     return out.sort((a, b) => a.schedule.date.localeCompare(b.schedule.date));
   }, [daySchedules, ts, winStart, winEnd]);
 
-  // 直近 14 日に重なるイベント (休講以外) を一覧に出す。休講は曜日マスに
-  // 既に休バッジが立っているので除外。
+  // 直近 14 日の休講のうち、この講師のコマに効くもの。週間ビューの曜日マスは
+  // 日付を持たないので休講バッジは立たない = ここで出さないとどこにも出ない。
+  // 部門 (scope) / 学年 / 教科キーワードの読み方はダッシュボードと同じ
+  // (dashboardHelpers.makeEventHelpers.isHolidayForSlot)。休講ごとにヘルパを
+  // 作るのは「どの休講が当たったか」を出すため (まとめて索引にすると
+  // 同じ日の別の休講と区別できない)。隔週コマはその日の担当週だけ見る
+  const upcomingHolidays = useMemo(() => {
+    if (!holidays?.length) return [];
+    const teacherSlots = slots.filter((s) => isSlotForTeacher(s, teacher));
+    const out = [];
+    for (const h of holidays) {
+      if (!h?.date || !isWithinWindow(h.date, winStart, winEnd)) continue;
+      const dow = dateToDay(h.date);
+      if (!dow) continue;
+      const { isHolidayForSlot } = makeEventHelpers([h]);
+      const affected = teacherSlots.filter(
+        (s) =>
+          s.day === dow &&
+          isHolidayForSlot(h.date, s.grade, s.subj) &&
+          (!isBiweekly(s.note) ||
+            isTeacherActiveOnDate(s, teacher, h.date, biweeklyAnchors, holidays, examPeriods))
+      );
+      if (affected.length === 0) continue;
+      out.push({ holiday: h, affected });
+    }
+    return out;
+  }, [holidays, slots, teacher, winStart, winEnd, biweeklyAnchors, examPeriods]);
+
+  // 直近 14 日に重なるイベント (休講・テスト期間・特別イベント) を一覧に出す。
+  // 休講は visibility トグルの対象外 (常時表示)
   const upcomingEvents = useMemo(() => {
     const winStartStr = fmtDate(winStart);
     const winEndStr = fmtDate(winEnd);
     const out = [];
+    for (const { holiday: h, affected } of upcomingHolidays) {
+      out.push({
+        kind: EVENT_KIND.HOLIDAY,
+        id: `h-${h.id ?? h.date}`,
+        name: h.label || "休講",
+        startDate: h.date,
+        endDate: h.date,
+        tags: [],
+        affected: affected.map(
+          (s) => `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""} ${s.subj}`
+        ),
+      });
+    }
     if (showExam) {
       for (const ep of examPeriods) {
         if (!isExamPeriodVisible(ep, visibility)) continue;
@@ -439,7 +484,7 @@ export function WeekView({
       }
     }
     return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
+  }, [upcomingHolidays, examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -500,12 +545,17 @@ export function WeekView({
             const meta =
               ev.kind === EVENT_KIND.SPECIAL
                 ? specialEventTypeMeta(ev.eventType)
-                : EXAM_META;
+                : ev.kind === EVENT_KIND.HOLIDAY
+                  ? HOLIDAY_META_WITH_ICON
+                  : EXAM_META;
             const range = formatDateRange(ev.startDate, ev.endDate);
+            const affectedText = ev.affected?.length
+              ? `休講: ${ev.affected.join(" / ")}`
+              : "";
             return (
               <span
                 key={ev.id}
-                title={`${range} ${ev.name}`}
+                title={`${range} ${ev.name}${affectedText ? `\n${affectedText}` : ""}`}
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
@@ -518,6 +568,11 @@ export function WeekView({
               >
                 {meta.icon ? `${meta.icon} ` : ""}
                 {ev.name}
+                {ev.affected?.length > 0 && (
+                  <span style={{ marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                    ({ev.affected.join(" / ")})
+                  </span>
+                )}
                 {(ev.tags || []).length > 0 && (
                   <span style={{ marginLeft: 4, opacity: 0.75 }}>
                     [{ev.tags.join("·")}]
