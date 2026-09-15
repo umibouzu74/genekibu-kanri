@@ -127,8 +127,13 @@ export function SubSummaryCards({
     </div>
   );
 
+  // 要対応カードは画面で次の操作へ飛ぶための道具なので紙面には載せない
+  // (印刷で要るのは日付と具体的なコマ = 時間割 / 日別の本文。2026-09-15)。
+  // no-print は window.print() (appShell.css) と popup 印刷 (printStyles)
+  // の両方で消える
   return (
     <div
+      className="no-print"
       style={{
         display: "flex",
         gap: 10,

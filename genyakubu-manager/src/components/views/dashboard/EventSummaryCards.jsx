@@ -112,7 +112,9 @@ export function EventSummaryCards({
   );
 
   return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+    // 直近 7 日のサマリも画面用の道具なので紙面には載せない
+    // (SubSummaryCards と同じ。2026-09-15)
+    <div className="no-print" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
       {upcomingHolidays.length > 0 && (
         <Card
           label="今後7日の休講"
