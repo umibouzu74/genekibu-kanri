@@ -543,6 +543,26 @@ describe("ExcelGridView (代行モードの仮代行)", () => {
     expect(toastSink.map((t) => t.message)).toEqual(["代行 1 件を保存しました"]);
   });
 
+  it("セルのクリックは「代行なしで確定」も片付いた扱いにして、代行未定の人を先に出す", () => {
+    const PREP = slot({ id: 1, grade: "中1-3", subj: "プレップ", teacher: "香川·福江" });
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      isAdmin: true,
+      slots: [PREP, slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "西岡" })],
+      subs: [
+        // 香川は代行なしで確定 (nosub)、福江は代行未定 (pending)
+        { id: 5, date: MONDAY, slotId: 1, originalTeacher: "香川", substitute: "", status: "confirmed", memo: "" },
+        { id: 6, date: MONDAY, slotId: 1, originalTeacher: "福江", substitute: "", status: "requested", memo: "" },
+      ],
+    });
+    enterSubMode(container, MONDAY);
+    // 代行未定 (福江) は代行モードに入ると自動で欠勤に取り込まれる。香川も手で欠勤に
+    fireEvent.click(screen.getByRole("button", { name: /^香川/ }));
+    fireEvent.click(cell(/^19:00-20:20 中1-3 - プレップ 香川·福江/));
+    expect(screen.getByRole("dialog").textContent).toMatch(/担当: 福江/);
+  });
+
   it("多担任コマは 2 人分の仮代行をセルに並べて出す", () => {
     // プレップ (香川·福江) の 2 人とも欠勤。西岡・杉原は同じ時間に空いている
     const PREP = slot({ id: 1, grade: "中1-3", subj: "プレップ", teacher: "香川·福江" });

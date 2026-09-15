@@ -507,6 +507,16 @@ export default function App() {
     [selectView]
   );
 
+  // 追加授業をバナー / カードから編集する (休講・テスト期間・イベント画面の
+  // 追加授業マネージャを対象 id で開く)。ダッシュボード・月間・週間で共有
+  const openExtraLessonEditor = useCallback(
+    (id) => {
+      setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
+      selectView(VIEWS.HOLIDAYS);
+    },
+    [selectView]
+  );
+
   // データ管理モーダルから「孤立データ一括掃除」を実行する。
   // バッチ destructive 操作 (CLAUDE.md 「cascade ありは confirmedRemove」
   // ルール) に該当するため、適用前に確認ダイアログを挟む。
@@ -955,10 +965,7 @@ export default function App() {
               initDate={dashInitDate}
               onConsumeInitDate={() => setDashInitDate(null)}
               onSelectTeacher={selectTeacher}
-              onEditExtraLesson={(id) => {
-                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
-                selectView(VIEWS.HOLIDAYS);
-              }}
+              onEditExtraLesson={openExtraLessonEditor}
             />
           )}
           {view === VIEWS.ALL && !selected && (
@@ -1185,6 +1192,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               teacherKana={teacherKana}
               onNew={() => setEditSub("new")}
+              newSubOpen={editSub === "new"}
               onEdit={setEditSub}
               onDel={subsCrud.del}
               onQuickUpdate={subsCrud.quickUpdate}
@@ -1310,10 +1318,7 @@ export default function App() {
               specialEvents={specialEvents}
               extraLessons={extraLessons}
               daySchedules={daySchedules}
-              onEditExtraLesson={(id) => {
-                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
-                selectView(VIEWS.HOLIDAYS);
-              }}
+              onEditExtraLesson={openExtraLessonEditor}
               displayCutoff={displayCutoff}
               timetables={timetables}
               visibility={eventVisibility}
@@ -1341,10 +1346,7 @@ export default function App() {
               extraLessons={extraLessons}
               koshuLessons={koshuLessons}
               daySchedules={daySchedules}
-              onEditExtraLesson={(id) => {
-                setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
-                selectView(VIEWS.HOLIDAYS);
-              }}
+              onEditExtraLesson={openExtraLessonEditor}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}

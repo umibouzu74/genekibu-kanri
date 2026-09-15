@@ -91,6 +91,25 @@ describe("WeekView の直近 2 週間の休講", () => {
     expect(screen.queryByText("直近2週間のイベント:")).toBeNull();
   });
 
+  it("時間割の有効期間外・終講後の日の休講は出さない (その日に実施されないコマ)", () => {
+    const ttSlot = { ...MON_SLOT, timetableId: "t1" };
+    // 12/7 (月) の休講。時間割は 12/5 で終わっているので 12/7 のコマは無い
+    const { unmount } = renderWeek({
+      slots: [ttSlot],
+      allSlots: [ttSlot],
+      timetables: [{ id: "t1", name: "前期", startDate: "2026-04-01", endDate: "2026-12-05" }],
+      holidays: [{ id: 1, date: "2026-12-07", label: "創立記念日", scope: ["全部"] }],
+    });
+    expect(screen.queryByText("直近2週間のイベント:")).toBeNull();
+    unmount();
+    // 表示期間設定 (学年グループの終了日) が 12/5 でも同じ
+    renderWeek({
+      displayCutoff: { groups: [{ id: "g", label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-12-05" }] },
+      holidays: [{ id: 1, date: "2026-12-07", label: "創立記念日", scope: ["全部"] }],
+    });
+    expect(screen.queryByText("直近2週間のイベント:")).toBeNull();
+  });
+
   it("隔週コマは休講日の担当週の講師にだけ出す", () => {
     const bi = { ...MON_SLOT, id: 3, subj: "英/数", note: "隔週(河野)" };
     const anchors = [{ date: "2026-12-07", weekType: "A" }];

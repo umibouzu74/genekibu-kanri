@@ -22,6 +22,9 @@ export function SubstituteView({
   partTimeStaff,
   teacherKana = {},
   onNew,
+  // ＋ 新規代行 のフォーム (App が持つ) が開いているか。閉じたら月フィルタの
+  // 追従を解除する (保存せず閉じた後の他端末の同期で月が飛ばないように)
+  newSubOpen = false,
   onEdit,
   onDel,
   onQuickUpdate,
@@ -173,7 +176,7 @@ export function SubstituteView({
   // 新規登録フォームを開いた後に subs へ新しい id が増えたら、その日付が
   // 月フィルタの外なら月フィルタをその月へ動かす。「すべて」(fMonth 空) は
   // そのまま。フォーム本体は App が持つので、完了はレコードの増加で検知する
-  const prevSubIdsRef = useRef(new Set(subs.map((s) => s.id)));
+  const prevSubIdsRef = useRef(null);
   const newSubArmedRef = useRef(false);
   const handleNew = useCallback(() => {
     newSubArmedRef.current = true;
@@ -181,8 +184,9 @@ export function SubstituteView({
   }, [onNew]);
   useEffect(() => {
     const prev = prevSubIdsRef.current;
-    const added = subs.filter((s) => !prev.has(s.id));
     prevSubIdsRef.current = new Set(subs.map((s) => s.id));
+    if (!prev) return; // 初回は差分を取らない
+    const added = subs.filter((s) => !prev.has(s.id));
     if (added.length === 0 || !newSubArmedRef.current) return;
     newSubArmedRef.current = false;
     setFMonth((cur) => {
@@ -193,6 +197,11 @@ export function SubstituteView({
       return month;
     });
   }, [subs]);
+  // フォームが閉じたら解除 (保存で閉じた場合は上の effect が先に走って
+  // 追従済み。同じコミットで両方走るので、この effect は後に置く)
+  useEffect(() => {
+    if (!newSubOpen) newSubArmedRef.current = false;
+  }, [newSubOpen]);
 
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
   // 孤立しがち。削除直後に件数を info トーストで案内する。

@@ -57,6 +57,21 @@
   (打鍵ごとに localStorage + RTDB へ書いていた)。Escape で元に戻す。
   空の名前は保存せず元に戻し、同じ一覧内で重複する名前は行内にエラーを
   出して保存しない。カテゴリ色はドラッグ中 300ms のデバウンス、blur で即確定
+- **校正レビューの反映** (同日):
+  - 玉突き代行の「担当なし」候補の母集団を**その日に有効な時間割**のコマの
+    講師に限定 (`filterSlotsForDate`)。全コマから集めると、期切替で残して
+    ある旧期だけに居る (辞めた) 講師まで空き講師に並び、提案に選ばれていた
+  - 週間ビューの休講チップは**その日に実施されるコマ**にだけ付ける
+    (時間割の有効期間 + 表示期間。曜日だけで当てると終講後の日にも 🚫 が出た)
+  - 代行モードのセルクリックで「代行なしで確定」した人も片付いた扱いに
+    (`needsSubstitute`。代行未定の人を先に出す)
+  - 玉突き代行の提案行の select に、一覧に無い名前 (直接入力・隔週パートナー)
+    も選択肢として足す (「-- 選択 --」に見えて提案が読めなかった)
+  - 授業管理の月フィルタ追従は、フォームを保存せず閉じたら解除する
+    (`newSubOpen`。閉じた後の他端末の同期で月が飛ばない)
+  - 整理: 追加授業の編集ハンドラを App で 1 つに (`openExtraLessonEditor`)、
+    `collectAllTeacherNames` は `biweeklyPartner` を使う、Dashboard の古い
+    コメントを削除、`SubstituteView` の id 集合は初回 effect で遅延生成
 - テスト: `useSubstitutionMode.test.jsx` (新規)、`SubstituteView.test.jsx`
   (新規)、`WeekView.test.jsx` (新規)、`ChainSubstitutionPanel.test.jsx`
   (新規)、`SubstituteForm.bulk.test.jsx` (新規)、`SubjectsMasterTab.test.jsx`

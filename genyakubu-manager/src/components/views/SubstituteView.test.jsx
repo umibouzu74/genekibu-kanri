@@ -134,6 +134,23 @@ describe("SubstituteView の新規代行と月フィルタ", () => {
     expect(monthInput().value).toBe(THIS_MONTH);
   });
 
+  it("フォームを保存せず閉じた後は、他端末の同期で来月の代行が増えても動かさない", () => {
+    const { rerenderWith } = renderView({ newSubOpen: false });
+    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
+    rerenderWith({ newSubOpen: true }); // App がフォームを開いた
+    rerenderWith({ newSubOpen: false }); // 保存せず閉じた
+    rerenderWith({ newSubOpen: false, subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
+    expect(monthInput().value).toBe(THIS_MONTH);
+  });
+
+  it("保存で閉じる (subs の増加とフォームの close が同じ描画) なら追従する", () => {
+    const { rerenderWith } = renderView({ newSubOpen: false });
+    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
+    rerenderWith({ newSubOpen: true });
+    rerenderWith({ newSubOpen: false, subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
+    expect(monthInput().value).toBe(NEXT_MONTH);
+  });
+
   it("「すべて」(月フィルタ空) はそのまま", () => {
     const { rerenderWith } = renderView({ subs: [sub({ id: 1 })] });
     fireEvent.change(monthInput(), { target: { value: "" } });

@@ -96,8 +96,7 @@ export function Dashboard({
   onConsumeInitDate,
   // 講師名クリックでその人の月間へ
   onSelectTeacher,
-  // 追加授業バナーの行クリックで編集へ (日別モード)。時間割モードの
-  // ExcelGridView は未配線 (props を透過しないため)
+  // 追加授業バナーの行クリックで編集へ (日別・時間割モードの両方)
   onEditExtraLesson,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)

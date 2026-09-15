@@ -32,6 +32,7 @@ import {
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
+import { filterSlotsForDate, isSlotBeyondCutoff } from "../../utils/timetable";
 import { EVENT_KIND, EXAM_META, HOLIDAY_META } from "../../constants/eventKinds";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { isCancelAdjustment } from "../../utils/slotCancel";
@@ -449,7 +450,12 @@ export function WeekView({
       const dow = dateToDay(h.date);
       if (!dow) continue;
       const { isHolidayForSlot } = makeEventHelpers([h]);
-      const affected = teacherSlots.filter(
+      // その日に実施されるコマだけ (曜日だけで絞ると、終了日を入れた旧期の
+      // コマや終講後のコマにも休講が付く。CLAUDE.md「表示期間設定」)
+      const heldSlots = filterSlotsForDate(teacherSlots, h.date, timetables).filter(
+        (s) => !isSlotBeyondCutoff(h.date, s, displayCutoff)
+      );
+      const affected = heldSlots.filter(
         (s) =>
           s.day === dow &&
           isHolidayForSlot(h.date, s.grade, s.subj) &&
@@ -460,7 +466,7 @@ export function WeekView({
       out.push({ holiday: h, affected });
     }
     return out;
-  }, [holidays, slots, teacher, winStart, winEnd, biweeklyAnchors, examPeriods]);
+  }, [holidays, slots, teacher, winStart, winEnd, biweeklyAnchors, examPeriods, timetables, displayCutoff]);
 
   // 直近 14 日に重なるイベント (休講・テスト期間・特別イベント) を一覧に出す。
   // 休講は visibility トグルの対象外 (常時表示)

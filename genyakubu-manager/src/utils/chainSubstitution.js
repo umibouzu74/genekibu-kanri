@@ -1,6 +1,6 @@
 // ─── 玉突き代行 提案ロジック ──────────────────────────────────────
 import { dateToDay, timeToMin } from "../data";
-import { getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
+import { biweeklyPartner, getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
@@ -165,10 +165,8 @@ export function collectAllTeacherNames(allSlots, partTimeStaff) {
   const names = new Set();
   for (const slot of allSlots || []) {
     for (const t of getSlotTeachers(slot)) names.add(t);
-    if (isBiweekly(slot.note)) {
-      const m = slot.note.match(/隔週\(([^)]+)\)/);
-      if (m) names.add(m[1]);
-    }
+    const partner = biweeklyPartner(slot.note);
+    if (partner) names.add(partner);
   }
   for (const s of partTimeStaff || []) if (s?.name) names.add(s.name);
   return names;
@@ -304,7 +302,11 @@ export function computeAvailableTeachers(
     // から、その日に既に引き受けている代行の時刻を除いたもの (手動追加の
     // 「全日」と同じ形)。代行を 1 つでも持っていれば全日空きではない
     const dayTimes = [...new Set(daySlots.map((s) => s.time))];
-    for (const name of collectAllTeacherNames(allSlots, partTimeStaff)) {
+    // 母集団は「その日に有効な時間割」のコマの講師 + バイト。全コマから
+    // 集めると、期切替で終了日を入れて残してある旧期だけに居る (辞めた)
+    // 講師まで「担当なし」で並ぶ
+    const activeSlots = filterSlotsForDate(allSlots, date, timetables);
+    for (const name of collectAllTeacherNames(activeSlots, partTimeStaff)) {
       if (teacherSlots.has(name)) continue;
       const busyTimes = substituteAssignments.get(name) || [];
       const isFreeAllDay = busyTimes.length === 0;

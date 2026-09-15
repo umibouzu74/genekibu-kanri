@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
+import { needsSubstitute } from "../../../utils/substituteState";
 import { ADJ_COLOR, gradeColor as GC, timeToMin } from "../../../data";
 import {
   formatCount,
@@ -321,8 +322,9 @@ export function ExcelSection({
             const absents = teachers.filter((t) => unavailableTeachers.has(t));
             const covered = new Set([
               ...(pendingSubMap?.get(s.id) || []).map((p) => p.originalTeacher),
+              // 「代行なしで確定」も片付いている (needsSubstitute = pending だけ)
               ...(existingSubMap?.get(s.id) || [])
-                .filter((x) => x.substitute)
+                .filter((x) => !needsSubstitute(x))
                 .map((x) => x.originalTeacher),
             ]);
             const teacher =

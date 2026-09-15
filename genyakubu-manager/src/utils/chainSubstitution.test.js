@@ -517,6 +517,26 @@ describe("computeAvailableTeachers — includeIdleTeachers", () => {
     expect(nishioka.freeTimeSlots).toEqual(["20:30-21:50"]);
   });
 
+  it("終了日を入れた旧期の時間割だけに居る講師 (辞めた人) は担当なしに出ない", () => {
+    // 前期 (〜9/30) だけに居る 旧講師。MONDAY の時点では前期は終わっている
+    const ttSlots = [
+      ...slots,
+      makeSlot({ id: 9, day: "火", teacher: "旧講師", subj: "国語", timetableId: "old" }),
+    ];
+    // timetableId の無いコマは id 1 の時間割に属する扱い (filterSlotsForDate)
+    const timetables = [
+      { id: 1, name: "今期", startDate: "2020-04-01" },
+      { id: "old", name: "前期", startDate: "2020-04-01", endDate: "2020-09-30" },
+    ];
+    const result = computeAvailableTeachers(
+      MONDAY, ttSlots, [], [], [], partTimeStaff, subjects, timetables, ANCHORS, {},
+      { includeIdleTeachers: true }
+    );
+    const names = result.map((t) => t.name);
+    expect(names).toContain("西岡");
+    expect(names).not.toContain("旧講師");
+  });
+
   it("休講で空いた講師 (従来の候補) と担当なしの講師は同時に出て、区別できる", () => {
     const holidays = [{ date: MONDAY, scope: ["全部"] }];
     const result = call({ holidays }, { includeIdleTeachers: true });

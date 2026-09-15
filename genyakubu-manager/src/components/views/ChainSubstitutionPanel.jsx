@@ -613,7 +613,13 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
           }}
         >
           <option value="">-- 選択 --</option>
-          {allTeachers.map((t) => (
+          {/* 提案が選んだ名前が一覧に無い (手動追加の直接入力・隔週の
+              パートナーなど) と select が「-- 選択 --」に見えてしまうので、
+              その名前も選択肢に足す */}
+          {(sugg.suggestedSubstitute && !allTeachers.includes(sugg.suggestedSubstitute)
+            ? [sugg.suggestedSubstitute, ...allTeachers]
+            : allTeachers
+          ).map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
         </select>
