@@ -22,7 +22,7 @@ vi.mock("./hooks/useAuth", () => ({
 }));
 
 vi.mock("./components/views/AbsenceWorkflowView", () => ({
-  AbsenceWorkflowView: ({ onDirtyChange }) => (
+  AbsenceWorkflowView: ({ onDirtyChange, onOpenChainSubstitution }) => (
     <div>
       <p>欠勤組み換えスタブ</p>
       <button type="button" onClick={() => onDirtyChange?.(true)}>
@@ -30,6 +30,9 @@ vi.mock("./components/views/AbsenceWorkflowView", () => ({
       </button>
       <button type="button" onClick={() => onDirtyChange?.(false)}>
         下書きを消す
+      </button>
+      <button type="button" onClick={() => onOpenChainSubstitution?.("2026-10-03")}>
+        玉突き代行で探す
       </button>
     </div>
   ),
@@ -107,5 +110,35 @@ describe("App: 欠勤組み換えの下書きを守るビュー移動ガード",
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ダッシュボード")
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("キャンセルしたら移動先の初期状態 (タブ・日付) も残さない", async () => {
+    const scope = await openAbsenceFlowWithDraft();
+    // 「玉突き代行で探す」= 授業管理の玉突きタブへ (subsInitFilter を伴う移動)
+    fireEvent.click(screen.getByRole("button", { name: "玉突き代行で探す" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 下書きを片付けてからサイドバーで授業管理へ → 既定の一覧タブのまま
+    // (キャンセルした玉突きタブの要求が残っていれば「提案を作成」が出る)
+    fireEvent.click(screen.getByRole("button", { name: "下書きを消す" }));
+    fireEvent.click(scope.getAllByRole("button", { name: /^\S*\s*授業管理/ })[0]);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("授業管理")
+    );
+    expect(screen.queryByRole("button", { name: /提案を作成/ })).toBeNull();
+  });
+
+  it("下書きが無ければ「玉突き代行で探す」で玉突きタブが開く (初期状態が届く)", async () => {
+    await openAbsenceFlowWithDraft();
+    fireEvent.click(screen.getByRole("button", { name: "下書きを消す" }));
+    fireEvent.click(screen.getByRole("button", { name: "玉突き代行で探す" }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("授業管理")
+    );
+    // 授業管理は lazy なので読み込みを待つ
+    expect(
+      await screen.findByRole("button", { name: /提案を作成/ }, { timeout: 5000 })
+    ).toBeInTheDocument();
   });
 });

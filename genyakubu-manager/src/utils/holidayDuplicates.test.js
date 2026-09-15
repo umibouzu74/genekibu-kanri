@@ -6,6 +6,8 @@ const H = (over) => ({ id: 1, date: "2026-12-25", label: "休講", scope: ["全�
 describe("holidayScopeKey", () => {
   it("scope 未指定は「全部」扱い、配列の順序は問わない", () => {
     expect(holidayScopeKey({})).toBe(holidayScopeKey({ scope: ["全部"] }));
+    // 空配列はどの部門にも効かない (scheduleHelpers.isSlotCancelledByHoliday) ので「全部」と同一視しない
+    expect(holidayScopeKey({ scope: [] })).not.toBe(holidayScopeKey({ scope: ["全部"] }));
     expect(holidayScopeKey({ scope: ["中学部", "高校部"] })).toBe(
       holidayScopeKey({ scope: ["高校部", "中学部"] })
     );

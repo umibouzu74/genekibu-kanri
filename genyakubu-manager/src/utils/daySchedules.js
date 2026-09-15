@@ -64,12 +64,13 @@ export function dayScheduleTimeKeys(d) {
   return [...set];
 }
 
-// 対象学年の交わり。空 (未指定) は「全学年」として扱う (検出は広めに)
+// 対象学年の交わり。空 (未指定) は resolveSlotDaySchedule と同じく「どの
+// 学年にも効かない」なので、誰とも交わらない (「全学年」と読むと、効かない
+// 登録が本物の登録を止めたり ⚠ を出したりする)
 function sharedGrades(a, b) {
   const ga = a || [];
   const gb = b || [];
-  if (ga.length === 0) return [...gb];
-  if (gb.length === 0) return [...ga];
+  if (ga.length === 0 || gb.length === 0) return [];
   return ga.filter((g) => gb.includes(g));
 }
 
@@ -91,9 +92,7 @@ export function findSameDayDaySchedules(candidate, daySchedules, opts = {}) {
   for (const d of getDaySchedulesForDate(daySchedules, candidate.date)) {
     if (excludeId != null && d.id === excludeId) continue;
     const grades = sharedGrades(candidate.targetGrades, d.targetGrades);
-    if (grades.length === 0 && (candidate.targetGrades || []).length > 0 && (d.targetGrades || []).length > 0) {
-      continue;
-    }
+    if (grades.length === 0) continue;
     const times = dayScheduleTimeKeys(d).filter((t) => myTimes.has(t));
     out.push({ schedule: d, sharedGrades: grades, sharedTimes: times });
   }

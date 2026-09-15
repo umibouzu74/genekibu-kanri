@@ -3,10 +3,12 @@ import { WEEKDAYS } from "../../data";
 import {
   eachDateStrInRange,
   formatDateRange,
+  monthOffsetFromToday,
   overlapsRange,
   parseLocalDate,
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
+import { DayNumberLink } from "../DayNumberLink";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { S } from "../../styles/common";
 import {
@@ -59,16 +61,6 @@ export const SS_MONTH_KEY = "genyakubu:eventCalMonth";
 // 今日から ±12 か月より遠い保存値は無視する (古いタブの置き土産で 1 年先を
 // 開かないように)
 const SS_MONTH_MAX_DIST = 12;
-
-// "YYYY-MM" と今日の (year, month0) の差を月数で返す。形式外は null。
-function monthOffsetFromToday(ym, today) {
-  const m = /^(\d{4})-(\d{2})$/.exec(ym || "");
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  if (mo < 1 || mo > 12) return null;
-  return (y - today.getFullYear()) * 12 + (mo - 1 - today.getMonth());
-}
 
 function loadMonthOff(today) {
   try {
@@ -503,53 +495,17 @@ export function EventCalendarView({
                   gap: 4,
                 }}
               >
-                {onSelectDate ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectDate(ds)}
-                    aria-label={`${month}/${d} をダッシュボードで見る`}
-                    title={`${month}/${d} をダッシュボードで見る`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      margin: 0,
-                      font: "inherit",
-                      color: "inherit",
-                      cursor: "pointer",
-                      textDecoration: "underline dotted",
-                      textUnderlineOffset: 2,
-                    }}
-                  >
-                    {d}
-                  </button>
-                ) : (
-                  <span>{d}</span>
-                )}
+                <DayNumberLink
+                  d={d}
+                  month={month}
+                  ds={ds}
+                  onSelectDate={onSelectDate}
+                  onJumpToAbsenceFlow={jumpToAbsenceFlow}
+                />
                 <span
                   className="no-print"
                   style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
                 >
-                {jumpToAbsenceFlow && (
-                  <button
-                    type="button"
-                    onClick={() => jumpToAbsenceFlow(ds)}
-                    aria-label={`${month}/${d} の欠勤組み換え`}
-                    title={`${month}/${d} の欠勤組み換えを開く`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      margin: 0,
-                      fontSize: 11,
-                      lineHeight: 1,
-                      cursor: "pointer",
-                      opacity: 0.7,
-                    }}
-                  >
-                    🚑
-                  </button>
-                )}
                 {showAdd && (
                   <span
                     style={{ position: "relative" }}

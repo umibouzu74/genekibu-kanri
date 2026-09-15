@@ -10,6 +10,8 @@ import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
 import { useChordNavigation } from "./hooks/useChordNavigation";
 import { useDateKeyNav } from "./hooks/useDateKeyNav";
+import { hasOpenDialog, isTypingTarget } from "./utils/keyboardGuards";
+import { monthOffsetFromToday } from "./utils/dateHelpers";
 import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
@@ -343,18 +345,6 @@ export default function App() {
   // フォーカスが入力要素にあるときや、他のダイアログが既に開いているときは
   // ? を無効化する (文字入力や既存モーダルの Esc 処理を妨げない)。
   useEffect(() => {
-    const isTypingTarget = (el) => {
-      if (!el) return false;
-      const tag = el.tagName;
-      return (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el.isContentEditable
-      );
-    };
-    const hasOpenDialog = () =>
-      !!document.querySelector('[role="dialog"][aria-modal="true"]');
     const handleKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -529,9 +519,13 @@ export default function App() {
   );
 
   // 戻り値は「移動したか」の Promise。呼び出し側が無視してもよい
+  // before: 移動先が読む初期状態 (表示日・編集対象・タブなど) を書く関数。
+  // 移動と同じ go() の中で実行するので、下書きガードでキャンセルしたときに
+  // 初期状態だけが残って、後の無関係な移動で発火することがない
   const selectView = useCallback(
-    (v) =>
+    (v, before) =>
       navigateGuarded(v, () => {
+        before?.();
         setSelected(null);
         setView(v);
         setSidebarOpen(false);
@@ -542,8 +536,7 @@ export default function App() {
   // 一覧 (合同授業 / 回数補正など) から欠勤振替画面の特定日へ遷移する。
   const jumpToAbsenceFlow = useCallback(
     (date) => {
-      setAbsenceFlowInitDate(date || null);
-      selectView(VIEWS.ABSENCE_FLOW);
+      selectView(VIEWS.ABSENCE_FLOW, () => setAbsenceFlowInitDate(date || null));
     },
     [selectView]
   );
@@ -552,8 +545,7 @@ export default function App() {
   // カレンダーの日付クリックで共有)
   const openDashboardAt = useCallback(
     (date) => {
-      setDashInitDate(date);
-      selectView(VIEWS.DASH);
+      selectView(VIEWS.DASH, () => setDashInitDate(date));
     },
     [selectView]
   );
@@ -562,8 +554,9 @@ export default function App() {
   // 追加授業マネージャを対象 id で開く)。ダッシュボード・月間・週間で共有
   const openExtraLessonEditor = useCallback(
     (id) => {
-      setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id });
-      selectView(VIEWS.HOLIDAYS);
+      selectView(VIEWS.HOLIDAYS, () =>
+        setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id })
+      );
     },
     [selectView]
   );
@@ -766,12 +759,8 @@ export default function App() {
   // <input type="month"> の値 (YYYY-MM) と、選んだ月 → monthOff の換算
   const monthInputValue = `${vy}-${String(vm).padStart(2, "0")}`;
   const handleMonthPicked = (value) => {
-    const m = /^(\d{4})-(\d{2})$/.exec(value || "");
-    if (!m) return;
-    const base = new Date();
-    setMonthOff(
-      (Number(m[1]) - base.getFullYear()) * 12 + (Number(m[2]) - 1 - base.getMonth())
-    );
+    const off = monthOffsetFromToday(value, new Date());
+    if (off != null) setMonthOff(off);
   };
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -809,13 +798,11 @@ export default function App() {
           setSidebarOpen(false);
         }}
         onSelectEventSection={(kind) => {
-          selectView(VIEWS.HOLIDAYS);
-          setEventSectionRequest(kind);
+          selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(kind));
         }}
         masterTab={masterTab}
         onSelectMasterTab={(tabKey) => {
-          setMasterTab(tabKey);
-          selectView(VIEWS.MASTER);
+          selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
         }}
         onJumpToRequestedSubs={() =>
           navigateGuarded(VIEWS.SUBS, () => {
@@ -1059,8 +1046,7 @@ export default function App() {
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
               onJumpToSubs={(status) => {
-                setSubsInitFilter({ status: status || "open" });
-                selectView(VIEWS.SUBS);
+                selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: status || "open" }));
               }}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               isAdmin={isAdmin}
@@ -1257,13 +1243,15 @@ export default function App() {
               onSelectDate={openDashboardAt}
               onJumpToAbsenceFlow={isAdmin ? jumpToAbsenceFlow : undefined}
               onEventClick={(ev) => {
-                setEventEditRequest({ kind: ev.kind, id: ev.source.id });
-                selectView(VIEWS.HOLIDAYS);
+                selectView(VIEWS.HOLIDAYS, () =>
+                  setEventEditRequest({ kind: ev.kind, id: ev.source.id })
+                );
               }}
               onAddNewEvent={(kind, date) => {
-                eventNewTokenRef.current += 1;
-                setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
-                selectView(VIEWS.HOLIDAYS);
+                selectView(VIEWS.HOLIDAYS, () => {
+                  eventNewTokenRef.current += 1;
+                  setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
+                });
               }}
             />
           )}
@@ -1370,8 +1358,7 @@ export default function App() {
               extraLessons={extraLessons}
               onOpenMultiDayAbsence={(init) => setMultiDayAbsence(init || {})}
               onOpenChainSubstitution={(date) => {
-                setSubsInitFilter({ tab: "chain", date });
-                selectView(VIEWS.SUBS);
+                selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: "chain", date }));
               }}
               onDirtyChange={(dirty) => {
                 absenceDraftDirtyRef.current = dirty;
@@ -1614,8 +1601,7 @@ export default function App() {
               setCmdPaletteOpen(false);
             }}
             onSelectEvent={(req) => {
-              setEventEditRequest(req);
-              selectView(VIEWS.HOLIDAYS);
+              selectView(VIEWS.HOLIDAYS, () => setEventEditRequest(req));
               setCmdPaletteOpen(false);
             }}
             onOpenDayReschedule={() => {
@@ -1643,13 +1629,11 @@ export default function App() {
                 : undefined
             }
             onSelectSubsSubTab={(tabKey) => {
-              setSubsInitFilter({ tab: tabKey });
-              selectView(VIEWS.SUBS);
+              selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: tabKey }));
               setCmdPaletteOpen(false);
             }}
             onSelectMasterTab={(tabKey) => {
-              setMasterTab(tabKey);
-              selectView(VIEWS.MASTER);
+              selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

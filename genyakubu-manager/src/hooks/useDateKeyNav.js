@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { hasOpenDialog, isTypingTarget } from "../utils/keyboardGuards";
 
 // 日付・月を持つビュー (日別ダッシュボード / 月間 / イベントカレンダー /
 // 週間) 共通のキーボード移動。
@@ -11,16 +12,6 @@ import { useEffect, useRef } from "react";
 //
 // enabled=false のときはリスナーを付けない (ビューが表示されていない間や、
 // 代行モードのように日付が固定される間)。
-
-const isTypingTarget = (el) => {
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
-};
-
-const hasOpenDialog = () =>
-  typeof document !== "undefined" &&
-  !!document.querySelector('[role="dialog"][aria-modal="true"]');
 
 export const DATE_KEY_NAV_KEYS = Object.freeze({
   prev: "ArrowLeft",

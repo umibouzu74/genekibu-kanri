@@ -371,3 +371,65 @@ describe("AbsenceWorkflowView の欠勤登録の理由メモ", () => {
     });
   });
 });
+
+describe("AbsenceWorkflowView の日付ジャンプ (initDate) と下書き", () => {
+  function makeDraft() {
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+  }
+  const NEXT_MON = "2026-09-28";
+
+  it("下書きがある状態で別の日へジャンプすると確認を出し、キャンセルなら日付も下書きも保つ", async () => {
+    const onConsumeInitDate = vi.fn();
+    const { rerender } = renderView({ onConsumeInitDate });
+    makeDraft();
+    expect(screen.getByRole("button", { name: /保存/ })).toBeInTheDocument();
+    const dateInput = screen.getByDisplayValue(MON);
+    rerender(
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <AbsenceWorkflowView
+            slots={SLOTS} subs={[]} adjustments={[]} sessionOverrides={[]} holidays={[]}
+            examPeriods={[]} biweeklyAnchors={[]} classSets={[]}
+            displayCutoff={{ groups: [], cohorts: [] }} partTimeStaff={[]} subjects={[]}
+            timetables={TIMETABLES} saveSubs={vi.fn()} saveAdjustments={vi.fn()}
+            saveSessionOverrides={vi.fn()} isAdmin initDate={NEXT_MON}
+            onConsumeInitDate={onConsumeInitDate}
+          />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/下書きが 1 件保存されていません/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(dateInput.value).toBe(MON);
+    expect(screen.getByRole("button", { name: /保存/ })).toBeInTheDocument();
+    // ジャンプ要求は消費済み (もう一度同じ日付を頼まれても再び聞かない)
+    expect(onConsumeInitDate).toHaveBeenCalled();
+  });
+
+  it("下書きが無ければ確認なしで日付を切り替える", () => {
+    const onConsumeInitDate = vi.fn();
+    const { rerender } = renderView({ onConsumeInitDate });
+    rerender(
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <AbsenceWorkflowView
+            slots={SLOTS} subs={[]} adjustments={[]} sessionOverrides={[]} holidays={[]}
+            examPeriods={[]} biweeklyAnchors={[]} classSets={[]}
+            displayCutoff={{ groups: [], cohorts: [] }} partTimeStaff={[]} subjects={[]}
+            timetables={TIMETABLES} saveSubs={vi.fn()} saveAdjustments={vi.fn()}
+            saveSessionOverrides={vi.fn()} isAdmin initDate={NEXT_MON}
+            onConsumeInitDate={onConsumeInitDate}
+          />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    expect(screen.getByDisplayValue(NEXT_MON)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onConsumeInitDate).toHaveBeenCalled();
+  });
+});

@@ -1123,13 +1123,9 @@ export function WeekView({
             return (
             <div
               key={d}
+              // 今日の列は黄枠で目立たせる (styles/appShell.css の .week-col-today)
               className={isTodayCol ? "week-col-today" : undefined}
-              style={{
-                borderRadius: 8,
-                // 今日の列は黄枠で目立たせる (月間カレンダーの今日と同じ色)
-                outline: isTodayCol ? "2px solid #e6a800" : "none",
-                outlineOffset: isTodayCol ? 1 : 0,
-              }}
+              style={{ borderRadius: 8 }}
             >
               <div
                 style={{

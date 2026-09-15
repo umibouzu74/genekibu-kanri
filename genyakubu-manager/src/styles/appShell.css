@@ -175,3 +175,12 @@ td[role="button"]:focus-visible {
   input, select, textarea { font-size: 10px !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
+
+/* 週間ビュー: 今日を含む列の黄枠 (月間カレンダーの今日と同じ色)。
+   紙面では枠を出さない */
+@media screen {
+  .week-col-today {
+    outline: 2px solid #e6a800;
+    outline-offset: 1px;
+  }
+}

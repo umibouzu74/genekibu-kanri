@@ -9,10 +9,14 @@
 
 const sortedKey = (arr) => [...(arr || [])].map(String).sort().join("|");
 
-/** 対象 (部門 / 学年 / 科目キーワード) の署名。順序に依らず比べる */
+/**
+ * 対象 (部門 / 学年 / 科目キーワード) の署名。順序に依らず比べる。
+ * scope が無い (undefined) は「全部」、空配列は isSlotCancelledByHoliday と
+ * 同じく「どの部門にも効かない」なので「全部」とは別物として扱う
+ */
 export function holidayScopeKey(h) {
   return [
-    sortedKey(h?.scope?.length ? h.scope : ["全部"]),
+    sortedKey(Array.isArray(h?.scope) ? h.scope : ["全部"]),
     sortedKey(h?.targetGrades),
     sortedKey(h?.subjKeywords),
   ].join("#");

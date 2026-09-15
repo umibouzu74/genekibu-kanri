@@ -48,6 +48,24 @@
   学年・時間帯が重なると後から登録した方が黙って効かない (先勝ち) ので
   登録を止め、一覧でも先の登録に隠れている件に ⚠ を付ける
   (`daySchedules.findSameDayDaySchedules` / `findShadowedDaySchedules`)
+- **校正レビューの反映** (同日):
+  - 欠勤組み換えに下書きがある状態で**同じビュー内の別の日へジャンプ**
+    (Cmd+K の「M/D の欠勤組み換え」など) しても無言で消えていた。App の
+    ガードは別ビューへの移動しか見ないので、ビュー側の `initDate` の効果で
+    確認を挟む (キャンセルなら日付も下書きも保つ)
+  - 移動先の初期状態 (表示日・編集対象・タブ) を `selectView(v, before)` の
+    中で書くようにした。ガードでキャンセルしたとき初期状態だけが残り、後の
+    無関係な移動で発火していた (ダッシュボードが別の日で開く、編集フォームが
+    勝手に開く、玉突きタブになる)
+  - 特別時程の同日重複: 対象学年が空の登録は `resolveSlotDaySchedule` と
+    同じく「誰にも効かない」ので相手にしない (「全学年」と読んで本物の登録を
+    止めていた)。休講日の重複: `scope: []` は `isSlotCancelledByHoliday` と
+    同じくどの部門にも効かないので「全部」と同一視しない
+  - 整理: キー操作の「入力中 / ダイアログ表示中」の判定を
+    `utils/keyboardGuards` に集約 (Cmd+K・chord・← → t の 3 リスナーで共有)、
+    月ピッカーの換算を `dateHelpers.monthOffsetFromToday` に、日付の数字
+    ボタン + 🚑 を `components/DayNumberLink` に共通化、週間の今日の列の枠を
+    CSS (`.week-col-today`) へ
 - テスト: `useDateKeyNav.test.jsx` (新規)、`App.absenceGuard.test.jsx` (新規)、
   `timetableOverlap.test.js` (新規)、`holidayDuplicates.test.js` (新規)、
   `DashboardDateNav.test.jsx` / `ShortcutsHelp.test.jsx` / `App.smoke.test.jsx` /

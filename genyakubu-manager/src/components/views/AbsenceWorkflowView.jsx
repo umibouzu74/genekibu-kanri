@@ -80,19 +80,6 @@ export function AbsenceWorkflowView({
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
 
-  // initDate を消費通知 (親側でクリア)。マウント中に再ジャンプされた場合は
-  // 新しい日付に切り替え、保留中のドラフトは破棄する (別の日付の作業を
-  // 紛れ込ませないため)。
-  useEffect(() => {
-    if (!initDate) return;
-    if (initDate !== date) {
-      setDate(initDate);
-      draft.reset();
-    }
-    onConsumeInitDate?.();
-    // date / draft / onConsumeInitDate は依存に含めない (initDate 変化時のみ実行)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initDate]);
 
   // ドロップダウン外クリック / Escape で閉じる (K3c: キーボードでも
   // 閉じられるように。IME 変換中の Escape は無視する)
@@ -483,6 +470,45 @@ export function AbsenceWorkflowView({
     onDirtyChangeRef.current?.(draftCount > 0);
   }, [draftCount]);
   useEffect(() => () => onDirtyChangeRef.current?.(false), []);
+
+  // initDate を消費通知 (親側でクリア)。マウント中に再ジャンプされた場合は
+  // 新しい日付に切り替え、保留中のドラフトは破棄する (別の日付の作業を
+  // 紛れ込ませないため)。下書きがあるときは他のビュー移動 (App の
+  // navigateGuarded) と同じく確認を挟む — 同じビューに留まるジャンプは
+  // App 側のガードを通らないので、ここで聞かないと無言で消える
+  useEffect(() => {
+    if (!initDate) return undefined;
+    if (initDate === date) {
+      onConsumeInitDate?.();
+      return undefined;
+    }
+    if (draftCount === 0) {
+      setDate(initDate);
+      draft.reset();
+      onConsumeInitDate?.();
+      return undefined;
+    }
+    let stale = false;
+    confirm({
+      title: "下書きがあります",
+      message: `欠勤組み換えの下書きが ${draftCount} 件保存されていません。破棄して ${initDate} へ移動しますか？`,
+      okLabel: "破棄して移動",
+      tone: "danger",
+    }).then((ok) => {
+      if (stale) return;
+      if (ok) {
+        setDate(initDate);
+        draft.reset();
+      }
+      onConsumeInitDate?.();
+    });
+    return () => {
+      stale = true;
+    };
+    // date / draft / draftCount / confirm / onConsumeInitDate は依存に含めない
+    // (initDate 変化時のみ実行)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initDate]);
 
   const handleDiscard = useCallback(async () => {
     const ok = await confirm({

@@ -243,10 +243,14 @@ describe("findSameDayDaySchedules / findShadowedDaySchedules", () => {
     expect(findSameDayDaySchedules({ date: "2026-10-07", targetGrades: ["附中1"] }, [cut()], { excludeId: 1 })).toEqual([]);
   });
 
-  it("対象学年が空なら全学年として交わる (検出は広め)", () => {
-    const r = findSameDayDaySchedules({ date: "2026-10-07", targetGrades: [], cancelTimes: ["16:25-17:25"] }, [cut()]);
-    expect(r[0].sharedGrades).toEqual(["附中1", "附中2"]);
-    expect(r[0].sharedTimes).toEqual(["16:25-17:25"]);
+  it("対象学年が空なら (resolveSlotDaySchedule と同じく誰にも効かないので) 相手にしない", () => {
+    expect(
+      findSameDayDaySchedules({ date: "2026-10-07", targetGrades: [], cancelTimes: ["16:25-17:25"] }, [cut()])
+    ).toEqual([]);
+    // 逆も同じ: 学年の無い既存は本物の登録を止めない
+    expect(
+      findSameDayDaySchedules({ date: "2026-10-07", targetGrades: ["附中1"], cancelTimes: ["16:25-17:25"] }, [cut({ targetGrades: [] })])
+    ).toEqual([]);
   });
 
   it("後から登録した同じ (学年, 時間帯) の id を返す。先の方・別時間帯は返さない", () => {
