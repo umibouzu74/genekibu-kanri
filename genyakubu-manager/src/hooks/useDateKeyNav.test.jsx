@@ -11,6 +11,16 @@ function Harness({ enabled = true, onPrev, onNext, onToday }) {
     <div>
       <input aria-label="text" />
       <button>b</button>
+      <div role="radiogroup">
+        <button role="radio" aria-checked="true" aria-label="radio-a">
+          a
+        </button>
+      </div>
+      <div role="listbox">
+        <span>
+          <button aria-label="in-listbox">x</button>
+        </span>
+      </div>
     </div>
   );
 }
@@ -66,5 +76,26 @@ describe("useDateKeyNav", () => {
     rerender(<Harness enabled onPrev={later} onNext={() => {}} onToday={() => {}} />);
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(later).toHaveBeenCalledTimes(1);
+  });
+
+  it("矢印キーを自前で使う role (radio / listbox の中) にフォーカスがある間は ← / → を握らない (t は効く)", () => {
+    const { onPrev, onNext, onToday, getByLabelText } = mount();
+    const radio = getByLabelText("radio-a");
+    radio.focus();
+    fireEvent.keyDown(radio, { key: "ArrowLeft" });
+    fireEvent.keyDown(radio, { key: "ArrowRight" });
+    expect(onPrev).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+    fireEvent.keyDown(radio, { key: "t" });
+    expect(onToday).toHaveBeenCalledTimes(1);
+    // 祖先が listbox でも同じ
+    const inList = getByLabelText("in-listbox");
+    inList.focus();
+    fireEvent.keyDown(inList, { key: "ArrowRight" });
+    expect(onNext).not.toHaveBeenCalled();
+    // 素のボタンに戻れば効く
+    inList.blur();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onNext).toHaveBeenCalledTimes(1);
   });
 });

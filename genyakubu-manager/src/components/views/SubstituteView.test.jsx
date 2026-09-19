@@ -109,62 +109,43 @@ function renderView(props = {}) {
 const monthInput = () => screen.getByLabelText("月");
 
 describe("SubstituteView の新規代行と月フィルタ", () => {
-  it("＋ 新規代行 で来月の代行を登録したら、月フィルタをその月へ動かして一覧に出す", () => {
-    const { onNew, rerenderWith } = renderView();
+  it("この画面から来月の代行を登録したら (createdSubs)、月フィルタをその月へ動かして一覧に出す", () => {
+    const { rerenderWith } = renderView();
     expect(monthInput().value).toBe(THIS_MONTH);
-    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
-    expect(onNew).toHaveBeenCalledTimes(1);
-    // App 側のフォームが保存して subs が増える
-    rerenderWith({ subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
+    const created = [sub({ id: 9, date: `${NEXT_MONTH}-03` })];
+    // App 側のフォームが保存して subs が増え、作ったレコードが createdSubs で届く
+    rerenderWith({ subs: created, createdSubs: created });
     expect(monthInput().value).toBe(NEXT_MONTH);
     expect(screen.getByText("西岡")).toBeInTheDocument();
   });
 
   it("当月の代行なら月フィルタは動かさない", () => {
     const { rerenderWith } = renderView();
-    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
-    rerenderWith({ subs: [sub({ id: 9, date: `${THIS_MONTH}-20` })] });
+    const created = [sub({ id: 9, date: `${THIS_MONTH}-20` })];
+    rerenderWith({ subs: created, createdSubs: created });
     expect(monthInput().value).toBe(THIS_MONTH);
     expect(screen.getByText("西岡")).toBeInTheDocument();
   });
 
-  it("この画面のフォームを開いていない (他端末の同期など) なら動かさない", () => {
+  it("他端末の同期で subs が増えただけ (createdSubs なし) なら動かさない", () => {
     const { rerenderWith } = renderView();
     rerenderWith({ subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
     expect(monthInput().value).toBe(THIS_MONTH);
   });
 
-  it("フォームを保存せず閉じた後は、他端末の同期で来月の代行が増えても動かさない", () => {
-    const { rerenderWith } = renderView({ newSubOpen: false });
-    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
-    rerenderWith({ newSubOpen: true }); // App がフォームを開いた
-    rerenderWith({ newSubOpen: false }); // 保存せず閉じた
-    rerenderWith({ newSubOpen: false, subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
-    expect(monthInput().value).toBe(THIS_MONTH);
-  });
-
-  it("保存で閉じる (subs の増加とフォームの close が同じ描画) なら追従する", () => {
-    const { rerenderWith } = renderView({ newSubOpen: false });
-    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
-    rerenderWith({ newSubOpen: true });
-    rerenderWith({ newSubOpen: false, subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
-    expect(monthInput().value).toBe(NEXT_MONTH);
-  });
-
   it("「すべて」(月フィルタ空) はそのまま", () => {
     const { rerenderWith } = renderView({ subs: [sub({ id: 1 })] });
     fireEvent.change(monthInput(), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
-    rerenderWith({ subs: [sub({ id: 1 }), sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
+    const created = [sub({ id: 9, date: `${NEXT_MONTH}-03` })];
+    rerenderWith({ subs: [sub({ id: 1 }), ...created], createdSubs: created });
     expect(monthInput().value).toBe("");
   });
 
-  it("一覧の空表示にある「＋ 代行を登録」からでも同じ", () => {
-    const { onNew, rerenderWith } = renderView();
+  it("＋ 新規代行 と空表示の ＋ 代行を登録 はどちらも onNew を呼ぶ", () => {
+    const { onNew } = renderView();
+    fireEvent.click(screen.getByRole("button", { name: "＋ 新規代行" }));
     fireEvent.click(screen.getByRole("button", { name: "＋ 代行を登録" }));
-    expect(onNew).toHaveBeenCalledTimes(1);
-    rerenderWith({ subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
-    expect(monthInput().value).toBe(NEXT_MONTH);
+    expect(onNew).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -214,11 +195,11 @@ describe("SubstituteView の代行一覧の並び替えと日付ジャンプ", (
     expect(dates()).toEqual([`${THIS_MONTH}-05`, `${THIS_MONTH}-12`, `${THIS_MONTH}-20`]);
   });
 
-  it("📅 は onJumpToAbsenceFlow に日付を渡す", () => {
+  it("🚑 は onJumpToAbsenceFlow に日付を渡す", () => {
     const onJumpToAbsenceFlow = vi.fn();
     renderView({ subs: SUBS, onJumpToAbsenceFlow });
     fireEvent.click(
-      screen.getByRole("button", { name: `${THIS_MONTH}-12 の欠勤振替画面を開く` })
+      screen.getByRole("button", { name: new RegExp(`^${THIS_MONTH}-12 .*の欠勤組み換えを開く$`) })
     );
     expect(onJumpToAbsenceFlow).toHaveBeenCalledWith(`${THIS_MONTH}-12`);
   });

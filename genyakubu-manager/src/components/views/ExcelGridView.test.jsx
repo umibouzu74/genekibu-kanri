@@ -633,3 +633,54 @@ describe("ExcelGridView (代行モードの仮代行)", () => {
     ).toBeNull();
   });
 });
+
+// 代行モードの日付は ← / → / t でも送れる (hooks/useDateKeyNav)。日曜は
+// 表せないので飛ばす。ダッシュボード内 (dashboardMode) は DashboardDateNav が
+// 同じキーを持つので、こちらでは付けない (二重に動く)
+describe("ExcelGridView (代行モードのキーボード日付移動)", () => {
+  const SLOTS = [slot({ id: 1, teacher: "田中" }), slot({ id: 2, day: "土", teacher: "佐藤" })];
+  const dateInput = (container) => container.querySelector('input[type="date"]');
+
+  it("← / → で代行管理日付を 1 日ずつ送り、日曜は飛ばす", () => {
+    const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+    // 2026-07-18 は土曜
+    enterSubMode(container, "2026-07-18");
+    expect(dateInput(container).value).toBe("2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    // 日曜 (7/19) を飛ばして月曜
+    expect(dateInput(container).value).toBe("2026-07-20");
+    expect(screen.getByText("月曜日 - 代行モード")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(dateInput(container).value).toBe("2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(dateInput(container).value).toBe("2026-07-17");
+  });
+
+  it("t で今日へ", () => {
+    vi.useFakeTimers({ now: new Date(2026, 6, 15, 12, 0, 0), toFake: ["Date"] });
+    try {
+      const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+      enterSubMode(container, "2026-07-18");
+      fireEvent.keyDown(window, { key: "t" });
+      expect(dateInput(container).value).toBe("2026-07-15");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("代行モードでないとき・入力中・ダッシュボード内では効かない", () => {
+    const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(dateInput(container).value).toBe("");
+    enterSubMode(container, "2026-07-18");
+    // 日付入力にフォーカスがあるときは握らない (input の ← → はカーソル移動)
+    fireEvent.keyDown(dateInput(container), { key: "ArrowRight" });
+    expect(dateInput(container).value).toBe("2026-07-18");
+    cleanup();
+    // ダッシュボード内は DashboardDateNav 側の担当
+    const dash = renderGrid({ dashboardMode: true, enableSubMode: true, slots: SLOTS });
+    enterSubMode(dash.container, "2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(dateInput(dash.container).value).toBe("2026-07-18");
+  });
+});

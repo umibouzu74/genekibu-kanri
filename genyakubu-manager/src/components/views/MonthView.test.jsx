@@ -445,32 +445,46 @@ describe("MonthView 多担任コマの代行", () => {
 describe("MonthView 日付から跳ぶ", () => {
   const decProps = { ...baseProps, year: 2026, month: 12 };
 
-  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す", () => {
+  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す。凡例も出る", () => {
     const onSelectDate = vi.fn();
     render(<MonthView {...decProps} onSelectDate={onSelectDate} />);
-    fireEvent.click(screen.getByRole("button", { name: "12/7 をダッシュボードで見る" }));
+    fireEvent.click(screen.getByRole("button", { name: "2026-12-07 (月) をダッシュボードで見る" }));
     expect(onSelectDate).toHaveBeenCalledWith("2026-12-07");
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード"
+    );
   });
 
-  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)", () => {
+  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)。凡例に 🚑 が加わる", () => {
     const onJumpToAbsenceFlow = vi.fn();
     render(
-      <MonthView {...decProps} isAdmin onJumpToAbsenceFlow={onJumpToAbsenceFlow} />
+      <MonthView
+        {...decProps}
+        isAdmin
+        onSelectDate={vi.fn()}
+        onJumpToAbsenceFlow={onJumpToAbsenceFlow}
+      />
     );
-    const btn = screen.getByRole("button", { name: "12/7 の欠勤組み換え" });
+    const btn = screen.getByRole("button", { name: "2026-12-07 (月) の欠勤組み換えを開く" });
+    expect(btn.getAttribute("title")).toBe("2026-12-07 (月) の欠勤組み換えを開く");
     expect(btn.className).toContain("no-print");
     fireEvent.click(btn);
     expect(onJumpToAbsenceFlow).toHaveBeenCalledWith("2026-12-07");
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード / 🚑 = 欠勤組み換え"
+    );
   });
 
-  it("閲覧者には 🚑 を出さない", () => {
+  it("閲覧者には 🚑 を出さない (凡例にも出ない)", () => {
     render(<MonthView {...decProps} isAdmin={false} onJumpToAbsenceFlow={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: /の欠勤組み換え$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+    expect(screen.queryByTestId("day-number-legend")).toBeNull();
   });
 
-  it("どちらも渡さなければ日付はボタンにならない", () => {
+  it("どちらも渡さなければ日付はボタンにならない (凡例も無し)", () => {
     render(<MonthView {...decProps} />);
     expect(screen.queryByRole("button", { name: /をダッシュボードで見る$/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /の欠勤組み換え$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+    expect(screen.queryByTestId("day-number-legend")).toBeNull();
   });
 });

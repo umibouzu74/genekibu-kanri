@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { hasOpenDialog, isTypingTarget } from "../utils/keyboardGuards";
+import {
+  hasArrowKeyOwnerFocus,
+  hasOpenDialog,
+  isTypingTarget,
+} from "../utils/keyboardGuards";
 
 // 日付・月を持つビュー (日別ダッシュボード / 月間 / イベントカレンダー /
 // 週間) 共通のキーボード移動。
@@ -7,7 +11,11 @@ import { hasOpenDialog, isTypingTarget } from "../utils/keyboardGuards";
 //   t      = 今日 (今週 / 今月)
 // 入力要素にフォーカスがあるとき・aria-modal なダイアログが開いているとき・
 // 修飾キー付きは握り潰す (chord ナビゲーション `useChordNavigation` と同じ
-// 判定)。ビューは onPrev / onNext / onToday を渡すだけでよく、キーの割り当ては
+// 判定)。← / → だけはさらに、矢印キーを自前で使うウィジェット (role=radio
+// 群・listbox・tab・menu など。`keyboardGuards.hasArrowKeyOwnerFocus`) に
+// フォーカスがある間も握らない — isTypingTarget は Cmd+K / chord と共有なので
+// そちらは広げず、この hook だけで見る。
+// ビューは onPrev / onNext / onToday を渡すだけでよく、キーの割り当ては
 // ここ 1 か所 (ShortcutsHelp の「日付の移動」節と揃える)。
 //
 // enabled=false のときはリスナーを付けない (ビューが表示されていない間や、
@@ -32,6 +40,8 @@ export function useDateKeyNav({ onPrev, onNext, onToday, enabled = true }) {
       if (isTypingTarget(e.target)) return;
       if (hasOpenDialog()) return;
       const key = typeof e.key === "string" ? e.key : "";
+      const isArrow = key === DATE_KEY_NAV_KEYS.prev || key === DATE_KEY_NAV_KEYS.next;
+      if (isArrow && hasArrowKeyOwnerFocus()) return;
       let fn = null;
       if (key === DATE_KEY_NAV_KEYS.prev) fn = handlers.current.onPrev;
       else if (key === DATE_KEY_NAV_KEYS.next) fn = handlers.current.onNext;

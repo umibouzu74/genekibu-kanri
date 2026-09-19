@@ -8,9 +8,9 @@ import {
   parseLocalDate,
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
-import { DayNumberLink } from "../DayNumberLink";
+import { DayNumberLegend, DayNumberLink } from "../DayNumberLink";
+import { MonthNav } from "../MonthNav";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
-import { S } from "../../styles/common";
 import {
   DAY_SCHEDULE_META,
   EVENT_KIND,
@@ -54,21 +54,32 @@ const ADD_BUTTONS = Object.freeze([
 
 // 表示中の月はタブ単位 (sessionStorage) で覚える。休講を入れに別の画面へ
 // 寄って戻ると今月に戻ってしまい、月を送り直しになるため。タブを閉じれば
-// 今月に戻る。値は絶対の "YYYY-MM" (今日からの差 monthOff で持つと、日を
-// 跨いで読み直したときに別の月になる)。Dashboard の SS_START_DATE_KEY と
+// 今月に戻る。値は絶対の "YYYY-MM"。state も同じ絶対値で持つ — 今日からの
+// 差 (monthOff) で持つと、月末に開きっぱなしのタブが 0 時を跨いだ瞬間に
+// 表示が翌月へ進み、保存値まで書き換わる。Dashboard の SS_START_DATE_KEY と
 // 同じ扱い (try/catch で包み、読めなければ今月)。
 export const SS_MONTH_KEY = "genyakubu:eventCalMonth";
 // 今日から ±12 か月より遠い保存値は無視する (古いタブの置き土産で 1 年先を
 // 開かないように)
 const SS_MONTH_MAX_DIST = 12;
 
-function loadMonthOff(today) {
+// "YYYY-MM" ± n か月
+function shiftYm(ym, delta) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// 保存された "YYYY-MM" を読む。無い / 壊れている / 遠すぎるときは今月
+function loadMonth(today) {
+  const cur = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   try {
-    const off = monthOffsetFromToday(sessionStorage.getItem(SS_MONTH_KEY), today);
-    if (off == null || Math.abs(off) > SS_MONTH_MAX_DIST) return 0;
-    return off;
+    const saved = sessionStorage.getItem(SS_MONTH_KEY);
+    const off = monthOffsetFromToday(saved, today);
+    if (off == null || Math.abs(off) > SS_MONTH_MAX_DIST) return cur;
+    return saved;
   } catch {
-    return 0;
+    return cur;
   }
 }
 
@@ -110,26 +121,30 @@ export function EventCalendarView({
   // new Date() を 1 回だけ読むと、開きっぱなしのタブで昨日を強調し続ける
   const todayStr = useToday();
   const today = useMemo(() => parseLocalDate(todayStr), [todayStr]);
-  const [monthOff, setMonthOff] = useState(() => loadMonthOff(today));
+  const todayYm = todayStr.slice(0, 7);
+  // 表示中の月 (絶対の "YYYY-MM")。今日が変わっても勝手に動かない
+  const [ym, setYm] = useState(() => loadMonth(today));
   const jumpToAbsenceFlow =
     isAdmin && onJumpToAbsenceFlow ? onJumpToAbsenceFlow : null;
 
-  const vd = useMemo(
-    () => new Date(today.getFullYear(), today.getMonth() + monthOff, 1),
-    [today, monthOff]
-  );
-  const year = vd.getFullYear();
-  const month = vd.getMonth() + 1; // 1-indexed
-  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const [year, month] = ym.split("-").map(Number); // month は 1-indexed
+  const isCurrentMonth = ym === todayYm;
   useEffect(() => {
     saveMonth(ym);
   }, [ym]);
 
   // ← / → で前後の月、t で今月 (入力中・ダイアログ中は効かない)
+  const goPrevMonth = () => setYm((cur) => shiftYm(cur, -1));
+  const goNextMonth = () => setYm((cur) => shiftYm(cur, 1));
+  const goThisMonth = () => setYm(todayYm);
+  // <input type="month"> の値。形式外 (空など) は無視
+  const pickMonth = (value) => {
+    if (monthOffsetFromToday(value, today) != null) setYm(value);
+  };
   useDateKeyNav({
-    onPrev: () => setMonthOff((o) => o - 1),
-    onNext: () => setMonthOff((o) => o + 1),
-    onToday: () => setMonthOff(0),
+    onPrev: goPrevMonth,
+    onNext: goNextMonth,
+    onToday: goThisMonth,
   });
   const dim = useMemo(
     () => new Date(year, month, 0).getDate(),
@@ -342,46 +357,17 @@ export function EventCalendarView({
           border: "1px solid #e0e0e0",
         }}
       >
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {/* 年月表示は紙面に必要なので残し、操作ボタンだけ no-print にする */}
-          <button
-            type="button"
-            className="no-print"
-            onClick={() => setMonthOff((o) => o - 1)}
-            style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
-          >
-            ◀
-          </button>
-          <span style={{ fontSize: 15, fontWeight: 800 }}>
-            {year}年{month}月
-          </span>
-          <button
-            type="button"
-            className="no-print"
-            onClick={() => setMonthOff((o) => o + 1)}
-            style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
-          >
-            ▶
-          </button>
-          <button
-            type="button"
-            className="no-print"
-            onClick={() => setMonthOff(0)}
-            style={{ ...S.btn(monthOff === 0), fontSize: 11 }}
-          >
-            今月
-          </button>
-          <input
-            type="month"
-            className="no-print"
-            aria-label="表示する月"
-            title="表示する月を選ぶ (← / → で前後の月、t で今月)"
-            value={ym}
-            onChange={(e) => {
-              const off = monthOffsetFromToday(e.target.value, today);
-              if (off != null) setMonthOff(off);
-            }}
-            style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {/* 月送り (講師別月間と共通の MonthNav)。年月表示は紙面に必要なので
+              残り、操作ボタンだけ no-print */}
+          <MonthNav
+            year={year}
+            month={month}
+            onPrev={goPrevMonth}
+            onNext={goNextMonth}
+            onToday={goThisMonth}
+            onPick={pickMonth}
+            isCurrent={isCurrentMonth}
           />
           <PrintButton style={{ fontSize: 11, marginLeft: 8 }} />
         </div>
@@ -418,6 +404,12 @@ export function EventCalendarView({
           onChange={onChangeVisibility}
           availableTags={availableTags}
           includeExtraLessons
+        />
+        {/* 日付の数字 / 🚑 が何かの凡例 (導線を渡したときだけ) */}
+        <DayNumberLegend
+          onSelectDate={onSelectDate}
+          onJumpToAbsenceFlow={jumpToAbsenceFlow}
+          style={{ marginLeft: "auto" }}
         />
       </div>
 
@@ -497,7 +489,6 @@ export function EventCalendarView({
               >
                 <DayNumberLink
                   d={d}
-                  month={month}
                   ds={ds}
                   onSelectDate={onSelectDate}
                   onJumpToAbsenceFlow={jumpToAbsenceFlow}

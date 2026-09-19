@@ -35,17 +35,25 @@ const OTHER = {
   note: "",
 };
 
-function setup({ subs = [], saveSubs = () => {}, unavailable = [], daySchedules = [], toasts } = {}) {
+function setup({
+  subs = [],
+  saveSubs = () => {},
+  unavailable = [],
+  daySchedules = [],
+  slots = [PREP, OTHER],
+  holidays = [],
+  toasts,
+} = {}) {
   const wrapper = toasts
     ? ({ children }) => <ToastProvider render={() => null}>{children}</ToastProvider>
     : undefined;
   return renderHook(
     () =>
       useSubstitutionMode({
-        slots: [PREP, OTHER],
+        slots,
         subs,
         saveSubs,
-        holidays: [],
+        holidays,
         examPeriods: [],
         partTimeStaff: [],
         subjects: [],
@@ -112,6 +120,40 @@ describe("useSubstitutionMode の仮代行 (コマ × 講師)", () => {
     expect(result.current.uncoveredSlots).toEqual([
       { slotId: 1, originalTeacher: "福江", date: SAT },
     ]);
+  });
+});
+
+describe("useSubstitutionMode の玉突き提案 (コマ × 講師)", () => {
+  // プレップと同じ時間 (14:00-16:00) の高1 のコマが休講で、西岡・杉原が空く。
+  // 香川と福江の 2 人が休むと、提案は (コマ, 元講師) ごとに別の人になる
+  const FREE_A = { ...OTHER, id: 3, time: "14:00-16:00", grade: "高1", teacher: "西岡" };
+  const FREE_B = { ...OTHER, id: 4, time: "14:00-16:00", grade: "高1", teacher: "杉原" };
+  const HOLIDAY = [{ id: 1, date: SAT, label: "高1休講", scope: ["全部"], targetGrades: ["高1"] }];
+
+  it("同じコマの 2 人に別々の提案が付き、getSuggestion は講師ごとに引ける", () => {
+    const { result } = setup({
+      slots: [PREP, FREE_A, FREE_B],
+      holidays: HOLIDAY,
+      unavailable: ["香川", "福江"],
+    });
+    act(() => result.current.setSubDate(SAT));
+    expect(result.current.uncoveredSlots).toHaveLength(2);
+    expect(result.current.chainSuggestions).toHaveLength(2);
+    const forKagawa = result.current.getSuggestion(1, "香川");
+    const forFukue = result.current.getSuggestion(1, "福江");
+    expect(forKagawa).toMatchObject({ slotId: 1, originalTeacher: "香川" });
+    expect(forFukue).toMatchObject({ slotId: 1, originalTeacher: "福江" });
+    // 同じ人を 2 人に提案しない (別々の名前)
+    expect(forKagawa.suggestedSubstitute).not.toBe(forFukue.suggestedSubstitute);
+    expect(new Set([forKagawa.suggestedSubstitute, forFukue.suggestedSubstitute])).toEqual(
+      new Set(["西岡", "杉原"])
+    );
+    // 索引はコマ id だけではなく (コマ, 講師)。後の講師が先の講師を上書きしない
+    expect(result.current.suggestionMap.size).toBe(2);
+    expect(result.current.suggestionMap.get(1)).toBeUndefined();
+    // 休まない人・無いコマは null
+    expect(result.current.getSuggestion(1, "川井")).toBeNull();
+    expect(result.current.getSuggestion(99, "香川")).toBeNull();
   });
 });
 

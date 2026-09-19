@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   ADJ_COLOR,
   DAY_BG as DB,
@@ -29,6 +29,7 @@ import {
   overlapsRange,
   formatDateRange,
   dateToDay,
+  fmtMD,
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
@@ -68,12 +69,6 @@ function weekMondayOf(dateStr) {
   if (!dt) return dateStr;
   const dow = dt.getDay(); // 日=0 .. 土=6
   return shiftDate(dateStr, dow === 0 ? 1 : 1 - dow);
-}
-
-// "YYYY-MM-DD" → "9/14" (曜日ヘッダ・期間表示用の短い表記)
-function shortMD(dateStr) {
-  const [, m, d] = dateStr.split("-").map(Number);
-  return `${m}/${d}`;
 }
 
 // 休講チップの配色。EVENT_SECTIONS と同じ 🚫 を頭に付ける
@@ -192,7 +187,12 @@ export function WeekView({
     return m;
   }, [weekMonday]);
   const weekSaturday = weekDates["土"];
-  const isCurrentWeek = weekMonday <= todayStr && todayStr <= weekSaturday;
+  // 「今週」= 今日を基準にしたときに出る週。日曜は翌週を指すので、月〜土の
+  // 範囲で今日を挟む判定だと日曜に「今週」が点かず t / 今週が効いていない
+  // ように見える
+  const isCurrentWeek = weekMondayOf(todayStr) === weekMonday;
+  const todayIsSunday = parseLocalDate(todayStr)?.getDay() === 0;
+  const weekInputId = useId();
   useDateKeyNav({
     onPrev: () => setWeekBase((b) => shiftDate(b, -7)),
     onNext: () => setWeekBase((b) => shiftDate(b, 7)),
@@ -234,6 +234,12 @@ export function WeekView({
   // 基準日から 14 日の [start,end] (メモの恩恵を狙って 1 回だけ作る)。
   // 週を送ってもバナーは「基準日から 2 週間」のまま
   const [winStart, winEnd] = useMemo(() => getUpcomingWindow(weekBase), [weekBase]);
+  // バナー見出しの「直近2週間の」。基準日が今日でないときは実際の窓
+  // ("12/8〜12/22 の") を出す — 週を送った後も「直近」と書くと嘘になる
+  const windowPrefix =
+    weekBase === todayStr
+      ? "直近2週間の"
+      : `${fmtMD(fmtDate(winStart))}〜${fmtMD(fmtDate(winEnd))} の`;
 
   // slotId → slot の逆引き。合同・移動・振替・代行の各 useMemo が
   // それぞれローカルで Map を作っていたため、slots に変化が無くても
@@ -616,7 +622,12 @@ export function WeekView({
           marginBottom: 10,
         }}
       >
-        <span style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>表示する週</span>
+        <label
+          htmlFor={weekInputId}
+          style={{ fontWeight: 800, fontSize: 13, color: "#444" }}
+        >
+          表示する週
+        </label>
         <button
           type="button"
           onClick={() => setWeekBase((b) => shiftDate(b, -7))}
@@ -642,19 +653,25 @@ export function WeekView({
           次の週 ▶
         </button>
         <input
+          id={weekInputId}
           type="date"
-          aria-label="基準日"
           value={weekBase}
           onChange={(e) => e.target.value && setWeekBase(e.target.value)}
           style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
         />
         <span
           data-testid="week-range"
+          aria-live="polite"
           style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "#555" }}
         >
-          {shortMD(weekMonday)} (月) 〜 {shortMD(weekSaturday)} (土)
+          {fmtMD(weekMonday)} (月) 〜 {fmtMD(weekSaturday)} (土)
           {isCurrentWeek && (
             <span style={{ marginLeft: 6, fontSize: 10, color: "#b08000" }}>今週</span>
+          )}
+          {isCurrentWeek && todayIsSunday && (
+            <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 400, color: "#888" }}>
+              (日曜のため翌週を表示)
+            </span>
           )}
         </span>
       </div>
@@ -680,7 +697,7 @@ export function WeekView({
               marginRight: 4,
             }}
           >
-            直近2週間のイベント:
+            {windowPrefix}イベント:
           </span>
           {upcomingEvents.map((ev) => {
             const meta =
@@ -732,7 +749,7 @@ export function WeekView({
           bg={ADJ_COLOR.combine.bannerBg}
           borderColor={ADJ_COLOR.combine.bannerBorder}
           titleColor={ADJ_COLOR.combine.deep}
-          title={`🔗 直近2週間の合同予定 (${upcomingCombines.length}件)`}
+          title={`🔗 ${windowPrefix}合同予定 (${upcomingCombines.length}件)`}
         >
           {upcomingCombines.map((c, i) => {
             const host = c.hostSlot;
@@ -803,7 +820,7 @@ export function WeekView({
           bg={ADJ_COLOR.move.bannerBg}
           borderColor={ADJ_COLOR.move.bannerBorder}
           titleColor={ADJ_COLOR.move.deep}
-          title={`↔ 直近2週間の時間変更予定 (${upcomingMoves.length}件)`}
+          title={`↔ ${windowPrefix}時間変更予定 (${upcomingMoves.length}件)`}
         >
           {upcomingMoves.map((mv, i) => {
             const slot = mv.slot;
@@ -833,7 +850,7 @@ export function WeekView({
           bg="#efeafa"
           borderColor="#a898d8"
           titleColor="#4a3a8e"
-          title={`⏰ 直近2週間の特別時程 (${upcomingDaySchedules.length}件)`}
+          title={`⏰ ${windowPrefix}特別時程 (${upcomingDaySchedules.length}件)`}
         >
           {upcomingDaySchedules.map(({ schedule, items }) => (
             <UpcomingRow key={`dsch-${schedule.id}`}>
@@ -883,7 +900,7 @@ export function WeekView({
           bg="#f4f4f4"
           borderColor="#cfcfcf"
           titleColor="#555"
-          title={`🚫 直近2週間のコマ休講 (${upcomingCancels.length}件)`}
+          title={`🚫 ${windowPrefix}コマ休講 (${upcomingCancels.length}件)`}
         >
           {upcomingCancels.map(({ adj, slot }) => (
             <UpcomingRow key={`cancel-${adj.id}`}>
@@ -912,7 +929,7 @@ export function WeekView({
           bg={ADJ_COLOR.reschedule.bannerBg}
           borderColor={ADJ_COLOR.reschedule.bannerBorder}
           titleColor={ADJ_COLOR.reschedule.deep}
-          title={`↻ 直近2週間の振替予定 (${upcomingReschedules.length}件)`}
+          title={`↻ ${windowPrefix}振替予定 (${upcomingReschedules.length}件)`}
         >
           {upcomingReschedules.map(({ adj, slot }, i) => {
             const tgtTime = adj.targetTime || slot.time;
@@ -962,7 +979,7 @@ export function WeekView({
           bg="#fdf5e8"
           borderColor="#e0a030"
           titleColor="#8a5a1a"
-          title={`📝 直近2週間のテスト直前特訓シフト (${upcomingExamPrep.length}日)`}
+          title={`📝 ${windowPrefix}テスト直前特訓シフト (${upcomingExamPrep.length}日)`}
         >
           {upcomingExamPrep.map((e) => {
             const first = e.shifts[0];
@@ -1003,7 +1020,7 @@ export function WeekView({
           bg="#fffbe6"
           borderColor="#f0d878"
           titleColor="#8a6a1a"
-          title={`🔄 直近2週間の代行予定 (${upcomingSubs.length}件)`}
+          title={`🔄 ${windowPrefix}代行予定 (${upcomingSubs.length}件)`}
         >
           {upcomingSubs.map((sub) => {
             const slot = slotById.get(sub.slotId);
@@ -1068,7 +1085,7 @@ export function WeekView({
           bg={EXTRA_LESSON_COLOR.bannerBg}
           borderColor={EXTRA_LESSON_COLOR.bannerBorder}
           titleColor={EXTRA_LESSON_COLOR.deep}
-          title={`➕ 直近2週間の追加授業 (${upcomingExtras.length}件)`}
+          title={`➕ ${windowPrefix}追加授業 (${upcomingExtras.length}件)`}
         >
           {upcomingExtras.map((l) => (
             <UpcomingRow
@@ -1146,7 +1163,7 @@ export function WeekView({
                 <span>{d}</span>
                 {/* 列の日付は紙面にも出す (どの週の表か判るように) */}
                 <span style={{ fontSize: 11, letterSpacing: 0, opacity: 0.9 }}>
-                  {shortMD(colDate)}
+                  {fmtMD(colDate)}
                 </span>
                 {isTodayCol && (
                   <span

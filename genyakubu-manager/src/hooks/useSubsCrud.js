@@ -15,6 +15,9 @@ export function useSubsCrud({ subs, saveSubs }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: subs, save: saveSubs });
 
+  // 戻り値: 新規に作ったレコードの配列 (更新なら空)。作った側 (App) が
+  // 授業管理へ「いま登録された」と知らせるのに使う (subs の増減を見張ると
+  // 他端末の同期と区別できない)
   const save = useCallback(
     (editSub, f, setEditSub) => {
       const ts = new Date().toISOString();
@@ -32,16 +35,18 @@ export function useSubsCrud({ subs, saveSubs }) {
         saveSubs([...subs, ...newRecords]);
         toasts.success(`代行を ${newRecords.length} 件追加しました`);
         setEditSub(null);
-        return;
+        return newRecords;
       }
 
       const normalized = { ...f, status: normalizeSubStatus(f) };
+      let created = [];
       if (editSub === "new") {
-        crud.add(normalized, {
+        const id = crud.add(normalized, {
           successMsg: "代行を追加しました",
           withCreatedAt: true,
           withUpdatedAt: true,
         });
+        created = [{ ...normalized, id }];
       } else {
         crud.update(editSub.id, normalized, {
           successMsg: "代行を更新しました",
@@ -49,6 +54,8 @@ export function useSubsCrud({ subs, saveSubs }) {
         });
       }
       setEditSub(null);
+      // 新規に作ったレコード (授業管理の月フィルタ追従が使う)。更新なら空
+      return created;
     },
     [subs, saveSubs, crud, toasts]
   );

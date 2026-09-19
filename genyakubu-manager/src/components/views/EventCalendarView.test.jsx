@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { EventCalendarView, SS_MONTH_KEY } from "./EventCalendarView";
 import { DEFAULT_EVENT_VISIBILITY } from "../EventVisibilityToggles";
 import { EVENT_KIND } from "../../constants/eventKinds";
+import { fmtDateWeekday } from "../../utils/dateHelpers";
 
 afterEach(() => {
   cleanup();
@@ -166,28 +167,41 @@ describe("EventCalendarView の「今日」", () => {
 // 日付の数字から「その日」へ跳ぶ (ダッシュボード / 欠勤組み換え)。
 // ＋ と同じセル見出しに置く。どちらも任意の prop
 describe("EventCalendarView の日付から跳ぶ", () => {
-  const m = now.getMonth() + 1;
+  const d15 = fmtDateWeekday(`${ym}-15`); // "YYYY-MM-15 (曜)"
 
-  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す", () => {
+  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す。凡例も出る", () => {
     const onSelectDate = vi.fn();
     renderView({ visibility: DEFAULT_EVENT_VISIBILITY, onSelectDate });
-    fireEvent.click(screen.getByRole("button", { name: `${m}/15 をダッシュボードで見る` }));
+    fireEvent.click(screen.getByRole("button", { name: `${d15} をダッシュボードで見る` }));
     expect(onSelectDate).toHaveBeenCalledWith(`${ym}-15`);
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード"
+    );
   });
 
-  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)", () => {
+  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)。凡例に 🚑 が加わる", () => {
     const onJumpToAbsenceFlow = vi.fn();
-    renderView({ visibility: DEFAULT_EVENT_VISIBILITY, isAdmin: true, onJumpToAbsenceFlow });
-    const btn = screen.getByRole("button", { name: `${m}/15 の欠勤組み換え` });
+    renderView({
+      visibility: DEFAULT_EVENT_VISIBILITY,
+      isAdmin: true,
+      onJumpToAbsenceFlow,
+      onSelectDate: vi.fn(),
+    });
+    const btn = screen.getByRole("button", { name: `${d15} の欠勤組み換えを開く` });
+    expect(btn.getAttribute("title")).toBe(`${d15} の欠勤組み換えを開く`);
     expect(btn.closest(".no-print")).not.toBeNull();
     fireEvent.click(btn);
     expect(onJumpToAbsenceFlow).toHaveBeenCalledWith(`${ym}-15`);
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード / 🚑 = 欠勤組み換え"
+    );
   });
 
-  it("閲覧者には 🚑 を出さず、prop 無しなら日付はボタンにならない", () => {
+  it("閲覧者には 🚑 を出さず、prop 無しなら日付はボタンにならない (凡例も無し)", () => {
     renderView({ visibility: DEFAULT_EVENT_VISIBILITY, onJumpToAbsenceFlow: vi.fn() });
-    expect(screen.queryByRole("button", { name: /の欠勤組み換え$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /をダッシュボードで見る$/ })).toBeNull();
+    expect(screen.queryByTestId("day-number-legend")).toBeNull();
   });
 });
 
@@ -208,7 +222,7 @@ describe("EventCalendarView の月の移動", () => {
     vi.useRealTimers();
   });
 
-  it("← / → で前後の月、t で今月", () => {
+  it("← / → で前後の月、t で今月 (◀ ▶ 今月 ボタンも同じ)", () => {
     renderAt();
     expect(screen.getByText("2026年7月")).toBeTruthy();
     fireEvent.keyDown(window, { key: "ArrowLeft" });
@@ -218,6 +232,28 @@ describe("EventCalendarView の月の移動", () => {
     expect(screen.getByText("2026年8月")).toBeTruthy();
     fireEvent.keyDown(window, { key: "t" });
     expect(screen.getByText("2026年7月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "前の月" }));
+    fireEvent.click(screen.getByRole("button", { name: "前の月" }));
+    expect(screen.getByText("2026年5月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "次の月" }));
+    expect(screen.getByText("2026年6月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "今月" }));
+    expect(screen.getByText("2026年7月")).toBeTruthy();
+    // 年月の表示は読み上げ (aria-live)
+    expect(screen.getByText("2026年7月").getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("月末に開いたまま 0 時を跨いでも表示中の月は動かない (保存値も 9 月のまま)", () => {
+    renderAt([2026, 8, 30, 23, 59, 0]); // 2026-09-30 23:59
+    expect(screen.getByText("2026年9月")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000); // → 10/1 0:01 (useToday が更新される)
+    });
+    expect(screen.getByText("2026年9月")).toBeTruthy();
+    expect(sessionStorage.getItem(SS_MONTH_KEY)).toBe("2026-09");
+    // 「今月」は 10 月になったので、t で 10 月へ
+    fireEvent.keyDown(window, { key: "t" });
+    expect(screen.getByText("2026年10月")).toBeTruthy();
   });
 
   it("月ピッカーで直接指定できる (年をまたいでも)", () => {

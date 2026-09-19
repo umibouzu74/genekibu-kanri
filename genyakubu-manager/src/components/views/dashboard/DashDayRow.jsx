@@ -10,7 +10,7 @@ import { RescheduleOutBanner } from "../../RescheduleOutBanner";
 import { SlotCancelBanner } from "../../SlotCancelBanner";
 import { collectCancelledSlots } from "../../../utils/slotCancel";
 import { SectionColumn } from "./SectionColumn";
-import { getSubsForSlot } from "../../../data";
+import { fmtDateWeekday, getSubsForSlot } from "../../../data";
 import {
   collectTeacherAssignments,
   findTeacherConflicts,
@@ -297,8 +297,8 @@ export function DashDayRow({
             type="button"
             className="no-print"
             onClick={() => onJumpToAbsenceFlow(date)}
-            title={`${date} の欠勤組み換えを開く`}
-            aria-label={`${date} の欠勤組み換えを開く`}
+            title={`${fmtDateWeekday(date)} の欠勤組み換えを開く`}
+            aria-label={`${fmtDateWeekday(date)} の欠勤組み換えを開く`}
             style={{
               marginLeft: "auto",
               fontSize: 11,

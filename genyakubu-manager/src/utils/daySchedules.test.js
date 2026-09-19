@@ -5,6 +5,7 @@ import {
   buildCutFirstCancelTimes,
   collectTargetTimes,
   findNewConflicts,
+  dayScheduleTimeKeys,
   findSameDayDaySchedules,
   findShadowedDaySchedules,
   getDaySchedulesForDate,
@@ -265,5 +266,35 @@ describe("findSameDayDaySchedules / findShadowedDaySchedules", () => {
     ]);
     expect(findShadowedDaySchedules([])).toEqual([]);
     expect(findShadowedDaySchedules(null)).toEqual([]);
+  });
+
+  // dayScheduleTimeKeys は resolveSlotDaySchedule と同じ述語で数える。
+  // to が空 / from と同じ行は読み替えなし (効かない) なので、その時間帯を
+  // 「取っている」ことにしない (効かない行が別の登録を止めていた)
+  it("to が空 / from と同じ timeMap の行は効く時間帯に数えない", () => {
+    expect(
+      dayScheduleTimeKeys({
+        timeMap: [
+          { from: "16:25-17:25", to: "" },
+          { from: "17:35-18:35", to: "17:35-18:35" },
+          { from: "18:45-19:45", to: "19:00-19:50" },
+          { from: "", to: "20:00-20:50" },
+          null,
+        ],
+        cancelTimes: ["19:55-20:55", ""],
+      })
+    ).toEqual(["18:45-19:45", "19:55-20:55"]);
+    expect(dayScheduleTimeKeys(null)).toEqual([]);
+
+    // 効かない行しか持たない既存は、同じ時間帯の本物の登録を止めない
+    const noop = cut({ cancelTimes: [], timeMap: [{ from: "16:25-17:25", to: "" }] });
+    const r = findSameDayDaySchedules(
+      { date: "2026-10-07", targetGrades: ["附中1"], cancelTimes: ["16:25-17:25"] },
+      [noop]
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0].sharedTimes).toEqual([]);
+    // 一覧の ⚠ も出さない
+    expect(findShadowedDaySchedules([noop, cut({ id: 2 })])).toEqual([]);
   });
 });

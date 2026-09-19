@@ -165,22 +165,55 @@ describe("DayScheduleManager", () => {
 });
 
 // 同じ日の二重登録 (2026-09-15)。resolveSlotDaySchedule は先勝ちなので、
-// 後から登録した同じ (学年, 時間帯) は黙って効かない → 登録を止めて既存の
-// 編集へ誘導する。時間帯が別なら注意だけ。一覧では隠れている件に ⚠
+// 後から登録した同じ (学年, 時間帯) は黙って効かない → 編集中から赤い注意を
+// 出して登録ボタンを無効にし、既存の編集へ誘導する (押してから知らせない)。
+// 時間帯が別なら注意だけ。一覧では隠れている件に ⚠
 describe("DayScheduleManager の同日二重登録の検出", () => {
-  it("同じ日・学年・時間帯の既存があると登録を止め、「既存を編集」で編集モードに入る", () => {
+  it("同じ日・学年・時間帯の既存があると編集中から注意が出て登録ボタンが無効になり、「既存を編集」で編集モードに入る", () => {
     const { onSave } = renderManager({ daySchedules: [SAVED] });
     setDate("2026-10-07");
+    const save = screen.getByRole("button", { name: "登録" });
+    expect(save.disabled).toBe(false);
     fireEvent.click(screen.getByText("② 1限カット")); // 16:25-17:25 休講 = SAVED と同じ
-    fireEvent.click(screen.getByText("登録"));
+    // 押す前から出る (再評価される注意なので alert ではなく status)
+    expect(screen.queryByRole("alert")).toBeNull();
+    const note = screen.getByRole("status");
+    expect(note.textContent).toContain("「附属 1限カット」が既にあります");
+    expect(note.textContent).toContain("16:25-17:25");
+    expect(note.textContent).toContain("既存を編集してまとめてください");
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
     expect(onSave).not.toHaveBeenCalled();
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("「附属 1限カット」が既にあります");
-    expect(alert.textContent).toContain("16:25-17:25");
+    // 休講を外せば (時間帯が重ならなくなる) 押せるようになり、赤い注意は
+    // 同じ日・学年の黄色い注意 (共存できる) に変わる
+    fireEvent.click(screen.getByLabelText("16:25-17:25 を休講にする"));
+    expect(screen.getByRole("status").textContent).toContain("1 件にまとめた方が");
+    expect(screen.getByRole("status").textContent).not.toContain("既存を編集してまとめてください");
+    expect(save.disabled).toBe(false);
+    fireEvent.click(screen.getByLabelText("16:25-17:25 を休講にする"));
+    expect(save.disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "既存を編集" }));
     expect(screen.getByText("特別時程を編集")).toBeInTheDocument();
     expect(screen.getByDisplayValue("附属 1限カット")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "更新" }).disabled).toBe(false);
+  });
+
+  it("編集中に別の既存と (学年, 時間帯) が重なれば更新も無効になる", () => {
+    const other = { ...SAVED, id: 2, label: "別件", targetGrades: ["附中1"], cancelTimes: [], timeMap: [{ from: "17:35-18:35", to: "18:00-18:50" }] };
+    const { onSave } = renderManager({ daySchedules: [SAVED, other] });
+    fireEvent.click(screen.getAllByLabelText("2026-10-07 の特別時程を編集")[0]); // SAVED (id 1)
+    expect(screen.getByDisplayValue("附属 1限カット")).toBeInTheDocument();
+    const update = screen.getByRole("button", { name: "更新" });
+    expect(update.disabled).toBe(false);
+    // SAVED (id 1) の編集で 2 限目も読み替える → 別件 (id 2) と 17:35 で重なる
+    fireEvent.change(screen.getAllByPlaceholderText("例: 17:00-17:50")[1], {
+      target: { value: "18:00-18:50" },
+    });
+    expect(screen.getByRole("status").textContent).toContain("「別件」が既にあります");
+    expect(update.disabled).toBe(true);
+    fireEvent.click(update);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("時間帯が別なら注意だけ出して登録できる", () => {

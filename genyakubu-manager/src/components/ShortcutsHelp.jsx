@@ -41,7 +41,8 @@ const SHORTCUTS = [
   },
   {
     section: "日付の移動",
-    note: "ダッシュボード・月間・イベントカレンダー・週間で",
+    note: "ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モードで",
+    sub: "(週間は ±1 週、月間・イベントカレンダーは ±1 か月)",
     items: [
       { keys: ["←"], label: "前の日 / 週 / 月" },
       { keys: ["→"], label: "次の日 / 週 / 月" },
@@ -215,6 +216,18 @@ export function ShortcutsHelp({ open, onClose }) {
               </span>
             )}
           </div>
+          {sec.sub && (
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 400,
+                color: "#aaa",
+                margin: "-2px 0 6px",
+              }}
+            >
+              {sec.sub}
+            </div>
+          )}
           {sec.items.map((it) => (
             <ItemRow key={it.label} item={it} />
           ))}

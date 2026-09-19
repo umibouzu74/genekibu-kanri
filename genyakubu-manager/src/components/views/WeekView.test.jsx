@@ -171,9 +171,9 @@ describe("WeekView の基準週", () => {
 
   it("基準日を日付入力で選べる。日曜は翌週 (月〜土の表なので)", () => {
     renderWeek();
-    fireEvent.change(screen.getByLabelText("基準日"), { target: { value: "2026-12-20" } }); // 日
+    fireEvent.change(screen.getByLabelText("表示する週"), { target: { value: "2026-12-20" } }); // 日
     expect(range()).toContain("12/21 (月) 〜 12/26 (土)");
-    fireEvent.change(screen.getByLabelText("基準日"), { target: { value: "2026-12-16" } }); // 水
+    fireEvent.change(screen.getByLabelText("表示する週"), { target: { value: "2026-12-16" } }); // 水
     expect(range()).toContain("12/14 (月) 〜 12/19 (土)");
   });
 
@@ -183,9 +183,31 @@ describe("WeekView の基準週", () => {
     });
     // 今日基準 (12/1〜12/15) では 12/21 は窓の外
     expect(screen.queryByTitle(/冬休み/)).toBeNull();
+    expect(screen.queryByText(/のイベント:/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
-    // 基準日 12/8 → 窓 12/8〜12/22 に入る
+    // 基準日 12/8 → 窓 12/8〜12/22 に入る。見出しは「直近2週間」ではなく実際の窓
     expect(screen.getByTitle(/冬休み/)).toBeTruthy();
+    expect(screen.getByText("12/8〜12/22 のイベント:")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "t" });
+    expect(screen.queryByText(/のイベント:/)).toBeNull();
+  });
+
+  it("他のお知らせバナーの見出しも週を送ると実際の窓になる", () => {
+    renderWeek({
+      subs: [
+        {
+          id: 1,
+          date: "2026-12-21",
+          slotId: 1,
+          originalTeacher: "堀上",
+          substitute: "河野",
+          status: "confirmed",
+        },
+      ],
+    });
+    expect(screen.queryByText(/代行予定/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
+    expect(screen.getByText("🔄 12/8〜12/22 の代行予定 (1件)")).toBeTruthy();
   });
 
   it("隔週コマは表示中の週の担当側にだけ出る", () => {
@@ -195,6 +217,34 @@ describe("WeekView の基準週", () => {
     expect(screen.queryByText(/（隔週）/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
     expect(screen.getByText("英（隔週）")).toBeTruthy();
+  });
+
+  it("日曜は翌週を「今週」として扱う (t / 今週 が効き、注記を出す)", () => {
+    vi.setSystemTime(new Date(2026, 11, 6, 12, 0, 0)); // 2026-12-06 (日)
+    renderWeek();
+    expect(range()).toContain("12/7 (月) 〜 12/12 (土)");
+    expect(range()).toContain("今週");
+    expect(range()).toContain("(日曜のため翌週を表示)");
+    // 今日 (日曜) の列は無い
+    expect(document.querySelector(".week-col-today")).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(range()).toContain("12/14 (月) 〜 12/19 (土)");
+    expect(range()).not.toContain("今週");
+    expect(range()).not.toContain("翌週");
+    fireEvent.keyDown(window, { key: "t" });
+    expect(range()).toContain("12/7 (月) 〜 12/12 (土)");
+    expect(range()).toContain("今週");
+    // 前の週 (11/30〜) は今週ではない
+    fireEvent.click(screen.getByRole("button", { name: "◀ 前の週" }));
+    expect(range()).toContain("11/30 (月) 〜 12/5 (土)");
+    expect(range()).not.toContain("今週");
+  });
+
+  it("平日は注記を出さず、日付入力は見出し「表示する週」で読める", () => {
+    renderWeek();
+    expect(range()).not.toContain("翌週");
+    expect(screen.getByLabelText("表示する週").type).toBe("date");
+    expect(screen.getByTestId("week-range").getAttribute("aria-live")).toBe("polite");
   });
 
   it("講師を切り替えても週は保つ (同じ週で見比べるため)", () => {

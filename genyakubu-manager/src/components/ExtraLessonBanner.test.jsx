@@ -46,6 +46,8 @@ describe("ExtraLessonBanner", () => {
     render(<ExtraLessonBanner lessons={[LESSON]} onEditExtraLesson={onEditExtraLesson} />);
     const row = screen.getByRole("button", { name: /プレップ個別指導/ });
     expect(row.getAttribute("tabindex")).toBe("0");
+    // 行内の道具なのでモバイルの 40px 規則から外す
+    expect(row.className).toContain("inline-activate");
     // メモは残しつつ、クリックで編集できることも title で伝える
     expect(row.getAttribute("title")).toContain("テキスト持参");
     expect(row.getAttribute("title")).toContain("編集");

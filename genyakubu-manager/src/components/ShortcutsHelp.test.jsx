@@ -30,7 +30,10 @@ describe("ShortcutsHelp", () => {
   it("lists the date navigation keys (← / → / t) and where they apply", () => {
     render(<ShortcutsHelp open onClose={noop} />);
     expect(screen.getByText("日付の移動")).toBeDefined();
-    expect(screen.getByText(/ダッシュボード・月間・イベントカレンダー・週間/)).toBeDefined();
+    expect(
+      screen.getByText(/ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モードで/)
+    ).toBeDefined();
+    expect(screen.getByText("(週間は ±1 週、月間・イベントカレンダーは ±1 か月)")).toBeDefined();
     expect(screen.getByText("今日 / 今週 / 今月")).toBeDefined();
     expect(screen.getAllByText("t", { selector: "kbd" }).length).toBeGreaterThan(0);
   });

@@ -39,7 +39,7 @@ import {
 } from "../../utils/teacherDayOff";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToday } from "../../hooks/useToday";
-import { DayNumberLink } from "../DayNumberLink";
+import { DayNumberLegend, DayNumberLink } from "../DayNumberLink";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { EVENT_KIND } from "../../constants/eventKinds";
 import {
@@ -355,12 +355,29 @@ export function MonthView({
 
   return (
     <div className="month-print-root" style={{ marginTop: 12 }}>
-      {onChangeVisibility && (
-        <div className="no-print" style={{ marginBottom: 8 }}>
-          <EventVisibilityToggles
-            visibility={visibility}
-            onChange={onChangeVisibility}
-            availableTags={availableTags}
+      {(onChangeVisibility || onSelectDate || jumpToAbsenceFlow) && (
+        <div
+          className="no-print"
+          style={{
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {onChangeVisibility && (
+            <EventVisibilityToggles
+              visibility={visibility}
+              onChange={onChangeVisibility}
+              availableTags={availableTags}
+            />
+          )}
+          {/* 日付の数字 / 🚑 が何かの凡例 (導線を渡したときだけ) */}
+          <DayNumberLegend
+            onSelectDate={onSelectDate}
+            onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            style={{ marginLeft: "auto" }}
           />
         </div>
       )}
@@ -1140,7 +1157,6 @@ export function MonthView({
               >
                 <DayNumberLink
                   d={d}
-                  month={month}
                   ds={ds}
                   onSelectDate={onSelectDate}
                   onJumpToAbsenceFlow={jumpToAbsenceFlow}

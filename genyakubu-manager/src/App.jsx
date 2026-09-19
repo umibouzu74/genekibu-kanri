@@ -12,7 +12,9 @@ import { useChordNavigation } from "./hooks/useChordNavigation";
 import { useDateKeyNav } from "./hooks/useDateKeyNav";
 import { hasOpenDialog, isTypingTarget } from "./utils/keyboardGuards";
 import { monthOffsetFromToday } from "./utils/dateHelpers";
+import { draftDiscardPrompt } from "./utils/absenceDraftPrompt";
 import { ChordWaitingBadge } from "./components/ChordWaitingBadge";
+import { MonthNav } from "./components/MonthNav";
 import { useAuth } from "./hooks/useAuth";
 import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
@@ -286,6 +288,8 @@ export default function App() {
   const [monthOff, setMonthOff] = useState(0);
   const [editSlot, setEditSlot] = useState(null);
   const [editSub, setEditSub] = useState(null);
+  // 代行フォームで直前に作ったレコード (授業管理の月フィルタ追従用)
+  const [createdSubs, setCreatedSubs] = useState(null);
   // スマホ (768px 以下) では閉じた状態から始める。開いた状態だと初回表示で
   // backdrop + サイドバーがダッシュボードを隠し、まず ✕ を押す操作が要る
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -488,12 +492,8 @@ export default function App() {
   const navigateGuarded = useCallback(
     async (nextView, go) => {
       if (absenceDraftDirtyRef.current && nextView !== VIEWS.ABSENCE_FLOW) {
-        const ok = await confirm({
-          title: "下書きがあります",
-          message: "欠勤組み換えの下書きが保存されていません。破棄して移動しますか？",
-          okLabel: "破棄して移動",
-          tone: "danger",
-        });
+        const count = Number(absenceDraftDirtyRef.current) || 0;
+        const ok = await confirm(draftDiscardPrompt({ count }));
         if (!ok) return false;
         absenceDraftDirtyRef.current = false;
       }
@@ -756,8 +756,7 @@ export default function App() {
     onToday: () => setMonthOff(0),
     enabled: !!selected && view === VIEWS.MONTH && !batchPrintOpen,
   });
-  // <input type="month"> の値 (YYYY-MM) と、選んだ月 → monthOff の換算
-  const monthInputValue = `${vy}-${String(vm).padStart(2, "0")}`;
+  // 月ピッカー (MonthNav) で選んだ月 → monthOff の換算
   const handleMonthPicked = (value) => {
     const off = monthOffsetFromToday(value, new Date());
     if (off != null) setMonthOff(off);
@@ -805,12 +804,7 @@ export default function App() {
           selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
         }}
         onJumpToRequestedSubs={() =>
-          navigateGuarded(VIEWS.SUBS, () => {
-            setSelected(null);
-            setView(VIEWS.SUBS);
-            setSubsInitFilter({ status: "open" });
-            setSidebarOpen(false);
-          })
+          selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
         }
         teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
@@ -938,42 +932,16 @@ export default function App() {
         </div>
 
         {selected && view === VIEWS.MONTH && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <button
-              onClick={() => setMonthOff((o) => o - 1)}
-              aria-label="前の月"
-              title="前の月 (←)"
-              style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
-            >
-              ◀
-            </button>
-            <span style={{ fontSize: 15, fontWeight: 700 }} aria-live="polite">
-              {vy}年{vm}月
-            </span>
-            <button
-              onClick={() => setMonthOff((o) => o + 1)}
-              aria-label="次の月"
-              title="次の月 (→)"
-              style={{ ...S.btn(false), padding: "4px 10px", fontSize: 14 }}
-            >
-              ▶
-            </button>
-            <button
-              onClick={() => setMonthOff(0)}
-              title="今月 (t)"
-              style={{ ...S.btn(false), fontSize: 11 }}
-            >
-              今月
-            </button>
-            <input
-              type="month"
-              value={monthInputValue}
-              onChange={(e) => handleMonthPicked(e.target.value)}
-              aria-label="表示する月"
-              title="表示する月を選ぶ"
-              style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
-            />
-          </div>
+          <MonthNav
+            year={vy}
+            month={vm}
+            onPrev={() => setMonthOff((o) => o - 1)}
+            onNext={() => setMonthOff((o) => o + 1)}
+            onToday={() => setMonthOff(0)}
+            onPick={handleMonthPicked}
+            isCurrent={monthOff === 0}
+            style={{ display: "flex", gap: 10, marginBottom: 8 }}
+          />
         )}
 
         {selected && (
@@ -1284,7 +1252,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               teacherKana={teacherKana}
               onNew={() => setEditSub("new")}
-              newSubOpen={editSub === "new"}
+              createdSubs={createdSubs}
               onEdit={setEditSub}
               onDel={subsCrud.del}
               onQuickUpdate={subsCrud.quickUpdate}
@@ -1361,6 +1329,7 @@ export default function App() {
                 selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: "chain", date }));
               }}
               onDirtyChange={(dirty) => {
+                // 件数 (number) か真偽値。0 / false = 下書きなし
                 absenceDraftDirtyRef.current = dirty;
               }}
             />
@@ -1492,7 +1461,10 @@ export default function App() {
               examPeriods={examPeriods}
               timetables={timetables}
               displayCutoff={displayCutoff}
-              onSave={(f) => subsCrud.save(editSub, f, setEditSub)}
+              onSave={(f) => {
+                const created = subsCrud.save(editSub, f, setEditSub);
+                if (created?.length) setCreatedSubs(created);
+              }}
               onCancel={() => setEditSub(null)}
             />
           </Suspense>

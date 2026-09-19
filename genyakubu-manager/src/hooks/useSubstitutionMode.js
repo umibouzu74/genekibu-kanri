@@ -194,12 +194,20 @@ export function useSubstitutionMode({
     );
   }, [subDate, uncoveredSlots, availableTeachers, dateFilteredSlots, subjects, subjectCategories, partTimeStaff]);
 
-  // Suggestion map for quick lookup
+  // Suggestion map for quick lookup. uncoveredSlots / chainSuggestions は
+  // (コマ, 元講師) 単位なので、コマ id だけで引くと多担任コマで 2 人目の
+  // 提案が 1 人目を黙って上書きし、ポップオーバーが別人の提案を出す。
+  // 索引は pendingByKey と同じ pendingKey (slotId, originalTeacher)
   const suggestionMap = useMemo(() => {
     const m = new Map();
-    for (const s of chainSuggestions) m.set(s.slotId, s);
+    for (const s of chainSuggestions) m.set(pendingKey(s.slotId, s.originalTeacher), s);
     return m;
   }, [chainSuggestions]);
+  const getSuggestion = useCallback(
+    (slotId, originalTeacher) =>
+      suggestionMap.get(pendingKey(slotId, originalTeacher)) || null,
+    [suggestionMap]
+  );
 
   // --- Actions ---
 
@@ -326,6 +334,7 @@ export function useSubstitutionMode({
     allTeachersForDay,
     chainSuggestions,
     suggestionMap,
+    getSuggestion,
     uncoveredSlots,
     pendingSubs,
     popoverTarget,

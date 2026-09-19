@@ -9,8 +9,9 @@ import {
   dateToDay,
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
+import { shiftDate } from "./dashboardHelpers";
 import { getSlotTeachers } from "../../utils/biweekly";
-import { activeTeachersOnDate } from "../../utils/absenceHelpers";
+import { absentTeachersForSlot } from "../../utils/absenceHelpers";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
@@ -18,6 +19,7 @@ import { getDaySchedulesForDate } from "../../utils/daySchedules";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
 import { useSubstitutionMode } from "../../hooks/useSubstitutionMode";
+import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { useToday } from "../../hooks/useToday";
 import { useOptionalToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -283,6 +285,28 @@ export function ExcelGridView({
     setSelectedDay(day);
   }, [clearSub, setSubDate]);
 
+  // ← / → / t で代行管理日付を送る (hooks/useDateKeyNav)。日曜は表せない
+  // (月〜土の表) ので飛ばす — ダッシュボードの時間割モード
+  // (DashboardDateNav.stepDate) と同じ。ダッシュボード内の描画
+  // (dashboardMode) では DashboardDateNav が同じキーを握っているので付けない
+  // (二重に動く)。全曜日印刷中も止める (printDay の差し替え中に日付を動かさない)
+  const today = useToday();
+  const stepSubDate = useCallback(
+    (step) => {
+      if (!subModeDate) return;
+      let next = shiftDate(subModeDate, step);
+      if (dateToDay(next) == null) next = shiftDate(next, step > 0 ? 1 : -1);
+      handleDateChange(next);
+    },
+    [subModeDate, handleDateChange]
+  );
+  useDateKeyNav({
+    onPrev: () => stepSubDate(-1),
+    onNext: () => stepSubDate(1),
+    onToday: () => handleDateChange(today),
+    enabled: subMode.isSubMode && !dashboardMode && !printBusy,
+  });
+
   // Handle cell click in substitution mode
   const handleCellClick = useCallback((slot, rect, originalTeacher, anchorEl) => {
     // If in combine mode, complete the combine
@@ -319,8 +343,7 @@ export function ExcelGridView({
   //   3. viewDate (ダッシュボードの日付ピッカー等) — 曜日が一致する時
   //   4. activeDay の直近発生日 (今日以前) — フォールバック
   // 「今日」は useToday で state 化してあり、タブを開いたまま深夜0時を
-  // 跨いでも翌 0 時に再計算される (H2c)。
-  const today = useToday();
+  // 跨いでも翌 0 時に再計算される (H2c)。today は上 (キー操作) で取得済み
   const sessionTargetDate = useMemo(() => {
     if (subMode.subDate) return subMode.subDate;
     if (printDay) {
@@ -348,14 +371,17 @@ export function ExcelGridView({
 
   // ポップオーバーの「担当」切替に出す欠勤者 (その日の担当のうち欠勤に
   // チェックの入っている人)。多担任コマで 2 人以上休むときだけ意味を持つ
-  const popoverAbsentTeachers = useMemo(() => {
-    if (!popoverSlot || !displayDate) return [];
-    return activeTeachersOnDate(popoverSlot, displayDate, {
-      biweeklyAnchors,
-      holidays,
-      examPeriods,
-    }).filter((t) => unavailableTeachers.has(t));
-  }, [popoverSlot, displayDate, biweeklyAnchors, holidays, examPeriods, unavailableTeachers]);
+  // (判定はセルクリック側 ExcelSection と共有の absentTeachersForSlot)
+  const popoverAbsentTeachers = useMemo(
+    () =>
+      absentTeachersForSlot(
+        popoverSlot,
+        displayDate,
+        { biweeklyAnchors, holidays, examPeriods },
+        unavailableTeachers
+      ),
+    [popoverSlot, displayDate, biweeklyAnchors, holidays, examPeriods, unavailableTeachers]
+  );
 
   // ─── ダッシュボード表示モードの表示期間フィルタ ─────────────────
   // 表示日を基準に、日別リスト (DashboardListView) と同じ判定で
@@ -1265,7 +1291,7 @@ export function ExcelGridView({
           }
           availableTeachers={subMode.availableTeachers}
           allTeachersForDay={subMode.allTeachersForDay}
-          suggestion={subMode.suggestionMap.get(popoverSlot.id) || null}
+          suggestion={subMode.getSuggestion(popoverSlot.id, popoverTarget.originalTeacher)}
           subjects={subjects || []}
           pendingSub={getPendingSub(popoverSlot.id, popoverTarget.originalTeacher)}
           onAssign={(teacher) =>

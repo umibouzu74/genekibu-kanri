@@ -32,6 +32,19 @@ export function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * "YYYY-MM-DD" → "M/D" (年を落とした短い表記。列見出し・帯・警告文の区間用)。
+ * 年が要る場面 (期切替の重なり警告など) は withYear で "YYYY/M/D"。
+ * @param {string} dateStr
+ * @param {{withYear?: boolean}} [opts]
+ */
+export function fmtMD(dateStr, opts = {}) {
+  const [y, m, d] = String(dateStr || "").split("-");
+  if (!m || !d) return String(dateStr || "");
+  const md = `${Number(m)}/${Number(d)}`;
+  return opts.withYear && y ? `${y}/${md}` : md;
+}
+
 export function fmtDateWeekday(dateStr) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-").map(Number);

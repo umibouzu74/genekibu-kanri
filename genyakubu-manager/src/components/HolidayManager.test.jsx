@@ -152,6 +152,16 @@ describe("HolidayManager の同じ日の二重登録", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it("注意書きの対象は「部門 学年・学年 キーワード」で言う (学年の区切りは「・」)", () => {
+    renderManager({
+      holidays: [
+        { id: 7, date: "2026-12-25", label: "高校休講", scope: ["高校部"], targetGrades: ["高1", "高2"], subjKeywords: ["共テ"] },
+      ],
+    });
+    fireEvent.change(screen.getByLabelText("日付 (開始日)"), { target: { value: "2026-12-25" } });
+    expect(screen.getByRole("status").textContent).toContain("「高校休講」(高校部 高1・高2 共テ)");
+  });
+
   it("編集中は自分自身を相手にしない", () => {
     const { onSave } = renderManager({ holidays: existing });
     fireEvent.click(screen.getByRole("button", { name: /編集/ }));

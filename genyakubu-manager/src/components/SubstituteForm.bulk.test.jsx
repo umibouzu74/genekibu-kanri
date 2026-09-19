@@ -153,3 +153,54 @@ describe("SubstituteForm (1日分まとめて) — 代行未定と共通メモ",
     ]);
   });
 });
+
+// 日付を変えたら共通メモも消す (前の日の理由が別の日の全件に付かない)。
+// 「該当コマがありません」は代行済みだけでなく代行未定・代行なしも含めた
+// 登録済みを外した結果なので、内訳を添える
+describe("SubstituteForm (1日分まとめて) — 日付変更と空表示", () => {
+  // 2026-09-15 は火曜 (月曜のコマは無い)
+  const TUE = "2026-09-15";
+
+  it("日付を変えると共通メモが空に戻る", () => {
+    renderBulk();
+    const memo = screen.getByLabelText(/メモ/);
+    fireEvent.change(memo, { target: { value: "体調不良" } });
+    expect(memo.value).toBe("体調不良");
+    fireEvent.change(screen.getByLabelText(/日付/), { target: { value: "2026-09-21" } });
+    expect(screen.getByLabelText(/メモ/).value).toBe("");
+  });
+
+  it("全コマが登録済みなら「登録済みを除く」と内訳 (代行あり / 代行未定 / 代行なし) を出す", () => {
+    renderBulk({
+      slots: [SINGLE],
+      subs: [
+        { id: 10, date: MON, slotId: 2, originalTeacher: "野口", substitute: "", status: "requested", memo: "" },
+        // 別の日のレコードは数えない
+        { id: 11, date: TUE, slotId: 2, originalTeacher: "野口", substitute: "江本", status: "confirmed", memo: "" },
+      ],
+    });
+    expect(screen.getByText("該当コマがありません (登録済みを除く)")).toBeTruthy();
+    expect(screen.getByText("登録済み: 代行あり 0 件 / 代行未定 1 件")).toBeTruthy();
+    expect(screen.queryByText(/代行なし/)).toBeNull();
+  });
+
+  it("代行なしで確定があるときだけ「代行なし K 件」を足す", () => {
+    renderBulk({
+      slots: [PREP],
+      subs: [
+        { id: 10, date: MON, slotId: 1, originalTeacher: "香川", substitute: "江本", status: "confirmed", memo: "" },
+        { id: 11, date: MON, slotId: 1, originalTeacher: "福江", substitute: "", status: "requested", memo: "" },
+        { id: 12, date: MON, slotId: 1, originalTeacher: "川井", substitute: "", status: "confirmed", memo: "" },
+      ],
+    });
+    expect(
+      screen.getByText("登録済み: 代行あり 1 件 / 代行未定 1 件 / 代行なし 1 件")
+    ).toBeTruthy();
+  });
+
+  it("その日のレコードが無い空表示には内訳を出さない", () => {
+    renderBulk({ slots: [] });
+    expect(screen.getByText("該当コマがありません (登録済みを除く)")).toBeTruthy();
+    expect(screen.queryByText(/登録済み:/)).toBeNull();
+  });
+});

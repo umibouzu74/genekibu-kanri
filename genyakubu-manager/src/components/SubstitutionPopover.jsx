@@ -173,8 +173,37 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
             style={{ fontSize: 10, color: "#888", display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}
           >
             担当: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
-            {absentTeachers && absentTeachers.length > 1 && onSwitchTeacher && (
-              <span role="group" aria-label="他の欠勤者へ切替" style={{ display: "flex", gap: 3 }}>
+            {/* 欠勤者が 4 人以上 (プレップ + 隣のコマの合同など) はチップを
+                並べると幅 280px に収まらないので select にする */}
+            {absentTeachers && absentTeachers.length >= 4 && onSwitchTeacher && (
+              <select
+                aria-label="代行を入れる欠勤者"
+                value={originalTeacher}
+                onChange={(e) => {
+                  if (e.target.value !== originalTeacher) onSwitchTeacher(e.target.value);
+                }}
+                style={{
+                  fontSize: 10,
+                  padding: "1px 4px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                  background: "#fff",
+                  color: "#555",
+                }}
+              >
+                {absentTeachers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            )}
+            {absentTeachers && absentTeachers.length > 1 && absentTeachers.length < 4 && onSwitchTeacher && (
+              <span
+                role="group"
+                aria-label="他の欠勤者へ切替"
+                style={{ display: "flex", gap: 3, flexWrap: "wrap" }}
+              >
                 {absentTeachers
                   .filter((t) => t !== originalTeacher)
                   .map((t) => (

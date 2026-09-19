@@ -56,10 +56,15 @@ export function isSlotCancelledByDaySchedule(slot, dateStr, daySchedules) {
 // 当たると登録順の先勝ちなので、後から登録した方はその時間帯で黙って
 // 効かない。登録時に止める / 一覧で ⚠ を出すための純関数。
 
-// その特別時程が実際に効く時間帯 (timeMap.from ∪ cancelTimes)
+// その特別時程が実際に効く時間帯 (timeMap.from ∪ cancelTimes)。
+// timeMap は resolveSlotDaySchedule と同じ述語 (to が空 / from と同じ行は
+// 読み替えなし = 効かない) で数える。数えると、効かない行が同じ日の別の
+// 登録を止めたり、一覧で ⚠ を出したりする
 export function dayScheduleTimeKeys(d) {
   const set = new Set();
-  for (const m of d?.timeMap || []) if (m && m.from) set.add(m.from);
+  for (const m of d?.timeMap || []) {
+    if (m && m.from && m.to && m.to !== m.from) set.add(m.from);
+  }
   for (const t of d?.cancelTimes || []) if (t) set.add(t);
   return [...set];
 }

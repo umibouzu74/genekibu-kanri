@@ -30,7 +30,7 @@ function renderTab(props = {}) {
     if (!byCat.has(s.categoryId)) byCat.set(s.categoryId, []);
     byCat.get(s.categoryId).push(s);
   }
-  render(
+  const ui = (over = {}) => (
     <SubjectsMasterTab
       subjectCategories={CATS}
       subjectsByCat={byCat}
@@ -47,9 +47,11 @@ function renderTab(props = {}) {
       onSaveSubject={onSaveSubject}
       onDelSubject={vi.fn()}
       {...props}
+      {...over}
     />
   );
-  return { onSaveCategory, onSaveSubject };
+  const { rerender, unmount } = render(ui());
+  return { onSaveCategory, onSaveSubject, rerender: (over) => rerender(ui(over)), unmount };
 }
 
 describe("SubjectsMasterTab — カテゴリ名", () => {
@@ -185,5 +187,40 @@ describe("SubjectsMasterTab — カテゴリ色", () => {
     // タイマーが後から二重に保存しない
     vi.advanceTimersByTime(500);
     expect(onSaveCategory).toHaveBeenCalledTimes(1);
+  });
+
+  // 削除の直後にアンマウント時の flush が走ると、最後の描画で捕まえた
+  // 保存関数 (削除前の一覧を握っている) で消したカテゴリが復活していた。
+  // 確定は親の ref 経由で「今の一覧にその id があるか」を見てから
+  it("色を変えた直後にそのカテゴリが消えたら、未確定の色は捨てる (復活させない)", () => {
+    vi.useFakeTimers();
+    const { onSaveCategory, rerender } = renderTab();
+    const input = screen.getByLabelText("文系 の色");
+    fireEvent.change(input, { target: { value: "#123456" } });
+    expect(onSaveCategory).not.toHaveBeenCalled();
+    // デバウンス中に文系が削除される (親が新しい一覧と新しい保存関数で描き直す)
+    const afterDelete = vi.fn();
+    rerender({ subjectCategories: CATS.filter((c) => c.id !== 1), onSaveCategory: afterDelete });
+    expect(screen.queryByLabelText("文系 の色")).toBeNull();
+    vi.advanceTimersByTime(500);
+    expect(onSaveCategory).not.toHaveBeenCalled();
+    expect(afterDelete).not.toHaveBeenCalled();
+  });
+
+  it("行が残ったままアンマウントされたら、今の一覧と保存関数で未確定の色を流す", () => {
+    vi.useFakeTimers();
+    const { onSaveCategory, rerender, unmount } = renderTab();
+    const input = screen.getByLabelText("文系 の色");
+    fireEvent.change(input, { target: { value: "#abcdef" } });
+    // 親が別の保存関数と、名前の変わった一覧に差し替えた後にタブごと閉じる
+    const latestSave = vi.fn();
+    rerender({
+      subjectCategories: [{ id: 1, name: "文系 (改)", color: "#4488aa" }, CATS[1]],
+      onSaveCategory: latestSave,
+    });
+    unmount();
+    expect(onSaveCategory).not.toHaveBeenCalled();
+    expect(latestSave).toHaveBeenCalledTimes(1);
+    expect(latestSave).toHaveBeenCalledWith({ id: 1, name: "文系 (改)", color: "#abcdef" });
   });
 });

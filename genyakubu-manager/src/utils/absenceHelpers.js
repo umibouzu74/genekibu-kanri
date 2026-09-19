@@ -88,6 +88,20 @@ export function activeTeachersOnDate(slot, dateStr, ctx = {}) {
   );
 }
 
+// そのコマのその日の担当のうち、欠勤にチェックの入っている人 (順序は
+// 講師欄の並び)。タイムテーブル代行モードのセルクリック (ExcelSection) と
+// ポップオーバーの担当切替 (ExcelGridView) が同じ判定を使う — 片方だけ
+// `getSlotTeachers` に戻すと B 週のコマに A 週の主担当が出る。
+// unavailableTeachers は Set (無ければ空扱い)。
+export function absentTeachersForSlot(slot, dateStr, ctx = {}, unavailableTeachers) {
+  if (!slot || !dateStr || !unavailableTeachers || unavailableTeachers.size === 0) {
+    return [];
+  }
+  return activeTeachersOnDate(slot, dateStr, ctx).filter((t) =>
+    unavailableTeachers.has(t)
+  );
+}
+
 // 対象日に指定先生群が担当するスロット id 集合を返す (赤枠表示用)。
 // date が空の場合は空集合。ctx は { biweeklyAnchors, holidays, examPeriods }。
 export function getAbsentSlotIds(slots, dateStr, absentTeachers, ctx = {}) {

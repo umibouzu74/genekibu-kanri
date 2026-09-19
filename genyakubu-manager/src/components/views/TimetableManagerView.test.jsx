@@ -114,14 +114,23 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     return { ttCrud };
   }
   const nameInput = () => screen.getByPlaceholderText("例: 2026年度 1学期");
+  // 重なり警告の箱 (同じ名前の注意も role="status" なので文言で選ぶ)
+  const overlapWarning = () =>
+    screen
+      .getAllByRole("status")
+      .find((el) => el.textContent.includes("有効期間が他の時間割と重なります"));
   const dateInputs = () => screen.getAllByDisplayValue("").filter((el) => el.type === "date");
 
   it("名前が空のまま保存すると、黙って戻らずにエラーを出す", () => {
     const { ttCrud } = renderWith([]); // 重なる相手が無い状態
     fireEvent.click(screen.getByRole("button", { name: "+ 新規作成" }));
     expect(screen.queryByText("名前を入力してください")).toBeNull();
+    // エラーが出ていない間は aria-describedby を付けない (FieldError は空だと
+    // 何も描かないので、付けると存在しない id を指す)
+    expect(nameInput().getAttribute("aria-describedby")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(screen.getByText("名前を入力してください")).toBeInTheDocument();
+    expect(nameInput().getAttribute("aria-describedby")).toBe("tt-form-name-err");
     expect(ttCrud.add).not.toHaveBeenCalled();
   });
 
@@ -163,12 +172,15 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     fireEvent.change(nameInput(), { target: { value: "2学期" } });
     const [start] = dateInputs();
     fireEvent.change(start, { target: { value: "2026-09-01" } });
-    // 1学期 (終了日なし・全学年) とは 9/1〜 で重なる。土曜プレップは 8/31 で終わるので出ない
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("1学期 と 9/1〜 が重なります (全学年)");
-    expect(alert.textContent).not.toContain("土曜プレップ");
-    expect(alert.textContent).toContain("前の期の終了日を入れると二重に出ません");
-    expect(alert.textContent).toContain("1 コマ");
+    // 1学期 (終了日なし・全学年) とは 9/1〜 で重なる。土曜プレップは 8/31 で終わるので出ない。
+    // 入力のたびに再評価される警告なので alert ではなく status (保存を止める
+    // エラーだけが alert)
+    expect(screen.queryByRole("alert")).toBeNull();
+    const warn = overlapWarning();
+    expect(warn.textContent).toContain("1学期 と 9/1〜 が重なります (全学年)");
+    expect(warn.textContent).not.toContain("土曜プレップ");
+    expect(warn.textContent).toContain("前の期の終了日を入れると二重に出ません");
+    expect(warn.textContent).toContain("1 コマ");
     const save = screen.getByRole("button", { name: "保存" });
     expect(save.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("重なりを承知で保存"));
@@ -189,7 +201,7 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     expect(screen.getByLabelText("重なりを承知で保存").checked).toBe(true);
     // 開始日を前へ動かすと土曜プレップとも重なる → 承知を取り直す
     fireEvent.change(screen.getByDisplayValue("2026-09-01"), { target: { value: "2026-08-01" } });
-    expect(screen.getByRole("alert").textContent).toContain("土曜プレップ と 8/1〜8/31 が重なります (中3)");
+    expect(overlapWarning().textContent).toContain("土曜プレップ と 8/1〜8/31 が重なります (中3)");
     expect(screen.getByLabelText("重なりを承知で保存").checked).toBe(false);
     expect(screen.getByRole("button", { name: "保存" }).disabled).toBe(true);
   });
@@ -200,13 +212,13 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
       { id: 2, name: "2学期", type: "regular", startDate: "2026-09-01", endDate: null, grades: [] },
     ]);
     fireEvent.click(screen.getAllByRole("button", { name: "編集" })[1]); // 2学期
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
     // 開始日を 1 日前へ → 1学期と 8/31 で重なる。自分 (2学期) は相手に出ない
     fireEvent.change(screen.getByDisplayValue("2026-09-01"), { target: { value: "2026-08-31" } });
-    expect(screen.getByRole("alert").textContent).toContain("1学期 と 8/31 が重なります (全学年)");
-    expect(screen.getByRole("alert").textContent).not.toContain("2学期 と");
+    expect(overlapWarning().textContent).toContain("1学期 と 8/31 が重なります (全学年)");
+    expect(overlapWarning().textContent).not.toContain("2学期 と");
     fireEvent.change(screen.getByDisplayValue("2026-08-31"), { target: { value: "2026-09-01" } });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(ttCrud.update).toHaveBeenCalledWith(2, expect.objectContaining({ startDate: "2026-09-01" }));
   });
@@ -215,17 +227,20 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     const { ttCrud } = renderWith();
     fireEvent.click(screen.getAllByRole("button", { name: "複製" })[1]); // 土曜プレップ (中3)
     // 期間を空にしたままだと無制限 = 1学期とも複製元とも重なる
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("1学期 と 4/7〜 が重なります (中3)");
-    expect(alert.textContent).toContain("土曜プレップ と 4/7〜8/31 が重なります (中3)");
+    const warn = overlapWarning();
+    expect(warn.textContent).toContain("1学期 と 4/7〜 が重なります (中3)");
+    expect(warn.textContent).toContain("土曜プレップ と 4/7〜8/31 が重なります (中3)");
     const dup = screen.getByRole("button", { name: "複製する" });
     expect(dup.disabled).toBe(true);
-    // 名前を空にして押すとエラー
+    // 名前を空にして押すとエラー (押した後の止めるエラーだけが alert で、
+    // 入力欄の aria-describedby もエラーが出ている間だけ付く)
     fireEvent.click(screen.getByLabelText("重なりを承知で保存"));
     const name = screen.getByDisplayValue("土曜プレップ（コピー）");
+    expect(name.getAttribute("aria-describedby")).toBeNull();
     fireEvent.change(name, { target: { value: "" } });
     fireEvent.click(dup);
-    expect(screen.getByText("名前を入力してください")).toBeInTheDocument();
+    expect(screen.getByRole("alert").textContent).toBe("名前を入力してください");
+    expect(name.getAttribute("aria-describedby")).toBe("tt-dup-name-err");
     expect(ttCrud.duplicate).not.toHaveBeenCalled();
     fireEvent.change(name, { target: { value: "土曜プレップ 2学期" } });
     fireEvent.click(dup);

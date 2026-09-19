@@ -24,8 +24,8 @@ import { useSessionCtx } from "../../hooks/useSessionCtx";
 // 作成 / 編集 / 複製のフォームは保存前に次を点検する (utils/timetableOverlap):
 //   - 名前が空 / 開始日 > 終了日 → エラー (保存しない)
 //   - 同じ名前の時間割がある → 警告 (保存はできる)
-//   - 有効期間 × 対象学年が他の時間割と重なる → 警告 + 「重なりを承知で保存」
-//     のチェックを要求する。前の期に終了日を入れ忘れると切替日以降どちらも
+//   - 有効期間 × 対象学年が他の時間割と重なる → 警告 (role="status") +
+//     「重なりを承知で保存」のチェックを要求する。前の期に終了日を入れ忘れると切替日以降どちらも
 //     有効になりコマが二重に出る (CLAUDE.md「期切替の運用」) ので、その事故を
 //     保存の手前で気付かせる。禁止にはしない (講習中だけ重ねる運用があり得る)
 
@@ -382,7 +382,7 @@ export function TimetableManagerView({
                   setDupForm({ ...dupForm, name: e.target.value })
                 }
                 aria-invalid={dupAttempted && dupChecks?.nameError ? "true" : undefined}
-                aria-describedby="tt-dup-name-err"
+                aria-describedby={dupAttempted && dupChecks?.nameError ? "tt-dup-name-err" : undefined}
                 style={{ ...S.input, marginTop: 2 }}
               />
               <FieldError id="tt-dup-name-err">
@@ -412,7 +412,7 @@ export function TimetableManagerView({
                     setDupForm({ ...dupForm, endDate: e.target.value })
                   }
                   aria-invalid={dupChecks?.periodError ? "true" : undefined}
-                  aria-describedby="tt-dup-period-err"
+                  aria-describedby={dupChecks?.periodError ? "tt-dup-period-err" : undefined}
                   style={{ ...S.input, marginTop: 2 }}
                 />
                 <FieldError id="tt-dup-period-err">{dupChecks?.periodError}</FieldError>
@@ -515,7 +515,9 @@ function DuplicateNameNote({ duplicate }) {
   );
 }
 
-// 有効期間 × 対象学年の重なり警告 + 「重なりを承知で保存」
+// 有効期間 × 対象学年の重なり警告 + 「重なりを承知で保存」。
+// 入力のたびに再評価される警告なので role="status" (alert は保存を押した後の
+// 止めるエラー = FieldError にだけ使う。打鍵ごとに alert を鳴らさない)
 function OverlapWarning({ checks, ackKey, setAckKey, slotCountByTT, idPrefix }) {
   const overlaps = checks?.overlaps || [];
   if (overlaps.length === 0) return null;
@@ -523,7 +525,7 @@ function OverlapWarning({ checks, ackKey, setAckKey, slotCountByTT, idPrefix }) 
   const boxId = `${idPrefix}-overlap-ack`;
   return (
     <div
-      role="alert"
+      role="status"
       style={{
         fontSize: 11,
         color: "#8a4a00",
@@ -603,7 +605,7 @@ function TimetableForm({
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="例: 2026年度 1学期"
             aria-invalid={attempted && checks?.nameError ? "true" : undefined}
-            aria-describedby="tt-form-name-err"
+            aria-describedby={attempted && checks?.nameError ? "tt-form-name-err" : undefined}
             style={{
               ...S.input,
               marginTop: 2,
@@ -633,7 +635,7 @@ function TimetableForm({
               min={form.startDate || undefined}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
               aria-invalid={checks?.periodError ? "true" : undefined}
-              aria-describedby="tt-form-period-err"
+              aria-describedby={checks?.periodError ? "tt-form-period-err" : undefined}
               style={{
                 ...S.input,
                 marginTop: 2,

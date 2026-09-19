@@ -34,10 +34,12 @@ import { colors } from "../styles/tokens";
 //
 // 同じ日の二重登録 (2026-09-15): resolveSlotDaySchedule は同じ (日付, 学年,
 // 時間帯) に複数件が当たると登録順の先勝ちなので、後から登録した方は黙って
-// 効かない。同じ日・学年が交わる既存があれば、時間帯まで重なるときは登録を
-// 止めて「既存を編集」へ誘導し、時間帯が別なら注意だけ出す
-// (utils/daySchedules.findSameDayDaySchedules)。一覧では先に登録したものに
-// 取られている件へ ⚠ を付ける (findShadowedDaySchedules)。
+// 効かない。同じ日・学年が交わる既存があれば、時間帯まで重なるときは
+// **編集中から** 赤い注意を出して登録 / 更新ボタンを無効にし「既存を編集」へ
+// 誘導する (押してから知らせない。TimetableManagerView の canSave と同じ)。
+// 時間帯が別なら黄色の注意だけ出す (utils/daySchedules.findSameDayDaySchedules)。
+// 一覧では先に登録したものに取られている件へ ⚠ を付ける
+// (findShadowedDaySchedules)。
 
 const TIME_RANGE_RE = /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/;
 
@@ -83,8 +85,6 @@ export function DayScheduleManager({
   const [rowEdits, setRowEdits] = useState({});
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
-  // 登録を止めた相手 (同じ日・学年・時間帯の既存)。「既存を編集」の飛び先
-  const [conflictWith, setConflictWith] = useState(null);
 
   const dow = date ? dateToDay(date) : null;
 
@@ -159,6 +159,9 @@ export function DayScheduleManager({
     [date, targetGrades, draft, daySchedules, editId]
   );
   const blockedBy = useMemo(() => sameDay.filter((h) => h.sharedTimes.length > 0), [sameDay]);
+  // 登録 / 更新を押せる条件。同じ日・学年・時間帯の既存があるときは押せない
+  // (理由は blockedBy の赤い注意に出ている)
+  const canSave = blockedBy.length === 0;
 
   // 一覧の ⚠: 先に登録した同日のものに (学年, 時間帯) を取られている件
   const shadowedById = useMemo(() => {
@@ -198,7 +201,6 @@ export function DayScheduleManager({
       return keep;
     });
     if (error) setError("");
-    setConflictWith(null);
   };
 
   const applyPreset = (key) => {
@@ -250,12 +252,10 @@ export function DayScheduleManager({
     setRowEdits({});
     setEditId(null);
     setError("");
-    setConflictWith(null);
   };
 
   const handleAdd = () => {
     setError("");
-    setConflictWith(null);
     if (!date || !isValidDateStr(date)) {
       setError("日付を入力してください");
       return;
@@ -274,15 +274,9 @@ export function DayScheduleManager({
       return;
     }
     // 同じ日・学年・時間帯の既存があると、後から登録した方はその時間帯で
-    // 適用されない (先勝ち)。黙って効かない登録は作らず、既存の編集へ誘導
-    if (blockedBy.length > 0) {
-      const h = blockedBy[0];
-      setError(
-        `${fmtDateWeekday(date)} には対象学年 (${h.sharedGrades.join("・")}) と時間帯 (${h.sharedTimes.join(" / ")}) が重なる特別時程「${h.schedule.label || "特別時程"}」が既にあります。後から登録した方は適用されないので、既存を編集してまとめてください`
-      );
-      setConflictWith(h.schedule);
-      return;
-    }
+    // 適用されない (先勝ち)。ボタンは無効になっているが、黙って効かない登録は
+    // どの経路からも作らない (理由は編集中の赤い注意に出ている)
+    if (!canSave) return;
     const entry = {
       id: editId != null ? editId : nextNumericId(daySchedules),
       date,
@@ -313,7 +307,6 @@ export function DayScheduleManager({
     setRowEdits(edits);
     setEditId(d.id);
     setError("");
-    setConflictWith(null);
   };
 
   const handleDel = (d) => {
@@ -596,8 +589,40 @@ export function DayScheduleManager({
             </div>
           )}
 
+          {/* 同じ日・学年・時間帯の既存 = 後から登録した方は適用されない。
+              編集中から出し、登録 / 更新は無効にする (押してから知らせない) */}
+          {blockedBy.length > 0 && (
+            <div
+              role="status"
+              style={{
+                fontSize: 11,
+                color: colors.danger,
+                background: "#fdeaea",
+                border: "1px solid #e0a0a0",
+                borderRadius: 6,
+                padding: "6px 10px",
+                marginBottom: 10,
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span>
+                {`${fmtDateWeekday(date)} には対象学年 (${blockedBy[0].sharedGrades.join("・")}) と時間帯 (${blockedBy[0].sharedTimes.join(" / ")}) が重なる特別時程「${blockedBy[0].schedule.label || "特別時程"}」が既にあります。後から登録した方は適用されないので、既存を編集してまとめてください`}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleEdit(blockedBy[0].schedule)}
+                style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
+              >
+                既存を編集
+              </button>
+            </div>
+          )}
+
           {/* 同じ日・学年の既存 (時間帯が別なら共存できるが、まとめた方が読みやすい) */}
-          {sameDay.length > 0 && blockedBy.length === 0 && !conflictWith && (
+          {sameDay.length > 0 && blockedBy.length === 0 && (
             <div
               role="status"
               style={{
@@ -652,20 +677,16 @@ export function DayScheduleManager({
               }}
             >
               <span>{error}</span>
-              {conflictWith && (
-                <button
-                  type="button"
-                  onClick={() => handleEdit(conflictWith)}
-                  style={{ ...S.btn(false), fontSize: 11, padding: "2px 8px" }}
-                >
-                  既存を編集
-                </button>
-              )}
             </div>
           )}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleAdd} style={S.btn(true)}>
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!canSave}
+              style={{ ...S.btn(true), opacity: canSave ? 1 : 0.5 }}
+            >
               {editId != null ? "更新" : "登録"}
             </button>
             {editId != null && (

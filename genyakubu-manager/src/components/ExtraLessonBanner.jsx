@@ -6,7 +6,8 @@ import { EXTRA_LESSON_COLOR } from "../constants/colors";
 // 表示する (呼び出し側も非表示にしないこと)。
 // onEditExtraLesson (id) を渡すと各行がクリック / Enter / Space で編集へ飛ぶ
 // (月次・週間・イベントカレンダーと同じ導線)。渡さなければ従来どおりの
-// 素の行のまま。
+// 素の行のまま。行は文字の高さのままにしたいので、role="button" でも
+// モバイルの 40px 規則 (appShell.css) から `inline-activate` で外す。
 export function ExtraLessonBanner({ lessons, style, onEditExtraLesson }) {
   if (!lessons || lessons.length === 0) return null;
   const activatable = typeof onEditExtraLesson === "function";
@@ -28,6 +29,7 @@ export function ExtraLessonBanner({ lessons, style, onEditExtraLesson }) {
         <div
           key={l.id}
           role={activatable ? "button" : undefined}
+          className={activatable ? "inline-activate" : undefined}
           tabIndex={activatable ? 0 : undefined}
           onClick={activatable ? () => onEditExtraLesson(l.id) : undefined}
           onKeyDown={

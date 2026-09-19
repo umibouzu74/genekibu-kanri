@@ -12,6 +12,7 @@
 //   - 学年の照合は gradeMatchesTimetable (「中1-3」の複合学年も展開して比べる)
 
 import { gradeMatchesTimetable } from "./timetable";
+import { fmtMD } from "./dateHelpers";
 
 export const PERIOD_ERROR = "終了日は開始日以降にしてください";
 export const NAME_REQUIRED_ERROR = "名前を入力してください";
@@ -132,16 +133,23 @@ export function findOverlappingTimetables(candidate, timetables, opts = {}) {
   return out;
 }
 
+const yearOf = (s) => Number(String(s || "").slice(0, 4));
+
 /**
  * 重なりの区間を人が読める形に。"4/1〜4/10" / "4/1〜" / "〜4/10" / "全期間"。
+ * 期切替は年をまたぐ (前期 2026 → 後期 2027 など) ので、区間の年が今年と
+ * 違うか、始点と終点の年が違うときは "2027/4/1" のように年を付ける
+ * (年を落とすと去年の 4/1 と今年の 4/1 が同じに見える)。
  * @param {{overlapStart: string | null, overlapEnd: string | null}} o
+ * @param {{today?: Date}} [opts] 「今年」の基準 (テスト用)
  */
-export function formatOverlapRange(o) {
-  const md = (s) => {
-    const [, m, d] = String(s).split("-");
-    return `${Number(m)}/${Number(d)}`;
-  };
+export function formatOverlapRange(o, opts = {}) {
   if (!o.overlapStart && !o.overlapEnd) return "全期間";
+  const thisYear = (opts.today || new Date()).getFullYear();
+  const years = [o.overlapStart, o.overlapEnd].filter(Boolean).map(yearOf);
+  const withYear =
+    years.some((y) => y !== thisYear) || (years.length === 2 && years[0] !== years[1]);
+  const md = (s) => fmtMD(s, { withYear });
   if (!o.overlapEnd) return `${md(o.overlapStart)}〜`;
   if (!o.overlapStart) return `〜${md(o.overlapEnd)}`;
   if (o.overlapStart === o.overlapEnd) return md(o.overlapStart);
@@ -149,10 +157,11 @@ export function formatOverlapRange(o) {
 }
 
 /**
- * 警告 1 行ぶんの文言: 「◯◯ と 4/1〜4/10 が重なります (中3)」
+ * 警告 1 行ぶんの文言: 「◯◯ と 4/1〜4/10 が重なります (中1・中2)」
  * @param {ReturnType<typeof findOverlappingTimetables>[number]} o
+ * @param {{today?: Date}} [opts] formatOverlapRange に渡す
  */
-export function describeOverlap(o) {
-  const grades = o.sharedGrades.length ? o.sharedGrades.join(", ") : "全学年";
-  return `${o.timetable.name} と ${formatOverlapRange(o)} が重なります (${grades})`;
+export function describeOverlap(o, opts = {}) {
+  const grades = o.sharedGrades.length ? o.sharedGrades.join("・") : "全学年";
+  return `${o.timetable.name} と ${formatOverlapRange(o, opts)} が重なります (${grades})`;
 }

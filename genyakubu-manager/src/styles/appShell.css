@@ -130,7 +130,9 @@ td[role="button"]:focus-visible {
      checkbox/radio/range/color は見た目が font-size に連動すると困るため除外。 */
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
   select, textarea { font-size: 16px !important; }
-  button, [role="button"] { min-height: 40px !important; touch-action: manipulation; }
+  /* 行内の小さな道具 (日付の数字・🚑・追加授業バナーの行) は 40px に
+     膨らませない (.inline-activate)。タップ幅は親の行で確保する */
+  button:not(.inline-activate), [role="button"]:not(.inline-activate) { min-height: 40px !important; touch-action: manipulation; }
   .app-main { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
   .app-h1 { font-size: 15px !important; }
   .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
@@ -174,6 +176,8 @@ td[role="button"]:focus-visible {
   body { font-size: 10px !important; }
   input, select, textarea { font-size: 10px !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* 日付の数字 (ダッシュボードへのリンク) の点線下線は紙面に出さない */
+  .day-number-link button { text-decoration: none !important; }
 }
 
 /* 週間ビュー: 今日を含む列の黄枠 (月間カレンダーの今日と同じ色)。
@@ -182,5 +186,19 @@ td[role="button"]:focus-visible {
   .week-col-today {
     outline: 2px solid #e6a800;
     outline-offset: 1px;
+  }
+}
+
+/* カレンダーの日付横の 🚑 (欠勤組み換えへ)。毎日並ぶので普段は薄く、
+   その日付にマウスを乗せた / フォーカスが入ったときだけ濃くする。
+   タッチ端末では hover が無いので薄いまま常時出す (消さない) */
+@media screen {
+  .day-number-link .day-number-absence {
+    opacity: 0.45;
+    transition: opacity 0.15s;
+  }
+  .day-number-link:hover .day-number-absence,
+  .day-number-link:focus-within .day-number-absence {
+    opacity: 1;
   }
 }

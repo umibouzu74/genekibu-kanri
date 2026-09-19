@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
@@ -22,9 +22,9 @@ export function SubstituteView({
   partTimeStaff,
   teacherKana = {},
   onNew,
-  // ＋ 新規代行 のフォーム (App が持つ) が開いているか。閉じたら月フィルタの
-  // 追従を解除する (保存せず閉じた後の他端末の同期で月が飛ばないように)
-  newSubOpen = false,
+  // この画面 (＋ 新規代行 / 空表示の ＋ 代行を登録) から保存した直後の
+  // レコード (App が useSubsCrud.save の戻り値を渡す)。月フィルタの追従に使う
+  createdSubs = null,
   onEdit,
   onDel,
   onQuickUpdate,
@@ -61,8 +61,8 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
-  // 代行一覧の並び: "date" (対象日昇順) / "createdAt-desc" (登録が新しい順)。
-  // 時間割調整一覧・回数補正一覧と同じ 2 択。並び順を SubListTab ではなく
+  // 代行一覧の並び: "date" / "date-desc" (対象日) と "createdAt" /
+  // "createdAt-desc" (登録日時) の 4 値。並び順を SubListTab ではなく
   // ここで持つのは、📥 表示中を CSV も同じ順で出すため
   const [sortBy, setSortBy] = useState("date");
   const [expandedTally, setExpandedTally] = useState(new Set());
@@ -125,15 +125,14 @@ export function SubstituteView({
     // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
     if (fStatus) r = r.filter((s) => matchesSubStateFilter(s, fStatus));
     return r.sort((a, b) => {
-      if (sortBy === "createdAt-desc") {
-        // createdAt 新→古。同値時は id 降順 (新しいレコードを上)
-        const c = (b.createdAt || "").localeCompare(a.createdAt || "");
-        if (c !== 0) return c;
-        return (b.id || 0) - (a.id || 0);
-      }
-      const c = (a.date || "").localeCompare(b.date || "");
-      if (c !== 0) return c;
-      return (a.id || 0) - (b.id || 0);
+      // 4 値: "date" 対象日昇順 / "date-desc" 対象日降順 /
+      // "createdAt-desc" 登録が新しい順 / "createdAt" 登録が古い順。
+      // 同値時は id (昇順は小さい方を上、降順は新しいレコードを上)
+      const desc = sortBy.endsWith("-desc");
+      const key = sortBy.startsWith("createdAt") ? "createdAt" : "date";
+      const c = (a[key] || "").localeCompare(b[key] || "");
+      if (c !== 0) return desc ? -c : c;
+      return desc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0);
     });
   }, [subs, fMonth, fStaff, fStatus, sortBy]);
 
@@ -186,36 +185,21 @@ export function SubstituteView({
   const [sharing, setSharing] = useState(false);
 
   // ＋ 新規代行 で来月の日付を登録すると、保存はされるのに当月の月フィルタで
-  // 一覧から消えて「登録できなかった」ように見える (2026-09-15)。この画面の
-  // 新規登録フォームを開いた後に subs へ新しい id が増えたら、その日付が
-  // 月フィルタの外なら月フィルタをその月へ動かす。「すべて」(fMonth 空) は
-  // そのまま。フォーム本体は App が持つので、完了はレコードの増加で検知する
-  const prevSubIdsRef = useRef(null);
-  const newSubArmedRef = useRef(false);
-  const handleNew = useCallback(() => {
-    newSubArmedRef.current = true;
-    onNew?.();
-  }, [onNew]);
+  // 一覧から消えて「登録できなかった」ように見える (2026-09-15)。保存経路
+  // (useSubsCrud.save) が返した「いま作ったレコード」を App が createdSubs で
+  // 渡してくるので、その日付が月フィルタの外なら月フィルタをその月へ動かす。
+  // 「すべて」(fMonth 空) はそのまま。subs の増減を見張る方式は、他端末の
+  // 同期で増えた分と区別できないのでやめた
   useEffect(() => {
-    const prev = prevSubIdsRef.current;
-    prevSubIdsRef.current = new Set(subs.map((s) => s.id));
-    if (!prev) return; // 初回は差分を取らない
-    const added = subs.filter((s) => !prev.has(s.id));
-    if (added.length === 0 || !newSubArmedRef.current) return;
-    newSubArmedRef.current = false;
+    if (!createdSubs || createdSubs.length === 0) return;
     setFMonth((cur) => {
       if (!cur) return cur; // 「すべて」は動かさない
-      const dates = added.map((s) => s.date || "").filter(Boolean).sort();
+      const dates = createdSubs.map((s) => s.date || "").filter(Boolean).sort();
       const month = dates[0]?.slice(0, 7);
       if (!month || dates.some((d) => d.startsWith(cur))) return cur;
       return month;
     });
-  }, [subs]);
-  // フォームが閉じたら解除 (保存で閉じた場合は上の effect が先に走って
-  // 追従済み。同じコミットで両方走るので、この effect は後に置く)
-  useEffect(() => {
-    if (!newSubOpen) newSubArmedRef.current = false;
-  }, [newSubOpen]);
+  }, [createdSubs]);
 
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
   // 孤立しがち。削除直後に件数を info トーストで案内する。
@@ -291,7 +275,7 @@ export function SubstituteView({
         <div style={{ marginBottom: 12 }}>
           <button
             type="button"
-            onClick={handleNew}
+            onClick={onNew}
             style={{
               padding: "12px 24px",
               borderRadius: 8,
@@ -406,7 +390,7 @@ export function SubstituteView({
           onEdit={onEdit}
           onDel={onDel}
           onQuickUpdate={onQuickUpdate}
-          onNew={handleNew}
+          onNew={onNew}
           onJumpToDate={onJumpToAbsenceFlow}
           todayStr={todayStr}
         />

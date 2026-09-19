@@ -75,7 +75,7 @@ describe("App: 欠勤組み換えの下書きを守るビュー移動ガード",
     const scope = await openAbsenceFlowWithDraft();
     fireEvent.click(scope.getAllByRole("button", { name: /^\S*\s*ダッシュボード/ })[0]);
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/欠勤組み換えの下書きが保存されていません/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/欠勤組み換えの下書きが/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("欠勤組み換えスタブ")).toBeInTheDocument();

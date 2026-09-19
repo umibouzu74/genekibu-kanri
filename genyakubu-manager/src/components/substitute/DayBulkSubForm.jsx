@@ -3,6 +3,7 @@ import { activeTeachersOnDate, getAbsenceDaySlots } from "../../utils/absenceHel
 import { sortSlots as sortS, SUB_STATUS, SUB_STATUS_KEYS } from "../../data";
 import { S } from "../../styles/common";
 import { formatBiweeklyNote, getSlotTeachers } from "../../utils/biweekly";
+import { hasSubstitute, needsSubstitute, SUB_STATE, subState } from "../../utils/substituteState";
 import { pickSubjectId } from "../../utils/subjectMatch";
 import { sortTeacherNames } from "../../utils/teacherKana";
 import { FieldError } from "../FieldError";
@@ -87,11 +88,30 @@ export function DayBulkSubForm({
     takenSlotTeachers, biweeklyAnchors, holidays, examPeriods,
   ]);
 
-  // 日付変更時に rowState をリセット (対象コマが変わるため)
+  // 日付変更時に rowState と共通メモをリセット (対象コマも「その日の理由」も
+  // 変わるため。メモだけ残すと前の日の理由が別の日の全件に付く)
   useEffect(() => {
     setRowState({});
+    setMemo("");
     setErrors((p) => ({ ...p, rows: undefined }));
   }, [date, setRowState]);
+
+  // 「該当コマがありません」の内訳。一覧から外れるのは代行者が付いたコマ
+  // だけではなく、代行未定 / 代行なしで確定も含めた**登録済み**すべて
+  // (slotTaken.buildTakenSlotTeachers) なので、その日のレコードを 3 つに
+  // 分けて見せる (「代行済み」と書くと代行未定が消えたように読める)
+  const registeredSummary = useMemo(() => {
+    let withSub = 0;
+    let pending = 0;
+    let nosub = 0;
+    for (const x of subs || []) {
+      if (x.date !== date) continue;
+      if (hasSubstitute(x)) withSub++;
+      else if (needsSubstitute(x)) pending++;
+      else if (subState(x) === SUB_STATE.NOSUB) nosub++;
+    }
+    return { withSub, pending, nosub, total: withSub + pending + nosub };
+  }, [subs, date]);
 
   const updateRow = (slotId, patch) => {
     setRowState((p) => ({
@@ -207,7 +227,16 @@ export function DayBulkSubForm({
       )}
       {dayOfDate && fullDayRows.length === 0 && (
         <div style={{ fontSize: 11, color: "#888" }}>
-          該当コマがありません (代行済みを除く)
+          <div>該当コマがありません (登録済みを除く)</div>
+          {registeredSummary.total > 0 && (
+            <div style={{ marginTop: 2 }}>
+              登録済み: 代行あり {registeredSummary.withSub} 件 / 代行未定{" "}
+              {registeredSummary.pending} 件
+              {registeredSummary.nosub > 0
+                ? ` / 代行なし ${registeredSummary.nosub} 件`
+                : ""}
+            </div>
+          )}
         </div>
       )}
 

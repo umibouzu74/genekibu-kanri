@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { FieldError } from "../../FieldError";
@@ -11,7 +11,11 @@ import { FieldError } from "../../FieldError";
 //   - 名前: 空は保存せず元に戻す。同じ一覧内の重複は行内にエラーを出して
 //     保存しない (Escape で元に戻す)
 //   - 別名: blur / Enter で配列に分解して保存
-//   - 色: ドラッグ中は 300ms のデバウンス、blur で即確定
+//   - 色: ドラッグ中は 300ms のデバウンス、blur で即確定。アンマウント時にも
+//     未確定の色を流すが、行が消えた (カテゴリ削除) ときは捨てる — 最後の
+//     描画で捕まえた onSaveCategory は削除前の一覧を握っているので、そのまま
+//     流すと消したカテゴリが復活する。確定は常に親の ref 経由で「今の一覧に
+//     その id があるか」を見てから行う (commitCategoryColor)
 
 const COLOR_DEBOUNCE_MS = 300;
 
@@ -93,6 +97,9 @@ function DraftTextInput({
 
 /**
  * 色の入力。ドラッグ中の onChange はデバウンスし、blur で即確定する。
+ * アンマウント時の flush も最後に描画されたときの onCommit を呼ぶ。この
+ * コンポーネント自身は消えた後の props を知りようがないので、onCommit
+ * 側が (親の ref 経由で) 今の状態を見て捨てるかどうかを決める。
  */
 function DraftColorInput({ value, onCommit, ...inputProps }) {
   const [draft, setDraft] = useState(value);
@@ -163,6 +170,19 @@ export function SubjectsMasterTab({
   onSaveSubject,
   onDelSubject,
 }) {
+  // 色の確定は ref 経由で「今の」一覧と保存関数を見る。DraftColorInput の
+  // アンマウント時 flush は最後の描画時の closure から来るので、閉じ込めた
+  // 一覧を使うと削除したカテゴリが復活する。id が今の一覧に無ければ捨てる
+  const latestRef = useRef({ subjectCategories, onSaveCategory });
+  latestRef.current = { subjectCategories, onSaveCategory };
+  const commitCategoryColor = useCallback((id, color) => {
+    const { subjectCategories: cats, onSaveCategory: save } = latestRef.current;
+    const cat = (cats || []).find((c) => c.id === id);
+    if (!cat) return;
+    if ((cat.color || "#888888") === color) return;
+    save({ ...cat, color });
+  }, []);
+
   return (
     <div>
       <div
@@ -242,7 +262,7 @@ export function SubjectsMasterTab({
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <DraftColorInput
                       value={cat.color || "#888888"}
-                      onCommit={(color) => onSaveCategory({ ...cat, color })}
+                      onCommit={(color) => commitCategoryColor(cat.id, color)}
                       title="カテゴリ色"
                       aria-label={`${cat.name} の色`}
                       style={{ width: 26, height: 20 }}

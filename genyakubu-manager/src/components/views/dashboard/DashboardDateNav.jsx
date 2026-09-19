@@ -1,5 +1,6 @@
+import { useId } from "react";
 import { S } from "../../../styles/common";
-import { dateToDay } from "../../../data";
+import { dateToDay, fmtDateWeekday } from "../../../data";
 import { shiftDate } from "../dashboardHelpers";
 import { useDateKeyNav } from "../../../hooks/useDateKeyNav";
 
@@ -27,6 +28,8 @@ export function DashboardDateNav({
 }) {
   const stepDays = viewMode === "timetable" ? 1 : daysInRange;
   const label = viewMode === "timetable" ? "表示日" : "表示開始日";
+  // 日付入力の読み上げ名は画面に見えている見出し (表示日 / 表示開始日) と同じ
+  const inputId = useId();
   // ← / → / t は「← 前」「次 →」「今日」と同じ動き (hooks/useDateKeyNav)。
   // このコンポーネントはダッシュボードと一緒にアンマウントされるので、
   // 他のビューでは効かない
@@ -48,8 +51,11 @@ export function DashboardDateNav({
         border: "1px solid #e0e0e0",
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>{label}</span>
+      <label htmlFor={inputId} style={{ fontWeight: 800, fontSize: 13, color: "#444" }}>
+        {label}
+      </label>
       <input
+        id={inputId}
         type="date"
         value={startDate}
         onChange={(e) => e.target.value && setStartDate(e.target.value)}
@@ -102,13 +108,15 @@ export function DashboardDateNav({
         <button
           type="button"
           onClick={() => onJumpToAbsenceFlow(startDate)}
-          title={`${startDate} の欠勤組み換えを開く`}
+          // 読み上げ名 / title は DayNumberLink・DashDayRow と同じ文言
+          aria-label={`${fmtDateWeekday(startDate)} の欠勤組み換えを開く`}
+          title={`${fmtDateWeekday(startDate)} の欠勤組み換えを開く`}
           style={{ ...S.btn(false), fontSize: 12, fontWeight: 700 }}
         >
           🚑 この日の欠勤組み換え
         </button>
       )}
-      <span style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
+      <span aria-live="polite" style={{ marginLeft: "auto", fontSize: 11, color: "#888" }}>
         {viewMode === "timetable" || daysInRange === 1
           ? startDate
           : `${startDate} 〜 ${days[days.length - 1].dateStr}（${daysInRange}日間）`}

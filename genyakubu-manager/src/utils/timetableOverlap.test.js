@@ -106,6 +106,16 @@ describe("findOverlappingTimetables", () => {
     expect(r[0].sharedGrades).toEqual(["中1-3"]);
   });
 
+  it("学年は「・」で並べる", () => {
+    const r = findOverlappingTimetables(
+      { startDate: "2026-10-01", endDate: "2026-10-10", grades: [] },
+      TT
+    );
+    expect(describeOverlap(r[0], { today: new Date(2026, 8, 19) })).toBe(
+      "2学期 中学 と 10/1〜10/10 が重なります (中1・中2・中3)"
+    );
+  });
+
   it("excludeId で編集中の自分自身を除く。両方無制限なら「全期間」", () => {
     const tts = [
       { id: 5, name: "A", grades: [], startDate: null, endDate: null },
@@ -115,5 +125,38 @@ describe("findOverlappingTimetables", () => {
     expect(r.map((o) => o.timetable.id)).toEqual([6]);
     expect(formatOverlapRange(r[0])).toBe("全期間");
     expect(findOverlappingTimetables(null, tts)).toEqual([]);
+  });
+});
+
+// 期切替は年をまたぐ。区間の年が今年と違う / 始点と終点で違うときだけ年を付ける
+describe("formatOverlapRange の年表記", () => {
+  const today = new Date(2026, 8, 19); // 2026-09-19
+  it("今年の区間は M/D だけ", () => {
+    expect(formatOverlapRange({ overlapStart: "2026-04-01", overlapEnd: "2026-04-10" }, { today })).toBe("4/1〜4/10");
+    expect(formatOverlapRange({ overlapStart: "2026-09-01", overlapEnd: null }, { today })).toBe("9/1〜");
+    expect(formatOverlapRange({ overlapStart: null, overlapEnd: "2026-12-31" }, { today })).toBe("〜12/31");
+    expect(formatOverlapRange({ overlapStart: "2026-08-31", overlapEnd: "2026-08-31" }, { today })).toBe("8/31");
+  });
+
+  it("今年以外の区間は年を付ける (片側だけでも)", () => {
+    expect(formatOverlapRange({ overlapStart: "2027-04-01", overlapEnd: "2027-04-10" }, { today })).toBe("2027/4/1〜2027/4/10");
+    expect(formatOverlapRange({ overlapStart: "2027-04-01", overlapEnd: null }, { today })).toBe("2027/4/1〜");
+    expect(formatOverlapRange({ overlapStart: null, overlapEnd: "2025-03-31" }, { today })).toBe("〜2025/3/31");
+    expect(formatOverlapRange({ overlapStart: "2025-08-31", overlapEnd: "2025-08-31" }, { today })).toBe("2025/8/31");
+  });
+
+  it("始点と終点の年が違えば両方に年を付ける", () => {
+    expect(formatOverlapRange({ overlapStart: "2026-12-01", overlapEnd: "2027-03-31" }, { today })).toBe("2026/12/1〜2027/3/31");
+    const r = findOverlappingTimetables(
+      { startDate: "2026-12-01", endDate: "2027-03-31", grades: "中3" },
+      TT
+    );
+    expect(describeOverlap(r[0], { today })).toBe("2学期 中学 と 2026/12/1〜2027/3/31 が重なります (中3)");
+  });
+
+  it("today を渡さなければ実際の今年を基準にする", () => {
+    const y = new Date().getFullYear();
+    expect(formatOverlapRange({ overlapStart: `${y}-04-01`, overlapEnd: null })).toBe("4/1〜");
+    expect(formatOverlapRange({ overlapStart: `${y + 1}-04-01`, overlapEnd: null })).toBe(`${y + 1}/4/1〜`);
   });
 });
