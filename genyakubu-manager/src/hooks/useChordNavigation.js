@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { hasOpenDialog, isTypingTarget } from "../utils/keyboardGuards";
 
 // `g` を起点とした 2 文字 chord ナビゲーション。
 // - `g` を押した直後 timeout 内にもう 1 キー押すと chordMap から対応する値を引いて onMatch に渡す。
@@ -28,18 +29,6 @@ export function useChordNavigation({
   onTimeoutRef.current = onTimeout;
 
   useEffect(() => {
-    const isTypingTarget = (el) => {
-      if (!el) return false;
-      const tag = el.tagName;
-      return (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el.isContentEditable
-      );
-    };
-    const hasOpenDialog = () =>
-      !!document.querySelector('[role="dialog"][aria-modal="true"]');
 
     let waitingG = false;
     let timer = null;

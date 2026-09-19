@@ -7,6 +7,7 @@ import { sortTeacherNames } from "../../utils/teacherKana";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
+import { draftDiscardPrompt, draftSaveAndContinuePrompt } from "../../utils/absenceDraftPrompt";
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
 import { useToday } from "../../hooks/useToday";
@@ -62,6 +63,9 @@ export function AbsenceWorkflowView({
   // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
   onOpenMultiDayAbsence,
   onOpenChainSubstitution,
+  // 未保存の下書きの有無を親 (App) に知らせる。App はこれを見て、別ビューへ
+  // 移る前に確認を出す (このビューは lazy でアンマウントされると下書きが消える)
+  onDirtyChange,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -77,19 +81,6 @@ export function AbsenceWorkflowView({
   const teacherDropdownRef = useRef(null);
   const draft = useAbsenceDraft();
 
-  // initDate を消費通知 (親側でクリア)。マウント中に再ジャンプされた場合は
-  // 新しい日付に切り替え、保留中のドラフトは破棄する (別の日付の作業を
-  // 紛れ込ませないため)。
-  useEffect(() => {
-    if (!initDate) return;
-    if (initDate !== date) {
-      setDate(initDate);
-      draft.reset();
-    }
-    onConsumeInitDate?.();
-    // date / draft / onConsumeInitDate は依存に含めない (initDate 変化時のみ実行)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initDate]);
 
   // ドロップダウン外クリック / Escape で閉じる (K3c: キーボードでも
   // 閉じられるように。IME 変換中の Escape は無視する)
@@ -471,6 +462,50 @@ export function AbsenceWorkflowView({
     return () => window.removeEventListener("beforeunload", handler);
   }, [draftCount]);
 
+  // 下書きの有無 (= 破棄ボタンと同じ draftCount > 0) を親へ。保存・破棄・
+  // 日付変更で reset されれば false になり、アンマウント時も false に戻す。
+  // 親が毎回新しい関数を渡しても効果を張り替えないよう ref 経由で呼ぶ
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(draftCount);
+  }, [draftCount]);
+  useEffect(() => () => onDirtyChangeRef.current?.(0), []);
+
+  // initDate を消費通知 (親側でクリア)。マウント中に再ジャンプされた場合は
+  // 新しい日付に切り替え、保留中のドラフトは破棄する (別の日付の作業を
+  // 紛れ込ませないため)。下書きがあるときは他のビュー移動 (App の
+  // navigateGuarded) と同じく確認を挟む — 同じビューに留まるジャンプは
+  // App 側のガードを通らないので、ここで聞かないと無言で消える
+  useEffect(() => {
+    if (!initDate) return undefined;
+    if (initDate === date) {
+      onConsumeInitDate?.();
+      return undefined;
+    }
+    if (draftCount === 0) {
+      setDate(initDate);
+      draft.reset();
+      onConsumeInitDate?.();
+      return undefined;
+    }
+    let stale = false;
+    confirm(draftDiscardPrompt({ count: draftCount, toDate: initDate })).then((ok) => {
+      if (stale) return;
+      if (ok) {
+        setDate(initDate);
+        draft.reset();
+      }
+      onConsumeInitDate?.();
+    });
+    return () => {
+      stale = true;
+    };
+    // date / draft / draftCount / confirm / onConsumeInitDate は依存に含めない
+    // (initDate 変化時のみ実行)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initDate]);
+
   const handleDiscard = useCallback(async () => {
     const ok = await confirm({
       title: "下書きを破棄",
@@ -484,12 +519,9 @@ export function AbsenceWorkflowView({
   const handleDateChange = useCallback(
     async (newDate) => {
       if (draftCount > 0) {
-        const ok = await confirm({
-          title: "下書きがあります",
-          message: "日付を変更すると下書きが破棄されます。続行しますか？",
-          okLabel: "破棄して変更",
-          tone: "danger",
-        });
+        const ok = await confirm(
+          draftDiscardPrompt({ count: draftCount, toDate: newDate, action: "変更" })
+        );
         if (!ok) return;
         draft.reset();
       }
@@ -515,7 +547,7 @@ export function AbsenceWorkflowView({
       (!removedSubIds || removedSubIds.length === 0)
     ) {
       toasts.error("変更がありません");
-      return;
+      return false;
     }
     try {
       const res = saveAbsenceBatch({
@@ -555,11 +587,29 @@ export function AbsenceWorkflowView({
       if (removedOnly) parts.push(`代行解除 ${removedOnly} 件`);
       toasts.success(`保存しました (${parts.join(" / ")})`);
       draft.reset();
+      // 親のガード用フラグは effect より先に (同期で) 落とす。保存直後に
+      // 別ビューへ移る導線 (玉突き代行で探す) が「下書きがあります」と
+      // 聞き直さないように
+      onDirtyChangeRef.current?.(0);
+      return true;
     } catch (err) {
       console.error(err);
       toasts.error("保存に失敗しました");
+      return false;
     }
   }, [draft, date, slots, subs, adjustments, sessionOverrides, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
+
+  // 玉突き代行は「欠勤を下書きしてから空き講師を探す」続きの作業。下書きが
+  // あるときは捨てさせず、保存してから開く (キャンセルなら留まる)
+  const handleOpenChain = useCallback(async () => {
+    if (!onOpenChainSubstitution) return;
+    if (draftCount > 0) {
+      const ok = await confirm(draftSaveAndContinuePrompt({ count: draftCount }));
+      if (!ok) return;
+      if (!handleSave()) return;
+    }
+    onOpenChainSubstitution(date);
+  }, [onOpenChainSubstitution, draftCount, confirm, handleSave, date]);
 
   if (!isAdmin) {
     return (
@@ -793,7 +843,7 @@ export function AbsenceWorkflowView({
             {onOpenChainSubstitution && (
               <button
                 type="button"
-                onClick={() => onOpenChainSubstitution(date)}
+                onClick={handleOpenChain}
                 title="この日の代行未定のコマに、空いている先生を自動で当ててみる (提案。自動では確定しない)"
                 style={{ ...S.btn(false), fontSize: 12 }}
               >

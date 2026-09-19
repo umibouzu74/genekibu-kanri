@@ -162,3 +162,92 @@ describe("SubListTab の期間外コマの付け替え", () => {
     expect(screen.queryByRole("button", { name: /有効なコマへ付け替え/ })).toBeNull();
   });
 });
+
+// 並び替え (対象日 / 作成日時、それぞれ昇順・降順) と「その日の欠勤組み換えへ」
+// (🚑)。時間割調整一覧・回数補正一覧と同じ導線 (2026-09-15)。並び順の state は
+// 親 (SubstituteView) が持ち、ここでは切り替えの通知と表示だけを見る
+describe("SubListTab の並び替えと日付ジャンプ", () => {
+  const sortBtn = (label) => screen.getByRole("button", { name: `${label}で並べ替え` });
+  const th = (re) => screen.getByRole("columnheader", { name: re });
+
+  it("既定 (対象日昇順): 対象日が ascending、作成日時は none。作成日時を押すと新しい順", () => {
+    const setSortBy = vi.fn();
+    renderTab({ sortBy: "date", setSortBy });
+    expect(th(/対象日/).getAttribute("aria-sort")).toBe("ascending");
+    expect(th(/作成日時/).getAttribute("aria-sort")).toBe("none");
+    expect(sortBtn("対象日").textContent).toBe("↑");
+    expect(sortBtn("作成日時").textContent).toBe("↕");
+    fireEvent.click(sortBtn("作成日時"));
+    expect(setSortBy).toHaveBeenCalledWith("createdAt-desc");
+    // 見出しセル自体のクリックでも同じ (ボタンのクリックは二重に数えない)
+    fireEvent.click(th(/作成日時/));
+    expect(setSortBy).toHaveBeenCalledTimes(2);
+    expect(setSortBy).toHaveBeenLastCalledWith("createdAt-desc");
+  });
+
+  it("同じ列をもう一度押すと昇順 / 降順が反転する", () => {
+    const setSortBy = vi.fn();
+    renderTab({ sortBy: "date", setSortBy });
+    fireEvent.click(sortBtn("対象日"));
+    expect(setSortBy).toHaveBeenCalledWith("date-desc");
+    cleanup();
+    renderTab({ sortBy: "date-desc", setSortBy });
+    expect(th(/対象日/).getAttribute("aria-sort")).toBe("descending");
+    expect(sortBtn("対象日").textContent).toBe("↓");
+    fireEvent.click(sortBtn("対象日"));
+    expect(setSortBy).toHaveBeenLastCalledWith("date");
+  });
+
+  it("登録が新しい順のときは作成日時が descending、押すと古い順、対象日を押すと対象日昇順", () => {
+    const setSortBy = vi.fn();
+    renderTab({ sortBy: "createdAt-desc", setSortBy });
+    expect(th(/作成日時/).getAttribute("aria-sort")).toBe("descending");
+    expect(th(/対象日/).getAttribute("aria-sort")).toBe("none");
+    expect(sortBtn("作成日時").textContent).toBe("↓");
+    fireEvent.click(sortBtn("作成日時"));
+    expect(setSortBy).toHaveBeenLastCalledWith("createdAt");
+    fireEvent.click(sortBtn("対象日"));
+    expect(setSortBy).toHaveBeenLastCalledWith("date");
+    cleanup();
+    renderTab({ sortBy: "createdAt", setSortBy });
+    expect(th(/作成日時/).getAttribute("aria-sort")).toBe("ascending");
+    expect(sortBtn("作成日時").textContent).toBe("↑");
+  });
+
+  it("setSortBy が無ければ見出しは操作にならない", () => {
+    renderTab();
+    expect(screen.queryByRole("button", { name: /で並べ替え$/ })).toBeNull();
+    expect(th(/対象日/).getAttribute("aria-sort")).toBeNull();
+    expect(th(/作成日時/).getAttribute("aria-sort")).toBeNull();
+  });
+
+  it("作成日時の列は紙面に載せない (th / td とも no-print)", () => {
+    renderTab({ sortBy: "date", setSortBy: vi.fn() });
+    expect(th(/作成日時/).classList.contains("no-print")).toBe(true);
+    // 対象日の列は紙面に残る
+    expect(th(/対象日/).classList.contains("no-print")).toBe(false);
+    const cells = screen.getAllByRole("cell").filter((c) => c.classList.contains("no-print"));
+    // 行ごとに作成日時の td (閲覧者なので操作列は無い)
+    expect(cells).toHaveLength(SUBS.length);
+  });
+
+  it("管理者には行ごとに 🚑 が出て、その日の欠勤組み換えへ飛ぶ", () => {
+    const onJumpToDate = vi.fn();
+    renderTab({ isAdmin: true, onJumpToDate });
+    const btns = screen.getAllByRole("button", { name: /の欠勤組み換えを開く$/ });
+    expect(btns).toHaveLength(2);
+    const btn = screen.getByRole("button", { name: "2026-09-10 (木) の欠勤組み換えを開く" });
+    expect(btn.textContent).toBe("🚑");
+    expect(btn.title).toBe("2026-09-10 (木) の欠勤組み換えを開く");
+    fireEvent.click(btn);
+    expect(onJumpToDate).toHaveBeenCalledWith("2026-09-10");
+  });
+
+  it("閲覧者 / 導線未配線のときは 🚑 を出さない", () => {
+    renderTab({ isAdmin: false, onJumpToDate: vi.fn() });
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+    cleanup();
+    renderTab({ isAdmin: true });
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+  });
+});

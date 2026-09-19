@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
-import { activeTeachersOnDate } from "../../../utils/absenceHelpers";
+import { absentTeachersForSlot, activeTeachersOnDate } from "../../../utils/absenceHelpers";
+import { needsSubstitute } from "../../../utils/substituteState";
 import { ADJ_COLOR, gradeColor as GC, timeToMin } from "../../../data";
 import {
   formatCount,
@@ -16,6 +17,9 @@ import {
   splitTime,
 } from "../../../utils/excelGrid";
 import { ExcelCell } from "./ExcelCell";
+
+// 仮代行の無いセルへ渡す空配列 (毎レンダ new [] を作ると ExcelCell の memo が外れる)
+const NO_PENDING = Object.freeze([]);
 
 // ─── Excel Section (one table per department) ───────────────────────
 export function ExcelSection({
@@ -281,7 +285,8 @@ export function ExcelSection({
     return {
       isUnavailable: isUnavail && !isOff,
       isHolidayOff: isOff,
-      pendingSub: pendingSubMap.get(slot.id) || null,
+      // 仮代行は (コマ, 元講師) ごとなので多担任コマは複数件
+      pendingSubs: pendingSubMap?.get(slot.id) || NO_PENDING,
       existingSubs: existingSubMap.get(slot.id) || [],
       isSubMode,
       subDate,
@@ -306,13 +311,22 @@ export function ExcelSection({
             }
             // Find the teacher for this cell: prefer absent teacher, fall back to first.
             // 隔週は A/B を解いた「その日の担当」(B 週なら note のパートナー)
-            const teachers = activeTeachersOnDate(s, subDate, {
-              biweeklyAnchors,
-              holidays,
-              examPeriods,
-            });
-            const absent = teachers.find((t) => unavailableTeachers.has(t));
-            const teacher = absent || teachers[0] || "";
+            const ctx = { biweeklyAnchors, holidays, examPeriods };
+            const teachers = activeTeachersOnDate(s, subDate, ctx);
+            // 多担任コマで欠勤が 2 人以上いるときは、まだ代行 (仮 / 保存済み)
+            // の付いていない人を先に出す (1 人目を割り当てた後のクリックで
+            // 2 人目に進めるように)。欠勤者の判定はポップオーバーの担当切替
+            // (ExcelGridView.popoverAbsentTeachers) と共有
+            const absents = absentTeachersForSlot(s, subDate, ctx, unavailableTeachers);
+            const covered = new Set([
+              ...(pendingSubMap?.get(s.id) || []).map((p) => p.originalTeacher),
+              // 「代行なしで確定」も片付いている (needsSubstitute = pending だけ)
+              ...(existingSubMap?.get(s.id) || [])
+                .filter((x) => !needsSubstitute(x))
+                .map((x) => x.originalTeacher),
+            ]);
+            const teacher =
+              absents.find((t) => !covered.has(t)) || absents[0] || teachers[0] || "";
             if (teacher) onCellClick(s, rect, teacher, el);
           }
         : undefined,

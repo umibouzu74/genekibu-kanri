@@ -3,12 +3,12 @@ import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortTeacherNames } from "../../../utils/teacherKana";
 import { getSlotTeachers } from "../../../utils/biweekly";
-import { fmtIsoLocal } from "../../../utils/dateHelpers";
+import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
 // 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替 / コマ休講) を月 / 講師 / 種別で
 // フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
-// 「📅」ボタンで該当日の欠勤振替画面に遷移する。
+// 「🚑」ボタンで該当日の欠勤組み換えに遷移する。
 
 const TYPE_META = {
   combine: { label: "合同授業", bg: "#e6f4ea", fg: "#1e6f3a" },
@@ -515,12 +515,12 @@ export function AdjustmentListTab({
                           <button
                             type="button"
                             onClick={() => onJumpToDate(adj.date)}
-                            aria-label={`${adj.date} の欠勤振替画面を開く`}
-                            title="この日の欠勤振替画面を開く"
+                            aria-label={`${fmtDateWeekday(adj.date)} の欠勤組み換えを開く`}
+                            title={`${fmtDateWeekday(adj.date)} の欠勤組み換えを開く`}
                             className={ICON_BTN_CLASS}
                             style={{ ...S.iconBtn, marginRight: 2 }}
                           >
-                            📅
+                            🚑
                           </button>
                         )}
                         {onJumpToDate &&
@@ -529,12 +529,12 @@ export function AdjustmentListTab({
                             <button
                               type="button"
                               onClick={() => onJumpToDate(adj.targetDate)}
-                              aria-label={`振替先 ${adj.targetDate} の欠勤振替画面を開く`}
-                              title="振替先の欠勤振替画面を開く"
+                              aria-label={`振替先 ${fmtDateWeekday(adj.targetDate)} の欠勤組み換えを開く`}
+                              title={`振替先 ${fmtDateWeekday(adj.targetDate)} の欠勤組み換えを開く`}
                               className={ICON_BTN_CLASS}
                               style={{ ...S.iconBtn, fontSize: 12, marginRight: 2 }}
                             >
-                              📅→
+                              🚑→
                             </button>
                           )}
                         <button

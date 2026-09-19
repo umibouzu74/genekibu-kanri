@@ -96,6 +96,8 @@ export function Dashboard({
   onConsumeInitDate,
   // 講師名クリックでその人の月間へ
   onSelectTeacher,
+  // 追加授業バナーの行クリックで編集へ (日別・時間割モードの両方)
+  onEditExtraLesson,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
@@ -298,6 +300,7 @@ export function Dashboard({
           daySchedules={daySchedules}
           dashboardMode
           onSelectTeacher={onSelectTeacher}
+          onEditExtraLesson={onEditExtraLesson}
         />
       ) : (
         <DashboardListView
@@ -320,6 +323,7 @@ export function Dashboard({
           adjustments={adjustments}
           onJumpToAbsenceFlow={jumpToAbsenceFlow}
           onSelectTeacher={onSelectTeacher}
+          onEditExtraLesson={onEditExtraLesson}
         />
       )}
     </div>

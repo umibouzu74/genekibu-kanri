@@ -5,10 +5,17 @@ import { needsSubstitute } from "../utils/substituteState";
 import { filterSlotsForDate } from "../utils/timetable";
 import { isSlotCancelledOnDate } from "../utils/slotCancel";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
+import { useOptionalToasts } from "./useToasts";
 import {
   computeAvailableTeachers,
   suggestChainSubstitutions,
 } from "../utils/chainSubstitution";
+
+// 仮代行 (pendingSubs) の索引キー。欠勤・代行は「コマ × 講師」単位
+// (CLAUDE.md) なので、コマ id だけで引くと多担任コマ (香川·福江·川井) で
+// 2 人目の仮代行が 1 人目を黙って上書きする (2026-09-15)。
+export const pendingKey = (slotId, originalTeacher) =>
+  `${slotId}\u0000${originalTeacher || ""}`;
 
 /**
  * Custom hook for managing substitution mode in the timetable view.
@@ -33,6 +40,7 @@ export function useSubstitutionMode({
   daySchedules = [],
   adjustments = [],
 }) {
+  const toasts = useOptionalToasts();
   const [subDate, setSubDateRaw] = useState(null);
   const [pendingSubs, setPendingSubs] = useState([]);
   const [popoverTarget, setPopoverTarget] = useState(null);
@@ -88,12 +96,26 @@ export function useSubstitutionMode({
     return m;
   }, [existingSubs]);
 
-  // Map slotId -> pending sub for quick lookup
+  // Map slotId -> pending sub[] (元講師ごとに 1 件。existingSubMap と同じ形)。
+  // 1 件だけ引く用途は getPendingSub(slotId, originalTeacher)
   const pendingSubMap = useMemo(() => {
     const m = new Map();
-    for (const s of pendingSubs) m.set(s.slotId, s);
+    for (const s of pendingSubs) {
+      if (!m.has(s.slotId)) m.set(s.slotId, []);
+      m.get(s.slotId).push(s);
+    }
     return m;
   }, [pendingSubs]);
+  const pendingByKey = useMemo(() => {
+    const m = new Map();
+    for (const s of pendingSubs) m.set(pendingKey(s.slotId, s.originalTeacher), s);
+    return m;
+  }, [pendingSubs]);
+  const getPendingSub = useCallback(
+    (slotId, originalTeacher) =>
+      pendingByKey.get(pendingKey(slotId, originalTeacher)) || null,
+    [pendingByKey]
+  );
 
   // Available teachers (auto-detected from holidays, biweekly, etc.)
   const availableTeachers = useMemo(() => {
@@ -145,7 +167,6 @@ export function useSubstitutionMode({
     for (const slot of dateFilteredSlots) {
       if (slot.day !== dayOfDate) continue;
       if (holidayOffSlots.has(slot.id)) continue; // cancelled, no sub needed
-      if (pendingSubMap.has(slot.id)) continue; // pending assignment
 
       // 代行が要るかは**講師ごと**。代行者が入っているレコードだけが
       // 「対応済み」で、代行未定 (substitute: "") はまさに探している状態、
@@ -155,13 +176,14 @@ export function useSubstitutionMode({
       // 隔週は A/B を解いた「その日の担当」で見る (B 週なら note のパートナー)
       for (const t of activeTeachersOnDate(slot, subDate, biweeklyCtx)) {
         if (!unavailableTeachers.has(t)) continue;
+        if (pendingByKey.has(pendingKey(slot.id, t))) continue; // 仮代行済み
         const existing = stateOf.get(t);
         if (existing && !needsSubstitute(existing)) continue;
         result.push({ slotId: slot.id, originalTeacher: t, date: subDate });
       }
     }
     return result;
-  }, [subDate, dayOfDate, dateFilteredSlots, holidayOffSlots, existingSubMap, pendingSubMap, unavailableTeachers, biweeklyCtx]);
+  }, [subDate, dayOfDate, dateFilteredSlots, holidayOffSlots, existingSubMap, pendingByKey, unavailableTeachers, biweeklyCtx]);
 
   // Chain suggestions
   const chainSuggestions = useMemo(() => {
@@ -172,12 +194,20 @@ export function useSubstitutionMode({
     );
   }, [subDate, uncoveredSlots, availableTeachers, dateFilteredSlots, subjects, subjectCategories, partTimeStaff]);
 
-  // Suggestion map for quick lookup
+  // Suggestion map for quick lookup. uncoveredSlots / chainSuggestions は
+  // (コマ, 元講師) 単位なので、コマ id だけで引くと多担任コマで 2 人目の
+  // 提案が 1 人目を黙って上書きし、ポップオーバーが別人の提案を出す。
+  // 索引は pendingByKey と同じ pendingKey (slotId, originalTeacher)
   const suggestionMap = useMemo(() => {
     const m = new Map();
-    for (const s of chainSuggestions) m.set(s.slotId, s);
+    for (const s of chainSuggestions) m.set(pendingKey(s.slotId, s.originalTeacher), s);
     return m;
   }, [chainSuggestions]);
+  const getSuggestion = useCallback(
+    (slotId, originalTeacher) =>
+      suggestionMap.get(pendingKey(slotId, originalTeacher)) || null,
+    [suggestionMap]
+  );
 
   // --- Actions ---
 
@@ -195,17 +225,26 @@ export function useSubstitutionMode({
     setCombineMode(null);
   }, []);
 
+  // (コマ, 元講師) 単位で差し替える。同じコマの別講師の仮代行は残す
   const assignSubstitute = useCallback((slotId, originalTeacher, substitute) => {
     setPendingSubs((prev) => {
-      const next = prev.filter((s) => s.slotId !== slotId);
+      const key = pendingKey(slotId, originalTeacher);
+      const next = prev.filter((s) => pendingKey(s.slotId, s.originalTeacher) !== key);
       next.push({ slotId, originalTeacher, substitute });
       return next;
     });
     setPopoverTarget(null);
   }, []);
 
-  const removeAssignment = useCallback((slotId) => {
-    setPendingSubs((prev) => prev.filter((s) => s.slotId !== slotId));
+  // originalTeacher 省略 = そのコマの仮代行を全部消す (useAbsenceDraft.clearSub と同じ規約)
+  const removeAssignment = useCallback((slotId, originalTeacher) => {
+    setPendingSubs((prev) =>
+      originalTeacher === undefined
+        ? prev.filter((s) => s.slotId !== slotId)
+        : prev.filter(
+            (s) => pendingKey(s.slotId, s.originalTeacher) !== pendingKey(slotId, originalTeacher)
+          )
+    );
   }, []);
 
   const openPopover = useCallback((slotId, rect, originalTeacher, anchorEl) => {
@@ -216,8 +255,11 @@ export function useSubstitutionMode({
     setPopoverTarget(null);
   }, []);
 
+  // 仮代行を確定して保存する。同じ (日付, コマ, 元講師) のレコードがあれば
+  // 置き換えるが、欠勤登録時に入れた理由メモは引き継ぐ (代行者を決めただけで
+  // 「体調不良」が消えないように)。戻り値は保存件数
   const saveAll = useCallback(() => {
-    if (pendingSubs.length === 0 || !subDate) return;
+    if (pendingSubs.length === 0 || !subDate) return 0;
     const ts = new Date().toISOString();
     let nextId = subs.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
 
@@ -239,7 +281,7 @@ export function useSubstitutionMode({
         originalTeacher: p.originalTeacher,
         substitute: p.substitute,
         status: "confirmed",
-        memo: "",
+        memo: existing?.memo || "",
         createdAt: existing?.createdAt || ts,
         updatedAt: ts,
       });
@@ -247,7 +289,10 @@ export function useSubstitutionMode({
     const kept = subs.filter((s) => !updatedIds.has(s.id));
     saveSubs([...kept, ...newRecords]);
     setPendingSubs([]);
-  }, [pendingSubs, subDate, subs, saveSubs]);
+    setPopoverTarget(null);
+    toasts?.success(`代行 ${newRecords.length} 件を保存しました`);
+    return newRecords.length;
+  }, [pendingSubs, subDate, subs, saveSubs, toasts]);
 
   const discardAll = useCallback(() => {
     setPendingSubs([]);
@@ -284,10 +329,12 @@ export function useSubstitutionMode({
     holidayOffSlots,
     existingSubMap,
     pendingSubMap,
+    getPendingSub,
     availableTeachers,
     allTeachersForDay,
     chainSuggestions,
     suggestionMap,
+    getSuggestion,
     uncoveredSlots,
     pendingSubs,
     popoverTarget,

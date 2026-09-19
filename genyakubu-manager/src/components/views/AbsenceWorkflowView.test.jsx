@@ -3,7 +3,7 @@
 // 曜日だけで絞っていた頃は、期切替で残してある旧期の時間割のコマが重なり、
 // 同じクラスが 2 重・3 重に並んでいた (2026-08-20)。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AbsenceWorkflowView } from "./AbsenceWorkflowView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -135,6 +135,47 @@ describe("AbsenceWorkflowView の欠勤登録 (代行未定)", () => {
     // カードは「滝澤 ⇒ 代行未定」(チップは他と同じ 2 文字で「未定」)
     expect(screen.getByText("代行未定", { exact: false })).toBeTruthy();
     expect(screen.getByText("未定")).toBeTruthy();
+  });
+});
+
+describe("AbsenceWorkflowView の下書きの通知 (onDirtyChange)", () => {
+  // 下書きを 1 件作る共通手順 (欠勤する先生を選んで「欠勤にする」)
+  // (保存後は先生が選ばれたままなので、2 回目は選択を飛ばす)
+  function makeDraft() {
+    const placeholder = screen.queryByText("(クリックして選択)");
+    if (placeholder) {
+      fireEvent.click(placeholder);
+      fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+  }
+
+  it("編集で件数 (1)、破棄で 0 を親へ知らせる", async () => {
+    const onDirtyChange = vi.fn();
+    renderView({ onDirtyChange });
+    // マウント直後は下書きなし
+    expect(onDirtyChange).toHaveBeenLastCalledWith(0);
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+    // 破棄 → 確認ダイアログで OK
+    fireEvent.click(screen.getByRole("button", { name: "破棄" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "破棄" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(0));
+  });
+
+  it("保存でも 0 に戻り、アンマウントでも 0 を送る", () => {
+    const onDirtyChange = vi.fn();
+    const { unmount } = renderView({ onDirtyChange });
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(0);
+    makeDraft();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+    unmount();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(0);
   });
 });
 
@@ -328,5 +369,94 @@ describe("AbsenceWorkflowView の欠勤登録の理由メモ", () => {
       status: "requested",
       memo: "学校行事",
     });
+  });
+});
+
+describe("AbsenceWorkflowView の日付ジャンプ (initDate) と下書き", () => {
+  function makeDraft() {
+    fireEvent.click(screen.getByText("(クリックして選択)"));
+    fireEvent.click(screen.getByLabelText("滝澤", { selector: "input" }));
+    fireEvent.click(screen.getByRole("button", { name: /欠勤にする/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 件を欠勤にする/ }));
+  }
+  const NEXT_MON = "2026-09-28";
+
+  it("下書きがある状態で別の日へジャンプすると確認を出し、キャンセルなら日付も下書きも保つ", async () => {
+    const onConsumeInitDate = vi.fn();
+    const { rerender } = renderView({ onConsumeInitDate });
+    makeDraft();
+    expect(screen.getByRole("button", { name: /保存/ })).toBeInTheDocument();
+    const dateInput = screen.getByDisplayValue(MON);
+    rerender(
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <AbsenceWorkflowView
+            slots={SLOTS} subs={[]} adjustments={[]} sessionOverrides={[]} holidays={[]}
+            examPeriods={[]} biweeklyAnchors={[]} classSets={[]}
+            displayCutoff={{ groups: [], cohorts: [] }} partTimeStaff={[]} subjects={[]}
+            timetables={TIMETABLES} saveSubs={vi.fn()} saveAdjustments={vi.fn()}
+            saveSessionOverrides={vi.fn()} isAdmin initDate={NEXT_MON}
+            onConsumeInitDate={onConsumeInitDate}
+          />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/下書きが 1 件あります。破棄して 2026-09-28 \(月\) へ移動しますか/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(dateInput.value).toBe(MON);
+    expect(screen.getByRole("button", { name: /保存/ })).toBeInTheDocument();
+    // ジャンプ要求は消費済み (もう一度同じ日付を頼まれても再び聞かない)
+    expect(onConsumeInitDate).toHaveBeenCalled();
+  });
+
+  it("下書きが無ければ確認なしで日付を切り替える", () => {
+    const onConsumeInitDate = vi.fn();
+    const { rerender } = renderView({ onConsumeInitDate });
+    rerender(
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <AbsenceWorkflowView
+            slots={SLOTS} subs={[]} adjustments={[]} sessionOverrides={[]} holidays={[]}
+            examPeriods={[]} biweeklyAnchors={[]} classSets={[]}
+            displayCutoff={{ groups: [], cohorts: [] }} partTimeStaff={[]} subjects={[]}
+            timetables={TIMETABLES} saveSubs={vi.fn()} saveAdjustments={vi.fn()}
+            saveSessionOverrides={vi.fn()} isAdmin initDate={NEXT_MON}
+            onConsumeInitDate={onConsumeInitDate}
+          />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    expect(screen.getByDisplayValue(NEXT_MON)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onConsumeInitDate).toHaveBeenCalled();
+  });
+
+  it("「玉突き代行で探す」は下書きがあれば保存してから開く (キャンセルなら留まる)", async () => {
+    const saveSubs = vi.fn();
+    const onOpenChainSubstitution = vi.fn();
+    renderView({ saveSubs, onOpenChainSubstitution });
+    makeDraft();
+    fireEvent.click(screen.getByRole("button", { name: /玉突き代行で探す/ }));
+    let dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/下書きが 1 件あります。保存してから玉突き代行を開きますか/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(saveSubs).not.toHaveBeenCalled();
+    expect(onOpenChainSubstitution).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /玉突き代行で探す/ }));
+    dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存して開く" }));
+    await waitFor(() => expect(onOpenChainSubstitution).toHaveBeenCalledWith(MON));
+    expect(saveSubs).toHaveBeenCalledTimes(1);
+  });
+
+  it("下書きが無ければ「玉突き代行で探す」はそのまま開く", () => {
+    const onOpenChainSubstitution = vi.fn();
+    renderView({ onOpenChainSubstitution });
+    fireEvent.click(screen.getByRole("button", { name: /玉突き代行で探す/ }));
+    expect(onOpenChainSubstitution).toHaveBeenCalledWith(MON);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 追加授業バナー (Dashboard 日別 / 時間割グリッドで共有) の骨格を固定する。
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ExtraLessonBanner } from "./ExtraLessonBanner";
 
 afterEach(cleanup);
@@ -39,6 +39,30 @@ describe("ExtraLessonBanner", () => {
     );
     expect(screen.getByText("追加授業")).toBeInTheDocument();
     expect(screen.queryByText(/@/)).toBeNull();
+  });
+
+  it("onEditExtraLesson を渡すと行がボタンになり、クリック / Enter / Space で id を渡す", () => {
+    const onEditExtraLesson = vi.fn();
+    render(<ExtraLessonBanner lessons={[LESSON]} onEditExtraLesson={onEditExtraLesson} />);
+    const row = screen.getByRole("button", { name: /プレップ個別指導/ });
+    expect(row.getAttribute("tabindex")).toBe("0");
+    // 行内の道具なのでモバイルの 40px 規則から外す
+    expect(row.className).toContain("inline-activate");
+    // メモは残しつつ、クリックで編集できることも title で伝える
+    expect(row.getAttribute("title")).toContain("テキスト持参");
+    expect(row.getAttribute("title")).toContain("編集");
+    fireEvent.click(row);
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyDown(row, { key: " " });
+    fireEvent.keyDown(row, { key: "a" });
+    expect(onEditExtraLesson).toHaveBeenCalledTimes(3);
+    expect(onEditExtraLesson).toHaveBeenCalledWith(1);
+  });
+
+  it("onEditExtraLesson が無ければ従来どおり素の行 (role / tabindex 無し)", () => {
+    render(<ExtraLessonBanner lessons={[LESSON]} />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByTitle("テキスト持参").getAttribute("tabindex")).toBeNull();
   });
 
   it("0 件なら何も描画しない", () => {

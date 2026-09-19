@@ -1,9 +1,13 @@
 // ─── 玉突き代行 提案ロジック ──────────────────────────────────────
 import { dateToDay, timeToMin } from "../data";
-import { getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
+import { biweeklyPartner, getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
+import { compareTeacherNames } from "./teacherKana";
+
+/** その日にコマが無い講師を候補に出すときの理由 (画面のバッジ文言と共有) */
+export const IDLE_TEACHER_REASON = "この日は担当なし";
 
 // ─── Pure sub-functions (exported for unit testing) ─────────────────
 
@@ -151,6 +155,23 @@ function collectTeacherSlots(daySlots) {
   return teacherSlots;
 }
 
+/**
+ * 時間割に出てくる全講師 (曜日を問わない。講師欄 + 隔週パートナー) と
+ * バイトの名前の集合。「その日のコマの講師」で候補を閉じないための母集団
+ * (常勤はその曜日にコマが無くても代行に入る — 2026-09-10 の西岡)。
+ * @returns {Set<string>}
+ */
+export function collectAllTeacherNames(allSlots, partTimeStaff) {
+  const names = new Set();
+  for (const slot of allSlots || []) {
+    for (const t of getSlotTeachers(slot)) names.add(t);
+    const partner = biweeklyPartner(slot.note);
+    if (partner) names.add(partner);
+  }
+  for (const s of partTimeStaff || []) if (s?.name) names.add(s.name);
+  return names;
+}
+
 /** 指定日付の既存 sub レコードから講師別 busyTime を構築。 */
 function buildSubstituteAssignments(subsForDate, allSlots) {
   const m = new Map();
@@ -178,6 +199,18 @@ function buildSubstituteAssignments(subsForDate, allSlots) {
  * @param {import("../types").Subject[]} subjects
  * @param {import("../types").Timetable[]} timetables
  * @param {Array} biweeklyAnchors - グローバル隔週基準
+ * @param {Record<string, number[]>} [teacherSubjects]
+ * @param {{includeIdleTeachers?: boolean}} [opts]
+ *   includeIdleTeachers: その日にコマが 1 つも無い講師 (時間割の全講師 +
+ *   バイト) も `reason: IDLE_TEACHER_REASON` の候補として返す。既定は
+ *   従来どおり (その日のコマが休講・隔週で空いた講師だけ)。タイムテーブル
+ *   代行モードの「空き / 授業中 / 時間重複」を変えないため、玉突き代行の
+ *   画面だけがオプトインする
+ *
+ * 返り値の各要素:
+ *   { name, isFreeAllDay, freeTimeSlots, cancelledSlots, reason, subjectIds,
+ *     isPartTime, noSlotsToday }
+ *   noSlotsToday はその日に担当コマが無い講師 (includeIdleTeachers のとき)
  */
 export function computeAvailableTeachers(
   date,
@@ -189,10 +222,12 @@ export function computeAvailableTeachers(
   subjects,
   timetables,
   biweeklyAnchors,
-  teacherSubjects = {}
+  teacherSubjects = {},
+  opts = {}
 ) {
   const day = dateToDay(date);
   if (!day) return [];
+  const includeIdle = !!opts?.includeIdleTeachers;
 
   const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
   const daySlots = filterSlotsForDate(allSlots, date, timetables).filter(
@@ -258,10 +293,67 @@ export function computeAvailableTeachers(
       reason: [...reasons].join("・"),
       subjectIds,
       isPartTime: staffNameSet.has(name),
+      noSlotsToday: false,
     });
   }
 
+  if (includeIdle) {
+    // その日に担当コマが無い講師。自由な時間帯は「その日に存在する全時間帯」
+    // から、その日に既に引き受けている代行の時刻を除いたもの (手動追加の
+    // 「全日」と同じ形)。代行を 1 つでも持っていれば全日空きではない
+    const dayTimes = [...new Set(daySlots.map((s) => s.time))];
+    // 母集団は「その日に有効な時間割」のコマの講師 + バイト。全コマから
+    // 集めると、期切替で終了日を入れて残してある旧期だけに居る (辞めた)
+    // 講師まで「担当なし」で並ぶ
+    const activeSlots = filterSlotsForDate(allSlots, date, timetables);
+    for (const name of collectAllTeacherNames(activeSlots, partTimeStaff)) {
+      if (teacherSlots.has(name)) continue;
+      const busyTimes = substituteAssignments.get(name) || [];
+      const isFreeAllDay = busyTimes.length === 0;
+      const freeTimeSlots = dayTimes.filter(
+        (time) => !busyTimes.some((bt) => timeOverlaps(time, bt))
+      );
+      if (freeTimeSlots.length === 0 && !isFreeAllDay) continue;
+      const subjectIds = resolveTeacherSubjectIds(name, {
+        teacherSubjects,
+        partTimeStaff,
+        staffNameSet,
+        slots: allSlots,
+        subjects,
+      });
+      result.push({
+        name,
+        isFreeAllDay,
+        freeTimeSlots,
+        cancelledSlots: [],
+        reason: IDLE_TEACHER_REASON,
+        subjectIds,
+        isPartTime: staffNameSet.has(name),
+        noSlotsToday: true,
+      });
+    }
+  }
+
   return result;
+}
+
+/**
+ * 空き講師の一覧を画面に並べる順。関連度 (休講・隔週でコマが空いた人 →
+ * その日に担当の無い人 → 手動追加) が主で、同点のときだけよみのあいうえお順
+ * (`utils/teacherKana`)。名前の文字列順は使わない (漢字は読み順に並ばない)。
+ * @param {Array} available - computeAvailableTeachers の返り値 (+ 手動追加)
+ * @param {Record<string, string>} [teacherKana]
+ */
+export function sortAvailableTeachers(available, teacherKana) {
+  const byKana = compareTeacherNames(teacherKana);
+  const rank = (t) => {
+    if (t.reason === "手動追加") return 2;
+    if (t.noSlotsToday) return 1;
+    return 0;
+  };
+  return [...(available || [])].sort(
+    (a, b) => rank(a) - rank(b) || byKana(a.name, b.name)
+  );
 }
 
 /** 1 ループ分: remaining を時間順にソートし、候補があれば assign する。 */
@@ -273,7 +365,8 @@ function assignOnePass(
   staffNameSet,
   partTimeStaff,
   chainStep,
-  result
+  result,
+  byKana
 ) {
   remaining.sort((a, b) => {
     const sa = slotMap.get(a.slotId);
@@ -310,7 +403,10 @@ function assignOnePass(
 
     if (candidates.length === 0) continue;
 
-    candidates.sort((a, b) => b.score - a.score);
+    // 関連度 (score) が主。同点はよみのあいうえお順で安定させる
+    candidates.sort(
+      (a, b) => b.score - a.score || byKana(a.teacher.name, b.teacher.name)
+    );
     const best = candidates[0];
     result.push({
       slotId: sub.slotId,
@@ -365,6 +461,7 @@ function assignOnePass(
  * @param {import("../types").Subject[]} subjects
  * @param {import("../types").SubjectCategory[]} subjectCategories
  * @param {import("../types").PartTimeStaffObject[]} partTimeStaff
+ * @param {Record<string, string>} [teacherKana] - 同点候補の並び (よみ順)
  */
 export function suggestChainSubstitutions(
   uncoveredSubs,
@@ -373,8 +470,10 @@ export function suggestChainSubstitutions(
   subjects,
   // subjectCategories is accepted for API compatibility; scoring uses subjects[].categoryId directly.
   _subjectCategories,
-  partTimeStaff
+  partTimeStaff,
+  teacherKana = {}
 ) {
+  const byKana = compareTeacherNames(teacherKana);
   const slotMap = new Map(slots.map((s) => [s.id, s]));
   const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
   const remaining = [...uncoveredSubs];
@@ -392,7 +491,8 @@ export function suggestChainSubstitutions(
       staffNameSet,
       partTimeStaff,
       chainStep,
-      result
+      result,
+      byKana
     );
     if (madeProgress) chainStep++;
   }

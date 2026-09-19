@@ -31,6 +31,10 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   suggestion,
   subjects,
   pendingSub,
+  // 多担任コマで欠勤者が 2 人以上いるとき、担当を切り替えて 2 人目の
+  // 代行を入れられるようにする (省略時は担当の表示だけ)
+  absentTeachers,
+  onSwitchTeacher,
   onAssign,
   onRemoveAssignment,
   onCombine,
@@ -165,8 +169,64 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
             marginTop: 2, gap: 6,
           }}
         >
-          <span style={{ fontSize: 10, color: "#888" }}>
+          <span
+            style={{ fontSize: 10, color: "#888", display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}
+          >
             担当: <b style={{ color: "#c03030" }}>{originalTeacher}</b>
+            {/* 欠勤者が 4 人以上 (プレップ + 隣のコマの合同など) はチップを
+                並べると幅 280px に収まらないので select にする */}
+            {absentTeachers && absentTeachers.length >= 4 && onSwitchTeacher && (
+              <select
+                aria-label="代行を入れる欠勤者"
+                value={originalTeacher}
+                onChange={(e) => {
+                  if (e.target.value !== originalTeacher) onSwitchTeacher(e.target.value);
+                }}
+                style={{
+                  fontSize: 10,
+                  padding: "1px 4px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                  background: "#fff",
+                  color: "#555",
+                }}
+              >
+                {absentTeachers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            )}
+            {absentTeachers && absentTeachers.length > 1 && absentTeachers.length < 4 && onSwitchTeacher && (
+              <span
+                role="group"
+                aria-label="他の欠勤者へ切替"
+                style={{ display: "flex", gap: 3, flexWrap: "wrap" }}
+              >
+                {absentTeachers
+                  .filter((t) => t !== originalTeacher)
+                  .map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => onSwitchTeacher(t)}
+                      title={`${t} の代行に切り替える`}
+                      style={{
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#555",
+                        borderRadius: 10,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        cursor: "pointer",
+                      }}
+                    >
+                      → {t}
+                    </button>
+                  ))}
+              </span>
+            )}
           </span>
           <label
             style={{

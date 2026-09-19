@@ -83,6 +83,18 @@ describe("App smoke", () => {
     }
   }, 60000);
 
+  it("トップバーの 🔍 検索 / ? ボタンからコマンドパレットとヘルプを開ける (タッチ端末向け)", async () => {
+    renderApp();
+    await expectNoCrash();
+    const search = screen.getByRole("button", { name: "コマンドパレットを開く" });
+    expect(search.title).toMatch(/K/);
+    expect(screen.getByRole("button", { name: "キーボードショートカット" })).toBeInTheDocument();
+    fireEvent.click(search);
+    // lazy 読み込みなので出るまで待つ
+    const palette = await screen.findByRole("dialog", { name: "コマンドパレット" });
+    expect(within(palette).getByRole("combobox")).toBeInTheDocument();
+  });
+
   it("講師を選ぶと月間 (既定) と週間が描ける", async () => {
     renderApp();
     await expectNoCrash();

@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 // イベントカレンダー: 追加授業の表示 (H1b) と visibility トグルの骨格を固定する。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { EventCalendarView } from "./EventCalendarView";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { EventCalendarView, SS_MONTH_KEY } from "./EventCalendarView";
 import { DEFAULT_EVENT_VISIBILITY } from "../EventVisibilityToggles";
 import { EVENT_KIND } from "../../constants/eventKinds";
+import { fmtDateWeekday } from "../../utils/dateHelpers";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // 表示中の月は sessionStorage に残る (タブ単位の保持)。テスト間で
+  // 持ち越すと次のテストが別の月から始まるので毎回消す
+  sessionStorage.clear();
+});
 
 // ビューは常に「今月」から表示を始めるので、テストデータは実行時の
 // 今月の日付で組み立てる (システム時刻のモック無しで安定させる)。
@@ -123,5 +129,161 @@ describe("EventCalendarView の日付セルからの登録", () => {
   it("閲覧者にはセルの ＋ を出さない", () => {
     renderView({ visibility: DEFAULT_EVENT_VISIBILITY });
     expect(screen.queryByRole("button", { name: /に登録$/ })).toBeNull();
+  });
+});
+
+// 「今日」の強調は useToday (深夜 0 時に更新)。開きっぱなしのタブが翌日も
+// 昨日を強調し続けないこと
+describe("EventCalendarView の「今日」", () => {
+  function todayCell(container) {
+    // 今日のセルだけ枠線 (#e6a800) が付く。jsdom は rgb() に正規化する
+    return [...container.querySelectorAll(".event-cal-cell")].find((el) =>
+      /e6a800|230, 168, 0/.test(el.style.border || "")
+    );
+  }
+
+  it("深夜 0 時を跨ぐと強調する日付が翌日へ移る", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 6, 3, 23, 59, 0)); // 2026-07-03 23:59
+      const { container } = render(
+        <EventCalendarView
+          extraLessons={[]}
+          visibility={DEFAULT_EVENT_VISIBILITY}
+          onChangeVisibility={() => {}}
+        />
+      );
+      expect(todayCell(container).textContent.startsWith("3")).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(2 * 60 * 1000); // → 7/4 0:01
+      });
+      expect(todayCell(container).textContent.startsWith("4")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// 日付の数字から「その日」へ跳ぶ (ダッシュボード / 欠勤組み換え)。
+// ＋ と同じセル見出しに置く。どちらも任意の prop
+describe("EventCalendarView の日付から跳ぶ", () => {
+  const d15 = fmtDateWeekday(`${ym}-15`); // "YYYY-MM-15 (曜)"
+
+  it("onSelectDate があれば日付の数字がボタンになり、その日付を渡す。凡例も出る", () => {
+    const onSelectDate = vi.fn();
+    renderView({ visibility: DEFAULT_EVENT_VISIBILITY, onSelectDate });
+    fireEvent.click(screen.getByRole("button", { name: `${d15} をダッシュボードで見る` }));
+    expect(onSelectDate).toHaveBeenCalledWith(`${ym}-15`);
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード"
+    );
+  });
+
+  it("管理者で onJumpToAbsenceFlow があれば 🚑 が出る (紙面には出さない)。凡例に 🚑 が加わる", () => {
+    const onJumpToAbsenceFlow = vi.fn();
+    renderView({
+      visibility: DEFAULT_EVENT_VISIBILITY,
+      isAdmin: true,
+      onJumpToAbsenceFlow,
+      onSelectDate: vi.fn(),
+    });
+    const btn = screen.getByRole("button", { name: `${d15} の欠勤組み換えを開く` });
+    expect(btn.getAttribute("title")).toBe(`${d15} の欠勤組み換えを開く`);
+    expect(btn.closest(".no-print")).not.toBeNull();
+    fireEvent.click(btn);
+    expect(onJumpToAbsenceFlow).toHaveBeenCalledWith(`${ym}-15`);
+    expect(screen.getByTestId("day-number-legend").textContent).toBe(
+      "日付クリック = その日のダッシュボード / 🚑 = 欠勤組み換え"
+    );
+  });
+
+  it("閲覧者には 🚑 を出さず、prop 無しなら日付はボタンにならない (凡例も無し)", () => {
+    renderView({ visibility: DEFAULT_EVENT_VISIBILITY, onJumpToAbsenceFlow: vi.fn() });
+    expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /をダッシュボードで見る$/ })).toBeNull();
+    expect(screen.queryByTestId("day-number-legend")).toBeNull();
+  });
+});
+
+// 月の移動: ◀ ▶ 今月 に加えて月ピッカー・← → t・タブ内での月の保持
+describe("EventCalendarView の月の移動", () => {
+  function renderAt(dateArgs = [2026, 6, 3, 12, 0, 0]) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(...dateArgs)); // 既定 2026-07-03
+    return render(
+      <EventCalendarView
+        extraLessons={[]}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+      />
+    );
+  }
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("← / → で前後の月、t で今月 (◀ ▶ 今月 ボタンも同じ)", () => {
+    renderAt();
+    expect(screen.getByText("2026年7月")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(screen.getByText("2026年6月")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByText("2026年8月")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "t" });
+    expect(screen.getByText("2026年7月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "前の月" }));
+    fireEvent.click(screen.getByRole("button", { name: "前の月" }));
+    expect(screen.getByText("2026年5月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "次の月" }));
+    expect(screen.getByText("2026年6月")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "今月" }));
+    expect(screen.getByText("2026年7月")).toBeTruthy();
+    // 年月の表示は読み上げ (aria-live)
+    expect(screen.getByText("2026年7月").getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("月末に開いたまま 0 時を跨いでも表示中の月は動かない (保存値も 9 月のまま)", () => {
+    renderAt([2026, 8, 30, 23, 59, 0]); // 2026-09-30 23:59
+    expect(screen.getByText("2026年9月")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000); // → 10/1 0:01 (useToday が更新される)
+    });
+    expect(screen.getByText("2026年9月")).toBeTruthy();
+    expect(sessionStorage.getItem(SS_MONTH_KEY)).toBe("2026-09");
+    // 「今月」は 10 月になったので、t で 10 月へ
+    fireEvent.keyDown(window, { key: "t" });
+    expect(screen.getByText("2026年10月")).toBeTruthy();
+  });
+
+  it("月ピッカーで直接指定できる (年をまたいでも)", () => {
+    renderAt();
+    const picker = screen.getByLabelText("表示する月");
+    expect(picker.value).toBe("2026-07");
+    fireEvent.change(picker, { target: { value: "2027-02" } });
+    expect(screen.getByText("2027年2月")).toBeTruthy();
+    expect(picker.value).toBe("2027-02");
+    // 形式外は無視
+    fireEvent.change(picker, { target: { value: "" } });
+    expect(screen.getByText("2027年2月")).toBeTruthy();
+  });
+
+  it("表示中の月を sessionStorage に持ち、開き直しても同じ月から始まる", () => {
+    const { unmount } = renderAt();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(sessionStorage.getItem(SS_MONTH_KEY)).toBe("2026-08");
+    unmount();
+    renderAt();
+    expect(screen.getByText("2026年8月")).toBeTruthy();
+  });
+
+  it("保存された月が今日から 12 か月より遠い・壊れているときは今月から始める", () => {
+    sessionStorage.setItem(SS_MONTH_KEY, "2028-01"); // 18 か月先
+    const { unmount } = renderAt();
+    expect(screen.getByText("2026年7月")).toBeTruthy();
+    unmount();
+    sessionStorage.setItem(SS_MONTH_KEY, "garbage");
+    renderAt();
+    expect(screen.getByText("2026年7月")).toBeTruthy();
   });
 });

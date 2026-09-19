@@ -42,13 +42,50 @@ describe("DashboardDateNav", () => {
     expect(set).toHaveBeenLastCalledWith("2026-09-13");
   });
 
-  it("欠勤組み換えへのジャンプは渡したときだけ出て、表示日を渡す", () => {
+  it("← / → / t キーでも「← 前」「次 →」「今日」と同じ日付へ動く", () => {
+    const set = renderNav({ viewMode: "list", daysInRange: 7, startDate: "2026-09-14" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-21");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-07");
+    fireEvent.keyDown(window, { key: "t" });
+    expect(set).toHaveBeenLastCalledWith("2026-09-12");
+    // 時間割モードは 1 日ずつ、日曜は飛ばす (ボタンと同じ)
+    cleanup();
+    const set2 = renderNav(); // 土曜、時間割モード
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(set2).toHaveBeenLastCalledWith("2026-09-14");
+  });
+
+  it("日付入力にフォーカスがある間は矢印キーで日付を送らない (入力の操作を妨げない)", () => {
+    const set = renderNav();
+    const input = document.querySelector('input[type="date"]');
+    input.focus();
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("欠勤組み換えへのジャンプは渡したときだけ出て、表示日を渡す (読み上げ名 = title)", () => {
     const onJumpToAbsenceFlow = vi.fn();
     renderNav({ onJumpToAbsenceFlow });
-    fireEvent.click(screen.getByRole("button", { name: /この日の欠勤組み換え/ }));
+    const btn = screen.getByRole("button", { name: "2026-09-12 (土) の欠勤組み換えを開く" });
+    expect(btn.getAttribute("title")).toBe("2026-09-12 (土) の欠勤組み換えを開く");
+    expect(btn.textContent).toContain("この日の欠勤組み換え");
+    fireEvent.click(btn);
     expect(onJumpToAbsenceFlow).toHaveBeenCalledWith("2026-09-12");
     cleanup();
     renderNav();
     expect(screen.queryByRole("button", { name: /欠勤組み換え/ })).toBeNull();
+  });
+
+  it("日付入力は見えている見出し (表示日 / 表示開始日) が label で、日付表示は aria-live", () => {
+    renderNav();
+    const input = screen.getByLabelText("表示日");
+    expect(input.type).toBe("date");
+    expect(input.value).toBe("2026-09-12");
+    cleanup();
+    renderNav({ viewMode: "list", daysInRange: 7 });
+    expect(screen.getByLabelText("表示開始日").type).toBe("date");
+    expect(document.querySelector('[aria-live="polite"]').textContent).toContain("2026-09-12");
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { splitTeacherField } from "../../utils/biweekly";
 import { needsSubstitute, subStateMeta } from "../../utils/substituteState";
 import { dateToDay, fmtDate, DEPT_COLOR, sortSlots } from "../../data";
@@ -11,6 +11,7 @@ import { filterSlotsForDate } from "../../utils/timetable";
 import { makeEventHelpers } from "./dashboardHelpers";
 import {
   computeAvailableTeachers,
+  sortAvailableTeachers,
   suggestChainSubstitutions,
   validateSubstituteChange,
 } from "../../utils/chainSubstitution";
@@ -42,6 +43,7 @@ export function ChainSubstitutionPanel({
   const [manualTeacher, setManualTeacher] = useState("");
   const [manualTime, setManualTime] = useState("all");
   const [saved, setSaved] = useState(false);
+  const manualListId = `${useId()}-manual-teachers`;
 
   const dayOfDate = dateToDay(date);
   const staffNameSet = useMemo(
@@ -95,16 +97,21 @@ export function ChainSubstitutionPanel({
     [subs, date]
   );
 
-  // 空き講師の合計（自動＋手動）
+  // 空き講師の合計（自動＋手動）。並びは関連度 (休講・隔週で空いた人 →
+  // その日に担当の無い人 → 手動追加) が主で、同点はよみのあいうえお順
   const allAvailable = useMemo(
-    () => [...autoAvailable, ...manualAvailable],
-    [autoAvailable, manualAvailable]
+    () => sortAvailableTeachers([...autoAvailable, ...manualAvailable], teacherKana),
+    [autoAvailable, manualAvailable, teacherKana]
   );
 
   const handleGenerate = useCallback(() => {
+    // 候補は「その日のコマの講師」で閉じない — 常勤はその曜日にコマが無くても
+    // 代行に入る (2026-09-10 の西岡)。その日に担当の無い講師も
+    // 「この日は担当なし」として候補に出す (玉突き代行の画面だけオプトイン)
     const auto = computeAvailableTeachers(
       date, slots, holidays, examPeriods, subs,
-      partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects
+      partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects,
+      { includeIdleTeachers: true }
     );
     setAutoAvailable(auto);
 
@@ -113,7 +120,7 @@ export function ChainSubstitutionPanel({
       uncoveredSubs.map((s) => ({
         slotId: s.slotId, originalTeacher: s.originalTeacher, date: s.date,
       })),
-      combined, slots, subjects, subjectCategories, partTimeStaff
+      combined, slots, subjects, subjectCategories, partTimeStaff, teacherKana
     );
     setSuggestions(sugg);
     setGenerated(true);
@@ -121,34 +128,39 @@ export function ChainSubstitutionPanel({
   }, [
     date, slots, holidays, examPeriods, subs, partTimeStaff,
     subjects, subjectCategories, timetables, biweeklyAnchors, teacherSubjects,
-    manualAvailable, uncoveredSubs,
+    teacherKana, manualAvailable, uncoveredSubs,
   ]);
 
+  // 手動追加。一覧に無い名前 (どのコマにも出てこない人) も直接入力できる
+  const manualName = manualTeacher.trim();
+  const manualDuplicate = allAvailable.some((a) => a.name === manualName);
   const handleAddManual = useCallback(() => {
-    if (!manualTeacher) return;
-    if (allAvailable.some((a) => a.name === manualTeacher)) return;
-    const isPartTime = staffNameSet.has(manualTeacher);
+    const name = manualTeacher.trim();
+    if (!name) return;
+    if (allAvailable.some((a) => a.name === name)) return;
+    const isPartTime = staffNameSet.has(name);
     let subjectIds;
     if (isPartTime) {
-      const staff = partTimeStaff.find((s) => s.name === manualTeacher);
+      const staff = partTimeStaff.find((s) => s.name === name);
       subjectIds = staff ? staff.subjectIds : [];
     } else {
       subjectIds = [];
       slots.forEach((s) => {
-        if (splitTeacherField(s.teacher).includes(manualTeacher)) {
+        if (splitTeacherField(s.teacher).includes(name)) {
           const sid = pickSubjectId(s.subj, subjects);
           if (sid != null && !subjectIds.includes(sid)) subjectIds.push(sid);
         }
       });
     }
     const entry = {
-      name: manualTeacher,
+      name,
       isFreeAllDay: manualTime === "all",
       freeTimeSlots: manualTime === "all" ? dayTimeSlots : [manualTime],
       cancelledSlots: [],
       reason: "手動追加",
       subjectIds,
       isPartTime,
+      noSlotsToday: false,
     };
     setManualAvailable((p) => [...p, entry]);
     setManualTeacher("");
@@ -364,12 +376,7 @@ export function ChainSubstitutionPanel({
                 <span style={{ fontSize: 10, color: "#888" }}>
                   {t.isFreeAllDay ? "全日空き" : t.freeTimeSlots.join(", ")}
                 </span>
-                <span style={{
-                  fontSize: 10, padding: "1px 6px", borderRadius: 4,
-                  background: t.reason === "手動追加" ? "#eef2ff" : "#e8f5e8",
-                  color: t.reason === "手動追加" ? "#1a1a6e" : "#2a7a2a",
-                  border: `1px solid ${t.reason === "手動追加" ? "#c0c8e8" : "#a8d8b0"}`,
-                }}>
+                <span style={reasonBadgeStyle(t)}>
                   {t.reason}
                 </span>
                 {t.reason === "手動追加" && (
@@ -393,21 +400,31 @@ export function ChainSubstitutionPanel({
                 padding: "8px 10px", flexWrap: "wrap",
                 borderTop: "1px solid #e0e0e0",
               }}>
-                <select
+                <input
+                  list={manualListId}
                   value={manualTeacher}
                   onChange={(e) => setManualTeacher(e.target.value)}
-                  style={{ ...S.input, width: "auto", flex: "0 1 120px" }}
-                >
-                  <option value="">-- 講師 --</option>
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddManual();
+                    }
+                  }}
+                  placeholder="講師名 (一覧に無い名前も可)"
+                  aria-label="手動追加する講師"
+                  style={{ ...S.input, width: "auto", flex: "0 1 160px" }}
+                />
+                <datalist id={manualListId}>
                   {allTeachers
                     .filter((t) => !allAvailable.some((a) => a.name === t))
                     .map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t} value={t} />
                     ))}
-                </select>
+                </datalist>
                 <select
                   value={manualTime}
                   onChange={(e) => setManualTime(e.target.value)}
+                  aria-label="手動追加する時間帯"
                   style={{ ...S.input, width: "auto", flex: "0 1 140px" }}
                 >
                   <option value="all">全日</option>
@@ -418,14 +435,19 @@ export function ChainSubstitutionPanel({
                 <button
                   type="button"
                   onClick={handleAddManual}
-                  disabled={!manualTeacher}
+                  disabled={!manualName || manualDuplicate}
                   style={{
                     ...S.btn(false), fontSize: 11,
-                    opacity: manualTeacher ? 1 : 0.5,
+                    opacity: manualName && !manualDuplicate ? 1 : 0.5,
                   }}
                 >
                   追加
                 </button>
+                {manualDuplicate && (
+                  <span style={{ fontSize: 10, color: "#888" }}>
+                    {manualName} は既に空き講師に入っています
+                  </span>
+                )}
               </div>
             )}
           </Section>
@@ -509,6 +531,21 @@ export function ChainSubstitutionPanel({
 
 // ─── サブコンポーネント ───────────────────────────────────────────
 
+// 空き講師の理由バッジ。休講・隔週で空いた人 (緑) / その日に担当の無い人
+// (灰) / 手動追加 (青) を色で見分ける
+function reasonBadgeStyle(t) {
+  const tone =
+    t.reason === "手動追加"
+      ? { bg: "#eef2ff", fg: "#1a1a6e", bd: "#c0c8e8" }
+      : t.noSlotsToday
+        ? { bg: "#f3f3f3", fg: "#555", bd: "#d0d0d0" }
+        : { bg: "#e8f5e8", fg: "#2a7a2a", bd: "#a8d8b0" };
+  return {
+    fontSize: 10, padding: "1px 6px", borderRadius: 4,
+    background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`,
+  };
+}
+
 function Section({ title, children }) {
   return (
     <div style={{
@@ -568,6 +605,7 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
         <select
           value={sugg.suggestedSubstitute}
           onChange={(e) => onChange(idx, e.target.value)}
+          aria-label={`${sugg.originalTeacher}の${slot.subj}(${slot.time}) の代行者`}
           style={{
             ...S.input, width: "auto", flex: "0 1 100px",
             borderColor: validation.timeConflict ? colors.danger
@@ -575,7 +613,13 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
           }}
         >
           <option value="">-- 選択 --</option>
-          {allTeachers.map((t) => (
+          {/* 提案が選んだ名前が一覧に無い (手動追加の直接入力・隔週の
+              パートナーなど) と select が「-- 選択 --」に見えてしまうので、
+              その名前も選択肢に足す */}
+          {(sugg.suggestedSubstitute && !allTeachers.includes(sugg.suggestedSubstitute)
+            ? [sugg.suggestedSubstitute, ...allTeachers]
+            : allTeachers
+          ).map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
         </select>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  absentTeachersForSlot,
   canCombineSlots,
   collectAbsenceTargets,
   findCombineCandidates,
@@ -228,6 +229,36 @@ describe("isSlotShownOnDate", () => {
     expect(isSlotShownOnDate(spring, "2026-09-21", {})).toBe(true);
     expect(isSlotShownOnDate(null, "2026-09-21", {})).toBe(false);
     expect(isSlotShownOnDate(fall, "", {})).toBe(false);
+  });
+});
+
+// タイムテーブル代行モードのセルクリック (ExcelSection) とポップオーバーの
+// 担当切替 (ExcelGridView) が共有する「このコマのこの日の欠勤者」
+describe("absentTeachersForSlot", () => {
+  const FRI = "2026-09-25";
+  const prep = mk(1, { teacher: "香川·福江·川井" });
+
+  it("その日の担当のうち欠勤にチェックの入っている人だけ、講師欄の順で返す", () => {
+    expect(absentTeachersForSlot(prep, FRI, {}, new Set(["川井", "香川", "西岡"]))).toEqual([
+      "香川",
+      "川井",
+    ]);
+    expect(absentTeachersForSlot(prep, FRI, {}, new Set(["西岡"]))).toEqual([]);
+  });
+
+  it("隔週は A/B を解いた「その日の担当」で見る (B 週は note のパートナー)", () => {
+    const ctx = { biweeklyAnchors: [{ date: FRI, weekType: "A" }] };
+    const bw = mk(5, { teacher: "河野", note: "隔週(堀上)" });
+    const both = new Set(["河野", "堀上"]);
+    expect(absentTeachersForSlot(bw, FRI, ctx, both)).toEqual(["河野"]);
+    expect(absentTeachersForSlot(bw, "2026-10-02", ctx, both)).toEqual(["堀上"]);
+  });
+
+  it("コマ・日付・欠勤者集合が無ければ空", () => {
+    expect(absentTeachersForSlot(null, FRI, {}, new Set(["香川"]))).toEqual([]);
+    expect(absentTeachersForSlot(prep, "", {}, new Set(["香川"]))).toEqual([]);
+    expect(absentTeachersForSlot(prep, FRI, {}, undefined)).toEqual([]);
+    expect(absentTeachersForSlot(prep, FRI, {}, new Set())).toEqual([]);
   });
 });
 

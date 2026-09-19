@@ -9,8 +9,11 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { ExcelGridView } from "./ExcelGridView";
+import { ConfirmProvider } from "../../hooks/useConfirm";
+import { ToastProvider } from "../../hooks/useToasts";
 
 afterEach(cleanup);
 
@@ -30,29 +33,46 @@ const slot = (overrides) => ({
   ...overrides,
 });
 
-function renderGrid(props = {}) {
+// 破棄の確認 (useConfirm) と保存の toast (useOptionalToasts) を本番と同じ
+// Provider の中で描く。toast は render に溜めて検証できるようにする
+function renderGrid(props = {}, { toastSink } = {}) {
   return render(
-    <ExcelGridView
-      slots={[]}
-      saveSlots={() => {}}
-      biweeklyAnchors={[]}
-      isAdmin={false}
-      timetables={[]}
-      partTimeStaff={[]}
-      subjects={[]}
-      subs={[]}
-      saveSubs={() => {}}
-      holidays={[]}
-      examPeriods={[]}
-      subjectCategories={[]}
-      teacherSubjects={{}}
-      classSets={[]}
-      displayCutoff={null}
-      viewDate={MONDAY}
-      dashboardMode
-      {...props}
-    />
+    <ToastProvider
+      render={(list) => {
+        if (toastSink) toastSink.splice(0, toastSink.length, ...list);
+        return null;
+      }}
+    >
+      <ConfirmProvider>
+        <ExcelGridView
+          slots={[]}
+          saveSlots={() => {}}
+          biweeklyAnchors={[]}
+          isAdmin={false}
+          timetables={[]}
+          partTimeStaff={[]}
+          subjects={[]}
+          subs={[]}
+          saveSubs={() => {}}
+          holidays={[]}
+          examPeriods={[]}
+          subjectCategories={[]}
+          teacherSubjects={{}}
+          classSets={[]}
+          displayCutoff={null}
+          viewDate={MONDAY}
+          dashboardMode
+          {...props}
+        />
+      </ConfirmProvider>
+    </ToastProvider>
   );
+}
+
+// 代行モードに入る (enableSubMode の日付入力へ日付を入れる)
+function enterSubMode(container, dateStr) {
+  const input = container.querySelector('input[type="date"]');
+  fireEvent.change(input, { target: { value: dateStr } });
 }
 
 describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => {
@@ -400,5 +420,267 @@ describe("ExcelGridView (講師の同時刻の重なり)", () => {
       ],
     });
     expect(screen.queryByText(/と重複/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ExcelGridView (代行モードと特別時程)", () => {
+  // 附属の「1限カット + 50 分授業」の日。ダッシュボードでは 移/休 とバナーが
+  // 出るのに、授業管理 → 時間割 (代行モード) では何も出なかった (2026-09-15)
+  const DAY_SCHEDULE = {
+    id: 1,
+    date: MONDAY,
+    targetGrades: ["中3"],
+    label: "行事",
+    cancelTimes: ["19:00-20:20"],
+    timeMap: [{ from: "20:30-21:50", to: "20:00-20:50" }],
+  };
+  const SLOTS = [
+    slot({ id: 1, teacher: "田中" }),
+    slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "佐藤" }),
+  ];
+
+  it("代行モードでは特別時程バナーと 移/休 を出す", () => {
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      slots: SLOTS,
+      daySchedules: [DAY_SCHEDULE],
+    });
+    // 代行モードに入る前 (日付を持たない時間割表示) は出さない
+    expect(screen.queryByText("⏰ 特別時程")).toBeNull();
+    enterSubMode(container, MONDAY);
+    expect(screen.getByText("月曜日 - 代行モード")).toBeInTheDocument();
+    expect(screen.getByText("⏰ 特別時程")).toBeInTheDocument();
+    expect(screen.getByText("中3 (行事)")).toBeInTheDocument();
+    // 1限カットのコマは「休」、読み替えのコマは「移」
+    expect(screen.getByText("休")).toBeInTheDocument();
+    expect(screen.getByText("移")).toBeInTheDocument();
+  });
+
+  it("特別時程が無い日はバナーを出さない", () => {
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      slots: SLOTS,
+      daySchedules: [{ ...DAY_SCHEDULE, date: "2026-07-20" }],
+    });
+    enterSubMode(container, MONDAY);
+    expect(screen.queryByText("⏰ 特別時程")).toBeNull();
+  });
+});
+
+describe("ExcelGridView (代行モードの仮代行)", () => {
+  // 19:00 の田中のコマに、20:30 にしかコマの無い佐藤を代行で入れる。
+  // 佐藤は 19:00 に空いているので候補に出る
+  const SLOTS = [
+    slot({ id: 1, teacher: "田中" }),
+    slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "佐藤" }),
+  ];
+
+  // セルは role=button (aria-label = 時刻 学年 科目 講師 …)。講師名だけで
+  // 引くと右パネルの講師ボタンにも当たる
+  const cell = (re) => screen.getByRole("button", { name: re });
+  // 空き候補は「休講で空いた人」だけなので、全員表示に切り替えてから選ぶ
+  function pickCandidate(candidate) {
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByLabelText("全員表示"));
+    const listbox = within(dialog).getByRole("listbox", { name: "代行候補" });
+    fireEvent.click(within(listbox).getByRole("option", { name: new RegExp(candidate) }));
+  }
+  function assignViaPopover(cellRe, candidate) {
+    fireEvent.click(cell(cellRe));
+    pickCandidate(candidate);
+  }
+
+  it("破棄は確認ダイアログ (useConfirm) を挟み、OK で仮代行を消す", async () => {
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      isAdmin: true,
+      slots: SLOTS,
+    });
+    enterSubMode(container, MONDAY);
+    assignViaPopover(/^19:00-20:20 中3 - 数学 田中/, "佐藤");
+    expect(screen.getByText("仮代行: 1件")).toBeInTheDocument();
+    expect(screen.getByText("← 佐藤")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "破棄" }));
+    // window.confirm ではなくアプリのダイアログ
+    expect(screen.getByText("仮代行をすべて破棄しますか？")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(screen.getByText("仮代行: 1件")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "破棄" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(screen.queryByText("仮代行: 1件")).toBeNull());
+    expect(screen.queryByText("← 佐藤")).toBeNull();
+  });
+
+  it("確定して保存すると保存件数を toast で出し、理由メモを引き継ぐ", () => {
+    const saveSubs = vi.fn();
+    const toastSink = [];
+    const { container } = renderGrid(
+      {
+        dashboardMode: false,
+        enableSubMode: true,
+        isAdmin: true,
+        slots: SLOTS,
+        subs: [
+          // 欠勤登録済み (代行未定) の理由メモ
+          { id: 5, date: MONDAY, slotId: 1, originalTeacher: "田中", substitute: "", status: "requested", memo: "体調不良" },
+        ],
+        saveSubs,
+      },
+      { toastSink }
+    );
+    enterSubMode(container, MONDAY);
+    assignViaPopover(/^19:00-20:20 中3 - 数学 田中/, "佐藤");
+    fireEvent.click(screen.getByRole("button", { name: "確定して保存" }));
+    expect(saveSubs).toHaveBeenCalledTimes(1);
+    expect(saveSubs.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ id: 5, substitute: "佐藤", status: "confirmed", memo: "体調不良" }),
+    ]);
+    expect(toastSink.map((t) => t.message)).toEqual(["代行 1 件を保存しました"]);
+  });
+
+  it("セルのクリックは「代行なしで確定」も片付いた扱いにして、代行未定の人を先に出す", () => {
+    const PREP = slot({ id: 1, grade: "中1-3", subj: "プレップ", teacher: "香川·福江" });
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      isAdmin: true,
+      slots: [PREP, slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "西岡" })],
+      subs: [
+        // 香川は代行なしで確定 (nosub)、福江は代行未定 (pending)
+        { id: 5, date: MONDAY, slotId: 1, originalTeacher: "香川", substitute: "", status: "confirmed", memo: "" },
+        { id: 6, date: MONDAY, slotId: 1, originalTeacher: "福江", substitute: "", status: "requested", memo: "" },
+      ],
+    });
+    enterSubMode(container, MONDAY);
+    // 代行未定 (福江) は代行モードに入ると自動で欠勤に取り込まれる。香川も手で欠勤に
+    fireEvent.click(screen.getByRole("button", { name: /^香川/ }));
+    fireEvent.click(cell(/^19:00-20:20 中1-3 - プレップ 香川·福江/));
+    expect(screen.getByRole("dialog").textContent).toMatch(/担当: 福江/);
+  });
+
+  it("多担任コマは 2 人分の仮代行をセルに並べて出す", () => {
+    // プレップ (香川·福江) の 2 人とも欠勤。西岡・杉原は同じ時間に空いている
+    const PREP = slot({ id: 1, grade: "中1-3", subj: "プレップ", teacher: "香川·福江" });
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      isAdmin: true,
+      slots: [
+        PREP,
+        slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "西岡" }),
+        slot({ id: 3, time: "20:30-21:50", room: "303", teacher: "杉原" }),
+      ],
+    });
+    enterSubMode(container, MONDAY);
+    // 右パネル (講師ごとのボタン) で 2 人を欠勤にする
+    fireEvent.click(screen.getByRole("button", { name: /^香川/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^福江/ }));
+    // 1 回目のクリックは香川 (欠勤者の先頭)、2 回目は仮代行の無い福江
+    const prepCell = /^19:00-20:20 中1-3 - プレップ 香川·福江/;
+    fireEvent.click(cell(prepCell));
+    expect(screen.getByRole("dialog").textContent).toMatch(/担当: 香川/);
+    pickCandidate("西岡");
+    fireEvent.click(cell(prepCell));
+    expect(screen.getByRole("dialog").textContent).toMatch(/担当: 福江/);
+    pickCandidate("杉原");
+    expect(screen.getByText("仮代行: 2件")).toBeInTheDocument();
+    expect(screen.getByText("香川 ⇒ ← 西岡")).toBeInTheDocument();
+    expect(screen.getByText("福江 ⇒ ← 杉原")).toBeInTheDocument();
+  });
+
+  it("多担任コマのポップオーバーは担当を切り替えて 2 人目の仮代行を直せる", () => {
+    const PREP = slot({ id: 1, grade: "中1-3", subj: "プレップ", teacher: "香川·福江" });
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      isAdmin: true,
+      slots: [
+        PREP,
+        slot({ id: 2, time: "20:30-21:50", room: "302", teacher: "西岡" }),
+        slot({ id: 3, time: "20:30-21:50", room: "303", teacher: "杉原" }),
+      ],
+    });
+    enterSubMode(container, MONDAY);
+    fireEvent.click(screen.getByRole("button", { name: /^香川/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^福江/ }));
+    const prepCell = /^19:00-20:20 中1-3 - プレップ 香川·福江/;
+    fireEvent.click(cell(prepCell));
+    pickCandidate("西岡");
+    fireEvent.click(cell(prepCell));
+    pickCandidate("杉原");
+    // 2 人とも仮代行が付いた後のクリックは先頭 (香川) に戻る。担当の
+    // 切替ボタンで福江へ移れる (1 人目を取り消さなくてよい)
+    fireEvent.click(cell(prepCell));
+    let dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toMatch(/担当: 香川/);
+    expect(dialog.textContent).toMatch(/仮割当: 西岡/);
+    const group = within(dialog).getByRole("group", { name: "他の欠勤者へ切替" });
+    fireEvent.click(within(group).getByRole("button", { name: "→ 福江" }));
+    dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toMatch(/担当: 福江/);
+    expect(dialog.textContent).toMatch(/仮割当: 杉原/);
+    fireEvent.keyDown(document, { key: "Escape" });
+    // 1 人しか休まないコマでは切替は出ない (右パネルで福江の欠勤を外す)
+    fireEvent.click(screen.getByRole("button", { name: /^✓ 福江/ }));
+    fireEvent.click(cell(prepCell));
+    expect(
+      within(screen.getByRole("dialog")).queryByRole("group", { name: "他の欠勤者へ切替" })
+    ).toBeNull();
+  });
+});
+
+// 代行モードの日付は ← / → / t でも送れる (hooks/useDateKeyNav)。日曜は
+// 表せないので飛ばす。ダッシュボード内 (dashboardMode) は DashboardDateNav が
+// 同じキーを持つので、こちらでは付けない (二重に動く)
+describe("ExcelGridView (代行モードのキーボード日付移動)", () => {
+  const SLOTS = [slot({ id: 1, teacher: "田中" }), slot({ id: 2, day: "土", teacher: "佐藤" })];
+  const dateInput = (container) => container.querySelector('input[type="date"]');
+
+  it("← / → で代行管理日付を 1 日ずつ送り、日曜は飛ばす", () => {
+    const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+    // 2026-07-18 は土曜
+    enterSubMode(container, "2026-07-18");
+    expect(dateInput(container).value).toBe("2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    // 日曜 (7/19) を飛ばして月曜
+    expect(dateInput(container).value).toBe("2026-07-20");
+    expect(screen.getByText("月曜日 - 代行モード")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(dateInput(container).value).toBe("2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(dateInput(container).value).toBe("2026-07-17");
+  });
+
+  it("t で今日へ", () => {
+    vi.useFakeTimers({ now: new Date(2026, 6, 15, 12, 0, 0), toFake: ["Date"] });
+    try {
+      const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+      enterSubMode(container, "2026-07-18");
+      fireEvent.keyDown(window, { key: "t" });
+      expect(dateInput(container).value).toBe("2026-07-15");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("代行モードでないとき・入力中・ダッシュボード内では効かない", () => {
+    const { container } = renderGrid({ dashboardMode: false, enableSubMode: true, slots: SLOTS });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(dateInput(container).value).toBe("");
+    enterSubMode(container, "2026-07-18");
+    // 日付入力にフォーカスがあるときは握らない (input の ← → はカーソル移動)
+    fireEvent.keyDown(dateInput(container), { key: "ArrowRight" });
+    expect(dateInput(container).value).toBe("2026-07-18");
+    cleanup();
+    // ダッシュボード内は DashboardDateNav 側の担当
+    const dash = renderGrid({ dashboardMode: true, enableSubMode: true, slots: SLOTS });
+    enterSubMode(dash.container, "2026-07-18");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(dateInput(dash.container).value).toBe("2026-07-18");
   });
 });

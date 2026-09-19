@@ -32,6 +32,19 @@ export function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * "YYYY-MM-DD" → "M/D" (年を落とした短い表記。列見出し・帯・警告文の区間用)。
+ * 年が要る場面 (期切替の重なり警告など) は withYear で "YYYY/M/D"。
+ * @param {string} dateStr
+ * @param {{withYear?: boolean}} [opts]
+ */
+export function fmtMD(dateStr, opts = {}) {
+  const [y, m, d] = String(dateStr || "").split("-");
+  if (!m || !d) return String(dateStr || "");
+  const md = `${Number(m)}/${Number(d)}`;
+  return opts.withYear && y ? `${y}/${md}` : md;
+}
+
 export function fmtDateWeekday(dateStr) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -98,4 +111,20 @@ export function fmtIsoLocal(iso) {
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${y}-${m}-${day} ${hh}:${mm}`;
+}
+
+/**
+ * <input type="month"> の値 "YYYY-MM" と基準日 (today) の月差。
+ * 月間・イベントカレンダーの monthOff (今月 = 0) に入れる値。形式外は null。
+ * @param {string | null | undefined} ym
+ * @param {Date} today
+ * @returns {number | null}
+ */
+export function monthOffsetFromToday(ym, today) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym || "");
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  if (mo < 1 || mo > 12) return null;
+  return (y - today.getFullYear()) * 12 + (mo - 1 - today.getMonth());
 }

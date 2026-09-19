@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   ADJ_COLOR,
   DAY_BG as DB,
@@ -29,12 +29,17 @@ import {
   overlapsRange,
   formatDateRange,
   dateToDay,
+  fmtMD,
 } from "../../utils/dateHelpers";
 import { useToday } from "../../hooks/useToday";
+import { useDateKeyNav } from "../../hooks/useDateKeyNav";
+import { shiftDate } from "./dashboardHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
+import { filterSlotsForDate, isSlotBeyondCutoff } from "../../utils/timetable";
+import { EVENT_KIND, EXAM_META, HOLIDAY_META } from "../../constants/eventKinds";
+import { makeEventHelpers } from "./dashboardHelpers";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { timeStartToMin } from "../../utils/dateHelpers";
-import { EVENT_KIND, EXAM_META } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { PrintButton } from "../PrintButton";
 import {
@@ -48,13 +53,26 @@ import {
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
 
-// 今日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
-function getUpcomingWindow(todayStr) {
-  const today = parseLocalDate(todayStr);
-  const end = new Date(today);
+// 基準日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
+function getUpcomingWindow(baseStr) {
+  const base = parseLocalDate(baseStr);
+  const end = new Date(base);
   end.setDate(end.getDate() + 14);
-  return [today, end];
+  return [base, end];
 }
+
+// 基準日を含む週の月曜。表は月〜土なので、日曜は「前の週の末尾」ではなく
+// 次の月曜から始まる週として扱う (日曜に開いて見たいのは翌週の予定。
+// ダッシュボードの時間割モードが日曜を飛ばすのと同じ向き)
+function weekMondayOf(dateStr) {
+  const dt = parseLocalDate(dateStr);
+  if (!dt) return dateStr;
+  const dow = dt.getDay(); // 日=0 .. 土=6
+  return shiftDate(dateStr, dow === 0 ? 1 : 1 - dow);
+}
+
+// 休講チップの配色。EVENT_SECTIONS と同じ 🚫 を頭に付ける
+const HOLIDAY_META_WITH_ICON = { ...HOLIDAY_META, icon: "🚫" };
 
 function isWithinWindow(dateStr, start, end) {
   const dt = parseLocalDate(dateStr);
@@ -153,9 +171,37 @@ export function WeekView({
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
-  // 隔週スロットは「今週の実施側講師」のビューにだけ出す。今日を基準週として扱う。
   // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
-  const refDateStr = useToday();
+  const todayStr = useToday();
+  // 基準日 (既定は今日)。表示する週・隔週 A/B・お知らせバナーの 2 週間窓は
+  // すべてこの日付から決める。講師を切り替えても週は保つ (同じ週で講師を
+  // 見比べる使い方のため)
+  const [weekBase, setWeekBase] = useState(todayStr);
+  const weekMonday = useMemo(() => weekMondayOf(weekBase), [weekBase]);
+  // 曜日 → 表示中の週のその曜日の日付 ("月" → "2026-09-14")
+  const weekDates = useMemo(() => {
+    const m = {};
+    DAYS.forEach((d, idx) => {
+      m[d] = shiftDate(weekMonday, idx);
+    });
+    return m;
+  }, [weekMonday]);
+  const weekSaturday = weekDates["土"];
+  // 「今週」= 今日を基準にしたときに出る週。日曜は翌週を指すので、月〜土の
+  // 範囲で今日を挟む判定だと日曜に「今週」が点かず t / 今週が効いていない
+  // ように見える
+  const isCurrentWeek = weekMondayOf(todayStr) === weekMonday;
+  const todayIsSunday = parseLocalDate(todayStr)?.getDay() === 0;
+  const weekInputId = useId();
+  useDateKeyNav({
+    onPrev: () => setWeekBase((b) => shiftDate(b, -7)),
+    onNext: () => setWeekBase((b) => shiftDate(b, 7)),
+    onToday: () => setWeekBase(todayStr),
+  });
+
+  // 隔週スロットは「その週の実施側講師」のビューにだけ出す。判定は列の日付
+  // (その曜日の実際の日付) で行う — 休講・テスト期間で週送りが止まる分も
+  // 他の画面と同じ答えになる
   const ts = useMemo(
     () =>
       sortS(
@@ -164,10 +210,17 @@ export function WeekView({
           .filter(
             (s) =>
               !isBiweekly(s.note) ||
-              isTeacherActiveOnDate(s, teacher, refDateStr, biweeklyAnchors, holidays, examPeriods)
+              isTeacherActiveOnDate(
+                s,
+                teacher,
+                weekDates[s.day] || weekBase,
+                biweeklyAnchors,
+                holidays,
+                examPeriods
+              )
           )
       ),
-    [teacher, slots, refDateStr, biweeklyAnchors, holidays, examPeriods]
+    [teacher, slots, weekDates, weekBase, biweeklyAnchors, holidays, examPeriods]
   );
   const byDay = useMemo(() => {
     const m = {};
@@ -178,8 +231,15 @@ export function WeekView({
     return m;
   }, [ts]);
 
-  // 直近14日の [start,end] (メモの恩恵を狙って 1 回だけ作る)
-  const [winStart, winEnd] = useMemo(() => getUpcomingWindow(refDateStr), [refDateStr]);
+  // 基準日から 14 日の [start,end] (メモの恩恵を狙って 1 回だけ作る)。
+  // 週を送ってもバナーは「基準日から 2 週間」のまま
+  const [winStart, winEnd] = useMemo(() => getUpcomingWindow(weekBase), [weekBase]);
+  // バナー見出しの「直近2週間の」。基準日が今日でないときは実際の窓
+  // ("12/8〜12/22 の") を出す — 週を送った後も「直近」と書くと嘘になる
+  const windowPrefix =
+    weekBase === todayStr
+      ? "直近2週間の"
+      : `${fmtMD(fmtDate(winStart))}〜${fmtMD(fmtDate(winEnd))} の`;
 
   // slotId → slot の逆引き。合同・移動・振替・代行の各 useMemo が
   // それぞれローカルで Map を作っていたため、slots に変化が無くても
@@ -191,7 +251,8 @@ export function WeekView({
   }, [slots]);
 
   // ダッシュボードと同じ仕組みで 第N回 (①②③…) バッジを出す。
-  // 曜日ごとに「今日以降で最初に実際の講義が成立する日」の回数マップを保持。
+  // 曜日ごとに「表示中の週の月曜以降で最初に実際の講義が成立する日」の
+  // 回数マップを保持 (見出しに出ている日付と同じ日の回数になる)。
   const { sessionCtx } = useSessionCtx({
     classSets,
     slots,
@@ -206,14 +267,14 @@ export function WeekView({
     adjustments,
   });
   const sessionMapByDay = useMemo(() => {
-    const today = parseLocalDate(refDateStr);
+    const monday = parseLocalDate(weekMonday);
     const result = {};
     DAYS.forEach((d, idx) => {
       // DAYS は月〜土。Date#getDay は日=0..土=6 なので月=1..土=6 に変換。
-      result[d] = findNextSessionMap(byDay[d], idx + 1, today, sessionCtx);
+      result[d] = findNextSessionMap(byDay[d], idx + 1, monday, sessionCtx);
     });
     return result;
-  }, [byDay, sessionCtx, refDateStr]);
+  }, [byDay, sessionCtx, weekMonday]);
 
   // 各スロットに対する直近14日間の代行予定をマップ化し、SlotCard にインライン表示する
   const slotSubMap = useMemo(() => {
@@ -430,12 +491,58 @@ export function WeekView({
     return out.sort((a, b) => a.schedule.date.localeCompare(b.schedule.date));
   }, [daySchedules, ts, winStart, winEnd]);
 
-  // 直近 14 日に重なるイベント (休講以外) を一覧に出す。休講は曜日マスに
-  // 既に休バッジが立っているので除外。
+  // 直近 14 日の休講のうち、この講師のコマに効くもの。週間ビューの曜日マスは
+  // 日付を持たないので休講バッジは立たない = ここで出さないとどこにも出ない。
+  // 部門 (scope) / 学年 / 教科キーワードの読み方はダッシュボードと同じ
+  // (dashboardHelpers.makeEventHelpers.isHolidayForSlot)。休講ごとにヘルパを
+  // 作るのは「どの休講が当たったか」を出すため (まとめて索引にすると
+  // 同じ日の別の休講と区別できない)。隔週コマはその日の担当週だけ見る
+  const upcomingHolidays = useMemo(() => {
+    if (!holidays?.length) return [];
+    const teacherSlots = slots.filter((s) => isSlotForTeacher(s, teacher));
+    const out = [];
+    for (const h of holidays) {
+      if (!h?.date || !isWithinWindow(h.date, winStart, winEnd)) continue;
+      const dow = dateToDay(h.date);
+      if (!dow) continue;
+      const { isHolidayForSlot } = makeEventHelpers([h]);
+      // その日に実施されるコマだけ (曜日だけで絞ると、終了日を入れた旧期の
+      // コマや終講後のコマにも休講が付く。CLAUDE.md「表示期間設定」)
+      const heldSlots = filterSlotsForDate(teacherSlots, h.date, timetables).filter(
+        (s) => !isSlotBeyondCutoff(h.date, s, displayCutoff)
+      );
+      const affected = heldSlots.filter(
+        (s) =>
+          s.day === dow &&
+          isHolidayForSlot(h.date, s.grade, s.subj) &&
+          (!isBiweekly(s.note) ||
+            isTeacherActiveOnDate(s, teacher, h.date, biweeklyAnchors, holidays, examPeriods))
+      );
+      if (affected.length === 0) continue;
+      out.push({ holiday: h, affected });
+    }
+    return out;
+  }, [holidays, slots, teacher, winStart, winEnd, biweeklyAnchors, examPeriods, timetables, displayCutoff]);
+
+  // 直近 14 日に重なるイベント (休講・テスト期間・特別イベント) を一覧に出す。
+  // 休講は visibility トグルの対象外 (常時表示)
   const upcomingEvents = useMemo(() => {
     const winStartStr = fmtDate(winStart);
     const winEndStr = fmtDate(winEnd);
     const out = [];
+    for (const { holiday: h, affected } of upcomingHolidays) {
+      out.push({
+        kind: EVENT_KIND.HOLIDAY,
+        id: `h-${h.id ?? h.date}`,
+        name: h.label || "休講",
+        startDate: h.date,
+        endDate: h.date,
+        tags: [],
+        affected: affected.map(
+          (s) => `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""} ${s.subj}`
+        ),
+      });
+    }
     if (showExam) {
       for (const ep of examPeriods) {
         if (!isExamPeriodVisible(ep, visibility)) continue;
@@ -467,7 +574,7 @@ export function WeekView({
       }
     }
     return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
+  }, [upcomingHolidays, examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -500,6 +607,74 @@ export function WeekView({
           <PrintButton style={{ fontSize: 11 }} />
         </div>
       </div>
+      {/* 基準週の切替。← / → で前後の週、t で今週 (useDateKeyNav) */}
+      <div
+        className="no-print"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+          background: "#fff",
+          padding: "8px 12px",
+          borderRadius: 10,
+          border: "1px solid #e0e0e0",
+          marginBottom: 10,
+        }}
+      >
+        <label
+          htmlFor={weekInputId}
+          style={{ fontWeight: 800, fontSize: 13, color: "#444" }}
+        >
+          表示する週
+        </label>
+        <button
+          type="button"
+          onClick={() => setWeekBase((b) => shiftDate(b, -7))}
+          style={{ ...S.btn(false), fontSize: 12 }}
+          title="前の週 (←)"
+        >
+          ◀ 前の週
+        </button>
+        <button
+          type="button"
+          onClick={() => setWeekBase(todayStr)}
+          style={{ ...S.btn(isCurrentWeek), fontSize: 12 }}
+          title="今週 (t)"
+        >
+          今週
+        </button>
+        <button
+          type="button"
+          onClick={() => setWeekBase((b) => shiftDate(b, 7))}
+          style={{ ...S.btn(false), fontSize: 12 }}
+          title="次の週 (→)"
+        >
+          次の週 ▶
+        </button>
+        <input
+          id={weekInputId}
+          type="date"
+          value={weekBase}
+          onChange={(e) => e.target.value && setWeekBase(e.target.value)}
+          style={{ ...S.input, width: "auto", padding: "4px 8px", fontSize: 12 }}
+        />
+        <span
+          data-testid="week-range"
+          aria-live="polite"
+          style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "#555" }}
+        >
+          {fmtMD(weekMonday)} (月) 〜 {fmtMD(weekSaturday)} (土)
+          {isCurrentWeek && (
+            <span style={{ marginLeft: 6, fontSize: 10, color: "#b08000" }}>今週</span>
+          )}
+          {isCurrentWeek && todayIsSunday && (
+            <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 400, color: "#888" }}>
+              (日曜のため翌週を表示)
+            </span>
+          )}
+        </span>
+      </div>
       {upcomingEvents.length > 0 && (
         <div
           style={{
@@ -522,18 +697,23 @@ export function WeekView({
               marginRight: 4,
             }}
           >
-            直近2週間のイベント:
+            {windowPrefix}イベント:
           </span>
           {upcomingEvents.map((ev) => {
             const meta =
               ev.kind === EVENT_KIND.SPECIAL
                 ? specialEventTypeMeta(ev.eventType)
-                : EXAM_META;
+                : ev.kind === EVENT_KIND.HOLIDAY
+                  ? HOLIDAY_META_WITH_ICON
+                  : EXAM_META;
             const range = formatDateRange(ev.startDate, ev.endDate);
+            const affectedText = ev.affected?.length
+              ? `休講: ${ev.affected.join(" / ")}`
+              : "";
             return (
               <span
                 key={ev.id}
-                title={`${range} ${ev.name}`}
+                title={`${range} ${ev.name}${affectedText ? `\n${affectedText}` : ""}`}
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
@@ -546,6 +726,11 @@ export function WeekView({
               >
                 {meta.icon ? `${meta.icon} ` : ""}
                 {ev.name}
+                {ev.affected?.length > 0 && (
+                  <span style={{ marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                    ({ev.affected.join(" / ")})
+                  </span>
+                )}
                 {(ev.tags || []).length > 0 && (
                   <span style={{ marginLeft: 4, opacity: 0.75 }}>
                     [{ev.tags.join("·")}]
@@ -564,7 +749,7 @@ export function WeekView({
           bg={ADJ_COLOR.combine.bannerBg}
           borderColor={ADJ_COLOR.combine.bannerBorder}
           titleColor={ADJ_COLOR.combine.deep}
-          title={`🔗 直近2週間の合同予定 (${upcomingCombines.length}件)`}
+          title={`🔗 ${windowPrefix}合同予定 (${upcomingCombines.length}件)`}
         >
           {upcomingCombines.map((c, i) => {
             const host = c.hostSlot;
@@ -635,7 +820,7 @@ export function WeekView({
           bg={ADJ_COLOR.move.bannerBg}
           borderColor={ADJ_COLOR.move.bannerBorder}
           titleColor={ADJ_COLOR.move.deep}
-          title={`↔ 直近2週間の時間変更予定 (${upcomingMoves.length}件)`}
+          title={`↔ ${windowPrefix}時間変更予定 (${upcomingMoves.length}件)`}
         >
           {upcomingMoves.map((mv, i) => {
             const slot = mv.slot;
@@ -665,7 +850,7 @@ export function WeekView({
           bg="#efeafa"
           borderColor="#a898d8"
           titleColor="#4a3a8e"
-          title={`⏰ 直近2週間の特別時程 (${upcomingDaySchedules.length}件)`}
+          title={`⏰ ${windowPrefix}特別時程 (${upcomingDaySchedules.length}件)`}
         >
           {upcomingDaySchedules.map(({ schedule, items }) => (
             <UpcomingRow key={`dsch-${schedule.id}`}>
@@ -715,7 +900,7 @@ export function WeekView({
           bg="#f4f4f4"
           borderColor="#cfcfcf"
           titleColor="#555"
-          title={`🚫 直近2週間のコマ休講 (${upcomingCancels.length}件)`}
+          title={`🚫 ${windowPrefix}コマ休講 (${upcomingCancels.length}件)`}
         >
           {upcomingCancels.map(({ adj, slot }) => (
             <UpcomingRow key={`cancel-${adj.id}`}>
@@ -744,7 +929,7 @@ export function WeekView({
           bg={ADJ_COLOR.reschedule.bannerBg}
           borderColor={ADJ_COLOR.reschedule.bannerBorder}
           titleColor={ADJ_COLOR.reschedule.deep}
-          title={`↻ 直近2週間の振替予定 (${upcomingReschedules.length}件)`}
+          title={`↻ ${windowPrefix}振替予定 (${upcomingReschedules.length}件)`}
         >
           {upcomingReschedules.map(({ adj, slot }, i) => {
             const tgtTime = adj.targetTime || slot.time;
@@ -794,7 +979,7 @@ export function WeekView({
           bg="#fdf5e8"
           borderColor="#e0a030"
           titleColor="#8a5a1a"
-          title={`📝 直近2週間のテスト直前特訓シフト (${upcomingExamPrep.length}日)`}
+          title={`📝 ${windowPrefix}テスト直前特訓シフト (${upcomingExamPrep.length}日)`}
         >
           {upcomingExamPrep.map((e) => {
             const first = e.shifts[0];
@@ -835,7 +1020,7 @@ export function WeekView({
           bg="#fffbe6"
           borderColor="#f0d878"
           titleColor="#8a6a1a"
-          title={`🔄 直近2週間の代行予定 (${upcomingSubs.length}件)`}
+          title={`🔄 ${windowPrefix}代行予定 (${upcomingSubs.length}件)`}
         >
           {upcomingSubs.map((sub) => {
             const slot = slotById.get(sub.slotId);
@@ -900,7 +1085,7 @@ export function WeekView({
           bg={EXTRA_LESSON_COLOR.bannerBg}
           borderColor={EXTRA_LESSON_COLOR.bannerBorder}
           titleColor={EXTRA_LESSON_COLOR.deep}
-          title={`➕ 直近2週間の追加授業 (${upcomingExtras.length}件)`}
+          title={`➕ ${windowPrefix}追加授業 (${upcomingExtras.length}件)`}
         >
           {upcomingExtras.map((l) => (
             <UpcomingRow
@@ -949,8 +1134,16 @@ export function WeekView({
             minWidth: 600,
           }}
         >
-          {DAYS.map((d) => (
-            <div key={d}>
+          {DAYS.map((d) => {
+            const colDate = weekDates[d];
+            const isTodayCol = colDate === todayStr;
+            return (
+            <div
+              key={d}
+              // 今日の列は黄枠で目立たせる (styles/appShell.css の .week-col-today)
+              className={isTodayCol ? "week-col-today" : undefined}
+              style={{ borderRadius: 8 }}
+            >
               <div
                 style={{
                   background: DC[d],
@@ -961,9 +1154,32 @@ export function WeekView({
                   fontWeight: 800,
                   fontSize: 14,
                   letterSpacing: 2,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "baseline",
+                  gap: 6,
                 }}
               >
-                {d}
+                <span>{d}</span>
+                {/* 列の日付は紙面にも出す (どの週の表か判るように) */}
+                <span style={{ fontSize: 11, letterSpacing: 0, opacity: 0.9 }}>
+                  {fmtMD(colDate)}
+                </span>
+                {isTodayCol && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: 0,
+                      background: "#e6a800",
+                      color: "#fff",
+                      padding: "0 5px",
+                      borderRadius: 8,
+                      fontWeight: 800,
+                    }}
+                  >
+                    今日
+                  </span>
+                )}
               </div>
               <div
                 style={{
@@ -1023,7 +1239,7 @@ export function WeekView({
                           onDel={isAdmin ? onDel : undefined}
                           displaySubject={
                             isBiweekly(s.note)
-                              ? `${biweeklyDisplaySubject(s, refDateStr, biweeklyAnchors, holidays, examPeriods)}（隔週）`
+                              ? `${biweeklyDisplaySubject(s, weekDates[d], biweeklyAnchors, holidays, examPeriods)}（隔週）`
                               : undefined
                           }
                           hideNote={isBiweekly(s.note)}
@@ -1185,7 +1401,8 @@ export function WeekView({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

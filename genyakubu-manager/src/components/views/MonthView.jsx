@@ -39,6 +39,7 @@ import {
 } from "../../utils/teacherDayOff";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToday } from "../../hooks/useToday";
+import { DayNumberLegend, DayNumberLink } from "../DayNumberLink";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
 import { EVENT_KIND } from "../../constants/eventKinds";
 import {
@@ -97,8 +98,15 @@ export function MonthView({
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
   availableTags = [],
+  // 日付の数字から「その日」へ跳ぶ導線 (どちらも任意)。
+  //   onSelectDate(ds)        = その日のダッシュボードを開く
+  //   onJumpToAbsenceFlow(ds) = その日の欠勤組み換えを開く (管理者だけ)
+  onSelectDate,
+  onJumpToAbsenceFlow,
 }) {
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
+  const jumpToAbsenceFlow =
+    isAdmin && onJumpToAbsenceFlow ? onJumpToAbsenceFlow : null;
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   // 日付 → この講師の特訓シフト一覧。cells.map の各セルで O(1) 参照するための索引。
   // assignments は名前キーなので、アルバイト・通常講師を問わず該当者全員を拾う。
@@ -347,12 +355,29 @@ export function MonthView({
 
   return (
     <div className="month-print-root" style={{ marginTop: 12 }}>
-      {onChangeVisibility && (
-        <div className="no-print" style={{ marginBottom: 8 }}>
-          <EventVisibilityToggles
-            visibility={visibility}
-            onChange={onChangeVisibility}
-            availableTags={availableTags}
+      {(onChangeVisibility || onSelectDate || jumpToAbsenceFlow) && (
+        <div
+          className="no-print"
+          style={{
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {onChangeVisibility && (
+            <EventVisibilityToggles
+              visibility={visibility}
+              onChange={onChangeVisibility}
+              availableTags={availableTags}
+            />
+          )}
+          {/* 日付の数字 / 🚑 が何かの凡例 (導線を渡したときだけ) */}
+          <DayNumberLegend
+            onSelectDate={onSelectDate}
+            onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            style={{ marginLeft: "auto" }}
           />
         </div>
       )}
@@ -1130,7 +1155,12 @@ export function MonthView({
                   justifyContent: "space-between",
                 }}
               >
-                <span>{d}</span>
+                <DayNumberLink
+                  d={d}
+                  ds={ds}
+                  onSelectDate={onSelectDate}
+                  onJumpToAbsenceFlow={jumpToAbsenceFlow}
+                />
                 {dayOff.off && (
                   <span
                     title={`この日の ${sl.length} コマはすべて他の担当に移っています`}

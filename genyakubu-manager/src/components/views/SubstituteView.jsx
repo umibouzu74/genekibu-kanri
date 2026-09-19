@@ -22,6 +22,9 @@ export function SubstituteView({
   partTimeStaff,
   teacherKana = {},
   onNew,
+  // この画面 (＋ 新規代行 / 空表示の ＋ 代行を登録) から保存した直後の
+  // レコード (App が useSubsCrud.save の戻り値を渡す)。月フィルタの追従に使う
+  createdSubs = null,
   onEdit,
   onDel,
   onQuickUpdate,
@@ -58,6 +61,10 @@ export function SubstituteView({
   );
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // 代行一覧の並び: "date" / "date-desc" (対象日) と "createdAt" /
+  // "createdAt-desc" (登録日時) の 4 値。並び順を SubListTab ではなく
+  // ここで持つのは、📥 表示中を CSV も同じ順で出すため
+  const [sortBy, setSortBy] = useState("date");
   const [expandedTally, setExpandedTally] = useState(new Set());
   // 玉突き代行タブの初期日付 (欠勤組み換えの「🔗 玉突き代行で探す」から)
   const [chainInitDate, setChainInitDate] = useState(null);
@@ -117,8 +124,17 @@ export function SubstituteView({
       r = r.filter((s) => s.originalTeacher === fStaff || s.substitute === fStaff);
     // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
     if (fStatus) r = r.filter((s) => matchesSubStateFilter(s, fStatus));
-    return r.sort((a, b) => a.date.localeCompare(b.date));
-  }, [subs, fMonth, fStaff, fStatus]);
+    return r.sort((a, b) => {
+      // 4 値: "date" 対象日昇順 / "date-desc" 対象日降順 /
+      // "createdAt-desc" 登録が新しい順 / "createdAt" 登録が古い順。
+      // 同値時は id (昇順は小さい方を上、降順は新しいレコードを上)
+      const desc = sortBy.endsWith("-desc");
+      const key = sortBy.startsWith("createdAt") ? "createdAt" : "date";
+      const c = (a[key] || "").localeCompare(b[key] || "");
+      if (c !== 0) return desc ? -c : c;
+      return desc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0);
+    });
+  }, [subs, fMonth, fStaff, fStatus, sortBy]);
 
   const adjustmentCount = useMemo(
     () =>
@@ -167,6 +183,23 @@ export function SubstituteView({
 
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
+
+  // ＋ 新規代行 で来月の日付を登録すると、保存はされるのに当月の月フィルタで
+  // 一覧から消えて「登録できなかった」ように見える (2026-09-15)。保存経路
+  // (useSubsCrud.save) が返した「いま作ったレコード」を App が createdSubs で
+  // 渡してくるので、その日付が月フィルタの外なら月フィルタをその月へ動かす。
+  // 「すべて」(fMonth 空) はそのまま。subs の増減を見張る方式は、他端末の
+  // 同期で増えた分と区別できないのでやめた
+  useEffect(() => {
+    if (!createdSubs || createdSubs.length === 0) return;
+    setFMonth((cur) => {
+      if (!cur) return cur; // 「すべて」は動かさない
+      const dates = createdSubs.map((s) => s.date || "").filter(Boolean).sort();
+      const month = dates[0]?.slice(0, 7);
+      if (!month || dates.some((d) => d.startsWith(cur))) return cur;
+      return month;
+    });
+  }, [createdSubs]);
 
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
   // 孤立しがち。削除直後に件数を info トーストで案内する。
@@ -345,6 +378,8 @@ export function SubstituteView({
           setFStaff={setFStaff}
           fStatus={fStatus}
           setFStatus={setFStatus}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
           isAdmin={isAdmin}
           slots={slots}
           partTimeStaff={partTimeStaff}
@@ -356,6 +391,7 @@ export function SubstituteView({
           onDel={onDel}
           onQuickUpdate={onQuickUpdate}
           onNew={onNew}
+          onJumpToDate={onJumpToAbsenceFlow}
           todayStr={todayStr}
         />
       )}
@@ -416,6 +452,7 @@ export function SubstituteView({
           timetables={timetables || []}
           activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
           subjects={subjects || []}
           subs={subs}
           saveSubs={saveSubs}
@@ -425,6 +462,7 @@ export function SubstituteView({
           teacherSubjects={teacherSubjects || {}}
           classSets={classSets || []}
           displayCutoff={displayCutoff}
+          daySchedules={daySchedules}
           onAddAdjustment={onAddAdjustment}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}

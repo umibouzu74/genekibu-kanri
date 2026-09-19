@@ -11,6 +11,7 @@ import {
   SUB_STATE,
 } from "../../../utils/substituteState";
 import { splitTeacherField } from "../../../utils/biweekly";
+import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 
 // 行内の「代行者名 + ✓ 確定」。モーダル (SubstituteForm) を開かずに
 // 未処理の行を片付けるための最小の操作だけを置く。
@@ -157,6 +158,12 @@ export function SubListTab({
   setFStaff,
   fStatus,
   setFStatus,
+  // 並び順 (親 SubstituteView が filtered をこの順で渡す。CSV も同じ順):
+  //   "date" 対象日昇順 / "date-desc" 対象日降順 /
+  //   "createdAt-desc" 登録が新しい順 / "createdAt" 登録が古い順
+  // 列見出しのボタンで列を選び、同じ列をもう一度押すと昇順 / 降順が反転する
+  sortBy = "date",
+  setSortBy,
   isAdmin,
   slots = [],
   partTimeStaff = [],
@@ -168,6 +175,8 @@ export function SubListTab({
   onDel,
   onQuickUpdate,
   onNew,
+  // 「その日の欠勤組み換えへ」(🚑)。管理者のみ。時間割調整一覧と同じ導線
+  onJumpToDate,
   todayStr = "",
 }) {
   const teacherGroups = useMemo(
@@ -196,6 +205,59 @@ export function SubListTab({
     return [...set];
   }, [allTeachers]);
   const canQuick = isAdmin && typeof onQuickUpdate === "function";
+  const canSort = typeof setSortBy === "function";
+  const sortColumn = sortBy.startsWith("createdAt") ? "createdAt" : "date";
+  const sortDir = sortBy.endsWith("-desc") ? "descending" : "ascending";
+  // 別の列を押したときの既定: 対象日は昇順 (近い日から)、作成日時は降順
+  // (登録が新しい順)。同じ列なら向きを反転
+  const toggleSort = (column) => {
+    if (!canSort) return;
+    if (column !== sortColumn) {
+      setSortBy(column === "createdAt" ? "createdAt-desc" : "date");
+      return;
+    }
+    const nextDesc = sortDir !== "descending";
+    setSortBy(nextDesc ? `${column}-desc` : column);
+  };
+  // 見出しの並べ替えボタン。th 自体をクリックしても同じ (押しやすさ)。
+  // ボタンのクリックは th へバブルするので、th 側は直接クリックだけ拾う
+  const sortHeaderProps = (column) =>
+    canSort
+      ? {
+          "aria-sort": column === sortColumn ? sortDir : "none",
+          onClick: (e) => {
+            if (e.target === e.currentTarget) toggleSort(column);
+          },
+        }
+      : {};
+  const sortHeaderStyle = { cursor: canSort ? "pointer" : undefined, userSelect: "none" };
+  const renderSortButton = (column, label) =>
+    canSort ? (
+      <button
+        type="button"
+        className="no-print"
+        aria-label={`${label}で並べ替え`}
+        title={
+          column === sortColumn
+            ? `クリックで${sortDir === "descending" ? "昇順" : "降順"}にする`
+            : `クリックで${label}順にする`
+        }
+        onClick={() => toggleSort(column)}
+        style={{
+          border: "none",
+          background: "none",
+          color: "inherit",
+          font: "inherit",
+          cursor: "pointer",
+          padding: 0,
+          marginLeft: 2,
+        }}
+      >
+        <span aria-hidden="true">
+          {column !== sortColumn ? "↕" : sortDir === "descending" ? "↓" : "↑"}
+        </span>
+      </button>
+    ) : null;
   const notShownTitle =
     "このコマの時間割はこの日に有効ではないため、スケジュール (ダッシュボード / タイムテーブル / 講師別カレンダー) には出ません。同じ位置の有効なコマがあれば ↪ で付け替え、無ければ ✏️ で選び直してください";
   // 期間外の行 → 同じ位置 (曜日・時刻・学年・クラス・科目) で有効なコマ
@@ -213,6 +275,7 @@ export function SubListTab({
   }, [canQuick, notShownIds, filtered, slotMap, slots, timetables, displayCutoff]);
   return (
     <div>
+      <style>{`@media print { .sub-list-table { min-width: 0 !important; } }`}</style>
       <div
         style={{
           display: "flex",
@@ -381,17 +444,29 @@ export function SubListTab({
           </div>
         ) : (
           <table
+            className="sub-list-table"
             style={{
               width: "100%",
               borderCollapse: "collapse",
               fontSize: 12,
-              minWidth: 760,
+              // 画面では 860 (作成日時・操作の列ぶん)。紙面ではその 2 列が
+              // no-print で消えるので、下の @media print で min-width を外す
+              minWidth: 860,
             }}
           >
             <thead>
               <tr style={{ background: "#1a1a2e", color: "#fff" }}>
-                <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
-                  日付
+                <th
+                  scope="col"
+                  {...sortHeaderProps("date")}
+                  style={{
+                    padding: "8px 10px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                    ...sortHeaderStyle,
+                  }}
+                >
+                  対象日{renderSortButton("date", "対象日")}
                 </th>
                 <th scope="col" style={{ padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>
                   時間
@@ -407,10 +482,24 @@ export function SubListTab({
                   状態
                 </th>
                 <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>メモ</th>
+                {/* 作成日時は画面での並べ替え用。紙面には載せない (幅も食う) */}
+                <th
+                  scope="col"
+                  className="no-print"
+                  {...sortHeaderProps("createdAt")}
+                  style={{
+                    padding: "8px 10px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                    ...sortHeaderStyle,
+                  }}
+                >
+                  作成日時{renderSortButton("createdAt", "作成日時")}
+                </th>
                 {isAdmin && (
                   <th scope="col"
                     className="no-print"
-                    style={{ padding: "8px 10px", textAlign: "center", width: 60 }}
+                    style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
                   >
                     操作
                   </th>
@@ -556,6 +645,17 @@ export function SubListTab({
                     >
                       {sub.memo}
                     </td>
+                    <td
+                      className="no-print"
+                      style={{
+                        padding: "8px 10px",
+                        fontSize: 10,
+                        color: "#999",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {fmtIsoLocal(sub.createdAt)}
+                    </td>
                     {isAdmin && (
                       <td
                         className="no-print"
@@ -565,6 +665,18 @@ export function SubListTab({
                           whiteSpace: "nowrap",
                         }}
                       >
+                        {onJumpToDate && sub.date && (
+                          <button
+                            type="button"
+                            onClick={() => onJumpToDate(sub.date)}
+                            aria-label={`${fmtDateWeekday(sub.date)} の欠勤組み換えを開く`}
+                            title={`${fmtDateWeekday(sub.date)} の欠勤組み換えを開く`}
+                            className={ICON_BTN_CLASS}
+                            style={{ ...S.iconBtn, marginRight: 2 }}
+                          >
+                            🚑
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onEdit(sub)}

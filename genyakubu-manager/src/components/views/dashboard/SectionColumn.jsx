@@ -6,11 +6,16 @@ import {
   timeToMin,
 } from "../../../data";
 import {
+  biweeklyActiveTeacher,
+  biweeklyDisplaySubject,
   formatBiweeklyNote,
   formatCount,
-  getSlotTeachers,
+  getSlotWeekType,
+  isBiweekly,
+  splitTeacherField,
   weightedSlotCount,
 } from "../../../utils/biweekly";
+import { BiweeklyWeekBadge } from "../../BiweeklyWeekBadge";
 import {
   subState,
   subStateMeta,
@@ -80,6 +85,10 @@ export function SectionColumn({
   daySchedules = [],
   // slotId → 講師の同時刻の重なり (DashDayRow で日単位に組んだもの)
   teacherConflicts = null,
+  // 隔週コマの A/B 週を date で解決するため (時間割モードの ExcelCell と同じ)
+  biweeklyAnchors = [],
+  holidays = [],
+  examPeriods = [],
   onSelectTeacher,
 }) {
   // この日の合同・移動・特別時程情報を索引化 (共通ヘルパを使用)
@@ -231,6 +240,21 @@ export function SectionColumn({
                     // 他日へ振り替えたコマ = この日は実施しない。
                     const rescheduledOut = rescheduleOutBySlot.get(s.id) || null;
                     const conflicts = teacherConflicts?.get(s.id) || null;
+                    // 隔週コマは「この日に実施する側」だけを出す (A 週 = 講師欄、
+                    // B 週 = note「隔週(◯◯)」のパートナー)。アンカー未設定で
+                    // 週が決まらないときは従来どおり併記 (安全側で隠さない)
+                    const biweekly = isBiweekly(s.note);
+                    const weekType =
+                      biweekly && date
+                        ? getSlotWeekType(date, s, biweeklyAnchors, holidays, examPeriods)
+                        : null;
+                    const displaySubj = weekType
+                      ? biweeklyDisplaySubject(s, date, biweeklyAnchors, holidays, examPeriods)
+                      : s.subj;
+                    const activeTeacherField = weekType
+                      ? biweeklyActiveTeacher(s, date, biweeklyAnchors, holidays, examPeriods)
+                      : s.teacher;
+                    const activeTeachers = splitTeacherField(activeTeacherField);
                     const newGradeRow =
                       i > 0 &&
                       s.grade !== tSlots[i - 1].grade &&
@@ -405,8 +429,9 @@ export function SectionColumn({
                                   : "none",
                               }}
                             >
-                              {s.subj}
+                              {displaySubj}
                             </span>
+                            {biweekly && <BiweeklyWeekBadge weekType={weekType} />}
                           </div>
                           {(s.room || s.note) && (
                             <div
@@ -452,7 +477,7 @@ export function SectionColumn({
                                   fontSize: 12,
                                 }}
                               >
-                                {s.teacher || "?"}
+                                {activeTeacherField || "?"}
                               </span>
                               <span style={{ margin: "0 2px", color: ADJ_COLOR.combine.color }}>→</span>
                               <span style={{ color: ADJ_COLOR.combine.color }}>
@@ -488,7 +513,7 @@ export function SectionColumn({
                                 const away = new Set(
                                   slotSubs.map((x) => x.originalTeacher)
                                 );
-                                const staying = getSlotTeachers(s).filter(
+                                const staying = activeTeachers.filter(
                                   (t) => !away.has(t)
                                 );
                                 if (staying.length === 0) return null;
@@ -508,7 +533,7 @@ export function SectionColumn({
                                   fontSize: 12,
                                 }}
                               >
-                                {s.teacher || "?"}
+                                {activeTeacherField || "?"}
                               </span>
                               <span
                                 style={{
@@ -519,16 +544,23 @@ export function SectionColumn({
                               >
                                 →{" "}
                                 {describeRescheduleTarget(rescheduledOut, {
-                                  originalTeacher: s.teacher,
+                                  originalTeacher: activeTeacherField,
                                 })}{" "}
                                 へ振替
                               </span>
                             </span>
-                          ) : s.teacher ? (
-                            <TeacherNames
-                              names={getSlotTeachers(s)}
-                              onSelectTeacher={onSelectTeacher}
-                            />
+                          ) : activeTeacherField ? (
+                            <>
+                              <TeacherNames
+                                names={activeTeachers}
+                                onSelectTeacher={onSelectTeacher}
+                              />
+                              {weekType && (
+                                <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 3 }}>
+                                  (隔週)
+                                </span>
+                              )}
+                            </>
                           ) : (
                             <span style={{ color: colors.danger, fontSize: 14, fontStyle: "italic" }}>
                               未割当
