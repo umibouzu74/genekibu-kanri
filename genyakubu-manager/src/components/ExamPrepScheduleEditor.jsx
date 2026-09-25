@@ -14,7 +14,7 @@ import {
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
-import { compareTeacherNames } from "../utils/teacherKana";
+import { compareTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
 import { getSlotTeachers } from "../utils/biweekly";
 import { pickSubjectId } from "../utils/subjectMatch";
 
@@ -26,6 +26,15 @@ const DEFAULT_PERIODS = [
   { no: 3, start: "20:00", end: "20:50" },
   { no: 4, start: "21:00", end: "21:50" },
 ];
+
+// その日に 1 校時でも出勤が入っている講師の数
+function countAssigned(day) {
+  let n = 0;
+  for (const nos of Object.values(day?.assignments || {})) {
+    if (Array.isArray(nos) && nos.length > 0) n++;
+  }
+  return n;
+}
 
 function blankDay(dateStr) {
   return {
@@ -57,6 +66,15 @@ export function ExamPrepScheduleEditor({
   const [activeDate, setActiveDate] = useState(rangeDates[0] || "");
   const [copyTargets, setCopyTargets] = useState([]);
   const [staffQuery, setStaffQuery] = useState("");
+  // 出勤が入っている講師だけに絞る (割り当て後の見直し用)
+  const [onlyAssigned, setOnlyAssigned] = useState(false);
+
+  // 日付を切り替えたら、その日をコピー先の選択から外す (コピー先の一覧には
+  // 自分自身が出ないので、残すと「N 日にコピー」の件数だけが合わなくなる)
+  const selectDate = (ds) => {
+    setActiveDate(ds);
+    setCopyTargets((prev) => prev.filter((d) => d !== ds));
+  };
 
   // 出勤候補リスト: アルバイト + 通常授業の担当講師 (重複排除)。
   // 各エントリに教科情報を付与し、教科 ID 昇順 → 名前 (五十音) で並べる。
@@ -124,16 +142,48 @@ export function ExamPrepScheduleEditor({
     return m;
   }, [subjects]);
 
-  // 講師名の部分一致で絞り込み (大文字小文字無視)。空クエリは全件。
-  const filteredStaffEntries = useMemo(() => {
-    const q = staffQuery.trim().toLowerCase();
-    if (!q) return staffEntries;
-    return staffEntries.filter((e) => e.name.toLowerCase().includes(q));
-  }, [staffEntries, staffQuery]);
-
   const activeDay = useMemo(() => {
     return findDay(schedule, activeDate);
   }, [schedule, activeDate]);
+
+  // 表の行: 出勤候補 + 「この日に出勤が入っているのに候補に居ない講師」。
+  // 期切替でコマが無くなった常勤講師などは候補から消えるが、出勤の登録は
+  // 残る。行を出さないとチェックを外す手段が無く、講師別の画面には特訓が
+  // 出続けるので、末尾に「候補外」として出す (黙って隠さない)。
+  const rowEntries = useMemo(() => {
+    const known = new Set(staffEntries.map((e) => e.name));
+    const outside = Object.entries(activeDay?.assignments || {})
+      .filter(([name, nos]) => !known.has(name) && Array.isArray(nos) && nos.length > 0)
+      .map(([name]) => name)
+      .sort(compareTeacherNames(teacherKana))
+      .map((name) => ({
+        name,
+        isPartTime: false,
+        isOutside: true,
+        subjectIds: [],
+        primarySubjectId: Infinity,
+      }));
+    return outside.length > 0 ? [...staffEntries, ...outside] : staffEntries;
+  }, [staffEntries, activeDay, teacherKana]);
+
+  // 講師名・よみの部分一致 + 「出勤者のみ」で絞り込み。空クエリは全件。
+  const filteredStaffEntries = useMemo(() => {
+    const assigned = activeDay?.assignments || {};
+    return rowEntries.filter(
+      (e) =>
+        teacherMatchesQuery(e.name, staffQuery, teacherKana) &&
+        (!onlyAssigned || (assigned[e.name] || []).length > 0)
+    );
+  }, [rowEntries, staffQuery, teacherKana, onlyAssigned, activeDay]);
+
+  // 校時ごとの出勤人数 (見出しに出す)。絞り込みに関係なく全員ぶん数える。
+  const headcountByPeriod = useMemo(() => {
+    const m = new Map();
+    for (const nos of Object.values(activeDay?.assignments || {})) {
+      for (const no of nos || []) m.set(no, (m.get(no) || 0) + 1);
+    }
+    return m;
+  }, [activeDay]);
 
   const hasDay = activeDay != null;
 
@@ -283,6 +333,10 @@ export function ExamPrepScheduleEditor({
   }, [activeDay]);
 
   const configuredDates = new Set((schedule?.days || []).map((d) => d.date));
+  const assignedCountByDate = new Map(
+    (schedule?.days || []).map((d) => [d.date, countAssigned(d)])
+  );
+  const filtering = staffQuery.trim() !== "" || onlyAssigned;
 
   return (
     <Modal
@@ -291,8 +345,10 @@ export function ExamPrepScheduleEditor({
       width="min(900px, 95vw)"
     >
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {/* 左ペイン: 日付リスト */}
-        <div style={{ minWidth: 170, maxWidth: 200 }}>
+        {/* 左ペイン: 日付リスト。講師の一覧を下へスクロールしても次の日を
+            選べるよう、左右 2 段組の画面ではモーダル内で固定する
+            (exam-prep-date-pane、appShell.css) */}
+        <div className="exam-prep-date-pane" style={{ minWidth: 170, maxWidth: 200 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
             日付
           </div>
@@ -300,11 +356,13 @@ export function ExamPrepScheduleEditor({
             {rangeDates.map((ds) => {
               const sel = ds === activeDate;
               const done = configuredDates.has(ds);
+              const count = assignedCountByDate.get(ds) || 0;
               return (
                 <button
                   key={ds}
                   type="button"
-                  onClick={() => setActiveDate(ds)}
+                  onClick={() => selectDate(ds)}
+                  aria-current={sel ? "date" : undefined}
                   style={{
                     textAlign: "left",
                     padding: "6px 10px",
@@ -321,7 +379,16 @@ export function ExamPrepScheduleEditor({
                 >
                   <span>{fmtDateWeekday(ds)}</span>
                   {done && (
-                    <span style={{ fontSize: 10, color: "#4a9a4a" }}>●</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: count > 0 ? "#4a9a4a" : "#aaa",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={count > 0 ? `${count} 人が出勤` : "校時のみ設定 (出勤なし)"}
+                    >
+                      ● {count}人
+                    </span>
                   )}
                 </button>
               );
@@ -518,36 +585,62 @@ export function ExamPrepScheduleEditor({
                 >
                   <div style={{ fontSize: 12, fontWeight: 700 }}>
                     出勤（該当校時にチェック / 教科別表示）
+                    <span style={{ marginLeft: 6, fontWeight: 400, color: "#666" }}>
+                      {countAssigned(activeDay)} 人
+                    </span>
                   </div>
                   <input
                     type="search"
                     value={staffQuery}
                     onChange={(e) => setStaffQuery(e.target.value)}
-                    placeholder="講師名で絞り込み"
-                    aria-label="講師名で絞り込み"
+                    placeholder="講師名・よみで絞り込み"
+                    aria-label="講師名・よみで絞り込み"
                     style={{
                       ...S.input,
-                      width: 160,
+                      width: 170,
                       padding: "3px 8px",
                       fontSize: 11,
                     }}
                   />
-                  {staffQuery && (
+                  <label
+                    style={{
+                      fontSize: 11,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={onlyAssigned}
+                      onChange={(e) => setOnlyAssigned(e.target.checked)}
+                    />
+                    出勤者のみ
+                  </label>
+                  {filtering && (
                     <span style={{ fontSize: 11, color: "#888" }}>
-                      {filteredStaffEntries.length} / {staffEntries.length} 件
+                      {filteredStaffEntries.length} / {rowEntries.length} 件
                     </span>
                   )}
                 </div>
-                {staffEntries.length === 0 ? (
+                {rowEntries.length === 0 ? (
                   <div style={{ fontSize: 11, color: "#888" }}>
                     出勤候補の講師が登録されていません
                   </div>
                 ) : filteredStaffEntries.length === 0 ? (
                   <div style={{ fontSize: 11, color: "#888" }}>
-                    「{staffQuery}」に該当する講師がいません
+                    {staffQuery.trim()
+                      ? `「${staffQuery.trim()}」に該当する${onlyAssigned ? "出勤者" : "講師"}がいません`
+                      : "この日はまだ誰も出勤していません"}
                   </div>
                 ) : (
-                  <div style={{ overflowX: "auto" }}>
+                  // 横スクロールの囲みは狭い画面だけ (exam-prep-staff-scroll、
+                  // appShell.css)。広い画面で overflow を付けるとそこが
+                  // スクロール領域になり、見出しの sticky がモーダルの縦
+                  // スクロールに効かなくなる
+                  <div className="exam-prep-staff-scroll">
                   <table
                     style={{
                       borderCollapse: "collapse",
@@ -555,20 +648,43 @@ export function ExamPrepScheduleEditor({
                     }}
                   >
                     <thead>
-                      <tr style={{ background: "#f5f5f5" }}>
-                        <th scope="col" style={{ ...thStyle, minWidth: 60 }}>教科</th>
-                        <th scope="col" style={{ ...thStyle, minWidth: 80 }}>講師</th>
-                        {activeDay.periods.map((p) => (
-                          <th scope="col" key={p.no} style={{ ...thStyle, minWidth: 50 }}>
-                            {p.no}
-                          </th>
-                        ))}
-                        <th scope="col" style={thStyle}>全て</th>
+                      <tr>
+                        <th scope="col" className="exam-prep-sticky-th" style={{ ...stickyThStyle, minWidth: 60 }}>教科</th>
+                        <th scope="col" className="exam-prep-sticky-th" style={{ ...stickyThStyle, minWidth: 80 }}>講師</th>
+                        {activeDay.periods.map((p) => {
+                          const n = headcountByPeriod.get(p.no) || 0;
+                          return (
+                            <th
+                              scope="col"
+                              key={p.no}
+                              className="exam-prep-sticky-th"
+                              style={{ ...stickyThStyle, minWidth: 64, padding: "4px 6px" }}
+                            >
+                              <div>{p.no}</div>
+                              <div style={{ fontSize: 10, fontWeight: 400, color: "#666" }}>
+                                {p.start}-{p.end}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 400,
+                                  color: n > 0 ? "#2a7a4a" : "#aaa",
+                                }}
+                              >
+                                {n}人
+                              </div>
+                            </th>
+                          );
+                        })}
+                        <th scope="col" className="exam-prep-sticky-th" style={stickyThStyle}>全て</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredStaffEntries.map((entry, idx) => {
                         const nos = activeDay.assignments?.[entry.name] || [];
+                        const allOn =
+                          activeDay.periods.length > 0 &&
+                          activeDay.periods.every((p) => nos.includes(p.no));
                         const subjectLabel = entry.subjectIds.length > 0
                           ? entry.subjectIds
                               .map((id) => subjectNameById.get(id))
@@ -577,7 +693,9 @@ export function ExamPrepScheduleEditor({
                           : "—";
                         const prev = idx > 0 ? filteredStaffEntries[idx - 1] : null;
                         const isSubjectBoundary =
-                          prev && prev.primarySubjectId !== entry.primarySubjectId;
+                          prev &&
+                          (prev.primarySubjectId !== entry.primarySubjectId ||
+                            !!prev.isOutside !== !!entry.isOutside);
                         return (
                           <tr
                             key={entry.name}
@@ -598,34 +716,65 @@ export function ExamPrepScheduleEditor({
                             >
                               {subjectLabel}
                             </td>
-                            <td style={tdStyle}>
+                            <td
+                              style={{
+                                ...tdStyle,
+                                fontWeight: nos.length > 0 ? 700 : 400,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
                               {entry.name}
-                              {!entry.isPartTime && (
+                              {entry.isOutside ? (
                                 <span
                                   style={{
                                     marginLeft: 4,
                                     fontSize: 9,
-                                    color: "#888",
+                                    color: colors.danger,
                                     fontWeight: 400,
                                   }}
-                                  title="通常授業の担当講師"
+                                  title="アルバイトにも時間割にも居ない講師です。不要ならチェックを外してください"
                                 >
-                                  常勤
+                                  候補外
                                 </span>
+                              ) : (
+                                !entry.isPartTime && (
+                                  <span
+                                    style={{
+                                      marginLeft: 4,
+                                      fontSize: 9,
+                                      color: "#888",
+                                      fontWeight: 400,
+                                    }}
+                                    title="通常授業の担当講師"
+                                  >
+                                    常勤
+                                  </span>
+                                )
                               )}
                             </td>
                             {activeDay.periods.map((p) => {
                               const checked = nos.includes(p.no);
                               return (
-                                <td key={p.no} style={tdStyle}>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() =>
-                                      handleToggleAssignment(entry.name, p.no)
-                                    }
-                                    aria-label={`${entry.name} ${p.no} 校時`}
-                                  />
+                                <td
+                                  key={p.no}
+                                  style={{
+                                    ...tdStyle,
+                                    padding: 0,
+                                    background: checked ? CHECKED_BG : undefined,
+                                  }}
+                                >
+                                  {/* セル全体をクリック範囲にする (小さな
+                                      チェックボックスを狙わなくてよい) */}
+                                  <label style={cellLabelStyle}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        handleToggleAssignment(entry.name, p.no)
+                                      }
+                                      aria-label={`${entry.name} ${p.no} 校時`}
+                                    />
+                                  </label>
                                 </td>
                               );
                             })}
@@ -633,13 +782,15 @@ export function ExamPrepScheduleEditor({
                               <button
                                 type="button"
                                 onClick={() => handleToggleAllForStaff(entry.name)}
+                                aria-label={`${entry.name} の全校時を${allOn ? "解除" : "選択"}`}
                                 style={{
                                   ...S.btn(false),
                                   fontSize: 10,
                                   padding: "2px 8px",
+                                  whiteSpace: "nowrap",
                                 }}
                               >
-                                切替
+                                {allOn ? "全解除" : "全選択"}
                               </button>
                             </td>
                           </tr>
@@ -751,4 +902,28 @@ const tdStyle = {
   border: "1px solid #ddd",
   padding: "4px 8px",
   textAlign: "center",
+};
+
+// 出勤表の見出しは、講師の一覧を下へスクロールしても校時と時刻が読めるよう
+// モーダル (S.card がスクロール領域) の上端に固定する。固定位置 (top) は
+// カードの padding ぶん上へ出す必要があり、padding が画面幅で変わるので
+// CSS 側 (appShell.css の .exam-prep-sticky-th) に置く。border-collapse の表は
+// sticky にした見出しの罫線が付いてこないので、下罫を影で描く
+const stickyThStyle = {
+  ...thStyle,
+  position: "sticky",
+  zIndex: 1,
+  background: "#f5f5f5",
+  boxShadow: "inset 0 -1px 0 #ccc",
+};
+
+// 出勤を入れた校時のセル
+const CHECKED_BG = "#fff4d6";
+
+const cellLabelStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "6px 8px",
+  cursor: "pointer",
 };

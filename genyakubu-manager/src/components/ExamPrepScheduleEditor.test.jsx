@@ -29,9 +29,8 @@ function makeDay() {
   };
 }
 
-function renderEditor(day = makeDay()) {
-  const crud = { upsertDay: vi.fn(), deleteDay: vi.fn(), copyDay: vi.fn() };
-  render(
+function editorTree({ day, crud, teacherKana, partTimeStaff }) {
+  return (
     <ToastProvider
       render={(toasts) => (
         <div data-testid="toasts">
@@ -44,15 +43,26 @@ function renderEditor(day = makeDay()) {
       <ConfirmProvider>
         <ExamPrepScheduleEditor
           examPeriod={EXAM_PERIOD}
-          schedule={{ examPeriodId: 1, days: [day] }}
-          partTimeStaff={[{ id: 1, name: "伊藤", subjectIds: [] }]}
+          schedule={{ examPeriodId: 1, days: day ? [day] : [] }}
+          partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
           crud={crud}
+          // 呼び出し側 (ExamPeriodManager) と同じくインライン関数で渡す
           onClose={() => {}}
         />
       </ConfirmProvider>
     </ToastProvider>
   );
-  return { crud };
+}
+
+const DEFAULT_STAFF = [{ id: 1, name: "伊藤", subjectIds: [] }];
+
+function renderEditor(day = makeDay(), { teacherKana = {}, partTimeStaff = DEFAULT_STAFF } = {}) {
+  const crud = { upsertDay: vi.fn(), deleteDay: vi.fn(), copyDay: vi.fn() };
+  const view = render(editorTree({ day, crud, teacherKana, partTimeStaff }));
+  const rerenderWith = (nextDay) =>
+    view.rerender(editorTree({ day: nextDay, crud, teacherKana, partTimeStaff }));
+  return { crud, rerenderWith };
 }
 
 function periodTable() {
@@ -113,5 +123,95 @@ describe("ExamPrepScheduleEditor の校時の自動並べ替え", () => {
     const saved = crud.upsertDay.mock.calls[0][1];
     expect(saved.periods.map((p) => p.start)).toEqual(["19:00", "20:00"]);
     expect(saved.assignments).toEqual({ 奥村: [1, 2] });
+  });
+});
+
+function staffTable() {
+  return screen.getByRole("columnheader", { name: "講師" }).closest("table");
+}
+
+function staffNames() {
+  return within(staffTable())
+    .getAllByRole("row")
+    .slice(1)
+    .map((tr) => tr.cells[1].textContent);
+}
+
+describe("ExamPrepScheduleEditor の出勤表", () => {
+  it("チェックして保存 → 再描画されてもフォーカスはチェックボックスに残る (先頭へ戻らない)", () => {
+    const { crud, rerenderWith } = renderEditor();
+    const box = screen.getByRole("checkbox", { name: "伊藤 1 校時" });
+    box.focus();
+    fireEvent.click(box);
+    expect(crud.upsertDay).toHaveBeenCalledTimes(1);
+    // 保存された内容で親が再描画する (onClose もインラインで作り直される)
+    rerenderWith(crud.upsertDay.mock.calls[0][1]);
+    const after = screen.getByRole("checkbox", { name: "伊藤 1 校時" });
+    expect(after).toBeChecked();
+    expect(document.activeElement).toBe(after);
+  });
+
+  it("見出しに校時の時刻と人数、日付リストに出勤人数を出す", () => {
+    renderEditor();
+    const headers = within(staffTable()).getAllByRole("columnheader");
+    // 教科 / 講師 / 1〜3 校時 / 全て
+    expect(headers[2]).toHaveTextContent("119:00-19:501人");
+    expect(headers[4]).toHaveTextContent("317:30-18:301人");
+    expect(screen.getByRole("button", { name: /2026-09-19/ })).toHaveTextContent("2人");
+  });
+
+  it("時間割にもバイトにも居ない講師の出勤は「候補外」の行で出し、外せる", () => {
+    const { crud } = renderEditor();
+    expect(staffNames()).toEqual(["伊藤", "奥村候補外"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "奥村 1 校時" }));
+    const saved = crud.upsertDay.mock.calls[0][1];
+    expect(saved.assignments).toEqual({ 伊藤: [3], 奥村: [2] });
+  });
+
+  it("よみでも絞り込める", () => {
+    renderEditor(makeDay(), {
+      teacherKana: { 伊藤: "いとう", 香川: "かがわ" },
+      partTimeStaff: [
+        { id: 1, name: "伊藤", subjectIds: [] },
+        { id: 2, name: "香川", subjectIds: [] },
+      ],
+    });
+    fireEvent.change(screen.getByRole("searchbox", { name: "講師名・よみで絞り込み" }), {
+      target: { value: "カガ" },
+    });
+    expect(staffNames()).toEqual(["香川"]);
+  });
+
+  it("「出勤者のみ」で出勤の入っている講師だけにする", () => {
+    renderEditor(makeDay(), {
+      partTimeStaff: [
+        { id: 1, name: "伊藤", subjectIds: [] },
+        { id: 2, name: "香川", subjectIds: [] },
+      ],
+    });
+    expect(staffNames()).toContain("香川");
+    fireEvent.click(screen.getByRole("checkbox", { name: "出勤者のみ" }));
+    expect(staffNames()).toEqual(["伊藤", "奥村候補外"]);
+  });
+
+  it("全校時ボタンは状態に応じて「全選択」「全解除」を出す", () => {
+    renderEditor();
+    expect(screen.getByRole("button", { name: "伊藤 の全校時を選択" })).toHaveTextContent("全選択");
+    expect(screen.getByRole("button", { name: "奥村 の全校時を選択" })).toHaveTextContent("全選択");
+    const day = makeDay();
+    day.assignments = { 伊藤: [1, 2, 3] };
+    cleanup();
+    renderEditor(day);
+    expect(screen.getByRole("button", { name: "伊藤 の全校時を解除" })).toHaveTextContent("全解除");
+  });
+
+  it("コピー先に選んでいた日へ切り替えたら、その日はコピー先から外れる", () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole("checkbox", { name: "2026-09-20 (日)" }));
+    expect(screen.getByRole("button", { name: "1 日にコピー" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /2026-09-20/ }));
+    // 9/20 にはシフトが無いので作成ボタンが出る。9/19 へ戻ってコピー欄を見る
+    fireEvent.click(screen.getByRole("button", { name: /2026-09-19/ }));
+    expect(screen.getByRole("button", { name: "0 日にコピー" })).toBeDisabled();
   });
 });

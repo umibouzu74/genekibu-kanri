@@ -90,6 +90,29 @@ td[role="button"]:focus-visible {
   .sidebar-backdrop { display: none !important; }
   .hamburger { display: none !important; }
 }
+/* 特訓シフトの日付リスト: 講師の一覧を下へスクロールしても次の日を選べる
+   ようにモーダル (スクロール領域) 内で固定する。幅が狭く左右 2 段組が
+   折り返す画面では日付リストが一覧の上に被さるので固定しない */
+@media screen and (min-width: 769px) {
+  .exam-prep-date-pane {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: calc(min(85vh, 100dvh - 32px) - 48px);
+    overflow-y: auto;
+  }
+}
+/* 特訓シフトの出勤表の見出し (position: sticky は JSX 側)。sticky の top: 0 は
+   スクロール領域の padding の内側で止まり、カード (S.card) の padding の帯に
+   下の行が透けて見えるので、padding ぶん上 = カードの上端に貼り付ける。
+   モバイルは .mobile-card-pad で padding が 16px になる (下の 480px 以下) */
+.exam-prep-sticky-th { top: -24px; }
+/* 同じ表の横スクロール。広い画面は表がモーダルに収まるので囲みを
+   スクロール領域にしない (すると上の sticky が効かない)。狭い画面は表だけを
+   横にスクロールさせ、見出しの固定は諦める (モーダルごと横に流れるよりよい) */
+@media screen and (max-width: 768px) {
+  .exam-prep-staff-scroll { overflow-x: auto; }
+}
 @media screen and (max-width: 768px) {
   .sidebar-spacer { display: none !important; }
   .dash-sections { grid-template-columns: 1fr !important; }
@@ -139,6 +162,7 @@ td[role="button"]:focus-visible {
   .mobile-stack > * { width: 100% !important; }
   .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
   .mobile-card-pad { padding: 16px !important; }
+  .exam-prep-sticky-th { top: -16px; }
   .slot-form-row { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
   .slot-form-row > label { width: auto !important; text-align: left !important; }
   .slot-form-row > input, .slot-form-row > select { width: 100% !important; min-width: 0 !important; }
