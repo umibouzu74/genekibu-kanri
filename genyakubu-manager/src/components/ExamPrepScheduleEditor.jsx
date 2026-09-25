@@ -27,13 +27,17 @@ const DEFAULT_PERIODS = [
   { no: 4, start: "21:00", end: "21:50" },
 ];
 
-// その日に 1 校時でも出勤が入っている講師の数
-function countAssigned(day) {
-  let n = 0;
-  for (const nos of Object.values(day?.assignments || {})) {
-    if (Array.isArray(nos) && nos.length > 0) n++;
+// その日に 1 校時でも出勤が入っている講師の名前
+function assignedNames(day) {
+  const out = new Set();
+  for (const [name, nos] of Object.entries(day?.assignments || {})) {
+    if (Array.isArray(nos) && nos.length > 0) out.add(name);
   }
-  return n;
+  return out;
+}
+
+function countAssigned(day) {
+  return assignedNames(day).size;
 }
 
 function blankDay(dateStr) {
@@ -65,15 +69,29 @@ export function ExamPrepScheduleEditor({
 
   const [activeDate, setActiveDate] = useState(rangeDates[0] || "");
   const [copyTargets, setCopyTargets] = useState([]);
+  // コピー先の一覧には表示中の日が出ないので、選択に残っていても数えない。
+  // 選択そのものは消さない (コピー先を選んだあと、その日を覗いて戻ってきた
+  // ときに選び直しにならないように)
+  const effectiveCopyTargets = copyTargets.filter((d) => d !== activeDate);
   const [staffQuery, setStaffQuery] = useState("");
   // 出勤が入っている講師だけに絞る (割り当て後の見直し用)
   const [onlyAssigned, setOnlyAssigned] = useState(false);
+  // 日付を開いた時点 (と「出勤者のみ」を入れた時点) の出勤者。最後の
+  // チェックを外しても、その日を開いている間は行を出し続ける。「出勤者のみ」
+  // や「候補外」の行が外した瞬間に消えると、誤って外したときにその場で
+  // 入れ直せない
+  const [pinnedNames, setPinnedNames] = useState(() =>
+    assignedNames(findDay(schedule, rangeDates[0] || ""))
+  );
 
-  // 日付を切り替えたら、その日をコピー先の選択から外す (コピー先の一覧には
-  // 自分自身が出ないので、残すと「N 日にコピー」の件数だけが合わなくなる)
   const selectDate = (ds) => {
     setActiveDate(ds);
-    setCopyTargets((prev) => prev.filter((d) => d !== ds));
+    setPinnedNames(assignedNames(findDay(schedule, ds)));
+  };
+
+  const toggleOnlyAssigned = (on) => {
+    setOnlyAssigned(on);
+    if (on) setPinnedNames(assignedNames(findDay(schedule, activeDate)));
   };
 
   // 出勤候補リスト: アルバイト + 通常授業の担当講師 (重複排除)。
@@ -147,40 +165,45 @@ export function ExamPrepScheduleEditor({
   }, [schedule, activeDate]);
 
   // 表の行: 出勤候補 + 「この日に出勤が入っているのに候補に居ない講師」。
-  // 期切替でコマが無くなった常勤講師などは候補から消えるが、出勤の登録は
-  // 残る。行を出さないとチェックを外す手段が無く、講師別の画面には特訓が
-  // 出続けるので、末尾に「候補外」として出す (黙って隠さない)。
+  // 候補は バイト + 全時間割のコマの講師 なので、コマの削除・置き換え反映や
+  // コマの講師名の書き換えで時間割から居なくなった人は候補から消えるが、
+  // 出勤の登録は残る。行を出さないと表から外す手段が無く、見出しの人数にも
+  // 別の日へのコピーにも黙って含まれるので、末尾に「候補外」として出す。
   const rowEntries = useMemo(() => {
     const known = new Set(staffEntries.map((e) => e.name));
-    const outside = Object.entries(activeDay?.assignments || {})
-      .filter(([name, nos]) => !known.has(name) && Array.isArray(nos) && nos.length > 0)
-      .map(([name]) => name)
+    const names = new Set([...assignedNames(activeDay), ...pinnedNames]);
+    const outside = [...names]
+      .filter((name) => !known.has(name))
       .sort(compareTeacherNames(teacherKana))
-      .map((name) => ({
-        name,
-        isPartTime: false,
-        isOutside: true,
-        subjectIds: [],
-        primarySubjectId: Infinity,
-      }));
+      .map((name) => {
+        const override = teacherSubjects?.[name];
+        return {
+          name,
+          isPartTime: false,
+          isOutside: true,
+          subjectIds: override && override.length > 0 ? override : [],
+          primarySubjectId: Infinity,
+        };
+      });
     return outside.length > 0 ? [...staffEntries, ...outside] : staffEntries;
-  }, [staffEntries, activeDay, teacherKana]);
+  }, [staffEntries, activeDay, pinnedNames, teacherSubjects, teacherKana]);
 
   // 講師名・よみの部分一致 + 「出勤者のみ」で絞り込み。空クエリは全件。
   const filteredStaffEntries = useMemo(() => {
-    const assigned = activeDay?.assignments || {};
+    const assigned = assignedNames(activeDay);
     return rowEntries.filter(
       (e) =>
         teacherMatchesQuery(e.name, staffQuery, teacherKana) &&
-        (!onlyAssigned || (assigned[e.name] || []).length > 0)
+        (!onlyAssigned || assigned.has(e.name) || pinnedNames.has(e.name))
     );
-  }, [rowEntries, staffQuery, teacherKana, onlyAssigned, activeDay]);
+  }, [rowEntries, staffQuery, teacherKana, onlyAssigned, activeDay, pinnedNames]);
 
   // 校時ごとの出勤人数 (見出しに出す)。絞り込みに関係なく全員ぶん数える。
   const headcountByPeriod = useMemo(() => {
     const m = new Map();
     for (const nos of Object.values(activeDay?.assignments || {})) {
-      for (const no of nos || []) m.set(no, (m.get(no) || 0) + 1);
+      if (!Array.isArray(nos)) continue;
+      for (const no of nos) m.set(no, (m.get(no) || 0) + 1);
     }
     return m;
   }, [activeDay]);
@@ -296,11 +319,11 @@ export function ExamPrepScheduleEditor({
       toasts.error("コピー元の日を先に設定してください");
       return;
     }
-    if (copyTargets.length === 0) {
+    if (effectiveCopyTargets.length === 0) {
       toasts.error("コピー先の日付を選択してください");
       return;
     }
-    const overwrites = copyTargets.filter((d) => configuredDates.has(d));
+    const overwrites = effectiveCopyTargets.filter((d) => configuredDates.has(d));
     if (overwrites.length > 0) {
       const ok = await confirm({
         title: "既存シフトの上書き",
@@ -312,7 +335,7 @@ export function ExamPrepScheduleEditor({
       });
       if (!ok) return;
     }
-    crud.copyDay(examPeriod.id, activeDate, copyTargets);
+    crud.copyDay(examPeriod.id, activeDate, effectiveCopyTargets);
     setCopyTargets([]);
   };
 
@@ -615,7 +638,7 @@ export function ExamPrepScheduleEditor({
                     <input
                       type="checkbox"
                       checked={onlyAssigned}
-                      onChange={(e) => setOnlyAssigned(e.target.checked)}
+                      onChange={(e) => toggleOnlyAssigned(e.target.checked)}
                     />
                     出勤者のみ
                   </label>
@@ -855,15 +878,15 @@ export function ExamPrepScheduleEditor({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  disabled={copyTargets.length === 0}
+                  disabled={effectiveCopyTargets.length === 0}
                   style={{
-                    ...S.btn(copyTargets.length > 0),
+                    ...S.btn(effectiveCopyTargets.length > 0),
                     fontSize: 11,
                     padding: "4px 10px",
-                    cursor: copyTargets.length > 0 ? "pointer" : "not-allowed",
+                    cursor: effectiveCopyTargets.length > 0 ? "pointer" : "not-allowed",
                   }}
                 >
-                  {copyTargets.length} 日にコピー
+                  {effectiveCopyTargets.length} 日にコピー
                 </button>
                 <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
                   ※コピー先に既に設定がある場合は上書きされます。

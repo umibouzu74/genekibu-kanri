@@ -126,7 +126,9 @@ export function sortByTeacherKana(items, kanaMap, getName = (x) => x?.name) {
  * 講師名の絞り込み入力に当たるか。名前の部分一致 (NFKC・大文字小文字無視) に
  * 加えて、**よみ**の部分一致でも当てる (「ほり」「ホリ」で 堀上 が出る)。
  * 漢字の名前はかなで打ち始めると当たらないので、よみを登録してある講師は
- * かなでも探せるようにする。空の入力は全員に当たる。
+ * かなでも探せるようにする。名前・よみとも normalizeKana と同じく
+ * ひらがな / カタカナ / 半角カナ・空白の差を無視する (「すみす」で スミス、
+ * 「田太」で「山田 太郎」)。空の入力は全員に当たる。
  * @param {string} name
  * @param {string} query
  * @param {Record<string, string>} [kanaMap]
@@ -138,6 +140,7 @@ export function teacherMatchesQuery(name, query, kanaMap) {
   if (String(name ?? "").normalize("NFKC").toLowerCase().includes(q)) return true;
   const kq = normalizeKana(q);
   if (!kq) return false;
+  if (normalizeKana(name).toLowerCase().includes(kq)) return true;
   const kana = normalizeKana(kanaMap?.[name]);
   return kana !== "" && kana.includes(kq);
 }

@@ -277,6 +277,11 @@ describe("teacherMatchesQuery", () => {
     expect(teacherMatchesQuery("河野", "かみ", kana)).toBe(false);
   });
 
+  it("かな書きの名前はひらがな / カタカナを問わず当たる。空白の差も無視する", () => {
+    expect(teacherMatchesQuery("スミス", "すみ", kana)).toBe(true);
+    expect(teacherMatchesQuery("山田 太郎", "田太", kana)).toBe(true);
+  });
+
   it("よみ未設定の講師はかなでは当たらない", () => {
     expect(teacherMatchesQuery("香川", "かが", kana)).toBe(false);
     expect(teacherMatchesQuery("香川", "かが", undefined)).toBe(false);

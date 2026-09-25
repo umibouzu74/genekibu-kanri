@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-// 特訓シフトの校時テーブル: 後から足した校時に早い時刻を入れても、テーブルから
-// フォーカスが外れた時点で開始時刻順に並び直す (連番と出勤チェックも追従)。
+// 特訓シフトの編集画面。
+// - 校時テーブル: 後から足した校時に早い時刻を入れても、テーブルから
+//   フォーカスが外れた時点で開始時刻順に並び直す (連番と出勤チェックも追従)
+// - 出勤表: チェックしてもスクロール (フォーカス) が先頭へ戻らない・見出しの
+//   時刻と人数・候補外の行・よみ / 出勤者のみの絞り込み・コピー先の選択
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
@@ -29,7 +32,7 @@ function makeDay() {
   };
 }
 
-function editorTree({ day, crud, teacherKana, partTimeStaff }) {
+function editorTree({ days, crud, teacherKana, partTimeStaff }) {
   return (
     <ToastProvider
       render={(toasts) => (
@@ -43,7 +46,7 @@ function editorTree({ day, crud, teacherKana, partTimeStaff }) {
       <ConfirmProvider>
         <ExamPrepScheduleEditor
           examPeriod={EXAM_PERIOD}
-          schedule={{ examPeriodId: 1, days: day ? [day] : [] }}
+          schedule={{ examPeriodId: 1, days }}
           partTimeStaff={partTimeStaff}
           teacherKana={teacherKana}
           crud={crud}
@@ -57,11 +60,18 @@ function editorTree({ day, crud, teacherKana, partTimeStaff }) {
 
 const DEFAULT_STAFF = [{ id: 1, name: "伊藤", subjectIds: [] }];
 
-function renderEditor(day = makeDay(), { teacherKana = {}, partTimeStaff = DEFAULT_STAFF } = {}) {
+function renderEditor(
+  day = makeDay(),
+  { teacherKana = {}, partTimeStaff = DEFAULT_STAFF, extraDays = [] } = {}
+) {
   const crud = { upsertDay: vi.fn(), deleteDay: vi.fn(), copyDay: vi.fn() };
-  const view = render(editorTree({ day, crud, teacherKana, partTimeStaff }));
+  const view = render(
+    editorTree({ days: [day, ...extraDays], crud, teacherKana, partTimeStaff })
+  );
   const rerenderWith = (nextDay) =>
-    view.rerender(editorTree({ day: nextDay, crud, teacherKana, partTimeStaff }));
+    view.rerender(
+      editorTree({ days: [nextDay, ...extraDays], crud, teacherKana, partTimeStaff })
+    );
   return { crud, rerenderWith };
 }
 
@@ -194,6 +204,22 @@ describe("ExamPrepScheduleEditor の出勤表", () => {
     expect(staffNames()).toEqual(["伊藤", "奥村候補外"]);
   });
 
+  it("最後のチェックを外しても、その日を開いている間は行が消えない (その場で入れ直せる)", () => {
+    const { crud, rerenderWith } = renderEditor();
+    fireEvent.click(screen.getByRole("checkbox", { name: "出勤者のみ" }));
+    // 伊藤 (出勤者のみの絞り込み) と 奥村 (候補外) の出勤を全部外す
+    fireEvent.click(screen.getByRole("checkbox", { name: "伊藤 3 校時" }));
+    rerenderWith(crud.upsertDay.mock.calls[0][1]);
+    fireEvent.click(screen.getByRole("button", { name: "奥村 の全校時を選択" }));
+    rerenderWith(crud.upsertDay.mock.calls[1][1]);
+    fireEvent.click(screen.getByRole("button", { name: "奥村 の全校時を解除" }));
+    const cleared = crud.upsertDay.mock.calls[2][1];
+    expect(cleared.assignments).toEqual({});
+    rerenderWith(cleared);
+    expect(staffNames()).toEqual(["伊藤", "奥村候補外"]);
+    expect(screen.getByRole("checkbox", { name: "伊藤 3 校時" })).not.toBeChecked();
+  });
+
   it("全校時ボタンは状態に応じて「全選択」「全解除」を出す", () => {
     renderEditor();
     expect(screen.getByRole("button", { name: "伊藤 の全校時を選択" })).toHaveTextContent("全選択");
@@ -205,13 +231,17 @@ describe("ExamPrepScheduleEditor の出勤表", () => {
     expect(screen.getByRole("button", { name: "伊藤 の全校時を解除" })).toHaveTextContent("全解除");
   });
 
-  it("コピー先に選んでいた日へ切り替えたら、その日はコピー先から外れる", () => {
-    renderEditor();
+  it("コピー先に選んだ日を開いている間はその日を数えず、戻ると選択が残っている", () => {
+    // 9/20 にも設定がある (どちらの日を開いてもコピー欄が出る)
+    renderEditor(makeDay(), { extraDays: [{ ...makeDay(), date: "2026-09-20" }] });
     fireEvent.click(screen.getByRole("checkbox", { name: "2026-09-20 (日)" }));
     expect(screen.getByRole("button", { name: "1 日にコピー" })).toBeEnabled();
+    // 9/20 を開くと、コピー先の一覧に 9/20 自身は出ないので数えない
     fireEvent.click(screen.getByRole("button", { name: /2026-09-20/ }));
-    // 9/20 にはシフトが無いので作成ボタンが出る。9/19 へ戻ってコピー欄を見る
-    fireEvent.click(screen.getByRole("button", { name: /2026-09-19/ }));
     expect(screen.getByRole("button", { name: "0 日にコピー" })).toBeDisabled();
+    // 9/19 へ戻ると 9/20 の選択は残っている (選び直しにならない)
+    fireEvent.click(screen.getByRole("button", { name: /2026-09-19/ }));
+    expect(screen.getByRole("checkbox", { name: "2026-09-20 (日)" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "1 日にコピー" })).toBeEnabled();
   });
 });
