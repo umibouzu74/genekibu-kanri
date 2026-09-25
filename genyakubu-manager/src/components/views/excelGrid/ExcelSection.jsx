@@ -20,6 +20,7 @@ import { ExcelCell } from "./ExcelCell";
 
 // 仮代行の無いセルへ渡す空配列 (毎レンダ new [] を作ると ExcelCell の memo が外れる)
 const NO_PENDING = Object.freeze([]);
+const NO_NAMES = Object.freeze([]);
 
 // ─── Excel Section (one table per department) ───────────────────────
 export function ExcelSection({
@@ -268,9 +269,11 @@ export function ExcelSection({
   const getCellSubProps = (slot) => {
     if (!slot) return {};
     const isOff = holidayOffSlots.has(slot.id);
-    const isUnavail =
-      unavailableTeachers.size > 0 &&
-      getSlotTeachers(slot).some((t) => unavailableTeachers.has(t));
+    const unavailableNames =
+      unavailableTeachers.size > 0
+        ? getSlotTeachers(slot).filter((t) => unavailableTeachers.has(t))
+        : NO_NAMES;
+    const isUnavail = unavailableNames.length > 0;
     const isCombineTarget =
       combineMode && slot.id !== combineMode.sourceSlotId;
     const absorbedHostId = adjIndex.combineAbsorbedBySlot.get(slot.id);
@@ -284,6 +287,7 @@ export function ExcelSection({
     const rescheduleOut = adjIndex.rescheduleOutBySlot.get(slot.id) || null;
     return {
       isUnavailable: isUnavail && !isOff,
+      unavailableNames,
       isHolidayOff: isOff,
       // 仮代行は (コマ, 元講師) ごとなので多担任コマは複数件
       pendingSubs: pendingSubMap?.get(slot.id) || NO_PENDING,

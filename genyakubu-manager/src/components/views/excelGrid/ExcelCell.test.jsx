@@ -89,3 +89,100 @@ describe("ExcelCell の講師重複", () => {
     expect(screen.queryByText(/重複/)).toBeNull();
   });
 });
+
+// 多担任コマ (プレップ) で 1 人だけ休むとき、残りの担当者まで休みに
+// 読めないこと (2026-09-25)。
+describe("ExcelCell の多担任コマの欠勤", () => {
+  const PREP = {
+    ...SLOT,
+    grade: "中1-3",
+    cls: "-",
+    subj: "英語·数学·理科",
+    teacher: "香川·福江·川井",
+    note: "プレップ個別指導",
+  };
+  const renderPrep = (props = {}) =>
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <ExcelCell slot={PREP} biweeklyAnchors={[]} holidays={[]} examPeriods={[]} {...props} />
+          </tr>
+        </tbody>
+      </table>
+    );
+  // 自分か祖先に line-through が付いているか (text-decoration は子へ伝播する)
+  const isStruck = (el) => {
+    for (let n = el; n && n.tagName !== "TD"; n = n.parentElement) {
+      if ((n.style?.textDecoration || "").includes("line-through")) return true;
+    }
+    return false;
+  };
+
+  it("休む人だけに取消線を引き、出勤する人には線を通さない", () => {
+    renderPrep({
+      existingSubs: [{ originalTeacher: "香川", substitute: "", status: "confirmed" }],
+    });
+    expect(isStruck(screen.getByText("香川"))).toBe(true);
+    expect(isStruck(screen.getByText("福江"))).toBe(false);
+    expect(isStruck(screen.getByText("川井"))).toBe(false);
+  });
+
+  it("誰が休みかを添えて出す (「代行なし」だけだと全員に読める)", () => {
+    renderPrep({
+      existingSubs: [{ originalTeacher: "香川", substitute: "", status: "confirmed" }],
+    });
+    expect(screen.getByText("香川 休み（代行なし）")).toBeInTheDocument();
+  });
+
+  it("代行未定も同じく名前を添える", () => {
+    renderPrep({
+      existingSubs: [{ originalTeacher: "福江", substitute: "", status: "requested" }],
+    });
+    expect(screen.getByText("福江 休み（代行未定）")).toBeInTheDocument();
+    expect(isStruck(screen.getByText("香川"))).toBe(false);
+    expect(isStruck(screen.getByText("福江"))).toBe(true);
+  });
+
+  it("代行なしで確定だけなら赤で塗らない (コマごと止まったように見せない)", () => {
+    renderPrep({
+      existingSubs: [{ originalTeacher: "香川", substitute: "", status: "confirmed" }],
+    });
+    const td = screen.getByText("香川").closest("td");
+    expect(td.style.background).not.toBe("rgb(255, 240, 240)");
+  });
+
+  it("出勤する人は名前から月間へ飛べる", () => {
+    const onSelectTeacher = vi.fn();
+    renderPrep({
+      existingSubs: [{ originalTeacher: "香川", substitute: "", status: "confirmed" }],
+      onSelectTeacher,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "福江" }));
+    expect(onSelectTeacher).toHaveBeenCalledWith("福江");
+    expect(screen.queryByRole("button", { name: "香川" })).toBeNull();
+  });
+
+  it("読み上げ名にも誰の欠勤かを含める", () => {
+    renderPrep({
+      isAdmin: true,
+      onEdit: vi.fn(),
+      existingSubs: [{ originalTeacher: "香川", substitute: "", status: "confirmed" }],
+    });
+    expect(screen.getByRole("button", { name: /香川 代行なし/ })).toBeInTheDocument();
+  });
+
+  it("代行モードで欠勤に選んだ人も、その人だけに取消線", () => {
+    renderPrep({ isUnavailable: true, unavailableNames: ["川井"] });
+    expect(isStruck(screen.getByText("川井"))).toBe(true);
+    expect(isStruck(screen.getByText("香川"))).toBe(false);
+  });
+
+  it("1 人担当のコマは従来どおり「代行なし」だけ", () => {
+    renderCell({
+      existingSubs: [{ originalTeacher: "堀上", substitute: "", status: "confirmed" }],
+    });
+    expect(screen.getByText("代行なし")).toBeInTheDocument();
+    expect(isStruck(screen.getByText("堀上"))).toBe(true);
+  });
+});
