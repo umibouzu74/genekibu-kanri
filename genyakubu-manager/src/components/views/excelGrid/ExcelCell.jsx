@@ -23,6 +23,16 @@ const SUB_STATE_META = {
   confirmed: subStateMeta({ substitute: "x", status: "confirmed" }),
 };
 
+// 代行 / 欠勤レコード 1 件ぶんの行の文言。多担任コマ (プレップ) では
+// 「誰が」を付けないと、残りの担当者まで休むように読める。
+function subLineText(x, withName) {
+  if (x.substitute) return `${withName ? `${x.originalTeacher} ⇒ ` : ""}← ${x.substitute}`;
+  const label = subTargetLabel(x);
+  return withName ? `${x.originalTeacher} 休み（${label}）` : label;
+}
+
+const NO_NAMES = Object.freeze([]);
+
 // セル内で並べる小さなステータスバッジ。
 // 代/仮/休/欠/合/合+/移 を同じ見た目で生成する。
 function mkBadge(color, label, key, title) {
@@ -64,6 +74,9 @@ export const ExcelCell = memo(function ExcelCell({
   examPeriods,
   subDate,
   isUnavailable,
+  // 代行モードで欠勤に選ばれた講師のうち、このコマの担当者 (多担任コマで
+  // 取消線をその人だけに絞るため)
+  unavailableNames = NO_NAMES,
   isHolidayOff,
   // 代行モードの仮代行 (元講師ごとに 1 件)。多担任コマは複数件。
   pendingSubs = [],
@@ -147,6 +160,8 @@ export const ExcelCell = memo(function ExcelCell({
   // 多担任スロット (例: プレップ「香川·福江·川井」) で代行・欠勤が出た時に、
   // 取消線をその講師だけに絞るための名前リスト。
   let partialStrikeOriginals = [];
+  const slotTeachers = getSlotTeachers(slot);
+  const multiTeacher = slotTeachers.length > 1;
 
   // 休講日のセルは合同・移動より優先 (休みなら実質何も起こらない)。
   // 逆に sub/pending/unavailable と合同は同時起こり得るので併記する。
@@ -171,7 +186,7 @@ export const ExcelCell = memo(function ExcelCell({
       ...pendingSubs.map((p) => p.originalTeacher),
       ...restSubs.map((x) => x.originalTeacher),
     ].filter(Boolean);
-    const multi = pendingSubs.length + restSubs.length > 1;
+    const multi = multiTeacher || pendingSubs.length + restSubs.length > 1;
     subDisplay = (
       <div style={{ fontSize: 12, fontWeight: 800, marginTop: 1, lineHeight: 1.3 }}>
         {pendingSubs.map((p, i) => (
@@ -181,8 +196,7 @@ export const ExcelCell = memo(function ExcelCell({
         ))}
         {restSubs.map((x, i) => (
           <div key={`e${i}`} style={{ color: SUB_STATE_META[subState(x)].color }}>
-            {multi ? `${x.originalTeacher} ⇒ ` : ""}
-            {x.substitute ? `← ${x.substitute}` : subTargetLabel(x)}
+            {subLineText(x, multi)}
           </div>
         ))}
       </div>
@@ -192,9 +206,14 @@ export const ExcelCell = memo(function ExcelCell({
     // ここで落とすと、代行が見つかるまで時間割上は通常授業に見えてしまう。
     // 1 コマを複数人で担当するコマ (プレップ) は**講師ごとに 1 件**なので、
     // 休む人ぶんだけ並べる。
+    // 塗りは「まだ手が要るか」で決める。代行未定が残れば赤、代行者が
+    // 付いていれば青。代行なしで確定だけなら片付いた欠勤なので、赤で
+    // 騒がず状態の色 (茶) にする — 赤だとコマごと止まったように見える
+    const anyPending = existingSubs.some((x) => subState(x) === "pending");
     const anyCovered = existingSubs.some((x) => x.substitute);
-    const tone = anyCovered ? "#3a6ea5" : "#c03030";
-    bg = anyCovered ? "#e8f0ff" : "#fff0f0";
+    const nosubMeta = SUB_STATE_META.nosub;
+    const tone = anyPending ? "#c03030" : anyCovered ? "#3a6ea5" : nosubMeta.color;
+    bg = anyPending ? "#fff0f0" : anyCovered ? "#e8f0ff" : nosubMeta.bg;
     borderLeft = `3px solid ${tone}`;
     for (const st of new Set(existingSubs.map((x) => subState(x)))) {
       const meta = SUB_STATE_META[st];
@@ -217,8 +236,7 @@ export const ExcelCell = memo(function ExcelCell({
       <div style={{ fontSize: 12, fontWeight: 800, marginTop: 1, lineHeight: 1.3 }}>
         {existingSubs.map((x, i) => (
           <div key={i} style={{ color: SUB_STATE_META[subState(x)].color }}>
-            {existingSubs.length > 1 ? `${x.originalTeacher} ⇒ ` : ""}
-            {x.substitute ? `← ${x.substitute}` : subTargetLabel(x)}
+            {subLineText(x, multiTeacher || existingSubs.length > 1)}
           </div>
         ))}
       </div>
@@ -229,6 +247,7 @@ export const ExcelCell = memo(function ExcelCell({
     badges.push(mkBadge("#c03030", "欠", "unavail"));
     teacherColor = "#c03030";
     teacherDecor = "line-through";
+    partialStrikeOriginals = unavailableNames;
   }
 
   // 合同・移動は休講日には意味がないのでそこでは表示しない (バッジもつけない)。
@@ -363,6 +382,19 @@ export const ExcelCell = memo(function ExcelCell({
     );
   }
 
+  // 多担任 (例: "香川·福江·川井") で休む人が一部だけなら、取消線をその人の
+  // 名前だけに引く。CSS の text-decoration は子要素へ伝播して子の
+  // `none` では消せないので、親の div には付けない (付けると出勤する人の
+  // 名前にも線が通って全員休みに見える)。
+  const struckTeachers =
+    teacherOverride == null &&
+    !activeBiweeklyTeacher &&
+    teacherDecor === "line-through" &&
+    multiTeacher
+      ? new Set(partialStrikeOriginals.filter((t) => slotTeachers.includes(t)))
+      : null;
+  const partialStrike = !!struckTeachers && struckTeachers.size > 0;
+
   // In sub mode, all cells with a teacher are clickable (for chain substitutions)
   const isClickable = isSubMode && (slot.teacher || pendingSubs.length > 0 || isCombineTarget);
 
@@ -386,7 +418,10 @@ export const ExcelCell = memo(function ExcelCell({
     pendingSubs.length > 0
       ? `仮代行 ${pendingSubs.map((p) => p.substitute).join("、")}`
       : null,
-    ...[...new Set(existingSubs.map((x) => subState(x)))].map((st) => SUB_STATE_META[st]?.label),
+    // 多担任コマは誰の欠勤かまで読み上げる (「代行なし」だけだと全員に読める)
+    ...(multiTeacher
+      ? existingSubs.map((x) => `${x.originalTeacher} ${SUB_STATE_META[subState(x)]?.label}`)
+      : [...new Set(existingSubs.map((x) => subState(x)))].map((st) => SUB_STATE_META[st]?.label)),
     absorbed ? "合同に吸収" : null,
     isCombineHost ? "合同" : null,
     moveTarget ? "移動" : null,
@@ -486,9 +521,9 @@ export const ExcelCell = memo(function ExcelCell({
           style={{
             fontSize: 15,
             fontWeight: 800,
-            color: teacherColor,
+            color: partialStrike ? "#1a1a2e" : teacherColor,
             marginTop: 2,
-            textDecoration: teacherDecor,
+            textDecoration: partialStrike ? "none" : teacherDecor,
           }}
         >
           {(() => {
@@ -521,31 +556,30 @@ export const ExcelCell = memo(function ExcelCell({
             if (activeBiweeklyTeacher) {
               return <>{nameBtn(activeBiweeklyTeacher)} (隔週)</>;
             }
-            // 多担任 (例: "香川·福江·川井") の slot で代行が発生している場合、
-            // 取消線を originalTeacher の名前のみに絞る。それ以外の担任は
-            // 通常の色で見える状態に戻す。
-            const teachers = getSlotTeachers(slot);
-            const struck = new Set(
-              partialStrikeOriginals.filter((t) => teachers.includes(t))
-            );
-            if (teacherDecor === "line-through" && teachers.length > 1 && struck.size > 0) {
-              return teachers.map((t, i) => (
+            // 休む人だけ薄く取消線、出勤する人はそのまま (名前で月間へ飛べる)
+            if (partialStrike) {
+              return slotTeachers.map((t, i) => (
                 <Fragment key={i}>
-                  {i > 0 && (
-                    <span style={{ color: "#1a1a2e", textDecoration: "none" }}>·</span>
-                  )}
-                  {struck.has(t) ? (
-                    <span>{t}</span>
+                  {i > 0 && "·"}
+                  {struckTeachers.has(t) ? (
+                    <span
+                      style={{
+                        color: teacherColor,
+                        textDecoration: "line-through",
+                        textDecorationThickness: 2,
+                      }}
+                    >
+                      {t}
+                    </span>
                   ) : (
-                    <span style={{ color: "#1a1a2e", textDecoration: "none" }}>{t}</span>
+                    <span>{nameBtn(t)}</span>
                   )}
                 </Fragment>
               ));
             }
             if (onSelectTeacher && !isSubMode && !biweekly && teacherDecor !== "line-through") {
-              const names = getSlotTeachers(slot);
-              if (names.length > 0) {
-                return names.map((t, i) => (
+              if (slotTeachers.length > 0) {
+                return slotTeachers.map((t, i) => (
                   <Fragment key={i}>
                     {i > 0 && "·"}
                     {nameBtn(t)}
