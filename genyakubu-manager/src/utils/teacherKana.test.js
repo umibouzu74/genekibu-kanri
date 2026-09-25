@@ -9,6 +9,7 @@ import {
   setTeacherKana,
   sortByTeacherKana,
   sortTeacherNames,
+  teacherMatchesQuery,
 } from "./teacherKana";
 
 describe("normalizeKana", () => {
@@ -253,5 +254,36 @@ describe("kanaEntriesFromRegularBuilder", () => {
     expect(kanaEntriesFromRegularBuilder("x")).toEqual([]);
     expect(kanaEntriesFromRegularBuilder({})).toEqual([]);
     expect(kanaEntriesFromRegularBuilder({ projects: [{}] })).toEqual([]);
+  });
+});
+
+describe("teacherMatchesQuery", () => {
+  const kana = { 堀上: "ほりかみ", 河野: "コウノ" };
+
+  it("空の入力は全員に当たる", () => {
+    expect(teacherMatchesQuery("堀上", "", kana)).toBe(true);
+    expect(teacherMatchesQuery("堀上", "  ", kana)).toBe(true);
+  });
+
+  it("名前の部分一致で当たる", () => {
+    expect(teacherMatchesQuery("堀上", "堀", kana)).toBe(true);
+    expect(teacherMatchesQuery("Smith", "smi", kana)).toBe(true);
+  });
+
+  it("よみの部分一致で当たる (ひらがな / カタカナ / 半角カナを問わない)", () => {
+    expect(teacherMatchesQuery("堀上", "ほり", kana)).toBe(true);
+    expect(teacherMatchesQuery("堀上", "ホリ", kana)).toBe(true);
+    expect(teacherMatchesQuery("河野", "ｺｳ", kana)).toBe(true);
+    expect(teacherMatchesQuery("河野", "かみ", kana)).toBe(false);
+  });
+
+  it("かな書きの名前はひらがな / カタカナを問わず当たる。空白の差も無視する", () => {
+    expect(teacherMatchesQuery("スミス", "すみ", kana)).toBe(true);
+    expect(teacherMatchesQuery("山田 太郎", "田太", kana)).toBe(true);
+  });
+
+  it("よみ未設定の講師はかなでは当たらない", () => {
+    expect(teacherMatchesQuery("香川", "かが", kana)).toBe(false);
+    expect(teacherMatchesQuery("香川", "かが", undefined)).toBe(false);
   });
 });

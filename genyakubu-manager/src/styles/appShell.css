@@ -90,6 +90,32 @@ td[role="button"]:focus-visible {
   .sidebar-backdrop { display: none !important; }
   .hamburger { display: none !important; }
 }
+/* 特訓シフトの日付リスト: 講師の一覧を下へスクロールしても次の日を選べる
+   ようにモーダル (スクロール領域) 内で固定する。幅が狭く左右 2 段組が
+   折り返す画面では日付リストが一覧の上に被さるので固定しない */
+@media screen and (min-width: 769px) {
+  .exam-prep-date-pane {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    /* S.card の max-height から上下の padding (24px × 2) を引いた高さ。
+       min() の中も calc() で書く (S.card と同じく古い UA 対策) */
+    max-height: calc(min(85vh, calc(100dvh - 32px)) - 48px);
+    overflow-y: auto;
+  }
+}
+/* 特訓シフトの出勤表の見出し (position: sticky は JSX 側)。sticky の top: 0 は
+   スクロール領域の padding の内側で止まり、カード (S.card) の padding の帯に
+   下の行が透けて見えるので、padding (24px) ぶん上 = カードの上端に貼り付ける */
+.exam-prep-sticky-th { top: -24px; }
+/* 同じ表の横スクロール。広い画面は表がモーダルに収まるので囲みを
+   スクロール領域にしない (すると上の sticky が効かない)。狭い画面は表だけを
+   横にスクロールさせ、見出しの固定は諦める (モーダルごと横に流れるよりよい)。
+   この幅では sticky が効かないので、.mobile-card-pad (480px 以下で padding
+   16px) に合わせた top の読み替えも要らない */
+@media screen and (max-width: 768px) {
+  .exam-prep-staff-scroll { overflow-x: auto; }
+}
 @media screen and (max-width: 768px) {
   .sidebar-spacer { display: none !important; }
   .dash-sections { grid-template-columns: 1fr !important; }
