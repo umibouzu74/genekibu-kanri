@@ -92,11 +92,14 @@ export function overlapsRange(start, end, rangeStart, rangeEnd) {
 }
 
 // 単日なら "YYYY-MM-DD"、複数日なら "YYYY-MM-DD 〜 YYYY-MM-DD" を返す。
-// イベントの期間表示で使うフォーマッタ。
-export function formatDateRange(start, end) {
+// イベントの期間表示で使うフォーマッタ。{ weekday: true } で各日付に
+// 曜日を添える ("2026-09-21 (月) 〜 2026-09-25 (金)")。一覧のように
+// 日付を読んで予定を確かめる場所で使う。
+export function formatDateRange(start, end, { weekday = false } = {}) {
   if (!start) return "";
-  if (!end || start === end) return start;
-  return `${start} 〜 ${end}`;
+  const f = weekday ? fmtDateWeekday : (ds) => ds;
+  if (!end || start === end) return f(start);
+  return `${f(start)} 〜 ${f(end)}`;
 }
 
 // ISO 8601 文字列をローカルの "YYYY-MM-DD HH:MM" にフォーマット。

@@ -488,3 +488,49 @@ describe("MonthView 日付から跳ぶ", () => {
     expect(screen.queryByTestId("day-number-legend")).toBeNull();
   });
 });
+
+describe("MonthView 日曜列と過ぎた日", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const gridColumns = (container) =>
+    container.querySelector(".month-print-grid").style.gridTemplateColumns;
+
+  it("日曜に何も載らない月は日曜列を細くする (紙面も同じ列幅)", () => {
+    const { container } = render(<MonthView {...baseProps} />);
+    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,1fr)");
+  });
+
+  it("日曜にこの講師の予定 (講習コマ) があれば 7 列均等のまま", () => {
+    // 2026-07-26 は日曜
+    const { container } = render(
+      <MonthView
+        {...baseProps}
+        koshuLessons={[{ ...KOSHU_LESSON, date: "2026-07-26", dateLabel: "7/26(日)" }]}
+      />
+    );
+    expect(gridColumns(container)).toBe("repeat(7,1fr)");
+  });
+
+  it("日曜が全日休講なだけなら細いまま (休講名は細い列で折り返す)", () => {
+    const { container } = render(
+      <MonthView
+        {...baseProps}
+        holidays={[{ date: "2026-07-19", label: "テスト休講", scope: ["全部"] }]}
+      />
+    );
+    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,1fr)");
+  });
+
+  it("今日より前の日だけ .month-past (画面で薄く出す印) が付く", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 6, 15, 10, 0, 0));
+    const { container } = render(<MonthView {...baseProps} />);
+    const cells = [...container.querySelectorAll(".month-print-cell")];
+    expect(cells).toHaveLength(31);
+    // 7/1〜7/14 が過去、7/15 (今日) 以降は通常
+    expect(cells.slice(0, 14).every((c) => c.classList.contains("month-past"))).toBe(true);
+    expect(cells.slice(14).some((c) => c.classList.contains("month-past"))).toBe(false);
+  });
+});

@@ -387,6 +387,8 @@ export function SubstituteView({
           subjects={subjects}
           timetables={timetables || []}
           displayCutoff={displayCutoff}
+          adjustments={adjustments}
+          daySchedules={daySchedules}
           onEdit={onEdit}
           onDel={onDel}
           onQuickUpdate={onQuickUpdate}

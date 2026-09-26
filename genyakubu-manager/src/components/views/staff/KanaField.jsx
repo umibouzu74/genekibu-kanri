@@ -46,7 +46,10 @@ export function KanaField({ name, kana = "", onSave, disabled }) {
             setDraft(kana);
           }
         }}
-        placeholder="ほりかみ"
+        // 全員の欄に同じ例 (「ほりかみ」) を出すと、入力済みの値に見えて
+        // 奥村の欄に「ほりかみ」が入っているように読めた。未設定であることを
+        // そのまま書く
+        placeholder={disabled ? "未設定" : "未設定 (ひらがな)"}
         aria-label={`${name} のよみ`}
         style={{
           width: 110,
@@ -54,7 +57,7 @@ export function KanaField({ name, kana = "", onSave, disabled }) {
           fontSize: 12,
           borderRadius: 4,
           border: `1px solid ${unset ? colors.accentOrange : "#ccc"}`,
-          background: disabled ? "#f5f5f5" : "#fff",
+          background: disabled ? "#f5f5f5" : unset ? "#fffaf2" : "#fff",
         }}
       />
     </div>

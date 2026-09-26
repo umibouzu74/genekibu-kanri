@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { SubListTab } from "./SubListTab";
+import { ToastProvider } from "../../../hooks/useToasts";
 
 afterEach(cleanup);
 
@@ -25,6 +26,7 @@ const SUBS = [
 function renderTab(props = {}) {
   const slotMap = Object.fromEntries(SLOTS.map((s) => [s.id, s]));
   return render(
+    <ToastProvider render={(toasts) => toasts.map((t) => <div key={t.id}>{t.message}</div>)}>
     <SubListTab
       filtered={SUBS}
       subs={SUBS}
@@ -42,6 +44,7 @@ function renderTab(props = {}) {
       displayCutoff={{ groups: [], cohorts: [] }}
       {...props}
     />
+    </ToastProvider>
   );
 }
 
@@ -249,5 +252,44 @@ describe("SubListTab の並び替えと日付ジャンプ", () => {
     cleanup();
     renderTab({ isAdmin: true });
     expect(screen.queryByRole("button", { name: /の欠勤組み換えを開く$/ })).toBeNull();
+  });
+});
+
+describe("SubListTab の 💬 連絡文", () => {
+  const S2 = [
+    { id: 20, date: "2026-09-10", slotId: 2, originalTeacher: "野口", substitute: "", status: "requested" },
+    { id: 21, date: "2026-09-10", slotId: 3, originalTeacher: "野口", substitute: "", status: "requested" },
+    { id: 22, date: "2026-09-11", slotId: 2, originalTeacher: "野口", substitute: "", status: "requested" },
+  ];
+  const SLOTS2 = [...SLOTS, { ...base, id: 3, timetableId: 2, time: "18:55-19:40", cls: "A", subj: "理科" }];
+
+  it("管理者だけに出て、同じ日・同じ先生の欠勤を 1 通にまとめてコピーする", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    renderTab({
+      filtered: S2,
+      subs: S2,
+      slots: SLOTS2,
+      slotMap: Object.fromEntries(SLOTS2.map((s) => [s.id, s])),
+      isAdmin: true,
+    });
+    const btn = screen.getAllByRole("button", { name: "2026-09-10 (木) 野口 の連絡文をコピー" })[0];
+    expect(btn.getAttribute("title")).toMatch(/2 コマをまとめて 1 通に/);
+    fireEvent.click(btn);
+    await screen.findByText("連絡文をコピーしました (2 コマ分をまとめました)");
+    expect(writeText).toHaveBeenCalledWith(
+      [
+        "【代行のお願い】",
+        "9/10 (木)",
+        "・18:55-19:40 中3A 理科 (504)",
+        "・19:50-20:35 中3C 社会 (504)",
+        "野口先生の代わりに入っていただける方を探しています。",
+      ].join("\n")
+    );
+  });
+
+  it("閲覧者には出ない", () => {
+    renderTab({ filtered: S2, subs: S2, isAdmin: false });
+    expect(screen.queryByRole("button", { name: /の連絡文をコピー$/ })).toBeNull();
   });
 });

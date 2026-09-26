@@ -228,3 +228,18 @@ td[role="button"]:focus-visible {
     opacity: 1;
   }
 }
+
+/* 講師別月間カレンダー: 過ぎた日は薄く出して今日以降を目立たせる。
+   マウスを乗せる / フォーカスが入ると元の濃さに戻る (過去の代行を確かめる
+   ときに読みにくくしない)。screen 限定なので紙面には出ない
+   (popup 印刷はそもそもこの CSS を読まない) */
+@media screen {
+  .month-past {
+    opacity: 0.55;
+    transition: opacity 0.15s;
+  }
+  .month-past:hover,
+  .month-past:focus-within {
+    opacity: 1;
+  }
+}

@@ -641,7 +641,7 @@ export function SpecialEventManager({
                   </span>
                   <strong style={{ fontSize: 13 }}>{ev.name}</strong>
                   <span style={{ fontSize: 11, color: "#666" }}>
-                    {formatDateRange(ev.startDate, ev.endDate)}
+                    {formatDateRange(ev.startDate, ev.endDate, { weekday: true })}
                   </span>
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {(ev.targetGrades || []).length === 0 ? (

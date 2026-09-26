@@ -903,7 +903,7 @@ export function HolidayManager({
                     flexWrap: "wrap",
                   }}
                 >
-                  <strong style={{ fontSize: 12, minWidth: 90 }}>{h.date}</strong>
+                  <strong style={{ fontSize: 12, minWidth: 115 }}>{fmtDateWeekday(h.date)}</strong>
                   <span style={{ fontSize: 12 }}>{h.label}</span>
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {sc.map((d) => (

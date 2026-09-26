@@ -12,6 +12,35 @@ import {
 } from "../../../utils/substituteState";
 import { splitTeacherField } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
+import { buildSubContactMessage, contactGroupKey } from "../../../utils/subContactMessage";
+import { useToasts } from "../../../hooks/useToasts";
+
+// クリップボードへ書く。navigator.clipboard は https / localhost でしか
+// 使えないので、使えない環境では textarea + execCommand に落とす。
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 下の予備経路へ
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 // 行内の「代行者名 + ✓ 確定」。モーダル (SubstituteForm) を開かずに
 // 未処理の行を片付けるための最小の操作だけを置く。
@@ -171,6 +200,9 @@ export function SubListTab({
   // 「その日に有効でないコマ」の点検用 (時間割の有効期間 / 表示期間)
   timetables = [],
   displayCutoff = null,
+  // 連絡文 (💬) の時刻をその日の実際の時刻にするため (コマ移動 / 特別時程)
+  adjustments = [],
+  daySchedules = [],
   onEdit,
   onDel,
   onQuickUpdate,
@@ -205,6 +237,35 @@ export function SubListTab({
     return [...set];
   }, [allTeachers]);
   const canQuick = isAdmin && typeof onQuickUpdate === "function";
+  const toasts = useToasts();
+  // 💬 連絡文。同じ日・同じ元講師・同じ代行者・同じ状態の行は 1 通に束ねる
+  // (utils/subContactMessage)。束ねる相手は表示中の行から探す
+  const contactGroups = useMemo(() => {
+    const m = new Map();
+    for (const sub of filtered) {
+      const k = contactGroupKey(sub);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(sub);
+    }
+    return m;
+  }, [filtered]);
+  const copyContactMessage = async (sub) => {
+    const group = contactGroups.get(contactGroupKey(sub)) || [sub];
+    const text = buildSubContactMessage(group, slotMap, { adjustments, daySchedules });
+    if (!text) {
+      toasts.error("コマが見つからないため連絡文を作れませんでした");
+      return;
+    }
+    if (await copyText(text)) {
+      toasts.success(
+        group.length > 1
+          ? `連絡文をコピーしました (${group.length} コマ分をまとめました)`
+          : "連絡文をコピーしました"
+      );
+    } else {
+      toasts.error("クリップボードにコピーできませんでした");
+    }
+  };
   const canSort = typeof setSortBy === "function";
   const sortColumn = sortBy.startsWith("createdAt") ? "createdAt" : "date";
   const sortDir = sortBy.endsWith("-desc") ? "descending" : "ascending";
@@ -499,7 +560,7 @@ export function SubListTab({
                 {isAdmin && (
                   <th scope="col"
                     className="no-print"
-                    style={{ padding: "8px 10px", textAlign: "center", width: 80 }}
+                    style={{ padding: "8px 10px", textAlign: "center", width: 110 }}
                   >
                     操作
                   </th>
@@ -665,6 +726,20 @@ export function SubListTab({
                           whiteSpace: "nowrap",
                         }}
                       >
+                        <button
+                          type="button"
+                          onClick={() => copyContactMessage(sub)}
+                          aria-label={`${fmtDateWeekday(sub.date)} ${sub.originalTeacher} の連絡文をコピー`}
+                          title={
+                            (contactGroups.get(contactGroupKey(sub))?.length || 1) > 1
+                              ? `LINE などに貼れる連絡文をコピー (この日の ${sub.originalTeacher} の ${contactGroups.get(contactGroupKey(sub)).length} コマをまとめて 1 通に)`
+                              : "LINE などに貼れる連絡文をコピー"
+                          }
+                          className={ICON_BTN_CLASS}
+                          style={{ ...S.iconBtn, marginRight: 2 }}
+                        >
+                          💬
+                        </button>
                         {onJumpToDate && sub.date && (
                           <button
                             type="button"

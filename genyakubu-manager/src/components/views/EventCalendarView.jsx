@@ -844,7 +844,7 @@ export function EventCalendarView({
                   </span>
                 )}
                 <span style={{ fontSize: 11, color: "#666" }}>
-                  {formatDateRange(ev.startDate, ev.endDate)}
+                  {formatDateRange(ev.startDate, ev.endDate, { weekday: true })}
                 </span>
                 {isCurrent && (
                   <span

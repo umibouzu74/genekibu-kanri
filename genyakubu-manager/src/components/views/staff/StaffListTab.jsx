@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  fmtDateWeekday,
   staffMonthlyAbsenceDates,
   staffMonthlyPendingAbsenceDates,
   staffMonthlyRegularDates,
@@ -11,6 +10,7 @@ import { colors } from "../../../styles/tokens";
 import { isSlotForTeacher } from "../../../utils/biweekly";
 import { useToasts } from "../../../hooks/useToasts";
 import { KanaField } from "./KanaField";
+import { StaffAttendanceCalendar } from "./StaffAttendanceCalendar";
 
 // バイト一覧タブ : 新規追加フォーム + 各バイトの担当教科 + 今月の出勤状況。
 export function StaffListTab({
@@ -314,53 +314,14 @@ export function StaffListTab({
                       <div style={{ fontWeight: 700, fontSize: 11, color: "#4a6a9a", marginBottom: 6 }}>
                         {nowMonth}月の出勤状況
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <div style={{ color: "#555", lineHeight: 1.6 }}>
-                          <span style={{ fontWeight: 700, fontSize: 11, color: "#666" }}>
-                            通常出勤日（{regularDates.length}日）:
-                          </span>{" "}
-                          {regularDates.length > 0
-                            ? regularDates.map((d) => fmtDateWeekday(d)).join("、")
-                            : "—"}
-                        </div>
-                        <div style={{ color: "#555", lineHeight: 1.6 }}>
-                          <span style={{ fontWeight: 700, fontSize: 11, color: "#2a7a4a" }}>
-                            代行出勤日（{workDates.length}日）:
-                          </span>{" "}
-                          {workDates.length > 0
-                            ? workDates.map((d) => fmtDateWeekday(d)).join("、")
-                            : "—"}
-                        </div>
-                        <div style={{ color: "#555", lineHeight: 1.6 }}>
-                          <span style={{ fontWeight: 700, fontSize: 11, color: "#c03030" }}>
-                            代行された日（{absenceDates.length}日）:
-                          </span>{" "}
-                          {absenceDates.length > 0 ? (
-                            <>
-                              {absenceDates.map((d) => fmtDateWeekday(d)).join("、")}
-                              <span style={{ marginLeft: 6, fontSize: 10, color: "#999" }}>
-                                ※ 出勤なし
-                              </span>
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </div>
-                        {/* 代行が見つかっていない欠勤。「代行された日」は
-                            代行確定分だけなので、ここに出さないと休んだ
-                            事実がどこにも出ない。 */}
-                        {pendingAbsenceDates.length > 0 && (
-                          <div style={{ color: "#555", lineHeight: 1.6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 11, color: "#c03030" }}>
-                              欠勤・代行未定（{pendingAbsenceDates.length}日）:
-                            </span>{" "}
-                            {pendingAbsenceDates.map((d) => fmtDateWeekday(d)).join("、")}
-                            <span style={{ marginLeft: 6, fontSize: 10, color: "#999" }}>
-                              ※ 代行者を探し中
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                      <StaffAttendanceCalendar
+                        year={nowYear}
+                        month={nowMonth}
+                        regularDates={regularDates}
+                        workDates={workDates}
+                        absenceDates={absenceDates}
+                        pendingAbsenceDates={pendingAbsenceDates}
+                      />
                     </div>
                   );
                 })()}
