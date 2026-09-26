@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WEEKDAYS } from "../../data";
 import {
   eachDateStrInRange,
+  fmtDateWeekday,
   formatDateRange,
   monthOffsetFromToday,
   overlapsRange,
@@ -18,6 +19,8 @@ import {
   EXAM_META,
   EXTRA_LESSON_META,
   HOLIDAY_META,
+  RESCHEDULE_META,
+  SLOT_CANCEL_META,
   TAG_META,
 } from "../../constants/eventKinds";
 import { specialEventTypeMeta } from "../../constants/specialEvents";
@@ -25,6 +28,18 @@ import {
   describeExtraLesson,
   upcomingExtraLessons,
 } from "../../utils/extraLessons";
+import {
+  describeExamTargetGrades,
+  describeHolidayScope,
+} from "../../utils/eventTargets";
+import {
+  ADJ_ENTRY,
+  adjustmentEntryHeading,
+  adjustmentEntryLabel,
+  adjustmentEntryLabelParts,
+  collectMonthAdjustmentEntries,
+  describeAdjustmentItem,
+} from "../../utils/eventCalendarAdjustments";
 import { PrintButton } from "../PrintButton";
 import {
   DEFAULT_EVENT_VISIBILITY,
@@ -39,6 +54,17 @@ import {
 // 月次のグリッドを描画し、各日のセルに該当イベントをバッジとして並べる。
 // 休講は常時表示。テスト期間 / 特別イベント / 追加授業は visibility
 // プロパティで切替。
+//
+// 休講・テスト期間は「誰に効くか」(中3 だけ / 高校部 / 英語 …) をチップに
+// 小さく添え、ツールチップと月の一覧には全文で出す (utils/eventTargets)。
+// 学校全体の休講と中3 だけの休講が同じ見た目にならないようにするため。
+//
+// 日まるごと振替 (振替 adjustments の束) とコマ休講 (adjustments の cancel)
+// も日単位で出す (utils/eventCalendarAdjustments)。どちらもイベントの
+// レコードを持たないので、ここで拾わないとカレンダーのどこにも出ない。
+// 休講・特別時程と同じく常時表示 (visibility トグルにすると既定 OFF で
+// 気付けない)。クリックは編集画面ではなく「その日のダッシュボード」へ
+// (振替・コマ休講のバナーと中身がそこにある)。
 //
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
@@ -99,12 +125,55 @@ function barBorderRadius(continuesLeft, continuesRight) {
   return 4;
 }
 
+// クリック / Enter / Space で handler を呼ぶ要素の属性。handler が無ければ
+// 素の要素 (ボタンにしない)
+function activateProps(handler) {
+  if (!handler) return {};
+  return {
+    role: "button",
+    tabIndex: 0,
+    onClick: handler,
+    onKeyDown: (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handler();
+      }
+    },
+  };
+}
+
+// 振替・コマ休講のツールチップ / 一覧の本文 (見出し + 1 コマ 1 行)
+function adjustmentEntryTitle(entry) {
+  return [adjustmentEntryHeading(entry), ...entry.items.map(describeAdjustmentItem)].join(
+    "\n"
+  );
+}
+
+const adjustmentEntryMeta = (entry) =>
+  entry.kind === ADJ_ENTRY.SLOT_CANCEL ? SLOT_CANCEL_META : RESCHEDULE_META;
+
+// 月の一覧の行頭の種別バッジ
+const kindBadgeStyle = (meta) => ({
+  fontSize: 11,
+  fontWeight: 700,
+  padding: "2px 8px",
+  borderRadius: 4,
+  background: meta.bg,
+  color: meta.fg,
+  border: `1px solid ${meta.accent}`,
+  minWidth: 88,
+  textAlign: "center",
+});
+
 export function EventCalendarView({
   holidays = [],
   examPeriods = [],
   specialEvents = [],
   extraLessons = [],
   daySchedules = [],
+  // 振替・コマ休講 (時間割調整) と、それが指すコマを引くための全コマ
+  adjustments = [],
+  slots = [],
   onEventClick,
   onAddNewEvent,
   isAdmin = false,
@@ -179,6 +248,10 @@ export function EventCalendarView({
         startDate: h.date,
         endDate: h.date,
         meta: HOLIDAY_META,
+        // 対象: target = チップ用の短い表記 (学校全体は "" で出さない)、
+        // targetFull = ツールチップ・一覧用の全文 ("全部" / "中学部 中3")
+        target: describeHolidayScope(h, { short: true }),
+        targetFull: describeHolidayScope(h),
         source: h,
       });
     }
@@ -218,6 +291,8 @@ export function EventCalendarView({
           startDate: ep.startDate,
           endDate: ep.endDate,
           meta: EXAM_META,
+          target: describeExamTargetGrades(ep, { short: true }),
+          targetFull: describeExamTargetGrades(ep),
           source: ep,
         });
       }
@@ -285,6 +360,27 @@ export function EventCalendarView({
     return m;
   }, [eventsInMonth, monthStart, monthEnd]);
 
+  // 振替・コマ休講 (日単位)。byDate = グリッド、rows = 月の一覧
+  const monthAdjustments = useMemo(
+    () => collectMonthAdjustmentEntries(adjustments, slots, monthStart, monthEnd),
+    [adjustments, slots, monthStart, monthEnd]
+  );
+
+  // 月の一覧 = イベント + 振替・コマ休講。日付順 (同じ日はイベントが先。
+  // sort は stable なので eventsInMonth の並びは保たれる)
+  const listItems = useMemo(
+    () =>
+      [
+        ...eventsInMonth,
+        ...monthAdjustments.rows.map((r) => ({
+          ...r,
+          isAdjustment: true,
+          startDate: r.date,
+          endDate: r.date,
+        })),
+      ].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [eventsInMonth, monthAdjustments]
+  );
 
   const showAdd = isAdmin && !!onAddNewEvent;
 
@@ -413,11 +509,13 @@ export function EventCalendarView({
         />
       </div>
 
-      {/* 月グリッド */}
+      {/* 月グリッド。列は常に等幅 (minmax(0, …))。1fr のままだとチップの
+          折り返さない文字列 (長い名前・対象ラベル) の分だけその曜日の列が
+          広がり、狭い画面では横にはみ出す。はみ出す分はチップ側で省略する */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(7,1fr)",
+          gridTemplateColumns: "repeat(7,minmax(0,1fr))",
           gap: 1,
           background: "#ccc",
           borderRadius: 8,
@@ -452,11 +550,13 @@ export function EventCalendarView({
           const ds = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
           const dow = new Date(year, month - 1, d).getDay();
           const evs = eventsByDate.get(ds) || [];
+          const adjEntries = monthAdjustments.byDate.get(ds) || [];
           const isT = ds === todayStr;
           return (
             <div
               key={ds}
               className="event-cal-cell"
+              data-date={ds}
               style={{
                 background: isT
                   ? "#fffbe6"
@@ -593,7 +693,9 @@ export function EventCalendarView({
                     title={`${EVENT_KIND_LABELS[ev.kind]}: ${ev.name}\n${formatDateRange(
                       ev.startDate,
                       ev.endDate
-                    )}${ev.detail ? "\n" + ev.detail : ""}${
+                    )}${ev.targetFull ? `\n対象: ${ev.targetFull}` : ""}${
+                      ev.detail ? "\n" + ev.detail : ""
+                    }${
                       ev.source.memo ? "\n" + ev.source.memo : ""
                     }${clickable ? "\n\nクリックで編集画面を開きます" : ""}`}
                     role={clickable ? "button" : undefined}
@@ -623,19 +725,52 @@ export function EventCalendarView({
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                       cursor: clickable ? "pointer" : "default",
+                      // 名前と対象ラベルを横に並べ、狭いセルでは名前の方を
+                      // 省略する (対象 = 誰に効くか、は切らさない)
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
                     }}
                   >
                     {showName ? (
                       <>
-                        {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
-                          <>
-                            <span aria-hidden="true">{ev.meta.icon}</span>{" "}
-                          </>
-                        ) : null}
-                        {ev.name}
-                        {(ev.source.tags || []).length > 0 && (
-                          <span style={{ opacity: 0.7, marginLeft: 3 }}>
-                            [{ev.source.tags.join("·")}]
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            minWidth: 0,
+                          }}
+                        >
+                          {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? (
+                            <>
+                              <span aria-hidden="true">{ev.meta.icon}</span>{" "}
+                            </>
+                          ) : null}
+                          {ev.name}
+                          {(ev.source.tags || []).length > 0 && (
+                            <span style={{ opacity: 0.7, marginLeft: 3 }}>
+                              [{ev.source.tags.join("·")}]
+                            </span>
+                          )}
+                        </span>
+                        {ev.target && (
+                          <span
+                            className="event-cal-target"
+                            style={{
+                              flexShrink: 0,
+                              maxWidth: "65%",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              fontSize: 9,
+                              lineHeight: "11px",
+                              padding: "0 3px",
+                              borderRadius: 3,
+                              background: "#fff",
+                              color: ev.meta.fg,
+                              border: `1px solid ${ev.meta.accent}`,
+                            }}
+                          >
+                            {ev.target}
                           </span>
                         )}
                       </>
@@ -643,6 +778,46 @@ export function EventCalendarView({
                       // 名前を出さないセルでも色帯の高さを維持するため、不可視文字
                       " "
                     )}
+                  </div>
+                );
+              })}
+              {/* 振替・コマ休講 (日単位)。クリックでその日のダッシュボードへ */}
+              {adjEntries.map((entry) => {
+                const meta = adjustmentEntryMeta(entry);
+                const open = onSelectDate ? () => onSelectDate(ds) : null;
+                const [main, tail] = adjustmentEntryLabelParts(entry);
+                return (
+                  <div
+                    key={entry.id}
+                    className="event-cal-adj"
+                    aria-label={adjustmentEntryLabel(entry)}
+                    title={`${adjustmentEntryTitle(entry)}${
+                      open ? "\n\nクリックでこの日のダッシュボードを開きます" : ""
+                    }`}
+                    {...activateProps(open)}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 5px",
+                      background: meta.bg,
+                      color: meta.fg,
+                      borderLeft: `3px solid ${meta.accent}`,
+                      borderRadius: 4,
+                      overflow: "hidden",
+                      whiteSpace: "nowrap",
+                      cursor: open ? "pointer" : "default",
+                      // 狭いセルでは本体を省略し、相手の日付 / 件数は残す
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    <span
+                      style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}
+                    >
+                      {main}
+                    </span>
+                    <span style={{ flexShrink: 0 }}>{tail}</span>
                   </div>
                 );
               })}
@@ -670,9 +845,9 @@ export function EventCalendarView({
             background: "#f8f9fa",
           }}
         >
-          {year}年{month}月のイベント一覧 ({eventsInMonth.length}件)
+          {year}年{month}月のイベント一覧 ({listItems.length}件)
         </div>
-        {eventsInMonth.length === 0 ? (
+        {listItems.length === 0 ? (
           <div
             style={{
               padding: "32px 20px",
@@ -706,57 +881,111 @@ export function EventCalendarView({
             )}
           </div>
         ) : (
-          eventsInMonth.map((ev, i) => {
-            const isCurrent = ev.startDate <= todayStr && todayStr <= ev.endDate;
-            const isUpcoming = !isCurrent && ev.startDate > todayStr;
-            const clickable = !!onEventClick;
+          listItems.map((ev, i) => {
+            // 振替は振替元・振替先の 2 日に関わる。どちらかが今日なら「今日」、
+            // 両方過ぎたら済み (薄く)
+            const touchDates =
+              ev.isAdjustment && ev.kind === ADJ_ENTRY.RESCHEDULE
+                ? [ev.fromDate, ev.toDate]
+                : null;
+            const isCurrent = touchDates
+              ? touchDates.includes(todayStr)
+              : ev.startDate <= todayStr && todayStr <= ev.endDate;
+            const isUpcoming =
+              !isCurrent &&
+              (touchDates
+                ? touchDates.some((d) => d > todayStr)
+                : ev.startDate > todayStr);
+            // 振替・コマ休講は編集画面ではなく、その日のダッシュボードへ
+            const onActivate = ev.isAdjustment
+              ? onSelectDate
+                ? () => onSelectDate(ev.date)
+                : null
+              : onEventClick
+                ? () => onEventClick(ev)
+                : null;
+            const rowStyle = {
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              padding: "8px 14px",
+              borderBottom: i < listItems.length - 1 ? "1px solid #eee" : "none",
+              background: isCurrent ? "#fffbe6" : i % 2 ? "#fafafa" : "#fff",
+              borderLeft: isCurrent ? "3px solid #e6a800" : "3px solid transparent",
+              opacity: !isCurrent && !isUpcoming ? 0.55 : 1,
+              cursor: onActivate ? "pointer" : "default",
+            };
+            const todayBadge = isCurrent && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "#e6a800",
+                  color: "#fff",
+                }}
+              >
+                今日
+              </span>
+            );
+            if (ev.isAdjustment) {
+              const meta = adjustmentEntryMeta(ev);
+              return (
+                <div
+                  key={ev.id}
+                  className="event-cal-adj-row"
+                  title={adjustmentEntryTitle(ev)}
+                  {...activateProps(onActivate)}
+                  style={rowStyle}
+                >
+                  <span style={kindBadgeStyle(meta)}>{meta.label}</span>
+                  <strong style={{ fontSize: 13 }}>
+                    {ev.kind === ADJ_ENTRY.RESCHEDULE
+                      ? `${fmtDateWeekday(ev.fromDate)} → ${fmtDateWeekday(ev.toDate)}`
+                      : fmtDateWeekday(ev.date)}
+                  </strong>
+                  <span style={{ fontSize: 11, color: "#666" }}>
+                    {ev.items.length} コマ
+                  </span>
+                  {todayBadge}
+                  {/* どのコマか (紙面でも読めるよう tooltip だけにしない) */}
+                  <span style={{ fontSize: 11, color: "#888" }}>
+                    {ev.items.map(describeAdjustmentItem).join(" / ")}
+                  </span>
+                </div>
+              );
+            }
             return (
               <div
                 key={ev.id}
-                role={clickable ? "button" : undefined}
-                tabIndex={clickable ? 0 : undefined}
-                onClick={clickable ? () => onEventClick(ev) : undefined}
-                onKeyDown={
-                  clickable
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onEventClick(ev);
-                        }
-                      }
-                    : undefined
-                }
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  padding: "8px 14px",
-                  borderBottom:
-                    i < eventsInMonth.length - 1 ? "1px solid #eee" : "none",
-                  background: isCurrent ? "#fffbe6" : i % 2 ? "#fafafa" : "#fff",
-                  borderLeft: isCurrent ? "3px solid #e6a800" : "3px solid transparent",
-                  opacity: !isCurrent && !isUpcoming ? 0.55 : 1,
-                  cursor: clickable ? "pointer" : "default",
-                }}
+                {...activateProps(onActivate)}
+                style={rowStyle}
               >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    background: ev.meta.bg,
-                    color: ev.meta.fg,
-                    border: `1px solid ${ev.meta.accent}`,
-                    minWidth: 88,
-                    textAlign: "center",
-                  }}
-                >
+                <span style={kindBadgeStyle(ev.meta)}>
                   {ev.kind === EVENT_KIND.SPECIAL && ev.meta.icon ? `${ev.meta.icon} ` : ""}
                   {EVENT_KIND_LABELS[ev.kind]}
                 </span>
                 <strong style={{ fontSize: 13 }}>{ev.name}</strong>
+                {/* 休講・テスト期間の対象。学校全体も「全部」「全学年」と書く
+                    (一覧では省略せず、誰に効くかを必ず読めるように) */}
+                {ev.targetFull && (
+                  <span
+                    className="event-cal-target-full"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "#fff",
+                      color: ev.meta.fg,
+                      border: `1px solid ${ev.meta.accent}`,
+                    }}
+                  >
+                    対象: {ev.targetFull}
+                  </span>
+                )}
                 {ev.kind === EVENT_KIND.EXAM &&
                   ev.source.stopsClasses === false && (
                     <span
@@ -846,20 +1075,7 @@ export function EventCalendarView({
                 <span style={{ fontSize: 11, color: "#666" }}>
                   {formatDateRange(ev.startDate, ev.endDate)}
                 </span>
-                {isCurrent && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 800,
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      background: "#e6a800",
-                      color: "#fff",
-                    }}
-                  >
-                    今日
-                  </span>
-                )}
+                {todayBadge}
                 {ev.kind === EVENT_KIND.SPECIAL && ev.source.memo && (
                   <span
                     style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}

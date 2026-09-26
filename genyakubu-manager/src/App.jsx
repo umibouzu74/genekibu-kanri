@@ -1204,6 +1204,10 @@ export default function App() {
               specialEvents={specialEvents}
               extraLessons={extraLessons}
               daySchedules={daySchedules}
+              /* 日まるごと振替・コマ休講 (時間割調整) を日単位で出す。
+                 調整が指すコマを引くため全コマを渡す */
+              adjustments={adjustments}
+              slots={slots}
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}
