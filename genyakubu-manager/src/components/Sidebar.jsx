@@ -150,7 +150,9 @@ const MENU_CONFIG = [
       { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
     ],
   },
-  { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
+  // 管理者専用の画面 (閲覧者が開いても「管理者のみ」と出るだけの行き止まり
+  // になるので、閲覧者には出さない。Cmd+K と g a も同じ)
+  { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え", adminOnly: true },
   // ビューではなくダイアログを開く項目。日単位の振替は「その日の作業」なので
   // 欠勤組み換えの隣に置く (機能が一覧のタブの中に埋もれないように)。
   {
@@ -205,6 +207,8 @@ export function Sidebar({
   onJumpToRequestedSubs,
   /** 全講師のグループ (検索前)。検索はこの中で行う */
   teacherGroups: allTeacherGroups,
+  // 講師検索をよみでも当てるため (名前 → よみ)
+  teacherKana,
   subjectCategories,
   slots,
   subs,
@@ -216,8 +220,8 @@ export function Sidebar({
   // App 全体 (ダッシュボード・月間カレンダー…) が再描画される (2026-09-04)
   const [search, onSearchChange] = useState("");
   const teacherGroups = useMemo(
-    () => filterTeacherGroups(allTeacherGroups, search),
-    [allTeacherGroups, search]
+    () => filterTeacherGroups(allTeacherGroups, search, teacherKana),
+    [allTeacherGroups, search, teacherKana]
   );
   // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
   const [expandedGroups, setExpandedGroups] = useState(
@@ -379,7 +383,7 @@ export function Sidebar({
         <div style={{ padding: "8px 10px", position: "relative" }}>
           <input
             type="text"
-            placeholder="講師名で検索…"
+            placeholder="講師名・よみで検索…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             onKeyDown={(e) => {

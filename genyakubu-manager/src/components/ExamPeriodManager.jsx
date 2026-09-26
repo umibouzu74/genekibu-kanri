@@ -11,7 +11,11 @@ import { nextNumericId } from "../utils/schema";
 import { fmtDateWeekday, formatDateRange } from "../utils/dateHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
@@ -998,7 +1002,10 @@ export function ExamPeriodManager({
                   )}
                   <button
                     type="button"
-                    onClick={() => handleEdit(ep)}
+                    onClick={() => {
+                      handleEdit(ep);
+                      scrollFormIntoView(formRef);
+                    }}
                     aria-label={`${ep.name} を編集`}
                     style={{
                       background: "none",

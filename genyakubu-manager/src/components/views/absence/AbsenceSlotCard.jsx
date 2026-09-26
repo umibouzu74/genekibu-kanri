@@ -105,6 +105,8 @@ export function AbsenceSlotCard({
     return (
       <div
         onContextMenu={onContextMenu}
+        // クリック / タップでも同じメニュー (タッチ端末は右クリックできない)
+        onClick={cancelInteractive ? onContextMenu : undefined}
         tabIndex={cancelInteractive ? 0 : undefined}
         role={cancelInteractive ? "button" : undefined}
         aria-label={
@@ -113,9 +115,9 @@ export function AbsenceSlotCard({
             : undefined
         }
         onKeyDown={cancelInteractive ? onCancelKeyDown : undefined}
-        title={cancelInteractive ? "右クリックで休講を取り消す" : undefined}
+        title={cancelInteractive ? "クリック (右クリック) で休講を取り消す" : undefined}
         style={{
-          cursor: cancelInteractive ? "context-menu" : undefined,
+          cursor: cancelInteractive ? "pointer" : undefined,
           background: "#f5f5f5",
           border: "1px dashed #c0c0c0",
           borderRadius: 6,
@@ -197,7 +199,7 @@ export function AbsenceSlotCard({
     ? "not-allowed"
     : draggable
       ? "grab"
-      : isCombineCandidate || isCombineSource
+      : isCombineCandidate || isCombineSource || onClick
         ? "pointer"
         : "default";
 

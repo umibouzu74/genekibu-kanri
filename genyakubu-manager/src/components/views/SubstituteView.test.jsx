@@ -5,7 +5,7 @@
 //    その月へ動かす (「すべて」は動かさない)
 //  - 時間割表タブ (代行モード) に特別時程を渡す
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { SubstituteView } from "./SubstituteView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -116,7 +116,7 @@ describe("SubstituteView の新規代行と月フィルタ", () => {
     // App 側のフォームが保存して subs が増え、作ったレコードが createdSubs で届く
     rerenderWith({ subs: created, createdSubs: created });
     expect(monthInput().value).toBe(NEXT_MONTH);
-    expect(screen.getByText("西岡")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("西岡")).toBeInTheDocument();
   });
 
   it("当月の代行なら月フィルタは動かさない", () => {
@@ -124,7 +124,7 @@ describe("SubstituteView の新規代行と月フィルタ", () => {
     const created = [sub({ id: 9, date: `${THIS_MONTH}-20` })];
     rerenderWith({ subs: created, createdSubs: created });
     expect(monthInput().value).toBe(THIS_MONTH);
-    expect(screen.getByText("西岡")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("西岡")).toBeInTheDocument();
   });
 
   it("他端末の同期で subs が増えただけ (createdSubs なし) なら動かさない", () => {
@@ -202,5 +202,29 @@ describe("SubstituteView の代行一覧の並び替えと日付ジャンプ", (
       screen.getByRole("button", { name: new RegExp(`^${THIS_MONTH}-12 .*の欠勤組み換えを開く$`) })
     );
     expect(onJumpToAbsenceFlow).toHaveBeenCalledWith(`${THIS_MONTH}-12`);
+  });
+});
+
+describe("SubstituteView の講師・代行者フィルタ", () => {
+  it("多担任コマの講師欄は 1 人ずつの選択肢に分け、選ぶとその人の代行が出る", () => {
+    const PREP = { ...SLOT, id: 2, teacher: "香川·福江·川井", subj: "プレップ" };
+    renderView({
+      slots: [SLOT, PREP],
+      subs: [sub({ id: 5, slotId: 2, originalTeacher: "福江", substitute: "" , status: "requested" })],
+    });
+    const select = screen.getByLabelText("講師・代行者");
+    const values = [...select.querySelectorAll("option")].map((o) => o.value);
+    expect(values).toEqual(expect.arrayContaining(["香川", "福江", "川井"]));
+    expect(values).not.toContain("香川·福江·川井");
+    fireEvent.change(select, { target: { value: "福江" } });
+    expect(screen.getByText("1 / 1 件表示")).toBeInTheDocument();
+  });
+
+  it("時間割に居ない代行者 (直接入力した名前) も選べる", () => {
+    renderView({ subs: [sub({ substitute: "臨時講師" })] });
+    const values = [...screen.getByLabelText("講師・代行者").querySelectorAll("option")].map(
+      (o) => o.value
+    );
+    expect(values).toContain("臨時講師");
   });
 });

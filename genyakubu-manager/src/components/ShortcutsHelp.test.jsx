@@ -31,7 +31,7 @@ describe("ShortcutsHelp", () => {
     render(<ShortcutsHelp open onClose={noop} />);
     expect(screen.getByText("日付の移動")).toBeDefined();
     expect(
-      screen.getByText(/ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モードで/)
+      screen.getByText(/ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モード・欠勤組み換えで/)
     ).toBeDefined();
     expect(screen.getByText("(週間は ±1 週、月間・イベントカレンダーは ±1 か月)")).toBeDefined();
     expect(screen.getByText("今日 / 今週 / 今月")).toBeDefined();

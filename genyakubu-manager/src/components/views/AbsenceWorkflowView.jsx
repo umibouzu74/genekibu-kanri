@@ -3,7 +3,7 @@ import { fmtDate, dateToDay, sortSlots as sortS, DAY_COLOR as DC } from "../../d
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
 import { getSlotTeachers } from "../../utils/biweekly";
-import { sortTeacherNames } from "../../utils/teacherKana";
+import { sortTeacherNames, teacherMatchesQuery } from "../../utils/teacherKana";
 import { saveAbsenceBatch } from "../../utils/absenceBatch";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -11,6 +11,7 @@ import { draftDiscardPrompt, draftSaveAndContinuePrompt } from "../../utils/abse
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import { makeEventHelpers, shiftDate } from "./dashboardHelpers";
 import { useToday } from "../../hooks/useToday";
+import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
@@ -186,12 +187,13 @@ export function AbsenceWorkflowView({
       }
     }
     const q = teacherQuery.trim();
-    const hit = (t) => !q || t.includes(q);
+    // 名前に加えてよみでも当てる (「ほり」で 堀上)
+    const hit = (t) => teacherMatchesQuery(t, q, teacherKana);
     return {
       onDay: allTeachers.filter((t) => onDay.has(t) && hit(t)),
       others: allTeachers.filter((t) => !onDay.has(t) && hit(t)),
     };
-  }, [daySlots, date, allTeachers, teacherQuery, biweeklyAnchors, holidays, examPeriods]);
+  }, [daySlots, date, allTeachers, teacherQuery, teacherKana, biweeklyAnchors, holidays, examPeriods]);
 
   // 欠勤先生が担当するコマ集合 (赤枠表示用)。対象は画面に出ているコマだけ。
   // 隔週は担当週 (A/B) を解いてから判定する ("欠勤にする" の対象と同じ判定)。
@@ -530,6 +532,25 @@ export function AbsenceWorkflowView({
     [confirm, draft, draftCount]
   );
 
+  // ← 前 / 次 → と ← / → / t キー。日曜は授業が無いので飛ばす (ダッシュボードの
+  // 時間割モード・代行モードと同じ)。土曜の「次 →」で日曜に止まると、空の
+  // 画面を挟んでもう 1 回押す必要があった。どちらも下書きガード
+  // (handleDateChange) を通る
+  const stepDate = useCallback(
+    (step) => {
+      let next = shiftDate(date, step);
+      if (dateToDay(next) == null) next = shiftDate(next, step > 0 ? 1 : -1);
+      handleDateChange(next);
+    },
+    [date, handleDateChange]
+  );
+  useDateKeyNav({
+    onPrev: () => stepDate(-1),
+    onNext: () => stepDate(1),
+    onToday: () => handleDateChange(todayStr),
+    enabled: !!isAdmin,
+  });
+
   const handleSave = useCallback(() => {
     const {
       draftSubs,
@@ -648,7 +669,7 @@ export function AbsenceWorkflowView({
             (ダッシュボードの DashboardDateNav と同じ 3 ボタン) */}
         <button
           type="button"
-          onClick={() => handleDateChange(shiftDate(date, -1))}
+          onClick={() => stepDate(-1)}
           style={{ ...S.btn(false), fontSize: 12 }}
         >
           ← 前
@@ -662,7 +683,7 @@ export function AbsenceWorkflowView({
         </button>
         <button
           type="button"
-          onClick={() => handleDateChange(shiftDate(date, 1))}
+          onClick={() => stepDate(1)}
           style={{ ...S.btn(false), fontSize: 12 }}
         >
           次 →
@@ -717,7 +738,7 @@ export function AbsenceWorkflowView({
                 type="search"
                 value={teacherQuery}
                 onChange={(e) => setTeacherQuery(e.target.value)}
-                placeholder="名前で絞り込み"
+                placeholder="名前・よみで絞り込み"
                 aria-label="欠勤する先生を名前で絞り込み"
                 autoFocus
                 style={{

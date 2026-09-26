@@ -15,7 +15,11 @@ import {
 } from "../utils/daySchedules";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
@@ -810,7 +814,10 @@ export function DayScheduleManager({
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => handleEdit(d)}
+                      onClick={() => {
+                        handleEdit(d);
+                        scrollFormIntoView(formRef);
+                      }}
                       aria-label={`${d.date} の特別時程を編集`}
                       style={{
                         background: "none",

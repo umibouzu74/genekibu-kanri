@@ -617,9 +617,35 @@ export function AbsenceTimetable({
 
   // 合同モード中のスロットクリック: 相手として選ぶ。
   // 既存 (saved) combine の「相手を変更」時は、保存済みリストを起点に追加する。
+  // 合同モード以外のクリック / タップ / Enter は、右クリックと同じ操作メニューを
+  // 開く。iPad などのタッチ端末は長押しで contextmenu が出ないため、右クリック
+  // だけだと代行・振替・合同を登録する手段が無かった。
   const handleSlotClick = useCallback(
-    (slot) => {
-      if (!combineSource) return;
+    (slot, e) => {
+      if (!combineSource) {
+        if (!e) return;
+        // キーボード (Enter / Space) の click には座標が無いので、カードの
+        // 左下に出す (ContextMenu キーと同じ位置)
+        let x = e.clientX;
+        let y = e.clientY;
+        if (x == null || (!x && !y)) {
+          const r = e.currentTarget?.getBoundingClientRect?.();
+          x = r ? r.left + 8 : 0;
+          y = r ? r.bottom - 4 : 0;
+        }
+        openContextMenu(
+          {
+            preventDefault() {},
+            stopPropagation() {},
+            clientX: x,
+            clientY: y,
+            currentTarget: e.currentTarget,
+            target: e.target,
+          },
+          slot
+        );
+        return;
+      }
       if (slot.id === combineSource.id) {
         setCombineSource(null);
         return;
@@ -631,7 +657,7 @@ export function AbsenceTimetable({
       draftApi.setCombine(combineSource.id, [...current, slot.id]);
       setCombineSource(null);
     },
-    [combineSource, subjects, hostsAbsorbedMap, draftApi, combineExcluded]
+    [combineSource, subjects, hostsAbsorbedMap, draftApi, combineExcluded, openContextMenu]
   );
 
   // 個々のスロットカード描画 (AbsenceExcelSection に渡す関数)
@@ -761,7 +787,7 @@ export function AbsenceTimetable({
           conflicts={teacherConflicts.get(s.id) || null}
           onContextMenu={isCancelled ? undefined : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
-          onClick={isCancelled || slotCancel ? undefined : () => handleSlotClick(s)}
+          onClick={isCancelled || slotCancel ? undefined : (e) => handleSlotClick(s, e)}
         />
       );
     },
@@ -1094,7 +1120,7 @@ export function AbsenceTimetable({
           marginBottom: 6,
         }}
       >
-        コマをドラッグ → 別時間セルにドロップで移動 / 右クリック → メニューで代行・合同・振替・回数補正
+        コマをドラッグ → 別時間セルにドロップで移動 / クリック (タップ) または右クリック → メニューで代行・合同・振替・回数補正
       </div>
 
       {effectiveSlots.length === 0 ? (

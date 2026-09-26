@@ -1249,9 +1249,12 @@ export function MonthView({
       </div>
     );
   });
+  // 列の最小幅は 0 (minmax(0,1fr))。1fr のままだと折り返さないカードの
+  // 長さで列が押し広げられ、スマホ幅では表が 700px 近くまで横にはみ出していた。
+  // 幅に収めたうえで、狭い画面ではカードを折り返す (appShell.css)
   const gridColumns = sundayBusy
-    ? "repeat(7,1fr)"
-    : "minmax(40px,0.4fr) repeat(6,1fr)";
+    ? "repeat(7,minmax(0,1fr))"
+    : "minmax(40px,0.4fr) repeat(6,minmax(0,1fr))";
 
   return (
     <div className="month-print-root" style={{ marginTop: 12 }}>

@@ -56,6 +56,24 @@ describe("CommandPalette", () => {
   it("欠勤組み換えへのジャンプは渡したときだけ (閲覧者には出ない)", () => {
     renderPalette({ onJumpToAbsenceFlow: undefined });
     expect(screen.queryByRole("option", { name: /の欠勤組み換え/ })).toBeNull();
+    // ビュー移動の「欠勤組み換え」も出さない (開いても「管理者のみ」の行き止まり)
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "欠勤" } });
+    expect(screen.queryByRole("option", { name: /欠勤組み換え/ })).toBeNull();
+  });
+
+  it("管理者にはビュー移動の「欠勤組み換え」が出る", () => {
+    renderPalette();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "欠勤" } });
+    expect(screen.getByRole("option", { name: /欠勤組み換え.*ビューに移動/ })).toBeTruthy();
+  });
+
+  it("講師はよみでも当てる (「ふく」で 福江)", () => {
+    const { onSelectTeacher } = renderPalette({ teacherKana: { 福江: "ふくえ", 香川: "かがわ" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ふく" } });
+    const opt = screen.getByRole("option", { name: /^福江/ });
+    fireEvent.click(opt);
+    expect(onSelectTeacher).toHaveBeenCalledWith("福江");
+    expect(screen.queryByRole("option", { name: /^香川/ })).toBeNull();
   });
 
   it("複数講師のコマは講師ごとに 1 件出し、選ぶとその講師を開く", () => {

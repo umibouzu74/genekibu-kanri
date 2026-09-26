@@ -7,7 +7,7 @@ import {
   sortSlots as sortS,
 } from "../../data";
 import { S } from "../../styles/common";
-import { sortTeacherNames } from "../../utils/teacherKana";
+import { sortTeacherNames, teacherMatchesQuery } from "../../utils/teacherKana";
 import { formatCount, weightedSlotCount, isSlotForTeacher, getSlotTeachers } from "../../utils/biweekly";
 import { groupTeacherNames } from "../../utils/groupTeacherNames";
 
@@ -35,9 +35,9 @@ export function CompareView({
   const filteredTeachers = useMemo(
     () =>
       searchInput
-        ? allTeachers.filter((t) => t.includes(searchInput))
+        ? allTeachers.filter((t) => teacherMatchesQuery(t, searchInput, teacherKana))
         : allTeachers,
-    [allTeachers, searchInput]
+    [allTeachers, searchInput, teacherKana]
   );
   // 教科ごとにグループ化したチップ一覧 (バイト → 英数国理社 → その他)
   const teacherGroups = useMemo(
@@ -93,7 +93,7 @@ export function CompareView({
           </span>
           <input
             type="text"
-            placeholder="講師名で検索…"
+            placeholder="講師名・よみで検索…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ ...S.input, width: "100%", maxWidth: 200 }}

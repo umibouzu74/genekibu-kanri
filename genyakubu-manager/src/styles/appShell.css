@@ -243,3 +243,15 @@ td[role="button"]:focus-visible {
     opacity: 1;
   }
 }
+
+/* 講師別月間カレンダー: スマホ幅では列が 50px 前後になるので、カードを
+   省略 (…) せずに折り返して中身を読めるようにする (列幅は MonthView の
+   minmax(0,1fr) で画面に収める) */
+@media screen and (max-width: 480px) {
+  .month-print-cell { padding: 2px !important; }
+  .month-print-card {
+    white-space: normal !important;
+    font-size: 10px !important;
+    padding: 1px 2px !important;
+  }
+}

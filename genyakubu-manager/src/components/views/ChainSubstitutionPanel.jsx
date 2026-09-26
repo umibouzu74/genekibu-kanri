@@ -208,7 +208,10 @@ export function ChainSubstitutionPanel({
         originalTeacher: sugg.originalTeacher,
         substitute: sugg.suggestedSubstitute,
         status: "confirmed",
-        memo: "玉突き代行",
+        // 欠勤登録時の理由メモ (体調不良など) は残す。上書きすると休んだ理由が
+        // 消える (代行モードの保存 useSubstitutionMode と同じ扱い)。玉突きで
+        // 新しく立つレコードにだけ目印を入れる
+        memo: existing?.memo || "玉突き代行",
         createdAt: existing?.createdAt || ts,
         updatedAt: ts,
       });

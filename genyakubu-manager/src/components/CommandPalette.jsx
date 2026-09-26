@@ -10,6 +10,7 @@ import { parseDateQuery } from "../utils/parseDateQuery";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
+import { teacherMatchesQuery } from "../utils/teacherKana";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -36,6 +37,8 @@ export function CommandPalette({
   onJumpToAbsenceFlow,
   views,
   onShowShortcuts,
+  // 講師検索をよみでも当てる (「ほり」で 堀上)
+  teacherKana,
 }) {
   const todayStr = useToday();
   const inputRef = useRef(null);
@@ -110,7 +113,7 @@ export function CommandPalette({
     if (!empty) {
       for (const s of slots) {
         for (const t of getSlotTeachers(s)) {
-          if (t.toLowerCase().includes(q)) teacherSet.add(t);
+          if (teacherMatchesQuery(t, q, teacherKana)) teacherSet.add(t);
         }
       }
     }
@@ -254,7 +257,9 @@ export function CommandPalette({
       { key: views.SUBS, label: "授業管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
       { key: views.STAFF, label: "バイト管理" },
-      { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
+      // 欠勤組み換えは管理者専用。onJumpToAbsenceFlow は管理者のときだけ
+      // 渡ってくるので、それを目印に閲覧者には出さない (開いても行き止まり)
+      ...(onJumpToAbsenceFlow ? [{ key: views.ABSENCE_FLOW, label: "欠勤組み換え" }] : []),
     ];
     // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
     // 選択されているときだけ候補に出す。空のビューに飛ばさないため。
@@ -367,6 +372,7 @@ export function CommandPalette({
     onOpenMultiDayAbsence,
     onClose,
     views,
+    teacherKana,
   ]);
 
   useEffect(() => {

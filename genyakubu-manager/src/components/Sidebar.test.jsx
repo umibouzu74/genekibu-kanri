@@ -150,3 +150,29 @@ describe("Sidebar の複数日の欠勤登録", () => {
     expect(screen.queryByRole("button", { name: /複数日の欠勤登録/ })).toBeNull();
   });
 });
+
+describe("Sidebar の講師検索", () => {
+  const groups = [{ key: "英語", label: "英語", teachers: ["堀上", "石原"] }];
+  const slots = [
+    { id: 1, day: "月", time: "19:00-20:20", grade: "中1", cls: "S", subj: "英語", teacher: "堀上", note: "" },
+    { id: 2, day: "月", time: "20:30-21:50", grade: "中1", cls: "S", subj: "英語", teacher: "石原", note: "" },
+  ];
+
+  it("よみでも当てる (「ほり」で 堀上)", () => {
+    renderSidebar({
+      teacherGroups: groups,
+      slots,
+      teacherKana: { 堀上: "ほりかみ", 石原: "いしはら" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("講師名・よみで検索…"), {
+      target: { value: "ほり" },
+    });
+    expect(screen.getByRole("button", { name: /^堀上/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^石原/ })).toBeNull();
+  });
+
+  it("管理者専用の「欠勤組み換え」は閲覧者に出さない", () => {
+    renderSidebar({ isAdmin: false });
+    expect(screen.queryByRole("button", { name: /欠勤組み換え/ })).toBeNull();
+  });
+});

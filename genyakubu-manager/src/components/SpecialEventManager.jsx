@@ -10,7 +10,11 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { formatDateRange } from "../utils/dateHelpers";
@@ -712,7 +716,10 @@ export function SpecialEventManager({
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => handleEdit(ev)}
+                      onClick={() => {
+                        handleEdit(ev);
+                        scrollFormIntoView(formRef);
+                      }}
                       aria-label={`${ev.name} を編集`}
                       style={{
                         background: "none",

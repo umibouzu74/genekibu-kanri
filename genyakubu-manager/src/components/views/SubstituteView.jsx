@@ -7,6 +7,7 @@ import { exportSubsCsv } from "../../utils/csv";
 import { useToasts } from "../../hooks/useToasts";
 import { useToday } from "../../hooks/useToday";
 import { matchesSubStateFilter } from "../../utils/substituteState";
+import { collectAllTeacherNames } from "../../utils/chainSubstitution";
 import { ShareLinkButton } from "../ShareLinkButton";
 import { ExcelGridView } from "./ExcelGridView";
 import { SubListTab } from "./substitute/SubListTab";
@@ -175,11 +176,19 @@ export function SubstituteView({
       );
   }, [tally, staffNameSet, byKana]);
 
+  // 講師・代行者フィルタの候補。講師欄 "香川·福江·川井" をそのまま 1 つの
+  // 名前にすると、選んでも originalTeacher (1 人ずつ) と一致せず 0 件になり、
+  // 多担任のコマにしか居ない講師は選べなかった。1 人ずつに分け、隔週の
+  // パートナー (B 週の担当) と、時間割に居ない代行者 (直接入力) も拾う
   const allTeachers = useMemo(() => {
-    const set = new Set(staffNameSet);
-    slots.forEach((s) => s.teacher && set.add(s.teacher));
+    const set = collectAllTeacherNames(slots, []);
+    for (const n of staffNameSet) set.add(n);
+    for (const s of subs) {
+      if (s.originalTeacher) set.add(s.originalTeacher);
+      if (s.substitute) set.add(s.substitute);
+    }
     return sortTeacherNames([...set], teacherKana);
-  }, [slots, staffNameSet, teacherKana]);
+  }, [slots, subs, staffNameSet, teacherKana]);
 
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);

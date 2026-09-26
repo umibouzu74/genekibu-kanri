@@ -499,7 +499,7 @@ describe("MonthView 日曜列と過ぎた日", () => {
 
   it("日曜に何も載らない月は日曜列を細くする (紙面も同じ列幅)", () => {
     const { container } = render(<MonthView {...baseProps} />);
-    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,1fr)");
+    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,minmax(0,1fr))");
   });
 
   it("日曜にこの講師の予定 (講習コマ) があれば 7 列均等のまま", () => {
@@ -510,7 +510,7 @@ describe("MonthView 日曜列と過ぎた日", () => {
         koshuLessons={[{ ...KOSHU_LESSON, date: "2026-07-26", dateLabel: "7/26(日)" }]}
       />
     );
-    expect(gridColumns(container)).toBe("repeat(7,1fr)");
+    expect(gridColumns(container)).toBe("repeat(7,minmax(0,1fr))");
   });
 
   it("日曜が全日休講なだけなら細いまま (休講名は細い列で折り返す)", () => {
@@ -520,7 +520,7 @@ describe("MonthView 日曜列と過ぎた日", () => {
         holidays={[{ date: "2026-07-19", label: "テスト休講", scope: ["全部"] }]}
       />
     );
-    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,1fr)");
+    expect(gridColumns(container)).toBe("minmax(40px,0.4fr) repeat(6,minmax(0,1fr))");
   });
 
   it("今日より前の日だけ .month-past (画面で薄く出す印) が付く", () => {

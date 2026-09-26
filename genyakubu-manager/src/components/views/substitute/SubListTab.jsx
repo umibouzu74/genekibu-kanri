@@ -197,6 +197,8 @@ export function SubListTab({
   slots = [],
   partTimeStaff = [],
   subjects = [],
+  // 講師プルダウンの教科グループ内をよみ順に (時間割調整一覧と同じ)
+  teacherKana = {},
   // 「その日に有効でないコマ」の点検用 (時間割の有効期間 / 表示期間)
   timetables = [],
   displayCutoff = null,
@@ -212,8 +214,8 @@ export function SubListTab({
   todayStr = "",
 }) {
   const teacherGroups = useMemo(
-    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects }),
-    [allTeachers, slots, partTimeStaff, subjects],
+    () => groupTeacherNames(allTeachers, { slots, partTimeStaff, subjects, teacherKana }),
+    [allTeachers, slots, partTimeStaff, subjects, teacherKana],
   );
   // 代行レコードが指すコマが、その日にスケジュールへ出ないもの (期切替で
   // 残してある旧期の同名コマなど) を点検する。一覧には載るのにダッシュ

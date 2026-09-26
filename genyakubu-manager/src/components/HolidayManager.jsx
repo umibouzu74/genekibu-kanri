@@ -11,7 +11,11 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
@@ -961,7 +965,10 @@ export function HolidayManager({
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => handleEdit(h)}
+                      onClick={() => {
+                        handleEdit(h);
+                        scrollFormIntoView(formRef);
+                      }}
                       aria-label={`${h.date} の休講日を編集`}
                       style={{
                         background: "none",

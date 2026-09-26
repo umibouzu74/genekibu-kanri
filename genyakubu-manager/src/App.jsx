@@ -655,6 +655,8 @@ export default function App() {
   //   - selected がある場合は selected を保ったまま view だけ切り替える
   const handleChordMatch = useCallback(
     (v) => {
+      // 欠勤組み換えは管理者専用 (サイドバー・Cmd+K と同じく閲覧者は飛ばない)
+      if (v === VIEWS.ABSENCE_FLOW && !isAdmin) return;
       if (v === VIEWS.WEEK || v === VIEWS.MONTH) {
         if (!selected) return;
         setView(v);
@@ -663,7 +665,7 @@ export default function App() {
       }
       selectView(v);
     },
-    [selected, selectView]
+    [selected, selectView, isAdmin]
   );
   const { waiting: chordWaiting, reset: resetChord } = useChordNavigation({
     chordMap: VIEW_CHORDS,
@@ -782,6 +784,7 @@ export default function App() {
         onClose={() => setSidebarOpen(false)}
         view={view}
         selected={selected}
+        teacherKana={teacherKana}
         onSelectView={selectView}
         onSelectTeacher={selectTeacher}
         onOpenDataMgr={() => {
@@ -1558,6 +1561,7 @@ export default function App() {
             open={cmdPaletteOpen}
             onClose={() => setCmdPaletteOpen(false)}
             slots={slots}
+            teacherKana={teacherKana}
             subs={subs}
             holidays={holidays}
             examPeriods={examPeriods}
