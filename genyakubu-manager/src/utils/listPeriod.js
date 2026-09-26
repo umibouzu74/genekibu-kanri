@@ -18,6 +18,18 @@ export function monthStartOf(dateStr) {
 }
 
 /**
+ * 1 つの日付がその期間に入るか (filterByListPeriod の単日版)。振替のように
+ * 「元の日か振替先のどちらかが入れば出す」一覧で使う。空の日付は入らない。
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @param {{mode: string, month?: string, todayStr: string}} period
+ * @returns {boolean}
+ */
+export function isDateInListPeriod(dateStr, period) {
+  if (!dateStr) return false;
+  return filterByListPeriod([dateStr], period, (d) => [d, d]).length === 1;
+}
+
+/**
  * @template T
  * @param {T[]} items
  * @param {{mode: string, month?: string, todayStr: string}} period

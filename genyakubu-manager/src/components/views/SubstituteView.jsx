@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { monthlyTally } from "../../data";
 import { S } from "../../styles/common";
 import { compareTeacherNames, sortTeacherNames } from "../../utils/teacherKana";
@@ -6,6 +6,8 @@ import { encodeShareData } from "../../utils/shareCodec";
 import { exportSubsCsv } from "../../utils/csv";
 import { useToasts } from "../../hooks/useToasts";
 import { useToday } from "../../hooks/useToday";
+import { useListPeriod } from "../../hooks/useListPeriod";
+import { isDateInListPeriod } from "../../utils/listPeriod";
 import { matchesSubStateFilter } from "../../utils/substituteState";
 import { collectAllTeacherNames } from "../../utils/chainSubstitution";
 import { ShareLinkButton } from "../ShareLinkButton";
@@ -57,9 +59,22 @@ export function SubstituteView({
   const now = new Date();
   const todayStr = useToday();
   const [tab, setTab] = useState("list");
+  // 時間割調整一覧・回数補正一覧は一度開いたら (隠して) 残す。タブを切り替える
+  // たびにアンマウントされて、月・講師・種別の絞り込みと並び順が消えていた
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(["list"]));
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set([...prev, tab])));
+  }, [tab]);
+  // 月次集計の対象月 (集計は月の指定が必須)
   const [fMonth, setFMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   );
+  // 代行一覧の期間。既定は「今月以降」(休講などの一覧と同じ)。以前は当月
+  // 固定で、月末に来月の代行が見えず、「すべて」は月の入力を空にするという
+  // 見えない操作だった
+  const listPeriod = useListPeriod();
+  const listPeriodRef = useRef(listPeriod);
+  listPeriodRef.current = listPeriod;
   const [fStaff, setFStaff] = useState("");
   const [fStatus, setFStatus] = useState("");
   // 代行一覧の並び: "date" / "date-desc" (対象日) と "createdAt" /
@@ -80,7 +95,7 @@ export function SubstituteView({
     if (initFilter) {
       if (initFilter.status) {
         setFStatus(initFilter.status);
-        setFMonth("");
+        listPeriodRef.current.setMode("all");
         setTab("list");
       }
       if (initFilter.tab) {
@@ -92,8 +107,8 @@ export function SubstituteView({
   }, [initFilter, onConsumeInitFilter]);
 
   // 月次集計タブは対象月が必須 (fMonth 空だと無言で全行 0 になる)。
-  // ステータスバッジ経由 (initFilter.status で fMonth を解除) の後に
-  // 集計タブへ移った場合などは当月へフォールバックする (K3f)。
+  // 月の入力を空にされた場合などは当月へフォールバックする (K3f)。
+  // 代行一覧の期間 (listPeriod) とは別に持つ
   useEffect(() => {
     if (tab === "tally" && !fMonth) {
       setFMonth(
@@ -119,8 +134,7 @@ export function SubstituteView({
 
 
   const filtered = useMemo(() => {
-    let r = [...subs];
-    if (fMonth) r = r.filter((s) => s.date?.startsWith(fMonth));
+    let r = listPeriod.apply([...subs], (s) => [s.date, s.date]);
     if (fStaff)
       r = r.filter((s) => s.originalTeacher === fStaff || s.substitute === fStaff);
     // 4 状態 + 「未処理」で絞る (utils/substituteState.SUB_STATE_FILTERS)
@@ -135,7 +149,7 @@ export function SubstituteView({
       if (c !== 0) return desc ? -c : c;
       return desc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0);
     });
-  }, [subs, fMonth, fStaff, fStatus, sortBy]);
+  }, [subs, listPeriod, fStaff, fStatus, sortBy]);
 
   const adjustmentCount = useMemo(
     () =>
@@ -193,21 +207,21 @@ export function SubstituteView({
   const toasts = useToasts();
   const [sharing, setSharing] = useState(false);
 
-  // ＋ 新規代行 で来月の日付を登録すると、保存はされるのに当月の月フィルタで
-  // 一覧から消えて「登録できなかった」ように見える (2026-09-15)。保存経路
-  // (useSubsCrud.save) が返した「いま作ったレコード」を App が createdSubs で
-  // 渡してくるので、その日付が月フィルタの外なら月フィルタをその月へ動かす。
-  // 「すべて」(fMonth 空) はそのまま。subs の増減を見張る方式は、他端末の
-  // 同期で増えた分と区別できないのでやめた
+  // ＋ 新規代行 で期間の外の日付 (先月の欠勤の登録など) を登録すると、保存は
+  // されるのに一覧から消えて「登録できなかった」ように見える (2026-09-15)。
+  // 保存経路 (useSubsCrud.save) が返した「いま作ったレコード」を App が
+  // createdSubs で渡してくるので、どれも期間の外ならその月の指定へ動かす。
+  // 「すべて」はそのまま。subs の増減を見張る方式は、他端末の同期で増えた
+  // 分と区別できないのでやめた。期間は ref で読む (期間を変えるたびに
+  // この効果が走ると、ユーザーが選んだ期間を作ったレコードの月へ戻してしまう)
   useEffect(() => {
     if (!createdSubs || createdSubs.length === 0) return;
-    setFMonth((cur) => {
-      if (!cur) return cur; // 「すべて」は動かさない
-      const dates = createdSubs.map((s) => s.date || "").filter(Boolean).sort();
-      const month = dates[0]?.slice(0, 7);
-      if (!month || dates.some((d) => d.startsWith(cur))) return cur;
-      return month;
-    });
+    const period = listPeriodRef.current;
+    const dates = createdSubs.map((s) => s.date || "").filter(Boolean).sort();
+    if (dates.length === 0) return;
+    if (dates.some((d) => isDateInListPeriod(d, period))) return;
+    period.setMode("month");
+    period.setMonth(dates[0].slice(0, 7));
   }, [createdSubs]);
 
   // 合同を削除すると、その日の同 slot に紐づく回数補正 (skip 等) が
@@ -381,8 +395,7 @@ export function SubstituteView({
           subs={subs}
           slotMap={slotMap}
           allTeachers={allTeachers}
-          fMonth={fMonth}
-          setFMonth={setFMonth}
+          period={listPeriod}
           fStaff={fStaff}
           setFStaff={setFStaff}
           fStatus={fStatus}
@@ -407,31 +420,35 @@ export function SubstituteView({
         />
       )}
 
-      {tab === "adjustment" && (
-        <AdjustmentListTab
-          adjustments={adjustments}
-          slots={slots}
-          isAdmin={isAdmin}
-          partTimeStaff={partTimeStaff}
-          subjects={subjects}
-          teacherKana={teacherKana}
-          onDel={handleDelAdjustment}
-          onJumpToDate={onJumpToAbsenceFlow}
-          onOpenDayReschedule={onOpenDayReschedule}
-        />
+      {visitedTabs.has("adjustment") && (
+        <div hidden={tab !== "adjustment"}>
+          <AdjustmentListTab
+            adjustments={adjustments}
+            slots={slots}
+            isAdmin={isAdmin}
+            partTimeStaff={partTimeStaff}
+            subjects={subjects}
+            teacherKana={teacherKana}
+            onDel={handleDelAdjustment}
+            onJumpToDate={onJumpToAbsenceFlow}
+            onOpenDayReschedule={onOpenDayReschedule}
+          />
+        </div>
       )}
 
-      {tab === "override" && (
-        <OverrideListTab
-          sessionOverrides={sessionOverrides}
-          slots={slots}
-          isAdmin={isAdmin}
-          partTimeStaff={partTimeStaff}
-          subjects={subjects}
-          teacherKana={teacherKana}
-          onDel={onDelSessionOverride}
-          onJumpToDate={onJumpToAbsenceFlow}
-        />
+      {visitedTabs.has("override") && (
+        <div hidden={tab !== "override"}>
+          <OverrideListTab
+            sessionOverrides={sessionOverrides}
+            slots={slots}
+            isAdmin={isAdmin}
+            partTimeStaff={partTimeStaff}
+            subjects={subjects}
+            teacherKana={teacherKana}
+            onDel={onDelSessionOverride}
+            onJumpToDate={onJumpToAbsenceFlow}
+          />
+        </div>
       )}
 
       {tab === "tally" && (

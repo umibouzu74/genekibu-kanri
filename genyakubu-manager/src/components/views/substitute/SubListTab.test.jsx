@@ -32,8 +32,7 @@ function renderTab(props = {}) {
       subs={SUBS}
       slotMap={slotMap}
       allTeachers={["野口", "西岡", "杉原"]}
-      fMonth=""
-      setFMonth={() => {}}
+      period={{ mode: "all", month: "2026-09", setMode: () => {}, setMonth: () => {} }}
       fStaff=""
       setFStaff={() => {}}
       fStatus=""

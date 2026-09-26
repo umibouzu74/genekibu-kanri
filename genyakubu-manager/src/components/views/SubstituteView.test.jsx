@@ -106,39 +106,65 @@ function renderView(props = {}) {
   return { ...utils, onNew, rerenderWith };
 }
 
-const monthInput = () => screen.getByLabelText("月");
+const periodSelect = () => screen.getByLabelText("期間");
+const monthInput = () => screen.getByLabelText("表示する月");
+const PREV_MONTH = ym(-1);
+const tableHas = (text) => within(screen.getByRole("table")).queryByText(text);
 
-describe("SubstituteView の新規代行と月フィルタ", () => {
-  it("この画面から来月の代行を登録したら (createdSubs)、月フィルタをその月へ動かして一覧に出す", () => {
+describe("SubstituteView の新規代行と期間", () => {
+  it("既定は「今月以降」: 今月と来月の代行が出て、先月の代行は出ない", () => {
+    renderView({
+      subs: [
+        sub({ id: 1, date: `${PREV_MONTH}-10`, substitute: "先月の人" }),
+        sub({ id: 2, date: `${THIS_MONTH}-05`, substitute: "今月の人" }),
+        sub({ id: 3, date: `${NEXT_MONTH}-03`, substitute: "来月の人" }),
+      ],
+    });
+    expect(periodSelect().value).toBe("current");
+    expect(tableHas("先月の人")).toBeNull();
+    expect(tableHas("今月の人")).toBeInTheDocument();
+    expect(tableHas("来月の人")).toBeInTheDocument();
+  });
+
+  it("来月の代行を登録しても今月以降なら見えているので期間は動かさない", () => {
     const { rerenderWith } = renderView();
-    expect(monthInput().value).toBe(THIS_MONTH);
     const created = [sub({ id: 9, date: `${NEXT_MONTH}-03` })];
     // App 側のフォームが保存して subs が増え、作ったレコードが createdSubs で届く
     rerenderWith({ subs: created, createdSubs: created });
-    expect(monthInput().value).toBe(NEXT_MONTH);
-    expect(within(screen.getByRole("table")).getByText("西岡")).toBeInTheDocument();
+    expect(periodSelect().value).toBe("current");
+    expect(tableHas("西岡")).toBeInTheDocument();
   });
 
-  it("当月の代行なら月フィルタは動かさない", () => {
+  it("期間の外 (先月) の代行を登録したら、その月の指定へ動かして一覧に出す", () => {
     const { rerenderWith } = renderView();
-    const created = [sub({ id: 9, date: `${THIS_MONTH}-20` })];
+    const created = [sub({ id: 9, date: `${PREV_MONTH}-20` })];
     rerenderWith({ subs: created, createdSubs: created });
+    expect(periodSelect().value).toBe("month");
+    expect(monthInput().value).toBe(PREV_MONTH);
+    expect(tableHas("西岡")).toBeInTheDocument();
+  });
+
+  it("月を指定しているときは、その月の外に登録したらその月へ動かす", () => {
+    const { rerenderWith } = renderView();
+    fireEvent.change(periodSelect(), { target: { value: "month" } });
     expect(monthInput().value).toBe(THIS_MONTH);
-    expect(within(screen.getByRole("table")).getByText("西岡")).toBeInTheDocument();
+    const created = [sub({ id: 9, date: `${NEXT_MONTH}-03` })];
+    rerenderWith({ subs: created, createdSubs: created });
+    expect(monthInput().value).toBe(NEXT_MONTH);
   });
 
   it("他端末の同期で subs が増えただけ (createdSubs なし) なら動かさない", () => {
     const { rerenderWith } = renderView();
-    rerenderWith({ subs: [sub({ id: 9, date: `${NEXT_MONTH}-03` })] });
-    expect(monthInput().value).toBe(THIS_MONTH);
+    rerenderWith({ subs: [sub({ id: 9, date: `${PREV_MONTH}-03` })] });
+    expect(periodSelect().value).toBe("current");
   });
 
-  it("「すべて」(月フィルタ空) はそのまま", () => {
+  it("「すべて」はそのまま", () => {
     const { rerenderWith } = renderView({ subs: [sub({ id: 1 })] });
-    fireEvent.change(monthInput(), { target: { value: "" } });
-    const created = [sub({ id: 9, date: `${NEXT_MONTH}-03` })];
+    fireEvent.change(periodSelect(), { target: { value: "all" } });
+    const created = [sub({ id: 9, date: `${PREV_MONTH}-03` })];
     rerenderWith({ subs: [sub({ id: 1 }), ...created], createdSubs: created });
-    expect(monthInput().value).toBe("");
+    expect(periodSelect().value).toBe("all");
   });
 
   it("＋ 新規代行 と空表示の ＋ 代行を登録 はどちらも onNew を呼ぶ", () => {
@@ -226,5 +252,18 @@ describe("SubstituteView の講師・代行者フィルタ", () => {
       (o) => o.value
     );
     expect(values).toContain("臨時講師");
+  });
+});
+
+describe("SubstituteView のタブ切り替えと絞り込み", () => {
+  it("時間割調整一覧の絞り込みは、別のタブへ移って戻っても残る", () => {
+    const { container } = renderView();
+    fireEvent.click(screen.getByRole("button", { name: /^時間割調整一覧/ }));
+    const adjPeriod = () => container.querySelector("#adj-list-filter-period");
+    expect(adjPeriod().value).toBe("current");
+    fireEvent.change(adjPeriod(), { target: { value: "all" } });
+    fireEvent.click(screen.getByRole("button", { name: /^代行一覧/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^時間割調整一覧/ }));
+    expect(adjPeriod().value).toBe("all");
   });
 });

@@ -14,6 +14,7 @@ import { splitTeacherField } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { buildSubContactMessage, contactGroupKey } from "../../../utils/subContactMessage";
 import { useToasts } from "../../../hooks/useToasts";
+import { ListPeriodSelect } from "../../ListPeriodFilter";
 
 // クリップボードへ書く。navigator.clipboard は https / localhost でしか
 // 使えないので、使えない環境では textarea + execCommand に落とす。
@@ -181,8 +182,8 @@ export function SubListTab({
   subs,
   slotMap,
   allTeachers,
-  fMonth,
-  setFMonth,
+  // 期間 (hooks/useListPeriod。今月以降 / 月を指定 / すべて)
+  period,
   fStaff,
   setFStaff,
   fStatus,
@@ -352,21 +353,7 @@ export function SubListTab({
           alignItems: "flex-end",
         }}
       >
-        <div>
-          <label
-            htmlFor="sub-list-filter-month"
-            style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
-          >
-            月
-          </label>
-          <input
-            id="sub-list-filter-month"
-            type="month"
-            value={fMonth}
-            onChange={(e) => setFMonth(e.target.value)}
-            style={{ ...S.input, width: "auto" }}
-          />
-        </div>
+        <ListPeriodSelect period={period} idPrefix="sub-list-filter" />
         <div>
           <label
             htmlFor="sub-list-filter-staff"
@@ -415,7 +402,7 @@ export function SubListTab({
         </div>
         <button
           onClick={() => {
-            setFMonth("");
+            period.setMode("all");
             setFStaff("");
             setFStatus("");
           }}
@@ -481,11 +468,11 @@ export function SubListTab({
                 flexWrap: "wrap",
               }}
             >
-              {(fMonth || fStaff || fStatus) && (
+              {(period.mode !== "all" || fStaff || fStatus) && (
                 <button
                   type="button"
                   onClick={() => {
-                    setFMonth("");
+                    period.setMode("all");
                     setFStaff("");
                     setFStatus("");
                   }}

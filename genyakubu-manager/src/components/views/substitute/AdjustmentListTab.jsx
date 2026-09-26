@@ -5,6 +5,9 @@ import { sortTeacherNames } from "../../../utils/teacherKana";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
+import { useListPeriod } from "../../../hooks/useListPeriod";
+import { ListPeriodSelect } from "../../ListPeriodFilter";
+import { isDateInListPeriod } from "../../../utils/listPeriod";
 
 // 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替 / コマ休講) を月 / 講師 / 種別で
 // フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
@@ -131,10 +134,8 @@ export function AdjustmentListTab({
   onJumpToDate,
   onOpenDayReschedule,
 }) {
-  const now = new Date();
-  const [fMonth, setFMonth] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-  );
+  // 期間 (今月以降 / 月を指定 / すべて)。代行一覧・休講などの一覧と同じ
+  const period = useListPeriod();
   const [fTeacher, setFTeacher] = useState("");
   const [fType, setFType] = useState("");
   // sortBy: "date" (源泉日昇順) / "createdAt-desc" (作成日時 新→古)
@@ -163,10 +164,10 @@ export function AdjustmentListTab({
   const filtered = useMemo(() => {
     let r = (adjustments || []).filter((a) => TYPE_META[a.type]);
     if (fType) r = r.filter((a) => a.type === fType);
-    if (fMonth) {
+    if (period.mode !== "all") {
       r = r.filter((a) => {
-        if (a.date?.startsWith(fMonth)) return true;
-        if (a.type === "reschedule" && a.targetDate?.startsWith(fMonth)) return true;
+        if (isDateInListPeriod(a.date, period)) return true;
+        if (a.type === "reschedule" && isDateInListPeriod(a.targetDate, period)) return true;
         return false;
       });
     }
@@ -195,7 +196,7 @@ export function AdjustmentListTab({
       if (c !== 0) return c;
       return (a.id || 0) - (b.id || 0);
     });
-  }, [adjustments, fMonth, fTeacher, fType, slotMap, sortBy]);
+  }, [adjustments, period, fTeacher, fType, slotMap, sortBy]);
 
   const totalCount = useMemo(
     () => (adjustments || []).filter((a) => TYPE_META[a.type]).length,
@@ -217,21 +218,7 @@ export function AdjustmentListTab({
           alignItems: "flex-end",
         }}
       >
-        <div>
-          <label
-            htmlFor="adj-list-filter-month"
-            style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
-          >
-            月
-          </label>
-          <input
-            id="adj-list-filter-month"
-            type="month"
-            value={fMonth}
-            onChange={(e) => setFMonth(e.target.value)}
-            style={{ ...S.input, width: "auto" }}
-          />
-        </div>
+        <ListPeriodSelect period={period} idPrefix="adj-list-filter" />
         <div>
           <label
             htmlFor="adj-list-filter-teacher"
@@ -279,7 +266,7 @@ export function AdjustmentListTab({
         </div>
         <button
           onClick={() => {
-            setFMonth("");
+            period.setMode("all");
             setFTeacher("");
             setFType("");
           }}
@@ -404,10 +391,10 @@ export function AdjustmentListTab({
                 // 「源泉日: YYYY-MM-DD だけど振替先が表示月」と一目で分かるよう
                 // targetDate にも小さな "★" バッジを付ける。
                 const matchedViaTargetDate =
-                  Boolean(fMonth) &&
+                  period.mode !== "all" &&
                   adj.type === "reschedule" &&
-                  !adj.date?.startsWith(fMonth) &&
-                  Boolean(adj.targetDate?.startsWith(fMonth));
+                  !isDateInListPeriod(adj.date, period) &&
+                  isDateInListPeriod(adj.targetDate, period);
                 return (
                   <tr
                     key={adj.id}
