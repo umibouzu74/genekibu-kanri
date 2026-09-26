@@ -272,16 +272,31 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
  * @returns {boolean}
  */
 export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
-  if (!displayCutoff || !slot) return false;
-  const group = findGroupForGrade(slot.grade, displayCutoff.groups);
-  const cohort = findCohortCutoff(slot, displayCutoff.cohorts);
-
-  const startDate = group?.startDate || null;
-  const endDate = (cohort && cohort.date) || group?.date || null;
-
+  const { startDate, endDate } = getSlotCutoffRange(slot, displayCutoff);
   if (startDate && dateStr < startDate) return true;
   if (endDate && dateStr > endDate) return true;
   return false;
+}
+
+/**
+ * isSlotBeyondCutoff が見ている窓そのもの (コマ 1 つぶんの表示期間)。
+ *   - startDate: 学年グループの開始日
+ *   - endDate:   コース別終講日。無ければ学年グループの終了日
+ * 未設定の端は null (その側には制限なし)。iCal 書き出しの DTSTART / UNTIL
+ * のように「期間として」要るところはここから引き、窓の決め方を
+ * 書き起こさない (isSlotBeyondCutoff と食い違わせない)。
+ * @param {import("../types").Slot} slot
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @returns {{startDate: string | null, endDate: string | null}}
+ */
+export function getSlotCutoffRange(slot, displayCutoff) {
+  if (!displayCutoff || !slot) return { startDate: null, endDate: null };
+  const group = findGroupForGrade(slot.grade, displayCutoff.groups);
+  const cohort = findCohortCutoff(slot, displayCutoff.cohorts);
+  return {
+    startDate: group?.startDate || null,
+    endDate: (cohort && cohort.date) || group?.date || null,
+  };
 }
 
 /**

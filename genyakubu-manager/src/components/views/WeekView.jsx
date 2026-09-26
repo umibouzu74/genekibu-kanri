@@ -23,6 +23,7 @@ import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { upcomingExtraLessons } from "../../utils/extraLessons";
 import { EXTRA_LESSON_COLOR } from "../../constants/colors";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import { useOptionalToasts } from "../../hooks/useToasts";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
 import {
@@ -169,6 +170,7 @@ export function WeekView({
   onChangeVisibility,
   availableTags = [],
 }) {
+  const toasts = useOptionalToasts();
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const showSpecial = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
@@ -598,9 +600,18 @@ export function WeekView({
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           <button
             type="button"
-            onClick={() => exportTeacherIcs(teacher, slots, biweeklyAnchors)}
+            onClick={() => {
+              // 繰り返しの終わり (時間割・表示期間の終了日) と抜け (休講など) は
+              // 画面の第N回と同じ sessionCtx で決める。期が終わったコマしか
+              // 無いと何も書き出さないので、黙って終わらせず理由を出す
+              if (!exportTeacherIcs(teacher, slots, sessionCtx)) {
+                toasts?.info(
+                  `${teacher} の今後の授業が無いので iCal を書き出しませんでした (時間割・表示期間の終了後など)`
+                );
+              }
+            }}
             style={{ ...S.btn(false), fontSize: 11 }}
-            title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
+            title="Google Calendar に取り込み可能な iCal ファイルをダウンロード (時間割・表示期間の終了日まで。休講日などは除く)"
           >
             📅 iCalエクスポート
           </button>
