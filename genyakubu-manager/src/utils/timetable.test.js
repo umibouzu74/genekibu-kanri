@@ -7,6 +7,7 @@ import {
   filterSlotsForDate,
   isBeyondCutoff,
   isSlotBeyondCutoff,
+  getSlotCutoffRange,
   isEntireDayBeyondCutoff,
   getDayCutoffKind,
   summarizeCutoffGroups,
@@ -327,6 +328,25 @@ describe("isSlotBeyondCutoff", () => {
   it("returns false when displayCutoff or slot is missing", () => {
     expect(isSlotBeyondCutoff("2026-07-20", slot(), null)).toBe(false);
     expect(isSlotBeyondCutoff("2026-07-20", null, cutoff)).toBe(false);
+  });
+
+  // getSlotCutoffRange は isSlotBeyondCutoff と同じ窓を期間として返す
+  // (iCal の DTSTART / UNTIL 用)
+  it("getSlotCutoffRange: グループ開始日 〜 コース終講日 (無ければグループ終了日)", () => {
+    expect(getSlotCutoffRange(slot({ grade: "高1", subj: "高松西 数学" }), cutoff)).toEqual({
+      startDate: "2026-04-07",
+      endDate: "2026-07-10",
+    });
+    expect(getSlotCutoffRange(slot({ grade: "高1", subj: "高松一 数学" }), cutoff)).toEqual({
+      startDate: "2026-04-07",
+      endDate: "2026-07-16",
+    });
+    // どのグループにも属さない学年 / 設定なしは制限なし
+    expect(getSlotCutoffRange(slot({ grade: "附中" }), cutoff)).toEqual({
+      startDate: null,
+      endDate: null,
+    });
+    expect(getSlotCutoffRange(slot(), null)).toEqual({ startDate: null, endDate: null });
   });
 });
 
