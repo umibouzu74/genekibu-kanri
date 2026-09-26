@@ -12,6 +12,11 @@ import {
   summarizeCutoffGroups,
   findUngroupedGrades,
   getCutoffGroupLabelsWithSlots,
+  isTimetableInEffectOn,
+  getTimetableStatusOn,
+  pickDefaultTimetableId,
+  resolveActiveTimetableId,
+  suggestTimetableSwitch,
 } from "./timetable";
 
 describe("expandGradeRange", () => {
@@ -128,6 +133,85 @@ describe("filterSlotsForDate", () => {
     const result = filterSlotsForDate(slots, "2026-08-01", timetables);
     // slot 1 (timetableId=2, ends 07-18) excluded; slot 2 (default, no bounds) included
     expect(result.map((s) => s.id)).toEqual([2]);
+  });
+});
+
+// ヘッダの時間割セレクタ: 期切替のあと端末が旧期を表示したままになるのを
+// 気付かせる / 選んでいない端末は今日有効な時間割を既定にする
+describe("時間割セレクタの状態と既定", () => {
+  const TERM1 = { id: 1, name: "1学期", type: "regular", startDate: "2026-04-01", endDate: "2026-08-31", grades: [] };
+  const TERM2 = { id: 2, name: "2学期", type: "regular", startDate: "2026-09-01", endDate: null, grades: [] };
+  const TERM3 = { id: 3, name: "3学期", type: "regular", startDate: "2027-01-08", endDate: null, grades: [] };
+  const CHU3 = { id: 4, name: "中3 2学期", type: "regular", startDate: "2026-09-01", endDate: null, grades: ["中3"] };
+
+  it("学年を絞った時間割も自分の対象学年で見るので、期間の内側なら有効", () => {
+    // isTimetableActiveForDate を別の学年で引くと false になるケース
+    expect(isTimetableActiveForDate(CHU3, "2026-09-26", "中1")).toBe(false);
+    expect(isTimetableInEffectOn(CHU3, "2026-09-26")).toBe(true);
+    expect(isTimetableInEffectOn(CHU3, "2026-08-31")).toBe(false);
+    expect(isTimetableInEffectOn(null, "2026-09-26")).toBe(false);
+  });
+
+  it("状態は 有効 / 開始前 / 終了 (境界日は有効、空の側は無制限)", () => {
+    expect(getTimetableStatusOn(TERM1, "2026-08-31")).toBe("active");
+    expect(getTimetableStatusOn(TERM1, "2026-09-01")).toBe("ended");
+    expect(getTimetableStatusOn(TERM2, "2026-08-31")).toBe("upcoming");
+    expect(getTimetableStatusOn(TERM2, "2099-12-31")).toBe("active");
+    const noBounds = { id: 9, name: "デフォルト", type: "regular", startDate: null, endDate: null, grades: [] };
+    expect(getTimetableStatusOn(noBounds, "2026-09-26")).toBe("active");
+  });
+
+  it("既定は今日有効な時間割の先頭。どれも有効でなければ従来どおり id=1", () => {
+    expect(pickDefaultTimetableId([TERM1, TERM2], "2026-09-26")).toBe(2);
+    expect(pickDefaultTimetableId([TERM1, TERM2], "2026-05-01")).toBe(1);
+    // 複数有効なら並び順の先頭 (どれが本命かは推測しない)
+    expect(pickDefaultTimetableId([TERM1, CHU3, TERM2], "2026-09-26")).toBe(4);
+    // 夏休みのように今日有効なものが無い → id=1
+    const summer = [{ ...TERM1, endDate: "2026-07-20" }, TERM2];
+    expect(pickDefaultTimetableId(summer, "2026-08-10")).toBe(1);
+    // id=1 が無ければ先頭 (セレクタの表示のフォールバックと揃える)
+    expect(pickDefaultTimetableId([{ ...TERM3, endDate: "2027-03-20" }, { ...TERM2, id: 5, endDate: "2026-12-20" }], "2027-04-01")).toBe(3);
+    expect(pickDefaultTimetableId([], "2026-09-26")).toBe(1);
+  });
+
+  it("保存された選択は今日有効でなくても切り替えない", () => {
+    expect(resolveActiveTimetableId([TERM1, TERM2], 1, "2026-09-26")).toBe(1);
+    expect(resolveActiveTimetableId([TERM1, TERM2], 2, "2026-05-01")).toBe(2);
+  });
+
+  it("保存が無い / 保存した時間割がもう無いときは今日有効な時間割", () => {
+    expect(resolveActiveTimetableId([TERM1, TERM2], null, "2026-09-26")).toBe(2);
+    expect(resolveActiveTimetableId([TERM1, TERM2], undefined, "2026-05-01")).toBe(1);
+    // 別の端末で削除された時間割を指したままだと集計ビューが空になる
+    expect(resolveActiveTimetableId([TERM1, TERM2], 7, "2026-09-26")).toBe(2);
+  });
+
+  it("表示中が終了していて今日有効な時間割があれば、切り替え先を出す", () => {
+    const s = suggestTimetableSwitch([TERM1, TERM2], 1, "2026-09-26");
+    expect(s.current.id).toBe(1);
+    expect(s.status).toBe("ended");
+    expect(s.suggestion.id).toBe(2);
+    expect(s.otherCount).toBe(0);
+  });
+
+  it("開始前の時間割を表示中でも出す (status = upcoming)", () => {
+    const s = suggestTimetableSwitch([TERM1, TERM2], 2, "2026-08-25");
+    expect(s.status).toBe("upcoming");
+    expect(s.suggestion.id).toBe(1);
+  });
+
+  it("表示中が有効 / 他に有効な時間割が無いときは出さない", () => {
+    expect(suggestTimetableSwitch([TERM1, TERM2], 2, "2026-09-26")).toBeNull();
+    // 1学期終了後・3学期開始前で他に有効なものが無い
+    const t2Ended = { ...TERM2, endDate: "2026-12-20" };
+    expect(suggestTimetableSwitch([TERM1, t2Ended, TERM3], 2, "2026-12-28")).toBeNull();
+    expect(suggestTimetableSwitch([TERM1, TERM2], 99, "2026-09-26")).toBeNull();
+  });
+
+  it("有効な候補が複数なら並び順の先頭 + 残りの件数", () => {
+    const s = suggestTimetableSwitch([TERM1, CHU3, TERM2], 1, "2026-09-26");
+    expect(s.suggestion.id).toBe(4);
+    expect(s.otherCount).toBe(1);
   });
 });
 

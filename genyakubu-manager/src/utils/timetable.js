@@ -103,6 +103,112 @@ export function filterSlotsByActiveTimetable(slots, timetables, activeTimetableI
   return slots.filter((s) => (s.timetableId ?? 1) === activeId);
 }
 
+// ─── ヘッダの時間割セレクタ (集計ベースのビューの「現在の時間割」) ──────
+// 選択は端末ごと (localStorage) なので、期切替のあと各端末が旧期を表示した
+// まま気付かない、が起きる (CLAUDE.md「期切替の運用」の集計ベースの経路)。
+// セレクタの選択肢に「今日有効 / 終了 / 開始前」を出し、表示中の時間割が
+// 今日有効でないときは切り替えを促すための純関数。
+
+/**
+ * 時間割が指定日に有効か (学年を問わない版)。
+ * isTimetableActiveForDate は (日付, 学年) で見るが、セレクタで知りたいのは
+ * 「その時間割が自分の対象学年にとって有効か」。学年を絞った時間割
+ * (grades: ["中3"]) を別の学年で引くと日付の内側でも false になるので、
+ * 対象学年の先頭 (grades が空 = 全学年なら何を渡しても一致) を渡して
+ * 日付の判定だけを効かせる。日付の解釈 (空 = 無制限、境界日を含む) を
+ * isTimetableActiveForDate と一本化するため、ここで日付を比べ直さない。
+ * @param {import("../types").Timetable | null | undefined} timetable
+ * @param {string} dateStr
+ * @returns {boolean}
+ */
+export function isTimetableInEffectOn(timetable, dateStr) {
+  if (!timetable) return false;
+  const grades = Array.isArray(timetable.grades) ? timetable.grades : [];
+  return isTimetableActiveForDate(timetable, dateStr, grades[0] ?? "");
+}
+
+/**
+ * 指定日から見た時間割の状態。
+ *   - "active":   有効 (期間の内側。開始日・終了日が空の側は無制限)
+ *   - "upcoming": 開始前 (startDate > 日付)
+ *   - "ended":    終了 (endDate < 日付)
+ * @param {import("../types").Timetable} timetable
+ * @param {string} dateStr
+ * @returns {"active" | "upcoming" | "ended"}
+ */
+export function getTimetableStatusOn(timetable, dateStr) {
+  if (isTimetableInEffectOn(timetable, dateStr)) return "active";
+  // 学年は自分の対象学年で見ているので、有効でない理由は日付だけ。
+  // 開始前か終了後かを出し分ける (有効かどうかの判定は上で済んでいる)
+  if (timetable?.startDate && dateStr < timetable.startDate) return "upcoming";
+  return "ended";
+}
+
+/**
+ * この端末でまだ時間割を選んでいない (localStorage に保存が無い) ときの既定。
+ * 今日有効な時間割があればその先頭 (並びは時間割管理の順 = セレクタの順)、
+ * 無ければ従来どおり id=1 (デフォルト時間割。無いときは先頭)。
+ * 期切替で前の期に終了日を入れてあれば今日有効なのは 1 つなので、複数が
+ * 有効になるのは学年を分けた時間割を並走させている場合だけ。そのときに
+ * 「どれが本命か」を推測する規則は足さず、並び順で決める。
+ * @param {import("../types").Timetable[]} timetables
+ * @param {string} dateStr
+ * @returns {number}
+ */
+export function pickDefaultTimetableId(timetables, dateStr) {
+  if (!Array.isArray(timetables) || timetables.length === 0) return 1;
+  const inEffect = timetables.find((t) => isTimetableInEffectOn(t, dateStr));
+  if (inEffect) return inEffect.id;
+  return timetables.some((t) => t.id === 1) ? 1 : timetables[0].id;
+}
+
+/**
+ * 集計ベースのビューに使う時間割 id を決める。
+ * 保存された選択 (savedId) があればそれを使い、**勝手に切り替えない**
+ * (今日有効でなくても。気付かせるのはセレクタの注意書きの役目)。
+ * 保存が無い / 保存された時間割がもう無い (別の端末で削除された等) ときは
+ * pickDefaultTimetableId。後者で空の画面を出さないため。
+ * @param {import("../types").Timetable[]} timetables
+ * @param {number | null | undefined} savedId
+ * @param {string} dateStr
+ * @returns {number}
+ */
+export function resolveActiveTimetableId(timetables, savedId, dateStr) {
+  if (savedId != null) {
+    if (!Array.isArray(timetables) || timetables.some((t) => t.id === savedId)) {
+      return savedId;
+    }
+  }
+  return pickDefaultTimetableId(timetables, dateStr);
+}
+
+/**
+ * 表示中の時間割が今日有効でなく、かつ他に今日有効な時間割があるとき、
+ * 切り替え先の候補を返す (それ以外は null)。候補が複数あるときは並び順の
+ * 先頭を出し、残りの件数を otherCount で返す (どれが本命かは推測しない)。
+ * @param {import("../types").Timetable[]} timetables
+ * @param {number} activeId
+ * @param {string} dateStr
+ * @returns {{
+ *   current: import("../types").Timetable,
+ *   status: "upcoming" | "ended",
+ *   suggestion: import("../types").Timetable,
+ *   otherCount: number,
+ * } | null}
+ */
+export function suggestTimetableSwitch(timetables, activeId, dateStr) {
+  if (!Array.isArray(timetables)) return null;
+  const current = timetables.find((t) => t.id === activeId);
+  if (!current) return null;
+  const status = getTimetableStatusOn(current, dateStr);
+  if (status === "active") return null;
+  const candidates = timetables.filter(
+    (t) => t.id !== activeId && isTimetableInEffectOn(t, dateStr)
+  );
+  if (candidates.length === 0) return null;
+  return { current, status, suggestion: candidates[0], otherCount: candidates.length - 1 };
+}
+
 /**
  * Check if a given grade matches any grade in a cutoff group.
  * @param {string} grade
