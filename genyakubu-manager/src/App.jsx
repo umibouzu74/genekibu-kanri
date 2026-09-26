@@ -26,7 +26,8 @@ import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
-import { filterSlotsByActiveTimetable } from "./utils/timetable";
+import { filterSlotsByActiveTimetable, resolveActiveTimetableId } from "./utils/timetable";
+import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessons } from "./utils/builderLessons";
@@ -321,19 +322,38 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  const [activeTimetableId, setActiveTimetableId] = useState(() => {
+  // ヘッダの時間割セレクタ = 集計ベースのビュー (週間・月間・一覧など) の
+  // 「現在の時間割」。選択は端末ごとに localStorage へ保存する。
+  // null = この端末ではまだ選んでいない (保存が無い)。そのときは固定の id=1
+  // ではなく今日有効な時間割を表示する (utils/timetable.resolveActiveTimetableId)。
+  // この既定は保存せず毎回導出する — 選んでいない端末は期切替の後も今の期に
+  // 追従し、時間割が Firebase から後で届いても初期化時の値に固まらない。
+  // 保存された選択は今日有効でなくても勝手に切り替えない (選んだのはその
+  // 端末の人。気付かせるのはセレクタの注意書きの役目)。
+  const [savedTimetableId, setSavedTimetableId] = useState(() => {
     try {
       const raw = localStorage.getItem(LS.activeTimetableId);
       const n = raw == null ? NaN : Number(raw);
-      return Number.isFinite(n) && n > 0 ? n : 1;
+      return Number.isFinite(n) && n > 0 ? n : null;
     } catch {
-      return 1;
+      return null;
     }
   });
+  const todayStr = useToday();
+  const activeTimetableId = useMemo(
+    () => resolveActiveTimetableId(timetables, savedTimetableId, todayStr),
+    [timetables, savedTimetableId, todayStr]
+  );
 
   const changeActiveTimetable = useCallback((id) => {
-    setActiveTimetableId(id);
+    setSavedTimetableId(id);
     try { localStorage.setItem(LS.activeTimetableId, String(id)); } catch { /* quota */ }
+  }, []);
+  // 表示中の時間割を削除したら「選んでいない」に戻す (今日有効な時間割へ
+  // フォールバックする。以前は id=1 を保存していた)
+  const clearActiveTimetable = useCallback(() => {
+    setSavedTimetableId(null);
+    try { localStorage.removeItem(LS.activeTimetableId); } catch { /* private mode 等 */ }
   }, []);
 
   // ─── Runtime migration: biweeklyBase → biweeklyAnchors ─────────
@@ -387,8 +407,8 @@ export default function App() {
     timetables, saveTimetables, slots, saveSlots,
     classSets, saveClassSets,
     onRemoveActive: useCallback((deletedId) => {
-      if (activeTimetableId === deletedId) changeActiveTimetable(1);
-    }, [activeTimetableId, changeActiveTimetable]),
+      if (activeTimetableId === deletedId) clearActiveTimetable();
+    }, [activeTimetableId, clearActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
 
@@ -447,7 +467,9 @@ export default function App() {
     setShowDataMgr,
     setSelected,
     setView,
-    setActiveTimetableId,
+    // インポート / 初期化は従来どおり state だけを差し替える (localStorage には
+    // 書かない。初期化は保存キーを消した後に 1 を入れている)
+    setActiveTimetableId: setSavedTimetableId,
     defaultView: VIEWS.DASH,
   });
 
