@@ -27,6 +27,7 @@ const SHORTCUTS = [
       { keys: ["g", "v"], sequential: true, label: "バイト管理" },
       { keys: ["g", "b"], sequential: true, label: "講習時間割作成" },
       { keys: ["g", "r"], sequential: true, label: "通常時間割作成" },
+      { keys: ["g", "f"], sequential: true, label: "附属の授業予定" },
       {
         keys: ["g", "w"],
         sequential: true,

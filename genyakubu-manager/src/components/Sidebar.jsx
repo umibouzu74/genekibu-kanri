@@ -150,6 +150,9 @@ const MENU_CONFIG = [
       { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
     ],
   },
+  // 附属コースの月間予定 (以前は Excel で管理していたもの)。学校の予定表を
+  // 見ながら毎月組むので、時間割管理の子に埋めずに名前を出す
+  { key: VIEWS.FUZOKU_PLAN, icon: "🎒", label: "附属の授業予定" },
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え" },
   // ビューではなくダイアログを開く項目。日単位の振替は「その日の作業」なので
   // 欠勤組み換えの隣に置く (機能が一覧のタブの中に埋もれないように)。

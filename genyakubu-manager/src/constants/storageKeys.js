@@ -27,6 +27,9 @@ export const LS = {
   specialEvents: "genyakubu-special-events",
   extraLessons: "genyakubu-extra-lessons",
   daySchedules: "genyakubu-day-schedules",
+  // 附属の授業予定: 日付ごとの学校メモ (バス時刻) + 確認テストの手動指定。
+  // 時程・休みは daySchedules / holidays / examPeriods のまま (utils/fuzokuPlan)
+  fuzokuPlan: "genyakubu-fuzoku-plan",
   eventVisibility: "genyakubu-event-visibility",
   regularBuilderProject: "genyakubu-regular-builder-project",
   // 通常時間割作成の表示トグル (1 bit)。明示トグルの保存であり、利用統計から

@@ -123,6 +123,9 @@ const DayScheduleManager = lazy(() =>
 const EventCalendarView = lazy(() =>
   import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
 );
+const FuzokuPlanView = lazy(() =>
+  import("./components/views/FuzokuPlanView").then((m) => ({ default: m.FuzokuPlanView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -171,6 +174,7 @@ const VIEW_TITLES = {
   [VIEWS.STAFF]: "バイト管理",
   [VIEWS.BUILDER]: "講習時間割作成",
   [VIEWS.REGULAR_BUILDER]: "通常時間割作成",
+  [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
 };
 
 export default function App() {
@@ -222,6 +226,8 @@ export default function App() {
     saveExtraLessons,
     daySchedules,
     saveDaySchedules,
+    fuzokuPlan,
+    saveFuzokuPlan,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -557,6 +563,30 @@ export default function App() {
       selectView(VIEWS.HOLIDAYS, () =>
         setEventEditRequest({ kind: EVENT_KIND.EXTRA_LESSON, id })
       );
+    },
+    [selectView]
+  );
+
+  // 特別時程を対象 id で開く / 日付を入れて新規で開く (附属の授業予定から、
+  // プリセットで表せない時程を細かく決めるとき)
+  const openDayScheduleEditor = useCallback(
+    (id) => {
+      selectView(VIEWS.HOLIDAYS, () =>
+        setEventEditRequest({ kind: EVENT_KIND.DAY_SCHEDULE, id })
+      );
+    },
+    [selectView]
+  );
+  const openNewDaySchedule = useCallback(
+    (date) => {
+      selectView(VIEWS.HOLIDAYS, () => {
+        eventNewTokenRef.current += 1;
+        setEventNewRequest({
+          kind: EVENT_KIND.DAY_SCHEDULE,
+          token: eventNewTokenRef.current,
+          date: date || null,
+        });
+      });
     },
     [selectView]
   );
@@ -1221,6 +1251,29 @@ export default function App() {
                   setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
                 });
               }}
+            />
+          )}
+          {view === VIEWS.FUZOKU_PLAN && !selected && (
+            <FuzokuPlanView
+              slots={slots}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              daySchedules={daySchedules}
+              adjustments={adjustments}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              extraLessons={extraLessons}
+              fuzokuPlan={fuzokuPlan}
+              onSaveFuzokuPlan={saveFuzokuPlan}
+              onSaveDaySchedules={saveDaySchedules}
+              isAdmin={isAdmin}
+              onSelectDate={openDashboardAt}
+              onEditDaySchedule={isAdmin ? openDayScheduleEditor : undefined}
+              onAddDaySchedule={isAdmin ? openNewDaySchedule : undefined}
             />
           )}
           {view === VIEWS.BUILDER && !selected && <BuilderApp />}

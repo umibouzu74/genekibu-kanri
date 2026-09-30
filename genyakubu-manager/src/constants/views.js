@@ -18,4 +18,6 @@ export const VIEWS = Object.freeze({
   EVENTS: "events",
   BUILDER: "builder",
   REGULAR_BUILDER: "regular-builder",
+  // 附属コース (水曜) の月間予定: 時程・科目・確認テスト・学校メモ
+  FUZOKU_PLAN: "fuzoku-plan",
 });

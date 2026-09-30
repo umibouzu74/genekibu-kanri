@@ -14,6 +14,7 @@ import {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,
@@ -44,6 +45,7 @@ export function useDataIO({
   specialEvents,
   extraLessons,
   daySchedules,
+  fuzokuPlan,
   activeTimetableId,
   saveSlots,
   saveHolidays,
@@ -65,6 +67,7 @@ export function useDataIO({
   saveSpecialEvents,
   saveExtraLessons,
   saveDaySchedules,
+  saveFuzokuPlan,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -102,6 +105,7 @@ export function useDataIO({
           specialEvents,
           extraLessons,
           daySchedules,
+          fuzokuPlan,
           // インポート先で timetables に対する選択が宙吊りにならないよう
           // アクティブな時間割 ID も持ち出す
           activeTimetableId,
@@ -121,7 +125,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, fuzokuPlan, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -198,6 +202,11 @@ export function useDataIO({
           }
           if (Array.isArray(d.daySchedules) && saveDaySchedules) {
             saveDaySchedules(migrateDaySchedules(d.daySchedules));
+          }
+          // 旧バックアップには fuzokuPlan が無い (附属の授業予定より前) ので、
+          // 欠けているときは現状維持 — 空で上書きしない (teacherKana と同じ)
+          if (d.fuzokuPlan && typeof d.fuzokuPlan === "object" && !Array.isArray(d.fuzokuPlan) && saveFuzokuPlan) {
+            saveFuzokuPlan(migrateFuzokuPlan(d.fuzokuPlan));
           }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
@@ -283,6 +292,7 @@ export function useDataIO({
       saveSpecialEvents,
       saveExtraLessons,
       saveDaySchedules,
+      saveFuzokuPlan,
       setActiveTimetableId,
       setImporting,
       setShowDataMgr,
@@ -316,6 +326,7 @@ export function useDataIO({
     if (saveSpecialEvents) saveSpecialEvents([]);
     if (saveExtraLessons) saveExtraLessons([]);
     if (saveDaySchedules) saveDaySchedules([]);
+    if (saveFuzokuPlan) saveFuzokuPlan({ notes: {}, tests: {} });
     // localStorage キーの removeItem だけでは React state と Firebase 側が
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
     // (export / import には含まれるのに reset だけ漏れていた)
@@ -350,6 +361,7 @@ export function useDataIO({
     saveSpecialEvents,
     saveExtraLessons,
     saveDaySchedules,
+    saveFuzokuPlan,
     setActiveTimetableId,
     setSelected,
     setView,
@@ -366,6 +378,7 @@ export {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,

@@ -28,6 +28,7 @@ import type {
   ExamPrepSchedule,
   ExportBundle,
   ExtraLesson,
+  FuzokuPlan,
   Holiday,
   PartTimeStaffObject,
   ScheduleAdjustment,
@@ -41,7 +42,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -297,6 +298,35 @@ export function isDaySchedule(x: unknown): x is DaySchedule {
   return true;
 }
 
+export function isFuzokuPlan(x: unknown): x is FuzokuPlan {
+  if (!isObject(x)) return false;
+  // Firebase RTDB drops empty maps — notes / tests の欠落は空扱い
+  // (migrateFuzokuPlan が読み込み時に補う)。
+  if (x.notes !== undefined) {
+    if (!isObject(x.notes)) return false;
+    for (const [date, n] of Object.entries(x.notes)) {
+      if (!ISO_DATE_RE.test(date) || !isObject(n)) return false;
+      if (n.bus !== undefined && !isString(n.bus)) return false;
+      if (n.memo !== undefined && !isString(n.memo)) return false;
+    }
+  }
+  if (x.tests !== undefined) {
+    if (!isObject(x.tests)) return false;
+    for (const [date, byGrade] of Object.entries(x.tests)) {
+      if (!ISO_DATE_RE.test(date) || !isObject(byGrade)) return false;
+      for (const e of Object.values(byGrade)) {
+        if (!isObject(e)) return false;
+        if (e.none !== undefined && typeof e.none !== "boolean") return false;
+        if (e.subjects !== undefined) {
+          if (!Array.isArray(e.subjects)) return false;
+          if (!(e.subjects as unknown[]).every((v) => isString(v))) return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
   if (!isObject(x)) return false;
   if (!isNumber(x.examPeriodId)) return false;
@@ -541,6 +571,11 @@ export function validateExportBundle(
         error: `daySchedules[${bad}] の形式が不正です`,
         path: `daySchedules[${bad}]`,
       };
+  }
+
+  if (raw.fuzokuPlan != null) {
+    if (!isFuzokuPlan(raw.fuzokuPlan))
+      return { ok: false, error: "fuzokuPlan の形式が不正です" };
   }
 
   // ── Cross-entity referential integrity ────────────────────────────
@@ -880,6 +915,11 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             既存 adjustments は move/combine/reschedule のみなので変換
   //             不要 (v12 と同じく「cancel を理解する schema」の切れ目)。
   // 既存データは触らない。
+
+  // v18 → v19: fuzokuPlan (附属の授業予定: 学校メモ + 確認テストの手動指定)
+  //             を追加。**既定値で埋めない** — 旧いバックアップを読み込んだ
+  //             ときに今のメモ・科目指定を空で上書きしないため (teacherKana と
+  //             同じく「無ければ現状維持」。useDataIO の handleImport 参照)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

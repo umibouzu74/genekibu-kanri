@@ -7,6 +7,7 @@ import {
   isExamPeriod,
   isExamPrepSchedule,
   isExtraLesson,
+  isFuzokuPlan,
   isHoliday,
   isPartTimeStaffObject,
   isScheduleAdjustment,
@@ -1023,6 +1024,45 @@ describe("v15 → v16 migration: daySchedules 初期化", () => {
     });
     expect(v.ok).toBe(false);
     expect(v.error).toContain("daySchedules[0]");
+  });
+});
+
+describe("v18 → v19: fuzokuPlan (附属の授業予定)", () => {
+  const plan = {
+    notes: { "2026-10-07": { bus: "12:30×2 12:40×1", memo: "3時間授業" } },
+    tests: { "2026-10-07": { 附中1: { subjects: ["英", "数"] }, 附中2: { none: true } } },
+  };
+
+  it("旧いバックアップには既定値を埋めない (読み込んでも今のメモを消さない)", () => {
+    const out = migrateExportBundle({ schemaVersion: 18, slots: [] }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect("fuzokuPlan" in out).toBe(false);
+    expect(validateExportBundle(out).ok).toBe(true);
+  });
+
+  it("既存の fuzokuPlan はそのまま通る", () => {
+    const out = migrateExportBundle({ schemaVersion: 18, fuzokuPlan: plan }) as Record<
+      string,
+      unknown
+    >;
+    expect(out.fuzokuPlan).toEqual(plan);
+    expect(validateExportBundle(out).ok).toBe(true);
+  });
+
+  it("isFuzokuPlan: RTDB が消した空の map は許す / 形の崩れたものは弾く", () => {
+    expect(isFuzokuPlan(plan)).toBe(true);
+    expect(isFuzokuPlan({})).toBe(true);
+    expect(isFuzokuPlan({ notes: { "10/7": { bus: "15:30" } } })).toBe(false);
+    expect(isFuzokuPlan({ notes: { "2026-10-07": { bus: 1530 } } })).toBe(false);
+    expect(isFuzokuPlan({ tests: { "2026-10-07": { 附中1: { subjects: "英数" } } } })).toBe(false);
+    expect(isFuzokuPlan({ tests: { "2026-10-07": { 附中1: { none: "yes" } } } })).toBe(false);
+    expect(isFuzokuPlan([])).toBe(false);
+  });
+
+  it("validateExportBundle rejects malformed fuzokuPlan", () => {
+    const v = validateExportBundle({ fuzokuPlan: { notes: [] } });
+    expect(v.ok).toBe(false);
+    expect(v.error).toContain("fuzokuPlan");
   });
 });
 

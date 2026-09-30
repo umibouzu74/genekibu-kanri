@@ -3,11 +3,73 @@ import {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,
   migrateSubs,
+  normalizeFuzokuTestEntry,
 } from "./migrate";
+
+describe("migrateFuzokuPlan", () => {
+  it("RTDB が消した notes / tests を空の map で補う", () => {
+    expect(migrateFuzokuPlan(null)).toEqual({ notes: {}, tests: {} });
+    expect(migrateFuzokuPlan([])).toEqual({ notes: {}, tests: {} });
+    expect(migrateFuzokuPlan({})).toEqual({ notes: {}, tests: {} });
+    expect(migrateFuzokuPlan({ notes: { "2026-10-07": { bus: "15:30" } } })).toEqual({
+      notes: { "2026-10-07": { bus: "15:30" } },
+      tests: {},
+    });
+  });
+
+  it("空のメモ・日付でないキーを捨て、前後の空白を落とす", () => {
+    const out = migrateFuzokuPlan({
+      notes: {
+        "2026-10-07": { bus: " 12:30×2 12:40×1 ", memo: "3時間授業" },
+        "2026-10-14": { bus: "", memo: "  " },
+        "10/21": { bus: "15:30" },
+        "2026-10-28": "合唱祭",
+      },
+    });
+    expect(out.notes).toEqual({ "2026-10-07": { bus: "12:30×2 12:40×1", memo: "3時間授業" } });
+  });
+
+  it("確認テストは none を空配列でなく none: true で保つ", () => {
+    const out = migrateFuzokuPlan({
+      tests: {
+        "2026-10-07": {
+          附中1: { subjects: ["英", "数"] },
+          附中2: { none: true },
+          附中3: { subjects: [] }, // RTDB なら subjects ごと消えて {} で来る
+        },
+        "2026-10-14": { 附中1: {} },
+      },
+    });
+    expect(out.tests).toEqual({
+      "2026-10-07": { 附中1: { subjects: ["英", "数"] }, 附中2: { none: true } },
+    });
+  });
+
+  it("冪等", () => {
+    const once = migrateFuzokuPlan({
+      notes: { "2026-10-07": { memo: "合唱祭" } },
+      tests: { "2026-10-07": { 附中1: { subjects: ["英"] } } },
+    });
+    expect(migrateFuzokuPlan(once)).toEqual(once);
+  });
+});
+
+describe("normalizeFuzokuTestEntry", () => {
+  it("none を優先し、科目は重複と空を落とす", () => {
+    expect(normalizeFuzokuTestEntry({ none: true, subjects: ["英"] })).toEqual({ none: true });
+    expect(normalizeFuzokuTestEntry({ subjects: ["英", " 英", "", 3, "数"] })).toEqual({
+      subjects: ["英", "数"],
+    });
+    expect(normalizeFuzokuTestEntry({ subjects: [] })).toBe(null);
+    expect(normalizeFuzokuTestEntry(null)).toBe(null);
+    expect(normalizeFuzokuTestEntry("英")).toBe(null);
+  });
+});
 
 describe("migrateDisplayCutoff", () => {
   it("backfills an empty cohorts array when missing (Firebase drops [])", () => {
