@@ -101,6 +101,19 @@ describe("DayScheduleManager", () => {
     expect(saved[0].cancelTimes).toEqual([]);
   });
 
+  it("プリセット① は授業が 3 コマの日でも確認テスト (21:00) を読み替えない", () => {
+    // 4 限 (19:55) の無い日: 「先頭 4 コマ」にテストを混ぜると 21:00 → 20:00 になる
+    const { onSave } = renderManager({ slots: SLOTS.filter((s) => s.time !== "19:55-20:55") });
+    setDate("2026-10-07");
+    fireEvent.click(screen.getByText("① 50分授業 (17:00開始)"));
+    fireEvent.click(screen.getByText("登録"));
+    expect(onSave.mock.calls[0][0][0].timeMap).toEqual([
+      { from: "16:25-17:25", to: "17:00-17:50" },
+      { from: "17:35-18:35", to: "18:00-18:50" },
+      { from: "18:45-19:45", to: "19:00-19:50" },
+    ]);
+  });
+
   it("プリセット② 1限カット: 最初の時間帯が休講になる", () => {
     const { onSave } = renderManager();
     setDate("2026-10-07");

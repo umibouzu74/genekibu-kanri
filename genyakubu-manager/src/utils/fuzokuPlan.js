@@ -82,12 +82,14 @@ export function parseBusTimes(text) {
   return [...out].sort((a, b) => a - b);
 }
 
-// 近い便どうしをまとめる (間隔が gap 分以内なら同じ便)
+// 近い便どうしをまとめる (その便の**最初の時刻から** gap 分以内なら同じ便)。
+// 直前の便との差で数えると 15:30 / 16:00 / 16:30 のように 30 分おきの便が
+// 数珠つなぎに 1 本になり、1 時間後の便まで同じ便に入ってしまう
 export function clusterBusTimes(times, gap = BUS_CLUSTER_GAP_MIN) {
   const clusters = [];
   for (const t of [...(times || [])].sort((a, b) => a - b)) {
     const last = clusters[clusters.length - 1];
-    if (last && t - last[last.length - 1] <= gap) last.push(t);
+    if (last && t - last[0] <= gap) last.push(t);
     else clusters.push([t]);
   }
   return clusters;
@@ -307,11 +309,24 @@ export function rotationSubjects(pos, n = TEST_SUBJECTS_PER_WEEK) {
   return out;
 }
 
-// 手で選んだ科目をローテーションの順に並べる (pos から数えた距離順)。
-// "社" と "英" を選んだら 社→英 (英→社 にすると次の週が 英 から始まる)
+// 手で選んだ科目をローテーションの順に並べる。次の週は「最後の科目の次」
+// から始まるので、並びがそのまま次の週を決める。
+//   - ローテーション上で**続いている**選び方 (社・英 / 数・国 など) は、
+//     その並びの頭から (社→英。英→社 にすると次の週が 数 でなく 英 から
+//     始まる)。pos に関係なくこれが正しい
+//   - 飛び飛びの選び方 (英・国 など) は pos (その週の手前の位置。不明なら
+//     英) から数えた順
 export function sortByRotation(subjects, pos) {
-  const base = pos == null ? 0 : pos;
   const n = TEST_ROTATION.length;
+  const idxs = [
+    ...new Set((subjects || []).map((s) => TEST_ROTATION.indexOf(s)).filter((i) => i !== -1)),
+  ];
+  let base = pos == null ? 0 : pos;
+  if (idxs.length > 0 && idxs.length < n) {
+    const set = new Set(idxs);
+    const heads = idxs.filter((i) => !set.has((i - 1 + n) % n));
+    if (heads.length === 1) base = heads[0];
+  }
   const dist = (s) => {
     const idx = TEST_ROTATION.indexOf(s);
     return idx === -1 ? n : (idx - base + n) % n;

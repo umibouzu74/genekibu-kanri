@@ -31,8 +31,9 @@ const FUZOKU = [
   S(47, "19:55-20:55", "附中3", "国語", "松川"),
   S(250, "21:00-21:30", "附中", "確認テスト", "松川"),
 ];
-// 16:25 の授業と重ならないが、50分授業 (17:00-17:50) にすると石原が重なる
-const CHU3 = S(99, "17:40-18:30", "中3", "英語", "石原", { cls: "S", room: "501" });
+// 武下は附中1 の 1 限 (16:25-17:25) だけ。通常は重ならないが、50分授業
+// (17:00-17:50) にすると 17:40 の中3 と重なる
+const CHU3 = S(99, "17:40-18:30", "中3", "理科", "武下", { cls: "S", room: "501" });
 const SLOTS = [...FUZOKU, CHU3];
 
 const OCT_WEDS = ["2026-10-07", "2026-10-14", "2026-10-21", "2026-10-28"];
@@ -63,7 +64,7 @@ function makeCtx({
   };
 }
 
-function build({ year = 2026, month = 10, slots = SLOTS, fuzokuPlan, specialEvents, extraLessons, ...ctxOpts } = {}) {
+function build({ year = 2026, month = 10, slots = SLOTS, fuzokuPlan, specialEvents, extraLessons, subs, ...ctxOpts } = {}) {
   return buildFuzokuMonth({
     year,
     month,
@@ -72,6 +73,7 @@ function build({ year = 2026, month = 10, slots = SLOTS, fuzokuPlan, specialEven
     fuzokuPlan,
     specialEvents,
     extraLessons,
+    subs,
   });
 }
 const week = (m, date) => m.weeks.find((w) => w.date === date);
@@ -144,7 +146,33 @@ describe("buildFuzokuMonth: 時程", () => {
     expect(cell(w, 0, "附中2")).toMatchObject({ status: "held", time: "17:00-17:50", remapped: true });
     // テストは据え置き
     expect(w.testRow.time).toBe("21:00-21:30");
-    expect(w.conflicts.map((c) => [c.kind, c.value])).toEqual([["teacher", "石原"]]);
+    expect(w.conflicts.map((c) => [c.kind, c.value, c.a.id, c.aTime, c.b.id])).toEqual([
+      ["teacher", "武下", 36, "17:00-17:50", 99],
+    ]);
+    // 通常の週は重ならない
+    expect(week(build(), "2026-10-28").conflicts).toEqual([]);
+  });
+
+  it("講師の重なりは代行を入れた後で見る (本体の teacherConflicts と同じ)", () => {
+    // 中3 の武下に代行が付いていれば重ならない
+    const covered = [
+      { id: 1, date: "2026-10-28", slotId: 99, originalTeacher: "武下", substitute: "河野", status: "confirmed" },
+    ];
+    expect(week(build({ daySchedules: [COMPRESS], subs: covered }), "2026-10-28").conflicts).toEqual([]);
+    // 附中2 の代行に入った片岡は、自分の附中3 1 限と重なる
+    const doubled = [
+      { id: 2, date: "2026-10-07", slotId: 37, originalTeacher: "石原", substitute: "片岡", status: "confirmed" },
+    ];
+    const c = week(build({ subs: doubled }), "2026-10-07").conflicts;
+    expect(c.map((x) => [x.value, x.a.id, x.aRole, x.b.id, x.bRole])).toEqual([
+      ["片岡", 37, "sub", 38, "own"],
+    ]);
+  });
+
+  it("50分授業で新たに重なる教室も出す", () => {
+    const room = { ...CHU3, id: 98, teacher: "河野", room: "401" };
+    const w = week(build({ slots: [...FUZOKU, room], daySchedules: [COMPRESS] }), "2026-10-28");
+    expect(w.conflicts.map((c) => [c.kind, c.value, c.a.id, c.b.id])).toEqual([["room", "401", 36, 98]]);
   });
 
   it("1限カットの日は 1 限が「カット」", () => {
@@ -155,11 +183,13 @@ describe("buildFuzokuMonth: 時程", () => {
     expect(cell(w, 1, "附中1").status).toBe("held");
   });
 
-  it("コマ移動は特別時程の読み替えより優先", () => {
-    const move = { id: 5, type: "move", date: "2026-10-28", slotId: 37, targetTime: "16:00-17:00" };
+  it("コマ移動は特別時程の読み替えより優先 (重なりの判定も実効時刻で)", () => {
+    const move = { id: 5, type: "move", date: "2026-10-28", slotId: 36, targetTime: "16:00-16:50" };
     const w = week(build({ daySchedules: [COMPRESS], adjustments: [move] }), "2026-10-28");
-    expect(cell(w, 0, "附中2").time).toBe("16:00-17:00");
+    expect(cell(w, 0, "附中1").time).toBe("16:00-16:50");
     expect(w.rows[0].time).toBe("17:00-17:50");
+    // 武下の附中1 理科は 16:00-16:50 に動かしたので 中3 (17:40) とは重ならない
+    expect(w.conflicts).toEqual([]);
   });
 
   it("バスの提案と時程が食い違えば知らせる", () => {
@@ -237,6 +267,24 @@ describe("buildFuzokuMonth: 休み", () => {
     expect(w.gradeOff).toEqual({});
   });
 
+  it("合同で吸収された学年は休みにしない (相手のクラスで受けている)", () => {
+    const adjustments = [36, 39, 42, 45].map((id, i) => ({
+      id: i + 1,
+      type: "combine",
+      date: "2026-10-14",
+      slotId: id + 1,
+      combineSlotIds: [id],
+    }));
+    const m = build({
+      adjustments,
+      fuzokuPlan: { notes: {}, tests: { "2026-10-07": { 附中1: { subjects: ["英", "数"] } } } },
+    });
+    const w = week(m, "2026-10-14");
+    expect(cell(w, 0, "附中1")).toMatchObject({ status: "combined", reason: "合同" });
+    expect(w.gradeOff).toEqual({});
+    expect(w.testRow.cells["附中1"]).toMatchObject({ kind: "auto", subjects: ["国", "理"] });
+  });
+
   it("コマ休講と振替は理由つき", () => {
     const adjustments = [
       { id: 1, type: "cancel", date: "2026-10-07", slotId: 36, memo: "講師都合" },
@@ -300,6 +348,50 @@ describe("buildFuzokuMonth: 確認テスト", () => {
       ["auto", "国理"],
       ["auto", "社英"],
     ]);
+  });
+
+  it("同じ時間割のまま開始日 (回数の起点) を進めたら、その日から自動を止める", () => {
+    const displayCutoff = {
+      groups: [{ label: "中1・2", grades: ["附中1", "附中2"], startDate: "2026-10-14", date: null }],
+    };
+    const m = build({
+      displayCutoff,
+      fuzokuPlan: plan({ "2026-09-30": { 附中1: { subjects: ["英", "数"] } } }),
+    });
+    // 10/7 は開講前 (休み扱い)、10/14 からは新しい期なので未設定
+    expect(testCells(m, "附中1")).toEqual([
+      ["off", ""],
+      ["unset", ""],
+      ["unset", ""],
+      ["unset", ""],
+    ]);
+  });
+
+  it("学年共通のテストのコマは開講日でもオリエン扱いにしない", () => {
+    const displayCutoff = {
+      groups: [{ label: "附属", grades: ["附中1", "附中2", "附中3", "附中"], startDate: "2026-10-07", date: null }],
+    };
+    const m = build({
+      displayCutoff,
+      fuzokuPlan: plan({ "2026-10-07": { 附中1: { subjects: ["英", "数"] } } }),
+    });
+    const w = week(m, "2026-10-07");
+    expect(w.testRow).toMatchObject({ status: "held", time: "21:00-21:30" });
+    expect(w.testRow.cells["附中1"]).toMatchObject({ kind: "manual", held: true });
+    expect(w.testRow.cells["附中2"].kind).toBe("unset");
+    expect(testCells(m, "附中1")[1]).toEqual(["auto", "国理"]);
+  });
+
+  it("休みの日に手で決めた確認テストは数えて知らせる", () => {
+    const holidays = [
+      { id: 1, date: "2026-10-14", label: "学校行事", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    ];
+    const m = build({
+      holidays,
+      fuzokuPlan: plan({ "2026-10-14": { 附中1: { subjects: ["英", "数"] } } }),
+    });
+    expect(week(m, "2026-10-14").testRow.cells["附中1"]).toMatchObject({ kind: "manual", held: false });
+    expect(m.summary.testOnOffDay).toBe(1);
   });
 
   it("時間割 (期) が変わったら自動を止める", () => {

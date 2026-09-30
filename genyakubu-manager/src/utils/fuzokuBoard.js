@@ -4,6 +4,7 @@
 //   限 × 学年の科目 (読み替え後の時刻)・休み・カット
 //   確認テストの科目 (ローテーション + 手動指定)
 //   学校メモ (バス) と時程の提案
+//   附属のコマが絡む講師・教室の重なり
 // を 1 つのデータにまとめる。画面は components/views/FuzokuPlanView.jsx。
 //
 // **実施判定を書き起こさない。** コマが実施されるかは
@@ -24,6 +25,7 @@ import {
 } from "./adjustmentDisplay";
 import { examPeriodStopsClassesOn, isSlotCancelledByHoliday } from "./scheduleHelpers";
 import { findNewConflicts, resolveSlotDaySchedule } from "./daySchedules";
+import { collectTeacherAssignments, findTeacherConflicts } from "./teacherConflicts";
 import { extraLessonsOnDate } from "./extraLessons";
 import { migrateFuzokuPlan } from "./migrate";
 import { cutoffShortText } from "../constants/cutoffMessages";
@@ -48,10 +50,11 @@ export function monthRange(year, month) {
   return { start: `${year}-${pad2(month)}-01`, end: `${year}-${pad2(month)}-${pad2(last)}` };
 }
 
-// 休み・カットで「授業が無い」扱いの状態
+// 休み・カット・振替で「その日は授業が無い」扱いの状態
 const ABSENT = new Set(["off", "cancelled", "moved"]);
-// その学年がその日に来ている (確認テストを受ける) 扱いの状態
-const ATTENDS = new Set(["held", "orientation"]);
+// その学年がその日に来ている (確認テストを受ける) 扱いの状態。
+// 合同で吸収されたコマの生徒は相手のクラスで授業を受けているので来ている
+const ATTENDS = new Set(["held", "orientation", "combined"]);
 
 /**
  * バス欄からの提案と、実際の時程が食い違っているか。
@@ -72,6 +75,7 @@ export function isPatternAtOddsWithBus(suggestionKind, patternKind) {
  *   year: number, month: number,          // month は 1-12
  *   slots: object[],                      // 全コマ (学年を問わない。講師の重なりを見るため)
  *   ctx: object,                          // useSessionCtx の sessionCtx
+ *   subs?: object[],                      // 代行・欠勤 (講師の重なりは代行を入れた後で見る)
  *   specialEvents?: object[],
  *   extraLessons?: object[],
  *   fuzokuPlan?: object,
@@ -86,6 +90,7 @@ export function buildFuzokuMonth({
   ctx = {},
   specialEvents = [],
   extraLessons = [],
+  subs = [],
   fuzokuPlan,
 }) {
   const timetables = ctx.timetables || [];
@@ -167,7 +172,7 @@ export function buildFuzokuMonth({
           reason: `振替 → ${describeRescheduleTarget(out, { short: true, originalTeacher: s.teacher })}`,
         };
       } else if (idx.combineAbsorbedBySlot.has(s.id)) {
-        v = { status: "moved", reason: "合同" };
+        v = { status: "combined", reason: "合同" };
       } else if (isSlotHeldOnDate(s, d, ctx)) {
         v = { status: "held", time, remapped: time !== s.time };
       } else if (isSlotHeldOnDate(s, d, ctxNoOrientation)) {
@@ -178,6 +183,74 @@ export function buildFuzokuMonth({
     }
     statusCache.set(key, v);
     return v;
+  };
+
+  // ── 附属のコマが絡む重なり ───────────────────────────────────────
+  // 講師は本体共通の utils/teacherConflicts (代行・欠勤を入れた後の「その日に
+  // 実際に教える人」) で見る。教室は特別時程の読み替えで新たに重なるものだけ
+  // (daySchedules.findNewConflicts。元から同じ部屋を使う並列・合同は拾わない)。
+  // 時刻はどちらもセルと同じ実効時刻 (コマ移動 > 特別時程の読み替え)
+  const subsBySlotOn = (d) => {
+    const m = new Map();
+    for (const r of subs || []) {
+      if (!r || r.date !== d) continue;
+      if (!m.has(r.slotId)) m.set(r.slotId, []);
+      m.get(r.slotId).push(r);
+    }
+    return m;
+  };
+  const conflictsOn = (d) => {
+    // 休み・カット・振替で出る・合同で吸収された側は講師も教室も使わない
+    const occupying = allDaySlots(d).filter((s) => {
+      const st = slotStatus(s, d).status;
+      return st === "held" || st === "orientation";
+    });
+    const timeBySlot = new Map();
+    for (const s of occupying) timeBySlot.set(s.id, slotStatus(s, d).time || s.time);
+    const out = [];
+    const seen = new Set();
+    const byTeacher = findTeacherConflicts(
+      collectTeacherAssignments(occupying, d, {
+        subsBySlot: subsBySlotOn(d),
+        timeBySlot,
+        biweeklyAnchors: ctx.biweeklyAnchors || [],
+        holidays,
+        examPeriods,
+      })
+    );
+    for (const s of occupying) {
+      if (!isFuzokuGrade(s.grade)) continue;
+      for (const c of byTeacher.get(s.id) || []) {
+        const key = [c.teacher, ...[s.id, c.other.id].sort((x, y) => x - y)].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          kind: "teacher",
+          value: c.teacher,
+          a: s,
+          aTime: timeBySlot.get(s.id),
+          aRole: c.role,
+          b: c.other,
+          bTime: c.otherTime,
+          bRole: c.otherRole,
+        });
+      }
+    }
+    const rooms = findNewConflicts(occupying, (s) => {
+      const st = slotStatus(s, d);
+      return st.remapped ? { time: st.time } : null;
+    }).filter((c) => c.kind === "room" && (isFuzokuGrade(c.a.grade) || isFuzokuGrade(c.b.grade)));
+    for (const c of rooms) {
+      out.push({
+        kind: "room",
+        value: c.value,
+        a: c.a,
+        aTime: timeBySlot.get(c.a.id) || c.a.time,
+        b: c.b,
+        bTime: timeBySlot.get(c.b.id) || c.b.time,
+      });
+    }
+    return out;
   };
 
   // ── 対象の日付と学年 ─────────────────────────────────────────────
@@ -192,6 +265,13 @@ export function buildFuzokuMonth({
   const grades = [...gradeSet].sort(compareFuzokuGrades);
 
   // ── 確認テスト (学年ごとに日付順でたどる) ─────────────────────────
+  // 確認テストのコマの状態。学年共通のテスト (学年 "附中") は、その学年の
+  // コマが自分 1 つしか無いので、"附中" を学年グループに入れると開講日に
+  // 「1 限 = オリエン」と判定される。テストはオリエンにならないので実施扱い
+  const testStatus = (t, d) => {
+    const st = slotStatus(t, d);
+    return st.status === "orientation" ? { ...st, status: "held" } : st;
+  };
   const testHeld = (g, d) => {
     const ds = fuzokuDaySlots(d);
     const attends = ds.some(
@@ -202,14 +282,18 @@ export function buildFuzokuMonth({
       (s) =>
         isFuzokuTestSlot(s) &&
         testSlotAppliesToGrade(s, g) &&
-        slotStatus(s, d).status === "held"
+        testStatus(s, d).status === "held"
     );
   };
-  // 期の識別子: 時間割 + 回数の数え直しの起点 (第N回と同じ区切り)
+  // 期の識別子: 時間割 + 回数の数え直しの起点 (第N回と同じ区切り)。
+  // 起点 (学年グループの開始日と時間割の開始日の遅い方) は設定の値で日付に
+  // よらないので、**起点より前の日は別の期**として扱う。同じ時間割のまま
+  // 2学期の開始日を入れたときも、1学期の続きで自動に回さない
   const scopeKeyOf = (g) => (d) => {
     const s = fuzokuDaySlots(d).find((x) => isFuzokuLessonSlot(x) && x.grade === g);
     if (!s) return null;
-    return `${s.timetableId ?? 1}|${getSlotCountStartDate(s, ctx) || ""}`;
+    const start = getSlotCountStartDate(s, ctx) || "";
+    return `${s.timetableId ?? 1}|${start && d < start ? "before" : start}`;
   };
   const lessonDaysOf = (g) =>
     new Set(slots.filter((s) => isFuzokuLessonSlot(s) && s.grade === g).map((s) => s.day));
@@ -288,7 +372,7 @@ export function buildFuzokuMonth({
     let testRow = null;
     if (tests.length > 0) {
       const t = tests[0];
-      const st = slotStatus(t, d);
+      const st = testStatus(t, d);
       const cells = {};
       for (const g of grades) {
         const res = chains.get(g)?.get(d);
@@ -320,14 +404,7 @@ export function buildFuzokuMonth({
       isFuzokuGrade(slot?.grade)
     );
 
-    // 50分授業などで新たに生じる講師・教室の重なり (附属のコマが絡むもの)
-    let conflicts = [];
-    if (pattern.kind !== PATTERN.NORMAL) {
-      const held = allDaySlots(d).filter((s) => slotStatus(s, d).status === "held");
-      conflicts = findNewConflicts(held, (s) =>
-        resolveSlotDaySchedule(s, d, daySchedules)
-      ).filter((c) => isFuzokuGrade(c.a.grade) || isFuzokuGrade(c.b.grade));
-    }
+    const conflicts = conflictsOn(d);
 
     return {
       date: d,
@@ -361,6 +438,13 @@ export function buildFuzokuMonth({
     busUnknown: weeks.filter((w) => w.anyHeld && w.suggestion?.kind === "unknown").length,
     testUnset: weeks.filter(
       (w) => w.testRow && Object.values(w.testRow.cells).some((c) => c.kind === "unset")
+    ).length,
+    // 休みの日に手で決めた確認テスト (後から休講などを入れた週)。ローテーションを
+    // 進めてしまうので、気付けるように数える
+    testOnOffDay: weeks.filter(
+      (w) =>
+        w.testRow &&
+        Object.values(w.testRow.cells).some((c) => c.kind === "manual" && !c.held)
     ).length,
   };
 

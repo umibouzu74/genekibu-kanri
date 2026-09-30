@@ -1267,6 +1267,7 @@ export default function App() {
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
               extraLessons={extraLessons}
+              subs={subs}
               fuzokuPlan={fuzokuPlan}
               onSaveFuzokuPlan={saveFuzokuPlan}
               onSaveDaySchedules={saveDaySchedules}

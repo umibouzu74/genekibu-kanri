@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToday } from "../../hooks/useToday";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
@@ -147,6 +147,8 @@ function NoteInput({ value, placeholder, ariaLabel, onCommit, width }) {
         if (v !== cur) onCommit(v);
       }}
       onKeyDown={(e) => {
+        // 日本語入力の変換中の Enter / Esc は変換の確定・取り消し (保存しない)
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
           e.currentTarget.value = cur;
@@ -302,7 +304,15 @@ function WeekSection({
   const note = week.note || {};
   const s = week.suggestion;
   const hasTable = week.anyHeld && week.rows.length > 0;
-  const editingRes = editingGrade ? week.testRow?.cells[editingGrade] : null;
+  const editingRes = isAdmin && editingGrade ? week.testRow?.cells[editingGrade] : null;
+  // 授業の無い週に手で決めた確認テスト (後から休講などを入れた週)。表を
+  // 出さないので、ここで見せないと気付けず・直せない
+  const offDayTests =
+    !hasTable && week.testRow
+      ? grades
+          .map((g) => [g, week.testRow.cells[g]])
+          .filter(([, res]) => res && (res.kind === "manual" || res.kind === "none"))
+      : [];
 
   return (
     <section
@@ -417,14 +427,21 @@ function WeekSection({
         </div>
       )}
 
-      {s && week.anyHeld && (
-        <div className="no-print" style={{ fontSize: 12, color: colors.inkMuted }}>
-          🚌 {s.ref} 発を基準 → {SUGGESTION_TEXT[s.kind]}
-          {s.others.length > 0 && ` (${s.others.join("・")} は別の便)`}
-          {week.busAtOdds && (
-            <b style={{ color: colors.accentRed, marginLeft: 8 }}>
-              ⚠ 今の時程 ({PATTERN_LABEL[week.pattern.kind]}) と食い違っています
-            </b>
+      {/* 管理者はバス欄を保存するとこの行が出るので、高さを先に確保しておく
+          (保存は blur = 次のクリックの mousedown で走る。その場で下の表が
+          ずれると、押そうとしたボタンの click が失われる) */}
+      {(isAdmin || (s && week.anyHeld)) && (
+        <div className="no-print" style={{ fontSize: 12, color: colors.inkMuted, minHeight: 18 }}>
+          {s && week.anyHeld && (
+            <>
+              🚌 {s.ref} 発を基準 → {SUGGESTION_TEXT[s.kind]}
+              {s.others.length > 0 && ` (${s.others.join("・")} は別の便)`}
+              {week.busAtOdds && (
+                <b style={{ color: colors.accentRed, marginLeft: 8 }}>
+                  ⚠ 今の時程 ({PATTERN_LABEL[week.pattern.kind]}) と食い違っています
+                </b>
+              )}
+            </>
           )}
         </div>
       )}
@@ -441,6 +458,27 @@ function WeekSection({
           }}
         >
           授業なし{week.allOffReason ? ` — ${week.allOffReason}` : ""}
+          {offDayTests.length > 0 && (
+            <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4 }}>
+              確認テストの指定が残っています (休みの週なのでローテーションを進めます):{" "}
+              {offDayTests.map(([g, res]) => (
+                <span key={g} style={{ marginRight: 10 }}>
+                  {shortFuzokuGrade(g)} {formatTestSubjects(res)}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="no-print"
+                      onClick={() => onEditTest(week.date, editingGrade === g ? null : g)}
+                      aria-label={`${dateLabel} ${shortFuzokuGrade(g)} の確認テスト: ${formatTestSubjects(res)}`}
+                      style={{ ...S.btn(false), padding: "1px 8px", fontSize: 11, marginLeft: 4 }}
+                    >
+                      変更
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -597,8 +635,9 @@ function WeekSection({
         <div className="no-print" style={{ fontSize: 12, color: colors.accentRed }}>
           {week.conflicts.map((c, i) => (
             <div key={i}>
-              ⚠ {c.kind === "teacher" ? "講師" : "教室"} {c.value}: {c.a.grade} {c.a.subj} {c.aTime} と{" "}
-              {c.b.grade} {c.b.subj} {c.bTime} が重なります
+              ⚠ {c.kind === "teacher" ? "講師" : "教室"} {c.value}: {c.a.grade} {c.a.subj} {c.aTime}
+              {c.aRole === "sub" ? " (代行)" : ""} と {c.b.grade} {c.b.subj} {c.bTime}
+              {c.bRole === "sub" ? " (代行)" : ""} が重なります
             </div>
           ))}
         </div>
@@ -620,6 +659,7 @@ export function FuzokuPlanView({
   biweeklyAnchors = [],
   sessionOverrides = [],
   extraLessons = [],
+  subs = [],
   fuzokuPlan,
   onSaveFuzokuPlan,
   onSaveDaySchedules,
@@ -671,9 +711,10 @@ export function FuzokuPlanView({
         ctx: sessionCtx,
         specialEvents,
         extraLessons,
+        subs,
         fuzokuPlan,
       }),
-    [year, month, slots, sessionCtx, specialEvents, extraLessons, fuzokuPlan]
+    [year, month, slots, sessionCtx, specialEvents, extraLessons, subs, fuzokuPlan]
   );
 
   // 時程の切り替えは特別時程のレコードを作る / 書き換える / 消す。
@@ -682,6 +723,10 @@ export function FuzokuPlanView({
     list: daySchedules,
     save: onSaveDaySchedules || (() => {}),
   });
+  // この画面で消した特別時程の id は使い回さない。末尾の id を消した直後に
+  // 別の週で足すと同じ id になり、消した方の「元に戻す」が効かなくなる
+  // (useRemoveWithUndo は同じ id が既にあれば戻さない)
+  const removedMaxIdRef = useRef(0);
   const handlePattern = (week, target) => {
     if (!onSaveDaySchedules) return;
     const md = `${fmtMD(week.date)} (${dateToDay(week.date) || ""})`;
@@ -695,7 +740,7 @@ export function FuzokuPlanView({
       onSaveDaySchedules((prev) => [
         ...(prev || []),
         {
-          id: nextNumericId(prev || []),
+          id: Math.max(nextNumericId(prev || []), removedMaxIdRef.current + 1),
           date: week.date,
           ...plan.entry,
           createdAt: new Date().toISOString(),
@@ -708,6 +753,7 @@ export function FuzokuPlanView({
       );
       toasts.success(`${md} を${PATTERN_LABEL[target]}にしました`);
     } else if (plan.action === "remove") {
+      removedMaxIdRef.current = Math.max(removedMaxIdRef.current, Number(plan.id) || 0);
       removeWithUndo(plan.id, { successMsg: `${md} を通常の時程に戻しました` });
     } else if (plan.action === "blocked") {
       toasts.error(plan.reason);
@@ -744,6 +790,11 @@ export function FuzokuPlanView({
       bg: colors.warningSoft,
       fg: "#8a6000",
     },
+    sum.testOnOffDay > 0 && {
+      text: `休みの週の確認テスト指定 ${sum.testOnOffDay} 件`,
+      bg: colors.warningSoft,
+      fg: "#8a6000",
+    },
   ].filter(Boolean);
 
   return (
@@ -769,15 +820,27 @@ export function FuzokuPlanView({
           isCurrent={ym === todayYm}
         />
         <PrintButton style={{ fontSize: 11, marginLeft: 4 }} />
-        {summaryChips.length > 0 && (
-          <div className="no-print" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {summaryChips.map((c) => (
-              <span key={c.text} style={chip(c.bg, c.fg)}>
-                {c.text}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* 件数は保存のたびに変わるので 1 行に固定する (増えて折り返すと
+            下の週がずれて、押そうとしたボタンの click が失われる) */}
+        <div
+          className="no-print"
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            flex: "1 1 240px",
+            minWidth: 0,
+            minHeight: 20,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {summaryChips.map((c) => (
+            <span key={c.text} style={chip(c.bg, c.fg)}>
+              {c.text}
+            </span>
+          ))}
+        </div>
       </div>
 
       <details className="no-print" style={{ fontSize: 12, color: colors.inkMuted }}>

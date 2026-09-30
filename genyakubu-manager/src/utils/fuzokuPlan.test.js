@@ -86,6 +86,16 @@ describe("バス時刻 → 時程の提案 (附属の予定表の実例)", () =>
     expect(clusterBusTimes([965, 1040])).toEqual([[965], [1040]]);
   });
 
+  it("30 分おきの便を数珠つなぎに 1 本にしない (最初の便から数える)", () => {
+    // 15:30 / 16:00 / 16:30 → 16:30 は 15:30 の 1 時間後なので別の便
+    expect(clusterBusTimes([930, 960, 990])).toEqual([[930, 960], [990]]);
+    expect(suggestPatternFromBus("15:30×2 16:00×1 16:30×1")).toEqual({
+      kind: "compress",
+      ref: "16:00",
+      others: ["16:30"],
+    });
+  });
+
   it.each([
     ["15:20×2 15:30×1", "normal", "15:30", []],
     ["12:25×2 12:35×1", "normal", "12:35", []],
@@ -251,6 +261,20 @@ describe("確認テストのローテーション", () => {
     expect(sortByRotation(["英", "社"], 4)).toEqual(["社", "英"]);
     expect(sortByRotation(["数", "英"], 0)).toEqual(["英", "数"]);
     expect(sortByRotation(["理", "国"], null)).toEqual(["国", "理"]);
+  });
+
+  it("続いている選び方は並びの頭から (起点の週・pos とずれた週でも)", () => {
+    // 期の最初の週 (pos 不明) に 社・英 → 社→英 (次の週は 数 から)
+    expect(sortByRotation(["社", "英"], null)).toEqual(["社", "英"]);
+    expect(sortByRotation(["英", "社"], null)).toEqual(["社", "英"]);
+    // 自動が「国 理」の週を 数・国 に変えた → 数→国 (次の週は 理 から)
+    expect(sortByRotation(["国", "数"], 2)).toEqual(["数", "国"]);
+    expect(sortByRotation(["英", "社", "理"], 0)).toEqual(["理", "社", "英"]);
+    // 飛び飛びは pos から数えた順
+    expect(sortByRotation(["理", "英"], 3)).toEqual(["理", "英"]);
+    expect(sortByRotation(["理", "英"], null)).toEqual(["英", "理"]);
+    // 5 科目ぜんぶは pos から
+    expect(sortByRotation([...TEST_ROTATION], 2)).toEqual(["国", "理", "社", "英", "数"]);
   });
 
   const D = ["2026-10-07", "2026-10-14", "2026-10-21", "2026-10-28", "2026-11-04"];

@@ -228,6 +228,82 @@ describe("FuzokuPlanView", () => {
     expect(within(w).getByText("🚌 12:30×2 12:40×1 / 3時間授業")).toBeInTheDocument();
   });
 
+  it("起点の週に 社・英 を選ぶと 社→英 で保存する (次の週は 数 から)", () => {
+    const { onSaveFuzokuPlan } = renderView({
+      fuzokuPlan: { notes: {}, tests: { "2026-10-07": { 附中1: { subjects: ["社"] } } } },
+    });
+    const w = weekEl("10/7 (水)");
+    fireEvent.click(within(w).getByRole("button", { name: "10/7 (水) 中1 の確認テスト: 社" }));
+    const editor = within(w).getByRole("group", { name: "10/7 中1 の確認テスト" });
+    fireEvent.click(within(editor).getByRole("button", { name: "英" }));
+    expect(
+      applied(onSaveFuzokuPlan, { notes: {}, tests: {} }).tests["2026-10-07"]["附中1"]
+    ).toEqual({ subjects: ["社", "英"] });
+  });
+
+  it("日本語入力の変換中の Enter / Esc では保存も取り消しもしない", () => {
+    const { onSaveFuzokuPlan } = renderView();
+    const input = within(weekEl("10/7 (水)")).getByRole("textbox", { name: "10/7 (水) の学校メモ" });
+    fireEvent.change(input, { target: { value: "3時間授業、ぎょうじ" } });
+    fireEvent.keyDown(input, { key: "Escape", keyCode: 229, isComposing: true });
+    expect(input.value).toBe("3時間授業、ぎょうじ");
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229, isComposing: true });
+    expect(onSaveFuzokuPlan).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(applied(onSaveFuzokuPlan, { notes: {}, tests: {} }).notes).toEqual({
+      "2026-10-07": { memo: "3時間授業、ぎょうじ" },
+    });
+  });
+
+  it("管理者でなくなったら確認テストの編集パネルを閉じる", () => {
+    const onSaveFuzokuPlan = vi.fn();
+    const props = {
+      slots: SLOTS,
+      timetables: [],
+      fuzokuPlan: { notes: {}, tests: {} },
+      onSaveFuzokuPlan,
+      onSaveDaySchedules: vi.fn(),
+    };
+    const tree = (isAdmin) => (
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <FuzokuPlanView {...props} isAdmin={isAdmin} />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    const { rerender } = render(tree(true));
+    const w = weekEl("10/7 (水)");
+    fireEvent.click(within(w).getByRole("button", { name: "10/7 (水) 中1 の確認テスト: 未設定" }));
+    expect(within(w).getByRole("group", { name: "10/7 中1 の確認テスト" })).toBeInTheDocument();
+    rerender(tree(false));
+    expect(screen.queryByRole("group", { name: "10/7 中1 の確認テスト" })).toBeNull();
+  });
+
+  it("授業の無い週に手で決めた確認テストも見せて直せる", () => {
+    const { onSaveFuzokuPlan } = renderView({
+      holidays: [
+        { id: 1, date: "2026-10-14", label: "学校行事", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+      ],
+      fuzokuPlan: { notes: {}, tests: { "2026-10-14": { 附中1: { subjects: ["国", "理"] } } } },
+    });
+    expect(screen.getByText("休みの週の確認テスト指定 1 件")).toBeInTheDocument();
+    const w = weekEl("10/14 (水)");
+    expect(within(w).getByText(/確認テストの指定が残っています/)).toBeInTheDocument();
+    fireEvent.click(within(w).getByRole("button", { name: "10/14 (水) 中1 の確認テスト: 国 理" }));
+    const editor = within(w).getByRole("group", { name: "10/14 中1 の確認テスト" });
+    fireEvent.click(within(editor).getByRole("button", { name: "自動に戻す" }));
+    expect(applied(onSaveFuzokuPlan, { notes: {}, tests: {} }).tests).toEqual({});
+  });
+
+  it("消した特別時程の id を別の週で使い回さない (元に戻すが効く)", () => {
+    const { onSaveDaySchedules } = renderView({ daySchedules: [COMPRESS] });
+    fireEvent.click(within(weekEl("10/28 (水)")).getByRole("button", { name: "通常" }));
+    fireEvent.click(within(weekEl("10/7 (水)")).getByRole("button", { name: "50分授業" }));
+    const added = applied(onSaveDaySchedules, []);
+    expect(added[0].id).toBe(4);
+  });
+
   it("月を送ると翌月の水曜に切り替わる", () => {
     renderView();
     fireEvent.click(screen.getByRole("button", { name: "次の月" }));
