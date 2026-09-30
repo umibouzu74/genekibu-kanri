@@ -13,6 +13,7 @@ import {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,
@@ -23,8 +24,12 @@ import { DEFAULT_EVENT_VISIBILITY } from "../components/EventVisibilityToggles";
 import { sanitizeKanaMap } from "../utils/teacherKana";
 import { LS } from "../constants/storageKeys";
 
+// fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
+// (毎描画で新しいオブジェクトを渡さない)
+const EMPTY_FUZOKU_PLAN = Object.freeze({ notes: {}, tests: {} });
+
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 21 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -167,6 +172,13 @@ export function useAppData({ toasts, isAdmin }) {
     [],
     { migrate: migrateDaySchedules, onError: onStorageError }
   );
+  // 附属の授業予定 (学校メモ + 確認テストの手動指定)。日付キーの map なので
+  // 既定値はオブジェクト (decodeFromServer が形を決めるのに使う)
+  const [fuzokuPlan, saveFuzokuPlan] = useSyncedStorage(
+    LS.fuzokuPlan,
+    EMPTY_FUZOKU_PLAN,
+    { migrate: migrateFuzokuPlan, onError: onStorageError }
+  );
   // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
   // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
   const [eventVisibility, saveEventVisibility] = useLocalStorage(
@@ -217,6 +229,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveExtraLessons,
     daySchedules,
     saveDaySchedules,
+    fuzokuPlan,
+    saveFuzokuPlan,
     eventVisibility,
     saveEventVisibility,
   };

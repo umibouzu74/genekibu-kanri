@@ -176,6 +176,40 @@ test("イベントカレンダー: print で追加授業バッジが紙面に残
   ).toBeVisible();
 });
 
+test("附属の授業予定: print で操作 UI が消え、週ごとの表と学校メモが残る", async ({ page }) => {
+  // 2026-10 の水曜 (10/7・14・21・28) を並べる。時計を固定して今月を決める
+  await page.clock.setFixedTime(new Date("2026-10-01T10:00:00+09:00"));
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "genyakubu-fuzoku-plan",
+      JSON.stringify({
+        notes: { "2026-10-07": { bus: "12:30×2 12:40×1", memo: "3時間授業" } },
+        tests: { "2026-10-07": { 附中1: { subjects: ["英", "数"] } } },
+      })
+    );
+  });
+  await page.goto("/genekibu-kanri/");
+  await page.getByRole("button", { name: /附属の授業予定/ }).first().click();
+  const first = page.getByRole("region", { name: "10/7 (水) の予定" });
+  await expect(first).toBeVisible();
+
+  await page.emulateMedia({ media: "print" });
+  await page.setViewportSize({ width: PRINT_PAGE_WIDTH, height: 1200 });
+  await expectPrintChromeHidden(page);
+  await expect(page.getByText("2026年10月", { exact: true })).toBeVisible();
+  await expect(first.getByText("🚌 12:30×2 12:40×1 / 3時間授業")).toBeVisible();
+  await expect(first.getByRole("table")).toBeVisible();
+  // 手で決めた週の次は自動で回る (英 数 → 国 理)
+  await expect(
+    page.getByRole("region", { name: "10/14 (水) の予定" }).getByText("国 理")
+  ).toBeVisible();
+  // 表が紙面の幅に収まっている (横溢れなし)
+  const overflow = await first
+    .getByRole("table")
+    .evaluate((t) => t.scrollWidth - t.parentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("講師の個人予定 (既定は月間): print で操作 UI が消える", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
   // サイドバーの講師リストから講師を選ぶ (奥村はデモデータの既定講師)

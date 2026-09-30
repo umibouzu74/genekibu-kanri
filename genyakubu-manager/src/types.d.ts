@@ -216,6 +216,30 @@ export interface DaySchedule {
   createdAt?: string;
 }
 
+// ─── 附属の授業予定 (FuzokuPlan) ─────────────────────────────────
+// 附属コース (学年が「附中」で始まるコマ) の月間予定のうち、既存モデルに
+// 受け皿が無い 2 つだけを持つ。時程 (50分授業など) は DaySchedule、休みは
+// Holiday / ExamPeriod のまま (utils/fuzokuPlan.js)。
+//   - notes: 日付ごとの学校メモ (バスの時刻・学校の行事)。時程を決めた根拠
+//   - tests: 確認テストの科目を (日付, 学年) で手で決めた分。無い週は
+//            英→数→国→理→社 のローテーションで自動に回る
+// 日付・学年をキーにした map なので RTDB の空配列落ちに強い。「なし」は
+// 空配列ではなく none: true で表す (空配列は RTDB が消すため)。
+export interface FuzokuDayNote {
+  bus?: string; // 学校の予定表のバス欄をそのまま ("15:20×2 15:30×1")
+  memo?: string; // 学校メモ ("3時間授業", "合唱祭")
+}
+
+export interface FuzokuTestEntry {
+  subjects?: string[]; // ["英", "数"]。1 科目だけの週もある
+  none?: boolean; // true = その週は確認テストなし
+}
+
+export interface FuzokuPlan {
+  notes: Record<string, FuzokuDayNote>; // "YYYY-MM-DD" → メモ
+  tests: Record<string, Record<string, FuzokuTestEntry>>; // 日付 → 学年 → 科目
+}
+
 // ─── Extra lesson (追加授業) ─────────────────────────────────────
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
@@ -354,6 +378,7 @@ export interface ExportBundle {
   specialEvents?: SpecialEvent[];
   extraLessons?: ExtraLesson[];
   daySchedules?: DaySchedule[];
+  fuzokuPlan?: FuzokuPlan;
 }
 
 export interface ValidationResult<T> {

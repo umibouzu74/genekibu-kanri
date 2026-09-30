@@ -24,6 +24,8 @@ export const VIEW_CHORDS = Object.freeze({
   b: VIEWS.BUILDER,
   // REGULAR_BUILDER (通常時間割作成) は regular の r。
   r: VIEWS.REGULAR_BUILDER,
+  // FUZOKU_PLAN (附属の授業予定) は fuzoku の f。
+  f: VIEWS.FUZOKU_PLAN,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -52,6 +54,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   o: "月間",
   b: "講習作成",
   r: "通常作成",
+  f: "附属",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

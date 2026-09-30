@@ -255,6 +255,8 @@ export function CommandPalette({
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
       { key: views.STAFF, label: "バイト管理" },
       { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
+      // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
+      { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
     ];
     // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
     // 選択されているときだけ候補に出す。空のビューに飛ばさないため。
