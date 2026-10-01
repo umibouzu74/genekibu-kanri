@@ -109,7 +109,10 @@ export class ErrorBoundary extends Component {
   handleClear = () => {
     if (!confirm("localStorage を初期化してリロードします。よろしいですか？")) return;
     try {
-      Object.values(LS).forEach((k) => localStorage.removeItem(k));
+      // 引継ぎメモは残す (データ管理の初期化と同じ扱い)
+      Object.values(LS)
+        .filter((k) => k !== LS.handoverNotes)
+        .forEach((k) => localStorage.removeItem(k));
       Object.values(SS).forEach((k) => sessionStorage.removeItem(k));
     } catch {
       // ignore

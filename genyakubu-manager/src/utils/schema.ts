@@ -29,6 +29,7 @@ import type {
   ExportBundle,
   ExtraLesson,
   FuzokuPlan,
+  HandoverNote,
   Holiday,
   PartTimeStaffObject,
   ScheduleAdjustment,
@@ -42,7 +43,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -327,6 +328,19 @@ export function isFuzokuPlan(x: unknown): x is FuzokuPlan {
   return true;
 }
 
+export function isHandoverNote(x: unknown): x is HandoverNote {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.date) || !ISO_DATE_RE.test(x.date)) return false;
+  if (!isString(x.title) || x.title.trim() === "") return false;
+  if (!isString(x.category)) return false;
+  if (x.body !== undefined && !isString(x.body)) return false;
+  if (x.advice !== undefined && !isString(x.advice)) return false;
+  if (x.annual !== undefined && typeof x.annual !== "boolean") return false;
+  if (x.pinned !== undefined && typeof x.pinned !== "boolean") return false;
+  return true;
+}
+
 export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
   if (!isObject(x)) return false;
   if (!isNumber(x.examPeriodId)) return false;
@@ -576,6 +590,18 @@ export function validateExportBundle(
   if (raw.fuzokuPlan != null) {
     if (!isFuzokuPlan(raw.fuzokuPlan))
       return { ok: false, error: "fuzokuPlan の形式が不正です" };
+  }
+
+  if (raw.handoverNotes != null) {
+    if (!Array.isArray(raw.handoverNotes))
+      return { ok: false, error: "handoverNotes が配列ではありません" };
+    const bad = raw.handoverNotes.findIndex((n: unknown) => !isHandoverNote(n));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `handoverNotes[${bad}] の形式が不正です`,
+        path: `handoverNotes[${bad}]`,
+      };
   }
 
   // ── Cross-entity referential integrity ────────────────────────────
@@ -920,6 +946,9 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             を追加。**既定値で埋めない** — 旧いバックアップを読み込んだ
   //             ときに今のメモ・科目指定を空で上書きしないため (teacherKana と
   //             同じく「無ければ現状維持」。useDataIO の handleImport 参照)。
+
+  // v19 → v20: handoverNotes (引継ぎメモ) を追加。管理者が書き出したとき
+  //             だけ含まれる。既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

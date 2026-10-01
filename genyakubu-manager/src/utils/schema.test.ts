@@ -8,6 +8,7 @@ import {
   isExamPrepSchedule,
   isExtraLesson,
   isFuzokuPlan,
+  isHandoverNote,
   isHoliday,
   isPartTimeStaffObject,
   isScheduleAdjustment,
@@ -1063,6 +1064,31 @@ describe("v18 → v19: fuzokuPlan (附属の授業予定)", () => {
     const v = validateExportBundle({ fuzokuPlan: { notes: [] } });
     expect(v.ok).toBe(false);
     expect(v.error).toContain("fuzokuPlan");
+  });
+});
+
+describe("v19 → v20: handoverNotes (引継ぎメモ)", () => {
+  const note = { id: 1, date: "2026-10-01", category: "事務", title: "ズバリ的中の提出催促" };
+
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 19 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("handoverNotes");
+  });
+
+  it("isHandoverNote: 必須 (id・日付・見出し・分類) と任意項目の型を見る", () => {
+    expect(isHandoverNote(note)).toBe(true);
+    expect(isHandoverNote({ ...note, body: "9月の会議で告知済み", annual: true })).toBe(true);
+    expect(isHandoverNote({ ...note, title: " " })).toBe(false);
+    expect(isHandoverNote({ ...note, date: "10/1" })).toBe(false);
+    expect(isHandoverNote({ ...note, annual: "yes" })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた handoverNotes を弾く", () => {
+    expect(validateExportBundle({ handoverNotes: [note] }).ok).toBe(true);
+    const v = validateExportBundle({ handoverNotes: [note, { id: 2 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("handoverNotes[1]");
   });
 });
 

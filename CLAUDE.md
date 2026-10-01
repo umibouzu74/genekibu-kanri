@@ -896,6 +896,40 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 - 対象は附属のコマだけ。data.js の TODO (通常の中学の確認テストの教科
   ローテーション) はこの仕組みでは扱っていない (要件が出たら別に定義から)
 
+## 引継ぎメモ (2026-10-01 実装)
+
+責任者が日々気付いたことを書き溜めて後任に渡す画面 (サイドバー「📝 引継ぎ
+メモ」、chord `g n`、`components/views/HandoverView.jsx` + `utils/handoverNotes.js`)。
+
+- **保存先は `adminData/` (管理者だけが読める)**。`appData/` は閲覧者
+  (匿名ログイン) が全部読めるので、責任者の申し送りは置かない。
+  `useSyncedStorage(key, init, { root: "adminData", enabled })` で、
+  **閲覧者のときは購読しない** (`enabled: false`。権限エラーで listener が
+  切れたまま、ログイン後も戻らなくなるため)。判定は
+  `useAppData.canUseAdminData` (管理者 or Firebase 未設定の端末)。
+  サイドバー項目は `adminData: true`
+  - 管理者専用のデータを増やすときも同じ経路 (adminData + enabled) に乗せ、
+    `database.rules.json` の `adminData` 側に列挙する
+- **バックアップには管理者が書き出したときだけ含める**。閲覧者の書き出しに
+  空配列を入れると、それを読み込んだときにメモが消える。読み込みは
+  「無ければ現状維持」
+- **データの初期化 (データ管理 / ErrorBoundary) では消さない**。初期化は
+  時間割まわりのやり直しのための操作で、何年分もの引継ぎを巻き添えにしない
+- 読み方の主役は**月別 (年度の流れ、4 月始まり)** と「📌 去年までのこの時期」
+  (今日の 1 週間前〜1 か月先に当たる去年以前のメモ)。どちらも**日付だけで
+  決まる** — 閲覧履歴や使用頻度で並べ替えない (A18 系の原則)
+- 削除は cascade なしなので removeWithUndo
+- 入力欄は `components/HandoverNoteForm.jsx` を画面とダイアログ
+  (`HandoverQuickAddDialog`、Cmd+K / ダッシュボードから) で共有する。
+  作成・更新は `handoverNotes.addHandoverNote` / `updateHandoverNote`
+- **`pinned` (いつでも必要なこと) は日付の並びに混ぜない**。月別・時系列・
+  「この時期」のどれにも入れず、先頭の固定欄にだけ出す (`splitPinned`)
+- ダッシュボードの「📌 去年のこの時期」(`HandoverSeasonBanner`) は App が
+  Dashboard の前に置く (Dashboard に引継ぎメモを渡さない)。閲覧者には出さない。
+  クリック → `openHandoverNote(id)` → 画面が `focusRequest` を受けて
+  スクロール + 強調し、`onConsumeFocus` で要求を消す (サイドバーから開き
+  直したときに古い要求で飛ばない)
+
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
 RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、

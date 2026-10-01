@@ -1,13 +1,23 @@
 // @vitest-environment jsdom
 // テスト期間の「例外的に授業を行う日」(classExceptions) の入力と保存形。
 // 特訓は始まっているが授業は休みにしない日 (例: 9/19 土の中3) を登録できる。
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ExamPeriodManager } from "./ExamPeriodManager";
 import { ConfirmProvider } from "../hooks/useConfirm";
 import { ToastProvider } from "../hooks/useToasts";
 
-afterEach(cleanup);
+// 一覧の既定は「今月以降」(useListPeriod) なので、9 月のテスト期間が
+// 一覧に出るよう今日を期間中に固定する (10 月になって落ちていた)。
+// 日付だけを偽装し、タイマーは本物のまま (toast 等の挙動を変えない)
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 8, 15, 12, 0, 0));
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const EXAM = {
   id: 1,

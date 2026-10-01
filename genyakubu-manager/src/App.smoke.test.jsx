@@ -46,6 +46,7 @@ const VIEW_LABELS = [
   "講習時間割作成",
   "通常時間割作成",
   "附属の授業予定",
+  "引継ぎメモ",
   "欠勤組み換え",
   "授業管理",
   "代行確定一覧",
@@ -109,4 +110,23 @@ describe("App smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "月間", exact: true }));
     await expectNoCrash();
   }, 60000);
+
+  it("ダッシュボードの「去年のこの時期」から引継ぎメモのその 1 件へ飛べる", async () => {
+    const d = new Date();
+    const lastYear = `${d.getFullYear() - 1}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    localStorage.setItem(
+      "genyakubu-handover-notes",
+      JSON.stringify([{ id: 9, date: lastYear, category: "事務", title: "去年の今日の申し送り" }])
+    );
+    renderApp();
+    await expectNoCrash();
+    const banner = await screen.findByRole("region", { name: "去年のこの時期 (引継ぎメモ)" });
+    fireEvent.click(within(banner).getByRole("button", { name: "去年の今日の申し送り" }));
+    expect(await screen.findByRole("heading", { level: 1, name: /引継ぎメモ/ })).toBeInTheDocument();
+    await expectNoCrash();
+    const card = (await screen.findAllByText("去年の今日の申し送り"))
+      .map((el) => el.closest("article"))
+      .find(Boolean);
+    expect(card.id).toBe("handover-note-9");
+  }, 30000);
 });

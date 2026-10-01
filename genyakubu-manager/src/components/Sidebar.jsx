@@ -179,6 +179,9 @@ const MENU_CONFIG = [
   // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
   // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理", sections: MASTER_TABS },
+  // 責任者の引継ぎメモ。閲覧者には読めないデータなので項目ごと出さない
+  // (adminData: 管理者ログイン中、または Firebase 未設定の端末だけ)
+  { key: VIEWS.HANDOVER, icon: "📝", label: "引継ぎメモ", adminData: true },
   { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
 ];
 
@@ -212,6 +215,8 @@ export function Sidebar({
   slots,
   subs,
   isAdmin,
+  /** 管理者だけが読めるデータ (引継ぎメモ) を扱えるか (useAppData.canUseAdminData) */
+  canUseAdminData = isAdmin,
   onSignIn,
   onSignOut,
 }) {
@@ -442,7 +447,10 @@ export function Sidebar({
           }}
         >
         <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
-          {MENU_CONFIG.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+          {MENU_CONFIG.filter(
+            (item) =>
+              (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData)
+          ).map((item) => {
             const hasChildren = !!item.children;
             const isExpanded = hasChildren && effectiveExpanded.has(item.key);
             const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);

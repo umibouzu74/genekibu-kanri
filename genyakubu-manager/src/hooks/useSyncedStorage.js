@@ -45,8 +45,11 @@ export const isPermissionError = (err) =>
     err.code === "permission-denied" ||
     /permission[_ -]?denied/i.test(err.message || ""));
 
-/** Firebase path: /appData/<key> */
-const fbPath = (key) => `appData/${key}`;
+/**
+ * Firebase path: /<root>/<key>。既定は appData (閲覧者も読める)。管理者だけが
+ * 読めるデータ (引継ぎメモ) は adminData に置く (database.rules.json)
+ */
+const fbPath = (key, root = "appData") => `${root}/${key}`;
 
 // ─── 「空」と「未初期化」の区別 ──────────────────────────────────────
 // RTDB は [] / {} (子がすべて空のオブジェクトも含む) を書くとノードごと
@@ -118,8 +121,20 @@ export function decodeFromServer(serverVal, initialValue) {
 // * When Firebase is not configured (env vars missing) the hook falls
 //   back to pure-localStorage behaviour identical to useLocalStorage.
 //
+// Options:
+// * root    — Firebase 上の親パス (既定 "appData")。
+// * enabled — false の間は localStorage も Firebase も読まず、初期値のまま
+//   (書込も無視)。true になった時点で読み込み・購読を始める。管理者だけが
+//   読めるデータを、閲覧者のときに購読しない (権限エラーで listener が
+//   切れたまま、ログイン後も戻らない) ために使う。既定 true で、従来の
+//   キーの挙動は変わらない。
+//
 // Returns: [value, setValue]
-export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
+export function useSyncedStorage(
+  key,
+  initialValue,
+  { migrate, onError, root = "appData", enabled = true } = {}
+) {
   const [value, setValue] = useState(initialValue);
 
   // Ref that holds the latest JSON string we wrote locally so we can
@@ -132,6 +147,12 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
 
   // ── 1. Load from localStorage (instant, works offline) ──────────
   useEffect(() => {
+    if (!enabled) {
+      // 無効化 (管理者ログアウト) されたら手元の表示も初期値に戻す
+      setValue(initialValue);
+      lastLocalJsonRef.current = null;
+      return;
+    }
     try {
       const raw = localStorage.getItem(key);
       if (raw == null) return;
@@ -145,15 +166,15 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       console.warn(`[useSyncedStorage] failed to load "${key}":`, err);
       onError?.(err, "load");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key/migrate are stable across renders; enabled で読み直す
+  }, [enabled]);
 
   // ── 2. Attach Firebase listener ─────────────────────────────────
   useEffect(() => {
-    if (!isConfigured || !db) return;
+    if (!enabled || !isConfigured || !db) return;
 
     let unsubscribed = false;
-    const dbRef = ref(db, fbPath(key));
+    const dbRef = ref(db, fbPath(key, root));
 
     authReady.then(() => {
       if (unsubscribed) return;
@@ -221,8 +242,8 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
       unsubscribed = true;
       off(dbRef);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key/migrate/root are stable across renders; enabled で購読し直す
+  }, [enabled]);
 
   // 権限エラー後の巻き戻し: サーバの現在値を取り直して state / localStorage
   // に入れ直す (echo 判定用の ref もサーバ値に合わせる)
@@ -252,6 +273,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
   // ── 3. Setter: write to localStorage + Firebase ─────────────────
   const update = useCallback(
     (next) => {
+      if (!enabled) return;
       setValue((prev) => {
         const resolved = typeof next === "function" ? next(prev) : next;
         const json = stableStringify(resolved);
@@ -271,7 +293,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
 
         // Write to Firebase (空はマーカーで書く。上の decode と対)
         if (isConfigured && db) {
-          const dbRef = ref(db, fbPath(key));
+          const dbRef = ref(db, fbPath(key, root));
           trackSyncActivity(set(dbRef, encodeForServer(resolved))).catch((err) => {
             console.warn(`[useSyncedStorage] firebase set failed "${key}":`, err);
             const denied = isPermissionError(err);
@@ -286,7 +308,7 @@ export function useSyncedStorage(key, initialValue, { migrate, onError } = {}) {
         return resolved;
       });
     },
-    [key, onError, rollbackToServer]
+    [key, root, enabled, onError, rollbackToServer]
   );
 
   return [value, update];

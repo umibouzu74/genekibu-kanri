@@ -23,13 +23,22 @@ import { DEFAULT_TIMETABLE, DEFAULT_DISPLAY_CUTOFF } from "../utils/schema";
 import { DEFAULT_EVENT_VISIBILITY } from "../components/EventVisibilityToggles";
 import { sanitizeKanaMap } from "../utils/teacherKana";
 import { LS } from "../constants/storageKeys";
+import { isConfigured } from "../firebase/config";
+import { migrateHandoverNotes } from "../utils/handoverNotes";
 
 // fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
 // (毎描画で新しいオブジェクトを渡さない)
 const EMPTY_FUZOKU_PLAN = Object.freeze({ notes: {}, tests: {} });
+const EMPTY_LIST = Object.freeze([]);
+
+/**
+ * 管理者だけが読めるデータ (引継ぎメモ) を扱えるか。Firebase 未設定
+ * (端末だけで使う) ときは読む人がその端末の持ち主だけなので常に可
+ */
+export const canUseAdminData = (isAdmin) => Boolean(isAdmin) || !isConfigured;
 
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本 (現在は 21 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 22 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -179,6 +188,19 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_FUZOKU_PLAN,
     { migrate: migrateFuzokuPlan, onError: onStorageError }
   );
+  // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
+  // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する
+  const handoverEnabled = canUseAdminData(isAdmin);
+  const [handoverNotes, saveHandoverNotes] = useSyncedStorage(
+    LS.handoverNotes,
+    EMPTY_LIST,
+    {
+      migrate: migrateHandoverNotes,
+      onError: onStorageError,
+      root: "adminData",
+      enabled: handoverEnabled,
+    }
+  );
   // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
   // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
   const [eventVisibility, saveEventVisibility] = useLocalStorage(
@@ -231,6 +253,9 @@ export function useAppData({ toasts, isAdmin }) {
     saveDaySchedules,
     fuzokuPlan,
     saveFuzokuPlan,
+    handoverNotes,
+    saveHandoverNotes,
+    handoverEnabled,
     eventVisibility,
     saveEventVisibility,
   };
