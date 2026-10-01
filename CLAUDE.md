@@ -919,6 +919,16 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   (今日の 1 週間前〜1 か月先に当たる去年以前のメモ)。どちらも**日付だけで
   決まる** — 閲覧履歴や使用頻度で並べ替えない (A18 系の原則)
 - 削除は cascade なしなので removeWithUndo
+- 入力欄は `components/HandoverNoteForm.jsx` を画面とダイアログ
+  (`HandoverQuickAddDialog`、Cmd+K / ダッシュボードから) で共有する。
+  作成・更新は `handoverNotes.addHandoverNote` / `updateHandoverNote`
+- **`pinned` (いつでも必要なこと) は日付の並びに混ぜない**。月別・時系列・
+  「この時期」のどれにも入れず、先頭の固定欄にだけ出す (`splitPinned`)
+- ダッシュボードの「📌 去年のこの時期」(`HandoverSeasonBanner`) は App が
+  Dashboard の前に置く (Dashboard に引継ぎメモを渡さない)。閲覧者には出さない。
+  クリック → `openHandoverNote(id)` → 画面が `focusRequest` を受けて
+  スクロール + 強調し、`onConsumeFocus` で要求を消す (サイドバーから開き
+  直したときに古い要求で飛ばない)
 
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 

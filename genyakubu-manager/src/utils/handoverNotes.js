@@ -9,6 +9,9 @@ import { isValidDateStr, parseLocalDate } from "./dateHelpers";
 //   - 時系列 (書き溜めるときの見え方)
 //   - 月別 = 年度 (4 月始まり) の流れ。年をまたいで同じ月のメモを並べる
 // さらに「去年までの同じ時期のメモ」を画面の先頭に出す (seasonalNotes)。
+// 日付に縛られない知識 (手順・連絡先・置き場所) は pinned にして、どちらの
+// 並べ方でも「いつでも必要なこと」として先頭に固定する (月別・この時期には
+// 混ぜない)。
 // 自動で何かを学習・並べ替えるものではない (日付だけで決まる)。
 //
 // 保存先は管理者だけが読める adminData/ (useAppData)。閲覧者 (匿名
@@ -48,6 +51,7 @@ export function normalizeHandoverNote(n) {
   const advice = str(n.advice);
   if (advice) out.advice = advice;
   if (n.annual === true) out.annual = true;
+  if (n.pinned === true) out.pinned = true;
   if (str(n.createdAt)) out.createdAt = str(n.createdAt);
   if (str(n.updatedAt)) out.updatedAt = str(n.updatedAt);
   return out;
@@ -69,6 +73,51 @@ export function migrateHandoverNotes(raw) {
     out.push(v);
   }
   return out;
+}
+
+/** 入力欄の初期値 (追加フォーム)。日付・分類は前回の値を引き継げる */
+export const emptyHandoverDraft = (date, category = DEFAULT_HANDOVER_CATEGORY) => ({
+  date,
+  category,
+  title: "",
+  body: "",
+  advice: "",
+  annual: false,
+  pinned: false,
+});
+
+/** 既存のメモ → 編集フォームの値 */
+export const draftFromNote = (n) => ({
+  date: n.date,
+  category: n.category,
+  title: n.title,
+  body: n.body || "",
+  advice: n.advice || "",
+  annual: Boolean(n.annual),
+  pinned: Boolean(n.pinned),
+});
+
+/** 保存できない理由 (無ければ null) */
+export function validateHandoverDraft(d) {
+  if (!isValidDateStr(str(d?.date))) return "日付を入れてください";
+  if (!str(d?.title)) return "何があったかを 1 行で入れてください";
+  return null;
+}
+
+/** 追加後の一覧。id は既存の最大 + 1 */
+export function addHandoverNote(notes, draft, nowIso) {
+  const id = notes.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0) + 1;
+  const note = normalizeHandoverNote({ ...draft, id, createdAt: nowIso, updatedAt: nowIso });
+  return note ? [...notes, note] : notes;
+}
+
+/** 1 件を書き換えた一覧 (id と作成日時は保つ) */
+export function updateHandoverNote(notes, id, draft, nowIso) {
+  return notes.map((n) =>
+    n.id === id
+      ? normalizeHandoverNote({ ...draft, id: n.id, createdAt: n.createdAt, updatedAt: nowIso }) || n
+      : n
+  );
 }
 
 /** 日付の新しい順 (同じ日は後から書いた方を上)。元の配列は変えない */
@@ -95,6 +144,24 @@ export function filterNotes(notes, { query = "", category = "" } = {}) {
     );
     return terms.every((t) => hay.includes(t));
   });
+}
+
+/**
+ * 「いつでも必要なこと」(pinned) と日付で読むメモに分ける。pinned は分類順
+ * (HANDOVER_CATEGORIES の並び) → 見出しの順で、どの並べ方でも同じ位置に出す
+ */
+export function splitPinned(notes) {
+  const pinned = [];
+  const dated = [];
+  for (const n of notes) (n.pinned ? pinned : dated).push(n);
+  const catIndex = (c) => {
+    const i = HANDOVER_CATEGORIES.indexOf(c);
+    return i === -1 ? HANDOVER_CATEGORIES.length : i;
+  };
+  pinned.sort(
+    (a, b) => catIndex(a.category) - catIndex(b.category) || a.title.localeCompare(b.title, "ja")
+  );
+  return { pinned, dated };
 }
 
 /** 時系列の見出し単位 ("2026-10" → "2026年10月")。新しい月から */
@@ -167,6 +234,7 @@ export function seasonalNotes(
   if (!t) return [];
   const out = [];
   for (const n of notes) {
+    if (n.pinned) continue;
     const src = parseLocalDate(n.date);
     if (!src || daysBetween(src, t) < minAgeDays) continue;
     let best = null;
@@ -208,18 +276,25 @@ export function notesToMarkdown(notes, { title = "引継ぎメモ", generatedOn 
   const lines = [`# ${title}`, ""];
   if (generatedOn) lines.push(`出力日: ${fmtNoteDate(generatedOn)}`, "");
   if (notes.length === 0) lines.push("(メモはありません)");
-  for (const g of groupByMonthOfYear(notes)) {
-    lines.push(`## ${g.label}`, "");
-    for (const n of g.notes) {
-      const tags = [n.category, n.annual ? "毎年" : ""].filter(Boolean).join("・");
-      lines.push(`- **${fmtNoteDate(n.date)}** [${tags}] ${n.title}`);
-      if (n.body) for (const l of n.body.split("\n")) lines.push(`  ${l}`);
-      if (n.advice) {
-        const [first, ...rest] = n.advice.split("\n");
-        lines.push(`  - 次の担当者へ: ${first}`);
-        for (const l of rest) lines.push(`    ${l}`);
-      }
+  const pushNote = (n, head) => {
+    const tags = [n.category, n.annual ? "毎年" : ""].filter(Boolean).join("・");
+    lines.push(`- ${head}[${tags}] ${n.title}`);
+    if (n.body) for (const l of n.body.split("\n")) lines.push(`  ${l}`);
+    if (n.advice) {
+      const [first, ...rest] = n.advice.split("\n");
+      lines.push(`  - 次の担当者へ: ${first}`);
+      for (const l of rest) lines.push(`    ${l}`);
     }
+  };
+  const { pinned, dated } = splitPinned(notes);
+  if (pinned.length > 0) {
+    lines.push("## いつでも必要なこと", "");
+    for (const n of pinned) pushNote(n, "");
+    lines.push("");
+  }
+  for (const g of groupByMonthOfYear(dated)) {
+    lines.push(`## ${g.label}`, "");
+    for (const n of g.notes) pushNote(n, `**${fmtNoteDate(n.date)}** `);
     lines.push("");
   }
   return lines.join("\n").replace(/\n+$/, "\n");

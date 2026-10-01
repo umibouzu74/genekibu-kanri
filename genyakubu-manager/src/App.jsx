@@ -20,6 +20,8 @@ import { useSlotsCrud } from "./hooks/useSlotsCrud";
 import { useSubsCrud } from "./hooks/useSubsCrud";
 import { useAdjustmentsCrud } from "./hooks/useAdjustmentsCrud";
 import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
+import { HandoverQuickAddDialog } from "./components/HandoverQuickAddDialog";
+import { HandoverSeasonBanner } from "./components/HandoverSeasonBanner";
 import { MultiDayAbsenceDialog } from "./components/MultiDayAbsenceDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
@@ -312,6 +314,10 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
   const [showDayReschedule, setShowDayReschedule] = useState(false);
+  // 「✏ 引継ぎメモを書く」ダイアログ (Cmd+K / ダッシュボードの去年のこの時期)
+  const [showHandoverAdd, setShowHandoverAdd] = useState(false);
+  // 引継ぎメモの 1 件へ飛ぶ要求 ({id, token})。token で同じ id の再要求も効かせる
+  const [handoverFocus, setHandoverFocus] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
@@ -576,6 +582,16 @@ export default function App() {
 
   // 特別時程を対象 id で開く / 日付を入れて新規で開く (附属の授業予定から、
   // プリセットで表せない時程を細かく決めるとき)
+  // 引継ぎメモの画面を開く (id を渡すとその 1 件までスクロールして強調)
+  const openHandoverNote = useCallback(
+    (id) => {
+      selectView(VIEWS.HANDOVER, () =>
+        setHandoverFocus(id == null ? null : { id, token: Date.now() })
+      );
+    },
+    [selectView]
+  );
+
   const openDayScheduleEditor = useCallback(
     (id) => {
       selectView(VIEWS.HOLIDAYS, () =>
@@ -1028,6 +1044,14 @@ export default function App() {
               落とさない。別のビューへ移れば自動で復帰する */}
           <ErrorBoundary scope="view" resetKey={`${view}:${selected || ""}`}>
           <Suspense fallback={<ViewFallback />}>
+          {view === VIEWS.DASH && !selected && handoverEnabled && (
+            <HandoverSeasonBanner
+              notes={handoverNotes}
+              onOpenNote={openHandoverNote}
+              onOpenList={() => openHandoverNote(null)}
+              onAdd={() => setShowHandoverAdd(true)}
+            />
+          )}
           {view === VIEWS.DASH && !selected && (
             <Dashboard
               slots={slots}
@@ -1290,6 +1314,8 @@ export default function App() {
               notes={handoverNotes}
               onSave={saveHandoverNotes}
               enabled={handoverEnabled}
+              focusRequest={handoverFocus}
+              onConsumeFocus={() => setHandoverFocus(null)}
             />
           )}
           {view === VIEWS.BUILDER && !selected && <BuilderApp />}
@@ -1591,6 +1617,14 @@ export default function App() {
           }
         />
       )}
+      {showHandoverAdd && handoverEnabled && (
+        <HandoverQuickAddDialog
+          notes={handoverNotes}
+          onSave={saveHandoverNotes}
+          onClose={() => setShowHandoverAdd(false)}
+          onOpenNote={openHandoverNote}
+        />
+      )}
       {showDayReschedule && (
         <DayRescheduleDialog
           slots={slots}
@@ -1634,6 +1668,9 @@ export default function App() {
             extraLessons={extraLessons}
             selectedTeacher={selected}
             canUseAdminData={handoverEnabled}
+            handoverNotes={handoverEnabled ? handoverNotes : undefined}
+            onOpenHandoverNote={handoverEnabled ? openHandoverNote : undefined}
+            onOpenHandoverAdd={handoverEnabled ? () => setShowHandoverAdd(true) : undefined}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);

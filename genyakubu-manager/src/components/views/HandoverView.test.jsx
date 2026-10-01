@@ -16,12 +16,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function Harness({ initial = [], enabled = true, onSaveSpy }) {
+function Harness({ initial = [], enabled = true, onSaveSpy, focusRequest = null, onConsumeFocus }) {
   const [notes, setNotes] = useState(initial);
   return (
     <HandoverView
       notes={notes}
       enabled={enabled}
+      focusRequest={focusRequest}
+      onConsumeFocus={onConsumeFocus}
       onSave={(next) => {
         onSaveSpy?.(next);
         setNotes(next);
@@ -188,5 +190,45 @@ describe("HandoverView", () => {
       vi.advanceTimersByTime(1500);
     });
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:x");
+  });
+
+  it("いつでも必要なことは日付の並びに混ぜず、先頭に固定する", () => {
+    renderView({
+      initial: [
+        { id: 1, date: "2026-10-01", category: "事務", title: "提出催促" },
+        { id: 2, date: "2026-04-01", category: "設備・システム", title: "鍵の置き場所", pinned: true },
+      ],
+    });
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(["📚 いつでも必要なこと1 件", "2026年10月1 件"]);
+    fireEvent.click(screen.getByRole("button", { name: "月別 (年度の流れ)" }));
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "📚 いつでも必要なこと1 件",
+      "10月1 件",
+    ]);
+  });
+
+  it("外から指定された 1 件へ: 絞り込みを外して強調し、要求を消してもらう", () => {
+    const onConsumeFocus = vi.fn();
+    const initial = [
+      { id: 1, date: "2026-10-01", category: "事務", title: "提出催促" },
+      { id: 2, date: "2026-04-01", category: "講師", title: "面談" },
+    ];
+    const { rerender } = renderView({ initial });
+    fireEvent.change(screen.getByLabelText("引継ぎメモを検索"), { target: { value: "面談" } });
+    expect(screen.queryByText("提出催促")).toBeNull();
+    rerender(
+      <ToastProvider>
+        <Harness initial={initial} focusRequest={{ id: 1, token: 1 }} onConsumeFocus={onConsumeFocus} />
+      </ToastProvider>
+    );
+    expect(onConsumeFocus).toHaveBeenCalled();
+    const card = screen.getByText("提出催促").closest("article");
+    expect(card.id).toBe("handover-note-1");
+    expect(card.style.boxShadow).not.toBe("");
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(card.style.boxShadow).toBe("");
   });
 });

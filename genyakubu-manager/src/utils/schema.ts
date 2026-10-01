@@ -337,6 +337,7 @@ export function isHandoverNote(x: unknown): x is HandoverNote {
   if (x.body !== undefined && !isString(x.body)) return false;
   if (x.advice !== undefined && !isString(x.advice)) return false;
   if (x.annual !== undefined && typeof x.annual !== "boolean") return false;
+  if (x.pinned !== undefined && typeof x.pinned !== "boolean") return false;
   return true;
 }
 

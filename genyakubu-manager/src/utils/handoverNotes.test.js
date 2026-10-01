@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  addHandoverNote,
   filterNotes,
+  splitPinned,
+  updateHandoverNote,
+  validateHandoverDraft,
   fmtNoteDate,
   fmtOffset,
   groupByMonthOfYear,
@@ -177,5 +181,62 @@ describe("表示用", () => {
         "",
       ].join("\n")
     );
+  });
+});
+
+describe("作成・更新・固定 (いつでも必要なこと)", () => {
+  it("追加は最大 id + 1、作成日時を入れる。更新は id と作成日時を保つ", () => {
+    const base = [note(4, "2026-09-01", "a", { createdAt: "2026-09-01T00:00:00.000Z" })];
+    const added = addHandoverNote(
+      base,
+      { date: "2026-10-01", category: "事務", title: "b", body: "", advice: "", annual: false, pinned: true },
+      "2026-10-01T09:00:00.000Z"
+    );
+    expect(added[1]).toEqual({
+      id: 5,
+      date: "2026-10-01",
+      category: "事務",
+      title: "b",
+      pinned: true,
+      createdAt: "2026-10-01T09:00:00.000Z",
+      updatedAt: "2026-10-01T09:00:00.000Z",
+    });
+    const updated = updateHandoverNote(
+      added,
+      4,
+      { date: "2026-09-02", category: "講師", title: "a2", body: "x", advice: "", annual: true, pinned: false },
+      "2026-10-02T00:00:00.000Z"
+    );
+    expect(updated[0]).toEqual({
+      id: 4,
+      date: "2026-09-02",
+      category: "講師",
+      title: "a2",
+      body: "x",
+      annual: true,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+    });
+  });
+
+  it("保存できない理由", () => {
+    expect(validateHandoverDraft({ date: "", title: "x" })).toMatch(/日付/);
+    expect(validateHandoverDraft({ date: "2026-10-01", title: " " })).toMatch(/1 行/);
+    expect(validateHandoverDraft({ date: "2026-10-01", title: "x" })).toBeNull();
+  });
+
+  it("固定メモは分類順 → 見出し順で分け、この時期には出さない", () => {
+    const notes = [
+      note(1, "2025-10-03", "日付のあるメモ"),
+      note(2, "2025-10-03", "鍵の置き場所", { pinned: true, category: "設備・システム" }),
+      note(3, "2025-10-03", "事務の連絡先", { pinned: true, category: "事務" }),
+    ];
+    const { pinned, dated } = splitPinned(notes);
+    expect(pinned.map((n) => n.id)).toEqual([3, 2]);
+    expect(dated.map((n) => n.id)).toEqual([1]);
+    expect(seasonalNotes(notes, "2026-10-01").map((x) => x.note.id)).toEqual([1]);
+    const md = notesToMarkdown(notes);
+    expect(md.indexOf("## いつでも必要なこと")).toBeLessThan(md.indexOf("## 10月"));
+    expect(md).toContain("- [事務] 事務の連絡先");
   });
 });

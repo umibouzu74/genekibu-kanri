@@ -1,29 +1,36 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToday } from "../../hooks/useToday";
 import { useToasts } from "../../hooks/useToasts";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import { PrintButton } from "../PrintButton";
+import { HandoverNoteForm } from "../HandoverNoteForm";
 import { S, colors } from "../../styles/common";
-import { isValidDateStr } from "../../utils/dateHelpers";
-import { nextNumericId } from "../../utils/schema";
 import {
-  DEFAULT_HANDOVER_CATEGORY,
   HANDOVER_CATEGORIES,
+  addHandoverNote,
+  draftFromNote,
+  emptyHandoverDraft,
   filterNotes,
   fmtNoteDate,
   fmtOffset,
   groupByMonthOfYear,
   groupByYearMonth,
-  normalizeHandoverNote,
   notesToMarkdown,
   seasonalNotes,
+  splitPinned,
+  updateHandoverNote,
+  validateHandoverDraft,
 } from "../../utils/handoverNotes";
 
 // ─── 引継ぎメモ ─────────────────────────────────────────────────────
 // 責任者が日々気付いたことを 1 行ずつ書き溜め、後任に渡す画面。
 // 書くときは「日付 + 分類 + 1 行」だけで済むようにし (詳細と「次の担当者へ」
 // は任意)、読むときは時系列 / 月別 (年度の流れ) を切り替える。去年までの
-// 同じ時期のメモは先頭に出す。組み立ては utils/handoverNotes.js。
+// 同じ時期のメモは先頭に出す。日付に縛られないこと (手順・連絡先) は
+// 「📚 いつでも必要なこと」として並べ方によらず先頭に固定する。
+// 外 (ダッシュボードの「去年のこの時期」/ Cmd+K) から focusRequest で 1 件を
+// 指定されたら、絞り込みを外してそこまでスクロールし、少しの間強調する。
+// 組み立ては utils/handoverNotes.js。
 //
 // 削除は cascade 無しなので removeWithUndo (CLAUDE.md の削除 UX ルール)。
 // 印刷系統: PrintButton (window.print())。紙面は一覧だけで、入力欄・検索・
@@ -33,6 +40,7 @@ const PRINT_CSS = `
 @media print {
   .handover-note { break-inside: avoid; page-break-inside: avoid; }
   .handover-group-title { break-after: avoid; page-break-after: avoid; }
+  .handover-note { box-shadow: none !important; }
 }
 `;
 
@@ -57,15 +65,6 @@ const chip = (bg, fg) => ({
   whiteSpace: "nowrap",
 });
 
-const emptyDraft = (date, category = DEFAULT_HANDOVER_CATEGORY) => ({
-  date,
-  category,
-  title: "",
-  body: "",
-  advice: "",
-  annual: false,
-});
-
 function download(filename, text) {
   const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -76,130 +75,16 @@ function download(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// 追加と編集で共有する入力欄。詳細 (経緯・次の担当者へ・毎年) は既定で
-// 畳んでおき、日々の 1 行メモの手間を増やさない
-function NoteForm({ draft, onChange, onSubmit, onCancel, submitLabel, defaultOpen = false, idPrefix }) {
-  const [open, setOpen] = useState(
-    defaultOpen || Boolean(draft.body || draft.advice || draft.annual)
-  );
-  const set = (patch) => onChange({ ...draft, ...patch });
-  const submitOnCtrlEnter = (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      onSubmit();
-    }
-  };
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit();
-      }}
-      style={{ display: "flex", flexDirection: "column", gap: 8 }}
-    >
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <input
-          type="date"
-          value={draft.date}
-          onChange={(e) => set({ date: e.target.value })}
-          aria-label="日付"
-          style={{ ...S.input, width: 150, padding: "6px 8px" }}
-        />
-        <select
-          value={draft.category}
-          onChange={(e) => set({ category: e.target.value })}
-          aria-label="分類"
-          style={{ ...S.input, width: 130, padding: "6px 8px" }}
-        >
-          {HANDOVER_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-          {!HANDOVER_CATEGORIES.includes(draft.category) && (
-            <option value={draft.category}>{draft.category}</option>
-          )}
-        </select>
-        <input
-          type="text"
-          value={draft.title}
-          onChange={(e) => set({ title: e.target.value })}
-          placeholder="何があったか (例: 事務よりズバリ的中の提出催促)"
-          aria-label="メモ"
-          style={{ ...S.input, flex: "1 1 260px", width: "auto", padding: "6px 8px" }}
-        />
-        <button type="submit" style={{ ...S.btn(true), padding: "6px 14px" }}>
-          {submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" onClick={onCancel} style={{ ...S.btn(false), padding: "6px 12px" }}>
-            キャンセル
-          </button>
-        )}
-      </div>
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          style={{
-            alignSelf: "flex-start",
-            background: "none",
-            border: "none",
-            padding: 0,
-            fontSize: 12,
-            color: colors.accentBlue,
-            cursor: "pointer",
-          }}
-        >
-          ▸ 詳しく書く (経緯・次の担当者へ・毎年あること)
-        </button>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <label htmlFor={`${idPrefix}-body`} style={{ ...S.formLabel, marginBottom: 0 }}>
-            経緯・詳細
-          </label>
-          <textarea
-            id={`${idPrefix}-body`}
-            value={draft.body}
-            onChange={(e) => set({ body: e.target.value })}
-            onKeyDown={submitOnCtrlEnter}
-            rows={2}
-            placeholder="例: 9月の会議で告知済み"
-            style={{ ...S.input, fontSize: 13, resize: "vertical" }}
-          />
-          <label htmlFor={`${idPrefix}-advice`} style={{ ...S.formLabel, marginBottom: 0 }}>
-            次の担当者へ
-          </label>
-          <textarea
-            id={`${idPrefix}-advice`}
-            value={draft.advice}
-            onChange={(e) => set({ advice: e.target.value })}
-            onKeyDown={submitOnCtrlEnter}
-            rows={2}
-            placeholder="例: 9月の会議で告知したあと、月末に講師へ念押ししておくと催促が来ない"
-            style={{ ...S.input, fontSize: 13, resize: "vertical" }}
-          />
-          <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={draft.annual}
-              onChange={(e) => set({ annual: e.target.checked })}
-            />
-            🔁 毎年この時期にあること
-          </label>
-        </div>
-      )}
-    </form>
-  );
-}
-
-function NoteCard({ note, editing, onEdit, onRemove, children }) {
+function NoteCard({ note, editing, highlighted, onEdit, onRemove, children }) {
   const tone = toneOf(note.category);
   return (
     <article
+      id={`handover-note-${note.id}`}
       className="handover-note"
       style={{
         ...S.panel,
+        boxShadow: highlighted ? `0 0 0 3px ${colors.warning}` : undefined,
+        transition: "box-shadow .4s",
         padding: "8px 12px",
         display: "flex",
         flexDirection: "column",
@@ -213,7 +98,7 @@ function NoteCard({ note, editing, onEdit, onRemove, children }) {
         <>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: colors.inkMuted }}>
-              {fmtNoteDate(note.date)}
+              {note.pinned ? `${fmtNoteDate(note.date)} 記入` : fmtNoteDate(note.date)}
             </span>
             <span style={chip(tone.bg, tone.fg)}>{note.category}</span>
             {note.annual && <span style={chip("#e8f2ea", colors.accentGreen)}>🔁 毎年</span>}
@@ -261,27 +146,65 @@ function NoteCard({ note, editing, onEdit, onRemove, children }) {
   );
 }
 
-export function HandoverView({ notes = [], onSave, enabled = true }) {
+export function HandoverView({
+  notes = [],
+  onSave,
+  enabled = true,
+  focusRequest = null,
+  onConsumeFocus,
+}) {
   const today = useToday();
   const toasts = useToasts();
   const remove = useRemoveWithUndo({ list: notes, save: onSave });
 
-  const [draft, setDraft] = useState(() => emptyDraft(today));
+  const [draft, setDraft] = useState(() => emptyHandoverDraft(today));
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [mode, setMode] = useState("timeline");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [highlightId, setHighlightId] = useState(null);
 
   const filtered = useMemo(
     () => filterNotes(notes, { query, category }),
     [notes, query, category]
   );
+  const { pinned, dated } = useMemo(() => splitPinned(filtered), [filtered]);
   const groups = useMemo(
-    () => (mode === "month" ? groupByMonthOfYear(filtered) : groupByYearMonth(filtered)),
-    [mode, filtered]
+    () => (mode === "month" ? groupByMonthOfYear(dated) : groupByYearMonth(dated)),
+    [mode, dated]
   );
   const seasonal = useMemo(() => seasonalNotes(notes, today), [notes, today]);
+
+  // 外から指定された 1 件へ飛ぶ。絞り込みで隠れていたら外す。スクロールは
+  // 描画が確定してから (この effect の後の描画) なので 1 タスク譲る。
+  // 要求は受け取ったら消してもらう (onConsumeFocus。サイドバーから開き直した
+  // ときに古い要求でまた飛ばない)。消した後の再実行でタイマーを止めないよう、
+  // タイマーはアンマウント時にだけ片付ける
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const timersRef = useRef([]);
+  useEffect(() => {
+    const id = focusRequest?.id;
+    if (id == null) return;
+    onConsumeFocus?.();
+    if (!notesRef.current.some((n) => n.id === id)) return;
+    setQuery("");
+    setCategory("");
+    setEditingId(null);
+    setHighlightId(id);
+    timersRef.current.push(
+      setTimeout(() => {
+        const el = document.getElementById(`handover-note-${id}`);
+        if (el && typeof el.scrollIntoView === "function") {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 0),
+      setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2500)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 要求 (token) が変わったときだけ動く
+  }, [focusRequest]);
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
 
   if (!enabled) {
     return (
@@ -291,61 +214,61 @@ export function HandoverView({ notes = [], onSave, enabled = true }) {
     );
   }
 
-  const validate = (d) => {
-    if (!isValidDateStr(d.date)) return "日付を入れてください";
-    if (!d.title.trim()) return "何があったかを 1 行で入れてください";
-    return null;
-  };
+  const nowIso = () => new Date().toISOString();
 
   const add = () => {
-    const err = validate(draft);
+    const err = validateHandoverDraft(draft);
     if (err) {
       toasts.error(err);
       return;
     }
-    const now = new Date().toISOString();
-    const note = normalizeHandoverNote({
-      ...draft,
-      id: nextNumericId(notes),
-      createdAt: now,
-      updatedAt: now,
-    });
-    onSave([...notes, note]);
+    onSave(addHandoverNote(notes, draft, nowIso()));
     toasts.success("引継ぎメモを追加しました");
     // 同じ日に続けて書くことが多いので日付と分類は残す
-    setDraft(emptyDraft(draft.date, draft.category));
+    setDraft(emptyHandoverDraft(draft.date, draft.category));
   };
 
   const startEdit = (n) => {
     setEditingId(n.id);
-    setEditDraft({
-      date: n.date,
-      category: n.category,
-      title: n.title,
-      body: n.body || "",
-      advice: n.advice || "",
-      annual: Boolean(n.annual),
-    });
+    setEditDraft(draftFromNote(n));
   };
 
   const saveEdit = () => {
-    const err = validate(editDraft);
+    const err = validateHandoverDraft(editDraft);
     if (err) {
       toasts.error(err);
       return;
     }
-    const now = new Date().toISOString();
-    onSave(
-      notes.map((n) =>
-        n.id === editingId
-          ? normalizeHandoverNote({ ...n, ...editDraft, id: n.id, updatedAt: now })
-          : n
-      )
-    );
+    onSave(updateHandoverNote(notes, editingId, editDraft, nowIso()));
     setEditingId(null);
     setEditDraft(null);
     toasts.success("引継ぎメモを更新しました");
   };
+
+  const renderCard = (n) => (
+    <NoteCard
+      key={n.id}
+      note={n}
+      editing={editingId === n.id}
+      highlighted={highlightId === n.id}
+      onEdit={() => startEdit(n)}
+      onRemove={() => remove(n.id, { successMsg: "引継ぎメモを削除しました" })}
+    >
+      {editingId === n.id && (
+        <HandoverNoteForm
+          idPrefix={`handover-edit-${n.id}`}
+          draft={editDraft}
+          onChange={setEditDraft}
+          onSubmit={saveEdit}
+          onCancel={() => {
+            setEditingId(null);
+            setEditDraft(null);
+          }}
+          submitLabel="保存"
+        />
+      )}
+    </NoteCard>
+  );
 
   const exportText = () => {
     const filteredNote = query || category ? " (絞り込み中)" : "";
@@ -372,7 +295,7 @@ export function HandoverView({ notes = [], onSave, enabled = true }) {
 
       <section className="no-print" style={{ ...S.panel, padding: "10px 12px" }}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>✏ 気付いたことを書く</div>
-        <NoteForm
+        <HandoverNoteForm
           idPrefix="handover-new"
           draft={draft}
           onChange={setDraft}
@@ -480,42 +403,36 @@ export function HandoverView({ notes = [], onSave, enabled = true }) {
           条件に合うメモはありません。
         </div>
       ) : (
-        groups.map((g) => (
-          <section key={g.key} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <h2
-              className="handover-group-title"
-              style={{ fontSize: 15, margin: "4px 0 0", borderBottom: `2px solid ${colors.border}` }}
-            >
-              {g.label}
-              <span style={{ fontSize: 12, fontWeight: 400, color: colors.inkMuted, marginLeft: 8 }}>
-                {g.notes.length} 件
-              </span>
-            </h2>
-            {g.notes.map((n) => (
-              <NoteCard
-                key={n.id}
-                note={n}
-                editing={editingId === n.id}
-                onEdit={() => startEdit(n)}
-                onRemove={() => remove(n.id, { successMsg: "引継ぎメモを削除しました" })}
+        <>
+          {pinned.length > 0 && (
+            <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <h2
+                className="handover-group-title"
+                style={{ fontSize: 15, margin: "4px 0 0", borderBottom: `2px solid ${colors.border}` }}
               >
-                {editingId === n.id && (
-                  <NoteForm
-                    idPrefix={`handover-edit-${n.id}`}
-                    draft={editDraft}
-                    onChange={setEditDraft}
-                    onSubmit={saveEdit}
-                    onCancel={() => {
-                      setEditingId(null);
-                      setEditDraft(null);
-                    }}
-                    submitLabel="保存"
-                  />
-                )}
-              </NoteCard>
-            ))}
-          </section>
-        ))
+                📚 いつでも必要なこと
+                <span style={{ fontSize: 12, fontWeight: 400, color: colors.inkMuted, marginLeft: 8 }}>
+                  {pinned.length} 件
+                </span>
+              </h2>
+              {pinned.map(renderCard)}
+            </section>
+          )}
+          {groups.map((g) => (
+            <section key={g.key} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <h2
+                className="handover-group-title"
+                style={{ fontSize: 15, margin: "4px 0 0", borderBottom: `2px solid ${colors.border}` }}
+              >
+                {g.label}
+                <span style={{ fontSize: 12, fontWeight: 400, color: colors.inkMuted, marginLeft: 8 }}>
+                  {g.notes.length} 件
+                </span>
+              </h2>
+              {g.notes.map(renderCard)}
+            </section>
+          ))}
+        </>
       )}
 
       <details className="no-print" style={{ fontSize: 12, color: colors.inkMuted }}>
@@ -531,6 +448,15 @@ export function HandoverView({ notes = [], onSave, enabled = true }) {
           </li>
           <li>
             去年以前のメモのうち、今の時期 (1 週間前〜1 か月先) にあたるものを上に出します。
+            ダッシュボードの先頭にも「📌 去年のこの時期」として出ます。
+          </li>
+          <li>
+            手順・連絡先・物の置き場所のように日付に関係ないことは「詳しく書く」で
+            「📚 いつでも必要なこと」にすると、どの並べ方でも先頭に固定されます。
+          </li>
+          <li>
+            どの画面からでも Cmd+K (Ctrl+K) →「引継ぎメモを書く」で書けます。Cmd+K の検索は
+            メモの中身も探します。
           </li>
           <li>
             引継ぎメモは管理者だけが読めます (閲覧用のログインでは見えません)。データ管理の

@@ -10,6 +10,7 @@ import { parseDateQuery } from "../utils/parseDateQuery";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
+import { filterNotes, fmtNoteDate, sortNotesDesc } from "../utils/handoverNotes";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -38,6 +39,10 @@ export function CommandPalette({
   onShowShortcuts,
   /** 引継ぎメモ (管理者だけが読める) を候補に出すか */
   canUseAdminData = false,
+  // 引継ぎメモの中身の検索と「✏ 引継ぎメモを書く」(canUseAdminData のときだけ)
+  handoverNotes = [],
+  onOpenHandoverNote,
+  onOpenHandoverAdd,
 }) {
   const todayStr = useToday();
   const inputRef = useRef(null);
@@ -328,7 +333,34 @@ export function CommandPalette({
       }
     }
 
+    // 引継ぎメモの中身 (見出し・経緯・次の担当者へ・日付の打ち方)。
+    // 閲覧者には読めないデータなので canUseAdminData のときだけ
+    if (canUseAdminData && onOpenHandoverNote && !empty) {
+      for (const n of sortNotesDesc(filterNotes(handoverNotes, { query: q })).slice(0, 5)) {
+        hits.push({
+          type: "handover",
+          label: n.title,
+          detail: `${n.pinned ? "いつでも必要なこと" : fmtNoteDate(n.date)} / ${n.category}`,
+          action: () => {
+            onOpenHandoverNote(n.id);
+            onClose();
+          },
+        });
+      }
+    }
+
     // ダイアログを開く操作 (ビュー移動ではないので別立て)。
+    if (canUseAdminData && onOpenHandoverAdd && matchLabel("引継ぎメモを書く")) {
+      hits.push({
+        type: "view",
+        label: "引継ぎメモを書く",
+        detail: "気付いたことをその場で 1 行メモ (後任への申し送り)",
+        action: () => {
+          onOpenHandoverAdd();
+          onClose();
+        },
+      });
+    }
     if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
       hits.push({
         type: "view",
@@ -375,6 +407,9 @@ export function CommandPalette({
     onClose,
     views,
     canUseAdminData,
+    handoverNotes,
+    onOpenHandoverNote,
+    onOpenHandoverAdd,
   ]);
 
   useEffect(() => {
@@ -400,8 +435,8 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆" };
-  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付" };
+  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ" };
   const listboxId = "cmdp-results";
   const optionId = (i) => `cmdp-opt-${i}`;
   const activeOptionId =

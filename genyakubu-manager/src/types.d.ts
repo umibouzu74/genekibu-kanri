@@ -251,6 +251,7 @@ export interface HandoverNote {
   body?: string; // 詳細・経緯 ("9 月の会議で告知済み")
   advice?: string; // 次の担当者へ (こうしておくとよい)
   annual?: boolean; // true = 毎年この時期にあること
+  pinned?: boolean; // true = 日付に関係なくいつでも必要なこと (手順・連絡先)
   createdAt?: string;
   updatedAt?: string;
 }
