@@ -240,6 +240,21 @@ export interface FuzokuPlan {
   tests: Record<string, Record<string, FuzokuTestEntry>>; // 日付 → 学年 → 科目
 }
 
+// ─── 引継ぎメモ (HandoverNote) ───────────────────────────────────
+// 責任者が日々気付いたことを書き溜めて後任に渡すメモ (utils/handoverNotes.js)。
+// Firebase では adminData/ (管理者だけが読める) に置く。
+export interface HandoverNote {
+  id: number;
+  date: string; // 起きた日 "YYYY-MM-DD"
+  category: string; // HANDOVER_CATEGORIES のいずれか
+  title: string; // 1 行の要約 ("事務よりズバリ的中の提出催促")
+  body?: string; // 詳細・経緯 ("9 月の会議で告知済み")
+  advice?: string; // 次の担当者へ (こうしておくとよい)
+  annual?: boolean; // true = 毎年この時期にあること
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ─── Extra lesson (追加授業) ─────────────────────────────────────
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
@@ -379,6 +394,8 @@ export interface ExportBundle {
   extraLessons?: ExtraLesson[];
   daySchedules?: DaySchedule[];
   fuzokuPlan?: FuzokuPlan;
+  /** 管理者が書き出したときだけ含まれる */
+  handoverNotes?: HandoverNote[];
 }
 
 export interface ValidationResult<T> {

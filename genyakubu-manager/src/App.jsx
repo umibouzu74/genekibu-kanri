@@ -126,6 +126,9 @@ const EventCalendarView = lazy(() =>
 const FuzokuPlanView = lazy(() =>
   import("./components/views/FuzokuPlanView").then((m) => ({ default: m.FuzokuPlanView }))
 );
+const HandoverView = lazy(() =>
+  import("./components/views/HandoverView").then((m) => ({ default: m.HandoverView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -175,6 +178,7 @@ const VIEW_TITLES = {
   [VIEWS.BUILDER]: "講習時間割作成",
   [VIEWS.REGULAR_BUILDER]: "通常時間割作成",
   [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
+  [VIEWS.HANDOVER]: "引継ぎメモ",
 };
 
 export default function App() {
@@ -228,6 +232,9 @@ export default function App() {
     saveDaySchedules,
     fuzokuPlan,
     saveFuzokuPlan,
+    handoverNotes,
+    saveHandoverNotes,
+    handoverEnabled,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -836,6 +843,7 @@ export default function App() {
         onJumpToRequestedSubs={() =>
           selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
         }
+        canUseAdminData={handoverEnabled}
         teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
         slots={slots}
@@ -1277,6 +1285,13 @@ export default function App() {
               onAddDaySchedule={isAdmin ? openNewDaySchedule : undefined}
             />
           )}
+          {view === VIEWS.HANDOVER && !selected && (
+            <HandoverView
+              notes={handoverNotes}
+              onSave={saveHandoverNotes}
+              enabled={handoverEnabled}
+            />
+          )}
           {view === VIEWS.BUILDER && !selected && <BuilderApp />}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
             <RegularBuilderApp
@@ -1618,6 +1633,7 @@ export default function App() {
             specialEvents={specialEvents}
             extraLessons={extraLessons}
             selectedTeacher={selected}
+            canUseAdminData={handoverEnabled}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);

@@ -36,6 +36,8 @@ export function CommandPalette({
   onJumpToAbsenceFlow,
   views,
   onShowShortcuts,
+  /** 引継ぎメモ (管理者だけが読める) を候補に出すか */
+  canUseAdminData = false,
 }) {
   const todayStr = useToday();
   const inputRef = useRef(null);
@@ -258,6 +260,9 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
     ];
+    if (canUseAdminData) {
+      viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
+    }
     // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
     // 選択されているときだけ候補に出す。空のビューに飛ばさないため。
     if (selectedTeacher) {
@@ -369,6 +374,7 @@ export function CommandPalette({
     onOpenMultiDayAbsence,
     onClose,
     views,
+    canUseAdminData,
   ]);
 
   useEffect(() => {

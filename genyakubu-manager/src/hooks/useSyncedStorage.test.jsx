@@ -192,3 +192,40 @@ describe("useSyncedStorage", () => {
     });
   });
 });
+
+describe("useSyncedStorage の root / enabled (管理者だけが読めるデータ)", () => {
+  it("enabled: false の間は localStorage も Firebase も読まず、書込も無視する", async () => {
+    localStorage.setItem("adm", JSON.stringify([{ id: 1 }]));
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useSyncedStorage("adm", [], { root: "adminData", enabled }),
+      { initialProps: { enabled: false } }
+    );
+    await flushMicrotasks();
+    expect(result.current[0]).toEqual([]);
+    expect(onValue).not.toHaveBeenCalled();
+    act(() => {
+      result.current[1]([{ id: 2 }]);
+    });
+    expect(set).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem("adm"))).toEqual([{ id: 1 }]);
+
+    // 管理者ログイン → 読み込み・購読を始める (パスは adminData/)
+    rerender({ enabled: true });
+    await flushMicrotasks();
+    expect(result.current[0]).toEqual([{ id: 1 }]);
+    expect(onValue).toHaveBeenCalledWith(
+      { __path: "adminData/adm" },
+      expect.any(Function),
+      expect.any(Function)
+    );
+    act(() => {
+      result.current[1]([{ id: 3 }]);
+    });
+    expect(set).toHaveBeenCalledWith({ __path: "adminData/adm" }, [{ id: 3 }]);
+
+    // ログアウト → 表示を初期値に戻し、購読を外す
+    rerender({ enabled: false });
+    expect(result.current[0]).toEqual([]);
+    expect(off).toHaveBeenCalledWith({ __path: "adminData/adm" });
+  });
+});
