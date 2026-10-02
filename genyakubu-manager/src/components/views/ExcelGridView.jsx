@@ -15,6 +15,8 @@ import { absentTeachersForSlot } from "../../utils/absenceHelpers";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
+import { offsiteLessonsOnDate } from "../../utils/offsiteLessons";
+import { isFullDayHoliday } from "../../utils/scheduleHelpers";
 import { getDaySchedulesForDate } from "../../utils/daySchedules";
 import { groupParallelSlots } from "../../utils/parallelSlots";
 import { useTeacherGroups } from "../../hooks/useTeacherGroups";
@@ -33,6 +35,7 @@ import {
 import { openPrintWindow } from "../../utils/printWindow";
 import { runSnapshotPrint } from "../../utils/snapshotPrint";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
+import { OffsiteLessonBanner } from "../OffsiteLessonBanner";
 import { SlotCancelBanner } from "../SlotCancelBanner";
 import { collectCancelledSlots, isSlotCancelledOnDate } from "../../utils/slotCancel";
 import { RescheduleInBanner } from "../RescheduleInBanner";
@@ -125,6 +128,10 @@ export function ExcelGridView({
   sessionOverrides = [],
   extraLessons = [],
   daySchedules = [],
+  // 他校舎の授業 (utils/offsiteLessons)。日付を持つ表示 (ダッシュボード /
+  // 代行モード) でだけ、バナー・講師の重なり・代行候補に使う
+  offsiteLessons = [],
+  onOpenOffsite,
   dashboardMode = false,
   // 講師名クリックでその人の月間へ (ダッシュボード / 閲覧モードだけ)
   onSelectTeacher,
@@ -193,6 +200,7 @@ export function ExcelGridView({
     unavailableTeachers,
     daySchedules: daySchedules || [],
     adjustments: adjustments || [],
+    offsiteLessons,
   });
 
   // Clear unavailable selection when day changes
@@ -521,6 +529,17 @@ export function ExcelGridView({
   // セクション横断 (中学部 ↔ 高校部) で当たるので、セクションではなく
   // ここで 1 回だけ組む。並列コマの集約 (groupParallelSlots) 前の一覧を
   // 使い、代表に畳まれた講師も落とさない。
+  // 表示日に他校舎へ授業に出ている予定。日付を持つ表示 (ダッシュボード /
+  // 代行モード) だけ — 通常のタイムテーブルの displayDate は「その曜日の
+  // 直近の日」の代用なので、日付ものは出さない (特別時程のバナーと同じ)
+  const offsiteForDisplayDate = useMemo(
+    () =>
+      (dashboardMode || subMode.isSubMode) && displayDate
+        ? offsiteLessonsOnDate(offsiteLessons, displayDate, { holidays })
+        : [],
+    [dashboardMode, subMode.isSubMode, displayDate, offsiteLessons, holidays]
+  );
+
   const teacherConflictMap = useMemo(() => {
     if (!displayDate) return new Map();
     const withAdjust = dashboardMode || subMode.isSubMode;
@@ -556,6 +575,8 @@ export function ExcelGridView({
         biweeklyAnchors,
         holidays,
         examPeriods,
+        // 既にこの日の分に絞ってある (休講日の判定も済み)
+        offsiteLessons: offsiteForDisplayDate,
       })
     );
   }, [
@@ -563,6 +584,7 @@ export function ExcelGridView({
     dashboardMode,
     subMode.isSubMode,
     subMode.pendingSubMap,
+    offsiteForDisplayDate,
     adjustments,
     daySchedules,
     rawDisplaySlots,
@@ -583,15 +605,10 @@ export function ExcelGridView({
   // 「scope=全部 かつ 学年/教科キーワード未指定」の休講が 1 件でもあれば
   // 全部門が一律休講なので、各セクションを描画せず日全体で 1 回だけ
   // メッセージを出す (DashDayRow の fullOff 相当)。
-  const dashboardFullOff = useMemo(() => {
-    return dashboardHolidaysForDay.some((h) => {
-      const sc = h.scope || ["全部"];
-      if (!sc.includes("全部")) return false;
-      if ((h.targetGrades || []).length > 0) return false;
-      if ((h.subjKeywords || []).length > 0) return false;
-      return true;
-    });
-  }, [dashboardHolidaysForDay]);
+  const dashboardFullOff = useMemo(
+    () => dashboardHolidaysForDay.some(isFullDayHoliday),
+    [dashboardHolidaysForDay]
+  );
 
   // 表示日の休講ラベル一覧 (各セクションの「本日休講」表示で利用)。
   const dashboardHolidayLabels = useMemo(
@@ -1031,6 +1048,12 @@ export function ExcelGridView({
             lessons={extraLessonsForDisplayDate}
             onEditExtraLesson={onEditExtraLesson}
           />
+          {/* 他校舎の授業 (塾の授業ではない、講師の予定)。その日に誰が居ないか */}
+          <OffsiteLessonBanner
+            lessons={offsiteForDisplayDate}
+            teacherKana={teacherKana}
+            onOpen={onOpenOffsite}
+          />
           <SlotCancelBanner items={cancelledSlotsForDisplayDate} />
           <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
           <RescheduleOutBanner items={outgoingReschedulesForDisplayDate} />
@@ -1310,6 +1333,7 @@ export function ExcelGridView({
           pendingSubs={subMode.pendingSubs}
           partTimeStaff={partTimeStaff}
           teacherKana={teacherKana}
+          offsiteByTeacher={subMode.offsiteByTeacher}
         />
       )}
     </div>

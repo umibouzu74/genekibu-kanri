@@ -276,6 +276,29 @@ export interface ExtraLesson {
   note?: string; // メモ (任意)
 }
 
+// ─── Offsite lesson (他校舎の授業) ───────────────────────────────
+// 講師が決まった曜日・時刻に別の校舎・学校へ授業をしに行く予定
+// (utils/offsiteLessons.js)。「石原: 村上高松 火・木 14:50-15:40 10/1〜未定」。
+// 塾の授業ではないので Slot / ExtraLesson にはしない (第N回・表示期間・
+// タイムテーブルのコマに混ぜない)。講師別の月間 / 週間・日別ダッシュボード・
+// 講師の重なり・代行候補が「その時間は他校舎にいる」として読む。
+// RTDB は空配列と null を消すので、days / skipDates / endDate の欠落は
+// 「空」「未定」と読む (migrateOffsiteLessons が補う)。
+export interface OffsiteLesson {
+  id: number;
+  teacher: string; // 講師 1 名 (複数人で行くときは 1 人 1 件)
+  place: string; // 行き先 ("村上高松" / "大手前丸亀")
+  days: DayName[]; // ["火", "木"]
+  time: string; // "14:50-15:40"。終了時刻が未定なら開始だけ "13:30"
+  startDate: string; // "YYYY-MM-DD"
+  endDate?: string; // "YYYY-MM-DD"。無し = 終了日未定
+  skipDates?: string[]; // この日は無い (先方の行事・冬休みなど)
+  keepOnHolidays?: boolean; // true = 塾の全体休講日 (祝日など) も行く
+  memo?: string; // "1月まで？" など
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ─── Koshu lesson (講習コマ、派生表示) ───────────────────────────
 // 講習時間割作成 (timetable-builder) の project から
 // utils/builderLessons.buildKoshuLessons が導出する読み取り専用の表示モデル。
@@ -395,6 +418,7 @@ export interface ExportBundle {
   extraLessons?: ExtraLesson[];
   daySchedules?: DaySchedule[];
   fuzokuPlan?: FuzokuPlan;
+  offsiteLessons?: OffsiteLesson[];
   /** 管理者が書き出したときだけ含まれる */
   handoverNotes?: HandoverNote[];
 }

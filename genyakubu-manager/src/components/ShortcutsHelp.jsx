@@ -28,6 +28,7 @@ const SHORTCUTS = [
       { keys: ["g", "b"], sequential: true, label: "講習時間割作成" },
       { keys: ["g", "r"], sequential: true, label: "通常時間割作成" },
       { keys: ["g", "f"], sequential: true, label: "附属の授業予定" },
+      { keys: ["g", "k"], sequential: true, label: "他校舎の授業" },
       { keys: ["g", "n"], sequential: true, label: "引継ぎメモ (管理者)" },
       {
         keys: ["g", "w"],

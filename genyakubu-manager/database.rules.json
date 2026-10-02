@@ -37,6 +37,7 @@
       "genyakubu-extra-lessons": { ".validate": "newData.hasChildren()" },
       "genyakubu-day-schedules": { ".validate": "newData.hasChildren()" },
       "genyakubu-fuzoku-plan": { ".validate": "newData.hasChildren()" },
+      "genyakubu-offsite-lessons": { ".validate": "newData.hasChildren()" },
       "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
 
       "builder": {

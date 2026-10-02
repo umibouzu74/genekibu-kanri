@@ -3,6 +3,7 @@ import { colors } from "../styles/tokens";
 import { pickSubjectId } from "../utils/subjectMatch";
 import { compareTeacherNames } from "../utils/teacherKana";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
+import { describeOffsiteBusy, offsiteOverlap } from "../utils/offsiteLessons";
 
 function computePosition(anchorRect) {
   // Popover の幅・高さ上限を画面サイズに応じて算出 (style の
@@ -43,6 +44,8 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   pendingSubs,
   partTimeStaff,
   teacherKana = {},
+  // 講師名 → 代行日の他校舎の授業 (useSubstitutionMode.offsiteByTeacher)
+  offsiteByTeacher,
 }) {
   const ref = useRef(null);
   const [showAll, setShowAll] = useState(false);
@@ -98,10 +101,30 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
   // 候補の並びは「関連度」が主。同点のときだけよみのあいうえお順で割る。
   const byKana = compareTeacherNames(teacherKana);
 
+  // その時間に他校舎へ出ているか (utils/offsiteLessons)。"overlap" = 確かに
+  // 重なる (空きに出さない) / "maybe" = 終了時刻未定で重なるかもしれない
+  const offsiteOf = (name) => {
+    let kind = null;
+    const hits = [];
+    for (const rec of offsiteByTeacher?.get?.(name) || []) {
+      const k = offsiteOverlap(rec.time, slot.time);
+      if (!k) continue;
+      hits.push(rec);
+      if (k === "overlap") kind = "overlap";
+      else if (!kind) kind = "maybe";
+    }
+    return { kind, hits };
+  };
+  const freeAllDayNames = new Set(
+    availableTeachers.filter((t) => t.isFreeAllDay).map((t) => t.name)
+  );
+
   // Filter and sort free candidates by relevance
   const freeCandidates = availableTeachers
     .filter((t) => {
       if (t.name === originalTeacher) return false;
+      // 塾のコマが無くても、その時間に他校舎へ出ている人は空きではない
+      if (offsiteOf(t.name).kind === "overlap") return false;
       if (t.isFreeAllDay) return true;
       return t.freeTimeSlots.some((ft) => ft === slot.time);
     })
@@ -335,6 +358,11 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
             ? validateSubstituteChange(t.name, slot.id, slots, pendingAssignments, subjects, partTimeStaff)
             : null;
           const hasConflict = conflict?.timeConflict;
+          const off = offsiteOf(t.name);
+          // 塾のコマが無い (全日空き) のに空きに出ないのは他校舎のせい。
+          // そのときは「授業中」ではなく「他校舎」とだけ出す
+          const busyOnlyOffsite =
+            t.isBusy && off.kind === "overlap" && freeAllDayNames.has(t.name);
           return (
             <div
               key={t.name}
@@ -392,9 +420,26 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
                   別教科
                 </span>
               ) : null}
-              {t.isBusy && (
+              {t.isBusy && !busyOnlyOffsite && (
                 <span style={{ fontSize: 9, background: "#eeeeee", color: "#666", padding: "0 4px", borderRadius: 3, fontWeight: 700 }}>
                   授業中
+                </span>
+              )}
+              {off.kind && (
+                <span
+                  title={`${off.hits.map(describeOffsiteBusy).join("\n")}${
+                    off.kind === "maybe" ? "\n終了時刻が未定のため、重なるかもしれません" : ""
+                  }`}
+                  style={{
+                    fontSize: 9,
+                    background: off.kind === "overlap" ? "#fde4e4" : "#fff4e0",
+                    color: off.kind === "overlap" ? "#c03030" : "#b06000",
+                    padding: "0 4px",
+                    borderRadius: 3,
+                    fontWeight: 700,
+                  }}
+                >
+                  {off.kind === "overlap" ? "他校舎" : "他校舎?"}
                 </span>
               )}
               {hasConflict && !t.isBusy && (

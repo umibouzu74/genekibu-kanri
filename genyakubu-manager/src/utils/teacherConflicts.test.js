@@ -8,6 +8,7 @@ import {
   describeTeacherConflict,
   findTeacherConflicts,
   teacherBusyAt,
+  teacherOffsiteMaybeAt,
   timesOverlap,
 } from "./teacherConflicts";
 
@@ -161,5 +162,75 @@ describe("teacherBusyAt", () => {
     expect(describeBusy(teacherBusyAt(list, "小見山", "19:50-20:35")[0])).toBe(
       "授業中: 中3A 理科"
     );
+  });
+});
+
+// 他校舎の授業 (utils/offsiteLessons) も「その時間その人は塾にいない」
+describe("他校舎の授業 (role: offsite)", () => {
+  // 2026-09-10 は木曜
+  const offsite = [
+    { id: 1, teacher: "奥村", place: "村上高松", days: ["木"], time: "19:00-20:00", startDate: "2026-09-01" },
+    { id: 2, teacher: "福江", place: "大手前丸亀", days: ["木"], time: "18:00", startDate: "2026-09-01" },
+    // 別の曜日・期間外・休講日は入らない
+    { id: 3, teacher: "奥村", place: "X校", days: ["火"], time: "19:00-20:00", startDate: "2026-09-01" },
+    { id: 4, teacher: "奥村", place: "Y校", days: ["木"], time: "19:00-20:00", startDate: "2026-09-01", endDate: "2026-09-09" },
+  ];
+
+  it("その日に行く予定を role: offsite の仮のコマとして足す", () => {
+    const list = collectTeacherAssignments([], DATE, { offsiteLessons: offsite });
+    expect(list.map((a) => `${a.teacher}:${a.slot.id}:${a.role}:${a.slot.subj}`)).toEqual([
+      "福江:offsite:2:offsite:大手前丸亀",
+      "奥村:offsite:1:offsite:村上高松",
+    ]);
+  });
+
+  it("塾の全体休講日は他校舎も休み (holidays を見る)", () => {
+    const holidays = [{ id: 1, date: DATE, label: "休", scope: ["全部"], targetGrades: [], subjKeywords: [] }];
+    expect(collectTeacherAssignments([], DATE, { offsiteLessons: offsite, holidays })).toEqual([]);
+  });
+
+  it("確かに重なる他校舎の予定はコマの重なりとして出る", () => {
+    const list = collectTeacherAssignments([mk(1)], DATE, { offsiteLessons: offsite });
+    const conflicts = findTeacherConflicts(list);
+    expect(conflicts.get(1)).toHaveLength(1);
+    expect(describeTeacherConflict(conflicts.get(1)[0], { withTime: true })).toBe(
+      "奥村: 他校舎 村上高松 19:00-20:00 と重複"
+    );
+  });
+
+  it("終了未定の予定の後に始まるコマは重なりにしない (注意書きだけ)", () => {
+    // 福江: 大手前丸亀 18:00〜 (終了未定) と 19:50 の代行
+    const subsBySlot = new Map([[1, [{ originalTeacher: "奥村", substitute: "福江" }]]]);
+    const list = collectTeacherAssignments([mk(1)], DATE, { subsBySlot, offsiteLessons: offsite });
+    expect(findTeacherConflicts(list).get(1)).toBeUndefined();
+    expect(teacherOffsiteMaybeAt(list, "福江", "19:50-20:35").map((a) => a.offsite.id)).toEqual([2]);
+    expect(teacherOffsiteMaybeAt(list, "福江", "17:00-17:50")).toEqual([]);
+  });
+
+  it("終了未定でも、コマの最中に始まるなら確かに重なる", () => {
+    const list = collectTeacherAssignments(
+      [mk(5, { time: "17:30-18:20", teacher: "福江" })],
+      DATE,
+      { offsiteLessons: offsite }
+    );
+    const c = findTeacherConflicts(list).get(5);
+    expect(c).toHaveLength(1);
+    expect(describeTeacherConflict(c[0], { withTime: true })).toBe(
+      "福江: 他校舎 大手前丸亀 18:00〜 (終了未定) と重複"
+    );
+  });
+
+  it("代行候補: その時間に他校舎にいる人は busy として出る", () => {
+    const list = collectTeacherAssignments([], DATE, { offsiteLessons: offsite });
+    const busy = teacherBusyAt(list, "奥村", "19:50-20:35");
+    expect(busy).toHaveLength(1);
+    expect(describeBusy(busy[0])).toBe("他校舎: 村上高松");
+    expect(teacherBusyAt(list, "奥村", "20:00-20:45")).toEqual([]);
+  });
+
+  it("同じ予定の重複登録どうしは重なりにしない", () => {
+    const dup = [offsite[0], { ...offsite[0], id: 9 }];
+    const list = collectTeacherAssignments([], DATE, { offsiteLessons: dup });
+    expect(findTeacherConflicts(list).size).toBe(0);
   });
 });

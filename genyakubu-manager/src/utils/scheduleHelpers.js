@@ -9,6 +9,20 @@ export function gradeToDept(grade) {
 
 export const isKameiRoom = (room) => room?.startsWith("亀");
 
+/**
+ * 塾全体が休みになる休講か (対象「全部」で、学年・科目の絞り込みが無い)。
+ * 月間カレンダー・日別ダッシュボードの「休講日」と、他校舎の授業の
+ * 「塾の休講日は休み」(utils/offsiteLessons) が同じ定義を使う。
+ */
+export function isFullDayHoliday(h) {
+  if (!h) return false;
+  const scope = h.scope || ["全部"];
+  if (!scope.includes("全部")) return false;
+  if ((h.targetGrades || []).length > 0) return false;
+  if ((h.subjKeywords || []).length > 0) return false;
+  return true;
+}
+
 export function sortSlots(arr) {
   const idx = Object.fromEntries(DAYS.map((d, i) => [d, i]));
   return [...arr].sort((a, b) => {

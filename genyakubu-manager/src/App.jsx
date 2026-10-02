@@ -39,6 +39,7 @@ import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
 import { fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import { sortJa } from "./utils/sortJa";
+import { sortTeacherNames } from "./utils/teacherKana";
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
@@ -131,6 +132,9 @@ const FuzokuPlanView = lazy(() =>
 const HandoverView = lazy(() =>
   import("./components/views/HandoverView").then((m) => ({ default: m.HandoverView }))
 );
+const OffsiteLessonView = lazy(() =>
+  import("./components/views/OffsiteLessonView").then((m) => ({ default: m.OffsiteLessonView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -181,6 +185,7 @@ const VIEW_TITLES = {
   [VIEWS.REGULAR_BUILDER]: "通常時間割作成",
   [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
   [VIEWS.HANDOVER]: "引継ぎメモ",
+  [VIEWS.OFFSITE]: "他校舎の授業",
 };
 
 export default function App() {
@@ -234,6 +239,8 @@ export default function App() {
     saveDaySchedules,
     fuzokuPlan,
     saveFuzokuPlan,
+    offsiteLessons,
+    saveOffsiteLessons,
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
@@ -318,6 +325,9 @@ export default function App() {
   const [showHandoverAdd, setShowHandoverAdd] = useState(false);
   // 引継ぎメモの 1 件へ飛ぶ要求 ({id, token})。token で同じ id の再要求も効かせる
   const [handoverFocus, setHandoverFocus] = useState(null);
+  // 他校舎の授業の画面への要求 ({id} = その 1 件を開く / {teacher} = その講師で
+  // 新規登録を始める。token は同じ要求の繰り返しも効かせるため)
+  const [offsiteFocus, setOffsiteFocus] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
@@ -592,6 +602,17 @@ export default function App() {
     [selectView]
   );
 
+  // 他校舎の授業の画面を開く。{id} でその 1 件 (管理者は編集)、{teacher} で
+  // その講師の新規登録 (月間・週間・ダッシュボードのバナー・Cmd+K から)
+  const openOffsite = useCallback(
+    (req) => {
+      selectView(VIEWS.OFFSITE, () =>
+        setOffsiteFocus(req ? { ...req, token: Date.now() } : null)
+      );
+    },
+    [selectView]
+  );
+
   const openDayScheduleEditor = useCallback(
     (id) => {
       selectView(VIEWS.HOLIDAYS, () =>
@@ -749,6 +770,15 @@ export default function App() {
     subjects,
     teacherKana,
   });
+  // 講師名の入力候補 (他校舎の授業)。グループを平らにしてよみ順に並べ直す
+  const allTeacherNames = useMemo(
+    () =>
+      sortTeacherNames(
+        [...new Set(allTeacherGroups.flatMap((g) => g.teachers))],
+        teacherKana
+      ),
+    [allTeacherGroups, teacherKana]
+  );
   // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ
   const fulltimeGroups = useMemo(
     () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
@@ -1073,6 +1103,8 @@ export default function App() {
               teacherSubjects={teacherSubjects}
               extraLessons={extraLessons}
               daySchedules={daySchedules}
+              offsiteLessons={offsiteLessons}
+              onOpenOffsite={(id) => openOffsite({ id })}
               saveSubs={saveSubs}
               onJumpToEventCalendar={() => selectView(VIEWS.EVENTS)}
               onJumpToSubs={(status) => {
@@ -1299,6 +1331,7 @@ export default function App() {
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
               extraLessons={extraLessons}
+              offsiteLessons={offsiteLessons}
               subs={subs}
               fuzokuPlan={fuzokuPlan}
               onSaveFuzokuPlan={saveFuzokuPlan}
@@ -1307,6 +1340,19 @@ export default function App() {
               onSelectDate={openDashboardAt}
               onEditDaySchedule={isAdmin ? openDayScheduleEditor : undefined}
               onAddDaySchedule={isAdmin ? openNewDaySchedule : undefined}
+            />
+          )}
+          {view === VIEWS.OFFSITE && !selected && (
+            <OffsiteLessonView
+              offsiteLessons={offsiteLessons}
+              onSave={saveOffsiteLessons}
+              isAdmin={isAdmin}
+              holidays={holidays}
+              teacherNames={allTeacherNames}
+              teacherKana={teacherKana}
+              focusRequest={offsiteFocus}
+              onConsumeFocus={() => setOffsiteFocus(null)}
+              onSelectTeacher={selectTeacher}
             />
           )}
           {view === VIEWS.HANDOVER && !selected && (
@@ -1367,6 +1413,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               daySchedules={daySchedules}
               extraLessons={extraLessons}
+              offsiteLessons={offsiteLessons}
               onAddAdjustment={adjCrud.add}
               onDelAdjustment={adjCrud.del}
               /* 日まるごと振替はサイドバー / Cmd+K からも開くので
@@ -1419,6 +1466,8 @@ export default function App() {
               onConsumeInitDate={() => setAbsenceFlowInitDate(null)}
               daySchedules={daySchedules}
               extraLessons={extraLessons}
+              offsiteLessons={offsiteLessons}
+              onOpenOffsite={(id) => openOffsite({ id })}
               onOpenMultiDayAbsence={(init) => setMultiDayAbsence(init || {})}
               onOpenChainSubstitution={(date) => {
                 selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: "chain", date }));
@@ -1477,6 +1526,8 @@ export default function App() {
               extraLessons={extraLessons}
               daySchedules={daySchedules}
               onEditExtraLesson={openExtraLessonEditor}
+              offsiteLessons={offsiteLessons}
+              onOpenOffsite={openOffsite}
               displayCutoff={displayCutoff}
               timetables={timetables}
               visibility={eventVisibility}
@@ -1505,6 +1556,8 @@ export default function App() {
               koshuLessons={koshuLessons}
               daySchedules={daySchedules}
               onEditExtraLesson={openExtraLessonEditor}
+              offsiteLessons={offsiteLessons}
+              onOpenOffsite={openOffsite}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -1666,6 +1719,19 @@ export default function App() {
             examPeriods={examPeriods}
             specialEvents={specialEvents}
             extraLessons={extraLessons}
+            offsiteLessons={offsiteLessons}
+            onOpenOffsite={(id) => {
+              openOffsite({ id });
+              setCmdPaletteOpen(false);
+            }}
+            onAddOffsite={
+              isAdmin
+                ? (teacher) => {
+                    openOffsite({ teacher });
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
             selectedTeacher={selected}
             canUseAdminData={handoverEnabled}
             handoverNotes={handoverEnabled ? handoverNotes : undefined}

@@ -18,8 +18,17 @@
 //
 // 判定は**警告であって禁止ではない** (作成ツールと同じ)。1 人で 2 教室を
 // 行き来する運用が実在するので、目立たせるだけで登録は止めない。
+//
+// 他校舎の授業 (utils/offsiteLessons) も「その時間その人は塾にいない」ので
+// 同じ一覧に role: "offsite" で入れる (opts.offsiteLessons)。コマではないので
+// slot は表示用の仮のもの (id は "offsite:<id>"、学年欄が「他校舎」、科目欄が
+// 行き先)。重なりは offsiteOverlap で見て、**確かに重なるものだけ**を重なりに
+// 数える。終了時刻が未定の予定に後から始まるコマは「重なるかもしれない」
+// (teacherOffsiteMaybeAt) — 警告にすると毎晩のコマに出続けるので、代行候補の
+// 注意書きにだけ使う。
 
 import { activeTeachersOnDate } from "./absenceHelpers";
+import { formatOffsiteTime, offsiteLessonsOnDate, offsiteOverlap } from "./offsiteLessons";
 
 const HM_RE = /^\s*(\d{1,2}):(\d{2})/;
 
@@ -50,6 +59,34 @@ export function timesOverlap(t1, t2) {
   return rangesOverlap(timeRange(t1), timeRange(t2));
 }
 
+// 他校舎の予定を一覧に載せるための仮のコマ。describe() がそのまま
+// 「他校舎 村上高松」と読めるように学年欄・科目欄を埋めておく
+function offsiteSlot(rec) {
+  return {
+    id: `offsite:${rec.id}`,
+    day: "",
+    time: rec.time,
+    grade: "他校舎",
+    cls: "",
+    room: "",
+    subj: rec.place,
+    teacher: rec.teacher,
+    note: "",
+  };
+}
+
+// 2 つの仕事が重なるか。他校舎の予定は終了未定がありうるので offsiteOverlap
+// の「確かに重なる」だけを見る。コマ同士は従来どおり timesOverlap
+function assignmentsOverlap(a, b) {
+  if (a.role === "offsite" && b.role !== "offsite") {
+    return offsiteOverlap(a.time, b.time) === "overlap";
+  }
+  if (b.role === "offsite" && a.role !== "offsite") {
+    return offsiteOverlap(b.time, a.time) === "overlap";
+  }
+  return timesOverlap(a.time, b.time);
+}
+
 function recordsOf(subsBySlot, slotId) {
   const recs = subsBySlot?.get?.(slotId);
   if (!recs) return [];
@@ -69,9 +106,10 @@ function recordsOf(subsBySlot, slotId) {
  * @param {Map<number, string>} [opts.timeBySlot] slotId → 実効時刻 (移動・特別時程)
  * @param {Set<number>} [opts.excludeSlotIds] 休講・振替で出る・合同で吸収された側
  * @param {Array} [opts.biweeklyAnchors]
- * @param {Array} [opts.holidays]
+ * @param {Array} [opts.holidays] 隔週の週送りと、他校舎の授業の「休講日は休み」
  * @param {Array} [opts.examPeriods]
- * @returns {Array<{teacher: string, slot: object, time: string, role: "own"|"sub", originalTeacher?: string}>}
+ * @param {Array} [opts.offsiteLessons] 他校舎の授業 (その日に行く分を role: "offsite" で足す)
+ * @returns {Array<{teacher: string, slot: object, time: string, role: "own"|"sub"|"offsite", originalTeacher?: string, offsite?: object}>}
  */
 export function collectTeacherAssignments(slots, date, opts = {}) {
   const out = [];
@@ -103,6 +141,17 @@ export function collectTeacherAssignments(slots, date, opts = {}) {
         originalTeacher: r.originalTeacher || "",
       });
     }
+  }
+  for (const rec of offsiteLessonsOnDate(opts.offsiteLessons, date, {
+    holidays: opts.holidays,
+  })) {
+    out.push({
+      teacher: rec.teacher,
+      slot: offsiteSlot(rec),
+      time: rec.time,
+      role: "offsite",
+      offsite: rec,
+    });
   }
   return out;
 }
@@ -143,7 +192,7 @@ export function findTeacherConflicts(assignments) {
         const b = list[j];
         if (a.slot.id === b.slot.id) continue;
         if (samePosition(a.slot, b.slot)) continue;
-        if (!timesOverlap(a.time, b.time)) continue;
+        if (!assignmentsOverlap(a, b)) continue;
         push(a.slot.id, {
           teacher,
           role: a.role,
@@ -179,7 +228,22 @@ export function teacherBusyAt(assignments, teacher, time, opts = {}) {
     (a) =>
       a.teacher === teacher &&
       a.slot.id !== opts.excludeSlotId &&
-      timesOverlap(a.time, time)
+      assignmentsOverlap(a, { role: "own", time })
+  );
+}
+
+/**
+ * 終了時刻が未定の他校舎の予定のうち、指定時刻のコマに掛かるかもしれない
+ * もの (offsiteOverlap が "maybe")。代行候補の注意書き用 — 重なりとしては
+ * 数えない。
+ */
+export function teacherOffsiteMaybeAt(assignments, teacher, time) {
+  if (!teacher) return [];
+  return (assignments || []).filter(
+    (a) =>
+      a.role === "offsite" &&
+      a.teacher === teacher &&
+      offsiteOverlap(a.time, time) === "maybe"
   );
 }
 
@@ -190,18 +254,22 @@ function describe(slot) {
 
 /**
  * 重なり 1 件を短い文にする。
- *   "福江: 中3A 理科 (代行) と重複" / "滝澤: 中3SS 理科 と重複"
+ *   "福江: 中3A 理科 (代行) と重複" / "滝澤: 中3SS 理科 と重複" /
+ *   "石原: 他校舎 村上高松 と重複"
  */
 export function describeTeacherConflict(c, { withTime = false } = {}) {
   const role = c.otherRole === "sub" ? " (代行)" : "";
-  const time = withTime && c.otherTime ? ` ${c.otherTime}` : "";
+  // 他校舎の予定は終了未定がありうる ("13:30" → "13:30〜 (終了未定)")
+  const otherTime = c.otherRole === "offsite" ? formatOffsiteTime(c.otherTime) : c.otherTime;
+  const time = withTime && otherTime ? ` ${otherTime}` : "";
   return `${c.teacher}: ${describe(c.other)}${role}${time} と重複`;
 }
 
 /**
  * 「その時間に持っている仕事」1 件を候補行のラベルにする。
- *   "授業中: 中2C 数学" / "代行中: 中3A 理科"
+ *   "授業中: 中2C 数学" / "代行中: 中3A 理科" / "他校舎: 村上高松"
  */
 export function describeBusy(a) {
+  if (a.role === "offsite") return `他校舎: ${a.slot.subj}`;
   return `${a.role === "sub" ? "代行中" : "授業中"}: ${describe(a.slot)}`;
 }

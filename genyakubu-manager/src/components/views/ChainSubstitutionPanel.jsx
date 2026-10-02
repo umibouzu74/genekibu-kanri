@@ -16,6 +16,10 @@ import {
   validateSubstituteChange,
 } from "../../utils/chainSubstitution";
 import { pickSubjectId } from "../../utils/subjectMatch";
+import {
+  describeOffsiteBusy,
+  offsiteByTeacherOnDate,
+} from "../../utils/offsiteLessons";
 
 export function ChainSubstitutionPanel({
   slots,
@@ -29,6 +33,8 @@ export function ChainSubstitutionPanel({
   biweeklyAnchors,
   teacherSubjects = {},
   teacherKana = {},
+  // 他校舎の授業 (その時間に他校舎へ出ている人は空き時間・提案から外す)
+  offsiteLessons = [],
   saveSubs,
   isAdmin,
   // 欠勤組み換えから日付つきで開いたとき
@@ -97,6 +103,13 @@ export function ChainSubstitutionPanel({
     [subs, date]
   );
 
+  // 講師名 → この日の他校舎の授業 (空き講師の一覧に出し、提案の手直しで
+  // その時間に他校舎にいる人を選んだら「他校舎」と出す)
+  const offsiteByTeacher = useMemo(
+    () => offsiteByTeacherOnDate(offsiteLessons, date, holidays),
+    [offsiteLessons, date, holidays]
+  );
+
   // 空き講師の合計（自動＋手動）。並びは関連度 (休講・隔週で空いた人 →
   // その日に担当の無い人 → 手動追加) が主で、同点はよみのあいうえお順
   const allAvailable = useMemo(
@@ -111,7 +124,7 @@ export function ChainSubstitutionPanel({
     const auto = computeAvailableTeachers(
       date, slots, holidays, examPeriods, subs,
       partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects,
-      { includeIdleTeachers: true }
+      { includeIdleTeachers: true, offsiteLessons }
     );
     setAutoAvailable(auto);
 
@@ -128,7 +141,7 @@ export function ChainSubstitutionPanel({
   }, [
     date, slots, holidays, examPeriods, subs, partTimeStaff,
     subjects, subjectCategories, timetables, biweeklyAnchors, teacherSubjects,
-    teacherKana, manualAvailable, uncoveredSubs,
+    teacherKana, manualAvailable, uncoveredSubs, offsiteLessons,
   ]);
 
   // 手動追加。一覧に無い名前 (どのコマにも出てこない人) も直接入力できる
@@ -161,13 +174,15 @@ export function ChainSubstitutionPanel({
       subjectIds,
       isPartTime,
       noSlotsToday: false,
+      // 手動で「空き」と言った人でも、他校舎にいる時間は提案に使わない
+      offsite: offsiteByTeacher.get(name) || [],
     };
     setManualAvailable((p) => [...p, entry]);
     setManualTeacher("");
     setManualTime("all");
   }, [
     manualTeacher, manualTime, allAvailable, staffNameSet,
-    partTimeStaff, slots, subjects, dayTimeSlots,
+    partTimeStaff, slots, subjects, dayTimeSlots, offsiteByTeacher,
   ]);
 
   const handleRemoveManual = useCallback((name) => {
@@ -379,6 +394,18 @@ export function ChainSubstitutionPanel({
                 <span style={reasonBadgeStyle(t)}>
                   {t.reason}
                 </span>
+                {(offsiteByTeacher.get(t.name) || []).map((rec) => (
+                  <span
+                    key={rec.id}
+                    title="この時間は空き時間・提案に使いません"
+                    style={{
+                      fontSize: 10, background: "#eef2f6", color: "#33475a",
+                      border: "1px solid #b4c3d1", borderRadius: 4, padding: "1px 6px",
+                    }}
+                  >
+                    🏫 {describeOffsiteBusy(rec)}
+                  </span>
+                ))}
                 {t.reason === "手動追加" && (
                   <button
                     type="button"
@@ -470,7 +497,8 @@ export function ChainSubstitutionPanel({
               if (!slot) return null;
               const validation = validateSubstituteChange(
                 sugg.suggestedSubstitute, sugg.slotId,
-                slots, suggestions, subjects, partTimeStaff
+                slots, suggestions, subjects, partTimeStaff,
+                { offsiteByTeacher }
               );
               return (
                 <SuggestionRow
@@ -608,7 +636,7 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
           aria-label={`${sugg.originalTeacher}の${slot.subj}(${slot.time}) の代行者`}
           style={{
             ...S.input, width: "auto", flex: "0 1 100px",
-            borderColor: validation.timeConflict ? colors.danger
+            borderColor: validation.timeConflict || validation.offsiteConflict ? colors.danger
               : validation.subjectMismatch ? "#e6a800" : "#ccc",
           }}
         >
@@ -636,6 +664,9 @@ function SuggestionRow({ sugg, slot, idx, allTeachers, validation, onChange, isA
       )}
       {validation.timeConflict && (
         <span style={{ fontSize: 10, color: colors.danger }}>時間重複</span>
+      )}
+      {validation.offsiteConflict && (
+        <span style={{ fontSize: 10, color: colors.danger }}>他校舎の授業と重複</span>
       )}
       {validation.subjectMismatch && (
         <span style={{ fontSize: 10, color: "#e6a800" }}>教科注意</span>

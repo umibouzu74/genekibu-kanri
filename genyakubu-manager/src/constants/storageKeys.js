@@ -30,6 +30,9 @@ export const LS = {
   // 附属の授業予定: 日付ごとの学校メモ (バス時刻) + 確認テストの手動指定。
   // 時程・休みは daySchedules / holidays / examPeriods のまま (utils/fuzokuPlan)
   fuzokuPlan: "genyakubu-fuzoku-plan",
+  // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)。
+  // 塾の授業ではないので slots / extraLessons とは別 (utils/offsiteLessons)
+  offsiteLessons: "genyakubu-offsite-lessons",
   // 引継ぎメモ (責任者が日々書き溜めて後任に渡す)。Firebase では
   // adminData/ (管理者だけが読める) に置く。データの初期化では消さない
   handoverNotes: "genyakubu-handover-notes",

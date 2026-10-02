@@ -100,7 +100,9 @@ export function buildMonthHeaderHtml({
   const meta = filterDesc
     ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
     : `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span></div>`;
-  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>特訓</b>テスト直前特訓</span><span><b>追</b>追加授業</span><span><b>講</b>講習</span><span><b>外</b>講習期間の外部授業</span></div>`;
+  // カードのバッジと同じ文字。休 (コマ休講) と 合+ (合同で他クラスを受ける側)
+  // も紙面に出るので凡例に載せる
+  const legend = `<div class="month-print-legend"><span><b>代</b>代行</span><span><b>合</b>合同</span><span><b>合+</b>合同で他クラスも担当</span><span><b>振</b>振替</span><span><b>移</b>時間変更</span><span><b>休</b>コマ休講</span><span><b>特訓</b>テスト直前特訓</span><span><b>追</b>追加授業</span><span><b>講</b>講習</span><span><b>外</b>講習期間の外部授業</span><span><b>他</b>他校舎の授業</span></div>`;
   return `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
 }
 

@@ -107,3 +107,30 @@ describe("SubstitutePickerPopover の「授業中 / 代行中」", () => {
     expect(screen.getByRole("option", { name: /江本/ }).textContent).not.toContain("授業中");
   });
 });
+
+describe("SubstitutePickerPopover の他校舎の授業", () => {
+  // collectTeacherAssignments が role: "offsite" で入れる仮のコマ
+  const offsite = (teacher, place, time) => ({
+    teacher,
+    slot: { id: `offsite:${teacher}`, day: "", time, grade: "他校舎", cls: "", subj: place, teacher, note: "" },
+    time,
+    role: "offsite",
+  });
+
+  it("その時間に他校舎にいる候補には「⚠ 他校舎: 行き先」を出す (選べなくはしない)", () => {
+    const { onAssign } = renderPicker({
+      assignments: [offsite("江本", "村上高松", "19:30-20:30")],
+    });
+    const ebisu = screen.getByRole("option", { name: /江本/ });
+    expect(ebisu.textContent).toContain("⚠ 他校舎: 村上高松");
+    fireEvent.click(ebisu);
+    expect(onAssign).toHaveBeenCalledWith("野口", "江本", "confirmed");
+  });
+
+  it("終了時刻が未定の予定の後のコマは「？ 他校舎」の注意書きだけ", () => {
+    renderPicker({ assignments: [offsite("江本", "大手前丸亀", "13:30")] });
+    const ebisu = screen.getByRole("option", { name: /江本/ });
+    expect(ebisu.textContent).not.toContain("⚠");
+    expect(ebisu.textContent).toContain("？ 他校舎 大手前丸亀 13:30〜 (終了未定)");
+  });
+});

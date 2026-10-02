@@ -11,6 +11,7 @@ import { fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
 import { filterNotes, fmtNoteDate, sortNotesDesc } from "../utils/handoverNotes";
+import { describeOffsite, formatOffsitePeriod } from "../utils/offsiteLessons";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -23,6 +24,11 @@ export function CommandPalette({
   examPeriods = [],
   specialEvents = [],
   extraLessons = [],
+  // 他校舎の授業 (講師・行き先・メモで引ける)。onOpenOffsite(id) でその 1 件を
+  // 開く。onAddOffsite(teacher) は管理者のときだけ渡す (その講師で新規登録)
+  offsiteLessons = [],
+  onOpenOffsite,
+  onAddOffsite,
   selectedTeacher,
   onSelectTeacher,
   onSelectView,
@@ -249,6 +255,27 @@ export function CommandPalette({
       }
     }
 
+    // 他校舎の授業 (講師名・行き先・メモ)。講師名で引いたときに「この人は
+    // 火木の午後に村上高松」がすぐ分かるように講師ヒットと並べて出す
+    if (onOpenOffsite && !empty) {
+      const matchedOffsite = offsiteLessons.filter((r) =>
+        [r.teacher, r.place, r.memo, "他校舎"]
+          .filter(Boolean)
+          .some((f) => f.toLowerCase().includes(q))
+      );
+      for (const r of matchedOffsite.slice(0, 5)) {
+        hits.push({
+          type: "offsite",
+          label: describeOffsite(r, { withTeacher: true }),
+          detail: `他校舎の授業 / ${formatOffsitePeriod(r)}`,
+          action: () => {
+            onOpenOffsite(r.id);
+            onClose();
+          },
+        });
+      }
+    }
+
     // ビュー検索
     const viewNames = [
       { key: views.DASH, label: "ダッシュボード" },
@@ -264,6 +291,7 @@ export function CommandPalette({
       { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
+      { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
     ];
     if (canUseAdminData) {
       viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
@@ -361,6 +389,21 @@ export function CommandPalette({
         },
       });
     }
+    // 他校舎の授業の登録 (講師を選んでいればその講師で始める。管理者だけ)
+    const offsiteAddLabel = selectedTeacher
+      ? `${selectedTeacher} の他校舎の授業を登録`
+      : "他校舎の授業を登録";
+    if (onAddOffsite && matchLabel(offsiteAddLabel)) {
+      hits.push({
+        type: "view",
+        label: offsiteAddLabel,
+        detail: "講師が他の校舎・学校で授業をする曜日と時間",
+        action: () => {
+          onAddOffsite(selectedTeacher || "");
+          onClose();
+        },
+      });
+    }
     if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
       hits.push({
         type: "view",
@@ -396,6 +439,9 @@ export function CommandPalette({
     examPeriods,
     specialEvents,
     extraLessons,
+    offsiteLessons,
+    onOpenOffsite,
+    onAddOffsite,
     selectedTeacher,
     onSelectTeacher,
     onSelectView,
@@ -435,8 +481,8 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒" };
-  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ" };
+  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒", offsite: "🏫" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ", offsite: "他校舎" };
   const listboxId = "cmdp-results";
   const optionId = (i) => `cmdp-opt-${i}`;
   const activeOptionId =

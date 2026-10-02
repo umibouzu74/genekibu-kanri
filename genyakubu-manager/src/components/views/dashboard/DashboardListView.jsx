@@ -7,6 +7,7 @@ import {
 } from "../../../utils/timetable";
 import { cutoffBannerText } from "../../../constants/cutoffMessages";
 import { extraLessonsOnDate } from "../../../utils/extraLessons";
+import { offsiteLessonsOnDate } from "../../../utils/offsiteLessons";
 import { getDaySchedulesForDate } from "../../../utils/daySchedules";
 import { isSlotCancelledOnDate } from "../../../utils/slotCancel";
 import { DashDayRow } from "./DashDayRow";
@@ -20,6 +21,10 @@ export function DashboardListView({
   todayStr,
   extraLessons = [],
   daySchedules = [],
+  offsiteLessons = [],
+  onOpenOffsite,
+  teacherKana,
+  holidays = [],
   holidaysFor,
   examPeriodsFor,
   specialEventsFor,
@@ -39,6 +44,18 @@ export function DashboardListView({
   const cancelCtx = useMemo(
     () => ({ daySchedules, adjustments }),
     [daySchedules, adjustments]
+  );
+  // 日付 → その日に他校舎へ授業に出ている予定。DashDayRow の重なり判定の
+  // useMemo に渡すので、描画のたびに作り直さない
+  const offsiteByDate = useMemo(
+    () =>
+      new Map(
+        days.map(({ dateStr }) => [
+          dateStr,
+          offsiteLessonsOnDate(offsiteLessons, dateStr, { holidays }),
+        ])
+      ),
+    [days, offsiteLessons, holidays]
   );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -98,6 +115,11 @@ export function DashboardListView({
                 entireDayCutoff ? [] : extraLessonsOnDate(extraLessons, dateStr)
               }
               daySchedulesForDate={getDaySchedulesForDate(daySchedules, dateStr)}
+              // 他校舎の授業は塾の休講・表示期間と関係なく先方で行うので、
+              // カットオフの日にも出す (塾の全体休講日は既定で他校舎も休み)
+              offsiteLessonsForDate={offsiteByDate.get(dateStr)}
+              onOpenOffsite={onOpenOffsite}
+              teacherKana={teacherKana}
               sessionCtx={sessionCtx}
               isToday={dateStr === todayStr}
               onJumpToAbsenceFlow={onJumpToAbsenceFlow}

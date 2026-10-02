@@ -78,6 +78,7 @@ export function isPatternAtOddsWithBus(suggestionKind, patternKind) {
  *   subs?: object[],                      // 代行・欠勤 (講師の重なりは代行を入れた後で見る)
  *   specialEvents?: object[],
  *   extraLessons?: object[],
+ *   offsiteLessons?: object[],            // 他校舎の授業 (講師の重なりに入れる)
  *   fuzokuPlan?: object,
  * }} args
  *   ctx から timetables / displayCutoff / daySchedules / adjustments /
@@ -90,6 +91,7 @@ export function buildFuzokuMonth({
   ctx = {},
   specialEvents = [],
   extraLessons = [],
+  offsiteLessons = [],
   subs = [],
   fuzokuPlan,
 }) {
@@ -216,6 +218,8 @@ export function buildFuzokuMonth({
         biweeklyAnchors: ctx.biweeklyAnchors || [],
         holidays,
         examPeriods,
+        // 他校舎の授業 (その日に行く分。附属のコマと重なるものだけ下で残る)
+        offsiteLessons,
       })
     );
     for (const s of occupying) {

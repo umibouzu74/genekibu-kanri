@@ -659,6 +659,8 @@ export function FuzokuPlanView({
   biweeklyAnchors = [],
   sessionOverrides = [],
   extraLessons = [],
+  // 他校舎の授業 (附属のコマを持つ講師が同じ時間に他校舎へ出ていれば重なりに出す)
+  offsiteLessons = [],
   subs = [],
   fuzokuPlan,
   onSaveFuzokuPlan,
@@ -711,10 +713,11 @@ export function FuzokuPlanView({
         ctx: sessionCtx,
         specialEvents,
         extraLessons,
+        offsiteLessons,
         subs,
         fuzokuPlan,
       }),
-    [year, month, slots, sessionCtx, specialEvents, extraLessons, subs, fuzokuPlan]
+    [year, month, slots, sessionCtx, specialEvents, extraLessons, offsiteLessons, subs, fuzokuPlan]
   );
 
   // 時程の切り替えは特別時程のレコードを作る / 書き換える / 消す。
