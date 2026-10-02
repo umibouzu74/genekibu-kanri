@@ -28,6 +28,8 @@ export const VIEW_CHORDS = Object.freeze({
   f: VIEWS.FUZOKU_PLAN,
   // HANDOVER (引継ぎメモ) は note の n。
   n: VIEWS.HANDOVER,
+  // OFFSITE (他校舎の授業) は kousha (校舎) の k。
+  k: VIEWS.OFFSITE,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -58,6 +60,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   r: "通常作成",
   f: "附属",
   n: "引継ぎ",
+  k: "他校舎",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

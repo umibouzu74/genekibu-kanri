@@ -28,7 +28,9 @@ import {
   isSlotCancelledByDaySchedule,
 } from "../../utils/daySchedules";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
+import { offsiteLessonsOnDate } from "../../utils/offsiteLessons";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
+import { OffsiteLessonBanner } from "../OffsiteLessonBanner";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
 
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
@@ -60,6 +62,10 @@ export function AbsenceWorkflowView({
   // 特別時程 (1 限カット等) と追加授業。ダッシュボードと同じ日の姿にする
   daySchedules = [],
   extraLessons = [],
+  // 他校舎の授業 (この日に他校舎へ出ている講師)。バナーと、代行候補の
+  // 「他校舎」・講師の重なりに使う。onOpenOffsite(id) でその 1 件を開く
+  offsiteLessons = [],
+  onOpenOffsite,
   // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
   onOpenMultiDayAbsence,
   onOpenChainSubstitution,
@@ -167,6 +173,10 @@ export function AbsenceWorkflowView({
   const extraLessonsToday = useMemo(
     () => extraLessonsOnDate(extraLessons, date),
     [extraLessons, date]
+  );
+  const offsiteToday = useMemo(
+    () => offsiteLessonsOnDate(offsiteLessons, date, { holidays }),
+    [offsiteLessons, date, holidays]
   );
 
   // 欠勤する先生のプルダウンは「この日に担当がある人」を先頭にまとめる。
@@ -906,6 +916,8 @@ export function AbsenceWorkflowView({
       )}
       {/* 追加授業: この日の担当を確かめる場なので出す (代行はここでは登録しない) */}
       <ExtraLessonBanner lessons={extraLessonsToday} />
+      {/* 他校舎の授業: この時間は塾に居ない講師 (代行候補にも「他校舎」で出る) */}
+      <OffsiteLessonBanner lessons={offsiteToday} teacherKana={teacherKana} onOpen={onOpenOffsite} />
 
       {/* Timetable grid */}
       <AbsenceTimetable
@@ -933,6 +945,7 @@ export function AbsenceWorkflowView({
         holidaysToday={holidaysToday}
         examPeriodsToday={examPeriodsToday}
         sessionOverrides={sessionOverrides}
+        offsiteToday={offsiteToday}
         date={date}
       />
 

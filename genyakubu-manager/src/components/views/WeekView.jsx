@@ -21,7 +21,12 @@ import {
 } from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
 import { upcomingExtraLessons } from "../../utils/extraLessons";
-import { EXTRA_LESSON_COLOR } from "../../constants/colors";
+import { EXTRA_LESSON_COLOR, OFFSITE_LESSON_COLOR as OC } from "../../constants/colors";
+import {
+  formatOffsitePeriod,
+  formatOffsiteTime,
+  offsiteDayStatus,
+} from "../../utils/offsiteLessons";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { S } from "../../styles/common";
 import { getExamPrepShiftsForStaff } from "../../utils/examPrepHelpers";
@@ -52,6 +57,84 @@ import {
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要。詳細は src/components/PrintButton.jsx 冒頭コメント。
+
+// 曜日の列に並べるもの (通常コマ・他校舎の授業) を開始時刻順にする。
+// 同時刻は渡した順 (他校舎が先)。時刻の読めないものは timeStartToMin が 0 を返す
+function byStartTime(items) {
+  return items
+    .map((x, seq) => ({ ...x, t: timeStartToMin(x.time), seq }))
+    .sort((a, b) => a.t - b.t || a.seq - b.seq)
+    .map((x) => x.el);
+}
+
+const OFFSITE_SKIP_TEXT = {
+  skip: "この日は休み",
+  holiday: "塾の休講日のため休み",
+};
+
+// 週間の列に出す他校舎の授業 1 枚。休みの日は取消線で残す
+function OffsiteWeekCard({ rec, status, onOpen }) {
+  const off = status !== "on";
+  const title = `[他校舎の授業] ${rec.place} ${formatOffsiteTime(rec.time)}\n期間: ${formatOffsitePeriod(rec)}${
+    rec.memo ? `\n${rec.memo}` : ""
+  }${off ? `\n${OFFSITE_SKIP_TEXT[status]}` : ""}${onOpen ? "\n\nクリックで他校舎の授業を開きます" : ""}`;
+  return (
+    <div
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen || undefined}
+      onKeyDown={
+        onOpen
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen();
+              }
+            }
+          : undefined
+      }
+      title={title}
+      style={{
+        background: off ? "#f6f6f6" : OC.bg,
+        border: `1px solid ${off ? "#e0e0e0" : OC.bannerBorder}`,
+        borderLeft: `4px solid ${off ? "#bbb" : OC.color}`,
+        borderRadius: 8,
+        padding: "6px 10px",
+        lineHeight: 1.45,
+        cursor: onOpen ? "pointer" : "default",
+        color: off ? "#999" : undefined,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 10 }}>
+        <span
+          style={{
+            background: off ? "#bbb" : OC.color,
+            color: "#fff",
+            borderRadius: 4,
+            padding: "1px 6px",
+            fontWeight: 800,
+          }}
+        >
+          🏫 他校舎
+        </span>
+        <span style={{ textDecoration: off ? "line-through" : undefined }}>
+          {formatOffsiteTime(rec.time)}
+        </span>
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 800,
+          color: off ? "#999" : OC.deep,
+          textDecoration: off ? "line-through" : undefined,
+        }}
+      >
+        {rec.place}
+      </div>
+      {off && <div style={{ fontSize: 10 }}>{OFFSITE_SKIP_TEXT[status]}</div>}
+    </div>
+  );
+}
 
 // 基準日〜+14日の [start, end] を返す (終日 00:00)。useMemo で毎回計算しないため。
 function getUpcomingWindow(baseStr) {
@@ -163,6 +246,10 @@ export function WeekView({
   extraLessons = [],
   daySchedules = [],
   onEditExtraLesson,
+  // 他校舎の授業 (utils/offsiteLessons)。曜日の列に通常コマと並べて出す。
+  // onOpenOffsite({id} | {teacher}) で他校舎の授業の画面を開く
+  offsiteLessons = [],
+  onOpenOffsite,
   displayCutoff,
   timetables = [],
   visibility = DEFAULT_EVENT_VISIBILITY,
@@ -230,6 +317,19 @@ export function WeekView({
     ts.forEach((s) => m[s.day]?.push(s));
     return m;
   }, [ts]);
+  // 曜日 → 表示中の週のその日の他校舎の授業 (この講師の分)。休みの日・塾の
+  // 全体休講日の予定も status 付きで残し、列には取消線で出す (毎週の予定が
+  // この週だけ無いことに気付けるように)
+  const offsiteByDay = useMemo(() => {
+    const m = {};
+    const mine = offsiteLessons.filter((r) => r.teacher === teacher);
+    DAYS.forEach((d) => {
+      m[d] = mine
+        .map((rec) => ({ rec, status: offsiteDayStatus(rec, weekDates[d], holidays) }))
+        .filter((x) => x.status);
+    });
+    return m;
+  }, [offsiteLessons, teacher, weekDates, holidays]);
 
   // 基準日から 14 日の [start,end] (メモの恩恵を狙って 1 回だけ作る)。
   // 週を送ってもバナーは「基準日から 2 週間」のまま
@@ -598,7 +698,9 @@ export function WeekView({
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           <button
             type="button"
-            onClick={() => exportTeacherIcs(teacher, slots, biweeklyAnchors)}
+            onClick={() =>
+              exportTeacherIcs(teacher, slots, biweeklyAnchors, { offsiteLessons, holidays })
+            }
             style={{ ...S.btn(false), fontSize: 11 }}
             title="Google Calendar に取り込み可能な iCal ファイルをダウンロード"
           >
@@ -1192,212 +1294,26 @@ export function WeekView({
                   gap: 5,
                 }}
               >
-                {byDay[d].length === 0 ? (
+                {byDay[d].length === 0 && offsiteByDay[d].length === 0 ? (
                   <div style={{ color: "#ccc", textAlign: "center", padding: 16, fontSize: 11 }}>
                     —
                   </div>
                 ) : (
-                  byDay[d].map((s) => {
-                    const slotSubs = slotSubMap.get(s.id);
-                    const slotCombines = slotCombineMap.get(s.id);
-                    const slotMoves = slotMoveMap.get(s.id);
-                    // 直近 14 日以内のイベント件数: SlotCard 右上にサマリーバッジ。
-                    // 詳細は下のインラインリストで見せるが、一目で「このコマは
-                    // 何か起きる」ことが判るよう本体にもヒントを出す。
-                    const subCount = slotSubs?.length || 0;
-                    const combineCount = slotCombines?.length || 0;
-                    const moveCount = slotMoves?.length || 0;
-                    const hasAny = subCount + combineCount + moveCount > 0;
-                    const summaryBadge = (label, count, color, key) => (
-                      <span
-                        key={key}
-                        style={{
-                          background: color,
-                          color: "#fff",
-                          fontSize: 8,
-                          fontWeight: 800,
-                          padding: "0 4px",
-                          borderRadius: 3,
-                          lineHeight: "14px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 2,
-                          boxShadow: "0 1px 2px rgba(0,0,0,.12)",
-                        }}
-                      >
-                        {label}
-                        {count > 1 && <span style={{ fontSize: 8 }}>×{count}</span>}
-                      </span>
-                    );
-                    return (
-                      <div key={s.id} style={{ position: "relative" }}>
-                        <SlotCard
-                          slot={s}
-                          compact
-                          sessionNum={sessionMapByDay[d]?.get(s.id) || 0}
-                          onEdit={isAdmin ? onEdit : undefined}
-                          onDel={isAdmin ? onDel : undefined}
-                          displaySubject={
-                            isBiweekly(s.note)
-                              ? `${biweeklyDisplaySubject(s, weekDates[d], biweeklyAnchors, holidays, examPeriods)}（隔週）`
-                              : undefined
-                          }
-                          hideNote={isBiweekly(s.note)}
+                  // 通常コマと他校舎の授業を開始時刻順に 1 本で並べる
+                  byStartTime([
+                    ...offsiteByDay[d].map(({ rec, status }) => ({
+                      time: rec.time,
+                      el: (
+                        <OffsiteWeekCard
+                          key={`offsite-${rec.id}`}
+                          rec={rec}
+                          status={status}
+                          onOpen={onOpenOffsite ? () => onOpenOffsite({ id: rec.id }) : null}
                         />
-                        {hasAny && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: 2,
-                              right: 2,
-                              display: "flex",
-                              gap: 2,
-                              zIndex: 1,
-                              pointerEvents: "none",
-                            }}
-                            title={[
-                              subCount > 0 ? `代行 ${subCount} 件` : null,
-                              combineCount > 0 ? `合同 ${combineCount} 件` : null,
-                              moveCount > 0 ? `時間変更 ${moveCount} 件` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" / ")}
-                          >
-                            {subCount > 0 && summaryBadge("代", subCount, "#3a6ea5", "sub")}
-                            {combineCount > 0 &&
-                              summaryBadge("合", combineCount, ADJ_COLOR.combine.color, "combine")}
-                            {moveCount > 0 &&
-                              summaryBadge("移", moveCount, ADJ_COLOR.move.color, "move")}
-                          </div>
-                        )}
-                        {slotCombines && slotCombines.length > 0 && (
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 2,
-                              marginTop: 2,
-                            }}
-                          >
-                            {slotCombines.map((c, i) => {
-                              const isHost = c.role === "host";
-                              return (
-                                <div
-                                  key={`cmb-${c.date}-${i}`}
-                                  style={{
-                                    fontSize: 9,
-                                    lineHeight: 1.3,
-                                    padding: "2px 4px",
-                                    borderRadius: 4,
-                                    background: ADJ_COLOR.combine.bg,
-                                    borderLeft: `2px solid ${ADJ_COLOR.combine.color}`,
-                                    display: "flex",
-                                    gap: 4,
-                                    alignItems: "center",
-                                    flexWrap: "wrap",
-                                  }}
-                                  title={
-                                    isHost
-                                      ? `${c.date} 合同ホスト\n+ ${c.absorbedSlots
-                                          .map(
-                                            (a) =>
-                                              `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`
-                                          )
-                                          .join(" / ")}`
-                                      : `${c.date} 合同で吸収\n→ ${c.hostSlot.grade}${c.hostSlot.cls && c.hostSlot.cls !== "-" ? c.hostSlot.cls : ""} ${c.hostSlot.subj} (${c.hostSlot.teacher})`
-                                  }
-                                >
-                                  <span style={{ fontWeight: 700 }}>{c.date.slice(5)}</span>
-                                  <span style={{ color: ADJ_COLOR.combine.color, fontWeight: 700 }}>
-                                    {isHost ? "合同ホスト" : "合同吸収"}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {slotMoves && slotMoves.length > 0 && (
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 2,
-                              marginTop: 2,
-                            }}
-                          >
-                            {slotMoves.map((mv, i) => (
-                              <div
-                                key={`mv-${mv.date}-${i}`}
-                                style={{
-                                  fontSize: 9,
-                                  lineHeight: 1.3,
-                                  padding: "2px 4px",
-                                  borderRadius: 4,
-                                  background: ADJ_COLOR.move.bg,
-                                  borderLeft: `2px solid ${ADJ_COLOR.move.color}`,
-                                  display: "flex",
-                                  gap: 4,
-                                  alignItems: "center",
-                                  flexWrap: "wrap",
-                                }}
-                                title={`${mv.date} 時間変更\n${mv.slot.time} → ${mv.targetTime}`}
-                              >
-                                <span style={{ fontWeight: 700 }}>{mv.date.slice(5)}</span>
-                                <span style={{ color: ADJ_COLOR.move.color, fontWeight: 700 }}>
-                                  {mv.slot.time.split("-")[0]}→{mv.targetTime.split("-")[0]}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {slotSubs && slotSubs.length > 0 && (
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 2,
-                              marginTop: 2,
-                            }}
-                          >
-                            {slotSubs.map((sub) => {
-                              const st = subStateMeta(sub);
-                              const isOriginal = sub.originalTeacher === teacher;
-                              return (
-                                <div
-                                  key={sub.id}
-                                  style={{
-                                    fontSize: 9,
-                                    lineHeight: 1.3,
-                                    padding: "2px 4px",
-                                    borderRadius: 4,
-                                    background: st.bg,
-                                    borderLeft: `2px solid ${st.color}`,
-                                    display: "flex",
-                                    gap: 4,
-                                    alignItems: "center",
-                                    flexWrap: "wrap",
-                                  }}
-                                  title={`${sub.date} ${isOriginal ? st.note : "代行予定"}\n${sub.originalTeacher} → ${subTargetLabel(sub)}${sub.memo ? "\n" + sub.memo : ""}`}
-                                >
-                                  <span style={{ fontWeight: 700 }}>
-                                    {sub.date.slice(5)}
-                                  </span>
-                                  <span style={{ color: st.color, fontWeight: 700 }}>
-                                    {st.label}
-                                  </span>
-                                  <span style={{ color: "#666" }}>
-                                    {isOriginal
-                                      ? `→${subTargetLabel(sub)}`
-                                      : `←${sub.originalTeacher}`}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                      ),
+                    })),
+                    ...byDay[d].map((s) => ({ time: s.time, el: renderSlotCard(s, d) })),
+                  ])
                 )}
               </div>
             </div>
@@ -1407,4 +1323,207 @@ export function WeekView({
       </div>
     </div>
   );
+
+  // 曜日の列の通常コマ 1 枚 (代行・合同・移動の直近予定つき)
+  function renderSlotCard(s, d) {
+    const slotSubs = slotSubMap.get(s.id);
+    const slotCombines = slotCombineMap.get(s.id);
+    const slotMoves = slotMoveMap.get(s.id);
+    // 直近 14 日以内のイベント件数: SlotCard 右上にサマリーバッジ。
+    // 詳細は下のインラインリストで見せるが、一目で「このコマは
+    // 何か起きる」ことが判るよう本体にもヒントを出す。
+    const subCount = slotSubs?.length || 0;
+    const combineCount = slotCombines?.length || 0;
+    const moveCount = slotMoves?.length || 0;
+    const hasAny = subCount + combineCount + moveCount > 0;
+    const summaryBadge = (label, count, color, key) => (
+      <span
+        key={key}
+        style={{
+          background: color,
+          color: "#fff",
+          fontSize: 8,
+          fontWeight: 800,
+          padding: "0 4px",
+          borderRadius: 3,
+          lineHeight: "14px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 2,
+          boxShadow: "0 1px 2px rgba(0,0,0,.12)",
+        }}
+      >
+        {label}
+        {count > 1 && <span style={{ fontSize: 8 }}>×{count}</span>}
+      </span>
+    );
+    return (
+      <div key={s.id} style={{ position: "relative" }}>
+        <SlotCard
+          slot={s}
+          compact
+          sessionNum={sessionMapByDay[d]?.get(s.id) || 0}
+          onEdit={isAdmin ? onEdit : undefined}
+          onDel={isAdmin ? onDel : undefined}
+          displaySubject={
+            isBiweekly(s.note)
+              ? `${biweeklyDisplaySubject(s, weekDates[d], biweeklyAnchors, holidays, examPeriods)}（隔週）`
+              : undefined
+          }
+          hideNote={isBiweekly(s.note)}
+        />
+        {hasAny && (
+          <div
+            style={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              display: "flex",
+              gap: 2,
+              zIndex: 1,
+              pointerEvents: "none",
+            }}
+            title={[
+              subCount > 0 ? `代行 ${subCount} 件` : null,
+              combineCount > 0 ? `合同 ${combineCount} 件` : null,
+              moveCount > 0 ? `時間変更 ${moveCount} 件` : null,
+            ]
+              .filter(Boolean)
+              .join(" / ")}
+          >
+            {subCount > 0 && summaryBadge("代", subCount, "#3a6ea5", "sub")}
+            {combineCount > 0 &&
+              summaryBadge("合", combineCount, ADJ_COLOR.combine.color, "combine")}
+            {moveCount > 0 &&
+              summaryBadge("移", moveCount, ADJ_COLOR.move.color, "move")}
+          </div>
+        )}
+        {slotCombines && slotCombines.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              marginTop: 2,
+            }}
+          >
+            {slotCombines.map((c, i) => {
+              const isHost = c.role === "host";
+              return (
+                <div
+                  key={`cmb-${c.date}-${i}`}
+                  style={{
+                    fontSize: 9,
+                    lineHeight: 1.3,
+                    padding: "2px 4px",
+                    borderRadius: 4,
+                    background: ADJ_COLOR.combine.bg,
+                    borderLeft: `2px solid ${ADJ_COLOR.combine.color}`,
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                  title={
+                    isHost
+                      ? `${c.date} 合同ホスト\n+ ${c.absorbedSlots
+                          .map(
+                            (a) =>
+                              `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`
+                          )
+                          .join(" / ")}`
+                      : `${c.date} 合同で吸収\n→ ${c.hostSlot.grade}${c.hostSlot.cls && c.hostSlot.cls !== "-" ? c.hostSlot.cls : ""} ${c.hostSlot.subj} (${c.hostSlot.teacher})`
+                  }
+                >
+                  <span style={{ fontWeight: 700 }}>{c.date.slice(5)}</span>
+                  <span style={{ color: ADJ_COLOR.combine.color, fontWeight: 700 }}>
+                    {isHost ? "合同ホスト" : "合同吸収"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {slotMoves && slotMoves.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              marginTop: 2,
+            }}
+          >
+            {slotMoves.map((mv, i) => (
+              <div
+                key={`mv-${mv.date}-${i}`}
+                style={{
+                  fontSize: 9,
+                  lineHeight: 1.3,
+                  padding: "2px 4px",
+                  borderRadius: 4,
+                  background: ADJ_COLOR.move.bg,
+                  borderLeft: `2px solid ${ADJ_COLOR.move.color}`,
+                  display: "flex",
+                  gap: 4,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+                title={`${mv.date} 時間変更\n${mv.slot.time} → ${mv.targetTime}`}
+              >
+                <span style={{ fontWeight: 700 }}>{mv.date.slice(5)}</span>
+                <span style={{ color: ADJ_COLOR.move.color, fontWeight: 700 }}>
+                  {mv.slot.time.split("-")[0]}→{mv.targetTime.split("-")[0]}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {slotSubs && slotSubs.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              marginTop: 2,
+            }}
+          >
+            {slotSubs.map((sub) => {
+              const st = subStateMeta(sub);
+              const isOriginal = sub.originalTeacher === teacher;
+              return (
+                <div
+                  key={sub.id}
+                  style={{
+                    fontSize: 9,
+                    lineHeight: 1.3,
+                    padding: "2px 4px",
+                    borderRadius: 4,
+                    background: st.bg,
+                    borderLeft: `2px solid ${st.color}`,
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                  title={`${sub.date} ${isOriginal ? st.note : "代行予定"}\n${sub.originalTeacher} → ${subTargetLabel(sub)}${sub.memo ? "\n" + sub.memo : ""}`}
+                >
+                  <span style={{ fontWeight: 700 }}>
+                    {sub.date.slice(5)}
+                  </span>
+                  <span style={{ color: st.color, fontWeight: 700 }}>
+                    {st.label}
+                  </span>
+                  <span style={{ color: "#666" }}>
+                    {isOriginal
+                      ? `→${subTargetLabel(sub)}`
+                      : `←${sub.originalTeacher}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 }

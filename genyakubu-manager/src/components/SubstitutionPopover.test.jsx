@@ -83,3 +83,43 @@ describe("SubstitutionPopover の担当切替", () => {
     expect(screen.queryByRole("group", { name: "他の欠勤者へ切替" })).toBeNull();
   });
 });
+
+describe("SubstitutionPopover の他校舎の授業", () => {
+  const WED = { ...SLOT, day: "水", time: "15:00-16:00", teacher: "香川" };
+  const free = (name) => ({
+    name,
+    isFreeAllDay: true,
+    freeTimeSlots: [],
+    cancelledSlots: [],
+    reason: "中学部休講",
+    subjectIds: [],
+    isPartTime: false,
+  });
+
+  it("全日空きでも、その時間に他校舎にいる人は空きに出さず、全員表示で「他校舎」と出す", () => {
+    const offsiteByTeacher = new Map([
+      ["石原", [{ id: 1, teacher: "石原", place: "村上高松", time: "14:50-15:40" }]],
+      ["堀上", [{ id: 2, teacher: "堀上", place: "大手前丸亀", time: "13:30" }]],
+    ]);
+    renderPopover({
+      slot: WED,
+      slots: [WED],
+      availableTeachers: [free("石原"), free("堀上"), free("片岡")],
+      allTeachersForDay: [
+        { name: "石原", subjectIds: [], isPartTime: false },
+        { name: "堀上", subjectIds: [], isPartTime: false },
+        { name: "片岡", subjectIds: [], isPartTime: false },
+      ],
+      offsiteByTeacher,
+    });
+    const names = () => screen.getAllByRole("option").map((o) => o.textContent);
+    expect(names().some((t) => t.startsWith("石原"))).toBe(false);
+    // 終了未定の後は空きのまま (注意書きつき)
+    const horikami = screen.getByRole("option", { name: /堀上/ });
+    expect(horikami.textContent).toContain("他校舎?");
+    fireEvent.click(screen.getByLabelText("全員表示"));
+    const ishihara = screen.getByRole("option", { name: /石原/ });
+    expect(ishihara.textContent).toContain("他校舎");
+    expect(ishihara.textContent).not.toContain("授業中");
+  });
+});

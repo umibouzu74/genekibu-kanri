@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './tailwind.css';
 import { ProjectProvider } from './contexts/ProjectContext';
 import { UIProvider } from './contexts/UIContext';
 import { useUI } from './contexts/uiContextValue';
 import { useProjectContext } from './contexts/projectContextValue';
+import { HostDataContext, type HostData } from './contexts/hostDataContext';
 import { runGeneratorInWorker } from './logic/runGenerator';
 import Header from './components/Header';
 import TabBar from './components/TabBar';
@@ -555,12 +556,22 @@ function ScheduleApp() {
   );
 }
 
-export default function BuilderApp() {
+// 本体 (App.jsx) から読み取り専用のデータを受け取る (いまは他校舎の授業の
+// 取り込み用。contexts/hostDataContext)。単体で描くときは空のまま
+export default function BuilderApp({
+  offsiteLessons = EMPTY_HOST_LIST,
+  holidays = EMPTY_HOST_LIST,
+}: Partial<HostData> = {}) {
+  const hostData = useMemo(() => ({ offsiteLessons, holidays }), [offsiteLessons, holidays]);
   return (
     <UIProvider>
       <ProjectProvider>
-        <ScheduleApp />
+        <HostDataContext.Provider value={hostData}>
+          <ScheduleApp />
+        </HostDataContext.Provider>
       </ProjectProvider>
     </UIProvider>
   );
 }
+
+const EMPTY_HOST_LIST: unknown[] = [];

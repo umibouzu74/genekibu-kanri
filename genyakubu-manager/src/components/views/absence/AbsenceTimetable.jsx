@@ -54,6 +54,7 @@ export function AbsenceTimetable({
   holidaysToday = [], // 当日に該当する休講エントリ (バナー表示用)
   examPeriodsToday = [], // 当日に該当するテスト期間 (バナー表示用)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
+  offsiteToday = [], // この日に他校舎へ授業に出ている予定 (重なり・代行候補の「他校舎」)
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -335,10 +336,13 @@ export function AbsenceTimetable({
       biweeklyAnchors,
       holidays,
       examPeriods,
+      // 既にこの日の分に絞ってある (休講日の判定も済み)
+      offsiteLessons: offsiteToday,
     });
   }, [
     effectiveSlots,
     date,
+    offsiteToday,
     subsBySlot,
     absorbedSet,
     rescheduleBySlot,

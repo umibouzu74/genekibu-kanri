@@ -52,6 +52,9 @@ export function SubstituteView({
   adjustments = [],
   sessionOverrides = [],
   extraLessons = [],
+  // 他校舎の授業 (代行モード・玉突き代行で、その時間に他校舎へ出ている人を
+  // 空き候補から外す)
+  offsiteLessons = [],
 }) {
   const now = new Date();
   const todayStr = useToday();
@@ -362,6 +365,7 @@ export function SubstituteView({
           biweeklyAnchors={biweeklyAnchors}
           teacherSubjects={teacherSubjects}
           teacherKana={teacherKana}
+          offsiteLessons={offsiteLessons}
           saveSubs={saveSubs}
           isAdmin={isAdmin}
         />
@@ -467,6 +471,7 @@ export function SubstituteView({
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
           extraLessons={extraLessons}
+          offsiteLessons={offsiteLessons}
           enableSubMode
         />
       )}

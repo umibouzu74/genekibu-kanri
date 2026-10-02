@@ -25,6 +25,7 @@ import { sanitizeKanaMap } from "../utils/teacherKana";
 import { LS } from "../constants/storageKeys";
 import { isConfigured } from "../firebase/config";
 import { migrateHandoverNotes } from "../utils/handoverNotes";
+import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 
 // fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
 // (毎描画で新しいオブジェクトを渡さない)
@@ -38,7 +39,7 @@ const EMPTY_LIST = Object.freeze([]);
 export const canUseAdminData = (isAdmin) => Boolean(isAdmin) || !isConfigured;
 
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本 (現在は 22 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 23 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -188,6 +189,13 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_FUZOKU_PLAN,
     { migrate: migrateFuzokuPlan, onError: onStorageError }
   );
+  // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)。
+  // RTDB が落とす days / skipDates を migrate で補う
+  const [offsiteLessons, saveOffsiteLessons] = useSyncedStorage(
+    LS.offsiteLessons,
+    EMPTY_LIST,
+    { migrate: migrateOffsiteLessons, onError: onStorageError }
+  );
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
   // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する
   const handoverEnabled = canUseAdminData(isAdmin);
@@ -253,6 +261,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveDaySchedules,
     fuzokuPlan,
     saveFuzokuPlan,
+    offsiteLessons,
+    saveOffsiteLessons,
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,

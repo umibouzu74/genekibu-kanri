@@ -10,6 +10,7 @@ import {
   computeAvailableTeachers,
   suggestChainSubstitutions,
 } from "../utils/chainSubstitution";
+import { offsiteByTeacherOnDate } from "../utils/offsiteLessons";
 
 // 仮代行 (pendingSubs) の索引キー。欠勤・代行は「コマ × 講師」単位
 // (CLAUDE.md) なので、コマ id だけで引くと多担任コマ (香川·福江·川井) で
@@ -39,6 +40,9 @@ export function useSubstitutionMode({
   // コマ」に含める
   daySchedules = [],
   adjustments = [],
+  // 他校舎の授業 (utils/offsiteLessons)。その時間に他校舎へ出ている講師を
+  // 空き候補・提案から外し、候補一覧に「他校舎」を出す
+  offsiteLessons = [],
 }) {
   const toasts = useOptionalToasts();
   const [subDate, setSubDateRaw] = useState(null);
@@ -123,12 +127,20 @@ export function useSubstitutionMode({
     return computeAvailableTeachers(
       subDate, dateFilteredSlots, holidays, examPeriods, subs,
       partTimeStaff, subjects, timetables, biweeklyAnchors,
-      teacherSubjects || {}
+      teacherSubjects || {},
+      { offsiteLessons }
     );
   }, [
     subDate, dateFilteredSlots, holidays, examPeriods, subs,
     partTimeStaff, subjects, timetables, biweeklyAnchors, teacherSubjects,
+    offsiteLessons,
   ]);
+
+  // 講師名 → 代行日の他校舎の授業 (候補一覧の「他校舎」表示用)
+  const offsiteByTeacher = useMemo(
+    () => (subDate ? offsiteByTeacherOnDate(offsiteLessons, subDate, holidays) : new Map()),
+    [subDate, offsiteLessons, holidays]
+  );
 
   // All teachers who have any slot on this day (including busy ones).
   // Used by the "全員表示" toggle in the popover.
@@ -327,6 +339,7 @@ export function useSubstitutionMode({
     isSubMode,
     dateFilteredSlots,
     holidayOffSlots,
+    offsiteByTeacher,
     existingSubMap,
     pendingSubMap,
     getPendingSub,

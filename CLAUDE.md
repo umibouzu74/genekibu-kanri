@@ -930,6 +930,67 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   スクロール + 強調し、`onConsumeFocus` で要求を消す (サイドバーから開き
   直したときに古い要求で飛ばない)
 
+## 他校舎の授業 (2026-10-02 実装)
+
+講師が別の校舎・学校で授業をする「行き先 × 曜日 × 時間 × 期間」
+(サイドバー「🏫 他校舎の授業」、chord `g k`、`components/views/OffsiteLessonView.jsx`
++ `utils/offsiteLessons.js`)。「石原: 村上高松 火・木 14:50-15:40 10/1〜未定」。
+
+- **Slot にも ExtraLesson にもしない** (専用の `offsiteLessons`、`LS.offsiteLessons`、
+  schema v21)。Slot にすると塾の授業としてタイムテーブル・第N回・表示期間に
+  並び、ExtraLesson にすると終わりの決まっていない毎週の予定を日付の数だけ
+  作ることになる。**塾の授業ではない**ので第N回・表示期間・休講による授業
+  停止のどれにも関与しない
+- **1 件 = 講師 1 人**。フォームは「石原・片岡」を `splitTeacherField` で分けて
+  1 人 1 件で作る (月間・代行候補の照合は完全一致)
+- 時刻は `"14:50-15:40"`、**終了時刻未定は開始だけ `"13:30"`**、終了日未定は
+  `endDate` 無し (RTDB は null を消す)。入力は `normalizeOffsiteTime` で
+  全角・「〜」区切りを吸収する
+- 休み: `skipDates` (先方の行事・冬休み。画面の「📅 日程」で日付ごと / 期間で
+  まとめて) と、**塾の全体休講日は既定で休み** (学校も祝日は休みのため。
+  `keepOnHolidays: true` で外す)。全体休講の定義は
+  `scheduleHelpers.isFullDayHoliday` で、月間・日別・タイムテーブルの「休講日」と
+  共有している。**片方だけ書き換えない**
+- その日に行くかは `offsiteDayStatus` / `isOffsiteOnDate` の 1 か所。画面ごとに
+  曜日・期間・休みを書き起こさない
+- 出る場所: 講師別の月間 (「他」カード、`pushCards` に載せる。紙面の凡例にも
+  「他」) / 週間 (曜日の列に通常コマと開始時刻順。休みの日は取消線で残す) /
+  日別ダッシュボード・タイムテーブル・欠勤組み換え (`OffsiteLessonBanner`) /
+  iCal エクスポート (RRULE + UNTIL + EXDATE) / Cmd+K。タイムテーブルは
+  **日付を持つ表示 (ダッシュボード・代行モード) だけ** — 通常の表示の
+  displayDate は「その曜日の直近の日」の代用なので日付ものは出さない
+- **講師別月間の「代行で休み」等の日単位の判定に数えない** (`summarizeTeacherDayOff`
+  の staying は塾の仕事だけ。特訓シフトは塾に来る仕事なので数える)
+- 講師の重なり (`teacherConflicts`) には `opts.offsiteLessons` で role
+  `"offsite"` の仮のコマ (id `"offsite:<id>"`・学年欄「他校舎」・科目欄が行き先)
+  として入る。結果の Map は仮の id にも積まれるが、表示側は実在のコマ id で
+  引くだけなので出ない。重なりは `offsiteOverlap` で見て、**確かに重なるもの
+  だけ**を重なりに数える。終了時刻未定の予定の後に始まるコマは `"maybe"` =
+  代行候補の注意書き (`teacherOffsiteMaybeAt`) だけ。警告にすると毎晩のコマに
+  出続ける
+- 代行の空き判定 (`chainSubstitution`) は**時刻ごとに外す** (`isAwayAtOffsite`)。
+  `isFreeAllDay` (塾のコマが無い) の意味は変えないこと — 他校舎の時刻を
+  busyTimes に入れると「全日空き」が「自分の休講コマの時刻だけ空き」に
+  縮んで、夜のコマの代行候補から消える
+- **移動時間 (`travelMinutes`、任意・片道の分)** を入れた予定は、時間帯が
+  重ならなくても間が移動時間より短いコマを `"travel"` として扱う
+  (`offsiteOverlap` の第 3 引数。予定からは `offsiteClashOf(rec, time)`)。
+  `"overlap"` と `"travel"` はどちらも「その時間は塾に居られない」=
+  `isOffsiteClash` で同じに扱い、文言だけ「移動が間に合わない」に変える。
+  **重なり・代行の空き判定で `offsiteOverlap(rec.time, …)` を直に呼ばない**
+  (移動時間が抜ける)。終了時刻未定の予定は前のコマにだけ移動を見る
+- **講習時間割作成への取り込み** (`utils/offsiteBuilderImport.buildOffsiteSessionItems`
+  + 講習の ⚙ 設定 →「講師不在・NG」の `OffsiteImport`)。講習の日付ラベルを
+  `builderLessons.resolveDateLabelYmd` で年つきに解決し、その日に行く予定を
+  他学年セッション (時刻つき = 自動 NG) にする。移動時間は前後に足す。
+  **ボタンを押したときだけ**取り込む (自動同期しない。講習側の正は講習の
+  project)。講習の講師に居ない名前は取り込まず名前を出す。本体のデータは
+  `BuilderApp` の props → `contexts/hostDataContext` で読み取り専用に渡す
+- 行き先・時間の入力候補はこれまでの入力から (五十音 / 開始時刻順)。使用頻度で
+  並べない (A18)
+- 削除は cascade なしなので removeWithUndo。閲覧者も読める `appData/` に置く
+  (講師の予定で、管理者限定にする理由が無い)
+
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
 RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、

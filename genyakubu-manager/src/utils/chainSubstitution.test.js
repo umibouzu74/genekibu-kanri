@@ -908,6 +908,84 @@ describe("validateSubstituteChange", () => {
       subjects,
       partTimeStaff
     );
-    expect(r).toEqual({ timeConflict: false, subjectMismatch: false });
+    expect(r).toEqual({ timeConflict: false, subjectMismatch: false, offsiteConflict: false });
+  });
+
+  it("offsiteByTeacher を渡すと、その時間に他校舎にいる人を offsiteConflict で返す", () => {
+    const offsiteByTeacher = new Map([
+      ["バイト英語", [{ id: 1, teacher: "バイト英語", place: "村上高松", time: "19:30-20:30" }]],
+    ]);
+    const r = validateSubstituteChange("バイト英語", 1, slots, [], subjects, partTimeStaff, {
+      offsiteByTeacher,
+    });
+    expect(r.offsiteConflict).toBe(true);
+    expect(r.timeConflict).toBe(false);
+    const r2 = validateSubstituteChange("バイト数学", 1, slots, [], subjects, partTimeStaff, {
+      offsiteByTeacher,
+    });
+    expect(r2.offsiteConflict).toBe(false);
+  });
+});
+
+// 他校舎の授業 (utils/offsiteLessons): その時間に他校舎へ出ている講師は
+// 空き時間から外す。全日空き (塾のコマが無い) の意味は変えない
+describe("他校舎の授業 (offsiteLessons)", () => {
+  // MONDAY = 2026-04-13 (月)
+  const slots = [
+    makeSlot({ id: 1, teacher: "山田", subj: "英語", time: "15:00-16:00" }),
+    makeSlot({ id: 2, teacher: "山田", subj: "英語", time: "19:00-20:20" }),
+    makeSlot({ id: 3, teacher: "鈴木", subj: "英語", time: "15:00-16:00" }),
+  ];
+  const holidays = [{ date: MONDAY, scope: ["全部"] }];
+  const offsiteLessons = [
+    { id: 1, teacher: "山田", place: "村上高松", days: ["月"], time: "14:50-15:40", startDate: "2026-04-01" },
+    // 終了未定は空き時間からは外さない (重なるかは分からない)
+    { id: 2, teacher: "鈴木", place: "大手前丸亀", days: ["月"], time: "13:30", startDate: "2026-04-01" },
+  ];
+  // 全体休講日でも行く予定にしておく (休講日は他校舎も既定で休み)
+  const keep = offsiteLessons.map((r) => ({ ...r, keepOnHolidays: true }));
+
+  it("他校舎の時間に掛かる空きコマを外し、offsite を付けて返す", () => {
+    const result = computeAvailableTeachers(
+      MONDAY, slots, holidays, [], [], partTimeStaff, subjects, [], ANCHORS, {},
+      { offsiteLessons: keep }
+    );
+    const yamada = result.find((t) => t.name === "山田");
+    expect(yamada.isFreeAllDay).toBe(true);
+    expect(yamada.freeTimeSlots).toEqual(["19:00-20:20"]);
+    expect(yamada.offsite.map((r) => r.place)).toEqual(["村上高松"]);
+    const suzuki = result.find((t) => t.name === "鈴木");
+    expect(suzuki.freeTimeSlots).toEqual(["15:00-16:00"]);
+    expect(suzuki.offsite.map((r) => r.place)).toEqual(["大手前丸亀"]);
+  });
+
+  it("塾の全体休講日は他校舎も休み扱い (keepOnHolidays でなければ外さない)", () => {
+    const result = computeAvailableTeachers(
+      MONDAY, slots, holidays, [], [], partTimeStaff, subjects, [], ANCHORS, {},
+      { offsiteLessons }
+    );
+    const yamada = result.find((t) => t.name === "山田");
+    expect(yamada.freeTimeSlots).toEqual(["15:00-16:00", "19:00-20:20"]);
+    expect(yamada.offsite).toEqual([]);
+  });
+
+  it("提案は他校舎にいる時間のコマへ入れない (全日空きでも)", () => {
+    const target = makeSlot({ id: 10, teacher: "田中", subj: "英語", time: "15:00-16:00" });
+    const available = [
+      {
+        name: "バイト英語", isFreeAllDay: true, freeTimeSlots: [], cancelledSlots: [],
+        reason: "", subjectIds: [1], isPartTime: true,
+        offsite: [{ id: 1, teacher: "バイト英語", place: "村上高松", time: "14:50-15:40" }],
+      },
+      {
+        name: "バイト数学", isFreeAllDay: true, freeTimeSlots: [], cancelledSlots: [],
+        reason: "", subjectIds: [2], isPartTime: true, offsite: [],
+      },
+    ];
+    const result = suggestChainSubstitutions(
+      [{ slotId: 10, originalTeacher: "田中", date: MONDAY }],
+      available, [target], subjects, subjectCategories, partTimeStaff
+    );
+    expect(result.map((r) => r.suggestedSubstitute)).toEqual(["バイト数学"]);
   });
 });

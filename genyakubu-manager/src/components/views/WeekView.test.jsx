@@ -269,3 +269,35 @@ describe("WeekView の基準週", () => {
     expect(range()).toContain("12/7 (月) 〜 12/12 (土)");
   });
 });
+
+// 他校舎の授業 (utils/offsiteLessons): 毎週の予定なので曜日の列に通常コマと
+// 開始時刻順で並べる。この週だけ無い日 (休み・塾の休講日) は取消線で残す
+describe("WeekView の他校舎の授業", () => {
+  // 表示中の週は 2026-11-30 (月) 〜 12-05 (土)
+  const OFFSITE = [
+    { id: 4, teacher: "堀上", place: "大手前丸亀", days: ["月", "水"], time: "13:30", startDate: "2026-10-14", skipDates: ["2026-12-02"] },
+    { id: 5, teacher: "石原", place: "村上高松", days: ["月"], time: "14:50-15:40", startDate: "2026-10-01" },
+  ];
+
+  it("自分の予定だけを列に出し、通常コマより前 (開始時刻順) に並べる", () => {
+    const onOpenOffsite = vi.fn();
+    const { container } = renderWeek({ offsiteLessons: OFFSITE, onOpenOffsite });
+    const cards = [...container.querySelectorAll("[title^='[他校舎の授業]']")];
+    expect(cards).toHaveLength(2); // 月 (11/30) と 水 (12/2、休み)
+    const mon = cards[0];
+    expect(mon.textContent).toContain("大手前丸亀");
+    expect(mon.textContent).toContain("13:30〜 (終了未定)");
+    // 月曜の列で他校舎 (13:30) が 19:00 の数学より先
+    const monCol = mon.parentElement;
+    expect(monCol.textContent.indexOf("大手前丸亀")).toBeLessThan(monCol.textContent.indexOf("数学"));
+    expect(container.textContent).not.toContain("村上高松");
+    fireEvent.click(mon);
+    expect(onOpenOffsite).toHaveBeenCalledWith({ id: 4 });
+  });
+
+  it("休みにした日は取消線で残し、理由を書く", () => {
+    const { container } = renderWeek({ offsiteLessons: OFFSITE });
+    const wed = [...container.querySelectorAll("[title^='[他校舎の授業]']")][1];
+    expect(wed.textContent).toContain("この日は休み");
+  });
+});

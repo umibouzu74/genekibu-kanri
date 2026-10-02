@@ -22,4 +22,6 @@ export const VIEWS = Object.freeze({
   FUZOKU_PLAN: "fuzoku-plan",
   // 引継ぎメモ (責任者が日々書き溜めて後任に渡す。管理者だけが読める)
   HANDOVER: "handover",
+  // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)
+  OFFSITE: "offsite",
 });

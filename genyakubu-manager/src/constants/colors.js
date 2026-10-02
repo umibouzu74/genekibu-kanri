@@ -79,6 +79,19 @@ export const KOSHU_EXTERNAL_COLOR = {
   chipBg: "#e8e8e8",
 };
 
+// 他校舎の授業 (講師が他の校舎・学校で授業をする予定、utils/offsiteLessons)
+// のカード / バナー / チップ。塾の授業 (学年色・追加授業の緑・講習の
+// マゼンタ・講習期間の外部授業のグレー) と紙面でも見分けがつくよう、
+// 未使用の青灰 (スレート) 系を割当て。
+export const OFFSITE_LESSON_COLOR = {
+  color: "#4a6378",
+  deep: "#33475a",
+  bg: "#e9eef3",
+  bannerBg: "#f2f5f8",
+  bannerBorder: "#b4c3d1",
+  chipBg: "#dde5ec",
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };

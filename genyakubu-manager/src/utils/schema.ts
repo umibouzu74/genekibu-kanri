@@ -31,6 +31,7 @@ import type {
   FuzokuPlan,
   HandoverNote,
   Holiday,
+  OffsiteLesson,
   PartTimeStaffObject,
   ScheduleAdjustment,
   SessionOverride,
@@ -43,7 +44,7 @@ import type {
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 20;
+export const CURRENT_SCHEMA_VERSION = 21;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -328,6 +329,26 @@ export function isFuzokuPlan(x: unknown): x is FuzokuPlan {
   return true;
 }
 
+export function isOffsiteLesson(x: unknown): x is OffsiteLesson {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.teacher) || !isString(x.place) || !isString(x.time)) return false;
+  if (!isIsoDate(x.startDate)) return false;
+  // 終了日未定は endDate が無い (RTDB は null を消す)。空文字・null も未定として通す
+  if (x.endDate != null && x.endDate !== "" && !isIsoDate(x.endDate)) return false;
+  // Firebase RTDB drops empty arrays — days / skipDates の欠落は空扱い
+  // (migrateOffsiteLessons が読み込み時に補う)。
+  for (const k of ["days", "skipDates"] as const) {
+    if (x[k] !== undefined) {
+      if (!Array.isArray(x[k])) return false;
+      if (!(x[k] as unknown[]).every((v) => isString(v))) return false;
+    }
+  }
+  if (x.keepOnHolidays !== undefined && typeof x.keepOnHolidays !== "boolean") return false;
+  if (x.memo !== undefined && !isString(x.memo)) return false;
+  return true;
+}
+
 export function isHandoverNote(x: unknown): x is HandoverNote {
   if (!isObject(x)) return false;
   if (!isNumber(x.id)) return false;
@@ -590,6 +611,18 @@ export function validateExportBundle(
   if (raw.fuzokuPlan != null) {
     if (!isFuzokuPlan(raw.fuzokuPlan))
       return { ok: false, error: "fuzokuPlan の形式が不正です" };
+  }
+
+  if (raw.offsiteLessons != null) {
+    if (!Array.isArray(raw.offsiteLessons))
+      return { ok: false, error: "offsiteLessons が配列ではありません" };
+    const bad = raw.offsiteLessons.findIndex((r: unknown) => !isOffsiteLesson(r));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `offsiteLessons[${bad}] の形式が不正です`,
+        path: `offsiteLessons[${bad}]`,
+      };
   }
 
   if (raw.handoverNotes != null) {
@@ -949,6 +982,11 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v19 → v20: handoverNotes (引継ぎメモ) を追加。管理者が書き出したとき
   //             だけ含まれる。既定値で埋めない (無ければ現状維持)。
+
+  // v20 → v21: offsiteLessons (他校舎の授業: 講師が他の校舎・学校で授業を
+  //             する曜日・時刻・期間) を追加。既定値で埋めない — 旧いバック
+  //             アップを読み込んだときに今の予定を空で上書きしないため
+  //             (fuzokuPlan と同じく「無ければ現状維持」)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

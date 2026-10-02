@@ -637,7 +637,8 @@ function WeekSection({
             <div key={i}>
               ⚠ {c.kind === "teacher" ? "講師" : "教室"} {c.value}: {c.a.grade} {c.a.subj} {c.aTime}
               {c.aRole === "sub" ? " (代行)" : ""} と {c.b.grade} {c.b.subj} {c.bTime}
-              {c.bRole === "sub" ? " (代行)" : ""} が重なります
+              {c.bRole === "sub" ? " (代行)" : ""}
+              {c.travel ? `${c.bTravel} の移動が間に合いません` : " が重なります"}
             </div>
           ))}
         </div>
@@ -659,6 +660,8 @@ export function FuzokuPlanView({
   biweeklyAnchors = [],
   sessionOverrides = [],
   extraLessons = [],
+  // 他校舎の授業 (附属のコマを持つ講師が同じ時間に他校舎へ出ていれば重なりに出す)
+  offsiteLessons = [],
   subs = [],
   fuzokuPlan,
   onSaveFuzokuPlan,
@@ -711,10 +714,11 @@ export function FuzokuPlanView({
         ctx: sessionCtx,
         specialEvents,
         extraLessons,
+        offsiteLessons,
         subs,
         fuzokuPlan,
       }),
-    [year, month, slots, sessionCtx, specialEvents, extraLessons, subs, fuzokuPlan]
+    [year, month, slots, sessionCtx, specialEvents, extraLessons, offsiteLessons, subs, fuzokuPlan]
   );
 
   // 時程の切り替えは特別時程のレコードを作る / 書き換える / 消す。
