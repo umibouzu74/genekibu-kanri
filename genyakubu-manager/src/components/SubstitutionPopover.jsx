@@ -3,7 +3,7 @@ import { colors } from "../styles/tokens";
 import { pickSubjectId } from "../utils/subjectMatch";
 import { compareTeacherNames } from "../utils/teacherKana";
 import { validateSubstituteChange } from "../utils/chainSubstitution";
-import { describeOffsiteBusy, offsiteOverlap } from "../utils/offsiteLessons";
+import { describeOffsiteBusy, isOffsiteClash, offsiteClashOf } from "../utils/offsiteLessons";
 
 function computePosition(anchorRect) {
   // Popover の幅・高さ上限を画面サイズに応じて算出 (style の
@@ -107,16 +107,24 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
     let kind = null;
     const hits = [];
     for (const rec of offsiteByTeacher?.get?.(name) || []) {
-      const k = offsiteOverlap(rec.time, slot.time);
+      const k = offsiteClashOf(rec, slot.time);
       if (!k) continue;
       hits.push(rec);
-      if (k === "overlap") kind = "overlap";
+      if (isOffsiteClash(k)) kind = "overlap";
       else if (!kind) kind = "maybe";
     }
     return { kind, hits };
   };
-  const freeAllDayNames = new Set(
-    availableTeachers.filter((t) => t.isFreeAllDay).map((t) => t.name)
+  // このコマの時刻に塾の授業が無い人 (全日空き / この時刻のコマが休講)。
+  // 空きに出ないのが他校舎のせいだけなら「授業中」とは書かない
+  const noLessonNowNames = new Set(
+    availableTeachers
+      .filter(
+        (t) =>
+          t.isFreeAllDay ||
+          (t.cancelledSlots || []).some((s) => s.time === slot.time)
+      )
+      .map((t) => t.name)
   );
 
   // Filter and sort free candidates by relevance
@@ -362,7 +370,7 @@ export const SubstitutionPopover = memo(function SubstitutionPopover({
           // 塾のコマが無い (全日空き) のに空きに出ないのは他校舎のせい。
           // そのときは「授業中」ではなく「他校舎」とだけ出す
           const busyOnlyOffsite =
-            t.isBusy && off.kind === "overlap" && freeAllDayNames.has(t.name);
+            t.isBusy && off.kind === "overlap" && noLessonNowNames.has(t.name);
           return (
             <div
               key={t.name}

@@ -234,3 +234,27 @@ describe("他校舎の授業 (role: offsite)", () => {
     expect(findTeacherConflicts(list).size).toBe(0);
   });
 });
+
+describe("他校舎の授業の移動時間", () => {
+  it("時間帯は重ならなくても移動が間に合わないコマを重なりにし、そう書く", () => {
+    const offsite = [
+      { id: 1, teacher: "奥村", place: "大手前丸亀", days: ["木"], time: "17:30-19:20", startDate: "2026-09-01", travelMinutes: 40 },
+    ];
+    const list = collectTeacherAssignments([mk(1)], DATE, { offsiteLessons: offsite });
+    const c = findTeacherConflicts(list).get(1);
+    expect(c).toHaveLength(1);
+    expect(describeTeacherConflict(c[0], { withTime: true })).toBe(
+      "奥村: 他校舎 大手前丸亀 17:30-19:20 (移動 40 分) との移動が間に合わない"
+    );
+    // 移動時間が無ければ重ならない
+    const plain = collectTeacherAssignments([mk(1)], DATE, {
+      offsiteLessons: [{ ...offsite[0], travelMinutes: undefined }],
+    });
+    expect(findTeacherConflicts(plain).get(1)).toBeUndefined();
+    // 代行候補でも「他校舎」(移動込み) として busy
+    const busy = teacherBusyAt(list, "奥村", "19:50-20:35").filter((a) => a.role === "offsite");
+    expect(describeBusy(busy[0])).toBe(
+      "他校舎: 大手前丸亀 (移動 40 分)"
+    );
+  });
+});

@@ -972,6 +972,20 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   `isFreeAllDay` (塾のコマが無い) の意味は変えないこと — 他校舎の時刻を
   busyTimes に入れると「全日空き」が「自分の休講コマの時刻だけ空き」に
   縮んで、夜のコマの代行候補から消える
+- **移動時間 (`travelMinutes`、任意・片道の分)** を入れた予定は、時間帯が
+  重ならなくても間が移動時間より短いコマを `"travel"` として扱う
+  (`offsiteOverlap` の第 3 引数。予定からは `offsiteClashOf(rec, time)`)。
+  `"overlap"` と `"travel"` はどちらも「その時間は塾に居られない」=
+  `isOffsiteClash` で同じに扱い、文言だけ「移動が間に合わない」に変える。
+  **重なり・代行の空き判定で `offsiteOverlap(rec.time, …)` を直に呼ばない**
+  (移動時間が抜ける)。終了時刻未定の予定は前のコマにだけ移動を見る
+- **講習時間割作成への取り込み** (`utils/offsiteBuilderImport.buildOffsiteSessionItems`
+  + 講習の ⚙ 設定 →「講師不在・NG」の `OffsiteImport`)。講習の日付ラベルを
+  `builderLessons.resolveDateLabelYmd` で年つきに解決し、その日に行く予定を
+  他学年セッション (時刻つき = 自動 NG) にする。移動時間は前後に足す。
+  **ボタンを押したときだけ**取り込む (自動同期しない。講習側の正は講習の
+  project)。講習の講師に居ない名前は取り込まず名前を出す。本体のデータは
+  `BuilderApp` の props → `contexts/hostDataContext` で読み取り専用に渡す
 - 行き先・時間の入力候補はこれまでの入力から (五十音 / 開始時刻順)。使用頻度で
   並べない (A18)
 - 削除は cascade なしなので removeWithUndo。閲覧者も読める `appData/` に置く

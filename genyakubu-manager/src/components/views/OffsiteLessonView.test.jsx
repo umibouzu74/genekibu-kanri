@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { OffsiteLessonView } from "./OffsiteLessonView";
 import { ToastProvider } from "../../hooks/useToasts";
+import { ConfirmProvider } from "../../hooks/useConfirm";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -54,7 +55,9 @@ const renderView = (props) =>
         </div>
       )}
     >
-      <Harness {...props} />
+      <ConfirmProvider>
+        <Harness {...props} />
+      </ConfirmProvider>
     </ToastProvider>
   );
 
@@ -186,7 +189,7 @@ describe("OffsiteLessonView — 一覧の操作", () => {
     renderView({ onSaveSpy: spy, initial: [rec] });
     fireEvent.click(screen.getByRole("button", { name: /村上高松 火・木 14:50-15:40 の日程/ }));
     // 文化の日 (11/3 火) は塾の休講日なので押せない
-    expect(screen.getByText("11/3 (火) 祝")).toBeInTheDocument();
+    expect(screen.getByText("11/3 (火) 休講")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "2026-10-06 (火) を休みにする" }));
     expect(spy).toHaveBeenLastCalledWith([{ ...rec, skipDates: ["2026-10-06"] }]);
     // 戻せる

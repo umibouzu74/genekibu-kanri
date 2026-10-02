@@ -102,7 +102,7 @@ export function resolveDateLabelYmd(label, baseYmd) {
 // 講習の作成・調整はシーズン近傍で行われるので、閲覧日 (today) よりも
 // 「シーズン後に見返しても年がずれない」安定した錨になる。どちらも無い
 // 外部 JSON だけ fallback (呼び出し側の今日) に頼る。
-function projectBaseYmd(project, fallbackYmd) {
+export function projectBaseYmd(project, fallbackYmd) {
   for (const key of ["updatedAt", "createdAt"]) {
     const m = String(project?.[key] ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];

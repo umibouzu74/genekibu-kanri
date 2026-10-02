@@ -28,7 +28,13 @@
 // 注意書きにだけ使う。
 
 import { activeTeachersOnDate } from "./absenceHelpers";
-import { formatOffsiteTime, offsiteLessonsOnDate, offsiteOverlap } from "./offsiteLessons";
+import {
+  formatOffsiteTime,
+  formatTravel,
+  isOffsiteClash,
+  offsiteClashOf,
+  offsiteLessonsOnDate,
+} from "./offsiteLessons";
 
 const HM_RE = /^\s*(\d{1,2}):(\d{2})/;
 
@@ -75,16 +81,19 @@ function offsiteSlot(rec) {
   };
 }
 
-// 2 つの仕事が重なるか。他校舎の予定は終了未定がありうるので offsiteOverlap
-// の「確かに重なる」だけを見る。コマ同士は従来どおり timesOverlap
-function assignmentsOverlap(a, b) {
+// 2 つの仕事の関係。他校舎の予定は offsiteClashOf (終了未定・移動時間込み) で
+// 見て、時間帯が重なる ("overlap") か移動が間に合わない ("travel") ものだけを
+// 重なりにする。コマ同士は従来どおり timesOverlap
+function assignmentsClash(a, b) {
   if (a.role === "offsite" && b.role !== "offsite") {
-    return offsiteOverlap(a.time, b.time) === "overlap";
+    const k = offsiteClashOf(a.offsite, b.time);
+    return isOffsiteClash(k) ? k : null;
   }
   if (b.role === "offsite" && a.role !== "offsite") {
-    return offsiteOverlap(b.time, a.time) === "overlap";
+    const k = offsiteClashOf(b.offsite, a.time);
+    return isOffsiteClash(k) ? k : null;
   }
-  return timesOverlap(a.time, b.time);
+  return timesOverlap(a.time, b.time) ? "overlap" : null;
 }
 
 function recordsOf(subsBySlot, slotId) {
@@ -192,13 +201,18 @@ export function findTeacherConflicts(assignments) {
         const b = list[j];
         if (a.slot.id === b.slot.id) continue;
         if (samePosition(a.slot, b.slot)) continue;
-        if (!assignmentsOverlap(a, b)) continue;
+        const kind = assignmentsClash(a, b);
+        if (!kind) continue;
+        // travel = 時間帯は重ならないが他校舎との移動が間に合わない
+        const travel = kind === "travel";
         push(a.slot.id, {
           teacher,
           role: a.role,
           other: b.slot,
           otherTime: b.time,
           otherRole: b.role,
+          otherOffsite: b.offsite,
+          travel,
         });
         push(b.slot.id, {
           teacher,
@@ -206,6 +220,8 @@ export function findTeacherConflicts(assignments) {
           other: a.slot,
           otherTime: a.time,
           otherRole: a.role,
+          otherOffsite: a.offsite,
+          travel,
         });
       }
     }
@@ -228,7 +244,7 @@ export function teacherBusyAt(assignments, teacher, time, opts = {}) {
     (a) =>
       a.teacher === teacher &&
       a.slot.id !== opts.excludeSlotId &&
-      assignmentsOverlap(a, { role: "own", time })
+      assignmentsClash(a, { role: "own", time })
   );
 }
 
@@ -243,7 +259,7 @@ export function teacherOffsiteMaybeAt(assignments, teacher, time) {
     (a) =>
       a.role === "offsite" &&
       a.teacher === teacher &&
-      offsiteOverlap(a.time, time) === "maybe"
+      offsiteClashOf(a.offsite, time) === "maybe"
   );
 }
 
@@ -255,13 +271,17 @@ function describe(slot) {
 /**
  * 重なり 1 件を短い文にする。
  *   "福江: 中3A 理科 (代行) と重複" / "滝澤: 中3SS 理科 と重複" /
- *   "石原: 他校舎 村上高松 と重複"
+ *   "石原: 他校舎 村上高松 と重複" /
+ *   "石原: 他校舎 村上高松 (移動 30 分) との移動が間に合わない"
  */
 export function describeTeacherConflict(c, { withTime = false } = {}) {
   const role = c.otherRole === "sub" ? " (代行)" : "";
   // 他校舎の予定は終了未定がありうる ("13:30" → "13:30〜 (終了未定)")
   const otherTime = c.otherRole === "offsite" ? formatOffsiteTime(c.otherTime) : c.otherTime;
   const time = withTime && otherTime ? ` ${otherTime}` : "";
+  if (c.travel) {
+    return `${c.teacher}: ${describe(c.other)}${time}${formatTravel(c.otherOffsite)} との移動が間に合わない`;
+  }
   return `${c.teacher}: ${describe(c.other)}${role}${time} と重複`;
 }
 
@@ -270,6 +290,6 @@ export function describeTeacherConflict(c, { withTime = false } = {}) {
  *   "授業中: 中2C 数学" / "代行中: 中3A 理科" / "他校舎: 村上高松"
  */
 export function describeBusy(a) {
-  if (a.role === "offsite") return `他校舎: ${a.slot.subj}`;
+  if (a.role === "offsite") return `他校舎: ${a.slot.subj}${formatTravel(a.offsite)}`;
   return `${a.role === "sub" ? "代行中" : "授業中"}: ${describe(a.slot)}`;
 }

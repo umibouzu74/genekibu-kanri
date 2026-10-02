@@ -115,6 +115,7 @@ describe("SubstitutePickerPopover の他校舎の授業", () => {
     slot: { id: `offsite:${teacher}`, day: "", time, grade: "他校舎", cls: "", subj: place, teacher, note: "" },
     time,
     role: "offsite",
+    offsite: { id: 1, teacher, place, time },
   });
 
   it("その時間に他校舎にいる候補には「⚠ 他校舎: 行き先」を出す (選べなくはしない)", () => {

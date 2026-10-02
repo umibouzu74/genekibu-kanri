@@ -124,23 +124,51 @@ export function offsiteStartText(time) {
  * 他校舎の予定 (offsiteTime) と塾のコマの時刻 (slotTime) が重なるか。
  *   "overlap" … 確かに重なる (半開区間。終了未定でも、コマの最中に他校舎が
  *               始まる / 開始が同時刻なら確か)
+ *   "travel"  … 時間帯は重ならないが、間が移動時間 (travelMinutes) より短い
+ *               (他校舎へ行く前 / 戻った後のコマに間に合わない)
  *   "maybe"   … 他校舎の終了時刻が未定で、コマがその開始より後に始まる
  *   null      … 重ならない / 読めない
+ * "overlap" と "travel" は「その時間は塾に居られない」として同じに扱う
+ * (isOffsiteClash)。"maybe" は注意書きだけ。
  * @param {string} offsiteTime
  * @param {string} slotTime "19:50-20:35" (終了無しは点)
+ * @param {number} [travelMinutes] 塾と行き先の片道の移動時間 (分)
  */
-export function offsiteOverlap(offsiteTime, slotTime) {
+export function offsiteOverlap(offsiteTime, slotTime, travelMinutes = 0) {
   const o = offsiteTimeRange(offsiteTime);
   const s = offsiteTimeRange(slotTime);
   if (!o || !s) return null;
+  const travel = Math.max(0, Number(travelMinutes) || 0);
+  const sEnd = s.end ?? s.start;
   if (s.start === o.start) return "overlap";
   if (o.end == null) {
     if (s.start > o.start) return "maybe";
     // コマが先に始まる: 他校舎の開始がコマの最中なら確かに重なる
-    return s.end != null && s.end > o.start ? "overlap" : null;
+    if (s.end != null && s.end > o.start) return "overlap";
+    // 終わってから他校舎へ向かうのに間に合うか
+    return travel > 0 && o.start - sEnd < travel ? "travel" : null;
   }
-  if (s.end == null) return s.start > o.start && s.start < o.end ? "overlap" : null;
-  return s.start < o.end && o.start < s.end ? "overlap" : null;
+  if (s.end == null) {
+    if (s.start > o.start && s.start < o.end) return "overlap";
+  } else if (s.start < o.end && o.start < s.end) {
+    return "overlap";
+  }
+  if (travel > 0) {
+    // 他校舎の後のコマ: 戻るのに間に合うか / 前のコマ: 向かうのに間に合うか
+    if (s.start >= o.end && s.start - o.end < travel) return "travel";
+    if (sEnd <= o.start && o.start - sEnd < travel) return "travel";
+  }
+  return null;
+}
+
+/** 「その時間は塾に居られない」か (時間帯が重なる / 移動が間に合わない) */
+export function isOffsiteClash(kind) {
+  return kind === "overlap" || kind === "travel";
+}
+
+/** その予定 (移動時間込み) とコマの時刻の関係 (offsiteOverlap の予定版) */
+export function offsiteClashOf(rec, slotTime) {
+  return offsiteOverlap(rec?.time, slotTime, rec?.travelMinutes);
 }
 
 // ─── 曜日・期間 ───────────────────────────────────────────────────
@@ -336,7 +364,7 @@ export function offsiteConflictsAt(list, teacher, dateStr, slotTime, holidays) {
   if (!teacher) return [];
   const out = [];
   for (const rec of offsiteLessonsOnDate(list, dateStr, { teacher, holidays })) {
-    const kind = offsiteOverlap(rec.time, slotTime);
+    const kind = offsiteClashOf(rec, slotTime);
     if (kind) out.push({ rec, kind });
   }
   return out;
@@ -355,10 +383,19 @@ export function offsiteByTeacherOnDate(list, dateStr, holidays) {
   return m;
 }
 
-/** "他校舎: 村上高松 14:50-15:40" (代行候補の注意書き) */
+/** "他校舎: 村上高松 14:50-15:40 (移動 30 分)" (代行候補の注意書き) */
 export function describeOffsiteBusy(rec) {
-  return `他校舎: ${rec.place} ${formatOffsiteTime(rec.time)}`;
+  return `他校舎: ${rec.place} ${formatOffsiteTime(rec.time)}${formatTravel(rec)}`;
 }
+
+/** " (移動 30 分)" / 移動時間が無ければ空 */
+export function formatTravel(rec) {
+  const t = Number(rec?.travelMinutes) || 0;
+  return t > 0 ? ` (移動 ${t} 分)` : "";
+}
+
+/** 移動時間として受ける上限 (分)。打ち間違いで 1 日中塞がないため */
+export const MAX_TRAVEL_MINUTES = 180;
 
 // ─── 入力 ─────────────────────────────────────────────────────────
 
@@ -371,6 +408,7 @@ export function emptyOffsiteDraft(todayStr = "") {
     time: "",
     startDate: todayStr,
     endDate: "",
+    travelMinutes: "",
     keepOnHolidays: false,
     memo: "",
   };
@@ -385,6 +423,7 @@ export function draftFromOffsite(rec) {
     time: rec.time || "",
     startDate: rec.startDate || "",
     endDate: rec.endDate || "",
+    travelMinutes: rec.travelMinutes ? String(rec.travelMinutes) : "",
     keepOnHolidays: !!rec.keepOnHolidays,
     memo: rec.memo || "",
   };
@@ -398,7 +437,8 @@ export function draftFromOffsite(rec) {
  * @returns {{ok: true, teachers: string[], time: string} | {ok: false, error: string, field: string}}
  */
 export function validateOffsiteDraft(draft, { splitTeachers, editing = false }) {
-  const teachers = splitTeachers(draft.teacher || "");
+  // 「石原・石原」のような重ね書きで同じ予定を 2 件作らない
+  const teachers = [...new Set(splitTeachers(draft.teacher || ""))];
   if (teachers.length === 0) {
     return { ok: false, field: "teacher", error: "講師を入力してください" };
   }
@@ -424,6 +464,17 @@ export function validateOffsiteDraft(draft, { splitTeachers, editing = false }) 
       return { ok: false, field: "endDate", error: "終了日は開始日以降にしてください" };
     }
   }
+  const travelText = String(draft.travelMinutes ?? "").normalize("NFKC").trim();
+  if (travelText) {
+    const n = Number(travelText);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_TRAVEL_MINUTES) {
+      return {
+        ok: false,
+        field: "travelMinutes",
+        error: `移動時間は 0〜${MAX_TRAVEL_MINUTES} 分の整数で入れてください (無ければ空欄)`,
+      };
+    }
+  }
   return { ok: true, teachers, time: t.time };
 }
 
@@ -431,6 +482,7 @@ export function validateOffsiteDraft(draft, { splitTeachers, editing = false }) 
 // 投げる)。終了日未定・メモなし・休みの日なしはキーごと持たない
 function recordFields(draft, teacher, time) {
   const memo = String(draft.memo || "").trim();
+  const travel = Number(String(draft.travelMinutes ?? "").normalize("NFKC").trim()) || 0;
   return {
     teacher,
     place: String(draft.place || "").trim(),
@@ -438,6 +490,7 @@ function recordFields(draft, teacher, time) {
     time,
     startDate: draft.startDate,
     ...(draft.endDate ? { endDate: draft.endDate } : {}),
+    ...(travel > 0 ? { travelMinutes: travel } : {}),
     ...(draft.keepOnHolidays ? { keepOnHolidays: true } : {}),
     ...(memo ? { memo } : {}),
   };
@@ -465,8 +518,12 @@ export function updateOffsiteLesson(list, id, draft, { teacher, time, nowIso }) 
   return (list || []).map((r) => {
     if (r.id !== id) return r;
     const fields = recordFields(draft, teacher, time);
+    // 期間の外に出た日・曜日を変えて当たらなくなった日は落とす
     const skips = (r.skipDates || []).filter(
-      (d) => d >= fields.startDate && (!fields.endDate || d <= fields.endDate)
+      (d) =>
+        d >= fields.startDate &&
+        (!fields.endDate || d <= fields.endDate) &&
+        fields.days.includes(dateToDay(d))
     );
     return {
       id: r.id,
@@ -527,6 +584,12 @@ export function knownOffsiteTimes(list) {
 
 // ─── 読み込み ─────────────────────────────────────────────────────
 
+function normalizeStoredTime(time) {
+  if (typeof time !== "string") return "";
+  const t = normalizeOffsiteTime(time);
+  return t.ok ? t.time : time;
+}
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -551,15 +614,21 @@ export function migrateOffsiteLessons(raw) {
       ? [...new Set(r.skipDates.filter((d) => typeof d === "string" && ISO_DATE_RE.test(d)))].sort()
       : [];
     const memo = typeof r.memo === "string" ? r.memo.trim() : "";
+    const travel = Number(r.travelMinutes);
     out.push({
       id,
       teacher,
       place,
       days: sortOffsiteDays(Array.isArray(r.days) ? r.days : []),
-      time: typeof r.time === "string" ? r.time : "",
+      // 読み込み (手編集・旧いバックアップ) の「14:50〜15:40」や全角も保存形に
+      // 揃える。読めない時刻はそのまま残す (画面で直せるように)
+      time: normalizeStoredTime(r.time),
       startDate,
       ...(endDate ? { endDate } : {}),
       ...(skipDates.length > 0 ? { skipDates } : {}),
+      ...(Number.isInteger(travel) && travel > 0 && travel <= MAX_TRAVEL_MINUTES
+        ? { travelMinutes: travel }
+        : {}),
       ...(r.keepOnHolidays === true ? { keepOnHolidays: true } : {}),
       ...(memo ? { memo } : {}),
       ...(typeof r.createdAt === "string" ? { createdAt: r.createdAt } : {}),

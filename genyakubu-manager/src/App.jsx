@@ -1364,7 +1364,10 @@ export default function App() {
               onConsumeFocus={() => setHandoverFocus(null)}
             />
           )}
-          {view === VIEWS.BUILDER && !selected && <BuilderApp />}
+          {view === VIEWS.BUILDER && !selected && (
+            // 他校舎の授業を講習の「講師不在」へ取り込むための読み取り専用データ
+            <BuilderApp offsiteLessons={offsiteLessons} holidays={holidays} />
+          )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
             <RegularBuilderApp
               slots={slots}

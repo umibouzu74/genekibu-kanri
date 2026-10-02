@@ -637,7 +637,8 @@ function WeekSection({
             <div key={i}>
               ⚠ {c.kind === "teacher" ? "講師" : "教室"} {c.value}: {c.a.grade} {c.a.subj} {c.aTime}
               {c.aRole === "sub" ? " (代行)" : ""} と {c.b.grade} {c.b.subj} {c.bTime}
-              {c.bRole === "sub" ? " (代行)" : ""} が重なります
+              {c.bRole === "sub" ? " (代行)" : ""}
+              {c.travel ? `${c.bTravel} の移動が間に合いません` : " が重なります"}
             </div>
           ))}
         </div>

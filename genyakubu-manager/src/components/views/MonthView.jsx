@@ -393,6 +393,7 @@ export function MonthView({
       {(teacherOffsite.length > 0 || (isAdmin && onOpenOffsite)) && (
         <div
           className="no-print"
+          role="group"
           aria-label={`${teacher} の他校舎の授業`}
           style={{
             marginBottom: 8,

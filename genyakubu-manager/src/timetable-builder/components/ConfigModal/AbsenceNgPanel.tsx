@@ -9,6 +9,7 @@ import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import NgCsvImport from './NgCsvImport';
+import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
@@ -545,6 +546,9 @@ export default function AbsenceNgPanel() {
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
         どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
       </div>
+
+      {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
+      <OffsiteImport />
 
       {/* NG 日時の CSV 一括登録 (E2a) */}
       <div className="mb-4">

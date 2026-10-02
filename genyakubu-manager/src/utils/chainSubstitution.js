@@ -5,7 +5,7 @@ import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
 import { compareTeacherNames } from "./teacherKana";
-import { offsiteByTeacherOnDate, offsiteOverlap } from "./offsiteLessons";
+import { isOffsiteClash, offsiteByTeacherOnDate, offsiteClashOf } from "./offsiteLessons";
 
 /** その日にコマが無い講師を候補に出すときの理由 (画面のバッジ文言と共有) */
 export const IDLE_TEACHER_REASON = "この日は担当なし";
@@ -25,13 +25,14 @@ export function timeOverlaps(t1, t2) {
 }
 
 /**
- * その時刻に他校舎の授業 (utils/offsiteLessons) へ出ているか。終了時刻が
- * 未定の予定は「重なるかもしれない」だけなので数えない (画面で注意書き)。
- * @param {Array<{time: string}>|undefined} offsite その日のその講師の予定
+ * その時刻に他校舎の授業 (utils/offsiteLessons) へ出ているか (移動時間込み)。
+ * 終了時刻が未定の予定は「重なるかもしれない」だけなので数えない (画面で
+ * 注意書き)。
+ * @param {Array<{time: string, travelMinutes?: number}>|undefined} offsite その日のその講師の予定
  * @param {string} time 代行に入るコマの時刻
  */
 export function isAwayAtOffsite(offsite, time) {
-  return (offsite || []).some((rec) => offsiteOverlap(rec.time, time) === "overlap");
+  return (offsite || []).some((rec) => isOffsiteClash(offsiteClashOf(rec, time)));
 }
 
 /**

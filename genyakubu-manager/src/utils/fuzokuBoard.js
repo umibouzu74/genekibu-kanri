@@ -26,6 +26,7 @@ import {
 import { examPeriodStopsClassesOn, isSlotCancelledByHoliday } from "./scheduleHelpers";
 import { findNewConflicts, resolveSlotDaySchedule } from "./daySchedules";
 import { collectTeacherAssignments, findTeacherConflicts } from "./teacherConflicts";
+import { formatOffsiteTime, formatTravel } from "./offsiteLessons";
 import { extraLessonsOnDate } from "./extraLessons";
 import { migrateFuzokuPlan } from "./migrate";
 import { cutoffShortText } from "../constants/cutoffMessages";
@@ -225,7 +226,8 @@ export function buildFuzokuMonth({
     for (const s of occupying) {
       if (!isFuzokuGrade(s.grade)) continue;
       for (const c of byTeacher.get(s.id) || []) {
-        const key = [c.teacher, ...[s.id, c.other.id].sort((x, y) => x - y)].join("|");
+        // 他校舎の予定の仮のコマは id が文字列 ("offsite:3") なので文字列で並べる
+        const key = [c.teacher, ...[String(s.id), String(c.other.id)].sort()].join("|");
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({
@@ -235,8 +237,12 @@ export function buildFuzokuMonth({
           aTime: timeBySlot.get(s.id),
           aRole: c.role,
           b: c.other,
-          bTime: c.otherTime,
+          // 他校舎の予定は終了未定を「13:30〜 (終了未定)」と書く
+          bTime: c.otherRole === "offsite" ? formatOffsiteTime(c.otherTime) : c.otherTime,
           bRole: c.otherRole,
+          // 時間帯は重ならないが他校舎との移動が間に合わない
+          travel: !!c.travel,
+          bTravel: c.travel ? formatTravel(c.otherOffsite) : "",
         });
       }
     }

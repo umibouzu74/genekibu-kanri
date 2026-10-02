@@ -9,7 +9,9 @@ import {
   formatOffsiteDays,
   formatOffsitePeriod,
   formatOffsiteTime,
+  formatTravel,
   indexOffsiteLessonsByDate,
+  isOffsiteClash,
   isOffsiteOnDate,
   isOpenEndedTime,
   knownOffsitePlaces,
@@ -19,6 +21,7 @@ import {
   nextOffsiteDate,
   normalizeOffsiteTime,
   offsiteByTeacherOnDate,
+  offsiteClashOf,
   offsiteConflictsAt,
   offsiteDayStatus,
   offsiteLessonsOnDate,
@@ -406,6 +409,7 @@ describe("入力 (validate / add / update)", () => {
       time: "13:30",
       startDate: "2026-10-14",
       endDate: "",
+      travelMinutes: "",
       keepOnHolidays: false,
       memo: "",
     });
@@ -484,5 +488,71 @@ describe("migrateOffsiteLessons", () => {
     expect(migrateOffsiteLessons(once)).toEqual(once);
     expect(migrateOffsiteLessons(null)).toEqual([]);
     expect(migrateOffsiteLessons({ 0: ishihara })).toEqual([]);
+  });
+});
+
+describe("移動時間 (travelMinutes)", () => {
+  it("時間帯は重ならなくても、間が移動時間より短いと travel", () => {
+    // 14:50-15:40 + 移動 30 分: 16:00 のコマは戻りが間に合わない、16:10 は間に合う
+    expect(offsiteOverlap("14:50-15:40", "16:00-16:50", 30)).toBe("travel");
+    expect(offsiteOverlap("14:50-15:40", "16:10-17:00", 30)).toBeNull();
+    // 行く前のコマ: 14:30 に終わると 14:50 に間に合わない
+    expect(offsiteOverlap("14:50-15:40", "13:40-14:30", 30)).toBe("travel");
+    expect(offsiteOverlap("14:50-15:40", "13:00-14:20", 30)).toBeNull();
+    // 重なるものは overlap のまま / 移動時間なしは従来どおり
+    expect(offsiteOverlap("14:50-15:40", "15:00-16:00", 30)).toBe("overlap");
+    expect(offsiteOverlap("14:50-15:40", "16:00-16:50")).toBeNull();
+    // 終了未定: 前のコマだけ移動を見る (後は maybe のまま)
+    expect(offsiteOverlap("13:30", "12:30-13:10", 30)).toBe("travel");
+    expect(offsiteOverlap("13:30", "16:25-17:25", 30)).toBe("maybe");
+  });
+
+  it("isOffsiteClash / offsiteClashOf / 表記", () => {
+    const rec = { ...ishihara, travelMinutes: 30 };
+    expect(offsiteClashOf(rec, "16:00-16:50")).toBe("travel");
+    expect(isOffsiteClash("travel")).toBe(true);
+    expect(isOffsiteClash("maybe")).toBe(false);
+    expect(describeOffsiteBusy(rec)).toBe("他校舎: 村上高松 14:50-15:40 (移動 30 分)");
+    expect(formatTravel(ishihara)).toBe("");
+  });
+
+  it("入力は 0〜180 の整数、空欄はなし。保存は 1 以上のときだけ持つ", () => {
+    const d = { ...emptyOffsiteDraft("2026-10-01"), teacher: "石原", place: "村上高松", days: ["火"], time: "14:50-15:40" };
+    expect(validateOffsiteDraft({ ...d, travelMinutes: "200" }, split)).toMatchObject({ ok: false, field: "travelMinutes" });
+    expect(validateOffsiteDraft({ ...d, travelMinutes: "1.5" }, split)).toMatchObject({ ok: false, field: "travelMinutes" });
+    expect(validateOffsiteDraft({ ...d, travelMinutes: "３０" }, split).ok).toBe(true);
+    const add = (t) =>
+      addOffsiteLessons([], { ...d, travelMinutes: t }, { teachers: ["石原"], time: "14:50-15:40", nextId: 1, nowIso: "x" }).added[0];
+    expect(add("３０").travelMinutes).toBe(30);
+    expect("travelMinutes" in add("")).toBe(false);
+    expect("travelMinutes" in add("0")).toBe(false);
+    expect(draftFromOffsite({ ...ishihara, travelMinutes: 30 }).travelMinutes).toBe("30");
+    expect(migrateOffsiteLessons([{ ...ishihara, travelMinutes: 30 }])[0].travelMinutes).toBe(30);
+    expect("travelMinutes" in migrateOffsiteLessons([{ ...ishihara, travelMinutes: -5 }])[0]).toBe(false);
+  });
+});
+
+describe("校正で直したところ", () => {
+  it("同じ講師の重ね書きは 1 件にする", () => {
+    const d = { ...emptyOffsiteDraft("2026-10-01"), teacher: "石原・石原", place: "村上高松", days: ["火"], time: "14:50-15:40" };
+    expect(validateOffsiteDraft(d, split).teachers).toEqual(["石原"]);
+  });
+
+  it("曜日を変えたら、当たらなくなった休みの日を落とす", () => {
+    const rec = { ...ishihara, skipDates: ["2026-10-06", "2026-10-08"] }; // 火・木
+    const next = updateOffsiteLesson([rec], 1, { ...draftFromOffsite(rec), days: ["木"] }, {
+      teacher: "石原",
+      time: "14:50-15:40",
+      nowIso: "u",
+    });
+    expect(next[0].skipDates).toEqual(["2026-10-08"]);
+  });
+
+  it("読み込んだ時刻のゆれを保存形に揃え、読めないものはそのまま残す", () => {
+    const out = migrateOffsiteLessons([
+      { ...ishihara, time: "１４：５０〜１５：４０" },
+      { ...kataoka, time: "午後" },
+    ]);
+    expect(out.map((r) => r.time)).toEqual(["14:50-15:40", "午後"]);
   });
 });

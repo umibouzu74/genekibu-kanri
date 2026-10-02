@@ -3,6 +3,7 @@ import { DAY_COLOR as DC, OFFSITE_LESSON_COLOR as OC } from "../../constants/col
 import { WEEKDAYS } from "../../constants/schools";
 import { useToday } from "../../hooks/useToday";
 import { useToasts } from "../../hooks/useToasts";
+import { useConfirm } from "../../hooks/useConfirm";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import { PrintButton } from "../PrintButton";
 import { S, colors } from "../../styles/common";
@@ -13,6 +14,7 @@ import { compareJa } from "../../utils/sortJa";
 import { fmtDate, fmtDateWeekday, fmtMD, parseLocalDate } from "../../utils/dateHelpers";
 import { isFullDayHoliday } from "../../utils/scheduleHelpers";
 import {
+  MAX_TRAVEL_MINUTES,
   OFFSITE_DAYS,
   addOffsiteLessons,
   addOffsiteSkipRange,
@@ -109,6 +111,12 @@ function mondayOf(dateStr) {
   return fmtDate(d);
 }
 
+// 「今週」の月曜。日曜は終わった週ではなく明日からの週を出す (週間ビューと同じ)
+function thisWeekMonday(todayStr) {
+  const d = parseLocalDate(todayStr);
+  return d && d.getDay() === 0 ? shiftDays(todayStr, 1) : mondayOf(todayStr);
+}
+
 function shiftDays(dateStr, n) {
   const d = parseLocalDate(dateStr);
   if (!d) return dateStr;
@@ -148,6 +156,7 @@ export function OffsiteLessonView({
 }) {
   const today = useToday();
   const toasts = useToasts();
+  const confirm = useConfirm();
   const formRef = useRef(null);
   const teacherInputRef = useRef(null);
   const [draft, setDraft] = useState(() => emptyOffsiteDraft(today));
@@ -159,7 +168,7 @@ export function OffsiteLessonView({
   const [openDatesId, setOpenDatesId] = useState(null);
   const [skipRange, setSkipRange] = useState({ from: "", to: "" });
   const [highlightId, setHighlightId] = useState(null);
-  const [weekBase, setWeekBase] = useState(() => mondayOf(today));
+  const [weekBase, setWeekBase] = useState(() => thisWeekMonday(today));
 
   const removeWithUndo = useRemoveWithUndo({ list: offsiteLessons, save: onSave });
   const cmpTeacher = useMemo(() => compareTeacherNames(teacherKana), [teacherKana]);
@@ -208,13 +217,36 @@ export function OffsiteLessonView({
     toasts.info("内容をフォームに写しました。講師を入れて登録してください");
   };
 
+  // 編集中の内容を保存せずに捨てることになるか (外からの要求で上書きする前に聞く)
+  const editingDirty = () => {
+    if (editId == null) return false;
+    const rec = offsiteLessons.find((r) => r.id === editId);
+    return !!rec && JSON.stringify(draftFromOffsite(rec)) !== JSON.stringify(draft);
+  };
+
   // 外からの要求 (月間カードのクリック・「＋ 他校舎の授業」・Cmd+K)
   useEffect(() => {
     if (!focusRequest) return;
-    if (focusRequest.id != null) {
-      const rec = offsiteLessons.find((r) => r.id === focusRequest.id);
-      if (rec) {
-        setFilter("all");
+    const req = focusRequest;
+    onConsumeFocus?.();
+    (async () => {
+      if (isAdmin && editingDirty()) {
+        const ok = await confirm({
+          title: "編集中の内容",
+          message: "編集中の他校舎の授業がまだ保存されていません。破棄して開きますか？",
+          okLabel: "破棄して開く",
+          tone: "danger",
+        });
+        if (!ok) return;
+      }
+      if (req.id != null) {
+        const rec = offsiteLessons.find((r) => r.id === req.id);
+        if (!rec) return;
+        // 今の絞り込みで見えないときだけ「すべて」に切り替える
+        const st = offsiteStatus(rec, today);
+        if ((filter === "current" && st === "ended") || (filter === "ended" && st !== "ended")) {
+          setFilter("all");
+        }
         setHighlightId(rec.id);
         if (isAdmin) startEdit(rec);
         else {
@@ -224,15 +256,14 @@ export function OffsiteLessonView({
               ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
           );
         }
+      } else if (isAdmin) {
+        setDraft({ ...emptyOffsiteDraft(today), teacher: req.teacher || "" });
+        setEditId(null);
+        setError(null);
+        setLastAdded(null);
+        scrollToForm();
       }
-    } else if (isAdmin) {
-      setDraft({ ...emptyOffsiteDraft(today), teacher: focusRequest.teacher || "" });
-      setEditId(null);
-      setError(null);
-      setLastAdded(null);
-      scrollToForm();
-    }
-    onConsumeFocus?.();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 要求 (token) ごとに 1 回だけ
   }, [focusRequest]);
 
@@ -279,6 +310,11 @@ export function OffsiteLessonView({
     setDraft((d) => ({ ...d, teacher: "", time: v.time }));
     setLastAdded(v.teachers);
     setHighlightId(added[added.length - 1]?.id ?? null);
+    // 終了日が過ぎた予定を入れたとき (記録として残す等) は今の絞り込みで
+    // 見えなくなるので、登録されたことが分かるように「すべて」へ
+    if (added.some((r) => offsiteStatus(r, today) === "ended") && filter === "current") {
+      setFilter("all");
+    }
     teacherInputRef.current?.focus?.();
   };
 
@@ -370,9 +406,7 @@ export function OffsiteLessonView({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
         <p style={{ margin: 0, fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, flex: "1 1 320px" }}>
-          講師が他の校舎・学校で授業をする曜日と時間です。登録すると、その講師の月間・週間
-          カレンダー、ダッシュボード、代行候補 (その時間は他校舎) に出ます。塾の授業ではないので
-          時間割のコマや第N回には数えません。
+          講師が他の校舎・学校で授業をする曜日と時間です。登録すると、その講師の月間・週間カレンダー、ダッシュボード、代行候補 (その時間は他校舎) に出ます。塾の授業ではないので時間割のコマや第N回には数えません。
         </p>
         <PrintButton />
       </div>
@@ -499,6 +533,31 @@ export function OffsiteLessonView({
           </div>
 
           <div style={fieldRow}>
+            <label htmlFor="offsite-travel" style={fieldLabel}>
+              移動
+            </label>
+            <input
+              id="offsite-travel"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={MAX_TRAVEL_MINUTES}
+              step={5}
+              value={draft.travelMinutes}
+              onChange={(e) => set("travelMinutes", e.target.value)}
+              placeholder="0"
+              aria-label="移動 (分)"
+              aria-invalid={error?.field === "travelMinutes" ? "true" : undefined}
+              aria-describedby="offsite-travel-hint"
+              style={{ ...S.input, width: 80 }}
+            />
+            <span>分</span>
+            <span id="offsite-travel-hint" style={hint}>
+              塾との片道 (任意)。入れると、行く前・戻った後のコマに間に合わないときも重なりとして警告し、代行候補・講習の講師不在にも含めます
+            </span>
+          </div>
+
+          <div style={fieldRow}>
             <label htmlFor="offsite-start" style={fieldLabel}>
               期間
             </label>
@@ -578,8 +637,7 @@ export function OffsiteLessonView({
             </button>
             {lastAdded && editId == null && (
               <span role="status" style={{ ...hint, color: colors.success }}>
-                ✓ {lastAdded.join("・")} を登録しました。行き先・曜日・時間・期間・メモは
-                残してあるので、講師を入れ替えて続けて登録できます
+                ✓ {lastAdded.join("・")} を登録しました。行き先・曜日・時間・期間・メモは残してあるので、講師を入れ替えて続けて登録できます
               </span>
             )}
           </div>
@@ -684,7 +742,7 @@ export function OffsiteLessonView({
             </button>
             <button
               type="button"
-              onClick={() => setWeekBase(mondayOf(today))}
+              onClick={() => setWeekBase(thisWeekMonday(today))}
               style={{ ...S.btn(false), fontSize: 12, padding: "3px 10px" }}
             >
               今週
@@ -864,6 +922,9 @@ function OffsiteRow({
         {skipCount > 0 && (
           <span style={{ fontSize: 10, color: colors.inkMuted }}>休み {skipCount} 日</span>
         )}
+        {rec.travelMinutes > 0 && (
+          <span style={{ fontSize: 10, color: colors.inkMuted }}>移動 {rec.travelMinutes} 分</span>
+        )}
         {rec.keepOnHolidays && (
           <span style={{ fontSize: 10, color: colors.inkMuted }}>休講日も行く</span>
         )}
@@ -963,8 +1024,8 @@ function OffsiteDates({
     >
       <div style={{ ...hint, marginBottom: 6 }}>
         {isAdmin
-          ? "日付を押すとその日だけ休み / 戻すを切り替えます。灰色は塾の休講日 (休講日も行くなら編集で切り替え)。"
-          : "取消線は休み、灰色は塾の休講日のため休みの日です。"}
+          ? "日付を押すとその日だけ休み / 戻すを切り替えます。灰色の「休講」は塾の全体休講日 (休講日も行くなら編集で切り替え)。"
+          : "取消線は休み、灰色の「休講」は塾の全体休講日のため休みの日です。"}
         {!rec.endDate && ` 終了日未定のため ${DATES_AHEAD_MONTHS} か月先まで表示しています。`}
       </div>
       {dates.length === 0 ? (
@@ -995,7 +1056,7 @@ function OffsiteDates({
                     title={`${holidayLabel(date) || "休講日"} のため休み`}
                     style={{ ...base, background: "#eee", borderColor: "#ddd", color: "#999" }}
                   >
-                    {label} 祝
+                    {label} 休講
                   </span>
                 );
               }

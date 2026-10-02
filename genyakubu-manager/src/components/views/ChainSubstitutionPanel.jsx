@@ -128,7 +128,11 @@ export function ChainSubstitutionPanel({
     );
     setAutoAvailable(auto);
 
-    const combined = [...auto, ...manualAvailable];
+    // 手動追加の他校舎の予定は、追加したときの日付ではなく今の日付で引き直す
+    const combined = [
+      ...auto,
+      ...manualAvailable.map((m) => ({ ...m, offsite: offsiteByTeacher.get(m.name) || [] })),
+    ];
     const sugg = suggestChainSubstitutions(
       uncoveredSubs.map((s) => ({
         slotId: s.slotId, originalTeacher: s.originalTeacher, date: s.date,
@@ -141,7 +145,7 @@ export function ChainSubstitutionPanel({
   }, [
     date, slots, holidays, examPeriods, subs, partTimeStaff,
     subjects, subjectCategories, timetables, biweeklyAnchors, teacherSubjects,
-    teacherKana, manualAvailable, uncoveredSubs, offsiteLessons,
+    teacherKana, manualAvailable, uncoveredSubs, offsiteLessons, offsiteByTeacher,
   ]);
 
   // 手動追加。一覧に無い名前 (どのコマにも出てこない人) も直接入力できる
