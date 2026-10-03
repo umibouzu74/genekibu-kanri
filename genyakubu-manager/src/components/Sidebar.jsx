@@ -131,7 +131,7 @@ const MENU_CONFIG = [
   {
     key: VIEWS.ALL, icon: "📊", label: "全講師一覧",
     children: [
-      { key: VIEWS.COMPARE, icon: "⚖", label: "講師比較" },
+      { key: VIEWS.MINUTES, icon: "⏱", label: "授業時間の集計" },
     ],
   },
   {

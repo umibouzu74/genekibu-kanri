@@ -991,6 +991,28 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 - 削除は cascade なしなので removeWithUndo。閲覧者も読める `appData/` に置く
   (講師の予定で、管理者限定にする理由が無い)
 
+## 授業時間の集計 (2026-10-03 実装、旧「講師比較」を置き換え)
+
+給与を「分」で計算する講師のために、期間内に講師ごとに**実際に教えた**時間を
+一覧する画面 (サイドバー「⏱ 授業時間の集計」、chord `g j`、
+`components/views/TeachingMinutesView.jsx` + `utils/teachingMinutes.js`)。
+
+- **誰がその日に教えたかは本体の判定に委ねる** (`computeTeachingMinutes`)。
+  対象コマの絞り込みは日別ダッシュボードと同じ (isOffForGrade・
+  `isSlotCancelledOnDate`・時間割の有効期間・`isSlotBeyondCutoff`)、担当は
+  `activeTeachersOnDate` − 代行 / 欠勤レコードのある人 + 代行者
+  (`teacherConflicts.collectTeacherAssignments` と同じ決め方)、時刻は
+  `buildAdjustmentIndex` の実効時刻。**画面側で独自の実施判定を書き起こさない**
+- 振替は**振替先の日**に数える (担当は `targetTeacher`、無ければ元の担当)。
+  合同で吸収された側は数えない。代行者が空の欠勤は誰にも付かない。
+  未確定の代行は代行者で数えて件数を出す
+- 追加授業・講習 (`koshuLessons` の kind="koshu" だけ) も種別を分けて数える。
+  **他校舎の授業は塾の授業ではないので数えない**
+- 分は「開始-終了」の差。終了時刻の読めないコマは **0 分にせず件数を出す**
+- 時間割セレクタでは絞らない (日付ベース。`slots` は全コマを渡す)
+- 締め日と選んだ講師は localStorage (人が明示的に選んだ表示の好み)。
+  使用頻度で講師を並べ替えない (A18)
+
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
 RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、

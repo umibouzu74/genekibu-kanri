@@ -280,7 +280,7 @@ export function CommandPalette({
     const viewNames = [
       { key: views.DASH, label: "ダッシュボード" },
       { key: views.ALL, label: "全講師一覧" },
-      { key: views.COMPARE, label: "講師比較" },
+      { key: views.MINUTES, label: "授業時間の集計 (給与用の分数)" },
       { key: views.TIMETABLE, label: "時間割管理" },
       { key: views.HOLIDAYS, label: "休講・テスト期間・イベント" },
       { key: views.EVENTS, label: "イベントカレンダー" },

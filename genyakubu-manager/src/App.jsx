@@ -81,8 +81,10 @@ const ConfirmedSubsView = lazy(() =>
 const StaffManagerView = lazy(() =>
   import("./components/views/StaffManagerView").then((m) => ({ default: m.StaffManagerView }))
 );
-const CompareView = lazy(() =>
-  import("./components/views/CompareView").then((m) => ({ default: m.CompareView }))
+const TeachingMinutesView = lazy(() =>
+  import("./components/views/TeachingMinutesView").then((m) => ({
+    default: m.TeachingMinutesView,
+  }))
 );
 const TimetableManagerView = lazy(() =>
   import("./components/views/TimetableManagerView").then((m) => ({ default: m.TimetableManagerView }))
@@ -172,7 +174,7 @@ const CMD_K_HINT = IS_MAC ? "⌘K" : "Ctrl+K";
 const VIEW_TITLES = {
   [VIEWS.DASH]: "ダッシュボード",
   [VIEWS.ALL]: "全講師コマ数一覧",
-  [VIEWS.COMPARE]: "講師比較",
+  [VIEWS.MINUTES]: "授業時間の集計",
   [VIEWS.TIMETABLE]: "時間割管理",
   [VIEWS.MASTER]: "コースマスター管理",
   [VIEWS.HOLIDAYS]: "休講・テスト期間・イベント",
@@ -1121,9 +1123,21 @@ export default function App() {
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
           )}
-          {view === VIEWS.COMPARE && !selected && (
-            <CompareView
-              slots={ttFilteredSlots}
+          {view === VIEWS.MINUTES && !selected && (
+            // 日付ベースの集計なので時間割セレクタでは絞らない (有効期間は日ごとに見る)
+            <TeachingMinutesView
+              slots={slots}
+              subs={subs}
+              adjustments={adjustments}
+              daySchedules={daySchedules}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              biweeklyAnchors={biweeklyAnchors}
+              extraLessons={extraLessons}
+              koshuLessons={koshuLessons}
               partTimeStaff={partTimeStaff}
               subjects={subjects}
               teacherKana={teacherKana}
