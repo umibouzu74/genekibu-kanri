@@ -1134,6 +1134,7 @@ export default function App() {
               displayCutoff={displayCutoff}
               holidays={holidays}
               examPeriods={examPeriods}
+              examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
               biweeklyAnchors={biweeklyAnchors}
               extraLessons={extraLessons}

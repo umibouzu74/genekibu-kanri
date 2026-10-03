@@ -9,6 +9,7 @@ import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
 import { isCancelAdjustment } from "../../../utils/slotCancel";
+import { rescheduleTeacherLabel } from "../../../utils/adjustmentDisplay";
 import {
   collectTeacherAssignments,
   findTeacherConflicts,
@@ -1046,7 +1047,11 @@ export function AbsenceTimetable({
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {incomingReschedules.map(({ adj, slot }) => {
               const timeText = adj.targetTime || slot.time;
-              const teacherText = adj.targetTeacher || slot.teacher;
+              const teacherText = rescheduleTeacherLabel(adj, slot, {
+                biweeklyAnchors,
+                holidays,
+                examPeriods,
+              });
               const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
               const titleParts = [`元: ${adj.date} ${slot.time}`];
               if (adj.memo) titleParts.push(adj.memo);

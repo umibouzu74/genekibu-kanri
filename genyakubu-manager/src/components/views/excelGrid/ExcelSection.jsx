@@ -7,7 +7,10 @@ import {
   getSlotTeachers,
   weightedSlotCount,
 } from "../../../utils/biweekly";
-import { buildAdjustmentIndex } from "../../../utils/adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  rescheduleTeacherLabel,
+} from "../../../utils/adjustmentDisplay";
 import {
   buildColumnDefs,
   buildTimeRows,
@@ -374,7 +377,11 @@ export function ExcelSection({
           </strong>
           {incomingReschedules.map(({ adj, slot }, idx) => {
             const timeText = adj.targetTime || slot.time;
-            const teacherText = adj.targetTeacher || slot.teacher;
+            const teacherText = rescheduleTeacherLabel(adj, slot, {
+              biweeklyAnchors,
+              holidays,
+              examPeriods,
+            });
             const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
             return (
               <span

@@ -1,6 +1,8 @@
 // 調整 (合同/移動/振替) の表示用インデックスを日付ごとに構築するヘルパ。
 // ビュー側で同じロジックを繰り返さないために集約。
 
+import { activeTeachersOnDate } from "./absenceHelpers";
+import { splitTeacherField } from "./biweekly";
 import { resolveSlotDaySchedule } from "./daySchedules";
 import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
 
@@ -107,6 +109,35 @@ export function collectIncomingReschedules(adjustments, dateStr, slots) {
       timeStartToMin(a.adj.targetTime || a.slot.time) -
       timeStartToMin(b.adj.targetTime || b.slot.time)
   );
+}
+
+/**
+ * 振替で他日から入ってくるコマを、振替先の日に担当する講師 (名前の配列)。
+ *
+ * - `targetTeacher` があればその人 (複数担当は区切りで分ける)
+ * - 無ければ**振替元の日**の担当。隔週コマは振替元の日の A/B で解決する
+ *   (B 週の 12/7 を 12/4 へ移したなら、12/4 に来るのはパートナー)
+ *
+ * **`adj.targetTeacher || slot.teacher` を名前と完全一致で比べないこと。**
+ * 講師欄は「香川·福江」のような複数担当や隔週のパートナーを持つので、
+ * 文字列のままだと講師別の月間で振替のカードが丸ごと消えていた
+ * (2026-10-03)。ctx が無ければ隔週は主担当のまま (従来の表示と同じ)。
+ *
+ * @param {object} adj reschedule の adjustment
+ * @param {object} slot 振替元のコマ
+ * @param {{biweeklyAnchors?: Array, holidays?: Array, examPeriods?: Array}} [ctx]
+ * @returns {string[]}
+ */
+export function rescheduleTargetTeachers(adj, slot, ctx = {}) {
+  if (!adj || !slot) return [];
+  const named = splitTeacherField(adj.targetTeacher);
+  if (named.length > 0) return named;
+  return activeTeachersOnDate(slot, adj.date, ctx);
+}
+
+/** rescheduleTargetTeachers の表示用 ("香川·福江")。 */
+export function rescheduleTeacherLabel(adj, slot, ctx = {}) {
+  return rescheduleTargetTeachers(adj, slot, ctx).join("·");
 }
 
 // スロットの短い表示ラベル "grade(cls) subj" を返す。slot が null の場合は fallback。

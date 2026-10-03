@@ -182,3 +182,57 @@ describe("usePrintJobs.handleBatchPrint", () => {
     expect(pw.writePendingDocument).not.toHaveBeenCalled();
   });
 });
+
+// トップバーの 🖨 (単発の popup 印刷)。紙面のタイトルの決め方
+describe("usePrintJobs.handlePrint", () => {
+  let w;
+  beforeEach(() => {
+    w = makeWindow();
+    pw.openPrintWindow.mockReset().mockReturnValue(w);
+    pw.writePrintDocument.mockReset();
+  });
+  afterEach(cleanup);
+
+  function PlainHarness({ onReady, children }) {
+    const jobs = usePrintJobs({
+      view: VIEWS.MINUTES,
+      selected: null,
+      monthOff: 0,
+      vy: 2026,
+      vm: 9,
+      eventVisibility: {},
+      setSelected: () => {},
+      setView: () => {},
+      setMonthOff: () => {},
+      toasts,
+    });
+    onReady(jobs);
+    return <div id="main-content">{children}</div>;
+  }
+
+  it("ビューが data-print-title を持てば、日付入力より優先してタイトルにする", () => {
+    let jobs = null;
+    render(
+      <PlainHarness onReady={(j) => (jobs = j)}>
+        <input type="date" defaultValue="2026-09-07" aria-label="開始日" />
+        <h3 data-print-title="授業時間の集計 2026/9/7 〜 2026/9/13">見出し</h3>
+      </PlainHarness>
+    );
+    jobs.handlePrint();
+    expect(pw.writePrintDocument).toHaveBeenCalledTimes(1);
+    expect(pw.writePrintDocument.mock.calls[0][1].title).toBe(
+      "授業時間の集計 2026/9/7 〜 2026/9/13"
+    );
+  });
+
+  it("持たなければ従来どおり日付入力から「◯日の授業予定」", () => {
+    let jobs = null;
+    render(
+      <PlainHarness onReady={(j) => (jobs = j)}>
+        <input type="date" defaultValue="2026-09-07" aria-label="日付" />
+      </PlainHarness>
+    );
+    jobs.handlePrint();
+    expect(pw.writePrintDocument.mock.calls[0][1].title).toBe("2026-09-07（月） 授業予定");
+  });
+});

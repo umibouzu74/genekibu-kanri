@@ -143,6 +143,10 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
   - CSS / HTML ビルダは `src/utils/printStyles.js` に切り出し、
     `printStyles.test.js` で純粋関数としてテストしている。popup の開閉
     (`openPrintWindow` / `writePrintDocument`) は `src/utils/printWindow.js`
+  - 紙面のタイトル (印刷ジョブ名) は既定では画面の日付入力から
+    「◯日の授業予定」を作る。**期間の日付入力を持つ画面 (授業時間の集計) は
+    `data-print-title` を付けた要素で自分のタイトルを渡す** (開始日を
+    「授業予定」の日付と取り違えないように)。操作部は `no-print`
 
   この popup 系統には、単発の `handlePrint` の他に**「対象を差し替えながら
   DOM をスナップショットして 1 ジョブに連結する」派生**が 2 つある。どちらも
@@ -552,6 +556,13 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 
 日付 → 入ってくる振替の一覧は `adjustmentDisplay.collectIncomingReschedules`
 に集約。**新しく日付ベースのビューを足すときはここを呼ぶこと。**
+
+**振替で入ってくるコマの担当は `adjustmentDisplay.rescheduleTargetTeachers`**
+(2026-10-03)。`targetTeacher` があればその人、無ければ**振替元の日**の担当
+(隔週は振替元の日の A/B で解決)。`adj.targetTeacher || slot.teacher` を講師名と
+完全一致で比べないこと — 「香川·福江」の複数担当や隔週のパートナーの週で、
+講師別の月間から振替先のカードが丸ごと消えていた。表示は
+`rescheduleTeacherLabel` (バナー・週間・タイムテーブル・欠勤組み換え)。
 
 **振替元 (出ていった側) は「休みになった」と読めるまで出す** (2026-08-20 の
 指摘)。コマに「振」バッジを付けるだけでは、月の一覧でその日が空いたことに
@@ -1003,15 +1014,26 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   `activeTeachersOnDate` − 代行 / 欠勤レコードのある人 + 代行者
   (`teacherConflicts.collectTeacherAssignments` と同じ決め方)、時刻は
   `buildAdjustmentIndex` の実効時刻。**画面側で独自の実施判定を書き起こさない**
-- 振替は**振替先の日**に数える (担当は `targetTeacher`、無ければ元の担当)。
-  合同で吸収された側は数えない。代行者が空の欠勤は誰にも付かない。
-  未確定の代行は代行者で数えて件数を出す
-- 追加授業・講習 (`koshuLessons` の kind="koshu" だけ) も種別を分けて数える。
-  **他校舎の授業は塾の授業ではないので数えない**
+- 振替は**振替先の日**に数える (担当は `adjustmentDisplay.rescheduleTargetTeachers`)。
+  合同で吸収された側は数えない。代行者が元講師と同じレコードは担当のまま
+- 代行の 4 状態は `substituteState` で読む: 代行者が付いたもの (未確定も) は
+  代行者の時間、**代行なしで確定は誰にも付けず知らせない** (残りの担当者で
+  回す意図どおり)、**代行未定は誰にも付けず一覧で知らせる** (給与を締める前に
+  片付けるべきデータ)。未確定の代行も件数を出す
+- 追加授業・講習 (`koshuLessons` の kind="koshu" だけ)・**特訓シフト**
+  (月間カレンダーと同じくテスト期間の範囲内の日だけ、校時ごと) も種別を分けて
+  数える。**他校舎の授業は塾の授業ではないので数えない**
 - 分は「開始-終了」の差。終了時刻の読めないコマは **0 分にせず件数を出す**
+- **「合計に含める」種別**を画面で選べる (講習・特訓を別の単価で払う運用)。
+  種別ごとの分は常に全部持ち、合計・コマ数・出勤日数は
+  `summarizeTeacherRow(row, included)` で選んだ種別だけから出す。外した種別は
+  列を消さず「(合計外)」と出す。明細 CSV は全行に「合計に含める」列を付ける
+  (Excel で絞れば合計と突き合わせられる)
 - 時間割セレクタでは絞らない (日付ベース。`slots` は全コマを渡す)
-- 締め日と選んだ講師は localStorage (人が明示的に選んだ表示の好み)。
-  使用頻度で講師を並べ替えない (A18)
+- 締め日・選んだ講師・合計に含める種別は localStorage (人が明示的に選んだ
+  表示の好み)。使用頻度で講師を並べ替えない (A18)
+- 印刷はトップバーの 🖨 (popup 系統)。操作部は `no-print`、紙面のタイトルは
+  `data-print-title` (上の「印刷システムの二系統」)
 
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
@@ -1063,6 +1085,9 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
   App.jsx に戻さない
 - App 全体のスモークは `App.smoke.test.jsx` (全ビュー遷移でクラッシュしない)。
   ビューを足したら `VIEW_LABELS` に名前を足す
+- chord を足したら `?` のヘルプ (`constants/shortcuts.js`) にも足す。
+  `ShortcutsHelp.test.jsx` が `VIEW_CHORDS` と突き合わせて止める
+  (2026-10-03 に `g j` を載せ忘れた)
 
 ## ErrorBoundary の 2 段構え (2026-09-04)
 

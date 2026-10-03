@@ -72,11 +72,18 @@ export function usePrintJobs({
     const hasTimetableGrid = !!el.querySelector(".excel-print-col-ms");
     const hasMonthView =
       view === VIEWS.MONTH && !!el.querySelector(".month-print-root");
+    // 紙面のタイトルをビュー自身が持っているとき (data-print-title)。期間の
+    // 日付入力を持つ集計画面 (授業時間の集計) で、開始日を「◯日の授業予定」
+    // と取り違えないように、日付入力からの推測より優先する
+    const ownTitle =
+      el.querySelector("[data-print-title]")?.getAttribute("data-print-title") || "";
     const docTitle = hasMonthView
       ? buildMonthLabel({ teacher: selected, year: vy, month: vm })
-      : selected
-        ? `${selected} 授業予定`
-        : dateLabel;
+      : ownTitle
+        ? ownTitle
+        : selected
+          ? `${selected} 授業予定`
+          : dateLabel;
 
     const printStyles = buildPrintStyles({ hasTimetableGrid, hasMonthView });
 

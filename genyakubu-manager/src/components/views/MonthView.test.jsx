@@ -154,6 +154,33 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.getAllByText("振")).toHaveLength(2);
   });
 
+  // 振替先の担当を `adj.targetTeacher || slot.teacher` の完全一致で見ていた
+  // ため、複数担当のコマ・隔週のパートナーの週は振替先のカードが丸ごと
+  // 消えていた (2026-10-03)。振替元の 12/7 と振替先の 12/4 で 2 枚出る
+  it("複数担当のコマの振替は、担当の 1 人から見ても振替先にカードを出す", () => {
+    render(
+      <MonthView
+        {...decProps}
+        slots={[{ ...SLOT, teacher: "堀上·河野" }]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.getAllByText("振")).toHaveLength(2);
+  });
+
+  it("隔週コマの B 週の振替は、パートナーの月間の振替先に出す", () => {
+    // 11/30 (月) を A 週の起点にすると 12/7 は B 週 = パートナー (堀上) の週
+    render(
+      <MonthView
+        {...decProps}
+        slots={[{ ...SLOT, teacher: "河野", note: "隔週(堀上)" }]}
+        biweeklyAnchors={[{ date: "2026-11-30" }]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.getAllByText("振")).toHaveLength(2);
+  });
+
   it("その日のコマが全部よそへ行ったら日付の横に「振替で休み」を出す", () => {
     render(<MonthView {...decProps} adjustments={[RESCHEDULE]} />);
     // 12/7 (月) だけが空になる。他の月曜は通常どおりなので 1 日分だけ

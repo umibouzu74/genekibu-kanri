@@ -14,18 +14,25 @@
 //   - 振替で他日へ出るコマ・合同で吸収された側は数えない。振替で他日から
 //     入ってくるコマは振替先の日に数える (担当は targetTeacher、無ければ
 //     元の担当。月間カレンダーと同じ)
-// 加えて、日付を明示して登録した追加授業と講習コマ (講習時間割作成から) も
-// 種別を分けて数える。他校舎の授業は塾の授業ではないので数えない。
+// 加えて、日付を明示して登録した追加授業・講習コマ (講習時間割作成から)・
+// テスト期間の特訓シフト (校時ごとの開始・終了) も種別を分けて数える。
+// 他校舎の授業は塾の授業ではないので数えない。
 //
 // 分は「開始-終了」の差。終了時刻の読めないコマは分を足さず件数だけ
-// (noTime) 数えて画面で知らせる (黙って 0 分にしない)。
+// (noTime) 数えて画面で知らせる (黙って 0 分にしない)。代行が決まらない
+// まま (代行未定) の欠勤は誰の時間にもならないので、これも一覧で知らせる。
+//
+// 「合計」に何を含めるかは呼び出し側が種別で選ぶ (講習・特訓を別の単価で
+// 払う運用があるため)。種別ごとの分は選択に関係なく行に持っておき、合計・
+// コマ数・出勤日数は summarizeTeacherRow で選んだ種別だけから出す。
 
 import { activeTeachersOnDate } from "./absenceHelpers";
-import { buildAdjustmentIndex } from "./adjustmentDisplay";
+import { buildAdjustmentIndex, rescheduleTargetTeachers } from "./adjustmentDisplay";
 import { splitTeacherField } from "./biweekly";
-import { dateToDay, eachDateStrInRange } from "./dateHelpers";
+import { dateToDay, eachDateStrInRange, fmtDate } from "./dateHelpers";
 import { getDaySchedulesForDate } from "./daySchedules";
-import { isSlotCancelledOnDate } from "./slotCancel";
+import { buildCancelIndex, isSlotCancelledOnDate } from "./slotCancel";
+import { hasSubstitute, needsSubstitute, SUB_STATE, subState } from "./substituteState";
 import {
   getCutoffGroupLabelsWithSlots,
   getDayCutoffKind,
@@ -33,13 +40,16 @@ import {
   isTimetableActiveForDate,
 } from "./timetable";
 
-export const MINUTE_KINDS = ["own", "sub", "extra", "koshu"];
+export const MINUTE_KINDS = ["own", "sub", "extra", "koshu", "prep"];
 export const MINUTE_KIND_LABELS = {
   own: "通常授業",
   sub: "代行",
   extra: "追加授業",
   koshu: "講習",
+  prep: "特訓",
 };
+
+const zeroByKind = () => Object.fromEntries(MINUTE_KINDS.map((k) => [k, 0]));
 
 // 期間の上限 (日)。誤って何年分も指定したときに画面が固まらないように
 export const MAX_RANGE_DAYS = 400;
@@ -85,15 +95,34 @@ function describeLesson(grade, cls, subj) {
 function emptyRow(teacher) {
   return {
     teacher,
-    total: 0,
-    count: 0,
-    noTime: 0,
-    unconfirmed: 0,
-    byKind: { own: 0, sub: 0, extra: 0, koshu: 0 },
-    countByKind: { own: 0, sub: 0, extra: 0, koshu: 0 },
-    days: new Set(),
+    // 種別ごとの分と件数 (合計に含めるかどうかに関係なく全種別)
+    byKind: zeroByKind(),
+    countByKind: zeroByKind(),
     entries: [],
   };
+}
+
+/**
+ * 講師 1 人ぶんの合計。included に入っている種別だけから出す。
+ * @param {ReturnType<typeof emptyRow>|undefined} row
+ * @param {Iterable<string>} [included] 合計に含める種別 (既定 = 全種別)
+ * @returns {{total: number, count: number, days: number, noTime: number, unconfirmed: number}}
+ */
+export function summarizeTeacherRow(row, included = MINUTE_KINDS) {
+  const out = { total: 0, count: 0, days: 0, noTime: 0, unconfirmed: 0 };
+  if (!row) return out;
+  const inc = included instanceof Set ? included : new Set(included);
+  const days = new Set();
+  for (const e of row.entries) {
+    if (!inc.has(e.kind)) continue;
+    out.count += 1;
+    days.add(e.date);
+    if (e.minutes == null) out.noTime += 1;
+    else out.total += e.minutes;
+    if (e.unconfirmed) out.unconfirmed += 1;
+  }
+  out.days = days.size;
+  return out;
 }
 
 /**
@@ -114,7 +143,14 @@ function emptyRow(teacher) {
  * @param {Array} [args.examPeriods]
  * @param {Array} [args.extraLessons]
  * @param {Array} [args.koshuLessons] buildKoshuLessons の結果 (kind="koshu" だけ数える)
- * @returns {{rows: Map<string, ReturnType<typeof emptyRow>>, days: number, truncated: boolean}}
+ * @param {Array} [args.examPrepSchedules] 特訓シフト (テスト期間内の日だけ数える)
+ * @returns {{
+ *   rows: Map<string, ReturnType<typeof emptyRow>>,
+ *   pendingAbsences: {date: string, time: string, label: string, teacher: string}[],
+ *   days: number,
+ *   truncated: boolean,
+ * }}
+ *   pendingAbsences = 代行未定のまま (誰の時間にもなっていない) 欠勤
  */
 export function computeTeachingMinutes(args) {
   const {
@@ -132,13 +168,17 @@ export function computeTeachingMinutes(args) {
     examPeriods = [],
     extraLessons = [],
     koshuLessons = [],
+    examPrepSchedules = [],
   } = args || {};
 
   const rows = new Map();
+  const pendingAbsences = [];
   let dates = eachDateStrInRange(startDate, endDate);
   const truncated = dates.length > MAX_RANGE_DAYS;
   if (truncated) dates = dates.slice(0, MAX_RANGE_DAYS);
-  if (dates.length === 0) return { rows, days: 0, truncated };
+  if (dates.length === 0) return { rows, pendingAbsences, days: 0, truncated };
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
 
   const slotById = new Map(slots.map((s) => [s.id, s]));
   const byDay = new Map();
@@ -149,7 +189,7 @@ export function computeTeachingMinutes(args) {
   // (日付, コマ) → 代行 / 欠勤レコード
   const subsByKey = new Map();
   for (const r of subs || []) {
-    if (!r || !r.date || r.date < dates[0] || r.date > dates[dates.length - 1]) continue;
+    if (!r || !r.date || r.date < firstDate || r.date > lastDate) continue;
     const k = `${r.date}|${r.slotId}`;
     if (!subsByKey.has(k)) subsByKey.set(k, []);
     subsByKey.get(k).push(r);
@@ -167,7 +207,8 @@ export function computeTeachingMinutes(args) {
     koshuByDate.get(l.date).push(l);
   }
   const activeGroupLabels = getCutoffGroupLabelsWithSlots(slots, displayCutoff);
-  const cancelCtx = { daySchedules, adjustments };
+  // コマ休講の索引 (日付 × コマのループなので、毎回 adjustments を走査しない)
+  const cancelCtx = { daySchedules, adjustments, _cancelIndex: buildCancelIndex(adjustments) };
   const teacherCtx = { biweeklyAnchors, holidays, examPeriods };
   const timetableById = new Map((timetables || []).map((t) => [t.id, t]));
 
@@ -182,15 +223,8 @@ export function computeTeachingMinutes(args) {
     if (!rows.has(name)) rows.set(name, emptyRow(name));
     const row = rows.get(name);
     const min = lessonMinutes(time);
-    row.count += 1;
     row.countByKind[kind] += 1;
-    row.days.add(date);
-    if (min == null) row.noTime += 1;
-    else {
-      row.total += min;
-      row.byKind[kind] += min;
-    }
-    if (extra.unconfirmed) row.unconfirmed += 1;
+    if (min != null) row.byKind[kind] += min;
     row.entries.push({ date, time, minutes: min, kind, label, ...extra });
   };
 
@@ -222,18 +256,28 @@ export function computeTeachingMinutes(args) {
       if (adjIndex.combineAbsorbedBySlot.has(slot.id)) continue;
       const time = adjIndex.moveBySlot.get(slot.id) || slot.time || "";
       const label = describeLesson(slot.grade, slot.cls, slot.subj);
-      const recs = subsByKey.get(`${date}|${slot.id}`) || [];
+      // 代行者 = 元講師のレコードは「担当のまま」(teacherDayOff と同じ読み方)
+      const recs = (subsByKey.get(`${date}|${slot.id}`) || []).filter(
+        (r) => r.substitute !== r.originalTeacher
+      );
       const away = new Set(recs.map((r) => r.originalTeacher).filter(Boolean));
       for (const t of activeTeachersOnDate(slot, date, teacherCtx)) {
         if (!t || away.has(t)) continue;
         add(t, date, time, "own", label, { slotId: slot.id });
       }
       for (const r of recs) {
-        if (!(r.substitute || "").trim()) continue;
+        if (!hasSubstitute(r)) {
+          // 代行未定 = 誰の時間にもなっていない。代行なしで確定 (残りの担当者で
+          // 回す) は意図どおりなので知らせない
+          if (needsSubstitute(r)) {
+            pendingAbsences.push({ date, time, label, teacher: r.originalTeacher || "" });
+          }
+          continue;
+        }
         add(r.substitute, date, time, "sub", label, {
           slotId: slot.id,
           originalTeacher: r.originalTeacher || "",
-          unconfirmed: r.status !== "confirmed",
+          unconfirmed: subState(r) === SUB_STATE.REQUESTED,
         });
       }
     }
@@ -246,10 +290,7 @@ export function computeTeachingMinutes(args) {
         if (!slot) continue;
         const time = adj.targetTime || slot.time || "";
         const label = describeLesson(slot.grade, slot.cls, slot.subj);
-        const teachers = adj.targetTeacher
-          ? splitTeacherField(adj.targetTeacher)
-          : activeTeachersOnDate(slot, adj.date, teacherCtx);
-        for (const t of teachers) {
+        for (const t of rescheduleTargetTeachers(adj, slot, teacherCtx)) {
           add(t, date, time, "own", label, { slotId: slot.id, rescheduledFrom: adj.date });
         }
       }
@@ -266,6 +307,29 @@ export function computeTeachingMinutes(args) {
     }
   }
 
+  // 特訓シフト。月間カレンダーと同じく、テスト期間の範囲内の日だけ
+  // (assignments は名前 → 出勤する校時 no の配列)
+  const examPeriodById = new Map((examPeriods || []).map((ep) => [ep.id, ep]));
+  for (const sch of examPrepSchedules || []) {
+    const ep = examPeriodById.get(sch?.examPeriodId);
+    if (!ep?.startDate || !ep?.endDate) continue;
+    for (const day of sch.days || []) {
+      const d = day?.date;
+      if (!d || d < firstDate || d > lastDate) continue;
+      if (d < ep.startDate || d > ep.endDate) continue;
+      const periodByNo = new Map((day.periods || []).map((p) => [p.no, p]));
+      for (const [name, nos] of Object.entries(day.assignments || {})) {
+        if (!Array.isArray(nos)) continue;
+        for (const no of nos) {
+          const p = periodByNo.get(no);
+          if (!p) continue;
+          const time = p.start && p.end ? `${p.start}-${p.end}` : p.start || "";
+          add(name, d, time, "prep", `${ep.name || "テスト期間"} 特訓 ${no}校時`);
+        }
+      }
+    }
+  }
+
   for (const row of rows.values()) {
     row.entries.sort(
       (a, b) =>
@@ -273,54 +337,55 @@ export function computeTeachingMinutes(args) {
         (hmToMin(a.time) ?? 9999) - (hmToMin(b.time) ?? 9999)
     );
   }
-  return { rows, days: dates.length, truncated };
+  pendingAbsences.sort(
+    (a, b) => a.date.localeCompare(b.date) || (hmToMin(a.time) ?? 9999) - (hmToMin(b.time) ?? 9999)
+  );
+  return { rows, pendingAbsences, days: dates.length, truncated };
 }
 
 /**
- * 給与計算に写す CSV の行。講師ごとの合計 (summary) と明細 (detail)。
+ * 給与計算に写す CSV の行 (講師ごとの合計)。teachers に並べた順で、
+ * 期間内に授業の無い講師も 0 で出す (選んだ人が黙って消えないように)。
+ * 合計・コマ数・出勤日数は included の種別だけ、種別ごとの列は全種別。
  */
-export function teachingMinutesSummaryRows(rows, teachers) {
+export function teachingMinutesSummaryRows(rows, teachers, included = MINUTE_KINDS) {
   const headers = [
     "講師",
     "合計(分)",
     "合計(時間)",
-    "通常授業(分)",
-    "代行(分)",
-    "追加授業(分)",
-    "講習(分)",
+    ...MINUTE_KINDS.map((k) => `${MINUTE_KIND_LABELS[k]}(分)`),
     "コマ数",
     "出勤日数",
     "時刻不明のコマ",
   ];
-  const body = teachers
-    .map((t) => rows.get(t))
-    .filter(Boolean)
-    .map((r) => [
-      r.teacher,
-      r.total,
-      minutesToHours(r.total),
-      r.byKind.own,
-      r.byKind.sub,
-      r.byKind.extra,
-      r.byKind.koshu,
-      r.count,
-      r.days.size,
-      r.noTime,
-    ]);
+  const body = teachers.map((t) => {
+    const r = rows.get(t);
+    const sum = summarizeTeacherRow(r, included);
+    return [
+      t,
+      sum.total,
+      minutesToHours(sum.total),
+      ...MINUTE_KINDS.map((k) => r?.byKind[k] ?? 0),
+      sum.count,
+      sum.days,
+      sum.noTime,
+    ];
+  });
   return { headers, body };
 }
 
-export function teachingMinutesDetailRows(rows, teachers) {
-  const headers = ["講師", "日付", "曜日", "時間帯", "分", "種別", "授業", "備考"];
+/**
+ * 明細の CSV の行 (1 コマ 1 行)。全種別を出し、最後の列で合計に含めたかを示す
+ * (Excel で絞り込めば合計と突き合わせられる)。
+ */
+export function teachingMinutesDetailRows(rows, teachers, included = MINUTE_KINDS) {
+  const inc = new Set(included);
+  const headers = ["講師", "日付", "曜日", "時間帯", "分", "種別", "授業", "備考", "合計に含める"];
   const body = [];
   for (const t of teachers) {
     const r = rows.get(t);
     if (!r) continue;
     for (const e of r.entries) {
-      const notes = [];
-      if (e.originalTeacher) notes.push(`${e.originalTeacher} の代行`);
-      if (e.unconfirmed) notes.push("代行未確定");
-      if (e.rescheduledFrom) notes.push(`${e.rescheduledFrom} から振替`);
       body.push([
         r.teacher,
         e.date,
@@ -329,11 +394,21 @@ export function teachingMinutesDetailRows(rows, teachers) {
         e.minutes ?? "",
         MINUTE_KIND_LABELS[e.kind],
         e.label,
-        notes.join(" / "),
+        describeEntryNotes(e).join(" / "),
+        inc.has(e.kind) ? "○" : "",
       ]);
     }
   }
   return { headers, body };
+}
+
+/** 明細 1 行の備考 (代行元・未確定・振替元)。画面と CSV で共有する。 */
+export function describeEntryNotes(e) {
+  const notes = [];
+  if (e.originalTeacher) notes.push(`${e.originalTeacher} の代行`);
+  if (e.unconfirmed) notes.push("代行未確定");
+  if (e.rescheduledFrom) notes.push(`${e.rescheduledFrom} から振替`);
+  return notes;
 }
 
 /**
@@ -345,12 +420,10 @@ export function teachingMinutesDetailRows(rows, teachers) {
  * @returns {{startDate: string, endDate: string}}
  */
 export function monthPeriod(year, month, closingDay = 0) {
-  const pad = (n) => String(n).padStart(2, "0");
-  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   if (!closingDay) {
     return {
-      startDate: ymd(new Date(year, month - 1, 1)),
-      endDate: ymd(new Date(year, month, 0)),
+      startDate: fmtDate(new Date(year, month - 1, 1)),
+      endDate: fmtDate(new Date(year, month, 0)),
     };
   }
   // 締め日が月の日数を超える月 (2 月の 30 日締め等) は末日で締める
@@ -358,5 +431,21 @@ export function monthPeriod(year, month, closingDay = 0) {
   const end = new Date(year, month - 1, Math.min(closingDay, lastOf(year, month)));
   const prevEnd = new Date(year, month - 2, Math.min(closingDay, lastOf(year, month - 1)));
   prevEnd.setDate(prevEnd.getDate() + 1);
-  return { startDate: ymd(prevEnd), endDate: ymd(end) };
+  return { startDate: fmtDate(prevEnd), endDate: fmtDate(end) };
+}
+
+/**
+ * その日を含む「◯月分」。締め日を過ぎていれば翌月分
+ * (20 日締めの 10/25 は 11 月分 = 10/21〜11/20)。
+ * @param {string} todayStr "YYYY-MM-DD"
+ * @param {number} [closingDay]
+ * @returns {{y: number, m: number}}
+ */
+export function currentPeriodYm(todayStr, closingDay = 0) {
+  const [y, m, d] = String(todayStr || "").split("-").map(Number);
+  if (!y || !m || !d) return { y: NaN, m: NaN };
+  if (closingDay && d > Math.min(closingDay, new Date(y, m, 0).getDate())) {
+    return m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
+  }
+  return { y, m };
 }

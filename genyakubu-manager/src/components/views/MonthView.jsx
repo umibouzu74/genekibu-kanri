@@ -41,7 +41,10 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
-import { describeRescheduleTarget } from "../../utils/adjustmentDisplay";
+import {
+  describeRescheduleTarget,
+  rescheduleTargetTeachers,
+} from "../../utils/adjustmentDisplay";
 import { subStateMeta, subTargetLabel } from "../../utils/substituteState";
 import {
   summarizeTeacherDayOff,
@@ -533,7 +536,8 @@ export function MonthView({
             ? []
             : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
           // 振替で当日に来る予定のコマ (この teacher が担当する分)。
-          // adj.targetTeacher 指定時はその講師、未指定時は元 slot.teacher。
+          // adj.targetTeacher 指定時はその講師、未指定時は振替元の日の担当
+          // (複数担当・隔週の A/B を解決した後。rescheduleTargetTeachers)。
           // 休講日でも消さない (追加授業と同じく「その日にやる」と明示登録
           // したコマ。日まるごと振替の受け先は休講日になるのが典型なので、
           // ここで巻き添えにすると紙面にも画面にも出なくなる)。
@@ -543,8 +547,12 @@ export function MonthView({
                   .map((adj) => {
                     const slot = slotById.get(adj.slotId);
                     if (!slot) return null;
-                    const tgtTeacher = adj.targetTeacher || slot.teacher;
-                    if (tgtTeacher !== teacher) return null;
+                    const tgtTeachers = rescheduleTargetTeachers(adj, slot, {
+                      biweeklyAnchors,
+                      holidays,
+                      examPeriods,
+                    });
+                    if (!tgtTeachers.includes(teacher)) return null;
                     return { adj, slot };
                   })
                   .filter(Boolean);

@@ -6,6 +6,8 @@ import {
   describeSlot,
   isDayEmptiedByReschedule,
   outgoingDayLabel,
+  rescheduleTargetTeachers,
+  rescheduleTeacherLabel,
 } from "./adjustmentDisplay";
 
 describe("buildAdjustmentIndex", () => {
@@ -259,5 +261,43 @@ describe("振替元の表示ヘルパ", () => {
     );
     expect(outgoingDayLabel(two)).toContain("他 1 日");
     expect(outgoingDayLabel([])).toBe("");
+  });
+});
+
+// 振替で入ってくるコマの担当。講師欄は複数担当や隔週のパートナーを持つので
+// 文字列の完全一致で比べると、講師別の月間で振替先のカードが消える (2026-10-03)
+describe("rescheduleTargetTeachers", () => {
+  // 2026-12-07 (月) → 2026-12-04 (金)
+  const slot = { id: 1, day: "月", time: "19:00-20:20", grade: "中3", subj: "数学", teacher: "堀上", note: "" };
+  const adj = { id: 9, type: "reschedule", date: "2026-12-07", slotId: 1, targetDate: "2026-12-04" };
+
+  it("振替先の担当があればその人 (複数は区切りで分ける)", () => {
+    expect(rescheduleTargetTeachers({ ...adj, targetTeacher: "香川・福江" }, slot)).toEqual([
+      "香川",
+      "福江",
+    ]);
+  });
+
+  it("無ければ元のコマの担当 (複数担当も分ける)", () => {
+    expect(rescheduleTargetTeachers(adj, { ...slot, teacher: "堀上·河野" })).toEqual([
+      "堀上",
+      "河野",
+    ]);
+  });
+
+  it("隔週は振替元の日の A/B で解決する", () => {
+    const bi = { ...slot, teacher: "河野", note: "隔週(堀上)" };
+    // 11/30 が A 週 → 12/7 は B 週 = パートナー
+    const ctx = { biweeklyAnchors: [{ date: "2026-11-30" }] };
+    expect(rescheduleTargetTeachers(adj, bi, ctx)).toEqual(["堀上"]);
+    // 振替先 (12/4) が A 週でも、来るのは振替元の週の担当
+    expect(rescheduleTargetTeachers({ ...adj, date: "2026-11-30" }, bi, ctx)).toEqual(["河野"]);
+    // ctx が無ければ主担当のまま (従来の表示)
+    expect(rescheduleTargetTeachers(adj, bi)).toEqual(["河野"]);
+  });
+
+  it("表示用は「·」でつなぐ。コマが無ければ空", () => {
+    expect(rescheduleTeacherLabel(adj, { ...slot, teacher: "堀上・河野" })).toBe("堀上·河野");
+    expect(rescheduleTargetTeachers(adj, null)).toEqual([]);
   });
 });

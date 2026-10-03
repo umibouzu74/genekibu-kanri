@@ -331,7 +331,7 @@ export function DashDayRow({
         onOpen={onOpenOffsite}
       />
       {!fullOff && <SlotCancelBanner items={cancelledSlots} />}
-      <RescheduleInBanner items={incomingReschedules} />
+      <RescheduleInBanner items={incomingReschedules} teacherCtx={sessionCtx} />
       {!fullOff && emptiedByReschedule && (
         <RescheduleOutBanner items={outgoingReschedules} />
       )}
