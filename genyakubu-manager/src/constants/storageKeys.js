@@ -48,6 +48,11 @@ export const LS = {
   regularBuilderWeekView: "genyakubu-regular-builder-week-view",
   regularBuilderMultiDay: "genyakubu-regular-builder-multi-day",
   regularBuilderMonoPrint: "genyakubu-regular-builder-mono-print",
+  // 授業時間の集計の表示の好み (締め日・選んだ講師・合計に含める種別)。
+  // 人が明示的に選んだものだけで、利用統計ではない (A18 とは別物)
+  teachingMinutesClosingDay: "genyakubu-teaching-minutes-closing-day",
+  teachingMinutesSelected: "genyakubu-teaching-minutes-selected",
+  teachingMinutesIncluded: "genyakubu-teaching-minutes-included",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────
@@ -59,4 +64,7 @@ export const SS = {
   teacher: "genyakubu-session-teacher",
   regularBuilderDay: "genyakubu-session-regb-day",
   regularBuilderDays: "genyakubu-session-regb-days",
+  // 授業時間の集計で見ている期間。講師名から月間を開いて戻ってきたときに
+  // 今月へ戻らないように (タブ単位)
+  teachingMinutesPeriod: "genyakubu-session-teaching-minutes-period",
 };

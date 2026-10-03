@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   computeTeachingMinutes,
   currentPeriodYm,
+  datesInRange,
+  describeEntryNotes,
   formatMinutes,
   lessonMinutes,
   MINUTE_KINDS,
@@ -90,7 +92,7 @@ describe("computeTeachingMinutes", () => {
     expect(sum(result, "福江").unconfirmed).toBe(0);
     expect(result.rows.get("福江").entries[0].originalTeacher).toBe("奥村");
     // 代行なし (残りの担当者で回す) は意図どおりなので知らせない
-    expect(result.pendingAbsences).toEqual([]);
+    expect(result.issues.pendingAbsences).toEqual([]);
   });
 
   it("代行未定のままの欠勤は誰にも付けず、一覧で知らせる", () => {
@@ -99,7 +101,7 @@ describe("computeTeachingMinutes", () => {
     ];
     const result = run({ slots: [mk(1)], subs });
     expect(result.rows.get("奥村")).toBeUndefined();
-    expect(result.pendingAbsences).toEqual([
+    expect(result.issues.pendingAbsences).toEqual([
       { date: "2026-09-07", time: "19:00-20:20", label: "中2A 数学", teacher: "奥村" },
     ]);
   });
@@ -166,6 +168,25 @@ describe("computeTeachingMinutes", () => {
     expect(o.entries[0].rescheduledFrom).toBe("2026-09-07");
     expect(result.rows.get("堀上")).toBeUndefined();
     expect(sum(result, "河野").total).toBe(80);
+    // 振替先の担当が元の担当と違えば代行として数える (元の担当を備考に)
+    expect(result.rows.get("河野").entries[0]).toMatchObject({ kind: "sub", originalTeacher: "堀上" });
+  });
+
+  // 同じコマの 9/7 と 9/14 を同じ 9/19 (土) へまとめて振り替える。コマ id の
+  // Map で引くと後の 1 件で上書きされ、240 分になっていた (2026-10-03)
+  it("同じコマを同じ日へ 2 回振り替えたら 2 回数える", () => {
+    const adjustments = [
+      { id: 1, type: "reschedule", date: "2026-09-07", slotId: 1, targetDate: "2026-09-19", targetTime: "10:00-11:20" },
+      { id: 2, type: "reschedule", date: "2026-09-14", slotId: 1, targetDate: "2026-09-19", targetTime: "13:00-14:20" },
+    ];
+    const result = computeTeachingMinutes({
+      startDate: "2026-09-07",
+      endDate: "2026-09-20",
+      slots: [mk(1)],
+      adjustments,
+    });
+    // 月曜 2 回は振替で出ていき、9/19 に 2 回入る = 80 × 2
+    expect(sum(result, "奥村")).toMatchObject({ total: 160, count: 2, days: 1 });
   });
 
   it("振替で入ってくる隔週コマは、振替元の週の担当に付く", () => {
@@ -243,6 +264,100 @@ describe("computeTeachingMinutes", () => {
     expect(sum(result, "福江").total).toBe(90);
   });
 
+  // 全学年が表示期間の外の日 (夏休み等) でも、日付を指定して登録した振替・
+  // 追加授業は行った授業。月間カレンダーには出ないが、給与から消さない
+  it("表示期間外の日の振替・追加授業も数え、印を付ける", () => {
+    const displayCutoff = {
+      groups: [{ label: "中学部", grades: ["中2"], startDate: "2026-04-01", date: "2026-09-08" }],
+    };
+    const adjustments = [
+      { id: 1, type: "reschedule", date: "2026-09-07", slotId: 1, targetDate: "2026-09-12" },
+    ];
+    const extraLessons = [
+      { id: 3, date: "2026-09-13", time: "10:00-11:00", grade: "中2", subj: "補講", teacher: "奥村" },
+    ];
+    const result = run({ slots: [mk(1)], displayCutoff, adjustments, extraLessons });
+    const entries = result.rows.get("奥村").entries;
+    expect(entries.map((e) => [e.date, e.kind, !!e.outsideDisplay])).toEqual([
+      ["2026-09-12", "own", true],
+      ["2026-09-13", "extra", true],
+    ]);
+    expect(sum(result, "奥村").total).toBe(140);
+  });
+
+  it("元講師がその日の担当にいない代行は、両方に数えた上で知らせる", () => {
+    // 8/31 が A 週 → 9/7 は B 週 = 河野。古いレコードは主担当 (堀上) で登録されていた
+    const subs = [
+      { id: 1, date: "2026-09-07", slotId: 1, originalTeacher: "堀上", substitute: "福江", status: "confirmed" },
+    ];
+    const result = run({
+      slots: [mk(1, { teacher: "堀上", note: "隔週(河野)" })],
+      subs,
+      biweeklyAnchors: [{ date: "2026-08-31" }],
+    });
+    expect(sum(result, "河野").total).toBe(80);
+    expect(sum(result, "福江").total).toBe(80);
+    expect(result.issues.subMismatches).toEqual([
+      {
+        date: "2026-09-07",
+        time: "19:00-20:20",
+        label: "中2A 数学",
+        teacher: "堀上",
+        substitute: "福江",
+        activeTeachers: ["河野"],
+      },
+    ]);
+  });
+
+  it("元講師の名前の前後の空白は無視する (担当を外す)", () => {
+    const subs = [
+      { id: 1, date: "2026-09-07", slotId: 1, originalTeacher: "奥村 ", substitute: "福江", status: "confirmed" },
+    ];
+    const result = run({ slots: [mk(1)], subs });
+    expect(result.rows.get("奥村")).toBeUndefined();
+    expect(result.issues.subMismatches).toEqual([]);
+  });
+
+  it("同じ講師の同じ日の授業で時間帯が重なるものは、両方に数えた上で知らせる", () => {
+    const slots = [mk(1), mk(2, { cls: "B", time: "19:30-20:20" }), mk(3, { cls: "C", time: "20:20-21:00" })];
+    const result = run({ slots });
+    expect(sum(result, "奥村").total).toBe(80 + 50 + 40);
+    // 19:00-20:20 と 19:30-20:20 だけ (20:20 開始は重ならない)
+    expect(result.issues.overlaps.map((o) => [o.a.label, o.b.label])).toEqual([
+      ["中2A 数学", "中2B 数学"],
+    ]);
+  });
+
+  it("相手の読めない「隔週」の B 週は、主担当に数えた上で知らせる。全角括弧の相手は読める", () => {
+    const anchors = [{ date: "2026-08-31" }];
+    const unknown = run({ slots: [mk(1, { note: "隔週" })], biweeklyAnchors: anchors });
+    expect(sum(unknown, "奥村").total).toBe(80);
+    expect(unknown.issues.biweeklyUnknown).toHaveLength(1);
+    const fullWidth = run({ slots: [mk(1, { note: "隔週（河野）" })], biweeklyAnchors: anchors });
+    expect(sum(fullWidth, "河野").total).toBe(80);
+    expect(fullWidth.issues.biweeklyUnknown).toEqual([]);
+  });
+
+  it("隔週の複合教科はその週の教科で出す", () => {
+    const anchors = [{ date: "2026-08-31" }];
+    const result = run({
+      slots: [mk(1, { subj: "英/数", note: "隔週(河野)" })],
+      biweeklyAnchors: anchors,
+    });
+    // 9/7 は B 週 → 2 つ目の教科
+    expect(result.rows.get("河野").entries[0].label).toBe("中2A 数");
+  });
+
+  it("時刻の無い講習の 1 限と 2 限を 1 つにまとめない", () => {
+    const koshuLessons = [
+      { kind: "koshu", key: "a:1", date: "2026-09-12", time: null, teacher: "奥村", grade: "中3", subj: "数学" },
+      { kind: "koshu", key: "a:2", date: "2026-09-12", time: null, teacher: "奥村", grade: "中3", subj: "数学" },
+    ];
+    const result = run({ slots: [], koshuLessons });
+    expect(sum(result, "奥村")).toMatchObject({ count: 2, noTime: 2 });
+    expect(result.rows.get("奥村").noTimeByKind.koshu).toBe(2);
+  });
+
   it("終了時刻の読めないコマは分を足さずに件数を残す", () => {
     expect(sum(run({ slots: [mk(1, { time: "19:00" })] }), "奥村")).toMatchObject({
       total: 0,
@@ -292,6 +407,9 @@ describe("summarizeTeacherRow (合計に含める種別)", () => {
   it("CSV: 選んだ講師は授業が無くても 0 で出し、種別の列は全種別", () => {
     const s = teachingMinutesSummaryRows(result.rows, ["奥村", "居ない人"], ["own"]);
     expect(s.headers).toHaveLength(3 + MINUTE_KINDS.length + 3);
+    expect(s.headers).toContain("通常授業(分)");
+    expect(s.headers).toContain("講習(分)(合計外)");
+    expect(s.headers.at(-1)).toBe("終了時刻なし(件)");
     expect(s.body).toEqual([
       ["奥村", 80, 1.33, 80, 0, 0, 45, 0, 1, 1, 0],
       ["居ない人", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -301,6 +419,47 @@ describe("summarizeTeacherRow (合計に含める種別)", () => {
       ["奥村", "2026-09-07", "月", "19:00-20:20", 80, "通常授業", "中2A 数学", "", "○"],
       ["奥村", "2026-09-12", "土", "13:00-13:45", 45, "講習", "中3 数学", "", ""],
     ]);
+  });
+});
+
+describe("datesInRange", () => {
+  it("開始〜終了の日付 (両端を含む)。形式違い・逆順は空", () => {
+    expect(datesInRange("2026-09-29", "2026-10-01").dates).toEqual([
+      "2026-09-29",
+      "2026-09-30",
+      "2026-10-01",
+    ]);
+    expect(datesInRange("2026-10-01", "2026-09-01").dates).toEqual([]);
+    expect(datesInRange("", "2026-09-01").dates).toEqual([]);
+  });
+
+  // 終了日の年に 5 桁を打たれても、全部作ってから切らない (固まらない)
+  it("上限で打ち切りながら作る", () => {
+    expect(datesInRange("2026-01-01", "20266-12-31")).toEqual({ dates: [], truncated: false });
+    const t0 = Date.now();
+    const r = datesInRange("1900-01-01", "9999-12-31", 400);
+    expect(Date.now() - t0).toBeLessThan(200);
+    expect(r.truncated).toBe(true);
+    expect(r.dates).toHaveLength(400);
+    expect(r.dates[399]).toBe("1901-02-04");
+  });
+});
+
+describe("describeEntryNotes", () => {
+  it("代行元・依頼中・振替元・表示期間外を並べる (画面は日付を縮める)", () => {
+    const e = {
+      originalTeacher: "奥村",
+      unconfirmed: true,
+      rescheduledFrom: "2026-10-05",
+      outsideDisplay: true,
+    };
+    expect(describeEntryNotes(e)).toEqual([
+      "奥村 の代行",
+      "依頼中 (未確定)",
+      "2026-10-05 (月) から振替",
+      "表示期間外の日",
+    ]);
+    expect(describeEntryNotes(e, { short: true })[2]).toBe("10/5 (月) から振替");
   });
 });
 

@@ -88,7 +88,7 @@ export function ExcelSection({
   // 補足表示する。
   const incomingReschedules = useMemo(() => {
     const out = [];
-    for (const adj of adjIndex.rescheduleInBySlot.values()) {
+    for (const adj of adjIndex.rescheduleIn) {
       const slot = slotById.get(adj.slotId);
       if (!slot) continue;
       if (sectionFilterFn && !sectionFilterFn(slot)) continue;
@@ -100,7 +100,7 @@ export function ExcelSection({
         timeToMin(b.adj.targetTime || b.slot.time || "00:00")
     );
     return out;
-  }, [adjIndex.rescheduleInBySlot, slotById, sectionFilterFn]);
+  }, [adjIndex.rescheduleIn, slotById, sectionFilterFn]);
 
   // 当日の移動 (move) を slot.time に反映した "effective slots"。
   // buildColumnDefs / buildTimeRows / findSlotForCell は全てこの effectiveSlots

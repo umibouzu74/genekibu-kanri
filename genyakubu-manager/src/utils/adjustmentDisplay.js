@@ -10,7 +10,9 @@ import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
  * 指定日の adjustments から、slot id ベースの表示用情報を構築する。
  * 振替 (reschedule) は、date が源泉日と一致するコマを
  * rescheduleOutBySlot に、targetDate が一致する (他日からこの日へ入る)
- * コマを rescheduleInBySlot にそれぞれ集約する。
+ * 振替を rescheduleIn (配列) に集める。入ってくる側はコマ id で引かない
+ * こと — 同じコマの 9/7 と 9/14 を同じ 9/19 へ振り替えると 2 件になる
+ * (Map にすると後の 1 件で上書きされ、1 コマ消えていた。2026-10-03)。
  *
  * opts.slots + opts.daySchedules を渡すと、特別時程 (日単位の時刻読み替え)
  * を moveBySlot に合流させる — 既存のコマ移動表示 (実効時間グループ化・
@@ -27,7 +29,7 @@ import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
  *   combineHostBySlot: Map<number, number[]>,
  *   moveBySlot: Map<number, string>,
  *   rescheduleOutBySlot: Map<number, object>,  // slotId -> adjustment (他日へ出ていく)
- *   rescheduleInBySlot: Map<number, object>,   // slotId -> adjustment (他日から来る)
+ *   rescheduleIn: object[],                     // 他日からこの日へ来る振替 (同じコマが複数あり得る)
  *   dayScheduleMoveBySlot: Map<number, object>, // slotId -> DaySchedule (特別時程由来)
  * }}
  */
@@ -36,21 +38,21 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
   const combineHostBySlot = new Map();
   const moveBySlot = new Map();
   const rescheduleOutBySlot = new Map();
-  const rescheduleInBySlot = new Map();
+  const rescheduleIn = [];
   const dayScheduleMoveBySlot = new Map();
   const index = {
     combineAbsorbedBySlot,
     combineHostBySlot,
     moveBySlot,
     rescheduleOutBySlot,
-    rescheduleInBySlot,
+    rescheduleIn,
     dayScheduleMoveBySlot,
   };
   if (!date) return index;
   for (const adj of adjustments || []) {
     if (adj.type === "reschedule") {
       if (adj.date === date) rescheduleOutBySlot.set(adj.slotId, adj);
-      if (adj.targetDate === date) rescheduleInBySlot.set(adj.slotId, adj);
+      if (adj.targetDate === date) rescheduleIn.push(adj);
       continue;
     }
     if (adj.date !== date) continue;

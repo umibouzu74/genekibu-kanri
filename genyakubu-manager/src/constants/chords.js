@@ -46,6 +46,7 @@ export const VIEW_CHORD_BY_VIEW = (() => {
 
 // chord 待機中バッジで「次のキー一覧」を出すための短ラベル。
 // バッジ幅を抑えるため、サイドバーよりさらに短い表記を用意。
+// キーは VIEW_CHORDS と 1 対 1 (chords.test.js が突き合わせる)。
 export const VIEW_CHORD_LABEL = Object.freeze({
   d: "ダッシュ",
   a: "欠勤",
@@ -63,6 +64,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   f: "附属",
   n: "引継ぎ",
   k: "他校舎",
+  j: "授業時間",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

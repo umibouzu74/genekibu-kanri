@@ -91,8 +91,7 @@ export function classifySlotForTeacher(
   if (isBiweekly(slot.note)) {
     const wt = getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods);
     const mainTeachers = getSlotTeachers(slot);
-    const m = slot.note.match(/隔週\(([^)]+)\)/);
-    const partner = m ? m[1] : null;
+    const partner = biweeklyPartner(slot.note);
     if (wt === "B" && mainTeachers.includes(name)) {
       return { status: "cancelled", reason: "隔週(B週)" };
     }
@@ -156,9 +155,8 @@ function collectTeacherSlots(daySlots) {
       teacherSlots.get(t).push(slot);
     }
     if (isBiweekly(slot.note)) {
-      const m = slot.note.match(/隔週\(([^)]+)\)/);
-      if (m) {
-        const partner = m[1];
+      const partner = biweeklyPartner(slot.note);
+      if (partner) {
         if (!teacherSlots.has(partner)) teacherSlots.set(partner, []);
         teacherSlots.get(partner).push(slot);
       }

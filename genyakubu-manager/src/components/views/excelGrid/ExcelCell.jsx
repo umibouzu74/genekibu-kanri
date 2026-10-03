@@ -1,6 +1,7 @@
 import { Fragment, memo } from "react";
 import { ADJ_COLOR, fmtDate } from "../../../data";
 import {
+  biweeklyPartner,
   formatBiweeklyTeacher,
   getSlotTeachers,
   getSlotWeekType,
@@ -138,13 +139,13 @@ export const ExcelCell = memo(function ExcelCell({
   // 実データは複合教科 (例: "英/数") のペアで使われる想定で、隔週の A/B に
   // 応じて実際に担当する教員を表示する。アンカー未設定 (weekType null) や
   // note が "隔週" のみ (partner 未指定) の場合は従来通りの併記表示。
-  const biweeklyPartnerMatch =
-    biweekly && dashboardMode ? slot.note.match(/隔週\(([^)]+)\)/) : null;
+  const biweeklyPartnerName =
+    biweekly && dashboardMode ? biweeklyPartner(slot.note) : null;
   const activeBiweeklyTeacher =
-    biweeklyPartnerMatch && weekType
+    biweeklyPartnerName && weekType
       ? weekType === "A"
         ? slot.teacher
-        : biweeklyPartnerMatch[1]
+        : biweeklyPartnerName
       : null;
 
   // Determine cell visual state (priority order).

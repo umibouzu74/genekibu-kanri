@@ -4,7 +4,13 @@ import { EVENT_KIND_LABELS, EVENT_SECTIONS } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
-import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
+import {
+  biweeklyPartner,
+  slotWeight,
+  formatCount,
+  getSlotTeachers,
+  isBiweekly,
+} from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 import { filterTeacherGroups } from "../hooks/useTeacherGroups";
@@ -280,8 +286,8 @@ export function Sidebar({
       }
       // Also attribute to biweekly partner mentioned in note
       if (isBiweekly(s.note)) {
-        const pm = s.note.match(/隔週\(([^)]+)\)/);
-        if (pm) m.set(pm[1], (m.get(pm[1]) || 0) + w(s));
+        const partner = biweeklyPartner(s.note);
+        if (partner) m.set(partner, (m.get(partner) || 0) + w(s));
       }
     }
     return m;

@@ -18,7 +18,7 @@ describe("buildAdjustmentIndex", () => {
     combineHostBySlot: new Map(),
     moveBySlot: new Map(),
     rescheduleOutBySlot: new Map(),
-    rescheduleInBySlot: new Map(),
+    rescheduleIn: [],
     dayScheduleMoveBySlot: new Map(),
   };
 
@@ -115,6 +115,18 @@ describe("buildAdjustmentIndex", () => {
     expect(r.combineAbsorbedBySlot.size).toBe(0);
   });
 
+  // 同じコマの 9/7 と 9/14 を同じ 9/19 へまとめて振り替える。コマ id で
+  // Map にすると後の 1 件で上書きされ、タイムテーブルの「振替で入るコマ」から
+  // 1 コマ消えていた (2026-10-03)
+  it("keeps every incoming reschedule even when the same slot comes in twice", () => {
+    const adjustments = [
+      { id: 1, date: "2026-09-07", type: "reschedule", slotId: 5, targetDate: "2026-09-19", targetTime: "10:00-11:20" },
+      { id: 2, date: "2026-09-14", type: "reschedule", slotId: 5, targetDate: "2026-09-19", targetTime: "13:00-14:20" },
+    ];
+    const r = buildAdjustmentIndex(adjustments, "2026-09-19");
+    expect(r.rescheduleIn.map((a) => a.id)).toEqual([1, 2]);
+  });
+
   it("ignores move adjustments without targetTime", () => {
     const adjustments = [{ id: 1, date: base, type: "move", slotId: 10 }];
     const r = buildAdjustmentIndex(adjustments, base);
@@ -130,8 +142,9 @@ describe("buildAdjustmentIndex", () => {
     // source date view: slot 20 is going out
     expect(r.rescheduleOutBySlot.get(20)?.targetDate).toBe("2026-04-27");
     // source date view: slot 21 is coming in from 2026-04-13
-    expect(r.rescheduleInBySlot.get(21)?.targetDate).toBe(base);
-    expect(r.rescheduleInBySlot.get(21)?.targetTeacher).toBe("本多");
+    const incoming = r.rescheduleIn.find((a) => a.slotId === 21);
+    expect(incoming?.targetDate).toBe(base);
+    expect(incoming?.targetTeacher).toBe("本多");
     // reschedule entries should not affect move/combine indices
     expect(r.moveBySlot.size).toBe(0);
     expect(r.combineHostBySlot.size).toBe(0);

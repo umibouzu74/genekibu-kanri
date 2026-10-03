@@ -179,7 +179,7 @@ export function buildDayOccupancy({
   }
   // 他日からこの日へ入ってくる振替コマ (曜日が違うので上のループには出ない)
   const byId = new Map((slots || []).map((s) => [s.id, s]));
-  for (const adj of index.rescheduleInBySlot.values()) {
+  for (const adj of index.rescheduleIn) {
     const slot = byId.get(adj.slotId);
     if (!slot) continue;
     pushSlot(slot, adj.targetTime || slot.time, "incoming", adj);

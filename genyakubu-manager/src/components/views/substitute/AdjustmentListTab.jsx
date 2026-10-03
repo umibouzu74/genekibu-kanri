@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortTeacherNames } from "../../../utils/teacherKana";
-import { getSlotTeachers } from "../../../utils/biweekly";
+import { getSlotTeachers, splitTeacherField } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 
@@ -178,7 +178,10 @@ export function AdjustmentListTab({
           return slot && getSlotTeachers(slot).includes(fTeacher);
         });
         if (hit) return true;
-        if (a.type === "reschedule" && a.targetTeacher === fTeacher) return true;
+        // 振替先の担当も複数担当 (「香川·福江」) がありうるので 1 人ずつ見る
+        if (a.type === "reschedule" && splitTeacherField(a.targetTeacher).includes(fTeacher)) {
+          return true;
+        }
         return false;
       });
     }

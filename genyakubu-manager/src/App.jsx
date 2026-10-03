@@ -534,12 +534,16 @@ export default function App() {
     [confirm]
   );
 
+  // opts.month ("YYYY-MM") を渡すとその月の月間を開く (授業時間の集計のように
+  // 特定の月を見ている画面から。省略時は表示中の月のまま)
   const selectTeacher = useCallback(
-    (t) =>
+    (t, opts) =>
       navigateGuarded(VIEWS.MONTH, () => {
         setSelected(t);
         setView(VIEWS.MONTH);
         setSidebarOpen(false);
+        const off = opts?.month ? monthOffsetFromToday(opts.month, new Date()) : null;
+        if (off != null) setMonthOff(off);
         saveEventVisibility((p) => visibilityForTeacherName(t, p));
       }),
     [navigateGuarded, visibilityForTeacherName, saveEventVisibility]
