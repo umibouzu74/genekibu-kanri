@@ -30,6 +30,8 @@ export const VIEW_CHORDS = Object.freeze({
   n: VIEWS.HANDOVER,
   // OFFSITE (他校舎の授業) は kousha (校舎) の k。
   k: VIEWS.OFFSITE,
+  // MINUTES (授業時間の集計) は jikan (時間) の j。
+  j: VIEWS.MINUTES,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -44,6 +46,7 @@ export const VIEW_CHORD_BY_VIEW = (() => {
 
 // chord 待機中バッジで「次のキー一覧」を出すための短ラベル。
 // バッジ幅を抑えるため、サイドバーよりさらに短い表記を用意。
+// キーは VIEW_CHORDS と 1 対 1 (chords.test.js が突き合わせる)。
 export const VIEW_CHORD_LABEL = Object.freeze({
   d: "ダッシュ",
   a: "欠勤",
@@ -61,6 +64,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   f: "附属",
   n: "引継ぎ",
   k: "他校舎",
+  j: "授業時間",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

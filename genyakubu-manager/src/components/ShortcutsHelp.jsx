@@ -1,87 +1,9 @@
 import { Modal } from "./Modal";
+import { SHORTCUTS } from "../constants/shortcuts";
 
 // キーボードショートカット ヘルプオーバーレイ
 // `?` キーで開き、Modal 共通の focus trap / Esc / フォーカス復帰を利用する。
-
-const SHORTCUTS = [
-  {
-    section: "全般",
-    items: [
-      { keys: ["Ctrl", "K"], alt: ["⌘", "K"], label: "コマンドパレット" },
-      { keys: ["?"], label: "このヘルプを表示" },
-      { keys: ["Esc"], label: "モーダル / ヘルプを閉じる" },
-    ],
-  },
-  {
-    section: "ビュー移動 (g から開始)",
-    note: "g を押した直後にもう 1 キー",
-    items: [
-      { keys: ["g", "d"], sequential: true, label: "ダッシュボード" },
-      { keys: ["g", "a"], sequential: true, label: "欠勤組み換え" },
-      { keys: ["g", "s"], sequential: true, label: "授業管理" },
-      { keys: ["g", "c"], sequential: true, label: "代行確定一覧" },
-      { keys: ["g", "t"], sequential: true, label: "時間割管理" },
-      { keys: ["g", "h"], sequential: true, label: "休講・テスト期間・イベント" },
-      { keys: ["g", "e"], sequential: true, label: "イベントカレンダー" },
-      { keys: ["g", "m"], sequential: true, label: "コースマスター管理" },
-      { keys: ["g", "v"], sequential: true, label: "バイト管理" },
-      { keys: ["g", "b"], sequential: true, label: "講習時間割作成" },
-      { keys: ["g", "r"], sequential: true, label: "通常時間割作成" },
-      { keys: ["g", "f"], sequential: true, label: "附属の授業予定" },
-      { keys: ["g", "k"], sequential: true, label: "他校舎の授業" },
-      { keys: ["g", "n"], sequential: true, label: "引継ぎメモ (管理者)" },
-      {
-        keys: ["g", "w"],
-        sequential: true,
-        label: "週間 (講師選択中のみ)",
-      },
-      {
-        keys: ["g", "o"],
-        sequential: true,
-        label: "月間 (講師選択中のみ)",
-      },
-    ],
-  },
-  {
-    section: "日付の移動",
-    note: "ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モードで",
-    sub: "(週間は ±1 週、月間・イベントカレンダーは ±1 か月)",
-    items: [
-      { keys: ["←"], label: "前の日 / 週 / 月" },
-      { keys: ["→"], label: "次の日 / 週 / 月" },
-      { keys: ["t"], label: "今日 / 今週 / 今月" },
-    ],
-  },
-  {
-    section: "コマンドパレット内",
-    items: [
-      { keys: ["↑"], label: "前の候補に移動" },
-      { keys: ["↓"], label: "次の候補に移動" },
-      { keys: ["Enter"], label: "選択" },
-    ],
-  },
-  {
-    section: "検索入力",
-    items: [
-      { keys: ["Esc"], label: "検索をクリア (サイドバー)" },
-    ],
-  },
-  {
-    section: "マウス操作",
-    items: [
-      { gesture: "ドラッグ", label: "欠勤組み換え: コマを他講師に移動／合同設定" },
-      { gesture: "右クリック", label: "欠勤組み換え: コマに対するコンテキストメニュー" },
-      { gesture: "クリック", label: "時間割セル: 代行先を選ぶポップオーバーを開く" },
-    ],
-  },
-  {
-    section: "ブラウザ",
-    note: "アプリ固有ではなくブラウザ標準",
-    items: [
-      { keys: ["Ctrl", "P"], alt: ["⌘", "P"], label: "現在のビューを印刷" },
-    ],
-  },
-];
+// 並べる一覧は constants/shortcuts.js。
 
 function Key({ children }) {
   return (

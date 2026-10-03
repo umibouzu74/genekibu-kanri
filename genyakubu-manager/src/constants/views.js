@@ -11,7 +11,8 @@ export const VIEWS = Object.freeze({
   SUBS: "subs",
   CONFIRMED_SUBS: "confirmed-subs",
   STAFF: "staff",
-  COMPARE: "compare",
+  // 授業時間の集計 (旧「講師比較」。期間内に講師ごとに教えた分)
+  MINUTES: "minutes",
   TIMETABLE: "timetable",
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",

@@ -95,7 +95,7 @@ export function buildTeacherPrimarySubjectMap(slots, subjects) {
 // subjectOrder: 任意の string[]。指定があればその順で教科グループを並べ、
 //   無指定なら DEFAULT_SUBJECT_ORDER (英→数→国→理→社) を使う。
 //   builder で project.subjects を渡せば、ユーザのリオーダ操作が
-//   本体側 (CompareView 等) の表示順にも反映される (code-review P3)。
+//   本体側 (TeachingMinutesView 等) の表示順にも反映される (code-review P3)。
 export function groupTeacherNames(names, { slots, partTimeStaff, subjects, subjectOrder, teacherKana }) {
   const staffNameSet = new Set((partTimeStaff || []).map((s) => s.name));
   const primary = buildTeacherPrimarySubjectMap(slots || [], subjects || []);

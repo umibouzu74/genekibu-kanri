@@ -1,6 +1,8 @@
 // 調整 (合同/移動/振替) の表示用インデックスを日付ごとに構築するヘルパ。
 // ビュー側で同じロジックを繰り返さないために集約。
 
+import { activeTeachersOnDate } from "./absenceHelpers";
+import { splitTeacherField } from "./biweekly";
 import { resolveSlotDaySchedule } from "./daySchedules";
 import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
 
@@ -8,7 +10,9 @@ import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
  * 指定日の adjustments から、slot id ベースの表示用情報を構築する。
  * 振替 (reschedule) は、date が源泉日と一致するコマを
  * rescheduleOutBySlot に、targetDate が一致する (他日からこの日へ入る)
- * コマを rescheduleInBySlot にそれぞれ集約する。
+ * 振替を rescheduleIn (配列) に集める。入ってくる側はコマ id で引かない
+ * こと — 同じコマの 9/7 と 9/14 を同じ 9/19 へ振り替えると 2 件になる
+ * (Map にすると後の 1 件で上書きされ、1 コマ消えていた。2026-10-03)。
  *
  * opts.slots + opts.daySchedules を渡すと、特別時程 (日単位の時刻読み替え)
  * を moveBySlot に合流させる — 既存のコマ移動表示 (実効時間グループ化・
@@ -25,7 +29,7 @@ import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
  *   combineHostBySlot: Map<number, number[]>,
  *   moveBySlot: Map<number, string>,
  *   rescheduleOutBySlot: Map<number, object>,  // slotId -> adjustment (他日へ出ていく)
- *   rescheduleInBySlot: Map<number, object>,   // slotId -> adjustment (他日から来る)
+ *   rescheduleIn: object[],                     // 他日からこの日へ来る振替 (同じコマが複数あり得る)
  *   dayScheduleMoveBySlot: Map<number, object>, // slotId -> DaySchedule (特別時程由来)
  * }}
  */
@@ -34,21 +38,21 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
   const combineHostBySlot = new Map();
   const moveBySlot = new Map();
   const rescheduleOutBySlot = new Map();
-  const rescheduleInBySlot = new Map();
+  const rescheduleIn = [];
   const dayScheduleMoveBySlot = new Map();
   const index = {
     combineAbsorbedBySlot,
     combineHostBySlot,
     moveBySlot,
     rescheduleOutBySlot,
-    rescheduleInBySlot,
+    rescheduleIn,
     dayScheduleMoveBySlot,
   };
   if (!date) return index;
   for (const adj of adjustments || []) {
     if (adj.type === "reschedule") {
       if (adj.date === date) rescheduleOutBySlot.set(adj.slotId, adj);
-      if (adj.targetDate === date) rescheduleInBySlot.set(adj.slotId, adj);
+      if (adj.targetDate === date) rescheduleIn.push(adj);
       continue;
     }
     if (adj.date !== date) continue;
@@ -107,6 +111,35 @@ export function collectIncomingReschedules(adjustments, dateStr, slots) {
       timeStartToMin(a.adj.targetTime || a.slot.time) -
       timeStartToMin(b.adj.targetTime || b.slot.time)
   );
+}
+
+/**
+ * 振替で他日から入ってくるコマを、振替先の日に担当する講師 (名前の配列)。
+ *
+ * - `targetTeacher` があればその人 (複数担当は区切りで分ける)
+ * - 無ければ**振替元の日**の担当。隔週コマは振替元の日の A/B で解決する
+ *   (B 週の 12/7 を 12/4 へ移したなら、12/4 に来るのはパートナー)
+ *
+ * **`adj.targetTeacher || slot.teacher` を名前と完全一致で比べないこと。**
+ * 講師欄は「香川·福江」のような複数担当や隔週のパートナーを持つので、
+ * 文字列のままだと講師別の月間で振替のカードが丸ごと消えていた
+ * (2026-10-03)。ctx が無ければ隔週は主担当のまま (従来の表示と同じ)。
+ *
+ * @param {object} adj reschedule の adjustment
+ * @param {object} slot 振替元のコマ
+ * @param {{biweeklyAnchors?: Array, holidays?: Array, examPeriods?: Array}} [ctx]
+ * @returns {string[]}
+ */
+export function rescheduleTargetTeachers(adj, slot, ctx = {}) {
+  if (!adj || !slot) return [];
+  const named = splitTeacherField(adj.targetTeacher);
+  if (named.length > 0) return named;
+  return activeTeachersOnDate(slot, adj.date, ctx);
+}
+
+/** rescheduleTargetTeachers の表示用 ("香川·福江")。 */
+export function rescheduleTeacherLabel(adj, slot, ctx = {}) {
+  return rescheduleTargetTeachers(adj, slot, ctx).join("·");
 }
 
 // スロットの短い表示ラベル "grade(cls) subj" を返す。slot が null の場合は fallback。

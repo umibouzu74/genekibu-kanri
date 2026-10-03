@@ -20,6 +20,10 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
+import {
+  rescheduleTargetTeachers,
+  rescheduleTeacherLabel,
+} from "../../utils/adjustmentDisplay";
 import { upcomingExtraLessons } from "../../utils/extraLessons";
 import { EXTRA_LESSON_COLOR, OFFSITE_LESSON_COLOR as OC } from "../../constants/colors";
 import {
@@ -456,8 +460,8 @@ export function WeekView({
   }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors, holidays, examPeriods]);
 
   // 振替: 直近14日間に「振替元」または「振替先」となる予定。
-  // 該当する講師は (a) 元担当 = adj 対象 slot.teacher または
-  //               (b) targetTeacher が指定されていればその講師。
+  // 該当する講師は (a) 元担当 = adj 対象 slot.teacher (隔週のパートナー含む) または
+  //               (b) 振替先の担当 (targetTeacher。複数担当は区切りで分ける)。
   // 表示は targetDate (実際に実施される日) でソートする。
   const upcomingReschedules = useMemo(() => {
     if (!adjustments?.length) return [];
@@ -469,7 +473,11 @@ export function WeekView({
       if (!slot) continue;
       const involved =
         isSlotForTeacher(slot, teacher) ||
-        (adj.targetTeacher && adj.targetTeacher === teacher);
+        rescheduleTargetTeachers(adj, slot, {
+          biweeklyAnchors,
+          holidays,
+          examPeriods,
+        }).includes(teacher);
       if (!involved) continue;
       // ウィンドウ内に「元日」または「振替先日」が入っていれば候補
       const inSrc = isWithinWindow(adj.date, winStart, winEnd);
@@ -484,7 +492,7 @@ export function WeekView({
       )
     );
     return out;
-  }, [adjustments, slotById, teacher, winStart, winEnd]);
+  }, [adjustments, slotById, teacher, winStart, winEnd, biweeklyAnchors, holidays, examPeriods]);
 
   // 上部バナー用: フラット化 + 日付ソート
   const upcomingCombines = useMemo(() => {
@@ -1035,7 +1043,11 @@ export function WeekView({
         >
           {upcomingReschedules.map(({ adj, slot }, i) => {
             const tgtTime = adj.targetTime || slot.time;
-            const tgtTeacher = adj.targetTeacher || slot.teacher;
+            const tgtTeacher = rescheduleTeacherLabel(adj, slot, {
+              biweeklyAnchors,
+              holidays,
+              examPeriods,
+            });
             const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
             return (
               <UpcomingRow key={`rsch-${adj.id}-${i}`}>

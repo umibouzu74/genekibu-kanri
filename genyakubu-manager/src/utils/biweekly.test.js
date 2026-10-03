@@ -697,6 +697,13 @@ describe("biweeklyActiveTeacher", () => {
     const slot = { teacher: "川井", note: "隔週(堀上)" };
     expect(biweeklyActiveTeacher(slot, "2026-04-06", anchors)).toBe("川井");
   });
+
+  it("全角括弧の「隔週（川井）」も B 週は partner", () => {
+    const slot = { teacher: "堀上", note: "隔週（川井）" };
+    expect(biweeklyActiveTeacher(slot, "2026-04-13", anchors)).toBe("川井");
+    expect(isTeacherActiveOnDate(slot, "川井", "2026-04-13", anchors)).toBe(true);
+    expect(isTeacherActiveOnDate(slot, "堀上", "2026-04-13", anchors)).toBe(false);
+  });
 });
 
 describe("formatCount", () => {
@@ -722,5 +729,16 @@ describe("biweeklyPartner", () => {
     expect(biweeklyPartner("補足メモ")).toBe(null);
     expect(biweeklyPartner("")).toBe(null);
     expect(biweeklyPartner(undefined)).toBe(null);
+    expect(biweeklyPartner("隔週( )")).toBe(null);
+  });
+
+  // IME の素の入力は全角括弧。2026-10-03 まで「隔週（河野）」はどの画面でも
+  // パートナー無しの隔週になっていた
+  it("全角の括弧・前後の空白も受ける", () => {
+    expect(biweeklyPartner("隔週（河野）")).toBe("河野");
+    expect(biweeklyPartner("隔週(河野）")).toBe("河野");
+    expect(biweeklyPartner("隔週( 河野 )")).toBe("河野");
+    expect(formatBiweeklyTeacher("堀上", "隔週（河野）")).toBe("堀上 / 河野");
+    expect(formatBiweeklyNote("堀上", "隔週（河野）")).toBe("隔週 : 堀上 / 河野");
   });
 });

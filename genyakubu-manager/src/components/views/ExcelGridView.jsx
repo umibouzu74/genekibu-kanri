@@ -1055,7 +1055,10 @@ export function ExcelGridView({
             onOpen={onOpenOffsite}
           />
           <SlotCancelBanner items={cancelledSlotsForDisplayDate} />
-          <RescheduleInBanner items={incomingReschedulesForDisplayDate} />
+          <RescheduleInBanner
+            items={incomingReschedulesForDisplayDate}
+            teacherCtx={{ biweeklyAnchors, holidays, examPeriods }}
+          />
           <RescheduleOutBanner items={outgoingReschedulesForDisplayDate} />
           {dashboardEntireDayCutoff ? (
             <div

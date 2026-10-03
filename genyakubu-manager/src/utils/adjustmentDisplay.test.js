@@ -6,6 +6,8 @@ import {
   describeSlot,
   isDayEmptiedByReschedule,
   outgoingDayLabel,
+  rescheduleTargetTeachers,
+  rescheduleTeacherLabel,
 } from "./adjustmentDisplay";
 
 describe("buildAdjustmentIndex", () => {
@@ -16,7 +18,7 @@ describe("buildAdjustmentIndex", () => {
     combineHostBySlot: new Map(),
     moveBySlot: new Map(),
     rescheduleOutBySlot: new Map(),
-    rescheduleInBySlot: new Map(),
+    rescheduleIn: [],
     dayScheduleMoveBySlot: new Map(),
   };
 
@@ -113,6 +115,18 @@ describe("buildAdjustmentIndex", () => {
     expect(r.combineAbsorbedBySlot.size).toBe(0);
   });
 
+  // 同じコマの 9/7 と 9/14 を同じ 9/19 へまとめて振り替える。コマ id で
+  // Map にすると後の 1 件で上書きされ、タイムテーブルの「振替で入るコマ」から
+  // 1 コマ消えていた (2026-10-03)
+  it("keeps every incoming reschedule even when the same slot comes in twice", () => {
+    const adjustments = [
+      { id: 1, date: "2026-09-07", type: "reschedule", slotId: 5, targetDate: "2026-09-19", targetTime: "10:00-11:20" },
+      { id: 2, date: "2026-09-14", type: "reschedule", slotId: 5, targetDate: "2026-09-19", targetTime: "13:00-14:20" },
+    ];
+    const r = buildAdjustmentIndex(adjustments, "2026-09-19");
+    expect(r.rescheduleIn.map((a) => a.id)).toEqual([1, 2]);
+  });
+
   it("ignores move adjustments without targetTime", () => {
     const adjustments = [{ id: 1, date: base, type: "move", slotId: 10 }];
     const r = buildAdjustmentIndex(adjustments, base);
@@ -128,8 +142,9 @@ describe("buildAdjustmentIndex", () => {
     // source date view: slot 20 is going out
     expect(r.rescheduleOutBySlot.get(20)?.targetDate).toBe("2026-04-27");
     // source date view: slot 21 is coming in from 2026-04-13
-    expect(r.rescheduleInBySlot.get(21)?.targetDate).toBe(base);
-    expect(r.rescheduleInBySlot.get(21)?.targetTeacher).toBe("本多");
+    const incoming = r.rescheduleIn.find((a) => a.slotId === 21);
+    expect(incoming?.targetDate).toBe(base);
+    expect(incoming?.targetTeacher).toBe("本多");
     // reschedule entries should not affect move/combine indices
     expect(r.moveBySlot.size).toBe(0);
     expect(r.combineHostBySlot.size).toBe(0);
@@ -259,5 +274,43 @@ describe("振替元の表示ヘルパ", () => {
     );
     expect(outgoingDayLabel(two)).toContain("他 1 日");
     expect(outgoingDayLabel([])).toBe("");
+  });
+});
+
+// 振替で入ってくるコマの担当。講師欄は複数担当や隔週のパートナーを持つので
+// 文字列の完全一致で比べると、講師別の月間で振替先のカードが消える (2026-10-03)
+describe("rescheduleTargetTeachers", () => {
+  // 2026-12-07 (月) → 2026-12-04 (金)
+  const slot = { id: 1, day: "月", time: "19:00-20:20", grade: "中3", subj: "数学", teacher: "堀上", note: "" };
+  const adj = { id: 9, type: "reschedule", date: "2026-12-07", slotId: 1, targetDate: "2026-12-04" };
+
+  it("振替先の担当があればその人 (複数は区切りで分ける)", () => {
+    expect(rescheduleTargetTeachers({ ...adj, targetTeacher: "香川・福江" }, slot)).toEqual([
+      "香川",
+      "福江",
+    ]);
+  });
+
+  it("無ければ元のコマの担当 (複数担当も分ける)", () => {
+    expect(rescheduleTargetTeachers(adj, { ...slot, teacher: "堀上·河野" })).toEqual([
+      "堀上",
+      "河野",
+    ]);
+  });
+
+  it("隔週は振替元の日の A/B で解決する", () => {
+    const bi = { ...slot, teacher: "河野", note: "隔週(堀上)" };
+    // 11/30 が A 週 → 12/7 は B 週 = パートナー
+    const ctx = { biweeklyAnchors: [{ date: "2026-11-30" }] };
+    expect(rescheduleTargetTeachers(adj, bi, ctx)).toEqual(["堀上"]);
+    // 振替先 (12/4) が A 週でも、来るのは振替元の週の担当
+    expect(rescheduleTargetTeachers({ ...adj, date: "2026-11-30" }, bi, ctx)).toEqual(["河野"]);
+    // ctx が無ければ主担当のまま (従来の表示)
+    expect(rescheduleTargetTeachers(adj, bi)).toEqual(["河野"]);
+  });
+
+  it("表示用は「·」でつなぐ。コマが無ければ空", () => {
+    expect(rescheduleTeacherLabel(adj, { ...slot, teacher: "堀上・河野" })).toBe("堀上·河野");
+    expect(rescheduleTargetTeachers(adj, null)).toEqual([]);
   });
 });

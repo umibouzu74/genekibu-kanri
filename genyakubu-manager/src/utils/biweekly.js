@@ -6,12 +6,20 @@ import { isSlotCancelledForBiweeklyShift } from "./scheduleHelpers";
 // "月"〜"土" → Date#getDay() の index (日=0)。
 const JP_DAY_TO_IDX = Object.fromEntries(WEEKDAYS.map((w, i) => [w, i]));
 
+// note の「隔週(◯◯)」のパートナー部分。日本語 IME で普通に入力すると全角の
+// 「（）」になるので、半角・全角どちらの括弧も受ける (講師の区切り "·"/"・" と
+// 同じ再発防止。2026-10-03: 「隔週（河野）」がどの画面でもパートナー無しの
+// 隔週になり、B 週も主担当の時間として数えられていた)。
+// **パートナーの読み取りは biweeklyPartner を通すこと** (正規表現を各所に
+// 書き起こさない)。
+const BIWEEKLY_PARTNER_RE = /隔週[(（]([^)）]+)[)）]/;
+
 // Format a teacher name with a biweekly partner extracted from the
 // free-form note field. e.g. teacher="堀上", note="隔週(河野)"
 // → "堀上 / 河野".
 export function formatBiweeklyTeacher(teacher, note) {
-  const m = note && note.match(/隔週\(([^)]+)\)/);
-  return m ? `${teacher} / ${m[1]}` : teacher;
+  const partner = biweeklyPartner(note);
+  return partner ? `${teacher} / ${partner}` : teacher;
 }
 
 // Determine whether a given date falls in an "A" week or "B" week.
@@ -72,7 +80,10 @@ function getWeekTypeFromBase(dateStr, baseStr) {
 // Non-biweekly notes are returned as-is.
 export function formatBiweeklyNote(teacher, note) {
   if (!note) return note;
-  return note.replace(/隔週\(([^)]+)\)/, (_, partner) => `隔週 : ${teacher} / ${partner}`);
+  return note.replace(
+    BIWEEKLY_PARTNER_RE,
+    (_, partner) => `隔週 : ${teacher} / ${partner.trim()}`
+  );
 }
 
 // Convenience: check if a note includes the "隔週" marker.
@@ -80,12 +91,13 @@ export function isBiweekly(note) {
   return !!note && note.includes("隔週");
 }
 
-// note の「隔週(パートナー)」マーカーからパートナー講師名を取り出す。
-// マーカーが無ければ null。formatBiweeklyTeacher 等と同じ正規表現の
-// 単独エクスポート版 (通常時間割作成の集計・強調表示から使う)。
+// note の「隔週(パートナー)」マーカーからパートナー講師名を取り出す
+// (括弧は半角・全角どちらでもよい。前後の空白は落とす)。マーカーが無い・
+// 「隔週」だけで名前が読めないときは null。
 export function biweeklyPartner(note) {
-  const m = note && note.match(/隔週\(([^)]+)\)/);
-  return m ? m[1] : null;
+  const m = typeof note === "string" ? note.match(BIWEEKLY_PARTNER_RE) : null;
+  const name = m ? m[1].trim() : "";
+  return name || null;
 }
 
 // anchor 以降・target 未満の範囲で、slot.day に当たる日付のうち
@@ -226,8 +238,7 @@ export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays,
   const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null) return true;
   const mainTeachers = getSlotTeachers(slot);
-  const m = slot.note.match(/隔週\(([^)]+)\)/);
-  const partner = m ? m[1] : null;
+  const partner = biweeklyPartner(slot.note);
   if (wt === "A") return mainTeachers.includes(teacher);
   // wt === "B"
   return partner != null && teacher === partner;
@@ -243,8 +254,7 @@ export function biweeklyActiveTeacher(slot, dateStr, anchors, holidays, examPeri
   if (!isBiweekly(slot.note)) return slot.teacher;
   const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null || wt === "A") return slot.teacher;
-  const m = slot.note.match(/隔週\(([^)]+)\)/);
-  return m ? m[1] : slot.teacher;
+  return biweeklyPartner(slot.note) || slot.teacher;
 }
 
 // 表示用の「実施される教科」を返す。
