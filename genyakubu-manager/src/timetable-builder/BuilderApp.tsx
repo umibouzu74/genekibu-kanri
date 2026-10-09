@@ -453,7 +453,8 @@ function ScheduleApp() {
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
-    <div className="font-sans builder-root" onClick={() => setContextMenu(null)}>
+    // koshu-builder: 罫線ユーティリティの土台を講習側だけに当てる印 (tailwind.css)
+    <div className="font-sans builder-root koshu-builder" onClick={() => setContextMenu(null)}>
       <style>{BUILDER_PRINT_STYLE}</style>
 
       <Header />
@@ -556,13 +557,17 @@ function ScheduleApp() {
   );
 }
 
-// 本体 (App.jsx) から読み取り専用のデータを受け取る (いまは他校舎の授業の
-// 取り込み用。contexts/hostDataContext)。単体で描くときは空のまま
+// 本体 (App.jsx) から読み取り専用のデータを受け取る (他校舎の授業の取り込み・
+// 出勤可能調査のバイト絞り込み用。contexts/hostDataContext)。単体で描くときは空のまま
 export default function BuilderApp({
   offsiteLessons = EMPTY_HOST_LIST,
   holidays = EMPTY_HOST_LIST,
+  partTimeStaffNames = EMPTY_HOST_NAMES,
 }: Partial<HostData> = {}) {
-  const hostData = useMemo(() => ({ offsiteLessons, holidays }), [offsiteLessons, holidays]);
+  const hostData = useMemo(
+    () => ({ offsiteLessons, holidays, partTimeStaffNames }),
+    [offsiteLessons, holidays, partTimeStaffNames],
+  );
   return (
     <UIProvider>
       <ProjectProvider>
@@ -575,3 +580,4 @@ export default function BuilderApp({
 }
 
 const EMPTY_HOST_LIST: unknown[] = [];
+const EMPTY_HOST_NAMES: string[] = [];

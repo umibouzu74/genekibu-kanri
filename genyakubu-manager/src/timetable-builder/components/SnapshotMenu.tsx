@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
@@ -27,6 +27,33 @@ export default function SnapshotMenu() {
   const { open, setOpen, ref } = useDismissablePopover();
   // 現在の状態と差分比較中のスナップショット id (null = 比較なし)
   const [comparingId, setComparingId] = useState(null);
+
+  // ボタンの右端に揃えて開くので、ボタンが左寄りの画面では左へはみ出し、
+  // 本体のメイン領域 (横スクロールの枠) で切れる (サイドバーのある 800px 幅前後で
+  // 左が切れ、スマホ幅では画面の外へ出ていた)。開いたときに枠の内側へ寄せる
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [shiftX, setShiftX] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setShiftX(0);
+      return;
+    }
+    const el = popoverRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    let left = 0;
+    let right = document.documentElement.clientWidth;
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      if (getComputedStyle(a).overflowX === 'visible') continue;
+      const clip = a.getBoundingClientRect();
+      left = Math.max(left, clip.left);
+      right = Math.min(right, clip.right);
+      break;
+    }
+    const margin = 8;
+    if (rect.left < left + margin) setShiftX(left + margin - rect.left);
+    else if (rect.right > right - margin) setShiftX(right - margin - rect.right);
+  }, [open]);
 
   // popover を閉じたら比較状態もリセット
   useEffect(() => {
@@ -127,9 +154,11 @@ export default function SnapshotMenu() {
       </button>
       {open && (
         <div
+          ref={popoverRef}
           role="dialog"
           aria-label="スナップショット"
-          className="absolute z-50 top-full right-0 mt-1 w-80 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+          style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
+          className="absolute z-50 top-full right-0 mt-1 w-96 max-w-[calc(100vw-1rem)] bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
         >
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold text-builder-ink-muted">

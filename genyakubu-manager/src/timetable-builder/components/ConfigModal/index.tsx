@@ -6,6 +6,7 @@ import BasicSettings from './BasicSettings';
 import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
 import AbsenceNgPanel from './AbsenceNgPanel';
+import AvailabilityPanel from './AvailabilityPanel';
 import SubjectColorSettings from './SubjectColorSettings';
 import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
@@ -20,6 +21,7 @@ const TABS = [
   ['subjects', '📚 科目'],
   ['classes', '🏫 クラス優先度'],
   ['absence-ng', '📅 講師不在・NG'],
+  ['availability', '🙋 出勤可能調査'],
   ['combined', '🔗 合同授業'],
   ['colors', '🎨 科目カラー'],
   ['generation', '⚡ 自動生成'],
@@ -77,7 +79,9 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print"
+      // z-[1000]: 本体のサイドバー (position:fixed, z-index 999) より上に出す。
+      // z-50 だとサイドバーの下に潜り、狭い画面でタイトル・先頭のタブが隠れていた
+      className="fixed inset-0 bg-black/50 z-[1000] flex justify-center items-center p-4 no-print"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
@@ -109,7 +113,7 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
                 aria-controls="builder-config-tabpanel"
                 tabIndex={selected ? 0 : -1}
                 onClick={() => setConfigTab(id)}
-                className={`pb-2 font-bold whitespace-nowrap ${selected ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
+                className={`pb-2 text-sm font-bold whitespace-nowrap ${selected ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
               >
                 {label}
               </button>
@@ -134,6 +138,8 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
             <SubjectColorSettings />
           ) : configTab === 'absence-ng' ? (
             <AbsenceNgPanel />
+          ) : configTab === 'availability' ? (
+            <AvailabilityPanel />
           ) : configTab === 'classes' ? (
             <ClassPriority />
           ) : (

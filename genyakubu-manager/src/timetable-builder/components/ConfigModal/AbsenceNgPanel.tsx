@@ -2,12 +2,13 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
-import { computeAutoNgEntries } from '../../utils/autoNg';
+import { autoNgSourceLabel, computeAutoNgEntries } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
+import { periodShortLabel, periodTimeText } from '../../utils/availability';
 import NgCsvImport from './NgCsvImport';
 import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
@@ -70,9 +71,24 @@ export default function AbsenceNgPanel() {
   // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
   // クリーンアップする useEffect で id 再利用時の silent collapse を防ぐ
   // (code-review P3)。
+  // 開いた直後は「手動NG か他学年セッション (由来の自動NG) がある日」だけ展開
+  // する。全日を開くと講師 × 時限のマトリクスが日数ぶん縦に並び (夏期で 1 万 px
+  // 超)、目当ての日にたどり着けなかった。出勤可能調査の × だけの日は開かない
+  // (バイトの回答が入るとほぼ全日が開いてしまう。調査の × はこの画面では直さない)。
+  // 閉じている日も見出しを押せば開く (すべて展開もある)。
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
-    poolDates.forEach(d => { initial[d.id] = true; });
+    const sessionDates = new Set((project.externalSessions || []).map(s => s.date));
+    poolDates.forEach(d => {
+      const hasNg = project.teachers.some(t => {
+        const auto = autoNgByTeacher?.get(t.name);
+        return poolPeriods.some(p => {
+          const k = makeNgKey(d.label, p.label);
+          return !!t.ngSlots?.includes(k) || (auto?.get(k)?.sessions.length ?? 0) > 0;
+        });
+      });
+      initial[d.id] = hasNg || sessionDates.has(d.label);
+    });
     return initial;
   });
   const [quickGridExpanded, setQuickGridExpanded] = useState(false);
@@ -409,7 +425,7 @@ export default function AbsenceNgPanel() {
   const handleClearAllManualNg = async () => {
     if (manualNgTotal === 0) return;
     const ok = await showConfirm(
-      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n他学年セッション由来の自動NGは残ります。\nよろしいですか?`,
+      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n自動NG (他学年セッション・出勤可能調査の ×) は残ります。\nよろしいですか?`,
       { title: '手動NGの全解除', danger: true, confirmLabel: '全解除する' },
     );
     if (!ok) return;
@@ -422,7 +438,7 @@ export default function AbsenceNgPanel() {
   const handleClearAllNg = async () => {
     if (manualNgTotal === 0 && sessions.length === 0) return;
     const ok = await showConfirm(
-      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\nよろしいですか?`,
+      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\n(出勤可能調査の × は残ります。消すには 🙋 出勤可能調査で回答を変えてください)\nよろしいですか?`,
       { title: 'NG設定の全解除', danger: true, confirmLabel: 'すべて解除する' },
     );
     if (!ok) return;
@@ -544,7 +560,8 @@ export default function AbsenceNgPanel() {
         <strong>他学年セッション</strong> (予備校 / 高校等) を時刻付きで登録すると、
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
-        どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
+        どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。<br />
+        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。
       </div>
 
       {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
@@ -885,8 +902,8 @@ export default function AbsenceNgPanel() {
           </button>
         </div>
         <div className="text-[11px] text-builder-ink-muted mt-1">
-          自動NGは他学年セッションから導出されるため、NG設定の全解除では他学年セッションも削除されます
-          (プリセットと数値入力の記録は残ります)
+          他学年セッション由来の自動NGを消すため、NG設定の全解除では他学年セッションも削除されます
+          (プリセットと数値入力の記録・出勤可能調査の回答は残ります)
         </div>
       </div>
 
@@ -940,7 +957,7 @@ export default function AbsenceNgPanel() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 text-builder-ink">講師名</th>
+                  <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">講師名</th>
                   {poolDates.map(d => <th key={d.id} className="border border-builder-border p-2 bg-builder-bg min-w-[60px] text-center text-builder-ink">{d.label}</th>)}
                 </tr>
               </thead>
@@ -948,13 +965,14 @@ export default function AbsenceNgPanel() {
                 {teacherGroups.map(group => (
                   <Fragment key={group.key}>
                     <tr className="bg-builder-bg">
-                      <td colSpan={1 + poolDates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10">
-                        ━━ {group.label} ━━
+                      {/* 横スクロールしても教科名が見えるよう、セル全体ではなく中の文字を sticky に */}
+                      <td colSpan={1 + poolDates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted">
+                        <span className="sticky left-2 inline-block">━━ {group.label} ━━</span>
                       </td>
                     </tr>
                     {group.teachers.map(t => (
                       <tr key={t.name}>
-                        <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                        <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">{t.name}</td>
                         {poolDates.map(d => {
                           const k = makeExternalKey(d.label, t.name);
                           const sessionCnt = sessionCountMap[k];
@@ -1074,15 +1092,22 @@ function DateSection({
           {/* NG マトリクス (講師×時限) */}
           <div className="px-3 py-2">
             <div className="text-xs font-bold text-builder-ink-muted mb-1">
-              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=自動NG / 空=OK)
+              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッションの自動NG / 調=出勤可能調査の × / 空=OK)
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs whitespace-nowrap">
                 <thead>
                   <tr>
-                    <th className="border border-builder-ink-ghost p-2 bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">講師名</th>
+                    <th className="border border-builder-ink-ghost p-2 bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">講師名</th>
+                    {/* 見出しは「1限 / 13:00-13:45」の 2 段 (ラベル全体を 1 行に出すと
+                        1400px 幅でも横にはみ出していた)。元のラベルは title に */}
                     {periods.map(p => (
-                      <th key={p.id} className="border border-builder-ink-ghost p-1 bg-builder-surface-alt font-normal min-w-[60px] text-center text-builder-ink">{p.label}</th>
+                      <th key={p.id} title={p.label} className="border border-builder-ink-ghost p-1 bg-builder-surface-alt font-normal min-w-[60px] text-center text-builder-ink leading-tight">
+                        <div>{periodShortLabel(p)}</div>
+                        {periodTimeText(p) !== p.label && periodTimeText(p) !== periodShortLabel(p) && (
+                          <div className="text-[10px] text-builder-ink-muted">{periodTimeText(p)}</div>
+                        )}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -1092,9 +1117,9 @@ function DateSection({
                       <tr className="bg-builder-bg">
                         <td
                           colSpan={1 + periods.length}
-                          className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted sticky left-0 z-10"
+                          className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted"
                         >
-                          ━━ {group.label} ━━
+                          <span className="sticky left-2 inline-block">━━ {group.label} ━━</span>
                         </td>
                       </tr>
                       {group.teachers.map(t => {
@@ -1102,12 +1127,14 @@ function DateSection({
                         const autoEntries = autoNgByTeacher?.get(t.name);
                         return (
                           <tr key={t.name}>
-                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">{t.name}</td>
                             {periods.map(p => {
                               const k = makeNgKey(date.label, p.label);
                               const isManualNg = t.ngSlots?.includes(k);
                               const autoEntry = autoEntries?.get(k);
                               const isAutoNg = !!autoEntry;
+                              // 出勤可能調査の × だけが由来の自動NG は「調」(他学年セッション由来は「自」)
+                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !!autoEntry.availability;
                               const cellClass = isManualNg
                                 ? 'bg-builder-red text-white font-bold'
                                 : isAutoNg
@@ -1115,7 +1142,7 @@ function DateSection({
                                   : 'bg-builder-surface';
                               const tooltipParts = [];
                               if (isManualNg) tooltipParts.push('手動NG');
-                              if (isAutoNg) {
+                              if (isAutoNg && autoEntry.sessions.length > 0) {
                                 const memos = autoEntry.sessions
                                   .map(s => {
                                     const timeText = s.startTime
@@ -1127,6 +1154,9 @@ function DateSection({
                                   .join(', ');
                                 tooltipParts.push(`自動NG (他学年: ${memos})`);
                               }
+                              if (isAutoNg && autoEntry.availability) {
+                                tooltipParts.push('出勤可能調査で × (🙋 出勤可能調査で変更)');
+                              }
                               // F2a: td onClick だけだとキーボード到達不能。
                               // role="button" + tabIndex + Enter/Space で
                               // toggle できるようにする (click と同経路)。
@@ -1137,7 +1167,7 @@ function DateSection({
                                   role="button"
                                   tabIndex={0}
                                   aria-pressed={!!isManualNg}
-                                  aria-label={`${t.name} ${date.label} ${p.label} の手動NG${isAutoNg ? ' (自動NGあり)' : ''}`}
+                                  aria-label={`${t.name} ${date.label} ${p.label} の手動NG${isAutoNg ? ` (自動NG: ${autoNgSourceLabel(autoEntry)})` : ''}`}
                                   onClick={toggle}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' || e.key === ' ') {
@@ -1148,7 +1178,7 @@ function DateSection({
                                   title={tooltipParts.join(' / ') || undefined}
                                   className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-builder-blue focus-visible:ring-inset ${cellClass}`}
                                 >
-                                  {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
+                                  {isManualNg ? 'NG' : isSurveyOnly ? '調' : isAutoNg ? '自' : ''}
                                 </td>
                               );
                             })}
@@ -1471,8 +1501,12 @@ function PresetPanel({ presets, dates, sessions = [], addPreset, updatePreset, r
                   キャンセル
                 </button>
               )}
+              {/* 名前がまだ無いだけ (開いた直後) は案内として控えめに。赤の警告は
+                  時刻の書き間違いなど直す必要があるものだけ */}
               {draftValidation && (
-                <span className="text-xs text-builder-red font-bold">⚠️ {draftValidation}</span>
+                <span className={`text-xs ${!draft.name.trim() ? 'text-builder-ink-muted' : 'text-builder-red font-bold'}`}>
+                  {!draft.name.trim() ? draftValidation : `⚠️ ${draftValidation}`}
+                </span>
               )}
             </div>
           </div>

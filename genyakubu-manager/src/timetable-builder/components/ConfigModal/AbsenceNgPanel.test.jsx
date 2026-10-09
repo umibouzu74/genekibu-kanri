@@ -522,7 +522,7 @@ describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)
     expect(removeExternalSession).toHaveBeenCalledWith(7);
   });
 
-  it('自動NG セルは「自」表示 + aria-label に自動NGあり + セッション由来ツールチップ', () => {
+  it('自動NG セルは「自」表示 + aria-label に自動NG の由来 + セッション由来ツールチップ', () => {
     const autoKey = '7/24(金)-1限';
     const autoNgByTeacher = new Map([
       ['堀上', new Map([[autoKey, {
@@ -532,7 +532,7 @@ describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)
     renderPanel({
       overrides: { project: makeFullProject(), analysis: { autoNgByTeacher } },
     });
-    const cell = screen.getByLabelText('堀上 7/24(金) 1限 の手動NG (自動NGあり)');
+    const cell = screen.getByLabelText('堀上 7/24(金) 1限 の手動NG (自動NG: 他学年)');
     expect(cell).toHaveTextContent('自');
     expect(cell).toHaveAttribute('title', expect.stringContaining('予備校 (10:00〜11:00)'));
     // 手動 NG ではないので aria-pressed=false のまま
@@ -541,8 +541,16 @@ describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)
     expect(screen.getByText('NG 1件')).toBeInTheDocument();
   });
 
+  it('NG も他学年セッションも無い日は閉じた状態で開き、「すべて展開」で開く', () => {
+    renderPanel({ overrides: { project: makeFullProject() } });
+    expect(screen.queryByLabelText('堀上 7/25(土) 1限 の手動NG')).toBeNull();
+    fireEvent.click(screen.getByText('すべて展開'));
+    expect(screen.getByLabelText('堀上 7/25(土) 1限 の手動NG')).toBeInTheDocument();
+  });
+
   it('「すべて折りたたむ」でマトリクスが隠れ、日付ヘッダから再展開できる', () => {
     renderPanel({ overrides: { project: makeFullProject() } });
+    fireEvent.click(screen.getByText('すべて展開'));
     expect(screen.queryByLabelText('堀上 7/24(金) 1限 の手動NG')).toBeInTheDocument();
     fireEvent.click(screen.getByText('すべて折りたたむ'));
     expect(screen.queryByLabelText('堀上 7/24(金) 1限 の手動NG')).toBeNull();
@@ -612,6 +620,8 @@ describe('AbsenceNgPanel — NG マトリクスのキーボード操作 (F2a)', 
   it('セルは role="button" + tabIndex=0 で Enter/Space で toggle できる', () => {
     const toggleTeacherNg = vi.fn();
     renderPanel({ overrides: { project: matrixProject, toggleTeacherNg } });
+    // NG の無い日は閉じた状態で開くので、日付の見出しで展開する
+    fireEvent.click(screen.getByRole('button', { name: /7\/20\(月\)/ }));
     const cell = screen.getByLabelText('堀上 7/20(月) 1限 の手動NG');
     expect(cell).toHaveAttribute('tabindex', '0');
     expect(cell).toHaveAttribute('aria-pressed', 'false');

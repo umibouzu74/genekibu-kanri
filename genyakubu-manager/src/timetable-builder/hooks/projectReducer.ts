@@ -21,9 +21,20 @@ import {
   renameCombinedGroupsLabel,
 } from '../utils/labelRefs';
 import { cleanSchedule, clampGenerationParam } from '../utils/constants';
+import {
+  applyAvailabilityMarks,
+  dropAvailabilityDates,
+  dropAvailabilityPeriods,
+  isAvailabilityMark,
+  mapTeachersAvailability,
+  renameAvailabilityDate,
+  renameAvailabilityPeriod,
+  withAvailability,
+} from '../utils/availabilityShape';
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
 import type {
+  AvailabilityMark,
   CombinedGroup,
   DayStatus,
   ExternalSession,
@@ -81,6 +92,9 @@ export type ProjectAction =
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
   | { type: 'teacher/clearAllManualNg' }
   | { type: 'teacher/clearAllNg' }
+  | { type: 'teacher/setAvailability'; payload: { name: string; cells: Array<{ date: string; period: string }>; mark: AvailabilityMark | null } }
+  | { type: 'teacher/clearAvailability'; payload: { name: string } }
+  | { type: 'teacher/setAvailabilityMemo'; payload: { name: string; memo: string } }
   | { type: 'teacher/toggleClassPriority'; payload: { idx: number; className: string } }
   | { type: 'teacher/setExternalCount'; payload: { date: string; teacherName: string; value: unknown } }
   | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
@@ -178,11 +192,15 @@ function removeDatesFromPool(project: Project, dateIds: number[]): Project {
     new Set(newPool.map(d => d.label)),
   );
   const shouldDropDateKey = makeDateKeyDropMatcher(pool.map(d => d.label), targetLabels);
-  const newTeachers = (project.teachers || []).map(t => {
-    const ngSlots = t.ngSlots || [];
-    const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
-    return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
-  });
+  const newTeachers = mapTeachersAvailability(
+    (project.teachers || []).map(t => {
+      const ngSlots = t.ngSlots || [];
+      const filtered = ngSlots.filter(k => !shouldDropDateKey(k));
+      return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+    }),
+    // 出勤可能調査の回答も同じ理由で消す (同ラベル再追加で古い回答が復活しない)
+    map => dropAvailabilityDates(map, targetLabelSet),
+  );
   const newExternal: Record<string, number> = {};
   Object.keys(project.externalCounts || {}).forEach(k => {
     if (!shouldDropDateKey(k)) newExternal[k] = project.externalCounts[k];
@@ -466,11 +484,15 @@ function applyAction(project: Project, action: ProjectAction): Project {
         const removedLabels = oldArr.map(e => e.label).filter(l => !newLabelSet.has(l));
         if (removedLabels.length > 0) {
           const shouldDrop = makePeriodKeyDropMatcher(oldArr.map(e => e.label), removedLabels);
-          const newTeachers = (baseProject.teachers || []).map(t => {
-            const ngSlots = t.ngSlots || [];
-            const filtered = ngSlots.filter(k2 => !shouldDrop(k2));
-            return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
-          });
+          const newTeachers = mapTeachersAvailability(
+            (baseProject.teachers || []).map(t => {
+              const ngSlots = t.ngSlots || [];
+              const filtered = ngSlots.filter(k2 => !shouldDrop(k2));
+              return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+            }),
+            // 出勤可能調査の回答は時限ラベルをキーに持つので完全一致で消せる
+            map => dropAvailabilityPeriods(map, removedLabels),
+          );
           cascadedTabsProject = { ...baseProject, teachers: newTeachers };
         }
       }
@@ -1152,6 +1174,48 @@ function applyAction(project: Project, action: ProjectAction): Project {
         ...(sessionsChanged ? { externalSessions: [] } : {}),
       };
     }
+    // ─── 出勤可能調査 ─────────────────────
+    // 回答は Teacher.availability (日付 → 時限 → 記号)。× は autoNg が自動NG に
+    // 合流させる (手動NG の ngSlots には書かない)。講師は名前で指す (画面が
+    // 古い index を握ったまま dispatch しても別の講師を書き換えないように)。
+    case 'teacher/setAvailability': {
+      const { name, cells, mark } = action.payload;
+      if (!name || name === '未定' || !Array.isArray(cells) || cells.length === 0) return project;
+      if (mark != null && !isAvailabilityMark(mark)) return project;
+      const idx = project.teachers.findIndex(t => t.name === name);
+      if (idx < 0) return project;
+      const t = project.teachers[idx];
+      const next = applyAvailabilityMarks(t.availability, cells, mark);
+      if (next === t.availability) return project; // F2d: 同値 no-op
+      const newTeachers = [...project.teachers];
+      newTeachers[idx] = withAvailability(t, next);
+      return { ...project, teachers: newTeachers };
+    }
+    case 'teacher/clearAvailability': {
+      const idx = project.teachers.findIndex(t => t.name === action.payload.name);
+      if (idx < 0) return project;
+      const t = project.teachers[idx];
+      if (t.availability === undefined && t.availabilityMemo === undefined) return project;
+      const { availability: _a, availabilityMemo: _m, ...rest } = t;
+      const newTeachers = [...project.teachers];
+      newTeachers[idx] = rest as Teacher;
+      return { ...project, teachers: newTeachers };
+    }
+    case 'teacher/setAvailabilityMemo': {
+      const idx = project.teachers.findIndex(t => t.name === action.payload.name);
+      if (idx < 0) return project;
+      const t = project.teachers[idx];
+      const memo = String(action.payload.memo ?? '').trim();
+      if ((t.availabilityMemo ?? '') === memo) return project;
+      const newTeachers = [...project.teachers];
+      if (memo) {
+        newTeachers[idx] = { ...t, availabilityMemo: memo };
+      } else {
+        const { availabilityMemo: _m, ...rest } = t;
+        newTeachers[idx] = rest as Teacher;
+      }
+      return { ...project, teachers: newTeachers };
+    }
     case 'teacher/toggleClassPriority': {
       const { idx, className } = action.payload;
       if (idx == null || idx < 0 || idx >= project.teachers.length) return project;
@@ -1628,6 +1692,14 @@ function applyAction(project: Project, action: ProjectAction): Project {
             : renameNgPeriod(t.ngSlots, oldVal, newVal);
           return { ...t, ngSlots: newNgSlots };
         });
+        // 出勤可能調査の回答 (日付 → 時限 → 記号) も追従させる。改名先は
+        // プールに無いラベル (上で重複を reject 済み) なので、そこに残っている
+        // 回答は前に消した日付・時限の残り。動かしてきた回答を優先する
+        newTeachers = mapTeachersAvailability(newTeachers, map => (
+          type === 'date'
+            ? renameAvailabilityDate(map, oldVal, newVal, 'moved')
+            : renameAvailabilityPeriod(map, oldVal, newVal, 'moved')
+        ));
       }
 
       if (type === 'date') {

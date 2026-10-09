@@ -8,11 +8,26 @@
 
 import { makeNgKey } from './scheduleKey';
 import { getPeriodTimeRange, getSessionTimeRange, timeRangesOverlap } from './timeRange';
+import { availabilityNgKeys, isSurveyTeacher } from './availability';
 import type { Entity, ExternalSession, Teacher } from '../types';
 
-/** 1 つの自動NG エントリ。sessions は由来となった他学年セッション群 */
+/**
+ * 1 つの自動NG エントリ。sessions は由来となった他学年セッション群。
+ * availability=true は出勤可能調査の × 由来 (sessions が空でもこれだけで NG)。
+ */
 export interface AutoNgEntry {
   sessions: ExternalSession[];
+  availability?: boolean;
+}
+
+// 自動NG の由来の短い表示 ("他学年" / "調査" / "他学年・調査")。
+// プルダウンの「(NG:…)」・NG マトリクスの tooltip で使う。
+export function autoNgSourceLabel(entry: AutoNgEntry | null | undefined): string {
+  if (!entry) return '';
+  const parts: string[] = [];
+  if (entry.sessions.length > 0) parts.push('他学年');
+  if (entry.availability) parts.push('調査');
+  return parts.join('・');
 }
 
 /** makeNgKey(dateLabel, periodLabel) → AutoNgEntry */
@@ -57,7 +72,12 @@ export function computeAutoNgEntries(
 
 // 講師名 → 自動NG entries (上記 Map) の二段 Map をプロジェクト全体で構築。
 // NgSettings / ScheduleCell など複数箇所で使うため、O(teachers × sessions × periods) を一度に。
-//   key: teacherName, value: Map<ngKey, { sessions: [...] }>
+//   key: teacherName, value: Map<ngKey, { sessions: [...], availability? }>
+// 出勤可能調査の × (teacher.availability) もここで合流させる。自動作成・違反
+// チェック・Excel・修正提案はすべてこの関数の結果を見るので、× を NG として
+// 扱う経路をここ 1 か所に保つ (呼び出し側で調査を見忘れる事故を防ぐ)。
+// placeholder の「未定」は調査の対象外 (画面で回答を直せない) なので、改名や
+// 読込で回答が付いていても NG にしない。
 export function computeAutoNgByTeacher(
   teachers: Teacher[] | null | undefined,
   externalSessions: ExternalSession[] | null | undefined,
@@ -66,7 +86,13 @@ export function computeAutoNgByTeacher(
   const result = new Map<string, AutoNgEntries>();
   if (!Array.isArray(teachers)) return result;
   for (const t of teachers) {
-    result.set(t.name, computeAutoNgEntries(t.name, externalSessions, periods));
+    const entries = computeAutoNgEntries(t.name, externalSessions, periods);
+    for (const key of isSurveyTeacher(t) ? availabilityNgKeys(t) : []) {
+      const existing = entries.get(key);
+      if (existing) existing.availability = true;
+      else entries.set(key, { sessions: [], availability: true });
+    }
+    result.set(t.name, entries);
   }
   return result;
 }

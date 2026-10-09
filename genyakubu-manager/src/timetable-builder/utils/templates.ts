@@ -5,6 +5,7 @@
 // 切り出し、localStorage I/O は薄いラッパに分ける (テスト容易性のため)。
 import { STORAGE_KEY_TEMPLATES } from './constants';
 import type { Project } from '../types';
+import { stripAvailability } from './availabilityShape';
 
 export interface ProjectTemplate {
   id: number;
@@ -15,11 +16,14 @@ export interface ProjectTemplate {
 }
 
 // テンプレートに載せる payload を作る。snapshots は試行錯誤の作業履歴で
-// 年度間で引き継ぐ意味が薄いので除外し、deep copy で固める。
+// 年度間で引き継ぐ意味が薄いので除外し、deep copy で固める。出勤可能調査の
+// 回答もその季節の日付に対するものなので外す (stripAvailability)。
 export function buildTemplatePayload(project: Project | null | undefined): Omit<Project, 'snapshots'> {
   // snapshots は除外 (rest に含めない)。_snapshots は意図的に未使用。
   const { snapshots: _snapshots, ...rest } = project || {};
-  return JSON.parse(JSON.stringify(rest));
+  const payload = JSON.parse(JSON.stringify(rest));
+  if (Array.isArray(payload.teachers)) payload.teachers = stripAvailability(payload.teachers);
+  return payload;
 }
 
 // 配列にテンプレートを追加した新配列を返す (純粋)。id は max+1。

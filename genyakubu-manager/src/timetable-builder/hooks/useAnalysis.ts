@@ -10,6 +10,7 @@ import {
   computeInfeasibilities,
 } from '../utils/analysisHelpers';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
+import { answeredTeacherNames, computeSurveyDays } from '../utils/availability';
 import { buildFixSuggestions } from '../utils/fixSuggestions';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
@@ -42,6 +43,17 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
       project.periods || [],
     ),
     [project.teachers, project.externalSessions, project.periods],
+  );
+
+  // 出勤可能調査に回答済みの講師 (今の調査の対象マスに記号が 1 つでもある人)。
+  // セルの講師プルダウンの「?」(回答はあるが未記入) の判定に使う。前の季節の
+  // 日付に残った回答だけの講師は未回答 (「?」を出さない)
+  const surveyAnsweredTeachers = useMemo(
+    () => answeredTeacherNames(
+      project.teachers,
+      computeSurveyDays({ dates: project.dates, periods: project.periods, tabs: project.tabs }),
+    ),
+    [project.teachers, project.dates, project.periods, project.tabs],
   );
 
   const activeAnalysis = useMemo(
@@ -106,8 +118,8 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
   );
 
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers],
   );
 
   const dashboard = useMemo(

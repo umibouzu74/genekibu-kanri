@@ -18,11 +18,31 @@ export interface Entity {
   label: string;
 }
 
+/**
+ * 出勤可能調査の回答 1 マス分。ok = ○ (出られる) / maybe = △ (相談・できれば
+ * 避けたい) / ng = × (出られない)。未記入はキーが無いことで表す。
+ */
+export type AvailabilityMark = 'ok' | 'maybe' | 'ng';
+
+/**
+ * 出勤可能調査の回答。日付ラベル → 時限ラベル → 記号 の入れ子
+ * (NG キーのような `${date}-${period}` 連結にしないのは、ラベルに "-" を
+ * 含むときの分解の曖昧さを持ち込まないため。utils/availability.ts 参照)。
+ */
+export type AvailabilityMap = Record<string, Record<string, AvailabilityMark>>;
+
 export interface Teacher {
   name: string;
   subjects: string[];
   /** makeNgKey(dateLabel, periodLabel) = `${date}-${period}` の配列 (手動NG) */
   ngSlots: string[];
+  /**
+   * 出勤可能調査の回答 (任意)。× は手動NG とは別に「導出される NG」として
+   * 自動NG に合流する (utils/autoNg)。未回答の講師はフィールドごと持たない
+   */
+  availability?: AvailabilityMap;
+  /** 出勤可能調査の自由記述 (「19 時以降なら可」等)。空なら持たない */
+  availabilityMemo?: string;
   /** 担当不可クラス (ラベル参照) */
   ngClasses: string[];
   /** 優先クラス (ラベル参照) */

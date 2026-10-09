@@ -360,6 +360,58 @@ describe("buildKoshuLessons", () => {
   });
 });
 
+describe("buildKoshuLessons: 前の季節の日付が残った project", () => {
+  // 夏期の project を冬期に作り替えた: プールに夏の日付と予備校の予定が残っていて、
+  // タブは冬の日付だけを使う。最終編集は 2026-12-20
+  const winter = () => {
+    const project = baseProject({
+      name: "2026冬期",
+      updatedAt: "2026-12-20T09:00:00.000Z",
+      dates: [
+        { id: 1, label: "7/29(水)" },
+        { id: 2, label: "12/25(金)" },
+        { id: 3, label: "1/7(木)" },
+      ],
+    });
+    project.tabs[0].config.activeDateIds = [2, 3];
+    project.tabs[0].schedule = {
+      "d2-p1-c1": { subject: "英語", teacher: "堀上" },
+      "d3-p1-c1": { subject: "英語", teacher: "堀上" },
+    };
+    project.externalSessions = [
+      { id: 1, date: "7/29(水)", teacherName: "堀上", memo: "予備校", startTime: "9:00", endTime: "10:30" },
+      { id: 2, date: "1/7(木)", teacherName: "堀上", memo: "予備校", startTime: "9:00", endTime: "10:30" },
+    ];
+    return project;
+  };
+
+  it("どのタブも使わない日の外部授業は載せない (翌年 7 月の予定に化けない)", () => {
+    const lessons = buildKoshuLessons(winter());
+    expect(lessons.filter((l) => l.kind === "external").map((l) => l.date)).toEqual(["2027-01-07"]);
+  });
+
+  it("講習のコマは年をまたいで 12 月 → 翌年 1 月", () => {
+    const lessons = buildKoshuLessons(winter());
+    expect(lessons.filter((l) => l.kind === "koshu").map((l) => l.date)).toEqual(["2026-12-25", "2027-01-07"]);
+  });
+
+  it("講習の数か月後に開いても (最終編集が 5 月)、曜日の合う年に置く", () => {
+    const project = winter();
+    project.updatedAt = "2027-05-01T09:00:00.000Z";
+    const lessons = buildKoshuLessons(project);
+    expect(lessons.filter((l) => l.kind === "koshu").map((l) => l.date)).toEqual(["2026-12-25", "2027-01-07"]);
+  });
+
+  it("講習の半年後の編集でも、1 つの講習が 2 つの年に割れない (年は季節ごとに決める)", () => {
+    // 最終編集 2027-07-01: 12/25 は 188 日前・1/7 は 175 日前。ラベルごとに決めると
+    // 曜日を信じる範囲 (180 日) の境目で 12/25 だけ 2027-12-25 へ移っていた
+    const project = winter();
+    project.updatedAt = "2027-07-01T09:00:00.000Z";
+    const dates = buildKoshuLessons(project).map((l) => l.date);
+    expect(dates).toEqual(["2026-12-25", "2027-01-07", "2027-01-07"]);
+  });
+});
+
 describe("indexKoshuLessonsByDate", () => {
   const lessons = [
     { date: "2026-07-24", teacher: "堀上", subj: "英語" },

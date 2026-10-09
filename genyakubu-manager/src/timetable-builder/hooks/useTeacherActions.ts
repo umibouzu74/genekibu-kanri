@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Dispatch } from 'react';
 import type { ProjectAction } from './projectReducer';
-import type { ExternalSessionPreset } from '../types';
+import type { AvailabilityMark, ExternalSessionPreset } from '../types';
 
 // 講師管理アクションを dispatch でラップする。
 // dispatch は useReducer から得られる安定参照なので、返り値の関数群も
@@ -26,6 +26,14 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
       dispatch({ type: 'teacher/importNg', payload: { entries } }),
     clearAllManualNg: () => dispatch({ type: 'teacher/clearAllManualNg' }),
     clearAllNg: () => dispatch({ type: 'teacher/clearAllNg' }),
+    // 出勤可能調査: cells (日付・時限ラベル) の記号をまとめて mark に。null で未記入へ
+    setTeacherAvailability: (name: string, cells: Array<{ date: string; period: string }>, mark: AvailabilityMark | null) =>
+      dispatch({ type: 'teacher/setAvailability', payload: { name, cells, mark } }),
+    // 出勤可能調査の回答とメモをまとめて消す (未回答に戻す)
+    clearTeacherAvailability: (name: string) =>
+      dispatch({ type: 'teacher/clearAvailability', payload: { name } }),
+    setTeacherAvailabilityMemo: (name: string, memo: string) =>
+      dispatch({ type: 'teacher/setAvailabilityMemo', payload: { name, memo } }),
     toggleTeacherClassPriority: (idx: number, className: string) =>
       dispatch({ type: 'teacher/toggleClassPriority', payload: { idx, className } }),
     handleExternalCountChange: (date: string, teacherName: string, value: unknown) =>

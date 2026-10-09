@@ -20,6 +20,7 @@ import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
+import { usedDateLabels } from './courseDates';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -625,7 +626,10 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
   // 学年(タブ) 列に出す種別ラベル: メモ (プリセット適用時はプリセット名) を
   // 優先し、メモ未設定でも時刻がプリセットに一致するならその名前を**表示に
   // だけ**使う (プロジェクトのデータは書き換えない)。どちらも無ければ '外部'。
-  const sessions = project.externalSessions || [];
+  // 載せるのは「どれかのタブが授業に使う日」の予定だけ (日付プールに残った
+  // 前の季節の日付の予備校が、冬期の講師別シートの先頭に並ばないように)。
+  const used = usedDateLabels(project);
+  const sessions = (project.externalSessions || []).filter(s => used.has(s.date));
   const { assignments } = computePresetMemoBackfill(
     sessions,
     project.externalSessionPresets || [],
@@ -845,10 +849,12 @@ function buildClassCountSummarySheet(
   const columnCount = 2 + columns.length;
 
   // タイトル (N5a / P1 と同じ「何の・いつの・いつ出したか」)。期間は
-  // プール全日程のカレンダー順の初日〜最終日。
-  const poolDates = sortPoolDatesByCalendar(project.dates || []);
-  const rangeText = poolDates.length > 0
-    ? `期間 ${poolDates[0].label}〜${poolDates[poolDates.length - 1].label}`
+  // どれかのタブが授業に使う日のカレンダー順の初日〜最終日 (プール全体だと
+  // 前の季節の残りの日付で「期間 7/29〜1/7」のようになる)。
+  const used = usedDateLabels(project);
+  const lessonDates = sortPoolDatesByCalendar(project.dates || []).filter(d => used.has(d.label));
+  const rangeText = lessonDates.length > 0
+    ? `期間 ${lessonDates[0].label}〜${lessonDates[lessonDates.length - 1].label}`
     : '';
   const d0 = new Date();
   const titleText = [

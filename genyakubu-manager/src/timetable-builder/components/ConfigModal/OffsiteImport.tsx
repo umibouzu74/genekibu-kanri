@@ -3,7 +3,7 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { useHostData } from '../../contexts/hostDataContext';
 import { buildOffsiteSessionItems } from '../../../utils/offsiteBuilderImport';
-import { projectBaseYmd } from '../../../utils/builderLessons';
+import { projectBaseYmd, usedDateLabels } from '../../utils/courseDates';
 
 // 本体の「🏫 他校舎の授業」を、この講習の日付に当たる分だけ他学年セッション
 // (講師不在) として取り込む。時刻つきなので重なる時限は自動で NG になる。
@@ -17,7 +17,12 @@ export default function OffsiteImport() {
     const today = new Date();
     const fallback = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     return buildOffsiteSessionItems(offsiteLessons, {
-      dateLabels: (project.dates || []).map((d) => d.label),
+      // どれかのタブが授業に使う日だけ (プールに残った前の季節の日付に
+      // 取り込まない)。並びはプール順のまま
+      dateLabels: (() => {
+        const used = usedDateLabels(project);
+        return (project.dates || []).map((d) => d.label).filter((l) => used.has(l));
+      })(),
       baseYmd: projectBaseYmd(project, fallback),
       holidays,
       teacherNames: (project.teachers || []).map((t) => t.name),

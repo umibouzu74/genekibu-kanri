@@ -71,9 +71,12 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!contextMenu || !el) return;
-    const rect = el.getBoundingClientRect();
-    const x = Math.max(8, Math.min(contextMenu.x, window.innerWidth - rect.width - 8));
-    const y = Math.max(8, Math.min(contextMenu.y, window.innerHeight - rect.height - 8));
+    // offsetWidth/Height は transform を含まない実寸。getBoundingClientRect だと
+    // 開くときの拡大アニメーション (0.95 倍) の途中の大きさを測り、2〜3px はみ出した
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    const x = Math.max(8, Math.min(contextMenu.x, window.innerWidth - width - 8));
+    const y = Math.max(8, Math.min(contextMenu.y, window.innerHeight - height - 8));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [contextMenu]);
@@ -160,7 +163,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }: Context
     ? makeKey(dateId, periodId, classId) : null;
 
   return (
-    <div ref={menuRef} role="menu" aria-label={type ? `${val} の一括操作` : 'セルの操作'} className="fixed bg-builder-surface border border-builder-border shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
+    <div ref={menuRef} role="menu" aria-label={type ? `${val} の一括操作` : 'セルの操作'} className="fixed bg-builder-surface border border-builder-border shadow-xl rounded z-[1000] text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
       {type ? (
         <>
           <div className="px-4 py-2 bg-builder-surface-alt border-b border-builder-border font-bold text-builder-ink-muted text-xs">{val} の一括操作</div>
