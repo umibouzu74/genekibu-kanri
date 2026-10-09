@@ -144,19 +144,22 @@ export function ReschedulePickerPopover({
       }
     }
     if (dow && targetTime) {
-      const teacher = targetTeacher || slot?.teacher || "";
-      const conflict = activeSlots.find(
-        (s) =>
-          s.day === dow &&
-          s.time === targetTime &&
-          (teacher ? splitTeacherField(s.teacher).includes(teacher) : false)
-      );
-      if (conflict) {
-        list.push(
-          `担当 ${teacher} は同時刻 (${targetTime}) に既に ${conflict.grade}${
-            conflict.cls && conflict.cls !== "-" ? conflict.cls : ""
-          } ${conflict.subj} を担当しています`
+      // 複数担当 (「香川·福江」) は 1 人ずつ見る。講師欄の文字列のまま比べると
+      // 誰の講師欄とも一致せず、重なりを見逃していた
+      for (const teacher of splitTeacherField(targetTeacher || slot?.teacher || "")) {
+        const conflict = activeSlots.find(
+          (s) =>
+            s.day === dow &&
+            s.time === targetTime &&
+            splitTeacherField(s.teacher).includes(teacher)
         );
+        if (conflict) {
+          list.push(
+            `担当 ${teacher} は同時刻 (${targetTime}) に既に ${conflict.grade}${
+              conflict.cls && conflict.cls !== "-" ? conflict.cls : ""
+            } ${conflict.subj} を担当しています`
+          );
+        }
       }
     }
     return list;

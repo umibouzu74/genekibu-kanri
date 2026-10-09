@@ -145,7 +145,7 @@ export default function SubjectManager() {
                       onClick={() => handleFillClick(tab)}
                       aria-label={`${tab.name} の全科目のコマ数を一括入力`}
                       title="この列の全科目を同じコマ数にします"
-                      className="text-builder-ink-ghost hover:text-builder-blue leading-none"
+                      className="px-0.5 py-0.5 rounded border border-builder-border text-builder-ink-muted hover:text-builder-blue hover:bg-builder-bg leading-none"
                     >⚡</button>
                     {tabs.length > 1 && (
                       <button
@@ -153,7 +153,7 @@ export default function SubjectManager() {
                         onClick={() => handleCopyCountsClick(tab)}
                         aria-label={`${tab.name} のコマ数を他の全タブへコピー`}
                         title="この列の値を他の全タブへコピーします"
-                        className="text-builder-ink-ghost hover:text-builder-blue leading-none"
+                        className="px-0.5 py-0.5 rounded border border-builder-border text-builder-ink-muted hover:text-builder-blue hover:bg-builder-bg leading-none"
                       >⧉</button>
                     )}
                     {classes.length >= 2 && (
@@ -166,7 +166,7 @@ export default function SubjectManager() {
                         title={perClass
                           ? 'クラス別のコマ数設定を解除して全クラス共通に戻します'
                           : 'クラスごとに別々のコマ数を設定します (学年混在タブ用)'}
-                        className={`leading-none ${perClass ? 'text-builder-blue' : 'text-builder-ink-ghost hover:text-builder-blue'}`}
+                        className={`px-0.5 py-0.5 rounded border leading-none ${perClass ? 'border-builder-blue text-builder-blue bg-builder-info-soft' : 'border-builder-border text-builder-ink-muted hover:text-builder-blue hover:bg-builder-bg'}`}
                       >▦</button>
                     )}
                   </span>
@@ -188,11 +188,15 @@ export default function SubjectManager() {
                 <button
                   onClick={() => moveUp(idx)}
                   disabled={idx === 0}
+                  aria-label={`${s} を上へ`}
+                  title={`${s} を上へ`}
                   className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
                 >▲</button>
                 <button
                   onClick={() => moveDown(idx)}
                   disabled={idx === commonSubjects.length - 1}
+                  aria-label={`${s} を下へ`}
+                  title={`${s} を下へ`}
                   className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
                 >▼</button>
               </div>
@@ -233,6 +237,8 @@ export default function SubjectManager() {
               })}
               <button
                 onClick={() => handleRemoveClick(s)}
+                aria-label={`${s} を削除`}
+                title={`${s} を削除`}
                 className="text-builder-ink-muted hover:text-builder-red text-sm px-1"
               >×</button>
             </div>

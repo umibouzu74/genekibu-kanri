@@ -250,6 +250,9 @@ describe("buildMonthHeaderHtml", () => {
     expect(html).toContain("追</b>追加授業");
     expect(html).toContain("講</b>講習");
     expect(html).toContain("外</b>講習期間の外部授業");
+    expect(html).toContain("他</b>他校舎の授業");
+    expect(html).toContain("休</b>コマ休講");
+    expect(html).toContain("合+</b>合同で他クラスも担当");
   });
 });
 

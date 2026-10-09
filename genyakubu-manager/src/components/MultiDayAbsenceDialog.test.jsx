@@ -61,7 +61,9 @@ describe("MultiDayAbsenceDialog", () => {
   });
 
   it("先生を選ぶまでは登録できない", () => {
-    renderDialog();
+    // 日付は既定 (今日) に任せない: 水曜に走ると 河野 (水) の 1 コマが対象に
+    // なってボタンが押せてしまう。2026-09-14 は月曜で 河野 の担当なし
+    renderDialog({ initial: { date: "2026-09-14" } });
     expect(screen.getByRole("button", { name: /件を欠勤にする/ }).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("河野"));
     expect(screen.getByRole("button", { name: /件を欠勤にする/ }).disabled).toBe(true);

@@ -98,6 +98,59 @@ describe("buildTeacherIcsContent", () => {
     expect(ical).toMatch(/SUMMARY:数学 中3/);
     expect(ical).toMatch(/講師: 堀上/);
   });
+
+  it("DESCRIPTION の改行は iCal の \\n 1 つ (バックスラッシュを二重にしない)", () => {
+    const ical = buildTeacherIcsContent("堀上", [baseSlot], CTX, NOW);
+    const line = ical.split("\r\n").find((l) => l.startsWith("DESCRIPTION:"));
+    expect(line).toBe("DESCRIPTION:講師: 堀上\\n教室: 101\\n備考: ");
+  });
+});
+
+describe("buildTeacherIcsContent — 他校舎の授業", () => {
+  // 2026-10-02 (金) に書き出す
+  const now = new Date("2026-10-02T12:00:00");
+  const offsiteLessons = [
+    { id: 3, teacher: "堀上", place: "村上高松", days: ["火", "木"], time: "14:50-15:40", startDate: "2026-10-01", endDate: "2026-10-13", skipDates: ["2026-10-08"] },
+    { id: 4, teacher: "堀上", place: "大手前丸亀", days: ["月", "水"], time: "13:30", startDate: "2026-10-14", memo: "3月まで？" },
+    { id: 5, teacher: "石原", place: "村上高松", days: ["火"], time: "14:50-15:40", startDate: "2026-10-01" },
+    // 終わった予定は書き出さない
+    { id: 6, teacher: "堀上", place: "X校", days: ["金"], time: "10:00-11:00", startDate: "2026-04-01", endDate: "2026-09-30" },
+  ];
+  const holidays = [{ id: 1, date: "2026-11-23", label: "勤労感謝の日", scope: ["全部"], targetGrades: [], subjKeywords: [] }];
+  const events = (ical) =>
+    ical
+      .split("BEGIN:VEVENT")
+      .slice(1)
+      .map((e) => e.split("END:VEVENT")[0]);
+
+  it("毎週の予定を RRULE (複数曜日・UNTIL は UTC) で書き、休みの日と休講日を EXDATE で抜く", () => {
+    // 休講日は画面と同じく sessionCtx (ctx.holidays) から読む
+    const ical = buildTeacherIcsContent("堀上", [], { holidays }, now, { offsiteLessons });
+    const ev = events(ical);
+    expect(ev).toHaveLength(2);
+    const [murakami, marugame] = ev;
+    // 今日 (10/2 金) 以降の最初の火・木 = 10/6
+    expect(murakami).toContain("DTSTART;TZID=Asia/Tokyo:20261006T145000");
+    expect(murakami).toContain("DTEND;TZID=Asia/Tokyo:20261006T154000");
+    expect(murakami).toContain("RRULE:FREQ=WEEKLY;BYDAY=TU,TH;UNTIL=20261013T145959Z");
+    expect(murakami).toContain("EXDATE;TZID=Asia/Tokyo:20261008T145000");
+    expect(murakami).toContain("SUMMARY:他校舎 村上高松");
+    expect(murakami).toContain("LOCATION:村上高松");
+    // 終了日未定は UNTIL なし。終了時刻未定は 1 時間で置いて件名に書く
+    expect(marugame).toContain("DTSTART;TZID=Asia/Tokyo:20261014T133000");
+    expect(marugame).toContain("DTEND;TZID=Asia/Tokyo:20261014T143000");
+    expect(marugame).toContain("RRULE:FREQ=WEEKLY;BYDAY=MO,WE\r\n");
+    expect(marugame).toContain("EXDATE;TZID=Asia/Tokyo:20261123T133000");
+    expect(marugame).toContain("SUMMARY:他校舎 大手前丸亀 (終了時刻未定)");
+    expect(marugame).toContain("3月まで？");
+  });
+
+  it("コマが無くても他校舎の授業があれば書き出す / どちらも無ければ null", () => {
+    expect(buildTeacherIcsContent("石原", [], {}, now, { offsiteLessons })).toContain(
+      "SUMMARY:他校舎 村上高松"
+    );
+    expect(buildTeacherIcsContent("片岡", [], {}, now, { offsiteLessons })).toBeNull();
+  });
 });
 
 // ─── 繰り返しの終わり (UNTIL) と抜け (EXDATE) ───────────────────────

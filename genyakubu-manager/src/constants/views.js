@@ -11,11 +11,20 @@ export const VIEWS = Object.freeze({
   SUBS: "subs",
   CONFIRMED_SUBS: "confirmed-subs",
   STAFF: "staff",
-  COMPARE: "compare",
+  // 授業時間の集計 (旧「講師比較」。期間内に講師ごとに教えた分)
+  MINUTES: "minutes",
   TIMETABLE: "timetable",
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",
   EVENTS: "events",
   BUILDER: "builder",
   REGULAR_BUILDER: "regular-builder",
+  // 附属コース (水曜) の月間予定: 時程・科目・確認テスト・学校メモ
+  FUZOKU_PLAN: "fuzoku-plan",
+  // 引継ぎメモ (責任者が日々書き溜めて後任に渡す。管理者だけが読める)
+  HANDOVER: "handover",
+  // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)
+  OFFSITE: "offsite",
+  // 予定表チェック (学校の予定表 Excel とシステムの休講・振替の突き合わせ)
+  YOTEIHYO: "yoteihyo",
 });

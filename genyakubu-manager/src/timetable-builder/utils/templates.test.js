@@ -95,3 +95,21 @@ describe('updateTemplate (N4a)', () => {
     expect(updateTemplate(list, { id: 999, project: proj('v2') })).toBe(list);
   });
 });
+
+describe('buildTemplatePayload — 出勤可能調査の回答は持ち越さない', () => {
+  it('講師の availability / availabilityMemo を外し、元の project は変えない', () => {
+    const project = {
+      name: 'p', snapshots: [], tabs: [],
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+          availability: { '7/29(水)': { '1限': 'ok' } }, availabilityMemo: 'メモ' },
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+    };
+    const payload = buildTemplatePayload(project);
+    expect(payload.teachers[0]).not.toHaveProperty('availability');
+    expect(payload.teachers[0]).not.toHaveProperty('availabilityMemo');
+    expect(payload.teachers[0].subjects).toEqual(['英語']);
+    expect(project.teachers[0].availability).toEqual({ '7/29(水)': { '1限': 'ok' } });
+  });
+});

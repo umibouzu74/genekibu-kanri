@@ -47,3 +47,10 @@ export function findSameDayHolidays(holidays, dates, criteria, opts = {}) {
   others.sort(byDate);
   return { exact, others };
 }
+
+// 一覧・注意書きで休講日の対象を短く言う
+// ("全部" / "中学部 中3" / "高校部 高1・高2 共テ・数学")。休講日の画面・
+// イベントカレンダー・予定表チェックの案で同じ書き方にするため、実体は
+// utils/eventTargets (イベントカレンダーのチップ用の short 版もある) に
+// 1 つだけ置き、ここからも引けるように再エクスポートする
+export { describeHolidayScope } from "./eventTargets";

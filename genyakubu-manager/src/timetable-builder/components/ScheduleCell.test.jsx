@@ -336,6 +336,83 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
     expect(td).toHaveAttribute('data-selected');
   });
 
+  it('出勤可能調査: プルダウンに ○ / △ / ? を添え、× は (NG:調査) で選べない', () => {
+    const availability = { '12/25(木)': { '1限': 'ok' } };
+    renderCell({
+      contextOverrides: {
+        project: {
+          teachers: [
+            { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], availability },
+            { name: '石原', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '12/25(木)': { '1限': 'maybe' } } },
+            // 回答はあるがこのマスは未記入
+            { name: '高松', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '12/26(金)': { '1限': 'ok' } } },
+            // 回答の無い講師には何も添えない
+            { name: '南條', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+            { name: '片岡', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '12/25(木)': { '1限': 'ng' } } },
+          ],
+          subjectColors: {},
+          combinedGroups: [],
+        },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語' } },
+        analysis: {
+          autoNgByTeacher: new Map([
+            ['片岡', new Map([[makeNgKey('12/25(木)', '1限'), { sessions: [], availability: true }]])],
+          ]),
+          // 今の調査に回答済みの講師 (useAnalysis の answeredTeacherNames)
+          surveyAnsweredTeachers: new Set(['堀上', '石原', '高松', '片岡']),
+        },
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    const text = (name) => options.find(o => o.value === name).textContent;
+    expect(text('堀上')).toBe('堀上 (○ 計0)');
+    expect(text('石原')).toBe('石原 (△ 計0)');
+    expect(text('高松')).toBe('高松 (? 計0)');
+    expect(text('南條')).toBe('南條 (計0)');
+    expect(text('片岡')).toBe('片岡 (NG:調査)');
+    expect(options.find(o => o.value === '片岡').disabled).toBe(true);
+  });
+
+  it('出勤可能調査: 前の季節の回答だけ残っている講師 (今の調査に未回答) には ? を付けない', () => {
+    renderCell({
+      contextOverrides: {
+        project: {
+          teachers: [
+            { name: '高松', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '7/29(水)': { '1限': 'ng' } } },
+          ],
+          subjectColors: {},
+          combinedGroups: [],
+        },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '高松' } },
+        analysis: { surveyAnsweredTeachers: new Set() },
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    expect(options.find(o => o.value === '高松').textContent).toBe('高松 (計0)');
+    expect(screen.queryByTitle(/高松 はこの時間/)).toBeNull();
+  });
+
+  it('出勤可能調査: 割り当てた講師が △ のマスなら目印を出す', () => {
+    renderCell({
+      contextOverrides: {
+        project: {
+          teachers: [
+            { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '12/25(木)': { '1限': 'maybe' } } },
+          ],
+          subjectColors: {},
+          combinedGroups: [],
+        },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+      },
+    });
+    expect(screen.getByTitle(/堀上 はこの時間「△ 相談」/)).toHaveTextContent('△');
+  });
+
   it('選択中はハイライトの薄表示 (opacity-40) より優先される', () => {
     renderCell({
       isSelected: true,

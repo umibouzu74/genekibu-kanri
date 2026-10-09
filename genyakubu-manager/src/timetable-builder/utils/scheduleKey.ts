@@ -19,11 +19,13 @@
 
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
-// 無依存モジュール (generationParams.js / dateGenerate.js / dateLabelUnify.js —
-// 最後者の依存も dateGenerate / labelRefs の無依存モジュールのみ) だけ。
+// 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
+// availabilityShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
+import { sanitizeAvailability } from './availabilityShape';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -670,6 +672,22 @@ export function normalizeTeacherFields(teachers: any): Teacher[] | any {
       if (!Array.isArray(nt[key])) {
         if (nt === t) nt = { ...t };
         nt[key] = [];
+        changed = true;
+      }
+    }
+    // 出勤可能調査の回答: 形の崩れたマス・日付は落とす (render の
+    // Object.keys / 記号の表示分岐で未知値が漏れないように)。メモは文字列のみ
+    {
+      const { value, changed: availChanged } = sanitizeAvailability(nt.availability);
+      if (availChanged) {
+        if (nt === t) nt = { ...t };
+        if (value) nt.availability = value;
+        else delete nt.availability;
+        changed = true;
+      }
+      if (nt.availabilityMemo !== undefined && (typeof nt.availabilityMemo !== 'string' || !nt.availabilityMemo.trim())) {
+        if (nt === t) nt = { ...t };
+        delete nt.availabilityMemo;
         changed = true;
       }
     }

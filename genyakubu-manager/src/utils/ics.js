@@ -15,6 +15,8 @@
 //     (isTaughtOn)
 // 代行・振替・コマ移動・特別時程の時刻読み替えは載せない (予定の時刻や
 // 日付そのものが変わるので、抜くだけでは表せない)。
+// その講師の他校舎の授業 (utils/offsiteLessons) も同じファイルに入れる
+// (期間・休みの日は他校舎の登録側が持つ。buildOffsiteEvents)。
 import {
   biweeklyDisplaySubject,
   getSlotTeachers,
@@ -24,6 +26,12 @@ import {
 } from "./biweekly";
 import { fmtDate, parseLocalDate } from "./dateHelpers";
 import { escapeIcal } from "./escape";
+import {
+  formatOffsitePeriod,
+  listOffsiteDates,
+  offsiteTimeRange,
+  sortOffsiteDays,
+} from "./offsiteLessons";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { getSlotCutoffRange, isSlotBeyondCutoff } from "./timetable";
 
@@ -177,6 +185,83 @@ function effectiveSubjectAndTeacher(slot, teacher, dateStr, ctx) {
   return { subject, teacherDisplay };
 }
 
+// ─── 他校舎の授業 (utils/offsiteLessons) ─────────────────────────────
+// 毎週の予定なので通常コマと同じく RRULE にする。コマと違って期間があるので
+// 終了日は UNTIL、休みの日 (skipDates) と塾の全体休講日 (keepOnHolidays で
+// なければ) は EXDATE で抜く。終了日未定は UNTIL を付けず、EXDATE は 1 年先
+// までの分だけ書く。終了時刻が未定 ("13:30") の予定は 1 時間の枠で置き、
+// 件名に「終了時刻未定」と書く。
+
+// 1 年先までの EXDATE を書く (終了日未定の予定)
+const OFFSITE_EXDATE_HORIZON_DAYS = 366;
+
+// fromStr 以降 (当日を含む) で days のどれかに当たる最初の日 ("YYYY-MM-DD")
+function firstMatchingDate(fromStr, days) {
+  const d = parseLocalDate(fromStr);
+  if (!d) return null;
+  for (let i = 0; i < 7; i++) {
+    if (days.includes(["日", "月", "火", "水", "木", "金", "土"][d.getDay()])) return fmtDate(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return null;
+}
+
+function buildOffsiteEvents(teacher, offsiteLessons, holidays, now, uid) {
+  const todayStr = fmtDate(now);
+  const events = [];
+  for (const rec of offsiteLessons || []) {
+    if (rec?.teacher !== teacher) continue;
+    if (rec.endDate && rec.endDate < todayStr) continue;
+    const range = offsiteTimeRange(rec.time);
+    const days = sortOffsiteDays(rec.days).filter((d) => ICAL_DAYS[d]);
+    if (!range || days.length === 0 || !rec.startDate) continue;
+    const first = firstMatchingDate(rec.startDate > todayStr ? rec.startDate : todayStr, days);
+    if (!first) continue;
+    if (rec.endDate && first > rec.endDate) continue;
+    const sh = Math.floor(range.start / 60);
+    const sm = range.start % 60;
+    const endMin = Math.min(range.end ?? range.start + 60, 23 * 60 + 59);
+    const exdates = listOffsiteDates(rec, {
+      from: first,
+      to: rec.endDate || addDays(first, OFFSITE_EXDATE_HORIZON_DAYS),
+      holidays,
+    })
+      .filter((x) => x.status !== "on")
+      .map((x) => icalDateTime(x.date, sh, sm));
+    // DTSTART が TZID 付きなので UNTIL は UTC で書く (RFC 5545)。
+    // 終了日 23:59:59 JST = 同日 14:59:59Z
+    const until = rec.endDate ? `;UNTIL=${rec.endDate.replace(/-/g, "")}T145959Z` : "";
+    const openEnd = range.end == null;
+    const desc = [
+      "他校舎の授業",
+      `期間: ${formatOffsitePeriod(rec)}`,
+      openEnd ? "終了時刻は未定 (仮に 1 時間で置いています)" : null,
+      rec.memo || null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    events.push(
+      [
+        "BEGIN:VEVENT",
+        `UID:offsite-${rec.id}-${uid}@genyakubu`,
+        `DTSTART;TZID=Asia/Tokyo:${icalDateTime(first, sh, sm)}`,
+        `DTEND;TZID=Asia/Tokyo:${icalDateTime(first, Math.floor(endMin / 60), endMin % 60)}`,
+        `RRULE:FREQ=WEEKLY;BYDAY=${days.map((d) => ICAL_DAYS[d]).join(",")}${until}`,
+        // 1 日 1 行 (コマの EXDATE と同じ。1 行に並べると 75 オクテットを超えて
+        // 折り返しが要る)
+        ...exdates.map((x) => `EXDATE;TZID=Asia/Tokyo:${x}`),
+        `SUMMARY:${escapeIcal(`他校舎 ${rec.place}${openEnd ? " (終了時刻未定)" : ""}`)}`,
+        `DESCRIPTION:${escapeIcal(desc)}`,
+        `LOCATION:${escapeIcal(rec.place)}`,
+        "END:VEVENT",
+      ]
+        .filter(Boolean)
+        .join("\r\n")
+    );
+  }
+  return events;
+}
+
 /**
  * 副作用 (Blob 書き出し) のない純粋な ICS テキスト生成関数。
  * テスト容易性と再利用性のために `exportTeacherIcs` から切り出してある。
@@ -189,11 +274,18 @@ function effectiveSubjectAndTeacher(slot, teacher, dateStr, ctx) {
  *   adjustments / biweeklyAnchors …)。欠けている項目はその判定をしない
  *   (例: timetables も displayCutoff も無ければ UNTIL は付かない)
  * @param {Date} [now]
+ * @param {{offsiteLessons?: object[]}} [opts] その講師の他校舎の授業も入れる
+ *   (休講日は ctx.holidays を使う)
  * @returns {string | null} 書き出す予定が 1 件も無ければ null
  */
-export function buildTeacherIcsContent(teacher, slots, ctx = {}, now = new Date()) {
+export function buildTeacherIcsContent(
+  teacher,
+  slots,
+  ctx = {},
+  now = new Date(),
+  { offsiteLessons = [] } = {}
+) {
   const teacherSlots = slots.filter((s) => isSlotForTeacher(s, teacher));
-  if (teacherSlots.length === 0) return null;
 
   // 開講日 1 限のオリエンは「授業」ではないが、その時間に講師が塞がって
   // いることは変わらない。講師別の月間カレンダー (MonthView) も消さないので
@@ -284,11 +376,15 @@ export function buildTeacherIcsContent(teacher, slots, ctx = {}, now = new Date(
         (d) => `EXDATE;TZID=Asia/Tokyo:${icalDateTime(d, startH, startM)}`
       ),
       `SUMMARY:${escapeIcal(subject)} ${escapeIcal(s.grade)}${s.cls && s.cls !== "-" ? s.cls : ""}`,
-      `DESCRIPTION:${escapeIcal(`講師: ${teacherDisplay}\\n教室: ${s.room || ""}\\n備考: ${s.note || ""}`)}`,
+      // 改行は本物の改行で渡し、escapeIcal に iCal の改行記法へ変換させる
+      // (以前は「バックスラッシュ + n」の 2 文字を渡していて、escapeIcal が
+      // バックスラッシュを二重にするため、カレンダーに「\n」が文字のまま出ていた)
+      `DESCRIPTION:${escapeIcal(`講師: ${teacherDisplay}\n教室: ${s.room || ""}\n備考: ${s.note || ""}`)}`,
       s.room ? `LOCATION:${escapeIcal(s.room)}` : null,
       "END:VEVENT",
     ].filter(Boolean).join("\r\n"));
   }
+  events.push(...buildOffsiteEvents(teacher, offsiteLessons, heldCtx.holidays || [], now, uid));
   if (events.length === 0) return null;
 
   return [
@@ -306,8 +402,8 @@ export function buildTeacherIcsContent(teacher, slots, ctx = {}, now = new Date(
 
 // ICS をダウンロードさせる。書き出す予定が無ければ何もせず false
 // (呼び出し側で「書き出す授業がありません」を出す)。
-export function exportTeacherIcs(teacher, slots, ctx = {}) {
-  const ical = buildTeacherIcsContent(teacher, slots, ctx);
+export function exportTeacherIcs(teacher, slots, ctx = {}, opts = {}) {
+  const ical = buildTeacherIcsContent(teacher, slots, ctx, new Date(), opts);
   if (ical == null) return false;
 
   const blob = new Blob([ical], { type: "text/calendar;charset=utf-8" });

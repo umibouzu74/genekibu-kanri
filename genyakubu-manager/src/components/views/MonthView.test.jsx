@@ -154,6 +154,33 @@ describe("MonthView 振替で入るコマ", () => {
     expect(screen.getAllByText("振")).toHaveLength(2);
   });
 
+  // 振替先の担当を `adj.targetTeacher || slot.teacher` の完全一致で見ていた
+  // ため、複数担当のコマ・隔週のパートナーの週は振替先のカードが丸ごと
+  // 消えていた (2026-10-03)。振替元の 12/7 と振替先の 12/4 で 2 枚出る
+  it("複数担当のコマの振替は、担当の 1 人から見ても振替先にカードを出す", () => {
+    render(
+      <MonthView
+        {...decProps}
+        slots={[{ ...SLOT, teacher: "堀上·河野" }]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.getAllByText("振")).toHaveLength(2);
+  });
+
+  it("隔週コマの B 週の振替は、パートナーの月間の振替先に出す", () => {
+    // 11/30 (月) を A 週の起点にすると 12/7 は B 週 = パートナー (堀上) の週
+    render(
+      <MonthView
+        {...decProps}
+        slots={[{ ...SLOT, teacher: "河野", note: "隔週(堀上)" }]}
+        biweeklyAnchors={[{ date: "2026-11-30" }]}
+        adjustments={[RESCHEDULE]}
+      />
+    );
+    expect(screen.getAllByText("振")).toHaveLength(2);
+  });
+
   it("その日のコマが全部よそへ行ったら日付の横に「振替で休み」を出す", () => {
     render(<MonthView {...decProps} adjustments={[RESCHEDULE]} />);
     // 12/7 (月) だけが空になる。他の月曜は通常どおりなので 1 日分だけ
@@ -532,5 +559,96 @@ describe("MonthView 日曜列と過ぎた日", () => {
     // 7/1〜7/14 が過去、7/15 (今日) 以降は通常
     expect(cells.slice(0, 14).every((c) => c.classList.contains("month-past"))).toBe(true);
     expect(cells.slice(14).some((c) => c.classList.contains("month-past"))).toBe(false);
+  });
+});
+
+// 他校舎の授業 (utils/offsiteLessons)。講師の予定として日付ごとのカードに
+// 出し、塾の休講日 (全体) は既定で他校舎も休み。カレンダーの上に一覧と登録の
+// 導線を出す。
+describe("MonthView 他校舎の授業", () => {
+  const OFFSITE = [
+    { id: 3, teacher: "堀上", place: "村上高松", days: ["火", "木"], time: "14:50-15:40", startDate: "2026-10-01", endDate: "2026-10-13" },
+    { id: 4, teacher: "堀上", place: "大手前丸亀", days: ["月", "水"], time: "13:30", startDate: "2026-10-14" },
+    // 他人の予定は出さない
+    { id: 5, teacher: "石原", place: "村上高松", days: ["火", "木"], time: "14:50-15:40", startDate: "2026-10-01" },
+  ];
+  const MON_SLOT = {
+    id: 1, day: "月", time: "19:00-20:20", grade: "中3", cls: "S", room: "602", subj: "数学", teacher: "堀上", note: "",
+  };
+  const octProps = { ...baseProps, year: 2026, month: 10, slots: [MON_SLOT], offsiteLessons: OFFSITE };
+  const cellOf = (container, d) =>
+    [...container.querySelectorAll(".month-print-cell")].find((c) =>
+      c.textContent.startsWith(String(d))
+    );
+  const cardTimes = (cell) => [...cell.querySelectorAll(".month-print-card b")].map((b) => b.textContent);
+
+  afterEach(() => vi.useRealTimers());
+
+  it("行く日にだけ「他」カードを出し、通常コマと開始時刻順に並べる", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 2, 12));
+    const { container } = render(
+      <MonthView
+        {...octProps}
+        holidays={[{ id: 1, date: "2026-10-08", label: "臨時休講", scope: ["全部"], targetGrades: [], subjKeywords: [] }]}
+      />
+    );
+    // 10/6 (火): 村上高松 14:50
+    expect(cardTimes(cellOf(container, 6))).toEqual(["14:50"]);
+    // 10/8 (木) は塾の全体休講日なので他校舎も休み
+    expect(cardTimes(cellOf(container, 8))).toEqual([]);
+    // 10/15 (木) は村上高松の終了後
+    expect(cardTimes(cellOf(container, 15))).toEqual([]);
+    // 10/19 (月): 大手前丸亀 13:30〜 (終了未定) → 19:00 の通常コマ
+    const oct19 = cellOf(container, 19);
+    expect(cardTimes(oct19)).toEqual(["13:30〜", "19:00"]);
+    expect(oct19.textContent).toContain("大手前丸亀");
+    // 村上高松 10/1・10/6・10/13 (10/8 は休講) + 大手前丸亀 10/14〜10/28 の月水 5 日
+    expect(screen.getAllByText("他").length).toBe(3 + 5);
+  });
+
+  it("カレンダーの上にこの講師の予定を並べ、押すとその 1 件を開く。管理者には登録の導線", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 2, 12));
+    const onOpenOffsite = vi.fn();
+    render(<MonthView {...octProps} isAdmin onOpenOffsite={onOpenOffsite} />);
+    const row = screen.getByLabelText("堀上 の他校舎の授業");
+    expect(row.textContent).toContain("村上高松 火・木 14:50-15:40");
+    expect(row.textContent).toContain("大手前丸亀 月・水 13:30〜 (終了未定)");
+    expect(row.textContent).not.toContain("石原");
+    fireEvent.click(screen.getByRole("button", { name: /大手前丸亀 月・水/ }));
+    expect(onOpenOffsite).toHaveBeenLastCalledWith({ id: 4 });
+    fireEvent.click(screen.getByRole("button", { name: "＋ 他校舎の授業を登録" }));
+    expect(onOpenOffsite).toHaveBeenLastCalledWith({ teacher: "堀上" });
+    // カードからも開ける
+    fireEvent.click(screen.getAllByTitle(/\[他校舎の授業\] 村上高松/)[0]);
+    expect(onOpenOffsite).toHaveBeenLastCalledWith({ id: 3 });
+  });
+
+  it("閲覧者で予定が無ければ一覧の行は出さない", () => {
+    render(<MonthView {...octProps} offsiteLessons={[]} />);
+    expect(screen.queryByLabelText("堀上 の他校舎の授業")).toBeNull();
+  });
+
+  it("特訓が残る日は「代行で休み」にしない (特訓も塾に来る仕事)", () => {
+    const { container } = render(
+      <MonthView
+        {...baseProps}
+        year={2026}
+        month={12}
+        slots={[MON_SLOT]}
+        subs={[{ id: 1, date: "2026-12-07", slotId: 1, originalTeacher: "堀上", substitute: "河野", status: "confirmed" }]}
+        examPeriods={[{ id: 1, name: "期末", startDate: "2026-12-07", endDate: "2026-12-11", targetGrades: [], stopsClasses: false }]}
+        examPrepSchedules={[
+          {
+            examPeriodId: 1,
+            days: [{ date: "2026-12-07", periods: [{ no: 1, start: "14:00", end: "15:00" }], assignments: { 堀上: [1] } }],
+          },
+        ]}
+      />
+    );
+    const dec7 = cellOf(container, 7);
+    expect(dec7.textContent).toContain("特訓");
+    expect(dec7.textContent).not.toContain("代行で休み");
   });
 });

@@ -84,4 +84,42 @@ describe("CommandPalette", () => {
     fireEvent.click(opts[1]);
     expect(onSelectTeacher).toHaveBeenCalledWith("福江");
   });
+
+  describe("引継ぎメモ", () => {
+    const NOTES = [
+      { id: 1, date: "2026-10-01", category: "事務", title: "事務よりズバリ的中の提出催促", body: "9月の会議で告知済み" },
+      { id: 2, date: "2026-04-01", category: "設備・システム", title: "鍵の置き場所", pinned: true },
+    ];
+
+    it("管理者なら中身を検索でき、選ぶとそのメモを開く", () => {
+      const onOpenHandoverNote = vi.fn();
+      renderPalette({ canUseAdminData: true, handoverNotes: NOTES, onOpenHandoverNote });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "会議" } });
+      fireEvent.click(screen.getByRole("option", { name: /ズバリ的中の提出催促.*2026\/10\/1/ }));
+      expect(onOpenHandoverNote).toHaveBeenCalledWith(1);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "鍵" } });
+      expect(screen.getByRole("option", { name: /鍵の置き場所.*いつでも必要なこと/ })).toBeTruthy();
+    });
+
+    it("「引継ぎメモを書く」でダイアログを開ける", () => {
+      const onOpenHandoverAdd = vi.fn();
+      renderPalette({ canUseAdminData: true, onOpenHandoverAdd });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "引継ぎ" } });
+      fireEvent.click(screen.getByRole("option", { name: /引継ぎメモを書く/ }));
+      expect(onOpenHandoverAdd).toHaveBeenCalled();
+    });
+
+    it("閲覧者には中身も操作も出さない", () => {
+      renderPalette({
+        canUseAdminData: false,
+        handoverNotes: NOTES,
+        onOpenHandoverNote: vi.fn(),
+        onOpenHandoverAdd: vi.fn(),
+      });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "引継ぎ" } });
+      expect(screen.queryByRole("option", { name: /引継ぎメモ/ })).toBeNull();
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "会議" } });
+      expect(screen.queryByRole("option", { name: /ズバリ/ })).toBeNull();
+    });
+  });
 });

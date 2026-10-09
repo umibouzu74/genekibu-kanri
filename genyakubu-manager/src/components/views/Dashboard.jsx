@@ -86,6 +86,9 @@ export function Dashboard({
   teacherSubjects,
   extraLessons = [],
   daySchedules = [],
+  // 他校舎の授業 (その日に他校舎へ出ている講師をバナーで出す・重なり判定)
+  offsiteLessons = [],
+  onOpenOffsite,
   saveSubs,
   onJumpToEventCalendar,
   onJumpToSubs,
@@ -298,6 +301,8 @@ export function Dashboard({
           sessionOverrides={sessionOverrides}
           extraLessons={extraLessons}
           daySchedules={daySchedules}
+          offsiteLessons={offsiteLessons}
+          onOpenOffsite={onOpenOffsite}
           dashboardMode
           onSelectTeacher={onSelectTeacher}
           onEditExtraLesson={onEditExtraLesson}
@@ -314,6 +319,9 @@ export function Dashboard({
           specialEvents={specialEvents}
           extraLessons={extraLessons}
           daySchedules={daySchedules}
+          offsiteLessons={offsiteLessons}
+          onOpenOffsite={onOpenOffsite}
+          teacherKana={teacherKana}
           holidaysFor={holidaysFor}
           examPeriodsFor={examPeriodsFor}
           specialEventsFor={specialEventsFor}

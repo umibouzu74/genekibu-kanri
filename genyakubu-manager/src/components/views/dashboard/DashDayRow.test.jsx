@@ -228,3 +228,44 @@ describe("DashDayRow の追加授業バナー", () => {
     expect(screen.queryByRole("button", { name: /プレップ個別指導/ })).toBeNull();
   });
 });
+
+// 他校舎の授業 (utils/offsiteLessons): その日に誰が他校舎へ出ているかを
+// バナーで出し、確かに重なるコマには講師の重なりとして出す
+describe("DashDayRow の他校舎の授業", () => {
+  const MURAKAMI = { id: 3, teacher: "石原", place: "村上高松", days: ["金"], time: "14:50-15:40", startDate: "2026-10-01" };
+  const KATAOKA = { ...MURAKAMI, id: 4, teacher: "片岡" };
+  const MARUGAME = { id: 5, teacher: "堀上", place: "大手前丸亀", days: ["金"], time: "13:30", startDate: "2026-10-01" };
+
+  it("行き先 × 時刻ごとに講師をよみ順でまとめ、講師名から開ける", () => {
+    const onOpenOffsite = vi.fn();
+    renderRow({
+      adjustments: [],
+      offsiteLessonsForDate: [MARUGAME, KATAOKA, MURAKAMI],
+      teacherKana: { 石原: "いしはら", 片岡: "かたおか" },
+      onOpenOffsite,
+    });
+    const banner = screen.getByRole("note", { name: "他校舎の授業" });
+    expect(banner.textContent).toContain("13:30〜 (終了未定)大手前丸亀堀上");
+    expect(banner.textContent).toContain("14:50-15:40村上高松石原片岡");
+    fireEvent.click(screen.getByRole("button", { name: "片岡" }));
+    expect(onOpenOffsite).toHaveBeenCalledWith(4);
+  });
+
+  it("他校舎と確かに重なるコマには ⚠ の行を出す (終了未定の後のコマは出さない)", () => {
+    const S1 = { ...SLOT, id: 21, day: "金", time: "15:00-15:50", teacher: "石原", subj: "英語", cls: "A" };
+    const S2 = { ...SLOT, id: 22, day: "金", time: "19:00-20:20", teacher: "堀上" };
+    renderRow({
+      slots: [S1, S2],
+      adjustments: [],
+      sessionCtx: { allSlots: [S1, S2] },
+      offsiteLessonsForDate: [MURAKAMI, MARUGAME],
+    });
+    expect(screen.getByText("⚠ 石原: 他校舎 村上高松 と重複")).toBeTruthy();
+    expect(screen.queryByText(/堀上: 他校舎/)).toBeNull();
+  });
+
+  it("予定が無ければバナーを出さない", () => {
+    renderRow({ adjustments: [] });
+    expect(screen.queryByRole("note", { name: "他校舎の授業" })).toBeNull();
+  });
+});

@@ -61,3 +61,8 @@ export function exportSubsCsv(subs, slotMap) {
   });
   downloadCsv(toCsv(headers, rows), "substitutions.csv");
 }
+
+// 見出し + 行の表をそのまま CSV で保存する (授業時間の集計など)
+export function downloadTableCsv(headers, rows, filename) {
+  downloadCsv(toCsv(headers, rows), filename);
+}

@@ -210,7 +210,13 @@ export function DayScheduleManager({
   const applyPreset = (key) => {
     const grades = targetGrades.length > 0 ? targetGrades : fuzokuGrades;
     if (targetGrades.length === 0) setTargetGrades(grades);
-    const base = collectTargetTimes(activeSlotsForDate, grades);
+    // プリセットの読み替え元は授業の時間帯だけ。確認テスト (21:00-21:30) は
+    // 据え置きが要件で、授業が 3 コマ以下の日に混ぜると「先頭 4 コマ」に
+    // 入って 20:00 へ読み替えてしまう (附属の授業予定の判定とも揃える)
+    const base = collectTargetTimes(
+      activeSlotsForDate.filter((s) => !/テスト/.test(s.subj || "")),
+      grades
+    );
     const prefix = grades.length > 0 && grades.every((g) => g.startsWith("附")) ? "附属 " : "";
     if (key === "compress") {
       const edits = {};

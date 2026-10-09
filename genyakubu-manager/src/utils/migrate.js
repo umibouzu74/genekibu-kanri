@@ -93,6 +93,60 @@ export const migrateDaySchedules = (arr) =>
       }))
     : arr;
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isPlainObject = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * 確認テスト 1 件 (その日・その学年) を整える。形にならないものは null。
+ * 「なし」は none: true (空配列は RTDB が消すので意味を持たせない)。
+ * none と subjects が両方あるときは none を採る (明示的に「なし」と
+ * 決めたものを、残骸の科目で上書きしない)。
+ */
+export const normalizeFuzokuTestEntry = (e) => {
+  if (!isPlainObject(e)) return null;
+  if (e.none === true) return { none: true };
+  const list = Array.isArray(e.subjects) ? e.subjects : [];
+  const subjects = [];
+  for (const s of list) {
+    const v = typeof s === "string" ? s.trim() : "";
+    if (v && !subjects.includes(v)) subjects.push(v);
+  }
+  return subjects.length > 0 ? { subjects } : null;
+};
+
+/**
+ * 附属の授業予定 (fuzokuPlan: 学校メモ + 確認テストの手動指定) を整える。
+ * RTDB は空の map を消して返すので notes / tests を必ず補う。日付でない
+ * キー・中身の空なメモ・形にならない科目指定は捨てる (冪等)。
+ * undefined を含めない (Firebase の set() が例外を投げる)。
+ */
+export const migrateFuzokuPlan = (raw) => {
+  const src = isPlainObject(raw) ? raw : {};
+  const notes = {};
+  if (isPlainObject(src.notes)) {
+    for (const [date, n] of Object.entries(src.notes)) {
+      if (!ISO_DATE_RE.test(date) || !isPlainObject(n)) continue;
+      const bus = typeof n.bus === "string" ? n.bus.trim() : "";
+      const memo = typeof n.memo === "string" ? n.memo.trim() : "";
+      if (!bus && !memo) continue;
+      notes[date] = { ...(bus ? { bus } : {}), ...(memo ? { memo } : {}) };
+    }
+  }
+  const tests = {};
+  if (isPlainObject(src.tests)) {
+    for (const [date, byGrade] of Object.entries(src.tests)) {
+      if (!ISO_DATE_RE.test(date) || !isPlainObject(byGrade)) continue;
+      const out = {};
+      for (const [grade, e] of Object.entries(byGrade)) {
+        const entry = normalizeFuzokuTestEntry(e);
+        if (grade && entry) out[grade] = entry;
+      }
+      if (Object.keys(out).length > 0) tests[date] = out;
+    }
+  }
+  return { notes, tests };
+};
+
 /**
  * Ensure displayCutoff carries a `cohorts` array. Firebase RTDB discards
  * empty arrays on write, and data saved before v14 predates the field, so

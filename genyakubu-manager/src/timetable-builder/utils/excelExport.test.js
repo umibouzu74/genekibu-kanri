@@ -1223,6 +1223,46 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
   });
 });
 
+describe('buildTeacherWorkbook — 前の季節の日付が残った project', () => {
+  // 夏期の project を冬期に作り替え: プールに夏の日付と予備校が残っていて、
+  // タブは冬の日付だけを使う
+  function makeLeftoverProject() {
+    return makeProject({
+      dates: [{ id: 1, label: '7/29(水)' }, { id: 2, label: '12/25(金)' }, { id: 3, label: '1/7(木)' }],
+      periods: [{ id: 1, label: '1限 (13:00~13:45)' }],
+      tabs: [{
+        id: 1, name: '中3',
+        config: {
+          classes: [{ id: 1, label: '３S' }],
+          subjectCounts: { '英語': 2 },
+          activeDateIds: [2, 3],
+        },
+        schedule: {
+          [makeKey(2, 1, 1)]: { subject: '英語', teacher: '堀上' },
+          [makeKey(3, 1, 1)]: { subject: '英語', teacher: '堀上' },
+        },
+      }],
+      externalSessions: [
+        { id: 1, date: '7/29(水)', teacherName: '堀上', label: '', memo: '予備校', startTime: '09:00', endTime: '10:30' },
+        { id: 2, date: '1/7(木)', teacherName: '堀上', label: '', memo: '予備校', startTime: '09:00', endTime: '10:30' },
+      ],
+    });
+  }
+
+  it('講師別シートに使われない日の外部授業を載せない (先頭に夏の予備校が並ばない)', () => {
+    const ws = buildTeacherWorkbook(makeLeftoverProject()).getWorksheet('堀上');
+    // データ行 (行 3〜)。その下のクラス別回数の 1 行まとめは見ない
+    const dates = [3, 4, 5, 6].map(r => ws.getCell(r, 1).value);
+    expect(dates).toEqual(['12/25(金)', '1/7(木)', '1/7(木)', null]);
+    expect(String(ws.getCell(1, 1).value)).toContain('期間 12/25(金)〜1/7(木)');
+  });
+
+  it('クラス別回数まとめの期間も、タブが使う日の初日〜最終日', () => {
+    const ws = buildTeacherWorkbook(makeLeftoverProject()).worksheets[0];
+    expect(String(ws.getCell(1, 1).value)).toContain('期間 12/25(金)〜1/7(木)');
+  });
+});
+
 describe('buildTeacherWorkbook — オートフィルタ (学年(タブ) 列での絞り込み)', () => {
   it('個人シートのヘッダ行 (行 2) 全列にオートフィルタが付く', () => {
     const wb = buildTeacherWorkbook(makeProject());

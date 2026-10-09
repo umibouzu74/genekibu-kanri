@@ -17,6 +17,7 @@ import { validateProjectShape } from '../utils/projectSchema';
 import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
 import { addTemplate, loadTemplates, persistTemplates } from '../utils/templates';
 import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
+import { stripAvailability } from '../utils/availabilityShape';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
@@ -46,7 +47,8 @@ export function useJsonIO({
       if (typeof v === 'number' && Number.isFinite(v)) generationParams[key] = v;
     });
     const defaults = {
-      teachers: project.teachers,
+      // 出勤可能調査の回答は季節ごとのものなので初期値に含めない
+      teachers: stripAvailability(project.teachers),
       config,
       subjects: project.subjects,
       subjectColors: project.subjectColors,

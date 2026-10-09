@@ -3,8 +3,9 @@ import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
-import { examClassExceptionsOnDate } from "../../../utils/scheduleHelpers";
+import { examClassExceptionsOnDate, isFullDayHoliday } from "../../../utils/scheduleHelpers";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
+import { OffsiteLessonBanner } from "../../OffsiteLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
 import { SlotCancelBanner } from "../../SlotCancelBanner";
@@ -33,6 +34,11 @@ export function DashDayRow({
   specialEventsForDate = [],
   extraLessonsForDate = [],
   daySchedulesForDate = [],
+  // その日に他校舎へ授業に出ている講師 (offsiteLessonsOnDate 済み)。
+  // バナーで出し、講師の重なり判定にも入れる
+  offsiteLessonsForDate = [],
+  onOpenOffsite,
+  teacherKana,
   sessionCtx,
   isToday = false,
   // 管理者だけ渡す。日付帯の右端から「この日の欠勤組み換え」を開ける
@@ -99,17 +105,13 @@ export function DashDayRow({
         biweeklyAnchors: sessionCtx?.biweeklyAnchors,
         holidays: sessionCtx?.holidays,
         examPeriods: sessionCtx?.examPeriods,
+        // 既にこの日の分に絞ってあるので休講日の判定は済んでいる
+        offsiteLessons: offsiteLessonsForDate,
       })
     );
-  }, [date, slots, subs, adjustments, daySchedulesForDate, sessionCtx]);
+  }, [date, slots, subs, adjustments, daySchedulesForDate, sessionCtx, offsiteLessonsForDate]);
 
-  const fullOff = hols.some((h) => {
-    const sc = h.scope || ["全部"];
-    if (!sc.includes("全部")) return false;
-    if ((h.targetGrades || []).length > 0) return false;
-    if ((h.subjKeywords || []).length > 0) return false;
-    return true;
-  });
+  const fullOff = hols.some(isFullDayHoliday);
   const offDepts = [
     ...new Set(
       hols
@@ -322,8 +324,14 @@ export function DashDayRow({
         lessons={extraLessonsForDate}
         onEditExtraLesson={onEditExtraLesson}
       />
+      {/* 他校舎の授業 (塾の授業ではない、講師の予定)。その日に誰が居ないか */}
+      <OffsiteLessonBanner
+        lessons={offsiteLessonsForDate}
+        teacherKana={teacherKana}
+        onOpen={onOpenOffsite}
+      />
       {!fullOff && <SlotCancelBanner items={cancelledSlots} />}
-      <RescheduleInBanner items={incomingReschedules} />
+      <RescheduleInBanner items={incomingReschedules} teacherCtx={sessionCtx} />
       {!fullOff && emptiedByReschedule && (
         <RescheduleOutBanner items={outgoingReschedules} />
       )}

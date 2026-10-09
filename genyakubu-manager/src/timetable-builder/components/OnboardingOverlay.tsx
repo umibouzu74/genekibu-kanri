@@ -40,7 +40,7 @@ export default function OnboardingOverlay({ open, onClose }: OnboardingOverlayPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 no-print"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 no-print"
       onClick={(e) => {
         // 背景クリックで閉じる (dontShowAgain=false で当該セッションのみ閉じる)
         if (e.target === e.currentTarget) onClose?.({ dontShowAgain: false });

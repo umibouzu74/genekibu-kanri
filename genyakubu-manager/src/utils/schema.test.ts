@@ -7,7 +7,10 @@ import {
   isExamPeriod,
   isExamPrepSchedule,
   isExtraLesson,
+  isFuzokuPlan,
+  isHandoverNote,
   isHoliday,
+  isOffsiteLesson,
   isPartTimeStaffObject,
   isScheduleAdjustment,
   isSlot,
@@ -1023,6 +1026,110 @@ describe("v15 → v16 migration: daySchedules 初期化", () => {
     });
     expect(v.ok).toBe(false);
     expect(v.error).toContain("daySchedules[0]");
+  });
+});
+
+describe("v18 → v19: fuzokuPlan (附属の授業予定)", () => {
+  const plan = {
+    notes: { "2026-10-07": { bus: "12:30×2 12:40×1", memo: "3時間授業" } },
+    tests: { "2026-10-07": { 附中1: { subjects: ["英", "数"] }, 附中2: { none: true } } },
+  };
+
+  it("旧いバックアップには既定値を埋めない (読み込んでも今のメモを消さない)", () => {
+    const out = migrateExportBundle({ schemaVersion: 18, slots: [] }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect("fuzokuPlan" in out).toBe(false);
+    expect(validateExportBundle(out).ok).toBe(true);
+  });
+
+  it("既存の fuzokuPlan はそのまま通る", () => {
+    const out = migrateExportBundle({ schemaVersion: 18, fuzokuPlan: plan }) as Record<
+      string,
+      unknown
+    >;
+    expect(out.fuzokuPlan).toEqual(plan);
+    expect(validateExportBundle(out).ok).toBe(true);
+  });
+
+  it("isFuzokuPlan: RTDB が消した空の map は許す / 形の崩れたものは弾く", () => {
+    expect(isFuzokuPlan(plan)).toBe(true);
+    expect(isFuzokuPlan({})).toBe(true);
+    expect(isFuzokuPlan({ notes: { "10/7": { bus: "15:30" } } })).toBe(false);
+    expect(isFuzokuPlan({ notes: { "2026-10-07": { bus: 1530 } } })).toBe(false);
+    expect(isFuzokuPlan({ tests: { "2026-10-07": { 附中1: { subjects: "英数" } } } })).toBe(false);
+    expect(isFuzokuPlan({ tests: { "2026-10-07": { 附中1: { none: "yes" } } } })).toBe(false);
+    expect(isFuzokuPlan([])).toBe(false);
+  });
+
+  it("validateExportBundle rejects malformed fuzokuPlan", () => {
+    const v = validateExportBundle({ fuzokuPlan: { notes: [] } });
+    expect(v.ok).toBe(false);
+    expect(v.error).toContain("fuzokuPlan");
+  });
+});
+
+describe("v19 → v20: handoverNotes (引継ぎメモ)", () => {
+  const note = { id: 1, date: "2026-10-01", category: "事務", title: "ズバリ的中の提出催促" };
+
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 19 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("handoverNotes");
+  });
+
+  it("isHandoverNote: 必須 (id・日付・見出し・分類) と任意項目の型を見る", () => {
+    expect(isHandoverNote(note)).toBe(true);
+    expect(isHandoverNote({ ...note, body: "9月の会議で告知済み", annual: true })).toBe(true);
+    expect(isHandoverNote({ ...note, title: " " })).toBe(false);
+    expect(isHandoverNote({ ...note, date: "10/1" })).toBe(false);
+    expect(isHandoverNote({ ...note, annual: "yes" })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた handoverNotes を弾く", () => {
+    expect(validateExportBundle({ handoverNotes: [note] }).ok).toBe(true);
+    const v = validateExportBundle({ handoverNotes: [note, { id: 2 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("handoverNotes[1]");
+  });
+});
+
+describe("v20 → v21: offsiteLessons (他校舎の授業)", () => {
+  const rec = {
+    id: 1,
+    teacher: "石原",
+    place: "村上高松",
+    days: ["火", "木"],
+    time: "14:50-15:40",
+    startDate: "2026-10-01",
+  };
+
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 20 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("offsiteLessons");
+  });
+
+  it("isOffsiteLesson: 終了日未定・RTDB が落とした配列を許し、型の崩れは弾く", () => {
+    expect(isOffsiteLesson(rec)).toBe(true);
+    expect(isOffsiteLesson({ ...rec, endDate: "2026-10-13", skipDates: ["2026-10-06"], keepOnHolidays: true, memo: "1月？" })).toBe(true);
+    // 終了時刻未定 (開始だけ)・終了日の空文字 / null は未定として通す
+    expect(isOffsiteLesson({ ...rec, time: "13:30", endDate: "" })).toBe(true);
+    expect(isOffsiteLesson({ ...rec, endDate: null })).toBe(true);
+    const { days: _d, ...noDays } = rec;
+    expect(isOffsiteLesson(noDays)).toBe(true);
+    expect(isOffsiteLesson({ ...rec, startDate: "10/1" })).toBe(false);
+    expect(isOffsiteLesson({ ...rec, endDate: "1月" })).toBe(false);
+    expect(isOffsiteLesson({ ...rec, days: "火木" })).toBe(false);
+    expect(isOffsiteLesson({ ...rec, keepOnHolidays: "yes" })).toBe(false);
+    expect(isOffsiteLesson({ ...rec, teacher: undefined })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた offsiteLessons を弾く", () => {
+    expect(validateExportBundle({ offsiteLessons: [rec] }).ok).toBe(true);
+    const v = validateExportBundle({ offsiteLessons: [rec, { id: 2 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("offsiteLessons[1]");
+    expect(validateExportBundle({ offsiteLessons: {} }).ok).toBe(false);
   });
 });
 

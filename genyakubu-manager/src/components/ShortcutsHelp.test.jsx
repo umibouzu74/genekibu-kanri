@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { ShortcutsHelp } from "./ShortcutsHelp";
+import { SHORTCUTS } from "../constants/shortcuts";
+import { VIEW_CHORDS } from "../constants/chords";
 
 afterEach(cleanup);
 
@@ -31,9 +33,13 @@ describe("ShortcutsHelp", () => {
     render(<ShortcutsHelp open onClose={noop} />);
     expect(screen.getByText("日付の移動")).toBeDefined();
     expect(
-      screen.getByText(/ダッシュボード・月間・イベントカレンダー・週間・時間割の代行モード・欠勤組み換えで/)
+      screen.getByText(
+        /ダッシュボード・月間・イベントカレンダー・週間・授業時間の集計・時間割の代行モード・欠勤組み換えで/
+      )
     ).toBeDefined();
-    expect(screen.getByText("(週間は ±1 週、月間・イベントカレンダーは ±1 か月)")).toBeDefined();
+    expect(
+      screen.getByText("(週間は ±1 週、月間・イベントカレンダー・授業時間の集計は ±1 か月)")
+    ).toBeDefined();
     expect(screen.getByText("今日 / 今週 / 今月")).toBeDefined();
     expect(screen.getAllByText("t", { selector: "kbd" }).length).toBeGreaterThan(0);
   });
@@ -43,6 +49,16 @@ describe("ShortcutsHelp", () => {
     expect(screen.getByText("ダッシュボード")).toBeDefined();
     expect(screen.getByText("コースマスター管理")).toBeDefined();
     expect(screen.getByText("授業管理")).toBeDefined();
+  });
+
+  // 2026-10-03: g j (授業時間の集計) を足したときに一覧へ載せ忘れた。
+  // チョードの定義とヘルプの行を突き合わせて、片方だけの追加を止める
+  it("lists exactly the g-chords defined in VIEW_CHORDS", () => {
+    const listed = SHORTCUTS.flatMap((sec) => sec.items)
+      .filter((it) => it.sequential && it.keys?.[0] === "g")
+      .map((it) => it.keys[1])
+      .sort();
+    expect(listed).toEqual(Object.keys(VIEW_CHORDS).sort());
   });
 
   it("renders sequential chord keys with arrow separator, not plus", () => {

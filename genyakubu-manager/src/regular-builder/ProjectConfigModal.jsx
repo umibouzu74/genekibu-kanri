@@ -434,7 +434,8 @@ export function ProjectConfigModal({
 
   return (
     <div
-      className="no-print fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4"
+      // z-[1000]: 本体のサイドバー (z-index 999) より上に出す (z-50 だと下に潜る)
+      className="no-print fixed inset-0 bg-black/50 z-[1000] flex justify-center items-center p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

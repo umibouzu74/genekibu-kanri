@@ -11,9 +11,19 @@ import {
   EXTRA_LESSON_COLOR,
   KOSHU_EXTERNAL_COLOR,
   KOSHU_LESSON_COLOR,
+  OFFSITE_LESSON_COLOR,
 } from "../../constants/colors";
-import { timeStartToMin } from "../../utils/dateHelpers";
+import { fmtMD, timeStartToMin } from "../../utils/dateHelpers";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
+import {
+  describeOffsite,
+  formatOffsitePeriod,
+  formatOffsiteTime,
+  indexOffsiteLessonsByDate,
+  offsiteStartText,
+  offsiteStatus,
+} from "../../utils/offsiteLessons";
+import { isFullDayHoliday } from "../../utils/scheduleHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
@@ -31,7 +41,10 @@ import {
   isTeacherActiveOnDate,
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
-import { describeRescheduleTarget } from "../../utils/adjustmentDisplay";
+import {
+  describeRescheduleTarget,
+  rescheduleTargetTeachers,
+} from "../../utils/adjustmentDisplay";
 import { subStateMeta, subTargetLabel } from "../../utils/substituteState";
 import {
   summarizeTeacherDayOff,
@@ -92,6 +105,10 @@ export function MonthView({
   koshuLessons = [],
   daySchedules = [],
   onEditExtraLesson,
+  // 他校舎の授業 (utils/offsiteLessons)。onOpenOffsite({id} | {teacher}) で
+  // その 1 件 / この講師の新規登録として他校舎の授業の画面を開く
+  offsiteLessons = [],
+  onOpenOffsite,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -145,6 +162,27 @@ export function MonthView({
   const koshuByDate = useMemo(
     () => indexKoshuLessonsByDate(koshuLessons, teacher),
     [koshuLessons, teacher]
+  );
+  // 日付 → この講師の他校舎の授業 (休みの日・塾の全体休講日は除いた、実際に
+  // 行く日だけ)。月の範囲だけ引く
+  const offsiteByDate = useMemo(() => {
+    const mm = String(month).padStart(2, "0");
+    const last = String(new Date(year, month, 0).getDate()).padStart(2, "0");
+    return indexOffsiteLessonsByDate(offsiteLessons, {
+      teacher,
+      holidays,
+      from: `${year}-${mm}-01`,
+      to: `${year}-${mm}-${last}`,
+    });
+  }, [offsiteLessons, teacher, holidays, year, month]);
+  // この講師の他校舎の授業 (終了していないもの)。カレンダー上の一覧行に出す
+  const todayStr = useToday();
+  const teacherOffsite = useMemo(
+    () =>
+      offsiteLessons.filter(
+        (r) => r.teacher === teacher && offsiteStatus(r, todayStr) !== "ended"
+      ),
+    [offsiteLessons, teacher, todayStr]
   );
   // 対象: 元々この teacher のコマ + この teacher が代行に入った他人のコマ
   const teacherSubs = useMemo(
@@ -351,8 +389,7 @@ export function MonthView({
   while (cells.length % 7) cells.push(null);
 
   // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
-  const today = useToday();
-  const [todayY, todayM, todayD] = today.split("-").map(Number);
+  const [todayY, todayM, todayD] = todayStr.split("-").map(Number);
 
   // 日曜は授業が無いのが普通なので、その月の日曜に何も載らないときは列を
   // 細くして平日の列に幅を回す (紙面も同じ)。1 度セルを組み立ててから
@@ -367,13 +404,7 @@ export function MonthView({
     const dow = new Date(year, month - 1, d).getDay();
     const dn = WEEKDAYS[dow];
     const hols = holMap[ds] || [];
-    const isFullOff = hols.some((h) => {
-      const sc = h.scope || ["全部"];
-      if (!sc.includes("全部")) return false;
-      if ((h.targetGrades || []).length > 0) return false;
-      if ((h.subjKeywords || []).length > 0) return false;
-      return true;
-    });
+    const isFullOff = hols.some(isFullDayHoliday);
     const offDepts = [
       ...new Set(
         hols
@@ -395,7 +426,8 @@ export function MonthView({
       ? []
       : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
     // 振替で当日に来る予定のコマ (この teacher が担当する分)。
-    // adj.targetTeacher 指定時はその講師、未指定時は元 slot.teacher。
+    // adj.targetTeacher 指定時はその講師、未指定時は振替元の日の担当
+    // (複数担当・隔週の A/B を解決した後。rescheduleTargetTeachers)。
     // 休講日でも消さない (追加授業と同じく「その日にやる」と明示登録
     // したコマ。日まるごと振替の受け先は休講日になるのが典型なので、
     // ここで巻き添えにすると紙面にも画面にも出なくなる)。
@@ -405,8 +437,12 @@ export function MonthView({
             .map((adj) => {
               const slot = slotById.get(adj.slotId);
               if (!slot) return null;
-              const tgtTeacher = adj.targetTeacher || slot.teacher;
-              if (tgtTeacher !== teacher) return null;
+              const tgtTeachers = rescheduleTargetTeachers(adj, slot, {
+                biweeklyAnchors,
+                holidays,
+                examPeriods,
+              });
+              if (!tgtTeachers.includes(teacher)) return null;
               return { adj, slot };
             })
             .filter(Boolean);
@@ -419,6 +455,10 @@ export function MonthView({
     // 追加授業と違いカットオフでも消さない。休講の巻き添えでも
     // 消さないのは追加授業と同じ (日付を明示して組んだコマのため)。
     const koshuForDay = koshuByDate.get(ds) || [];
+    // 他校舎の授業。塾の休講・表示期間とは関係なく先方で行うので、
+    // カットオフの日にも出す (塾の全体休講日は既定で他校舎も休みなので、
+    // 休講日に出るのは「休講日も行く」と登録した予定だけ)
+    const offsiteForDay = offsiteByDate.get(ds) || [];
     // この teacher が他人のコマを代行する行で使う slot も session count
     // の対象に含めるため、ここで抽出して結合した計算用リストを作る。
     // この teacher が「他人のコマ」を代行する分。カード表示と
@@ -457,6 +497,10 @@ export function MonthView({
     // その日のコマが全部手を離れた = この講師にとっては休みの日。
     // カードの薄字だけだと月の一覧で「その日が空いた」ことに気付けない
     // ので、休講日と同じ強さで日単位の状態として見せる。
+    // 特訓シフトも塾に来る仕事なので「残る仕事」に数える (数えないと
+    // 特訓だけ残った日に「代行で休み」と出ていた)。他校舎の授業は塾の
+    // 仕事ではないので数えない (塾のコマが全部代行なら、その日の塾は
+    // 休み — 他校舎のカードは並べて出る)
     const dayOff =
       isFullOff || dayCutoff
         ? { off: false, reason: null, label: "" }
@@ -465,7 +509,8 @@ export function MonthView({
             incomingForDay.length +
               extraForDay.length +
               koshuForDay.length +
-              externalSubSlots.length
+              externalSubSlots.length +
+              (examPrepByDate.get(ds)?.length ? 1 : 0)
           );
     const offTone = dayOff.off ? DAY_OFF_TONE[dayOff.reason] : null;
     // その日のカードは種類 (通常コマ / 他人のコマの代行 / 振替で入る
@@ -1020,6 +1065,65 @@ export function MonthView({
         );
       })
     );
+    // 他校舎の授業 (塾の授業ではない、講師の予定)。クリックで他校舎の
+    // 授業の画面のその 1 件を開く
+    pushCards(
+      offsiteForDay.map((rec) => rec.time),
+      offsiteForDay.map((rec) => {
+        const clickable = !!onOpenOffsite;
+        const open = () => onOpenOffsite({ id: rec.id });
+        return (
+          <div
+            key={`offsite-${rec.id}`}
+            className="month-print-card"
+            role={clickable ? "button" : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            onClick={clickable ? open : undefined}
+            onKeyDown={
+              clickable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      open();
+                    }
+                  }
+                : undefined
+            }
+            style={{
+              fontSize: 11,
+              lineHeight: 1.4,
+              padding: "2px 3px",
+              margin: "1px 0",
+              borderRadius: 3,
+              background: OFFSITE_LESSON_COLOR.bg,
+              borderLeft: `2px solid ${OFFSITE_LESSON_COLOR.color}`,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              cursor: clickable ? "pointer" : "default",
+            }}
+            title={`[他校舎の授業] ${rec.place} ${formatOffsiteTime(rec.time)}\n期間: ${formatOffsitePeriod(rec)}${
+              rec.memo ? `\n${rec.memo}` : ""
+            }${clickable ? "\n\nクリックで他校舎の授業を開きます" : ""}`}
+          >
+            <span
+              style={{
+                background: OFFSITE_LESSON_COLOR.color,
+                color: "#fff",
+                fontSize: 8,
+                fontWeight: 800,
+                padding: "0 3px",
+                borderRadius: 2,
+                marginRight: 2,
+              }}
+            >
+              他
+            </span>
+            <b>{offsiteStartText(rec.time)}</b> {rec.place}
+          </div>
+        );
+      })
+    );
     pushCards(
       [examPrepByDate.get(ds)?.[0]?.start],
       [
@@ -1091,7 +1195,7 @@ export function MonthView({
         // 過ぎた日は画面では薄く (appShell.css の .month-past。ホバーと
         // フォーカスで戻る)。規則は @media screen 限定で、popup 印刷は
         // appShell.css を読まないので紙面は薄くならない。
-        className={`month-print-cell${ds < today ? " month-past" : ""}`}
+        className={`month-print-cell${ds < todayStr ? " month-past" : ""}`}
         style={{
           background: dayCutoff
             ? "#f5f5f0"
@@ -1258,6 +1362,66 @@ export function MonthView({
 
   return (
     <div className="month-print-root" style={{ marginTop: 12 }}>
+      {(teacherOffsite.length > 0 || (isAdmin && onOpenOffsite)) && (
+        <div
+          className="no-print"
+          role="group"
+          aria-label={`${teacher} の他校舎の授業`}
+          style={{
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+            fontSize: 12,
+          }}
+        >
+          <span style={{ fontWeight: 800, color: OFFSITE_LESSON_COLOR.deep }}>🏫 他校舎:</span>
+          {teacherOffsite.length === 0 && (
+            <span style={{ color: "#999" }}>登録なし</span>
+          )}
+          {teacherOffsite.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={onOpenOffsite ? () => onOpenOffsite({ id: r.id }) : undefined}
+              disabled={!onOpenOffsite}
+              title={`期間: ${formatOffsitePeriod(r)}${r.memo ? `\n${r.memo}` : ""}`}
+              style={{
+                border: `1px solid ${OFFSITE_LESSON_COLOR.bannerBorder}`,
+                background: OFFSITE_LESSON_COLOR.bannerBg,
+                color: OFFSITE_LESSON_COLOR.deep,
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontSize: 12,
+                cursor: onOpenOffsite ? "pointer" : "default",
+              }}
+            >
+              {describeOffsite(r)}{" "}
+              <span style={{ fontSize: 10, opacity: 0.8 }}>
+                ({r.startDate > todayStr ? `${fmtMD(r.startDate)} から` : formatOffsitePeriod(r)})
+              </span>
+            </button>
+          ))}
+          {isAdmin && onOpenOffsite && (
+            <button
+              type="button"
+              onClick={() => onOpenOffsite({ teacher })}
+              style={{
+                border: "1px dashed #aab",
+                background: "#fff",
+                color: "#555",
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              ＋ 他校舎の授業を登録
+            </button>
+          )}
+        </div>
+      )}
       {(onChangeVisibility || onSelectDate || jumpToAbsenceFlow) && (
         <div
           className="no-print"

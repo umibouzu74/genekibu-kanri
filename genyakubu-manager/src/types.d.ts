@@ -216,6 +216,46 @@ export interface DaySchedule {
   createdAt?: string;
 }
 
+// ─── 附属の授業予定 (FuzokuPlan) ─────────────────────────────────
+// 附属コース (学年が「附中」で始まるコマ) の月間予定のうち、既存モデルに
+// 受け皿が無い 2 つだけを持つ。時程 (50分授業など) は DaySchedule、休みは
+// Holiday / ExamPeriod のまま (utils/fuzokuPlan.js)。
+//   - notes: 日付ごとの学校メモ (バスの時刻・学校の行事)。時程を決めた根拠
+//   - tests: 確認テストの科目を (日付, 学年) で手で決めた分。無い週は
+//            英→数→国→理→社 のローテーションで自動に回る
+// 日付・学年をキーにした map なので RTDB の空配列落ちに強い。「なし」は
+// 空配列ではなく none: true で表す (空配列は RTDB が消すため)。
+export interface FuzokuDayNote {
+  bus?: string; // 学校の予定表のバス欄をそのまま ("15:20×2 15:30×1")
+  memo?: string; // 学校メモ ("3時間授業", "合唱祭")
+}
+
+export interface FuzokuTestEntry {
+  subjects?: string[]; // ["英", "数"]。1 科目だけの週もある
+  none?: boolean; // true = その週は確認テストなし
+}
+
+export interface FuzokuPlan {
+  notes: Record<string, FuzokuDayNote>; // "YYYY-MM-DD" → メモ
+  tests: Record<string, Record<string, FuzokuTestEntry>>; // 日付 → 学年 → 科目
+}
+
+// ─── 引継ぎメモ (HandoverNote) ───────────────────────────────────
+// 責任者が日々気付いたことを書き溜めて後任に渡すメモ (utils/handoverNotes.js)。
+// Firebase では adminData/ (管理者だけが読める) に置く。
+export interface HandoverNote {
+  id: number;
+  date: string; // 起きた日 "YYYY-MM-DD"
+  category: string; // HANDOVER_CATEGORIES のいずれか
+  title: string; // 1 行の要約 ("事務よりズバリ的中の提出催促")
+  body?: string; // 詳細・経緯 ("9 月の会議で告知済み")
+  advice?: string; // 次の担当者へ (こうしておくとよい)
+  annual?: boolean; // true = 毎年この時期にあること
+  pinned?: boolean; // true = 日付に関係なくいつでも必要なこと (手順・連絡先)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ─── Extra lesson (追加授業) ─────────────────────────────────────
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
@@ -234,6 +274,29 @@ export interface ExtraLesson {
   // utils/biweekly.splitTeacherField を使う — "・"/"･" の IME 入力も受理する)
   label?: string; // 種別ラベル (例: "夏期講習", "テスト対策")
   note?: string; // メモ (任意)
+}
+
+// ─── Offsite lesson (他校舎の授業) ───────────────────────────────
+// 講師が決まった曜日・時刻に別の校舎・学校へ授業をしに行く予定
+// (utils/offsiteLessons.js)。「石原: 村上高松 火・木 14:50-15:40 10/1〜未定」。
+// 塾の授業ではないので Slot / ExtraLesson にはしない (第N回・表示期間・
+// タイムテーブルのコマに混ぜない)。講師別の月間 / 週間・日別ダッシュボード・
+// 講師の重なり・代行候補が「その時間は他校舎にいる」として読む。
+// RTDB は空配列と null を消すので、days / skipDates / endDate の欠落は
+// 「空」「未定」と読む (migrateOffsiteLessons が補う)。
+export interface OffsiteLesson {
+  id: number;
+  teacher: string; // 講師 1 名 (複数人で行くときは 1 人 1 件)
+  place: string; // 行き先 ("村上高松" / "大手前丸亀")
+  days: DayName[]; // ["火", "木"]
+  time: string; // "14:50-15:40"。終了時刻が未定なら開始だけ "13:30"
+  startDate: string; // "YYYY-MM-DD"
+  endDate?: string; // "YYYY-MM-DD"。無し = 終了日未定
+  skipDates?: string[]; // この日は無い (先方の行事・冬休みなど)
+  keepOnHolidays?: boolean; // true = 塾の全体休講日 (祝日など) も行く
+  memo?: string; // "1月まで？" など
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // ─── Koshu lesson (講習コマ、派生表示) ───────────────────────────
@@ -354,6 +417,10 @@ export interface ExportBundle {
   specialEvents?: SpecialEvent[];
   extraLessons?: ExtraLesson[];
   daySchedules?: DaySchedule[];
+  fuzokuPlan?: FuzokuPlan;
+  offsiteLessons?: OffsiteLesson[];
+  /** 管理者が書き出したときだけ含まれる */
+  handoverNotes?: HandoverNote[];
 }
 
 export interface ValidationResult<T> {

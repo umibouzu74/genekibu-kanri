@@ -5,6 +5,7 @@ import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
 import { compareTeacherNames } from "./teacherKana";
+import { isOffsiteClash, offsiteByTeacherOnDate, offsiteClashOf } from "./offsiteLessons";
 
 /** その日にコマが無い講師を候補に出すときの理由 (画面のバッジ文言と共有) */
 export const IDLE_TEACHER_REASON = "この日は担当なし";
@@ -21,6 +22,17 @@ export function timeOverlaps(t1, t2) {
   const a = parseTimeRange(t1);
   const b = parseTimeRange(t2);
   return a.start < b.end && b.start < a.end;
+}
+
+/**
+ * その時刻に他校舎の授業 (utils/offsiteLessons) へ出ているか (移動時間込み)。
+ * 終了時刻が未定の予定は「重なるかもしれない」だけなので数えない (画面で
+ * 注意書き)。
+ * @param {Array<{time: string, travelMinutes?: number}>|undefined} offsite その日のその講師の予定
+ * @param {string} time 代行に入るコマの時刻
+ */
+export function isAwayAtOffsite(offsite, time) {
+  return (offsite || []).some((rec) => isOffsiteClash(offsiteClashOf(rec, time)));
 }
 
 /**
@@ -79,8 +91,7 @@ export function classifySlotForTeacher(
   if (isBiweekly(slot.note)) {
     const wt = getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods);
     const mainTeachers = getSlotTeachers(slot);
-    const m = slot.note.match(/隔週\(([^)]+)\)/);
-    const partner = m ? m[1] : null;
+    const partner = biweeklyPartner(slot.note);
     if (wt === "B" && mainTeachers.includes(name)) {
       return { status: "cancelled", reason: "隔週(B週)" };
     }
@@ -144,9 +155,8 @@ function collectTeacherSlots(daySlots) {
       teacherSlots.get(t).push(slot);
     }
     if (isBiweekly(slot.note)) {
-      const m = slot.note.match(/隔週\(([^)]+)\)/);
-      if (m) {
-        const partner = m[1];
+      const partner = biweeklyPartner(slot.note);
+      if (partner) {
         if (!teacherSlots.has(partner)) teacherSlots.set(partner, []);
         teacherSlots.get(partner).push(slot);
       }
@@ -200,17 +210,21 @@ function buildSubstituteAssignments(subsForDate, allSlots) {
  * @param {import("../types").Timetable[]} timetables
  * @param {Array} biweeklyAnchors - グローバル隔週基準
  * @param {Record<string, number[]>} [teacherSubjects]
- * @param {{includeIdleTeachers?: boolean}} [opts]
+ * @param {{includeIdleTeachers?: boolean, offsiteLessons?: Array}} [opts]
  *   includeIdleTeachers: その日にコマが 1 つも無い講師 (時間割の全講師 +
  *   バイト) も `reason: IDLE_TEACHER_REASON` の候補として返す。既定は
  *   従来どおり (その日のコマが休講・隔週で空いた講師だけ)。タイムテーブル
  *   代行モードの「空き / 授業中 / 時間重複」を変えないため、玉突き代行の
  *   画面だけがオプトインする
+ *   offsiteLessons: 他校舎の授業。その時間に他校舎へ出ている講師は、その
+ *   時間帯を freeTimeSlots から外す (isFreeAllDay = 塾のコマが無い、の意味は
+ *   変えない。提案 (assignOnePass) と候補一覧は offsite を見て時刻ごとに外す)
  *
  * 返り値の各要素:
  *   { name, isFreeAllDay, freeTimeSlots, cancelledSlots, reason, subjectIds,
- *     isPartTime, noSlotsToday }
+ *     isPartTime, noSlotsToday, offsite }
  *   noSlotsToday はその日に担当コマが無い講師 (includeIdleTeachers のとき)
+ *   offsite はその日のその講師の他校舎の授業 (無ければ空配列)
  */
 export function computeAvailableTeachers(
   date,
@@ -240,6 +254,7 @@ export function computeAvailableTeachers(
   const substituteAssignments = buildSubstituteAssignments(subsForDate, allSlots);
 
   const teacherSlots = collectTeacherSlots(daySlots);
+  const offsiteByTeacher = offsiteByTeacherOnDate(opts?.offsiteLessons, date, holidays);
   const result = [];
 
   for (const [name, slots] of teacherSlots) {
@@ -270,9 +285,14 @@ export function computeAvailableTeachers(
     const busyTimes = substituteAssignments.get(name) || [];
     const isFreeAllDay = activeSlots.length === 0 && busyTimes.length === 0;
 
+    const offsite = offsiteByTeacher.get(name) || [];
     const freeTimeSlots = cancelledSlots
       .map((s) => s.time)
-      .filter((time) => !busyTimes.some((bt) => timeOverlaps(time, bt)));
+      .filter(
+        (time) =>
+          !busyTimes.some((bt) => timeOverlaps(time, bt)) &&
+          !isAwayAtOffsite(offsite, time)
+      );
     const uniqueFreeTimes = [...new Set(freeTimeSlots)];
 
     if (uniqueFreeTimes.length === 0 && !isFreeAllDay) continue;
@@ -294,6 +314,7 @@ export function computeAvailableTeachers(
       subjectIds,
       isPartTime: staffNameSet.has(name),
       noSlotsToday: false,
+      offsite,
     });
   }
 
@@ -310,8 +331,11 @@ export function computeAvailableTeachers(
       if (teacherSlots.has(name)) continue;
       const busyTimes = substituteAssignments.get(name) || [];
       const isFreeAllDay = busyTimes.length === 0;
+      const offsite = offsiteByTeacher.get(name) || [];
       const freeTimeSlots = dayTimes.filter(
-        (time) => !busyTimes.some((bt) => timeOverlaps(time, bt))
+        (time) =>
+          !busyTimes.some((bt) => timeOverlaps(time, bt)) &&
+          !isAwayAtOffsite(offsite, time)
       );
       if (freeTimeSlots.length === 0 && !isFreeAllDay) continue;
       const subjectIds = resolveTeacherSubjectIds(name, {
@@ -330,6 +354,7 @@ export function computeAvailableTeachers(
         subjectIds,
         isPartTime: staffNameSet.has(name),
         noSlotsToday: true,
+        offsite,
       });
     }
   }
@@ -394,7 +419,10 @@ function assignOnePass(
       const notBusy = !teacher.busyTimes.some((bt) =>
         timeOverlaps(bt, slot.time)
       );
-      if (!hasTimeAvailable || !notBusy) continue;
+      // 全日空き (塾のコマが無い) でも、その時間に他校舎へ出ている人は外す
+      if (!hasTimeAvailable || !notBusy || isAwayAtOffsite(teacher.offsite, slot.time)) {
+        continue;
+      }
       candidates.push({
         teacher,
         score: scoreSubstituteCandidate(teacher, slotSubjectId, subjects),
@@ -502,7 +530,9 @@ export function suggestChainSubstitutions(
 
 /**
  * 代行者の変更が妥当かどうかを検証する。
- * @returns {{ timeConflict: boolean, subjectMismatch: boolean }}
+ * opts.offsiteByTeacher (講師名 → その日の他校舎の授業) を渡すと、その時間に
+ * 他校舎へ出ている人を offsiteConflict で返す (時間重複とは別に出す)。
+ * @returns {{ timeConflict: boolean, subjectMismatch: boolean, offsiteConflict: boolean }}
  */
 export function validateSubstituteChange(
   teacherName,
@@ -510,10 +540,12 @@ export function validateSubstituteChange(
   slots,
   existingAssignments,
   subjects,
-  partTimeStaff
+  partTimeStaff,
+  opts = {}
 ) {
   const slot = slots.find((s) => s.id === slotId);
-  if (!slot) return { timeConflict: false, subjectMismatch: false };
+  if (!slot) return { timeConflict: false, subjectMismatch: false, offsiteConflict: false };
+  const offsiteConflict = isAwayAtOffsite(opts.offsiteByTeacher?.get?.(teacherName), slot.time);
 
   const timeConflict = existingAssignments.some((a) => {
     if (a.suggestedSubstitute !== teacherName || a.slotId === slotId) return false;
@@ -535,5 +567,5 @@ export function validateSubstituteChange(
     }
   }
 
-  return { timeConflict, subjectMismatch };
+  return { timeConflict, subjectMismatch, offsiteConflict };
 }

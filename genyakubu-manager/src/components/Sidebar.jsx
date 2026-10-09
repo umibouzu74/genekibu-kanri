@@ -4,7 +4,13 @@ import { EVENT_KIND_LABELS, EVENT_SECTIONS } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
-import { slotWeight, formatCount, getSlotTeachers, isBiweekly } from "../utils/biweekly";
+import {
+  biweeklyPartner,
+  slotWeight,
+  formatCount,
+  getSlotTeachers,
+  isBiweekly,
+} from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 import { filterTeacherGroups } from "../hooks/useTeacherGroups";
@@ -131,7 +137,7 @@ const MENU_CONFIG = [
   {
     key: VIEWS.ALL, icon: "📊", label: "全講師一覧",
     children: [
-      { key: VIEWS.COMPARE, icon: "⚖", label: "講師比較" },
+      { key: VIEWS.MINUTES, icon: "⏱", label: "授業時間の集計" },
     ],
   },
   {
@@ -145,11 +151,20 @@ const MENU_CONFIG = [
         label: "休講・テスト期間・イベント",
         sections: EVENT_SECTIONS,
       },
+      // 学校の予定表 (Excel) を読んで、休講・振替の登録の漏れを探す。
+      // 休講の登録のすぐ下に置く (予定表が届いたときに使う)
+      { key: VIEWS.YOTEIHYO, icon: "📑", label: "予定表チェック" },
       { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
       { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成" },
       { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
     ],
   },
+  // 附属コースの月間予定 (以前は Excel で管理していたもの)。学校の予定表を
+  // 見ながら毎月組むので、時間割管理の子に埋めずに名前を出す
+  { key: VIEWS.FUZOKU_PLAN, icon: "🎒", label: "附属の授業予定" },
+  // 講師が他の校舎・学校へ授業に行く曜日と時間。講師の月間・代行候補に効く
+  // 登録なので、時間割管理の子に埋めずに名前を出す
+  { key: VIEWS.OFFSITE, icon: "🏫", label: "他校舎の授業" },
   // 管理者専用の画面 (閲覧者が開いても「管理者のみ」と出るだけの行き止まり
   // になるので、閲覧者には出さない。Cmd+K と g a も同じ)
   { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え", adminOnly: true },
@@ -178,6 +193,9 @@ const MENU_CONFIG = [
   // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
   // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理", sections: MASTER_TABS },
+  // 責任者の引継ぎメモ。閲覧者には読めないデータなので項目ごと出さない
+  // (adminData: 管理者ログイン中、または Firebase 未設定の端末だけ)
+  { key: VIEWS.HANDOVER, icon: "📝", label: "引継ぎメモ", adminData: true },
   { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
 ];
 
@@ -213,6 +231,8 @@ export function Sidebar({
   slots,
   subs,
   isAdmin,
+  /** 管理者だけが読めるデータ (引継ぎメモ) を扱えるか (useAppData.canUseAdminData) */
+  canUseAdminData = isAdmin,
   onSignIn,
   onSignOut,
 }) {
@@ -273,8 +293,8 @@ export function Sidebar({
       }
       // Also attribute to biweekly partner mentioned in note
       if (isBiweekly(s.note)) {
-        const pm = s.note.match(/隔週\(([^)]+)\)/);
-        if (pm) m.set(pm[1], (m.get(pm[1]) || 0) + w(s));
+        const partner = biweeklyPartner(s.note);
+        if (partner) m.set(partner, (m.get(partner) || 0) + w(s));
       }
     }
     return m;
@@ -443,7 +463,10 @@ export function Sidebar({
           }}
         >
         <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
-          {MENU_CONFIG.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+          {MENU_CONFIG.filter(
+            (item) =>
+              (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData)
+          ).map((item) => {
             const hasChildren = !!item.children;
             const isExpanded = hasChildren && effectiveExpanded.has(item.key);
             const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);

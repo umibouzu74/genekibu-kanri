@@ -14,6 +14,7 @@ import {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,
@@ -21,6 +22,8 @@ import {
 } from "../utils/migrate";
 import { detectOrphans, describeOrphanDetection } from "../utils/orphanCleanup";
 import { sanitizeKanaMap } from "../utils/teacherKana";
+import { migrateHandoverNotes } from "../utils/handoverNotes";
+import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -44,6 +47,10 @@ export function useDataIO({
   specialEvents,
   extraLessons,
   daySchedules,
+  fuzokuPlan,
+  offsiteLessons,
+  handoverNotes,
+  handoverEnabled,
   activeTimetableId,
   saveSlots,
   saveHolidays,
@@ -65,6 +72,9 @@ export function useDataIO({
   saveSpecialEvents,
   saveExtraLessons,
   saveDaySchedules,
+  saveFuzokuPlan,
+  saveOffsiteLessons,
+  saveHandoverNotes,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -102,6 +112,11 @@ export function useDataIO({
           specialEvents,
           extraLessons,
           daySchedules,
+          fuzokuPlan,
+          offsiteLessons,
+          // 引継ぎメモは読める人 (管理者) が書き出すときだけ含める。閲覧者の
+          // 書き出しに空配列を入れると、それを読み込んだときに消えてしまう
+          ...(handoverEnabled ? { handoverNotes } : {}),
           // インポート先で timetables に対する選択が宙吊りにならないよう
           // アクティブな時間割 ID も持ち出す
           activeTimetableId,
@@ -121,7 +136,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -198,6 +213,20 @@ export function useDataIO({
           }
           if (Array.isArray(d.daySchedules) && saveDaySchedules) {
             saveDaySchedules(migrateDaySchedules(d.daySchedules));
+          }
+          // 旧バックアップには fuzokuPlan が無い (附属の授業予定より前) ので、
+          // 欠けているときは現状維持 — 空で上書きしない (teacherKana と同じ)
+          if (d.fuzokuPlan && typeof d.fuzokuPlan === "object" && !Array.isArray(d.fuzokuPlan) && saveFuzokuPlan) {
+            saveFuzokuPlan(migrateFuzokuPlan(d.fuzokuPlan));
+          }
+          // 他校舎の授業も旧バックアップには無い (v21 より前) ので、欠けている
+          // ときは現状維持 — 空で上書きしない
+          if (Array.isArray(d.offsiteLessons) && saveOffsiteLessons) {
+            saveOffsiteLessons(migrateOffsiteLessons(d.offsiteLessons));
+          }
+          // 引継ぎメモも欠けているときは現状維持 (旧バックアップ・閲覧者の書き出し)
+          if (Array.isArray(d.handoverNotes) && handoverEnabled && saveHandoverNotes) {
+            saveHandoverNotes(migrateHandoverNotes(d.handoverNotes));
           }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
@@ -283,6 +312,10 @@ export function useDataIO({
       saveSpecialEvents,
       saveExtraLessons,
       saveDaySchedules,
+      saveFuzokuPlan,
+      saveOffsiteLessons,
+      saveHandoverNotes,
+      handoverEnabled,
       setActiveTimetableId,
       setImporting,
       setShowDataMgr,
@@ -292,12 +325,17 @@ export function useDataIO({
   const handleReset = useCallback(async () => {
     const ok = await confirm({
       title: "データの初期化",
-      message: "データを初期状態に戻しますか？\n現在のデータは失われます。",
+      message:
+        "データを初期状態に戻しますか？\n現在のデータは失われます。\n(引継ぎメモは残ります)",
       okLabel: "初期化",
       tone: "danger",
     });
     if (!ok) return;
-    Object.values(lsKeys).forEach((k) => localStorage.removeItem(k));
+    // 引継ぎメモは消さない。初期化は時間割まわりのやり直しのための操作で、
+    // 何年も書き溜めた引継ぎを巻き添えにしない (消すなら画面から 1 件ずつ)
+    Object.values(lsKeys)
+      .filter((k) => k !== lsKeys.handoverNotes)
+      .forEach((k) => localStorage.removeItem(k));
     saveSlots(INIT_SLOTS);
     saveHolidays(INIT_HOLIDAYS);
     saveBiweeklyBase("");
@@ -316,6 +354,8 @@ export function useDataIO({
     if (saveSpecialEvents) saveSpecialEvents([]);
     if (saveExtraLessons) saveExtraLessons([]);
     if (saveDaySchedules) saveDaySchedules([]);
+    if (saveFuzokuPlan) saveFuzokuPlan({ notes: {}, tests: {} });
+    if (saveOffsiteLessons) saveOffsiteLessons([]);
     // localStorage キーの removeItem だけでは React state と Firebase 側が
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
     // (export / import には含まれるのに reset だけ漏れていた)
@@ -350,6 +390,8 @@ export function useDataIO({
     saveSpecialEvents,
     saveExtraLessons,
     saveDaySchedules,
+    saveFuzokuPlan,
+    saveOffsiteLessons,
     setActiveTimetableId,
     setSelected,
     setView,
@@ -366,6 +408,7 @@ export {
   migrateDisplayCutoff,
   migrateExamPeriods,
   migrateExamPrepSchedules,
+  migrateFuzokuPlan,
   migrateHolidays,
   migratePartTimeStaff,
   migrateSpecialEvents,
