@@ -19,9 +19,9 @@
 
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
-// 無依存モジュール (generationParams.js / dateGenerate.js / dateLabelUnify.js —
-// 最後者の依存も dateGenerate / labelRefs / availabilityShape の無依存モジュール
-// のみ — と availabilityShape.ts) だけ。
+// 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
+// availabilityShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';

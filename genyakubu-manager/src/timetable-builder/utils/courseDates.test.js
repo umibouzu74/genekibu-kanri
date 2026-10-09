@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDateLabel, projectBaseYmd, resolveDateLabelYmd, usedDateLabels } from './courseDates';
+import { parseDateLabel, projectBaseYmd, resolveDateLabelYmd, resolveDateLabelsYmd, usedDateLabels } from './courseDates';
 
 const P = (id, label) => ({ id, label });
 
@@ -33,10 +33,40 @@ describe('resolveDateLabelYmd', () => {
     expect(resolveDateLabelYmd('12/25(木)', '2026-11-15')).toBe('2026-12-25');
   });
 
+  it('1 年近く先の年に合う曜日も信じない (曜日の打ち間違いで 1 年先へ飛ばさない)', () => {
+    // 2027-12-25 は土曜だが基準日 2026-11-15 から 400 日先 → 近い年 (2026) を採る
+    expect(resolveDateLabelYmd('12/25(土)', '2026-11-15')).toBe('2026-12-25');
+    expect(resolveDateLabelYmd('7/29(木)', '2026-07-01')).toBe('2026-07-29');
+  });
+
   it('不正な入力は null', () => {
     expect(resolveDateLabelYmd('補講日', '2026-07-01')).toBeNull();
     expect(resolveDateLabelYmd('2/30(月)', '2026-02-01')).toBeNull();
     expect(resolveDateLabelYmd('7/24(金)', 'invalid')).toBeNull();
+  });
+});
+
+describe('resolveDateLabelsYmd (講習の日付をまとめて解決)', () => {
+  const winter = ['12/22(火)', '12/26(土)', '1/4(月)', '1/7(木)'];
+
+  it('年は季節ごとに 1 回だけ決める (講習の半年後の編集でも途中で割れない)', () => {
+    // 2027-06-21〜07-06 に編集すると、ラベルごとに決めていたころは 12 月だけ翌年へ移った
+    for (const base of ['2027-06-21', '2027-06-30', '2027-07-05']) {
+      const m = resolveDateLabelsYmd(winter, base);
+      expect(winter.map(l => m.get(l))).toEqual(['2026-12-22', '2026-12-26', '2027-01-04', '2027-01-07']);
+    }
+  });
+
+  it('曜日の打ち間違いが 1 つあっても、過半数の曜日が合う年に置く', () => {
+    const labels = ['12/22(火)', '12/26(日)', '1/4(月)', '1/7(木)'];
+    const m = resolveDateLabelsYmd(labels, '2027-03-01');
+    expect(labels.map(l => m.get(l))).toEqual(['2026-12-22', '2026-12-26', '2027-01-04', '2027-01-07']);
+  });
+
+  it('読めないラベルは null。重複は 1 つにまとまる', () => {
+    const m = resolveDateLabelsYmd(['7/29(水)', '補講日', '7/29(水)'], '2026-07-01');
+    expect([...m.entries()]).toEqual([['7/29(水)', '2026-07-29'], ['補講日', null]]);
+    expect(resolveDateLabelsYmd(['7/29(水)'], 'invalid').get('7/29(水)')).toBeNull();
   });
 });
 

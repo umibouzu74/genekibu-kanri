@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAvailabilitySurveyWorkbook, buildSurveyFormLayout } from './availabilitySurveyExport';
+import { buildAvailabilitySurveyWorkbook, buildSurveyFormLayout, estimateSurveyScale } from './availabilitySurveyExport';
 
 const P = (id, label) => ({ id, label });
 
@@ -55,8 +55,9 @@ describe('buildAvailabilitySurveyWorkbook', () => {
     const ws = buildAvailabilitySurveyWorkbook(summerProject(), { today }).getWorksheet('出勤可能調査');
     expect(String(ws.getCell(1, 1).value)).toContain('2026 夏期講習');
     expect(String(ws.getCell(1, 1).value)).toContain('出勤可能調査');
-    expect(rowValues(ws, 2)).toEqual(['作成日: 2026/7/1', '氏名：']);
-    expect(String(ws.getCell(3, 1).value)).toContain('○');
+    expect(rowValues(ws, 2)).toEqual(['出力日：2026/7/1', '氏名：']);
+    // 記号の並びは画面と同じ ○ → △ → ×
+    expect(String(ws.getCell(3, 1).value)).toMatch(/○.*△.*×/);
   });
 
   it('週ごとに「7月13日 | 月曜日」の見出しを並べ、授業の無い曜日は空欄', () => {
@@ -90,12 +91,44 @@ describe('buildAvailabilitySurveyWorkbook', () => {
     expect(ws.getCell(head + 4, 3).value).toBe('18:30-19:15');
   });
 
-  it('A4 縦・横 1 枚に収める印刷設定と、末尾の備考欄', () => {
+  it('A4 縦・横 1 枚に収まる固定の倍率と、末尾の備考欄', () => {
     const ws = buildAvailabilitySurveyWorkbook(summerProject(), { today }).getWorksheet('出勤可能調査');
     expect(ws.pageSetup.paperSize).toBe(9);
     expect(ws.pageSetup.orientation).toBe('portrait');
-    expect(ws.pageSetup.fitToWidth).toBe(1);
+    // fitToPage にすると手動の改ページが効かないので、固定の倍率で刷る
+    expect(ws.pageSetup.fitToPage).toBe(false);
+    expect(ws.pageSetup.scale).toBe(estimateSurveyScale([11.5, 6.5, 11.5, 6.5, 11.5, 6.5, 11.5, 6.5, 11.5, 6.5, 11.5, 6.5]));
+    expect(ws.pageSetup.scale).toBeGreaterThan(70);
+    expect(ws.pageSetup.scale).toBeLessThan(90);
     expect(findRow(ws, '備考')).toBeGreaterThan(findRow(ws, '7月27日'));
+  });
+
+  it('長い講習は週のブロックの前で改ページし、週を 2 ページに割らない', () => {
+    // 7/6〜8/22 の 7 週・月〜土。昼 4 コマ + 夜 3 コマ
+    const labels = [];
+    for (let d = new Date(2026, 6, 6, 12); d <= new Date(2026, 7, 22, 12); d.setDate(d.getDate() + 1)) {
+      if (d.getDay() === 0) continue;
+      labels.push(`${d.getMonth() + 1}/${d.getDate()}(${'日月火水木金土'[d.getDay()]})`);
+    }
+    const project = {
+      name: '2026 夏期講習',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+      teachers: [],
+      dates: labels.map((l, i) => P(i + 1, l)),
+      periods: [
+        P(1, '1 (13:00~13:45)'), P(2, '2 (13:55~14:40)'), P(3, '3 (14:50~15:35)'), P(4, '4 (15:45~16:50)'),
+        P(5, '夜1 (18:30~19:15)'), P(6, '夜2 (19:25~20:10)'), P(7, '夜3 (20:20~21:30)'),
+      ],
+      tabs: [{ id: 1, name: '中3', schedule: {}, config: { classes: [], subjectCounts: {} } }],
+    };
+    const ws = buildAvailabilitySurveyWorkbook(project, { today }).getWorksheet('出勤可能調査');
+    expect(ws.rowBreaks.length).toBeGreaterThan(0);
+    for (const { id } of ws.rowBreaks) {
+      // 改ページの次の行は空き行か週の見出し (日付の見出しの途中で割れていない)
+      let r = id + 1;
+      while (r <= ws.rowCount && rowValues(ws, r).length === 0) r++;
+      expect(rowValues(ws, r)[0]).toMatch(/^\d+月\d+日$/);
+    }
   });
 
   it('冬期講習 (年またぎ・日曜あり) も週の並びと日曜の列が出る', () => {

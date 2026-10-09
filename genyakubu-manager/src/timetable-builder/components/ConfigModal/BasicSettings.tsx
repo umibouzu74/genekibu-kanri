@@ -89,6 +89,9 @@ export default function BasicSettings() {
   const [genEnd, setGenEnd] = useState('');
   const [genWeekdays, setGenWeekdays] = useState(() => new Set([0, 1, 2, 3, 4, 5, 6]));
   const [genExclude, setGenExclude] = useState('');
+  // 除外日の入力中は警告を出さない (「12/29〜1/3」を打つ途中の「12/」等で
+  // 赤字が点滅し、読み上げも毎打鍵になる)。欄を離れたら出す
+  const [genExcludeEditing, setGenExcludeEditing] = useState(false);
   const [manualDate, setManualDate] = useState('');
   // 全タブまとめて表示 (行=プールの日付・列=各タブ) トグル
   const [showAllTabs, setShowAllTabs] = useState(false);
@@ -286,12 +289,27 @@ export default function BasicSettings() {
           </div>
           <label className="flex flex-col gap-0.5 text-xs">
             <span className="text-builder-ink-muted">除外日 (任意・授業が無い日。カンマ区切り。「12/29〜1/3」のような期間や年なしも可)</span>
-            <input type="text" value={genExclude} onChange={(e) => setGenExclude(e.target.value)} placeholder="例: 12/29〜1/3, 2026-08-13" className={inputCls} />
-            {genExcludeParsed.invalid.length > 0 && (
-              <span className="text-builder-red" role="alert">
-                ⚠ 日付として読めない除外日: {genExcludeParsed.invalid.join('、')} (この分は除外されません)
-              </span>
-            )}
+            <input
+              type="text"
+              value={genExclude}
+              onChange={(e) => setGenExclude(e.target.value)}
+              onFocus={() => setGenExcludeEditing(true)}
+              onBlur={() => setGenExcludeEditing(false)}
+              placeholder="例: 12/29〜1/3, 2026-08-13"
+              className={inputCls}
+            />
+            <span role="status" className="flex flex-col">
+              {!genExcludeEditing && genExcludeParsed.invalid.length > 0 && (
+                <span className="text-builder-red">
+                  ⚠ 日付として読めない除外日: {genExcludeParsed.invalid.join('、')} (この分は除外されません)
+                </span>
+              )}
+              {!genExcludeEditing && genExcludeParsed.outside.length > 0 && (
+                <span className="text-builder-ink-muted">
+                  生成する期間に当たる日が無い除外日: {genExcludeParsed.outside.join('、')} (打ち間違いでなければそのままで構いません)
+                </span>
+              )}
+            </span>
           </label>
           {/* L4e: 確定前のプレビュー。曜日の押し忘れ・除外日の書き間違いに
               「設定」してから気づく事故を防ぐ */}

@@ -128,6 +128,19 @@ describe('ラベルの改名・削除への追従 (cascade)', () => {
     });
   });
 
+  it('改名先に前の日付の回答が残っていても、動かしてきた回答を優先する', () => {
+    // 「7/28(火)」はプールに無い (前に消した日の残り)。そこへ 7/29 を改名しても
+    // 古い ○ で × を上書きしない (× の NG が黙って外れないように)
+    const s0 = makeState({
+      teachers: [{
+        name: '堀上', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [],
+        availability: { '7/29(水)': { '1限': 'ng' }, '7/28(火)': { '1限': 'ok', '2限': 'ok' } },
+      }],
+    });
+    const s = run(s0, { type: 'schedule/renameHeader', payload: { type: 'date', oldVal: '7/29(水)', newVal: '7/28(火)' } });
+    expect(teacher(s, '堀上').availability).toEqual({ '7/28(火)': { '1限': 'ng', '2限': 'ok' } });
+  });
+
   it('日付をプールから消すと、その日の回答も消える (同ラベル再追加で復活しない)', () => {
     const s = run(answered(), { type: 'dates/removeFromPool', payload: { dateId: 1 } });
     expect(teacher(s, '堀上').availability).toEqual({ '7/30(木)': { '1限': 'maybe' } });

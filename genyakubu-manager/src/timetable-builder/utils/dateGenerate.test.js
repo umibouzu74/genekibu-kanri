@@ -165,7 +165,7 @@ describe('expandExcludeInput', () => {
 
   it('従来どおり YYYY-MM-DD のカンマ区切り', () => {
     expect(expandExcludeInput('2026-07-29, 2026-08-13')).toEqual({
-      excludeYmd: ['2026-07-29', '2026-08-13'], invalid: [],
+      excludeYmd: ['2026-07-29', '2026-08-13'], invalid: [], outside: [],
     });
   });
 
@@ -188,9 +188,32 @@ describe('expandExcludeInput', () => {
     expect(r.invalid).toEqual(['2026-13-01', 'あした', '2026-12-31〜2026-12-29']);
   });
 
+  it('実在しない月日 (2/30・11/31) も invalid。2/29 はうるう年の日付として読む', () => {
+    const r = expandExcludeInput('2/30, 11/31〜12/2, 2/29', { startYmd: '2028-02-01', endYmd: '2028-03-05' });
+    expect(r.invalid).toEqual(['2/30', '11/31〜12/2']);
+    expect(r.excludeYmd).toEqual(['2028-02-29']);
+  });
+
+  it('期間の前後の空白・全角の数字や記号・日付ラベルの曜日もそのまま読める', () => {
+    const expected = ['2026-12-29', '2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02', '2027-01-03'];
+    expect(expandExcludeInput('12/29 〜 1/3', winter)).toEqual({ excludeYmd: expected, invalid: [], outside: [] });
+    expect(expandExcludeInput('１２/２９～１/３', winter).excludeYmd).toEqual(expected);
+    expect(expandExcludeInput('12/29(火)〜1/3(日)', winter).excludeYmd).toEqual(expected);
+    expect(expandExcludeInput('12/24（木）', winter).excludeYmd).toEqual(['2026-12-24']);
+  });
+
+  it('年なしで生成する期間の中に当たる日が無い語は outside に返す (打ち間違いに気付けるように)', () => {
+    const r = expandExcludeInput('1/11, 8/10〜8/16, 12/31', winter);
+    expect(r.outside).toEqual(['1/11', '8/10〜8/16']);
+    expect(r.excludeYmd).toEqual(['2026-12-31']);
+    expect(r.invalid).toEqual([]);
+    // 期間がまだ入っていないときは判定しない
+    expect(expandExcludeInput('1/11').outside).toEqual([]);
+  });
+
   it('空・未指定は何も除外しない', () => {
-    expect(expandExcludeInput('', winter)).toEqual({ excludeYmd: [], invalid: [] });
-    expect(expandExcludeInput(undefined)).toEqual({ excludeYmd: [], invalid: [] });
+    expect(expandExcludeInput('', winter)).toEqual({ excludeYmd: [], invalid: [], outside: [] });
+    expect(expandExcludeInput(undefined)).toEqual({ excludeYmd: [], invalid: [], outside: [] });
   });
 
   it('generateDateLabels と組み合わせて冬期の日付を作れる', () => {

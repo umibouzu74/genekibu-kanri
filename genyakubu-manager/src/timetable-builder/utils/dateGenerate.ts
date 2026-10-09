@@ -72,60 +72,79 @@ export function generateDateLabels(
 // 除外日の入力 (自由記述) を 'YYYY-MM-DD' の配列に展開する。冬期講習の年末年始
 // のように何日も続く休みを 1 日ずつ打たせないため、期間指定も受ける:
 //   - 区切り: カンマ (, 、 ，)・空白・改行・セミコロン
-//   - 1 日: '2026-12-31' / '2026/12/31' / '12/31' (年なし)
-//   - 期間: '2026-12-29〜2027-01-03' / '12/29〜1/3' (〜 ~ ～ のどれでも)
+//   - 1 日: '2026-12-31' / '2026/12/31' / '12/31' (年なし)。後ろの曜日 '(木)' は
+//     読み飛ばす (日付ラベルをそのまま貼っても読める)
+//   - 期間: '2026-12-29〜2027-01-03' / '12/29〜1/3' (〜 ~ ～ のどれでも。前後の
+//     空白も可)
+//   - 全角の数字・記号も受ける (NFKC で半角にそろえてから読む)
 // 年なしの指定は生成する期間 (startYmd〜endYmd) の中で当てはめる (12/29〜1/3 は
-// 年をまたいで 12/29・12/30・12/31・1/1・1/2・1/3)。読めない語は invalid に返して
-// 画面で知らせる (黙って無視すると、打ち間違いに気付かず授業日が残る)。
+// 年をまたいで 12/29・12/30・12/31・1/1・1/2・1/3)。読めない語 (2/30 のような
+// 実在しない日付も) は invalid、年なしで期間の中に当たる日が無い語は outside に
+// 返して画面で知らせる (黙って無視すると、打ち間違いに気付かず授業日が残る)。
 export function expandExcludeInput(
   text: string,
   { startYmd, endYmd }: { startYmd?: string; endYmd?: string } = {},
-): { excludeYmd: string[]; invalid: string[] } {
+): { excludeYmd: string[]; invalid: string[]; outside: string[] } {
   const out = new Set<string>();
   const invalid: string[] = [];
+  const outside: string[] = [];
   const windowStart = parseYmd(startYmd);
   const windowEnd = parseYmd(endYmd);
-  // 年なしの指定: 生成する期間の中で条件に合う日を除外日にする
-  const addInWindow = (match: (dt: Date) => boolean) => {
-    if (!windowStart || !windowEnd || windowStart > windowEnd) return;
+  // 年なしの指定: 生成する期間の中で条件に合う日を除外日にする。期間の中に
+  // 当たる日が無ければ false (期間が未入力の間は判定しないので true)
+  const addInWindow = (match: (dt: Date) => boolean): boolean => {
+    if (!windowStart || !windowEnd || windowStart > windowEnd) return true;
+    let hit = false;
     const cur = new Date(windowStart);
     for (let guard = 0; cur <= windowEnd && guard < 1000; guard++) {
-      if (match(cur)) out.add(toYmd(cur));
+      if (match(cur)) {
+        out.add(toYmd(cur));
+        hit = true;
+      }
       cur.setDate(cur.getDate() + 1);
     }
+    return hit;
   };
   const fullDate = (s: string): Date | null => {
-    const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\([日月火水木金土]\))?$/);
     return m ? parseYmd(`${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`) : null;
   };
   const monthDay = (s: string): { month: number; day: number } | null => {
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\([日月火水木金土]\))?$/);
     if (!m) return null;
     const month = Number(m[1]);
     const day = Number(m[2]);
-    return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? { month, day } : null;
+    // うるう年 (2024) で実在する月日か。2/30・11/31 は読めない日付として返す
+    const dt = new Date(2024, month - 1, day, 12);
+    return month >= 1 && month <= 12 && dt.getMonth() === month - 1 && dt.getDate() === day
+      ? { month, day }
+      : null;
   };
   const mdKey = (month: number, day: number) => month * 100 + day;
 
   String(text ?? '')
-    .split(/[,、，;\s]+/)
+    .normalize('NFKC')
+    // 「12/29 〜 1/3」の空白で期間が 2 つの語に割れないように
+    .replace(/\s*[〜~～]\s*/g, '〜')
+    .split(/[,、;\s]+/)
     .map(s => s.trim())
     .filter(Boolean)
     .forEach(token => {
-      const parts = token.split(/[〜~～]/);
+      const parts = token.split('〜');
       if (parts.length === 1) {
         const dt = fullDate(token);
         if (dt) { out.add(toYmd(dt)); return; }
         const md = monthDay(token);
         if (md) {
-          addInWindow(cur => cur.getMonth() + 1 === md.month && cur.getDate() === md.day);
+          const hit = addInWindow(cur => cur.getMonth() + 1 === md.month && cur.getDate() === md.day);
+          if (!hit) outside.push(token);
           return;
         }
         invalid.push(token);
         return;
       }
       if (parts.length !== 2) { invalid.push(token); return; }
-      const [a, b] = parts.map(s => s.trim());
+      const [a, b] = parts;
       const fa = fullDate(a);
       const fb = fullDate(b);
       if (fa && fb) {
@@ -143,15 +162,16 @@ export function expandExcludeInput(
         // 年なしの期間は月日の円環で判定 (12/29〜1/3 は年をまたぐ)
         const from = mdKey(ma.month, ma.day);
         const to = mdKey(mb.month, mb.day);
-        addInWindow(cur => {
+        const hit = addInWindow(cur => {
           const k = mdKey(cur.getMonth() + 1, cur.getDate());
           return from <= to ? (k >= from && k <= to) : (k >= from || k <= to);
         });
+        if (!hit) outside.push(token);
         return;
       }
       invalid.push(token);
     });
-  return { excludeYmd: [...out].sort(), invalid };
+  return { excludeYmd: [...out].sort(), invalid, outside };
 }
 
 // 'M/D' 部分だけ取り出す (曜日サフィックスの有無は問わない)。取れなければ null。

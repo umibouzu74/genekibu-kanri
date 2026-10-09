@@ -30,6 +30,7 @@ import { makeSubjectOrderMarker } from "../timetable-builder/utils/analysisHelpe
 import {
   projectBaseYmd,
   resolveDateLabelYmd,
+  resolveDateLabelsYmd,
   usedDateLabels,
 } from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
@@ -67,10 +68,11 @@ export function parseBuilderProject(raw) {
 }
 
 // 日付ラベル "M/D(曜)" → "YYYY-MM-DD" と、その年を決める基準日。講習時間割
-// 作成 (出勤可能調査の紙面) と同じ日付に置くため、決まりは builder 側の
-// utils/courseDates に一本化してある (過去方向 2 倍の重み + ラベルの曜日を
-// 半年以内なら優先)。既存の import 先を変えないよう、ここから再エクスポートする。
-export { resolveDateLabelYmd, projectBaseYmd };
+// 作成 (出勤可能調査の調査票) と同じ日付に置くため、決まりは builder 側の
+// utils/courseDates に一本化してある (年は季節ごとにまとめて決める。過去方向
+// 2 倍の重み + ラベルの曜日を信じる範囲)。既存の import 先を変えないよう、
+// ここから再エクスポートする。
+export { resolveDateLabelYmd, resolveDateLabelsYmd, projectBaseYmd };
 
 // 時限ラベルの短表示: "1限 (13:00~13:45)" → "1限"。時刻注記の括弧
 // (半角/全角) 以降を落とす (\s は全角スペース U+3000 も含む)。落とすと
@@ -94,6 +96,12 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   if (!project || !Array.isArray(project.tabs)) return [];
   const baseYmd = projectBaseYmd(project, todayYmd);
   if (!baseYmd) return [];
+  // 講習で使う日付 (どれかのタブが授業に使う日) の年は季節ごとにまとめて決める
+  // (ラベルごとに決めると、講習の半年後の編集で季節が 2 つの年に割れる)
+  const used = usedDateLabels(project);
+  const ymdByLabel = resolveDateLabelsYmd(used, baseYmd);
+  const ymdOf = (label) =>
+    ymdByLabel.has(label) ? ymdByLabel.get(label) : resolveDateLabelYmd(label, baseYmd);
 
   const lessons = [];
   project.tabs.forEach((tab, tabIndex) => {
@@ -106,7 +114,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
 
     const dateById = new Map();
     for (const d of cfg.dates || []) {
-      const ymd = resolveDateLabelYmd(d.label, baseYmd);
+      const ymd = ymdOf(d.label);
       if (ymd) dateById.set(d.id, { ymd, label: d.label });
     }
     const periodById = new Map();
@@ -196,7 +204,6 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   // 日」のものだけ — 日付プールには前の季節の日付が残りうるので、そこに登録した
   // 予定まで拾うと、冬期の project を開いている間に前の夏の予備校が翌年 7 月の
   // 予定として月間カレンダーに出ていた。講師別 Excel も同じ絞り込み。
-  const used = usedDateLabels(project);
   const sessions = (Array.isArray(project.externalSessions)
     ? project.externalSessions
     : []
@@ -213,7 +220,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
     const teacher =
       typeof s?.teacherName === "string" ? s.teacherName.trim() : "";
     if (!teacher || teacher === "未定") continue;
-    const ymd = resolveDateLabelYmd(s.date, baseYmd);
+    const ymd = ymdOf(s.date);
     if (!ymd) continue;
     const range = getSessionTimeRange(s);
     const time = range

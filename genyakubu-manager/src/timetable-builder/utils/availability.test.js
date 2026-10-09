@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  answeredTeacherNames,
   applyAvailabilityMarks,
   availabilityNgKeys,
   buildSurveyLayout,
   collectSlotAvailability,
   computeSurveyDays,
-  computeTabMilestones,
   countTeacherAvailability,
   dropAvailabilityDates,
   dropAvailabilityPeriods,
@@ -73,6 +73,24 @@ describe('ラベルの改名・削除への追従', () => {
     expect(renameAvailabilityDate(map, '9/1', '9/2')).toBe(map);
   });
 
+  it('prefer=moved なら重なるマスは動かしてきた回答を優先 (見出しの改名)', () => {
+    expect(renameAvailabilityDate(map, '8/6', '8/6(木)', 'moved')).toEqual({
+      '8/6(木)': { '1限': 'ok', '2限': 'ng' },
+      '8/7(金)': { '1限': 'ng' },
+    });
+    const m2 = { '8/6(木)': { '1限': 'ok', '1限 (13:00~)': 'ng' } };
+    expect(renameAvailabilityPeriod(m2, '1限', '1限 (13:00~)', 'moved')).toEqual({ '8/6(木)': { '1限 (13:00~)': 'ok' } });
+    expect(renameAvailabilityPeriod(m2, '1限', '1限 (13:00~)')).toEqual({ '8/6(木)': { '1限 (13:00~)': 'ng' } });
+  });
+
+  it('ラベルが Object の組み込みと同じ名前でも自前のキーだけを見る', () => {
+    const m = { '8/6(木)': { '1限': 'ok' } };
+    expect(renameAvailabilityPeriod(m, '1限', 'toString')).toEqual({ '8/6(木)': { toString: 'ok' } });
+    expect(renameAvailabilityPeriod(m, 'constructor', '2限')).toBe(m);
+    expect(renameAvailabilityDate(m, 'constructor', '9/1')).toBe(m);
+    expect(applyAvailabilityMarks(m, [{ date: '8/6(木)', period: 'constructor' }], null)).toBe(m);
+  });
+
   it('時限の改名は全日付に効く', () => {
     expect(renameAvailabilityPeriod(map, '1限', '1限 (13:00~13:45)')).toEqual({
       '8/6': { '1限 (13:00~13:45)': 'ok', '2限': 'ng' },
@@ -105,6 +123,15 @@ describe('sanitizeAvailability', () => {
     })).toEqual({ value: { '7/29(水)': { '1限': 'ok' } }, changed: true });
     expect(sanitizeAvailability([1, 2])).toEqual({ value: undefined, changed: true });
     expect(sanitizeAvailability({ '7/30(木)': ['ok'] })).toEqual({ value: undefined, changed: true });
+  });
+
+  it('外部 JSON の "__proto__" キーは読み込まない (プロトタイプを書き換えない)', () => {
+    const raw = JSON.parse('{"__proto__": {"1限": "ng"}, "7/29(水)": {"1限": "ok", "__proto__": "ok"}}');
+    const { value, changed } = sanitizeAvailability(raw);
+    expect(changed).toBe(true);
+    expect(value).toEqual({ '7/29(水)': { '1限': 'ok' } });
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(Object.getPrototypeOf(value['7/29(水)'])).toBe(Object.prototype);
   });
 });
 
@@ -160,6 +187,14 @@ describe('computeAutoNgByTeacher への合流', () => {
     expect(e.sessions).toHaveLength(1);
     expect(e.availability).toBe(true);
     expect(autoNgSourceLabel(e)).toBe('他学年・調査');
+  });
+
+  it('placeholder の「未定」に回答が付いていても NG にしない (画面で直せないため)', () => {
+    const teachers = [{
+      name: '未定', subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [],
+      availability: { '7/29(水)': { '1限 (13:00~13:45)': 'ng' } },
+    }];
+    expect(computeAutoNgByTeacher(teachers, [], periods).get('未定').size).toBe(0);
   });
 });
 
@@ -229,6 +264,13 @@ describe('sortPeriodsByTime / groupPeriodsIntoBands', () => {
   it('終了時刻の無い時限 (1限 (13:00~) 等) は 1 時限ずつに割れない', () => {
     const bands = groupPeriodsIntoBands([P(1, '1限 (13:00~)'), P(2, '2限 (14:10~)'), P(3, '3限 (15:20~)')]);
     expect(bands).toHaveLength(1);
+    // 90 分授業 (開始の間隔 100 分) でも 1 つのまとまり
+    expect(groupPeriodsIntoBands([P(1, '1限 (13:00~)'), P(2, '2限 (14:40~)'), P(3, '3限 (16:20~)')])).toHaveLength(1);
+  });
+
+  it('終了時刻の無い時限でも、開始の間隔が 2 時間以上あけば昼と夜に分かれる', () => {
+    const bands = groupPeriodsIntoBands([P(1, '4限 (15:45~)'), P(2, '夜1 (18:30~)'), P(3, '夜2 (19:25~)')]);
+    expect(bands.map(b => b.map(p => p.id))).toEqual([[1], [2, 3]]);
   });
 
   it('時刻の読めない時限は最後のまとまり', () => {
@@ -285,31 +327,69 @@ describe('resolveCourseYmds', () => {
     expect(resolveCourseYmds(['補講日'], '2026-07-01').get('補講日')).toBeNull();
   });
 
+  it('講習の半年後に開いても、1 つの講習が 2 つの年に割れない (年は季節ごとに決める)', () => {
+    const labels = ['12/22(火)', '12/26(土)', '1/4(月)', '1/7(木)'];
+    // 曜日を信じる範囲の境目の近く: ラベルごとに決めると 12 月だけ翌年へ移っていた
+    const m = resolveCourseYmds(labels, '2027-06-25');
+    expect(labels.map(l => m.get(l))).toEqual(['2026-12-22', '2026-12-26', '2027-01-04', '2027-01-07']);
+    // 範囲を過ぎたら季節ごと次の年へ (途中で割れない)
+    const later = resolveCourseYmds(labels, '2027-07-10');
+    expect(labels.map(l => later.get(l))).toEqual(['2027-12-22', '2027-12-26', '2028-01-04', '2028-01-07']);
+  });
+
 });
 
-describe('computeTabMilestones', () => {
+describe('調査票の注記 (タブの開始・終講日)', () => {
+  const notesOf = (layout) => Object.fromEntries(
+    layout.weeks.flatMap(w => w.days).filter(d => d.notes.length > 0).map(d => [`${d.month}/${d.day}`, d.notes]),
+  );
+
   it('タブの初日に「開始」、最終日に「終講日」', () => {
-    const m = computeTabMilestones(summerProject());
-    expect(m.get('7/24(金)')).toEqual(['中12開始']);
-    expect(m.get('7/30(木)')).toEqual(['中12終講日', '中3終講日']);
-    expect(m.get('7/29(水)')).toEqual(['中3開始']);
-    expect(m.get('7/17(金)')).toEqual(['プレップ夏期開始']);
-    expect(m.get('7/21(火)')).toEqual(['プレップ夏期終講日']);
+    const layout = buildSurveyLayout(computeSurveyDays(summerProject()), { baseYmd: '2026-07-01' });
+    expect(notesOf(layout)).toEqual({
+      '7/17': ['プレップ夏期開始'],
+      '7/21': ['プレップ夏期終講日'],
+      '7/24': ['中12開始'],
+      '7/29': ['中3開始'],
+      '7/30': ['中12終講日', '中3終講日'],
+    });
   });
 
   it('1 日だけのタブはタブ名だけ。時限を使わないタブは載せない', () => {
     const p = summerProject();
     p.tabs.push({ id: 4, name: '模試', schedule: {}, config: { classes: [], subjectCounts: {}, activeDateIds: [7], activePeriodIds: [1] } });
     p.tabs.push({ id: 5, name: '空', schedule: {}, config: { classes: [], subjectCounts: {}, activeDateIds: [7], activePeriodIds: [] } });
-    const m = computeTabMilestones(p);
-    expect(m.get('7/20(月)')).toEqual(['模試']);
+    const layout = buildSurveyLayout(computeSurveyDays(p), { baseYmd: '2026-07-01' });
+    expect(notesOf(layout)['7/20']).toEqual(['模試']);
+  });
+
+  it('プールの並び (足した順) ではなく実日付の順で最初と最後を決める', () => {
+    // 後から前倒しの日 (7/22) を足したプール
+    const project = {
+      dates: [P(1, '7/24(金)'), P(2, '7/29(水)'), P(3, '7/22(水)')],
+      periods: [P(1, '1限 (13:00~13:45)')],
+      tabs: [{ id: 1, name: '中3', schedule: {}, config: { classes: [], subjectCounts: {} } }],
+    };
+    const layout = buildSurveyLayout(computeSurveyDays(project), { baseYmd: '2026-07-01' });
+    expect(notesOf(layout)).toEqual({ '7/22': ['中3開始'], '7/29': ['中3終講日'] });
+  });
+
+  it('日付として読めない日に終講日を付けない (本当の最終日に付ける)', () => {
+    const project = {
+      dates: [P(1, '1/7(木)'), P(2, '12/24(木)'), P(3, '補講日')],
+      periods: [P(1, '1限 (13:00~13:45)')],
+      tabs: [{ id: 1, name: '中3', schedule: {}, config: { classes: [], subjectCounts: {} } }],
+    };
+    const layout = buildSurveyLayout(computeSurveyDays(project), { baseYmd: '2026-12-01' });
+    expect(notesOf(layout)).toEqual({ '12/24': ['中3開始'], '1/7': ['中3終講日'] });
+    expect(layout.unplaced.map(sd => sd.date.label)).toEqual(['補講日']);
   });
 });
 
 describe('buildSurveyLayout', () => {
   it('月曜始まりの週に並べ、授業の無い週は飛ばす', () => {
     const p = summerProject();
-    const layout = buildSurveyLayout(computeSurveyDays(p), { baseYmd: '2026-07-01', milestones: computeTabMilestones(p) });
+    const layout = buildSurveyLayout(computeSurveyDays(p), { baseYmd: '2026-07-01' });
     expect(layout.weeks.map(w => w.mondayYmd)).toEqual(['2026-07-13', '2026-07-20', '2026-07-27']);
     expect(layout.includeSunday).toBe(false);
     const w1 = layout.weeks[0];
@@ -383,12 +463,24 @@ describe('集計', () => {
     expect(c).toEqual({ ok: 1, maybe: 0, ng: 1, blank: 21, total: 23 });
   });
 
+  it('answeredTeacherNames は今の調査の対象マスに記号がある講師だけ (前の季節の回答・未定は除く)', () => {
+    const names = answeredTeacherNames([
+      ...teachers,
+      // 調査の対象外の日 (前の冬) の回答だけ残っている
+      { name: '南條', availability: { '12/25(金)': { '1限 (13:00~13:45)': 'ng' } } },
+    ], days);
+    expect([...names]).toEqual(['堀上', '石原']);
+  });
+
   it('collectSlotAvailability は回答ごとに分け、未定は除く', () => {
-    const s = collectSlotAvailability(teachers, '7/17(金)', 'プレップ2 (20:20~21:50)');
+    const all = [...teachers, { name: '南條', availability: { '12/25(金)': { '1限 (13:00~13:45)': 'ng' } } }];
+    const answered = answeredTeacherNames(all, days);
+    const s = collectSlotAvailability(all, '7/17(金)', 'プレップ2 (20:20~21:50)', answered);
     expect(s.ng.map(t => t.name)).toEqual(['堀上']);
     expect(s.blank.map(t => t.name)).toEqual(['石原']);
-    expect(s.unanswered.map(t => t.name)).toEqual(['高松']);
-    const s2 = collectSlotAvailability(teachers, '7/17(金)', 'プレップ1 (18:30~20:00)');
+    // 前の季節の回答だけの講師は「未記入」ではなく「未回答」
+    expect(s.unanswered.map(t => t.name)).toEqual(['高松', '南條']);
+    const s2 = collectSlotAvailability(all, '7/17(金)', 'プレップ1 (18:30~20:00)', answered);
     expect(s2.ok.map(t => t.name)).toEqual(['堀上']);
     expect(s2.maybe.map(t => t.name)).toEqual(['石原']);
   });

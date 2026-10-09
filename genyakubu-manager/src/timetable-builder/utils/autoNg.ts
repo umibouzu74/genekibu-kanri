@@ -8,7 +8,7 @@
 
 import { makeNgKey } from './scheduleKey';
 import { getPeriodTimeRange, getSessionTimeRange, timeRangesOverlap } from './timeRange';
-import { availabilityNgKeys } from './availability';
+import { availabilityNgKeys, isSurveyTeacher } from './availability';
 import type { Entity, ExternalSession, Teacher } from '../types';
 
 /**
@@ -76,6 +76,8 @@ export function computeAutoNgEntries(
 // 出勤可能調査の × (teacher.availability) もここで合流させる。自動作成・違反
 // チェック・Excel・修正提案はすべてこの関数の結果を見るので、× を NG として
 // 扱う経路をここ 1 か所に保つ (呼び出し側で調査を見忘れる事故を防ぐ)。
+// placeholder の「未定」は調査の対象外 (画面で回答を直せない) なので、改名や
+// 読込で回答が付いていても NG にしない。
 export function computeAutoNgByTeacher(
   teachers: Teacher[] | null | undefined,
   externalSessions: ExternalSession[] | null | undefined,
@@ -85,7 +87,7 @@ export function computeAutoNgByTeacher(
   if (!Array.isArray(teachers)) return result;
   for (const t of teachers) {
     const entries = computeAutoNgEntries(t.name, externalSessions, periods);
-    for (const key of availabilityNgKeys(t)) {
+    for (const key of isSurveyTeacher(t) ? availabilityNgKeys(t) : []) {
       const existing = entries.get(key);
       if (existing) existing.availability = true;
       else entries.set(key, { sessions: [], availability: true });

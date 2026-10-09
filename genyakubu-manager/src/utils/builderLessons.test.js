@@ -401,6 +401,15 @@ describe("buildKoshuLessons: 前の季節の日付が残った project", () => {
     const lessons = buildKoshuLessons(project);
     expect(lessons.filter((l) => l.kind === "koshu").map((l) => l.date)).toEqual(["2026-12-25", "2027-01-07"]);
   });
+
+  it("講習の半年後の編集でも、1 つの講習が 2 つの年に割れない (年は季節ごとに決める)", () => {
+    // 最終編集 2027-07-01: 12/25 は 188 日前・1/7 は 175 日前。ラベルごとに決めると
+    // 曜日を信じる範囲 (180 日) の境目で 12/25 だけ 2027-12-25 へ移っていた
+    const project = winter();
+    project.updatedAt = "2027-07-01T09:00:00.000Z";
+    const dates = buildKoshuLessons(project).map((l) => l.date);
+    expect(dates).toEqual(["2026-12-25", "2027-01-07", "2027-01-07"]);
+  });
 });
 
 describe("indexKoshuLessonsByDate", () => {

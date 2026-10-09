@@ -522,7 +522,7 @@ describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)
     expect(removeExternalSession).toHaveBeenCalledWith(7);
   });
 
-  it('自動NG セルは「自」表示 + aria-label に自動NGあり + セッション由来ツールチップ', () => {
+  it('自動NG セルは「自」表示 + aria-label に自動NG の由来 + セッション由来ツールチップ', () => {
     const autoKey = '7/24(金)-1限';
     const autoNgByTeacher = new Map([
       ['堀上', new Map([[autoKey, {
@@ -532,7 +532,7 @@ describe('AbsenceNgPanel — 日付セクションのセッション一覧 (E3e)
     renderPanel({
       overrides: { project: makeFullProject(), analysis: { autoNgByTeacher } },
     });
-    const cell = screen.getByLabelText('堀上 7/24(金) 1限 の手動NG (自動NGあり)');
+    const cell = screen.getByLabelText('堀上 7/24(金) 1限 の手動NG (自動NG: 他学年)');
     expect(cell).toHaveTextContent('自');
     expect(cell).toHaveAttribute('title', expect.stringContaining('予備校 (10:00〜11:00)'));
     // 手動 NG ではないので aria-pressed=false のまま

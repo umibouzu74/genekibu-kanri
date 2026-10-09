@@ -5,7 +5,8 @@
 // 講習の日付プールに展開して、同じ形の登録項目にする純粋関数。
 //
 // - 講習の日付ラベル ("12/24(木)") を本体と同じ規則で年つきの日付に解決し
-//   (builderLessons.resolveDateLabelYmd)、その日に実際に行く予定だけを拾う
+//   (builderLessons.resolveDateLabelsYmd。年は季節ごとにまとめて決める)、
+//   その日に実際に行く予定だけを拾う
 //   (休みの日・塾の全体休講日は offsiteLessonsOnDate が外す)
 // - 移動時間があれば前後に足した時刻で入れる (講習のコマに間に合わない時限も
 //   NG にするため)。メモに行き先と「移動込み」を書く
@@ -14,7 +15,7 @@
 // 取り込みは画面のボタンを押したときだけ (自動で同期はしない)。同じ内容の
 // 再取り込みは講習側の reducer が重複として飛ばす。
 
-import { resolveDateLabelYmd } from "./builderLessons";
+import { resolveDateLabelsYmd } from "./builderLessons";
 import { offsiteLessonsOnDate, offsiteTimeRange } from "./offsiteLessons";
 
 function fmtHM(min) {
@@ -44,8 +45,9 @@ export function buildOffsiteSessionItems(
   if (!Array.isArray(offsiteLessons) || offsiteLessons.length === 0 || !baseYmd) {
     return { items, unknownTeachers: [] };
   }
+  const ymdByLabel = resolveDateLabelsYmd(dateLabels, baseYmd);
   for (const label of dateLabels) {
-    const ymd = resolveDateLabelYmd(label, baseYmd);
+    const ymd = ymdByLabel.get(String(label ?? ""));
     if (!ymd) continue;
     for (const rec of offsiteLessonsOnDate(offsiteLessons, ymd, { holidays })) {
       if (known && !known.has(rec.teacher)) {

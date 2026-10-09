@@ -163,7 +163,7 @@ describe('unifyDateLabelWeekdays: リネーム (twin が居ない裸ラベル)',
     expect(out.teachers[0].ngSlots).toEqual(['8/7(金)-1限']); // id 不変なので schedule は無関係
   });
 
-  it('年またぎプール (12月+1月) は 1〜3 月を翌年扱いで推定する', () => {
+  it('年またぎプール (12月+1月) は季節の始まり (12 月) より前の月を翌年扱いで推定する', () => {
     // 12/28(月)・1/4(月) は 2026-12〜2027-01 の冬期講習。1/5 → 2027-01-05 (火)
     const p = makeProject({
       dates: [{ id: 1, label: '12/28(月)' }, { id: 2, label: '1/4(月)' }, { id: 3, label: '1/5' }],

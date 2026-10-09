@@ -14,6 +14,16 @@ export function isAvailabilityMark(v: unknown): v is AvailabilityMark {
   return v === 'ok' || v === 'maybe' || v === 'ng';
 }
 
+// 自前のキーだけを見る (ラベルが "constructor" などでも Object の組み込みを
+// 拾わない)
+function hasOwn(obj: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+// 外部 JSON の "__proto__" キーは、{} へ代入すると値ではなくプロトタイプに
+// なるので読み込まない
+const UNSAFE_KEY = '__proto__';
+
 export interface AvailabilityCell {
   date: string;
   period: string;
@@ -33,15 +43,17 @@ export function applyAvailabilityMarks(
   const ensureDate = (date: string): Record<string, AvailabilityMark> => {
     if (!next) next = { ...(map || {}) };
     if (!cloned.has(date)) {
-      next[date] = { ...(next[date] || {}) };
+      next[date] = { ...(hasOwn(next, date) ? next[date] : {}) };
       cloned.add(date);
     }
     return next[date];
   };
   for (const cell of cells || []) {
-    if (!cell || !cell.date || !cell.period) continue;
+    if (!cell || !cell.date || !cell.period || cell.date === UNSAFE_KEY || cell.period === UNSAFE_KEY) continue;
     const { date, period } = cell;
-    const current = (next || map || {})[date]?.[period];
+    const src = next || map || {};
+    const byDate = hasOwn(src, date) ? src[date] : undefined;
+    const current = byDate && hasOwn(byDate, period) ? byDate[period] : undefined;
     if (mark == null) {
       if (current === undefined) continue;
       const byPeriod = ensureDate(date);
@@ -88,37 +100,46 @@ export function mapTeachersAvailability(
 
 // ─── ラベルの改名・削除への追従 ─────────────────────────────
 
-// 日付ラベルの改名。改名先に既に回答がある日はマスごとに既存 (改名先) を優先
-// してマージする (日付ラベル統一で「8/6」と「8/6(木)」が合流するケース)。
+// 改名先に既に回答があるマスをどちらに寄せるか。
+//   'existing': 改名先を優先 (日付ラベル統一で「8/6」と「8/6(木)」が合流する
+//     ケース。改名先もプールにある本物の日付)
+//   'moved': 動かしてきた回答を優先 (見出しの改名。改名先はプールに無い
+//     ラベルなので、そこにある回答は前に消した日付の残り)
+export type RenamePrefer = 'existing' | 'moved';
+
+// 日付ラベルの改名 (改名先と同じ日付の回答はマスごとにマージ)。
 export function renameAvailabilityDate(
   map: AvailabilityMap | undefined,
   oldLabel: string,
   newLabel: string,
+  prefer: RenamePrefer = 'existing',
 ): AvailabilityMap | undefined {
-  if (!map || oldLabel === newLabel || !map[oldLabel]) return map;
+  if (!map || oldLabel === newLabel || newLabel === UNSAFE_KEY || !hasOwn(map, oldLabel)) return map;
   const next = { ...map };
   const moved = next[oldLabel];
   delete next[oldLabel];
-  next[newLabel] = { ...moved, ...(next[newLabel] || {}) };
+  const existing = hasOwn(next, newLabel) ? next[newLabel] : {};
+  next[newLabel] = prefer === 'moved' ? { ...existing, ...moved } : { ...moved, ...existing };
   return next;
 }
 
-// 時限ラベルの改名 (全日付)。改名先に既に回答があるマスは既存を優先。
+// 時限ラベルの改名 (全日付)。改名先と同じマスの回答の扱いは prefer。
 export function renameAvailabilityPeriod(
   map: AvailabilityMap | undefined,
   oldLabel: string,
   newLabel: string,
+  prefer: RenamePrefer = 'existing',
 ): AvailabilityMap | undefined {
-  if (!map || oldLabel === newLabel) return map;
+  if (!map || oldLabel === newLabel || newLabel === UNSAFE_KEY) return map;
   let next: AvailabilityMap | null = null;
   Object.keys(map).forEach(date => {
     const byPeriod = map[date];
-    if (!byPeriod || !(oldLabel in byPeriod)) return;
+    if (!byPeriod || !hasOwn(byPeriod, oldLabel)) return;
     if (!next) next = { ...map };
     const np = { ...byPeriod };
     const v = np[oldLabel];
     delete np[oldLabel];
-    if (!(newLabel in np)) np[newLabel] = v;
+    if (prefer === 'moved' || !hasOwn(np, newLabel)) np[newLabel] = v;
     next[date] = np;
   });
   return next || map;
@@ -170,7 +191,7 @@ export function sanitizeAvailability(raw: unknown): { value: AvailabilityMap | u
   const out: AvailabilityMap = {};
   Object.keys(src).forEach(date => {
     const byPeriod = src[date];
-    if (!byPeriod || typeof byPeriod !== 'object' || Array.isArray(byPeriod)) {
+    if (date === UNSAFE_KEY || !byPeriod || typeof byPeriod !== 'object' || Array.isArray(byPeriod)) {
       changed = true;
       return;
     }
@@ -178,7 +199,7 @@ export function sanitizeAvailability(raw: unknown): { value: AvailabilityMap | u
     const np: Record<string, AvailabilityMark> = {};
     Object.keys(bp).forEach(period => {
       const v = bp[period];
-      if (isAvailabilityMark(v)) np[period] = v;
+      if (period !== UNSAFE_KEY && isAvailabilityMark(v)) np[period] = v;
       else changed = true;
     });
     if (Object.keys(np).length === 0) {

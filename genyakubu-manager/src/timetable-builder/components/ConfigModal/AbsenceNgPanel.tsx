@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
-import { computeAutoNgEntries } from '../../utils/autoNg';
+import { autoNgSourceLabel, computeAutoNgEntries } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
@@ -71,9 +71,11 @@ export default function AbsenceNgPanel() {
   // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
   // クリーンアップする useEffect で id 再利用時の silent collapse を防ぐ
   // (code-review P3)。
-  // 開いた直後は「NG か他学年セッションがある日」だけ展開する。全日を開くと
-  // 講師 × 時限のマトリクスが日数ぶん縦に並び (夏期で 1 万 px 超)、目当ての日に
-  // たどり着けなかった。閉じている日も見出しを押せば開く (すべて展開もある)。
+  // 開いた直後は「手動NG か他学年セッション (由来の自動NG) がある日」だけ展開
+  // する。全日を開くと講師 × 時限のマトリクスが日数ぶん縦に並び (夏期で 1 万 px
+  // 超)、目当ての日にたどり着けなかった。出勤可能調査の × だけの日は開かない
+  // (バイトの回答が入るとほぼ全日が開いてしまう。調査の × はこの画面では直さない)。
+  // 閉じている日も見出しを押せば開く (すべて展開もある)。
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
     const sessionDates = new Set((project.externalSessions || []).map(s => s.date));
@@ -82,7 +84,7 @@ export default function AbsenceNgPanel() {
         const auto = autoNgByTeacher?.get(t.name);
         return poolPeriods.some(p => {
           const k = makeNgKey(d.label, p.label);
-          return !!t.ngSlots?.includes(k) || !!auto?.has(k);
+          return !!t.ngSlots?.includes(k) || (auto?.get(k)?.sessions.length ?? 0) > 0;
         });
       });
       initial[d.id] = hasNg || sessionDates.has(d.label);
@@ -423,7 +425,7 @@ export default function AbsenceNgPanel() {
   const handleClearAllManualNg = async () => {
     if (manualNgTotal === 0) return;
     const ok = await showConfirm(
-      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n他学年セッション由来の自動NGは残ります。\nよろしいですか?`,
+      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n自動NG (他学年セッション・出勤可能調査の ×) は残ります。\nよろしいですか?`,
       { title: '手動NGの全解除', danger: true, confirmLabel: '全解除する' },
     );
     if (!ok) return;
@@ -558,8 +560,8 @@ export default function AbsenceNgPanel() {
         <strong>他学年セッション</strong> (予備校 / 高校等) を時刻付きで登録すると、
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
-        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で調査票ごと管理できます (× が自動で NG になり、下のマトリクスに「調」で出ます)。<br />
-        どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
+        どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。<br />
+        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。
       </div>
 
       {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
@@ -900,8 +902,8 @@ export default function AbsenceNgPanel() {
           </button>
         </div>
         <div className="text-[11px] text-builder-ink-muted mt-1">
-          自動NGは他学年セッションから導出されるため、NG設定の全解除では他学年セッションも削除されます
-          (プリセットと数値入力の記録は残ります)
+          他学年セッション由来の自動NGを消すため、NG設定の全解除では他学年セッションも削除されます
+          (プリセットと数値入力の記録・出勤可能調査の回答は残ります)
         </div>
       </div>
 
@@ -1165,7 +1167,7 @@ function DateSection({
                                   role="button"
                                   tabIndex={0}
                                   aria-pressed={!!isManualNg}
-                                  aria-label={`${t.name} ${date.label} ${p.label} の手動NG${isAutoNg ? ' (自動NGあり)' : ''}`}
+                                  aria-label={`${t.name} ${date.label} ${p.label} の手動NG${isAutoNg ? ` (自動NG: ${autoNgSourceLabel(autoEntry)})` : ''}`}
                                   onClick={toggle}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' || e.key === ' ') {

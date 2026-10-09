@@ -7,7 +7,7 @@ import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraint
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 import { autoNgSourceLabel } from '../utils/autoNg';
-import { AVAILABILITY_SYMBOL, BLANK_SYMBOL, getAvailabilityMark, hasAvailability } from '../utils/availability';
+import { AVAILABILITY_SYMBOL, BLANK_SYMBOL, getAvailabilityMark } from '../utils/availability';
 
 export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null, isSelected = false, onCellSelect }) {
   const {
@@ -87,13 +87,15 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isAutoNg = !!analysis.autoNgByTeacher?.get(entry.teacher)?.has(ngKey);
   const isNgAssigned = isManualNg || isAutoNg;
   // 出勤可能調査: 割り当てた講師が △ (相談) / 未記入のマスなら目印を出す
-  // (× は上の自動NG に合流済み)。回答の無い講師 (調査していない常勤など) は出さない
+  // (× は上の自動NG に合流済み)。今の調査に回答の無い講師 (調査していない常勤・
+  // 前の季節の回答だけ残っている人) は出さない
+  const surveyAnswered = analysis.surveyAnsweredTeachers;
   const assignedMark = assignedTeacher ? getAvailabilityMark(assignedTeacher, dLabel, pLabel) : null;
   const assignedSurveyHint = !assignedTeacher || isNgAssigned
     ? null
     : assignedMark === 'maybe'
       ? 'maybe'
-      : (!assignedMark && hasAvailability(assignedTeacher) ? 'blank' : null);
+      : (!assignedMark && surveyAnswered?.has(assignedTeacher.name) ? 'blank' : null);
 
   // 合同グループ判定 (label ベース)
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
@@ -298,7 +300,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                   else {
                     // 出勤可能調査の ○ / △ / 未記入 (?) を計の前に添える。回答の無い講師は何も付けない
                     const mark = getAvailabilityMark(t, dLabel, pLabel);
-                    const surveyPrefix = mark ? `${AVAILABILITY_SYMBOL[mark]} ` : (hasAvailability(t) ? `${BLANK_SYMBOL} ` : '');
+                    const surveyPrefix = mark ? `${AVAILABILITY_SYMBOL[mark]} ` : (surveyAnswered?.has(t.name) ? `${BLANK_SYMBOL} ` : '');
                     label += ` (${surveyPrefix}計${daily.total})`;
                   }
                 }

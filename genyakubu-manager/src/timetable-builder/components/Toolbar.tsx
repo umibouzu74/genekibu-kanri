@@ -362,8 +362,8 @@ export default function Toolbar({
           {isCompact ? "🔍 標準" : "📏 縮小"}
         </button>
         <div className="h-6 w-px bg-builder-border mx-1"></div>
-        <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
-        <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
+        <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-sm text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="元に戻す (Undo)">↩️</button>
+        <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-sm text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
         <div className="h-6 w-px bg-builder-border mx-1"></div>
         <SnapshotMenu />
         <button

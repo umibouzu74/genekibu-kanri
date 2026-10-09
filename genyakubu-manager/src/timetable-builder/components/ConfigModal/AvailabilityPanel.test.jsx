@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
 import AvailabilityPanel from './AvailabilityPanel';
 import { ProjectContext } from '../../contexts/projectContextValue';
 import { UIContext } from '../../contexts/uiContextValue';
 import { HostDataContext } from '../../contexts/hostDataContext';
+import { applyAvailabilityMarks, withAvailability } from '../../utils/availability';
 
 afterEach(cleanup);
 
@@ -44,6 +46,24 @@ function renderPanel({ project = baseProject(), ui = {}, partTimeStaffNames = []
     </ProjectContext.Provider>,
   );
   return { ...utils, setTeacherAvailability, clearTeacherAvailability, setTeacherAvailabilityMemo, uiValue };
+}
+
+// 回答を実際に書き換える (reducer と同じ形の操作を state で持つ) 版
+function StatefulPanel({ initial }) {
+  const [project, setProject] = useState(initial);
+  const setTeacherAvailability = (name, cells, mark) => setProject(p => ({
+    ...p,
+    teachers: p.teachers.map(t => (t.name === name ? withAvailability(t, applyAvailabilityMarks(t.availability, cells, mark)) : t)),
+  }));
+  return (
+    <ProjectContext.Provider value={{ project, setTeacherAvailability, clearTeacherAvailability: vi.fn(), setTeacherAvailabilityMemo: vi.fn() }}>
+      <UIContext.Provider value={{ showConfirm: vi.fn().mockResolvedValue(true), showToast: vi.fn() }}>
+        <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames: [] }}>
+          <AvailabilityPanel />
+        </HostDataContext.Provider>
+      </UIContext.Provider>
+    </ProjectContext.Provider>
+  );
 }
 
 describe('AvailabilityPanel — 回答の入力', () => {
@@ -109,6 +129,53 @@ describe('AvailabilityPanel — 回答の入力', () => {
     fireEvent.click(screen.getByRole('button', { name: '回答を消す' }));
     await vi.waitFor(() => expect(clearTeacherAvailability).toHaveBeenCalledWith('山田'));
     expect(uiValue.showConfirm).toHaveBeenCalled();
+    expect(uiValue.showToast).toHaveBeenCalledWith('山田 の回答とメモを消しました', 'success', 2500);
+  });
+
+  it('前の季節の日付に残った回答だけの講師は未回答扱い (「未記入を × に」を押せない。消すことはできる)', () => {
+    const project = baseProject();
+    project.teachers[0] = { ...project.teachers[0], availability: { '12/25(金)': { '1限 (13:00~13:45)': 'ok' } } };
+    renderPanel({ project });
+    expect(screen.getByRole('button', { name: /^堀上/ })).toHaveTextContent('未回答');
+    fireEvent.click(screen.getByRole('button', { name: /^堀上/ }));
+    expect(screen.getByRole('button', { name: /未記入を × に/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '回答を消す' })).toBeEnabled();
+  });
+
+  it('◀ / ▶ で講師を移っても押したボタンにフォーカスが残る (作り直さない)', () => {
+    const project = baseProject();
+    project.teachers.splice(1, 0, { name: '石原', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] });
+    renderPanel({ project });
+    fireEvent.click(screen.getByRole('button', { name: /^堀上/ }));
+    const next = screen.getByRole('button', { name: '次の講師' });
+    next.focus();
+    fireEvent.click(next);
+    expect(screen.getByText('石原 の回答')).toBeInTheDocument();
+    expect(next).toBeEnabled();
+    expect(document.activeElement).toBe(next);
+  });
+
+  it('ペンは矢印キーで移り、選ばれているものだけが Tab で止まる', () => {
+    renderPanel();
+    const ok = screen.getByRole('radio', { name: '○ 出られる' });
+    expect(ok).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('radio', { name: '△ 相談' })).toHaveAttribute('tabindex', '-1');
+    ok.focus();
+    fireEvent.keyDown(ok, { key: 'ArrowRight' });
+    const maybe = screen.getByRole('radio', { name: '△ 相談' });
+    expect(maybe).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(maybe);
+  });
+
+  it('メモの変換確定の Enter では保存しない', () => {
+    const { setTeacherAvailabilityMemo } = renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /^山田/ }));
+    const input = screen.getByPlaceholderText(/19:00 以降なら可/);
+    input.focus();
+    fireEvent.change(input, { target: { value: '19じ' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(document.activeElement).toBe(input);
+    expect(setTeacherAvailabilityMemo).not.toHaveBeenCalled();
   });
 
   it('メモは blur で 1 回だけ保存', () => {
@@ -153,12 +220,44 @@ describe('AvailabilityPanel — 誰が入れるか', () => {
     expect(within(detail).getByText('堀上(英語)')).toBeInTheDocument(); // 未回答
   });
 
-  it('一覧のマスもペンで付けられ、講師名で入力へ移る', () => {
+  it('一覧のマスもペンで付けられ、講師名で入力へ移る (フォーカスは入力の見出しへ)', () => {
     const { setTeacherAvailability } = renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: '👀 誰が入れるか' }));
     fireEvent.click(screen.getByRole('button', { name: '山田 7/30(木) 13:00-13:45: 未記入' }));
     expect(setTeacherAvailability).toHaveBeenLastCalledWith('山田', [{ date: '7/30(木)', period: '1限 (13:00~13:45)' }], 'ok');
     fireEvent.click(screen.getByRole('button', { name: /^山田 📝/ }));
-    expect(screen.getByText('山田 の回答')).toBeInTheDocument();
+    const heading = screen.getByText('山田 の回答');
+    expect(heading).toBeInTheDocument();
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it('表示の切り替えはタブ (左右キーでも移る)', () => {
+    renderPanel();
+    const input = screen.getByRole('tab', { name: '✏️ 回答の入力' });
+    expect(input).toHaveAttribute('aria-controls', 'availability-view-panel');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', input.id);
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '👀 誰が入れるか' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText(/1 名を非表示中/)).toBeInTheDocument();
+  });
+
+  it('一覧で最後の記号を消しても、その講師の行は消えない (行がずれて隣を押さないように)', () => {
+    const project = baseProject();
+    project.teachers[1] = { ...project.teachers[1], availability: { '7/29(水)': { '1限 (13:00~13:45)': 'ok' } } };
+    render(<StatefulPanel initial={project} />);
+    fireEvent.click(screen.getByRole('tab', { name: '👀 誰が入れるか' }));
+    // ○ のペンで ○ のマスを押す → 未記入 (山田の回答は 0 になる)
+    fireEvent.click(screen.getByRole('button', { name: '山田 7/29(水) 13:00-13:45: ○ 出られる' }));
+    expect(screen.getByRole('button', { name: '山田 7/29(水) 13:00-13:45: 未記入' })).toBeInTheDocument();
+  });
+
+  it('顔ぶれを閉じると、押した人数のボタンへフォーカスを戻す', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: '👀 誰が入れるか' }));
+    const count = screen.getByRole('button', { name: '7/29(水) 13:00-13:45 に出られる人: 1 名' });
+    fireEvent.click(count);
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    expect(screen.queryByText(/授業 2 クラス/)).toBeNull();
+    expect(document.activeElement).toBe(count);
   });
 });

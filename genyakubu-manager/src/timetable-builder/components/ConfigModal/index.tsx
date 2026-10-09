@@ -113,7 +113,7 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
                 aria-controls="builder-config-tabpanel"
                 tabIndex={selected ? 0 : -1}
                 onClick={() => setConfigTab(id)}
-                className={`pb-2 font-bold whitespace-nowrap ${selected ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
+                className={`pb-2 text-sm font-bold whitespace-nowrap ${selected ? 'text-builder-blue border-b-2 border-builder-blue' : 'text-builder-ink-muted'}`}
               >
                 {label}
               </button>

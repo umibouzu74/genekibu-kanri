@@ -13,12 +13,14 @@
 // - 調査の対象マス (= 調査票に載る (日付, 時限)) は「どれかのタブがその日に
 //   使う時限」(computeSurveyDays)。プールにあっても誰も使わない時限は載せない
 // - 日付ラベルは年を持たないので、週の並び (調査票・入力画面) は本体と同じ
-//   決まり (courseDates.resolveDateLabelYmd) で実日付に解決する (冬期講習の
+//   決まり (courseDates.resolveDateLabelsYmd) で実日付に解決する (冬期講習の
 //   12/25 → 1/7 の年またぎを含む)。授業のある日だけを解決する
+// - 「回答済み」は今の調査の対象マスに記号が 1 つでもあること
+//   (answeredTeacherNames)。前の季節の日付に残った回答だけの講師は未回答
 
-import { makeNgKey, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
+import { makeNgKey, activePeriodsForTab } from './scheduleKey';
 import { sortPoolDatesByCalendar } from './dateGenerate';
-import { resolveDateLabelYmd } from './courseDates';
+import { resolveDateLabelsYmd } from './courseDates';
 import { formatHHmm, getPeriodTimeRange } from './timeRange';
 import { isAvailabilityMark } from './availabilityShape';
 import type { AvailabilityCell } from './availabilityShape';
@@ -75,7 +77,8 @@ export function getAvailabilityMark(
   return isAvailabilityMark(m) ? m : null;
 }
 
-/** 1 マスでも回答がある講師か (未回答 = 調査票がまだ戻っていない) */
+/** 回答が何か残っているか (調査の対象外のマスに残った前の季節の回答も含む)。
+ *  「回答を消す」を押せるかに使う。今の調査に回答済みかは answeredTeacherNames */
 export function hasAvailability(teacher: Pick<Teacher, 'availability'> | null | undefined): boolean {
   const map = teacher?.availability;
   if (!map) return false;
@@ -182,28 +185,43 @@ export function countTeacherAvailability(
   return counts;
 }
 
+// 今の調査の対象マスに記号が 1 つでもある講師 (= 回答済み) の名前。前の季節の
+// 日付など対象外のマスに残った回答だけの講師は含めない — 含めると未回答の人に
+// 「未記入を × に」が押せてしまい、プルダウンにも「?」が並ぶ。未定は含めない。
+export function answeredTeacherNames(teachers: Teacher[] | null | undefined, surveyDays: SurveyDay[]): Set<string> {
+  const out = new Set<string>();
+  (teachers || []).forEach(t => {
+    if (!isSurveyTeacher(t) || !t.availability) return;
+    const hit = surveyDays.some(sd => sd.periods.some(p => getAvailabilityMark(t, sd.date.label, p.label) != null));
+    if (hit) out.add(t.name);
+  });
+  return out;
+}
+
 export interface SlotAvailability {
   ok: Teacher[];
   maybe: Teacher[];
   ng: Teacher[];
   /** 回答はあるが、このマスは未記入 */
   blank: Teacher[];
-  /** 回答が 1 マスも無い (調査票が戻っていない・調査しない講師) */
+  /** 今の調査に回答が無い (調査票が戻っていない・調査しない講師) */
   unanswered: Teacher[];
 }
 
 // 1 マス (日付, 時限) について、講師を回答ごとに分ける。並びは teachers の順。
+// answered は answeredTeacherNames の結果 (未記入と未回答の分け目)。
 export function collectSlotAvailability(
   teachers: Teacher[],
   dateLabel: string,
   periodLabel: string,
+  answered: ReadonlySet<string>,
 ): SlotAvailability {
   const out: SlotAvailability = { ok: [], maybe: [], ng: [], blank: [], unanswered: [] };
   (teachers || []).forEach(t => {
     if (!isSurveyTeacher(t)) return;
     const m = getAvailabilityMark(t, dateLabel, periodLabel);
     if (m) out[m].push(t);
-    else if (hasAvailability(t)) out.blank.push(t);
+    else if (answered.has(t.name)) out.blank.push(t);
     else out.unanswered.push(t);
   });
   return out;
@@ -235,10 +253,11 @@ export function periodTimeText(period: Entity): string {
 // 時間帯のまとまり (昼の部・夜の部など) に分ける。開始時刻順に並べ、前の
 // まとまりの終わりから BAND_GAP_MIN 分以上空いたら次のまとまりにする。
 // 終了時刻の無い時限は ASSUMED_LESSON_MIN 分の授業とみなす (「1限 (13:00~)」
-// 「2限 (14:10~)」が 1 時限ずつ別のまとまりに割れないように)。時刻の読めない
-// 時限は最後のまとまりに元の順でまとめる。
+// 「2限 (14:40~)」のような 90 分授業でも 1 時限ずつ別のまとまりに割れないように。
+// 開始の間隔が 2 時間あけば別のまとまり)。時刻の読めない時限は最後のまとまりに
+// 元の順でまとめる。
 export const BAND_GAP_MIN = 40;
-const ASSUMED_LESSON_MIN = 60;
+const ASSUMED_LESSON_MIN = 80;
 
 export function groupPeriodsIntoBands(periods: Entity[], gapMin = BAND_GAP_MIN): Entity[][] {
   const timed: Array<{ p: Entity; start: number; end: number; idx: number }> = [];
@@ -278,36 +297,11 @@ export function toYmd(dt: Date): string {
 }
 
 // 日付ラベル → 実日付 (YYYY-MM-DD)。本体の月間カレンダーと同じ決まり
-// (courseDates.resolveDateLabelYmd) で置くので、調査票の曜日の列と本体の
-// 「講」の日付が食い違わない。M/D として読めないラベルは null。
+// (courseDates.resolveDateLabelsYmd。年は季節ごとにまとめて決める) で置くので、
+// 調査票の曜日の列と本体の「講」の日付が食い違わない。M/D として読めない
+// ラベルは null。
 export function resolveCourseYmds(labels: string[], baseYmd: string): Map<string, string | null> {
-  const out = new Map<string, string | null>();
-  (labels || []).forEach(label => out.set(label, resolveDateLabelYmd(label, baseYmd)));
-  return out;
-}
-
-// タブの開始・終講の注記 ("中3開始" / "中3終講日")。日付ラベル → 注記の配列。
-// 授業の時限を 1 つも使わないタブは載せない。1 日だけのタブはタブ名だけ。
-export function computeTabMilestones(project: Pick<Project, 'dates' | 'periods' | 'tabs'>): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  const push = (label: string, note: string) => {
-    if (!out.has(label)) out.set(label, []);
-    out.get(label)!.push(note);
-  };
-  (project.tabs || []).forEach(tab => {
-    if (activePeriodsForTab(project.periods, tab).length === 0) return;
-    const dates = activeDatesForTab(project.dates, tab);
-    if (dates.length === 0) return;
-    const first = dates[0];
-    const last = dates[dates.length - 1];
-    if (first.id === last.id) {
-      push(first.label, tab.name);
-      return;
-    }
-    push(first.label, `${tab.name}開始`);
-    push(last.label, `${tab.name}終講日`);
-  });
-  return out;
+  return resolveDateLabelsYmd(labels || [], baseYmd);
 }
 
 export interface SurveyLayoutDay {
@@ -317,11 +311,11 @@ export interface SurveyLayoutDay {
   day: number;
   /** 0=日 .. 6=土 */
   weekday: number;
-  /** プールにある日ならその調査日 (時限が 0 の日も含む)。プールに無い日は null */
+  /** 授業のある日 (時限が 1 つ以上) ならその調査日。それ以外は null */
   survey: SurveyDay | null;
   /** 時間帯のまとまりごとの、この日の時限 (上から詰める) */
   bandPeriods: Entity[][];
-  /** タブの開始・終講の注記 */
+  /** タブの開始・終講の注記 ("中3開始" / "中3終講日"。1 日だけのタブはタブ名) */
   notes: string[];
 }
 
@@ -339,7 +333,8 @@ export interface SurveyLayout {
   bands: Entity[][];
   /** 日曜の列を出すか (日曜に授業のある日が 1 つでもあるとき) */
   includeSunday: boolean;
-  /** 実日付に解決できなかった日 (M/D でないラベル)。紙面の末尾に並べる */
+  /** 週の枠に置けなかった日 (M/D として読めないラベル・ほかのラベルと同じ
+   *  実日付に当たるラベル)。紙面の末尾に並べる */
   unplaced: SurveyDay[];
 }
 
@@ -347,9 +342,11 @@ export interface SurveyLayout {
 // - 週は月曜始まり。授業 (時限) のある日が 1 つも無い週は飛ばす
 // - 各週の各日は、時間帯のまとまりごとにその日の時限を上から詰める
 //   (昼の部・夜の部の行が週の中で揃い、日によって時限の数が違っても崩れない)
+// - タブの開始・終講の注記は、週の枠に置いた日の実日付で最初と最後を決める
+//   (プールの並び順やラベルの読めない日に引きずられない)
 export function buildSurveyLayout(
   surveyDays: SurveyDay[],
-  { baseYmd, milestones }: { baseYmd: string; milestones?: Map<string, string[]> },
+  { baseYmd }: { baseYmd: string },
 ): SurveyLayout {
   const allPeriods: Entity[] = [];
   const seen = new Set<number>();
@@ -379,6 +376,30 @@ export function buildSurveyLayout(
   });
 
   const includeSunday = [...byYmd.keys()].some(ymd => parseYmdNoon(ymd)?.getDay() === 0);
+
+  // タブ (授業のあるタブ名) ごとの最初と最後の日 → 注記。並びはタブが最初に
+  // 出てくる順 (同じ日に始まるタブはタブの並び順)
+  const notesByYmd = new Map<string, string[]>();
+  const pushNote = (ymd: string, note: string) => {
+    if (!notesByYmd.has(ymd)) notesByYmd.set(ymd, []);
+    notesByYmd.get(ymd)!.push(note);
+  };
+  const tabSpan = new Map<string, { first: string; last: string }>();
+  [...byYmd.keys()].sort().forEach(ymd => {
+    byYmd.get(ymd)!.tabNames.forEach(name => {
+      const span = tabSpan.get(name);
+      if (span) span.last = ymd;
+      else tabSpan.set(name, { first: ymd, last: ymd });
+    });
+  });
+  tabSpan.forEach(({ first, last }, name) => {
+    if (first === last) {
+      pushNote(first, name);
+      return;
+    }
+    pushNote(first, `${name}開始`);
+    pushNote(last, `${name}終講日`);
+  });
 
   // 授業のある日を含む週の月曜日
   const mondays: string[] = [];
@@ -414,7 +435,7 @@ export function buildSurveyLayout(
         weekday: dt.getDay(),
         survey,
         bandPeriods,
-        notes: survey ? (milestones?.get(survey.date.label) || []) : [],
+        notes: notesByYmd.get(ymd) || [],
       });
     }
     const bandRows = bands.map((_, b) => Math.max(0, ...days.map(d => d.bandPeriods[b].length)));

@@ -1692,11 +1692,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
             : renameNgPeriod(t.ngSlots, oldVal, newVal);
           return { ...t, ngSlots: newNgSlots };
         });
-        // 出勤可能調査の回答 (日付 → 時限 → 記号) も追従させる
+        // 出勤可能調査の回答 (日付 → 時限 → 記号) も追従させる。改名先は
+        // プールに無いラベル (上で重複を reject 済み) なので、そこに残っている
+        // 回答は前に消した日付・時限の残り。動かしてきた回答を優先する
         newTeachers = mapTeachersAvailability(newTeachers, map => (
           type === 'date'
-            ? renameAvailabilityDate(map, oldVal, newVal)
-            : renameAvailabilityPeriod(map, oldVal, newVal)
+            ? renameAvailabilityDate(map, oldVal, newVal, 'moved')
+            : renameAvailabilityPeriod(map, oldVal, newVal, 'moved')
         ));
       }
 

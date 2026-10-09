@@ -361,6 +361,8 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
           autoNgByTeacher: new Map([
             ['片岡', new Map([[makeNgKey('12/25(木)', '1限'), { sessions: [], availability: true }]])],
           ]),
+          // 今の調査に回答済みの講師 (useAnalysis の answeredTeacherNames)
+          surveyAnsweredTeachers: new Set(['堀上', '石原', '高松', '片岡']),
         },
       },
     });
@@ -372,6 +374,26 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
     expect(text('南條')).toBe('南條 (計0)');
     expect(text('片岡')).toBe('片岡 (NG:調査)');
     expect(options.find(o => o.value === '片岡').disabled).toBe(true);
+  });
+
+  it('出勤可能調査: 前の季節の回答だけ残っている講師 (今の調査に未回答) には ? を付けない', () => {
+    renderCell({
+      contextOverrides: {
+        project: {
+          teachers: [
+            { name: '高松', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [],
+              availability: { '7/29(水)': { '1限': 'ng' } } },
+          ],
+          subjectColors: {},
+          combinedGroups: [],
+        },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '高松' } },
+        analysis: { surveyAnsweredTeachers: new Set() },
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    expect(options.find(o => o.value === '高松').textContent).toBe('高松 (計0)');
+    expect(screen.queryByTitle(/高松 はこの時間/)).toBeNull();
   });
 
   it('出勤可能調査: 割り当てた講師が △ のマスなら目印を出す', () => {
