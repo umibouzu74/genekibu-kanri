@@ -104,6 +104,9 @@ export function DayRescheduleDialog({
   onClose,
   onSaved,
   isAdmin = true,
+  // 振替元・振替先を入れた状態で開く (予定表チェックの「12/7 の振替」から)
+  initialSourceDate = "",
+  initialTargetDate = "",
 }) {
   const { sessionCtx: builtCtx } = useSessionCtx({
     classSets,
@@ -118,8 +121,8 @@ export function DayRescheduleDialog({
     adjustments,
   });
   const sessionCtx = sessionCtxProp || builtCtx;
-  const [sourceDate, setSourceDate] = useState("");
-  const [targetDate, setTargetDate] = useState("");
+  const [sourceDate, setSourceDate] = useState(initialSourceDate || "");
+  const [targetDate, setTargetDate] = useState(initialTargetDate || "");
   const [memo, setMemo] = useState("");
   // null = 全選択 (振替元日を変えたら選び直し)
   const [excluded, setExcluded] = useState(() => new Set());

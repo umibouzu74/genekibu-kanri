@@ -31,6 +31,7 @@ export const SHORTCUTS = [
       { keys: ["g", "f"], sequential: true, label: "附属の授業予定" },
       { keys: ["g", "k"], sequential: true, label: "他校舎の授業" },
       { keys: ["g", "j"], sequential: true, label: "授業時間の集計" },
+      { keys: ["g", "y"], sequential: true, label: "予定表チェック" },
       { keys: ["g", "n"], sequential: true, label: "引継ぎメモ (管理者)" },
       {
         keys: ["g", "w"],

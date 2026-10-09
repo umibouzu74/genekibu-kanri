@@ -53,6 +53,9 @@ export const LS = {
   teachingMinutesClosingDay: "genyakubu-teaching-minutes-closing-day",
   teachingMinutesSelected: "genyakubu-teaching-minutes-selected",
   teachingMinutesIncluded: "genyakubu-teaching-minutes-included",
+  // 予定表チェックで、予定表の講座とシステムのコマの対応を手で直した結果
+  // (講座キー → { subjects } / { skip })。推定の上書きで、利用統計ではない
+  yoteihyoMapping: "genyakubu-yoteihyo-mapping",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────

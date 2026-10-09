@@ -112,6 +112,13 @@ describe("DayRescheduleDialog", () => {
     expect(saveAdjustments.mock.calls[0][0].map((a) => a.slotId)).toEqual([1]);
   });
 
+  it("振替元・振替先を入れた状態で開ける (予定表チェックの振替の案内から)", () => {
+    renderDialog({ initialSourceDate: MON, initialTargetDate: FRI });
+    expect(screen.getByLabelText("振替元日").value).toBe(MON);
+    expect(screen.getByLabelText("振替先日").value).toBe(FRI);
+    expect(screen.getByText("振替するコマ 2 / 2")).toBeTruthy();
+  });
+
   it("開いた直後は赤字のエラーを出さない", () => {
     renderDialog();
     expect(screen.queryByText("振替元日を選んでください")).toBeNull();

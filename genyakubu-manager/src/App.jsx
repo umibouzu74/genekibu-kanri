@@ -137,6 +137,9 @@ const HandoverView = lazy(() =>
 const OffsiteLessonView = lazy(() =>
   import("./components/views/OffsiteLessonView").then((m) => ({ default: m.OffsiteLessonView }))
 );
+const YoteihyoCheckView = lazy(() =>
+  import("./components/views/YoteihyoCheckView").then((m) => ({ default: m.YoteihyoCheckView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -188,6 +191,7 @@ const VIEW_TITLES = {
   [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
   [VIEWS.HANDOVER]: "引継ぎメモ",
   [VIEWS.OFFSITE]: "他校舎の授業",
+  [VIEWS.YOTEIHYO]: "予定表チェック",
 };
 
 export default function App() {
@@ -329,6 +333,11 @@ export default function App() {
   const [showDataMgr, setShowDataMgr] = useState(false);
   // 日まるごと振替ダイアログ (サイドバー / Cmd+K / 時間割調整一覧から開く)
   const [showDayReschedule, setShowDayReschedule] = useState(false);
+  // 振替元・振替先を入れた状態で開く (予定表チェックの「12/7 の振替」から)
+  const [dayRescheduleInit, setDayRescheduleInit] = useState(null);
+  // 予定表チェックで読み込んだ予定表 (画面を離れて戻っても読み直さずに済むように
+  // ここで持つ。端末には保存しない)
+  const [yoteihyoSession, setYoteihyoSession] = useState(null);
   // 「✏ 引継ぎメモを書く」ダイアログ (Cmd+K / ダッシュボードの去年のこの時期)
   const [showHandoverAdd, setShowHandoverAdd] = useState(false);
   // 引継ぎメモの 1 件へ飛ぶ要求 ({id, token})。token で同じ id の再要求も効かせる
@@ -1380,6 +1389,37 @@ export default function App() {
               onSelectTeacher={selectTeacher}
             />
           )}
+          {view === VIEWS.YOTEIHYO && !selected && (
+            // 日付ベースの突き合わせなので時間割セレクタでは絞らない
+            <YoteihyoCheckView
+              slots={slots}
+              holidays={holidays}
+              saveHolidays={saveHolidays}
+              adjustments={adjustments}
+              saveAdjustments={saveAdjustments}
+              subs={subs}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              displayCutoff={displayCutoff}
+              timetables={timetables}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              daySchedules={daySchedules}
+              extraLessons={extraLessons}
+              isAdmin={isAdmin}
+              session={yoteihyoSession}
+              onSessionChange={setYoteihyoSession}
+              onOpenDayReschedule={(init) => {
+                setDayRescheduleInit(init || null);
+                setShowDayReschedule(true);
+              }}
+              onEditHoliday={(id) =>
+                selectView(VIEWS.HOLIDAYS, () => setEventEditRequest({ kind: EVENT_KIND.HOLIDAY, id }))
+              }
+              onOpenTimetableManager={() => selectView(VIEWS.TIMETABLE)}
+            />
+          )}
           {view === VIEWS.HANDOVER && !selected && (
             <HandoverView
               notes={handoverNotes}
@@ -1728,7 +1768,12 @@ export default function App() {
           isAdmin={isAdmin}
           saveAdjustments={saveAdjustments}
           onRemoveAdjustments={adjCrud.delMany}
-          onClose={() => setShowDayReschedule(false)}
+          initialSourceDate={dayRescheduleInit?.sourceDate}
+          initialTargetDate={dayRescheduleInit?.targetDate}
+          onClose={() => {
+            setShowDayReschedule(false);
+            setDayRescheduleInit(null);
+          }}
           onSaved={({ added, replaced, sourceDate, targetDate }) =>
             toasts.success(
               `${fmtDateWeekday(sourceDate)} → ${fmtDateWeekday(targetDate)} に ` +
