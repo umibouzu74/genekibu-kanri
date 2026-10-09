@@ -233,7 +233,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
               aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}
-              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink min-w-0 ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"}`}
+              // min-w: 目印 (⚠️2回・合同 等) が並んでも科目名が矢印だけに潰れないように。
+              // 枠はセル (カード) 側にあるので select 自体は枠なし
+              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink border-0 ${isCompact ? "min-w-[2.5rem]" : "min-w-[3.5rem]"} ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"}`}
               value={entry.subject || ""}
               onChange={(e) => handleAssign(dateId, periodId, classId, 'subject', e.target.value)}
               onKeyDown={(e) => handleCellNavigation(e, 'subject')}
@@ -249,8 +251,10 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
               })}
             </select>
             {isSubjDup && <span className={`bg-builder-red text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
-            {isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
-            {isNgAssigned && !isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️NG</span>}
+            {/* 標準表示は下の帯 (⚠️ 重複 / ⚠️ NG設定違反) で出すので、横並びの目印は
+                縮小表示だけ (両方出すと科目名の幅を食い、同じ警告が 2 回並んでいた) */}
+            {isCompact && isConflict && <span className="bg-builder-red text-white rounded animate-pulse shrink-0 text-[8px] px-0.5">⚠️重複</span>}
+            {isCompact && isNgAssigned && !isConflict && <span className="bg-builder-red text-white rounded animate-pulse shrink-0 text-[8px] px-0.5">⚠️NG</span>}
             {assignedSurveyHint && (
               <span
                 className={`rounded border shrink-0 ${assignedSurveyHint === 'maybe' ? 'border-builder-warning-border bg-builder-warning-soft text-builder-orange' : 'border-builder-border bg-builder-surface text-builder-ink-muted'} ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}
@@ -271,7 +275,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
         <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
           aria-label={`${dLabel} ${pLabel} ${cLabel} の講師`}
-          className={`w-full rounded cursor-pointer ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
+          className={`w-full rounded cursor-pointer border border-builder-border ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}

@@ -191,8 +191,13 @@ export default function CombinedGroupSettings() {
           )}
         </div>
 
-        {/* 検証メッセージ + 操作ボタン */}
-        {error && <p className="text-xs text-builder-red">{error}</p>}
+        {/* 検証メッセージ + 操作ボタン。まだ選び終えていないだけ (開いた直後など) は
+            案内として控えめに出し、赤字は重なり・タブに無いラベルなど直すべきものだけ */}
+        {error && (
+          <p className={`text-xs ${(!subject || classes.length < 2 || (dates !== null && dates.length === 0)) ? 'text-builder-ink-muted' : 'text-builder-red'}`}>
+            {error}
+          </p>
+        )}
         <div className="flex gap-2 pt-2 border-t border-builder-border">
           <button
             onClick={handleSave}

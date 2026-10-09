@@ -227,20 +227,21 @@ export default function TeacherManager() {
 
   return (
     <div className="border-l border-builder-border pl-6 space-y-4">
-      <div className="flex justify-between items-center border-b border-builder-border pb-1">
+      <div className="flex flex-wrap justify-between items-center gap-2 border-b border-builder-border pb-1">
         <h3 className="font-bold text-builder-ink">👤 講師マスタ (全タブ共通)</h3>
-        <div className="flex gap-2">
+        {/* 狭い幅では見出しの下へ折り返す (ボタンの文字が途中で割れないように) */}
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={handleImportFromParent}
-            className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt"
+            className="text-xs whitespace-nowrap bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt"
             title="原学部管理 (親アプリ) のバイト講師マスタから講師名と担当科目を取り込みます"
           >🔗 親アプリから取込</button>
           <button
             onClick={() => setCsvPanelOpen((v) => !v)}
-            className="text-xs bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt"
+            className="text-xs whitespace-nowrap bg-builder-surface border border-builder-border text-builder-ink-muted px-2 py-1 rounded shadow hover:bg-builder-surface-alt"
             aria-expanded={csvPanelOpen}
           >📥 CSV インポート</button>
-          <button onClick={handleAddClick} className="text-xs bg-builder-green text-white px-2 py-1 rounded shadow hover:bg-builder-green-hover">+ 追加</button>
+          <button onClick={handleAddClick} className="text-xs whitespace-nowrap bg-builder-green text-white px-2 py-1 rounded shadow hover:bg-builder-green-hover">+ 追加</button>
         </div>
       </div>
       {csvPanelOpen && (
@@ -366,11 +367,13 @@ export default function TeacherManager() {
           >クリア</button>
         )}
       </div>
-      <div className="overflow-y-auto max-h-[400px] border border-builder-border rounded bg-builder-bg p-2">
+      {/* 高さは絞らない (モーダル本体がスクロールするので、内側にもう 1 つ
+          スクロール枠を作ると 3 名ほどしか見えなかった) */}
+      <div className="border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>
             <tr>
-              <th className="text-left p-1 text-builder-ink-muted">氏名</th>
+              <th className="text-left p-1 text-builder-ink-muted whitespace-nowrap">氏名</th>
               <th className="text-left p-1 text-builder-ink-muted">担当科目</th>
               <th
                 className="text-left p-1 text-builder-ink-muted whitespace-nowrap"
@@ -404,16 +407,20 @@ export default function TeacherManager() {
                   // 失われる (code-review P2)。i は rename で変わらないので安定。
                   return (
                     <tr key={i} className="border-b border-builder-border bg-builder-surface last:border-0">
-                      <td className="p-2 font-bold text-builder-ink">
+                      {/* 名前は 1 文字ずつ縦に折り返さない */}
+                      <td className="p-2 font-bold text-builder-ink whitespace-nowrap">
                         <InlineNameEdit value={t.name} onSave={(newName) => renameTeacher(i, newName)} />
                       </td>
-                      <td className="p-2 flex flex-wrap gap-1">
-                        {commonSubjects.map(s => (
-                          <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-builder-blue text-white border-builder-blue" : "bg-builder-surface text-builder-ink-ghost border-builder-border"}`}>
-                            <input type="checkbox" className="hidden" checked={t.subjects.includes(s)} onChange={() => toggleTeacherSubject(i, s)} />
-                            {s}
-                          </label>
-                        ))}
+                      {/* td 自体を flex にすると表の行の高さ・罫線が崩れるので中の div で並べる */}
+                      <td className="p-2">
+                        <div className="flex flex-wrap gap-1">
+                          {commonSubjects.map(s => (
+                            <label key={s} className={`px-2 py-0.5 border rounded cursor-pointer text-xs select-none transition-colors ${t.subjects.includes(s) ? "bg-builder-blue text-white border-builder-blue" : "bg-builder-surface text-builder-ink-ghost border-builder-border"}`}>
+                              <input type="checkbox" className="hidden" checked={t.subjects.includes(s)} onChange={() => toggleTeacherSubject(i, s)} />
+                              {s}
+                            </label>
+                          ))}
+                        </div>
                       </td>
                       {/* L3a/L3b: 講師個別の上限。'未定' は placeholder で
                           上限の対象外なので入力を出さない */}
@@ -460,7 +467,7 @@ export default function TeacherManager() {
                         )}
                       </td>
                       <td className="p-2 text-center">
-                        <button onClick={() => handleRemoveClick(i)} className="text-builder-ink-muted hover:text-builder-red">×</button>
+                        <button onClick={() => handleRemoveClick(i)} aria-label={`${t.name} を削除`} title={`${t.name} を削除`} className="text-builder-ink-muted hover:text-builder-red">×</button>
                       </td>
                     </tr>
                   );

@@ -8,6 +8,7 @@ import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/pres
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
 import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
+import { periodShortLabel, periodTimeText } from '../../utils/availability';
 import NgCsvImport from './NgCsvImport';
 import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
@@ -70,9 +71,22 @@ export default function AbsenceNgPanel() {
   // 初期化時の date id のみキーとして持つ。dates 変更時に stale な key を
   // クリーンアップする useEffect で id 再利用時の silent collapse を防ぐ
   // (code-review P3)。
+  // 開いた直後は「NG か他学年セッションがある日」だけ展開する。全日を開くと
+  // 講師 × 時限のマトリクスが日数ぶん縦に並び (夏期で 1 万 px 超)、目当ての日に
+  // たどり着けなかった。閉じている日も見出しを押せば開く (すべて展開もある)。
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
-    poolDates.forEach(d => { initial[d.id] = true; });
+    const sessionDates = new Set((project.externalSessions || []).map(s => s.date));
+    poolDates.forEach(d => {
+      const hasNg = project.teachers.some(t => {
+        const auto = autoNgByTeacher?.get(t.name);
+        return poolPeriods.some(p => {
+          const k = makeNgKey(d.label, p.label);
+          return !!t.ngSlots?.includes(k) || !!auto?.has(k);
+        });
+      });
+      initial[d.id] = hasNg || sessionDates.has(d.label);
+    });
     return initial;
   });
   const [quickGridExpanded, setQuickGridExpanded] = useState(false);
@@ -941,7 +955,7 @@ export default function AbsenceNgPanel() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 text-builder-ink">講師名</th>
+                  <th className="border border-builder-border p-2 bg-builder-bg min-w-[100px] sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">講師名</th>
                   {poolDates.map(d => <th key={d.id} className="border border-builder-border p-2 bg-builder-bg min-w-[60px] text-center text-builder-ink">{d.label}</th>)}
                 </tr>
               </thead>
@@ -949,13 +963,14 @@ export default function AbsenceNgPanel() {
                 {teacherGroups.map(group => (
                   <Fragment key={group.key}>
                     <tr className="bg-builder-bg">
-                      <td colSpan={1 + poolDates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted sticky left-0 z-10">
-                        ━━ {group.label} ━━
+                      {/* 横スクロールしても教科名が見えるよう、セル全体ではなく中の文字を sticky に */}
+                      <td colSpan={1 + poolDates.length} className="border border-builder-border px-2 py-1 text-xs font-bold text-builder-ink-muted">
+                        <span className="sticky left-2 inline-block">━━ {group.label} ━━</span>
                       </td>
                     </tr>
                     {group.teachers.map(t => (
                       <tr key={t.name}>
-                        <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                        <td className="border border-builder-border p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">{t.name}</td>
                         {poolDates.map(d => {
                           const k = makeExternalKey(d.label, t.name);
                           const sessionCnt = sessionCountMap[k];
@@ -1081,9 +1096,16 @@ function DateSection({
               <table className="w-full border-collapse text-xs whitespace-nowrap">
                 <thead>
                   <tr>
-                    <th className="border border-builder-ink-ghost p-2 bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">講師名</th>
+                    <th className="border border-builder-ink-ghost p-2 bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">講師名</th>
+                    {/* 見出しは「1限 / 13:00-13:45」の 2 段 (ラベル全体を 1 行に出すと
+                        1400px 幅でも横にはみ出していた)。元のラベルは title に */}
                     {periods.map(p => (
-                      <th key={p.id} className="border border-builder-ink-ghost p-1 bg-builder-surface-alt font-normal min-w-[60px] text-center text-builder-ink">{p.label}</th>
+                      <th key={p.id} title={p.label} className="border border-builder-ink-ghost p-1 bg-builder-surface-alt font-normal min-w-[60px] text-center text-builder-ink leading-tight">
+                        <div>{periodShortLabel(p)}</div>
+                        {periodTimeText(p) !== p.label && periodTimeText(p) !== periodShortLabel(p) && (
+                          <div className="text-[10px] text-builder-ink-muted">{periodTimeText(p)}</div>
+                        )}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -1093,9 +1115,9 @@ function DateSection({
                       <tr className="bg-builder-bg">
                         <td
                           colSpan={1 + periods.length}
-                          className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted sticky left-0 z-10"
+                          className="border border-builder-ink-ghost px-2 py-1 text-[11px] font-bold text-builder-ink-muted"
                         >
-                          ━━ {group.label} ━━
+                          <span className="sticky left-2 inline-block">━━ {group.label} ━━</span>
                         </td>
                       </tr>
                       {group.teachers.map(t => {
@@ -1103,7 +1125,7 @@ function DateSection({
                         const autoEntries = autoNgByTeacher?.get(t.name);
                         return (
                           <tr key={t.name}>
-                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 text-builder-ink">{t.name}</td>
+                            <td className="border border-builder-ink-ghost p-2 font-bold bg-builder-surface-alt sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] text-builder-ink">{t.name}</td>
                             {periods.map(p => {
                               const k = makeNgKey(date.label, p.label);
                               const isManualNg = t.ngSlots?.includes(k);
@@ -1477,8 +1499,12 @@ function PresetPanel({ presets, dates, sessions = [], addPreset, updatePreset, r
                   キャンセル
                 </button>
               )}
+              {/* 名前がまだ無いだけ (開いた直後) は案内として控えめに。赤の警告は
+                  時刻の書き間違いなど直す必要があるものだけ */}
               {draftValidation && (
-                <span className="text-xs text-builder-red font-bold">⚠️ {draftValidation}</span>
+                <span className={`text-xs ${!draft.name.trim() ? 'text-builder-ink-muted' : 'text-builder-red font-bold'}`}>
+                  {!draft.name.trim() ? draftValidation : `⚠️ ${draftValidation}`}
+                </span>
               )}
             </div>
           </div>

@@ -383,6 +383,17 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - 講習時間割作成で**罫線のユーティリティを新しく使うときは、tailwind.css の
   一覧に足す** (無いと線が出ない)。input / select は土台の対象外 (枠のクラスを
   持たない入力欄が消えるため)
+- 同じ場所で **Tailwind の CSS 変数の既定値** (`--tw-ring-*` / `--tw-translate-*` /
+  `--tw-brightness` など。ふつうは `@tailwind base` が出す) も講習側だけに当てて
+  ある。無いと `ring-*` (選択中のセル・ドラッグ先・押しているペン)・`hover:scale-*`・
+  `hover:brightness-*` が何も描かれない。ul / ol も preflight と同じく黒丸なしが土台
+  (黒丸が要る一覧は `list-disc` を付ける)
+- 通知・確認ダイアログ (UIContext) は BuilderApp のルートの外に描くので、UIProvider
+  の中で `.koshu-builder.builder-root` で包んである。**新しくルートの外に描くものを
+  足すときも同じく包む**
+- **講習・通常どちらの作成画面も、画面全体を覆うモーダル・メニューは z-[1000] 以上**
+  (本体のサイドバーが position:fixed / z-index 999)。z-50 だとサイドバーの下に潜り、
+  狭い画面でタイトル・先頭のタブが隠れる。確認ダイアログは 1010、通知は 1020
 
 ## 期切替 (前期/後期) の運用 (2026-08-01 確定、2026-08-02 更新)
 

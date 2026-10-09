@@ -28,16 +28,19 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 // --- Toast ---
 function ToastContainer({ toasts, removeToast }) {
   return (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+    // z-[1020]: 設定モーダル (1000)・確認ダイアログ (1010) より上。色は builder の
+    // トークン (警告の白字 on yellow-500 はコントラスト約 1.9:1 で読めなかった)
+    <div className="fixed top-4 right-4 z-[1020] flex flex-col gap-2 pointer-events-none">
       {toasts.map(t => (
         <div
           key={t.id}
+          role={t.type === 'error' ? 'alert' : 'status'}
           className={`pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-bold flex items-center gap-2 animate-slide-in
-            ${t.type === 'error' ? 'bg-red-600 text-white' : t.type === 'warning' ? 'bg-yellow-500 text-white' : 'bg-green-600 text-white'}`}
+            ${t.type === 'error' ? 'bg-builder-red text-white' : t.type === 'warning' ? 'bg-builder-orange text-white' : 'bg-builder-green text-white'}`}
         >
           <span>{t.type === 'error' ? '❌' : t.type === 'warning' ? '⚠️' : '✅'}</span>
           <span className="whitespace-pre-line">{t.message}</span>
-          <button onClick={() => removeToast(t.id)} className="ml-2 opacity-70 hover:opacity-100">×</button>
+          <button onClick={() => removeToast(t.id)} aria-label="通知を閉じる" className="ml-2 opacity-70 hover:opacity-100">×</button>
         </div>
       ))}
     </div>
@@ -54,23 +57,23 @@ function ConfirmModalComponent({ config, onResult }) {
   useFocusTrap(boxRef, { onClose: () => onResult(false), enabled: !!config, initialFocusRef: okRef });
   if (!config) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 z-[90] flex justify-center items-center p-4" onClick={() => onResult(false)}>
-      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-[1010] flex justify-center items-center p-4" onClick={() => onResult(false)}>
+      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-builder-surface rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
         <div className="p-5">
-          <h3 className="font-bold text-lg text-gray-800 mb-3">{config.title || '確認'}</h3>
-          <p className="text-sm text-gray-600 whitespace-pre-line">{config.message}</p>
+          <h3 className="font-bold text-lg text-builder-ink mb-3">{config.title || '確認'}</h3>
+          <p className="text-sm text-builder-ink-muted whitespace-pre-line">{config.message}</p>
         </div>
         <div className="flex justify-end gap-2 px-5 pb-4">
           <button
             onClick={() => onResult(false)}
-            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 font-bold"
+            className="px-4 py-2 text-sm text-builder-ink-muted bg-builder-bg rounded hover:bg-builder-border font-bold"
           >
             キャンセル
           </button>
           <button
             ref={okRef}
             onClick={() => onResult(true)}
-            className={`px-4 py-2 text-sm text-white rounded font-bold ${config.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+            className={`px-4 py-2 text-sm text-white rounded font-bold ${config.danger ? 'bg-builder-red hover:bg-builder-red-hover' : 'bg-builder-blue hover:bg-builder-blue-hover'}`}
             autoFocus
           >
             {config.confirmLabel || 'OK'}
@@ -104,15 +107,15 @@ function InputModalComponent({ config, onResult }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[90] flex justify-center items-center p-4" onClick={() => onResult(null)}>
-      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-white rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-[1010] flex justify-center items-center p-4" onClick={() => onResult(null)}>
+      <div ref={boxRef} role="dialog" aria-modal="true" className="bg-builder-surface rounded-lg shadow-2xl max-w-md w-full animate-fade-in" onClick={e => e.stopPropagation()}>
         <form onSubmit={handleSubmit}>
           <div className="p-5">
-            <h3 className="font-bold text-lg text-gray-800 mb-3">{config.title || '入力'}</h3>
-            {config.message && <p className="text-sm text-gray-600 mb-3">{config.message}</p>}
+            <h3 className="font-bold text-lg text-builder-ink mb-3">{config.title || '入力'}</h3>
+            {config.message && <p className="text-sm text-builder-ink-muted mb-3">{config.message}</p>}
             <input
               ref={inputRef}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full border border-builder-border rounded px-3 py-2 text-sm text-builder-ink bg-builder-surface focus:outline-none focus:border-builder-blue focus:ring-1 focus:ring-builder-blue"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={config.placeholder || ''}
@@ -122,14 +125,14 @@ function InputModalComponent({ config, onResult }) {
             <button
               type="button"
               onClick={() => onResult(null)}
-              className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 font-bold"
+              className="px-4 py-2 text-sm text-builder-ink-muted bg-builder-bg rounded hover:bg-builder-border font-bold"
             >
               キャンセル
             </button>
             <button
               type="submit"
               disabled={!value.trim()}
-              className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 font-bold disabled:opacity-40"
+              className="px-4 py-2 text-sm text-white bg-builder-blue rounded hover:bg-builder-blue-hover font-bold disabled:opacity-40"
             >
               {config.confirmLabel || 'OK'}
             </button>
@@ -211,9 +214,14 @@ export function UIProvider({ children }: { children: ReactNode }) {
   return (
     <UIContext.Provider value={value}>
       {children}
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
-      <ConfirmModalComponent config={confirmConfig} onResult={handleConfirmResult} />
-      {inputConfig && <InputModalComponent config={inputConfig} onResult={handleInputResult} />}
+      {/* 通知・確認ダイアログは BuilderApp のルートの外 (兄弟) に描くので、
+          ボタン・罫線の土台 (tailwind.css の .koshu-builder) とフォーカス表示
+          (.builder-root) をここでも効かせる。中身は fixed なので配置は変わらない */}
+      <div className="koshu-builder builder-root">
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <ConfirmModalComponent config={confirmConfig} onResult={handleConfirmResult} />
+        {inputConfig && <InputModalComponent config={inputConfig} onResult={handleInputResult} />}
+      </div>
     </UIContext.Provider>
   );
 }

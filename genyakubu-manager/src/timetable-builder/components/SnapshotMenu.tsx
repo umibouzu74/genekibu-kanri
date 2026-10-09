@@ -129,7 +129,7 @@ export default function SnapshotMenu() {
         <div
           role="dialog"
           aria-label="スナップショット"
-          className="absolute z-50 top-full right-0 mt-1 w-80 bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+          className="absolute z-50 top-full right-0 mt-1 w-96 max-w-[calc(100vw-2rem)] bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
         >
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold text-builder-ink-muted">

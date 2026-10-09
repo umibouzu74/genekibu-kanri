@@ -246,10 +246,12 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   まだ集計するコマがありません。セルに講師を割り当てるか、🧙‍♂️ 自動作成をお試しください。
                 </div>
               )}
-              <div className="flex flex-col gap-2">
+              {/* 教科のまとまりは横に詰めて並べる (1 教科 1 行だと 5 教科で 400px 超
+                  になり、時間割が下へ押し出されていた) */}
+              <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
                 {groupRows.map(({ group, entries }) => {
                   return (
-                    <Fragment key={group.key}>
+                    <div key={group.key} className="flex flex-col gap-1 min-w-0">
                       <div className="text-xs font-bold text-builder-ink-muted">━ {group.label}</div>
                       <div className="flex flex-wrap gap-2">
                         {entries.map(({ t, total }) => {
@@ -275,7 +277,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                           );
                         })}
                       </div>
-                    </Fragment>
+                    </div>
                   );
                 })}
               </div>

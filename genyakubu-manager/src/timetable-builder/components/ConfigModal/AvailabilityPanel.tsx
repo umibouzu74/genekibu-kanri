@@ -291,7 +291,10 @@ function PenPicker({ pen, onChange }: { pen: Pen; onChange: (pen: Pen) => void }
       <span className="text-builder-ink-muted mr-1">付ける記号:</span>
       {PEN_OPTIONS.map(opt => {
         const active = pen === opt.pen;
-        const tone = opt.pen === 'clear' ? MARK_CLASS.blank : MARK_CLASS[opt.pen];
+        // 「消す」は未記入マスの色 (薄いグレー) にすると押せないボタンに見えるので別の色
+        const tone = opt.pen === 'clear'
+          ? 'bg-builder-surface text-builder-ink-muted border-builder-border'
+          : MARK_CLASS[opt.pen];
         return (
           <button
             key={opt.pen}
@@ -300,7 +303,7 @@ function PenPicker({ pen, onChange }: { pen: Pen; onChange: (pen: Pen) => void }
             aria-checked={active}
             onClick={() => onChange(opt.pen)}
             title={`キー ${opt.key} でも切り替えられます (この画面の中で)`}
-            className={`px-2 py-1 rounded border font-bold ${tone} ${active ? 'ring-2 ring-builder-blue' : 'opacity-70 hover:opacity-100'}`}
+            className={`px-2 py-1 rounded border font-bold ${tone} ${active ? 'ring-2 ring-builder-blue' : 'opacity-80 hover:opacity-100'}`}
           >
             {opt.label}
           </button>
@@ -655,7 +658,7 @@ function AvailabilityOverview({ project, groups, usedDays, onCell, onOpenTeacher
           <table className="border-collapse text-xs whitespace-nowrap">
             <thead>
               <tr>
-                <th rowSpan={2} scope="col" className="sticky left-0 z-10 bg-builder-surface-alt border border-builder-border px-2 py-1 text-left">講師</th>
+                <th rowSpan={2} scope="col" className="sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] bg-builder-surface-alt border border-builder-border px-2 py-1 text-left">講師</th>
                 {usedDays.map(sd => (
                   <th key={sd.date.id} colSpan={sd.periods.length} scope="colgroup"
                     className="border border-builder-border border-l-2 border-l-builder-ink-ghost bg-builder-surface-alt px-1 py-0.5"
@@ -678,14 +681,15 @@ function AvailabilityOverview({ project, groups, usedDays, onCell, onOpenTeacher
               {visibleGroups.map(group => (
                 <Fragment key={group.key}>
                   <tr>
+                    {/* 横スクロールしても教科名が見えるよう、中の文字を sticky に */}
                     <td colSpan={1 + usedDays.reduce((n, sd) => n + sd.periods.length, 0)}
-                      className="sticky left-0 bg-builder-bg border border-builder-border px-2 py-0.5 text-[11px] font-bold text-builder-ink-muted">
-                      ━ {group.label}
+                      className="bg-builder-bg border border-builder-border px-2 py-0.5 text-[11px] font-bold text-builder-ink-muted">
+                      <span className="sticky left-2 inline-block">━ {group.label}</span>
                     </td>
                   </tr>
                   {group.teachers.map(t => (
                     <tr key={t.name}>
-                      <th scope="row" className="sticky left-0 z-10 bg-builder-surface border border-builder-border px-2 py-0 text-left font-bold">
+                      <th scope="row" className="sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] bg-builder-surface border border-builder-border px-2 py-0 text-left font-bold">
                         <button type="button" onClick={() => onOpenTeacher(t.name)}
                           className="hover:underline text-builder-ink"
                           title={t.availabilityMemo ? `メモ: ${t.availabilityMemo}` : 'この講師の回答を入力'}>
@@ -710,7 +714,7 @@ function AvailabilityOverview({ project, groups, usedDays, onCell, onOpenTeacher
             </tbody>
             <tfoot>
               <tr>
-                <th scope="row" className="sticky left-0 z-10 bg-builder-surface-alt border border-builder-border px-2 py-0.5 text-left">○ の人数</th>
+                <th scope="row" className="sticky left-0 z-10 shadow-[inset_-1px_0_0_#bbbbbb] bg-builder-surface-alt border border-builder-border px-2 py-0.5 text-left">○ の人数</th>
                 {usedDays.map(sd => sd.periods.map((p, i) => {
                   const s = collectSlotAvailability(allSurveyTeachers, sd.date.label, p.label);
                   const isFocus = focus?.date === sd.date.label && focus?.period === p.label;

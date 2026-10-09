@@ -79,7 +79,9 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print"
+      // z-[1000]: 本体のサイドバー (position:fixed, z-index 999) より上に出す。
+      // z-50 だとサイドバーの下に潜り、狭い画面でタイトル・先頭のタブが隠れていた
+      className="fixed inset-0 bg-black/50 z-[1000] flex justify-center items-center p-4 no-print"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div

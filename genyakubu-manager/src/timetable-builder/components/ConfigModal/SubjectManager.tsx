@@ -188,11 +188,15 @@ export default function SubjectManager() {
                 <button
                   onClick={() => moveUp(idx)}
                   disabled={idx === 0}
+                  aria-label={`${s} を上へ`}
+                  title={`${s} を上へ`}
                   className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
                 >▲</button>
                 <button
                   onClick={() => moveDown(idx)}
                   disabled={idx === commonSubjects.length - 1}
+                  aria-label={`${s} を下へ`}
+                  title={`${s} を下へ`}
                   className="text-[10px] text-builder-ink-muted hover:text-builder-ink disabled:opacity-20 leading-none"
                 >▼</button>
               </div>
@@ -233,6 +237,8 @@ export default function SubjectManager() {
               })}
               <button
                 onClick={() => handleRemoveClick(s)}
+                aria-label={`${s} を削除`}
+                title={`${s} を削除`}
                 className="text-builder-ink-muted hover:text-builder-red text-sm px-1"
               >×</button>
             </div>

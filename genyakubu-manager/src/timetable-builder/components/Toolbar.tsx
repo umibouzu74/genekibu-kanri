@@ -206,7 +206,9 @@ export default function Toolbar({
               <div
                 role="dialog"
                 aria-label="違反の内訳"
-                className="absolute z-50 top-full left-0 mt-1 w-72 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+                // right-0: バッジは進捗バーの右端にあるので、左揃えだと内訳の大半が
+                // 画面の外にはみ出していた (横スクロールも出ていた)
+                className="absolute z-50 top-full right-0 mt-1 w-72 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
               >
                 <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
                 <ul className="space-y-1.5 text-xs">
@@ -364,13 +366,23 @@ export default function Toolbar({
         <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-builder-ink-muted hover:bg-builder-bg disabled:opacity-30 border border-builder-border rounded shadow-sm" title="やり直す (Redo)">↪️</button>
         <div className="h-6 w-px bg-builder-border mx-1"></div>
         <SnapshotMenu />
-        <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow-sm text-sm font-bold" title="講師別コマ数の集計を表示/非表示">📊 集計</button>
+        <button
+          onClick={() => setShowSummary(!showSummary)}
+          aria-pressed={!!showSummary}
+          className={`flex items-center gap-1 px-3 py-2 rounded shadow-sm text-sm font-bold border ${showSummary ? 'bg-builder-blue text-white border-builder-blue hover:bg-builder-blue-hover' : 'bg-builder-surface text-builder-blue border-builder-blue hover:bg-builder-info-soft'}`}
+          title={showSummary ? '講師別コマ数の集計を閉じる' : '講師別コマ数の集計を表示'}
+        >
+          📊 集計{showSummary ? ' ✓' : ''}
+        </button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
         {onShowHelp && (
           <button onClick={onShowHelp} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="操作ガイドを表示">❓ ヘルプ</button>
         )}
         <div className="h-6 w-px bg-builder-border mx-1"></div>
+        {/* 生成クリア・自動作成・中止はまとめて折り返す (自動作成だけが 3 行目に
+            取り残されないように) */}
+        <div className="flex flex-wrap items-center gap-2">
         <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-builder-danger-soft text-builder-red border border-builder-danger-border rounded hover:bg-builder-danger-border shadow-sm text-sm font-bold" title="ロックされていないセルを全てクリア">🗑️ 生成クリア</button>
         <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-builder-primary opacity-60 cursor-not-allowed" : "bg-builder-primary hover:bg-builder-primary-hover"}`}>
           {isGenerating ? (
@@ -396,6 +408,7 @@ export default function Toolbar({
             ✕ 中止
           </button>
         )}
+        </div>
       </div>
       {isGenerating && generateLive && (
         <div
