@@ -4,6 +4,7 @@ import { cleanup, render, screen, fireEvent, within } from '@testing-library/rea
 import AvailabilityPanel from './AvailabilityPanel';
 import { ProjectContext } from '../../contexts/projectContextValue';
 import { UIContext } from '../../contexts/uiContextValue';
+import { HostDataContext } from '../../contexts/hostDataContext';
 
 afterEach(cleanup);
 
@@ -28,7 +29,7 @@ function baseProject(overrides = {}) {
   };
 }
 
-function renderPanel({ project = baseProject(), ui = {} } = {}) {
+function renderPanel({ project = baseProject(), ui = {}, partTimeStaffNames = [] } = {}) {
   const setTeacherAvailability = vi.fn();
   const clearTeacherAvailability = vi.fn();
   const setTeacherAvailabilityMemo = vi.fn();
@@ -36,7 +37,9 @@ function renderPanel({ project = baseProject(), ui = {} } = {}) {
   const utils = render(
     <ProjectContext.Provider value={{ project, setTeacherAvailability, clearTeacherAvailability, setTeacherAvailabilityMemo }}>
       <UIContext.Provider value={uiValue}>
-        <AvailabilityPanel />
+        <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames }}>
+          <AvailabilityPanel />
+        </HostDataContext.Provider>
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
@@ -118,6 +121,18 @@ describe('AvailabilityPanel — 回答の入力', () => {
     expect(setTeacherAvailabilityMemo).not.toHaveBeenCalled();
     fireEvent.blur(input);
     expect(setTeacherAvailabilityMemo).toHaveBeenCalledWith('山田', '18時以降なら可');
+  });
+
+  it('本体のバイトが居れば「バイトのみ」で絞れる (居なければ出さない)', () => {
+    renderPanel({ partTimeStaffNames: ['山田', '本体だけの人'] });
+    const toggle = screen.getByLabelText(/バイトのみ \(1 名\)/);
+    expect(screen.getByRole('button', { name: /^堀上/ })).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('button', { name: /^堀上/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^山田/ })).toBeInTheDocument();
+    cleanup();
+    renderPanel();
+    expect(screen.queryByLabelText(/バイトのみ/)).toBeNull();
   });
 
   it('授業のある日が無いときは案内だけ出す', () => {

@@ -20,6 +20,7 @@ import {
 } from '../../utils/availability';
 import type { AvailabilityCell, SurveyDay, SurveyLayoutWeek } from '../../utils/availability';
 import { projectBaseYmd } from '../../utils/courseDates';
+import { useHostData } from '../../contexts/hostDataContext';
 import type { AvailabilityMark, Entity, Teacher } from '../../types';
 
 // 「🙋 出勤可能調査」タブ。講習期間に配る調査票 (どの日のどの時間に出られるか)
@@ -83,6 +84,10 @@ export default function AvailabilityPanel() {
   const [pen, setPen] = useState<Pen>('ok');
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // 本体のバイト管理にいる講師だけに絞る (調査は主にバイト向けなので、常勤が
+  // 多いと一覧が長くなる)。本体の外で単体で描くときは出さない
+  const [onlyPartTime, setOnlyPartTime] = useState(false);
+  const { partTimeStaffNames } = useHostData();
 
   const surveyDays = useMemo(() => computeSurveyDays(project), [project]);
   const usedDays = useMemo(() => surveyDays.filter(sd => sd.periods.length > 0), [surveyDays]);
@@ -93,9 +98,15 @@ export default function AvailabilityPanel() {
   }), [surveyDays, project]);
 
   const surveyTeachers = useMemo(() => project.teachers.filter(isSurveyTeacher), [project.teachers]);
+  const partTimeSet = useMemo(() => new Set(partTimeStaffNames || []), [partTimeStaffNames]);
+  const partTimeCount = surveyTeachers.filter(t => partTimeSet.has(t.name)).length;
+  const shownTeachers = useMemo(
+    () => (onlyPartTime && partTimeCount > 0 ? surveyTeachers.filter(t => partTimeSet.has(t.name)) : surveyTeachers),
+    [onlyPartTime, partTimeCount, surveyTeachers, partTimeSet],
+  );
   const teacherGroups = useMemo(
-    () => groupTeachersBySubject(surveyTeachers, project.subjects),
-    [surveyTeachers, project.subjects],
+    () => groupTeachersBySubject(shownTeachers, project.subjects),
+    [shownTeachers, project.subjects],
   );
   // 表示順 (教科グループ順) の講師名。前へ / 次へ の移動に使う
   const orderedNames = useMemo(
@@ -212,6 +223,12 @@ export default function AvailabilityPanel() {
               ))}
             </div>
             <PenPicker pen={pen} onChange={setPen} />
+            {partTimeCount > 0 && (
+              <label className="flex items-center gap-1 text-xs cursor-pointer" title="本体の「バイト管理」にいる講師だけを並べます">
+                <input type="checkbox" checked={onlyPartTime} onChange={(e) => setOnlyPartTime(e.target.checked)} />
+                バイトのみ ({partTimeCount} 名)
+              </label>
+            )}
           </div>
 
           {view === 'input' ? (

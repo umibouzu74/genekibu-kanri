@@ -260,6 +260,12 @@ export default function App() {
     [builderProject]
   );
 
+  // 講習時間割作成の出勤可能調査で「バイトのみ」に絞るための名前 (読み取り専用)
+  const partTimeStaffNames = useMemo(
+    () => (partTimeStaff || []).map((s) => s?.name).filter(Boolean),
+    [partTimeStaff]
+  );
+
   // タグ別フィルタ用の候補一覧。テスト期間 + 特別イベント の両方から
   // 重複なく抽出 (五十音順)。タグは両者で共有する空間として扱う。
   const availableTags = useMemo(() => {
@@ -1384,8 +1390,13 @@ export default function App() {
             />
           )}
           {view === VIEWS.BUILDER && !selected && (
-            // 他校舎の授業を講習の「講師不在」へ取り込むための読み取り専用データ
-            <BuilderApp offsiteLessons={offsiteLessons} holidays={holidays} />
+            // 他校舎の授業を講習の「講師不在」へ取り込む・出勤可能調査をバイトで
+            // 絞るための読み取り専用データ
+            <BuilderApp
+              offsiteLessons={offsiteLessons}
+              holidays={holidays}
+              partTimeStaffNames={partTimeStaffNames}
+            />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
             <RegularBuilderApp
