@@ -335,6 +335,9 @@ export default function App() {
   const [showDayReschedule, setShowDayReschedule] = useState(false);
   // 振替元・振替先を入れた状態で開く (予定表チェックの「12/7 の振替」から)
   const [dayRescheduleInit, setDayRescheduleInit] = useState(null);
+  // 予定表チェックで読み込んだ予定表 (画面を離れて戻っても読み直さずに済むように
+  // ここで持つ。端末には保存しない)
+  const [yoteihyoSession, setYoteihyoSession] = useState(null);
   // 「✏ 引継ぎメモを書く」ダイアログ (Cmd+K / ダッシュボードの去年のこの時期)
   const [showHandoverAdd, setShowHandoverAdd] = useState(false);
   // 引継ぎメモの 1 件へ飛ぶ要求 ({id, token})。token で同じ id の再要求も効かせる
@@ -1405,6 +1408,8 @@ export default function App() {
               daySchedules={daySchedules}
               extraLessons={extraLessons}
               isAdmin={isAdmin}
+              session={yoteihyoSession}
+              onSessionChange={setYoteihyoSession}
               onOpenDayReschedule={(init) => {
                 setDayRescheduleInit(init || null);
                 setShowDayReschedule(true);

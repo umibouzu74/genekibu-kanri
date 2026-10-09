@@ -1,12 +1,21 @@
-// 予定表の講座 ↔ システムのコマ (学年|科目名) の対応。自動の推定を見せ、
-// 違っていれば選び直せる (選び直した結果はこの端末に保存)。
+// 予定表の講座 ↔ システムのコマ (学年|科目名) の対応。自動で当てはめた対応を
+// 見せ、違っていれば選び直せる (選び直した結果はこの端末に保存)。
+// 開閉は最初だけ決める (コマが見つからない講座があれば開く)。その後は人に任せ、
+// 対応を直して件数が 0 になっても勝手に閉じない。ファイルを読み直すと親が
+// key で作り直す。
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { S } from "../../../styles/common";
-import { gradeToDept } from "../../../utils/scheduleHelpers";
+import { colors } from "../../../styles/tokens";
 import { courseWeekdays } from "../../../utils/yoteihyo/highSchoolSheet";
-import { subjectKey, systemGradesFor } from "../../../utils/yoteihyo/courseMapping";
+import {
+  MAPPING_PROBLEMS,
+  mappingStatus,
+  subjectDays,
+  systemGradesFor,
+} from "../../../utils/yoteihyo/courseMapping";
 import { courseLabel, subjectLabel } from "../../../utils/yoteihyo/labels";
+import { WARN_TEXT } from "./styles";
 
 const WD_ORDER = "月火水木金土日";
 const sortDays = (days) => [...new Set(days)].sort((a, b) => WD_ORDER.indexOf(a) - WD_ORDER.indexOf(b));
@@ -14,21 +23,25 @@ const sortDays = (days) => [...new Set(days)].sort((a, b) => WD_ORDER.indexOf(a)
 export function MappingPanel({ courses, suggestions, mapping, overrides, onChangeOverrides, slots }) {
   const [editing, setEditing] = useState(null); // course key
   const [draft, setDraft] = useState([]);
+  const [focusKey, setFocusKey] = useState(null); // 保存後に「変える」へフォーカスを戻す
+  const buttonRefs = useRef(new Map());
 
   // 学年|科目名 → 曜日 (候補の表示用)
-  const daysBySubject = useMemo(() => {
-    const m = new Map();
-    for (const s of slots || []) {
-      if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "高校部") continue;
-      const k = subjectKey(s.grade, s.subj);
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(s.day);
-    }
-    return m;
-  }, [slots]);
+  const daysBySubject = useMemo(() => subjectDays(slots), [slots]);
 
-  const rows = courses.map((c) => ({ course: c, m: mapping.get(c.key), wd: courseWeekdays(c).regular }));
-  const problems = rows.filter((r) => r.m && !r.m.skip && r.m.subjects.length === 0).length;
+  const rows = courses.map((c) => {
+    const m = mapping.get(c.key);
+    const wd = courseWeekdays(c).regular;
+    return { course: c, m, wd, ...mappingStatus(c, m, daysBySubject) };
+  });
+  const problems = rows.filter((r) => MAPPING_PROBLEMS.has(r.status)).length;
+  const [open, setOpen] = useState(() => problems > 0);
+
+  useEffect(() => {
+    if (!focusKey) return;
+    buttonRefs.current.get(focusKey)?.focus();
+    setFocusKey(null);
+  }, [focusKey]);
 
   const startEdit = (course) => {
     setEditing(course.key);
@@ -40,6 +53,7 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
     else next[key] = value;
     onChangeOverrides(next);
     setEditing(null);
+    setFocusKey(key);
   };
 
   const td = { padding: "6px 8px", borderBottom: "1px solid #eee", fontSize: 12, verticalAlign: "top" };
@@ -55,25 +69,30 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
 
   return (
     <details
-      style={{ background: "#fff", borderRadius: 8, padding: 14, border: "1px solid #e0e0e0", marginBottom: 16 }}
-      open={problems > 0}
+      className="no-print"
+      style={{ ...S.panel, padding: 14, marginBottom: 16 }}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 800 }}>
-        講座とシステムのコマの対応 ({courses.length} 講座{problems > 0 ? `、うち ${problems} 講座はコマが見つかりません` : ""})
+      <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 800, color: problems ? WARN_TEXT : colors.ink }}>
+        {problems > 0
+          ? `⚠ 講座とシステムのコマの対応 (${courses.length} 講座、うち ${problems} 講座はコマが見つかりません)`
+          : `講座とシステムのコマの対応 (${courses.length} 講座)`}
       </summary>
-      <p style={{ fontSize: 12, color: "#555", lineHeight: 1.7, margin: "8px 0" }}>
-        予定表の講座が、システムのどのコマ (学年・科目名) に当たるかの推定です。違っていれば「変える」で選び直してください
-        (この端末に保存します)。比べるのは、予定表でその講座の授業がある曜日のコマだけです。
+      <p style={{ fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, margin: "8px 0" }}>
+        {"予定表の各講座が、システムのどのコマ (学年・科目名) に当たるかを自動で当てはめています。" +
+          "違っていれば「変える」で選び直してください (この端末に保存します)。" +
+          "比べるのは、予定表でその講座の授業がいつもある曜日 (3 回以上ある曜日) のコマだけです。"}
       </p>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr>
-              {["予定表の講座", "曜日", "システムのコマ", ""].map((h, i) => (
+              {["予定表の講座", "いつもの曜日", "システムのコマ"].map((h) => (
                 <th
-                  key={i}
+                  key={h}
                   scope="col"
-                  style={{ ...td, textAlign: "left", fontWeight: 700, color: "#444", background: "#f5f5f7" }}
+                  style={{ ...td, textAlign: "left", fontWeight: 700, color: colors.ink, background: "#f5f5f7" }}
                 >
                   {h}
                 </th>
@@ -81,58 +100,87 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ course, m, wd }) => {
+            {rows.map(({ course, m, wd, status, valid, stale }) => {
               const isEditing = editing === course.key;
+              const label = courseLabel(course);
               const grades = systemGradesFor(course);
               const candidates = [...daysBySubject.entries()]
                 .filter(([k, days]) => grades.has(k.split("|")[0]) && days.some((d) => wd.includes(d)))
                 .map(([k]) => k);
               for (const k of draft) if (isEditing && !candidates.includes(k)) candidates.push(k);
               candidates.sort();
+              const ambiguous = !m?.manual ? suggestions.byCourse.get(course.key)?.ambiguous || [] : [];
               return (
                 <Fragment key={course.key}>
                   <tr>
-                    <td style={{ ...td, minWidth: 180 }}>{courseLabel(course)}</td>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}>{wd.join("・") || "-"}</td>
-                    <td style={td}>
-                      {m?.skip ? (
-                        <span style={{ color: "#777" }}>照合しない</span>
-                      ) : m?.subjects.length ? (
-                        m.subjects.map((k) => (
-                          <span key={k} style={chip}>
-                            {subjectLabel(k)}
-                          </span>
-                        ))
-                      ) : (
-                        <span style={{ color: "#c03030" }}>見つかりません (照合しません)</span>
-                      )}
-                      {m?.manual && !m.skip && <span style={{ color: "#777", marginLeft: 4 }}>(手で選んだ)</span>}
-                      {!m?.manual && suggestions.byCourse.get(course.key)?.ambiguous.length > 0 && (
-                        <span style={{ color: "#a05000", marginLeft: 4 }}>(他の講座と同点の推定あり)</span>
-                      )}
-                    </td>
-                    <td style={{ ...td, whiteSpace: "nowrap", textAlign: "right" }}>
+                    {/* 「変える」は講座名の下に置く (スマホ幅で右端の列が枠の外に切れないように) */}
+                    <td style={{ ...td, minWidth: 120 }}>
+                      <div>{label}</div>
                       <button
                         type="button"
+                        ref={(el) => {
+                          if (el) buttonRefs.current.set(course.key, el);
+                          else buttonRefs.current.delete(course.key);
+                        }}
                         onClick={() => (isEditing ? setEditing(null) : startEdit(course))}
-                        style={{ ...S.btn(false), padding: "3px 10px", fontSize: 12 }}
+                        style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12, marginTop: 4 }}
                         aria-expanded={isEditing}
+                        aria-label={isEditing ? `${label} の対応の編集を閉じる` : `${label} の対応を変える`}
                       >
                         {isEditing ? "閉じる" : "変える"}
                       </button>
                     </td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{wd.join("・") || "-"}</td>
+                    <td style={td}>
+                      {status === "skip" && <span style={{ color: colors.inkMuted }}>比べない</span>}
+                      {status === "noSessions" && (
+                        <span style={{ color: colors.inkMuted }}>この予定表の期間には授業がありません (比べません)</span>
+                      )}
+                      {status === "noWeekday" && (
+                        <span style={{ color: colors.inkMuted }}>
+                          授業が少なく、いつもの曜日が決まらないため比べません
+                        </span>
+                      )}
+                      {status === "unmapped" && (
+                        <span style={{ color: colors.accentRed }}>コマが見つかりません (比べません)</span>
+                      )}
+                      {valid.map((k) => (
+                        <span key={k} style={chip}>
+                          {subjectLabel(k)}
+                        </span>
+                      ))}
+                      {status === "offDay" && (
+                        <span style={{ color: colors.accentRed, marginLeft: 2 }}>
+                          {`このコマは予定表のいつもの曜日 (${wd.join("・")}) にありません (比べません)`}
+                        </span>
+                      )}
+                      {stale.length > 0 && status !== "skip" && (
+                        <span style={{ color: colors.accentRed, marginLeft: 2 }}>
+                          {`「${stale.map(subjectLabel).join("」「")}」は今の時間割にありません`}
+                          {status === "stale" ? " (比べません)" : ""}
+                        </span>
+                      )}
+                      {m?.manual && status !== "skip" && (
+                        <span style={{ color: colors.inkMuted, marginLeft: 4 }}>(手で選んだ)</span>
+                      )}
+                      {ambiguous.length > 0 && (
+                        <div style={{ color: WARN_TEXT }}>
+                          {`「${ambiguous.map(subjectLabel).join("」「")}」は他の講座にも同じくらい当てはまります。確かめてください。`}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                   {isEditing && (
                     <tr>
-                      <td colSpan={4} style={{ ...td, background: "#fafbfc" }}>
+                      <td colSpan={3} style={{ ...td, background: "#fafbfc" }}>
                         {candidates.length === 0 ? (
-                          <p style={{ fontSize: 12, color: "#777", margin: 0 }}>
+                          <p style={{ fontSize: 12, color: colors.inkMuted, margin: 0 }}>
                             この講座の学年・曜日のコマがシステムにありません。
                           </p>
                         ) : (
                           <fieldset style={{ border: "none", margin: 0, padding: 0 }}>
                             <legend style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                              {courseLabel(course)} に当たるコマ
+                              「{label}」に当たるコマ
                             </legend>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
                               {candidates.map((k) => (
@@ -147,7 +195,11 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                                     }
                                   />
                                   {subjectLabel(k)}
-                                  <span style={{ color: "#888" }}>({sortDays(daysBySubject.get(k) || []).join("・")})</span>
+                                  <span style={{ color: colors.inkMuted }}>
+                                    {daysBySubject.has(k)
+                                      ? `(${sortDays(daysBySubject.get(k)).join("・")})`
+                                      : "(今の時間割にありません)"}
+                                  </span>
                                 </label>
                               ))}
                             </div>
@@ -158,6 +210,7 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                             type="button"
                             onClick={() => setOverride(course.key, { subjects: [...draft].sort() })}
                             style={{ ...S.btn(true), padding: "4px 12px", fontSize: 12 }}
+                            disabled={draft.length === 0}
                           >
                             この対応にする
                           </button>
@@ -167,14 +220,14 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                             style={{ ...S.btn(false), padding: "4px 12px", fontSize: 12 }}
                             disabled={!overrides?.[course.key]}
                           >
-                            自動の推定に戻す
+                            自動の対応に戻す
                           </button>
                           <button
                             type="button"
                             onClick={() => setOverride(course.key, { skip: true })}
                             style={{ ...S.btn(false), padding: "4px 12px", fontSize: 12 }}
                           >
-                            この講座は照合しない
+                            この講座は比べない
                           </button>
                         </div>
                       </td>
@@ -187,7 +240,7 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
         </table>
       </div>
       {suggestions.unmatched.length > 0 && (
-        <p style={{ fontSize: 12, color: "#555", lineHeight: 1.7, margin: "8px 0 0" }}>
+        <p style={{ fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, margin: "8px 0 0" }}>
           予定表のどの講座にも当たらなかったシステムのコマ (予定表の学年・曜日の範囲内):{" "}
           {suggestions.unmatched.map((u) => `${subjectLabel(u.key)} (${sortDays(u.days).join("・")})`).join("、")}
         </p>

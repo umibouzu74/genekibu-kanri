@@ -87,24 +87,91 @@ describe("compareSchedules", () => {
     expect(kinds(after, "2026-11-09")).toEqual([]);
   });
 
-  it("表示期間の外の学期は比べず、学期の中で開講日より前の日は「開講前」と出す", () => {
+  it("表示期間設定の境目の近くは比べ (開講前・終講後と出す)、遠い日は比べていない期間として返す", () => {
     const displayCutoff = {
-      groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: "2026-10-05", date: "2026-11-30" }],
+      groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: "2026-10-05", date: "2026-11-05" }],
       cohorts: [],
     };
-    const { findings, ungroupedGrades } = run({ holidays: HOLIDAYS, displayCutoff });
+    const { findings, courses, ungroupedGrades } = run({ holidays: HOLIDAYS, displayCutoff });
     const f = findings.find((x) => x.date === "2026-10-01");
     expect(f.kind).toBe("needOn");
-    expect(f.sys.off[0].status.kind).toBe("before-start");
+    expect(f.sys.off[0].status).toMatchObject({ kind: "before-start", label: "開講前 (表示期間設定の開始日 10/5)" });
+    // 終了日の 10 日後までは比べる (11/12 木) / それより後は比べない (11/16 月〜)
+    expect(findings.find((x) => x.date === "2026-11-12").sys.off[0].status.label).toBe(
+      "終講後 (表示期間設定の終了日 11/5)"
+    );
+    expect(findings.filter((x) => x.date > "2026-11-15")).toEqual([]);
+    expect(courses.find((c) => c.key === "高1|高松西高校").skipped).toEqual([{ start: "2026-11-16", end: "2026-11-30" }]);
     expect(ungroupedGrades).toEqual([]);
-    // 学期がまるごと表示期間の外なら比べない
+    // 期間がまるごと遠ければ比べない (次の期の表示期間設定がまだ無いとき)
     const later = {
       groups: [{ label: "高1・2", grades: ["高1", "高2"], startDate: "2027-01-08", date: null }],
       cohorts: [],
     };
     const r = run({ holidays: HOLIDAYS, displayCutoff: later });
     expect(r.findings).toEqual([]);
-    expect(r.courses.find((c) => c.key === "高1|高松西高校").skippedTerms).toHaveLength(1);
+    expect(r.courses.find((c) => c.key === "高1|高松西高校").skipped).toEqual([
+      { start: "2026-10-01", end: "2026-11-30" },
+    ]);
+  });
+
+  it("比べない講座・コマの無い講座は、比べていない期間に数えない (状態だけ返す)", () => {
+    const merged = mergeHighSchoolSheets([{ name: "10-11月", parsed: parseHighSchoolSheet(sheet()) }]);
+    const sugg = suggestMapping(merged.courses.values(), SLOTS).byCourse;
+    const mapping = effectiveMapping(sugg, { "高1|高松西高校": { skip: true }, "高2|古文・漢文": { subjects: ["高2|古典"] } });
+    const r = compareSchedules({ merged, mapping, slots: SLOTS, sys: makeSys({ slots: SLOTS, holidays: HOLIDAYS }) });
+    expect(r.courses.map((c) => [c.key, c.status, c.skipped])).toEqual([
+      ["高1|高松西高校", "skip", []],
+      ["高2|古文・漢文", "stale", []],
+    ]);
+    expect(r.findings).toEqual([]);
+  });
+
+  it("振替元の注記があれば、振替元の曜日のコマが全部この日へ振り替えてあるかを見る", () => {
+    const slots = [
+      ...SLOTS,
+      { id: 6, day: "月", time: "20:50-21:50", grade: "高1", subj: "高松西 英語", room: "701", teacher: "F" },
+    ];
+    const merged = mergeHighSchoolSheets([{ name: "10-11月", parsed: parseHighSchoolSheet(sheet()) }]);
+    const mapping = effectiveMapping(suggestMapping(merged.courses.values(), slots).byCourse, {});
+    const adjustments = [{ id: 1, type: "reschedule", date: "2026-11-09", slotId: 1, targetDate: "2026-11-06" }];
+    const sys = makeSys({ slots, holidays: HOLIDAYS, adjustments });
+    const { findings } = compareSchedules({ merged, mapping, slots, sys });
+    // 数学だけ振り替えた: 11/6 は英語がまだ / 11/9 は英語が残っている
+    const extra = findings.find((x) => x.date === "2026-11-06");
+    expect(extra).toMatchObject({ kind: "missingExtra", sourceDate: "2026-11-09" });
+    expect(extra.pending.map((s) => s.id)).toEqual([6]);
+    const plan = buildDayPlans({ findings, merged, slots, sys }).find((p) => p.date === "2026-11-09");
+    // 残った英語は休講日にせず、日まるごと振替へ
+    expect(plan.fix.holidays).toEqual([]);
+    expect(plan.moves).toEqual([{ targetDate: "2026-11-06", slots: [expect.objectContaining({ id: 6 })] }]);
+  });
+
+  it("振替元の日が休講日で休みなら、日まるごと振替では移せないと分かるように返す", () => {
+    const holidays = [
+      ...HOLIDAYS,
+      { id: 2, date: "2026-11-09", label: "休校", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
+    ];
+    const { findings } = run({ holidays });
+    const f = findings.find((x) => x.date === "2026-11-06");
+    expect(f.pending).toEqual([]);
+    expect(f.sourceOff.map((x) => [x.slot.id, x.status.label])).toEqual([[1, "休講日「休校」"]]);
+    expect(kinds(findings, "2026-11-09")).toEqual([]);
+  });
+
+  it("いつもの曜日以外の日でも、その曜日のシステムのコマで授業があれば食い違いにしない", () => {
+    const slots = [
+      ...SLOTS,
+      { id: 7, day: "金", time: "19:40-20:40", grade: "高1", subj: "高松西 理科", room: "701", teacher: "G" },
+    ];
+    const merged = mergeHighSchoolSheets([{ name: "10-11月", parsed: parseHighSchoolSheet(sheet()) }]);
+    const sugg = suggestMapping(merged.courses.values(), slots).byCourse;
+    const mapping = effectiveMapping(sugg, {
+      "高1|高松西高校": { subjects: ["高1|高松西 数学", "高1|高松西 英語", "高1|高松西 理科"] },
+    });
+    const sys = makeSys({ slots, holidays: HOLIDAYS });
+    const { findings } = compareSchedules({ merged, mapping, slots, sys });
+    expect(kinds(findings, "2026-11-06")).toEqual([]);
   });
 
   it("学年グループに入っていない学年を知らせる", () => {
@@ -141,7 +208,7 @@ describe("proposeFixes", () => {
   it("その日の高校部のコマが全部休みなら、高校部の休講日 1 件", () => {
     const r = proposeFixes({ date: "2026-10-28", offSlots: [S(1, "高1", "高松西 数学")], keepSlots: [S(9, "中2", "数学")] });
     expect(r.holidays).toEqual([
-      { date: "2026-10-28", label: "休講", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
+      { date: "2026-10-28", label: "休講 (予定表)", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
     ]);
     expect(r.cancels).toEqual([]);
   });
@@ -153,8 +220,14 @@ describe("proposeFixes", () => {
       keepSlots: [S(4, "高1", "高松西 数学"), S(5, "高3", "共テ世界史")],
     });
     expect(r.holidays).toEqual([
-      { date: "2026-10-15", label: "休講", scope: ["高校部"], targetGrades: ["高2"], subjKeywords: [] },
-      { date: "2026-10-15", label: "休講", scope: ["高校部"], targetGrades: ["高1"], subjKeywords: ["高松一", "高松桜井"] },
+      { date: "2026-10-15", label: "休講 (予定表)", scope: ["高校部"], targetGrades: ["高2"], subjKeywords: [] },
+      {
+        date: "2026-10-15",
+        label: "休講 (予定表)",
+        scope: ["高校部"],
+        targetGrades: ["高1"],
+        subjKeywords: ["高松一", "高松桜井"],
+      },
     ]);
   });
 
@@ -182,7 +255,18 @@ describe("proposeFixes", () => {
       subs: [{ id: 1, date: "2026-09-09", slotId: 1, originalTeacher: "A", substitute: "B" }],
     });
     expect(r.cancels).toEqual([]);
-    expect(r.manual).toEqual([{ slot: expect.objectContaining({ id: 1 }), reason: "代行・欠勤の登録がある" }]);
+    expect(r.manual).toEqual([{ slot: expect.objectContaining({ id: 1 }), reason: "sub" }]);
+  });
+
+  it("休講日で止めるコマに代行・合同があれば注意として返す (休講日の案はそのまま)", () => {
+    const r = proposeFixes({
+      date: "2026-10-28",
+      offSlots: [S(1, "高1", "高松西 数学")],
+      keepSlots: [],
+      adjustments: [{ id: 5, type: "combine", date: "2026-10-28", slotId: 1, combineSlotIds: [2] }],
+    });
+    expect(r.holidays).toHaveLength(1);
+    expect(r.cautions).toEqual([{ slot: expect.objectContaining({ id: 1 }), reason: "adjustment" }]);
   });
 
   it("1 語の科目名は頭の 2 文字 / 括弧の前 / 科目名そのものの順で選ぶ", () => {
@@ -196,20 +280,55 @@ describe("proposeFixes", () => {
 });
 
 describe("buildDayPlans", () => {
-  it("日ごとにまとめ、休校の行の文字を休講日の名前に使う", () => {
+  it("日ごとにまとめ、振替元の日は休講日にせず日まるごと振替へ回す", () => {
     const { findings, merged, sys } = run();
     const plans = buildDayPlans({ findings, merged, slots: SLOTS, sys });
+    // 11/9 (休校) は予定表で 11/6 へ振り替えている → 休講日の案は出さない
     const p = plans.find((x) => x.date === "2026-11-09");
-    // 月曜は高1 高松西 数学だけ → 高校部まるごと (中学部のコマは無い)
-    expect(p.fix.holidays).toEqual([
-      { date: "2026-11-09", label: "休校", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
-    ]);
+    expect(p.fix.holidays).toEqual([]);
+    expect(p.moves).toEqual([{ targetDate: "2026-11-06", slots: [expect.objectContaining({ id: 1 })] }]);
     const q = plans.find((x) => x.date === "2026-10-15");
     // 木曜は高2 のコマ (古文漢文・高松西 英語) と中2 が残るので、高1 だけ
     expect(q.fix.holidays).toEqual([
-      { date: "2026-10-15", label: "休講", scope: ["高校部"], targetGrades: ["高1"], subjKeywords: [] },
+      { date: "2026-10-15", label: "休講 (予定表)", scope: ["高校部"], targetGrades: ["高1"], subjKeywords: [] },
     ]);
     expect(plans.find((x) => x.date === "2026-11-06").extras).toHaveLength(1);
+  });
+
+  it("休校の行の文字を休講日の名前に使う", () => {
+    // 11/9 の振替の注記が無い表 (振替元にならない) で
+    const plain = mergeHighSchoolSheets([{ name: "10-11月", parsed: parseHighSchoolSheet(sheet({ withMove: false })) }]);
+    const mapping = effectiveMapping(suggestMapping(plain.courses.values(), SLOTS).byCourse, {});
+    const sys = makeSys({ slots: SLOTS });
+    const { findings } = compareSchedules({ merged: plain, mapping, slots: SLOTS, sys });
+    const p = buildDayPlans({ findings, merged: plain, slots: SLOTS, sys }).find((x) => x.date === "2026-11-09");
+    expect(p.fix.holidays).toEqual([
+      { date: "2026-11-09", label: "休校", scope: ["高校部"], targetGrades: [], subjKeywords: [] },
+    ]);
+  });
+
+  it("今たまたま休みのコマ (テスト期間など) にも休講日の案を当てない", () => {
+    const slots = [
+      { id: 1, day: "月", time: "19:40-20:40", grade: "高1", subj: "高松西 数学" },
+      { id: 9, day: "月", time: "19:40-20:40", grade: "高3", subj: "共テ英語(Hi)" },
+    ];
+    const sys = makeSys({
+      slots,
+      examPeriods: [{ id: 1, name: "高3 模試", startDate: "2026-10-19", endDate: "2026-10-19", targetGrades: ["高3"] }],
+    });
+    const findings = [
+      {
+        date: "2026-10-19",
+        courseKey: "高1|高松西高校",
+        kind: "needOff",
+        yt: { status: "cancelled", label: "休講 (灰色)" },
+        sys: { held: [{ slot: slots[0] }], off: [] },
+      },
+    ];
+    const [plan] = buildDayPlans({ findings, merged: null, slots, sys });
+    // 高3 は今テスト期間で休みだが、高校部まるごとの休講日にはしない
+    expect(plan.fix.holidays.map((h) => h.targetGrades)).toEqual([["高1"]]);
+    expect(plan.keepSlots.map((s) => s.id)).toEqual([9]);
   });
 });
 

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   effectiveMapping,
+  mappingStatus,
   matchScore,
   normalizeName,
+  subjectDays,
   suggestMapping,
   systemGradesFor,
   tokenizeSubject,
@@ -135,5 +137,42 @@ describe("effectiveMapping", () => {
     expect(eff.get("a")).toEqual({ subjects: [], skip: true, manual: true });
     expect(eff.get("b")).toEqual({ subjects: ["高1|w"], skip: false, manual: true });
     expect(eff.get("c")).toEqual({ subjects: ["高1|z"], skip: false, manual: false });
+  });
+});
+
+describe("mappingStatus", () => {
+  // 月木に授業のある講座 (いつもの曜日 = 月・木)
+  const sessions = new Map(
+    ["2026-10-05", "2026-10-08", "2026-10-12", "2026-10-15", "2026-10-19", "2026-10-22"].map((d) => [
+      d,
+      { status: "held" },
+    ])
+  );
+  const course = { key: "高1|高松西高校", sessions };
+  const days = subjectDays([
+    { day: "月", grade: "高1", subj: "高松西 数学" },
+    { day: "火", grade: "高1", subj: "高松西 理科" },
+    { day: "月", grade: "中2", subj: "数学" }, // 中学部は入れない
+  ]);
+  const st = (m, c = course) => mappingStatus(c, m, days).status;
+
+  it("対応・曜日・今の時間割から、比べられるかを決める", () => {
+    expect([...days.keys()]).toEqual(["高1|高松西 数学", "高1|高松西 理科"]);
+    expect(st({ subjects: ["高1|高松西 数学"], skip: false })).toBe("ok");
+    expect(st({ subjects: [], skip: true })).toBe("skip");
+    expect(st({ subjects: [], skip: false })).toBe("unmapped");
+    expect(st(undefined)).toBe("unmapped");
+    // 手で選んだコマが今の時間割に無い (期切替で科目名が変わった)
+    expect(mappingStatus(course, { subjects: ["高1|高松西 旧数学"], skip: false }, days)).toEqual({
+      status: "stale",
+      valid: [],
+      stale: ["高1|高松西 旧数学"],
+    });
+    // 選んだコマが予定表のいつもの曜日 (月木) に無い
+    expect(st({ subjects: ["高1|高松西 理科"], skip: false })).toBe("offDay");
+    // 授業が 2 回だけ → いつもの曜日が決まらない / 授業が 1 回も無い列
+    const few = { key: "x", sessions: new Map([...sessions].slice(0, 2)) };
+    expect(st({ subjects: ["高1|高松西 数学"], skip: false }, few)).toBe("noWeekday");
+    expect(st({ subjects: ["高1|高松西 数学"], skip: false }, { key: "y", sessions: new Map() })).toBe("noSessions");
   });
 });

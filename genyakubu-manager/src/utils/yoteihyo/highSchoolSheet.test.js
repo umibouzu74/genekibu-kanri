@@ -6,6 +6,7 @@ import {
   courseWeekdays,
   gradesIn,
   mergeHighSchoolSheets,
+  namedMonthRange,
   parseHighSchoolSheet,
   splitTerms,
 } from "./highSchoolSheet";
@@ -163,7 +164,8 @@ describe("parseHighSchoolSheet (高1・高2 型)", () => {
     const bad = parseHighSchoolSheet(buildH12({ wrongWeekday: true }));
     expect(bad.warnings).toHaveLength(1);
     expect(bad.warnings[0].kind).toBe("weekday");
-    expect(bad.warnings[0].message).toMatch(/曜日が暦と合わない日が 61 日/);
+    expect(bad.warnings[0].message).toMatch(/^曜日が暦と合わない日が 61 日あります \(例: 10\/1 が「/);
+    expect(bad.warnings[0].message).toMatch(/前の年の表の曜日が残っているかもしれません。学校に確認してください。$/);
   });
 
   it("教員用の予定回数を読み、数と合わない講座を出す", () => {
@@ -323,5 +325,67 @@ describe("splitTerms", () => {
       { start: "2026-07-01", end: "2026-07-20" },
       { start: "2026-08-25", end: "2026-09-01" },
     ]);
+  });
+});
+
+describe("記号", () => {
+  it("一覧に無い記号 (■ など) も授業の印として読む。「★■」は 2 講座の授業", () => {
+    const sheet = makeSheet("2026\u3000H3\u3000【10月】", (s) => {
+      s.set(1, 1, "2026年度\u3000【高3ゼミ】\u300010月予定表");
+      s.set(4, 3, "本校");
+      s.set(6, 3, "共通テスト");
+      const map = s.month({ year: 2026, month: 10, dayCol: 1, firstRow: 7, labelRow: 3 });
+      for (const [iso, r] of map) if (weekdayIndexOf(iso) === 5) s.set(r, 3, "★■");
+      s.set(40, 3, "\u3000★：共通テスト英語\u3000\u3000■：共通テスト数学");
+    });
+    const p = parseHighSchoolSheet(sheet);
+    expect(p.courses.get("高3|sym:■")).toMatchObject({ name: "共通テスト数学" });
+    expect(p.courses.get("高3|sym:★").sessions.size).toBe(5);
+    expect(p.courses.get("高3|sym:■").sessions.size).toBe(5);
+  });
+});
+
+describe("namedMonthRange", () => {
+  it("シート名・題の月の期間 (1〜3 月は翌年)", () => {
+    expect(namedMonthRange("2026\u3000H3\u3000【9-12月】", "", 2026)).toEqual({ start: "2026-09-01", end: "2026-12-31" });
+    expect(namedMonthRange("2025 H1・H2 【1-3月】教員用", "", 2025)).toEqual({ start: "2026-01-01", end: "2026-03-31" });
+    expect(namedMonthRange("x", "2026年度 【高1・高2ゼミ】 10月～11月予定表", 2026)).toEqual({
+      start: "2026-10-01",
+      end: "2026-11-30",
+    });
+    expect(namedMonthRange("2026 H3 【10月】", "", 2026)).toEqual({ start: "2026-10-01", end: "2026-10-31" });
+    expect(namedMonthRange("Sheet1", "", 2026)).toBeNull();
+  });
+});
+
+describe("checkPlannedCounts (シート名の期間)", () => {
+  // 8/28〜12/18 の金曜 (17 回)。「【9-12月】」のシートの予定 16 回は 9/1〜12/31 の分
+  const fridays = [];
+  for (let d = new Date(Date.UTC(2026, 7, 28)); d <= new Date(Date.UTC(2026, 11, 18)); d.setUTCDate(d.getUTCDate() + 7)) {
+    fridays.push(d.toISOString().slice(0, 10));
+  }
+  const mergedWith = (namedRange) => ({
+    planned: [
+      {
+        courseKey: "高3|sym:★",
+        weekdays: "金",
+        count: 16,
+        sheet: "2026 H3 【9-12月】",
+        range: { start: "2026-10-01", end: "2026-12-31" },
+        namedRange,
+      },
+    ],
+    courses: new Map([
+      ["高3|sym:★", { family: "高3", sessions: new Map(fridays.map((d) => [d, { status: "held" }])) }],
+    ]),
+    families: new Map([
+      ["高3", { terms: [{ start: "2026-08-28", end: "2026-12-18" }], ranges: [{ start: "2026-08-24" }] }],
+    ]),
+  });
+
+  it("シートの期間 (12 回)・学期 (17 回) で合わなくても、シート名の月 (16 回) で合えば一致", () => {
+    expect(fridays).toHaveLength(17);
+    expect(checkPlannedCounts(mergedWith({ start: "2026-09-01", end: "2026-12-31" }))).toEqual([]);
+    expect(checkPlannedCounts(mergedWith(null))).toMatchObject([{ planned: 16, counted: 17, countedInSheet: 12 }]);
   });
 });

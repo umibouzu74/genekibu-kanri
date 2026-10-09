@@ -55,8 +55,9 @@ export function weekdayIndexOf(iso) {
 }
 
 // 10〜11 月の高1・高2 の予定表。講座は 高1 高松西高校 (月木) と 高2 古文・漢文 (木)。
-// 2026 年は 10/12 スポーツの日・11/9 休校・10/15 灰色 (休講)・11/6 振替 (黄色)。
-export function smallH12Sheet({ name = "2026\u3000H1H2【10-11月】教員用", year = 2026 } = {}) {
+// 2026 年は 10/12 スポーツの日・11/9 休校・10/15 灰色 (休講)・11/6 振替 (黄色、
+// 注記「←11/9(月)の振替→」)。withMove: false で 11/6 の振替を描かない
+export function smallH12Sheet({ name = "2026\u3000H1H2【10-11月】教員用", year = 2026, withMove = true } = {}) {
   return makeSheet(name, (s) => {
     s.set(1, 1, `${year}年度\u3000【高1・高2ゼミ】\u300010月～11月予定表`);
     const blocks = [
@@ -81,7 +82,7 @@ export function smallH12Sheet({ name = "2026\u3000H1H2【10-11月】教員用", 
         }
         if (wd === 1 || wd === 4) s.set(r, c0, "●", md === "10-15" ? GRAY : null);
         if (wd === 4) s.set(r, c0 + 1, "◇");
-        if (md === "11-06") {
+        if (withMove && md === "11-06") {
           s.set(r, c0, "●", YELLOW);
           s.set(r, c0 + 1, "←11/9(月)の振替→");
         }

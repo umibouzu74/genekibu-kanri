@@ -5,42 +5,35 @@
 // モジュールごと動的 import で読む (workbookFile.js)。
 
 import ExcelJS from "exceljs";
-import { DEFAULT_PALETTE, excelSerialToIso } from "./xlsReader";
+import { WorkbookError } from "./errors";
+import { paletteColor, themeColor, themeFromXml } from "./colors";
+import { excelSerialToIso, isWeekdayFormatString } from "./xlsReader";
 
-const FIXED_COLORS = ["000000", "ffffff", "ff0000", "00ff00", "0000ff", "ffff00", "ff00ff", "00ffff"];
-// Office 既定テーマ (theme 0〜9 = lt1, dk1, lt2, dk2, accent1〜6)
-const THEME_COLORS = ["ffffff", "000000", "e7e6e6", "44546a", "4472c4", "ed7d31", "a5a5a5", "ffc000", "5b9bd5", "70ad47"];
+const WEEKDAYS = "日月火水木金土";
+// 予定表の日付として信じる最も古い年 (xlsReader と同じ)
+const MIN_DATE_YEAR = 1950;
+const MAX_ROW = 1048575;
+const MAX_COL = 16383;
 
-function applyTint(hex, tint) {
-  if (!tint) return hex;
-  const ch = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const out = ch.map((c) => Math.round(tint < 0 ? c * (1 + tint) : c + (255 - c) * tint));
-  return out.map((c) => Math.max(0, Math.min(255, c)).toString(16).padStart(2, "0")).join("");
-}
-
-function colorOf(c) {
+function colorOf(c, theme) {
   if (!c) return null;
   if (typeof c.argb === "string" && c.argb.length >= 6) return c.argb.slice(-6).toLowerCase();
-  if (Number.isInteger(c.indexed)) {
-    if (c.indexed < 8) return FIXED_COLORS[c.indexed];
-    if (c.indexed < 64) return DEFAULT_PALETTE[c.indexed - 8] ?? null;
-    return null;
-  }
-  if (Number.isInteger(c.theme) && THEME_COLORS[c.theme]) return applyTint(THEME_COLORS[c.theme], c.tint);
+  if (Number.isInteger(c.indexed)) return paletteColor(c.indexed);
+  if (Number.isInteger(c.theme)) return themeColor(c.theme, c.tint || 0, theme);
   return null;
 }
 
-function fillOf(cell) {
+function fillOf(cell, theme) {
   const f = cell.fill;
   if (!f || f.type !== "pattern" || !f.pattern || f.pattern === "none") return null;
-  const hex = colorOf(f.fgColor);
+  const hex = colorOf(f.fgColor, theme);
   return hex ? `#${hex}` : null;
 }
 
 const SERIAL_EPOCH = Date.UTC(1899, 11, 30);
 
-function cellOf(cell) {
-  const fill = fillOf(cell);
+function cellOf(cell, theme) {
+  const fill = fillOf(cell, theme);
   let v = cell.value;
   if (v && typeof v === "object" && !(v instanceof Date)) {
     if (Array.isArray(v.richText)) v = v.richText.map((r) => r.text || "").join("");
@@ -50,20 +43,38 @@ function cellOf(cell) {
   }
   if (v instanceof Date) {
     const serial = (v.getTime() - SERIAL_EPOCH) / 86400000;
-    return { t: "n", v: serial, fill, date: excelSerialToIso(serial) };
+    const out = { t: "n", v: serial, fill };
+    // 書式「d」で作った日の列の 1〜31 は 1900 年 1 月の日付になるので、日付にしない
+    if (v.getUTCFullYear() >= MIN_DATE_YEAR) {
+      if (isWeekdayFormatString(cell.numFmt)) out.wd = WEEKDAYS[v.getUTCDay()];
+      else out.date = excelSerialToIso(serial);
+    }
+    return out;
   }
-  if (typeof v === "number") return { t: "n", v, fill };
+  if (typeof v === "number") {
+    const out = { t: "n", v, fill };
+    if (isWeekdayFormatString(cell.numFmt)) {
+      const iso = excelSerialToIso(v);
+      if (iso && Number(iso.slice(0, 4)) >= MIN_DATE_YEAR) {
+        out.wd = WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+      }
+    }
+    return out;
+  }
   if (typeof v === "string") return { t: "s", v, fill };
   if (typeof v === "boolean") return { t: "b", v, fill };
   return fill ? { t: "z", v: null, fill } : null;
 }
 
-// "B2:D4" → { r0, c0, r1, c1 } (0 起点)
+// "B2:D4" → { r0, c0, r1, c1 } (0 起点)。逆向き・上限を超える範囲は壊れているので捨てる
 function parseRange(ref) {
   const m = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(String(ref).replace(/\$/g, ""));
   if (!m) return null;
   const col = (s) => [...s].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
-  return { r0: Number(m[2]) - 1, c0: col(m[1]), r1: Number(m[4]) - 1, c1: col(m[3]) };
+  const out = { r0: Number(m[2]) - 1, c0: col(m[1]), r1: Number(m[4]) - 1, c1: col(m[3]) };
+  if (out.r0 < 0 || out.c0 < 0 || out.r1 < out.r0 || out.c1 < out.c0) return null;
+  if (out.r1 > MAX_ROW || out.c1 > MAX_COL) return null;
+  return out;
 }
 
 /**
@@ -73,6 +84,9 @@ function parseRange(ref) {
 export async function readXlsx(input) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(input instanceof Uint8Array ? input : new Uint8Array(input));
+  // ブック自身のテーマの配色 (無ければ Office 既定)。exceljs はテーマを
+  // 公開の API で出していないので、読み込んだ theme1.xml を直接見る
+  const theme = themeFromXml(wb._themes?.theme1);
   const sheets = [];
   wb.eachSheet((ws) => {
     const rows = [];
@@ -82,10 +96,10 @@ export async function readXlsx(input) {
         const isSlave = cell.isMerged && cell.master && cell.master !== cell;
         const c = isSlave
           ? (() => {
-              const fill = fillOf(cell);
+              const fill = fillOf(cell, theme);
               return fill ? { t: "z", v: null, fill } : null;
             })()
-          : cellOf(cell);
+          : cellOf(cell, theme);
         if (!c) return;
         (rows[rowNumber - 1] || (rows[rowNumber - 1] = []))[colNumber - 1] = c;
       });
@@ -93,5 +107,6 @@ export async function readXlsx(input) {
     const merges = (ws.model?.merges || []).map(parseRange).filter(Boolean);
     sheets.push({ name: ws.name, rows, merges });
   });
+  if (!sheets.length) throw new WorkbookError("Excel のブック (.xlsx) ではありません。");
   return { sheets };
 }

@@ -283,8 +283,8 @@ export function CommandPalette({
       { key: views.MINUTES, label: "授業時間の集計 (給与計算・講師ごとの授業時間)" },
       { key: views.TIMETABLE, label: "時間割管理" },
       { key: views.HOLIDAYS, label: "休講・テスト期間・イベント" },
-      // 予定表 (Excel) と休講の登録の突き合わせ
-      { key: views.YOTEIHYO, label: "予定表チェック (学校の予定表と休講・振替の突き合わせ)" },
+      // 学校の予定表 (Excel) と休講・振替の登録を比べる
+      { key: views.YOTEIHYO, label: "予定表チェック (学校の予定表と休講・振替を比べる)" },
       { key: views.EVENTS, label: "イベントカレンダー" },
       { key: views.MASTER, label: "コースマスター管理" },
       { key: views.SUBS, label: "授業管理" },

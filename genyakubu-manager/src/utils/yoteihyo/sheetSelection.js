@@ -9,24 +9,25 @@ import { classifySheet, parseHighSchoolSheet } from "./highSchoolSheet";
 /**
  * @param {{ sheets: Array<{name: string}> }} workbook
  * @returns {Array<{ index, name, kind, title, parsed }>}
- *   kind: high (読めた) / middle / calendar / unknown (高校部らしいが形が読めない も含む)
+ *   kind: high (読めた) / unreadable (高校部らしいが表の形が読めない) /
+ *         middle / calendar / unknown (予定表として読めない)
  */
 export function analyzeWorkbook(workbook) {
   return (workbook?.sheets || []).map((sheet, index) => {
-    const cls = classifySheet(sheet);
+    // 1 枚が読めなくても、ほかのシートは読む
+    let cls = { kind: "unknown", title: "" };
     let parsed = null;
-    if (cls.kind === "high") {
-      try {
-        parsed = parseHighSchoolSheet(sheet);
-      } catch (err) {
-        console.warn(`[yoteihyo] シート「${sheet.name}」を読めませんでした`, err);
-        parsed = null;
-      }
+    try {
+      cls = classifySheet(sheet);
+      if (cls.kind === "high") parsed = parseHighSchoolSheet(sheet);
+    } catch (err) {
+      console.warn(`[yoteihyo] シート「${sheet.name}」を読めませんでした`, err);
+      parsed = null;
     }
     return {
       index,
       name: sheet.name,
-      kind: parsed ? "high" : cls.kind === "high" ? "unknown" : cls.kind,
+      kind: parsed ? "high" : cls.kind === "high" ? "unreadable" : cls.kind,
       title: cls.title,
       parsed,
     };

@@ -4,9 +4,11 @@ import {
   excelSerialToIso,
   isCompoundFile,
   isDateFormatString,
+  isWeekdayFormatString,
   openCompoundFile,
   readXls,
 } from "./xlsReader";
+import { PASSWORD_MESSAGE } from "./errors";
 
 const sample = new Uint8Array(readFileSync(new URL("./testdata/sample.xls", import.meta.url)));
 
@@ -132,7 +134,7 @@ function rec(type, bytes) {
 function utf16(s) {
   return [...s].flatMap((ch) => u16le(ch.charCodeAt(0)));
 }
-function buildCfb(stream) {
+function buildCfb(stream, name = "Workbook") {
   const sector = 512;
   const nStream = Math.ceil(stream.length / sector);
   const out = new Uint8Array(sector * (3 + nStream));
@@ -169,7 +171,7 @@ function buildCfb(stream) {
   out.set(
     [
       ...entry("Root Entry", 5, 0xfffffffe, 0, 1),
-      ...entry("Workbook", 2, 2, stream.length, 0xffffffff),
+      ...entry(name, 2, 2, stream.length, 0xffffffff),
       ...new Array(256).fill(0),
     ],
     sector * 2
@@ -187,12 +189,13 @@ function xf(fill, color) {
   d.splice(18, 2, ...u16le(color & 0x7f));
   return rec(0x00e0, d);
 }
-function buildWorkbook({ sstSegments, sheetRecords, palette }) {
+function buildWorkbook({ sstSegments, sheetRecords, palette, globals = [], streamName }) {
   const globalsHead = [
     ...bof(0x0005),
     ...xf(0, 64), // 0: 塗りなし
     ...xf(1, 55), // 1: 灰色 (既定パレット 55 = 969696)
     ...xf(1, 8), // 2: 色番号 8 (PALETTE で上書きする)
+    ...globals,
   ];
   const paletteRec = palette
     ? rec(0x0092, [...u16le(palette.length), ...palette.flatMap(([r, g, b]) => [r, g, b, 0])])
@@ -208,8 +211,31 @@ function buildWorkbook({ sstSegments, sheetRecords, palette }) {
   let stream = [...globalsHead, ...paletteRec, ...sst, ...boundSheet, ...rec(0x000a, []), ...sheet];
   // 4096 バイト以上にする (末尾の未知レコードは読み飛ばされる)
   while (stream.length < 4200) stream = [...stream, ...rec(0x7fff, new Array(200).fill(0))];
-  return buildCfb(new Uint8Array(stream));
+  return buildCfb(new Uint8Array(stream), streamName);
 }
+
+// XF (書式番号つき)
+function xfFmt(fmt) {
+  const d = new Array(20).fill(0);
+  d.splice(2, 2, ...u16le(fmt));
+  return rec(0x00e0, d);
+}
+// FORMAT (番号 + 書式の文字列)
+function format(id, str) {
+  return rec(0x041e, [...u16le(id), ...u16le(str.length), 0x00, ...[...str].map((ch) => ch.charCodeAt(0))]);
+}
+// XFEXT: XF ixfe の塗りの前景色 (extType 4) を FullColorExt で
+function xfext(ixfe, xclrType, value, tint = 0) {
+  const full = [...u16le(xclrType), ...u16le(tint & 0xffff), ...u32le(value), ...new Array(8).fill(0)];
+  const prop = [...u16le(4), ...u16le(4 + full.length), ...full];
+  return rec(0x087d, [...new Array(12).fill(0), ...u16le(0), ...u16le(ixfe), ...u16le(0), ...u16le(1), ...prop]);
+}
+const SST0 = [[...u32le(0), ...u32le(0)]];
+const number = (r, c, ixfe, v) => {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setFloat64(0, v, true);
+  return rec(0x0203, [...u16le(r), ...u16le(c), ...u16le(ixfe), ...b]);
+};
 
 describe("readXls (組み立てた .xls)", () => {
   it("文字の途中で CONTINUE に切れた共有文字列を、続きのフラグで読み直す", () => {
@@ -267,5 +293,110 @@ describe("readXls (組み立てた .xls)", () => {
     expect(s.rows[5][1]).toBeUndefined();
     expect(s.rows[5][2]).toEqual({ t: "z", v: null, fill: "#123456" });
     expect(s.merges).toEqual([{ r0: 6, r1: 7, c0: 0, c1: 3 }]);
+  });
+});
+
+describe("readXls (壊れた・特殊なファイル)", () => {
+  it("パスワード付きのブック (FILEPASS) は、分かる言葉で止まる", () => {
+    const bytes = buildWorkbook({ sstSegments: SST0, sheetRecords: [], globals: rec(0x002f, [0, 0, 1, 0, 1, 0]) });
+    expect(() => readXls(bytes)).toThrow(PASSWORD_MESSAGE);
+  });
+
+  it("パスワード付きの .xlsx (EncryptedPackage の OLE2) も同じ", () => {
+    const bytes = buildWorkbook({ sstSegments: SST0, sheetRecords: [], streamName: "EncryptedPackage" });
+    expect(() => readXls(bytes)).toThrow(PASSWORD_MESSAGE);
+  });
+
+  it("ストリーム名の大文字・小文字は区別しない", () => {
+    const bytes = buildWorkbook({ sstSegments: SST0, sheetRecords: number(0, 0, 0, 5), streamName: "WORKBOOK" });
+    expect(readXls(bytes).sheets[0].rows[0][0]).toEqual({ t: "n", v: 5, fill: null });
+  });
+
+  it("文字列の数式: 間に SHRFMLA / ARRAY が入っても STRING を読む。STRING が無くてもセルは残す", () => {
+    const formula = (r, c) => [
+      ...u16le(r), ...u16le(c), ...u16le(0),
+      0x00, 0, 0, 0, 0, 0, 0xff, 0xff,
+      ...u16le(0), ...u32le(0), ...u16le(0),
+    ];
+    const bytes = buildWorkbook({
+      sstSegments: SST0,
+      sheetRecords: [
+        ...rec(0x0006, formula(0, 0)),
+        ...rec(0x04bc, new Array(10).fill(0)), // SHRFMLA
+        ...rec(0x0207, [...u16le(1), 0x01, ...utf16("月")]),
+        ...rec(0x0006, formula(1, 0)),
+        ...rec(0x0221, new Array(14).fill(0)), // ARRAY
+        ...rec(0x0207, [...u16le(1), 0x01, ...utf16("火")]),
+        ...rec(0x0006, formula(2, 0)), // STRING が無い
+        ...number(3, 0, 0, 1),
+      ],
+    });
+    const rows = readXls(bytes).sheets[0].rows;
+    expect(rows[0][0].v).toBe("月");
+    expect(rows[1][0].v).toBe("火");
+    expect(rows[2][0]).toEqual({ t: "s", v: "", fill: null });
+    expect(rows[3][0].v).toBe(1);
+  });
+
+  it("塗りの色は XFEXT (本当の色) を XF の色番号より優先する (RGB / テーマ + 明るさ)", () => {
+    const bytes = buildWorkbook({
+      sstSegments: SST0,
+      // XF 1 (色番号 55 = 969696) を RGB a6a6a6 に、XF 2 をテーマ 0 (白) の -15% に
+      globals: [...xfext(1, 2, 0x00a6a6a6), ...xfext(2, 3, 0, -4915)],
+      sheetRecords: [...number(0, 0, 1, 1), ...number(0, 1, 2, 1)],
+    });
+    const row = readXls(bytes).sheets[0].rows[0];
+    expect(row[0].fill).toBe("#a6a6a6");
+    expect(row[1].fill).toBe("#d9d9d9");
+  });
+
+  it("曜日だけの書式 (aaa) は曜日の文字、日の数だけの日付書式 (d) の 1〜31 は日付にしない", () => {
+    const bytes = buildWorkbook({
+      sstSegments: SST0,
+      globals: [...format(164, "aaa"), ...format(165, "d"), ...xfFmt(164), ...xfFmt(165)],
+      sheetRecords: [
+        ...number(0, 0, 3, 46304), // 2026-10-09 (金) を「aaa」で
+        ...number(0, 1, 4, 15), // 「d」で 15 (Excel の画面は「15」)
+        ...number(0, 2, 4, 46304), // 「d」でも本当の日付なら日付
+      ],
+    });
+    const row = readXls(bytes).sheets[0].rows[0];
+    expect(row[0]).toEqual({ t: "n", v: 46304, fill: null, wd: "金" });
+    expect(row[1]).toEqual({ t: "n", v: 15, fill: null });
+    expect(row[2].date).toBe("2026-10-09");
+  });
+
+  it("途中で切れたファイル・セクタの大きさがおかしいファイルは、壊れていると知らせる", () => {
+    const ok = buildWorkbook({ sstSegments: SST0, sheetRecords: [] });
+    expect(() => readXls(ok.subarray(0, ok.length - 600))).toThrow(/ファイルが壊れています \(途中で切れています\)/);
+    const bad = ok.slice();
+    bad[0x1e] = 8; // セクタ 256 バイト
+    expect(() => openCompoundFile(bad)).toThrow(/ファイルが壊れています \(セクタサイズ\)/);
+  });
+
+  it("Workbook ストリームの中身が Excel 95 (BIFF5) なら、保存し直しを案内する", () => {
+    const bytes = buildWorkbook({ sstSegments: SST0, sheetRecords: [] });
+    const i = bytes.findIndex((_, k) => bytes[k] === 0x09 && bytes[k + 1] === 0x08);
+    bytes[i + 4 + 1] = 0x05; // vers 0x0600 → 0x0500
+    expect(() => readXls(bytes)).toThrow(/Excel 5\.0\/95 形式のファイルは読めません/);
+  });
+
+  it("ワークシートが 1 枚も無いブックは、空のまま返さず知らせる", () => {
+    // BOUNDSHEET の種類をグラフ (2) にする
+    const bytes = buildWorkbook({ sstSegments: SST0, sheetRecords: [] });
+    const i = bytes.findIndex((_, k) => bytes[k] === 0x85 && bytes[k + 1] === 0x00);
+    bytes[i + 4 + 5] = 2;
+    expect(() => readXls(bytes)).toThrow("ブックにワークシートがありません。");
+  });
+});
+
+describe("isWeekdayFormatString", () => {
+  it("曜日だけの書式", () => {
+    expect(isWeekdayFormatString("aaa")).toBe(true);
+    expect(isWeekdayFormatString("[$-411]aaaa")).toBe(true);
+    expect(isWeekdayFormatString("ddd")).toBe(true);
+    expect(isWeekdayFormatString("m/d(aaa)")).toBe(false);
+    expect(isWeekdayFormatString("d")).toBe(false);
+    expect(isWeekdayFormatString("General")).toBe(false);
   });
 });

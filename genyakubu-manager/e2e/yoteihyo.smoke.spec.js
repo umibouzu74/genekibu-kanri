@@ -96,22 +96,24 @@ test("予定表 (.xlsx) を読み込むと、塗りの色から食い違う日�
     buffer: await buildWorkbook(),
   });
   await expect(page.getByText("読み込んだファイル: 予定表.xlsx")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByLabel("「2026 H1H2【10-11月】教員用」を照合に使う")).toBeChecked();
+  await expect(page.getByLabel("「2026 H1H2【10-11月】教員用」を使う")).toBeChecked();
 
-  const cards = page.getByRole("region", { name: /の食い違い$/ });
-  await expect(cards).toHaveCount(3);
+  // 食い違う日ごとのカード (日付が見出し)
+  await expect(page.getByRole("article")).toHaveCount(3);
   // 10/15: 灰色 = 休講。高1 だけ止める案 (木曜の高2・中2 は残す)
-  const oct15 = page.getByRole("region", { name: "10/15(木) の食い違い" });
+  const oct15 = page.getByRole("article", { name: "10/15 (木)" });
   await expect(oct15.getByText("予定表: 休講 (灰色)", { exact: false })).toBeVisible();
   await expect(oct15.getByText("高校部 高1", { exact: true })).toBeVisible();
-  // 11/9: 休校の行 (赤) の文字を休講日の名前に
-  await expect(page.getByRole("region", { name: "11/9(月) の食い違い" }).getByText(/休講日「休校」/)).toBeVisible();
+  // 11/9: 休校の行 (赤・結合) を読む。11/6 への振替元なので休講日にはせず、日まるごと振替を案内する
+  const nov9 = page.getByRole("article", { name: "11/9 (月)" });
+  await expect(nov9.getByText("予定表: 休校", { exact: false })).toBeVisible();
+  await expect(nov9.getByText(/予定表では 11\/6 \(金\) に振り替えています/)).toBeVisible();
   // 11/6: 黄色の振替。注記から振替元を読む
   await expect(
-    page.getByRole("region", { name: "11/6(金) の食い違い" }).getByText("11/9(月) の授業をこの日へ振り替える登録がありません。")
+    page.getByRole("article", { name: "11/6 (金)" }).getByText("11/9 (月) の授業をこの日へ振り替える登録がありません。")
   ).toBeVisible();
 
   // 管理者でなければ登録のボタンは出さない
-  await expect(page.getByText("直す案の登録には管理者ログインが必要です。")).toBeVisible();
+  await expect(page.getByText(/直す案の登録と日まるごと振替を開くには、管理者ログインが必要です/)).toBeVisible();
   await expect(page.getByRole("button", { name: "この日の案を登録" })).toHaveCount(0);
 });

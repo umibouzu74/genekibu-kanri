@@ -1,5 +1,5 @@
 // ─── 予定表の講座 → システムのコマ ─────────────────────────────────
-// 予定表の講座 (「高1 高松西高校」「高3 ●＝共通テスト英語(ハイレベル)」) が
+// 予定表の講座 (「高1 高松西高校」「高3 ● 共通テスト英語(ハイレベル)」) が
 // システムのどのコマ (学年 × 科目名) に当たるかを推定する。推定は手がかり:
 //
 //   - 学年: 講座の学年 (「高1・高2」なら 高1 / 高2 / 高1高2 のどれか)
@@ -250,3 +250,52 @@ export function effectiveMapping(suggested, overrides = {}) {
   }
   return out;
 }
+
+/**
+ * システムの高校部のコマの「学年|科目名」→ 曜日の一覧。
+ * @returns {Map<string, string[]>}
+ */
+export function subjectDays(slots) {
+  const m = new Map();
+  for (const s of slots || []) {
+    if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "高校部") continue;
+    const k = subjectKey(s.grade, s.subj);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(s.day);
+  }
+  return m;
+}
+
+/**
+ * 講座の対応の状態。比べるのは status が ok の講座だけ (compare と対応表で共有)。
+ * @param {object} course   予定表の講座 (sessions を持つ)
+ * @param {{subjects: string[], skip: boolean} | undefined} m  effectiveMapping の 1 件
+ * @param {Map<string, string[]>} days  subjectDays(slots)
+ * @returns {{ status: string, valid: string[], stale: string[] }}
+ *   status:
+ *     ok         比べる
+ *     skip       「この講座は比べない」にした
+ *     noSessions この予定表の期間に授業が 1 回も無い (見出しだけの列)
+ *     noWeekday  授業が少なく、いつもの曜日が決まらない
+ *     unmapped   対応するコマが無い
+ *     stale      選んだコマが今の時間割に無い (期切替で科目名が変わったなど)
+ *     offDay     選んだコマが、予定表のいつもの曜日に無い
+ *   valid / stale: 選んだ「学年|科目名」のうち今の時間割にある / 無いもの
+ */
+export function mappingStatus(course, m, days) {
+  if (m?.skip) return { status: "skip", valid: [], stale: [] };
+  const subjects = m?.subjects || [];
+  const valid = subjects.filter((k) => days.has(k));
+  const stale = subjects.filter((k) => !days.has(k));
+  const out = (status) => ({ status, valid, stale });
+  if (!course?.sessions?.size) return out("noSessions");
+  const { regular } = courseWeekdays(course);
+  if (!regular.length) return out("noWeekday");
+  if (!subjects.length) return out("unmapped");
+  if (!valid.length) return out("stale");
+  if (!valid.some((k) => days.get(k).some((d) => regular.includes(d)))) return out("offDay");
+  return out("ok");
+}
+
+/** 比べられないので直してほしい状態 (対応表の「コマが見つかりません」の件数) */
+export const MAPPING_PROBLEMS = new Set(["unmapped", "stale", "offDay"]);
