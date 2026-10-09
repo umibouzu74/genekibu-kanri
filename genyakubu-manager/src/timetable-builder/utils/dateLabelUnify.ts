@@ -17,7 +17,7 @@
 //
 // 冪等: 統一後のプールに裸ラベルは残らないので 2 回目以降は no-op。
 import type { CombinedGroup, Entity, Schedule, Tab, TabSnapshot, Teacher } from '../types';
-import { WEEKDAY_LABELS } from './dateGenerate';
+import { WEEKDAY_LABELS, seasonStartMonth } from './dateGenerate';
 import { makeDateKeyDropMatcher } from './labelRefs';
 import { mapTeachersAvailability, renameAvailabilityDate } from './availabilityShape';
 
@@ -52,19 +52,23 @@ function parsePoolDate(entity: Entity): ParsedPoolDate | null {
   return { entity, month, day, weekday: suffixed ? suffixed[3] : null };
 }
 
+// 季節の始まりの月 (seasonStartMonth) より前の月は翌年 (冬期講習の 1 月など)。
+// sortPoolDatesByCalendar と同じ前提で年をまたぐ。
+const yearOffset = (month: number, start: number | null): number =>
+  start != null && month < start ? 1 : 0;
+
 // (曜) 付きラベル全部と矛盾しない年の候補を nowYear-6〜nowYear+2 から探す。
-// wrapsYear (10〜12月と1〜3月の混在 = 年またぎ講習) は sortPoolDatesByCalendar
-// と同じ前提で 1〜3 月を翌年扱いにする。
+// y は季節の始まりの年。
 function findCandidateYears(
   suffixed: ParsedPoolDate[],
-  wrapsYear: boolean,
+  start: number | null,
   nowYear: number,
 ): number[] {
   if (suffixed.length === 0) return [];
   const out: number[] = [];
   for (let y = nowYear - 6; y <= nowYear + 2; y++) {
     const allMatch = suffixed.every(s => {
-      const dt = makeValidDate(wrapsYear && s.month <= 3 ? y + 1 : y, s.month, s.day);
+      const dt = makeValidDate(y + yearOffset(s.month, start), s.month, s.day);
       return dt !== null && WEEKDAY_LABELS[dt.getDay()] === s.weekday;
     });
     if (allMatch) out.push(y);
@@ -77,12 +81,12 @@ function inferWeekday(
   month: number,
   day: number,
   candidateYears: number[],
-  wrapsYear: boolean,
+  start: number | null,
 ): string | null {
   if (candidateYears.length === 0) return null;
   let weekday: string | null = null;
   for (const y of candidateYears) {
-    const dt = makeValidDate(wrapsYear && month <= 3 ? y + 1 : y, month, day);
+    const dt = makeValidDate(y + yearOffset(month, start), month, day);
     if (!dt) return null;
     const wd = WEEKDAY_LABELS[dt.getDay()];
     if (weekday === null) weekday = wd;
@@ -239,9 +243,8 @@ export function unifyDateLabelWeekdays(
   if (bares.length === 0) return project; // fast path (統一済みプールの通常経路)
 
   const suffixed = parsed.filter(p => p.weekday !== null);
-  const months = parsed.map(p => p.month);
-  const wrapsYear = months.some(m => m >= 10) && months.some(m => m <= 3);
-  const candidateYears = findCandidateYears(suffixed, wrapsYear, nowYear);
+  const start = seasonStartMonth(parsed.map(p => p.month));
+  const candidateYears = findCandidateYears(suffixed, start, nowYear);
 
   // 同じ月日の (曜) 付き entity。同月日に複数 (曜) 付きが居る (曜日の打ち
   // 間違い等) 場合はどちらへ寄せるべきか判断できないので対象外にする。
@@ -260,7 +263,7 @@ export function unifyDateLabelWeekdays(
       return;
     }
     if (twinByMd.get(md) === null) return; // 同月日の (曜) 付きが複数 → 触らない
-    const weekday = inferWeekday(bare.month, bare.day, candidateYears, wrapsYear);
+    const weekday = inferWeekday(bare.month, bare.day, candidateYears, start);
     if (!weekday) return; // 年が確定できない → 誤った曜日を付けるより温存
     const newLabel = `${bare.month}/${bare.day}(${weekday})`;
     // 念のためのラベル衝突ガード (通常は twin 検出で弾かれている)

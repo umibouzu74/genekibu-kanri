@@ -172,6 +172,19 @@ describe('unifyDateLabelWeekdays: リネーム (twin が居ない裸ラベル)',
     expect(out.dates[2].label).toBe('1/5(火)');
   });
 
+  it('前の冬の日付が残った春期プールでも、季節の並び (12 → 1 → 3 → 4 月) で年を推定する', () => {
+    // 2026-12-24(木)・2027-01-07(木) の冬期 + 2027-03-25(木)・2027-04-01(木) の春期。
+    // 旧実装 (1〜3 月だけ翌年) では 4 月が冬と同じ年扱いになり年が決まらなかった
+    const p = makeProject({
+      dates: [
+        { id: 1, label: '12/24(木)' }, { id: 2, label: '1/7(木)' },
+        { id: 3, label: '3/25(木)' }, { id: 4, label: '4/1(木)' }, { id: 5, label: '4/2' },
+      ],
+    });
+    const out = unifyDateLabelWeekdays(p, NOW_YEAR);
+    expect(out.dates[4].label).toBe('4/2(金)');
+  });
+
   it('(曜) 付きが 1 つも無いプールは年を推定できないので触らない', () => {
     const p = makeProject({ dates: [{ id: 1, label: '8/6' }, { id: 2, label: '8/7' }] });
     expect(unifyDateLabelWeekdays(p, NOW_YEAR)).toBe(p);

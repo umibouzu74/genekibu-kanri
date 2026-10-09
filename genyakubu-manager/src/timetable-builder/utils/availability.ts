@@ -12,12 +12,13 @@
 //   ROADMAP L3c (ソフト希望) の範囲
 // - 調査の対象マス (= 調査票に載る (日付, 時限)) は「どれかのタブがその日に
 //   使う時限」(computeSurveyDays)。プールにあっても誰も使わない時限は載せない
-// - 日付ラベルは年を持たないので、週の並び (調査票・入力画面) は
-//   resolveCourseYmds で「最初の日を基準日の近くに置き、以降は前の日より後」
-//   として実日付に解決する (冬期講習の 12/25 → 1/7 の年またぎを含む)
+// - 日付ラベルは年を持たないので、週の並び (調査票・入力画面) は本体と同じ
+//   決まり (courseDates.resolveDateLabelYmd) で実日付に解決する (冬期講習の
+//   12/25 → 1/7 の年またぎを含む)。授業のある日だけを解決する
 
 import { makeNgKey, activeDatesForTab, activePeriodsForTab } from './scheduleKey';
-import { sortPoolDatesByCalendar, WEEKDAY_LABELS } from './dateGenerate';
+import { sortPoolDatesByCalendar } from './dateGenerate';
+import { resolveDateLabelYmd } from './courseDates';
 import { formatHHmm, getPeriodTimeRange } from './timeRange';
 import { isAvailabilityMark } from './availabilityShape';
 import type { AvailabilityCell } from './availabilityShape';
@@ -265,81 +266,23 @@ export function groupPeriodsIntoBands(periods: Entity[], gapMin = BAND_GAP_MIN):
   return bands;
 }
 
-// "7/29(水)" → { month, day, weekday(0=日..6=土 | null) }
-function parseDateLabel(label: string): { month: number; day: number; weekday: number | null } | null {
-  const m = String(label ?? '').match(/^(\d{1,2})\/(\d{1,2})(?:\s*[(（]\s*([日月火水木金土]))?/);
+function parseYmdNoon(ymd: string): Date | null {
+  const m = String(ymd ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
-  const month = Number(m[1]);
-  const day = Number(m[2]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const weekday = m[3] ? WEEKDAY_LABELS.indexOf(m[3]) : null;
-  return { month, day, weekday: weekday != null && weekday >= 0 ? weekday : null };
-}
-
-function makeDate(year: number, month: number, day: number): Date | null {
-  const dt = new Date(year, month - 1, day, 12);
-  return dt.getMonth() === month - 1 && dt.getDate() === day ? dt : null;
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
+  return dt.getMonth() === Number(m[2]) - 1 ? dt : null;
 }
 
 export function toYmd(dt: Date): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-function parseYmdNoon(ymd: string): Date | null {
-  const m = String(ymd ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  return makeDate(Number(m[1]), Number(m[2]), Number(m[3]));
-}
-
-// 年の推定の基準日: project の updatedAt (無ければ createdAt)、どちらも無ければ
-// fallback (呼び出し側の今日)。講習の準備・調整はシーズン近傍で行うので、
-// 編集日時が最も安定した錨になる (本体の builderLessons.projectBaseYmd と同じ考え方)。
-export function surveyBaseYmd(
-  project: Pick<Project, 'updatedAt' | 'createdAt'> | null | undefined,
-  fallbackYmd: string,
-): string {
-  for (const key of ['updatedAt', 'createdAt'] as const) {
-    const m = String(project?.[key] ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
-    if (m) return m[1];
-  }
-  return fallbackYmd;
-}
-
-// カレンダー順の日付ラベルを実日付 (YYYY-MM-DD) に解決する。
-// - 最初の日: 基準日の前後 1 年の候補のうち、ラベルの曜日と合う年を優先し、
-//   基準日に近い年 (過去は 2 倍の距離 = 先の講習を優先) を選ぶ
-// - 以降の日: 前の日以降で最初に来るその月日 (年をまたぐと翌年になる)
-// M/D として読めないラベルは null。
+// 日付ラベル → 実日付 (YYYY-MM-DD)。本体の月間カレンダーと同じ決まり
+// (courseDates.resolveDateLabelYmd) で置くので、調査票の曜日の列と本体の
+// 「講」の日付が食い違わない。M/D として読めないラベルは null。
 export function resolveCourseYmds(labels: string[], baseYmd: string): Map<string, string | null> {
   const out = new Map<string, string | null>();
-  const base = parseYmdNoon(baseYmd) || new Date();
-  let prev: Date | null = null;
-  (labels || []).forEach(label => {
-    const parsed = parseDateLabel(label);
-    if (!parsed) { out.set(label, null); return; }
-    const { month, day, weekday } = parsed;
-    let chosen: Date | null = null;
-    if (!prev) {
-      const candidates: Array<{ dt: Date; dist: number; wdOk: boolean }> = [];
-      for (const y of [base.getFullYear() - 1, base.getFullYear(), base.getFullYear() + 1]) {
-        const dt = makeDate(y, month, day);
-        if (!dt) continue;
-        const diff = dt.getTime() - base.getTime();
-        candidates.push({ dt, dist: diff < 0 ? -diff * 2 : diff, wdOk: weekday == null || dt.getDay() === weekday });
-      }
-      const pool = candidates.some(c => c.wdOk) ? candidates.filter(c => c.wdOk) : candidates;
-      pool.sort((a, b) => a.dist - b.dist);
-      chosen = pool[0]?.dt ?? null;
-    } else {
-      for (const y of [prev.getFullYear(), prev.getFullYear() + 1]) {
-        const dt = makeDate(y, month, day);
-        if (dt && dt.getTime() >= prev.getTime()) { chosen = dt; break; }
-      }
-    }
-    if (!chosen) { out.set(label, null); return; }
-    prev = chosen;
-    out.set(label, toYmd(chosen));
-  });
+  (labels || []).forEach(label => out.set(label, resolveDateLabelYmd(label, baseYmd)));
   return out;
 }
 
@@ -417,29 +360,31 @@ export function buildSurveyLayout(
   const bandOf = new Map<number, number>();
   bands.forEach((b, i) => b.forEach(p => bandOf.set(p.id, i)));
 
-  const ymdByLabel = resolveCourseYmds(surveyDays.map(sd => sd.date.label), baseYmd);
+  // 置くのは授業のある日だけ。どのタブも使わない日 (前の季節の残り・作り直す
+  // 前の既定の日付) は解決しない — 同じ実日付に当たる古いラベルに授業の日が
+  // 押し出されないように
+  const lessonDays = surveyDays.filter(sd => sd.periods.length > 0);
+  const ymdByLabel = resolveCourseYmds(lessonDays.map(sd => sd.date.label), baseYmd);
   const byYmd = new Map<string, SurveyDay>();
   const unplaced: SurveyDay[] = [];
-  surveyDays.forEach(sd => {
+  lessonDays.forEach(sd => {
     const ymd = ymdByLabel.get(sd.date.label);
-    // 読めないラベル・同じ実日付に当たる 2 つ目のラベルは週の枠に入れない
-    // (授業のある日だけ末尾に並べ、黙って調査票から落とさない)
+    // 読めないラベル・同じ実日付に当たる 2 つ目のラベルは週の枠に入れず、
+    // 末尾に並べる (黙って調査票から落とさない)
     if (!ymd || byYmd.has(ymd)) {
-      if (sd.periods.length > 0) unplaced.push(sd);
+      unplaced.push(sd);
       return;
     }
     byYmd.set(ymd, sd);
   });
 
-  const includeSunday = [...byYmd.entries()].some(([ymd, sd]) =>
-    sd.periods.length > 0 && parseYmdNoon(ymd)?.getDay() === 0);
+  const includeSunday = [...byYmd.keys()].some(ymd => parseYmdNoon(ymd)?.getDay() === 0);
 
   // 授業のある日を含む週の月曜日
   const mondays: string[] = [];
   const mondaySet = new Set<string>();
-  [...byYmd.entries()]
-    .filter(([, sd]) => sd.periods.length > 0)
-    .map(([ymd]) => parseYmdNoon(ymd)!)
+  [...byYmd.keys()]
+    .map(ymd => parseYmdNoon(ymd)!)
     .sort((a, b) => a.getTime() - b.getTime())
     .forEach(dt => {
       const monday = new Date(dt);

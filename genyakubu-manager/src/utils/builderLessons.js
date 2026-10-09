@@ -27,6 +27,11 @@ import {
 } from "../timetable-builder/utils/scheduleKey";
 import { cleanSchedule } from "../timetable-builder/utils/constants";
 import { makeSubjectOrderMarker } from "../timetable-builder/utils/analysisHelpers";
+import {
+  projectBaseYmd,
+  resolveDateLabelYmd,
+  usedDateLabels,
+} from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import {
   formatHHmm,
@@ -61,56 +66,11 @@ export function parseBuilderProject(raw) {
   }
 }
 
-// 日付ラベル "M/D(曜)" → "YYYY-MM-DD"。ラベルは年を持たないため、基準日
-// (project.updatedAt など) に最も近い年を前年・当年・翌年の 3 候補から選ぶ。
-// 冬期講習の年跨ぎ (12月・1月の混在) も基準日との距離で自然に解決する
-// (11月編集の "12/25" → 当年、"1/7" → 翌年。1月に編集しても "12/25" は前年)。
-//
-// 距離は過去方向を 2 倍に重み付けする。講習日程は「最終編集の少し前
-// (シーズン中の調整、高々 1〜2 ヶ月) 〜 数ヶ月先 (シーズン前の作成)」に
-// 分布し、素の距離だと『半年近く先に組んで以後未編集の project』(例: 6 月に
-// 作った冬期の "12/25") が前年 12 月へ誤解決するため。重み付け後の境界は
-// 過去 ≈122 日で、実運用の過去方向 (シーズン長 ≦ 2 ヶ月弱) には影響しない。
-// M/D として解釈できない / 実在しない日付 (2/30 等) は null。
-export function resolveDateLabelYmd(label, baseYmd) {
-  const m = String(label ?? "").match(/^(\d{1,2})\/(\d{1,2})/);
-  if (!m) return null;
-  const month = Number(m[1]);
-  const day = Number(m[2]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const bm = String(baseYmd ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!bm) return null;
-  const baseYear = Number(bm[1]);
-  // ローカル正午基準で DST / タイムゾーン揺れを避ける (dateGenerate と同じ)
-  const base = new Date(baseYear, Number(bm[2]) - 1, Number(bm[3]), 12);
-  let best = null;
-  for (const year of [baseYear - 1, baseYear, baseYear + 1]) {
-    const dt = new Date(year, month - 1, day, 12);
-    // 桁あふれ (2/30、平年の 2/29 等) はその年の候補から除外
-    if (dt.getMonth() !== month - 1 || dt.getDate() !== day) continue;
-    const diffMs = dt.getTime() - base.getTime();
-    const dist = diffMs < 0 ? -diffMs * 2 : diffMs;
-    if (!best || dist < best.dist) best = { dt, dist };
-  }
-  if (!best) return null;
-  const mo = String(best.dt.getMonth() + 1).padStart(2, "0");
-  const d = String(best.dt.getDate()).padStart(2, "0");
-  return `${best.dt.getFullYear()}-${mo}-${d}`;
-}
-
-// 年推定の基準日。project の updatedAt (無ければ createdAt) を使う —
-// 講習の作成・調整はシーズン近傍で行われるので、閲覧日 (today) よりも
-// 「シーズン後に見返しても年がずれない」安定した錨になる。どちらも無い
-// 外部 JSON だけ fallback (呼び出し側の今日) に頼る。
-export function projectBaseYmd(project, fallbackYmd) {
-  for (const key of ["updatedAt", "createdAt"]) {
-    const m = String(project?.[key] ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
-    if (m) return m[1];
-  }
-  return typeof fallbackYmd === "string" && /^\d{4}-\d{2}-\d{2}/.test(fallbackYmd)
-    ? fallbackYmd.slice(0, 10)
-    : null;
-}
+// 日付ラベル "M/D(曜)" → "YYYY-MM-DD" と、その年を決める基準日。講習時間割
+// 作成 (出勤可能調査の紙面) と同じ日付に置くため、決まりは builder 側の
+// utils/courseDates に一本化してある (過去方向 2 倍の重み + ラベルの曜日を
+// 半年以内なら優先)。既存の import 先を変えないよう、ここから再エクスポートする。
+export { resolveDateLabelYmd, projectBaseYmd };
 
 // 時限ラベルの短表示: "1限 (13:00~13:45)" → "1限"。時刻注記の括弧
 // (半角/全角) 以降を落とす (\s は全角スペース U+3000 も含む)。落とすと
@@ -232,12 +192,15 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   });
 
   // 外部授業 (予備校・高校等の他学年セッション)。種別ラベルは講師別 Excel
-  // (excelExport) と同じ規則で解決する。日付ラベルはプールと同じ表記なので
-  // resolveDateLabelYmd をそのまま使う (プールから消えた孤児ラベルも、
-  // M/D として読めれば載せる — Excel 出力と同じ寛容さ)。
-  const sessions = Array.isArray(project.externalSessions)
+  // (excelExport) と同じ規則で解決する。載せるのは「どれかのタブが授業に使う
+  // 日」のものだけ — 日付プールには前の季節の日付が残りうるので、そこに登録した
+  // 予定まで拾うと、冬期の project を開いている間に前の夏の予備校が翌年 7 月の
+  // 予定として月間カレンダーに出ていた。講師別 Excel も同じ絞り込み。
+  const used = usedDateLabels(project);
+  const sessions = (Array.isArray(project.externalSessions)
     ? project.externalSessions
-    : [];
+    : []
+  ).filter((s) => used.has(s?.date));
   const { assignments } = computePresetMemoBackfill(
     sessions,
     project.externalSessionPresets || [],

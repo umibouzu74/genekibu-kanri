@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
+import { expandExcludeInput, generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
 
 // カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
 // フォーカスを外した時にだけ onCommit で確定する。
@@ -105,22 +105,27 @@ export default function BasicSettings() {
 
   // L4e: 生成条件のライブプレビュー。開始・終了が揃うまでは null (非表示)。
   // runGenerate と同じ入力で generateDateLabels を呼ぶだけなので結果は一致する。
+  // 除外日の入力を展開 (期間指定・年なしも可)。読めない語は画面に出す
+  const genExcludeParsed = useMemo(
+    () => expandExcludeInput(genExclude, { startYmd: genStart, endYmd: genEnd }),
+    [genExclude, genStart, genEnd],
+  );
   const genPreview = useMemo(() => {
     if (!genStart || !genEnd) return null;
     return generateDateLabels({
       startYmd: genStart,
       endYmd: genEnd,
       weekdays: [...genWeekdays],
-      excludeYmd: genExclude.split(',').map(s => s.trim()).filter(Boolean),
+      excludeYmd: genExcludeParsed.excludeYmd,
     });
-  }, [genStart, genEnd, genWeekdays, genExclude]);
+  }, [genStart, genEnd, genWeekdays, genExcludeParsed]);
 
   const runGenerate = (mode) => {
     const labels = generateDateLabels({
       startYmd: genStart,
       endYmd: genEnd,
       weekdays: [...genWeekdays],
-      excludeYmd: genExclude.split(',').map(s => s.trim()).filter(Boolean),
+      excludeYmd: genExcludeParsed.excludeYmd,
     });
     if (labels.length === 0) {
       showToast('生成できる日付がありません（期間・曜日・除外日を確認してください）', 'error', 3500);
@@ -280,8 +285,13 @@ export default function BasicSettings() {
             </div>
           </div>
           <label className="flex flex-col gap-0.5 text-xs">
-            <span className="text-builder-ink-muted">除外日 (任意・YYYY-MM-DD をカンマ区切り。授業が無い日)</span>
-            <input type="text" value={genExclude} onChange={(e) => setGenExclude(e.target.value)} placeholder="2026-07-29, 2026-08-13" className={inputCls} />
+            <span className="text-builder-ink-muted">除外日 (任意・授業が無い日。カンマ区切り。「12/29〜1/3」のような期間や年なしも可)</span>
+            <input type="text" value={genExclude} onChange={(e) => setGenExclude(e.target.value)} placeholder="例: 12/29〜1/3, 2026-08-13" className={inputCls} />
+            {genExcludeParsed.invalid.length > 0 && (
+              <span className="text-builder-red" role="alert">
+                ⚠ 日付として読めない除外日: {genExcludeParsed.invalid.join('、')} (この分は除外されません)
+              </span>
+            )}
           </label>
           {/* L4e: 確定前のプレビュー。曜日の押し忘れ・除外日の書き間違いに
               「設定」してから気づく事故を防ぐ */}

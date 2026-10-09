@@ -13,15 +13,16 @@
 // 入力画面と共有する (画面と紙で並びが食い違わないように)。
 //
 // 夏期・冬期・春期のどれでも、プロジェクトの日付から組むので季節の固定値は無い
-// (年またぎの冬期講習は resolveCourseYmds が 12/25 → 1/7 を順に並べる)。
+// (年またぎの冬期講習も、本体の月間カレンダーと同じ決まりで 12/25 → 1/7 を
+// 実日付に置く。courseDates.resolveDateLabelYmd)。
 import ExcelJS from 'exceljs';
 import {
   buildSurveyLayout,
   computeSurveyDays,
   computeTabMilestones,
   periodTimeText,
-  surveyBaseYmd,
 } from './availability';
+import { projectBaseYmd } from './courseDates';
 import type { SurveyLayout, SurveyLayoutDay } from './availability';
 import { buildExcelFilename, downloadWorkbook } from './excelExport';
 import type { Project } from '../types';
@@ -56,7 +57,7 @@ function ymdOf(d: Date): string {
 // 調査票の紙面モデル (テスト用に export)。
 export function buildSurveyFormLayout(project: Project, opts: SurveyWorkbookOptions = {}): SurveyLayout {
   const today = opts.today || new Date();
-  const baseYmd = opts.baseYmd || surveyBaseYmd(project, ymdOf(today));
+  const baseYmd = opts.baseYmd || projectBaseYmd(project, ymdOf(today)) || ymdOf(today);
   return buildSurveyLayout(computeSurveyDays(project), {
     baseYmd,
     milestones: computeTabMilestones(project),

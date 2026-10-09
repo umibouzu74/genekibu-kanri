@@ -16,10 +16,10 @@ import {
   isSurveyTeacher,
   periodShortLabel,
   periodTimeText,
-  surveyBaseYmd,
   surveyCells,
 } from '../../utils/availability';
 import type { AvailabilityCell, SurveyDay, SurveyLayoutWeek } from '../../utils/availability';
+import { projectBaseYmd } from '../../utils/courseDates';
 import type { AvailabilityMark, Entity, Teacher } from '../../types';
 
 // 「🙋 出勤可能調査」タブ。講習期間に配る調査票 (どの日のどの時間に出られるか)
@@ -88,7 +88,7 @@ export default function AvailabilityPanel() {
   const usedDays = useMemo(() => surveyDays.filter(sd => sd.periods.length > 0), [surveyDays]);
   const allCells = useMemo(() => surveyCells(surveyDays), [surveyDays]);
   const layout = useMemo(() => buildSurveyLayout(surveyDays, {
-    baseYmd: surveyBaseYmd(project, todayYmd()),
+    baseYmd: projectBaseYmd(project, todayYmd()) || todayYmd(),
     milestones: computeTabMilestones(project),
   }), [surveyDays, project]);
 

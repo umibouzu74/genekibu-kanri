@@ -19,7 +19,6 @@ import {
   resolveCourseYmds,
   sanitizeAvailability,
   sortPeriodsByTime,
-  surveyBaseYmd,
   surveyCells,
   withAvailability,
 } from './availability';
@@ -269,21 +268,23 @@ describe('resolveCourseYmds', () => {
     expect(m.get('1/7(木)')).toBe('2027-01-07');
   });
 
-  it('ラベルの曜日と合う年を優先する (前年のテンプレートの日付でも曜日の列がずれない)', () => {
-    // 2025-12-25 は木曜、2026-12-25 は金曜
+  it('ラベルの曜日は半年以内なら優先する (講習の数か月後に開いても年がずれない)', () => {
+    // 2027-01-07 は木曜。5 月に開いた (基準日が 5 月) 冬期でも 2027 年 1 月
+    const m = resolveCourseYmds(['12/24(木)', '1/7(木)'], '2027-05-01');
+    expect(m.get('12/24(木)')).toBe('2026-12-24');
+    expect(m.get('1/7(木)')).toBe('2027-01-07');
+  });
+
+  it('1 年近く前の曜日は信じない (作り直していない前年の既定の日付を 1 年前へ飛ばさない)', () => {
+    // 2025-12-25 は木曜だが基準日 (2026-11) から 300 日以上前 → 近い年 (2026) を採る
     const m = resolveCourseYmds(['12/25(木)'], '2026-11-01');
-    expect(m.get('12/25(木)')).toBe('2025-12-25');
+    expect(m.get('12/25(木)')).toBe('2026-12-25');
   });
 
   it('M/D でないラベルは null', () => {
     expect(resolveCourseYmds(['補講日'], '2026-07-01').get('補講日')).toBeNull();
   });
 
-  it('surveyBaseYmd は updatedAt → createdAt → fallback', () => {
-    expect(surveyBaseYmd({ updatedAt: '2026-07-10T01:00:00Z', createdAt: '2026-06-01' }, '2000-01-01')).toBe('2026-07-10');
-    expect(surveyBaseYmd({ createdAt: '2026-06-01T00:00:00Z' }, '2000-01-01')).toBe('2026-06-01');
-    expect(surveyBaseYmd({}, '2000-01-01')).toBe('2000-01-01');
-  });
 });
 
 describe('computeTabMilestones', () => {
@@ -341,6 +342,19 @@ describe('buildSurveyLayout', () => {
     expect(layout.weeks.map(w => w.mondayYmd)).toEqual(['2026-12-21', '2027-01-04']);
     expect(layout.weeks[0].days).toHaveLength(7);
     expect(layout.weeks[0].days[6].survey.date.label).toBe('12/27(日)');
+  });
+
+  it('どのタブも使わない古いラベルが同じ実日付でも、授業のある日を押し出さない', () => {
+    // 既定の日付 (前年の曜日) を作り直した後に残った「12/25(木)」と、今年の「12/25(金)」
+    const project = {
+      dates: [P(1, '12/25(木)'), P(2, '12/25(金)')],
+      periods: [P(1, '1限 (13:00~13:45)')],
+      tabs: [{ id: 1, name: '中3', schedule: {}, config: { classes: [], subjectCounts: {}, activeDateIds: [2] } }],
+    };
+    const layout = buildSurveyLayout(computeSurveyDays(project), { baseYmd: '2026-12-01' });
+    expect(layout.unplaced).toEqual([]);
+    const fri = layout.weeks[0].days.find(d => d.ymd === '2026-12-25');
+    expect(fri.survey.date.label).toBe('12/25(金)');
   });
 
   it('M/D でないラベルの日は unplaced へ (授業のある日だけ)', () => {
