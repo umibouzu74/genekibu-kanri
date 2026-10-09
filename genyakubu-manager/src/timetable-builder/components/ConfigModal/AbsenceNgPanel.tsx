@@ -422,7 +422,7 @@ export default function AbsenceNgPanel() {
   const handleClearAllNg = async () => {
     if (manualNgTotal === 0 && sessions.length === 0) return;
     const ok = await showConfirm(
-      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\nよろしいですか?`,
+      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\n(出勤可能調査の × は残ります。消すには 🙋 出勤可能調査で回答を変えてください)\nよろしいですか?`,
       { title: 'NG設定の全解除', danger: true, confirmLabel: 'すべて解除する' },
     );
     if (!ok) return;
@@ -544,6 +544,7 @@ export default function AbsenceNgPanel() {
         <strong>他学年セッション</strong> (予備校 / 高校等) を時刻付きで登録すると、
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
+        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で調査票ごと管理できます (× が自動で NG になり、下のマトリクスに「調」で出ます)。<br />
         どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。
       </div>
 
@@ -1074,7 +1075,7 @@ function DateSection({
           {/* NG マトリクス (講師×時限) */}
           <div className="px-3 py-2">
             <div className="text-xs font-bold text-builder-ink-muted mb-1">
-              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=自動NG / 空=OK)
+              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッションの自動NG / 調=出勤可能調査の × / 空=OK)
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs whitespace-nowrap">
@@ -1108,6 +1109,8 @@ function DateSection({
                               const isManualNg = t.ngSlots?.includes(k);
                               const autoEntry = autoEntries?.get(k);
                               const isAutoNg = !!autoEntry;
+                              // 出勤可能調査の × だけが由来の自動NG は「調」(他学年セッション由来は「自」)
+                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !!autoEntry.availability;
                               const cellClass = isManualNg
                                 ? 'bg-builder-red text-white font-bold'
                                 : isAutoNg
@@ -1115,7 +1118,7 @@ function DateSection({
                                   : 'bg-builder-surface';
                               const tooltipParts = [];
                               if (isManualNg) tooltipParts.push('手動NG');
-                              if (isAutoNg) {
+                              if (isAutoNg && autoEntry.sessions.length > 0) {
                                 const memos = autoEntry.sessions
                                   .map(s => {
                                     const timeText = s.startTime
@@ -1126,6 +1129,9 @@ function DateSection({
                                   .filter(Boolean)
                                   .join(', ');
                                 tooltipParts.push(`自動NG (他学年: ${memos})`);
+                              }
+                              if (isAutoNg && autoEntry.availability) {
+                                tooltipParts.push('出勤可能調査で × (🙋 出勤可能調査で変更)');
                               }
                               // F2a: td onClick だけだとキーボード到達不能。
                               // role="button" + tabIndex + Enter/Space で
@@ -1148,7 +1154,7 @@ function DateSection({
                                   title={tooltipParts.join(' / ') || undefined}
                                   className={`border border-builder-ink-ghost p-1 text-center cursor-pointer hover:opacity-80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-builder-blue focus-visible:ring-inset ${cellClass}`}
                                 >
-                                  {isManualNg ? 'NG' : isAutoNg ? '自' : ''}
+                                  {isManualNg ? 'NG' : isSurveyOnly ? '調' : isAutoNg ? '自' : ''}
                                 </td>
                               );
                             })}

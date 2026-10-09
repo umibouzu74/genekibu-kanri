@@ -19,6 +19,7 @@
 import type { CombinedGroup, Entity, Schedule, Tab, TabSnapshot, Teacher } from '../types';
 import { WEEKDAY_LABELS } from './dateGenerate';
 import { makeDateKeyDropMatcher } from './labelRefs';
+import { mapTeachersAvailability, renameAvailabilityDate } from './availabilityShape';
 
 const BARE_RE = /^(\d{1,2})\/(\d{1,2})$/;
 const SUFFIXED_RE = /^(\d{1,2})\/(\d{1,2})\(([日月火水木金土])\)$/;
@@ -143,7 +144,7 @@ function rewriteLabelRefs(project: any, oldLabel: string, newLabel: string): Lab
   const allLabels: string[] = (project.dates || []).map((d: Entity) => d.label);
   const isTarget = makeDateKeyDropMatcher(allLabels, [oldLabel]);
 
-  const teachers: Teacher[] = (project.teachers || []).map((t: Teacher) => {
+  const ngRewritten: Teacher[] = (project.teachers || []).map((t: Teacher) => {
     if (!t.ngSlots || t.ngSlots.length === 0) return t;
     const renamed = t.ngSlots.map(slot => renameKeyPrefixExact(slot, isTarget, oldLabel, newLabel));
     // マージで「8/6-1限」と「8/6(木)-1限」が同キーになったら dedupe
@@ -152,6 +153,11 @@ function rewriteLabelRefs(project: any, oldLabel: string, newLabel: string): Lab
       ? t
       : { ...t, ngSlots: deduped };
   });
+  // 出勤可能調査の回答 (日付ラベルがキー)。マスが重なれば既存 (newLabel 側) を優先
+  const teachers: Teacher[] = mapTeachersAvailability(
+    ngRewritten,
+    map => renameAvailabilityDate(map, oldLabel, newLabel),
+  );
 
   const externalCounts: Record<string, number> = {};
   const src = project.externalCounts || {};

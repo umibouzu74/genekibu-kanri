@@ -6,6 +6,7 @@ import BasicSettings from './BasicSettings';
 import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
 import AbsenceNgPanel from './AbsenceNgPanel';
+import AvailabilityPanel from './AvailabilityPanel';
 import SubjectColorSettings from './SubjectColorSettings';
 import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
@@ -20,6 +21,7 @@ const TABS = [
   ['subjects', '📚 科目'],
   ['classes', '🏫 クラス優先度'],
   ['absence-ng', '📅 講師不在・NG'],
+  ['availability', '🙋 出勤可能調査'],
   ['combined', '🔗 合同授業'],
   ['colors', '🎨 科目カラー'],
   ['generation', '⚡ 自動生成'],
@@ -134,6 +136,8 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
             <SubjectColorSettings />
           ) : configTab === 'absence-ng' ? (
             <AbsenceNgPanel />
+          ) : configTab === 'availability' ? (
+            <AvailabilityPanel />
           ) : configTab === 'classes' ? (
             <ClassPriority />
           ) : (

@@ -6,6 +6,8 @@ import { quotaForClass } from '../utils/subjectQuota';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
+import { autoNgSourceLabel } from '../utils/autoNg';
+import { AVAILABILITY_SYMBOL, BLANK_SYMBOL, getAvailabilityMark, hasAvailability } from '../utils/availability';
 
 export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null, isSelected = false, onCellSelect }) {
   const {
@@ -84,6 +86,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const isManualNg = !!assignedTeacher?.ngSlots?.includes(ngKey);
   const isAutoNg = !!analysis.autoNgByTeacher?.get(entry.teacher)?.has(ngKey);
   const isNgAssigned = isManualNg || isAutoNg;
+  // 出勤可能調査: 割り当てた講師が △ (相談) / 未記入のマスなら目印を出す
+  // (× は上の自動NG に合流済み)。回答の無い講師 (調査していない常勤など) は出さない
+  const assignedMark = assignedTeacher ? getAvailabilityMark(assignedTeacher, dLabel, pLabel) : null;
+  const assignedSurveyHint = !assignedTeacher || isNgAssigned
+    ? null
+    : assignedMark === 'maybe'
+      ? 'maybe'
+      : (!assignedMark && hasAvailability(assignedTeacher) ? 'blank' : null);
 
   // 合同グループ判定 (label ベース)
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
@@ -241,6 +251,16 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             {isSubjDup && <span className={`bg-builder-red text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
             {isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
             {isNgAssigned && !isConflict && <span className={`bg-builder-red text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️NG</span>}
+            {assignedSurveyHint && (
+              <span
+                className={`rounded border shrink-0 ${assignedSurveyHint === 'maybe' ? 'border-builder-warning-border bg-builder-warning-soft text-builder-orange' : 'border-builder-border bg-builder-surface text-builder-ink-muted'} ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}
+                title={assignedSurveyHint === 'maybe'
+                  ? `出勤可能調査: ${entry.teacher} はこの時間「△ 相談」`
+                  : `出勤可能調査: ${entry.teacher} はこの時間が未記入 (出られるか未確認)`}
+              >
+                {assignedSurveyHint === 'maybe' ? AVAILABILITY_SYMBOL.maybe : BLANK_SYMBOL}
+              </span>
+            )}
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-builder-red" : "text-builder-ink-muted"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
             {isCombined && <span className={`bg-builder-primary text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
@@ -264,12 +284,19 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const dayKey = makeExternalKey(dLabel, t.name);
                 const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
                 const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
-                const isAuto = !!analysis.autoNgByTeacher?.get(t.name)?.has(ngKey);
+                const autoEntry = analysis.autoNgByTeacher?.get(t.name)?.get(ngKey);
+                const isAuto = !!autoEntry;
                 const isNg = isManual || isAuto;
                 let label = t.name;
                 if (t.name !== "未定") {
-                  if (isNg) label += isAuto && !isManual ? " (NG:他学年)" : " (NG)";
-                  else label += ` (計${daily.total})`;
+                  // 自動NG の由来は「他学年」(他学年セッション) / 「調査」(出勤可能調査の ×)
+                  if (isNg) label += isAuto && !isManual ? ` (NG:${autoNgSourceLabel(autoEntry)})` : " (NG)";
+                  else {
+                    // 出勤可能調査の ○ / △ / 未記入 (?) を計の前に添える。回答の無い講師は何も付けない
+                    const mark = getAvailabilityMark(t, dLabel, pLabel);
+                    const surveyPrefix = mark ? `${AVAILABILITY_SYMBOL[mark]} ` : (hasAvailability(t) ? `${BLANK_SYMBOL} ` : '');
+                    label += ` (${surveyPrefix}計${daily.total})`;
+                  }
                 }
                 // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に
                 // しない (= 違反として表示しつつ、ユーザに気付かせる)。それ以外は disabled。

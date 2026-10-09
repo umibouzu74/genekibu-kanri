@@ -31,6 +31,50 @@
 .animate-fade-in { animation: fade-in 0.15s ease-out; }
 
 /*
+ * 罫線ユーティリティの土台 (講習時間割作成のみ)。
+ *
+ * preflight を読み込んでいないため、`border` / `border-b` / `border-2` などは
+ * 幅だけが付いて border-style が none のまま = 何も描かれていなかった
+ * (NG マトリクスの升目、NG 違反セルの赤枠、各ボックスの枠、表の罫線)。
+ * preflight と同じ土台 (幅 0 + solid + 既定色) を「罫線ユーティリティを持つ
+ * 要素」にだけ当てる。:where() で詳細度 0 にしてあるので、幅・色・dashed の
+ * ユーティリティがそのまま勝つ。
+ *
+ * - 罫線ユーティリティを持たない要素 (select / input / 素の button の既定の枠)
+ *   は触らない (見た目を変えない)
+ * - 通常時間割作成 (regular-builder) は罫線を使わず塗り分けで升目を見せる
+ *   設計で確定しているので対象外。同じ .builder-root を使うため、講習側の
+ *   ルート (BuilderApp) だけに付けた .koshu-builder で絞る
+ * - 罫線のユーティリティを新しく使うときは下の一覧に足すこと
+ */
+:where(.koshu-builder) :where(
+  .border, .border-0, .border-2, .border-4,
+  .border-x, .border-y,
+  .border-t, .border-r, .border-b, .border-l,
+  .border-t-2, .border-r-2, .border-b-2, .border-l-2
+) {
+  border-width: 0;
+  border-style: solid;
+  border-color: #e0e0e0;
+}
+
+/*
+ * ボタンの土台 (講習時間割作成のみ、上と同じ理由)。preflight が無いので
+ * ブラウザ既定の灰色の背景と立体枠がそのまま出ていた (色付きボタンの黒い縁、
+ * 🔓 / ⧉ / × などのアイコンボタンが灰色の箱、設定タブが箱型)。preflight と
+ * 同じく枠なし・背景透明を土台にし、bg-* / border-* のユーティリティで描く。
+ * 詳細度 0 なので、クラスを付けたボタンの見た目はクラスどおりになる。
+ * input / select は触らない (枠のクラスを持たない入力欄が見えなくなるため)。
+ */
+:where(.koshu-builder) :where(button) {
+  border-width: 0;
+  border-style: solid;
+  border-color: #e0e0e0;
+  background-color: transparent;
+  background-image: none;
+}
+
+/*
  * キーボードフォーカスの可視化 (E1e a11y)。
  * 色だけに頼らず「太い (3px) リング + offset」で形状としても認識できるように
  * する (色覚特性に配慮)。リングは offset により要素の外側=明るいページ背景に

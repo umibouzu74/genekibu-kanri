@@ -453,7 +453,8 @@ function ScheduleApp() {
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
-    <div className="font-sans builder-root" onClick={() => setContextMenu(null)}>
+    // koshu-builder: 罫線ユーティリティの土台を講習側だけに当てる印 (tailwind.css)
+    <div className="font-sans builder-root koshu-builder" onClick={() => setContextMenu(null)}>
       <style>{BUILDER_PRINT_STYLE}</style>
 
       <Header />
