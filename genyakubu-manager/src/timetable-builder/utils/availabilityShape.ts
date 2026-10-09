@@ -190,3 +190,19 @@ export function sanitizeAvailability(raw: unknown): { value: AvailabilityMap | u
   if (!changed) return { value: raw as AvailabilityMap, changed: false };
   return { value: Object.keys(out).length > 0 ? out : undefined, changed: true };
 }
+
+// 講師から出勤可能調査の回答とメモを外す (テンプレート・初期値の保存用)。
+// 回答はその季節の日付に対するものなので、次の講習へ持ち越さない (持ち越すと
+// 調査の対象外の古い回答で「回答済み」扱いになり、プルダウンに ? が並ぶ)。
+// 外すものが無ければ入力の配列をそのまま返す。
+export function stripAvailability(teachers: Teacher[]): Teacher[] {
+  if (!Array.isArray(teachers)) return teachers;
+  let changed = false;
+  const out = teachers.map(t => {
+    if (!t || (t.availability === undefined && t.availabilityMemo === undefined)) return t;
+    changed = true;
+    const { availability: _a, availabilityMemo: _m, ...rest } = t;
+    return rest as Teacher;
+  });
+  return changed ? out : teachers;
+}
