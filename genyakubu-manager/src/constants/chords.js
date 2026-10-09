@@ -32,6 +32,8 @@ export const VIEW_CHORDS = Object.freeze({
   k: VIEWS.OFFSITE,
   // MINUTES (授業時間の集計) は jikan (時間) の j。
   j: VIEWS.MINUTES,
+  // YOTEIHYO (予定表チェック) は yoteihyo の y。
+  y: VIEWS.YOTEIHYO,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -65,6 +67,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   n: "引継ぎ",
   k: "他校舎",
   j: "授業時間",
+  y: "予定表",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

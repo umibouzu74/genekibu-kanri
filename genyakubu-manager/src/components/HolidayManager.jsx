@@ -15,7 +15,7 @@ import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
-import { findSameDayHolidays } from "../utils/holidayDuplicates";
+import { describeHolidayScope, findSameDayHolidays } from "../utils/holidayDuplicates";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 
@@ -71,22 +71,6 @@ function extractClassGroups(slots, grades) {
     if (!dominated) groups.add(normalized);
   }
   return [...groups].sort();
-}
-
-// 一覧・注意書きで休講日の対象を短く言う
-// ("全部" / "中学部 中3" / "高校部 高1・高2 共テ・数学")。
-// 部門 / 学年 / 科目キーワードの 3 群は空白で分け、群の中 (学年同士など) は
-// 「・」で並べる (他の画面の学年の並べ方と同じ)
-function describeHolidayScope(h) {
-  const groups = [
-    h.scope?.length ? h.scope : ["全部"],
-    h.targetGrades || [],
-    h.subjKeywords || [],
-  ];
-  return groups
-    .map((g) => g.join("・"))
-    .filter(Boolean)
-    .join(" ");
 }
 
 export function HolidayManager({

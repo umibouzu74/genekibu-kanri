@@ -25,4 +25,6 @@ export const VIEWS = Object.freeze({
   HANDOVER: "handover",
   // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)
   OFFSITE: "offsite",
+  // 予定表チェック (学校の予定表 Excel とシステムの休講・振替の突き合わせ)
+  YOTEIHYO: "yoteihyo",
 });

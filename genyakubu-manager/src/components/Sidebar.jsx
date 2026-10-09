@@ -151,6 +151,9 @@ const MENU_CONFIG = [
         label: "休講・テスト期間・イベント",
         sections: EVENT_SECTIONS,
       },
+      // 学校の予定表 (Excel) を読んで、休講・振替の登録の漏れを探す。
+      // 休講の登録のすぐ下に置く (予定表が届いたときに使う)
+      { key: VIEWS.YOTEIHYO, icon: "📑", label: "予定表チェック" },
       { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
       { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成" },
       { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
