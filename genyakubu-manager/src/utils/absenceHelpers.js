@@ -186,6 +186,10 @@ export function findCombineCandidates(slot, daySlots, subjects = [], absorbedSlo
 //                      reason: string}[]}}
 export function collectAbsenceTargets({
   slots,
+  // 他日から振替で入ってくるコマ (adjustmentDisplay.buildIncomingCards)。
+  // 代行レコードは (日付, コマ, 元講師) なので振替で来たコマには立てられない。
+  // 担当は振替の「振替先の担当」で変えるので、対象外として理由つきで出す
+  incoming = [],
   date,
   teachers,
   ctx = {},
@@ -268,6 +272,16 @@ export function collectAbsenceTargets({
         continue;
       }
       targets.push({ slotId: slot.id, slot, teacher });
+    }
+  }
+  for (const card of incoming || []) {
+    for (const teacher of splitTeacherField(card.teacher)) {
+      if (!absent.has(teacher)) continue;
+      skipped.push({
+        slot: card,
+        teacher,
+        reason: "振替で入るコマ (振替先の担当を変えてください)",
+      });
     }
   }
   return { targets, skipped };

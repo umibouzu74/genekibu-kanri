@@ -13,6 +13,7 @@
 import { dateToDay, eachDateStrInRange, isValidDateStr } from "./dateHelpers";
 import { collectDayRescheduleCandidates } from "./dayReschedule";
 import { collectAbsenceTargets } from "./absenceHelpers";
+import { buildIncomingCards } from "./adjustmentDisplay";
 import { isSlotForTeacher } from "./biweekly";
 import { saveAbsenceBatch } from "./absenceBatch";
 
@@ -80,6 +81,8 @@ export function buildAbsenceRangePlan({
     });
     const { targets, skipped } = collectAbsenceTargets({
       slots: candidates,
+      // 振替で入ってくるコマは対象外 (理由つき)。担当は振替先の担当で変える
+      incoming: buildIncomingCards(adjustments, date, slots, absenceCtx),
       date,
       teachers,
       ctx: absenceCtx,

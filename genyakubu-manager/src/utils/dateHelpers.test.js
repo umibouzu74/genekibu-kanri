@@ -3,6 +3,7 @@ import {
   dateToDay,
   fmtDate,
   fmtDateWeekday,
+  fmtMDWeekday,
   fmtIsoLocal,
   isValidDateStr,
   formatDateRange,
@@ -66,6 +67,14 @@ describe("fmtDateWeekday", () => {
   it("appends (weekday) to the date", () => {
     // 2026-04-19 is a Sunday
     expect(fmtDateWeekday("2026-04-19")).toBe("2026-04-19 (日)");
+  });
+});
+
+describe("fmtMDWeekday", () => {
+  it("年を落として M/D (曜) にする", () => {
+    expect(fmtMDWeekday("2026-10-16")).toBe("10/16 (金)");
+    expect(fmtMDWeekday("2026-04-19")).toBe("4/19 (日)");
+    expect(fmtMDWeekday("")).toBe("");
   });
 });
 

@@ -53,6 +53,9 @@ export function AbsenceSlotCard({
   dimmed, // 合同モード中の非候補: 暗くする
   isRescheduled, // 他日へ振替中
   rescheduleLabel, // 振替情報テキスト (例: "振替 → 2026-05-01 19:00-20:20")
+  // 他日から振替で入ってきたコマ (振替先の日のカード)。見た目は通常のコマの
+  // まま、枠の色と「振替」バッジ + この行 (例: "← 10/16 (金) から振替") で示す
+  incomingLabel,
   // 講師の同時刻の重なり (utils/teacherConflicts)。代行を入れた結果
   // 同じ人が 2 か所に居るとき。警告であって禁止ではない
   conflicts = null,
@@ -176,7 +179,7 @@ export function AbsenceSlotCard({
       ? "#ffc107"
       : isAbsent
         ? colors.danger
-        : isRescheduled
+        : isRescheduled || incomingLabel
           ? ADJ_COLOR.reschedule.color
           : isMoved
             ? ADJ_COLOR.move.color
@@ -211,6 +214,7 @@ export function AbsenceSlotCard({
   const stateWords = [
     isAbsent ? "欠勤" : null,
     isRescheduled ? "振替中" : null,
+    incomingLabel ? "振替で入るコマ" : null,
     isMoved ? "移動" : null,
     isCombineHost ? "合同" : null,
     isAbsorbed ? "合同に吸収" : null,
@@ -277,7 +281,7 @@ export function AbsenceSlotCard({
       }}
     >
       {/* 状態バッジ (右上) */}
-      {(isMoved || isCombineHost || subs.length > 0 || isRescheduled) && (
+      {(isMoved || isCombineHost || subs.length > 0 || isRescheduled || incomingLabel) && (
         <div
           style={{
             position: "absolute",
@@ -287,7 +291,7 @@ export function AbsenceSlotCard({
             gap: 3,
           }}
         >
-          {isRescheduled && (
+          {(isRescheduled || incomingLabel) && (
             <BadgeChip color={ADJ_COLOR.reschedule.color} label="振替" />
           )}
           {isMoved && (
@@ -420,6 +424,18 @@ export function AbsenceSlotCard({
           {conflicts.map((c, i) => (
             <div key={i}>⚠ {describeTeacherConflict(c, { withTime: true })}</div>
           ))}
+        </div>
+      )}
+      {incomingLabel && (
+        <div
+          style={{
+            fontSize: 10,
+            color: ADJ_COLOR.reschedule.deep,
+            fontWeight: 700,
+            marginTop: 2,
+          }}
+        >
+          {incomingLabel}
         </div>
       )}
       {rescheduleLabel && (

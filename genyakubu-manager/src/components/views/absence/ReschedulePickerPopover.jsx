@@ -52,6 +52,9 @@ export function ReschedulePickerPopover({
   isOffForGrade, // (date, grade, subj) => boolean
   initial,
   hasAutoSkip = false, // 編集時: 既存で skip override が付いているか
+  // 「元日付の回数カウントから外す」を出すか。振替先の日から振替を直すとき
+  // (欠勤組み換えの振替で入るコマ) は振替元の日の回数補正に触らないので出さない
+  showAutoSkip = true,
   onSave,
   onClear,
   onClose,
@@ -340,31 +343,33 @@ export function ReschedulePickerPopover({
           />
         </div>
 
-        <label
-          style={{
-            display: "flex",
-            gap: 6,
-            alignItems: "flex-start",
-            color: "#555",
-            background: "#f7f7fa",
-            border: "1px solid #e0e0e8",
-            borderRadius: 6,
-            padding: "6px 8px",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={autoSkip}
-            onChange={(e) => setAutoSkip(e.target.checked)}
-            style={{ marginTop: 2 }}
-          />
-          <span>
-            元日付の回数カウントから外す (skip 補正を自動付与)
-            <div style={{ color: "#888", fontSize: 10, marginTop: 1 }}>
-              振替元の日にこのコマは実施されない扱いとし、第N回カウントを進めません
-            </div>
-          </span>
-        </label>
+        {showAutoSkip && (
+          <label
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "flex-start",
+              color: "#555",
+              background: "#f7f7fa",
+              border: "1px solid #e0e0e8",
+              borderRadius: 6,
+              padding: "6px 8px",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={autoSkip}
+              onChange={(e) => setAutoSkip(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              元日付の回数カウントから外す (skip 補正を自動付与)
+              <div style={{ color: "#888", fontSize: 10, marginTop: 1 }}>
+                振替元の日にこのコマは実施されない扱いとし、第N回カウントを進めません
+              </div>
+            </span>
+          </label>
+        )}
       </div>
 
       {notes.length > 0 && (
