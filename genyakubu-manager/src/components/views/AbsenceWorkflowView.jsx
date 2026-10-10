@@ -561,6 +561,28 @@ export function AbsenceWorkflowView({
     enabled: !!isAdmin,
   });
 
+  // 振替先での合同 (振替で入ってきたコマ同士、utils/adjustmentDisplay の
+  // resolveIncomingCombines)。吸収される側の振替に combineWith を付ける /
+  // 外すだけなので、下書きを通さずにその場で保存する。
+  const handleSetIncomingCombine = useCallback(
+    (absorbedAdjId, hostAdjId) => {
+      saveAdjustments((prev) =>
+        (prev || []).map((a) => {
+          if (a.id !== absorbedAdjId || a.type !== "reschedule") return a;
+          if (hostAdjId == null) {
+            const { combineWith: _drop, ...rest } = a;
+            return rest;
+          }
+          return { ...a, combineWith: hostAdjId };
+        })
+      );
+      toasts.success(
+        hostAdjId == null ? "振替先での合同を外しました" : "振替先で合同にしました"
+      );
+    },
+    [saveAdjustments, toasts]
+  );
+
   const handleSave = useCallback(() => {
     const {
       draftSubs,
@@ -967,6 +989,7 @@ export function AbsenceWorkflowView({
         examPeriodsToday={examPeriodsToday}
         sessionOverrides={sessionOverrides}
         offsiteToday={offsiteToday}
+        onSetIncomingCombine={isAdmin ? handleSetIncomingCombine : undefined}
         date={date}
       />
 

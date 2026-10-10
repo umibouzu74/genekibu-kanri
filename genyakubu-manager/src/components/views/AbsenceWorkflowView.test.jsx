@@ -482,3 +482,53 @@ describe("AbsenceWorkflowView の日付ジャンプ (initDate) と下書き", ()
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+// 10/16 (金) の高1 文系・理系の数学を、高1 が休みの 10/9 (金) へ振り替え、
+// 10/9 の画面で合同にする (振替先での合同、combineWith)。
+describe("AbsenceWorkflowView の振替先での合同", () => {
+  const FRI_TT = [{ id: 1, name: "通年", type: "regular", grades: [], startDate: "2026-04-01", endDate: null }];
+  const fri = { day: "金", time: "19:00-20:20", room: "", subj: "数学", note: "", timetableId: 1 };
+  const slots = [
+    { ...fri, id: 1, grade: "高1", cls: "文系", teacher: "香川" },
+    { ...fri, id: 2, grade: "高1", cls: "理系", teacher: "福江" },
+  ];
+  const adjustments = [
+    { id: 10, type: "reschedule", date: "2026-10-16", slotId: 1, targetDate: "2026-10-09" },
+    { id: 11, type: "reschedule", date: "2026-10-16", slotId: 2, targetDate: "2026-10-09" },
+  ];
+
+  it("振替で入るコマを押して合同にすると、吸収する側の振替に combineWith を付けて保存する", () => {
+    const saveAdjustments = vi.fn();
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      adjustments,
+      saveAdjustments,
+      initDate: "2026-10-09",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "高1文系 数学 の振替 (合同の設定)" }));
+    fireEvent.click(screen.getByText(/合同にする: 高1理系 数学/));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    const next = saveAdjustments.mock.calls[0][0](adjustments);
+    expect(next.find((a) => a.id === 11).combineWith).toBe(10);
+    expect(next.find((a) => a.id === 10).combineWith).toBeUndefined();
+  });
+
+  it("合同にした振替は「→ 合同」と出て、そこから外せる", () => {
+    const saveAdjustments = vi.fn();
+    const combined = [adjustments[0], { ...adjustments[1], combineWith: 10 }];
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      adjustments: combined,
+      saveAdjustments,
+      initDate: "2026-10-09",
+    });
+    expect(screen.getByText("→ 高1文系 数学 に合同")).toBeTruthy();
+    expect(screen.getByText("+ 高1理系 数学 合同")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "高1理系 数学 の振替 (合同の設定)" }));
+    fireEvent.click(screen.getByText(/合同を外す/));
+    const next = saveAdjustments.mock.calls[0][0](combined);
+    expect("combineWith" in next.find((a) => a.id === 11)).toBe(false);
+  });
+});

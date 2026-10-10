@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { ADJ_COLOR, dateToDay, DEPT_COLOR, timeToMin } from "../../../data";
+import { ADJ_COLOR, dateToDay, DEPT_COLOR } from "../../../data";
 import { getDashSections } from "../../../constants/schedule";
 import { ContextMenu } from "../../ContextMenu";
 import { AbsenceSlotCard } from "./AbsenceSlotCard";
@@ -7,9 +7,17 @@ import { AbsenceExcelSection } from "./AbsenceExcelSection";
 import { SubstitutePickerPopover } from "./SubstitutePickerPopover";
 import { SessionOverridePopover } from "./SessionOverridePopover";
 import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
-import { canCombineSlots, findCombineCandidates } from "../../../utils/absenceHelpers";
+import {
+  canCombineIncoming,
+  canCombineSlots,
+  findCombineCandidates,
+} from "../../../utils/absenceHelpers";
 import { isCancelAdjustment } from "../../../utils/slotCancel";
-import { rescheduleTeacherLabel } from "../../../utils/adjustmentDisplay";
+import {
+  buildIncomingItems,
+  describeSlot,
+  rescheduleTeacherLabel,
+} from "../../../utils/adjustmentDisplay";
 import {
   collectTeacherAssignments,
   findTeacherConflicts,
@@ -56,6 +64,10 @@ export function AbsenceTimetable({
   examPeriodsToday = [], // 当日に該当するテスト期間 (バナー表示用)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   offsiteToday = [], // この日に他校舎へ授業に出ている予定 (重なり・代行候補の「他校舎」)
+  // 振替先での合同 (振替で入ってきたコマ同士)。(吸収される振替の id,
+  // 受け入れる振替の id | null) で呼ぶ。下書きを通さずその場で保存する
+  // (保存済みの振替どうしの付け替えなので)。未指定なら操作を出さない
+  onSetIncomingCombine,
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -128,25 +140,17 @@ export function AbsenceTimetable({
   // 他日から当日へ振替えられてきたコマ (incoming) を集約。
   // 「本多が 4/24 休み → 今日のコマを 5/1 に振替」という adjustment が
   // あるとき、5/1 の画面では「+ 振替で来たコマ」バナーとして可視化したい。
+  // 振替先で合同にしたもの (combineWith) は吸収された側も残し、チップで
+  // 「→ 高1A に合同」と出す (ここから合同を外せるように)。
   const incomingReschedules = useMemo(() => {
     const removed = removedAdjustmentIds || new Set();
     const slotById = new Map();
     for (const s of allSlots || []) slotById.set(s.id, s);
-    const out = [];
-    for (const adj of existingAdjustments || []) {
-      if (adj.type !== "reschedule") continue;
-      if (removed.has(adj.id)) continue;
-      if (adj.targetDate !== date) continue;
-      const slot = slotById.get(adj.slotId);
-      if (!slot) continue;
-      out.push({ adj, slot });
-    }
-    out.sort(
-      (a, b) =>
-        timeToMin(a.adj.targetTime || a.slot.time || "00:00") -
-        timeToMin(b.adj.targetTime || b.slot.time || "00:00")
+    const adjs = (existingAdjustments || []).filter(
+      (adj) =>
+        adj.type === "reschedule" && adj.targetDate === date && !removed.has(adj.id)
     );
-    return out;
+    return buildIncomingItems(adjs, slotById, { includeAbsorbed: true });
   }, [existingAdjustments, removedAdjustmentIds, date, allSlots]);
 
   // draft + 既存 からの実効的な合同状態 (draft が同 slot にある場合は draft を優先)
@@ -362,6 +366,53 @@ export function AbsenceTimetable({
   const teacherConflicts = useMemo(
     () => findTeacherConflicts(teacherAssignments),
     [teacherAssignments]
+  );
+
+  // 振替で入ってくるコマのメニュー (振替先での合同)。
+  // 合同の相手は「同じ日へ振替で入ってきた、同学年・同教科のコマ」だけ。
+  // 他のコマを受け入れている側は吸収させない (合同の連鎖を作らない)。
+  const openIncomingMenu = useCallback(
+    (e, item) => {
+      e.preventDefault();
+      if (!onSetIncomingCombine) return;
+      const items = [];
+      if (item.combinedInto) {
+        items.push({
+          label: `合同を外す (${describeSlot(item.combinedInto.slot)} から)`,
+          danger: true,
+          onClick: () => onSetIncomingCombine(item.adj.id, null),
+        });
+      } else {
+        const candidates = incomingReschedules.filter(
+          (o) =>
+            o.adj.id !== item.adj.id &&
+            !o.combinedInto &&
+            !o.combined?.length &&
+            canCombineIncoming(item.slot, o.slot, subjects)
+        );
+        if (candidates.length === 0) {
+          items.push({
+            label: "合同にする (候補なし: 同学年・同教科の振替がこの日にありません)",
+            disabled: true,
+          });
+        }
+        for (const o of candidates) {
+          items.push({
+            label: `合同にする: ${describeSlot(o.slot)} (${o.adj.targetTime || o.slot.time}) をこのコマへ`,
+            onClick: () => onSetIncomingCombine(o.adj.id, item.adj.id),
+          });
+        }
+        for (const p of item.combined || []) {
+          items.push({
+            label: `合同を外す: ${describeSlot(p.slot)}`,
+            danger: true,
+            onClick: () => onSetIncomingCombine(p.adj.id, null),
+          });
+        }
+      }
+      setCtxMenu({ x: e.clientX, y: e.clientY, items });
+    },
+    [incomingReschedules, onSetIncomingCombine, subjects]
   );
 
   // 右クリックメニュー
@@ -1069,9 +1120,15 @@ export function AbsenceTimetable({
             <strong style={{ color: ADJ_COLOR.reschedule.deep }}>
               この日に振替で入るコマ: {incomingReschedules.length} 件
             </strong>
+            {onSetIncomingCombine && incomingReschedules.length > 1 && (
+              <span style={{ color: "#888", fontSize: 11 }}>
+                コマを押すと振替先で合同にできます (すぐ保存されます)
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {incomingReschedules.map(({ adj, slot }) => {
+            {incomingReschedules.map((item) => {
+              const { adj, slot } = item;
               const timeText = adj.targetTime || slot.time;
               const teacherText = rescheduleTeacherLabel(adj, slot, {
                 biweeklyAnchors,
@@ -1081,20 +1138,47 @@ export function AbsenceTimetable({
               const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
               const titleParts = [`元: ${adj.date} ${slot.time}`];
               if (adj.memo) titleParts.push(adj.memo);
+              const absorbed = !!item.combinedInto;
+              const interactive = !!onSetIncomingCombine;
+              if (interactive) titleParts.push("クリック / 右クリックで合同の設定");
+              const open = interactive ? (e) => openIncomingMenu(e, item) : undefined;
               return (
                 <span
                   key={adj.id}
                   title={titleParts.join(" / ")}
+                  role={interactive ? "button" : undefined}
+                  tabIndex={interactive ? 0 : undefined}
+                  aria-label={
+                    interactive
+                      ? `${slot.grade}${cls} ${slot.subj} の振替 (合同の設定)`
+                      : undefined
+                  }
+                  onClick={open}
+                  onContextMenu={open}
+                  onKeyDown={
+                    interactive
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            const r = e.currentTarget.getBoundingClientRect();
+                            openIncomingMenu(
+                              { preventDefault: () => e.preventDefault(), clientX: r.left, clientY: r.bottom },
+                              item
+                            );
+                          }
+                        }
+                      : undefined
+                  }
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 4,
-                    background: "#fff",
+                    background: absorbed ? "#f3f3f3" : "#fff",
                     border: `1px solid ${ADJ_COLOR.reschedule.bannerBorder}`,
                     borderRadius: 12,
                     padding: "2px 8px",
                     fontSize: 11,
-                    color: ADJ_COLOR.reschedule.deep,
+                    color: absorbed ? "#888" : ADJ_COLOR.reschedule.deep,
+                    cursor: interactive ? "pointer" : undefined,
                   }}
                 >
                   <span style={{ fontWeight: 700 }}>{timeText}</span>
@@ -1102,7 +1186,20 @@ export function AbsenceTimetable({
                     {slot.grade}
                     {cls} {slot.subj}
                   </span>
-                  <span style={{ color: "#666" }}>({teacherText})</span>
+                  {absorbed ? (
+                    <span style={{ fontWeight: 700 }}>
+                      → {describeSlot(item.combinedInto.slot)} に合同
+                    </span>
+                  ) : (
+                    <>
+                      {item.combined?.length > 0 && (
+                        <span style={{ fontWeight: 700 }}>
+                          {item.combined.map((p) => `+ ${describeSlot(p.slot)}`).join(" ")} 合同
+                        </span>
+                      )}
+                      <span style={{ color: "#666" }}>({teacherText})</span>
+                    </>
+                  )}
                   <span style={{ color: "#888" }}>← {adj.date}</span>
                   {adj.memo && (
                     <span

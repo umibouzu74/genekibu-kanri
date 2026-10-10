@@ -42,7 +42,9 @@ import {
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import {
+  buildIncomingItems,
   describeRescheduleTarget,
+  incomingCombinedLabel,
   rescheduleTargetTeachers,
 } from "../../utils/adjustmentDisplay";
 import { subStateMeta, subTargetLabel } from "../../utils/substituteState";
@@ -433,19 +435,16 @@ export function MonthView({
     // ここで巻き添えにすると紙面にも画面にも出なくなる)。
     const incomingForDay = dayCutoff
       ? []
-      : (rescheduleInByDate.get(ds) || [])
-            .map((adj) => {
-              const slot = slotById.get(adj.slotId);
-              if (!slot) return null;
-              const tgtTeachers = rescheduleTargetTeachers(adj, slot, {
-                biweeklyAnchors,
-                holidays,
-                examPeriods,
-              });
-              if (!tgtTeachers.includes(teacher)) return null;
-              return { adj, slot };
-            })
-            .filter(Boolean);
+      : // 振替先で合同にした側は受け入れる側のカードにまとまる (担当は
+        // 受け入れる側の講師だけ)
+        buildIncomingItems(rescheduleInByDate.get(ds) || [], slotById).filter(
+          ({ adj, slot }) =>
+            rescheduleTargetTeachers(adj, slot, {
+              biweeklyAnchors,
+              holidays,
+              examPeriods,
+            }).includes(teacher)
+        );
     // 追加授業 (この日付に単発で入るコマ、この teacher が担当する分)。
     // 休講日でも表示する (通常授業と違い「その日にやる」と明示的に
     // 登録した単発コマなので、休講の巻き添えで消さない)。
@@ -859,9 +858,11 @@ export function MonthView({
     );
     pushCards(
       incomingForDay.map(({ adj, slot }) => adj.targetTime || slot.time),
-      incomingForDay.map(({ adj, slot }) => {
+      incomingForDay.map((item) => {
+        const { adj, slot } = item;
         const gc = GC(slot.grade);
         const tgtTime = adj.targetTime || slot.time;
+        const combinedText = incomingCombinedLabel(item);
         return (
           <div
             key={`rsch-in-${adj.id}`}
@@ -880,9 +881,9 @@ export function MonthView({
             }}
             title={`[振替で当日担当] ${slot.grade}${
               slot.cls && slot.cls !== "-" ? slot.cls : ""
-            } ${slot.subj} (${tgtTime})\n元: ${adj.date} ${slot.time}${
-              adj.memo ? "\n" + adj.memo : ""
-            }`}
+            } ${slot.subj} (${tgtTime})${
+              combinedText ? ` ${combinedText} 合同` : ""
+            }\n元: ${adj.date} ${slot.time}${adj.memo ? "\n" + adj.memo : ""}`}
           >
             <span
               style={{
@@ -912,6 +913,7 @@ export function MonthView({
               {slot.cls && slot.cls !== "-" ? slot.cls : ""}
             </span>
             <b>{tgtTime.split("-")[0]}</b> {slot.subj}
+            {combinedText && <span style={{ fontWeight: 700 }}> 合同</span>}
           </div>
         );
       })

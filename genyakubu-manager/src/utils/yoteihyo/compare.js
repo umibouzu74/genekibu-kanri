@@ -186,7 +186,9 @@ export function compareSchedules({ merged, mapping, slots, sys }) {
     const subj = new Set(m.subjects);
     const mapped = (slots || []).filter((s) => subj.has(subjectKey(s.grade, s.subj)));
     const courseSlots = mapped.filter((s) => regular.includes(s.day));
-    const incomingFor = (date) => collectIncomingReschedules(sys.adjustments, date, mapped);
+    // 振替先で合同にした側も、その講座の授業はその日に行われている
+    const incomingFor = (date) =>
+      collectIncomingReschedules(sys.adjustments, date, mapped, { includeAbsorbed: true });
     const extraFor = (date) =>
       (sys.extraLessons || []).filter((e) => e?.date === date && subj.has(subjectKey(e.grade, e.subj)));
     const { dates, skipped } = compareDatesFor(course, courseSlots, sys);

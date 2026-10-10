@@ -8,6 +8,7 @@ import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 import { useListPeriod } from "../../../hooks/useListPeriod";
 import { ListPeriodSelect } from "../../ListPeriodFilter";
 import { isDateInListPeriod } from "../../../utils/listPeriod";
+import { incomingCombineNote } from "../../../utils/adjustmentDisplay";
 
 // 時間割調整一覧タブ: adjustments (合同 / 移動 / 振替 / コマ休講) を月 / 講師 / 種別で
 // フィルタ表示。1 行 = 1 件の調整。削除は removeWithUndo。
@@ -61,7 +62,7 @@ function SlotChip({ slot, fallback }) {
   );
 }
 
-function detailFor(adj, slotMap) {
+function detailFor(adj, slotMap, adjustments = []) {
   if (adj.type === "cancel") {
     return (
       <span style={{ color: "#666", fontSize: 11 }}>
@@ -91,6 +92,8 @@ function detailFor(adj, slotMap) {
   }
   if (adj.type === "reschedule") {
     const dow = adj.targetDate ? dateToDay(adj.targetDate) : null;
+    // 振替先で合同にしたもの (欠勤組み換えの振替先の日で設定)
+    const combineNote = incomingCombineNote(adj, adjustments, (id) => slotMap[id]);
     return (
       <span>
         <span style={{ color: "#666", fontSize: 11 }}>振替先: </span>
@@ -115,6 +118,11 @@ function detailFor(adj, slotMap) {
         {adj.targetTeacher && adj.targetTeacher !== slotMap[adj.slotId]?.teacher && (
           <span style={{ marginLeft: 6, color: "#2a7a4a", fontSize: 11 }}>
             → {adj.targetTeacher}
+          </span>
+        )}
+        {combineNote && (
+          <span style={{ marginLeft: 6, color: "#7a4a10", fontSize: 11, fontWeight: 700 }}>
+            {combineNote}
           </span>
         )}
       </span>
@@ -467,7 +475,7 @@ export function AdjustmentListTab({
                     <td style={{ padding: "8px 10px" }}>
                       <SlotChip slot={slot} />
                     </td>
-                    <td style={{ padding: "8px 10px" }}>{detailFor(adj, slotMap)}</td>
+                    <td style={{ padding: "8px 10px" }}>{detailFor(adj, slotMap, adjustments)}</td>
                     <td
                       style={{
                         padding: "8px 10px",

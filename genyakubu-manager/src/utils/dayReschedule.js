@@ -19,7 +19,7 @@ import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
-import { buildAdjustmentIndex } from "./adjustmentDisplay";
+import { buildAdjustmentIndex, resolveIncomingCombines } from "./adjustmentDisplay";
 import { nextNumericId } from "./schema";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -127,7 +127,8 @@ function occupancyLabel(time, grade, cls, subj, suffix) {
  *   - その日の通常コマ (コマ移動・特別時程の時刻読み替えを反映)
  *   - 他日からこの日へ振り替えられてくるコマ
  *   - その日の追加授業 (日付つきの単発コマ)
- * 合同で吸収されたコマと、この日から他日へ出ていくコマは塞がっていない扱い。
+ * 合同で吸収されたコマ (振替先での合同も) と、この日から他日へ出ていくコマは
+ * 塞がっていない扱い。
  *
  * @returns {{key: string, kind: "normal"|"incoming"|"extra", slot: object|null,
  *            lesson: object|null, adj: object|null, time: string,
@@ -178,8 +179,11 @@ export function buildDayOccupancy({
     pushSlot(slot, index.moveBySlot.get(slot.id) || slot.time, "normal");
   }
   // 他日からこの日へ入ってくる振替コマ (曜日が違うので上のループには出ない)
+  // 振替先で合同にされた側は塞いでいない (受け入れる側の 1 コマだけ)
   const byId = new Map((slots || []).map((s) => [s.id, s]));
+  const { hostOf } = resolveIncomingCombines(index.rescheduleIn);
   for (const adj of index.rescheduleIn) {
+    if (hostOf.has(adj.id)) continue;
     const slot = byId.get(adj.slotId);
     if (!slot) continue;
     pushSlot(slot, adj.targetTime || slot.time, "incoming", adj);
@@ -362,7 +366,7 @@ export function buildDayReschedulePlan({
   });
   if (dayAdjOnSource.length > 0) {
     notes.push(
-      `振替元日には合同・コマ移動が ${dayAdjOnSource.length} 件あります (振替先には引き継がれません)`,
+      `振替元日には合同・コマ移動が ${dayAdjOnSource.length} 件あります (振替先には引き継がれません。振替先でも合同にするなら、欠勤組み換えで振替先の日を開き「振替で入るコマ」から設定してください)`,
     );
   }
   const subsOnSource = (subs || []).filter(

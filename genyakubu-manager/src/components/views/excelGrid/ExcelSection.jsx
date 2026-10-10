@@ -9,6 +9,8 @@ import {
 } from "../../../utils/biweekly";
 import {
   buildAdjustmentIndex,
+  buildIncomingItems,
+  incomingCombinedLabel,
   rescheduleTeacherLabel,
 } from "../../../utils/adjustmentDisplay";
 import {
@@ -87,19 +89,10 @@ export function ExcelSection({
   // 元コマ自体は別日付に属するため通常の slots ループには現れない。バナーで
   // 補足表示する。
   const incomingReschedules = useMemo(() => {
-    const out = [];
-    for (const adj of adjIndex.rescheduleIn) {
-      const slot = slotById.get(adj.slotId);
-      if (!slot) continue;
-      if (sectionFilterFn && !sectionFilterFn(slot)) continue;
-      out.push({ adj, slot });
-    }
-    out.sort(
-      (a, b) =>
-        timeToMin(a.adj.targetTime || a.slot.time || "00:00") -
-        timeToMin(b.adj.targetTime || b.slot.time || "00:00")
+    // 振替先で合同にしたものは受け入れる側 1 件にまとまる (buildIncomingItems)
+    return buildIncomingItems(adjIndex.rescheduleIn, slotById).filter(
+      ({ slot }) => !sectionFilterFn || sectionFilterFn(slot)
     );
-    return out;
   }, [adjIndex.rescheduleIn, slotById, sectionFilterFn]);
 
   // 当日の移動 (move) を slot.time に反映した "effective slots"。
@@ -375,7 +368,9 @@ export function ExcelSection({
           <strong style={{ marginRight: 6 }}>
             ↻ 振替で入るコマ ({incomingReschedules.length})
           </strong>
-          {incomingReschedules.map(({ adj, slot }, idx) => {
+          {incomingReschedules.map((item, idx) => {
+            const { adj, slot } = item;
+            const combinedText = incomingCombinedLabel(item);
             const timeText = adj.targetTime || slot.time;
             const teacherText = rescheduleTeacherLabel(adj, slot, {
               biweeklyAnchors,
@@ -394,7 +389,11 @@ export function ExcelSection({
                 {idx > 0 && <span style={{ color: "#888" }}>・</span>}
                 <span style={{ fontWeight: 700 }}>{timeText}</span>{" "}
                 {slot.grade}
-                {cls} {slot.subj} ({teacherText})
+                {cls} {slot.subj}
+                {combinedText && (
+                  <span style={{ fontWeight: 700 }}> {combinedText} 合同</span>
+                )}{" "}
+                ({teacherText})
                 <span style={{ color: "#888", marginLeft: 2 }}>
                   ←{adj.date}
                 </span>
