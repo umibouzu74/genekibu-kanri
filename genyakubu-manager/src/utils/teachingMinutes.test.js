@@ -189,6 +189,27 @@ describe("computeTeachingMinutes", () => {
     expect(sum(result, "奥村")).toMatchObject({ total: 160, count: 2, days: 1 });
   });
 
+  // 振替先で合同にした側 (combineWith) は授業をしていないので数えない
+  it("振替先で合同にした側は数えない (受け入れる側の担当だけ)", () => {
+    const adjustments = [
+      { id: 1, type: "reschedule", date: "2026-09-07", slotId: 1, targetDate: "2026-09-11" },
+      {
+        id: 2,
+        type: "reschedule",
+        date: "2026-09-07",
+        slotId: 2,
+        targetDate: "2026-09-11",
+        combineWith: { date: "2026-09-07", slotId: 1 },
+      },
+    ];
+    const result = run({
+      slots: [mk(1), mk(2, { cls: "B", teacher: "堀上" })],
+      adjustments,
+    });
+    expect(sum(result, "奥村").total).toBe(80);
+    expect(result.rows.get("堀上")).toBeUndefined();
+  });
+
   it("振替で入ってくる隔週コマは、振替元の週の担当に付く", () => {
     // 8/31 (月) が A 週 → 9/7 は B 週 = パートナー (河野) の週
     const adjustments = [

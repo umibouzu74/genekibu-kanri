@@ -1,5 +1,5 @@
 import { ADJ_COLOR } from "../constants/colors";
-import { rescheduleTeacherLabel } from "../utils/adjustmentDisplay";
+import { incomingCombinedLabel, rescheduleTeacherLabel } from "../utils/adjustmentDisplay";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 
 // 他日から「この日へ」振り替えられてくるコマのバナー表示。
@@ -11,6 +11,9 @@ import { fmtDateWeekday } from "../utils/dateHelpers";
 //
 // 行は振替元の日付ごとにまとめる (日まるごと振替では 10 件以上が同じ日から
 // 来るので、行ごとに日付を繰り返すと読めない)。
+//
+// 振替先で合同にしたもの (collectIncomingReschedules の `combined`) は
+// 受け入れる側の行に「+ 高1B 数学 合同」と相手を並べる。
 //
 // 担当は rescheduleTeacherLabel (振替元の日の隔週 A/B を解決した後)。
 // teacherCtx ({biweeklyAnchors, holidays, examPeriods}) を渡さないと隔週は
@@ -51,7 +54,9 @@ export function RescheduleInBanner({ items, style, teacherCtx }) {
           >
             ↻ {fmtDateWeekday(g.date)} から振替 ({g.items.length}件)
           </div>
-          {g.items.map(({ adj, slot }) => {
+          {g.items.map((item) => {
+            const { adj, slot } = item;
+            const combinedText = incomingCombinedLabel(item);
             const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
             return (
               <div
@@ -83,6 +88,11 @@ export function RescheduleInBanner({ items, style, teacherCtx }) {
                   {slot.grade}
                   {cls} {slot.subj}
                 </span>
+                {combinedText && (
+                  <span style={{ fontWeight: 700, color: ADJ_COLOR.reschedule.deep }}>
+                    {combinedText} 合同
+                  </span>
+                )}
                 <span style={{ color: "#555" }}>
                   {rescheduleTeacherLabel(adj, slot, teacherCtx)}
                 </span>

@@ -90,6 +90,7 @@ export interface ScheduleAdjustment {
   combineSlotIds?: number[]; // "combine" 用: 合同にするコマID群
   targetDate?: string; // "reschedule" 用: 振替先の日付 (YYYY-MM-DD)
   targetTeacher?: string; // "reschedule" 用: 振替先担当者 (未指定 = 元担当)
+  combineWith?: { date: string; slotId: number }; // "reschedule" 用: 振替先で合同にした相手 (受け入れる側の振替の振替元の日とコマ)
   memo: string; // "cancel" では休講の理由 (任意)
   createdAt?: string;
 }

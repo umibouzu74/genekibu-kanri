@@ -108,7 +108,8 @@ export function collectMonthAdjustmentEntries(adjustments, slots, monthStart, mo
       });
       addPairRow(ds, toDate, items);
     }
-    const incoming = collectIncomingReschedules(relevant, ds, slots);
+    // 振替先で合同にした側も数える (振替元の「出ていく」件数と揃える)
+    const incoming = collectIncomingReschedules(relevant, ds, slots, { includeAbsorbed: true });
     for (const [fromDate, items] of groupByKey(incoming, (x) => x.adj.date)) {
       entries.push({
         kind: ADJ_ENTRY.RESCHEDULE,

@@ -58,3 +58,34 @@ describe("ReschedulePickerPopover の重複警告", () => {
     expect(screen.queryByText(/担当 香川 は同時刻/)).toBeNull();
   });
 });
+
+describe("ReschedulePickerPopover の振替先の日付", () => {
+  // 10/16 の授業を、休講で空いた 10/9 (前倒し・今日より前) へ振り替える
+  it("振替元より前・今日より前の日付も選べる (注意書きを出して保存できる)", () => {
+    const onSave = vi.fn();
+    const fri = { ...fridaySlot, grade: "高1", subj: "数学", teacher: "香川" };
+    const { container } = render(
+      <ReschedulePickerPopover
+        anchorRect={{ top: 0, left: 0, bottom: 0, right: 0 }}
+        slot={fri}
+        sourceDate="2099-10-16"
+        allSlots={[fri]}
+        allTeachers={["香川"]}
+        timetables={[]}
+        isOffForGrade={(d) => d === "2026-10-09"}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />
+    );
+    const input = container.querySelector('input[type="date"]');
+    expect(input.getAttribute("min")).toBeNull();
+    fireEvent.change(input, { target: { value: "2026-10-09" } });
+    expect(screen.getByText(/振替元より前の日付/)).toBeTruthy();
+    expect(screen.getByText(/今日より前の日付/)).toBeTruthy();
+    expect(screen.getByText(/休講日 \/ テスト期間です/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "適用" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ targetDate: "2026-10-09" })
+    );
+  });
+});

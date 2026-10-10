@@ -21,6 +21,7 @@ import {
 } from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
 import {
+  incomingCombineNote,
   rescheduleTargetTeachers,
   rescheduleTeacherLabel,
 } from "../../utils/adjustmentDisplay";
@@ -1059,6 +1060,9 @@ export function WeekView({
               examPeriods,
             });
             const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+            const combineNote = incomingCombineNote(adj, adjustments, (id) =>
+              slotById.get(id)
+            );
             return (
               <UpcomingRow key={`rsch-${adj.id}-${i}`}>
                 <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110 }}>
@@ -1081,6 +1085,9 @@ export function WeekView({
                   <span style={{ color: "#666", marginLeft: 4 }}>
                     ({tgtTeacher})
                   </span>
+                  {combineNote && (
+                    <span style={{ fontWeight: 700, marginLeft: 4 }}>{combineNote}</span>
+                  )}
                 </span>
                 {adj.memo && (
                   <span

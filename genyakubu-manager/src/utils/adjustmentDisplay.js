@@ -84,6 +84,64 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
   return index;
 }
 
+// ─── 振替先での合同 (2026-10-10) ─────────────────────────────
+// 「10/16 の高1 文系数学と理系数学を 10/9 へ振り替え、10/9 では合同にする」
+// のように、**振替で入ってきたコマ同士を振替先の日で合同にする**。
+// 振替はコマごとに登録したまま (振替元の表示・第N回は何も変わらない)、
+// 吸収される側の振替に `combineWith` = 受け入れる側の振替の
+// **振替元の日とコマ `{date, slotId}`** を持たせる。
+//
+// - 日付 × コマの combine を振替先の日付で作らないのは、振替元と振替先が
+//   同じ曜日 (10/16 金 → 10/9 金) だと同じコマ id が振替先の日の通常の
+//   コマとしても居て、どちらを合同にしたのか区別できないため
+// - 相手を adjustment の id で指さないのは、id が再利用されるため
+//   (`nextNumericId` は最大 + 1。いちばん新しい振替を消した後に作った
+//   別のコマの振替が同じ id になり、黙ってそちらへ合同されてしまう)。
+//   振替元の日とコマなら、受け入れる側の振替を登録し直しても合同が残る
+//
+// 受け入れる側は「同じ日へ入ってくる振替で、自分は合同されていないもの」。
+// 相手の振替が無い・別の日へ変わった・連鎖している合同は無かったことにして、
+// 吸収される側も 1 コマの振替として出す (黙って消さない)。
+
+/** 受け入れる側の振替 (reschedule) から combineWith の値を作る。 */
+export function incomingCombineKey(hostAdj) {
+  return { date: hostAdj.date, slotId: hostAdj.slotId };
+}
+
+/**
+ * その日へ入ってくる振替の合同の対応を解く。
+ * @param {object[]} incomingAdjs targetDate が同じ日の reschedule
+ * @returns {{hostOf: Map<number, object>, partnersOf: Map<number, object[]>}}
+ *   hostOf: 吸収される振替の id → 受け入れる振替 / partnersOf: 受け入れる振替の id → 吸収される振替
+ */
+export function resolveIncomingCombines(incomingAdjs) {
+  const hostOf = new Map();
+  const partnersOf = new Map();
+  const list = (incomingAdjs || []).filter((a) => a?.type === "reschedule");
+  const findHost = (adj) => {
+    const key = adj.combineWith;
+    if (!key || typeof key !== "object") return null;
+    return (
+      list.find(
+        (a) =>
+          a !== adj &&
+          a.date === key.date &&
+          a.slotId === key.slotId &&
+          a.targetDate === adj.targetDate
+      ) || null
+    );
+  };
+  for (const adj of list) {
+    const host = findHost(adj);
+    if (!host) continue;
+    if (findHost(host)) continue; // 連鎖は無効
+    hostOf.set(adj.id, host);
+    if (!partnersOf.has(host.id)) partnersOf.set(host.id, []);
+    partnersOf.get(host.id).push(adj);
+  }
+  return { hostOf, partnersOf };
+}
+
 /**
  * 他日から「その日へ」振り替えられてくるコマを集める (時刻順)。
  * 元コマは別の曜日に属するので、日付で絞ったコマ一覧には出てこない。
@@ -92,25 +150,83 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
  * **休講・全日休講で除外しないこと。** 「その日にやる」と明示登録された
  * コマなので、休みの日へ寄せる日まるごと振替の受け先で消えてしまう。
  *
+ * 振替先で合同にしたもの (`resolveIncomingCombines`) は、受け入れる側の
+ * 項目に `combined: [{adj, slot}]` を付け、**吸収された側は既定で外す**
+ * (授業は 1 コマ・担当も受け入れる側の講師だけ)。授業が行われたかを見る
+ * 用途 (予定表チェック・イベントカレンダーの件数) は `includeAbsorbed: true`
+ * で吸収された側も受け取る (`combinedInto: {adj, slot}` 付き)。
+ *
  * @param {Array} adjustments
  * @param {string} dateStr "YYYY-MM-DD"
  * @param {Array} slots 元コマを引くための一覧 (全コマ)
- * @returns {{adj: object, slot: object}[]}
+ * @param {{includeAbsorbed?: boolean}} [opts]
+ * @returns {{adj: object, slot: object, combined?: object[], combinedInto?: object}[]}
  */
-export function collectIncomingReschedules(adjustments, dateStr, slots) {
+export function collectIncomingReschedules(adjustments, dateStr, slots, opts = {}) {
   if (!dateStr || !adjustments?.length) return [];
-  const byId = new Map((slots || []).map((s) => [s.id, s]));
+  const incoming = adjustments.filter(
+    (adj) => adj?.type === "reschedule" && adj.targetDate === dateStr
+  );
+  return buildIncomingItems(incoming, slots, opts);
+}
+
+/**
+ * その日へ入ってくる振替 (reschedule の配列) を、表示用の項目にする。
+ * buildAdjustmentIndex の `rescheduleIn` をそのまま渡せる。slots は配列か
+ * id → コマの Map。並び・合同の扱いは collectIncomingReschedules と同じ。
+ */
+export function buildIncomingItems(incomingAdjs, slots, { includeAbsorbed = false } = {}) {
+  if (!incomingAdjs?.length) return [];
+  const byId =
+    slots instanceof Map ? slots : new Map((slots || []).map((s) => [s.id, s]));
+  const { hostOf, partnersOf } = resolveIncomingCombines(incomingAdjs);
   const out = [];
-  for (const adj of adjustments) {
-    if (adj?.type !== "reschedule" || adj.targetDate !== dateStr) continue;
+  for (const adj of incomingAdjs) {
     const slot = byId.get(adj.slotId);
-    if (slot) out.push({ adj, slot });
+    if (!slot) continue;
+    const host = hostOf.get(adj.id);
+    if (host && byId.has(host.slotId)) {
+      if (!includeAbsorbed) continue;
+      out.push({ adj, slot, combinedInto: { adj: host, slot: byId.get(host.slotId) } });
+      continue;
+    }
+    const partners = (partnersOf.get(adj.id) || [])
+      .map((p) => ({ adj: p, slot: byId.get(p.slotId) }))
+      .filter((p) => p.slot);
+    out.push(partners.length > 0 ? { adj, slot, combined: partners } : { adj, slot });
   }
   return out.sort(
     (a, b) =>
       timeStartToMin(a.adj.targetTime || a.slot.time) -
       timeStartToMin(b.adj.targetTime || b.slot.time)
   );
+}
+
+/**
+ * 振替 1 件について、振替先での合同の注記を返す (一覧・週間の行用)。
+ * 吸収された側は "→ 高1A 数学 に合同"、受け入れる側は "+ 高1B 数学 合同"、
+ * どちらでもなければ ""。
+ * @param {object} adj reschedule
+ * @param {Array} adjustments 全 adjustments
+ * @param {(id: number) => object|undefined} slotOf コマを引く関数
+ */
+export function incomingCombineNote(adj, adjustments, slotOf) {
+  if (adj?.type !== "reschedule" || !adj.targetDate) return "";
+  const sameDay = (adjustments || []).filter(
+    (a) => a?.type === "reschedule" && a.targetDate === adj.targetDate
+  );
+  const { hostOf, partnersOf } = resolveIncomingCombines(sameDay);
+  const host = hostOf.get(adj.id);
+  if (host) return `→ ${describeSlot(slotOf(host.slotId))} に合同`;
+  const partners = partnersOf.get(adj.id) || [];
+  if (partners.length === 0) return "";
+  return `${partners.map((p) => `+ ${describeSlot(slotOf(p.slotId))}`).join(" ")} 合同`;
+}
+
+/** 振替先での合同の相手を "+ 高1B 数学" のように並べる (無ければ "")。 */
+export function incomingCombinedLabel(item) {
+  if (!item?.combined?.length) return "";
+  return item.combined.map(({ slot }) => `+ ${describeSlot(slot)}`).join(" ");
 }
 
 /**

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAdjustmentIndex,
+  collectIncomingReschedules,
   collectOutgoingReschedules,
+  incomingCombineNote,
+  resolveIncomingCombines,
   describeRescheduleTarget,
   describeSlot,
   isDayEmptiedByReschedule,
@@ -312,5 +315,84 @@ describe("rescheduleTargetTeachers", () => {
   it("表示用は「·」でつなぐ。コマが無ければ空", () => {
     expect(rescheduleTeacherLabel(adj, { ...slot, teacher: "堀上・河野" })).toBe("堀上·河野");
     expect(rescheduleTargetTeachers(adj, null)).toEqual([]);
+  });
+});
+
+// 10/16 (金) の高1 文系数学・理系数学を 10/9 (金) へ振り替え、10/9 では合同。
+describe("振替先での合同 (combineWith)", () => {
+  const bun = { id: 1, day: "金", time: "19:00-20:20", grade: "高1", cls: "文系", subj: "数学", teacher: "香川" };
+  const ri = { id: 2, day: "金", time: "19:00-20:20", grade: "高1", cls: "理系", subj: "数学", teacher: "福江" };
+  const eng = { id: 3, day: "金", time: "20:30-21:50", grade: "高1", cls: "文系", subj: "英語", teacher: "河野" };
+  const slots = [bun, ri, eng];
+  const host = { id: 10, type: "reschedule", date: "2026-10-16", slotId: 1, targetDate: "2026-10-09" };
+  // 相手は振替元の日とコマで指す (adjustment の id は再利用されるため)
+  const absorbed = {
+    id: 11,
+    type: "reschedule",
+    date: "2026-10-16",
+    slotId: 2,
+    targetDate: "2026-10-09",
+    combineWith: { date: "2026-10-16", slotId: 1 },
+  };
+  const other = { id: 12, type: "reschedule", date: "2026-10-16", slotId: 3, targetDate: "2026-10-09" };
+
+  it("吸収された側を外し、受け入れる側に相手を付ける", () => {
+    const items = collectIncomingReschedules([host, absorbed, other], "2026-10-09", slots);
+    expect(items.map((x) => x.adj.id)).toEqual([10, 12]);
+    expect(items[0].combined.map((p) => p.slot.id)).toEqual([2]);
+    expect(items[1].combined).toBeUndefined();
+  });
+
+  it("includeAbsorbed なら吸収された側も combinedInto 付きで返す", () => {
+    const items = collectIncomingReschedules([host, absorbed], "2026-10-09", slots, {
+      includeAbsorbed: true,
+    });
+    expect(items.map((x) => x.adj.id)).toEqual([10, 11]);
+    expect(items[1].combinedInto.adj.id).toBe(10);
+  });
+
+  it("相手の振替が無い・別の日なら合同は無かったことにして 1 コマとして出す", () => {
+    expect(
+      collectIncomingReschedules([absorbed], "2026-10-09", slots).map((x) => x.adj.id)
+    ).toEqual([11]);
+    const moved = { ...host, targetDate: "2026-10-10" };
+    expect(resolveIncomingCombines([moved, absorbed]).hostOf.size).toBe(0);
+  });
+
+  it("連鎖 (受け入れる側がさらに合同されている) は無効", () => {
+    const chained = { ...host, combineWith: { date: "2026-10-16", slotId: 3 } };
+    const { hostOf } = resolveIncomingCombines([chained, absorbed, other]);
+    expect(hostOf.has(11)).toBe(false);
+    expect(hostOf.get(10).id).toBe(12);
+  });
+
+  it("受け入れる側の振替を登録し直しても (id が変わっても) 合同は残る", () => {
+    const reRegistered = { ...host, id: 20 };
+    const items = collectIncomingReschedules([reRegistered, absorbed], "2026-10-09", slots);
+    expect(items.map((x) => x.adj.id)).toEqual([20]);
+    expect(items[0].combined.map((p) => p.adj.id)).toEqual([11]);
+  });
+
+  // 受け入れる側の振替 (id 10) を消した後、別のコマの振替が同じ id で作られても
+  // そちらへ合同しない (id で指していたら黙って英語へ合同されていた)
+  it("id が再利用された別のコマの振替には合同しない", () => {
+    const reusedId = { ...other, id: 10 };
+    const items = collectIncomingReschedules([absorbed, reusedId], "2026-10-09", slots);
+    expect(items.map((x) => x.adj.id)).toEqual([11, 10]);
+    expect(items.every((x) => !x.combined)).toBe(true);
+  });
+
+  it("振替先の日のコマ合同 (combine) とは混ざらない", () => {
+    const idx = buildAdjustmentIndex([host, absorbed], "2026-10-09");
+    expect(idx.combineAbsorbedBySlot.size).toBe(0);
+    expect(idx.rescheduleIn).toHaveLength(2);
+  });
+
+  it("一覧用の注記", () => {
+    const all = [host, absorbed, other];
+    const slotOf = (id) => slots.find((s) => s.id === id);
+    expect(incomingCombineNote(absorbed, all, slotOf)).toBe("→ 高1文系 数学 に合同");
+    expect(incomingCombineNote(host, all, slotOf)).toBe("+ 高1理系 数学 合同");
+    expect(incomingCombineNote(other, all, slotOf)).toBe("");
   });
 });

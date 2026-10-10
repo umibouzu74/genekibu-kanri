@@ -90,8 +90,10 @@ export function ReschedulePickerPopover({
     };
   }, [onClose]);
 
+  // 振替先は振替元より前の日・今日より前の日でもよい (2026-10-10)。
+  // 「10/16 の授業を休みの 10/9 へ前倒し」や、済んだ振替の後からの記録が
+  // あるため。止めずに確認の注意書き (notes) として出す。
   const todayStr = useMemo(() => fmtDate(new Date()), []);
-  const minDate = sourceDate < todayStr ? todayStr : sourceDate;
 
   // 振替先日付に有効な時間割スロットを抽出。
   const activeSlots = useMemo(
@@ -122,7 +124,7 @@ export function ReschedulePickerPopover({
 
   const targetDow = targetDate ? dateToDay(targetDate) : null;
 
-  // 警告: 振替先が日曜 (WEEKDAYS に含まれない) / 休講日 / テスト期間 /
+  // 警告: 振替先が日曜 (WEEKDAYS に含まれない) /
   // 同担当の同時間帯重複。
   const warnings = useMemo(() => {
     const list = [];
@@ -138,20 +140,19 @@ export function ReschedulePickerPopover({
         list.push("振替先の曜日が解釈できません");
       }
     }
-    if (typeof isOffForGrade === "function" && slot) {
-      if (isOffForGrade(targetDate, slot.grade, slot.subj)) {
-        list.push("振替先が休講日 / テスト期間に該当します");
-      }
-    }
     if (dow && targetTime) {
       // 複数担当 (「香川·福江」) は 1 人ずつ見る。講師欄の文字列のまま比べると
       // 誰の講師欄とも一致せず、重なりを見逃していた
       for (const teacher of splitTeacherField(targetTeacher || slot?.teacher || "")) {
+        // 振替先の日に休講・テスト期間のコマは塞いでいない。同じ曜日の
+        // 休みの日へ寄せる振替 (10/16 金 → 10/9 金) で自分自身と重なって
+        // 見えていた
         const conflict = activeSlots.find(
           (s) =>
             s.day === dow &&
             s.time === targetTime &&
-            splitTeacherField(s.teacher).includes(teacher)
+            splitTeacherField(s.teacher).includes(teacher) &&
+            !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
         );
         if (conflict) {
           list.push(
@@ -164,6 +165,26 @@ export function ReschedulePickerPopover({
     }
     return list;
   }, [targetDate, targetTime, targetTeacher, slot, activeSlots, isOffForGrade]);
+
+  // 確認だけの注意書き (保存は止めない)。振替先が休講日なのは「休みの日へ
+  // 寄せる」典型なので警告にしない (日まるごと振替と同じ扱い。振替の
+  // コマは休講日でも表示される)。
+  const notes = useMemo(() => {
+    const list = [];
+    if (!targetDate) return list;
+    if (typeof isOffForGrade === "function" && slot) {
+      if (isOffForGrade(targetDate, slot.grade, slot.subj)) {
+        list.push("振替先は休講日 / テスト期間です (振替のコマは休講日でも表示されます)");
+      }
+    }
+    if (sourceDate && targetDate < sourceDate) {
+      list.push("振替先は振替元より前の日付です (前倒しの振替)");
+    }
+    if (targetDate < todayStr) {
+      list.push("振替先は今日より前の日付です (済んだ振替の記録)");
+    }
+    return list;
+  }, [targetDate, sourceDate, todayStr, slot, isOffForGrade]);
 
   // 警告内容が変わったら確認状態をリセット (誤承認防止)
   useEffect(() => {
@@ -182,10 +203,6 @@ export function ReschedulePickerPopover({
     }
     if (targetDate === sourceDate) {
       setError("振替先は元の日付と異なる日を指定してください");
-      return;
-    }
-    if (targetDate < minDate) {
-      setError(`振替先は ${minDate} 以降の日付を指定してください`);
       return;
     }
     if (warnings.length > 0 && !confirmedWarn) {
@@ -241,7 +258,6 @@ export function ReschedulePickerPopover({
             <input
               type="date"
               value={targetDate}
-              min={minDate}
               onChange={(e) => setTargetDate(e.target.value)}
               style={{ ...S.input, width: "auto" }}
             />
@@ -350,6 +366,27 @@ export function ReschedulePickerPopover({
           </span>
         </label>
       </div>
+
+      {notes.length > 0 && (
+        <div
+          role="note"
+          style={{
+            background: "#eef4fb",
+            border: "1px solid #c5d8ee",
+            color: "#2a4a6a",
+            padding: "6px 10px",
+            margin: "0 10px 8px",
+            borderRadius: 4,
+            fontSize: 11,
+          }}
+        >
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {warnings.length > 0 && (
         <div

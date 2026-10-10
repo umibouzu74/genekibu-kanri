@@ -139,6 +139,14 @@ export function canCombineSlots(a, b, subjects = []) {
   return false;
 }
 
+// 振替先で合同にできるか (振替で同じ日へ入ってきたコマ同士)。
+// 振替元の曜日が違っても同じ日に来ているので曜日は問わない。学年・教科の
+// 照合は canCombineSlots と同じ。
+export function canCombineIncoming(a, b, subjects = []) {
+  if (!a || !b) return false;
+  return canCombineSlots({ ...a, day: "" }, { ...b, day: "" }, subjects);
+}
+
 // 同日のコマ群から、与えられたスロットに対する合同候補を返す。
 // 候補は canCombineSlots に通ったコマ全て。既に別の combine adjustment で
 // 吸収されているコマは除外する (`absorbedSlotIds`)。

@@ -482,3 +482,83 @@ describe("AbsenceWorkflowView の日付ジャンプ (initDate) と下書き", ()
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+// 10/16 (金) の高1 文系・理系の数学を、高1 が休みの 10/9 (金) へ振り替え、
+// 10/9 の画面で合同にする (振替先での合同、combineWith)。
+describe("AbsenceWorkflowView の振替先での合同", () => {
+  const FRI_TT = [{ id: 1, name: "通年", type: "regular", grades: [], startDate: "2026-04-01", endDate: null }];
+  const fri = { day: "金", time: "19:00-20:20", room: "", subj: "数学", note: "", timetableId: 1 };
+  const slots = [
+    { ...fri, id: 1, grade: "高1", cls: "文系", teacher: "香川" },
+    { ...fri, id: 2, grade: "高1", cls: "理系", teacher: "福江" },
+  ];
+  const adjustments = [
+    { id: 10, type: "reschedule", date: "2026-10-16", slotId: 1, targetDate: "2026-10-09" },
+    { id: 11, type: "reschedule", date: "2026-10-16", slotId: 2, targetDate: "2026-10-09" },
+  ];
+
+  it("振替で入るコマを押して合同にすると、吸収する側の振替に combineWith を付けて保存する", () => {
+    const saveAdjustments = vi.fn();
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      adjustments,
+      saveAdjustments,
+      initDate: "2026-10-09",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "高1文系 数学 の振替 (合同の設定)" }));
+    fireEvent.click(screen.getByText(/合同にする: 高1理系 数学/));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    const next = saveAdjustments.mock.calls[0][0](adjustments);
+    // 相手は振替元の日とコマで指す (id は再利用されうる)
+    expect(next.find((a) => a.id === 11).combineWith).toEqual({ date: "2026-10-16", slotId: 1 });
+    expect(next.find((a) => a.id === 10).combineWith).toBeUndefined();
+  });
+
+  // 振替元の日 (10/16) で吸収された側の振替を開き直して「適用」しても、
+  // 振替先の日が同じなら合同は外れない (保存し直すと新しい振替になるため)
+  it("振替先の日を変えない振替の変更では、振替先での合同を引き継ぐ", () => {
+    const saveAdjustments = vi.fn();
+    const combineWith = { date: "2026-10-16", slotId: 1 };
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      adjustments: [adjustments[0], { ...adjustments[1], combineWith }],
+      saveAdjustments,
+      initDate: "2026-10-16",
+    });
+    fireEvent.contextMenu(screen.getByRole("button", { name: /高1 理系 数学/ }));
+    fireEvent.click(screen.getByText("振替を変更…"));
+    const confirmWarn = screen.queryByLabelText("上記を確認した");
+    if (confirmWarn) fireEvent.click(confirmWarn);
+    fireEvent.click(screen.getByRole("button", { name: "適用" }));
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    const saved = saveAdjustments.mock.calls[0][0];
+    const ri = saved.filter((a) => a.type === "reschedule" && a.slotId === 2);
+    expect(ri).toHaveLength(1);
+    expect(ri[0].id).not.toBe(11); // 登録し直し
+    expect(ri[0]).toMatchObject({ targetDate: "2026-10-09", combineWith });
+  });
+
+  it("合同にした振替は「→ 合同」と出て、そこから外せる", () => {
+    const saveAdjustments = vi.fn();
+    const combined = [
+      adjustments[0],
+      { ...adjustments[1], combineWith: { date: "2026-10-16", slotId: 1 } },
+    ];
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      adjustments: combined,
+      saveAdjustments,
+      initDate: "2026-10-09",
+    });
+    expect(screen.getByText("→ 高1文系 数学 に合同")).toBeTruthy();
+    expect(screen.getByText("+ 高1理系 数学 合同")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "高1理系 数学 の振替 (合同の設定)" }));
+    fireEvent.click(screen.getByText(/合同を外す/));
+    const next = saveAdjustments.mock.calls[0][0](combined);
+    expect("combineWith" in next.find((a) => a.id === 11)).toBe(false);
+  });
+});

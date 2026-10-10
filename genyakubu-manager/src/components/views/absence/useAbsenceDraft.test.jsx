@@ -206,6 +206,20 @@ describe("useAbsenceDraft", () => {
       expect(out.removedSubIds).toEqual([20]);
     });
 
+    // 振替先での合同 (combineWith) を引き継いだ振替は、保存でも落とさない
+    it("reschedule の combineWith を保存する調整へ写す (null なら載せない)", () => {
+      const { result } = renderHook(() => useAbsenceDraft());
+      const combineWith = { date: DATE, slotId: 11 };
+      act(() => {
+        result.current.updateReschedule(10, { targetDate: "2026-05-01", combineWith });
+        result.current.updateReschedule(11, { targetDate: "2026-05-01", combineWith: null });
+      });
+      const out = result.current.toBatchPayload(DATE, SAMPLE_SLOTS, []);
+      const bySlot = new Map(out.draftAdjustments.map((a) => [a.slotId, a]));
+      expect(bySlot.get(10).combineWith).toEqual(combineWith);
+      expect("combineWith" in bySlot.get(11)).toBe(false);
+    });
+
     it("emits a reschedule adjustment with optional fields", () => {
       const { result } = renderHook(() => useAbsenceDraft());
       act(() => {
