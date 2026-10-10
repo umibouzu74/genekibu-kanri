@@ -18,6 +18,7 @@ import {
   describeSlot,
   rescheduleTeacherLabel,
 } from "../../../utils/adjustmentDisplay";
+import { fmtMDWeekday } from "../../../utils/dateHelpers";
 import {
   collectTeacherAssignments,
   findTeacherConflicts,
@@ -64,10 +65,20 @@ export function AbsenceTimetable({
   examPeriodsToday = [], // 当日に該当するテスト期間 (バナー表示用)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   offsiteToday = [], // この日に他校舎へ授業に出ている予定 (重なり・代行候補の「他校舎」)
-  // 振替先での合同 (振替で入ってきたコマ同士)。(吸収される振替の id,
-  // 受け入れる振替の id | null) で呼ぶ。下書きを通さずその場で保存する
-  // (保存済みの振替どうしの付け替えなので)。未指定なら操作を出さない
+  // 他日から振替で入ってくるコマ (adjustmentDisplay.buildIncomingCards の
+  // コマの形。id は "rs:<振替の id>")。通常のコマと同じグリッドにカードで並べる
+  incomingCards = [],
+  absentTeachers = [], // 欠勤する先生 (振替で入るコマの ❗欠勤 表示用)
+  // 振替で入るコマの操作。どれも保存済みの振替そのものを直すので、下書きを
+  // 通さずその場で保存する (呼び出し側が「元に戻す」を出す)。未指定なら
+  // その操作を出さない:
+  //   onSetIncomingCombine(吸収される振替の id, 受け入れる振替の id | null)
+  //   onUpdateIncoming(振替の id, {targetDate, targetTime, targetTeacher, memo})
+  //   onRemoveIncoming(振替の id) / onOpenDate("YYYY-MM-DD") (振替元の日を開く)
   onSetIncomingCombine,
+  onUpdateIncoming,
+  onRemoveIncoming,
+  onOpenDate,
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -308,10 +319,40 @@ export function AbsenceTimetable({
     [subsBySlot]
   );
 
+  // 振替で入るコマと同じセルに出る「そのコマ自身の休講カード」は出さない。
+  // 振替元と振替先が同じ曜日 (10/16 金 → 10/9 金) で振替先が休講日だと、
+  // 同じセルに「休講」と「振替で入る」が重なり、授業があるのに休講と読める
+  // (2026-10-10 の指摘)。休講日・テスト期間の灰色カードは操作を持たないので
+  // 隠してよい。コマ休講 (取り消しのメニューを持つ) と、その日に実施される
+  // 通常のコマ (同じ曜日の別の週へ寄せた振替) はそのまま並べる
+  // 振替先で合同にした吸収された側も同じ (セルは空になり、受け入れる側の
+  // カードに「+ 高1理系 数学 (合同)」と出る。通常の合同と同じ見え方)
+  const hiddenOffSlotIds = useMemo(() => {
+    const hidden = new Set();
+    if (incomingCards.length === 0) return hidden;
+    const byId = new Map(effectiveSlots.map((s) => [s.id, s]));
+    const arrivals = [];
+    for (const card of incomingCards) {
+      arrivals.push({ slotId: card._incoming.slot.id, time: card.time });
+      for (const p of card._incoming.combined) {
+        arrivals.push({ slotId: p.slot.id, time: p.adj.targetTime || p.slot.time });
+      }
+    }
+    for (const { slotId, time } of arrivals) {
+      const s = byId.get(slotId);
+      if (!s || (s._time || s.time) !== time) continue;
+      const off =
+        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) ||
+        (isInExamPeriodForGrade && isInExamPeriodForGrade(date, s.grade));
+      if (off) hidden.add(s.id);
+    }
+    return hidden;
+  }, [incomingCards, effectiveSlots, isHolidayForSlot, isInExamPeriodForGrade, date]);
+
   // 表示対象 (absorbed は除外、host/移動済みは残す)
   const visibleSlots = useMemo(
-    () => effectiveSlots.filter((s) => !absorbedSet.has(s.id)),
-    [effectiveSlots, absorbedSet]
+    () => effectiveSlots.filter((s) => !absorbedSet.has(s.id) && !hiddenOffSlotIds.has(s.id)),
+    [effectiveSlots, absorbedSet, hiddenOffSlotIds]
   );
 
   // ─── 講師の同時刻の重なり (下書きを含む) ─────────────────────────
@@ -334,7 +375,9 @@ export function AbsenceTimetable({
       }
       if (s._moved && s._time) timeBySlot.set(s.id, s._time);
     }
-    return collectTeacherAssignments(effectiveSlots, date, {
+    // 振替で入るコマも「その時間に教える人」に入れる (担当は振替先の担当。
+    // 振替先で合同にした吸収された側はカードに無い = 数えない)
+    return collectTeacherAssignments([...effectiveSlots, ...incomingCards], date, {
       subsBySlot,
       timeBySlot,
       excludeSlotIds: exclude,
@@ -346,6 +389,7 @@ export function AbsenceTimetable({
     });
   }, [
     effectiveSlots,
+    incomingCards,
     date,
     offsiteToday,
     subsBySlot,
@@ -368,56 +412,96 @@ export function AbsenceTimetable({
     [teacherAssignments]
   );
 
-  // 振替で入ってくるコマのメニュー (振替先での合同)。
+  // 振替で入ってくるコマのメニュー (グリッドのカードと上の帯のチップで共有)。
+  // item は {adj, slot, combined?, combinedInto?} (buildIncomingItems の項目、
+  // カードなら card._incoming)。
   // 合同の相手は「同じ日へ振替で入ってきた、同学年・同教科のコマ」だけ。
   // 他のコマを受け入れている側は吸収させない (合同の連鎖を作らない)。
+  // どの操作も保存済みの振替を直すので、その場で保存する (下書きにしない)。
   const openIncomingMenu = useCallback(
     (e, item) => {
       e.preventDefault();
-      if (!onSetIncomingCombine) return;
+      // ピッカーの位置はメニューを開いた時点のカードで決める (メニューの項目を
+      // 押す頃には React が event.currentTarget を外している)
+      const anchorEl = e.currentTarget || e.target;
+      const anchorRect = anchorEl?.getBoundingClientRect?.() || {
+        top: e.clientY,
+        bottom: e.clientY,
+        left: e.clientX,
+        right: e.clientX,
+      };
       const items = [];
-      if (item.combinedInto) {
-        items.push({
-          label: `合同を外す (${describeSlot(item.combinedInto.slot)} から)`,
-          danger: true,
-          onClick: () => onSetIncomingCombine(item.adj.id, null),
-        });
-      } else {
-        const candidates = incomingReschedules.filter(
-          (o) =>
-            o.adj.id !== item.adj.id &&
-            !o.combinedInto &&
-            !o.combined?.length &&
-            canCombineIncoming(item.slot, o.slot, subjects)
-        );
-        if (candidates.length === 0) {
+      if (onSetIncomingCombine) {
+        if (item.combinedInto) {
           items.push({
-            label: "合同にする (候補なし: 同学年・同教科の振替がこの日にありません)",
-            disabled: true,
-          });
-        }
-        for (const o of candidates) {
-          items.push({
-            label: `合同にする: ${describeSlot(o.slot)} (${o.adj.targetTime || o.slot.time}) をこのコマへ`,
-            onClick: () => onSetIncomingCombine(o.adj.id, item.adj.id),
-          });
-        }
-        for (const p of item.combined || []) {
-          items.push({
-            label: `合同を外す: ${describeSlot(p.slot)}`,
+            label: `合同を外す (${describeSlot(item.combinedInto.slot)} から)`,
             danger: true,
-            onClick: () => onSetIncomingCombine(p.adj.id, null),
+            onClick: () => onSetIncomingCombine(item.adj.id, null),
           });
+        } else {
+          const candidates = incomingReschedules.filter(
+            (o) =>
+              o.adj.id !== item.adj.id &&
+              !o.combinedInto &&
+              !o.combined?.length &&
+              canCombineIncoming(item.slot, o.slot, subjects)
+          );
+          if (candidates.length === 0) {
+            items.push({
+              label: "合同にする (候補なし: 同学年・同教科の振替がこの日にありません)",
+              disabled: true,
+            });
+          }
+          for (const o of candidates) {
+            items.push({
+              label: `合同にする: ${describeSlot(o.slot)} (${o.adj.targetTime || o.slot.time}) をこのコマへ`,
+              onClick: () => onSetIncomingCombine(o.adj.id, item.adj.id),
+            });
+          }
+          for (const p of item.combined || []) {
+            items.push({
+              label: `合同を外す: ${describeSlot(p.slot)}`,
+              danger: true,
+              onClick: () => onSetIncomingCombine(p.adj.id, null),
+            });
+          }
         }
       }
+      if (onUpdateIncoming) {
+        // 代行の代わり: 振替で入るコマの担当は振替の「振替先の担当」で決まる
+        // (代行レコードは (日付, コマ, 元講師) なので振替で来たコマには立てない)
+        items.push({
+          label: "振替先の担当・時刻を変更…",
+          onClick: () =>
+            setReschedulePicker({ slot: item.slot, anchorRect, incomingAdj: item.adj }),
+        });
+      }
+      if (onOpenDate) {
+        items.push({
+          label: `振替元の日 (${fmtMDWeekday(item.adj.date)}) を開く`,
+          onClick: () => onOpenDate(item.adj.date),
+        });
+      }
+      if (onRemoveIncoming) {
+        items.push({
+          label: "振替を取り消す",
+          danger: true,
+          onClick: () => onRemoveIncoming(item.adj.id),
+        });
+      }
+      if (items.length === 0) return;
       setCtxMenu({ x: e.clientX, y: e.clientY, items });
     },
-    [incomingReschedules, onSetIncomingCombine, subjects]
+    [incomingReschedules, onSetIncomingCombine, onUpdateIncoming, onOpenDate, onRemoveIncoming, subjects]
   );
 
   // 右クリックメニュー
   const openContextMenu = useCallback(
     (e, slot) => {
+      if (slot._incoming) {
+        openIncomingMenu(e, slot._incoming);
+        return;
+      }
       e.preventDefault();
       const items = [];
       const row = draft[slot.id];
@@ -645,6 +729,7 @@ export function AbsenceTimetable({
       draftApi,
       slots,
       subjects,
+      openIncomingMenu,
     ]
   );
 
@@ -706,6 +791,9 @@ export function AbsenceTimetable({
         setCombineSource(null);
         return;
       }
+      // 振替で入るコマは (日付, コマ) の合同の相手にしない (振替先での合同は
+      // そのカードのメニューから)
+      if (slot._incoming) return;
       if (!canCombineSlots(combineSource, slot, subjects)) return;
       if (combineExcluded.has(slot.id)) return;
       const current = hostsAbsorbedMap.get(combineSource.id) || [];
@@ -716,9 +804,63 @@ export function AbsenceTimetable({
     [combineSource, subjects, hostsAbsorbedMap, draftApi, combineExcluded, openContextMenu]
   );
 
+  // 振替で入るコマのカード。見た目は通常のコマのまま、「振替」バッジと
+  // 「← 10/16 (金) から振替」で示す。第N回は振替元の日で数えるので出さない。
+  // ドラッグ (時刻の移動) はできない — 時刻はメニューの「振替先の担当・時刻を
+  // 変更…」で振替そのものを直す
+  const absentTeacherSet = useMemo(() => new Set(absentTeachers || []), [absentTeachers]);
+  const renderIncomingCard = useCallback(
+    (s) => {
+      const { adj, combined } = s._incoming;
+      const from = `← ${fmtMDWeekday(adj.date)} から振替`;
+      const partners = combined.map((p) => describeSlot(p.slot)).join(" / ");
+      const interactive = !!(
+        onSetIncomingCombine ||
+        onUpdateIncoming ||
+        onRemoveIncoming ||
+        onOpenDate
+      );
+      return (
+        <AbsenceSlotCard
+          key={s.id}
+          slot={s}
+          date={date}
+          biweeklyAnchors={biweeklyAnchors}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          isAbsent={splitTeacherField(s.teacher).some((t) => absentTeacherSet.has(t))}
+          isCombineHost={combined.length > 0}
+          absorbedLabel={combined.length > 0 ? `+ ${partners} (合同)` : null}
+          incomingLabel={adj.memo ? `${from} - ${adj.memo}` : from}
+          disableDrag
+          dimmed={combineSource != null}
+          conflicts={teacherConflicts.get(s.id) || null}
+          onContextMenu={interactive ? (e) => openContextMenu(e, s) : undefined}
+          onClick={interactive ? (e) => handleSlotClick(s, e) : undefined}
+        />
+      );
+    },
+    [
+      date,
+      biweeklyAnchors,
+      holidays,
+      examPeriods,
+      absentTeacherSet,
+      combineSource,
+      teacherConflicts,
+      onSetIncomingCombine,
+      onUpdateIncoming,
+      onRemoveIncoming,
+      onOpenDate,
+      openContextMenu,
+      handleSlotClick,
+    ]
+  );
+
   // 個々のスロットカード描画 (AbsenceExcelSection に渡す関数)
   const renderCard = useCallback(
     (s) => {
+      if (s._incoming) return renderIncomingCard(s);
       const row = draft[s.id] || {};
       const isAbsorbed = absorbedSet.has(s.id);
       const isHost = hostsAbsorbedMap.has(s.id);
@@ -872,6 +1014,7 @@ export function AbsenceTimetable({
       teacherConflicts,
       cancelBySlot,
       combineExcluded,
+      renderIncomingCard,
     ]
   );
 
@@ -1120,11 +1263,9 @@ export function AbsenceTimetable({
             <strong style={{ color: ADJ_COLOR.reschedule.deep }}>
               この日に振替で入るコマ: {incomingReschedules.length} 件
             </strong>
-            {onSetIncomingCombine && incomingReschedules.length > 1 && (
-              <span style={{ color: "#888", fontSize: 11 }}>
-                コマを押すと振替先で合同にできます (すぐ保存されます)
-              </span>
-            )}
+            <span style={{ color: "#888", fontSize: 11 }}>
+              下の時間割にも「振替」のカードで並べています。押すと合同・担当や時刻の変更 (すぐ保存されます)
+            </span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {incomingReschedules.map((item) => {
@@ -1139,8 +1280,13 @@ export function AbsenceTimetable({
               const titleParts = [`元: ${adj.date} ${slot.time}`];
               if (adj.memo) titleParts.push(adj.memo);
               const absorbed = !!item.combinedInto;
-              const interactive = !!onSetIncomingCombine;
-              if (interactive) titleParts.push("クリック / 右クリックで合同の設定");
+              const interactive = !!(
+                onSetIncomingCombine ||
+                onUpdateIncoming ||
+                onRemoveIncoming ||
+                onOpenDate
+              );
+              if (interactive) titleParts.push("クリック / 右クリックで操作");
               const open = interactive ? (e) => openIncomingMenu(e, item) : undefined;
               return (
                 <span
@@ -1150,7 +1296,7 @@ export function AbsenceTimetable({
                   tabIndex={interactive ? 0 : undefined}
                   aria-label={
                     interactive
-                      ? `${slot.grade}${cls} ${slot.subj} の振替 (合同の設定)`
+                      ? `${slot.grade}${cls} ${slot.subj} の振替 (操作)`
                       : undefined
                   }
                   onClick={open}
@@ -1229,7 +1375,7 @@ export function AbsenceTimetable({
         コマをドラッグ → 別時間セルにドロップで移動 / クリック (タップ) または右クリック → メニューで代行・合同・振替・回数補正
       </div>
 
-      {effectiveSlots.length === 0 ? (
+      {effectiveSlots.length === 0 && incomingCards.length === 0 ? (
         <div
           style={{
             textAlign: "center",
@@ -1263,6 +1409,7 @@ export function AbsenceTimetable({
                 headerColor={color.accent}
                 slots={visibleSlots}
                 originalSlots={slots}
+                incomingSlots={incomingCards}
                 day={dow}
                 sectionFilterFn={sec.filterFn}
                 renderCard={renderCard}
@@ -1366,8 +1513,40 @@ export function AbsenceTimetable({
         />
       )}
 
+      {/* 振替で入るコマの振替を、振替先の日から直す。下書きにせずその場で保存
+          (振替元の日の回数補正には触らないので「回数カウントから外す」は出さない) */}
+      {reschedulePicker?.incomingAdj && (
+        <ReschedulePickerPopover
+          anchorRect={reschedulePicker.anchorRect}
+          slot={reschedulePicker.slot}
+          sourceDate={reschedulePicker.incomingAdj.date}
+          allSlots={allSlots}
+          allTeachers={allTeachers}
+          teacherKana={teacherKana}
+          timetables={timetables}
+          isOffForGrade={isOffForGrade}
+          showAutoSkip={false}
+          initial={{
+            targetDate: reschedulePicker.incomingAdj.targetDate,
+            targetTime: reschedulePicker.incomingAdj.targetTime || "",
+            targetTeacher: reschedulePicker.incomingAdj.targetTeacher || "",
+            memo: reschedulePicker.incomingAdj.memo || "",
+          }}
+          onSave={(payload) => {
+            const { autoSkip: _autoSkip, ...patch } = payload;
+            onUpdateIncoming?.(reschedulePicker.incomingAdj.id, patch);
+          }}
+          onClear={
+            onRemoveIncoming
+              ? () => onRemoveIncoming(reschedulePicker.incomingAdj.id)
+              : undefined
+          }
+          onClose={() => setReschedulePicker(null)}
+        />
+      )}
+
       {/* 振替ピッカー */}
-      {reschedulePicker && (
+      {reschedulePicker && !reschedulePicker.incomingAdj && (
         <ReschedulePickerPopover
           anchorRect={reschedulePicker.anchorRect}
           slot={reschedulePicker.slot}

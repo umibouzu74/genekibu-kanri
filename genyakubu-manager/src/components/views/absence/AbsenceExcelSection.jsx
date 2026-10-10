@@ -15,19 +15,25 @@ import { AbsenceExcelCell } from "./AbsenceExcelCell";
 // カラム定義は move 適用前の `originalSlots` から作ることで、移動ドラフトが
 // 新しい学年・クラス・教室の列を生やさないようにする。ドロップ時は時間のみを
 // 更新 — 学年・クラス・教室は変更しない (欠勤 move ドラフトの仕様)。
+//
+// `incomingSlots` は他日から振替で入ってくるコマ (adjustmentDisplay.
+// buildIncomingCards のコマの形)。通常のコマと同じセルにカードで並べ、列・
+// 時間行にも加える (その日に無い学年・クラスでも列を作る)。見出しのコマ数は
+// その日の時間割のコマだけで数える (振替で入るコマは別に「振替 +N」)。
 export function AbsenceExcelSection({
   label,
   headerColor,
   slots,
   originalSlots,
+  incomingSlots = [],
   day,
   sectionFilterFn,
   renderCard,
   onTimeDrop,
 }) {
   const { gradeGroups } = useMemo(
-    () => buildColumnDefs(originalSlots, day, sectionFilterFn),
-    [originalSlots, day, sectionFilterFn]
+    () => buildColumnDefs([...originalSlots, ...incomingSlots], day, sectionFilterFn),
+    [originalSlots, incomingSlots, day, sectionFilterFn]
   );
 
   const sectionOriginalSlots = useMemo(
@@ -35,9 +41,18 @@ export function AbsenceExcelSection({
     [originalSlots, day, sectionFilterFn]
   );
 
+  const sectionIncoming = useMemo(
+    () => incomingSlots.filter((s) => s.day === day && sectionFilterFn(s)),
+    [incomingSlots, day, sectionFilterFn]
+  );
+
+  // セルに並べるカード (通常のコマの後ろに振替で入るコマ)
   const sectionEffectiveSlots = useMemo(
-    () => slots.filter((s) => s.day === day && sectionFilterFn(s)),
-    [slots, day, sectionFilterFn]
+    () => [
+      ...slots.filter((s) => s.day === day && sectionFilterFn(s)),
+      ...sectionIncoming,
+    ],
+    [slots, day, sectionFilterFn, sectionIncoming]
   );
 
   // 移動先に元々コマがない時間でもドロップ可能にするため、元時間と移動先時間
@@ -167,9 +182,12 @@ export function AbsenceExcelSection({
       }}
     >
       <span>{label}</span>
-      {sectionOriginalSlots.length > 0 && (
+      {(sectionOriginalSlots.length > 0 || sectionIncoming.length > 0) && (
         <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>
-          {formatCount(weightedSlotCount(sectionOriginalSlots))}コマ
+          {sectionOriginalSlots.length > 0 &&
+            `${formatCount(weightedSlotCount(sectionOriginalSlots))}コマ`}
+          {sectionIncoming.length > 0 &&
+            `${sectionOriginalSlots.length > 0 ? " / " : ""}振替 +${sectionIncoming.length}`}
         </span>
       )}
     </div>

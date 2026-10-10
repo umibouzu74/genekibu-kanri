@@ -17,7 +17,9 @@ import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
 import { isCancelAdjustment } from "../../utils/slotCancel";
-import { incomingCombineKey } from "../../utils/adjustmentDisplay";
+import { buildIncomingCards, incomingCombineKey } from "../../utils/adjustmentDisplay";
+import { fmtMDWeekday } from "../../utils/dateHelpers";
+import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import {
   activeTeachersOnDate,
   collectAbsenceTargets,
@@ -343,12 +345,27 @@ export function AbsenceWorkflowView({
     []
   );
 
+  // 他日から振替で入ってくるコマ。グリッドに通常のコマと同じカードで並べ、
+  // 「欠勤にする」でも理由つきの対象外として出す (adjustmentDisplay.buildIncomingCards)
+  const incomingCards = useMemo(() => {
+    const removed = draft.removedAdjustmentIds;
+    const adjs = removed?.size
+      ? (adjustments || []).filter((a) => !removed.has(a.id))
+      : adjustments || [];
+    return buildIncomingCards(adjs, date, slots, {
+      biweeklyAnchors: biweeklyAnchors || [],
+      holidays,
+      examPeriods,
+    });
+  }, [adjustments, draft.removedAdjustmentIds, date, slots, biweeklyAnchors, holidays, examPeriods]);
+
   // 「選択した先生を欠勤にする」の対象 (代行者が空の代行レコードを作る)。
   // 対象から外したコマは理由つきで画面に出す (黙って減らさない)。
   const absenceTargets = useMemo(
     () =>
       collectAbsenceTargets({
         slots: daySlots,
+        incoming: incomingCards,
         date,
         teachers: selectedTeachers,
         ctx: {
@@ -376,6 +393,7 @@ export function AbsenceWorkflowView({
       draft.removedAdjustmentIds,
       subs,
       adjustments,
+      incomingCards,
     ]
   );
 
@@ -562,9 +580,38 @@ export function AbsenceWorkflowView({
     enabled: !!isAdmin,
   });
 
-  // 振替先での合同 (振替で入ってきたコマ同士、utils/adjustmentDisplay の
-  // resolveIncomingCombines)。吸収される側の振替に combineWith (受け入れる側の
-  // 振替元の日とコマ) を付ける / 外すだけなので、下書きを通さずにその場で保存する。
+  // ── 振替で入るコマの操作 (振替先の日のカード) ──
+  // どれも保存済みの振替そのものを直すので、下書きを通さずその場で保存し、
+  // 6 秒の「元に戻す」を出す。振替元と振替先が同じ曜日だと同じコマが通常の
+  // コマとしても並ぶので、(日付, コマ) の下書きには載せられない。
+  const replaceRescheduleWithUndo = useCallback(
+    (adjId, makeNext, message) => {
+      const before = (adjustments || []).find(
+        (a) => a.id === adjId && a.type === "reschedule"
+      );
+      if (!before) {
+        toasts.error("振替が見つかりません (他の端末で変更された可能性があります)");
+        return;
+      }
+      const after = makeNext(before);
+      saveAdjustments((prev) => (prev || []).map((a) => (a.id === adjId ? after : a)));
+      toasts.push(message, {
+        tone: "success",
+        duration: 6000,
+        action: {
+          label: "元に戻す",
+          // 元に戻すのは同じ id の振替がまだ残っているときだけ (map なので
+          // その間に消されていれば何もしない)
+          onClick: () =>
+            saveAdjustments((prev) => (prev || []).map((a) => (a.id === adjId ? before : a))),
+        },
+      });
+    },
+    [adjustments, saveAdjustments, toasts]
+  );
+
+  // 振替先での合同 (utils/adjustmentDisplay の resolveIncomingCombines)。
+  // 吸収される側の振替に combineWith (受け入れる側の振替元の日とコマ) を付ける / 外す。
   const handleSetIncomingCombine = useCallback(
     (absorbedAdjId, hostAdjId) => {
       let combineWith = null;
@@ -578,21 +625,65 @@ export function AbsenceWorkflowView({
         }
         combineWith = incomingCombineKey(host);
       }
-      saveAdjustments((prev) =>
-        (prev || []).map((a) => {
-          if (a.id !== absorbedAdjId || a.type !== "reschedule") return a;
-          if (!combineWith) {
-            const { combineWith: _drop, ...rest } = a;
-            return rest;
-          }
-          return { ...a, combineWith };
-        })
-      );
-      toasts.success(
+      replaceRescheduleWithUndo(
+        absorbedAdjId,
+        (a) => {
+          if (combineWith) return { ...a, combineWith };
+          const { combineWith: _drop, ...rest } = a;
+          return rest;
+        },
         combineWith ? "振替先で合同にしました" : "振替先での合同を外しました"
       );
     },
-    [adjustments, saveAdjustments, toasts]
+    [adjustments, replaceRescheduleWithUndo, toasts]
+  );
+
+  // 振替先の担当・時刻・日付・メモを直す (振替ピッカーの値)。
+  // 時刻が元のコマの時刻と同じなら持たない (ピッカーは元の時刻を初期値に
+  // 入れて返すので、担当だけ直したのに振替元の表示に時刻が増えないように)。
+  // 振替先の日を変えたら振替先での合同は外す (相手は前の日に残るため)
+  const handleUpdateIncoming = useCallback(
+    (adjId, patch) => {
+      replaceRescheduleWithUndo(
+        adjId,
+        (a) => {
+          const slotTime = (slots || []).find((x) => x.id === a.slotId)?.time;
+          const next = { ...a, targetDate: patch.targetDate };
+          for (const key of ["targetTime", "targetTeacher", "memo"]) {
+            const value = key === "targetTime" && patch[key] === slotTime ? "" : patch[key];
+            if (value) next[key] = value;
+            else delete next[key];
+          }
+          if (next.targetDate !== a.targetDate) delete next.combineWith;
+          return next;
+        },
+        "振替を変更しました"
+      );
+    },
+    [replaceRescheduleWithUndo, slots]
+  );
+
+  // 振替を取り消す (cascade の無い削除なので removeWithUndo)。振替元の日に
+  // 「振替に伴う skip」の回数補正があっても消さない (振替元の日の「振替を
+  // 解除」と同じ)。残ることは黙らずに知らせる
+  const removeAdjustmentWithUndo = useRemoveWithUndo({
+    list: adjustments || [],
+    save: saveAdjustments,
+  });
+  const handleRemoveIncoming = useCallback(
+    (adjId) => {
+      const adj = (adjustments || []).find((a) => a.id === adjId);
+      if (!adj) return;
+      const skipLeft = (sessionOverrides || []).some(
+        (o) => o.date === adj.date && o.slotId === adj.slotId && o.mode === "skip"
+      );
+      removeAdjustmentWithUndo(adjId, {
+        successMsg: skipLeft
+          ? `振替を取り消しました (${fmtMDWeekday(adj.date)} の回数補正「カウント外」は残っています)`
+          : "振替を取り消しました",
+      });
+    },
+    [adjustments, sessionOverrides, removeAdjustmentWithUndo]
   );
 
   const handleSave = useCallback(() => {
@@ -1001,7 +1092,12 @@ export function AbsenceWorkflowView({
         examPeriodsToday={examPeriodsToday}
         sessionOverrides={sessionOverrides}
         offsiteToday={offsiteToday}
+        incomingCards={incomingCards}
+        absentTeachers={selectedTeachers}
         onSetIncomingCombine={isAdmin ? handleSetIncomingCombine : undefined}
+        onUpdateIncoming={isAdmin ? handleUpdateIncoming : undefined}
+        onRemoveIncoming={isAdmin ? handleRemoveIncoming : undefined}
+        onOpenDate={handleDateChange}
         date={date}
       />
 

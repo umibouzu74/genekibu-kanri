@@ -2,7 +2,7 @@
 // ビュー側で同じロジックを繰り返さないために集約。
 
 import { activeTeachersOnDate } from "./absenceHelpers";
-import { splitTeacherField } from "./biweekly";
+import { biweeklyDisplaySubject, splitTeacherField } from "./biweekly";
 import { resolveSlotDaySchedule } from "./daySchedules";
 import { dateToDay, fmtDateWeekday, timeStartToMin } from "./dateHelpers";
 
@@ -221,6 +221,50 @@ export function incomingCombineNote(adj, adjustments, slotOf) {
   const partners = partnersOf.get(adj.id) || [];
   if (partners.length === 0) return "";
   return `${partners.map((p) => `+ ${describeSlot(slotOf(p.slotId))}`).join(" ")} 合同`;
+}
+
+/** 振替で入るコマのカードの id ("rs:<振替の id>")。本物のコマ id とは混ざらない。 */
+export function incomingCardId(adj) {
+  return `rs:${adj.id}`;
+}
+
+/**
+ * その日へ振替で入ってくるコマを、**コマの形をした項目**にする (欠勤組み換えの
+ * グリッドに通常のコマと同じカードで並べるため。2026-10-10)。
+ *
+ * - `id` は `incomingCardId` ("rs:<振替の id>")。本物のコマ id にしないのは、
+ *   振替元と振替先が同じ曜日 (10/16 金 → 10/9 金) だと同じコマが振替先の日の
+ *   通常のコマとしても並び、下書き・代行・合同の索引が混ざるため
+ * - `day` はその日の曜日、`time` は振替先の時刻 (`targetTime` が無ければ元の時刻)
+ * - `teacher` は振替先の担当 (`rescheduleTargetTeachers` = 振替元の日の A/B で
+ *   解決済み)、`note` は空 (振替先の日で隔週を解き直さないように)、`subj` は
+ *   振替元の日の科目 (複合教科の隔週)
+ * - 振替先で合同にした吸収された側は含めない。受け入れる側の
+ *   `_incoming.combined` に入る
+ *
+ * @param {Array} adjustments 時間割調整 (解除予定のものは呼び出し側で除く)
+ * @param {string} dateStr 振替先の日 "YYYY-MM-DD"
+ * @param {Array|Map} slots 元のコマを引くための全コマ
+ * @param {{biweeklyAnchors?: Array, holidays?: Array, examPeriods?: Array}} [ctx]
+ * @returns {Array<object>} コマの形 + `_incoming: {adj, slot, combined}`
+ */
+export function buildIncomingCards(adjustments, dateStr, slots, ctx = {}) {
+  if (!dateStr || !adjustments?.length) return [];
+  const incoming = adjustments.filter(
+    (a) => a?.type === "reschedule" && a.targetDate === dateStr
+  );
+  const day = dateToDay(dateStr);
+  const anchors = ctx.biweeklyAnchors || [];
+  return buildIncomingItems(incoming, slots).map(({ adj, slot, combined }) => ({
+    ...slot,
+    id: incomingCardId(adj),
+    day,
+    time: adj.targetTime || slot.time,
+    teacher: rescheduleTargetTeachers(adj, slot, ctx).join("·"),
+    note: "",
+    subj: biweeklyDisplaySubject(slot, adj.date, anchors, ctx.holidays, ctx.examPeriods),
+    _incoming: { adj, slot, combined: combined || [] },
+  }));
 }
 
 /** 振替先での合同の相手を "+ 高1B 数学" のように並べる (無ければ "")。 */

@@ -52,6 +52,14 @@ export function fmtDateWeekday(dateStr) {
   return `${dateStr} (${WEEKDAYS[dt.getDay()]})`;
 }
 
+/** "YYYY-MM-DD" → "M/D (曜)" (年を落とした短い表記。狭いカードの中など)。 */
+export function fmtMDWeekday(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${fmtMD(dateStr)} (${WEEKDAYS[dt.getDay()]})`;
+}
+
 export function dateToDay(dateStr) {
   if (!dateStr) return null;
   const [y, m, d] = dateStr.split("-").map(Number);

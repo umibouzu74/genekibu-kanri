@@ -283,6 +283,26 @@ describe("collectAbsenceTargets", () => {
     expect(pairs(targets)).toEqual([[1, "河野"]]);
   });
 
+  it("振替で入ってくるコマは対象外として理由つきで出す (欠勤の先生の分だけ)", () => {
+    const incoming = [
+      { ...mk(9, { teacher: "河野·福江", subj: "理科" }), id: "rs:5", _incoming: {} },
+    ];
+    const { targets, skipped } = collectAbsenceTargets({
+      slots: daySlots,
+      incoming,
+      date: DATE,
+      teachers: ["福江"],
+    });
+    expect(pairs(targets)).toEqual([[3, "福江"]]);
+    expect(skipped).toEqual([
+      {
+        slot: incoming[0],
+        teacher: "福江",
+        reason: "振替で入るコマ (振替先の担当を変えてください)",
+      },
+    ]);
+  });
+
   it("多担任コマは欠勤する本人を元講師にする", () => {
     const { targets } = collectAbsenceTargets({
       slots: daySlots,

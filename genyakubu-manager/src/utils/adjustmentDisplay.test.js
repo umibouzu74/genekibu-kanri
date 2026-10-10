@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAdjustmentIndex,
+  buildIncomingCards,
   collectIncomingReschedules,
   collectOutgoingReschedules,
   incomingCombineNote,
@@ -394,5 +395,74 @@ describe("振替先での合同 (combineWith)", () => {
     expect(incomingCombineNote(absorbed, all, slotOf)).toBe("→ 高1文系 数学 に合同");
     expect(incomingCombineNote(host, all, slotOf)).toBe("+ 高1理系 数学 合同");
     expect(incomingCombineNote(other, all, slotOf)).toBe("");
+  });
+});
+
+// 欠勤組み換えのグリッドに「振替で入るコマ」を通常のコマと同じカードで並べる
+describe("buildIncomingCards", () => {
+  // 2026-12-07 (月) → 2026-12-04 (金)
+  const slot = {
+    id: 1,
+    day: "月",
+    time: "19:00-20:20",
+    grade: "高1",
+    cls: "文系",
+    room: "301",
+    subj: "英/数",
+    teacher: "河野",
+    note: "隔週(堀上)",
+  };
+  const other = { ...slot, id: 2, cls: "理系", room: "302", subj: "数学", teacher: "福江", note: "" };
+  const adj = { id: 9, type: "reschedule", date: "2026-12-07", slotId: 1, targetDate: "2026-12-04" };
+  // 11/30 が A 週 → 12/7 は B 週 = パートナー (堀上) の週・2 つ目の科目
+  const ctx = { biweeklyAnchors: [{ date: "2026-11-30" }] };
+
+  it("振替先の曜日・時刻と、振替元の日で解いた担当・科目のコマにする", () => {
+    const [card] = buildIncomingCards([adj], "2026-12-04", [slot], ctx);
+    expect(card).toMatchObject({
+      id: "rs:9",
+      day: "金",
+      time: "19:00-20:20",
+      grade: "高1",
+      cls: "文系",
+      room: "301",
+      teacher: "堀上",
+      subj: "数",
+      note: "", // 振替先の日で隔週を解き直さない
+    });
+    expect(card._incoming.adj).toBe(adj);
+    expect(card._incoming.slot).toBe(slot);
+  });
+
+  it("振替先の時刻・担当が指定されていればそれを使う", () => {
+    const [card] = buildIncomingCards(
+      [{ ...adj, targetTime: "17:00-18:20", targetTeacher: "香川・福江" }],
+      "2026-12-04",
+      [slot],
+      ctx
+    );
+    expect(card.time).toBe("17:00-18:20");
+    expect(card.teacher).toBe("香川·福江");
+  });
+
+  it("その日へ入る振替だけ。振替先で合同にした側は受け入れる側にまとめる", () => {
+    const absorbed = {
+      id: 10,
+      type: "reschedule",
+      date: "2026-12-07",
+      slotId: 2,
+      targetDate: "2026-12-04",
+      combineWith: { date: "2026-12-07", slotId: 1 },
+    };
+    const elsewhere = { ...adj, id: 11, targetDate: "2026-12-05" };
+    const move = { id: 12, type: "move", date: "2026-12-04", slotId: 2, targetTime: "20:30-21:50" };
+    const cards = buildIncomingCards([adj, absorbed, elsewhere, move], "2026-12-04", [slot, other], ctx);
+    expect(cards.map((c) => c.id)).toEqual(["rs:9"]);
+    expect(cards[0]._incoming.combined.map((p) => p.adj.id)).toEqual([10]);
+  });
+
+  it("元のコマが無い振替・日付なしは出さない", () => {
+    expect(buildIncomingCards([adj], "2026-12-04", [], ctx)).toEqual([]);
+    expect(buildIncomingCards([adj], "", [slot], ctx)).toEqual([]);
   });
 });

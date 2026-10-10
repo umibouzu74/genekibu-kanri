@@ -64,6 +64,28 @@ describe("buildAbsenceRangePlan", () => {
     expect(plan.days[1].skipped[0].reason).toBe("登録済み");
   });
 
+  // 代行レコードは (日付, コマ, 元講師) なので、振替で入ってくるコマには
+  // 立てられない。黙って外さず、担当の変え方つきで対象外に出す
+  it("振替で入ってくるコマは対象外 (振替先の担当で変える) として出す", () => {
+    const plan = buildAbsenceRangePlan({
+      slots: SLOTS,
+      // 9/16 (水) の河野のコマを 9/18 (金) へ
+      adjustments: [{ id: 1, type: "reschedule", date: "2026-09-16", slotId: 3, targetDate: "2026-09-18" }],
+      fromDate: "2026-09-18",
+      toDate: "2026-09-18",
+      teachers: ["河野"],
+      ctx,
+    });
+    expect(plan.total).toBe(0);
+    expect(plan.days[0].skipped).toEqual([
+      expect.objectContaining({
+        teacher: "河野",
+        reason: "振替で入るコマ (振替先の担当を変えてください)",
+        slot: expect.objectContaining({ id: "rs:1", day: "金", subj: "数学" }),
+      }),
+    ]);
+  });
+
   it("入力の不備はエラーで返す", () => {
     expect(buildAbsenceRangePlan({ slots: SLOTS, fromDate: "2026-09-14", toDate: "2026-09-10", teachers: ["堀上"], ctx }).errors).toContain(
       "終了日は開始日以降にしてください"
