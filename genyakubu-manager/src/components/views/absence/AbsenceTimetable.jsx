@@ -1398,10 +1398,21 @@ export function AbsenceTimetable({
             const { autoSkip, ...reschedulePayload } = payload;
             // 既存 (saved) からの変更は draft に写した上で既存を除去マーク
             const info = rescheduleBySlot.get(slotId);
-            if (info?.source === "saved") {
-              const existing = existingRescheduleBySlot.get(slotId);
-              if (existing) draftApi.markAdjustmentRemoved(existing.id);
+            const prevReschedule =
+              info?.source === "saved"
+                ? existingRescheduleBySlot.get(slotId)
+                : draft[slotId]?.reschedule;
+            if (info?.source === "saved" && prevReschedule) {
+              draftApi.markAdjustmentRemoved(prevReschedule.id);
             }
+            // 振替先での合同 (combineWith) は振替先の日が変わらない限り
+            // 引き継ぐ (メモや時刻を直しただけで合同が外れないように)。
+            // 日を変えたら外す (updateReschedule は下書きに重ねるので明示的に)
+            reschedulePayload.combineWith =
+              prevReschedule?.combineWith &&
+              prevReschedule.targetDate === reschedulePayload.targetDate
+                ? prevReschedule.combineWith
+                : null;
             // 同コマで既に確定している代行があれば解除マーク
             // (振替するなら同日の代行は不要のため)
             for (const sub of existingSubs || []) {

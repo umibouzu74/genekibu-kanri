@@ -383,6 +383,10 @@ export function useAbsenceDraft() {
             if (row.reschedule.targetTeacher) {
               entry.targetTeacher = row.reschedule.targetTeacher;
             }
+            // 振替先での合同 (振替先の日が変わらない編集で引き継いだもの)
+            if (row.reschedule.combineWith) {
+              entry.combineWith = row.reschedule.combineWith;
+            }
             draftAdjustments.push(entry);
             const existingId = existingBySlotType.get(`${slotId}|reschedule`);
             if (existingId != null) autoRemovedIds.add(existingId);

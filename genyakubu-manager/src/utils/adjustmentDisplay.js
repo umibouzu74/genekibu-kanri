@@ -88,14 +88,25 @@ export function buildAdjustmentIndex(adjustments, date, opts = {}) {
 // 「10/16 の高1 文系数学と理系数学を 10/9 へ振り替え、10/9 では合同にする」
 // のように、**振替で入ってきたコマ同士を振替先の日で合同にする**。
 // 振替はコマごとに登録したまま (振替元の表示・第N回は何も変わらない)、
-// 吸収される側の振替に `combineWith` = 受け入れる側の振替 (adjustment) の id を
-// 持たせる。日付 × コマの combine を振替先の日付で作らないのは、振替元と
-// 振替先が同じ曜日 (10/16 金 → 10/9 金) だと同じコマ id が振替先の日の
-// 通常のコマとしても居て、どちらを合同にしたのか区別できないため。
+// 吸収される側の振替に `combineWith` = 受け入れる側の振替の
+// **振替元の日とコマ `{date, slotId}`** を持たせる。
+//
+// - 日付 × コマの combine を振替先の日付で作らないのは、振替元と振替先が
+//   同じ曜日 (10/16 金 → 10/9 金) だと同じコマ id が振替先の日の通常の
+//   コマとしても居て、どちらを合同にしたのか区別できないため
+// - 相手を adjustment の id で指さないのは、id が再利用されるため
+//   (`nextNumericId` は最大 + 1。いちばん新しい振替を消した後に作った
+//   別のコマの振替が同じ id になり、黙ってそちらへ合同されてしまう)。
+//   振替元の日とコマなら、受け入れる側の振替を登録し直しても合同が残る
 //
 // 受け入れる側は「同じ日へ入ってくる振替で、自分は合同されていないもの」。
-// 相手の振替が消えた・別の日へ変わった・連鎖している、のどれかなら合同は
-// 無かったことにして、吸収される側も 1 コマの振替として出す (黙って消さない)。
+// 相手の振替が無い・別の日へ変わった・連鎖している合同は無かったことにして、
+// 吸収される側も 1 コマの振替として出す (黙って消さない)。
+
+/** 受け入れる側の振替 (reschedule) から combineWith の値を作る。 */
+export function incomingCombineKey(hostAdj) {
+  return { date: hostAdj.date, slotId: hostAdj.slotId };
+}
 
 /**
  * その日へ入ってくる振替の合同の対応を解く。
@@ -107,13 +118,23 @@ export function resolveIncomingCombines(incomingAdjs) {
   const hostOf = new Map();
   const partnersOf = new Map();
   const list = (incomingAdjs || []).filter((a) => a?.type === "reschedule");
-  const byId = new Map(list.map((a) => [a.id, a]));
+  const findHost = (adj) => {
+    const key = adj.combineWith;
+    if (!key || typeof key !== "object") return null;
+    return (
+      list.find(
+        (a) =>
+          a !== adj &&
+          a.date === key.date &&
+          a.slotId === key.slotId &&
+          a.targetDate === adj.targetDate
+      ) || null
+    );
+  };
   for (const adj of list) {
-    if (adj.combineWith == null) continue;
-    const host = byId.get(adj.combineWith);
-    if (!host || host.id === adj.id) continue;
-    if (host.targetDate !== adj.targetDate) continue;
-    if (host.combineWith != null && byId.has(host.combineWith)) continue; // 連鎖は無効
+    const host = findHost(adj);
+    if (!host) continue;
+    if (findHost(host)) continue; // 連鎖は無効
     hostOf.set(adj.id, host);
     if (!partnersOf.has(host.id)) partnersOf.set(host.id, []);
     partnersOf.get(host.id).push(adj);

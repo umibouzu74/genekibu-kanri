@@ -17,6 +17,7 @@ import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
 import { isCancelAdjustment } from "../../utils/slotCancel";
+import { incomingCombineKey } from "../../utils/adjustmentDisplay";
 import {
   activeTeachersOnDate,
   collectAbsenceTargets,
@@ -562,25 +563,36 @@ export function AbsenceWorkflowView({
   });
 
   // 振替先での合同 (振替で入ってきたコマ同士、utils/adjustmentDisplay の
-  // resolveIncomingCombines)。吸収される側の振替に combineWith を付ける /
-  // 外すだけなので、下書きを通さずにその場で保存する。
+  // resolveIncomingCombines)。吸収される側の振替に combineWith (受け入れる側の
+  // 振替元の日とコマ) を付ける / 外すだけなので、下書きを通さずにその場で保存する。
   const handleSetIncomingCombine = useCallback(
     (absorbedAdjId, hostAdjId) => {
+      let combineWith = null;
+      if (hostAdjId != null) {
+        const host = (adjustments || []).find(
+          (a) => a.id === hostAdjId && a.type === "reschedule"
+        );
+        if (!host) {
+          toasts.error("合同の相手の振替が見つかりません");
+          return;
+        }
+        combineWith = incomingCombineKey(host);
+      }
       saveAdjustments((prev) =>
         (prev || []).map((a) => {
           if (a.id !== absorbedAdjId || a.type !== "reschedule") return a;
-          if (hostAdjId == null) {
+          if (!combineWith) {
             const { combineWith: _drop, ...rest } = a;
             return rest;
           }
-          return { ...a, combineWith: hostAdjId };
+          return { ...a, combineWith };
         })
       );
       toasts.success(
-        hostAdjId == null ? "振替先での合同を外しました" : "振替先で合同にしました"
+        combineWith ? "振替先で合同にしました" : "振替先での合同を外しました"
       );
     },
-    [saveAdjustments, toasts]
+    [adjustments, saveAdjustments, toasts]
   );
 
   const handleSave = useCallback(() => {

@@ -521,6 +521,27 @@ describe("applyDayReschedule", () => {
     // memo 未指定のときは載せない
     expect(next.every((a) => a.memo === undefined)).toBe(true);
   });
+
+  // 振替先での合同 (combineWith) は同じ振替先へ登録し直すときだけ引き継ぐ
+  it("同じ振替先への置き換えでは振替先での合同を引き継ぎ、別の日なら外す", () => {
+    const combineWith = { date: MON, slotId: 2 };
+    const run = (oldTarget) => {
+      const adjustments = [
+        { id: 1, date: MON, type: "reschedule", slotId: 1, targetDate: oldTarget, combineWith },
+        { id: 2, date: MON, type: "reschedule", slotId: 2, targetDate: oldTarget },
+      ];
+      const plan = buildDayReschedulePlan({
+        slots,
+        adjustments,
+        sourceDate: MON,
+        targetDate: FRI,
+        ctx: makeCtx({ allSlots: slots }),
+      });
+      return applyDayReschedule({ adjustments, plan }).next.find((a) => a.slotId === 1);
+    };
+    expect(run(FRI).combineWith).toEqual(combineWith);
+    expect(run("2026-12-11").combineWith).toBeUndefined();
+  });
 });
 
 describe("findDayRescheduleAdjustments", () => {

@@ -19,7 +19,7 @@ import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
-import { buildAdjustmentIndex, resolveIncomingCombines } from "./adjustmentDisplay";
+import { buildAdjustmentIndex, buildIncomingItems } from "./adjustmentDisplay";
 import { nextNumericId } from "./schema";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -181,11 +181,7 @@ export function buildDayOccupancy({
   // 他日からこの日へ入ってくる振替コマ (曜日が違うので上のループには出ない)
   // 振替先で合同にされた側は塞いでいない (受け入れる側の 1 コマだけ)
   const byId = new Map((slots || []).map((s) => [s.id, s]));
-  const { hostOf } = resolveIncomingCombines(index.rescheduleIn);
-  for (const adj of index.rescheduleIn) {
-    if (hostOf.has(adj.id)) continue;
-    const slot = byId.get(adj.slotId);
-    if (!slot) continue;
+  for (const { adj, slot } of buildIncomingItems(index.rescheduleIn, byId)) {
     pushSlot(slot, adj.targetTime || slot.time, "incoming", adj);
   }
   // 追加授業 (日付つきの単発コマ)。コマ id とは別の名前空間で数える。
@@ -448,6 +444,10 @@ export function applyDayReschedule({ adjustments = [], plan, memo = "" }) {
       createdAt: ts,
     };
     if (memo) adj.memo = memo;
+    // 同じ振替先へ登録し直すなら、振替先での合同 (combineWith) は引き継ぐ
+    if (e.existing?.combineWith && e.existing.targetDate === targetDate) {
+      adj.combineWith = e.existing.combineWith;
+    }
     return adj;
   });
   return {

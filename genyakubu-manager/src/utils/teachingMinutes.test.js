@@ -193,7 +193,14 @@ describe("computeTeachingMinutes", () => {
   it("振替先で合同にした側は数えない (受け入れる側の担当だけ)", () => {
     const adjustments = [
       { id: 1, type: "reschedule", date: "2026-09-07", slotId: 1, targetDate: "2026-09-11" },
-      { id: 2, type: "reschedule", date: "2026-09-07", slotId: 2, targetDate: "2026-09-11", combineWith: 1 },
+      {
+        id: 2,
+        type: "reschedule",
+        date: "2026-09-07",
+        slotId: 2,
+        targetDate: "2026-09-11",
+        combineWith: { date: "2026-09-07", slotId: 1 },
+      },
     ];
     const result = run({
       slots: [mk(1), mk(2, { cls: "B", teacher: "堀上" })],

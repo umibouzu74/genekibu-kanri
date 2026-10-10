@@ -325,7 +325,15 @@ describe("振替先での合同 (combineWith)", () => {
   const eng = { id: 3, day: "金", time: "20:30-21:50", grade: "高1", cls: "文系", subj: "英語", teacher: "河野" };
   const slots = [bun, ri, eng];
   const host = { id: 10, type: "reschedule", date: "2026-10-16", slotId: 1, targetDate: "2026-10-09" };
-  const absorbed = { id: 11, type: "reschedule", date: "2026-10-16", slotId: 2, targetDate: "2026-10-09", combineWith: 10 };
+  // 相手は振替元の日とコマで指す (adjustment の id は再利用されるため)
+  const absorbed = {
+    id: 11,
+    type: "reschedule",
+    date: "2026-10-16",
+    slotId: 2,
+    targetDate: "2026-10-09",
+    combineWith: { date: "2026-10-16", slotId: 1 },
+  };
   const other = { id: 12, type: "reschedule", date: "2026-10-16", slotId: 3, targetDate: "2026-10-09" };
 
   it("吸収された側を外し、受け入れる側に相手を付ける", () => {
@@ -352,10 +360,26 @@ describe("振替先での合同 (combineWith)", () => {
   });
 
   it("連鎖 (受け入れる側がさらに合同されている) は無効", () => {
-    const chained = { ...host, combineWith: 12 };
+    const chained = { ...host, combineWith: { date: "2026-10-16", slotId: 3 } };
     const { hostOf } = resolveIncomingCombines([chained, absorbed, other]);
     expect(hostOf.has(11)).toBe(false);
     expect(hostOf.get(10).id).toBe(12);
+  });
+
+  it("受け入れる側の振替を登録し直しても (id が変わっても) 合同は残る", () => {
+    const reRegistered = { ...host, id: 20 };
+    const items = collectIncomingReschedules([reRegistered, absorbed], "2026-10-09", slots);
+    expect(items.map((x) => x.adj.id)).toEqual([20]);
+    expect(items[0].combined.map((p) => p.adj.id)).toEqual([11]);
+  });
+
+  // 受け入れる側の振替 (id 10) を消した後、別のコマの振替が同じ id で作られても
+  // そちらへ合同しない (id で指していたら黙って英語へ合同されていた)
+  it("id が再利用された別のコマの振替には合同しない", () => {
+    const reusedId = { ...other, id: 10 };
+    const items = collectIncomingReschedules([absorbed, reusedId], "2026-10-09", slots);
+    expect(items.map((x) => x.adj.id)).toEqual([11, 10]);
+    expect(items.every((x) => !x.combined)).toBe(true);
   });
 
   it("振替先の日のコマ合同 (combine) とは混ざらない", () => {
