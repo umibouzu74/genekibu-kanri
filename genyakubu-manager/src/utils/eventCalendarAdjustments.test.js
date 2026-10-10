@@ -111,4 +111,33 @@ describe("describeAdjustmentItem", () => {
       })
     ).toBe("10:00-11:30 高1 英語 河野 — 模試");
   });
+
+  // 振替の担当は他の振替の表示 (RescheduleInBanner など) と同じく振替元の日の
+  // 担当。隔週コマは振替元の日の A/B で解く (rescheduleTeacherLabel)
+  describe("隔週コマの振替", () => {
+    const BW = { id: 9, day: "月", time: "19:40-21:00", grade: "中2", cls: "A", subj: "英語", teacher: "堀上", note: "隔週(河野)" };
+    // 11/30 (月) が A 週 → 12/7 は B 週 (河野)、12/14 は A 週 (堀上)
+    const CTX = { biweeklyAnchors: [{ date: "2026-11-30", weekType: "A" }], holidays: [], examPeriods: [] };
+
+    it("B 週の日を移したならパートナーの名前で出す", () => {
+      expect(describeAdjustmentItem({ slot: BW, adj: RS({ slotId: 9 }) }, CTX)).toBe(
+        "19:40-21:00 中2A 英語 河野"
+      );
+      expect(
+        describeAdjustmentItem({ slot: BW, adj: RS({ slotId: 9, date: "2026-12-14" }) }, CTX)
+      ).toBe("19:40-21:00 中2A 英語 堀上");
+    });
+
+    it("振替先の担当にその週の担当 (パートナー) を書いてあっても担当が変わったようには出さない", () => {
+      expect(
+        describeAdjustmentItem({ slot: BW, adj: RS({ slotId: 9, targetTeacher: "河野" }) }, CTX)
+      ).toBe("19:40-21:00 中2A 英語 河野");
+    });
+
+    it("ctx が無ければ主担当のまま (rescheduleTeacherLabel と同じ)", () => {
+      expect(describeAdjustmentItem({ slot: BW, adj: RS({ slotId: 9 }) })).toBe(
+        "19:40-21:00 中2A 英語 堀上"
+      );
+    });
+  });
 });

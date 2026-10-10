@@ -142,11 +142,13 @@ function activateProps(handler) {
   };
 }
 
-// 振替・コマ休講のツールチップ / 一覧の本文 (見出し + 1 コマ 1 行)
-function adjustmentEntryTitle(entry) {
-  return [adjustmentEntryHeading(entry), ...entry.items.map(describeAdjustmentItem)].join(
-    "\n"
-  );
+// 振替・コマ休講のツールチップ / 一覧の本文 (見出し + 1 コマ 1 行)。
+// teacherCtx は隔週の A/B を振替元の日で解くため (describeAdjustmentItem)
+function adjustmentEntryTitle(entry, teacherCtx) {
+  return [
+    adjustmentEntryHeading(entry),
+    ...entry.items.map((it) => describeAdjustmentItem(it, teacherCtx)),
+  ].join("\n");
 }
 
 const adjustmentEntryMeta = (entry) =>
@@ -174,6 +176,8 @@ export function EventCalendarView({
   // 振替・コマ休講 (時間割調整) と、それが指すコマを引くための全コマ
   adjustments = [],
   slots = [],
+  // 振替の担当を振替元の日の隔週 A/B で解くため (他の振替の表示と同じ)
+  biweeklyAnchors = [],
   onEventClick,
   onAddNewEvent,
   isAdmin = false,
@@ -361,6 +365,10 @@ export function EventCalendarView({
   }, [eventsInMonth, monthStart, monthEnd]);
 
   // 振替・コマ休講 (日単位)。byDate = グリッド、rows = 月の一覧
+  const teacherCtx = useMemo(
+    () => ({ biweeklyAnchors, holidays, examPeriods }),
+    [biweeklyAnchors, holidays, examPeriods]
+  );
   const monthAdjustments = useMemo(
     () => collectMonthAdjustmentEntries(adjustments, slots, monthStart, monthEnd),
     [adjustments, slots, monthStart, monthEnd]
@@ -791,7 +799,7 @@ export function EventCalendarView({
                     key={entry.id}
                     className="event-cal-adj"
                     aria-label={adjustmentEntryLabel(entry)}
-                    title={`${adjustmentEntryTitle(entry)}${
+                    title={`${adjustmentEntryTitle(entry, teacherCtx)}${
                       open ? "\n\nクリックでこの日のダッシュボードを開きます" : ""
                     }`}
                     {...activateProps(open)}
@@ -936,7 +944,7 @@ export function EventCalendarView({
                 <div
                   key={ev.id}
                   className="event-cal-adj-row"
-                  title={adjustmentEntryTitle(ev)}
+                  title={adjustmentEntryTitle(ev, teacherCtx)}
                   {...activateProps(onActivate)}
                   style={rowStyle}
                 >
@@ -952,7 +960,7 @@ export function EventCalendarView({
                   {todayBadge}
                   {/* どのコマか (紙面でも読めるよう tooltip だけにしない) */}
                   <span style={{ fontSize: 11, color: "#888" }}>
-                    {ev.items.map(describeAdjustmentItem).join(" / ")}
+                    {ev.items.map((it) => describeAdjustmentItem(it, teacherCtx)).join(" / ")}
                   </span>
                 </div>
               );

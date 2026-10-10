@@ -1361,6 +1361,7 @@ export default function App() {
                  調整が指すコマを引くため全コマを渡す */
               adjustments={adjustments}
               slots={slots}
+              biweeklyAnchors={biweeklyAnchors}
               isAdmin={isAdmin}
               visibility={eventVisibility}
               onChangeVisibility={saveEventVisibility}

@@ -123,3 +123,27 @@ describe("CommandPalette", () => {
     });
   });
 });
+
+describe("CommandPalette のよみ検索 (講師名の欄)", () => {
+  const KANA = { 堀上: "ほりかみ", 石原: "いしはら" };
+
+  it("講師ヒットと並べて、その人の他校舎の授業・代行もよみで出す", () => {
+    renderPalette({
+      teacherKana: KANA,
+      slots: [{ id: 2, day: "火", time: "19:00-20:20", grade: "中3", cls: "A", subj: "英語", teacher: "堀上", note: "" }],
+      offsiteLessons: [
+        { id: 3, teacher: "堀上", place: "村上高松", days: ["火"], time: "14:50-15:40", startDate: "2026-10-01" },
+        { id: 4, teacher: "石原", place: "大手前丸亀", days: ["水"], time: "13:30", startDate: "2026-10-01" },
+      ],
+      onOpenOffsite: vi.fn(),
+      subs: [{ id: 7, date: "2026-10-09", slotId: 2, originalTeacher: "堀上", substitute: "", status: "requested", memo: "" }],
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ほり" } });
+    const texts = screen.getAllByRole("option").map((o) => o.textContent);
+    // 講師ヒット (1コマ) / 他校舎の授業 / 代行 (代行未定) の 3 種が並ぶ
+    expect(texts.some((t) => t.includes("堀上1コマ講師"))).toBe(true);
+    expect(texts.some((t) => t.includes("村上高松"))).toBe(true);
+    expect(texts.some((t) => t.includes("堀上 → 代行未定"))).toBe(true);
+    expect(texts.some((t) => t.includes("大手前丸亀"))).toBe(false);
+  });
+});

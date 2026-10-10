@@ -22,7 +22,9 @@ import {
   collectIncomingReschedules,
   collectOutgoingReschedules,
   describeSlot,
+  rescheduleTeacherLabel,
 } from "./adjustmentDisplay";
+import { activeTeachersOnDate } from "./absenceHelpers";
 import { collectCancelledSlots } from "./slotCancel";
 import { fmtDateWeekday, fmtMD } from "./dateHelpers";
 
@@ -169,18 +171,32 @@ export function adjustmentEntryHeading(entry) {
  * 振替の日付は見出しに出ているので、行には時刻・担当が変わるときだけ
  * 行き先を書く。担当は元担当と同じなら書かない (describeRescheduleTarget の
  * originalTeacher と同じ扱い。書くと担当が変わった振替に読める)。
+ *
+ * 振替の担当は他の振替の表示 (ダッシュボードの RescheduleInBanner・週間・
+ * タイムテーブル・欠勤組み換え) と同じく **振替元の日の担当** で言う。隔週
+ * コマは振替元の日の A/B で解く (B 週を移したならパートナー。
+ * adjustmentDisplay.rescheduleTeacherLabel)。`slot.teacher` のまま出すと、
+ * 同じ振替でダッシュボードは「河野」、イベントカレンダーは「堀上」になる。
+ * ctx (biweeklyAnchors / holidays / examPeriods) が無ければ隔週は主担当の
+ * まま (rescheduleTeacherLabel と同じ)。コマ休講は SlotCancelBanner と同じく
+ * 講師欄のまま。
+ *
+ * @param {{slot: object, adj: object}} item
+ * @param {{biweeklyAnchors?: Array, holidays?: Array, examPeriods?: Array}} [ctx]
  */
-export function describeAdjustmentItem({ slot, adj }) {
-  const parts = [[slot.time, describeSlot(slot), slot.teacher].filter(Boolean).join(" ")];
-  if (adj.type === "reschedule") {
-    const change = [
-      adj.targetTime,
-      adj.targetTeacher && adj.targetTeacher !== slot.teacher ? `(${adj.targetTeacher})` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    if (change) parts.push(`→ ${change}`);
+export function describeAdjustmentItem({ slot, adj }, ctx = {}) {
+  if (adj.type !== "reschedule") {
+    const parts = [[slot.time, describeSlot(slot), slot.teacher].filter(Boolean).join(" ")];
+    if (adj.memo) parts.push(`— ${adj.memo}`);
+    return parts.join(" ");
   }
+  const fromTeacher = activeTeachersOnDate(slot, adj.date, ctx).join("·") || slot.teacher;
+  const toTeacher = rescheduleTeacherLabel(adj, slot, ctx);
+  const parts = [[slot.time, describeSlot(slot), fromTeacher].filter(Boolean).join(" ")];
+  const change = [adj.targetTime, toTeacher && toTeacher !== fromTeacher ? `(${toTeacher})` : ""]
+    .filter(Boolean)
+    .join(" ");
+  if (change) parts.push(`→ ${change}`);
   if (adj.memo) parts.push(`— ${adj.memo}`);
   return parts.join(" ");
 }
