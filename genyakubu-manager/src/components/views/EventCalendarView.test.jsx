@@ -205,6 +205,141 @@ describe("EventCalendarView の日付から跳ぶ", () => {
   });
 });
 
+// 休講・テスト期間の「誰に効くか」。学校全体の休講と中3 だけの休講を
+// 同じ見た目にしない
+describe("EventCalendarView の対象 (休講・テスト期間)", () => {
+  const cell = (container, ds) => container.querySelector(`.event-cal-cell[data-date="${ds}"]`);
+  const HOL = (over) => ({ id: 1, date: `${ym}-10`, label: "休講", scope: ["全部"], targetGrades: [], subjKeywords: [], ...over });
+
+  it("学年を絞った休講はチップに学年を添え、ツールチップと一覧には全文で出す", () => {
+    const { container } = render(
+      <EventCalendarView
+        holidays={[HOL({ id: 2, label: "中3休講", scope: ["中学部"], targetGrades: ["中3"] })]}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+      />
+    );
+    const chip = within(cell(container, `${ym}-10`)).getByText("中3休講").closest("[title]");
+    expect(within(chip).getByText("中3")).toBeInTheDocument();
+    expect(chip.getAttribute("title")).toContain("対象: 中学部 中3");
+    expect(screen.getByText("対象: 中学部 中3")).toBeInTheDocument();
+  });
+
+  it("学校全体の休講はチップに対象を出さず、一覧には「全部」と書く", () => {
+    const { container } = render(
+      <EventCalendarView
+        holidays={[HOL({ id: 3, label: "文化の日" })]}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+      />
+    );
+    expect(cell(container, `${ym}-10`).querySelector(".event-cal-target")).toBeNull();
+    expect(screen.getByText("対象: 全部")).toBeInTheDocument();
+  });
+
+  it("部門・科目で絞った休講は部門 / 科目を添える", () => {
+    const { container } = render(
+      <EventCalendarView
+        holidays={[
+          HOL({ id: 4, date: `${ym}-11`, label: "高校休講", scope: ["高校部"] }),
+          HOL({ id: 5, date: `${ym}-12`, label: "英語休講", scope: ["高校部"], targetGrades: ["高1", "高2"], subjKeywords: ["英語"] }),
+        ]}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+      />
+    );
+    expect(cell(container, `${ym}-11`).querySelector(".event-cal-target").textContent).toBe("高校部");
+    expect(cell(container, `${ym}-12`).querySelector(".event-cal-target").textContent).toBe("高1・高2 英語");
+    expect(screen.getByText("対象: 高校部 高1・高2 英語")).toBeInTheDocument();
+  });
+
+  it("テスト期間は対象学年を出す (全学年はチップに出さず、一覧に「全学年」)", () => {
+    const { container } = render(
+      <EventCalendarView
+        examPeriods={[
+          { id: 1, name: "中3定期", startDate: `${ym}-05`, endDate: `${ym}-06`, targetGrades: ["中3"] },
+          { id: 2, name: "全体模試", startDate: `${ym}-20`, endDate: `${ym}-20`, targetGrades: [] },
+        ]}
+        visibility={{ [EVENT_KIND.EXAM]: true }}
+        onChangeVisibility={() => {}}
+      />
+    );
+    expect(cell(container, `${ym}-05`).querySelector(".event-cal-target").textContent).toBe("中3");
+    expect(cell(container, `${ym}-20`).querySelector(".event-cal-target")).toBeNull();
+    expect(screen.getByText("対象: 中3")).toBeInTheDocument();
+    expect(screen.getByText("対象: 全学年")).toBeInTheDocument();
+  });
+});
+
+// 日まるごと振替 (振替 adjustments の束) とコマ休講 (adjustments の cancel)。
+// イベントのレコードを持たないので、ここで拾わないとカレンダーに出ない
+describe("EventCalendarView の振替・コマ休講", () => {
+  const cell = (container, ds) => container.querySelector(`.event-cal-cell[data-date="${ds}"]`);
+  const md = (d) => `${now.getMonth() + 1}/${d}`;
+  const SLOTS = [
+    { id: 1, day: "月", time: "19:40-21:00", grade: "中3", cls: "A", subj: "英語", teacher: "香川" },
+    { id: 2, day: "月", time: "18:00-19:30", grade: "中3", cls: "B", subj: "数学", teacher: "福江" },
+  ];
+  const ADJS = [
+    { id: 11, type: "reschedule", date: `${ym}-07`, slotId: 1, targetDate: `${ym}-04` },
+    { id: 12, type: "reschedule", date: `${ym}-07`, slotId: 2, targetDate: `${ym}-04` },
+    { id: 21, type: "cancel", date: `${ym}-19`, slotId: 1, memo: "行事" },
+    { id: 22, type: "cancel", date: `${ym}-19`, slotId: 2 },
+  ];
+  function renderAdj(props = {}) {
+    return render(
+      <EventCalendarView
+        adjustments={ADJS}
+        slots={SLOTS}
+        visibility={DEFAULT_EVENT_VISIBILITY}
+        onChangeVisibility={() => {}}
+        {...props}
+      />
+    );
+  }
+
+  it("振替は振替元と振替先の両方の日に、相手の日付とコマ数で出る", () => {
+    const { container } = renderAdj();
+    // 読み上げ名 = チップの文言 1 行 (見た目は本体と相手の日付に分かれている)
+    const out = within(cell(container, `${ym}-07`)).getByLabelText(`↻ 振替 2 コマ → ${md(4)}`);
+    const inn = within(cell(container, `${ym}-04`)).getByLabelText(`↻ 振替 2 コマ ← ${md(7)}`);
+    expect(out.textContent).toContain(`→ ${md(4)}`);
+    expect(inn.textContent).toContain(`← ${md(7)}`);
+    // ツールチップにどのコマか
+    const chip = inn;
+    expect(chip.getAttribute("title")).toContain("19:40-21:00 中3A 英語 香川");
+    expect(chip.getAttribute("title")).toContain("18:00-19:30 中3B 数学 福江");
+  });
+
+  it("コマ休講はその日の件数で出し、ツールチップにコマを並べる", () => {
+    const { container } = renderAdj();
+    const chip = within(cell(container, `${ym}-19`)).getByLabelText("🚫 コマ休講 2");
+    expect(chip.textContent).toContain("コマ休講");
+    expect(chip.getAttribute("title")).toContain("中3A 英語 香川 — 行事");
+    expect(chip.getAttribute("title")).toContain("中3B 数学 福江");
+  });
+
+  it("月の一覧にも出る (振替は元・先の組で 1 行)", () => {
+    const { container } = renderAdj();
+    const rows = container.querySelectorAll(".event-cal-adj-row");
+    expect(rows).toHaveLength(2);
+    expect(screen.getByText(`${fmtDateWeekday(`${ym}-07`)} → ${fmtDateWeekday(`${ym}-04`)}`)).toBeInTheDocument();
+    expect(screen.getByText(fmtDateWeekday(`${ym}-19`))).toBeInTheDocument();
+    // イベントが無くても空状態にしない
+    expect(screen.queryByText("該当するイベントはありません")).toBeNull();
+    expect(screen.getByText(/のイベント一覧 \(2件\)/)).toBeInTheDocument();
+  });
+
+  it("クリックは編集画面ではなく、その日のダッシュボードへ", () => {
+    const onSelectDate = vi.fn();
+    const onEventClick = vi.fn();
+    const { container } = renderAdj({ onSelectDate, onEventClick });
+    fireEvent.click(within(cell(container, `${ym}-19`)).getByRole("button", { name: "🚫 コマ休講 2" }));
+    expect(onSelectDate).toHaveBeenCalledWith(`${ym}-19`);
+    expect(onEventClick).not.toHaveBeenCalled();
+  });
+});
+
 // 月の移動: ◀ ▶ 今月 に加えて月ピッカー・← → t・タブ内での月の保持
 describe("EventCalendarView の月の移動", () => {
   function renderAt(dateArgs = [2026, 6, 3, 12, 0, 0]) {

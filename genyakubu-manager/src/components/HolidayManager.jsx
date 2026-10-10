@@ -11,11 +11,17 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
-import { describeHolidayScope, findSameDayHolidays } from "../utils/holidayDuplicates";
+import { findSameDayHolidays } from "../utils/holidayDuplicates";
+// 注意書きの対象 ("中学部 中3" 等) はイベントカレンダーと同じ言い方にする
+import { describeHolidayScope } from "../utils/eventTargets";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 
@@ -887,7 +893,7 @@ export function HolidayManager({
                     flexWrap: "wrap",
                   }}
                 >
-                  <strong style={{ fontSize: 12, minWidth: 90 }}>{h.date}</strong>
+                  <strong style={{ fontSize: 12, minWidth: 115 }}>{fmtDateWeekday(h.date)}</strong>
                   <span style={{ fontSize: 12 }}>{h.label}</span>
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {sc.map((d) => (
@@ -945,7 +951,10 @@ export function HolidayManager({
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => handleEdit(h)}
+                      onClick={() => {
+                        handleEdit(h);
+                        scrollFormIntoView(formRef);
+                      }}
                       aria-label={`${h.date} の休講日を編集`}
                       style={{
                         background: "none",

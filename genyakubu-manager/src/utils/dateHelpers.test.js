@@ -98,6 +98,16 @@ describe("formatDateRange", () => {
   it("returns 'start 〜 end' for multi-day ranges", () => {
     expect(formatDateRange("2026-05-01", "2026-05-05")).toBe("2026-05-01 〜 2026-05-05");
   });
+
+  it("{ weekday: true } で各日付に曜日を添える", () => {
+    expect(formatDateRange("2026-09-21", "2026-09-21", { weekday: true })).toBe(
+      "2026-09-21 (月)"
+    );
+    expect(formatDateRange("2026-09-21", "2026-09-25", { weekday: true })).toBe(
+      "2026-09-21 (月) 〜 2026-09-25 (金)"
+    );
+    expect(formatDateRange("", "2026-09-25", { weekday: true })).toBe("");
+  });
 });
 
 describe("dateToDay", () => {

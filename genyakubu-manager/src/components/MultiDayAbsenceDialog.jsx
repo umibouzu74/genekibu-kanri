@@ -8,7 +8,7 @@ import { shiftDate } from "./views/dashboardHelpers";
 import { useSessionCtx } from "../hooks/useSessionCtx";
 import { useToday } from "../hooks/useToday";
 import { getSlotTeachers } from "../utils/biweekly";
-import { sortTeacherNames } from "../utils/teacherKana";
+import { sortTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
 import { applyAbsenceRange, buildAbsenceRangePlan } from "../utils/absenceRange";
 
 // ─── 複数日の欠勤登録ダイアログ ─────────────────────────────────
@@ -70,8 +70,9 @@ export function MultiDayAbsenceDialog({
   }, [slots, partTimeStaff, teacherKana]);
   const shownTeachers = useMemo(() => {
     const q = teacherQuery.trim();
-    return q ? allTeachers.filter((t) => t.includes(q)) : allTeachers;
-  }, [allTeachers, teacherQuery]);
+    // 名前に加えてよみでも当てる (「ほり」で 堀上)
+    return q ? allTeachers.filter((t) => teacherMatchesQuery(t, q, teacherKana)) : allTeachers;
+  }, [allTeachers, teacherQuery, teacherKana]);
 
   const plan = useMemo(
     () =>
@@ -149,7 +150,7 @@ export function MultiDayAbsenceDialog({
             type="search"
             value={teacherQuery}
             onChange={(e) => setTeacherQuery(e.target.value)}
-            placeholder="名前で絞り込み"
+            placeholder="名前・よみで絞り込み"
             style={{ ...S.input, marginBottom: 4 }}
           />
           <div

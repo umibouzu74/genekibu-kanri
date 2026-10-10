@@ -103,3 +103,34 @@ describe("ChainSubstitutionPanel — その日に担当の無い講師", () => {
     expect(screen.getByText(/既に空き講師に入っています/)).toBeTruthy();
   });
 });
+
+describe("ChainSubstitutionPanel — 一括保存", () => {
+  it("欠勤登録時の理由メモを「玉突き代行」で上書きしない", () => {
+    const { saveSubs } = renderPanel({
+      subs: [
+        {
+          id: 1,
+          date: MONDAY,
+          slotId: 1,
+          originalTeacher: "山田",
+          substitute: "",
+          status: "requested",
+          memo: "体調不良",
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提案を作成" }));
+    fireEvent.click(screen.getByRole("button", { name: "一括保存" }));
+    const saved = saveSubs.mock.calls[0][0];
+    const rec = saved.find((s) => s.slotId === 1 && s.originalTeacher === "山田");
+    expect(rec).toMatchObject({ id: 1, substitute: "石原", status: "confirmed", memo: "体調不良" });
+  });
+
+  it("メモが空なら「玉突き代行」の目印を入れる", () => {
+    const { saveSubs } = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "提案を作成" }));
+    fireEvent.click(screen.getByRole("button", { name: "一括保存" }));
+    const rec = saveSubs.mock.calls[0][0].find((s) => s.slotId === 1);
+    expect(rec.memo).toBe("玉突き代行");
+  });
+});

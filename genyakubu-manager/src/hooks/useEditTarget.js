@@ -1,5 +1,18 @@
 import { useEffect } from "react";
 
+// 編集 / 新規フォームを画面に出す。一覧の ✏️ を押してもフォームが画面外
+// (一覧のずっと上) にあると、書き換わったことに気付けず「押しても何も起きない」
+// ように見える。描画が確定してから (次フレーム) スクロールする。
+// scrollIntoView の無い環境 (jsdom) では何もしない。
+export function scrollFormIntoView(formRef) {
+  requestAnimationFrame(() => {
+    const el = formRef?.current;
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+}
+
 // 外部 (例: イベントカレンダーやコマンドパレット) からの編集要求を
 // Manager 側で消化するための共通フック。
 //
@@ -25,9 +38,7 @@ export function useEditTarget({
     const target = items.find((it) => it.id === editTargetId);
     if (target && isAdmin) {
       onEdit(target);
-      requestAnimationFrame(() => {
-        formRef?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+      scrollFormIntoView(formRef);
     }
     onConsume?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,9 +62,7 @@ export function useNewEntryTarget({
     if (token == null) return;
     if (isAdmin) {
       onReset?.(date || undefined);
-      requestAnimationFrame(() => {
-        formRef?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+      scrollFormIntoView(formRef);
     }
     onConsume?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps

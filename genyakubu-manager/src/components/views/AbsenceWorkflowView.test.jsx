@@ -337,6 +337,28 @@ describe("AbsenceWorkflowView の日付ナビと先生の絞り込み", () => {
     expect(screen.getByLabelText("対象日:").value).toBe(MON);
   });
 
+  it("日曜は飛ばす (土曜の「次 →」で月曜、月曜の「← 前」で土曜)", () => {
+    renderView({ initDate: "2026-09-26" }); // 土曜
+    fireEvent.click(screen.getByRole("button", { name: "次 →" }));
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-09-28");
+    fireEvent.click(screen.getByRole("button", { name: "← 前" }));
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-09-26");
+  });
+
+  it("← / → キーでも日付を送れる (日曜は飛ばす)", () => {
+    renderView({ initDate: "2026-09-26" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-09-28");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-09-26");
+  });
+
+  it("コマをクリックすると右クリックと同じ操作メニューが開く (タッチ端末向け)", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: /^19:00-20:20 中3 S 理科/ }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
   it("この日に担当のある先生を先頭のグループに出し、名前で絞れる", () => {
     renderView({ partTimeStaff: [{ name: "河野", subjectIds: [] }] });
     fireEvent.click(screen.getByText("(クリックして選択)"));

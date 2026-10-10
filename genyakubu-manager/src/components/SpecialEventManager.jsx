@@ -10,7 +10,11 @@ import {
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { formatDateRange } from "../utils/dateHelpers";
@@ -641,7 +645,7 @@ export function SpecialEventManager({
                   </span>
                   <strong style={{ fontSize: 13 }}>{ev.name}</strong>
                   <span style={{ fontSize: 11, color: "#666" }}>
-                    {formatDateRange(ev.startDate, ev.endDate)}
+                    {formatDateRange(ev.startDate, ev.endDate, { weekday: true })}
                   </span>
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {(ev.targetGrades || []).length === 0 ? (
@@ -712,7 +716,10 @@ export function SpecialEventManager({
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => handleEdit(ev)}
+                      onClick={() => {
+                        handleEdit(ev);
+                        scrollFormIntoView(formRef);
+                      }}
                       aria-label={`${ev.name} を編集`}
                       style={{
                         background: "none",

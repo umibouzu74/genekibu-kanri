@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 休講日管理: 連続日 (年末年始・盆休み) の一括登録と、一覧の期間絞り込み。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HolidayManager } from "./HolidayManager";
 import { ToastProvider } from "../hooks/useToasts";
 import { ConfirmProvider } from "../hooks/useConfirm";
@@ -169,5 +169,25 @@ describe("HolidayManager の同じ日の二重登録", () => {
     fireEvent.click(screen.getByRole("button", { name: /更新|保存/ }));
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0][0].label).toBe("冬休み");
+  });
+});
+
+describe("HolidayManager の一覧の ✏️", () => {
+  it("押すと編集フォームを開いてフォームまでスクロールする (画面外で書き換わって気付けない、を防ぐ)", async () => {
+    const scrollIntoView = vi.fn();
+    const orig = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderManager({
+        holidays: [{ id: 1, date: "2099-01-05", label: "臨時休講", scope: ["全部"] }],
+      });
+      fireEvent.click(screen.getByRole("button", { name: "2099-01-05 の休講日を編集" }));
+      expect(screen.getByText("休講日を編集")).toBeInTheDocument();
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      // スクロール先は編集フォーム (見出しを含む要素)
+      expect(scrollIntoView.mock.instances[0].textContent).toContain("休講日を編集");
+    } finally {
+      Element.prototype.scrollIntoView = orig;
+    }
   });
 });

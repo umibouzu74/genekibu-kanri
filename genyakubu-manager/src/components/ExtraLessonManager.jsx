@@ -6,7 +6,11 @@ import { describeExtraLesson } from "../utils/extraLessons";
 import { splitTeacherField } from "../utils/biweekly";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveWithUndo } from "../hooks/useCrudResource";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { S } from "../styles/common";
@@ -546,7 +550,10 @@ export function ExtraLessonManager({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleEdit(l)}
+                    onClick={() => {
+                      handleEdit(l);
+                      scrollFormIntoView(formRef);
+                    }}
                     aria-label={`${l.date} ${describeExtraLesson(l)} を編集`}
                     style={{
                       background: "none",

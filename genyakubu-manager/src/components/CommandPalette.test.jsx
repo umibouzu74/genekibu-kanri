@@ -56,6 +56,24 @@ describe("CommandPalette", () => {
   it("欠勤組み換えへのジャンプは渡したときだけ (閲覧者には出ない)", () => {
     renderPalette({ onJumpToAbsenceFlow: undefined });
     expect(screen.queryByRole("option", { name: /の欠勤組み換え/ })).toBeNull();
+    // ビュー移動の「欠勤組み換え」も出さない (開いても「管理者のみ」の行き止まり)
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "欠勤" } });
+    expect(screen.queryByRole("option", { name: /欠勤組み換え/ })).toBeNull();
+  });
+
+  it("管理者にはビュー移動の「欠勤組み換え」が出る", () => {
+    renderPalette();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "欠勤" } });
+    expect(screen.getByRole("option", { name: /欠勤組み換え.*ビューに移動/ })).toBeTruthy();
+  });
+
+  it("講師はよみでも当てる (「ふく」で 福江)", () => {
+    const { onSelectTeacher } = renderPalette({ teacherKana: { 福江: "ふくえ", 香川: "かがわ" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ふく" } });
+    const opt = screen.getByRole("option", { name: /^福江/ });
+    fireEvent.click(opt);
+    expect(onSelectTeacher).toHaveBeenCalledWith("福江");
+    expect(screen.queryByRole("option", { name: /^香川/ })).toBeNull();
   });
 
   it("複数講師のコマは講師ごとに 1 件出し、選ぶとその講師を開く", () => {
@@ -103,5 +121,29 @@ describe("CommandPalette", () => {
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "会議" } });
       expect(screen.queryByRole("option", { name: /ズバリ/ })).toBeNull();
     });
+  });
+});
+
+describe("CommandPalette のよみ検索 (講師名の欄)", () => {
+  const KANA = { 堀上: "ほりかみ", 石原: "いしはら" };
+
+  it("講師ヒットと並べて、その人の他校舎の授業・代行もよみで出す", () => {
+    renderPalette({
+      teacherKana: KANA,
+      slots: [{ id: 2, day: "火", time: "19:00-20:20", grade: "中3", cls: "A", subj: "英語", teacher: "堀上", note: "" }],
+      offsiteLessons: [
+        { id: 3, teacher: "堀上", place: "村上高松", days: ["火"], time: "14:50-15:40", startDate: "2026-10-01" },
+        { id: 4, teacher: "石原", place: "大手前丸亀", days: ["水"], time: "13:30", startDate: "2026-10-01" },
+      ],
+      onOpenOffsite: vi.fn(),
+      subs: [{ id: 7, date: "2026-10-09", slotId: 2, originalTeacher: "堀上", substitute: "", status: "requested", memo: "" }],
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ほり" } });
+    const texts = screen.getAllByRole("option").map((o) => o.textContent);
+    // 講師ヒット (1コマ) / 他校舎の授業 / 代行 (代行未定) の 3 種が並ぶ
+    expect(texts.some((t) => t.includes("堀上1コマ講師"))).toBe(true);
+    expect(texts.some((t) => t.includes("村上高松"))).toBe(true);
+    expect(texts.some((t) => t.includes("堀上 → 代行未定"))).toBe(true);
+    expect(texts.some((t) => t.includes("大手前丸亀"))).toBe(false);
   });
 });

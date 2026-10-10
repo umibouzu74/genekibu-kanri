@@ -5,6 +5,8 @@ import { sortTeacherNames } from "../../../utils/teacherKana";
 import { getSlotTeachers } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
+import { useListPeriod } from "../../../hooks/useListPeriod";
+import { ListPeriodSelect } from "../../ListPeriodFilter";
 
 // 回数補正一覧タブ: sessionOverrides を月 / 講師 / モードでフィルタして表示。
 // 削除は removeWithUndo (6 秒間 Undo 可能なトースト)。
@@ -19,10 +21,8 @@ export function OverrideListTab({
   onDel,
   onJumpToDate,
 }) {
-  const now = new Date();
-  const [fMonth, setFMonth] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-  );
+  // 期間 (今月以降 / 月を指定 / すべて)。代行一覧・休講などの一覧と同じ
+  const period = useListPeriod();
   const [fTeacher, setFTeacher] = useState("");
   const [fMode, setFMode] = useState("");
   // sortBy: "date" (補正対象日昇順) / "createdAt-desc" (作成日時 新→古)
@@ -49,8 +49,7 @@ export function OverrideListTab({
   );
 
   const filtered = useMemo(() => {
-    let r = [...sessionOverrides];
-    if (fMonth) r = r.filter((o) => o.date?.startsWith(fMonth));
+    let r = period.apply([...sessionOverrides], (o) => [o.date, o.date]);
     if (fTeacher) {
       r = r.filter((o) => {
         const slot = slotMap[o.slotId];
@@ -70,7 +69,7 @@ export function OverrideListTab({
       if (c !== 0) return c;
       return (a.id || 0) - (b.id || 0);
     });
-  }, [sessionOverrides, fMonth, fTeacher, fMode, slotMap, sortBy]);
+  }, [sessionOverrides, period, fTeacher, fMode, slotMap, sortBy]);
 
   return (
     <div>
@@ -87,21 +86,7 @@ export function OverrideListTab({
           alignItems: "flex-end",
         }}
       >
-        <div>
-          <label
-            htmlFor="ov-list-filter-month"
-            style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
-          >
-            月
-          </label>
-          <input
-            id="ov-list-filter-month"
-            type="month"
-            value={fMonth}
-            onChange={(e) => setFMonth(e.target.value)}
-            style={{ ...S.input, width: "auto" }}
-          />
-        </div>
+        <ListPeriodSelect period={period} idPrefix="ov-list-filter" />
         <div>
           <label
             htmlFor="ov-list-filter-teacher"
@@ -147,7 +132,7 @@ export function OverrideListTab({
         </div>
         <button
           onClick={() => {
-            setFMonth("");
+            period.setMode("all");
             setFTeacher("");
             setFMode("");
           }}

@@ -5,11 +5,12 @@ import { MASTER_TABS } from "../constants/masterTabs";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { isSlotForTeacher, getSlotTeachers } from "../utils/biweekly";
+import { isSlotForTeacher, getSlotTeachers, splitTeacherField } from "../utils/biweekly";
 import { parseDateQuery } from "../utils/parseDateQuery";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
+import { teacherMatchesQuery } from "../utils/teacherKana";
 import { filterNotes, fmtNoteDate, sortNotesDesc } from "../utils/handoverNotes";
 import { describeOffsite, formatOffsitePeriod } from "../utils/offsiteLessons";
 
@@ -49,6 +50,8 @@ export function CommandPalette({
   handoverNotes = [],
   onOpenHandoverNote,
   onOpenHandoverAdd,
+  // 講師検索をよみでも当てる (「ほり」で 堀上)
+  teacherKana,
 }) {
   const todayStr = useToday();
   const inputRef = useRef(null);
@@ -123,7 +126,7 @@ export function CommandPalette({
     if (!empty) {
       for (const s of slots) {
         for (const t of getSlotTeachers(s)) {
-          if (t.toLowerCase().includes(q)) teacherSet.add(t);
+          if (teacherMatchesQuery(t, q, teacherKana)) teacherSet.add(t);
         }
       }
     }
@@ -169,12 +172,20 @@ export function CommandPalette({
       }
     }
 
+    // 講師名の欄はよみでも当てる (講師ヒットと同じ teacherMatchesQuery)。
+    // 「ほり」で講師の 堀上 が出るのに、その人の代行・追加授業・他校舎の
+    // 授業が出ないと、講師ヒットと並べて出す意味が無くなる
+    const teacherFieldHit = (field) =>
+      !!field && splitTeacherField(field).some((t) => teacherMatchesQuery(t, q, teacherKana));
+
     // 代行検索 (メモ・講師名)
     const matchedSubs = (empty ? [] : subs || []).filter(
       (s) =>
         s.memo?.toLowerCase().includes(q) ||
         s.originalTeacher?.toLowerCase().includes(q) ||
-        s.substitute?.toLowerCase().includes(q)
+        s.substitute?.toLowerCase().includes(q) ||
+        teacherFieldHit(s.originalTeacher) ||
+        teacherFieldHit(s.substitute)
     );
     for (const s of matchedSubs.slice(0, 5)) {
       const st = subStateMeta(s);
@@ -237,10 +248,11 @@ export function CommandPalette({
       }
       // 追加授業 (科目・種別ラベル・担当・日付を横断検索)。選択すると
       // ExtraLessonManager の編集フォームへジャンプ (H1b の editTargetId 経路)
-      const matchedExtra = extraLessons.filter((l) =>
-        [l.subj, l.label, l.teacher, l.note, l.date, "追加授業"]
-          .filter(Boolean)
-          .some((f) => f.toLowerCase().includes(q))
+      const matchedExtra = extraLessons.filter(
+        (l) =>
+          [l.subj, l.label, l.teacher, l.note, l.date, "追加授業"]
+            .filter(Boolean)
+            .some((f) => f.toLowerCase().includes(q)) || teacherFieldHit(l.teacher)
       );
       for (const l of matchedExtra.slice(0, 5)) {
         hits.push({
@@ -258,10 +270,11 @@ export function CommandPalette({
     // 他校舎の授業 (講師名・行き先・メモ)。講師名で引いたときに「この人は
     // 火木の午後に村上高松」がすぐ分かるように講師ヒットと並べて出す
     if (onOpenOffsite && !empty) {
-      const matchedOffsite = offsiteLessons.filter((r) =>
-        [r.teacher, r.place, r.memo, "他校舎"]
-          .filter(Boolean)
-          .some((f) => f.toLowerCase().includes(q))
+      const matchedOffsite = offsiteLessons.filter(
+        (r) =>
+          [r.teacher, r.place, r.memo, "他校舎"]
+            .filter(Boolean)
+            .some((f) => f.toLowerCase().includes(q)) || teacherFieldHit(r.teacher)
       );
       for (const r of matchedOffsite.slice(0, 5)) {
         hits.push({
@@ -290,7 +303,9 @@ export function CommandPalette({
       { key: views.SUBS, label: "授業管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
       { key: views.STAFF, label: "バイト管理" },
-      { key: views.ABSENCE_FLOW, label: "欠勤組み換え" },
+      // 欠勤組み換えは管理者専用。onJumpToAbsenceFlow は管理者のときだけ
+      // 渡ってくるので、それを目印に閲覧者には出さない (開いても行き止まり)
+      ...(onJumpToAbsenceFlow ? [{ key: views.ABSENCE_FLOW, label: "欠勤組み換え" }] : []),
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
@@ -458,6 +473,7 @@ export function CommandPalette({
     handoverNotes,
     onOpenHandoverNote,
     onOpenHandoverAdd,
+    teacherKana,
   ]);
 
   useEffect(() => {

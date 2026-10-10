@@ -4,7 +4,7 @@
 // 特別イベントの細分化された type メタは constants/specialEvents.js を
 // 参照する。
 
-import { EXTRA_LESSON_COLOR } from "./colors";
+import { ADJ_COLOR, EXTRA_LESSON_COLOR } from "./colors";
 
 export const EVENT_KIND = Object.freeze({
   HOLIDAY: "holiday",
@@ -81,4 +81,25 @@ export const DAY_SCHEDULE_META = Object.freeze({
   fg: "#4a3a8e",
   accent: "#8a78c8",
   icon: "⏰",
+});
+
+// イベントカレンダーに出す時間割調整 (日まるごと振替 = 振替の束 / コマ休講)
+// のチップ・一覧の色。データ実体はイベントではなく時間割調整 (adjustments の
+// reschedule / cancel。utils/eventCalendarAdjustments) で、編集先も
+// 「休講・テスト期間・イベント」画面ではない (欠勤組み換え・時間割調整一覧)
+// ので EVENT_KIND / EVENT_SECTIONS には載せない。休講と同じく常時表示
+// (visibility トグル対象外)。色は他ビューの振替 (ADJ_COLOR.reschedule) と
+// コマ休講バナー (SlotCancelBanner) に揃える。
+export const RESCHEDULE_META = Object.freeze({
+  label: "振替",
+  bg: ADJ_COLOR.reschedule.bg,
+  fg: ADJ_COLOR.reschedule.deep,
+  accent: ADJ_COLOR.reschedule.color,
+});
+
+export const SLOT_CANCEL_META = Object.freeze({
+  label: "コマ休講",
+  bg: "#f4f4f4",
+  fg: "#555",
+  accent: "#c44",
 });

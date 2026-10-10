@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { compareTeacherNames } from "../utils/teacherKana";
+import { compareTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
 import { getSlotTeachers } from "../utils/biweekly";
 
 // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
@@ -107,13 +107,16 @@ export function useTeacherGroups({ slots, partTimeStaff, subjects, teacherKana }
   }, [slots, partTimeStaff, subjects, teacherKana]);
 }
 
-/** 検索文字列で講師グループを絞る純粋関数。空なら元の配列をそのまま返す */
-export function filterTeacherGroups(groups, search) {
+/**
+ * 検索文字列で講師グループを絞る純粋関数。空なら元の配列をそのまま返す。
+ * 名前に加えて**よみ**でも当てる (「ほり」で 堀上。teacherMatchesQuery)
+ */
+export function filterTeacherGroups(groups, search, kanaMap) {
   if (!search) return groups;
   return groups
     .map((g) => ({
       ...g,
-      teachers: g.teachers.filter((t) => t.includes(search)),
+      teachers: g.teachers.filter((t) => teacherMatchesQuery(t, search, kanaMap)),
     }))
     .filter((g) => g.teachers.length > 0);
 }

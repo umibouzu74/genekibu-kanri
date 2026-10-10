@@ -8,9 +8,14 @@ import {
   isValidDateStr,
 } from "../data";
 import { nextNumericId } from "../utils/schema";
+import { fmtDateWeekday, formatDateRange } from "../utils/dateHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
-import { useEditTarget, useNewEntryTarget } from "../hooks/useEditTarget";
+import {
+  scrollFormIntoView,
+  useEditTarget,
+  useNewEntryTarget,
+} from "../hooks/useEditTarget";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
@@ -575,7 +580,7 @@ export function ExamPeriodManager({
                           padding: "3px 8px",
                         }}
                       >
-                        <span style={{ fontWeight: 700 }}>{ex.date}</span>
+                        <span style={{ fontWeight: 700 }}>{fmtDateWeekday(ex.date)}</span>
                         <span style={{ color: "#3a6b3a" }}>
                           {(ex.grades || []).length === 0
                             ? "対象学年すべて"
@@ -866,7 +871,7 @@ export function ExamPeriodManager({
               >
                 <strong style={{ fontSize: 13 }}>{ep.name}</strong>
                 <span style={{ fontSize: 11, color: "#666" }}>
-                  {ep.startDate} 〜 {ep.endDate}
+                  {formatDateRange(ep.startDate, ep.endDate, { weekday: true })}
                 </span>
                 {ep.stopsClasses === false && (
                   <span
@@ -997,7 +1002,10 @@ export function ExamPeriodManager({
                   )}
                   <button
                     type="button"
-                    onClick={() => handleEdit(ep)}
+                    onClick={() => {
+                      handleEdit(ep);
+                      scrollFormIntoView(formRef);
+                    }}
                     aria-label={`${ep.name} を編集`}
                     style={{
                       background: "none",

@@ -34,7 +34,7 @@ describe("ShortcutsHelp", () => {
     expect(screen.getByText("日付の移動")).toBeDefined();
     expect(
       screen.getByText(
-        /ダッシュボード・月間・イベントカレンダー・週間・授業時間の集計・時間割の代行モードで/
+        /ダッシュボード・月間・イベントカレンダー・週間・授業時間の集計・時間割の代行モード・欠勤組み換えで/
       )
     ).toBeDefined();
     expect(

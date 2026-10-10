@@ -65,3 +65,45 @@ export function ListPeriodFilter({ period, shown, total, noun = "件" }) {
     </div>
   );
 }
+
+// 同じ期間の絞り込みを、授業管理の一覧 (代行 / 時間割調整 / 回数補正) の
+// フィルタ行に並べる小型版。見出し付きの select + 「月を指定」のときだけ
+// 月の入力。状態は useListPeriod をそのまま渡す。
+// 以前は月の入力 1 つで、既定が当月だったため月末に来月の代行が一覧に
+// 出ず、「すべて」は月の入力を空にするという見えない操作だった。
+export function ListPeriodSelect({ period, idPrefix }) {
+  return (
+    <div>
+      <label
+        htmlFor={`${idPrefix}-period`}
+        style={{ fontSize: 10, fontWeight: 700, display: "block", marginBottom: 2 }}
+      >
+        期間
+      </label>
+      <div style={{ display: "flex", gap: 4 }}>
+        <select
+          id={`${idPrefix}-period`}
+          value={period.mode}
+          onChange={(e) => period.setMode(e.target.value)}
+          style={{ ...S.input, width: "auto" }}
+        >
+          {LIST_PERIOD_MODES.map((m) => (
+            <option key={m.key} value={m.key}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        {period.mode === "month" && (
+          <input
+            id={`${idPrefix}-month`}
+            type="month"
+            aria-label="表示する月"
+            value={period.month}
+            onChange={(e) => e.target.value && period.setMonth(e.target.value)}
+            style={{ ...S.input, width: "auto" }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

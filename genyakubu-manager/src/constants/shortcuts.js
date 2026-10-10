@@ -18,7 +18,7 @@ export const SHORTCUTS = [
     note: "g を押した直後にもう 1 キー",
     items: [
       { keys: ["g", "d"], sequential: true, label: "ダッシュボード" },
-      { keys: ["g", "a"], sequential: true, label: "欠勤組み換え" },
+      { keys: ["g", "a"], sequential: true, label: "欠勤組み換え (管理者)" },
       { keys: ["g", "s"], sequential: true, label: "授業管理" },
       { keys: ["g", "c"], sequential: true, label: "代行確定一覧" },
       { keys: ["g", "t"], sequential: true, label: "時間割管理" },
@@ -47,7 +47,7 @@ export const SHORTCUTS = [
   },
   {
     section: "日付の移動",
-    note: "ダッシュボード・月間・イベントカレンダー・週間・授業時間の集計・時間割の代行モードで",
+    note: "ダッシュボード・月間・イベントカレンダー・週間・授業時間の集計・時間割の代行モード・欠勤組み換えで",
     sub: "(週間は ±1 週、月間・イベントカレンダー・授業時間の集計は ±1 か月)",
     items: [
       { keys: ["←"], label: "前の日 / 週 / 月" },
@@ -73,7 +73,7 @@ export const SHORTCUTS = [
     section: "マウス操作",
     items: [
       { gesture: "ドラッグ", label: "欠勤組み換え: コマを他講師に移動／合同設定" },
-      { gesture: "右クリック", label: "欠勤組み換え: コマに対するコンテキストメニュー" },
+      { gesture: "クリック / 右クリック", label: "欠勤組み換え: コマに対する操作メニュー" },
       { gesture: "クリック", label: "時間割セル: 代行先を選ぶポップオーバーを開く" },
     ],
   },
