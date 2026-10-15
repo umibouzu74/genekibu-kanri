@@ -8,7 +8,7 @@ const pw = vi.hoisted(() => ({
 }));
 vi.mock("./printWindow", () => pw);
 
-import { runSnapshotPrint } from "./snapshotPrint";
+import { collectSnapshots, runSnapshotPrint } from "./snapshotPrint";
 
 const makeWindow = () => ({ closed: false, close: vi.fn() });
 
@@ -120,5 +120,47 @@ describe("runSnapshotPrint", () => {
     const res = await runSnapshotPrint(w, opts({ items: [] }));
     expect(res.status).toBe("empty");
     expect(pw.writePendingDocument).toHaveBeenCalledWith(w, { title: "テスト印刷", total: 0 });
+  });
+});
+
+describe("collectSnapshots (popup を使わない 🖼 画像にするのループ)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("render → yield → capture の順で回し、null は飛ばして結果を返す", async () => {
+    const calls = [];
+    const progress = [];
+    const res = await collectSnapshots({
+      items: ["a", "b", "c"],
+      progressName: (x) => x,
+      onProgress: (p) => progress.push(p),
+      render: (x) => calls.push(`render:${x}`),
+      capture: (x) => {
+        calls.push(`capture:${x}`);
+        return x === "b" ? null : x.toUpperCase();
+      },
+    });
+    expect(res).toEqual(["A", "C"]);
+    expect(calls).toEqual([
+      "render:a", "capture:a", "render:b", "capture:b", "render:c", "capture:c",
+    ]);
+    expect(progress.map((p) => p.current)).toEqual([1, 2, 3]);
+    expect(pw.yieldToBrowser).toHaveBeenCalledTimes(3);
+    // popup には触らない
+    expect(pw.writePendingDocument).not.toHaveBeenCalled();
+    expect(pw.writePrintDocument).not.toHaveBeenCalled();
+  });
+
+  it("中断されたらそこで止まり、撮れた分だけ返す", async () => {
+    let aborted = false;
+    const res = await collectSnapshots({
+      items: ["a", "b", "c"],
+      isAborted: () => aborted,
+      render: () => {},
+      capture: (x) => {
+        if (x === "a") aborted = true;
+        return x;
+      },
+    });
+    expect(res).toEqual(["a"]);
   });
 });

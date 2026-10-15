@@ -219,6 +219,27 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
   (コマ休講・振替・休講・特別時程) は「黙って減らさない」の対象なので
   紙面に残す。
 
+  **月次の 🖼 画像にする** (2026-10-15、まとめて印刷ダイアログ内のボタン。
+  `usePrintJobs.handleBatchImages`) は印刷ではなく 1 人 1 枚 (× 月) の PNG を
+  作る派生。バイトに LINE で送るとき、印刷を PDF にして別アプリで画像に
+  変えていた手間を省くためのもの。決めごと:
+  - 紙面の DOM はまとめて印刷と同じループ (`snapshotPrint.collectSnapshots`。
+    `runSnapshotPrint` もこれを使う) と同じ `render` / `capture` で撮る。
+    **popup は開かない** (元のタブのまま)
+  - PNG 化は `utils/htmlImage.renderHtmlToPng` (外部ライブラリなし。SVG の
+    foreignObject → `<img>` → canvas)。高さの計測は隠し iframe で行い、
+    **アプリ本体の CSS (appShell.css の `.month-past` など画面専用の規則) を
+    画像に持ち込まない**。紙面の見た目は `printStyles.monthPaperCss` を印刷
+    (@media print の中) と画像 (`buildMonthImageStyles`、素のまま) で共有する
+    — **片方だけに規則を足さないこと**。幅は `MONTH_IMAGE_WIDTH` (1120px、
+    A4 横の紙面相当) 固定 × 2 倍。端末の画面幅に左右されない
+  - 共有は端末の共有シート (`navigator.share`、iPad から LINE へ直接)。
+    クリック直下でしか呼べないので、生成と共有を分け、生成済みの File を
+    ダイアログ (`BatchImageResults`) のボタンから同期的に渡す。共有シートの
+    無いブラウザは「保存」(ダウンロード) だけ。行ごとの共有 (個別トーク用) と
+    まとめて共有 (グループ用) の両方を置く
+  - 画像のメタ行は「◯日 作成」(`buildMonthHeaderHtml` の `stampLabel`)
+
 **両者を統合する案 (E-2: 全部 window.print() 方式に寄せる) は
 2026-05-05 に検討の上で却下。** 月次の印刷ヘッダ (タイトル・印刷日・
 フィルタ状態・凡例) を `window.print()` で出すには各コンポーネントに

@@ -17,6 +17,10 @@
 //   "aborted" = isAborted が真になった (popup は閉じる)
 //   "empty"   = 1 枚も撮れなかった (popup は閉じる)
 // toast の文言は呼び出し側 (経路ごとに違う) が status を見て出す。
+//
+// 1 枚ごとのループ本体は collectSnapshots に分けてある。popup を使わない
+// 月次の 🖼 画像にする (usePrintJobs.handleBatchImages) も同じループで
+// 撮る (render → yield → 中断チェック → capture の順を 1 か所に保つため)。
 import {
   updatePendingProgress,
   writePendingDocument,
@@ -41,21 +45,19 @@ export async function runSnapshotPrint(
 ) {
   const total = items.length;
   const cancelled = () => w.closed || isAborted();
-  const results = [];
   // ユーザーが見ているのは popup のタブなので、進捗はそちらに出す
   writePendingDocument(w, { title, total });
-  for (let i = 0; i < total; i++) {
-    if (cancelled()) break;
-    const item = items[i];
-    const progress = { current: i + 1, total, name: progressName(item, i) };
-    onProgress?.(progress);
-    updatePendingProgress(w, progress);
-    render(item, i);
-    await yieldToBrowser();
-    if (cancelled()) break;
-    const r = capture(item, i);
-    if (r != null) results.push(r);
-  }
+  const results = await collectSnapshots({
+    items,
+    progressName,
+    onProgress: (progress) => {
+      onProgress?.(progress);
+      updatePendingProgress(w, progress);
+    },
+    isAborted: cancelled,
+    render,
+    capture,
+  });
   if (w.closed) return { status: "closed", results };
   if (isAborted()) {
     w.close();
@@ -71,4 +73,31 @@ export async function runSnapshotPrint(
     bodyHtml: buildBody(results),
   });
   return { status: "printed", results };
+}
+
+// 対象を 1 つずつ描いて (render) DOM を撮る (capture) ループ本体。
+// 進捗 → render (flushSync で描画を確定) → yieldToBrowser (1 タスク譲る。
+// rAF は使わない) → 中断チェック → capture (null は飛ばす)。
+// 中断されたらそこまでの結果を返す (呼び出し側が isAborted を見て扱いを決める)。
+export async function collectSnapshots({
+  items = [],
+  progressName = () => "",
+  onProgress,
+  isAborted = () => false,
+  render,
+  capture,
+}) {
+  const total = items.length;
+  const results = [];
+  for (let i = 0; i < total; i++) {
+    if (isAborted()) break;
+    const item = items[i];
+    onProgress?.({ current: i + 1, total, name: progressName(item, i) });
+    render(item, i);
+    await yieldToBrowser();
+    if (isAborted()) break;
+    const r = capture(item, i);
+    if (r != null) results.push(r);
+  }
+  return results;
 }

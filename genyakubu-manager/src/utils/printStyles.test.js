@@ -6,6 +6,8 @@ import {
   buildBatchMonthOptions,
   buildBatchPrintBodyHtml,
   buildMonthHeaderHtml,
+  buildMonthImageFileName,
+  buildMonthImageStyles,
   buildMonthLabel,
   buildPageRule,
   buildPrintStyles,
@@ -196,6 +198,19 @@ describe("buildMonthHeaderHtml", () => {
       now: fixedNow,
     });
     expect(html).toContain("2026年05月05日 印刷");
+  });
+
+  it("画像出力ではメタ行の語を「作成」にできる (stampLabel)", () => {
+    const html = buildMonthHeaderHtml({
+      teacher: "山田",
+      year: 2026,
+      month: 5,
+      visibility: {},
+      now: fixedNow,
+      stampLabel: "作成",
+    });
+    expect(html).toContain("2026年05月05日 作成");
+    expect(html).not.toContain("印刷");
   });
 
   it("デフォルト visibility ではフィルタ説明 (表示/除外タグ) を出さない", () => {
@@ -668,5 +683,58 @@ describe("buildPrintStyles (全曜日ブロック)", () => {
     const css = buildPrintStyles({ hasTimetableGrid: true, hasMonthView: false });
     expect(css).toContain(".excel-print-day{break-before:page");
     expect(css).toContain(".excel-print-day:first-child{break-before:auto");
+  });
+});
+
+describe("buildMonthImageStyles (画像出力)", () => {
+  it("紙面と同じ罫線・カードの規則を @media print に入れずに当てる", () => {
+    const css = buildMonthImageStyles();
+    expect(css).not.toContain("@media print");
+    expect(css).toContain(".month-print-grid");
+    expect(css).toContain("border:1px solid #888 !important");
+    expect(css).toContain(".month-print-card");
+    expect(css).toContain(".month-print-page-title");
+    // 操作 UI (タグ切替・🚑 など) は画像に出さない
+    expect(css).toMatch(/\.no-print\{display:none !important\}/);
+    // 日付の数字の点線下線は出さない (紙面と同じ)
+    expect(css).toContain(".day-number-link button{text-decoration:none !important}");
+  });
+
+  it("外枠の幅は既定 1120px、指定もできる", () => {
+    expect(buildMonthImageStyles()).toContain(".month-image-sheet{width:1120px");
+    expect(buildMonthImageStyles({ width: 900 })).toContain(".month-image-sheet{width:900px");
+  });
+
+  it("印刷の紙面と画像で同じ規則を使う (片方だけに足さない)", () => {
+    const print = buildPrintStyles({ hasTimetableGrid: false, hasMonthView: true });
+    const image = buildMonthImageStyles();
+    for (const rule of [
+      ".month-print-grid > *{",
+      "white-space:normal !important;",
+      ".day-number-link button{text-decoration:none !important}",
+    ]) {
+      expect(print).toContain(rule);
+      expect(image).toContain(rule);
+    }
+  });
+});
+
+describe("buildMonthImageFileName", () => {
+  it("講師名_YYYY年MM月_月次予定.png", () => {
+    expect(buildMonthImageFileName({ teacher: "奥村", year: 2026, month: 10 })).toBe(
+      "奥村_2026年10月_月次予定.png"
+    );
+    expect(buildMonthImageFileName({ teacher: "杉原", year: 2027, month: 1 })).toBe(
+      "杉原_2027年01月_月次予定.png"
+    );
+  });
+
+  it("ファイル名に使えない文字は _ に置き換え、空なら「講師」", () => {
+    expect(buildMonthImageFileName({ teacher: "A/B:C", year: 2026, month: 4 })).toBe(
+      "A_B_C_2026年04月_月次予定.png"
+    );
+    expect(buildMonthImageFileName({ teacher: "", year: 2026, month: 4 })).toBe(
+      "講師_2026年04月_月次予定.png"
+    );
   });
 });
