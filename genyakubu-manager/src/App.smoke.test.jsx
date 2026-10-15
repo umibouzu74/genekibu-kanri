@@ -153,6 +153,51 @@ describe("App smoke", () => {
     await expectNoCrash();
   }, 60000);
 
+  // 月間予定のまとめて印刷・画像 (2026-10-15)。講師の月間のツールバーにしか
+  // 無かったものをメインメニュー・サイドバーからも開く。対象月の既定は今月
+  // (前に見ていた月間の月を引きずらない)
+  it("月間予定の印刷・画像をメインメニューから開ける (対象月の既定は今月)", async () => {
+    renderApp();
+    await expectNoCrash();
+    // 講師の月間で翌月へ動かしてから、メインメニューへ戻る
+    const teacherBtns = screen.getAllByRole("button", { name: /^[^\s]+\s*\d+(\.5)?$/ });
+    fireEvent.click(teacherBtns[0]);
+    await expectNoCrash();
+    fireEvent.click(screen.getByRole("button", { name: "次の月" }));
+    const nav = await screen.findByRole("navigation", { name: "メインナビゲーション", hidden: true });
+    fireEvent.click(within(nav).getByRole("button", { name: /^\S*\s*メインメニュー/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: /メインメニュー/ })).toBeInTheDocument();
+
+    const main = document.getElementById("main-content");
+    fireEvent.click(within(main).getByRole("button", { name: /^月間予定の印刷・画像/ }));
+    const dialog = await screen.findByRole("dialog", { name: "月次予定をまとめて印刷・画像にする" });
+    const d = new Date();
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    expect(within(dialog).getByLabelText(`${d.getFullYear()}年${d.getMonth() + 1}月`)).toBeChecked();
+    expect(
+      within(dialog).getByLabelText(`${next.getFullYear()}年${next.getMonth() + 1}月`)
+    ).not.toBeChecked();
+    // 画面はメインメニューのまま
+    expect(screen.getByRole("heading", { level: 1, name: /メインメニュー/ })).toBeInTheDocument();
+  }, 30000);
+
+  // まとめて印刷・画像は月間を描き替えて撮るので、その間いまの画面は外れて
+  // 作り直しになる。画面の中に入力途中のものを持ちうる画面からは、メインメニューへ
+  // 移ってから開く (印刷のついでに黙って捨てない)
+  it("授業管理からサイドバーで開くと、メインメニューへ移ってから開く", async () => {
+    renderApp();
+    await expectNoCrash();
+    const nav = await screen.findByRole("navigation", { name: "メインナビゲーション", hidden: true });
+    fireEvent.click(within(nav).getByRole("button", { name: /^\S*\s*授業管理/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: /授業管理/ })).toBeInTheDocument();
+    await expectNoCrash();
+    fireEvent.click(within(nav).getByRole("button", { name: /月間予定の印刷・画像/ }));
+    expect(
+      await screen.findByRole("dialog", { name: "月次予定をまとめて印刷・画像にする" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /メインメニュー/ })).toBeInTheDocument();
+  }, 30000);
+
   it("ダッシュボードの「去年のこの時期」から引継ぎメモのその 1 件へ飛べる", async () => {
     const d = new Date();
     const lastYear = `${d.getFullYear() - 1}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

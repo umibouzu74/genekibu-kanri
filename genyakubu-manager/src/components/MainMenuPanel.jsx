@@ -1,4 +1,5 @@
 import { colors } from "../styles/tokens";
+import { menuItemChord } from "../constants/mainMenu";
 
 // ─── メインメニューのカテゴリとボタン ───────────────────────────────
 // 中身は constants/mainMenu (visibleMainMenu で見ている人の分に絞ったもの)。
@@ -11,6 +12,10 @@ import { colors } from "../styles/tokens";
 //
 // ダッシュボードの下に置くときは呼び出し側で no-print に包むこと (紙面に
 // 載せない。ダッシュボードは PrintButton = window.print で刷る)。
+//
+// ビューへ移る項目には、そのビューの g chord (サイドバーの ChordHint と同じ
+// constants/chords) を添える。押して覚えられるように。タッチ端末には
+// キーボードが無いので出さない (appShell.css の .main-menu-chord)。
 
 const CATEGORY_TONE = {
   today: "#c0392b",
@@ -23,6 +28,32 @@ const CATEGORY_TONE = {
 
 function toneOf(cat) {
   return CATEGORY_TONE[cat.key] || colors.primary;
+}
+
+// g → x の小さい表示。読み上げはボタンの名前を汚さないよう外す
+export function MenuChordHint({ chord, onDark = false }) {
+  if (!chord) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="main-menu-chord"
+      title={`キーボード: g → ${chord}`}
+      style={{
+        fontSize: 10,
+        fontWeight: 400,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        letterSpacing: 0.5,
+        padding: "0 4px",
+        borderRadius: 3,
+        border: `1px solid ${onDark ? "rgba(255,255,255,0.45)" : colors.border}`,
+        color: onDark ? "rgba(255,255,255,0.85)" : colors.inkSubtle,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      g {chord}
+    </span>
+  );
 }
 
 function FullCategory({ cat, onNavigate }) {
@@ -70,8 +101,11 @@ function FullCategory({ cat, onNavigate }) {
             <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1.2, width: 22, flexShrink: 0, textAlign: "center" }}>
               {item.icon}
             </span>
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{item.label}</span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{item.label}</span>
+                <MenuChordHint chord={menuItemChord(item)} />
+              </span>
               {item.desc && (
                 <span style={{ display: "block", fontSize: 11, color: colors.inkMuted, marginTop: 2, lineHeight: 1.5 }}>
                   {item.desc}
@@ -83,6 +117,12 @@ function FullCategory({ cat, onNavigate }) {
       </div>
     </section>
   );
+}
+
+// 小さい版は名前だけなので、説明とショートカットは title に
+function compactTitle(item) {
+  const chord = menuItemChord(item);
+  return [item.desc, chord ? `(キーボード: g → ${chord})` : ""].filter(Boolean).join(" ");
 }
 
 function CompactCategory({ cat, onNavigate }) {
@@ -110,7 +150,7 @@ function CompactCategory({ cat, onNavigate }) {
             key={item.key}
             type="button"
             onClick={() => onNavigate(item)}
-            title={item.desc}
+            title={compactTitle(item)}
             className="main-menu-item"
             style={{
               border: `1px solid ${colors.border}`,

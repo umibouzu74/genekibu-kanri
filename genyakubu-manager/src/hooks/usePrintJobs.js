@@ -15,7 +15,7 @@ import {
   MONTH_IMAGE_WIDTH,
 } from "../utils/printStyles";
 import { renderHtmlToPng } from "../utils/htmlImage";
-import { openPrintWindow, writePrintDocument } from "../utils/printWindow";
+import { openPrintWindow, waitForSelector, writePrintDocument } from "../utils/printWindow";
 import { collectSnapshots, runSnapshotPrint } from "../utils/snapshotPrint";
 
 // 講師 × 月の一覧を作る。講師ごとに各月を連続で並べる (人単位で束ねて
@@ -202,6 +202,18 @@ export function usePrintJobs({
     }),
     [setSelected, setMonthOff, setView]
   );
+  // MonthView は遅延読み込み (React.lazy)。一度も描いていないと、import 済み
+  // でも最初の描画は Suspense の「読み込み中...」で、撮る紙面が無い (メイン
+  // メニュー・サイドバーから開いたとき。月間から開くと既に描いてある)。
+  // ループの前に 1 枚目を描いて、紙面が出るまで待っておく
+  const primeMonthView = useCallback(
+    async (firstJob) => {
+      if (!firstJob) return;
+      monthSnapshotSteps.render(firstJob);
+      await waitForSelector(".month-print-root");
+    },
+    [monthSnapshotSteps]
+  );
 
   // options.tagMode:
   //   "perTeacher" (既定) = テスト期間・特別イベントのタグを講師ごとに担当
@@ -250,6 +262,7 @@ export function usePrintJobs({
           toasts.error("アプリが更新されています。再読込してからもう一度お試しください。");
           return;
         }
+        await primeMonthView(jobs[0]);
         // 準備中画面・進捗・中断 (popup を閉じる / 中断ボタン)・最終書き込みは
         // 共通ドライバ。ここは「講師 × 月を描く」と「月次の DOM を撮る」だけ
         const { status } = await runSnapshotPrint(w, {
@@ -306,6 +319,7 @@ export function usePrintJobs({
       setView,
       setMonthOff,
       monthSnapshotSteps,
+      primeMonthView,
       closeBatchPrint,
     ]
   );
@@ -362,6 +376,7 @@ export function usePrintJobs({
         }
         let slides;
         try {
+          await primeMonthView(jobs[0]);
           slides = await collectSnapshots({
             items: jobs,
             progressName: nameOf,
@@ -440,6 +455,7 @@ export function usePrintJobs({
       setView,
       setMonthOff,
       monthSnapshotSteps,
+      primeMonthView,
       clearBatchImages,
       replaceBatchImages,
     ]

@@ -91,6 +91,17 @@ export const SIDEBAR_MENU = [
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
+  // 講師の月間予定を何人分もまとめて印刷 / 画像にする (バイトに LINE で送る)。
+  // 講師を選んだ後の月間のツールバーにしか無かったので名前を出す。開き方は
+  // App の openMonthBatch (今の画面の状態を巻き添えにしない)。印刷・画像は
+  // 書き込みではないので閲覧者にも出す
+  {
+    key: "month-batch",
+    icon: "🖼",
+    label: "月間予定の印刷・画像",
+    action: "modal",
+    modal: "monthBatch",
+  },
   // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
   // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
   { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理", sections: MASTER_TABS },

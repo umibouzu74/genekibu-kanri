@@ -22,6 +22,7 @@ import { SIDEBAR_MENU } from "./sidebarMenu";
 import { EVENT_KIND, EVENT_KIND_LABELS, EVENT_SECTIONS } from "./eventKinds";
 import { MASTER_TAB, MASTER_TABS } from "./masterTabs";
 import { SUBS_TABS } from "./subsTabs";
+import { VIEW_CHORD_BY_VIEW } from "./chords";
 
 const SIDEBAR_BY_KEY = (() => {
   const m = new Map();
@@ -122,6 +123,10 @@ export const MAIN_MENU = Object.freeze([
       navItem(VIEWS.ALL, "講師ごとの週のコマ数"),
       navItem(VIEWS.MINUTES, "期間内に講師ごとに教えた時間 (給与計算用)"),
       navItem(VIEWS.STAFF, "バイトの登録、講師の担当教科、教科マスター"),
+      navItem(
+        "month-batch",
+        "バイト・講師の月間予定を何人分もまとめて印刷 / 1 人 1 枚の画像にして LINE などで送る"
+      ),
       navItem(VIEWS.OFFSITE, "講師が他の校舎・学校へ授業に行く曜日と時間"),
     ],
   },
@@ -161,4 +166,14 @@ export function visibleMainMenu({ isAdmin = false, canUseAdminData = isAdmin } =
       (item) => (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData)
     ),
   })).filter((cat) => cat.items.length > 0);
+}
+
+/**
+ * 項目のショートカット (g の次のキー)。ビューへ移る項目だけ。画面の中の
+ * セクション・タブは g で開くと親の画面 (今のタブ) になるので出さない。
+ * @param {object} item MAIN_MENU の項目
+ * @returns {string|null}
+ */
+export function menuItemChord(item) {
+  return item?.kind === "view" ? VIEW_CHORD_BY_VIEW.get(item.view) || null : null;
 }

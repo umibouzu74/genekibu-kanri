@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAIN_MENU, visibleMainMenu } from "./mainMenu";
+import { MAIN_MENU, menuItemChord, visibleMainMenu } from "./mainMenu";
 import { SIDEBAR_MENU } from "./sidebarMenu";
 import { VIEWS } from "./views";
 import { EVENT_SECTIONS } from "./eventKinds";
@@ -51,6 +51,38 @@ describe("MAIN_MENU", () => {
     });
     const handover = allItems(MAIN_MENU).find((i) => i.key === `nav:${VIEWS.HANDOVER}`);
     expect(handover).toMatchObject({ kind: "view", adminData: true });
+  });
+});
+
+describe("月間予定の印刷・画像 (2026-10-15)", () => {
+  it("講師・スタッフにダイアログの項目として並び、閲覧者にも出す", () => {
+    const staff = MAIN_MENU.find((c) => c.key === "staff");
+    const item = staff.items.find((i) => i.key === "nav:month-batch");
+    expect(item).toMatchObject({
+      kind: "modal",
+      modal: "monthBatch",
+      label: "月間予定の印刷・画像",
+      adminOnly: false,
+      adminData: false,
+    });
+    const viewer = allItems(visibleMainMenu({ isAdmin: false, canUseAdminData: false }));
+    expect(viewer.some((i) => i.key === "nav:month-batch")).toBe(true);
+  });
+});
+
+describe("menuItemChord", () => {
+  it("ビューへ移る項目はそのビューの g chord を返す", () => {
+    const items = allItems(MAIN_MENU);
+    expect(menuItemChord(items.find((i) => i.key === `nav:${VIEWS.ABSENCE_FLOW}`))).toBe("a");
+    expect(menuItemChord(items.find((i) => i.key === `nav:${VIEWS.MINUTES}`))).toBe("j");
+  });
+
+  it("ダイアログ・画面の中のセクション・タブには出さない (g では親の画面になる)", () => {
+    const items = allItems(MAIN_MENU);
+    for (const item of items.filter((i) => i.kind !== "view")) {
+      expect(menuItemChord(item)).toBeNull();
+    }
+    expect(menuItemChord(null)).toBeNull();
   });
 });
 

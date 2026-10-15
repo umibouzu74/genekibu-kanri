@@ -1,5 +1,7 @@
 import { useMemo } from "react";
-import { MainMenuPanel } from "../MainMenuPanel";
+import { MainMenuPanel, MenuChordHint } from "../MainMenuPanel";
+import { VIEWS } from "../../constants/views";
+import { VIEW_CHORD_BY_VIEW } from "../../constants/chords";
 import { colors } from "../../styles/tokens";
 import { fmtDateWeekday } from "../../utils/dateHelpers";
 import { summarizeOpenSubs } from "../../utils/substituteState";
@@ -59,7 +61,10 @@ export function MainMenuView({
             📋
           </span>
           <span>
-            <span style={{ display: "block", fontSize: 16, fontWeight: 800 }}>ダッシュボード</span>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 800 }}>ダッシュボード</span>
+              <MenuChordHint chord={VIEW_CHORD_BY_VIEW.get(VIEWS.DASH)} onDark />
+            </span>
             <span style={{ display: "block", fontSize: 11, opacity: 0.85 }}>
               {fmtDateWeekday(today)} の授業・代行・休講
             </span>
