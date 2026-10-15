@@ -576,6 +576,7 @@ export function MonthView({
                 ? `→${describeRescheduleTarget(rescheduledOut, {
                     short: true,
                     originalTeacher: s.teacher,
+                    originalRoom: s.room,
                   })}`
                 : null;
         const awayNoteColor =
@@ -882,6 +883,8 @@ export function MonthView({
             title={`[振替で当日担当] ${slot.grade}${
               slot.cls && slot.cls !== "-" ? slot.cls : ""
             } ${slot.subj} (${tgtTime})${
+              adj.targetRoom ? ` @${adj.targetRoom}` : ""
+            }${
               combinedText ? ` ${combinedText} 合同` : ""
             }\n元: ${adj.date} ${slot.time}${adj.memo ? "\n" + adj.memo : ""}`}
           >

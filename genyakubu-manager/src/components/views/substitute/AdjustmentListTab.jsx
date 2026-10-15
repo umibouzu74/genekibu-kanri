@@ -115,6 +115,11 @@ function detailFor(adj, slotMap, adjustments = []) {
             {adj.targetTime}
           </span>
         )}
+        {adj.targetRoom && adj.targetRoom !== slotMap[adj.slotId]?.room && (
+          <span style={{ marginLeft: 6, color: "#555", fontSize: 11, fontWeight: 700 }}>
+            @{adj.targetRoom}
+          </span>
+        )}
         {adj.targetTeacher && adj.targetTeacher !== slotMap[adj.slotId]?.teacher && (
           <span style={{ marginLeft: 6, color: "#2a7a4a", fontSize: 11 }}>
             → {adj.targetTeacher}
@@ -141,6 +146,7 @@ export function AdjustmentListTab({
   onDel,
   onJumpToDate,
   onOpenDayReschedule,
+  onOpenTestPrep,
 }) {
   // 期間 (今月以降 / 月を指定 / すべて)。代行一覧・休講などの一覧と同じ
   const period = useListPeriod();
@@ -285,6 +291,24 @@ export function AdjustmentListTab({
         >
           クリア
         </button>
+        {isAdmin && onOpenTestPrep && (
+          <button
+            type="button"
+            onClick={onOpenTestPrep}
+            title="コースを選んで 1 コマずつ振替 (別の日・時間・教室へ) / 追加授業を登録する"
+            style={{
+              ...S.btn(false),
+              marginLeft: "auto",
+              fontSize: 12,
+              background: "#fff",
+              border: "1px solid #c44040",
+              color: "#a52a2a",
+              fontWeight: 700,
+            }}
+          >
+            🎯 テスト対策の振替・追加
+          </button>
+        )}
         {isAdmin && onOpenDayReschedule && (
           <button
             type="button"
@@ -292,7 +316,7 @@ export function AdjustmentListTab({
             title="ある日の授業をまとめて別の日へ振り替える"
             style={{
               ...S.btn(false),
-              marginLeft: "auto",
+              marginLeft: isAdmin && onOpenTestPrep ? 0 : "auto",
               fontSize: 12,
               background: "#fff",
               border: "1px solid #c44040",

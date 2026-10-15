@@ -18,7 +18,7 @@ import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { buildIncomingCards, incomingCombineKey } from "../../utils/adjustmentDisplay";
-import { fmtMDWeekday } from "../../utils/dateHelpers";
+import { canonicalTimeRange, fmtMDWeekday } from "../../utils/dateHelpers";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import {
   activeTeachersOnDate,
@@ -638,7 +638,7 @@ export function AbsenceWorkflowView({
     [adjustments, replaceRescheduleWithUndo, toasts]
   );
 
-  // 振替先の担当・時刻・日付・メモを直す (振替ピッカーの値)。
+  // 振替先の担当・時刻・教室・日付・メモを直す (振替ピッカーの値)。
   // 時刻が元のコマの時刻と同じなら持たない (ピッカーは元の時刻を初期値に
   // 入れて返すので、担当だけ直したのに振替元の表示に時刻が増えないように)。
   // 振替先の日を変えたら振替先での合同は外す (相手は前の日に残るため)
@@ -647,10 +647,17 @@ export function AbsenceWorkflowView({
       replaceRescheduleWithUndo(
         adjId,
         (a) => {
-          const slotTime = (slots || []).find((x) => x.id === a.slotId)?.time;
+          const slot = (slots || []).find((x) => x.id === a.slotId);
           const next = { ...a, targetDate: patch.targetDate };
-          for (const key of ["targetTime", "targetTeacher", "memo"]) {
-            const value = key === "targetTime" && patch[key] === slotTime ? "" : patch[key];
+          for (const key of ["targetTime", "targetRoom", "targetTeacher", "memo"]) {
+            // 時刻は正規形で比べる (ピッカーは "09:30-10:50" に整えて返すので、
+            // ゼロ埋めの無い "9:30-10:50" のコマと文字列では一致しない)
+            const same =
+              (key === "targetTime" &&
+                patch[key] &&
+                canonicalTimeRange(patch[key]) === canonicalTimeRange(slot?.time)) ||
+              (key === "targetRoom" && patch[key] === slot?.room);
+            const value = same ? "" : patch[key];
             if (value) next[key] = value;
             else delete next[key];
           }

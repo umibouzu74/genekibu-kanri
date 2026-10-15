@@ -62,7 +62,9 @@ function renderApp() {
 
 async function openAbsenceFlowWithDraft() {
   renderApp();
-  const nav = await screen.findByRole("navigation", { hidden: true }).catch(() => null);
+  const nav = await screen
+    .findByRole("navigation", { name: "メインナビゲーション", hidden: true })
+    .catch(() => null);
   const scope = nav ? within(nav) : screen;
   fireEvent.click(scope.getAllByRole("button", { name: /^\S*\s*欠勤組み換え/ })[0]);
   await screen.findByText("欠勤組み換えスタブ");

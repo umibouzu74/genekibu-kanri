@@ -50,6 +50,7 @@ export function SubstituteView({
   onAddAdjustment,
   onDelAdjustment,
   onOpenDayReschedule,
+  onOpenTestPrep,
   onDelSessionOverride,
   onJumpToAbsenceFlow,
   adjustments = [],
@@ -436,6 +437,7 @@ export function SubstituteView({
             onDel={handleDelAdjustment}
             onJumpToDate={onJumpToAbsenceFlow}
             onOpenDayReschedule={onOpenDayReschedule}
+            onOpenTestPrep={onOpenTestPrep}
           />
         </div>
       )}

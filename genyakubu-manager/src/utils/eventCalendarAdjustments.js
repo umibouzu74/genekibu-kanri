@@ -168,8 +168,8 @@ export function adjustmentEntryHeading(entry) {
 }
 
 /**
- * 1 コマぶんの説明 ("19:40 中3A 英語 香川 → 20:00 (福江) — 行事のため")。
- * 振替の日付は見出しに出ているので、行には時刻・担当が変わるときだけ
+ * 1 コマぶんの説明 ("19:40 中3A 英語 香川 → 20:00 @亀21 (福江) — 行事のため")。
+ * 振替の日付は見出しに出ているので、行には時刻・教室・担当が変わるときだけ
  * 行き先を書く。担当は元担当と同じなら書かない (describeRescheduleTarget の
  * originalTeacher と同じ扱い。書くと担当が変わった振替に読める)。
  *
@@ -194,7 +194,11 @@ export function describeAdjustmentItem({ slot, adj }, ctx = {}) {
   const fromTeacher = activeTeachersOnDate(slot, adj.date, ctx).join("·") || slot.teacher;
   const toTeacher = rescheduleTeacherLabel(adj, slot, ctx);
   const parts = [[slot.time, describeSlot(slot), fromTeacher].filter(Boolean).join(" ")];
-  const change = [adj.targetTime, toTeacher && toTeacher !== fromTeacher ? `(${toTeacher})` : ""]
+  const change = [
+    adj.targetTime,
+    adj.targetRoom && adj.targetRoom !== slot.room ? `@${adj.targetRoom}` : "",
+    toTeacher && toTeacher !== fromTeacher ? `(${toTeacher})` : "",
+  ]
     .filter(Boolean)
     .join(" ");
   if (change) parts.push(`→ ${change}`);

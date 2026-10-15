@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { subStateMeta, subTargetLabel } from "../utils/substituteState";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
+import { SUBS_TABS } from "../constants/subsTabs";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -38,6 +39,7 @@ export function CommandPalette({
   onSelectMasterTab,
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
+  onOpenTestPrep,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -291,6 +293,7 @@ export function CommandPalette({
 
     // ビュー検索
     const viewNames = [
+      { key: views.MENU, label: "メインメニュー (機能の一覧)" },
       { key: views.DASH, label: "ダッシュボード" },
       { key: views.ALL, label: "全講師一覧" },
       { key: views.MINUTES, label: "授業時間の集計 (給与計算・講師ごとの授業時間)" },
@@ -338,14 +341,7 @@ export function CommandPalette({
     // 授業管理のサブタブ (時間割調整一覧 / 回数補正一覧 / 代行一覧 など) も
     // 名前で直接呼び出せるようにする。
     if (onSelectSubsSubTab) {
-      const subTabs = [
-        { tab: "list", label: "代行一覧" },
-        { tab: "adjustment", label: "時間割調整一覧" },
-        { tab: "override", label: "回数補正一覧" },
-        { tab: "tally", label: "月次集計" },
-        { tab: "chain", label: "玉突き代行" },
-      ];
-      for (const t of subTabs) {
+      for (const t of SUBS_TABS) {
         if (matchLabel(t.label)) {
           hits.push({
             type: "view",
@@ -432,6 +428,21 @@ export function CommandPalette({
         },
       });
     }
+    // 「テスト対策」「振替」「追加授業」のどれで探しても出す
+    if (
+      onOpenTestPrep &&
+      (matchLabel("テスト対策の振替・追加授業") || matchLabel("追加授業を登録") || matchLabel("振替を登録"))
+    ) {
+      hits.push({
+        type: "view",
+        label: "テスト対策の振替・追加授業",
+        detail: "コースを選んで振替 (別の日・時間・教室へ) / 追加授業を登録",
+        action: () => {
+          onOpenTestPrep();
+          onClose();
+        },
+      });
+    }
     if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
@@ -467,6 +478,7 @@ export function CommandPalette({
     onSelectMasterTab,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,
+    onOpenTestPrep,
     onClose,
     views,
     canUseAdminData,

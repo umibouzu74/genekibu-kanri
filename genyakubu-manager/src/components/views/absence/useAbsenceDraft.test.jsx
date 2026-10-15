@@ -226,6 +226,7 @@ describe("useAbsenceDraft", () => {
         result.current.updateReschedule(10, {
           targetDate: "2026-05-01",
           targetTime: "19:00-20:20",
+          targetRoom: "亀63",
           targetTeacher: "藤田",
           memo: "本多の体調不良対応",
         });
@@ -238,6 +239,7 @@ describe("useAbsenceDraft", () => {
         slotId: 10,
         targetDate: "2026-05-01",
         targetTime: "19:00-20:20",
+        targetRoom: "亀63",
         targetTeacher: "藤田",
         memo: "本多の体調不良対応",
       });

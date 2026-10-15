@@ -1085,6 +1085,9 @@ export function WeekView({
                   <span style={{ color: "#666", marginLeft: 4 }}>
                     ({tgtTeacher})
                   </span>
+                  {adj.targetRoom && (
+                    <span style={{ marginLeft: 4, fontWeight: 700 }}>@{adj.targetRoom}</span>
+                  )}
                   {combineNote && (
                     <span style={{ fontWeight: 700, marginLeft: 4 }}>{combineNote}</span>
                   )}

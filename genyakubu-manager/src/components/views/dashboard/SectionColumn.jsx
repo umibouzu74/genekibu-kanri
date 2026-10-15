@@ -545,6 +545,7 @@ export function SectionColumn({
                                 →{" "}
                                 {describeRescheduleTarget(rescheduledOut, {
                                   originalTeacher: activeTeacherField,
+                                  originalRoom: s.room,
                                 })}{" "}
                                 へ振替
                               </span>

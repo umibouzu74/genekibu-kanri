@@ -10,6 +10,7 @@ import {
   describeSlot,
   isDayEmptiedByReschedule,
   outgoingDayLabel,
+  rescheduleRoom,
   rescheduleTargetTeachers,
   rescheduleTeacherLabel,
 } from "./adjustmentDisplay";
@@ -267,6 +268,17 @@ describe("振替元の表示ヘルパ", () => {
     );
   });
 
+  it("振替先の教室は元の教室と違うときだけ出す", () => {
+    const a = adj(11, 1, { targetTime: "17:00-18:00", targetRoom: "亀63" });
+    expect(describeRescheduleTarget(a)).toBe("2026-12-04 (金) 17:00-18:00 @亀63");
+    expect(describeRescheduleTarget(a, { short: true, originalRoom: "602" })).toBe(
+      "12/4 17:00 @亀63"
+    );
+    expect(describeRescheduleTarget(a, { originalRoom: "亀63" })).toBe(
+      "2026-12-04 (金) 17:00-18:00"
+    );
+  });
+
   it("見出しは行き先が 1 つならその日付、複数なら「他 N 日」", () => {
     const one = collectOutgoingReschedules(slots, indexOf([adj(11, 1), adj(12, 2)]));
     expect(outgoingDayLabel(one)).toBe(
@@ -432,6 +444,18 @@ describe("buildIncomingCards", () => {
     });
     expect(card._incoming.adj).toBe(adj);
     expect(card._incoming.slot).toBe(slot);
+  });
+
+  it("振替先の教室が指定されていればその教室のカードにする", () => {
+    const [card] = buildIncomingCards(
+      [{ ...adj, targetRoom: "亀63" }],
+      "2026-12-04",
+      [slot],
+      ctx
+    );
+    expect(card.room).toBe("亀63");
+    expect(rescheduleRoom({ ...adj, targetRoom: " " }, slot)).toBe("301");
+    expect(rescheduleRoom(adj, { ...slot, room: undefined })).toBe("");
   });
 
   it("振替先の時刻・担当が指定されていればそれを使う", () => {

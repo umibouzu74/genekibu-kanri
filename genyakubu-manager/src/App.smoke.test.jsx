@@ -39,6 +39,7 @@ function renderApp() {
 // 欠勤組み換えは管理者専用 (adminOnly) で、このテストは閲覧者として動くので
 // サイドバーに出ないことを別に確かめる
 const VIEW_LABELS = [
+  "メインメニュー",
   "ダッシュボード",
   "全講師一覧",
   "授業時間の集計",
@@ -71,15 +72,51 @@ async function expectNoCrash() {
 }
 
 describe("App smoke", () => {
-  it("初期表示 (ダッシュボード) が描ける", async () => {
+  it("初期表示 (メインメニュー) が描け、ボタンでダッシュボードへ移れる", async () => {
     renderApp();
+    expect(await screen.findByRole("heading", { level: 1, name: /メインメニュー/ })).toBeInTheDocument();
+    await expectNoCrash();
+    // 閲覧者には管理者専用の項目 (欠勤組み換え) を出さない
+    const main = document.getElementById("main-content");
+    expect(within(main).queryByRole("button", { name: /欠勤組み換え/ })).toBeNull();
+    fireEvent.click(within(main).getByRole("button", { name: /^ダッシュボード/ }));
     expect(await screen.findByRole("heading", { level: 1, name: /ダッシュボード/ })).toBeInTheDocument();
     await expectNoCrash();
+    // ダッシュボードの下にもメニュー (紙面には載せない)
+    const menu = screen.getByRole("navigation", { name: "メニュー" });
+    expect(menu.className).toContain("no-print");
+    fireEvent.click(within(menu).getByRole("button", { name: /隔週管理/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: /コースマスター管理/ })).toBeInTheDocument();
+    await expectNoCrash();
+  });
+
+  it("メインメニューから画面の中のセクション (追加授業) へ飛べる", async () => {
+    // jsdom には scrollIntoView が無いので、どこへスクロールしたかを記録する
+    const original = Element.prototype.scrollIntoView;
+    const scrolled = [];
+    Element.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.id);
+    };
+    try {
+      renderApp();
+      await expectNoCrash();
+      const main = document.getElementById("main-content");
+      fireEvent.click(within(main).getByRole("button", { name: /^追加授業/ }));
+      expect(
+        await screen.findByRole("heading", { level: 1, name: /休講・テスト期間・イベント/ })
+      ).toBeInTheDocument();
+      await waitFor(() => expect(scrolled).toContain("hv-extraLesson"));
+      await expectNoCrash();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 
   it("サイドバーの全ビューを順に開いてもクラッシュしない", async () => {
     renderApp();
-    const nav = await screen.findByRole("navigation", { hidden: true }).catch(() => null);
+    const nav = await screen
+      .findByRole("navigation", { name: "メインナビゲーション", hidden: true })
+      .catch(() => null);
     const scope = nav ? within(nav) : screen;
     for (const label of VIEW_LABELS) {
       const btn = scope.getAllByRole("button", { name: new RegExp(`^\\S*\\s*${label}`) })[0];

@@ -19,14 +19,26 @@ import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
-import { buildAdjustmentIndex, buildIncomingItems } from "./adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  buildIncomingItems,
+  rescheduleRoom,
+  rescheduleTargetTeachers,
+} from "./adjustmentDisplay";
 import { nextNumericId } from "./schema";
+import { collectTeacherAssignments } from "./teacherConflicts";
+import {
+  describeOffsiteBusy,
+  isOffsiteClash,
+  offsiteClashOf,
+  offsiteLessonsOnDate,
+} from "./offsiteLessons";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // "19:00-20:20" → {start, end} (分)。終了時刻が読めないときは start と
 // 同じにして「点」として扱う (重なり判定では同じ開始時刻だけが当たる)。
-function timeRange(time) {
+export function timeRange(time) {
   const parts = String(time || "").split("-");
   const start = timeStartToMin(parts[0]);
   let end = start;
@@ -37,7 +49,7 @@ function timeRange(time) {
   return { start, end: end > start ? end : start };
 }
 
-function rangesOverlap(a, b) {
+export function rangesOverlap(a, b) {
   if (a.end === a.start || b.end === b.start) return a.start === b.start;
   return a.start < b.end && b.start < a.end;
 }
@@ -58,7 +70,8 @@ function activeTeachers(slot, dateStr, ctx) {
 // 対象日にそのコマが実施されない理由を 1 つだけ返す (表示用)。
 // 判定の順序は「期間 → 休講 → その他」。isSlotHeldOnDate が false を返した
 // ときの説明なので、ここで新しいルールを足さないこと。
-function skipReason(slot, dateStr, ctx) {
+// テスト対策の振替 (testPrepLessons) も同じ文言を使う。
+export function skipReason(slot, dateStr, ctx) {
   const tts = ctx?.timetables;
   if (Array.isArray(tts) && tts.length > 0) {
     const tt = tts.find((t) => t.id === (slot.timetableId ?? 1));
@@ -123,15 +136,20 @@ function occupancyLabel(time, grade, cls, subj, suffix) {
 
 /**
  * 指定日に「その時間その先生・その教室が塞がっている」ものを集める。
- * 見るのは 3 種類:
- *   - その日の通常コマ (コマ移動・特別時程の時刻読み替えを反映)
+ * 見るのは 4 種類:
+ *   - その日の通常コマ (コマ移動・特別時程の時刻読み替えを反映)。担当は
+ *     代行・欠勤を入れた後 (`teacherConflicts.collectTeacherAssignments`。
+ *     代行者が塞がり、休む人は空く)
  *   - 他日からこの日へ振り替えられてくるコマ
  *   - その日の追加授業 (日付つきの単発コマ)
+ *   - その日の他校舎の授業 (講師だけを塞ぐ。重なりは移動時間込みで
+ *     `offsiteClashOf` が見る)
  * 合同で吸収されたコマ (振替先での合同も) と、この日から他日へ出ていくコマは
  * 塞がっていない扱い。
  *
- * @returns {{key: string, kind: "normal"|"incoming"|"extra", slot: object|null,
- *            lesson: object|null, adj: object|null, time: string,
+ * @returns {{key: string, kind: "normal"|"incoming"|"extra"|"offsite",
+ *            slot: object|null, lesson: object|null, adj: object|null,
+ *            offsite?: object, time: string,
  *            teachers: string[], room: string, label: string}[]}
  */
 export function buildDayOccupancy({
@@ -139,6 +157,8 @@ export function buildDayOccupancy({
   dateStr,
   adjustments = [],
   extraLessons = [],
+  subs = [],
+  offsiteLessons = [],
   ctx,
 }) {
   const day = dateToDay(dateStr);
@@ -157,25 +177,61 @@ export function buildDayOccupancy({
   const pushSlot = (slot, time, kind, adj = null) => {
     if (!slot) return;
     push({
-      key: `slot:${slot.id}`,
+      // 振替で入るコマは振替の id で数える。同じ曜日の振替 (10/16 金 → 10/9 金)
+      // では同じコマが振替先の日の通常のコマとしても居て、同じコマの 9/7 と
+      // 9/14 を同じ日へ振り替えると 2 件になるので、コマ id ではまとめない
+      key: adj ? `rs:${adj.id}` : `slot:${slot.id}`,
       kind,
       slot,
       lesson: null,
       adj,
       time,
-      teachers: activeTeachers(slot, dateStr, ctx),
-      room: (slot.room || "").trim(),
+      // 振替で入ってくるコマは振替先の担当 (振替元の日の A/B で解決) と
+      // 振替先の教室 (targetRoom) で塞ぐ。通常のコマは代行・欠勤を入れた後の担当
+      teachers: adj
+        ? rescheduleTargetTeachers(adj, slot, ctx || {})
+        : teachersBySlot.get(slot.id) || activeTeachers(slot, dateStr, ctx),
+      room: adj ? rescheduleRoom(adj, slot) : (slot.room || "").trim(),
       label: occupancyLabel(
         time, slot.grade, slot.cls, slot.subj, kind === "incoming" ? "振替" : null
       ),
     });
   };
-  for (const slot of slots || []) {
-    if (!slot || slot.day !== day) continue;
-    if (!isSlotHeldOnDate(slot, dateStr, ctx || {})) continue;
-    if (isSlotBeyondCutoff(dateStr, slot, ctx?.displayCutoff)) continue;
-    if (index.combineAbsorbedBySlot.has(slot.id)) continue; // 合同に吸収済み
-    if (index.rescheduleOutBySlot.has(slot.id)) continue; // 他日へ出ていく
+  const normalSlots = (slots || []).filter(
+    (slot) =>
+      slot &&
+      slot.day === day &&
+      isSlotHeldOnDate(slot, dateStr, ctx || {}) &&
+      !isSlotBeyondCutoff(dateStr, slot, ctx?.displayCutoff) &&
+      !index.combineAbsorbedBySlot.has(slot.id) && // 合同に吸収済み
+      !index.rescheduleOutBySlot.has(slot.id) // 他日へ出ていく
+  );
+  // その日に実際に教える人 (代行・欠勤を入れた後)。画面ごとに書き起こさず
+  // 講師の重なりと同じ関数を通す (CLAUDE.md「講師の同時刻の重なり」)
+  const subsBySlot = new Map();
+  for (const sub of subs || []) {
+    if (sub?.date !== dateStr) continue;
+    if (!subsBySlot.has(sub.slotId)) subsBySlot.set(sub.slotId, []);
+    subsBySlot.get(sub.slotId).push(sub);
+  }
+  // 全員が欠勤のコマは空 (誰も塞がない)。時刻が読めず collectTeacherAssignments
+  // が飛ばしたコマは、代行・欠勤が無ければ元の担当で塞ぐ (下の pushSlot)
+  const teachersBySlot = new Map();
+  for (const slot of normalSlots) {
+    if (subsBySlot.has(slot.id)) teachersBySlot.set(slot.id, []);
+  }
+  for (const a of collectTeacherAssignments(normalSlots, dateStr, {
+    subsBySlot,
+    timeBySlot: index.moveBySlot,
+    biweeklyAnchors: ctx?.biweeklyAnchors || [],
+    holidays: ctx?.holidays,
+    examPeriods: ctx?.examPeriods,
+  })) {
+    if (!teachersBySlot.has(a.slot.id)) teachersBySlot.set(a.slot.id, []);
+    const list = teachersBySlot.get(a.slot.id);
+    if (!list.includes(a.teacher)) list.push(a.teacher);
+  }
+  for (const slot of normalSlots) {
     pushSlot(slot, index.moveBySlot.get(slot.id) || slot.time, "normal");
   }
   // 他日からこの日へ入ってくる振替コマ (曜日が違うので上のループには出ない)
@@ -201,7 +257,62 @@ export function buildDayOccupancy({
       ),
     });
   }
-  return sortByTime(out, (x) => x.time, (x) => (x.slot?.id ?? x.lesson?.id ?? 0));
+  // 他校舎の授業 (講師だけが塞がる。教室は塾の教室ではない)
+  for (const rec of offsiteLessonsOnDate(offsiteLessons, dateStr, {
+    holidays: ctx?.holidays,
+  })) {
+    push({
+      key: `offsite:${rec.id}`,
+      kind: "offsite",
+      slot: null,
+      lesson: null,
+      adj: null,
+      offsite: rec,
+      time: rec.time || "",
+      teachers: rec.teacher ? [rec.teacher] : [],
+      room: "",
+      label: describeOffsiteBusy(rec),
+    });
+  }
+  return sortByTime(
+    out,
+    (x) => x.time,
+    (x) => (x.slot?.id ?? x.lesson?.id ?? x.offsite?.id ?? 0)
+  );
+}
+
+/**
+ * 予定 1 つ (時間・担当・教室) が、その日の塞がり (buildDayOccupancy) の
+ * どれと重なるか。講師と教室を見る。日まるごと振替とテスト対策の振替・
+ * 追加授業 (testPrepLessons) で共有する。
+ *
+ * @param {Array} occupancy buildDayOccupancy の結果 (除外したいものは呼び出し側で除く)
+ * @param {{time: string, teachers: string[], room?: string}} item
+ * @returns {{kind: "teacher"|"room", label: string}[]}
+ */
+export function findOccupancyConflicts(occupancy, { time, teachers = [], room = "" }) {
+  const range = timeRange(time);
+  const r = String(room || "").trim();
+  const conflicts = [];
+  for (const o of occupancy || []) {
+    if (o.kind === "offsite") {
+      // 他校舎は移動時間込みで「確かに居られない」ときだけ (終了時刻未定の
+      // 予定の後は数えない。teacherConflicts と同じ扱い)
+      if (!isOffsiteClash(offsiteClashOf(o.offsite, time))) continue;
+      for (const t of teachers.filter((name) => o.teachers.includes(name))) {
+        conflicts.push({ kind: "teacher", label: `${t} / ${o.label}` });
+      }
+      continue;
+    }
+    if (!rangesOverlap(range, timeRange(o.time))) continue;
+    for (const t of teachers.filter((name) => o.teachers.includes(name))) {
+      conflicts.push({ kind: "teacher", label: `${t} / ${o.label}` });
+    }
+    if (r && r !== "-" && r === o.room) {
+      conflicts.push({ kind: "room", label: `${r} / ${o.label}` });
+    }
+  }
+  return conflicts;
 }
 
 /**
@@ -232,6 +343,7 @@ export function buildDayReschedulePlan({
   adjustments = [],
   extraLessons = [],
   subs = [],
+  offsiteLessons = [],
   sourceDate,
   targetDate,
   selectedSlotIds = null,
@@ -288,6 +400,8 @@ export function buildDayReschedulePlan({
     dateStr: targetDate,
     adjustments,
     extraLessons,
+    subs,
+    offsiteLessons,
     ctx,
   }).filter(
     (o) =>
@@ -307,20 +421,11 @@ export function buildDayReschedulePlan({
 
   const entries = selected.map((slot) => {
     const teachers = activeTeachers(slot, sourceDate, ctx);
-    const range = timeRange(slot.time);
-    const room = (slot.room || "").trim();
-    const conflicts = [];
-    for (const o of occupancy) {
-      if (!rangesOverlap(range, timeRange(o.time))) continue;
-      const label = o.label;
-      const dupTeachers = teachers.filter((t) => o.teachers.includes(t));
-      for (const t of dupTeachers) {
-        conflicts.push({ kind: "teacher", label: `${t} / ${label}` });
-      }
-      if (room && room !== "-" && room === o.room) {
-        conflicts.push({ kind: "room", label: `${room} / ${label}` });
-      }
-    }
+    const conflicts = findOccupancyConflicts(occupancy, {
+      time: slot.time,
+      teachers,
+      room: slot.room,
+    });
     return {
       slot,
       teachers,
@@ -351,6 +456,16 @@ export function buildDayReschedulePlan({
     notes.push(
       `${replaced.length} コマはすでに振替登録済みです (振替先を上書きします)`,
     );
+    // 日まるごと振替は時刻・教室・担当を持たない (まるごと移す操作)。テスト対策
+    // などで個別に決めた時間・教室・担当は上書きで外れるので、黙って消さない
+    const custom = replaced.filter(
+      (e) => e.existing.targetTime || e.existing.targetRoom || e.existing.targetTeacher,
+    );
+    if (custom.length > 0) {
+      notes.push(
+        `そのうち ${custom.length} コマは振替先の時間・教室・担当を個別に決めてあります (上書きすると元のコマの時間・教室・担当に戻ります)`,
+      );
+    }
   }
   // 合同・コマ移動・代行はどれも (コマ, 日付) に紐づくので、日付が変わると
   // 付いてこない。「その日だけ組んだ合同」の日をまるごと動かすと外れる。

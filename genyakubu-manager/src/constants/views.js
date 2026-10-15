@@ -2,6 +2,8 @@
 // Central definition of the view keys used in App state. Prevents typos
 // and makes it easier to add or rename views.
 export const VIEWS = Object.freeze({
+  // メインメニュー (起動時の画面。機能をカテゴリごとに並べてボタンで飛ぶ)
+  MENU: "menu",
   DASH: "dash",
   WEEK: "week",
   MONTH: "month",

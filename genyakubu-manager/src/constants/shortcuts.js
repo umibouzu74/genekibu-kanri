@@ -17,6 +17,7 @@ export const SHORTCUTS = [
     section: "ビュー移動 (g から開始)",
     note: "g を押した直後にもう 1 キー",
     items: [
+      { keys: ["g", "g"], sequential: true, label: "メインメニュー" },
       { keys: ["g", "d"], sequential: true, label: "ダッシュボード" },
       { keys: ["g", "a"], sequential: true, label: "欠勤組み換え (管理者)" },
       { keys: ["g", "s"], sequential: true, label: "授業管理" },

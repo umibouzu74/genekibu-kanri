@@ -86,6 +86,8 @@ export function DayRescheduleDialog({
   adjustments,
   extraLessons = [],
   subs = [],
+  // 振替先で講師が他校舎へ出ている時間 (講師の重なりの警告に使う)
+  offsiteLessons = [],
   // 実施判定 (休講・テスト期間・時間割の有効期間・表示期間・特別時程・隔週)
   // に要るデータ。ダイアログを開いたときだけ索引を組みたいので、ctx は
   // 呼び出し側ではなくここで作る。sessionCtx を直接渡せばそちらを優先する
@@ -138,12 +140,13 @@ export function DayRescheduleDialog({
         adjustments,
         extraLessons,
         subs,
+        offsiteLessons,
         sourceDate,
         targetDate,
         selectedSlotIds: null,
         ctx: sessionCtx,
       }),
-    [slots, adjustments, extraLessons, subs, sourceDate, targetDate, sessionCtx]
+    [slots, adjustments, extraLessons, subs, offsiteLessons, sourceDate, targetDate, sessionCtx]
   );
 
   // 除外を反映した最終プラン。実行するのはこちら。候補の一覧は除外前の
@@ -159,6 +162,7 @@ export function DayRescheduleDialog({
         adjustments,
         extraLessons,
         subs,
+        offsiteLessons,
         sourceDate,
         targetDate,
         selectedSlotIds: selectedIds,
@@ -169,6 +173,7 @@ export function DayRescheduleDialog({
       adjustments,
       extraLessons,
       subs,
+      offsiteLessons,
       sourceDate,
       targetDate,
       selectedIds,

@@ -228,7 +228,7 @@ export function AbsenceTimetable({
   }, [slots, draft, existingMoveBySlot]);
 
   // draft + 既存 からの実効的な振替状態 (draft 優先)。
-  //   slotId -> { targetDate, targetTime?, targetTeacher?, memo, source }
+  //   slotId -> { targetDate, targetTime?, targetRoom?, targetTeacher?, memo, source }
   const rescheduleBySlot = useMemo(() => {
     const map = new Map();
     for (const [sid, adj] of existingRescheduleBySlot) {
@@ -236,6 +236,7 @@ export function AbsenceTimetable({
       map.set(sid, {
         targetDate: adj.targetDate,
         targetTime: adj.targetTime || "",
+        targetRoom: adj.targetRoom || "",
         targetTeacher: adj.targetTeacher || "",
         memo: adj.memo || "",
         source: "saved",
@@ -246,6 +247,7 @@ export function AbsenceTimetable({
       map.set(Number(sidStr), {
         targetDate: row.reschedule.targetDate,
         targetTime: row.reschedule.targetTime || "",
+        targetRoom: row.reschedule.targetRoom || "",
         targetTeacher: row.reschedule.targetTeacher || "",
         memo: row.reschedule.memo || "",
         source: "draft",
@@ -929,6 +931,9 @@ export function AbsenceTimetable({
         const timeText = reschedule.targetTime || s.time;
         const parts = [`→ ${reschedule.targetDate}`];
         if (timeText) parts.push(timeText);
+        if (reschedule.targetRoom && reschedule.targetRoom !== s.room) {
+          parts.push(`@${reschedule.targetRoom}`);
+        }
         if (reschedule.targetTeacher && reschedule.targetTeacher !== s.teacher) {
           parts.push(`(${reschedule.targetTeacher})`);
         }
@@ -1344,6 +1349,9 @@ export function AbsenceTimetable({
                         </span>
                       )}
                       <span style={{ color: "#666" }}>({teacherText})</span>
+                      {adj.targetRoom && (
+                        <span style={{ fontWeight: 700 }}>@{adj.targetRoom}</span>
+                      )}
                     </>
                   )}
                   <span style={{ color: "#888" }}>← {adj.date}</span>
@@ -1529,6 +1537,7 @@ export function AbsenceTimetable({
           initial={{
             targetDate: reschedulePicker.incomingAdj.targetDate,
             targetTime: reschedulePicker.incomingAdj.targetTime || "",
+            targetRoom: reschedulePicker.incomingAdj.targetRoom || "",
             targetTeacher: reschedulePicker.incomingAdj.targetTeacher || "",
             memo: reschedulePicker.incomingAdj.memo || "",
           }}

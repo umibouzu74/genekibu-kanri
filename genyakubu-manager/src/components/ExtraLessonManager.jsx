@@ -37,6 +37,8 @@ export function ExtraLessonManager({
   onConsumeNewEntry,
   /** 担当講師の候補 (useSlotsCrud.suggestions.teachers) */
   teacherSuggestions = [],
+  /** テスト対策の振替・追加授業ダイアログを開く (コマを型にして登録する導線) */
+  onOpenTestPrep = null,
 }) {
   const toasts = useToasts();
   const formRef = useRef(null);
@@ -222,9 +224,31 @@ export function ExtraLessonManager({
           color: "#1a1a2e",
           borderBottom: `2px solid ${EXTRA_LESSON_COLOR.color}`,
           paddingBottom: 6,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
         }}
       >
         追加授業管理
+        {isAdmin && onOpenTestPrep && (
+          <button
+            type="button"
+            onClick={onOpenTestPrep}
+            title="コースを選ぶだけで、学年・科目・担当を写した追加授業を登録します"
+            style={{
+              ...S.btn(false),
+              marginLeft: "auto",
+              fontSize: 12,
+              padding: "4px 10px",
+              background: "#fff",
+              border: `1px solid ${EXTRA_LESSON_COLOR.color}`,
+              color: EXTRA_LESSON_COLOR.deep,
+            }}
+          >
+            🎯 コースから登録 (テスト対策)
+          </button>
+        )}
       </div>
 
       {isAdmin && (

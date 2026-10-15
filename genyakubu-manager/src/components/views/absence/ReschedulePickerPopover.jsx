@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { splitTeacherField } from "../../../utils/biweekly";
 import { dateToDay, DAY_COLOR as DC, fmtDate, WEEKDAYS } from "../../../data";
+import {
+  canonicalTimeRange,
+  normalizeTimeRange,
+  timeRangeMinutes,
+} from "../../../utils/dateHelpers";
+import { rangesOverlap, timeRange } from "../../../utils/dayReschedule";
+import { collectRoomNames } from "../../../utils/testPrepLessons";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { sortTeacherNames } from "../../../utils/teacherKana";
@@ -9,9 +16,11 @@ import { isTimetableActiveForDate } from "../../../utils/timetable";
 // ─── 振替ピッカーポップオーバー ───────────────────────────────
 // 他日への振替を下書きするための UI。
 // 振替先日付 (必須) / 振替先時間帯 (任意、既定は元コマの時間) /
-// 振替先担当 (任意、既定は元担当) / メモ を設定する。
-// 時間帯の候補は振替先日付に有効な時間割のスロットから抽出し、
-// 自由入力も許容する。
+// 振替先の教室 (任意、既定は元の教室) / 振替先担当 (任意、既定は元担当) /
+// メモ を設定する。
+// 時間帯の候補は振替先日付に有効な時間割のスロットから抽出する。候補に
+// 無い時間 (テスト対策の 17:00-18:00 など) も打てるよう、入力欄 + 候補に
+// している (以前は候補があると select しか出ず、自由入力ができなかった)。
 
 function computePosition(anchorRect) {
   const popoverWidth = Math.min(340, window.innerWidth - 16);
@@ -61,16 +70,19 @@ export function ReschedulePickerPopover({
 }) {
   const ref = useRef(null);
   const [targetDate, setTargetDate] = useState(initial?.targetDate || "");
-  const [targetTime, setTargetTime] = useState(
-    initial?.targetTime || slot?.time || ""
-  );
+  // 既定は空 = 元のコマの時間。元の時間を入れておくと、候補 (datalist) が
+  // 入力中の文字で絞られて他の時間帯が出てこない
+  const [targetTime, setTargetTime] = useState(initial?.targetTime || "");
   // 既定は空 = 「(元担当 ◯◯ のまま)」。**元担当を既定で入れないこと** —
   // 「担当が変わった振替」として一覧・カード・tooltip に相手の名前が出て
   // しまう (2026-08-21)。担当を変えるときだけ人が選ぶ。
   const [targetTeacher, setTargetTeacher] = useState(
     initial?.targetTeacher || ""
   );
+  const [targetRoom, setTargetRoom] = useState(initial?.targetRoom || "");
   const [memo, setMemo] = useState(initial?.memo || "");
+  const timeListId = useId();
+  const roomListId = useId();
   // 源泉日のコマを「未実施 (skip)」として回数カウントから除外するか。
   // 既定 true (振替するなら通常そのコマは実施されない)。編集時に既に
   // override がある場合はそれを引き継ぐ。
@@ -117,6 +129,9 @@ export function ReschedulePickerPopover({
     return [...set].sort();
   }, [activeSlots, targetDate]);
 
+  // 教室の候補 (時間割に出てくる教室)
+  const roomOptions = useMemo(() => collectRoomNames(allSlots), [allSlots]);
+
   const teacherOptions = useMemo(() => {
     const names = new Set(allTeachers || []);
     if (slot?.teacher) {
@@ -127,8 +142,16 @@ export function ReschedulePickerPopover({
 
   const targetDow = targetDate ? dateToDay(targetDate) : null;
 
+  // 振替先の実際の時間 (空なら元のコマの時間。"1700-1800" などは整えてから)。
+  // 読めないときは null (保存の時に理由を出す)
+  const effectiveTime = useMemo(() => {
+    const r = normalizeTimeRange(targetTime, { durationMin: timeRangeMinutes(slot?.time) });
+    if (!r.ok) return null;
+    return r.time || slot?.time || "";
+  }, [targetTime, slot]);
+
   // 警告: 振替先が日曜 (WEEKDAYS に含まれない) /
-  // 同担当の同時間帯重複。
+  // 同担当・同じ教室の同時間帯の重なり (時間帯が少しでも重なれば)。
   const warnings = useMemo(() => {
     const list = [];
     if (!targetDate) return list;
@@ -143,31 +166,41 @@ export function ReschedulePickerPopover({
         list.push("振替先の曜日が解釈できません");
       }
     }
-    if (dow && targetTime) {
+    if (dow && effectiveTime) {
+      const range = timeRange(effectiveTime);
+      // 振替先の日に休講・テスト期間のコマは塞いでいない。同じ曜日の
+      // 休みの日へ寄せる振替 (10/16 金 → 10/9 金) で自分自身と重なって
+      // 見えていた。時刻は文字列の一致ではなく時間帯の重なりで見る
+      // (自由入力の "17:00-18:00" と 16:25-17:25 のコマも重なる)
+      const busy = activeSlots.filter(
+        (s) =>
+          s.day === dow &&
+          s.time &&
+          rangesOverlap(range, timeRange(s.time)) &&
+          !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
+      );
+      const describe = (s) =>
+        `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""} ${s.subj} (${s.time})`;
       // 複数担当 (「香川·福江」) は 1 人ずつ見る。講師欄の文字列のまま比べると
       // 誰の講師欄とも一致せず、重なりを見逃していた
       for (const teacher of splitTeacherField(targetTeacher || slot?.teacher || "")) {
-        // 振替先の日に休講・テスト期間のコマは塞いでいない。同じ曜日の
-        // 休みの日へ寄せる振替 (10/16 金 → 10/9 金) で自分自身と重なって
-        // 見えていた
-        const conflict = activeSlots.find(
-          (s) =>
-            s.day === dow &&
-            s.time === targetTime &&
-            splitTeacherField(s.teacher).includes(teacher) &&
-            !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
-        );
+        const conflict = busy.find((s) => splitTeacherField(s.teacher).includes(teacher));
         if (conflict) {
           list.push(
-            `担当 ${teacher} は同時刻 (${targetTime}) に既に ${conflict.grade}${
-              conflict.cls && conflict.cls !== "-" ? conflict.cls : ""
-            } ${conflict.subj} を担当しています`
+            `担当 ${teacher} は同じ時間 (${effectiveTime}) に既に ${describe(conflict)} を担当しています`
           );
+        }
+      }
+      const room = targetRoom.trim() || (slot?.room || "").trim();
+      if (room && room !== "-") {
+        const conflict = busy.find((s) => (s.room || "").trim() === room);
+        if (conflict) {
+          list.push(`教室 ${room} は同じ時間 (${effectiveTime}) に ${describe(conflict)} が使っています`);
         }
       }
     }
     return list;
-  }, [targetDate, targetTime, targetTeacher, slot, activeSlots, isOffForGrade]);
+  }, [targetDate, effectiveTime, targetTeacher, targetRoom, slot, activeSlots, isOffForGrade]);
 
   // 確認だけの注意書き (保存は止めない)。振替先が休講日なのは「休みの日へ
   // 寄せる」典型なので警告にしない (日まるごと振替と同じ扱い。振替の
@@ -192,7 +225,7 @@ export function ReschedulePickerPopover({
   // 警告内容が変わったら確認状態をリセット (誤承認防止)
   useEffect(() => {
     setConfirmedWarn(false);
-  }, [warnings.length, targetDate, targetTime, targetTeacher]);
+  }, [warnings.length, targetDate, targetTime, targetTeacher, targetRoom]);
 
   const pos = anchorRect
     ? computePosition(anchorRect)
@@ -208,13 +241,28 @@ export function ReschedulePickerPopover({
       setError("振替先は元の日付と異なる日を指定してください");
       return;
     }
+    // "1700-1800" / 全角 / 開始だけ (元のコマの長さで終わりを補う) を受ける
+    const normalized = normalizeTimeRange(targetTime, {
+      durationMin: timeRangeMinutes(slot?.time),
+    });
+    if (!normalized.ok) {
+      setError(normalized.error);
+      return;
+    }
     if (warnings.length > 0 && !confirmedWarn) {
       setError("警告を確認してチェックを入れてください");
       return;
     }
+    const room = targetRoom.trim();
     onSave({
       targetDate,
-      targetTime: targetTime || "",
+      // 元のコマと同じ時間なら持たない ("9:30-10:50" と "09:30-10:50" も同じ)
+      targetTime:
+        normalized.time && canonicalTimeRange(normalized.time) !== canonicalTimeRange(slot?.time)
+          ? normalized.time
+          : "",
+      // 元の教室と同じなら持たない (振替元の表示に教室が増えないように)
+      targetRoom: room && room !== (slot?.room || "").trim() ? room : "",
       targetTeacher: targetTeacher || "",
       memo,
       autoSkip,
@@ -285,31 +333,47 @@ export function ReschedulePickerPopover({
           <label style={{ display: "block", color: "#555", marginBottom: 2 }}>
             振替先の時間帯 (任意)
           </label>
-          {timeOptions.length > 0 ? (
-            <select
-              value={timeOptions.includes(targetTime) ? targetTime : ""}
-              onChange={(e) => setTargetTime(e.target.value)}
-              style={{ ...S.input, width: "100%" }}
-            >
-              <option value="">(元と同じ時間帯を使用)</option>
+          <input
+            type="text"
+            value={targetTime}
+            onChange={(e) => setTargetTime(e.target.value)}
+            placeholder={`例: 17:00-18:00 (空欄なら ${slot?.time || "元の時間"})`}
+            aria-label="振替先の時間帯"
+            list={timeOptions.length > 0 ? timeListId : undefined}
+            style={{ ...S.input, width: "100%" }}
+          />
+          {timeOptions.length > 0 && (
+            <datalist id={timeListId}>
               {timeOptions.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+                <option key={t} value={t} />
               ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={targetTime}
-              onChange={(e) => setTargetTime(e.target.value)}
-              placeholder="例: 19:00-20:20 (任意)"
-              style={{ ...S.input, width: "100%" }}
-            />
+            </datalist>
           )}
           <div style={{ color: "#888", fontSize: 10, marginTop: 2 }}>
-            未指定の場合は元コマの時間帯 ({slot?.time || "?"}) を使います
+            空欄なら元コマの時間帯 ({slot?.time || "?"})。開始だけ (17:00) なら、元の授業と同じ長さで終わりを補います
           </div>
+        </div>
+
+        <div>
+          <label style={{ display: "block", color: "#555", marginBottom: 2 }}>
+            振替先の教室 (任意)
+          </label>
+          <input
+            type="text"
+            value={targetRoom}
+            onChange={(e) => setTargetRoom(e.target.value)}
+            placeholder={`(元の教室 ${slot?.room || "未設定"} のまま)`}
+            aria-label="振替先の教室"
+            list={roomOptions.length > 0 ? roomListId : undefined}
+            style={{ ...S.input, width: "100%" }}
+          />
+          {roomOptions.length > 0 && (
+            <datalist id={roomListId}>
+              {roomOptions.map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          )}
         </div>
 
         <div>

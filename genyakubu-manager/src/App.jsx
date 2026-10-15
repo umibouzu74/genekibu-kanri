@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 
 import { VIEWS } from "./constants/views";
@@ -23,6 +32,7 @@ import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
 import { HandoverQuickAddDialog } from "./components/HandoverQuickAddDialog";
 import { HandoverSeasonBanner } from "./components/HandoverSeasonBanner";
 import { MultiDayAbsenceDialog } from "./components/MultiDayAbsenceDialog";
+import { TestPrepLessonDialog } from "./components/TestPrepLessonDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -59,6 +69,9 @@ import { TimetableSelector } from "./components/TimetableSelector";
 
 import { Dashboard } from "./components/views/Dashboard";
 import { AllView } from "./components/views/AllView";
+import { MainMenuView } from "./components/views/MainMenuView";
+import { MainMenuPanel } from "./components/MainMenuPanel";
+import { visibleMainMenu } from "./constants/mainMenu";
 
 // Lazy-loaded views (less frequently used or gated by navigation).
 // 講師別の週間 / 月間 (合わせて 2,300 行超) は講師を選んだときにだけ要るので
@@ -174,8 +187,13 @@ const IS_MAC =
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 const CMD_K_HINT = IS_MAC ? "⌘K" : "Ctrl+K";
 
+// 起動時の画面 (新しいタブで開いたとき・データの初期化の後)。
+// 2026-10-15 にダッシュボードからメインメニューへ変えた
+const START_VIEW = VIEWS.MENU;
+
 // 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
 const VIEW_TITLES = {
+  [VIEWS.MENU]: "メインメニュー",
   [VIEWS.DASH]: "ダッシュボード",
   [VIEWS.ALL]: "全講師コマ数一覧",
   [VIEWS.MINUTES]: "授業時間の集計",
@@ -286,7 +304,7 @@ export default function App() {
 
   // ─── UI state ─────────────────────────────────────────────────────
   // view / selected はリロードしても直前の画面を維持する (sessionStorage
-  // なのでタブ単位 — 新しいタブで開いたときは従来どおりダッシュボード)。
+  // なのでタブ単位 — 新しいタブで開いたときは START_VIEW = メインメニュー)。
   const [selected, setSelected] = useState(() => {
     try {
       return sessionStorage.getItem(SS.teacher) || null;
@@ -297,18 +315,18 @@ export default function App() {
   const [view, setView] = useState(() => {
     try {
       const saved = sessionStorage.getItem(SS.view);
-      if (!Object.values(VIEWS).includes(saved)) return VIEWS.DASH;
+      if (!Object.values(VIEWS).includes(saved)) return START_VIEW;
       // WEEK / MONTH は講師選択中専用ビュー。講師なしで復元すると
-      // 空画面になるため、その場合はダッシュボードに倒す。
+      // 空画面になるため、その場合は起動時の画面に倒す。
       if (
         (saved === VIEWS.WEEK || saved === VIEWS.MONTH) &&
         !sessionStorage.getItem(SS.teacher)
       ) {
-        return VIEWS.DASH;
+        return START_VIEW;
       }
       return saved;
     } catch {
-      return VIEWS.DASH;
+      return START_VIEW;
     }
   });
   useEffect(() => {
@@ -348,6 +366,9 @@ export default function App() {
   const [offsiteFocus, setOffsiteFocus] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
+  // テスト対策の振替・追加授業ダイアログ。null = 閉じている / { mode } = 開く
+  // (mode: "reschedule" | "extra"。追加授業管理から開くと追加授業から始める)
+  const [testPrep, setTestPrep] = useState(null);
   // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
   // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
   // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
@@ -516,7 +537,7 @@ export default function App() {
     // インポート / 初期化は従来どおり state だけを差し替える (localStorage には
     // 書かない。初期化は保存キーを消した後に 1 を入れている)
     setActiveTimetableId: setSavedTimetableId,
-    defaultView: VIEWS.DASH,
+    defaultView: START_VIEW,
   });
 
   // Slots filtered by active timetable (for aggregate views that show
@@ -652,6 +673,52 @@ export default function App() {
       selectView(VIEWS.OFFSITE, () =>
         setOffsiteFocus(req ? { ...req, token: Date.now() } : null)
       );
+    },
+    [selectView]
+  );
+
+  // メインメニューに出す項目 (閲覧者には管理者専用の項目を出さない)
+  const mainMenu = useMemo(
+    () => visibleMainMenu({ isAdmin, canUseAdminData: handoverEnabled }),
+    [isAdmin, handoverEnabled]
+  );
+
+  // 画面を移ったら本文のスクロールを先頭へ戻す。ダッシュボードの下のメニュー
+  // から移ると、次の画面が途中までスクロールした位置で開き、見出しが見えなかった
+  // (セクションへのスクロール・引継ぎメモの強調はこの後に走るので邪魔しない)
+  const mainScrollRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = mainScrollRef.current;
+    if (el && typeof el.scrollTo === "function") el.scrollTo(0, 0);
+    else if (el) el.scrollTop = 0;
+  }, [view, selected]);
+
+  // メインメニュー (起動時の画面 / ダッシュボードの下) の項目を押したときの移動。
+  // 項目の kind ごとに、サイドバー・Cmd+K と同じ経路を通す (constants/mainMenu)
+  const navigateMenuItem = useCallback(
+    (item) => {
+      switch (item.kind) {
+        case "view":
+          selectView(item.view);
+          break;
+        case "section":
+          selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(item.section));
+          break;
+        case "masterTab":
+          selectView(VIEWS.MASTER, () => setMasterTab(item.tab));
+          break;
+        case "subsTab":
+          selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: item.tab }));
+          break;
+        case "modal":
+          if (item.modal === "dayReschedule") setShowDayReschedule(true);
+          else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
+          else if (item.modal === "testPrep") setTestPrep({});
+          else if (item.modal === "data") setShowDataMgr(true);
+          break;
+        default:
+          break;
+      }
     },
     [selectView]
   );
@@ -925,6 +992,10 @@ export default function App() {
           setMultiDayAbsence({});
           setSidebarOpen(false);
         }}
+        onOpenTestPrep={() => {
+          setTestPrep({});
+          setSidebarOpen(false);
+        }}
         onSelectEventSection={(kind) => {
           selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(kind));
         }}
@@ -949,7 +1020,11 @@ export default function App() {
       <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
-      <div className="app-main" style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
+      <div
+        ref={mainScrollRef}
+        className="app-main"
+        style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}
+      >
         <div
           style={{
             display: "flex",
@@ -1038,7 +1113,7 @@ export default function App() {
             >
               ?
             </button>
-            {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && (
+            {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && view !== VIEWS.MENU && (
               <button
                 type="button"
                 onClick={handlePrint}
@@ -1120,12 +1195,25 @@ export default function App() {
               落とさない。別のビューへ移れば自動で復帰する */}
           <ErrorBoundary scope="view" resetKey={`${view}:${selected || ""}`}>
           <Suspense fallback={<ViewFallback />}>
-          {view === VIEWS.DASH && !selected && handoverEnabled && (
+          {/* 去年のこの時期 (引継ぎメモ) は起動時の画面とダッシュボードの上に */}
+          {(view === VIEWS.DASH || view === VIEWS.MENU) && !selected && handoverEnabled && (
             <HandoverSeasonBanner
               notes={handoverNotes}
               onOpenNote={openHandoverNote}
               onOpenList={() => openHandoverNote(null)}
               onAdd={() => setShowHandoverAdd(true)}
+            />
+          )}
+          {view === VIEWS.MENU && !selected && (
+            <MainMenuView
+              categories={mainMenu}
+              onNavigate={navigateMenuItem}
+              onOpenDashboard={() => selectView(VIEWS.DASH)}
+              subs={subs}
+              onOpenPendingSubs={() =>
+                selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
+              }
+              cmdKHint={CMD_K_HINT}
             />
           )}
           {view === VIEWS.DASH && !selected && (
@@ -1163,6 +1251,43 @@ export default function App() {
               onSelectTeacher={selectTeacher}
               onEditExtraLesson={openExtraLessonEditor}
             />
+          )}
+          {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
+              載せない (no-print: PrintButton の window.print と 🖨 の popup の
+              どちらでも消える) */}
+          {view === VIEWS.DASH && !selected && (
+            <nav
+              className="no-print"
+              aria-label="メニュー"
+              style={{
+                marginTop: 20,
+                background: "#fff",
+                border: "1px solid #e0e0e0",
+                borderRadius: 8,
+                padding: "10px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 4,
+                }}
+              >
+                <strong style={{ fontSize: 13 }}>メニュー</strong>
+                <button
+                  type="button"
+                  onClick={() => selectView(VIEWS.MENU)}
+                  className="main-menu-item"
+                  style={{ ...S.btn(false), fontSize: 12, padding: "4px 10px", border: "1px solid #ccc" }}
+                >
+                  🏠 メインメニュー (説明つき)
+                </button>
+              </div>
+              <MainMenuPanel categories={mainMenu} onNavigate={navigateMenuItem} variant="compact" />
+            </nav>
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
@@ -1307,6 +1432,7 @@ export default function App() {
                 onSave={saveExtraLessons}
                 isAdmin={isAdmin}
                 teacherSuggestions={slotsCrud.suggestions.teachers}
+                onOpenTestPrep={isAdmin ? () => setTestPrep({ mode: "extra" }) : null}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXTRA_LESSON
                     ? eventEditRequest.id
@@ -1524,6 +1650,7 @@ export default function App() {
               onOpenDayReschedule={
                 isAdmin ? () => setShowDayReschedule(true) : null
               }
+              onOpenTestPrep={isAdmin ? () => setTestPrep({}) : null}
               onDelSessionOverride={overridesCrud.del}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
@@ -1773,6 +1900,32 @@ export default function App() {
           }
         />
       )}
+      {/* テスト対策の振替・追加授業 (コースを選んで振替 / 追加授業を登録)。
+          実施判定用の索引をダイアログの中で組むので、開いている間だけマウントする */}
+      {testPrep && isAdmin && (
+        <TestPrepLessonDialog
+          slots={slots}
+          adjustments={adjustments}
+          extraLessons={extraLessons}
+          subs={subs}
+          offsiteLessons={offsiteLessons}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
+          initialMode={testPrep.mode}
+          isAdmin={isAdmin}
+          saveAdjustments={saveAdjustments}
+          saveExtraLessons={saveExtraLessons}
+          onClose={() => setTestPrep(null)}
+        />
+      )}
       {showHandoverAdd && handoverEnabled && (
         <HandoverQuickAddDialog
           notes={handoverNotes}
@@ -1787,6 +1940,7 @@ export default function App() {
           adjustments={adjustments}
           extraLessons={extraLessons}
           subs={subs}
+          offsiteLessons={offsiteLessons}
           holidays={holidays}
           examPeriods={examPeriods}
           timetables={timetables}
@@ -1866,6 +2020,14 @@ export default function App() {
               isAdmin
                 ? () => {
                     setMultiDayAbsence({});
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
+            onOpenTestPrep={
+              isAdmin
+                ? () => {
+                    setTestPrep({});
                     setCmdPaletteOpen(false);
                   }
                 : undefined

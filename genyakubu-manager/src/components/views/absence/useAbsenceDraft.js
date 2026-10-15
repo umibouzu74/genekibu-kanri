@@ -18,7 +18,7 @@ import { useCallback, useState } from "react";
 //     [slotId]: {
 //       subs?:        { [originalTeacher]: { substitute, status, memo } },
 //       move?:        { targetTime },
-//       reschedule?:  { targetDate, targetTime, targetTeacher, memo },
+//       reschedule?:  { targetDate, targetTime, targetRoom, targetTeacher, memo },
 //       combine?:     { absorbedSlotIds },   // この slot が host
 //       absorbedBy?:  number,                // 逆向き: 他の slot (host) に吸収
 //       override?:    { mode, value?, displayAs?, memo },
@@ -203,6 +203,7 @@ export function useAbsenceDraft() {
         reschedule: {
           targetDate: "",
           targetTime: "",
+          targetRoom: "",
           targetTeacher: "",
           memo: "",
           ...(cur.reschedule || {}),
@@ -379,6 +380,9 @@ export function useAbsenceDraft() {
             };
             if (row.reschedule.targetTime) {
               entry.targetTime = row.reschedule.targetTime;
+            }
+            if (row.reschedule.targetRoom) {
+              entry.targetRoom = row.reschedule.targetRoom;
             }
             if (row.reschedule.targetTeacher) {
               entry.targetTeacher = row.reschedule.targetTeacher;

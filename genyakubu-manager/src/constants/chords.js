@@ -8,6 +8,8 @@ import { VIEWS } from "./views";
 // App.jsx 側のラッパで selected を保ちつつ view だけ切り替え、
 // selected が null なら chord を no-op にする。
 export const VIEW_CHORDS = Object.freeze({
+  // MENU (メインメニュー = 起動時の画面) は g を 2 回 (home に戻る)。
+  g: VIEWS.MENU,
   d: VIEWS.DASH,
   a: VIEWS.ABSENCE_FLOW,
   s: VIEWS.SUBS,
@@ -50,6 +52,7 @@ export const VIEW_CHORD_BY_VIEW = (() => {
 // バッジ幅を抑えるため、サイドバーよりさらに短い表記を用意。
 // キーは VIEW_CHORDS と 1 対 1 (chords.test.js が突き合わせる)。
 export const VIEW_CHORD_LABEL = Object.freeze({
+  g: "メニュー",
   d: "ダッシュ",
   a: "欠勤",
   s: "授業",
