@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { subStateMeta, subTargetLabel } from "../utils/substituteState";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
+import { SUBS_TABS } from "../constants/subsTabs";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -292,6 +293,7 @@ export function CommandPalette({
 
     // ビュー検索
     const viewNames = [
+      { key: views.MENU, label: "メインメニュー (機能の一覧)" },
       { key: views.DASH, label: "ダッシュボード" },
       { key: views.ALL, label: "全講師一覧" },
       { key: views.MINUTES, label: "授業時間の集計 (給与計算・講師ごとの授業時間)" },
@@ -339,14 +341,7 @@ export function CommandPalette({
     // 授業管理のサブタブ (時間割調整一覧 / 回数補正一覧 / 代行一覧 など) も
     // 名前で直接呼び出せるようにする。
     if (onSelectSubsSubTab) {
-      const subTabs = [
-        { tab: "list", label: "代行一覧" },
-        { tab: "adjustment", label: "時間割調整一覧" },
-        { tab: "override", label: "回数補正一覧" },
-        { tab: "tally", label: "月次集計" },
-        { tab: "chain", label: "玉突き代行" },
-      ];
-      for (const t of subTabs) {
+      for (const t of SUBS_TABS) {
         if (matchLabel(t.label)) {
           hits.push({
             type: "view",

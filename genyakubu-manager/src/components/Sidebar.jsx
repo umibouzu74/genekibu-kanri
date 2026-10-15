@@ -1,7 +1,7 @@
 import { Fragment, memo, useMemo, useState } from "react";
 import { VIEWS } from "../constants/views";
-import { EVENT_KIND_LABELS, EVENT_SECTIONS } from "../constants/eventKinds";
-import { MASTER_TABS } from "../constants/masterTabs";
+import { EVENT_KIND_LABELS } from "../constants/eventKinds";
+import { SIDEBAR_MENU } from "../constants/sidebarMenu";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
 import {
@@ -132,87 +132,9 @@ function SectionLinks({ sections, activeKey, onSelect, onClose }) {
   });
 }
 
-const MENU_CONFIG = [
-  { key: VIEWS.DASH, icon: "📋", label: "ダッシュボード" },
-  {
-    key: VIEWS.ALL, icon: "📊", label: "全講師一覧",
-    children: [
-      { key: VIEWS.MINUTES, icon: "⏱", label: "授業時間の集計" },
-    ],
-  },
-  {
-    key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理",
-    children: [
-      // この 1 画面に 5 種類のマネージャが縦に並ぶ。ラベルからは「追加授業」
-      // 「特別時程」に辿り着けないので、開いている間だけ中身をここに出す。
-      {
-        key: VIEWS.HOLIDAYS,
-        icon: "📅",
-        label: "休講・テスト期間・イベント",
-        sections: EVENT_SECTIONS,
-      },
-      // 学校の予定表 (Excel) を読んで、休講・振替の登録の漏れを探す。
-      // 休講の登録のすぐ下に置く (予定表が届いたときに使う)
-      { key: VIEWS.YOTEIHYO, icon: "📑", label: "予定表チェック" },
-      { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー" },
-      { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成" },
-      { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成" },
-    ],
-  },
-  // 附属コースの月間予定 (以前は Excel で管理していたもの)。学校の予定表を
-  // 見ながら毎月組むので、時間割管理の子に埋めずに名前を出す
-  { key: VIEWS.FUZOKU_PLAN, icon: "🎒", label: "附属の授業予定" },
-  // 講師が他の校舎・学校へ授業に行く曜日と時間。講師の月間・代行候補に効く
-  // 登録なので、時間割管理の子に埋めずに名前を出す
-  { key: VIEWS.OFFSITE, icon: "🏫", label: "他校舎の授業" },
-  // 管理者専用の画面 (閲覧者が開いても「管理者のみ」と出るだけの行き止まり
-  // になるので、閲覧者には出さない。Cmd+K と g a も同じ)
-  { key: VIEWS.ABSENCE_FLOW, icon: "🚑", label: "欠勤組み換え", adminOnly: true },
-  // ビューではなくダイアログを開く項目。日単位の振替は「その日の作業」なので
-  // 欠勤組み換えの隣に置く (機能が一覧のタブの中に埋もれないように)。
-  {
-    key: "day-reschedule",
-    icon: "📅",
-    label: "日まるごと振替",
-    action: "modal",
-    modal: "dayReschedule",
-    adminOnly: true,
-  },
-  // テスト前の振替・追加授業 (高校部は学校ごとにテストの日程が違うので多い)
-  // を、コースを選ぶだけで登録する。追加授業の画面の奥や欠勤組み換えの
-  // 右クリックに埋めず、名前を出す
-  {
-    key: "test-prep",
-    icon: "🎯",
-    label: "テスト対策の振替・追加",
-    action: "modal",
-    modal: "testPrep",
-    adminOnly: true,
-  },
-  // 複数日にまたがる欠勤 (インフル 1 週間など) を期間 × 講師で一度に登録する
-  {
-    key: "multi-day-absence",
-    icon: "🤒",
-    label: "複数日の欠勤登録",
-    action: "modal",
-    modal: "multiDayAbsence",
-    adminOnly: true,
-  },
-  { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
-  { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
-  { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
-  // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
-  // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
-  { key: VIEWS.MASTER, icon: "⚙", label: "コースマスター管理", sections: MASTER_TABS },
-  // 責任者の引継ぎメモ。閲覧者には読めないデータなので項目ごと出さない
-  // (adminData: 管理者ログイン中、または Firebase 未設定の端末だけ)
-  { key: VIEWS.HANDOVER, icon: "📝", label: "引継ぎメモ", adminData: true },
-  { key: "data-mgr", icon: "💾", label: "データ管理", action: "modal", modal: "data" },
-];
-
 // child view key → parent view key のマッピングを事前構築
 const CHILD_TO_PARENT = new Map();
-for (const item of MENU_CONFIG) {
+for (const item of SIDEBAR_MENU) {
   if (item.children) {
     for (const child of item.children) {
       CHILD_TO_PARENT.set(child.key, item.key);
@@ -257,7 +179,7 @@ export function Sidebar({
   );
   // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
   const [expandedGroups, setExpandedGroups] = useState(
-    () => new Set(MENU_CONFIG.filter((m) => m.children).map((m) => m.key))
+    () => new Set(SIDEBAR_MENU.filter((m) => m.children).map((m) => m.key))
   );
 
   // 手動トグル + アクティブ子ビューの自動展開を統合
@@ -474,8 +396,21 @@ export function Sidebar({
             flexDirection: "column",
           }}
         >
-        <div style={{ borderBottom: "1px solid #2a2a4e", flexShrink: 0 }}>
-          {MENU_CONFIG.filter(
+        {/* 項目が多い (管理者は 20 行を超える) ので、背の低くない画面でも
+            メニューだけで縦がいっぱいになると下のログイン欄に重なっていた。
+            メニューは高さの 6 割までにして中でスクロールし、講師一覧の場所を
+            残す (統合スクロールの画面では appShell.css が外す) */}
+        <div
+          className="sidebar-menu"
+          style={{
+            borderBottom: "1px solid #2a2a4e",
+            flex: "0 1 auto",
+            minHeight: 0,
+            maxHeight: "60%",
+            overflowY: "auto",
+          }}
+        >
+          {SIDEBAR_MENU.filter(
             (item) =>
               (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData)
           ).map((item) => {

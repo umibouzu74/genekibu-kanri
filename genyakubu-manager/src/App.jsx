@@ -60,6 +60,9 @@ import { TimetableSelector } from "./components/TimetableSelector";
 
 import { Dashboard } from "./components/views/Dashboard";
 import { AllView } from "./components/views/AllView";
+import { MainMenuView } from "./components/views/MainMenuView";
+import { MainMenuPanel } from "./components/MainMenuPanel";
+import { visibleMainMenu } from "./constants/mainMenu";
 
 // Lazy-loaded views (less frequently used or gated by navigation).
 // 講師別の週間 / 月間 (合わせて 2,300 行超) は講師を選んだときにだけ要るので
@@ -175,8 +178,13 @@ const IS_MAC =
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 const CMD_K_HINT = IS_MAC ? "⌘K" : "Ctrl+K";
 
+// 起動時の画面 (新しいタブで開いたとき・インポート / 初期化の後)。
+// 2026-10-15 にダッシュボードからメインメニューへ変えた
+const START_VIEW = VIEWS.MENU;
+
 // 全講師ビュー以外のヘッダタイトル。teacher 選択中は別ロジック。
 const VIEW_TITLES = {
+  [VIEWS.MENU]: "メインメニュー",
   [VIEWS.DASH]: "ダッシュボード",
   [VIEWS.ALL]: "全講師コマ数一覧",
   [VIEWS.MINUTES]: "授業時間の集計",
@@ -287,7 +295,7 @@ export default function App() {
 
   // ─── UI state ─────────────────────────────────────────────────────
   // view / selected はリロードしても直前の画面を維持する (sessionStorage
-  // なのでタブ単位 — 新しいタブで開いたときは従来どおりダッシュボード)。
+  // なのでタブ単位 — 新しいタブで開いたときは START_VIEW = メインメニュー)。
   const [selected, setSelected] = useState(() => {
     try {
       return sessionStorage.getItem(SS.teacher) || null;
@@ -298,18 +306,18 @@ export default function App() {
   const [view, setView] = useState(() => {
     try {
       const saved = sessionStorage.getItem(SS.view);
-      if (!Object.values(VIEWS).includes(saved)) return VIEWS.DASH;
+      if (!Object.values(VIEWS).includes(saved)) return START_VIEW;
       // WEEK / MONTH は講師選択中専用ビュー。講師なしで復元すると
-      // 空画面になるため、その場合はダッシュボードに倒す。
+      // 空画面になるため、その場合は起動時の画面に倒す。
       if (
         (saved === VIEWS.WEEK || saved === VIEWS.MONTH) &&
         !sessionStorage.getItem(SS.teacher)
       ) {
-        return VIEWS.DASH;
+        return START_VIEW;
       }
       return saved;
     } catch {
-      return VIEWS.DASH;
+      return START_VIEW;
     }
   });
   useEffect(() => {
@@ -520,7 +528,7 @@ export default function App() {
     // インポート / 初期化は従来どおり state だけを差し替える (localStorage には
     // 書かない。初期化は保存キーを消した後に 1 を入れている)
     setActiveTimetableId: setSavedTimetableId,
-    defaultView: VIEWS.DASH,
+    defaultView: START_VIEW,
   });
 
   // Slots filtered by active timetable (for aggregate views that show
@@ -656,6 +664,42 @@ export default function App() {
       selectView(VIEWS.OFFSITE, () =>
         setOffsiteFocus(req ? { ...req, token: Date.now() } : null)
       );
+    },
+    [selectView]
+  );
+
+  // メインメニューに出す項目 (閲覧者には管理者専用の項目を出さない)
+  const mainMenu = useMemo(
+    () => visibleMainMenu({ isAdmin, canUseAdminData: handoverEnabled }),
+    [isAdmin, handoverEnabled]
+  );
+
+  // メインメニュー (起動時の画面 / ダッシュボードの下) の項目を押したときの移動。
+  // 項目の kind ごとに、サイドバー・Cmd+K と同じ経路を通す (constants/mainMenu)
+  const navigateMenuItem = useCallback(
+    (item) => {
+      switch (item.kind) {
+        case "view":
+          selectView(item.view);
+          break;
+        case "section":
+          selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(item.section));
+          break;
+        case "masterTab":
+          selectView(VIEWS.MASTER, () => setMasterTab(item.tab));
+          break;
+        case "subsTab":
+          selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: item.tab }));
+          break;
+        case "modal":
+          if (item.modal === "dayReschedule") setShowDayReschedule(true);
+          else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
+          else if (item.modal === "testPrep") setTestPrep({});
+          else if (item.modal === "data") setShowDataMgr(true);
+          break;
+        default:
+          break;
+      }
     },
     [selectView]
   );
@@ -1046,7 +1090,7 @@ export default function App() {
             >
               ?
             </button>
-            {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && (
+            {view !== VIEWS.BUILDER && view !== VIEWS.REGULAR_BUILDER && view !== VIEWS.MENU && (
               <button
                 type="button"
                 onClick={handlePrint}
@@ -1128,7 +1172,20 @@ export default function App() {
               落とさない。別のビューへ移れば自動で復帰する */}
           <ErrorBoundary scope="view" resetKey={`${view}:${selected || ""}`}>
           <Suspense fallback={<ViewFallback />}>
-          {view === VIEWS.DASH && !selected && handoverEnabled && (
+          {view === VIEWS.MENU && !selected && (
+            <MainMenuView
+              categories={mainMenu}
+              onNavigate={navigateMenuItem}
+              onOpenDashboard={() => selectView(VIEWS.DASH)}
+              subs={subs}
+              onOpenPendingSubs={() =>
+                selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
+              }
+              cmdKHint={CMD_K_HINT}
+            />
+          )}
+          {/* 去年のこの時期 (引継ぎメモ) は起動時の画面とダッシュボードの上に */}
+          {(view === VIEWS.DASH || view === VIEWS.MENU) && !selected && handoverEnabled && (
             <HandoverSeasonBanner
               notes={handoverNotes}
               onOpenNote={openHandoverNote}
@@ -1171,6 +1228,43 @@ export default function App() {
               onSelectTeacher={selectTeacher}
               onEditExtraLesson={openExtraLessonEditor}
             />
+          )}
+          {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
+              載せない (no-print: PrintButton の window.print と 🖨 の popup の
+              どちらでも消える) */}
+          {view === VIEWS.DASH && !selected && (
+            <nav
+              className="no-print"
+              aria-label="メニュー"
+              style={{
+                marginTop: 20,
+                background: "#fff",
+                border: "1px solid #e0e0e0",
+                borderRadius: 8,
+                padding: "10px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 4,
+                }}
+              >
+                <strong style={{ fontSize: 13 }}>メニュー</strong>
+                <button
+                  type="button"
+                  onClick={() => selectView(VIEWS.MENU)}
+                  className="main-menu-item"
+                  style={{ ...S.btn(false), fontSize: 12, padding: "4px 10px", border: "1px solid #ccc" }}
+                >
+                  🏠 メインメニュー (説明つき)
+                </button>
+              </div>
+              <MainMenuPanel categories={mainMenu} onNavigate={navigateMenuItem} variant="compact" />
+            </nav>
           )}
           {view === VIEWS.ALL && !selected && (
             <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />

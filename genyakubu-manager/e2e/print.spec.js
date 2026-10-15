@@ -34,6 +34,17 @@ const PRINT_PAGE_WIDTH = 733;
 // 2026-09-17 は木曜で祝日でない。
 const GRID_DAY = new Date("2026-09-17T10:00:00+09:00");
 
+// 起動時の画面はメインメニュー (2026-10-15)。ダッシュボードを見るテストは
+// 「ダッシュボードを開いたままリロードした」状態 (view を sessionStorage から
+// 復元) から始める。サイドバーを押して移ると sidebarOpen が閉じるので、
+// リロード直後の通常運用 (backdrop が DOM に居る) を再現できなくなる。
+async function gotoDashboard(page) {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("genyakubu-session-view", "dash");
+  });
+  await page.goto("/genekibu-kanri/");
+}
+
 // print メディアで、印刷に出ないはずの要素が全て消えていることを確認する。
 async function expectPrintChromeHidden(page) {
   await expect(page.locator(".sidebar")).toBeHidden();
@@ -66,19 +77,31 @@ async function expectPrintChromeHidden(page) {
 }
 
 test("ダッシュボード: print で操作 UI が消え本文が残る", async ({ page }) => {
-  await page.goto("/genekibu-kanri/");
+  await gotoDashboard(page);
   await expect(page.locator(".app-h1")).toHaveText("ダッシュボード");
+  // ダッシュボードの下のメニューは画面には出ている
+  const menu = page.getByRole("navigation", { name: "メニュー" });
+  await expect(menu).toBeVisible();
 
   await page.emulateMedia({ media: "print" });
   await expectPrintChromeHidden(page);
+  // 紙面にはメニューを載せない
+  await expect(menu).toBeHidden();
   // 本文 (ビュータイトル) は残る
   await expect(page.locator(".app-h1")).toBeVisible();
+});
+
+test("起動時はメインメニュー。ボタンでダッシュボードへ移れる", async ({ page }) => {
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+  await page.locator("#main-content").getByRole("button", { name: /^ダッシュボード/ }).click();
+  await expect(page.locator(".app-h1")).toHaveText("ダッシュボード");
 });
 
 test("印刷: サイドバー未操作 (リロード直後) でも紙面が暗くならない", async ({
   page,
 }) => {
-  await page.goto("/genekibu-kanri/");
+  await gotoDashboard(page);
   await expect(page.locator(".app-h1")).toHaveText("ダッシュボード");
   // sidebarOpen の初期値は true。view は sessionStorage から復元されるため、
   // 「サイドバーを一度も操作せずに印刷する」= backdrop が DOM に居る状態は
@@ -102,7 +125,7 @@ test("印刷: 用紙サイズを変えても紙面レイアウトが変わらな
   // 印刷のメディアクエリは紙面幅で評価されるので、screen を外すと
   // 「A4 縦なら 1 カラム / A3 なら 2 カラム」のように用紙で紙面が化ける。
   await page.clock.setFixedTime(GRID_DAY);
-  await page.goto("/genekibu-kanri/");
+  await gotoDashboard(page);
   await expect(page.locator(".excel-grid-sections")).toBeVisible();
   await page.emulateMedia({ media: "print" });
 
@@ -160,7 +183,8 @@ test("イベントカレンダー: print で追加授業バッジが紙面に残
   }, [ym]);
 
   await page.goto("/genekibu-kanri/");
-  await page.getByRole("button", { name: /イベントカレンダー/ }).click();
+  // メインメニューにも同じ名前のボタンがあるのでサイドバーで押す
+  await page.locator(".sidebar").getByRole("button", { name: /イベントカレンダー/ }).click();
   await expect(
     page.getByText(/18:30 中3A プレップ個別指導/).first()
   ).toBeVisible();
@@ -189,7 +213,7 @@ test("附属の授業予定: print で操作 UI が消え、週ごとの表と�
     );
   });
   await page.goto("/genekibu-kanri/");
-  await page.getByRole("button", { name: /附属の授業予定/ }).first().click();
+  await page.locator(".sidebar").getByRole("button", { name: /附属の授業予定/ }).click();
   const first = page.getByRole("region", { name: "10/7 (水) の予定" });
   await expect(first).toBeVisible();
 
@@ -231,7 +255,7 @@ test("タイムテーブル: popup 印刷に中学/高校のセクションヘ�
   });
 
   await page.clock.setFixedTime(GRID_DAY);
-  await page.goto("/genekibu-kanri/");
+  await gotoDashboard(page);
   // Dashboard の既定は時間割モード (ExcelGridView)
   await expect(page.locator(".excel-grid-sections")).toBeVisible();
 
@@ -488,7 +512,7 @@ test("タイムテーブル: 全曜日まとめ印刷が曜日ごとの紙面を
   });
 
   await page.clock.setFixedTime(GRID_DAY);
-  await page.goto("/genekibu-kanri/");
+  await gotoDashboard(page);
   // Dashboard の既定は時間割モード (ExcelGridView)
   await expect(page.locator(".excel-grid-sections")).toBeVisible();
 

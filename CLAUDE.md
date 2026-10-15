@@ -601,8 +601,10 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 あること自体に気付けない (日まるごと振替の指摘)。ただしサイドバーは
 無制限には伸ばせないので、次のように使い分ける。
 
-- **ビュー**は従来どおり `MENU_CONFIG` の項目 (+ `VIEW_CHORD_BY_VIEW` の
-  chord)
+- **ビュー**は従来どおりサイドバーの項目 (+ `VIEW_CHORD_BY_VIEW` の
+  chord)。項目の定義は **`constants/sidebarMenu.js` の `SIDEBAR_MENU`**
+  (2026-10-15 に Sidebar.jsx から移した。メインメニューが名前・アイコン・
+  権限をここから引く)
 - **ダイアログを開く操作**は `action: "modal"` の項目
   (💾 データ管理 / 📅 日まるごと振替 / 🎯 テスト対策の振替・追加)。書き込み専用の操作には
   `adminOnly: true` を付け、閲覧者には出さない
@@ -625,6 +627,43 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   TabSwitcher もこの配列から作る** (ラベルを両方に書き起こさない)。
   タブは App が持つ (`masterTab`) ので、サイドバーは現在地を強調でき、
   Cmd+K からも「隔週管理」で直接開ける
+
+## メインメニュー (2026-10-15 実装、起動時の画面)
+
+機能をカテゴリごとに並べ、ボタンでその場所へ飛ぶ画面 (`VIEWS.MENU`、サイドバーの
+先頭「🏠 メインメニュー」、chord `g g`、`components/views/MainMenuView.jsx`)。
+**新しいタブで開いたときの最初の画面はメインメニュー** (App の `START_VIEW`。
+インポート / 初期化の後も)。リロードは従来どおり sessionStorage の直前の画面。
+ダッシュボードの下にも同じメニューの小さい版を出す (`MainMenuPanel` の
+`variant="compact"`)。
+
+- **中身は `constants/mainMenu.js` の `MAIN_MENU` の 1 か所**。カテゴリは
+  今日の対応 / 振替・追加授業 / 予定・休み / 講師・スタッフ / 時間割 / 記録・データ。
+  **名前・アイコン・権限 (adminOnly / adminData)・ダイアログの種類は
+  サイドバー (`SIDEBAR_MENU`) から引く** (`navItem`)。画面の中のセクションは
+  `EVENT_SECTIONS`、タブは `MASTER_TABS` / `SUBS_TABS` (`constants/subsTabs.js`。
+  Cmd+K と共有)。名前を書き起こさない
+- **サイドバーに機能を足したらメインメニューのどのカテゴリかに足す**。
+  `mainMenu.test.js` が、サイドバーの項目 (ビュー / ダイアログ)・
+  `EVENT_SECTIONS`・`MASTER_TABS` がすべてメニューにあるかを突き合わせて止める
+- 押したときの移動は App の `navigateMenuItem` (kind: view / modal / section /
+  masterTab / subsTab)。サイドバー・Cmd+K と同じ経路 (`selectView` +
+  初期状態の要求) を通す。ダイアログを足したらここにも足す
+- **並びは固定**。使用頻度・履歴で並べ替えない・「よく使う」欄を作らない (A18)
+- 閲覧者には管理者専用の項目を出さない (`visibleMainMenu`)
+- **ダッシュボードの下のメニューは紙面に載せない** (`no-print`。PrintButton の
+  window.print と 🖨 の popup のどちらでも消える。e2e の印刷テストが見ている)。
+  メインメニュー画面には 🖨 印刷を出さない
+- メインメニュー画面の先頭はダッシュボードへの大きな入口と、今日以降の未処理の
+  代行 (サイドバーの赤バッジと同じ `summarizeOpenSubs`)。「去年のこの時期」
+  (引継ぎメモ) もダッシュボードと同じく上に出す。講師ごとの予定 (月間・週間) は
+  サイドバーの講師名から (メニューには並べない)
+- e2e でサイドバーのボタンを名前で押すときは `.sidebar` で絞る (メニューにも同じ
+  名前のボタンがある)。ダッシュボードから始めるテストは sessionStorage の view を
+  `dash` にしてから開く (`print.spec.js` の `gotoDashboard`)
+- サイドバーのメニュー部分は高さの 6 割まで (`.sidebar-menu`、中でスクロール)。
+  管理者は項目が 20 行を超え、背の低くない画面でも下のログイン欄に重なっていた。
+  統合スクロールの画面 (幅 768 以下 / 高さ 860 以下) では外す
 
 ## 日まるごと振替 (2026-08-19 実装)
 
@@ -1447,7 +1486,8 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
 - **App のグローバル CSS は `styles/appShell.css`**。`<style>` 文字列を
   App.jsx に戻さない
 - App 全体のスモークは `App.smoke.test.jsx` (全ビュー遷移でクラッシュしない)。
-  ビューを足したら `VIEW_LABELS` に名前を足す
+  ビューを足したら `VIEW_LABELS` に名前を足す (メインメニューにも足す。上の
+  「メインメニュー」節)
 - chord を足したら `?` のヘルプ (`constants/shortcuts.js`) と、g を押した後の
   待機中バッジの短ラベル (`chords.js` の `VIEW_CHORD_LABEL`) にも足す。
   `ShortcutsHelp.test.jsx` / `chords.test.js` が `VIEW_CHORDS` と突き合わせて
