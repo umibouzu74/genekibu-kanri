@@ -495,7 +495,7 @@ export function applyTestPrepReschedule({
  * @param {Array} args.slots
  * @param {Array} [args.adjustments]
  * @param {Array} [args.extraLessons]
- * @param {object|null} args.template 型にするコマ
+ * @param {object|null} args.template 型にするコマ (画面で選んだコース)
  * @param {string[]} args.dates 実施日
  * @param {string} args.timeInput 時間 (必須。開始だけなら型のコマの長さ)
  * @param {string} [args.roomInput]
@@ -528,7 +528,7 @@ export function buildTestPrepExtraPlan({
   const notes = [];
   const plan = { errors, notes, conflictsByDate: [], records: [], editingId, time: "" };
   if (!template) {
-    errors.push("型にするコマを選んでください");
+    errors.push("コースを選んでください");
     return plan;
   }
   const ds = [...new Set((dates || []).filter((d) => isValidDateStr(d || "")))].sort();

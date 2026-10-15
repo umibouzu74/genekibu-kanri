@@ -191,7 +191,7 @@ function RoomPicker({ rooms, value, onChange, usage, originalRoom, usageKnown, i
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={originalRoom ? `空 = 元の教室 (${originalRoom})` : "教室"}
+          placeholder={originalRoom ? `元の教室 (${originalRoom}) のまま` : "教室"}
           aria-label="教室"
           style={{ ...S.input, width: 160 }}
         />
@@ -213,7 +213,9 @@ function RoomPicker({ rooms, value, onChange, usage, originalRoom, usageKnown, i
       {rooms.length > 0 && (
         <div style={{ ...rowStyle, marginTop: 6, gap: 4 }}>
           {usageKnown && (
-            <span style={{ fontSize: 10, color: "#888", marginRight: 2 }}>空き:</span>
+            <span style={{ fontSize: 10, color: "#888", marginRight: 2 }}>
+              {showBusy ? "教室:" : "空き:"}
+            </span>
           )}
           {shown.map((r) => {
             const used = usage.has(r);
@@ -269,7 +271,7 @@ function TimePicker({ value, onChange, options, originalTime, previewTime, error
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={allowEmpty ? `空 = 元の時間 (${originalTime})` : "例: 17:00-18:00"}
+          placeholder={allowEmpty ? `元の時間 (${originalTime}) のまま` : "例: 17:00-18:00"}
           aria-label="時間"
           aria-invalid={error ? "true" : undefined}
           style={{ ...S.input, width: 170 }}
@@ -297,7 +299,7 @@ function TimePicker({ value, onChange, options, originalTime, previewTime, error
         })}
       </div>
       <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>
-        「1700-1800」「１７：００〜１８：００」も可。開始だけ (17:00) なら元の授業の長さで終わりを補います
+        「1700-1800」「１７：００〜１８：００」のようにも入れられます。開始だけ (17:00) なら、元の授業と同じ長さで終わりを補います
       </div>
     </div>
   );
@@ -933,9 +935,9 @@ export function TestPrepLessonDialog({
         </div>
       )}
 
-      {/* ② する事 */}
-      <div style={sectionTitle}>② する事</div>
-      <div style={rowStyle} role="group" aria-label="する事">
+      {/* ② 何をするか */}
+      <div style={sectionTitle}>② 何をするか</div>
+      <div style={rowStyle} role="group" aria-label="何をするか">
         <button
           type="button"
           onClick={() => {
@@ -956,7 +958,7 @@ export function TestPrepLessonDialog({
           aria-pressed={!isResched}
           style={chip(!isResched, EXTRA_LESSON_COLOR.color)}
         >
-          ➕ 追加授業を足す
+          ➕ 追加授業を登録する
         </button>
       </div>
 
@@ -1030,7 +1032,7 @@ export function TestPrepLessonDialog({
                   );
                 })}
               {resched.targetDate && dateToDay(resched.targetDate) == null && (
-                <span style={{ fontSize: 11, color: "#a06010" }}>日曜日です</span>
+                <span style={{ fontSize: 11, color: "#a06010" }}>振替先は日曜日です</span>
               )}
             </div>
             <label htmlFor="testprep-rs-time" style={{ fontSize: 12, fontWeight: 700, paddingTop: 6 }}>
@@ -1067,7 +1069,7 @@ export function TestPrepLessonDialog({
                 type="text"
                 value={resched.teacher}
                 onChange={(e) => patchResched({ teacher: e.target.value })}
-                placeholder={slot ? `空 = 元の担当 (${slot.teacher || "未設定"})` : "担当"}
+                placeholder={slot ? `元の担当 (${slot.teacher || "未設定"}) のまま` : "担当"}
                 aria-label="振替先の担当"
                 list="testprep-teachers"
                 style={{ ...S.input, width: 220 }}
@@ -1233,11 +1235,11 @@ export function TestPrepLessonDialog({
       >
         <span style={{ fontSize: 11, color: touched && plan.errors.length > 0 ? "#a06010" : "#888", flex: 1, minWidth: 160 }}>
           {plan.errors.length > 0
-            ? `あと: ${plan.errors[0]}`
+            ? plan.errors[0]
             : conflicts.length > 0
               ? (
                 <b style={{ color: "#a02020" }}>
-                  ⚠ 講師・教室の重なり {conflicts.length} 件 (上に表示。登録はできます)
+                  ⚠ 講師・教室の重なりが {conflicts.length} 件あります (上に表示。このまま登録もできます)
                 </b>
               )
               : isResched

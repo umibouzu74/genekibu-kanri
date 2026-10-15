@@ -148,7 +148,7 @@ describe("TestPrepLessonDialog の振替", () => {
     renderDialog();
     chooseSakuraiEnglish();
     expect(screen.getByRole("button", { name: "↻ 振替を登録" }).disabled).toBe(true);
-    expect(screen.getByText("あと: 振替元の日を選んでください")).toBeTruthy();
+    expect(screen.getByText("振替元の日を選んでください")).toBeTruthy();
   });
 
   it("一覧の ✏️ で直すと、同じ振替を置き換える", () => {
@@ -235,6 +235,6 @@ describe("TestPrepLessonDialog の追加授業", () => {
     renderDialog({ initialMode: "extra" });
     chooseSakuraiEnglish();
     fireEvent.change(screen.getByLabelText("実施日を追加"), { target: { value: "2026-10-17" } });
-    expect(screen.getByText(/あと: 時間を入れてください/)).toBeTruthy();
+    expect(screen.getByText(/^時間を入れてください/)).toBeTruthy();
   });
 });

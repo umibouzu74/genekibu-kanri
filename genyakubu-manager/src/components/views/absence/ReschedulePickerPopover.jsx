@@ -310,7 +310,7 @@ export function ReschedulePickerPopover({
             type="text"
             value={targetTime}
             onChange={(e) => setTargetTime(e.target.value)}
-            placeholder={`例: 17:00-18:00 (空 = ${slot?.time || "元の時間"})`}
+            placeholder={`例: 17:00-18:00 (空欄なら ${slot?.time || "元の時間"})`}
             aria-label="振替先の時間帯"
             list={timeOptions.length > 0 ? timeListId : undefined}
             style={{ ...S.input, width: "100%" }}
@@ -323,7 +323,7 @@ export function ReschedulePickerPopover({
             </datalist>
           )}
           <div style={{ color: "#888", fontSize: 10, marginTop: 2 }}>
-            空なら元コマの時間帯 ({slot?.time || "?"})。開始だけ (17:00) なら元の長さで終わりを補います
+            空欄なら元コマの時間帯 ({slot?.time || "?"})。開始だけ (17:00) なら、元の授業と同じ長さで終わりを補います
           </div>
         </div>
 

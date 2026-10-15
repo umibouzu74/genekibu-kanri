@@ -107,7 +107,7 @@ export const MAIN_MENU = Object.freeze([
     label: "予定・休み",
     items: [
       eventSection(EVENT_KIND.HOLIDAY, "祝日・行事などで授業の無い日 (学年・科目で絞れる)"),
-      eventSection(EVENT_KIND.EXAM, "学校のテスト期間 (授業を止める日・特訓)"),
+      eventSection(EVENT_KIND.EXAM, "学校のテスト期間 (授業を止める期間と特訓の日程)"),
       eventSection(EVENT_KIND.SPECIAL, "校外行事・式典・告知などの予定"),
       navItem(VIEWS.EVENTS, "休講・テスト期間・イベント・振替を月のカレンダーで"),
       navItem(VIEWS.YOTEIHYO, "学校の予定表 (Excel) と休講・振替の登録を突き合わせる"),
@@ -121,7 +121,7 @@ export const MAIN_MENU = Object.freeze([
     items: [
       navItem(VIEWS.ALL, "講師ごとの週のコマ数"),
       navItem(VIEWS.MINUTES, "期間内に講師ごとに教えた時間 (給与計算用)"),
-      navItem(VIEWS.STAFF, "バイトの登録・担当教科、常勤講師の担当教科"),
+      navItem(VIEWS.STAFF, "バイトの登録、講師の担当教科、教科マスター"),
       navItem(VIEWS.OFFSITE, "講師が他の校舎・学校へ授業に行く曜日と時間"),
     ],
   },
