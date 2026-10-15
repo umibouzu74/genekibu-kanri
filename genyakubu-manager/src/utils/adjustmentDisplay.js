@@ -235,7 +235,8 @@ export function incomingCardId(adj) {
  * - `id` は `incomingCardId` ("rs:<振替の id>")。本物のコマ id にしないのは、
  *   振替元と振替先が同じ曜日 (10/16 金 → 10/9 金) だと同じコマが振替先の日の
  *   通常のコマとしても並び、下書き・代行・合同の索引が混ざるため
- * - `day` はその日の曜日、`time` は振替先の時刻 (`targetTime` が無ければ元の時刻)
+ * - `day` はその日の曜日、`time` は振替先の時刻 (`targetTime` が無ければ元の時刻)、
+ *   `room` は振替先の教室 (`rescheduleRoom`)
  * - `teacher` は振替先の担当 (`rescheduleTargetTeachers` = 振替元の日の A/B で
  *   解決済み)、`note` は空 (振替先の日で隔週を解き直さないように)、`subj` は
  *   振替元の日の科目 (複合教科の隔週)
@@ -260,6 +261,7 @@ export function buildIncomingCards(adjustments, dateStr, slots, ctx = {}) {
     id: incomingCardId(adj),
     day,
     time: adj.targetTime || slot.time,
+    room: rescheduleRoom(adj, slot),
     teacher: rescheduleTargetTeachers(adj, slot, ctx).join("·"),
     note: "",
     subj: biweeklyDisplaySubject(slot, adj.date, anchors, ctx.holidays, ctx.examPeriods),
@@ -295,6 +297,20 @@ export function rescheduleTargetTeachers(adj, slot, ctx = {}) {
   const named = splitTeacherField(adj.targetTeacher);
   if (named.length > 0) return named;
   return activeTeachersOnDate(slot, adj.date, ctx);
+}
+
+/**
+ * 振替で入ってくるコマの、振替先の日の教室。`targetRoom` があればその教室、
+ * 無ければ元のコマの教室 (テスト対策で「別の教室で 17:00 から」のように
+ * 教室だけ変える振替がある。2026-10-15)。
+ * @param {object} adj reschedule の adjustment
+ * @param {object} slot 振替元のコマ
+ * @returns {string}
+ */
+export function rescheduleRoom(adj, slot) {
+  const room = String(adj?.targetRoom || "").trim();
+  if (room) return room;
+  return String(slot?.room || "").trim();
 }
 
 /** rescheduleTargetTeachers の表示用 ("香川·福江")。 */
@@ -348,21 +364,23 @@ export function isDayEmptiedByReschedule(slots, outgoing, otherLessons = 0) {
 }
 
 /**
- * 振替先の表記。"2026-08-28 (金) 19:40 (福江)" のように、
- * 日付 → 時刻 → 担当 の順で、入っているものだけを並べる。
+ * 振替先の表記。"2026-08-28 (金) 19:40 @亀21 (福江)" のように、
+ * 日付 → 時刻 → 教室 → 担当 の順で、入っているものだけを並べる。
  * short: true で日付を "8/28" に縮める (月間カレンダーのカード内など)。
  *
  * originalTeacher を渡すと、**担当が変わらない振替では担当を出さない**。
  * 振替の targetTeacher には元担当がそのまま入っていることがあり
  * (振替ピッカーの既定だった)、そのまま出すと担当が変わったように読める。
+ * 教室も同じく、`targetRoom` が originalRoom (元のコマの教室) と違うときだけ。
  */
 export function describeRescheduleTarget(
   adj,
-  { short = false, originalTeacher = "" } = {}
+  { short = false, originalTeacher = "", originalRoom = "" } = {}
 ) {
   if (!adj?.targetDate) return "";
   const parts = [short ? shortDate(adj.targetDate) : fmtDateWeekday(adj.targetDate)];
   if (adj.targetTime) parts.push(short ? adj.targetTime.split("-")[0] : adj.targetTime);
+  if (adj.targetRoom && adj.targetRoom !== originalRoom) parts.push(`@${adj.targetRoom}`);
   if (adj.targetTeacher && adj.targetTeacher !== originalTeacher) {
     parts.push(`(${adj.targetTeacher})`);
   }

@@ -1,5 +1,9 @@
 import { ADJ_COLOR } from "../constants/colors";
-import { incomingCombinedLabel, rescheduleTeacherLabel } from "../utils/adjustmentDisplay";
+import {
+  incomingCombinedLabel,
+  rescheduleRoom,
+  rescheduleTeacherLabel,
+} from "../utils/adjustmentDisplay";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 
 // 他日から「この日へ」振り替えられてくるコマのバナー表示。
@@ -17,7 +21,8 @@ import { fmtDateWeekday } from "../utils/dateHelpers";
 //
 // 担当は rescheduleTeacherLabel (振替元の日の隔週 A/B を解決した後)。
 // teacherCtx ({biweeklyAnchors, holidays, examPeriods}) を渡さないと隔週は
-// 主担当のまま出る。
+// 主担当のまま出る。教室は rescheduleRoom (振替先の教室を指定した振替は
+// その教室。テスト対策で「別の教室で 17:00 から」がある)。
 export function RescheduleInBanner({ items, style, teacherCtx }) {
   if (!items || items.length === 0) return null;
   // 振替元の日付でまとめる (並びは最初に出てきた順。行の中の並びは
@@ -58,6 +63,7 @@ export function RescheduleInBanner({ items, style, teacherCtx }) {
             const { adj, slot } = item;
             const combinedText = incomingCombinedLabel(item);
             const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+            const room = rescheduleRoom(adj, slot);
             return (
               <div
                 key={adj.id}
@@ -96,7 +102,16 @@ export function RescheduleInBanner({ items, style, teacherCtx }) {
                 <span style={{ color: "#555" }}>
                   {rescheduleTeacherLabel(adj, slot, teacherCtx)}
                 </span>
-                {slot.room && <span style={{ color: "#888" }}>@{slot.room}</span>}
+                {room && (
+                  <span
+                    style={{
+                      color: adj.targetRoom ? ADJ_COLOR.reschedule.deep : "#888",
+                      fontWeight: adj.targetRoom ? 700 : 400,
+                    }}
+                  >
+                    @{room}
+                  </span>
+                )}
                 {adj.memo && (
                   <span style={{ fontSize: 10, color: "#888", fontStyle: "italic" }}>
                     {adj.memo}

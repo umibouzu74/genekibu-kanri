@@ -360,6 +360,7 @@ export const ExcelCell = memo(function ExcelCell({
           {describeRescheduleTarget(rescheduleOut, {
             short: true,
             originalTeacher: slot.teacher,
+            originalRoom: slot.room,
           })}{" "}
           へ振替
         </div>

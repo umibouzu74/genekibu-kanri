@@ -139,3 +139,79 @@ export function monthOffsetFromToday(ym, today) {
   if (mo < 1 || mo > 12) return null;
   return (y - today.getFullYear()) * 12 + (mo - 1 - today.getMonth());
 }
+
+// "17:00" / "1700" / "9:05" / "17.00" → 分。読めなければ null
+function parseHourMin(token) {
+  const t = String(token || "").replace(".", ":");
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t) || /^(\d{1,2})(\d{2})$/.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+function fmtHourMin(min) {
+  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
+/** "19:00-20:20" → 80 (分)。読めなければ null。 */
+export function timeRangeMinutes(time) {
+  const [a, b] = String(time || "").split("-");
+  const start = parseHourMin((a || "").trim());
+  const end = parseHourMin((b || "").trim());
+  if (start == null || end == null || end <= start) return null;
+  return end - start;
+}
+
+/**
+ * 入力された授業の時間を保存形 "17:00-18:00" に整える。全角数字・「〜」
+ * 「ー」などの区切り・空白・"1700-1800" のような区切りなしの時刻のゆれを
+ * 吸収する (IME の素の入力 "１７：００〜１８：００" をそのまま受ける)。
+ * 開始だけ ("17:00") のときは durationMin (元のコマの長さ) を足して終わりを
+ * 補う。durationMin が無ければ終了時刻を求める。空の入力は {ok: true, time: ""}
+ * (「元の時間のまま」を表す呼び出し側がある)。
+ *
+ * 他校舎の授業は終了未定 ("13:30") を持てるので別の関数
+ * (offsiteLessons.normalizeOffsiteTime)。授業の時間はこちらを使う。
+ *
+ * @param {string} input
+ * @param {{durationMin?: number|null}} [opts]
+ * @returns {{ok: true, time: string} | {ok: false, error: string}}
+ */
+export function normalizeTimeRange(input, { durationMin = null } = {}) {
+  const s = String(input ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    // 〜 (U+301C) ~ (NFKC 後の ～) − – — ― ‐ ー (長音) を区切りの "-" に
+    .replace(/[〜~−–—―‐ー]/g, "-");
+  if (!s) return { ok: true, time: "" };
+  const parts = s.split("-");
+  if (parts.length === 2 && parts[1] === "") parts.pop();
+  if (parts.length > 2) {
+    return { ok: false, error: "時間は「17:00-18:00」の形で入力してください" };
+  }
+  const start = parseHourMin(parts[0]);
+  if (start == null) {
+    return { ok: false, error: "開始時刻が読めません (例: 17:00-18:00)" };
+  }
+  let end;
+  if (parts.length === 1) {
+    if (!(durationMin > 0)) {
+      return { ok: false, error: "終了時刻も入れてください (例: 17:00-18:00)" };
+    }
+    end = start + durationMin;
+    if (end >= 24 * 60) {
+      return { ok: false, error: "終了時刻が日付をまたぎます。終了時刻も入れてください" };
+    }
+  } else {
+    end = parseHourMin(parts[1]);
+    if (end == null) {
+      return { ok: false, error: "終了時刻が読めません (例: 17:00-18:00)" };
+    }
+  }
+  if (end <= start) {
+    return { ok: false, error: "終了時刻は開始時刻より後にしてください" };
+  }
+  return { ok: true, time: `${fmtHourMin(start)}-${fmtHourMin(end)}` };
+}

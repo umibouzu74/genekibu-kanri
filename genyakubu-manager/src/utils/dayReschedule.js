@@ -19,14 +19,19 @@ import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
-import { buildAdjustmentIndex, buildIncomingItems } from "./adjustmentDisplay";
+import {
+  buildAdjustmentIndex,
+  buildIncomingItems,
+  rescheduleRoom,
+  rescheduleTargetTeachers,
+} from "./adjustmentDisplay";
 import { nextNumericId } from "./schema";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // "19:00-20:20" → {start, end} (分)。終了時刻が読めないときは start と
 // 同じにして「点」として扱う (重なり判定では同じ開始時刻だけが当たる)。
-function timeRange(time) {
+export function timeRange(time) {
   const parts = String(time || "").split("-");
   const start = timeStartToMin(parts[0]);
   let end = start;
@@ -37,7 +42,7 @@ function timeRange(time) {
   return { start, end: end > start ? end : start };
 }
 
-function rangesOverlap(a, b) {
+export function rangesOverlap(a, b) {
   if (a.end === a.start || b.end === b.start) return a.start === b.start;
   return a.start < b.end && b.start < a.end;
 }
@@ -58,7 +63,8 @@ function activeTeachers(slot, dateStr, ctx) {
 // 対象日にそのコマが実施されない理由を 1 つだけ返す (表示用)。
 // 判定の順序は「期間 → 休講 → その他」。isSlotHeldOnDate が false を返した
 // ときの説明なので、ここで新しいルールを足さないこと。
-function skipReason(slot, dateStr, ctx) {
+// テスト対策の振替 (testPrepLessons) も同じ文言を使う。
+export function skipReason(slot, dateStr, ctx) {
   const tts = ctx?.timetables;
   if (Array.isArray(tts) && tts.length > 0) {
     const tt = tts.find((t) => t.id === (slot.timetableId ?? 1));
@@ -157,14 +163,21 @@ export function buildDayOccupancy({
   const pushSlot = (slot, time, kind, adj = null) => {
     if (!slot) return;
     push({
-      key: `slot:${slot.id}`,
+      // 振替で入るコマは振替の id で数える。同じ曜日の振替 (10/16 金 → 10/9 金)
+      // では同じコマが振替先の日の通常のコマとしても居て、同じコマの 9/7 と
+      // 9/14 を同じ日へ振り替えると 2 件になるので、コマ id ではまとめない
+      key: adj ? `rs:${adj.id}` : `slot:${slot.id}`,
       kind,
       slot,
       lesson: null,
       adj,
       time,
-      teachers: activeTeachers(slot, dateStr, ctx),
-      room: (slot.room || "").trim(),
+      // 振替で入ってくるコマは振替先の担当 (振替元の日の A/B で解決) と
+      // 振替先の教室 (targetRoom) で塞ぐ
+      teachers: adj
+        ? rescheduleTargetTeachers(adj, slot, ctx || {})
+        : activeTeachers(slot, dateStr, ctx),
+      room: adj ? rescheduleRoom(adj, slot) : (slot.room || "").trim(),
       label: occupancyLabel(
         time, slot.grade, slot.cls, slot.subj, kind === "incoming" ? "振替" : null
       ),
@@ -202,6 +215,31 @@ export function buildDayOccupancy({
     });
   }
   return sortByTime(out, (x) => x.time, (x) => (x.slot?.id ?? x.lesson?.id ?? 0));
+}
+
+/**
+ * 予定 1 つ (時間・担当・教室) が、その日の塞がり (buildDayOccupancy) の
+ * どれと重なるか。講師と教室を見る。日まるごと振替とテスト対策の振替・
+ * 追加授業 (testPrepLessons) で共有する。
+ *
+ * @param {Array} occupancy buildDayOccupancy の結果 (除外したいものは呼び出し側で除く)
+ * @param {{time: string, teachers: string[], room?: string}} item
+ * @returns {{kind: "teacher"|"room", label: string}[]}
+ */
+export function findOccupancyConflicts(occupancy, { time, teachers = [], room = "" }) {
+  const range = timeRange(time);
+  const r = String(room || "").trim();
+  const conflicts = [];
+  for (const o of occupancy || []) {
+    if (!rangesOverlap(range, timeRange(o.time))) continue;
+    for (const t of teachers.filter((name) => o.teachers.includes(name))) {
+      conflicts.push({ kind: "teacher", label: `${t} / ${o.label}` });
+    }
+    if (r && r !== "-" && r === o.room) {
+      conflicts.push({ kind: "room", label: `${r} / ${o.label}` });
+    }
+  }
+  return conflicts;
 }
 
 /**
@@ -307,20 +345,11 @@ export function buildDayReschedulePlan({
 
   const entries = selected.map((slot) => {
     const teachers = activeTeachers(slot, sourceDate, ctx);
-    const range = timeRange(slot.time);
-    const room = (slot.room || "").trim();
-    const conflicts = [];
-    for (const o of occupancy) {
-      if (!rangesOverlap(range, timeRange(o.time))) continue;
-      const label = o.label;
-      const dupTeachers = teachers.filter((t) => o.teachers.includes(t));
-      for (const t of dupTeachers) {
-        conflicts.push({ kind: "teacher", label: `${t} / ${label}` });
-      }
-      if (room && room !== "-" && room === o.room) {
-        conflicts.push({ kind: "room", label: `${room} / ${label}` });
-      }
-    }
+    const conflicts = findOccupancyConflicts(occupancy, {
+      time: slot.time,
+      teachers,
+      room: slot.room,
+    });
     return {
       slot,
       teachers,

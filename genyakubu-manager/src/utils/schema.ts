@@ -131,6 +131,8 @@ export function isScheduleAdjustment(x: unknown): x is ScheduleAdjustment {
   if (x.type === "reschedule" && !isIsoDate(x.targetDate)) return false;
   // targetTeacher は省略可だが、入っていれば文字列であること
   if (x.targetTeacher !== undefined && !isString(x.targetTeacher)) return false;
+  // targetRoom (振替先の教室) も同じく省略可・文字列
+  if (x.targetRoom !== undefined && !isString(x.targetRoom)) return false;
   return true;
 }
 

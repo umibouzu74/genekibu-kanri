@@ -195,6 +195,49 @@ describe("buildDayOccupancy", () => {
     expect(occ[0].label).toBe("17:00-18:20 高3 特訓 (追加授業)");
   });
 
+  it("振替で入ってくるコマは振替先の教室・担当で塞ぐ (targetRoom / targetTeacher)", () => {
+    const slots = [makeSlot(2, "月", "19:00-20:20", { teacher: "堀上", room: "602" })];
+    const adjustments = [
+      {
+        id: 1,
+        date: MON,
+        type: "reschedule",
+        slotId: 2,
+        targetDate: FRI,
+        targetTime: "17:00-18:00",
+        targetRoom: "亀21",
+        targetTeacher: "河野",
+      },
+    ];
+    const occ = buildDayOccupancy({
+      slots,
+      dateStr: FRI,
+      adjustments,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(occ).toHaveLength(1);
+    expect(occ[0].room).toBe("亀21");
+    expect(occ[0].teachers).toEqual(["河野"]);
+    expect(occ[0].time).toBe("17:00-18:00");
+  });
+
+  it("同じ曜日の振替は、振替先の日の同じコマの通常授業と別に数える", () => {
+    // 金曜のコマを別の金曜へ振り替える (休みの日へ寄せる)。コマ id でまとめると
+    // 振替で入るぶんが消えていた
+    const NEXT_FRI = "2026-12-11";
+    const slots = [makeSlot(1, "金", "19:00-20:20")];
+    const adjustments = [
+      { id: 5, date: NEXT_FRI, type: "reschedule", slotId: 1, targetDate: FRI, targetTime: "17:00-18:20" },
+    ];
+    const occ = buildDayOccupancy({
+      slots,
+      dateStr: FRI,
+      adjustments,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(occ.map((o) => o.key)).toEqual(["rs:5", "slot:1"]);
+  });
+
   it("コマ id と追加授業 id が同じでも別物として数える", () => {
     const slots = [makeSlot(1, "金", "19:00-20:20")];
     const occ = buildDayOccupancy({

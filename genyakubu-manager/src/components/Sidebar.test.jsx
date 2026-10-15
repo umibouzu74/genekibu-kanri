@@ -151,6 +151,19 @@ describe("Sidebar の複数日の欠勤登録", () => {
   });
 });
 
+describe("Sidebar のテスト対策の振替・追加", () => {
+  it("管理者にはボタンを出し、クリックでダイアログを開く", () => {
+    const onOpenTestPrep = vi.fn();
+    renderSidebar({ onOpenTestPrep });
+    fireEvent.click(screen.getByRole("button", { name: /テスト対策の振替・追加/ }));
+    expect(onOpenTestPrep).toHaveBeenCalledTimes(1);
+  });
+  it("閲覧者には出さない", () => {
+    renderSidebar({ isAdmin: false });
+    expect(screen.queryByRole("button", { name: /テスト対策の振替・追加/ })).toBeNull();
+  });
+});
+
 describe("Sidebar の講師検索", () => {
   const groups = [{ key: "英語", label: "英語", teachers: ["堀上", "石原"] }];
   const slots = [

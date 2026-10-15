@@ -89,3 +89,61 @@ describe("ReschedulePickerPopover の振替先の日付", () => {
     );
   });
 });
+
+describe("ReschedulePickerPopover の時間・教室", () => {
+  // 候補 (振替先の日の時間割の時間) に無い時間も打てる。以前は候補があると
+  // select しか出ず、テスト対策の 17:00-18:00 が入れられなかった
+  it("候補に無い時間を打てて、振替先の教室も保存する", () => {
+    const onSave = vi.fn();
+    const { container } = render(
+      <ReschedulePickerPopover
+        anchorRect={{ top: 0, left: 0, bottom: 0, right: 0 }}
+        slot={{ ...slot, room: "602" }}
+        sourceDate="2026-09-07"
+        allSlots={[slot, fridaySlot]}
+        allTeachers={["香川", "福江"]}
+        timetables={[]}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />
+    );
+    fireEvent.change(container.querySelector('input[type="date"]'), {
+      target: { value: "2026-09-11" },
+    });
+    fireEvent.change(screen.getByLabelText("振替先の時間帯"), {
+      target: { value: "１７：００〜１８：００" },
+    });
+    fireEvent.change(screen.getByLabelText("振替先の教室"), { target: { value: "亀63" } });
+    fireEvent.click(screen.getByRole("button", { name: "適用" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ targetTime: "17:00-18:00", targetRoom: "亀63" })
+    );
+  });
+
+  it("元の教室と同じなら振替先の教室を持たない / 読めない時間は止める", () => {
+    const onSave = vi.fn();
+    const { container } = render(
+      <ReschedulePickerPopover
+        anchorRect={{ top: 0, left: 0, bottom: 0, right: 0 }}
+        slot={{ ...slot, room: "602" }}
+        sourceDate="2026-09-07"
+        allSlots={[slot]}
+        allTeachers={["香川"]}
+        timetables={[]}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />
+    );
+    fireEvent.change(container.querySelector('input[type="date"]'), {
+      target: { value: "2026-09-12" },
+    });
+    fireEvent.change(screen.getByLabelText("振替先の時間帯"), { target: { value: "18:00-17:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "適用" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("終了時刻は開始時刻より後にしてください")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("振替先の時間帯"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("振替先の教室"), { target: { value: "602" } });
+    fireEvent.click(screen.getByRole("button", { name: "適用" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ targetTime: "", targetRoom: "" }));
+  });
+});

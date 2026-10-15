@@ -23,6 +23,7 @@ import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
 import { HandoverQuickAddDialog } from "./components/HandoverQuickAddDialog";
 import { HandoverSeasonBanner } from "./components/HandoverSeasonBanner";
 import { MultiDayAbsenceDialog } from "./components/MultiDayAbsenceDialog";
+import { TestPrepLessonDialog } from "./components/TestPrepLessonDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
@@ -348,6 +349,9 @@ export default function App() {
   const [offsiteFocus, setOffsiteFocus] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
+  // テスト対策の振替・追加授業ダイアログ。null = 閉じている / { mode } = 開く
+  // (mode: "reschedule" | "extra"。追加授業管理から開くと追加授業から始める)
+  const [testPrep, setTestPrep] = useState(null);
   // サイドバーの子項目から「休講・テスト期間・イベント」の特定セクションへ
   // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
   // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
@@ -925,6 +929,10 @@ export default function App() {
           setMultiDayAbsence({});
           setSidebarOpen(false);
         }}
+        onOpenTestPrep={() => {
+          setTestPrep({});
+          setSidebarOpen(false);
+        }}
         onSelectEventSection={(kind) => {
           selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(kind));
         }}
@@ -1307,6 +1315,7 @@ export default function App() {
                 onSave={saveExtraLessons}
                 isAdmin={isAdmin}
                 teacherSuggestions={slotsCrud.suggestions.teachers}
+                onOpenTestPrep={isAdmin ? () => setTestPrep({ mode: "extra" }) : null}
                 editTargetId={
                   eventEditRequest?.kind === EVENT_KIND.EXTRA_LESSON
                     ? eventEditRequest.id
@@ -1524,6 +1533,7 @@ export default function App() {
               onOpenDayReschedule={
                 isAdmin ? () => setShowDayReschedule(true) : null
               }
+              onOpenTestPrep={isAdmin ? () => setTestPrep({}) : null}
               onDelSessionOverride={overridesCrud.del}
               onJumpToAbsenceFlow={jumpToAbsenceFlow}
               adjustments={adjustments}
@@ -1773,6 +1783,31 @@ export default function App() {
           }
         />
       )}
+      {/* テスト対策の振替・追加授業 (コースを選んで振替 / 追加授業を登録)。
+          実施判定用の索引をダイアログの中で組むので、開いている間だけマウントする */}
+      {testPrep && isAdmin && (
+        <TestPrepLessonDialog
+          slots={slots}
+          adjustments={adjustments}
+          extraLessons={extraLessons}
+          subs={subs}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
+          initialMode={testPrep.mode}
+          isAdmin={isAdmin}
+          saveAdjustments={saveAdjustments}
+          saveExtraLessons={saveExtraLessons}
+          onClose={() => setTestPrep(null)}
+        />
+      )}
       {showHandoverAdd && handoverEnabled && (
         <HandoverQuickAddDialog
           notes={handoverNotes}
@@ -1866,6 +1901,14 @@ export default function App() {
               isAdmin
                 ? () => {
                     setMultiDayAbsence({});
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
+            onOpenTestPrep={
+              isAdmin
+                ? () => {
+                    setTestPrep({});
                     setCmdPaletteOpen(false);
                   }
                 : undefined

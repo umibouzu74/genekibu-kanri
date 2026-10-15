@@ -394,6 +394,9 @@ export function ExcelSection({
                   <span style={{ fontWeight: 700 }}> {combinedText} 合同</span>
                 )}{" "}
                 ({teacherText})
+                {adj.targetRoom && (
+                  <span style={{ fontWeight: 700, marginLeft: 2 }}>@{adj.targetRoom}</span>
+                )}
                 <span style={{ color: "#888", marginLeft: 2 }}>
                   ←{adj.date}
                 </span>

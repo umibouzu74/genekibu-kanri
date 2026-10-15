@@ -7,6 +7,8 @@ import {
   fmtIsoLocal,
   isValidDateStr,
   formatDateRange,
+  normalizeTimeRange,
+  timeRangeMinutes,
   overlapsRange,
   parseLocalDate,
   timeToMin,
@@ -174,5 +176,38 @@ describe("isValidDateStr は実在する日付だけ通す (2026-09-04)", () => 
     expect(isValidDateStr("2026/02/01")).toBe(false);
     expect(isValidDateStr("2026-2-1")).toBe(false);
     expect(isValidDateStr("")).toBe(false);
+  });
+});
+
+describe("normalizeTimeRange / timeRangeMinutes", () => {
+  it("全角・「〜」区切り・区切りなしの時刻を保存形に整える", () => {
+    expect(normalizeTimeRange("１７：００〜１８：００")).toEqual({ ok: true, time: "17:00-18:00" });
+    expect(normalizeTimeRange("1700-1800")).toEqual({ ok: true, time: "17:00-18:00" });
+    expect(normalizeTimeRange(" 9:05 - 10:00 ")).toEqual({ ok: true, time: "09:05-10:00" });
+  });
+
+  it("空は「元の時間のまま」として ok", () => {
+    expect(normalizeTimeRange("")).toEqual({ ok: true, time: "" });
+    expect(normalizeTimeRange(null)).toEqual({ ok: true, time: "" });
+  });
+
+  it("開始だけなら durationMin で終わりを補い、無ければ終了時刻を求める", () => {
+    expect(normalizeTimeRange("17:00", { durationMin: 80 })).toEqual({ ok: true, time: "17:00-18:20" });
+    expect(normalizeTimeRange("17:00-", { durationMin: 60 })).toEqual({ ok: true, time: "17:00-18:00" });
+    expect(normalizeTimeRange("17:00").ok).toBe(false);
+    expect(normalizeTimeRange("23:30", { durationMin: 60 }).ok).toBe(false);
+  });
+
+  it("読めない・逆転した時刻はエラー", () => {
+    expect(normalizeTimeRange("18:00-17:00").ok).toBe(false);
+    expect(normalizeTimeRange("25:00-26:00").ok).toBe(false);
+    expect(normalizeTimeRange("17:00-18:00-19:00").ok).toBe(false);
+    expect(normalizeTimeRange("あ").ok).toBe(false);
+  });
+
+  it("timeRangeMinutes は授業の長さ (分)", () => {
+    expect(timeRangeMinutes("19:00-20:20")).toBe(80);
+    expect(timeRangeMinutes("19:00")).toBeNull();
+    expect(timeRangeMinutes("")).toBeNull();
   });
 });

@@ -178,6 +178,17 @@ const MENU_CONFIG = [
     modal: "dayReschedule",
     adminOnly: true,
   },
+  // テスト前の振替・追加授業 (高校部は学校ごとにテストの日程が違うので多い)
+  // を、コースを選ぶだけで登録する。追加授業の画面の奥や欠勤組み換えの
+  // 右クリックに埋めず、名前を出す
+  {
+    key: "test-prep",
+    icon: "🎯",
+    label: "テスト対策の振替・追加",
+    action: "modal",
+    modal: "testPrep",
+    adminOnly: true,
+  },
   // 複数日にまたがる欠勤 (インフル 1 週間など) を期間 × 講師で一度に登録する
   {
     key: "multi-day-absence",
@@ -219,6 +230,7 @@ export function Sidebar({
   onOpenDataMgr,
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
+  onOpenTestPrep,
   onSelectEventSection,
   onSelectMasterTab,
   masterTab,
@@ -533,6 +545,7 @@ export function Sidebar({
                       if (isModal) {
                         if (item.modal === "dayReschedule") onOpenDayReschedule?.();
                         else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
+                        else if (item.modal === "testPrep") onOpenTestPrep?.();
                         else onOpenDataMgr();
                         onClose?.();
                       } else {

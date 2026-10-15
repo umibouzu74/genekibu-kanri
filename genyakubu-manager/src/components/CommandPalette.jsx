@@ -38,6 +38,7 @@ export function CommandPalette({
   onSelectMasterTab,
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
+  onOpenTestPrep,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -432,6 +433,21 @@ export function CommandPalette({
         },
       });
     }
+    // 「テスト対策」「振替」「追加授業」のどれで探しても出す
+    if (
+      onOpenTestPrep &&
+      (matchLabel("テスト対策の振替・追加授業") || matchLabel("追加授業を登録") || matchLabel("振替を登録"))
+    ) {
+      hits.push({
+        type: "view",
+        label: "テスト対策の振替・追加授業",
+        detail: "コースを選んで振替 (別の日・時間・教室へ) / 追加授業を登録",
+        action: () => {
+          onOpenTestPrep();
+          onClose();
+        },
+      });
+    }
     if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
@@ -467,6 +483,7 @@ export function CommandPalette({
     onSelectMasterTab,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,
+    onOpenTestPrep,
     onClose,
     views,
     canUseAdminData,
