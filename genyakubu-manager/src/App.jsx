@@ -921,9 +921,13 @@ export default function App() {
   const {
     handlePrint,
     handleBatchPrint,
+    handleBatchImages,
     handleBatchPrintAbort,
     batchPrintOpen,
     setBatchPrintOpen,
+    closeBatchPrint,
+    batchImages,
+    clearBatchImages,
     batchPrintBusy,
     batchPrintProgress,
     batchVisibility,
@@ -1127,10 +1131,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setBatchPrintOpen(true)}
-                aria-label="講師を選んでまとめて印刷"
+                aria-label="講師を選んでまとめて印刷・画像にする"
                 style={{ ...S.btn(false), border: "1px solid #ccc" }}
               >
-                📋 まとめて印刷
+                📋 まとめて印刷・画像
               </button>
             )}
           </div>
@@ -2078,8 +2082,11 @@ export default function App() {
             teacherKana={teacherKana}
             year={vy}
             month={vm}
-            onClose={() => setBatchPrintOpen(false)}
+            onClose={closeBatchPrint}
             onPrint={handleBatchPrint}
+            onExportImages={handleBatchImages}
+            onBackFromImages={clearBatchImages}
+            images={batchImages}
             onAbort={handleBatchPrintAbort}
             busy={batchPrintBusy}
             progress={batchPrintProgress}

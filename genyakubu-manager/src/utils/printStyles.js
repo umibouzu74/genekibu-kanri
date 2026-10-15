@@ -8,6 +8,7 @@
 //   2. 月次カレンダー (label / header / visibility / CSS)
 //   3. タイムテーブル (header / 全曜日まとめ / CSS)
 //   4. 一括印刷 (グルーピング / body 連結)
+//   5. 画像出力 (月次の紙面を PNG にするときの CSS / ファイル名)
 
 import { EVENT_KIND } from "../constants/eventKinds";
 import { escapeHtml } from "./escape";
@@ -17,8 +18,9 @@ import { sortTeacherNames } from "./teacherKana";
 
 // 印刷ヘッダのメタ行に出す印刷日 (YYYY年MM月DD日 印刷)。月次・時間割の
 // 双方で同形式にしたいので、フォーマットを 1 箇所にまとめる。
-function formatPrintedAt(now) {
-  return `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 印刷`;
+// label は画像出力のときだけ「作成」にする (紙ではないので)。
+function formatPrintedAt(now, label = "印刷") {
+  return `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, "0")}月${String(now.getDate()).padStart(2, "0")}日 ${label}`;
 }
 
 // 紙面ヘッダの対象日 (E1h: 日付フォーマット統一)。"YYYY-MM-DD" を
@@ -86,16 +88,17 @@ export function describeMonthVisibility(visibility) {
 
 // 月次カレンダー印刷ヘッダ HTML (タイトル + メタ + 凡例) を組み立てる。
 // .month-print-root の直前に挿入される。`now` を引数で受けるのは決定的に
-// テストするため。
+// テストするため。stampLabel はメタ行の日付の後ろの語 (画像出力は「作成」)。
 export function buildMonthHeaderHtml({
   teacher,
   year,
   month,
   visibility,
   now = new Date(),
+  stampLabel = "印刷",
 }) {
   const monthLabel = buildMonthLabel({ teacher, year, month });
-  const printedAt = formatPrintedAt(now);
+  const printedAt = formatPrintedAt(now, stampLabel);
   const filterDesc = describeMonthVisibility(visibility);
   const meta = filterDesc
     ? `<div class="month-print-meta"><span>${escapeHtml(printedAt)}</span><span>${escapeHtml(filterDesc)}</span></div>`
@@ -106,10 +109,8 @@ export function buildMonthHeaderHtml({
   return `<div class="month-print-header"><h2 class="month-print-page-title">${escapeHtml(monthLabel)}</h2>${meta}${legend}</div>`;
 }
 
-// 月次カレンダー印刷専用 CSS。罫線を明示し、各日セルがページ境界で
-// 割れないよう抑制し、コマカードは折り返し可・操作 UI 風表現を解除する。
-// 一括印刷時の .batch-print-page (講師ごとの 1 枚) は最後を除き改ページする。
-function monthPrintCss() {
+// 月次の紙面ヘッダ (タイトル・メタ・凡例) の CSS。印刷・画像出力で共通。
+function monthHeaderCss() {
   return `
     .month-print-header{margin:0 0 6px}
     .month-print-page-title{font-size:13pt;font-weight:700;margin:0 0 3px;padding:0 0 3px;border-bottom:1px solid #444}
@@ -117,7 +118,15 @@ function monthPrintCss() {
     .month-print-legend{font-size:8pt;color:#555;display:flex;gap:10px;flex-wrap:wrap}
     .month-print-legend>span{white-space:nowrap}
     .month-print-legend b{background:#444;color:#fff;font-weight:700;padding:0 4px;border-radius:2px;margin-right:3px}
-    @media print{
+  `;
+}
+
+// 月次の紙面の見た目 (罫線を明示・コマカードは折り返し可・操作 UI 風表現を
+// 解除)。印刷では @media print の中に入れ、画像出力 (buildMonthImageStyles)
+// では素のまま当てる。**紙面と画像の見た目を揃えるため、片方だけに規則を
+// 足さないこと。**
+function monthPaperCss() {
+  return `
       .month-print-root{margin-top:0 !important}
       .month-print-grid{
         gap:0 !important;
@@ -140,6 +149,18 @@ function monthPrintCss() {
         cursor:default !important;
         opacity:1 !important;
       }
+      .day-number-link button{text-decoration:none !important}
+  `;
+}
+
+// 月次カレンダー印刷専用 CSS。各日セルがページ境界で割れないよう抑制する
+// (break-inside は monthPaperCss)。一括印刷時の .batch-print-page (講師ごとの
+// 1 枚) は最後を除き改ページする。
+function monthPrintCss() {
+  return `
+    ${monthHeaderCss()}
+    @media print{
+      ${monthPaperCss()}
       .batch-print-page{
         page-break-after:always;
         break-after:page;
@@ -336,4 +357,35 @@ export function buildBatchPrintBodyHtml({ slides }) {
         `<section class="batch-print-page">${headerHtml}${monthRootHtml}</section>`
     )
     .join("");
+}
+
+// ─── 5. 画像出力 (まとめて印刷ダイアログの 🖼 画像にする) ─────────────
+
+// 画像 1 枚の幅 (CSS px)。A4 横の紙面幅 (297mm - 8mm×2 ≒ 1062px) に余白を
+// 足した値。端末の画面幅に関係なく、毎回この幅で描く (iPad の縦向きでも
+// 紙面と同じ並びの画像になる)。実際の画素数は utils/htmlImage の倍率 (既定 2)
+// を掛けたもの。
+export const MONTH_IMAGE_WIDTH = 1120;
+
+// 画像出力用の CSS。紙面 (印刷) と同じ規則 (monthHeaderCss / monthPaperCss) を
+// @media print に入れずに当てる。画面専用の CSS (appShell.css の .month-past
+// で過ぎた日を薄くする等) は画像の文書に読み込まれないので写らない。
+// .month-image-sheet は画像 1 枚の外枠 (utils/htmlImage.renderHtmlToPng)。
+export function buildMonthImageStyles({ width = MONTH_IMAGE_WIDTH } = {}) {
+  return `
+    .month-image-sheet{width:${width}px;padding:16px;box-sizing:border-box;background:#fff;color:#222;font-family:"Hiragino Kaku Gothic Pro","Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif;font-size:11px}
+    .month-image-sheet .no-print{display:none !important}
+    ${monthHeaderCss()}
+    ${monthPaperCss()}
+  `;
+}
+
+// 保存・共有するときのファイル名 (例: 奥村_2026年10月_月次予定.png)。
+// 講師名にファイル名で使えない文字 (制御文字を含む) が混ざっていたら _ に置き換える。
+export function buildMonthImageFileName({ teacher, year, month }) {
+  const safe = Array.from(String(teacher || ""))
+    .map((ch) => (/[\\/:*?"<>|]/.test(ch) || ch.charCodeAt(0) < 0x20 ? "_" : ch))
+    .join("")
+    .trim();
+  return `${safe || "講師"}_${year}年${String(month).padStart(2, "0")}月_月次予定.png`;
 }

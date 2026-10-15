@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
+import { BatchImageResults } from "./BatchImageResults";
 import { buildBatchMonthOptions, groupStaffBySubject } from "../utils/printStyles";
 import { S } from "../styles/common";
 
@@ -20,6 +21,11 @@ import { S } from "../styles/common";
 // 予測できるように)。同じ人が複数グループに出ても 1 回だけ。
 // tagMode は "perTeacher" (講師ごとにタグを担当コマから導出。既定) か
 // "current" (今の表示設定をそのまま全員に使う)。
+//
+// 「🖼 画像にする」(onExportImages) も同じ引数で呼ぶ。印刷の代わりに 1 人 1 枚
+// (× 月) の PNG を作り、できたら images に入って一覧 (BatchImageResults) に
+// 切り替わる (共有・保存はそこから)。「選び直す」(onBackFromImages) で選択画面に
+// 戻る。選択状態はこのコンポーネントが持ち続けるので、戻っても消えない。
 // busy true のあいだは選択 UI を fieldset disabled でロックし、フッタの
 // 「中断」ボタンだけ反応するようにする。onAbort は中断ボタン押下時の
 // コールバック (省略可、未指定時は中断ボタンを出さない)。progress は
@@ -33,6 +39,9 @@ export function BatchPrintDialog({
   month,
   onClose,
   onPrint,
+  onExportImages,
+  onBackFromImages,
+  images = null,
   onAbort,
   busy = false,
   progress = { current: 0, total: 0, name: "" },
@@ -133,13 +142,31 @@ export function BatchPrintDialog({
     }
   };
 
+  const handleExportImages = () => {
+    const list = orderedNames.filter((n) => selected.has(n));
+    if (list.length > 0 && selectedMonths.length > 0) {
+      onExportImages?.(list, selectedMonths, { tagMode });
+    }
+  };
+
   const total = allNames.size;
   const count = selected.size;
   const monthCount = selectedMonths.length;
+  const amountLabel =
+    monthCount > 1 ? `${count} 名 × ${monthCount} か月分` : `${count} 名分`;
+
+  // 画像ができたら一覧に切り替える (選択状態はこのまま持っておく)
+  if (!busy && Array.isArray(images) && images.length > 0) {
+    return (
+      <Modal title="月次予定の画像" onClose={onClose} width={560}>
+        <BatchImageResults images={images} onBack={onBackFromImages} onClose={onClose} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
-      title="月次予定をまとめて印刷"
+      title={onExportImages ? "月次予定をまとめて印刷・画像にする" : "月次予定をまとめて印刷"}
       onClose={onClose}
       closeDisabled={busy}
       width={560}
@@ -409,22 +436,31 @@ export function BatchPrintDialog({
             justifyContent: "flex-end",
             alignItems: "center",
             gap: 8,
+            flexWrap: "wrap",
           }}
         >
           <button type="button" onClick={onClose} style={S.btn(false)}>
             キャンセル
           </button>
+          {/* LINE などで送る用。1 人 1 枚 (× 月) の PNG を作る */}
+          {onExportImages && (
+            <button
+              type="button"
+              onClick={handleExportImages}
+              aria-label={`${amountLabel}を画像にする`}
+              style={{ ...S.btn(false), border: "1px solid #bbc" }}
+              disabled={count === 0 || monthCount === 0}
+            >
+              {busy ? "準備中…" : `🖼 ${amountLabel}を画像に`}
+            </button>
+          )}
           <button
             type="button"
             onClick={handlePrint}
             style={S.btn(true)}
             disabled={count === 0 || monthCount === 0}
           >
-            {busy
-              ? "準備中…"
-              : monthCount > 1
-                ? `${count} 名 × ${monthCount} か月分を印刷`
-                : `${count} 名分を印刷`}
+            {busy ? "準備中…" : `${amountLabel}を印刷`}
           </button>
         </div>
       </fieldset>
@@ -478,7 +514,7 @@ export function BatchPrintDialog({
           <progress
             value={progress.current}
             max={progress.total}
-            aria-label="一括印刷の生成進捗"
+            aria-label="生成の進捗"
             style={{ width: "100%", height: 8 }}
           />
         </div>

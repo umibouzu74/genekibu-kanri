@@ -676,3 +676,122 @@ test("月次カレンダー: まとめて印刷で「現在の表示設定のま
   await expect(metas.nth(0)).toContainText("除外タグ: 高松西");
   await expect(metas.nth(1)).toContainText("除外タグ: 高松西");
 });
+
+// 月次の 🖼 画像にする (usePrintJobs.handleBatchImages)。まとめて印刷と同じ
+// 講師 × 月の紙面を 1 人 1 枚の PNG にして、ダイアログから保存・共有する
+// (LINE でバイトに送る用。2026-10-15)。実 Chromium で SVG foreignObject →
+// canvas → PNG が通り、白紙でない画像になることまで確かめる。
+// (Linux の Chromium には共有シートが無いので「保存」= ダウンロードの経路)
+test("月次カレンダー: まとめて印刷ダイアログから 1 人 1 枚の画像を作って保存できる", async ({
+  page,
+}, testInfo) => {
+  // 保存時に付けたファイル名を記録する。Playwright の suggestedFilename は
+  // 実行環境のロケールが UTF-8 でないと日本語名が "download" に化けるので、
+  // <a download> に入れた名前そのものを見る
+  await page.addInitScript(() => {
+    window.__downloadNames = [];
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) window.__downloadNames.push(this.download);
+      return click.call(this);
+    };
+  });
+  await page.goto("/genekibu-kanri/");
+  await page.locator(".sidebar button").filter({ hasText: /^奥村/ }).first().click();
+  await page.getByRole("button", { name: "月間", exact: true }).click();
+  await expect(page.locator(".month-print-root")).toBeVisible();
+
+  await page.getByRole("button", { name: "講師を選んでまとめて印刷" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("杉原", { exact: true }).check();
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  await dialog.getByRole("button", { name: "2 名分を画像にする" }).click();
+
+  // できた画像の一覧 (並びは印刷と同じ: 奥村 → 杉原)
+  const list = dialog.getByRole("list", { name: "できた画像" });
+  await expect(list.getByRole("listitem")).toHaveCount(2, { timeout: 30_000 });
+  const imgs = list.getByRole("img");
+  await expect(imgs.nth(0)).toHaveAttribute("alt", /^奥村 \d{4}年\d{1,2}月の月次予定$/);
+  await expect(imgs.nth(1)).toHaveAttribute("alt", /^杉原 /);
+
+  // 紙面の幅 (1120px) × 2 倍の画素で、白紙ではない (罫線・文字が描かれている)
+  const stats = await imgs.nth(0).evaluate(async (img) => {
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    let ink = 0;
+    for (let i = 0; i < data.length; i += 4 * 7) {
+      if (data[i] < 200 || data[i + 1] < 200 || data[i + 2] < 200) ink++;
+    }
+    return { w: img.naturalWidth, h: img.naturalHeight, ink };
+  });
+  expect(stats.w).toBe(2240);
+  expect(stats.h).toBeGreaterThan(600);
+  expect(stats.ink).toBeGreaterThan(5000);
+
+  // 保存は講師名・年月の付いたファイル名のダウンロードになる
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    dialog.getByRole("button", { name: "奥村 の画像を保存" }).click(),
+  ]);
+  const names = await page.evaluate(() => window.__downloadNames);
+  expect(names).toHaveLength(1);
+  expect(names[0]).toMatch(/^奥村_\d{4}年\d{2}月_月次予定\.png$/);
+  await download.saveAs(testInfo.outputPath("okumura-month.png"));
+
+  // 画面は元の講師 (奥村) の月間ビューに戻っている
+  await expect(page.locator(".month-print-root")).toBeVisible();
+  await expect(page.locator("h1, h2").filter({ hasText: "奥村" }).first()).toBeVisible();
+
+  // 「選び直す」で選択画面に戻り、チェックは残っている
+  await dialog.getByRole("button", { name: "← 選び直す" }).click();
+  await expect(dialog.getByLabel("奥村", { exact: true })).toBeChecked();
+  await expect(dialog.getByLabel("杉原", { exact: true })).toBeChecked();
+});
+
+// 共有シートのある端末 (iPad / iPhone) では、行の「共有」でその人の画像だけ、
+// 「まとめて共有」で全員分を navigator.share に渡す。Linux の Chromium には
+// 共有シートが無いので navigator.share / canShare を差し替えて確かめる。
+// 画面幅は iPad の縦向き。
+test("月次カレンダー: 画像は共有シートへ 1 人ずつ / まとめて渡せる (iPad 幅)", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.addInitScript(() => {
+    window.__shared = [];
+    navigator.canShare = () => true;
+    navigator.share = (data) => {
+      window.__shared.push(Object.keys(data).join(","));
+      window.__shared.push(data.files.map((f) => `${f.name}:${f.type}`));
+      return Promise.resolve();
+    };
+  });
+  await page.goto("/genekibu-kanri/");
+  await page.locator(".sidebar button").filter({ hasText: /^奥村/ }).first().click();
+  await page.getByRole("button", { name: "月間", exact: true }).click();
+  await expect(page.locator(".month-print-root")).toBeVisible();
+
+  await page.getByRole("button", { name: "講師を選んでまとめて印刷" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  await dialog.getByLabel("杉原", { exact: true }).check();
+  await dialog.getByRole("button", { name: "2 名分を画像にする" }).click();
+  await expect(dialog.getByRole("list", { name: "できた画像" }).getByRole("listitem")).toHaveCount(
+    2,
+    { timeout: 30_000 }
+  );
+  await dialog.screenshot({ path: testInfo.outputPath("dialog-ipad.png") });
+
+  await dialog.getByRole("button", { name: "杉原 の画像を共有" }).click();
+  await dialog.getByRole("button", { name: "2 枚をまとめて共有" }).click();
+  const shared = await page.evaluate(() => window.__shared);
+  expect(shared[0]).toBe("files");
+  expect(shared[1]).toHaveLength(1);
+  expect(shared[1][0]).toMatch(/^杉原_\d{4}年\d{2}月_月次予定\.png:image\/png$/);
+  expect(shared[3]).toHaveLength(2);
+  expect(shared[3][0]).toMatch(/^奥村_/);
+});
