@@ -191,6 +191,8 @@ td[role="button"]:focus-visible {
    (紙面の見え方は @media print だけで決める方針) */
 @media screen and (hover: none) {
   .master-slot-actions { opacity: 1 !important; }
+  /* メインメニューのショートカット (g d など) はキーボードのある端末だけ */
+  .main-menu-chord { display: none !important; }
 }
 @media print {
   /* アプリシェルは通常 height:100vh のフレックス + .app-main が

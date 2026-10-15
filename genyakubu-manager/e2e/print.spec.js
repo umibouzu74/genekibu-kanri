@@ -795,3 +795,66 @@ test("月次カレンダー: 画像は共有シートへ 1 人ずつ / まとめ
   expect(shared[3]).toHaveLength(2);
   expect(shared[3][0]).toMatch(/^奥村_/);
 });
+
+// メインメニューからも 月間予定の印刷・画像 を開ける (2026-10-15)。講師を選んで
+// いない画面から始めても、講師 × 月を描き替えて撮り、終われば元のメインメニューへ
+// 戻ること (usePrintJobs は selected = null / view = MENU を戻す)。
+test("メインメニュー: 月間予定の印刷・画像から画像を作り、終わるとメインメニューに戻る", async ({
+  page,
+}) => {
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+  await page
+    .locator("#main-content")
+    .getByRole("button", { name: /^月間予定の印刷・画像/ })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "月次予定をまとめて印刷・画像にする" });
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  await dialog.getByLabel("杉原", { exact: true }).check();
+  await dialog.getByRole("button", { name: "2 名分を画像にする" }).click();
+
+  const list = page.getByRole("list", { name: "できた画像" });
+  await expect(list.getByRole("listitem")).toHaveCount(2, { timeout: 30_000 });
+  await expect(list.getByRole("img").nth(0)).toHaveAttribute("alt", /^奥村 /);
+  // 後ろの画面はメインメニューに戻っている (講師の月間のままにしない)
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+  await expect(page.locator(".month-print-root")).toHaveCount(0);
+
+  // ✕ (aria-label 閉じる) ではなく、一覧の下の「閉じる」
+  await page.getByRole("dialog", { name: "月次予定の画像" }).getByText("閉じる", { exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+});
+
+// メインメニューから開いた まとめて印刷 (popup)。月間をまだ 1 度も描いていない
+// ので、遅延読み込みの MonthView が最初は「読み込み中...」になる。紙面が出るまで
+// 待ってから撮ること (待たないと全員分が空で「印刷データを生成できません」に
+// なっていた)。background タブの再現 (rAF を呼ばない) も上と同じ
+test("メインメニュー: まとめて印刷も月間を開かずに刷れ、終わるとメインメニューに戻る", async ({
+  page,
+  context,
+}) => {
+  await context.addInitScript(() => {
+    window.print = () => {};
+    window.requestAnimationFrame = () => 0;
+  });
+  await page.goto("/genekibu-kanri/");
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+  await page
+    .locator("#main-content")
+    .getByRole("button", { name: /^月間予定の印刷・画像/ })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "月次予定をまとめて印刷・画像にする" });
+  await dialog.getByLabel("奥村", { exact: true }).check();
+  await dialog.getByLabel("杉原", { exact: true }).check();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    dialog.getByRole("button", { name: "2 名分を印刷" }).click(),
+  ]);
+  await expect(popup.locator(".batch-print-page")).toHaveCount(2, { timeout: 15_000 });
+  await expect(popup.locator(".month-print-page-title").nth(0)).toContainText("奥村");
+  await expect(popup.locator(".month-print-grid").first()).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".app-h1")).toHaveText("メインメニュー");
+});

@@ -240,6 +240,27 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
     まとめて共有 (グループ用) の両方を置く
   - 画像のメタ行は「◯日 作成」(`buildMonthHeaderHtml` の `stampLabel`)
 
+  **月間予定の印刷・画像はメインメニュー・サイドバー・Cmd+K からも開く**
+  (2026-10-15、サイドバー「🖼 月間予定の印刷・画像」= `action: "modal"` の
+  `monthBatch`、閲覧者にも出す)。開くのは App の **`openMonthBatch` の 1 か所**:
+  - まとめて印刷・画像は `setView(VIEWS.MONTH)` で月間を描き替えて撮るので、
+    その間いまの画面は**アンマウントされ、終わると作り直し**になる。画面の中に
+    覚えておくものが無い画面 (メインメニュー・ダッシュボード (表示日は
+    sessionStorage)・講師の月間) だけその場で開き、**それ以外はメインメニューへ
+    移ってから開く** (`selectView` = navigateGuarded を通すので、欠勤組み換えの
+    下書きは確認が出る)。**`setBatchPrintOpen(true)` を新しい導線から直に
+    呼ばないこと** — 欠勤組み換えの下書きや入力途中のフォームを、印刷のついでに
+    黙って捨てる
+  - 対象月の既定は、講師の月間から開いたときは表示中の月、それ以外は今月
+    (`batchBaseMonth`。`monthOff` は月間を離れても残るので、そのまま使うと前に
+    見ていた月が既定になる)
+  - **MonthView は遅延読み込み (React.lazy)**。モジュールを `import()` 済みでも、
+    lazy は最初の描画で Suspense の「読み込み中...」を出し、中身はその後の
+    再描画で出る。月間を 1 度も描いていない状態から始めると flushSync だけでは
+    紙面が無いまま撮る (全員分が空になる)。ループの前に `primeMonthView` で
+    1 枚目を描き、`printWindow.waitForSelector(".month-print-root")` で紙面が
+    出るまで待つ (待ちは yieldToBrowser。rAF は使わない)
+
 **両者を統合する案 (E-2: 全部 window.print() 方式に寄せる) は
 2026-05-05 に検討の上で却下。** 月次の印刷ヘッダ (タイトル・印刷日・
 フィルタ状態・凡例) を `window.print()` で出すには各コンポーネントに
@@ -627,8 +648,9 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   (2026-10-15 に Sidebar.jsx から移した。メインメニューが名前・アイコン・
   権限をここから引く)
 - **ダイアログを開く操作**は `action: "modal"` の項目
-  (💾 データ管理 / 📅 日まるごと振替 / 🎯 テスト対策の振替・追加)。書き込み専用の操作には
-  `adminOnly: true` を付け、閲覧者には出さない
+  (💾 データ管理 / 📅 日まるごと振替 / 🎯 テスト対策の振替・追加 /
+  🖼 月間予定の印刷・画像)。書き込み専用の操作には
+  `adminOnly: true` を付け、閲覧者には出さない (月間予定の印刷・画像は閲覧者にも出す)
 - **1 画面に複数のマネージャが縦に並ぶ画面**は、その画面を開いている間だけ
   子項目にセクション名を出す (`sections`)。クリックでアンカーまでスクロール。
   常時展開しないのは、サイドバーが長くなって元のビュー一覧が読めなくなるため
@@ -674,6 +696,11 @@ sessionStorage の直前の画面。画面を移ると本文のスクロール�
   masterTab / subsTab)。サイドバー・Cmd+K と同じ経路 (`selectView` +
   初期状態の要求) を通す。ダイアログを足したらここにも足す
 - **並びは固定**。使用頻度・履歴で並べ替えない・「よく使う」欄を作らない (A18)
+- ビューへ移る項目には g chord (`g a` など) を添える (`mainMenu.menuItemChord` →
+  `MainMenuPanel` の `MenuChordHint`。サイドバーの ChordHint と同じ `VIEW_CHORD_BY_VIEW`)。
+  画面の中のセクション・タブ・ダイアログには出さない (g では親の画面になる)。
+  読み上げ名には入れず (aria-hidden)、タッチ端末では消す (appShell.css の
+  `.main-menu-chord`)。小さい版は title に入れる
 - 閲覧者には管理者専用の項目を出さない (`visibleMainMenu`)
 - **ダッシュボードの下のメニューは紙面に載せない** (`no-print`。PrintButton の
   window.print と 🖨 の popup のどちらでも消える。e2e の印刷テストが見ている)。

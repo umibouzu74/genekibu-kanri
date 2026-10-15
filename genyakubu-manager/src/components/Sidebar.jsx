@@ -153,6 +153,7 @@ export function Sidebar({
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
   onOpenTestPrep,
+  onOpenMonthBatch,
   onSelectEventSection,
   onSelectMasterTab,
   masterTab,
@@ -490,6 +491,7 @@ export function Sidebar({
                         if (item.modal === "dayReschedule") onOpenDayReschedule?.();
                         else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
                         else if (item.modal === "testPrep") onOpenTestPrep?.();
+                        else if (item.modal === "monthBatch") onOpenMonthBatch?.();
                         else onOpenDataMgr();
                         onClose?.();
                       } else {

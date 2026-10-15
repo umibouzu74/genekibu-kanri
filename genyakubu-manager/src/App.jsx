@@ -693,36 +693,6 @@ export default function App() {
     else if (el) el.scrollTop = 0;
   }, [view, selected]);
 
-  // メインメニュー (起動時の画面 / ダッシュボードの下) の項目を押したときの移動。
-  // 項目の kind ごとに、サイドバー・Cmd+K と同じ経路を通す (constants/mainMenu)
-  const navigateMenuItem = useCallback(
-    (item) => {
-      switch (item.kind) {
-        case "view":
-          selectView(item.view);
-          break;
-        case "section":
-          selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(item.section));
-          break;
-        case "masterTab":
-          selectView(VIEWS.MASTER, () => setMasterTab(item.tab));
-          break;
-        case "subsTab":
-          selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: item.tab }));
-          break;
-        case "modal":
-          if (item.modal === "dayReschedule") setShowDayReschedule(true);
-          else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
-          else if (item.modal === "testPrep") setTestPrep({});
-          else if (item.modal === "data") setShowDataMgr(true);
-          break;
-        default:
-          break;
-      }
-    },
-    [selectView]
-  );
-
   const openDayScheduleEditor = useCallback(
     (id) => {
       selectView(VIEWS.HOLIDAYS, () =>
@@ -945,6 +915,58 @@ export default function App() {
     toasts,
   });
 
+  // 月間予定のまとめて印刷・画像 (サイドバー / メインメニュー / Cmd+K から)。
+  // まとめて印刷・画像は月間を講師ごとに描き替えて撮るので、その間いまの画面は
+  // いったん外れ、終わると作り直しになる (usePrintJobs)。画面の中に覚えておく
+  // ものが無い画面 (メインメニュー・ダッシュボード・講師の月間) ではその場で
+  // 開き、それ以外はメインメニューへ移ってから開く。欠勤組み換えの下書きや
+  // 入力途中のフォームを、印刷のついでに黙って捨てないため (移動は
+  // navigateGuarded が下書きを確認する)
+  const openMonthBatch = useCallback(() => {
+    const keepsScreen = selected
+      ? view === VIEWS.MONTH
+      : view === VIEWS.MENU || view === VIEWS.DASH;
+    if (keepsScreen) setBatchPrintOpen(true);
+    else selectView(VIEWS.MENU, () => setBatchPrintOpen(true));
+  }, [selected, view, selectView, setBatchPrintOpen]);
+  // ダイアログの対象月の基準。講師の月間から開いたときは表示中の月、それ以外
+  // (メインメニューなど) は今月 (前に見ていた月間の月を引きずらない)
+  const batchBaseMonth =
+    selected && view === VIEWS.MONTH
+      ? { year: vy, month: vm }
+      : { year: now.getFullYear(), month: now.getMonth() + 1 };
+
+  // メインメニュー (起動時の画面 / ダッシュボードの下) の項目を押したときの移動。
+  // 項目の kind ごとに、サイドバー・Cmd+K と同じ経路を通す (constants/mainMenu)
+  const navigateMenuItem = useCallback(
+    (item) => {
+      switch (item.kind) {
+        case "view":
+          selectView(item.view);
+          break;
+        case "section":
+          selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(item.section));
+          break;
+        case "masterTab":
+          selectView(VIEWS.MASTER, () => setMasterTab(item.tab));
+          break;
+        case "subsTab":
+          selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: item.tab }));
+          break;
+        case "modal":
+          if (item.modal === "dayReschedule") setShowDayReschedule(true);
+          else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
+          else if (item.modal === "testPrep") setTestPrep({});
+          else if (item.modal === "monthBatch") openMonthBatch();
+          else if (item.modal === "data") setShowDataMgr(true);
+          break;
+        default:
+          break;
+      }
+    },
+    [selectView, openMonthBatch]
+  );
+
   // 月間 (講師選択中) の ← / → / t = 前の月 / 次の月 / 今月。まとめて印刷の
   // ダイアログを開いている間は月を動かさない (印刷対象の月がずれる)。
   // 日別ダッシュボードは DashboardDateNav、イベントカレンダー・週間は
@@ -998,6 +1020,10 @@ export default function App() {
         }}
         onOpenTestPrep={() => {
           setTestPrep({});
+          setSidebarOpen(false);
+        }}
+        onOpenMonthBatch={() => {
+          openMonthBatch();
           setSidebarOpen(false);
         }}
         onSelectEventSection={(kind) => {
@@ -1134,7 +1160,7 @@ export default function App() {
                 aria-label="講師を選んでまとめて印刷・画像にする"
                 style={{ ...S.btn(false), border: "1px solid #ccc" }}
               >
-                📋 まとめて印刷・画像
+                🖼 まとめて印刷・画像
               </button>
             )}
           </div>
@@ -2036,6 +2062,10 @@ export default function App() {
                   }
                 : undefined
             }
+            onOpenMonthBatch={() => {
+              setCmdPaletteOpen(false);
+              openMonthBatch();
+            }}
             onSelectDate={(date) => {
               openDashboardAt(date);
               setCmdPaletteOpen(false);
@@ -2080,8 +2110,8 @@ export default function App() {
             fulltimeGroups={fulltimeGroups}
             subjects={subjects}
             teacherKana={teacherKana}
-            year={vy}
-            month={vm}
+            year={batchBaseMonth.year}
+            month={batchBaseMonth.month}
             onClose={closeBatchPrint}
             onPrint={handleBatchPrint}
             onExportImages={handleBatchImages}

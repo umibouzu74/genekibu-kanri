@@ -164,6 +164,19 @@ describe("Sidebar のテスト対策の振替・追加", () => {
   });
 });
 
+describe("Sidebar の月間予定の印刷・画像", () => {
+  // 印刷・画像は書き込みではないので閲覧者にも出す (2026-10-15)
+  it("閲覧者にも出し、クリックでダイアログを開く", () => {
+    const onOpenMonthBatch = vi.fn();
+    const onOpenDataMgr = vi.fn();
+    renderSidebar({ isAdmin: false, onOpenMonthBatch, onOpenDataMgr });
+    fireEvent.click(screen.getByRole("button", { name: /月間予定の印刷・画像/ }));
+    expect(onOpenMonthBatch).toHaveBeenCalledTimes(1);
+    // データ管理 (modal の既定の行き先) には落ちない
+    expect(onOpenDataMgr).not.toHaveBeenCalled();
+  });
+});
+
 describe("Sidebar の講師検索", () => {
   const groups = [{ key: "英語", label: "英語", teachers: ["堀上", "石原"] }];
   const slots = [

@@ -90,3 +90,19 @@ export function yieldToBrowser() {
     }
   });
 }
+
+// selector の要素が DOM に現れるまで待つ (現れたら true、timeoutMs を過ぎたら
+// false)。待ちは yieldToBrowser (上と同じ理由で rAF は使わない)。
+//
+// 一括の印刷・画像で、遅延読み込み (React.lazy) のビューを 1 度も描いていない
+// ときに使う。モジュールを import 済みでも、lazy は最初の描画で Suspense の
+// 「読み込み中...」を出し、中身はその後の再描画で出る。flushSync だけでは
+// 紙面が無いまま撮ることになる (メインメニューから月間予定を刷ったとき)。
+export async function waitForSelector(selector, { timeoutMs = 10000, root = document } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (!root.querySelector(selector)) {
+    if (Date.now() > deadline) return false;
+    await yieldToBrowser();
+  }
+  return true;
+}

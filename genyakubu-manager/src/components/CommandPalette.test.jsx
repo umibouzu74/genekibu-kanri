@@ -147,3 +147,22 @@ describe("CommandPalette のよみ検索 (講師名の欄)", () => {
     expect(texts.some((t) => t.includes("大手前丸亀"))).toBe(false);
   });
 });
+
+describe("CommandPalette の月間予定のまとめて印刷・画像", () => {
+  it("月間予定のまとめて印刷・画像を「まとめて印刷」「画像」で開ける", () => {
+    const onOpenMonthBatch = vi.fn();
+    const { onClose } = renderPalette({ onOpenMonthBatch });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "まとめて印刷" } });
+    expect(screen.getByRole("option", { name: /月間予定のまとめて印刷・画像/ })).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "画像" } });
+    fireEvent.click(screen.getByRole("option", { name: /月間予定のまとめて印刷・画像/ }));
+    expect(onOpenMonthBatch).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("onOpenMonthBatch を渡さなければ出さない", () => {
+    renderPalette();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "まとめて印刷" } });
+    expect(screen.queryByRole("option", { name: /月間予定のまとめて印刷・画像/ })).toBeNull();
+  });
+});

@@ -40,6 +40,8 @@ export function CommandPalette({
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
   onOpenTestPrep,
+  // 月間予定のまとめて印刷・画像 (閲覧者にも渡す。印刷は書き込みではない)
+  onOpenMonthBatch,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -443,6 +445,21 @@ export function CommandPalette({
         },
       });
     }
+    // 「まとめて印刷」「画像」「月間予定」のどれで探しても出す
+    if (
+      onOpenMonthBatch &&
+      (matchLabel("月間予定のまとめて印刷・画像") || matchLabel("画像にする"))
+    ) {
+      hits.push({
+        type: "view",
+        label: "月間予定のまとめて印刷・画像",
+        detail: "バイト・講師の月間予定を何人分もまとめて印刷 / 1 人 1 枚の画像に",
+        action: () => {
+          onOpenMonthBatch();
+          onClose();
+        },
+      });
+    }
     if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
@@ -479,6 +496,7 @@ export function CommandPalette({
     onOpenDayReschedule,
     onOpenMultiDayAbsence,
     onOpenTestPrep,
+    onOpenMonthBatch,
     onClose,
     views,
     canUseAdminData,
