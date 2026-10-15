@@ -215,3 +215,15 @@ export function normalizeTimeRange(input, { durationMin = null } = {}) {
   }
   return { ok: true, time: `${fmtHourMin(start)}-${fmtHourMin(end)}` };
 }
+
+/**
+ * 授業の時間を比べるための正規形 ("9:30-10:50" と "09:30-10:50"、"〜" 区切りを
+ * 同じにする)。読めない時間は前後の空白を落としただけで返す。
+ * 「元のコマと同じ時間か」は文字列の完全一致ではなくこれで比べること
+ * (コマの時間は自由入力で、ゼロ埋めの無い "9:30-10:50" もありうる)。
+ * @param {string} time
+ */
+export function canonicalTimeRange(time) {
+  const r = normalizeTimeRange(time);
+  return r.ok && r.time ? r.time : String(time ?? "").trim();
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyDayReschedule,
   buildDayOccupancy,
+  findOccupancyConflicts,
   buildDayReschedulePlan,
   collectDayRescheduleCandidates,
   findDayRescheduleAdjustments,
@@ -238,6 +239,43 @@ describe("buildDayOccupancy", () => {
     expect(occ.map((o) => o.key)).toEqual(["rs:5", "slot:1"]);
   });
 
+  // 校正レビュー (2026-10-15): 代行・欠勤と他校舎の授業を見ていなかった
+  it("通常のコマは代行・欠勤を入れた後の担当で塞ぎ、他校舎の授業も講師を塞ぐ", () => {
+    const slots = [
+      makeSlot(1, "金", "19:00-20:20", { teacher: "河野" }),
+      makeSlot(2, "金", "20:30-21:50", { teacher: "堀上" }),
+    ];
+    const occ = buildDayOccupancy({
+      slots,
+      dateStr: FRI,
+      subs: [
+        // 河野の代わりに西岡 / 堀上は欠勤 (代行未定)
+        { id: 1, date: FRI, slotId: 1, originalTeacher: "河野", substitute: "西岡", status: "confirmed" },
+        { id: 2, date: FRI, slotId: 2, originalTeacher: "堀上", substitute: "", status: "requested" },
+        // 別の日の代行は見ない
+        { id: 3, date: MON, slotId: 1, originalTeacher: "河野", substitute: "福江", status: "confirmed" },
+      ],
+      offsiteLessons: [
+        { id: 7, teacher: "石原", place: "村上高松", days: ["金"], time: "14:50-15:40", startDate: "2026-10-01" },
+      ],
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    const byKey = new Map(occ.map((o) => [o.key, o]));
+    expect(byKey.get("slot:1").teachers).toEqual(["西岡"]);
+    expect(byKey.get("slot:2").teachers).toEqual([]);
+    expect(byKey.get("offsite:7").teachers).toEqual(["石原"]);
+    expect(
+      findOccupancyConflicts(occ, { time: "19:30-20:30", teachers: ["西岡", "河野"], room: "" }).map(
+        (c) => c.label
+      )
+    ).toEqual(["西岡 / 19:00-20:20 中3S 数学"]);
+    expect(
+      findOccupancyConflicts(occ, { time: "15:00-16:00", teachers: ["石原"] }).map((c) => c.kind)
+    ).toEqual(["teacher"]);
+    // 他校舎の予定と重ならない時間なら数えない
+    expect(findOccupancyConflicts(occ, { time: "17:00-18:00", teachers: ["石原"] })).toEqual([]);
+  });
+
   it("コマ id と追加授業 id が同じでも別物として数える", () => {
     const slots = [makeSlot(1, "金", "19:00-20:20")];
     const occ = buildDayOccupancy({
@@ -258,6 +296,21 @@ describe("buildDayReschedulePlan", () => {
     makeSlot(1, "月", "19:00-20:20", { teacher: "堀上" }),
     makeSlot(2, "月", "20:30-21:50", { teacher: "河野", room: "603" }),
   ];
+
+  // 校正レビュー (2026-10-15): 日まるごと振替の上書きで、テスト対策などで個別に
+  // 決めた時間・教室・担当が黙って外れていた
+  it("時間・教室・担当を個別に決めた振替を上書きするときは知らせる", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      adjustments: [
+        { id: 9, date: MON, type: "reschedule", slotId: 1, targetDate: FRI, targetTime: "17:00-18:00", targetRoom: "亀63" },
+      ],
+      sourceDate: MON,
+      targetDate: FRI,
+      ctx: makeCtx({ allSlots: slots }),
+    });
+    expect(plan.notes.join("\n")).toMatch(/1 コマは振替先の時間・教室・担当を個別に決めてあります/);
+  });
 
   it("その日のコマを全部まとめて振り替えるプランを作る", () => {
     const plan = buildDayReschedulePlan({

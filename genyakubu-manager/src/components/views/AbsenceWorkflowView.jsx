@@ -18,7 +18,7 @@ import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { buildIncomingCards, incomingCombineKey } from "../../utils/adjustmentDisplay";
-import { fmtMDWeekday } from "../../utils/dateHelpers";
+import { canonicalTimeRange, fmtMDWeekday } from "../../utils/dateHelpers";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import {
   activeTeachersOnDate,
@@ -650,8 +650,12 @@ export function AbsenceWorkflowView({
           const slot = (slots || []).find((x) => x.id === a.slotId);
           const next = { ...a, targetDate: patch.targetDate };
           for (const key of ["targetTime", "targetRoom", "targetTeacher", "memo"]) {
+            // 時刻は正規形で比べる (ピッカーは "09:30-10:50" に整えて返すので、
+            // ゼロ埋めの無い "9:30-10:50" のコマと文字列では一致しない)
             const same =
-              (key === "targetTime" && patch[key] === slot?.time) ||
+              (key === "targetTime" &&
+                patch[key] &&
+                canonicalTimeRange(patch[key]) === canonicalTimeRange(slot?.time)) ||
               (key === "targetRoom" && patch[key] === slot?.room);
             const value = same ? "" : patch[key];
             if (value) next[key] = value;

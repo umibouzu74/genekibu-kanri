@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 
 import { VIEWS } from "./constants/views";
@@ -178,7 +187,7 @@ const IS_MAC =
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 const CMD_K_HINT = IS_MAC ? "⌘K" : "Ctrl+K";
 
-// 起動時の画面 (新しいタブで開いたとき・インポート / 初期化の後)。
+// 起動時の画面 (新しいタブで開いたとき・データの初期化の後)。
 // 2026-10-15 にダッシュボードからメインメニューへ変えた
 const START_VIEW = VIEWS.MENU;
 
@@ -674,6 +683,16 @@ export default function App() {
     [isAdmin, handoverEnabled]
   );
 
+  // 画面を移ったら本文のスクロールを先頭へ戻す。ダッシュボードの下のメニュー
+  // から移ると、次の画面が途中までスクロールした位置で開き、見出しが見えなかった
+  // (セクションへのスクロール・引継ぎメモの強調はこの後に走るので邪魔しない)
+  const mainScrollRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = mainScrollRef.current;
+    if (el && typeof el.scrollTo === "function") el.scrollTo(0, 0);
+    else if (el) el.scrollTop = 0;
+  }, [view, selected]);
+
   // メインメニュー (起動時の画面 / ダッシュボードの下) の項目を押したときの移動。
   // 項目の kind ごとに、サイドバー・Cmd+K と同じ経路を通す (constants/mainMenu)
   const navigateMenuItem = useCallback(
@@ -1001,7 +1020,11 @@ export default function App() {
       <div className="sidebar-spacer" style={{ width: LAYOUT.SIDEBAR_WIDTH, flexShrink: 0 }} />
 
       {/* Main */}
-      <div className="app-main" style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}>
+      <div
+        ref={mainScrollRef}
+        className="app-main"
+        style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}
+      >
         <div
           style={{
             display: "flex",
@@ -1172,6 +1195,15 @@ export default function App() {
               落とさない。別のビューへ移れば自動で復帰する */}
           <ErrorBoundary scope="view" resetKey={`${view}:${selected || ""}`}>
           <Suspense fallback={<ViewFallback />}>
+          {/* 去年のこの時期 (引継ぎメモ) は起動時の画面とダッシュボードの上に */}
+          {(view === VIEWS.DASH || view === VIEWS.MENU) && !selected && handoverEnabled && (
+            <HandoverSeasonBanner
+              notes={handoverNotes}
+              onOpenNote={openHandoverNote}
+              onOpenList={() => openHandoverNote(null)}
+              onAdd={() => setShowHandoverAdd(true)}
+            />
+          )}
           {view === VIEWS.MENU && !selected && (
             <MainMenuView
               categories={mainMenu}
@@ -1182,15 +1214,6 @@ export default function App() {
                 selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
               }
               cmdKHint={CMD_K_HINT}
-            />
-          )}
-          {/* 去年のこの時期 (引継ぎメモ) は起動時の画面とダッシュボードの上に */}
-          {(view === VIEWS.DASH || view === VIEWS.MENU) && !selected && handoverEnabled && (
-            <HandoverSeasonBanner
-              notes={handoverNotes}
-              onOpenNote={openHandoverNote}
-              onOpenList={() => openHandoverNote(null)}
-              onAdd={() => setShowHandoverAdd(true)}
             />
           )}
           {view === VIEWS.DASH && !selected && (
@@ -1885,6 +1908,7 @@ export default function App() {
           adjustments={adjustments}
           extraLessons={extraLessons}
           subs={subs}
+          offsiteLessons={offsiteLessons}
           holidays={holidays}
           examPeriods={examPeriods}
           timetables={timetables}
@@ -1916,6 +1940,7 @@ export default function App() {
           adjustments={adjustments}
           extraLessons={extraLessons}
           subs={subs}
+          offsiteLessons={offsiteLessons}
           holidays={holidays}
           examPeriods={examPeriods}
           timetables={timetables}

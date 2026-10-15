@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { EVENT_KIND_LABELS } from "../constants/eventKinds";
 import { SIDEBAR_MENU } from "../constants/sidebarMenu";
@@ -177,6 +177,14 @@ export function Sidebar({
     () => filterTeacherGroups(allTeacherGroups, search, teacherKana),
     [allTeacherGroups, search, teacherKana]
   );
+  // メニュー部分は高さの 6 割で中がスクロールするので、メインメニューや Cmd+K
+  // から下の方の画面 (引継ぎメモなど) を開いたとき、今いる項目を見える所へ出す
+  const menuRef = useRef(null);
+  useEffect(() => {
+    const el = menuRef.current?.querySelector('[aria-current="page"]');
+    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+  }, [view, selected]);
+
   // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
   const [expandedGroups, setExpandedGroups] = useState(
     () => new Set(SIDEBAR_MENU.filter((m) => m.children).map((m) => m.key))
@@ -401,6 +409,7 @@ export function Sidebar({
             メニューは高さの 6 割までにして中でスクロールし、講師一覧の場所を
             残す (統合スクロールの画面では appShell.css が外す) */}
         <div
+          ref={menuRef}
           className="sidebar-menu"
           style={{
             borderBottom: "1px solid #2a2a4e",

@@ -181,6 +181,23 @@ describe("buildTestPrepReschedulePlan", () => {
     expect(plan.record).toEqual({ date: WED, type: "reschedule", slotId: 1, targetDate: THU });
   });
 
+  it("ゼロ埋めの無いコマの時間と同じ時間なら持たない", () => {
+    const morning = { ...SAKURAI_EN, time: "9:30-10:50" };
+    const plan = buildTestPrepReschedulePlan({ ...base, slot: morning, timeInput: "09:30-10:50" });
+    expect(plan.record.targetTime).toBeUndefined();
+  });
+
+  it("隔週の B 週は振替元の日の担当 (パートナー) を元の担当として扱う", () => {
+    // 10/7 を A 週 → 10/14 は B 週 = 河野
+    // 隔週コマの科目は「A 週/B 週」(B 週は数学)
+    const biweekly = { ...SAKURAI_EN, subj: "英/数", teacher: "堀上", note: "隔週(河野)" };
+    const ctx = makeCtx({ allSlots: [biweekly], biweeklyAnchors: [{ date: "2026-10-07", weekType: "A" }] });
+    const plan = buildTestPrepReschedulePlan({ ...base, slot: biweekly, ctx, teacherInput: "河野" });
+    expect(plan.fromTeachers).toEqual(["河野"]);
+    // 元の担当と同じなので持たない
+    expect(plan.record.targetTeacher).toBeUndefined();
+  });
+
   it("開始だけなら元の長さで終わりを補う", () => {
     const plan = buildTestPrepReschedulePlan({ ...base, timeInput: "1700" });
     expect(plan.record.targetTime).toBe("17:00-18:20");

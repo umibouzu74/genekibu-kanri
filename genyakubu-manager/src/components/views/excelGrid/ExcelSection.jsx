@@ -87,7 +87,10 @@ export function ExcelSection({
 
   // 当日に他日から振替で来るコマのうち、本セクションのフィルタに該当するもの。
   // 元コマ自体は別日付に属するため通常の slots ループには現れない。バナーで
-  // 補足表示する。
+  // 補足表示する。セクションの振り分けは**元のコマの教室**で見る (振替先の
+  // 教室 targetRoom ではない)。振替先の教室の部 (本校 / 亀井町) にその日の
+  // コマが無いとセクションごと描かれず、振替が画面から黙って消えるため。
+  // 振替先の教室はバナーの「@亀21」で読める
   const incomingReschedules = useMemo(() => {
     // 振替先で合同にしたものは受け入れる側 1 件にまとまる (buildIncomingItems)
     return buildIncomingItems(adjIndex.rescheduleIn, slotById).filter(

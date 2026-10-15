@@ -1,7 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { splitTeacherField } from "../../../utils/biweekly";
 import { dateToDay, DAY_COLOR as DC, fmtDate, WEEKDAYS } from "../../../data";
-import { normalizeTimeRange, timeRangeMinutes } from "../../../utils/dateHelpers";
+import {
+  canonicalTimeRange,
+  normalizeTimeRange,
+  timeRangeMinutes,
+} from "../../../utils/dateHelpers";
+import { rangesOverlap, timeRange } from "../../../utils/dayReschedule";
 import { collectRoomNames } from "../../../utils/testPrepLessons";
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
@@ -65,9 +70,9 @@ export function ReschedulePickerPopover({
 }) {
   const ref = useRef(null);
   const [targetDate, setTargetDate] = useState(initial?.targetDate || "");
-  const [targetTime, setTargetTime] = useState(
-    initial?.targetTime || slot?.time || ""
-  );
+  // 既定は空 = 元のコマの時間。元の時間を入れておくと、候補 (datalist) が
+  // 入力中の文字で絞られて他の時間帯が出てこない
+  const [targetTime, setTargetTime] = useState(initial?.targetTime || "");
   // 既定は空 = 「(元担当 ◯◯ のまま)」。**元担当を既定で入れないこと** —
   // 「担当が変わった振替」として一覧・カード・tooltip に相手の名前が出て
   // しまう (2026-08-21)。担当を変えるときだけ人が選ぶ。
@@ -137,8 +142,16 @@ export function ReschedulePickerPopover({
 
   const targetDow = targetDate ? dateToDay(targetDate) : null;
 
+  // 振替先の実際の時間 (空なら元のコマの時間。"1700-1800" などは整えてから)。
+  // 読めないときは null (保存の時に理由を出す)
+  const effectiveTime = useMemo(() => {
+    const r = normalizeTimeRange(targetTime, { durationMin: timeRangeMinutes(slot?.time) });
+    if (!r.ok) return null;
+    return r.time || slot?.time || "";
+  }, [targetTime, slot]);
+
   // 警告: 振替先が日曜 (WEEKDAYS に含まれない) /
-  // 同担当の同時間帯重複。
+  // 同担当・同じ教室の同時間帯の重なり (時間帯が少しでも重なれば)。
   const warnings = useMemo(() => {
     const list = [];
     if (!targetDate) return list;
@@ -153,31 +166,41 @@ export function ReschedulePickerPopover({
         list.push("振替先の曜日が解釈できません");
       }
     }
-    if (dow && targetTime) {
+    if (dow && effectiveTime) {
+      const range = timeRange(effectiveTime);
+      // 振替先の日に休講・テスト期間のコマは塞いでいない。同じ曜日の
+      // 休みの日へ寄せる振替 (10/16 金 → 10/9 金) で自分自身と重なって
+      // 見えていた。時刻は文字列の一致ではなく時間帯の重なりで見る
+      // (自由入力の "17:00-18:00" と 16:25-17:25 のコマも重なる)
+      const busy = activeSlots.filter(
+        (s) =>
+          s.day === dow &&
+          s.time &&
+          rangesOverlap(range, timeRange(s.time)) &&
+          !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
+      );
+      const describe = (s) =>
+        `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""} ${s.subj} (${s.time})`;
       // 複数担当 (「香川·福江」) は 1 人ずつ見る。講師欄の文字列のまま比べると
       // 誰の講師欄とも一致せず、重なりを見逃していた
       for (const teacher of splitTeacherField(targetTeacher || slot?.teacher || "")) {
-        // 振替先の日に休講・テスト期間のコマは塞いでいない。同じ曜日の
-        // 休みの日へ寄せる振替 (10/16 金 → 10/9 金) で自分自身と重なって
-        // 見えていた
-        const conflict = activeSlots.find(
-          (s) =>
-            s.day === dow &&
-            s.time === targetTime &&
-            splitTeacherField(s.teacher).includes(teacher) &&
-            !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
-        );
+        const conflict = busy.find((s) => splitTeacherField(s.teacher).includes(teacher));
         if (conflict) {
           list.push(
-            `担当 ${teacher} は同時刻 (${targetTime}) に既に ${conflict.grade}${
-              conflict.cls && conflict.cls !== "-" ? conflict.cls : ""
-            } ${conflict.subj} を担当しています`
+            `担当 ${teacher} は同じ時間 (${effectiveTime}) に既に ${describe(conflict)} を担当しています`
           );
+        }
+      }
+      const room = targetRoom.trim() || (slot?.room || "").trim();
+      if (room && room !== "-") {
+        const conflict = busy.find((s) => (s.room || "").trim() === room);
+        if (conflict) {
+          list.push(`教室 ${room} は同じ時間 (${effectiveTime}) に ${describe(conflict)} が使っています`);
         }
       }
     }
     return list;
-  }, [targetDate, targetTime, targetTeacher, slot, activeSlots, isOffForGrade]);
+  }, [targetDate, effectiveTime, targetTeacher, targetRoom, slot, activeSlots, isOffForGrade]);
 
   // 確認だけの注意書き (保存は止めない)。振替先が休講日なのは「休みの日へ
   // 寄せる」典型なので警告にしない (日まるごと振替と同じ扱い。振替の
@@ -202,7 +225,7 @@ export function ReschedulePickerPopover({
   // 警告内容が変わったら確認状態をリセット (誤承認防止)
   useEffect(() => {
     setConfirmedWarn(false);
-  }, [warnings.length, targetDate, targetTime, targetTeacher]);
+  }, [warnings.length, targetDate, targetTime, targetTeacher, targetRoom]);
 
   const pos = anchorRect
     ? computePosition(anchorRect)
@@ -233,7 +256,11 @@ export function ReschedulePickerPopover({
     const room = targetRoom.trim();
     onSave({
       targetDate,
-      targetTime: normalized.time || "",
+      // 元のコマと同じ時間なら持たない ("9:30-10:50" と "09:30-10:50" も同じ)
+      targetTime:
+        normalized.time && canonicalTimeRange(normalized.time) !== canonicalTimeRange(slot?.time)
+          ? normalized.time
+          : "",
       // 元の教室と同じなら持たない (振替元の表示に教室が増えないように)
       targetRoom: room && room !== (slot?.room || "").trim() ? room : "",
       targetTeacher: targetTeacher || "",

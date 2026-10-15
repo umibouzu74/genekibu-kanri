@@ -171,7 +171,7 @@ describe("TestPrepLessonDialog の振替", () => {
     });
   });
 
-  it("振替登録済みの日を選ぶと、その振替先を読み込む (登録すると上書き)", () => {
+  it("振替登録済みの日を選ぶと、その振替先を読み込んで直す扱いになる", () => {
     const { state } = renderDialog({
       initialAdjustments: [
         { id: 3, date: "2026-10-14", type: "reschedule", slotId: 1, targetDate: "2026-10-15", targetTime: "17:00-18:00", targetRoom: "亀63", memo: "" },
@@ -182,14 +182,74 @@ describe("TestPrepLessonDialog の振替", () => {
     expect(screen.getByLabelText("振替先の日").value).toBe("2026-10-15");
     expect(screen.getByLabelText("時間").value).toBe("17:00-18:00");
     expect(screen.getByLabelText("教室").value).toBe("亀63");
-    expect(screen.getByText(/上書きします/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("時間"), { target: { value: "16:30-17:30" } });
-    click(screen.getByRole("button", { name: "↻ 振替を登録" }));
+    click(screen.getByRole("button", { name: "振替を直す" }));
     expect(state.current.adjustments).toHaveLength(1);
     expect(state.current.adjustments[0]).toMatchObject({
       targetTime: "16:30-17:30",
       targetRoom: "亀63",
     });
+  });
+
+  // 校正レビュー (2026-10-15): 一覧で直している途中に、振替登録済みの別の日を
+  // 選ぶと、直していた方の振替が黙って消えていた
+  it("直している途中に振替登録済みの別の日を選んでも、前の振替は消さない", () => {
+    const { state } = renderDialog({
+      initialAdjustments: [
+        { id: 3, date: "2026-10-14", type: "reschedule", slotId: 1, targetDate: "2026-10-15", memo: "" },
+        { id: 4, date: "2026-10-21", type: "reschedule", slotId: 1, targetDate: "2026-10-22", memo: "" },
+      ],
+    });
+    chooseSakuraiEnglish();
+    click(screen.getByRole("button", { name: /10\/15 \(木\) 高2 高松桜井 英語 の振替.* を直す$/ }));
+    click(screen.getByRole("button", { name: "10/21 (水) ↻10/22" }));
+    expect(screen.getByLabelText("振替先の日").value).toBe("2026-10-22");
+    fireEvent.change(screen.getByLabelText("時間"), { target: { value: "17:00-18:00" } });
+    click(screen.getByRole("button", { name: "振替を直す" }));
+    const ids = state.current.adjustments.map((a) => a.date).sort();
+    expect(ids).toEqual(["2026-10-14", "2026-10-21"]);
+  });
+
+  // 校正レビュー (2026-10-15): 別のコースを選んでも前のコースの担当が残り、
+  // 黙ってその担当で保存されていた
+  it("コースを選び直すと時間・教室・担当を持ち越さない", () => {
+    const { state } = renderDialog();
+    chooseSakuraiEnglish();
+    click(screen.getByRole("button", { name: "10/14 (水)" }));
+    click(screen.getByRole("button", { name: /翌日 10\/15/ }));
+    fireEvent.change(screen.getByLabelText("振替先の担当"), { target: { value: "西岡" } });
+    fireEvent.change(screen.getByLabelText("教室"), { target: { value: "亀63" } });
+    click(within(screen.getByRole("list", { name: "コース" })).getByRole("button", { name: /高松桜井 数学/ }));
+    expect(screen.getByLabelText("振替先の担当").value).toBe("");
+    expect(screen.getByLabelText("教室").value).toBe("");
+    // 振替先の日は続けて使えるよう残す
+    expect(screen.getByLabelText("振替先の日").value).toBe("2026-10-15");
+    click(screen.getByRole("button", { name: "10/14 (水)" }));
+    click(screen.getByRole("button", { name: "↻ 振替を登録" }));
+    expect(state.current.adjustments[0].targetTeacher).toBeUndefined();
+  });
+
+  // 校正レビュー (2026-10-15): id は「最大 + 1」で使い回されるので、id だけで
+  // 元に戻すと、その後に登録した別の振替を消していた
+  it("元に戻すは、登録した振替がそのまま残っているときだけ", () => {
+    const { state } = renderDialog();
+    chooseSakuraiEnglish();
+    click(screen.getByRole("button", { name: "10/14 (水)" }));
+    click(screen.getByRole("button", { name: /翌日 10\/15/ }));
+    click(screen.getByRole("button", { name: "↻ 振替を登録" }));
+    const firstUndo = screen.getByRole("button", { name: "元に戻す" });
+    // ✕ で取り消し (ここの元に戻すは使わない) → 同じ id で別の振替を登録
+    click(screen.getByRole("button", { name: /を取り消す$/ }));
+    click(screen.getByRole("button", { name: "10/21 (水)" }));
+    click(screen.getByRole("button", { name: /翌日 10\/22/ }));
+    click(screen.getByRole("button", { name: "↻ 振替を登録" }));
+    expect(state.current.adjustments).toHaveLength(1);
+    expect(state.current.adjustments[0].date).toBe("2026-10-21");
+    // 最初の登録の「元に戻す」を押しても、後の振替は消さない
+    click(firstUndo);
+    expect(state.current.adjustments).toHaveLength(1);
+    expect(state.current.adjustments[0].date).toBe("2026-10-21");
+    expect(screen.getByText(/元に戻しませんでした/)).toBeTruthy();
   });
 
   it("一覧の ✕ で取り消し、元に戻せる", () => {

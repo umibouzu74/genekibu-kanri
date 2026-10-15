@@ -1349,6 +1349,9 @@ export function AbsenceTimetable({
                         </span>
                       )}
                       <span style={{ color: "#666" }}>({teacherText})</span>
+                      {adj.targetRoom && (
+                        <span style={{ fontWeight: 700 }}>@{adj.targetRoom}</span>
+                      )}
                     </>
                   )}
                   <span style={{ color: "#888" }}>← {adj.date}</span>

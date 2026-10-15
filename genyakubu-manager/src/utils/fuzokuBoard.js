@@ -172,7 +172,11 @@ export function buildFuzokuMonth({
       } else if (out) {
         v = {
           status: "moved",
-          reason: `振替 → ${describeRescheduleTarget(out, { short: true, originalTeacher: s.teacher })}`,
+          reason: `振替 → ${describeRescheduleTarget(out, {
+            short: true,
+            originalTeacher: s.teacher,
+            originalRoom: s.room,
+          })}`,
         };
       } else if (idx.combineAbsorbedBySlot.has(s.id)) {
         v = { status: "combined", reason: "合同" };

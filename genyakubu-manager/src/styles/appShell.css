@@ -25,6 +25,12 @@ button:disabled, [role="button"][aria-disabled="true"] {
   outline: 2px solid #5b8dee;
   outline-offset: 1px;
 }
+/* サイドバーのメニュー部分は中でスクロールする (overflow) ので、幅いっぱいの
+   ボタンのフォーカスの枠が切れないよう内側に描く */
+.sidebar-menu button:focus-visible {
+  outline: 2px solid #5b8dee;
+  outline-offset: -2px;
+}
 /* VISUALLY_HIDDEN な checkbox を内包する <label>。
    input 自体は視覚上隠れているので、Tab フォーカス時に label 側に
    リングを出してキーボード位置を可視化する。 */

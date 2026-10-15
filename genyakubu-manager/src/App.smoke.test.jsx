@@ -114,7 +114,9 @@ describe("App smoke", () => {
 
   it("サイドバーの全ビューを順に開いてもクラッシュしない", async () => {
     renderApp();
-    const nav = await screen.findByRole("navigation", { hidden: true }).catch(() => null);
+    const nav = await screen
+      .findByRole("navigation", { name: "メインナビゲーション", hidden: true })
+      .catch(() => null);
     const scope = nav ? within(nav) : screen;
     for (const label of VIEW_LABELS) {
       const btn = scope.getAllByRole("button", { name: new RegExp(`^\\S*\\s*${label}`) })[0];

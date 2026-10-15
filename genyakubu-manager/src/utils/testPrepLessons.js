@@ -27,6 +27,7 @@ import { describeRescheduleTarget } from "./adjustmentDisplay";
 import { splitTeacherField } from "./biweekly";
 import { firstSubjToken } from "./cohorts";
 import {
+  canonicalTimeRange,
   dateToDay,
   fmtDate,
   fmtMDWeekday,
@@ -267,7 +268,9 @@ export function roomUsageAt(occupancy, time) {
  * @param {Array} args.slots 全コマ
  * @param {Array} [args.adjustments]
  * @param {Array} [args.extraLessons] 振替先の塞がりに数える
- * @param {Array} [args.subs] 振替元の日の代行 (注意書きに使う)
+ * @param {Array} [args.subs] 代行・欠勤 (振替元の日の注意書きと、振替先の日の
+ *   講師の塞がり = 代行者は塞がり休む人は空く)
+ * @param {Array} [args.offsiteLessons] 他校舎の授業 (振替先の日の講師の塞がり)
  * @param {object|null} args.slot 振り替えるコマ
  * @param {string} args.sourceDate 振替元の日
  * @param {string} args.targetDate 振替先の日
@@ -281,7 +284,8 @@ export function roomUsageAt(occupancy, time) {
  *   errors: string[], notes: string[],
  *   conflicts: {kind: string, label: string}[],
  *   record: object|null, editingAdjId: number|null,
- *   time: string, room: string, teachers: string[], occupancy: Array,
+ *   time: string, room: string, teachers: string[], fromTeachers: string[],
+ *   occupancy: Array,
  * }}
  */
 export function buildTestPrepReschedulePlan({
@@ -289,6 +293,7 @@ export function buildTestPrepReschedulePlan({
   adjustments = [],
   extraLessons = [],
   subs = [],
+  offsiteLessons = [],
   slot,
   sourceDate,
   targetDate,
@@ -310,6 +315,7 @@ export function buildTestPrepReschedulePlan({
     time: "",
     room: "",
     teachers: [],
+    fromTeachers: [],
     occupancy: [],
   };
   const c = ctx || {};
@@ -371,6 +377,7 @@ export function buildTestPrepReschedulePlan({
   plan.time = time;
   plan.room = room;
   plan.teachers = teachers;
+  plan.fromTeachers = fromTeachers;
 
   const existing =
     (adjustments || []).find(
@@ -389,6 +396,8 @@ export function buildTestPrepReschedulePlan({
     dateStr: targetDate,
     adjustments: (adjustments || []).filter((a) => !replacing.has(a?.id)),
     extraLessons,
+    subs,
+    offsiteLessons,
     ctx: c,
   });
   plan.occupancy = occupancy;
@@ -398,7 +407,7 @@ export function buildTestPrepReschedulePlan({
   if (existing && existing.id !== editing?.id) {
     notes.push(
       `${fmtMDWeekday(sourceDate)} のこのコマはすでに ${describeRescheduleTarget(existing, {
-        originalTeacher: slot.teacher,
+        originalTeacher: fromTeachers.join("·"),
         originalRoom: slotRoom,
       })} へ振替登録済みです (上書きします)`
     );
@@ -426,9 +435,10 @@ export function buildTestPrepReschedulePlan({
   if (targetDate < sourceDate) notes.push("振替先は振替元より前の日付です (前倒しの振替)");
   if (today && targetDate < today) notes.push("振替先は今日より前の日付です (済んだ振替の記録)");
 
-  // 元と同じものは持たない (振替元の表示に時刻・教室・担当が増えないように)
+  // 元と同じものは持たない (振替元の表示に時刻・教室・担当が増えないように)。
+  // 時刻は正規形で比べる ("9:30-10:50" のコマに "09:30-10:50" を持たない)
   const record = { date: sourceDate, type: "reschedule", slotId: slot.id, targetDate };
-  if (time !== slot.time) record.targetTime = time;
+  if (canonicalTimeRange(time) !== canonicalTimeRange(slot.time)) record.targetTime = time;
   if (room && room !== slotRoom) record.targetRoom = room;
   if (named.length > 0 && named.join("·") !== fromTeachers.join("·")) {
     record.targetTeacher = named.join("·");
@@ -495,6 +505,8 @@ export function applyTestPrepReschedule({
  * @param {Array} args.slots
  * @param {Array} [args.adjustments]
  * @param {Array} [args.extraLessons]
+ * @param {Array} [args.subs] 代行・欠勤 (実施日の講師の塞がり)
+ * @param {Array} [args.offsiteLessons] 他校舎の授業 (実施日の講師の塞がり)
  * @param {object|null} args.template 型にするコマ (画面で選んだコース)
  * @param {string[]} args.dates 実施日
  * @param {string} args.timeInput 時間 (必須。開始だけなら型のコマの長さ)
@@ -513,6 +525,8 @@ export function buildTestPrepExtraPlan({
   slots,
   adjustments = [],
   extraLessons = [],
+  subs = [],
+  offsiteLessons = [],
   template,
   dates = [],
   timeInput = "",
@@ -576,6 +590,8 @@ export function buildTestPrepExtraPlan({
       dateStr: date,
       adjustments,
       extraLessons: others,
+      subs,
+      offsiteLessons,
       ctx: ctx || {},
     });
     const conflicts = findOccupancyConflicts(occupancy, { time, teachers, room });

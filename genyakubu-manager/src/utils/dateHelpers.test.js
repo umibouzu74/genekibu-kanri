@@ -7,6 +7,7 @@ import {
   fmtIsoLocal,
   isValidDateStr,
   formatDateRange,
+  canonicalTimeRange,
   normalizeTimeRange,
   timeRangeMinutes,
   overlapsRange,
@@ -209,5 +210,15 @@ describe("normalizeTimeRange / timeRangeMinutes", () => {
     expect(timeRangeMinutes("19:00-20:20")).toBe(80);
     expect(timeRangeMinutes("19:00")).toBeNull();
     expect(timeRangeMinutes("")).toBeNull();
+  });
+});
+
+describe("canonicalTimeRange", () => {
+  it("ゼロ埋めや区切りの違う同じ時間を同じにする", () => {
+    expect(canonicalTimeRange("9:30-10:50")).toBe(canonicalTimeRange("09:30〜10:50"));
+    expect(canonicalTimeRange(" 19:00-20:20 ")).toBe("19:00-20:20");
+    // 読めない時間は空白を落としただけ
+    expect(canonicalTimeRange(" 放課後 ")).toBe("放課後");
+    expect(canonicalTimeRange(undefined)).toBe("");
   });
 });

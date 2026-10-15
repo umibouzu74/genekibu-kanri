@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Modal } from "./Modal";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
@@ -26,6 +26,8 @@ import {
   rescheduleTeacherLabel,
 } from "../utils/adjustmentDisplay";
 import { isKameiRoom } from "../utils/scheduleHelpers";
+import { activeTeachersOnDate } from "../utils/absenceHelpers";
+import { stableStringify } from "../utils/stableStringify";
 import { sortTeacherNames } from "../utils/teacherKana";
 import {
   TEST_PREP_LABEL,
@@ -77,6 +79,13 @@ const EMPTY_EXTRA = {
   label: TEST_PREP_LABEL,
   note: "",
 };
+
+// 「元に戻す」で消してよいのは、登録したものがそのまま残っているときだけ。
+// id は「最大 + 1」で使い回されるので、id だけで消すと、その後に消して
+// 登録し直した別の振替・追加授業を消してしまう
+function sameRecord(a, b) {
+  return a?.id === b?.id && stableStringify(a) === stableStringify(b);
+}
 
 function shiftDate(dateStr, n) {
   const d = parseLocalDate(dateStr);
@@ -371,7 +380,11 @@ function ChangeList({ items, onEdit, onRemove, isAdmin, editingKey, teacherCtx }
           ? rescheduleTeacherLabel(item.adj, item.slot, teacherCtx)
           : item.lesson.teacher;
         const memo = isResched ? item.adj.memo : item.lesson.note;
-        const label = `${fmtMDWeekday(item.date)} ${describeSlot(x)}`;
+        // 読み上げ名は 1 件ずつ違うように (同じコマの 9/7 と 9/14 を同じ日へ
+        // 振り替えたとき・振替と追加授業が同じ日に並ぶとき)
+        const label = isResched
+          ? `${fmtMDWeekday(item.date)} ${describeSlot(x)} の振替 (${fmtMDWeekday(item.adj.date)} の分)`
+          : `${fmtMDWeekday(item.date)} ${item.time} ${describeSlot(x)} の追加授業`;
         return (
           <div
             key={item.key}
@@ -446,6 +459,8 @@ export function TestPrepLessonDialog({
   adjustments = [],
   extraLessons = [],
   subs = [],
+  // 振替先・実施日に講師が他校舎へ出ている時間 (講師の重なりの警告に使う)
+  offsiteLessons = [],
   // 実施判定 (休講・テスト期間・時間割の有効期間・表示期間・特別時程・隔週)
   // に要るデータ。日まるごと振替と同じく、開いている間だけ索引を組む。
   // sessionCtx を直接渡せばそちらを優先する (テスト用)
@@ -491,8 +506,14 @@ export function TestPrepLessonDialog({
   const [slotId, setSlotId] = useState(null);
   const [resched, setResched] = useState(EMPTY_RESCHED);
   const [extra, setExtra] = useState(EMPTY_EXTRA);
-  // 一覧から直しているもの ({kind: "reschedule", adj} / {kind: "extra", lesson})
+  // 一覧から直しているもの ({kind: "reschedule", adj, origin} / {kind: "extra", lesson})。
+  // origin: "list" = 一覧の ✏️ から / "prefill" = 振替登録済みの日を選んで読み込んだ
   const [editing, setEditing] = useState(null);
+  // 「元に戻す」を押した時点の一覧 (toast はこの描画より後に押される)
+  const adjustmentsRef = useRef(adjustments);
+  adjustmentsRef.current = adjustments;
+  const extraLessonsRef = useRef(extraLessons);
+  extraLessonsRef.current = extraLessons;
 
   const patchResched = (patch) => setResched((prev) => ({ ...prev, ...patch }));
   const patchExtra = (patch) => setExtra((prev) => ({ ...prev, ...patch }));
@@ -528,7 +549,9 @@ export function TestPrepLessonDialog({
     const next = slots.find((s) => s.id === id) || null;
     setSlotId(id);
     setEditing(null);
-    patchResched({ sourceDate: "" });
+    // 別のコースの時間・教室・担当を持ち越さない (前のコースの担当のまま
+    // 黙って保存されていた)。振替先の日とメモは続けて使えるよう残す
+    setResched((prev) => ({ ...EMPTY_RESCHED, targetDate: prev.targetDate, memo: prev.memo }));
     // 追加授業は担当・教室をコマから写す (直せる)
     patchExtra({
       teacher: next ? splitTeacherField(next.teacher).join("·") : "",
@@ -556,10 +579,18 @@ export function TestPrepLessonDialog({
   }, [adjustments, slot]);
 
   // 振替元の日を選ぶ。その日のこのコマがすでに振替登録済みなら、振替先の
-  // 日・時間・教室・担当・メモを読み込む (登録すると上書き = 直すのと同じ)
+  // 日・時間・教室・担当・メモを読み込み、その振替を直す扱いにする (別の
+  // 振替を直している途中でも、直す相手を読み込んだ方に切り替える。前の
+  // 振替を黙って消さない)。読み込んだ振替から登録の無い日へ移ったら、
+  // 読み込んだ値は持ち越さない
   const chooseSourceDate = (d) => {
     const ex = existingBySource.get(d);
-    if (ex && editing?.adj?.id !== ex.id) {
+    if (ex) {
+      if (editing?.adj?.id === ex.id) {
+        patchResched({ sourceDate: d });
+        return;
+      }
+      setEditing({ kind: "reschedule", adj: ex, origin: "prefill" });
       setResched({
         sourceDate: d,
         targetDate: ex.targetDate,
@@ -570,8 +601,24 @@ export function TestPrepLessonDialog({
       });
       return;
     }
+    if (editing?.origin === "prefill") {
+      setEditing(null);
+      setResched({ ...EMPTY_RESCHED, sourceDate: d });
+      return;
+    }
     patchResched({ sourceDate: d });
   };
+
+  // 振替元の日の担当 (隔週の B 週ならパートナー)。「元の担当のまま」の案内と
+  // 登録の知らせに使う (講師欄の主担当をそのまま出さない)
+  const fromTeacherLabel = useMemo(() => {
+    if (!slot) return "";
+    const d = resched.sourceDate;
+    if (isValidDateStr(d || "") && dateToDay(d) === slot.day) {
+      return activeTeachersOnDate(slot, d, ctx).join("·");
+    }
+    return slot.teacher || "";
+  }, [slot, resched.sourceDate, ctx]);
 
   // ── プラン ──
   const editingAdjId = editing?.kind === "reschedule" ? editing.adj.id : null;
@@ -583,6 +630,7 @@ export function TestPrepLessonDialog({
         adjustments,
         extraLessons,
         subs,
+        offsiteLessons,
         slot,
         sourceDate: resched.sourceDate,
         targetDate: resched.targetDate,
@@ -593,7 +641,7 @@ export function TestPrepLessonDialog({
         today,
         ctx,
       }),
-    [slots, adjustments, extraLessons, subs, slot, resched, editingAdjId, today, ctx]
+    [slots, adjustments, extraLessons, subs, offsiteLessons, slot, resched, editingAdjId, today, ctx]
   );
   const extraPlan = useMemo(
     () =>
@@ -601,6 +649,8 @@ export function TestPrepLessonDialog({
         slots,
         adjustments,
         extraLessons,
+        subs,
+        offsiteLessons,
         template,
         dates: extra.dates,
         timeInput: extra.time,
@@ -612,7 +662,7 @@ export function TestPrepLessonDialog({
         today,
         ctx,
       }),
-    [slots, adjustments, extraLessons, template, extra, editingExtraId, today, ctx]
+    [slots, adjustments, extraLessons, subs, offsiteLessons, template, extra, editingExtraId, today, ctx]
   );
 
   // ── 時間・教室の候補 (振替先 / 実施日の塞がり) ──
@@ -647,9 +697,11 @@ export function TestPrepLessonDialog({
       dateStr: usageDate,
       adjustments: (adjustments || []).filter((a) => !skipAdj.has(a?.id)),
       extraLessons: (extraLessons || []).filter((l) => l?.id !== editingExtraId),
+      subs,
+      offsiteLessons,
       ctx,
     });
-  }, [usageDate, isResched, slot, adjustments, resched.sourceDate, editingAdjId, slots, extraLessons, editingExtraId, ctx]);
+  }, [usageDate, isResched, slot, adjustments, resched.sourceDate, editingAdjId, slots, extraLessons, subs, offsiteLessons, editingExtraId, ctx]);
   const usage = useMemo(() => roomUsageAt(occupancy, effectiveTime), [occupancy, effectiveTime]);
   const usageKnown = Boolean(isValidDateStr(usageDate || "") && effectiveTime);
   const rooms = useMemo(
@@ -719,7 +771,7 @@ export function TestPrepLessonDialog({
     });
     const target = describeRescheduleTarget(
       { ...reschedPlan.record },
-      { originalTeacher: slot.teacher, originalRoom: slot.room }
+      { originalTeacher: reschedPlan.fromTeachers.join("·"), originalRoom: slot.room }
     );
     toasts.push(
       `${editingAdjId != null ? "振替を直しました" : "振替を登録しました"}: ${fmtMDWeekday(
@@ -730,17 +782,29 @@ export function TestPrepLessonDialog({
         duration: 6000,
         action: {
           label: "元に戻す",
-          onClick: () =>
+          onClick: () => {
+            const added = captured.added;
+            // 登録した振替がその後に直された / 消されたなら戻さない (置き換えた
+            // 振替だけを戻すと、同じ日の同じコマに振替が 2 件できる)
+            if (!added || !(adjustmentsRef.current || []).some((a) => sameRecord(a, added))) {
+              toasts.info("その後に変更されているので、元に戻しませんでした");
+              return;
+            }
             saveAdjustments((prev) => {
-              const list = (prev || []).filter((a) => a.id !== captured.added?.id);
-              const present = new Set(list.map((a) => a.id));
-              return [...list, ...captured.removed.filter((a) => !present.has(a.id))];
-            }),
+              const list = prev || [];
+              if (!list.some((a) => sameRecord(a, added))) return list;
+              const rest = list.filter((a) => !sameRecord(a, added));
+              const present = new Set(rest.map((a) => a.id));
+              return [...rest, ...captured.removed.filter((a) => !present.has(a.id))];
+            });
+          },
         },
       }
     );
+    // 登録したら入力を初めの状態に戻す (前の振替の時間・教室・担当を次の登録に
+    // 持ち越さない)
     setEditing(null);
-    patchResched({ sourceDate: "" });
+    setResched(EMPTY_RESCHED);
   };
 
   const registerExtra = () => {
@@ -762,16 +826,26 @@ export function TestPrepLessonDialog({
         duration: 6000,
         action: {
           label: "元に戻す",
-          onClick: () =>
-            saveExtraLessons((prev) => {
-              if (captured.before) {
-                return (prev || []).map((l) =>
-                  l.id === captured.before.id ? captured.before : l
-                );
+          onClick: () => {
+            const current = extraLessonsRef.current || [];
+            if (captured.updated) {
+              if (!current.some((l) => sameRecord(l, captured.updated))) {
+                toasts.info("その後に変更されているので、元に戻しませんでした");
+                return;
               }
-              const ids = new Set(captured.added.map((l) => l.id));
-              return (prev || []).filter((l) => !ids.has(l.id));
-            }),
+              saveExtraLessons((prev) =>
+                (prev || []).map((l) => (sameRecord(l, captured.updated) ? captured.before : l))
+              );
+              return;
+            }
+            if (!captured.added.some((a) => current.some((l) => sameRecord(l, a)))) {
+              toasts.info("その後に変更されているので、元に戻しませんでした");
+              return;
+            }
+            saveExtraLessons((prev) =>
+              (prev || []).filter((l) => !captured.added.some((a) => sameRecord(l, a)))
+            );
+          },
         },
       }
     );
@@ -792,7 +866,7 @@ export function TestPrepLessonDialog({
       setGrade(s.grade);
       setSchool(schoolOfSubj(s.subj));
       setSlotId(s.id);
-      setEditing({ kind: "reschedule", adj });
+      setEditing({ kind: "reschedule", adj, origin: "list" });
       setResched({
         sourceDate: adj.date,
         targetDate: adj.targetDate,
@@ -1069,7 +1143,7 @@ export function TestPrepLessonDialog({
                 type="text"
                 value={resched.teacher}
                 onChange={(e) => patchResched({ teacher: e.target.value })}
-                placeholder={slot ? `元の担当 (${slot.teacher || "未設定"}) のまま` : "担当"}
+                placeholder={slot ? `元の担当 (${fromTeacherLabel || "未設定"}) のまま` : "担当"}
                 aria-label="振替先の担当"
                 list="testprep-teachers"
                 style={{ ...S.input, width: 220 }}
