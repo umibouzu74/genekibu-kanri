@@ -77,6 +77,27 @@ describe("AbsenceSlotCard のキーボード操作", () => {
     renderCard({ cancelLabel: "休講", onClick: undefined, onContextMenu: undefined });
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("メニューを持つ休講のカード (休講日の例外にする等) は Enter でもメニューを開く", () => {
+    const { onContextMenu } = renderCard({
+      cancelLabel: "休講",
+      onClick: undefined,
+      cancelMenuTitle: "クリック (右クリック) で休講日の例外にできます",
+    });
+    const card = screen.getByRole("button", { name: /数学（休講）/ });
+    expect(card).toHaveAttribute("title", "クリック (右クリック) で休講日の例外にできます");
+    fireEvent.keyDown(card, { key: "Enter" });
+    fireEvent.click(card);
+    expect(onContextMenu).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("AbsenceSlotCard の休講日の例外の印", () => {
+  it("例外のコマは印を行で出し、読み上げ名にも含める", () => {
+    renderCard({ holidayExceptionLabel: "休講日の例外 (「高1・高2 休講」。この日は授業あり)" });
+    expect(screen.getByText("休講日の例外 (「高1・高2 休講」。この日は授業あり)")).toBeInTheDocument();
+    expect(screen.getByRole("button").getAttribute("aria-label")).toMatch(/休講日の例外/);
+  });
 });
 
 describe("AbsenceSlotCard の講師重複", () => {

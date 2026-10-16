@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import { S } from "../styles/common";
 import { DAY_COLOR as DC, gradeColor as GC } from "../data";
@@ -8,6 +8,7 @@ import {
   applyDayReschedule,
   buildDayReschedulePlan,
   findDayRescheduleAdjustments,
+  resolveDayRescheduleSelection,
 } from "../utils/dayReschedule";
 
 // ─── 日まるごと振替ダイアログ ──────────────────────────────────
@@ -17,11 +18,14 @@ import {
 //
 // 画面の作りは「振替元 → 対象コマの確認 → 振替先 → 実行」の一方通行。
 // 対象コマは既定で全選択 (まるごと振り替えるのが主目的) だが、外したい
-// コマだけチェックを外せる。
+// コマだけチェックを外せる。振替元日に担当のいないコマ (マークテストなど)
+// だけは最初からチェックを外しておく (既定の選択は
+// dayReschedule.resolveDayRescheduleSelection。ここで判定を書き起こさない)。
 
 const CHECK_ALL = "all";
+const NO_OVERRIDES = new Map();
 
-function SlotRow({ slot, checked, conflicts, onToggle, disabled }) {
+function SlotRow({ slot, checked, conflicts, onToggle, disabled, unstaffed }) {
   const gc = GC(slot.grade);
   const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
   return (
@@ -63,6 +67,22 @@ function SlotRow({ slot, checked, conflicts, onToggle, disabled }) {
           </span>
           <span style={{ fontSize: 12, fontWeight: 600 }}>{slot.subj}</span>
           <span style={{ fontSize: 11, color: "#555" }}>{slot.teacher}</span>
+          {unstaffed && (
+            <span
+              title="この日に担当する講師がいないコマ (マークテストなど)。既定では振り替えません"
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#7a4a10",
+                background: "#fdf0d8",
+                border: "1px solid #e0c080",
+                borderRadius: 3,
+                padding: "0 5px",
+              }}
+            >
+              講師なし
+            </span>
+          )}
           {slot.room && (
             <span style={{ fontSize: 10, color: "#888" }}>{slot.room}</span>
           )}
@@ -126,12 +146,14 @@ export function DayRescheduleDialog({
   const [sourceDate, setSourceDate] = useState(initialSourceDate || "");
   const [targetDate, setTargetDate] = useState(initialTargetDate || "");
   const [memo, setMemo] = useState("");
-  // null = 全選択 (振替元日を変えたら選び直し)
-  const [excluded, setExcluded] = useState(() => new Set());
-
-  useEffect(() => {
-    setExcluded(new Set());
-  }, [sourceDate]);
+  // 人が触ったチェックだけを覚える (id → true / false)。触っていないコマは
+  // 既定 (担当のいるコマだけ選ぶ)。振替元日を変えたら選び直し (日付欄の
+  // 変更と同時に消す。effect で消すと 1 回ぶん古いチェックで描いてしまう)
+  const [overrides, setOverrides] = useState(NO_OVERRIDES);
+  const changeSourceDate = (value) => {
+    setSourceDate(value);
+    setOverrides(NO_OVERRIDES);
+  };
 
   const plan = useMemo(
     () =>
@@ -149,11 +171,16 @@ export function DayRescheduleDialog({
     [slots, adjustments, extraLessons, subs, offsiteLessons, sourceDate, targetDate, sessionCtx]
   );
 
-  // 除外を反映した最終プラン。実行するのはこちら。候補の一覧は除外前の
+  // 選択を反映した最終プラン。実行するのはこちら。候補の一覧は選択前の
   // plan から出す (チェックを外したコマも行としては残す)。
   const selectedIds = useMemo(
-    () => plan.candidates.filter((s) => !excluded.has(s.id)).map((s) => s.id),
-    [plan.candidates, excluded]
+    () => resolveDayRescheduleSelection(plan, overrides),
+    [plan, overrides]
+  );
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const unstaffedSet = useMemo(
+    () => new Set(plan.unstaffedSlotIds || []),
+    [plan.unstaffedSlotIds]
   );
   const finalPlan = useMemo(
     () =>
@@ -196,18 +223,17 @@ export function DayRescheduleDialog({
     [adjustments, sourceDate]
   );
 
+  const allSelected =
+    plan.candidates.length > 0 && selectedIds.length === plan.candidates.length;
   const toggle = (id) => {
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (id === CHECK_ALL) {
-        if (next.size > 0) return new Set();
-        for (const s of plan.candidates) next.add(s.id);
-        return next;
-      }
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Map(overrides);
+    if (id === CHECK_ALL) {
+      // 全部選んであれば全部外す、そうでなければ (講師なしも含めて) 全部選ぶ
+      for (const s of plan.candidates) next.set(s.id, !allSelected);
+    } else {
+      next.set(id, !selectedSet.has(id));
+    }
+    setOverrides(next);
   };
 
   const canApply =
@@ -255,7 +281,7 @@ export function DayRescheduleDialog({
             id="day-resched-src"
             type="date"
             value={sourceDate}
-            onChange={(e) => setSourceDate(e.target.value)}
+            onChange={(e) => changeSourceDate(e.target.value)}
             style={{ ...S.input, width: "auto" }}
           />
           {plan.sourceDay && (
@@ -380,9 +406,15 @@ export function DayRescheduleDialog({
               onClick={() => toggle(CHECK_ALL)}
               style={{ ...S.btn(false), fontSize: 11, padding: "4px 10px" }}
             >
-              {excluded.size > 0 ? "すべて選択" : "すべて解除"}
+              {allSelected ? "すべて解除" : "すべて選択"}
             </button>
           </div>
+          {unstaffedSet.size > 0 && (
+            <div style={{ fontSize: 11, color: "#7a4a10", marginBottom: 4 }}>
+              講師のいないコマ (マークテストなど) {unstaffedSet.size} 件は最初からチェックを
+              外しています。一緒に移すならチェックを入れてください。
+            </div>
+          )}
           <div
             style={{
               border: "1px solid #e0e0e0",
@@ -396,10 +428,11 @@ export function DayRescheduleDialog({
               <SlotRow
                 key={slot.id}
                 slot={slot}
-                checked={!excluded.has(slot.id)}
+                checked={selectedSet.has(slot.id)}
                 conflicts={conflictsBySlot.get(slot.id) || []}
                 onToggle={toggle}
                 disabled={!isAdmin}
+                unstaffed={unstaffedSet.has(slot.id)}
               />
             ))}
           </div>

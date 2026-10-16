@@ -14,6 +14,11 @@ import {
 } from "../../../utils/absenceHelpers";
 import { isCancelAdjustment } from "../../../utils/slotCancel";
 import {
+  holidayExceptionSlots,
+  holidaysCancellingSlot,
+  holidaysExceptingSlot,
+} from "../../../utils/holidayExceptions";
+import {
   buildIncomingItems,
   describeSlot,
   rescheduleTeacherLabel,
@@ -36,6 +41,9 @@ import {
 // 編集機能:
 //   1. スロットをドラッグして別時間セルにドロップ → move 下書き (時間のみ更新)
 //   2. 右クリック → ContextMenu → 代行 / 合同 / 移動 / 振替 / コマ休講 / 回数補正 / 取消
+//      休講日 (Holiday) で休みのカードは「この日はこのコマだけ授業あり」
+//      (休講日の例外、utils/holidayExceptions)。休講日は下書きに入らないので
+//      呼び出し側がその場で保存する
 //   3. 合同モード中はヒューリスティック候補のみ破線枠、クリックで合同確定
 // draft は親から渡された callback 経由で更新する (直接 mutate しない)。
 
@@ -79,6 +87,12 @@ export function AbsenceTimetable({
   onUpdateIncoming,
   onRemoveIncoming,
   onOpenDate,
+  // 休講日の例外 (この日はこのコマだけ授業あり)。休講日は欠勤組み換えの
+  // 下書きに入らないので、呼び出し側がその場で保存して「元に戻す」を出す。
+  // 未指定ならその操作を出さない:
+  //   onAddHolidayException(slot) / onRemoveHolidayException(slot)
+  onAddHolidayException,
+  onRemoveHolidayException,
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -321,6 +335,68 @@ export function AbsenceTimetable({
     [subsBySlot]
   );
 
+  // 休講日の例外 (この日はこのコマだけ授業あり) になっているコマ → その休講日。
+  // カードの印と「休講日どおり休講に戻す」に使う
+  const holidayExceptionsBySlot = useMemo(() => {
+    const map = new Map();
+    if (!(holidays || []).some((h) => h?.date === date && h.excludeSlotIds?.length)) {
+      return map;
+    }
+    for (const s of slots) {
+      const list = holidaysExceptingSlot(holidays, s, date);
+      if (list.length > 0) map.set(s.id, list);
+    }
+    return map;
+  }, [holidays, slots, date]);
+  const holidayExceptionLabelFor = useCallback(
+    (slotId) => {
+      const list = holidayExceptionsBySlot.get(slotId);
+      if (!list) return null;
+      return `休講日の例外 (${list.map((h) => `「${h.label || "休講"}」`).join("")}。この日は授業あり)`;
+    },
+    [holidayExceptionsBySlot]
+  );
+
+  // 休講日の例外のメニュー項目 (休講日で休みのカードには「例外にする」、例外の
+  // コマには「休講日どおり休講に戻す」)。下書きのあるコマは戻さない — 戻すと
+  // カードが灰色の「休講」になり、下書きが見えないまま保存されるため
+  const holidayExceptionItems = useCallback(
+    (slot) => {
+      const items = [];
+      if (
+        onAddHolidayException &&
+        holidaysCancellingSlot(holidays, slot, date).length > 0
+      ) {
+        items.push({
+          label: "この日はこのコマだけ授業あり（休講日の例外にする）",
+          onClick: () => onAddHolidayException(slot),
+        });
+      }
+      if (onRemoveHolidayException && holidayExceptionsBySlot.has(slot.id)) {
+        const blocked = !!draft[slot.id];
+        items.push({
+          label: blocked
+            ? "休講日どおり休講に戻す (先にこのコマの下書きを片付けてください)"
+            : "休講日どおり休講に戻す",
+          danger: !blocked,
+          disabled: blocked,
+          onClick: blocked ? undefined : () => onRemoveHolidayException(slot),
+        });
+      }
+      return items;
+    },
+    [onAddHolidayException, onRemoveHolidayException, holidays, date, holidayExceptionsBySlot, draft]
+  );
+  // 休講日・テスト期間の灰色カードのメニュー (休講日の例外の項目だけ)
+  const openOffMenu = useCallback(
+    (e, slot) => {
+      e.preventDefault();
+      const items = holidayExceptionItems(slot);
+      if (items.length > 0) setCtxMenu({ x: e.clientX, y: e.clientY, items });
+    },
+    [holidayExceptionItems]
+  );
+
   // 振替で入るコマと同じセルに出る「そのコマ自身の休講カード」は出さない。
   // 振替元と振替先が同じ曜日 (10/16 金 → 10/9 金) で振替先が休講日だと、
   // 同じセルに「休講」と「振替で入る」が重なり、授業があるのに休講と読める
@@ -531,6 +607,7 @@ export function AbsenceTimetable({
             }
           },
         });
+        items.push(...holidayExceptionItems(slot));
         setCtxMenu({ x: e.clientX, y: e.clientY, items });
         return;
       }
@@ -673,6 +750,8 @@ export function AbsenceTimetable({
           disabled: isHost,
           onClick: isHost ? undefined : () => draftApi.setCancel(slot.id),
         });
+        // 休講日の例外のコマ: 休講日どおり休講に戻す (その場で保存)
+        items.push(...holidayExceptionItems(slot));
 
         // 回数補正
         items.push({
@@ -732,6 +811,7 @@ export function AbsenceTimetable({
       slots,
       subjects,
       openIncomingMenu,
+      holidayExceptionItems,
     ]
   );
 
@@ -942,11 +1022,14 @@ export function AbsenceTimetable({
       }
 
       // 休講優先 → テスト期間 の順で判定。両方とも当日のコマは流れないので
-      // 操作不能 (drag/contextmenu/click 抑止)。
+      // 代行などの操作はできない (drag 抑止)。休講日の例外にする / 戻すの
+      // メニューだけは開ける (holidayExceptionItems)
       let cancelLabel = null;
       let cancelNote = null;
+      let cancelMenuTitle;
       if (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj, s.id)) {
         cancelLabel = "休講";
+        cancelMenuTitle = "クリック (右クリック) で「この日はこのコマだけ授業あり」(休講日の例外) にできます";
       } else if (
         isInExamPeriodForGrade &&
         isInExamPeriodForGrade(date, s.grade)
@@ -954,6 +1037,14 @@ export function AbsenceTimetable({
         cancelLabel = "テスト期間";
       }
       const isCancelled = cancelLabel != null;
+      // 休講日・テスト期間の灰色カードで開けるメニュー (休講日の例外の項目)
+      const offMenu =
+        isCancelled && holidayExceptionItems(s).length > 0
+          ? (e) => openOffMenu(e, s)
+          : undefined;
+      if (offMenu && cancelLabel === "テスト期間") {
+        cancelMenuTitle = "クリック (右クリック) で休講日どおり休講に戻せます";
+      }
       // コマ休講 (下書き / 保存済み)。休講日と同じ灰色カードだが、右クリックで
       // 取り消せるようにメニューは残す
       const slotCancel = !isCancelled ? cancelBySlot.get(s.id) : null;
@@ -973,6 +1064,8 @@ export function AbsenceTimetable({
           isAbsent={isAbsent}
           cancelLabel={cancelLabel}
           cancelNote={cancelNote}
+          cancelMenuTitle={cancelMenuTitle}
+          holidayExceptionLabel={holidayExceptionLabelFor(s.id)}
           isMoved={isMoved}
           isCombineHost={isHost}
           absorbedLabel={absorbedLabel}
@@ -988,7 +1081,7 @@ export function AbsenceTimetable({
           isRescheduled={!!reschedule}
           rescheduleLabel={rescheduleLabel}
           conflicts={teacherConflicts.get(s.id) || null}
-          onContextMenu={isCancelled ? undefined : (e) => openContextMenu(e, s)}
+          onContextMenu={isCancelled ? offMenu : (e) => openContextMenu(e, s)}
           onDragStart={(e) => handleDragStart(e, s)}
           onClick={isCancelled || slotCancel ? undefined : (e) => handleSlotClick(s, e)}
         />
@@ -1020,6 +1113,9 @@ export function AbsenceTimetable({
       cancelBySlot,
       combineExcluded,
       renderIncomingCard,
+      holidayExceptionItems,
+      holidayExceptionLabelFor,
+      openOffMenu,
     ]
   );
 
@@ -1072,6 +1168,9 @@ export function AbsenceTimetable({
         >
           {holidaysToday.map((h) => {
             const range = formatHolidayRange(h);
+            // 休講日の例外 (この日は授業あり) のコマも添える (どのコマが
+            // 休講日なのに授業をするかを帯からも読めるように)
+            const excepted = holidayExceptionSlots(h, allSlots || slots);
             return (
               <span
                 key={`hol-${h.id}`}
@@ -1092,6 +1191,11 @@ export function AbsenceTimetable({
                 {range && (
                   <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
                     ({range})
+                  </span>
+                )}
+                {excepted.length > 0 && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#2a6a3a" }}>
+                    例外 (授業あり): {excepted.map((x) => describeSlot(x.slot, `コマ#${x.id}`)).join("・")}
                   </span>
                 )}
               </span>

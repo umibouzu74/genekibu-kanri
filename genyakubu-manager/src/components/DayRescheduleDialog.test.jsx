@@ -175,6 +175,82 @@ describe("DayRescheduleDialog", () => {
     expect(screen.getByText("振替元日に実施されるコマがありません")).toBeTruthy();
   });
 
+  // 12/7 → 12/4 で、講師のいないマークテスト (12/7 には実施しない) まで
+  // 一緒に振り替わっていた (2026-10-16)
+  describe("講師なし・実施予定なしのコマ", () => {
+    const markSlots = [
+      ...SLOTS,
+      mk(4, "月", "17:00-18:30", { subj: "マークテスト", teacher: "", room: "" }),
+      mk(5, "月", "17:00-18:30", {
+        subj: "マークテスト",
+        cls: "A",
+        teacher: "",
+        room: "",
+        irregular: true,
+        onlyDates: ["2026-12-14"],
+      }),
+    ];
+    const ctx = {
+      allSlots: markSlots,
+      classSets: [],
+      timetables: [],
+      displayCutoff: { groups: [] },
+      daySchedules: [],
+      biweeklyAnchors: [],
+      holidays: [],
+      examPeriods: [],
+      isOffForGrade: () => false,
+    };
+
+    it("講師のいないコマは最初からチェックを外し、不定期のコマは理由つきで対象外", () => {
+      const { saveAdjustments } = renderDialog({ slots: markSlots, sessionCtx: ctx });
+      setDates(MON, FRI);
+      expect(screen.getByText("振替するコマ 2 / 3")).toBeTruthy();
+      expect(screen.getByText("講師なし")).toBeTruthy();
+      expect(screen.getByText(/講師のいないコマ \(マークテストなど\) 1 件は最初からチェックを/)).toBeTruthy();
+      // 不定期のコマ (12/7 は実施日でない) は対象外の一覧に理由つきで出る
+      expect(screen.getByText(/対象外のコマ 1 件/)).toBeTruthy();
+      expect(screen.getByText("実施日でない (不定期のコマ)")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "2 コマを振り替える" }));
+      expect(saveAdjustments.mock.calls[0][0].map((a) => a.slotId).sort()).toEqual([1, 2]);
+    });
+
+    it("講師のいないコマもチェックを入れれば一緒に移せる (すべて選択でも入る)", () => {
+      const { saveAdjustments } = renderDialog({ slots: markSlots, sessionCtx: ctx });
+      setDates(MON, FRI);
+      fireEvent.click(screen.getByRole("button", { name: "すべて選択" }));
+      expect(screen.getByText("振替するコマ 3 / 3")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "すべて解除" }));
+      expect(screen.getByText("振替するコマ 0 / 3")).toBeTruthy();
+      // 1 行ずつ入れる: マークテストの行 (時刻順で先頭)
+      fireEvent.click(screen.getAllByRole("checkbox")[0]);
+      fireEvent.click(screen.getByRole("button", { name: "1 コマを振り替える" }));
+      expect(saveAdjustments.mock.calls[0][0].map((a) => a.slotId)).toEqual([4]);
+    });
+
+    it("振替元・振替先を入れて開いたときも講師なしのコマは外れている", () => {
+      renderDialog({
+        slots: markSlots,
+        sessionCtx: ctx,
+        initialSourceDate: MON,
+        initialTargetDate: FRI,
+      });
+      expect(screen.getByText("振替するコマ 2 / 3")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "2 コマを振り替える" })).toBeTruthy();
+    });
+
+    it("振替元日を変えたらチェックは選び直し (既定に戻る)", () => {
+      renderDialog({ slots: markSlots, sessionCtx: ctx });
+      setDates(MON, FRI);
+      fireEvent.click(screen.getByRole("button", { name: "すべて選択" }));
+      expect(screen.getByText("振替するコマ 3 / 3")).toBeTruthy();
+      setDates("2026-12-14");
+      setDates(MON);
+      expect(screen.getByText("振替するコマ 2 / 3")).toBeTruthy();
+    });
+  });
+
   it("登録済みの振替をまとめて解除できる", () => {
     const onRemoveAdjustments = vi.fn();
     renderDialog({

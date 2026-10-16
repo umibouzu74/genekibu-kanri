@@ -35,6 +35,12 @@ export function AbsenceSlotCard({
   isAbsent,
   cancelLabel, // 当日が「休講」「テスト期間」等で授業が走らない場合のラベル
   cancelNote, // コマ休講の理由メモ (cancelLabel と併用)
+  // 休講のカードを押したときに開くメニューの説明 (title)。休講日のカードは
+  // 「休講日の例外にする」、コマ休講は「休講を取り消す」
+  cancelMenuTitle = "クリック (右クリック) で休講を取り消す",
+  // 休講日の例外 (この日はこのコマだけ授業あり) のとき、その休講日の名前を
+  // 添えた印の文言 (例: "休講日の例外 (「高1・高2 休講」)")
+  holidayExceptionLabel = null,
   isMoved,
   isCombineHost,
   absorbedLabel, // host のとき: "+ 中3A 理科"
@@ -86,13 +92,19 @@ export function AbsenceSlotCard({
     : null;
 
   // 休講 / テスト期間: 操作系をすべて無効化し、ラベル + 灰色化で簡素表示。
-  // コマ休講 (utils/slotCancel) だけは onContextMenu を受け取り、右クリック /
-  // ContextMenu キーで「休講を取り消す」を開ける (取り消し導線が無いと
-  // 時間割調整一覧まで行かないと戻せない)。
+  // コマ休講 (utils/slotCancel) と休講日 (Holiday) のカードは onContextMenu を
+  // 受け取り、クリック / 右クリック / Enter / ContextMenu キーでメニュー
+  // (「休講を取り消す」/「休講日の例外にする」) を開ける (取り消し導線が
+  // 無いと時間割調整一覧・休講日の画面まで行かないと戻せない)。
   if (cancelLabel) {
     const cancelInteractive = !!onContextMenu;
     const onCancelKeyDown = (e) => {
-      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+      if (
+        e.key === "ContextMenu" ||
+        (e.shiftKey && e.key === "F10") ||
+        e.key === "Enter" ||
+        e.key === " "
+      ) {
         e.preventDefault();
         const r = e.currentTarget.getBoundingClientRect();
         onContextMenu({
@@ -118,7 +130,7 @@ export function AbsenceSlotCard({
             : undefined
         }
         onKeyDown={cancelInteractive ? onCancelKeyDown : undefined}
-        title={cancelInteractive ? "クリック (右クリック) で休講を取り消す" : undefined}
+        title={cancelInteractive ? cancelMenuTitle : undefined}
         style={{
           cursor: cancelInteractive ? "pointer" : undefined,
           background: "#f5f5f5",
@@ -164,6 +176,7 @@ export function AbsenceSlotCard({
         {cancelNote && (
           <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>{cancelNote}</div>
         )}
+        {holidayExceptionLabel && <HolidayExceptionMark label={holidayExceptionLabel} />}
         {slot.teacher && (
           <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>
             {formatBiweeklyTeacher(slot.teacher, slot.note)}
@@ -218,6 +231,7 @@ export function AbsenceSlotCard({
     isMoved ? "移動" : null,
     isCombineHost ? "合同" : null,
     isAbsorbed ? "合同に吸収" : null,
+    holidayExceptionLabel ? "休講日の例外" : null,
     ...[...new Set(subs.map((x) => subState(x)))].map((st) => STATE_META[st]?.label),
     conflicts && conflicts.length > 0
       ? `講師重複 ${conflicts.map((c) => describeTeacherConflict(c)).join("、")}`
@@ -450,6 +464,7 @@ export function AbsenceSlotCard({
           {rescheduleLabel}
         </div>
       )}
+      {holidayExceptionLabel && <HolidayExceptionMark label={holidayExceptionLabel} />}
       {overrideLabel && (
         <div
           style={{
@@ -465,6 +480,28 @@ export function AbsenceSlotCard({
           {overrideLabel}
         </div>
       )}
+    </div>
+  );
+}
+
+// 休講日の例外の印。休講日の対象なのに授業がある理由がカードから読めるように
+// (tooltip だけにしない)
+function HolidayExceptionMark({ label }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        color: "#2a6a3a",
+        background: "#e8f5ea",
+        border: "1px solid #b8dcc0",
+        marginTop: 4,
+        padding: "1px 4px",
+        borderRadius: 3,
+        display: "inline-block",
+        fontWeight: 700,
+      }}
+    >
+      {label}
     </div>
   );
 }
