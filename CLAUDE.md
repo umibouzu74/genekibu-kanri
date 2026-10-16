@@ -706,6 +706,15 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   実施判定は `sessionCount.isSlotHeldOnDate` に委ね、**休講・テスト期間・
   特別時程・隔週・時間割の有効期間の解釈を回数計算と一本化する**
   (画面ごとに独自ルールを書き起こさない)
+- **コース別終講日が未設定のコースには「予定上の最終授業日（案）」を薄く出す**
+  (2026-10-16)。未設定のコースが従う終わり = 学年グループの終了日
+  (`getSlotCutoffRange` と同じ) 以前で実際に授業がある最後の日を
+  `findLastSessionOnOrBefore` (withSessionNo: false) で逆算する。**グループの終了日が
+  無い・開始日 > 終了日なら推し量らない** (学年の見出しに「表示期間の終了日 未設定」/
+  「学年グループなし」を出す。行ごとに断り書きを並べない)。案を出すだけでは何も
+  書き換えず、「この日を終講日にする」を押したときだけ保存する (終講日を入れると、
+  後で表示期間の終了日を延ばしてもそのコースはその日で止まるため、自動では入れない)。
+  第N回は数えない (未設定のコースは数が多く、回数の走査まで足すと設定のたびに待たされる)
 
 ## サイドバーの導線 (2026-08-20 確定)
 
@@ -743,7 +752,7 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **タブで切り替わる画面**も同じ扱い。開いている間だけタブ名を子項目に出し、
   クリックでそのタブへ切り替える (`Sidebar` の `SectionLinks` を共有)
 
-いま `sections` を持つのは 3 画面。**どれも画面名から辿れない機能が
+いま `sections` を持つのは 4 画面。**どれも画面名から辿れない機能が
 あるのが理由**なので、中身を増やしたら定義側の配列に足すこと:
 
 - **「休講・テスト期間・イベント」** (休講 / テスト期間 / 特別イベント /
@@ -759,6 +768,18 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   教科マスター) = タブ切替。定義は `constants/staffTabs.js` の `STAFF_TABS`
   (画面のタブ・サイドバー・メインメニューの `staffTab`・Cmd+K が共有)。タブは
   App が持つ (`staffTab`)
+- **「時間割管理」** (時間割一覧 / 時刻一括変換 (管理者のみ) / 期間の全体像 /
+  表示期間設定 / **コース別終講日** / **授業セット**) = 縦に並ぶカードへスクロール
+  (2026-10-16。カードが 6 枚並んで長く、コース別終講日が下の方 + 折りたたみの裏で
+  見つけにくかった)。定義は `constants/timetableSections.js` の `TIMETABLE_SECTIONS`
+  (アンカー id は `timetableSectionAnchorId`。画面先頭の目次・サイドバー・
+  メインメニュー・Cmd+K が共有)。スクロールは EVENT_SECTIONS と違い**画面の側**で
+  行う (App は `sectionRequest` ({key, token}) を渡すだけ。画面が受け取って
+  `onConsumeSectionRequest` で消す。HandoverView の focusRequest と同じ)。
+  **コース別終講日へ飛んだときは折りたたみ (「他 N コースを表示」) を全部開く**
+  (`CohortCutoffEditor` の `expandRequest`)。`adminOnly` のセクション (時刻一括変換) は
+  閲覧者の画面に描かれないので、目次・サイドバー・Cmd+K にも出さない。カードを
+  足したら配列と画面のアンカーの両方に足す
 
 ## メインメニュー (2026-10-15 実装、起動時の画面)
 
@@ -777,13 +798,14 @@ sessionStorage の直前の画面。画面を移ると本文のスクロール�
   (名前・アイコン・並びは `constants/menuCategories.js`。サイドバーのカテゴリと共有)。
   **名前・アイコン・権限 (adminOnly / adminData)・ダイアログの種類は
   サイドバー (`SIDEBAR_MENU`) から引く** (`navItem`)。画面の中のセクションは
-  `EVENT_SECTIONS`、タブは `MASTER_TABS` / `SUBS_TABS` (`constants/subsTabs.js`。
+  `EVENT_SECTIONS` / `TIMETABLE_SECTIONS`、タブは `MASTER_TABS` / `SUBS_TABS` (`constants/subsTabs.js`。
   Cmd+K と共有)。名前を書き起こさない
 - **サイドバーに機能を足したらメインメニューのどのカテゴリかに足す**。
   `mainMenu.test.js` が、サイドバーの項目 (ビュー / ダイアログ)・
   `EVENT_SECTIONS`・`MASTER_TABS` がすべてメニューにあるかを突き合わせて止める
+  (時間割管理の表示期間設定・コース別終講日・授業セットもメニューにあるかを見る)
 - 押したときの移動は App の `navigateMenuItem` (kind: view / modal / section /
-  masterTab / subsTab / staffTab)。サイドバー・Cmd+K と同じ経路 (`selectView` +
+  timetableSection / masterTab / subsTab / staffTab)。サイドバー・Cmd+K と同じ経路 (`selectView` +
   初期状態の要求) を通す。ダイアログを足したらここにも足す
 - **並びは固定**。使用頻度・履歴で並べ替えない・「よく使う」欄を作らない (A18)
 - ビューへ移る項目には g chord (`g a` など) を添える (`mainMenu.menuItemChord` →
