@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
 import { formatCount, slotWeight } from "../../utils/biweekly";
@@ -17,6 +17,11 @@ import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
 import { CutoffTimeline } from "../CutoffTimeline";
 import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
+import {
+  TIMETABLE_SECTION,
+  timetableSectionAnchorId,
+  visibleTimetableSections,
+} from "../../constants/timetableSections";
 
 // ─── 時間割管理ビュー ─────────────────────────────────────────────────
 // 時間割の一覧表示、作成、編集、削除、複製と表示期限設定を提供する。
@@ -28,6 +33,11 @@ import { useSessionCtx } from "../../hooks/useSessionCtx";
 //     「重なりを承知で保存」のチェックを要求する。前の期に終了日を入れ忘れると切替日以降どちらも
 //     有効になりコマが二重に出る (CLAUDE.md「期切替の運用」) ので、その事故を
 //     保存の手前で気付かせる。禁止にはしない (講習中だけ重ねる運用があり得る)
+//
+// カードが 6 枚縦に並んで長いので、先頭に目次を置き、各カードにアンカー id
+// (constants/timetableSections) を付ける。サイドバーの子項目・メインメニュー・
+// Cmd+K からは App が sectionRequest ({key, token}) で同じ場所へ飛ばす。
+// コース別終講日へ飛んだときは折りたたみ (「他 N コースを表示」) も開く (C4)
 
 // フォーム 1 つぶんの点検結果。overlapKey は「承知で保存」のチェックを
 // 紐付けるための署名 (重なる相手や区間が変わったらチェックを取り直す)
@@ -61,6 +71,11 @@ export function TimetableManagerView({
   daySchedules = [],
   adjustments = [],
   isAdmin,
+  // 外 (サイドバー / メインメニュー / Cmd+K) からのセクションへの要求
+  // ({key: TIMETABLE_SECTION, token})。受け取ったら onConsumeSectionRequest で
+  // 消してもらう (開き直したときに古い要求でまた飛ばないように)
+  sectionRequest = null,
+  onConsumeSectionRequest,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
@@ -110,6 +125,36 @@ export function TimetableManagerView({
     daySchedules,
     adjustments,
   });
+
+  // ─── 目次 / セクションへのスクロール ───────────────────────────
+  // コース別終講日へ飛ぶときは CohortCutoffEditor の折りたたみを全部開く
+  // (cohortExpandRequest が変わると開く)。スクロールは描画が確定してから
+  // (この後の描画) なので 1 タスク譲る (HandoverView の focusRequest と同じ)。
+  // タイマーはアンマウント時にだけ片付ける
+  const [cohortExpandRequest, setCohortExpandRequest] = useState(null);
+  const scrollTimersRef = useRef([]);
+  const jumpToSection = useCallback((key) => {
+    if (key === TIMETABLE_SECTION.COHORT_CUTOFF) {
+      setCohortExpandRequest((n) => (n || 0) + 1);
+    }
+    scrollTimersRef.current.push(
+      setTimeout(() => {
+        const el = document.getElementById(timetableSectionAnchorId(key));
+        if (el && typeof el.scrollIntoView === "function") {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 0)
+    );
+  }, []);
+  useEffect(() => () => scrollTimersRef.current.forEach(clearTimeout), []);
+  useEffect(() => {
+    const key = sectionRequest?.key;
+    if (!key) return;
+    onConsumeSectionRequest?.();
+    jumpToSection(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 要求 (token) が変わったときだけ動く
+  }, [sectionRequest]);
+  const tocSections = visibleTimetableSections(isAdmin);
 
   const startEdit = useCallback(
     (tt) => {
@@ -209,9 +254,14 @@ export function TimetableManagerView({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* 目次 (画面だけ。紙面には載せない) */}
+      <SectionToc sections={tocSections} onJump={jumpToSection} />
+
       {/* 時間割一覧 */}
       <div
+        id={timetableSectionAnchorId(TIMETABLE_SECTION.LIST)}
         style={{
+          ...anchorStyle,
           background: "#fff",
           borderRadius: 10,
           border: "1px solid #e0e0e0",
@@ -450,47 +500,100 @@ export function TimetableManagerView({
         </div>
       )}
 
-      {/* 時刻一括変換 (期切替支援) */}
-      <TimeBulkEditPanel
-        timetables={timetables}
-        slots={slots}
-        ttCrud={ttCrud}
-        isAdmin={isAdmin}
-      />
+      {/* 時刻一括変換 (期切替支援)。管理者だけ (閲覧者には何も描かないので、
+          空の枠で間隔が空かないよう包みごと出さない) */}
+      {isAdmin && (
+        <div id={timetableSectionAnchorId(TIMETABLE_SECTION.TIME_BULK)} style={anchorStyle}>
+          <TimeBulkEditPanel
+            timetables={timetables}
+            slots={slots}
+            ttCrud={ttCrud}
+            isAdmin={isAdmin}
+          />
+        </div>
+      )}
 
       {/* 期間の全体像 (時間割 / 学年グループ / コースを同じ物差しで並べる) */}
-      <CutoffTimeline
-        timetables={timetables}
-        slots={slots}
-        displayCutoff={displayCutoff}
-      />
+      <div id={timetableSectionAnchorId(TIMETABLE_SECTION.OVERVIEW)} style={anchorStyle}>
+        <CutoffTimeline
+          timetables={timetables}
+          slots={slots}
+          displayCutoff={displayCutoff}
+        />
+      </div>
 
       {/* 表示期限設定 (学年グループの開始日 / 終了日 / オリエン) */}
-      <DisplayCutoffEditor
-        slots={slots}
-        displayCutoff={displayCutoff}
-        onSave={onSaveDisplayCutoff}
-        isAdmin={isAdmin}
-        sessionCtx={sessionCtx}
-      />
+      <div id={timetableSectionAnchorId(TIMETABLE_SECTION.DISPLAY_CUTOFF)} style={anchorStyle}>
+        <DisplayCutoffEditor
+          slots={slots}
+          displayCutoff={displayCutoff}
+          onSave={onSaveDisplayCutoff}
+          isAdmin={isAdmin}
+          sessionCtx={sessionCtx}
+        />
+      </div>
 
       {/* コース別 終講日設定 (学校別・曜日別) */}
-      <CohortCutoffEditor
-        slots={slots}
-        displayCutoff={displayCutoff}
-        onSave={onSaveDisplayCutoff}
-        isAdmin={isAdmin}
-        sessionCtx={sessionCtx}
-      />
+      <div id={timetableSectionAnchorId(TIMETABLE_SECTION.COHORT_CUTOFF)} style={anchorStyle}>
+        <CohortCutoffEditor
+          slots={slots}
+          displayCutoff={displayCutoff}
+          onSave={onSaveDisplayCutoff}
+          isAdmin={isAdmin}
+          sessionCtx={sessionCtx}
+          expandRequest={cohortExpandRequest}
+        />
+      </div>
 
       {/* 授業セット管理 */}
-      <ClassSetManager
-        classSets={classSets || []}
-        slots={slots}
-        onSave={onSaveClassSets}
-        isAdmin={isAdmin}
-      />
+      <div id={timetableSectionAnchorId(TIMETABLE_SECTION.CLASS_SETS)} style={anchorStyle}>
+        <ClassSetManager
+          classSets={classSets || []}
+          slots={slots}
+          onSave={onSaveClassSets}
+          isAdmin={isAdmin}
+        />
+      </div>
     </div>
+  );
+}
+
+// スクロールで飛んだとき、カードの上端が本文の枠にぴったり付かないように
+const anchorStyle = { scrollMarginTop: 8 };
+
+// ページ先頭の目次。押すとそのカードへスクロールする (URL の # は変えない)。
+// 並び・名前・アイコンは constants/timetableSections (サイドバーの子項目と同じ)
+function SectionToc({ sections, onJump }) {
+  return (
+    <nav
+      aria-label="このページの目次"
+      className="no-print"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        flexWrap: "wrap",
+        fontSize: 11,
+        marginBottom: -12,
+      }}
+    >
+      <span style={{ color: "#888", fontWeight: 700 }}>目次</span>
+      {sections.map((sec) => (
+        <button
+          key={sec.key}
+          type="button"
+          onClick={() => onJump(sec.key)}
+          style={{
+            ...S.btn(false),
+            fontSize: 11,
+            padding: "3px 10px",
+            borderRadius: 999,
+          }}
+        >
+          <span aria-hidden="true">{sec.icon}</span> {sec.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 

@@ -25,6 +25,7 @@
 
 import { VIEWS } from "./views";
 import { EVENT_SECTIONS } from "./eventKinds";
+import { TIMETABLE_SECTIONS } from "./timetableSections";
 import { MASTER_TABS } from "./masterTabs";
 import { STAFF_TABS } from "./staffTabs";
 import { MENU_CATEGORIES, MENU_CATEGORY } from "./menuCategories";
@@ -123,7 +124,15 @@ export const SIDEBAR_MENU = [
   { key: VIEWS.OFFSITE, icon: "🏫", label: "他校舎の授業", category: C.STAFF },
 
   // ── 時間割 ──
-  { key: VIEWS.TIMETABLE, icon: "🗓", label: "時間割管理", category: C.TIMETABLE },
+  // カードが 6 枚縦に並ぶ長い画面で、画面名からは「コース別終講日」「授業セット」
+  // に辿り着けない。開いている間だけ中身をここに出す (休講・テスト期間・イベントと同じ)
+  {
+    key: VIEWS.TIMETABLE,
+    icon: "🗓",
+    label: "時間割管理",
+    sections: TIMETABLE_SECTIONS,
+    category: C.TIMETABLE,
+  },
   // この画面はタブが 3 枚あり、名前 (コースマスター管理) からは「隔週管理」に
   // 辿り着けない。開いている間だけタブ名をサイドバーに出す。
   {

@@ -415,6 +415,9 @@ export default function App() {
   // スクロールする要求 (EVENT_KIND)。ビューを切り替えた直後は lazy 読み込みで
   // まだ DOM に無いことがあるので、見つかるまで数フレーム探す。
   const [eventSectionRequest, setEventSectionRequest] = useState(null);
+  // 時間割管理のセクション (コース別終講日など) へ飛ぶ要求 ({key, token})。
+  // スクロールは画面の側 (TimetableManagerView) が受け取ってから行う
+  const [timetableSectionRequest, setTimetableSectionRequest] = useState(null);
   const [importing, setImporting] = useState(false);
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   // コースマスター管理のタブ。サイドバー / Cmd+K から直接開けるよう App が持つ。
@@ -711,6 +714,17 @@ export default function App() {
     [selectView]
   );
 
+  // 時間割管理を開いて、そのセクション (constants/timetableSections) へ飛ぶ
+  // (サイドバーの子項目 / メインメニュー / Cmd+K)
+  const openTimetableSection = useCallback(
+    (key) => {
+      selectView(VIEWS.TIMETABLE, () =>
+        setTimetableSectionRequest(key ? { key, token: Date.now() } : null)
+      );
+    },
+    [selectView]
+  );
+
   // 他校舎の授業の画面を開く。{id} でその 1 件 (管理者は編集)、{teacher} で
   // その講師の新規登録 (月間・週間・ダッシュボードのバナー・Cmd+K から)
   const openOffsite = useCallback(
@@ -996,6 +1010,9 @@ export default function App() {
         case "section":
           selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(item.section));
           break;
+        case "timetableSection":
+          openTimetableSection(item.section);
+          break;
         case "masterTab":
           selectView(VIEWS.MASTER, () => setMasterTab(item.tab));
           break;
@@ -1016,7 +1033,7 @@ export default function App() {
           break;
       }
     },
-    [selectView, openMonthBatch]
+    [selectView, openMonthBatch, openTimetableSection]
   );
 
   // 月間 (講師選択中) の ← / → / t = 前の月 / 次の月 / 今月。まとめて印刷の
@@ -1081,6 +1098,7 @@ export default function App() {
         onSelectEventSection={(kind) => {
           selectView(VIEWS.HOLIDAYS, () => setEventSectionRequest(kind));
         }}
+        onSelectTimetableSection={openTimetableSection}
         masterTab={masterTab}
         onSelectMasterTab={(tabKey) => {
           selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
@@ -1444,6 +1462,8 @@ export default function App() {
               daySchedules={daySchedules}
               adjustments={adjustments}
               isAdmin={isAdmin}
+              sectionRequest={timetableSectionRequest}
+              onConsumeSectionRequest={() => setTimetableSectionRequest(null)}
             />
           )}
           {view === VIEWS.HOLIDAYS && !selected && (
@@ -2218,6 +2238,10 @@ export default function App() {
             }}
             onSelectMasterTab={(tabKey) => {
               selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
+              setCmdPaletteOpen(false);
+            }}
+            onSelectTimetableSection={(key) => {
+              openTimetableSection(key);
               setCmdPaletteOpen(false);
             }}
             onSelectStaffTab={(tabKey) => {
