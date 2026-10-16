@@ -152,7 +152,10 @@ export function ToastContainer({ toasts, onDismiss }) {
       className="no-print"
       style={{
         position: "fixed",
-        bottom: 24,
+        // 画面下に固定のバー (欠勤組み換えの未保存バー) が出ている間は
+        // その上に出す (重なると保存ボタンが通知に隠れる)。高さはバーが
+        // CSS 変数に書く (absence/DraftSaveBar)
+        bottom: "calc(24px + var(--app-bottom-bar-height, 0px))",
         right: 24,
         zIndex: 2000,
         display: "flex",

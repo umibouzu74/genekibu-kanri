@@ -682,3 +682,141 @@ describe("AbsenceWorkflowView の振替で入るコマ", () => {
     expect(ri[0]).toMatchObject({ targetDate: "2026-10-09", combineWith });
   });
 });
+
+// コマ休講などの下書きを「保存」せずに離れていた (2026-10-16)。右下の小さな
+// 浮きボタンは狭い画面や通知に隠れて見落とされるので、下書きがある間は画面下に
+// 固定の未保存バーを出す。離れる操作 (日付の変更・同じ画面の中のジャンプ・
+// タブを閉じる) は確認を通す。
+describe("AbsenceWorkflowView の未保存バーと離れるときの確認", () => {
+  const toastRender = (toasts) => (
+    <div>
+      {toasts.map((t) => (
+        <div key={t.id}>
+          <span>{t.message}</span>
+          {t.action && (
+            <button type="button" onClick={t.action.onClick}>
+              {t.action.label}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+  // この日のコマを全部「コマ休講」の下書きにする
+  function draftCancelAll() {
+    fireEvent.click(screen.getByRole("button", { name: /コマを休講にする/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "全部選ぶ" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /\d+ コマを休講にする/ }));
+  }
+
+  it("下書きがある間だけ画面下に未保存バー (件数・内訳・保存・破棄) を出し、紙面には載せない", () => {
+    const saveAdjustments = vi.fn();
+    renderView({ saveAdjustments });
+    expect(screen.queryByRole("region", { name: "未保存の下書き" })).toBeNull();
+    draftCancelAll();
+    const bar = screen.getByRole("region", { name: "未保存の下書き" });
+    expect(bar.className).toContain("no-print");
+    expect(within(bar).getByText("未保存の下書き 1 件")).toBeTruthy();
+    expect(within(bar).getByText("コマ休講 1")).toBeTruthy();
+    // バーの高さを CSS 変数に書く (本文の下の余白・通知の位置がこれを見る)
+    expect(document.documentElement.style.getPropertyValue("--app-bottom-bar-height")).not.toBe("");
+    fireEvent.click(within(bar).getByRole("button", { name: "1 件の変更を保存" }));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    expect(saveAdjustments.mock.calls[0][0][0]).toMatchObject({ type: "cancel", slotId: 2 });
+    expect(screen.queryByRole("region", { name: "未保存の下書き" })).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--app-bottom-bar-height")).toBe("");
+  });
+
+  it("コマ休講の下書きを作ると、まだ保存されていないと通知し、通知からも保存できる", () => {
+    const saveAdjustments = vi.fn();
+    renderView({ saveAdjustments }, { toastRender });
+    draftCancelAll();
+    expect(screen.getByText(/1 コマを休講の下書きにしました。まだ保存されていません/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "今すぐ保存" }));
+    expect(saveAdjustments).toHaveBeenCalledTimes(1);
+    expect(saveAdjustments.mock.calls[0][0][0]).toMatchObject({ type: "cancel", slotId: 2 });
+  });
+
+  it("画面を離れた後に通知の「今すぐ保存」を押しても、捨てた下書きを保存しない", () => {
+    const saveAdjustments = vi.fn();
+    let actions = [];
+    const capture = (toasts) => {
+      actions = toasts.filter((t) => t.action).map((t) => t.action);
+      return null;
+    };
+    const { rerender } = renderView({ saveAdjustments }, { toastRender: capture });
+    draftCancelAll();
+    expect(actions.length).toBe(1);
+    // 欠勤組み換えをアンマウント (別の画面へ移った)
+    rerender(
+      <ToastProvider render={capture}>
+        <ConfirmProvider>
+          <div />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+    actions[0].onClick();
+    expect(saveAdjustments).not.toHaveBeenCalled();
+  });
+
+  it("日付欄を変えると確認が出て、キャンセルなら日付も下書きも保つ (OK なら破棄して移る)", async () => {
+    renderView();
+    draftCancelAll();
+    const input = screen.getByLabelText("対象日:");
+    fireEvent.change(input, { target: { value: "2026-09-22" } });
+    let dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/下書きが 1 件あります。破棄して 2026-09-22 \(火\) へ変更しますか/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("対象日:").value).toBe(MON);
+    expect(screen.getByRole("region", { name: "未保存の下書き" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "次 →" }));
+    dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "破棄して変更" }));
+    await waitFor(() => expect(screen.getByLabelText("対象日:").value).toBe("2026-09-22"));
+    expect(screen.queryByRole("region", { name: "未保存の下書き" })).toBeNull();
+  });
+
+  it("同じ画面の中のジャンプ (振替元の日を開く) も下書きがあれば確認する", async () => {
+    const FRI_TT = [{ id: 1, name: "通年", type: "regular", grades: [], startDate: "2026-04-01", endDate: null }];
+    const fri = { day: "金", time: "19:00-20:20", subj: "数学", note: "", timetableId: 1 };
+    const slots = [
+      { ...fri, id: 1, grade: "高1", cls: "文系", room: "301", teacher: "香川" },
+      { ...fri, id: 3, grade: "高1", cls: "文系", room: "301", time: "20:30-21:50", subj: "英語", teacher: "河野" },
+    ];
+    renderView({
+      slots,
+      timetables: FRI_TT,
+      initDate: "2026-10-09",
+      adjustments: [{ id: 10, type: "reschedule", date: "2026-10-16", slotId: 1, targetDate: "2026-10-09" }],
+    });
+    // 英語 (通常のコマ) を休講の下書きにする
+    fireEvent.click(screen.getByRole("button", { name: /20:30-21:50 高1 文系 英語/ }));
+    fireEvent.click(screen.getByText("🚫 このコマを休講にする"));
+    expect(screen.getByText("休講 (下書き)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /高1 文系 数学 香川 （振替で入るコマ）/ }));
+    fireEvent.click(screen.getByText("振替元の日 (10/16 (金)) を開く"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/下書きが 1 件あります/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("対象日:").value).toBe("2026-10-09");
+    expect(screen.getByText("休講 (下書き)")).toBeTruthy();
+  });
+
+  it("下書きがある間はタブを閉じる・再読み込みで警告する (beforeunload)", () => {
+    renderView();
+    const fire = () => {
+      const ev = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    };
+    expect(fire()).toBe(false);
+    draftCancelAll();
+    expect(fire()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "1 件の変更を保存" }));
+    expect(fire()).toBe(false);
+  });
+});

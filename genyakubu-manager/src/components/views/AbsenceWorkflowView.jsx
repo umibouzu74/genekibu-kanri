@@ -16,6 +16,7 @@ import { useAbsenceDraft } from "./absence/useAbsenceDraft";
 import { AbsenceTimetable } from "./absence/AbsenceTimetable";
 import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
+import { DraftSaveBar } from "./absence/DraftSaveBar";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { buildIncomingCards, incomingCombineKey } from "../../utils/adjustmentDisplay";
 import { canonicalTimeRange, fmtMDWeekday } from "../../utils/dateHelpers";
@@ -40,8 +41,8 @@ import { cutoffBannerText } from "../../constants/cutoffMessages";
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
 // 上部: 対象日 + 欠勤先生選択 / 下部: 時間割グリッド
 // 全ての操作 (代行・合同・移動・回数補正) はグリッド上で DnD や右クリック
-// から行い、下書きは useAbsenceDraft が保持する。画面右下のフローティング
-// ボタンで一括保存。
+// から行い、下書きは useAbsenceDraft が保持する。下書きがある間は画面下に
+// 固定の未保存バー (absence/DraftSaveBar) を出し、そこから一括保存する。
 
 export function AbsenceWorkflowView({
   slots,
@@ -401,6 +402,39 @@ export function AbsenceWorkflowView({
     ]
   );
 
+  // 下書きを足したことの通知。下書きは「保存」を押すまで確定しないので、
+  // そう書いた上で通知からもすぐ保存できるようにする (コマ休講を下書きの
+  // まま離れていた、2026-10-16)。保存は最新の handleSave を ref で呼ぶ
+  // (通知を出した時点の handleSave は足す前の下書きしか知らない)。画面を
+  // 離れた後に押されたら何もしない (破棄して移動した下書きを保存しない)
+  const handleSaveRef = useRef(null);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const notifyDrafted = useCallback(
+    (message) => {
+      toasts.push(`${message}。まだ保存されていません (画面下の「保存」で確定します)`, {
+        tone: "success",
+        duration: 8000,
+        action: {
+          label: "今すぐ保存",
+          onClick: () => {
+            if (!mountedRef.current) {
+              toasts.error("欠勤組み換えの画面を離れたため、ここからは保存できません");
+              return;
+            }
+            handleSaveRef.current?.();
+          },
+        },
+      });
+    },
+    [toasts]
+  );
+
   // ダイアログで選んだぶんだけ下書きにする。mode は
   //   pending = これから代行を探す (代行未定)
   //   nosub   = 代行を立てず残りの担当者で回す (代行なしで確定)
@@ -421,14 +455,14 @@ export function AbsenceWorkflowView({
         onRecordLeave(
           leave.names.map((name) => ({ name, dates: [date], kind: leave.kind, memo }))
         );
-        toasts.success(
-          `${selected.length} 件を${what}の下書きにし、${leave.names.join("・")} の有給・半休を記録しました`
+        notifyDrafted(
+          `${leave.names.join("・")} の有給・半休を記録し、${selected.length} 件を${what}の下書きにしました`
         );
       } else {
-        toasts.success(`${selected.length} 件を${what}の下書きにしました`);
+        notifyDrafted(`${selected.length} 件を${what}の下書きにしました`);
       }
     },
-    [draft, toasts, onRecordLeave, date]
+    [draft, notifyDrafted, onRecordLeave, date]
   );
 
   // コマ休講ダイアログの候補: この日のコマのうち、まだ休講になっていない
@@ -471,28 +505,39 @@ export function AbsenceWorkflowView({
         draft.setCancel(s.id, memo ? { memo } : {});
       }
       setCancelDialogOpen(false);
-      toasts.success(`${selectedSlots.length} コマを休講の下書きにしました`);
+      notifyDrafted(`${selectedSlots.length} コマを休講の下書きにしました`);
     },
-    [draft, toasts]
+    [draft, notifyDrafted]
   );
 
-  // 下書きの件数カウント (保存ボタン表示用)
-  const draftCount = useMemo(() => {
-    let c = 0;
+  // 下書きの件数 (保存ボタン表示用) と種類ごとの内訳 (未保存バー用)
+  const { draftCount, draftSummary } = useMemo(() => {
+    const n = { subs: 0, cancel: 0, combine: 0, move: 0, reschedule: 0, override: 0 };
     for (const row of Object.values(draft.draft)) {
       // 代行 / 欠勤は講師ごとに 1 件 (多担任コマでは複数)。代行者が未定の
       // 「欠勤だけ」も数える (数えないと保存ボタンが出ず、登録したつもりが
       // 消える)。
-      c += Object.keys(row.subs || {}).length;
-      if (row.combine?.absorbedSlotIds?.length) c++;
-      if (row.move?.targetTime) c++;
-      if (row.reschedule?.targetDate) c++;
-      if (row.override) c++;
-      if (row.cancel) c++;
+      n.subs += Object.keys(row.subs || {}).length;
+      if (row.combine?.absorbedSlotIds?.length) n.combine++;
+      if (row.move?.targetTime) n.move++;
+      if (row.reschedule?.targetDate) n.reschedule++;
+      if (row.override) n.override++;
+      if (row.cancel) n.cancel++;
     }
-    c += (draft.removedAdjustmentIds?.size || 0);
-    c += (draft.removedSubIds?.size || 0);
-    return c;
+    const removed = (draft.removedAdjustmentIds?.size || 0) + (draft.removedSubIds?.size || 0);
+    const parts = [
+      ["代行・欠勤", n.subs],
+      ["コマ休講", n.cancel],
+      ["合同", n.combine],
+      ["移動", n.move],
+      ["振替", n.reschedule],
+      ["回数補正", n.override],
+      ["解除", removed],
+    ].filter(([, c]) => c > 0);
+    return {
+      draftCount: parts.reduce((sum, [, c]) => sum + c, 0),
+      draftSummary: parts.map(([label, c]) => `${label} ${c}`),
+    };
   }, [draft.draft, draft.removedAdjustmentIds, draft.removedSubIds]);
 
   // 下書きがある状態でタブを閉じる / リロードしようとしたら警告
@@ -777,6 +822,8 @@ export function AbsenceWorkflowView({
     }
   }, [draft, date, slots, subs, adjustments, sessionOverrides, saveSubs, saveAdjustments, saveSessionOverrides, toasts]);
 
+  handleSaveRef.current = handleSave;
+
   // 玉突き代行は「欠勤を下書きしてから空き講師を探す」続きの作業。下書きが
   // あるときは捨てさせず、保存してから開く (キャンセルなら留まる)
   const handleOpenChain = useCallback(async () => {
@@ -798,7 +845,17 @@ export function AbsenceWorkflowView({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 80 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        // 未保存バー (画面下に固定) が最後のコマを隠さないよう、バーの高さ
+        // (DraftSaveBar が CSS 変数に書く) ぶん下に余白を足す
+        paddingBottom:
+          draftCount > 0 ? "calc(16px + var(--app-bottom-bar-height, 72px))" : 16,
+      }}
+    >
       {/* Header: date + teacher selection */}
       <div
         style={{
@@ -1150,48 +1207,14 @@ export function AbsenceWorkflowView({
         />
       )}
 
-      {/* Floating save button */}
+      {/* 未保存バー (画面下に固定)。下書きがある間だけ出す */}
       {draftCount > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 20,
-            right: 20,
-            zIndex: 500,
-            display: "flex",
-            gap: 6,
-            alignItems: "center",
-            background: "#fff",
-            padding: "8px 10px",
-            borderRadius: 10,
-            boxShadow: "0 6px 18px rgba(0,0,0,.25)",
-            border: "1px solid #ddd",
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleDiscard}
-            style={{ ...S.btn(false), fontSize: 12 }}
-          >
-            破棄
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            style={{
-              background: "#2a6a9e",
-              color: "#fff",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: 6,
-              fontWeight: 800,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            {draftCount} 件の変更を保存
-          </button>
-        </div>
+        <DraftSaveBar
+          count={draftCount}
+          summary={draftSummary}
+          onSave={handleSave}
+          onDiscard={handleDiscard}
+        />
       )}
     </div>
   );

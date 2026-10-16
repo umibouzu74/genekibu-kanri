@@ -204,7 +204,12 @@ export function SlotCancelDialog({
         />
       </div>
 
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+        {/* 欠勤組み換えの他の操作と同じく下書きに入る。ここで確定したと
+            思って画面を離れる人がいたので、押す前に書いておく */}
+        <span style={{ fontSize: 11, color: "#8a6a20", marginRight: "auto" }}>
+          ※ 下書きに入ります。画面下の「保存」を押すと確定します
+        </span>
         <button type="button" onClick={onClose} style={S.btn(false)}>
           キャンセル
         </button>
