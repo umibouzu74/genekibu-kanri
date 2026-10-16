@@ -32,8 +32,9 @@ export function DataManager({
         adjustments: adjustments || [],
         sessionOverrides: sessionOverrides || [],
         classSets: classSets || [],
+        holidays: holidays || [],
       }),
-    [slots, subs, adjustments, sessionOverrides, classSets]
+    [slots, subs, adjustments, sessionOverrides, classSets, holidays]
   );
 
   return (

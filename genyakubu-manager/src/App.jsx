@@ -513,6 +513,8 @@ export default function App() {
     saveAdjustments,
     sessionOverrides,
     saveSessionOverrides,
+    holidays,
+    saveHolidays,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
   const ttCrud = useTimetablesCrud({
@@ -777,13 +779,15 @@ export default function App() {
         tone: "danger",
       });
       if (!ok) return;
-      const { nextSubs, nextAdjustments, nextOverrides, nextClassSets } = applyOrphanCleanup({
-        subs,
-        adjustments,
-        sessionOverrides,
-        classSets,
-        detection,
-      });
+      const { nextSubs, nextAdjustments, nextOverrides, nextClassSets, nextHolidays } =
+        applyOrphanCleanup({
+          subs,
+          adjustments,
+          sessionOverrides,
+          classSets,
+          holidays,
+          detection,
+        });
       if (detection.orphanSubs.length > 0) saveSubs(nextSubs);
       if (
         detection.orphanAdjustments.length > 0 ||
@@ -795,6 +799,7 @@ export default function App() {
       if (detection.orphanClassSets?.length || detection.updatedClassSets?.length) {
         saveClassSets(nextClassSets);
       }
+      if (detection.updatedHolidays?.length) saveHolidays(nextHolidays);
       toasts.success(`孤立データを掃除しました (${describeOrphanDetection(detection)})`);
     },
     [
@@ -803,10 +808,12 @@ export default function App() {
       adjustments,
       sessionOverrides,
       classSets,
+      holidays,
       saveSubs,
       saveAdjustments,
       saveSessionOverrides,
       saveClassSets,
+      saveHolidays,
       toasts,
     ]
   );
@@ -824,11 +831,13 @@ export default function App() {
         adjustments,
         sessionOverrides,
         classSets,
+        holidays,
       });
       if (r.changed.subs) saveSubs(r.nextSubs);
       if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
       if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
       if (r.changed.classSets) saveClassSets(r.nextClassSets);
+      if (r.changed.holidays) saveHolidays(r.nextHolidays);
       return r.detection;
     },
     [
@@ -836,10 +845,12 @@ export default function App() {
       adjustments,
       sessionOverrides,
       classSets,
+      holidays,
       saveSubs,
       saveAdjustments,
       saveSessionOverrides,
       saveClassSets,
+      saveHolidays,
     ]
   );
 
@@ -1454,6 +1465,8 @@ export default function App() {
               <HolidayManager
                 holidays={holidays}
                 slots={slots}
+                timetables={timetables}
+                displayCutoff={displayCutoff}
                 onSave={saveHolidays}
                 isAdmin={isAdmin}
                 editTargetId={

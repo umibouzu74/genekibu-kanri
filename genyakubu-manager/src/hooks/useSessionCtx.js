@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
-import { buildClassSetIndex } from "../utils/classSets";
+import { buildClassSetIndex, buildClassSetOwnerIndex } from "../utils/classSets";
 import { buildSlotCohortIndex } from "../utils/cohorts";
 import { buildSlotById } from "../utils/sessionCount";
 import { buildCancelIndex } from "../utils/slotCancel";
@@ -44,6 +44,10 @@ export function useSessionCtx({
     () => buildClassSetIndex(classSets || [], slotPool),
     [classSets, slotPool]
   );
+  const classSetOwnerIndex = useMemo(
+    () => buildClassSetOwnerIndex(classSets || [], slotPool),
+    [classSets, slotPool]
+  );
   const slotById = useMemo(() => buildSlotById(slotPool), [slotPool]);
   const cancelIndex = useMemo(() => buildCancelIndex(adjustments || []), [adjustments]);
   const sessionCtx = useMemo(
@@ -54,6 +58,7 @@ export function useSessionCtx({
       _cohortIndex: cohortIndex,
       _slotById: slotById,
       _classSetIndex: classSetIndex,
+      _classSetOwnerIndex: classSetOwnerIndex,
       _cancelIndex: cancelIndex,
       displayCutoff,
       // 期またぎ (前期/後期) の二重カウント防止と、期ごとの回数リセットに使う。
@@ -75,7 +80,7 @@ export function useSessionCtx({
       // orientationFirstDay。未設定なら中学部のみ) が決める。
       orientationOnFirstDay: true,
     }),
-    [classSets, slotPool, cohortIndex, classSetIndex, slotById, cancelIndex, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules, adjustments]
+    [classSets, slotPool, cohortIndex, classSetIndex, classSetOwnerIndex, slotById, cancelIndex, displayCutoff, timetables, helpers, biweeklyAnchors, holidays, examPeriods, sessionOverrides, daySchedules, adjustments]
   );
   return { sessionCtx, ...helpers };
 }

@@ -10,6 +10,14 @@
 // 学年グループ開始日と所属時間割 startDate の遅い方 (getSlotCountStartDate)
 // なので、期の切替では「第N回」が 1 から数え直しになる。
 //
+// 数え方のオプション (2026-10-16):
+//   - 授業セットの countByDay (日数カウント) … 同じ日の同じ教科・クラスの
+//     コマは 1 回と数える (土曜のプレップのように 1 日に 2 コマ続く授業)
+//   - コマの separateWeekdayCount … そのコマは同じ曜日のコマとだけ通算する
+//     (月・土のように会場違いで同じ内容のコマを別の回数で数える)
+//   - コマの sessionStartNumber … その期の最初の回を第N回から数える
+//     (2 学期は⑨から、のように期をまたいで続く番号)
+//
 // SessionOverride (回数手動補正) の扱い:
 //   - mode:"set"  → そのコマの回数を value に強制し、以降の同バケット
 //                    スロットは value を基準に連番で続く。value は以降
@@ -27,7 +35,7 @@ import { buildCancelIndex, isSlotCancelledOnDate } from "./slotCancel";
 import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
-import { buildClassSetIndex } from "./classSets";
+import { buildClassSetIndex, buildClassSetOwnerIndex, isDayCountSet } from "./classSets";
 import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
 import { isSlotScheduledOnDate } from "./slotDates";
 
@@ -123,11 +131,20 @@ export function resolveSetSlotIds(slot, classSets, cohortIndex, classSetIndex) {
 // 重いので、一度作った ctx を使い回す (computeSessionNumber /
 // buildSessionCountMap の入口で 1 回だけ)。
 function withIndexes(ctx) {
-  if (ctx._cohortIndex && ctx._classSetIndex && ctx._slotById && ctx._cancelIndex) {
+  if (
+    ctx._cohortIndex &&
+    ctx._classSetIndex &&
+    ctx._classSetOwnerIndex &&
+    ctx._slotById &&
+    ctx._cancelIndex
+  ) {
     return ctx;
   }
   return {
     ...ctx,
+    // slotId → 授業セット (数え方のオプション countByDay を引く)
+    _classSetOwnerIndex:
+      ctx._classSetOwnerIndex || buildClassSetOwnerIndex(ctx.classSets, ctx.allSlots),
     // (日付, コマ) → コマ休講 (adjustments の cancel)。日付ループの中から
     // 引くので線形走査にしない
     _cancelIndex: ctx._cancelIndex || buildCancelIndex(ctx.adjustments),
@@ -139,6 +156,39 @@ function withIndexes(ctx) {
     // 1 度だけ作って渡す。無ければここで作る)
     _slotById: ctx._slotById || buildSlotById(ctx.allSlots),
   };
+}
+
+// 回数を通算するコマ (resolveSetSlotIds の結果に、曜日ごとに数えるコマの
+// 切り分けを重ねたもの)。separateWeekdayCount のコマは同じ曜日のコマとだけ
+// 通算し、それ以外のコマの通算からも外れる (片側だけ外すと、土曜の回数に
+// 月曜が混ざったまま残る)。
+function resolveCountingSlotIds(slot, ctx) {
+  const ids = resolveSetSlotIds(
+    slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
+  );
+  const slotById = ctx._slotById;
+  const own = slot.separateWeekdayCount === true;
+  const anySeparate = ids.some((id) => slotById.get(id)?.separateWeekdayCount === true);
+  if (!own && !anySeparate) return ids;
+  return ids.filter((id) => {
+    const s = slotById.get(id);
+    if (!s) return false;
+    if (s.day === slot.day) return true;
+    return !own && s.separateWeekdayCount !== true;
+  });
+}
+
+// そのコマの回数を日数で数えるか (授業セットの countByDay)。
+// コース (コホート) の既定束ねには数え方のオプションが無いので、セットを
+// 登録したときだけ効く。
+function isCountByDay(slot, ctx) {
+  return isDayCountSet(ctx._classSetOwnerIndex?.get(slot.id));
+}
+
+// コマの「数え始め」(第N回から数える)。1 以上の整数のときだけ有効。
+function startNumberOf(slot) {
+  const n = slot?.sessionStartNumber;
+  return typeof n === "number" && Number.isInteger(n) && n > 1 ? n : 1;
 }
 
 export function buildSlotById(slots) {
@@ -358,12 +408,22 @@ function buildOverrideIndex(sessionOverrides) {
   return idx;
 }
 
+const skipDisplayOf = (ov) =>
+  typeof ov.displayAs === "number" && Number.isFinite(ov.displayAs) && ov.displayAs > 0
+    ? ov.displayAs
+    : 0;
+
+const isSetOverride = (ov) =>
+  !!ov && ov.mode === "set" && typeof ov.value === "number" && Number.isFinite(ov.value);
+
 // 1 つの (setKey) バケットに属する setSlots について、対象教科 × cohort で
 // 開始日〜対象日 (含む) の各日・各スロットの回数を算出した Map を返す。
 //   key:   `${slotId}|${dateStr}`
 //   value: 1-indexed の回数 (skip + displayAs 未指定時は 0)
 // 走査中に override を見つけたらそれに従い、通常カウント時は reserved
 // (既に override で消費された値の集合) をスキップしながら +1 する。
+// opts.countByDay: その日に実施する (同じ教科・cohort の) コマはまとめて 1 回。
+// 最初に数えるコマに sessionStartNumber があれば、そこから数え始める。
 function computeBucketCounts(
   setSlots,
   startDateStr,
@@ -372,6 +432,7 @@ function computeBucketCounts(
   targetCls,
   ctx,
   overrideIndex,
+  opts = {},
 ) {
   const result = new Map();
   if (!startDateStr || targetDateStr < startDateStr) return result;
@@ -380,35 +441,68 @@ function computeBucketCounts(
   const end = parseDate(targetDateStr);
   const cur = new Date(start);
   let running = 0;
+  // まだ 1 回も数えていない (数え始めの番号を当てる前)
+  let started = false;
   const reserved = new Set();
+  const nextNumber = (s) => {
+    if (!started) {
+      running = Math.max(running, startNumberOf(s) - 1);
+      started = true;
+    }
+    running += 1;
+    while (reserved.has(running)) running += 1;
+    return running;
+  };
   while (cur <= end) {
     const dStr = fmtDate(cur);
     const active = activeSlotsOnDay(setSlots, dStr, ctx, targetSubj, targetCls);
+    if (opts.countByDay && active.length > 1) {
+      // 日数カウント: その日のコマは同じ回。skip のコマは displayAs を出すだけ、
+      // set があればその値、無ければ通常どおり +1 を 1 回だけ
+      const counted = [];
+      let setOv = null;
+      for (const s of active) {
+        const ov = overrideIndex.get(`${s.id}|${dStr}`);
+        if (ov && ov.mode === "skip") {
+          const disp = skipDisplayOf(ov);
+          if (disp > 0) reserved.add(disp);
+          result.set(`${s.id}|${dStr}`, disp);
+          continue;
+        }
+        if (!setOv && isSetOverride(ov)) setOv = ov;
+        counted.push(s);
+      }
+      if (counted.length > 0) {
+        let n;
+        if (setOv) {
+          running = setOv.value;
+          started = true;
+          reserved.add(running);
+          n = running;
+        } else {
+          n = nextNumber(counted[0]);
+        }
+        for (const s of counted) result.set(`${s.id}|${dStr}`, n);
+      }
+      cur.setDate(cur.getDate() + 1);
+      continue;
+    }
     for (const s of active) {
       const ov = overrideIndex.get(`${s.id}|${dStr}`);
       if (ov && ov.mode === "skip") {
-        const disp =
-          typeof ov.displayAs === "number" && Number.isFinite(ov.displayAs) && ov.displayAs > 0
-            ? ov.displayAs
-            : 0;
+        const disp = skipDisplayOf(ov);
         if (disp > 0) reserved.add(disp);
         result.set(`${s.id}|${dStr}`, disp);
         continue;
       }
-      if (
-        ov &&
-        ov.mode === "set" &&
-        typeof ov.value === "number" &&
-        Number.isFinite(ov.value)
-      ) {
+      if (isSetOverride(ov)) {
         running = ov.value;
+        started = true;
         reserved.add(running);
         result.set(`${s.id}|${dStr}`, running);
         continue;
       }
-      running += 1;
-      while (reserved.has(running)) running += 1;
-      result.set(`${s.id}|${dStr}`, running);
+      result.set(`${s.id}|${dStr}`, nextNumber(s));
     }
     cur.setDate(cur.getDate() + 1);
   }
@@ -433,9 +527,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
   if (!startDate) return 0;
   if (targetDateStr < startDate) return 0;
 
-  const setSlotIds = resolveSetSlotIds(
-    slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
-  );
+  const setSlotIds = resolveCountingSlotIds(slot, ctx);
   const slotById = ctx._slotById;
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
   if (setSlots.length === 0) return 0;
@@ -454,6 +546,7 @@ export function computeSessionNumber(slot, targetDateStr, ctx) {
     targetCls,
     ctx,
     overrideIndex,
+    { countByDay: isCountByDay(slot, ctx) },
   );
   return bucket.get(`${slot.id}|${targetDateStr}`) || 0;
 }
@@ -494,10 +587,9 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
     }
     const targetCls = slot.cls || "";
 
-    const setSlotIds = resolveSetSlotIds(
-      slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
-    );
-    // キャッシュキーは (セット × 実施教科 × cohort × 開始日) 単位で分離。
+    const setSlotIds = resolveCountingSlotIds(slot, ctx);
+    const countByDay = isCountByDay(slot, ctx);
+    // キャッシュキーは (セット × 実施教科 × cohort × 開始日 × 数え方) 単位で分離。
     // 区切りには非可視文字 (US: \u001f) を使い、ユーザー入力 (cls 等) に
     // 通常含まれない文字で衝突を防ぐ。
     const SEP = "\u001f";
@@ -505,7 +597,8 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
       [...setSlotIds].sort((a, b) => a - b).join(",") +
       SEP + targetSubj +
       SEP + targetCls +
-      SEP + startDate;
+      SEP + startDate +
+      SEP + (countByDay ? "day" : "slot");
     const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
     if (setSlots.length === 0) {
       out.set(slot.id, 0);
@@ -522,6 +615,7 @@ export function buildSessionCountMap(slots, targetDateStr, ctx) {
         targetCls,
         ctx,
         overrideIndex,
+        { countByDay },
       );
       setCache.set(setKey, bucket);
     }

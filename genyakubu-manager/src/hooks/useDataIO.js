@@ -277,6 +277,7 @@ export function useDataIO({
               ? d.sessionOverrides
               : [],
             classSets: Array.isArray(d.classSets) ? d.classSets : [],
+            holidays: Array.isArray(d.holidays) ? d.holidays : [],
           });
           if (orphanCounts.total > 0) {
             toasts.info(

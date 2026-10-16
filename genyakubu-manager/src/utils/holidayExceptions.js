@@ -14,6 +14,8 @@
 // 純粋関数のみ。書き込みは呼び出し側 (removeWithUndo と同じく 6 秒の
 // 「元に戻す」を出す。cascade の無い変更)。
 
+import { getAbsenceDaySlots } from "./absenceHelpers";
+import { dateToDay, timeStartToMin } from "./dateHelpers";
 import { holidayMatches } from "./scheduleHelpers";
 
 function hasException(h, slotId) {
@@ -113,4 +115,23 @@ export function holidayExceptionSlots(h, slotsOrMap) {
     id,
     slot: byId.get(String(id)) || byId.get(id) || null,
   }));
+}
+
+/**
+ * その日にその休講日 (の対象設定) が止めるコマ。例外は見ない (例外にする候補を
+ * 並べるため)。画面に出るコマ (時間割の期間・表示期間) だけ —
+ * absenceHelpers.getAbsenceDaySlots と同じ窓で、期切替で残した旧期のコマを
+ * 二重に並べない。
+ * @param {Array} slots
+ * @param {string} dateStr
+ * @param {{scope?: string[], targetGrades?: string[], subjKeywords?: string[]}} criteria
+ * @param {{timetables?: Array, displayCutoff?: object}} [opts]
+ * @returns {Array}
+ */
+export function slotsStoppedByHoliday(slots, dateStr, criteria, opts = {}) {
+  const day = dateToDay(dateStr);
+  if (!day) return [];
+  return getAbsenceDaySlots(slots, dateStr, day, opts)
+    .filter((s) => holidayMatches(criteria, s.grade, s.subj))
+    .sort((a, b) => timeStartToMin(a.time) - timeStartToMin(b.time) || a.id - b.id);
 }

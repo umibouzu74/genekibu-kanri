@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ALL_GRADES, DAYS, DEPT_COLOR, gradeToDept } from "../data";
+import { DAYS, DEPT_COLOR, gradeToDept } from "../data";
+import { gradeChoices } from "../utils/gradeChoices";
 import { nextNumericId } from "../utils/schema";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
@@ -15,6 +16,7 @@ import {
 } from "../utils/classSetSuggestions";
 import {
   expandClassSetSlotIds,
+  isDayCountSet,
   isLegacySet,
   unitKey,
   unitsFromSlotIds,
@@ -44,6 +46,8 @@ import {
 export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const [selectedUnitKeys, setSelectedUnitKeys] = useState([]);
   const [label, setLabel] = useState("");
+  // 日数カウント (同じ日の同じ教科・クラスは 1 回と数える)。classSets.isDayCountSet
+  const [countByDay, setCountByDay] = useState(false);
   const [editId, setEditId] = useState(null);
   const [gradeFilter, setGradeFilter] = useState("all");
   const [dayFilter, setDayFilter] = useState("all");
@@ -145,6 +149,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const resetForm = () => {
     setSelectedUnitKeys([]);
     setLabel("");
+    setCountByDay(false);
     setEditId(null);
     setExpandedKeys(new Set());
   };
@@ -199,11 +204,13 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     }
     const finalLabel = label.trim() || autoLabelFromUnits(selectedUnits);
     const units = selectedUnits.map((u) => ({ grade: u.grade, day: u.day }));
+    // 既定 (コマごと) はキーを持たない (保存形を従来と同じにする)
+    const options = countByDay ? { countByDay: true } : {};
 
     if (editId != null) {
       const next = detachUnits(classSets, selectedUnitKeys, editId).map((cs) =>
         cs.id === editId
-          ? { id: cs.id, label: finalLabel, units }
+          ? { id: cs.id, label: finalLabel, units, ...options }
           : cs
       );
       onSave(next);
@@ -211,7 +218,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     } else {
       const next = [
         ...detachUnits(classSets, selectedUnitKeys, null),
-        { id: nextNumericId(classSets), label: finalLabel, units },
+        { id: nextNumericId(classSets), label: finalLabel, units, ...options },
       ];
       onSave(next);
       toasts.success("授業セットを登録しました");
@@ -222,6 +229,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
   const handleEdit = (cs) => {
     setEditId(cs.id);
     setLabel(cs.label);
+    setCountByDay(isDayCountSet(cs));
     // 編集対象のセットに属するスロットを持つユニットを選択状態に
     const slotIdSet = new Set(expandClassSetSlotIds(cs, slots));
     const ownedUnitKeys = allUnits
@@ -302,7 +310,9 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
     }
     onSave(
       classSets.map((x) =>
-        x.id === cs.id ? { id: x.id, label: x.label, units } : x
+        x.id === cs.id
+          ? { id: x.id, label: x.label, units, ...(isDayCountSet(x) ? { countByDay: true } : {}) }
+          : x
       )
     );
     toasts.success(`「${cs.label}」を曜日ベースに変換しました`);
@@ -435,6 +445,21 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
                     <span style={{ fontSize: 10, color: "#888" }}>
                       {setUnits.length} ユニット / {setSlots.length} コマ
                     </span>
+                    {isDayCountSet(cs) && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          padding: "1px 5px",
+                          borderRadius: 8,
+                          background: "#e8f0fb",
+                          color: "#2a4a7a",
+                          border: "1px solid #b8cce8",
+                        }}
+                        title="同じ日に同じ教科・クラスのコマが複数あっても 1 回と数えます"
+                      >
+                        日数で数える
+                      </span>
+                    )}
                     {legacy && (
                       <span
                         style={{
@@ -677,6 +702,30 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
             placeholder="ラベル (空欄で自動生成)"
             style={{ ...S.input, width: "100%", marginBottom: 8 }}
           />
+          <label
+            style={{
+              fontSize: 11,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 4,
+              marginBottom: 8,
+              lineHeight: 1.5,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={countByDay}
+              onChange={(e) => setCountByDay(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              同じ日に同じ教科・クラスのコマが複数あっても 1 回と数える (日数カウント)
+              <span style={{ display: "block", fontSize: 10, color: "#888" }}>
+                土曜のプレップ・内申対策のように 1 日に 2 コマ続く授業で、予定表の回数
+                (☆14 など) を日数で数えているとき
+              </span>
+            </span>
+          </label>
 
           {/* フィルタ */}
           <div
@@ -702,7 +751,7 @@ export function ClassSetManager({ classSets, slots, onSave, isAdmin }) {
               <option value="all">全学年</option>
               <option value="中学部">中学部</option>
               <option value="高校部">高校部</option>
-              {ALL_GRADES.map((g) => (
+              {gradeChoices(slots).map((g) => (
                 <option key={g} value={g}>
                   {g}
                 </option>

@@ -25,6 +25,11 @@ export interface Slot {
   // (一覧が空ならどの日も実施しない)。マークテストのように決まった日だけのコマ
   irregular?: boolean;
   onlyDates?: string[]; // YYYY-MM-DD
+  // 回数 (第N回) の数え方 (utils/sessionCount)。
+  // separateWeekdayCount: 同じ曜日のコマとだけ通算する (月・土で会場違いの同じ授業)
+  // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
+  separateWeekdayCount?: boolean;
+  sessionStartNumber?: number;
 }
 
 export interface Holiday {
@@ -388,6 +393,9 @@ export interface ClassSet {
   label: string; // "中3 (火・木)" 等
   units?: ClassSetUnit[]; // 現行形式 (学年 × 曜日)
   slotIds?: number[]; // 旧形式 (コマ id 直参照)
+  // 日数カウント: 同じ日の同じ教科・クラスのコマは 1 回と数える (土曜の
+  // プレップのように 1 日に同じ授業が 2 コマ続くコース)。未設定 = コマごと
+  countByDay?: boolean;
 }
 
 // ─── Timetable / Display cutoff ──────────────────────────────────

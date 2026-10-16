@@ -386,7 +386,7 @@ describe("cascadeOrphansForSlots", () => {
       classSets: [{ id: 1, slotIds: [7] }],
     });
     expect(r.detection.total).toBe(3);
-    expect(r.changed).toEqual({ subs: true, adjustments: false, sessionOverrides: true, classSets: true });
+    expect(r.changed).toEqual({ subs: true, adjustments: false, sessionOverrides: true, classSets: true, holidays: false });
     expect(r.nextSubs).toEqual([{ id: 1, slotId: 1 }]);
     expect(r.nextAdjustments).toEqual([{ id: 1, slotId: 1, type: "move" }]);
     expect(r.nextOverrides).toEqual([]);
@@ -400,5 +400,26 @@ describe("cascadeOrphansForSlots", () => {
     expect(r.detection.total).toBe(0);
     expect(r.changed).toEqual({});
     expect(r.nextSubs).toBe(subs);
+  });
+});
+
+describe("休講日の例外 (excludeSlotIds) の孤立", () => {
+  it("消えたコマの id だけ抜き、休講日は残す。空になったらキーごと外す", async () => {
+    const { detectOrphans, applyOrphanCleanup, cascadeOrphansForSlots } = await import("./orphanCleanup");
+    const slots = [{ id: 1 }, { id: 2 }];
+    const holidays = [
+      { id: 10, date: "2026-09-09", excludeSlotIds: [1, 99] },
+      { id: 11, date: "2026-09-10", excludeSlotIds: [98] },
+      { id: 12, date: "2026-09-11" },
+    ];
+    const det = detectOrphans({ slots, subs: [], adjustments: [], sessionOverrides: [], holidays });
+    expect(det.updatedHolidays).toHaveLength(2);
+    expect(det.total).toBe(2);
+    const { nextHolidays } = applyOrphanCleanup({ subs: [], adjustments: [], sessionOverrides: [], holidays, detection: det });
+    expect(nextHolidays[0].excludeSlotIds).toEqual([1]);
+    expect(nextHolidays[1]).not.toHaveProperty("excludeSlotIds");
+    expect(nextHolidays[2]).toBe(holidays[2]);
+    const r = cascadeOrphansForSlots({ slots, subs: [], adjustments: [], sessionOverrides: [], holidays });
+    expect(r.changed.holidays).toBe(true);
   });
 });

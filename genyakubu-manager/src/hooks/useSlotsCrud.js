@@ -20,6 +20,8 @@ export function useSlotsCrud({
   saveAdjustments,
   sessionOverrides = [],
   saveSessionOverrides,
+  holidays = [],
+  saveHolidays,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -117,6 +119,10 @@ export function useSlotsCrud({
     const linkedOverrides = (sessionOverrides || []).filter((o) =>
       sameId(o.slotId)
     );
+    // 休講日の例外 (この日は授業あり) は休講日を残して id だけ抜く
+    const linkedHolidays = (holidays || []).filter(
+      (h) => Array.isArray(h.excludeSlotIds) && h.excludeSlotIds.some(sameId)
+    );
     const extras = [];
     if (linkedSubs.length) extras.push(`代行記録 ${linkedSubs.length} 件削除`);
     if (removedAdjustments.length)
@@ -125,6 +131,8 @@ export function useSlotsCrud({
       extras.push(`合同授業 ${updatedAdjustments.length} 件からこのコマを除外`);
     if (linkedOverrides.length)
       extras.push(`回数補正 ${linkedOverrides.length} 件削除`);
+    if (linkedHolidays.length)
+      extras.push(`休講日 ${linkedHolidays.length} 件の例外からこのコマを除外`);
     const extra = extras.length
       ? `\n※この操作で次のデータも更新されます:\n - ${extras.join("\n - ")}`
       : "";
@@ -160,6 +168,18 @@ export function useSlotsCrud({
     if (linkedOverrides.length && saveSessionOverrides) {
       saveSessionOverrides(sessionOverrides.filter((o) => !sameId(o.slotId)));
     }
+    if (linkedHolidays.length && saveHolidays) {
+      saveHolidays((prev) =>
+        prev.map((h) => {
+          if (!Array.isArray(h.excludeSlotIds) || !h.excludeSlotIds.some(sameId)) return h;
+          const rest = h.excludeSlotIds.filter((v) => !sameId(v));
+          const next = { ...h };
+          if (rest.length > 0) next.excludeSlotIds = rest;
+          else delete next.excludeSlotIds;
+          return next;
+        })
+      );
+    }
     const removedParts = [];
     if (linkedSubs.length) removedParts.push(`代行 ${linkedSubs.length} 件`);
     if (removedAdjustments.length)
@@ -169,6 +189,8 @@ export function useSlotsCrud({
     const updatedParts = [];
     if (updatedAdjustments.length)
       updatedParts.push(`合同 ${updatedAdjustments.length} 件を更新`);
+    if (linkedHolidays.length)
+      updatedParts.push(`休講日の例外 ${linkedHolidays.length} 件を更新`);
     let msg = "コマを削除しました";
     if (removedParts.length || updatedParts.length) {
       const segments = [];

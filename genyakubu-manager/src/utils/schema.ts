@@ -74,6 +74,8 @@ export function isSlot(x: unknown): x is Slot {
       (Array.isArray(x.biweeklyAnchors) &&
         (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a)))) &&
     (x.irregular === undefined || typeof x.irregular === "boolean") &&
+    (x.separateWeekdayCount === undefined || typeof x.separateWeekdayCount === "boolean") &&
+    (x.sessionStartNumber === undefined || isNumber(x.sessionStartNumber)) &&
     (x.onlyDates === undefined ||
       (Array.isArray(x.onlyDates) &&
         (x.onlyDates as unknown[]).every((d) => isIsoDate(d))))
@@ -240,6 +242,7 @@ export function isClassSet(x: unknown): x is ClassSet {
   if (hasSlotIds && !(x.slotIds as unknown[]).every((i) => isNumber(i))) {
     return false;
   }
+  if (x.countByDay !== undefined && typeof x.countByDay !== "boolean") return false;
   return true;
 }
 
@@ -765,6 +768,22 @@ function collectReferentialWarnings(raw: Record<string, unknown>): string[] {
           if (missing(ids[j])) {
             warnings.push(
               `classSets[${i}].slotIds[${j}] (${String(ids[j])}) が slots に存在しません`
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(raw.holidays)) {
+      // 休講日の例外 (この日は授業あり) のコマ id
+      const list = raw.holidays as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        const ids = list[i]?.excludeSlotIds;
+        if (!Array.isArray(ids)) continue;
+        for (let j = 0; j < ids.length; j++) {
+          if (missing(ids[j])) {
+            warnings.push(
+              `holidays[${i}].excludeSlotIds[${j}] (${String(ids[j])}) が slots に存在しません`
             );
           }
         }
