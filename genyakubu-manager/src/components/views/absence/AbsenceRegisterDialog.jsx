@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { LeaveRecordOption } from "../../LeaveRecordOption";
+import { leaveKindMeta } from "../../../utils/staffLeave";
 import { Modal } from "../../Modal";
 import { S } from "../../../styles/common";
 import { gradeColor as GC } from "../../../data";
@@ -19,7 +21,18 @@ function slotLabel(slot) {
   return `${slot.grade}${cls} ${slot.subj}`;
 }
 
-export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, onClose }) {
+// leaveNames: 有給・半休にも記録できる人 (現役部 常勤)。渡されたときだけ
+// 「🌴 有給・半休にも記録する」を出し、選んだ種類を onSubmit の 4 番目で返す。
+// 記録するのはその人のコマに 1 つでもチェックが残っているときだけ (全部外した
+// = 来られる人には付けない)
+export function AbsenceRegisterDialog({
+  date,
+  targets,
+  skipped = [],
+  onSubmit,
+  onClose,
+  leaveNames = [],
+}) {
   // key = "slotId|teacher"。既定は全部にチェック。
   const keyOf = (t) => `${t.slotId}|${t.teacher}`;
   const [excluded, setExcluded] = useState(() => new Set());
@@ -27,6 +40,7 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
   // 理由メモ (体調不良 / 学校行事 など)。選んだ全件に同じ値を入れる。
   // 保存後に授業管理で 1 件ずつ ✏️ を開き直さなくて済むように
   const [memo, setMemo] = useState("");
+  const [leaveKind, setLeaveKind] = useState(null);
 
   const byTeacher = useMemo(() => {
     const m = new Map();
@@ -38,6 +52,7 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
   }, [targets]);
 
   const selected = targets.filter((t) => !excluded.has(keyOf(t)));
+  const leaveFor = leaveNames.filter((n) => selected.some((t) => t.teacher === n));
 
   const toggle = (t) => {
     setExcluded((prev) => {
@@ -222,6 +237,20 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
         </details>
       )}
 
+      <LeaveRecordOption
+        idPrefix="absence-register-leave"
+        names={leaveNames}
+        kind={leaveKind}
+        onChange={setLeaveKind}
+        detail={
+          leaveKind
+            ? leaveFor.length > 0
+              ? `${leaveFor.join("・")} の ${date} を「${leaveKindMeta(leaveKind).label}」として、登録と同時に記録します (欠勤は下の「保存」で確定)`
+              : "コマに全部チェックが無い人には記録しません"
+            : null
+        }
+      />
+
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
         <label htmlFor="absence-register-memo" style={{ fontSize: 12, fontWeight: 700 }}>
           理由メモ:
@@ -243,7 +272,9 @@ export function AbsenceRegisterDialog({ date, targets, skipped = [], onSubmit, o
         <button
           type="button"
           disabled={selected.length === 0}
-          onClick={() => onSubmit(selected, mode, memo.trim())}
+          onClick={() =>
+            onSubmit(selected, mode, memo.trim(), leaveKind && leaveFor.length > 0 ? { kind: leaveKind, names: leaveFor } : null)
+          }
           style={{
             ...S.btn(true),
             cursor: selected.length === 0 ? "not-allowed" : "pointer",

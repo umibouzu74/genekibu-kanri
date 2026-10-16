@@ -89,6 +89,8 @@ export function EventSummaryCards({
           padding: "10px 14px",
           border: `1px solid ${accent}`,
           minWidth: 150,
+          // 1 枚だけのときに横幅いっぱいに伸びて間延びしないように上限を付ける
+          maxWidth: 360,
           flex: "1 1 150px",
           cursor: clickable ? "pointer" : "default",
         }}

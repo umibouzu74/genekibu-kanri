@@ -6,6 +6,7 @@
 // 登録のボタンが出ないことまで。
 import { Buffer } from "node:buffer";
 import { test, expect } from "@playwright/test";
+import { openSidebarCategory } from "./helpers.js";
 import ExcelJS from "exceljs";
 
 const WD = "日月火水木金土";
@@ -87,6 +88,7 @@ test.beforeEach(async ({ page }) => {
 
 test("予定表 (.xlsx) を読み込むと、塗りの色から食い違う日が出る", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
+  await openSidebarCategory(page, "予定・休み");
   await page.getByRole("button", { name: "📑 予定表チェック" }).click();
   await expect(page.locator(".app-h1")).toHaveText("予定表チェック");
 

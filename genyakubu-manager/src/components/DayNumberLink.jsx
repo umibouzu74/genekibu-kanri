@@ -10,6 +10,9 @@ import { fmtDateWeekday } from "../utils/dateHelpers";
 // どちらのボタンも行内の小さな道具なので、モバイルの 40px 規則
 // (appShell.css の button 最小高) から `inline-activate` で外す。
 //
+// onAddLeave があれば 🌴 (その日の有給・半休を入れる。講師別月間で、その講師が
+// 現役部 常勤のときだけ) も同じ作りで並べる。
+//
 // 読み上げ名 / title は他の導線 (DashboardDateNav / DashDayRow) と同じ文言:
 //   「YYYY-MM-DD (曜) をダッシュボードで見る」「YYYY-MM-DD (曜) の欠勤組み換えを開く」
 function dayNumberLabels(ds) {
@@ -17,10 +20,11 @@ function dayNumberLabels(ds) {
   return {
     dashboard: `${day} をダッシュボードで見る`,
     absence: `${day} の欠勤組み換えを開く`,
+    leave: `${day} の有給・半休を入れる`,
   };
 }
 
-export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow }) {
+export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow, onAddLeave }) {
   const labels = dayNumberLabels(ds);
   return (
     <span
@@ -71,16 +75,37 @@ export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow }) {
           🚑
         </button>
       )}
+      {onAddLeave && (
+        <button
+          type="button"
+          className="no-print inline-activate day-number-absence"
+          onClick={() => onAddLeave(ds)}
+          aria-label={labels.leave}
+          title={labels.leave}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            fontSize: 10,
+            lineHeight: 1,
+            cursor: "pointer",
+          }}
+        >
+          🌴
+        </button>
+      )}
     </span>
   );
 }
 
 // カレンダーのヘッダに出す凡例 (画面だけ)。渡された導線ぶんだけ書く。
 // 「🚑 が何か」は凡例が無いと判らない (毎日並ぶ絵文字なので)
-export function DayNumberLegend({ onSelectDate, onJumpToAbsenceFlow, style }) {
+export function DayNumberLegend({ onSelectDate, onJumpToAbsenceFlow, onAddLeave, style }) {
   const parts = [];
   if (onSelectDate) parts.push("日付クリック = その日のダッシュボード");
   if (onJumpToAbsenceFlow) parts.push("🚑 = 欠勤組み換え");
+  if (onAddLeave) parts.push("🌴 = 有給・半休");
   if (parts.length === 0) return null;
   return (
     <span

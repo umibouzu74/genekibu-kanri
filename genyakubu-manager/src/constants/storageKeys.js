@@ -60,6 +60,9 @@ export const LS = {
   teachingMinutesClosingDay: "genyakubu-teaching-minutes-closing-day",
   teachingMinutesSelected: "genyakubu-teaching-minutes-selected",
   teachingMinutesIncluded: "genyakubu-teaching-minutes-included",
+  // サイドバーで人が開いたカテゴリ (constants/menuCategories の key の配列)。
+  // 明示的な開け閉めの保存で、利用統計ではない (A18 とは別物)
+  sidebarOpenCategories: "genyakubu-sidebar-open-categories",
   // 予定表チェックで、予定表の講座とシステムのコマの対応を手で直した結果
   // (講座キー → { subjects } / { skip })。推定の上書きで、利用統計ではない
   yoteihyoMapping: "genyakubu-yoteihyo-mapping",

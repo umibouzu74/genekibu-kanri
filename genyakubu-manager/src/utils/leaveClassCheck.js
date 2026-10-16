@@ -61,3 +61,16 @@ export function leaveClassSeverity(kind, check) {
   if (!check || check.open === 0) return null;
   return kind === "am" ? "info" : "warn";
 }
+
+/** leaveClassCheck の結果を 1 行の文にする (入力欄・一覧の注意書き) */
+export function classCheckText(check) {
+  if (!check || check.classes === 0) return "この日の担当の授業はありません";
+  const parts = [`この日の担当の授業 ${check.classes} コマ`];
+  if (check.open > 0) {
+    parts.push(`代行・欠勤の登録なし ${check.open} コマ`);
+    if (check.incoming > 0) parts.push(`うち振替で入るコマ ${check.incoming}`);
+  } else {
+    parts.push("すべて代行・欠勤を登録済み");
+  }
+  return parts.join(" — ");
+}

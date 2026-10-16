@@ -109,6 +109,8 @@ export function SubSummaryCards({
         padding: "10px 14px",
         border: `1px solid ${color}30`,
         minWidth: 130,
+        // 1〜2 枚だけのときに横幅いっぱいに伸びて間延びしないように上限を付ける
+        maxWidth: 280,
         flex: "1 1 130px",
         cursor: onActivate ? "pointer" : "default",
       }}

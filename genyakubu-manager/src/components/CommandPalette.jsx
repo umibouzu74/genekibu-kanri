@@ -3,6 +3,7 @@ import { subStateMeta, subTargetLabel } from "../utils/substituteState";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
 import { SUBS_TABS } from "../constants/subsTabs";
+import { STAFF_TABS } from "../constants/staffTabs";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -37,6 +38,8 @@ export function CommandPalette({
   onSelectEvent,
   onSelectSubsSubTab,
   onSelectMasterTab,
+  // 講師管理のタブ (講師の所属 / 担当教科・よみ など) を名前で開く
+  onSelectStaffTab,
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
   onOpenTestPrep,
@@ -307,14 +310,14 @@ export function CommandPalette({
       { key: views.MASTER, label: "コースマスター管理" },
       { key: views.SUBS, label: "授業管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },
-      { key: views.STAFF, label: "バイト管理" },
+      // 旧「バイト管理」。前の名前でも引けるように並べて書く
+      { key: views.STAFF, label: "講師管理 (バイト管理・講師の所属・担当教科)" },
       // 欠勤組み換えは管理者専用。onJumpToAbsenceFlow は管理者のときだけ
       // 渡ってくるので、それを目印に閲覧者には出さない (開いても行き止まり)
       ...(onJumpToAbsenceFlow ? [{ key: views.ABSENCE_FLOW, label: "欠勤組み換え" }] : []),
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
-      { key: views.AFFILIATION, label: "講師の所属 (現役部 常勤・非常勤 / 予備校部)" },
     ];
     if (canUseAdminData) {
       viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
@@ -371,6 +374,25 @@ export function CommandPalette({
             detail: "コースマスター管理のタブに移動",
             action: () => {
               onSelectMasterTab(t.key);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
+    // 講師管理のタブ (講師の所属 / 担当教科・よみ / 教科マスター)。画面名
+    // (講師管理) からは中身に辿り着けないので、タブ名でも引けるようにする
+    if (onSelectStaffTab) {
+      for (const t of STAFF_TABS) {
+        const label = t.key === "affiliation" ? `${t.label} (現役部 常勤・非常勤 / 予備校部)` : t.label;
+        if (matchLabel(label)) {
+          hits.push({
+            type: "view",
+            label,
+            detail: "講師管理のタブに移動",
+            action: () => {
+              onSelectStaffTab(t.key);
               onClose();
             },
           });
@@ -495,6 +517,7 @@ export function CommandPalette({
     onSelectEvent,
     onSelectSubsSubTab,
     onSelectMasterTab,
+    onSelectStaffTab,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,
     onOpenTestPrep,

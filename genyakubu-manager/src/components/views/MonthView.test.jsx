@@ -652,3 +652,35 @@ describe("MonthView 他校舎の授業", () => {
     expect(dec7.textContent).not.toContain("代行で休み");
   });
 });
+
+// 有給・半休 (2026-10-16)。管理者の画面だけで、紙面・画像には載せない (no-print)。
+// 講師が現役部 常勤なら日付の横の 🌴 からその日の有給・半休を入れられる
+describe("MonthView の有給・半休", () => {
+  const leave = {
+    records: [{ id: 1, name: "堀上", date: "2026-07-10", kind: "pm", memo: "通院" }],
+    grants: [],
+  };
+
+  it("記録のある日に 🌴 の印を出し (no-print)、押すとその日を直せる", () => {
+    const onEditLeave = vi.fn();
+    render(<MonthView {...baseProps} staffLeave={leave} onEditLeave={onEditLeave} />);
+    const chip = screen.getByRole("button", { name: "休暇: 午後半休" });
+    expect(chip.className).toMatch(/no-print/);
+    fireEvent.click(chip);
+    expect(onEditLeave).toHaveBeenCalledWith("2026-07-10");
+  });
+
+  it("記録の無い日は日付の横の 🌴 から入れる (onEditLeave を渡したときだけ)", () => {
+    const onEditLeave = vi.fn();
+    const { unmount } = render(
+      <MonthView {...baseProps} staffLeave={leave} onEditLeave={onEditLeave} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2026-07-13 (月) の有給・半休を入れる" }));
+    expect(onEditLeave).toHaveBeenCalledWith("2026-07-13");
+    // 記録のある日には 🌴 (入れる) を重ねて出さない
+    expect(screen.queryByRole("button", { name: "2026-07-10 (金) の有給・半休を入れる" })).toBeNull();
+    unmount();
+    render(<MonthView {...baseProps} staffLeave={leave} />);
+    expect(screen.queryByRole("button", { name: /の有給・半休を入れる/ })).toBeNull();
+  });
+});

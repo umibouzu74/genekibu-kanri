@@ -8,7 +8,15 @@ import { VIEWS } from "../constants/views";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TAB } from "../constants/masterTabs";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
+
+// カテゴリを開く (サイドバーはカテゴリごとに開け閉めする。既定で開いているのは
+// 「今日の対応」と今いる画面のカテゴリだけ)
+const openCategory = (label) =>
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^▸?\\s*\\S+ ${label}`), expanded: false }));
 
 function renderSidebar(props = {}) {
   return render(
@@ -39,6 +47,7 @@ describe("Sidebar の日まるごと振替", () => {
   it("管理者にはボタンを出し、クリックでダイアログを開く", () => {
     const onOpenDayReschedule = vi.fn();
     renderSidebar({ onOpenDayReschedule });
+    openCategory("振替・追加授業");
     fireEvent.click(screen.getByRole("button", { name: /日まるごと振替/ }));
     expect(onOpenDayReschedule).toHaveBeenCalledTimes(1);
   });
@@ -52,8 +61,9 @@ describe("Sidebar の日まるごと振替", () => {
 describe("Sidebar のイベント系セクション", () => {
   it("休講・テスト期間・イベントを開いている間だけ中身を並べる", () => {
     const { rerender } = renderSidebar();
-    // 別の画面を見ているときは出さない (サイドバーが長くなりすぎるため)
-    expect(screen.queryByText(/追加授業/)).toBeNull();
+    // 別の画面を見ているときは出さない (サイドバーが長くなりすぎるため)。
+    // カテゴリ名「振替・追加授業」とは別に、セクションの「追加授業」だけを見る
+    expect(screen.queryByRole("button", { name: /^\S+ 追加授業$/ })).toBeNull();
 
     rerender(
       <Sidebar
@@ -77,7 +87,7 @@ describe("Sidebar のイベント系セクション", () => {
       />
     );
     // 画面名からは辿れない 2 つが、名前でサイドバーに出る
-    expect(screen.getByRole("button", { name: /追加授業/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^\S+ 追加授業$/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /特別時程/ })).toBeTruthy();
   });
 
@@ -155,6 +165,7 @@ describe("Sidebar のテスト対策の振替・追加", () => {
   it("管理者にはボタンを出し、クリックでダイアログを開く", () => {
     const onOpenTestPrep = vi.fn();
     renderSidebar({ onOpenTestPrep });
+    openCategory("振替・追加授業");
     fireEvent.click(screen.getByRole("button", { name: /テスト対策の振替・追加/ }));
     expect(onOpenTestPrep).toHaveBeenCalledTimes(1);
   });
@@ -170,6 +181,7 @@ describe("Sidebar の月間予定の印刷・画像", () => {
     const onOpenMonthBatch = vi.fn();
     const onOpenDataMgr = vi.fn();
     renderSidebar({ isAdmin: false, onOpenMonthBatch, onOpenDataMgr });
+    openCategory("講師・スタッフ");
     fireEvent.click(screen.getByRole("button", { name: /月間予定の印刷・画像/ }));
     expect(onOpenMonthBatch).toHaveBeenCalledTimes(1);
     // データ管理 (modal の既定の行き先) には落ちない
@@ -200,5 +212,53 @@ describe("Sidebar の講師検索", () => {
   it("管理者専用の「欠勤組み換え」は閲覧者に出さない", () => {
     renderSidebar({ isAdmin: false });
     expect(screen.queryByRole("button", { name: /欠勤組み換え/ })).toBeNull();
+  });
+});
+
+// 項目が 25 前後あり全部並べると画面に収まらないので、カテゴリごとに開け閉め
+// する (2026-10-16)。並びは固定で、使用頻度では開くものを変えない (A18)
+describe("Sidebar のカテゴリ", () => {
+  it("既定で開いているのは「今日の対応」だけ。メインメニュー・ダッシュボードは常に出す", () => {
+    renderSidebar();
+    expect(screen.getByRole("button", { name: /メインメニュー/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ダッシュボード/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /欠勤組み換え/ })).toBeInTheDocument();
+    // 閉じているカテゴリは見出しだけ (項目の数を添える)
+    expect(screen.queryByRole("button", { name: /コースマスター管理/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /時間割/, expanded: false })
+    ).toHaveTextContent(/4$/);
+  });
+
+  it("今いる画面のカテゴリは自動で開く (閉じればその画面にいる間は閉じたまま)", () => {
+    renderSidebar({ view: VIEWS.MASTER });
+    expect(screen.getByRole("button", { name: /コースマスター管理/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /時間割/, expanded: true }));
+    expect(screen.queryByRole("button", { name: /コースマスター管理/ })).toBeNull();
+  });
+
+  it("人が開いたカテゴリはこの端末に覚える", () => {
+    renderSidebar();
+    openCategory("記録・データ");
+    expect(screen.getByRole("button", { name: /データ管理/ })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("genyakubu-sidebar-open-categories"))).toEqual([
+      "today",
+      "records",
+    ]);
+    cleanup();
+    renderSidebar();
+    expect(screen.getByRole("button", { name: /データ管理/ })).toBeInTheDocument();
+  });
+
+  it("「今日の対応」を閉じても未処理の代行の件数は見出しに出る", () => {
+    const today = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const ds = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+    renderSidebar({
+      subs: [{ id: 1, date: ds, slotId: 1, originalTeacher: "堀上", substitute: "", status: "requested" }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /今日の対応/, expanded: true }));
+    expect(screen.queryByRole("button", { name: /欠勤組み換え/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "未処理の代行 1 件を表示" })).toBeInTheDocument();
   });
 });

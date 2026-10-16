@@ -76,6 +76,10 @@ export function AbsenceWorkflowView({
   // 未保存の下書きの有無を親 (App) に知らせる。App はこれを見て、別ビューへ
   // 移る前に確認を出す (このビューは lazy でアンマウントされると下書きが消える)
   onDirtyChange,
+  // 有給・半休にも記録する (欠勤にする人が現役部 常勤のとき)。書ける人のときだけ
+  // App が渡す。isLeaveTracked(name, date) / onRecordLeave([{name, dates, kind, memo}])
+  isLeaveTracked = null,
+  onRecordLeave = null,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -400,8 +404,10 @@ export function AbsenceWorkflowView({
   // ダイアログで選んだぶんだけ下書きにする。mode は
   //   pending = これから代行を探す (代行未定)
   //   nosub   = 代行を立てず残りの担当者で回す (代行なしで確定)
+  // leave = { kind, names } なら有給・半休にもすぐ記録する (人事の記録で、
+  // 時間割の下書きとは別。欠勤は下書きのまま「保存」で確定)
   const handleRegisterAbsence = useCallback(
-    (selected, mode, memo = "") => {
+    (selected, mode, memo = "", leave = null) => {
       for (const t of selected) {
         draft.updateSub(t.slotId, t.teacher, {
           substitute: "",
@@ -411,9 +417,18 @@ export function AbsenceWorkflowView({
       }
       setAbsenceDialogOpen(false);
       const what = mode === "nosub" ? "欠勤 (代行なし)" : "欠勤 (代行未定)";
-      toasts.success(`${selected.length} 件を${what}の下書きにしました`);
+      if (leave && onRecordLeave) {
+        onRecordLeave(
+          leave.names.map((name) => ({ name, dates: [date], kind: leave.kind, memo }))
+        );
+        toasts.success(
+          `${selected.length} 件を${what}の下書きにし、${leave.names.join("・")} の有給・半休を記録しました`
+        );
+      } else {
+        toasts.success(`${selected.length} 件を${what}の下書きにしました`);
+      }
     },
-    [draft, toasts]
+    [draft, toasts, onRecordLeave, date]
   );
 
   // コマ休講ダイアログの候補: この日のコマのうち、まだ休講になっていない
@@ -1123,6 +1138,13 @@ export function AbsenceWorkflowView({
           date={date}
           targets={absenceTargets.targets}
           skipped={absenceTargets.skipped}
+          leaveNames={
+            onRecordLeave && isLeaveTracked
+              ? [...new Set(absenceTargets.targets.map((t) => t.teacher))].filter((n) =>
+                  isLeaveTracked(n, date)
+                )
+              : []
+          }
           onSubmit={handleRegisterAbsence}
           onClose={() => setAbsenceDialogOpen(false)}
         />

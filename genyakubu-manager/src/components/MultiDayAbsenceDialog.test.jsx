@@ -76,4 +76,60 @@ describe("MultiDayAbsenceDialog", () => {
     expect(screen.getByText(/日曜 1 日は時間割が無いので飛ばします/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "1 件を欠勤にする" })).toBeTruthy();
   });
+
+  // 有給・半休にも記録する (2026-10-16)。現役部 常勤の人だけ選べ、既定は記録しない
+  describe("有給・半休にも記録する", () => {
+    const isLeaveTracked = (name) => name === "堀上";
+
+    it("現役部 常勤の人がいるときだけ出し、選んだ種類で期間の日曜以外に記録する", () => {
+      const onRecordLeave = vi.fn();
+      const { onSaved } = renderDialog({
+        initial: { teachers: ["堀上"], date: "2026-09-14" },
+        isLeaveTracked,
+        onRecordLeave,
+      });
+      fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-09-20" } });
+      const group = screen.getByRole("group", { name: /有給・半休にも記録する/ });
+      expect(group).toHaveTextContent("堀上 は現役部 常勤");
+      fireEvent.click(screen.getByRole("button", { name: "有給" }));
+      expect(group).toHaveTextContent("6 日 (期間の日曜以外)");
+      fireEvent.click(screen.getByRole("button", { name: "2 件を欠勤にする + 有給・半休を記録" }));
+      expect(onRecordLeave).toHaveBeenCalledWith([
+        {
+          name: "堀上",
+          dates: ["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19"],
+          kind: "full",
+          memo: "",
+        },
+      ]);
+      expect(onSaved).toHaveBeenCalledWith(
+        expect.objectContaining({ leave: { kind: "full", names: ["堀上"], days: 6 } })
+      );
+    });
+
+    it("既定は記録しない / 現役部 常勤でない人には出さない", () => {
+      const onRecordLeave = vi.fn();
+      renderDialog({
+        initial: { teachers: ["堀上"], date: "2026-09-14" },
+        isLeaveTracked,
+        onRecordLeave,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "1 件を欠勤にする" }));
+      expect(onRecordLeave).not.toHaveBeenCalled();
+      cleanup();
+      renderDialog({ initial: { teachers: ["河野"], date: "2026-09-16" }, isLeaveTracked, onRecordLeave });
+      expect(screen.queryByRole("group", { name: /有給・半休にも記録する/ })).toBeNull();
+    });
+
+    it("授業の無い日でも有給・半休だけ記録できる", () => {
+      const onRecordLeave = vi.fn();
+      // 2026-09-16 (水) は 堀上 の担当なし
+      renderDialog({ initial: { teachers: ["堀上"], date: "2026-09-16" }, isLeaveTracked, onRecordLeave });
+      fireEvent.click(screen.getByRole("button", { name: "午後半休" }));
+      fireEvent.click(screen.getByRole("button", { name: "有給・半休だけ記録する" }));
+      expect(onRecordLeave).toHaveBeenCalledWith([
+        { name: "堀上", dates: ["2026-09-16"], kind: "pm", memo: "" },
+      ]);
+    });
+  });
 });

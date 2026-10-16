@@ -62,7 +62,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   t: "時間割",
   h: "休講日",
   m: "マスター",
-  v: "バイト",
+  v: "講師管理",
   e: "イベント",
   w: "週間",
   o: "月間",

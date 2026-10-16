@@ -5,6 +5,7 @@
 // (vitest 側は reducer / solver / 分析を個別に検証しており、ここでは
 //  UI → 生成 → 採用 → autosave の連結だけを見る)
 import { test, expect } from "@playwright/test";
+import { openSidebarCategory } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -47,6 +48,7 @@ test.beforeEach(async ({ page }) => {
 
 test("クラス別コマ数を UI で設定し、自動作成がクォータどおりに埋める", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({ timeout: 30_000 });
 
@@ -97,6 +99,7 @@ test("クラス別コマ数を UI で設定し、自動作成がクォータど�
 
   // リロード後も設定が永続化されている (autosave)
   await page.reload();
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
   await page.getByRole("tab", { name: "📚 科目" }).click();

@@ -26,7 +26,7 @@ export const SHORTCUTS = [
       { keys: ["g", "h"], sequential: true, label: "休講・テスト期間・イベント" },
       { keys: ["g", "e"], sequential: true, label: "イベントカレンダー" },
       { keys: ["g", "m"], sequential: true, label: "コースマスター管理" },
-      { keys: ["g", "v"], sequential: true, label: "バイト管理" },
+      { keys: ["g", "v"], sequential: true, label: "講師管理 (バイト・所属)" },
       { keys: ["g", "b"], sequential: true, label: "講習時間割作成" },
       { keys: ["g", "r"], sequential: true, label: "通常時間割作成" },
       { keys: ["g", "f"], sequential: true, label: "附属の授業予定" },

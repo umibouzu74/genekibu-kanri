@@ -93,7 +93,7 @@ const DAY_OFF_TONE = {
 // 月間はバイトへ画像で送るので、人事の記録が広がらないように)
 function LeaveDayChip({ record, onOpen }) {
   const k = leaveKindMeta(record.kind);
-  const title = `${k.label}${record.memo ? ` (${record.memo})` : ""}${onOpen ? "\nクリックで有給・半休を開きます" : ""}`;
+  const title = `${k.label}${record.memo ? ` (${record.memo})` : ""}${onOpen ? "\nクリックで直せます" : ""}`;
   const style = {
     fontSize: 9,
     fontWeight: 800,
@@ -150,6 +150,9 @@ export function MonthView({
   // ときだけ App が渡す。画面だけに出し、紙面・画像には載せない (no-print)
   staffLeave = null,
   onOpenLeave,
+  // その日の有給・半休を入れる / 直す (講師が現役部 常勤で、書ける人のときだけ)。
+  // 日付の横に 🌴 を出し、🌴有給 の印からも開く
+  onEditLeave,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -1286,9 +1289,13 @@ export function MonthView({
             ds={ds}
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            onAddLeave={onEditLeave && !leaveByDate.has(ds) ? onEditLeave : undefined}
           />
           {leaveByDate.has(ds) && (
-            <LeaveDayChip record={leaveByDate.get(ds)} onOpen={onOpenLeave} />
+            <LeaveDayChip
+              record={leaveByDate.get(ds)}
+              onOpen={onEditLeave ? () => onEditLeave(ds) : onOpenLeave}
+            />
           )}
           {dayOff.off && (
             <span
@@ -1499,6 +1506,7 @@ export function MonthView({
           <DayNumberLegend
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            onAddLeave={onEditLeave}
             style={{ marginLeft: "auto" }}
           />
         </div>

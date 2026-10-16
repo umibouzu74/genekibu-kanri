@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openSidebarCategory } from "./helpers.js";
 
 // E3a: 講習時間割作成 (timetable-builder) の自動生成を実 Worker 経路で検証。
 //
@@ -27,6 +28,7 @@ test.beforeEach(async ({ page }) => {
 async function openBuilder(page) {
   await page.goto("/genekibu-kanri/");
   // サイドバーから講習時間割作成ビューへ (chord g→b より DOM 依存が少ない)
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await expect(
     page.getByRole("button", { name: /自動作成/ }),
