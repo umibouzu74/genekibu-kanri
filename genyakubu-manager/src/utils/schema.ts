@@ -37,14 +37,16 @@ import type {
   SessionOverride,
   Slot,
   SpecialEvent,
+  StaffLeave,
   Subject,
   SubjectCategory,
   Substitute,
+  TeacherAffiliationChange,
   Timetable,
   ValidationResult,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 21;
+export const CURRENT_SCHEMA_VERSION = 22;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -364,6 +366,37 @@ export function isHandoverNote(x: unknown): x is HandoverNote {
   return true;
 }
 
+export function isTeacherAffiliationChange(x: unknown): x is TeacherAffiliationChange {
+  if (!isObject(x)) return false;
+  if (!isString(x.name) || x.name.trim() === "") return false;
+  if (!isNumber(x.fromYear) || !Number.isInteger(x.fromYear)) return false;
+  if (!isString(x.category) || x.category.trim() === "") return false;
+  return true;
+}
+
+// 有給・半休 { records, grants }。RTDB は空の配列を消すので欠落は空扱い
+// (migrateStaffLeave が読み込み時に補う)。
+export function isStaffLeave(x: unknown): x is StaffLeave {
+  if (!isObject(x)) return false;
+  if (x.records !== undefined) {
+    if (!Array.isArray(x.records)) return false;
+    for (const r of x.records as unknown[]) {
+      if (!isObject(r)) return false;
+      if (!isNumber(r.id)) return false;
+      if (!isString(r.name) || !isIsoDate(r.date) || !isString(r.kind)) return false;
+      if (r.memo !== undefined && !isString(r.memo)) return false;
+    }
+  }
+  if (x.grants !== undefined) {
+    if (!Array.isArray(x.grants)) return false;
+    for (const g of x.grants as unknown[]) {
+      if (!isObject(g)) return false;
+      if (!isString(g.name) || !isNumber(g.year) || !isNumber(g.days)) return false;
+    }
+  }
+  return true;
+}
+
 export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
   if (!isObject(x)) return false;
   if (!isNumber(x.examPeriodId)) return false;
@@ -637,6 +670,25 @@ export function validateExportBundle(
         error: `handoverNotes[${bad}] の形式が不正です`,
         path: `handoverNotes[${bad}]`,
       };
+  }
+
+  if (raw.teacherAffiliations != null) {
+    if (!Array.isArray(raw.teacherAffiliations))
+      return { ok: false, error: "teacherAffiliations が配列ではありません" };
+    const bad = raw.teacherAffiliations.findIndex(
+      (c: unknown) => !isTeacherAffiliationChange(c)
+    );
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `teacherAffiliations[${bad}] の形式が不正です`,
+        path: `teacherAffiliations[${bad}]`,
+      };
+  }
+
+  if (raw.staffLeave != null) {
+    if (!isStaffLeave(raw.staffLeave))
+      return { ok: false, error: "staffLeave の形式が不正です" };
   }
 
   // ── Cross-entity referential integrity ────────────────────────────
@@ -989,6 +1041,10 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             する曜日・時刻・期間) を追加。既定値で埋めない — 旧いバック
   //             アップを読み込んだときに今の予定を空で上書きしないため
   //             (fuzokuPlan と同じく「無ければ現状維持」)。
+
+  // v21 → v22: teacherAffiliations (講師の所属: 年度ごとの区分の変更) と
+  //             staffLeave (有給・半休。管理者が書き出したときだけ) を追加。
+  //             既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

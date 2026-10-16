@@ -1,7 +1,14 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { VIEWS } from "../constants/views";
 import { EVENT_KIND_LABELS } from "../constants/eventKinds";
-import { SIDEBAR_MENU } from "../constants/sidebarMenu";
+import {
+  SIDEBAR_CATEGORIES,
+  SIDEBAR_CATEGORY_BY_VIEW,
+  SIDEBAR_PINNED,
+} from "../constants/sidebarMenu";
+import { DEFAULT_OPEN_CATEGORIES } from "../constants/menuCategories";
+import { LS } from "../constants/storageKeys";
+import { useLocalStorage } from "../hooks/useLocalStorage";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
 import {
@@ -132,15 +139,11 @@ function SectionLinks({ sections, activeKey, onSelect, onClose }) {
   });
 }
 
-// child view key → parent view key のマッピングを事前構築
-const CHILD_TO_PARENT = new Map();
-for (const item of SIDEBAR_MENU) {
-  if (item.children) {
-    for (const child of item.children) {
-      CHILD_TO_PARENT.set(child.key, item.key);
-    }
-  }
-}
+// 開いているカテゴリ (人が開け閉めしたもの) の保存値を整える
+const sanitizeOpenCategories = (raw) =>
+  Array.isArray(raw)
+    ? raw.filter((k) => SIDEBAR_CATEGORIES.some((c) => c.key === k))
+    : [...DEFAULT_OPEN_CATEGORIES];
 
 export function Sidebar({
   open,
@@ -157,6 +160,8 @@ export function Sidebar({
   onSelectEventSection,
   onSelectMasterTab,
   masterTab,
+  onSelectStaffTab,
+  staffTab,
   onJumpToRequestedSubs,
   /** 全講師のグループ (検索前)。検索はこの中で行う */
   teacherGroups: allTeacherGroups,
@@ -186,35 +191,45 @@ export function Sidebar({
     if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
   }, [view, selected]);
 
-  // 展開/折りたたみ状態管理 (初期状態で子メニューを持つグループを全展開)
-  const [expandedGroups, setExpandedGroups] = useState(
-    () => new Set(SIDEBAR_MENU.filter((m) => m.children).map((m) => m.key))
+  // ─── カテゴリの開け閉め ───────────────────────────────────────
+  // 項目が 25 前後あり全部並べると画面に収まらないので、カテゴリごとに開け
+  // 閉めする (constants/menuCategories)。人が開け閉めした状態はこの端末に
+  // 覚える (明示的な操作の保存。使用頻度で開くものを変えたりはしない — A18)。
+  // 今いる画面のカテゴリは自動で開く (覚えはしない。開いたままにしたければ
+  // 人が開く)。ただし、その画面にいる間に人が閉じたら閉じたまま
+  const [savedOpen, setSavedOpen] = useLocalStorage(
+    LS.sidebarOpenCategories,
+    DEFAULT_OPEN_CATEGORIES,
+    { migrate: sanitizeOpenCategories }
   );
-
-  // 手動トグル + アクティブ子ビューの自動展開を統合
-  const effectiveExpanded = useMemo(() => {
-    const set = new Set(expandedGroups);
-    const parentOfActive = CHILD_TO_PARENT.get(view);
-    if (parentOfActive) set.add(parentOfActive);
+  const activeCategory = selected ? null : SIDEBAR_CATEGORY_BY_VIEW.get(view) || null;
+  const [closedActive, setClosedActive] = useState(null);
+  useEffect(() => {
+    setClosedActive(null);
+  }, [view, selected]);
+  const openCategories = useMemo(() => {
+    const set = new Set(savedOpen);
+    if (activeCategory && closedActive !== activeCategory) set.add(activeCategory);
     return set;
-  }, [expandedGroups, view]);
+  }, [savedOpen, activeCategory, closedActive]);
+  const toggleCategory = (key, isOpen) => {
+    if (isOpen) {
+      setSavedOpen((prev) => prev.filter((k) => k !== key));
+      if (key === activeCategory) setClosedActive(key);
+    } else {
+      setSavedOpen((prev) => (prev.includes(key) ? prev : [...prev, key]));
+      if (key === closedActive) setClosedActive(null);
+    }
+  };
 
   // セクション (画面の中のタブ / 並んだマネージャ) のクリック先と、
   // 現在地の強調に使うキー。画面ごとに 1 か所へまとめる。
   const sectionSelect = {
     [VIEWS.HOLIDAYS]: onSelectEventSection,
     [VIEWS.MASTER]: onSelectMasterTab,
+    [VIEWS.STAFF]: onSelectStaffTab,
   };
-  const sectionActiveKey = { [VIEWS.MASTER]: masterTab };
-
-  const toggleGroup = (key) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const sectionActiveKey = { [VIEWS.MASTER]: masterTab, [VIEWS.STAFF]: staffTab };
 
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
@@ -251,6 +266,8 @@ export function Sidebar({
     // 決めるのではなく、グループラベルに対応する固定カラーを用いる。
     // 代わりにシンプルに、バイト=金 / 英=青 / 数=赤 / 国=紫 / 理=緑 / 社=橙 を返す。
     const defaults = {
+      "現役部 常勤": "#3aa060",
+      "現役部 非常勤": "#5a8ac0",
       バイト: "#d4a84a",
       英語: "#2e6a9e",
       数学: "#c05030",
@@ -262,6 +279,110 @@ export function Sidebar({
     for (const [k, v] of Object.entries(defaults)) m.set(k, v);
     return m;
   }, [subjectCategories]);
+
+  const visible = (item) =>
+    (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData);
+
+  // 依頼中バッジは項目ボタンの「兄弟」として置く。<button> の中に
+  // role="button" を入れ子にすると HTML として不正で、スクリーンリーダーが
+  // 内側を読まない / 二重に読む (2026-09-04)
+  const pendingBadge = pending > 0 && (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onJumpToRequestedSubs?.();
+      }}
+      title="今日以降の未処理 (代行未定 + 依頼中) を表示"
+      aria-label={`未処理の代行 ${pending} 件を表示`}
+      style={{
+        marginLeft: 6,
+        border: "none",
+        background: colors.danger,
+        color: "#fff",
+        borderRadius: 10,
+        padding: "1px 6px",
+        fontSize: 9,
+        fontWeight: 800,
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      {pending}
+    </button>
+  );
+
+  // 項目 1 行 (+ 開いている画面ならその中のセクション / タブ)。indent はカテゴリの中
+  const renderItem = (item, indent) => {
+    const selfActive = !selected && view === item.key;
+    const isModal = item.action === "modal";
+    return (
+      <div key={item.key}>
+        {/* 項目本体と依頼中バッジは兄弟の <button> に分ける (入れ子の button は
+            不正な DOM)。行の背景色は外側の div が持つ */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            width: "100%",
+            background: selfActive ? "#3a3a6e" : "transparent",
+            color: selfActive ? "#fff" : "#ccc",
+          }}
+        >
+          <button
+            aria-current={selfActive ? "page" : undefined}
+            onClick={() => {
+              if (isModal) {
+                if (item.modal === "dayReschedule") onOpenDayReschedule?.();
+                else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
+                else if (item.modal === "testPrep") onOpenTestPrep?.();
+                else if (item.modal === "monthBatch") onOpenMonthBatch?.();
+                else onOpenDataMgr();
+                onClose?.();
+              } else {
+                onSelectView(item.key);
+                // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
+                if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
+              }
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              padding: indent ? "8px 14px 8px 26px" : "10px 14px",
+              border: "none",
+              background: "transparent",
+              color: "inherit",
+              textAlign: "left",
+              cursor: "pointer",
+              fontSize: indent ? 12.5 : 13,
+              fontWeight: selfActive ? 700 : 400,
+            }}
+          >
+            <span style={{ flex: 1, display: "flex", alignItems: "center" }}>
+              <span>
+                {item.icon} {item.label}
+              </span>
+              {!isModal && <ChordHint viewKey={item.key} dim={!selfActive} />}
+            </span>
+          </button>
+          {/* 未処理バッジ: 項目そのもの (授業管理)。カテゴリが閉じているときは
+              カテゴリの見出しに出す */}
+          {item.badge && pendingBadge}
+        </div>
+        {/* 画面の中のセクション / タブは、その画面を開いている間だけ名前を出す */}
+        {selfActive && item.sections && (
+          <SectionLinks
+            sections={item.sections}
+            activeKey={sectionActiveKey[item.key]}
+            onSelect={sectionSelect[item.key]}
+            onClose={onClose}
+          />
+        )}
+      </div>
+    );
+  };
 
   const totalTeachers = useMemo(
     () =>
@@ -420,218 +541,63 @@ export function Sidebar({
             overflowY: "auto",
           }}
         >
-          {SIDEBAR_MENU.filter(
-            (item) =>
-              (!item.adminOnly || isAdmin) && (!item.adminData || canUseAdminData)
-          ).map((item) => {
-            const hasChildren = !!item.children;
-            const isExpanded = hasChildren && effectiveExpanded.has(item.key);
-            const childActive = hasChildren && item.children.some((c) => !selected && view === c.key);
-            // 開いている子が持つセクション数 (子リストの高さ計算に足す)
-            const activeChildSectionCount = hasChildren
-              ? item.children.reduce(
-                  (n, c) =>
-                    !selected && view === c.key && c.sections ? n + c.sections.length : n,
-                  0
-                )
-              : 0;
-            const selfActive = !selected && view === item.key;
-            const isModal = item.action === "modal";
-
-            // 依頼中バッジは親の項目ボタンの「兄弟」として置く。<button> の
-            // 中に role="button" を入れ子にすると HTML として不正で、
-            // スクリーンリーダーが内側を読まない / 二重に読む (2026-09-04)
-            const pendingBadge = pending > 0 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onJumpToRequestedSubs?.();
-                }}
-                title="今日以降の未処理 (代行未定 + 依頼中) を表示"
-                aria-label={`未処理の代行 ${pending} 件を表示`}
-                style={{
-                  marginLeft: 6,
-                  border: "none",
-                  background: colors.danger,
-                  color: "#fff",
-                  borderRadius: 10,
-                  padding: "1px 6px",
-                  fontSize: 9,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                {pending}
-              </button>
-            );
-
+          {SIDEBAR_PINNED.filter(visible).map((item) => renderItem(item, false))}
+          {SIDEBAR_CATEGORIES.map((cat) => {
+            const items = cat.items.filter(visible);
+            if (items.length === 0) return null;
+            const isOpen = openCategories.has(cat.key);
+            const isCurrent = activeCategory === cat.key;
+            const hasBadge = items.some((i) => i.badge);
             return (
-              <div key={item.key}>
-                {/* 項目本体・依頼中バッジ・展開トグルは兄弟の <button> に分ける
-                    (入れ子の button は不正な DOM)。行の背景色は外側の div が持つ */}
+              <div key={cat.key} role="group" aria-label={cat.label}>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    width: "100%",
-                    background: selfActive
-                      ? "#3a3a6e"
-                      : childActive
-                        ? "#2a2a4e"
-                        : "transparent",
-                    color: selfActive ? "#fff" : childActive ? "#ddd" : "#ccc",
+                    borderTop: "1px solid #24244a",
+                    background: isCurrent && !isOpen ? "#2a2a4e" : "transparent",
                   }}
                 >
                   <button
-                    aria-current={selfActive ? "page" : undefined}
-                    onClick={() => {
-                      if (isModal) {
-                        if (item.modal === "dayReschedule") onOpenDayReschedule?.();
-                        else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
-                        else if (item.modal === "testPrep") onOpenTestPrep?.();
-                        else if (item.modal === "monthBatch") onOpenMonthBatch?.();
-                        else onOpenDataMgr();
-                        onClose?.();
-                      } else {
-                        onSelectView(item.key);
-                        // モバイルでは選択後にサイドバーを閉じる (デスクトップでは @media で常時表示)
-                        if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-                      }
-                    }}
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => toggleCategory(cat.key, isOpen)}
+                    title={isOpen ? `${cat.label} を閉じる` : `${cat.label} を開く`}
                     style={{
                       flex: 1,
                       minWidth: 0,
                       display: "flex",
                       alignItems: "center",
-                      padding: "10px 14px",
+                      gap: 6,
+                      padding: "8px 14px 6px",
                       border: "none",
                       background: "transparent",
-                      color: "inherit",
+                      color: isCurrent ? "#fff" : "#9a9ac0",
                       textAlign: "left",
                       cursor: "pointer",
-                      fontSize: 13,
-                      fontWeight: selfActive ? 700 : childActive ? 600 : 400,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      letterSpacing: 0.5,
                     }}
                   >
-                    <span style={{ flex: 1, display: "flex", alignItems: "center" }}>
-                      <span>
-                        {item.icon} {item.label}
-                      </span>
-                      {!isModal && <ChordHint viewKey={item.key} dim={!selfActive && !childActive} />}
+                    <span aria-hidden="true" style={{ width: 10, fontSize: 9 }}>
+                      {isOpen ? "▾" : "▸"}
                     </span>
+                    <span style={{ flex: 1 }}>
+                      {cat.icon} {cat.label}
+                    </span>
+                    {!isOpen && (
+                      <span style={{ fontSize: 10, color: "#6a6a8e", fontWeight: 700 }}>
+                        {items.length}
+                      </span>
+                    )}
                   </button>
-                  {/* 未処理バッジ: 項目そのもの (授業管理) と、折りたたみ時の親。
-                      以前はトップレベル項目に描く分岐が無く、赤バッジが
-                      どこにも出ていなかった (2026-09-12) */}
-                  {item.badge && pendingBadge}
-                  {hasChildren && !isExpanded && item.children.some((c) => c.badge) && pendingBadge}
-                  {hasChildren && (
-                    <button
-                      type="button"
-                      aria-label={isExpanded ? `${item.label} を折りたたむ` : `${item.label} を展開する`}
-                      aria-expanded={isExpanded}
-                      onClick={() => toggleGroup(item.key)}
-                      style={{
-                        marginRight: 8,
-                        padding: "2px 6px",
-                        border: "none",
-                        borderRadius: 4,
-                        background: "transparent",
-                        fontSize: 10,
-                        color: "#888",
-                        cursor: "pointer",
-                        transition: "background .15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#3a3a5e"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                    >
-                      {isExpanded ? "▾" : "▸"}
-                    </button>
+                  {/* 閉じているときも未処理の代行は見えるように (授業管理がこの中) */}
+                  {!isOpen && hasBadge && pendingBadge && (
+                    <span style={{ paddingRight: 10, display: "flex" }}>{pendingBadge}</span>
                   )}
                 </div>
-                {/* 子メニューを持たない画面のタブ (コースマスター管理) も、
-                    開いている間だけ中身の名前を出す */}
-                {selfActive && item.sections && (
-                  <SectionLinks
-                    sections={item.sections}
-                    activeKey={sectionActiveKey[item.key]}
-                    onSelect={sectionSelect[item.key]}
-                    onClose={onClose}
-                  />
-                )}
-                {hasChildren && (
-                  <div
-                    style={{
-                      maxHeight: isExpanded
-                        ? `${(item.children.length + activeChildSectionCount) * 44}px`
-                        : "0px",
-                      overflow: "hidden",
-                      transition: "max-height 0.2s ease",
-                      background: "#16162e",
-                    }}
-                  >
-                    {item.children.map((child) => {
-                      const childIsActive = !selected && view === child.key;
-                      return (
-                        <Fragment key={child.key}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            width: "100%",
-                            background: childIsActive ? "#3a3a6e" : "transparent",
-                            color: childIsActive ? "#fff" : "#aaa",
-                          }}
-                        >
-                          <button
-                            aria-current={childIsActive ? "page" : undefined}
-                            onClick={() => {
-                              onSelectView(child.key);
-                              if (typeof window !== "undefined" && window.innerWidth <= 768) onClose?.();
-                            }}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              display: "block",
-                              padding: "9px 14px 9px 28px",
-                              border: "none",
-                              background: "transparent",
-                              color: "inherit",
-                              textAlign: "left",
-                              cursor: "pointer",
-                              fontSize: 12,
-                              fontWeight: childIsActive ? 700 : 400,
-                            }}
-                          >
-                            <span style={{ display: "flex", alignItems: "center" }}>
-                              <span style={{ flex: 1 }}>
-                                {child.icon} {child.label}
-                              </span>
-                              <ChordHint viewKey={child.key} dim={!childIsActive} />
-                            </span>
-                          </button>
-                          {/* 依頼中バッジは兄弟の button (入れ子にしない) */}
-                          {child.badge && pendingBadge && (
-                            <span style={{ paddingRight: 10, display: "flex" }}>{pendingBadge}</span>
-                          )}
-                        </div>
-                        {/* 開いているときだけ、その画面の中のセクションを出す。
-                            クリックで該当セクションまでスクロールする */}
-                        {childIsActive && child.sections && (
-                          <SectionLinks
-                            sections={child.sections}
-                            activeKey={sectionActiveKey[child.key]}
-                            onSelect={sectionSelect[child.key]}
-                            onClose={onClose}
-                          />
-                        )}
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-                )}
+                {isOpen && items.map((item) => renderItem(item, true))}
               </div>
             );
           })}
@@ -700,10 +666,31 @@ export function Sidebar({
               )}
             </div>
           )}
-          {teacherGroups.map((group) => {
+          {teacherGroups.map((group, gi) => {
             const color = subjectColorByName.get(group.label) || "#888";
+            // 講師の所属で分けているときは「現役部」「予備校部」の見出しを挟む
+            // (section は所属を誰も分けていなければ付かない = 従来の見た目)
+            const sectionHead =
+              group.section && group.section !== teacherGroups[gi - 1]?.section
+                ? group.section === "genyaku"
+                  ? "現役部"
+                  : "予備校部"
+                : null;
             return (
               <div key={group.key}>
+                {sectionHead && (
+                  <div
+                    style={{
+                      padding: "10px 14px 2px",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 2,
+                      color: "#8a8ab0",
+                    }}
+                  >
+                    {sectionHead}
+                  </div>
+                )}
                 <div
                   style={{
                     display: "flex",

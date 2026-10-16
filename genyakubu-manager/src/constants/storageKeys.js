@@ -36,6 +36,13 @@ export const LS = {
   // 引継ぎメモ (責任者が日々書き溜めて後任に渡す)。Firebase では
   // adminData/ (管理者だけが読める) に置く。データの初期化では消さない
   handoverNotes: "genyakubu-handover-notes",
+  // 講師の所属 (年度ごとの区分の変更)。名前で持つ (teacherKana と同じく、
+  // 時間割のコマにしか出てこない常勤にも付けたいので partTimeStaff の項目に
+  // しない)。utils/teacherAffiliations
+  teacherAffiliations: "genyakubu-teacher-affiliations",
+  // 有給・半休 (現役部 常勤の休暇の記録)。人事の記録なので adminData/ に置く。
+  // データの初期化では消さない (引継ぎメモと同じ)。utils/staffLeave
+  staffLeave: "genyakubu-staff-leave",
   eventVisibility: "genyakubu-event-visibility",
   regularBuilderProject: "genyakubu-regular-builder-project",
   // 通常時間割作成の表示トグル (1 bit)。明示トグルの保存であり、利用統計から
@@ -53,6 +60,9 @@ export const LS = {
   teachingMinutesClosingDay: "genyakubu-teaching-minutes-closing-day",
   teachingMinutesSelected: "genyakubu-teaching-minutes-selected",
   teachingMinutesIncluded: "genyakubu-teaching-minutes-included",
+  // サイドバーで人が開いたカテゴリ (constants/menuCategories の key の配列)。
+  // 明示的な開け閉めの保存で、利用統計ではない (A18 とは別物)
+  sidebarOpenCategories: "genyakubu-sidebar-open-categories",
   // 予定表チェックで、予定表の講座とシステムのコマの対応を手で直した結果
   // (講座キー → { subjects } / { skip })。推定の上書きで、利用統計ではない
   yoteihyoMapping: "genyakubu-yoteihyo-mapping",

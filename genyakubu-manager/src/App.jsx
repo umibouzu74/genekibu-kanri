@@ -32,6 +32,7 @@ import { DayRescheduleDialog } from "./components/DayRescheduleDialog";
 import { HandoverQuickAddDialog } from "./components/HandoverQuickAddDialog";
 import { HandoverSeasonBanner } from "./components/HandoverSeasonBanner";
 import { MultiDayAbsenceDialog } from "./components/MultiDayAbsenceDialog";
+import { LeaveQuickDialog } from "./components/LeaveQuickDialog";
 import { TestPrepLessonDialog } from "./components/TestPrepLessonDialog";
 import { useSessionOverridesCrud } from "./hooks/useSessionOverridesCrud";
 import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
@@ -48,9 +49,17 @@ import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
+import { DEFAULT_STAFF_TAB, STAFF_TAB } from "./constants/staffTabs";
 import { fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import { sortJa } from "./utils/sortJa";
 import { sortTeacherNames } from "./utils/teacherKana";
+import {
+  categoryMeta,
+  fiscalYearOf,
+  indexAffiliationChanges,
+  resolveAffiliation,
+} from "./utils/teacherAffiliations";
+import { leaveKindMeta, setLeaveForDates } from "./utils/staffLeave";
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
@@ -154,6 +163,9 @@ const OffsiteLessonView = lazy(() =>
 const YoteihyoCheckView = lazy(() =>
   import("./components/views/YoteihyoCheckView").then((m) => ({ default: m.YoteihyoCheckView }))
 );
+const LeaveView = lazy(() =>
+  import("./components/views/LeaveView").then((m) => ({ default: m.LeaveView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -204,13 +216,14 @@ const VIEW_TITLES = {
   [VIEWS.SUBS]: "授業管理",
   [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
   [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
-  [VIEWS.STAFF]: "バイト管理",
+  [VIEWS.STAFF]: "講師管理",
   [VIEWS.BUILDER]: "講習時間割作成",
   [VIEWS.REGULAR_BUILDER]: "通常時間割作成",
   [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
   [VIEWS.HANDOVER]: "引継ぎメモ",
   [VIEWS.OFFSITE]: "他校舎の授業",
   [VIEWS.YOTEIHYO]: "予定表チェック",
+  [VIEWS.LEAVE]: "有給・半休",
 };
 
 export default function App() {
@@ -269,6 +282,10 @@ export default function App() {
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
+    teacherAffiliations,
+    saveTeacherAffiliations,
+    staffLeave,
+    saveStaffLeave,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -287,6 +304,29 @@ export default function App() {
   const partTimeStaffNames = useMemo(
     () => (partTimeStaff || []).map((s) => s?.name).filter(Boolean),
     [partTimeStaff]
+  );
+
+  // 有給・半休を記録する人か (その日の年度の講師の所属が現役部 常勤)。
+  // 欠勤の登録ダイアログが「有給・半休にも記録する」を出すかに使う
+  const affiliationIndex = useMemo(
+    () => indexAffiliationChanges(teacherAffiliations),
+    [teacherAffiliations]
+  );
+  const partTimeNameSet = useMemo(() => new Set(partTimeStaffNames), [partTimeStaffNames]);
+  const isLeaveTracked = useCallback(
+    (name, date) =>
+      categoryMeta(
+        resolveAffiliation(affiliationIndex, name, fiscalYearOf(date), partTimeNameSet).category
+      ).tracksLeave,
+    [affiliationIndex, partTimeNameSet]
+  );
+  // 有給・半休を書く ([{name, dates, kind, memo}])。書く時点の保存値から
+  const recordLeave = useCallback(
+    (entries) =>
+      saveStaffLeave((prev) =>
+        entries.reduce((acc, e) => setLeaveForDates(acc, e), prev)
+      ),
+    [saveStaffLeave]
   );
 
   // タグ別フィルタ用の候補一覧。テスト期間 + 特別イベント の両方から
@@ -366,6 +406,8 @@ export default function App() {
   const [offsiteFocus, setOffsiteFocus] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
+  // 講師の月間から 1 日の有給・半休を入れるダイアログ。null = 閉じている / { name, date }
+  const [leaveQuick, setLeaveQuick] = useState(null);
   // テスト対策の振替・追加授業ダイアログ。null = 閉じている / { mode } = 開く
   // (mode: "reschedule" | "extra"。追加授業管理から開くと追加授業から始める)
   const [testPrep, setTestPrep] = useState(null);
@@ -377,6 +419,9 @@ export default function App() {
   const [subsInitFilter, setSubsInitFilter] = useState(null);
   // コースマスター管理のタブ。サイドバー / Cmd+K から直接開けるよう App が持つ。
   const [masterTab, setMasterTab] = useState(DEFAULT_MASTER_TAB);
+  // 講師管理のタブ。同じく App が持つ (サイドバー / メインメニュー / Cmd+K /
+  // 有給・半休の「講師の所属」から直接そのタブを開く)
+  const [staffTab, setStaffTab] = useState(DEFAULT_STAFF_TAB);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // Cmd+K の日付ジャンプでダッシュボードを開くときの表示日 (YYYY-MM-DD)
@@ -846,11 +891,15 @@ export default function App() {
   // サイドバーの検索文字列によるフィルタは Sidebar の中 (ローカル state +
   // filterTeacherGroups) で行う。以前は search が App の state だったため、
   // 1 打鍵ごとに App 全体 (ダッシュボード・月間カレンダー…) が再描画されていた
+  // 講師の所属 (今年度) で分けている端末では、現役部 常勤 → 現役部 非常勤 →
+  // バイト → 予備校部 (教科別) の順に並べる
   const allTeacherGroups = useTeacherGroups({
     slots: ttFilteredSlots,
     partTimeStaff,
     subjects,
     teacherKana,
+    affiliations: teacherAffiliations,
+    year: fiscalYearOf(todayStr),
   });
   // 講師名の入力候補 (他校舎の授業)。グループを平らにしてよみ順に並べ直す
   const allTeacherNames = useMemo(
@@ -953,6 +1002,9 @@ export default function App() {
         case "subsTab":
           selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: item.tab }));
           break;
+        case "staffTab":
+          selectView(VIEWS.STAFF, () => setStaffTab(item.tab));
+          break;
         case "modal":
           if (item.modal === "dayReschedule") setShowDayReschedule(true);
           else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
@@ -1032,6 +1084,10 @@ export default function App() {
         masterTab={masterTab}
         onSelectMasterTab={(tabKey) => {
           selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
+        }}
+        staffTab={staffTab}
+        onSelectStaffTab={(tabKey) => {
+          selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
         }}
         onJumpToRequestedSubs={() =>
           selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
@@ -1280,6 +1336,8 @@ export default function App() {
               onConsumeInitDate={() => setDashInitDate(null)}
               onSelectTeacher={selectTeacher}
               onEditExtraLesson={openExtraLessonEditor}
+              staffLeave={handoverEnabled ? staffLeave : null}
+              onOpenLeave={() => selectView(VIEWS.LEAVE)}
             />
           )}
           {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
@@ -1615,6 +1673,35 @@ export default function App() {
               onConsumeFocus={() => setHandoverFocus(null)}
             />
           )}
+          {view === VIEWS.LEAVE && !selected && (
+            // 授業がある日の「代行・欠勤の登録なし」を数えるために本体のデータも渡す
+            // (日付ベースなので時間割セレクタでは絞らない)
+            <LeaveView
+              staffLeave={staffLeave}
+              onSave={saveStaffLeave}
+              enabled={handoverEnabled}
+              affiliations={teacherAffiliations}
+              partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
+              slots={slots}
+              subs={subs}
+              adjustments={adjustments}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              daySchedules={daySchedules}
+              onRegisterAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
+              onOpenAffiliation={() =>
+                selectView(VIEWS.STAFF, () => setStaffTab(STAFF_TAB.AFFILIATION))
+              }
+              onSelectTeacher={selectTeacher}
+            />
+          )}
           {view === VIEWS.BUILDER && !selected && (
             // 他校舎の授業を講習の「講師不在」へ取り込む・出勤可能調査をバイトで
             // 絞るための読み取り専用データ
@@ -1736,6 +1823,8 @@ export default function App() {
                 // 件数 (number) か真偽値。0 / false = 下書きなし
                 absenceDraftDirtyRef.current = dirty;
               }}
+              isLeaveTracked={handoverEnabled ? isLeaveTracked : null}
+              onRecordLeave={handoverEnabled ? recordLeave : null}
             />
           )}
           {view === VIEWS.STAFF && !selected && (
@@ -1764,6 +1853,11 @@ export default function App() {
               onSaveSubject={staffCrud.saveSubject}
               onDelSubject={staffCrud.delSubject}
               isAdmin={isAdmin}
+              affiliations={teacherAffiliations}
+              onSaveAffiliations={saveTeacherAffiliations}
+              onOpenLeave={handoverEnabled ? () => selectView(VIEWS.LEAVE) : undefined}
+              tab={staffTab}
+              onTabChange={setStaffTab}
             />
           )}
           {selected && view === VIEWS.WEEK && (
@@ -1818,6 +1912,13 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={openOffsite}
+              staffLeave={handoverEnabled ? staffLeave : null}
+              onOpenLeave={handoverEnabled ? () => selectView(VIEWS.LEAVE) : undefined}
+              onEditLeave={
+                handoverEnabled && isLeaveTracked(selected, `${vy}-${String(vm).padStart(2, "0")}-01`)
+                  ? (date) => setLeaveQuick({ name: selected, date })
+                  : undefined
+              }
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -1921,13 +2022,46 @@ export default function App() {
           initial={multiDayAbsence}
           isAdmin={isAdmin}
           saveSubs={saveSubs}
+          isLeaveTracked={handoverEnabled ? isLeaveTracked : null}
+          onRecordLeave={handoverEnabled ? recordLeave : null}
           onClose={() => setMultiDayAbsence(null)}
-          onSaved={({ count, mode, fromDate, toDate, teachers: names }) =>
+          onSaved={({ count, mode, fromDate, toDate, teachers: names, leave }) => {
+            const range = `${fmtDateWeekday(fromDate)} 〜 ${fmtDateWeekday(toDate)}`;
+            const leaveText = leave
+              ? `${leave.names.join("・")} の ${leave.days} 日を「${leaveKindMeta(leave.kind).label}」として記録しました`
+              : "";
             toasts.success(
-              `${names.join("・")} の ${fmtDateWeekday(fromDate)} 〜 ${fmtDateWeekday(toDate)} を` +
-                `${mode === "nosub" ? "欠勤 (代行なし)" : "欠勤 (代行未定)"} ${count} 件として登録しました`
-            )
-          }
+              count > 0
+                ? `${names.join("・")} の ${range} を` +
+                    `${mode === "nosub" ? "欠勤 (代行なし)" : "欠勤 (代行未定)"} ${count} 件として登録しました` +
+                    (leaveText ? `。${leaveText}` : "")
+                : leaveText
+            );
+          }}
+        />
+      )}
+      {/* 講師の月間の 🌴 から 1 日の有給・半休を入れる (管理者だけが読めるデータ) */}
+      {leaveQuick && handoverEnabled && (
+        <LeaveQuickDialog
+          name={leaveQuick.name}
+          date={leaveQuick.date}
+          staffLeave={staffLeave}
+          onSave={saveStaffLeave}
+          slots={slots}
+          subs={subs}
+          adjustments={adjustments}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          specialEvents={specialEvents}
+          timetables={timetables}
+          displayCutoff={displayCutoff}
+          classSets={classSets}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          onRegisterAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
+          onOpenLeaveView={() => selectView(VIEWS.LEAVE)}
+          onClose={() => setLeaveQuick(null)}
         />
       )}
       {/* テスト対策の振替・追加授業 (コースを選んで振替 / 追加授業を登録)。
@@ -2084,6 +2218,10 @@ export default function App() {
             }}
             onSelectMasterTab={(tabKey) => {
               selectView(VIEWS.MASTER, () => setMasterTab(tabKey));
+              setCmdPaletteOpen(false);
+            }}
+            onSelectStaffTab={(tabKey) => {
+              selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

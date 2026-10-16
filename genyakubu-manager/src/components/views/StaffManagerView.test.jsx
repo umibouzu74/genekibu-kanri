@@ -173,10 +173,10 @@ describe("StaffManagerView — よみ未設定の見せ方", () => {
   });
 });
 
-describe("StaffManagerView — 常勤講師タブ", () => {
+describe("StaffManagerView — 担当教科・よみタブ (バイト以外の講師)", () => {
   it("常勤講師にもよみを付けられる", () => {
     const { onSetStaffKana } = renderView();
-    fireEvent.click(screen.getByRole("button", { name: /常勤講師/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /担当教科・よみ/ }));
 
     const input = screen.getByRole("textbox", { name: "武下 のよみ" });
     fireEvent.change(input, { target: { value: "たけした" } });
@@ -186,7 +186,7 @@ describe("StaffManagerView — 常勤講師タブ", () => {
 
   it("常勤講師の未設定もタブごとに数える", () => {
     renderView({ teacherKana: KANA });
-    fireEvent.click(screen.getByRole("button", { name: /常勤講師/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /担当教科・よみ/ }));
     // バイト 3 名は入っているが、常勤の武下は未設定
     expect(screen.getByText(/よみ未設定 1 名/)).toBeInTheDocument();
   });

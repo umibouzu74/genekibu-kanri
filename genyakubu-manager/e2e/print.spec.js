@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openSidebarCategory } from "./helpers.js";
 
 // E3c: 印刷出力のスモークテスト (構造検証)。
 //
@@ -27,6 +28,7 @@ test.beforeEach(async ({ page }) => {
 // @media (min-width: 769px) 前提の回帰 (下の「紙面が暗くならない」) を
 // 取りこぼす。紙面幅を再現したいテストはこの幅にビューポートを合わせる。
 const PRINT_PAGE_WIDTH = 733;
+
 
 // ダッシュボードの時間割グリッド (.excel-grid-sections) を見るテスト用の
 // 固定日。祝日 (デモデータの holidays) に当たると「本日休講」に切り替わって
@@ -183,7 +185,9 @@ test("イベントカレンダー: print で追加授業バッジが紙面に残
   }, [ym]);
 
   await page.goto("/genekibu-kanri/");
-  // メインメニューにも同じ名前のボタンがあるのでサイドバーで押す
+  // メインメニューにも同じ名前のボタンがあるのでサイドバーで押す。サイドバーは
+  // カテゴリごとに開け閉めする (イベントカレンダーは「予定・休み」の中)
+  await openSidebarCategory(page, "予定・休み");
   await page.locator(".sidebar").getByRole("button", { name: /イベントカレンダー/ }).click();
   await expect(
     page.getByText(/18:30 中3A プレップ個別指導/).first()
@@ -213,6 +217,7 @@ test("附属の授業予定: print で操作 UI が消え、週ごとの表と�
     );
   });
   await page.goto("/genekibu-kanri/");
+  await openSidebarCategory(page, "予定・休み");
   await page.locator(".sidebar").getByRole("button", { name: /附属の授業予定/ }).click();
   const first = page.getByRole("region", { name: "10/7 (水) の予定" });
   await expect(first).toBeVisible();
@@ -288,6 +293,7 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
 
   await page.goto("/genekibu-kanri/");
   // サイドバーから講習時間割作成ビューへ (builder-worker.spec と同経路)
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({
     timeout: 30_000,

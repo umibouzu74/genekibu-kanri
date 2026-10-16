@@ -29,4 +29,6 @@ export const VIEWS = Object.freeze({
   OFFSITE: "offsite",
   // 予定表チェック (学校の予定表 Excel とシステムの休講・振替の突き合わせ)
   YOTEIHYO: "yoteihyo",
+  // 有給・半休 (現役部 常勤の休暇の記録。管理者だけが読める)
+  LEAVE: "leave",
 });

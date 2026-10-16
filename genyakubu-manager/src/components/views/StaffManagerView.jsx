@@ -1,4 +1,11 @@
 import { useMemo, useState } from "react";
+import { STAFF_TAB, STAFF_TABS, normalizeStaffTab } from "../../constants/staffTabs";
+import { useToday } from "../../hooks/useToday";
+import {
+  fiscalYearOf,
+  indexAffiliationChanges,
+} from "../../utils/teacherAffiliations";
+import { AffiliationView } from "./AffiliationView";
 import { splitTeacherField } from "../../utils/biweekly";
 import { S } from "../../styles/common";
 import {
@@ -11,10 +18,13 @@ import { StaffListTab } from "./staff/StaffListTab";
 import { FulltimeTab } from "./staff/FulltimeTab";
 import { SubjectsMasterTab } from "./staff/SubjectsMasterTab";
 
-// バイト管理ビュー。3 タブ構成：
+// 講師管理ビュー (旧「バイト管理」)。タブは constants/staffTabs の STAFF_TABS:
 //   - バイト一覧: 登録・削除・担当教科の割り当て (カテゴリ別チェックボックス)
-//   - 常勤講師: スロットに登場するがバイトに無い講師の担当教科を設定
+//   - 講師の所属: 現役部 常勤 / 現役部 非常勤 / 予備校部 (年度ごと。AffiliationView)
+//   - 担当教科・よみ: スロットに登場するがバイトに無い講師の担当教科・よみ
 //   - 教科マスター: カテゴリと教科の CRUD (インライン編集)
+// タブは App が持つ (サイドバー・メインメニュー・Cmd+K から直接開けるように)。
+// tab を渡さなければ画面の中で持つ (単体テスト用)。
 export function StaffManagerView({
   partTimeStaff,
   teacherSubjects = {},
@@ -40,8 +50,23 @@ export function StaffManagerView({
   onSaveSubject,
   onDelSubject,
   isAdmin,
+  // 講師の所属 (utils/teacherAffiliations)
+  affiliations = [],
+  onSaveAffiliations,
+  // 有給・半休の画面を開く (管理者だけが読める画面なので、読める人にだけ渡す)
+  onOpenLeave,
+  tab: tabProp,
+  onTabChange,
 }) {
-  const [tab, setTab] = useState("staff");
+  const [tabState, setTabState] = useState(STAFF_TAB.STAFF);
+  const tab = normalizeStaffTab(tabProp ?? tabState);
+  const setTab = (k) => {
+    setTabState(k);
+    onTabChange?.(k);
+  };
+  const today = useToday();
+  const thisYear = fiscalYearOf(today);
+  const affIndex = useMemo(() => indexAffiliationChanges(affiliations), [affiliations]);
   const [newStaff, setNewStaff] = useState("");
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState("#888");
@@ -127,31 +152,60 @@ export function StaffManagerView({
     setNewSubjByCat((p) => ({ ...p, [categoryId]: "" }));
   };
 
-  const TabBtn = ({ k, label, count }) => (
-    <button onClick={() => setTab(k)} style={S.btn(tab === k)}>
-      {label}
-      {count != null && <span style={{ marginLeft: 5, opacity: 0.7 }}>{count}</span>}
-    </button>
-  );
+  const tabCount = {
+    [STAFF_TAB.STAFF]: partTimeStaff.length,
+    [STAFF_TAB.TEACHERS]: fulltimeTeachers.length,
+    [STAFF_TAB.SUBJECTS]: subjects.length,
+  };
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        <TabBtn k="staff" label="バイト一覧" count={partTimeStaff.length} />
-        <TabBtn k="fulltime" label="常勤講師" count={fulltimeTeachers.length} />
-        <TabBtn k="subjects" label="教科マスター" count={subjects.length} />
+      <div
+        role="tablist"
+        aria-label="講師管理のタブ"
+        className="no-print"
+        style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}
+      >
+        {STAFF_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            style={S.btn(tab === t.key)}
+          >
+            {t.icon} {t.label}
+            {tabCount[t.key] != null && (
+              <span style={{ marginLeft: 5, opacity: 0.7 }}>{tabCount[t.key]}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {(tab === "staff" || tab === "fulltime") && (
+      {(tab === STAFF_TAB.STAFF || tab === STAFF_TAB.TEACHERS) && (
         <KanaStatusBanner
-          missing={tab === "staff" ? missingStaffKana : missingFulltimeKana}
-          total={tab === "staff" ? partTimeStaff.length : fulltimeTeachers.length}
+          missing={tab === STAFF_TAB.STAFF ? missingStaffKana : missingFulltimeKana}
+          total={tab === STAFF_TAB.STAFF ? partTimeStaff.length : fulltimeTeachers.length}
           onImportKana={onImportKana}
           isAdmin={isAdmin}
         />
       )}
 
-      {tab === "staff" && (
+      {tab === STAFF_TAB.AFFILIATION && (
+        <AffiliationView
+          affiliations={affiliations}
+          onSave={onSaveAffiliations}
+          slots={slots}
+          timetables={timetables}
+          partTimeStaff={partTimeStaff}
+          teacherKana={teacherKana}
+          isAdmin={isAdmin}
+          onOpenLeave={onOpenLeave}
+        />
+      )}
+
+      {tab === STAFF_TAB.STAFF && (
         <StaffListTab
           partTimeStaff={partTimeStaff}
           sortedPartTimeStaff={sortedPartTimeStaff}
@@ -182,9 +236,13 @@ export function StaffManagerView({
         />
       )}
 
-      {tab === "fulltime" && (
+      {tab === STAFF_TAB.TEACHERS && (
         <FulltimeTab
           fulltimeTeachers={fulltimeTeachers}
+          affiliationIndex={affIndex}
+          affiliationYear={thisYear}
+          partTimeNames={staffNameSet}
+          onShowAffiliation={() => setTab(STAFF_TAB.AFFILIATION)}
           slots={slots}
           teacherSubjects={teacherSubjects}
           subjectCategories={subjectCategories}
@@ -196,7 +254,7 @@ export function StaffManagerView({
         />
       )}
 
-      {tab === "subjects" && (
+      {tab === STAFF_TAB.SUBJECTS && (
         <SubjectsMasterTab
           subjectCategories={subjectCategories}
           subjectsByCat={subjectsByCat}

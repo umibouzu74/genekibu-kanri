@@ -10,6 +10,8 @@ import { useToday } from "../hooks/useToday";
 import { getSlotTeachers } from "../utils/biweekly";
 import { sortTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
 import { applyAbsenceRange, buildAbsenceRangePlan } from "../utils/absenceRange";
+import { leaveKindMeta, leaveRangeDates } from "../utils/staffLeave";
+import { LeaveRecordOption } from "./LeaveRecordOption";
 
 // ─── 複数日の欠勤登録ダイアログ ─────────────────────────────────
 // 「インフルで 9/14〜9/18 は休み」を、期間 × 講師で一度に登録する。中身は
@@ -38,6 +40,11 @@ export function MultiDayAbsenceDialog({
   onClose,
   onSaved,
   isAdmin = true,
+  // 有給・半休にも記録する (現役部 常勤の人だけ)。isLeaveTracked(name, date) で
+  // 記録する人かを判定し、onRecordLeave([{name, dates, kind, memo}]) で書く。
+  // 管理者だけが読めるデータなので、書ける人のときだけ App が渡す
+  isLeaveTracked = null,
+  onRecordLeave = null,
 }) {
   const todayStr = useToday();
   const { sessionCtx: builtCtx } = useSessionCtx({
@@ -61,6 +68,7 @@ export function MultiDayAbsenceDialog({
   const [mode, setMode] = useState("pending");
   const [memo, setMemo] = useState("");
   const [excluded, setExcluded] = useState(() => new Set());
+  const [leaveKind, setLeaveKind] = useState(null);
 
   const allTeachers = useMemo(() => {
     const set = new Set();
@@ -116,18 +124,45 @@ export function MultiDayAbsenceDialog({
       return next;
     });
 
-  const canApply = isAdmin && plan.errors.length === 0 && selectedCount > 0;
+  // 有給・半休にも記録できる人 (選んだ先生のうち現役部 常勤) と、入れる日
+  // (期間の日曜以外。授業の無い日も常勤は出勤日なので含める)
+  const leaveNames = useMemo(
+    () =>
+      onRecordLeave && isLeaveTracked && fromDate
+        ? teachers.filter((t) => isLeaveTracked(t, fromDate))
+        : [],
+    [onRecordLeave, isLeaveTracked, teachers, fromDate]
+  );
+  const leaveDates = useMemo(
+    () => (leaveNames.length > 0 ? leaveRangeDates(fromDate, toDate).dates : []),
+    [leaveNames, fromDate, toDate]
+  );
+  const recordsLeave = Boolean(leaveKind) && leaveNames.length > 0 && leaveDates.length > 0;
+
+  const canApply =
+    isAdmin && plan.errors.length === 0 && (selectedCount > 0 || recordsLeave);
   const handleApply = () => {
     if (!canApply) return;
-    const n = applyAbsenceRange({
-      subs,
-      plan,
-      excludedKeys: excluded,
-      mode,
-      memo: memo.trim(),
-      saveSubs,
-    });
-    onSaved?.({ count: n, mode, fromDate, toDate, teachers });
+    const n =
+      selectedCount > 0
+        ? applyAbsenceRange({
+            subs,
+            plan,
+            excludedKeys: excluded,
+            mode,
+            memo: memo.trim(),
+            saveSubs,
+          })
+        : 0;
+    const leave = recordsLeave
+      ? { kind: leaveKind, names: leaveNames, days: leaveDates.length }
+      : null;
+    if (leave) {
+      onRecordLeave(
+        leaveNames.map((name) => ({ name, dates: leaveDates, kind: leaveKind, memo: memo.trim() }))
+      );
+    }
+    onSaved?.({ count: n, mode, fromDate, toDate, teachers, leave });
     onClose?.();
   };
 
@@ -271,6 +306,18 @@ export function MultiDayAbsenceDialog({
         </div>
       </div>
 
+      <LeaveRecordOption
+        idPrefix="mda-leave"
+        names={leaveNames}
+        kind={leaveKind}
+        onChange={setLeaveKind}
+        detail={
+          leaveKind
+            ? `${leaveDates.length} 日 (期間の日曜以外) を「${leaveKindMeta(leaveKind).label}」として記録します。日ごとの直しは「有給・半休」の画面で`
+            : null
+        }
+      />
+
       {plan.errors.length > 0 && teachers.length > 0 && (
         <div role="alert" style={{ fontSize: 11, color: colors.danger, marginBottom: 8 }}>
           {plan.errors.join(" / ")}
@@ -406,7 +453,11 @@ export function MultiDayAbsenceDialog({
             borderColor: canApply ? colors.danger : "#ccc",
           }}
         >
-          {selectedCount} 件を欠勤にする
+          {selectedCount > 0
+            ? `${selectedCount} 件を欠勤にする${recordsLeave ? " + 有給・半休を記録" : ""}`
+            : recordsLeave
+              ? "有給・半休だけ記録する"
+              : "0 件を欠勤にする"}
         </button>
       </div>
     </Modal>

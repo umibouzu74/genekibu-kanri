@@ -1,9 +1,17 @@
 import { isSlotForTeacher } from "../../../utils/biweekly";
+import { categoryMeta, fmtFiscalYear, resolveAffiliation } from "../../../utils/teacherAffiliations";
 import { KanaField } from "./KanaField";
 
-// 常勤講師タブ : 時間割のコマに登場するがバイト一覧に無い講師の教科設定。
+// 担当教科・よみタブ (旧「常勤講師」タブ) : 時間割のコマに登場するがバイト一覧に
+// 無い講師の教科・よみの設定。予備校部の非常勤も含むので「常勤講師」とは呼ばない。
+// 名前の横に今年度の所属 (講師の所属タブ) を出す。
 export function FulltimeTab({
   fulltimeTeachers,
+  // 講師の所属 (indexAffiliationChanges の戻り値)・年度・バイトの名前
+  affiliationIndex = null,
+  affiliationYear = null,
+  partTimeNames = null,
+  onShowAffiliation,
   slots,
   teacherSubjects,
   teacherKana = {},
@@ -27,12 +35,12 @@ export function FulltimeTab({
             fontSize: 13,
           }}
         >
-          常勤講師が見つかりません（時間割にコマを登録すると自動的に表示されます）
+          バイト以外の講師が見つかりません（時間割にコマを登録すると自動的に表示されます）
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>
-            時間割のコマに登録されている講師のうち、バイト一覧に含まれない講師です。教科を設定すると玉突き代行の提案精度が上がります。
+            時間割のコマに登録されている講師のうち、バイト一覧に含まれない講師です (常勤・予備校部の非常勤とも)。教科を設定すると玉突き代行の提案精度が上がります。
           </div>
           {fulltimeTeachers.map((name) => {
             const cnt = slots.filter((s) => isSlotForTeacher(s, name)).length;
@@ -57,6 +65,40 @@ export function FulltimeTab({
                 >
                   <div>
                     <span style={{ fontWeight: 800, fontSize: 15 }}>{name}</span>
+                    {affiliationIndex && affiliationYear != null && (() => {
+                      const r = resolveAffiliation(
+                        affiliationIndex,
+                        name,
+                        affiliationYear,
+                        partTimeNames
+                      );
+                      const c = categoryMeta(r.category);
+                      const chip = {
+                        marginLeft: 8,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "1px 8px",
+                        borderRadius: 10,
+                        background: c.tone.bg,
+                        color: c.tone.fg,
+                        border: `1px solid ${c.tone.border}`,
+                      };
+                      const title = `${fmtFiscalYear(affiliationYear)}の所属: ${c.label}`;
+                      return onShowAffiliation ? (
+                        <button
+                          type="button"
+                          onClick={onShowAffiliation}
+                          title={`${title}\n押すと「講師の所属」タブで変えられます`}
+                          style={{ ...chip, cursor: "pointer" }}
+                        >
+                          {c.label}
+                        </button>
+                      ) : (
+                        <span title={title} style={chip}>
+                          {c.label}
+                        </span>
+                      );
+                    })()}
                     <span style={{ marginLeft: 10, fontSize: 11, color: "#888" }}>
                       担当コマ: {cnt}
                     </span>

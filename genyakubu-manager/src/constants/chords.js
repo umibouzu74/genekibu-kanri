@@ -36,6 +36,8 @@ export const VIEW_CHORDS = Object.freeze({
   j: VIEWS.MINUTES,
   // YOTEIHYO (予定表チェック) は yoteihyo の y。
   y: VIEWS.YOTEIHYO,
+  // LEAVE (有給・半休) は leave の l。
+  l: VIEWS.LEAVE,
 });
 
 // view key から chord 第 2 キーを引くための逆引き Map（読み取り専用）。
@@ -60,7 +62,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   t: "時間割",
   h: "休講日",
   m: "マスター",
-  v: "バイト",
+  v: "講師管理",
   e: "イベント",
   w: "週間",
   o: "月間",
@@ -71,6 +73,7 @@ export const VIEW_CHORD_LABEL = Object.freeze({
   k: "他校舎",
   j: "授業時間",
   y: "予定表",
+  l: "有給",
 });
 
 // chord タイムアウト ms（hook と badge で共有）。

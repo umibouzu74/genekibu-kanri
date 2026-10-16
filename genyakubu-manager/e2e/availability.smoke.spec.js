@@ -4,6 +4,7 @@
 // 紙面の組み立て / パネルを個別に検証している)。あわせて、講習側だけに当てた
 // 罫線の土台 (tailwind.css の .koshu-builder) が効いていることも見る。
 import { test, expect } from "@playwright/test";
+import { openSidebarCategory } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -38,6 +39,7 @@ test.beforeEach(async ({ page }) => {
 
 test("回答を付けると × が NG になり、一覧に人数が出て、リロード後も残る", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({ timeout: 30_000 });
 
@@ -68,6 +70,7 @@ test("回答を付けると × が NG になり、一覧に人数が出て、リ
 
   // リロード後も回答が残る (autosave)
   await page.reload();
+  await openSidebarCategory(page, "時間割");
   await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
   await page.getByRole("tab", { name: "🙋 出勤可能調査" }).click();

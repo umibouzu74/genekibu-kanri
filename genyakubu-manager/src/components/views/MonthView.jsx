@@ -23,6 +23,7 @@ import {
   offsiteStartText,
   offsiteStatus,
 } from "../../utils/offsiteLessons";
+import { leaveKindMeta } from "../../utils/staffLeave";
 import { isFullDayHoliday } from "../../utils/scheduleHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
@@ -88,6 +89,40 @@ const DAY_OFF_TONE = {
   mixed: { bg: "#eef0f2", fg: "#5a6570" },
 };
 
+// 講師の月間の日付の横に出す有給・半休 (画面だけ。紙面・画像には載せない —
+// 月間はバイトへ画像で送るので、人事の記録が広がらないように)
+function LeaveDayChip({ record, onOpen }) {
+  const k = leaveKindMeta(record.kind);
+  const title = `${k.label}${record.memo ? ` (${record.memo})` : ""}${onOpen ? "\nクリックで直せます" : ""}`;
+  const style = {
+    fontSize: 9,
+    fontWeight: 800,
+    padding: "0 4px",
+    borderRadius: 3,
+    background: k.tone.bg,
+    color: k.tone.fg,
+    border: `1px solid ${k.tone.border}`,
+    lineHeight: 1.4,
+    whiteSpace: "nowrap",
+  };
+  return onOpen ? (
+    <button
+      type="button"
+      className="no-print"
+      onClick={onOpen}
+      title={title}
+      aria-label={`休暇: ${k.label}`}
+      style={{ ...style, cursor: "pointer" }}
+    >
+      🌴{k.label}
+    </button>
+  ) : (
+    <span className="no-print" title={title} style={style}>
+      🌴{k.label}
+    </span>
+  );
+}
+
 export function MonthView({
   teacher,
   slots,
@@ -111,6 +146,13 @@ export function MonthView({
   // その 1 件 / この講師の新規登録として他校舎の授業の画面を開く
   offsiteLessons = [],
   onOpenOffsite,
+  // 有給・半休 (utils/staffLeave)。管理者だけが読めるデータなので、読める人の
+  // ときだけ App が渡す。画面だけに出し、紙面・画像には載せない (no-print)
+  staffLeave = null,
+  onOpenLeave,
+  // その日の有給・半休を入れる / 直す (講師が現役部 常勤で、書ける人のときだけ)。
+  // 日付の横に 🌴 を出し、🌴有給 の印からも開く
+  onEditLeave,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -177,6 +219,14 @@ export function MonthView({
       to: `${year}-${mm}-${last}`,
     });
   }, [offsiteLessons, teacher, holidays, year, month]);
+  // 日付 → この講師の有給・半休
+  const leaveByDate = useMemo(() => {
+    const m = new Map();
+    for (const r of staffLeave?.records || []) {
+      if (r.name === teacher) m.set(r.date, r);
+    }
+    return m;
+  }, [staffLeave, teacher]);
   // この講師の他校舎の授業 (終了していないもの)。カレンダー上の一覧行に出す
   const todayStr = useToday();
   const teacherOffsite = useMemo(
@@ -1239,7 +1289,14 @@ export function MonthView({
             ds={ds}
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            onAddLeave={onEditLeave && !leaveByDate.has(ds) ? onEditLeave : undefined}
           />
+          {leaveByDate.has(ds) && (
+            <LeaveDayChip
+              record={leaveByDate.get(ds)}
+              onOpen={onEditLeave ? () => onEditLeave(ds) : onOpenLeave}
+            />
+          )}
           {dayOff.off && (
             <span
               title={`この日の ${sl.length} コマはすべて他の担当に移っています`}
@@ -1449,6 +1506,7 @@ export function MonthView({
           <DayNumberLegend
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
+            onAddLeave={onEditLeave}
             style={{ marginLeft: "auto" }}
           />
         </div>

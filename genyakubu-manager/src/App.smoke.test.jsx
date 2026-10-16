@@ -54,7 +54,8 @@ const VIEW_LABELS = [
   "引継ぎメモ",
   "授業管理",
   "代行確定一覧",
-  "バイト管理",
+  "講師管理",
+  "有給・半休",
   "コースマスター管理",
 ];
 
@@ -118,6 +119,10 @@ describe("App smoke", () => {
       .findByRole("navigation", { name: "メインナビゲーション", hidden: true })
       .catch(() => null);
     const scope = nav ? within(nav) : screen;
+    // サイドバーはカテゴリごとに開け閉めする。全部開いてから順に押す
+    for (const head of scope.queryAllByRole("button", { expanded: false })) {
+      fireEvent.click(head);
+    }
     for (const label of VIEW_LABELS) {
       const btn = scope.getAllByRole("button", { name: new RegExp(`^\\S*\\s*${label}`) })[0];
       fireEvent.click(btn);
@@ -191,6 +196,8 @@ describe("App smoke", () => {
     fireEvent.click(within(nav).getByRole("button", { name: /^\S*\s*授業管理/ }));
     expect(await screen.findByRole("heading", { level: 1, name: /授業管理/ })).toBeInTheDocument();
     await expectNoCrash();
+    // 月間予定の印刷・画像は「講師・スタッフ」のカテゴリの中
+    fireEvent.click(within(nav).getByRole("button", { name: /講師・スタッフ/, expanded: false }));
     fireEvent.click(within(nav).getByRole("button", { name: /月間予定の印刷・画像/ }));
     expect(
       await screen.findByRole("dialog", { name: "月次予定をまとめて印刷・画像にする" })
