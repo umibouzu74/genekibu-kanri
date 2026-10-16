@@ -166,3 +166,32 @@ describe("CommandPalette の月間予定のまとめて印刷・画像", () => {
     expect(screen.queryByRole("option", { name: /月間予定のまとめて印刷・画像/ })).toBeNull();
   });
 });
+
+// 時間割管理の中のカード (コース別終講日など) を名前で開く (C4)
+describe("CommandPalette の時間割管理のセクション", () => {
+  it("「終講」でコース別終講日へ飛べる", () => {
+    const onSelectTimetableSection = vi.fn();
+    const { onClose } = renderPalette({ onSelectTimetableSection });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "終講" } });
+    fireEvent.click(
+      screen.getByRole("option", { name: /コース別終講日.*時間割管理のセクションに移動/ })
+    );
+    expect(onSelectTimetableSection).toHaveBeenCalledWith("cohortCutoff");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("空のときの固定一覧には並べない (他の操作を押し出さない)", () => {
+    renderPalette({ onSelectTimetableSection: vi.fn() });
+    expect(screen.queryByRole("option", { name: /時間割管理のセクションに移動/ })).toBeNull();
+  });
+
+  it("時刻一括変換は管理者だけ (閲覧者の画面には無いカード)", () => {
+    renderPalette({ onSelectTimetableSection: vi.fn() });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "時刻一括" } });
+    expect(screen.getByRole("option", { name: /時刻一括変換.*時間割管理のセクション/ })).toBeTruthy();
+    cleanup();
+    renderPalette({ onSelectTimetableSection: vi.fn(), onJumpToAbsenceFlow: undefined });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "時刻一括" } });
+    expect(screen.queryByRole("option", { name: /時刻一括変換/ })).toBeNull();
+  });
+});

@@ -158,6 +158,8 @@ export function Sidebar({
   onOpenTestPrep,
   onOpenMonthBatch,
   onSelectEventSection,
+  // 時間割管理のセクション (コース別終講日など) へ飛ぶ (constants/timetableSections)
+  onSelectTimetableSection,
   onSelectMasterTab,
   masterTab,
   onSelectStaffTab,
@@ -226,6 +228,7 @@ export function Sidebar({
   // 現在地の強調に使うキー。画面ごとに 1 か所へまとめる。
   const sectionSelect = {
     [VIEWS.HOLIDAYS]: onSelectEventSection,
+    [VIEWS.TIMETABLE]: onSelectTimetableSection,
     [VIEWS.MASTER]: onSelectMasterTab,
     [VIEWS.STAFF]: onSelectStaffTab,
   };
@@ -371,10 +374,11 @@ export function Sidebar({
               カテゴリの見出しに出す */}
           {item.badge && pendingBadge}
         </div>
-        {/* 画面の中のセクション / タブは、その画面を開いている間だけ名前を出す */}
+        {/* 画面の中のセクション / タブは、その画面を開いている間だけ名前を出す。
+            管理者だけの画面に描かれるセクション (時刻一括変換) は閲覧者に出さない */}
         {selfActive && item.sections && (
           <SectionLinks
-            sections={item.sections}
+            sections={item.sections.filter(visible)}
             activeKey={sectionActiveKey[item.key]}
             onSelect={sectionSelect[item.key]}
             onClose={onClose}

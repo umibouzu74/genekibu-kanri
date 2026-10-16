@@ -4,8 +4,8 @@
 // セクション・タブ / ダイアログ) へ飛ぶ。
 //
 // - **アイコン・名前・権限はサイドバー (constants/sidebarMenu) から引く**
-//   (navItem)。画面の中のセクションは EVENT_SECTIONS、コースマスター管理の
-//   タブは MASTER_TABS、授業管理のタブは SUBS_TABS から。名前を書き起こさない
+//   (navItem)。画面の中のセクションは EVENT_SECTIONS / TIMETABLE_SECTIONS、
+//   コースマスター管理のタブは MASTER_TABS、授業管理のタブは SUBS_TABS から。名前を書き起こさない
 //   (サイドバーと食い違わないように)
 // - カテゴリの名前・アイコン・並びは constants/menuCategories (サイドバーと共有)
 // - 並びは固定。使用頻度・履歴で並べ替えない (CLAUDE.md の A18)
@@ -15,6 +15,7 @@
 //   "view"      … view へ移る
 //   "modal"     … ダイアログを開く (modal = サイドバーの modal と同じ名前)
 //   "section"   … 休講・テスト期間・イベント画面の中のマネージャへ (section = EVENT_KIND)
+//   "timetableSection" … 時間割管理の画面の中のカードへ (section = TIMETABLE_SECTION)
 //   "masterTab" … コースマスター管理のタブへ (tab = MASTER_TAB)
 //   "subsTab"   … 授業管理のタブへ (tab = SUBS_TABS の tab)
 //   "staffTab"  … 講師管理のタブへ (tab = STAFF_TAB)
@@ -23,6 +24,7 @@ import { VIEWS } from "./views";
 import { SIDEBAR_MENU } from "./sidebarMenu";
 import { EVENT_KIND, EVENT_KIND_LABELS, EVENT_SECTIONS } from "./eventKinds";
 import { MASTER_TAB, MASTER_TABS } from "./masterTabs";
+import { TIMETABLE_SECTION, TIMETABLE_SECTIONS } from "./timetableSections";
 import { SUBS_TABS } from "./subsTabs";
 import { STAFF_TAB, STAFF_TABS } from "./staffTabs";
 import { VIEW_CHORD_BY_VIEW } from "./chords";
@@ -56,6 +58,20 @@ function eventSection(kind, desc) {
     icon: sec?.icon || "",
     label: EVENT_KIND_LABELS[kind],
     desc,
+  };
+}
+
+// 時間割管理の画面の中のカード (表示期間設定・コース別終講日など)
+function timetableSection(key, desc) {
+  const sec = TIMETABLE_SECTIONS.find((s) => s.key === key);
+  return {
+    key: `timetable:${key}`,
+    kind: "timetableSection",
+    section: key,
+    icon: sec.icon,
+    label: sec.label,
+    desc,
+    adminOnly: Boolean(sec.adminOnly),
   };
 }
 
@@ -130,7 +146,19 @@ export const MAIN_MENU = Object.freeze([
   {
     ...menuCategory(MENU_CATEGORY.TIMETABLE),
     items: [
-      navItem(VIEWS.TIMETABLE, "時間割 (期) の期間・表示期間・終講日"),
+      navItem(VIEWS.TIMETABLE, "時間割 (期) の一覧と有効期間・期間の全体像"),
+      timetableSection(
+        TIMETABLE_SECTION.DISPLAY_CUTOFF,
+        "学年グループごとの表示期間 (開始日〜終了日) と初回のオリエン"
+      ),
+      timetableSection(
+        TIMETABLE_SECTION.COHORT_CUTOFF,
+        "学校別・曜日別のコースの終講日 (未設定のコースは最終授業日の案を出す)"
+      ),
+      timetableSection(
+        TIMETABLE_SECTION.CLASS_SETS,
+        "第N回を通算するコマの組 (中3 の火木 / 水金のようなコース分け)"
+      ),
       masterTab(MASTER_TAB.LIST, "時間割のコマを追加・編集する"),
       masterTab(MASTER_TAB.BIWEEKLY, "隔週コマの A 週・B 週の基準日"),
       masterTab(MASTER_TAB.EXCEL, "曜日ごとの時間割を表で見る"),
