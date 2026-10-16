@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { gradeColor as GC } from "../../../data";
 import { formatBiweeklyNote, formatBiweeklyTeacher } from "../../../utils/biweekly";
+import { isIrregularSlot, slotOnlyDates } from "../../../utils/slotDates";
 
 // Extracted to its own component so that hover state is scoped to a
 // single card instead of requiring DOM querySelector manipulation.
@@ -53,6 +54,22 @@ export const MasterSlotCard = memo(function MasterSlotCard({
             {s.cls && s.cls !== "-" ? s.cls : ""}
           </span>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#444" }}>{s.subj}</span>
+          {isIrregularSlot(s) && (
+            <span
+              title={`決まった日だけ実施するコマ (実施日 ${slotOnlyDates(s).length} 日)`}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#2a4a7a",
+                background: "#e8f0fb",
+                border: "1px solid #b8cce8",
+                borderRadius: 3,
+                padding: "0 4px",
+              }}
+            >
+              不定期 {slotOnlyDates(s).length}日
+            </span>
+          )}
         </div>
         {(s.room || s.note) && (
           <div

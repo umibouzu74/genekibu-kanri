@@ -12,6 +12,8 @@
 //   の両方がここを通す。**画面ごとに onlyDates を見に行かない**
 // - 休講 (Holiday) とは別物。実施日でない日は「休講」とも出さない
 
+import { dateToDay } from "./dateHelpers";
+
 /** 不定期のコマか (実施日の一覧で日を決めるコマ)。 */
 export function isIrregularSlot(slot) {
   return !!slot && slot.irregular === true;
@@ -39,3 +41,22 @@ export function isSlotScheduledOnDate(slot, dateStr) {
 
 /** 実施日でない日の理由の文言 (日まるごと振替・予定表チェックなどの表示用)。 */
 export const IRREGULAR_OFF_LABEL = "実施日でない (不定期のコマ)";
+
+// 保存前に「回数・実施日」の項目を保存形にそろえる。既定 (毎週・コースで通算・
+// 第1回から) はキーを持たない (従来のコマと同じ形のまま)。
+// 不定期のコマは実施日を並べ替え、曜日の違う日 (曜日を変えた後の残り) は外す
+// (その曜日にしか実施しないので、残しても効かない)。
+export function normalizeSlotCountFields(f) {
+  const out = { ...f };
+  if (out.irregular === true) {
+    out.onlyDates = [...new Set((out.onlyDates || []).filter((d) => dateToDay(d) === out.day))].sort();
+  } else {
+    delete out.irregular;
+    delete out.onlyDates;
+  }
+  if (out.separateWeekdayCount !== true) delete out.separateWeekdayCount;
+  const n = Number(out.sessionStartNumber);
+  if (Number.isInteger(n) && n > 1) out.sessionStartNumber = n;
+  else delete out.sessionStartNumber;
+  return out;
+}
