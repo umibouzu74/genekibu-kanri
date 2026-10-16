@@ -68,7 +68,7 @@ export function DashboardListView({
           : slots.filter(
               (s) =>
                 s.day === dow &&
-                !isOffForGrade(dateStr, s.grade, s.subj) &&
+                !isOffForGrade(dateStr, s.grade, s.subj, s.id) &&
                 // 特別時程の部分休講 (1限カット等) とコマ休講は休講と同じ
                 // 扱いで外す (コマ休講は DashDayRow がバナーで出す)
                 !isSlotCancelledOnDate(s, dateStr, cancelCtx) &&

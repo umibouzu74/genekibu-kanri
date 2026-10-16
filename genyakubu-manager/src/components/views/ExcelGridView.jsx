@@ -494,7 +494,7 @@ export function ExcelGridView({
     for (const s of displaySlots) {
       if (s.day !== activeDay) continue;
       if (
-        isOffForGrade(displayDate, s.grade, s.subj) ||
+        isOffForGrade(displayDate, s.grade, s.subj, s.id) ||
         // 特別時程の部分休講 (1限カット等) とコマ休講も休講ハイライトに含める
         isSlotCancelledOnDate(s, displayDate, { daySchedules, adjustments })
       )

@@ -87,7 +87,7 @@ export function ChainSubstitutionPanel({
       const color = sec.color || DEPT_COLOR[sec.dept] || { b: "#e8e8e8", f: "#444", accent: "#888" };
       const secSlots = sortSlots(daySlots.filter(sec.filterFn));
       const rows = secSlots.map((slot) => {
-        const off = isOffForGrade(date, slot.grade, slot.subj);
+        const off = isOffForGrade(date, slot.grade, slot.subj, slot.id);
         // 元講師ごとに 1 件 (多担任コマは複数件)。
         const slotSubs = subsForDate.filter((s) => s.slotId === slot.id);
         return { slot, off, slotSubs };

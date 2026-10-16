@@ -72,7 +72,11 @@ export function isSlot(x: unknown): x is Slot {
     (x.timetableId === undefined || isNumber(x.timetableId)) &&
     (x.biweeklyAnchors === undefined ||
       (Array.isArray(x.biweeklyAnchors) &&
-        (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a))))
+        (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a)))) &&
+    (x.irregular === undefined || typeof x.irregular === "boolean") &&
+    (x.onlyDates === undefined ||
+      (Array.isArray(x.onlyDates) &&
+        (x.onlyDates as unknown[]).every((d) => isIsoDate(d))))
   );
 }
 
@@ -81,7 +85,10 @@ export function isHoliday(x: unknown): x is Holiday {
     isObject(x) &&
     isString(x.date) &&
     (x.targetGrades === undefined || Array.isArray(x.targetGrades)) &&
-    (x.subjKeywords === undefined || Array.isArray(x.subjKeywords))
+    (x.subjKeywords === undefined || Array.isArray(x.subjKeywords)) &&
+    (x.excludeSlotIds === undefined ||
+      (Array.isArray(x.excludeSlotIds) &&
+        (x.excludeSlotIds as unknown[]).every((i) => isNumber(i) || isString(i))))
   );
 }
 

@@ -75,7 +75,7 @@ export function useSubstitutionMode({
     for (const s of dateFilteredSlots) {
       if (s.day !== dayOfDate) continue;
       if (
-        isOffForGrade(subDate, s.grade, s.subj) ||
+        isOffForGrade(subDate, s.grade, s.subj, s.id) ||
         isSlotCancelledOnDate(s, subDate, cancelCtx)
       ) {
         offSet.add(s.id);

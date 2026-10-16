@@ -29,6 +29,7 @@ import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
 import { buildClassSetIndex } from "./classSets";
 import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
+import { isSlotScheduledOnDate } from "./slotDates";
 
 // "YYYY-MM-DD" → Date (ローカル)
 function parseDate(s) {
@@ -185,7 +186,8 @@ function findPoolFirstDate(pool, startDate, ctx) {
       for (const s of pool) {
         if (s.day !== dayKey) continue;
         if (!isSlotTimetableActive(s, dStr, ctx)) continue;
-        if (ctx.isOffForGrade && ctx.isOffForGrade(dStr, s.grade, s.subj)) continue;
+        if (!isSlotScheduledOnDate(s, dStr)) continue;
+        if (ctx.isOffForGrade && ctx.isOffForGrade(dStr, s.grade, s.subj, s.id)) continue;
         if (isSlotCancelledOnDate(s, dStr, ctx)) continue;
         return dStr;
       }
@@ -256,8 +258,12 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
   // 所属時間割の有効期間外は実施なし (期をまたぐ二重カウント防止)。
   if (!isSlotTimetableActive(slot, dateStr, ctx)) return null;
 
+  // 不定期のコマ (utils/slotDates) は実施日の一覧に無い日は実施なし。
+  if (!isSlotScheduledOnDate(slot, dateStr)) return null;
+
   // 休講 / テスト期間 (exam) 判定は生の slot.subj で評価 (既存挙動維持)。
-  if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
+  // 第 4 引数のコマ id は休講日の例外 (Holiday.excludeSlotIds) の照合用
+  if (ctx.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj, slot.id)) {
     return null;
   }
 
@@ -292,8 +298,9 @@ function effectiveSubjectOnDay(slot, dateStr, ctx) {
 }
 
 /**
- * 対象日にそのコマが実施されるか (曜日・時間割の有効期間・休講・テスト期間・
- * 特別時程の部分休講・単独教科隔週の B 週・開講日 1 限のオリエンを考慮)。
+ * 対象日にそのコマが実施されるか (曜日・時間割の有効期間・不定期のコマの
+ * 実施日・休講・テスト期間・特別時程の部分休講・単独教科隔週の B 週・
+ * 開講日 1 限のオリエンを考慮)。
  * 回数の起点 (開始日) には依存しないので、開始日が未設定でも判定できる。
  * @param {object} slot
  * @param {string} dateStr "YYYY-MM-DD"

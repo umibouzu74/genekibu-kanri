@@ -344,7 +344,7 @@ export function AbsenceTimetable({
       const s = byId.get(slotId);
       if (!s || (s._time || s.time) !== time) continue;
       const off =
-        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) ||
+        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj, s.id)) ||
         (isInExamPeriodForGrade && isInExamPeriodForGrade(date, s.grade));
       if (off) hidden.add(s.id);
     }
@@ -370,7 +370,7 @@ export function AbsenceTimetable({
     const timeBySlot = new Map();
     for (const s of effectiveSlots) {
       if (
-        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) ||
+        (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj, s.id)) ||
         (isInExamPeriodForGrade && isInExamPeriodForGrade(date, s.grade))
       ) {
         exclude.add(s.id);
@@ -945,7 +945,7 @@ export function AbsenceTimetable({
       // 操作不能 (drag/contextmenu/click 抑止)。
       let cancelLabel = null;
       let cancelNote = null;
-      if (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj)) {
+      if (isHolidayForSlot && isHolidayForSlot(date, s.grade, s.subj, s.id)) {
         cancelLabel = "休講";
       } else if (
         isInExamPeriodForGrade &&

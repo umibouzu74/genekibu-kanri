@@ -2,6 +2,7 @@
 // All date strings are "YYYY-MM-DD".
 
 import { findCohortCutoff } from "./cohorts";
+import { isSlotScheduledOnDate } from "./slotDates";
 import { DAYS } from "../constants/schools";
 
 /**
@@ -258,7 +259,9 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
 }
 
 /**
- * Cohort-aware variant of isBeyondCutoff. Layers a per-cohort 終講日
+ * Cohort-aware variant of isBeyondCutoff. 不定期のコマ (slot.irregular) は
+ * 実施日の一覧 (slot.onlyDates) に無い日も窓の外 (utils/slotDates)。
+ * Layers a per-cohort 終講日
  * (last-class date) over the grade-group range:
  *   - start: always the grade group's startDate (cohorts refine the END only)
  *   - end:   the matching cohort's date if set, otherwise the group's date
@@ -272,6 +275,9 @@ export function isBeyondCutoff(dateStr, grade, displayCutoff) {
  * @returns {boolean}
  */
 export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
+  // 不定期のコマ (utils/slotDates) は実施日の一覧に無い日を窓の外として扱う。
+  // 日付ベースの画面はどれもここを通すので、実施日でない日に並ばない
+  if (!isSlotScheduledOnDate(slot, dateStr)) return true;
   const { startDate, endDate } = getSlotCutoffRange(slot, displayCutoff);
   if (startDate && dateStr < startDate) return true;
   if (endDate && dateStr > endDate) return true;

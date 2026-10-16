@@ -225,7 +225,7 @@ export function ConfirmedSubsView({
           const daySlots = slots.filter(
             (s) =>
               s.day === dow &&
-              !isOffForGrade(dateStr, s.grade, s.subj) &&
+              !isOffForGrade(dateStr, s.grade, s.subj, s.id) &&
               !isSlotCancelledOnDate(s, dateStr, cancelCtx) &&
               (!timetables ||
                 timetables.length === 0 ||

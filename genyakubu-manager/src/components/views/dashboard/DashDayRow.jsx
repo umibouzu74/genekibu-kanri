@@ -3,7 +3,11 @@ import { DAY_COLOR as DC, DEPT_COLOR, sortSlots as sortS } from "../../../data";
 import { DASH_SECTIONS } from "../../../constants/schedule";
 import { buildSessionCountMap } from "../../../utils/sessionCount";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
-import { examClassExceptionsOnDate, isFullDayHoliday } from "../../../utils/scheduleHelpers";
+import {
+  examClassExceptionsOnDate,
+  isFullDayHoliday,
+  isGranularHoliday,
+} from "../../../utils/scheduleHelpers";
 import { ExtraLessonBanner } from "../../ExtraLessonBanner";
 import { OffsiteLessonBanner } from "../../OffsiteLessonBanner";
 import { RescheduleInBanner } from "../../RescheduleInBanner";
@@ -115,18 +119,11 @@ export function DashDayRow({
   const offDepts = [
     ...new Set(
       hols
-        .filter(
-          (h) =>
-            (h.targetGrades || []).length === 0 &&
-            (h.subjKeywords || []).length === 0
-        )
+        .filter((h) => !isGranularHoliday(h))
         .flatMap((h) => h.scope || ["全部"])
     ),
   ].filter((d) => d !== "全部");
-  const granularHols = hols.filter(
-    (h) =>
-      (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
-  );
+  const granularHols = hols.filter(isGranularHoliday);
   const hasPartial = !fullOff && (offDepts.length > 0 || granularHols.length > 0);
   const holLabel = hols[0]?.label;
   const hasExamPeriod = examPeriodsForDate.length > 0;

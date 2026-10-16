@@ -238,7 +238,7 @@ export function collectAbsenceTargets({
     // コマ単位で外れる理由 (その日そのコマが走らない / 別の手で片付いている)。
     const row = draft[slot.id];
     const slotReason =
-      isOffForGrade && isOffForGrade(date, slot.grade, slot.subj)
+      isOffForGrade && isOffForGrade(date, slot.grade, slot.subj, slot.id)
         ? "休講・テスト期間"
         : row?.cancel
           ? "コマ休講 (下書き)"

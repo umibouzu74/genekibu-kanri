@@ -21,6 +21,7 @@
 
 import { isSlotHeldOnDate } from "../sessionCount";
 import { findGroupForGrade, isSlotBeyondCutoff, isTimetableActiveForDate } from "../timetable";
+import { IRREGULAR_OFF_LABEL, isSlotScheduledOnDate } from "../slotDates";
 import { examPeriodStopsClassesOn, gradeToDept, isSlotCancelledByHoliday } from "../scheduleHelpers";
 import { slotCancelReason } from "../slotCancel";
 import { findCohortCutoff } from "../cohorts";
@@ -59,8 +60,8 @@ function md(date) {
  * @param {{ctx: object, adjustments?: Array, holidays?: Array, examPeriods?: Array,
  *          displayCutoff?: object, timetables?: Array}} sys
  * @returns {{ held: boolean, kind: string, label: string }}
- *   kind: held / timetable / rescheduled / before-start / after-end / holiday / exam /
- *         cancel / daySchedule / other
+ *   kind: held / timetable / rescheduled / irregular / before-start / after-end /
+ *         holiday / exam / cancel / daySchedule / other
  */
 export function systemSlotStatus(slot, date, sys) {
   if (!isSlotTimetableActive(slot, date, sys.timetables)) {
@@ -71,6 +72,9 @@ export function systemSlotStatus(slot, date, sys) {
   );
   if (moved) {
     return { held: false, kind: "rescheduled", label: `振替で ${md(moved.targetDate)} へ`, adj: moved };
+  }
+  if (!isSlotScheduledOnDate(slot, date)) {
+    return { held: false, kind: "irregular", label: IRREGULAR_OFF_LABEL };
   }
   if (isSlotBeyondCutoff(date, slot, sys.displayCutoff)) {
     // isSlotBeyondCutoff と同じ順: 開始日 → コース別終講日 → 学年グループの終了日

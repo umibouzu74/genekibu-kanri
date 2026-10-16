@@ -452,7 +452,7 @@ export function AbsenceWorkflowView({
       const row = draft.draft[s.id];
       if (row?.cancel) skipped.push({ slot: s, reason: "すでに休講 (下書き)" });
       else if (savedCancelled.has(s.id)) skipped.push({ slot: s, reason: "すでに休講" });
-      else if (isOffForGrade(date, s.grade, s.subj)) {
+      else if (isOffForGrade(date, s.grade, s.subj, s.id)) {
         skipped.push({ slot: s, reason: "休講・テスト期間" });
       } else if (
         row?.absorbedBy != null ||

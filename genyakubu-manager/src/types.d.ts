@@ -21,6 +21,10 @@ export interface Slot {
   note: string;
   timetableId?: number; // Timetable.id。未設定 = デフォルト時間割(id=1)
   biweeklyAnchors?: BiweeklyAnchor[]; // 授業別の隔週基準。未設定 = グローバル基準を使用
+  // 不定期のコマ (utils/slotDates)。true のときは onlyDates の日だけ実施する
+  // (一覧が空ならどの日も実施しない)。マークテストのように決まった日だけのコマ
+  irregular?: boolean;
+  onlyDates?: string[]; // YYYY-MM-DD
 }
 
 export interface Holiday {
@@ -30,6 +34,9 @@ export interface Holiday {
   scope: HolidayScopeEntry[];
   targetGrades: string[]; // 空配列 = scope に従う（既存動作）
   subjKeywords: string[]; // 空配列 = 全科目対象。例: ["高松西"]
+  // 例外 (この日は授業あり) のコマ。対象に入っていても休講にしない
+  // (utils/holidayExceptions、判定は scheduleHelpers.holidayMatches)
+  excludeSlotIds?: number[];
 }
 
 // 代行レコード。**代行者が空 ("") のものは欠勤**を表す (欠勤専用のモデルは

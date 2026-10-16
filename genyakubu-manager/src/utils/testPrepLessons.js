@@ -426,7 +426,7 @@ export function buildTestPrepReschedulePlan({
       `${fmtMDWeekday(sourceDate)} にはこのコマの代行・欠勤が ${subsOnSource.length} 件あります (振替先には引き継がれません。要らなければ欠勤組み換えで外してください)`
     );
   }
-  if (typeof c.isOffForGrade === "function" && c.isOffForGrade(targetDate, slot.grade, slot.subj)) {
+  if (typeof c.isOffForGrade === "function" && c.isOffForGrade(targetDate, slot.grade, slot.subj, slot.id)) {
     notes.push("振替先は休講日・テスト期間です (振替のコマは休講日でも表示されます)");
   }
   if (isSlotBeyondCutoff(targetDate, slot, c.displayCutoff)) {

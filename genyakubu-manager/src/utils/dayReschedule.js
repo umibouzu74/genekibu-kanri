@@ -19,6 +19,7 @@ import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
+import { IRREGULAR_OFF_LABEL, isSlotScheduledOnDate } from "./slotDates";
 import {
   buildAdjustmentIndex,
   buildIncomingItems,
@@ -79,8 +80,9 @@ export function skipReason(slot, dateStr, ctx) {
       return "時間割の期間外";
     }
   }
+  if (!isSlotScheduledOnDate(slot, dateStr)) return IRREGULAR_OFF_LABEL;
   if (isSlotBeyondCutoff(dateStr, slot, ctx?.displayCutoff)) return "表示期間外";
-  if (ctx?.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
+  if (ctx?.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj, slot.id)) {
     return "休講・テスト期間";
   }
   const cancel = slotCancelReason(slot, dateStr, ctx);
@@ -492,7 +494,7 @@ export function buildDayReschedulePlan({
   // 警告ではなく「振替のコマは休講日でも出る」という確認として出す。
   if (ctx?.isOffForGrade) {
     const offCount = entries.filter((e) =>
-      ctx.isOffForGrade(targetDate, e.slot.grade, e.slot.subj),
+      ctx.isOffForGrade(targetDate, e.slot.grade, e.slot.subj, e.slot.id),
     ).length;
     if (offCount > 0) {
       notes.push(

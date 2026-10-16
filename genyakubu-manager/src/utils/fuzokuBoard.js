@@ -160,7 +160,7 @@ export function buildFuzokuMonth({
     const time = idx.moveBySlot.get(s.id) || s.time;
     if (isSlotBeyondCutoff(d, s, displayCutoff)) {
       v = { status: "off", reason: cutoffReason(s, d) };
-    } else if (ctx.isOffForGrade && ctx.isOffForGrade(d, s.grade, s.subj)) {
+    } else if (ctx.isOffForGrade && ctx.isOffForGrade(d, s.grade, s.subj, s.id)) {
       v = { status: "off", reason: offReason(s, d) };
     } else {
       const cancel = slotCancelReason(s, d, ctx);
