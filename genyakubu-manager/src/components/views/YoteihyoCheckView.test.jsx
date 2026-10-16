@@ -13,7 +13,7 @@ import { ToastProvider } from "../../hooks/useToasts";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { LS } from "../../constants/storageKeys";
 import { readWorkbookFile } from "../../utils/yoteihyo/workbookFile";
-import { SMALL_SLOTS, makeSheet, smallH12Sheet } from "../../utils/yoteihyo/testUtils";
+import { SMALL_SLOTS, makeSheet, smallH12Sheet, smallT1T2Sheet } from "../../utils/yoteihyo/testUtils";
 
 vi.mock("../../utils/yoteihyo/workbookFile", () => ({ readWorkbookFile: vi.fn() }));
 
@@ -43,11 +43,12 @@ function Harness({
   slots: initSlots = SMALL_SLOTS,
   altSlots = null,
   holidays: initHolidays = HOLIDAYS,
+  displayCutoff: initCutoff = { groups: [], cohorts: [] },
 }) {
   const [slots, saveSlots] = useState(initSlots);
   const [holidays, saveHolidays] = useState(initHolidays);
   const [adjustments, saveAdjustments] = useState([]);
-  const [displayCutoff, saveDisplayCutoff] = useState({ groups: [], cohorts: [] });
+  const [displayCutoff, saveDisplayCutoff] = useState(initCutoff);
   const [courseMapping, saveCourseMapping] = useState([]);
   const [confirmed, saveConfirmed] = useState([]);
   const [session, setSession] = useState(null);
@@ -174,13 +175,13 @@ describe("YoteihyoCheckView — 読み込みと食い違い", () => {
     expect(screen.getByText("比べるシートにチェックを入れてください。")).toBeTruthy();
   });
 
-  it("高校部のシートが無いファイルは未対応と知らせる", async () => {
+  it("読める予定表のシートが無いファイルはそう知らせる", async () => {
     readWorkbookFile.mockResolvedValue({ sheets: [makeSheet("T3", (s) => s.set(0, 0, "2026年度 中3 予定表"))] });
     renderView();
     await loadWorkbook();
     expect(screen.getByLabelText("「T3」を使う").disabled).toBe(true);
-    expect(screen.getByText("中学部 (未対応)")).toBeTruthy();
-    expect(screen.getByRole("note").textContent).toMatch(/読み込める高校部の予定表のシートがありません/);
+    expect(screen.getByText("表の形が読めません")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/読み込める高校部・中学部の予定表のシートがありません/);
   });
 
   it("読めないファイルは理由を出し、前に読み込んだ結果は消さない", async () => {
@@ -598,5 +599,36 @@ describe("YoteihyoCheckView — 予定表から終講日を設定", () => {
     const toasts = screen.getByTestId("toasts");
     fireEvent.click(within(toasts).getByRole("button", { name: "元に戻す" }));
     expect(state.displayCutoff.cohorts).toEqual([]);
+  });
+});
+
+describe("YoteihyoCheckView — 中学部の予定表", () => {
+  // 中1・中2 の予定表 (作りもの) とシステムのコマ
+  const MID_SLOTS = [
+    { id: 11, day: "火", time: "19:00-20:20", grade: "中1", cls: "", subj: "英語", room: "601", teacher: "A", note: "" },
+    { id: 12, day: "金", time: "19:00-20:20", grade: "中1", cls: "", subj: "数学", room: "601", teacher: "B", note: "" },
+    { id: 13, day: "月", time: "19:00-20:20", grade: "中2", cls: "", subj: "国語", room: "603", teacher: "D", note: "" },
+    { id: 14, day: "木", time: "19:00-20:20", grade: "中2", cls: "", subj: "理科", room: "603", teacher: "E", note: "" },
+    { id: 15, day: "土", time: "15:00-16:20", grade: "中1-3", cls: "", subj: "プレップ", room: "605", teacher: "G", note: "" },
+    { id: 16, day: "土", time: "16:30-17:50", grade: "中1-3", cls: "", subj: "プレップ", room: "605", teacher: "G", note: "" },
+  ];
+
+  it("中学部のシートを読み、食い違いと第N回の食い違いを出す", async () => {
+    readWorkbookFile.mockResolvedValue({ sheets: [smallT1T2Sheet()] });
+    // 第N回はカウントの起点 (表示期間設定の開始日) から数える
+    const displayCutoff = {
+      groups: [{ label: "中学", grades: ["中1", "中2", "中3"], startDate: "2026-10-01", orientationFirstDay: false }],
+      cohorts: [],
+    };
+    renderView({ slots: MID_SLOTS, holidays: [], displayCutoff });
+    await loadWorkbook("中学.xls");
+    expect(screen.getByLabelText("「T1T2」を使う").checked).toBe(true);
+    expect(screen.getByText("中学部 中1・中2")).toBeTruthy();
+    // 11/9 (月) は振替元 (予定表では中2 本科の授業なし)、10/17 (土) はプレップの「※」
+    expect(dayCards()).toEqual(expect.arrayContaining([expect.stringMatching(/^10\/17/), expect.stringMatching(/^11\/9/)]));
+    const panel = screen.getByRole("region", { name: "第N回の食い違い" });
+    expect(panel.textContent).toMatch(/中学 ☆ プレップ\(個別指導\)/);
+    expect(panel.textContent).toMatch(/予定表 ☆1、システム 第1・2回/);
+    expect(panel.textContent).toMatch(/日数カウント/);
   });
 });

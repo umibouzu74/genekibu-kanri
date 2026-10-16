@@ -37,7 +37,7 @@ import { WEEKDAYS, isGrayFill, isRedFill, isWeekdayChar, isYellowFill, makeGrid 
 // 装飾記号 (U+2600〜27BF ★☆✸ …)・漢数字のゼロの「〇」。学校によって使う記号が
 // 違う (「★■」のように並べる) ので、文字の一覧ではなく範囲で見る。
 // ※ (U+203B)・矢印 (U+2190〜) は含まない
-const MARK_CLASS = "\\u25A0-\\u27BF\\u3007";
+export const MARK_CLASS = "\\u25A0-\\u27BF\\u3007";
 const MARK_RE = new RegExp(`[${MARK_CLASS}]`);
 const LEGEND_RE = new RegExp(`([${MARK_CLASS}])\\s*[：:]\\s*([^${MARK_CLASS}]*)`, "g");
 
@@ -62,7 +62,7 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-function isoOf(y, m, d) {
+export function isoOf(y, m, d) {
   const dt = new Date(Date.UTC(y, m - 1, d));
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
   return `${y}-${pad2(m)}-${pad2(d)}`;
@@ -98,7 +98,7 @@ export function gradesIn(text) {
   return [...out].sort();
 }
 
-function findTitle(g) {
+export function findTitle(g) {
   for (const [r, c] of g.cells(0, 6)) {
     const t = g.text(r, c);
     if (t && /予定表|ゼミ|カレンダー/.test(t)) return t;
@@ -132,7 +132,7 @@ export function namedMonthRange(sheetName, title, fiscalYear) {
   return monthSpan(sheetName, fiscalYear) || monthSpan(title, fiscalYear);
 }
 
-function fiscalYearOf(title, sheetName) {
+export function fiscalYearOf(title, sheetName) {
   const t = String(title || "").normalize("NFKC");
   const n = String(sheetName || "").normalize("NFKC");
   const m = /(\d{4})\s*年度/.exec(t) || /(\d{4})\s*年度/.exec(n) || /^\s*(\d{4})(?!\d)/.exec(n);
@@ -140,7 +140,7 @@ function fiscalYearOf(title, sheetName) {
 }
 
 /**
- * シートの種類を見分ける。読めるのは高校部の予定表だけで、中学部・
+ * シートの種類を見分ける。読めるのは高校部・中学部の予定表で、
  * 年間カレンダーは「この版では未対応」として名前だけ返す。
  * @returns {{ kind: "high"|"middle"|"calendar"|"unknown", title: string }}
  */
@@ -156,7 +156,7 @@ export function classifySheet(sheet) {
 
 // 日付の列 (1〜31 の数 or 日付型) の右隣が曜日の 1 文字、という行が 20 行以上
 // ある列を「月のブロック」の日付列とみなす。
-function findDayBlocks(g) {
+export function findDayBlocks(g) {
   const byCol = new Map();
   for (const [r, c, cell] of g.cells()) {
     if (cell.t !== "n" || cell.wd) continue;
@@ -171,7 +171,7 @@ function findDayBlocks(g) {
     .sort((a, b) => a.dayCol - b.dayCol);
 }
 
-function monthLabelAbove(g, block) {
+export function monthLabelAbove(g, block) {
   for (let r = block.rows[0] - 1; r >= 0; r--) {
     for (let c = block.dayCol; c <= Math.min(block.dayCol + 4, g.maxCol); c++) {
       const t = g.text(r, c).normalize("NFKC").replace(/\s+/g, "");
@@ -184,7 +184,7 @@ function monthLabelAbove(g, block) {
 
 // ブロックの各行に日付を付ける。月は見出しの「N月」から始め、日が戻ったら
 // 次の月へ。日付型のセルがあればそれを正とする。
-function assignDates(g, blocks, fiscalYear) {
+export function assignDates(g, blocks, fiscalYear) {
   const out = [];
   for (const block of blocks) {
     const label = monthLabelAbove(g, block);
@@ -506,7 +506,8 @@ export function parseHighSchoolSheet(sheet) {
       if (!marks || ![...marks].every((ch) => MARK_RE.test(ch))) continue;
       if (!(n?.t === "n" && Number.isInteger(n.v))) continue;
       for (const sym of marks) {
-        planned.push({ courseKey: `${titleGrades.join("・")}|sym:${sym}`, weekdays: w, count: n.v });
+        // row: 集計表の同じ行 (「金 ●★☆ 15」) の記号をまとめて点検するための印
+        planned.push({ courseKey: `${titleGrades.join("・")}|sym:${sym}`, weekdays: w, count: n.v, row: `${r},${c}` });
       }
       plannedRows.push({ weekdays: w, marks, count: n.v });
       for (let k = 0; k < 3; k++) usedOutside.add(`${r},${c + k}`);
@@ -635,7 +636,7 @@ function isMarkLike(text) {
 // 表の外 (日付の行より下・講座の列の外) に残った授業の印。凡例 (「◎：…」)・
 // 注記 (「※…」)・集計表は外す。どの講座の授業にも数えていないので、
 // 消し忘れ・書き間違いとして知らせる
-function checkOutside(g, { datedRows, blocks, blockCols, maxDayRow, title, usedOutside }) {
+export function checkOutside(g, { datedRows, blocks, blockCols, maxDayRow, title, usedOutside }) {
   const cols = blocks.flatMap((b, bi) => [b.dayCol, b.dayCol + 1, ...blockCols[bi].map((x) => x.c)]);
   const minCol = Math.min(...cols);
   const maxCol = Math.max(...cols);
@@ -670,11 +671,12 @@ function rgbOf(fill) {
   return [1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16));
 }
 
-// 白・ごく薄い色・灰色 (罫線代わりの塗り) は色として見ない
+// 白・ごく薄い色・灰色 (罫線代わりの塗り) は色として見ない。Office の「白 + 基本色
+// 80%」の薄い緑 (#e2f0d9。中学部の予定表で凡例に無いまま使われていた) は色として見る
 function isPlainFill(fill) {
   const c = rgbOf(fill);
   if (!c) return true;
-  return Math.max(...c) - Math.min(...c) <= 24 || Math.min(...c) >= 0xf0;
+  return Math.max(...c) - Math.min(...c) <= 16 || Math.min(...c) >= 0xf0;
 }
 
 /** 塗りの色のおおまかな名前 (知らせる文言用) */
@@ -685,7 +687,8 @@ export function fillColorName(fill) {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const d = max - min;
-  if (d < 0.1) return "灰色";
+  // ごく薄い色 (Office の「80%」の明るさ。#e2f0d9 の薄い緑) も色の名前で呼ぶ
+  if (d < 0.05) return "灰色";
   let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   h = (h * 60 + 360) % 360;
   const light = (max + min) / 2 > 0.75;
@@ -705,7 +708,7 @@ export function fillColorName(fill) {
 // (テストの日の行を日付の欄ごと塗ってあっても拾う)。印ではない塗りは外す:
 //   - 曜日ごとの色分け (その色の行が、その曜日のほぼ全部 = 土曜の行の色など)
 //   - 列ごとの色分け (その列のほぼ全部の行 = 校舎ごとの色など)
-function checkFills(g, { datedRows, blocks, blockCols, days }) {
+export function checkFills(g, { datedRows, blocks, blockCols, days }) {
   const known = (f) => !f || isPlainFill(f) || isGrayFill(f) || isYellowFill(f) || isRedFill(f);
   const norm = (f) => (typeof f === "string" ? f.toLowerCase() : null);
   const datedRowSet = new Set(datedRows.map((x) => x.r));
@@ -726,11 +729,14 @@ function checkFills(g, { datedRows, blocks, blockCols, days }) {
   }
   if (!cand.length) return [];
   // 日付の行の外で文字のあるセル (凡例・見出し) の色は説明のある色
+  // 文字の無い色見本の右に説明がある凡例 (中学部の「■■■ 公立中学校定期テスト」) も
+  // 説明のある色 (右 4 セルまでに文字があれば)
   const explained = new Set();
   for (const [r, c] of g.cells()) {
-    if (datedRowSet.has(r) || !g.text(r, c)) continue;
+    if (datedRowSet.has(r)) continue;
     const f = norm(g.fill(r, c));
-    if (f) explained.add(f);
+    if (!f) continue;
+    if (g.text(r, c) || [1, 2, 3, 4].some((k) => g.text(r, c + k))) explained.add(f);
   }
   const perCol = new Map();
   for (const x of cand) perCol.set(`${x.c}|${x.f}`, (perCol.get(`${x.c}|${x.f}`) || 0) + 1);
@@ -791,7 +797,7 @@ export function splitTerms(dates, gapDays = 21) {
 const familyKey = (grades) => grades.join("・");
 
 /**
- * 選んだシート (高校部) を 1 つにまとめる。同じ日が 2 枚にあれば、
+ * 選んだシート (高校部・中学部) を 1 つにまとめる。同じ日が 2 枚にあれば、
  * 先に渡したシートを使う (並びは呼び出し側が決める。画面は
  * sheetSelection.selectedInMergeOrder = 教員用 → 改訂・訂正・変更 → ブックの左)。
  *
@@ -829,11 +835,24 @@ export function mergeHighSchoolSheets(sheets) {
           headers: [...course.headers],
           sessions: new Map(),
           ranges: [],
+          // 中学部のコース (middleSchoolSheet): 部・学年をまたぐか・欄の名前・学年
+          ...(course.dept
+            ? {
+                dept: course.dept,
+                shared: !!course.shared,
+                group: course.group ?? null,
+                sheetGrades: [...(course.sheetGrades || [])],
+              }
+            : {}),
         });
       }
       const merged = courses.get(course.key);
       if (!merged.name && course.name) merged.name = course.name;
       if (!merged.campus && course.campus) merged.campus = course.campus;
+      // 学年をまたぐコース (☆ プレップ) は中1・中2 の表と中3 の表の両方に出る
+      for (const gr of course.sheetGrades || []) {
+        if (merged.sheetGrades && !merged.sheetGrades.includes(gr)) merged.sheetGrades.push(gr);
+      }
       merged.ranges.push({ ...parsed.range, sheet: name });
       for (const [date, s] of course.sessions) {
         // 同じ日を 2 枚が持つときは先のシートを使う。範囲が重なるシートを
@@ -856,7 +875,62 @@ export function mergeHighSchoolSheets(sheets) {
   for (const family of families.values()) {
     family.terms = splitTerms(family.sessionDates);
   }
+  warnings.push(...checkPlannedGroupsInTerm({ courses, families, planned }));
   return { courses, days, families, notes, warnings, planned };
+}
+
+// 集計表の 1 行 (「金 ●★☆ 15」) の記号どうしの回数を、学期全体 (選んだシートを
+// まとめた授業の連なり) で数えて比べる。シートの中だけで比べる checkPlannedGroups は、
+// 学期の頭が前のシートにあると見えない (2026-10: 高3【9-12月】の「金 ●★☆ 15」は、
+// 【8-9月】の 8/28 (金) に ★☆ だけがあり、学期全体では ● 15・★ 16・☆ 16 回だった)。
+// シートの中で既に食い違っていれば (checkPlannedGroups が出す) 重ねて出さない
+function checkPlannedGroupsInTerm({ courses, families, planned }) {
+  const rows = new Map();
+  for (const p of planned) {
+    if (!p.row || !p.weekdays) continue;
+    const k = `${p.sheet}|${p.row}`;
+    if (!rows.has(k)) rows.set(k, []);
+    rows.get(k).push(p);
+  }
+  const out = [];
+  for (const list of rows.values()) {
+    if (list.length < 2) continue;
+    const first = list[0];
+    const items = list.map((p) => ({ p, course: courses.get(p.courseKey) })).filter((x) => x.course);
+    if (items.length < 2) continue;
+    const family = families.get(items[0].course.family);
+    const term = family?.terms.find((t) => t.start <= first.range.end && first.range.start <= t.end);
+    if (!term) continue;
+    const heldIn = (course, from, to) =>
+      new Set(
+        [...course.sessions]
+          .filter(([d, x]) => x.status === "held" && first.weekdays.includes(weekdayOf(d)) && from <= d && d <= to)
+          .map(([d]) => d)
+      );
+    const inSheet = items.map(({ course }) => heldIn(course, first.range.start, first.range.end).size);
+    if (inSheet.some((n) => n !== inSheet[0])) continue; // シートの中の点検が出している
+    const held = items.map(({ course }) => heldIn(course, term.start, term.end));
+    const counts = held.map((x) => x.size);
+    if (counts.every((n) => n === counts[0])) continue;
+    const syms = items.map(({ course }) => course.symbol || "?");
+    const all = [...new Set(held.flatMap((x) => [...x]))].sort();
+    const partial = all.filter((d) => held.some((x) => !x.has(d)));
+    const which = partial
+      .slice(0, 3)
+      .map((d) => `${mdw(d)} は「${syms.filter((_, i) => held[i].has(d)).join("")}」だけ`)
+      .join("、");
+    out.push({
+      kind: "plannedGroup",
+      sheet: first.sheet,
+      message:
+        `集計表の「${first.weekdays} ${syms.join("")} ${first.count} 回」は ${syms.length} つの講座を同じ回数としていますが、` +
+        `学期全体 (${mdOnly(term.start)}〜${mdOnly(term.end)}) で表の印を数えると ` +
+        `${syms.map((sym, i) => `${sym} ${counts[i]} 回`).join("・")}です` +
+        (which ? ` (${which}${partial.length > 3 ? ` ほか ${partial.length - 3} 日` : ""})` : "") +
+        "。回数か印のどちらかが誤っているかもしれません。学校に確認してください。",
+    });
+  }
+  return out;
 }
 
 /**

@@ -163,7 +163,7 @@ describe("mappingStatus", () => {
   const st = (m, c = course) => mappingStatus(c, m, days).status;
 
   it("対応・曜日・今の時間割から、比べられるかを決める", () => {
-    expect([...days.keys()]).toEqual(["高1|高松西 数学", "高1|高松西 理科"]);
+    expect([...days.keys()]).toEqual(["高1|高松西 数学", "高1|高松西 理科", "中2|数学"]);
     expect(st({ subjects: ["高1|高松西 数学"], skip: false })).toBe("ok");
     expect(st({ subjects: [], skip: true })).toBe("skip");
     expect(st({ subjects: [], skip: false })).toBe("unmapped");

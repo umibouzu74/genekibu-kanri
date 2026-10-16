@@ -17,6 +17,7 @@
 
 import { gradeToDept, isKameiRoom } from "../scheduleHelpers";
 import { courseWeekdays } from "./highSchoolSheet";
+import { expandGradeRange } from "../timetable";
 
 // 予定表の書き方 → システムの科目名の書き方 (長いものから置き換える)
 const SYNONYMS = [
@@ -154,6 +155,18 @@ export function systemGradesFor(course) {
   return out;
 }
 
+/**
+ * その学年のコマが講座の学年に入るか (対応表の候補・「予定表と違う学年のコマ」の印)。
+ * 中学部のコースは「中1-3」のような共通学年も重なれば入る (☆ プレップ)。
+ */
+export function courseGradeMatches(course, grade) {
+  if (course?.dept === "中学部") {
+    const grades = course.shared ? course.sheetGrades || [] : course.grades || [];
+    return middleGradeHit(grade, grades);
+  }
+  return systemGradesFor(course).has(grade);
+}
+
 function campusOk(course, slot) {
   if (course.campus === "亀井町") return isKameiRoom(slot.room || "");
   if (course.campus === "本校") return !isKameiRoom(slot.room || "");
@@ -173,7 +186,96 @@ export const subjectKey = (grade, subj) => `${grade}|${subj}`;
  *   unmatched は、予定表の学年・曜日に入るのにどの講座にも当たらなかったコマ
  */
 export function suggestMapping(courses, slots) {
-  const list = [...courses];
+  const all = [...courses];
+  const middle = suggestMiddleMapping(all.filter((c) => c.dept === "中学部"), slots);
+  const high = suggestHighMapping(all.filter((c) => c.dept !== "中学部"), slots);
+  return {
+    byCourse: new Map([...high.byCourse, ...middle.byCourse]),
+    unmatched: [...high.unmatched, ...middle.unmatched],
+  };
+}
+
+// 学年の表記がコースの学年と重なるか (「中1-3」は中1〜中3 のどれにも重なる)
+function middleGradeHit(slotGrade, grades) {
+  if (grades.includes(slotGrade)) return true;
+  const expanded = expandGradeRange(slotGrade);
+  return expanded.length > 1 && expanded.some((g) => grades.includes(g));
+}
+
+// 名前で当てる語 (「プレップ(個別指導)」「内申対策コース」→ プレップ / 内申対策)。
+// 「本科」「附中」「コース」はコマの科目名に出てこないので語にしない
+function middleNameWords(name) {
+  return normalizeName(name)
+    .replace(/[(（][^)）]*[)）]/g, "")
+    .replace(/本科|附中|コース|ゼミ/g, " ")
+    .split(/\s+/)
+    .filter((w) => [...w].length >= 2);
+}
+
+/**
+ * 中学部のコース (予定表の記号) → システムのコマ。中学部のコースは「その学年の、
+ * その曜日の授業ぜんぶ」なので、科目名ではなく学年 × いつもの曜日で当てる:
+ *   1. 名前のあるコース (☆ プレップ・★ 内申対策) は、学年が重なり、いつもの曜日にあり、
+ *      科目名に名前の語を含むコマ
+ *   2. 残りのコースは、学年がそのコースの学年 (中1 / 附中1 …) で、いつもの曜日にある
+ *      まだ当たっていないコマ (学年をまたぐコースは「中1-3」のような共通学年も)
+ * 推定なので、違えば対応表で人が直す (高校部と同じ)。
+ */
+function suggestMiddleMapping(list, slots) {
+  const weekdays = new Map(list.map((c) => [c.key, courseWeekdays(c).regular]));
+  const groups = new Map();
+  for (const s of slots || []) {
+    if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "中学部") continue;
+    const k = `${subjectKey(s.grade, s.subj)}|${s.day}`;
+    if (!groups.has(k)) groups.set(k, { key: subjectKey(s.grade, s.subj), grade: s.grade, subj: s.subj, day: s.day });
+  }
+  const gradesOf = (c) => (c.shared ? c.sheetGrades || [] : c.grades || []);
+  const assigned = new Map(list.map((c) => [c.key, new Set()]));
+  const taken = new Set();
+  const inScope = new Set();
+  // 1. 名前で
+  for (const c of list) {
+    const words = middleNameWords(c.name);
+    if (!words.length) continue;
+    for (const [gk, g] of groups) {
+      if (!weekdays.get(c.key).includes(g.day) || !middleGradeHit(g.grade, gradesOf(c))) continue;
+      inScope.add(gk);
+      const subj = normalizeName(g.subj);
+      if (!words.some((w) => subj.includes(w))) continue;
+      assigned.get(c.key).add(g.key);
+      taken.add(gk);
+    }
+  }
+  // 2. 学年 × 曜日で。欄 1 つのコース → 学年の少ないコースの順 (★ 内申対策 (中3) を
+  //    ☆ プレップ (中1〜中3) より先に。プレップが中3 の土曜のコマを取らないように)
+  const order = [...list].sort(
+    (a, b) => Number(!!a.shared) - Number(!!b.shared) || gradesOf(a).length - gradesOf(b).length
+  );
+  for (const c of order) {
+    if (assigned.get(c.key).size) continue;
+    const grades = gradesOf(c);
+    for (const [gk, g] of groups) {
+      if (!weekdays.get(c.key).includes(g.day)) continue;
+      const exact = grades.includes(g.grade);
+      const common = c.shared && grades.length > 1 && middleGradeHit(g.grade, grades);
+      if (!exact && !common) continue;
+      inScope.add(gk);
+      if (taken.has(gk)) continue;
+      assigned.get(c.key).add(g.key);
+      taken.add(gk);
+    }
+  }
+  const byCourse = new Map(list.map((c) => [c.key, { subjects: [...assigned.get(c.key)].sort(), ambiguous: [] }]));
+  const unmatchedMap = new Map();
+  for (const [gk, g] of groups) {
+    if (!inScope.has(gk) || taken.has(gk)) continue;
+    if (!unmatchedMap.has(g.key)) unmatchedMap.set(g.key, { key: g.key, grade: g.grade, subj: g.subj, days: [] });
+    unmatchedMap.get(g.key).days.push(g.day);
+  }
+  return { byCourse, unmatched: [...unmatchedMap.values()] };
+}
+
+function suggestHighMapping(list, slots) {
   const weekdays = new Map(list.map((c) => [c.key, courseWeekdays(c).regular]));
   // (学年, 科目, 曜日) ごとにまとめる
   const groups = new Map();
@@ -369,13 +471,13 @@ export function effectiveMapping(suggested, overrides = {}) {
 }
 
 /**
- * システムの高校部のコマの「学年|科目名」→ 曜日の一覧。
+ * システムのコマ (高校部・中学部) の「学年|科目名」→ 曜日の一覧。
  * @returns {Map<string, string[]>}
  */
 export function subjectDays(slots) {
   const m = new Map();
   for (const s of slots || []) {
-    if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "高校部") continue;
+    if (!s?.grade || !s.subj || !gradeToDept(s.grade)) continue;
     const k = subjectKey(s.grade, s.subj);
     if (!m.has(k)) m.set(k, []);
     m.get(k).push(s.day);

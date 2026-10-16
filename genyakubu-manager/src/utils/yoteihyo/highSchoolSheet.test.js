@@ -441,6 +441,45 @@ describe("予定表の点検 (集計表の記号どうし)", () => {
     const p = parseHighSchoolSheet(buildH3());
     expect(p.warnings.filter((x) => x.kind === "plannedGroup")).toEqual([]);
   });
+
+  it("学期の頭が前のシートにあっても、まとめた学期全体で記号どうしを比べる", () => {
+    // 実際の予定表の形: 8/28 (★☆ だけ) は【8月】のシート、集計表は【9月】のシートにある
+    const aug = makeSheet("2026\u3000H3\u3000【8月】", (s) => {
+      s.set(1, 1, "2026年度\u3000【高3ゼミ】\u30008月予定表");
+      s.set(4, 3, "本校");
+      s.set(6, 3, "共通テスト");
+      const m = s.month({ year: 2026, month: 8, dayCol: 1, firstRow: 7, labelRow: 3 });
+      s.set(m.get("2026-08-28"), 3, "★☆");
+      s.set(42, 3, "\u3000●：共通テスト英語(ハイレベル)\u3000\u3000★：共通テスト数学\u3000\u3000☆：共通テスト国語");
+    });
+    const sep = makeSheet("2026\u3000H3\u3000【9月】", (s) => {
+      s.set(1, 1, "2026年度\u3000【高3ゼミ】\u30009月予定表");
+      s.set(4, 3, "本校");
+      s.set(6, 3, "共通テスト");
+      const m = s.month({ year: 2026, month: 9, dayCol: 1, firstRow: 7, labelRow: 3 });
+      for (const [iso, r] of m) if (weekdayIndexOf(iso) === 5) s.set(r, 3, "●★☆");
+      s.set(42, 3, "\u3000●：共通テスト英語(ハイレベル)\u3000\u3000★：共通テスト数学\u3000\u3000☆：共通テスト国語");
+      s.set(9, 12, "金");
+      s.set(9, 13, "●★☆");
+      s.set(9, 14, 4);
+    });
+    const pSep = parseHighSchoolSheet(sep);
+    // シートの中だけでは合っている
+    expect(pSep.warnings.filter((x) => x.kind === "plannedGroup")).toEqual([]);
+    const merged = mergeHighSchoolSheets([
+      { name: "9月", parsed: pSep },
+      { name: "8月", parsed: parseHighSchoolSheet(aug) },
+    ]);
+    const w = merged.warnings.filter((x) => x.kind === "plannedGroup");
+    expect(w).toHaveLength(1);
+    expect(w[0].sheet).toBe("9月");
+    expect(w[0].message).toBe(
+      "集計表の「金 ●★☆ 4 回」は 3 つの講座を同じ回数としていますが、学期全体 (8/28〜9/25) で表の印を数えると " +
+        "● 4 回・★ 5 回・☆ 5 回です (8/28 (金) は「★☆」だけ)。回数か印のどちらかが誤っているかもしれません。学校に確認してください。"
+    );
+    // 予定回数の点検だけでは、シートの期間・シート名の月で数えると 4 回になり見逃す
+    expect(checkPlannedCounts(merged)).toEqual([]);
+  });
 });
 
 describe("予定表の点検 (表の外の印)", () => {

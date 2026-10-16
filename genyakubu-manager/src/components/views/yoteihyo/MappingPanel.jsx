@@ -14,9 +14,9 @@ import { colors } from "../../../styles/tokens";
 import { courseWeekdays } from "../../../utils/yoteihyo/highSchoolSheet";
 import {
   MAPPING_PROBLEMS,
+  courseGradeMatches,
   mappingStatus,
   subjectDays,
-  systemGradesFor,
 } from "../../../utils/yoteihyo/courseMapping";
 import { courseLabel, subjectLabel } from "../../../utils/yoteihyo/labels";
 import { WARN_TEXT } from "./styles";
@@ -60,11 +60,10 @@ export function MappingPanel({
 
   const startEdit = (course) => {
     const current = mapping.get(course.key)?.subjects || [];
-    const grades = systemGradesFor(course);
     setEditing(course.key);
     setDraft(current);
     // 違う学年のコマを選んであれば、最初から全学年の候補を出す
-    setOtherGrades(current.some((k) => !grades.has(k.split("|")[0])));
+    setOtherGrades(current.some((k) => !courseGradeMatches(course, k.split("|")[0])));
   };
   const setOverride = (key, value) => {
     if (!canEdit) return;
@@ -138,10 +137,10 @@ export function MappingPanel({
             {rows.map(({ course, m, wd, status, valid, stale }) => {
               const isEditing = editing === course.key;
               const label = courseLabel(course);
-              const grades = systemGradesFor(course);
+              const inGrade = (k) => courseGradeMatches(course, k.split("|")[0]);
               const wide = isEditing && otherGrades;
               const candidates = [...daysBySubject.entries()]
-                .filter(([k, days]) => (wide || grades.has(k.split("|")[0])) && days.some((d) => wd.includes(d)))
+                .filter(([k, days]) => (wide || inGrade(k)) && days.some((d) => wd.includes(d)))
                 .map(([k]) => k);
               for (const k of draft) if (isEditing && !candidates.includes(k)) candidates.push(k);
               candidates.sort();
@@ -201,7 +200,7 @@ export function MappingPanel({
                       {m?.manual && status !== "skip" && (
                         <span style={{ color: colors.inkMuted, marginLeft: 4 }}>(手で選んだ)</span>
                       )}
-                      {valid.some((k) => !grades.has(k.split("|")[0])) && (
+                      {valid.some((k) => !inGrade(k)) && (
                         <span style={{ color: colors.inkMuted, marginLeft: 4 }}>(予定表と違う学年のコマ)</span>
                       )}
                       {ambiguous.length > 0 && (

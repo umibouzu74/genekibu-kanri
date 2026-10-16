@@ -13,7 +13,9 @@
 //   - 最後の授業日が読み込んだ予定表の期間の終わり近く (END_MARGIN 日以内) なら、
 //     その後の予定表で授業が続くかもしれないので注意を付ける (既定では選ばない)。
 //     予定表が年度末 (3/31) まであるなら続きは無いので付けない
-//   - 中学部のコース (M|…) は扱わない (中学部の予定表は未対応)
+//   - 中学部のコース (M|学年|曜日) も同じ。中学部のコースは学年の平日ぜんぶで
+//     1 コース (utils/cohorts) なので、中3 の本科 火木 (12/17) と 水金 (12/16) は
+//     遅い方の 12/17 が案になる (水金のコマは 12/17 (木) に無いので同じこと)
 
 import { deriveCohortsFromSlots } from "../cohorts";
 import { findGroupForGrade } from "../timetable";
@@ -48,7 +50,7 @@ export function lastHeldDate(course) {
  * }}
  */
 export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) {
-  const cohorts = deriveCohortsFromSlots(slots).filter((c) => c.dept === "高校部");
+  const cohorts = deriveCohortsFromSlots(slots);
   const cohortBySlot = new Map();
   for (const c of cohorts) for (const id of c.slotIds || []) cohortBySlot.set(id, c);
   const saved = new Map((displayCutoff?.cohorts || []).filter((c) => c?.id).map((c) => [c.id, c]));

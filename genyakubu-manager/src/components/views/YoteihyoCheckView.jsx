@@ -3,6 +3,7 @@
 // 食い違う日を一覧にする。読み取り・突き合わせは utils/yoteihyo:
 //   - xlsReader / xlsxReader  … .xls (BIFF8) / .xlsx を読む (値・塗り・結合)
 //   - highSchoolSheet         … 高校部の予定表から講座ごとの授業日を取り出す
+//   - middleSchoolSheet       … 中学部の予定表 (中1・中2 / 中3) からコースごとの授業日と第N回
 //   - courseMapping           … 予定表の講座 → システムのコマ (学年|科目名) の推定
 //   - compare                 … システムの実施判定と比べ、直す案 (休講日・コマ休講) を作る
 //
@@ -16,8 +17,10 @@
 //     実施日に加える案を出す (どちらも 6 秒の「元に戻す」つき)
 //   - 振替で入る授業 (いつもの曜日以外) は、注記の「12/7(月)の振替」から
 //     日まるごと振替を開く案内を出す
-//   - 読めるのは高校部の予定表 (高1・高2 / 高3) だけ。中学部の予定表・
+//   - 読めるのは高校部の予定表 (高1・高2 / 高3) と中学部の予定表 (中1・中2 / 中3)。
 //     年間カレンダーは「未対応」と出す
+//   - 予定表の第N回 (中学部の「☆14」・マークテストの「⑯」) とシステムの第N回を比べる
+//     (compare.compareSessionNumbers。回数のカウンタが 1 本の講座だけ)
 //   - 講座とコマの対応を手で直した結果と、「確認済み (対応不要)」にした食い違いは
 //     同期データ (appData。PC と iPad で共有。書けるのは管理者だけ)。旧版で端末に
 //     保存していた対応 (LS.yoteihyoMapping) は、共有するまで重ねて使う
@@ -59,6 +62,7 @@ import {
   applyFixes,
   buildDayPlans,
   compareSchedules,
+  compareSessionNumbers,
   dropHolidayException,
   groupSkippedRanges,
   newCancelsFor,
@@ -83,6 +87,7 @@ import { SheetList } from "./yoteihyo/SheetList";
 import { MappingPanel } from "./yoteihyo/MappingPanel";
 import { DayPlanCard } from "./yoteihyo/DayPlanCard";
 import { CutoffProposalPanel } from "./yoteihyo/CutoffProposalPanel";
+import { SessionNumberPanel } from "./yoteihyo/SessionNumberPanel";
 import { WARN_TEXT } from "./yoteihyo/styles";
 
 const panel = { ...S.panel, padding: 14, marginBottom: 16 };
@@ -338,6 +343,11 @@ export function YoteihyoCheckView({
     [merged, isAdmin, saveDisplayCutoff, mapping, slots, displayCutoff]
   );
   const plannedIssues = useMemo(() => (merged ? checkPlannedCounts(merged) : []), [merged]);
+  // 予定表の第N回 (☆14 / ⑯) とシステムの第N回の食い違い
+  const sessionNumberIssues = useMemo(
+    () => (merged ? compareSessionNumbers({ merged, mapping, slots, sys }) : []),
+    [merged, mapping, slots, sys]
+  );
   const overlapsSel = useMemo(
     () => (sheets ? overlappingSelections(sheets, selected) : []),
     [sheets, selected]
@@ -578,8 +588,9 @@ export function YoteihyoCheckView({
           {"学校から届く予定表 (Excel) を読み込み、システムに登録した休講・振替と食い違う日を一覧にします。" +
             "直す案のボタンを押すまで、システムの登録は変わりません。"}
           <br />
-          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b>
-          {" だけです。予定表の灰色の欄は休講、空欄は授業なし、黄色の欄は変更・振替、赤い行は休校・祝日として読みます。"}
+          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b> と<b>中学部の予定表 (中1・中2 / 中3)</b>
+          {" です。高校部は灰色の欄を休講、空欄を授業なし、黄色の欄を変更・振替、赤い行を休校・祝日として読みます。" +
+            "中学部は記号 (■21 など) を授業あり・その日の第N回、「※」を授業なし、黒い曜日を休日として読みます。"}
         </p>
         <div
           onDragOver={(e) => {
@@ -636,10 +647,10 @@ export function YoteihyoCheckView({
             使うシート
           </h2>
           <SheetList key={book.loadId} sheets={book.sheets} selected={selected} onChange={setSelected} today={today} />
-          {!book.sheets.some((s) => s.kind === "high") ? (
+          {!book.sheets.some((s) => s.parsed) ? (
             <p role="note" style={{ ...warnNote, marginTop: 6 }}>
-              {"このファイルには、読み込める高校部の予定表のシートがありません。" +
-                "中学部の予定表・年間カレンダーにはまだ対応していません。"}
+              {"このファイルには、読み込める高校部・中学部の予定表のシートがありません。" +
+                "年間カレンダーにはまだ対応していません。"}
             </p>
           ) : (
             !merged && (
@@ -679,6 +690,15 @@ export function YoteihyoCheckView({
           plan={cutoffPlan}
           courses={merged.courses}
           onApply={applyCutoffs}
+        />
+      )}
+
+      {merged && (
+        <SessionNumberPanel
+          items={sessionNumberIssues}
+          courses={merged.courses}
+          panelStyle={panel}
+          headingStyle={h2}
         />
       )}
 
