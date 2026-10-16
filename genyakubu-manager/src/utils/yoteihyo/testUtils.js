@@ -185,3 +185,104 @@ export function smallT1T2Sheet({ name = "T1T2", year = 2026, wrongWeekday = fals
     s.set(47, 6, "☆9");
   });
 }
+
+export const ORANGE = "#ffc000";
+export const PALE_YELLOW = "#ffffcc";
+export const MOCK_GREEN = "#92d050";
+
+// 教員用の年間カレンダー (形は 2026 年度の「2026年度カレンダー」を写したもの。中身は作りもの)。
+// 10〜12 月だけの 3 ブロック = [日][曜日][行事 (4 列結合)][土日 休み][日月 休み]。
+//   - 「1」= その型の公休 (日曜・祝日・塾の休みは両方の型が休み)
+//   - 10/12 スポーツの日・11/3 文化の日・11/23 勤労感謝の日は曜日の欄が黒 (祝日)。
+//     11/23 は行事の欄が橙 (凡例: 予備校授業あり→現役生も授業可能 = 公休ではない)
+//   - 10/17 (土)・12/29〜31 は行事の欄が黄色 (凡例: 予備校授業なし→現役生も休み)
+//   - 11/1 (日) はチャレ④ (模試の緑) で出勤 (どちらの型も公休でない)
+//   - 12/1 (火) は教科会議 (凡例: 教員半休の薄い黄色)
+//   - 12/19・12/20 は「共通テスト※」で両方の型に印。12 月の休日数は 1 日少なく
+//     書いてある (注記「※共通テストは，どちらか1日出勤」)
+//   - 右端に「2025年度カレンダー」の書き残し
+export function smallCalendarSheet({ name = "2026年度カレンダー", year = 2026 } = {}) {
+  const months = [10, 11, 12];
+  const holidays = { "10-12": "スポーツの日", "11-03": "文化の日", "11-23": "勤労感謝の日" };
+  const closed = new Set(["10-17", "12-29", "12-30", "12-31"]);
+  const counts = new Map(); // month → [土日, 日月]
+  const sheet = makeSheet(name, (s) => {
+    s.set(0, 30, "2025年度カレンダー");
+    months.forEach((month, i) => {
+      const b = i * 8;
+      for (const [k, label] of [
+        [6, "土日 休み"],
+        [7, "日月 休み"],
+      ]) {
+        s.set(0, b + k, label, "#bdd7ee");
+        s.set(1, b + k, null);
+        s.merge(0, b + k, 1, b + k);
+      }
+      s.set(2, b, `${month}\n月`, "#c9c9c9");
+      s.merge(2, b, 2, b + 7);
+      const map = s.month({ year, month, dayCol: b, firstRow: 3 });
+      let sat = 0;
+      let mon = 0;
+      let starred = 0;
+      for (const [iso, r] of map) {
+        const wd = weekdayIndexOf(iso);
+        const md = iso.slice(5);
+        const hol = holidays[md];
+        if (wd === 0 || hol) s.set(r, b + 1, "日月火水木金土"[wd], BLACK);
+        const ev = (text, fill = null) => {
+          s.set(r, b + 2, text, fill);
+          for (let c = b + 3; c <= b + 5; c++) s.set(r, c, null, fill);
+          s.merge(r, b + 2, r, b + 5);
+        };
+        let offSat = wd === 0 || wd === 6;
+        let offMon = wd === 0 || wd === 1;
+        if (hol) {
+          ev(hol, md === "11-23" ? ORANGE : null);
+          offSat = offMon = md !== "11-23";
+        }
+        if (closed.has(md)) {
+          ev(null, YELLOW);
+          offSat = offMon = true;
+        }
+        if (md === "11-01") {
+          ev("チャレ④", MOCK_GREEN);
+          offSat = offMon = false;
+        }
+        if (md === "12-01") ev("教科会議", PALE_YELLOW);
+        if (md === "12-19" || md === "12-20") {
+          ev("共通テスト※");
+          offSat = offMon = true;
+          starred += 1;
+        }
+        if (offSat) {
+          s.set(r, b + 6, 1);
+          sat += 1;
+        }
+        if (offMon) {
+          s.set(r, b + 7, 1);
+          mon += 1;
+        }
+      }
+      // 「※」の 2 日はどちらか 1 日出勤なので、表の数は 1 日少ない
+      const less = starred ? 1 : 0;
+      counts.set(month, [sat - less, mon - less]);
+      s.set(34, b + 6, sat - less);
+      s.set(34, b + 7, mon - less);
+    });
+    const total = (k) => [...counts.values()].reduce((a, v) => a + v[k], 0);
+    s.set(35, 5, total(0));
+    s.set(35, 6, null);
+    s.merge(35, 5, 35, 6);
+    s.set(35, 7, total(1));
+    s.set(35, 8, null);
+    s.merge(35, 7, 35, 8);
+    s.set(35, 18, "※共通テストは，どちらか1日出勤");
+    s.set(36, 0, "予備校授業なし→現役生も休み", YELLOW);
+    s.merge(36, 0, 36, 5);
+    s.set(36, 8, "予備校授業あり→現役生も授業可能", ORANGE);
+    s.merge(36, 8, 36, 13);
+    s.set(36, 16, "教員半休", PALE_YELLOW);
+    s.merge(36, 16, 36, 18);
+  });
+  return { sheet, counts };
+}

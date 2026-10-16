@@ -17,8 +17,11 @@
 //     実施日に加える案を出す (どちらも 6 秒の「元に戻す」つき)
 //   - 振替で入る授業 (いつもの曜日以外) は、注記の「12/7(月)の振替」から
 //     日まるごと振替を開く案内を出す
-//   - 読めるのは高校部の予定表 (高1・高2 / 高3) と中学部の予定表 (中1・中2 / 中3)。
-//     年間カレンダーは「未対応」と出す
+//   - 読めるのは高校部の予定表 (高1・高2 / 高3) と中学部の予定表 (中1・中2 / 中3)、
+//     教員用の年間カレンダー (annualCalendarSheet)。年間カレンダーは講座の突き合わせに
+//     混ぜず、日単位で「塾の休み・祝日にシステムの授業があるか」を比べ (calendarCompare)、
+//     直す案は全日休講だけ (注記で振り替えている日は日まるごと振替の案内)。
+//     「有給・半休に取り込む」で常勤の公休 (土日 休み / 日月 休み) を有給・半休の画面へ
 //   - 予定表の第N回 (中学部の「☆14」・マークテストの「⑯」) とシステムの第N回を比べる
 //     (compare.compareSessionNumbers。回数のカウンタが 1 本の講座だけ)
 //   - 講座とコマの対応を手で直した結果と、「確認済み (対応不要)」にした食い違いは
@@ -88,6 +91,9 @@ import { MappingPanel } from "./yoteihyo/MappingPanel";
 import { DayPlanCard } from "./yoteihyo/DayPlanCard";
 import { CutoffProposalPanel } from "./yoteihyo/CutoffProposalPanel";
 import { SessionNumberPanel } from "./yoteihyo/SessionNumberPanel";
+import { CalendarCheckPanel } from "./yoteihyo/CalendarCheckPanel";
+import { collectMovesFromSheets, compareCalendar } from "../../utils/yoteihyo/calendarCompare";
+import { calendarForLeave } from "../../utils/yoteihyo/annualCalendarSheet";
 import { WARN_TEXT } from "./yoteihyo/styles";
 
 const panel = { ...S.panel, padding: 14, marginBottom: 16 };
@@ -171,6 +177,11 @@ export function YoteihyoCheckView({
   onOpenDayReschedule,
   onEditHoliday,
   onOpenTimetableManager,
+  // 年間カレンダーを有給・半休に取り込む (管理者だけが読めるデータ。書ける人のときだけ)。
+  // leaveCalendarFor(year) = 取り込み済みのカレンダー (無ければ null)
+  onImportLeaveCalendar,
+  leaveCalendarFor,
+  onOpenLeave,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -352,6 +363,23 @@ export function YoteihyoCheckView({
     () => (sheets ? overlappingSelections(sheets, selected) : []),
     [sheets, selected]
   );
+  // 選んだ年間カレンダーと、休講日との食い違い。振替元の日は講座の表 (選んでいない
+  // ものも) の注記から読む
+  const calendarSheets = useMemo(
+    () => (sheets ? sheets.filter((s) => s.calendar && selected.has(s.index)) : EMPTY),
+    [sheets, selected]
+  );
+  const calendarMoves = useMemo(
+    () => collectMovesFromSheets((sheets || []).filter((s) => s.parsed).map((s) => s.parsed)),
+    [sheets]
+  );
+  const calendarItems = useMemo(
+    () =>
+      calendarSheets.map((s) =>
+        compareCalendar({ calendar: s.calendar, slots, sys, subs, moves: calendarMoves })
+      ),
+    [calendarSheets, slots, sys, subs, calendarMoves]
+  );
 
   const visiblePlans = onlyUpcoming ? displayPlans.filter((p) => p.date >= today) : displayPlans;
   const fixable = visiblePlans.filter((p) => p.fix.holidays.length || p.fix.cancels.length);
@@ -453,6 +481,45 @@ export function YoteihyoCheckView({
       }
     },
     [isAdmin, holidays, adjustments, saveHolidays, saveAdjustments, toasts, confirm, today, visiblePlans]
+  );
+
+  // 年間カレンダーの直す案 (全日休講) を登録する。書き込む時点の配列から足す分を決める
+  const applyCalendar = useCallback(
+    async (items, { bulk = false } = {}) => {
+      if (!isAdmin || !saveHolidays) return;
+      const preview = newHolidaysFor(holidays, items);
+      if (!preview.added.length) {
+        toasts.info("登録済みです (同じ日の全日休講が既にあります)");
+        return;
+      }
+      if (bulk) {
+        const past = items.filter((x) => x.date < today).length;
+        const ok = await confirm({
+          title: "全日休講の案をまとめて登録",
+          message:
+            `年間カレンダーで授業の無い ${preview.added.length} 日を全日休講にします。` +
+            (past ? `今日より前の日が ${past} 日含まれます (第N回の数え方が変わります)。` : "") +
+            "登録した後も「休講・テスト期間・イベント」の休講から 1 件ずつ消せます。",
+          okLabel: "登録する",
+        });
+        if (!ok) return;
+      }
+      const ids = new Set();
+      saveHolidays((prev) => {
+        ids.clear();
+        const { added } = newHolidaysFor(prev, items);
+        for (const h of added) ids.add(h.id);
+        return added.length ? [...prev, ...added] : prev;
+      });
+      toasts.success(`全日休講を ${preview.added.length} 件登録しました`, {
+        duration: 6000,
+        action: {
+          label: "元に戻す",
+          onClick: () => saveHolidays((prev) => prev.filter((h) => !ids.has(h.id))),
+        },
+      });
+    },
+    [isAdmin, saveHolidays, holidays, toasts, confirm, today]
   );
 
   // 消えるカードの次へフォーカスを移す (カードが残るならその日の見出しへ)
@@ -588,9 +655,11 @@ export function YoteihyoCheckView({
           {"学校から届く予定表 (Excel) を読み込み、システムに登録した休講・振替と食い違う日を一覧にします。" +
             "直す案のボタンを押すまで、システムの登録は変わりません。"}
           <br />
-          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b> と<b>中学部の予定表 (中1・中2 / 中3)</b>
+          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b>・<b>中学部の予定表 (中1・中2 / 中3)</b>・
+          <b>教員用の年間カレンダー</b>
           {" です。高校部は灰色の欄を休講、空欄を授業なし、黄色の欄を変更・振替、赤い行を休校・祝日として読みます。" +
-            "中学部は記号 (■21 など) を授業あり・その日の第N回、「※」を授業なし、黒い曜日を休日として読みます。"}
+            "中学部は記号 (■21 など) を授業あり・その日の第N回、「※」を授業なし、黒い曜日を休日として読みます。" +
+            "年間カレンダーは塾の休み・祝日とシステムの休講日を比べ、常勤の公休 (土日 休み / 日月 休み) を有給・半休に取り込めます。"}
         </p>
         <div
           onDragOver={(e) => {
@@ -647,13 +716,13 @@ export function YoteihyoCheckView({
             使うシート
           </h2>
           <SheetList key={book.loadId} sheets={book.sheets} selected={selected} onChange={setSelected} today={today} />
-          {!book.sheets.some((s) => s.parsed) ? (
+          {!book.sheets.some((s) => s.parsed || s.calendar) ? (
             <p role="note" style={{ ...warnNote, marginTop: 6 }}>
-              {"このファイルには、読み込める高校部・中学部の予定表のシートがありません。" +
-                "年間カレンダーにはまだ対応していません。"}
+              このファイルには、読み込める高校部・中学部の予定表・年間カレンダーのシートがありません。
             </p>
           ) : (
-            !merged && (
+            !merged &&
+            !calendarSheets.length && (
               <p role="note" style={{ ...note, marginTop: 6 }}>
                 比べるシートにチェックを入れてください。
               </p>
@@ -821,6 +890,32 @@ export function YoteihyoCheckView({
           )}
         </section>
       )}
+
+      {calendarSheets.map((s, i) => (
+        <CalendarCheckPanel
+          key={`calendar-${book.loadId}-${s.index}`}
+          sheet={s}
+          items={calendarItems[i] || EMPTY}
+          today={today}
+          isAdmin={isAdmin}
+          panelStyle={panel}
+          headingStyle={h2}
+          headingId={`${idBase}-calendar-${s.index}`}
+          onApply={saveHolidays ? applyCalendar : undefined}
+          onOpenDayReschedule={onOpenDayReschedule}
+          onEditHoliday={onEditHoliday}
+          onImportLeave={
+            isAdmin && onImportLeaveCalendar
+              ? () =>
+                  onImportLeaveCalendar(
+                    calendarForLeave(s.calendar, { source: `${book.fileName} / ${s.name}`, importedAt: today })
+                  )
+              : undefined
+          }
+          importedLeave={leaveCalendarFor ? leaveCalendarFor(s.calendar.fiscalYear) : null}
+          onOpenLeave={onOpenLeave}
+        />
+      ))}
     </div>
   );
 }

@@ -584,7 +584,7 @@ function keywordsFor(offSlots, keepSlots) {
 }
 
 // その日にそのコマへの登録 (合同・移動 / 代行・欠勤) があるか
-function registrationOn(slot, date, adjustments, subs) {
+export function registrationOn(slot, date, adjustments, subs) {
   const adj = adjustments.some(
     (a) => a?.date === date && (a.slotId === slot.id || (a.combineSlotIds || []).includes(slot.id))
   );

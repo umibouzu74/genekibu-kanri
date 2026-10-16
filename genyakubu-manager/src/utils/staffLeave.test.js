@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   LEAVE_RANGE_MAX_DAYS,
+  NO_WORK_PATTERN,
+  calendarDayOf,
+  calendarFor,
   countLeave,
   fmtLeaveDays,
   grantFor,
@@ -8,13 +11,20 @@ import {
   leaveKey,
   leaveRangeDates,
   migrateStaffLeave,
+  offDayPredicate,
+  publicOffCount,
+  publicOffOf,
   recordsInRange,
   removeLeave,
+  restoreCalendars,
+  setCalendar,
   setGrant,
   setLeave,
   setLeaveForDates,
+  setWorkPattern,
   summarizeYear,
   upcomingLeave,
+  workPatternFor,
   yearsWithLeave,
 } from "./staffLeave";
 
@@ -150,5 +160,85 @@ describe("数える", () => {
       },
     ]);
     expect(upcomingLeave(leave, "2026-10-03")).toEqual([]);
+  });
+});
+
+describe("年間カレンダーと休みの型", () => {
+  const cal = {
+    year: 2026,
+    source: "予定表.xls / 2026年度カレンダー",
+    patterns: [
+      { key: "土日", label: "土日 休み", offDates: ["2026-10-17", "2026-10-18", "2026-10-25"], total: 2 },
+      { key: "日月", label: "日月 休み", offDates: ["2026-10-18", "2026-10-19", "2026-10-25"] },
+    ],
+    days: [
+      { date: "2026-10-12", holiday: true, event: "スポーツの日" },
+      { date: "2026-10-17", kind: "closed" },
+      { date: "2026-10-20", kind: "zzz" },
+    ],
+    notes: ["※共通テストは，どちらか1日出勤"],
+  };
+
+  it("空のカレンダー・型はキーごと持たない (取り込む前の形のまま)", () => {
+    expect(migrateStaffLeave({ records: [], grants: [], calendars: [], workPatterns: [] })).toEqual(EMPTY);
+  });
+
+  it("年度ごとに 1 つ・形にならない日は落とす", () => {
+    let l = setCalendar(EMPTY, cal);
+    l = setCalendar(l, { ...cal, source: "新しい版" });
+    expect(l.calendars).toHaveLength(1);
+    expect(calendarFor(l, 2026).source).toBe("新しい版");
+    expect(calendarFor(l, 2026).days.map((d) => d.date)).toEqual(["2026-10-12", "2026-10-17"]);
+    expect(calendarFor(l, 2025)).toBeNull();
+    // 元に戻す: 控えた年度だけ
+    l = setCalendar(l, { ...cal, year: 2025 });
+    l = restoreCalendars(l, [2026], []);
+    expect(l.calendars.map((c) => c.year)).toEqual([2025]);
+  });
+
+  it("休みの型は「この年度から」。前の年度と同じ型は持たない", () => {
+    let l = setWorkPattern(EMPTY, "石原", 2025, "土日");
+    expect(workPatternFor(l, "石原", 2026)).toBe("土日");
+    expect(workPatternFor(l, "石原", 2024)).toBeNull();
+    l = setWorkPattern(l, "石原", 2026, "土日");
+    expect(l.workPatterns).toHaveLength(1);
+    l = setWorkPattern(l, "石原", 2026, "日月");
+    expect(workPatternFor(l, "石原", 2026)).toBe("日月");
+    expect(workPatternFor(l, "石原", 2025)).toBe("土日");
+    l = setWorkPattern(l, "石原", 2026, NO_WORK_PATTERN);
+    expect(workPatternFor(l, "石原", 2026)).toBeNull();
+    l = setWorkPattern(l, "石原", 2026, "土日");
+    expect(l.workPatterns).toEqual([{ name: "石原", fromYear: 2025, pattern: "土日" }]);
+  });
+
+  it("その人のその日の公休・カレンダーの日", () => {
+    let l = setCalendar(EMPTY, cal);
+    expect(publicOffOf(l, "石原", "2026-10-17")).toBeNull(); // 型が無い
+    l = setWorkPattern(l, "石原", 2026, "土日");
+    l = setWorkPattern(l, "堀上", 2026, "日月");
+    expect(publicOffOf(l, "石原", "2026-10-17")).toEqual({ off: true, pattern: "土日", label: "土日 休み" });
+    expect(publicOffOf(l, "石原", "2026-10-19").off).toBe(false);
+    expect(publicOffOf(l, "堀上", "2026-10-19").off).toBe(true);
+    expect(publicOffOf(l, "石原", "2027-04-03")).toBeNull(); // 次の年度のカレンダーは無い
+    expect(calendarDayOf(l, "2026-10-12")).toEqual({ date: "2026-10-12", holiday: true, event: "スポーツの日" });
+    expect(calendarDayOf(l, "2026-10-13")).toBeNull();
+    expect(publicOffCount(l, "石原", 2026)).toBe(2);
+    expect(publicOffCount(l, "堀上", 2026)).toBe(3);
+    expect(publicOffCount(l, "片岡", 2026)).toBeNull();
+  });
+
+  it("期間で入れるときは公休を除く (カレンダーの無い年度は日曜)", () => {
+    let l = setCalendar(EMPTY, cal);
+    expect(offDayPredicate(l, "石原", "2026-10-16", "2026-10-20")).toBeNull();
+    l = setWorkPattern(l, "石原", 2026, "土日");
+    const isOff = offDayPredicate(l, "石原", "2026-10-16", "2026-10-20");
+    expect(leaveRangeDates("2026-10-16", "2026-10-20", { isOff }).dates).toEqual([
+      "2026-10-16",
+      "2026-10-19",
+      "2026-10-20",
+    ]);
+    // 2027 年度 (カレンダーなし) の日は日曜だけ除く
+    expect(isOff("2027-04-04")).toBe(true);
+    expect(isOff("2027-04-03")).toBe(false);
   });
 });

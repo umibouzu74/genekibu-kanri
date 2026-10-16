@@ -6,7 +6,7 @@ import {
   overlappingSelections,
   selectedInMergeOrder,
 } from "./sheetSelection";
-import { makeSheet, smallH12Sheet } from "./testUtils";
+import { makeSheet, smallCalendarSheet, smallH12Sheet } from "./testUtils";
 
 const calendar = makeSheet("年間カレンダー", (s) => s.set(0, 0, "2026年度 年間カレンダー"));
 const middle = makeSheet("中3", (s) => s.set(0, 0, "2026年度 中3 予定表"));
@@ -59,5 +59,25 @@ describe("selectedInMergeOrder / overlappingSelections", () => {
     const overlaps = overlappingSelections(sheets, selected);
     expect(overlaps.map((o) => [o.first.name, o.second.name])).toEqual([["H1H2 教員用", "H1H2 生徒用"]]);
     expect(overlappingSelections(sheets, new Set([0]))).toEqual([]);
+  });
+});
+
+describe("年間カレンダーのシート", () => {
+  it("読めたカレンダーは calendar に持ち、講座の表 (parsed) には混ぜない", () => {
+    const sheets = analyzeWorkbook({ sheets: [smallH12Sheet(), smallCalendarSheet().sheet] });
+    expect(sheets[1]).toMatchObject({ kind: "calendar", parsed: null });
+    expect(sheets[1].calendar.fiscalYear).toBe(2026);
+    expect(sheets[0].calendar).toBeNull();
+    // 既定では今年度のカレンダーも選ぶ。講座の突き合わせには入らない
+    const selected = defaultSheetSelection(sheets, "2026-10-09");
+    expect([...selected].sort()).toEqual([0, 1]);
+    expect(selectedInMergeOrder(sheets, selected).map((s) => s.index)).toEqual([0]);
+    expect(overlappingSelections(sheets, selected)).toEqual([]);
+  });
+
+  it("前の年度のカレンダーは選ばない", () => {
+    const sheets = analyzeWorkbook({ sheets: [smallCalendarSheet({ name: "2025年度カレンダー", year: 2025 }).sheet] });
+    expect(sheets[0].calendar.fiscalYear).toBe(2025);
+    expect([...defaultSheetSelection(sheets, "2026-10-09")]).toEqual([]);
   });
 });

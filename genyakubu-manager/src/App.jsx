@@ -59,7 +59,14 @@ import {
   indexAffiliationChanges,
   resolveAffiliation,
 } from "./utils/teacherAffiliations";
-import { leaveKindMeta, setLeaveForDates } from "./utils/staffLeave";
+import {
+  calendarFor,
+  leaveKindMeta,
+  offDayPredicate,
+  restoreCalendars,
+  setCalendar,
+  setLeaveForDates,
+} from "./utils/staffLeave";
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
@@ -324,6 +331,32 @@ export default function App() {
       ).tracksLeave,
     [affiliationIndex, partTimeNameSet]
   );
+  // 期間で有給・半休を入れるときに除く日 (年間カレンダーの公休。無ければ null =
+  // 呼び出し側は日曜を除く)。複数日の欠勤登録の「有給・半休にも記録する」で使う
+  const leaveOffDay = useCallback(
+    (name, from, to) => offDayPredicate(staffLeave, name, from, to),
+    [staffLeave]
+  );
+  // 予定表チェックの年間カレンダーを有給・半休に取り込む (同じ年度のものは入れ替え)。
+  // 6 秒の「元に戻す」は、その年度の前のカレンダーへ戻すだけ
+  const importLeaveCalendar = useCallback(
+    (cal) => {
+      const previous = (staffLeave?.calendars || []).filter((c) => c.year === cal.year);
+      saveStaffLeave((prev) => setCalendar(prev, cal));
+      toasts.success(
+        `${cal.year}年度の年間カレンダーを有給・半休に取り込みました` +
+          (previous.length ? " (前に取り込んだものと入れ替えました)" : ""),
+        {
+          duration: 6000,
+          action: {
+            label: "元に戻す",
+            onClick: () => saveStaffLeave((prev) => restoreCalendars(prev, [cal.year], previous)),
+          },
+        }
+      );
+    },
+    [staffLeave, saveStaffLeave, toasts]
+  );
   // 有給・半休を書く ([{name, dates, kind, memo}])。書く時点の保存値から
   const recordLeave = useCallback(
     (entries) =>
@@ -412,6 +445,8 @@ export default function App() {
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // 講師の月間から 1 日の有給・半休を入れるダイアログ。null = 閉じている / { name, date }
   const [leaveQuick, setLeaveQuick] = useState(null);
+  // 有給・半休の画面を「入れる欄を開いた状態」で開く要求 ({name?, date?, token})
+  const [leaveFocus, setLeaveFocus] = useState(null);
   // テスト対策の振替・追加授業ダイアログ。null = 閉じている / { mode } = 開く
   // (mode: "reschedule" | "extra"。追加授業管理から開くと追加授業から始める)
   const [testPrep, setTestPrep] = useState(null);
@@ -715,6 +750,17 @@ export default function App() {
     (id) => {
       selectView(VIEWS.HANDOVER, () =>
         setHandoverFocus(id == null ? null : { id, token: Date.now() })
+      );
+    },
+    [selectView]
+  );
+
+  // 有給・半休の画面を開く。target ({name?, date?}) を渡すと入れる欄を開いた状態で
+  // (ダッシュボードの「今後7日の休暇」・講師の月間のダイアログ・Cmd+K から)
+  const openLeave = useCallback(
+    (target = null) => {
+      selectView(VIEWS.LEAVE, () =>
+        setLeaveFocus(target ? { ...target, token: Date.now() } : null)
       );
     },
     [selectView]
@@ -1370,7 +1416,7 @@ export default function App() {
               onSelectTeacher={selectTeacher}
               onEditExtraLesson={openExtraLessonEditor}
               staffLeave={handoverEnabled ? staffLeave : null}
-              onOpenLeave={() => selectView(VIEWS.LEAVE)}
+              onOpenLeave={openLeave}
             />
           )}
           {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
@@ -1705,6 +1751,9 @@ export default function App() {
                 selectView(VIEWS.HOLIDAYS, () => setEventEditRequest({ kind: EVENT_KIND.HOLIDAY, id }))
               }
               onOpenTimetableManager={() => selectView(VIEWS.TIMETABLE)}
+              onImportLeaveCalendar={handoverEnabled ? importLeaveCalendar : undefined}
+              leaveCalendarFor={handoverEnabled ? (y) => calendarFor(staffLeave, y) : undefined}
+              onOpenLeave={handoverEnabled ? () => openLeave(null) : undefined}
             />
           )}
           {view === VIEWS.HANDOVER && !selected && (
@@ -1743,6 +1792,8 @@ export default function App() {
                 selectView(VIEWS.STAFF, () => setStaffTab(STAFF_TAB.AFFILIATION))
               }
               onSelectTeacher={selectTeacher}
+              focusRequest={leaveFocus}
+              onConsumeFocus={() => setLeaveFocus(null)}
             />
           )}
           {view === VIEWS.BUILDER && !selected && (
@@ -2068,11 +2119,16 @@ export default function App() {
           saveSubs={saveSubs}
           isLeaveTracked={handoverEnabled ? isLeaveTracked : null}
           onRecordLeave={handoverEnabled ? recordLeave : null}
+          leaveOffDay={handoverEnabled ? leaveOffDay : null}
           onClose={() => setMultiDayAbsence(null)}
           onSaved={({ count, mode, fromDate, toDate, teachers: names, leave }) => {
             const range = `${fmtDateWeekday(fromDate)} 〜 ${fmtDateWeekday(toDate)}`;
             const leaveText = leave
-              ? `${leave.names.join("・")} の ${leave.days} 日を「${leaveKindMeta(leave.kind).label}」として記録しました`
+              ? `${
+                  leave.perName
+                    ? leave.perName.map((x) => `${x.name} ${x.days} 日`).join("・")
+                    : `${leave.names.join("・")} の ${leave.days} 日`
+                }を「${leaveKindMeta(leave.kind).label}」として記録しました`
               : "";
             toasts.success(
               count > 0
@@ -2104,7 +2160,7 @@ export default function App() {
           sessionOverrides={sessionOverrides}
           daySchedules={daySchedules}
           onRegisterAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
-          onOpenLeaveView={() => selectView(VIEWS.LEAVE)}
+          onOpenLeaveView={() => openLeave({ name: leaveQuick.name, date: leaveQuick.date })}
           onClose={() => setLeaveQuick(null)}
         />
       )}
@@ -2208,6 +2264,7 @@ export default function App() {
             handoverNotes={handoverEnabled ? handoverNotes : undefined}
             onOpenHandoverNote={handoverEnabled ? openHandoverNote : undefined}
             onOpenHandoverAdd={handoverEnabled ? () => setShowHandoverAdd(true) : undefined}
+            onOpenLeaveEntry={handoverEnabled ? () => openLeave({}) : undefined}
             onSelectTeacher={(t) => {
               selectTeacher(t);
               setCmdPaletteOpen(false);
