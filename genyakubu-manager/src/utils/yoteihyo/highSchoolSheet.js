@@ -700,58 +700,66 @@ export function fillColorName(fill) {
 }
 
 // 表の中 (日付の行 × 講座の列) の塗りのうち、灰色 (休講)・黄色 (変更)・
-// 赤 (休校・祝日) 以外で、凡例・見出しなど表の外の文字のあるセルに無い色。
-// 凡例では「黄 = 定期テスト」なのに 2学期は緑で塗っていた、のような食い違いを拾う。
-// 行ごとの塗り (日付・曜日の欄も同じ色 = 土曜の行の色分けなど) と、列のほとんどを
-// 塗った列の色 (校舎ごとの色分け) は印ではないので外す
+// 赤 (休校・祝日) 以外で、凡例・見出しなど日付の行の外の文字のあるセルに無い色。
+// 凡例では「黄 = 定期テスト」なのに 2学期は緑で塗っていた、のような食い違いを拾う
+// (テストの日の行を日付の欄ごと塗ってあっても拾う)。印ではない塗りは外す:
+//   - 曜日ごとの色分け (その色の行が、その曜日のほぼ全部 = 土曜の行の色など)
+//   - 列ごとの色分け (その列のほぼ全部の行 = 校舎ごとの色など)
 function checkFills(g, { datedRows, blocks, blockCols, days }) {
   const known = (f) => !f || isPlainFill(f) || isGrayFill(f) || isYellowFill(f) || isRedFill(f);
   const norm = (f) => (typeof f === "string" ? f.toLowerCase() : null);
-  const body = new Set();
+  const datedRowSet = new Set(datedRows.map((x) => x.r));
   const cand = [];
-  const rowsOfCol = new Map(); // 列 → その列の日付の行の数
+  const rowsOfCol = new Map(); // 列 → その列の (休校でない) 日付の行の数
+  const rowsOfWd = new Map(); // 曜日 → (休校でない) 日付の行の数
   for (const x of datedRows) {
     const cols = blockCols[blocks.indexOf(x.block)];
-    for (const { c } of cols) {
-      body.add(`${x.r},${c}`);
-      rowsOfCol.set(c, (rowsOfCol.get(c) || 0) + 1);
-    }
     if (!cols.length || days.get(x.date)?.closed) continue;
-    const dayFills = [norm(g.fill(x.r, x.block.dayCol)), norm(g.fill(x.r, x.block.dayCol + 1))];
-    const fills = cols.map(({ c }) => norm(g.fill(x.r, c)));
-    const uniform = cols.length >= 3 && fills.every((f) => f === fills[0]);
-    cols.forEach(({ c }, i) => {
-      const f = fills[i];
-      if (known(f) || uniform || dayFills.includes(f) || !g.isAnchor(x.r, c)) return;
-      cand.push({ f, c, date: x.date });
-    });
+    const wd = weekdayOf(x.date);
+    rowsOfWd.set(wd, (rowsOfWd.get(wd) || 0) + 1);
+    for (const { c } of cols) {
+      rowsOfCol.set(c, (rowsOfCol.get(c) || 0) + 1);
+      const f = norm(g.fill(x.r, c));
+      if (known(f) || !g.isAnchor(x.r, c)) continue;
+      cand.push({ f, c, date: x.date, wd });
+    }
   }
   if (!cand.length) return [];
-  // 表の外で文字のあるセル (凡例・見出し) の色は説明のある色
+  // 日付の行の外で文字のあるセル (凡例・見出し) の色は説明のある色
   const explained = new Set();
   for (const [r, c] of g.cells()) {
-    if (body.has(`${r},${c}`) || !g.text(r, c)) continue;
+    if (datedRowSet.has(r) || !g.text(r, c)) continue;
     const f = norm(g.fill(r, c));
     if (f) explained.add(f);
   }
   const perCol = new Map();
   for (const x of cand) perCol.set(`${x.c}|${x.f}`, (perCol.get(`${x.c}|${x.f}`) || 0) + 1);
+  const rest = cand.filter(
+    (x) => !explained.has(x.f) && perCol.get(`${x.c}|${x.f}`) < 0.8 * (rowsOfCol.get(x.c) || 1)
+  );
   const byFill = new Map();
-  for (const x of cand) {
-    if (explained.has(x.f)) continue;
-    if (perCol.get(`${x.c}|${x.f}`) >= 0.8 * (rowsOfCol.get(x.c) || 1)) continue;
+  for (const x of rest) {
     if (!byFill.has(x.f)) byFill.set(x.f, []);
-    byFill.get(x.f).push(x.date);
+    byFill.get(x.f).push(x);
   }
-  return [...byFill].map(([f, list]) => {
-    const dates = [...new Set(list)].sort();
-    return {
+  const out = [];
+  for (const [f, list] of byFill) {
+    // 曜日ごとの色分け: その色の日が、出てくるどの曜日でもほぼ全部
+    const datesByWd = new Map();
+    for (const x of list) {
+      if (!datesByWd.has(x.wd)) datesByWd.set(x.wd, new Set());
+      datesByWd.get(x.wd).add(x.date);
+    }
+    if ([...datesByWd].every(([wd, ds]) => ds.size >= 0.8 * (rowsOfWd.get(wd) || 1))) continue;
+    const dates = [...new Set(list.map((x) => x.date))].sort();
+    out.push({
       kind: "fill",
       message:
         `凡例に無い色 (${fillColorName(f)} ${f}) で塗った欄が ${list.length} か所あります (${examples(dates)})。` +
         "この画面では塗りを見ずに、記号があれば授業ありとして読んでいます。何の印か学校に確認してください。",
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /** 講座の主な曜日 (3 回以上かつ最多の 4 分の 1 以上) */

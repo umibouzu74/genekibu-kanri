@@ -471,7 +471,7 @@ describe("予定表の点検 (シート名と題の期間)", () => {
 
 describe("予定表の点検 (凡例に無い色)", () => {
   // 1 列 = 1 講座 の表。月曜に授業。fills で日付ごとの塗りを決める
-  function colored({ fills = {}, legend = [], rowFill = null, colFill = null } = {}) {
+  function colored({ fills = {}, legend = [], rowFill = null, colFill = null, shade = null } = {}) {
     return makeSheet("2026 H1H2【10月】", (s) => {
       s.set(1, 1, "2026年度 【高1・高2ゼミ】 10月予定表");
       s.set(4, 3, "高1");
@@ -493,6 +493,12 @@ describe("予定表の点検 (凡例に無い色)", () => {
           s.set(r, 2, "土", rowFill);
           s.set(r, 4, null, rowFill);
         }
+        if (shade?.dates.includes(iso)) {
+          // テストの日の行を日付の欄ごと塗る
+          s.set(r, 1, Number(iso.slice(8)), shade.fill);
+          s.set(r, 2, "日月火水木金土"[wd], shade.fill);
+          for (const c of [3, 4, 5]) s.set(r, c, null, shade.fill);
+        }
       }
       legend.forEach(([text, fill], i) => s.set(40 + i, 3, text, fill));
     });
@@ -513,7 +519,15 @@ describe("予定表の点検 (凡例に無い色)", () => {
     ]);
   });
 
-  it("凡例にある色・行ごとの塗り・列ごとの塗り・灰色/黄色は知らせない", () => {
+  it("テストの日の行を日付の欄ごと塗ってあっても知らせる", () => {
+    const p = parseHighSchoolSheet(colored({ shade: { dates: ["2026-10-20", "2026-10-21"], fill: "#92d050" } }));
+    expect(p.warnings.map((w) => w.message)).toEqual([
+      "凡例に無い色 (緑 #92d050) で塗った欄が 6 か所あります (10/20 (火)・10/21 (水))。" +
+        "この画面では塗りを見ずに、記号があれば授業ありとして読んでいます。何の印か学校に確認してください。",
+    ]);
+  });
+
+  it("凡例にある色・曜日ごとの塗り・列ごとの塗り・灰色/黄色は知らせない", () => {
     const green = "#ccffcc";
     const p = parseHighSchoolSheet(
       colored({
