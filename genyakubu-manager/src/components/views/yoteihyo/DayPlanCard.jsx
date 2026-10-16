@@ -1,16 +1,22 @@
 // 予定表とシステムが食い違う 1 日ぶん。食い違いの中身と直す案。
 // 日付は見出し (h3)。登録してこのカードが消えたら、親が次のカードの見出しへ
 // フォーカスを移す (headingId)。ボタンは紙面に出さない (no-print)。
+//
+// 食い違いごとに「確認済みにする」(対応不要。次に読み込んでも出さない) を置く。
+// 確認済みの食い違いは親が「確認済みも表示」にしたときだけ plan.confirmed で
+// 渡ってきて、この日の最後に灰色で並ぶ (取り消せる)。
 
 import { S } from "../../../styles/common";
 import { colors } from "../../../styles/tokens";
 import { courseLabel, dateLabel } from "../../../utils/yoteihyo/labels";
+import { holidayExceptionTargets } from "../../../utils/yoteihyo/compare";
 import { WARN_TEXT } from "./styles";
 
 const sectionTitle = { fontSize: 12, fontWeight: 800, color: colors.ink, margin: "8px 0 4px" };
 const list = { margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7, color: colors.ink };
 const muted = { color: colors.inkMuted };
 const smallBtn = { ...S.btn(false), padding: "3px 10px", fontSize: 12 };
+const tinyBtn = { ...smallBtn, padding: "1px 8px", fontSize: 11, marginLeft: 6 };
 
 function slotText(slot) {
   return [slot.time, slot.grade, slot.subj].filter(Boolean).join(" ");
@@ -19,6 +25,8 @@ function slotText(slot) {
 function uniq(arr) {
   return [...new Set(arr)];
 }
+
+const shortDate = (iso) => (iso ? `${Number(iso.slice(5, 7))}/${Number(iso.slice(8))}` : "");
 
 // 休講日の案: 「対象 高校部 高2 / 科目名に「高松一」を含むコマ」
 // (休講日の照合は 部 × 学年 × 科目名にその語を含む)
@@ -40,6 +48,15 @@ const MANUAL_REASON = {
   sub: "代行・欠勤が登録されているため、自動ではコマ休講にできません。欠勤組み換えの画面で「このコマを休講にする」を選んでください。",
 };
 
+// 確認済みの一覧に出す、食い違いの種類
+const KIND_LABEL = {
+  needOff: "予定表では休み・システムでは授業あり",
+  needOn: "予定表では授業あり・システムでは休み",
+  partial: "予定表では授業あり・システムでは一部のコマが休み",
+  noSlot: "予定表では授業あり・システムにこの曜日のコマなし",
+  missingExtra: "いつもの曜日以外に授業あり・システムには登録なし",
+};
+
 export function DayPlanCard({
   plan,
   headingId,
@@ -49,8 +66,14 @@ export function DayPlanCard({
   onApply,
   onOpenDayReschedule,
   onEditHoliday,
+  onConfirm,
+  onUnconfirm,
+  stale,
+  onExceptHoliday,
+  onAddOnlyDate,
 }) {
   const needOff = plan.findings.filter((f) => f.kind === "needOff");
+  const confirmed = plan.confirmed || [];
   const isPast = plan.date < today;
   const fix = plan.fix;
   const canApply = fix.holidays.length > 0 || fix.cancels.length > 0;
@@ -67,17 +90,47 @@ export function DayPlanCard({
         {dateLabel(sourceDate)} → {dateLabel(targetDate)} の日まるごと振替を開く
       </button>
     ) : null;
+  const canConfirm = isAdmin && !!onConfirm;
+  const confirmBtn = (f) =>
+    canConfirm ? (
+      <button
+        type="button"
+        className="no-print"
+        onClick={() => onConfirm([f])}
+        style={tinyBtn}
+        aria-label={`${dateLabel(plan.date)} ${nameOf(f.courseKey)} を確認済み (対応不要) にする`}
+      >
+        確認済みにする
+      </button>
+    ) : null;
+  // 確認済みにした後で中身が変わったので、もう一度出しているもの
+  const staleNote = (f) => {
+    const entry = stale?.get(f);
+    if (!entry) return null;
+    return (
+      <div style={{ fontSize: 11, color: WARN_TEXT }}>
+        {`${entry.at ? `${shortDate(entry.at)} に` : "以前に"}確認済みにしましたが、その後に食い違いの中身が変わったため、もう一度出しています。`}
+      </div>
+    );
+  };
+  const borderColor = needOff.length
+    ? "#c05030"
+    : plan.extras.length
+      ? colors.accentBlue
+      : plan.infos.length
+        ? WARN_TEXT
+        : colors.inkGhost;
 
   return (
     <article
       aria-labelledby={headingId}
       style={{
         border: `1px solid ${colors.border}`,
-        borderLeft: `4px solid ${needOff.length ? "#c05030" : plan.extras.length ? colors.accentBlue : WARN_TEXT}`,
+        borderLeft: `4px solid ${borderColor}`,
         borderRadius: 6,
         padding: "8px 12px",
         marginBottom: 10,
-        background: isPast ? "#fafafa" : colors.surface,
+        background: isPast || !plan.findings.length ? "#fafafa" : colors.surface,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -98,7 +151,19 @@ export function DayPlanCard({
             今日
           </span>
         )}
-        {isPast && <span style={{ fontSize: 11, ...muted }}>過ぎた日 (直すと、この日以降の第N回が変わります)</span>}
+        {isPast && plan.findings.length > 0 && (
+          <span style={{ fontSize: 11, ...muted }}>過ぎた日 (直すと、この日以降の第N回が変わります)</span>
+        )}
+        {canConfirm && plan.findings.length >= 2 && (
+          <button
+            type="button"
+            className="no-print"
+            onClick={() => onConfirm(plan.findings)}
+            style={{ ...tinyBtn, marginLeft: "auto" }}
+          >
+            この日の食い違いをまとめて確認済みにする
+          </button>
+        )}
       </div>
 
       {needOff.length > 0 && (
@@ -108,9 +173,11 @@ export function DayPlanCard({
             {needOff.map((f) => (
               <li key={f.courseKey}>
                 {nameOf(f.courseKey)} <span style={muted}>— 予定表: {f.yt.label}</span>
+                {confirmBtn(f)}
                 <div style={{ ...muted, fontSize: 11 }}>
                   システムで授業のあるコマ: {f.sys.held.map((x) => slotText(x.slot)).join("、")}
                 </div>
+                {staleNote(f)}
               </li>
             ))}
           </ul>
@@ -180,6 +247,7 @@ export function DayPlanCard({
               <li key={f.courseKey}>
                 {nameOf(f.courseKey)}
                 {f.notes?.length > 0 && <span style={muted}> — 注記「{f.notes.join(" / ")}」</span>}
+                {confirmBtn(f)}
                 {f.sourceOff?.length > 0 && (
                   <div style={{ fontSize: 11, color: WARN_TEXT }}>
                     {`${dateLabel(f.sourceDate)} のこのコマはシステムで休み (${uniq(
@@ -192,7 +260,7 @@ export function DayPlanCard({
                           type="button"
                           className="no-print"
                           onClick={() => onEditHoliday(hol.id)}
-                          style={{ ...smallBtn, padding: "1px 8px", fontSize: 11, marginLeft: 6 }}
+                          style={tinyBtn}
                         >
                           休講日を開く
                         </button>
@@ -200,6 +268,7 @@ export function DayPlanCard({
                     })()}
                   </div>
                 )}
+                {staleNote(f)}
               </li>
             ))}
           </ul>
@@ -230,6 +299,11 @@ export function DayPlanCard({
             {plan.infos.map((f) => {
               const reasons = uniq(f.sys.off.map((x) => x.status.label));
               const hol = f.sys.off.map((x) => x.status.holidays?.[0]).find(Boolean);
+              // 休講日で休みのコマは、その日・そのコマだけ休講日の例外にできる
+              // (休講日そのものは消さず縮めない)
+              const excepts = holidayExceptionTargets(f);
+              // 不定期のコマの実施日でない日は、実施日に加えられる
+              const irregular = f.sys.off.filter((x) => x.status.kind === "irregular").map((x) => x.slot);
               return (
                 <li key={f.courseKey}>
                   {nameOf(f.courseKey)}{" "}
@@ -242,18 +316,70 @@ export function DayPlanCard({
                         : reasons.join("、")}
                   </span>
                   {isAdmin && hol && onEditHoliday && (
-                    <button
-                      type="button"
-                      className="no-print"
-                      onClick={() => onEditHoliday(hol.id)}
-                      style={{ ...smallBtn, padding: "1px 8px", fontSize: 11, marginLeft: 6 }}
-                    >
+                    <button type="button" className="no-print" onClick={() => onEditHoliday(hol.id)} style={tinyBtn}>
                       休講日を開く
                     </button>
                   )}
+                  {confirmBtn(f)}
+                  {isAdmin && onExceptHoliday && excepts.length > 0 && (
+                    <div className="no-print" style={{ marginTop: 2 }}>
+                      <button
+                        type="button"
+                        onClick={() => onExceptHoliday(plan.date, excepts)}
+                        style={{ ...smallBtn, padding: "2px 10px" }}
+                        aria-label={`${dateLabel(plan.date)} は ${excepts.map(slotText).join("、")} だけ授業あり (休講日の例外にする)`}
+                      >
+                        {excepts.length > 1
+                          ? `この日はこの ${excepts.length} コマだけ授業あり（休講日の例外にする）`
+                          : "この日はこのコマだけ授業あり（休講日の例外にする）"}
+                      </button>
+                      <span style={{ ...muted, fontSize: 11, marginLeft: 6 }}>{excepts.map(slotText).join("、")}</span>
+                    </div>
+                  )}
+                  {isAdmin && onAddOnlyDate && irregular.length > 0 && (
+                    <div className="no-print" style={{ marginTop: 2 }}>
+                      <button
+                        type="button"
+                        onClick={() => onAddOnlyDate(plan.date, irregular)}
+                        style={{ ...smallBtn, padding: "2px 10px" }}
+                        aria-label={`${dateLabel(plan.date)} を ${irregular.map(slotText).join("、")} の実施日に加える`}
+                      >
+                        {dateLabel(plan.date)} を実施日に加える
+                      </button>
+                      <span style={{ ...muted, fontSize: 11, marginLeft: 6 }}>
+                        {irregular.map(slotText).join("、")} (不定期のコマ)
+                      </span>
+                    </div>
+                  )}
+                  {staleNote(f)}
                 </li>
               );
             })}
+          </ul>
+        </>
+      )}
+
+      {confirmed.length > 0 && (
+        <>
+          <h4 style={{ ...sectionTitle, color: colors.inkMuted }}>確認済み (対応不要)</h4>
+          <ul style={{ ...list, color: colors.inkMuted }}>
+            {confirmed.map(({ finding: f, entry }) => (
+              <li key={f.courseKey}>
+                ✓ {nameOf(f.courseKey)} <span>— {KIND_LABEL[f.kind] || f.kind}</span>
+                {entry.at && <span>{` (${shortDate(entry.at)} 確認)`}</span>}
+                {isAdmin && onUnconfirm && (
+                  <button
+                    type="button"
+                    className="no-print"
+                    onClick={() => onUnconfirm([{ finding: f, entry }])}
+                    style={tinyBtn}
+                    aria-label={`${dateLabel(plan.date)} ${nameOf(f.courseKey)} の確認済みを取り消す`}
+                  >
+                    確認済みを取り消す
+                  </button>
+                )}
+              </li>
+            ))}
           </ul>
         </>
       )}

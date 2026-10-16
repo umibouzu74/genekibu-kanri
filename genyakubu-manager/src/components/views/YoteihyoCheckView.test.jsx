@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 // 予定表チェック: Excel を読み込むと食い違う日が並び、直す案は押したときだけ
 // 休講日として足される (元に戻せる)・振替元の日は休講日にせず日まるごと振替へ
-// 案内する・講座の対応を直すと結果が変わる・閲覧者には登録のボタンを出さない・
+// 案内する・講座の対応を直すと結果が変わる (同期データに残す。端末だけの旧版の
+// 対応は共有できる)・確認済みにした食い違いは出さない・休講日の例外にできる・
+// 予定表から終講日を設定できる・閲覧者には登録のボタンを出さない・
 // 画面を離れて戻っても読み込んだ予定表が残る・印刷では操作部を出さない、を固定する。
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,27 +34,51 @@ const HOLIDAYS = [
   { id: 1, date: "2026-10-12", label: "スポーツの日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
 ];
 
-// App と同じく、読み込んだ予定表 (session) は画面の外で持つ
-function Harness({ isAdmin = true, onState, onOpenDayReschedule, slots = SMALL_SLOTS }) {
-  const [holidays, saveHolidays] = useState(HOLIDAYS);
+// App と同じく、読み込んだ予定表 (session) と同期データ (講座の対応・確認済み・
+// 休講日・表示期間設定・コマ) は画面の外で持つ
+function Harness({
+  isAdmin = true,
+  onState,
+  onOpenDayReschedule,
+  slots: initSlots = SMALL_SLOTS,
+  altSlots = null,
+  holidays: initHolidays = HOLIDAYS,
+}) {
+  const [slots, saveSlots] = useState(initSlots);
+  const [holidays, saveHolidays] = useState(initHolidays);
   const [adjustments, saveAdjustments] = useState([]);
+  const [displayCutoff, saveDisplayCutoff] = useState({ groups: [], cohorts: [] });
+  const [courseMapping, saveCourseMapping] = useState([]);
+  const [confirmed, saveConfirmed] = useState([]);
   const [session, setSession] = useState(null);
   const [shown, setShown] = useState(true);
   useEffect(() => {
-    onState?.({ holidays, adjustments });
-  }, [holidays, adjustments, onState]);
+    onState?.({ holidays, adjustments, displayCutoff, courseMapping, confirmed, slots });
+  }, [holidays, adjustments, displayCutoff, courseMapping, confirmed, slots, onState]);
   return (
     <>
       <button type="button" onClick={() => setShown((v) => !v)}>
         {shown ? "ほかの画面へ" : "予定表チェックへ戻る"}
       </button>
+      {altSlots && (
+        <button type="button" onClick={() => saveSlots(altSlots)}>
+          時間割を変える
+        </button>
+      )}
       {shown && (
         <YoteihyoCheckView
           slots={slots}
+          saveSlots={saveSlots}
           holidays={holidays}
           saveHolidays={saveHolidays}
           adjustments={adjustments}
           saveAdjustments={saveAdjustments}
+          displayCutoff={displayCutoff}
+          saveDisplayCutoff={saveDisplayCutoff}
+          courseMapping={courseMapping}
+          saveCourseMapping={saveCourseMapping}
+          confirmed={confirmed}
+          saveConfirmed={saveConfirmed}
           isAdmin={isAdmin}
           session={session}
           onSessionChange={setSession}
@@ -217,6 +243,8 @@ describe("YoteihyoCheckView — 読み込みと食い違い", () => {
       within(card("10/15 (木)")).getByRole("button", { name: "この日の案を登録" }),
       within(card("11/6 (金)")).getByRole("button", { name: /日まるごと振替を開く/ }),
       screen.getByRole("button", { name: "高1 高松西高校 の対応を変える" }),
+      within(card("10/15 (木)")).getByRole("button", { name: /を確認済み \(対応不要\) にする$/ }),
+      screen.getByRole("button", { name: "予定表から終講日を設定" }),
     ]) {
       expect(el.closest(".no-print")).not.toBeNull();
     }
@@ -352,6 +380,9 @@ describe("YoteihyoCheckView — 直す案の登録", () => {
     expect(screen.queryByRole("button", { name: "この日の案を登録" })).toBeNull();
     expect(screen.queryByRole("button", { name: /まとめて登録/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /日まるごと振替を開く/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /確認済み/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /の対応を変える$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "予定表から終講日を設定" })).toBeNull();
     expect(
       screen.getByText(
         "直す案の登録と日まるごと振替を開くには、管理者ログインが必要です (サイドバー下の「管理者ログイン」から)。"
@@ -361,8 +392,9 @@ describe("YoteihyoCheckView — 直す案の登録", () => {
 });
 
 describe("YoteihyoCheckView — 講座とコマの対応", () => {
-  it("「比べない」にした講座は比べず、選んだ結果をこの端末に残す", async () => {
-    renderView();
+  it("「比べない」にした講座は比べず、選んだ結果を同期データに残す", async () => {
+    let state = null;
+    renderView({ onState: (s) => (state = s) });
     await loadWorkbook();
     const row = screen.getByText("高1 高松西高校", { selector: "td > div" }).closest("tr");
     expect(within(row).getByText("高1 高松西 数学")).toBeTruthy();
@@ -376,13 +408,53 @@ describe("YoteihyoCheckView — 講座とコマの対応", () => {
     expect(screen.getByText(/ほかに 1 講座は比べていません/)).toBeTruthy();
     // 比べていない期間には数えない (表示期間とは関係ない)
     expect(screen.queryByText(/比べていない期間/)).toBeNull();
-    expect(JSON.parse(localStorage.getItem(LS.yoteihyoMapping))).toEqual({ "高1|高松西高校": { skip: true } });
+    expect(state.courseMapping).toEqual([{ course: "高1|高松西高校", skip: true }]);
+    // 端末だけの保存先には書かない
+    expect(localStorage.getItem(LS.yoteihyoMapping)).toBeNull();
 
     // 自動の対応に戻すと元どおり
     fireEvent.click(within(row).getByRole("button", { name: "高1 高松西高校 の対応を変える" }));
     fireEvent.click(screen.getByRole("button", { name: "自動の対応に戻す" }));
     expect(dayCards()).toHaveLength(3);
-    expect(JSON.parse(localStorage.getItem(LS.yoteihyoMapping))).toEqual({});
+    expect(state.courseMapping).toEqual([]);
+  });
+
+  it("旧版で端末だけに保存していた対応を使い、他の端末と共有できる (共有したら端末の分は消す)", async () => {
+    localStorage.setItem(LS.yoteihyoMapping, JSON.stringify({ "高1|高松西高校": { skip: true } }));
+    let state = null;
+    renderView({ onState: (s) => (state = s) });
+    await loadWorkbook();
+    const row = screen.getByText("高1 高松西高校", { selector: "td > div" }).closest("tr");
+    expect(within(row).getByText("比べない")).toBeTruthy();
+    expect(dayCards()).toEqual([]);
+    expect(screen.getByText(/この端末だけに保存されている対応が 1 講座あります/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "他の端末と共有する" }));
+    expect(state.courseMapping).toEqual([{ course: "高1|高松西高校", skip: true }]);
+    expect(localStorage.getItem(LS.yoteihyoMapping)).toBeNull();
+    expect(screen.queryByText(/この端末だけに保存されている対応/)).toBeNull();
+    expect(within(row).getByText("比べない")).toBeTruthy();
+  });
+
+  it("ほかの学年のコマも選べる (予定表は高1、システムは高3 のコマ)", async () => {
+    let state = null;
+    const slots = [
+      ...SMALL_SLOTS,
+      { id: 8, day: "月", time: "18:30-19:30", grade: "高3", subj: "SpeakingListening", room: "702", teacher: "F" },
+    ];
+    renderView({ onState: (s) => (state = s), slots });
+    await loadWorkbook();
+    fireEvent.click(screen.getByRole("button", { name: "高1 高松西高校 の対応を変える" }));
+    expect(screen.queryByLabelText(/高3 SpeakingListening/)).toBeNull();
+    fireEvent.click(screen.getByLabelText(/ほかの学年のコマも出す/));
+    fireEvent.click(screen.getByLabelText(/高3 SpeakingListening/));
+    fireEvent.click(screen.getByLabelText(/高1 高松西 数学/));
+    fireEvent.click(screen.getByLabelText(/高1 高松西 英語/));
+    fireEvent.click(screen.getByRole("button", { name: "この対応にする" }));
+    expect(state.courseMapping).toEqual([{ course: "高1|高松西高校", subjects: ["高3|SpeakingListening"] }]);
+    const row = screen.getByText("高1 高松西高校", { selector: "td > div" }).closest("tr");
+    expect(within(row).getByText("(予定表と違う学年のコマ)")).toBeTruthy();
+    // 高3 のコマ (月) で比べる: 月曜の授業はあるので 11/9 (休校) だけ食い違う
+    expect(dayCards()).toContain("11/9 (月)");
   });
 
   it("コマが見つからない講座があれば開いて知らせ、直しても勝手には閉じない", async () => {
@@ -397,5 +469,134 @@ describe("YoteihyoCheckView — 講座とコマの対応", () => {
     fireEvent.click(screen.getByRole("button", { name: "高2 古文・漢文 の対応を変える" }));
     fireEvent.click(screen.getByRole("button", { name: "この講座は比べない" }));
     expect(screen.getByText("講座とシステムのコマの対応 (2 講座)").closest("details").open).toBe(true);
+  });
+});
+
+describe("YoteihyoCheckView — 確認済み (対応不要)", () => {
+  it("確認済みにした食い違いは出さず、「確認済みも表示」で見て取り消せる。元に戻せる", async () => {
+    let state = null;
+    renderView({ onState: (s) => (state = s) });
+    await loadWorkbook();
+    fireEvent.click(
+      within(card("10/15 (木)")).getByRole("button", { name: "10/15 (木) 高1 高松西高校 を確認済み (対応不要) にする" })
+    );
+    expect(dayCards()).toEqual(["11/6 (金)", "11/9 (月)"]);
+    expect(state.confirmed).toEqual([
+      { date: "2026-10-15", course: "高1|高松西", fp: expect.any(String), at: "2026-10-09" },
+    ]);
+    expect(document.activeElement.textContent).toBe("11/6 (金)");
+    // まとめて登録の対象からも外れる
+    expect(screen.queryByRole("button", { name: /まとめて登録/ })).toBeNull();
+
+    // 元に戻す
+    const toasts = screen.getByTestId("toasts");
+    fireEvent.click(within(toasts).getByRole("button", { name: "元に戻す" }));
+    expect(state.confirmed).toEqual([]);
+    expect(dayCards()).toContain("10/15 (木)");
+
+    // もう一度確認済みにして、表示する
+    fireEvent.click(within(card("10/15 (木)")).getByRole("button", { name: /を確認済み \(対応不要\) にする$/ }));
+    fireEvent.click(screen.getByLabelText("確認済みも表示 (1 件)"));
+    const c = card("10/15 (木)");
+    expect(within(c).getByText("確認済み (対応不要)")).toBeTruthy();
+    expect(within(c).getByText(/高1 高松西高校/)).toBeTruthy();
+    expect(within(c).queryByRole("button", { name: "この日の案を登録" })).toBeNull();
+    // 紙面にも出す (表示しているときだけ)
+    expect(c.closest(".no-print")).toBeNull();
+    fireEvent.click(within(c).getByRole("button", { name: "10/15 (木) 高1 高松西高校 の確認済みを取り消す" }));
+    expect(state.confirmed).toEqual([]);
+    expect(within(card("10/15 (木)")).getByRole("button", { name: "この日の案を登録" })).toBeTruthy();
+  });
+
+  it("予定表を読み直しても確認済みのまま。食い違いの中身が変われば、また出す", async () => {
+    const altSlots = [
+      ...SMALL_SLOTS,
+      { id: 9, day: "木", time: "18:30-19:30", grade: "高1", subj: "高松西 理科", room: "702", teacher: "G" },
+    ];
+    renderView({ altSlots });
+    await loadWorkbook();
+    fireEvent.click(within(card("10/15 (木)")).getByRole("button", { name: /を確認済み \(対応不要\) にする$/ }));
+    expect(dayCards()).not.toContain("10/15 (木)");
+
+    // 改訂版 (シート名が違う) を読み直しても出さない
+    readWorkbookFile.mockResolvedValue({ sheets: [smallH12Sheet({ name: "2026 H1H2【10-11月】教員用 改訂" })] });
+    chooseFile("改訂.xls");
+    await screen.findByText("読み込んだファイル: 改訂.xls");
+    expect(dayCards()).not.toContain("10/15 (木)");
+
+    // システムのコマが増えて食い違いの中身が変わった → また出す (前の確認を添える)
+    fireEvent.click(screen.getByRole("button", { name: "時間割を変える" }));
+    const c = card("10/15 (木)");
+    expect(within(c).getByText(/確認済みにしましたが、その後に食い違いの中身が変わったため、もう一度出しています/)).toBeTruthy();
+  });
+});
+
+describe("YoteihyoCheckView — 休講日の例外", () => {
+  it("休講日で休みのコマを「この日はこのコマだけ授業あり」にし、元に戻せる", async () => {
+    let state = null;
+    const holidays = [
+      ...HOLIDAYS,
+      { id: 2, date: "2026-10-22", label: "高2休講", scope: ["高校部"], targetGrades: ["高2"], subjKeywords: [] },
+    ];
+    renderView({ onState: (s) => (state = s), holidays });
+    await loadWorkbook();
+    const c = card("10/22 (木)");
+    expect(within(c).getByText(/休講日「高2休講」/)).toBeTruthy();
+    fireEvent.click(within(c).getByRole("button", { name: /だけ授業あり \(休講日の例外にする\)$/ }));
+    // 休講日は消さず縮めず、そのコマだけを例外にする
+    expect(state.holidays[1]).toEqual({ ...holidays[1], excludeSlotIds: [3] });
+    expect(dayCards()).not.toContain("10/22 (木)");
+    const toasts = screen.getByTestId("toasts");
+    expect(within(toasts).getByText(/10\/22 \(木\) の 19:40-20:40 高2 古文漢文 を休講日の例外/)).toBeTruthy();
+    fireEvent.click(within(toasts).getByRole("button", { name: "元に戻す" }));
+    expect(state.holidays).toEqual(holidays);
+    expect(dayCards()).toContain("10/22 (木)");
+  });
+});
+
+describe("YoteihyoCheckView — 不定期のコマ", () => {
+  it("実施日でない日に予定表で授業があれば、実施日に加えられる (元に戻せる)", async () => {
+    let state = null;
+    const slots = SMALL_SLOTS.map((s) =>
+      s.id === 3 ? { ...s, irregular: true, onlyDates: ["2026-10-01", "2026-10-08"] } : s
+    );
+    renderView({ onState: (st) => (state = st), slots });
+    await loadWorkbook();
+    const c = card("10/15 (木)");
+    expect(within(c).getByText(/実施日でない \(不定期のコマ\)/)).toBeTruthy();
+    fireEvent.click(within(c).getByRole("button", { name: "10/15 (木) を 19:40-20:40 高2 古文漢文 の実施日に加える" }));
+    expect(state.slots.find((s) => s.id === 3).onlyDates).toEqual(["2026-10-01", "2026-10-08", "2026-10-15"]);
+    expect(within(card("10/15 (木)")).queryByText(/実施日でない/)).toBeNull();
+    fireEvent.click(within(screen.getByTestId("toasts")).getByRole("button", { name: "元に戻す" }));
+    expect(state.slots.find((s) => s.id === 3).onlyDates).toEqual(["2026-10-01", "2026-10-08"]);
+  });
+});
+
+describe("YoteihyoCheckView — 予定表から終講日を設定", () => {
+  it("案を選んで、確認してから設定する。元に戻せる", async () => {
+    let state = null;
+    renderView({ onState: (s) => (state = s) });
+    await loadWorkbook();
+    fireEvent.click(screen.getByRole("button", { name: "予定表から終講日を設定" }));
+    // 予定表の終わり (11/30) まで授業がある講座は、既定では選ばない
+    const box = screen.getByLabelText("高1 高松西 英数 の終講日を 11/30 (月) にする");
+    expect(box.checked).toBe(false);
+    expect(screen.getByText(/この後の予定表で授業が続くかもしれません/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "選んだ 0 コースの終講日を設定" }).disabled).toBe(true);
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "選んだ 1 コースの終講日を設定" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/^1 コースの終講日を、予定表の最後の授業日にします。/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "設定する" }));
+    await waitFor(() =>
+      expect(state.displayCutoff.cohorts).toEqual([
+        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2026-11-30" },
+      ])
+    );
+    // 設定した案は消える
+    expect(screen.getByText("設定する案はありません。")).toBeTruthy();
+    const toasts = screen.getByTestId("toasts");
+    fireEvent.click(within(toasts).getByRole("button", { name: "元に戻す" }));
+    expect(state.displayCutoff.cohorts).toEqual([]);
   });
 });

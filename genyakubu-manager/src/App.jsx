@@ -286,6 +286,10 @@ export default function App() {
     saveTeacherAffiliations,
     staffLeave,
     saveStaffLeave,
+    yoteihyoCourseMapping,
+    saveYoteihyoCourseMapping,
+    yoteihyoConfirmed,
+    saveYoteihyoConfirmed,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -1687,6 +1691,12 @@ export default function App() {
               isAdmin={isAdmin}
               session={yoteihyoSession}
               onSessionChange={setYoteihyoSession}
+              courseMapping={yoteihyoCourseMapping}
+              saveCourseMapping={saveYoteihyoCourseMapping}
+              confirmed={yoteihyoConfirmed}
+              saveConfirmed={saveYoteihyoConfirmed}
+              saveDisplayCutoff={saveDisplayCutoff}
+              saveSlots={saveSlots}
               onOpenDayReschedule={(init) => {
                 setDayRescheduleInit(init || null);
                 setShowDayReschedule(true);

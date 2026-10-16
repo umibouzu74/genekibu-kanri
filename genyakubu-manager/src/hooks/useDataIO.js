@@ -26,6 +26,8 @@ import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { migrateStaffLeave } from "../utils/staffLeave";
+import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
+import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -55,6 +57,8 @@ export function useDataIO({
   handoverEnabled,
   teacherAffiliations,
   staffLeave,
+  yoteihyoCourseMapping,
+  yoteihyoConfirmed,
   activeTimetableId,
   saveSlots,
   saveHolidays,
@@ -81,6 +85,8 @@ export function useDataIO({
   saveHandoverNotes,
   saveTeacherAffiliations,
   saveStaffLeave,
+  saveYoteihyoCourseMapping,
+  saveYoteihyoConfirmed,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -126,6 +132,9 @@ export function useDataIO({
           teacherAffiliations,
           // 有給・半休も管理者だけが読めるデータ (引継ぎメモと同じ扱い)
           ...(handoverEnabled ? { staffLeave } : {}),
+          // 予定表チェックの講座の対応・確認済みの食い違い
+          yoteihyoMapping: yoteihyoCourseMapping,
+          yoteihyoConfirmed,
           // インポート先で timetables に対する選択が宙吊りにならないよう
           // アクティブな時間割 ID も持ち出す
           activeTimetableId,
@@ -145,7 +154,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -245,6 +254,14 @@ export function useDataIO({
           if (d.staffLeave && typeof d.staffLeave === "object" && handoverEnabled && saveStaffLeave) {
             saveStaffLeave(migrateStaffLeave(d.staffLeave));
           }
+          // 予定表チェックの講座の対応・確認済みも旧バックアップには無い (v23 より前)
+          // ので、欠けているときは現状維持 — 空で上書きしない
+          if (Array.isArray(d.yoteihyoMapping) && saveYoteihyoCourseMapping) {
+            saveYoteihyoCourseMapping(migrateCourseMapping(d.yoteihyoMapping));
+          }
+          if (Array.isArray(d.yoteihyoConfirmed) && saveYoteihyoConfirmed) {
+            saveYoteihyoConfirmed(migrateYoteihyoConfirmed(d.yoteihyoConfirmed));
+          }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -335,6 +352,8 @@ export function useDataIO({
       saveHandoverNotes,
       saveTeacherAffiliations,
       saveStaffLeave,
+      saveYoteihyoCourseMapping,
+      saveYoteihyoConfirmed,
       handoverEnabled,
       setActiveTimetableId,
       setImporting,
@@ -383,6 +402,9 @@ export function useDataIO({
     saveTeacherSubjects({});
     if (saveTeacherKana) saveTeacherKana({});
     if (saveTeacherAffiliations) saveTeacherAffiliations([]);
+    // 予定表チェックの講座の対応はコマの科目名を指すので、時間割と一緒にやり直す
+    if (saveYoteihyoCourseMapping) saveYoteihyoCourseMapping([]);
+    if (saveYoteihyoConfirmed) saveYoteihyoConfirmed([]);
     if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
@@ -415,6 +437,8 @@ export function useDataIO({
     saveFuzokuPlan,
     saveOffsiteLessons,
     saveTeacherAffiliations,
+    saveYoteihyoCourseMapping,
+    saveYoteihyoConfirmed,
     setActiveTimetableId,
     setSelected,
     setView,
