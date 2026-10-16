@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { makeEventHelpers } from "../../components/views/dashboardHelpers";
 import { buildCancelIndex } from "../slotCancel";
-import { buildDayPlans, compareSchedules, parseSourceDate, proposeFixes, systemSlotStatus } from "./compare";
+import {
+  buildDayPlans,
+  compareSchedules,
+  dropHolidayException,
+  extraLessonMatchesCourse,
+  groupSkippedRanges,
+  holidayExceptionTargets,
+  parseSourceDate,
+  proposeFixes,
+  systemSlotStatus,
+  withOnlyDate,
+} from "./compare";
 import { effectiveMapping, suggestMapping } from "./courseMapping";
 import { mergeHighSchoolSheets, parseHighSchoolSheet } from "./highSchoolSheet";
-import { SMALL_SLOTS as SLOTS, smallH12Sheet as sheet } from "./testUtils";
+import { SMALL_SLOTS as SLOTS, makeSheet, smallH12Sheet as sheet, weekdayIndexOf } from "./testUtils";
+import { addHolidayException } from "../holidayExceptions";
+import { IRREGULAR_OFF_LABEL } from "../slotDates";
 
 function makeSys({
   slots,
@@ -337,5 +350,181 @@ describe("parseSourceDate", () => {
     expect(parseSourceDate(["←12/7(月)の振替→"], "2026-12-04")).toBe("2026-12-07");
     expect(parseSourceDate(["←1/4の振替"], "2026-12-28")).toBe("2027-01-04");
     expect(parseSourceDate(["休講 →"], "2026-12-04")).toBeNull();
+  });
+});
+
+// ─── 追加授業 ─────────────────────────────────────────────────────
+
+// 7 月の高1・高2 プレップ (土曜の講座)。7/17 (金)・7/21 (火)・7/22 (水) は夏期講習のプレップ
+function prepSheet() {
+  return makeSheet("2026 H1H2【7月】", (s) => {
+    s.set(1, 1, "2026年度 【高1・高2ゼミ】 7月予定表");
+    s.set(4, 3, "高1・高2");
+    s.set(6, 3, "高予備プレップ");
+    const map = s.month({ year: 2026, month: 7, dayCol: 1, firstRow: 7, labelRow: 3 });
+    for (const [iso, r] of map) {
+      if (weekdayIndexOf(iso) === 6 || ["2026-07-17", "2026-07-21", "2026-07-22"].includes(iso)) s.set(r, 3, "★");
+    }
+  });
+}
+const PREP_SLOTS = [{ id: 21, day: "土", time: "13:00-15:00", grade: "高1高2", subj: "高予備プレップ", room: "" }];
+const PREP_EXTRAS = ["2026-07-17", "2026-07-21", "2026-07-22"].map((date, i) => ({
+  id: i + 1,
+  date,
+  time: "13:00-16:00",
+  grade: "中1-高3",
+  subj: "プレップ",
+  teacher: "A",
+  label: "夏期講習",
+}));
+
+function runPrep(sysOpts = {}) {
+  const merged = mergeHighSchoolSheets([{ name: "7月", parsed: parseHighSchoolSheet(prepSheet()) }]);
+  const mapping = effectiveMapping(suggestMapping(merged.courses.values(), PREP_SLOTS).byCourse, {});
+  const sys = makeSys({ slots: PREP_SLOTS, ...sysOpts });
+  return compareSchedules({ merged, mapping, slots: PREP_SLOTS, sys });
+}
+
+describe("追加授業も授業ありとして数える", () => {
+  it("学年は部をまたぐ範囲も広げ、科目名はどちらかが含めば当たり", () => {
+    const course = { grades: ["高1", "高2"], name: "高予備プレップ" };
+    expect(extraLessonMatchesCourse(PREP_EXTRAS[0], course, PREP_SLOTS)).toBe(true);
+    // 学年が重ならない / 科目名が当たらない / 1 文字だけ
+    expect(extraLessonMatchesCourse({ ...PREP_EXTRAS[0], grade: "中1-3" }, course, PREP_SLOTS)).toBe(false);
+    expect(extraLessonMatchesCourse({ ...PREP_EXTRAS[0], subj: "英語" }, course, PREP_SLOTS)).toBe(false);
+    expect(extraLessonMatchesCourse({ ...PREP_EXTRAS[0], subj: "プ" }, course, PREP_SLOTS)).toBe(false);
+    // 講座と違う学年のコマを選んだ講座は、コマの学年でも当てる
+    const sl = { grades: ["高1", "高2"], name: "Speaking/Listening" };
+    const slSlots = [{ grade: "高3", subj: "SpeakingListening" }];
+    expect(extraLessonMatchesCourse({ grade: "高3", subj: "SpeakingListening 補講" }, sl, slSlots)).toBe(true);
+  });
+
+  it("いつもの曜日以外の授業 (夏期のプレップ) は、追加授業があれば食い違いにしない", () => {
+    const without = runPrep();
+    expect(without.findings.filter((f) => f.kind === "missingExtra").map((f) => f.date)).toEqual([
+      "2026-07-17",
+      "2026-07-21",
+      "2026-07-22",
+    ]);
+    expect(runPrep({ extraLessons: PREP_EXTRAS }).findings).toEqual([]);
+  });
+
+  it("いつもの曜日でも、システムのコマが休みの日に追加授業があれば食い違いにしない", () => {
+    const holidays = [{ id: 1, date: "2026-07-18", label: "高校部休講", scope: ["高校部"], targetGrades: [], subjKeywords: [] }];
+    expect(runPrep({ holidays, extraLessons: PREP_EXTRAS }).findings.map((f) => `${f.date}:${f.kind}`)).toEqual([
+      "2026-07-18:needOn",
+    ]);
+    const extra = { ...PREP_EXTRAS[0], id: 9, date: "2026-07-18" };
+    expect(runPrep({ holidays, extraLessons: [...PREP_EXTRAS, extra] }).findings).toEqual([]);
+  });
+});
+
+// ─── 休講日の例外・不定期のコマ ──────────────────────────────────
+
+describe("休講日の例外 (この日はこのコマだけ授業あり)", () => {
+  const HOLS = [
+    { id: 1, date: "2026-10-12", label: "スポーツの日", scope: ["全部"], targetGrades: [], subjKeywords: [] },
+    { id: 2, date: "2026-10-22", label: "高2休講", scope: ["高校部"], targetGrades: ["高2"], subjKeywords: [] },
+  ];
+
+  it("休講日で休みのコマを案にし、例外にすれば食い違いが消える。元に戻すと戻る", () => {
+    const { findings } = run({ holidays: HOLS });
+    const f = findings.find((x) => x.date === "2026-10-22");
+    expect(f.kind).toBe("needOn");
+    const targets = holidayExceptionTargets(f);
+    expect(targets.map((s) => s.id)).toEqual([3]);
+    const { next, changedIds } = addHolidayException(HOLS, targets[0], "2026-10-22");
+    expect(changedIds).toEqual([2]);
+    expect(next[1].excludeSlotIds).toEqual([3]);
+    expect(run({ holidays: next }).findings.find((x) => x.date === "2026-10-22")).toBeUndefined();
+    // 元に戻す: 足した休講日からだけ外し、空になったキーは消す
+    const back = dropHolidayException(next, changedIds, 3);
+    expect(back).toEqual(HOLS);
+    // 前からあった例外は残す
+    const withOld = [{ ...HOLS[0], excludeSlotIds: [3] }, next[1]];
+    expect(dropHolidayException(withOld, [2], 3)[0].excludeSlotIds).toEqual([3]);
+  });
+
+  it("休講日以外の理由 (テスト期間など) で休みのコマは例外の案にしない", () => {
+    const f = {
+      sys: {
+        off: [
+          { slot: { id: 1 }, status: { kind: "exam" } },
+          { slot: { id: 2 }, status: { kind: "holiday" } },
+        ],
+      },
+    };
+    expect(holidayExceptionTargets(f).map((s) => s.id)).toEqual([2]);
+  });
+});
+
+describe("不定期のコマ", () => {
+  const IRR = SLOTS.map((s) => (s.id === 3 ? { ...s, irregular: true, onlyDates: ["2026-10-01", "2026-10-08"] } : s));
+  const runIrr = (slots) => {
+    const merged = mergeHighSchoolSheets([{ name: "10-11月", parsed: parseHighSchoolSheet(sheet()) }]);
+    const mapping = effectiveMapping(suggestMapping(merged.courses.values(), slots).byCourse, {});
+    return compareSchedules({ merged, mapping, slots, sys: makeSys({ slots, holidays: [] }) });
+  };
+
+  it("実施日でない日は理由つきで出し、表示期間の外の扱い (比べていない期間) にはしない", () => {
+    const r = runIrr(IRR);
+    const f = r.findings.find((x) => x.date === "2026-10-15" && x.courseKey === "高2|古文・漢文");
+    expect(f.kind).toBe("needOn");
+    expect(f.sys.off[0].status).toMatchObject({ kind: "irregular", label: IRREGULAR_OFF_LABEL });
+    expect(r.courses.find((c) => c.key === "高2|古文・漢文").skipped).toEqual([]);
+  });
+
+  it("実施日に加える / 外す", () => {
+    const added = withOnlyDate(IRR, [3, 1], "2026-10-15", true);
+    expect(added.find((s) => s.id === 3).onlyDates).toEqual(["2026-10-01", "2026-10-08", "2026-10-15"]);
+    // 毎週のコマは変えない
+    expect(added.find((s) => s.id === 1)).toBe(IRR.find((s) => s.id === 1));
+    expect(runIrr(added).findings.find((x) => x.date === "2026-10-15" && x.courseKey === "高2|古文・漢文")).toBeUndefined();
+    expect(withOnlyDate(added, [3], "2026-10-15", false).find((s) => s.id === 3).onlyDates).toEqual([
+      "2026-10-01",
+      "2026-10-08",
+    ]);
+  });
+});
+
+// ─── 比べていない期間のまとめ / 振替元の案内 ─────────────────────
+
+describe("groupSkippedRanges", () => {
+  it("学年の組ごとに、重なる・続く期間を 1 つにまとめて講座の数を添える", () => {
+    const courses = new Map([
+      ["a", { family: "高3" }],
+      ["b", { family: "高3" }],
+      ["c", { family: "高3" }],
+      ["d", { family: "高1・高2" }],
+    ]);
+    const summaries = [
+      { key: "a", skipped: [{ start: "2026-12-25", end: "2026-12-31" }] },
+      { key: "b", skipped: [{ start: "2026-12-26", end: "2026-12-31" }] },
+      { key: "c", skipped: [{ start: "2026-12-25", end: "2026-12-31" }] },
+      { key: "d", skipped: [{ start: "2026-12-25", end: "2026-12-31" }] },
+      { key: "x", skipped: [{ start: "2026-01-01", end: "2026-01-02" }] }, // 講座が無い
+    ];
+    expect(groupSkippedRanges(summaries, courses)).toEqual([
+      { family: "高1・高2", start: "2026-12-25", end: "2026-12-31", courseCount: 1, partial: false },
+      { family: "高3", start: "2026-12-25", end: "2026-12-31", courseCount: 3, partial: true },
+    ]);
+    // 離れた期間は分ける
+    const two = groupSkippedRanges(
+      [{ key: "a", skipped: [{ start: "2026-08-01", end: "2026-08-10" }, { start: "2026-12-25", end: "2026-12-31" }] }],
+      courses
+    );
+    expect(two.map((t) => `${t.start}〜${t.end}`)).toEqual(["2026-08-01〜2026-08-10", "2026-12-25〜2026-12-31"]);
+  });
+});
+
+describe("buildDayPlans (確認済みを除いたとき)", () => {
+  it("振替先の日を確認済みにしても、振替元の日は休講日にせず振替の案内のまま", () => {
+    const { findings, merged, sys } = run();
+    const open = findings.filter((f) => f.date !== "2026-11-06");
+    const p = buildDayPlans({ findings: open, allFindings: findings, merged, slots: SLOTS, sys }).find(
+      (x) => x.date === "2026-11-09"
+    );
+    expect(p.fix.holidays).toEqual([]);
+    expect(p.moves).toHaveLength(1);
   });
 });

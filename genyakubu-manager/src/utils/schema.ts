@@ -44,9 +44,11 @@ import type {
   TeacherAffiliationChange,
   Timetable,
   ValidationResult,
+  YoteihyoConfirmation,
+  YoteihyoMappingEntry,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 23;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -381,6 +383,28 @@ export function isTeacherAffiliationChange(x: unknown): x is TeacherAffiliationC
   return true;
 }
 
+// 予定表チェックの講座の対応 { course, subjects } | { course, skip }。
+// RTDB は空の配列を消すので subjects の欠落は許す (skip でもなければ読み込みで捨てる)
+export function isYoteihyoMappingEntry(x: unknown): x is YoteihyoMappingEntry {
+  if (!isObject(x)) return false;
+  if (!isString(x.course) || x.course === "") return false;
+  if (x.subjects !== undefined) {
+    if (!Array.isArray(x.subjects) || !x.subjects.every((v) => isString(v))) return false;
+  }
+  if (x.skip !== undefined && typeof x.skip !== "boolean") return false;
+  return true;
+}
+
+// 予定表チェックの確認済み { date, course, fp, at? }
+export function isYoteihyoConfirmation(x: unknown): x is YoteihyoConfirmation {
+  if (!isObject(x)) return false;
+  if (!isIsoDate(x.date)) return false;
+  if (!isString(x.course) || x.course === "") return false;
+  if (!isString(x.fp)) return false;
+  if (x.at !== undefined && !isIsoDate(x.at)) return false;
+  return true;
+}
+
 // 有給・半休 { records, grants }。RTDB は空の配列を消すので欠落は空扱い
 // (migrateStaffLeave が読み込み時に補う)。
 export function isStaffLeave(x: unknown): x is StaffLeave {
@@ -696,6 +720,18 @@ export function validateExportBundle(
   if (raw.staffLeave != null) {
     if (!isStaffLeave(raw.staffLeave))
       return { ok: false, error: "staffLeave の形式が不正です" };
+  }
+
+  for (const [key, check] of [
+    ["yoteihyoMapping", isYoteihyoMappingEntry],
+    ["yoteihyoConfirmed", isYoteihyoConfirmation],
+  ] as const) {
+    const list = raw[key];
+    if (list == null) continue;
+    if (!Array.isArray(list)) return { ok: false, error: `${key} が配列ではありません` };
+    const bad = list.findIndex((e: unknown) => !check(e));
+    if (bad !== -1)
+      return { ok: false, error: `${key}[${bad}] の形式が不正です`, path: `${key}[${bad}]` };
   }
 
   // ── Cross-entity referential integrity ────────────────────────────
@@ -1051,6 +1087,10 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v21 → v22: teacherAffiliations (講師の所属: 年度ごとの区分の変更) と
   //             staffLeave (有給・半休。管理者が書き出したときだけ) を追加。
+  //             既定値で埋めない (無ければ現状維持)。
+
+  // v22 → v23: yoteihyoMapping (予定表チェックの講座の対応。以前は端末だけに
+  //             保存していた) と yoteihyoConfirmed (確認済みの食い違い) を追加。
   //             既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;

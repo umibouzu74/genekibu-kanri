@@ -18,6 +18,8 @@ import {
   isSub,
   isSubject,
   isSubjectCategory,
+  isYoteihyoConfirmation,
+  isYoteihyoMappingEntry,
   migrateExportBundle,
   nextNumericId,
   validateExportBundle,
@@ -1130,6 +1132,43 @@ describe("v20 → v21: offsiteLessons (他校舎の授業)", () => {
     expect(v.ok).toBe(false);
     expect(v.path).toBe("offsiteLessons[1]");
     expect(validateExportBundle({ offsiteLessons: {} }).ok).toBe(false);
+  });
+});
+
+describe("v22 → v23: 予定表チェックの講座の対応・確認済み", () => {
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 22 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("yoteihyoMapping");
+    expect(out).not.toHaveProperty("yoteihyoConfirmed");
+  });
+
+  it("isYoteihyoMappingEntry / isYoteihyoConfirmation", () => {
+    expect(isYoteihyoMappingEntry({ course: "高1・高2|Speaking/Listening", subjects: ["高3|SpeakingListening"] })).toBe(true);
+    expect(isYoteihyoMappingEntry({ course: "高1|高松西高校", skip: true })).toBe(true);
+    // RTDB が落とした空の subjects も通す (読み込みで捨てる)
+    expect(isYoteihyoMappingEntry({ course: "x" })).toBe(true);
+    expect(isYoteihyoMappingEntry({ course: "", skip: true })).toBe(false);
+    expect(isYoteihyoMappingEntry({ course: "x", subjects: "高1|a" })).toBe(false);
+    expect(isYoteihyoMappingEntry({ course: "x", skip: "yes" })).toBe(false);
+    const ok = { date: "2026-10-15", course: "高1|高松西", fp: "1abc", at: "2026-10-16" };
+    expect(isYoteihyoConfirmation(ok)).toBe(true);
+    expect(isYoteihyoConfirmation({ ...ok, at: undefined })).toBe(true);
+    expect(isYoteihyoConfirmation({ ...ok, date: "10/15" })).toBe(false);
+    expect(isYoteihyoConfirmation({ ...ok, fp: 1 })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた項目を弾く", () => {
+    expect(
+      validateExportBundle({
+        yoteihyoMapping: [{ course: "a", skip: true }],
+        yoteihyoConfirmed: [{ date: "2026-10-15", course: "a", fp: "x" }],
+      }).ok
+    ).toBe(true);
+    const v = validateExportBundle({ yoteihyoConfirmed: [{ date: "2026-10-15", course: "a", fp: "x" }, { date: 1 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("yoteihyoConfirmed[1]");
+    expect(validateExportBundle({ yoteihyoMapping: {} }).ok).toBe(false);
   });
 });
 

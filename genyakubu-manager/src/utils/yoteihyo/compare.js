@@ -17,10 +17,19 @@
 //     「比べていない期間」として返す。前の期・次の期まで比べると、開講前・終講後の
 //     日が全部「システムでは休み」と出てしまう (冬休みは短く、予定表の学期の
 //     切れ目では分けられない)
-//   - 自動では何も書き換えない。直す案 (休講日 / コマ休講) を作るだけ
+//   - 追加授業 (extraLessons) も授業ありとして数える。学年は「中1-高3」のような
+//     部をまたぐ範囲も広げて重なりで見て (courseMapping.expandGradeLabel)、
+//     科目名はどちらかがどちらかを含めば当たりとする (「プレップ」と
+//     「高予備プレップ」)。予定表と違う書き方で登録した追加授業を取りこぼさない
+//   - 自動では何も書き換えない。直す案 (休講日 / コマ休講 / 休講日の例外) を作るだけ
 
 import { isSlotHeldOnDate } from "../sessionCount";
-import { findGroupForGrade, isSlotBeyondCutoff, isTimetableActiveForDate } from "../timetable";
+import {
+  findGroupForGrade,
+  getSlotCutoffRange,
+  isSlotBeyondCutoff,
+  isTimetableActiveForDate,
+} from "../timetable";
 import { IRREGULAR_OFF_LABEL, isSlotScheduledOnDate } from "../slotDates";
 import { examPeriodStopsClassesOn, gradeToDept, isSlotCancelledByHoliday } from "../scheduleHelpers";
 import { slotCancelReason } from "../slotCancel";
@@ -29,7 +38,7 @@ import { findSameDayHolidays } from "../holidayDuplicates";
 import { nextNumericId } from "../schema";
 import { collectIncomingReschedules } from "../adjustmentDisplay";
 import { addDays, courseWeekdays, weekdayOf } from "./highSchoolSheet";
-import { mappingStatus, subjectDays, subjectKey } from "./courseMapping";
+import { gradesOverlap, mappingStatus, normalizeName, subjectDays, subjectKey } from "./courseMapping";
 
 /** 表示期間・時間割の期間の外でも、境目からこの日数までは比べる */
 export const OUTSIDE_MARGIN = 10;
@@ -136,8 +145,15 @@ function toRanges(sortedDates) {
  * ある日と、その外側 OUTSIDE_MARGIN 日まで。それより外の日は skipped (区間) で返す。
  */
 function compareDatesFor(course, courseSlots, sys) {
-  const live = (s, d) =>
-    isSlotTimetableActive(s, d, sys.timetables) && !isSlotBeyondCutoff(d, s, sys.displayCutoff);
+  // 表示期間の窓 (開始日〜終講日) だけで見る。isSlotBeyondCutoff は不定期のコマの
+  // 実施日でない日も窓の外にするので、それを使うと実施日の間が「表示期間の外の
+  // ため比べていない期間」に入ってしまう (実施日でない日は systemSlotStatus が
+  // 理由を出す)
+  const inWindow = (s, d) => {
+    const { startDate, endDate } = getSlotCutoffRange(s, sys.displayCutoff);
+    return !(startDate && d < startDate) && !(endDate && d > endDate);
+  };
+  const live = (s, d) => isSlotTimetableActive(s, d, sys.timetables) && inWindow(s, d);
   const far = (d) => {
     const sameDay = courseSlots.filter((s) => s.day === weekdayOf(d));
     const pool = sameDay.length ? sameDay : courseSlots;
@@ -152,6 +168,27 @@ function compareDatesFor(course, courseSlots, sys) {
   }
   for (const d of dates) skipped.delete(d);
   return { dates: [...dates].sort(), skipped: toRanges([...skipped].sort()) };
+}
+
+/**
+ * 追加授業がその講座の授業に当たるか。学年は講座の学年と、対応する
+ * システムのコマの学年のどちらかと重なれば (「中1-高3」は高1・高2 の講座にも
+ * 当たる)。科目名は講座名・コマの科目名のどれかと、どちらかがどちらかを含めば
+ * 当たり (2 文字以上。「プレップ」⊂「高予備プレップ」)。
+ * @param {object} lesson ExtraLesson
+ * @param {object} course 予定表の講座
+ * @param {Array} mappedSlots 講座に対応するシステムのコマ
+ */
+export function extraLessonMatchesCourse(lesson, course, mappedSlots = []) {
+  if (!lesson?.grade || !lesson.subj) return false;
+  const grades = [...(course?.grades || []), ...mappedSlots.map((s) => s.grade)];
+  if (!grades.some((g) => gradesOverlap(lesson.grade, g))) return false;
+  const subj = normalizeName(lesson.subj);
+  if ([...subj].length < 2) return false;
+  const names = [course?.name, ...mappedSlots.map((s) => s.subj)]
+    .map((n) => normalizeName(n || ""))
+    .filter((n) => [...n].length >= 2);
+  return names.some((n) => n.includes(subj) || subj.includes(n));
 }
 
 /**
@@ -194,7 +231,9 @@ export function compareSchedules({ merged, mapping, slots, sys }) {
     const incomingFor = (date) =>
       collectIncomingReschedules(sys.adjustments, date, mapped, { includeAbsorbed: true });
     const extraFor = (date) =>
-      (sys.extraLessons || []).filter((e) => e?.date === date && subj.has(subjectKey(e.grade, e.subj)));
+      (sys.extraLessons || []).filter(
+        (e) => e?.date === date && (subj.has(subjectKey(e.grade, e.subj)) || extraLessonMatchesCourse(e, course, mapped))
+      );
     const { dates, skipped } = compareDatesFor(course, courseSlots, sys);
     const dateSet = new Set(dates);
     let compared = 0;
@@ -223,6 +262,9 @@ export function compareSchedules({ merged, mapping, slots, sys }) {
       const off = st.filter((x) => !x.status.held);
       if (ytHeld && !off.length) continue;
       if (!ytHeld && !held.length) continue;
+      // システムのコマは休みでも、その日の追加授業で授業をしている (夏期の
+      // プレップなど)。予定表どおりなので食い違いにしない
+      if (ytHeld && !held.length && extraFor(date).length) continue;
       const kind = !ytHeld ? "needOff" : held.length ? "partial" : "needOn";
       findings.push({ date, courseKey: course.key, kind, yt, sys: { held, off }, notes: day?.notes || [] });
     }
@@ -300,12 +342,13 @@ export function compareSchedules({ merged, mapping, slots, sys }) {
  *           (sourceDate があれば日まるごと振替の案内)
  *   infos: システムで休みになっている理由など (直す案は出さない)
  */
-export function buildDayPlans({ findings, merged, slots, sys, subs = [] }) {
+export function buildDayPlans({ findings, allFindings = findings, merged, slots, sys, subs = [] }) {
   // 振替元の日 → 講座 → 振替先の日 (注記「←12/7(月)の振替→」から)。
   // 振替元の日のその講座のコマを休講日にすると、日まるごと振替の対象から外れ、
-  // 第N回も振替元の日で数えられなくなる
+  // 第N回も振替元の日で数えられなくなる。振替先の日の食い違いを確認済みに
+  // していても振替元の日は振替の案内のままにする (allFindings = 確認済みも含めた全部)
   const movedOut = new Map();
-  for (const f of findings) {
+  for (const f of allFindings) {
     if (f.kind !== "missingExtra" || !f.sourceDate) continue;
     if (!movedOut.has(f.sourceDate)) movedOut.set(f.sourceDate, new Map());
     const byCourse = movedOut.get(f.sourceDate);
@@ -376,6 +419,51 @@ export function buildDayPlans({ findings, merged, slots, sys, subs = [] }) {
     });
   }
   return plans.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * 表示期間の外のため比べていない期間を、学年の組 (予定表の 高1・高2 / 高3) ごとに
+ * まとめる。講座ごとにコース別終講日が違うと 12/25〜・12/26〜… と少しずつ
+ * ずれた期間が並ぶので、重なる・続く期間は 1 つにまとめ、講座の数を添える。
+ * @param {Array<{key: string, skipped: Array<{start, end}>}>} summaries compareSchedules の courses
+ * @param {Map<string, {family: string}>} courses merged.courses
+ * @returns {Array<{ family, start, end, courseCount, partial }>}
+ *   partial: 講座によってはその期間の一部だけ (期間がずれている講座がある)
+ */
+export function groupSkippedRanges(summaries, courses) {
+  const byFamily = new Map();
+  for (const c of summaries || []) {
+    const family = courses?.get?.(c.key)?.family;
+    if (!family) continue;
+    for (const t of c.skipped || []) {
+      if (!byFamily.has(family)) byFamily.set(family, []);
+      byFamily.get(family).push({ ...t, key: c.key });
+    }
+  }
+  const out = [];
+  for (const [family, list] of byFamily) {
+    list.sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+    let cur = null;
+    const flush = () => {
+      if (!cur) return;
+      const partial = [...cur.byCourse.values()].some(
+        (rs) => rs.length !== 1 || rs[0].start !== cur.start || rs[0].end !== cur.end
+      );
+      out.push({ family, start: cur.start, end: cur.end, courseCount: cur.byCourse.size, partial });
+    };
+    for (const t of list) {
+      if (cur && t.start <= addDays(cur.end, 1)) {
+        if (t.end > cur.end) cur.end = t.end;
+      } else {
+        flush();
+        cur = { start: t.start, end: t.end, byCourse: new Map() };
+      }
+      if (!cur.byCourse.has(t.key)) cur.byCourse.set(t.key, []);
+      cur.byCourse.get(t.key).push(t);
+    }
+    flush();
+  }
+  return out.sort((a, b) => a.start.localeCompare(b.start) || a.family.localeCompare(b.family));
 }
 
 // 注記「←12/7(月)の振替→」から振替元の日付 (年は振替先と同じ年度で近い方)
@@ -584,4 +672,55 @@ export function applyFixes({ holidays = [], adjustments = [], plans = [], now = 
   const h = newHolidaysFor(holidays, plans);
   const a = newCancelsFor(adjustments, plans, now);
   return { holidays: h.added, adjustments: a.added, skipped: h.skipped + a.skipped };
+}
+
+// ─── 休講日の例外 (予定表では授業あり・システムでは休講日で休み) ───────
+
+/**
+ * 「この日はこのコマだけ授業あり」にできるコマ (休講日で休みになっているコマ)。
+ * 休講日そのものは消さず縮めず、そのコマ・その日だけを休講日の例外にする
+ * (utils/holidayExceptions.addHolidayException)。
+ * @param {object} finding needOn / partial の食い違い
+ * @returns {Array} slot
+ */
+export function holidayExceptionTargets(finding) {
+  return (finding?.sys?.off || []).filter((x) => x.status?.kind === "holiday").map((x) => x.slot);
+}
+
+/**
+ * 休講日の例外の「元に戻す」: 足した休講日 (holidayIds) からだけ、そのコマの
+ * 例外を外す (前からあった例外は残す)。空になった excludeSlotIds はキーごと外す
+ * (RTDB が空配列を消すので保存形をそろえる)。
+ */
+export function dropHolidayException(holidays, holidayIds, slotId) {
+  const ids = new Set(holidayIds || []);
+  const key = String(slotId);
+  return (holidays || []).map((h) => {
+    if (!ids.has(h.id) || !Array.isArray(h.excludeSlotIds)) return h;
+    const rest = h.excludeSlotIds.filter((id) => String(id) !== key);
+    if (rest.length === h.excludeSlotIds.length) return h;
+    if (rest.length) return { ...h, excludeSlotIds: rest };
+    const base = { ...h };
+    delete base.excludeSlotIds;
+    return base;
+  });
+}
+
+/**
+ * 不定期のコマ (utils/slotDates) の実施日に date を足す / 外す。毎週のコマ・
+ * 既に入っている (外すときは入っていない) コマは変えない。
+ * @returns {Array} slots
+ */
+export function withOnlyDate(slots, slotIds, date, add = true) {
+  const ids = new Set((slotIds || []).map(String));
+  return (slots || []).map((s) => {
+    if (!ids.has(String(s.id)) || s.irregular !== true) return s;
+    const list = Array.isArray(s.onlyDates) ? s.onlyDates : [];
+    if (add === list.includes(date)) return s;
+    const next = add ? [...list, date].sort() : list.filter((d) => d !== date);
+    if (next.length) return { ...s, onlyDates: next };
+    const base = { ...s };
+    delete base.onlyDates;
+    return base;
+  });
 }

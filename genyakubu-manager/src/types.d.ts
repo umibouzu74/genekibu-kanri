@@ -275,6 +275,23 @@ export interface TeacherAffiliationChange {
   category: string; // AFFILIATION_CATEGORIES の key ("genyaku-fulltime" など)
 }
 
+// ─── 予定表チェックの同期データ ────────────────────────────────────
+// 講座の対応 (utils/yoteihyo/courseMapping): 予定表の講座キー → システムの
+// コマ (学年|科目名) を手で選んだ結果。講座キーは RTDB のキーに使えない文字を
+// 含みうるので配列で持つ。
+export interface YoteihyoMappingEntry {
+  course: string; // 予定表の講座キー (「高1|高松西高校」「高3|sym:★」)
+  subjects?: string[]; // 「学年|科目名」
+  skip?: boolean; // true = この講座は比べない
+}
+// 確認済み (対応不要) の食い違い (utils/yoteihyo/confirmations)。
+export interface YoteihyoConfirmation {
+  date: string; // "YYYY-MM-DD" 食い違いの日
+  course: string; // 講座の識別 (学年の組 + 講座名。courseIdentity)
+  fp: string; // 確認したときの食い違いの中身の目印 (変われば、また出す)
+  at?: string; // "YYYY-MM-DD" 確認した日
+}
+
 // ─── 有給・半休 (StaffLeave) ─────────────────────────────────────
 // 現役部 常勤の休暇の記録 (utils/staffLeave.js)。Firebase では adminData/
 // (管理者だけが読める) に置く。
@@ -463,6 +480,8 @@ export interface ExportBundle {
   teacherAffiliations?: TeacherAffiliationChange[];
   /** 管理者が書き出したときだけ含まれる */
   staffLeave?: StaffLeave;
+  yoteihyoMapping?: YoteihyoMappingEntry[];
+  yoteihyoConfirmed?: YoteihyoConfirmation[];
 }
 
 export interface ValidationResult<T> {
