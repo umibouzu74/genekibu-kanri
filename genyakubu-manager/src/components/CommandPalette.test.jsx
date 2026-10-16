@@ -109,6 +109,18 @@ describe("CommandPalette", () => {
       expect(onOpenHandoverAdd).toHaveBeenCalled();
     });
 
+    it("「有給・半休を入れる」で入れる欄を開いた有給・半休の画面へ (閲覧者には出さない)", () => {
+      const onOpenLeaveEntry = vi.fn();
+      renderPalette({ canUseAdminData: true, onOpenLeaveEntry });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "有給" } });
+      fireEvent.click(screen.getByRole("option", { name: /有給・半休を入れる/ }));
+      expect(onOpenLeaveEntry).toHaveBeenCalled();
+      cleanup();
+      renderPalette({ canUseAdminData: false, onOpenLeaveEntry });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "有給" } });
+      expect(screen.queryByRole("option", { name: /有給・半休を入れる/ })).toBeNull();
+    });
+
     it("閲覧者には中身も操作も出さない", () => {
       renderPalette({
         canUseAdminData: false,

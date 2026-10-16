@@ -6,6 +6,15 @@
 //             同じ日を入れ直したら置き換え (午前半休 → 有給に変える、など)
 //   grants  … 年度ごとの持ち日数 (付与 + 繰越) { name, year, days }。
 //             任意。入れてあれば年度のまとめに「残り」を出す
+//   calendars    … 年度ごとの教員用の年間カレンダー (予定表の Excel から取り込む。
+//                  utils/yoteihyo/annualCalendarSheet.calendarForLeave)。
+//                  { year, source?, importedAt?, patterns: [{key, label, offDates, total?}],
+//                    days: [{date, kind?, holiday?, event?}], notes }
+//                  patterns = 休みの型 (「土日 休み」「日月 休み」) ごとの公休の日
+//   workPatterns … 人ごとの休みの型。講師の所属と同じく「この年度からこの型」の
+//                  変更だけを持つ { name, fromYear, pattern }。pattern は型の key
+//                  (「土日」) か "none" (型なし = 公休を出さない)
+//   calendars / workPatterns は空ならキーごと持たない (取り込む前の形のまま)
 //
 // 数え方: 有給 = 1 日、午前半休 / 午後半休 = 0.5 日。「その他の休み」(代休・
 // 特別休暇など) は有給の日数には数えず、別に数える。集計の区切りは年度
@@ -74,6 +83,19 @@ export const EMPTY_STAFF_LEAVE = Object.freeze({
   grants: Object.freeze([]),
 });
 
+/**
+ * 年間カレンダーの日の意味 (凡例の色から読む。utils/yoteihyo/annualCalendarSheet)。
+ *   closed = 予備校授業なし→現役生も休み / open = 予備校授業あり→現役生も授業可能
+ */
+export const CALENDAR_DAY_KINDS = Object.freeze({
+  closed: "塾の休み",
+  open: "授業可能",
+  half: "教員半休",
+});
+
+/** 休みの型を「なし」にした印 (前の年度の型を引き継がない) */
+export const NO_WORK_PATTERN = "none";
+
 // ─── 保存の形 ───────────────────────────────────────────────────────
 
 const str = (v) => (typeof v === "string" ? v.trim() : "");
@@ -105,9 +127,65 @@ function normalizeGrant(g) {
   return { name, year, days: Math.round(days * 2) / 2 };
 }
 
+const CALENDAR_DAY_KIND_KEYS = new Set(Object.keys(CALENDAR_DAY_KINDS));
+
+function normalizeCalendar(c) {
+  if (c == null || typeof c !== "object" || Array.isArray(c)) return null;
+  const year = Number(c.year);
+  if (!Number.isInteger(year)) return null;
+  const patterns = [];
+  for (const p of asList(c.patterns)) {
+    const key = str(p?.key);
+    if (!key || key === NO_WORK_PATTERN || patterns.some((x) => x.key === key)) continue;
+    const offDates = [...new Set(asList(p.offDates).map(str).filter(isValidDateStr))].sort();
+    const total = Number(p.total);
+    patterns.push({
+      key,
+      label: str(p.label) || key,
+      offDates,
+      ...(Number.isFinite(total) && total >= 0 ? { total } : {}),
+    });
+  }
+  const dayByDate = new Map();
+  for (const d of asList(c.days)) {
+    const date = str(d?.date);
+    if (!isValidDateStr(date)) continue;
+    const kind = CALENDAR_DAY_KIND_KEYS.has(d.kind) ? d.kind : null;
+    const event = str(d.event).slice(0, 100);
+    if (!kind && d.holiday !== true && !event) continue;
+    dayByDate.set(date, {
+      date,
+      ...(kind ? { kind } : {}),
+      ...(d.holiday === true ? { holiday: true } : {}),
+      ...(event ? { event } : {}),
+    });
+  }
+  const notes = [...new Set(asList(c.notes).map(str).filter(Boolean))];
+  const source = str(c.source);
+  const importedAt = str(c.importedAt);
+  return {
+    year,
+    ...(source ? { source } : {}),
+    ...(importedAt ? { importedAt } : {}),
+    patterns,
+    days: [...dayByDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+    notes,
+  };
+}
+
+function normalizeWorkPattern(w) {
+  if (w == null || typeof w !== "object" || Array.isArray(w)) return null;
+  const name = str(w.name);
+  const fromYear = Number(w.fromYear);
+  const pattern = str(w.pattern);
+  if (!name || !Number.isInteger(fromYear) || !pattern) return null;
+  return { name, fromYear, pattern };
+}
+
 /**
  * 保存値を整える (冪等)。RTDB が空の配列を消すので、欠けていれば空で補う。
  * 同じ (講師, 日付) の記録・同じ (講師, 年度) の持ち日数は後勝ち。
+ * 年間カレンダーは年度ごとに 1 つ、休みの型は (講師, 年度) ごとに 1 つ (後勝ち)。
  */
 export function migrateStaffLeave(raw) {
   const obj = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -124,6 +202,18 @@ export function migrateStaffLeave(raw) {
     const v = normalizeGrant(g);
     if (v) grantByKey.set(`${v.name}\u0000${v.year}`, v);
   }
+  const calByYear = new Map();
+  for (const c of asList(obj.calendars)) {
+    const v = normalizeCalendar(c);
+    if (v) calByYear.set(v.year, v);
+  }
+  const patByKey = new Map();
+  for (const w of asList(obj.workPatterns)) {
+    const v = normalizeWorkPattern(w);
+    if (v) patByKey.set(`${v.name}\u0000${v.fromYear}`, v);
+  }
+  const byNameYear = (a, b) =>
+    a.name !== b.name ? (a.name < b.name ? -1 : 1) : a.fromYear - b.fromYear;
   return {
     records: [...recByKey.values()].sort((a, b) =>
       a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.id - b.id
@@ -131,6 +221,10 @@ export function migrateStaffLeave(raw) {
     grants: [...grantByKey.values()].sort((a, b) =>
       a.year !== b.year ? a.year - b.year : a.name < b.name ? -1 : a.name > b.name ? 1 : 0
     ),
+    ...(calByYear.size
+      ? { calendars: [...calByYear.values()].sort((a, b) => a.year - b.year) }
+      : {}),
+    ...(patByKey.size ? { workPatterns: [...patByKey.values()].sort(byNameYear) } : {}),
   };
 }
 
@@ -165,10 +259,12 @@ export function removeLeave(leave, name, date) {
 }
 
 /**
- * 期間で入れるときの日付 (日曜を除くかを選べる)。上限を超えたら errors。
+ * 期間で入れるときの日付 (休みの日を除くかを選べる)。上限を超えたら errors。
+ * 除く日は既定で日曜。isOff (日付 → 休みか) を渡すとそちらで決める
+ * (年間カレンダーの公休。offDayPredicate)。
  * @returns {{dates: string[], errors: string[]}}
  */
-export function leaveRangeDates(fromDate, toDate, { skipSundays = true } = {}) {
+export function leaveRangeDates(fromDate, toDate, { skipSundays = true, isOff = null } = {}) {
   const errors = [];
   if (!isValidDateStr(fromDate)) errors.push("開始日を入れてください");
   if (!isValidDateStr(toDate)) errors.push("終了日を入れてください");
@@ -179,7 +275,8 @@ export function leaveRangeDates(fromDate, toDate, { skipSundays = true } = {}) {
     return { dates: [], errors: [`一度に入れられるのは ${LEAVE_RANGE_MAX_DAYS} 日までです`] };
   }
   // dateToDay は月〜土の曜日 / 日曜は null
-  const dates = skipSundays ? all.filter((d) => dateToDay(d) != null) : all;
+  const off = isOff || ((d) => dateToDay(d) == null);
+  const dates = skipSundays ? all.filter((d) => !off(d)) : all;
   return { dates, errors: dates.length === 0 ? ["入れる日がありません"] : [] };
 }
 
@@ -331,4 +428,134 @@ export function upcomingLeave(leave, todayStr, days = 7) {
     byDate.get(r.date).push(r);
   }
   return [...byDate.entries()].map(([date, records]) => ({ date, records }));
+}
+
+// ─── 年間カレンダー (常勤の公休) ─────────────────────────────────────
+// 予定表の Excel に入っている教員用の年間カレンダー (「土日 休み」「日月 休み」の
+// 列に公休の印) を年度ごとに取り込み、人ごとの休みの型 (土日 / 日月) と合わせて
+// 「その人のその日は公休か」を出す。月の表で公休の日を薄く見せ、期間で入れる
+// ときに公休を除く (有給の日数に公休を数えない)。
+//
+// 型の決め方は講師の所属と同じ「この年度からこの型」。年間カレンダーは年度ごと
+// (前の年度のカレンダーは翌年度に使わない — 祝日も塾の休みも年度で違う)。
+
+/** その年度の年間カレンダー (無ければ null) */
+export function calendarFor(leave, year) {
+  return (leave?.calendars || []).find((c) => c.year === year) || null;
+}
+
+/** 年間カレンダーを入れる (同じ年度のものは置き換え) */
+export function setCalendar(leave, calendar) {
+  const cur = migrateStaffLeave(leave);
+  const v = normalizeCalendar(calendar);
+  if (!v) return cur;
+  const rest = (cur.calendars || []).filter((c) => c.year !== v.year);
+  return migrateStaffLeave({ ...cur, calendars: [...rest, v] });
+}
+
+/**
+ * 年度の年間カレンダーを、控えておいた状態へ戻す (「元に戻す」・外す)。
+ * previous に無い年度は外す。控えた年度以外のカレンダーには触らない。
+ */
+export function restoreCalendars(leave, years, previous) {
+  const cur = migrateStaffLeave(leave);
+  const ys = new Set(years);
+  const kept = (cur.calendars || []).filter((c) => !ys.has(c.year));
+  return migrateStaffLeave({ ...cur, calendars: [...kept, ...(previous || [])] });
+}
+
+// カレンダー → 型ごとの公休の Set・日付 → 日。カレンダーは保存値の中の
+// オブジェクトなので、同じものなら作り直さない
+const calendarIndexCache = new WeakMap();
+export function calendarIndex(calendar) {
+  if (!calendar) return null;
+  let idx = calendarIndexCache.get(calendar);
+  if (!idx) {
+    idx = {
+      offByPattern: new Map((calendar.patterns || []).map((p) => [p.key, new Set(p.offDates)])),
+      patternByKey: new Map((calendar.patterns || []).map((p) => [p.key, p])),
+      dayByDate: new Map((calendar.days || []).map((d) => [d.date, d])),
+    };
+    calendarIndexCache.set(calendar, idx);
+  }
+  return idx;
+}
+
+/** その年度のその人の休みの型の key (前の年度から引き継ぐ。無し / "none" は null) */
+export function workPatternFor(leave, name, year) {
+  let best = null;
+  for (const w of leave?.workPatterns || []) {
+    if (w.name !== name || w.fromYear > year) continue;
+    if (!best || w.fromYear > best.fromYear) best = w;
+  }
+  return best && best.pattern !== NO_WORK_PATTERN ? best.pattern : null;
+}
+
+/**
+ * その年度からの休みの型を入れる。pattern は型の key / NO_WORK_PATTERN (なし)。
+ * 前の年度から引き継ぐ型と同じなら、その年度の変更は持たない (最小の形)。
+ */
+export function setWorkPattern(leave, name, year, pattern) {
+  const cur = migrateStaffLeave(leave);
+  const n = str(name);
+  if (!n || !Number.isInteger(year)) return cur;
+  const rest = (cur.workPatterns || []).filter((w) => !(w.name === n && w.fromYear === year));
+  const inherited = workPatternFor({ workPatterns: rest }, n, year) || NO_WORK_PATTERN;
+  const want = str(pattern) || NO_WORK_PATTERN;
+  const next = want === inherited ? rest : [...rest, { name: n, fromYear: year, pattern: want }];
+  return migrateStaffLeave({ ...cur, workPatterns: next });
+}
+
+/**
+ * その人のその日の公休。年間カレンダーと休みの型の両方がそろったときだけ答える。
+ * @returns {null | {off: boolean, pattern: string, label: string}}
+ */
+export function publicOffOf(leave, name, date) {
+  const year = fiscalYearOf(date);
+  if (year == null) return null;
+  const idx = calendarIndex(calendarFor(leave, year));
+  if (!idx) return null;
+  const pattern = workPatternFor(leave, name, year);
+  const p = pattern ? idx.patternByKey.get(pattern) : null;
+  if (!p) return null;
+  return { off: idx.offByPattern.get(pattern).has(date), pattern, label: p.label };
+}
+
+/** 年間カレンダーのその日 ({kind?, holiday?, event?}。無ければ null) */
+export function calendarDayOf(leave, date) {
+  const year = fiscalYearOf(date);
+  if (year == null) return null;
+  return calendarIndex(calendarFor(leave, year))?.dayByDate.get(date) || null;
+}
+
+/**
+ * 期間で入れるときに除く日 (leaveRangeDates の isOff)。年間カレンダーと休みの型が
+ * そろう年度は公休、そろわない年度は日曜。どの日もそろわなければ null
+ * (呼び出し側は「日曜を除く」のまま)。
+ */
+export function offDayPredicate(leave, name, from, to) {
+  if (!isValidDateStr(from) || !isValidDateStr(to)) return null;
+  const years = new Set([fiscalYearOf(from), fiscalYearOf(to)]);
+  const any = [...years].some((y) => {
+    const idx = calendarIndex(calendarFor(leave, y));
+    const pattern = workPatternFor(leave, name, y);
+    return !!(idx && pattern && idx.patternByKey.has(pattern));
+  });
+  if (!any) return null;
+  return (date) => {
+    const info = publicOffOf(leave, name, date);
+    return info ? info.off : dateToDay(date) == null;
+  };
+}
+
+/**
+ * その年度のその人の公休の日数 (表の「年間の休日数」があればそれ、無ければ印の数)。
+ * 年間カレンダーか休みの型が無ければ null
+ */
+export function publicOffCount(leave, name, year) {
+  const idx = calendarIndex(calendarFor(leave, year));
+  const pattern = workPatternFor(leave, name, year);
+  const p = idx && pattern ? idx.patternByKey.get(pattern) : null;
+  if (!p) return null;
+  return p.total ?? p.offDates.length;
 }

@@ -121,6 +121,32 @@ describe("MultiDayAbsenceDialog", () => {
       expect(screen.queryByRole("group", { name: /有給・半休にも記録する/ })).toBeNull();
     });
 
+    it("年間カレンダーと休みの型がそろう人は公休を除いて記録する (人ごとに日数が違えば内訳)", () => {
+      const onRecordLeave = vi.fn();
+      // 堀上 = 土日 休み (9/19 土・9/20 日が公休)、石原 = カレンダーなし (日曜だけ除く)
+      const leaveOffDay = (name) =>
+        name === "堀上" ? (d) => d === "2026-09-19" || d === "2026-09-20" : null;
+      const { onSaved } = renderDialog({
+        initial: { teachers: ["堀上", "石原"], date: "2026-09-14" },
+        isLeaveTracked: (n) => n === "堀上" || n === "石原",
+        onRecordLeave,
+        leaveOffDay,
+      });
+      fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-09-20" } });
+      fireEvent.click(screen.getByRole("button", { name: "有給" }));
+      const group = screen.getByRole("group", { name: /有給・半休にも記録する/ });
+      expect(group).toHaveTextContent("堀上 5 日・石原 6 日 (公休 (年間カレンダー)・日曜を除く)");
+      fireEvent.click(screen.getByRole("button", { name: /有給・半休を記録/ }));
+      expect(onRecordLeave.mock.calls[0][0].map((e) => [e.name, e.dates.length])).toEqual([
+        ["堀上", 5],
+        ["石原", 6],
+      ]);
+      expect(onSaved.mock.calls[0][0].leave.perName).toEqual([
+        { name: "堀上", days: 5 },
+        { name: "石原", days: 6 },
+      ]);
+    });
+
     it("授業の無い日でも有給・半休だけ記録できる", () => {
       const onRecordLeave = vi.fn();
       // 2026-09-16 (水) は 堀上 の担当なし

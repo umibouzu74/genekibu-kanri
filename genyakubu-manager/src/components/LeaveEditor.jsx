@@ -3,10 +3,14 @@ import { useToasts } from "../hooks/useToasts";
 import { S, colors } from "../styles/common";
 import { fmtMDWeekday } from "../utils/dateHelpers";
 import {
+  CALENDAR_DAY_KINDS,
   LEAVE_KINDS,
+  calendarDayOf,
   leaveKindMeta,
   leaveRangeDates,
   leaveRecordsFor,
+  offDayPredicate,
+  publicOffOf,
   restoreLeaveRecords,
   setLeaveForDates,
 } from "../utils/staffLeave";
@@ -21,6 +25,10 @@ import { LEAVE_SEVERITY_TONE, leaveKindChip } from "../styles/leave";
 //
 // 呼び出し側は (name, date) が変わったら key で作り直す (メモ・期間の入力を
 // 前の人・日から持ち越さない)。
+//
+// 年間カレンダー (staffLeave の calendars) と休みの型がそろっていれば、その日が
+// 公休か・塾の休み・教員半休・行事を知らせ、期間で入れるときは公休を除く
+// (そろっていなければ従来どおり日曜を除く)。
 
 /**
  * @param {object} props
@@ -54,11 +62,20 @@ export function LeaveEditor({
   const [rangeTo, setRangeTo] = useState(date);
   const [skipSundays, setSkipSundays] = useState(true);
 
-  const rangeInfo = useRange ? leaveRangeDates(date, rangeTo || date, { skipSundays }) : null;
+  const offInfo = publicOffOf(leave, name, date);
+  const calDay = calendarDayOf(leave, date);
+  // 期間で入れるときに除く日 (年間カレンダーの公休。無ければ日曜)
+  const isOff = useRange ? offDayPredicate(leave, name, date, rangeTo || date) : null;
+  const rangeOpts = { skipSundays, isOff };
+  const rangeInfo = useRange ? leaveRangeDates(date, rangeTo || date, rangeOpts) : null;
   const targetDates = () =>
-    useRange
-      ? leaveRangeDates(date, rangeTo || date, { skipSundays })
-      : { dates: [date], errors: [] };
+    useRange ? leaveRangeDates(date, rangeTo || date, rangeOpts) : { dates: [date], errors: [] };
+  const calNotes = [
+    offInfo?.off && `この日は ${name} の公休 (${offInfo.label}) です。有給を入れる必要はありません`,
+    calDay?.holiday && `祝日${calDay.event ? ` (${calDay.event})` : ""}`,
+    calDay?.kind && `年間カレンダー: ${CALENDAR_DAY_KINDS[calDay.kind]}`,
+    calDay?.event && !calDay.holiday && `行事: ${calDay.event}`,
+  ].filter(Boolean);
 
   // 入れる / 消す。控えておいた (人, 日) だけを「元に戻す」で戻す
   const apply = (kind) => {
@@ -108,6 +125,9 @@ export function LeaveEditor({
         {holidayLabel && (
           <span style={{ fontSize: 12, color: "#c44" }}>(塾の休講日: {holidayLabel})</span>
         )}
+        {offInfo && !offInfo.off && !useRange && (
+          <span style={{ fontSize: 11, color: colors.inkMuted }}>({offInfo.label}の出勤日)</span>
+        )}
         {onClose && (
           <button
             type="button"
@@ -119,6 +139,22 @@ export function LeaveEditor({
           </button>
         )}
       </div>
+
+      {!useRange && calNotes.length > 0 && (
+        <div
+          role="note"
+          style={{
+            fontSize: 12,
+            padding: "5px 10px",
+            borderRadius: 6,
+            background: offInfo?.off ? "#f1f2f5" : "#fff",
+            color: offInfo?.off ? colors.ink : colors.inkMuted,
+            border: `1px solid ${colors.border}`,
+          }}
+        >
+          📅 {calNotes.join(" / ")}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         {LEAVE_KINDS.map((k) => {
@@ -211,7 +247,7 @@ export function LeaveEditor({
                 checked={skipSundays}
                 onChange={(e) => setSkipSundays(e.target.checked)}
               />
-              日曜を除く
+              {isOff ? "公休を除く (年間カレンダー)" : "日曜を除く"}
             </label>
             <span
               style={{

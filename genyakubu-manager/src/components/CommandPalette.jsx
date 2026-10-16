@@ -60,6 +60,8 @@ export function CommandPalette({
   handoverNotes = [],
   onOpenHandoverNote,
   onOpenHandoverAdd,
+  // 有給・半休の画面を、入れる欄を開いた状態で開く (管理者だけが読めるデータ)
+  onOpenLeaveEntry,
   // 講師検索をよみでも当てる (「ほり」で 堀上)
   teacherKana,
 }) {
@@ -453,6 +455,17 @@ export function CommandPalette({
         },
       });
     }
+    if (canUseAdminData && onOpenLeaveEntry && matchLabel("有給・半休を入れる (休暇の記録)")) {
+      hits.push({
+        type: "view",
+        label: "有給・半休を入れる",
+        detail: "人と日を選んで有給・半休・代休を記録する",
+        action: () => {
+          onOpenLeaveEntry();
+          onClose();
+        },
+      });
+    }
     // 他校舎の授業の登録 (講師を選んでいればその講師で始める。管理者だけ)
     const offsiteAddLabel = selectedTeacher
       ? `${selectedTeacher} の他校舎の授業を登録`
@@ -554,6 +567,7 @@ export function CommandPalette({
     handoverNotes,
     onOpenHandoverNote,
     onOpenHandoverAdd,
+    onOpenLeaveEntry,
     teacherKana,
   ]);
 

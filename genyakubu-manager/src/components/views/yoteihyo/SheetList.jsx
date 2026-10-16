@@ -1,5 +1,5 @@
 // 予定表のブックに入っているシートの一覧。比べるのに使うシートを選ぶ。
-// 読めるのは高校部・中学部の予定表 (年間カレンダーは名前と「未対応」だけ出す)。
+// 読めるのは高校部・中学部の予定表と、教員用の年間カレンダー (s.calendar)。
 
 import { useState } from "react";
 import { colors } from "../../../styles/tokens";
@@ -7,7 +7,7 @@ import { fiscalYearRange } from "../../../utils/yoteihyo/sheetSelection";
 import { WARN_TEXT } from "./styles";
 
 const KIND_LABEL = {
-  calendar: "年間カレンダー (未対応)",
+  calendar: "年間カレンダー (表の形が読めません)",
   unreadable: "表の形が読めません",
   unknown: "予定表として読めません",
 };
@@ -41,8 +41,8 @@ function SheetTable({ sheets, selected, onToggle }) {
         </thead>
         <tbody>
           {sheets.map((s) => {
-            const usable = !!s.parsed;
-            const p = s.parsed;
+            const usable = !!s.parsed || !!s.calendar;
+            const p = s.parsed || s.calendar;
             return (
               <tr key={s.index} style={{ opacity: usable ? 1 : 0.7 }}>
                 <td style={td}>
@@ -61,7 +61,11 @@ function SheetTable({ sheets, selected, onToggle }) {
                   )}
                 </td>
                 <td style={td}>
-                  {usable ? `${DEPT_LABEL[s.kind] || ""} ${p.grades.join("・")}`.trim() : KIND_LABEL[s.kind] || s.kind}
+                  {s.calendar
+                    ? `年間カレンダー (${s.calendar.patterns.map((x) => x.label).join("・") || "休みの型なし"})`
+                    : usable
+                      ? `${DEPT_LABEL[s.kind] || ""} ${p.grades.join("・")}`.trim()
+                      : KIND_LABEL[s.kind] || s.kind}
                 </td>
                 <td style={td}>{p ? shortRange(p.range) : ""}</td>
               </tr>
@@ -85,7 +89,10 @@ export function SheetList({ sheets, selected, onChange, today }) {
     onChange(next);
   };
   const fy = fiscalYearRange(today);
-  const isOld = (s) => !!s.parsed && (s.parsed.range.end < fy.start || s.parsed.range.start > fy.end);
+  const isOld = (s) => {
+    const r = (s.parsed || s.calendar)?.range;
+    return !!r && (r.end < fy.start || r.start > fy.end);
+  };
   const current = sheets.filter((s) => !isOld(s));
   const old = sheets.filter(isOld);
   const oldSelected = old.filter((s) => selected.has(s.index)).length;
