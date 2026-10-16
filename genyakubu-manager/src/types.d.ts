@@ -21,6 +21,15 @@ export interface Slot {
   note: string;
   timetableId?: number; // Timetable.id。未設定 = デフォルト時間割(id=1)
   biweeklyAnchors?: BiweeklyAnchor[]; // 授業別の隔週基準。未設定 = グローバル基準を使用
+  // 不定期のコマ (utils/slotDates)。true のときは onlyDates の日だけ実施する
+  // (一覧が空ならどの日も実施しない)。マークテストのように決まった日だけのコマ
+  irregular?: boolean;
+  onlyDates?: string[]; // YYYY-MM-DD
+  // 回数 (第N回) の数え方 (utils/sessionCount)。
+  // separateWeekdayCount: 同じ曜日のコマとだけ通算する (月・土で会場違いの同じ授業)
+  // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
+  separateWeekdayCount?: boolean;
+  sessionStartNumber?: number;
 }
 
 export interface Holiday {
@@ -30,6 +39,9 @@ export interface Holiday {
   scope: HolidayScopeEntry[];
   targetGrades: string[]; // 空配列 = scope に従う（既存動作）
   subjKeywords: string[]; // 空配列 = 全科目対象。例: ["高松西"]
+  // 例外 (この日は授業あり) のコマ。対象に入っていても休講にしない
+  // (utils/holidayExceptions、判定は scheduleHelpers.holidayMatches)
+  excludeSlotIds?: number[];
 }
 
 // 代行レコード。**代行者が空 ("") のものは欠勤**を表す (欠勤専用のモデルは
@@ -268,6 +280,23 @@ export interface TeacherAffiliationChange {
   category: string; // AFFILIATION_CATEGORIES の key ("genyaku-fulltime" など)
 }
 
+// ─── 予定表チェックの同期データ ────────────────────────────────────
+// 講座の対応 (utils/yoteihyo/courseMapping): 予定表の講座キー → システムの
+// コマ (学年|科目名) を手で選んだ結果。講座キーは RTDB のキーに使えない文字を
+// 含みうるので配列で持つ。
+export interface YoteihyoMappingEntry {
+  course: string; // 予定表の講座キー (「高1|高松西高校」「高3|sym:★」)
+  subjects?: string[]; // 「学年|科目名」
+  skip?: boolean; // true = この講座は比べない
+}
+// 確認済み (対応不要) の食い違い (utils/yoteihyo/confirmations)。
+export interface YoteihyoConfirmation {
+  date: string; // "YYYY-MM-DD" 食い違いの日
+  course: string; // 講座の識別 (学年の組 + 講座名。courseIdentity)
+  fp: string; // 確認したときの食い違いの中身の目印 (変われば、また出す)
+  at?: string; // "YYYY-MM-DD" 確認した日
+}
+
 // ─── 有給・半休 (StaffLeave) ─────────────────────────────────────
 // 現役部 常勤の休暇の記録 (utils/staffLeave.js)。Firebase では adminData/
 // (管理者だけが読める) に置く。
@@ -381,6 +410,9 @@ export interface ClassSet {
   label: string; // "中3 (火・木)" 等
   units?: ClassSetUnit[]; // 現行形式 (学年 × 曜日)
   slotIds?: number[]; // 旧形式 (コマ id 直参照)
+  // 日数カウント: 同じ日の同じ教科・クラスのコマは 1 回と数える (土曜の
+  // プレップのように 1 日に同じ授業が 2 コマ続くコース)。未設定 = コマごと
+  countByDay?: boolean;
 }
 
 // ─── Timetable / Display cutoff ──────────────────────────────────
@@ -456,6 +488,8 @@ export interface ExportBundle {
   teacherAffiliations?: TeacherAffiliationChange[];
   /** 管理者が書き出したときだけ含まれる */
   staffLeave?: StaffLeave;
+  yoteihyoMapping?: YoteihyoMappingEntry[];
+  yoteihyoConfirmed?: YoteihyoConfirmation[];
 }
 
 export interface ValidationResult<T> {

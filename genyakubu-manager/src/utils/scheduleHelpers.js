@@ -18,9 +18,20 @@ export function isFullDayHoliday(h) {
   if (!h) return false;
   const scope = h.scope || ["全部"];
   if (!scope.includes("全部")) return false;
-  if ((h.targetGrades || []).length > 0) return false;
-  if ((h.subjKeywords || []).length > 0) return false;
-  return true;
+  return !isGranularHoliday(h);
+}
+
+/**
+ * 部門まるごとではなく、一部のコマにだけ効く休講日か (対象学年・科目キーワード・
+ * 例外のコマのどれかがある)。例外 (この日は授業あり) のある休講日は、部門を
+ * 丸ごと隠す「全日休講」「◯◯部休講」の扱いにしない (例外のコマが消える)。
+ */
+export function isGranularHoliday(h) {
+  if (!h) return false;
+  if ((h.targetGrades || []).length > 0) return true;
+  if ((h.subjKeywords || []).length > 0) return true;
+  if ((h.excludeSlotIds || []).length > 0) return true;
+  return false;
 }
 
 export function sortSlots(arr) {
@@ -42,20 +53,45 @@ export function sortSlots(arr) {
 // 隔週ローテーションのスキップ判定でも共用するため pure 関数として切り出す。
 export function isSlotCancelledByHoliday(slot, dateStr, holidays) {
   if (!holidays || holidays.length === 0) return false;
-  const dept = slot.grade ? gradeToDept(slot.grade) : null;
-  return holidays.some((h) => {
-    if (h.date !== dateStr) return false;
-    const sc = h.scope || ["全部"];
-    if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-    const tg = h.targetGrades || [];
-    if (tg.length > 0 && !tg.includes(slot.grade)) return false;
-    const sk = h.subjKeywords || [];
-    if (sk.length > 0) {
-      if (!slot.subj) return false;
-      if (!sk.some((kw) => slot.subj.includes(kw))) return false;
-    }
-    return true;
-  });
+  return holidays.some(
+    (h) => h.date === dateStr && holidayMatches(h, slot.grade, slot.subj, slot.id)
+  );
+}
+
+/**
+ * その休講日が (学年, 科目, コマ) に効くか (日付は呼び出し側で照合済み)。
+ * 部門 scope × 対象学年 (完全一致) × 科目キーワード × 例外のコマ。
+ * 休講日の解釈はこの 1 か所 (isSlotCancelledByHoliday と
+ * dashboardHelpers.makeEventHelpers の isHolidayForSlot が共有する)。
+ *
+ * - 対象学年は**完全一致**。「附中」「中1-3」「高1高2」のような共通学年は
+ *   それ自体を対象学年に選んだときだけ止まる (中1-3 の土曜プレップは
+ *   期末特訓中も実施するので、中1〜3 から自動では広げない)
+ * - `excludeSlotIds` (例外: この日は授業あり) に入っているコマには効かない。
+ *   コマ id を渡さない呼び出し (学年単位の判定) では例外を見ない
+ * @param {object} h Holiday
+ * @param {string} grade
+ * @param {string} [subj]
+ * @param {number} [slotId]
+ * @returns {boolean}
+ */
+export function holidayMatches(h, grade, subj, slotId) {
+  if (!h) return false;
+  const dept = grade ? gradeToDept(grade) : null;
+  const sc = h.scope || ["全部"];
+  if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
+  const tg = h.targetGrades || [];
+  if (tg.length > 0 && !tg.includes(grade)) return false;
+  const sk = h.subjKeywords || [];
+  if (sk.length > 0) {
+    if (!subj) return false;
+    if (!sk.some((kw) => subj.includes(kw))) return false;
+  }
+  if (slotId != null && Array.isArray(h.excludeSlotIds)) {
+    const key = String(slotId);
+    if (h.excludeSlotIds.some((id) => String(id) === key)) return false;
+  }
+  return true;
 }
 
 // テスト期間の「例外的に授業を行う日」(classExceptions) に (日付, 学年) が

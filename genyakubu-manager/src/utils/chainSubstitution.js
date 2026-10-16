@@ -138,7 +138,7 @@ export function resolveTeacherSubjectIds(name, ctx) {
 function buildSlotCancellationMap(daySlots, date, holidayHelpers) {
   const map = new Map();
   for (const slot of daySlots) {
-    map.set(slot.id, holidayHelpers.isOffForGrade(date, slot.grade, slot.subj));
+    map.set(slot.id, holidayHelpers.isOffForGrade(date, slot.grade, slot.subj, slot.id));
   }
   return map;
 }

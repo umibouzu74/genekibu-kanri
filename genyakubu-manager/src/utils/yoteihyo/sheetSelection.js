@@ -1,16 +1,17 @@
 // ─── 予定表のブックから、照合に使うシートを選ぶ ─────────────────────
 // 学校から届くブックには、過去の年度・改訂前・生徒用 / 教員用のシートが
-// 何枚も入っている。既定では「今年度の高校部のシートのうち、同じ学年の
+// 何枚も入っている。既定では「今年度の高校部・中学部のシートのうち、同じ学年の
 // 組で期間が重ならないもの」を選び、重なるときは教員用 (休講が灰色で
 // 書いてある) → 改訂・訂正・変更 → ブックの左の順で 1 枚にする。
 
 import { classifySheet, parseHighSchoolSheet } from "./highSchoolSheet";
+import { parseMiddleSchoolSheet } from "./middleSchoolSheet";
 
 /**
  * @param {{ sheets: Array<{name: string}> }} workbook
  * @returns {Array<{ index, name, kind, title, parsed }>}
- *   kind: high (読めた) / unreadable (高校部らしいが表の形が読めない) /
- *         middle / calendar / unknown (予定表として読めない)
+ *   kind: high / middle (読めた) / unreadable (高校部・中学部らしいが表の形が
+ *         読めない) / calendar / unknown (予定表として読めない)
  */
 export function analyzeWorkbook(workbook) {
   return (workbook?.sheets || []).map((sheet, index) => {
@@ -20,6 +21,7 @@ export function analyzeWorkbook(workbook) {
     try {
       cls = classifySheet(sheet);
       if (cls.kind === "high") parsed = parseHighSchoolSheet(sheet);
+      else if (cls.kind === "middle") parsed = parseMiddleSchoolSheet(sheet);
     } catch (err) {
       console.warn(`[yoteihyo] シート「${sheet.name}」を読めませんでした`, err);
       parsed = null;
@@ -27,7 +29,8 @@ export function analyzeWorkbook(workbook) {
     return {
       index,
       name: sheet.name,
-      kind: parsed ? "high" : cls.kind === "high" ? "unreadable" : cls.kind,
+      kind:
+        cls.kind === "high" || cls.kind === "middle" ? (parsed ? cls.kind : "unreadable") : cls.kind,
       title: cls.title,
       parsed,
     };
@@ -52,7 +55,7 @@ function preference(name) {
 export function defaultSheetSelection(sheets, today) {
   const fy = fiscalYearRange(today);
   const cands = sheets
-    .filter((s) => s.kind === "high" && s.parsed && overlaps(s.parsed.range, fy))
+    .filter((s) => s.parsed && overlaps(s.parsed.range, fy))
     .sort((a, b) => preference(b.name) - preference(a.name) || a.index - b.index);
   const chosen = [];
   for (const s of cands) {

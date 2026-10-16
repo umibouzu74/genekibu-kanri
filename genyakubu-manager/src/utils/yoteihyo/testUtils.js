@@ -98,3 +98,90 @@ export const SMALL_SLOTS = [
   { id: 4, day: "木", time: "20:50-21:50", grade: "高2", subj: "高松西 英語", room: "703", teacher: "D" },
   { id: 5, day: "木", time: "19:50-20:35", grade: "中2", cls: "S", subj: "数学", room: "601", teacher: "E" },
 ];
+
+export const BLACK = "#000000";
+export const TEST_GREEN = "#c5e0b4";
+export const PALE_GREEN = "#e2f0d9";
+
+// 10〜11 月の中1・中2 の予定表 (形は 2026 年度の「T1T2」を写したもの。中身は作りもの)。
+// 月のブロック = [日][曜日][中1 (5 列)][中2 (5 列)]。記号は 中1 ■ 本科 (火金)・
+// ◇ 附中 (水)、中2 □ 本科 (月木)・◆ 附中 (水)、☆ プレップ (土。2 つの欄をまたぐ)。
+// 日曜と 10/12 (スポーツの日) は曜日の欄が黒。
+//   - 10/17 (土) は ☆ の欄に「※」(プレップ休校。備考にも書く)
+//   - 11/4 (水) は中2 の欄に「※」(中2 附中の休講)
+//   - 11/9 (月) の中2 本科を 11/6 (金) へ振替 (黄色。備考「中2本科：11/9(月)の授業を11/6(金)に振替」)
+//   - 10/20 (火) の中1 の欄は緑 (凡例: 公立中学校定期テスト)、11/25 (水) は凡例に無い薄い緑
+//   - 表の外に「☆9」の書き残し
+// wrongWeekday: 11 月のブロックの曜日を前の年のまま (1 日ずれ) にする
+export function smallT1T2Sheet({ name = "T1T2", year = 2026, wrongWeekday = false } = {}) {
+  return makeSheet(name, (s) => {
+    s.set(
+      0,
+      0,
+      `${year}年度【中1・中2ゼミ】 10月～11月予定表\u3000\u3000中1…■：本科，◇：附中\u3000\u3000\u3000中2…□：本科，◆：附中\u3000\u3000\u3000☆：プレップ（個別指導）`
+    );
+    s.merge(0, 0, 1, 23);
+    const counters = {};
+    const next = (k) => (counters[k] = (counters[k] || 0) + 1);
+    const blocks = [
+      { dayCol: 0, month: 10 },
+      { dayCol: 12, month: 11 },
+    ];
+    for (const b of blocks) {
+      const g1 = b.dayCol + 2;
+      const g2 = b.dayCol + 7;
+      s.set(2, b.dayCol, `${b.month}月`);
+      s.merge(2, b.dayCol, 2, b.dayCol + 11);
+      s.set(3, b.dayCol, "学年");
+      s.set(3, g1, "中1");
+      s.merge(3, g1, 3, g1 + 4);
+      s.set(3, g2, "中2");
+      s.merge(3, g2, 3, g2 + 4);
+      const map = s.month({
+        year,
+        month: b.month,
+        dayCol: b.dayCol,
+        firstRow: 4,
+        wrongWeekday: wrongWeekday && b.month === 11,
+      });
+      for (const [iso, r] of map) {
+        const wd = weekdayIndexOf(iso);
+        const md = iso.slice(5);
+        const cell = (c, v, fill = null) => {
+          s.set(r, c, v, fill);
+          s.merge(r, c, r, c + 4);
+        };
+        if (wd === 0 || md === "10-12") {
+          s.set(r, b.dayCol + 1, "日月火水木金土"[wd], BLACK);
+          continue;
+        }
+        if (md === "11-09") continue; // 中2 本科は 11/6 へ振替
+        if (wd === 6) {
+          if (md === "10-17") s.set(r, g1, "※");
+          else s.set(r, g1, `☆ ${next("☆")}`);
+          s.merge(r, g1, r, g2 + 4);
+          continue;
+        }
+        if (wd === 2 || wd === 5) cell(g1, `\u3000\u3000■${next("■")}  英①`, md === "10-20" ? TEST_GREEN : null);
+        if (wd === 3) cell(g1, `\u3000\u3000◇${next("◇")}  数②`, md === "11-25" ? PALE_GREEN : null);
+        if (wd === 1 || wd === 4) cell(g2, `\u3000\u3000□${next("□")}  国③`);
+        if (md === "11-06") cell(g2, `\u3000\u3000□${next("□")}  理④`, YELLOW);
+        if (wd === 3) {
+          if (md === "11-04") cell(g2, "※");
+          else cell(g2, `\u3000\u3000◆${next("◆")}  社⑤`);
+        }
+      }
+    }
+    // 備考と凡例 (日付の行の下)
+    s.set(36, 0, "備\u3000\u3000考");
+    s.merge(36, 0, 43, 1);
+    s.set(36, 2, "\u3000プレップ：10/17(土) 休校");
+    s.set(36, 14, "\u3000中2本科：11/9(月)の授業を11/6(金)に振替");
+    s.set(37, 14, "\u3000＜ゼミ終講日＞");
+    s.set(38, 15, "中1本科：11/27(金)");
+    s.set(40, 2, "※予定に変更がある場合，担任からお知らせします。");
+    for (const c of [2, 3, 4]) s.set(42, c, null, TEST_GREEN);
+    s.set(42, 5, "公立中学校定期テスト(標準日)");
+    s.set(47, 6, "☆9");
+  });
+}

@@ -3,6 +3,7 @@
 // 食い違う日を一覧にする。読み取り・突き合わせは utils/yoteihyo:
 //   - xlsReader / xlsxReader  … .xls (BIFF8) / .xlsx を読む (値・塗り・結合)
 //   - highSchoolSheet         … 高校部の予定表から講座ごとの授業日を取り出す
+//   - middleSchoolSheet       … 中学部の予定表 (中1・中2 / 中3) からコースごとの授業日と第N回
 //   - courseMapping           … 予定表の講座 → システムのコマ (学年|科目名) の推定
 //   - compare                 … システムの実施判定と比べ、直す案 (休講日・コマ休講) を作る
 //
@@ -10,12 +11,23 @@
 //   - **自動では何も書き換えない**。食い違いと直す案を出し、人が押したときだけ
 //     休講日・コマ休講を足す (6 秒の「元に戻す」つき)。新しいデータの形は作らない
 //   - 予定表で授業があるのにシステムで休みになっている日は、理由 (どの休講日か
-//     など) を出すだけ。休講日の削除は休講日の画面で (他の日・学年にも効くため)
+//     など) を出す。休講日の削除・縮小は休講日の画面で (他の日・学年にも効くため)。
+//     休講日で休みのコマには「この日はこのコマだけ授業あり」(休講日の例外。
+//     そのコマ・その日だけに効く) の案を出し、不定期のコマの実施日でない日には
+//     実施日に加える案を出す (どちらも 6 秒の「元に戻す」つき)
 //   - 振替で入る授業 (いつもの曜日以外) は、注記の「12/7(月)の振替」から
 //     日まるごと振替を開く案内を出す
-//   - 読めるのは高校部の予定表 (高1・高2 / 高3) だけ。中学部の予定表・
+//   - 読めるのは高校部の予定表 (高1・高2 / 高3) と中学部の予定表 (中1・中2 / 中3)。
 //     年間カレンダーは「未対応」と出す
-//   - 講座とコマの対応を手で直した結果は、この端末に保存する (LS.yoteihyoMapping)
+//   - 予定表の第N回 (中学部の「☆14」・マークテストの「⑯」) とシステムの第N回を比べる
+//     (compare.compareSessionNumbers。回数のカウンタが 1 本の講座だけ)
+//   - 講座とコマの対応を手で直した結果と、「確認済み (対応不要)」にした食い違いは
+//     同期データ (appData。PC と iPad で共有。書けるのは管理者だけ)。旧版で端末に
+//     保存していた対応 (LS.yoteihyoMapping) は、共有するまで重ねて使う
+//   - 確認済みの食い違いは既定で出さない (「確認済みも表示」で出す。紙面も同じ)。
+//     確認したときと中身が変われば、また出す (utils/yoteihyo/confirmations)
+//   - 予定表の最後の授業日からコース別終講日を設定できる (選んだものだけ、確認して
+//     から。6 秒の「元に戻す」つき。utils/yoteihyo/cutoffProposals)
 //   - 読み込んだ予定表は App が持つ (session)。休講日の画面へ移って戻っても
 //     読み直さずに済むように。ファイルの中身は端末に保存しない
 //   - 印刷はトップバーの 🖨 (popup 系統)。紙面に載せるのは食い違う日の一覧と
@@ -25,7 +37,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { LS } from "../../constants/storageKeys";
 import { S } from "../../styles/common";
 import { colors } from "../../styles/tokens";
-import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -38,18 +49,45 @@ import {
   overlappingSelections,
   selectedInMergeOrder,
 } from "../../utils/yoteihyo/sheetSelection";
-import { MAPPING_PROBLEMS, effectiveMapping, suggestMapping } from "../../utils/yoteihyo/courseMapping";
+import {
+  MAPPING_PROBLEMS,
+  effectiveMapping,
+  mappingOverrides,
+  mergeLegacyMapping,
+  migrateCourseMapping,
+  setMappingOverride,
+  suggestMapping,
+} from "../../utils/yoteihyo/courseMapping";
 import {
   applyFixes,
   buildDayPlans,
   compareSchedules,
+  compareSessionNumbers,
+  dropHolidayException,
+  groupSkippedRanges,
   newCancelsFor,
   newHolidaysFor,
+  withOnlyDate,
 } from "../../utils/yoteihyo/compare";
+import {
+  confirmationFor,
+  confirmedEntriesFor,
+  restoreConfirmed,
+  splitByConfirmation,
+  withConfirmed,
+} from "../../utils/yoteihyo/confirmations";
+import {
+  applyCohortCutoffs,
+  proposeCohortCutoffs,
+  restoreCohortCutoffs,
+} from "../../utils/yoteihyo/cutoffProposals";
+import { addHolidayException, holidaysCancellingSlot } from "../../utils/holidayExceptions";
 import { courseLabel, dateLabel } from "../../utils/yoteihyo/labels";
 import { SheetList } from "./yoteihyo/SheetList";
 import { MappingPanel } from "./yoteihyo/MappingPanel";
 import { DayPlanCard } from "./yoteihyo/DayPlanCard";
+import { CutoffProposalPanel } from "./yoteihyo/CutoffProposalPanel";
+import { SessionNumberPanel } from "./yoteihyo/SessionNumberPanel";
 import { WARN_TEXT } from "./yoteihyo/styles";
 
 const panel = { ...S.panel, padding: 14, marginBottom: 16 };
@@ -58,17 +96,51 @@ const note = { fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, margin: 0 
 const warnNote = { ...note, color: WARN_TEXT };
 
 const NO_SELECTION = new Set();
+const EMPTY = Object.freeze([]);
+const NO_SPLIT = Object.freeze({ open: EMPTY, confirmed: EMPTY, stale: new Map() });
 
 function shortRange(r) {
   const f = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
   return `${f(r.start)}〜${f(r.end)}`;
 }
 
-// 読み込んだ予定表 ({ fileName, sheets, selected, loadId, onlyUpcoming }) は
+function slotText(slot) {
+  return [slot.time, slot.grade, slot.subj].filter(Boolean).join(" ");
+}
+
+// 読み込んだ予定表 ({ fileName, sheets, selected, loadId, onlyUpcoming, showConfirmed }) は
 // App が持つ。props が無いとき (テストなど) はこの画面で持つ
 function useSession(session, onSessionChange) {
   const [local, setLocal] = useState(null);
   return onSessionChange ? [session ?? null, onSessionChange] : [local, setLocal];
+}
+
+// 同期データ (講座の対応・確認済み) も App から受ける。保存先が渡されない
+// とき (テストなど) はこの画面で持つ
+function useShared(value, save) {
+  const [local, setLocal] = useState(EMPTY);
+  return save ? [value ?? EMPTY, save] : [local, setLocal];
+}
+
+// 旧版で端末だけに保存していた講座の対応 (LS.yoteihyoMapping)。共有するまで
+// 同期データの下に重ねて使う。読めなければ無いものとする
+function readLegacyMapping() {
+  try {
+    const raw = localStorage.getItem(LS.yoteihyoMapping);
+    if (!raw) return null;
+    const list = migrateCourseMapping(JSON.parse(raw));
+    return list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+function dropLegacyMapping() {
+  try {
+    localStorage.removeItem(LS.yoteihyoMapping);
+  } catch {
+    // 消せなくても、同期データの方が優先なので害はない
+  }
 }
 
 export function YoteihyoCheckView({
@@ -90,6 +162,12 @@ export function YoteihyoCheckView({
   isAdmin = false,
   session: sessionProp,
   onSessionChange,
+  courseMapping: courseMappingProp,
+  saveCourseMapping: saveCourseMappingProp,
+  confirmed: confirmedProp,
+  saveConfirmed: saveConfirmedProp,
+  saveDisplayCutoff,
+  saveSlots,
   onOpenDayReschedule,
   onEditHoliday,
   onOpenTimetableManager,
@@ -103,7 +181,9 @@ export function YoteihyoCheckView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const [overrides, setOverrides] = useLocalStorage(LS.yoteihyoMapping, {});
+  const [courseMapping, saveCourseMapping] = useShared(courseMappingProp, saveCourseMappingProp);
+  const [confirmedList, saveConfirmed] = useShared(confirmedProp, saveConfirmedProp);
+  const [legacyMapping, setLegacyMapping] = useState(readLegacyMapping);
   // 登録してカードが消えたあとにフォーカスを移す先 (日付 / "" = 一覧の見出し)
   const [focusTarget, setFocusTarget] = useState(null);
 
@@ -111,8 +191,43 @@ export function YoteihyoCheckView({
   const sheets = book?.sheets ?? null;
   const selected = session?.selected ?? NO_SELECTION;
   const onlyUpcoming = !!session?.onlyUpcoming;
+  const showConfirmed = !!session?.showConfirmed;
   const setSelected = (next) => setSession((prev) => (prev ? { ...prev, selected: next } : prev));
   const setOnlyUpcoming = (v) => setSession((prev) => (prev ? { ...prev, onlyUpcoming: v } : prev));
+  const setShowConfirmed = (v) => setSession((prev) => (prev ? { ...prev, showConfirmed: v } : prev));
+
+  // 手で直した対応 = 同期データ + (まだ共有していない) この端末だけの旧版の対応
+  const overrides = useMemo(
+    () => mappingOverrides(mergeLegacyMapping(courseMapping, legacyMapping)),
+    [courseMapping, legacyMapping]
+  );
+  const legacyCount = useMemo(() => {
+    if (!legacyMapping) return 0;
+    const shared = new Set(migrateCourseMapping(courseMapping).map((e) => e.course));
+    return legacyMapping.filter((e) => !shared.has(e.course)).length;
+  }, [courseMapping, legacyMapping]);
+  // 対応を直すとき、まだ共有していない旧版の対応も一緒に同期データへ移す
+  // (書き込む時点の配列に重ねる。他の端末で直した講座はそちらを使う)
+  const changeOverride = useCallback(
+    (courseKey, value) => {
+      if (!isAdmin) return;
+      const legacy = legacyMapping;
+      saveCourseMapping((prev) => setMappingOverride(mergeLegacyMapping(prev, legacy), courseKey, value));
+      if (legacy) {
+        dropLegacyMapping();
+        setLegacyMapping(null);
+      }
+    },
+    [isAdmin, legacyMapping, saveCourseMapping]
+  );
+  const shareLegacy = useCallback(() => {
+    if (!isAdmin || !legacyMapping) return;
+    const legacy = legacyMapping;
+    saveCourseMapping((prev) => mergeLegacyMapping(prev, legacy));
+    dropLegacyMapping();
+    setLegacyMapping(null);
+    toasts.success("この端末に保存していた講座の対応を、他の端末と共有しました");
+  }, [isAdmin, legacyMapping, saveCourseMapping, toasts]);
 
   const listHeadingId = `${idBase}-list`;
   const dayHeadingId = (date) => `${idBase}-day-${date}`;
@@ -134,6 +249,7 @@ export function YoteihyoCheckView({
           selected: defaultSheetSelection(sheets, today),
           loadId: (prev?.loadId || 0) + 1,
           onlyUpcoming: !!prev?.onlyUpcoming,
+          showConfirmed: !!prev?.showConfirmed,
         }));
       } catch (err) {
         if (seq !== loadSeq.current) return;
@@ -184,34 +300,69 @@ export function YoteihyoCheckView({
     () => (merged ? compareSchedules({ merged, mapping, slots, sys }) : null),
     [merged, mapping, slots, sys]
   );
+  // 確認済み (対応不要) の食い違いを分ける。中身が変わったものは open に戻る
+  const split = useMemo(
+    () => (result && merged ? splitByConfirmation(result.findings, merged.courses, confirmedList) : NO_SPLIT),
+    [result, merged, confirmedList]
+  );
   const plans = useMemo(
-    () => (result ? buildDayPlans({ findings: result.findings, merged, slots, sys, subs }) : []),
-    [result, merged, slots, sys, subs]
+    () =>
+      result
+        ? buildDayPlans({ findings: split.open, allFindings: result.findings, merged, slots, sys, subs })
+        : [],
+    [result, split, merged, slots, sys, subs]
+  );
+  // 「確認済みも表示」のときは、確認済みの食い違いをその日のカードに添える
+  // (確認済みだけの日は、直す案の無いカードにする)
+  const displayPlans = useMemo(() => {
+    if (!showConfirmed || !split.confirmed.length) return plans;
+    const byDate = new Map(plans.map((p) => [p.date, { ...p, confirmed: [] }]));
+    for (const c of split.confirmed) {
+      const date = c.finding.date;
+      if (!byDate.has(date)) {
+        byDate.set(date, {
+          date,
+          findings: [],
+          offSlots: [],
+          keepSlots: [],
+          fix: { holidays: [], cancels: [], manual: [], cautions: [] },
+          moves: [],
+          extras: [],
+          infos: [],
+          confirmed: [],
+        });
+      }
+      byDate.get(date).confirmed.push(c);
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }, [plans, split, showConfirmed]);
+  // 予定表の最後の授業日から作るコース別終講日の案 (管理者だけ)
+  const cutoffPlan = useMemo(
+    () =>
+      merged && isAdmin && saveDisplayCutoff ? proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) : null,
+    [merged, isAdmin, saveDisplayCutoff, mapping, slots, displayCutoff]
   );
   const plannedIssues = useMemo(() => (merged ? checkPlannedCounts(merged) : []), [merged]);
+  // 予定表の第N回 (☆14 / ⑯) とシステムの第N回の食い違い
+  const sessionNumberIssues = useMemo(
+    () => (merged ? compareSessionNumbers({ merged, mapping, slots, sys }) : []),
+    [merged, mapping, slots, sys]
+  );
   const overlapsSel = useMemo(
     () => (sheets ? overlappingSelections(sheets, selected) : []),
     [sheets, selected]
   );
 
-  const visiblePlans = onlyUpcoming ? plans.filter((p) => p.date >= today) : plans;
+  const visiblePlans = onlyUpcoming ? displayPlans.filter((p) => p.date >= today) : displayPlans;
   const fixable = visiblePlans.filter((p) => p.fix.holidays.length || p.fix.cancels.length);
   const upcomingCount = plans.filter((p) => p.date >= today).length;
+  const confirmedCount = split.confirmed.length;
 
-  // 表示期間設定の外で比べていない期間 (学年の組ごとに同じ区間は 1 回だけ出す)
-  const skipped = useMemo(() => {
-    if (!merged || !result) return [];
-    const out = new Map();
-    for (const c of result.courses) {
-      const course = merged.courses.get(c.key);
-      if (!course) continue;
-      for (const t of c.skipped) {
-        const k = `${course.family}|${t.start}|${t.end}`;
-        if (!out.has(k)) out.set(k, { family: course.family, ...t });
-      }
-    }
-    return [...out.values()].sort((a, b) => a.start.localeCompare(b.start) || a.family.localeCompare(b.family));
-  }, [merged, result]);
+  // 表示期間設定の外で比べていない期間 (学年の組ごとに、重なる・続く期間は 1 つにまとめる)
+  const skipped = useMemo(
+    () => (merged && result ? groupSkippedRanges(result.courses, merged.courses) : []),
+    [merged, result]
+  );
   // 比べていない講座 (コマが見つからない = 直してほしいもの と、それ以外)
   const notCompared = useMemo(() => {
     if (!merged || !result) return { problems: [], others: 0 };
@@ -304,6 +455,126 @@ export function YoteihyoCheckView({
     [isAdmin, holidays, adjustments, saveHolidays, saveAdjustments, toasts, confirm, today, visiblePlans]
   );
 
+  // 消えるカードの次へフォーカスを移す (カードが残るならその日の見出しへ)
+  const focusAfter = (date, vanishes) => {
+    if (!vanishes) {
+      setFocusTarget(date);
+      return;
+    }
+    const i = visiblePlans.findIndex((p) => p.date === date);
+    const next = visiblePlans[i + 1] || visiblePlans[i - 1];
+    setFocusTarget(next ? next.date : "");
+  };
+
+  // 確認済み (対応不要) にする。次に読み込んでも、中身が同じなら出さない
+  const confirmFindings = (findings) => {
+    if (!isAdmin || !findings.length || !merged) return;
+    const entries = findings.map((f) => confirmationFor(f, merged.courses, today));
+    const previous = confirmedEntriesFor(confirmedList, entries);
+    saveConfirmed((prev) => withConfirmed(prev, entries));
+    toasts.success(
+      `${findings.length} 件を確認済みにしました` + (showConfirmed ? "" : " (「確認済みも表示」で見られます)"),
+      {
+        duration: 6000,
+        action: {
+          label: "元に戻す",
+          onClick: () => saveConfirmed((prev) => restoreConfirmed(prev, entries, previous)),
+        },
+      }
+    );
+    const date = findings[0].date;
+    const plan = visiblePlans.find((p) => p.date === date);
+    focusAfter(date, !showConfirmed && !!plan && plan.findings.every((f) => findings.includes(f)));
+  };
+  const unconfirmFindings = (items) => {
+    if (!isAdmin || !items.length) return;
+    const entries = items.map((x) => x.entry);
+    saveConfirmed((prev) => restoreConfirmed(prev, entries, []));
+    toasts.success(`${items.length} 件の確認済みを取り消しました`, {
+      duration: 6000,
+      action: { label: "元に戻す", onClick: () => saveConfirmed((prev) => withConfirmed(prev, entries)) },
+    });
+    setFocusTarget(items[0].finding.date);
+  };
+
+  // 休講日の例外にする (この日はこのコマだけ授業あり)。休講日そのものは消さず
+  // 縮めず、そのコマのその日だけに効く。書き込む時点の配列から決める
+  const exceptHoliday = (date, targetSlots) => {
+    if (!isAdmin || !saveHolidays) return;
+    const effective = targetSlots.filter((s) => holidaysCancellingSlot(holidays, s, date).length);
+    if (!effective.length) {
+      toasts.info("休講日の例外になっています");
+      return;
+    }
+    const changed = new Map(); // slotId → 例外を足した休講日の id
+    saveHolidays((prev) => {
+      changed.clear();
+      let next = prev;
+      for (const s of effective) {
+        const r = addHolidayException(next, s, date);
+        if (r.changedIds.length) changed.set(s.id, r.changedIds);
+        next = r.next;
+      }
+      return next;
+    });
+    toasts.success(
+      `${dateLabel(date)} の ${effective.map(slotText).join("、")} を休講日の例外 (この日は授業あり) にしました`,
+      {
+        duration: 6000,
+        action: {
+          label: "元に戻す",
+          onClick: () =>
+            saveHolidays((prev) => {
+              let next = prev;
+              for (const [slotId, ids] of changed) next = dropHolidayException(next, ids, slotId);
+              return next;
+            }),
+        },
+      }
+    );
+    focusAfter(date, false);
+  };
+
+  // 不定期のコマの実施日に加える (予定表ではこの日も授業がある)
+  const addOnlyDate = (date, targetSlots) => {
+    if (!isAdmin || !saveSlots) return;
+    const ids = targetSlots
+      .filter((s) => s.irregular === true && !(s.onlyDates || []).includes(date))
+      .map((s) => s.id);
+    if (!ids.length) return;
+    saveSlots((prev) => withOnlyDate(prev, ids, date, true));
+    toasts.success(`${dateLabel(date)} を不定期のコマ ${ids.length} 件の実施日に加えました`, {
+      duration: 6000,
+      action: { label: "元に戻す", onClick: () => saveSlots((prev) => withOnlyDate(prev, ids, date, false)) },
+    });
+    focusAfter(date, false);
+  };
+
+  // 予定表の最後の授業日をコース別終講日にする (選んだコースだけ、確認してから)
+  const applyCutoffs = async (chosen) => {
+    if (!isAdmin || !saveDisplayCutoff || !chosen.length) return;
+    const replacing = chosen.filter((p) => p.current).length;
+    const ok = await confirm({
+      title: "予定表から終講日を設定",
+      message:
+        `${chosen.length} コースの終講日を、予定表の最後の授業日にします。` +
+        (replacing ? `うち ${replacing} コースは今の終講日を書き換えます。` : "") +
+        "終講日の後の日は、そのコースの授業が画面に出なくなります。",
+      okLabel: "設定する",
+    });
+    if (!ok) return;
+    const ids = chosen.map((p) => p.cohortId);
+    const previous = (displayCutoff?.cohorts || []).filter((c) => c && ids.includes(c.id));
+    saveDisplayCutoff((prev) => applyCohortCutoffs(prev, chosen));
+    toasts.success(`${chosen.length} コースの終講日を設定しました`, {
+      duration: 6000,
+      action: {
+        label: "元に戻す",
+        onClick: () => saveDisplayCutoff((prev) => restoreCohortCutoffs(prev, ids, previous)),
+      },
+    });
+  };
+
   const onDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
@@ -317,8 +588,9 @@ export function YoteihyoCheckView({
           {"学校から届く予定表 (Excel) を読み込み、システムに登録した休講・振替と食い違う日を一覧にします。" +
             "直す案のボタンを押すまで、システムの登録は変わりません。"}
           <br />
-          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b>
-          {" だけです。予定表の灰色の欄は休講、空欄は授業なし、黄色の欄は変更・振替、赤い行は休校・祝日として読みます。"}
+          いま読み込めるのは<b>高校部の予定表 (高1・高2 / 高3)</b> と<b>中学部の予定表 (中1・中2 / 中3)</b>
+          {" です。高校部は灰色の欄を休講、空欄を授業なし、黄色の欄を変更・振替、赤い行を休校・祝日として読みます。" +
+            "中学部は記号 (■21 など) を授業あり・その日の第N回、「※」を授業なし、黒い曜日を休日として読みます。"}
         </p>
         <div
           onDragOver={(e) => {
@@ -375,10 +647,10 @@ export function YoteihyoCheckView({
             使うシート
           </h2>
           <SheetList key={book.loadId} sheets={book.sheets} selected={selected} onChange={setSelected} today={today} />
-          {!book.sheets.some((s) => s.kind === "high") ? (
+          {!book.sheets.some((s) => s.parsed) ? (
             <p role="note" style={{ ...warnNote, marginTop: 6 }}>
-              {"このファイルには、読み込める高校部の予定表のシートがありません。" +
-                "中学部の予定表・年間カレンダーにはまだ対応していません。"}
+              {"このファイルには、読み込める高校部・中学部の予定表のシートがありません。" +
+                "年間カレンダーにはまだ対応していません。"}
             </p>
           ) : (
             !merged && (
@@ -403,9 +675,30 @@ export function YoteihyoCheckView({
           courses={[...merged.courses.values()]}
           suggestions={suggestions}
           mapping={mapping}
-          overrides={overrides || {}}
-          onChangeOverrides={setOverrides}
+          overrides={overrides}
+          onChangeOverride={changeOverride}
           slots={slots}
+          canEdit={isAdmin}
+          legacyCount={legacyCount}
+          onShareLegacy={shareLegacy}
+        />
+      )}
+
+      {cutoffPlan && (
+        <CutoffProposalPanel
+          key={`cutoff-${book.loadId}`}
+          plan={cutoffPlan}
+          courses={merged.courses}
+          onApply={applyCutoffs}
+        />
+      )}
+
+      {merged && (
+        <SessionNumberPanel
+          items={sessionNumberIssues}
+          courses={merged.courses}
+          panelStyle={panel}
+          headingStyle={h2}
         />
       )}
 
@@ -430,6 +723,19 @@ export function YoteihyoCheckView({
               <input type="checkbox" checked={onlyUpcoming} onChange={(e) => setOnlyUpcoming(e.target.checked)} />
               今日以降だけ
             </label>
+            {(confirmedCount > 0 || showConfirmed) && (
+              <label
+                className="no-print"
+                style={{ fontSize: 12, color: colors.ink, display: "flex", alignItems: "center", gap: 4 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showConfirmed}
+                  onChange={(e) => setShowConfirmed(e.target.checked)}
+                />
+                確認済みも表示 ({confirmedCount} 件)
+              </label>
+            )}
             {isAdmin && fixable.length > 0 && (
               <button
                 type="button"
@@ -467,8 +773,14 @@ export function YoteihyoCheckView({
           )}
           {skipped.length > 0 && (
             <p style={{ ...note, marginBottom: 8 }}>
-              表示期間設定 (開始日〜終了日) の外のため比べていない期間:{" "}
-              {skipped.map((t) => `${t.family} ${shortRange(t)}`).join("、")}
+              表示期間設定 (開始日〜終了日・コース別終講日) の外のため比べていない期間:{" "}
+              {skipped
+                .map(
+                  (t) =>
+                    `${t.family} ${shortRange(t)} (${t.courseCount} 講座` +
+                    `${t.partial ? "。講座によっては一部の日だけ" : ""})`
+                )
+                .join("、")}
             </p>
           )}
           {notCompared.problems.length > 0 && (
@@ -485,6 +797,7 @@ export function YoteihyoCheckView({
           {visiblePlans.length === 0 ? (
             <p style={{ ...note, padding: "12px 0" }}>
               {plans.length ? "今日以降の食い違いはありません。" : "食い違う日はありません。"}
+              {confirmedCount > 0 && !showConfirmed && ` (確認済みにした ${confirmedCount} 件は出していません)`}
             </p>
           ) : (
             visiblePlans.map((plan) => (
@@ -498,6 +811,11 @@ export function YoteihyoCheckView({
                 onApply={() => apply([plan])}
                 onOpenDayReschedule={onOpenDayReschedule}
                 onEditHoliday={onEditHoliday}
+                onConfirm={confirmFindings}
+                onUnconfirm={unconfirmFindings}
+                stale={split.stale}
+                onExceptHoliday={saveHolidays ? exceptHoliday : undefined}
+                onAddOnlyDate={saveSlots ? addOnlyDate : undefined}
               />
             ))
           )}
@@ -544,7 +862,10 @@ function SheetIssues({ merged, plannedIssues }) {
           </div>
         )}
         {count === 0 && merged.notes.length === 0 && (
-          <p style={note}>曜日は暦どおりで、予定回数も表の印の数と合っています。</p>
+          <p style={note}>
+            {"曜日は暦どおりで、予定回数も表の印の数と合っています。" +
+              "表の外の印・シート名と題の期間の違い・凡例に無い色の塗りも見つかりませんでした。"}
+          </p>
         )}
       </div>
     </details>

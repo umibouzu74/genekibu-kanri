@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // 表示期間設定の「初回1限はオリエン（回数に数えない）」チェックボックス。
 // 未設定 (従来データ) の既定表示と、切り替えたときの保存形を固定する。
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TimetableManagerView } from "./TimetableManagerView";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { ToastProvider } from "../../hooks/useToasts";
@@ -245,5 +245,117 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     fireEvent.change(name, { target: { value: "土曜プレップ 2学期" } });
     fireEvent.click(dup);
     expect(ttCrud.duplicate).toHaveBeenCalledWith(2, "土曜プレップ 2学期", { startDate: null, endDate: null });
+  });
+});
+
+// ページ内の目次とセクションへの要求 (C4)。カードが縦に 6 枚並んで長く、
+// コース別終講日が下の方 + 折りたたみの裏で見つけにくかった
+describe("TimetableManagerView の目次", () => {
+  // jsdom には scrollIntoView が無いので、どこへスクロールしたかを記録する
+  let scrolled;
+  let original;
+  beforeEach(() => {
+    scrolled = [];
+    original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.id);
+    };
+  });
+  afterEach(() => {
+    Element.prototype.scrollIntoView = original;
+  });
+
+  // 高3 にコースが 10 (折りたたみの上限 8 を超える)
+  const MANY = Array.from({ length: 10 }, (_, i) => ({
+    id: 100 + i,
+    grade: "高3",
+    day: "月",
+    time: "19:00-20:20",
+    cls: "",
+    room: "602",
+    subj: `共テ科目${i} 演習`,
+    teacher: "T",
+    note: "",
+    timetableId: 1,
+  }));
+
+  function renderToc(props = {}) {
+    render(
+      <ToastProvider render={() => null}>
+        <ConfirmProvider>
+          <TimetableManagerView
+            timetables={TIMETABLES}
+            displayCutoff={CUTOFF}
+            slots={MANY}
+            classSets={[]}
+            onSaveClassSets={vi.fn()}
+            ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() }}
+            onSaveDisplayCutoff={vi.fn()}
+            isAdmin
+            {...props}
+          />
+        </ConfirmProvider>
+      </ToastProvider>
+    );
+  }
+  const toc = () => screen.getByRole("navigation", { name: "このページの目次" });
+
+  it("先頭の目次に各カードを並べ、紙面には載せない", () => {
+    renderToc();
+    expect(toc().className).toContain("no-print");
+    const names = within(toc())
+      .getAllByRole("button")
+      .map((b) => b.textContent.replace(/^\S+\s/, ""));
+    expect(names).toEqual([
+      "時間割一覧",
+      "時刻一括変換",
+      "期間の全体像",
+      "表示期間設定",
+      "コース別終講日",
+      "授業セット",
+    ]);
+    // 目次の飛び先はどれも画面にある
+    for (const id of [
+      "tt-section-list",
+      "tt-section-timeBulk",
+      "tt-section-overview",
+      "tt-section-displayCutoff",
+      "tt-section-cohortCutoff",
+      "tt-section-classSets",
+    ]) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+  });
+
+  it("閲覧者には時刻一括変換 (管理者だけのカード) を目次に出さない", () => {
+    renderToc({ isAdmin: false });
+    expect(within(toc()).queryByRole("button", { name: "時刻一括変換" })).toBeNull();
+    expect(document.getElementById("tt-section-timeBulk")).toBeNull();
+    expect(within(toc()).getByRole("button", { name: "コース別終講日" })).toBeInTheDocument();
+  });
+
+  it("コース別終講日へ飛ぶとそのカードへスクロールし、折りたたみも開く", async () => {
+    renderToc();
+    expect(screen.queryByText("高3 共テ科目9")).toBeNull();
+    fireEvent.click(within(toc()).getByRole("button", { name: "コース別終講日" }));
+    await waitFor(() => expect(scrolled).toContain("tt-section-cohortCutoff"));
+    expect(screen.getByText("高3 共テ科目9")).toBeInTheDocument();
+  });
+
+  it("外からの要求 (サイドバー等) を受けたらそのカードへ飛び、要求を消してもらう", async () => {
+    const onConsumeSectionRequest = vi.fn();
+    renderToc({
+      sectionRequest: { key: "cohortCutoff", token: 1 },
+      onConsumeSectionRequest,
+    });
+    expect(onConsumeSectionRequest).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(scrolled).toEqual(["tt-section-cohortCutoff"]));
+    expect(screen.getByText("高3 共テ科目9")).toBeInTheDocument();
+  });
+
+  it("ほかのカードへの要求では折りたたみを開かない", async () => {
+    renderToc({ sectionRequest: { key: "classSets", token: 1 }, onConsumeSectionRequest: vi.fn() });
+    await waitFor(() => expect(scrolled).toEqual(["tt-section-classSets"]));
+    expect(screen.queryByText("高3 共テ科目9")).toBeNull();
   });
 });

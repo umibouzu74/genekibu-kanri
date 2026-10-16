@@ -72,6 +72,34 @@ export function expandClassSetSlotIds(cs, slots) {
 }
 
 /**
+ * 「同じ日の同じ教科・クラスは 1 回と数える」セットか (日数カウント)。
+ * 土曜のプレップ・内申対策のように 1 日に同じ授業が 2 コマ続くコースで、
+ * 予定表の回数 (☆14) は日数で数えている。既定 (未設定) はコマごとに数える。
+ */
+export function isDayCountSet(cs) {
+  return !!cs && cs.countByDay === true;
+}
+
+/**
+ * slotId → そのコマが属する授業セット (オブジェクト) の索引。
+ * buildClassSetIndex と同じく先に定義されたセットを採る。
+ * セットごとの数え方 (countByDay) を回数計算から引くために使う。
+ *
+ * @param {Array} classSets
+ * @param {Array} slots 母集合 (全コマ)
+ * @returns {Map<number, object>}
+ */
+export function buildClassSetOwnerIndex(classSets, slots) {
+  const index = new Map();
+  for (const cs of classSets || []) {
+    for (const id of expandClassSetSlotIds(cs, slots)) {
+      if (!index.has(id)) index.set(id, cs);
+    }
+  }
+  return index;
+}
+
+/**
  * slotId → 同じセットに属する slot.id 配列 の索引。
  * 1 つの slot が複数セットに載っている場合は先に定義されたセットを採る
  * (画面側で「各コマは 0 or 1 セット」を保っている)。

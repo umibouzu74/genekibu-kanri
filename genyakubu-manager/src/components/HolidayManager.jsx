@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  ALL_GRADES,
   DEPARTMENTS,
   DEPT_COLOR,
   HIGH_GRADES,
@@ -24,6 +23,18 @@ import { findSameDayHolidays } from "../utils/holidayDuplicates";
 import { describeHolidayScope } from "../utils/eventTargets";
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
+import { MultiDateCalendar } from "./MultiDateCalendar";
+import { gradeChoices, isCommonGrade } from "../utils/gradeChoices";
+import { holidayExceptionSlots, slotsStoppedByHoliday } from "../utils/holidayExceptions";
+
+// 例外の候補・一覧に出すコマの短い名前 ("19:00 高2 高松一 物理")
+function slotShortLabel(s) {
+  const time = (s.time || "").split("-")[0];
+  return [time, `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""}`, s.subj].filter(Boolean).join(" ");
+}
+
+// 例外の候補を並べる日数の上限 (年末年始のような長い期間を入れても重くしない)
+const EXCEPTION_PREVIEW_DAYS = 14;
 
 // Extract unique class groups (school/course names) from configured slots.
 // For high school, the class group is either:
@@ -82,6 +93,9 @@ function extractClassGroups(slots, grades) {
 export function HolidayManager({
   holidays,
   slots = [],
+  // 例外の候補 (その日に止まるコマ) を画面に出るコマだけにする窓
+  timetables = [],
+  displayCutoff = null,
   onSave,
   isAdmin,
   editTargetId = null,
@@ -102,6 +116,14 @@ export function HolidayManager({
   const [targetGrades, setTargetGrades] = useState([]);
   const [allGrades, setAllGrades] = useState(true);
   const [subjKeywords, setSubjKeywords] = useState([]);
+  // 対象クラスの自由入力 (科目名に含む文字)。チップに無い「共テ英語(Hi)」なども指定できる
+  const [keywordInput, setKeywordInput] = useState("");
+  const [showDaySlots, setShowDaySlots] = useState(false);
+  // 例外 (この日は授業あり) のコマ。scheduleHelpers.holidayMatches が見る
+  const [excludeSlotIds, setExcludeSlotIds] = useState([]);
+  const [showExceptions, setShowExceptions] = useState(false);
+  // 飛び飛びの日付をカレンダーで押して選ぶ
+  const [showCalendar, setShowCalendar] = useState(false);
   const [filter, setFilter] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
@@ -112,6 +134,21 @@ export function HolidayManager({
     list: holidays,
     save: onSave,
   });
+  const slotById = useMemo(
+    () => new Map((slots || []).map((s) => [String(s.id), s])),
+    [slots]
+  );
+
+  // 対象学年の選択肢 = 標準の学年 + 時間割にある共通学年 (附中・中1-3・高1高2 …)。
+  // 対象学年は完全一致で効くので、共通学年はそれ自体を選んだときだけ止まる
+  const gradeOptions = useMemo(() => gradeChoices(slots, targetGrades), [slots, targetGrades]);
+  const scopeGradeOptions = useMemo(
+    () =>
+      scope.includes("全部")
+        ? gradeOptions
+        : gradeOptions.filter((g) => scope.includes(gradeToDept(g))),
+    [gradeOptions, scope]
+  );
 
   // Derive available class groups from configured slots
   const availableClasses = useMemo(
@@ -156,22 +193,24 @@ export function HolidayManager({
   const toggleGrade = (g) => {
     setSubjKeywords([]); // Clear class selection when grades change
     if (allGrades) {
+      // 全学年 (= 共通学年も含む) からその学年だけ外す
       setAllGrades(false);
-      const scopeGrades = scope.includes("全部")
-        ? ALL_GRADES
-        : ALL_GRADES.filter((gr) => scope.includes(gradeToDept(gr)));
-      setTargetGrades(scopeGrades.filter((gr) => gr !== g));
+      setTargetGrades(scopeGradeOptions.filter((gr) => gr !== g));
       return;
     }
-    const next = targetGrades.includes(g)
-      ? targetGrades.filter((x) => x !== g)
-      : [...targetGrades, g];
-    if (next.length === 0) {
-      setAllGrades(true);
-      setTargetGrades([]);
-    } else {
-      setTargetGrades(next);
-    }
+    // 全部外しても全学年には戻さない (「全解除」から選び直せるように)。
+    // 何も選んでいないまま登録しようとしたら止める (handleAdd)
+    setTargetGrades(
+      targetGrades.includes(g) ? targetGrades.filter((x) => x !== g) : [...targetGrades, g]
+    );
+  };
+
+  // 「全解除」: 何も選んでいない状態から、止めたい学年だけを選ぶ
+  // (附中1〜3 だけ、のときに中1〜3 を 1 つずつ外さなくて済むように)
+  const clearGrades = () => {
+    setAllGrades(false);
+    setTargetGrades([]);
+    setSubjKeywords([]);
   };
 
   const selectAllGrades = () => {
@@ -198,6 +237,27 @@ export function HolidayManager({
   const toggleKeyword = (kw) => {
     setSubjKeywords((prev) =>
       prev.includes(kw) ? prev.filter((k) => k !== kw) : [...prev, kw]
+    );
+  };
+  // 自由入力・その日のコマから足す (科目名に含む文字。完全な科目名なら
+  // そのコマだけに効く)
+  const addKeyword = (raw) => {
+    const kw = (raw || "").trim();
+    if (!kw) return;
+    setSubjKeywords((prev) => (prev.includes(kw) ? prev : [...prev, kw]));
+    setKeywordInput("");
+  };
+  const toggleCalendarDate = (d) => {
+    setDates((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()
+    );
+    if (error) setError("");
+  };
+  const toggleException = (id) => {
+    setExcludeSlotIds((prev) =>
+      prev.some((x) => String(x) === String(id))
+        ? prev.filter((x) => String(x) !== String(id))
+        : [...prev, id]
     );
   };
 
@@ -238,6 +298,31 @@ export function HolidayManager({
     () => findSameDayHolidays(holidays, previewDates, criteria, { excludeId: editId }),
     [holidays, previewDates, criteria, editId]
   );
+  // その日 (入力中の日付) にこの対象設定で止まるコマ = 例外 (この日は授業あり)
+  // の候補。同じコマは 1 回だけ (毎週のコマなので日付が違っても同じ id)
+  const stoppedSlots = useMemo(() => {
+    const seen = new Map();
+    for (const d of previewDates.slice(0, EXCEPTION_PREVIEW_DAYS)) {
+      for (const s of slotsStoppedByHoliday(slots, d, criteria, { timetables, displayCutoff })) {
+        if (!seen.has(s.id)) seen.set(s.id, { slot: s, dates: [] });
+        seen.get(s.id).dates.push(d);
+      }
+    }
+    return [...seen.values()];
+  }, [previewDates, slots, criteria, timetables, displayCutoff]);
+  // その日のコマ (対象クラスを「その日のコマから選ぶ」用)。科目キーワードで
+  // 絞る前の、部門・学年だけで止まるコマ
+  const daySlotsForKeywords = useMemo(() => {
+    if (!showDaySlots) return [];
+    const base = { ...criteria, subjKeywords: [] };
+    const seen = new Map();
+    for (const d of previewDates.slice(0, EXCEPTION_PREVIEW_DAYS)) {
+      for (const s of slotsStoppedByHoliday(slots, d, base, { timetables, displayCutoff })) {
+        if (!seen.has(s.subj)) seen.set(s.subj, s);
+      }
+    }
+    return [...seen.values()];
+  }, [showDaySlots, previewDates, slots, criteria, timetables, displayCutoff]);
 
   // ─── Form actions ───
   // presetDate: イベントカレンダーの日付セルから来たときの日付 (文字列のみ。
@@ -251,6 +336,9 @@ export function HolidayManager({
     setTargetGrades([]);
     setAllGrades(true);
     setSubjKeywords([]);
+    setKeywordInput("");
+    setExcludeSlotIds([]);
+    setShowExceptions(false);
     setEditId(null);
     setError("");
     setConflict(null);
@@ -277,6 +365,10 @@ export function HolidayManager({
       setError("日付を入力してください");
       return;
     }
+    if (!scope.includes("全部") && !allGrades && targetGrades.length === 0) {
+      setError("対象学年を選んでください (すべての学年なら「全学年」)");
+      return;
+    }
 
     // 同じ日・同じ対象の既存があれば足さない (効き目は変わらないのに一覧に
     // 2 行並び、片方だけ消して「まだ休講のまま」になる)。対象が違う既存は
@@ -301,11 +393,21 @@ export function HolidayManager({
       return;
     }
 
+    // 例外は今の対象設定で止まるコマのものだけ残す (対象を絞り直して止まら
+    // なくなったコマの id を持ち続けない)。候補を出していない長い期間は
+    // そのまま (判定に害は無い)
+    const stoppedIds = new Set(stoppedSlots.map((x) => String(x.slot.id)));
+    const keptExcludes =
+      previewDates.length > EXCEPTION_PREVIEW_DAYS
+        ? excludeSlotIds
+        : excludeSlotIds.filter((id) => stoppedIds.has(String(id)));
     const base = {
       label: label || "休講",
       scope: criteria.scope,
       targetGrades: criteria.targetGrades,
       subjKeywords: criteria.subjKeywords,
+      // 空は持たない (RTDB が消すので保存形をそろえる)
+      ...(keptExcludes.length > 0 ? { excludeSlotIds: keptExcludes } : {}),
     };
 
     if (editId != null) {
@@ -338,6 +440,8 @@ export function HolidayManager({
       setTargetGrades([...h.targetGrades]);
     }
     setSubjKeywords([...(h.subjKeywords || [])]);
+    setExcludeSlotIds([...(h.excludeSlotIds || [])]);
+    setShowExceptions((h.excludeSlotIds || []).length > 0);
     setEditId(h.id);
     setError("");
     setConflict(null);
@@ -352,6 +456,44 @@ export function HolidayManager({
     setDateEndInput("");
     setError("");
     setConflict(null);
+  };
+
+  // 一覧の例外を外す (この日は休講日どおり休講に戻す)。cascade の無い変更なので
+  // 6 秒の「元に戻す」を出す。書き込みは保存時点の配列から (updater)
+  const handleRemoveException = (h, id) => {
+    const key = String(id);
+    const withExcludes = (x, ids) => {
+      const next = { ...x };
+      if (ids.length > 0) next.excludeSlotIds = ids;
+      else delete next.excludeSlotIds;
+      return next;
+    };
+    onSave((prev) =>
+      prev.map((x) =>
+        x.id === h.id
+          ? withExcludes(x, (x.excludeSlotIds || []).filter((v) => String(v) !== key))
+          : x
+      )
+    );
+    const s = slotById.get(key);
+    toasts.push(
+      `${fmtDateWeekday(h.date)} の例外を外しました${s ? ` (${slotShortLabel(s)} は休講に戻ります)` : ""}`,
+      {
+        tone: "info",
+        duration: 6000,
+        action: {
+          label: "元に戻す",
+          onClick: () =>
+            onSave((prev) =>
+              prev.map((x) => {
+                if (x.id !== h.id) return x;
+                const cur = x.excludeSlotIds || [];
+                return cur.some((v) => String(v) === key) ? x : withExcludes(x, [...cur, id]);
+              })
+            ),
+        },
+      }
+    );
   };
 
   const handleDel = (h) => {
@@ -509,6 +651,15 @@ export function HolidayManager({
                   >
                     ＋ 日付を追加
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendar((v) => !v)}
+                    aria-expanded={showCalendar}
+                    title="飛び飛びの日付を、カレンダーで押して選べます"
+                    style={{ ...S.btn(showCalendar), fontSize: 11, padding: "4px 10px" }}
+                  >
+                    📅 カレンダーで選ぶ
+                  </button>
                   <span style={{ fontSize: 10, color: "#888" }}>
                     （複数日は同じ対象設定で一括登録）
                   </span>
@@ -523,6 +674,20 @@ export function HolidayManager({
             style={{ ...S.input, width: "100%", maxWidth: 240 }}
           />
         </div>
+        {editId == null && showCalendar && (
+          <div style={{ marginBottom: 10, display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <MultiDateCalendar
+              selected={dates}
+              onToggle={toggleCalendarDate}
+              initialMonth={dateInput || dates[0] || newEntryDate || undefined}
+              label="休講日をカレンダーで選ぶ"
+            />
+            <div style={{ fontSize: 11, color: "#666", maxWidth: 260, lineHeight: 1.6 }}>
+              押した日が上のチップに入ります (もう一度押すと外れます)。
+              {dates.length > 0 && <div style={{ fontWeight: 700 }}>選択中: {dates.length} 日</div>}
+            </div>
+          </div>
+        )}
         {error && (
           <div
             id="holiday-date-err"
@@ -676,6 +841,18 @@ export function HolidayManager({
               >
                 全学年
               </button>
+              <button
+                type="button"
+                onClick={clearGrades}
+                title="選択を全部外して、止めたい学年だけを選び直します"
+                style={{
+                  ...S.btn(!allGrades && targetGrades.length === 0),
+                  fontSize: 11,
+                  padding: "4px 10px",
+                }}
+              >
+                全解除
+              </button>
               {scope.includes("中学部") && (
                 <button
                   type="button"
@@ -712,16 +889,19 @@ export function HolidayManager({
               )}
             </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {ALL_GRADES.filter((g) => {
-                const dept = gradeToDept(g);
-                return scope.includes(dept);
-              }).map((g) => {
+              {scopeGradeOptions.map((g) => {
                 const dept = gradeToDept(g);
                 const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                 const sel = isGradeSelected(g);
+                const common = isCommonGrade(g);
                 return (
                   <label
                     key={g}
+                    title={
+                      common
+                        ? "共通学年のコマ (附中の確認テスト・中1-3 のプレップなど)。それ自体を選んだときだけ止まります"
+                        : undefined
+                    }
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -732,7 +912,7 @@ export function HolidayManager({
                       cursor: "pointer",
                       background: sel ? col.b : "#f5f5f5",
                       color: sel ? col.f : "#aaa",
-                      border: `1px solid ${sel ? col.accent || "#ccc" : "#ddd"}`,
+                      border: `1px ${common ? "dashed" : "solid"} ${sel ? col.accent || "#ccc" : "#ccc"}`,
                       fontWeight: sel ? 700 : 400,
                       transition: "all .15s",
                       userSelect: "none",
@@ -749,12 +929,33 @@ export function HolidayManager({
                 );
               })}
             </div>
+            {scopeGradeOptions.some(isCommonGrade) && (
+              <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+                ※ 点線の学年 (共通学年) は、中1〜3 などを選んでも止まりません。止めるときはそれ自体を選んでください
+              </div>
+            )}
+            {!allGrades && targetGrades.length === 0 && (
+              <div role="status" style={{ fontSize: 11, color: "#a03030", marginTop: 4 }}>
+                止めたい学年を選んでください
+              </div>
+            )}
           </div>
         )}
 
-        {/* 対象クラス (学年が個別選択かつ高校部を含む場合のみ表示) */}
-        {showGradeSelection && !allGrades && targetGrades.some((g) => gradeToDept(g) === "高校部") && availableClasses.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
+        {/* 対象クラス。部門を選んでいる間は常に同じ高さで出す (学年を切り替える
+            たびに欄が出入りして「更新」ボタンが上下し、押し間違える) */}
+        {showGradeSelection && (
+          <div
+            data-testid="holiday-class-section"
+            style={{
+              marginBottom: 12,
+              minHeight: 116,
+              border: "1px solid #eee",
+              borderRadius: 6,
+              padding: "6px 8px",
+              background: "#fcfcfc",
+            }}
+          >
             <div
               style={{
                 display: "flex",
@@ -765,41 +966,194 @@ export function HolidayManager({
               }}
             >
               <span style={{ fontSize: 12, fontWeight: 700 }}>対象クラス:</span>
-              <span style={{ fontSize: 10, color: "#888" }}>（未選択＝全クラス対象）</span>
+              <span style={{ fontSize: 10, color: "#888" }}>
+                （未選択＝全クラス対象。科目名にその文字を含むコマだけ止まります）
+              </span>
             </div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {availableClasses.map((cls) => {
-                const sel = subjKeywords.includes(cls);
-                return (
-                  <label
-                    key={cls}
+            {allGrades || targetGrades.length === 0 ? (
+              <div style={{ fontSize: 11, color: "#999", padding: "6px 0" }}>
+                学年を絞ると、学校名・科目名でさらに絞り込めます
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 4,
+                    flexWrap: "wrap",
+                    maxHeight: 58,
+                    overflowY: "auto",
+                    marginBottom: 6,
+                  }}
+                >
+                  {[
+                    ...availableClasses,
+                    ...subjKeywords.filter((k) => !availableClasses.includes(k)),
+                  ].map((cls) => {
+                    const sel = subjKeywords.includes(cls);
+                    return (
+                      <label
+                        key={cls}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 3,
+                          fontSize: 11,
+                          padding: "3px 8px",
+                          borderRadius: 5,
+                          cursor: "pointer",
+                          background: sel ? "#e0ecf8" : "#f5f5f5",
+                          color: sel ? "#1a4a7a" : "#999",
+                          border: `1px solid ${sel ? "#6aa0d0" : "#ddd"}`,
+                          fontWeight: sel ? 700 : 400,
+                          transition: "all .15s",
+                          userSelect: "none",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() => toggleKeyword(cls)}
+                          style={VISUALLY_HIDDEN}
+                        />
+                        {cls}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    value={keywordInput}
+                    onChange={(e) => setKeywordInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        addKeyword(keywordInput);
+                      }
+                    }}
+                    placeholder="科目名に含む文字 (例: 共テ英語(Hi))"
+                    aria-label="対象クラスを文字で指定"
+                    style={{ ...S.input, width: 220, fontSize: 11 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addKeyword(keywordInput)}
+                    disabled={!keywordInput.trim()}
+                    style={{ ...S.btn(false), fontSize: 11, padding: "3px 8px" }}
+                  >
+                    ＋ 追加
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDaySlots((v) => !v)}
+                    aria-expanded={showDaySlots}
+                    disabled={previewDates.length === 0}
+                    title={previewDates.length === 0 ? "先に日付を入れてください" : undefined}
+                    style={{ ...S.btn(showDaySlots), fontSize: 11, padding: "3px 8px" }}
+                  >
+                    その日のコマから選ぶ
+                  </button>
+                </div>
+                {showDaySlots && (
+                  <div
                     style={{
+                      marginTop: 6,
                       display: "flex",
-                      alignItems: "center",
-                      gap: 3,
-                      fontSize: 11,
-                      padding: "3px 8px",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      background: sel ? "#e0ecf8" : "#f5f5f5",
-                      color: sel ? "#1a4a7a" : "#999",
-                      border: `1px solid ${sel ? "#6aa0d0" : "#ddd"}`,
-                      fontWeight: sel ? 700 : 400,
-                      transition: "all .15s",
-                      userSelect: "none",
+                      gap: 4,
+                      flexWrap: "wrap",
+                      maxHeight: 96,
+                      overflowY: "auto",
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={sel}
-                      onChange={() => toggleKeyword(cls)}
-                      style={VISUALLY_HIDDEN}
-                    />
-                    {cls}
-                  </label>
-                );
-              })}
-            </div>
+                    {daySlotsForKeywords.length === 0 ? (
+                      <span style={{ fontSize: 11, color: "#999" }}>
+                        この日に止まるコマはありません
+                      </span>
+                    ) : (
+                      daySlotsForKeywords.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => addKeyword(s.subj)}
+                          disabled={subjKeywords.includes(s.subj)}
+                          title={`「${s.subj}」を対象クラスに足す`}
+                          style={{ ...S.btn(subjKeywords.includes(s.subj)), fontSize: 10, padding: "2px 6px" }}
+                        >
+                          {s.grade} {s.subj}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 例外 (この日は授業あり)。対象に入るが授業を行うコマ */}
+        {previewDates.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={() => setShowExceptions((v) => !v)}
+              aria-expanded={showExceptions}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#444",
+              }}
+            >
+              {showExceptions ? "▼" : "▶"} 例外 (この日は授業あり):{" "}
+              {excludeSlotIds.length > 0 ? `${excludeSlotIds.length} コマ` : "なし"}
+              <span style={{ fontWeight: 400, color: "#888", fontSize: 10, marginLeft: 6 }}>
+                この休講で止まるコマ {stoppedSlots.length} コマ
+              </span>
+            </button>
+            {showExceptions && (
+              <div
+                style={{
+                  marginTop: 6,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  maxHeight: 180,
+                  overflowY: "auto",
+                  border: "1px solid #eee",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                }}
+              >
+                {stoppedSlots.length === 0 ? (
+                  <span style={{ fontSize: 11, color: "#999" }}>この日にこの対象で止まるコマはありません</span>
+                ) : (
+                  stoppedSlots.map(({ slot: sl, dates: ds }) => (
+                    <label
+                      key={sl.id}
+                      style={{ fontSize: 11, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={excludeSlotIds.some((x) => String(x) === String(sl.id))}
+                        onChange={() => toggleException(sl.id)}
+                      />
+                      <span>{slotShortLabel(sl)}</span>
+                      {previewDates.length > 1 && (
+                        <span style={{ color: "#999", fontSize: 10 }}>
+                          ({ds.map((d) => fmtDateWeekday(d)).join("・")})
+                        </span>
+                      )}
+                    </label>
+                  ))
+                )}
+                <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
+                  チェックしたコマはこの休講日では止まりません (その日は通常どおり授業)
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -943,6 +1297,43 @@ export function HolidayManager({
                         }}
                       >
                         {kw}
+                      </span>
+                    ))}
+                    {holidayExceptionSlots(h, slotById).map(({ id, slot: ex }) => (
+                      <span
+                        key={`ex-${id}`}
+                        title="例外: この日は授業あり (休講にしない)"
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "1px 4px 1px 6px",
+                          borderRadius: 4,
+                          background: "#e6f4ea",
+                          color: "#2a6a3a",
+                          border: "1px solid #a8d8b0",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 3,
+                        }}
+                      >
+                        授業あり: {ex ? slotShortLabel(ex) : `削除済みのコマ (${id})`}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveException(h, id)}
+                            aria-label={`${h.date} の例外 ${ex ? slotShortLabel(ex) : id} を外す`}
+                            style={{
+                              border: "none",
+                              background: "none",
+                              color: "#2a6a3a",
+                              cursor: "pointer",
+                              padding: 0,
+                              fontSize: 11,
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
                       </span>
                     ))}
                   </div>

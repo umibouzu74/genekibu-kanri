@@ -300,7 +300,7 @@ export function computeTeachingMinutes(args) {
         ? []
         : (byDay.get(dow) || []).filter(
             (s) =>
-              !isOffForGrade(date, s.grade, s.subj) &&
+              !isOffForGrade(date, s.grade, s.subj, s.id) &&
               !isSlotCancelledOnDate(s, date, cancelCtx) &&
               (timetableById.size === 0 ||
                 isTimetableActiveForDate(

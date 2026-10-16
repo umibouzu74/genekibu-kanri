@@ -625,7 +625,7 @@ export function WeekView({
       const affected = heldSlots.filter(
         (s) =>
           s.day === dow &&
-          isHolidayForSlot(h.date, s.grade, s.subj) &&
+          isHolidayForSlot(h.date, s.grade, s.subj, s.id) &&
           (!isBiweekly(s.note) ||
             isTeacherActiveOnDate(s, teacher, h.date, biweeklyAnchors, holidays, examPeriods))
       );

@@ -24,7 +24,7 @@ import {
   offsiteStatus,
 } from "../../utils/offsiteLessons";
 import { leaveKindMeta } from "../../utils/staffLeave";
-import { isFullDayHoliday } from "../../utils/scheduleHelpers";
+import { isFullDayHoliday, isGranularHoliday } from "../../utils/scheduleHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
@@ -402,7 +402,7 @@ export function MonthView({
   // (以前は除外していたが バッジが消えて代行/合同されたことが判らない問題があった)。
   const isTeacherAttending = useCallback(
     (slot, ds) => {
-      if (isOffForGrade(ds, slot.grade, slot.subj)) return false;
+      if (isOffForGrade(ds, slot.grade, slot.subj, slot.id)) return false;
       // 特別時程の部分休講 (1限カット等) は休講同様このビューから外す。
       // コマ休講 (adjustments の cancel) は外さず、カードに取消線 + 「休」で
       // 出す (この日だけ無いことに気付けるように。teacherDayOff の
@@ -460,13 +460,11 @@ export function MonthView({
     const offDepts = [
       ...new Set(
         hols
-          .filter((h) => (h.targetGrades || []).length === 0 && (h.subjKeywords || []).length === 0)
+          .filter((h) => !isGranularHoliday(h))
           .flatMap((h) => (h.scope || ["全部"]).filter((s) => s !== "全部"))
       ),
     ];
-    const granularHols = hols.filter(
-      (h) => (h.targetGrades || []).length > 0 || (h.subjKeywords || []).length > 0
-    );
+    const granularHols = hols.filter(isGranularHoliday);
     const epActive = showExam ? examPeriodsForDate(ds) : [];
     const hasExam = epActive.length > 0;
     const evActive = showSpecial ? specialEventsForDate(ds) : [];
@@ -1317,9 +1315,11 @@ export function MonthView({
           )}
           {!isFullOff && granularHols.length > 0 && (
             <span style={{ fontSize: 7, color: "#4a7a9a", fontWeight: 400, display: "block" }}>
-              {granularHols.map((h) =>
-                [...(h.targetGrades || []), ...(h.subjKeywords || [])].join("・")
-              ).join(", ") + "休"}
+              {granularHols.map((h) => {
+                const parts = [...(h.targetGrades || []), ...(h.subjKeywords || [])];
+                // 例外 (この日は授業あり) だけの休講日は部門名で言う
+                return (parts.length > 0 ? parts : h.scope || ["全部"]).join("・");
+              }).join(", ") + "休"}
             </span>
           )}
           {!isFullOff && hasExam && (

@@ -113,6 +113,27 @@ describe("App smoke", () => {
     }
   });
 
+  it("メインメニューから時間割管理のコース別終講日へ飛べる (C4)", async () => {
+    const original = Element.prototype.scrollIntoView;
+    const scrolled = [];
+    Element.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.id);
+    };
+    try {
+      renderApp();
+      await expectNoCrash();
+      const main = document.getElementById("main-content");
+      fireEvent.click(within(main).getByRole("button", { name: /^コース別終講日/ }));
+      expect(
+        await screen.findByRole("heading", { level: 1, name: /時間割管理/ })
+      ).toBeInTheDocument();
+      await waitFor(() => expect(scrolled).toContain("tt-section-cohortCutoff"));
+      await expectNoCrash();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("サイドバーの全ビューを順に開いてもクラッシュしない", async () => {
     renderApp();
     const nav = await screen

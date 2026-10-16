@@ -64,8 +64,16 @@ export const LS = {
   // 明示的な開け閉めの保存で、利用統計ではない (A18 とは別物)
   sidebarOpenCategories: "genyakubu-sidebar-open-categories",
   // 予定表チェックで、予定表の講座とシステムのコマの対応を手で直した結果
-  // (講座キー → { subjects } / { skip })。推定の上書きで、利用統計ではない
+  // (講座キー → { subjects } / { skip })。推定の上書きで、利用統計ではない。
+  // **旧版の端末だけの保存先** (2026-10-16 から yoteihyoCourseMapping へ移した)。
+  // 読むだけで、共有した時点で消す (YoteihyoCheckView)
   yoteihyoMapping: "genyakubu-yoteihyo-mapping",
+  // 予定表チェックの講座の対応 (同期データ、appData)。[{ course, subjects } | { course, skip }]。
+  // 講座キーは RTDB のキーに使えない文字を含みうるので配列で持つ (utils/yoteihyo/courseMapping)
+  yoteihyoCourseMapping: "genyakubu-yoteihyo-course-mapping",
+  // 予定表チェックで「確認済み (対応不要)」にした食い違い (同期データ、appData)。
+  // [{ date, course, fp, at }] (utils/yoteihyo/confirmations)
+  yoteihyoConfirmed: "genyakubu-yoteihyo-confirmed",
 };
 
 // ─── sessionStorage keys ────────────────────────────────────────────

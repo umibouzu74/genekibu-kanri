@@ -4,6 +4,7 @@ import { SIDEBAR_MENU } from "./sidebarMenu";
 import { VIEWS } from "./views";
 import { EVENT_SECTIONS } from "./eventKinds";
 import { MASTER_TABS } from "./masterTabs";
+import { TIMETABLE_SECTION, TIMETABLE_SECTIONS } from "./timetableSections";
 
 const allItems = (menu) => menu.flatMap((cat) => cat.items);
 
@@ -38,6 +39,24 @@ describe("MAIN_MENU", () => {
     for (const tab of MASTER_TABS) {
       expect(items.some((i) => i.kind === "masterTab" && i.tab === tab.key)).toBe(true);
     }
+  });
+
+  // 時間割管理は長い画面で、画面名からは下の方のカードに辿り着けない (C4)。
+  // 一覧・全体像・時刻一括変換は「時間割管理」そのものの項目から開く
+  it("時間割管理の表示期間設定・コース別終講日・授業セットもある", () => {
+    const items = allItems(MAIN_MENU);
+    for (const key of [
+      TIMETABLE_SECTION.DISPLAY_CUTOFF,
+      TIMETABLE_SECTION.COHORT_CUTOFF,
+      TIMETABLE_SECTION.CLASS_SETS,
+    ]) {
+      const item = items.find((i) => i.kind === "timetableSection" && i.section === key);
+      const sec = TIMETABLE_SECTIONS.find((s) => s.key === key);
+      // 名前・アイコンは TIMETABLE_SECTIONS (サイドバーの子項目) と同じ
+      expect(item).toMatchObject({ icon: sec.icon, label: sec.label, adminOnly: false });
+    }
+    // 時間割管理そのものも残す
+    expect(items.some((i) => i.key === `nav:${VIEWS.TIMETABLE}`)).toBe(true);
   });
 
   it("名前・アイコン・権限はサイドバーと同じ", () => {

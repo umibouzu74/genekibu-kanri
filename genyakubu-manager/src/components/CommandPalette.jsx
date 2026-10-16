@@ -4,6 +4,7 @@ import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
 import { SUBS_TABS } from "../constants/subsTabs";
 import { STAFF_TABS } from "../constants/staffTabs";
+import { TIMETABLE_SECTIONS } from "../constants/timetableSections";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -38,6 +39,8 @@ export function CommandPalette({
   onSelectEvent,
   onSelectSubsSubTab,
   onSelectMasterTab,
+  // 時間割管理のセクション (コース別終講日 / 授業セット など) を名前で開く
+  onSelectTimetableSection,
   // 講師管理のタブ (講師の所属 / 担当教科・よみ など) を名前で開く
   onSelectStaffTab,
   onOpenDayReschedule,
@@ -381,6 +384,28 @@ export function CommandPalette({
       }
     }
 
+    // 時間割管理のセクション (表示期間設定 / コース別終講日 / 授業セット など)。
+    // ページが長く、画面名からは下の方のカードに辿り着けない (サイドバーの
+    // 子項目と同じ狙い)。空のときの固定一覧には並べない (6 件で他の操作が
+    // 押し出される)。時刻一括変換は管理者の画面にしか無いので、管理者のときだけ
+    // 渡ってくる onJumpToAbsenceFlow を目印に閲覧者には出さない (上のビュー一覧と同じ)
+    if (onSelectTimetableSection && !empty) {
+      for (const sec of TIMETABLE_SECTIONS) {
+        if (sec.adminOnly && !onJumpToAbsenceFlow) continue;
+        if (matchLabel(sec.label)) {
+          hits.push({
+            type: "view",
+            label: sec.label,
+            detail: "時間割管理のセクションに移動",
+            action: () => {
+              onSelectTimetableSection(sec.key);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
     // 講師管理のタブ (講師の所属 / 担当教科・よみ / 教科マスター)。画面名
     // (講師管理) からは中身に辿り着けないので、タブ名でも引けるようにする
     if (onSelectStaffTab) {
@@ -517,6 +542,7 @@ export function CommandPalette({
     onSelectEvent,
     onSelectSubsSubTab,
     onSelectMasterTab,
+    onSelectTimetableSection,
     onSelectStaffTab,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,

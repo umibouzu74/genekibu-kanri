@@ -28,6 +28,8 @@ import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
+import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
+import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
 
 // fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
 // (毎描画で新しいオブジェクトを渡さない)
@@ -41,7 +43,7 @@ const EMPTY_LIST = Object.freeze([]);
 export const canUseAdminData = (isAdmin) => Boolean(isAdmin) || !isConfigured;
 
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本 (現在は 25 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 27 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -204,6 +206,18 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_LIST,
     { migrate: migrateTeacherAffiliations, onError: onStorageError }
   );
+  // 予定表チェックの講座の対応・確認済み (対応不要) の食い違い。PC と iPad で
+  // 同じ予定表を見るので同期する (以前の講座の対応は端末だけ。画面が引き継ぐ)
+  const [yoteihyoCourseMapping, saveYoteihyoCourseMapping] = useSyncedStorage(
+    LS.yoteihyoCourseMapping,
+    EMPTY_LIST,
+    { migrate: migrateCourseMapping, onError: onStorageError }
+  );
+  const [yoteihyoConfirmed, saveYoteihyoConfirmed] = useSyncedStorage(
+    LS.yoteihyoConfirmed,
+    EMPTY_LIST,
+    { migrate: migrateYoteihyoConfirmed, onError: onStorageError }
+  );
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
   // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する。
   // 有給・半休も同じ (人事の記録)。handoverEnabled = 管理者だけのデータを扱えるか
@@ -285,6 +299,10 @@ export function useAppData({ toasts, isAdmin }) {
     saveTeacherAffiliations,
     staffLeave,
     saveStaffLeave,
+    yoteihyoCourseMapping,
+    saveYoteihyoCourseMapping,
+    yoteihyoConfirmed,
+    saveYoteihyoConfirmed,
     eventVisibility,
     saveEventVisibility,
   };

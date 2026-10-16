@@ -7,6 +7,7 @@ import { Sidebar } from "./Sidebar";
 import { VIEWS } from "../constants/views";
 import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TAB } from "../constants/masterTabs";
+import { TIMETABLE_SECTION } from "../constants/timetableSections";
 
 afterEach(() => {
   cleanup();
@@ -117,6 +118,31 @@ describe("Sidebar のコースマスター管理のタブ", () => {
     renderSidebar({ view: VIEWS.MASTER, onSelectMasterTab });
     fireEvent.click(screen.getByRole("button", { name: /隔週管理/ }));
     expect(onSelectMasterTab).toHaveBeenCalledWith(MASTER_TAB.BIWEEKLY);
+  });
+});
+
+// 時間割管理はカードが縦に並ぶ長い画面で、コース別終講日が見つけにくかった (C4)
+describe("Sidebar の時間割管理のセクション", () => {
+  it("開いている間だけカードの名前 (コース別終講日) を並べ、クリックでキーを通知する", () => {
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: /コース別終講日/ })).toBeNull();
+
+    cleanup();
+    const onSelectTimetableSection = vi.fn();
+    renderSidebar({ view: VIEWS.TIMETABLE, onSelectTimetableSection });
+    expect(screen.getByRole("button", { name: /表示期間設定/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /授業セット/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /コース別終講日/ }));
+    expect(onSelectTimetableSection).toHaveBeenCalledWith(TIMETABLE_SECTION.COHORT_CUTOFF);
+  });
+
+  it("管理者だけのカード (時刻一括変換) は閲覧者に出さない", () => {
+    renderSidebar({ view: VIEWS.TIMETABLE });
+    expect(screen.getByRole("button", { name: /時刻一括変換/ })).toBeTruthy();
+    cleanup();
+    renderSidebar({ view: VIEWS.TIMETABLE, isAdmin: false });
+    expect(screen.queryByRole("button", { name: /時刻一括変換/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /コース別終講日/ })).toBeTruthy();
   });
 });
 

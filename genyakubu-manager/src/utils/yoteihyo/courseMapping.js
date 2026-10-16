@@ -9,11 +9,15 @@
 //     講座の名前に含まれること。講座の名前に教科 (物理・英語…) が書いて
 //     あれば、コマの教科もその中にあること
 //
-// 推定は叩き台で、画面で直せる (直した結果は端末に保存)。コマの id では
-// なく「学年|科目名」で持つので、期切替でコマを作り直しても効き続ける。
+// 推定は叩き台で、画面で直せる。直した結果は同期データ (appData の
+// genyakubu-yoteihyo-course-mapping) に保存し、PC と iPad で共有する。
+// コマの id ではなく「学年|科目名」で持つので、期切替でコマを作り直しても
+// 効き続ける。手で選ぶときは講座と違う学年のコマも選べる (予定表では
+// 「高1・高2」の講座が、システムでは高3 のコマ、のようなことがある)。
 
 import { gradeToDept, isKameiRoom } from "../scheduleHelpers";
 import { courseWeekdays } from "./highSchoolSheet";
+import { expandGradeRange } from "../timetable";
 
 // 予定表の書き方 → システムの科目名の書き方 (長いものから置き換える)
 const SYNONYMS = [
@@ -151,6 +155,18 @@ export function systemGradesFor(course) {
   return out;
 }
 
+/**
+ * その学年のコマが講座の学年に入るか (対応表の候補・「予定表と違う学年のコマ」の印)。
+ * 中学部のコースは「中1-3」のような共通学年も重なれば入る (☆ プレップ)。
+ */
+export function courseGradeMatches(course, grade) {
+  if (course?.dept === "中学部") {
+    const grades = course.shared ? course.sheetGrades || [] : course.grades || [];
+    return middleGradeHit(grade, grades);
+  }
+  return systemGradesFor(course).has(grade);
+}
+
 function campusOk(course, slot) {
   if (course.campus === "亀井町") return isKameiRoom(slot.room || "");
   if (course.campus === "本校") return !isKameiRoom(slot.room || "");
@@ -170,7 +186,96 @@ export const subjectKey = (grade, subj) => `${grade}|${subj}`;
  *   unmatched は、予定表の学年・曜日に入るのにどの講座にも当たらなかったコマ
  */
 export function suggestMapping(courses, slots) {
-  const list = [...courses];
+  const all = [...courses];
+  const middle = suggestMiddleMapping(all.filter((c) => c.dept === "中学部"), slots);
+  const high = suggestHighMapping(all.filter((c) => c.dept !== "中学部"), slots);
+  return {
+    byCourse: new Map([...high.byCourse, ...middle.byCourse]),
+    unmatched: [...high.unmatched, ...middle.unmatched],
+  };
+}
+
+// 学年の表記がコースの学年と重なるか (「中1-3」は中1〜中3 のどれにも重なる)
+function middleGradeHit(slotGrade, grades) {
+  if (grades.includes(slotGrade)) return true;
+  const expanded = expandGradeRange(slotGrade);
+  return expanded.length > 1 && expanded.some((g) => grades.includes(g));
+}
+
+// 名前で当てる語 (「プレップ(個別指導)」「内申対策コース」→ プレップ / 内申対策)。
+// 「本科」「附中」「コース」はコマの科目名に出てこないので語にしない
+function middleNameWords(name) {
+  return normalizeName(name)
+    .replace(/[(（][^)）]*[)）]/g, "")
+    .replace(/本科|附中|コース|ゼミ/g, " ")
+    .split(/\s+/)
+    .filter((w) => [...w].length >= 2);
+}
+
+/**
+ * 中学部のコース (予定表の記号) → システムのコマ。中学部のコースは「その学年の、
+ * その曜日の授業ぜんぶ」なので、科目名ではなく学年 × いつもの曜日で当てる:
+ *   1. 名前のあるコース (☆ プレップ・★ 内申対策) は、学年が重なり、いつもの曜日にあり、
+ *      科目名に名前の語を含むコマ
+ *   2. 残りのコースは、学年がそのコースの学年 (中1 / 附中1 …) で、いつもの曜日にある
+ *      まだ当たっていないコマ (学年をまたぐコースは「中1-3」のような共通学年も)
+ * 推定なので、違えば対応表で人が直す (高校部と同じ)。
+ */
+function suggestMiddleMapping(list, slots) {
+  const weekdays = new Map(list.map((c) => [c.key, courseWeekdays(c).regular]));
+  const groups = new Map();
+  for (const s of slots || []) {
+    if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "中学部") continue;
+    const k = `${subjectKey(s.grade, s.subj)}|${s.day}`;
+    if (!groups.has(k)) groups.set(k, { key: subjectKey(s.grade, s.subj), grade: s.grade, subj: s.subj, day: s.day });
+  }
+  const gradesOf = (c) => (c.shared ? c.sheetGrades || [] : c.grades || []);
+  const assigned = new Map(list.map((c) => [c.key, new Set()]));
+  const taken = new Set();
+  const inScope = new Set();
+  // 1. 名前で
+  for (const c of list) {
+    const words = middleNameWords(c.name);
+    if (!words.length) continue;
+    for (const [gk, g] of groups) {
+      if (!weekdays.get(c.key).includes(g.day) || !middleGradeHit(g.grade, gradesOf(c))) continue;
+      inScope.add(gk);
+      const subj = normalizeName(g.subj);
+      if (!words.some((w) => subj.includes(w))) continue;
+      assigned.get(c.key).add(g.key);
+      taken.add(gk);
+    }
+  }
+  // 2. 学年 × 曜日で。欄 1 つのコース → 学年の少ないコースの順 (★ 内申対策 (中3) を
+  //    ☆ プレップ (中1〜中3) より先に。プレップが中3 の土曜のコマを取らないように)
+  const order = [...list].sort(
+    (a, b) => Number(!!a.shared) - Number(!!b.shared) || gradesOf(a).length - gradesOf(b).length
+  );
+  for (const c of order) {
+    if (assigned.get(c.key).size) continue;
+    const grades = gradesOf(c);
+    for (const [gk, g] of groups) {
+      if (!weekdays.get(c.key).includes(g.day)) continue;
+      const exact = grades.includes(g.grade);
+      const common = c.shared && grades.length > 1 && middleGradeHit(g.grade, grades);
+      if (!exact && !common) continue;
+      inScope.add(gk);
+      if (taken.has(gk)) continue;
+      assigned.get(c.key).add(g.key);
+      taken.add(gk);
+    }
+  }
+  const byCourse = new Map(list.map((c) => [c.key, { subjects: [...assigned.get(c.key)].sort(), ambiguous: [] }]));
+  const unmatchedMap = new Map();
+  for (const [gk, g] of groups) {
+    if (!inScope.has(gk) || taken.has(gk)) continue;
+    if (!unmatchedMap.has(g.key)) unmatchedMap.set(g.key, { key: g.key, grade: g.grade, subj: g.subj, days: [] });
+    unmatchedMap.get(g.key).days.push(g.day);
+  }
+  return { byCourse, unmatched: [...unmatchedMap.values()] };
+}
+
+function suggestHighMapping(list, slots) {
   const weekdays = new Map(list.map((c) => [c.key, courseWeekdays(c).regular]));
   // (学年, 科目, 曜日) ごとにまとめる
   const groups = new Map();
@@ -234,8 +339,122 @@ export function suggestMapping(courses, slots) {
   return { byCourse, unmatched: [...unmatchedMap.values()] };
 }
 
+// ─── 学年の表記 ───────────────────────────────────────────────────
+
+const GRADE_SEQ = ["中1", "中2", "中3", "高1", "高2", "高3"];
+const GRADE_LIST_RE = /^(?:中|高)[1-3](?:[・,、/]?(?:中|高)?[1-3])*$/;
+
 /**
- * 手で直した対応 (端末に保存) を推定に重ねる。
+ * 学年の表記を 1 学年ずつに分ける。「中1-高3」→ 中1〜高3、「中1〜3」→ 中1〜中3、
+ * 「高1高2」「高1・高2」「高1・2」→ 高1・高2。それ以外 (「附中」など) はそのまま 1 つ。
+ * timetable.expandGradeRange は同じ頭の範囲 (中1-3) だけを広げるので、
+ * 部をまたぐ範囲 (追加授業の「中1-高3」) はここで広げる。
+ * @param {string} grade
+ * @returns {string[]}
+ */
+export function expandGradeLabel(grade) {
+  const s = String(grade || "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "");
+  if (!s) return [];
+  const range = /^(中|高)([1-3])[-~〜](中|高)?([1-3])$/.exec(s);
+  if (range) {
+    const a = GRADE_SEQ.indexOf(`${range[1]}${range[2]}`);
+    const b = GRADE_SEQ.indexOf(`${range[3] || range[1]}${range[4]}`);
+    if (a >= 0 && b >= a) return GRADE_SEQ.slice(a, b + 1);
+  }
+  if (!GRADE_LIST_RE.test(s)) return [s];
+  const out = [];
+  let dept = "";
+  for (const m of s.matchAll(/(中|高)?([1-3])/g)) {
+    if (m[1]) dept = m[1];
+    const g = `${dept}${m[2]}`;
+    if (!out.includes(g)) out.push(g);
+  }
+  return out;
+}
+
+/** 2 つの学年の表記に共通の学年があるか (「中1-高3」と「高1高2」など) */
+export function gradesOverlap(a, b) {
+  const set = new Set(expandGradeLabel(a));
+  return expandGradeLabel(b).some((g) => set.has(g));
+}
+
+// ─── 手で直した対応の保存形 ───────────────────────────────────────
+// 同期データ (appData) は配列 [{ course, subjects } | { course, skip: true }] で
+// 持つ。講座キー (「高1・高2|Speaking/Listening」) は RTDB のキーに使えない
+// 文字 (/ . # $ [ ]) を含みうるので、オブジェクトのキーにしない。
+// 旧版は端末の localStorage に { 講座キー: { subjects } | { skip } } で持っていた
+// (LS.yoteihyoMapping)。読み込みはどちらの形も受ける。
+
+function cleanOverride(v) {
+  if (!v || typeof v !== "object") return null;
+  if (v.skip === true) return { skip: true };
+  const subjects = Array.isArray(v.subjects) ? v.subjects.filter((s) => typeof s === "string" && s) : [];
+  return subjects.length ? { subjects: [...new Set(subjects)].sort() } : null;
+}
+
+/**
+ * 保存形を揃える (同期の読み込み・バックアップの読み込み)。旧版の
+ * { 講座キー: 対応 } も配列に直す。形の崩れた項目は捨てる。
+ * @param {unknown} raw
+ * @returns {Array<{course: string, subjects?: string[], skip?: true}>}
+ */
+export function migrateCourseMapping(raw) {
+  if (raw == null || typeof raw !== "object") return [];
+  const entries = Array.isArray(raw)
+    ? raw
+    : Object.values(raw).every((v) => v && typeof v === "object" && typeof v.course === "string")
+      ? Object.values(raw)
+      : Object.entries(raw).map(([course, v]) => ({ ...(v && typeof v === "object" ? v : {}), course }));
+  const out = [];
+  for (const e of entries) {
+    if (!e || typeof e !== "object" || typeof e.course !== "string" || !e.course) continue;
+    const v = cleanOverride(e);
+    if (!v) continue;
+    const i = out.findIndex((x) => x.course === e.course);
+    if (i >= 0) out.splice(i, 1);
+    out.push({ course: e.course, ...v });
+  }
+  return out;
+}
+
+/** 保存形 → { 講座キー: { subjects } | { skip } } (effectiveMapping に渡す形) */
+export function mappingOverrides(list) {
+  const out = {};
+  for (const e of migrateCourseMapping(list)) {
+    out[e.course] = e.skip ? { skip: true } : { subjects: e.subjects };
+  }
+  return out;
+}
+
+/**
+ * 1 講座の対応を書き換えた保存形を返す (value が null なら自動の対応に戻す)。
+ * @param {Array} list
+ * @param {string} course 講座キー
+ * @param {{subjects?: string[], skip?: boolean} | null} value
+ */
+export function setMappingOverride(list, course, value) {
+  const rest = migrateCourseMapping(list).filter((e) => e.course !== course);
+  const v = value == null ? null : cleanOverride(value);
+  return v ? [...rest, { course, ...v }] : rest;
+}
+
+/**
+ * 端末だけに残っている旧版の対応 (legacy) を保存形に足す。同じ講座が既に
+ * 保存形にあれば保存形の方を使う (他の端末で直した結果を上書きしない)。
+ * @returns {Array}
+ */
+export function mergeLegacyMapping(list, legacy) {
+  let out = migrateCourseMapping(list);
+  for (const e of migrateCourseMapping(legacy)) {
+    if (!out.some((x) => x.course === e.course)) out = [...out, e];
+  }
+  return out;
+}
+
+/**
+ * 手で直した対応を推定に重ねる。
  * @param {Map<string, {subjects: string[]}>} suggested
  * @param {Record<string, {skip?: boolean, subjects?: string[]}>} overrides
  * @returns {Map<string, {subjects: string[], skip: boolean, manual: boolean}>}
@@ -252,13 +471,13 @@ export function effectiveMapping(suggested, overrides = {}) {
 }
 
 /**
- * システムの高校部のコマの「学年|科目名」→ 曜日の一覧。
+ * システムのコマ (高校部・中学部) の「学年|科目名」→ 曜日の一覧。
  * @returns {Map<string, string[]>}
  */
 export function subjectDays(slots) {
   const m = new Map();
   for (const s of slots || []) {
-    if (!s?.grade || !s.subj || gradeToDept(s.grade) !== "高校部") continue;
+    if (!s?.grade || !s.subj || !gradeToDept(s.grade)) continue;
     const k = subjectKey(s.grade, s.subj);
     if (!m.has(k)) m.set(k, []);
     m.get(k).push(s.day);
@@ -268,6 +487,9 @@ export function subjectDays(slots) {
 
 /**
  * 講座の対応の状態。比べるのは status が ok の講座だけ (compare と対応表で共有)。
+ * 学年は見ない: 講座と違う学年のコマを手で選んでも、今の時間割にあって
+ * いつもの曜日にあれば ok (予定表の「高1・高2」の講座が、システムでは高3 の
+ * コマ、のような学校側との食い違いを人が直せるように)。
  * @param {object} course   予定表の講座 (sessions を持つ)
  * @param {{subjects: string[], skip: boolean} | undefined} m  effectiveMapping の 1 件
  * @param {Map<string, string[]>} days  subjectDays(slots)

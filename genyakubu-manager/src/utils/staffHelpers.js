@@ -154,7 +154,8 @@ export function staffMonthlyRegularDates(
       const tt = timetables.find((t) => t.id === (slot.timetableId ?? 1));
       if (!isTimetableActiveForDate(tt, dateStr, slot.grade)) return false;
     }
-    if (displayCutoff && isSlotBeyondCutoff(dateStr, slot, displayCutoff)) return false;
+    // 表示期間 + 不定期のコマの実施日 (displayCutoff が無くても実施日は見る)
+    if (isSlotBeyondCutoff(dateStr, slot, displayCutoff)) return false;
     if (isSlotCancelledOnDate(slot, dateStr, cancelCtx)) return false;
     return true;
   };

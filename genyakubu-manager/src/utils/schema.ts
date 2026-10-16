@@ -44,9 +44,11 @@ import type {
   TeacherAffiliationChange,
   Timetable,
   ValidationResult,
+  YoteihyoConfirmation,
+  YoteihyoMappingEntry,
 } from "../types";
 
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 23;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -72,7 +74,13 @@ export function isSlot(x: unknown): x is Slot {
     (x.timetableId === undefined || isNumber(x.timetableId)) &&
     (x.biweeklyAnchors === undefined ||
       (Array.isArray(x.biweeklyAnchors) &&
-        (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a))))
+        (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a)))) &&
+    (x.irregular === undefined || typeof x.irregular === "boolean") &&
+    (x.separateWeekdayCount === undefined || typeof x.separateWeekdayCount === "boolean") &&
+    (x.sessionStartNumber === undefined || isNumber(x.sessionStartNumber)) &&
+    (x.onlyDates === undefined ||
+      (Array.isArray(x.onlyDates) &&
+        (x.onlyDates as unknown[]).every((d) => isIsoDate(d))))
   );
 }
 
@@ -81,7 +89,10 @@ export function isHoliday(x: unknown): x is Holiday {
     isObject(x) &&
     isString(x.date) &&
     (x.targetGrades === undefined || Array.isArray(x.targetGrades)) &&
-    (x.subjKeywords === undefined || Array.isArray(x.subjKeywords))
+    (x.subjKeywords === undefined || Array.isArray(x.subjKeywords)) &&
+    (x.excludeSlotIds === undefined ||
+      (Array.isArray(x.excludeSlotIds) &&
+        (x.excludeSlotIds as unknown[]).every((i) => isNumber(i) || isString(i))))
   );
 }
 
@@ -233,6 +244,7 @@ export function isClassSet(x: unknown): x is ClassSet {
   if (hasSlotIds && !(x.slotIds as unknown[]).every((i) => isNumber(i))) {
     return false;
   }
+  if (x.countByDay !== undefined && typeof x.countByDay !== "boolean") return false;
   return true;
 }
 
@@ -371,6 +383,28 @@ export function isTeacherAffiliationChange(x: unknown): x is TeacherAffiliationC
   if (!isString(x.name) || x.name.trim() === "") return false;
   if (!isNumber(x.fromYear) || !Number.isInteger(x.fromYear)) return false;
   if (!isString(x.category) || x.category.trim() === "") return false;
+  return true;
+}
+
+// 予定表チェックの講座の対応 { course, subjects } | { course, skip }。
+// RTDB は空の配列を消すので subjects の欠落は許す (skip でもなければ読み込みで捨てる)
+export function isYoteihyoMappingEntry(x: unknown): x is YoteihyoMappingEntry {
+  if (!isObject(x)) return false;
+  if (!isString(x.course) || x.course === "") return false;
+  if (x.subjects !== undefined) {
+    if (!Array.isArray(x.subjects) || !x.subjects.every((v) => isString(v))) return false;
+  }
+  if (x.skip !== undefined && typeof x.skip !== "boolean") return false;
+  return true;
+}
+
+// 予定表チェックの確認済み { date, course, fp, at? }
+export function isYoteihyoConfirmation(x: unknown): x is YoteihyoConfirmation {
+  if (!isObject(x)) return false;
+  if (!isIsoDate(x.date)) return false;
+  if (!isString(x.course) || x.course === "") return false;
+  if (!isString(x.fp)) return false;
+  if (x.at !== undefined && !isIsoDate(x.at)) return false;
   return true;
 }
 
@@ -691,6 +725,18 @@ export function validateExportBundle(
       return { ok: false, error: "staffLeave の形式が不正です" };
   }
 
+  for (const [key, check] of [
+    ["yoteihyoMapping", isYoteihyoMappingEntry],
+    ["yoteihyoConfirmed", isYoteihyoConfirmation],
+  ] as const) {
+    const list = raw[key];
+    if (list == null) continue;
+    if (!Array.isArray(list)) return { ok: false, error: `${key} が配列ではありません` };
+    const bad = list.findIndex((e: unknown) => !check(e));
+    if (bad !== -1)
+      return { ok: false, error: `${key}[${bad}] の形式が不正です`, path: `${key}[${bad}]` };
+  }
+
   // ── Cross-entity referential integrity ────────────────────────────
   // 参照切れは拒否せず warnings で返す (インポート後に孤立データ掃除で
   // 整理する)。両側が揃っているときだけ検査する (部分インポート)。
@@ -758,6 +804,22 @@ function collectReferentialWarnings(raw: Record<string, unknown>): string[] {
           if (missing(ids[j])) {
             warnings.push(
               `classSets[${i}].slotIds[${j}] (${String(ids[j])}) が slots に存在しません`
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(raw.holidays)) {
+      // 休講日の例外 (この日は授業あり) のコマ id
+      const list = raw.holidays as Array<Record<string, unknown>>;
+      for (let i = 0; i < list.length; i++) {
+        const ids = list[i]?.excludeSlotIds;
+        if (!Array.isArray(ids)) continue;
+        for (let j = 0; j < ids.length; j++) {
+          if (missing(ids[j])) {
+            warnings.push(
+              `holidays[${i}].excludeSlotIds[${j}] (${String(ids[j])}) が slots に存在しません`
             );
           }
         }
@@ -1044,6 +1106,10 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v21 → v22: teacherAffiliations (講師の所属: 年度ごとの区分の変更) と
   //             staffLeave (有給・半休。管理者が書き出したときだけ) を追加。
+  //             既定値で埋めない (無ければ現状維持)。
+
+  // v22 → v23: yoteihyoMapping (予定表チェックの講座の対応。以前は端末だけに
+  //             保存していた) と yoteihyoConfirmed (確認済みの食い違い) を追加。
   //             既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;

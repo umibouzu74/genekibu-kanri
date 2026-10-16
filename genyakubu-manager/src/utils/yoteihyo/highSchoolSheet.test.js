@@ -3,6 +3,8 @@ import {
   checkPlannedCounts,
   circledNumber,
   classifySheet,
+  columnName,
+  fillColorName,
   courseWeekdays,
   gradesIn,
   mergeHighSchoolSheets,
@@ -280,7 +282,15 @@ describe("parseHighSchoolSheet (日付型のセル)", () => {
     const p = parseHighSchoolSheet(sheet);
     expect(p.range).toEqual({ start: "2026-08-24", end: "2026-09-30" });
     expect([...p.courses.get("高3|列5").sessions.keys()]).toContain("2026-09-01");
-    expect(p.warnings).toEqual([]);
+    // シート名は【8-9月】なのに題は「9月～12月予定表」(前の版の書き残し) なので知らせる
+    expect(p.warnings).toEqual([
+      {
+        kind: "titlePeriod",
+        message:
+          "シート名「2026　H3　【8-9月】」と表の題「2026年度　【高3ゼミ】　9月～12月予定表」で期間が違います" +
+          " (表の日付は 8/24〜9/30)。どちらかが前の版の書き残しかもしれません。",
+      },
+    ]);
   });
 });
 
@@ -387,5 +397,197 @@ describe("checkPlannedCounts (シート名の期間)", () => {
     expect(fridays).toHaveLength(17);
     expect(checkPlannedCounts(mergedWith({ start: "2026-09-01", end: "2026-12-31" }))).toEqual([]);
     expect(checkPlannedCounts(mergedWith(null))).toMatchObject([{ planned: 16, counted: 17, countedInSheet: 12 }]);
+  });
+});
+
+// ─── 予定表そのものの点検 ─────────────────────────────────────────
+
+// 高3 の 8 月末〜9 月。金曜は ●★☆ (8/28 だけ ★☆)。集計表は「金 ●★☆ 4」
+function buildH3Fri({ stray = false } = {}) {
+  return makeSheet("2026\u3000H3\u3000【9月】", (s) => {
+    s.set(1, 1, "2026年度\u3000【高3ゼミ】\u30009月予定表");
+    s.set(4, 3, "本校");
+    s.set(6, 3, "共通テスト");
+    const aug = s.month({ year: 2026, month: 8, dayCol: 1, firstRow: 7, labelRow: 3 });
+    const sep = s.month({ year: 2026, month: 9, dayCol: 6, firstRow: 7, labelRow: 3 });
+    s.set(4, 8, "本校");
+    s.set(6, 8, "共通テスト");
+    s.set(aug.get("2026-08-28"), 3, "★☆");
+    for (const [iso, r] of sep) if (weekdayIndexOf(iso) === 5) s.set(r, 8, "●★☆");
+    s.set(42, 3, "\u3000●：共通テスト英語(ハイレベル)\u3000\u3000★：共通テスト数学\u3000\u3000☆：共通テスト国語");
+    s.set(9, 12, "金");
+    s.set(9, 13, "●★☆");
+    s.set(9, 14, 4);
+    if (stray) s.set(57, 76, "☆11");
+  });
+}
+
+describe("予定表の点検 (集計表の記号どうし)", () => {
+  it("集計表の 1 行の記号で、表の印の数が違えば知らせる (シート名の月で数えると合ってしまう分も)", () => {
+    const p = parseHighSchoolSheet(buildH3Fri());
+    expect(p.mode).toBe("symbol");
+    const w = p.warnings.filter((x) => x.kind === "plannedGroup");
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toBe(
+      "集計表の「金 ●★☆ 4 回」は 3 つの講座を同じ回数としていますが、表の印を数えると ● 4 回・★ 5 回・☆ 5 回です" +
+        " (8/28 (金) は「★☆」だけ)。回数か印のどちらかが誤っているかもしれません。学校に確認してください。"
+    );
+    // 予定回数の点検だけでは、★☆ もシート名の月 (9 月) で数えると 4 回になり見逃す
+    const merged = mergeHighSchoolSheets([{ name: "9月", parsed: p }]);
+    expect(checkPlannedCounts(merged)).toEqual([]);
+  });
+
+  it("記号どうしの数が同じなら出さない", () => {
+    const p = parseHighSchoolSheet(buildH3());
+    expect(p.warnings.filter((x) => x.kind === "plannedGroup")).toEqual([]);
+  });
+
+  it("学期の頭が前のシートにあっても、まとめた学期全体で記号どうしを比べる", () => {
+    // 実際の予定表の形: 8/28 (★☆ だけ) は【8月】のシート、集計表は【9月】のシートにある
+    const aug = makeSheet("2026\u3000H3\u3000【8月】", (s) => {
+      s.set(1, 1, "2026年度\u3000【高3ゼミ】\u30008月予定表");
+      s.set(4, 3, "本校");
+      s.set(6, 3, "共通テスト");
+      const m = s.month({ year: 2026, month: 8, dayCol: 1, firstRow: 7, labelRow: 3 });
+      s.set(m.get("2026-08-28"), 3, "★☆");
+      s.set(42, 3, "\u3000●：共通テスト英語(ハイレベル)\u3000\u3000★：共通テスト数学\u3000\u3000☆：共通テスト国語");
+    });
+    const sep = makeSheet("2026\u3000H3\u3000【9月】", (s) => {
+      s.set(1, 1, "2026年度\u3000【高3ゼミ】\u30009月予定表");
+      s.set(4, 3, "本校");
+      s.set(6, 3, "共通テスト");
+      const m = s.month({ year: 2026, month: 9, dayCol: 1, firstRow: 7, labelRow: 3 });
+      for (const [iso, r] of m) if (weekdayIndexOf(iso) === 5) s.set(r, 3, "●★☆");
+      s.set(42, 3, "\u3000●：共通テスト英語(ハイレベル)\u3000\u3000★：共通テスト数学\u3000\u3000☆：共通テスト国語");
+      s.set(9, 12, "金");
+      s.set(9, 13, "●★☆");
+      s.set(9, 14, 4);
+    });
+    const pSep = parseHighSchoolSheet(sep);
+    // シートの中だけでは合っている
+    expect(pSep.warnings.filter((x) => x.kind === "plannedGroup")).toEqual([]);
+    const merged = mergeHighSchoolSheets([
+      { name: "9月", parsed: pSep },
+      { name: "8月", parsed: parseHighSchoolSheet(aug) },
+    ]);
+    const w = merged.warnings.filter((x) => x.kind === "plannedGroup");
+    expect(w).toHaveLength(1);
+    expect(w[0].sheet).toBe("9月");
+    expect(w[0].message).toBe(
+      "集計表の「金 ●★☆ 4 回」は 3 つの講座を同じ回数としていますが、学期全体 (8/28〜9/25) で表の印を数えると " +
+        "● 4 回・★ 5 回・☆ 5 回です (8/28 (金) は「★☆」だけ)。回数か印のどちらかが誤っているかもしれません。学校に確認してください。"
+    );
+    // 予定回数の点検だけでは、シートの期間・シート名の月で数えると 4 回になり見逃す
+    expect(checkPlannedCounts(merged)).toEqual([]);
+  });
+});
+
+describe("予定表の点検 (表の外の印)", () => {
+  it("表の外に残った印をセルの位置つきで知らせる (凡例・集計表・注記は除く)", () => {
+    const p = parseHighSchoolSheet(buildH3Fri({ stray: true }));
+    const w = p.warnings.filter((x) => x.kind === "stray");
+    expect(w).toEqual([
+      {
+        kind: "stray",
+        message:
+          "表の外に授業の印があります: BY58「☆11」。消し忘れ・書き間違いかもしれません (この画面ではどの講座の授業にも数えていません)。",
+      },
+    ]);
+    expect(parseHighSchoolSheet(buildH3Fri()).warnings.filter((x) => x.kind === "stray")).toEqual([]);
+    expect(parseHighSchoolSheet(buildH3()).warnings.filter((x) => x.kind === "stray")).toEqual([]);
+  });
+
+  it("列の名前", () => {
+    expect([0, 25, 26, 51, 76, 701].map(columnName)).toEqual(["A", "Z", "AA", "AZ", "BY", "ZZ"]);
+  });
+});
+
+describe("予定表の点検 (シート名と題の期間)", () => {
+  it("同じ期間なら出さない", () => {
+    expect(parseHighSchoolSheet(buildH12()).warnings).toEqual([]);
+  });
+});
+
+describe("予定表の点検 (凡例に無い色)", () => {
+  // 1 列 = 1 講座 の表。月曜に授業。fills で日付ごとの塗りを決める
+  function colored({ fills = {}, legend = [], rowFill = null, colFill = null, shade = null } = {}) {
+    return makeSheet("2026 H1H2【10月】", (s) => {
+      s.set(1, 1, "2026年度 【高1・高2ゼミ】 10月予定表");
+      s.set(4, 3, "高1");
+      s.set(4, 4, "高1");
+      s.set(4, 5, "高2");
+      s.set(6, 3, "高松西高校");
+      s.set(6, 4, "古文・漢文");
+      s.set(6, 5, "高松高校");
+      const map = s.month({ year: 2026, month: 10, dayCol: 1, firstRow: 7, labelRow: 3 });
+      for (const [iso, r] of map) {
+        const wd = weekdayIndexOf(iso);
+        if (wd === 1) s.set(r, 3, "●", fills[iso] || null);
+        if (wd === 4) s.set(r, 4, "◇");
+        // 高松高校の列は全体を薄い色で塗った列 (校舎の色分けなど)
+        s.set(r, 5, wd === 2 ? "〇" : null, colFill);
+        if (rowFill && wd === 6) {
+          // 土曜の行は日付・曜日の欄から講座の列まで同じ色
+          s.set(r, 1, Number(iso.slice(8)), rowFill);
+          s.set(r, 2, "土", rowFill);
+          s.set(r, 4, null, rowFill);
+        }
+        if (shade?.dates.includes(iso)) {
+          // テストの日の行を日付の欄ごと塗る
+          s.set(r, 1, Number(iso.slice(8)), shade.fill);
+          s.set(r, 2, "日月火水木金土"[wd], shade.fill);
+          for (const c of [3, 4, 5]) s.set(r, c, null, shade.fill);
+        }
+      }
+      legend.forEach(([text, fill], i) => s.set(40 + i, 3, text, fill));
+    });
+  }
+
+  it("灰色・黄色・赤以外で、凡例・見出しに無い色の塗りを日付つきで知らせる", () => {
+    const green = "#ccffcc";
+    const p = parseHighSchoolSheet(
+      colored({ fills: { "2026-10-19": green, "2026-10-26": green }, legend: [["定期テスト", YELLOW]] })
+    );
+    expect(p.warnings).toEqual([
+      {
+        kind: "fill",
+        message:
+          "凡例に無い色 (緑 #ccffcc) で塗った欄が 2 か所あります (10/19 (月)・10/26 (月))。" +
+          "この画面では塗りを見ずに、記号があれば授業ありとして読んでいます。何の印か学校に確認してください。",
+      },
+    ]);
+  });
+
+  it("テストの日の行を日付の欄ごと塗ってあっても知らせる", () => {
+    const p = parseHighSchoolSheet(colored({ shade: { dates: ["2026-10-20", "2026-10-21"], fill: "#92d050" } }));
+    expect(p.warnings.map((w) => w.message)).toEqual([
+      "凡例に無い色 (緑 #92d050) で塗った欄が 6 か所あります (10/20 (火)・10/21 (水))。" +
+        "この画面では塗りを見ずに、記号があれば授業ありとして読んでいます。何の印か学校に確認してください。",
+    ]);
+  });
+
+  it("凡例にある色・曜日ごとの塗り・列ごとの塗り・灰色/黄色は知らせない", () => {
+    const green = "#ccffcc";
+    const p = parseHighSchoolSheet(
+      colored({
+        fills: { "2026-10-19": green, "2026-10-05": GRAY, "2026-10-12": YELLOW },
+        legend: [["模試", green]],
+        rowFill: "#ddebf7",
+        colFill: "#fff2cc",
+      })
+    );
+    expect(p.warnings).toEqual([]);
+  });
+
+  it("色の名前", () => {
+    expect(["#ccffcc", "#00b050", "#9bc2e6", "#ffc000", "#ff99cc", "#cc99ff", "#808080"].map(fillColorName)).toEqual([
+      "緑",
+      "緑",
+      "青",
+      "橙",
+      "桃色",
+      "紫",
+      "灰色",
+    ]);
   });
 });

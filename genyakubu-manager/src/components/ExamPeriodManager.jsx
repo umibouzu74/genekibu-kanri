@@ -1,6 +1,5 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-  ALL_GRADES,
   DEPT_COLOR,
   HIGH_GRADES,
   MIDDLE_GRADES,
@@ -23,6 +22,7 @@ import { colors } from "../styles/tokens";
 import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
 import { TAG_META } from "../constants/eventKinds";
+import { gradeChoices, isCommonGrade } from "../utils/gradeChoices";
 
 export function ExamPeriodManager({
   examPeriods,
@@ -79,8 +79,15 @@ export function ExamPeriodManager({
     setTagsArr(tagsArr.filter((x) => x !== t));
   };
 
+  // 対象学年の選択肢 = 標準の学年 + 時間割にある共通学年 (附中・中1-3 …)。
+  // テスト期間の対象学年は完全一致で効くので (examPeriodStopsClassesOn)、
+  // 附中の確認テストを止めるには「附中」そのものを選ぶ。中1-3 の土曜
+  // プレップのように期末特訓中も実施するコマを巻き込まないため、中1〜3 から
+  // 自動では広げない
+  const gradeOptions = useMemo(() => gradeChoices(slots, targetGrades), [slots, targetGrades]);
+
   // 例外日で選べる学年。テスト期間が全学年対象なら全学年から選ぶ。
-  const exceptionGradeChoices = allGrades ? ALL_GRADES : targetGrades;
+  const exceptionGradeChoices = allGrades ? gradeOptions : targetGrades;
 
   const toggleExGrade = (g) => {
     setExError("");
@@ -124,21 +131,22 @@ export function ExamPeriodManager({
 
   const toggleGrade = (g) => {
     if (allGrades) {
-      // Switch from "all" to specific selection with this grade toggled off
+      // 全学年 (= 共通学年も含む) からその学年だけ外す
       setAllGrades(false);
-      setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
+      setTargetGrades(gradeOptions.filter((gr) => gr !== g));
       return;
     }
-    const next = targetGrades.includes(g)
-      ? targetGrades.filter((x) => x !== g)
-      : [...targetGrades, g];
-    // If all grades deselected, revert to "all" mode
-    if (next.length === 0) {
-      setAllGrades(true);
-      setTargetGrades([]);
-    } else {
-      setTargetGrades(next);
-    }
+    // 全部外しても全学年には戻さない (「全解除」から選び直せるように)。
+    // 何も選んでいないまま登録しようとしたら handleAdd が止める
+    setTargetGrades(
+      targetGrades.includes(g) ? targetGrades.filter((x) => x !== g) : [...targetGrades, g]
+    );
+  };
+
+  // 「全解除」: 何も選んでいない状態から、対象の学年だけを選ぶ
+  const clearGrades = () => {
+    setAllGrades(false);
+    setTargetGrades([]);
   };
 
   const selectAll = () => {
@@ -434,6 +442,18 @@ export function ExamPeriodManager({
               </button>
               <button
                 type="button"
+                onClick={clearGrades}
+                title="選択を全部外して、対象の学年だけを選び直します"
+                style={{
+                  ...S.btn(!allGrades && targetGrades.length === 0),
+                  fontSize: 11,
+                  padding: "4px 10px",
+                }}
+              >
+                全解除
+              </button>
+              <button
+                type="button"
                 onClick={selectMiddle}
                 style={{
                   ...S.btn(
@@ -476,13 +496,19 @@ export function ExamPeriodManager({
               </button>
             </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {ALL_GRADES.map((g) => {
+              {gradeOptions.map((g) => {
                 const dept = gradeToDept(g);
                 const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                 const sel = isGradeSelected(g);
+                const common = isCommonGrade(g);
                 return (
                   <label
                     key={g}
+                    title={
+                      common
+                        ? "共通学年のコマ (附中の確認テスト・中1-3 のプレップなど)。それ自体を選んだときだけ止まります"
+                        : undefined
+                    }
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -493,7 +519,7 @@ export function ExamPeriodManager({
                       cursor: "pointer",
                       background: sel ? col.b : "#f5f5f5",
                       color: sel ? col.f : "#aaa",
-                      border: `1px solid ${sel ? col.accent || "#ccc" : "#ddd"}`,
+                      border: `1px ${common ? "dashed" : "solid"} ${sel ? col.accent || "#ccc" : "#ccc"}`,
                       fontWeight: sel ? 700 : 400,
                       transition: "all .15s",
                       userSelect: "none",
@@ -510,6 +536,17 @@ export function ExamPeriodManager({
                 );
               })}
             </div>
+            {gradeOptions.some(isCommonGrade) && (
+              <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+                ※ 点線の学年 (共通学年) は、中1〜3・附中1〜3 を選んでも止まりません。止めるときはそれ自体を選んでください
+                (例: 附中の確認テスト → 「附中」)
+              </div>
+            )}
+            {!allGrades && targetGrades.length === 0 && (
+              <div role="status" style={{ fontSize: 11, color: "#a03030", marginTop: 4 }}>
+                対象の学年を選んでください
+              </div>
+            )}
           </div>
 
           {/* 授業休止フラグ */}

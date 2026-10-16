@@ -124,20 +124,44 @@ export function analyzeOrphanClassSets(classSets, slots) {
 }
 
 /**
- * 全 orphan を一括検出。表示用に件数も返す。classSets は省略可 (旧呼び出し)。
+ * 休講日の例外 (excludeSlotIds = この日は授業あり) の orphan 解析。休講日
+ * そのものは残し、消えたコマの id だけ抜く (コマ id は最大 + 1 で使い回される
+ * ので、残すと後から作った別のコマが黙って例外になる)。
+ * @returns {Array<{ original: object, next: object }>}
  */
-export function detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets }) {
+export function analyzeOrphanHolidays(holidays, slots) {
+  const live = buildLiveSlotIdSet(slots);
+  const updated = [];
+  for (const h of holidays || []) {
+    if (!h || !Array.isArray(h.excludeSlotIds) || h.excludeSlotIds.length === 0) continue;
+    const remaining = h.excludeSlotIds.filter((id) => live.has(slotIdKey(id)));
+    if (remaining.length === h.excludeSlotIds.length) continue;
+    const next = { ...h };
+    if (remaining.length > 0) next.excludeSlotIds = remaining;
+    else delete next.excludeSlotIds;
+    updated.push({ original: h, next });
+  }
+  return updated;
+}
+
+/**
+ * 全 orphan を一括検出。表示用に件数も返す。classSets / holidays は省略可
+ * (旧呼び出し)。
+ */
+export function detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets, holidays }) {
   const orphanSubs = findOrphanSubs(subs, slots);
   const orphanOverrides = findOrphanOverrides(sessionOverrides, slots);
   const adj = analyzeOrphanAdjustments(adjustments, slots);
   const sets = analyzeOrphanClassSets(classSets, slots);
+  const updatedHolidays = analyzeOrphanHolidays(holidays, slots);
   const total =
     orphanSubs.length +
     adj.removed.length +
     adj.updated.length +
     orphanOverrides.length +
     sets.removed.length +
-    sets.updated.length;
+    sets.updated.length +
+    updatedHolidays.length;
   return {
     orphanSubs,
     orphanAdjustments: adj.removed,
@@ -145,19 +169,21 @@ export function detectOrphans({ slots, subs, adjustments, sessionOverrides, clas
     orphanOverrides,
     orphanClassSets: sets.removed,
     updatedClassSets: sets.updated,
+    updatedHolidays,
     total,
   };
 }
 
 /**
  * 検出結果を反映するための新しいリストを返す (純粋関数)。
- * classSets を渡さなければ nextClassSets は undefined。
+ * classSets / holidays を渡さなければ nextClassSets / nextHolidays は undefined。
  */
 export function applyOrphanCleanup({
   subs,
   adjustments,
   sessionOverrides,
   classSets,
+  holidays,
   detection,
 }) {
   const subRemovedIds = new Set(detection.orphanSubs.map((r) => r.id));
@@ -192,7 +218,14 @@ export function applyOrphanCleanup({
       nextClassSets.push(setUpdatedById.has(s.id) ? setUpdatedById.get(s.id) : s);
     }
   }
-  return { nextSubs, nextAdjustments, nextOverrides, nextClassSets };
+  let nextHolidays;
+  if (holidays) {
+    const holUpdatedById = new Map(
+      (detection.updatedHolidays || []).map(({ next }) => [next.id, next])
+    );
+    nextHolidays = holidays.map((h) => (holUpdatedById.has(h.id) ? holUpdatedById.get(h.id) : h));
+  }
+  return { nextSubs, nextAdjustments, nextOverrides, nextClassSets, nextHolidays };
 }
 
 /**
@@ -207,12 +240,13 @@ export function cascadeOrphansForSlots({
   adjustments,
   sessionOverrides,
   classSets,
+  holidays,
 }) {
-  const detection = detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets });
+  const detection = detectOrphans({ slots, subs, adjustments, sessionOverrides, classSets, holidays });
   if (detection.total === 0) {
-    return { detection, changed: {}, nextSubs: subs, nextAdjustments: adjustments, nextOverrides: sessionOverrides, nextClassSets: classSets };
+    return { detection, changed: {}, nextSubs: subs, nextAdjustments: adjustments, nextOverrides: sessionOverrides, nextClassSets: classSets, nextHolidays: holidays };
   }
-  const next = applyOrphanCleanup({ subs, adjustments, sessionOverrides, classSets, detection });
+  const next = applyOrphanCleanup({ subs, adjustments, sessionOverrides, classSets, holidays, detection });
   return {
     detection,
     changed: {
@@ -221,6 +255,7 @@ export function cascadeOrphansForSlots({
         detection.orphanAdjustments.length > 0 || detection.updatedAdjustments.length > 0,
       sessionOverrides: detection.orphanOverrides.length > 0,
       classSets: detection.orphanClassSets.length > 0 || detection.updatedClassSets.length > 0,
+      holidays: detection.updatedHolidays.length > 0,
     },
     ...next,
   };
@@ -239,6 +274,7 @@ export function listOrphanDetection(detection) {
     { key: "overrides", label: "回数補正", short: "回数補正", action: "削除", count: detection.orphanOverrides?.length || 0 },
     { key: "classSets", label: "授業セット (旧形式)", short: "授業セット", action: "削除", count: detection.orphanClassSets?.length || 0 },
     { key: "classSetsUpdated", label: "授業セット (旧形式)", short: "授業セット", action: "削除済みコマを除外", count: detection.updatedClassSets?.length || 0 },
+    { key: "holidays", label: "休講日の例外", short: "休講日の例外", action: "削除済みコマを除外", count: detection.updatedHolidays?.length || 0 },
   ];
   return rows.filter((r) => r.count > 0);
 }

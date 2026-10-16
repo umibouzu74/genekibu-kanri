@@ -177,7 +177,7 @@ export function ReschedulePickerPopover({
           s.day === dow &&
           s.time &&
           rangesOverlap(range, timeRange(s.time)) &&
-          !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj))
+          !(typeof isOffForGrade === "function" && isOffForGrade(targetDate, s.grade, s.subj, s.id))
       );
       const describe = (s) =>
         `${s.grade}${s.cls && s.cls !== "-" ? s.cls : ""} ${s.subj} (${s.time})`;
@@ -209,7 +209,7 @@ export function ReschedulePickerPopover({
     const list = [];
     if (!targetDate) return list;
     if (typeof isOffForGrade === "function" && slot) {
-      if (isOffForGrade(targetDate, slot.grade, slot.subj)) {
+      if (isOffForGrade(targetDate, slot.grade, slot.subj, slot.id)) {
         list.push("振替先は休講日 / テスト期間です (振替のコマは休講日でも表示されます)");
       }
     }

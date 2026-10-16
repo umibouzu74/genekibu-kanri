@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // コース別 終講日: 効き目 (最終授業日・第N回) と設定ミスの警告。
+// 未設定のコースには「予定上の最終授業日（案）」を出す (C4)。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CohortCutoffEditor } from "./CohortCutoffEditor";
@@ -44,10 +45,10 @@ function renderEditor(cohortDate, groupPatch = {}, opts = {}) {
   };
   const sessionCtx = {
     classSets: [],
-    allSlots: SLOTS,
+    allSlots: opts.slots || SLOTS,
     displayCutoff,
     timetables: [],
-    isOffForGrade: () => false,
+    isOffForGrade: opts.isOffForGrade || (() => false),
     biweeklyAnchors: [],
     holidays: [],
     examPeriods: [],
@@ -78,9 +79,67 @@ describe("CohortCutoffEditor", () => {
     expect(screen.getByText(/第\d+回/)).toBeInTheDocument();
   });
 
-  it("終講日が未設定なら最終授業日は出さない", () => {
-    renderEditor(null);
-    expect(screen.queryByText(/最終授業日/)).not.toBeInTheDocument();
+  it("終講日が未設定なら確定の最終授業日は出さず、表示期間の終了日からの案を出す", () => {
+    // 表示期間の終了日 8/1 は土曜 → 火金コースの授業は 7/31 (金) で終わる
+    const { onSave } = renderEditor(null, { date: "2026-08-01" });
+    expect(screen.getByText("予定上の最終授業日（案）: 7/31 (金)")).toBeInTheDocument();
+    expect(screen.queryByText(/^最終授業日/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/第\d+回/)).not.toBeInTheDocument();
+    // 案を出すだけでは何も書き換えない
+    expect(onSave).not.toHaveBeenCalled();
+    // 学年の見出しに、未設定のコースが従う終わりを出す
+    expect(screen.getByText("表示期間の終了日 8/1 (土)")).toBeInTheDocument();
+  });
+
+  it("案は「この日を終講日にする」を押したときだけ終講日として保存する", () => {
+    const { onSave } = renderEditor(null, { date: "2026-08-01" });
+    fireEvent.click(screen.getByLabelText("中1 火金 の終講日を予定上の最終授業日にする"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].cohorts).toEqual([
+      { id: COHORT_ID, label: "中1 火金", grade: "中1", date: "2026-07-31" },
+    ]);
+  });
+
+  it("終講日を入れたコースには案を出さない", () => {
+    renderEditor("2026-07-17", { date: "2026-08-01" });
+    expect(screen.queryByText(/予定上の最終授業日/)).not.toBeInTheDocument();
+  });
+
+  it("案は休講の日を飛ばす (実施の判定は回数計算と同じ)", () => {
+    // 7/31 (金) が休講なら、その前の授業 7/28 (火) が最後
+    renderEditor(null, { date: "2026-08-01" }, {
+      isOffForGrade: (date) => date === "2026-07-31",
+    });
+    expect(screen.getByText("予定上の最終授業日（案）: 7/28 (火)")).toBeInTheDocument();
+  });
+
+  it("不定期のコマは実施日の一覧にある日だけで案を出す", () => {
+    const irregular = [
+      { ...mk(1, "火"), irregular: true, onlyDates: ["2026-07-07", "2026-07-21"] },
+    ];
+    renderEditor(null, { date: "2026-08-01" }, { slots: irregular });
+    expect(screen.getByText("予定上の最終授業日（案）: 7/21 (火)")).toBeInTheDocument();
+  });
+
+  it("終了日の直前 4 週間に授業が無ければ、案の代わりにそう出す", () => {
+    renderEditor(null, { date: "2026-08-01" }, {
+      isOffForGrade: (date) => date >= "2026-07-01",
+    });
+    expect(
+      screen.getByText(/予定上の最終授業日（案）: 表示期間の終了日の直前 4 週間にこのコースの授業がありません/)
+    ).toBeInTheDocument();
+  });
+
+  it("表示期間の終了日が無ければ推し量らず、学年の見出しで知らせる", () => {
+    renderEditor(null, { date: null });
+    expect(screen.queryByText(/予定上の最終授業日/)).not.toBeInTheDocument();
+    expect(screen.getByText("表示期間の終了日 未設定")).toBeInTheDocument();
+  });
+
+  it("どの学年グループにも属さない学年は、見出しでそう知らせる", () => {
+    renderEditor(null, { grades: ["中2"] });
+    expect(screen.queryByText(/予定上の最終授業日/)).not.toBeInTheDocument();
+    expect(screen.getByText("学年グループなし").title).toMatch(/どの学年グループにも属さない/);
   });
 
   it("グループ終了日より後なら従来どおり警告する", () => {
@@ -179,6 +238,35 @@ describe("CohortCutoffEditor", () => {
     expect(screen.queryByText("高3 共テ科目9")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("他 2 コースを表示"));
     expect(screen.getByText("高3 共テ科目9")).toBeInTheDocument();
+  });
+
+  it("expandRequest が来たら折りたたみを全部開く (目次から飛んできたとき)", () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      id: 300 + i,
+      grade: "高3",
+      day: "月",
+      time: "19:00-20:20",
+      cls: "",
+      room: "602",
+      subj: `共テ科目${i} 演習`,
+      teacher: "T",
+      note: "",
+    }));
+    const displayCutoff = { groups: [], cohorts: [] };
+    const props = { slots: many, displayCutoff, onSave: vi.fn(), isAdmin: true, sessionCtx: null };
+    const { rerender } = render(
+      <ConfirmProvider>
+        <CohortCutoffEditor {...props} />
+      </ConfirmProvider>
+    );
+    expect(screen.queryByText("高3 共テ科目9")).not.toBeInTheDocument();
+    rerender(
+      <ConfirmProvider>
+        <CohortCutoffEditor {...props} expandRequest={1} />
+      </ConfirmProvider>
+    );
+    expect(screen.getByText("高3 共テ科目9")).toBeInTheDocument();
+    expect(screen.queryByText(/他 \d+ コースを表示/)).not.toBeInTheDocument();
   });
 
   it("一括設定は 10 コース以上なら確認を挟む", async () => {

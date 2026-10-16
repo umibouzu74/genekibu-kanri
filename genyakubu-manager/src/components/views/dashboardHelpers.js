@@ -1,7 +1,8 @@
-import { fmtDate, gradeToDept, WEEKDAYS } from "../../data";
+import { fmtDate, WEEKDAYS } from "../../data";
 import {
   examClassExceptionsOnDate,
   examPeriodStopsClassesOn,
+  holidayMatches,
 } from "../../utils/scheduleHelpers";
 
 // Parse a "YYYY-MM-DD" string into a local Date. Avoids timezone drift that
@@ -55,27 +56,13 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
 
   // Check if a specific (date, grade, subj) is cancelled by a holiday entry.
   // 「テスト期間」は含めない (テスト期間中は別途振替が走るためここでは別扱い)。
-  const isHolidayForSlot = (d, grade, subj) => {
+  // slotId を渡すと休講日の例外 (excludeSlotIds = この日は授業あり) も見る。
+  // コマを描く経路は必ず渡すこと (渡さないと例外のコマも休講に見える)。
+  // 解釈は scheduleHelpers.holidayMatches の 1 か所。
+  const isHolidayForSlot = (d, grade, subj, slotId) => {
     const dayHols = holidaysByDate.get(d);
     if (!dayHols) return false;
-    const dept = gradeToDept(grade);
-    return dayHols.some((h) => {
-      // 1. Department scope check
-      const sc = h.scope || ["全部"];
-      if (!sc.includes("全部") && !(dept && sc.includes(dept))) return false;
-
-      // 2. Grade-level check
-      const tg = h.targetGrades || [];
-      if (tg.length > 0 && !tg.includes(grade)) return false;
-
-      // 3. Subject keyword check
-      const sk = h.subjKeywords || [];
-      if (sk.length > 0) {
-        if (!subj) return false;
-        if (!sk.some((kw) => subj.includes(kw))) return false;
-      }
-      return true;
-    });
+    return dayHols.some((h) => holidayMatches(h, grade, subj, slotId));
   };
 
   // Check whether (date, grade) falls within any exam period that stops classes.
@@ -93,8 +80,8 @@ export function makeEventHelpers(holidays, examPeriods = [], specialEvents = [])
   // Check if a specific slot is off on a given date.
   // `subj` is optional for backward compat; when omitted, holidays with
   // subjKeywords set will NOT match (safe-side).
-  const isOffForGrade = (d, grade, subj) =>
-    isHolidayForSlot(d, grade, subj) || isInExamPeriodForGrade(d, grade);
+  const isOffForGrade = (d, grade, subj, slotId) =>
+    isHolidayForSlot(d, grade, subj, slotId) || isInExamPeriodForGrade(d, grade);
 
   return {
     holidaysFor,

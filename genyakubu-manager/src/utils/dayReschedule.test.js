@@ -6,7 +6,10 @@ import {
   buildDayReschedulePlan,
   collectDayRescheduleCandidates,
   findDayRescheduleAdjustments,
+  isUnstaffedOnDate,
+  resolveDayRescheduleSelection,
 } from "./dayReschedule";
+import { IRREGULAR_OFF_LABEL } from "./slotDates";
 
 // 2026-12-04 は金曜、2026-12-07 は月曜、2026-12-11 は金曜。
 const MON = "2026-12-07";
@@ -136,6 +139,78 @@ describe("collectDayRescheduleCandidates", () => {
     });
     expect(candidates).toEqual([]);
     expect(skipped[0].reason).toBe("実施なし (隔週など)");
+  });
+
+  // 12/7→12/4 の日まるごと振替で、12/7 に実施しないマークテストまで一緒に
+  // 振り替わっていた (2026-10-16)。不定期のコマは実施日の一覧に無い日は対象外
+  it("不定期のコマは実施日の一覧に無い日は理由つきで対象外、ある日は候補", () => {
+    const slots = [
+      makeSlot(1, "月", "19:00-20:20"),
+      makeSlot(2, "月", "17:00-18:30", {
+        subj: "マークテスト",
+        teacher: "",
+        irregular: true,
+        onlyDates: ["2026-12-14"],
+      }),
+    ];
+    const ctx = makeCtx({ allSlots: slots });
+    const off = collectDayRescheduleCandidates({ slots, dateStr: MON, ctx });
+    expect(off.candidates.map((s) => s.id)).toEqual([1]);
+    expect(off.skipped.map((x) => [x.slot.id, x.reason])).toEqual([[2, IRREGULAR_OFF_LABEL]]);
+    const on = collectDayRescheduleCandidates({ slots, dateStr: "2026-12-14", ctx });
+    expect(on.candidates.map((s) => s.id)).toEqual([2, 1]);
+  });
+});
+
+describe("担当のいないコマの既定の選択", () => {
+  const slots = [
+    makeSlot(1, "月", "19:00-20:20", { teacher: "堀上" }),
+    makeSlot(2, "月", "17:00-18:30", { subj: "マークテスト", teacher: "" }),
+    // 区切りだけの講師欄も「講師なし」(splitTeacherField で空になる)
+    makeSlot(3, "月", "17:00-18:30", { subj: "マークテスト", cls: "A", teacher: " · " }),
+  ];
+  const ctx = makeCtx({ allSlots: slots });
+
+  it("講師欄が空のコマは振替元日に担当がいない", () => {
+    expect(isUnstaffedOnDate(slots[0], MON, ctx)).toBe(false);
+    expect(isUnstaffedOnDate(slots[1], MON, ctx)).toBe(true);
+    expect(isUnstaffedOnDate(slots[2], MON, ctx)).toBe(true);
+  });
+
+  it("プランは担当のいないコマを unstaffedSlotIds に出し、既定の選択から外す", () => {
+    const plan = buildDayReschedulePlan({ slots, sourceDate: MON, targetDate: FRI, ctx });
+    expect(plan.unstaffedSlotIds.sort()).toEqual([2, 3]);
+    expect(resolveDayRescheduleSelection(plan)).toEqual([1]);
+    // 人が触ったコマはそちらが勝つ (入れれば移せる・外せば外れる)
+    expect(
+      resolveDayRescheduleSelection(plan, new Map([[2, true], [1, false]]))
+    ).toEqual([2]);
+  });
+
+  it("日付が未入力でも既定の選択に使えるよう unstaffedSlotIds を返す", () => {
+    const plan = buildDayReschedulePlan({ slots, sourceDate: MON, targetDate: "", ctx });
+    expect(plan.errors.length).toBeGreaterThan(0);
+    expect(plan.unstaffedSlotIds.sort()).toEqual([2, 3]);
+  });
+
+  it("選ばなかった講師なしのコマは注意書きに件数を出す", () => {
+    const plan = buildDayReschedulePlan({
+      slots,
+      sourceDate: MON,
+      targetDate: FRI,
+      selectedSlotIds: [1],
+      ctx,
+    });
+    expect(plan.entries.map((e) => e.slot.id)).toEqual([1]);
+    expect(plan.notes.join("\n")).toMatch(/講師のいないコマ 2 件 \(マークテストなど\) は振り替えません/);
+    const all = buildDayReschedulePlan({
+      slots,
+      sourceDate: MON,
+      targetDate: FRI,
+      selectedSlotIds: [1, 2, 3],
+      ctx,
+    });
+    expect(all.notes.join("\n")).not.toMatch(/講師のいないコマ/);
   });
 });
 

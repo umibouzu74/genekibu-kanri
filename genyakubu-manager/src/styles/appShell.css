@@ -274,3 +274,18 @@ td[role="button"]:focus-visible {
     padding: 1px 2px !important;
   }
 }
+
+/* 欠勤組み換えの未保存バー (absence/DraftSaveBar)。画面下に固定する。
+   デスクトップ幅はサイドバーが固定 (LAYOUT.SIDEBAR_WIDTH = 210px) なので
+   その右から、狭い画面のサイドバーは上に重なる引き出しなので左端から。
+   下書きが増えたときに件数の札を一瞬強調する (動きを減らす設定では上の
+   prefers-reduced-motion の規則で止まる) */
+.draft-save-bar { left: 0; }
+@media screen and (min-width: 769px) {
+  .draft-save-bar { left: 210px; }
+}
+@keyframes draft-save-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(224, 160, 32, 0.8); }
+  100% { box-shadow: 0 0 0 10px rgba(224, 160, 32, 0); }
+}
+.draft-save-bar-count { animation: draft-save-pulse 0.9s ease-out 2; }

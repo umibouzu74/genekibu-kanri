@@ -13,12 +13,17 @@
 //   - 第N回は振替元の日付で数えたまま (sessionCount は振替を見ない)。
 //     授業の総回数は変わらないので、カウントの日付は付け替えない
 //   - 振替先が振替元より前の日付でもよい (休みの日へ前倒しで寄せる運用)
+//   - 振替元日に担当のいないコマ (講師欄が空。マークテストなど) は候補には
+//     並べるが、既定では選ばない (unstaffedSlotIds / resolveDayRescheduleSelection)。
+//     「授業」として移すものではないことが多く、まるごと選ぶと黙って一緒に
+//     振り替わっていた (2026-10-16 の指摘)。人がチェックを入れれば移せる
 
 import { dateToDay, timeStartToMin, timeToMin } from "./dateHelpers";
 import { biweeklyActiveTeacher, splitTeacherField } from "./biweekly";
 import { slotCancelReason } from "./slotCancel";
 import { isSlotHeldOnDate } from "./sessionCount";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
+import { IRREGULAR_OFF_LABEL, isSlotScheduledOnDate } from "./slotDates";
 import {
   buildAdjustmentIndex,
   buildIncomingItems,
@@ -67,6 +72,37 @@ function activeTeachers(slot, dateStr, ctx) {
   );
 }
 
+/**
+ * 振替元日にそのコマを担当する講師がいないか (講師欄が空。隔週は A/B を
+ * 解いた後)。日まるごと振替では既定の選択から外す。
+ * @param {object} slot
+ * @param {string} dateStr
+ * @param {object} ctx sessionCtx (biweeklyAnchors / holidays / examPeriods)
+ * @returns {boolean}
+ */
+export function isUnstaffedOnDate(slot, dateStr, ctx) {
+  return activeTeachers(slot, dateStr, ctx).length === 0;
+}
+
+/**
+ * 画面のチェック状態から、振替するコマの id を候補の並び順で決める。
+ * overrides は人がチェックを触ったコマだけ (id → true / false)。触って
+ * いないコマは既定 = 担当のいるコマだけ選ぶ (plan.unstaffedSlotIds は外す)。
+ *
+ * @param {{candidates?: Array, unstaffedSlotIds?: Array}} plan buildDayReschedulePlan の結果
+ * @param {Map<number, boolean>} [overrides]
+ * @returns {number[]}
+ */
+export function resolveDayRescheduleSelection(plan, overrides) {
+  const unstaffed = new Set(plan?.unstaffedSlotIds || []);
+  return (plan?.candidates || [])
+    .filter((s) => {
+      const o = overrides?.get(s.id);
+      return o == null ? !unstaffed.has(s.id) : o;
+    })
+    .map((s) => s.id);
+}
+
 // 対象日にそのコマが実施されない理由を 1 つだけ返す (表示用)。
 // 判定の順序は「期間 → 休講 → その他」。isSlotHeldOnDate が false を返した
 // ときの説明なので、ここで新しいルールを足さないこと。
@@ -79,8 +115,9 @@ export function skipReason(slot, dateStr, ctx) {
       return "時間割の期間外";
     }
   }
+  if (!isSlotScheduledOnDate(slot, dateStr)) return IRREGULAR_OFF_LABEL;
   if (isSlotBeyondCutoff(dateStr, slot, ctx?.displayCutoff)) return "表示期間外";
-  if (ctx?.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj)) {
+  if (ctx?.isOffForGrade && ctx.isOffForGrade(dateStr, slot.grade, slot.subj, slot.id)) {
     return "休講・テスト期間";
   }
   const cancel = slotCancelReason(slot, dateStr, ctx);
@@ -327,12 +364,14 @@ export function findOccupancyConflicts(occupancy, { time, teachers = [], room = 
  * @param {string} args.sourceDate 振替元日 "YYYY-MM-DD"
  * @param {string} args.targetDate 振替先日 "YYYY-MM-DD"
  * @param {Array<number>|null} [args.selectedSlotIds] 対象を絞る場合の slot id
- *   (null / 未指定 = 候補すべて)
+ *   (null / 未指定 = 候補すべて。画面の既定の選択は
+ *   resolveDayRescheduleSelection で作って渡す)
  * @param {object} args.ctx sessionCtx
  * @returns {{
  *   sourceDate: string, targetDate: string,
  *   sourceDay: string|null, targetDay: string|null,
  *   candidates: Array, skipped: Array,
+ *   unstaffedSlotIds: number[],   // 候補のうち振替元日に担当のいないコマ
  *   entries: {slot: object, teachers: string[], existing: object|null,
  *             conflicts: {kind: string, label: string}[]}[],
  *   errors: string[], notes: string[],
@@ -368,6 +407,11 @@ export function buildDayReschedulePlan({
   const idFilter =
     selectedSlotIds == null ? null : new Set(selectedSlotIds.map(Number));
   const selected = candidates.filter((s) => !idFilter || idFilter.has(s.id));
+  // 担当のいないコマ (マークテストなど)。日付のエラーがあっても一覧の既定の
+  // チェックに使うので先に出す
+  const unstaffedSlotIds = candidates
+    .filter((s) => isUnstaffedOnDate(s, sourceDate, ctx))
+    .map((s) => s.id);
 
   const empty = {
     sourceDate,
@@ -376,6 +420,7 @@ export function buildDayReschedulePlan({
     targetDay,
     candidates,
     skipped,
+    unstaffedSlotIds,
     entries: [],
     errors,
     notes,
@@ -492,7 +537,7 @@ export function buildDayReschedulePlan({
   // 警告ではなく「振替のコマは休講日でも出る」という確認として出す。
   if (ctx?.isOffForGrade) {
     const offCount = entries.filter((e) =>
-      ctx.isOffForGrade(targetDate, e.slot.grade, e.slot.subj),
+      ctx.isOffForGrade(targetDate, e.slot.grade, e.slot.subj, e.slot.id),
     ).length;
     if (offCount > 0) {
       notes.push(
@@ -514,6 +559,12 @@ export function buildDayReschedulePlan({
   if (skipped.length > 0) {
     notes.push(`振替元日に実施されないコマ ${skipped.length} 件は対象外です`);
   }
+  const unstaffedLeft = unstaffedSlotIds.filter((id) => !movingIds.has(id)).length;
+  if (unstaffedLeft > 0) {
+    notes.push(
+      `講師のいないコマ ${unstaffedLeft} 件 (マークテストなど) は振り替えません (移すならチェックを入れてください)`,
+    );
+  }
 
   return {
     sourceDate,
@@ -522,6 +573,7 @@ export function buildDayReschedulePlan({
     targetDay,
     candidates,
     skipped,
+    unstaffedSlotIds,
     entries,
     errors,
     notes,

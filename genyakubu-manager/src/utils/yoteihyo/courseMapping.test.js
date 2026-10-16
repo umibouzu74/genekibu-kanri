@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   effectiveMapping,
+  expandGradeLabel,
+  gradesOverlap,
+  mappingOverrides,
   mappingStatus,
   matchScore,
+  mergeLegacyMapping,
+  migrateCourseMapping,
   normalizeName,
+  setMappingOverride,
   subjectDays,
   suggestMapping,
   systemGradesFor,
@@ -157,7 +163,7 @@ describe("mappingStatus", () => {
   const st = (m, c = course) => mappingStatus(c, m, days).status;
 
   it("対応・曜日・今の時間割から、比べられるかを決める", () => {
-    expect([...days.keys()]).toEqual(["高1|高松西 数学", "高1|高松西 理科"]);
+    expect([...days.keys()]).toEqual(["高1|高松西 数学", "高1|高松西 理科", "中2|数学"]);
     expect(st({ subjects: ["高1|高松西 数学"], skip: false })).toBe("ok");
     expect(st({ subjects: [], skip: true })).toBe("skip");
     expect(st({ subjects: [], skip: false })).toBe("unmapped");
@@ -174,5 +180,78 @@ describe("mappingStatus", () => {
     const few = { key: "x", sessions: new Map([...sessions].slice(0, 2)) };
     expect(st({ subjects: ["高1|高松西 数学"], skip: false }, few)).toBe("noWeekday");
     expect(st({ subjects: ["高1|高松西 数学"], skip: false }, { key: "y", sessions: new Map() })).toBe("noSessions");
+  });
+
+  it("講座と違う学年のコマを手で選んでも、曜日が合えば比べる (高1・高2 の講座 → 高3 のコマ)", () => {
+    const sl = { key: "高1・高2|Speaking/Listening", grades: ["高1", "高2"], sessions };
+    const d = subjectDays([{ day: "月", grade: "高3", subj: "SpeakingListening" }]);
+    expect(mappingStatus(sl, { subjects: ["高3|SpeakingListening"], skip: false }, d).status).toBe("ok");
+  });
+});
+
+describe("expandGradeLabel / gradesOverlap", () => {
+  it("部をまたぐ範囲・同じ部の範囲・並べた学年を 1 学年ずつにする", () => {
+    expect(expandGradeLabel("中1-高3")).toEqual(["中1", "中2", "中3", "高1", "高2", "高3"]);
+    expect(expandGradeLabel("中1〜高3")).toEqual(["中1", "中2", "中3", "高1", "高2", "高3"]);
+    expect(expandGradeLabel("高1～高3")).toEqual(["高1", "高2", "高3"]);
+    expect(expandGradeLabel("中1-3")).toEqual(["中1", "中2", "中3"]);
+    expect(expandGradeLabel("高1高2")).toEqual(["高1", "高2"]);
+    expect(expandGradeLabel("高1・高2")).toEqual(["高1", "高2"]);
+    expect(expandGradeLabel("高1・2")).toEqual(["高1", "高2"]);
+    expect(expandGradeLabel("高３")).toEqual(["高3"]);
+    // 附中などはそのまま (「附中1」の中の「中1」を拾わない)
+    expect(expandGradeLabel("附中1")).toEqual(["附中1"]);
+    expect(expandGradeLabel("附中")).toEqual(["附中"]);
+    expect(expandGradeLabel("")).toEqual([]);
+  });
+
+  it("共通の学年があるか", () => {
+    expect(gradesOverlap("中1-高3", "高1")).toBe(true);
+    expect(gradesOverlap("中1-高3", "高1高2")).toBe(true);
+    expect(gradesOverlap("中1-3", "高1")).toBe(false);
+    expect(gradesOverlap("附中", "高1")).toBe(false);
+  });
+});
+
+describe("手で直した対応の保存形", () => {
+  it("旧版の { 講座キー: 対応 } も配列に直し、形の崩れたものは捨てる", () => {
+    expect(
+      migrateCourseMapping({
+        "高1|高松西高校": { skip: true },
+        "高1・高2|Speaking/Listening": { subjects: ["高3|SpeakingListening", "高3|SpeakingListening"] },
+        壊れた: { subjects: [] },
+      })
+    ).toEqual([
+      { course: "高1|高松西高校", skip: true },
+      { course: "高1・高2|Speaking/Listening", subjects: ["高3|SpeakingListening"] },
+    ]);
+    // RTDB が配列をオブジェクトで返したとき
+    expect(migrateCourseMapping({ 0: { course: "a", skip: true }, 2: { course: "b", subjects: ["高1|x"] } })).toEqual([
+      { course: "a", skip: true },
+      { course: "b", subjects: ["高1|x"] },
+    ]);
+    expect(migrateCourseMapping(null)).toEqual([]);
+    expect(migrateCourseMapping([{ course: "c" }, { skip: true }])).toEqual([]);
+  });
+
+  it("1 講座ずつ書き換え、effectiveMapping に渡す形にする", () => {
+    let list = setMappingOverride([], "a", { skip: true });
+    list = setMappingOverride(list, "b", { subjects: ["高1|y", "高1|x"] });
+    expect(list).toEqual([
+      { course: "a", skip: true },
+      { course: "b", subjects: ["高1|x", "高1|y"] },
+    ]);
+    expect(mappingOverrides(list)).toEqual({ a: { skip: true }, b: { subjects: ["高1|x", "高1|y"] } });
+    expect(setMappingOverride(list, "a", null)).toEqual([{ course: "b", subjects: ["高1|x", "高1|y"] }]);
+  });
+
+  it("端末だけの旧版の対応は、同期データに無い講座だけ足す (他の端末で直した方を使う)", () => {
+    const shared = [{ course: "a", subjects: ["高1|共有"] }];
+    const legacy = { a: { subjects: ["高1|端末"] }, b: { skip: true } };
+    expect(mergeLegacyMapping(shared, legacy)).toEqual([
+      { course: "a", subjects: ["高1|共有"] },
+      { course: "b", skip: true },
+    ]);
+    expect(mergeLegacyMapping(shared, null)).toEqual(shared);
   });
 });

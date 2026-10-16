@@ -1,5 +1,9 @@
 // 予定表の講座 ↔ システムのコマ (学年|科目名) の対応。自動で当てはめた対応を
-// 見せ、違っていれば選び直せる (選び直した結果はこの端末に保存)。
+// 見せ、違っていれば選び直せる。選び直した結果は同期データに保存し、他の端末
+// (PC と iPad) と共有する (書き換えられるのは管理者だけ)。旧版で端末だけに
+// 保存していた対応は、共有するまで「この端末だけ」と出す (legacyCount)。
+// 候補は講座の学年のコマだけを出し、「ほかの学年のコマも出す」で全学年に広げる
+// (予定表の「高1・高2」の講座が、システムでは高3 のコマ、のようなことがある)。
 // 開閉は最初だけ決める (コマが見つからない講座があれば開く)。その後は人に任せ、
 // 対応を直して件数が 0 になっても勝手に閉じない。ファイルを読み直すと親が
 // key で作り直す。
@@ -10,9 +14,9 @@ import { colors } from "../../../styles/tokens";
 import { courseWeekdays } from "../../../utils/yoteihyo/highSchoolSheet";
 import {
   MAPPING_PROBLEMS,
+  courseGradeMatches,
   mappingStatus,
   subjectDays,
-  systemGradesFor,
 } from "../../../utils/yoteihyo/courseMapping";
 import { courseLabel, subjectLabel } from "../../../utils/yoteihyo/labels";
 import { WARN_TEXT } from "./styles";
@@ -20,9 +24,20 @@ import { WARN_TEXT } from "./styles";
 const WD_ORDER = "月火水木金土日";
 const sortDays = (days) => [...new Set(days)].sort((a, b) => WD_ORDER.indexOf(a) - WD_ORDER.indexOf(b));
 
-export function MappingPanel({ courses, suggestions, mapping, overrides, onChangeOverrides, slots }) {
+export function MappingPanel({
+  courses,
+  suggestions,
+  mapping,
+  overrides,
+  onChangeOverride,
+  slots,
+  canEdit = true,
+  legacyCount = 0,
+  onShareLegacy,
+}) {
   const [editing, setEditing] = useState(null); // course key
   const [draft, setDraft] = useState([]);
+  const [otherGrades, setOtherGrades] = useState(false);
   const [focusKey, setFocusKey] = useState(null); // 保存後に「変える」へフォーカスを戻す
   const buttonRefs = useRef(new Map());
 
@@ -44,14 +59,15 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
   }, [focusKey]);
 
   const startEdit = (course) => {
+    const current = mapping.get(course.key)?.subjects || [];
     setEditing(course.key);
-    setDraft(mapping.get(course.key)?.subjects || []);
+    setDraft(current);
+    // 違う学年のコマを選んであれば、最初から全学年の候補を出す
+    setOtherGrades(current.some((k) => !courseGradeMatches(course, k.split("|")[0])));
   };
   const setOverride = (key, value) => {
-    const next = { ...(overrides || {}) };
-    if (value == null) delete next[key];
-    else next[key] = value;
-    onChangeOverrides(next);
+    if (!canEdit) return;
+    onChangeOverride(key, value);
     setEditing(null);
     setFocusKey(key);
   };
@@ -81,9 +97,27 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
       </summary>
       <p style={{ fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, margin: "8px 0" }}>
         {"予定表の各講座が、システムのどのコマ (学年・科目名) に当たるかを自動で当てはめています。" +
-          "違っていれば「変える」で選び直してください (この端末に保存します)。" +
+          (canEdit
+            ? "違っていれば「変える」で選び直してください (選び直した結果は他の端末とも共有します)。"
+            : "選び直すには管理者ログインが必要です。") +
           "比べるのは、予定表でその講座の授業がいつもある曜日 (3 回以上ある曜日) のコマだけです。"}
       </p>
+      {legacyCount > 0 && (
+        <p role="note" style={{ fontSize: 12, color: WARN_TEXT, lineHeight: 1.7, margin: "0 0 8px" }}>
+          {`この端末だけに保存されている対応が ${legacyCount} 講座あります (前の版で選び直したもの)。`}
+          {canEdit && onShareLegacy ? (
+            <button
+              type="button"
+              onClick={onShareLegacy}
+              style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12, marginLeft: 6 }}
+            >
+              他の端末と共有する
+            </button>
+          ) : (
+            "管理者ログインすると他の端末と共有できます。"
+          )}
+        </p>
+      )}
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
@@ -103,9 +137,10 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
             {rows.map(({ course, m, wd, status, valid, stale }) => {
               const isEditing = editing === course.key;
               const label = courseLabel(course);
-              const grades = systemGradesFor(course);
+              const inGrade = (k) => courseGradeMatches(course, k.split("|")[0]);
+              const wide = isEditing && otherGrades;
               const candidates = [...daysBySubject.entries()]
-                .filter(([k, days]) => grades.has(k.split("|")[0]) && days.some((d) => wd.includes(d)))
+                .filter(([k, days]) => (wide || inGrade(k)) && days.some((d) => wd.includes(d)))
                 .map(([k]) => k);
               for (const k of draft) if (isEditing && !candidates.includes(k)) candidates.push(k);
               candidates.sort();
@@ -116,19 +151,21 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                     {/* 「変える」は講座名の下に置く (スマホ幅で右端の列が枠の外に切れないように) */}
                     <td style={{ ...td, minWidth: 120 }}>
                       <div>{label}</div>
-                      <button
-                        type="button"
-                        ref={(el) => {
-                          if (el) buttonRefs.current.set(course.key, el);
-                          else buttonRefs.current.delete(course.key);
-                        }}
-                        onClick={() => (isEditing ? setEditing(null) : startEdit(course))}
-                        style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12, marginTop: 4 }}
-                        aria-expanded={isEditing}
-                        aria-label={isEditing ? `${label} の対応の編集を閉じる` : `${label} の対応を変える`}
-                      >
-                        {isEditing ? "閉じる" : "変える"}
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          ref={(el) => {
+                            if (el) buttonRefs.current.set(course.key, el);
+                            else buttonRefs.current.delete(course.key);
+                          }}
+                          onClick={() => (isEditing ? setEditing(null) : startEdit(course))}
+                          style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12, marginTop: 4 }}
+                          aria-expanded={isEditing}
+                          aria-label={isEditing ? `${label} の対応の編集を閉じる` : `${label} の対応を変える`}
+                        >
+                          {isEditing ? "閉じる" : "変える"}
+                        </button>
+                      )}
                     </td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{wd.join("・") || "-"}</td>
                     <td style={td}>
@@ -163,6 +200,9 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                       {m?.manual && status !== "skip" && (
                         <span style={{ color: colors.inkMuted, marginLeft: 4 }}>(手で選んだ)</span>
                       )}
+                      {valid.some((k) => !inGrade(k)) && (
+                        <span style={{ color: colors.inkMuted, marginLeft: 4 }}>(予定表と違う学年のコマ)</span>
+                      )}
                       {ambiguous.length > 0 && (
                         <div style={{ color: WARN_TEXT }}>
                           {`「${ambiguous.map(subjectLabel).join("」「")}」は他の講座にも同じくらい当てはまります。確かめてください。`}
@@ -173,9 +213,22 @@ export function MappingPanel({ courses, suggestions, mapping, overrides, onChang
                   {isEditing && (
                     <tr>
                       <td colSpan={3} style={{ ...td, background: "#fafbfc" }}>
+                        <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={otherGrades}
+                            onChange={(e) => setOtherGrades(e.target.checked)}
+                          />
+                          ほかの学年のコマも出す
+                          <span style={{ color: colors.inkMuted }}>
+                            (予定表とシステムで学年の書き方が違う講座。例: 予定表は「高1・高2」、システムは高3 のコマ)
+                          </span>
+                        </label>
                         {candidates.length === 0 ? (
                           <p style={{ fontSize: 12, color: colors.inkMuted, margin: 0 }}>
-                            この講座の学年・曜日のコマがシステムにありません。
+                            {otherGrades
+                              ? "この講座の曜日のコマがシステムにありません。"
+                              : "この講座の学年・曜日のコマがシステムにありません。"}
                           </p>
                         ) : (
                           <fieldset style={{ border: "none", margin: 0, padding: 0 }}>

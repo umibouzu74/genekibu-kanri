@@ -39,6 +39,8 @@
       "genyakubu-fuzoku-plan": { ".validate": "newData.hasChildren()" },
       "genyakubu-offsite-lessons": { ".validate": "newData.hasChildren()" },
       "genyakubu-teacher-affiliations": { ".validate": "newData.hasChildren()" },
+      "genyakubu-yoteihyo-course-mapping": { ".validate": "newData.hasChildren()" },
+      "genyakubu-yoteihyo-confirmed": { ".validate": "newData.hasChildren()" },
       "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
 
       "builder": {

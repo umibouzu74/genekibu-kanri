@@ -12,12 +12,12 @@ const calendar = makeSheet("年間カレンダー", (s) => s.set(0, 0, "2026年�
 const middle = makeSheet("中3", (s) => s.set(0, 0, "2026年度 中3 予定表"));
 
 describe("analyzeWorkbook", () => {
-  it("高校部のシートだけ読み、他は種類だけ返す", () => {
+  it("高校部・中学部のシートを読み、他は種類だけ返す (表の形が読めない中学部は unreadable)", () => {
     const sheets = analyzeWorkbook({ sheets: [calendar, smallH12Sheet(), middle] });
     expect(sheets.map((s) => [s.index, s.kind])).toEqual([
       [0, "calendar"],
       [1, "high"],
-      [2, "middle"],
+      [2, "unreadable"],
     ]);
     expect(sheets[1].parsed.range).toEqual({ start: "2026-10-01", end: "2026-11-30" });
     expect(sheets[0].parsed).toBeNull();

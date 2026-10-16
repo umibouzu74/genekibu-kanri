@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { S } from "../styles/common";
 import { DAYS } from "../constants/schools";
 import { deriveCohortsFromSlots, firstSubjToken } from "../utils/cohorts";
 import { findGroupForGrade } from "../utils/timetable";
-import { fmtDateWeekday } from "../utils/dateHelpers";
+import { fmtDateWeekday, fmtMDWeekday } from "../utils/dateHelpers";
 import { findLastSessionOnOrBefore } from "../utils/lastSessionDate";
 import { useConfirm } from "../hooks/useConfirm";
 
@@ -22,18 +22,33 @@ const BULK_CONFIRM_LIMIT = 10;
 //
 // 保存先は displayCutoff.cohorts (CohortCutoff[])。終講日 (date) のみ持ち、
 // 開始日は学年グループ (表示期間設定) を流用する。回数計算には影響しない。
+//
+// 終講日を入れていないコースは学年グループの終了日に従う。その終わり方が
+// 見えるように、未設定のコースには「予定上の最終授業日（案）」(グループの
+// 終了日以前で実際に授業がある最後の日) を薄く出す (C4)。
+//
+// expandRequest: 時間割管理の目次・サイドバーからこのカードへ飛んできたときに
+// 変わる値 (token)。変わったら折りたたみを全部開く (「他 N コースを表示」の
+// 裏にあるコースを探せるように)。null は要求なし
 export function CohortCutoffEditor({
   slots,
   displayCutoff,
   onSave,
   isAdmin,
   sessionCtx,
+  expandRequest = null,
 }) {
   const confirm = useConfirm();
   const [query, setQuery] = useState("");
   const [unsetOnly, setUnsetOnly] = useState(false);
   const [expandedGrades, setExpandedGrades] = useState(() => new Set());
+  // 目次から飛んできた後は全学年を開いたままにする (後から増えた学年も)
+  const [expandAll, setExpandAll] = useState(false);
   const [bulkDate, setBulkDate] = useState("");
+
+  useEffect(() => {
+    if (expandRequest != null) setExpandAll(true);
+  }, [expandRequest]);
 
   const cohorts = useMemo(() => deriveCohortsFromSlots(slots), [slots]);
 
@@ -141,11 +156,11 @@ export function CohortCutoffEditor({
         grade,
         items,
         shown:
-          expandedGrades.has(grade) || items.length <= COLLAPSE_LIMIT
+          expandAll || expandedGrades.has(grade) || items.length <= COLLAPSE_LIMIT
             ? items
             : items.slice(0, COLLAPSE_LIMIT),
       })),
-    [filteredByGrade, expandedGrades]
+    [filteredByGrade, expandedGrades, expandAll]
   );
 
   // 絞り込みに該当するコースへの一括操作 (折りたたみで省略している行も
@@ -233,6 +248,37 @@ export function CohortCutoffEditor({
     }
     return out;
   }, [shownByGrade, savedById, slotById, sessionCtx]);
+
+  // 終講日を入れていないコースの「予定上の最終授業日（案）」。未設定のコースが
+  // 従う終わり = 学年グループの終了日 (timetable.getSlotCutoffRange と同じ決め方)
+  // 以前で、実際に授業がある最後の日。実施の判定は findLastSessionOnOrBefore
+  // (= sessionCount.isSlotHeldOnDate。休講・テスト期間・特別時程・隔週・時間割の
+  // 有効期間・不定期のコマの実施日) に任せる。
+  // グループの終了日が無い (= 終わりが無い) / 開始日 > 終了日 のコースは推し量らず
+  // 出さない (学年の見出しに理由を出す)。日付だけで第N回は数えない — 未設定の
+  // コースは数が多く (高3 は 20 を超える)、回数の走査まで足すと設定のたびに待たされる。
+  // 値: {date, sessionNo: 0} | null (= 終了日の直前 4 週間に授業が無い)
+  const suggestedLast = useMemo(() => {
+    const out = new Map();
+    if (!sessionCtx) return out;
+    for (const { shown } of shownByGrade) {
+      for (const c of shown) {
+        if (savedById.get(c.id)?.date) continue;
+        const group = findGroupForGrade(c.grade, displayCutoff?.groups);
+        if (!group?.date) continue;
+        if (group.startDate && group.startDate > group.date) continue;
+        const cohortSlots = (c.slotIds || [])
+          .map((id) => slotById.get(id))
+          .filter(Boolean);
+        if (cohortSlots.length === 0) continue;
+        out.set(
+          c.id,
+          findLastSessionOnOrBefore(cohortSlots, group.date, sessionCtx, { withSessionNo: false })
+        );
+      }
+    }
+    return out;
+  }, [shownByGrade, savedById, slotById, sessionCtx, displayCutoff]);
 
   // 未使用エントリ (対象の授業が無い) の一括削除。1 件ずつ日付を消す導線しか
   // 無かったので、掃除が一手で済むようにする。設定を消すだけで cascade は
@@ -411,6 +457,7 @@ export function CohortCutoffEditor({
               <span style={{ fontSize: 10, color: "#aaa", fontWeight: 600, marginLeft: 6 }}>
                 {items.length} コース
               </span>
+              <GradeEndNote group={findGroupForGrade(grade, displayCutoff?.groups)} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {shown.map((cohort) => {
@@ -421,6 +468,7 @@ export function CohortCutoffEditor({
                 const exceedsGroup = date && groupEnd && date > groupEnd;
                 const beforeStart = date && groupStart && date < groupStart;
                 const last = lastSessions.get(cohort.id);
+                const suggested = date ? undefined : suggestedLast.get(cohort.id);
                 const warn = exceedsGroup
                   ? `グループ終了日 (${groupEnd}) より後です。表示するには上の「表示期間設定」でこの学年の終了日も延ばしてください。`
                   : beforeStart
@@ -443,6 +491,10 @@ export function CohortCutoffEditor({
                       last && date && last.date !== date
                         ? () => setCohortDate(cohort, last.date)
                         : null
+                    }
+                    suggestedLast={suggested}
+                    onApplySuggestion={
+                      suggested ? () => setCohortDate(cohort, suggested.date) : null
                     }
                   />
                 );
@@ -572,6 +624,8 @@ function CohortRow({
   warn,
   onChange,
   onAlignToLastSession,
+  suggestedLast,
+  onApplySuggestion,
 }) {
   return (
     <div
@@ -648,6 +702,46 @@ function CohortRow({
           )}
         </div>
       )}
+      {/* 終講日が未設定のコースだけ。undefined = 案を出さない (グループの終了日が
+          無い等。理由は学年の見出し) / null = 直前 4 週間に授業が無い */}
+      {!date && suggestedLast !== undefined && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "#8a9690",
+            marginTop: 3,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+          }}
+        >
+          {suggestedLast ? (
+            <>
+              <span title="終講日を入れなければ、表示期間設定の終了日までの授業がこの日で終わります">
+                予定上の最終授業日（案）: {fmtMDWeekday(suggestedLast.date)}
+              </span>
+              {/* 押したときだけ保存する (案を出すだけでは何も書き換えない)。
+                  終講日を入れると、後で表示期間の終了日を延ばしてもこのコースは
+                  この日で止まる */}
+              {onApplySuggestion && isAdmin && (
+                <button
+                  type="button"
+                  aria-label={`${label} の終講日を予定上の最終授業日にする`}
+                  onClick={onApplySuggestion}
+                  style={{ ...S.btn(false), fontSize: 10, padding: "1px 6px", color: "#777" }}
+                >
+                  この日を終講日にする
+                </button>
+              )}
+            </>
+          ) : (
+            <span>
+              予定上の最終授業日（案）: 表示期間の終了日の直前 4 週間にこのコースの授業がありません
+            </span>
+          )}
+        </div>
+      )}
       {detail && (detail.days || (detail.subjects && detail.subjects.length > 0)) && (
         <div style={{ fontSize: 10, color: "#999", marginTop: 3 }}>
           {detail.days && <span style={{ fontWeight: 600 }}>{detail.days}</span>}
@@ -662,5 +756,39 @@ function CohortRow({
         <div style={{ fontSize: 10, color: "#a05a00", marginTop: 4 }}>⚠ {warn}</div>
       )}
     </div>
+  );
+}
+
+// 学年の見出しに添える「終講日が未設定のコースはいつ終わるか」。未設定の
+// コースは学年グループの終了日に従うので、その日 (または終わりが無いこと) を
+// 薄く短く出す。コースの行の「予定上の最終授業日（案）」が出ない理由もここで
+// 分かる (学年ごとに 1 回。行ごとに同じ断り書きを並べない)
+function GradeEndNote({ group }) {
+  const style = { fontSize: 10, color: "#999", fontWeight: 400, marginLeft: 8 };
+  if (!group) {
+    // 表示期間も終講日の既定も効かない設定漏れ (表示期間設定のカードでも警告している)
+    return (
+      <span
+        style={{ ...style, color: "#a05a00" }}
+        title="どの学年グループにも属さない学年です。終講日が未設定のコースには終わりがありません（表示期間設定で学年をグループに加えてください）"
+      >
+        学年グループなし
+      </span>
+    );
+  }
+  if (!group.date) {
+    return (
+      <span
+        style={style}
+        title="終講日が未設定のコースには終わりがありません（予定上の最終授業日の案も出しません）"
+      >
+        表示期間の終了日 未設定
+      </span>
+    );
+  }
+  return (
+    <span style={style} title="終講日が未設定のコースはこの日まで表示されます">
+      表示期間の終了日 {fmtMDWeekday(group.date)}
+    </span>
   );
 }
