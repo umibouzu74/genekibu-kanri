@@ -683,6 +683,130 @@ describe("AbsenceWorkflowView の振替で入るコマ", () => {
   });
 });
 
+// 9/9 (水) は高1・高2 休講。ただし高2 高松一 物理は授業あり (休講日の例外、
+// Holiday.excludeSlotIds)。休講日で休みのカードから例外にできる (2026-10-16)。
+// 休講日は下書きに入らないので、その場で保存して「元に戻す」を出す
+describe("AbsenceWorkflowView の休講日の例外 (この日はこのコマだけ授業あり)", () => {
+  const WED = "2026-09-09";
+  const WED_TT = [{ id: 1, name: "通年", type: "regular", grades: [], startDate: "2026-04-01", endDate: null }];
+  const wed = { day: "水", time: "19:00-20:20", note: "", timetableId: 1 };
+  const slots = [
+    { ...wed, id: 11, grade: "高2", cls: "高松一", room: "301", subj: "物理", teacher: "滝澤" },
+    { ...wed, id: 12, grade: "高2", cls: "高松二", room: "302", subj: "英語", teacher: "河野" },
+    { ...wed, id: 13, grade: "中3", cls: "S", room: "501", subj: "理科", teacher: "藤田" },
+  ];
+  const holiday = {
+    id: 1,
+    date: WED,
+    label: "高1・高2 休講",
+    scope: ["高校部"],
+    targetGrades: ["高1", "高2"],
+    subjKeywords: [],
+  };
+  const toastRender = (toasts) => (
+    <div>
+      {toasts.map((t) => (
+        <div key={t.id}>
+          <span>{t.message}</span>
+          {t.action && (
+            <button type="button" onClick={t.action.onClick}>
+              {t.action.label}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+  const base = { slots, timetables: WED_TT, initDate: WED };
+
+  it("休講日で休みのカードを押すと休講日の例外にでき、その場で保存して元に戻せる", () => {
+    const saveHolidays = vi.fn();
+    renderView({ ...base, holidays: [holiday], saveHolidays }, { toastRender });
+    fireEvent.click(screen.getByRole("button", { name: /高2 高松一 物理（休講）/ }));
+    fireEvent.click(screen.getByText("この日はこのコマだけ授業あり（休講日の例外にする）"));
+
+    expect(saveHolidays).toHaveBeenCalledTimes(1);
+    const next = saveHolidays.mock.calls[0][0]([holiday]);
+    expect(next[0].excludeSlotIds).toEqual([11]);
+    // 休講日は下書きに入らない (未保存バーを出さない)
+    expect(screen.queryByRole("region", { name: "未保存の下書き" })).toBeNull();
+    expect(screen.getByText(/高2高松一 物理 を休講日「高1・高2 休講」の例外にしました/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    const undone = saveHolidays.mock.calls[1][0](next);
+    expect("excludeSlotIds" in undone[0]).toBe(false);
+  });
+
+  it("例外のコマは印つきの通常のカードになり、「休講日どおり休講に戻す」で戻せる", () => {
+    const saveHolidays = vi.fn();
+    const excepted = { ...holiday, excludeSlotIds: [11] };
+    renderView({ ...base, holidays: [excepted], saveHolidays }, { toastRender });
+    // 物理は授業ありのカード (印つき)、英語は休講のまま
+    const card = screen.getByRole("button", { name: /高2 高松一 物理 滝澤 （休講日の例外）/ });
+    expect(within(card).getByText("休講日の例外 (「高1・高2 休講」。この日は授業あり)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /高2 高松二 英語（休講）/ })).toBeTruthy();
+    // 上の帯にも例外のコマを添える
+    expect(screen.getByText("例外 (授業あり): 高2高松一 物理")).toBeTruthy();
+
+    fireEvent.click(card);
+    fireEvent.click(screen.getByText("休講日どおり休講に戻す"));
+    expect(saveHolidays).toHaveBeenCalledTimes(1);
+    const next = saveHolidays.mock.calls[0][0]([excepted]);
+    expect("excludeSlotIds" in next[0]).toBe(false);
+    expect(screen.getByText(/を休講日「高1・高2 休講」どおり休講に戻しました/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(saveHolidays.mock.calls[1][0](next)[0].excludeSlotIds).toEqual([11]);
+  });
+
+  it("例外のコマに下書きがあるときは休講日どおりに戻せない (下書きが見えないまま保存されるため)", () => {
+    const saveHolidays = vi.fn();
+    renderView({ ...base, holidays: [{ ...holiday, excludeSlotIds: [11] }], saveHolidays });
+    const card = () => screen.getByRole("button", { name: /高2 高松一 物理 滝澤/ });
+    fireEvent.click(card());
+    fireEvent.click(screen.getByText("❗ 代行未定のまま欠勤にする"));
+    fireEvent.click(card());
+    const item = screen.getByRole("menuitem", { name: /休講日どおり休講に戻す/ });
+    expect(item).toBeDisabled();
+    expect(item.textContent).toMatch(/先にこのコマの下書きを片付けてください/);
+    expect(saveHolidays).not.toHaveBeenCalled();
+  });
+
+  it("テスト期間でも止まっているコマは、例外にしてもテスト期間のままと知らせ、そこから戻せる", () => {
+    const saveHolidays = vi.fn();
+    const examPeriods = [
+      { id: 1, name: "高2 中間", startDate: WED, endDate: WED, targetGrades: ["高2"], stopsClasses: true },
+    ];
+    renderView({ ...base, holidays: [holiday], examPeriods, saveHolidays }, { toastRender });
+    fireEvent.click(screen.getByRole("button", { name: /高2 高松一 物理（休講）/ }));
+    fireEvent.click(screen.getByText("この日はこのコマだけ授業あり（休講日の例外にする）"));
+    expect(screen.getByText(/テスト期間のため、この日の授業は止まったままです/)).toBeTruthy();
+  });
+
+  it("例外にしたがテスト期間で止まっているコマは「テスト期間」のカードから休講日どおりに戻せる", () => {
+    const saveHolidays = vi.fn();
+    const examPeriods = [
+      { id: 1, name: "高2 中間", startDate: WED, endDate: WED, targetGrades: ["高2"], stopsClasses: true },
+    ];
+    renderView({
+      ...base,
+      holidays: [{ ...holiday, excludeSlotIds: [11] }],
+      examPeriods,
+      saveHolidays,
+    });
+    const card = screen.getByRole("button", { name: /高2 高松一 物理（テスト期間）/ });
+    expect(within(card).getByText(/休講日の例外/)).toBeTruthy();
+    fireEvent.click(card);
+    fireEvent.click(screen.getByText("休講日どおり休講に戻す"));
+    expect(saveHolidays).toHaveBeenCalledTimes(1);
+  });
+
+  it("休講日を保存できないとき (saveHolidays なし) は休講のカードを押せないまま", () => {
+    renderView({ ...base, holidays: [holiday] });
+    expect(screen.queryByRole("button", { name: /高2 高松一 物理（休講）/ })).toBeNull();
+    expect(screen.getAllByText("休講").length).toBeGreaterThan(0);
+  });
+});
+
 // コマ休講などの下書きを「保存」せずに離れていた (2026-10-16)。右下の小さな
 // 浮きボタンは狭い画面や通知に隠れて見落とされるので、下書きがある間は画面下に
 // 固定の未保存バーを出す。離れる操作 (日付の変更・同じ画面の中のジャンプ・

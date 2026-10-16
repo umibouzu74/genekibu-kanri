@@ -1808,6 +1808,7 @@ export default function App() {
               saveSubs={saveSubs}
               saveAdjustments={saveAdjustments}
               saveSessionOverrides={saveSessionOverrides}
+              saveHolidays={saveHolidays}
               isAdmin={isAdmin}
               initDate={absenceFlowInitDate}
               onConsumeInitDate={() => setAbsenceFlowInitDate(null)}

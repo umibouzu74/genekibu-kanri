@@ -18,7 +18,12 @@ import { AbsenceRegisterDialog } from "./absence/AbsenceRegisterDialog";
 import { SlotCancelDialog } from "./absence/SlotCancelDialog";
 import { DraftSaveBar } from "./absence/DraftSaveBar";
 import { isCancelAdjustment } from "../../utils/slotCancel";
-import { buildIncomingCards, incomingCombineKey } from "../../utils/adjustmentDisplay";
+import {
+  buildIncomingCards,
+  describeSlot,
+  incomingCombineKey,
+} from "../../utils/adjustmentDisplay";
+import { addHolidayException, removeHolidayException } from "../../utils/holidayExceptions";
 import { canonicalTimeRange, fmtMDWeekday } from "../../utils/dateHelpers";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
 import {
@@ -37,6 +42,26 @@ import { offsiteLessonsOnDate } from "../../utils/offsiteLessons";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { OffsiteLessonBanner } from "../OffsiteLessonBanner";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
+
+// 休講日 1 件にコマの例外 (この日は授業あり) を足す / 外す。「元に戻す」用で、
+// さっき変えた休講日だけに効かせる (その間に他の端末で足された休講日や、
+// もともと例外だった休講日には触らない)
+function withHolidayException(h, slotId) {
+  const ids = h.excludeSlotIds || [];
+  if (ids.some((id) => String(id) === String(slotId))) return h;
+  return { ...h, excludeSlotIds: [...ids, slotId] };
+}
+function withoutHolidayException(h, slotId) {
+  const ids = h.excludeSlotIds || [];
+  const rest = ids.filter((id) => String(id) !== String(slotId));
+  if (rest.length === ids.length) return h;
+  if (rest.length > 0) return { ...h, excludeSlotIds: rest };
+  // 空配列は RTDB が消すので、キーごと外して保存形をそろえる
+  const base = { ...h };
+  delete base.excludeSlotIds;
+  return base;
+}
+const holidayNames = (list) => list.map((h) => `「${h.label || "休講"}」`).join("");
 
 // ─── 先生欠勤 統合ワークフロー (直接操作 UI 版) ─────────────────
 // 上部: 対象日 + 欠勤先生選択 / 下部: 時間割グリッド
@@ -61,6 +86,9 @@ export function AbsenceWorkflowView({
   saveSubs,
   saveAdjustments,
   saveSessionOverrides,
+  // 休講日の保存 (休講日の例外 = この日はこのコマだけ授業あり)。休講日は
+  // 下書きに入らないので、その場で保存する。未指定なら例外の操作を出さない
+  saveHolidays,
   isAdmin,
   initDate,
   onConsumeInitDate,
@@ -753,6 +781,88 @@ export function AbsenceWorkflowView({
     [adjustments, sessionOverrides, removeAdjustmentWithUndo]
   );
 
+  // ── 休講日の例外 (この日はこのコマだけ授業あり、utils/holidayExceptions) ──
+  // 「9/9 は高1・高2 休講。ただし高2 高松一 物理は授業あり」。休講日は
+  // 日付 × 学年の設定で欠勤組み換えの下書きには入らないので、その場で保存して
+  // 6 秒の「元に戻す」を出す (cascade の無い変更)。書き込みは書き込む時点の
+  // 配列から (updater)
+  const handleAddHolidayException = useCallback(
+    (slot) => {
+      if (!saveHolidays) return;
+      const { changedIds } = addHolidayException(holidays || [], slot, date);
+      if (changedIds.length === 0) {
+        toasts.error("このコマを休講にしている休講日が見つかりません (他の端末で変更された可能性があります)");
+        return;
+      }
+      const changed = new Set(changedIds);
+      const names = holidayNames((holidays || []).filter((h) => changed.has(h.id)));
+      saveHolidays((prev) => addHolidayException(prev || [], slot, date).next);
+      // テスト期間でも止まっているコマは、休講日の例外にしても授業にならない
+      const stillOff = isInExamPeriodForGrade(date, slot.grade)
+        ? "。テスト期間のため、この日の授業は止まったままです"
+        : "";
+      toasts.push(
+        `${describeSlot(slot)} を休講日${names}の例外にしました (この日は授業あり)${stillOff}`,
+        {
+          tone: "success",
+          duration: 6000,
+          action: {
+            label: "元に戻す",
+            onClick: () =>
+              saveHolidays((prev) =>
+                (prev || []).map((h) => (changed.has(h.id) ? withoutHolidayException(h, slot.id) : h))
+              ),
+          },
+        }
+      );
+    },
+    [saveHolidays, holidays, date, toasts, isInExamPeriodForGrade]
+  );
+
+  // 例外を外して休講日どおり休講に戻す。この日のこのコマに保存済みの代行・
+  // 調整があっても消さない (休講日の間は画面に出なくなる) ので、件数を知らせる
+  const handleRemoveHolidayException = useCallback(
+    (slot) => {
+      if (!saveHolidays) return;
+      if (draft.draft[slot.id]) {
+        toasts.error("このコマには下書きがあります。先に保存するか取り消してください");
+        return;
+      }
+      const { changedIds } = removeHolidayException(holidays || [], slot, date);
+      if (changedIds.length === 0) {
+        toasts.error("このコマを例外にしている休講日が見つかりません (他の端末で変更された可能性があります)");
+        return;
+      }
+      const changed = new Set(changedIds);
+      const names = holidayNames((holidays || []).filter((h) => changed.has(h.id)));
+      const left =
+        (subs || []).filter((x) => x.date === date && x.slotId === slot.id).length +
+        (adjustments || []).filter(
+          (a) =>
+            a.date === date &&
+            (a.slotId === slot.id || (a.combineSlotIds || []).includes(slot.id))
+        ).length;
+      saveHolidays((prev) => removeHolidayException(prev || [], slot, date).next);
+      toasts.push(
+        `${describeSlot(slot)} を休講日${names}どおり休講に戻しました${
+          left > 0 ? ` (この日のこのコマの代行・調整 ${left} 件は残っています)` : ""
+        }`,
+        {
+          tone: "success",
+          duration: 6000,
+          action: {
+            label: "元に戻す",
+            onClick: () =>
+              saveHolidays((prev) =>
+                (prev || []).map((h) => (changed.has(h.id) ? withHolidayException(h, slot.id) : h))
+              ),
+          },
+        }
+      );
+    },
+    [saveHolidays, draft.draft, holidays, date, subs, adjustments, toasts]
+  );
+
   const handleSave = useCallback(() => {
     const {
       draftSubs,
@@ -1176,6 +1286,10 @@ export function AbsenceWorkflowView({
         onSetIncomingCombine={isAdmin ? handleSetIncomingCombine : undefined}
         onUpdateIncoming={isAdmin ? handleUpdateIncoming : undefined}
         onRemoveIncoming={isAdmin ? handleRemoveIncoming : undefined}
+        onAddHolidayException={isAdmin && saveHolidays ? handleAddHolidayException : undefined}
+        onRemoveHolidayException={
+          isAdmin && saveHolidays ? handleRemoveHolidayException : undefined
+        }
         onOpenDate={handleDateChange}
         date={date}
       />
