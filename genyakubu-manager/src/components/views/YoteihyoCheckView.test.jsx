@@ -554,6 +554,24 @@ describe("YoteihyoCheckView — 休講日の例外", () => {
   });
 });
 
+describe("YoteihyoCheckView — 不定期のコマ", () => {
+  it("実施日でない日に予定表で授業があれば、実施日に加えられる (元に戻せる)", async () => {
+    let state = null;
+    const slots = SMALL_SLOTS.map((s) =>
+      s.id === 3 ? { ...s, irregular: true, onlyDates: ["2026-10-01", "2026-10-08"] } : s
+    );
+    renderView({ onState: (st) => (state = st), slots });
+    await loadWorkbook();
+    const c = card("10/15 (木)");
+    expect(within(c).getByText(/実施日でない \(不定期のコマ\)/)).toBeTruthy();
+    fireEvent.click(within(c).getByRole("button", { name: "10/15 (木) を 19:40-20:40 高2 古文漢文 の実施日に加える" }));
+    expect(state.slots.find((s) => s.id === 3).onlyDates).toEqual(["2026-10-01", "2026-10-08", "2026-10-15"]);
+    expect(within(card("10/15 (木)")).queryByText(/実施日でない/)).toBeNull();
+    fireEvent.click(within(screen.getByTestId("toasts")).getByRole("button", { name: "元に戻す" }));
+    expect(state.slots.find((s) => s.id === 3).onlyDates).toEqual(["2026-10-01", "2026-10-08"]);
+  });
+});
+
 describe("YoteihyoCheckView — 予定表から終講日を設定", () => {
   it("案を選んで、確認してから設定する。元に戻せる", async () => {
     let state = null;
