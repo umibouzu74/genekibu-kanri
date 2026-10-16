@@ -194,6 +194,9 @@ export function DashDayRow({
                 ...(h.targetGrades || []),
                 ...(h.subjKeywords || []),
               ];
+              // 例外 (この日は授業あり) だけで部門まるごとではない休講日は部門名で言う
+              if (parts.length === 0) parts.push(...(h.scope || ["全部"]));
+              const exceptions = (h.excludeSlotIds || []).length;
               return (
                 <span
                   key={h.id}
@@ -205,6 +208,7 @@ export function DashDayRow({
                   }}
                 >
                   {parts.join("・")}休{h.label ? `(${h.label})` : ""}
+                  {exceptions > 0 && ` ※${exceptions}コマは授業あり`}
                 </span>
               );
             })}

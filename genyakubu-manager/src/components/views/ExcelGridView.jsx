@@ -966,6 +966,8 @@ export function ExcelGridView({
               >
                 {parts.join(" / ")}
                 {h.label ? ` (${h.label})` : ""}
+                {(h.excludeSlotIds || []).length > 0 &&
+                  ` ※${h.excludeSlotIds.length}コマは授業あり`}
               </span>
             );
           })}

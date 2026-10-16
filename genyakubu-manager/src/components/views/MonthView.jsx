@@ -1315,9 +1315,11 @@ export function MonthView({
           )}
           {!isFullOff && granularHols.length > 0 && (
             <span style={{ fontSize: 7, color: "#4a7a9a", fontWeight: 400, display: "block" }}>
-              {granularHols.map((h) =>
-                [...(h.targetGrades || []), ...(h.subjKeywords || [])].join("・")
-              ).join(", ") + "休"}
+              {granularHols.map((h) => {
+                const parts = [...(h.targetGrades || []), ...(h.subjKeywords || [])];
+                // 例外 (この日は授業あり) だけの休講日は部門名で言う
+                return (parts.length > 0 ? parts : h.scope || ["全部"]).join("・");
+              }).join(", ") + "休"}
             </span>
           )}
           {!isFullOff && hasExam && (
